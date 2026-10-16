@@ -1,4 +1,4 @@
-// time_machine family — part `core` (original time_machine.js lines 19–1418).
+// time_machine family — part `core` (original time_machine.js lines 19–1425).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/time_machine.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as TMS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
@@ -1494,6 +1494,13 @@
       if (!g) continue;
       (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
     }
+    // §CW_SOLIDIFY_EVENT (CIVIL ONLY — bim-compiler prompts/CWRoadBakeIssues.md Issue A). A staged element becomes
+    // visible at _tmXraySolidifyTs (another element's end), which was not an event of ITS mesh, so the delta skip
+    // below could pass over that mesh and leave the slot hidden for the rest of the film (road v6: 12,112/19,559
+    // staged, 4/8 watched slabs never drawn). Gated on app.isCivilModel(): buildings build the identical index.
+    var _cwOn = !!(app.isCivilModel && app.isCivilModel()), _cwN = 0;
+    if (_cwOn) for (var _cg in _tmXraySolidifyTs) { (guidT[_cg] || (guidT[_cg] = [])).push(_tmXraySolidifyTs[_cg]); _cwN++; }
+    console.log('§CW_SOLIDIFY_EVENT civil=' + _cwOn + ' added=' + _cwN + (_cwOn ? '' : ' (building: index unchanged)'));
     var byMesh = Object.create(null), k, metas, j, arr, ts;
     function addAll(meshId, guid) {
       ts = guidT[guid];

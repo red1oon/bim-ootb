@@ -58,9 +58,18 @@
     // The writable ERP db is loaded lazily (fetch erp/ad_seed.db → sql.js) and the folded result is
     // persisted to OPFS (bim_project_orders.db) — a viewer-owned project-orders store. NOTE: the
     // cross-page hand-off so the ERP app reads it is the BIMtoERP §B write-path (follow-on).
-    var _bimErpDb = null;
+    var _bimErpDb = null, _bimErpStamp = null;
+    function _stamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
     function _ensureErpDb() {
-      if (_bimErpDb) return Promise.resolve(_bimErpDb);
+      // §STORE_STAMP: reuse the cached store only while the file on disk is the one we loaded/wrote; else reload (logged, never silent).
+      return _stamp().then(function (st) {
+        if (_bimErpDb && st === _bimErpStamp && st !== 'unknown') return _bimErpDb;
+        if (_bimErpDb) console.log('[RP-C] §PUSH_STORE_RELOAD writer=find_erp_push was=' + _bimErpStamp + ' now=' + st);
+        _bimErpDb = null; _bimErpStamp = st;
+        return _loadErpDb();
+      });
+    }
+    function _loadErpDb() {
       var SQL = A._SQL || (typeof window !== 'undefined' && (window.SQL || window._SQL_CACHED));   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !global.ProjFold) return Promise.resolve(null);
       // §S9 (TM_4D5D_VARIANCE_LANE §S9): OPFS-FIRST, exactly as diff.js _loadVoErpDb already does for the VO path — so a Project Order the MODELLER (or an
@@ -83,7 +92,7 @@
           .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
           .then(function (fh) { return fh.createWritable(); })
           .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-          .then(function () { return true; }).catch(function () { return false; });
+          .then(function () { return _stamp().then(function (st) { if (db === _bimErpDb) _bimErpStamp = st; return true; }); }).catch(function () { return false; });
       } catch (e) { return Promise.resolve(false); }
     }
     // ── §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold ─────────────────────────────────────────────────
@@ -268,6 +277,14 @@
       console.log('[RP-C] §PROJ_PUSH_AUDIO id=' + id + ' sfx=' + (ok ? 'played' : 'absent'));
     }
     function _pushReject(msg) { if (A.status) A.status.textContent = msg; _pushSfx('erp_reject'); }
+    // §ZOOM-LINKBACK pure store rule (node-witnessed: viewer/tests/witness_zoom_linkback_node.js).
+    function _linkBackStore(prevNote, set, dbUrl) {
+      var gs = {};
+      if (/^\S+(,\S+)*$/.test(prevNote || '')) prevNote.split(',').forEach(function (g) { gs[g] = 1; });
+      set.forEach(function (g) { gs[g] = 1; });
+      var keys = Object.keys(gs);
+      return { description: 'BIM src db=' + dbUrl, note: keys.join(','), count: keys.length };
+    }
     function _pushToErp() {
       var set = D.getLastSelSet();
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
@@ -288,6 +305,17 @@
         console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + D.getLastSelLabel() + '" phases=+' + r.created.phases +
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
           ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+        // §ZOOM-LINKBACK (bim-ootb prompts: ZoomAcross red pill, GUID + source-model link back) — the order carries the
+        // link back to its source: Description = the model db url this push came from, Note = the pushed GUID set (union
+        // with earlier pushes to the same project). ERP Zoom Across reads both → opens THAT db, highlights those GUIDs.
+        try {
+          if (r.projectId != null) {
+            var _cur = db.exec("SELECT Note FROM C_Project WHERE C_Project_ID=?", [r.projectId]);
+            var _lb = _linkBackStore((_cur.length && _cur[0].values[0][0]) ? String(_cur[0].values[0][0]) : '', set, A.DB_URL);
+            db.run("UPDATE C_Project SET Description=?, Note=? WHERE C_Project_ID=?", [_lb.description, _lb.note, r.projectId]);
+            console.log('[RP-C] §ZOOM_LINKBACK_STORE project=' + r.projectId + ' db=' + A.DB_URL + ' guids=' + _lb.count);
+          }
+        } catch (e) { console.log('[RP-C] §ZOOM_LINKBACK_ERR ' + e.message); }
         // §F9 — when BlueFuture is engaged, route the pushed Project Order onto the active blue branch
         // (op-log + projection tag) so it's a speculative UNOFFICIAL draft, invisible to official chrome
         // until accepted on the timeline. No-op in the plain viewer (BlueFuture/BlueFold absent → white push).
@@ -329,7 +357,7 @@
             console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
           }
         });
-      });
+      }).catch(function (e) { _pushReject('Project Order push failed: ' + (e && e.message)); console.log('[RP-C] §PROJ_PUSH_ERR ' + (e && e.stack || e)); });
     }
 
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,

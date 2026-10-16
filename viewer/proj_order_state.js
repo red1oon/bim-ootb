@@ -52,6 +52,15 @@
     console.log('§S9-STORE src=seed bytes=' + (b && b.byteLength));
     return { db: new SQL.Database(new Uint8Array(b)), src: 'seed' };
   }
+  // §STORE_STAMP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §BIM-CRUD; user 2026-10-07 stale-tab fix): the store's identity on disk
+  //   = lastModified:size, or 'gone'. A writer that cached the store reuses its copy ONLY while the stamp is unchanged — a seed reset
+  //   (removes the file), another tab's push or an ERP-side change makes it reload, so an open tab can no longer write old orders back.
+  async function storeStamp() {
+    try {
+      var root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle(STORE_DIR), fh = await dir.getFileHandle(STORE_FILE);
+      var f = await fh.getFile(); return f.lastModified + ':' + f.size;
+    } catch (e) { return 'gone'; }
+  }
   async function persist(db) {
     try {
       var bytes = db.export(), root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle(STORE_DIR, { create: true });
@@ -181,7 +190,7 @@
   }
   function voStatusLabel(s) { return s === 'DR' ? 'Drafted' : s === 'CO' ? 'Approved' : s === 'IP' ? 'In progress' : s === 'RE' ? 'Reversed' : String(s); }
 
-  var API = { BUILDING_LABELS: BUILDING_LABELS, projectKey: projectKey, openStore: openStore, persist: persist, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
+  var API = { BUILDING_LABELS: BUILDING_LABELS, projectKey: projectKey, openStore: openStore, persist: persist, storeStamp: storeStamp, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
     deleteReissue: deleteReissue, voRowsFromEdit: voRowsFromEdit, rowsAmount: rowsAmount, voStatusLabel: voStatusLabel, issueVO: issueVO, launchUrl: launchUrl, countProjects: countProjects, STORE_FILE: STORE_FILE };
   if (typeof window !== 'undefined') window.ProjOrderState = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

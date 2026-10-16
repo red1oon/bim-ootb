@@ -104,7 +104,7 @@
     } catch (e) {}
   });
 
-  function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
+  function today() { try { return CORE.localDay(); } catch (e) { return ''; } }   // §LOCAL-TIME: legacy #Date = the local day
   // S2B — FOLDED holds host-registered AD-folded specs (one per non-curated table). entryFor prefers the CURATED
   //   crud_ops entry (it carries docPolicy fan-out / ownerGate / docAction); else falls back to the folded spec so
   //   ANY window is editable per its own dictionary. Lower-cased key, mirrors crud_ops keys.
@@ -353,6 +353,13 @@
   // A New runs GridTab.dataNew's callout fan (M/GridTab.java:1179-1181). Generic over the dictionary: no table or column
   // is named here. Supersedes the 14 hand-written host handlers + 9 bundle accessors this block used to carry.
   var _co = null, _coLogin = null, _coLoginKey = null, _coUdfDb = null;
+  // bind the AD runtime to this db AND register the stored-function UDFs on it (once per db). Shared by the callout path and every model transaction (withModelTrx), so an
+  // @SQL default, an info window or a process port can call bomQtyOnHand()/invoiceOpen()/... exactly as the legacy DB lets any SQL call its PL/pgSQL functions.
+  function _coBindUdf(db) {
+    var A = global.AdCallout; if (!A || !A.bind) return;
+    A.bind(_modelQuery(db), { now: function () { return Date.now(); } });
+    if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+  }
   function _coDb(fn) {
     var A = global.AdCallout;
     if (!A || !A.bind || typeof withBundle !== 'function') return;
@@ -360,8 +367,7 @@
       if (!db) return;
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
       try {
-        A.bind(_modelQuery(db), { now: function () { return Date.now(); } });
-        if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
+        _coBindUdf(db);
         fn(A);
       } catch (e) { console.log('§CALLOUT-ERR ' + ((e && e.message) || e)); }
       finally { _tipShadowOff(db, sh); }
@@ -761,7 +767,7 @@
     var win = app._winCtx;
     if (win) for (k in win) fill(String(k).toLowerCase(), win[k]);
     fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
-    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
+    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today()); fill('showadvanced', app.showAdvanced);   // #ShowAdvanced (Login.java:531)
     // window context IsSOTrx = AD_Window.IsSOTrx (host sets APP._createIsSOTrx; _docCtx owns this question).
     if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') fill('issotrx', app._createIsSOTrx);
     var ctx = {};
@@ -811,6 +817,16 @@
   // rec (§P3) = the row under edit, the window context the @token@ feed reads. opts.valRuleOnly re-runs ONLY
   // the val-rule'd fk pickers (a dependent lookup refresh, e.g. C_BPartner_ID → C_BPartner_Location_ID) —
   // a full re-run would reset every list select back to its render-time data-cur and lose the user's choice.
+  // Display column of a table lookup. Name when the table has one (unchanged); else the table's FIRST IsIdentifier column by SeqNo (MLookupFactory.getLookup_TableDir: the identifiers ARE the label —
+  // C_Currency shows ISO_Code "USD", not its id); else DocumentNo; else the key.
+  function refNameCol(db, t, pk) {
+    if (recHasCol(db, t, 'name')) return 'name';
+    try {
+      var r = db.exec("SELECT c.columnname FROM ad_column c JOIN ad_table tb ON tb.ad_table_id=c.ad_table_id WHERE lower(tb.tablename)=lower('" + String(t).replace(/'/g, '') + "') AND c.isidentifier='Y' AND c.isactive='Y' ORDER BY c.seqno");
+      if (r.length) { for (var i = 0; i < r[0].values.length; i++) { var cn = String(r[0].values[i][0]); if (recHasCol(db, t, cn.toLowerCase())) return cn.toLowerCase(); } }
+    } catch (e) { /* no dictionary in this bundle -> old fallback */ }
+    return recHasCol(db, t, 'documentno') ? 'documentno' : pk;
+  }
   function populateRefs(e, rec, opts) {
     var only = !!(opts && opts.valRuleOnly);
     (e.fields || []).forEach(function (f) {
@@ -865,7 +881,7 @@
           if (keep === '' || keep == null) return;
           withBundle(function (db) {
             try {
-              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+              var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = refNameCol(db, t, pk);
               var res = db.exec('SELECT ' + pk + ',' + nameCol + ' FROM ' + t + ' WHERE ' + pk + '=' + Number(keep));
               var label = (res.length && res[0].values.length) ? (res[0].values[0][1] + ' (' + res[0].values[0][0] + ')') : keep;
               el.innerHTML = '<option value="' + esc(keep) + '" selected>' + esc(label) + '</option>';
@@ -877,7 +893,7 @@
           try {
             // §P8 P8.4 (W-PARITY-REFTABLE): the pk is the AD_Ref_Table AD_Key when there is one
             // (MLookupFactory.getLookup_Table), else the TableDIR convention.
-            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = recHasCol(db, t, 'name') ? 'name' : (recHasCol(db, t, 'documentno') ? 'documentno' : pk);
+            var t = f.ref, pk = f.refkey || (t + '_id'), nameCol = refNameCol(db, t, pk);
             // ── §P3 (§P3-SPEC P3.4 — W-PARITY-VALRULE): narrow the candidate set to exactly the rows this
             // column's AD_Val_Rule admits. MLookupFactory.java:122-125 — the rule's Code IS the lookup's
             // ValidationCode, appended to the lookup query; that is all this does.
@@ -1604,21 +1620,41 @@
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
              uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };
   }
+  // _needThen(table, run) - the OSGi lazy-activation seam (Host work H2): if a lazy plugin bundle declares `table` as a trigger and is still STARTING, activate it FIRST (async, before the synchronous model layer runs), then run.
+  //   Nothing pending => run() synchronously, exactly as before. An activation failure is atomic in the registry and is logged here; the run proceeds without that bundle (legacy: a bundle that failed to activate registers no factory).
+  function _needThen(table, run) {
+    var PE = global.PluginEngine, t = table == null ? null : String(table).toLowerCase();
+    if (!PE || typeof PE.hasPending !== 'function' || !t || !PE.hasPending({ table: t })) { run(); return; }
+    var fired = false; function go() { if (!fired) { fired = true; run(); } }
+    Promise.resolve(PE.need({ table: t })).then(go, function (e) { console.log('§PLUGIN-NEED-ERR table=' + t + ' ' + (e && e.message)); go(); });
+  }
+  function _noteTouched(r) {   // a run that wrote a trigger table of a still-STARTING bundle (cascade) is reported by the registry, never silent
+    var PE = global.PluginEngine; if (!PE || typeof PE.noteTouched !== 'function' || !r || !r.ops) return;
+    var seen = {}, tabs = []; r.ops.forEach(function (o) { var t = o && (o.table || (o.params && o.params.table)); if (t && !seen[t]) { seen[t] = 1; tabs.push(t); } });
+    if (tabs.length) PE.noteTouched(tabs);
+  }
   function modelRun(spec, cb) {
     var ML = global.ModelLayer;
     if (!ML || typeof withBundle !== 'function') { cb(null); return; }
+    _needThen(spec && spec.table, function () { _modelRunNow(spec, cb, ML); });
+  }
+  function _modelRunNow(spec, cb, ML) {
     withBundle(function (db) {
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
       try { r = ML.run(_modelQuery(db), _modelEnv(), spec); }
       catch (e) { console.log('§MODEL-ERR ' + (e && e.message)); r = null; }
       finally { _tipShadowOff(db, sh); }
       if (r && r.log) r.log.forEach(function (l) { console.log(l); });
+      _noteTouched(r);
       cb(r);
     });
   }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || typeof withBundle !== 'function') { cb(null); return; }
+    _needThen(e && e.key, function () { _fireBeforeSaveNow(e, vals, orig, cb, MV); });
+  }
+  function _fireBeforeSaveNow(e, vals, orig, cb, MV) {
     withBundle(function (db) {
       var out = null;
       try {
@@ -2470,7 +2506,9 @@
           Object.keys(op.changes || {}).forEach(function (c) { var ch = op.changes[c]; rec[c.toLowerCase()] = (ch && Object.prototype.hasOwnProperty.call(ch, 'new')) ? ch.new : ch; }); rec[pk] = op.id; }
       } finally { _tipShadowOff(bdb, sh); }
       modelRun({ table: op.table, timing: 'AFTER_SAVE', record: rec, old: old, isNew: op.op_type === 'CRUD_CREATE' }, function (mr) {
-        if (!mr || !mr.ok || !mr.ops.length) { if (mr && !mr.ok) console.log('§MODEL-AFTER-SAVE table=' + op.table + ' refused: ' + (mr.error || mr.msg)); cb([]); return; }
+        // PO.save semantics (PO.java saveNew/saveFinish): an afterSave/AFTER_NEW refusal fails the WHOLE save and the trx rolls back - the host row must not be sealed either (twin rule). cb(ops, refusal).
+        if (mr && !mr.ok) { var why = mr.error || mr.msg || 'refused'; console.log('§MODEL-AFTER-SAVE table=' + op.table + ' refused: ' + why); cb([], why); return; }
+        if (!mr || !mr.ops.length) { cb([]); return; }
         // the host op sits at index 0 → every model {__opRef:i} shifts by one
         var shift = function (v) { return (v && typeof v === 'object' && v.__opRef != null) ? { __opRef: v.__opRef + 1 } : v; };
         var ops = mr.ops.map(function (o) { var c = JSON.parse(JSON.stringify(o)); if (c.fields) Object.keys(c.fields).forEach(function (k) { c.fields[k] = shift(c.fields[k]); });
@@ -2481,7 +2519,8 @@
     });
   }
   function _commitCrudSealed(op, K, db, done) {
-    _modelAfterSave(op, db, function (modelOps) {
+    _modelAfterSave(op, db, function (modelOps, refusal) {
+      if (refusal) { console.log('§MODEL-SAVE-ROLLBACK table=' + op.table + ' op=' + op.op_type + ' nothing sealed: ' + refusal); toast('Save refused: ' + String(refusal).slice(0, 140)); done(); return; }
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
         if (op.op_type === 'CRUD_UPDATE')      { params.changes = op.changes; if (op.actor != null) params.actor = op.actor; }
@@ -2517,6 +2556,11 @@
 
   // ── applyOp — the commit funnel. DOC_ACTION + CRUD verbs all take the GP3 signed-write seam (sidecar). ──
   function applyOp(op, e) {
+    // THE demand point of OSGi-style lazy activation (Host work H2): completeFanout / _modelAfterSave / modelRun all read the model + DocAction registries SYNCHRONOUSLY before they run, so a lazy plugin bundle
+    //   whose trigger table is this op's table must be activated FIRST. Nothing pending => synchronous, exactly as before (applyOp returns nothing, so waiting is safe for every caller).
+    _needThen(op && (op.key || op.table), function () { _applyOpNow(op, e); });
+  }
+  function _applyOpNow(op, e) {
     if (op.op_type === 'DOC_ACTION') { commitProcess(op); return; }                                    // GP3: signed status write
     if (op.op_type === 'CRUD_CREATE' || op.op_type === 'CRUD_UPDATE' || op.op_type === 'CRUD_DELETE') { commitCrud(op); return; }  // GP3: signed field write
     toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — unknown op');
@@ -2876,7 +2920,7 @@
                     calloutTab: function () { return _co ? _co.tab : null; },
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
                     withModelTrx: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
-                      try { var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
+                      try { _coBindUdf(db); var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
                     // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
                     //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
                     //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside
@@ -2912,7 +2956,7 @@
                       });
                     },
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
-                    changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    changeLog: function (table, id, opts) { return SIDE ? CORE.changeLog(SIDE, table, id, opts) : null; },   // §ADMIN-2 opts {roleChangeLog, insertLog, baseRow}
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
                     restoreDraft: restoreDraft, bufferDraft: _bufferDraft,   // Item 1 (W-DRAFT-RESTORE-LIVE): opt-in restore + leave-buffer (host/witness seam)
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log

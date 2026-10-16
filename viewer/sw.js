@@ -56,7 +56,7 @@
 // four film flags (buildup, room_title, reveal, day_counter) alongside the path geometry it already
 // stored, so a path saved with Ctrl+S no longer travels with every feature silently OFF. Columns are
 // APPENDED and the reader PRAGMA-probes them, so old and new .db files open in both directions.
-// scene.js?v=59->60, effects.js?v=32->33.
+// scene.js?v=60->60, effects.js?v=32->33.
 // v1136 (2026-09-04) §CPE_ROSTER_NOT_A_HIGHLIGHT: the Reveal round's revolving rotation is the
 // stat cards ONLY. The held build-up crew roster is no longer one of the slots — it holds,
 // un-rotated, through round 1 where it means something. A build-up slide is not a finished-building
@@ -186,18 +186,51 @@
 // v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
 // v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
 // v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
-const CACHE_VERSION = 'v1600';
-// v1600 (2026-10-06) time_machine.js split move-only into tm_core.js tm_render.js tm_panel.js tm_sched_xray.js tm_gantt_build.js tm_gantt_edit.js tm_dash.js tm_lifecycle_api.js (precached, loaded before it) by scripts/split_closure.js. time_machine.js?v=87
+// v1633 (2026-10-17) time_machine.js split move-only into tm_core.js tm_render.js tm_panel.js tm_sched_xray.js tm_gantt_build.js tm_gantt_edit.js tm_dash.js tm_lifecycle_api.js (precached, loaded before it) by scripts/split_closure.js. time_machine.js?v=87
 // v1599 (2026-10-06) cpe_load_path.js split move-only into lp_chain.js lp_geom_pick.js lp_build.js lp_backdrop_diag.js lp_apply_restore.js lp_hud.js (precached, loaded before it) by scripts/split_closure.js — supersedes the one-off split of PR #1903. cpe_load_path.js?v=12
 // v1598 (2026-10-06) effects.js split move-only into fx_composer.js fx_props_staffage.js fx_sun_shadow.js fx_photo_staging.js fx_still_refine.js fx_cpe_reveal_bands.js fx_cinema_path_plan.js fx_cinema_orbit.js (precached, loaded before it); early mobile return preserved; W-SPLIT-SURFACE + split_verify. effects.js?v=150
 // v1597 (2026-10-06) cinema_maxq.js split move-only into maxq_buildup_ghost.js maxq_infra.js maxq_hud_layers.js maxq_capture_stitch.js maxq_start.js (precached, loaded before it); W-SPLIT-SURFACE + split_verify. cinema_maxq.js?v=43
 // v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
 // v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=2, #sec-axes.
 // v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=1, main.js setupCivilSections.
+// v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
+// main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
+// v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
+// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
+const CACHE_VERSION = 'v1633';
+// v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
+// v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
+// v1627 (2026-10-09) §INSPECT_EARTH_ROAD: earthworks_overlay.js (Inspect EW + RW panels, inferred Cut & Fill overlay) added to PRECACHE_ASSETS; std_values.json gains _cut_fill; panels.js ew/rw rows.
+// v1626 (2026-10-08) §ROAD_REPORT polish: grade value printed with 2 decimals next to its limit, sign chainages de-duplicated, environment terms + ground/drain discipline names from std_values.json; road_report.js?v=2, civil_sections.js?v=9, chainage_grid.js?v=3.
+// v1625 (2026-10-08) §ROAD_REPORT: road_report.js (The Road Report, R on civil models; Inspect row) added to PRECACHE_ASSETS; std_values.json gains _road_report.
+// v1624 (2026-10-08) §CHAINAGE_EVERYWHERE: every chainage readout (speed zones, Long/Cross) shows the model's chainage via A.civilChainLabel; chainage_grid.js?v=2, speed_zones.js?v=9, road_standards.js?v=5, civil_sections.js?v=8.
+// v1623 (2026-10-08) §CHAINAGE_GRID: chainage_grid.js (real chainage read from the model's CHAINAGE glyph solids, station ribbon/ticks/tags, hover chip, bottom strip) added to PRECACHE_ASSETS; std_values.json gains _chainage_map (?v=3); road_standards.js?v=4 mounts the Chainage section.
+// v1621 (2026-10-08) §SIGN_VS_SPEED + §LABEL_CLEAN: advance-placement check (ATJ 2B cl.2.2.8, std_values.json advance_placement), short legend/list tags with full provenance in tooltip + HUD; speed_zones.js?v=8, road_standards.js?v=3, std_values.json?v=2.
+// v1620 (2026-10-08) §DISC_ON_BOARD_AREA + §SPEED_SIGN_LIST: disc on the board itself (largest face-on footprint), Speed list = the 8 disc-bearing signs.
+// v1619 (2026-10-08) §DISC_ON_FACE + §PROFILE_AFTER_LOAD: speed discs placed on the board's real face (mesh), long section sampled after loading (80 km/h zone kept).
+// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=6; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
+// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=5.
+// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=5.
+// v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
+// v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
+// v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
+// v1609 (2026-10-07) §FIND_ROW_CLIPPED: Find tree height clamped so the cost · › ERP · open ↗ row always fits (saved findTreeH re-fits).
+// v1608 (2026-10-07) §ZOOM-REUSE + §ZOOM_LANDING_NO_RESTORE: red pill zooms in an open viewer tab (no reload); a ?find= landing skips the saved view's TM/camera/filter.
+// v1607 (2026-10-07) §NO_FALLTHROUGH: whatif_panel _pickProject no longer falls through to the newest phased project (Hospital).
+// v1606 (2026-10-07) §CROSS_POPUP_COMPACT: live cross popup — short header, wrapping short-name legend, no overlapping text; civil_sections.js?v=7.
+// v1605 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill (was v1603 on its branch).
+// v1604 (2026-10-07) §CROSS_LIVE_POPUP: draggable live cross-section popup beside the cut while scrubbing (civil_sections.js); viewer.html civil_sections.js?v=6.
+// v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=5.
+// v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=4.
+// v1600 (main)
+// v1597 (2026-10-06) §SKY_GHOST_SKYLINE: a civil model builds no fake-city skyline ring (effects.js?v=150); tools/sky_ghost_detect.js + viewer/tests/witness_sky_ghost.js.
+// v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
+// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=3, #sec-axes.
+// v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=2, main.js setupCivilSections.
 // v1594 (2026-10-06) §EW_VOLUME_SURFACE: earthworks_volume.js (ONE owner of the volume line) -> Alt+C ground card, model_check_report.html, boq_charts.html.
 // v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
 // v1591 (2026-10-06) §EARTHWORKS_VOLUME: cpe_road_panels.js earthworks volume line on the planned card (closed-solid gate).
-// v1590 (2026-10-06) §CPE_CHECKBOX_SAVE: every Alt+C box marks the path edited + persists in cinema_path (8 new columns); effects.js?v=149 cinema_path_editor.js?v=23 cinema_maxq.js?v=42 scene.js?v=73.
+// v1590 (2026-10-06) §CPE_CHECKBOX_SAVE: every Alt+C box marks the path edited + persists in cinema_path (8 new columns); effects.js?v=149 cinema_path_editor.js?v=23 cinema_maxq.js?v=42 scene.js?v=74.
 // v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
 // v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
 // v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
@@ -250,16 +283,16 @@ const CACHE_VERSION = 'v1600';
 // sky-surface v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
 // sky-surface v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
 // sky-surface v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
-// sky-surface v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
-// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=12.
+// sky-surface v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=70 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=69 streaming.js?v=85 still_fault.js?v=12.
 // v1565 (2026-10-04) A/B switches only, defaults unchanged: &csmlambda=<0..1> (cascade split; 1 = log, MEASURED HHS c0 tpp 3.51->1.60, SampleHouse 8.63->1.74) and &shadowwide=0. effects.js?v=133.
 // v1564 (2026-10-03) §SHADOW_WIDE_OTHER_CAMERA: mirror tiles + the §GLASS_ENV cube render with the sun box widened to the building union, cascades suspended (was: eye-fitted cascades -> sun speckle in mirrors). effects.js?v=132 shadow_cascade.js?v=2 glass_fresnel.js?v=15.
 // v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
 // v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.
 // v1561 (2026-10-03) §GLASS_PLANAR_REFL: exterior panes on the K=6 largest on-screen glass planes reflect a per-plane mirror render (oblique near plane) instead of the eye-centred cube x sky gate; §GLASS_REFL_TRUTH witness (&refltruth=1); still_fault glassReflMirrored. glass_fresnel.js?v=13 effects.js?v=130 still_fault.js?v=14.
 // v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
-// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=69 streaming.js?v=86 wind_flip.js?v=1.
-// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=68 streaming.js?v=85 still_fault.js?v=11.
+// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=70 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=69 streaming.js?v=85 still_fault.js?v=11.
 // v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
 // v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
 // v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
@@ -303,7 +336,7 @@ const CACHE_VERSION = 'v1600';
 //   only; Hospital hall bright+blocked 23 -> 0, +29 s build) + §GI_WAIT_BUDGET (bounce wait 120 s -> while active, 900 s cap, logged)
 //   + §STILL_OVERLAY_GUARD (Alt+S clears X-Ray / ghost shell). viewer.html light_zones.js?v=21, effects.js?v=123, gi_still.js?v=35.
 // v1498 §LIGHT_FIELD_DB: the Alt+S light field saved inside the building .db (light_zones.js primeDb/dbPack, scene.js
-//   _writeLightFieldTable, main.js primeDb at open); viewer.html light_zones.js?v=21, scene.js?v=66, main.js?v=51 in the SAME commit.
+//   _writeLightFieldTable, main.js primeDb at open); viewer.html light_zones.js?v=21, scene.js?v=67, main.js?v=51 in the SAME commit.
 // v1496 (2026-09-28) Z26 §GLASS_REFL_OPEN: exact-ray reflection openness per exterior glass cell side, built once with the field
 //   (light_zones.js, shares the shell pass BVH): 12 az x 25 el table in the pane frame, blocked = T x rho_hit x F_hit; the zone
 //   texture G of the glass cell = cell-table index + 1; slSpecKeep + specVis read it before the voxel march (Clinic clerestory panes
@@ -350,7 +383,7 @@ const CACHE_VERSION = 'v1600';
 //   viewer.html sourced_light.js?v=54->55, gi_still.js?v=28->29 in the SAME commit.
 // v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
 //   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
-//   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=64->65 in the SAME commit.
+//   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=65->65 in the SAME commit.
 
 // v1452 (2026-09-30) §S8 EDIT→Δ: new viewer/edit_delta.js (one pure Δ function) + edit_delta_viewer.js (Connect 'identity' subscriber, P3);
 //   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
@@ -553,7 +586,7 @@ const CACHE_VERSION = 'v1600';
 // lamp did not — MEASURED, the two differ 50x in projected chord deviation, not in detection.
 // One level of uniform Phong subdivision on the elements whose own facet step still covers a
 // 1080p pixel at 5 m. Hard edges keep the plain midpoint, so flat surfaces are untouched.
-// viewer.html scene.js?v=58->59 and streaming.js?v=68->69 bumped in the SAME commit.
+// viewer.html scene.js?v=59->59 and streaming.js?v=68->69 bumped in the SAME commit.
 // PRECACHE entry added in this same commit — a new module that is not precached is invisible
 // offline, and a precached scene.js served past a version bump would call a function that is
 // not there (the §CRISIS LESSON 4 failure mode noted under v1127).
@@ -587,7 +620,7 @@ const CACHE_VERSION = 'v1600';
 // v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
 // derived FRONT_SIDE_CLASSES, T1<=2% defect; §S260d "inconsistent normals" premise corrected —
 // measured false) + scene.js ambient/hemi lowered to the derived light floor so away-from-sun
-// faces darken. viewer.html streaming.js?v=65->66 + scene.js?v=57->58 bumped in the SAME commit.
+// faces darken. viewer.html streaming.js?v=65->66 + scene.js?v=58->58 bumped in the SAME commit.
 // Witness: witness_wall_side_light_floor.js (pick integrity + no-vanish + perf/mem gates).
 // v1120 (2026-09-01) §CLI_SILENT_BAKE (cinema_maxq.js?v=9 dev-only scripted bake entry) +
 // §NIGHT_BAKE_POOL (tools.js?v=44 — point-light COUNT frozen during a MaxQ bake; measured
@@ -752,7 +785,7 @@ const CACHE_VERSION = 'v1600';
 // v1044 (2026-08-16) §GROUND_EARTH_DEFAULT: Alt+S/Alt+C bake staging ground texture switched from
 // 'paved' back to 'earth' (effects.js?v=21) — user: "more realistic even surface feel", avoids
 // paved's rectangular slab-joint relief entirely. Shadow-mode toggle cycle reordered so 'earth' is
-// the first real choice (tools.js?v=42 _SG_CYCLE, panels.js?v=44 swatch row + tooltip).
+// the first real choice (tools.js?v=42 _SG_CYCLE, panels.js?v=45 swatch row + tooltip).
 // v1043 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
 // (schedule_author.js displayRemap hook + time_machine.js _tmDisplayRemap), strict-bar sweep skipped
 // on display-authored schedules, §CJP live census in the §CROSSTASK_JUDGE_PARITY log line.
@@ -960,6 +993,7 @@ const PRECACHE_ASSETS = [
   'db_resolve.js',
   'helpers.js',
   'silhouette_refine.js',
+  'vertex_weld.js',
   'surface_r10.js',
   'sky_portal.js',
   'sky_occlusion.js',
@@ -1110,6 +1144,12 @@ const PRECACHE_ASSETS = [
   // erp.html/idempiere.html below are now reroute STUBS that live in viewer/.
   'list_builder.js',
   'settings_editor.js',
+  'road_standards.js',
+  'speed_zones.js',
+  'chainage_grid.js',
+  'road_report.js',
+  'earthworks_overlay.js',
+  'std_values.json',
   'panel_nav.js',
   // Lazy-loaded modules
   'navigate.js',

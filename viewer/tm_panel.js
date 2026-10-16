@@ -1,4 +1,4 @@
-// time_machine family — part `panel` (original time_machine.js lines 2843–3697).
+// time_machine family — part `panel` (original time_machine.js lines 2850–3704).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/time_machine.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as TMS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

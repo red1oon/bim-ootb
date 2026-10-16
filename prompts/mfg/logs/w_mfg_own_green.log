@@ -1,0 +1,19 @@
+§KERNEL_OPS_LOADED v13 (W-CHAIN/W-SIGN/G-IDENTITY/W-OPGROUP/W-RATE-INPUT/W-BLUE-FUTURE/W-EMIT/T6-persist-guard/T2-content-sign/T7-incremental/W-OPLOG-APPEND)
+§OWNER_LOADED erp_replay.js (owner-gate + CAS guarded replay)
+§SNAP_SIGN_LOADED v1 (ECDSA P-256, pinned controller key)
+§KRN_CHAIN sealed=16 tip=981ebe85be65… signed
+§MFG-OWN-LOAD break=none ops=16 devices=3 orders=2 tamperTarget=id2
+§MFG-OWN-W5 verifyChain ok=true len=16
+  §MFG-OWN W5 the signed log verifies (chain + content signature) PASS
+§MFG-OWN-W1 applied=8 rejected=8 final PP_Order:8000=["PP_Order:8000","PP_Order","dev:C","in_progress",null,0]
+  §MFG-OWN W1/W2 every op verdict matches the timeline (non-owner rejected, handoff ordered, no two-owner window, stranger/no-target handoff refused) PASS
+  §MFG-OWN W2b final state: owner dev:C, status in_progress (last accepted status op) PASS
+§MFG-OWN-W3 merge orders ABC,CBA,BAC,BCA -> be040c46/98006efd be040c46/98006efd be040c46/98006efd be040c46/98006efd
+  §MFG-OWN W3 projection + rejected set identical for every merge order (and == the central replay) PASS
+  §MFG-OWN W4 control: ALLOCATE non-owner rejected, owner allocates, CLAIM first-wins (O2 status allocated, claimed_by dev:B) PASS
+§KRN_CHAIN sealed=16 tip=981ebe85be65… signed
+§MFG-OWN-W6 (a) tamper: ok=false why=payload altered brokeAt=2 | (b) tamper+re-seal, signed: ok=false why=signature | (c) tamper+re-seal, NO signer: ok=true
+  §MFG-OWN W6a tampered op detected (verifyChain fails, brokeAt = the tampered op) PASS
+  §MFG-OWN W6b tampered op + attacker re-sealed chain still detected (content signature) PASS
+§MFG-OWN-GAP (shown, not asserted away) without a signer a re-sealed tamper verifies=true: the signature/roster is what makes ownership tamper-evident, the bare hash chain is not (W-ROSTER-VERIFY covers key custody)
+§MFG-OWN-VERDICT PASS break=none judged=7 failed=0 inconclusive=0

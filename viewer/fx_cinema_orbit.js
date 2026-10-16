@@ -1,4 +1,4 @@
-// effects family — part `cinema_orbit` (original effects.js lines 10600–11142).
+// effects family — part `cinema_orbit` (original effects.js lines 10605–11147).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/effects.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as FXS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

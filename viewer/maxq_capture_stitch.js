@@ -1,4 +1,4 @@
-// cinema_maxq family — part `capture_stitch` (original cinema_maxq.js lines 1702–2563).
+// cinema_maxq family — part `capture_stitch` (original cinema_maxq.js lines 1720–2581).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/cinema_maxq.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as MQS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

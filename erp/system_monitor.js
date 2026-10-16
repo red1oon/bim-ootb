@@ -175,6 +175,8 @@
         row('Cache reset', '<button class="sm-reset sm-nuke" data-sm-reset>Reset to seed (full)</button> <span class="sm-dim">nuclear &mdash; drops the WHOLE local footprint: all your tenants, op-log, World history, plugins &amp; device key</span>') +
         '<tr class="sm-grp"><td colspan="2">Logs &amp; Trace</td></tr>' +
         row('Trace', 'the signed <b>op-log</b> is the trace &mdash; replayable, per-tenant (git-for-data). No server log file.') +
+        '<tr class="sm-grp"><td colspan="2">Housekeeping</td></tr>' +
+        '<tr><td colspan="2" id="sm-hk"><span class="sm-dim">reading runtime tables&hellip;</span></td></tr>' +
         '<tr class="sm-grp"><td colspan="2">Servers &amp; Cluster</td></tr>' +
         row('Background processors', 'Accounting / Alert / Scheduler / Workflow run <b>on-open or on-sync</b> &mdash; no always-on daemon to babysit.', true) +
         row('Cluster &amp; threads', 'one browser kernel &mdash; no cluster nodes, no JVM thread pool to tune.', true) +
@@ -204,7 +206,9 @@
     '#sm-root .sm-rf:hover{text-decoration:underline}' +
     '#sm-root .sm-reset{background:#0a4ea3;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}' +
     '#sm-root .sm-nuke{background:#b23030}' +
-    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}';
+    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}' +
+    '#sm-root .sm-hk{width:100%;border-collapse:collapse}#sm-root .sm-hk td{padding:4px 6px;border-bottom:1px solid #eef1f5}' +
+    '#sm-root .sm-hk-red td{background:#fdecec;color:#8a1f1f;box-shadow:inset 0 0 8px rgba(214,40,40,.35)}';
 
   function ensureCss() { if (document.getElementById('sm-css')) return; var s = document.createElement('style'); s.id = 'sm-css'; s.textContent = CSS; document.head.appendChild(s); }
 
@@ -216,6 +220,27 @@
   var OPLOG_IDB = 'glassbowl_kernel_ops';
   // nuclear full-wipe set: data cache · kernel op-log · installed plugins · device signing key.
   var FULL_WIPE_IDB = ['erp_cache', 'glassbowl_kernel_ops', 'fold_plugins', 'bim_erp_signer'];
+  // §BIM-CRUD (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): the viewer's push store (OPFS bim_analysis/bim_project_orders.db,
+  //   written by find_erp_push · diff §H1 VO · whatif_panel · schedule_author_ui) is re-overlaid onto the ERP at every boot
+  //   (bim_orders_overlay.js §BIM_OVERLAY), so a reset that leaves it brings the pushed Project Orders straight back.
+  //   Both resets remove the file; the viewer writers re-create it on the next push (they fall back to the bundled seed).
+  async function clearBimPushStore() {
+    var n = -1;
+    try {
+      var dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_analysis');
+      try {
+        var buf = await (await (await dir.getFileHandle('bim_project_orders.db')).getFile()).arrayBuffer();
+        var sdb = new global.SQL.Database(new Uint8Array(buf));
+        var r = sdb.exec('SELECT COUNT(*) FROM C_Project WHERE C_Project_ID >= 990000'); n = r.length ? r[0].values[0][0] : 0; sdb.close();
+      } catch (e) {}
+      await dir.removeEntry('bim_project_orders.db');
+      console.log('§SEED-RESET bim-push-store removed projects=' + n);
+      return true;
+    } catch (e) {
+      console.log('§SEED-RESET bim-push-store ' + (e && e.name === 'NotFoundError' ? 'none' : 'remove-fail ' + (e && (e.name || e.message))));
+      return false;
+    }
+  }
   function clearWorldHistory() { try { var ls = global.localStorage; if (ls) WORLD_HISTORY_KEYS.forEach(function (k) { try { ls.removeItem(k); } catch (e) {} }); } catch (e) {} }
 
   // idbPutBlob — write a blob under erp_cache/blobs (the SAME store/key idempiere.html loads the live db from).
@@ -281,7 +306,7 @@
       return;
     }
     if (!global.confirm || !global.confirm(
-      'Reset demo / seed ERPs?\n\nThe shipped tenants — System, GardenWorld, and any demo-band installs (Odoo · iDempiere · SAP · Oracle · Dynamics) — return to their INITIAL state. Dirty / edited / demo data is removed.\n\nThe tenants YOU created (and all their data) are KEPT untouched.')) return;
+      'Reset demo / seed ERPs?\n\nThe shipped tenants — System, GardenWorld, and any demo-band installs (Odoo · iDempiere · SAP · Oracle · Dynamics) — return to their INITIAL state. Dirty / edited / demo data is removed, and so are the Project Orders pushed from the BIM viewer.\n\nThe tenants YOU created (and all their data) are KEPT untouched.')) return;
     console.log('§SEED-RESET start floor=' + SEED_FLOOR);
 
     // 1+2. re-fetch the PRISTINE shipped seed, then rebuild it with the resident (>= floor) snapshot.
@@ -293,16 +318,17 @@
     console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
 
     // 3. persist the rebuilt base as the live cache (replaces the mutated blob).
-    try { await idbPutBlob('ad_seed_v16', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v16 pristine+resident'); }
+    try { await idbPutBlob('ad_seed_v18', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v18 pristine+resident'); }
     catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
     try { fresh.close(); } catch (e) {}
     // 4. clear the World history (whole-history timeline) + the kernel op-log so the reset is a clean slate.
     //    (born-tenant DATA is preserved above; only the audit/history trail is reset — the user's call.)
     clearWorldHistory(); await delIdb(OPLOG_IDB);
     console.log('§SEED-RESET cleared world-history + op-log (' + OPLOG_IDB + ')');
+    await clearBimPushStore();
     var kept = 0; try { var kr = db.exec('SELECT COUNT(*) FROM AD_Client WHERE AD_Client_ID >= ' + SEED_FLOOR); kept = (kr.length && kr[0].values.length) ? kr[0].values[0][0] : 0; } catch (e) {}
     console.log('§SEED-RESET done keptTenants=' + kept + ' — reloading');
-    if (global.alert) global.alert('Reset demo / seed ERPs — done.\n\n• Shipped ERPs restored to their initial state\n• World history + kernel op-log cleared\n• Your created tenant(s) kept: ' + kept + '\n\nClick OK to reload.');
+    if (global.alert) global.alert('Reset demo / seed ERPs — done.\n\n• Shipped ERPs restored to their initial state\n• World history + kernel op-log cleared\n• Project Orders pushed from the BIM viewer removed\n• Your created tenant(s) kept: ' + kept + '\n\nClick OK to reload.');
     location.reload();
   }
 
@@ -312,6 +338,7 @@
     // the WHOLE local footprint: data cache · op-log · plugins · device signer · World history · SW asset caches
     clearWorldHistory();
     for (var i = 0; i < FULL_WIPE_IDB.length; i++) { try { await delIdb(FULL_WIPE_IDB[i]); console.log('§SYSTEM-MONITOR wiped idb=' + FULL_WIPE_IDB[i]); } catch (e) {} }
+    await clearBimPushStore();
     try { if (global.caches) { var ks = await caches.keys(); await Promise.all(ks.filter(function (k) { return /erp-ootb-/.test(k); }).map(function (k) { return caches.delete(k); })); } } catch (e) {}
     console.log('§SYSTEM-MONITOR reset-to-seed done (world-history + op-log + plugins + signer cleared) — reloading');
     if (global.alert) global.alert('Reset to seed (full) — done.\n\nCleared everything local: all tenants you created, the kernel op-log, the World history, installed plugins and the device key.\n\nClick OK to reload fresh from the shipped seed.');
@@ -319,6 +346,25 @@
   }
 
   function close() { var r = document.getElementById('sm-root'); if (r) r.remove(); }
+  // §UDP-5 housekeeping panel (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-5, user decision 2026-10-16): runtime/log tables of this client
+  //   over the threshold glow red with "OK to Housekeep"; the scan + the signed deletes are the core's (IdmpHost.housekeeping).
+  //   Saved Parameters (named AD_PInstance) are never deleted. A signed delete shrinks the table, not the op-log bytes (named, ⛔ open).
+  function hkRender(root) {
+    var cell = root.querySelector('#sm-hk'), H = global.IdmpHost && global.IdmpHost.housekeeping;
+    if (!cell) return;
+    if (!H) { cell.innerHTML = '<span class="sm-dim">not available on this page</span>'; return; }
+    H.scan(function (r) {
+      if (!r.loggedIn) { cell.innerHTML = '<span class="sm-dim">log in to see this client&rsquo;s runtime tables</span>'; return; }
+      var html = '<table class="sm-hk">' + r.tables.map(function (t) {
+        return '<tr class="' + (t.red ? 'sm-hk-red' : '') + '" data-hk-table="' + esc(t.table) + '" data-hk-rows="' + t.rows + '"><td>' + esc(t.table) + '</td><td>' + t.rows + ' rows</td><td>' +
+          (t.red ? '<button class="sm-reset sm-hk-go" data-hk-go="' + esc(t.table) + '">OK to Housekeep</button>' : '') + '</td></tr>';
+      }).join('') + '</table><div class="sm-dim">red = over ' + r.threshold + ' rows; housekeep keeps the last ' + r.days + ' days and every Saved Parameter (named process instance)</div>';
+      cell.innerHTML = html;
+      Array.prototype.forEach.call(cell.querySelectorAll('[data-hk-go]'), function (b) {
+        b.addEventListener('click', function () { b.disabled = true; b.textContent = 'Housekeeping…'; H.run(b.getAttribute('data-hk-go'), function () { hkRender(root); }); });
+      });
+    });
+  }
   function open() {
     ensureCss();
     close();
@@ -331,10 +377,11 @@
       root.querySelectorAll('[data-sm-close]').forEach(function (el) { el.addEventListener('click', close); });
       var rb = root.querySelector('[data-sm-reset]'); if (rb) rb.addEventListener('click', resetToSeed);
       var rsb = root.querySelector('[data-sm-reset-seed]'); if (rsb) rsb.addEventListener('click', resetSeedClients);
+      try { hkRender(root); } catch (e) { console.log('§UDP5-HK panel failed: ' + e.message); }
     });
   }
 
-  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed,
+  global.SystemMonitor = { open: open, close: close, _gather: gather, _resetSeedClients: resetSeedClients, _rebuildSeed: _rebuildSeed, _clearBimPushStore: clearBimPushStore,
     resolveRelease: resolveRelease, releaseHref: releaseHref };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.SystemMonitor;
 })(typeof window !== 'undefined' ? window : this);

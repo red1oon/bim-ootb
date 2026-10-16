@@ -210,6 +210,22 @@
     53128: { name: 'A_Asset_Transfer',     reActivate: false, rc: false, ra: false, vo: {} },  // all action stubs false (parsed)
     53121: { name: 'A_Depreciation_Entry', reActivate: false, rc: false, ra: false, vo: {} }   // all action stubs false (parsed)
   };
+  // ── plugin-contributed families (Host work, Libero bundle): a bundle that brings a DocAction class for its own table registers the FSM flags of that class here, layered over the walked table above and
+  //    removed by owner on stop (the previous entry, or none, returns). Same shape as a DOC_FAMILY entry; the flags are PARSED from the plugin's class source (never defaulted to the generic union).
+  var FAM_L = {};   // tableId -> [{ owner, fam }] (bottom = the walked base entry, owner '<core>', or none)
+  function registerFamily(adTableId, fam, owner) {
+    var t = Number(adTableId), st = FAM_L[t];
+    if (!st) { st = FAM_L[t] = []; if (DOC_FAMILY[t]) st.push({ owner: '<core>', fam: DOC_FAMILY[t] }); }
+    st.push({ owner: owner || '<plugin>', fam: fam }); DOC_FAMILY[t] = fam;
+  }
+  function removeFamilyOwner(owner) {
+    var n = 0;
+    Object.keys(FAM_L).forEach(function (k) {
+      var st = FAM_L[k], before = st.length; FAM_L[k] = st = st.filter(function (e) { return e.owner !== owner; }); n += before - st.length;
+      if (st.length) DOC_FAMILY[k] = st[st.length - 1].fam; else { delete DOC_FAMILY[k]; delete FAM_L[k]; }
+    });
+    return n;
+  }
   function legalActionsFor(db, adTableId, rec) {
     if (Number(adTableId) === 259) return legalActionsOrder(db, rec);   // the H-1 port, untouched
     var fam = DOC_FAMILY[Number(adTableId)];
@@ -312,7 +328,7 @@
     STATUS_ACTIONS: STATUS_ACTIONS, TRANSITION: TRANSITION, readDocType: readDocType,
     legalActions: legalActions, transition: transition, dispatch: dispatch, reachableStatuses: reachableStatuses,
     legalActionsOrder: legalActionsOrder, transitionOrder: transitionOrder, dispatchOrder: dispatchOrder,
-    DOC_FAMILY: DOC_FAMILY, legalActionsFor: legalActionsFor, transitionFor: transitionFor, dispatchFor: dispatchFor
+    DOC_FAMILY: DOC_FAMILY, registerFamily: registerFamily, removeFamilyOwner: removeFamilyOwner, legalActionsFor: legalActionsFor, transitionFor: transitionFor, dispatchFor: dispatchFor
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness
   if (typeof window !== 'undefined') window.AdDocFsm = API;                     // browser

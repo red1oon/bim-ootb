@@ -1,4 +1,4 @@
-// effects family — part `cpe_reveal_bands` (original effects.js lines 6680–7756).
+// effects family — part `cpe_reveal_bands` (original effects.js lines 6685–7761).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/effects.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as FXS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

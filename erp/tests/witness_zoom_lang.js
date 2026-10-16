@@ -16,6 +16,13 @@ console.log('§ZOOM_LANG codes=' + codes.length + ' ' + codes.join(','));
 // ── (a) ERP launch URLs ──
 const html = fs.readFileSync(path.join(ROOT, 'erp/idempiere.html'), 'utf8');
 const zl = html.match(/function _zoomLang\(\)[^\n]*\n/);
+function fnSrc(name) {                       // the named top-level-ish function of idempiere.html, brace-matched (the launch block calls helpers defined outside itself)
+  const i = html.indexOf('function ' + name + '('); if (i < 0) return '';
+  let d = 0, j = html.indexOf('{', i);
+  for (let k = j; k < html.length; k++) { if (html[k] === '{') d++; else if (html[k] === '}' && --d === 0) return html.slice(i, k + 1); }
+  return '';
+}
+const HELPERS = ['_viewerUrl'].map(fnSrc).join('\n');
 function registerBlock(id) {
   const i = html.indexOf("window.ZoomAcross.register({\n      id: '" + id + "'");
   if (i < 0) return null;
@@ -29,7 +36,7 @@ function launchUrl(id, lang) {
   const scope = { bld: 'Hospital', find: 'IfcWall', tm: { order: 77 } };
   const ctx = { window: win, location: { origin: 'http://h', pathname: '/erp/idempiere.html' }, console: { log() {} },
     _connectEnable() {}, _zoomScope: () => scope, _lastBimScope: null, status() {} };
-  const src = 'var window=__w;' + zl[0] + 'var d=(' + block + ');d.launch({});';
+  const src = 'var window=__w;' + HELPERS + zl[0] + 'var d=(' + block + ');d.launch({});';
   vm.runInNewContext(src, Object.assign({ __w: win }, ctx));
   return opened[0] || '';
 }

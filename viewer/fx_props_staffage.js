@@ -1,4 +1,4 @@
-// effects family — part `props_staffage` (original effects.js lines 468–2542).
+// effects family — part `props_staffage` (original effects.js lines 468–2547).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/effects.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as FXS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.
@@ -278,6 +278,11 @@
     // §PHOTO_SKYLINE_DENSER (user ask, "we need more building silhouette" — the original radius
     // (envelope*4) put these so far out they subtended almost no visible angle from a normal
     // camera position, reading as tiny specks. Pulled closer + bigger + more of them.
+    // §SKY_GHOST_SKYLINE (2026-10-06, user: "a box non-mesh is given surface" — the dark squares along the horizon of every road
+    // frame): the fake-city ring is a dusk backdrop for a BUILDING still. A road's site is km-scale (radius = envelope x 2.2 = ~5 km), so
+    // the ring is not a skyline there, it is 37 dark boxes floating on the horizon of a real landscape. Gate: A.isCivilModel() — a building
+    // never skips it (NON-IMPACT). Witness: viewer/tests/witness_sky_ghost.js (§SKY_GHOST_SKYLINE).
+    if (A.isCivilModel && A.isCivilModel()) { console.log('§SKY_GHOST_SKYLINE skipped (civil model — no fake city around a road) envelopeM=' + Math.round(Math.max(w, d, 50))); return; }
     var envelope = Math.max(w, d, 50);
     var radius = envelope * FXS.PHOTO_SKYLINE_RADIUS_MULT;
     var group = new THREE.Group();
@@ -2007,7 +2012,7 @@
   };
 
   function _showPhotoProps(show) {
-    if (show && (!FXS._photoSkyline || FXS._photoPropsBuilding !== A.activeBuilding)) {   // §NO_PHOTO_PROPS: no uplights any more; key on the skyline
+    if (show && !(A.isCivilModel && A.isCivilModel() && FXS._photoPropsBuilding === A.activeBuilding) && (!FXS._photoSkyline || FXS._photoPropsBuilding !== A.activeBuilding)) {   // §SKY_GHOST_SKYLINE: a civil model builds nothing here, once   // §NO_PHOTO_PROPS: no uplights any more; key on the skyline
       _disposePhotoProps();
       _buildPhotoProps();
     }

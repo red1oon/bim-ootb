@@ -1,4 +1,4 @@
-// effects family — part `still_refine` (original effects.js lines 5175–6659).
+// effects family — part `still_refine` (original effects.js lines 5180–6664).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/effects.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as FXS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

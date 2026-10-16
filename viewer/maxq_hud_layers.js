@@ -1,4 +1,4 @@
-// cinema_maxq family — part `hud_layers` (original cinema_maxq.js lines 800–1692).
+// cinema_maxq family — part `hud_layers` (original cinema_maxq.js lines 818–1710).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/cinema_maxq.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as MQS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

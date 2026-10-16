@@ -1,4 +1,4 @@
-// time_machine family — part `sched_xray` (original time_machine.js lines 3736–4929).
+// time_machine family — part `sched_xray` (original time_machine.js lines 3743–4936).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/time_machine.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as TMS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

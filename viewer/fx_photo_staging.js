@@ -1,4 +1,4 @@
-// effects family — part `photo_staging` (original effects.js lines 4260–5166).
+// effects family — part `photo_staging` (original effects.js lines 4265–5171).
 // GENERATED move-only by scripts/split_closure.js (config scripts/split_configs/effects.json). Below the `yield` every
 // statement is the original text; the only edit is that a name owned by ANOTHER part is reached as FXS.name.
 // Edit this file normally from now on; regenerate only to re-split a branch that still edits the old single file.

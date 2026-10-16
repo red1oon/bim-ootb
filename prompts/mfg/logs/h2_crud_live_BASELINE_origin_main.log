@@ -1,0 +1,24 @@
+§FOLD-CRUD setup window=123 table=c_bpartner baseRealPks=[119,120,112,113,114,117,50001,50002,50005,50004,50007,50008,50009,118,121,50003,50000,200000,1001,1002,1600006,1600007,1600008,1600009]
+   🟢 Business Partner window opens with existing C_BPartner rows (a NON-curated table) — pks=[119,120,112,113,114,117,50001,50002,50005,50004,50007,50008,50009,118,121,50003,50000,200000,1001,1002,1600006,1600007,1600008,1600009]
+   🟢 c_bpartner is NOT in the curated crud_ops allow-list (proves generality, not a hand-list) — curatedHas=false
+§FOLD-CRUD ACT1 fold="§S2B-FOLD table=c_bpartner verb=update verbs=[create,update,delete] fields=60 isView=false tabRO=false"
+   🟢 §S2B-FOLD derived create/update/delete verbs for c_bpartner FROM the AD — §S2B-FOLD table=c_bpartner verb=update verbs=[create,update,delete] fields=60 isView=false tabRO=false
+   🔴 New opened the inline create form (NOT the "not in crud_ops" skip)
+§FOLD-CRUD ACT1 createdPk=undefined ringFanned=false reject="" persist=""
+   🔴 CREATE: ONE signed CRUD_CREATE (verifyChain=ok), row appears, ring not fanned, no validate-reject — createdPk=undefined
+   🔴 CREATE SURVIVES reload (the new BP re-folds after a fresh load) — pks=[119,120,112,113,114,117,50001,50002,50005,50004,50007,50008,50009,118,121,50003,50000,200000,1001,1002,1600006,1600007,1600008,1600009]
+§FOLD-CRUD ACT2 editState={"open":false,"modal":false,"ring":false,"orgDisabled":false,"nameDisabled":false}
+   🔴 Edit opens the edit form IN PLACE (no modal, ring not fanned) — {"open":false,"modal":false,"ring":false,"orgDisabled":false,"nameDisabled":false}
+   🔴 IsUpdateable=N field (AD_Org_ID) is DISPLAY-ONLY on edit; an updateable field (Name) is editable — orgDisabled=false nameDisabled=false
+§FOLD-CRUD ACT2 persist="§CRUD-PERSIST key=c_bpartner id=119 op=CRUD_UPDATE cols=value,c_bp_group_id,name source=sidecar gid=2273e0f9-9566-49bd-9990-7756bc9efba0 ops=1 sealed=1 verifyChain=ok"
+   🟢 UPDATE: ONE signed CRUD_UPDATE (verifyChain=ok) — §CRUD-PERSIST key=c_bpartner id=119 op=CRUD_UPDATE cols=value,c_bp_group_id,name source=sidecar gid=2273e0f9-9566-49bd-9990-7756bc9efba0 ops=1 sealed=1 verifyChain=ok
+§FOLD-CRUD ACT2 RELOAD name="null" (want "S2B-BP-45503-EDIT")
+   🔴 UPDATE SURVIVES reload (the edited Name re-folds) — got="null"
+§FOLD-CRUD ACT3 gone=true ringFanned=false persist=""
+   🔴 DELETE: ONE signed CRUD_DELETE (verifyChain=ok), ring not fanned, row disappears
+   🟢 DELETE SURVIVES reload (the deleted BP stays gone) — pks=[119,120,112,113,114,117,50001,50002,50005,50004,50007,50008,50009,118,121,50003,50000,200000,1001,1002,1600006,1600007,1600008,1600009]
+   🟢 a VIEW (AD_Table.IsView=Y) folds to NO verbs — correctly read-only — []
+   🟢 0 pageerrors across all folded-CRUD acts
+
+§CRITIC-VERDICT(AD-FOLDED-CRUD) 🔴 — CRUD is now GENERAL, not curated: a window whose table is NOT in crud_ops (Business Partner) is New/Edit/Delete-capable purely from its OWN AD (foldCrudSpec), each op ONE signed write that survives reload; an IsUpdateable=N field is display-only on Edit; a VIEW table is read-only. The signed write path is unchanged — only the spec SOURCE moved to the dict.
+❌ W-AD-FOLDED-CRUD-LIVE: 7/14 PASS (7 FAIL)

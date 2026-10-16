@@ -1,0 +1,6 @@
+  §MFG M1 eight missing PP tables are physical FAIL {"missing":["pp_order_workflow","pp_order_node_product","pp_order_node_asset","pp_order_nodenext","pp_cost_collector","pp_cost_collectorma","pp_wf_node_product","pp_wf_node_asset"]}
+§MFG-COLS tables=13 dictionary columns judged=287 lacking=50
+  §MFG M2 every tab table has every dictionary column FAIL {"lacking":["pp_order_workflow (no table)","pp_order_node.ismilestone","pp_order_node.overlapunits","pp_order_node.pp_order_workflow_id","pp_order_node.qtyreject","pp_order_node.xposition","pp_order_node.ad_form_id","pp_order_node.validto",
+§MFG-MENU path(leaf->root)= BROKEN at 53055
+  §MFG M3 menu path to Manufacturing Order is fully active and opens window 53009 FAIL {"broke":53055,"chain":[],"window":[]}
+§MFG-VERDICT FAIL judged=4 failed=3 inconclusive=0

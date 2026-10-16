@@ -912,9 +912,14 @@ async function setupScene(A) {
     try {
       var r = db.exec("SELECT COUNT(*), COALESCE(SUM(LENGTH(normals)),0) FROM component_geometries WHERE normals IS NOT NULL");
       var n = r.length ? r[0].values[0][0] : 0, b = r.length ? r[0].values[0][1] : 0;
-      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); return; }
+      if (!n) { console.log('§MESH_SLIM_SAVE normals=0 (already slim)'); }
       var t0 = performance.now();
-      db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      if (n) db.run('UPDATE component_geometries SET normals = NULL WHERE normals IS NOT NULL');
+      // §VERT_WELD (M4-A, CIVIL_HIGHWAY_JELAPANG.md §MEM_GROWTH): merge duplicate corners at data level, look-neutral. Needs normals gone
+      // (stored normals would no longer match the welded vertex list), so it runs only after the drop above.
+      if (window.VertexWeld) { var W = window.VertexWeld.weldDb(db);
+        console.log('§VERT_WELD_SAVE rows=' + W.rows + ' changed=' + W.changed + ' vertsBefore=' + W.vertsBefore + ' vertsAfter=' + W.vertsAfter + ' ms=' + W.ms + (W.changed ? '' : ' INCONCLUSIVE(nothing welded)')); }
+      else console.warn('§VERT_WELD_SAVE skipped: vertex_weld.js not loaded');
       db.run('VACUUM');
       console.log('§MESH_SLIM_SAVE normalsDropped=' + n + ' bytes=' + b + ' ms=' + (performance.now() - t0).toFixed(0));
     } catch (e) { console.warn('§MESH_SLIM_SAVE_ERR ' + e.message); }
@@ -966,6 +971,19 @@ async function setupScene(A) {
     if (!A.db) { if (A.status) A.status.textContent = 'Open a building first'; console.log('§SAVE_SKIP no A.db'); return; }
     var name = (A.activeBuilding || 'building').replace(/\.(ifc|db)$/i, '') + '.db';
     var bytes;
+    // §SAVE_PICKER_FIRST (user 2026-10-09: "it should let me choose where to save to. It seems to auto save now"): showSaveFilePicker needs a LIVE user gesture
+    //   (~5 s of transient activation after the click). The export below takes seconds (light-field pack, civil weld + VACUUM ~13 s on Civil Works), so a picker
+    //   opened AFTER it threw SecurityError and the catch fell through to the silent <a download> = straight into Downloads. Open the picker FIRST, export after.
+    var handle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
+        console.log('§SAVE_PICKER first name=' + handle.name + ' userActive=' + (navigator.userActivation ? navigator.userActivation.isActive : 'n/a'));
+      } catch (e) {
+        if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; }
+        console.warn('§SAVE_PICKER_FAIL ' + e.name + ': ' + e.message + ' -> download fallback');
+      }
+    }
     // §LIGHT_FIELD_DB S5: pack + gzip the light field first (async, ~1-2 s on Hospital); _exportBuildingDb writes it synchronously
     if (window.LightZones && window.LightZones.dbPack) { try { await window.LightZones.dbPack(A); } catch (eLF) { console.warn('§LIGHT_FIELD_DB pack failed: ' + eLF.message); } }
     try { bytes = A._exportBuildingDb(); }
@@ -973,15 +991,13 @@ async function setupScene(A) {
     if (!bytes) { console.log('§SAVE_SKIP export null'); return; }
     var blob = new Blob([bytes], { type: 'application/x-sqlite3' });
     // Native Save As… (Chromium FSA) — the traditional desktop dialog. Fallback = download.
-    if (window.showSaveFilePicker) {
+    if (handle) {
       try {
-        var handle = await window.showSaveFilePicker({ suggestedName: name,
-          types: [{ description: 'Building database', accept: { 'application/x-sqlite3': ['.db'] } }] });
         var w = await handle.createWritable(); await w.write(blob); await w.close();
         if (A.status) A.status.textContent = 'Saved ' + handle.name;
         console.log('§SAVE_DONE mode=fsa name=' + handle.name + ' bytes=' + bytes.byteLength);
         return;
-      } catch (e) { if (e.name === 'AbortError') { console.log('§SAVE_CANCEL user'); return; } /* else fall through to download */ }
+      } catch (e) { console.warn('§SAVE_WRITE_FAIL ' + e.name + ': ' + e.message + ' -> download fallback'); }
     }
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
@@ -2505,6 +2521,7 @@ async function setupScene(A) {
     },
     '4':  function() { if (typeof A.export4D5D === 'function') A.export4D5D(); },
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
+    'j':  function() { if (typeof A.toggleRoadStandards === 'function') A.toggleRoadStandards(); },   // §SIGN_CHECK: Road standards (civil-only; the opener gates itself)
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
     't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
@@ -2693,7 +2710,8 @@ async function setupScene(A) {
     // left anywhere in the codebase — matches the reorg's own "no longer in use, delete" verdict.
     // ROOM_CYCLE_HOME_SHORTCUTS.md (2026-07-22): 'r' reused for Room Cycle — plain R is confirmed
     // free (grepped), unrelated to the retired Record binding above.
-    'r':  function() { _cycleRoom(); },
+    // §ROAD_REPORT (user 2026-10-08 "for CW 'R' be for Road"): on a civil model R opens The Road Report; a building keeps Room Cycle
+    'r':  function() { if (A.isCivilModel && A.isCivilModel() && typeof A.toggleRoadReport === 'function') { A.toggleRoadReport(); return; } _cycleRoom(); },
     'a':  function() { if (typeof window.resetCamOrbit === 'function') window.resetCamOrbit(); },   // Reset cam (Anchor) — precision-cam cluster w/ CapsLock+Q
     'q':  function() { if (typeof window.toggleCamPivot === 'function') window.toggleCamPivot(); },  // Auto-Pivot toggle
     'Ctrl+S': function() { if (A.saveModelDb) A.saveModelDb(); },   // Save Building → native Save As…

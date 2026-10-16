@@ -18,6 +18,7 @@
   var MQS = {};
   var parts = ORDER.map(function (n) { return R[n](MQS); });
   parts.forEach(function (p) { p.next(); });   // phase 1
-  parts.forEach(function (p) { p.next(); });   // phase 2
+  for (var j = 0; j < parts.length; j++) { var r2 = parts[j].next();   // phase 2
+    if (r2 && r2.value && r2.value.__splitReturn) return r2.value.value; }   // an early `return` in the original stops the whole setup
   // </split-driver>
 })();
