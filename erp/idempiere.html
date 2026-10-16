@@ -734,7 +734,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=6"></script>
-<script src="crud_overlay.js?v=33"></script>
+<script src="crud_overlay.js?v=34"></script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -1073,7 +1073,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     window.__adSeedFingerprint = _fpH.toString(16); console.log('§AD-SEED-FINGERPRINT ' + window.__adSeedFingerprint);
     // The stored-function UDFs (sqlfn.js: trunc, round, currencyRate, ...) belong to the DATABASE, like PL/pgSQL functions in legacy: bind them once the handle is ready, not lazily on the first model transaction.
     //   A window on a legacy VIEW (Accounting Fact Balances, trunc(date,'DD')) opened FIRST hit SQLite's 1-argument built-in trunc() and showed 0 records (W-VIEW-WINDOW-FIRST).
-    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && !db.__udfBound) { window.AdCallout.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; console.log('§UDF-BOUND at load'); } } catch (eUdf) { console.log('§UDF-BOUND failed ' + eUdf.message); }
+    try { if (window.AdCallout && window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.registerSqlFunctions && !db.__udfBound) { window.AdCallout.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); db.__udfBound = true; console.log('§UDF-BOUND at load'); }
+      // ...and their DATA ACCESS: a UDF that queries (bomqtyonhand, currencyrate, a plugin's bomqty*asi) reads through AdCallout.RUNTIME.DB, which was bound only on the first model
+      //   transaction - a view window opened before any save errored. Bound here on the same handle by the page's one binder (crud_overlay _coBindUdf).
+      if (window.__crud && window.__crud.bindUdf) { window.__crud.bindUdf(db); console.log('§UDF-DATA bound at load db=' + !!(window.AdCallout.RUNTIME && window.AdCallout.RUNTIME.DB)); } } catch (eUdf) { console.log('§UDF-BOUND failed ' + eUdf.message); }
     // BIM→Project round-trip §B (docs/BIMtoERP.md): overlay the viewer-folded Project Orders + VO amendments
     // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
     // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
