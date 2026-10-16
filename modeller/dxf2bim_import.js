@@ -5,7 +5,7 @@
 // pipeline on dropped DXF files. Every geometric rule lives in the verbatim modules under dxf2bim/ (see dxf2bim/SOURCE.md);
 // every number comes from dxf2bim/dxf2shell_config.js. This file only: reads sheets, assigns roles from DXF2BIM-MARK markings,
 // gates, calls the modules in the witness's order, and maps the result to the Modeller's ARC-seed op form (toOps).
-// UMD: Node (witness C1-PORT) and the page (window.Dxf2BimImport). Pure: no DOM, no THREE, no network.
+// UMD: Node (witness C1-PORT) and the page (window.Dxf2BimImport). Pure: no DOM, no THREE, no network (loadOci takes an injected fetchJson).
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) {
     module.exports = factory({ DxfParser: require('./lib/dxf-parser.js'), B: require('./dxf2bim/dxf2bim.js'), MK: require('./dxf2bim/dxf2marks.js'),
@@ -200,8 +200,11 @@
       var LIB = { wall: library.wallTypes.filter(function (w) { return w.id !== 'NONE'; }).map(function (w) { return { id: w.id, thickness: w.t / 1000 }; }),
         window: library.families.filter(function (f) { return f.ot === 'WINDOW'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }),
         door: library.families.filter(function (f) { return f.ot === 'DOOR'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }) };
+      // §L3.4: an OCI library carries labels per run_id (run data, shipped beside the library): applied only to the set with that run_id
+      var LABS = library.labelsByRun ? (library.labelsByRun[R.run_id] || null) : library.labels;
+      R.labelsFrom = library.labelsByRun ? (library.labelsByRun[R.run_id] ? 'run ' + R.run_id.slice(0, 12) : 'none') : (library.labels ? 'subset' : 'none');
       ST.forEach(function (st) {
-        var lr = T.applyLabels(st.after, { units: 'm', labels: (library.labels && library.labels[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
+        var lr = T.applyLabels(st.after, { units: 'm', labels: (LABS && LABS[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
         st.labelGaps = lr.gaps.length;
         st.after = T.bindTypes(lr.ops, LIB, { bind: { size_tol: C.TYPES.size_tol, prefer: C.TYPES.prefer } }, {}).ops;
       });
@@ -400,10 +403,69 @@
       header: { source: J0.source, input: J0.input, counts: J0.counts } };
   }
 
+  // ---- §L3.4: the library on OCI (BIMCompiler export_library_subset.js --full): index + shards (geometry_hash[0:2]) + labels per run_id.
+  // Pure except the injected fetchJson(url) → parsed JSON | null on 404 (throws on any other failure). Builds the SAME subset form
+  // librarySubset reads, so the withheld / missing / not-in-subset rules of §L3.2 apply unchanged.
+  var ORDER3 = function (a, b) { return a.element_ref < b.element_ref ? -1 : a.element_ref > b.element_ref ? 1 : a.ifc_class < b.ifc_class ? -1 : a.ifc_class > b.ifc_class ? 1 : a.geometry_hash < b.geometry_hash ? -1 : a.geometry_hash > b.geometry_hash ? 1 : 0; };
+  // the shards holding a family's candidate rows (familyToRef's set: same class + Dxf2Shell.pairKey size key, as the export)
+  function familyShards(index, fam) {
+    var key = S.pairKey(fam.description), out = {};
+    if (key) index.rows.ad_geometry_map.forEach(function (m) { if (m.ifc_class === fam.ifc_class && S.pairKey(m.element_ref) === key) out[m.shard] = 1; });
+    return Object.keys(out).sort();
+  }
+  // index + the shards loaded so far → the `library` convert takes; `complete` = the families whose candidate shards are all loaded
+  function libraryFromShards(index, shards, complete, labelsByRun) {
+    var rows = [], meshes = {};
+    Object.keys(shards).sort().forEach(function (n) {
+      var J0 = shards[n];
+      if (!J0 || J0.format !== 'dxf2bim-library-shard/1' || J0.library_sha256 !== index.source.sha256) throw new Error('library shard ' + n + ': wrong format or library');
+      rows = rows.concat(J0.rows.ad_geometry_map); Object.keys(J0.meshes).forEach(function (h) { meshes[h] = J0.meshes[h]; });
+    });
+    rows.sort(ORDER3);
+    var L0 = librarySubset({ format: 'dxf2bim-library-subset/1', source: index.source, input: { oci: true, shards: Object.keys(shards).sort() },
+      counts: { ad_opening_family: index.rows.ad_opening_family.length, ad_wall_type: index.rows.ad_wall_type.length, ad_geometry_map: rows.length, meshes: Object.keys(meshes).length },
+      rows: { ad_opening_family: index.rows.ad_opening_family, ad_wall_type: index.rows.ad_wall_type, ad_geometry_map: rows }, meshes: meshes,
+      complete_for_families: complete.slice().sort(), labels: null });
+    L0.labelsByRun = labelsByRun || {};
+    return L0;
+  }
+  // iterate: convert → the bound families not yet loaded (GAP:lod400_not_in_subset) → their shards; the run_id → its labels. ≤ maxPasses.
+  async function loadOci(sheets, o) {
+    var fx = o.fetchJson, base = o.base, memo = o.memo || {};
+    var get = async function (u) { if (!(u in memo)) memo[u] = await fx(u); return memo[u]; };
+    var latest = await fx(base + 'latest.json');
+    if (!latest || latest.format !== 'dxf2bim-library-latest/1') throw new Error('latest.json ' + (latest ? 'unknown format ' + latest.format : 'not found'));
+    var index = await get(base + latest.index);
+    if (!index || index.format !== 'dxf2bim-library-index/1' || index.source.sha256 !== latest.library_sha256) throw new Error('index ' + latest.index + (index ? ' does not match latest.json' : ' not found'));
+    var dir = latest.index.replace(/index\.json$/, ''), shards = {}, complete = [], labelsByRun = {}, famById = {}, passes = 0, R = null, Lb = null, max = o.maxPasses || 4;
+    index.rows.ad_opening_family.forEach(function (f) { famById[f.family_id] = f; });
+    while (passes < max) {
+      Lb = libraryFromShards(index, shards, complete, labelsByRun);
+      R = convert(sheets, Object.assign({}, o.convertOpts || {}, { library: Lb })); passes++;
+      if (R.refused) break;
+      var more = false;
+      if (!(R.run_id in labelsByRun)) { var lj = await get(base + 'labels/' + R.run_id + '.json');
+        if (lj && (lj.format !== 'dxf2bim-labels/1' || lj.run_id !== R.run_id)) throw new Error('labels ' + R.run_id + ': wrong format or run_id');
+        labelsByRun[R.run_id] = lj ? lj.labels : null; if (lj) more = true; }
+      var need = {}; (R.fillGaps || []).forEach(function (x) { if (x.code === 'GAP:lod400_not_in_subset' && complete.indexOf(x.type_id) < 0) need[x.type_id] = 1; });
+      var fams = Object.keys(need).sort();
+      for (var i = 0; i < fams.length; i++) {
+        var f = famById[fams[i]]; if (!f) throw new Error('bound family ' + fams[i] + ' not in the index');
+        var sh = familyShards(index, f);
+        for (var j = 0; j < sh.length; j++) if (!shards[sh[j]]) { var sj = await get(base + dir + sh[j] + '.json'); if (!sj) throw new Error('shard ' + sh[j] + ' not found'); shards[sh[j]] = sj; }
+        complete.push(fams[i]); more = true;
+      }
+      if (!more) break;
+    }
+    Lb = libraryFromShards(index, shards, complete, labelsByRun);
+    return { library: Lb, R: R, passes: passes, sha: index.source.sha256, shards: Object.keys(shards).sort(), families: complete.slice().sort(),
+      labels: R && R.run_id && labelsByRun[R.run_id] ? R.run_id : null };
+  }
+
   function counts(R) {
     var by = {}; R.els.forEach(function (e) { var k = e.storey + '/' + e.class + (R.infillGuid[e.guid] ? '(infill)' : ''); by[k] = (by[k] || 0) + 1; });
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });
