@@ -748,7 +748,7 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
 - **Door height:**
   - From the elevation, as drawn.
   - From the schedule, as the schedule leaf height + the head frame. The plan and the schedule do not draw the head frame, so `applyDoorHeights(opts.schedule_head_frame)` adds the caller's existing `CASING` (R1b, 0.076).
-  - The leaf height is kept as `leaf_height`. Without the option, nothing is added.
+  - The leaf height is kept as `leaf_height`. Type binding (`Dxf2Types.request`) measures doors by `leaf_height`, because library families are nominal leaf sizes; the head frame belongs to the opening, not to the type. Without the option, nothing is added.
 - **The fill check** (`placeFills`) compares the library product (frame included) with the drawn opening. Door width = the opening box's along-extent (frame drawn) when the door has one, else the void width (s1 − s0). Height = the door's opening height. The cut itself stays the drawn wall gap (bridgeOpenings void). The leaf width stays only in the arc check (rosetta DW-doors).
 - rosetta_dx_shell OV / FL keep comparing against the source opening bbox (frame included), which is the same measure.
 - Tests:
