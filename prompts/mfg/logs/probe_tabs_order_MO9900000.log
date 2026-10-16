@@ -1,0 +1,15 @@
+§PROBE header tab (before select): {"rows":18,"firstRow":"DraftedGardenWorldStore West800010Manufacturing OrderYNot Posted","form":0,"status":""}
+§PROBE after select: {"rows":0,"firstRow":"","form":96,"status":""} sel=null
+§PROBE tab 0 "Manufacturing Order" {"rows":0,"firstRow":"","form":96,"status":""}
+§PROBE tab 1 "Order Parent Product" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 2 "Orden BOM Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 3 "Components of the Manufacturing Order" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 4 "Order Components Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 5 "Workflow" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 6 "Workflow Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 7 "Order Activity" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 8 "Order Activity Translation" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 9 "Node Product" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 10 "Node Asset" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 11 "Transition Next" {"rows":1,"firstRow":"No records","form":0,"status":""}
+§PROBE tab 12 "Cost" {"rows":4,"firstRow":"MO-9900000GardenWorld US/A/US Dollar0MaterialDefault8594","form":0,"status":""}

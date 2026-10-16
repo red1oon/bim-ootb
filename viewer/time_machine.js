@@ -56,6 +56,116 @@
   var _tmXraySolidifyTs = {};
   var _tmXrayStagedTotal = 0;   // total guids ever eligible to stage, this activation (the "n=")
   var _tmXraySolidifiedN = 0;   // guids that have crossed their solidify ms so far (the "solidified=")
+
+  // ══ §CPE_BUILDUP_PLACED (MEP_CLASH_REVEAL_MOVIE.md §88.3/§88.6e) ═════════════════════════════
+  // §CPE_BUILDUP reports an AGGREGATE — `placed=N/63415` — and nothing else in this codebase names
+  // a single element. So when Hospital's 8,899 m² Level 1 slab read as bare ground from the opening
+  // seconds to the closing reveal (§88), no bake log could say whether it was placed at frame 50,
+  // at frame 4000, or never: the op count reads identically whether the guid has no mesh at all,
+  // has one that was left hidden, or has one that is drawn and occluded by something else. Those
+  // are three different bugs with three different fixes, and a count cannot tell them apart.
+  //
+  // The observation rides along in the ONE traverse that already decides visibility — no second
+  // pass, no second opinion about what is on screen. A WATCH SET (≤16 guids) is the only per-object
+  // cost: one lookup in a null-prototype map per traversed object, and a getWorldPosition for the
+  // handful that match.
+  //
+  // ⚠ The record PERSISTS across ticks and is never reset to MISSING. The traverse's incremental
+  // path (`_incrOK`) legitimately SKIPS whole BatchedMesh/InstancedMesh objects on ticks where
+  // nothing in them changed — resetting each tick would report those frames as "mesh vanished"
+  // every time the delta path engaged. Only `op` (which comes from the schedule, not the scene) is
+  // recomputed every tick; `mesh`/`visible`/`y`/`host` are last-observed values.
+  var _bdWatch = null;          // guid -> { cls, storey } | null when not yet built, false when off
+  var _bdState = Object.create(null);   // guid -> { op, mesh, visible, y, host }
+
+  // Watch set, in the §88.6e order: an explicit `?watch=guid,guid` on the viewer URL wins; else the
+  // largest slab per storey — the floor plates, which is exactly the population §88 is about and the
+  // same pool §SLAB_BEAT already picks its beat from.
+  function _bdWatchSet(app) {
+    if (_bdWatch !== null) return _bdWatch;
+    _bdWatch = false;
+    try {
+      var w = Object.create(null), n = 0, i;
+      var q = (typeof location !== 'undefined' && location.search) ? location.search : '';
+      var m = /[?&]watch=([^&]+)/.exec(q);
+      if (m) {
+        var gs = decodeURIComponent(m[1]).split(',');
+        for (i = 0; i < gs.length && n < 16; i++) {
+          var g = gs[i].trim(); if (!g) continue;
+          w[g] = { cls: '?', storey: '?' }; n++;
+        }
+        if (n) {
+          // Fill in cls/storey for the explicit set so the log line reads without a second lookup.
+          if (app && app.db) {
+            var keys = Object.keys(w).map(function (k) { return "'" + k.replace(/'/g, "''") + "'"; });
+            var rr = app.db.exec('SELECT guid, ifc_class, storey FROM elements_meta WHERE guid IN (' + keys.join(',') + ')');
+            if (rr.length) for (i = 0; i < rr[0].values.length; i++) {
+              var rv = rr[0].values[i];
+              if (w[rv[0]]) { w[rv[0]].cls = rv[1] || '?'; w[rv[0]].storey = rv[2] || '?'; }
+            }
+          }
+          _bdWatch = w;
+          console.log('§CPE_BUILDUP_PLACED_WATCH n=' + n + ' src=url guids=' + Object.keys(w).join(','));
+          return _bdWatch;
+        }
+      }
+      if (!app || !app.db) { _bdWatch = null; return null; }   // retry next tick, the DB may not be up yet
+      var r = app.db.exec(
+        'SELECT m.guid, m.ifc_class, m.storey, MAX(t.bbox_x * t.bbox_y) AS area ' +
+        'FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE m.ifc_class = 'IfcSlab' AND t.bbox_x IS NOT NULL AND t.bbox_y IS NOT NULL " +
+        'GROUP BY m.storey ORDER BY area DESC LIMIT 16'
+      );
+      if (!r.length || !r[0].values.length) {
+        console.log('§CPE_BUILDUP_PLACED_WATCH n=0 src=slab-per-storey — this model has no IfcSlab with a bbox; pass ?watch=<guid> to name one');
+        _bdWatch = false; return false;
+      }
+      var names = [];
+      for (i = 0; i < r[0].values.length; i++) {
+        var v = r[0].values[i];
+        w[v[0]] = { cls: v[1] || '?', storey: v[2] || '?' };
+        names.push((v[2] || '?') + ' ' + Math.round(v[3]) + 'm2');
+        n++;
+      }
+      _bdWatch = w;
+      console.log('§CPE_BUILDUP_PLACED_WATCH n=' + n + ' src=slab-per-storey ' + names.join(' | '));
+    } catch (e) {
+      console.warn('§CPE_BUILDUP_PLACED_WATCH_FAIL ' + (e && e.message));
+      _bdWatch = false;
+    }
+    return _bdWatch;
+  }
+
+  function _bdRec(g) {
+    var s = _bdState[g];
+    if (!s) s = _bdState[g] = { op: 'pending', mesh: 'MISSING', visible: false, y: null, host: '-' };
+    return s;
+  }
+
+  // Called from the traverse the moment a watched guid's rendering path has decided its visibility.
+  // `obj` is optional and only used for the world Y — the number that says whether a drawn element
+  // is above or below the ghost-ground plane (§88.6a), which is the whole reason y is reported.
+  function _bdSeen(g, host, visible, obj) {
+    var s = _bdRec(g);
+    s.mesh = 'found'; s.host = host; s.visible = !!visible;
+    if (obj && obj.getWorldPosition) {
+      try { var v = new THREE.Vector3(); obj.getWorldPosition(v); s.y = +v.y.toFixed(3); } catch (e) {}
+    }
+  }
+
+  // The bake reads this once per frame (cinema_maxq.js) and logs only what CHANGED, so a 4,699-frame
+  // film costs a handful of lines rather than 4,699 × |watch|.
+  window.tmWatchState = function () {
+    if (!_bdWatch) return null;
+    var out = {};
+    for (var g in _bdWatch) {
+      var s = _bdState[g];
+      out[g] = { cls: _bdWatch[g].cls, storey: _bdWatch[g].storey,
+                 op: s ? s.op : 'pending', mesh: s ? s.mesh : 'MISSING',
+                 visible: s ? s.visible : false, y: s ? s.y : null, host: s ? s.host : '-' };
+    }
+    return out;
+  };
   var _ganttVisible = false;
   var _dashVisible = false;
   // §TM-VARIANCE (GW_HOSPITAL_SHOWCASE_SPEC §ACTUAL): planned = TM's own generated timeline; actual = a
@@ -561,6 +671,10 @@
   var _dlodBoxMeshes = null;     // [InstancedMesh, ...] one per discipline
   var _dlodBoxBld = null;        // building the index was built for
   var _lastProxyEngaged = null;  // edge-detection (mirrors _lastShadowOn) for a forced full pass
+  // §129.51c (2026-09-19) — the REAL-MESH twin of _lastProxyEngaged. That one forces a full sync of
+  // the proxy's own BOXES on an engage/disengage edge; nothing did the same for the real instance
+  // rows, so disengaging stopped the proxy hiding MORE without ever un-hiding what it already hid.
+  var _dlodPrevOn = null;
   var _dlodFrustum = null, _dlodPSM = null, _dlodSphere = null; // per-tick scratch (built lazily, reused)
   var _dlodCamPos = null;
   // §DLOD_TM_CAMGUARD (2026-07-20): last camera pose-signature seen on a DLOD-engaged tick — see
@@ -570,6 +684,28 @@
 
   function _dlodEngaged(app) {
     // §5.4 Streaming interplay: refuse to engage until streaming drains (Fly Tour §FLY_STREAM_WAIT doctrine)
+    // §129.50 (2026-09-19, red1: "DLOD yes most likely.. so study how to disable during Reveal") —
+    // THE REVEAL ROUND OWNS INSTANCE VISIBILITY WHILE IT IS UP, so the proxy stands down.
+    // Both systems hide an instanced element the same way — by zero-scaling its row — and only one
+    // of them writes every tick. The reveal writes ONCE per slot (cpeRevealApplyVisual returns early
+    // on an unchanged key), the proxy writes continuously, so the proxy always wins and ARC comes
+    // back on the frame after it is hidden. MEASURED on the delivered Hospital film: ARC gone at
+    // exactly 102.0 s and solid again at 102.1 s, one frame.
+    // ⚠ THIS IS NOT THE OLD BUG IT LOOKS LIKE. time_machine.js has never consulted hiddenDiscs, and
+    // that is fine — those lines are from 2026-08-15, on main, and the reveal worked with them for
+    // a month. What changed is that --dlod-proxy made _dlodProxyOn reachable from a headless bake
+    // for the first time (2026-09-19), so a second writer started competing for those rows.
+    // red1's own logs are the proof: Hospital_groundfix_check3.log, 06:38 the same day, has
+    // reveal=1 AND the load-path batch unpack AND dlod=0, and its reveal was fine.
+    // Standing down is the honest fix rather than teaching the proxy about hiddenDiscs: during the
+    // round the camera is flying the model to SHOW one discipline at a time, which is the one moment
+    // a draw-cost proxy has nothing useful to say, and it costs only the round's own seconds.
+    if (app && app._cpeRevealVisualKey) return false;
+    // §129.51 — and the STOREY reveal, for the same reason plus a sharper one: that leg SNAPSHOTS
+    // the scene at arm and writes the snapshot back at restore, so anything the proxy is hiding at
+    // that instant becomes permanent. Measured on Hospital: armed with 2,674 rows zero-scaled,
+    // handed back 2,981 members off. Standing down covers arm-to-restore, not just the tint window.
+    if (app && app._storeyRevealArmed) return false;
     return _dlodProxyOn && _isLargeBuilding && !app.streaming;
   }
 
@@ -590,12 +726,19 @@
 
   // In-view = the S261 LOD0/LOD2 boundary: close AND actually in the camera's frustum. Fails open
   // (treats as in-view/real) for an unknown guid rather than risk hiding something real by mistake.
+  // §DLOD_ONSCREEN_FIX (2026-09-19, red1 on the Hospital bake: "DLOD occured when at a distance,
+  // which should not as it impairs the scenes"). The old test boxed anything more than
+  // DLOD_VIEW_DIST (50 m) from the camera, WITHOUT asking whether it was on screen — the frustum
+  // check only ran for things already inside 50 m. Hospital's envelope is far bigger than 50 m and
+  // its closing orbit pulls back well beyond it, so at the one shot that shows the finished
+  // building, every element was "out of view" and the whole model rendered as a wireframe cage.
+  // Boxing is now what the button always claimed: OFF SCREEN. Distance alone never boxes anything.
   function _dlodInView(g) {
     var b = _dlodBoxIndex && _dlodBoxIndex[g];
     if (!b || !_dlodCamPos) return true;
-    if (_dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ) return false;
     _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-    return _dlodFrustum.intersectsSphere(_dlodSphere);
+    if (_dlodFrustum.intersectsSphere(_dlodSphere)) return true;   // on screen at ANY distance
+    return _dlodCamPos.distanceToSquared(b.pos) <= DLOD_VIEW_DIST_SQ;  // off screen but close: keep real
   }
 
   function _dlodDisposeBoxes() {
@@ -668,6 +811,14 @@
     console.log('§DLOD_TM_BUILD bld=' + app.activeBuilding + ' boxes=' + total + ' discs=' + discs.length + ' build_ms=' + ms.toFixed(0));
   }
 
+  // §129.56 — census throttle state. 2,000 ms is a compromise read off this project's own bake
+  // rates: at the measured 0.79-1.42 s/frame of a 1080p Hospital bake that is roughly one line per
+  // one-to-two frames, and at a 480p test-iteration rate it is one line per several — either way a
+  // few hundred lines across a full film, not thousands. `window.__dlodCensusMs` overrides it for a
+  // run that wants finer sampling, without a rebuild.
+  var _dlodCensusAt = 0, _dlodCensusPasses = 0;
+  var DLOD_CENSUS_MS = (typeof window !== 'undefined' && +window.__dlodCensusMs > 0) ? +window.__dlodCensusMs : 2000;
+
   function _dlodUpdateBoxes(app, engaged, placed, frontier, recent) {
     if (_dlodBoxIndex && _dlodBoxBld !== app.activeBuilding) _dlodDisposeBoxes(); // building switched — stale guids, drop
     if (!_dlodBoxIndex) {
@@ -678,17 +829,26 @@
     var forceFull = (_lastProxyEngaged !== engaged);
     _lastProxyEngaged = engaged;
     var touched = null, boxed = 0;
+    // §129.56 — counted in the loop that is already running, never a second traversal or an
+    // Object.keys() over the index. `indexed` is how many proxy boxes exist at all; `candidates`
+    // is how many the proxy was ALLOWED to box this pass (placed, not frontier, not recent).
+    // `boxed < candidates` means the frustum/distance test kept them real — a different fact from
+    // "nothing was eligible", and until now neither was visible in any log.
+    var indexed = 0, candidates = 0;
     for (var guid in _dlodBoxIndex) {
       var b = _dlodBoxIndex[guid];
+      indexed++;
       var wantVisible = false;
       if (engaged && placed[guid] && !frontier[guid] && recent[guid] === undefined) {
+        candidates++;
         // §DLOD_VIEW: same in-view test as the real-mesh branches, inlined against the position
         // already in hand (b.pos/b.radius) — avoids a second index lookup via _dlodInView(guid).
-        var outOfView = _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
-        if (!outOfView) {
-          _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
-          outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere);
-        }
+        // §DLOD_ONSCREEN_FIX — frustum FIRST, and distance can no longer box an on-screen element
+        // on its own (see _dlodInView above for the whole story). Off screen AND beyond 50 m boxes;
+        // anything else stays real.
+        _dlodSphere.center.copy(b.pos); _dlodSphere.radius = b.radius;
+        var outOfView = !_dlodFrustum.intersectsSphere(_dlodSphere) &&
+                        _dlodCamPos.distanceToSquared(b.pos) > DLOD_VIEW_DIST_SQ;
         wantVisible = outOfView;
       }
       if (!forceFull && b.visible === wantVisible) { if (wantVisible) boxed++; continue; }
@@ -701,6 +861,29 @@
     if (touched) for (var ti = 0; ti < touched.length; ti++) touched[ti].instanceMatrix.needsUpdate = true;
     if (forceFull) console.log('§DLOD_TM active=' + Object.keys(frontier).length + ' boxed=' + boxed +
       ' mode=' + (engaged ? 'on' : 'off'));
+    // §129.56 (2026-09-20, red1: "isn't DLOD engaged in this hi res bake?" — and no log could
+    // answer it) — the line ABOVE prints only on an engage/disengage EDGE, so on the 09-20 Hospital
+    // hi-res bake it fired exactly once, at frame 0 before the buildup had placed anything:
+    // `§DLOD_TM active=1 boxed=0 mode=on`. That reads as "the proxy is doing nothing" and means
+    // "the proxy had nothing to do YET". This is the standing census, wall-clock throttled so a
+    // 5,000-frame film costs a few dozen lines instead of 5,000. `passes`/`since` are printed
+    // BECAUSE it is throttled: a sampled census that hides its own sampling rate is the same lie
+    // in a smaller font — with them, the real per-frame rate is recoverable from one line.
+    _dlodCensusPasses++;
+    if (typeof window !== 'undefined') window.__dlodBoxedMax = Math.max(window.__dlodBoxedMax || 0, boxed);   // W7: whole-film max, every pass
+    var _nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    // `_dlodCensusAt === 0` = the very first pass: emit IMMEDIATELY rather than after a full
+    // window. The question this tag exists to answer ("is the proxy engaged in this bake?") is
+    // asked at the start of a run, and a census that stays silent for its first 2,000 ms answers
+    // it late — at 1.4 s/frame on a 1080p Hospital that is the first frame or two, exactly the
+    // ones a reader checks. Caught by W-DLOD-CENSUS on its first run, before any bake used it.
+    if (_dlodCensusAt === 0 || _nowMs - _dlodCensusAt >= DLOD_CENSUS_MS) {
+      console.log('§DLOD_TM_CENSUS boxed=' + boxed + '/' + indexed + ' candidates=' + candidates +
+        ' frontier=' + Object.keys(frontier).length + ' passes=' + _dlodCensusPasses +
+        ' since=' + Math.round(_dlodCensusAt ? (_nowMs - _dlodCensusAt) : 0) + 'ms' +
+        ' mode=' + (engaged ? 'on' : 'off'));
+      _dlodCensusAt = _nowMs; _dlodCensusPasses = 0;
+    }
   }
 
   // §S260d: Audio removed — can't hear on most browsers anyway
@@ -1194,6 +1377,13 @@
       if (!g) continue;
       (guidT[g] || (guidT[g] = [])).push(op.start_ts, op.end_ts, op.end_ts + lingerMs);
     }
+    // §CW_SOLIDIFY_EVENT (CIVIL ONLY — bim-compiler prompts/CWRoadBakeIssues.md Issue A). A staged element becomes
+    // visible at _tmXraySolidifyTs (another element's end), which was not an event of ITS mesh, so the delta skip
+    // below could pass over that mesh and leave the slot hidden for the rest of the film (road v6: 12,112/19,559
+    // staged, 4/8 watched slabs never drawn). Gated on app.isCivilModel(): buildings build the identical index.
+    var _cwOn = !!(app.isCivilModel && app.isCivilModel()), _cwN = 0;
+    if (_cwOn) for (var _cg in _tmXraySolidifyTs) { (guidT[_cg] || (guidT[_cg] = [])).push(_tmXraySolidifyTs[_cg]); _cwN++; }
+    console.log('§CW_SOLIDIFY_EVENT civil=' + _cwOn + ' added=' + _cwN + (_cwOn ? '' : ' (building: index unchanged)'));
     var byMesh = Object.create(null), k, metas, j, arr, ts;
     function addAll(meshId, guid) {
       ts = guidT[guid];
@@ -1340,6 +1530,14 @@
     // (not lazily inside _dlodUpdateBoxes) — else the first engaged tick would see an empty index
     // and fail every element open to "real", one tick behind. Zero cost when the toggle is off.
     var _dlodOn = _dlodEngaged(app);
+    // §129.51c — did the proxy just engage or disengage? The incremental path below only revisits
+    // elements whose PLACED STATE changed in this cursor step, so on a disengage tick every row the
+    // proxy had zero-scaled would simply stay zero-scaled: nothing looks at it again. MEASURED, the
+    // §129.51b attempt: the stand-down flag rose 41 frames before the storey window and the arm
+    // STILL snapshotted 4,544 zero-scaled rows, handing back 2,981 members off. The flag was right
+    // and inert. This is the term that makes it act.
+    var _dlodJustToggled = (_dlodPrevOn !== null && _dlodPrevOn !== _dlodOn);
+    _dlodPrevOn = _dlodOn;
     if (_dlodOn) {
       _dlodBuildBoxes(app);
       if (_dlodBoxIndex && app.camera) {
@@ -1419,7 +1617,11 @@
     } else {
       _dlodLastCamSig = null; // reset: engaging DLOD later must not compare against a stale pose
     }
+    // §129.51c — !_dlodJustToggled joins !_shadowJustToggled and !_dlodCamMoved: all three are
+    // "something changed that the delta cannot see", and a proxy edge is exactly that. One full
+    // pass on the edge is enough; the tick after it goes back to the incremental path.
     var _incrOK = !!_evMesh && _prevCursor != null && !_shadowJustToggled && !_dlodCamMoved &&
+                  !_dlodJustToggled &&
                   (_dHi - _dLo) <= _INCR_MAX_SPAN_MS && _incrPrimed;
     // W-INCR-EQUIV hook: the verification harness sets window.__forceFull to re-render the SAME
     // cursor via the full path, so the two results can be diffed. Test-only; no production effect.
@@ -1440,6 +1642,17 @@
     // below can match against. Reading straight from `frontier` is correct regardless of which
     // rendering path a given guid ends up on.
     window.__tmFrontierGuidsNow = new Set(Object.keys(frontier));
+    // §CPE_BUILDUP_PLACED — refresh ONLY the schedule half of each watched guid's record. The scene
+    // half is written by the traverse below and deliberately survives ticks the delta path skips.
+    var _bdW = _bdWatchSet(app);
+    if (_bdW) for (var _bg in _bdW) {
+      _bdRec(_bg).op = frontier[_bg] ? 'frontier' : (placed[_bg] ? 'placed' : 'pending');
+    }
+    // §REVEAL_DOOR_LEAK (bim-compiler prompts/ALTC_FOUNDATION.md): this pass owns "is it built at the cursor"; whether its DISCIPLINE is shown is
+    // owned by the discipline filter (panels.js _applyDiscVisibility / app.hiddenDiscs). A single mesh is visible only when both say yes —
+    // before, this pass wrote visible=true every tick and undid the reveal round's once-per-slot hide (HHS: 17 IfcDoor meshes, §REVEAL_TRAP).
+    var _hd = (app.hiddenDiscs && app.hiddenDiscs.size) ? app.hiddenDiscs : null, _discKept = 0;
+    function _discShown(o) { if (_hd && o.userData.disc && _hd.has(o.userData.disc)) { _discKept++; return false; } return true; }
     var _perfT0 = performance.now(), _perfObjs = 0, _perfSkipped = 0, _perfHideForProxy = 0;
     app.scene.traverse(function(obj) {
       _perfObjs++;
@@ -1472,7 +1685,7 @@
 
         // Visibility + highlighting
         if (isFrontier) {
-          obj.visible = true;
+          obj.visible = _discShown(obj);   // §REVEAL_DOOR_LEAK: built AND its discipline shown (the filter owns the second half)
           if (obj.isMesh) {
             _wbMat('FRONTIER', obj);
             var ft = frontier[g].t;
@@ -1482,12 +1695,13 @@
             applyHighlight(obj, fColor, 0.85, 0.4);
           }
         } else if (showReal) {
-          obj.visible = true;
+          obj.visible = _discShown(obj);   // §REVEAL_DOOR_LEAK
           if (obj._tm_highlighted) { _wbMat('RESTORE', obj); restoreMaterial(obj); }
         } else {
           obj.visible = false;
           if (obj._tm_highlighted) restoreMaterial(obj);
         }
+        if (_bdW && _bdW[g]) _bdSeen(g, obj.isMesh ? 'Mesh' : 'Obj', obj.visible, obj);
 
         // Shadow + camera (merged — was 3 separate traversals)
         // §S260b: Only set shadow flags if Sunglass shadow is ON
@@ -1546,7 +1760,15 @@
           // MEP, batched for performance) previously had NO staging check at all and showed fully
           // solid before its own support finished — the worse half of the bug this removal closes.
           var bStaged = !frontier[bg] && (_tmXraySolidifyTs[bg] !== undefined && cursorMs < _tmXraySolidifyTs[bg]);
-          if ((placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged) {
+          var bShow = (placed[bg] || frontier[bg] || recent[bg] !== undefined) && !bHideForProxy && !bStaged;
+          if (_bdW && _bdW[bg]) {
+            _bdSeen(bg, 'BM', bShow, null);
+            // §CPE_BUILDUP_PLACED — a batched slot's world Y comes from its own slot matrix, not
+            // from the host mesh's position (the host is one object for thousands of elements).
+            obj.getMatrixAt(sid, _bmM4); _bmPos.setFromMatrixPosition(_bmM4);
+            _bdRec(bg).y = +(_bmPos.y + (obj.position ? obj.position.y : 0)).toFixed(3);
+          }
+          if (bShow) {
             obj.setVisibleAt(sid, true);
             anyVis = true;
             if (frontier[bg]) {
@@ -1614,7 +1836,14 @@
           var iHideForProxy = _dlodOn && !!placed[ig] && !frontier[ig] && recent[ig] === undefined && !_dlodInView(ig);
           // §XRAY_STAGING_REMOVED — same gate as the single-mesh/BatchedMesh branches.
           var iStaged = !frontier[ig] && (_tmXraySolidifyTs[ig] !== undefined && cursorMs < _tmXraySolidifyTs[ig]);
-          if ((placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged) {
+          var iShow = (placed[ig] || frontier[ig] || recent[ig] !== undefined) && !iHideForProxy && !iStaged;
+          if (_bdW && _bdW[ig]) {
+            _bdSeen(ig, 'IM', iShow, null);
+            var _isv = _savedInstanceMatrices[meshId][mi];
+            if (_isv) { _tmV2.setFromMatrixPosition(_isv);
+              _bdRec(ig).y = +(_tmV2.y + (obj.position ? obj.position.y : 0)).toFixed(3); }
+          }
+          if (iShow) {
             if (_savedInstanceMatrices[meshId][mi]) {
               obj.setMatrixAt(mi, _savedInstanceMatrices[meshId][mi]);
             }
@@ -1647,7 +1876,7 @@
     var _travMs = performance.now() - _perfT0;
     if (_gspRoll % 10 === 0) console.log('§PERF_TRAVERSE ms=' + _travMs.toFixed(1) +
       ' objs=' + _perfObjs + ' skipped=' + _perfSkipped + ' mode=' + (_incrOK ? 'delta' : 'full') +
-      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3));
+      ' span=' + Math.round((_dHi - _dLo) / 3600000) + 'h cand=' + (_gspCand.length / 3) + (_hd ? ' discKept=' + _discKept + ' hiddenDiscs=[' + Array.from(_hd).join(',') + ']' : ''));
     // Diagnostic hook (harmless, cheap): last-traverse stats for perf verification without relying
     // on the throttled log. Read via window.__tmTrav in a probe.
     window.__tmTrav = { ms: +_travMs.toFixed(1), objs: _perfObjs, skipped: _perfSkipped,
@@ -2202,6 +2431,7 @@
   }
   // HUD callout that names the addressed item(s) — created lazily, sits above the TM panel.
   function _updatePinpoint(frontier) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var el = document.getElementById('tm-pinpoint');
     if (!el) {
       el = document.createElement('div');
@@ -2214,8 +2444,8 @@
     if (!_active || !frontier || !frontier.length) { el.style.display = 'none'; return; }
     var byPhase = {}; frontier.forEach(function (f) { byPhase[f.phase] = (byPhase[f.phase] || 0) + 1; });
     var ph = Object.keys(byPhase).sort(function (a, b) { return byPhase[b] - byPhase[a]; })[0];
-    el.innerHTML = '<span style="color:#4fc3f7">⊕ Now building</span> · ' + frontier.length + ' item' +
-      (frontier.length > 1 ? 's' : '') + ' · <b>' + ph + '</b>';
+    el.innerHTML = '<span style="color:#4fc3f7">' + _L('tm_now_building', '⊕ Now building') + '</span> · ' + frontier.length + ' ' +
+      (frontier.length > 1 ? _L('tm_items', 'items') : _L('tm_item', 'item')) + ' · <b>' + ph + '</b>';
     el.style.display = 'block';
   }
 
@@ -2618,6 +2848,7 @@
   }
 
   function updateStatus() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var pbar = document.getElementById('tm-progress-bar');
     var range = _projectEnd - _projectStart;
     if (pbar && range > 0) pbar.style.width = Math.round((_cursor - _projectStart) / range * 100) + '%';
@@ -2642,12 +2873,12 @@
     var bigCounter = document.getElementById('tm-big-counter');
     var d = new Date(_cursor);
     if (label) label.textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    if (status) status.textContent = placed + ' placed | ' + (activeNames.join(', ') || 'idle');
+    if (status) status.textContent = _L('tm_status_placed', '{n} placed | {names}', { n: placed, names: activeNames.join(', ') || _L('tm_idle', 'idle') });
     if (bigCounter) {
       var elapsedMs = _cursor - _projectStart;
       var totalDays = Math.floor(elapsedMs / 86400000);
       var remainHrs = Math.floor((elapsedMs % 86400000) / 3600000);
-      bigCounter.textContent = 'DAY ' + totalDays + ' \u2502 HR ' + remainHrs;
+      bigCounter.textContent = _L('tm_mode_day', 'DAY') + ' ' + totalDays + ' \u2502 ' + _L('tm_mode_hr', 'HR') + ' ' + remainHrs;
     }
   }
 
@@ -2772,7 +3003,19 @@
   }
 
   // ── UI ──
+  // S226 §R2b (bim-compiler prompts/S226_localisation.md): the drawer's strings come from the iDempiere-format
+  // dictionary (viewer/i18n/ad_message_base.csv ⋈ AD_Message_Trl_<lang>.xml → i18n/<code>.json, read by
+  // locale_loader.js). `en` is the English shown today — byte-identical to the CSV msgtext (W-VIEWER-I18N 3b) — and
+  // is what the page shows until the label pack lands or when no loader is present (Node witnesses). Functions that
+  // witnesses SLICE out of this file and run alone in a vm sandbox cannot see this helper; they open with a local
+  // `var _L = (typeof _tmTrl === 'function') ? _tmTrl : <English fallback>` instead (same contract).
+  function _tmTrl(key, en, repl) {
+    if (typeof _trl === 'function') return _trl(key, repl || null, en);
+    var s = en; if (repl) for (var k in repl) s = s.replace('{' + k + '}', repl[k]);
+    return s;
+  }
   function buildPanel() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     _panel = document.createElement('div');
     _panel.id = 'time-machine-panel';
     _panel.style.cssText =
@@ -2785,9 +3028,9 @@
 
     _panel.innerHTML =
       '<div style="display:flex;align-items:center;width:100%;cursor:grab" class="tm-drag">' +
-        '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
-        '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
-        '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" title="Gantt chart">&#x1F4CA;</button>' +
+        '<button id="tm-sun" style="font-size:14px;padding:4px 8px;min-width:32px;min-height:32px" data-trl-title="tm_tt_sun" title="Day/night cycle"><span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:linear-gradient(90deg,#fff 50%,#222 50%);vertical-align:middle"></span></button>' +
+        '<button id="tm-eye" style="padding:2px 6px;min-width:36px;min-height:36px;background:#888" data-trl-title="tm_tt_drone" title="Drone Pilot — cinematic camera"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/><circle cx="12" cy="12" r="3"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M12 2v4"/><path d="M12 18v4"/></svg></button>' +
+        '<button id="tm-gantt" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_gantt" title="Gantt chart">&#x1F4CA;</button>' +
         // §GANTT_EDIT DEP (user ruling 2026-08-04): the ✎ Author-4D side-panel button is REMOVED —
         // the Gantt drawer itself is now the editable surface (drag to move, edge-pull to resize,
         // both constraint-aware). §TM_P6_FOLD (2026-08-24): the "later pass" that old comment
@@ -2797,22 +3040,21 @@
         // schedule_editor_ui.js are DELETED. The tab's one non-redundant surface — P6/MS Project
         // import/export + Diff-vs-Model — is folded into the #tm-p6-box section below, and #tm-editor
         // is repurposed as its toggle.
-        '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
-        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" title="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">&#8644; P6/MSP</button>' +
-        '<button id="tm-dash" style="font-size:12px;padding:2px 6px" title="Dashboard">&#x1F4CB;</button>' +
-        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" title="Budget vs Actual variance">&#x2696;</button>' +
-        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
-        '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px">DAY 0 | HR 0</span>' +
-        '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" title="Close">&#x2715;</button>' +
+        '<button id="tm-whatif" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_whatif" title="What-if: slip a phase, watch the chain re-fold in blue">&#9094;</button>' +
+        '<button id="tm-editor" style="font-size:11px;padding:2px 6px" data-trl-title="tm_tt_p6" title="P6 / MS Project interop — import a Primavera .xer/.xml or MS Project XML programme onto this model, export MSPDI/PMXML/XER, or grade an imported schedule against the model to see its own quantity + rate estimate">&#8644; P6/MSP</button>' +
+        '<button id="tm-dash" style="font-size:12px;padding:2px 6px" data-trl-title="tm_tt_dash" title="Dashboard">&#x1F4CB;</button>' +
+        '<button id="tm-var" style="font-size:13px;padding:2px 6px;display:none" data-trl-title="tm_tt_var" title="Budget vs Actual variance">&#x2696;</button>' +
+        '<button id="tm-lod" style="padding:2px 6px;min-width:32px;min-height:32px;display:none" data-trl-title="tm_tt_lod" title="Draw-cost proxy: box the already-built elements outside camera view (large buildings only). OFF = today\'s rendering, unchanged."><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></button>' +
+        '<span id="tm-big-counter" style="flex:1;font-size:18px;font-weight:bold;color:#4fc3f7;text-align:center;letter-spacing:1px"><span data-trl="tm_mode_day">DAY</span> 0 | <span data-trl="tm_mode_hr">HR</span> 0</span>' +
+        '<button id="tm-close" style="width:22px;height:22px;font-size:12px;padding:0;line-height:1" data-trl-title="ui_close" title="Close">&#x2715;</button>' +
       '</div>' +
-      '<div id="tm-status" style="width:100%;text-align:center;font-size:13px;color:#ccc;padding:2px 0;min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-        '4D Construction Playback</div>' +
+      '<div id="tm-status" data-trl="tm_status_init" style="width:100%;text-align:center;font-size:13px;color:#ccc;padding:2px 0;min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">4D Construction Playback</div>' +
       '<div style="display:flex;gap:4px;align-items:center;width:100%">' +
         '<span id="tm-label" style="color:#4fc3f7;font-weight:bold;font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>' +
         '<div style="display:flex;gap:3px">' +
-          '<button class="tm-mode" data-mode="DAY">DAY</button>' +
-          '<button class="tm-mode" data-mode="HR">HR</button>' +
-          '<button class="tm-mode" data-mode="MIN">MIN</button>' +
+          '<button class="tm-mode" data-mode="DAY" data-trl="tm_mode_day">DAY</button>' +
+          '<button class="tm-mode" data-mode="HR" data-trl="tm_mode_hr">HR</button>' +
+          '<button class="tm-mode" data-mode="MIN" data-trl="tm_mode_min">MIN</button>' +
         '</div>' +
       '</div>' +
       '<input id="tm-slider" type="range" min="0" max="100" value="50" style="width:100%;accent-color:#4fc3f7">' +
@@ -2820,14 +3062,14 @@
         '<div id="tm-progress-bar" style="height:100%;width:100%;background:#4fc3f7;transition:width 0.2s"></div>' +
       '</div>' +
       '<div style="display:flex;gap:3px;width:100%;height:30px">' +
-        '<button id="tm-start-btn" style="width:30px;font-size:14px" title="Jump to start">&#x25C0;&#x25C0;</button>' +
-        '<button id="tm-rev-btn" style="width:30px;font-size:14px" title="Deconstruct">&#x25C0;</button>' +
-        '<button id="tm-stop-btn" style="width:30px;font-size:14px" title="Stop">&#x25A0;</button>' +
-        '<button id="tm-fwd-btn" style="width:30px;font-size:14px" title="Build">&#x25B6;</button>' +
-        '<button id="tm-end-btn" style="width:30px;font-size:14px" title="Jump to end">&#x25B6;&#x25B6;</button>' +
-        '<button id="tm-undo" style="flex:1;font-size:9px" title="Undo the last Gantt drag/resize">&#x21BA; Undo edit</button>' +
-        '<button id="tm-baseline" style="flex:1;font-size:9px" title="Snapshot current dates as the baseline for schedule variance">&#x2691; Set Baseline</button>' +
-        '<button id="tm-reschedule-asap" style="flex:1;font-size:9px" title="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">&#x23EA; Pull Back</button>' +
+        '<button id="tm-start-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_jump_start" title="Jump to start">&#x25C0;&#x25C0;</button>' +
+        '<button id="tm-rev-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_deconstruct" title="Deconstruct">&#x25C0;</button>' +
+        '<button id="tm-stop-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_stop" title="Stop">&#x25A0;</button>' +
+        '<button id="tm-fwd-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_build" title="Build">&#x25B6;</button>' +
+        '<button id="tm-end-btn" style="width:30px;font-size:14px" data-trl-title="tm_tt_jump_end" title="Jump to end">&#x25B6;&#x25B6;</button>' +
+        '<button id="tm-undo" style="flex:1;font-size:9px" data-trl-title="tm_tt_undo_edit" title="Undo the last Gantt drag/resize">&#x21BA; <span data-trl="tm_undo_edit">Undo edit</span></button>' +
+        '<button id="tm-baseline" style="flex:1;font-size:9px" data-trl-title="tm_tt_set_baseline" title="Snapshot current dates as the baseline for schedule variance">&#x2691; <span data-trl="tm_set_baseline">Set Baseline</span></button>' +
+        '<button id="tm-reschedule-asap" style="flex:1;font-size:9px" data-trl-title="tm_tt_pull_back" title="Pull every task back to the earliest start its predecessors allow (compression only — never moves a task later)">&#x23EA; <span data-trl="tm_pull_back">Pull Back</span></button>' +
       '</div>' +
       '<div id="tm-gantt-box" class="tm-drawer-bottom">' +
         // §GANTT_PALETTE 2026-08-04: phase legend strip removed — the hover tooltip already reports
@@ -2839,7 +3081,7 @@
         // taller than the CSS 220px cap (a 22-storey building renders ~130 bars into that box).
         '<div id="tm-gantt-head" style="position:sticky;top:0;z-index:3;background:#12161c">' +
           '<div id="tm-gantt-grip" style="height:7px;cursor:ns-resize;background:rgba(79,195,247,0.18);' +
-            'border-bottom:1px solid rgba(79,195,247,0.25)" title="Drag to resize the Gantt drawer"></div>' +
+            'border-bottom:1px solid rgba(79,195,247,0.25)" data-trl-title="tm_tt_gantt_grip" title="Drag to resize the Gantt drawer"></div>' +
           // §GANTT_EDIT_LOCK (user ruling 2026-08-05, supersedes §GANTT_AUTHOR_ENTRY's button): no
           // button opens a side panel any more, native or otherwise — the drawer materializes its own
           // schedule automatically (see drawGanttMini's auto-generate call) the first time it has
@@ -2849,16 +3091,14 @@
           // not a generate trigger.
           '<div id="tm-gantt-lockbar" style="display:flex;align-items:center;gap:6px;padding:3px 6px;' +
             'font-size:10px;color:#8a97a5;border-bottom:1px solid rgba(79,195,247,0.15)">' +
-            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" ' +
-            'title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
-            '&#x1F512; Locked</button><span id="tm-gantt-lockmsg" style="flex:1"></span>' +
+            '<button id="tm-gantt-editlock" style="font-size:10px;padding:1px 6px" data-trl-title="tm_tt_locked" title="Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.">' +
+            '&#x1F512; <span data-trl="tm_locked">Locked</span></button><span id="tm-gantt-lockmsg" style="flex:1"></span>' +
             // §S75 — the legend for the float rail. The swatches are drawn as thin bars, the same
             // shape as the rail itself, so the mapping reads without a caption. Counts come from the
             // SAME annotate pass that paints the bars (never a second computation), and the whole
             // strip is emptied when CPM could not run rather than showing a stale or invented zero.
             '<span id="tm-gantt-cpmlegend" style="white-space:nowrap;color:#8a97a5"></span></div>' +
-          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" ' +
-            'title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
+          '<canvas id="tm-gantt-ruler" style="width:100%;height:18px;display:block;cursor:ew-resize" data-trl-title="tm_tt_ruler" title="Drag to shift the whole project\'s start/finish (Editing must be unlocked)"></canvas>' +
         '</div>' +
         '<div style="position:relative">' +
           '<canvas id="tm-gantt-canvas" style="width:100%;cursor:pointer"></canvas>' +
@@ -2878,17 +3118,17 @@
       // toggles it and lazy-loads foreign_schedule.js + schedule_diff.js on first open.
       '<div id="tm-p6-box" class="tm-drawer-bottom">' +
         '<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:6px 6px 2px">' +
-          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Import</span>' +
-          '<button id="tm-p6-import" style="font-size:10px" title="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">&#8681; P6/MSP file</button>' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em" data-trl="tm_import">Import</span>' +
+          '<button id="tm-p6-import" style="font-size:10px" data-trl-title="tm_tt_p6_file" title="Import a Primavera P6 programme (.xer or .xml/PMXML) or MS Project XML (MSPDI) — adopt its WBS, logic and dates onto this model. Binding tasks to elements stays a separate, reviewable step.">&#8681; <span data-trl="tm_p6_file">P6/MSP file</span></button>' +
           '<input id="tm-p6-file" type="file" accept=".xer,.xml" style="display:none">' +
-          '<label style="font-size:10px;color:#8a97a5" title="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="tm-p6-autobind" type="checkbox" checked> auto-bind</label>' +
+          '<label style="font-size:10px;color:#8a97a5" data-trl-title="tm_tt_autobind" title="If activity names carry a BIM-Bind token (@discipline:IfcClass[:storey]), resolve it against this model and pre-bind tasks to elements on import — a reviewable first pass, not a guess."><input id="tm-p6-autobind" type="checkbox" checked> <span data-trl="tm_autobind">auto-bind</span></label>' +
           '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
-          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em">Export</span>' +
-          '<button id="tm-p6-export-msp" style="font-size:10px" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">&#8679; MSP</button>' +
-          '<button id="tm-p6-export-pmxml" style="font-size:10px" title="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">&#8679; PMXML</button>' +
-          '<button id="tm-p6-export-xer" style="font-size:10px" title="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">&#8679; XER</button>' +
+          '<span style="font-size:9px;color:#8a97a5;text-transform:uppercase;letter-spacing:.06em" data-trl="tm_export">Export</span>' +
+          '<button id="tm-p6-export-msp" style="font-size:10px" data-trl-title="tm_tt_export_msp" title="Export the current schedule (WBS, dates, dependencies) as MS Project XML (MSPDI) — opens directly in Microsoft Project; re-imports here too.">&#8679; MSP</button>' +
+          '<button id="tm-p6-export-pmxml" style="font-size:10px" data-trl-title="tm_tt_export_pmxml" title="Export as Primavera P6 PMXML (APIBusinessObjects XML) — the format every documented P6 export path uses; re-imports here too. Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.">&#8679; PMXML</button>' +
+          '<button id="tm-p6-export-xer" style="font-size:10px" data-trl-title="tm_tt_export_xer" title="Export as Primavera XER — the older tab-delimited P6 interchange, for P6 installs that still prefer it over PMXML. Same known-lossy fields as PMXML.">&#8679; XER</button>' +
           '<span style="width:1px;height:14px;background:rgba(79,195,247,0.25);margin:0 2px"></span>' +
-          '<button id="tm-p6-diff" style="font-size:10px" title="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">&#9878; Diff vs Model</button>' +
+          '<button id="tm-p6-diff" style="font-size:10px" data-trl-title="tm_tt_diff_model" title="4D Schedule Diff — grade an IMPORTED P6/MSP schedule per-phase against the model. It compares their durations to our own real-quantity + labor-rate estimate (import a file first)">&#9878; <span data-trl="tm_diff_model">Diff vs Model</span></button>' +
         '</div>' +
         '<div id="tm-p6-out" style="padding:2px 8px 6px;font-size:10px;color:#9fb0c6;line-height:1.5;max-height:64px;overflow-y:auto"></div>' +
       '</div>' +
@@ -2897,11 +3137,11 @@
           '<canvas id="tm-dash-time-pie" width="120" height="120" style="width:110px;height:110px"></canvas>' +
           '<canvas id="tm-dash-cost-pie" width="120" height="120" style="width:110px;height:110px"></canvas>' +
         '</div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin-bottom:4px">Phase Progress</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin-bottom:4px" data-trl="tm_phase_progress">Phase Progress</div>' +
         '<div id="tm-dash-phases"></div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">Site Resources</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px" data-trl="t_site_resources">Site Resources</div>' +
         '<div id="tm-dash-crews"></div>' +
-        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px">S-Curve</div>' +
+        '<div style="font-size:11px;color:#4fc3f7;font-weight:bold;margin:8px 0 4px" data-trl="tm_s_curve">S-Curve</div>' +
         '<canvas id="tm-dash-scurve" width="200" height="60" style="width:100%;height:60px"></canvas>' +
         '<div id="tm-dash-daycnt" style="font-size:10px;color:#999;margin-top:2px;text-align:center"></div>' +
       '</div>' +
@@ -2911,14 +3151,16 @@
       // screenshot showed: the props panel overlapping the storey labels and ruler with nowhere to
       // grow into. `_panel` is centered via left:50%/translateX(-50%), so a single edge handle grows
       // the box symmetrically for free — no left-edge math needed.
-      '<div id="tm-panel-resize-grip" title="Drag to resize the drawer" style="position:absolute;' +
+      '<div id="tm-panel-resize-grip" data-trl-title="tm_tt_panel_grip" title="Drag to resize the drawer" style="position:absolute;' +
         'top:0;right:-3px;bottom:0;width:8px;cursor:ew-resize;z-index:6"></div>' +
       // §TM_PANEL_RESIZE_H (2026-08-05, user: "make the lower border pullable expandable too, not
       // just the right border") — same edge-grip pattern as the width handle above, mirrored onto
       // the panel's bottom edge so both resizable dimensions are reachable the same way.
-      '<div id="tm-panel-resize-grip-b" title="Drag to resize the drawer" style="position:absolute;' +
+      '<div id="tm-panel-resize-grip-b" data-trl-title="tm_tt_panel_grip" title="Drag to resize the drawer" style="position:absolute;' +
         'left:0;right:0;bottom:-3px;height:8px;cursor:ns-resize;z-index:6"></div>';
     document.body.appendChild(_panel);
+    // S226 §R2b: the drawer is built after the loader's own pass may already have run — translate its subtree now.
+    if (typeof window._applyTrlToDOM === 'function') window._applyTrlToDOM();
     wirePanelResize();
     wirePanelResizeHeight();
 
@@ -2964,13 +3206,13 @@
       e.stopPropagation();
       if (window.ScheduleAuthorUI) window.ScheduleAuthorUI.toggle();
       else if (typeof window.openScheduleAuthorWizard === 'function') window.openScheduleAuthorWizard();
-      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'Author engine not loaded'; }
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = _L('tm_author_not_loaded', 'Author engine not loaded'); }
     });
     var _whatif = document.getElementById('tm-whatif');
     if (_whatif) _whatif.addEventListener('pointerup', function(e) {
       e.stopPropagation();
       if (window.WhatIfPanel) window.WhatIfPanel.open();
-      else { var s = document.getElementById('tm-status'); if (s) s.textContent = 'What-if engine not loaded'; }
+      else { var s = document.getElementById('tm-status'); if (s) s.textContent = _L('tm_whatif_not_loaded', 'What-if engine not loaded'); }
     });
     // §TM_P6_FOLD — repurposed #tm-editor: no longer opens a tab; toggles the in-panel P6/MSP
     // interop section (import/export/diff). Editing lives in the drawer itself (§GANTT_EDIT +
@@ -3222,8 +3464,8 @@
         var dayStart = Math.round((bar.startTs - _projectStart) / 86400000);
         var dayEnd = Math.round((bar.endTs - _projectStart) / 86400000);
         // \u00a7gate: source label so you can tell preset IFC 4D from generated fallback
-        var src = (bar.cap === bar.count) ? 'IFC 4D' : (bar.cap > 0 ? (bar.cap + '/' + bar.count + ' IFC 4D') : 'generated');
-        tip.textContent = bar.storey + ' \u2014 ' + bar.phase + ' (' + bar.count + ' el, Day ' + dayStart + '\u2013' + dayEnd + ', ' + src + ')';
+        var src = (bar.cap === bar.count) ? _L('tm_src_ifc4d', 'IFC 4D') : (bar.cap > 0 ? (bar.cap + '/' + bar.count + ' ' + _L('tm_src_ifc4d', 'IFC 4D')) : _L('tm_src_generated', 'generated'));
+        tip.textContent = _L('tm_bar_tip', '{storey} \u2014 {phase} ({n} el, Day {a}\u2013{b}, {src})', { storey: bar.storey, phase: bar.phase, n: bar.count, a: dayStart, b: dayEnd, src: src });
         tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
         // \u00a7gate: follow the pointer/touch Y so the tip stays visible when the Gantt is scrolled
         // (was pinned at top:4px \u2192 off-screen once scrolled down). Just above the tip; flip below near the top.
@@ -3598,6 +3840,12 @@
     }
     return null;
   }
+  // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — discipline-keyed phase for civil models,
+  // delegated to the one owner (ScheduleAuthor.civilRuleFor). null for every building element (NON-IMPACT rule).
+  function _civilRule(db, guid) {
+    var SA = window.ScheduleAuthor;
+    return (SA && SA.civilRuleFor) ? SA.civilRuleFor(db, guid) : null;
+  }
   function _classifyRule(cls, name, rules, dflt, nameOverrides) {
     if (!cls) return dflt;
     var ov = _classifyNameOverride(cls, name, nameOverrides);
@@ -3728,7 +3976,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'"
+        "WHERE " + _scheduledWhere('m')
       );
     } catch (e) { return null; }
     if (!r.length || !r[0].values.length) return null;
@@ -3743,7 +3991,7 @@
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[4] || 0, bz = row[5] || 0;
       var cx = row[6] || 0, cy = row[7] || 0, bx = row[8] || 0, by = row[9] || 0;
       var storey = assignStoreyByZ(rawStorey, cz);
-      var rule = matchRule(cls, elName);
+      var rule = _civilRule(db, row[0]) || matchRule(cls, elName);   // §CIVIL_PHASE
       return {
         guid: row[0], cls: cls, storey: storey,
         base_z: cz - bz / 2, top_z: cz + bz / 2,
@@ -4154,6 +4402,106 @@
   // touch computeSchedule's own body or the existing display-timeline reuse contract.
   var _rawScheduleRemember = null;   // { map: {guid:{start,end}}, n }
 
+  // ══ §HR_COST_PERSISTED (2026-09-21) — COST THE PROGRAMME THAT IS ALREADY SAVED ══════════════
+  // red1: "isn't that injected and saved when user opens alt-c and save path and save in DB?" It
+  // is, and nothing was missing from the save: every DB has schedules=1 with every element mapped
+  // and all 122,330 LTU place-ops carry {"resource":"CONCRETE_GANG",...}.
+  //
+  // THE DEFECT. §CREW_DEMAND/§HR_COST are computed INSIDE injectGantt(), which is only reached from
+  // the `!_placeOps.length` branch — the GENERATE path. MEASURED on three full 1080p bakes:
+  //   Hospital  §GANTT injected=63415  §CREW_DEMAND x1   (ops judged STALE -> cleared -> regenerate)
+  //   LTU       no §GANTT line          §CREW_DEMAND x0
+  //   Terminal  no §GANTT line          §CREW_DEMAND x0
+  // So a building was penalised for HAVING a saved programme, and Hospital only shows a cost
+  // because its ops were thrown away.
+  //
+  // ⚠ I FIRST WITHDREW THIS FIX AND THAT WAS A MISTAKE. I checked ScheduleAuthor._installSecs,
+  // saw it needs realQty/lengthRatio, and concluded a faithful recompute was impossible outside
+  // injectGantt — without checking where those two come from. They come from
+  // ScheduleAuthor._classFragmentation(db, RATES) and ._linearWeighting(db, RATES), both PUBLIC and
+  // both taking nothing but the db. Every input is reachable, so the number is the same number.
+  //
+  // IDENTICAL BY CONSTRUCTION, not by intent: same fragmentation table, same linear weighting, same
+  // matchNameOverride -> matchRule order, same _installSecs, same basis seconds, same LABOR_RATES.
+  // Nothing is re-derived here; every step calls the one implementation injectGantt calls.
+  //
+  // IT WRITES NOTHING — no op, no task, no row. A saved programme stays exactly as authored.
+  //
+  // AND IT CHECKS ITSELF. On a building that regenerates (Hospital, HHS) BOTH paths run, so the two
+  // numbers must agree; §HR_COST_AGREE reports the comparison and says WRONG if they differ by more
+  // than a rounding step. That is the guard against this ever becoming the second-number defect
+  // recorded as P4 in OCCUPANT_PATHFINDER.md §PATHING-DEFECTS.
+  function _hrCostFromDb(app) {
+    try {
+      var db = app && app.db; if (!db) return null;
+      var SA = window.ScheduleAuthor;
+      if (!SA || !SA._installSecs || !SA._classFragmentation || !SA._linearWeighting || !SA.matchRule) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE — ScheduleAuthor helpers absent, so the only' +
+          ' honest options were a DIFFERENT number or none; none is chosen');
+        return null;
+      }
+      var RT = window.RATES || {}, LRx = window.LABOR_RATES || {};
+      var SR = window.SEQUENCE_RULES || {};
+      var SD = window.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
+      var NO = window.SEQUENCE_NAME_OVERRIDES || [];
+      var frag = SA._classFragmentation(db, RT) || { fragmented: {}, area: {} };
+      var lin = SA._linearWeighting(db, RT) || { avgLength: {} };
+      var rr = db.exec(
+        'SELECT m.guid, m.ifc_class, m.element_name, ' +
+        'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by, COALESCE(t.bbox_z, 0) as bz ' +
+        'FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+        "WHERE " + _scheduledWhere('m'));
+      if (!rr || !rr.length) return null;
+      var basis = SR._productivity_basis_secs || 28800;
+      var days = {}, n = 0, ovN = 0;
+      rr[0].values.forEach(function (row) {
+        var guid = row[0], cls = row[1], nm = row[2] || '';
+        if (!cls) return;
+        var ov = _civilRule(db, guid) || (SA.matchNameOverride ? SA.matchNameOverride(cls, nm, NO) : null);   // §CIVIL_PHASE
+        if (ov) ovN++;
+        var rule = ov || SA.matchRule(cls, SR, SD);
+        var bx = row[3] || 0, by = row[4] || 0, bz = row[5] || 0;
+        var realQty = (frag.fragmented[cls] && frag.area[guid] != null) ? frag.area[guid] : null;
+        var hasGeom = bx > 0 || by > 0 || bz > 0;
+        var avgLen = lin.avgLength[cls];
+        var lengthRatio = (realQty == null && hasGeom && avgLen > 0) ? Math.max(bx, by, bz) / avgLen : null;
+        var secs = SA._installSecs(cls, rule, LRx, realQty, lengthRatio) || 0;
+        var res = (rule && rule.resource) || '_DEFAULT';
+        days[res] = (days[res] || 0) + secs / basis; n++;
+      });
+      var total = 0, pd = 0, trades = 0, log = [];
+      for (var k in days) {
+        var rate = LRx[k]; if (!rate || !rate.rate_per_day) continue;
+        var p = days[k] * (rate.crew_size || 1), c = p * rate.rate_per_day;
+        total += c; pd += p; trades++;
+        log.push(k + ' personDays=' + p.toFixed(1) + ' @' + rate.rate_per_day + '/d = ' + Math.round(c));
+      }
+      var out = { total: Math.round(total), personDays: +pd.toFixed(1), trades: trades };
+      if (!(total > 0)) {
+        console.log('§HR_COST_PERSISTED INCONCLUSIVE elements=' + n + ' resources=[' +
+          Object.keys(days).join(' ') + '] — none matched a LABOR_RATES row, so no cost is claimed');
+        return null;
+      }
+      console.log('§HR_COST_PERSISTED total=' + out.total + ' personDays=' + out.personDays +
+        ' across ' + trades + ' trades over ' + n + ' elements (nameOverrides=' + ovN + ')' +
+        ' — recomputed from the SAVED programme with the SAME helpers injectGantt uses. ' + log.join(' | '));
+      return out;
+    } catch (e) { console.log('§HR_COST_PERSISTED threw: ' + e.message); return null; }
+  }
+  // Always compute, so a building that regenerates can CHECK the recompute against the real thing.
+  function _hrCostEnsure(app, placeOpsLen) {
+    var already = app && app._hrCost && app._hrCost.total > 0 ? app._hrCost.total : null;
+    var mine = _hrCostFromDb(app);
+    if (already != null && mine) {
+      var d = Math.abs(mine.total - already), pct = already ? (100 * d / already) : 0;
+      console.log('§HR_COST_AGREE generate=' + already + ' recompute=' + mine.total +
+        ' delta=' + d + ' (' + pct.toFixed(3) + '%) => ' + (pct <= 0.01 ? 'ok — the two paths agree' :
+        'WRONG — the recompute is NOT the same number, which is the P4 defect and must be fixed, not shipped'));
+      return;   // the generate path's own figure stands; the recompute was only the check
+    }
+    if (!already && mine && placeOpsLen) app._hrCost = mine;   // fill the gap a saved programme leaves
+  }
+
   // §TPL_WIRED (2026-08-26, bim-compiler prompts/4D_BAR_MODEL.md §19/§20) — the 4D programme
   // template, loaded ONCE and handed to every materializeZones call site in this file.
   //
@@ -4171,8 +4519,48 @@
   // and runs the legacy zone path byte-identically, so a fetch failure degrades to today's
   // behaviour instead of breaking generation.
   var _4dTemplate = null, _4dTemplateTried = false;
+  // §CIVIL_TEMPLATE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q, §MIXED_PROGRAMME): when the open model carries ANY
+  // civil discipline (SEQUENCE_CIVIL keys), the programme comes from rates/4D_template_civil.json — which also declares the
+  // structure phases (a bridge merged into a road is built ALONGSIDE it, user ruling 2026-10-06). Was: EVERY element civil,
+  // so a road + bridge got the building template and no civil order at all. No civil row → the building template, exactly
+  // as before (NON-IMPACT rule: fleet DBs hold 0 civil rows). The choice is re-made per db so a later building reverts.
+  var _4dTemplateBase = null, _4dTemplateCivil = null, _4dTemplateDb = null;
+  // §SCHEDULE_POPULATION — the owner is ScheduleAuthor.scheduledWhere (schedule_author.js); this is its only caller-side
+  // fallback, for a page where schedule_author.js failed to load (§LOAD_FAIL) — the pre-owner clause, unchanged.
+  function _scheduledWhere(a) {
+    if (window.ScheduleAuthor && window.ScheduleAuthor.scheduledWhere) return window.ScheduleAuthor.scheduledWhere(a);
+    var p = a ? a + '.' : '';
+    return p + "ifc_class != 'IfcOpeningElement' AND " + p + "ifc_class != 'IfcSpace'";
+  }
+  function _hasCivil(db) {
+    var keys = Object.keys(window.SEQUENCE_CIVIL || {});
+    if (!db || !keys.length) return false;
+    try {
+      var r = db.exec("SELECT COUNT(*), SUM(CASE WHEN discipline IN (" + keys.map(function () { return '?'; }).join(',') +
+        ") THEN 1 ELSE 0 END) FROM elements_meta WHERE " + _scheduledWhere(''), keys);
+      var n = r.length ? r[0].values[0][0] : 0, c = r.length ? (r[0].values[0][1] || 0) : 0;
+      console.log('§CIVIL_TEMPLATE_GATE scheduled=' + n + ' civil=' + c + ' → ' + (c > 0 ? (c === n ? 'civil' : 'civil+structures') : 'building'));
+      return c > 0;
+    } catch (e) { return false; }
+  }
+  async function _civilSwap() {
+    var app = A(), db = app && app.db;
+    if (_4dTemplateDb === db) return _4dTemplate;
+    _4dTemplateDb = db;
+    if (!_hasCivil(db)) { _4dTemplate = _4dTemplateBase; try { window._4dTemplate = _4dTemplate; } catch (e) {} return _4dTemplate; }
+    if (!_4dTemplateCivil) {
+      try {
+        _4dTemplateCivil = await fetch('rates/4D_template_civil.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+      } catch (e) { console.warn('§CIVIL_TEMPLATE_FAIL ' + e.message + ' — keeping the building template'); return _4dTemplate; }
+    }
+    _4dTemplate = _4dTemplateCivil;
+    try { window._4dTemplate = _4dTemplate; } catch (e) {}
+    console.log('§CIVIL_TEMPLATE loaded rates/4D_template_civil.json v' + ((_4dTemplate.meta && _4dTemplate.meta.version) || '?') +
+      ' phases=' + (_4dTemplate.phases || []).length + ' — model carries civil disciplines (order: ' + ((_4dTemplate.meta && _4dTemplate.meta.order_source) || '').split(' — ')[0] + ')');
+    return _4dTemplate;
+  }
   async function _load4DTemplate() {
-    if (_4dTemplateTried) return _4dTemplate;
+    if (_4dTemplateTried) return _civilSwap();
     _4dTemplateTried = true;
     var url = 'rates/4D_template.json';
     try {
@@ -4194,8 +4582,18 @@
       console.warn('§TPL_WIRED_FAIL ' + e.message +
         ' — falling back to the legacy deriveZones path (byte-identical to pre-2026-08-26)');
     }
-    return _4dTemplate;
+    _4dTemplateBase = _4dTemplate;
+    return _civilSwap();
   }
+  // §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-GRAIN/§S7-INJECT-WHERE) — the "Generate programme" pill
+  // action needs the SAME template this function fetches, and §S7-INJECT is explicit: "reuse that,
+  // do not load a second copy". The pill can fire before Time Machine has ever been opened (that is
+  // the whole point — the user does not have to find ✎ Author first), so `window._4dTemplate` may
+  // still be unset at that moment; a second fetch()/loadJsonWithOverrides call in a new module would
+  // be exactly the duplicated loader this note forbids. Exposing THIS function (idempotent — its own
+  // `_4dTemplateTried` guard makes a second call a no-op after the first real fetch) is the smallest
+  // possible seam: one loader, two callers, both awaiting the one promise/cache.
+  window.tm4DTemplate = _load4DTemplate;
 
   // §FUTURE-5A A7 (attempted 2026-09-02, queue item B-3, REVERTED same day) — rates.js's
   // `var SHIFT_HOURS = 24` is hand-copied as a literal `24` fallback at 4 separate sites in this
@@ -4237,7 +4635,7 @@
       var st = schedule[el.guid]; if (!st) return;
       items.push({ guid: el.guid, s: st.start, e: st.end, bz: el.base_z, tz: el.top_z,
         x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
-        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey,
+        cls: el.cls, seq: el.seq, phase: el.phase, storey: el.storey, lvlSec: el.lvlSec, civil: el.civil, disc: el.disc,   // §CHAINAGE_LEVELS
         resource: el.resource });   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     if (!items.length) return null;
@@ -4671,7 +5069,7 @@
         'COALESCE(t.bbox_x, 0) as bx, COALESCE(t.bbox_y, 0) as by ' +
         'FROM elements_meta m ' +
         'LEFT JOIN element_transforms t ON t.guid = m.guid ' +
-        "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace' " +
+        "WHERE " + _scheduledWhere('m') + " " +
         'ORDER BY cz, COALESCE(t.center_x, 0), COALESCE(t.center_y, 0)'
       );
     } catch(e) { console.log('§GANTT table error: ' + e.message); return false; }
@@ -4707,6 +5105,48 @@
     // by median Z — deterministic, uses only already-extracted Z data, nothing invented — so the
     // Gantt grouping, the storey-band ranking above, and the roof-slab override below all see the
     // corrected storey with zero further code changes downstream.
+    // §CHAINAGE_LEVELS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md 2f/2g, user 2026-10-05: "make the buildup chainage";
+    // industry: road works are planned on time-chainage / line-of-balance charts, not storeys). On a CIVIL model the build
+    // ladder's LEVEL is the element's chainage section along the inferred route (tour.js app.civilRoutePath — the one owner,
+    // the route Fly and Alt+C use), not a storey height. Road elements get storey "CH nn" (their section); building elements
+    // (a merged bridge) keep their storeys, and every element carries lvlSec = its section, so the ladder owners
+    // (schedule_gate.deriveBandRanks, cpm_schedule bandRank) order by section first, then height. Buildings: no civil
+    // discipline → no route → no lvlSec → unchanged.
+    var _chainPts = null;
+    try {
+      if (app.isCivilModel && app.isCivilModel() && typeof app.civilRoutePath === 'function') {
+        // §CHAINAGE_V2: the film's DRIVE route (same points, drive direction) so the build runs the way the camera drives
+        var _DR = typeof app.civilDriveRoute === 'function' ? app.civilDriveRoute() : null;
+        if (_DR && _DR.length >= 2) _chainPts = _DR;
+        else { var _CR = app.civilRoutePath(); if (_CR && _CR.path && _CR.path.length >= 2) _chainPts = _CR.path; }
+      }
+    } catch (eCR) { console.warn('§CHAINAGE_LEVELS route failed: ' + eCR.message); }
+    function _nearIdx(x, z) {
+      var bi = 0, bd = Infinity;
+      for (var k = 0; k < _chainPts.length; k++) { var d = Math.hypot(_chainPts[k].x - x, _chainPts[k].z - z); if (d < bd) { bd = d; bi = k; } }
+      return bi;
+    }
+    // §CHAINAGE_V2 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_V2): an element's section = where it STARTS along
+    // the drive — the lowest route index over the 4 plan corners of its REAL drawn box (owner: cpe_load_path.js
+    // A._loadPathInstanceWorldBox). Filing by the vertex CENTROID put long drains / guardrails / curved road pieces in a later
+    // section than what they touch: MEASURED 2,265 of 10,078 support edges ran backwards against the route (drain→pavement 995).
+    // No drawn box (not streamed) → the centroid, counted in §CHAINAGE_LEVELS fromCentroid=.
+    var _chainFromBox = 0, _chainFromCentroid = 0;
+    function _secOf(guid, cx, cy, cz) {
+      var wb = (typeof app._loadPathInstanceWorldBox === 'function') ? app._loadPathInstanceWorldBox(guid) : null;
+      // a zero-size box at the origin is a lookup miss, not a position (MEASURED: 1,485 bridge pieces read (0,0,0)-(0,0,0) while the
+      // DB places every one of them) → treat as no box, use the centroid
+      if (wb && wb.maxX - wb.minX <= 0 && wb.maxZ - wb.minZ <= 0 && wb.maxY - wb.minY <= 0) wb = null;
+      if (wb) {
+        _chainFromBox++;
+        return Math.min(_nearIdx(wb.minX, wb.minZ), _nearIdx(wb.minX, wb.maxZ), _nearIdx(wb.maxX, wb.minZ), _nearIdx(wb.maxX, wb.maxZ));
+      }
+      _chainFromCentroid++;
+      var p = app.ifc2three(cx, cy, cz);
+      return _nearIdx(p.x, p.z);
+    }
+    var _chainCivil = 0, _chainKept = 0;
+
     var unknownReassigned = 0;
     function assignStoreyByZ(storey, cz) {
       // §ZONE_INDEX: the reassignment itself now lives in the shared index; the counter stays here
@@ -4722,8 +5162,12 @@
     var elements = r[0].values.map(function(row) {
       var cls = row[1], elName = row[2] || '', rawStorey = row[3] || '_UNKNOWN', cz = row[5] || 0, bz = row[6] || 0;
       var cx = row[7] || 0, cy = row[8] || 0, bx = row[9] || 0, by = row[10] || 0;
-      var storey = assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
-      var ov = matchNameOverride(cls, elName);
+      var _civ = _civilRule(db, row[0]);
+      var lvlSec;
+      if (_chainPts) lvlSec = _secOf(row[0], cx, cy, cz);   // §CHAINAGE_LEVELS / §CHAINAGE_V2
+      var storey = (_chainPts && _civ) ? ('CH ' + (lvlSec < 10 ? '0' : '') + lvlSec) : assignStoreyByZ(rawStorey, cz);  // §STOREY-Z
+      if (_chainPts) { if (_civ) _chainCivil++; else _chainKept++; }
+      var ov = _civ || matchNameOverride(cls, elName);   // §CIVIL_PHASE
       if (ov) nameOverrides++;
       var rule = ov || matchRule(cls);
       var seq = rule.sequence, phase = rule.phase;
@@ -4733,7 +5177,8 @@
         cz: cz, band: Math.floor(cz / 3),  // §S260e: Z-quantized band (3m = ~one floor)
         base_z: cz - bz / 2, top_z: cz + bz / 2,  // §gate: Z geometry (base = underside, top = where it tops out)
         x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,  // §gate: XY footprint for the support gate
-        seq: seq, phase: phase,
+        seq: seq, phase: phase, lvlSec: lvlSec,   // §CHAINAGE_LEVELS (undefined on a building)
+        civil: !!_civ, disc: row[4] || '',        // §CHAINAGE_E1 — same-discipline civil abutment is not support
         resource: rule.resource || '_DEFAULT',
         installSecs: getInstallSecs(cls, rule, row[0], bx, by, bz),
         // §4D_NOGEO (2026-08-07, 4D_SCHEDULE_PERFECTION.md §4D_LAYER_TRUTH): no transform row —
@@ -4744,6 +5189,8 @@
         noGeo: (bx === 0 && by === 0 && bz === 0 && cx === 0 && cy === 0 && cz === 0)
       };
     });
+    if (_chainPts) console.log('§CHAINAGE_LEVELS sections=' + _chainPts.length + ' fromDrawnBox=' + _chainFromBox + ' fromCentroid=' + _chainFromCentroid + ' civilByChainage=' + _chainCivil +
+      ' otherKeptStorey=' + _chainKept + ' (ladder = section first, then height — line of balance along the route)');
     if (unknownReassigned) console.log('§GANTT_STOREY_Z reassigned=' + unknownReassigned + ' no-storey elements to nearest real storey by median Z');
     if (nameOverrides) console.log('§NAME_OVERRIDE ' + nameOverrides + ' elements reclassified by name (' +
       NO.map(function(o){ return o.id; }).join(',') + ') — see rates/sequence_rules.json NAME_OVERRIDES');
@@ -4962,6 +5409,18 @@
       }
       if (_rawHits > 0 && _rawHits >= 0.999 * (_rawHits + _rawMisses)) {
         _sched = _rawScheduleRemember.map;
+        // §S4_RAW_EPOCH (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §DAY_COUNTER_EPOCH): materializeZones anchors its raw schedule at
+        // time 0; computeSchedule here anchors at baseMs. Reused verbatim, every element NOT re-dated by a task window kept a 1970
+        // timestamp — measured on the road+bridge film: 5,674 uncovered road pieces at 1969-12-31 next to 4,739 task-dated bridge pieces
+        // → the day counter read 20,791 days. Rigid shift onto baseMs when the map is epoch-relative: order and durations untouched.
+        var _rMin = Infinity;
+        for (var _rk in _sched) if (_sched[_rk] && _sched[_rk].start < _rMin) _rMin = _sched[_rk].start;
+        if (isFinite(_rMin) && _rMin < 1e12 && baseMs > 1e12) {
+          var _rShift = baseMs - _rMin, _rSh = {};
+          for (var _rk2 in _sched) { var _rv = _sched[_rk2]; if (!_rv) continue; var _rc = {}; for (var _rf in _rv) _rc[_rf] = _rv[_rf]; _rc.start = _rv.start + _rShift; _rc.end = _rv.end + _rShift; _rSh[_rk2] = _rc; }
+          _sched = _rSh;
+          console.log('§S4_RAW_EPOCH shifted reused raw schedule onto baseMs by ' + (_rShift / 86400000).toFixed(1) + ' days (it was epoch-relative)');
+        }
         console.log('§S4_RAW_SCHEDULE_REUSE hits=' + _rawHits + ' misses=' + _rawMisses +
           ' — skipped a second computeSchedule call (materializeZones already computed this raw schedule)');
       }
@@ -4983,7 +5442,7 @@
       return { guid: el.guid, s: _ts ? _ts.start : baseMs, e: _ts ? _ts.end : baseMs + 60000,
         bz: el.base_z, tz: el.top_z, x0: el.x0, x1: el.x1, y0: el.y0, y1: el.y1,
         cls: el.cls, seq: el.seq, phase: el.phase,
-        storey: el.storey,   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired
+        storey: el.storey, lvlSec: el.lvlSec, civil: el.civil, disc: el.disc,   // §TIER_SERIAL_BY_ZONE: the §ZONE_INDEX band, already median-Z repaired · §CHAINAGE_LEVELS
         resource: el.resource };   // §S6_CREW_PASS: the solve's in-pass crew pools key on this
     });
     var _twStats = _displayTimeline(_twItems).stats;   // §CPM_DISPLAY (or legacy §TIER_SERIAL+§MIDAIR_REPAIR via ?cpm4d=0)
@@ -5769,16 +6228,17 @@
     return { EV: Math.round(EV), AC: Math.round(AC), CPI: CPI, CV: Math.round(EV - AC), BAC: BAC, EAC: EAC, VAC: BAC - EAC };
   }
   function drawVariance() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     if (!_opsPlanned) _opsPlanned = _ops.slice();          // first open: snapshot the planned timeline (phase windows)
     var head = document.getElementById('tm-var-head');
     if (!_twin) {                                          // records not fetched yet → load, then redraw
-      if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">Reading records…</div>';
+      if (head) head.innerHTML = '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b><div style="margin-top:2px;color:#888">' + _L('tm_reading_records', 'Reading records…') + '</div>';
       _loadTwin().then(function (t) { if (t && _varVisible) drawVariance(); });
       return;
     }
     var V = _computeVariance();
-    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">Budget vs Actual</b><div style="margin-top:2px;color:#888">No project records for this model</div>'; return; }
+    if (!V) { if (head) head.innerHTML = '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b><div style="margin-top:2px;color:#888">' + _L('tm_no_project_records', 'No project records for this model') + '</div>'; return; }
     var fmtD = function (ms) { return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : '—'; };
     var curIdx = _varPhaseUnderCursor(V);
     var SP = _computeScheduleProjection(V);                     // E3 — the projected-from-cost schedule slip (4D Δ)
@@ -5791,25 +6251,25 @@
     if (head) {
       head.innerHTML =
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">' +
-          '<b style="color:#4fc3f7">Budget vs Actual</b>' +
-          '<span style="font-size:9px;color:#888">from records · ' + _twin.building + '</span>' +
+          '<b style="color:#4fc3f7">' + _L('tm_budget_vs_actual', 'Budget vs Actual') + '</b>' +
+          '<span style="font-size:9px;color:#888">' + _L('tm_from_records', 'from records') + ' · ' + _twin.building + '</span>' +
         '</div>' +
-        '<div style="margin-top:2px">Cost <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
+        '<div style="margin-top:2px">' + _L('tm_cost', 'Cost') + ' <b style="color:#9fd6ff" title="C_Project.PlannedAmt">' + _money(V.tP) + '</b> → ' +
           '<b style="color:#ff6b6b" title="C_Project.CommittedAmt">' + _money(V.tA) + '</b> ' +
           '<span style="color:' + (V.dCost >= 0 ? '#ff6b6b' : '#26a69a') + '">(' + (V.dCost >= 0 ? '+' : '') + V.pctOver + '%, ' +
           (V.dCost >= 0 ? '+' : '') + _money(V.dCost) + ')</span></div>' +
-        '<div style="color:#9fd6ff">Schedule ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
-          ' <span style="color:#888">(planned baseline)</span></div>' +
-        (SP ? '<div style="color:#ffb74d">Projected finish ' + fmtD(SP.projEnd) +
+        '<div style="color:#9fd6ff">' + _L('tm_schedule', 'Schedule') + ' ' + fmtD(V.plannedStart) + ' → ' + fmtD(V.plannedEnd) +
+          ' <span style="color:#888">' + _L('tm_planned_baseline', '(planned baseline)') + '</span></div>' +
+        (SP ? '<div style="color:#ffb74d">' + _L('tm_projected_finish', 'Projected finish') + ' ' + fmtD(SP.projEnd) +
           ' <span style="color:' + slipColor(SP.projSlipDays) + '">(' + slipTxt(SP.projSlipDays) + ')</span>' +
-          ' <span style="color:#888">projected from cost</span></div>' : '') +
+          ' <span style="color:#888">' + _L('tm_projected_from_cost', 'projected from cost') + '</span></div>' : '') +
         // S5(B) EVM — cursor-driven earned value: EV/AC + CPI + the at-completion forecast (EAC). Cost only,
         // from records (no independent SPI on this twin — see §HONESTY FINDING; schedule = the line above).
         (EVM ? '<div style="margin-top:2px;color:#cfe8ff">EV <b>' + _money(EVM.EV) + '</b> / AC <b>' + _money(EVM.AC) + '</b>' +
           ' · CPI <b style="color:' + (EVM.CPI >= 1 ? '#26a69a' : '#ff6b6b') + '">' + EVM.CPI.toFixed(2) + '</b>' +
-          ' · forecast <b title="EAC = BAC/CPI">' + _money(EVM.EAC) + '</b>' +
+          ' · ' + _L('tm_forecast', 'forecast') + ' <b title="EAC = BAC/CPI">' + _money(EVM.EAC) + '</b>' +
           ' <span style="color:' + (EVM.VAC >= 0 ? '#26a69a' : '#ff6b6b') + '">(' + (EVM.VAC >= 0 ? '+' : '') + _money(EVM.VAC) + ')</span>' +
-          ' <span style="font-size:9px;color:#888">cost · from records</span></div>' : '');
+          ' <span style="font-size:9px;color:#888">' + _L('tm_cost_from_records', 'cost · from records') + '</span></div>' : '');
     }
 
     // canvas — one bar per phase on the SAME axis the cursor scrubs; bar color = phase, edge cap red/green by
@@ -5859,7 +6319,7 @@
         var dc = (p.dCost >= 0 ? '+' : '') + _money(p.dCost);
         var col = p.dCost > 0 ? '#ff6b6b' : '#26a69a';
         var sp = SP ? SP.phases[i] : null;                      // E3 — the per-phase projected schedule slip
-        var spTxt = sp ? ' <span style="color:' + slipColor(sp.slipDays) + '" title="projected from cost">' + slipTxt(sp.slipDays) + '</span>' : '';
+        var spTxt = sp ? ' <span style="color:' + slipColor(sp.slipDays) + '" title="' + _L('tm_projected_from_cost', 'projected from cost') + '">' + slipTxt(sp.slipDays) + '</span>' : '';
         html += '<div style="display:flex;justify-content:space-between;gap:6px' + (i === curIdx ? ';color:#fff;font-weight:bold' : '') + '">' +
           '<span>' + (p.marquee ? '⚠ ' : '') + p.phase + '</span>' +
           '<span style="color:' + col + '">' + dc + ' (' + (p.pct >= 0 ? '+' : '') + p.pct + '%)' + spTxt + '</span></div>';
@@ -6085,6 +6545,7 @@
   // reason to exempt it from the lock). Uses the SAME axis math as ganttHit's dayPx so a drag of N
   // pixels always means the same N days everywhere in the drawer, ruler included.
   function wireGanttRulerShift() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var rc = document.getElementById('tm-gantt-ruler');
     if (!rc || rc._shiftWired) return;
     rc._shiftWired = true;
@@ -6094,7 +6555,7 @@
         console.log('§TM_RULER_SHIFT_REJECT reason=locked');
         var t0 = document.getElementById('tm-gantt-tip');
         if (t0) {
-          t0.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t0.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t0.style.display = 'block';
           setTimeout(function () { t0.style.display = 'none'; }, 2200);
         }
@@ -6112,7 +6573,7 @@
       dragDays = Math.round((e.clientX - startX) / Math.max(0.001, dayPx));
       var tip = document.getElementById('tm-gantt-tip');
       if (tip) {
-        tip.textContent = 'Shift whole schedule ' + (dragDays >= 0 ? '+' : '') + dragDays + 'd';
+        tip.textContent = _L('tm_shift_whole', 'Shift whole schedule {d}d', { d: (dragDays >= 0 ? '+' : '') + dragDays });
         tip.style.left = '4px'; tip.style.top = '20px'; tip.style.display = 'block';
       }
       e.preventDefault(); e.stopPropagation();
@@ -6385,6 +6846,7 @@
   // _tmCpmLegend(marks) — §S75. null/empty ⇒ the strip is cleared: a legend that keeps showing the
   // last building's counts after a bail is worse than no legend.
   function _tmCpmLegend(crit, slack, pf, minF, maxF) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var el = (typeof document !== 'undefined') && document.getElementById('tm-gantt-cpmlegend');
     if (!el) return;
     if (crit === null) { el.textContent = ''; el.removeAttribute('title'); return; }
@@ -6392,12 +6854,9 @@
       return '<span style="display:inline-block;width:12px;height:3px;background:' + c +
         ';vertical-align:middle;margin-right:3px"></span>';
     };
-    el.innerHTML = sw(CPM_COLOR_CRITICAL) + '<b style="color:#c9d3dd">' + crit + '</b> critical' +
-      '<span style="margin:0 5px">·</span>' + sw(CPM_COLOR_FLOAT) + '<b style="color:#c9d3dd">' + slack + '</b> with float';
-    el.title = 'Critical Path Method, recomputed after every edit. Red = zero total float: the task ' +
-      'cannot slip without moving the project end. Green = it has slack.\n' +
-      'Project duration ' + pf + 'd · total float ' + minF + '..' + maxF + 'd.\n' +
-      'CPM reads the dates the drag produced — it never changes one.';
+    el.innerHTML = sw(CPM_COLOR_CRITICAL) + '<b style="color:#c9d3dd">' + crit + '</b> ' + _L('tm_cpm_critical', 'critical') +
+      '<span style="margin:0 5px">·</span>' + sw(CPM_COLOR_FLOAT) + '<b style="color:#c9d3dd">' + slack + '</b> ' + _L('tm_cpm_with_float', 'with float');
+    el.title = _L('tm_tt_cpm', 'Critical Path Method, recomputed after every edit. Red = zero total float: the task cannot slip without moving the project end. Green = it has slack.\nProject duration {pf}d · total float {minF}..{maxF}d.\nCPM reads the dates the drag produced — it never changes one.', { pf: pf, minF: minF, maxF: maxF });
   }
 
   function _tmAnnotateCpm(schedId) {
@@ -6589,11 +7048,12 @@
     return out;
   }
   function _tmSayException(e) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var tip = document.getElementById('tm-gantt-tip');
     if (!tip) return;
-    var shortReason = (e && e.message) ? String(e.message).slice(0, 90) : 'unexpected error';
+    var shortReason = (e && e.message) ? String(e.message).slice(0, 90) : _L('tm_unexpected_error', 'unexpected error');
     _tmTipRestore(tip);
-    tip.textContent = 'Time Machine couldn\'t complete this edit — ' + shortReason;
+    tip.textContent = _L('tm_edit_exception', 'Time Machine couldn\'t complete this edit — {reason}', { reason: shortReason });
     var others = [];
     try { others = _tmVisibleOtherPanels(); } catch (e2) {}
     var hidden = false;
@@ -6605,7 +7065,7 @@
     }
     if (others.length) {
       var btn = document.createElement('button');
-      btn.textContent = 'Close other panels (' + others.length + ')';
+      btn.textContent = _L('tm_close_other_panels', 'Close other panels ({n})', { n: others.length });
       btn.style.cssText = 'display:block;margin-top:3px;font-size:10px;padding:1px 6px;cursor:pointer';
       btn.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
       btn.addEventListener('click', function (ev) {
@@ -6634,18 +7094,19 @@
   }
 
   function commitGanttDrag(bar, mode, deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('commitGanttDrag')) return;
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.moveTaskCascade) {
       console.log('§GANTT_DRAG_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL — same wording as setGanttBaseline/rescheduleGanttAsap's SA guard
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL — same wording as setGanttBaseline/rescheduleGanttAsap's SA guard
       return;
     }
     if (!bar.taskId) {
       // Honest refusal: an un-authored bar has no task to move. Never fake the edit.
       console.log('§GANTT_DRAG_REJECT reason=bar_has_no_task storey="' + bar.storey + '" phase="' + bar.phase + '"');
-      _tmSay('Not editable — no schedule task on this bar');   // §TM_SILENT_REFUSAL — same wording as wireGanttDrag's copy of this refusal
+      _tmSay(_L('tm_not_editable', 'Not editable — no schedule task on this bar'));   // §TM_SILENT_REFUSAL — same wording as wireGanttDrag's copy of this refusal
       return;
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -6679,7 +7140,7 @@
     var tbBar = tasksBefore[bar.taskId];
     if (!tbBar || !tbBar.start || !tbBar.finish) {
       console.log('§GANTT_DRAG_REJECT reason=no_real_task_snapshot task=' + bar.taskId);
-      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_edit_no_dates', 'Cannot edit — no real dates found for this task'));   // §TM_SILENT_REFUSAL
       return;
     }
     var realS0 = Date.parse(tbBar.start + 'T00:00:00Z'), realE0 = Date.parse(tbBar.finish + 'T00:00:00Z');
@@ -6701,14 +7162,14 @@
       // §TM_SILENT_REFUSAL — the CLAMPED case below always showed a tip; the outright-failure case
       // (bad_date / no_such_task / no_tasks / cycle from the engine verb) showed nothing at all.
       console.log('§GANTT_DRAG_REJECT task=' + bar.taskId + ' reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Rejected: ' + ((res && res.reason) || 'unknown'));   // same format as the props panel's Rejected: line
+      _tmSay(_L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }));   // same format as the props panel's Rejected: line
       return;
     }
     // C2 feedback: the user must SEE that the drag was refused, not silently land somewhere else.
     if (res.clamped) {
       var tip = document.getElementById('tm-gantt-tip');
       if (tip) {
-        tip.textContent = 'Blocked by ' + res.blockedBy + ' — clamped to ' + res.start;
+        tip.textContent = _L('tm_blocked_clamped', 'Blocked by {by} — clamped to {start}', { by: res.blockedBy, start: res.start });
         tip.style.display = 'block';
         setTimeout(function () { tip.style.display = 'none'; }, 2600);
       }
@@ -6786,12 +7247,13 @@
   // only) — undoLastGanttEdit's restore loop doesn't branch on it, so no other change was needed
   // there at all.
   function shiftGanttSchedule(deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('shiftGanttSchedule')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftSchedule) {
       console.log('§TM_RULER_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays) return;   // a click, not a drag — nothing to shift
@@ -6809,7 +7271,7 @@
     var res = SA.shiftSchedule(app.db, schedId, deltaDays);
     if (!res || !res.ok) {
       console.log('§TM_RULER_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Cannot shift — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL — same shape as "Cannot compress"
+      _tmSay(_L('tm_cannot_shift', 'Cannot shift — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL — same shape as "Cannot compress"
       return;
     }
 
@@ -6844,12 +7306,13 @@
   // restore loop doesn't care whether tasksBefore/opsBefore covers a cascade, the whole schedule,
   // or a selection, it just restores whatever's in there.
   function commitGanttGroupShift(taskIds, deltaDays) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('commitGanttGroupShift')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA || !SA.shiftTasks) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=ScheduleAuthor_not_loaded');
-      _tmSay('Not available');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_not_available', 'Not available'));   // §TM_SILENT_REFUSAL
       return;
     }
     if (!deltaDays || !taskIds || !taskIds.length) return;
@@ -6868,7 +7331,7 @@
     var res = SA.shiftTasks(app.db, taskIds, deltaDays);
     if (!res || !res.ok) {
       console.log('§GANTT_GROUP_SHIFT_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      _tmSay('Cannot move group — ' + ((res && res.reason) || 'no schedule'));   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_move_group', 'Cannot move group — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));   // §TM_SILENT_REFUSAL
       return;
     }
 
@@ -6903,6 +7366,7 @@
   // element ops (retimeTaskElements's write to `kernel_ops`) — same two tables, same shape, run
   // backward. Single-level: clears _lastEdit so a second click is a no-op, not a second undo step.
   function undoLastGanttEdit() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     // §TM_BAKE_LOCK (§S69) — an undo mutates the timeline exactly as much as the edit it reverses.
     if (_tmEditLocked('undoLastGanttEdit')) return;
     var app = A();
@@ -6914,7 +7378,7 @@
     }
     if (!_lastEdit || !app || !app.db) {
       console.log('§GANTT_EDIT_UNDO_REJECT reason=nothing_to_undo');
-      say('Nothing to undo');
+      say(_L('tm_nothing_to_undo', 'Nothing to undo'));
       return;
     }
     var edit = _lastEdit;
@@ -6946,7 +7410,7 @@
     db.run('COMMIT');
     console.log('§GANTT_EDIT_UNDO task=' + edit.taskId + ' mode=' + edit.mode +
       ' tasksRestored=' + tRestored + ' opsRestored=' + oRestored);
-    say('Undone: ' + edit.mode + ' ' + edit.taskId);
+    say(_L('tm_undone', 'Undone: {mode} {task}', { mode: edit.mode, task: edit.taskId }));
     _tmResyncAfterRetime();   // §GANTT_RETIME_RESYNC — without this the canvas plays the OLD times
     _tmAnnotateCpm(edit.schedId);   // §GANTT_CPM_ANNOTATE (§S68) — re-derive float/critical FROM the new dates
     _tmPersistEdit('undo');   // §S70 — the edit must survive a reload
@@ -6963,6 +7427,7 @@
   // SAME ScheduleAuthor.setBaseline verb gets called there too; this button does not become obsolete,
   // it becomes the "re-baseline for an approved change order" case named in the spec.
   function setGanttBaseline() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var tip = document.getElementById('tm-gantt-tip');
@@ -6973,12 +7438,12 @@
     }
     if (!app || !app.db || !SA || !SA.setBaseline) {
       console.log('§GANTT_SET_BASELINE_REJECT reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
     var res = SA.setBaseline(app.db, schedId);
-    if (!res.ok) { say('No schedule to baseline yet — generate a 4D schedule first'); return; }
-    say('Baseline set — ' + res.taskCount + ' tasks');
+    if (!res.ok) { say(_L('tm_no_baseline_yet', 'No schedule to baseline yet — generate a 4D schedule first')); return; }
+    say(_L('tm_baseline_set', 'Baseline set — {n} tasks', { n: res.taskCount }));
   }
 
   // ⏪ Pull Back — §GANTT_RESCHEDULE_ASAP. The EXPLICIT "reschedule as early as possible" action.
@@ -6989,6 +7454,7 @@
   // as every other edit path (lock → verb → retime → resync → annotate → persist → redraw); W-CPM-1
   // / W-PERS-1 / W-TBL-5 derive their caller lists from the source and hold this function to it.
   function rescheduleGanttAsap() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('rescheduleGanttAsap')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -7000,7 +7466,7 @@
     }
     if (!app || !app.db || !SA || !SA.rescheduleAsap) {
       console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     // (returns: true = committed, 'nothing' = zero float to close, undefined = refused — §S73's
     // convention, so the __tmRescheduleAsap probe hook reports what HAPPENED, not "I was called".)
@@ -7022,13 +7488,13 @@
     var res = SA.rescheduleAsap(app.db, schedId, {});
     if (!res || !res.ok) {
       console.log('§GANTT_RESCHEDULE_ASAP_REJECT reason=' + ((res && res.reason) || 'unknown'));
-      say('Cannot compress — ' + ((res && res.reason) || 'no schedule'));
+      say(_L('tm_cannot_compress', 'Cannot compress — {reason}', { reason: (res && res.reason) || _L('tm_no_schedule', 'no schedule') }));
       return;
     }
     if (!res.moved.length) {
       // The verb wrote nothing (compression found zero float to close) — honest no-op, no retime,
       // no persist, no undo entry to clobber the user's real last edit.
-      say('Nothing to compress — schedule is already at earliest float');
+      say(_L('tm_nothing_to_compress', 'Nothing to compress — schedule is already at earliest float'));
       return 'nothing';
     }
 
@@ -7056,9 +7522,9 @@
     computeDays();
     drawGanttMini();
     renderAtTime(_cursor);
-    say('Compressed ' + res.moved.length + ' task' + (res.moved.length === 1 ? '' : 's') +
-      (res.daysCompressed > 0 ? ' — project finish moved up ' + res.daysCompressed + ' day' + (res.daysCompressed === 1 ? '' : 's')
-                              : ' — project finish unchanged (internal float closed)'));
+    say((res.moved.length === 1 ? _L('tm_compressed_one', 'Compressed 1 task') : _L('tm_compressed_many', 'Compressed {n} tasks', { n: res.moved.length })) + ' — ' +
+      (res.daysCompressed > 0 ? (res.daysCompressed === 1 ? _L('tm_finish_moved_one', 'project finish moved up 1 day') : _L('tm_finish_moved_many', 'project finish moved up {d} days', { d: res.daysCompressed }))
+                              : _L('tm_finish_unchanged', 'project finish unchanged (internal float closed)')));
     return true;
     } catch (e) { _tmEditExceptionRecover('rescheduleGanttAsap', e); }   // §TM_EDIT_EXCEPTION
   }
@@ -7098,6 +7564,7 @@
   }
 
   function generateGanttSchedule() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('generateGanttSchedule')) return;
     var app = A();
     var SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
@@ -7109,7 +7576,7 @@
     }
     if (!app || !app.db || !SA || !SA.materializeZones) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=ScheduleAuthor_not_loaded');
-      say('Not available'); return;
+      say(_L('tm_not_available', 'Not available')); return;
     }
     // Never clobber a REAL imported (Bonsai/Revit/IFC-native) schedule with a synthetic one — the
     // SAME guard schedule_author_ui.js's generateDraft() already applies before it materializes
@@ -7138,11 +7605,11 @@
     }
     if (!res.ok) {
       console.log('§GANTT_AUTHOR_ENTRY_FAIL reason=' + (res.reason || 'materialize_failed'));
-      say('Could not generate a schedule'); return;
+      say(_L('tm_could_not_generate', 'Could not generate a schedule')); return;
     }
     console.log('§GANTT_AUTHOR_ENTRY native generate zones=' + (res.zoneCount != null ? res.zoneCount : 'n/a') +
       ' phases=' + (res.phases ? res.phases.length : 'n/a'));
-    say('Schedule generated — refreshing…');
+    say(_L('tm_schedule_generated', 'Schedule generated — refreshing…'));
     // Reuse the SAME refresh path applyTo4D() already uses for this exact situation (a fresh/edited
     // schedule needs the drawer's overlay re-run) — real, already-working machinery, not a second
     // lighter-weight refresh path whose correctness would need its own separate proof.
@@ -7152,6 +7619,7 @@
   }
 
   function wireGanttDrag() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var cv = document.getElementById('tm-gantt-canvas');
     if (!cv || cv._dragWired) return;
     cv._dragWired = true;
@@ -7176,7 +7644,7 @@
           '" phase="' + hit.bar.phase + '"');
         var t0 = document.getElementById('tm-gantt-tip');
         if (t0) {
-          t0.textContent = 'Not editable — no schedule task on this bar';
+          t0.textContent = _L('tm_not_editable', 'Not editable — no schedule task on this bar');
           t0.style.display = 'block';
           setTimeout(function () { t0.style.display = 'none'; }, 2200);
         }
@@ -7190,7 +7658,7 @@
         console.log('§GANTT_DRAG_REJECT reason=locked');
         var t1 = document.getElementById('tm-gantt-tip');
         if (t1) {
-          t1.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t1.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t1.style.display = 'block';
           setTimeout(function () { t1.style.display = 'none'; }, 2200);
         }
@@ -7228,7 +7696,7 @@
         if (days2 !== _groupDrag.days) { _groupDrag.days = days2; _groupDrag.moved = _groupDrag.moved || days2 !== 0; }
         var tip2 = document.getElementById('tm-gantt-tip');
         if (tip2 && _groupDrag.moved) {
-          tip2.textContent = 'Move ' + _groupDrag.taskIds.length + ' bars  ' + (days2 >= 0 ? '+' : '') + days2 + 'd';
+          tip2.textContent = _L('tm_move_bars', 'Move {n} bars  {d}d', { n: _groupDrag.taskIds.length, d: (days2 >= 0 ? '+' : '') + days2 });
           tip2.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
           tip2.style.top = Math.max(2, e.offsetY - 22) + 'px';
           tip2.style.display = 'block';
@@ -7241,7 +7709,7 @@
       if (days !== _drag.days) { _drag.days = days; _drag.moved = _drag.moved || days !== 0; }
       var tip = document.getElementById('tm-gantt-tip');
       if (tip && _drag.moved) {
-        tip.textContent = (_drag.mode === 'move' ? 'Move ' : 'Resize ') + _drag.bar.phase + ' — ' +
+        tip.textContent = (_drag.mode === 'move' ? _L('tm_drag_move', 'Move') : _L('tm_drag_resize', 'Resize')) + ' ' + _drag.bar.phase + ' — ' +
           _drag.bar.storey + '  ' + (days >= 0 ? '+' : '') + days + 'd';
         tip.style.left = Math.max(0, Math.min(e.offsetX + 8, e.target.clientWidth - 200)) + 'px';
         tip.style.top = Math.max(2, e.offsetY - 22) + 'px';
@@ -7313,7 +7781,7 @@
         // pattern, and witness_gantt_edit_lock.js slices this function alone into its sandbox.
         var t2 = document.getElementById('tm-gantt-tip');
         if (t2) {
-          t2.textContent = 'Locked — click 🔒 Locked to enable editing';
+          t2.textContent = _L('tm_locked_hint', 'Locked — click 🔒 Locked to enable editing');
           t2.style.display = 'block';
           setTimeout(function () { t2.style.display = 'none'; }, 2200);
         }
@@ -7326,23 +7794,24 @@
   // §GANTT_LINK (E3) — create a real FS dependency, guarded by the EXISTING wouldCycle. A cyclic
   // schedule is invalid, so the guard refuses rather than "fixing" it silently.
   function linkGanttBars(predBar, succBar) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_tmEditLocked('linkGanttBars')) return;   // §TM_BAKE_LOCK (§S69)
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     // §TM_SILENT_REFUSAL — this guard returns before the local say() below exists, so it uses the
     // module-scope _tmSay (the guard used to be the one refusal in this function with no tip).
-    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay('Not available'); return; }
+    if (!app || !app.db || !SA || !SA.addDependency) { console.log('§GANTT_LINK_REJECT reason=ScheduleAuthor_not_loaded'); _tmSay(_L('tm_not_available', 'Not available')); return; }
     var tip = document.getElementById('tm-gantt-tip');
     function say(msg) { if (tip) { tip.textContent = msg; tip.style.display = 'block'; setTimeout(function () { tip.style.display = 'none'; }, 2600); } }
     try {   // §TM_EDIT_EXCEPTION — cycle probe + addDependency verb through the final repaint
     if (SA.wouldCycle && SA.wouldCycle(app.db, predBar.taskId, succBar.taskId)) {
       console.log('§GANTT_EDIT_CYCLE_BLOCKED pred=' + predBar.taskId + ' succ=' + succBar.taskId);
-      say('Refused — that link would create a cycle');
+      say(_L('tm_refused_cycle', 'Refused — that link would create a cycle'));
       return;
     }
     var r = SA.addDependency(app.db, predBar.taskId, succBar.taskId, 'FS', 0);
     console.log('§GANTT_EDIT_LINK pred=' + predBar.taskId + ' succ=' + succBar.taskId +
       ' type=FS ok=' + JSON.stringify(r && (r.ok !== undefined ? r.ok : r)));
-    say('Linked: ' + predBar.phase + ' — ' + predBar.storey + '  →  ' + succBar.phase + ' — ' + succBar.storey);
+    say(_L('tm_linked', 'Linked: {pred}  →  {succ}', { pred: predBar.phase + ' — ' + predBar.storey, succ: succBar.phase + ' — ' + succBar.storey }));
     // The new edge may make the successor illegal where it currently sits. Re-apply it through the
     // SAME constraint-aware verb so the graph and the dates agree immediately, rather than leaving a
     // freshly-created violation on screen.
@@ -7377,7 +7846,7 @@
       // res.blockedBy is the engine's own extracted binding predecessor (schedule_author.js
       // _bindingPred) — never invented here.
       if (res && res.clamped) {
-        _tmSay('Linked, but ' + succBar.taskId + ' clamped to ' + res.start + ' — blocked by ' + res.blockedBy, 3400);
+        _tmSay(_L('tm_linked_clamped', 'Linked, but {task} clamped to {start} — blocked by {by}', { task: succBar.taskId, start: res.start, by: res.blockedBy }), 3400);
       }
     }
     // §GANTT_CPM_ANNOTATE (§S68) — OUTSIDE the moved-check on purpose: a new EDGE changes the graph,
@@ -7391,6 +7860,7 @@
   // §GANTT_PROPS (E7) — typed editing + the dependency list (E4 unlink lives here rather than on a
   // 1px arrow hit-target: same verbs, same C1/C2 checks, just a precise input surface).
   function openGanttProps(bar) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     if (!app || !app.db || !SA) return;
     var schedId = (_taskIndex && _taskIndex.scheduleId) || 'SCH_AUTHORED';
@@ -7414,7 +7884,7 @@
       // Honest refusal, same shape as commitGanttDrag's no_real_task_snapshot: a panel that cannot
       // read the task's real dates must not offer to edit them with made-up ones.
       console.log('§GANTT_PROPS_REJECT reason=no_real_task_dates task=' + bar.taskId);
-      _tmSay('Cannot edit — no real dates found for this task');   // §TM_SILENT_REFUSAL
+      _tmSay(_L('tm_cannot_edit_no_dates', 'Cannot edit — no real dates found for this task'));   // §TM_SILENT_REFUSAL
       return;
     }
     var box = document.getElementById('tm-gantt-props') || (function () {
@@ -7430,30 +7900,30 @@
       .filter(function (x) { return x.succId === bar.taskId || x.predId === bar.taskId; });
     var cpmInfo = bar.taskId ? _ganttCritical[bar.taskId] : null;   // §S68 — display only, never a date source
     var depHtml = deps.length ? deps.map(function (x, i) {
-      var dir = x.succId === bar.taskId ? '← after' : '→ before';
+      var dir = x.succId === bar.taskId ? _L('tm_dep_after', '← after') : _L('tm_dep_before', '→ before');
       var other = x.succId === bar.taskId ? x.predName : x.succName;
       return '<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0">' +
         '<span>' + dir + ' <b>' + other + '</b> <span style="color:#8a97a5">' + x.type +
         (x.lag ? (x.lag > 0 ? '+' : '') + x.lag + 'd' : '') + '</span></span>' +
-        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">unlink</button></div>';
-    }).join('') : '<div style="color:#8a97a5">no dependencies</div>';
+        '<button data-unlink="' + i + '" style="font-size:9px;padding:0 5px">' + _L('tm_unlink', 'unlink') + '</button></div>';
+    }).join('') : '<div style="color:#8a97a5">' + _L('tm_no_dependencies', 'no dependencies') + '</div>';
     box.innerHTML =
       '<div style="font-weight:bold;margin-bottom:4px">' + (bar.taskName || (bar.phase + ' — ' + bar.storey)) + '</div>' +
-      '<div style="color:#8a97a5;margin-bottom:6px">' + bar.count + ' elements · ' + bar.taskId + '</div>' +
+      '<div style="color:#8a97a5;margin-bottom:6px">' + _L('tm_elements_count', '{n} elements · {task}', { n: bar.count, task: bar.taskId }) + '</div>' +
       // §GANTT_CPM_ANNOTATE (§S68) — read-only. Total float is the ONE number that tells you whether
       // a slip on this task moves the project end; the bar's red rail only says "zero float". Blank
       // when CPM could not run (cycle/thin table) rather than showing a made-up 0.
       (cpmInfo ? '<div style="margin-bottom:6px;color:' + (cpmInfo.critical ? '#e53935' : '#8a97a5') + '">' +
-        (cpmInfo.critical ? 'CRITICAL PATH · zero float' : 'Total float ' + cpmInfo.totalFloat + 'd') +
-        ' <span style="font-size:9px;color:#8a97a5">(CPM, dates unchanged)</span></div>' : '') +
-      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">Start' +
+        (cpmInfo.critical ? _L('tm_critical_path', 'CRITICAL PATH · zero float') : _L('tm_total_float', 'Total float {n}d', { n: cpmInfo.totalFloat })) +
+        ' <span style="font-size:9px;color:#8a97a5">' + _L('tm_cpm_dates_unchanged', '(CPM, dates unchanged)') + '</span></div>' : '') +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">' + _L('tm_start', 'Start') +
         '<input id="tmp-s" type="date" value="' + realS + '" style="flex:1;font-size:11px"></div>' +
-      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">Finish' +
+      '<div style="display:flex;gap:4px;align-items:center;margin-bottom:6px">' + _L('tm_finish', 'Finish') +
         '<input id="tmp-f" type="date" value="' + realF + '" style="flex:1;font-size:11px"></div>' +
-      '<div style="margin-bottom:4px;color:#8a97a5">Dependencies</div>' + depHtml +
+      '<div style="margin-bottom:4px;color:#8a97a5">' + _L('tm_dependencies', 'Dependencies') + '</div>' + depHtml +
       '<div style="display:flex;gap:6px;margin-top:8px">' +
-        '<button id="tmp-apply" style="flex:1;font-size:11px">Apply</button>' +
-        '<button id="tmp-close" style="font-size:11px">Close</button></div>' +
+        '<button id="tmp-apply" style="flex:1;font-size:11px">' + _L('tm_apply', 'Apply') + '</button>' +
+        '<button id="tmp-close" style="font-size:11px">' + _L('ui_close', 'Close') + '</button></div>' +
       '<div id="tmp-msg" style="color:#ff8c00;margin-top:4px;min-height:12px"></div>';
     box.style.display = 'block';
     console.log('§GANTT_PROPS_OPEN task=' + bar.taskId + ' deps=' + deps.length + ' elements=' + bar.count);
@@ -7493,9 +7963,9 @@
       var res = (s !== realS && f === realF && SA.moveTaskCascade)
         ? SA.moveTaskCascade(app.db, schedId, bar.taskId, s, {})
         : SA.resizeTask(app.db, schedId, bar.taskId, s, f, {});
-      if (!res || !res.ok) { if (msg) msg.textContent = 'Rejected: ' + ((res && res.reason) || 'unknown'); return; }
-      if (msg) msg.textContent = res.clamped ? ('Clamped to ' + res.start + ' by ' + res.blockedBy) :
-        ('Applied · ' + res.cascaded + ' successor(s) cascaded');
+      if (!res || !res.ok) { if (msg) msg.textContent = _L('tm_rejected', 'Rejected: {reason}', { reason: (res && res.reason) || _L('tm_unknown', 'unknown') }); return; }
+      if (msg) msg.textContent = res.clamped ? _L('tm_clamped_by', 'Clamped to {start} by {by}', { start: res.start, by: res.blockedBy }) :
+        _L('tm_applied_cascaded', 'Applied · {n} successor(s) cascaded', { n: res.cascaded });
       var byTask = {};
       for (var i = 0; i < _ganttTasks.length; i++) if (_ganttTasks[i].taskId) byTask[_ganttTasks[i].taskId] = _ganttTasks[i];
       retimeTaskElements(app.db, byTask, res.moved || [], tasksBeforeApply);
@@ -7541,6 +8011,7 @@
   }
 
   function toggleP6Drawer() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     _p6Visible = !_p6Visible;
     // Mobile: only one bottom drawer at a time (mirror the gantt/dash/var rule).
     if (_p6Visible && window.innerWidth < 600 && _ganttVisible) {
@@ -7557,7 +8028,7 @@
         console.log('§TM_P6_OPEN modules ready ForeignSchedule=' + !!window.ForeignSchedule +
           ' ScheduleDiff=' + !!window.ScheduleDiff);
       }).catch(function (e) {
-        _tmP6Say('Interop modules failed to load: ' + e.message);
+        _tmP6Say(_L('tm_interop_load_failed', 'Interop modules failed to load: {err}', { err: e.message }));
       });
     }
   }
@@ -7622,11 +8093,12 @@
   // cache + kernel_ops places invalidated, re-activate re-reads the adopted tasks). task_elements
   // stays empty unless auto-bind resolves tokens — binding is a separate, reviewable craft.
   function tmImportForeign(file) {
-    if (_tmEditLocked('tmImportForeign')) { _tmP6Say('Recording in progress — import refused'); return; }   // §TM_BAKE_LOCK (§S69)
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
+    if (_tmEditLocked('tmImportForeign')) { _tmP6Say(_L('tm_recording_import_refused', 'Recording in progress — import refused')); return; }   // §TM_BAKE_LOCK (§S69)
     var app = A();
     var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
-    if (!FSx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
-    if (!app || !app.db) { _tmP6Say('No model open yet'); return; }
+    if (!FSx) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
+    if (!app || !app.db) { _tmP6Say(_L('tm_no_model_open', 'No model open yet')); return; }
     var rdr = new FileReader();
     rdr.onload = function () {
       try {
@@ -7641,24 +8113,22 @@
         var ab = document.getElementById('tm-p6-autobind'); var bindMsg = '';
         if (tokened && (!ab || ab.checked) && FSx.autoBind) {
           var r = FSx.autoBind(app.db, schedId);
-          bindMsg = ' Pre-bound ' + r.bound + ' elements across ' + r.perActivity.length +
-            ' activities by convention' +
-            (r.unresolved.length ? ' (' + r.unresolved.length + ' selector(s) matched nothing — review)' : '') + '.';
+          bindMsg = ' ' + _L('tm_prebound', 'Pre-bound {n} elements across {a} activities by convention', { n: r.bound, a: r.perActivity.length }) +
+            (r.unresolved.length ? ' ' + _L('tm_unresolved_selectors', '({n} selector(s) matched nothing — review)', { n: r.unresolved.length }) : '') + '.';
           console.log('§TM_AUTOBIND schedule=' + schedId + ' bound=' + r.bound +
             ' activities=' + r.perActivity.length + ' unresolved=' + r.unresolved.length);
         } else if (tokened) {
-          bindMsg = ' (' + tokened + ' activities carry a bind token — tick auto-bind to resolve.)';
+          bindMsg = ' ' + _L('tm_bind_hint', '({n} activities carry a bind token — tick auto-bind to resolve.)', { n: tokened });
         }
         invalidateGanttModel();
         _tmAnnotateCpm(schedId);        // §S68 — the Editor tab's ▶ CPM, automatic here
         _tmPersistEdit('import_p6');    // §S70 — an imported programme is a real edit, save it
         refoldSchedule();               // §TM-REFOLD — rebuild the 4D from the LIVE tasks table
-        _tmP6Say('Imported ' + det.format + ' "' + file.name + '" — ' + data._meta.summaryCount +
-          ' WBS / ' + data._meta.leafCount + ' activities / ' + data.taskSequences.length + ' links.' + bindMsg);
+        _tmP6Say(_L('tm_imported', 'Imported {format} "{file}" — {wbs} WBS / {acts} activities / {links} links.', { format: det.format, file: file.name, wbs: data._meta.summaryCount, acts: data._meta.leafCount, links: data.taskSequences.length }) + bindMsg);
         console.log('§TM_IMPORT_P6 file=' + file.name + ' format=' + det.format +
           ' schedule=' + schedId + ' wbs=' + data._meta.summaryCount +
           ' activities=' + data._meta.leafCount + ' tokened=' + tokened);
-      } catch (e) { _tmP6Say('Import failed: ' + e.message); console.error('§TM_IMPORT_P6 ERROR', e); }
+      } catch (e) { _tmP6Say(_L('tm_import_failed', 'Import failed: {err}', { err: e.message })); console.error('§TM_IMPORT_P6 ERROR', e); }
     };
     rdr.readAsText(file);
   }
@@ -7667,11 +8137,12 @@
   // parseMSPDI (not invented): OutlineLevel-encoded hierarchy, Duration='PT{hours}H0M0S', LinkLag in
   // TENTHS OF A MINUTE, PredecessorLink/Type 0=FF/1=FS/2=SF/3=SS, 8h/day calendar (MinutesPerDay=480).
   function tmExportMSProject() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var predByTask = {};
     deps.forEach(function (d) { (predByTask[d.succId] = predByTask[d.succId] || []).push(d); });
@@ -7726,7 +8197,7 @@
 
     var fname = name + '_schedule.xml';
     _tmP6Download(xml.join(''), 'application/xml', fname);
-    _tmP6Say('Exported ' + rows.length + ' tasks / ' + deps.length + ' links to MS Project XML (' + fname + ').');
+    _tmP6Say(_L('tm_exported_msp', 'Exported {n} tasks / {m} links to MS Project XML ({file}).', { n: rows.length, m: deps.length, file: fname }));
     console.log('§TM_EXPORT_MSP tasks=' + rows.length + ' links=' + deps.length + ' file=' + fname);
   }
 
@@ -7734,13 +8205,14 @@
   // ForeignSchedule.toPMXML/toXER are pure serializers (W-XER-ROUNDTRIP/W-PMXML-ROUNDTRIP prove
   // mismatch=0 re-parsing the writer's own output with our reader).
   function _tmExportP6(kind, writeFn, ext, mime, label) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
-    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say('No schedule to export'); return; }
+    if (!app || !app.db || !SA || !SA.wbsTree) { _tmP6Say(_L('tm_no_schedule_export', 'No schedule to export')); return; }
     var FSx = (typeof window !== 'undefined') && window.ForeignSchedule;
-    if (!FSx || !FSx[writeFn]) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
+    if (!FSx || !FSx[writeFn]) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
     var schedId = _tmP6SchedId();
     var tree = SA.wbsTree(app.db, schedId);
-    if (!tree.length) { _tmP6Say('No tasks to export'); return; }
+    if (!tree.length) { _tmP6Say(_L('tm_no_tasks_export', 'No tasks to export')); return; }
     var deps = SA.listDependencies ? SA.listDependencies(app.db, schedId) : [];
     var name = _tmP6BaseName(app);
     var out = FSx[writeFn](tree, deps, { hpd: 8, projectId: schedId, projectName: name });
@@ -7748,9 +8220,7 @@
     var fname = name + '_schedule.' + ext;
     _tmP6Download(out, mime, fname);
     var leafCount = 0; (function walk(ns) { (ns || []).forEach(function (n) { if (!n.isSummary) leafCount++; walk(n.children); }); })(tree);
-    _tmP6Say('Exported ' + leafCount + ' tasks / ' + deps.length + ' links to ' + label + ' (' + fname +
-      '). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, ' +
-      'baselines) are not carried — P6 itself drops most of these on cross-DB import.');
+    _tmP6Say(_L('tm_exported_p6', 'Exported {n} tasks / {m} links to {label} ({file}). Some fields (WBS code, EPS-level activity codes, resource assignments, global calendars, baselines) are not carried — P6 itself drops most of these on cross-DB import.', { n: leafCount, m: deps.length, label: label, file: fname }));
     console.log('§TM_EXPORT_' + kind + ' tasks=' + leafCount + ' links=' + deps.length + ' file=' + fname);
   }
   function tmExportPMXML() { _tmExportP6('PMXML', 'toPMXML', 'xml', 'application/xml', 'Primavera PMXML'); }
@@ -7762,37 +8232,36 @@
   // estimate is written to the throwaway SCH_DIFF_SHADOW schedule (non-destructive,
   // rebuild-on-every-call — schedule_diff.js's own convention).
   function tmDiffVsModel() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     var app = A(), SA = (typeof window !== 'undefined') && window.ScheduleAuthor;
     var DFx = (typeof window !== 'undefined') && window.ScheduleDiff;
-    if (!DFx) { _tmP6Say('Interop module not loaded — reopen the P6/MSP section'); return; }
-    if (!app || !app.db || !SA || !SA.activeSchedule) { _tmP6Say('No schedule loaded'); return; }
+    if (!DFx) { _tmP6Say(_L('tm_interop_not_loaded', 'Interop module not loaded — reopen the P6/MSP section')); return; }
+    if (!app || !app.db || !SA || !SA.activeSchedule) { _tmP6Say(_L('tm_no_schedule_loaded', 'No schedule loaded')); return; }
     var act = SA.activeSchedule(app.db);
     if (!act || !act.captured) {
-      _tmP6Say('Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.');
+      _tmP6Say(_L('tm_diff_needs_import', 'Diff vs Model compares an IMPORTED P6/MSP schedule against our real-quantity estimate — import one first.'));
       return;
     }
-    _tmP6Say('Computing schedule diff…');
+    _tmP6Say(_L('tm_diff_computing', 'Computing schedule diff…'));
     setTimeout(function () {
       var res = DFx.computeScheduleDiff(app.db, null, { importedScheduleId: act.id, start: '2026-01-01' });
-      if (res.error) { _tmP6Say('Diff failed: ' + res.error); return; }
+      if (res.error) { _tmP6Say(_L('tm_diff_failed', 'Diff failed: {err}', { err: res.error })); return; }
       var lines = res.phases.map(function (r) {
         var icon = r.flag === 'optimistic' ? '⚡' : r.flag === 'slow' ? '🐢' : '✓';
-        return icon + ' ' + r.phase + ': theirs ' + r.theirDays + 'd vs ours ' + r.ourDays + 'd (' +
+        return icon + ' ' + r.phase + ': ' + _L('tm_diff_theirs_ours', 'theirs {a}d vs ours {b}d', { a: r.theirDays, b: r.ourDays }) + ' (' +
           (r.deltaPct > 0 ? '+' : '') + r.deltaPct + '%) — ' + r.flagMsg;
       });
-      if (res.unmatchedActivities.length) lines.push(res.unmatchedActivities.length +
-        ' activity(ies) unmatched — see console §4D_DIFF_UNMATCHED');
+      if (res.unmatchedActivities.length) lines.push(_L('tm_diff_unmatched', '{n} activity(ies) unmatched — see console §4D_DIFF_UNMATCHED', { n: res.unmatchedActivities.length }));
       var out = document.getElementById('tm-p6-out');
       if (out) out.textContent = lines.join('   ');
-      _tmSay('4D Schedule Diff: ' + res.summary.matchedPhases + '/' + res.summary.ourPhases +
-        ' phases compared, ' + res.summary.matchedActivities + '/' + res.summary.theirActivities +
-        ' activities matched.');
+      _tmSay(_L('tm_diff_summary', '4D Schedule Diff: {a}/{b} phases compared, {c}/{d} activities matched.', { a: res.summary.matchedPhases, b: res.summary.ourPhases, c: res.summary.matchedActivities, d: res.summary.theirActivities }));
       console.log('§TM_DIFF schedule=' + act.id + ' matchedPhases=' + res.summary.matchedPhases +
         ' matchedActivities=' + res.summary.matchedActivities + ' unmatched=' + res.summary.unmatchedActivities);
     }, 30);
   }
 
   function drawGanttMini() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     var canvas = document.getElementById('tm-gantt-canvas');
     var box = document.getElementById('tm-gantt-box');
@@ -7814,10 +8283,10 @@
         lockBtn.addEventListener('pointerup', function (e) {
           e.stopPropagation();
           function applyLockUi() {
-            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; Editing' : '&#x1F512; Locked';
+            lockBtn.innerHTML = _ganttEditable ? '&#x1F513; ' + _L('tm_editing', 'Editing') : '&#x1F512; ' + _L('tm_locked', 'Locked');
             lockBtn.title = _ganttEditable
-              ? 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.'
-              : 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.';
+              ? _L('tm_tt_editing', 'Editing: drag to move/resize, drag onto another bar to link, double-click for typed edit. Click to lock.')
+              : _L('tm_tt_locked', 'Locked: drag/resize/link disabled, timeline still scrubs live. Click to unlock editing.');
             console.log('§GANTT_EDIT_LOCK editable=' + _ganttEditable);
             // §TM_PANEL_RESIZE auto-expand (user ruling 2026-08-05): editing needs elbow room (the
             // props panel alone is ~330px wide) — widen automatically rather than making the user find
@@ -7842,7 +8311,7 @@
             // (spec open-question 1) needs no edit-history tracing. Only THIS transition is gated
             // (spec Q2); unlock below never verifies.
             var lm = document.getElementById('tm-gantt-lockmsg');
-            if (lm) { lm.textContent = 'Verifying integrity…'; lm.style.color = ''; }
+            if (lm) { lm.textContent = _L('tm_verifying', 'Verifying integrity…'); lm.style.color = ''; }
             setTimeout(function () {   // let the "Verifying…" state paint before the audit runs (spec Q3)
               var v = verifyGanttIntegrity();
               if (!v.ok) {
@@ -7851,9 +8320,9 @@
                   ' sample=[' + v.guids.slice(0, 5).join(',') + '] (lock refused — Undo or fix, then lock again)');
                 if (lm) {
                   var _breach = [];
-                  if (v.dFloating > 0) _breach.push('+' + v.dFloating + ' floating');
-                  if (v.dMidair > 0) _breach.push('+' + v.dMidair + ' hanging in midair');
-                  lm.textContent = '⚠ Integrity Breach: ' + _breach.join(' + ') + ' — press ↺ Undo edit (or fix), then lock again';
+                  if (v.dFloating > 0) _breach.push(_L('tm_breach_floating', '+{n} floating', { n: v.dFloating }));
+                  if (v.dMidair > 0) _breach.push(_L('tm_breach_midair', '+{n} hanging in midair', { n: v.dMidair }));
+                  lm.textContent = _L('tm_breach', '⚠ Integrity Breach: {list} — press ↺ Undo edit (or fix), then lock again', { list: _breach.join(' + ') });
                   lm.style.color = '#f66';
                 }
                 return;   // REFUSED — _ganttEditable stays true, nothing hidden
@@ -7873,7 +8342,7 @@
         });
       }
       var lockMsg = document.getElementById('tm-gantt-lockmsg');
-      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? 'No schedule available' : '');
+      if (lockMsg) lockMsg.textContent = editable ? '' : (_ganttAutoGenAttempted ? _L('tm_no_schedule_available', 'No schedule available') : '');
       if (!editable && !_ganttAutoGenAttempted) {
         _ganttAutoGenAttempted = true;
         console.log('§GANTT_AUTO_GENERATE no editable bars — materializing a schedule natively');
@@ -8165,6 +8634,7 @@
   // ── Dashboard drawer ──
   var _dashLogTick = 0; // §S260d: throttle dashboard logs
   function drawDashboard() {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (!_ops.length) return;
     _dashLogTick++;
 
@@ -8320,7 +8790,7 @@
     for (var di = 0; di < _ops.length; di++) { if (_ops[di].end_ts <= _cursor) totalDone++; }
     var donePct = Math.round(totalDone / _ops.length * 100);
     var dc = document.getElementById('tm-dash-daycnt');
-    if (dc) dc.textContent = 'Day ' + curDay + ' / ' + totalDays + ' \u2014 ' + donePct + '% complete';
+    if (dc) dc.textContent = _L('tm_day_of_total', 'Day {c} / {t} \u2014 {p}% complete', { c: curDay, t: totalDays, p: donePct });
 
     // §S260e: Throttle — was spamming every tick during playback
     if (!drawDashboard._tick) drawDashboard._tick = 0;
@@ -8460,7 +8930,7 @@
   // elevation rows won over the 7 world-frame center_z rows by emptiness) — 1 band, 7 tasks, 509 d
   // instead of 8/42/318. schedule_author.js now picks the ladder whose span contains the element
   // base-Z median; a persisted v38 grid still carries the collapsed ladder, so regenerate.
-  var _GANTT_CACHE_VERSION = 39;   // §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
+  var _GANTT_CACHE_VERSION = 41;   // §CHAINAGE_LEVELS + §CHAINAGE_V2 (2026-10-06, CIVIL_HIGHWAY_JELAPANG.md §CHAINAGE_V2) — a civil programme cached before chainage levels climbs by storey height (lamps first on a road+bridge merge); regenerate. Buildings regenerate once to an identical programme (no lvlSec). Previous: 40 §CIVIL_TRADES (2026-10-05, bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2) — a civil programme saved before the per-discipline crews carries ONE crew (MASON) and serial finishing; user saw "only one resource in play". Buildings regenerate once to an identical programme (cache_4d_run fleet before/after identical). Previous: 39 §STOREY_DATUM_FRAME (2026-09-03) — see above. Previous: 38 §TM_REVEAL_TILED (2026-09-02) — kernel_ops timestamps are now tiled inside each bar (CPM order, own-duration width) instead of the per-task affine; a v37 IDB entry still carries the affine layout (dead air 44-71% of every bar), regenerate
   // was 37:   // §S51 item d — ops now carry the cell stamp (_cell) so the Gantt groups by the schedule's own cells; pre-§S51 kernel_ops lack it, regenerate
   // was 28:   // §CPM_DISPLAY (2026-08-16): display timeline authored by the one-DAG CPM pass
   // was 27:   // §ZONE_DISPLAY_AUTHORING (2026-08-16): task windows authored from
@@ -8543,6 +9013,9 @@
   function cachePut(prefix, data) {
     var app = A();
     if (!app || !app.openCacheDB) return;
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable; nothing it writes here is ever read
+    // back by a later session, so skip it rather than pay an IDB round trip for no benefit.
+    if (app._bakeOwned) { console.log('§CACHE_SKIP key=' + _cacheKey(prefix) + ' reason=bake'); return; }
     app.openCacheDB().then(function(cacheDb) {
       if (!cacheDb) return;
       var key = _cacheKey(prefix);
@@ -8582,13 +9055,136 @@
     return n;
   }
 
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12, bim-compiler prompts/4D_SCHEDULE_PERFECTION.md
+  // §SCHED_TASK_BUCKET_SPLIT_BRAIN) — DOES THIS PERSISTED SCHEDULE STILL AGREE WITH THIS DB?
+  //
+  // §KERNEL_OPS_SCHED_VERSION below asks "were these ops produced by the current ALGORITHM?". It
+  // never asks "are they still TRUE OF the model they sit in?", and those are different questions.
+  // Measured consequence: Hospital_silent.db ships 63,415 ELEMENT_PLACE rows stamped _genVersion=39
+  // against _GANTT_CACHE_VERSION=39, so they are adopted verbatim — yet its `tasks`/`task_elements`
+  // tables were RE-AUTHORED after those ops were captured, so 13,574 of them (21.4%) carry a `_task`
+  // that matches no task_elements row for their own guid, and the op calendar (2026-09-10..2027-07-17)
+  // sits 233 days outside the task calendar (2026-01-01..2026-11-26) even though the DB's own
+  // schedules.display_authored=1 asserts the task windows are VIEWS of these very element times.
+  // 28 of those mis-bucketed rows are Level 1 foundation walls that carry an 8,899 m² ground slab and
+  // are scheduled 13.47 h AFTER it, so §XRAY_STAGING_REMOVED correctly refuses to draw the floor.
+  // Re-deriving (verified in a real browser: §GANTT_SOURCE, staged 544→501, slab leaves staging, wall
+  // returns to TASK_Substructure_Level_1, span becomes 1/10/2026→11/26/2026) produces the right answer
+  // — the TABLES are right, only the frozen answer is wrong.
+  //
+  // Deliberately NOT fixed by bumping _GANTT_CACHE_VERSION: that is a one-shot data patch. It
+  // discards every user's warm gantt:v39:* entry fleet-wide (correct ones included) and leaves the
+  // hole open, so the next re-authoring of `tasks` freezes a wrong answer again at v40. This makes
+  // the staleness decision a property of the DB instead of a constant a human must remember to bump.
+  //
+  // TWO INDEPENDENT CLAUSES, both cheap, both measured to flag Hospital and NOT to flag a building
+  // whose ops are correct (HHS_Office_Federated_silent: 0/6,880 task-link mismatches, op window
+  // inside its task window):
+  //   B-WIN  armed only when schedules.display_authored=1 — that flag IS the DB asserting the task
+  //          windows are views of these element times, so containment must hold by construction.
+  //          One MIN/MAX over the dated leaf tasks + one pass over ops already parsed in memory.
+  //   B-TE   a SAMPLE of ops must have a task_elements row for their own guid and _task. One
+  //          `guid IN (…)` query, so the cost is bounded by the sample, not by model size (loading
+  //          the whole 63,415-row map costs 72 ms in sql.js and is not affordable per activate).
+  //          At Hospital's 21.4% defect rate a sample of 50 detects in 2000/2000 trials.
+  // ⚠ This NEVER rewrites an op from task_elements — a disagreement only triggers RE-DERIVATION by
+  // the shipped verb. On the 13,546 one-storey shifts the OP is the better witness (it matches
+  // elements_meta.storey 7,491 times, task_elements 0), so copying one table over the other would
+  // repair 28 rows and break 13,546. Freshly derived ops measure 0/63,415 on B-TE and land inside the
+  // task window, so neither clause re-fires and there is no derive-every-activate loop.
+  var _AGREE_SAMPLE = 64;                    // ops sampled for B-TE (evenly spaced, deterministic)
+  var _AGREE_WINDOW_SLACK_MS = 86400000;     // `tasks` bounds are DATE-only; allow a day either side
+
+  function _schedOpsAgreementFail(db, placeOps) {
+    if (!db || !placeOps || !placeOps.length) return '';
+    var _t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var reason = '', detail = '', winMs = 0, teMs = 0;
+    try {
+      // ── B-WIN ──────────────────────────────────────────────────────────────────────────────────
+      var _da = 0;
+      try {
+        var r0 = db.exec('SELECT MAX(display_authored) FROM schedules');
+        if (r0.length && r0[0].values.length && r0[0].values[0][0] != null) _da = r0[0].values[0][0] | 0;
+      } catch (e) { _da = 0; }   // pre-§ZONE_DISPLAY_AUTHORING DB: no column, clause simply not armed
+      if (_da === 1) {
+        var r1 = db.exec('SELECT MIN(schedule_start), MAX(schedule_finish) FROM tasks ' +
+          'WHERE schedule_start IS NOT NULL AND (is_summary IS NULL OR is_summary=0)');
+        if (r1.length && r1[0].values.length && r1[0].values[0][0] && r1[0].values[0][1]) {
+          var tS = Date.parse(r1[0].values[0][0]), tE = Date.parse(r1[0].values[0][1]);
+          if (isFinite(tS) && isFinite(tE)) {
+            var oS = Infinity, oE = -Infinity;
+            for (var i = 0; i < placeOps.length; i++) {
+              var pp = placeOps[i].parameters || {};
+              var s = placeOps[i].start_ts, e = pp._end_ts;
+              if (typeof s === 'number' && s < oS) oS = s;
+              if (typeof e === 'number' && e > oE) oE = e;
+            }
+            if (isFinite(oS) && isFinite(oE) &&
+                (oS < tS - _AGREE_WINDOW_SLACK_MS || oE > tE + _AGREE_WINDOW_SLACK_MS)) {
+              reason = 'window';
+              detail = ' ops=' + new Date(oS).toISOString().slice(0, 10) + '..' + new Date(oE).toISOString().slice(0, 10) +
+                ' tasks=' + r1[0].values[0][0] + '..' + r1[0].values[0][1] +
+                ' (display_authored=1 asserts these are the same window)';
+            }
+          }
+        }
+      }
+      winMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0;
+      // ── B-TE ───────────────────────────────────────────────────────────────────────────────────
+      if (!reason) {
+        var step = Math.max(1, Math.floor(placeOps.length / _AGREE_SAMPLE));
+        var want = {}, list = [], n = 0;
+        for (var j = 0; j < placeOps.length && list.length < _AGREE_SAMPLE; j += step) {
+          var o = placeOps[j], par = o.parameters || {};
+          if (!o.output_guid || !par._task) continue;            // generated (uncaptured) op: no bucket to check
+          if (/['\\]/.test(o.output_guid)) continue;             // IFC guids never contain these; skip rather than quote
+          want[o.output_guid] = par._task; list.push(o.output_guid); n++;
+        }
+        if (n) {
+          var got = {};
+          var r2 = db.exec("SELECT guid, task_id FROM task_elements WHERE guid IN ('" + list.join("','") + "')");
+          if (r2.length) for (var k = 0; k < r2[0].values.length; k++) {
+            var g = r2[0].values[k][0];
+            (got[g] = got[g] || []).push(r2[0].values[k][1]);
+          }
+          var bad = 0, firstBad = '';
+          for (var g2 in want) {
+            if (!got[g2] || got[g2].indexOf(want[g2]) < 0) {
+              bad++;
+              if (!firstBad) firstBad = g2 + ' _task=' + want[g2] + ' task_elements=' + JSON.stringify(got[g2] || null);
+            }
+          }
+          if (bad) {
+            reason = 'taskLink';
+            detail = ' sampled=' + n + ' mismatched=' + bad + ' first ' + firstBad;
+          }
+        }
+      }
+      teMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - _t0 - winMs;
+    } catch (e) {
+      // A DB that cannot answer the question is never called stale on that account — an agreement
+      // test that fails OPEN would re-derive every building with a missing table on every activate.
+      console.log('§KERNEL_OPS_SCHED_AGREE unavailable (' + e.message + ') — agreement clause skipped');
+      return '';
+    }
+    console.log('§KERNEL_OPS_SCHED_AGREE ops=' + placeOps.length +
+      ' winMs=' + winMs.toFixed(1) + ' teMs=' + teMs.toFixed(1) +
+      ' totalMs=' + (winMs + teMs).toFixed(1) +
+      ' verdict=' + (reason || 'agrees') + detail);
+    return reason;
+  }
+
   // §KERNEL_OPS_SCHED_VERSION (2026-08-11): pure predicate, no db/window — placeOps materialized
   // under an OLDER schedule-generation algorithm (missing/mismatched _genVersion stamp) must never
   // be silently reused. currentVersion is _GANTT_CACHE_VERSION, passed in rather than closed over so
   // this stays independently testable (same idiom as _tier1Extents/_tier1Serialize below).
-  function _kernelOpsSchedStale(placeOps, currentVersion) {
-    return !!(placeOps && placeOps.length && placeOps[0].parameters &&
-      placeOps[0].parameters._genVersion !== currentVersion);
+  // §KERNEL_OPS_SCHED_AGREE (2026-09-12): agreementFail is likewise PASSED IN, already computed by
+  // _schedOpsAgreementFail above — this predicate stays pure, with no db or window of its own, so
+  // witness_kernel_ops_sched_version.js can keep slicing and calling it in a bare vm sandbox.
+  function _kernelOpsSchedStale(placeOps, currentVersion, agreementFail) {
+    if (!(placeOps && placeOps.length && placeOps[0].parameters)) return false;
+    if (placeOps[0].parameters._genVersion !== currentVersion) return true;
+    return !!agreementFail;
   }
 
   // ── Activate / Deactivate ──
@@ -8608,6 +9204,7 @@
   // per G-CPE-SOLE-OWNER ("only a real Play opens Time Machine"). Every other caller passes
   // nothing, so silent is falsy and behavior is byte-identical to before this flag existed.
   function activate(silent) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     if (_active) return;
     _s4ActT0 = performance.now();
     _lastEdit = null;   // §GANTT_EDIT_UNDO — a stale snapshot from a prior building must never apply here
@@ -8652,7 +9249,7 @@
       setToolbarHighlight(true);
       _panel.style.display = 'flex';
       st = document.getElementById('tm-status');
-      if (st) st.textContent = 'Loading timeline...';
+      if (st) st.textContent = _L('tm_loading_timeline', 'Loading timeline...');
     }
 
     // §S260c: Try IDB cache first, then kernel_ops table, then full recompute
@@ -8663,6 +9260,7 @@
   }
 
   function _activateAsync(st, silent) {
+    var _L = (typeof _tmTrl === 'function') ? _tmTrl : function (k, en, r) { var s = en; if (r) for (var q in r) s = s.replace('{' + q + '}', r[q]); return s; };   // S226 §R2b — sliced into vm sandboxes by witnesses
     return new Promise(function(resolve) {
     var app = A();
 
@@ -8689,6 +9287,21 @@
         if (!_act) {
           console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length +
             ' but no schedule in DB — dropping cache, taking the single-pass cold path');
+          cacheDel('gantt');
+          _hasCachedPlaces = false;
+        }
+      }
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12) — kernel_ops HAS TWO HOMES and this branch is the other
+      // one. It returns before the persisted-table branch below is ever reached, DELETE+INSERTing the
+      // cached JSON over the DB's rows, so gating only the table would leave this home able to serve a
+      // frozen answer the table can no longer serve. Same predicate, same question: is this cache
+      // still TRUE OF this db? (A cache whose absence changes the answer is not a cache.)
+      if (_hasCachedPlaces) {
+        var _cachedPlaces = cachedOps.filter(function(o) { return o.op_type === 'ELEMENT_PLACE'; });
+        var _cacheAgreeFail = _schedOpsAgreementFail(app.db, _cachedPlaces);
+        if (_cacheAgreeFail) {
+          console.log('§GANTT_STALE_CACHE ops=' + cachedOps.length + ' agreementFail=' + _cacheAgreeFail +
+            ' — cached schedule no longer agrees with this DB, dropping cache and re-deriving');
           cacheDel('gantt');
           _hasCachedPlaces = false;
         }
@@ -8751,17 +9364,22 @@
       // HHS_Office_Federated still showing MEP Rough-in starting 20.8d before Architecture finished,
       // §TIER_SERIAL's own witness (which reads the freshly-recomputed _disp, not kernel_ops) could
       // not have caught it. Stamp+check closes the same gap _end_ts's check closes for schema shape.
-      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION)) {
+      // §KERNEL_OPS_SCHED_AGREE (2026-09-12): …and the second question the stamp cannot answer —
+      // do these rows still agree with THIS db's tasks/task_elements? See the long note on
+      // _schedOpsAgreementFail. Computed here so the predicate itself stays pure.
+      var _agreeFail = _schedOpsAgreementFail(app.db, _placeOps);
+      if (_kernelOpsSchedStale(_placeOps, _GANTT_CACHE_VERSION, _agreeFail)) {
         try { app.db.run("DELETE FROM kernel_ops WHERE op_type = 'ELEMENT_PLACE'"); } catch(e) {}
         console.log('§KERNEL_OPS_SCHED_VERSION stale genVersion=' + _placeOps[0].parameters._genVersion +
-          ' current=' + _GANTT_CACHE_VERSION + ' — cleared ' + _placeOps.length + ' ops, will re-inject');
+          ' current=' + _GANTT_CACHE_VERSION + ' agreementFail=' + (_agreeFail || 'none') +
+          ' — cleared ' + _placeOps.length + ' ops, will re-inject');
         _placeOps = [];
       }
       if (_placeOps.length) { _ops = _placeOps; _ganttDirty = true; }
       console.log('§TM_OPS_CHECK total=' + _ops.length + ' place=' + _placeOps.length);
 
       if (!_placeOps.length) {
-        if (st) st.textContent = 'Setting up 4D construction timeline...';
+        if (st) st.textContent = _L('tm_setting_up', 'Setting up 4D construction timeline...');
         viewerStatus('Time Machine: generating construction schedule...');
         // §GANTT_SINGLE_LOAD (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD): a cold open used to run
         // injectGantt TWICE — pass 1 with no schedule (placeholder dates, task_id-less ops), then
@@ -8775,7 +9393,7 @@
         _materializeNativeSchedule(app);
         console.log('§S4_ACTIVATION_TIMING_MID afterMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
         if (!(await injectGantt())) {
-          if (st) st.textContent = 'No elements found in database';
+          if (st) st.textContent = _L('tm_no_elements_db', 'No elements found in database');
           viewerStatus('Time Machine: no elements found');
           console.log('§TIME_MACHINE no ops and no elements — nothing to show');
           resolve(false);
@@ -8801,6 +9419,13 @@
         viewerStatus('Time Machine: ' + _ops.length + ' elements scheduled');
       }
 
+      // §HR_COST_PERSISTED — runs after BOTH branches, on purpose. On a building that regenerated
+      // (a fresh IFC drop, or one whose ops were judged stale) injectGantt has already set _hrCost,
+      // and this call becomes a CHECK: §HR_COST_AGREE compares the two and says WRONG if they
+      // differ. On a building that kept its saved programme, injectGantt never ran and this is the
+      // only thing that can cost it. Read-only either way — it writes no op, task or row.
+      try { _hrCostEnsure(app, _placeOps.length); } catch (eHC) { console.log('§HR_COST_PERSISTED hook threw: ' + eHC.message); }
+
       _finishActivate(app, silent);
       resolve(true);
     }).catch(async function(e) {   // §GANTT_REFOLD_HANG: awaits chunked injectGantt in the fallback
@@ -8811,7 +9436,12 @@
       // fallback below (TM still opened with 63,416 ops) but with no way to locate it. Log the
       // stack and the phase so the next occurrence names its own line.
       console.warn('§GANTT_CACHE_ERR ' + e.message + ' | phase=' + (_ops && _ops.length ? 'post-loadOps' : 'pre-loadOps') +
-        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << '));
+        ' | stack=' + String(e && e.stack || '(none)').split('\n').slice(0, 4).join(' << ') +
+        // §KERNEL_OPS_SCHED_AGREE (2026-09-12): the line above promises the next occurrence will name
+        // itself, and it did not — a silent-bake cold derive on Hospital logged `undefined | stack=(none)`
+        // because sql.js throws a bare STRING ("Statement closed"), which has neither .message nor
+        // .stack. One occurrence cost a whole diagnosis round. Print what a non-Error throw actually is.
+        ' | thrown type=' + (typeof e) + ' value=' + String(e));
       // Fallback: compute without cache
       _ops = loadOps(); _ganttDirty = true;
       if (!_ops.length) { await _load4DTemplate(); _materializeNativeSchedule(A()); await injectGantt(); _ops = loadOps(); _ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
@@ -8845,6 +9475,16 @@
     // A building switch below threshold also resets the toggle (never silently carries proxy state
     // into a small building where DLOD_TM_MIN_ELEMENTS wouldn't gate it anyway).
     if (!_isLargeBuilding) _dlodProxyOn = false;
+    // §DLOD_BAKE_PROXY (2026-09-19, LARGE_DB_BAKE.md §8.3 L8c) — the draw-cost proxy already
+    // exists, already works, and is reachable only by clicking `tm-lod`, which a headless bake can
+    // never do. So the one thing most likely to cut large-building bake time has never been
+    // measured in a bake. This lets a bake ask for it (`--tap` sets window.__dlodProxyBake), and
+    // ONLY under the same large-building gate the button itself obeys — no new threshold, no new
+    // behaviour, nothing changed for any interactive user or any bake that does not ask.
+    if (_isLargeBuilding && typeof window !== 'undefined' && window.__dlodProxyBake) {
+      _dlodProxyOn = true; window.__dlodProxyEngaged = true;   // W7: read by the film's end-of-bake NO-OP verdict
+      console.log('§DLOD_BAKE_PROXY on — requested by the bake tap, large-building gate passed');
+    }
     var _lodBtnGate = document.getElementById('tm-lod');
     if (_lodBtnGate) {
       _lodBtnGate.style.display = _isLargeBuilding ? '' : 'none';
@@ -9502,7 +10142,7 @@
         if (sr.length && sr[0].values.length) summarySkipped = sr[0].values[0][0] | 0;
       } catch (e) { leafTasks = 0; summarySkipped = 0; }   // no tasks table → derived, not an error
       try {
-        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
+        var er = app.db.exec("SELECT COUNT(*) FROM elements_meta WHERE " + _scheduledWhere(''));
         if (er.length && er[0].values.length) total = er[0].values[0][0] | 0;
       } catch (e) { total = 0; }
     }

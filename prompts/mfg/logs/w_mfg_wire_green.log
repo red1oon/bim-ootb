@@ -1,0 +1,26 @@
+§MFG-LOAD patch statements ok=3187 failed=0 break=none
+  §MFG M1 eight missing PP tables are physical PASS
+§MFG-COLS tables=13 dictionary columns judged=382 lacking=0
+  §MFG M2 every tab table has every dictionary column PASS
+§MFG-MENU path(leaf->root)=Manufacturing Order < Discreet Manufacturing < Production Management < Manufacturing Management
+  §MFG M3 menu path to Manufacturing Order is fully active and opens window 53009 PASS
+§AD_PARSER_LOADED v1
+§AD_PARSER getWindow id=53009 source=db
+§AD_PARSER getTabs windowId=53009
+§AD_PARSER getFields tabId=53054 count=62
+§AD_PARSER getFields tabId=53040 count=22
+§AD_PARSER getFields tabId=53217 count=10
+§AD_PARSER getFields tabId=53039 count=38
+§AD_PARSER getFields tabId=53218 count=9
+§AD_PARSER getFields tabId=53041 count=43
+§AD_PARSER getFields tabId=53213 count=10
+§AD_PARSER getFields tabId=53036 count=65
+§AD_PARSER getFields tabId=53214 count=10
+§AD_PARSER getFields tabId=53042 count=12
+§AD_PARSER getFields tabId=53043 count=9
+§AD_PARSER getFields tabId=53037 count=14
+§AD_PARSER getFields tabId=53038 count=16
+§AD_PARSER getTabs windowId=53009 count=13
+§AD_PARSER getWindow id=53009 name=Manufacturing Order tabs=13
+  §MFG M4 getWindow(53009) returns 13 tabs PASS
+§MFG-VERDICT PASS judged=4 failed=0 inconclusive=0

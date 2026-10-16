@@ -456,6 +456,20 @@
     _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
     return true;
   }
+  // §CPE_STICK_CLEAR (red1 2026-10-04, prompts/ALTC_FOUNDATION.md §1) — remove every middle band in
+  // ONE undo step; settle and stop stay (same rule as _removeStick).
+  function _clearSticks() {
+    if (!_state || _state.bands.length <= 2) return 0;
+    var k = _state.bands.length - 2;
+    _undoPush('clear ' + k + ' stick' + (k === 1 ? '' : 's'));
+    _state.bands = [_state.bands[0], _state.bands[_state.bands.length - 1]];
+    _state.held = null; _state.staged = false;
+    console.log('§CPE_STICK_CLEAR removed=' + k + ' remaining=' + _state.bands.length);
+    _markPreviewStale();
+    _refreshFlow(); _replanFilm();
+    _redrawScene(); _renderRows(); _renderClock(); _renderWhole(); _syncButtons();
+    return k;
+  }
   // §CPE_GHOST_PULL — a hose pull is removable exactly as a stick is. Before this existed a pull
   // could only be undone (Ctrl+Z, and only while it was still the newest edit); once buried under a
   // later edit it was permanent AND invisible. That is the whole "ghost" the user reported.
@@ -703,7 +717,8 @@
     var revealSec = 0;
     if (s.reveal) {
       var a = A(), discs = (a && typeof a.cpeRevealDiscsPresent === 'function') ? a.cpeRevealDiscsPresent() : [];
-      if (discs.length) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
+      // §ALTC_V2 V6: a road film's parade plays inside the drive — no extra seconds
+      if (discs.length && !(a.cpeRevealInDrive && a.cpeRevealInDrive())) revealSec = 1.5 + (len / 6.5) + len / s.speed + (2 * discs.length + 2);
     }
     return { len: len, outSec: outSec + holdSec, holdSec: holdSec, revealSec: revealSec,
              total: s.baseTotal - s.baseOutSec + outSec + holdSec + revealSec };
@@ -746,6 +761,13 @@
       clash: !!s.clash,                    // §CLASH_FILM_P1
       measure: !!s.measure,                // §FLYTHRU_DATUM
       storeyReveal: !!s.storeyReveal,       // §STOREY_HIGHLIGHT_REVEAL
+      loadPath: !!s.loadPath,               // §129.31 — own checkbox now, was folded under Measure
+      visualPanel: !!s.visualPanel,         // §FREEZE_PERF_PANEL (PERFORMANCE_AS_CLASH.md §19) — draws only inside the load-path freeze
+      audioPanel: !!s.audioPanel,
+      escapeRoute: !!s.escapeRoute,         // §ESCAPE_ROUTE_REVEAL
+      sunCompass: !!s.sunCompass,           // §SUN_COMPASS
+      filmBounce: s.filmBounce !== false,   // §CPE_CHECKBOX_SAVE — the Bounce-light box (default ON), persisted like its siblings
+      sunDate: s.sunDate || '',             // §SUN_DAY
       bakeRes: s.bakeRes || '',            // §CPE_BAKE_RES — read by cli_silent_bake.js
       dayCounter: s.dayCounter || 'tr',
       diveSec: s.baseSec.dive * scale, spinSec: s.baseSec.spin * scale,
@@ -779,6 +801,21 @@
     if (L > 1e-6) for (i = 0; i < cum.length; i++) cum[i] /= L;
     return cum;
   }
+  // §CPE_CHECKBOX_SAVE — the boxes beyond buildup/roomTitle/reveal (those keep their own origX baselines).
+  var _CPE_FLAG_KEYS = ['clash', 'measure', 'storeyReveal', 'loadPath', 'visualPanel', 'audioPanel', 'escapeRoute', 'sunCompass'];
+  function _flagBaseline() {
+    var o = { filmBounce: _state.filmBounce !== false, sunDate: _state.sunDate || '', bakeRes: _state.bakeRes || '' };
+    _CPE_FLAG_KEYS.forEach(function(k) { o[k] = !!_state[k]; });
+    return o;
+  }
+  // The ONE handler tail for every panel box: a toggle is an edit, so a prior Save no longer covers it
+  // (staged=false, same as every other edit site) and the OK/Save buttons must re-read _isEdited().
+  function _flagChanged() {
+    if (!_state) return;
+    _state.staged = false;
+    _markPreviewStale();
+    _syncButtons();
+  }
   function _isEdited() {
     if (!_state || !_state.origBands) return false;
     // §CPE_HOSE / §CPE_CLIP / §CPE_BUILDUP are edits in their own right: a path that was ONLY hosed,
@@ -799,6 +836,20 @@
     if (_state.roomTitle !== _state.origRoomTitle) return true;
     if (_state.reveal) return true;
     if (_state.reveal !== _state.origReveal) return true;
+    // §CPE_CHECKBOX_SAVE (2026-10-06): every OTHER panel box is an edit in its own right — the same rule as
+    // the three above (ON must produce an override because the consumer defaults it off with none; changed
+    // from the open/restore baseline counts too). Was missing, so a path changed ONLY by one of these boxes
+    // kept Save disabled. Table-driven off _CPE_FLAG_KEYS so a new box cannot be forgotten in one place.
+    var _of = _state.origFlags || {};
+    for (var _fi = 0; _fi < _CPE_FLAG_KEYS.length; _fi++) {
+      var _fk = _CPE_FLAG_KEYS[_fi];
+      if (!!_state[_fk]) return true;
+      if (!!_state[_fk] !== !!_of[_fk]) return true;
+    }
+    if (_state.sunDate || _state.bakeRes) return true;
+    if ((_state.sunDate || '') !== (_of.sunDate || '') || (_state.bakeRes || '') !== (_of.bakeRes || '')) return true;
+    // Bounce defaults ON, so only a change away from the baseline is an edit (ON must NOT make every open dirty).
+    if ((_state.filmBounce !== false) !== (_of.filmBounce !== false)) return true;
     if (_state.userTotal != null && Math.abs(_state.userTotal - _naturalDuration().total) > 0.05) return true;
     // §CPE_STICK: the band COUNT is now a thing that can change, and it must count as an edit before
     // the per-band comparison below (which indexes both arrays in lockstep and would otherwise miss
@@ -861,6 +912,9 @@
                   'the door it walks out through — drag it back inside to shape the interior leg',
                   'end of the WALK, not the film; its far end stretches the orbit'];
 
+  // §CPE_TOGGLE_ICONS — the strip's own table, kept so a census can report what is on screen
+  // rather than re-deriving it from the DOM.
+  var _toggleSpecs = [];
   function _buildPanel() {
     if (!document.getElementById('cpe-style')) {
       var st = document.createElement('style');
@@ -871,7 +925,40 @@
         '#cpe-panel button{transition:background .15s,color .15s,border-color .15s}' +
         '#cpe-panel button:disabled{opacity:.45;cursor:default}' +
         '#cpe-panel input{background:#15181c;border:1px solid #3a3f47;border-radius:3px;padding:2px 4px;' +
-        'font-size:11px;font-family:monospace;color:#ddd}';
+        'font-size:11px;font-family:monospace;color:#ddd}' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19) — the seven overlay toggles as icon buttons that
+        // LIGHT UP when checked, instead of seven stacked rows of checkbox-plus-prose.
+        //
+        // ⚠ COSMETIC ONLY, AND THAT IS LOAD-BEARING. Every <input type="checkbox"> keeps its exact
+        // id, its change handler, its _state field and its place in the panel census and the DOM
+        // sync list. Nothing in the wiring moved — W-SUN-COMPASS-WIRING still passes unchanged,
+        // which is the point: a restyle that quietly renamed an id would silently stop a toggle
+        // from reaching the bake, and that is this project's recurring defect shape.
+        // The input is hidden with opacity/position rather than display:none or visibility:hidden,
+        // so it stays focusable and keyboard-reachable — a checkbox you cannot tab to is not a
+        // checkbox, and an icon strip is exactly where that gets lost.
+        '#cpe-panel .cpe-tgls{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}' +
+        '#cpe-panel .cpe-tgl{position:relative;display:flex;flex-direction:column;align-items:center;' +
+        'justify-content:center;gap:3px;width:60px;padding:6px 2px;cursor:pointer;border-radius:5px;' +
+        'border:1px solid #3a3f47;background:#1b1f24;color:#8a9199;font-size:9px;line-height:1.15;' +
+        'text-align:center;transition:background .15s,color .15s,border-color .15s,box-shadow .15s}' +
+        '#cpe-panel .cpe-tgl input{position:absolute;opacity:0;width:100%;height:100%;top:0;left:0;' +
+        'margin:0;cursor:pointer}' +
+        '#cpe-panel .cpe-tgl svg{width:18px;height:18px;stroke:currentColor;fill:none;' +
+        'stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}' +
+        // The lit state. Amber to match the panel's own §CPE_LIVE breathe colour, so "this overlay
+        // is on" reads as the same language as the rest of this window rather than a new one.
+        '#cpe-panel .cpe-tgl:has(input:checked){background:#2e2410;color:#ffb74d;border-color:#ffb74d;' +
+        'box-shadow:0 0 6px rgba(255,183,77,0.35)}' +
+        '#cpe-panel .cpe-tgl:hover{border-color:#6a7280;color:#cfd6dd}' +
+        // Keyboard focus must be visible, and :has(:focus-visible) is the only thing that can show
+        // it once the real input is transparent.
+        '#cpe-panel .cpe-tgl:has(input:focus-visible){outline:2px solid #64b5f6;outline-offset:1px}' +
+        // A slot with no icon yet is NOT broken — it is a caption-only button, and it says so by
+        // reserving the same box height so the strip does not jump when real icons land.
+        '#cpe-panel .cpe-tgl .cpe-noicon{width:18px;height:18px;border-radius:3px;' +
+        'border:1px dashed #4a4f57;box-sizing:border-box}' +
+        '';
       document.head.appendChild(st);
     }
     var d = document.createElement('div');
@@ -913,37 +1000,143 @@
           '<button id="cpe-mark-in" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark in</button> ' +
           '<button id="cpe-mark-out" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#ddd;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">mark out</button> ' +
           '<button id="cpe-clip-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">whole film</button></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-buildup" type="checkbox" checked> ' +
-          'build the model as the film plays</label> <span style="color:#666">(follows the Time Machine, not a programme)</span></div>' +
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-room-title" type="checkbox"> ' +
-          'room titles</label> <span style="color:#666">(name card as the camera enters each room)</span> ' +
-          // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so far.
-          // Checkbox + state round-trip through save/restore, same as every sibling here; the actual
-          // ghost/pacing render mechanism is NOT built (spec Open Question 1, render approach, still
-          // unresolved) — the hint says so, so checking it does not silently do nothing unexplained.
-          '<label style="cursor:pointer;margin-left:10px"><input id="cpe-reveal" type="checkbox"> ' +
-          'Reveal</label> <span style="color:#666">(retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale)</span></div>' +
-        // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world content.
-        // The hint states the two things a user cannot see from the checkbox: the pairs are
-        // triangle-exact (not the bounding-box list, a third of which is false), and they stand from
-        // frame 0 rather than appearing when the buildup reaches them.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-clash" type="checkbox"> ' +
-          'Clash pairs</label> <span style="color:#666">(mesh-true pairs, red/blue at each contact, ' +
-          'pulsing from frame 0 so you see where the trouble is before it is built)</span></div>' +
-        // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
-        // drawing. The hint names the two things the checkbox cannot show: the grid is the REAL
-        // column grid out of the DB, not a decorative module, and the marks are laid in the model's
-        // own planes, so they foreshorten with the building instead of facing the camera.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-measure" type="checkbox"> ' +
-          'Measure</label> <span style="color:#666">(setting-out drawing from the real column grid — ' +
-          'numbered and lettered bubbles, bay chains that sum to the overall, storey rules; ' +
-          'up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises)</span></div>' +
-        // §STOREY_HIGHLIGHT_REVEAL (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md, 2026-09-06) — the
-        // final 5 real seconds of the pull-back beat, ending exactly where the closing orbit begins,
-        // fill with each storey tinting through in sequence instead of just cruising toward the orbit.
-        '<div style="margin-top:4px"><label style="cursor:pointer"><input id="cpe-storey-reveal" type="checkbox"> ' +
-          'Storey highlight</label> <span style="color:#666">(each storey glows blue/green/yellow/orange ' +
-          'in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card)</span></div>' +
+        // §CPE_TOGGLE_ICONS (red1, 2026-09-19): "all 7 Alt+C panel toggles as icon buttons that
+        // light up when checked". Built from ONE table rather than seven hand-written rows, so the
+        // eighth overlay is a table entry and cannot be added with a mismatched id, a missing
+        // title or a forgotten style.
+        //
+        // ⚠ THE IDS, THE HANDLERS AND THE STATE FIELDS ARE UNCHANGED. This is presentation only.
+        // W-SUN-COMPASS-WIRING asserts the whole chain by name and still passes untouched — which
+        // is exactly what a cosmetic change has to be able to say for itself.
+        //
+        // ⚠ THE HINTS ARE NOT LOST, and that was the one real risk in this change. Each row's
+        // prose moved into `hint`, which becomes the button's `title`. It is information the icon
+        // cannot carry — that Clash pairs are mesh-true and not the bounding-box list a third of
+        // which is false; that Measure's grid is the REAL column grid out of the DB; that Reveal's
+        // render mechanism is NOT built; that Sun compass draws NOTHING on a model with no site
+        // lat/long. Dropping those to make room for pictures would have been a downgrade wearing a
+        // restyle.
+        //
+        // ⚠ ICONS: only where an HONEST one already exists in this codebase's own set
+        // (panels.js `ICONS`, a global). Three of the seven have one, and each is the icon the
+        // SAME feature already uses elsewhere in this UI, so reusing it is consistency rather than
+        // a guess: `ruler` for Measure, `triangle` for Clash (panels.js's own Clash Matrix entry),
+        // `disciplines` for Reveal. The other four are `null` on purpose — red1 is sourcing
+        // artwork and a peer session is tracing the compass, and inventing four placeholder icons
+        // now would mean four things to un-pick later. A null slot renders a caption-only button
+        // at the same size, so the strip does not reflow when the real art lands. To add one:
+        // put the SVG inner markup on the entry, nothing else changes.
+        // ⚠ `I.draftingCompass` is NOT the right icon for the sun compass — checked, it is a pair
+        // of legs and a pivot (the drawing instrument), not a magnetic rose.
+        (function () {
+          var I = (typeof ICONS !== 'undefined') ? ICONS : {};
+          var TOGGLES = [
+            { id: 'cpe-buildup', label: 'Buildup', checked: true, icon: null,
+              hint: 'build the model as the film plays (follows the Time Machine, not a programme)' },
+            // §129.6 item 6b (2026-09-15): this toggle is still FLAGS.roomTitle / --label
+            // (--4d5d is an accepted alias, so no bake command breaks), but it now also gates
+            // the pie-chart HUD's Cost/Ledger rows and the day counter — the caption says what
+            // it actually carries. Restored on the merge: main's icon table had it back as
+            // 'Room titles', which under-states it.
+            { id: 'cpe-room-title', label: '4D/5D', icon: null,
+              hint: 'room name card, day counter, cost + ledger rows' },
+            // §CPE_DISCIPLINE_REVEAL (prompts/CINEMA_DISCIPLINE_REVEAL.md) — panel wiring only so
+            // far. The checkbox + state round-trip through save/restore like every sibling here;
+            // the ghost/pacing render mechanism is NOT built (spec Open Question 1, render
+            // approach, unresolved). The hint says so, so ticking it does not silently do nothing
+            // unexplained.
+            { id: 'cpe-reveal', label: 'Reveal', icon: I.disciplines && I.disciplines.svg,
+              hint: 'retraces the walk, hiding ARC/STR to show MEP, cycling each discipline before the finale' },
+            // §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md) — the mesh-true clash pairs as world
+            // content. The hint states the two things a user cannot see from the button: the pairs
+            // are triangle-exact (not the bounding-box list, a third of which is false), and they
+            // stand from frame 0 rather than appearing when the buildup reaches them.
+            { id: 'cpe-clash', label: 'Clash pairs', icon: I.triangle && I.triangle.svg,
+              hint: 'mesh-true pairs, red/blue at each contact, pulsing from frame 0 so you see where the trouble is before it is built' },
+            // §FLYTHRU_DATUM (bim-compiler prompts/MEP_CLASH_REVEAL_MOVIE.md §24) — the setting-out
+            // drawing. The hint names the two things the button cannot show: the grid is the REAL
+            // column grid out of the DB, not a decorative module, and the marks are laid in the
+            // model's own planes, so they foreshorten with the building instead of facing camera.
+            { id: 'cpe-measure', label: 'Measure', icon: I.ruler && I.ruler.svg,
+              hint: 'setting-out drawing from the real column grid — numbered and lettered bubbles, bay chains that sum to the overall, storey rules; up at frame 0, drawn in the model\'s own planes, occluded by the build as it rises' },
+            // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — ONE button for the
+            // whole overlay: the ground rose, the day-of-year and the sun-angle readout are one
+            // idea, and three buttons would let a user ask for a compass with no date on it.
+            // §SUN_COMPASS. `I.compass` is Lucide's own compass — a ring and a needle — added to
+            // panels.js's set for this. ISC, the same licence covering all 68 icons there
+            // (viewer/icons/lucide/README.md), so no attribution obligation and nothing pending.
+            // ⚠ NOT `I.draftingCompass`, one entry above it: that is the drawing instrument, legs
+            // and a pivot, not a rose.
+            // ⚠ AN EARLIER ICON HERE WAS REMOVED AND MUST NOT COME BACK. A compass traced from
+            // `clipart4585220.png` was inlined on 2026-09-19, believed to be Flaticon free-tier;
+            // the real source is realclipart.com, licensed "Personal Use". That is a use
+            // restriction, not an attribution gap — no credit line makes it shippable, and a
+            // redraw keeping its exact vertices would still be derived from it.
+            // W-SUN-COMPASS-WIRING asserts its colours and viewBox stay absent.
+            // §SUN_DAY — red1's own words for the hover: "enable geo-ref truth". The longer
+            // sentence follows it, because the button still has to say the two things it cannot
+            // show: that this is TRUE north out of the IFC (not the model grid every building in
+            // this fleet silently used until now), and that it draws NOTHING on a model with no
+            // site lat/long rather than inventing a location.
+            { id: 'cpe-sun-compass', label: 'Sun compass', icon: I.compass && I.compass.svg,
+              hint: 'enable geo-ref truth — TRUE-north rose on the ground from the IFC\'s own georeference, the sun\'s real path for the site and date, and its angle of attack on the building; silent on a model with no site lat/long, never a guessed one' },            // — the final 5 real seconds of the pull-back beat, ending exactly where the closing
+            // orbit begins, fill with each storey tinting through in sequence.
+            { id: 'cpe-storey-reveal', label: 'Storey highlight', icon: null,
+              hint: 'each storey glows blue/green/yellow/orange in turn for the last 5s before the closing orbit, with a door-count/footprint HUD card' },
+            // §129.31 (2026-09-18, red1: "give it its own checkbox") — un-folds §129 GATING's
+            // "load path rides the Measure checkbox" decision, which let an unrelated toggle
+            // ("setting-out drawing") silently gate the structural freeze-frame beat. Its own
+            // entry now; cinema_maxq.js's `_loadPath` line is the runtime half of the same change.
+            // Icon null on purpose, same rule as the four above: no honest one exists in the set yet.
+            { id: 'cpe-load-path', label: 'Load path freeze', icon: null,
+              hint: 'camera holds on the structural chain from topout to ground — section-cut, cost + schedule per member, stack info panel' },
+            // §FREEZE_PERF_PANEL (bim-compiler PERFORMANCE_AS_CLASH.md §19): panels in the load-path freeze's black space, ONLY with load path on.
+            { id: 'cpe-visual-panel', label: 'Visual (CCTV) in freeze', icon: null,
+              hint: 'with Load path freeze: CCTV coverage per room — best ceiling corner, blind m², best/worst room (IEC 62676-4 DORI, Paxton 103°×55°)' },
+            { id: 'cpe-audio-panel', label: 'Audio (RT) in freeze', icon: null,
+              hint: 'with Load path freeze: room reverberation (Sabine/Eyring) — not built yet' },
+            // §ESCAPE_ROUTE_REVEAL (bim-compiler prompts/ESCAPE_ROUTE_REVEAL.md). `I.route` is the
+            // icon this UI ALREADY uses for a walked route (panels.js's Pick Walk entry), so reusing
+            // it is consistency rather than a guess — the same rule the three icons above follow.
+            // The hint carries the two things the button cannot: the route is the REAL computed one
+            // out of the room graph, and the walking time rests on a cited standard while the step
+            // count rests on an admitted placeholder.
+            { id: 'cpe-escape-route', label: 'Escape route', icon: I.route && I.route.svg,
+              hint: 'during the closing orbit, the worst-case room shines through and an orange dotted line traces its REAL computed route to the exit — the same distance the Egress report\'s "Longest path to exit" headline reads. Counts up live in walking time (1.19 m/s, SFPE) and in steps (0.75 m stride, uncited). The camera eases; the day counter and the sun do not.' }
+          ];
+          _toggleSpecs = TOGGLES;
+          function esc(t) {
+            return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+          // ONE KIND OF ICON: 24-box, stroked, `stroke:currentColor`, no fill — the contract every
+          // entry in panels.js's set keeps (viewer/icons/lucide/README.md states it). So the button
+          // inherits its lit colour for free and nothing needs a per-icon viewBox.
+          // A `flat`/viewBox branch existed briefly for a filled 100-box PNG trace, whose fills
+          // would have been outlined by the inherited stroke-width. That artwork is gone on licence
+          // grounds and the branch went with it rather than staying as dead configuration; re-add
+          // it only if a non-conforming icon is ever genuinely cleared for use.
+          return '<div class="cpe-tgls">' + TOGGLES.map(function (t) {
+            return '<label class="cpe-tgl" title="' + esc(t.label + ' — ' + t.hint) + '">' +
+              '<input id="' + t.id + '" type="checkbox"' + (t.checked ? ' checked' : '') + '>' +
+              (t.icon ? '<svg viewBox="0 0 24 24" aria-hidden="true">' + t.icon + '</svg>'
+                      : '<span class="cpe-noicon"></span>') +
+              '<span>' + esc(t.label) + '</span></label>';
+          }).join('') + '</div>';
+        })() +
+        // §SUN_DAY (red1, 2026-09-19) — the date field that appears with the compass. Pinning a
+        // date makes the whole film one day's daylight: the hour sweeps 9:00→17:00 solar and the
+        // sun arcs once, instead of the date advancing underneath and the season fighting the
+        // clock. Leave it empty and the 4D timeline's own dates drive the light, as before.
+        // ⚠ It only does anything with the Sun compass on — the row hides itself otherwise, so
+        // there is no field sitting there that silently does nothing.
+        '<div id="cpe-sun-date-row" style="margin-top:4px;display:none">' +
+          '<label style="cursor:pointer">light the whole film on ' +
+          '<input id="cpe-sun-date" type="date" style="font-family:inherit"></label> ' +
+          '<button id="cpe-sun-date-clear" style="padding:1px 6px;font-size:10px;background:#2a2e34;' +
+          'color:#888;border:1px solid #4a4f57;border-radius:3px;cursor:pointer">follow the 4D dates</button>' +
+          '<div style="color:#666">(one day, sun rising to late afternoon across the film — the ' +
+          'BUILD still follows the 4D timeline, only the light is pinned)</div></div>' +
         // §CPE_BAKE_RES — the resolution a SILENT bake should use. An interactive Alt+C bake always
         // renders at this window's canvas (cinema_maxq.js:1120 reads renderer.domElement), so this
         // select does not resize anything here; it is stored on the path and cli_silent_bake.js
@@ -953,6 +1146,10 @@
         // onto own terminal") — the silent bake is a Node CLI tool with no server-side execution
         // possible from a static site (there is nothing to click that could run it FOR the user), so
         // the most honest thing this control can do is hand over the exact command, ready to paste.
+        // §FILM_PARITY (§GI_FILM) — the Alt+S bounce in the film: ON by default, a checkbox to switch it off; this window's
+        // Alt+C and the copy-bake-command line both follow it. No WebGPU -> the film stands down with §GI_FILM_OFF.
+        '<div style="margin-top:4px"><label style="cursor:pointer"><input type="checkbox" id="cpe-film-bounce" checked style="vertical-align:middle"> ' +
+          'Bounce light (Alt+S look; needs WebGPU)</label></div>' +
         '<div style="margin-top:4px">Silent-bake size ' +
           '<select id="cpe-bake-res" style="background:#15181c;color:#ddd;border:1px solid #3a3f47;' +
             'border-radius:3px;font-size:10px;padding:1px 2px">' +
@@ -1173,7 +1370,9 @@
         head.appendChild(lbl);
         // §CPE_STICK: a spawned stick is removable; settle and stop are not (the dive lands on one
         // and the orbit stretches off the other — removing either would change what the beats mean).
-        if (b._stick && i > 0 && i < _state.bands.length - 1) {
+        // §CPE_STICK_CLEAR (red1 2026-10-04): EVERY middle band is removable, seeded or dropped —
+        // gating on `b._stick` left seeded middle bands with no way to delete them.
+        if (i > 0 && i < _state.bands.length - 1) {
           var del = document.createElement('button');
           del.textContent = '×';
           del.title = 'remove this stick';
@@ -1263,6 +1462,17 @@
         box.appendChild(row);
       })(i);
     }
+    // §CPE_STICK_CLEAR — one button for every middle band; disabled when only settle + stop remain.
+    var nMid = Math.max(0, _state.bands.length - 2);
+    var clr = document.createElement('button');
+    clr.id = 'cpe-stick-clear';
+    clr.textContent = nMid ? 'clear ' + nMid + ' stick' + (nMid === 1 ? '' : 's') : 'no sticks to clear';
+    clr.title = 'remove every middle stick (start and end stay) — Ctrl+Z brings them back';
+    clr.disabled = !nMid;
+    clr.style.cssText = 'margin:4px 12px;padding:1px 8px;font-size:10px;background:#2a2e34;border:1px solid #4a4f57;' +
+      'border-radius:3px;color:' + (nMid ? '#ddd' : '#666') + ';cursor:' + (nMid ? 'pointer' : 'default');
+    clr.addEventListener('click', function(e) { e.stopPropagation(); _clearSticks(); });
+    box.appendChild(clr);
     _renderHoseRows(box);
   }
 
@@ -2285,7 +2495,9 @@
     try { tm = (typeof window.tmGetState === 'function') ? window.tmGetState() : null; } catch (e) {}
     return {
       checkboxes: { buildup: !!ov.buildup, roomTitle: !!ov.roomTitle, reveal: !!ov.reveal, clash: !!ov.clash, measure: !!ov.measure,
-                    storeyReveal: !!ov.storeyReveal },
+                    storeyReveal: !!ov.storeyReveal, loadPath: !!ov.loadPath, visualPanel: !!ov.visualPanel, audioPanel: !!ov.audioPanel,
+                    escapeRoute: !!ov.escapeRoute, sunCompass: !!ov.sunCompass, filmBounce: ov.filmBounce !== false },
+      sunDate: ov.sunDate || '',
       bakeRes: ov.bakeRes || '',
       dayCounter: ov.dayCounter || 'tr',
       tmActive: tm ? !!tm.active : false,
@@ -2336,10 +2548,22 @@
   function _syncPanelControls() {
     [['cpe-buildup', !!_state.buildup], ['cpe-room-title', !!_state.roomTitle],
      ['cpe-reveal', !!_state.reveal], ['cpe-clash', !!_state.clash], ['cpe-measure', !!_state.measure],
-     ['cpe-storey-reveal', !!_state.storeyReveal]].forEach(function(p) {
+     ['cpe-storey-reveal', !!_state.storeyReveal], ['cpe-load-path', !!_state.loadPath],
+     ['cpe-visual-panel', !!_state.visualPanel], ['cpe-audio-panel', !!_state.audioPanel],
+     ['cpe-escape-route', !!_state.escapeRoute],
+     ['cpe-sun-compass', !!_state.sunCompass]].forEach(function(p) {
       var el = document.getElementById(p[0]);
       if (el && el.checked !== p[1]) { el.checked = p[1]; el.dispatchEvent(new Event('change')); }
     });
+    // §SUN_DAY — the field mirrors state, and the row only exists while the compass is on.
+    var _sdEl = document.getElementById('cpe-sun-date');
+    if (_sdEl) _sdEl.value = _state.sunDate || '';
+    var _sdRow = document.getElementById('cpe-sun-date-row');
+    if (_sdRow) _sdRow.style.display = _state.sunCompass ? '' : 'none';
+    var _fbSync = document.getElementById('cpe-film-bounce');
+    if (_fbSync && _fbSync.checked !== (_state.filmBounce !== false)) { _fbSync.checked = _state.filmBounce !== false; _fbSync.dispatchEvent(new Event('change')); }
+    var _brSync = document.getElementById('cpe-bake-res');
+    if (_brSync && _brSync.value !== (_state.bakeRes || '')) { _brSync.value = _state.bakeRes || ''; _brSync.dispatchEvent(new Event('change')); }
     var dayEl = document.getElementById('cpe-day-counter'), want = _state.dayCounter || 'tr';
     if (dayEl && dayEl.value !== want) { dayEl.value = want; dayEl.dispatchEvent(new Event('change')); }
   }
@@ -2358,11 +2582,23 @@
       // in _isEdited()'s dirty-check, both are read live by their own draw code with no beat-boundary
       // side effect that a stale plan could get wrong).
       _state.storeyReveal = !!ps.checkboxes.storeyReveal;
+      // §129.31: restored the same lightweight way as storeyReveal just above — no origX baseline,
+      // read live by cinema_maxq.js's own `_loadPath` line with no beat-boundary side effect.
+      _state.loadPath = !!ps.checkboxes.loadPath;
+      _state.visualPanel = !!ps.checkboxes.visualPanel; _state.audioPanel = !!ps.checkboxes.audioPanel;   // §FREEZE_PERF_PANEL
+      _state.escapeRoute = !!ps.checkboxes.escapeRoute;
+      // §CPE_CHECKBOX_SAVE: clash/measure/sunCompass/bounce were CAPTURED in panelState but never assigned here,
+      // so reopening a saved plan dropped them (the sync below then unticked the boxes to match).
+      _state.clash = !!ps.checkboxes.clash; _state.measure = !!ps.checkboxes.measure;
+      _state.sunCompass = !!ps.checkboxes.sunCompass;
+      _state.filmBounce = ps.checkboxes.filmBounce !== false;
+      _state.sunDate = ps.sunDate || ''; _state.bakeRes = ps.bakeRes || '';
       // §CPE_EDIT_BASELINE: a restored plan's own checkbox values are the new "unedited" baseline —
       // reopening a saved buildup=on plan and touching nothing else must not read as edited.
       _state.origBuildup = _state.buildup;
       _state.origRoomTitle = _state.roomTitle;
       _state.origReveal = _state.reveal;
+      _state.origFlags = _flagBaseline();   // §CPE_CHECKBOX_SAVE
     }
     if (ps.dayCounter) _state.dayCounter = ps.dayCounter;
     _syncPanelControls();
@@ -2515,7 +2751,7 @@
     // sampling loop runs a single near-zero-width pass) purely to RESET the module's `_liveSegs` for
     // this run; without this a PRIOR run's real room-title segments could leak into this one's
     // rise-proper/round-2 stretches, showing stale captions the user just turned off.
-    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal);
+    var _titleOn = !!(s.roomTitle || s.reveal || s.storeyReveal || s.escapeRoute);
     var _titleTotalSec = s.roomTitle ? _buildOverride()._total : 0;
     if (_titleOn && a.roomTitleLiveStart) a.roomTitleLiveStart(s.plan, _titleTotalSec);
     // §CPE_DAY_COUNTER_POS — cpe_day_counter.js has carried dayCounterLiveStart/Tick/Stop since it
@@ -2592,6 +2828,19 @@
         if (s.reveal && a.cpeRevealApplyVisual) a.cpeRevealApplyVisual(s.plan, tn);
         // §STOREY_HIGHLIGHT_REVEAL — same "preview mirrors the bake exactly" call.
         if (s.storeyReveal && a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(s.plan, tn);
+        if (s.storeyReveal && a.storeyRevealApplyCut) a.storeyRevealApplyCut(s.plan, tn);
+        // §ESCAPE_ROUTE_REVEAL — the preview builds lazily on first entry into the window, so a
+        // scrub that never reaches the closing orbit pays nothing for it.
+        // ⚠ THE PREVIEW SHOWS THE ROOM GLOW, NOT THE LINE OR THE CAMERA EASE, and that is stated
+        // rather than quietly true. The line and the card are composited onto the CAPTURE canvas
+        // (cinema_maxq.js _captureFrame), which the preview has no equivalent of — the same reason
+        // the clash labels and the day counter have never appeared in a preview either. The camera
+        // ease is deliberately not applied to _applyCameraPose: that function also serves the SCRUB
+        // drag, where a pose that does not match the playhead the user is holding would be a bug.
+        if (s.escapeRoute && a.escapeRouteApplyVisual) {
+          if (a.escapeRouteBuild && a.escapeRouteRecord && !a.escapeRouteRecord()) { try { a.escapeRouteBuild(); } catch (eERp) {} }
+          a.escapeRouteApplyVisual(s.plan, tn);
+        }
         // §CPE_BUILDUP_OWNS_TM: `bkPrev` alone is a snapshot taken once at flight-start — it never
         // saw a LIVE uncheck of #cpe-buildup mid-flight. Gate on `s.buildup` too so unchecking it
         // stops feeding the cursor on the very next frame, instead of racing the checkbox handler's
@@ -2652,6 +2901,8 @@
         // §STOREY_HIGHLIGHT_REVEAL: same exit contract — a tinted storey must not follow the user
         // back into normal editing.
         if (a.storeyRevealApplyVisual) a.storeyRevealApplyVisual(null, 0);
+        if (a.storeyRevealApplyCut) a.storeyRevealApplyCut(null, 0);
+        if (a.escapeRouteApplyVisual) a.escapeRouteApplyVisual(null, 0);
         _state.flying = false;
         // §CPE_SCRUB_PLAY: natural completion — clear the pause hooks, this run is over, not paused.
         s._flyPauseAt = null; s._flyResume = null; s.flyPaused = false;
@@ -3518,8 +3769,21 @@
         clash: false,          // §CLASH_FILM_P1
         measure: false,        // §FLYTHRU_DATUM — same off-by-default reasoning as clash/reveal
         storeyReveal: false,   // §STOREY_HIGHLIGHT_REVEAL — off by default, same reasoning as reveal/clash
+        loadPath: false,       // §129.31 — off by default for a BRAND NEW path, same reasoning; an
+                                // existing saved path with no loadPath key falls back to Measure instead
+                                // of this default (cinema_maxq.js's own `_loadPath` line), never this
+        escapeRoute: false,    // §ESCAPE_ROUTE_REVEAL — off by default, same reasoning again
+        visualPanel: false, audioPanel: false,   // §FREEZE_PERF_PANEL — off by default, same reasoning
+        // §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md §7) — off by default, same
+        // reasoning as the four above: a new overlay appearing in every saved path's re-bake would
+        // silently change films the user has already signed off.
+        sunCompass: false,
+        // §SUN_DAY — '' means follow the 4D timeline's own dates (the shipped behaviour).
+        sunDate: '',
         bakeRes: '',           // §CPE_BAKE_RES — '' = the window; else '<w>x<h>@<fps>'
         origReveal: false,
+        filmBounce: true,      // §CPE_CHECKBOX_SAVE — Bounce light, default ON
+        origFlags: null,       // §CPE_CHECKBOX_SAVE — set right after _state is built
         dayCounter: 'tr',        // §CPE_DAY_COUNTER_POS — the shipped position, unchanged by default
         // §CPE_PREVIEW_BUTTON: edits counts every landed change; previewedAt is the edit the user
         // has actually seen. Equal = "you have seen this version".
@@ -3546,6 +3810,8 @@
         ' bandLen=' + _state.bands[0].len.toFixed(2) + 'm pathLen=' + plan.pathLen.toFixed(1) +
         'm speed=' + _state.speed.toFixed(2) + 'm/s total=' + ctx.durationSec.toFixed(1) + 's');
 
+      _state.filmBounce = true; a._filmBounceOff = false;   // §CPE_CHECKBOX_SAVE: the box opens ticked, so state must agree with it
+      _state.origFlags = _flagBaseline();
       var panel = _buildPanel();
       // §CPE_SCRUB_EYE_GATED (2026-08-06, retires §CPE_SCRUB_STANDALONE's "built unconditionally"
       // behaviour) — user, this session: "Been minimalist, user is asked to just bake on the fly.
@@ -3618,6 +3884,7 @@
       });
       document.getElementById('cpe-buildup').addEventListener('change', function(e) {
         _state.buildup = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         // §CPE_BUILDUP_FOLLOW_TM — the reveal is the Time Machine's own timeline, unmodified. The
         // mode (S = linked schedule, T = this model's derived 4D) is decided and logged by
@@ -3643,6 +3910,7 @@
       });
       document.getElementById('cpe-room-title').addEventListener('change', function(e) {
         _state.roomTitle = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         console.log('§CPE_ROOM_TITLE ' + (_state.roomTitle ? 'ON' : 'off'));
         // a.friendlyName/a.getRoomGraph live in the lazy Navigate bundle — same load-on-first-use
@@ -3664,7 +3932,7 @@
       var _clashEl = document.getElementById('cpe-clash');
       if (_clashEl) _clashEl.addEventListener('change', function(e) {
         _state.clash = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_CLASH checkbox=' + (_state.clash ? 'on' : 'off') +
           ' — mesh-true clash pairs as world content in the bake');
       });
@@ -3673,9 +3941,41 @@
       var _measureEl = document.getElementById('cpe-measure');
       if (_measureEl) _measureEl.addEventListener('change', function(e) {
         _state.measure = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§CPE_MEASURE checkbox=' + (_state.measure ? 'on' : 'off') +
           ' — setting-out drawing (grid bubbles, bay chains, storey rules) in the bake');
+      });
+      // §SUN_COMPASS — a pure overlay flag like clash/measure: it moves no beat boundary, so
+      // _markPreviewStale() is the whole handler. The log line says what a re-bake will and will
+      // not contain, because whether anything is drawn depends on the BUILDING, not on this box.
+      var _sunCompassEl = document.getElementById('cpe-sun-compass');
+      if (_sunCompassEl) _sunCompassEl.addEventListener('change', function(e) {
+        _state.sunCompass = !!e.target.checked;
+        var _row = document.getElementById('cpe-sun-date-row');
+        if (_row) _row.style.display = _state.sunCompass ? '' : 'none';
+        _flagChanged();
+        console.log('§CPE_SUN_COMPASS checkbox=' + (_state.sunCompass ? 'on' : 'off') +
+          ' — true-north ground rose + day-of-year + sun angle of attack, as ONE overlay. ' +
+          'On a building with no site lat/long this draws nothing and the bake logs ' +
+          '§SUN_COMPASS INCONCLUSIVE — the checkbox cannot promise a compass the DB cannot support.');
+      });
+      // §SUN_DAY — the date field and its clear button. Pure overlay state like the checkbox
+      // above: no beat boundary moves, so _markPreviewStale() is the whole handler.
+      var _sunDateEl = document.getElementById('cpe-sun-date');
+      if (_sunDateEl) _sunDateEl.addEventListener('change', function(e) {
+        _state.sunDate = String(e.target.value || '');
+        _flagChanged();
+        console.log('§CPE_SUN_DATE ' + (_state.sunDate
+          ? 'pinned to ' + _state.sunDate + ' — the whole film is lit on that one day, hour ' +
+            'sweeping morning to late afternoon; the BUILD still follows the 4D timeline'
+          : 'cleared — the light follows the 4D timeline\'s own dates again'));
+      });
+      var _sunDateClr = document.getElementById('cpe-sun-date-clear');
+      if (_sunDateClr) _sunDateClr.addEventListener('click', function() {
+        _state.sunDate = '';
+        if (_sunDateEl) _sunDateEl.value = '';
+        _flagChanged();
+        console.log('§CPE_SUN_DATE cleared — the light follows the 4D timeline\'s own dates again');
       });
       // §STOREY_HIGHLIGHT_REVEAL — like clash above, this does not move any beat boundary (it reads
       // the EXISTING plan.beats.rise), so a plain _markPreviewStale() is the whole handler; no
@@ -3683,9 +3983,39 @@
       var _storeyRevealEl = document.getElementById('cpe-storey-reveal');
       if (_storeyRevealEl) _storeyRevealEl.addEventListener('change', function(e) {
         _state.storeyReveal = !!e.target.checked;
-        _markPreviewStale();
+        _flagChanged();
         console.log('§STOREY_REVEAL checkbox=' + (_state.storeyReveal ? 'on' : 'off') +
           ' — each storey tints in sequence for the last 5s of pull-back, ending at the orbit start');
+      });
+      // §129.31 — like clash/measure above, a pure overlay flag off the existing topout hold point;
+      // no beat boundary moves, so _markPreviewStale() is the whole handler.
+      ['visualPanel', 'cpe-visual-panel', 'audioPanel', 'cpe-audio-panel'].forEach(function (_k, _i, _a) {   // §FREEZE_PERF_PANEL
+        if (_i % 2) return; var _el = document.getElementById(_a[_i + 1]);
+        if (_el) _el.addEventListener('change', function (e) { _state[_k] = !!e.target.checked; _flagChanged();
+          console.log('§CPE_FREEZE_PERF checkbox ' + _k + '=' + (_state[_k] ? 'on' : 'off') + (_state.loadPath ? '' : ' (draws nothing until Load path freeze is on)')); });
+      });
+      var _loadPathEl = document.getElementById('cpe-load-path');
+      if (_loadPathEl) _loadPathEl.addEventListener('change', function(e) {
+        _state.loadPath = !!e.target.checked;
+        _flagChanged();
+        console.log('§CPE_LOAD_PATH checkbox=' + (_state.loadPath ? 'on' : 'off') +
+          ' — structural chain freeze-frame (section-cut, cost/schedule HUD) in the bake');
+      });
+      // §ESCAPE_ROUTE_REVEAL — a pure overlay flag like clash/measure/storey above: it moves no
+      // beat boundary (its window is carved out of the closing orbit that already exists), so
+      // _markPreviewStale() is the whole handler. The log says what a re-bake will and will not
+      // contain, because whether anything is drawn depends on the BUILDING — a model whose room
+      // graph reaches no exit at all has no worst case to show, and the bake says so as
+      // §ESCAPE_ROUTE_BUILD VACUOUS rather than drawing an invented line.
+      var _escapeRouteEl = document.getElementById('cpe-escape-route');
+      if (_escapeRouteEl) _escapeRouteEl.addEventListener('change', function(e) {
+        _state.escapeRoute = !!e.target.checked;
+        _flagChanged();
+        console.log('§ESCAPE_ROUTE checkbox=' + (_state.escapeRoute ? 'on' : 'off') +
+          ' — the worst-case room\'s REAL escape route traced during the closing orbit, with a live' +
+          ' walking-time (1.19 m/s, SFPE, cited) and step (0.75 m stride, uncited) count. On a' +
+          ' building whose room graph reaches no exit this draws nothing and the bake logs' +
+          ' §ESCAPE_ROUTE_BUILD VACUOUS — read the log, do not infer from the video.');
       });
       // §CPE_BAKE_RES — stored on the path for the silent baker; changes nothing in this window.
       // §S274 FIX (2026-09-06, live crash reported from production, red1oon.github.io/bim-ootb):
@@ -3695,6 +4025,7 @@
       var _resEl = document.getElementById('cpe-bake-res');
       if (_resEl) _resEl.addEventListener('change', function(e) {
         _state.bakeRes = e.target.value || '';
+        _flagChanged();
         var _app = A();
         var _winSize = (_app && _app.renderer && _app.renderer.domElement) ?
           (_app.renderer.domElement.width + 'x' + _app.renderer.domElement.height) : 'this window';
@@ -3704,6 +4035,10 @@
       // §CPE_BAKE_RES_COMMAND — there is no server behind this page, so nothing here can RUN a
       // bake; the honest control is handing over the exact command for the user's own terminal
       // (repo cloned, Node installed, the building's DB available locally).
+      var _fbEl = document.getElementById('cpe-film-bounce');
+      if (_fbEl) _fbEl.addEventListener('change', function(e) { var _app = A(); _state.filmBounce = !!e.target.checked; if (_app) _app._filmBounceOff = !e.target.checked; _flagChanged();
+        console.log('§GI_FILM_TOGGLE bounce=' + (e.target.checked ? 'on' : 'off') + ' (this window\'s Alt+C and the bake command)');
+        if (_cmdText && _cmdBox && _cmdBox.style.display !== 'none') _cmdText.value = _buildBakeCommand(); });
       var _cmdLink = document.getElementById('cpe-bake-cmd-link');
       var _cmdBox = document.getElementById('cpe-bake-cmd-box');
       var _cmdText = document.getElementById('cpe-bake-cmd-text');
@@ -3716,6 +4051,8 @@
         var m = res.match(/^(\d+)x(\d+)@(\d+)$/);
         if (m) flags = ' --width ' + m[1] + ' --height ' + m[2] + ' --fps ' + m[3];
         // no selection = cli_silent_bake.js's own default (1280x720@15), not invented here
+        var _bEl = document.getElementById('cpe-film-bounce');
+        if (_bEl && !_bEl.checked) flags += ' --bounce 0';   // §GI_FILM — default on; only the off state needs saying
         return 'node cli_silent_bake.js --db ' + bld + flags + ' --gpu real --out /tmp/' + bld + '_bake.mp4';
       }
       if (_cmdLink) _cmdLink.addEventListener('click', function() {
@@ -3736,6 +4073,7 @@
       });
       document.getElementById('cpe-reveal').addEventListener('change', function(e) {
         _state.reveal = !!e.target.checked;
+        _state.staged = false;   // §CPE_CHECKBOX_SAVE
         _markPreviewStale();
         // §CPE_DISCIPLINE_REVEAL — real bug found live (user, 2026-08-14: "Preview also do not go
         // 2nd round" / "the pov timeline numbering did double but the alt-c still remains not").

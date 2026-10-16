@@ -68,7 +68,11 @@ function serve() {
     var secs = [].slice.call(p.querySelectorAll('.mg-sec')).map(function (d) { return (d.firstChild && d.firstChild.textContent || '').trim(); });
     return { open: true, count: secs.length, secs: secs };
   });
-  chk('D5 Guide overlay opens with the modeller verb sections', guide.open && guide.count === 7, 'sections=' + guide.count);
+  // §NET-AUDIT (2026-09-26): expected = the entries of the page's OWN guide SECTIONS array (read from modeller.html),
+  // not a hardcoded 7 — the guide grew to 10 (Conformity Gate, Move & Manipulate, Teams) and D5 had been red since.
+  var srcSecs = (function () { var h = require('fs').readFileSync(require('path').join(__dirname, '..', 'modeller.html'), 'utf8');
+    var a = h.indexOf('const SECTIONS = ['), b = h.indexOf('\n  ];', a); return a < 0 || b < 0 ? -1 : (h.slice(a, b).match(/^\s*\['/gm) || []).length; })();
+  chk('D5 Guide overlay opens with the modeller verb sections (DOM == source SECTIONS)', guide.open && srcSecs > 0 && guide.count === srcSecs, 'sections=' + guide.count + ' source=' + srcSecs);
   chk('D6 Guide covers Open + Disc=walker + 3D Grid', guide.open && guide.secs.indexOf('Open') >= 0 &&
     guide.secs.indexOf('Disc = walker') >= 0 && guide.secs.indexOf('3D Grid') >= 0, (guide.secs || []).join(' · '));
 

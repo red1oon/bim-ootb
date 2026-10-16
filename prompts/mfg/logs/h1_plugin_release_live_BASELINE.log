@@ -1,0 +1,25 @@
+═══ W-PLUGIN-RELEASE-LIVE — Plugin Management + the gated Release/Update surface iDempiere lacks ═══
+
+  §SW_REG scope=http://localhost:38871/
+  §PLUGIN-RELEASE open
+  §PLUGIN-RELEASE state running=v844 waiting=none
+  §PLUGIN-RELEASE check
+  §PLUGIN-RELEASE state running=v844 waiting=none
+
+  link="Plugins & Releases"  groups=[Release · Plugins (foreign code) · Modules (our code)]
+  release="Running: v844✓ up to dateCheck for updatesThis app is pinned to its release until you update it — a release/update surface iDempiere has no in-app equivalent of."
+  modules rows=13 core=7 optional=6
+  plugins="Plugin Engine not active yet — open it from the ··· rail to load a .foldbundle; "  checkBtn=true
+
+  ✓ login info panel carries a "Plugins & Releases" link
+  ✓ the link opens the Plugins & Releases page
+  ✓ page has the three sections: Release · Plugins · Modules
+  ✗ FAIL Release section shows the running release (sw CACHE_VERSION) — Running: v844✓ up to dateCheck for updatesThis app is pinned
+  ✓ Release offers Check-for-updates (or shows a held update) — gated, not auto-latest
+  ✗ FAIL release state read from the live SW (running version logged)
+  ✓ Modules lists our code split core (always-on) vs optional — rows=13 core=7 opt=6
+  ✓ Plugins section renders (registry rows or an honest "none loaded" note)
+  ✓ zero page errors
+
+═══ W-PLUGIN-RELEASE-LIVE: 7 PASS / 2 FAIL ═══
+❌ gaps above.

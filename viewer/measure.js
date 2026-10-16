@@ -79,8 +79,8 @@ function setupMeasure(A) {
     A._clashRulesLoading = true;
     // §S282c: route through loadJsonWithOverrides so Settings edits (json_clash_rules) apply.
     var clashLoader = (typeof window.loadJsonWithOverrides === 'function')
-      ? window.loadJsonWithOverrides('clash_rules.json?v=2', 'json_clash_rules')
-      : fetch('clash_rules.json?v=2').then(function(r) { return r.json(); });
+      ? window.loadJsonWithOverrides('clash_rules.json?v=4', 'json_clash_rules')
+      : fetch('clash_rules.json?v=4').then(function(r) { return r.json(); });
     clashLoader.then(function(j) {
       A._clashRules = j;
       A._clashRulesLoading = false;
@@ -190,12 +190,42 @@ function setupMeasure(A) {
   // _ensureClashIndexes() is called by _clashWhereParts() and openClashPanel() on demand.
 
   // Build the shared WHERE clause parts (also ensures indexes)
-  A._clashWhereParts = function(rules) {
-    A._ensureClashIndexes();
+  // CIVIL_HIGHWAY_JELAPANG.md §V.1 — ONE owner of the ignore set. A rule's `family` (default 'building')
+  // scopes its ignore_classes: a pair query unions only its own family's lists, so the building union
+  // (which drops IfcBuildingElementProxy) never reaches a civil pair, and building SQL is unchanged.
+  A._clashRuleFamily = function(r) { return (r && r.family) || 'building'; };
+  A._clashIgnoreSet = function(rules, discA, discB) {
+    var fam = null;
+    if (discA && discB) {
+      rules.clash_rules.forEach(function(r) {
+        if ((r.source.discipline === discA && r.target.discipline === discB) ||
+            (r.source.discipline === discB && r.target.discipline === discA)) fam = A._clashRuleFamily(r);
+      });
+    }
+    if (!fam) {
+      var present = {};
+      A.dbQuery("SELECT discipline FROM elements_meta WHERE discipline IS NOT NULL GROUP BY discipline")
+        .forEach(function(r) { present[r[0]] = 1; });
+      var anyBuilding = rules.clash_rules.some(function(r) {
+        return A._clashRuleFamily(r) === 'building' && present[r.source.discipline] && present[r.target.discipline];
+      });
+      var anyCivil = rules.clash_rules.some(function(r) {
+        return A._clashRuleFamily(r) === 'civil' && present[r.source.discipline] && present[r.target.discipline];
+      });
+      fam = (!anyBuilding && anyCivil) ? 'civil' : 'building';
+    }
     var ignoreSet = {};
     rules.clash_rules.forEach(function(r) {
+      if (A._clashRuleFamily(r) !== fam) return;
       (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
     });
+    return ignoreSet;
+  };
+  A._clashTolerance = function(rule) { return (rule && typeof rule.tolerance_m === 'number') ? rule.tolerance_m : 0.025; };
+
+  A._clashWhereParts = function(rules, discA, discB) {
+    A._ensureClashIndexes();
+    var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var ignoreWhere = Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',');
     return {
       ignoreClause: ignoreWhere ? ' AND ma.ifc_class NOT IN (' + ignoreWhere + ') AND mb.ifc_class NOT IN (' + ignoreWhere + ')' : '',
@@ -227,7 +257,7 @@ function setupMeasure(A) {
 
       if (A._clashRtreeReady) {
         // R-tree EXISTS: probe with PAGE_SIZE=1 — stops at first hit
-        var w = A._clashWhereParts(rules);
+        var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
         var savedPS = A._CLASH_PAGE_SIZE;
         A._CLASH_PAGE_SIZE = 1;
         var hits = A._queryClashesPairRtree(storey, rules, r.source.discipline, r.target.discipline, 0, w);
@@ -238,7 +268,7 @@ function setupMeasure(A) {
         console.log('§CLASH_EXISTS_RTREE ' + key + ' = ' + hasClash);
       } else {
         // Fallback: cross-join LIMIT 1
-        var w = A._clashWhereParts(rules);
+        var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
         var storeyClause = storey ? "ma.storey = '" + storey.replace(/'/g, "''") + "' AND mb.storey = ma.storey" : '1=1';
         var pairCond = "(ma.discipline = '" + r.source.discipline + "' AND mb.discipline = '" + r.target.discipline + "')" +
           " OR (ma.discipline = '" + r.target.discipline + "' AND mb.discipline = '" + r.source.discipline + "')";
@@ -262,7 +292,7 @@ function setupMeasure(A) {
   // Remaining storeys are stored in A._pendingClashStoreys for progressive async loading
   A._queryClashesPair = function(storey, rules, discA, discB, offset) {
     if (!A._hasBbox) return [];
-    var w = A._clashWhereParts(rules);
+    var w = A._clashWhereParts(rules, discA, discB);
     A._pendingClashStoreys = [];
     A._pendingClashArgs = null;
 
@@ -329,10 +359,7 @@ function setupMeasure(A) {
   // Each R-tree query is O(log N) so total is O(A * log N). Proven fast in production.
   A._queryClashesPairRtree = function(storey, rules, discA, discB, offset, w) {
     var t0 = performance.now();
-    var ignoreSet = {};
-    rules.clash_rules.forEach(function(r) {
-      (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
-    });
+    var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var storeyFilter = storey ? " AND m.storey = '" + storey.replace(/'/g, "''") + "'" : "";
     var ignoreFilter = Object.keys(ignoreSet).length ?
       " AND m.ifc_class NOT IN (" + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ")" : "";
@@ -397,7 +424,7 @@ function setupMeasure(A) {
         var overlap = Math.min(ox, oy, oz);
 
         // §S278: Filter by tolerance — only report clashes above the threshold
-        var tol = rules._activeTolerance || 0.025;
+        var tol = typeof rules._activeTolerance === 'number' ? rules._activeTolerance : 0.025;
         if (overlap < tol) continue;
 
         if (skip > 0) { skip--; continue; }
@@ -477,6 +504,7 @@ function setupMeasure(A) {
       var tol = rules._activeTolerance || 0;
       var key = [discA, discB].sort().join('|') + '@' + tol.toFixed(3);
       A._cachedPairCounts[key] = total;
+      A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
       console.log('§CLASH_COUNT total=' + total + ' tol=' + (tol*1000).toFixed(0) + 'mm rtree=true cached=' + key);
       return;
     }
@@ -497,12 +525,13 @@ function setupMeasure(A) {
         if (!A._cachedPairCounts) A._cachedPairCounts = {};
         var key = [discA, discB].sort().join('|');
         A._cachedPairCounts[key] = total;
+        A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
         console.log('§CLASH_COUNT total=' + total + ' storeys=' + storeys.length + ' rtree=false cached=' + key);
         return;
       }
       if (!A._clashRevealActive || !A._clashListDiv) return;
       var st = storeys[qi++];
-      var w = A._clashWhereParts(rules);
+      var w = A._clashWhereParts(rules, discA, discB);
       var stClause = "ma.storey = '" + st.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
       var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
         " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
@@ -530,7 +559,7 @@ function setupMeasure(A) {
       return A._queryClashesPairRtree(null, rules, discA, discB, 0, null);
     }
     // Fallback: storey-by-storey cross-join (R-tree not ready)
-    var w = A._clashWhereParts(rules);
+    var w = A._clashWhereParts(rules, discA, discB);
     var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
       " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
     var stA = {};
@@ -683,48 +712,23 @@ function setupMeasure(A) {
       var hashRows = A.dbQuery("SELECT i.guid, i.geometry_hash, m.discipline FROM element_instances i JOIN elements_meta m ON i.guid = m.guid WHERE i.guid IN (?, ?)", [c[0], c[1]]);
       var meshColors = [0xff2222, 0x2266ff];  // §S277c: red A + blue B (was orange)
       hashRows.forEach(function(hr, hi) {
-        var geo = A.meshCache[hr[1]];
-        if (!geo) {
-          var gRows = A.dbQuery("SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?", [hr[1]]);
-          if (gRows.length && gRows[0][0] && gRows[0][1]) {
-            geo = A.blobToGeometry(gRows[0][0], gRows[0][1]);
-            if (geo) A.meshCache[hr[1]] = geo;
-          }
-        }
-        if (!geo) return;
-        var tRow = A.dbQuery("SELECT center_x, center_y, center_z, rotation_x, rotation_y, rotation_z FROM element_transforms WHERE guid = ?", [hr[0]]);
-        if (!tRow.length) return;
-        var pos = A.ifc2three(tRow[0][0], tRow[0][1], tRow[0][2]);
         var disc = hr[2] || '';
         var discColor = (A.DISC_COLORS && A.DISC_COLORS[disc]) || meshColors[hi];
-
         // Full unclipped mesh — discipline color, shows full pipe/slab length
-        var fullMat = new THREE.MeshPhongMaterial({
+        var fullMesh = A._elementOverlay(hr[0], new THREE.MeshPhongMaterial({
           color: discColor, transparent: true, opacity: 0.25,
           side: THREE.DoubleSide, depthWrite: false, flatShading: true
-        });
-        var fullMesh = new THREE.Mesh(geo.clone(), fullMat);
-        fullMesh.position.set(pos.x, pos.y, pos.z);
-        if (tRow[0][3] || tRow[0][4] || tRow[0][5]) {
-          fullMesh.rotation.set(tRow[0][3] || 0, tRow[0][5] || 0, -(tRow[0][4] || 0));
-        }
-        fullMesh.frustumCulled = false;
+        }));
+        if (!fullMesh) return;
         fullMesh.renderOrder = 996 + hi;
         A.measureGroup.add(fullMesh);
         A._clashHighlights.push(fullMesh);
-
         // Clipped mesh at overlap — bright red/blue, both always visible
-        var mat = new THREE.MeshBasicMaterial({
+        var mesh = A._elementOverlay(hr[0], new THREE.MeshBasicMaterial({
           color: meshColors[hi], transparent: true, opacity: 0.6,
           side: THREE.DoubleSide, depthTest: false, depthWrite: false,
           clippingPlanes: clipPlanes, clipShadows: true
-        });
-        var mesh = new THREE.Mesh(geo.clone(), mat);
-        mesh.position.set(pos.x, pos.y, pos.z);
-        if (tRow[0][3] || tRow[0][4] || tRow[0][5]) {
-          mesh.rotation.set(tRow[0][3] || 0, tRow[0][5] || 0, -(tRow[0][4] || 0));
-        }
-        mesh.frustumCulled = false;
+        }));
         mesh.renderOrder = 998 + hi; // A=998, B=999 — both draw, B on top
         A.measureGroup.add(mesh);
         A._clashHighlights.push(mesh);
@@ -815,6 +819,7 @@ function setupMeasure(A) {
     A._loadClashStatuses();
     A._currentClashes = clashes;
     A._currentClashRules = rules;
+    A._clashPairBoxTotal = undefined; // §V.4: set by _countClashesAsync for THIS pair
     var display = rules.display || {};
     var dimOpacity = display.dim_opacity || 0.1;
     var maxVisible = display.max_visible || 20;
@@ -868,7 +873,7 @@ function setupMeasure(A) {
       // §MESH_NARROWPHASE: mesh-true count once row[9] verdicts exist (bbox-only rows are struck below)
       var nJudged = 0, nMeshTrue = 0;
       for (var qi = 0; qi < cc.length; qi++) { var qv = cc[qi][9]; if (qv && qv.verdict && qv.verdict !== 'UNKNOWN') { nJudged++; if (qv.verdict === 'CLASH') nMeshTrue++; } }
-      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px"></span>' +
+      hdr += '<span style="color:#fff;font-size:11px">' + cc.length + ' <span id="clash-total-count" style="color:#888;font-size:10px">' + (typeof A._clashPairBoxTotal === 'number' ? 'Total: ' + A._clashPairBoxTotal : '') + '</span>' +
         (nJudged ? ' <span id="clash-mesh-true" style="color:#8fef8f;font-size:10px" title="triangle-exact verdict (clash_narrow.js)">mesh-true ' + nMeshTrue + '/' + nJudged + '</span>' : '') + '</span>';
       hdr += '<div style="display:flex;gap:8px;margin:2px 0;font-size:11px;color:#aaa">' +
         '<span>\u{1F7E1}' + sCounts['Reviewed'] + ' RVW</span>' +
@@ -877,10 +882,16 @@ function setupMeasure(A) {
       hdr += '<hr style="border:none;border-top:1px solid #555;margin:3px 0">';
 
       // Scrollable body
-      var shown = Math.min(cc.length, maxVisible);
-      var body = '';
-      for (var i = 0; i < shown; i++) {
+      // CIVIL_HIGHWAY_JELAPANG.md §V.4 — a pair with ≥ display.hide_box_only_above BOX hits lists only rows the
+      // mesh test has not ruled out (CLEAR = box-only is skipped, not struck through). Unjudged rows still show.
+      var hideAbove = (rules.display && rules.display.hide_box_only_above) || 0;
+      var hideBoxOnly = hideAbove > 0 && typeof A._clashPairBoxTotal === 'number' && A._clashPairBoxTotal >= hideAbove;
+      var body = '', shown = 0, hiddenBox = 0, more = 0;
+      for (var i = 0; i < cc.length; i++) {
         var c = cc[i];
+        if (hideBoxOnly && c[9] && c[9].verdict === 'CLEAR') { hiddenBox++; continue; }
+        if (shown >= maxVisible) { more++; continue; }
+        shown++;
         var clsA = (c[2] || '?').replace('Ifc', '').replace('StandardCase', '');
         var clsB = (c[3] || '?').replace('Ifc', '').replace('StandardCase', '');
         var overlap = (typeof c[8] === 'number') ? c[8] : 0;
@@ -907,9 +918,14 @@ function setupMeasure(A) {
           ' <b style="color:' + sev.color + '">' + overlap.toFixed(2) + 'm</b>' + nvTag +
           '</span>';
       }
-      if (cc.length > maxVisible) {
-        body += '<span style="color:#888;font-size:9px">+' + (cc.length - maxVisible) + ' more</span>';
+      if (more > 0) {
+        body += '<span style="color:#888;font-size:9px">+' + more + ' more</span>';
       }
+      if (hiddenBox > 0) {
+        body += '<span id="clash-boxonly-hidden" style="display:block;color:#888;font-size:9px">' + hiddenBox + ' box-only hidden (' +
+          A._clashPairBoxTotal + ' box hits \u2265 ' + hideAbove + ')</span>';
+      }
+      if (hideBoxOnly) console.log('§CLASH_BOXONLY_HIDE boxTotal=' + A._clashPairBoxTotal + ' limit=' + hideAbove + ' page=' + cc.length + ' hidden=' + hiddenBox + ' shown=' + shown + ' more=' + more);
       return { hdr: hdr, body: body };
     };
 
@@ -1278,6 +1294,7 @@ function setupMeasure(A) {
     if (!A.measureFirstPoint) {
       A.measureFirstPoint = point;
       A._measureFirstMesh = hitMesh;
+      A._measureFirstHit = hits[0];
       const markerGeo = new THREE.SphereGeometry(0.15, 8, 8);
       const markerMat = new THREE.MeshBasicMaterial({ color: 0x4fc3f7 });
       A.measureFirstMarker = new THREE.Mesh(markerGeo, markerMat);
@@ -1286,24 +1303,8 @@ function setupMeasure(A) {
       A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_measure_tap||'Tap another spot for length, same spot for Area';
       console.log('§MEASURE dot placed — tap same dot for area, or tap elsewhere for distance');
     } else if (point.distanceTo(A.measureFirstPoint) < 0.5) {
-      // Second tap on same spot → area of that element
-      var mesh = A._measureFirstMesh;
-      var area = A._meshArea(mesh);
-      var label = area.toFixed(2) + ' m²';
-      var cls = mesh.userData.ifcClass || '';
-      if (cls) label = cls.replace('Ifc', '') + ': ' + label;
-      A._highlightMesh(mesh, null, 0xff8c00);
-      // Fixed-position label at click point
-      var labelDiv = document.createElement('div');
-      labelDiv.className = 'measure-label';
-      labelDiv.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#cc6600;font-size:14px;font-weight:bold;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,140,0,0.6);pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif';
-      labelDiv.textContent = label;
-      labelDiv.style.left = Math.min(e.clientX + 10, window.innerWidth - 200) + 'px';
-      labelDiv.style.top = Math.min(Math.max(e.clientY - 30, 10), window.innerHeight - 50) + 'px';
-      document.body.appendChild(labelDiv);
-      A.measureLabels.push({ div: labelDiv, mid: null });
-      A.status.textContent = label;
-      console.log('§MEASURE_AREA ' + label + ' mesh=' + (mesh.userData.guid || mesh.id));
+      // Second tap on same spot → the element's size (§MEASURE_ITEM — same path as double-click)
+      A._measureItem(A._measureFirstHit || hits[0], e.clientX, e.clientY);
       // Remove the first-point marker
       if (A.measureFirstMarker) A.measureGroup.remove(A.measureFirstMarker);
       A.measureFirstPoint = null;
@@ -1353,6 +1354,106 @@ function setupMeasure(A) {
     // render loop or the blue dot won't paint until the NEXT click happens to wake it.
     if (A.markDirty) A.markDirty();
     return true;
+  };
+
+  // §MEASURE_ITEM (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Y) — ONE builder for "this element, drawn on its
+  // own": its geometry (meshCache, else the DB blob) at its DB placement, rotated as the renderer does. DB center is the
+  // vertex CENTROID and the stored vertices are centroid-relative, so the geometry sits at center with no offset.
+  // Used by the clash reveal (both overlays) and the Measure item highlight. Shares the cached geometry — never dispose it.
+  A._elementOverlay = function(guid, material) {
+    var r = A.dbQuery("SELECT i.geometry_hash, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z " +
+      "FROM element_instances i JOIN element_transforms t ON t.guid = i.guid WHERE i.guid = ?", [guid]);
+    if (!r.length || !r[0][0]) return null;
+    var hash = r[0][0], geo = A.meshCache[hash];
+    if (!geo) {
+      var gRows = A.dbQuery("SELECT vertices, faces FROM component_geometries WHERE geometry_hash = ?", [hash]);
+      if (gRows.length && gRows[0][0] && gRows[0][1]) { geo = A.blobToGeometry(gRows[0][0], gRows[0][1]); if (geo) A.meshCache[hash] = geo; }
+    }
+    if (!geo) return null;
+    var pos = A.ifc2three(r[0][1], r[0][2], r[0][3]);
+    var m = new THREE.Mesh(geo, material);
+    m.position.set(pos.x, pos.y, pos.z);
+    if (r[0][4] || r[0][5] || r[0][6]) m.rotation.set(r[0][4] || 0, r[0][6] || 0, -(r[0][5] || 0));
+    m.frustumCulled = false;
+    m.userData.guid = guid;
+    m.updateMatrixWorld(true);
+    return m;
+  };
+
+  // §MEASURE_ITEM — size of ONE element: highlight it, give its area and its extents along its OWN axes.
+  // Elements are drawn in shared batches, so the raycast's object is a batch; the element is resolved with the
+  // hover resolver (A.guidForHit) and measured on its own geometry. Plan extents along the element's own axes (tightest
+  // plan rectangle): longer = Length, shorter = Width. A curved element's rectangle gives the CHORD, so the label says
+  // "box" — not a centre-line length.
+  A._measureItem = function(hit, clientX, clientY) {
+    var guid = A.guidForHit ? A.guidForHit(hit) : null;
+    var target = guid ? A._elementOverlay(guid, new THREE.MeshBasicMaterial({
+      color: 0xff8c00, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthTest: false, depthWrite: false })) : null;
+    if (!target) {
+      // unbatched mesh with no guid (e.g. an imported mesh) — the old path, which is correct for a single mesh
+      var lone = hit.object, la = A._meshArea(lone);
+      A._highlightMesh(lone, la.toFixed(2) + ' m²', 0xff8c00);
+      console.log('§MEASURE_ITEM guid=none (single mesh) area=' + la.toFixed(3));
+      return null;
+    }
+    target.renderOrder = 997;
+    A.measureGroup.add(target);
+    var geo = target.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    var bb = geo.boundingBox, pos = geo.attributes.position, plan = [];
+    // The importer bakes each element's yaw into its vertices (rotation_* stay 0), so an axis-aligned box would give a
+    // diagonal kerb its world-axis extents. Own axes = the tightest plan rectangle at any angle (A.minAreaRect, shared
+    // with the lamp-shape test). Viewer frame is y-up: plan = (x, z), height = y extent.
+    for (var pi = 0; pi < pos.count; pi++) plan.push([pos.getX(pi), pos.getZ(pi)]);
+    var rect = A.minAreaRect ? A.minAreaRect(plan) : null;
+    var height = bb.max.y - bb.min.y, y0 = bb.min.y;
+    var planA, planB, cornerAt;
+    if (rect) {
+      planA = rect.w; planB = rect.d;
+      cornerAt = function(u, v) { return new THREE.Vector3(u * rect.ux - v * rect.uy, y0, u * rect.uy + v * rect.ux); };
+    } else {   // degenerate plan (a vertical sheet): fall back to the axis box
+      planA = bb.max.x - bb.min.x; planB = bb.max.z - bb.min.z;
+      cornerAt = function(u, v) { return new THREE.Vector3(u, y0, v); };
+      rect = { u0: bb.min.x, u1: bb.max.x, v0: bb.min.z, v1: bb.max.z };
+    }
+    var length = Math.max(planA, planB), width = Math.min(planA, planB);
+    var area = A._meshArea(target);
+    var cls = (A.dbQuery("SELECT ifc_class FROM elements_meta WHERE guid = ?", [guid])[0] || [''])[0] || '';
+    // three dimension lines on the rectangle's edges, in the element's frame (children inherit its rotation/position)
+    var lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true });
+    var c0 = cornerAt(rect.u0, rect.v0), edges = [
+      { a: c0, b: cornerAt(rect.u1, rect.v0), v: planA },
+      { a: c0, b: cornerAt(rect.u0, rect.v1), v: planB },
+      { a: c0, b: c0.clone().setY(bb.max.y), v: height }];
+    edges.forEach(function(e) {
+      var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([e.a, e.b]), lineMat);
+      ln.renderOrder = 999; target.add(ln);
+      var mid = target.localToWorld(e.a.clone().add(e.b).multiplyScalar(0.5));
+      var d = document.createElement('div');
+      d.className = 'measure-label';
+      d.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#fff;font-size:12px;padding:2px 6px;border-radius:4px;pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif;transform:translate(-50%,-50%)';
+      d.textContent = e.v.toFixed(2) + ' m';
+      document.body.appendChild(d);
+      A.measureLabels.push({ div: d, mid: mid });
+    });
+    var label = (cls ? cls.replace('Ifc', '') + ': ' : '') + 'L ' + length.toFixed(2) + ' × W ' + width.toFixed(2) +
+      ' × H ' + height.toFixed(2) + ' m (box) · ' + area.toFixed(2) + ' m²';
+    var labelDiv = document.createElement('div');
+    labelDiv.className = 'measure-label';
+    labelDiv.style.cssText = 'position:fixed;z-index:100;' + _panelBg + 'color:#cc6600;font-size:14px;font-weight:bold;padding:6px 12px;border-radius:6px;border:1px solid rgba(255,140,0,0.6);pointer-events:none;white-space:nowrap;font-family:Segoe UI,sans-serif';
+    labelDiv.textContent = label;
+    labelDiv.style.left = Math.min(clientX + 10, window.innerWidth - 260) + 'px';
+    labelDiv.style.top = Math.min(Math.max(clientY - 30, 10), window.innerHeight - 50) + 'px';
+    document.body.appendChild(labelDiv);
+    A.measureLabels.push({ div: labelDiv, mid: null });
+    A.status.textContent = label;
+    var out = { guid: guid, ifcClass: cls, length: length, width: width, height: height, planA: planA, planB: planB, area: area,
+      vertices: pos.count, ownAxes: !!(A.minAreaRect && rect.ux !== undefined) };
+    A._lastMeasureItem = out;
+    console.log('§MEASURE_ITEM guid=' + guid + ' class=' + cls + ' L=' + length.toFixed(3) + ' W=' + width.toFixed(3) +
+      ' H=' + height.toFixed(3) + ' area=' + area.toFixed(3) + ' verts=' + out.vertices + ' batch=' + !!(hit.object.isBatchedMesh || hit.object.isInstancedMesh));
+    if (A.markDirty) A.markDirty();
+    return out;
   };
 
   // ── Area from mesh geometry (world-space, cached by geometry UUID) ──
@@ -1432,21 +1533,21 @@ function setupMeasure(A) {
     if (!A.measureActive) return;
     // Cancel pending single-click
     if (A._measureClickTimer) { clearTimeout(A._measureClickTimer); A._measureClickTimer = null; }
-    A.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    A.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    // canvas bounds for NDC (S246b, same as _doMeasureClick) — window size is wrong when the canvas is not full-window
+    var canvas = A.renderer ? A.renderer.domElement : null;
+    var rect = canvas ? canvas.getBoundingClientRect() : { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+    A.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    A.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     A.raycaster.setFromCamera(A.mouse, A.camera);
     var meshes = [];
-    A.scene.traverse(function(obj) { if (obj.isMesh && obj !== A.ground && obj.visible) meshes.push(obj); });
+    A.scene.traverse(function(obj) { if (obj.isMesh && obj !== A.ground && obj.visible && obj.parent !== A.measureGroup) meshes.push(obj); });
     var hits = A.raycaster.intersectObjects(meshes, false);
-    if (!hits.length) return;
-    var mesh = hits[0].object;
-    var area = A._meshArea(mesh);
-    var label = area.toFixed(2) + ' m²';
-    var cls = mesh.userData.ifcClass || '';
-    if (cls) label = cls.replace('Ifc', '') + ': ' + label;
-    A._highlightMesh(mesh, label, 0xff8c00);
-    A.status.textContent = label;
-    console.log('§MEASURE_AREA ' + label + ' mesh=' + (mesh.userData.guid || mesh.id));
+    // same skip as the hover resolver (hover_name.js A.hoverGuidAt): a see-through element (ghosted, opacity < 0.3) in
+    // front of the target is not what the user is pointing at
+    var hit = null;
+    for (var hi = 0; hi < hits.length && !hit; hi++) if (!(hits[hi].object.material && hits[hi].object.material.opacity < 0.3)) hit = hits[hi];
+    if (!hit) return;
+    return A._measureItem(hit, e.clientX, e.clientY);
   };
 
   // ── Right-click: bounding box wireframe + info card ──

@@ -149,6 +149,17 @@ function setupClashLabels(A) {
       return r.name;
     }
 
+    // §ALTC_LABELS L3 (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_LABELS): a road export carries every piece as
+    // IfcBuildingElementProxy ("Misc Element" in rates.js); its discipline (from the file name, §CIVIL_DISC) names the trade.
+    // Owner of the trade name: rates.js SEQUENCE_CIVIL[disc].phase. Building disciplines never match → null → rates.js name.
+    function civilNameFor(disc) {
+      var SC = window.SEQUENCE_CIVIL, e = (SC && disc) ? SC[disc] : null;
+      if (!e || !e.phase) return null;
+      if (!_nameLogged['civil:' + disc]) { _nameLogged['civil:' + disc] = 1; console.log('§CLASH_LABEL_NAME ' + disc + ' → "' + e.phase + '" source=SEQUENCE_CIVIL'); }
+      return e.phase;
+    }
+    A.clashLabels.civilNameFor = civilNameFor;
+
     // Sized off frame HEIGHT, exactly as the day counter is, so the label stays in proportion to the
     // HUD at every export size. Nothing here depends on the pair's distance — that is §P2.5 P5.
     function metrics(h) {
@@ -186,7 +197,7 @@ function setupClashLabels(A) {
       if (_pairsRef !== pairs || !_near || _near.length !== pairs.length) {
         _pairsRef = pairs; _near = new Uint8Array(pairs.length); _fade = new Float32Array(pairs.length); _lastFilmS = null; _names = null;
       }
-      if (!_names) _names = pairs.map(function (p) { return { a: nameFor(p.classA), b: nameFor(p.classB) }; });
+      if (!_names) _names = pairs.map(function (p) { return { a: civilNameFor(p.discA) || nameFor(p.classA), b: civilNameFor(p.discB) || nameFor(p.classB) }; });
       var fs = filmSeconds || 0;
       var dt = (_lastFilmS == null) ? FADE_S : Math.max(0, fs - _lastFilmS);
       _lastFilmS = fs;
@@ -306,14 +317,21 @@ function setupClashLabels(A) {
     // entry here is guaranteed IN-FRUSTUM by update()'s selection step (§P2.1 amended again) — an
     // out-of-frustum contact never reaches `placed` at all, so there is no "behind the camera, clamp
     // to the edge, skip the leader" special case here any more (that was the sticky-lingering bug).
-    A.clashLabelsCompositeOntoCanvas = function (ctx, w, h, placed) {
+    // §129 FIX 5 (2026-09-17) — `ambientAlpha` (new, optional, defaults to 1 — every existing caller
+    // keeps working unchanged) is the load-path hold's own HUD fade, passed through from
+    // `cinema_maxq.js`'s `_drawUnlessHold`. `ctx.globalAlpha = Math.min(1, q.alpha)` below is this
+    // function's OWN per-label fade (`q.alpha`), an ABSOLUTE assignment that silently clobbered the
+    // ambient fade every hold frame (found via a real bake's `§LOADPATH_FOCUS alphaClobber=
+    // [clash.labels:3x@maxAlpha=1.00,...]`, not guessed).
+    A.clashLabelsCompositeOntoCanvas = function (ctx, w, h, placed, ambientAlpha) {
       if (!ctx || !placed || !placed.length) return 0;
+      var _ambA = (ambientAlpha == null) ? 1 : ambientAlpha;
       var M = metrics(h), n = 0;
       ctx.save();
       for (var k = 0; k < placed.length; k++) {
         var q = placed[k];
         if (!(q.alpha > 0)) continue;
-        ctx.globalAlpha = Math.min(1, q.alpha);
+        ctx.globalAlpha = Math.min(1, q.alpha) * _ambA;
         // leader: from the panel's nearest edge point to the projected contact, plus a dot on it
         var ax = clamp(q.sx, q.x, q.x + q.w), ay = clamp(q.sy, q.y, q.y + q.h);
         // §CLASH_LABEL_HUD_FAMILY: halo first, core on top — line and dot alike.

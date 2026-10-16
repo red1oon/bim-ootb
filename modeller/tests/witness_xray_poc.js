@@ -60,6 +60,9 @@ async function measure(pg, key, walkDisc) {
     if (dwRoot) dwRoot.children.forEach(o => {
       if (fixtures.length >= 10) return;
       const ud = o.userData || {};
+      // §NET-AUDIT (2026-09-27): a routed-run mesh (userData.dwChain — walks route since #1769) is not a fixture bucket;
+      // counting it made SampleCastle's gate fail on a population the discriminator was never about. Logged as info.
+      if (ud.dwChain != null) { console.log('§XRAYPOC chain-mesh (info, not a fixture) disc=' + ud.dwChain + ' count=' + (o.count || null)); return; }
       const fid = ud.featureId;   // measured: InstancedMesh buckets carry dwDisc/dwSub, NOT featureId (see modeller.html:3694)
       fixtures.push({ fid: fid, hasDwDisc: ud.dwDisc != null || ud.dwAsm != null, dwDisc: ud.dwDisc || ud.dwAsm, hasColorParam: fid != null && colorMap[fid] != null, isInstancedMesh: !!o.isInstancedMesh, count: o.count || null });
     });
@@ -82,7 +85,8 @@ async function measure(pg, key, walkDisc) {
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalk==="function"', { timeout: 30000 }).catch(() => {});
 
-  const sc = await measure(pg, 'SampleCastle', 'ELEC');
+  // §WALK-LOD400-ONLY (2026-09-27): SampleCastle's ELEC/ACMV/PLB walks now REFUSE — their placements carry no device and no mesh hash, so they rendered 366 LOD200 boxes (red1: 'All must be LOD400 or fail hard'). FP (borrowed from terminal_rules) is real LOD400 there (126), so this leg walks FP.
+  const sc = await measure(pg, 'SampleCastle', 'FP');
   // fresh reload before Duplex to avoid state bleed between residents
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalk==="function"', { timeout: 30000 }).catch(() => {});

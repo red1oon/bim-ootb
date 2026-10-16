@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+// ⚠ DO NOT REMOVE — WITNESS §ALTC_HIGHWAY (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ALTC_HIGHWAY). Read the log.
+// ISSUE (user 2026-10-05): "alt-c to give more realistic daytime (perhaps late evening) with lamps on and hitting surface …
+// special treatment for outdoor CW roads". Before: the film plan dived to the bbox CENTRE of a 2 km road and left through a
+// "facade" (no road), under a 55° → 6° sun. PROVES OR DISPROVES WITHOUT A BAKE (no film is rendered — bakes need the user's
+// go): (1) the civil plan's waypoints ARE the Fly route (A.civilRoutePath), settle = route start; (2) the sun arc reads
+// 15° at tNorm 0 and 6° at 1 on the road, 55° → 6° on a building (A._sunArcStep's return); (3) Duplex plan has no road
+// seeding (non-impact); (4) the road film is paced at the Fly speed (was 1243 s at the 2.3 m/s interior walk). NOT judged here: the interior-lights gate and lamp cap run only inside a bake loop (code-read only).
+// Env: BLD_DIR · PORT · LOG
+'use strict';
+const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
+const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
+const ROOT = path.resolve(path.join(__dirname, '..', '..'));
+const BLD_DIR = process.env.BLD_DIR || path.join(os.homedir(), 'Downloads', 'JALAN JELAPANG IFC');
+const PORT = +(process.env.PORT || 8585), LOG = process.env.LOG || '/tmp/witness_altc_highway.log';
+const out = []; const log = l => { out.push(l); console.log(l); };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.css': 'text/css' };
+const server = http.createServer((req, res) => { try {
+  const u = decodeURIComponent(req.url.split('?')[0]); let fp = path.join(ROOT, u.replace(/^\/+/, ''));
+  if (!fs.existsSync(fp) && u.startsWith('/jel/')) fp = path.join(BLD_DIR, u.slice(5));
+  if (!fs.existsSync(fp)) { const alt = path.join('/home/red1/bim-ootb', u); if (fs.existsSync(alt)) fp = alt; else { res.writeHead(404); res.end(); return; } }
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(fp)] || 'application/octet-stream', 'Content-Length': fs.statSync(fp).size }); fs.createReadStream(fp).pipe(res);
+} catch (e) { res.writeHead(500); res.end(); } });
+async function probe(b, url, tag) {
+  const p = await b.newPage(); const con = [];
+  p.on('console', m => { const t = m.text(); if (/§ALTC_HIGHWAY|§ALTC_V2|§ALTC_V3|§SUN_ARC_STEP|§CINEMA_PACING/.test(t)) con.push(t); });
+  await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 600000 });
+  let ok = false;
+  for (let i = 0; i < 900 && !ok; i++) { await new Promise(r => setTimeout(r, 1000)); try { ok = await p.evaluate(() => !!(window.APP && APP.db && APP.streaming === false && Object.keys(APP.guidMap || {}).length && (!APP.isCivilModel || !APP.isCivilModel() || APP._civilLabels))); } catch (e) {} }
+  if (!ok) { await p.close(); return null; }
+  const r = await p.evaluate(() => {
+    const civil = !!(APP.isCivilModel && APP.isCivilModel());
+    const plan = APP.cinemaPathPlan(60);
+    const R = civil && APP.civilRoutePath ? APP.civilRoutePath() : null;
+    const wp = (plan && plan.waypoints) || [];
+    // §ALTC_V2 V1: the seed drives TOWARDS the junction with the most signal heads — the route may be reversed
+    const big = R ? R.stops.reduce((m, j) => (!m || j.n > m.n ? j : m), null) : null;
+    const RP = R ? (big && big.at < (R.path.length - 1) / 2 ? R.path.slice().reverse() : R.path) : null;
+    let wpMatch = 0; if (RP) wp.forEach((w, i) => { const q = RP[i]; if (q && Math.hypot(w.x - q.x, w.y - q.y, w.z - q.z) < 0.01) wpMatch++; });
+    const st = plan && plan.settle, s0 = RP && RP[0];
+    const settleToStart = (st && s0) ? Math.hypot(st.x - s0.x, st.z - s0.z) : null;
+    const el0 = APP._sunArcStep(0), el1 = APP._sunArcStep(1);
+    // §ALTC_ONEWAY: the SAME plan with Reveal ticked (road: seeded with its route, as the editor does; building: derived)
+    const ovR = civil && RP ? { waypoints: RP.map(p => ({ x: p.x, y: p.y, z: p.z })), reveal: true } : { reveal: true };
+    const pr = APP.cinemaPathPlan(60, ovR);
+    const rv = (pr && pr.reveal) || {}, sec = (pr && pr.sec) || {}, bt = (pr && pr.beats) || {};
+    // §ALTC_V2 V4: orbit at the big junction; V5: build-up done at the drive midpoint; V6: parade only inside [a, b]
+    const v2 = {};
+    if (civil && big && pr) {
+      const last = RP[RP.length - 1];
+      v2.driveEndToBigM = +Math.hypot(last.x - big.x, last.z - big.z).toFixed(1); v2.bigR = +big.r.toFixed(1); v2.bigHeads = big.n;
+      v2.pivotSrc = pr.pivotSrc; v2.pivotToBigM = +Math.hypot(pr.pivot.x - big.x, pr.pivot.z - big.z).toFixed(2); v2.orbitR = pr.orbitRadius != null ? +pr.orbitRadius.toFixed(1) : null;
+    }
+    if (rv.inDrive) {
+      const a = rv.inDrive.a, z = rv.inDrive.b; v2.a = +a.toFixed(4); v2.b = +z.toFixed(4); v2.mid = +((bt.spin + bt.out) / 2).toFixed(4); v2.out = +bt.out.toFixed(4);
+      v2.buAtMid = APP.buildupTAt ? +APP.buildupTAt(a + 1e-6, pr).toFixed(4) : null; v2.buBefore = APP.buildupTAt ? +APP.buildupTAt(a - 0.01, pr).toFixed(4) : null;
+      let outside = 0, one = new Set(), all = 0;
+      for (let t = 0; t <= 1; t += 0.0005) { const ph = APP.cpeRevealVisualAt(pr, t); if (!ph) continue; if (t <= a || t >= z) outside++; if (ph.phase === 'tail-one') one.add(ph.discs[0]); if (ph.phase === 'tail-all') all++; }
+      v2.phaseOutside = outside; v2.onesSeen = one.size; v2.discs = rv.discs.length; v2.allSamples = all;
+    }
+    return { civil, wp: wp.length, routePts: R ? R.path.length : 0, wpMatch, settleToStart: settleToStart == null ? null : +settleToStart.toFixed(2),
+      el0: +(+el0).toFixed(1), el1: +(+el1).toFixed(1), naturalTotal: plan && plan.naturalTotal ? +plan.naturalTotal.toFixed(1) : null,
+      revealTotal: pr && pr.naturalTotal ? +pr.naturalTotal.toFixed(1) : null, revealRound2Sec: rv.roundSec != null ? +(+rv.roundSec).toFixed(1) : null,
+      revealFlybackSec: sec.flyback != null ? +(+sec.flyback).toFixed(1) : null, revealTailSec: rv.tailSec != null ? +(+rv.tailSec).toFixed(1) : null,
+      revealPivotSrc: pr && pr.pivotSrc, v2 };
+  });
+  r.lines = con.filter(l => /§ALTC_HIGHWAY/.test(l)).slice(0, 2); r.v2lines = con.filter(l => /§ALTC_V2/.test(l));
+  const pc = con.filter(l => /§CINEMA_PACING/.test(l)).pop() || ''; const wm = pc.match(/\(walk [0-9.]+m @([0-9.]+)m\/s/);
+  r.walkMps = wm ? +wm[1] : null; r.pacing = pc.slice(0, 200);
+  const dm = pc.match(/= dive ([0-9.]+)/); r.diveSec = dm ? +dm[1] : null;   // §ALTC_V3: the plan's own dive seconds
+  r.diveSecRaw = r.diveSec; if (/approach capped/.test(con.join('\n'))) r.diveSecRaw = -1;
+  log('  [' + tag + '] ' + JSON.stringify(r)); await p.close(); return r;
+}
+(async () => {
+  await new Promise(r => server.listen(PORT, '127.0.0.1', r));
+  const b = await puppeteer.launch({ headless: true, userDataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'ach-')), protocolTimeout: 1800000,
+    args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--js-flags=--max-old-space-size=8192'] });
+  const base = `http://127.0.0.1:${PORT}/viewer/viewer.html?db=`;
+  const road = await probe(b, base + '/jel/JELAPANG.db', 'road');
+  const bld = await probe(b, base + 'buildings/Duplex_extracted.db', 'building');
+  if (!road || !bld) { log('§WITNESS_ALTC_HIGHWAY INCONCLUSIVE — a model never loaded'); fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(2); }
+  const checks = [
+    ['road model detected as civil (else nothing judged)', road.civil === true],
+    ['road film waypoints ARE the Fly route (every point within 1 cm)', road.routePts >= 2 && road.wp === road.routePts && road.wpMatch === road.routePts],
+    ['road film settles at the route start (< 1 m)', road.settleToStart != null && road.settleToStart < 1],
+    ['road sun arc 15° → 6° (late afternoon → dusk)', road.el0 === 15 && road.el1 === 6],
+    ['building not seeded with a road (no §ALTC_HIGHWAY line)', bld.civil === false && bld.lines.length === 0],
+    ['building sun arc unchanged 55° → 6°', bld.el0 === 55 && bld.el1 === 6],
+    ['road film cruise 35 m/s (§ALTC_ONEWAY) — was 2.3 m/s interior walk (1243 s)', road.walkMps === 35],
+    ['§ALTC_V2 V3 road film WITH Reveal under 3 min, one drive (round 2 + fly-back + tail = 0)', road.revealTotal < 180 && road.revealRound2Sec === 0 && road.revealFlybackSec === 0 && road.revealTailSec === 0],
+    ['§ALTC_V2 V1 drive ends at the big junction (≤ its r)', road.v2.driveEndToBigM != null && road.v2.driveEndToBigM <= road.v2.bigR],
+    ['§ALTC_V2 V4 orbit pivot = big junction (≤ 1 m), radius = its r', road.v2.pivotSrc === 'civil-junction' && road.v2.pivotToBigM <= 1 && road.v2.orbitR === road.v2.bigR],
+    ['§ALTC_V2 V5 build-up complete by min(drive midpoint, film half-way), not before', road.v2.a === +Math.min(road.v2.mid, 0.5).toFixed(4) && road.v2.a <= 0.5 && road.v2.buAtMid === 1 && road.v2.buBefore < 1],
+    ['§ALTC_V2 V6 parade only inside the drive second half, every discipline + all-together shown', road.v2.b === road.v2.out && road.v2.phaseOutside === 0 && road.v2.onesSeen === road.v2.discs && road.v2.discs > 0 && road.v2.allSamples > 0],
+    ['building orbit pivot not a junction (non-impact)', bld.revealPivotSrc !== 'civil-junction' && !bld.v2.a],
+    ['building Reveal still flies its second lap (non-impact)', bld.revealRound2Sec > 0 && bld.revealFlybackSec > 0],
+    ['building film pace unchanged (2.3 m/s interior walk)', bld.walkMps === 2.3],
+    ['§ALTC_V3 V3c road approach ≤ 8.3 s (280 m @ 35 m/s; v2 was 25.6 s)', road.diveSec != null && road.diveSec <= 8.3],
+    ['§ALTC_V3 building approach not capped (non-impact)', bld.diveSec != null && bld.diveSec === bld.diveSecRaw],
+  ];
+  let fail = 0; checks.forEach(([n, v]) => { if (!v) fail++; log('  ' + (v ? 'PASS ' : 'FAIL ') + n); });
+  log('§WITNESS_ALTC_HIGHWAY ' + (fail ? 'FAIL ' : 'PASS ') + (checks.length - fail) + '/' + checks.length);
+  fs.writeFileSync(LOG, out.join('\n') + '\n'); await b.close(); server.close(); process.exit(fail ? 1 : 0);
+})().catch(e => { log('CRASH ' + e.stack); fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(2); });

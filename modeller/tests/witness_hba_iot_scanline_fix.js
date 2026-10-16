@@ -16,7 +16,7 @@
  * CLAIM S1: the pane mounts (toggle() returns truthy — boundAssets/deps wiring intact).
  * CLAIM S2: requestAnimationFrame(loop) is called MORE THAN ONCE over ~500ms of real animation frames — before
  *           the fix this would be EXACTLY 0 (dead on the very first call); confirmed by re-running this exact
- *           witness against the pre-fix file via `git show HEAD:viewer/hba_iot.js` to prove the regression
+ *           witness against the pre-fix file via `git show 4a2e3f65^:viewer/hba_iot.js` to prove the regression
  *           shape, not just asserting the post-fix number in isolation.
  */
 'use strict';
@@ -60,11 +60,13 @@ async function run(label, hbaIotSource) {
   // session's edit) to confirm the bug shape actually existed (rafCalls === 0) — not just asserting the fix.
   const { execSync } = require('child_process');
   let preFixSource = null;
-  try { preFixSource = execSync('git show HEAD:viewer/hba_iot.js', { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 }).toString(); }
+  // §NET-AUDIT (2026-09-27): 'HEAD' was pre-fix only while the fix was uncommitted; once 4a2e3f65 (#665) merged, HEAD IS
+  // the fixed file and S3 could never pass again. Pin the reference to the fix commit's PARENT.
+  try { preFixSource = execSync('git show 4a2e3f65^:viewer/hba_iot.js', { cwd: ROOT, maxBuffer: 10 * 1024 * 1024 }).toString(); }
   catch (e) { console.log('  §HBA_SCANLINE could not read pre-fix HEAD version: ' + e.message); }
   if (preFixSource) {
-    const beforeR = await run('PRE-FIX (git HEAD)', preFixSource);
-    chk('S3 pre-fix HEAD version reproduces the dead-loop bug (rafCalls === 0)', beforeR.rafCalls === 0, 'rafCalls=' + beforeR.rafCalls);
+    const beforeR = await run('PRE-FIX (4a2e3f65^)', preFixSource);
+    chk('S3 pre-fix (4a2e3f65^) version reproduces the dead-loop bug (rafCalls === 0)', beforeR.rafCalls === 0, 'rafCalls=' + beforeR.rafCalls);
   } else {
     console.log('  ⚠ S3 skipped (no git HEAD to diff against — working tree may be the first commit touching this file)');
   }

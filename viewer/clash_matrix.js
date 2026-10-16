@@ -14,10 +14,7 @@ function setupClashMatrix(A) {
 
   A._countClashesRtree = function(storey, rules, discA, discB) {
     var tol = rules._activeTolerance || 0;
-    var ignoreSet = {};
-    rules.clash_rules.forEach(function(r) {
-      (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
-    });
+    var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var storeyFilter = storey ? " AND m.storey = '" + storey.replace(/'/g, "''") + "'" : "";
     var ignoreFilter = Object.keys(ignoreSet).length ?
       " AND m.ifc_class NOT IN (" + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ")" : "";
@@ -293,7 +290,7 @@ function setupClashMatrix(A) {
       var thisPair = discA + ' vs ' + discB;
       if (thisPair !== prevPair) A._clashPairOffset = 0;
       // §S278: Set active tolerance for query filtering
-      rules._activeTolerance = rule.tolerance_m || 0.025;
+      rules._activeTolerance = A._clashTolerance(rule);
       var offset = A._clashPairOffset || 0;
       var clashes = A._queryClashesPair(storey, rules, discA, discB, offset);
       if (!clashes.length && offset > 0) {

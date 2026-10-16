@@ -25,12 +25,31 @@
     n = Math.round(Number(n) || 0); var a = Math.abs(n), s = n < 0 ? '-' : '';
     if (a >= 1e6) return s + (a / 1e6).toFixed(1) + 'M'; if (a >= 1e3) return s + Math.round(a / 1e3) + 'K'; return s + a;
   }
+  // S226 §R2b (bim-compiler prompts/S226_localisation.md): labels from the iDempiere-format dictionary via
+  // locale_loader.js's _trl(); `en` = the English shown today, byte-identical to ad_message_base.csv (W-VIEWER-I18N 3b).
+  function _wiTrl(key, en, repl) {
+    if (typeof global._trl === 'function') return global._trl(key, repl || null, en);
+    var s = en; if (repl) for (var k in repl) s = s.replace('{' + k + '}', repl[k]);
+    return s;
+  }
   function _days(s) { return global.WhatIf._days(s); }
-  function _fmt(ds) { return global.WhatIf._date(ds).slice(0, 10); }
+  // _fmt(ds) — phase dates arrive as 'YYYY-MM-DD hh:mm:ss' strings (readPhases / ripple); a number is epoch days.
+  // S226 §R2b (2026-10-04): was `_date(ds)` on the string → 'NaN-NaN-Na' in every track tooltip (found by W-VIEWER-I18N).
+  function _fmt(ds) { return (typeof ds === 'number' ? global.WhatIf._date(ds) : String(ds)).slice(0, 10); }
 
   // Load the ERP db (OPFS push-store first, then bundled seed). Returns a sql.js Database or null.
+  var _dbStamp = null;
+  function _wiStamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
   function _loadDb() {
-    if (_db) return Promise.resolve(_db);
+    return _wiStamp().then(function (st) {
+      if (_db && st === _dbStamp && st !== 'unknown') return _db;
+      if (_db) console.log('§PUSH_STORE_RELOAD writer=whatif was=' + _dbStamp + ' now=' + st);
+      _db = null; _dbStamp = st;
+      return _openDb();
+    });
+  }
+  function _openDb() {
     var SQL = _SQL();
     if (!SQL || !global.WhatIf) return Promise.resolve(null);
     var fromOpfs = Promise.resolve(null);
@@ -56,7 +75,10 @@
   function _hasFoldedProject(db) {
     return Number(_scalar(db, "SELECT COUNT(*) FROM C_ProjectPhase") || 0) > 0;
   }
-  // pick the folded project: the active building's C_Project if it has phases, else the first project that does.
+  // pick the folded project: the active building's C_Project if it has phases — ONLY that one.
+  // §NO_FALLTHROUGH (user 2026-10-07: "falling thru to pick up Hospital … just where clause proper"): there used to be an
+  //   "else the newest project with phases" branch, which on the bundled seed is always Hospital (C_Project 990000) — so a
+  //   Civil Works session showed and edited Hospital's schedule. No match now returns null + a § line; open() tells the user.
   function _pickProject(db) {
     var building = A().activeBuilding;
     // NB: don't filter on branch_id here — that column only exists AFTER a blue commit ALTERs it in. readPhases is
@@ -65,8 +87,7 @@
       var pid = _scalar(db, "SELECT p.C_Project_ID FROM C_Project p WHERE p.Value=? AND EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID)", [building]);
       if (pid != null) return { id: pid, name: _scalar(db, "SELECT Name FROM C_Project WHERE C_Project_ID=?", [pid]) };
     }
-    var r = db.exec("SELECT p.C_Project_ID, p.Name FROM C_Project p WHERE EXISTS(SELECT 1 FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID) ORDER BY p.C_Project_ID DESC LIMIT 1");
-    if (r.length && r[0].values.length) return { id: r[0].values[0][0], name: r[0].values[0][1] };
+    console.log('§WHATIF-UI no-project-for-building building="' + (building || '') + '" (no fall-through to another project)');
     return null;
   }
 
@@ -126,24 +147,24 @@
       var moved = (bp.start !== op.start || bp.end !== op.end);
       return '<div class="wi-row">' +
         '<div class="wi-name" title="' + op.name + '">' + op.name + '</div>' +
-        '<div class="wi-track" data-seq="' + op.seqno + '" title="drag to slip · official ' + _fmt(op.start) + '→' + _fmt(op.end) + (moved ? '  ·  blue ' + _fmt(bp.start) + '→' + _fmt(bp.end) : '') + '">' +
+        '<div class="wi-track" data-seq="' + op.seqno + '" title="' + _wiTrl('wi_tt_track', 'drag to slip · official {a}→{b}', { a: _fmt(op.start), b: _fmt(op.end) }) + (moved ? '  ·  ' + _wiTrl('wi_tt_track_blue', 'blue {a}→{b}', { a: _fmt(bp.start), b: _fmt(bp.end) }) : '') + '">' +
           '<div class="wi-bar off" style="left:' + offL.toFixed(1) + '%;width:' + offW.toFixed(1) + '%"></div>' +
           (moved ? '<div class="wi-bar blue" style="left:' + bL.toFixed(1) + '%;width:' + bW.toFixed(1) + '%"></div>' : '') +
         '</div>' +
-        '<div class="wi-step"><button data-seq="' + op.seqno + '" data-d="-7" title="pull in 7 days">−</button>' +
+        '<div class="wi-step"><button data-seq="' + op.seqno + '" data-d="-7" title="' + _wiTrl('wi_tt_pull_in', 'pull in 7 days') + '">−</button>' +
           '<span class="wi-d">' + (d > 0 ? '+' + d : d) + 'd</span>' +
-          '<button data-seq="' + op.seqno + '" data-d="7" title="slip out 7 days">+</button></div>' +
+          '<button data-seq="' + op.seqno + '" data-d="7" title="' + _wiTrl('wi_tt_slip_out', 'slip out 7 days') + '">+</button></div>' +
       '</div>';
     }).join('');
     var fs = wf.forward.finishSlipDays || 0;
     var summary = '<div id="whatif-summary">' +
-      '<div>Finish: <b>' + wf.official.finish.slice(0, 10) + '</b> → <span class="blue">' + wf.blue.finish.slice(0, 10) + '</span> ' +
+      '<div>' + _wiTrl('wi_finish', 'Finish:') + ' <b>' + wf.official.finish.slice(0, 10) + '</b> → <span class="blue">' + wf.blue.finish.slice(0, 10) + '</span> ' +
         '<b>(' + (fs > 0 ? '+' + fs : fs) + 'd)</b></div>' +
-      '<div>BAC: <b>' + _money(wf.official.bac) + '</b> <span style="color:#8893a8">(unchanged — same scope)</span></div>' +
-      '<div>PV @ finish: <b>' + _money(wf.official.pv) + '</b> → <span class="blue">' + _money(wf.blue.pv) + '</span></div>' +
+      '<div>' + _wiTrl('wi_bac', 'BAC:') + ' <b>' + _money(wf.official.bac) + '</b> <span style="color:#8893a8">' + _wiTrl('wi_unchanged_scope', '(unchanged — same scope)') + '</span></div>' +
+      '<div>' + _wiTrl('wi_pv_finish', 'PV @ finish:') + ' <b>' + _money(wf.official.pv) + '</b> → <span class="blue">' + _money(wf.blue.pv) + '</span></div>' +
     '</div>';
     panel.querySelector('#whatif-body').innerHTML = summary +
-      '<div id="whatif-legend"><span class="l-off">Official (planned)</span><span class="l-blue">What-if (blue ripple)</span></div>' +
+      '<div id="whatif-legend"><span class="l-off">' + _wiTrl('wi_legend_official', 'Official (planned)') + '</span><span class="l-blue">' + _wiTrl('wi_legend_blue', 'What-if (blue ripple)') + '</span></div>' +
       '<div style="margin-top:8px">' + rows + '</div>';
     var anySlip = Object.keys(_slips).some(function (k) { return _slips[k] && _slips[k].startDelta; });
     panel.querySelector('#wi-accept').disabled = !anySlip;
@@ -163,6 +184,18 @@
 
   function _persist() {
     if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    // §STORE_STAMP: the panel held this copy while open — if the store changed on disk since (reset, another push), writing would
+    // put old orders back. Refuse, say so; the user reopens What-if on the current store.
+    return _wiStamp().then(function (st) {
+      if (st !== _dbStamp) {
+        console.log('§PUSH_STORE_STALE writer=whatif was=' + _dbStamp + ' now=' + st + ' — accept refused, reopen What-if');
+        var stx = A().status; if (stx) stx.textContent = _wiTrl('wi_store_changed', 'What-if: the project store changed since you opened this — reopen What-if');
+        _db = null; return false;
+      }
+      return _writeDb();
+    });
+  }
+  function _writeDb() {
     try {
       var bytes = _db.export();
       return navigator.storage.getDirectory()
@@ -170,7 +203,7 @@
         .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
         .then(function (fh) { return fh.createWritable(); })
         .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
+        .then(function () { return _wiStamp().then(function (st) { _dbStamp = st; return true; }); }).catch(function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
 
@@ -185,7 +218,7 @@
         return _persist().then(function (ok) {
           console.log('§WHATIF-UI persist opfs=' + ok + ' (re-baseline ' + (ok ? 'saved' : 'in-memory only') + ')');
           _phases = global.WhatIf.readPhases(_db, _pid, null);
-          var st = A().status; if (st) st.textContent = 'What-if accepted — schedule re-baselined (finish +' + c.finishSlipDays + 'd)';
+          var st = A().status; if (st) st.textContent = _wiTrl('wi_accepted', 'What-if accepted — schedule re-baselined (finish +{d}d)', { d: c.finishSlipDays });
           _render();
         });
       });
@@ -193,7 +226,7 @@
   }
   function _discard() {
     _slips = {}; console.log('§WHATIF-UI discard — slips cleared, official restored');
-    var st = A().status; if (st) st.textContent = 'What-if discarded — official schedule restored';
+    var st = A().status; if (st) st.textContent = _wiTrl('wi_discarded', 'What-if discarded — official schedule restored');
     _render();
   }
 
@@ -266,21 +299,20 @@
   function open() {
     _injectStyle();
     _loadDb().then(function (db) {
-      if (!db) { var st = A().status; if (st) st.textContent = 'What-if: ERP engine not ready'; console.log('§WHATIF-UI no-db'); return; }
+      if (!db) { var st = A().status; if (st) st.textContent = _wiTrl('wi_erp_not_ready', 'What-if: ERP engine not ready'); console.log('§WHATIF-UI no-db'); return; }
       var proj = _pickProject(db);
-      if (!proj) { var st2 = A().status; if (st2) st2.textContent = 'What-if: no folded project yet — push one to ERP first'; console.log('§WHATIF-UI no-folded-project'); return; }
-      _pid = proj.id; _name = proj.name || ('Project ' + proj.id); _slips = {}; _committed = false;
+      if (!proj) { var st2 = A().status; if (st2) st2.textContent = _wiTrl('wi_no_project', 'What-if: no folded project yet — push one to ERP first'); console.log('§WHATIF-UI no-folded-project'); return; }
+      _pid = proj.id; _name = proj.name || _wiTrl('wi_project_n', 'Project {id}', { id: proj.id }); _slips = {}; _committed = false;
       _phases = global.WhatIf.readPhases(_db, _pid, null);
       var old = document.getElementById('whatif-panel'); if (old) old.remove();
       var panel = document.createElement('div'); panel.id = 'whatif-panel';
       panel.innerHTML =
-        '<h3>What-if schedule <span style="font-weight:400;color:#8aa0d0;font-size:13px">' + _name + '</span>' +
-          '<button class="wi-close" title="Close">×</button></h3>' +
-        '<div class="wi-sub">Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase ' +
-          're-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.</div>' +
+        '<h3>' + _wiTrl('wi_title', 'What-if schedule') + ' <span style="font-weight:400;color:#8aa0d0;font-size:13px">' + _name + '</span>' +
+          '<button class="wi-close" title="' + _wiTrl('ui_close', 'Close') + '">×</button></h3>' +
+        '<div class="wi-sub">' + _wiTrl('wi_sub', 'Drag a phase bar to slip it (or use ± for ±7d) → every downstream phase re-folds in blue (finish-to-start). Accept to re-baseline, Discard to drop.') + '</div>' +
         '<div id="whatif-body"></div>' +
-        '<div id="whatif-actions"><button id="wi-accept">Accept — re-baseline</button>' +
-          '<button id="wi-discard">Discard</button></div>';
+        '<div id="whatif-actions"><button id="wi-accept">' + _wiTrl('wi_accept', 'Accept — re-baseline') + '</button>' +
+          '<button id="wi-discard">' + _wiTrl('wi_discard', 'Discard') + '</button></div>';
       document.body.appendChild(panel);
       panel.querySelector('.wi-close').addEventListener('click', function () { panel.remove(); });
       panel.querySelector('#wi-accept').addEventListener('click', _accept);

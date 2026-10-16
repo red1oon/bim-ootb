@@ -202,3 +202,12 @@ cd /tmp/wt-bim2proj && for w in poc_proj_schema poc_find_cost poc_proj_push poc_
 Memory `project_bim_to_project.md` (state + named gaps), `project_posting_preview.md`, `project_erp_reporting_lane.md`;
 specs `docs/ERP.md`, `docs/BIMtoProject.md`, `docs/BIMtoERP.md`; reuse `viewer/variation_order.js` (EVM math),
 `erp/doc_poster.js` / `erp/ad_process.js` (posting engine), `viewer/proj_fold.js` + `viewer/vo_fold.js` (the folds to extend).
+
+## §PROXY_BY_DISC (2026-10-06) — spec, then witnessed in `viewer/tests/witness_civil_find_erp_push.js`
+Defect (measured, witness PR #1906): a civil selection ROAD+LIGHTING+DRAINAGE+SIGNAGE+MARKING pushed ONE C_ProjectLine
+`IfcBuildingElementProxy (BIM) · 4652 ea · price 280 · amt 1302560`. 280 = `RATES.IfcBuildingElementProxy` of the active pack
+(`rates/rsmeans2024_us.json`, picked by `rates.js` locale map en_US; hardcoded fallback is 850, `rates.js:53`) — a BUILDING class rate on road assets.
+Rule: (1) `proj_fold.js` — class `IfcBuildingElementProxy` WITH a discipline folds one line per discipline (name "Road (BIM)",
+desc "N ea · discipline ROAD"); every other class unchanged. (2) `navigate_find.js _selectionPriced` — a discipline in `rates.js CIVIL_RATES`
+(the owner `boq_charts.html` already uses) prices from it; `rate:null` (no cited SoR) → qty carried, price 0, row `unpriced`, desc flag "rate not set". No second rate table.
+Witness: 5 lines, qty = DB counts, price per CIVIL_RATES (log both); RED control = origin/main gives 1 lumped line; fleet (SampleHouse, Hospital) lines/amounts identical.

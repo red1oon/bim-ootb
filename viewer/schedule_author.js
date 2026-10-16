@@ -51,6 +51,45 @@
   // matchNameOverride — REPLICATES time_machine.js matchNameOverride EXACTLY. §4D_FACADE_ORDER:
   // ifc_class alone cannot tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely
   // structural plates/members. Checked BEFORE matchRule, never replacing it — see rates/sequence_rules.json.
+  // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models.
+  // civilRuleFor(db, guid, table): the SEQUENCE_CIVIL row for this element's discipline, else null. One query
+  // per db (cached, keyed on the db object + element count); a building db has no civil discipline → empty map
+  // → every caller falls through to its unchanged name/class rule (NON-IMPACT rule). `table` defaults to the
+  // browser global; node harnesses that load rates.js in a vm pass it explicitly (absent → civil layer off).
+  // §SCHEDULE_POPULATION (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MIXED_PROGRAMME) — ONE owner for "which elements are
+  // scheduled work". Was written inline 7× (schedule_author ×2, time_machine ×5). Not work: openings (voids), spaces (room volumes),
+  // and REFERENCE disciplines = rates.js CIVIL_RATES rows whose measure is 'NONE' (chainage labels, right-of-way: setting-out
+  // references, never built). `alias` = the elements_meta alias in the caller's SQL ('m' or '' for none). Fleet: no reference
+  // discipline rows → the predicate selects exactly the rows the old inline clause did. COALESCE: a NULL discipline stays in.
+  function scheduledWhere(alias, rates) {
+    var a = alias ? alias + '.' : '';
+    // node: `global` is module.exports, so the harness's rates.js globals are read from globalThis
+    var cr = rates || global.CIVIL_RATES || (typeof globalThis !== 'undefined' && globalThis.CIVIL_RATES) || {}, refs = Object.keys(cr).filter(function (d) { return cr[d] && cr[d].measure === 'NONE'; });
+    return a + "ifc_class != 'IfcOpeningElement' AND " + a + "ifc_class != 'IfcSpace'" +
+      (refs.length ? " AND COALESCE(" + a + "discipline,'') NOT IN (" + refs.map(function (d) { return "'" + String(d).replace(/'/g, "''") + "'"; }).join(',') + ')' : '');
+  }
+  var _civilCache = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function civilRuleFor(db, guid, table) {
+    table = table || global.SEQUENCE_CIVIL;
+    if (!table || !db || !guid) return null;
+    var c = _civilCache && _civilCache.get(db), n = -1;
+    try { var nr = db.exec('SELECT COUNT(*) FROM elements_meta'); n = nr.length ? nr[0].values[0][0] : -1; } catch (e) { return null; }
+    if (!c || c.n !== n || c.table !== table) {
+      var keys = Object.keys(table), map = {};
+      if (keys.length) {
+        try {
+          var r = db.exec('SELECT guid, discipline FROM elements_meta WHERE discipline IN (' + keys.map(function () { return '?'; }).join(',') + ')', keys);
+          if (r.length) r[0].values.forEach(function (row) { map[row[0]] = row[1]; });
+        } catch (e) { /* no discipline column → no civil layer */ }
+      }
+      c = { n: n, table: table, map: map, size: Object.keys(map).length };
+      if (_civilCache) _civilCache.set(db, c);
+      if (c.size) console.log('§CIVIL_PHASE map=' + c.size + ' of ' + n + ' elements carry a civil discipline');
+    }
+    if (!c.size) return null;
+    var d = c.map[guid];
+    return d ? (table[d] || null) : null;
+  }
   function matchNameOverride(cls, name, nameOverrides) {
     if (!name || !nameOverrides) return null;
     for (var i = 0; i < nameOverrides.length; i++) {
@@ -460,7 +499,7 @@
       "COALESCE(t.center_x,0), COALESCE(t.center_y,0), COALESCE(t.center_z,0), " +
       "COALESCE(t.bbox_x,0), COALESCE(t.bbox_y,0), COALESCE(t.bbox_z,0) " +
       "FROM elements_meta m LEFT JOIN element_transforms t ON t.guid=m.guid " +
-      "WHERE m.ifc_class != 'IfcOpeningElement' AND m.ifc_class != 'IfcSpace'");
+      "WHERE " + scheduledWhere('m'));
     if (!r.length || !r[0].values.length) return [];
 
     // ══ §STOREY_DATUM (2026-08-27, bim-compiler prompts/4D_MODEL_INTEGRITY.md §I.3) ═════════════
@@ -551,7 +590,7 @@
       var cx = row[4], cy = row[5], cz = row[6], bx = row[7], by = row[8], bz = row[9];
       // §STOREY_DATUM — in datum mode the level is the band containing the element's BASE.
       var storey = _datumMode ? _bandOf(cz - bz / 2) : assignStoreyByZ(rawStorey, cz);
-      var ov = matchNameOverride(cls, name, nameOverrides);
+      var ov = civilRuleFor(db, guid, opts.civilRules) || matchNameOverride(cls, name, nameOverrides);   // §CIVIL_PHASE
       var rule = ov || matchRule(cls, rules, dflt);
       var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
       // §HEAVY_MEMBER_SPEED_LIMIT: only when this element has real geometry (bx/by/bz not all the
@@ -771,7 +810,11 @@
           return;                                   // chain BRIDGES: prevOnLevel is left untouched
         }
         var pr = priceCell(c);
-        var start = cursor;
+        // §CIVIL_PARALLEL (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q.2): a template declaring
+        // placement:'logic' starts each phase from its declared predecessor (the bridge below) instead of the
+        // within-level cursor, so phases that share a predecessor run in parallel. Only 4D_template_civil.json
+        // declares it; 4D_template.json does not → building placement byte-identical (NON-IMPACT rule).
+        var start = (T.placement === 'logic') ? 0 : cursor;
         // §TPL_LADDER_BRIDGE (2026-08-27) — the across_levels ladder MUST bridge past dropped
         // phases, exactly as the within_level chain already does.
         //
@@ -808,7 +851,7 @@
             var pp = byId[cur2]; if (!pp) break;
             for (d = li; d >= 0; d--) {
               b = taskAt[pp.name + '||' + levels[d]];
-              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d };
+              if (b) return { finish: b.eDays + (wl2.lag_days || 0), via: 'within_level_bridged', hops: li - d, task: b };
             }
           }
           return null;
@@ -856,8 +899,12 @@
         if (t.eDays > totalDays) totalDays = t.eDays;
         cursor = t.eDays;
         // within_level edge, from the last phase that ACTUALLY instantiated on this level.
-        if (prevOnLevel) {
-          edges.push({ predId: prevOnLevel.id, succId: t.id, type: (wl && wl.type) || 'FS',
+        // §CIVIL_PARALLEL: under placement:'logic' the edge comes from the DECLARED predecessor's task (the
+        // bridge walk's hit), so siblings that share a predecessor are not chained to each other. Building
+        // templates never declare it → this branch is never taken for them.
+        var _edgePred = (T.placement === 'logic') ? ((_bridge && _bridge.task) || null) : prevOnLevel;
+        if (_edgePred) {
+          edges.push({ predId: _edgePred.id, succId: t.id, type: (wl && wl.type) || 'FS',
                        lagDays: wl ? (wl.lag_days || 0) : 0, kind: 'within_level' });
         }
         // §PHASE_WATERMARK_FLOOR edge — see comment above.
@@ -1857,7 +1904,7 @@
     // materialize path that still read every row unfiltered. Same exclusion, same two classes, so a
     // blank-model default schedule can't invent labor for a room volume or a doorway either.
     var er = db.exec("SELECT guid, ifc_class, COALESCE(element_name,''), COALESCE(storey,'') FROM elements_meta " +
-      "WHERE ifc_class != 'IfcOpeningElement' AND ifc_class != 'IfcSpace'");
+      "WHERE " + scheduledWhere(''));
     if (er.length && er[0].values.length) {
       er[0].values.forEach(function (r) { elems.push({ guid: r[0], cls: r[1], name: r[2], storey: r[3] }); });
     }
@@ -1866,7 +1913,7 @@
     var phases = {};   // phaseName -> { name, seq, guids:[] }
     var nameOverridden = 0;
     elems.forEach(function (e) {
-      var ov = matchNameOverride(e.cls, e.name, nameOverrides);
+      var ov = civilRuleFor(db, e.guid, opts.civilRules) || matchNameOverride(e.cls, e.name, nameOverrides);   // §CIVIL_PHASE
       if (ov) nameOverridden++;
       var rule = ov || matchRule(e.cls, rules, dflt);
       var p = phases[rule.phase];
@@ -2131,7 +2178,7 @@
       if (er.length && er[0].values.length) {
         er[0].values.forEach(function (row) {
           var guid = row[0], cls = row[1], storey = row[2];
-          var rule = matchRule(cls, rules, dflt);
+          var rule = civilRuleFor(db, guid, opts && opts.civilRules) || matchRule(cls, rules, dflt);   // §CIVIL_PHASE
           var resKey = rule.resource || '__NONE__';
           var realQty = (_frag.fragmented[cls] && _frag.area[guid] != null) ? _frag.area[guid] : null;
           resourceSecs[resKey] = (resourceSecs[resKey] || 0) + _installSecs(cls, rule, laborRates, realQty);
@@ -3161,6 +3208,10 @@
     _storeyDatumCandidates: _storeyDatumCandidates,
     _chooseStoreyDatum: _chooseStoreyDatum,
     _storeyLadder: _storeyLadder,
+    // §STOREY_RUNG_VOTE (2026-09-15, Fable review of item 15) — exported so cpe_storey_reveal.js can
+    // band a per-element base-Z on the SAME ladder verb this file uses to decide which rungs are
+    // populated, instead of re-deriving a nearest-neighbour test of its own.
+    _ladderBandIndex: _ladderBandIndex,
     instantiateTemplate: instantiateTemplate,
     // §TPL_LEVEL_AXIS — exported so the axis and its disagreement measurement are testable on their
     // own, without having to drive a whole materializeZones write to see them.
@@ -3190,9 +3241,11 @@
     addTask: addTask,
     reparentTask: reparentTask,
     breakdownByAttribute: breakdownByAttribute,
+    civilRuleFor: civilRuleFor,
     persistDb: persistDb,
     openBuildingCache: openBuildingCache
   };
+  API.scheduledWhere = scheduledWhere;   // §SCHEDULE_POPULATION — time_machine.js reads the same owner
   if (typeof window !== 'undefined') window.ScheduleAuthor = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ScheduleAuthor = API;

@@ -35,10 +35,16 @@ function sliceAssign(src, marker) {
 const visSrc = sliceAssign(fx, 'A.cpeRevealVisualAt = function');
 const offSrc = sliceAssign(fx, 'A.cpeRevealLightsOffAt = function');
 const fadeSec = Number((fx.match(/CPE_REVEAL_FADE_SEC\s*=\s*([0-9.]+)/) || [])[1]) || 0;
+// cpeRevealVisualAt also reads ARCH_DROP_FADE_SEC / ARCH_BULK_CUT_FRAC (§57.4b, effects.js module scope) — read from the shipped
+// file, not restated here; without them the slice threw 'ARCH_BULK_CUT_FRAC is not defined' (2026-10-06 instrument fix).
+const moduleConsts = ['ARCH_DROP_FADE_SEC', 'ARCH_BULK_CUT_FRAC'].map(n => { const m = fx.match(new RegExp('var ' + n + '\\s*=\\s*([0-9.]+)')); return m ? 'var ' + n + ' = ' + m[1] + ';' : ''; }).join('\n');
 
 // WIRING, read from the shipped files — the mapping is worthless if nothing acts on it.
 const wirePL = /if \(A\._cpeRevealLightsOff\) A\._nightPLScale = 0;/.test(fx);
-const wireGlow = /function _glowOn\(filterFn\)[\s\S]{0,900}?if \(A\._cpeRevealLightsOff\) \{/.test(fx);
+// the decorative glow layers were DELETED from Alt+S (§GLOW_LAYERS_OFF, 92b36bdb, 2026-09-25): with no _glowOn left there is no glow to
+// suppress — reported as 'absent', not as a wiring failure (this check failed on every run since that deletion).
+const glowLayerAbsent = !/function _glowOn\(/.test(fx);
+const wireGlow = glowLayerAbsent || /function _glowOn\(filterFn\)[\s\S]{0,900}?if \(A\._cpeRevealLightsOff\) \{/.test(fx);
 const iFlag = mq.indexOf('A._cpeRevealLightsOff = A.cpeRevealLightsOffAt');
 const iStage = mq.indexOf('A.startStillRefine();', iFlag > 0 ? iFlag : 0);
 const wireOrder = iFlag > 0 && iStage > iFlag;   // the flag must be set BEFORE staging rebuilds lights
@@ -54,7 +60,7 @@ function ctx() {
   const sb = { A, Math, console: { log() {} } };
   sb.CPE_REVEAL_FADE_SEC = fadeSec;
   vm.createContext(sb);
-  vm.runInContext('var CPE_REVEAL_FADE_SEC = ' + fadeSec + ';\n' + visSrc + '\n' + offSrc, sb);
+  vm.runInContext('var CPE_REVEAL_FADE_SEC = ' + fadeSec + ';\n' + moduleConsts + '\n' + visSrc + '\n' + offSrc, sb);
   return A;
 }
 
@@ -122,7 +128,7 @@ rows.forEach(r => { byPhase[r.phase] = byPhase[r.phase] || { n: 0, off: 0 };
   byPhase[r.phase].n++; if (r.lightsOff) byPhase[r.phase].off++; });
 Object.keys(byPhase).forEach(k => console.log('§TAIL_LIGHTS_PHASE phase=' + k +
   ' samples=' + byPhase[k].n + ' lightsOff=' + byPhase[k].off));
-console.log('§TAIL_LIGHTS_WIRING plScaleZeroed=' + wirePL + ' glowSuppressed=' + wireGlow +
+console.log('§TAIL_LIGHTS_WIRING plScaleZeroed=' + wirePL + ' glowSuppressed=' + (glowLayerAbsent ? 'n/a(glow layer deleted)' : '') + wireGlow +
   ' flagSetBeforeStaging=' + wireOrder);
 const vacuous = rows.length === 0;
 const noop = rows.every(r => !r.lightsOff);

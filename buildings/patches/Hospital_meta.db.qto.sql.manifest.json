@@ -1,0 +1,50 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-10-02T01:41:23.935Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-qto",
+    "sha": "1d16fe6ce765f94be0442cb26cc0c16229bab81c",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 2,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "a84c5022-e123-45f0-b93a-be52cf82fa3b",
+    "content-md5": "S4DRfFRDGYsXcxoXfqsH8Q==",
+    "size": "4163894",
+    "last-modified": "Sat, 15 Aug 2026 17:20:49 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/Hospital_meta.db.qto.sql",
+    "bytes": 59277,
+    "md5": "19e913740e7b6f277be4b87ae5f2e09c",
+    "md5_b64": "GekTdA57byd75Lh65fLgnA==",
+    "object": "buildings/patches/Hospital_meta.db.qto.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": false
+  },
+  "verification": {
+    "cmd": "python3 scripts/verify_qto_patch.py --gate-db \"$GATE_DB\" --src-url https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/buildings/Hospital_extracted.db --patch buildings/patches/Hospital_meta.db.qto.sql",
+    "exit": 0,
+    "tail": [
+      "§QTO_VERIFY source fetched https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/buildings/Hospital_extracted.db",
+      "§QTO_VERIFY rows src=218 patched=218 colsMatch=True rowsEqual=True",
+      "§QTO_VERIFY reapply rows=218 unchanged=True",
+      "§QTO_VERIFY sums material=65518184.0 labour=8142231.0 equipment=2779120.0",
+      "§QTO_VERIFY PASS"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-10-02T01:41:29.236Z",
+    "etag": "1ecc8858-65be-4afd-ab1e-7dd5f777cd5f",
+    "verified": true
+  }
+}

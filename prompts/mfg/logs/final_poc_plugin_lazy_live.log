@@ -1,0 +1,11 @@
+  §PLG-LAZY L0 the page exposes the engine + commit funnel and the base product has NO pp_order DocAction class PASS
+§PLG-LAZY-CTRL control (no bundle): MODEL-DOCACTION lines=0 HOSTPROCESS lines=1
+  §PLG-LAZY L1 control: the pp_order DocAction reached the funnel but NO model DocAction ran (no class) - the status-only path PASS
+§PLG-LAZY-1 after START: {"state":"STARTING","probe":0,"docClass":false}
+  §PLG-LAZY L2 started LAZY: state STARTING, the bundle code has NOT run (0 activations), no DocAction class yet PASS
+§PLG-LAZY-2 after the first pp_order DocAction: {"state":"ACTIVE","probe":1,"docClass":true} activateLine@6 modelDocActionLine@11
+  §PLG-LAZY L3 the first pp_order DocAction ACTIVATED the bundle at the funnel (ACTIVE, exactly 1 activation, DocAction class registered) PASS
+  §PLG-LAZY L4 ordering: §PLUGIN-ACTIVATE precedes §MODEL-DOCACTION, and the model layer RAN the bundle's DocAction (not the status-only path) PASS
+  §PLG-LAZY L5 a second demand does not re-activate (still 1 activation) PASS
+  §PLG-LAZY L6 zero page errors PASS
+§PLG-LAZY-VERDICT PASS failed=0

@@ -106,6 +106,14 @@ function setupDLOD(A) {
       console.log('[DLOD] §DLOD_SKIP_TM count=' + A.streamedCount + ' — Time Machine owns instance matrices; re-enabled when it closes');
       return;
     }
+    // §DLOD_STILL_OWNERSHIP (2026-09-24, PHOTOREAL_STILL_RENDER.md): while photo staging (Alt+S or a
+    // bake) holds DLOD off, a re-enable from elsewhere (e.g. a stream completing) is recorded, not
+    // applied — a zero-scaled roof slot casts no shadow and lets the sun through. Teardown honours it.
+    if (A._dlodStillHold) {
+      A._dlodStillWanted = true;
+      console.log('[DLOD] §DLOD_STILL_OWNERSHIP enable deferred — photo staging holds DLOD off');
+      return;
+    }
     if (A.streamedCount < MIN_ELEMENTS) {
       console.log('[DLOD] §DLOD_SKIP count=' + A.streamedCount + ' < ' + MIN_ELEMENTS);
       return;

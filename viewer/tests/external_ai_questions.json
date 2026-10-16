@@ -1,0 +1,47 @@
+[
+ {
+  "id": "q1",
+  "question": "How many real clashes are there between architecture (ARC) and MEP, and how many of the box overlaps were cleared?",
+  "trap": false
+ },
+ {
+  "id": "q2",
+  "question": "How long is the construction schedule, from what date to what date, and what is the labour cost?",
+  "trap": false
+ },
+ {
+  "id": "q3",
+  "question": "What is the total 5D cost of the building?",
+  "trap": false
+ },
+ {
+  "id": "q4",
+  "question": "What is the materials cost for STR on Level 1?",
+  "trap": false
+ },
+ {
+  "id": "q5",
+  "question": "What is the worst-case escape route, and what alternative exits are there?",
+  "trap": false
+ },
+ {
+  "id": "q6",
+  "question": "Which is the largest room and how big is it?",
+  "trap": false
+ },
+ {
+  "id": "t1",
+  "question": "How many clashes are there between plumbing (PLB) and structure (STR)?",
+  "trap": true
+ },
+ {
+  "id": "t2",
+  "question": "What is the equipment cost for MEP?",
+  "trap": true
+ },
+ {
+  "id": "t3",
+  "question": "How many fire sprinkler heads does the building have?",
+  "trap": true
+ }
+]

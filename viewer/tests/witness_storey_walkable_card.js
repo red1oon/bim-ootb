@@ -38,15 +38,21 @@ const server = http.createServer((req, res) => { try { const u = decodeURICompon
       try { A.cinemaPathPlan(60); } catch (e) {}
       const ov0 = (A._getCinemaPathEdit && A._getCinemaPathEdit()) || null;
       const plan = A.cinemaPathPlan(dur, ov0 ? Object.assign({}, ov0, { storeyReveal: true }) : undefined); R.cards = []; R.planHasReveal = !!(plan && plan.storeyReveal && plan.storeyReveal.on);
-      if (A.storeyRevealStatCardAt && plan && plan.beats) { for (let u = plan.beats.rise - 0.026; u < plan.beats.rise; u += 0.003) { const c = A.storeyRevealStatCardAt(plan, u); if (c && c.card) R.cards.push({ u: +u.toFixed(4), label: c.card.label, sub: c.card.sub || '' }); } }
+      if (A.storeyRevealStatCardAt && plan && plan.beats) { for (let u = plan.beats.rise - 0.026; u < plan.beats.rise; u += 0.003) { const c = A.storeyRevealStatCardAt(plan, u); const v = A.storeyRevealVisualAt ? A.storeyRevealVisualAt(plan, u) : null; if (c && c.card) R.cards.push({ u: +u.toFixed(4), storey: v ? v.storey : null, big: c.card.big, label: c.card.label, sub: c.card.sub || '' }); } }
     } catch (e) { R.err = e.message + ' @ ' + (e.stack || '').split('\n')[1]; }
     return R;
   }, DUR);
   await b.close(); server.close();
   if (out.err) { console.log('§WITNESS_STOREY_WALKABLE_CARD INCONCLUSIVE — ' + out.err); process.exit(1); }
   console.log('§WITNESS_STOREY_WALKABLE_CARD db=' + DB + ' planHasReveal=' + out.planHasReveal + ' cards=' + (out.cards || []).length + ' rows=' + JSON.stringify(out.rows) );
-  (out.cards || []).forEach(c => console.log('§WITNESS_STOREY_WALKABLE_CARD_TEXT u=' + c.u + ' ' + c.label + ' | ' + c.sub));
-  const cardsFor = {}; (out.cards || []).forEach(c => { const st = c.label.replace(/^doors · /, ''); cardsFor[st] = c.sub; });
+  (out.cards || []).forEach(c => console.log('§WITNESS_STOREY_WALKABLE_CARD_TEXT u=' + c.u + ' ' + c.big + ' — ' + c.label + ' | ' + c.sub));
+  // The storey a card is FOR comes from the visual record the card was built from, never from parsing
+  // a string the card DISPLAYS. This used to strip a 'doors · ' prefix off `card.label`, which had two
+  // faults: §STOREY_CARD_INK moved the storey out of that label (the parse would then key every sub
+  // under the one string "N doors" and still print green), and the ground-slab slot never matched the
+  // prefix at all — it displays "Ground slab", so its row lookup missed and its walkable clause was
+  // judged against the wrong rule. `vis.storey` is the exact name `storeyRevealStatsFor` was handed.
+  const cardsFor = {}; (out.cards || []).forEach(c => { if (c.storey) cardsFor[c.storey] = c.sub; });
   Witness('storey_walkable_card')
     .population(() => out.rows)
     .schema({ type: 'object', required: ['storey'], properties: { storey: { type: 'string' }, rasterArea: { type: ['number', 'null'] }, walk: { type: ['number', 'null'] } } })

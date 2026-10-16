@@ -1,0 +1,14 @@
+§OC-LIVE-1 rows=14 first={"id":"0","name":"BIM OOTB ERP engine (system bundle) (system.bundle)","status":"Active"} summary="Bundle information: 14 bundles in total - all 14 bundles active."
+  §OC-LIVE C1 the Felix-style page: title bar, columns Id | Name | Version | Status | Actions, Id 0 = the system bundle, built-in modules listed Active PASS
+  §OC-LIVE C2 the Felix summary sentence ("Bundle information: N bundles in total - all N bundles active.") PASS
+§OC-LIVE-2 after Install and start: {"id":"14","name":"com.test.lazy-probe (com.test.lazy-probe)","status":"Starting"} summary="Bundle information: 15 bundles in total - 14 bundles active, 1 bundle starting (lazy)."
+  §OC-LIVE C3 the lazy fixture installed through the console appears as a new bundle in status STARTING and the summary counts it (starting (lazy)) PASS
+  §OC-LIVE C4 clicking the name expands the detail pane: symbolic name, lazy triggers (PP_Order), policy, and "not active" services PASS
+  §OC-LIVE C5 Stop returns the bundle to Resolved (as OSGi does) and Start returns it to Starting (lazy) PASS
+§OC-LIVE-3 after a pp_order DocAction + Reload: status=Active
+  §OC-LIVE C6 a pp_order DocAction activated it on demand: the console now shows Active and the detail pane lists the registered DocAction class PASS
+§OC-LIVE-4 after a full page reload: {"id":"14","name":"com.test.lazy-probe (com.test.lazy-probe)","status":"Starting"}
+  §OC-LIVE C7 a full page reload restores the stack from persistence: the lazy bundle is back (started, not yet activated = Starting) PASS
+  §OC-LIVE C8 Uninstall removes the row and the summary returns to "all N bundles active" PASS
+  §OC-LIVE C9 zero page errors PASS
+§OC-LIVE-VERDICT PASS failed=0

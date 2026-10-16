@@ -44,6 +44,10 @@
   }
   // a throwaway db (for SAFE validate-before-adopt) from the same sql.js bundle.
   function _freshDb() {
+    // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): a page that already initialised sql.js (idempiere.html
+    // exposes window.SQL = its FTS5 build) gives the throwaway db from THAT build — pairing its initSqlJs glue with the
+    // plain sqljs/sql-wasm.wasm would mix two builds. No window.SQL (glassbowl) → the old lazy path, unchanged.
+    if (global.SQL && typeof global.SQL.Database === 'function') return Promise.resolve(new global.SQL.Database());
     if (!_sqlP) _sqlP = global.initSqlJs({ locateFile: function (f) { return 'sqljs/' + f; } });
     return _sqlP.then(function (SQL) { return new SQL.Database(); });
   }

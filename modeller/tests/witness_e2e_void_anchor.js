@@ -184,8 +184,28 @@ runE2E('W-E2E-VOID-ANCHOR', async (t) => {
     JSON.stringify(cap.gm) + ' vs ' + JSON.stringify(b.gm));
   t.assert('G5 §SAVE_BASELINE elements IDENTICAL', cap.saveBaselineElements === b.saveBaselineElements,
     cap.saveBaselineElements + ' vs ' + b.saveBaselineElements);
-  t.assert('G6 §XEDGE-ALL derived counts IDENTICAL', JSON.stringify(cap.xedge) === JSON.stringify(b.xedge),
-    JSON.stringify(cap.xedge) + ' vs ' + JSON.stringify(b.xedge));
+  // G6 — §NET-AUDIT (2026-09-26): the 07-30 baseline file predates §XEDGE-3AXIS/§XEDGE-GEOWIRE, so comparing to it
+  // varied TWO things (anchors AND the derive code) and went red on the code change alone (abuts 9817→14124,
+  // aggregates 0→277). Same-run control instead: the LIVE set vs this witness's own derive over the same buffers
+  // with the anchor rows stripped (must be EQUAL) and kept (must DIFFER — proves anchors would show, not vacuous).
+  { const tg = Date.now(); while (Date.now() - tg < 60000 && !t.slog.some(l => /§XEDGE-GEO phase=geo/.test(l))) await t.sleep(250);
+    const g6 = await t.pg.evaluate(() => {
+      const cnt = X => ({ abuts: X.abuts.length, anchored: X.anchored.length, spans: X.spans.length, fills: X.fills.length, aggregates: X.aggregates.length, datums: X.datums.length });
+      const derive = (strip) => {
+        const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)); window.STRWalkerOutliner._composeGhosts(db);
+        const n = db.exec("SELECT COUNT(*) FROM element_transforms WHERE transform_source='void_anchor'")[0].values[0][0];
+        if (strip) db.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'");
+        const geo = window.__dwGeoBuf ? new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+        const X = window.CrossEdges.deriveAll(db, geo ? { geoDb: geo } : undefined); db.close(); if (geo) geo.close();
+        return { n: n, c: cnt(X) };
+      };
+      const s = derive(true), k = derive(false);
+      return { live: cnt(window.swXEdges), stripped: s.c, kept: k.c, anchorRows: s.n, geo: !!window.__dwGeoBuf };
+    });
+    console.log('  §VOIDANCHOR G6 ' + JSON.stringify(g6) + ' (07-30 file baseline, info only: ' + JSON.stringify(b.xedge) + ')');
+    t.assert('G6 §XEDGE-ALL live counts == same-run anchor-stripped derive, and != anchor-kept derive (' + g6.anchorRows + ' anchor rows, geo=' + g6.geo + ')',
+      g6.anchorRows > 0 && JSON.stringify(g6.live) === JSON.stringify(g6.stripped) && JSON.stringify(g6.kept) !== JSON.stringify(g6.stripped),
+      'live=' + JSON.stringify(g6.live) + ' stripped=' + JSON.stringify(g6.stripped) + ' kept=' + JSON.stringify(g6.kept)); }
   t.assert('G7 §ARC-SEED elements= IDENTICAL (anchors logged separately)', arcElements === base.arcElements,
     arcElements + ' vs ' + base.arcElements);
 

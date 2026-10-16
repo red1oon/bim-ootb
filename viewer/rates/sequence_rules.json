@@ -537,6 +537,69 @@
       "trade": "General Laborer",
       "productivity": {}
     },
+    "CIVIL_EARTHWORKS": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Earthworks Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_DRAINAGE": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Drainage Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_PAVING": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Paving Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_FURNITURE": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Road Furniture Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_SIGNAGE": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Signage Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_LIGHTING": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Road Lighting Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
+    "CIVIL_MARKING": {
+      "rate_per_day": 155,
+      "crew_size": 3,
+      "max_crews": 2,
+      "trade": "Road Marking Crew (civil — copied from MASON, uncalibrated)",
+      "productivity": {
+        "IfcBuildingElementProxy": 15
+      }
+    },
     "_productivity_basis_secs": 28800,
     "_productivity_basis_secs_why": "bim-compiler prompts/4D_GANTT_TM_REFACTOR.md §FUTURE-5A row A1 (2026-08-27 inventory, applied 2026-09-02, queue item B-3). 28800s = the 8h crew-day the productivity figures above are QUOTED AGAINST (secsPerUnit = this / productivity). This is NOT calendar.hours_per_shift (4D_template.json, =24, the crew's actual working day) — those are two different quantities that merely share the word 'hours'; collapsing them was the exact 3x conflation bug §FUTURE item 2 chased. Read by schedule_author.js _installSecs/materializeDefault/scheduleContiguous and time_machine.js getInstallSecs/§HR_COST, all with a literal 28800 fallback so a caller that omits this key (an older cached JSON, a minimal test object) is byte-identical to pre-2026-09-02 behaviour.",
     "_zero_minute_floor_secs": 120,

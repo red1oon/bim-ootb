@@ -365,11 +365,12 @@
   // call to this function (line ~418, inside PASS-B's band-monotonic trade gate) never passes this
   // map, so engine timing and the floating=0 gate are provably unaffected by this parameter existing.
   function deriveBandRanks(elements, storeyMergeMap) {
-    var byPhase = {};
+    var byPhase = {}, secOf = {};
     elements.forEach(function (e) {
       var ph = collapsePhase(e.storey);
       if (storeyMergeMap && storeyMergeMap[ph]) ph = storeyMergeMap[ph];
       (byPhase[ph] = byPhase[ph] || []).push(e.base_z);
+      if (typeof e.lvlSec === 'number') (secOf[ph] = secOf[ph] || []).push(e.lvlSec);   // §CHAINAGE_LEVELS
     });
     var rows = [], bandRank = {}, unbanded = 0;
     for (var ph in byPhase) {
@@ -377,9 +378,15 @@
       // Hospital regression this guards against. Excluded from the ladder, not ranked.
       if (ph === '_UNKNOWN' || /^unknown$/i.test(ph)) { unbanded += byPhase[ph].length; continue; }
       var zs = byPhase[ph].slice().sort(function (a, b) { return a - b; });
-      rows.push({ ph: ph, z: zs[Math.floor(zs.length / 2)], n: zs.length });
+      var _sv = secOf[ph] ? secOf[ph].slice().sort(function (a, b) { return a - b; }) : null;
+      rows.push({ ph: ph, z: zs[Math.floor(zs.length / 2)], n: zs.length, sec: _sv ? _sv[Math.floor(_sv.length / 2)] : null });
     }
-    rows.sort(function (a, b) { return a.z - b.z; });
+    // §CHAINAGE_LEVELS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md 2f): when the caller carries a chainage section per
+    // element (civil models only), the ladder climbs ALONG THE ROUTE first, then by height inside a section (a merged bridge's
+    // own storeys stay in Z order at the section where it sits). No lvlSec anywhere (every building) → the Z sort, unchanged.
+    var _bySec = rows.some(function (r) { return r.sec != null; });
+    rows.sort(_bySec ? function (a, b) { return ((a.sec == null ? -1 : a.sec) - (b.sec == null ? -1 : b.sec)) || (a.z - b.z); }
+                     : function (a, b) { return a.z - b.z; });
     rows.forEach(function (r, i) { bandRank[r.ph] = i; });
     return { bandRank: bandRank, rankList: rows, unbanded: unbanded };
   }
