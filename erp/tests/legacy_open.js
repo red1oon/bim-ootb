@@ -24,6 +24,13 @@ async function showAllRows(page, opts) {
     await findBtn.click(); await page.waitForSelector('#idmp-find-ov', { timeout: 8000 }).catch(() => {});
     if (await page.locator('#idmp-find-ov').count()) { await page.click('#idmp-find-ov [data-find-ok]'); steps.push('history:find-ok'); await wait(1000); }
   }
+  // §OPEN-MODE: a single-row tab (AD_Tab.IsSingleRow='Y', 753 of 776 tabs) now opens as a FORM like legacy; a witness that reads grid rows takes the
+  //   legacy user's path to the grid - the Grid/Form toolbar toggle. opts.grid === false keeps the form.
+  if (opts.grid !== false) {
+    const inForm = await page.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form') && !document.querySelector('#idmp-content .idmp-grid'));
+    const tgl = page.locator('#idmp-toolbar [data-tb="toggle"]');
+    if (inForm && await tgl.count()) { await tgl.first().click().catch(() => {}); steps.push('open-mode:to-grid'); await wait(700); }
+  }
   return steps;
 }
 module.exports = { showAllRows };
