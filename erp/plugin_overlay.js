@@ -268,9 +268,24 @@
 
   function _close(doc) { var o = doc.getElementById('pe-ov'); if (o) o.remove(); }
 
+  // Optional bundles (ERP_FRIENDLY_OPS_LENS.md §30): offered, never auto-installed (the default screen stays the legacy twin's). An offer shows only while the bundle is not installed.
+  var OPTIONAL = [{ url: 'plugins/friendly_ops.mjs', id: 'org.kernel.friendly-ops', name: 'Friendly operations', blurb: 'Fewer clicks on the same books: Save & Complete, Add line, Save & back, related records.' }];
+  function _renderOffers(doc, bundles) {
+    var box = doc.getElementById('pe-available'); if (!box) return;
+    box.innerHTML = '';
+    OPTIONAL.filter(function (o) { return !bundles.some(function (b) { return b.id === o.id; }); }).forEach(function (o) {
+      var row = doc.createElement('div'); row.className = 'pe-row'; row.setAttribute('data-offer', o.id);
+      row.innerHTML = '<div class="pe-id">' + o.name + ' <small>' + o.blurb + '</small></div><button class="pe-btn pe-go pe-offer-install">Install</button>';
+      row.querySelector('.pe-offer-install').onclick = function () { _doInstall(doc, new URL(o.url, location.href).href); };
+      box.appendChild(row);
+    });
+    console.log('§PLUGIN-OFFER shown=' + box.children.length);
+  }
+
   function _render(doc) {
     var body = doc.getElementById('pe-list'); if (!body) return;
     var bundles = _reg ? _reg.list() : [];
+    _renderOffers(doc, bundles);
     body.innerHTML = '';
     if (!bundles.length) { body.innerHTML = '<div class="pe-empty">No plugins installed. Paste a bundle URL above to install.</div>'; return; }
     bundles.forEach(function (b) {
@@ -521,6 +536,7 @@
             '<input id="pe-url" placeholder="https://raw.githubusercontent.com/&hellip;/my-plugin.mjs" />' +
             '<button class="pe-btn pe-go" id="pe-install">Install</button>' +
           '</div>' +
+          '<div id="pe-available"></div>' +
           '<div id="pe-list"></div>' +
         '</div>' +
         // Create (PackOut) face — drop a model sheet, preview, Emit & Install. Ninja mode (tribute to Red1 Ninja).
