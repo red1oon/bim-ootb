@@ -865,6 +865,24 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63
 
 **3. R1b over every cut wall** (rosetta_dx.js R1b and rosetta_dx_shell R1b-u). Recall is scored over every source wall the plan's cut plane cuts (any model storey), symmetric with R1a. The expected uncovered length uses the source openings the plane cuts (any storey) whose plan centre lies in that wall.
 
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-wall-base`; baseline = master d06a63c8a).**
+- **rosetta_dx_shell std: 36 PASS / 0 FAIL** (was 34/1).
+  - Wall bases: L1 section 5 / elevation 9 / plan level 15; L2 section 6 / elevation 11 / plan level 24.
+  - Door 152 (wall 1014): the section cut lies inside its opening, so jambs 13B/13D take base 2.612 (B5) and the infill under the door is solid.
+  - Door 150 (wall 1019, not cut, interior): explained by `wall_base_from_plan_level` on jamb 103.
+  - Merged across plans: the 2 corner posts (107+12B, 10D+139 → 0..6.0). R6-stacked PASS. R1b-u over every cut wall: 17/17, 19/19.
+- **Std qualify: qualifies, 0 blocking, 75 advisory** (`type_unbound` 36 + `wall_base_from_plan_level` 39).
+- **Old set:**
+  - rosetta_dx_shell 33/4 (was 33/3): + R6-stacked PASS, + R1b-u L2 FAIL 17/19.
+  - rosetta_dx 12/3 (was 13/2): R1b-stated L2 FAIL 17/19.
+  - Both new FAILs are KNOWN FINDINGS: the old writer drew walls by storey, so its FF plan omits 1014 and 1019, which the 4.3 m plane cuts. Recall over every cut wall exposes it.
+  - Its mesh holds 104 elements (106 − 2 merged corner posts); the volume is unchanged.
+  - Old qualify: unchanged (347).
+- Tests:
+  - `test_std_rules` 47: WB1-6 (WB6 = cut inside a door opening → its jambs), MS1-3
+  - All 18 unit suites fail=0.
+- Unchanged: rosetta_dx std 15/0, rosetta_dx_section, farm_heights; t8 identical except timing; old marked copies byte-identical.
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
