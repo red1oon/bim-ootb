@@ -532,7 +532,7 @@ Decisions (coordinator, 2026-10-16), as rules. The SECTION / roof-sheet work and
   - Malformed → `MARK:malformed`. The same handle with two values → `MARK:conflict`.
 - Tool:
   - The plan is run through `Dxf2Bim.run` (std map, shell CFG) to get its DXF_WALL pieces. A piece belongs to a model interior wall when its rect lies inside the wall's plan bbox within 2 mm.
-  - If the L2.5 W1 test confirms the storey (counting only interior walls that have a piece on the plan, i.e. cut by the plan), the tool writes `@WALLTOP=<level>,slab_above`, plus `handle:` lines for each exception: `<h>` = the piece's handle, `<z_top_m>` = the wall's model maxZ (3 decimals).
+  - The tool writes `@WALLTOP=<level>,slab_above` when at least one interior wall that has a piece on the plan passes the L2.5 W1 test (top = slab underside). For each interior wall on the plan that fails it, it writes a `handle:` line: `<h>` = the piece's handle, `<z_top_m>` = the wall's model maxZ (3 decimals).
   - A wall whose model base ≠ the storey level (> tol), or whose piece matches 2 walls with different tops, gets no marking: the gap stays and is logged.
   - Measured: the exceptions on the plans are GF 9F → wall 1029 (3.1) and FF 99/9B → walls 1034/1033 (5.695). Walls 1014/1019/1037/1038 start at 2.612, so the plan cut does not show them.
 - Pipeline:
