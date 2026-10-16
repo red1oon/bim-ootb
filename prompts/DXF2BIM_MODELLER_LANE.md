@@ -290,9 +290,9 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
 - A ROOF sheet gets the role-independent checks (layers, units, dimension texts). It gets no grid or dimension-string checks, because it has no walls.
 - `QF:set_no_roof` (shape **roof** only): the set has no ROOF sheet; the roof outline needs one (BASIC_SHAPES R-O).
 - `QF:roof_level_mismatch`: an elevation's `@ROOF` differs from the ROOF sheet's `@ROOF` by more than `tol.level`.
-- `mark_dx_set.js` now also marks the old set's `DX_ROOF`, with `@LEVEL` and `@ROOF` from the model:
-  - `@LEVEL` = min wall minZ of storey "Roof"
-  - `@ROOF` = max Z of IfcRoof, else of the highest IfcSlab (R11)
+- **Supersedes BIMCompiler BASIC_SHAPES_SPEC §11 CF-2** (merged in #180 while this was being written). CF-2 read a roof plan as "`@VIEW=PLAN` + `@ROOF`, no `@LEVEL`". The marking step of `rosetta_dx_shell.js` that writes `out/marked_shell/DX_ROOF_shell.dxf` now writes `@VIEW=ROOF`, plus `@LEVEL` = the "Roof" storey level from the model (R1: min wall minZ of storey "Roof", as `mark_dx_set.js` does for plans). `@ROOF` is unchanged (the value the elevations agree on).
+  - The L3 Modeller import (`modeller/dxf2bim_import.js`) must read `view === 'ROOF'` as the roof role. This is a one-line change in that lane.
+  - The set run_id changes, because the roof sheet text changes.
 - Tests: QR1 roof sheet present → no roof item; QR2 roof sheet absent → `set_no_roof`, and only the roof shape is blocked; QR3 roof top differs → `roof_level_mismatch`.
 
 **D2 Storeys come only from plans.**
