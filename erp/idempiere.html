@@ -499,6 +499,7 @@
 <script src="ad_process.js?v=15"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
+<script src="ad_issue.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -529,7 +530,7 @@
 <script src="genesis.js?v=7"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
-<script src="system_monitor.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
+<script src="system_monitor.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
 <script src="osgi_console.js?v=1"></script>
 <script src="plugin_release.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
@@ -4887,12 +4888,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   model behind the Home Recent Items gadget (getFromUser + getLabel + role filter; riDBremove). Read + signed writes stay in the core.
     zoom: function (windowId, column, value) { return _zoom(windowId, column, value, 'host'); },
     recentItems: function (cb) { _recentItems(cb); },
-    recentRemove: function (id, cb) { _recentRemove(id, cb); }
+    recentRemove: function (id, cb) { _recentRemove(id, cb); },
+    // §UDP-5 — the System Monitor housekeeping panel: scan(cb) -> runtime tables + row counts; run(table, cb) -> signed deletes.
+    housekeeping: { scan: function (cb) { _hkScan(cb); }, run: function (t, cb) { _hkRun(t, cb); } }
     // TODO(STEP-0 seam#1 — write path): inject the engine C0 dispatch(intent, ctx) + populated ctx
     //   {actor,pubKey,roleId,allowOrgs} so the lens chromes can commit (kanban drag / chat send). The kernel
     //   write path is PROVEN (W-CRUD-WRITELOOP 11/11); only the C0 wrapper + ctx wiring remain (ENGINE_CONTRACT §6).
   };
-  console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate,zoom,recentItems,recentRemove mount=#idmp-content');
+  console.log('§SEAM-FROZEN seam=host-contract globals=IdmpHost methods=trace,focus,openTab,has,locate,zoom,recentItems,recentRemove,housekeeping mount=#idmp-content');
 
   // ── SO_FULL_CRUD_GAP.md T3 / GAP 3 — host adapter for the SHARED crud_overlay.js (no fork) ───────────
   // The overlay reads page globals (typeof-guarded): withBundle/curChain/fname + __crudHostAnchor. Glassbowl
@@ -5206,6 +5209,119 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (!c || typeof c.applyOpGroup !== 'function') { console.log('§UDP6G-REMOVE ids=' + list.join(',') + ' NOT persisted (no signed op-log)'); cb(false); return; }
     c.applyOpGroup(list.map(function (id) { return _procCrud('delete', 'ad_recentitem', { id: id }); }), function (cr) {
       console.log('§UDP6G-REMOVE ids=' + list.join(',') + ' committed=' + !!(cr && cr.committed)); cb(!!(cr && cr.committed)); });
+  }
+
+  // §UDP-5 — AD_Issue from SELECTED §-lines (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-5; Witnesses: W-UDP5-ENGINE, W-UDP5-LIVE).
+  //   Legacy CLogErrorBuffer -> MIssue.create (:64-95) for every SEVERE record; the twin (user decision 2026-10-16) only for the
+  //   § lines window.AdIssue.qualify accepts + uncaught errors, deduplicated per session, capped at AdIssue.CAP per client, written as
+  //   ONE signed CRUD group per issue, written one at a time from a bounded queue (AdIssue.CAP pending; overflow counted as skipped).
+  //   MIssue's s_creatingIssue guards recursion; here a line raised BY an issue write is queued like any other and the per-session
+  //   dedup stops it at one row (its key repeats), so a failing write cannot loop.
+  //   Before login there is no actor to sign: the line stays in the console + the error beacon's local ring only. ?issues=0 = off.
+  var _issueSeen = {}, _issueBusy = false, _issueQ = [], _issueOff = /[?&]issues=0\b/.test(location.search), _issueStat = { written: 0, dup: 0, skipped: 0, preLogin: 0 };
+  function _issueCand(text, level, stack) {
+    if (_issueOff || !window.AdIssue) return;
+    var t = String(text || ''); if (/^§FIELD-ERROR\b/.test(t) && level !== 'beacon') return;   // the beacon's own line: taken from the listener (with its stack)
+    var v = AdIssue.qualify(t, level === 'beacon' ? 'error' : level); if (!v.ok) return;
+    var App = window.APP || {}; if (App.actor == null || App.clientId == null || !_session) { _issueStat.preLogin++; return; }
+    if (_issueQ.length >= AdIssue.CAP) { _issueStat.skipped++; return; }
+    _issueQ.push({ tag: v.tag, text: t, stack: stack || null });
+    if (_issueQ.length === 1 && !_issueBusy) setTimeout(_issueDrain, 0);
+  }
+  function _issueDrain() {
+    var cand = _issueQ[0]; if (!cand) return;
+    var App = window.APP || {}, w = _curWin(), c = window.__crud;
+    cand.windowId = _activeWin; cand.method = w && w.name || '-'; cand.host = location.host;
+    var ver = document.getElementById('idmp-info-ver'); cand.release = ver && /v[0-9]+/.test(ver.textContent) ? ver.textContent.match(/v[0-9]+/)[0] : '-';
+    var sys = _sqlRows('SELECT name FROM ad_client WHERE ad_client_id=0')[0]; cand.systemName = sys && sys.name || '-';
+    var done = function () { _issueBusy = false; _issueQ.shift(); if (_issueQ.length) setTimeout(_issueDrain, 0); };
+    _issueBusy = true;
+    try {
+      _recentTip('ad_issue', 'ad_issue_id', _sqlRows('SELECT * FROM ad_issue WHERE ad_client_id=' + Number(App.clientId)), function (rows) {
+        try {
+          var mine = rows.filter(function (r) { return String(r.ad_client_id == null ? App.clientId : r.ad_client_id) === String(App.clientId); });
+          var pl = AdIssue.plan(mine, cand, _issueSeen), now = _procNowTs();
+          if (!pl.intents.length) { _issueStat.dup++; done(); return; }
+          var ops = pl.intents.map(function (it) {
+            if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.created = now; f.updated = now; return _procCrud('create', 'ad_issue', { fields: f }); }
+            if (it.op === 'touch') return _procCrud('update', 'ad_issue', { id: it.id, changes: { updated: { old: null, new: now } } });
+            return _procCrud('delete', 'ad_issue', { id: it.id });
+          });
+          if (!c || typeof c.applyOpGroup !== 'function') { done(); return; }
+          c.applyOpGroup(ops, function (cr) {
+            _issueStat.written++;
+            console.log('§UDP5-ISSUE tag=' + cand.tag + ' ' + pl.intents.map(function (i) { return i.op; }).join(',') + ' committed=' + !!(cr && cr.committed) + ' key="' + pl.key.slice(0, 100) + '" session written=' + _issueStat.written + ' dup=' + _issueStat.dup + ' skipped=' + _issueStat.skipped);
+            done();
+          });
+        } catch (e2) { done(); }
+      });
+    } catch (e) { done(); }
+  }
+  (function () {
+    ['log', 'warn', 'error'].forEach(function (lv) {
+      var orig = console[lv]; if (typeof orig !== 'function' || orig.__udp5) return;
+      var wrap = function () { orig.apply(console, arguments); try { var a0 = arguments[0]; if (typeof a0 === 'string' && a0.charAt(0) === '§') _issueCand(Array.prototype.map.call(arguments, String).join(' '), lv === 'error' ? 'error' : 'log', null); } catch (e) {} };
+      wrap.__udp5 = true; console[lv] = wrap;
+    });
+    window.addEventListener('error', function (e) {
+      try { if (e && e.target && e.target.tagName) _issueCand('§FIELD-ERROR kind=resource ' + e.target.tagName + ' ' + (e.target.src || e.target.href || ''), 'beacon', null);
+        else _issueCand('§FIELD-ERROR kind=error msg="' + (e && e.message) + '" at=' + (e && e.filename) + ':' + (e && e.lineno), 'beacon', e && e.error && e.error.stack); } catch (er) {}
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      try { var r = e && e.reason; _issueCand('§FIELD-ERROR kind=promise msg="' + ((r && r.message) || (typeof r === 'string' ? r : 'unhandledrejection')) + '"', 'beacon', r && r.stack); } catch (er) {}
+    });
+  })();
+
+  // §UDP-5 housekeeping — the System Monitor's "OK to Housekeep" panel (user decision 2026-10-16). Tables = the RUNTIME class of
+  //   witness_dict_census.js; rows = this client's seed + op-log tip; over 500 (MRole.getConfirmQueryRecords default) = red. A run deletes
+  //   rows Updated (else Created) older than 7 days (AD_HouseKeeping's "preserving last week") as signed CRUD_DELETE groups of <= 200,
+  //   never a named AD_PInstance (Saved Parameters) nor its AD_PInstance_Para rows, never this login's AD_Session row.
+  var _HK_RUNTIME = /^(ad_changelog|ad_session|ad_pinstance|ad_pinstance_para|ad_pinstance_log|ad_issue|ad_attachment|ad_migrationscript|ad_package_imp.*|ad_alertprocessorlog|ad_schedulerlog|ad_workflowprocessorlog|ad_sequence_no|ad_note|ad_recentitem)$/;
+  var _HK_THRESHOLD = 500, _HK_DAYS = 7, _HK_BATCH = 200;
+  function _hkPk(t) { var r = _sqlRows('PRAGMA table_info(' + t + ')'), pk = r.filter(function (c) { return Number(c.pk) === 1; })[0]; return pk ? String(pk.name).toLowerCase() : t + '_id'; }
+  function _hkRows(t, cb) {
+    var App = window.APP || {}, pk = _hkPk(t), cols = _sqlRows('PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); });
+    var base = cols.indexOf('ad_client_id') >= 0 ? _sqlRows('SELECT * FROM ' + t + ' WHERE ad_client_id=' + Number(App.clientId)) : _sqlRows('SELECT * FROM ' + t);
+    _recentTip(t, pk, base, function (rows) { cb(rows.filter(function (r) { return r.ad_client_id == null || String(r.ad_client_id) === String(App.clientId); }), pk); });
+  }
+  function _hkKeep(t, rows) {   // ids a run must never delete
+    var keep = {};
+    if (t === 'ad_pinstance') rows.forEach(function (r) { if (r.name != null && String(r.name).trim() !== '') keep[r.ad_pinstance_id] = 'named'; });
+    if (t === 'ad_session' && _sessionRow != null) keep[_sessionRow] = 'current';
+    return keep;
+  }
+  function _hkScan(cb) {
+    var App = window.APP || {}, out = [];
+    if (App.actor == null || App.clientId == null) { cb({ loggedIn: false, tables: [] }); return; }
+    var tabs = _sqlRows("SELECT name FROM sqlite_master WHERE type='table'").map(function (r) { return String(r.name).toLowerCase(); }).filter(function (t) { return _HK_RUNTIME.test(t); }).sort(), i = 0;
+    var next = function () {
+      if (i >= tabs.length) { console.log('§UDP5-HK scan client=' + App.clientId + ' threshold=' + _HK_THRESHOLD + ' ' + out.map(function (o) { return o.table + '=' + o.rows + (o.red ? '(RED)' : ''); }).join(' ')); cb({ loggedIn: true, threshold: _HK_THRESHOLD, days: _HK_DAYS, tables: out }); return; }
+      var t = tabs[i++];
+      _hkRows(t, function (rows) { out.push({ table: t, rows: rows.length, red: rows.length > _HK_THRESHOLD }); next(); });
+    };
+    next();
+  }
+  function _hkRun(t, cb) {
+    cb = typeof cb === 'function' ? cb : function () {};
+    var c = window.__crud, App = window.APP || {};
+    t = String(t || '').toLowerCase();
+    if (!_HK_RUNTIME.test(t) || App.actor == null || !c || typeof c.applyOpGroup !== 'function') { console.log('§UDP5-HK run table=' + t + ' refused'); cb({ ok: false }); return; }
+    _hkRows(t, function (rows, pk) {
+      var keep = _hkKeep(t, rows), cutoff = new Date(Date.now() - _HK_DAYS * 864e5), p2 = function (n) { return ('0' + n).slice(-2); };
+      var cut = cutoff.getFullYear() + '-' + p2(cutoff.getMonth() + 1) + '-' + p2(cutoff.getDate()) + ' ' + p2(cutoff.getHours()) + ':' + p2(cutoff.getMinutes()) + ':' + p2(cutoff.getSeconds());
+      var finish = function (namedParas) {
+        var del = rows.filter(function (r) { var id = r[pk]; if (keep[id]) return false; if (namedParas && namedParas[r.ad_pinstance_id]) return false; var ts = String(r.updated || r.created || ''); return ts !== '' && ts < cut; }).map(function (r) { return r[pk]; });
+        var kept = Object.keys(keep).length, done = 0, groups = [];
+        for (var k = 0; k < del.length; k += _HK_BATCH) groups.push(del.slice(k, k + _HK_BATCH));
+        var go = function () {
+          if (!groups.length) { console.log('§UDP5-HK run table=' + t + ' before=' + rows.length + ' deleted=' + done + ' kept-protected=' + (kept + (namedParas ? Object.keys(namedParas).length : 0)) + ' cutoff=' + cut); cb({ ok: true, before: rows.length, deleted: done }); return; }
+          var g = groups.shift();
+          c.applyOpGroup(g.map(function (id) { return _procCrud('delete', t, { id: id }); }), function (cr) { if (cr && cr.committed) done += g.length; go(); });
+        };
+        go();
+      };
+      if (t === 'ad_pinstance_para') _hkRows('ad_pinstance', function (pi) { finish(_hkKeep('ad_pinstance', pi)); }); else finish(null);
+    });
   }
 
   // BLUE FUTURE (item 0) — enter/accept/discard changed the branch view: re-open the active window so the
