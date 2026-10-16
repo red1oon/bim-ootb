@@ -3,7 +3,8 @@
  * # ⚠ DO NOT REMOVE — W-DXF-CONVERT: DXF2BIM lane L3 in the Modeller (prompts/DXF2BIM_MODELLER_LANE.md §L3 "L3 build spec").
  * Read the log (tests/logs/witness_dxf_convert.log) after every run; exit code is not evidence.
  *
- * Drives the REAL UI: Open ▸ "Open 2D drawings (.dxf)…" (file chooser, 7 sheets) → canvas → Convert button.
+ * §L3.3: runs on the STD set (8 sheets incl. ROOF + SECTION, BIMCompiler `DXSET=std rosetta_dx_shell.js`, summary *_std.json).
+ * Drives the REAL UI: Open ▸ "Open 2D drawings (.dxf)…" (file chooser, 8 sheets) → canvas → gate (roles + dxf2qualify verdict) → Convert.
  *   C0 CANVAS   — each sheet lands where its markings put it: plan wall lines at z = @LEVEL, roof outline at z = @ROOF, each
  *                 elevation's A-ELEV-WALL lines ON its face plane and spanning exactly the building's outer envelope along it
  *                 (1 mm). Issue: a sheet drawn at the wrong height, off its face plane or slid along it. Not covered: a mirror of a
@@ -16,15 +17,26 @@
  *   C1 FILLS    — §L3.2: with the LOCAL library subset (generated first by BIMCompiler scripts/export_library_subset.js into
  *                 modeller/dxf2bim/local/, git-ignored) every Node fill (26) is ONE committed GEOM_INSERT of its library mesh with
  *                 the Node id, class, storey, rendered centre and bbox within 1 mm. Issue: fills missing, misplaced, or another product.
- *   C1 FILLS-FALSIFY — the subset served with one mesh removed: exactly the Node fills of that mesh's product hard-fail with
- *                 GAP:lod400_mesh_missing (console.error), every other fill is placed, no extra insert (never a box).
+ *   C1 FILLS-FALSIFY — the subset served with one mesh removed: exactly the Node fills of that mesh's product get
+ *                 GAP:lod400_mesh_missing, those are the ONLY blocking qualify items, so the gate refuses the set (§L3.3): Convert
+ *                 disabled, forced convert refused, op-log unchanged (never a box, never a substitute).
  *   C1 FALSIFY  — the C1 comparator against the Node summary with one piece and one infill box moved 2 mm reports exactly those
  *                 two. Issue: a comparator that cannot fail.
  *   C2 IFC      — Export ▸ IFC → reimport: products by class == committed inserts by class, storeys == 2, contained == products.
  *                 Issue: the converted model does not survive export (classes lost, no storeys, products outside the tree).
- *   C3 REFUSE   — the GF plan replaced by its raw unmarked original: gate refused naming that sheet, Convert disabled, a forced
- *                 convert() refused, op-log unchanged. Issue: a sheet without a role marking converted on a guess.
+ *   C0 SECTION  — every read layer of the SECTION sheet lies ON its cut plane (@CUT x units, 1 mm) and its cut walls (A-SECT)
+ *                 span exactly the plan envelope along the section axis (1 mm). Issue: a section off its cut plane or slid along it.
+ *   C3 REFUSE   — (a) the std GF plan replaced by its raw unmarked original: roles refuse naming that sheet; (b) the OLD marked set
+ *                 (7 sheets, dxf2qualify verdict blocked): gate refused with the verdict (its canvas C0 still checked). Both: Convert
+ *                 disabled, a forced convert() refused, op-log unchanged. Issue: a sheet without a role, or a set qualify blocks, converted.
  *   C4 UNDO     — ONE undo: every converted op inactive and no converted mesh left. Issue: convert is not one gesture.
+ *   §L3.4 DXF_LIB=oci (L2) — the main page answers the local subset URL with 404 (as on GitHub Pages, where dxf2bim/local/ does not
+ *                 exist): the library comes from OCI (log `§DXF-LIB source=oci`), and C0-C4 above must hold unchanged, incl. C1 FILLS
+ *                 36/36. Issue: the public page cannot reach the OCI library (CORS, content type, path) or builds another one.
+ *                 Default (no DXF_LIB): the local subset, `§DXF-LIB source=local` (the dev override).
+ *   C5 LIB-UNREACHABLE (L3 falsify, always) — test hook = puppeteer answers latest.json with a non-existent library sha (production code
+ *                 unchanged) and the local URL with 404: `§DXF-LIB source=none`, every opening GAP:lod400_library_unreachable, gate refused,
+ *                 forced convert refused, op-log unchanged, no mesh. Issue: an unreachable library silently yields boxes or a pass.
  * Screenshots: ~/Videos/dxf2bim_work/l3/ (imported sheets; converted Duplex).
  * Inputs (not in git): $DXF2BIM_BC (default ~/Projects/bim-compiler): tests/dxf2bim/out/{marked,marked_shell}, the Node summary,
  * 2D_Layout/output/DXF/DX_FLOOR_GF_20260428_0636.dxf (C3). Run BIMCompiler tests/dxf2bim/rosetta_dx_shell.js first.
@@ -38,12 +50,14 @@ const OUT = path.join(BC, 'tests/dxf2bim/out');
 const SHOTS = path.join(process.env.HOME, 'Videos', 'dxf2bim_work', 'l3');
 const LOG = path.join(__dirname, 'logs', 'witness_dxf_convert.log');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css' };
-const SET = [['marked', 'DX_FLOOR_GF_marked.dxf'], ['marked', 'DX_FLOOR_FF_marked.dxf'], ['marked_shell', 'DX_FRONT_shell.dxf'], ['marked_shell', 'DX_REAR_shell.dxf'],
+const SET = [['marked_std', 'DX_FLOOR_GF_marked.dxf'], ['marked_std', 'DX_FLOOR_FF_marked.dxf'], ['marked_std_shell', 'DX_FRONT_shell.dxf'], ['marked_std_shell', 'DX_REAR_shell.dxf'],
+  ['marked_std_shell', 'DX_LEFT_shell.dxf'], ['marked_std_shell', 'DX_RIGHT_shell.dxf'], ['marked_std', 'DX_ROOF_marked.dxf'], ['marked_std', 'DX_SECTION_marked.dxf']].map(([d, n]) => path.join(OUT, d, n));
+const OLDSET = [['marked', 'DX_FLOOR_GF_marked.dxf'], ['marked', 'DX_FLOOR_FF_marked.dxf'], ['marked_shell', 'DX_FRONT_shell.dxf'], ['marked_shell', 'DX_REAR_shell.dxf'],
   ['marked_shell', 'DX_LEFT_shell.dxf'], ['marked_shell', 'DX_RIGHT_shell.dxf'], ['marked_shell', 'DX_ROOF_shell.dxf']].map(([d, n]) => path.join(OUT, d, n));
-const RAW_GF = path.join(BC, '2D_Layout/output/DXF/DX_FLOOR_GF_20260428_0636.dxf');
+const RAW_GF = path.join(BC, '2D_Layout/output/STD/DX_FLOOR_GF_std.dxf');
 const lines = []; let fail = 0, gaps = 0;
 const cp = require('child_process');
-const SUBSET = path.join(ROOT, 'dxf2bim', 'local', 'library_subset_duplex.json'), DROP = '00b72db6daa0796e';
+const SUBSET = path.join(ROOT, 'dxf2bim', 'local', 'library_subset_duplex.json');
 const say = s => { lines.push(s); console.log(s); };
 const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL ') + id + ' | ' + issue + ' | ' + d); };
 const server = http.createServer((q, r) => {
@@ -51,16 +65,25 @@ const server = http.createServer((q, r) => {
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(b); });
 });
 
-async function openPage(br, port, tag) {
+const LIBMODE = process.env.DXF_LIB === 'oci' ? 'oci' : 'local';
+const LOCAL_RE = /dxf2bim\/local\/library_subset_duplex\.json/, LATEST_RE = /\/dxf2bim\/library\/latest\.json$/;
+// routes: [[RegExp, {status, contentType, body}]] answered by interception (the SW is bypassed so it cannot answer first)
+async function openPage(br, port, tag, routes) {
   const pg = await br.newPage();
   await pg.setViewport({ width: 1400, height: 900 });
-  pg.on('console', m => { const t = m.text(); if (/§DXF|§IFC-SPATIAL|§IFC reimport|§IFC build|§IFC §IFC-SEED|commitGesture|GESTURE-UNDO|LOD400-REFUSE|insert fold fail|ERR/.test(t)) say('  [' + tag + '] ' + t.slice(0, 400)); });
+  pg._logs = [];
+  if (routes) {
+    await pg.setBypassServiceWorker(true); await pg.setRequestInterception(true);
+    pg.on('request', rq => { const hit = routes.find(([re]) => re.test(rq.url().split('?')[0])); if (hit) rq.respond(hit[1]); else rq.continue(); });
+  }
+  pg.on('console', m => { const t = m.text(); pg._logs.push(t); if (/§DXF|§IFC-SPATIAL|§IFC reimport|§IFC build|§IFC §IFC-SEED|commitGesture|GESTURE-UNDO|LOD400-REFUSE|insert fold fail|ERR/.test(t)) say('  [' + tag + '] ' + t.slice(0, 400)); });
   pg.on('pageerror', e => say('  [' + tag + '] PAGEERR ' + String(e).slice(0, 300)));
   await pg.goto(`http://localhost:${port}/modeller.html`, { waitUntil: 'load', timeout: 90000 });
   await pg.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.Bonsai.library && window.DxfImportUI && window.A && window.A.scene', { timeout: 90000 });
   return pg;
 }
 async function openViaChooser(pg, files) {
+  await pg.evaluate(() => { window.gateSum = g => g ? { ok: g.ok, set: g.set, refused: g.refused, verdict: g.verdict ? { verdict: g.verdict.verdict, blocking: g.verdict.blocking.length, advisory: g.verdict.advisory.length, counts: g.verdict.counts } : null } : null; });
   await pg.click('#b-open');
   await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true, timeout: 20000 });
   const [chooser] = await Promise.all([pg.waitForFileChooser({ timeout: 20000 }), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]);
@@ -71,36 +94,52 @@ async function openViaChooser(pg, files) {
 }
 
 (async () => {
-  for (const f of SET.concat([RAW_GF])) if (!fs.existsSync(f)) { say('MISSING input ' + f); process.exit(2); }
+  for (const f of SET.concat(OLDSET, [RAW_GF])) if (!fs.existsSync(f)) { say('MISSING input ' + f); process.exit(2); }
   // §L3.2: generate the local library subset FIRST (never committed)
-  say(cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements.json'),
-    '--labels', path.join(OUT, 'duplex_basic_shapes_labels.json'), '--lib', path.join(BC, 'deploy/component_library.db'), '--out', SUBSET], { encoding: 'utf8' }).trim());
-  const ref = JSON.parse(fs.readFileSync(path.join(OUT, 'duplex_basic_shapes_elements.json'), 'utf8'));
+  say(cp.execFileSync('node', [path.join(BC, 'scripts/export_library_subset.js'), '--elements', path.join(OUT, 'duplex_basic_shapes_elements_std.json'),
+    '--labels', path.join(OUT, 'duplex_basic_shapes_labels_std.json'), '--lib', path.join(BC, 'deploy/component_library.db'), '--out', SUBSET], { encoding: 'utf8' }).trim());
+  const ref = JSON.parse(fs.readFileSync(path.join(OUT, 'duplex_basic_shapes_elements_std.json'), 'utf8'));
+  const DROP = ref.elements.filter(e => e.class === 'IfcDoor' && e.geometry_hash).map(e => e.geometry_hash).sort()[0];   // a door product's mesh (deterministic)
   fs.mkdirSync(SHOTS, { recursive: true });
   await new Promise(r => server.listen(0, r)); const port = server.address().port;
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   say('BC=' + BC);
 
   // ---------------- C1 / C2 / C4 on the marked set ----------------
-  const pg = await openPage(br, port, 'set');
+  say('library mode=' + LIBMODE);
+  const pg = await openPage(br, port, 'set', LIBMODE === 'oci' ? [[LOCAL_RE, { status: 404, contentType: 'text/plain', body: 'not found' }]] : null);
   const multiple = await openViaChooser(pg, SET);
-  const imp = await pg.evaluate(() => ({ gate: window.DxfImportUI.state.gate, roles: window.DxfImportUI.state.sheets.map(s => [s.name, s.role]),
+  const imp = await pg.evaluate(() => ({ gate: gateSum(window.DxfImportUI.state.gate), roles: window.DxfImportUI.state.sheets.map(s => [s.name, s.role]),
     lines: window.DxfImportUI.state.group ? window.DxfImportUI.state.group.children.map(c => [c.userData.dxfSheet, c.geometry.attributes.position.count / 2]) : [],
     convertDisabled: document.getElementById('dxf-convert').disabled }));
-  const cv = await pg.evaluate(() => ({ canvas: window.DxfImportUI.state.canvas, env: window.DxfImportUI.state.envelope,
+  const c0 = async (pgx, label, nSheets) => {
+  const cv = await pgx.evaluate(() => ({ canvas: window.DxfImportUI.state.canvas, env: window.DxfImportUI.state.envelope,
     sheets: window.DxfImportUI.state.sheets.map(s => ({ name: s.name, role: s.role, level: s.level, face: s.face, roofZ: s.roofZ })) }));
-  const cbad = [];
+  const cbad = [], lv = cv.sheets.filter(s => s.role === 'plan').map(s => s.level), roofZ = (cv.sheets.find(s => s.role === 'roof') || {}).roofZ;
   cv.sheets.forEach(s => { const c = cv.canvas[s.name]; if (!c) { cbad.push(s.name + ' not drawn'); return; } const tb = c.typeBox;
     if (s.role === 'plan') { const b = tb.wall; if (!b || Math.abs(b[2] - s.level) > 1e-6 || Math.abs(b[5] - s.level) > 1e-6) cbad.push(s.name + ' wall z ' + (b && [b[2], b[5]])); }
     if (s.role === 'roof') { const b = tb.roof; if (!b || Math.abs(b[2] - s.roofZ) > 1e-6 || Math.abs(b[5] - s.roofZ) > 1e-6) cbad.push(s.name + ' roof z ' + (b && [b[2], b[5]])); }
     if (s.role === 'elev') { const b = tb.elevwall, E = cv.env, ax = /Y$/.test(s.face) ? 0 : 1, ac = 1 - ax, fc = { minX: E[0], minY: E[1], maxX: E[2], maxY: E[3] }[s.face];
       const ok = b && Math.abs(b[ac] - fc) <= 0.001 && Math.abs(b[ac + 3] - fc) <= 0.001 && Math.abs(b[ax] - E[ax]) <= 0.001 && Math.abs(b[ax + 3] - E[ax + 2]) <= 0.001;
-      if (!ok) cbad.push(s.name + ' ' + s.face + ' elevwall box ' + JSON.stringify(b) + ' env ' + JSON.stringify(E)); } });
-  check('C0 CANVAS', 'a sheet is drawn at the wrong height, or an elevation is off its face plane / slid along it (1 mm)', cbad.length === 0 && cv.sheets.length === 7,
+      if (!ok) cbad.push(s.name + ' ' + s.face + ' elevwall box ' + JSON.stringify(b) + ' env ' + JSON.stringify(E)); }
+    if (s.role === 'section') {   // every read layer ON the cut plane; the cut walls (A-SECT, sectwall) span exactly the plan envelope along the section axis
+      const E = cv.env, cu = c.cut, ca = cu && cu.axis === 'X' ? 0 : 1, oa = 1 - ca, b = tb.sectwall;
+      const onPlane = cu && Object.keys(tb).every(t => Math.abs(tb[t][ca] - cu.value) <= 0.001 && Math.abs(tb[t][ca + 3] - cu.value) <= 0.001);
+      const ok = onPlane && b && Math.abs(b[oa] - E[oa]) <= 0.001 && Math.abs(b[oa + 3] - E[oa + 2]) <= 0.001;
+      say('  [' + label + '] section ' + s.name + ' cut=' + JSON.stringify(cu) + ' boxes=' + JSON.stringify(Object.keys(tb).reduce((o, t) => (o[t] = tb[t].map(v => Math.round(v * 1000) / 1000), o), {})));
+      if (!ok) cbad.push(s.name + ' section onPlane=' + onPlane + ' sectwall ' + JSON.stringify(b) + ' cut ' + JSON.stringify(cu) + ' env ' + JSON.stringify(E)); } });
+  check('C0 CANVAS ' + label, 'a sheet is drawn at the wrong height, an elevation off its face plane / slid along it, or a section off its cut plane (1 mm)', cbad.length === 0 && cv.sheets.length === nSheets,
     'sheets=' + cv.sheets.length + ' envelope=' + JSON.stringify(cv.env) + (cbad.length ? ' bad: ' + cbad.join('; ') : ''));
+  };
+  await c0(pg, 'std', SET.length);
+  const srcLine = pg._logs.filter(t => /^§DXF-LIB /.test(t));
+  check('C0 LIB-SOURCE', 'the library came from another source than this run asks for (' + LIBMODE + '), or no §DXF-LIB line',
+    srcLine.length > 0 && srcLine.every(t => t.indexOf('§DXF-LIB source=' + LIBMODE + ' ') === 0) && srcLine.every(t => /sha=7e5df6e10027/.test(t)), srcLine.join(' || ').slice(0, 400));
+  check('C0 GATE std', 'the std set (Node verdict qualifies) is not allowed to convert by the ONE gate (roles + dxf2qualify)', imp.gate.ok && imp.gate.verdict && imp.gate.verdict.verdict === 'qualifies' && !imp.convertDisabled,
+    JSON.stringify(imp.gate));
   say('import: multiple=' + multiple + ' gate.ok=' + imp.gate.ok + ' roles=' + JSON.stringify(imp.roles) + ' canvas=' + JSON.stringify(imp.lines));
   await new Promise(r => setTimeout(r, 1500));
-  await pg.screenshot({ path: path.join(SHOTS, 'l3_imported_sheets.png') });
+  await pg.screenshot({ path: path.join(SHOTS, 'l3_std_imported_sheets.png') });
   const opsBefore = await pg.evaluate(() => window.Bonsai.oplog.length);
   await pg.click('#dxf-convert');
   await pg.waitForFunction('window.DxfImportUI.state.last', { timeout: 600000 });
@@ -125,18 +164,18 @@ async function openViaChooser(pg, files) {
     return { run_id: L.run_id, gid: L.gid, ids: L.ids, groups: L.groups, counts: L.counts, fillsNeeded: L.fillsNeeded, fills: L.fills, fillGaps: L.fillGaps, inserts, cuts, nOps: ops.length, opsTotal: window.Bonsai.oplog.length };
   });
   say('converted: ops=' + got.nOps + ' inserts=' + got.inserts.length + ' cuts=' + got.cuts.length + ' gid=' + got.gid + ' counts=' + JSON.stringify(got.counts) + ' op-log ' + opsBefore + '->' + got.opsTotal);
-  await pg.screenshot({ path: path.join(SHOTS, 'l3_converted_duplex.png') });
+  await pg.screenshot({ path: path.join(SHOTS, 'l3_std_converted_panel.png') });
   await pg.evaluate(() => { const p = document.getElementById('dxf-panel'); if (p) p.style.display = 'none';
     const T = window.THREE, A = window.A, b = new T.Box3().setFromObject(window.Bonsai.group()), c = b.getCenter(new T.Vector3()), sz = b.getSize(new T.Vector3());
     const r = Math.max(sz.x, sz.y, sz.z) * 0.5, d = new T.Vector3(0.9, -1, 0.5).normalize();
     A.camera.up.set(0, 0, 1); A.controls.target.copy(c); A.camera.position.copy(c).addScaledVector(d, r / Math.sin(A.camera.fov * Math.PI / 360) * 1.25); A.controls.update(); });
   await new Promise(r => setTimeout(r, 1200));
-  await pg.screenshot({ path: path.join(SHOTS, 'l3_converted_front.png') });
+  await pg.screenshot({ path: path.join(SHOTS, 'l3_std_converted.png') });
   await pg.evaluate(() => { const T = window.THREE, A = window.A, b = new T.Box3().setFromObject(window.Bonsai.group()), c = b.getCenter(new T.Vector3()), sz = b.getSize(new T.Vector3());
     const r = Math.max(sz.x, sz.y, sz.z) * 0.5, d = new T.Vector3(0.75, -1, 0.35).normalize();
     A.controls.target.copy(c); A.camera.position.copy(c).addScaledVector(d, r / Math.sin(A.camera.fov * Math.PI / 360) * 1.05); A.controls.update(); });
   await new Promise(r => setTimeout(r, 1200));
-  await pg.screenshot({ path: path.join(SHOTS, 'l3b_fills.png') });
+  await pg.screenshot({ path: path.join(SHOTS, 'l3_std_fills.png') });
 
   // C1 comparator (pure, reused by the falsify control)
   function c1(refEls, gotIns, groups) {
@@ -236,38 +275,62 @@ async function openViaChooser(pg, files) {
     await pgf.goto(`http://localhost:${port}/modeller.html`, { waitUntil: 'load', timeout: 90000 });
     await pgf.waitForFunction('window.Bonsai && window.Bonsai.oplog && window.DxfImportUI && window.A && window.A.scene', { timeout: 90000 });
     await openViaChooser(pgf, SET);
-    await pgf.click('#dxf-convert');
-    await pgf.waitForFunction('window.DxfImportUI.state.last', { timeout: 600000 });
-    const fz = await pgf.evaluate(() => { const L = window.DxfImportUI.state.last;
-      const ops = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.provenance && o.parameters.provenance.run_id === L.run_id);
-      return { fills: L.fills.length, nIns: L.nInserts, gaps: L.fillGaps.map(g => ({ code: g.code, storey: g.storey, handle: g.handle, product: g.element_ref })),
-        ins: ops.map(o => ({ cls: o.parameters.ifc_class, hash: o.parameters.realGeomHash, prod: o.parameters.provenance.element_ref })) }; });
+    // §L3.3: a missing LOD400 mesh is a blocking qualify item, so the ONE gate refuses the set: nothing is converted, nothing is a box
+    const fz = await pgf.evaluate(async () => { const st = window.DxfImportUI.state, g = st.gate, before = window.Bonsai.oplog.length, dis = document.getElementById('dxf-convert').disabled;
+      const forced = await window.DxfImportUI.convert();
+      return { gate: gateSum(g), disabled: dis, forced: !!(forced && forced.refused), before, after: window.Bonsai.oplog.length,
+        gaps: (g.R && g.R.fillGaps || []).map(x => ({ code: x.code, storey: x.storey, handle: x.handle, product: x.element_ref })),
+        blockingCodes: g.verdict ? g.verdict.blocking.map(x => x.code) : [], meshes: window.Bonsai.group().children.filter(m => m.isMesh && m.userData && m.userData.featureId != null).length }; });
     const expect = ref.elements.filter(e => /IfcDoor|IfcWindow/.test(e.class) && prodRows.indexOf(e.element_ref) >= 0);
     const key = x => x.storey + '|' + x.handle, ms = a => a.map(key).sort().join(',');
-    const noBox = fz.ins.every(x => typeof x.hash === 'string' && x.hash.length > 0) && !fz.ins.some(x => x.prod && prodRows.indexOf(x.prod) >= 0);
-    check('C1 FILLS-FALSIFY', 'a fill whose library mesh is missing is placed anyway (substitute or box), or the hard fail hits other fills / is unnamed',
-      expect.length > 0 && fz.gaps.every(g => g.code === 'GAP:lod400_mesh_missing') && ms(fz.gaps) === ms(expect) && fz.fills === nFillRef - expect.length &&
-      fz.nIns === got.inserts.length - expect.length && noBox && errs.length === expect.length,
-      'dropped=' + DROP + ' product=' + [...new Set(prodRows)].join(',') + ' node fills of it=' + expect.length + ' gaps=' + JSON.stringify(fz.gaps) + ' placed=' + fz.fills + '/' + nFillRef +
-      ' inserts=' + fz.nIns + ' (full ' + got.inserts.length + ') console.error=' + errs.length + (errs[0] ? ' "' + errs[0].slice(0, 200) + '"' : ''));
+    check('C1 FILLS-FALSIFY', 'a fill whose library mesh is missing is converted anyway (substitute or box), the GAP hits other fills or is unnamed, or the gate lets the set through',
+      expect.length > 0 && fz.gaps.length === expect.length && fz.gaps.every(g => g.code === 'GAP:lod400_mesh_missing') && ms(fz.gaps) === ms(expect) &&
+      fz.gate && !fz.gate.ok && fz.gate.verdict && fz.gate.verdict.verdict === 'blocked' && fz.blockingCodes.length > 0 && fz.blockingCodes.every(c => c === 'GAP:lod400_mesh_missing') &&
+      fz.disabled && fz.forced && fz.before === fz.after,
+      'dropped=' + DROP + ' product=' + [...new Set(prodRows)].join(',') + ' node fills of it=' + expect.length + ' gaps=' + JSON.stringify(fz.gaps) + ' verdict=' + JSON.stringify(fz.gate && fz.gate.verdict) +
+      ' blocking codes=' + JSON.stringify([...new Set(fz.blockingCodes)]) + ' disabled=' + fz.disabled + ' forced refused=' + fz.forced + ' op-log ' + fz.before + '->' + fz.after);
     await pgf.close();
   }
 
-  // ---------------- C3 refuse: the GF plan without markings ----------------
-  const pg3 = await openPage(br, port, 'raw');
-  await openViaChooser(pg3, [RAW_GF].concat(SET.slice(1)));
-  const r3 = await pg3.evaluate(async () => {
-    const before = window.Bonsai.oplog.length, st = window.DxfImportUI.state, dis = document.getElementById('dxf-convert').disabled;
-    const forced = await window.DxfImportUI.convert();
-    return { gate: st.gate, disabled: dis, forced, before, after: window.Bonsai.oplog.length, why: (document.querySelector('#dxf-panel .dxf-why') || {}).textContent };
-  });
-  const named = r3.gate.refused.some(r => r.sheet === path.basename(RAW_GF));
-  check('C3 REFUSE', 'a sheet without a role marking is converted (or refused without naming it)', !r3.gate.ok && named && r3.disabled && r3.forced && r3.forced.refused && r3.before === r3.after,
-    'refused=' + JSON.stringify(r3.gate.refused) + ' disabled=' + r3.disabled + ' op-log ' + r3.before + '->' + r3.after + ' panel="' + r3.why + '"');
-  await pg3.close();
+  // ---------------- C3 refuse: (a) a std plan without markings (roles), (b) the OLD marked set (dxf2qualify verdict blocked) ----------------
+  for (const [label, files, expectNamed] of [['raw-gf', [RAW_GF].concat(SET.slice(1)), path.basename(RAW_GF)], ['old-set', OLDSET, null]]) {
+    const pg3 = await openPage(br, port, label);
+    await openViaChooser(pg3, files);
+    if (label === 'old-set') await c0(pg3, 'old-set', OLDSET.length);
+    const r3 = await pg3.evaluate(async () => {
+      const before = window.Bonsai.oplog.length, st = window.DxfImportUI.state, dis = document.getElementById('dxf-convert').disabled;
+      const forced = await window.DxfImportUI.convert();
+      return { gate: gateSum(st.gate), disabled: dis, forced: forced && { refused: !!forced.refused }, before, after: window.Bonsai.oplog.length,
+        why: Array.prototype.map.call(document.querySelectorAll('#dxf-panel .dxf-why'), e => e.textContent).slice(0, 3).join(' | ') };
+    });
+    const named = expectNamed ? r3.gate.refused.some(r => r.sheet === expectNamed) : (r3.gate.verdict && r3.gate.verdict.verdict === 'blocked' && r3.gate.verdict.blocking > 0);
+    check('C3 REFUSE ' + label, label === 'raw-gf' ? 'a sheet without a role marking is converted (or refused without naming it)' : 'a set the dxf2qualify verdict blocks is converted (or refused without the verdict)',
+      !r3.gate.ok && named && r3.disabled && r3.forced && r3.forced.refused && r3.before === r3.after,
+      'gate=' + JSON.stringify(r3.gate).slice(0, 500) + ' disabled=' + r3.disabled + ' op-log ' + r3.before + '->' + r3.after + ' panel="' + r3.why.slice(0, 300) + '"');
+    await pg3.close();
+  }
+
+  // ---------------- C5 LIB-UNREACHABLE (§L3.4 L3 falsify): latest.json names a library sha that does not exist ----------------
+  {
+    const fake = JSON.stringify({ format: 'dxf2bim-library-latest/1', library_sha256: '0'.repeat(64), index: '000000000000/index.json' });
+    const pg5 = await openPage(br, port, 'nolib', [[LOCAL_RE, { status: 404, contentType: 'text/plain', body: 'not found' }], [LATEST_RE, { status: 200, contentType: 'application/json', body: fake, headers: { 'Access-Control-Allow-Origin': '*' } }]]);
+    await openViaChooser(pg5, SET);
+    const r5 = await pg5.evaluate(async () => { const st = window.DxfImportUI.state, g = st.gate, before = window.Bonsai.oplog.length, dis = document.getElementById('dxf-convert').disabled;
+      const forced = await window.DxfImportUI.convert();
+      return { gate: gateSum(g), disabled: dis, forced: !!(forced && forced.refused), before, after: window.Bonsai.oplog.length, lib: !!g.lib,
+        codes: [...new Set((g.R && g.R.ST || []).reduce((a, st) => a.concat(st.fills.gaps), []).map(x => x.code))], nGaps: (g.R && g.R.ST || []).reduce((n, st) => n + st.fills.gaps.length, 0),
+        blockingCodes: g.verdict ? [...new Set(g.verdict.blocking.map(x => x.code))] : [],
+        meshes: window.Bonsai.group().children.filter(m => m.isMesh && m.userData && m.userData.featureId != null).length }; });
+    const src5 = pg5._logs.filter(t => /^§DXF-LIB /.test(t));
+    check('C5 LIB-UNREACHABLE', 'an unreachable library silently yields boxes, a substitute or a pass (must be GAP:lod400_library_unreachable, gate refused, no op)',
+      src5.length > 0 && src5.every(t => /^§DXF-LIB source=none /.test(t)) && !r5.lib && r5.nGaps > 0 && r5.codes.length === 1 && r5.codes[0] === 'GAP:lod400_library_unreachable' && r5.blockingCodes.length === 1 && r5.blockingCodes[0] === 'GAP:lod400_library_unreachable' &&
+      r5.gate && !r5.gate.ok && r5.disabled && r5.forced && r5.before === r5.after && r5.meshes === 0,
+      'log=' + src5.join(' || ').slice(0, 300) + ' gaps=' + r5.nGaps + ' codes=' + JSON.stringify(r5.codes) + ' blocking codes=' + JSON.stringify(r5.blockingCodes) + ' verdict=' + JSON.stringify(r5.gate && r5.gate.verdict) + ' disabled=' + r5.disabled + ' forced refused=' + r5.forced + ' op-log ' + r5.before + '->' + r5.after + ' meshes=' + r5.meshes);
+    await pg5.close();
+  }
 
   await br.close(); server.close();
-  say('screenshots: ' + ['l3_imported_sheets.png', 'l3_converted_duplex.png', 'l3_converted_front.png', 'l3b_fills.png'].map(f => path.join(SHOTS, f)).join(' , '));
+  say('screenshots: ' + ['l3_std_imported_sheets.png', 'l3_std_converted_panel.png', 'l3_std_converted.png', 'l3_std_fills.png'].map(f => path.join(SHOTS, f)).join(' , '));
   say('SUMMARY fail=' + fail + ' gap=' + gaps);
   fs.mkdirSync(path.dirname(LOG), { recursive: true }); fs.writeFileSync(LOG, lines.join('\n') + '\n');
   process.exit(fail ? 1 : 0);

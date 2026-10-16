@@ -486,7 +486,7 @@
 <script src="error_beacon.js?v=1" onerror="console.warn('§LOAD_FAIL error_beacon.js — field-error capture disabled')"></script><!-- SYSTEM_MONITOR_WIDGETS §H — minimal field-error beacon (G2 seed); loads early to catch boot errors -->
 <script src="vfs_detect.js?v=1"></script>
 <script src="erp_i18n.js?v=2"></script><!-- UI locales (bim-compiler prompts/ERP_UI_LOCALES.md) — W-ERP-I18N -->
-<script src="ad_parser.js?v=24"></script>
+<script src="ad_parser.js?v=25"></script>
 <!-- UI_UNPARK_RESUME.md — proven AD engines (source of truth: bim-compiler build/erp/): logic evaluator
      (W-LOGIC-EVAL 3044/3044) · DocAction FSM (W-*-FSM, 22 tables) · beforeSave hooks (W-*-SAVE, 12 installers). -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -498,7 +498,7 @@
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=15"></script>
+<script src="ad_process.js?v=16"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_data.js?v=23"></script>
@@ -546,7 +546,7 @@
      to the lookup query, exactly as MLookupFactory:122-125 does. 61 displayed fields on the five document
      header tabs carry an AD_Val_Rule_ID. -->
 <script src="ad_valrule.js?v=1"></script>
-<script src="ad_gridtab.js?v=3"></script>
+<script src="ad_gridtab.js?v=4"></script>
 <script src="ad_infowin.js?v=1"></script>
 <script src="plugin_registry.js?v=1"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
@@ -692,7 +692,7 @@
      ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
      pos_lens._sfx no-ops if absent. -->
 <script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
-<script src="pos_lens.js?v=10"></script>
+<script src="pos_lens.js?v=11"></script>
 <!-- Kitchen Display (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC) — queue = FOLD over the op log
      (KitchenCore, == bim-compiler build/erp source of truth, W-KDS-QUEUE headless) + the dumb-terminal
      lens (KitchenLens). Serve rides pos_core's completeShipmentOps — load AFTER pos_core. -->
@@ -735,7 +735,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=6"></script>
+<script src="crud_core.js?v=8"></script>
 <script src="crud_overlay.js?v=34"></script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
@@ -2199,7 +2199,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     put('ad_client_id', (_session && _session.client) ? _session.client.id : null);
     put('ad_org_id', (_session && _session.org) ? _session.org.id : null);
     put('ad_user_id', (_session && _session.user) ? _session.user.id : null);
-    put('date', (new Date()).toISOString().slice(0, 10));
+    put('date', CrudCore.localDay());   // §LOCAL-TIME #Date = the local day
     return ctx;
   }
   // §GT — the tab model (one per AD_Tab, cached on the open window) + the window context Env.getContext reads:
@@ -2228,7 +2228,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (ln === 'ad_org_id') return _session && _session.org ? _session.org.id : null;
       if (ln === 'ad_user_id') return _session && _session.user ? _session.user.id : null;
       if (ln === 'ad_role_id') return _session && _session.role ? _session.role.id : null;
-      if (ln === 'date') return (new Date()).toISOString().slice(0, 10);
+      if (ln === 'date') return CrudCore.localDay();   // §LOCAL-TIME
       if (ln === 'issotrx') return _winIsSOTrx();
       if (ln === 'showadvanced') return window.APP && window.APP.showAdvanced ? window.APP.showAdvanced : null;   // Login.java:531 (AD_UserQuery tab WhereClause uses it)
       return null;
@@ -2608,6 +2608,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function _findCode(f, v) { return AdFind.valueType(f) === 'date' ? (String(v).length === 10 ? v + ' 00:00:00.0' : v) : String(v); }   // the Code holds java toString values
   function _findShow(f, v) { if (v == null || v === '') return ''; return AdFind.valueType(f) === 'date' ? String(v).slice(0, 10) : String(v); }
+  // §GRID-COLS — the grid's columns = GridView.setupFields (AdGridTab.gridFields); mobile = the ≤760px rule, cap = SysConfig
+  //   ZK_GRID_MOBILE_MAX_COLUMNS (default 10). A legacy-shape bundle without IsDisplayedGrid keeps the form's display fields.
+  function _gridCols(tab) {
+    var mobile = false; try { mobile = window.matchMedia('(max-width:760px)').matches; } catch (e) {}
+    var mx = mobile ? _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_GRID_MOBILE_MAX_COLUMNS' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number((window.APP || {}).clientId || 0) + ") ORDER BY ad_client_id DESC")[0] : null;
+    var g = window.AdGridTab && AdGridTab.gridFields ? AdGridTab.gridFields(tab.fields || [], { mobile: mobile, maxMobile: mx && mx.v }) : null;
+    if (g) console.log('§GRID-COLS tab=' + tab.name + ' cols=' + g.length + ' mobile=' + mobile + ' [' + g.map(function (f) { return f.columnName; }).join(',') + ']');
+    return g || _displayFields(tab);
+  }
   function _displayFields(tab) {
     return (tab.fields || []).filter(function (f) { return f.isDisplayed && !f.isKey; });
   }
@@ -2699,7 +2708,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     renderBody();   // re-render grid: DocStatus chips advance, still-selected rows persist by PK, batch bar re-folds
   }
   function buildGrid(tab) {
-    var cols = _displayFields(tab).slice(0, 7);
+    var cols = _gridCols(tab);
     var batchbar = el('div'); batchbar.id = 'idmp-batchbar'; batchbar.style.display = 'none';   // item 4 — the gear/batch toolbar
     var table = el('table', 'idmp-grid');
     var thead = el('thead'); var htr = el('tr');
@@ -2714,19 +2723,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _renderBatchBar(tab);
     });
     thSel.appendChild(allCk); htr.appendChild(thSel);
-    // punch-list #2 — status-at-a-glance: a LEADING Status column for document windows when DocStatus isn't
-    // already one of the displayed columns (when it IS, that cell renders the chip in place — see row loop).
-    // Leading (not trailing) so the chip is always on-screen without horizontal scroll — the whole point.
-    var hasStatus = _tabHasStatus(tab);
-    var statusInCols = cols.some(function (f) { return /^docstatus$/i.test(f.columnName); });
-    var leadStatus = hasStatus && !statusInCols;
-    if (leadStatus) htr.appendChild(el('th', null, 'Status'));
+    // §GRID-COLS: DocStatus and Posted render IN PLACE in their own dictionary columns (the twin-only leading Status / trailing Posted
+    //   columns, added when the old 7-column cut dropped them, are gone - legacy shows exactly the IsDisplayedGrid fields)
+    var showPosted = _showPostedAffordance();
+    // GridView :1453 — a cell is visible only when the field's display logic holds for THAT row, in the login context (Login.java :520-531
+    //   #ShowAcct / #ShowAdvanced / #AD_*); the header stays. Uncertain or unparsable logic -> shown (GridField parity, as the form does).
+    var App0 = window.APP || {}, gctx = { '#ShowAcct': _acctRole() ? 'Y' : 'N', '#ShowAdvanced': App0.showAdvanced ? 'Y' : 'N', '#AD_Client_ID': App0.clientId, '#AD_Org_ID': App0.orgId, '#AD_User_ID': App0.actor, '#AD_Role_ID': App0.roleId };
+    var cellShown = function (f, rec) { if (!f.displayLogic || !window.AdEvaluator) return true; try { return window.AdEvaluator.evaluate(f.displayLogic, rec, gctx) !== false; } catch (e) { return true; } };
     cols.forEach(function (f) { htr.appendChild(el('th', null, f.name)); });
-    // Leg 3 — Posted COLUMN (accounting-role-gated, posting docs only). Trailing, mirroring iDempiere's AD
-    // Posted Button field; skipped if Posted is already one of the sampled display columns (no duplicate).
-    var postedInCols = cols.some(function (f) { return /^posted$/i.test(f.columnName); });
-    var showPosted = _showPostedAffordance() && !postedInCols;
-    if (showPosted) htr.appendChild(el('th', null, 'Posted'));
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
@@ -2739,10 +2743,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       ck.addEventListener('click', function (e) { e.stopPropagation(); });   // checkbox ≠ open-form
       ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); var sa = document.getElementById('idmp-grid-selall'); if (sa) sa.checked = _selectedRecs(tab).length === _records.length; });
       tdCk.appendChild(ck); tr.appendChild(tdCk);
-      if (leadStatus) { var tdS = el('td'); var ds = _recStatus(rec); tdS.appendChild(ds ? _statusChip(ds) : document.createTextNode('')); tdS.setAttribute('data-ad-col', 'DocStatus'); tr.appendChild(tdS); }
       cols.forEach(function (f) {
         var td;
-        if (/^docstatus$/i.test(f.columnName)) { td = el('td'); var ds0 = _recStatus(rec); td.appendChild(ds0 ? _statusChip(ds0) : document.createTextNode('')); }
+        if (!cellShown(f, rec)) { td = el('td', 'idmp-gcell-hidden'); }
+        else if (/^docstatus$/i.test(f.columnName)) { td = el('td'); var ds0 = _recStatus(rec); td.appendChild(ds0 ? _statusChip(ds0) : document.createTextNode('')); }
+        else if (/^posted$/i.test(f.columnName) && showPosted) { td = el('td', 'idmp-posted-cell'); td.appendChild(_postedButton(rec, i)); }
         else {
           td = el('td', null, fmt(f, recVal(rec, f.columnName)));
           // P4 (W-INPLACE-GRID-LIVE) — click a data cell → inline WEditor → signed CRUD_UPDATE row-wise (GridView
@@ -2753,7 +2758,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
-      if (showPosted) { var tdP = el('td', 'idmp-posted-cell'); tdP.setAttribute('data-ad-col', 'Posted'); tdP.appendChild(_postedButton(rec, i)); tr.appendChild(tdP); }
       tr.addEventListener('click', function () { _saveAndNavigate(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
       tb.appendChild(tr);
     });
@@ -2823,7 +2827,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // USER_JOURNEY_LANE punch-list #2 — status-at-a-glance. A record HAS a status iff it carries a DocStatus
   // value (model-agnostic — any absorbed model with a DocStatus column lights up; no per-model hardcode).
   function _recStatus(rec) { var ds = recVal(rec, 'DocStatus'); return (ds == null || ds === '') ? null : String(ds); }
-  function _tabHasStatus(tab) { return !!(_records.length && _records.some(function (r) { return _recStatus(r) != null; })); }
   // S1/J5 (ERP_CRITIC_UX_LANE) — read-the-tip overlay for DOCUMENT status. A signed DocAction (commitProcess)
   //   writes the new DocStatus to the kernel op-log (SET_STATUS), NOT the immutable bundle — so the rendered
   //   status, and its SURVIVAL across reload, must READ THE TIP, the SAME verb the CRUD form (_overlayTip) and
@@ -3241,7 +3244,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
       finReport: function (rid, opts) { return (window.__report && window.__report.fold) ? window.__report.fold(rid, opts) : null; },
-      today: (function () { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })(),
+      today: CrudCore.localDay(),   // §LOCAL-TIME the one local-day implementation
       clientId: (_session && _session.client) ? Number(_session.client.id) : null,
       fetchAccounts: function () {
         var m = {};
@@ -5199,7 +5202,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   @#Date@) — so a mandatory system column doesn't block a folded New. iDempiere fills these from Env, never asks.
     var ctx = { clientId: (_session && _session.client) ? _session.client.id : null,
                 orgId: (_session && _session.org) ? _session.org.id : null,
-                today: (new Date()).toISOString().slice(0, 10) };
+                today: CrudCore.localDay() };   // §LOCAL-TIME
     ctx.sysPref = _loginDefaults();                          // FS-12: GridField stage 5 (#ColumnName)
     // §P2.7 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §IMPL — W-PARITY-REFLIST): a List column's option set
     //   is its AD_Reference_Value_ID's AD_Ref_List rows — resolved by the SAME ADParser.resolveReference the read

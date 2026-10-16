@@ -19,6 +19,7 @@
     else if (op.op_type === 'DXF_OPENING' && p.category === undefined && (p.kind === 'window' || p.kind === 'door')) cls = p.kind;   // door arcs / glazing clusters carry kind only
     else return null;
     var m = {}; DIMS[cls].forEach(function (d) { m[d] = p[d]; });
+    if (cls === 'door' && typeof p.leaf_height === 'number') m.height = p.leaf_height;   // L2.7 (2): types are nominal leaf sizes; the opening height adds the head frame
     return { class: cls, measured: m, label: p.label === undefined ? null : p.label, label_source: p.label_source === undefined ? null : p.label_source };
   }
   function deltas(req, entry) {
@@ -112,7 +113,14 @@
   function hits(op, cls, x, y, tol, z, level) {
     if (classOf(op) !== cls) return false;
     if (z !== undefined) { var zi = zInterval(op, level); if (!zi || z < zi[0] - tol || z > zi[1] + tol) return false; }
-    if (cls === 'door' && op.params.hinge) { var h = op.params.hinge; return !!h && Math.sqrt((h[0] - x) * (h[0] - x) + (h[1] - y) * (h[1] - y)) <= op.params.width + tol; }   // SANDBOX rule: swing disc around the hinge
+    if (cls === 'door' && op.params.hinge) {                    // lane spec L2.7 (3): inside the door's swing box (hinge + arc ends) or its drawn opening box
+      var P = op.params, H = P.hinge, pts = [H].concat([P.swing_start_deg, P.swing_end_deg].map(function (a) { return [H[0] + P.width * Math.cos(a * Math.PI / 180), H[1] + P.width * Math.sin(a * Math.PI / 180)]; }));
+      var sx = pts.map(function (q) { return q[0]; }), sy = pts.map(function (q) { return q[1]; });
+      if (x >= Math.min.apply(null, sx) - tol && x <= Math.max.apply(null, sx) + tol && y >= Math.min.apply(null, sy) - tol && y <= Math.max.apply(null, sy) + tol) return true;
+      var b = P.opening_box; if (!b) return false;
+      var ax = b.axis === 'x', u = ax ? x : y, v = ax ? y : x;
+      var L = b.along || b.s; return u >= L[0] - tol && u <= L[1] + tol && v >= b.band[0] - tol && v <= b.band[1] + tol;
+    }
     var f = footprint(op); return !!f && x >= f[0] - tol && x <= f[2] + tol && y >= f[1] - tol && y <= f[3] + tol;
   }
   // desc: Dxf2Marks.describe(...).desc (PLAN view); units: Dxf2Marks.UNITS map; opts.snap_tol in metres (required)

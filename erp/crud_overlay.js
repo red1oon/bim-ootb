@@ -104,7 +104,7 @@
     } catch (e) {}
   });
 
-  function today() { try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; } }
+  function today() { try { return CORE.localDay(); } catch (e) { return ''; } }   // §LOCAL-TIME: legacy #Date = the local day
   // S2B — FOLDED holds host-registered AD-folded specs (one per non-curated table). entryFor prefers the CURATED
   //   crud_ops entry (it carries docPolicy fan-out / ownerGate / docAction); else falls back to the folded spec so
   //   ANY window is editable per its own dictionary. Lower-cased key, mirrors crud_ops keys.
