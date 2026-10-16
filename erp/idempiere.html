@@ -2620,7 +2620,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tb = el('tbody');
     if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
-      var tr = el('tr'); tr.dataset.i = i;
+      var tr = el('tr'); tr.dataset.i = i; if (i === _recIdx) tr.classList.add('idmp-grid-cur');   // the current row (GridTabRowRenderer.setCurrentRow)
       var pk = _pkOf(tab, rec);
       tr.setAttribute('data-ad-table', tab.tableName); tr.setAttribute('data-ad-record', recVal(rec, _keyCol(tab)));  // AD-key tag (host contract)
       var tdCk = el('td', 'idmp-cbcol');
@@ -4637,6 +4637,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
     var pk = rec ? recVal(rec, _keyCol(tab)) : null;
     var openForm = function () { _recIdx = recIdx; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); };
+    // GridView.onEvent ON_CLICK (org.adempiere.ui.zk .../adwindow/GridView.java:1031-1072): a click on a row that is NOT the current row only changes the
+    //   current row (onSelectedRowChange -> GridTab.navigate; toolbar, Zoom Across and the lens follow it); a click on the CURRENT row enters edit mode.
+    if (recIdx !== _recIdx) {
+      _saveAndNavigate(function () { _recIdx = recIdx; _setSel(tab); renderBody(); renderToolbar(); _histPush('record');
+        console.log('§GRID-SELECT table=' + tab.tableName + ' row=' + recIdx + ' key=' + pk + ' (click on a non-current row selects it; a click on the current row edits)'); });
+      return;
+    }
     if (!tn || pk == null || String(pk) === '' || !window.__crud || typeof window.__crud.editCell !== 'function' || !_crudHas(tn)) { openForm(); return; }
     if (td.classList.contains('idmp-cell-edit')) return;   // already editing this cell
     var prevHtml = td.innerHTML;
