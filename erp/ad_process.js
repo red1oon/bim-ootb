@@ -67,6 +67,7 @@
   // data-source-agnostic (node witness injects sqlite fetchers; browser injects the bundle).
   // REPORT handlers resolve to report_overlay.js folds — NOT reinvented here.
   // LAYERED (Host work H1, layered_registry.js): REGISTRY / JAVA are the MATERIALISED effective views; a bundle registers with opts {owner, rank} and stopping it removes its layers (core entry effective again).
+  function _CC() { return (typeof module !== 'undefined' && module.exports) ? require('./crud_core.js') : global.CrudCore; }   // §LOCAL-TIME localDay
   function _LR() { return (typeof module !== 'undefined' && module.exports) ? require('./layered_registry.js') : global.LayeredRegistry; }
   var REGISTRY = {}, REG_L = _LR().create();
 
@@ -820,7 +821,7 @@
       if (typeof q !== 'function') return { ok: false, message: 'Aging: no data accessor', rows: 0 };
       if (String(p.DateAcct || 'N') === 'Y') return { ok: false, message: 'Aging DateAcct=Y (RV_OpenItemToDate / invoiceOpenToDate) is not ported — run without it', rows: 0 };
       if (Number(p.ConvertAmountsInCurrency_ID) > 0) return { ok: false, message: 'Aging ConvertAmountsInCurrency_ID (currencyConvertInvoice) is not ported — run without it', rows: 0 };
-      var today = ctx.today || new Date().toISOString().slice(0, 10);
+      var today = ctx.today || _CC().localDay();   // §LOCAL-TIME
       var stmt = p.StatementDate ? String(p.StatementDate).slice(0, 10) : today;
       var offset = _agDay(stmt) - _agDay(today);                         // Aging.prepare :96-99 getDaysBetween(now, StatementDate)
       var so = String(p.IsSOTrx == null ? 'Y' : p.IsSOTrx) === 'Y' ? 'Y' : 'N';

@@ -82,6 +82,10 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('R2', 'the Change Log lists both Name edits, newest first, old -> new chained from the record state (not a stored AD_ChangeLog)',
     nameRows.length === 2 && nameRows[0][1] === n2 && nameRows[0][2] === n1 && nameRows[1][1] === n1 && nameRows[1][2] === before, JSON.stringify(nameRows));
   ok('R3', 'each row: column Name label, Updated By = the user who saved, Updated = a date-time', nameRows.length === 2 && nameRows.every(r => r[0] && r[3] === 'GardenAdmin' && /^\d{4}-\d\d-\d\d \d\d:\d\d/.test(r[4])), JSON.stringify(nameRows.map(r => [r[0], r[3], r[4]])));
+  // §LOCAL-TIME: the Updated shown is the device's LOCAL wall clock (legacy: the server's local time), not UTC
+  const localNow = await pg.evaluate(() => { const d = new Date(), p = n => ('0' + n).slice(-2); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); });
+  const toMin = s => { const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)/.exec(s || ''); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) / 60000 : NaN; };
+  ok('R3b', 'Updated is the LOCAL wall clock (within 3 minutes of the page\'s local time, not UTC)', nameRows.length > 0 && Math.abs(toMin(nameRows[0][4]) - toMin(localNow)) <= 3, nameRows.length && (nameRows[0][4] + ' vs local ' + localNow));
   ok('R4', 'no row for a column that did not change (legacy skips old==new) and no insert rows (SYSTEM_INSERT_CHANGELOG default N)', ri && ri.rows && ri.rows.every(r => r[1] !== r[2]) && ri.rows.length === nameRows.length + ri.rows.filter(r => r[5].toLowerCase() !== 'name').length, JSON.stringify(ri && ri.rows && ri.rows.map(r => r[5])));
   await pg.evaluate(() => { const o = document.getElementById('idmp-recinfo-ov'); if (o) o.remove(); });
   // the same record as a role whose PreferenceType is 'O' (GardenAdmin's GardenWorld User role): change log hidden

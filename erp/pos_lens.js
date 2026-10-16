@@ -413,7 +413,7 @@
       var bl = q1(b3, "SELECT c_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=? AND isbillto='Y' AND isactive='Y' ORDER BY c_bpartner_location_id", bpId);
       var oi = q1(b3, 'SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=?', pos.ad_org_id), wl = q1(b3, 'SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=?', pos.m_warehouse_id);
       var dv = q1(b3, "SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'");
-      var today = new Date().toISOString().slice(0, 10);
+      var today = (typeof window !== 'undefined' && window.CrudCore ? window.CrudCore : require('./crud_core.js')).localDay();   // §LOCAL-TIME
       return function (pid, date) {   // §REVIEW2 R4: `date` = the order's DateOrdered (MOrderLine.setTax :348 getDateOrdered()); absent ⇒ today
         var p = q1(b3, 'SELECT c_taxcategory_id AS c FROM m_product WHERE m_product_id=?', pid);
         var r = Eng.taxLookup({ taxes: taxes, taxCategoryId: p && p.c, isSOTrx: true, billDate: date ? String(date).slice(0, 10) : today, billFrom: loc(oi && oi.l), billTo: loc(bl && bl.l), warehouse: loc(wl && wl.l),
