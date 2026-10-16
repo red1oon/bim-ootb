@@ -37,7 +37,10 @@
     grid: { min_wall_len: 1.0 /* L1.1 R4 */ }, layers: { grid: ['A-GRID'], dims: ['A-ANNO-DIMS'] /* NCS names, L1.1 R12 */ } };   // layers.bearing removed (L2.3 D4)
   function ign(l) { return { match: 'exact', pattern: l, type: 'ignore' }; }
   var STD = {
-    MAP_PLAN: { version: 1, rules: MAP_PLAN.rules.concat(['A-GLAZ-SILL', 'A-ANNO-NOTE', 'A-ANNO-TTLB'].map(ign)) },
+    // lane spec §L1.6: A-GLAZ-OVHD / A-DOOR-OVHD = dashed outlines of openings above the cut (drafting annotation; the opening is the gap + its
+    // elevation, so reading them again would double count). A-FLOR-STRS (stair cut outline) and S-COLS / A-COLS (columns): the reader has no
+    // stair or column shape yet, so they are excluded, stated here, not read as walls.
+    MAP_PLAN: { version: 1, rules: MAP_PLAN.rules.concat(['A-GLAZ-SILL', 'A-ANNO-NOTE', 'A-ANNO-TTLB', 'A-GLAZ-OVHD', 'A-DOOR-OVHD', 'A-FLOR-STRS', 'S-COLS', 'A-COLS'].map(ign)) },
     MAP_ELEV: { version: 1, rules: [{ match: 'exact', pattern: 'A-GLAZ', type: 'glazing' }, { match: 'exact', pattern: 'A-WALL', type: 'elevwall' }, { match: 'exact', pattern: 'A-DOOR', type: 'elevdoor' }] },
     MAP_LEVL: MAP_LEVL,
     // lane spec L1.4 F4/F5: the std ROOF plan (DX roof map + the R12 annotation layers ignored) and the SECTION sheet
