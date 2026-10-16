@@ -48,7 +48,8 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
     const MARKING = /^QF:(sheet_no_role|units_unstated|plan_no_level|mark_missing|mark_invalid|set_mismatch|set_no_plan|set_no_roof|plan_level_duplicate|face_no_elev)$/;
     const mk = v.blocking.filter(b => MARKING.test(b.code)), qf = v.blocking.filter(b => /^QF:/.test(b.code)), gap = v.blocking.filter(b => /^GAP:/.test(b.code) && b.code !== 'GAP:lod400_library_unreachable');
     check('R4 VERDICT', 'the exported set has marking/structure blocking in the Modeller importer (QF:* codes)', qf.length === 0, `QF blocking=${qf.length} (marking-class ${mk.length}) ${JSON.stringify(qf.map(b => b.code))}`);
-    say(`  INFO engine/model gaps in the verdict (not export defects): ${gap.length} ${JSON.stringify(gap.map(b => b.code))}; library_unreachable=${v.blocking.length - qf.length - gap.length} (no OCI library in Node); verdict=${v.verdict}`);
+    check('R4b PIPELINE', 'a pipeline gap (GAP:*) other than library reachability blocks the exported set', gap.length === 0, JSON.stringify(gap.map(b => b.code)));
+    say(`  INFO engine/model gaps in the verdict (R4b fails on any): ${gap.length} ${JSON.stringify(gap.map(b => b.code))}; library_unreachable=${v.blocking.length - qf.length - gap.length} (no OCI library in Node); verdict=${v.verdict}`);
   }
   const victim = files.find(f => /FLOOR_/.test(f.name)), stripped = victim.text.replace(/@LEVEL=[^\n]*\n/, '@LEVEL_REMOVED\n');
   const s2 = I.readSheets(files.map(f => f === victim ? { name: f.name, text: stripped } : f));

@@ -403,7 +403,18 @@
     const env = envelope(sw), E = env.map(mm), faceRuns = { S: [], N: [], W: [], E: [] }, onAxis = new Set();
     for (const w of sw) { const [ax, pos] = wallAxis(w); if (grid[ax].some(g => Math.abs(pos - g[1]) <= GRID_MERGE_TOL)) onAxis.add(w.guid); }
     const polys = {};
-    cut.forEach(c => { polys[c.guid] = G.elementContours(c.v, c.f, c.c, cutZ).map(ct => ct.points.map(p => [mm(p[0]), mm(p[1])])).filter(p => p.length >= 3); });
+    cut.forEach(c => {
+      polys[c.guid] = G.elementContours(c.v, c.f, c.c, cutZ).map(ct => ct.points.map(p => [mm(p[0]), mm(p[1])])).filter(p => p.length >= 3);
+      // §L1.8 S1: an orthogonal wall is rectilinear (R3); a contour of it whose mean width (area / longest bbox side) is below the plan merge tolerance is a
+      // tessellation sliver of a rectilinear remnant (web-ifc meshes a 0.6 mm wall end as a wedge) and becomes its bounding rectangle
+      if (WALLS.indexOf(c.cls) >= 0 && orthogonal(c.v, c.f)) polys[c.guid] = polys[c.guid].map(pl => {
+        const xs = pl.map(q => q[0]), ys = pl.map(q => q[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), L = Math.max(x1 - x0, y1 - y0);
+        let a = 0; for (let k = 0; k < pl.length; k++) { const q = pl[(k + 1) % pl.length]; a += pl[k][0] * q[1] - q[0] * pl[k][1]; } a = Math.abs(a) / 2;
+        const rect = new Set(xs).size <= 2 && new Set(ys).size <= 2;
+        if (L > 0 && a / L < PT_MERGE * 1000 && !rect) { log.add(`§SLIVER_RECT guid=${c.guid} cls=${c.cls} area=${fx(a, 2)} mm2 mean_width=${fx(a / L, 3)} mm -> bounding rectangle (§L1.8 S1)`); return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]; }
+        return pl;
+      });
+    });
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid)), polys, log);
     let nW = 0, nC = 0;
     for (const c of cut) for (const pts of (polys[c.guid] || [])) {
