@@ -434,6 +434,15 @@
     var h = Array.from(b).map(function (x) { return x.toString(16).padStart(2, '0'); }).join(''); return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
   };
   F.charat = function (str, i) { if (str == null || i == null) return null; var a = Array.from(String(str)), k = Math.trunc(Number(i)); return k >= 1 && k <= a.length ? a[k - 1] : ''; };      // SUBSTR($1, $2, 1)
+  // substring(text, from [, count]) — PG SUBSTRING (string functions, PG docs §9.4): characters from position `from` (1-based) for `count`; positions before 1 are dropped, so
+  //   SUBSTRING('org.eevolution.x', 0, 15) = the first 14 characters. SQLite has substr() but no SUBSTRING; legacy SQL (2Pack SQLStatements of DBType Postgres, e.g. Libero 2Pack_1.0.2) calls it.
+  //   bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §20.A (W-PACKIN P2).
+  F.substring = function (str, from, count) {
+    if (str == null || from == null) return null;
+    var a = Array.from(String(str)), f = Math.trunc(Number(from)), end = count == null ? a.length + 1 : f + Math.trunc(Number(count));
+    if (count != null && Number(count) < 0) throw new Error('negative substring length not allowed');
+    return a.slice(Math.max(f, 1) - 1, Math.max(end, 1) - 1).join('');
+  };
   // round(numeric, n) — PG ROUND on NUMERIC: exact decimal, half away from zero, negative n allowed. SQLite's built-in round(x, n) works on the binary double
   //   (round(2.675,2)=2.67, round(1.005,2)=1, negative n ignored) - the dictionary calls ROUND in 29 AD_Column default rows, so the twin must agree with legacy. Overrides the 2-arg built-in only.
   //   Returns a NUMBER (not text) so comparisons such as ROUND(x,2)=1.01 keep numeric typing; the decimal text is the shortest round-trip form of the stored REAL.
@@ -570,7 +579,7 @@
     bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
     paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3], documentno: [1], instr: [2, 3, 4], generate_uuid: [0, 1],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],
-    ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3] };
+    ismemberofacctschema: [3], isintersectcsv: [2], torecordid: [2], productattribute: [1], get1099bucket: [3], substring: [2, 3] };   // substring: §20.A (2Pack SQLStatements)
   // a NUMERIC result reaches SQLite as a NUMBER: as TEXT it compared GREATER than every number (rv_pp_mrp: bomqtyonhand(..) < pp.safetystock was never true), whereas arithmetic coerced it anyway
   function conv(v) { if (v instanceof BD) return Number(out(v)); if (v instanceof Timestamp) return v.toString(); return v; }
   function arity(fn, n) {
