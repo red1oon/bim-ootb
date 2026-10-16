@@ -723,6 +723,103 @@ Decisions (coordinator, 2026-10-16), as rules. The SECTION / roof-sheet work and
   - rosetta_qualify: fail=0
   - old marked copies: byte-identical
 
+### L2.7 Doors by drafting practice, and the source of a marking (2026-10-16, before code)
+Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (L2.6 results): 30 door-layer outlines are not attached to a door; 6 GF fills differ from the leaf by dw 0.152 / dh 0.076; 4 FF tags are ambiguous; 8 FF doors have no host or cut.
+
+**1. Door symbol = arc + leaf + frame/casing** (`dxf2bim.js` §12 D1, after the L2.6 touch rule).
+- **Opening box of a door**, computed in the reader from the drawn walls:
+  - The closed leaf direction is the arc end whose hinge→end segment runs along a wall piece's direction.
+  - The strip is the wall pieces parallel to that direction whose band (between the two faces) contains the hinge (on a face or the axis).
+  - Jamb to jamb: the wall-free interval along the strip that contains the leaf span: s0 = the nearest piece end ≤ the leaf start, s1 = the nearest piece start ≥ the leaf end. If either is missing, there is no box.
+  - Across: the band of the two jamb pieces (union of their across ranges). Pieces are not filtered by length, because a jamb can be a short or square stub (std 10B, 0.1 m; 10D, square).
+  - Along, the box is [s0, s1] ∪ the along-extent of the parts the L2.6 touch rule already attached to that door. That is the drawn casing extent. Measured: the std walls stop at the hinge, so s0..s1 is the leaf span (1.25). The frame drawn at the hinge spans −16.879..−15.477 (1.402 = the source opening).
+  - A door-layer entity belongs to the box when its bbox lies within the along range (±snap_tol) and its across range overlaps or touches the band (±snap_tol).
+  - The box is stored on the door op as `opening_box` (metres: along axis, s0, s1, band).
+- **Attachment:** an entity not attached by the L2.6 touch rule is attached to the door whose opening box holds it. If two boxes hold it → `GAP:door_part_ambiguous`. If none → unchanged (rectangle cluster, else `opening_unclassified`).
+- Tests:
+  - DB1: far-face casing absorbed
+  - DB2: a leaf panel inside the gap absorbed
+  - DB3: an entity outside the gap stays a gap
+  - DB4: in two boxes → ambiguous
+  - DB5 (mutation): an entity shifted beyond s1 + 2 × snap_tol → gap
+
+**2. Cut and fill from drawn evidence** (`dxf2shell`).
+- **The cut opening** = the drawn wall gap (the `bridgeOpenings` void s0..s1, jamb face to jamb face) × the door height.
+- **Door height:**
+  - From the elevation, as drawn.
+  - From the schedule, as the schedule leaf height + the head frame. The plan and the schedule do not draw the head frame, so `applyDoorHeights(opts.schedule_head_frame)` adds the caller's existing `CASING` (R1b, 0.076).
+  - The leaf height is kept as `leaf_height`. Type binding (`Dxf2Types.request`) measures doors by `leaf_height`, because library families are nominal leaf sizes; the head frame belongs to the opening, not to the type. Without the option, nothing is added.
+- **The fill check** (`placeFills`) compares the library product (frame included) with the drawn opening. Door width = the opening box's along-extent (frame drawn) when the door has one, else the void width (s1 − s0). Height = the door's opening height. The cut itself stays the drawn wall gap (bridgeOpenings void). The leaf width stays only in the arc check (rosetta DW-doors).
+- rosetta_dx_shell OV / FL keep comparing against the source opening bbox (frame included), which is the same measure.
+- Tests:
+  - DF1: void width used, not the leaf
+  - DF2: schedule height + head frame = product height → no `fill_size_mismatch`
+  - DF3 (mutation): no head frame given → `fill_size_mismatch` dh 0.076
+
+**3. Tag → door** (`dxf2types` `hits`).
+- A door tag binds to the door whose **swing box** (hinge, closed end, open end) or **opening box** (rule 1) contains the tag point. This replaces the swing disc.
+- Exactly one door → bound. Zero → `label_unmatched`. Several → `label_ambiguous` (as today).
+- Doors without `opening_box` (old set) use the swing box only.
+- Tests:
+  - DT1: a tag at the opening centre binds
+  - DT2: two adjacent doors 0.22 m apart, each tag binds to its own door
+  - DT3 (mutation): a tag outside both boxes → `label_unmatched`
+
+**4. Hosting at T-junctions** (`Dxf2Shell.doorStrip`).
+- The host = the strip whose face or axis the hinge lies on (L2.6 G) AND whose direction is parallel to the closed leaf.
+- The closed leaf is the arc end whose span H→E is a wall-free gap bounded by strip pieces at both ends (jamb to jamb).
+- Applied only when the L2.6 passes give more than one candidate, so single hits (the old set) are unchanged. If 2 remain → `GAP:door_host_ambiguous`. There is no tie-break by order or size.
+- Tests:
+  - DH3: a T-junction, hinge on the faces of two strips, closed leaf along one → hosted
+  - DH4: both spans bounded → ambiguous
+
+**5. Source of a marking: `@BY`** (binding grammar; the L4 editor writes the same).
+- A suffix in the SAME TEXT entity: `@KEY=VALUE @BY=model|user`, for example `@LEVEL=3.1 @BY=user`.
+- `@BY` qualifies the other `@KEY` in that one TEXT and nothing else. It is not a scope by position or handle order.
+- A TEXT holding only `@BY`, a second `@BY`, or another value → `MARK:by_invalid` (blocking, qualify `QF:mark_invalid`).
+- `describe` keeps `by` on the entries that carry a source: `walltop`, `walltop_walls`, `labels`, `tags`, `schedule`, plus `desc.by[KEY]` for single keys.
+- No `@BY` → `by: 'file'`.
+- qualify:
+  - conventions and stated heights show `source: 'stated (model)' | 'stated (user)' | 'stated (file)'`
+  - the L2.3 `'user-stated'` label is retired
+- `mark_dx_set.js std` writes `@BY=model` on every std marking. The old profile writes none, so its copies stay byte-identical and read as "stated (file)".
+- Tests:
+  - BY1: suffix read and the key still parsed
+  - BY2: only `@BY` → by_invalid
+  - BY3: a second `@BY` → by_invalid
+  - BY4: another value → by_invalid
+  - BY5: no `@BY` → file
+  - BY6: no leaking to the next TEXT
+  - BY7 (mutation): `@BY=model` placed in a separate TEXT next to the marking → by_invalid, and the marking reads as file
+
+**Report:** the std verdict by cause; rosetta_dx_shell std/old; all suites against a master baseline.
+
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-doors2`; baseline = master 550068a03).**
+- **Std set qualify: blocked, 8** (was 56). Walls, slabs and roof qualify.
+  - GF doors: 0 items. 6/6 have opening boxes, frames are absorbed, fills match the product, tags bind, heights come from the schedule + head frame.
+  - FF: 6 of 8 doors are clean.
+  - **The 8 left are all FF doors 150 and 152:** `no_host_cut` 2, `no_elevation_height` 2 (tag unmatched: no box), and their 4 casing outlines unattached (BA, BB, BF, C0).
+  - Cause (L1 writer fact): their host walls are model walls 1019 and 1014, in storey "Level 1", z 2.612..6.0. The FF cut at 4.3 m passes through them, but `std2d.py` draws walls by storey membership, so the FF plan omits them. With no drawn jamb, no opening box exists and no host is found.
+- rosetta_dx_shell:
+  - std 34 PASS / 1 FAIL: DW-doors L2, the same 2 doors; was 31/4. OV and FL now pass.
+  - old 33/3, unchanged: RF-d and DW-doors are the known findings.
+- **Old Duplex qualify:** 343 → 347. 4 new `fill_size_mismatch` dw 0.152 (GF doors). Its arcs are casing-inclusive (1.402), so the span overlaps the wall pieces, no opening box exists, and the fill is compared with the drawn wall gap (1.25). This is the rule-2 truth about drawings already ruled wrong (L2.6 F); no rule accepts it.
+- Implementation notes found while coding:
+  - Thin F5b stub candidates (e.g. AF, 20 mm) count as jamb pieces.
+  - A line's pieces are those with the band of a long parallel piece.
+  - When the door has an opening box, `doorStrip` takes the host from it: the two jamb pieces, parallel to the closed leaf. This is rule 4 by construction; without a box, the L2.6 passes and the bounded-span filter apply.
+- Tests:
+  - `test_std_rules` 38: DB1/2/4/5, DF0-3, DT1-3, DH3/4, BY1-7, plus the L2.6 set
+  - `test_qualify` 60: QG3 stated (file) / QG3b stated (model) / QBY
+  - `test_types` LB5 now uses the swing box
+- Regression:
+  - unit suites 18/18 fail=0
+  - rosetta_dx old 13/2 and std 15/0, unchanged
+  - rosetta_dx_section 9 + control, unchanged
+  - farm_heights: identical; t8: identical except timing
+  - rosetta_qualify: fail=0
+  - old marked copies: byte-identical (no `@BY`)
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
