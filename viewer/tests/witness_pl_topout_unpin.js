@@ -11,6 +11,7 @@
 // the staged value (the legacy/preview path untouched); a staged 0 → 0 at every t; ambient/hemi never move.
 // Every claim can come back NO; staging that never lands is INCONCLUSIVE, never PASS.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require('/home/red1/bim-compiler/node_modules/puppeteer');
 const { Witness } = require('../../witness_kit/contract');
@@ -46,7 +47,7 @@ function inconclusive(r) { log('§PLT verdict=INCONCLUSIVE reason=' + r + ' — 
   const commit = (() => { try { return require('child_process').execFileSync('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).toString().trim(); } catch (e) { return '?'; } })();
   log(`§PLT_ENV root=${ROOT} commit=${commit} bld=${BLD} gpu=${GPU} topoutU=${TOPOUT_U} log=${LOG}`);
   // static claim: the bake passes the topout fraction to the pin (otherwise nothing below can reach a real bake)
-  const MAXQ = fs.readFileSync(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
+  const MAXQ = __readSrc(path.join(ROOT, 'viewer/cinema_maxq.js'), 'utf8');
   const wired = /A\._sunArcFillPin\(_tnFilm,\s*_revealU\)/.test(MAXQ);
   const browser = await puppeteer.launch({ headless: true, userDataDir: profile, protocolTimeout: 20 * 60 * 1000, env: Object.assign({}, process.env, gpuEnv), args: ['--no-sandbox', '--hide-crash-restore-bubble', '--window-size=1300,840'].concat(gpuArgs) });
   const page = await browser.newPage(); await page.setViewport({ width: 1280, height: 720 });

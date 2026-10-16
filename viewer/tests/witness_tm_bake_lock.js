@@ -15,6 +15,7 @@
  * would pass the first half and fail the second — that pairing is the point.
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -22,7 +23,7 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 function sliceFn(src, name) {
   const idx = src.indexOf('function ' + name + '(');

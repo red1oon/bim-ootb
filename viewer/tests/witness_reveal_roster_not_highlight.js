@@ -16,11 +16,12 @@
 // by brace matching and driven directly; the bake's call site is read out of the shipped
 // cinema_maxq.js. Nothing is re-typed, so this cannot pass against a copy that is not what ships.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
 
-const panelSrc = fs.readFileSync(path.join(__dirname, '..', 'cpe_resource_panel.js'), 'utf8');
-const maxqSrc = fs.readFileSync(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
+const panelSrc = __readSrc(path.join(__dirname, '..', 'cpe_resource_panel.js'), 'utf8');
+const maxqSrc = __readSrc(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
 
 function sliceFn(src, marker) {
   const i = src.indexOf(marker);

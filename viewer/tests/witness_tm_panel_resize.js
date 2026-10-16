@@ -5,6 +5,7 @@
 // actually track the cursor 1:1, and the result must clamp to [PANEL_W_MIN, min(92vw, 900)]. Slices
 // the real wirePanelResize by balanced braces, never reimplements the drag math.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -23,7 +24,7 @@ function sliceFn(src, name) {
   throw new Error('unbalanced braces for ' + name);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 const varsMatch = tmSrc.match(/var PANEL_W_DEFAULT = \d+, PANEL_W_EDIT = \d+, PANEL_W_MIN = \d+;/);
 if (!varsMatch) throw new Error('PANEL_W_* constants not found');
 const sliced = varsMatch[0] + '\n' + sliceFn(tmSrc, 'wirePanelResize');

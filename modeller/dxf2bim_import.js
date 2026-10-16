@@ -258,11 +258,8 @@
       var LIB = { wall: library.wallTypes.filter(function (w) { return w.id !== 'NONE'; }).map(function (w) { return { id: w.id, thickness: w.t / 1000 }; }),
         window: library.families.filter(function (f) { return f.ot === 'WINDOW'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }),
         door: library.families.filter(function (f) { return f.ot === 'DOOR'; }).map(function (f) { return { id: f.id, set: C.setOf(f.id), width: f.w / 1000, height: f.h / 1000 }; }) };
-      // §L3.4: an OCI library carries labels per run_id (run data, shipped beside the library): applied only to the set with that run_id
-      var LABS = library.labelsByRun ? (library.labelsByRun[R.run_id] || null) : library.labels;
-      R.labelsFrom = library.labelsByRun ? (library.labelsByRun[R.run_id] ? 'run ' + R.run_id.slice(0, 12) : 'none') : (library.labels ? 'subset' : 'none');
       ST.forEach(function (st) {
-        var lr = T.applyLabels(st.after, { units: 'm', labels: (LABS && LABS[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
+        var lr = T.applyLabels(st.after, { units: 'm', labels: (library.labels && library.labels[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
         st.labelGaps = lr.gaps.length;
         st.after = T.bindTypes(lr.ops, LIB, { bind: { size_tol: C.TYPES.size_tol, prefer: C.TYPES.prefer } }, {}).ops;
       });
@@ -461,7 +458,8 @@
       header: { source: J0.source, input: J0.input, counts: J0.counts } };
   }
 
-  // ---- §L3.4: the library on OCI (BIMCompiler export_library_subset.js --full): index + shards (geometry_hash[0:2]) + labels per run_id.
+  // ---- §L3.4: the library on OCI (BIMCompiler export_library_subset.js --full): index + shards (geometry_hash[0:2]). Library data only:
+  // a drawing states its products as @TAG markings (no labels sidecar).
   // Pure except the injected fetchJson(url) → parsed JSON | null on 404 (throws on any other failure). Builds the SAME subset form
   // librarySubset reads, so the withheld / missing / not-in-subset rules of §L3.2 apply unchanged.
   var ORDER3 = function (a, b) { return a.element_ref < b.element_ref ? -1 : a.element_ref > b.element_ref ? 1 : a.ifc_class < b.ifc_class ? -1 : a.ifc_class > b.ifc_class ? 1 : a.geometry_hash < b.geometry_hash ? -1 : a.geometry_hash > b.geometry_hash ? 1 : 0; };
@@ -472,7 +470,7 @@
     return Object.keys(out).sort();
   }
   // index + the shards loaded so far → the `library` convert takes; `complete` = the families whose candidate shards are all loaded
-  function libraryFromShards(index, shards, complete, labelsByRun) {
+  function libraryFromShards(index, shards, complete) {
     var rows = [], meshes = {};
     Object.keys(shards).sort().forEach(function (n) {
       var J0 = shards[n];
@@ -484,10 +482,9 @@
       counts: { ad_opening_family: index.rows.ad_opening_family.length, ad_wall_type: index.rows.ad_wall_type.length, ad_geometry_map: rows.length, meshes: Object.keys(meshes).length },
       rows: { ad_opening_family: index.rows.ad_opening_family, ad_wall_type: index.rows.ad_wall_type, ad_geometry_map: rows }, meshes: meshes,
       complete_for_families: complete.slice().sort(), labels: null });
-    L0.labelsByRun = labelsByRun || {};
     return L0;
   }
-  // iterate: convert → the bound families not yet loaded (GAP:lod400_not_in_subset) → their shards; the run_id → its labels. ≤ maxPasses.
+  // iterate: convert → the bound families not yet loaded (GAP:lod400_not_in_subset) → their shards. ≤ maxPasses.
   async function loadOci(sheets, o) {
     var fx = o.fetchJson, base = o.base, memo = o.memo || {};
     var get = async function (u) { if (!(u in memo)) memo[u] = await fx(u); return memo[u]; };
@@ -495,16 +492,13 @@
     if (!latest || latest.format !== 'dxf2bim-library-latest/1') throw new Error('latest.json ' + (latest ? 'unknown format ' + latest.format : 'not found'));
     var index = await get(base + latest.index);
     if (!index || index.format !== 'dxf2bim-library-index/1' || index.source.sha256 !== latest.library_sha256) throw new Error('index ' + latest.index + (index ? ' does not match latest.json' : ' not found'));
-    var dir = latest.index.replace(/index\.json$/, ''), shards = {}, complete = [], labelsByRun = {}, famById = {}, passes = 0, R = null, Lb = null, max = o.maxPasses || 4;
+    var dir = latest.index.replace(/index\.json$/, ''), shards = {}, complete = [], famById = {}, passes = 0, R = null, Lb = null, max = o.maxPasses || 4;
     index.rows.ad_opening_family.forEach(function (f) { famById[f.family_id] = f; });
     while (passes < max) {
-      Lb = libraryFromShards(index, shards, complete, labelsByRun);
+      Lb = libraryFromShards(index, shards, complete);
       R = convert(sheets, Object.assign({}, o.convertOpts || {}, { library: Lb })); passes++;
       if (R.refused) break;
       var more = false;
-      if (!(R.run_id in labelsByRun)) { var lj = await get(base + 'labels/' + R.run_id + '.json');
-        if (lj && (lj.format !== 'dxf2bim-labels/1' || lj.run_id !== R.run_id)) throw new Error('labels ' + R.run_id + ': wrong format or run_id');
-        labelsByRun[R.run_id] = lj ? lj.labels : null; if (lj) more = true; }
       var need = {}; (R.fillGaps || []).forEach(function (x) { if (x.code === 'GAP:lod400_not_in_subset' && complete.indexOf(x.type_id) < 0) need[x.type_id] = 1; });
       var fams = Object.keys(need).sort();
       for (var i = 0; i < fams.length; i++) {
@@ -515,9 +509,8 @@
       }
       if (!more) break;
     }
-    Lb = libraryFromShards(index, shards, complete, labelsByRun);
-    return { library: Lb, R: R, passes: passes, sha: index.source.sha256, shards: Object.keys(shards).sort(), families: complete.slice().sort(),
-      labels: R && R.run_id && labelsByRun[R.run_id] ? R.run_id : null };
+    Lb = libraryFromShards(index, shards, complete);
+    return { library: Lb, R: R, passes: passes, sha: index.source.sha256, shards: Object.keys(shards).sort(), families: complete.slice().sort() };
   }
 
   function counts(R) {

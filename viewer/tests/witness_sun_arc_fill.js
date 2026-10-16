@@ -30,6 +30,7 @@
 // Usage: node viewer/tests/witness_sun_arc_fill.js [--db Hospital_silent_local] [--gpu real]
 //          [--out-dir ~/Downloads/sunarc] [--clip 0.5:0.5032] [--port 8571] [--reuse] [--only before|after]
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), os = require('os');
 const { spawnSync } = require('child_process');
 const { Witness } = require(path.join(__dirname, '..', '..', 'witness_kit', 'contract.js'));
@@ -50,8 +51,8 @@ const REUSE = has('reuse');
 const ONLY = arg('only', null);
 const RUNS = [{ name: 'before', pinOff: true }, { name: 'after', pinOff: false }].filter(r => !ONLY || r.name === ONLY);
 
-const TOOLS = fs.readFileSync(path.join(ROOT, 'viewer', 'tools.js'), 'utf8');
-const EFFECTS = fs.readFileSync(path.join(ROOT, 'viewer', 'effects.js'), 'utf8');
+const TOOLS = __readSrc(path.join(ROOT, 'viewer', 'tools.js'), 'utf8');
+const EFFECTS = __readSrc(path.join(ROOT, 'viewer', 'effects.js'), 'utf8');
 // the shipped still-budget constants, READ from tools.js — never re-typed here
 const stillBudget = +(TOOLS.match(/A\._nightMaxLightsStill\s*=\s*([0-9.]+)/) || [])[1];
 const stillFloor = +(TOOLS.match(/A\._nightNearFadeFloorStill\s*=\s*([0-9.]+)/) || [])[1];
@@ -71,7 +72,7 @@ function bake(run, idx, attempt) {
   const tapf = path.join(OUT_DIR, 'tap_pin_' + run.name + '.js'), prof = path.join(OUT_DIR, 'profile_' + run.name);
   const tapJson = out.replace(/\.mp4$/, '_tap.json');
   if (REUSE && !attempt && fs.existsSync(logf) && fs.existsSync(tapJson)) { log('§SUN_ARC_FILL_BAKE run=' + run.name + ' REUSED ' + logf); return { out, logf, tapJson }; }
-  fs.writeFileSync(tapf, (run.pinOff ? 'window.__SUN_ARC_FILL_PIN_OFF = true;\n' : '') + fs.readFileSync(path.join(__dirname, 'tap_sun_arc_fill.js'), 'utf8'));
+  fs.writeFileSync(tapf, (run.pinOff ? 'window.__SUN_ARC_FILL_PIN_OFF = true;\n' : '') + __readSrc(path.join(__dirname, 'tap_sun_arc_fill.js'), 'utf8'));
   fs.rmSync(prof, { recursive: true, force: true });          // fresh profile per run (the rule)
   const args = [path.join(ROOT, 'cli_silent_bake.js'), '--root', ROOT, '--db', DB, '--out', out, '--log', logf, '--profile', prof,
     '--gpu', GPU, '--clip', CLIP, '--no-buildup', '--no-label', '--no-reveal', '--day', 'off', '--tap', tapf,
@@ -80,7 +81,7 @@ function bake(run, idx, attempt) {
   const t0 = Date.now();
   const r = spawnSync('node', args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 });
   log('§SUN_ARC_FILL_BAKE run=' + run.name + ' exit=' + r.status + ' wallSec=' + ((Date.now() - t0) / 1000).toFixed(0) + ' log=' + logf);
-  const clip = /§CPE_CLIP applied[^\n]*frames=(\d+)→(\d+)/.exec(fs.existsSync(logf) ? fs.readFileSync(logf, 'utf8') : '');
+  const clip = /§CPE_CLIP applied[^\n]*frames=(\d+)→(\d+)/.exec(fs.existsSync(logf) ? __readSrc(logf, 'utf8') : '');
   if (clip && +clip[2] !== 5 && !attempt) {
     const span = 5.2 / +clip[1], m = CLIP.split(':').map(Number);
     CLIP = m[0] + ':' + (m[0] + span).toFixed(6);
@@ -94,7 +95,7 @@ function bake(run, idx, attempt) {
 const RX_PIN = /§SUN_ARC_FILL_PIN tNorm=([\d.]+) elevation=([\d.]+) ambient=([\d.]+) hemi=([\d.]+) plScale=([-\d.]+) budget=(\d+) nearFloor=([\d.]+) poolLit=(\d+) poolSum=([\d.]+) sun=([\d.]+) sunPos=([-\d.,]+) drift=(\S+)/;
 const RX_STEP = /§SUN_ARC_STEP tNorm=([\d.]+) elevation=([\d.]+)/;
 function analyse(run, files) {
-  const text = fs.existsSync(files.logf) ? fs.readFileSync(files.logf, 'utf8') : '';
+  const text = fs.existsSync(files.logf) ? __readSrc(files.logf, 'utf8') : '';
   const lines = text.split('\n');
   const steps = lines.map(l => RX_STEP.exec(l)).filter(Boolean).map(m => ({ tNorm: +m[1], elevation: +m[2] }));
   const pins = lines.map(l => RX_PIN.exec(l)).filter(Boolean).map(m => ({ tNorm: +m[1], elevation: +m[2], ambient: +m[3], hemi: +m[4], plScale: +m[5],
@@ -106,7 +107,7 @@ function analyse(run, files) {
   const clip = /§CPE_CLIP applied[^\n]*frames=(\d+)→(\d+)/.exec(text);
   const probe = /§CLI_BAKE_FFPROBE codec=(\w+) (\d+)x(\d+) frames=(\d+)/.exec(text);
   const gl = /§CLI_BAKE_GL ([^\n]*)/.exec(text);
-  const tap = fs.existsSync(files.tapJson) ? JSON.parse(fs.readFileSync(files.tapJson, 'utf8')) : { lines: [], rows: [] };
+  const tap = fs.existsSync(files.tapJson) ? JSON.parse(__readSrc(files.tapJson, 'utf8')) : { lines: [], rows: [] };
   (tap.lines || []).forEach(l => log('  [' + run.name + '] ' + l));
   log('§SUN_ARC_FILL_RUN run=' + run.name + ' pinOff=' + run.pinOff + ' stepLines=' + steps.length + ' pinLines=' + pins.length +
     ' clipFrames=' + (clip ? clip[1] + '→' + clip[2] : '?') + ' ffprobe=' + (probe ? probe[2] + 'x' + probe[3] + ' frames=' + probe[4] : 'none') +

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // witness_midair_zero.js — §MIDAIR_REPAIR (2026-08-12, bim-compiler
 // prompts/4D_SCHEDULE_PERFECTION.md — the acceptance bar in the user's own words:
 // "all i want is not to see a single item hanging in midair that is all").
@@ -111,7 +112,7 @@ const SupportSweep = require(path.join(__dirname, '..', 'support_sweep.js'));
 globalThis.RoomWalker = require(path.join(__dirname, '..', 'lib', 'room_walker.js'));
 globalThis.LevelDeriver = require(path.join(__dirname, '..', 'lib', 'level_deriver.js'));
 globalThis.LocationAxis = require(path.join(__dirname, '..', 'location_axis.js'));
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
@@ -205,7 +206,7 @@ assert(/_cell:\s*_cellMap \? _cellMap\[el\.guid\] : undefined/.test(tmSrc),
 }
 
 function loadRatesTable() {
-  const txt = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const txt = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const start = txt.indexOf('var RATES = {');
   const defIdx = txt.indexOf('var SEQUENCE_DEFAULT');
   return (new Function(txt.slice(start, txt.indexOf('};', defIdx) + 2) + '\n return RATES;'))();
@@ -389,8 +390,8 @@ function census(items) {
 }
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const rulesJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const rulesJson = JSON.parse(__readSrc(path.join(__dirname, '..', 'rates', 'sequence_rules.json'), 'utf8'));
   const SR = rulesJson.SEQUENCE_RULES, SD = rulesJson.SEQUENCE_DEFAULT, LR = rulesJson.LABOR_RATES;
   const NO = rulesJson.NAME_OVERRIDES || [];
   const RATES = loadRatesTable();
@@ -402,7 +403,7 @@ function census(items) {
       (dbPick.deprecatedAlso ? ' (a deprecated ' + bld + '_extracted.db also exists and was NOT used)' : '') +
       ' — every number below for this building is measured on THIS file');
     if (!fs.existsSync(dbPath)) { assert(false, 'W-MZ fixture missing: ' + dbPath); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     // §S20: window.LABOR_RATES = the real rates.js table (RATES.LABOR_RATES) — matches what a real
     // browser exposes (rates.js declares `var LABOR_RATES` at module scope, i.e. window.LABOR_RATES),
     // so _displayTimeline's own §S6_CREW_PASS max_crews_fixed/max_crews lookup sees real per-resource

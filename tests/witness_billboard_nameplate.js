@@ -18,6 +18,7 @@
  *       (then READ THE LOG — exit code is not evidence.)
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -153,8 +154,8 @@ gate('S2', 'its ELEMENT_PLACE op starts after every other op in the phase and en
 
 // ═══════════════ V1/V2: the overlay's visibility EQUALS the real element's, over a real scrub ═══
 // Both pieces of logic are lifted from the SHIPPED SOURCE, not rewritten here.
-const tmSrc = fs.readFileSync(path.join(ROOT, 'viewer/time_machine.js'), 'utf8');
-const fxSrc = fs.readFileSync(path.join(ROOT, 'viewer/effects.js'), 'utf8');
+const tmSrc = __readSrc(path.join(ROOT, 'viewer/time_machine.js'), 'utf8');
+const fxSrc = __readSrc(path.join(ROOT, 'viewer/effects.js'), 'utf8');
 
 // (a) renderAtTime's op→state loop, verbatim.
 const LOOP_HEAD = '    for (var i = 0; i < _ops.length; i++) {\n      var op = _ops[i];\n      if (op.start_ts > cursorMs) break;';
@@ -278,7 +279,7 @@ gate('V2', '"it shall appear last, not like now it came on" — invisible at pro
   '\n     §-log lines the shipped setter emitted: ' + JSON.stringify(ov.logs));
 
 // ─────────────────────────────────────── C1: text is config-only, config carries no geometry ──
-const cfg = JSON.parse(fs.readFileSync(CFG, 'utf8'));
+const cfg = JSON.parse(__readSrc(CFG, 'utf8'));
 const geomKeys = Object.keys(cfg).filter(k => k !== 'buildingName' && k[0] !== '_');
 const fxUsesCfg = fxSrc.indexOf('cfg.buildingName') >= 0;
 const fxHasNamePlateCfg = /cfg\.namePlate|np\.widthM|np\.heightM|np\.gapM|np\.orientation/.test(fxSrc);
@@ -317,7 +318,7 @@ gate('M1', 're-applying both migrations changes nothing (idempotent)',
   '  ELEMENT_PLACE total=' + q(DB_4D, "SELECT count(*) FROM kernel_ops WHERE op_type='ELEMENT_PLACE'"));
 
 // ─────────────────────────────────── 5D: the shipped rate that applies, quoted not fabricated ──
-const ratesSrc = fs.readFileSync(path.join(ROOT, 'viewer/rates.js'), 'utf8');
+const ratesSrc = __readSrc(path.join(ROOT, 'viewer/rates.js'), 'utf8');
 const m = ratesSrc.match(/IfcBuildingElementProxy\s*:\s*\{[^}]*\}/);
 const cls = q(DB_4D, `SELECT ifc_class FROM elements_meta WHERE guid='${GUID}'`);
 gate('D1', '5D folds this element through the ALREADY-SHIPPED rate row keyed by ifc_class — no new category',

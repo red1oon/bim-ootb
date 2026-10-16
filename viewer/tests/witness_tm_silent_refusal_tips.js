@@ -27,6 +27,7 @@
  *     working fallback (reads the existing tasks as-is), so there is nothing to tell the user.
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 
@@ -34,7 +35,7 @@ let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); } else { fail++; console.log('  FAIL ' + msg); } }
 
 const SRC_PATH = path.join(__dirname, '..', 'time_machine.js');
-const src = fs.readFileSync(SRC_PATH, 'utf8');
+const src = __readSrc(SRC_PATH, 'utf8');
 
 // ── The scanner: brace depth per character, skipping strings/comments/templates ────────────────
 // blockOpenAt[i] = source index of the '{' that opened the block containing index i (innermost).

@@ -58,7 +58,8 @@ grows.forEach(r => { const k = r.element_ref + '|' + r.geometry_hash; if (seenG[
   geoms.push({ element_ref: r.element_ref, ifc_class: r.ifc_class, geometry_hash: r.geometry_hash, vertices: V, faces: F, bbox: { min: mn, max: mx } }); });
 const LABELMAP = { M_Fixed: 'DUPLEX_SMALL_FIXED', M_Casement: 'DUPLEX_CASEMENT' };   // as rosetta_dx_shell.js (labels FROM the source model, round trip)
 const labels = {};
-['Level 1', 'Level 2'].forEach(st => { labels[st] = sqlj(SRC, "select substr(m.element_name,1,instr(m.element_name,':')-1) k, r.minX a, r.minY b, r.maxX c, r.maxY d, r.minZ z0, r.maxZ z1 from elements_meta m join elements_rtree r on r.id=m.id where m.ifc_class='IfcWindow' and m.storey='" + st + "' and m.element_type='819mm x 759mm'")
+// BIMCompiler §14 LF-4: the std set states these windows as @TAG markings in its plans; the Node std run applies no source-model labels
+if (!STD) ['Level 1', 'Level 2'].forEach(st => { labels[st] = sqlj(SRC, "select substr(m.element_name,1,instr(m.element_name,':')-1) k, r.minX a, r.minY b, r.maxX c, r.maxY d, r.minZ z0, r.maxZ z1 from elements_meta m join elements_rtree r on r.id=m.id where m.ifc_class='IfcWindow' and m.storey='" + st + "' and m.element_type='819mm x 759mm'")
   .map(x => ({ class: 'window', x: (x.a + x.c) / 2, y: (x.b + x.d) / 2, z: (x.z0 + x.z1) / 2, text: LABELMAP[x.k] })); });
 
 const sheets = I.readSheets(files, { hashHex });

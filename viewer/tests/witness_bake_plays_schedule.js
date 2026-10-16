@@ -22,6 +22,7 @@
  * of this witness's scope and would need a live run.
  */
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -45,8 +46,8 @@ function sliceFn(src, name, decl) {
   return src.slice(idx, i + 1);
 }
 
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
-const mqSrc = fs.readFileSync(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const mqSrc = __readSrc(path.join(__dirname, '..', 'cinema_maxq.js'), 'utf8');
 const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-ootb', 'buildings');
 const BUILDINGS = (process.env.BAKE_BUILDINGS || 'Hospital_extracted,Clinic_extracted').split(',');
 
@@ -59,8 +60,8 @@ assert(/window\.tmWorkSchedule = function/.test(tmSrc),
   'W-BAKE-0b time_machine.js publishes tmWorkSchedule — the other half of the seam');
 
 async function main() {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const ratesSrc = fs.readFileSync(path.join(__dirname, '..', 'rates.js'), 'utf8');
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const ratesSrc = __readSrc(path.join(__dirname, '..', 'rates.js'), 'utf8');
   const RATES = (new Function(ratesSrc +
     '\nreturn {SEQUENCE_RULES:SEQUENCE_RULES, SEQUENCE_DEFAULT:SEQUENCE_DEFAULT, ' +
     'SEQUENCE_NAME_OVERRIDES:SEQUENCE_NAME_OVERRIDES, LABOR_RATES:LABOR_RATES, RATES:RATES};'))();
@@ -70,7 +71,7 @@ async function main() {
     const dbPath = path.join(BLD_DIR, B + '.db');
     if (!fs.existsSync(dbPath)) { console.log('  SKIP ' + B + ' (no DB)'); continue; }
     console.log('── ' + B + ' ──');
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     const mkOpts = extra => Object.assign({ laborRates: RATES.LABOR_RATES, rates: RATES.RATES,
       nameOverrides: RATES.SEQUENCE_NAME_OVERRIDES, defaultRule: RATES.SEQUENCE_DEFAULT,
       scheduleGate: ScheduleGate, shiftHours: 24, genVersion: 999, start: '2026-01-01' }, extra || {});

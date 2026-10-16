@@ -1500,6 +1500,16 @@ function setupPanels(A) {
       // the 'h' shortcut + Help listing. Row rendered specially (real texture-swatch) — see
       // _buildShadowGroundRow() below, not the generic drawer-row.
       { id: 'shadow',     name: 'Shadow + Ground', key: 'h', pill: false, icon: I.cloud.svg, fn: function() { if (typeof A.toggleShadow === 'function') A.toggleShadow(); }, isActive: function() { return !!A._shadowOn; } },
+      // effects_gi_poc.js §GI_POC: N8AO ambient-occlusion research spike, desktop-only (stubbed to
+      // a no-op on mobile — extra full-res GPU render targets, real memory cost). Registered here
+      // ONLY for desktop findability (2026-07-22 user: "i cant find it") — same fix shape as the
+      // 'o'/dlodnav entry below (v1 shortcut existed but wasn't in any drawer id-list). Do NOT lift
+      // the mobile stub via this entry; it stays hidden/no-op there by design.
+      { id: 'gi-preview', name: 'GI Preview (AO)', key: 'Alt+G', pill: false,
+        icon: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.287L3 12l5.8 1.9a2 2 0 0 1 1.287 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.287L21 12l-5.8-1.9a2 2 0 0 1-1.287-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>',
+        fn: function() { if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); },
+        isActive: function() { return !!A._giComposerActive; },
+        children: [ { name: 'N8AO ambient occlusion (research spike)' }, { name: 'Desktop only — disabled on mobile (memory)' } ] },
       { id: 'fly',        name: 'Fly Tour',        key: 'l', pill: false, icon: I.plane.svg, fn: function() { if (typeof toggleFlyAround === 'function') toggleFlyAround(); }, isActive: function() { return !!A.flyActive; } },
       // FLY_TOUR_DLOD_SCALE.md §9: nav-scope DLOD pill — sibling of Fly Tour (must be reachable
       // during tours/orbit, unlike TM's tm-lod which dies with the TM panel). Same box glyph as
@@ -1804,7 +1814,7 @@ function setupPanels(A) {
     // this only changes which drawer lists it.
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report']);
-    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot']);
+    var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot', 'gi-preview']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
     // A._buildSunglassPanel(), before _actions existed — this runs AFTER, so it can reuse the
@@ -1976,6 +1986,43 @@ function setupPanels(A) {
       addRow('Settings (localStorage)', function () { var x = _lsBytes(); return x.n + ' keys · ' + _fmtBytes(x.b); }, null);
       addRow('Imported buildings (IndexedDB)', _idbInfo, _clearImportedDbs, true);
       addRow('Offline app cache (SW)', _swCacheInfo, _clearSwCaches, true);
+
+      // §OFFLINE_SURFACE: "Make available offline" row — honest status from GET_OFFLINE_STATUS
+      (function() {
+        var offRow = document.createElement('div');
+        offRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);';
+        var offL = document.createElement('span'); offL.textContent = 'Make available offline'; offL.style.cssText = 'flex:1;color:#cfe;';
+        var offSt = document.createElement('span'); offSt.textContent = '…'; offSt.style.cssText = 'color:#8ab4ff;font-size:11px;';
+        var offBtn = document.createElement('button');
+        offBtn.textContent = 'Download';
+        offBtn.style.cssText = 'padding:3px 10px;border:1px solid rgba(108,159,255,0.4);border-radius:6px;background:transparent;color:#6c9fff;font-size:11px;cursor:pointer;';
+        offBtn.addEventListener('pointerup', function(e) { e.stopPropagation(); if (typeof A !== 'undefined' && A.startOfflineDownload) A.startOfflineDownload(); });
+        offRow.appendChild(offL); offRow.appendChild(offSt); offRow.appendChild(offBtn);
+        box.appendChild(offRow);
+        function _refreshOfflineStatus() {
+          if (!navigator.serviceWorker) { offSt.textContent = 'SW not supported'; offBtn.style.display = 'none'; return; }
+          navigator.serviceWorker.ready.then(function(reg) {
+            var ctrl = navigator.serviceWorker.controller || reg.active;
+            if (!ctrl) { offSt.textContent = 'SW not active'; return; }
+            var ch = new MessageChannel();
+            ch.port1.onmessage = function(ev) {
+              var d = ev.data;
+              if (d.allDeferred) {
+                offSt.textContent = '✓ Fully offline ready'; offSt.style.color = '#4caf50'; offBtn.style.display = 'none';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=full');
+              } else {
+                offSt.textContent = 'Core: ✓ cached · Full libs: not yet'; offSt.style.color = '#8ab4ff'; offBtn.style.display = '';
+                console.log('§OFFLINE-SURFACE row=Y button=wired status=core');
+              }
+            };
+            ctrl.postMessage({ type: 'GET_OFFLINE_STATUS' }, [ch.port2]);
+          });
+        }
+        _refreshOfflineStatus();
+        offBtn.addEventListener('pointerup', function() { setTimeout(_refreshOfflineStatus, 3000); });
+        console.log('§OFFLINE-SURFACE-RESULT PASS');
+      })();
+
       var foot = document.createElement('div');
       foot.style.cssText = 'color:#777;font-size:11px;margin-top:8px;';
       box.appendChild(foot);

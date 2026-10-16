@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 // cache_4d_run.js — RUN THE PIPELINE ONCE PER BUILDING, PERSIST IT, READ IT FOREVER AFTER.
 //
 // ⚠ DO NOT REMOVE — SCOPE. USER, 2026-08-26: "Cant u get that to persist instead of endless
@@ -107,8 +108,8 @@ function layerOf(run, id) {
 const MIRROR_INPUTS = ['lib/tm_played_layer.js'];
 function codeKey() {
   const h = crypto.createHash('sha1');
-  for (const f of INPUTS) h.update(f).update(fs.readFileSync(path.join(V, f)));
-  for (const f of MIRROR_INPUTS) h.update('scripts/' + f).update(fs.readFileSync(path.join(__dirname, f)));
+  for (const f of INPUTS) h.update(f).update(__readSrc(path.join(V, f)));
+  for (const f of MIRROR_INPUTS) h.update('scripts/' + f).update(__readSrc(path.join(__dirname, f)));
   return h.digest('hex').slice(0, 12);
 }
 function dbKey(file) {
@@ -181,11 +182,11 @@ function dirFor(bld, want) {
 function read(bld, want) {
   const d = dirFor(bld, want);
   if (!d || !fs.existsSync(path.join(d, 'run.json'))) return null;
-  const j = JSON.parse(fs.readFileSync(path.join(d, 'run.json'), 'utf8'));
+  const j = JSON.parse(__readSrc(path.join(d, 'run.json'), 'utf8'));
   return { els: j.els, play: j.play || null, sched: j.sched, display: j.sched,
     playStats: j.playStats || null, storeys: j.storeys || null, tasks: j.tasks || null,
     dbFile: j.dbFile || null, dbKind: j.dbKind || null, builtAt: j.builtAt || null,
-    log: fs.readFileSync(path.join(d, 'witness.log'), 'utf8'), dir: d };
+    log: __readSrc(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
 
 function build(bld, force, want) {
@@ -210,10 +211,10 @@ function build(bld, force, want) {
   globalThis.RoomWalker = require(path.join(V, 'lib', 'room_walker.js'));
   globalThis.LevelDeriver = require(path.join(V, 'lib', 'level_deriver.js'));
   globalThis.LocationAxis = require(path.join(V, 'location_axis.js'));
-  const T = JSON.parse(fs.readFileSync(path.join(V, 'rates', '4D_template.json'), 'utf8'));
-  const tmSrc = fs.readFileSync(path.join(V, 'time_machine.js'), 'utf8');
+  const T = JSON.parse(__readSrc(path.join(V, 'rates', '4D_template.json'), 'utf8'));
+  const tmSrc = __readSrc(path.join(V, 'time_machine.js'), 'utf8');
   const sb = { console: { log() {}, warn() {}, error() {} } };
-  vm.createContext(sb); vm.runInContext(fs.readFileSync(path.join(V, 'rates.js'), 'utf8'), sb);
+  vm.createContext(sb); vm.runInContext(__readSrc(path.join(V, 'rates.js'), 'utf8'), sb);
 
   const initSqlJs = require(path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js'));
   return initSqlJs({ locateFile: f => path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js', 'dist', f) })
@@ -225,7 +226,7 @@ function build(bld, force, want) {
       console.warn = function () { const s = Array.prototype.join.call(arguments, ' '); lines.push(s); _w(s); };
       let els = null, sched = null, play = null, playStats = null, storeys = null, tasks = null, err = null;
       try {
-        const db = new SQL.Database(new Uint8Array(fs.readFileSync(file)));
+        const db = new SQL.Database(new Uint8Array(__readSrc(file)));
         // §CACHE_PLAYED_LAYER — the live time_machine.js functions, sliced (never re-typed).
         const tmsb = TMP.buildSandbox({ tmSrc: tmSrc, SA: SA, SG: SG, CP: CP, GM: GM, SS: SS,
           LABOR_RATES: sb.LABOR_RATES, console: console });

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /* ⚠ WITNESS — W-FREEZE-HUD-THEME, §129.58
  * (bim-compiler prompts/LOADPATH_FREEZE_POLISH_RESUME.md §129.58)
  *
@@ -45,7 +46,7 @@ const LP = process.argv[2] || path.resolve(__dirname, '..', 'cpe_load_path.js');
 const RP = path.resolve(__dirname, '..', 'cpe_resource_panel.js');
 const CM = path.resolve(__dirname, '..', 'cinema_maxq.js');
 let lp, rp, cm;
-try { lp = fs.readFileSync(LP, 'utf8'); rp = fs.readFileSync(RP, 'utf8'); cm = fs.readFileSync(CM, 'utf8'); }
+try { lp = __readSrc(LP, 'utf8'); rp = __readSrc(RP, 'utf8'); cm = __readSrc(CM, 'utf8'); }
 catch (e) { console.log('§FREEZE_THEME INCONCLUSIVE — ' + e.message); process.exit(2); }
 
 let fails = 0;

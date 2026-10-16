@@ -17,11 +17,12 @@
 // points it at another tree (the RED control runs it against origin/main's files).
 // VERDICT prints INCONCLUSIVE (never PASS) when a slice fails or nothing was judged.
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const HOME = require('os').homedir();
 const ROOT = process.env.ROOT || path.join(__dirname, '..', '..');
 const initSqlJs = require(path.join(HOME, 'bim-ootb', 'node_modules', 'sql.js'));
-const rd = f => fs.readFileSync(path.join(ROOT, 'viewer', f), 'utf8');
+const rd = f => __readSrc(path.join(ROOT, 'viewer', f), 'utf8');
 function sliceFn(src, marker) {
   const i = src.indexOf(marker); if (i < 0) return null;
   let d = 0, open = false;

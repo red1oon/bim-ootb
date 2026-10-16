@@ -10,6 +10,7 @@
  * Model: tests/test_s281_input_registry.js (vm + mock DOM pattern).
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -122,7 +123,7 @@ function buildSandbox() {
 // ══════════════════════════════════════════════
 console.log('\n§S282b_TEST PanelNav — universal zone-based keyboard nav');
 
-var pnSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'panel_nav.js'), 'utf8');
+var pnSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'panel_nav.js'), 'utf8');
 
 // Helper: make a fake KeyboardEvent
 function keyEvent(key) {
@@ -528,7 +529,7 @@ function keyEvent(key) {
 // ══════════════════════════════════════════════
 console.log('\n§S282b_TEST ListBuilder — reorderable list extraction');
 
-var lbSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'list_builder.js'), 'utf8');
+var lbSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'list_builder.js'), 'utf8');
 
 // ── Test 11: Basic render ──
 (function() {
@@ -770,8 +771,8 @@ console.log('\n§S282b_TEST Shortcut Audit — Help panel keys vs scene.js _shor
 // Extract _actions key list from panels.js source (the authoritative Help panel)
 // and _shortcuts keys from scene.js source — cross-check them.
 (function() {
-  var panelsSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
-  var sceneSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'scene.js'), 'utf8');
+  var panelsSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
+  var sceneSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'scene.js'), 'utf8');
 
   // Extract action key bindings from panels.js _actions array
   // Pattern: key: 'x' or key: 'Alt+Z' or key: 'F1' or key: 'F11'
@@ -840,7 +841,7 @@ console.log('\n§S282b_TEST Shortcut Audit — Help panel keys vs scene.js _shor
 console.log('\n§S282b_TEST [] double-tap — focusOnlyLatest + status bar persist');
 
 (function() {
-  var panelsSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
+  var panelsSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
 
   // Build a richer sandbox that can run parts of panels.js
   logs = [];
@@ -991,7 +992,7 @@ console.log('\n§S282b_TEST [] double-tap — focusOnlyLatest + status bar persi
 
 // ── Test 19: focusOnlyLatest with no focused panel ──
 (function() {
-  var panelsSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
+  var panelsSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'panels.js'), 'utf8');
   logs = [];
 
   var _elements = {};
@@ -1045,7 +1046,7 @@ console.log('\n§S282b_TEST [] double-tap — focusOnlyLatest + status bar persi
 console.log('\n§S282b_TEST Shortcut function wiring — _shortcuts dispatch');
 
 (function() {
-  var sceneSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'scene.js'), 'utf8');
+  var sceneSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'scene.js'), 'utf8');
 
   // Extract the _shortcuts block and build a testable version
   var scBlock = sceneSrc.match(/var _shortcuts = \{([\s\S]*?)\n  \};/);
@@ -1195,7 +1196,7 @@ console.log('\n§S282b_TEST _isMobile registry — single source, no re-detectio
   ];
   var rendererFiles = ['effects.js', 'streaming.js', 'scene.js'];
 
-  var configSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'config.js'), 'utf8');
+  var configSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'config.js'), 'utf8');
   var setMatches = configSrc.match(/window\._isMobile\s*=/g) || [];
   check('21.1 config.js sets window._isMobile exactly once', setMatches.length === 1);
   check('21.2 config.js uses ontouchstart', configSrc.indexOf('ontouchstart') >= 0);
@@ -1205,7 +1206,7 @@ console.log('\n§S282b_TEST _isMobile registry — single source, no re-detectio
   var violations = [];
   uiFiles.forEach(function(f) {
     var src;
-    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    try { src = __readSrc(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
     src.split('\n').forEach(function(line, idx) {
       if (reDetectPattern.test(line)) {
         violations.push(f + ':' + (idx + 1) + ' → ' + line.trim().slice(0, 80));
@@ -1220,7 +1221,7 @@ console.log('\n§S282b_TEST _isMobile registry — single source, no re-detectio
   var copies = [];
   uiFiles.forEach(function(f) {
     var src;
-    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    try { src = __readSrc(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
     src.split('\n').forEach(function(line, idx) {
       if (localCopyPattern.test(line)) {
         copies.push(f + ':' + (idx + 1));
@@ -1232,19 +1233,19 @@ console.log('\n§S282b_TEST _isMobile registry — single source, no re-detectio
 
   rendererFiles.forEach(function(f) {
     var src;
-    try { src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
+    try { src = __readSrc(path.join(__dirname, '..', 'viewer', f), 'utf8'); } catch(e) { return; }
     var hasScreenWidth = src.indexOf('screen.width') >= 0;
     check('21.7.' + f + ' has screen.width threshold (renderer-specific)', hasScreenWidth);
   });
 
-  var mainSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'main.js'), 'utf8');
+  var mainSrc = __readSrc(path.join(__dirname, '..', 'viewer', 'main.js'), 'utf8');
   var mainSets = (mainSrc.match(/window\._isMobile\s*=/g) || []);
   check('21.8 main.js does NOT set window._isMobile', mainSets.length === 0);
 
-  var pbSrc = fs.readFileSync(path.join(__dirname, '..', 'common', 'pill_builder.js'), 'utf8');   // canonical location since PILLS_CONSOLIDATION_REVIEW_2026-07-03
+  var pbSrc = __readSrc(path.join(__dirname, '..', 'common', 'pill_builder.js'), 'utf8');   // canonical location since PILLS_CONSOLIDATION_REVIEW_2026-07-03
   check('21.9 pill_builder.js reads window._isMobile', pbSrc.indexOf('window._isMobile') >= 0);
 
-  var viewerHtml = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'viewer.html'), 'utf8');
+  var viewerHtml = __readSrc(path.join(__dirname, '..', 'viewer', 'viewer.html'), 'utf8');
   var configPos = viewerHtml.indexOf('src="config.js');
   var pillPos = viewerHtml.indexOf('src="../common/pill_builder.js');
   var panelsPos = viewerHtml.indexOf('src="panels.js');

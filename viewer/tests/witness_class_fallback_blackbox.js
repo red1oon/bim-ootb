@@ -32,6 +32,7 @@
 // or set BLD_DIR to point elsewhere — DBs are OCI-distributed, not git-tracked, so a fresh
 // worktree normally has none locally; point BLD_DIR at an existing checkout's buildings/ dir).
 'use strict';
+const __readSrc = require('./_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -42,7 +43,7 @@ function assert(cond, msg) { if (cond) { pass++; console.log('  PASS ' + msg); }
 
 // ── Real rules data — the same JSON the shipped engine loads ──
 const RULES_PATH = path.join(__dirname, '..', 'rates', 'sequence_rules.json');
-const rulesJson = JSON.parse(fs.readFileSync(RULES_PATH, 'utf8'));
+const rulesJson = JSON.parse(__readSrc(RULES_PATH, 'utf8'));
 const SEQUENCE_RULES = rulesJson.SEQUENCE_RULES || rulesJson;
 const SEQUENCE_DEFAULT = rulesJson.SEQUENCE_DEFAULT || { phase: 'Architecture', sequence: 6, resource: null };
 const NAME_OVERRIDES = rulesJson.SEQUENCE_NAME_OVERRIDES || rulesJson.NAME_OVERRIDES || [];
@@ -70,7 +71,7 @@ function hasExplicitRule(cls) {
 // real `window.ScheduleAuthor` present (the delegating path — what production always exercises
 // past initial page load, both TM call sites go through this) and once without (the fallback
 // path — dead code unless a script load fails). Both must still agree with Copy 1. ──
-const tmSrc = fs.readFileSync(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
+const tmSrc = __readSrc(path.join(__dirname, '..', 'time_machine.js'), 'utf8');
 function extractBalanced(src, startIdx) {
   let depth = 0, i = startIdx, seenOpen = false;
   for (; i < src.length; i++) {
@@ -112,7 +113,7 @@ const BLD_DIR = process.env.BLD_DIR || path.join(require('os').homedir(), 'bim-o
 const BUILDINGS = (process.env.BLDS || 'Hospital,Terminal,LTU_AHouse,Duplex').split(',');
 
 (async () => {
-  const SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
+  const SQL = await initSqlJs({ wasmBinary: __readSrc(path.join(__dirname, '..', '..', 'modeller', 'lib', 'sql-wasm.wasm')) });
   let grandTotalElements = 0, grandTotalAudited = 0;
   const allFallbackHits = [];
   const allDisagreements = [];
@@ -120,7 +121,7 @@ const BUILDINGS = (process.env.BLDS || 'Hospital,Terminal,LTU_AHouse,Duplex').sp
   for (const BLD of BUILDINGS) {
     const dbPath = path.join(BLD_DIR, BLD + '_extracted.db');
     if (!fs.existsSync(dbPath)) { console.log(`\n(skip ${BLD} — ${dbPath} not present locally)`); continue; }
-    const db = new SQL.Database(fs.readFileSync(dbPath));
+    const db = new SQL.Database(__readSrc(dbPath));
     const res = db.exec("SELECT ifc_class, element_name, COUNT(*) c FROM elements_meta GROUP BY ifc_class ORDER BY c DESC");
     const rows = res.length ? res[0].values : [];
     const totalRes = db.exec("SELECT COUNT(*) FROM elements_meta");

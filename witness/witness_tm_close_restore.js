@@ -1,3 +1,4 @@
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 /**
  * witness_tm_close_restore.js — Time Machine panel-close restore bug.
  *
@@ -29,7 +30,7 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 function assert(cond, msg) { if (cond) { pass++; console.log('  \u{1F7E2} ' + msg); } else { fail++; console.log('  \u{1F534} FAIL: ' + msg); } }
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
+const src = __readSrc(path.join(__dirname, '..', 'viewer', 'time_machine.js'), 'utf8');
 
 // ── brace-matching function extractor ──
 function extractFn(name) {

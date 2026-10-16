@@ -13,6 +13,7 @@
  * Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT
  */
 'use strict';
+const __readSrc = require('../viewer/tests/_split_families.js').readSource;   // split-aware source reads: a split module reads back as its original text (bim-compiler VIEWER_FILE_SPLIT_PLAN.md)
 const fs = require('fs'), path = require('path');
 const initSqlJs = require('../tests/_sqljs.js').requireSqlJs();
 const { resolveWitnessDb } = require('../tests/_witness_db.js');
@@ -33,7 +34,7 @@ const near = (a, b, e) => Math.abs(a - b) <= (e === undefined ? 1e-9 : e);
 // either cannot be loaded, W-ESC-8a fails loudly rather than silently measuring an empty reserve.
 function loadHudGeometry(A) {
   ['cpe_day_counter.js', 'cpe_resource_panel.js'].forEach(function (f) {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'viewer', f), 'utf8');
+    const src = __readSrc(path.join(__dirname, '..', 'viewer', f), 'utf8');
     const name = 'setup' + f.replace(/\.js$/, '').replace(/(^|_)([a-z])/g, (m, a, b) => b.toUpperCase());
     try { eval(src + '\n' + name + '(A);'); }
     catch (e) { console.log('  §WER note ' + f + ' setup threw (' + e.message + ') — geometry may be partial'); }
@@ -78,7 +79,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // walk name DIFFERENT rooms on real data, and that the film takes the walk.
   // Disproved if the module ever picks the cost-ranked room while a longer real walk exists.
   // ═══════════════════════════════════════════════════════════════════════════════════════════
-  const rules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'viewer/rates/egress_rules.json'), 'utf8'));
+  const rules = JSON.parse(__readSrc(path.join(__dirname, '..', 'viewer/rates/egress_rules.json'), 'utf8'));
   const rows = EgressSanity.evaluate(q, rules, { log: () => {} });
   const circ = rows.filter(r => r.rule === 'circulation_distance' && r.ratio != null);
   const ruleMax = circ.reduce((m, r) => (m === null || r.ratio > m ? r.ratio : m), null);
@@ -255,7 +256,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
 
   // The static half. A grep is weak evidence in general — here it is the RIGHT evidence, because
   // the claim IS about which variable the eased value is allowed to reach.
-  const mq = fs.readFileSync(path.join(__dirname, '..', 'viewer/cinema_maxq.js'), 'utf8');
+  const mq = __readSrc(path.join(__dirname, '..', 'viewer/cinema_maxq.js'), 'utf8');
   const loopBody = mq.slice(mq.indexOf('for (var i = 0; i < nFrames; i++) {'));
   const tnAssigns = (loopBody.match(/_tnFilm\s*=/g) || []).length;
   ck('W-ESC-4f _tnFilm is assigned exactly ONCE per frame and never re-written', tnAssigns === 1,
@@ -300,7 +301,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   A.escapeRouteApplyVisual(null, 0);                       // the forced restore every bake exit path makes
   ck('W-ESC-5c the forced restore clears it', A._escRouteHudSuppress === false);
   ck('W-ESC-5d the §129.1 freeze mechanism is never touched — not then, and not now that the flag gates nothing',
-     fs.readFileSync(path.join(__dirname, '..', 'viewer/cpe_escape_route.js'), 'utf8').indexOf('__drawUnlessHold') < 0 &&
+     __readSrc(path.join(__dirname, '..', 'viewer/cpe_escape_route.js'), 'utf8').indexOf('__drawUnlessHold') < 0 &&
      /_escRouteHudSuppress/.test(mq));
 
   // ══ W-ESC-6 — the honesty asymmetry reaches the SCREEN, not just the comments (§3's own ruling:
@@ -446,7 +447,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // on for the ~1.2 s between the beats.
   ck('W-ESC-8f4 the storey-reveal trigger has NO upper bound, so the chips cannot flash back between beats',
      /A\._findingsHudSuppress = \(tNorm != null && tNorm >= _srWin - _clearLead\);/.test(
-       fs.readFileSync(path.join(__dirname, '..', 'viewer/cpe_storey_reveal.js'), 'utf8')),
+       __readSrc(path.join(__dirname, '..', 'viewer/cpe_storey_reveal.js'), 'utf8')),
      'one-sided test from two seconds before the reveal opens');
   ck('W-ESC-8f2 the sun clock, the compass readout, the day counter and the pie are NOT suppressed',
      !/ESC_SUPPRESSED = \{[^}]*(suncompass|daycounter|hud\.pie|hud\.pathmap)/.test(mq) &&
@@ -509,7 +510,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // the number; a raw grep flags that and says the threshold is hardcoded, which is false. The
   // claim is about CODE, so the test must be about code. (First cut got this wrong — same
   // self-referential trap as W-ESC-7.)
-  const esrc = fs.readFileSync(path.join(__dirname, '..', 'viewer/cpe_escape_route.js'), 'utf8')
+  const esrc = __readSrc(path.join(__dirname, '..', 'viewer/cpe_escape_route.js'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
   ck('W-ESC-10a no threshold is typed into this feature\'s CODE — the limits come from the rulebook alone',
      esrc.indexOf('60.96') < 0 && esrc.indexOf('45.7') < 0 && /_rules\.critical_m/.test(esrc),
@@ -544,7 +545,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // intuitive enough." ISSUE: does this beat still touch the building's materials anywhere?
   // Disproved by any path that reaches A.toggleXray or the shared material cache. Measured cost of
   // the thing removed: 334 s vs 146 s wall over 88 identical frames, 4.24 vs 1.40 s per frame.
-  const tools = fs.readFileSync(path.join(__dirname, '..', 'viewer/tools.js'), 'utf8');
+  const tools = __readSrc(path.join(__dirname, '..', 'viewer/tools.js'), 'utf8');
   ck('W-ESC-11a the beat never engages x-ray — no call, no flag, no restore path',
      esrc.indexOf('toggleXray') < 0 && esrc.indexOf('_xrayByUs') < 0 && esrc.indexOf('xrayOn') < 0,
      'cpe_escape_route.js is clean of it');
@@ -602,7 +603,7 @@ const planWith = (rise, durationSec) => ({ beats: { rise: rise }, durationSec: d
   // then searches ITSELF for them always fails — the first cut of this check did exactly that, and
   // reported a pixel dependency this witness does not have. Self-referential tests lie in both
   // directions, so the needle must not be able to be its own match.
-  const self = fs.readFileSync(__filename, 'utf8');
+  const self = __readSrc(__filename, 'utf8');
   const forbidden = ['createImage' + 'Bitmap', 'ff' + 'mpeg', 'Io' + 'U', '.pn' + 'g\'', '.mp' + '4\'', 'toBl' + 'ob'];
   const hits = forbidden.filter(n => self.indexOf(n) >= 0);
   ck('W-ESC-7 this witness opens no frame, no image and no video — every claim is a real predicate',
