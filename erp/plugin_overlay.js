@@ -158,6 +158,8 @@
       docFsm:     global.AdDocFsm || null,     // the document-action FSM family table (plugin documents get the DocAction bar): registerFamily / removeFamilyOwner
       form:       global.AdFormGeneric || null, // the generic AD_Form engine (ad_form_generic.js): a bundle registers a form descriptor, the host draws it
       lens:       global.AdLens || null,       // the opt-in operations lens (ad_lens.js, bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15): a bundle registers record actions, the host draws ONE lens bar
+      pill:       { register: function (id, desc, owner) { if (!global.IdmpPills || !global.IdmpPills.register) throw new Error('no pill rail on this page'); return global.IdmpPills.register(id, desc, owner); },
+                    removeOwner: function (owner) { if (global.IdmpPills && global.IdmpPills.removeOwner) global.IdmpPills.removeOwner(owner); } },   // a bundle's pill on the rail (idmp_pills.js §PILL-CONTRIB, §27)
       packs:      { apply: _packApply },          // a bundle's 2Packs (manifest.packs): Pack In at Start, kept + replayed at load (§22)
       docClass:   global.DocPoster || null,    // the posting-class extension point (legacy IDocFactory): registerDocClass / removeDocClassOwner (Host work H1)
       import: function (url) { return import(/* @vite-ignore */ url); }
@@ -179,7 +181,22 @@
       // one implementation: the registry's restore() installs every saved bundle then restarts the ACTIVE ones in dependency order (Host work H1); failures are collected, never thrown.
       var chain = _reg.restore((saved || []).filter(function (b) { return b && b.url; }))
         .then(function (r) { (r.failed || []).forEach(function (f) { console.warn('§PLUGIN-PILL rehydrate failed id=' + f.id + ': ' + f.error); }); });
-      return chain.then(function () { _hydrated = true; });
+      return chain.then(_builtins).then(function () { _hydrated = true; });
+    });
+  }
+
+  // Built-in bundles (§27): shipped with the page like the bundles of a default OSGi distribution. A builtin this browser has never seen is installed + started ONCE and
+  //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
+  var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs'];
+  function _builtins() {
+    if (typeof location === 'undefined') return Promise.resolve();
+    return _kvGet('builtins_seen', []).then(function (seen) {
+      var todo = BUILTINS.map(function (u) { return new URL(u, location.href).href; }).filter(function (u) { return seen.indexOf(u) < 0; });
+      if (!todo.length) return null;
+      return todo.reduce(function (p, u) {
+        return p.then(function () { return _reg.installBundle(u); }).then(function (b) { return _reg.startBundle(b.id || (b.manifest && b.manifest.id)); })
+          .then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed+started url=' + u); }, function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN failed url=' + u + ': ' + e.message); });
+      }, Promise.resolve()).then(function () { return _kvPut('builtins_seen', seen); }).then(function () { return _persist(); });
     });
   }
 
@@ -534,6 +551,10 @@
     doc.getElementById('pe-tab-create').onclick = function () { _switchTab(doc, 'create'); };
     _wireCreate(doc);
     _tab = 'install';
+    // the Create face belongs to the Ninja bundle (§27): shown only while org.idempiere.ninja.create is ACTIVE; opts.face='create' lands on it (the Ninja pill)
+    var nc = _reg && _reg.get && _reg.get('org.idempiere.ninja.create'), ncOn = !!(nc && nc.state === 'ACTIVE');
+    if (!ncOn) doc.getElementById('pe-tab-create').style.display = 'none';
+    else if (opts.face === 'create') _switchTab(doc, 'create');
 
     // Hydrate persisted bundles, then render. (First open re-activates ACTIVE bundles into the engines.)
     _hydrate().then(function () { _render(doc); }).catch(function () { _render(doc); });

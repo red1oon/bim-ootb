@@ -180,11 +180,54 @@
   // window.IdmpPillDocGate() (AD: is a posting document open?). Recomputes the bar at the current stage.
   function setDocContext() { if (_PB && _actions) _applyStage(_curStage || 'pre-client'); }
 
+  // ── §PILL-CONTRIB (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §27): a plugin bundle contributes a pill (icon + label + action) through ctx.pill;
+  //   Stop removes it (removeOwner). Icon: the bundle's own img, else a named host icon, else a plain box with the label's first letter.
+  var _contrib = {};   // id -> { desc, owner }
+  var _orderRef = null;   // the builder's default order array (PillBuilder keeps this reference)
+  // a pill added after mount takes its place by `order` in the default order AND in a saved per-user order (else PillBuilder sorts an unknown id first)
+  function _placeInOrder(act) {
+    var place = function (arr) { if (!arr || arr.indexOf(act.id) >= 0) return false; var prev = null;
+      _PB.actions.slice().sort(function (a, b) { return (a._order || 0) - (b._order || 0); }).some(function (a) { if (a.id === act.id) return true; if (arr.indexOf(a.id) >= 0) prev = a.id; return false; });
+      arr.splice(prev ? arr.indexOf(prev) + 1 : 0, 0, act.id); return true; };
+    place(_orderRef);
+    var saved = null; try { saved = JSON.parse(localStorage.getItem('idmp_pill_config') || 'null'); } catch (e) {}
+    if (saved && !Array.isArray(saved) && saved.order) { var cfg = _PB.getConfig(); if (place(cfg.order)) _PB.setConfig(cfg); }
+  }
+  function _letterSvg(name) {
+    var ch = String(name || '?').trim().charAt(0).toUpperCase().replace(/[&<>"]/g, '') || '?';
+    return '<rect x="3" y="3" width="18" height="18" rx="4"/><text x="12" y="16.5" text-anchor="middle" font-size="12" font-family="system-ui,sans-serif" font-weight="700" fill="currentColor" stroke="none">' + ch + '</text>';
+  }
+  function _contribAction(id) {
+    var c = _contrib[id], d = c.desc, act = { id: id, name: d.name || id, key: '', _order: Number(d.order) || 0, _owner: c.owner };
+    if (d.title) act.title = d.title;
+    if (d.img) { act.img = d.img; act._iconKind = 'img'; }
+    else { var named = d.icon ? _resolveIcon({ icon: d.icon }) : null; if (named) { act.icon = named; act._iconKind = 'named'; } else { act.icon = _letterSvg(d.name || id); act._iconKind = 'letter'; } }
+    act.fn = function () { try { d.action(); } catch (e) { _toast((d.name || id) + ' — ' + e.message); } };
+    return act;
+  }
+  function register(id, desc, owner) {
+    if (!id || !desc || typeof desc.action !== 'function') throw new Error('pill ' + id + ' needs { name, action }');
+    if (_contrib[id] && _contrib[id].owner !== owner) throw new Error('pill ' + id + ' already contributed by ' + _contrib[id].owner);
+    _contrib[id] = { desc: desc, owner: owner };
+    var act = _contribAction(id);
+    console.log('§PILL-CONTRIB add id=' + id + ' owner=' + owner + ' icon=' + act._iconKind + ' order=' + act._order + ' mounted=' + !!_PB);
+    if (_PB) { _PB.actions.forEach(function (a, i) { if (a.id === id) _PB.actions.splice(i, 1); }); _PB.actions.push(act); _placeInOrder(act); _PB.build(); _PB.sync(); }
+  }
+  function removeOwner(owner) {
+    Object.keys(_contrib).forEach(function (id) {
+      if (_contrib[id].owner !== owner) return;
+      delete _contrib[id];
+      if (_PB) for (var i = _PB.actions.length - 1; i >= 0; i--) if (_PB.actions[i].id === id) _PB.actions.splice(i, 1);
+      console.log('§PILL-CONTRIB remove id=' + id + ' owner=' + owner);
+    });
+    if (_PB) { _PB.build(); _PB.sync(); }
+  }
+
   function mount() {
     if (!window.PillBuilder) { console.warn('§IDMP-PILLS PillBuilder missing — not mounted'); return; }
     if (document.getElementById('idmp-pillbar')) return;     // idempotent (one bar)
 
-    fetch('pills_idmp.json?v=37').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills_idmp.json?v=38').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var ACT = window.IdmpPillActions || {};
 
@@ -202,6 +245,10 @@
         if (p.id === 'worldhist') act.hold = function (btn) { _worldDrawer(btn); };
         return act;
       });
+      // §PILL-CONTRIB: bundles started before the rail existed join it here, in order with the manifest pills
+      pills.forEach(function (p, i) { actions[i]._order = Number(p.order) || 0; });
+      Object.keys(_contrib).forEach(function (id) { if (!actions.some(function (a) { return a.id === id; })) actions.push(_contribAction(id)); });
+      actions.sort(function (a, b) { return (a._order || 0) - (b._order || 0); });
       _actions = actions;
       // §AD-GATE — apply the posting-doc condition at BUILD (not just on later sync): with no document open
       // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
@@ -234,7 +281,7 @@
 
       var PB = window.PillBuilder({
         pill: pill, trigger: trigger, APP: {}, actions: actions,
-        order: actions.map(function (a) { return a.id; }),
+        order: (_orderRef = actions.map(function (a) { return a.id; })),
         storageKey: 'idmp_pill_config'
         // NON-persistent (user wrap 2026-06-09: "click outside closes — intuitive + standard"): a ⋯ tap toggles;
         // tapping a pill INSIDE keeps it open; tapping OUTSIDE (canvas/record) collapses it — consistent with the
@@ -264,7 +311,7 @@
       var hidden = (PB.getConfig().hidden || []).length;
       console.log('§IDMP-PILLS source=registry pills=' + pills.length + ' handAuthored=0' +
         ' mountedButtons=' + mounted + ' overflow=⋯ hidden=' + hidden +
-        ' stage=' + _curStage + ' ids=[' + pills.map(function (p) { return p.id; }).join(',') + ']');
+        ' stage=' + _curStage + ' ids=[' + actions.map(function (a) { return a.id; }).join(',') + '] contributed=[' + Object.keys(_contrib).join(',') + ']');
     }).catch(function (e) {
       console.warn('§IDMP-PILLS fetch/mount failed: ' + e.message);
     });
@@ -317,5 +364,5 @@
     document.head.appendChild(s);
   }
 
-  window.IdmpPills = { mount: mount, setStage: setStage, setDocContext: setDocContext, _evalReveal: _evalReveal, builder: null };
+  window.IdmpPills = { mount: mount, setStage: setStage, setDocContext: setDocContext, _evalReveal: _evalReveal, builder: null, register: register, removeOwner: removeOwner };
 })();

@@ -533,7 +533,7 @@
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
 <script src="osgi_console.js?v=1"></script>
-<script src="plugin_release.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
+<script src="plugin_release.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -548,7 +548,7 @@
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=5"></script>
 <script src="ad_infowin.js?v=1"></script>
-<script src="plugin_registry.js?v=1"></script>
+<script src="plugin_registry.js?v=2"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
@@ -561,7 +561,7 @@
 <script src="pg_view_sql.js?v=1"></script>  <!-- ONE Postgres->SQLite view translator (core views + plugin packs), ERP_FRIENDLY_OPS_LENS.md §24 -->
 <script src="pipo_packin.js?v=2"></script>
 <script src="pipo_packout.js?v=1"></script>  <!-- Pack Out to a real 2Pack (ERP_FRIENDLY_OPS_LENS.md §25) -->  <!-- Pack In of a bundle's 2Packs (bim-compiler ERP_FRIENDLY_OPS_LENS.md §20.A/§22) -->
-<script src="plugin_overlay.js?v=5"></script>
+<script src="plugin_overlay.js?v=6"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
      readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
      way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
@@ -715,7 +715,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="../common/pill_builder.js?v=1"></script>
 <script src="../viewer/connect_scene.js?v=1"></script><!-- §CONNECT-ERP: shared Connect bus (BroadcastChannel+postMessage); ERP registers as 'erp' on first Zoom-Across launch -->
 <script src="zoom_across.js?v=1"></script>
-<script src="idmp_pills.js?v=15"></script>
+<script src="idmp_pills.js?v=16"></script>
 <!-- §TEAMS-EMBED — the GATED Teams overlay pill (teams/ROADMAP.md §S9 follow-up). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
      (localStorage.teamsEmbed='1' | ?teams=1) → it lazy-loads the proven teams/ modules + mounts a distinct
@@ -7054,16 +7054,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // PLUGIN_SYSTEM_LANE.md §Phase D — Fold-Engine plugin host. Inject the page glue (the loaded db for the
       // PLUGIN_* kernel_ops + a bundle's read-only setup query) + the live engine registries a bundle contributes
       // into. db may be null pre-login — engine plugins still install/activate (their ops just aren't logged).
-      plugin: function () {
+      plugin: function (o) {
         if (!window.PluginEngine) { status('Plugin engine not loaded'); return; }
         window.PluginEngine.open({
+          face: (o && o.face) || null,   // 'create' = the Ninja bundle's pill (§27)
           doc: document, db: window.__idmpDb || db, adQ: _adQ, KO: window.KernelOps,
           engines: { modelval: window.AdModelVal, callout: window.AdCallout, process: window.AdProcess,
                      postTokens: (window.PostResolver && window.PostResolver.TOKENS) || null }
         });
       },
-      // NINJA EXCEL — the lens needs only the loaded tenant db; engine + UI are self-contained.
-      ninja: function () { window.NinjaPill.open({ db: window.__idmpDb }); },
+      // NINJA EXCEL — now the built-in bundle plugins/ninja_excel.mjs contributes this pill (§PILL-CONTRIB, ERP_FRIENDLY_OPS_LENS.md §27).
       warehouse: function () {
         var homeUrl = encodeURIComponent(location.origin + location.pathname.replace(/[^/]*$/, '') + 'idempiere.html');
         var url = '../viewer/viewer.html?db=../buildings/warehouse_gardenworld.db&home=' + homeUrl;

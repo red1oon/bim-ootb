@@ -65,14 +65,6 @@
       "note": "Opens the warehouse walk viewer (§S-1 compiled GardenWorld db, short GH Pages URL). Static demo door — no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
     },
     {
-      "id": "ninja",
-      "name": "Excel Report",
-      "key": "",
-      "icon": "grid",
-      "order": 4.8,
-      "note": "NinjaExcelAdaptation.md §6.2 — Excel-as-report-binder lens (window.NinjaPill): drop a filled sample (BACKUP) → MAKE scaffolds Input+Process; drop the authored workbook → RUN folds each Process row over the loaded tenant db (sql.js), writes values to the addressed cells, verify-by-example vs the sample (integer cents), download filled. The browser never renders the report — formatting/subtotals/charts stay the user's own Excel. grid glyph (spreadsheet). Engine == bim-compiler build/erp (W-NINJA/MAKE/RULE headless + W-NINJA-PILL live)."
-    },
-    {
       "id": "erpdoc",
       "name": "Read / Compare",
       "key": "",
