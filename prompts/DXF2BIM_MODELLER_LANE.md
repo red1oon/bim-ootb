@@ -279,6 +279,27 @@ Written before the code. BIMCompiler branch `fix/std2d-det-r3` (same PR as §L1.
   - `GAP:no_elevation_match` 5: the F6 marker rounding.
   - `GAP:no_elevation_height` 54 (14 with @WALLTOP), `GAP:opening_unclassified` 74, `GAP:no_host_cut` 19, `QF:elev_height_dim_missing` 4: pre-existing L2 / reader items.
 
+### L1.5 Plans show what the cut plane cuts, not storey membership (2026-10-16)
+Written before the code. BIMCompiler branch `fix/std2d-plan-cut` (off master 73ad2c00f).
+
+**Problem (L2.7 result: std set blocked 8, all FF doors 150/152).** `write_plan` drew a section-cut element only when the element's *storey* was the plan's storey. Two Duplex walls, `2O2Fr$t4X7Zf8NOew3FLTF` and `2O2Fr$t4X7Zf8NOew3FL8v`, belong to "Level 1" but run from z 2.612 to 6.000. The FF plan cut (Level 2 elevation 3.100 + `CUT_OFFSET` 1.200 = **4.300 m**; GF: 0.000 + 1.200 = 1.200 m) passes through them, yet the FF plan omitted them. Without their jambs, doors 150/152 had no opening box, host, height or cut.
+
+**Rule P1 (drafting standard).** A floor plan shows every element cut by that plan's cut plane, whatever storey the model assigns it to.
+- **Cut contours:** IfcWall/IfcWallStandardCase/IfcColumn/IfcDoor/IfcWindow whose DB z-range strictly contains the cut height (`minZ < cut_z < maxZ`, the `section_cut` CUT test) are drawn. The storey filter on cut contours is removed.
+- **Plan walls:** the same set (walls whose z-range contains the cut height) drives the R12 layer choice (on a grid axis → A-WALL-FULL), the envelope and the R8 face runs.
+- **Opening symbols stay with storey membership:** door arcs (§L1.2) and window sill lines (R10) still come from the storey's IfcDoor/IfcWindow. An opening belongs to the storey whose floor it opens from.
+- A wall that spans two plans' cut heights appears on both plans. On the Duplex no wall spans both 1.2 and 4.3 (query: 0 walls with `minZ < 1.2 AND maxZ > 4.3`). The two walls above appear only on FF, because they start at 2.612, above the GF cut.
+- **Log:** `§PLAN_CUT view=… cut_z=… walls=n (other-storey walls=k: guid@storey …)`.
+
+**Tests (`test_std2d.py`).**
+- W2 and W3 expectations are recomputed from the DB by cut height, not storey. The test's own query `walls_cut(db, cut_z)` replaces `walls_bbox(db, storey)` for the plan being checked; the grid stays derived on the grid storey (R2).
+- **W10 (issue: an element cut by the plan's cut plane is missing, or one not cut is drawn):**
+  - every DB wall whose z-range contains the cut height has ≥1 contour tagged with its GUID on that plan, and no other wall does
+  - FF must contain LTF and L8v
+- **W10-control:** a copy of the FF plan with the LTF contours deleted must FAIL W10.
+- **Pipeline double count:** `rosetta_dx_shell` (DXSET=std) is checked so that each source wall is reconstructed once. The same model wall drawn on two plans must not become two 3D walls. If it does, this is reported, not hacked. On the Duplex no wall is on two plans (see above).
+- **Re-run from master:** std2d `--door-ops`, then `mark_dx_set.js std <door_ops.db>`, `DXSET=std rosetta_dx_shell.js`, `rosetta_qualify.js`. The target is std set blocking = 0.
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
