@@ -184,6 +184,43 @@ Real data: `tests/dxf2bim/rosetta_qualify.js`. It reports the true list for each
 
 Duplex pipeline gaps come from `rosetta_dx_shell.js` (main variant A), which writes them to the git-ignored `out/marked_shell/dx_shell_gaps.json`. Configs are not copied: the DX / Farmhouse / jscad maps and configs move into `tests/dxf2bim/set_configs.js`, and the scripts import them.
 
+### L2.2 Results (2026-10-16; BIMCompiler `deploy/dev/dxf2qualify.js`)
+- `test_qualify.js`: 36/36 PASS.
+  - Q1 qualifies with 0 blocking.
+  - Q2 is exactly 5 `sheet_no_role` + 5 `units_unstated` + `set_no_plan` + 4 `face_no_elev`.
+  - Q3 `units_conflict {in}` + `layer_unmapped`.
+  - Q4 regions / `EQ` / equal override.
+  - Q5: exactly one `dim_text_mismatch` carrying the changed handle.
+  - One break per check (G1-G4, F, U, L, M, K, S, P). Order shuffle gives the same verdict, and the input is unchanged.
+- `rosetta_qualify.js` (real sets): SUMMARY fail=0. Each set: verdict, then blocking items by code.
+  - **Duplex marked (today, L1 pending): blocked, 358 blocking + 28 advisory (`type_unbound`).**
+    - Drawing-standard items:
+      - `grid_missing` 8: the 4 exterior wall axes per plan; the grids sit on the faces
+      - `grid_label_series` 8: letters on constant-X lines
+      - `dim_not_entity` 44: exploded dims plus scale-bar numerals on A-ANNO-DIMS
+      - `dim_missing` 16, `dim_point_missing` 52
+      - `elev_level_mismatch` 4: no Level 2 = 3.1 line; the nearest is 3.2
+      - `elev_height_dim_missing` 12
+      - `layer_unmapped` 31: A-ANNO-SECT on plans; the elevation maps do not exclude A-GRID / A-ANNO-* / A-TTLB / A-ROOF / 0
+      - DX_ROOF: `sheet_no_role` + `units_unstated`, since no roof view exists
+    - Pipeline gaps (variant A):
+      - `opening_unclassified` 76, `wall_below_min_thickness` 40, `no_elevation_height` 36, `no_host_cut` 26, `door_below_min_width` 2, `slab_no_underside` 1
+  - **Duplex stripped:** 94 blocking. The 17 items not in the marked verdict are all marking codes: 6 sheets × (`sheet_no_role` + `units_unstated`), `set_no_plan`, and 4 `face_no_elev`.
+  - **jscad:** 133 blocking: `units_conflict` (63 feet-inch dims vs `$INSUNITS` mm), `units_unstated`, `sheet_no_role`, `layer_unmapped` 9, `setting_missing` 2 (grid / bearing layers), `set_no_plan`, `face_no_elev` 4, and plan-run gaps.
+  - **Farmhouse:** 51 blocking + 1 advisory:
+    - `dim_text_mismatch` 1: elevation dim 44E1 reads `30"` but measures 25.01 in
+    - `dim_text_unreadable` 2 (`EQ`)
+    - `face_no_elev` 3, `elev_roof_unstated`, `layer_unmapped` 2 (title-block layers inside the plan region)
+    - `check_skipped` 2 (the elevation region has no layer map)
+    - `setting_missing` 2
+    - plan-run gaps: `wall_line_unpaired` 26, `unsupported_entity` 7, `wall_pair_ambiguous` 5
+  - Q5 on a real DIMENSION (Farmhouse 1F1A, override `99'-9"`): exactly one new `dim_text_mismatch` 1F1A; total 51 → 52.
+- Regression:
+  - 16 unit suites: SUMMARY fail=0
+  - rosetta_dx_shell: 33/34, the known RF-d roof-top FAIL; its log differs only by the new gap-dump line
+  - farm_heights: log identical
+  - t8_sandbox: identical except timing (configs moved to `set_configs.js`)
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
