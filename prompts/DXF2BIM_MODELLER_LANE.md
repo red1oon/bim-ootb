@@ -1438,5 +1438,10 @@ Lanes 1–2 must reach their pass condition first, otherwise (b) would honestly 
 ### L5.5 UI
 Export entry in the existing Modeller menu, Lucide icon from `icons.js`; drawable report in the `#ins-panel` pattern used by L4. No new pill types.
 
+### L5.6 Port slices (2026-10-17, before code)
+Source of record is BIMCompiler `deploy/dev/std2d*.js` (UMD, no DOM, no DB: takes plain model arrays, returns DXF text + log lines), copied into `modeller/dxf2bim/` by `sync.sh` like the reader modules. Slices, each ending in a parity witness against `std2d.py` as oracle on the Duplex Node DB (`Duplex_ARC`):
+- **S1 plan geometry** (`std2d_geom.js`): `sliceMesh`, `chainSegments`, polygon union (vendored `polygon-clipping` 0.15.7, MIT, pinned, sha256 in SOURCE.md; replaces shapely `unary_union`; `make_valid` is replaced by dropping rings with < 3 points or zero area, logged `§RING_DROPPED`). Witness **W-S1** (issue: the port draws a different wall plan than the oracle): for every wall/door/window/column of the Duplex on every plan cut z, the JS union area equals the Python `_slice_poly` area within 0.5 mm^2 and the polygon count is equal; control: one wall mesh vertex moved 5 mm in the JS input must FAIL. Python oracle numbers are produced by a script in the same commit, not typed in.
+- S2 grid + hosts + openings (R4-R6, O1-O3); S3 DXF writer (entities, layers, DIMENSION as defpoints + `BIMGUID` xdata as the reader needs; no ezdxf-rendered dimension blocks unless the reader requires them: checked in S3 spec) with the per-layer entity-count witness; S4 elevations/roof/section; S5 Modeller wiring (L5.1 b-d). Each slice gets its own spec paragraph before its code.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
