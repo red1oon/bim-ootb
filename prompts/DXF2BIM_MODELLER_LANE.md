@@ -57,6 +57,136 @@ Tests (each names the issue):
 - **W6** elevation levels equal the model storey elevations: level invented
 - **W7** mutation: shift one wall 50 mm in the model → W2/W3 report it
 
+### L1.1 Refinements before coding (2026-10-16)
+Source of every value: `DX_extracted.db` (tables `elements_meta`, `elements_rtree` bbox in m, `element_transforms`, `base_geometries`, `rel_fills_host`, `spatial_structure`). The DB has no storey-elevation column, no LoadBearing/IsExternal property and no door placement axis or OperationType. Each rule below says how the value is derived, or names it as a GAP. "Convention" = a stated drafting choice, never something read from a drawing. Name strings (e.g. "Exterior", "Party Wall") are not used by any rule.
+- **R1 Storey elevation.** `elev(S)` = min `minZ` of the IfcWall elements contained in S. Storey without walls → `GAP:storey_no_walls` (no datum drawn). Cross-check on Duplex against the source IFC `IfcBuildingStorey.Elevation`: Level 1 0, Level 2 3.1, Roof 6.0, T/FDN −1.25 (equal, 4/4).
+- **R2 Foundation and grid storey.** Foundation storey = the storey that contains IfcFooting. Grid storey = the lowest storey above it (Duplex: Level 1). Convention: one structural grid per building, derived on the grid storey and reused on every plan and elevation.
+- **R3 Wall axis.** The plan bbox must be axis-aligned (else `GAP:wall_not_orthogonal`, not gridded). The longer plan extent is the length. The axis is the bbox centre across the thickness.
+- **R4 Gridded walls (G1).** A grid-storey wall is gridded when its length ≥ `grid_min_wall_len` = 1000 mm and either:
+  - (a) **load-bearing**: a parallel foundation wall's thickness band strictly contains the wall axis, and the overlap along the length is ≥ 50 % of the wall length (the wall bears on it); or
+  - (b) **exterior**: its outer face lies on the plan envelope bbox within 10 mm.
+  - Duplex result expected: X axes 0.2085 / 4.4 / 8.5915 m; Y axes −17.5915 / −9.9715 / −7.8285 / −0.2085 m.
+- **R5 Merge.** `grid_merge_tol` = 10 mm. The merged position is the mean of its members, rounded to 0.1 mm.
+- **R6 Labels (G2), convention US NCS.** Numbers 1..n go on lines of constant X, left→right. Letters A..Z, skipping I and O, go on lines of constant Y, bottom→top. This supersedes the earlier JKR-style letters-on-X in `derive_grids`, for the std set only.
+- **R7 Plan sheet (1:100), convention.** All offsets are measured outward from the envelope, in paper mm (×100 in model). Dimension tiers per side, inner→outer:
+  - (3) openings/wall-ends at 10
+  - (2) grid-to-grid at 18
+  - (1) overall at 26
+  - Grid lines run to 33. Bubbles (r 4, label 3.5 mm) are centred at 37, at both ends.
+  - Dimension style STD100: architectural tick, text 2.5 mm, `dimdec` 0 (mm), measurement text only (no override).
+  - Cut plane = storey elevation + 1200 mm (existing §5.1a).
+- **R8 Openings string (G3-3).** Each section-cut wall contour contributes its run along that exterior face line (the min..max of its vertices within ±5 mm of the face). The points are the ends of the union of those runs (runs within 1 mm merge, so abutting walls make no false break), plus the envelope corners. Contour mid-edge vertices (mesh slicing artefacts) are therefore not dimensioned. The first run measured mid-edge vertices and gave 47/52 mm junk segments; this was seen in the PNG.
+- **R7a Narrow dimensions.** When a segment is shorter than its text (digits × 0.9 × 2.5 mm + 1 mm, paper), the text moves 4.5 paper mm outward with a leader (`dimtmove` 1). The measurement is unchanged.
+- **R9 Door swing (G6).** The DB door mesh is axis-aligned and symmetric across its width. The leaf panel is offset across the wall thickness, so the swing side = the face the leaf is offset to (the frame/casing is mirror-symmetric about the door centre; the leaf is not. Swing sign = the sign shared by the thickness-axis vertex coordinates that have no mirror partner −v within 1 mm). If no leaf is found or the sign is mixed → `GAP:door_swing`. Witness: 14/14 Duplex doors have a leaf-offset sign equal to the source IFC door local +Y, the direction its IFC `Plan` swing arc opens into.
+  - **Hinge jamb is NOT in the DB** (the width-symmetric mesh carries no placement X axis or OperationType) → `GAP:door_hinge` for every such door. The writer then draws the cut jambs and the closed leaf (section cut) plus a `HINGE ?` note on A-ANNO-NOTE on the swing side. It draws no arc and never picks a side.
+  - Upstream fix (not this lane): the extractor persists the IfcDoor placement X axis + OperationType. Both are present in the Duplex IFC for 14/14 doors.
+- **R10 Window (G7).** The cut contour (frame + glass) goes on A-GLAZ. Both wall-face lines across the opening go on A-GLAZ-SILL; the interior one is the sill/stool. A-GLAZ-SILL is the NCS minor group; it keeps the reader's A-GLAZ rectangles unmixed. Elevation: the window outline goes on A-GLAZ, and its bottom edge is repeated on A-GLAZ-SILL.
+- **R11 Elevations (G4).**
+  - Faces (names kept from the existing writer): FRONT = min Y, REAR = max Y, LEFT = min X, RIGHT = max X.
+  - Convention: the projection is as seen by an observer outside the face. Horizontal axis: FRONT +X, REAR −X, LEFT −Y, RIGHT +Y. This corrects the existing writer's mirrored LEFT/RIGHT.
+  - What is drawn:
+    - walls whose outer face is on that envelope face (≤ 10 mm), on A-WALL
+    - their hosted openings via `rel_fills_host`, on A-DOOR / A-GLAZ, when the opening's longer plan extent runs along that face (this excludes a corner wall's openings on the other face)
+    - the roof element silhouette on A-ROOF
+  - Levels: one datum per storey with elevation ≥ the grid storey, text `<storey name> <±z.zzz>` on A-ANNO-LEVL, plus **T/ROOF** = max Z of IfcRoof, else of the highest IfcSlab.
+  - Height dimension chain (storey to storey to T/ROOF) plus the overall, both left of the face.
+  - Grid bubbles for the grid lines perpendicular to the face sit below the lowest datum: 12 paper mm below, bubble 16 below.
+  - The foundation storey (below grade) is listed in the log, not drawn. Natural grade is not in the DB, so no grade line is drawn.
+- **R12 Layers (G5).** A-WALL-FULL (walls whose axis is within `grid_merge_tol` of a parallel grid line; on every plan storey) and A-WALL-PRTN (other walls); these are the names the DXF2BIM reader map consumes. A-WALL-PATT holds the solid poché. The rest: A-DOOR, A-GLAZ, A-GLAZ-SILL, A-GRID, A-ANNO-DIMS, A-ANNO-LEVL, A-ANNO-NOTE, A-ANNO-TTLB, A-ROOF, A-WALL (elevation outline). Furniture and MEP are not drawn on the std set.
+- **R13 Determinism.**
+  - `ezdxf.options.write_fixed_meta_data_for_testing = True` (fixed $TDCREATE/$TDUPDATE/GUIDs).
+  - Iteration is sorted by guid / coordinate.
+  - File names carry no timestamp: `output/STD/DX_{FLOOR_GF,FLOOR_FF,FRONT,REAR,LEFT,RIGHT}_std.dxf` (git-ignored). The log is `log_DX_std.txt`, which also lists every `§GAP`.
+- **R14 G8 marks.** Deferred (optional in G8); not in this pass.
+- **Tests: `2D_Layout/python/test_std2d.py`.** Expectations are recomputed in the test from the DB, independently of the writer code. The W5/W6 oracle is the source IFC, when present.
+  - W5 checks three things:
+    - (a) the closed leaf sits on the IFC +Y side
+    - (b) every drawn arc has its hinge at the IFC hinge jamb
+    - (c) every `GAP:door_hinge` door has no arc
+  - W5 control: the DXF with mirrored notes/leaves must FAIL.
+  - W7: the drawing from the original DB is checked against a copy with one interior load-bearing wall shifted 50 mm. W2/W3 must FAIL on it, and must PASS on the drawing regenerated from the mutated copy.
+- **Witness (2026-10-16, BIMCompiler branch `feat/dxf2bim-std2d`).**
+  - Grid: 1/2/3 at x 208.5 / 4400 / 8591.5 mm; A/B/C/D at y −17591.5 / −9971.5 / −7828.5 / −208.5 mm.
+  - Tests: W1–W7 PASS. The W5 control (mirrored swing) FAILS as required; W7 stale W2+W3 FAIL, regenerated PASS. Gaps: `GAP:door_hinge` 14/14.
+  - Reader re-run (copy of rosetta_dx.js on the std plans): walls are unchanged versus the old set (L1 29 pieces, 17/17; L2 27 pieces, 12/17, the same pre-existing R1b FAIL); windows are unchanged (4/4, 10/10). Doors fall from 6+6 to 0, because the reader needs an ARC and the hinge is a GAP. This is fixed by the upstream extractor fix in R9, not by drawing guessed arcs.
+  - The old set's door arcs agreed with the IFC on swing side 6/14 and hinge jamb 8/14, i.e. they were invented.
+
+### L1.2 Door hinge from the IFC: `door_operation` table → std2d arcs (2026-10-16)
+Closes the R9 `GAP:door_hinge` upstream, as R9 asked: the extractor persists the door's operation type and placement axes; std2d draws the arc only from them. Nothing is guessed.
+
+**Source of handing (Duplex, IFC2X3).** Every IfcDoor is typed through `IfcRelDefinesByType` → `IfcDoorStyle.OperationType` (Duplex: 6 styles, 3 `.SINGLE_SWING_LEFT.` + 3 `.SINGLE_SWING_RIGHT.`, covering 14/14 doors). The door frame is its `ObjectPlacement` (IfcLocalPlacement chain of IfcAxis2Placement3D).
+
+**IFC definition relied on** (offline sources only; the buildingSMART HTML pages are not available offline):
+- IfcOpenShell 0.8.4 ships the IFC IfcDoor documentation text in `ifcopenshell/mvd/mvd_examples/officials/ReferenceView_V1-2.mvdxml` (concept "Door Attributes"). Quoted exactly:
+  - "The door panel (for swinging doors) opens always into the direction of the positive Y axis of the local placement. The determination of whether the door opens to the left or to the right is done at the level of the *IfcDoorType*. Here it is a left side opening door given by *IfcDoorType.OperationType* = SingleSwingLeft" — "refered to as LEFT HAND (LH) in US", "refered to as DIN-R (right hung) in Germany".
+  - "If the door panel (for swinging doors) opens to the right, a separate door style needs to be used (here *IfcDoorTypee.OperationType* = SingleSwingRight) and it always opens into the direction of the positive Y axis of the local placement." — "RIGHT HAND (RH) in US", "DIN-L (left hung) in Germany".
+  - "NOTE There are different definitions in various countries on what a left opening or left hung or left swing door is (same for right). Therefore the IFC definition may derivate from the local standard and need to be mapped appropriately."
+- The figures (ifcdoor-fig01..04) and the enum item text ("hinges on the left side as viewed in the direction of the positive y-axis") are **not** available offline: `ifcopenshell/util/schema/ifc{2x3,4,4x3}_types.json` carry only the enum description, web-ifc ships no docs. So the left/right side is derived, and stated as such:
+  - US LH = viewed from the side away from which the door swings (i.e. looking along +Y), hinges on the left. DIN-R = viewed from the side the door opens toward (looking along −Y), hinges on the right. Both name the same physical door, so SingleSwingLeft = **hinges on the left when looking along +Y = the −X jamb** (Z up: looking along +Y, right is +X).
+  - Cross-check in code: IfcOpenShell `api/geometry/add_door_representation.py` draws the SINGLE_SWING_LEFT 2D panel + quarter arc at the panel's start (local min X) opening into +Y, and mirrors it about the panel centre for `RIGHT`.
+  - Witness on the data (below): every Duplex IFC `Plan` swing arc agrees with this reading.
+
+**D1 Table (extractor `scripts/extractIFC2DB.js`, web-ifc; new table only, no existing table or output changes).**
+`door_operation(guid TEXT PRIMARY KEY, operation_type TEXT, source TEXT, x_axis TEXT, y_axis TEXT, z_axis TEXT, origin TEXT, overall_width REAL, overall_height REAL)`
+- One row per extracted IfcDoor that has an operation type; doors without one get no row (counted in the log, `§DOOR_OP none=`).
+- `operation_type`: the enum value as written (e.g. `SINGLE_SWING_LEFT`, `DOUBLE_DOOR_SINGLE_SWING`, `NOTDEFINED`, `USERDEFINED`).
+- `source`: `style` (IFC2X3 `IfcDoorStyle.OperationType`, also an IFC4 file still using IfcDoorStyle), `type` (IFC4 `IfcDoorType.OperationType`) or `occurrence` (IFC4 `IfcDoor.OperationType`). Precedence follows IFC4 IfcDoor ("OperationType shall only be used if no type object IfcDoorType is assigned, providing its own IfcDoorType.OperationType"): the type/style value wins when it is set; the occurrence is used only when no type/style value exists.
+- `x_axis`, `y_axis`, `z_axis`: unit vectors of the door's ObjectPlacement resolved to world (the whole IfcLocalPlacement chain; per IfcAxis2Placement3D, Z = Axis or (0,0,1), X = RefDirection or (1,0,0) made orthogonal to Z, Y = Z × X). JSON `[x,y,z]`. IFC is Z-up, the same frame as the DB.
+- `origin`: placement origin in metres, JSON `[x,y,z]`. Length unit from `IfcProject.UnitsInContext` (IfcSIUnit prefix, or IfcConversionBasedUnit factor). The DB geometry is in metres, so `origin` is too.
+- `overall_width`, `overall_height`: IfcDoor.OverallWidth/Height in metres (null when absent). Recorded, not used by std2d.
+- A placement that is not an IfcLocalPlacement of IfcAxis2Placement3D/2D → axes and origin null (logged); the row keeps its operation type.
+- Log: `§DOOR_OP guid=… op=… source=… x=… y=…` per door and `§DOOR_OPERATION rows=n style=a type=b occurrence=c none=d`.
+
+**D2 Hinge and swing rule (std2d R9b; supersedes the R9 hinge GAP when D1 is present).**
+- H1 Applies only to `SINGLE_SWING_LEFT` / `SINGLE_SWING_RIGHT` with all three axes present and `z_axis` = (0,0,1) within 1e-6 (a vertical door). Everything else — no row, other operation types (double, sliding, folding, revolving, NOTDEFINED, USERDEFINED), tilted placement — keeps `GAP:door_hinge` and the `HINGE ?` note. No arc is drawn.
+- H2 Swing side = +`y_axis` (mvdXML text above).
+- H3 Hinge jamb = the leaf's −`x_axis` end for LEFT, its +`x_axis` end for RIGHT.
+- H4 Leaf = the mesh components (face-connected vertex sets of the DB door mesh) that hold an R9 leaf vertex (a thickness-axis coordinate, measured along `y_axis`, with no mirror partner within 1 mm). Leaf extent along `x_axis` = [s0, s1]; leaf width = s1 − s0 = arc radius. Hinge point = the leaf end from H3 at the leaf's +`y_axis` face (the edge the leaf turns about when it opens toward +Y).
+- H5 Geometry must agree with the enum: the R9 leaf-offset sign along `y_axis` must be +. If the mesh leaf sits on the −Y side → `GAP:door_handing_conflict` (logged with both values), no arc. No leaf found → `GAP:door_swing` as before.
+- Drawn on A-DOOR, tagged with the door GUID: the open leaf line hinge → hinge + width·Y, and a 90° ARC centred on the hinge, radius = leaf width, from the closed-leaf direction (toward the latch jamb: +X for LEFT, −X for RIGHT) to +Y. `§DOOR … hinge=… swing=+Y op=… source=…` in the log.
+- std2d gets the table from the DB itself, or from `--door-ops <db>` (the Node-extracted DB) joined on GUID. The DX_extracted.db std input is unchanged.
+
+**Tests.**
+- Extractor witness `scripts/witness_door_operation.py` (oracle = IfcOpenShell reading the IFC, independent of web-ifc):
+  - X1 regression: origin/master extractor vs this one on 5 IFCs (Duplex_ARC, Duplex Federated, Ifc4_SampleHouse mm, SampleHouse_ARC, Ifc4_WallElementedCase): every pre-existing table identical row-for-row (only `project_metadata.import_date` differs): the new table changed an existing output.
+  - X2 every IfcDoor with an operation type has a row whose type, source, axes (1e-6) and origin (1e-6 m) equal the oracle: wrong or missing handing data.
+  - X3 IFC4 mm file (Ifc4_SampleHouse: type + occurrence both set, one DOUBLE_DOOR_SINGLE_SWING): source = `type`, and the origin (m) lies within one door size of the door's DB mesh bbox (a missed or doubled mm→m scale puts it ~1000× away; the origin itself need not be inside the mesh: the double door's sits 121 mm off it, on the wall face): precedence or unit scale wrong.
+  - X3-occurrence: a copy of that IFC with the three IfcDoorType OperationType values removed must give source = `occurrence` with the IfcDoor values: the occurrence path is dead.
+  - X4 geometry agreement per door: the hinge jamb from H3 equals the jamb of the IFC `Plan` swing-arc centre, and the IFC Plan arc opens toward +Y, and the DB mesh leaf offset (R9, about the mesh bbox centre along `y_axis`) is +Y: enum disagrees with the physical door. The 3D mesh carries no hinge hardware (it is symmetric along X), so the hinge's geometric witness is the IFC Plan curve; the swing has two (Plan curve + mesh leaf). A file with neither (Ifc4_SampleHouse: no Plan curve, asymmetric Revit mesh) is reported as INFO "no contradiction, no witness", never as a PASS.
+  - X4-control: the same IFC with one IfcDoorStyle's LEFT/RIGHT swapped (copy) must FAIL X4 on exactly that style's doors: X4 is blind.
+- `2D_Layout/python/test_std2d.py --door-ops <db>` W5 (extends L1.1 W5): for every door with an arc, (a) arc centre within 5 mm of the IFC Plan swing-arc centre (hinge position), (b) hinge on the IFC enum's jamb (sign along IFC +X from the door centre), (c) arc mid-direction and leaf line along IFC +Y (swing side), (d) radius = IFC OverallWidth within 2 mm; every door without an arc has a `GAP:door_hinge`; Duplex expects 14 arcs, 0 hinge GAPs.
+  - W5-control-hinge: every arc mirrored across the door centre along X (hinge on the other jamb, same swing side) must FAIL.
+  - W5-control-swing: every arc mirrored across the door centre along Y (other face) must FAIL.
+- Reader: a copy of `tests/dxf2bim/rosetta_dx.js` pointed at the std plans reports door arcs found per storey and matched to the source doors (D-MATCH, copy only: hinge within 5 mm of the IFC Plan arc centre, width within 2 mm of OverallWidth, swing on IFC +Y); Duplex expects 14 (Level 1: 6, Level 2: 8).
+
+**Witness (2026-10-16, BIMCompiler branch `feat/door-hinge`).** Duplex re-extracted with the Node extractor to a new DB (`2D_Layout/input/DX_ARC_node_extracted.db`, outside git; DX_extracted.db untouched).
+- `witness_door_operation.py`: X1 5/5 IFCs identical on every pre-existing table (1014 / 4370 / 263 / 263 / 29 rows); X2 5/5 (Duplex 14 rows source `style`; SampleHouse 3 rows source `type`, mm; WallElementedCase 0 doors, inch unit resolved 0.0254); X3 + X3-occurrence PASS; X4 Duplex 14/14 AGREE (hinge: enum = IFC Plan arc jamb 14/14; swing: enum +Y = Plan arc 14/14 = mesh leaf 14/14); X4-control flags exactly the 2 doors of the swapped style. Extractor has no other test of its own; X1 is the regression proof.
+- Per door (Duplex): 6 SINGLE_SWING_LEFT (hinge −X jamb), 8 SINGLE_SWING_RIGHT (hinge +X jamb), all swing +Y; enum and geometry agree 14/14, no conflict.
+- `test_std2d.py --door-ops`: W1–W7 PASS; W5 14 arcs, 0 hinge GAPs, every hinge 0.00–0.01 mm from the IFC Plan arc centre, jamb = enum 14/14, swing on +Y 14/14, radius = OverallWidth 14/14. W5-control-hinge and W5-control-swing each FAIL on 14/14 doors, as required. Without `--door-ops` the L1.1 behaviour is unchanged (14 hinge GAPs, W5 PASS, swing control FAILs).
+- Reader copy on the std plans: doors found 6 + 8 = 14, D-MATCH 14/14; walls R1a/R1b-stated/R1c PASS on both storeys, windows R4 PASS.
+- Findings:
+  - Reader R3 FAILS on the std set: it compares the arc radius with the source door bbox long side, which includes the 2 × 76 mm casing (0.914 vs 0.762 …). The std arc radius is the leaf width (= OverallWidth = the IFC Plan arc radius). R1b-stated already removes the casing; R3 does not. Fix in the reader lane, not here (the old sheets passed R3 because their arcs used the casing-inclusive width).
+  - W1 across processes is not deterministic on origin/master either: ezdxf's OBJECTS section order follows Python's hash seed (FRONT differed in 1 of 3 runs; identical with `PYTHONHASHSEED=0`). Within one process W1 holds. Pre-existing; the L1.1 claim "across two separate CLI processes" was a lucky pair.
+
+### L1.3 Fixes from the §L1.2 findings: cross-process determinism + reader R3 leaf width (2026-10-16)
+**F1 Determinism (std2d, R13).**
+- Cause, read in ezdxf 1.4.3 `sections/classes.py`: at save, `ClassesSection.add_required_classes` appends one CLASS per DXF type in use by iterating `entitydb.dxf_types_in_use()`, a Python `set` of strings. String hashes are salted per process, so the CLASSES section order (e.g. LAYOUT vs ACDBPLACEHOLDER) changes between processes. Entities, handles and every other section were identical in the observed diffs.
+- Fix: before each `saveas`, std2d registers the CLASS entries itself in a fixed order: ezdxf's own `REQUIRED_CLASSES` list for the DXF version, then the types in use **sorted**. `ClassesSection.register` skips keys that already exist, so ezdxf's own call at save then adds nothing in hash order. This needs no `PYTHONHASHSEED`: the caller's environment is not used.
+- Test W1-proc (issue: nondeterminism across processes): 5 separate CLI runs, each with a different `PYTHONHASHSEED` (1..5), must give byte-identical files for all 6 views. Control W1-proc-control: the same 5 runs with the fix disabled (the CLI run with `_stable_classes` replaced by a no-op) must differ, which proves the 5 seeds really change the hash order.
+
+**F2 Reader R3 (`tests/dxf2bim/rosetta_dx.js`).**
+- R3 compared the arc radius with the source door bbox long side. That side includes the casing on both jambs, so a correct leaf-width arc (the std set, radius = IFC OverallWidth) failed.
+- Rule: the source door width for R3 = bbox long side − 2 × `CASING`. This is the same constant (0.076, evidenced by `R1-evidence`) and the same casing rule that R1b-stated already applies to doors. No second casing value. Tolerance unchanged: 2 mm.
+- The script reads the std set when `STD_DIR` is set (`DX_<view>_std.dxf`); otherwise it reads the old timestamped set, as before.
+- Expected: std set with door ops → R3 14/14 (6 + 8). Old timestamped set: its arcs were drawn with the casing-inclusive width (0.914 / 0.965 / 1.016 / 1.402 m), so on the leaf rule they are no source leaf width. R3 states the old set's verdict as measured (see results), not adjusted to pass.
+
+**Results (2026-10-16, BIMCompiler branch `fix/std2d-det-r3`).**
+- F1: W1-proc PASS (5 CLI runs, seeds 1..5, one digest for the 6-file set); W1-proc-control PASS (fix disabled: seed 4 differs, 2 distinct digests). Five more runs with `PYTHONHASHSEED` unset (random): one digest. W1–W7 and the W5 controls unchanged (`SUMMARY fail=0`).
+- F2: std set with door ops → R3 PASS on both storeys (Level 1 6/6, Level 2 8/8 = 14/14). The rest of rosetta_dx is unchanged on the std set (`SUMMARY fail=0`).
+- F2, old timestamped set: R3 changes from PASS to **FAIL** on both storeys. Its arc radii (0.914 / 0.965 / 1.402, and 0.914 / 1.016) equal the casing-inclusive bbox exactly, and no leaf width (0.762 / 0.813 / 0.864 / 1.25). Keeping its old PASS would need a second criterion that accepts the casing-inclusive radius, which is the error R3 now catches. Open decision (coordinator/user): accept the old-set R3 FAIL as the truth about those sheets (their swings were already 6/14 and hinges 8/14 right), or retire the old set from rosetta_dx in favour of the std set.
+- Unit suites `tests/dxf2bim/test_*.js` 16/16 `SUMMARY fail=0`. `rosetta_dx_shell.js` 35 PASS, 1 FAIL: the known RF-d roof top (6.5 drawn vs 6.457 source).
+- G8 / `DXF2BIM-MARK` for the std set: no writer on master yet. #179/#180 read markings, and `mark_dx_set.js` marks only the old set. So the std set was regenerated with door ops only: `2D_Layout/output/STD/` (14 arcs, 0 GAPs).
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
@@ -76,6 +206,254 @@ Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'
   - Q3 jscad → blocked on units (header ≠ drawing) and unmapped layers
   - Q4 Farmhouse marked → its true list
   - Q5 mutation: alter one DIMENSION text → blocked with that handle
+
+### L2.1 Refinements before coding (2026-10-16)
+Read first: BIMCompiler `deploy/dev/dxf2{marks,bim,elev,shell}.js`, `tests/dxf2bim/rosetta_dx_shell.js`, `farm_*.js`, `t8_sandbox.js`, and the L1.1 rules (R4-R12) in the L1 worktree. Measured on the inputs (2026-10-16):
+- Duplex sheets: there are no DIMENSION entities; dimensions are exploded LINE + TEXT on A-ANNO-DIMS ("8800", "3200mm"). Grid lines lie on the envelope's outer faces (x 0 / 8800, y −17800 / 0), with letters on constant-X lines and numbers on constant-Y lines. Elevation level lines are at 0 / 3.2 / 5.6 / 6.0 / 6.5 (sill, head and ceiling datums are mixed in); there is no line at Level 2 = 3.1.
+- jscad: 63 DIMENSION entities with no override; their block text is feet-inches (`3'-1"` for a raw measurement of 37), while `$INSUNITS` = 4 (mm).
+- Farmhouse: 467 DIMENSION entities on A-DIMSx, 91 with overrides (`EQ`, `VARIES`, `15' TYP`, …), `$DIMLFAC` 0.99985. Two marked regions.
+
+**Contract.** `Dxf2Qualify.qualify(input, settings)` is a pure function. It is UMD and loads in a browser as `root.Dxf2Qualify` with `Dxf2Marks` and `Dxf2Bim`. It reads its input and never changes it; it never fixes or fills anything. Same input gives the same output, byte for byte, whatever the entity order.
+- `input.files[]` = `{name, dxf, layer_maps | layer_maps_by_view{PLAN,ELEV}}`. `dxf` is the dxf-parser output (entities, header, blocks). One file holds one sheet, or one sheet per `@REGION` (`Dxf2Marks.describeAll`). The sheet id is `name`, or `name#k` for the k-th region in describeAll order. Entities belong to a region by the reader's rule: all of their points are inside. Entities fully inside an `@EXCLUDE` are left out. Entities outside every region are not part of the set and are not judged.
+- `input.plan_ops{sheetId: ops}` = the plan pipeline's ops (DXF_WALL rects in metres). `input.gaps[]` = the pipeline's gap records `{code, sheet, handle?, shape?, …}`.
+- Output: `{verdict: 'qualifies'|'blocked', blocking[], advisory[], by_shape{walls,slabs,roof,openings}: {verdict, blocking, advisory}, sheets[], checks[]}`.
+  - Item = `{code, shape, sheet, handles[], pos:{x,y}|null, message}` plus detail fields. `pos` is in that sheet's raw drawing coordinates (for zoom). It comes from the first handle's entity, or from the stated geometry.
+  - Items are sorted by code, sheet, first handle (numeric), then message.
+  - `shape: 'set'` blocks all four shapes. A shape qualifies only when no blocking item has its shape or `set`.
+- **Unverifiable = not qualified.** When a check needs an input that is absent (plan ops, a setting), it emits a blocking item (`QF:check_skipped` or `QF:setting_missing`). The check is never passed silently.
+- Role-independent checks run on every sheet: layers, unit evidence, and dimension texts. They use the `@UNITS` factor, or `$INSUNITS` when units are unstated.
+- Role-dependent checks need the role and `@UNITS`: grid, dimension coverage, and elevation. A sheet without them gets only its marking items for these checks.
+
+**Settings** (metres; no defaults; each traces to a stated source). A missing one gives `QF:setting_missing {need}`.
+- `tol.grid` 0.010 (L1.1 R5)
+- `tol.dim` 0.0005 (L1 W3)
+- `tol.level` 0.003 (`CFG.elev_tol`, rosetta_dx_shell)
+- `tol.align` 0.001 (rosetta_dx_shell's `MK.align` call)
+- `grid.min_wall_len` 1.0 (L1.1 R4)
+- `layers.grid`, `layers.dims`, `layers.bearing`: exact layer names. Duplex / L1 output: A-GRID, A-ANNO-DIMS, A-WALL-FULL (R12: walls on a grid axis are A-WALL-FULL).
+
+**Blocking codes**
+- Markings (all `shape: set`):
+  - `QF:sheet_no_role`: no `@VIEW`.
+  - `QF:units_unstated`: no `@UNITS` (checked on every sheet, with or without a role).
+  - `QF:plan_no_level`: a PLAN without `@LEVEL`.
+  - `QF:mark_missing {keys}`: any other `MARK:missing` key.
+  - `QF:mark_invalid {mark_code}`: every other `MARK:*` error (malformed, conflict, view_ambiguous, set_mismatch, axis_face).
+  - `QF:set_mismatch`: files carry different `@SET`.
+  - `QF:set_no_plan`: no sheet is a PLAN.
+  - `QF:plan_level_duplicate`: two plans state the same `@LEVEL`.
+  - `QF:face_no_elev {face}`: see "face covered" below.
+  - `QF:elev_align_fail {mark_code}`: `Dxf2Marks.align(refPlan, elev, tol.align)` fails (align_fail or level_scale_fail).
+  - The reference plan is the PLAN with the lowest `@LEVEL`. It is the grid storey, per L1.1 R2.
+- **A building face covered:** the building's faces are the 4 orthogonal sides of the plan envelope, minX, maxX, minY and maxY. The envelope is the axis-aligned bbox of the reference plan's DXF_WALL rects. A face is covered when some ELEV sheet states `@FACE` = that side. Its alignment is reported separately, as `elev_align_fail`, so one fault is not listed twice. A non-rectangular plan still has exactly these 4 faces. A recessed face is not a separate face in v1.
+- `QF:units_conflict {implied}`: dimension evidence contradicts the units. A DIMENSION's displayed text carries an explicit unit (feet-inches `'`/`"`, or a `mm`/`cm`/`m` suffix). Its length disagrees with the measurement × `$DIMLFAC` × the sheet factor (the `@UNITS` factor if stated, else `$INSUNITS`). It agrees with exactly one other unit in the reader's table (mm, cm, m, in, ft). There is one item per sheet, holding all such handles. Those dimensions are then not reported again as `dim_text_mismatch`. This is the jscad case: `$INSUNITS` mm, while the drawing's own dimensions are in inches.
+- `QF:layer_unmapped {layer, count}`: a layer has entities in the sheet scope, but no rule in that sheet's layer maps matches it. A rule of type `ignore` counts as excluded. The `DXF2BIM-MARK` layer is the reader's own. There is one item per (sheet, layer), carrying all of its handles. The pipeline's own `GAP:unmapped_layer` records are folded into this item, not double-listed.
+- Dimensions (G3; on PLAN and ELEV sheets; `layers.dims`):
+  - Measured value (DIMENSION type 0 rotated): the projection of p13→p14 on the group-50 angle. Type 1 (aligned): |p14 − p13|.
+  - Displayed text: the override (group 1). If there is none, it is the dimension block's single TEXT/MTEXT. `<>` means "measured". MTEXT codes are stripped.
+  - Types other than 0/1 (angular, radial, ordinate) are not checked; they are counted in `checks`.
+  - Text grammar: a decimal number (drawing units), or `F'`, `F'-I"`, `I"`, `I N/D"`, `F'-I N/D"`, or a decimal with `mm|cm|m`.
+  - The tolerance is max(`tol.dim`, half of the text's last written unit). For example, `8800` gives 0.5 mm, and `6'-6"` gives 0.5 in.
+  - `QF:dim_text_mismatch {text, measured}`: the text parses, and its length ≠ measured × DIMLFAC × factor.
+  - `QF:dim_text_unreadable {text}`: an override that is not a length (`EQ`, `15' TYP`). G3 forbids overrides, and this one cannot be verified.
+  - `QF:dim_not_entity {text}`: a TEXT/MTEXT on a dims layer that parses as a length but is not a DIMENSION entity (an exploded dimension). Each such text is one item.
+- Grid (G1, G2; PLAN sheets; `layers.grid`):
+  - Grid line: a LINE or 2-point LWPOLYLINE that is axis-parallel within `tol.grid`. A skew one is advisory `QF:grid_line_skew`.
+  - Label: the single TEXT/MTEXT whose insertion point lies inside a CIRCLE (on a grid layer) centred on the line (perpendicular distance ≤ `tol.grid`).
+  - `QF:grid_unlabelled`: a line has no bubble label.
+  - `QF:grid_label_conflict`: a line's two bubbles disagree.
+  - `QF:grid_off_axis {pos}`: a grid line is within `tol.grid` of no DXF_WALL rect's axis (centre across the thickness) and of no rect face. Any wall layer counts.
+  - `QF:grid_missing {axis, pos, walls}`: a wall piece on a `layers.bearing` layer, with length ≥ `grid.min_wall_len`, has no parallel grid line within `tol.grid` of its AXIS (G1, R3/R4). Pieces are merged per position within `tol.grid`. A grid on a face does not satisfy G1.
+  - `QF:grid_label_dup`: two lines carry the same label.
+  - `QF:grid_label_series`: a constant-X line is not labelled with a number, or a constant-Y line is not labelled with a letter (G2 / R6).
+  - `QF:grid_label_order`: sorted by position, the labels are not exactly 1..n (left→right) or A..(n), skipping I and O (bottom→top).
+- Plan dimension strings (G3, per side, 4 sides):
+  - A DIMENSION is on side S when its dimension-line point (group 10) lies outside the envelope on S, and it measures along S.
+  - Required spans: (1) the overall envelope extent along S; (2) each consecutive grid-to-grid interval.
+  - Required points: (3) the ends of the union of the exterior wall-pieces' runs on that face. These are the rects whose outer face lies on the envelope face within `tol.grid`; runs within `tol.dim` merge; the points include the envelope corners (R8).
+  - A span is covered by a DIMENSION on S whose [min, max] along S equals it within `tol.dim`. A point is covered by a definition point (13/14) of a DIMENSION on S.
+  - Codes: `QF:dim_missing {side, kind: overall|grid, span}` and `QF:dim_point_missing {side, at}`.
+- Elevations (G4; ELEV sheets that align):
+  - `QF:elev_grid_missing {label}`: a reference-plan grid line runs perpendicular to the face (its axis = the `@HAXIS` axis) and lies within the face extent. The elevation has no grid line with the same label at its projected `h` within `tol.grid`.
+  - `QF:elev_level_mismatch {level}`: a plan `@LEVEL` (every plan in the set), or the elevation's `@ROOF`, has no level line (a layer typed `levelline`) at that z within `tol.level`. The message names the nearest line.
+  - `QF:elev_roof_unstated`: the elevation has no `@ROOF` (the G4 roof datum).
+  - `QF:elev_height_dim_missing {span}`: the datums are the plan levels ∪ `@ROOF`, sorted. Each consecutive interval, and the overall lowest→roof, needs a vertical DIMENSION in that elevation whose z-span (via the `@Z` calibration) equals it within `tol.dim`.
+- Pipeline gaps: every `input.gaps` record whose code is not advisory is blocking, as `GAP:*` with its own code.
+  - Shape: the record's `shape` if given. Otherwise `kind` door/window → openings. Otherwise this stated table:
+    - `slab_*` → slabs; `roof_*` → roof
+    - `wall_*`, `no_elevation_height`, `elevation_height_conflict`, `no_elevation_for_face`, `no_height`, `duplicate_footprint`, `zero_length`, `bad_outline`, `layers_sum_mismatch` → walls
+    - `door_*`, `window_*`, `opening_*`, `fill_*`, `no_lod*`, `lod*`, `no_host*`, `gap_height_conflict`, `no_elevation_match`, `unknown_block`, `no_fill_geometry`, `type_*` → openings
+    - anything else → set
+- `QF:check_skipped {check, need}`: a check cannot run because its input is absent (for example, no plan ops for a PLAN sheet).
+
+**Advisory codes:** `GAP:type_unbound`, `GAP:schedule_conflict`, `GAP:label_*` (L2), `QF:grid_line_skew`, and `QF:dim_override_equal` (an override whose value equals the measurement: G3 forbids it, but the value is right).
+
+**Not checked in v1 (stated):**
+- A storey that has no plan sheet at all. Storeys are known only from plans; elevation datums mix sill, head and ceiling lines (measured above), so they cannot name storeys. The editor's sheet list is where a missing storey shows.
+- Roof plan sheets: dxf2marks has no roof view, and `@VIEW` is PLAN|ELEV only. A roof plan in the set is therefore `QF:sheet_no_role` until a role exists (open question).
+- G5-G7 layer names and door/window symbols.
+
+**Tests** (`tests/dxf2bim/test_qualify.js`, script-written fixtures; each names its issue):
+- Q1: a complete marked fixture set (plan + 4 elevations, real DIMENSIONs, grid on axes) → `qualifies`, 0 blocking.
+- Q2: the same set with the mark layer stripped → blocking is exactly 5×`sheet_no_role` + 5×`units_unstated` + `set_no_plan` + 4×`face_no_elev`, and nothing else.
+- Q3: a jscad-like fixture (header mm, feet-inch dims, unmapped layer) → `units_conflict {implied: in}` + `layer_unmapped`. With `@UNITS=in` stated, the conflict goes.
+- Q4: a two-region file → entities outside the regions are not judged; an `EQ` override gives `dim_text_unreadable`; an equal override is advisory.
+- Q5 (mutation): change one DIMENSION's text in the Q1 set → blocked, exactly one `dim_text_mismatch` carrying that handle.
+- Plus:
+  - every G-check broken once, each named
+  - shuffled entity order gives an identical verdict
+  - the input is unchanged after qualify (hash before = after)
+  - pipeline advisory vs blocking gaps
+
+Real data: `tests/dxf2bim/rosetta_qualify.js`. It reports the true list for each of these and asserts nothing about Duplex passing, since L1 is pending:
+- Duplex marked (elevations from `out/marked_shell`, plus the unmarked ROOF sheet)
+- Duplex stripped (the difference from marked must be marking codes only)
+- jscad (Q3)
+- Farmhouse (Q4)
+- the Q5 mutation on a real DIMENSION (Farmhouse)
+
+Duplex pipeline gaps come from `rosetta_dx_shell.js` (main variant A), which writes them to the git-ignored `out/marked_shell/dx_shell_gaps.json`. Configs are not copied: the DX / Farmhouse / jscad maps and configs move into `tests/dxf2bim/set_configs.js`, and the scripts import them.
+
+### L2.2 Results (2026-10-16; BIMCompiler `deploy/dev/dxf2qualify.js`)
+- `test_qualify.js`: 36/36 PASS.
+  - Q1 qualifies with 0 blocking.
+  - Q2 is exactly 5 `sheet_no_role` + 5 `units_unstated` + `set_no_plan` + 4 `face_no_elev`.
+  - Q3 `units_conflict {in}` + `layer_unmapped`.
+  - Q4 regions / `EQ` / equal override.
+  - Q5: exactly one `dim_text_mismatch` carrying the changed handle.
+  - One break per check (G1-G4, F, U, L, M, K, S, P). Order shuffle gives the same verdict, and the input is unchanged.
+- `rosetta_qualify.js` (real sets): SUMMARY fail=0. Each set: verdict, then blocking items by code.
+  - **Duplex marked (today, L1 pending): blocked, 358 blocking + 28 advisory (`type_unbound`).**
+    - Drawing-standard items:
+      - `grid_missing` 8: the 4 exterior wall axes per plan; the grids sit on the faces
+      - `grid_label_series` 8: letters on constant-X lines
+      - `dim_not_entity` 44: exploded dims plus scale-bar numerals on A-ANNO-DIMS
+      - `dim_missing` 16, `dim_point_missing` 52
+      - `elev_level_mismatch` 4: no Level 2 = 3.1 line; the nearest is 3.2
+      - `elev_height_dim_missing` 12
+      - `layer_unmapped` 31: A-ANNO-SECT on plans; the elevation maps do not exclude A-GRID / A-ANNO-* / A-TTLB / A-ROOF / 0
+      - DX_ROOF: `sheet_no_role` + `units_unstated`, since no roof view exists
+    - Pipeline gaps (variant A):
+      - `opening_unclassified` 76, `wall_below_min_thickness` 40, `no_elevation_height` 36, `no_host_cut` 26, `door_below_min_width` 2, `slab_no_underside` 1
+  - **Duplex stripped:** 94 blocking. The 17 items not in the marked verdict are all marking codes: 6 sheets × (`sheet_no_role` + `units_unstated`), `set_no_plan`, and 4 `face_no_elev`.
+  - **jscad:** 133 blocking: `units_conflict` (63 feet-inch dims vs `$INSUNITS` mm), `units_unstated`, `sheet_no_role`, `layer_unmapped` 9, `setting_missing` 2 (grid / bearing layers), `set_no_plan`, `face_no_elev` 4, and plan-run gaps.
+  - **Farmhouse:** 51 blocking + 1 advisory:
+    - `dim_text_mismatch` 1: elevation dim 44E1 reads `30"` but measures 25.01 in
+    - `dim_text_unreadable` 2 (`EQ`)
+    - `face_no_elev` 3, `elev_roof_unstated`, `layer_unmapped` 2 (title-block layers inside the plan region)
+    - `check_skipped` 2 (the elevation region has no layer map)
+    - `setting_missing` 2
+    - plan-run gaps: `wall_line_unpaired` 26, `unsupported_entity` 7, `wall_pair_ambiguous` 5
+  - Q5 on a real DIMENSION (Farmhouse 1F1A, override `99'-9"`): exactly one new `dim_text_mismatch` 1F1A; total 51 → 52.
+- Regression:
+  - 16 unit suites: SUMMARY fail=0
+  - rosetta_dx_shell: 33/34, the known RF-d roof-top FAIL; its log differs only by the new gap-dump line
+  - farm_heights: log identical
+  - t8_sandbox: identical except timing (configs moved to `set_configs.js`)
+
+### L2.3 Decisions on the L2 open questions (user, 2026-10-16), as rules before code
+(Numbered L2.3 because L2.2 already holds the L2 results.) KISS and non-invent. Each rule names its test. These rules supersede L2.1 wherever they differ.
+Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` regenerated into the git-ignored `2D_Layout/output/STD/`):
+- Header `$DIMLFAC` = 100, yet every dimension block renders 1:1 (block `*D2` text `4835`, measured 4835 mm). The header value is the default for new dimensions, not the factor of the ones that exist (the per-style value is not parsed).
+- All overrides are `<>`.
+- Elevations draw datums LEVEL 1 0, LEVEL 2 3.1, ROOF 6.0 (the model storey "Roof", 4 parapet walls 6.0-6.609) and T/ROOF 6.457 (the highest IfcSlab, R11). Elevation A-WALL rectangles start at 0, 3.1 and 6.0. There is no roof plan sheet.
+- Doors: A-DOOR section contours only, no arcs (`GAP:door_hinge` ×14 in the writer log).
+
+**D1 Roof role.**
+- dxf2marks accepts `@VIEW=ROOF`. It requires `@SET @VIEW @UNITS @LEVEL @ROOF`:
+  - `@LEVEL` = the roof storey level (R1)
+  - `@ROOF` = the roof top (BASIC_SHAPES §5.3)
+- A ROOF sheet gets the role-independent checks (layers, units, dimension texts). It gets no grid or dimension-string checks, because it has no walls.
+- A ROOF sheet's `@LEVEL` is a stated level. Elevation datums and height chains use the plan levels, plus that level, plus `@ROOF`.
+- `QF:set_no_roof` (shape **roof** only): the set has no ROOF sheet; the roof outline needs one (BASIC_SHAPES R-O).
+- `QF:roof_level_mismatch`: an elevation's `@ROOF` differs from the ROOF sheet's `@ROOF` by more than `tol.level`.
+- **Supersedes BIMCompiler BASIC_SHAPES_SPEC §11 CF-2** (merged in #180 while this was being written). CF-2 read a roof plan as "`@VIEW=PLAN` + `@ROOF`, no `@LEVEL`". The marking step of `rosetta_dx_shell.js` that writes `out/marked_shell/DX_ROOF_shell.dxf` now writes `@VIEW=ROOF`, plus `@LEVEL` = the "Roof" storey level from the model (R1: min wall minZ of storey "Roof", as `mark_dx_set.js` does for plans). `@ROOF` is unchanged (the value the elevations agree on).
+  - The L3 Modeller import (`modeller/dxf2bim_import.js`) must read `view === 'ROOF'` as the roof role. This is a one-line change in that lane.
+  - The set run_id changes, because the roof sheet text changes.
+- Tests: QR1 roof sheet present → no roof item; QR2 roof sheet absent → `set_no_roof`, and only the roof shape is blocked; QR3 roof top differs → `roof_level_mismatch`.
+
+**D2 Storeys come only from plans.**
+- Storeys are the `@LEVEL` values of PLAN sheets. A ROOF sheet's `@LEVEL` also counts as stated.
+- `QF:set_storey_unstated {level}`: an elevation shows a level band with no stated level.
+  - A band is a bottom z (through the `@Z` calibration) at which the closed axis-aligned rectangles on `elevwall` layers starting there, taken together, cover the elevation's full width (the min..max h of all its elevwall rectangles, joints ≤ `tol.grid`).
+  - Measured: the old set's wall pieces above windows start at 2.612 and 5.712 but do not span the face, so they are not bands. Its foundation rectangles at −1.25 do span it, and that is the model storey T/FDN, which has no plan.
+- Band bottoms within `tol.level` merge. One item is emitted per unstated z, naming the elevation and its rectangle handles.
+- Nothing is inferred from datum lines or texts.
+- Test: QS1 an elevation band at 6.0 with no plan → `set_storey_unstated 6`.
+
+**D3 Gaps count once, against the final stage.**
+- `input.resolved{sheetId: [handles]}` = the handles that the final shell/cut stage resolved: every opening of a bridged void, those openings' part handles, and every placed fill's handle.
+- `GAP:no_host_cut` and `GAP:opening_unclassified` on a resolved handle are dropped as superseded, and counted in `checks.gaps_superseded`. Every other gap is kept.
+- Interior wall heights:
+  - `GAP:no_elevation_height` on a wall-layer entity (its layer's rule type is `wall` or `wallline` in that sheet's maps) blocks.
+  - The exception is a stated user convention: the new marking `@WALLTOP=<level>,slab_above` (any sheet; `<level>` must equal a PLAN `@LEVEL`, else `QF:walltop_unknown_storey`).
+  - Covered gaps become advisory `QF:convention_applied`, and the verdict lists `conventions: [{level, rule, sheet, handle, source: 'user-stated'}]`.
+  - Never a default: the marking tools do not write it. The rosetta shows the verdict without it and, separately labelled, with it.
+- Tests:
+  - QG1 superseded gaps dropped, others kept
+  - QG2 interior wall gap blocks without `@WALLTOP`
+  - QG3 advisory with it, plus `conventions` listed
+  - QG4 a door's `no_elevation_height` still blocks under `@WALLTOP`
+  - QG5 `@WALLTOP` naming no plan level → `walltop_unknown_storey`
+
+**D4 G1 reader rule for any DXF.**
+- `QF:grid_off_axis` (a stray grid line) is tested against the wall rects of EVERY plan in the set. Per L1.1 R2, one building grid is reused on all plans. Measured: std FF grid C (y −7.8285) has its wall only on GF.
+- `QF:grid_missing` now applies to exterior envelope axes only: wall pieces whose outer face lies on the envelope face within `tol.grid`, with length ≥ `grid.min_wall_len`. Their axes merge within `tol.grid`, and each needs a parallel grid line.
+- Interior grid coverage is a writer-side rule only (L1 W2). The setting `layers.bearing` is removed.
+- Tests: QD4a an interior wall without a grid is not blocked; QD4b an exterior axis without a grid is blocked.
+
+**D5 Dimension overrides.**
+- A numeric text that differs from its measurement → `QF:dim_text_mismatch` (blocking), as before.
+- Recognised drafting notes are advisory `QF:dim_note {note, measured_m}`, with the measured value shown in the message:
+  - `EQ`
+  - `VERIFY` / `V.I.F.`
+  - `<length> TYP` / `TYPICAL` / `VERIFY` / `V.I.F.`, when the length equals the measurement. A differing length is `dim_text_mismatch`.
+- Any other non-length override stays `QF:dim_text_unreadable` (blocking), e.g. `VARIES`, `80" MIN CLEAR`.
+- Displayed text:
+  - An override of `<>` or nothing means the dimension block's single text, which is now checked too. It is the CAD rendering of the measurement.
+  - `$DIMLFAC` from the header is no longer applied (measured above). The measurement is compared at 1:1.
+- Tests: QN1 `EQ` advisory; QN2 `30 TYP` equal → advisory; QN3 `31 TYP` on 30 → mismatch; QN4 `VARIES` → unreadable; QN5 the block text differs from the measurement → mismatch.
+
+**Convergence: markings for the L1 std set** (G8 stays deferred in the writer).
+- `mark_dx_set.js` gains a std profile (`node mark_dx_set.js std`). It reads `2D_Layout/output/STD/DX_*_std.dxf` and writes `tests/dxf2bim/out/marked_std/DX_*_marked.dxf` (copies; originals untouched; git-ignored).
+- Evidence rules are as before:
+  - `@UNITS` from `$INSUNITS` = 4
+  - grids from A-GRID lines plus the nearest single-character label
+  - `@HAXIS` by unique fit against the GF plan grid
+  - `@FACE` from the sheet name (R11)
+  - `@Z` from A-ANNO-LEVL lines paired with their `±z.zzz` texts
+- From the model: `@LEVEL` (R1), and `@ROOF` on elevations (R11 T/ROOF).
+- The std layer maps are new constants in `set_configs.js` (`STD.*`), built from the R12 layer names: A-WALL is the elevation outline, and A-GLAZ-SILL, A-ANNO-NOTE and A-ANNO-TTLB are ignored.
+- The pipeline gaps come from `rosetta_dx_shell.js` with `DXSET=std`. It uses the same pipeline with the std maps. With no roof plan in the std set, the roof-plan stage yields its own gap, so the roof shape stays blocked.
+- `rosetta_qualify.js` reports the std verdict, then the same with `@WALLTOP` stated for both plan levels (labelled user-stated).
+- The expected residue is door items only (no arcs until the door-hinge lane), plus anything this run proves otherwise. That residue is reported, not asserted.
+
+### L2.4 Results of L2.3 (2026-10-16; BIMCompiler branch feat/dxf2bim-qualify-decisions)
+- `test_qualify.js`: 52/52 PASS. This adds QR2/QR3 roof, QS1 band vs window piece, QG1-QG5 gaps-once / `@WALLTOP`, QD4a/b exterior-only grid, and QN1-QN6 notes. Q2 is now exactly 6 `sheet_no_role` + 6 `units_unstated` + `set_no_plan` + `set_no_roof` + 4 `face_no_elev`.
+- **L1 std set, marked from the model (`mark_dx_set.js std`), pipeline `DXSET=std rosetta_dx_shell.js`.** Qualify: **blocked, 132**. Every drawing-standard check passes:
+  - G1 grid on axes and labels
+  - G3 dimension strings, texts and points
+  - G4 elevation grid and level datums
+  - layers, units
+  - Blocking, by cause:
+    - doors: `opening_unclassified` 74 (A-DOOR section contours with no swing arc; the door-hinge lane)
+    - interior wall heights: `no_elevation_height` 40. These become 40 advisory `convention_applied` when the user states `@WALLTOP` → 92.
+    - windows: `no_elevation_match` 5 and `no_host_cut` 5, on the same 5 A-GLAZ handles (GF A3, C2; FF C0, CE, F1). Also, rosetta_dx_shell's DW-windows check finds 9 source windows with no window in the std run, and 4 of them have no gap. Both are for the L1 writer or the reader's glazing match.
+    - slabs: `slab_no_underside` 2. GF has no storey below (§10.8 already says so). FF has no wall end below the top, because the std elevations draw the 2-storey exterior walls continuously from 0 to 6.0 (DB: Level 1 IfcWall z 0..6.0).
+    - roof storey: `set_no_roof` 1 (L1 writes no roof plan); `set_storey_unstated` 1 (elevation band 6.0, the model storey "Roof" with 4 parapet walls, has no plan); `elev_height_dim_missing` 4. The chain 3.1→6.0→6.457 is drawn, but 6.0 is not a stated level until a ROOF sheet states it.
+  - rosetta_dx_shell std: 23 PASS / 8 FAIL: doors, windows, Level 2 slab, roof outline.
+- **Old Duplex set:** 343 blocking.
+  - `set_storey_unstated` −1.25: the foundation band, model storey T/FDN, with no plan.
+  - 18 gaps superseded by the shell/cut stage.
+  - The roof sheet is now `@VIEW=ROOF` with `@LEVEL` 6.
+- Regression:
+  - unit suites 16/16: SUMMARY fail=0
+  - rosetta_dx_shell (old): 35/36, the known RF-d; it differs only in the roof marking line and run_id (expected: the roof sheet text changed)
+  - mark_dx_set old copies: byte-identical
+  - farm_heights: identical
+  - t8: identical except timing
+  - rosetta_qualify: fail=0
+- Finding for L1 (W1): two `std2d.py` runs into different directories give DXFs that differ in the OBJECTS section (LAYOUT / ACDBPLACEHOLDER order).
 
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
