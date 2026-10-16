@@ -452,7 +452,7 @@ function setupClashReporter(A) {
 
       // Query all clashes for this pair — use large page size to get everything
       A._CLASH_PAGE_SIZE = 50000;
-      var w = A._clashWhereParts(rules);
+      var w = A._clashWhereParts(rules, p.discA, p.discB);
       var rows;
       if (A._clashRtreeReady) {
         rows = A._queryClashesPairRtree(null, rules, p.discA, p.discB, 0, w);

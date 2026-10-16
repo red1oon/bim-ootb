@@ -1188,7 +1188,19 @@
       var rescued = rooms.filter(function (r) { return r.door_rescued; }).length;
       var partitioned = rooms.filter(function (r) { return r.door_partitioned; }).length;
       var suspects = rooms.filter(function (r) { return r.suspect; }).length;
-      stZ[st] = ws.reduce(function (s, w) { return s + w[2]; }, 0) / ws.length; // storey z = mean wall centre-z
+      // §STOREY_DATUM_FLOOR (bim-compiler prompts/4D_MODEL_INTEGRITY.md §K.4, 2026-08-27):
+      // a storey datum is its FLOOR, not wall mid-height. The wall row is [cx,cy,cz,bx,by,bz], so a
+      // wall's base is `w[2] - w[5]/2`. This line read `w[2]` (the CENTRE) until 2026-08-27, which
+      // put every Terminal datum 0.64-3.07 m above the real floor; since `schedule_author.js`
+      // §STOREY_DATUM bands by `base_z ∈ [datum_i, datum_i+1)`, an element standing on the Aras 03
+      // floor (base_z ≈ 16.11) fell into the Aras 02 band — EVERY element on EVERY floor was
+      // assigned one level DOWN, uniformly. The uniformity is why §W_D0 passed over it.
+      var _mCentre = ws.reduce(function (s, w) { return s + w[2]; }, 0) / ws.length;
+      stZ[st] = ws.reduce(function (s, w) { return s + (w[2] - w[5] / 2); }, 0) / ws.length; // storey z = mean wall BASE-z (the floor)
+      // §-log the pair, so the next session reads the datum instead of re-deriving it (PRIMAL LAW 3).
+      console.log('§STOREY_DATUM_FLOOR st=' + st + ' walls=' + ws.length +
+        ' meanCentreZ=' + _mCentre.toFixed(3) + ' meanBaseZ=' + stZ[st].toFixed(3) +
+        ' drop=' + (_mCentre - stZ[st]).toFixed(3));
       report.push({
         storey: st, walls: ws.length, doors: doors.length, method: method, roomCount: rooms.length,
         doorRescued: rescued, doorPartitioned: partitioned, suspect: suspects,
@@ -1251,6 +1263,84 @@
     return hits;
   }
 
+  // §CONTAINMENT-ALIAS join, hoisted (FLY_TOUR_DLOD_SCALE.md §13): the per-canonical-floor Z-anchor
+  // join writeRooms() has always used for element containment, factored out so the camera-side room
+  // lookup (buildCameraRoomIndex below) resolves floors with the IDENTICAL math — §11.2 Q2 measured
+  // observable cross-floor mispicks (VÅNING_2 → VÅNING_1) from a naive nearest-cz match that skipped
+  // this. Returns joinKey(storey, cz): canonical floor if the storey label parses, else nearest
+  // anchor by cz, else the raw storey label (unresolvable — no regression fallback).
+  function _makeJoinKey(floorAnchors) {
+    var floorAnchorNames = Object.keys(floorAnchors).sort();
+    function joinKey(storey, cz) {
+      var cf = _canonicalFloor(storey);
+      if (cf !== null) return cf;
+      if (cz === null || cz === undefined || !floorAnchorNames.length) return storey; // unresolvable — raw fallback, no regression
+      var best = null, bd = Infinity;
+      for (var i = 0; i < floorAnchorNames.length; i++) {
+        var d = Math.abs(cz - floorAnchors[floorAnchorNames[i]]);
+        if (d < bd) { bd = d; best = floorAnchorNames[i]; }
+      }
+      return best;
+    }
+    joinKey.anchorNames = floorAnchorNames;
+    return joinKey;
+  }
+
+  // §ROOM_OCCL (FLY_TOUR_DLOD_SCALE.md §13, step 1): camera-side room lookup index, read back from
+  // the COMPILED rooms already persisted in spatial_structure. Same rect test writeRooms() applies
+  // to element centres (abs(x-cx)<=sx/2 && abs(y-cy)<=sy/2), same floor-anchor Z-join (_makeJoinKey
+  // above) — evaluated against the CAMERA's IFC-space position instead of an element's. SUSPECT
+  // rooms are excluded exactly as writeRooms() excludes them from containment (an unreviewed
+  // corridor/void must not become anyone's "current room" either). roomAt() returns the LOGICAL
+  // room guid (room_guid — §MULTI-RECT: N rects, one room) or null (camera in no compiled room —
+  // §13's explicit no-room state; the caller must treat null as "criterion contributes nothing").
+  function buildCameraRoomIndex(db) {
+    // Schema tolerance: room_guid (§MULTI-RECT) is ALTERed in by writeRooms — rooms compiled by an
+    // older walker/patch predate it. Absent column ⇒ every row is its own primary rect (guid).
+    var hasRoomGuid = _rows(db, "PRAGMA table_info(spatial_structure)")
+      .some(function (c) { return c.name === 'room_guid'; });
+    var rows = _rows(db,
+      "SELECT r.guid g, " + (hasRoomGuid ? "r.room_guid" : "NULL") + " rg, " +
+      "r.center_x cx, r.center_y cy, r.center_z cz, " +
+      "r.size_x sx, r.size_y sy, r.predefined_type pt, p.name storey " +
+      "FROM spatial_structure r LEFT JOIN spatial_structure p ON p.guid = r.parent_guid " +
+      "WHERE r.type='IfcSpace' AND r.guid LIKE 'RM\\_%' ESCAPE '\\' AND r.center_x IS NOT NULL " +
+      "AND r.size_x IS NOT NULL AND r.size_y IS NOT NULL");
+    rows = rows.filter(function (r) { return !(r.pt && String(r.pt).indexOf('SUSPECT') === 0); });
+    var acc = {};
+    rows.forEach(function (r) {
+      var cf = _canonicalFloor(r.storey);
+      if (cf !== null) (acc[cf] = acc[cf] || []).push(r.cz);
+    });
+    var anchors = {};
+    Object.keys(acc).forEach(function (cf) {
+      var v = acc[cf];
+      anchors[cf] = v.reduce(function (s, x) { return s + x; }, 0) / v.length;
+    });
+    var joinKey = _makeJoinKey(anchors);
+    var floors = {};
+    rows.forEach(function (r) {
+      var k = joinKey(r.storey, r.cz);
+      if (k === null || k === undefined) return;
+      (floors[k] = floors[k] || []).push({ cx: r.cx, cy: r.cy, sx: r.sx, sy: r.sy, room: r.rg || r.g });
+    });
+    return {
+      rects: rows.length,
+      anchors: anchors,
+      anchorNames: joinKey.anchorNames,
+      floors: floors,
+      roomAt: function (x, y, z) {
+        // camera carries no storey label — always the Z-anchor branch of the join (storey=null)
+        var cand = floors[joinKey(null, z)] || [];
+        for (var i = 0; i < cand.length; i++) {
+          var c = cand[i];
+          if (Math.abs(x - c.cx) <= c.sx / 2 && Math.abs(y - c.cy) <= c.sy / 2) return c.room;
+        }
+        return null;
+      }
+    };
+  }
+
   // Persist a compileRooms() result into spatial_structure + rel_contained_in_space (the --write
   // half of compile_rooms.py's main()). Idempotent: prior compiled rows (RM_%/STC_%) are replaced.
   function writeRooms(db, compiled) {
@@ -1271,11 +1361,31 @@
     // per floor via parent_guid -> IfcBuildingStorey.name. Idempotent on the STC_ prefix.
     db.run("DELETE FROM spatial_structure WHERE type='IfcBuildingStorey' AND guid LIKE 'STC\\_%' ESCAPE '\\'");
     var stStmt = db.prepare("INSERT INTO spatial_structure (guid,type,name,parent_guid,object_type,predefined_type,center_z) VALUES (?,?,?,?,?,?,?)");
-    Object.keys(stZ).sort().forEach(function (st) {
-      if (!allrooms.some(function (r) { return r.storey === st; })) return;
+    // §STOREY_ROW_EMIT (bim-compiler prompts/4D_MODEL_INTEGRITY.md §K.3/§K.4, 2026-08-27):
+    // emit a row for EVERY storey the walker walked, not only those where a room happened to
+    // compile. The old guard here was `if (!allrooms.some(r => r.storey === st)) return;`, which
+    // silently dropped real storeys from spatial_structure — a storey whose rooms were all merged
+    // or rejected still HAS a floor, and `schedule_author.js` §STOREY_DATUM reads these rows as its
+    // band source (`WHERE type='IfcBuildingStorey' AND center_z IS NOT NULL`). A missing row is a
+    // missing band, so every element on that floor was banded onto the floor below it.
+    // The guard was NOT protecting against duplicates: it keyed on rooms, not on whether the DB
+    // already had a storey of that name, and MEASURED on Terminal the shipped DB already carries 6
+    // same-name real rows per storey alongside each STC_ row. Those real rows have center_z NULL on
+    // every shipped DB, so the datum consumer never sees them and cannot be confused by them.
+    // `stZ` only ever holds storeys that PASSED the >=3-wall gate, so this cannot emit a row for a
+    // storey the walker never actually walked.
+    var stKeys = Object.keys(stZ).sort(), stWithRooms = 0;
+    stKeys.forEach(function (st) {
+      if (allrooms.some(function (r) { return r.storey === st; })) stWithRooms++;
       stStmt.run([('STC_' + st).replace(/ /g, '_'), 'IfcBuildingStorey', st, null, 'COMPILED', null, stZ[st]]);
     });
     stStmt.free();
+    // A pass that cannot report a no-op is not a witness (PRIMAL LAW 4): say how many rows the old
+    // guard would have dropped, and say VACUOUS out loud when there was nothing to emit at all.
+    console.log('§STOREY_ROW_EMIT walked=' + stKeys.length + ' withRooms=' + stWithRooms +
+      ' withoutRooms=' + (stKeys.length - stWithRooms) + ' emitted=' + stKeys.length +
+      ' (old guard would have emitted ' + stWithRooms + ')' +
+      (stKeys.length === 0 ? ' VACUOUS: no storey passed the >=3-wall gate — this 0 means nothing' : ''));
     // remove any prior compiled rooms (idempotent)
     db.run("DELETE FROM spatial_structure WHERE type='IfcSpace' AND guid LIKE 'RM\\_%' ESCAPE '\\'");
     var roomStmt = db.prepare("INSERT INTO spatial_structure (guid,type,name,parent_guid,object_type,predefined_type," +
@@ -1323,18 +1433,7 @@
       var v = floorAnchorsAcc[cf];
       floorAnchors[cf] = v.reduce(function (s, x) { return s + x; }, 0) / v.length;
     });
-    var floorAnchorNames = Object.keys(floorAnchors).sort();
-    function _joinKey(storey, cz) {
-      var cf = _canonicalFloor(storey);
-      if (cf !== null) return cf;
-      if (cz === null || cz === undefined || !floorAnchorNames.length) return storey; // unresolvable — raw fallback, no regression
-      var best = null, bd = Infinity;
-      for (var i = 0; i < floorAnchorNames.length; i++) {
-        var d = Math.abs(cz - floorAnchors[floorAnchorNames[i]]);
-        if (d < bd) { bd = d; best = floorAnchorNames[i]; }
-      }
-      return best;
-    }
+    var _joinKey = _makeJoinKey(floorAnchors); // §ROOM_OCCL hoist — same math, now shared (see _makeJoinKey)
     // §ROOM-FORM: SUSPECT rooms get no element containment — an unreviewed corridor/void must not
     // capture elements away from real rooms.
     allrooms.forEach(function (r) {
@@ -1392,6 +1491,11 @@
     floodRooms: floodRooms, partitionByDoors: partitionByDoors,
     mergeRooms: mergeRooms, rejectRooms: rejectRooms, allWallsRaw: allWallsRaw, allDoorsRaw: allDoorsRaw,
     compileRooms: compileRooms, writeRooms: writeRooms, walk: walk,
+    buildCameraRoomIndex: buildCameraRoomIndex,
+    // §S50 (4D_GANTT_TM_REFACTOR.md, 2026-08-21): the containment join, exported so the runtime
+    // location axis (location_axis.js) assigns elements to compiled rooms IN MEMORY with the
+    // IDENTICAL math writeRooms persists — one join, no re-derivation, no drift.
+    _canonicalFloor: _canonicalFloor, _makeJoinKey: _makeJoinKey,
     RES: RES, MIN_AREA: MIN_AREA, DOOR_SHORTFALL_RATIO: DOOR_SHORTFALL_RATIO,
     VERT_FACTOR: VERT_FACTOR, OPEN_PERIM_FACTOR: OPEN_PERIM_FACTOR,
     MERGE_GAP_TOL_FACTOR: MERGE_GAP_TOL_FACTOR, MERGE_SHARE_MIN: MERGE_SHARE_MIN,

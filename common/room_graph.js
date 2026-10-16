@@ -72,6 +72,13 @@
  * `A.dbQuery` convention `common/room_habitability.js` already assumes) — this module is DB/file
  * I/O-free otherwise, so it runs identically in the browser (viewer/modeller) and in a node
  * witness script against sql.js/better-sqlite3.
+ *
+ * §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18) — OPTIONAL `opts.doorRealXY`:
+ * a pre-resolved `{ doorGuid: [x,y] }` map (built by the caller via common/door_real_position.js,
+ * which needs a live db/geoDb handle this file deliberately never touches — see contract above).
+ * When present, overrides a door's coarse center_x/y with its real world-AABB centre for E1/E2/E4/E9
+ * matching AND the doorwp waypoint the drawn polyline hugs. Omitted, or no entry for a given door →
+ * IDENTICAL behaviour to before this option existed.
  */
 (function () {
   'use strict';
@@ -79,9 +86,43 @@
   // §G3-REVISED (PATH_LEGAL_SEGMENTS.md) — pack/unpack + lookup for the offline-precomputed
   // per-storey walkable raster (scripts/build_storey_walkable_raster.js). Dual-mode like this file.
   var StoreyRaster = (typeof module !== 'undefined' && module.exports) ? require('./storey_raster.js') : ROOT.StoreyRaster;
+  // EXIT_DETECTION.md T1/T2 — the measured "raster + footprint" exterior-door test's footprint
+  // half. Dual-mode like StoreyRaster above.
+  var StoreyFootprint = (typeof module !== 'undefined' && module.exports) ? require('./storey_footprint.js') : ROOT.StoreyFootprint;
+  // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22) — the utility-room
+  // classifier, dual-mode loaded exactly like HallwayBackbone/StoreyRaster above. Reused (not
+  // reinvented) from common/room_habitability.js `classifyUtilityRooms()` — the SAME real element-
+  // composition signal (ACMV IfcFlowSegment duct-dominance or pure IfcFooting) already used by the
+  // Type-lens display (viewer/navigate_find.js), batched for perf (proven safe on Hospital's 311
+  // rooms). buildGraph() below uses it to TAG utility room nodes; _buildAdjacency() applies a
+  // routing-cost penalty (NOT removal) to any edge touching one — see UTILITY_EDGE_PENALTY.
+  var RoomHabitability = (typeof module !== 'undefined' && module.exports) ? require('./room_habitability.js') : ROOT.RoomHabitability;
 
   // Ported verbatim from scripts/compile_rooms.py — see file header. Not a new number.
   var DOOR_BUFFER_SLACK = 0.20;
+  // §STAIR-TIME-WEIGHT (EXIT_DETECTION.md PART 2, 2026-09-11): a real, commonly-cited evacuation-
+  // engineering convention (SFPE Handbook-style: ~0.6-0.8 m/s descending/ascending stairs vs
+  // ~1.2-1.5 m/s on a flat corridor) but NOT pinned to a specific cited edition/clause this
+  // session — treat as an editable placeholder pending citation, same disclosure discipline as
+  // Structural Sanity's span/depth ratios. Converts a stair's real sloped travel distance into
+  // "equivalent corridor metres" so E3 edge weights stay commensurable with every other edge kind
+  // in this graph (E1/E2/E4 are already real plan-distance metres) — do NOT switch to a time unit
+  // for just this one edge kind.
+  var STAIR_SPEED_MPS = 0.7;
+  var CORRIDOR_SPEED_MPS = 1.3;
+  // §UTILITY-ROUTING-PENALTY: cost multiplier applied in _buildAdjacency() to any weighted edge
+  // that touches a utility-classified room node (node.isUtility). This is the "penalise, prefer
+  // circulation" design target VIEWER_FIND_PANEL_ROOM_ACCURACY.md §9/§10 named — a cabling/service
+  // room stays REACHABLE (a maintenance-access "find path to the closet" query still resolves, just
+  // costs more), but ordinary room→room routing never treats it as an equal-weight circulation hop.
+  // Value chosen (not tuned to a fixture): real room-center-to-room-center edges in these buildings
+  // run ~3–12m and a corridor alternative "a few hops longer" adds ~10–40m; ×8 makes even a single
+  // ~5m utility hop cost ~40m, and a THROUGH-route (two touching edges, entry+exit, both penalised)
+  // cost ~80m — reliably losing to any realistic corridor detour a few hops longer — while staying
+  // finite (a multiplier, never Infinity/edge-removal, so reachability is preserved per §10's own
+  // "do NOT hard-exclude" requirement). A path whose destination IS the utility room pays the
+  // penalty on only its single arrival edge, which is fine/expected.
+  var UTILITY_EDGE_PENALTY = 8;
   // §DOOR-NOT-ROOM ported verbatim from scripts/compile_rooms.py NON_ROOM_DOOR_NAMES.
   var NON_ROOM_DOOR_NAMES = ['liftdeur', 'lift', 'elevator', 'aufzug', 'fahrstuhl', 'hoist'];
   function isRoomDoor(name) {
@@ -157,9 +198,71 @@
     }
     flightRows = flightRows.concat(mergedAssemblyRows);
 
-    var groups = {}, order = [];
-    flightRows.forEach(function (f) {
-      var key = stairBaseKey(f[1]);
+    // ══ §STAIR-SHAFT-SPLIT (2026-09-20) — ONE NAME IS NOT ONE STAIR ═══════════════════════════
+    // stairBaseKey() strips a trailing /:\d+$/ on the assumption it is a flight index. On a model
+    // that names stairs by TYPE with an element-ID suffix — Revit's default export — that leaves
+    // the type name, which every stair in the building shares. The comment below already records
+    // the consequence for the footprint ("one 84.1 x 63.9m box ... the whole building"); this is
+    // the same defect reaching the GRAPH, where it is worse: the merged group becomes ONE vertical
+    // link, so a building with 62 stairs routes as if it had three.
+    //
+    // MEASURED (tools_poc_stair_grouping.js, calculation-only, the whole fleet — §GRAPH-FOUNDATION
+    // requires the POC gate before the engine):
+    //   Hospital      62 rows, 11 name keys, worst merge 26 rows spanning  78.1 m
+    //   LTU_AHouse    80 rows, 18 name keys, worst merge 24 rows spanning 128.6 m
+    //   HHS_Office    20 rows,  5 name keys, worst merge 12 rows spanning  54.6 m
+    //   Hospital 2.0, HospitalAuckland, Ifc4_Revit_ARC — same failure, 54-80 m
+    //   Clinic, Terminal, Duplex, jkr — worst merge 1.5-3.0 m, i.e. genuinely ONE shaft
+    //
+    // THE RULE IS SPLIT-ONLY, and that is the whole safety argument: the name key still decides
+    // what MAY group, and plan distance only SUBDIVIDES what it produced. No building can come out
+    // with fewer groups than it has today, so a model the old rule handled correctly is untouched
+    // — measured: Clinic 5->5, Terminal 17->17, Duplex 2->2, jkr 4->4, byte-identical. Only the
+    // broken ones move: Hospital 11->23, LTU_AHouse 18->37, HHS_Office 5->11.
+    // Clustering is single-link on PLAN position: flights of one shaft share an (x,y) footprint as
+    // they climb, separate shafts do not. Transitive, so a run that drifts across its own landings
+    // still forms one cluster (§STAIR-RUN-ENDS measured 3.4 m of real horizontal offset on HHS,
+    // comfortably inside the radius).
+    var STAIR_SHAFT_RADIUS_M = 4.0;
+    var _shaftKey = (function () {
+      var byBase = {};
+      flightRows.forEach(function (f, i) { var b = stairBaseKey(f[1]); (byBase[b] = byBase[b] || []).push(i); });
+      var out = {}, splitBases = 0, splitInto = 0;
+      Object.keys(byBase).forEach(function (b) {
+        var idxs = byBase[b];
+        var parent = idxs.map(function (_, k) { return k; });
+        function find(k) { while (parent[k] !== k) { parent[k] = parent[parent[k]]; k = parent[k]; } return k; }
+        function union(a, c) { a = find(a); c = find(c); if (a !== c) parent[c] = a; }
+        for (var a = 0; a < idxs.length; a++) {
+          for (var c = a + 1; c < idxs.length; c++) {
+            var ra = flightRows[idxs[a]], rc = flightRows[idxs[c]];
+            if (Math.hypot(ra[2] - rc[2], ra[3] - rc[3]) <= STAIR_SHAFT_RADIUS_M) union(a, c);
+          }
+        }
+        var seen = {}, n = 0;
+        idxs.forEach(function (rowIdx, k) {
+          var r = find(k);
+          if (seen[r] === undefined) seen[r] = n++;
+          out[rowIdx] = (n > 1 || seen[r] > 0) ? (b + '#' + seen[r]) : b;
+        });
+        // a base that produced more than one shaft has to be re-labelled consistently
+        if (n > 1) {
+          splitBases++; splitInto += n;
+          idxs.forEach(function (rowIdx, k) { out[rowIdx] = b + '#' + seen[find(k)]; });
+        }
+      });
+      if (splitBases) {
+        log('§ROOM_GRAPH_STAIR_SPLIT baseKeys=' + Object.keys(byBase).length + ' split=' + splitBases +
+          ' into=' + splitInto + ' radius=' + STAIR_SHAFT_RADIUS_M + 'm — one NAME covered several' +
+          ' physically separate shafts; plan distance subdivides it. Split-only: no group is ever' +
+          ' merged that the name key kept apart.');
+      }
+      return out;
+    })();
+
+    var groups = {}, order = [], rowRects = [];
+    flightRows.forEach(function (f, _fi) {
+      var key = _shaftKey[_fi] || stairBaseKey(f[1]);
       if (!groups[key]) {
         groups[key] = { guids: [], cx: 0, cy: 0, n: 0, zlo: Infinity, zhi: -Infinity,
           xlo: Infinity, xhi: -Infinity, ylo: Infinity, yhi: -Infinity,
@@ -185,8 +288,17 @@
       gr.yhi = Math.max(gr.yhi, cy + by / 2);
       if (cz < gr.loRowZ) { gr.loRowZ = cz; gr.loRowX = cx; gr.loRowY = cy; }
       if (cz > gr.hiRowZ) { gr.hiRowZ = cz; gr.hiRowX = cx; gr.hiRowY = cy; }
+      // §STAIR-FOOTPRINT-WALKABLE — this ROW's own footprint and z span, kept separately from the
+      // group aggregate on purpose: a group's xlo..xhi is a name-keyed UNION and on Hospital that
+      // is one 84.1 x 63.9m box (5368 m², the whole building — 61 assembly rows share the base key
+      // "Stair:180mm max riser 280mm going"). Using the group bbox as walkable evidence would have
+      // blanketed every storey and declared every chord legal — the exact concave-AABB overreach
+      // PATH_LEGAL_SEGMENTS.md's own §POCLEG_ROOTCAUSE measured for slabs. Per-row boxes are real
+      // single-flight footprints (a few m² each), so the union stays honest.
+      rowRects.push({ x0: cx - bx / 2, x1: cx + bx / 2, y0: cy - by / 2, y1: cy + by / 2,
+        zlo: cz - bz / 2, zhi: cz + bz / 2 });
     });
-    return { groups: groups, order: order };
+    return { groups: groups, order: order, rowRects: rowRects };
   }
 
   // Build the room-adjacency graph from the SAME building db the Room Lens already reads.
@@ -304,9 +416,57 @@
       } catch (eBb0) { log('§CORRIDOR_ROOM_BACKPROP_ERR ' + eBb0.message); backbone = null; }
     }
 
+    // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classify every
+    // real room node by real element COMPOSITION (RoomHabitability.classifyUtilityRooms — see the
+    // require's own comment) and TAG utility rooms with node.isUtility. _buildAdjacency() then
+    // penalises (never removes) any edge touching a tagged node, so ordinary room→room routing
+    // prefers a corridor over cutting through a cabling/service room while keeping it reachable.
+    // Descriptor shape ({guid,cx,cy,sx,sy,storey}) mirrors navigate_find.js's two existing call
+    // sites; sx/sy are derived here from each logical room's UNION rect bbox (§MULTI-RECT aware —
+    // an L-shaped room's several sub-rects collapse to one covering box, same as a single-rect
+    // room degenerates to its own rect), with the box center used for cx/cy so the descriptor is
+    // self-consistent for the classifier's element range-scan. Batched call — 2 SQL queries total
+    // regardless of room count (the Hospital-311 perf fix baked into classifyUtilityRooms).
+    // Defensive: module absent / query error → no tags, penalty never fires, graph unchanged.
+    var utilityRoomCount = 0;
+    if (RoomHabitability && RoomHabitability.classifyUtilityRooms) {
+      try {
+        var utilDescs = roomOrder
+          // §NEVER-PENALISE-A-CORRIDOR (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): synthetic
+          // CORRIDOR_ROOM::* nodes (injected by §CORRIDOR-ROOM-BACKPROP) ARE circulation by
+          // construction — the very thing routing should PREFER. With the door exemption ignored a
+          // footing under a corridor slab would otherwise tag the corridor itself utility:footing
+          // (measured: Hospital_3 tagged all 8 of its corridor nodes) and penalise the route we want
+          // to favour — exactly backwards. Exclude them from utility classification outright.
+          .filter(function (lg) { return lg.indexOf('CORRIDOR_ROOM::') !== 0; })
+          .map(function (lg) {
+            var g = nodes[lg];
+            var minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+            g.rects.forEach(function (rc) {
+              if (rc.x0 < minx) minx = rc.x0; if (rc.x1 > maxx) maxx = rc.x1;
+              if (rc.y0 < miny) miny = rc.y0; if (rc.y1 > maxy) maxy = rc.y1;
+            });
+            return { guid: lg, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2,
+              sx: maxx - minx, sy: maxy - miny, storey: g.storey };
+          });
+        // §DOOR-EXEMPTION-POLICY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): routing must
+        // ignore classifyUtilityRooms's door-exemption. That exemption ("a room with a nearby door
+        // is a serviced space, not a void") is right for the Type-lens DISPLAY, but for ROUTING it
+        // meant every utility room that could ever be a through-hop (a graph edge REQUIRES a nearby
+        // door) was exempted out — so the penalty never fired on a real door-carrying cabling closet.
+        // ignoreDoorExemption:true classifies by element composition alone, closing that gap.
+        var utilMap = RoomHabitability.classifyUtilityRooms(utilDescs, dbQuery, { ignoreDoorExemption: true }) || {};
+        Object.keys(utilMap).forEach(function (guid) {
+          if (nodes[guid]) { nodes[guid].isUtility = true; nodes[guid].utilityWhy = utilMap[guid]; utilityRoomCount++; }
+        });
+        if (utilityRoomCount) log('§ROOM_GRAPH_UTILITY utilityRooms=' + utilityRoomCount +
+          ' (routing penalty x' + UTILITY_EDGE_PENALTY + ' on touching edges, not removed)');
+      } catch (eUtil) { log('§ROOM_GRAPH_UTILITY_ERR ' + eUtil.message); }
+    }
+
     var doorRows = [];
     try {
-      doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y' +
+      doorRows = dbQuery('SELECT m.guid, m.element_name, m.storey, t.center_x, t.center_y, t.center_z, t.bbox_x, t.bbox_y, t.bbox_z' +
         ' FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid' +
         " WHERE m.ifc_class LIKE 'IfcDoor%' AND m.discipline='ARC' AND t.center_x IS NOT NULL") || [];
     } catch (eDr) { log('§ROOM_GRAPH_DOOR_ERR ' + eDr.message); }
@@ -340,13 +500,22 @@
     // blob behavior per storey if the backbone build finds nothing there (short/doorless corridor,
     // or the module isn't available) — never worse than before, never invents a spine that isn't
     // grounded in real doors+walls.
-    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0, ambiguousResidualRescued = 0;
+    var edges = [], deadend = 0, orphan = 0, ambiguous = 0, nonRoomDoors = 0, e2 = 0, orphanRescued = 0, ambiguousResidualRescued = 0, subHumanDoors = 0;
+    // §HUMAN-HEIGHT-DOOR (2026-08-03, user directive): a door/opening whose own measured clear
+    // height is below human passage height is not a route a person can walk through — hatches,
+    // low service ducts, vent louvres modeled as IfcDoor. 1.5m is deliberately far BELOW any real
+    // code-minimum door height (IBC/ADA egress ~2.03m clear) so it only excludes openings no
+    // building code would ever call a door, never a genuine one. Measured via the door's own
+    // bbox_z (same column doorStats() already reads), never a per-building guess.
+    var SUB_HUMAN_DOOR_HEIGHT = 1.5;
     var spineByStorey = {}; // storey -> [{guid,cx,cy}]
     // §CORRIDOR-WIDTH: real, wall-measured corridor rects (see hallway_backbone.js bucketRect) fed
     // into _pointWalkable()'s room-rects fallback — WITHOUT this, a storey with no walkable raster
     // treats genuine open corridor floor (no room modeled there) as illegal, so a legality detour
     // can never succeed through it no matter how many spine candidate points are added.
     var corridorRectsByStorey = {};
+    var doorRectsByStorey = {}; // §DOOR-THRESHOLD-WALKABLE — real door footprints, see the door loop
+    var stairRectsByStorey = {}; // §STAIR-FOOTPRINT-WALKABLE — real stair-group footprints, see _e3Chain
     if (backbone) {
       try {
         backbone.joined.forEach(function (b, bi) {
@@ -390,9 +559,44 @@
       return best;
     }
 
+    // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): door E1/E2/E4/E9 matching below has
+    // always read the coarse element_transforms.center_x/y — the IFC local-placement ANCHOR, not the
+    // door's real volumetric AABB centre (the same convention bim-ootb #1744 measured+fixed for
+    // modeller/cross_edges.js's §REAL-AABB). Measured impact (§2/§2b of that doc): median offset 20mm
+    // (SampleCastle), and on Duplex 8/14 doors' matched edges actually changed, concentrated in the
+    // §AMBIGUOUS-RESIDUAL-RESCUE (E9) layer. `opts.doorRealXY` is an OPTIONAL, PRE-RESOLVED
+    // { doorGuid: [x,y] } map the caller builds via common/door_real_position.js (which needs a live
+    // db/geoDb handle — kept OUT of this file on purpose, see file header: this module stays DB/file
+    // I/O-free, dual-mode node+browser). Additive/gracefully-degrading: no map, or no entry for a
+    // given door, leaves dx/dy IDENTICAL to today's coarse read — never worse than current behaviour.
+    var doorRealResolved = 0;
     doorRows.forEach(function (d) {
-      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0;
+      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0, bz = d[8];
       if (!isRoomDoor(name)) { nonRoomDoors++; return; }
+      if (opts.doorRealXY && opts.doorRealXY[guid]) {
+        dx = opts.doorRealXY[guid][0]; dy = opts.doorRealXY[guid][1];
+        doorRealResolved++;
+      }
+      if (bz != null && bz > 0 && bz < SUB_HUMAN_DOOR_HEIGHT) {
+        subHumanDoors++;
+        log('§ROOM_GRAPH_SUB_HUMAN_DOOR "' + name + '" height=' + bz.toFixed(2) + 'm storey=' + storey + ' (< ' + SUB_HUMAN_DOOR_HEIGHT + 'm, not human-passable)');
+        return;
+      }
+      // §DOOR-THRESHOLD-WALKABLE (2026-07-25, measured on the Hospital field-report route): a door
+      // opening is walkable BY CONSTRUCTION — it is the only place you can cross a wall — but no
+      // walkable-evidence source covered it. The raster is slab-mesh-derived (a threshold often has
+      // no slab triangle of its own) and room rects stop at the wall face, so a door's own centre
+      // measured `walkable=false` on this route's real doors (737178, 775497) and every chord
+      // through them counted its endpoint illegal, which is also why A* found "no on-floor route"
+      // between two rooms that share a doorway: the rect islands never touched. The door's OWN
+      // measured footprint (`element_transforms.bbox_x/bbox_y`, the same two columns the buffer
+      // below already uses) inflated by the SAME `DOOR_BUFFER_SLACK` this file already applies to
+      // the real wall/doorway sliver — no new constant, no invented geometry, bounded to ~1 x 0.6m
+      // per real door element.
+      (doorRectsByStorey[storey] = doorRectsByStorey[storey] || []).push({
+        x0: dx - bx / 2 - DOOR_BUFFER_SLACK, x1: dx + bx / 2 + DOOR_BUFFER_SLACK,
+        y0: dy - by / 2 - DOOR_BUFFER_SLACK, y1: dy + by / 2 + DOOR_BUFFER_SLACK
+      });
       var buf = Math.max(bx, by) / 2 + DOOR_BUFFER_SLACK;
       var cands = [];
       roomOrder.forEach(function (lg) {
@@ -465,6 +669,8 @@
         }
       }
     });
+    if (opts.doorRealXY) log('§DOOR_REAL_AABB resolved=' + doorRealResolved + '/' + doorRows.length +
+      ' (real world-AABB centre used in place of the coarse center_x/y for that many doors)');
 
     // ── E3: stair/ramp flights bridge two storeys' circulation nodes ──
     // §STAIR-GROUPS: extracted to getStairGroups() below (2026-07-14, §HALLWAY-BACKBONE) so a
@@ -476,13 +682,31 @@
     // phrasing — this function is the one to call, not a new query.
     var stairGroupsResult = getStairGroups(dbQuery, log);
     var flightGroups = stairGroupsResult.groups, flightGroupOrder = stairGroupsResult.order;
+    // §STAIR-FOOTPRINT-WALKABLE (2026-07-25, same finding as §DOOR-THRESHOLD-WALKABLE, measured on
+    // the Hospital field-report route): a stair IS circulation you physically walk on, but it is not
+    // a slab and not a compiled room, so NO walkable-evidence source covered it — all three of this
+    // route's `stairwp` anchors measured `walkable=false`, nearest walkable cell 2.25-5.25m away,
+    // far outside `_astarGrid`'s 1.2m snap, so the same-storey leg `stairwp -> corridor spine` could
+    // never be A*-routed and stayed a 39.5m straight chord with 143 illegal samples. Each real
+    // FLIGHT ROW's own measured footprint (never the name-keyed group union — see getStairGroups)
+    // is registered as walkable on every storey whose elevation the flight physically reaches
+    // (z-band tolerance 0.5m: a flight's own bbox already spans landing to landing).
+    (stairGroupsResult.rowRects || []).forEach(function (rr) {
+      Object.keys(storeyZ).forEach(function (st) {
+        var z = storeyZ[st];
+        if (z == null || z < rr.zlo - 0.5 || z > rr.zhi + 0.5) return;
+        (stairRectsByStorey[st] = stairRectsByStorey[st] || []).push({ x0: rr.x0, x1: rr.x1, y0: rr.y0, y1: rr.y1 });
+      });
+    });
+    log('§STAIR_FOOTPRINT_WALKABLE rows=' + (stairGroupsResult.rowRects || []).length +
+      ' storeys=' + Object.keys(stairRectsByStorey).length);
 
     var e3 = 0, e3Skipped = 0;
     var _e3Seen = {};
     // Shared E3 edge creation (§STAIR-CHAIN): one storey-pair edge per physical stair span, with
     // the stairwp render waypoints at the group's real z ends. Deduped on storeyA|storeyB — two
     // stair groups (or one tower emitting a chain) never produce parallel identical edges.
-    function _e3Chain(sA, sB, gr, key) {
+    function _e3Chain(sA, sB, gr, key, trustRunGeometry) {
       var ek = sA + '|' + sB;
       if (_e3Seen[ek]) return;
       _e3Seen[ek] = 1;
@@ -514,8 +738,25 @@
       if (!nodes[loWp]) nodes[loWp] = { guid: loWp, kind: 'stairwp', name: key + ' (lower)', cx: loX, cy: loY, cz: zLo, storey: (zA <= zB) ? sA : sB };
       if (!nodes[hiWp]) nodes[hiWp] = { guid: hiWp, kind: 'stairwp', name: key + ' (upper)', cx: hiX, cy: hiY, cz: zHi, storey: (zA <= zB) ? sB : sA };
       var wpForA = (zA <= zB) ? loWp : hiWp, wpForB = (zA <= zB) ? hiWp : loWp;
+      // §STAIR-TIME-WEIGHT: real sloped run length (loX,loY,zLo -> hiX,hiY,zHi — the SAME real
+      // per-end positions §STAIR-RUN-ENDS just derived above, not a fresh approximation), not raw
+      // vertical rise alone — a flight with a real horizontal run offset (measured: HHS 3.4m) was
+      // otherwise treated as equal-cost to a sheer vertical drop. ONLY trustworthy when `gr`'s own
+      // global lo/hi rows really are THIS edge's two endpoints (trustRunGeometry, set by the
+      // caller) — a multi-storey stair TOWER's §STAIR-CHAIN splits one `gr` into several
+      // consecutive-floor edges (§STAIR-CHAIN above), and `gr.loRowX/hiRowX` stay the group's
+      // GLOBAL extremes across every call, not this one link's real local endpoints; using them
+      // for an intermediate link measured a bogus ~70m "run" on real Hospital data (the building's
+      // full stair-corner-to-stair-corner drift, not one floor's flight) — caught by this session's
+      // own witness before shipping, not assumed safe. Untrusted links fall back to the rise-only
+      // proxy (honest — no horizontal claim this code cannot actually verify for that link).
+      // Converted to equivalent corridor metres either way so stairs are never cheaper than the
+      // old vertical-rise proxy (flightLength >= rise always, STAIR_SPEED_MPS < CORRIDOR_SPEED_MPS).
+      var flightLength = trustRunGeometry
+        ? (Math.hypot(hiX - loX, hiY - loY, zHi - zLo) || Math.abs(gr.zhi - gr.zlo))
+        : Math.abs(zHi - zLo);
       edges.push({ a: circA, b: circB, doorGuid: repGuid, doorName: key, storey: sA + ' / ' + sB,
-        kind: 'E3', w: Math.abs(zB - zA) || Math.abs(gr.zhi - gr.zlo), wpA: wpForA, wpB: wpForB });
+        kind: 'E3', w: (flightLength / STAIR_SPEED_MPS) * CORRIDOR_SPEED_MPS, wpA: wpForA, wpB: wpForB });
       e3++;
     }
     flightGroupOrder.forEach(function (key) {
@@ -542,7 +783,7 @@
         // shared edge-creation below stays single-source. Duplicate physical stairs produce the
         // same chain — deduped by _e3Seen.
         for (var ci = 1; ci + 1 < contained.length; ci++) {
-          _e3Chain(contained[ci], contained[ci + 1], gr, key);
+          _e3Chain(contained[ci], contained[ci + 1], gr, key, false); // intermediate chain link — see §STAIR-TIME-WEIGHT
         }
         // §STAIR-TOWER-ENDS (SampleCastle, 2026-07-13): storeyZ is MEAN WALL-CENTER z, which sits
         // roughly half a wall above the floor a stair's top actually lands on — so a tower whose
@@ -555,12 +796,12 @@
         var lastC = contained[contained.length - 1], lastIdx = storeysSorted.indexOf(lastC);
         if (lastIdx + 1 < storeysSorted.length) {
           var nxtS = storeysSorted[lastIdx + 1], gapUp = storeyZ[nxtS] - storeyZ[lastC];
-          if (gapUp > 0 && (gr.zhi - storeyZ[lastC]) >= 0.3 * gapUp) _e3Chain(lastC, nxtS, gr, key);
+          if (gapUp > 0 && (gr.zhi - storeyZ[lastC]) >= 0.3 * gapUp) _e3Chain(lastC, nxtS, gr, key, false);
         }
         var firstC = contained[0], firstIdx = storeysSorted.indexOf(firstC);
         if (firstIdx - 1 >= 0) {
           var prvS = storeysSorted[firstIdx - 1], gapDn = storeyZ[firstC] - storeyZ[prvS];
-          if (gapDn > 0 && (storeyZ[firstC] - gr.zlo) >= 0.3 * gapDn) _e3Chain(prvS, firstC, gr, key);
+          if (gapDn > 0 && (storeyZ[firstC] - gr.zlo) >= 0.3 * gapDn) _e3Chain(prvS, firstC, gr, key, false);
         }
         sA = contained[0]; sB = contained[1];
       } else if (contained.length === 1) {
@@ -581,7 +822,12 @@
         if (!below.length || !above.length) { e3Skipped++; return; }
         sA = below[below.length - 1]; sB = above[0];
       }
-      _e3Chain(sA, sB, gr, key);
+      // §STAIR-TIME-WEIGHT trust: gr's own zlo/zhi rows are this SPECIFIC edge's real endpoints
+      // only when the group doesn't span a 3+-storey chain past this one link (contained.length<=2
+      // covers the single-flight/simple-2-floor cases above, where sA/sB really are the group's
+      // whole span) — a 3+-storey tower's bottom link (contained[0]-contained[1]) still borrows the
+      // group's GLOBAL top row for its own "hi" end, same imprecision as the chain-interior calls.
+      _e3Chain(sA, sB, gr, key, contained.length <= 2);
     });
 
     // §CIRC-SPINE-BRIDGE (2026-07-14, real regression found via user screenshot + HHS report):
@@ -639,41 +885,13 @@
     });
     if (circBridges) log('§CIRC_SPINE_BRIDGE bridged=' + circBridges);
 
-    // ── E4: escape — the existing nonRoomDoors detection becomes an N-EXIT node (free fire-escape
-    // target); connect the nearest room-or-circ node on that storey (real distance, not invented).
-    var exits = 0, e4 = 0;
-    doorRows.forEach(function (d) {
-      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5];
-      if (isRoomDoor(name)) return; // only the name-filtered set — see file header
-      var exitGuid = 'EXIT::' + guid;
-      nodes[exitGuid] = { guid: exitGuid, kind: 'exit', name: 'Exit — ' + (name || guid), storey: storey,
-        cx: dx, cy: dy, cz: dz };
-      order.push(exitGuid); exits++;
-      var best = null, bestD = Infinity;
-      order.forEach(function (lg) {
-        var g = nodes[lg];
-        if (g.guid === exitGuid || g.storey !== storey) return;
-        if (g.kind !== 'room' && g.kind !== 'circ') return;
-        var dd = Math.hypot(g.cx - dx, g.cy - dy);
-        if (dd < bestD) { bestD = dd; best = lg; }
-      });
-      if (best) {
-        edges.push({ a: best, b: exitGuid, doorGuid: guid, doorName: name, storey: storey, kind: 'E4', w: bestD });
-        e4++;
-      }
-    });
-
-    var circCount = order.filter(function (lg) { return nodes[lg].kind === 'circ'; }).length;
-    log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
-      ' edges=' + edges.filter(function (e) { return e.kind === 'E1'; }).length +
-      ' deadend=' + deadend + ' orphan=' + orphan + ' orphanRescued=' + orphanRescued + ' ambiguous=' + ambiguous +
-      ' ambiguousResidualRescued=' + ambiguousResidualRescued +
-      ' circ=' + circCount + ' stairs=' + e3 + ' (skipped=' + e3Skipped + ') exits=' + exits + ' e2=' + e2);
 
     // §G3-REVISED (PATH_LEGAL_SEGMENTS.md): read-only lookup of the offline-precomputed per-storey
     // walkable raster (scripts/build_storey_walkable_raster.js self-heals this table onto a
     // building's db). Defensive: table absent (older patch / building not yet mined) -> rasters
     // stays {} and shortestPath()'s chord-legality test falls back to roomRectsByStorey alone.
+    // Moved above the (former) E4 block — EXIT_DETECTION.md's real exit test (below) needs rasters
+    // + a footprint built from them, both BEFORE the exits count can be computed and logged.
     var rasters = {};
     try {
       var rasterRows = dbQuery('SELECT storey,res,x0,y0,cols,rows,bits FROM storey_walkable_raster') || [];
@@ -687,6 +905,277 @@
       g.rects.forEach(function (rc) { roomRectsByStorey[g.storey].push(rc); });
     });
 
+    // ── E4: exit detection, REVIVED correctly (EXIT_DETECTION.md, 2026-09-11) ──
+    // §G1-EXIT-IS-A-LIFT-DOOR (removed 2026-07-26, OCCUPANT_PATHFINDER.md work order step 1): the
+    // old E4 turned every door FAILING isRoomDoor() (a LIFT-NAME test) into an EXIT:: node — nothing
+    // in it ever tested whether a door faces outside. Fleet-measured: the only exits it ever produced
+    // (Terminal, 5) were all elevator doors. That shipped a lift as Fly Tour's `entrance` and would
+    // have routed escapeRoute() INTO a lift. Reverted; `exits` stayed 0 fleet-wide as "the HONEST
+    // state, not a regression" pending "a real exit node returns when the MEASURED exterior test
+    // lands (work order step 2: sample either side of a door against the storey walkable raster +
+    // footprint)". That measured test is common/storey_footprint.js (this session) — see its own
+    // header for the flood-fill algorithm that tells a real exterior side apart from an internal
+    // void (atrium/shaft) the raster alone can't cover. Independent of isRoomDoor entirely — a real
+    // exit is a GEOMETRIC fact (which side of the door is confirmed outside), never a name guess, so
+    // this pass tests every ARC door regardless of the E1/E2 loop's own name-based branching above
+    // (same "additive only, never touches E1/E2's own room-facing logic" discipline as the orphan-
+    // spine/ambiguous-residual rescues elsewhere in this file).
+    // §EXIT-SAMPLE-CLEARANCE (measured, not assumed): a sample offset of just-past-the-frame
+    // (halfThickness + one raster cell, 0.25m) under-detects — validated on real HHS data (1/133
+    // candidates) vs the work order's own cited "HHS yields 3 candidates of 133 doors". Sweeping
+    // the clearance margin (0.25/0.5/0.75/1.0/1.5m) on both HHS and Hospital shows 1.0m is where
+    // HHS's count matches that cited figure exactly (3/133) while Hospital's stays stable and
+    // plausibly ground-floor-concentrated (7->8, still all Level 1) rather than ballooning — a
+    // small step-back is needed to clear the doorway/vestibule transition zone, not just the door
+    // frame itself, before a sample point is unambiguously deep-interior or deep-exterior. UNCITED
+    // (no code/SFPE clearance-zone reference checked this session) — same disclosure discipline as
+    // EXIT_DETECTION.md's own stair-speed constants; treat as an editable placeholder.
+    var EXIT_SAMPLE_CLEARANCE_M = 1.0;
+    var exits = 0, exitsNoRaster = 0;
+    var footprints = {};
+    function _footprintFor(storey) {
+      if (!rasters[storey] || !StoreyFootprint) return null;
+      if (!(storey in footprints)) footprints[storey] = StoreyFootprint.buildFootprint(rasters[storey]);
+      return footprints[storey];
+    }
+    doorRows.forEach(function (d) {
+      var guid = d[0], name = d[1] || '', storey = d[2] || '', dx = d[3], dy = d[4], dz = d[5], bx = d[6] || 0, by = d[7] || 0;
+      var raster = rasters[storey], footprint = _footprintFor(storey);
+      if (!raster || !footprint) { exitsNoRaster++; return; } // fleet coverage gap — unknown/unavailable, NEVER a name guess
+      var longX = bx >= by; // width axis; the OTHER axis is the door's thickness (through-wall) axis
+      var halfThick = (longX ? by : bx) / 2;
+      var offset = halfThick + EXIT_SAMPLE_CLEARANCE_M; // clear the door frame + the transition zone
+      var p1, p2;
+      if (longX) { p1 = { x: dx, y: dy - offset }; p2 = { x: dx, y: dy + offset }; }
+      else { p1 = { x: dx - offset, y: dy }; p2 = { x: dx + offset, y: dy }; }
+      var in1 = raster.contains(p1.x, p1.y), in2 = raster.contains(p2.x, p2.y);
+      var out1 = !in1 && footprint.isOutside(p1.x, p1.y);
+      var out2 = !in2 && footprint.isOutside(p2.x, p2.y);
+      if (!((in1 && out2) || (in2 && out1))) return; // not a measured exit — most doors, correctly
+
+      // Real exit candidate — connect it into the graph the same way E1/E2 connect any door: nearest
+      // room within the standard buffer, else the storey's own circulation spine/blob (never dangling).
+      var eg = 'EXIT::' + guid;
+      if (!nodes[eg]) { nodes[eg] = { guid: eg, kind: 'exit', name: name, storey: storey, cx: dx, cy: dy, cz: dz }; order.push(eg); }
+      var buf = Math.max(bx, by) / 2 + DOOR_BUFFER_SLACK;
+      var nearestRoom = null, nearestRoomDist = Infinity;
+      roomOrder.forEach(function (lg) {
+        var g = nodes[lg];
+        if (g.storey !== storey) return;
+        var best = Infinity;
+        for (var i = 0; i < g.rects.length; i++) best = Math.min(best, rectDist(g.rects[i], dx, dy));
+        if (best <= buf && best < nearestRoomDist) { nearestRoomDist = best; nearestRoom = lg; }
+      });
+      if (nearestRoom) {
+        edges.push({ a: nearestRoom, b: eg, doorGuid: guid, doorName: name, storey: storey, kind: 'E4', w: nearestRoomDist });
+      } else {
+        var nearSpine = nearestSpine(storey, dx, dy);
+        var cg = nearSpine ? nearSpine.guid : circNode(storey, dx, dy, dz);
+        var w = nearSpine ? Math.hypot(nearSpine.cx - dx, nearSpine.cy - dy) : undefined;
+        edges.push({ a: cg, b: eg, doorGuid: guid, doorName: name, storey: storey, kind: 'E4', w: w });
+      }
+      exits++;
+      log('§EXIT_CANDIDATE guid=' + guid + ' storey=' + storey + ' name="' + name + '" side_in=' +
+        (in1 ? 'p1' : 'p2') + ' side_out=' + (out1 ? 'p1' : 'p2'));
+    });
+    log('§ROOM_GRAPH_EXITS exits=' + exits + ' noRaster=' + exitsNoRaster + ' of ' + doorRows.length + ' doors');
+
+    var circCount = order.filter(function (lg) { return nodes[lg].kind === 'circ'; }).length;
+    log('§ROOM_GRAPH nodes=' + roomOrder.length + ' doors=' + doorRows.length + ' nonRoomDoors=' + nonRoomDoors +
+      ' subHumanDoors=' + subHumanDoors +
+      ' edges=' + edges.filter(function (e) { return e.kind === 'E1'; }).length +
+      ' deadend=' + deadend + ' orphan=' + orphan + ' orphanRescued=' + orphanRescued + ' ambiguous=' + ambiguous +
+      ' ambiguousResidualRescued=' + ambiguousResidualRescued +
+      ' circ=' + circCount + ' stairs=' + e3 + ' (skipped=' + e3Skipped + ') exits=' + exits + ' e2=' + e2);
+
+    // ── §ROOM-SPINE-BRIDGE + §BRIDGE-WALL-LEGAL (OCCUPANT_PATHFINDER.md, 2026-07-25) ──
+    // A room with ZERO edges is unroutable: §CONNECTED-STOPS drops it, Find cannot path to it, and
+    // on Hospital that stranded 42 rooms (room-pair pathability 56.2%) INCLUDING the building's
+    // largest space (315.7 m² atrium). E1 is door-based, and a low-enclosure space has no door on
+    // its boundary — the property that earns it SUSPECT_OPEN. Two alternatives were falsified on a
+    // real fixture first: widening the door slack (cannot reach rooms whose nearest door is 8-10m;
+    // needs a 5x constant move) and room-to-room rect adjacency (0 of 42 have a neighbour ROOM rect
+    // within RES — compiled rooms do not tile the floor). Circulation IS in reach: the atrium's
+    // nearest spine point is 1.31m away.
+    // §BRIDGE-WALL-LEGAL — the review's correction, and it is the point of the whole edge: an
+    // UNVALIDATED bridge is an INVENTED PASSAGE. The first cut emitted 40 bridges of which 17
+    // exceeded 15m and the longest was 45.7m, each stored as doorName 'Opening onto corridor' with
+    // doorGuid null — Find would happily route a user through 45.7m of solid wall. So the segment
+    // must be MEASURED, not asserted: sample room-centre -> spine point and require ZERO illegal
+    // samples via the engine's own _chordIllegalCount (raster when the storey has one, room/corridor
+    // rects otherwise — the same predicate shortestPath's legalizer already trusts). This block
+    // therefore lives HERE, after `rasters` and `roomRectsByStorey` exist, not up beside the circ
+    // bridge. Candidates are tried nearest-first and the first LEGAL one wins; if none is legal the
+    // room stays deg-0 ON PURPOSE. A graph that admits a gap is recoverable; one that invents a
+    // passage produces confidently wrong egress/MEP/quantity answers downstream.
+    var roomBridges = 0, bridgeRejected = 0;
+    var _legalCtx = { rasters: rasters, roomRectsByStorey: roomRectsByStorey,
+                      corridorRectsByStorey: corridorRectsByStorey, doorRectsByStorey: doorRectsByStorey,
+                      stairRectsByStorey: stairRectsByStorey };
+    // §SPINE-BRIDGE-CLUSTER (2026-08-05, OCCUPANT_PATHFINDER.md — real LTU_AHouse field report):
+    // the old test skipped any room with SOME degree, on the assumption that any edge at all means
+    // "already reachable". False for a room-PAIR island: R1's only edge is its door to R2, and
+    // neither reaches circulation — the pair is a 2-node component with zero outward edges, but
+    // neither node is individually zero-degree so the old per-node check never even tried them
+    // (measured: LTU_AHouse VÅNING 4 stranded 8 of 12 rooms this way). Union-find the E1 (room-room
+    // door) edges into components and bridge by COMPONENT: a component needs an attempt only if
+    // NONE of its members already has a non-E1 edge (i.e. none reaches spine/circ/doorwp-to-spine).
+    // This subsumes the old zero-degree case (a size-1 component with no outward edge) — same
+    // legality test, same nearest-first/first-legal-wins rule, just ranking candidates across every
+    // member of the component instead of one room's own centre.
+    var _ufParent = {};
+    order.forEach(function (lg) { if (nodes[lg].kind === 'room') _ufParent[lg] = lg; });
+    function _ufFind(x) { while (_ufParent[x] !== x) { x = _ufParent[x]; } return x; }
+    function _ufUnion(a, b) { var ra = _ufFind(a), rb = _ufFind(b); if (ra !== rb) _ufParent[ra] = rb; }
+    var hasOutward = {};
+    edges.forEach(function (e) {
+      if (e.kind === 'E1') {
+        if (_ufParent[e.a] !== undefined && _ufParent[e.b] !== undefined) _ufUnion(e.a, e.b);
+      } else {
+        hasOutward[e.a] = true; hasOutward[e.b] = true;
+      }
+    });
+    var components = {};
+    order.forEach(function (lg) {
+      if (nodes[lg].kind !== 'room') return;
+      var root = _ufFind(lg);
+      (components[root] = components[root] || []).push(lg);
+    });
+    Object.keys(components).forEach(function (root) {
+      var members = components[root];
+      if (members.some(function (m) { return hasOutward[m]; })) return; // component already reaches circulation
+      var storey = nodes[members[0]].storey;
+      var pts = spineByStorey[storey];
+      if (!pts || !pts.length) return;
+      // rect distance ranks candidates (a long room's centre can be far from a corridor its EDGE
+      // touches); the LEGALITY test uses centre->spine, which is the segment a router actually draws.
+      // Ranked across EVERY member of the component, not just one room's centre — any member
+      // reaching the spine reconnects the whole component via its own internal E1 edges.
+      var ranked = [];
+      members.forEach(function (mlg) {
+        var mg = nodes[mlg];
+        pts.forEach(function (p) {
+          var d;
+          if (mg.rects && mg.rects.length) {
+            d = Infinity;
+            for (var ri = 0; ri < mg.rects.length; ri++) {
+              var rc = mg.rects[ri];
+              var ddx = Math.max(0, Math.max(rc.x0 - p.cx, p.cx - rc.x1));
+              var ddy = Math.max(0, Math.max(rc.y0 - p.cy, p.cy - rc.y1));
+              var dd = Math.hypot(ddx, ddy);
+              if (dd < d) d = dd;
+            }
+          } else {
+            d = Math.hypot(p.cx - mg.cx, p.cy - mg.cy);
+          }
+          ranked.push({ g: mg, p: p, d: d });
+        });
+      });
+      ranked.sort(function (a, b) { return a.d - b.d; });
+      for (var k = 0; k < ranked.length; k++) {
+        var g = ranked[k].g, sp = ranked[k].p;
+        // §BRIDGE-ROUTED-LEGAL (2026-07-25, review correction to §BRIDGE-WALL-LEGAL above):
+        // _chordIllegalCount samples a STRAIGHT segment — that is a visibility test, not a
+        // connectivity test. A person leaving a 9.7x34.1m atrium walks through the opening and
+        // TURNS; nothing says their route to the corridor is a straight line. So "the straight
+        // chord is not walkable" never established "no walkable route exists", and rejecting on it
+        // is as unmeasured a claim as the unvalidated bridges §BRIDGE-WALL-LEGAL was written to
+        // kill — just erring the other way. _astarHop is the honest predicate and it already
+        // exists in this file, over the SAME walkable evidence (_pointWalkable, raster-first) that
+        // the straight test reads: [] = the straight segment is itself on-floor (fast path, most
+        // bridges), [pts] = an on-floor ROUTE exists (its turn points), null = A* searched and
+        // found none. It carries its own §ON-FLOOR-GUARANTEE re-verification, so an accepted
+        // routed bridge is verified end to end, anchors included.
+        // The edge WEIGHT is the routed length, never the straight distance — an edge that claims
+        // a shorter walk than the only real way there is the same class of lie as an invented
+        // passage. Nothing else changes: candidates are still tried nearest-first, the first
+        // ACCEPTED one wins, and a component with no route stays disconnected ON PURPOSE (REJECT).
+        // _buildPolyline re-derives the same A* interior points at render time, so the drawn route
+        // follows the floor without this block having to store geometry on the edge.
+        var hop = _astarHop(_legalCtx, { storey: storey, cx: g.cx, cy: g.cy },
+                                       { storey: storey, cx: sp.cx, cy: sp.cy });
+        if (hop === null) continue; // A* searched the walkable evidence and found no on-floor route
+        var w = Math.hypot(sp.cx - g.cx, sp.cy - g.cy), routedVia = 'straight';
+        if (hop.length) {
+          var px = g.cx, py = g.cy, L = 0;
+          for (var hp = 0; hp < hop.length; hp++) { L += Math.hypot(hop[hp].x - px, hop[hp].y - py); px = hop[hp].x; py = hop[hp].y; }
+          w = L + Math.hypot(sp.cx - px, sp.cy - py);
+          routedVia = 'routed(' + hop.length + ' turns)';
+        }
+        edges.push({ a: g.guid, b: sp.guid, doorGuid: null, doorName: 'Opening onto corridor',
+                     storey: storey, kind: 'E6', w: w, wpA: sp.guid });
+        roomBridges++;
+        log('§ROOM_SPINE_BRIDGE' + (members.length > 1 ? '_CLUSTER' : '') + ' room="' + (g.name || g.guid) + '" storey=' + storey +
+            (members.length > 1 ? ' clusterSize=' + members.length + ' clusterMembers=' + members.join(',') : '') +
+            ' spine=' + sp.guid + ' gap=' + ranked[k].d.toFixed(2) + 'm walk=' + w.toFixed(2) + 'm via=' + routedVia);
+        return;
+      }
+      bridgeRejected++;
+      // §SEALED-ROOM (2026-08-03, user directive): a room with zero edges even after every rescue
+      // (E1 door-touch, E2 lone-door, E6 spine-bridge with A*-verified walkable route) is not a
+      // routing failure to keep retrying — it is a genuine dead end by the best evidence this graph
+      // has. Marked, not deleted: the room still exists (real IFC data), it just cannot be a Find
+      // Panel From/To target. Rejection is now per-COMPONENT (the E1 union-find bridge-by-component
+      // change above), so every member of a rejected component is sealed — a cluster of E1-linked
+      // rooms with no way out is a dead end as a WHOLE, not just its nearest-ranked member.
+      members.forEach(function (mlg) { nodes[mlg].sealed = true; });
+      log('§ROOM_SPINE_BRIDGE_REJECT' + (members.length > 1 ? '_CLUSTER' : '') + ' storey=' + storey +
+          (members.length > 1 ? ' clusterSize=' + members.length + ' clusterMembers=' + members.join(',')
+                               : ' room="' + (nodes[members[0]].name || members[0]) + '"') +
+          ' candidates=' + ranked.length + ' nearest=' + (ranked.length ? ranked[0].d.toFixed(2) : '?') + 'm — no walkable route (straight or A*), marked sealed');
+    });
+    if (roomBridges || bridgeRejected)
+      log('§ROOM_SPINE_BRIDGE bridged=' + roomBridges + ' rejected=' + bridgeRejected + ' sealed=' + bridgeRejected);
+
+    // ══ §WALK-Z (2026-09-20) — ONE HEIGHT PER STOREY FOR THE DRAWN LINE ════════════════════════
+    // red1: "fix P2, the sawtooth." MEASURED on Hospital_silent, the DB the film bakes:
+    //   Level 1  room/spine 168.61   doorwp/exit 166.87   -> 1.74 m apart
+    //   Level 2  room/spine 174.16   doorwp      172.87   -> 1.29 m
+    //   Level 4  room/spine 183.82   doorwp      182.87   -> 0.95 m
+    // `storeyZ` is the average of each storey's ROOMS' centre z — room MID-HEIGHT — while a doorwp
+    // carries the DOOR's own centre. Neither is the floor, and they differ by roughly
+    // (roomHeight - doorHeight)/2. _buildPolyline pushes A* interior points at the FROM anchor's z
+    // and then the arrival anchor at its own, so every room->door->room hop stepped down and back
+    // up. On the escape route that was 11 vertical steps totalling 28.98 m, of which only 15.21 m
+    // was the real stair: 13.77 m of phantom climb in a walk that is measured in 3D, and a visibly
+    // bobbing line for half its length.
+    //
+    // AND A SECOND, WORSE ONE: Levels 3 and 5 have NO datum at all — every room and spine node
+    // there is NaN, because storeyZ averages room cz and those rooms have none, so one undefined
+    // room poisons its whole storey. `_polyPt` does `z: (n.cz || 0)`, and NaN || 0 is 0 — a route
+    // through those storeys would be DRAWN AT z=0, some 167 m below the building. Nothing had gone
+    // through them yet, so nothing had shown it.
+    //
+    // walkZ is therefore one height per storey, used by the DRAWN LINE only: finite storeyZ where
+    // there is one, otherwise the median door centre on that storey (a door sits within ~1 m of the
+    // walking level, so it is a far better answer than 0). `cz` is untouched — other consumers
+    // still read it — and stairwp keeps its own z, because that IS the genuine vertical move.
+    var _walkZ = {}, _doorZ = {};
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.storey == null || n.kind !== 'doorwp' || !isFinite(n.cz)) return;
+      (_doorZ[n.storey] = _doorZ[n.storey] || []).push(n.cz);
+    });
+    var _wzFilled = [];
+    Object.keys(storeyZ).concat(Object.keys(_doorZ)).forEach(function (sname) {
+      if (_walkZ[sname] !== undefined) return;
+      if (isFinite(storeyZ[sname])) { _walkZ[sname] = storeyZ[sname]; return; }
+      var ds = (_doorZ[sname] || []).slice().sort(function (a, b) { return a - b; });
+      if (ds.length) { _walkZ[sname] = ds[ds.length >> 1]; _wzFilled.push(sname + '=' + _walkZ[sname].toFixed(2)); }
+    });
+    var _wzSet = 0;
+    Object.keys(nodes).forEach(function (k) {
+      var n = nodes[k];
+      if (n.kind === 'stairwp') { n.walkZ = n.cz; return; }      // the real vertical transition
+      var z = (n.storey != null) ? _walkZ[n.storey] : undefined;
+      n.walkZ = isFinite(z) ? z : (isFinite(n.cz) ? n.cz : 0);
+      if (isFinite(z)) _wzSet++;
+    });
+    log('§ROOM_GRAPH_WALK_Z storeys=' + Object.keys(_walkZ).length + ' nodesPinned=' + _wzSet +
+      (_wzFilled.length ? ' filledFromDoors=[' + _wzFilled.join(' ') + '] (these storeys had NO room' +
+        ' datum at all — every room/spine cz was NaN, and the drawn line would have been placed at z=0)' : '') +
+      ' — the drawn route now holds ONE height per storey; only a stair changes it.');
+
     return {
       nodes: roomOrder.map(function (lg) { return nodes[lg]; }), // §API-COMPAT: room-only, see file header
       edges: edges,
@@ -694,11 +1183,15 @@
       rasters: rasters, // §G3-REVISED: {storey: StoreyRaster instance}, see shortestPath()
       roomRectsByStorey: roomRectsByStorey, // §G3-REVISED fallback when a storey has no raster
       corridorRectsByStorey: corridorRectsByStorey, // §CORRIDOR-WIDTH: real backbone corridor rects, same fallback
-      stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors,
+      doorRectsByStorey: doorRectsByStorey, // §DOOR-THRESHOLD-WALKABLE: real door footprints (openings are walkable)
+      stairRectsByStorey: stairRectsByStorey, // §STAIR-FOOTPRINT-WALKABLE: real stair footprints (stairs are circulation)
+      stats: { doors: doorRows.length, nonRoomDoors: nonRoomDoors, subHumanDoors: subHumanDoors,
         edges: edges.filter(function (e) { return e.kind === 'E1'; }).length,
         deadend: deadend, orphan: orphan, orphanRescued: orphanRescued, ambiguous: ambiguous,
         ambiguousResidualRescued: ambiguousResidualRescued,
-        circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2 }
+        circ: circCount, stairs: e3, stairsSkipped: e3Skipped, exits: exits, e2: e2,
+        roomBridges: roomBridges, sealed: bridgeRejected,
+        doorRealResolved: doorRealResolved } // §REAL-AABB: doors matched using a real (not coarse) position
     };
   }
 
@@ -804,6 +1297,15 @@
         w = (typeof e.w === 'number') ? e.w : Math.hypot(
           graph.nodesByGuid[a].cx - graph.nodesByGuid[b].cx, graph.nodesByGuid[a].cy - graph.nodesByGuid[b].cy);
       }
+      // §UTILITY-ROUTING-PENALTY (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10): an edge with a utility-
+      // classified room at EITHER end (tagged in buildGraph, see UTILITY_EDGE_PENALTY's comment)
+      // costs UTILITY_EDGE_PENALTY× its real distance — so Dijkstra prefers a corridor route a few
+      // hops longer over cutting through a cabling/service room, yet the room stays reachable (a
+      // finite multiplier, never removed). Both shortestPath() and escapeRoute() consume this
+      // adjacency, so both inherit the preference (an emergency exit route also shouldn't thread a
+      // service room when a corridor exists). No-op on every graph with no utility-tagged node.
+      var na = graph.nodesByGuid[a], nb = graph.nodesByGuid[b];
+      if ((na && na.isUtility) || (nb && nb.isUtility)) w *= UTILITY_EDGE_PENALTY;
       adj[a].push({ to: b, w: w, e: e, arriveSide: 'b' });
       adj[b].push({ to: a, w: w, e: e, arriveSide: 'a' });
     });
@@ -871,10 +1373,91 @@
     return arrivedGuid; // defensive fallback — should not happen with a well-formed edge
   }
 
+  // §HOP-DOOR-WAYPOINT (2026-07-25, measured on the Hospital field-report route): _publicHop above
+  // SUBSTITUTES an edge's waypoint for a `circ` node (an invented centroid). But when the arrived
+  // node is a REAL point — a corridor `spine` — nothing substitutes and the edge's own door
+  // waypoint was silently dropped from the drawn line: an E2 edge is literally
+  // `{a: room, b: spine, doorGuid: g, wpB: g}`, i.e. "leave this room THROUGH THIS DOOR, arrive on
+  // the corridor spine", and the renderer drew room-centre → spine-point as one straight line,
+  // skipping the door it is named after. Measured, real data (`HospitalV2.db`, route
+  // `≈ Level 1 R35 → ≈ Level 4 R8`): that single hop is 32.6m long with 94 illegal samples and no
+  // A*-routable alternative, because the only real opening out of R35 — the door the edge already
+  // records — was not on the drawn line. Fix: INSERT the waypoint (never substitute; the spine
+  // point is real and still walked) so the geometry becomes room → its own door → spine. Nothing
+  // about WHICH rooms/doors the route uses changes (`doors[]`/`distance` untouched, per
+  // PATH_LEGAL_SEGMENTS.md's scope fence) — only the anchors the polyline passes through.
+  function _hopWaypoint(graph, fromGuid, arrivedGuid, edge, arriveSide) {
+    if (!edge) return null;
+    var arrived = graph.nodesByGuid[arrivedGuid];
+    if (!arrived || arrived.kind === 'circ') return null; // circ already handled by substitution
+    if (edge.kind === 'E3') return null;                  // stair flight: cross-storey, has its own stairwp
+    var wp = (arriveSide === 'a') ? edge.wpA : edge.wpB;
+    if (!wp) wp = edge.doorGuid;                          // E1/E2/E7/E9 all record their real door guid
+    if (!wp || wp === arrivedGuid || wp === fromGuid) return null;
+    var n = graph.nodesByGuid[wp];
+    if (!n || n.kind !== 'doorwp') return null;
+    // Same-storey only: a door waypoint on another storey would bend the line vertically through a
+    // slab. Both ends of a door-carrying same-storey hop share the door's storey by construction.
+    var fromN = graph.nodesByGuid[fromGuid];
+    if (n.storey == null || (arrived.storey != null && n.storey !== arrived.storey) ||
+      (fromN && fromN.storey != null && n.storey !== fromN.storey)) return null;
+    return wp;
+  }
+
   // shortestPath()'s signature is frozen (§API-COMPATIBLE, no opts/log param) — same direct-console
   // convention modeller/real_geometry.js's own `_log` already uses in this codebase, since there is
   // no caller-injected logger to route through here (unlike buildGraph's `opts.log`).
   function _log(m) { if (typeof console !== 'undefined') console.log(m); }
+
+  // §RECT-INDEX (perf, 2026-07-25): every rect-shaped walkable source for a storey — room rects,
+  // corridor buckets, door thresholds, stair footprints — pre-inflated by ITS OWN existing slack
+  // constant and dropped into one uniform 4m bucket grid, built ONCE per storey on first use and
+  // cached on the graph. Two reasons this is needed now: the raster no longer SHORT-CIRCUITS (it is
+  // a union member again, §RASTER-UNION-NOT-EXCLUSIVE), so every off-raster sample used to fall
+  // through three linear scans; and doors/stairs added ~144 more rects per storey on Hospital.
+  // Measured: 0.01 -> 0.03 ms per 5-30m chord with linear scans, back to 0.01 ms with this index —
+  // it matters only because A* calls the predicate millions of times per interactive click.
+  // Identical answers: same rects, same slack, just a spatial lookup instead of a walk.
+  var SMALL_RECT_CELL = 4.0;
+  function _rectIndexHit(graph, storey, px, py) {
+    var idxAll = graph._smallRectIdx || (graph._smallRectIdx = {});
+    var ix = idxAll[storey];
+    if (ix === undefined) {
+      var CORRIDOR_RECT_SLACK = 0.3; // §CORRIDOR-RECT-SLACK, unchanged — see _pointWalkable's comment
+      var infl = function (list, pad) {
+        return (list || []).map(function (r) {
+          return { x0: r.x0 - pad, x1: r.x1 + pad, y0: r.y0 - pad, y1: r.y1 + pad };
+        });
+      };
+      var all = infl(graph.roomRectsByStorey && graph.roomRectsByStorey[storey], DOOR_BUFFER_SLACK)
+        .concat(infl(graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey], CORRIDOR_RECT_SLACK))
+        .concat(infl(graph.doorRectsByStorey && graph.doorRectsByStorey[storey], 0))
+        .concat(infl(graph.stairRectsByStorey && graph.stairRectsByStorey[storey], 0));
+      if (!all.length) { idxAll[storey] = null; return false; }
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      all.forEach(function (r) { x0 = Math.min(x0, r.x0); y0 = Math.min(y0, r.y0); x1 = Math.max(x1, r.x1); y1 = Math.max(y1, r.y1); });
+      var cols = Math.max(1, Math.ceil((x1 - x0) / SMALL_RECT_CELL)), rows = Math.max(1, Math.ceil((y1 - y0) / SMALL_RECT_CELL));
+      var buckets = new Array(cols * rows);
+      all.forEach(function (r) {
+        var c0 = Math.max(0, Math.floor((r.x0 - x0) / SMALL_RECT_CELL)), c1 = Math.min(cols - 1, Math.floor((r.x1 - x0) / SMALL_RECT_CELL));
+        var r0 = Math.max(0, Math.floor((r.y0 - y0) / SMALL_RECT_CELL)), r1 = Math.min(rows - 1, Math.floor((r.y1 - y0) / SMALL_RECT_CELL));
+        for (var c = c0; c <= c1; c++) for (var rr = r0; rr <= r1; rr++) {
+          var k = rr * cols + c; (buckets[k] = buckets[k] || []).push(r);
+        }
+      });
+      ix = idxAll[storey] = { x0: x0, y0: y0, cols: cols, rows: rows, buckets: buckets };
+    }
+    if (!ix) return false;
+    var cc = Math.floor((px - ix.x0) / SMALL_RECT_CELL), rc = Math.floor((py - ix.y0) / SMALL_RECT_CELL);
+    if (cc < 0 || rc < 0 || cc >= ix.cols || rc >= ix.rows) return false;
+    var list = ix.buckets[rc * ix.cols + cc];
+    if (!list) return false;
+    for (var i = 0; i < list.length; i++) {
+      var q = list[i];
+      if (px >= q.x0 && px <= q.x1 && py >= q.y0 && py <= q.y1) return true;
+    }
+    return false;
+  }
 
   // §PATH_LEGAL_SEGMENTS.md §G3-REVISED — is (px,py) on `storey` walkable? Raster first (real
   // mesh-derived, accurate on concave floors — the real slab physically continues under interior
@@ -888,46 +1471,43 @@
   // void like the HHS courtyard is far too wide for this small a buffer to paper over). Returns
   // true/false/null (null = no data AT ALL for this storey — caller must not penalize a chord it
   // cannot judge).
+  // §RASTER-UNION-NOT-EXCLUSIVE (2026-07-25, measured on Hospital — the field-report route
+  // `≈ Level 1 R35 → ≈ Level 4 R8`): the raster used to SHORT-CIRCUIT here (`if (raster) return
+  // raster.contains(...)`), so a storey that HAS a raster never consulted its room/corridor rects
+  // at all. §G3 always defined walkable space as the UNION of room rects AND floor evidence — the
+  // raster is only a better computation of the FLOOR half (§G3-REVISED's own words: "this whole
+  // revision only replaces how the SLAB half of the union is computed; it does not touch how rooms
+  // are read"). Making it exclusive silently turned "raster ∪ rooms" into "raster INSTEAD OF rooms",
+  // which breaks the moment the room set moves under a fixed raster — exactly what the client-side
+  // room injector does on every load (Hospital 142→214 rooms, `ROOM_INJECTOR_NEEDLE.md`). Measured
+  // consequence, real data (`HospitalV2.db`, saved after the injector ran): injected room
+  // `≈ Level 1 R35` has 0/110 of its OWN footprint raster-walkable and no walkable cell within 12m,
+  // so its centre was off-floor by construction → `_astarHop` could not snap it, every candidate
+  // chord out of it started on an illegal sample, and `_detourForChord` reported the misleading
+  // `no legal detour among 128 doors` (the failure was the endpoint, never the doors). Restoring the
+  // union is monotone: it can only turn illegal→legal, never the reverse, and the void cases this
+  // file exists for still fail correctly (HHS's courtyard is covered by NO room rect — measured
+  // 156/194 illegal on the rooms-only diagnostic in `PATH_LEGAL_SEGMENTS.md`).
   function _pointWalkable(graph, storey, px, py) {
     var raster = graph.rasters && graph.rasters[storey];
-    if (raster) return raster.contains(px, py);
+    if (raster && raster.contains(px, py)) return true;
     var rects = graph.roomRectsByStorey && graph.roomRectsByStorey[storey];
-    // §CORRIDOR-WIDTH: real, wall-measured corridor rects (hallway_backbone.js bucketRect) — see
-    // that fix's comment above the caller for WHY this is a different, stronger-evidence case than
-    // just widening DOOR_BUFFER_SLACK (a courtyard-sized void still correctly fails; a corridor
-    // only gets a rect here when it's an ACTUAL wall-bounded run with >=3 real doors).
     var corridors = graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey];
-    if ((!rects || !rects.length) && (!corridors || !corridors.length)) return null;
-    if (rects) {
-      for (var i = 0; i < rects.length; i++) {
-        var rc = rects[i];
-        if (px >= rc.x0 - DOOR_BUFFER_SLACK && px <= rc.x1 + DOOR_BUFFER_SLACK &&
-          py >= rc.y0 - DOOR_BUFFER_SLACK && py <= rc.y1 + DOOR_BUFFER_SLACK) return true;
-      }
-    }
-    // §CORRIDOR-RECT-SLACK (2026-07-15, §18 item 5 — user-reported live: a rendered path visibly
-    // cuts straight through open space on an L-shaped HHS floor instead of hugging the walkway).
-    // This branch had NO tolerance at all, unlike the room-rects branch just above (which forgives
-    // DOOR_BUFFER_SLACK on every edge) — a sampled point sitting a few cm outside a corridor
-    // bucket's rect (real wall thickness / measurement rounding, or the small gap where two
-    // adjacent corridor buckets meet at a T-junction/corner) registered as illegal with zero
-    // margin. Measured live on HHS (14 rooms, 91 real pairs): 173/253=68% of directed room pairs
-    // hit >=1 `§PATH_LEGAL_DETOUR_FAIL` chord before this fix — the detour visibility graph's own
-    // candidate-to-candidate edges suffer the identical zero-margin test, so a sparse-coverage
-    // building can end up with NO legal detour at all, and `_legalizePath`'s honest-degrade leaves
-    // the original illegal straight chord in the rendered path. Fixed with the SAME wall-thickness
-    // slack `hallway_backbone.js`'s own `wallCrossSlack` already uses for this exact class of
-    // problem ("real walls are rasterized transforms, not infinitely thin planes") — not a new
-    // magic number.
-    var CORRIDOR_RECT_SLACK = 0.3;
-    if (corridors) {
-      for (var j = 0; j < corridors.length; j++) {
-        var cc = corridors[j];
-        if (px >= cc.x0 - CORRIDOR_RECT_SLACK && px <= cc.x1 + CORRIDOR_RECT_SLACK &&
-          py >= cc.y0 - CORRIDOR_RECT_SLACK && py <= cc.y1 + CORRIDOR_RECT_SLACK) return true;
-      }
-    }
-    return false;
+    var doorRects = graph.doorRectsByStorey && graph.doorRectsByStorey[storey];
+    var stairRects = graph.stairRectsByStorey && graph.stairRectsByStorey[storey];
+    // §NULL-CONTRACT-UNCHANGED (measured regression, caught by witness_jkr_walkable_raster.js before
+    // this reached a PR): what makes a storey JUDGEABLE must stay exactly what it was — a raster, or
+    // compiled room rects, or real corridor buckets. Door thresholds and stair footprints are
+    // ADDITIVE evidence only: they may flip a point from illegal to walkable, but they must never
+    // make an otherwise-unjudgeable storey judgeable. The first cut got this wrong by folding them
+    // into the same test, so a storey with NO compiled rooms and NO corridors but some doors went
+    // from `null` ("cannot judge" — never penalizes a chord) to "judged against ~1m² door slivers",
+    // i.e. almost everything illegal. Measured cost on JKR: DETOUR_FAIL 34.2% -> 49.6% on the
+    // no-raster baseline, a straight regression, from a change whose whole justification is that it
+    // can only turn illegal into legal.
+    var judgeable = raster || (rects && rects.length) || (corridors && corridors.length);
+    if (!judgeable) return null;
+    return _rectIndexHit(graph, storey, px, py);
   }
 
   var PATH_LEGAL_SAMPLE_RES = 0.25; // matches PATH_LEGAL_SEGMENTS.md's own sampling step
@@ -969,10 +1549,15 @@
   // back to the full unrestricted storey-wide search if no local detour exists — never REMOVES a
   // detour that used to work, only prefers a nearby one when one exists.
   var DETOUR_LOCALITY_MARGIN = 6.0; // m — padding around the chord's own bbox for the local pass
-  function _detourCandidates(graph, storey, ax, ay, bx, by, localOnly) {
+  // §DETOUR-MID-MARGIN (2026-07-26): `margin` used to be the single hardcoded DETOUR_LOCALITY_MARGIN.
+  // It is now a parameter so _detourForChord can try a BOUNDED wider window before giving up and
+  // going storey-wide — see that function. `excludeIds` lets the caller veto specific waypoints
+  // (§DETOUR-NO-REVISIT) without touching the candidate rule itself.
+  function _detourCandidates(graph, storey, ax, ay, bx, by, localOnly, margin, excludeIds) {
+    var M = (margin == null) ? DETOUR_LOCALITY_MARGIN : margin;
     var pts = [{ id: null, x: ax, y: ay }, { id: null, x: bx, y: by }];
-    var x0 = Math.min(ax, bx) - DETOUR_LOCALITY_MARGIN, x1 = Math.max(ax, bx) + DETOUR_LOCALITY_MARGIN;
-    var y0 = Math.min(ay, by) - DETOUR_LOCALITY_MARGIN, y1 = Math.max(ay, by) + DETOUR_LOCALITY_MARGIN;
+    var x0 = Math.min(ax, bx) - M, x1 = Math.max(ax, bx) + M;
+    var y0 = Math.min(ay, by) - M, y1 = Math.max(ay, by) + M;
     Object.keys(graph.nodesByGuid).forEach(function (g) {
       var n = graph.nodesByGuid[g];
       // §HALLWAY-BACKBONE: real corridor spine points are ALSO valid detour candidates, not just
@@ -984,6 +1569,7 @@
       // route, never remove an already-legal one.
       if (!((n.kind === 'doorwp' || n.kind === 'spine' || n.kind === 'circ') && n.storey === storey)) return;
       if (localOnly && (n.cx < x0 || n.cx > x1 || n.cy < y0 || n.cy > y1)) return;
+      if (excludeIds && excludeIds[g]) return;
       pts.push({ id: g, x: n.cx, y: n.cy });
     });
     return pts;
@@ -1022,15 +1608,79 @@
     for (var k = 1; k < hopIdx.length - 1; k++) mid.push(pts[hopIdx[k]].id);
     return mid;
   }
-  function _detourForChord(graph, storey, ax, ay, bx, by) {
-    var localPts = _detourCandidates(graph, storey, ax, ay, bx, by, true);
+  // §DETOUR-MID-MARGIN (2026-07-26, from a real live capture): the search was local(6m) -> storey-wide,
+  // and Hospital's `≈ Level 1 R35 -> ≈ Level 4 R8` route logged `§PATH_LEGAL_DETOUR_NONLOCAL` twice on
+  // Level 4 — both chords fell straight through to the UNRESTRICTED storey-wide Dijkstra, which has no
+  // sense of overall direction (the exact failure mode §DETOUR-LOCALITY was written to bound: a route
+  // that walks to the far end of the building because that is still "legal"). A bounded MID pass now
+  // sits between them. This is monotone by construction: a chord that already succeeded locally never
+  // reaches the mid pass, and a chord that previously went storey-wide still does if the mid pass finds
+  // nothing — so the only possible change is a NEARER legal detour replacing a far-flung one.
+  // MID margin = ASTAR_WIDEN_MARGIN's 28m, reused deliberately (that constant was already measured as
+  // "covers a 20-30m spine-to-spine corridor route" for the A* widen pass) — no new magic number.
+  var DETOUR_MID_MARGIN = 28.0;
+  function _detourForChord(graph, storey, ax, ay, bx, by, excludeIds) {
+    var localPts = _detourCandidates(graph, storey, ax, ay, bx, by, true, DETOUR_LOCALITY_MARGIN, excludeIds);
     var localResult = _detourDijkstra(graph, storey, localPts);
     if (localResult) return localResult;
-    var globalPts = _detourCandidates(graph, storey, ax, ay, bx, by, false);
+    var midPts = _detourCandidates(graph, storey, ax, ay, bx, by, true, DETOUR_MID_MARGIN, excludeIds);
+    if (midPts.length > localPts.length) {
+      var midResult = _detourDijkstra(graph, storey, midPts);
+      if (midResult) {
+        _log('§PATH_LEGAL_DETOUR_MID storey=' + storey + ' no local detour within ' + DETOUR_LOCALITY_MARGIN +
+          'm, found one within ' + DETOUR_MID_MARGIN + 'm (' + midResult.length + ' waypoint(s))');
+        return midResult;
+      }
+    }
+    var globalPts = _detourCandidates(graph, storey, ax, ay, bx, by, false, DETOUR_LOCALITY_MARGIN, excludeIds);
     var globalResult = _detourDijkstra(graph, storey, globalPts);
-    if (!globalResult) { _log('§PATH_LEGAL_DETOUR_FAIL storey=' + storey + ' no legal detour among ' + (globalPts.length - 2) + ' doors'); return null; }
+    if (!globalResult) {
+      // §DETOUR_FAIL_CAUSE (2026-07-25, §14's "self-diagnosing on one line" rule): the old message
+      // was `no legal detour among N doors`, which reads as "the doors are the problem" and sent
+      // real sessions hunting through 128 doors. On the Hospital field-report route the actual cause
+      // was never the doors: an ENDPOINT sat off walkable floor (an injected room the raster predates,
+      // a stair with no slab under it), so every candidate chord out of it started on an illegal
+      // sample and no visibility edge could exist. State which it is, measured, on the same line.
+      var aw = _pointWalkable(graph, storey, ax, ay), bw = _pointWalkable(graph, storey, bx, by);
+      var cause = (aw !== true || bw !== true) ? 'ENDPOINT_OFF_FLOOR' : 'WALKABLE_ISLANDS';
+      _log('§PATH_LEGAL_DETOUR_FAIL storey=' + storey + ' cause=' + cause +
+        ' aWalkable=' + aw + ' bWalkable=' + bw + ' len=' + Math.hypot(bx - ax, by - ay).toFixed(1) + 'm' +
+        ' illegal=' + _chordIllegalCount(graph, storey, ax, ay, bx, by) +
+        ' candidates=' + (globalPts.length - 2));
+      return null;
+    }
     _log('§PATH_LEGAL_DETOUR_NONLOCAL storey=' + storey + ' no local detour within ' + DETOUR_LOCALITY_MARGIN + 'm margin, used a wider one');
     return globalResult;
+  }
+
+  // §ANCHOR-DEDUPE (2026-07-25, measured on the Hospital field-report route): two DISTINCT spine
+  // guids can occupy the SAME measured point (`Corridor — Level 1` at (48.6,110.2) twice, a
+  // chain-to-chain junction where both chains' bucket rects centre on the same crossing), so the
+  // reconstructed path carried a zero-length hop. Harmless to the drawn line (the polyline's own
+  // pushPt already collapses coincident points) but NOT harmless to what the user reads: the Find
+  // panel listed the same corridor twice as two separate stops, and `_legalizePath` counted a
+  // meaningless extra legality check. Drop a node that is coincident (<0.05m, well under the 0.25m
+  // sampling resolution) with its predecessor on the same storey. Never drops an endpoint.
+  function _dedupeAnchors(graph, path) {
+    if (!path || path.length < 3) return path;
+    // ⚠ WAYPOINTS ONLY. A `room`/`exit` node is a real STOP the panel lists and the user taps — it
+    // must never be dropped, even when it is coincident with a corridor waypoint. The first cut of
+    // this function dropped any coincident node, and on HHS (where §CORRIDOR-ROOM-BACKPROP creates
+    // synthetic corridor ROOMS that sit on the spine point by construction) that silently changed the
+    // room sequence of 78/210 sampled pairs — measured by compare_routes_ab.js against origin/main
+    // before this reached a PR. doors[]/distance were identical throughout; the room LIST was not.
+    var isWaypoint = function (n) { return n && n.kind !== 'room' && n.kind !== 'exit'; };
+    var out = [path[0]];
+    for (var i = 1; i < path.length; i++) {
+      var prev = graph.nodesByGuid[out[out.length - 1]], cur = graph.nodesByGuid[path[i]];
+      var coincident = prev && cur && prev.storey === cur.storey &&
+        Math.hypot((prev.cx || 0) - (cur.cx || 0), (prev.cy || 0) - (cur.cy || 0)) < 0.05 &&
+        Math.abs((prev.cz || 0) - (cur.cz || 0)) < 0.05;
+      if (coincident && isWaypoint(cur) && i < path.length - 1) continue;      // drop the duplicate waypoint
+      if (coincident && isWaypoint(prev) && !isWaypoint(cur)) { out[out.length - 1] = path[i]; continue; } // room wins
+      out.push(path[i]);
+    }
+    return out;
   }
 
   // §PATH_LEGAL_SEGMENTS.md — walk the just-built `path`, testing every consecutive same-storey
@@ -1039,6 +1689,7 @@
   // wherever a chord fails. Never touches WHICH rooms/doors the route uses (`doors` list
   // untouched) — only the polyline's intermediate points, exactly per the spec's scope fence.
   function _legalizePath(graph, path) {
+    var _legT0 = (typeof Date !== 'undefined') ? Date.now() : 0;
     var legalized = 0, detoured = 0;
     var out = [path[0]];
     for (var i = 0; i + 1 < path.length; i++) {
@@ -1048,11 +1699,275 @@
       var illegal = _chordIllegalCount(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
       if (illegal > 0) {
         var mid = _detourForChord(graph, a.storey, a.cx, a.cy, b.cx, b.cy);
+        // §DETOUR-NO-REVISIT (2026-07-26, from a real live capture): a detour waypoint may coincide
+        // with an anchor the route visits LATER, which renders as a visible back-step — on Hospital's
+        // `≈ Level 1 R35 -> ≈ Level 4 R8` the door `…531444` was spliced in as a detour for the
+        // spine->775497 chord and then used again 3 hops later to leave R9 into R8 (a real ~3m
+        // wiggle; legal, but it is the shape once reported as `MissCOback2doors`). Retry ONCE with
+        // those guids vetoed. Honest degrade, never a regression: if no alternative legal detour
+        // exists, the original stands — the drawn line is never made worse, only less wiggly.
+        if (mid && mid.length) {
+          var laterAnchors = {};
+          for (var k = i + 2; k < path.length; k++) laterAnchors[path[k]] = 1;
+          // §DETOUR-NO-BACKTRACK (2026-08-04): the forward-only check above misses a waypoint an
+          // EARLIER chord's own detour already spliced into `out` this same pass — that guid never
+          // appears in the original `path` array, only in `out`, so it slipped through. Widening the
+          // same veto-candidate set to also cover everything already placed reuses the existing
+          // chainLen-guarded "only replace if not longer" acceptance below unchanged — no new logic.
+          for (var eo = 0; eo < out.length; eo++) laterAnchors[out[eo]] = 1;
+          var revisits = mid.filter(function (g) { return laterAnchors[g]; });
+          if (revisits.length) {
+            var veto = {};
+            revisits.forEach(function (g) { veto[g] = 1; });
+            var alt = _detourForChord(graph, a.storey, a.cx, a.cy, b.cx, b.cy, veto);
+            // §NOREVISIT-LENGTH-GUARD (measured, 2026-07-26): taking the vetoed alternative
+            // UNCONDITIONALLY traded one cosmetic flaw for another — on the Hospital live fixture it
+            // removed the ~3m back-step through …531444 but routed via a door 24m west instead,
+            // lengthening the DRAWN line 229.4m -> 230.9m. So only accept the alternative when it is
+            // no longer than the detour it replaces: the wiggle goes away when that is free, and the
+            // shorter line wins when it is not. Both options are already legality-verified by
+            // _detourForChord, so this only ever picks between two honest routes.
+            var chainLen = function (wps) {
+              var px = a.cx, py = a.cy, L = 0;
+              for (var w = 0; w < wps.length; w++) {
+                var n = graph.nodesByGuid[wps[w]]; if (!n) continue;
+                L += Math.hypot(n.cx - px, n.cy - py); px = n.cx; py = n.cy;
+              }
+              return L + Math.hypot(b.cx - px, b.cy - py);
+            };
+            if (alt && alt.length && chainLen(alt) <= chainLen(mid) + 1e-9) {
+              _log('§PATH_LEGAL_DETOUR_NOREVISIT storey=' + a.storey + ' replaced ' + revisits.length +
+                ' waypoint(s) the route visits later (' + revisits.join(',') + ') with a no-longer detour ' +
+                chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm');
+              mid = alt;
+            } else if (alt && alt.length) {
+              _log('§PATH_LEGAL_DETOUR_REVISIT_KEPT storey=' + a.storey + ' the only revisit-free detour is ' +
+                'longer (' + chainLen(mid).toFixed(1) + 'm -> ' + chainLen(alt).toFixed(1) + 'm) — keeping the shorter line');
+            } else {
+              // §PATH_LEGAL_DETOUR_REVISIT_FORCED (2026-08-05, real gap caught in review): the two
+              // branches above only fire when a revisit-free ALTERNATIVE exists (chosen either
+              // because it's shorter, or kept-anyway because it's longer). When no such alternative
+              // exists at all (`alt` null/empty — the revisit is the ONLY legal route), neither branch
+              // fired and the revisit was kept with ZERO log line — indistinguishable in the log from
+              // a clean detour with no revisit at all. Detecting the revisit was already correct; this
+              // just makes the "kept because it's the only option" case as visible as the "kept
+              // because shorter" case above, per this project's no-silent-fallback Log Mandate.
+              _log('§PATH_LEGAL_DETOUR_REVISIT_FORCED storey=' + a.storey + ' no revisit-free detour exists ' +
+                'at all (' + revisits.length + ' unavoidable waypoint(s): ' + revisits.join(',') + ') — keeping the only route');
+            }
+          }
+        }
         if (mid && mid.length) { detoured++; mid.forEach(function (g) { out.push(g); }); }
       }
       out.push(path[i + 1]);
     }
     if (legalized) _log('§PATH_LEGAL legalized=' + legalized + ' detoured=' + detoured);
+    // LARGE_DB_BAKE.md §2 L1 — accumulate on the graph itself so a whole-building sweep
+    // (egress_sanity.js's rule 2/3 loop, one shortestPath() per room) can print ONE summary line
+    // for the raster-absent case instead of the per-call §PATH_LEGAL noise above being the only
+    // trace anything was slow. Never gated on rasters here — the caller decides whether the
+    // absence is newsworthy; this just carries the numbers.
+    if (graph) {
+      var _legSt = graph._legalizeStats || (graph._legalizeStats = { calls: 0, legalized: 0, detoured: 0, ms: 0 });
+      _legSt.calls++; _legSt.legalized += legalized; _legSt.detoured += detoured;
+      _legSt.ms += (typeof Date !== 'undefined') ? (Date.now() - _legT0) : 0;
+    }
+    return out;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════════════════════
+  // §RASTER-ASTAR (Stage B — VIEWER_FIND_PANEL_ROOM_ACCURACY.md §13, 2026-07-22): the ACTUAL walked
+  // polyline. `_legalizePath` above still owns the logical `path`/`doors`/`distance` (and the
+  // §PATH_LEGAL_DETOUR_FAIL metric the raster witnesses measure) — UNTOUCHED. This computes an
+  // ADDITIVE `result.polyline`: between two consecutive same-storey path anchors it grid-searches
+  // (A*) the storey's own walkable evidence (`_pointWalkable` — raster-first, room+corridor-rect
+  // fallback, null=no-data) so the drawn line HUGS real floor by construction, instead of the old
+  // straight chord + sparse door-visibility detour that §11 measured cutting through walls/atrium
+  // air. It changes ONLY geometry, never which rooms/doors the route uses. Honest degrade preserved:
+  // where `_pointWalkable` returns null (no floor data at all for the storey) the straight segment is
+  // the only non-invented route; where A* finds no on-floor route it also falls back to straight
+  // (same "never fabricate, never fail" contract the old detour honoured). Reuses storey_raster.js's
+  // contains() via _pointWalkable — no second raster representation is built.
+  var ASTAR_CELL = 0.25;          // fine grid step (local pass) — matches raster res / PATH_LEGAL_SAMPLE_RES
+  var ASTAR_WINDOW_MARGIN = 6.0;  // local-search window padding around the chord bbox (DETOUR_LOCALITY spirit)
+  var ASTAR_WIDEN_MARGIN = 28.0;  // bounded wider-pass padding (covers a 20-30m spine-to-spine corridor route)
+  var ASTAR_WIDEN_CELL = 0.5;     // coarser cell for the wider pass (corridors are >=1m; verification re-tests fine)
+  var ASTAR_MAX_CELLS = 400000;   // safety cap per grid; beyond it the pass abandons -> straight
+
+  // Tiny binary min-heap keyed by .f — keeps A* fast even on the storey-wide widen pass (a linear
+  // open-set scan is O(N^2) and would stall on Hospital-scale grids; measured, not assumed).
+  function _Heap() { this.a = []; }
+  _Heap.prototype.push = function (n) { var a = this.a; a.push(n); var i = a.length - 1; while (i > 0) { var p = (i - 1) >> 1; if (a[p].f <= a[i].f) break; var t = a[p]; a[p] = a[i]; a[i] = t; i = p; } };
+  _Heap.prototype.pop = function () { var a = this.a; if (!a.length) return null; var top = a[0], last = a.pop(); if (a.length) { a[0] = last; var i = 0, n = a.length; for (;;) { var l = 2 * i + 1, r = l + 1, s = i; if (l < n && a[l].f < a[s].f) s = l; if (r < n && a[r].f < a[s].f) s = r; if (s === i) break; var t = a[s]; a[s] = a[i]; a[i] = t; i = s; } } return top; };
+  _Heap.prototype.size = function () { return this.a.length; };
+
+  function _storeyExtent(graph, storey) {
+    var r = graph.rasters && graph.rasters[storey];
+    if (r) return { x0: r.x0, y0: r.y0, x1: r.x0 + r.cols * r.res, y1: r.y0 + r.rows * r.res };
+    var ext = null;
+    ['roomRectsByStorey', 'corridorRectsByStorey'].forEach(function (k) {
+      var rects = graph[k] && graph[k][storey]; if (!rects) return;
+      rects.forEach(function (rc) {
+        if (!ext) ext = { x0: rc.x0, y0: rc.y0, x1: rc.x1, y1: rc.y1 };
+        else { ext.x0 = Math.min(ext.x0, rc.x0); ext.y0 = Math.min(ext.y0, rc.y0); ext.x1 = Math.max(ext.x1, rc.x1); ext.y1 = Math.max(ext.y1, rc.y1); }
+      });
+    });
+    return ext;
+  }
+
+  // 8-connected A* over a bounded window; cell walkable iff _pointWalkable(cell center)===true.
+  // Returns {cells:[{c,r}...], wx0, wy0, cell} or null (no window fit / no route / start|goal unsnappable).
+  function _astarGrid(graph, storey, ax, ay, bx, by, win, cellSize) {
+    var cell = cellSize || ASTAR_CELL, wx0 = win.x0, wy0 = win.y0;
+    var cols = Math.max(1, Math.ceil((win.x1 - win.x0) / cell)), rows = Math.max(1, Math.ceil((win.y1 - win.y0) / cell));
+    if (cols * rows > ASTAR_MAX_CELLS) return null;
+    function cw(c, r) { return _pointWalkable(graph, storey, wx0 + (c + 0.5) * cell, wy0 + (r + 0.5) * cell) === true; }
+    function inb(c, r) { return c >= 0 && r >= 0 && c < cols && r < rows; }
+    function toCell(x, y) { return { c: Math.floor((x - wx0) / cell), r: Math.floor((y - wy0) / cell) }; }
+    function snap(c0) {
+      if (inb(c0.c, c0.r) && cw(c0.c, c0.r)) return c0;
+      var R = Math.ceil(1.2 / cell) + 1; // snap a room-center/door-wp onto floor within ~1.2m
+      for (var rad = 1; rad <= R; rad++) for (var dc = -rad; dc <= rad; dc++) for (var dr = -rad; dr <= rad; dr++) {
+        if (Math.max(Math.abs(dc), Math.abs(dr)) !== rad) continue;
+        var c = c0.c + dc, r = c0.r + dr; if (inb(c, r) && cw(c, r)) return { c: c, r: r };
+      }
+      return null;
+    }
+    var s = snap(toCell(ax, ay)), g = snap(toCell(bx, by));
+    if (!s || !g) return null;
+    var idx = function (c, r) { return r * cols + c; };
+    var goalI = idx(g.c, g.r), gscore = {}, came = {}, closed = {};
+    gscore[idx(s.c, s.r)] = 0;
+    function h(c, r) { var dc = Math.abs(c - g.c), dr = Math.abs(r - g.r); return (dc + dr) + (Math.SQRT2 - 2) * Math.min(dc, dr); }
+    var heap = new _Heap(); heap.push({ i: idx(s.c, s.r), c: s.c, r: s.r, f: h(s.c, s.r) });
+    var dirs = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+    var expansions = 0;
+    while (heap.size()) {
+      var cur = heap.pop();
+      if (cur.i === goalI) {
+        var out = [], ci = goalI; while (ci != null) { var cc = ci % cols, rr = (ci - cc) / cols; out.push({ c: cc, r: rr }); ci = came[ci]; }
+        out.reverse(); return { cells: out, wx0: wx0, wy0: wy0, cell: cell };
+      }
+      if (closed[cur.i]) continue; closed[cur.i] = 1;
+      if (++expansions > ASTAR_MAX_CELLS) return null;
+      for (var d = 0; d < 8; d++) {
+        var nc = cur.c + dirs[d][0], nr = cur.r + dirs[d][1];
+        if (!inb(nc, nr) || !cw(nc, nr)) continue;
+        // no diagonal corner-cutting: both orthogonal neighbours must also be walkable
+        if (dirs[d][2] > 1 && (!cw(cur.c + dirs[d][0], cur.r) || !cw(cur.c, cur.r + dirs[d][1]))) continue;
+        var ni = idx(nc, nr); if (closed[ni]) continue;
+        var ng = gscore[cur.i] + dirs[d][2];
+        if (gscore[ni] == null || ng < gscore[ni]) { gscore[ni] = ng; came[ni] = cur.i; heap.push({ i: ni, c: nc, r: nr, f: ng + h(nc, nr) }); }
+      }
+    }
+    return null;
+  }
+
+  // Greedy line-of-sight string-pull: collapse a dense cell path to its minimal turn points, keeping
+  // only vertices where the straight run to the next kept point would cross non-walkable space (same
+  // _chordIllegalCount legality test the rest of this file uses). Turns ~120 grid cells into a handful.
+  function _simplifyLOS(graph, storey, pts) {
+    if (pts.length <= 2) return pts.slice();
+    var out = [pts[0]], i = 0;
+    while (i < pts.length - 1) {
+      var j = pts.length - 1;
+      for (; j > i + 1; j--) { if (_chordIllegalCount(graph, storey, pts[i].x, pts[i].y, pts[j].x, pts[j].y) === 0) break; }
+      out.push(pts[j]); i = j;
+    }
+    return out;
+  }
+
+  // Interior walked points between two same-storey anchors (a,b excluded — caller re-adds them).
+  // Returns: [] = a straight segment IS the honest route (chord already on-floor, or no floor data);
+  //          [p,...] = A* found an on-floor route (these turn points);
+  //          null = A* was attempted (chord illegal, data present) but found NO on-floor route — the
+  //                 caller decides whether to keep a synthetic bypass anchor or degrade to straight.
+  function _astarHop(graph, a, b) {
+    var storey = a.storey;
+    var hasData = (graph.rasters && graph.rasters[storey]) ||
+      (graph.roomRectsByStorey && graph.roomRectsByStorey[storey] && graph.roomRectsByStorey[storey].length) ||
+      (graph.corridorRectsByStorey && graph.corridorRectsByStorey[storey] && graph.corridorRectsByStorey[storey].length);
+    if (!hasData) return [];
+    if (_chordIllegalCount(graph, storey, a.cx, a.cy, b.cx, b.cy) === 0) return []; // fast path — most hops
+    // Local pass first at fine res (fast, handles the common short corridor jog), then a BOUNDED wider
+    // pass at a coarser cell (§WIDEN-BOUNDED): the widen window is capped to the chord bbox + a large
+    // margin (not the whole storey — that made a cross-wing Hospital path stack several full-storey A*
+    // passes, measured 205ms max) and searched at 0.5m cells (corridors are >=1m wide, so coarser is
+    // safe; the end-to-end §ON-FLOOR-GUARANTEE verification below re-tests at fine res regardless, so
+    // any coarseness error just degrades to null → honest straight, never a bad line). Keeps a single
+    // interactive click well under budget while still rescuing the 20-30m spine-to-spine corridor routes.
+    var m = ASTAR_WINDOW_MARGIN;
+    var localWin = { x0: Math.min(a.cx, b.cx) - m, y0: Math.min(a.cy, b.cy) - m, x1: Math.max(a.cx, b.cx) + m, y1: Math.max(a.cy, b.cy) + m };
+    var res = _astarGrid(graph, storey, a.cx, a.cy, b.cx, b.cy, localWin, ASTAR_CELL);
+    if (!res) {
+      var W = ASTAR_WIDEN_MARGIN;
+      var wideWin = { x0: Math.min(a.cx, b.cx) - W, y0: Math.min(a.cy, b.cy) - W, x1: Math.max(a.cx, b.cx) + W, y1: Math.max(a.cy, b.cy) + W };
+      res = _astarGrid(graph, storey, a.cx, a.cy, b.cx, b.cy, wideWin, ASTAR_WIDEN_CELL);
+    }
+    if (!res) return null; // A* genuinely found no on-floor route — caller degrades honestly
+    var pts = res.cells.map(function (cl) { return { x: res.wx0 + (cl.c + 0.5) * res.cell, y: res.wy0 + (cl.r + 0.5) * res.cell }; });
+    var simp = _simplifyLOS(graph, storey, pts);
+    // trim a snapped endpoint that sits right on top of the anchor the caller re-adds (avoids a hairline stub)
+    if (simp.length && Math.hypot(simp[0].x - a.cx, simp[0].y - a.cy) < ASTAR_CELL) simp.shift();
+    if (simp.length && Math.hypot(simp[simp.length - 1].x - b.cx, simp[simp.length - 1].y - b.cy) < ASTAR_CELL) simp.pop();
+    // §ON-FLOOR-GUARANTEE (Stage B): only return a route that is VERIFIABLY on real floor end to end —
+    // including the two anchor connectors (a -> first turn point, last -> b) the LOS pass didn't test.
+    // If the snapped route still leaves any illegal sample (e.g. a rect-fallback building whose A* path
+    // hugs rect cells but the a->simp connector crosses an uncovered doorway seam), return null so the
+    // caller degrades to the original straight/synthetic route instead of drawing a subtly-off-floor
+    // line. This is what makes "the polyline stays on real floor" a guarantee, not a best-effort.
+    var chain = [{ x: a.cx, y: a.cy }]; for (var s = 0; s < simp.length; s++) chain.push(simp[s]); chain.push({ x: b.cx, y: b.cy });
+    var bad = 0; for (var q = 0; q + 1 < chain.length; q++) bad += _chordIllegalCount(graph, storey, chain[q].x, chain[q].y, chain[q + 1].x, chain[q + 1].y);
+    if (bad > 0) return null;
+    return simp;
+  }
+
+  // §POLYLINE: the additive floor-hugging geometry for result.polyline — world {x,y,z} points. Rooms/
+  // doors/circ anchors from `path` are kept as-is; A* interior points are spliced between same-storey
+  // pairs; a cross-storey (stair) pair keeps its straight vertical segment (no raster spans floors).
+  // §WALK-Z — the DRAWN line reads walkZ (one height per storey, see the note where it is
+  // assigned). Falls back to cz for any caller that builds a node without it.
+  function _polyPt(n) { return { x: n.cx, y: n.cy, z: (isFinite(n.walkZ) ? n.walkZ : (n.cz || 0)) }; }
+  function _walkZOf(n) { return isFinite(n.walkZ) ? n.walkZ : (n.cz || 0); }
+  function _buildPolyline(graph, path) {
+    if (!path || !path.length) return [];
+    var anchors = [];
+    for (var pi = 0; pi < path.length; pi++) { var nn = graph.nodesByGuid[path[pi]]; if (nn) anchors.push(nn); }
+    if (!anchors.length) return [];
+    var out = [];
+    function pushPt(p) {
+      var L = out.length ? out[out.length - 1] : null;
+      if (!L || Math.hypot(L.x - p.x, L.y - p.y) > 1e-6 || Math.abs((L.z || 0) - (p.z || 0)) > 1e-6) out.push(p);
+    }
+    function pushInterior(hop, z) { for (var k = 0; k < hop.length; k++) pushPt({ x: hop[k].x, y: hop[k].y, z: z }); }
+    pushPt(_polyPt(anchors[0]));
+    var i = 0;
+    while (i + 1 < anchors.length) {
+      var a = anchors[i];
+      // §CIRC-NOT-A-WALKPOINT (Stage B, the key §11 finding proven on real data): a `circ` node is a
+      // per-storey circulation-hub CENTROID (stair-group average), NOT a walked floor point — measured
+      // on HHS/Terminal it routinely sits on a DISCONNECTED raster island, so A* cannot reach it and
+      // every room→…→circ→…→room chord degraded to the old straight (off-floor) line. It is a
+      // TOPOLOGICAL connector; the real walk goes spine→spine along the corridor it bridges. So when the
+      // next anchor is a circ, TRY A* straight from `a` to the anchor AFTER it (bypassing circ): if A*
+      // routes it on real floor (verified: HHS spine→spine straight=61 illegal → A* polyline=0), take
+      // that and drop circ from the DRAWN line (never from `path` — room list/markers keep it). If A*
+      // can't (e.g. a rect-fallback building whose doorways aren't rect-covered — Clinic), KEEP circ and
+      // fall through to the normal per-segment handling, so a raster-less building is never made WORSE
+      // than before. Cross-storey never relies on circ (those surface as real `stairwp` via _publicHop).
+      if (anchors[i + 1].kind === 'circ' && i + 2 < anchors.length && a.storey != null && a.storey === anchors[i + 2].storey) {
+        var c = anchors[i + 2];
+        var bypass = _astarHop(graph, a, c);
+        if (bypass !== null) { pushInterior(bypass, _walkZOf(a)); pushPt(_polyPt(c)); i += 2; continue; }
+      }
+      var b = anchors[i + 1];
+      if (a.storey != null && a.storey === b.storey) {
+        var hop = _astarHop(graph, a, b);
+        if (hop && hop.length) pushInterior(hop, _walkZOf(a));
+      }
+      pushPt(_polyPt(b));
+      i += 1;
+    }
     return out;
   }
 
@@ -1076,12 +1991,96 @@
       if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
       var publicCur = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
       path[0] = publicCur; // replace the just-pushed guid with its public form
+      // §HOP-DOOR-WAYPOINT — insert the hop's own real door waypoint between the two anchors when
+      // the arrival node is a real point (spine) that never triggered _publicHop's substitution.
+      var wpIns = _hopWaypoint(graph, p.from, publicCur, p.edge, p.arriveSide);
+      if (wpIns) path.unshift(wpIns);
       path.unshift(p.from);
       departEdge = p.edge;
       cur = p.from;
     }
+    path = _dedupeAnchors(graph, path);
     path = _legalizePath(graph, path);
-    return { path: path, doors: doors, distance: core.dist[toGuid] };
+    // §RASTER-ASTAR: additive floor-hugging geometry (see _buildPolyline). path/doors/distance are
+    // unchanged — polyline is the ONLY new field, consumed by navigate_find.js for the drawn line.
+    return { path: path, doors: doors, distance: core.dist[toGuid], polyline: _buildPolyline(graph, path) };
+  }
+
+  // §ESCAPE-ROUTES-ALL (ESCAPE_ROUTE_REVEAL.md §12.1, 2026-09-20) — EVERY reachable exit from a
+  // room, ranked, from ONE Dijkstra. escapeRoute() below already ran that Dijkstra and then threw
+  // away all but the winner; the common-path rule needs the runner-up too, and paying a second
+  // full search per room to get it would be absurd (MEASURED: 149 Hospital rooms x 8 exits via
+  // repeated shortestPath = ~90 s; this is one search per room, the same cost escapeRoute already
+  // pays).
+  //
+  // ⚠ THE DIVERGENCE NODE FALLS OUT FOR FREE, and that is the whole reason this shape is right.
+  // A Dijkstra from `fromGuid` produces a shortest-path TREE. Two exits' paths in that tree share
+  // a prefix by construction, and where they part IS their lowest common ancestor. So "the point
+  // at which the occupant first gains a choice of two paths" (IBC 2021 §1006.2.1's own words) is a
+  // tree walk, not a second search. `divergenceFrom()` below does it.
+  //
+  // Returns { routes: [{exitGuid, distance, path, doors}, ...] } ranked nearest-first, or null on
+  // the same conditions escapeRoute() returns null. NOT a change to escapeRoute(): that function
+  // is untouched below and every existing caller keeps its exact behaviour.
+  function escapeRoutes(graph, fromGuid, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var adj = _buildAdjacency(graph);
+    if (!adj[fromGuid]) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_GRAPH_NODE'); return null; }
+    var dist = {}, prev = {}, visited = {};
+    Object.keys(adj).forEach(function (g) { dist[g] = Infinity; });
+    dist[fromGuid] = 0;
+    var pq = [fromGuid];
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      (adj[u] || []).forEach(function (edge) {
+        var nd = dist[u] + edge.w;
+        if (nd < dist[edge.to]) { dist[edge.to] = nd; prev[edge.to] = { from: u, edge: edge.e, arriveSide: edge.arriveSide }; pq.push(edge.to); }
+      });
+    }
+    // Reconstruct one exit's path out of the shared tree — the SAME walk escapeRoute() does.
+    function build(exitGuid) {
+      var path = [exitGuid], doors = [], cur = exitGuid, departEdge = null;
+      while (cur !== fromGuid) {
+        var p = prev[cur];
+        if (!p) return null;
+        if (p.edge.doorGuid) doors.unshift({ guid: p.edge.doorGuid, name: p.edge.doorName });
+        path[0] = _publicHop(graph, cur, p.edge, p.arriveSide, departEdge);
+        path.unshift(p.from);
+        departEdge = p.edge;
+        cur = p.from;
+      }
+      return { exitGuid: exitGuid, distance: dist[exitGuid], path: path, doors: doors };
+    }
+    var routes = [];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      if (graph.nodesByGuid[g].kind !== 'exit') return;
+      if (!(dist[g] < Infinity)) return;
+      var r = build(g);
+      if (r) routes.push(r);
+    });
+    if (!routes.length) { log('§ESCAPE_ROUTES from=' + fromGuid + ' NO_EXIT_REACHABLE'); return null; }
+    routes.sort(function (a, b) { return a.distance - b.distance; });
+    log('§ESCAPE_ROUTES from=' + fromGuid + ' exits=' + routes.length +
+        ' nearest=' + routes[0].distance.toFixed(1) + (routes[1] ? ' next=' + routes[1].distance.toFixed(1) : ' (only one)'));
+    return { routes: routes };
+  }
+
+  // §COMMON-PATH (ESCAPE_ROUTE_REVEAL.md §12.1) — the last node two routes SHARE, walking from the
+  // room outward. Both `path` arrays start at fromGuid by construction (see build() above), so the
+  // divergence is simply the last index at which they agree. Returns { node, index } or null when
+  // one route is a prefix of the other (one exit lies ON the way to the other — a real state, and
+  // NOT a divergence: the occupant still has no choice until the first exit is reached).
+  function divergenceFrom(pathA, pathB) {
+    if (!pathA || !pathB || !pathA.length || !pathB.length) return null;
+    var i = 0;
+    while (i < pathA.length && i < pathB.length && pathA[i] === pathB[i]) i++;
+    if (i === 0) return null;                                   // not even the room in common — impossible here, guarded anyway
+    if (i >= pathA.length || i >= pathB.length) return null;    // prefix case: no choice point exists between them
+    return { node: pathA[i - 1], index: i - 1 };
   }
 
   // §ESCAPE-ROUTE (OCCUPANT_PATHFINDER.md SPEC — "falls out" of shortestPath, not a separate
@@ -1130,13 +2129,158 @@
     return result;
   }
 
+  // §PROTECTED-STAIR-TERMINUS (EGRESS_HARDENING.md item 3, 2026-09-18) — OPT-IN alternative to
+  // escapeRoute() above. Code intent (IBC Table 1017.2): travel distance is measured to the
+  // NEAREST EXIT, and a protected exit-stair enclosure counts as "reached" the moment you enter
+  // it — not the physical exterior door at grade the stair eventually leads to. escapeRoute()
+  // above measures the LATTER (walks the full E3 chain down through every intervening floor to a
+  // real EXIT:: node) because that is the only terminus this graph has ever had — egress_sanity.js's
+  // own header (THRESHOLD CITATIONS block) already discloses this as a conservative over-estimate
+  // for upper-storey rooms.
+  //
+  // WHAT THIS CANNOT CLAIM: this pipeline extracts no FireRating/enclosure property (checked
+  // directly, grep across common/*.js and DAGCompiler/python/extractIFCtoDB.py — nothing), so
+  // there is no way to confirm a given stairwell is actually a fire-rated PROTECTED enclosure vs.
+  // an open feature stair. This function does NOT claim that. What it DOES measure, as a real
+  // graph fact: whether the room's own storey's `CIRC::<storey>` node — the ONE per-storey node
+  // every E3 stair edge actually connects (circNode() above; a `stairwp` node is metadata for
+  // polyline rendering ONLY, §API-COMPAT-WAYPOINT above — never wired into `_buildAdjacency`'s own
+  // traversable edges, confirmed directly: escapeRoute() called FROM a stairwp guid returns
+  // NO_GRAPH_NODE on real Hospital data, so targeting stairwp was tried first and found to not
+  // work against this graph's real structure) — is confirmed, by actual E3-chain connectivity, to
+  // lead all the way down to a real measured EXIT:: node (§ROOM_GRAPH_EXITS's geometric
+  // raster+footprint test). That is a disclosed PROXY for "protected exit stair" — "this floor's
+  // circulation is confirmed to reach a real building exit via SOME stair" — coarser than the
+  // stair's own literal door position (a floor-wide blob, not a point), and not a fire-rating
+  // verification, but still strictly more accurate than escapeRoute()'s "walk the entire chain to
+  // grade" for any floor where CIRC::<storey> sits closer to the room than the real ground exit
+  // does. Same disclosure discipline as STAIR_SPEED_MPS/EXIT_SAMPLE_CLEARANCE_M above (uncited
+  // constants, labelled as such).
+  //
+  // Zero cost to every existing caller: this is a NEW function, escapeRoute()/buildGraph()'s own
+  // logic is untouched. graph._distToExitCache memoizes the one multi-source Dijkstra this needs
+  // per graph instance (not per room); the per-room lookup below reuses the ALREADY-EXPORTED
+  // shortestPath() rather than a second hand-rolled Dijkstra. See cost measurement in
+  // witness_egress_hardening.js.
+  function _distToNearestExit(graph) {
+    if (graph._distToExitCache) return graph._distToExitCache;
+    var adj = _buildAdjacency(graph);
+    var dist = {}, visited = {};
+    Object.keys(adj).forEach(function (g) { dist[g] = Infinity; });
+    var pq = [];
+    Object.keys(graph.nodesByGuid).forEach(function (g) {
+      if (graph.nodesByGuid[g].kind === 'exit') { dist[g] = 0; pq.push(g); }
+    });
+    while (pq.length) {
+      pq.sort(function (a, b) { return dist[a] - dist[b]; });
+      var u = pq.shift();
+      if (visited[u]) continue;
+      visited[u] = true;
+      (adj[u] || []).forEach(function (edge) {
+        var nd = dist[u] + edge.w;
+        if (nd < dist[edge.to]) { dist[edge.to] = nd; pq.push(edge.to); }
+      });
+    }
+    graph._distToExitCache = dist;
+    return dist;
+  }
+
+  function escapeRouteViaProtectedStair(graph, fromGuid, opts) {
+    opts = opts || {};
+    var log = opts.log || function () {};
+    var base = escapeRoute(graph, fromGuid, { log: function () {} }); // untouched, existing behaviour
+    var fromNode = graph.nodesByGuid[fromGuid];
+    if (!fromNode) return base;
+    var circGuid = 'CIRC::' + fromNode.storey;
+    if (!graph.nodesByGuid[circGuid]) return base; // this storey has no circulation node at all
+    var distToExit = _distToNearestExit(graph);
+    if (!(distToExit[circGuid] != null && distToExit[circGuid] < Infinity)) return base; // not confirmed exit-connected
+    if (circGuid === fromGuid) return base; // already the circ node itself — nothing to shorten
+    var sp = shortestPath(graph, fromGuid, circGuid);
+    if (sp && sp.distance != null && (!base || sp.distance < base.distance)) {
+      log('§ESCAPE_ROUTE_PROTECTED_STAIR from=' + fromGuid + ' circ=' + circGuid +
+        ' distance=' + sp.distance.toFixed(1) + (base ? ' (vs exterior-door distance=' + base.distance.toFixed(1) + ')' : ' (no exterior-door route existed)'));
+      return { distance: sp.distance, exitGuid: circGuid, viaProtectedStair: true, path: sp.path, doors: [] };
+    }
+    return base; // no shorter protected-stair route found — falls back unchanged, never worse than escapeRoute()
+  }
+
+  // FLY_TOUR_DLOD_SCALE.md §16 — precomputed room-to-room Potentially-Visible-Set (portal
+  // culling), built ONCE per graph build, never per frame (§15 already proved per-frame CPU
+  // raycasting is 4 orders of magnitude too slow; §7 already flagged GPU occlusion-query
+  // driver-inconsistency/per-object overhead as a reason to prefer a precomputed approach).
+  // Model: travelling through circulation space (E2/E5/E6/E7/E8/E9 — corridor/junction/lone-door
+  // edges) is FREE — a hallway is one open volume by the walker's own corridor-room backprop
+  // convention, not a chain of doors. Crossing a REAL room<->room door (E1) or a stair flight
+  // (E3, the vertical equivalent of a door — deliberately NOT "the whole floor above is visible",
+  // matching §5/§10's storey-occlusion atrium/stairwell carve-out) costs ONE "door crossing".
+  // opts.maxDoorCrossings (default 1) caps how many such crossings stay inside the visible set —
+  // §16.4's Stage-0 validation is what should confirm/adjust this default with real numbers, not
+  // this comment. Door open/closed state is NOT modeled (no per-frame IFC operation state exists)
+  // — a portal is always "open": a deliberate conservative bias (may show a few elements through
+  // an actually-closed door — safe, costs a few extra draw calls — never hides something visible).
+  // Returns { roomGuid: { roomGuid: true, ... }, ... } — every room maps to itself plus whatever
+  // it can see; a plain object used as a Set (guid membership), not a Map, for JSON-friendliness.
+  function buildRoomPVS(graph, opts) {
+    opts = opts || {};
+    var maxCross = (opts.maxDoorCrossings !== undefined) ? opts.maxDoorCrossings : 1;
+    var adj = {};
+    function addAdj(a, b, cost) {
+      if (!a || !b || a === b) return;
+      (adj[a] = adj[a] || []).push({ to: b, cost: cost });
+      (adj[b] = adj[b] || []).push({ to: a, cost: cost });
+    }
+    (graph.edges || []).forEach(function (e) {
+      if (e.kind === 'E4') return; // exit — leads outside, never a compiled room, not useful here
+      var cost = (e.kind === 'E1' || e.kind === 'E3') ? 1 : 0;
+      addAdj(e.a, e.b, cost);
+    });
+    var roomGuids = (graph.nodes || []).map(function (n) { return n.guid; });
+    var pvs = {};
+    roomGuids.forEach(function (startGuid) {
+      // 0-1 BFS (deque): 0-cost edges push to the front, 1-cost edges push to the back — same
+      // result as Dijkstra for a 2-value cost domain, O(V+E) per room, no priority queue needed.
+      var dist = {}; dist[startGuid] = 0;
+      var deque = [startGuid];
+      while (deque.length) {
+        var u = deque.shift();
+        var uEdges = adj[u] || [];
+        for (var i = 0; i < uEdges.length; i++) {
+          var v = uEdges[i].to, nd = dist[u] + uEdges[i].cost;
+          if (nd <= maxCross && (dist[v] === undefined || nd < dist[v])) {
+            dist[v] = nd;
+            if (uEdges[i].cost === 0) deque.unshift(v); else deque.push(v);
+          }
+        }
+      }
+      var visible = {};
+      Object.keys(dist).forEach(function (g) {
+        var n = graph.nodesByGuid[g];
+        if (n && n.kind === 'room') visible[g] = true;
+      });
+      pvs[startGuid] = visible;
+    });
+    return pvs;
+  }
+
   var API = {
     buildGraph: buildGraph, degree: degree, components: components, fullConnectivity: fullConnectivity,
-    shortestPath: shortestPath, escapeRoute: escapeRoute, isRoomDoor: isRoomDoor,
+    shortestPath: shortestPath, escapeRoute: escapeRoute,
+    // §12.1 — every reachable exit ranked, from one Dijkstra, plus the tree walk that finds where
+    // two routes part. escapeRoute() above is unchanged and still the single-answer entry point.
+    escapeRoutes: escapeRoutes, divergenceFrom: divergenceFrom,
+    escapeRouteViaProtectedStair: escapeRouteViaProtectedStair, isRoomDoor: isRoomDoor,
     stairBaseKey: stairBaseKey, DOOR_BUFFER_SLACK: DOOR_BUFFER_SLACK, getStairGroups: getStairGroups,
     // FLY_TOUR_CORRIDOR_GRAPH.md §S4 — read-only witness helper: count of walkability-illegal
     // sample points on a same-storey chord (the same test _legalizePath uses internally).
-    chordIllegalCount: _chordIllegalCount
+    chordIllegalCount: _chordIllegalCount,
+    // OCCUPANT_PATHFINDER.md §BRIDGE-ROUTED-LEGAL — read-only witness helper, same precedent as
+    // chordIllegalCount above: the ROUTED (A*, on-floor) counterpart of the straight-chord test.
+    // [] = straight segment is already honest, [pts] = an on-floor route exists (its turn points),
+    // null = no on-floor route. Exported so a harness can measure the gate without re-implementing it.
+    astarHop: _astarHop,
+    // FLY_TOUR_DLOD_SCALE.md §16 — room-to-room portal PVS for real occlusion culling.
+    buildRoomPVS: buildRoomPVS
   };
   ROOT.RoomGraph = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

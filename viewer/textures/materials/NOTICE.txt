@@ -1,11 +1,14 @@
 Layer 3 triplanar PBR material textures — sourced from ambientCG (https://ambientcg.com),
 license CC0 1.0 (public domain, no attribution required). Vendored 2026-07-15 via the
-ambientCG public API (https://ambientcg.com/api/v2/full_json). Diffuse+roughness only
-(no normal/AO — see PHOTOREAL_STILL_RENDER.md §LAYER 3, two-maps-only first pass).
+ambientCG public API (https://ambientcg.com/api/v2/full_json). Diffuse+roughness+normal
+(no AO). The normal maps were added 2026-08-30 (§TRIPLANAR_NORMAL) — the original
+two-maps-only first pass left every fragment of a flat surface sharing one normal, so
+the lighting term was constant across it. NormalGL variant (OpenGL Y+ convention, the
+one three.js expects), from the same _1K-JPG.zip already fetched for the other maps.
 
-  concrete_color_1k.jpg / concrete_rough_1k.jpg  <- Concrete034      (IfcWall)
-  plaster_color_1k.jpg  / plaster_rough_1k.jpg   <- PaintedPlaster017 (IfcWallStandardCase)
-  metal_color_1k.jpg    / metal_rough_1k.jpg     <- Metal032          (metal classes)
+  concrete_color_1k.jpg / concrete_rough_1k.jpg / concrete_normal_1k.jpg <- Concrete034       (IfcWall)
+  plaster_color_1k.jpg  / plaster_rough_1k.jpg  / plaster_normal_1k.jpg  <- PaintedPlaster017 (IfcWallStandardCase)
+  metal_color_1k.jpg    / metal_rough_1k.jpg    / metal_normal_1k.jpg    <- Metal032          (metal classes)
 
 Measured average diffuse luminance (64x64 downsample, used to derive each set's
 normFactor in streaming.js TRIPLANAR_MAT — keeps the textured surface's average

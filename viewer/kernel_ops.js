@@ -122,13 +122,31 @@
       console.log('§KRN_PERSIST_SKIP foreign db (not APP.db) — building cache preserved');
       return;
     }
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable, never reopened from cache, so this
+    // export()+IDB-put buys nothing; it only risked the write-loop race that killed the Hospital/LTU
+    // clash film (CPE_4D_PERF_MEM_FINDINGS.md §8.6: a `db.export()` here frees every prepared
+    // statement mid time_machine.js write loop). Skip outright rather than debounce-and-skip, so no
+    // timer is even armed to race against.
+    if (window.APP && APP._bakeOwned) {
+      console.log('§KRN_PERSIST_SKIP reason=bake — bake profile is disposable, never reopened from cache');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       sealChain(db).then(function() {
         try {
-          var dbUrl = window.APP && APP.DB_URL;
+          // §TM_SPLITMODE_PERSIST_KEY (§S78): a split-mode building's APP.db is loaded from
+          // metaUrl, not APP.DB_URL (streaming.js) — APP._dbPersistUrl is set at the exact point
+          // APP.db is assigned, in both the split and whole-db branches, so it always names the
+          // url APP.db's bytes actually came from. Same field ScheduleAuthor.persistDb now uses.
+          var dbUrl = window.APP && (APP._dbPersistUrl || APP.DB_URL);
           if (!dbUrl) return;
           if (window.APP && APP._cacheDisabled) return;   // incognito / low quota → no IDB
+          // §SCHED_PERSIST_KEY (§S70): cachedFetch reads under DbResolve.cacheKey(url), not the raw
+          // url — writing the raw url put "survive refresh" in a slot nothing reads on any profile
+          // that had loaded the building normally. Same derivation as ScheduleAuthor.persistDb.
+          var dbKey = (window.DbResolve && window.DbResolve.cacheKey)
+            ? window.DbResolve.cacheKey(dbUrl, window.APP && APP.PROD_BASE) : dbUrl;
           var buf = db.export().buffer;
           // §KRN_PERSIST_FIX: open the cache DB through the app's SINGLE opener (scene.js
           // openCacheDB → version 2, ensures the 'dbs' store). The old hardcoded
@@ -146,8 +164,8 @@
             if (!idb) { console.warn('§KRN_PERSIST_ERR no cacheDB'); return; }
             if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); return; }
             var tx = idb.transaction('dbs', 'readwrite');
-            tx.objectStore('dbs').put(buf, dbUrl);
-            tx.oncomplete = function() { console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB'); };
+            tx.objectStore('dbs').put(buf, dbKey);
+            tx.oncomplete = function() { console.log('§KRN_PERSIST url=' + dbUrl + ' key=' + dbKey + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB'); };
             tx.onerror = function() { console.warn('§KRN_PERSIST_ERR tx ' + (tx.error && tx.error.message)); };
           }).catch(function(e) { console.warn('§KRN_PERSIST_ERR open ' + (e && e.message)); });
         } catch(e) { console.warn('§KRN_PERSIST_ERR', e); }

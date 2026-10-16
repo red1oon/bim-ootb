@@ -30,6 +30,16 @@ function check(name, cond, got) { console.log((cond?'PASS ':'FAIL ')+name+(cond?
   const thr = A.compute4D('B', () => { throw new Error('bad tasks table'); }, cpmFn, []);
   check('captured throws → falls to CPM (no throw)', thr.source === 'generated', thr.source);
 
+  // 3b) §GANTT_EDIT/BOQ4D: capturedFn may return {source, tasks} so a REAL authored schedule
+  // (schedule_author.js tasks/task_elements, read by schedule_read_4d.js) is not mislabelled
+  // 'captured' — a captured IfcWorkSchedule is a different, real thing and the log must not lie
+  // about which one produced the dates. The bare-array form above (case 1) must keep working.
+  const AUTH_TASKS = [{ id: 1, taskId: 'TASK_ARCH_L1', name: 'Architecture — Level 1' }];
+  const auth = A.compute4D('B', () => ({ source: 'authored', tasks: AUTH_TASKS }), cpmFn, []);
+  check('capturedFn {source,tasks} → source is carried through', auth.source === 'authored' && auth.tasks === AUTH_TASKS, auth.source);
+  const authEmpty = A.compute4D('B', () => ({ source: 'authored', tasks: [] }), cpmFn, []);
+  check('capturedFn {source,tasks:[]} → falls to CPM default', authEmpty.source === 'generated' && authEmpty.tasks === CPM_TASKS, authEmpty.source);
+
   // 4) resolve4D: valid kernel_ops overrides
   const def = { source: 'generated', tasks: CPM_TASKS };
   const r1 = A.resolve4D(def, [{ op: 1 }], () => [{ id: 1 }, { id: 2 }]);

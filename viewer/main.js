@@ -13,7 +13,7 @@ async function initViewer() {
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, window.setupCpeFreezePerf, window.setupCpeRoadPanels, window.setupCivilSections, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -100,12 +100,15 @@ async function initViewer() {
       var _zm = /[?&]find=([^&]+)/.exec(location.search);
       if (!_zm) return;
       var scope = decodeURIComponent(_zm[1].replace(/\+/g, ' '));
+      if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (e) { scope = ''; } if (!scope) return; }   // §ZOOM-LINKBACK long GUID set handoff
+      var _wm = /[?&]within=([^&]+)/.exec(location.search), within = _wm ? decodeURIComponent(_wm[1]) : '';
+      if (within.charAt(0) === '@') { try { within = localStorage.getItem('zoomfind_' + within.slice(1)) || ''; } catch (e) { within = ''; } }
       var tries = 0, poll = setInterval(function () {
         tries++;
         if (!APP.db) { if (tries > 300) clearInterval(poll); return; } // wait for the model db (runSearch needs it)
         clearInterval(poll);
         var go = function () {
-          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
+          if (typeof APP.applyFindScope === 'function') { try { APP.applyFindScope(scope, { within: within }); } catch (e) { console.log('§ZOOM-SCOPE err=' + (e && e.message)); } }
           else { console.log('§ZOOM-SCOPE skip=no-applyFindScope'); }
         };
         // give geometry a beat to stream (so focusElement can light), then load Navigate + apply.
@@ -116,6 +119,32 @@ async function initViewer() {
         }, 600);
       }, 300);
     } catch (e) { /* never block boot */ }
+  })();
+  // §ZOOM-REUSE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §ZOOM_BACK_FIELD 5; user 2026-10-07: "it can reuse the open tab if it is
+  //   opened. Only when not, it loads again"). The ERP red pill asks on a same-origin BroadcastChannel first; a viewer whose model db
+  //   (resolved absolute URL — the key, never a model name) matches answers and zooms IN PLACE (no reload). TM is closed first:
+  //   a zoom-back is a straight Find zoom. Only one tab answers (the first to claim the request id).
+  (function () {
+    try {
+      if (typeof BroadcastChannel === 'undefined') return;
+      var bc = new BroadcastChannel('bim-zoom-across');
+      bc.onmessage = function (e) {
+        var m = e.data || {};
+        if (m.type !== 'zoom?' || !m.db || !APP.db || typeof APP.applyFindScope !== 'function') return;
+        var mine = ''; try { mine = new URL(APP.DB_URL, location.href).href; } catch (x) {}
+        if (m.db !== mine) return;
+        bc.postMessage({ type: 'zoom!', id: m.id });
+        var scope = String(m.find || '');
+        if (scope.charAt(0) === '@') { try { scope = localStorage.getItem('zoomfind_' + scope.slice(1)) || ''; } catch (x) { scope = ''; } }
+        var within = String(m.within || '');
+        if (within.charAt(0) === '@') { try { within = localStorage.getItem('zoomfind_' + within.slice(1)) || ''; } catch (x) { within = ''; } }
+        var st = null; try { st = window.tmGetState && window.tmGetState(); } catch (x) {}
+        if (st && st.active && typeof window.toggleTimeMachine === 'function') { window.toggleTimeMachine(); console.log('§ZOOM-REUSE closed-tm'); }
+        var n = scope ? APP.applyFindScope(scope, { within: within }) : 0;
+        console.log('§ZOOM-REUSE hit db=' + mine + ' find=' + (scope ? scope.length + 'ch' : '-') + ' focused=' + n + ' ms=' + (m.t0 ? Date.now() - m.t0 : -1) + ' (no reload)');
+        try { window.focus(); } catch (x) {}
+      };
+    } catch (e) { console.log('§ZOOM-REUSE listener-fail ' + (e && e.message)); }
   })();
   if (typeof setupDLOD === 'function') setupDLOD(APP);
   if (typeof setupNlp === 'function') setupNlp(APP);
@@ -139,11 +168,25 @@ async function initViewer() {
       // Lazy-loaded here (not a static viewer.html <script>) since it's only ever needed alongside
       // navigate_find.js itself — no reason to spend the bytes on every boot.
       var modules = [
-        '../common/room_habitability.js?v=1',
+        // v2 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): classifyUtilityRooms/utilityContentClass
+        // gain an additive opts.ignoreDoorExemption (default false = identical display behavior); the
+        // routing caller (room_graph.js) passes true. A stale v1 cache would ignore the new arg.
+        '../common/room_habitability.js?v=2',
         // PATH_LEGAL_SEGMENTS.md §G3-REVISED — pack/unpack + lookup for the offline-precomputed
         // per-storey walkable raster; must load BEFORE room_graph.js (buildGraph() references
         // window.StoreyRaster when it reads storey_walkable_raster).
         '../common/storey_raster.js?v=1',
+        // §STOREY_FOOTPRINT_NOT_LOADED (MEP_CLASH_REVEAL_MOVIE.md §59.7 D2, 2026-09-11) — the
+        // flood-fill that tells a real exterior side of a door apart from an enclosed internal
+        // void (atrium/shaft). room_graph.js:84 binds window.StoreyFootprint at factory time and
+        // E4 exit detection hard-gates on it (`if (!raster || !footprint) { exitsNoRaster++ }`),
+        // so while this line was missing EVERY door was skipped: the real HHS bake logged
+        // `§ROOM_GRAPH_EXITS exits=0 noRaster=133 of 133 doors` on a run whose own
+        // `§PATH_LEGAL_RASTER` proves the rasters were built — a module gap, never a data gap.
+        // Same class as §HALLWAY-BACKBONE-NOT-LOADED below: witness_exit_detection.js requires
+        // this file and passes in Node, which is no evidence at all that the browser path runs it.
+        // Must load BEFORE room_graph.js, for the identical reason storey_raster.js above does.
+        '../common/storey_footprint.js?v=1',
         // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §7 — room-to-room adjacency graph + pathfinding,
         // consumed by navigate_find.js's Room axis "Path" sub-mode. Same lazy-load rationale as
         // room_habitability.js above (only needed alongside navigate_find.js itself).
@@ -152,7 +195,24 @@ async function initViewer() {
         // v4 (2026-07-15, §ISLAND_BRIDGE): ambiguous-residual-candidate rescue (E9) + circ-per-chain
         // bridge (E6) — a returning browser's cached v3 would keep reporting the pre-fix island counts.
         // v5 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): expose chordIllegalCount witness helper.
-        '../common/room_graph.js?v=5',
+        // v6 (VIEWER_FIND_PANEL_ROOM_ACCURACY.md §10, 2026-07-22): §UTILITY-ROUTING-PENALTY — buildGraph()
+        // tags utility rooms via RoomHabitability.classifyUtilityRooms; _buildAdjacency() penalises
+        // (x8, never removes) any edge touching one so room→room routing prefers corridors.
+        // v7 (same doc §10, 2026-07-22): pass ignoreDoorExemption:true so real door-carrying service
+        // rooms are tagged too (the door-exempt display default missed them); exclude CORRIDOR_ROOM nodes.
+        // v8 (ROOM_GRAPH_REAL_AABB.md §4 item 3, 2026-09-18): buildGraph() gains an OPTIONAL
+        // opts.doorRealXY — no behaviour change unless a caller passes one (see below).
+        '../common/room_graph.js?v=13',
+        // ROOM_GRAPH_REAL_AABB.md §4 item 3 — real_geometry.js is the SAME module cross_edges.js
+        // (modeller) already uses; the Viewer never loaded it before this. Pure DB read, no THREE/DOM
+        // dep (see its own header) — safe alongside room_graph.js's lazy-load discipline. Must load
+        // BEFORE door_real_position.js (soft dependency, but load order avoids the first-call lazy-
+        // require race that file's own header explains).
+        '../modeller/real_geometry.js?v=1',
+        // door_real_position.js resolves a door's real world-AABB centre (yaw-only), feeding
+        // room_graph.js's new opts.doorRealXY above — kept OUT of room_graph.js itself so that file
+        // stays DB/file I/O-free (dual-mode node+browser, see its own header).
+        '../common/door_real_position.js?v=1',
         // §HALLWAY-BACKBONE-NOT-LOADED (2026-07-14, real bug found via live browser check — every
         // corridor/spine/Hall-Corridor-label feature built this session had been silently no-oping
         // in the browser, despite passing every Node-based witness, because this line never
@@ -164,7 +224,25 @@ async function initViewer() {
         // (getStairGroups() reuse), so room_graph.js must already exist by the time this runs.
         '../common/hallway_backbone.js?v=1',
         // v49 (FLY_TOUR_CORRIDOR_GRAPH.md, 2026-07-16): A.ensureRooms + A.getRoomGraph extraction.
-        'navigate_find.js?v=55',
+        // §S59 candidate 2 (SCRIPT_LENGTH_REFACTOR_SEAMS.md, 2026-08-23): the Find panel's 5D-cost/
+        // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
+        // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
+        // no-op if missing, but then every › ERP surface is inert).
+        'find_erp_push.js?v=3',
+        // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
+        // would still carry its own copy AND the new wiring would never run.
+        // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
+        'find_ask_grammar.js?v=1',
+        'find_ask.js?v=4',
+        'nf_ui_history.js?v=1',
+        'nf_tree_lens.js?v=1',
+        'nf_highlight_cost.js?v=1',
+        'nf_room.js?v=1',
+        'nf_trees.js?v=1',
+        'nf_isolate_drill.js?v=1',
+        'nf_panel_search.js?v=1',
+        // navigate_find.js is now the setup shell for the nf_*.js parts above (move-only split, scripts/split_closure.js)
+        'navigate_find.js?v=64',
         'navigate_grid.js?v=1',
         'navigate_path.js?v=1',
         'navigate_engine.js?v=1',
@@ -191,16 +269,22 @@ async function initViewer() {
   };
   // Proxy so nlp.js "typeof A.openFindPanel === 'function'" finds it immediately.
   // setupNavigate() overwrites APP.openFindPanel with the real implementation.
+  // S226 §R2 — status/toast strings resolve through the AD_Message dictionary (viewer/i18n via locale_loader.js); the
+  // English literal stays the in-code default, used if the loader has not run yet (main.js is parsed before it).
+  function _trlD(key, repl, dflt) {
+    if (typeof window._trl === 'function') return window._trl(key, repl, dflt);
+    var s = dflt != null ? dflt : key; if (repl) for (var k in repl) s = s.replace('{' + k + '}', repl[k]); return s;
+  }
   var _navProxy = function(searchTerm) {
     console.log('[S275] §FIND_PROXY loading navigate modules…');
-    if (APP.status) APP.status.textContent = 'Loading Find…';
+    if (APP.status) APP.status.textContent = _trlD('ui_loading_find', null, 'Loading Find…');
     APP.loadNavigate().then(function() {
       // After load, APP.openFindPanel is the real function (set by setupNavigate)
       if (APP.openFindPanel !== _navProxy) APP.openFindPanel(searchTerm);
       else console.warn('[S275] §FIND_PROXY_FAIL openFindPanel still proxy after load');
     }).catch(function(e) {
       console.warn('[S275] §FIND_PROXY_ERR', e);
-      if (APP.status) APP.status.textContent = 'Find failed to load';
+      if (APP.status) APP.status.textContent = _trlD('ui_find_load_failed', null, 'Find failed to load');
     });
   };
   APP.openFindPanel = _navProxy;
@@ -230,6 +314,14 @@ async function initViewer() {
   else if (typeof setupGridOverlay === 'function') setupGridOverlay(APP);
   if (typeof setupImport === 'function') setupImport(APP);
   if (typeof setupDiff === 'function') setupDiff(APP);
+  // STRUCTURAL_SANITY.md T4 — after setupDiff (A.zoomToGuid) and setupShare (A.shareUrl, in the
+  // earlier _mods array) so rule_checklist.js's row click/long-press wiring has both available.
+  if (typeof setupRuleChecklist === 'function') setupRuleChecklist(APP);
+  if (typeof window.setupSpeedZones === 'function') window.setupSpeedZones(APP);   // §SPEED_ZONES (via window: no-undef gate)
+  if (typeof window.setupChainageGrid === 'function') window.setupChainageGrid(APP);   // §CHAINAGE_GRID (via window: no-undef gate)
+  if (typeof window.setupRoadStandards === 'function') window.setupRoadStandards(APP);   // §SIGN_CHECK (via window: no-undef gate)
+  if (typeof window.setupRoadReport === 'function') window.setupRoadReport(APP);   // §ROAD_REPORT (via window: no-undef gate)
+  if (typeof window.setupEarthworksOverlay === 'function') window.setupEarthworksOverlay(APP);   // §INSPECT_EARTH_ROAD EW/RW panels (via window: no-undef gate)
 
   // Expose functions to HTML onclick handlers
   window.togglePanel = APP.togglePanel;
@@ -284,7 +376,7 @@ async function initViewer() {
     if (window._isMobile) { APP.status.textContent = '2D views are desktop-only'; console.log('§2D_GATE skip — mobile'); return; }
     // Block if Measure is active
     if (APP.measureActive) {
-      APP.status.textContent = 'Close Measure first';
+      APP.status.textContent = _trlD('ui_close_measure', null, 'Close Measure first');
       return;
     }
     if (typeof APP.toggleGridOverlay === 'function') {
@@ -653,6 +745,31 @@ async function initViewer() {
   // Render loop — on-demand: only render when camera moves or streaming is active
   let _needsRender = true;
   let _idleLogged = false; // §S286: whitebox — true once the desktop loop has parked idle
+
+  // §FPS_MODE: frame_ms sampler tagged by nav-DLOD/xray-cycle/fly/orbit state — landed to settle
+  // whether nav-DLOD ('o') actually helps frame time while flying vs dragging vs bbox-cycle mode
+  // (bbox mode gates nav-DLOD off via activeGuidFilter, see dlod_nav.js _gateBlockReason). Only
+  // accumulates on frames that actually did work (post-_awake) — idle-parked gaps aren't real cost.
+  var _fpsSum = 0, _fpsN = 0, _fpsMax = 0, _fpsLastT = 0, _fpsLastLogT = 0;
+  function _fpsSample(now) {
+    if (_fpsLastT) {
+      var dt = now - _fpsLastT;
+      _fpsSum += dt; _fpsN++;
+      if (dt > _fpsMax) _fpsMax = dt;
+    }
+    _fpsLastT = now;
+    if (_fpsN && (now - _fpsLastLogT) >= 2000) {
+      var mean = +(_fpsSum / _fpsN).toFixed(1);
+      var disp = APP.xrayOn ? 'xray' : ((typeof window.ghostXrayOn === 'function' && window.ghostXrayOn()) ? 'bbox' : 'solid');
+      // dlod= reads _dlodNavEngaged (actually classifying/boxing), not the pill-pressed _dlodNavOn —
+      // a gate-blocked press (streaming/find-isolation/etc, see dlod_nav.js _gateBlockReason) does
+      // nothing at all, and tagging those frames "on" would silently poison this exact comparison.
+      console.log('§FPS_MODE mean=' + mean + ' max=' + _fpsMax.toFixed(1) + ' n=' + _fpsN +
+        ' dlod=' + (window._dlodNavEngaged ? 'on' : 'off') + ' disp=' + disp +
+        ' fly=' + (APP.flyActive ? 1 : 0) + ' orbit=' + (_orbiting ? 1 : 0));
+      _fpsSum = 0; _fpsN = 0; _fpsMax = 0; _fpsLastLogT = now;
+    }
+  }
   // §IDLE-PARK: these are the wake points. markDirty/controls-change now also REVIVE the
   // rAF chain (the loop self-parks when idle — see animate()). _startLoop is hoisted + guarded
   // (no-op if already running), so calling it on every change is cheap.
@@ -677,7 +794,15 @@ async function initViewer() {
     // made the re-arm branch dead code and let Stage 2 fire mid-gesture (the ghosting report).
     if ((APP._stillRefineActive || APP._photoAutoStageOn) && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine();
     _startLoop(); // §IDLE-PARK: drag begins → revive the loop if parked
-    if (!_orbiting && APP.streamedCount > 5000) {
+    // §CPE_VF_DPR_GUARD (2026-08-05): skip the perf-DPR drop while the cinema path editor's POV
+    // inset (B) is open. B's own scissor render (cinema_path_editor.js _vfRender) reads
+    // renderer.getPixelRatio() fresh every frame, so a mid-drag pr flip between _fullDPR and
+    // _orbitDPR — invisible on the main view (browser upscales the whole canvas uniformly) —
+    // shows up as B's small inset box visibly resizing/rescaling frame to frame (§CPE_VF_RENDER_TRACE
+    // logged x/y/w/h changing while panelR stayed fixed). This LOD trick exists purely for main-canvas
+    // orbit smoothness on large buildings; B is a tiny sub-render, not worth degrading, and coupling
+    // it to a main-canvas-only heuristic is exactly the entanglement the user flagged — separate them.
+    if (!_orbiting && APP.streamedCount > 5000 && !APP._cpeViewfinderRender) {
       _orbiting = true;
       APP.renderer.setPixelRatio(_orbitDPR);
     }
@@ -697,12 +822,20 @@ async function initViewer() {
   // §S287b: SINGLE-OWNER render loop. Every (re)start routes through here; the _rafId guard
   // guarantees exactly ONE rAF chain — fixes the S287 focus/pageshow + async-init double-loop
   // (which ran render twice per frame). Witness: §RENDER_LOOP start total= must stay 1.
+  var _idleCycles = 0;   // §LOG_SPAM_THROTTLE — the idle gate's cycle count, logged instead of each cycle
   function _startLoop() {
     if (_rafId) return;                       // already running — never double
     _loopStarts++;
     _needsRender = true;
     _rafId = requestAnimationFrame(animate);
-    console.log('§RENDER_LOOP start total=' + _loopStarts);
+    // §LOG_SPAM_THROTTLE (user, 2026-07-27: "solve the spam too"). This trio — RENDER_LOOP start,
+    // IDLE_GATE park, IDLE_GATE wake — fires once per idle cycle, and the idle gate cycles on every
+    // pointer twitch: their Hospital console ran to `total=189` with hundreds of interleaved
+    // park/wake pairs, burying every §-line that carries information. The COUNT is the signal here,
+    // not each occurrence, so log the first few in full and then only every 25th, carrying the
+    // running total (which is what the §RENDER_LOOP witness asserts on anyway).
+    if (_loopStarts <= 3 || _loopStarts % 25 === 0)
+      console.log('§RENDER_LOOP start total=' + _loopStarts + (_loopStarts > 3 ? ' (throttled: every 25th)' : ''));
   }
   function _ensureLoop() { _tabVisible = true; _startLoop(); }
   document.addEventListener('visibilitychange', function() {
@@ -729,12 +862,14 @@ async function initViewer() {
   // effects.js) — _photoAutoStageOn is permanently false now, and without the staging term a
   // tap/UI-click during kept-staging would never reach the full teardown (dusk mood stuck on).
   function _photoCycleEngaged() { return !!(APP._stillRefineActive || APP._photoAutoStageOn || APP._photoStagingOn); }
-  function _cancelStillRefine() { if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
+  // §STILL_LOCK: while an Alt+S still is locked, only Esc exits — clicks on the bounce overlay (Save PNG, the picture)
+  // bubble here and must not cancel it.
+  function _cancelStillRefine() { if (APP._stillLockOn) return; if (_photoCycleEngaged() && typeof APP.stopStillRefine === 'function') APP.stopStillRefine(); }
   // §STAGE1 (sandbox spike, feat/ssgi-composer-poc — NOT shipped): a pointerdown ON THE 3D CANVAS
   // is camera-orbit-drag-start territory (soft-cancel, keep staging) — a pointerdown ANYWHERE ELSE
   // (Find panel, toolbar, any UI chrome) is a real selection/action (full teardown, matches "when i
   // select an item it breaks to old nature" exactly, unchanged from today's behavior for UI clicks).
-  function _cancelStillRefineSoft() { if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
+  function _cancelStillRefineSoft() { if (APP._stillLockOn) return; if (_photoCycleEngaged() && typeof APP.softStopStillRefine === 'function') APP.softStopStillRefine(); }
   // §PANEL_REGISTRY_SOFT_CANCEL (2026-07-17, user: "during flight we cannot disturb the panel as
   // closing it stops the Alt-S and it be recording onwards non S... Pill registry is an abstract
   // handling"): this was a blind binary check — canvas = soft, EVERYTHING else = full teardown —
@@ -789,7 +924,7 @@ async function initViewer() {
   APP._onStreamDone = function() {
     if (!APP._isWebGPU || !APP.renderer.compileAsync) return;
     _pipelinesCompiling = true;
-    if (APP.status) APP.status.textContent = 'Compiling GPU shaders — please wait...';
+    if (APP.status) APP.status.textContent = _trlD('ui_gpu_compiling', null, 'Compiling GPU shaders — please wait...');
     console.log('§S276_COMPILE_ASYNC starting pipeline pre-compilation...');
     var t0 = performance.now();
     APP.renderer.compileAsync(APP.scene, APP.camera).then(function() {
@@ -801,7 +936,7 @@ async function initViewer() {
         console.log('§S276_BBOX_CLEAR bboxes removed after pipeline compilation');
       }
       _needsRender = true;
-      if (APP.status) APP.status.textContent = 'GPU shaders compiled in ' + ms + 'ms — rendering';
+      if (APP.status) APP.status.textContent = _trlD('ui_gpu_compiled', { ms: ms }, 'GPU shaders compiled in {ms}ms — rendering');
       console.log('§S276_COMPILE_ASYNC done ms=' + ms);
     });
   };
@@ -814,10 +949,24 @@ async function initViewer() {
                  APP.flyActive || _orbiting || _pipelinesCompiling;
     if (!_awake) {
       _rafId = null;
-      if (!_idleLogged) { console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames)'); _idleLogged = true; }
+      if (!_idleLogged) {
+        _idleCycles = (_idleCycles || 0) + 1;
+        // §VAC / §R14.1 (bim-compiler prompts/CPE_4D_PERF_MEM_STUDY.md): this tag is the ONE of
+        // the nine audited that was already compliant — its mechanism is unchanged here. What was
+        // wrong is that the line INVITED a misread, and got one: §R13.9 recorded "165 park + 165
+        // wake pairs" from s5_hospital.log as if that were the event count. It is the SAMPLE
+        // count — `cycles=4050` on the last line is the real number of park/wake cycles during
+        // that bake, ~2 per exported frame. Saying the sample rate and the running total on the
+        // line itself is the whole fix; `(throttled: every 25th)` did not make that readable.
+        if (_idleCycles <= 3 || _idleCycles % 25 === 0)
+          console.log('§IDLE_GATE park — rAF chain stopped (self-parking, 0 frames) parks=' + _idleCycles +
+            (_idleCycles > 3 ? ' (1-in-25 sample; every park is counted in parks=, only the line is sampled)' : ''));
+        _idleLogged = true;
+      }
       return;
     }
     _rafId = requestAnimationFrame(animate);
+    _fpsSample(performance.now()); // §FPS_MODE — elapsed since previous awake-frame start = full per-frame cost
     if (!APP.walkModeActive) {
       APP.controls.update();
       if (APP.walkMode) { APP.walkTick(); } else { APP.flyTick(); }
@@ -836,6 +985,9 @@ async function initViewer() {
     }
     // §S277b: WebGL only — no pipeline compilation gate needed
     if (_pipelinesCompiling) return;
+    // §GI_SCENE_BORROWED (2026-09-24): the bounce still hides app meshes across awaits while it compiles/renders its own
+    // passes (gi_still.js). Drawing the app scene then shows a half-hidden building; hold the last frame instead.
+    if (APP._sceneBorrowed) return;
     if (window._isMobile) {
       // §S276b: Throttle continuous streaming renders — every 10th frame only.
       // But always honor explicit _needsRender (bbox chunks, user interaction).
@@ -849,6 +1001,11 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER: an OPT-IN second-camera scissor sub-render, installed only while the
+        // cinema path editor's B panel is toggled on (cinema_path_editor.js). undefined/absent the
+        // rest of the time, so this is a single property check when off — never touched by the
+        // MaxQ bake, which does not run through this loop and never sets the hook.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
       }
     } else {
@@ -862,8 +1019,14 @@ async function initViewer() {
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();
         else APP.renderer.render(APP.scene, APP.camera);
+        // §CPE_VIEWFINDER — see the mobile branch above for the full comment.
+        if (APP._cpeViewfinderRender) APP._cpeViewfinderRender();
         _needsRender = false;
-        if (_idleLogged) { console.log('§IDLE_GATE wake'); _idleLogged = false; }
+        if (_idleLogged) {
+          // §VAC — same 1-in-25 sample as the park line above; parks= is the true event count.
+          if ((_idleCycles || 0) <= 3 || (_idleCycles || 0) % 25 === 0) console.log('§IDLE_GATE wake parks=' + (_idleCycles || 0) + ' (1-in-25 sample)');
+          _idleLogged = false;
+        }
       } else if (!_idleLogged) {
         console.log('§IDLE_GATE park — desktop loop idle, 0 GPU frames (static scene)');
         _idleLogged = true;
@@ -1067,6 +1230,70 @@ async function initViewer() {
         }
       }, 1500);
     }
+
+    // §SCENE_STATE_RESTORE (prompts/Viewer/SAVE_DB_SCENE_STATE.md §1-4) — restore the SAVED DEFAULT
+    // view for a plain DB open, no share link. Runs on every load (unlike the S265 block above, which
+    // only fires when a hash is present); a hash field wins over the DB's saved default per-field —
+    // an explicit shared link is a more deliberate ask than the reopener's own last-saved view.
+    if (APP.db) {
+      var hasSceneState = APP.dbQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='scene_state'");
+      if (hasSceneState && hasSceneState.length) {
+        var ssChecks = 0;
+        var ssTimer = setInterval(function() {
+          ssChecks++;
+          if (APP.streamedCount > 10 || ssChecks > 20) {
+            clearInterval(ssTimer);
+            try {
+              var ssRows = APP.dbQuery("SELECT cam_ifc_x,cam_ifc_y,cam_ifc_z,tgt_ifc_x,tgt_ifc_y,tgt_ifc_z," +
+                "xray_on,dlod_on,walk_mode,focused_panel,find_guids,tm_on FROM scene_state LIMIT 1");
+              if (!ssRows || !ssRows.length) { console.log('§SCENE_STATE_RESTORE none (0 rows)'); return; }
+              var sr = ssRows[0], ssApplied = [];
+              // §ZOOM_LANDING_NO_RESTORE (user 2026-10-07: zoom back "reload afresh with Time Machine"): a ?find= landing is a
+              //   deliberate zoom, so the saved default view's camera, saved Find filter and Time Machine are NOT re-applied
+              //   (they fought the zoom and routed it into the TM). xray/dlod/walk/panel still restore.
+              if (/[?&]find=/.test(location.search)) {
+                if (sr[11]) console.log('§SCENE_STATE_RESTORE skip=tm,camera,find (zoom landing)');
+                sr = sr.slice(); sr[0] = null; sr[10] = null; sr[11] = 0;
+              }
+              if (!hashParams.cam && sr[0] != null && APP.ifc2three) {
+                var scp = APP.ifc2three(sr[0], sr[1], sr[2]), sct = APP.ifc2three(sr[3], sr[4], sr[5]);
+                APP.camera.position.set(scp.x, scp.y, scp.z);
+                APP.controls.target.set(sct.x, sct.y, sct.z);
+                APP.controls.update();
+                ssApplied.push('camera');
+              }
+              if (!hashParams.xray && sr[6] && typeof APP.toggleXray === 'function' && !APP.xrayOn) {
+                APP.toggleXray(); ssApplied.push('xray');
+              }
+              if (sr[7] && typeof APP.dlodEnable === 'function' && !APP._dlodEnabled) {
+                APP.dlodEnable(); ssApplied.push('dlod');
+              }
+              if (sr[8] && typeof APP.startDriveThru === 'function' && !APP.walkModeActive) {
+                APP.startDriveThru(); ssApplied.push('walk');
+              }
+              if (sr[9] && typeof APP.runPanelAction === 'function') {
+                if (APP.runPanelAction(sr[9])) ssApplied.push('panel=' + sr[9]);
+              }
+              if (!hashParams.pick && sr[10] && typeof APP.filterByGuids === 'function') {
+                var ssGuids = String(sr[10]).split(',').filter(Boolean);
+                if (ssGuids.length) { APP.filterByGuids(new Set(ssGuids)); ssApplied.push('find=' + ssGuids.length); }
+              }
+              if (!hashParams.tm && sr[11] && typeof window.toggleTimeMachine === 'function') {
+                window.toggleTimeMachine(); ssApplied.push('tm');
+              }
+              console.log('§SCENE_STATE_RESTORE ' + (ssApplied.length ? ssApplied.join(' ') : 'none'));
+            } catch (e) { console.warn('§SCENE_STATE_RESTORE_FAIL ' + e.message); }
+          }
+        }, 1500);
+      } else {
+        console.log('§SCENE_STATE_RESTORE none (no scene_state table)');
+      }
+      // §LIGHT_FIELD_DB (light_zones.js SPEC S4): read the saved Alt+S light field out of the .db now, off the press path, so the
+      // first Alt+S restores it (cache=hit src=db) instead of building it. Async; prime() at staging joins the same read.
+      // §FILM_FIELD_BY_BUILDING: a db without its own row first borrows the building's baked sidecar (scene.js), then primes.
+      if (APP._loadPrebake) APP._loadPrebake();   // §PREBAKE sidecar (async, never blocks; consumers check their own keys)
+      if (window.LightZones && window.LightZones.primeDb) { Promise.resolve(APP._lightFieldByBuilding ? APP._lightFieldByBuilding() : null).then(function () { try { window.LightZones.primeDb(APP); } catch (eLF) { console.warn('§LIGHT_FIELD_DB prime failed: ' + eLF.message); } }); }
+    }
   }).catch(e => {
     APP.status.textContent = `Error: ${e.message}`;
     console.error(`[S192] §INIT_ERROR`, e);
@@ -1099,12 +1326,12 @@ async function initViewer() {
     if (online) {
       div.style.background = 'rgba(39,174,96,0.92)';
       div.style.color = '#fff';
-      div.textContent = 'Back online';
+      div.textContent = _trlD('ui_back_online', null, 'Back online');
       console.log('[S243] §NET_STATUS online');
     } else {
       div.style.background = 'rgba(230,126,34,0.92)';
       div.style.color = '#fff';
-      div.textContent = 'Offline mode — cached buildings still available';
+      div.textContent = _trlD('ui_offline_mode', null, 'Offline mode — cached buildings still available');
       console.log('[S243] §NET_STATUS offline');
     }
     document.body.appendChild(div);
@@ -1120,7 +1347,7 @@ async function initViewer() {
     var mic = document.getElementById('nlp-btn');
     var badge = document.createElement('span');
     badge.id = id;
-    badge.textContent = 'OFFLINE';
+    badge.textContent = _trlD('ui_offline_badge', null, 'OFFLINE');
     badge.style.cssText = 'position:fixed;top:10px;z-index:21;padding:2px 7px;' +
       'background:rgba(200,30,30,0.85);color:#fff;font-size:10px;font-family:Segoe UI,sans-serif;' +
       'border-radius:4px;letter-spacing:0.5px;pointer-events:none;opacity:0.9;';

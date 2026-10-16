@@ -134,6 +134,14 @@
     });
     _$('adq-body').innerHTML = (_tab === 'diy') ? _diyHtml() : _aboutHtml();
     if (_tab === 'diy') _wireDIY();
+    // FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): a page that loads erp_persist_ui.js (idempiere.html) shows the
+    // signed Backup / Restore of its work under "Run it yourself" — the data-out half of DIY. Other pages: nothing changes.
+    if (_tab === 'diy' && window.ErpPersist && typeof window.ErpPersist.renderInto === 'function') {
+      var bk = document.createElement('div'); bk.setAttribute('data-erp-backup', '1');
+      bk.innerHTML = '<h4 style="margin:14px 0 4px">Back up / restore your work</h4>';
+      _$('adq-body').appendChild(bk);
+      try { window.ErpPersist.renderInto(bk, {}); console.log('§ABOUT-DIY backup control mounted (ErpPersist)'); } catch (e) { console.warn('§ABOUT-DIY backup mount', e && e.message); }
+    }
     console.log('§ABOUT-DIY tab=' + _tab);
   }
 

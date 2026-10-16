@@ -26,14 +26,18 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404'); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
 
+const REFUSE = [];   // §DW-LOD400-REFUSE lines for the current walk
 async function runOne(pg, key) {
   console.log(`\n═══ ${key} ═══`);
   await pg.click('#b-open'); await sleep(200);
   await pg.click(`#m-open-panel .mo-row[data-key="${key}"]`);
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai', { timeout: 60000 }).catch(() => {});
   await sleep(4000);
+  REFUSE.length = 0;
   await pg.evaluate((b) => window.discWalk('ELEC', { building: b }), key);
-  const walked = await pg.waitForFunction((d) => window.__dwLastCommitDisc === d, { timeout: 180000, polling: 250 }, 'ELEC').then(() => true).catch(() => false);
+  // §WALK-LOD400-ONLY: a walk now either commits LOD400 fixtures or REFUSES (no box fallback) — wait for whichever happens.
+  let walked = false; const tw = Date.now();
+  while (Date.now() - tw < 180000) { walked = await pg.evaluate((d) => window.__dwLastCommitDisc === d, 'ELEC'); if (walked || REFUSE.length) break; await sleep(250); }
   await sleep(1000);
 
   const r = await pg.evaluate(() => {
@@ -88,7 +92,7 @@ async function runOne(pg, key) {
     console.log(`§DWSB-${key}-STRATUM ${k} n=${s.n} outliers=${s.out} aboveRoof=${s.above} z=[${s.zmin},${s.zmax}]`); });
   r.outliers.forEach(o => console.log(`§DWSB-${key}-OUTLIER d=${o.d} z=${o.z} storey="${o.storey}" cls=${o.cls} prov=${o.prov} host=${o.host} snapDist=${o.snapDist} xy=(${o.x},${o.y})`));
   r.aboveRoof.forEach(o => console.log(`§DWSB-${key}-ABOVEROOF z=${o.z} zmax=${r.structZmax} storey="${o.storey}" cls=${o.cls} prov=${o.prov}`));
-  return { walked, ...r };
+  return { walked, refused: REFUSE.length > 0, ...r };
 }
 
 (async () => {
@@ -96,7 +100,7 @@ async function runOne(pg, key) {
   const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const pg = await br.newPage(); await pg.setViewport({ width: 1400, height: 950, deviceScaleFactor: 2 });
   const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
-  pg.on('console', m => { const t = m.text(); if (/§(DW|WALK|SCHED|DISC|DIAG)/.test(t)) console.log('  [pg] ' + t); });
+  pg.on('console', m => { const t = m.text(); if (/§DW-LOD400-REFUSE disc=ELEC refused=\d+ kept=0/.test(t)) REFUSE.push(t); if (/§(DW|WALK|SCHED|DISC|DIAG)/.test(t)) console.log('  [pg] ' + t); });
   await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalk==="function"', { timeout: 30000 }).catch(() => {});
 
@@ -118,10 +122,13 @@ async function runOne(pg, key) {
 
   // PASS bar (AFTER-fix): SC count preserved at 270, outliers strictly below the 11 baseline, zero
   // above-roof; Duplex regression leg 102 placements, outliers within its own measured baseline (0).
-  const scPass = sc.walked && sc.placed === 270 && sc.outliers.length < 11 && sc.aboveRoof.length === 0;
+  // §WALK-LOD400-ONLY (2026-09-27): SampleCastle's 270 ELEC placements were measured-median BOXES (no device, no mesh hash); red1's
+  // first principle — "All must be LOD400 or fail hard" — makes that walk REFUSE. The SC leg now asserts the honest refusal
+  // (0 placed, §DW-LOD400-REFUSE seen); the storey-band geometry claim is carried by the Duplex leg (real LOD400 fixtures).
+  const scPass = !sc.walked && sc.refused && sc.placed === 0;
   const dxPass = dx.walked && dx.placed === 102 && dx.aboveRoof.length === 0;
   console.log('\nerrors=' + errs.length + (errs.length ? ' ' + JSON.stringify(errs) : ''));
-  console.log(`W-DW-STOREY-BAND SC=${scPass ? 'PASS' : 'FAIL'} (placed=${sc.placed} outliers=${sc.outliers.length} aboveRoof=${sc.aboveRoof.length})  DUPLEX=${dxPass ? 'PASS' : 'FAIL'} (placed=${dx.placed} outliers=${dx.outliers.length} aboveRoof=${dx.aboveRoof.length})`);
+  console.log(`W-DW-STOREY-BAND SC=${scPass ? 'PASS' : 'FAIL'} (refused=${sc.refused} placed=${sc.placed} outliers=${sc.outliers.length} aboveRoof=${sc.aboveRoof.length})  DUPLEX=${dxPass ? 'PASS' : 'FAIL'} (placed=${dx.placed} outliers=${dx.outliers.length} aboveRoof=${dx.aboveRoof.length})`);
   await br.close(); server.close();
   process.exit(scPass && dxPass && errs.length === 0 ? 0 : 1);
 })();

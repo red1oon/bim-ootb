@@ -195,6 +195,9 @@ async function partC() {
   }
   fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
   fs.copyFileSync(path.join(MOD, 'bonsai_kernel_worker.js'), path.join(tmp, 'worker.mjs'));
+  // §NET-AUDIT (2026-09-26): the worker imports ./cut_move.js since the GEOM_CUT_MOVE arc (#1711); without the copy this
+  // leg died with ERR_MODULE_NOT_FOUND before judging anything (red since 2026-09-11).
+  fs.copyFileSync(path.join(MOD, 'cut_move.js'), path.join(tmp, 'cut_move.js'));
   globalThis.self = globalThis.self || {};
   self.postMessage = () => { };
   await import(path.join(tmp, 'worker.mjs'));

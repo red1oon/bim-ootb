@@ -31,26 +31,86 @@ function pointInTriangle(px, py, ax, ay, bx, by, cx, cy) {
 function pointInRect(px, py, rc) { return px >= rc.x0 && px <= rc.x1 && py >= rc.y0 && py <= rc.y1; }
 function inflateRect(rc, slack) { return { x0: rc.x0 - slack, x1: rc.x1 + slack, y0: rc.y0 - slack, y1: rc.y1 + slack }; }
 
+function _hasTable(db, name) {
+  try {
+    const r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [name]);
+    return r.length > 0 && r[0].values.length > 0;
+  } catch (e) { return false; }
+}
+
+// §SPLIT-DB (2026-07-22, VIEWER_FIND_PANEL_ROOM_ACCURACY.md §12): a split-DB building (e.g. Terminal)
+// keeps `component_geometries` in a SEPARATE sibling `_geo.db`, NOT in the primary `_meta.db`/
+// `_extracted.db` the room graph is read from — exactly the 3-file layout the live viewer's own
+// §S260b split-DB detection loads (meta.db for panels/spatial, geo.db for meshes). If the primary db
+// carries no geometry table, resolve the sibling `_geo.db` and hand it to buildGeometryIndex as its
+// second (geoDb) arg — element_instances stays keyed off the PRIMARY db, meshes decode from the geo
+// db, exactly as real_geometry.js's two-arg contract already supports. Without this, every slab is
+// unresolved (0/705 on Terminal) and the raster silently degrades to crude full-slab-bbox fallback
+// rects — the "0/174 slabs resolved" gap §24 flagged as unexplored. This is a plumbing fix, not a
+// data one: Terminal's slab mesh is fully present (705/705 resolve once geo.db is loaded).
+function _resolveGeoDb(SQL, dbPath, primaryDb, log) {
+  if (_hasTable(primaryDb, 'component_geometries') || _hasTable(primaryDb, 'base_geometries')) return null;
+  const geoPath = dbPath.replace(/_(meta|extracted|rooms)\.db$/, '_geo.db');
+  if (geoPath === dbPath || !fs.existsSync(geoPath)) {
+    if (log) log('§RASTER_SPLITDB primary has no geometry table and no sibling _geo.db found (' + geoPath + ')');
+    return null;
+  }
+  const geoDb = new SQL.Database(new Uint8Array(fs.readFileSync(geoPath)));
+  if (log) log('§RASTER_SPLITDB loaded sibling geo db ' + path.basename(geoPath));
+  return geoDb;
+}
+
 async function loadDb(SQL, dbPath, patchPath) {
   const db = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
   if (patchPath && fs.existsSync(patchPath)) db.exec(fs.readFileSync(patchPath, 'utf8'));
+  const geoDb = _resolveGeoDb(SQL, dbPath, db, console.log);
   function dbQuery(q, params) {
     const r = params ? db.exec(q, params) : db.exec(q);
     if (!r.length) return [];
     return r[0].values;
   }
-  return { db, dbQuery };
+  return { db, geoDb, dbQuery };
 }
 
-// World-XY triangles for every slab guid on `storey` (z window [storeyZ+Z_LO, storeyZ+Z_HI]).
-// Returns { triangles: [[x0,y0,x1,y1,x2,y2],...], fallbackRects: [rect,...] (unresolved/tilted guids) }.
+// World-XY triangles for every slab guid on `storey`.
+// §FLOOR-PLANE-NOT-FIXED-WINDOW (2026-07-25, root-caused on Hospital with real numbers): the slab
+// selector used a HARDCODED window `[storeyZ-2, storeyZ+1]` around `storeyZ`, which is the average
+// ROOM-CENTRE z — i.e. mid-height of the occupied volume, ~2.0-2.5m above the floor it stands on.
+// On Hospital that 2.00m lookdown missed the real floor plate by FIVE CENTIMETRES:
+//   Level 4 window [181.79,184.79], real floor slab z=181.74, area 8270 m² -> EXCLUDED
+//   Level 5 window [186.83,189.83], real floor slab z=186.74, area 8343 m² -> EXCLUDED
+//   Level 1 window [166.58,169.58], real floor slabs z=165.59/165.74, area 8899 m² -> EXCLUDED
+// which is the whole reason this building's raster was rooms-and-corridors only (Level 4 fill 20.5%),
+// its walkable cells formed disconnected islands, and the Find-panel route
+// `≈ Level 1 R35 -> ≈ Level 4 R8` had three legs A* could not route on floor (135/143/34 illegal
+// samples). It is also exactly the "fixable plumbing gap behind Hospital's tie result" that
+// VIEWER_FIND_PANEL_ROOM_ACCURACY.md §16 left open, and the same class as Terminal's §12 Stage A.
+// Fix, derived instead of guessed: find the FLOOR PLANE — the highest slab z that is still at or
+// below the occupied volume's centre, searching a generous 4m down (covers real 3-4m ceiling heights
+// without reaching the storey below, whose own floor is a full storey height away) — then take every
+// slab COPLANAR with it (within FLOOR_PLANE_TOL) plus anything up to storeyZ+Z_HI, which keeps the
+// original window's upper half (mezzanine/landing slabs sitting inside the storey) unchanged. A
+// storey with no slab below its centre falls back to the original window, so nothing regresses on a
+// building whose slabs were already being found.
+const FLOOR_LOOKDOWN = 4.0;   // m below storeyZ to search for the floor plane (storey pitch is >4.7m here)
+const FLOOR_PLANE_TOL = 0.35; // m — slabs within this of the floor plane z are the same floor
 function slabTrianglesForStorey(dbQuery, geomIdx, storey, storeyZ, log) {
   let rows = [];
   try {
+    let zLo = storeyZ + Z_LO;
+    const below = dbQuery("SELECT MAX(t.center_z) FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid " +
+      "WHERE m.ifc_class LIKE 'IfcSlab%' AND t.center_x IS NOT NULL AND t.center_z <= ? AND t.center_z >= ?",
+      [storeyZ, storeyZ - FLOOR_LOOKDOWN]) || [];
+    const floorZ = (below.length && below[0][0] != null) ? below[0][0] : null;
+    if (floorZ != null) zLo = Math.min(zLo, floorZ - FLOOR_PLANE_TOL);
+    log('§RASTER_FLOOR_PLANE storey=' + storey + ' storeyZ=' + storeyZ.toFixed(2) +
+      ' floorPlaneZ=' + (floorZ == null ? 'none' : floorZ.toFixed(2)) +
+      ' zWindow=[' + zLo.toFixed(2) + ',' + (storeyZ + Z_HI).toFixed(2) + ']' +
+      ' (fixedWindowWouldStartAt=' + (storeyZ + Z_LO).toFixed(2) + ')');
     rows = dbQuery("SELECT m.guid, t.center_x, t.center_y, t.center_z, t.rotation_x, t.rotation_y, t.rotation_z, " +
       "t.bbox_x, t.bbox_y, m.element_name FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid " +
       "WHERE m.ifc_class LIKE 'IfcSlab%' AND t.center_x IS NOT NULL AND t.center_z >= ? AND t.center_z <= ?",
-      [storeyZ + Z_LO, storeyZ + Z_HI]) || [];
+      [zLo, storeyZ + Z_HI]) || [];
   } catch (e) { log('§RASTER_SLAB_ERR ' + e.message); }
   const triangles = [], fallbackRects = [];
   let resolved = 0, unresolved = 0, tilted = 0;
@@ -155,8 +215,8 @@ async function main() {
   if (!dbPath) { console.error('usage: build_storey_walkable_raster.js <dbPath> [patchPath] [outSqlPath]'); process.exit(1); }
   const log = console.log;
   const initSql = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ROOT, 'modeller', 'lib', 'sql-wasm.wasm')) });
-  const { db, dbQuery } = await loadDb(initSql, dbPath, patchPath);
-  const geomIdx = RealGeometry.buildGeometryIndex(db);
+  const { db, geoDb, dbQuery } = await loadDb(initSql, dbPath, patchPath);
+  const geomIdx = RealGeometry.buildGeometryIndex(db, geoDb || db);
   log('§RASTER_GEOM_INDEX table=' + geomIdx.table + ' guids=' + Object.keys(geomIdx.byGuid).length +
     ' resolvedHashes=' + Object.keys(geomIdx.resolved).length);
   const graph = RoomGraph.buildGraph(dbQuery, { log });

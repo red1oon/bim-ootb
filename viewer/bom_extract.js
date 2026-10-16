@@ -38,6 +38,14 @@
 
 var BOM_IDB_STORE = 'bim_ootb_bom';
 
+// Envelope from structural classes only — outliers (proxy, site, furniture) stretch AABB.
+// §20.9 — the single owner of this list; other modules (cpe_flythru_cues.js) reference
+// window.BOMExtract.ENV_CLASSES rather than keep a second, driftable copy.
+var ENV_CLASSES = {
+  IfcColumn: 1, IfcPile: 1, IfcWall: 1, IfcWallStandardCase: 1,
+  IfcSlab: 1, IfcBeam: 1, IfcFooting: 1, IfcCurtainWall: 1, IfcRoof: 1
+};
+
 /**
  * extractBOM(A) — main entry point
  * @param {object} A — the APP object with A.db, A.activeBuilding, A.dbQuery
@@ -67,12 +75,7 @@ function extractBOM(A) {
 
   // ── 2. Build grouped tree ──
   var storeyMap = {};  // storey_name → { disciplines: { disc → { classes: { class → {elements} } } } }
-  // Envelope from structural classes only — outliers (proxy, site, furniture) stretch AABB.
-  // Fallback to all elements if no structural classes found.
-  var ENV_CLASSES = {
-    IfcColumn: 1, IfcPile: 1, IfcWall: 1, IfcWallStandardCase: 1,
-    IfcSlab: 1, IfcBeam: 1, IfcFooting: 1, IfcCurtainWall: 1, IfcRoof: 1
-  };
+  // Fallback to all elements if no structural classes found (ENV_CLASSES is the module-scope owner above).
   var envMinX = Infinity, envMaxX = -Infinity;
   var envMinY = Infinity, envMaxY = -Infinity;
   var envMinZ = Infinity, envMaxZ = -Infinity;
@@ -401,7 +404,8 @@ window.BOMExtract = {
   extract: extractBOM,
   loadCached: loadCachedBOM,
   applySTDMEP: applySTDMEP,
-  STD_MEP: STD_MEP
+  STD_MEP: STD_MEP,
+  ENV_CLASSES: ENV_CLASSES
 };
 
 })(window);

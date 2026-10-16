@@ -1,0 +1,26 @@
+-- ════════════════════════════════════════════════════════
+-- KUL001-OVERALL_partial: add the missing elements_meta.building column to buildings/KUL_OVERALL_partial_extracted.db
+--
+-- Issue this patch proves/disproves: the KUL DBs load (§DB_LOADED see §DB_SIZE_CHECK) but render ZERO
+-- geometry (witnessed: meshes=2 tris=14 after 180s headless, only the ground/sky helpers).
+-- Root cause chain, all §-witnessed, no viewer code involved:
+--   §HELPERS_QUERY_ERR no such column: m.building   ← streaming.js:1946 centres query
+--   §CENTRES_RESULT rows=0  →  §BOOTSTRAP centres=0
+--   A.startStreaming() (streaming.js:25-37) loops Object.entries(A.buildingCentres); empty ⇒
+--   nearest === null ⇒ bare `return` with NO log line — which is exactly why the console goes
+--   silent after §BBOX_PAINT_YIELD and never reaches §DS_AUTO_START/§DS_*.
+--
+-- Why the column is missing: DAGCompiler/python/extractIFCtoDB.py (bim-compiler) never writes
+-- elements_meta.building — verified by reading the script. The two existing residents built by
+-- that SAME extractor schema (id,guid,discipline,ifc_class,element_name,element_type,storey,...)
+-- — LTU_AHouse and Terminal — DO carry the column, populated by a later pipeline step as
+-- 'T0_<name>' (LTU_AHouse: T0_LTU_AHouse ×125,698; Terminal: T0_Terminal ×48,428). This patch
+-- reproduces that convention exactly; it does not invent a new one.
+--
+-- Applied at runtime by viewer/scene.js A._applyPendingPatch on EVERY load, against the RAW
+-- server bytes (the IDB cache stores unpatched bytes), so the ALTER always runs on a pristine
+-- copy — a repeat apply is a fresh add, never a duplicate-column error. Any exec failure is
+-- swallowed by the loader and the unpatched db is used, so this can never block an open.
+-- ════════════════════════════════════════════════════════
+ALTER TABLE elements_meta ADD COLUMN building TEXT;
+UPDATE elements_meta SET building = 'T0_KUL_OVERALL_partial';

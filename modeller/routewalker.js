@@ -18,7 +18,7 @@
 
 // ─── Constants ───────────────────────────────────────────────
 var RW_PREFIX = 'RW2D-';
-var MEP_RW_DB_URL = 'mep_rw.db?v=2';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room)
+var MEP_RW_DB_URL = 'mep_rw.db?v=5';  // relative to viewer, or full OCI URL (?v busts the IDB cache when the db data changes — v2 adds building_room; v3/v4/v5 add the FP_TERMINAL_01 / ACMV_TERMINAL_01 / ELEC_DUPLEX_01 ad_mep_pattern rows, §MEP-ROUTE-DISC D1/D2/D3)
 // §RW-CROSSSECTION (WalkerDoctrine.md §8, 2026-07-07): RW_PIPE_NOMINAL_MM/RW_PIPE_CROSS below are BARE
 // INVENTED LITERALS with no product/BOM-line/IFC element behind them — confirmed making every pipe/duct
 // segment (every discipline) render as an identical 50mm SQUARE prism, ~2.3x oversized vs the one real
@@ -51,11 +51,57 @@ var RW_WALL_SNAP_MAX = 1.5;   // metres — a wall-host fixture snaps onto a rea
 // `IfcFlowSegment_Ifc2x3_Duplex_2f28520e`) actually measures a 48mm×70mm cross-section over a 4.43m run —
 // not round, not 250mm. That catalog's declared dims cannot be trusted as a "real cross-section" for this
 // hard-fail gate, so CW/SP/ACMV/ELEC stay REFUSED until component_library.db grows a verified product.
+// §RW-CW-SP-PRODUCT (2026-09-24, MODELLER_MASTER §STRATEGY L3) — SPEC. red1 decided (2026-09-24): "Use measured
+// Duplex pipes". CW and SP are each registered from ONE cited real pipe instance of the Duplex federated MEP model
+// (build/Duplex_mep_extracted.db, extracted from reference/residential/Ifc2x3_Duplex_Federated.ifc per
+// build/logs/extract_duplex_mep.log; the guids are also in internal/UNMERGED/Ifc2x3_Duplex_MEP.ifc). The discipline
+// comes from the SOURCE's own pipe type name, not inferred: 'Pipe Types:Cold Water' → CW, 'Pipe Types:Waste' → SP
+// (SP = gravity soil/waste, RW_DISC_TO_COORD). The cross-section is that instance's measured bbox across its run.
+// It is an axis-aligned straight run, so the two short extents ARE the pipe section. Measured over ALL straight
+// axis-aligned segments of each type (2026-09-24):
+//   Waste       43 straight → 48.3 mm on 41 (1½" OD) · 42.2 ×1 · 60.3 ×1          → 48.3 mm, a clear mode
+//   Cold Water  65 straight → 25.4 mm on 31 (1")  · 12.7 mm on 30 (½")  · 6.3/6.4 ×4 → 25.4 mm, CHOSEN AS THE
+//               MAINS SIZE; the ½" branch size is nearly as common. One product per discipline is a stated
+//               simplification: branches are drawn and signed at the mains section.
+// Effect: CW/SP runs now SIGN (GEOM_SWEEP) instead of refusing, and the clash margin uses the real section instead of
+// the invented RW_PIPE_CROSS (75 mm).
 var RW_REAL_CROSSSECTION = {
+  CW: {
+    w: 0.0254, h: 0.0254,               // measured bbox cross extents, metres (run length 4.514 m)
+    product: 'Duplex_CW_Pipe_25', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3mPE5k4Z1BMwNpizluRx2t "Pipe Types:Cold Water:583067" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
+  SP: {
+    w: 0.04826, h: 0.048361,            // measured bbox cross extents, metres (run length 3.803 m)
+    product: 'Duplex_SP_Waste_Pipe_48', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 0_dkc9hC11lA4ntVXLyrTT "Pipe Types:Waste:583332" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-24'
+  },
   FP: {
     w: 0.0213317871, h: 0.0213356018,   // measured local bbox X/Y extent, metres — component_library.db
     product: 'FP_Drop_Pipe', ifc_class: 'IfcPipeSegment',
     source: 'library/component_library.db component_definitions (name=FP_Drop_Pipe), verified 2026-07-07'
+  },
+  // §MEP-ROUTE-DISC D2 (2026-09-26): ACMV duct, ONE cited real instance of SJTII_Terminal's own ductwork (bim-ootb
+  // buildings/Terminal_extracted.db; all 568 IfcDuctSegment have rotation_z = 0, so the two short AABB extents ARE the
+  // section). Type 'Rectangular Duct:jkrME_duct_Radius Elbows / Taps' (420 straight segments; Flex Duct Round 129,
+  // Mitered 18, Round 1 are the others). Section MODE over the 420: 150×150 mm on 53 (then 300×200 = 29, 300×250 = 21,
+  // 400×300 = 21 … up to 1500×550 for the mains). 150×150 is the branch/tap size (of the 53: X 19 / Y 4 / Z 30). ONE
+  // product per discipline is the stated simplification (L3 precedent: CW at the mains size) — a mains size is red1's
+  // call (SPEC_MEP_ROUTE_DISC Q2), not this file's.
+  ACMV: {
+    w: 0.15, h: 0.15,                   // measured bbox cross extents, metres (run length 2.9935 m)
+    product: 'Terminal_Rect_Duct_150x150', ifc_class: 'IfcDuctSegment',
+    source: 'buildings/Terminal_extracted.db guid T0_Terminal_2xYwS5_$XEdxC3K5YP8DZ9 "Rectangular Duct:jkrME_duct_Radius Elbows / Taps:2502617" Aras 02 (SJTII_Terminal), measured 2026-09-26'
+  },
+  // §MEP-ROUTE-DISC D3 (2026-09-26): ELEC conduit, ONE cited real instance of the Duplex federated MEP model (the same
+  // source L3 used for CW/SP: bim-compiler build/Duplex_mep_extracted.db ← reference/residential/Ifc2x3_Duplex_Federated.ifc).
+  // The Terminal has NO cable containment at all (ELEC = 814 IfcLightFixture + 19 appliances), so the Duplex is the only
+  // real source. Its 10 straight 'Conduit with Fittings:Electrical Metallic Tubing (EMT)' IfcFlowSegment ALL measure
+  // 29.5 × 29.5 mm (10/10 — 1" EMT OD); 8 'Conduit Elbow - Steel' are the fittings. n = 10, small, disclosed.
+  ELEC: {
+    w: 0.0295, h: 0.0295,               // measured bbox cross extents, metres (run length 9.0962 m)
+    product: 'Duplex_EMT_Conduit_29', ifc_class: 'IfcFlowSegment',
+    source: 'build/Duplex_mep_extracted.db guid 3qI03Xhmj12QySDYgBoGRD "Conduit with Fittings:Electrical Metallic Tubing (EMT):575511" (Ifc2x3_Duplex_Federated.ifc), measured 2026-09-26'
   }
 };
 // rwCrossSectionFor(disc) -> the REAL cross-section for a RouteWalker discipline code (CW/SP/FP/ACMV/ELEC),
@@ -530,15 +576,18 @@ function _rwPairSegments(discipline, steps, allAnchors, arcEnvelope, out) {
           dz = step.gradient * Math.sqrt(dx * dx + dy * dy);
         }
         var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        var midX = (from.x + nearest.x) / 2, midY = (from.y + nearest.y) / 2, midZ = (from.z + nearest.z) / 2;
         // Clash-margin box: the REAL cross-section when one is verified for this discipline (WalkerDoctrine.md
         // §8, rwCrossSectionFor), else RW_PIPE_CROSS — a disclosed, topology-level safety margin (candidate
         // pairing, not a rendered dimension). No real CW/SP product exists yet (see RW_REAL_CROSSSECTION).
+        // NEAREST-ONLY is deliberate. Measured 2026-09-24: "try the next-nearest on a clash" exploded PLB runs
+        // (Duplex 18 fixtures → 110 runs, Terminal 969 → 7,712) by reaching targets up to RW_MAX_PAIR_DIST away.
+        // Do not "improve" this without a plausibility bound on run length.
         var _xsPS = rwCrossSectionFor(discipline);
         var _crossPS = (_xsPS.real ? Math.max(_xsPS.w, _xsPS.h) : RW_PIPE_CROSS / 1000);
-        if (_rwClashesWithArc(midX, midY, midZ, _crossPS, _crossPS, len, arcEnvelope)) {
+        if (_rwRunClashes(from, dx, dy, dz, _crossPS, arcEnvelope)) {   // §RW-RUNBOX
           return; // clash — skip, same gate as the insert path
         }
+        if (!nearest) return;
         out.push({
           disc: discipline, storey: storey, axis: step.directionAxis,
           from: [from.x, from.y, from.z], to: [nearest.x, nearest.y, from.z + dz],
@@ -684,7 +733,7 @@ function _rwApplyPattern(buildingDb, discipline, steps, allAnchors, arcEnvelope,
         var midZ = (from.z + nearest.z) / 2;
 
         // ARC envelope clash check (real cross-section when verified, else the disclosed safety-margin default)
-        if (_rwClashesWithArc(midX, midY, midZ, _crossAP, _crossAP, pipeLen, arcEnvelope)) {
+        if (_rwRunClashes(from, dx, dy, dz, _crossAP, arcEnvelope)) {   // §RW-RUNBOX
           clashSkipped++;
           return;
         }
@@ -817,6 +866,26 @@ function _rwAabbOverlap(c1, s1, c2, s2, tol) {
 // Optional `tol` overrides RW_ARC_CLASH_TOL. Positive tol = a REQUIRED standoff (the candidate must stay
 // `tol` metres CLEAR of the box); the default -0.01 lets a pipe touch a wall but not penetrate. The
 // discipline-aware caller (_rwStructTol) passes the cited clearance for the relevant service.
+// §RW-RUNBOX (2026-09-24, MODELLER_MASTER §STRATEGY L2) — SPEC. The pairing/insert clash box used to be
+// [cross, cross, runLength] at the run's midpoint: the THIRD (Z) axis was always treated as the pipe's long axis.
+// A horizontal run of length L therefore became a thin vertical post L tall, poking L/2 through the slab above
+// and the slab below, so almost every horizontal run "clashed" and was skipped. Measured (2026-09-24, bridge
+// probe): Duplex 141 pairs with an empty envelope vs 6 with the ARC envelope; SampleCastle 316 vs 32; SampleHouse
+// 14 vs 0. disc_walker.js's _envelopeClash had already documented the mis-orientation (and post-filters with the
+// correct box) but left routewalker.js unfixed. FIX: the box is the run's own axis-aligned extent, inflated by
+// the cross-section on every axis (all THREE call sites: _rwPairSegments, the pattern insert path, _rwConnectFixtures): [|dx|+cross, |dy|+cross, |dz|+cross], centred on the EMITTED segment's
+// midpoint (to.z = from.z + dz, so a GRADIENT step is checked where it is actually drawn). Pattern steps are
+// axis-aligned by construction, so this box is exact, not an approximation. Proof: W-ROUTE-PATTERN-BRIDGE and
+// W-MEP-OPENPATH, compared against the unmodified baseline. MEASURED (PLB runs on the real walk, L1 alone →
+// L1+§RW-RUNBOX): Duplex 8 → 18, Terminal 2,781 → 2,893, SampleCastle 32 → 18. SampleCastle's drop is a greedy
+// PAIRING-ORDER effect, not lost correctness: both variants emit only runs that pass the correct box
+// (disc_walker.js _envelopeClash post-filters with it). The old box let clashing runs consume target anchors,
+// which changed which targets later fixtures saw.
+function _rwRunClashes(from, dx, dy, dz, cross, arcEnvelope) {
+  return _rwClashesWithArc(from.x + dx / 2, from.y + dy / 2, from.z + dz / 2,
+    Math.abs(dx) + cross, Math.abs(dy) + cross, Math.abs(dz) + cross, arcEnvelope);
+}
+
 function _rwClashesWithArc(px, py, pz, pw, pd, ph, arcs, tol) {
   if (tol === undefined) tol = RW_ARC_CLASH_TOL;
   for (var i = 0; i < arcs.length; i++) {
@@ -1304,7 +1373,7 @@ function _rwConnectFixtures(buildingDb, buildingName, arcEnvelope) {
       var _crossCF = (_xsCF.real ? Math.max(_xsCF.w, _xsCF.h) : RW_PIPE_CROSS / 1000);
 
       // Clash check (real cross-section when verified, else the disclosed safety-margin default)
-      if (_rwClashesWithArc(midX, midY, midZ, _crossCF, _crossCF, dist, arcEnvelope)) {
+      if (_rwRunClashes(from, dx, dy, dz, _crossCF, arcEnvelope)) {   // §RW-RUNBOX
         clashSkipped++;
         continue;
       }

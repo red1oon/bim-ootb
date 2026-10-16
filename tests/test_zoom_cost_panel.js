@@ -65,7 +65,7 @@ assert(cov.phase.name === 'Finishes' && pct(cov.phase.planned, cov.phase.committ
 assert(/^\d{4}-\d\d-\d\d/.test(beam.phase.start), 'phase carries a REAL StartDate from records (' + beam.phase.start + ') — not fabricated');
 
 // ── W-PC-HONEST — the panel reads records + labels honestly; no invented line committed, no fabricated date ──
-const navSrc = fs.readFileSync(path.join(__dirname, '..', 'viewer', 'navigate_find.js'), 'utf8');
+const navSrc = require('../viewer/tests/_split_families.js').readFamily('navigate_find');   // whole split family (VIEWER_FILE_SPLIT_PLAN.md §LANES_RULING)
 const cut = navSrc.slice(navSrc.indexOf('function _foldClassTwin'), navSrc.indexOf('A._showClassCost'));
 assert(/from records/.test(cut), 'W-PC-HONEST: cost block is labelled "from records"');
 assert(/C_ProjectPhase\.CommittedAmt|c_projectphase_id/.test(cut), 'committed is folded from the phase grain (control-account), as documented');

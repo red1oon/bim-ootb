@@ -11,7 +11,7 @@
  *   fields) — NOT a stripped OUTPUT: G3 folds iDempiere's full default chart of accounts.
  *
  *   birthTenant(input) -> { input, groups:[{seq,label,ops:[{op:'CREATE',table,row}],parent,tip}], tip, refs }
- *     input = { clientName, currencyId, currencyPrecision, adminUser, dateAcct }
+ *     input = { clientName, currencyId, currencyPrecision, adminUser, dateAcct, countryId?, regionId?, city? }
  *     Each group's tip = sha256(parent.tip + JSON(ops)) — op-log = git-for-data (replay/branch/reverse).
  *   foldGenesis(groups, db) -> apply every CREATE op into `db` (better-sqlite3 OR sql.js facade); schema inferred.
  *   signHead(groups) -> ECDSA-sign the head tip (the signed genesis bundle). [async; webcrypto, node + browser]
@@ -88,6 +88,12 @@
     var ccyPrec = input.currencyPrecision != null ? input.currencyPrecision : 2;
     var adminUser = input.adminUser || 'admin';
     var dateAcct = input.dateAcct || '2024-01-15';                          // explicit, not Date.now
+    var ccyIso = input.currencyIso || 'USD';                                 // FS-3: names the schema (MAcctSchema :262)
+    // FS-12 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2j — Witness: W-ERP-FIRST-SETUP S15b): MSetup.createEntities
+    // takes the country (process 53161 param C_Country_ID, default = the en_US country 100). Headless callers that give
+    // none keep the pre-FS-12 tax-category name ('Standard'); a given country follows MSetup.java:1233.
+    var countryId = input.countryId != null ? Number(input.countryId) : 100;
+    var regionId = input.regionId != null ? Number(input.regionId) : null, city = input.city || null;
 
     var id = new IdGen(1000000), groups = [], parent = '0'.repeat(64);
     function group(label, ops) {
@@ -95,45 +101,95 @@
       groups.push({ seq: groups.length + 1, label: label, ops: ops, parent: parent, tip: tip });
       parent = tip;
     }
-    function create(table, row) { return { op: 'CREATE', table: table, row: row }; }
+    // FIX-A (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2 — Witness: W-ERP-FIRST-SETUP S08/S09).
+    // Every setup row iDempiere writes carries AD_Org_ID; unless the model gives it an org it is 0 ('*'):
+    // MSetup.java:179 m_stdValues = AD_Client_ID + ",0,'Y',..." and bpg/bp/pc/tax/product/pl/plv.setAD_Org_ID(0)
+    // (MSetup.java:1173,1184,1215,1253,1263,1334,1349). A born row with NO org was dropped by every window's
+    // session clause AD_Org_ID IN (0,<org>) (idempiere.html:1836) — the tenant's own masters were invisible.
+    function create(table, row) {
+      if (row.ad_org_id === undefined) row.ad_org_id = 0;
+      return { op: 'CREATE', table: table, row: row };
+    }
 
     // ── G1 IDENTITY ─────────────────────────────────────────────────────────────────────────────────────────
     var clientId = id.next(), orgId = id.next();
     var roleAdminId = id.next(), roleUserId = id.next(), userId = id.next();
+    var locOrgId = id.next();                                                 // FS-12: MSetup.java:1286-1292 org location
     group('G1 identity', [
       create('ad_client', { ad_client_id: clientId, name: clientName, value: clientName }),
-      create('ad_org', { ad_org_id: orgId, ad_client_id: clientId, name: clientName + ' HQ', value: 'HQ' }),
-      create('ad_role', { ad_role_id: roleAdminId, ad_client_id: clientId, name: clientName + ' Admin', userlevel: '  C' }),
-      create('ad_role', { ad_role_id: roleUserId, ad_client_id: clientId, name: clientName + ' User', userlevel: '   O' }),
+      // FIX-A: MOrg.java:146 setIsSummary(false) — AD_Val_Rule 130 (AD_Org.IsSummary='N') hid a NULL.
+      create('ad_org', { ad_org_id: orgId, ad_client_id: clientId, name: clientName + ' HQ', value: 'HQ', issummary: 'N' }),
+      // FS-12: MSetup.java:258 admin = USERLEVEL_ClientPlusOrganization ' CO' (X_AD_Role.java:1336); the user role keeps
+      // MRole.setInitialDefaults USERLEVEL_Organization '  O' (MRole.java:339). Were '  C' / '   O' — not iDempiere values:
+      // ad_access.canView reads char 1 = C, char 2 = O, so '  C' could not write any Client+Org (AccessLevel 3) table
+      // (§CRUD-GATE … reason=wrong-accesslevel on M_PriceList update, measured).
+      create('ad_role', { ad_role_id: roleAdminId, ad_client_id: clientId, name: clientName + ' Admin', userlevel: ' CO' }),
+      create('ad_role', { ad_role_id: roleUserId, ad_client_id: clientId, name: clientName + ' User', userlevel: '  O' }),
       create('ad_user', { ad_user_id: userId, ad_client_id: clientId, name: adminUser }),
       create('ad_user_roles', { ad_user_id: userId, ad_role_id: roleAdminId, ad_client_id: clientId }),
-      create('ad_org_info', { ad_org_id: orgId, ad_client_id: clientId })
+      // FS-12: MSetup.java:1286-1292 — an MLocation(country, region, city) and UPDATE AD_OrgInfo SET C_Location_ID (Tax.get's bill-from).
+      // The row's table is AD_OrgInfo (MOrgInfo); it was emitted as 'ad_org_info', which no resident schema carries, so
+      // mergeGenesisInto skipped it (honest skip) — a born org had NO AD_OrgInfo row at all (Tax.get: TaxCriteriaNotFound).
+      create('c_location', { c_location_id: locOrgId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('ad_orginfo', { ad_org_id: orgId, ad_client_id: clientId, c_location_id: locOrgId })
     ]);
 
-    // ── G2 CALENDAR + PERIOD ─────────────────────────────────────────────────────────────────────────────────
-    var calId = id.next(), yearId = id.next(), periodId = id.next(), year = dateAcct.slice(0, 4);
-    group('G2 calendar', [
+    // ── G2 CALENDAR + YEAR + 12 PERIODS — FS-2 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2g — Witness:
+    //    W-ERP-FIRST-SETUP S06). MSetup.java:473-485 → MCalendar.createYear (MCalendar.java:193-202) → MYear of the
+    //    setup's year → createStdPeriods (MYear.java:209-283): month 0..11, name MMM-yy, 1st .. last day, PeriodNo
+    //    month+1 (MPeriod.java:564-574). The year comes from the explicit dateAcct input (genesis stays clock-free). ──
+    var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var calId = id.next(), yearId = id.next(), year = dateAcct.slice(0, 4), yy = year.slice(2), periodId = null;
+    var g2 = [
       create('c_calendar', { c_calendar_id: calId, ad_client_id: clientId, name: clientName + ' Calendar' }),
-      create('c_year', { c_year_id: yearId, c_calendar_id: calId, ad_client_id: clientId, fiscalyear: year }),
-      create('c_period', { c_period_id: periodId, c_year_id: yearId, ad_client_id: clientId,
-        name: 'Jan-' + year, startdate: year + '-01-01', enddate: year + '-12-31', periodtype: 'S' })
-    ]);
+      create('c_year', { c_year_id: yearId, c_calendar_id: calId, ad_client_id: clientId, fiscalyear: year })
+    ];
+    var leap = (Number(year) % 4 === 0 && Number(year) % 100 !== 0) || Number(year) % 400 === 0;
+    var DAYS = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    for (var m = 0; m < 12; m++) {
+      var pid = id.next(), mm = (m < 9 ? '0' : '') + (m + 1);
+      if (dateAcct.slice(5, 7) === mm) periodId = pid;                      // refs.periodId = the period of dateAcct
+      g2.push(create('c_period', { c_period_id: pid, c_year_id: yearId, ad_client_id: clientId, name: MON[m] + '-' + yy,
+        periodno: m + 1, startdate: year + '-' + mm + '-01', enddate: year + '-' + mm + '-' + DAYS[m], periodtype: 'S' }));
+    }
+    group('G2 calendar', g2);
 
     // ── G3 CHART (fold iDempiere's full default CoA — the data-bearing step) ─────────────────────────────────
-    var elementId = id.next(), coa = SEED.coa, evByValue = {};
+    // FS-18 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2p — Witness: W-ERP-FIRST-SETUP S05b): input.coa = a parsed
+    // CoA file (parseCoA) → its distinct Values are the chart and its key map wires the defaults; every input.requiredKeys
+    // column the file does not define throws 'Account not defined: KEY' (MSetup.java:911-919) BEFORE any op exists.
+    var customCoa = input.coa && input.coa.accounts && input.coa.accounts.length ? input.coa : null;
+    if (customCoa) {
+      (input.requiredKeys || []).forEach(function (k) {
+        if (customCoa.keyToValue[String(k).toUpperCase()] == null) throw new Error('Account not defined: ' + String(k).toUpperCase());
+      });
+    }
+    var elementId = id.next(), coa = customCoa ? customCoa.accounts : SEED.coa, evByValue = {};
     var g3 = [create('c_element', { c_element_id: elementId, ad_client_id: clientId, name: 'Account', elementtype: 'A' })];
     coa.forEach(function (a) {
       var evId = id.next(); evByValue[a.value] = evId;
-      g3.push(create('c_elementvalue', { c_elementvalue_id: evId, c_element_id: elementId, ad_client_id: clientId,
-        value: a.value, name: a.name, accounttype: a.accounttype, accountsign: a.accountsign, issummary: 'N' }));
+      var row = { c_elementvalue_id: evId, c_element_id: elementId, ad_client_id: clientId,
+        value: a.value, name: a.name, accounttype: a.accounttype, accountsign: a.accountsign, issummary: a.issummary || 'N' };
+      if (customCoa) { row.description = a.description || null; row.isdoccontrolled = a.isdoccontrolled || 'N'; }
+      g3.push(create('c_elementvalue', row));
     });
     group('G3 chart', g3);
 
     // ── G4 ACCTSCHEMA + default-account wiring (DERIVE: col -> validcombination -> elementvalue) ──────────────
     var asId = id.next();
-    var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/USD',
+    var g4 = [create('c_acctschema', { c_acctschema_id: asId, ad_client_id: clientId, name: clientName + ' US/' + ccyIso,
       c_currency_id: ccyId, c_element_id: elementId })];
-    var map = SEED.acctMap, vcByColumn = {};
+    var GLMAP = SEED.acctMapGL || {};                                       // FS-18: C_AcctSchema_GL's account columns
+    var map = {}, vcByColumn = {};
+    Object.keys(SEED.acctMap).forEach(function (c) { map[c] = SEED.acctMap[c]; });
+    Object.keys(GLMAP).forEach(function (c) { map[c] = GLMAP[c]; });
+    if (customCoa) {                                                         // FS-18: the file's key map (lower-case column → Value)
+      map = {};
+      Object.keys(customCoa.keyToValue).forEach(function (k) {
+        var col = k.toLowerCase();
+        if (SEED.acctMap[col] !== undefined || GLMAP[col] !== undefined || (input.requiredKeys || []).some(function (r) { return String(r).toLowerCase() === col; })) map[col] = customCoa.keyToValue[k];
+      });
+    }
     Object.keys(map).forEach(function (col) {
       var evId = evByValue[map[col]];
       if (evId == null) return;                                            // value not in CoA -> skip (honest)
@@ -141,46 +197,189 @@
       g4.push(create('c_validcombination', { c_validcombination_id: vcId, ad_client_id: clientId,
         c_acctschema_id: asId, account_id: evId }));
     });
-    var defRow = { c_acctschema_id: asId, ad_client_id: clientId };
-    Object.keys(vcByColumn).forEach(function (col) { defRow[col] = vcByColumn[col]; });
+    var defRow = { c_acctschema_id: asId, ad_client_id: clientId }, glRow = { c_acctschema_id: asId, ad_client_id: clientId }, nGl = 0;
+    Object.keys(vcByColumn).forEach(function (col) { if (GLMAP[col] !== undefined) { glRow[col] = vcByColumn[col]; nGl++; } else defRow[col] = vcByColumn[col]; });
     g4.push(create('c_acctschema_default', defRow));
+    // FS-18: MSetup.java:683 createAccountingRecord(C_AcctSchema_GL) — the GL row was never born (its 7 account columns were absent).
+    if (nGl) g4.push(create('c_acctschema_gl', glRow));
     group('G4 acctschema', g4);
 
-    // ── G5 DOCTYPES (minimal sales spine: AR Invoice) ────────────────────────────────────────────────────────
-    var glCatId = id.next(), seqId = id.next(), dtAriId = id.next();
-    group('G5 doctypes', [
-      create('gl_category', { gl_category_id: glCatId, ad_client_id: clientId, name: 'Standard' }),
-      create('ad_sequence', { ad_sequence_id: seqId, ad_client_id: clientId, name: 'AR Invoice', startno: 1000 }),
-      create('c_doctype', { c_doctype_id: dtAriId, ad_client_id: clientId, name: 'AR Invoice',
-        docbasetype: 'ARI', gl_category_id: glCatId, docnosequence_id: seqId, issotrx: 'Y' })
-    ]);
+    // ── G5 GL CATEGORIES + DOCTYPES — FS-1 doctypes (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2c —
+    //    Witness: W-ERP-FIRST-SETUP S07/S15). The iDempiere MSetup set, as data, in MSetup's own order:
+    //    GL categories MSetup.java:696-707; doc types = the createDocType(...) calls MSetup.java:710-831. ───────
+    var g5 = [], glByKey = {}, dtByKey = {}, doctypes = {};
+    [ // [key, name, CategoryType, IsDefault]                                     MSetup.java:696-707
+      ['STD', 'Standard', 'M', 'Y'], ['NONE', 'None', 'D', 'N'], ['GL', 'Manual', 'M', 'N'],
+      ['ARI', 'AR Invoice', 'D', 'N'], ['ARR', 'AR Receipt', 'D', 'N'], ['MM', 'Material Management', 'D', 'N'],
+      ['API', 'AP Invoice', 'D', 'N'], ['APP', 'AP Payment', 'D', 'N'], ['CASH', 'Cash/Payments', 'D', 'N'],
+      ['MFG', 'Manufacturing', 'D', 'N'], ['DIST', 'Distribution', 'D', 'N'], ['PAY', 'Payroll', 'D', 'N']
+    ].forEach(function (c) {
+      var gid = glByKey[c[0]] = id.next();
+      g5.push(create('gl_category', { gl_category_id: gid, ad_client_id: clientId, name: c[1], categorytype: c[2], isdefault: c[3] }));
+    });
+    // [key, Name, PrintName (Msg.getElement → AD_Element Name / PO_Name; '' → defaults to Name), DocBaseType,
+    //  DocSubType, shipment key, invoice key, StartNo, GL key, isReturnTrx]                 MSetup.java:710-831
+    [
+      ['GLJ', 'GL Journal', 'Journal', 'GLJ', null, 0, 0, 1000, 'GL', false],
+      [0, 'GL Journal Batch', 'Journal Batch', 'GLJ', null, 0, 0, 100, 'GL', false],
+      ['I', 'AR Invoice', 'Invoice', 'ARI', null, 0, 0, 100000, 'ARI', false],
+      ['II', 'AR Invoice Indirect', 'Invoice', 'ARI', null, 0, 0, 150000, 'ARI', false],
+      ['IC', 'AR Credit Memo', 'Credit Memo', 'ARC', null, 0, 0, 170000, 'ARI', false],   // AD_Message absent: seed C_DocType 118 PrintName
+      [0, 'AP Invoice', 'Invoice', 'API', null, 0, 0, 0, 'API', false],
+      ['IPC', 'AP CreditMemo', 'Credit Memo', 'APC', null, 0, 0, 0, 'API', false],
+      [0, 'Match Invoice', 'Match Invoice', 'MXI', null, 0, 0, 390000, 'API', false],
+      [0, 'AR Receipt', 'Payment', 'ARR', null, 0, 0, 0, 'ARR', false],
+      [0, 'AP Payment', 'Payment', 'APP', null, 0, 0, 0, 'APP', false],
+      [0, 'Allocation', 'Allocation', 'CMA', null, 0, 0, 490000, 'CASH', false],
+      ['S', 'MM Shipment', 'Delivery Note', 'MMS', null, 0, 0, 500000, 'MM', false],
+      ['SI', 'MM Shipment Indirect', 'Delivery Note', 'MMS', null, 0, 0, 550000, 'MM', false],
+      ['VRM', 'MM Vendor Return', 'Vendor Return', 'MMS', null, 0, 0, 590000, 'MM', true],
+      [0, 'MM Receipt', 'Vendor Delivery', 'MMR', null, 0, 0, 0, 'MM', false],
+      ['RM', 'MM Customer Return', 'Customer Return', 'MMR', null, 0, 0, 570000, 'MM', true],
+      [0, 'Purchase Order', 'Purchase Order', 'POO', null, 0, 0, 800000, 'NONE', false],
+      [0, 'Match PO', 'Match PO', 'MXP', null, 0, 0, 890000, 'NONE', false],
+      [0, 'Purchase Requisition', 'Requisition', 'POR', null, 0, 0, 900000, 'NONE', false],
+      [0, 'Vendor Return Material', 'Vendor Return Material Authorization', 'POO', 'RM', 'VRM', 'IPC', 990000, 'MM', false],
+      [0, 'Bank Statement', '', 'CMB', null, 0, 0, 700000, 'CASH', false],   // MSetup asks element "C_BankStatemet_ID" (sic) → ''
+      [0, 'Cash Journal', 'Cash Journal', 'CMC', null, 0, 0, 750000, 'CASH', false],
+      [0, 'Material Movement', 'Inventory Move', 'MMM', null, 0, 0, 610000, 'MM', false],
+      [0, 'Physical Inventory', 'Phys.Inventory', 'MMI', 'PI', 0, 0, 620000, 'MM', false],
+      [0, 'Material Production', 'Production', 'MMP', null, 0, 0, 630000, 'MM', false],
+      [0, 'Project Issue', 'Project Issue', 'PJI', null, 0, 0, 640000, 'MM', false],
+      [0, 'Internal Use Inventory', 'Internal Use Inventory', 'MMI', 'IU', 0, 0, 650000, 'MM', false],
+      [0, 'Cost Adjustment', 'Cost Adjustment', 'MMI', 'CA', 0, 0, 660000, 'MM', false],
+      [0, 'Binding offer', 'Quotation', 'SOO', 'OB', 0, 0, 10000, 'NONE', false],
+      [0, 'Non binding offer', 'Proposal', 'SOO', 'ON', 0, 0, 20000, 'NONE', false],
+      [0, 'Prepay Order', 'Prepay Order', 'SOO', 'PR', 'S', 'I', 30000, 'NONE', false],
+      [0, 'Customer Return Material', 'Customer Return Material Authorization', 'SOO', 'RM', 'RM', 'IC', 30000, 'NONE', false],
+      [0, 'Standard Order', 'Order Confirmation', 'SOO', 'SO', 'S', 'I', 50000, 'NONE', false],
+      [0, 'Credit Order', 'Order Confirmation', 'SOO', 'WI', 'SI', 'I', 60000, 'NONE', false],
+      [0, 'Warehouse Order', 'Order Confirmation', 'SOO', 'WP', 'S', 'I', 70000, 'NONE', false],
+      [0, 'Manufacturing Order', 'Manufacturing Order', 'MOP', null, 0, 0, 80000, 'MFG', false],
+      [0, 'Manufacturing Cost Collector', 'Cost Collector', 'MCC', null, 0, 0, 81000, 'MFG', false],
+      [0, 'Maintenance Order', 'Maintenance Order', 'MOF', null, 0, 0, 86000, 'MFG', false],
+      [0, 'Quality Order', 'Quality Order', 'MQO', null, 0, 0, 87000, 'MFG', false],
+      [0, 'Distribution Order', 'Distribution Order', 'DOO', null, 0, 0, 88000, 'DIST', false],
+      [0, 'Payroll', 'Payroll', 'HRP', null, 0, 0, 90000, 'PAY', false],
+      [0, 'POS Order', 'Order Confirmation', 'SOO', 'WR', 'SI', 'II', 80000, 'NONE', false]
+    ].forEach(function (d) {
+      var name = d[1], base = d[3], sub = d[4], startNo = d[7], seq = null;
+      if (startNo !== 0) {                                   // createDocType :985-993 + MSequence.java:986-995,941-950
+        seq = id.next();
+        g5.push(create('ad_sequence', { ad_sequence_id: seq, ad_client_id: clientId, name: name, description: name,
+          startno: startNo, currentnext: startNo, currentnextsys: Math.floor(startNo / 10), incrementno: 1,
+          isautosequence: 'Y', istableid: 'N' }));
+      }
+      var dtId = id.next();
+      if (d[0]) dtByKey[d[0]] = dtId;
+      doctypes[name] = dtId;
+      var isSO = base === 'SOO' || base === 'MMS' || base.indexOf('AR') === 0;   // MDocType.setIsSOTrx :244-250
+      if (d[9]) isSO = !isSO;                                                       // isReturnTrx :1018-1019
+      var row = { c_doctype_id: dtId, ad_client_id: clientId, name: name, printname: d[2] || name,
+        docbasetype: base, issotrx: isSO ? 'Y' : 'N', gl_category_id: glByKey[d[8]],
+        isdocnocontrolled: seq ? 'Y' : 'N', isdefault: 'N',
+        // MDocType.beforeSave :340-348 (lists :310-320); Prepay keeps the X_ default 'N'
+        isautogenerateinout: /^(WR|WI|WP)$/.test(sub) ? 'Y' : 'N', isautogenerateinvoice: /^(WR|WI)$/.test(sub) ? 'Y' : 'N' };
+      if (seq) row.docnosequence_id = seq;
+      if (sub) { if (base === 'MMI') row.docsubtypeinv = sub; else row.docsubtypeso = sub; }   // :999-1007
+      if (d[5]) row.c_doctypeshipment_id = dtByKey[d[5]];
+      if (d[6]) row.c_doctypeinvoice_id = dtByKey[d[6]];
+      g5.push(create('c_doctype', row));
+    });
+    var dtAriId = doctypes['AR Invoice'];
+    group('G5 doctypes', g5);
 
     // ── G6 BASE OPS + default masters (each master emits its acct-mapping row from the schema default) ────────
     var whId = id.next(), locId = id.next(), plId = id.next(), plvId = id.next();
     var bpGroupId = id.next(), bpId = id.next(), pcatId = id.next(), prodId = id.next(), taxId = id.next();
+    var taxCatId = id.next(), payTermId = id.next();                          // FS-4 (§FS2g)
+    var locBpId = id.next(), bpLocId = id.next(), locWhId = id.next(), dsId = id.next(), ppId = id.next();   // FS-12 (§FS2j)
+    var taxCatName = (input.countryId != null && countryId === 100) ? 'Sales Tax' : 'Standard';             // MSetup.java:1233
     group('G6 base ops', [
-      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse' }),
-      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, value: 'Std' }),
-      create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, issotrx: 'Y' }),
-      create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year }),
+      // FS-12: MSetup.java:1298-1303 — the warehouse gets its own MLocation.
+      create('c_location', { c_location_id: locWhId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('m_warehouse', { m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, name: 'HQ Warehouse', c_location_id: locWhId }),
+      // FIX-A: MLocator.java:290 setClientOrg(warehouse) — the locator takes its warehouse's org, not '*'.
+      create('m_locator', { m_locator_id: locId, m_warehouse_id: whId, ad_client_id: clientId, ad_org_id: orgId, value: 'Std' }),
+      // FS-12: MSetup.java:1333-1353 — IsDefault=Y; MPriceList.setInitialDefaults :243-249 (IsSOPriceList=N — the setup
+      // list is NOT a sales list in iDempiere either; a Sales Order reaches it via Login.loadDefault #M_PriceList_ID);
+      // a DiscountSchema 'P'; the version's ValidFrom = today (MPriceListVersion.setName :177-187 — here the explicit
+      // dateAcct, which the wizard sets to today); MProductPrice(plv, product, 1, 1, 1) (:1355-1356).
+      create('m_pricelist', { m_pricelist_id: plId, ad_client_id: clientId, name: 'Standard', c_currency_id: ccyId, isdefault: 'Y',
+        issopricelist: 'N', enforcepricelimit: 'N', istaxincluded: 'N', priceprecision: 2 }),
+      create('m_discountschema', { m_discountschema_id: dsId, ad_client_id: clientId, name: 'Standard', discounttype: 'P' }),
+      create('m_pricelist_version', { m_pricelist_version_id: plvId, m_pricelist_id: plId, ad_client_id: clientId, name: 'Std ' + year,
+        validfrom: dateAcct, m_discountschema_id: dsId }),
       create('c_bp_group', { c_bp_group_id: bpGroupId, ad_client_id: clientId, name: 'Standard' }),
-      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y' }),
+      // FIX-A: MBPartner.java:286 setInitialDefaults → setIsSummary(false) — AD_Val_Rule 230 hid a NULL.
+      create('c_bpartner', { c_bpartner_id: bpId, ad_client_id: clientId, c_bp_group_id: bpGroupId, name: 'Standard BP', iscustomer: 'Y', issummary: 'N' }),
+      // FS-12: MSetup.java:1193-1198 — the Standard BP's location (X_C_BPartner_Location defaults Bill/Ship/PayFrom/RemitTo=Y,
+      // MBPartnerLocation.java:93 Name '.'); without it MOrder.beforeSave setBPartner rejects the order (MOrder.java:772-774).
+      create('c_location', { c_location_id: locBpId, ad_client_id: clientId, c_country_id: countryId, c_region_id: regionId, city: city }),
+      create('c_bpartner_location', { c_bpartner_location_id: bpLocId, c_bpartner_id: bpId, c_location_id: locBpId, ad_client_id: clientId,
+        name: '.', isbillto: 'Y', isshipto: 'Y', ispayfrom: 'Y', isremitto: 'Y' }),
       create('c_bp_customer_acct', { c_bpartner_id: bpId, c_acctschema_id: asId, ad_client_id: clientId, c_receivable_acct: vcByColumn['c_receivable_acct'] }),
       create('m_product_category', { m_product_category_id: pcatId, ad_client_id: clientId, name: 'Standard' }),
       create('m_product_category_acct', { m_product_category_id: pcatId, c_acctschema_id: asId, ad_client_id: clientId, p_revenue_acct: vcByColumn['p_revenue_acct'] }),
-      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product' }),
-      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9 }),
+      // FS-4: MSetup.java:1227-1236 one C_TaxCategory (no country input → Msg 'Standard'), IsDefault=Y; the setup tax is
+      // made IN it (:1251) and the product uses it (:1263-1275). Rate stays 9 (W-GENESIS-MINIMAL oracle; MSetup's is 0).
+      create('c_taxcategory', { c_taxcategory_id: taxCatId, ad_client_id: clientId, name: taxCatName, isdefault: 'Y' }),
+      // FS-12: MSetup.java:1225,1263-1268 — Value=Name, C_UOM_ID=100 (EA); then its one price (1/1/1) in the setup version.
+      create('m_product', { m_product_id: prodId, ad_client_id: clientId, m_product_category_id: pcatId, name: 'Standard Product', value: 'Standard Product',
+        c_uom_id: 100, c_taxcategory_id: taxCatId,
+        // FS-12: X_M_Product defaults (IsSummary=N … AD_Val_Rule 231 'M_Product (Trx)' hid a NULL) + MProduct.java:257 ProductType 'I'.
+        issummary: 'N', issold: 'Y', ispurchased: 'Y', isstocked: 'Y', producttype: 'I' }),
+      create('m_productprice', { m_productprice_id: ppId, m_pricelist_version_id: plvId, m_product_id: prodId, ad_client_id: clientId,
+        pricelist: 1, pricestd: 1, pricelimit: 1 }),
+      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9, c_taxcategory_id: taxCatId, isdefault: 'Y' }),
+      // FS-4: MSetup.java:1418-1426 — the 'Immediate' term, every day/discount 0, IsDefault=Y.
+      create('c_paymentterm', { c_paymentterm_id: payTermId, ad_client_id: clientId, value: 'Immediate', name: 'Immediate',
+        netdays: 0, gracedays: 0, discountdays: 0, discount: 0, discountdays2: 0, discount2: 0, isdefault: 'Y',
+        paymenttermusage: 'B' }),   // FS-12: MSetup's SQL INSERT omits it → the column default 'B' (AD_Column.DefaultValue); AD_Ref_Table 53383/53384 filter on it
       create('c_tax_acct', { c_tax_id: taxId, c_acctschema_id: asId, ad_client_id: clientId, t_due_acct: vcByColumn['t_due_acct'] })
     ]);
 
     return {
-      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, adminUser: adminUser, dateAcct: dateAcct },
+      input: { clientName: clientName, currencyId: ccyId, currencyPrecision: ccyPrec, currencyIso: ccyIso, adminUser: adminUser, dateAcct: dateAcct, countryId: countryId },
       groups: groups, tip: parent,
       refs: { clientId: clientId, orgId: orgId, roleAdminId: roleAdminId, userId: userId,
-              acctSchemaId: asId, bpartnerId: bpId, productId: prodId,
-              taxId: taxId, doctypeAriId: dtAriId, warehouseId: whId, periodId: periodId,
+              acctSchemaId: asId, bpartnerId: bpId, productId: prodId, priceListId: plId, priceListVersionId: plvId, bpLocationId: bpLocId,
+              taxId: taxId, taxCategoryId: taxCatId, paymentTermId: payTermId, doctypeAriId: dtAriId, doctypes: doctypes, warehouseId: whId, periodId: periodId,
               ev: evByValue, vc: vcByColumn }
     };
+  }
+
+  // ── parseCoA — NaturalAccountMap.parseLine (NaturalAccountMap.java:118-260), transcribed. FS-18 (§FS2p). ────────────
+  //   Returns { accounts:[{value,name,description,accounttype,accountsign,isdoccontrolled,issummary}] (distinct Values, file order),
+  //             keyToValue:{KEY: value}, lines, skipped }. Pure; no DB.
+  function parseCoA(text) {
+    var accounts = [], byValue = {}, keyToValue = {}, lines = 0, skipped = 0;
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      if (!line.trim().length) return;
+      lines++;
+      // fields with ',' are enclosed in " — the enclosed parts get their ',' replaced by ' ' (StringTokenizer on '"')
+      var st = line.split('"').filter(function (x) { return x.length > 0; });   // StringTokenizer drops empty tokens
+      if (!st.length) { skipped++; return; }
+      var nl = st[0];
+      for (var i = 1; i < st.length; i += 2) { nl += st[i].replace(/,/g, ' '); if (i + 1 < st.length) nl += st[i + 1]; }
+      nl += ' ';
+      nl = nl.split(',,').join(', ,'); nl = nl.split(',,').join(', ,');
+      var t = nl.split(',').filter(function (x) { return x.length > 0; });
+      if (t.length < 9) { skipped++; return; }
+      var f = [];
+      for (var j = 0; j < 8 && j < t.length; j++) { var v = t[j].trim(); if (v.charAt(0) === '[' && v.charAt(v.length - 1) === ']') { skipped++; return; } f.push(v); }
+      var Value = f[0], Name = f[1], Description = f[2];
+      var AccountType = f[3] && f[3].length ? f[3].charAt(0) : 'E', AccountSign = f[4] && f[4].length ? f[4].charAt(0) : 'N';
+      var IsDoc = f[5] && f[5].length ? f[5].charAt(0) : 'N', IsSummary = f[6] && f[6].length ? f[6].charAt(0) : 'N', Key = f[7];
+      if (!Value && !Name) { skipped++; return; }
+      if (!Key) { skipped++; return; }                                       // Default Account blank → ignored
+      if (Key !== 'SUMMARY' && IsSummary !== 'N') { skipped++; return; }
+      var a = byValue[Value];
+      if (!a) { a = byValue[Value] = { value: Value, name: Name, description: Description || null, accounttype: AccountType, accountsign: AccountSign,
+        isdoccontrolled: IsDoc.toUpperCase() === 'Y' ? 'Y' : 'N', issummary: IsSummary.toUpperCase() === 'Y' ? 'Y' : 'N' }; accounts.push(a); }
+      keyToValue[Key.toUpperCase()] = Value;
+    });
+    return { accounts: accounts, keyToValue: keyToValue, lines: lines, skipped: skipped };
   }
 
   // ── foldGenesis — apply CREATE ops into a fresh tenant DB (schema inferred from row keys) ───────────────────
@@ -360,7 +559,7 @@
     return { tip: head, sig: await S.signTip(priv, head), pub: pub, verify: function (t, s) { return S.verifyTip(t, s, pub); } };
   }
 
-  var _api = { birthTenant: birthTenant, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
+  var _api = { birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
     rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
     grantFullAccess: grantFullAccess };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;

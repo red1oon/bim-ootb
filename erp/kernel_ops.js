@@ -11,9 +11,13 @@
     '  id INTEGER PRIMARY KEY,' +       // local total-order — W-CHAIN seals/verifies in id order
     '  op_uuid TEXT,' +                 // G-IDENTITY (§0.21): edge-minted cross-device id; NOT the PK
     '  timestamp INTEGER NOT NULL,' +
-    '  op_type TEXT NOT NULL,' +       // GRID_MOVE | VIEW_FILTER | … | PLUGIN_INSTALL | PLUGIN_UNINSTALL | PLUGIN_START | PLUGIN_STOP
+    '  op_type TEXT NOT NULL,' +       // GRID_MOVE | VIEW_FILTER | … | PLUGIN_INSTALL | PLUGIN_UNINSTALL | PLUGIN_START | PLUGIN_STOP | MODELVAL_AUTOINSTALL
     //   PLUGIN_* (W-PLUGIN, prompts/PLUGIN_SYSTEM_LANE.md §Phase B): Fold-Engine bundle lifecycle audit ops.
     //   parameters = JSON { id, version, manifestUrl }. ADDITIVE — no schema change, op_type is free TEXT.
+    //   MODELVAL_AUTOINSTALL (prompts/PLUGIN_SYSTEM_LANE.md §Phase E, Q5): appended by ad_modelval_bridge.js
+    //   IN ADDITION TO (never instead of) the PLUGIN_INSTALL op above, so the audit log can tell "an admin
+    //   pasted a URL" apart from "the ad_modelvalidator AD table drove this." parameters = JSON
+    //   { adModelValidatorId, name, id, modelValidationClass }. ADDITIVE — no schema change.
     '  parameters TEXT NOT NULL,' +
     '  input_guids TEXT,' +
     '  output_guid TEXT,' +
@@ -130,12 +134,28 @@
       var myTip = _lastSealedTip(db).hash;
       var buf = db.export().buffer;
       return new Promise(function(resolve) {
-        var req = indexedDB.open('bim_ootb_cache', 1);
-        req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
-        req.onerror = function() { console.warn('§KRN_PERSIST_ERR open failed'); resolve(); };
-        req.onsuccess = function() {
+        // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md) — mirrors viewer/kernel_ops.js's proven fix.
+        // The old hardcoded indexedDB.open('bim_ootb_cache', 1) drifted BELOW scene.js's v2 opener →
+        // every open fired onerror (VersionError), onsuccess never ran, and the ERP op-log was
+        // silently never persisted ("survive refresh" was dead). Route through the app's SINGLE
+        // opener (version 2, guards the store) when present; else an unversioned open (whatever
+        // version is actually stored — never throws VersionError) for a standalone ERP page.
+        var openP = (typeof window !== 'undefined' && window.APP && APP.openCacheDB)
+          ? APP.openCacheDB()
+          : new Promise(function(res) {
+              var rq = indexedDB.open('bim_ootb_cache');   // no version → current
+              rq.onupgradeneeded = function() {
+                var d = rq.result;
+                if (!d.objectStoreNames.contains('dbs')) d.createObjectStore('dbs');
+              };
+              rq.onsuccess = function() { res(rq.result); };
+              rq.onerror = function() { console.warn('§KRN_PERSIST_ERR open failed'); res(null); };
+            });
+        openP.then(function(idb) {
+          if (!idb) { resolve(); return; }
           try {
-            var store = req.result.transaction('dbs', 'readwrite').objectStore('dbs');
+            if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); resolve(); return; }
+            var store = idb.transaction('dbs', 'readwrite').objectStore('dbs');
             var tipKey = dbUrl + '::tip';
             var getReq = store.get(tipKey);
             var writeAndDone = function() {
@@ -155,11 +175,20 @@
             };
             getReq.onerror = function() { writeAndDone(); };   // fail-open (no worse than today)
           } catch(e) { console.warn('§KRN_PERSIST_ERR', e); resolve(); }
-        };
+        }).catch(function(e) { console.warn('§KRN_PERSIST_ERR open ' + (e && e.message)); resolve(); });
       });
     }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
   }
   function _persistToIdb(db) {
+    // LARGE_DB_BAKE.md §2 L2 — same gate as viewer/kernel_ops.js's twin: a bake profile is
+    // disposable, never reopened from cache, so this export()+IDB-put buys nothing and only risks
+    // the write-loop race (CPE_4D_PERF_MEM_FINDINGS.md §8.6). Found firing on an LTU bake despite
+    // the viewer/kernel_ops.js gate — this is a SEPARATE duplicate implementation (erp/kernel_ops.js
+    // ships its own _persistToIdb, loaded via find_erp_push.js in the Find panel's module chain).
+    if (typeof window !== 'undefined' && window.APP && APP._bakeOwned) {
+      console.log('§KRN_PERSIST_SKIP reason=bake — bake profile is disposable, never reopened from cache');
+      return;
+    }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
       var dbUrl = (typeof window !== 'undefined' && window.APP && APP.DB_URL) || null;
@@ -321,24 +350,38 @@
     if (!r.length || !r[0].values.length) return { id: 0, hash: GENESIS };
     return { id: r[0].values[0][0], hash: r[0].values[0][1] };
   }
-  async function sealFrom(db, fromTip) {
+  // ROUND 4 item 4 (2026-09-16, real Terminal bake, no tap): a real, on-disk defect — id=48431
+  // (BUILDING_OPEN) was ALREADY SEALED, carrying an op_hash/prev_hash chained to a tip from an OLD
+  // seal pass, with unsealed rows appended after it by the page's own re-injection. Incremental
+  // `sealFrom`'s own `_lastSealedTip` found that stale sealed row and chained the NEW rows onto it —
+  // but 48431's own prev_hash still pointed at a hash that no longer exists once the page re-wrote
+  // the rows before it, so `verifyChain` broke exactly at id=48431 (`brokenAt=48431`), even though
+  // nothing was tampered — the DB just carried a genuinely stale partial seal from a previous run.
+  // `full` (bake mode ONLY — see cpe_ledger_ticker.js's own `A._bakeOwned` gate): re-seals EVERY row
+  // from id 1, in id order, overwriting every existing op_hash/prev_hash unconditionally — the DB's
+  // own prior sealed state (however it got there) is never trusted as a starting point during a
+  // bake. Non-bake callers (compact()'s own post-compaction reseal, the CLI preflight script, the
+  // live editor's incremental per-group seal) are UNCHANGED — `full` defaults falsy.
+  async function sealFrom(db, fromTip, full) {
     ensureTable(db);
-    var tip = fromTip || _lastSealedTip(db);
-    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops WHERE id > ' + tip.id + ' ORDER BY id');
-    if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: tip.id }; }
+    var tip = full ? { id: 0, hash: GENESIS } : (fromTip || _lastSealedTip(db));
+    var where = full ? '1=1' : ('id > ' + tip.id);
+    var r = db.exec('SELECT id,timestamp,op_type,parameters,input_guids,output_guid,sig,op_uuid,user_tag FROM kernel_ops WHERE ' + where + ' ORDER BY id');
+    if (!r.length) { return { sealed: 0, tip: tip.hash, fromId: full ? 1 : tip.id, mode: full ? 'full' : 'incremental' }; }
     var rows = r[0].values, prev = tip.hash, sealed = 0;
     for (var i = 0; i < rows.length; i++) {
       var op = { id: rows[i][0], timestamp: rows[i][1], op_type: rows[i][2],
                  parameters: rows[i][3], input_guids: rows[i][4], output_guid: rows[i][5],
                  op_uuid: rows[i][7], user_tag: rows[i][8] };
-      var sig = rows[i][6];
+      var sig = full ? null : rows[i][6];   // full re-seal never trusts a stale existing sig either
       var h = await _sha256(prev + '|' + _canonical(op));
       if (_signer && !sig) { try { sig = await _signer.sign(await _sigBase(op, h)); } catch (e) { sig = null; } }
       db.run('UPDATE kernel_ops SET prev_hash=?, op_hash=?, sig=? WHERE id=?', [prev, h, sig || null, op.id]);
       prev = h; sealed++;
     }
-    console.log('§KRN_SEAL_FROM fromId=' + tip.id + ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
-    return { sealed: sealed, tip: prev, fromId: tip.id };
+    console.log('§KRN_SEAL_FROM mode=' + (full ? 'full' : 'incremental') + ' fromId=' + (full ? 1 : tip.id) +
+      ' sealed=' + sealed + ' tip=' + prev.slice(0, 12) + '…' + (_signer ? ' signed' : ''));
+    return { sealed: sealed, tip: prev, fromId: full ? 1 : tip.id, mode: full ? 'full' : 'incremental' };
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -580,9 +623,27 @@
     }
 
     // ── 4. SEAL ONCE from the tip forward (the I-D win — not N whole-log re-seals). ──
-    // Rows were inserted ALREADY-sealed (prev_hash/op_hash/sig staged); sealFrom is idempotent over them
-    // and confirms the tip. This keeps per-group seal cost O(N-in-group).
-    var sealRes = await sealFrom(db, tipRow);
+    // Implementing prompts/PROD_SCALE_FORECAST.md §10.3 F1 — Witness: W-SCALE-THRU.
+    // Rows were inserted ALREADY-sealed (prev_hash/op_hash/sig staged off tipRow), so in the CLEAN case
+    // — the tip IS the last row, i.e. nothing below it is unsealed — the staged hashes already ARE the
+    // chain and re-deriving them is pure waste: sealFrom(db, tipRow) selects `id > tipRow.id`, which is
+    // this group's OWN rows, and re-hashes + UPDATEs every one. MEASURED: 2,000 ops cost 4,040 digests
+    // instead of 2,040, and each digest is an await, so the extra 2,000 promise round-trips are what made
+    // batch LOSE to naive per-op commit under CPU contention (§10.1: speedup flipped to 0.82×).
+    // `sealed` still reports ids.length — the rows WERE sealed, at stage time — so the return contract
+    // poc_crud_group.js:91 / test_crud_process_writeloop.js:39 assert on is unchanged.
+    // DIRTY case (unsealed rows sit BELOW the tip, e.g. a prior commitOp that was never sealed) keeps the
+    // full re-seal: those rows must be re-chained, and the staged hashes are superseded by it. It is now
+    // announced (§KRN_GROUP RESEAL) instead of being a silent slow path.
+    var cleanTip = (tipRow.id === nextId - 1);
+    var sealRes;
+    if (cleanTip) {
+      sealRes = { sealed: ids.length, tip: opHashes[opHashes.length - 1], fromId: tipRow.id, skipped: true };
+    } else {
+      console.log('§KRN_GROUP RESEAL gid=' + gid + ' unsealedBelowTip=' + (nextId - 1 - tipRow.id) +
+                  ' rows → full sealFrom(id>' + tipRow.id + ') (staged hashes superseded)');
+      sealRes = await sealFrom(db, tipRow);
+    }
     console.log('§KRN_GROUP committed gid=' + gid + ' ops=' + ids.length + ' groupHash=' + groupHash.slice(0, 12) +
                 '… tip=' + sealRes.tip.slice(0, 12) + '… sealed=' + sealRes.sealed + ' (WHOLE — all-or-none)');
     _persistToIdb(db);

@@ -1,0 +1,10 @@
+§MFG-MRP-LOAD break=none orders=2 dispatch=true,true rows=6
+§MFG-MRP-R1 legacy rows=6 matched=6 fields compared=84 diffs=0 | EXCLUDED (not derivable): pp_mrp_id, value (minted), datesimulation/created/updated (wall clock), isavailable (unevidenced)
+  §MFG-MRP R1 derived rows == legacy PP_MRP rows (derivable fields) PASS
+§MFG-MRP-AMBIGUOUS supply.datefinishschedule=orders.datestartschedule is the only value legacy shows, but both legacy orders share one date pair (2008-08-16 00:00:00 / 2008-08-17 00:00:00): a rule such as "finish - 1 day" fits equally; NOT proven
+§MFG-MRP-R2 run1=dabc9e5d run2=dabc9e5d replay=dabc9e5d rows=6/6/6
+  §MFG-MRP R2 run1 == run2 == fold over the projection rebuilt from the op log alone PASS
+  §MFG-MRP R3 no minted / wall-clock / unevidenced column in any derived row PASS
+  §MFG-MRP R4 non-vacuous: a third order (qty 250) changes the rows (6 -> 9) and the hash PASS
+  §MFG-MRP R5 the fold is read-only: projection hash and op count unchanged PASS
+§MFG-MRP-VERDICT PASS break=none judged=5 failed=0 inconclusive=0

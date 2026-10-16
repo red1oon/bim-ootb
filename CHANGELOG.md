@@ -4,6 +4,1481 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.81.0](https://github.com/red1oon/bim-ootb/compare/v1.80.0...v1.81.0) (2026-10-15)
+
+
+### ✨ Features
+
+* **oplogpic:** carry file (.oplogpic Save file / Open file with verified open) + Show QR for small links + gradient-map bar layout fix ([#2025](https://github.com/red1oon/bim-ootb/issues/2025)) ([4f19cb5](https://github.com/red1oon/bim-ootb/commit/4f19cb52dc6e115519409dc2c99bc098adbbd773))
+
+## [1.80.0](https://github.com/red1oon/bim-ootb/compare/v1.79.0...v1.80.0) (2026-10-13)
+
+
+### ✨ Features
+
+* **oplogpic:** design kit: gradient tool + gradient map, live blur / sharpen layers, shapes, drop shadow / outline, editable text, image export (JPEG / WebP / sizes) ([#2002](https://github.com/red1oon/bim-ootb/issues/2002)) ([eb0857b](https://github.com/red1oon/bim-ootb/commit/eb0857bbbd9ead6c5bc7a25218be3b67f94da575))
+
+## [1.79.0](https://github.com/red1oon/bim-ootb/compare/v1.78.0...v1.79.0) (2026-10-13)
+
+
+### ✨ Features
+
+* **erp:** Customer/Vendor RMA through the generic model path (§RMA-WINDOW-PORT) ([#1985](https://github.com/red1oon/bim-ootb/issues/1985)) ([ca3c117](https://github.com/red1oon/bim-ootb/commit/ca3c117671d5d8846018fe0d99350034265dbfda))
+* **erp:** POS Order cycle depth — 6 twin gaps fixed + Info Product port (W-DEPTH-CYCLE 23/23, W-INFOPROD 12/12 + parity 187 cells) ([#1988](https://github.com/red1oon/bim-ootb/issues/1988)) ([814e43e](https://github.com/red1oon/bim-ootb/commit/814e43ed3f83ddbf26195b67861874d2941f1b81))
+* **oplogpic:** Fill anchors 1/4 and 3/4 along (crop just enough to keep the whole subject) ([#1984](https://github.com/red1oon/bim-ootb/issues/1984)) ([048e2de](https://github.com/red1oon/bim-ootb/commit/048e2de25846441c306b4bd600df03fdde6433b5))
+* **oplogpic:** Guide link before the red pill + generated guide.html ([#1986](https://github.com/red1oon/bim-ootb/issues/1986)) ([f296912](https://github.com/red1oon/bim-ootb/commit/f296912a87bce6daa1a66603c7fc7b7902d01e8a))
+
+## [1.78.0](https://github.com/red1oon/bim-ootb/compare/v1.77.0...v1.78.0) (2026-10-12)
+
+
+### ✨ Features
+
+* **oplogpic:** checkpoints (fast reopen), undo after reopen, go back to here ([#1976](https://github.com/red1oon/bim-ootb/issues/1976)) ([18d5c5b](https://github.com/red1oon/bim-ootb/commit/18d5c5b5e0db6559c0fdc23ebd486cc37e84f156))
+* **oplogpic:** masks, adjustment layers + masks, hue/saturation, feather, magic wand, text, photo Fill, move/scale, red pill ([#1982](https://github.com/red1oon/bim-ootb/issues/1982)) ([542f357](https://github.com/red1oon/bim-ootb/commit/542f3578653ed34c91f89ea2e6bc42cbaa3d27e2))
+
+## [1.77.0](https://github.com/red1oon/bim-ootb/compare/v1.76.0...v1.77.0) (2026-10-11)
+
+
+### ✨ Features
+
+* **oplogpic:** add OplogPic, a serverless op-log painting app (static folder, installable PWA) ([#1973](https://github.com/red1oon/bim-ootb/issues/1973)) ([2958495](https://github.com/red1oon/bim-ootb/commit/29584957bcf27d05a235b695174dbf026d9ad859))
+* **oplogpic:** layers (delete/hide/reorder/rename), selection, photo import, history panel, share-as-link ([#1975](https://github.com/red1oon/bim-ootb/issues/1975)) ([62561b3](https://github.com/red1oon/bim-ootb/commit/62561b3b4bbb52582a04579731fe6aba27b367b1))
+
+## [1.76.0](https://github.com/red1oon/bim-ootb/compare/v1.75.0...v1.76.0) (2026-10-08)
+
+
+### ✨ Features
+
+* **civil:** Inspect EW + RW panels, inferred Cut & Fill overlay (orange cut / blue fill) ([#1952](https://github.com/red1oon/bim-ootb/issues/1952)) ([62ea691](https://github.com/red1oon/bim-ootb/commit/62ea69116f49329201425715ce58d925654c2279))
+
+
+### 🐛 Fixes
+
+* **civil:** re-land Cut & Fill scan fixes + EW/RW icons (squash of [#1952](https://github.com/red1oon/bim-ootb/issues/1952) dropped them) ([#1953](https://github.com/red1oon/bim-ootb/issues/1953)) ([19a030c](https://github.com/red1oon/bim-ootb/commit/19a030cf8f943719c21d344a1d8afaecfbb8905c))
+
+## [1.75.0](https://github.com/red1oon/bim-ootb/compare/v1.74.0...v1.75.0) (2026-10-08)
+
+
+### ✨ Features
+
+* **civil:** §ROUNDABOUT_ZONE - roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD) + near-white-to-red speed ramp ([#1942](https://github.com/red1oon/bim-ootb/issues/1942)) ([7602203](https://github.com/red1oon/bim-ootb/commit/7602203914a70d0aa06843301bb116c82a2a6bcd))
+* **civil:** §SIGN_CHECK — Road standards (sign codes vs ATJ 2A/85) ([#1937](https://github.com/red1oon/bim-ootb/issues/1937)) ([43ce6d1](https://github.com/red1oon/bim-ootb/commit/43ce6d10724f540024ef017010c2612354221e9a))
+* **civil:** §SIGN_VS_SPEED advance placement (ATJ 2B cl.2.2.8) + §LABEL_CLEAN short tags + HUD card/panel layout ([#1946](https://github.com/red1oon/bim-ootb/issues/1946)) ([009f376](https://github.com/red1oon/bim-ootb/commit/009f376f94e08e547ba166afdd9370a6bf65b1cb))
+* **civil:** §SIGNAL_JUNCTION_ZONE - one controlled-node engine (roundabout + signal junction), flat two-sided discs on sign faces, borrowed-board discs + MISSING SPEED SIGN rows (sw v1618, speed_zones.js?v=5) ([#1943](https://github.com/red1oon/bim-ootb/issues/1943)) ([2a5e697](https://github.com/red1oon/bim-ootb/commit/2a5e6976766adcbd45c67d8a7c8a309474b577c2))
+* **civil:** §SPEED_ZONES — speed limits derived from ATJ 8/86, coloured zones, sign list, derived/class/manual lever ([#1939](https://github.com/red1oon/bim-ootb/issues/1939)) ([13312a8](https://github.com/red1oon/bim-ootb/commit/13312a86ae11721a0a685b609c9fc927820e2215))
+* **civil:** chainage read from the model's own markers — station ribbon, ticks, tags, hover chip, bottom strip (§CHAINAGE_GRID) ([#1948](https://github.com/red1oon/bim-ootb/issues/1948)) ([334d11b](https://github.com/red1oon/bim-ootb/commit/334d11b64f6d7f1e7200997490286c851c11bd35))
+* **civil:** every chainage readout shows the model's chainage (§CHAINAGE_EVERYWHERE) ([#1949](https://github.com/red1oon/bim-ootb/issues/1949)) ([990efe7](https://github.com/red1oon/bim-ootb/commit/990efe7358fcc11f91ae9aa2128f345074cbe586))
+* **civil:** speed number painted on each speed-limit sign while Speed zones is on ([#1940](https://github.com/red1oon/bim-ootb/issues/1940)) ([58f991d](https://github.com/red1oon/bim-ootb/commit/58f991dba73b4e0ea24075398279e1729121426e))
+* **civil:** The Road Report — R on a road model, dashboard + .txt + PDF (§ROAD_REPORT) ([#1950](https://github.com/red1oon/bim-ootb/issues/1950)) ([8d1f42d](https://github.com/red1oon/bim-ootb/commit/8d1f42d3980bb47e411c31096c6eea633406179f))
+
+
+### 🐛 Fixes
+
+* **civil:** Road Report polish — grade shown to 2 decimals at its limit, sign chainages de-duplicated, mapping moved to std_values ([#1951](https://github.com/red1oon/bim-ootb/issues/1951)) ([b275026](https://github.com/red1oon/bim-ootb/commit/b27502602ccb6afc557108a861ff887cb0628287))
+* **civil:** Road standards toggles from the Inspect menu and j; closing clears the speed-zone colours and discs ([#1947](https://github.com/red1oon/bim-ootb/issues/1947)) ([0ef1b8e](https://github.com/red1oon/bim-ootb/commit/0ef1b8ebd7d5e9c9e8f0070a5a5d61ec6c930aae))
+* **civil:** speed disc sits on the board itself; Speed list shows only the disc-bearing signs ([#1945](https://github.com/red1oon/bim-ootb/issues/1945)) ([5941ada](https://github.com/red1oon/bim-ootb/commit/5941ada41235f0e6cbf6946acce1fd4e446159bb))
+* **civil:** speed discs painted on the board's real face; long section sampled after loading (80 km/h zone was lost) ([#1944](https://github.com/red1oon/bim-ootb/issues/1944)) ([8f07c40](https://github.com/red1oon/bim-ootb/commit/8f07c408b7bee5d10dd2df3f45026a392a26452a))
+* **civil:** speed-zone road shows the legend's colour (was grey-brown far, brick near) ([#1941](https://github.com/red1oon/bim-ootb/issues/1941)) ([da6a384](https://github.com/red1oon/bim-ootb/commit/da6a384df3be3e66722b5f6cb16d8737488df0ea))
+* **erp-push:** an open viewer tab can no longer write old Project Orders back after a reset / another push ([#1938](https://github.com/red1oon/bim-ootb/issues/1938)) ([4eb59b2](https://github.com/red1oon/bim-ootb/commit/4eb59b22319a5c15139fa4bb3cfc240b1b8ebd3d))
+* **zoom-across:** narrowed line zoom shows the Cost variance box again ([#1935](https://github.com/red1oon/bim-ootb/issues/1935)) ([d603845](https://github.com/red1oon/bim-ootb/commit/d603845e2fd282210250e5bd46690d4db47642e6))
+
+## [1.74.0](https://github.com/red1oon/bim-ootb/compare/v1.73.0...v1.74.0) (2026-10-07)
+
+
+### ✨ Features
+
+* **civil:** Cross section output - real mid-plane cut PNG + Section sheet (§CROSS_OUTPUT, sw v1602) ([#1926](https://github.com/red1oon/bim-ootb/issues/1926)) ([fece022](https://github.com/red1oon/bim-ootb/commit/fece022487b37afd363f3719703cc3c8f3e67345))
+* **civil:** live draggable cross-section popup while scrubbing (sw v1604) ([#1928](https://github.com/red1oon/bim-ootb/issues/1928)) ([d6e4061](https://github.com/red1oon/bim-ootb/commit/d6e4061dc9a4f909d190933b63a166c0fb130034))
+* **civil:** profile lens (Long) + Profile PDF/PNG; sections witness 41/41 (sw v1601) ([#1922](https://github.com/red1oon/bim-ootb/issues/1922)) ([510fb9e](https://github.com/red1oon/bim-ootb/commit/510fb9e0997785904c9e608f034d9e0b427ff2fc))
+* **civil:** Signage priced RM 800/Nos (Selangor 2023 tender, cited) (sw v1600) ([#1921](https://github.com/red1oon/bim-ootb/issues/1921)) ([c5952b7](https://github.com/red1oon/bim-ootb/commit/c5952b7a6b33f9ae78bd24882d609462de154f60))
+
+
+### 🐛 Fixes
+
+* **bim→erp:** proxy folds one line per discipline; civil priced by CIVIL_RATES owner ([#1915](https://github.com/red1oon/bim-ootb/issues/1915)) ([609021e](https://github.com/red1oon/bim-ootb/commit/609021e0fd9197e6c9b156acafa8e22012f6f77b))
+* **civil:** live cross popup — short header + wrapping short-name legend, no overlapping text (viewer sw v1606) ([#1929](https://github.com/red1oon/bim-ootb/issues/1929)) ([d1ba203](https://github.com/red1oon/bim-ootb/commit/d1ba203dab10275e31c879f177a9e03afbe5e24f))
+* **civil:** no fake-city skyline ring around a road (§SKY_GHOST_SKYLINE) + frame detector + witness ([#1918](https://github.com/red1oon/bim-ootb/issues/1918)) ([9f19b6e](https://github.com/red1oon/bim-ootb/commit/9f19b6e36c32cbd73b29e128f03e23508ebee7bf))
+* **civil:** road film paces by distinct completion instants — no frozen day counter (§CW_PACE_DISTINCT) (sw v1599) ([#1920](https://github.com/red1oon/bim-ootb/issues/1920)) ([de1dec7](https://github.com/red1oon/bim-ootb/commit/de1dec75c338706190ace3e5a16e76986a06ac02))
+* **civil:** staged slots revisited at their reveal time — civil-only (§CW_SOLIDIFY_EVENT) (sw v1598) ([#1919](https://github.com/red1oon/bim-ootb/issues/1919)) ([bdd95f3](https://github.com/red1oon/bim-ootb/commit/bdd95f3bc9ad91fcdf38f52718e707cc4b82c1f8))
+* **erp:** detail tab fails closed when its GridTab model can't be built; log §GT-OPEN-FAIL (erp sw v821) ([#1924](https://github.com/red1oon/bim-ootb/issues/1924)) ([eeb8e6b](https://github.com/red1oon/bim-ootb/commit/eeb8e6be02275c0752bbe50125fe39077907679f))
+* **erp:** seed reset also removes the BIM push store (erp sw v822) ([#1925](https://github.com/red1oon/bim-ootb/issues/1925)) ([eb41f8a](https://github.com/red1oon/bim-ootb/commit/eb41f8a65187921d0def722699705158cbf2e595))
+* **find:** the cost · › ERP · open ↗ row can no longer be pushed out of the Find panel (saved tall tree re-fits) ([#1932](https://github.com/red1oon/bim-ootb/issues/1932)) ([45962b2](https://github.com/red1oon/bim-ootb/commit/45962b2dc3ca3f2fe5df7ebedff0a1c3f585caa3))
+* **whatif+erp:** no fall-through to another project (Hospital) when the building has none (viewer v1607, erp v824) ([#1930](https://github.com/red1oon/bim-ootb/issues/1930)) ([fa829aa](https://github.com/red1oon/bim-ootb/commit/fa829aac37d7875765f2142eb8627897f017e5a0))
+* **zoom-across:** red pill on a project line returns to the SAME pushed item, not every element of its class ([#1933](https://github.com/red1oon/bim-ootb/issues/1933)) ([8a30a23](https://github.com/red1oon/bim-ootb/commit/8a30a234e8c15f231dddcf1b3ab34333c55f30d4))
+* **zoom-across:** red pill opens the order's SOURCE model db + highlights the pushed GUIDs (link-back stored at push; node witness) ([#1916](https://github.com/red1oon/bim-ootb/issues/1916)) ([21979ca](https://github.com/red1oon/bim-ootb/commit/21979cae6a94335cd977f7b4cb0eb5b05907b833))
+* **zoom-across:** red pill zooms to the ticked project lines (erp v823, viewer v1603) ([#1927](https://github.com/red1oon/bim-ootb/issues/1927)) ([9f23c4b](https://github.com/red1oon/bim-ootb/commit/9f23c4bb139458d448e425c29239cdbd94b830d5))
+* **zoom-across:** reuse the open viewer tab; zoom landing skips the saved view's Time Machine (viewer v1608, erp v825) ([#1931](https://github.com/red1oon/bim-ootb/issues/1931)) ([b0fd8c6](https://github.com/red1oon/bim-ootb/commit/b0fd8c61c39193f8f9034df77bbacba422b82b48))
+
+
+### ♻️ Refactors
+
+* **navigate_find:** split into 7 parts via committed generator (move-only) + split tooling ([#1907](https://github.com/red1oon/bim-ootb/issues/1907)) ([7464ec8](https://github.com/red1oon/bim-ootb/commit/7464ec8c66b11a27fa5dd71a53d588201a6a314e))
+
+## [1.73.0](https://github.com/red1oon/bim-ootb/compare/v1.72.0...v1.73.0) (2026-10-06)
+
+
+### ✨ Features
+
+* **4d:** road + bridge in one civil programme; partner phases; one schedule-population owner (sw v1581) ([#1890](https://github.com/red1oon/bim-ootb/issues/1890)) ([0696593](https://github.com/red1oon/bim-ootb/commit/06965933c3cf9d3b2a0ecd6fa34e08f871e5f748))
+* **4d:** road build-up by chainage — lamps never before their pavement (sw v1571) ([#1880](https://github.com/red1oon/bim-ootb/issues/1880)) ([80f00d0](https://github.com/red1oon/bim-ootb/commit/80f00d017714b3ded9783e660068c0b75a4a773e))
+* **altc:** earthworks volume line on the planned card — V from the closed EARTHWORK solid, NO number when the surface is open (sw v1590) ([#1899](https://github.com/red1oon/bim-ootb/issues/1899)) ([ceaefd5](https://github.com/red1oon/bim-ootb/commit/ceaefd5a64d355ea7d43eba81d3e5e17a6770e8f))
+* **altc:** earthworks volume option (a) — open surface shows ≈ V ±B (bbox-centre origin, B over 14 fixed shifts); B&gt;=V or wrong-way edge = not measurable (sw v1592) ([#1900](https://github.com/red1oon/bim-ootb/issues/1900)) ([1862c3a](https://github.com/red1oon/bim-ootb/commit/1862c3af7d270bc9ac346aeb1461c5d18603baeb))
+* **altc:** ground-works card, red-banner Outstanding card, earthworks row replaces the stale 'no earthwork surface' (sw v1586) ([#1892](https://github.com/red1oon/bim-ootb/issues/1892)) ([b599428](https://github.com/red1oon/bim-ootb/commit/b599428d8d6d460cd1c8871b1477143c8ce12316))
+* **civil:** §EW_VOLUME_SURFACE — earthworks volume on ground card, model check report, 4D/5D page; one owner earthworks_volume.js (sw v1593) ([#1902](https://github.com/red1oon/bim-ootb/issues/1902)) ([eb6b5a8](https://github.com/red1oon/bim-ootb/commit/eb6b5a8b31ab0ba1486539f32d139c5fad76759d))
+* **civil:** §LONG_SECTION road profile panel + §CROSS_SECTION slab square to route (civil-gated; sw v1593) ([#1901](https://github.com/red1oon/bim-ootb/issues/1901)) ([ca26e8b](https://github.com/red1oon/bim-ootb/commit/ca26e8bf81f6d57bc0260f5172814d4141aa670a))
+* **civil:** §SECTION_CIVIL_MODES — Long/Cross inside the Cut section tool, chainage scrubber, floating button deleted (sw v1595) ([#1904](https://github.com/red1oon/bim-ootb/issues/1904)) ([fb183dd](https://github.com/red1oon/bim-ootb/commit/fb183ddf3faee0e20d5f1a6cbc42a7c89cd7a869))
+* **import:** the BIM partner's added files import as civil disciplines — GEOTECH, GABION, CHAINAGE, ROW (sw v1577) ([#1886](https://github.com/red1oon/bim-ootb/issues/1886)) ([dfb4748](https://github.com/red1oon/bim-ootb/commit/dfb47486fc4a6b1aa391de068b5d1450d7513cb0))
+* **viewer:** civil earthworks see-through, right-of-way as outline, ground at the true earthworks bottom (sw v1579) ([#1887](https://github.com/red1oon/bim-ootb/issues/1887)) ([6e39a98](https://github.com/red1oon/bim-ootb/commit/6e39a98c43a44bd4f2d029b836d0535957e8b0d3))
+* **viewer:** road checks in the road film as worked formulas, each tagged VALID or SPECULATIVE (sw v1573) ([#1882](https://github.com/red1oon/bim-ootb/issues/1882)) ([44fa0c7](https://github.com/red1oon/bim-ootb/commit/44fa0c76896a7b8e0eee8bba86841987bcf48673))
+* **viewer:** road film data cards on quiet stretches of the drive (sw v1570) ([#1879](https://github.com/red1oon/bim-ootb/issues/1879)) ([cfd2b4e](https://github.com/red1oon/bim-ootb/commit/cfd2b4e5b1d93bcf4dc93de5715bffeebf880a8a))
+* **viewer:** road film v2 — one drive, build-up by half-way, parade in the drive, junction close-up (sw v1569) ([#1878](https://github.com/red1oon/bim-ootb/issues/1878)) ([e8ef457](https://github.com/red1oon/bim-ootb/commit/e8ef4574886e3154b3ba4f77ed0132b511e7cb35))
+* **viewer:** road film v3 — build by pieces completed, no load-path freeze, 8 s approach, grass ground; road compliance mock-up replaces the MEP tab (sw v1574) ([#1883](https://github.com/red1oon/bim-ootb/issues/1883)) ([7a1f9c5](https://github.com/red1oon/bim-ootb/commit/7a1f9c515f2f97a85e12eb856ee14435ea5369f7))
+
+
+### 🐛 Fixes
+
+* **4d:** film day counter read 20,791 days — reused raw schedule kept 1970 timestamps for pieces outside any task (sw v1576) ([#1885](https://github.com/red1oon/bim-ootb/issues/1885)) ([cdc1951](https://github.com/red1oon/bim-ootb/commit/cdc195158f866b5d5ebf0b3f7fc3ca539af207b6))
+* **cpe:** Alt+C checkboxes mark the path edited and are all saved (cinema_path +8 cols) ([#1898](https://github.com/red1oon/bim-ootb/issues/1898)) ([ff901cf](https://github.com/red1oon/bim-ootb/commit/ff901cf4aba1f3e62121f9ebb0e20956136b7dc3))
+* **viewer:** a merge into an already-drawn building draws the new rows and refreshes Find (sw v1578) ([#1888](https://github.com/red1oon/bim-ootb/issues/1888)) ([ef2d66d](https://github.com/red1oon/bim-ootb/commit/ef2d66dabda3030f90c27216ce52c36812aa18fc))
+* **viewer:** bbox view boxes every element of a civil building in a merged scene (sw v1580) ([#1889](https://github.com/red1oon/bim-ootb/issues/1889)) ([44d4a22](https://github.com/red1oon/bim-ootb/commit/44d4a22f4b2e8379b8cdf60744faa3ccd8b1baf1))
+* **viewer:** box view is the same whatever the drop order — group by civil discipline, not building name (sw v1589) ([#1895](https://github.com/red1oon/bim-ootb/issues/1895)) ([bdd70f1](https://github.com/red1oon/bim-ootb/commit/bdd70f1321f836f4d6d6ee279116bdd8126ed24d))
+* **viewer:** drawn-box owner reads the real placement of a DLOD-culled instance, not its zeroed matrix (sw v1587) ([#1893](https://github.com/red1oon/bim-ootb/issues/1893)) ([e768a63](https://github.com/red1oon/bim-ootb/commit/e768a632e859cad2cc5127edbfb06e402f3a7a2e))
+* **viewer:** Open→Merge carries element properties (element_psets) — only for elements new to the scene (sw v1585) ([#1891](https://github.com/red1oon/bim-ootb/issues/1891)) ([5f18779](https://github.com/red1oon/bim-ootb/commit/5f18779c44c6c061bb8c58dde38f91b0cbb204d0))
+* **viewer:** road film mirror ghost (no interior room probe on roads) + status box Chainage row instead of the model name (sw v1575) ([#1884](https://github.com/red1oon/bim-ootb/issues/1884)) ([3669849](https://github.com/red1oon/bim-ootb/commit/3669849dfd7f28494a99c1eae0ae83c1c84af9a0))
+* **viewer:** road films stop showing building labels — no building rule cards, Site Envelope, road trade clash names (sw v1572) ([#1881](https://github.com/red1oon/bim-ootb/issues/1881)) ([88106e7](https://github.com/red1oon/bim-ootb/commit/88106e797c7fc9682e8071528e857d1f95f9be2f))
+* **viewer:** road lamp glow hidden in daylight, soft round dot instead of square (sw v1567) ([#1875](https://github.com/red1oon/bim-ootb/issues/1875)) ([1135bb9](https://github.com/red1oon/bim-ootb/commit/1135bb9ce55b2b783cb782a76847686e96870de9))
+* **viewer:** road reveal hides the pavement too — reveal shell = ARC+STR+ROAD on civil models (sw v1568) ([#1877](https://github.com/red1oon/bim-ootb/issues/1877)) ([5f7bdc2](https://github.com/red1oon/bim-ootb/commit/5f7bdc237857eb2a58886ec43a740be40dea504f))
+
+## [1.72.0](https://github.com/red1oon/bim-ootb/compare/v1.71.0...v1.72.0) (2026-10-05)
+
+
+### ✨ Features
+
+* **4d/5d:** civil resource types (one crew per discipline, parallel finishing) + 5D civil line items priced from the JKR SoR pack (sw v1476) ([#1853](https://github.com/red1oon/bim-ootb/issues/1853)) ([dab5275](https://github.com/red1oon/bim-ootb/commit/dab52752b6b535ab18b2eaf800a06903d430c94f))
+* **4d:** Time Machine discipline breakdown for civil models — §CIVIL_PHASE + civil template (sw v1474) ([#1851](https://github.com/red1oon/bim-ootb/issues/1851)) ([15f2909](https://github.com/red1oon/bim-ootb/commit/15f2909add9c988a7c082cb4772e5b9dfb2cc081))
+* **civil:** clash pairs for civil models — family-scoped ignore set, 0-tolerance honoured (sw v1480) ([#1859](https://github.com/red1oon/bim-ootb/issues/1859)) ([c7c0f11](https://github.com/red1oon/bim-ootb/commit/c7c0f1172142192a981207fa972f6134a8ca1f55))
+* **civil:** night lamps at real lamp heads, Fly works on label-less imports, civil labels as config (sw v1482) ([#1862](https://github.com/red1oon/bim-ootb/issues/1862)) ([e5ace78](https://github.com/red1oon/bim-ootb/commit/e5ace781396958cbdd467b59ce4f6fceee7deb07))
+* **civil:** property labels for civil imports + Fly Tour flies the road, traffic signals as scrubber stops (sw v1479) ([#1858](https://github.com/red1oon/bim-ootb/issues/1858)) ([3076755](https://github.com/red1oon/bim-ootb/commit/3076755fa2f031b0b47f0c609a7dd61f018adbba))
+* **clash:** hide box-only rows when a pair has ≥1000 box hits (sw v1481) ([#1861](https://github.com/red1oon/bim-ootb/issues/1861)) ([2d26a3e](https://github.com/red1oon/bim-ootb/commit/2d26a3e5be4654e3ddd431fd049bfd2249b24ed7))
+* **measure:** double-click sizes the ELEMENT — highlight, area, and L×W×H along its own axes (sw v1485) ([#1865](https://github.com/red1oon/bim-ootb/issues/1865)) ([4e3fa0a](https://github.com/red1oon/bim-ootb/commit/4e3fa0a3c2127b361a05425de9eaaff8f28b33f3))
+* **viewer:** Alt+C highway mode — civil film drives the road at dusk with lamps on (sw v1492) ([#1872](https://github.com/red1oon/bim-ootb/issues/1872)) ([6693f3c](https://github.com/red1oon/bim-ootb/commit/6693f3cf0b56ea67ed5fb6bb220cff0a85f71ebe))
+* **viewer:** road lamps read at night — every head glows, lit heads throw to the carriageway (sw v1489) ([#1869](https://github.com/red1oon/bim-ootb/issues/1869)) ([fb01c6a](https://github.com/red1oon/bim-ootb/commit/fb01c6adf88ad0b9da532020c345ee6326b8e46a))
+
+
+### 🐛 Fixes
+
+* **4d:** civil crews reach every reader — Gantt read model, 5D ops grouping, load-path film, edit delta; regenerate stale civil programmes (sw v1477) ([#1854](https://github.com/red1oon/bim-ootb/issues/1854)) ([bfab470](https://github.com/red1oon/bim-ootb/commit/bfab47061793d52f788f507094ac0223f847a745))
+* **altc:** few deletable sticks on main — cherry-pick §CPE_SEED_FEW + §CPE_STICK_CLEAR from fix/fast-bake (sw v1493) ([#1873](https://github.com/red1oon/bim-ootb/issues/1873)) ([9c72741](https://github.com/red1oon/bim-ootb/commit/9c7274182018aa0506050b70709176bb24eafba9))
+* **alts:** §STILL_OVERLAY_NOGI Save PNG / Close overlay when the bounce can't run (phones, no WebGPU) (sw v1478) ([#1856](https://github.com/red1oon/bim-ootb/issues/1856)) ([889b705](https://github.com/red1oon/bim-ootb/commit/889b705ff2ba1c05f08104f6e5f97fe652b7145e))
+* **civil:** lamp heads are centroid-relative (DB center = vertex centroid, not box middle); witness judges against the renderer ([#1863](https://github.com/red1oon/bim-ootb/issues/1863)) ([f8c8e62](https://github.com/red1oon/bim-ootb/commit/f8c8e6219331d4062064c5b776c17c378cb3e6bf))
+* **import:** cache-bust import.js (v4-&gt;5) + hub import_own.js (v1-&gt;2) so browsers pick up the [#1844](https://github.com/red1oon/bim-ootb/issues/1844) importer (sw v1470) ([#1847](https://github.com/red1oon/bim-ootb/issues/1847)) ([9492d7e](https://github.com/red1oon/bim-ootb/commit/9492d7eeacb26529030225e208c92f0142d134ef))
+* **import:** civil/large models — real-size units, civil disciplines, robust framing (sw v1469) ([#1844](https://github.com/red1oon/bim-ootb/issues/1844)) ([011dd74](https://github.com/red1oon/bim-ootb/commit/011dd746f79014e6bd02639a9274230be1f59129))
+* **import:** progress shows on the viewer status line when importing from the viewer (sw v1484) ([#1864](https://github.com/red1oon/bim-ootb/issues/1864)) ([3d8d37d](https://github.com/red1oon/bim-ootb/commit/3d8d37d57f11020a26ce8e274bcdbad2c20beae5))
+* **viewer:** §SHADOW_FOLLOW — shadow box follows the camera on large sites so thin casters (lamp poles) shadow (sw v1472) ([#1850](https://github.com/red1oon/bim-ootb/issues/1850)) ([76068dd](https://github.com/red1oon/bim-ootb/commit/76068dd9f23a7ae8ae411e36cdb6c0ec4325a241))
+* **viewer:** §SHADOW_FOLLOW_THROTTLE — refit immediately on shadow-on, then every 250 ms while moving; skip tiny moves (sw v1475) ([#1852](https://github.com/red1oon/bim-ootb/issues/1852)) ([b21d2ab](https://github.com/red1oon/bim-ootb/commit/b21d2abde47ba238933b7dd29f1085ac6d55dc5e))
+* **viewer:** a merged scene is one model — reopen streams every building, Find lists all disciplines (sw v1486) ([#1866](https://github.com/red1oon/bim-ootb/issues/1866)) ([feee4a0](https://github.com/red1oon/bim-ootb/commit/feee4a05ce38a3414af8bc277bdb28bff7be3eb5))
+* **viewer:** civil Fly flies the road forward, junction to junction — no zig-zag, no shuttling (sw v1491) ([#1871](https://github.com/red1oon/bim-ootb/issues/1871)) ([c86bb11](https://github.com/red1oon/bim-ootb/commit/c86bb114816cfd210c8712cba30507d6c651ce37))
+* **viewer:** fog sized after the envelope + large-site fog keeps the model visible from its framing distance; Fly Tour says when there are no rooms (sw v1478) ([#1857](https://github.com/red1oon/bim-ootb/issues/1857)) ([f710a81](https://github.com/red1oon/bim-ootb/commit/f710a81a77ede967106facf76dea8ba345b54e03))
+* **viewer:** Night/Shadow ground plane no longer buries a road merged with a bridge (sw v1488) ([#1868](https://github.com/red1oon/bim-ootb/issues/1868)) ([0388d06](https://github.com/red1oon/bim-ootb/commit/0388d0633918f16e3b04114a3a166456ceb9e40d))
+* **viewer:** stray-robust ground for slab-less models (roads) + civil discipline colours (sw v1471) ([#1849](https://github.com/red1oon/bim-ootb/issues/1849)) ([f18c7a8](https://github.com/red1oon/bim-ootb/commit/f18c7a8a2b6962884246664815f74cc66df607ea))
+
+
+### ⚡ Performance
+
+* **viewer:** civil models stop storing/reading derivable normals — JELAPANG save 661 → 396 MB (sw v1490) ([#1870](https://github.com/red1oon/bim-ootb/issues/1870)) ([2a01315](https://github.com/red1oon/bim-ootb/commit/2a0131597fe28f4936d3f60d457b3d38212c27e8))
+* **viewer:** roof-layer pass 16 s → 33 ms on km-long sites, identical result; merge verdict DRAINING mid-load (sw v1487) ([#1867](https://github.com/red1oon/bim-ootb/issues/1867)) ([f7de3b2](https://github.com/red1oon/bim-ootb/commit/f7de3b267b1b34650a53009eaf77e9325d8594ae))
+
+## [1.71.0](https://github.com/red1oon/bim-ootb/compare/v1.70.1...v1.71.0) (2026-10-02)
+
+
+### ✨ Features
+
+* **history:** §THREADS step 1 — category/element threads on the Modeller dotline (read-only) ([#1807](https://github.com/red1oon/bim-ootb/issues/1807)) ([a363d71](https://github.com/red1oon/bim-ootb/commit/a363d711922b557eb2efb12bcb07495edda10e2e))
+* **history:** §THREADS step 1b — read-only category scrubber: 'Viewing: &lt;Cat&gt;', ‹ › step the thread, jump-to-view ([#1812](https://github.com/red1oon/bim-ootb/issues/1812)) ([7f2f05a](https://github.com/red1oon/bim-ootb/commit/7f2f05a70774c9184a713d227bc9bca159f280dd))
+* **modeller:** §GRID-SPAN-GATE — span colours on grid drag, Add one more (one gesture), column-derived grid on Move Grid ([#1803](https://github.com/red1oon/bim-ootb/issues/1803)) ([bda94cd](https://github.com/red1oon/bim-ootb/commit/bda94cd1a37de73b5b67276dc0ef940ee904d6bc))
+
+
+### 🐛 Fixes
+
+* **ask:** live split buildings get their cost table — separate &lt;db&gt;.qto.sql patch + loader ([#1816](https://github.com/red1oon/bim-ootb/issues/1816)) ([1513755](https://github.com/red1oon/bim-ootb/commit/1513755dbf2d2ad0200ae68f7027e92107902654))
+* **modeller:** §THREADS history bar gets an opaque backing (the §S8 Δ pin text showed through it) ([#1815](https://github.com/red1oon/bim-ootb/issues/1815)) ([9aea666](https://github.com/red1oon/bim-ootb/commit/9aea666ee461f9adadd00d2e4f1d15ed6813802c))
+
+## [1.70.1](https://github.com/red1oon/bim-ootb/compare/v1.70.0...v1.70.1) (2026-09-30)
+
+
+### 🐛 Fixes
+
+* **modeller:** one gesture = one undo — move/rotate/scale with hosted riders commit as ONE gesture (sw v67) ([#1794](https://github.com/red1oon/bim-ootb/issues/1794)) ([b0ffae5](https://github.com/red1oon/bim-ootb/commit/b0ffae52a3b17900bedb77e4be4724adf5bfba36))
+
+## [1.70.0](https://github.com/red1oon/bim-ootb/compare/v1.69.0...v1.70.0) (2026-09-26)
+
+
+### ✨ Features
+
+* **§GLOW_LAYERS_OFF:** delete the two decorative glow layers from Alt+S completely; §FIXTURE_EMISSIVE count; §ITEM_C check; sw v1410 ([92b36bd](https://github.com/red1oon/bim-ootb/commit/92b36bdbd45ae889b7bd50b94d8dfac861e9f294))
+* **§SKY_VIEW_FIELD + §LUX_CHECK:** one camera-free CIE-overcast sky-view field F per covered cell (41 dirs to 6.7 deg, glass T once per pane), trilinear irradiance-volume read in G (RG16UI) scaling hemi/ambient/IBL of zone fragments; ADF add removed (logged cross-check only); portals retired (&portals=1); §LUX_CHECK vs prEN 12464-1:2019 rows; §STILL_STAGE_MS (88c90251 effects.js); sw v1394 ([901d75a](https://github.com/red1oon/bim-ootb/commit/901d75a5e064280a6d6a2fa9f11aae1cebe36d7b))
+
+
+### 🐛 Fixes
+
+* **§LAMP_ZONE_PICK:** DECIDE by zone boxes vs the frustum (S5) — decideMs 0.9-2 ms per press on Hospital (first press 40 ms = the one-time BUILD box pass); sw v1402 ([996d204](https://github.com/red1oon/bim-ootb/commit/996d20492803486feb5b594d32c954861da838a3))
+* **§LAMP_ZONE_PICK:** pick Alt+S lamps by the zones they light — A._lampZonePick(camPos, camZone, visZones, fixtures, cap) replaces the frustum test + zone-blind top-up when the camera is in a light zone; sw v1400 ([34ab1e3](https://github.com/red1oon/bim-ootb/commit/34ab1e3801319b568f2e73bb4f06aaab0a57453a))
+* **§LAMP_ZONE_PICK:** ray-free DECIDE (ALTC_SHOWSTOPPERS S5) — BUILD: A._lampZoneTable (fixture -&gt; zone via atLamp, cached per building+zone grid+fixture count); DECIDE: _lampZonePick(camPos, camZone, visZones) with camZone = LightZones.at(camera) and visZones = 64x36 depth readback -&gt; world -&gt; LightZones.at (A._lampZoneView), no raycast, decideMs logged; sw v1401 ([973de0e](https://github.com/red1oon/bim-ootb/commit/973de0e5a40855576117e701950fe4cc2addcf5c))
+* **§SKY_VIEW_FIELD V12/V13:** interreflected component per zone (flux balance, R 0.5) so ceilings/soffits under an opaque roof are not sourceless; fieldOn carries no film gate; sw v1396 ([ad1314f](https://github.com/red1oon/bim-ootb/commit/ad1314fbe474b163c3fb25042767f6b698db0258))
+* **§SKY_VIEW_FIELD:** glass cell = majority surface (V3'), outside fragments filtered (V5'); witness: warm-up double read, class pairs, acrossSolid (V11), exterior no-regression pose; sw v1395 ([5bae708](https://github.com/red1oon/bim-ootb/commit/5bae708a97f7ddfb253703081db923e4be619aec))
+* **§SKY_VIEW_FIELD:** IRC OFF by default (watchdog ruling: the GI bounce pass already carries interreflection; V12 double-counts and is a flat fill); &irc=1 / APP._stillIrc keeps it for A/B, logged; wash witness §GI_AWARE (composite/app readback: blackFinal, GI share, IRC share); sw v1397 ([59e0b22](https://github.com/red1oon/bim-ootb/commit/59e0b22d307716277ad739137e4176b1b03028bf))
+* **§SOURCED_DAYLIGHT D7:** A_z = surfaceM2 + apertureM2 (BRE's A includes the openings); over10 split all-sky-lit vs receiving with glazing ratio; sw v1391 ([62b7ea9](https://github.com/red1oon/bim-ootb/commit/62b7ea92ff539919d1b097272707c6c103860974))
+* **§STILL_SHADOW_CASCADE_MAPS_EXIST:** render every cascade map once when the lights are added — with no map, staged draws before the fit wrote nothing and every indoor §METER was VACUOUS (0a9950a3); gate witness FAILs on §METER VACUOUS; sw v1382 ([c56769b](https://github.com/red1oon/bim-ootb/commit/c56769bfa60cf25e7552317db1b803dd785859cc))
+
+## [1.69.0](https://github.com/red1oon/bim-ootb/compare/v1.68.1...v1.69.0) (2026-09-24)
+
+
+### ✨ Features
+
+* **gi:** bounce light on Alt+S and in the film bake, checked frame-by-frame against a no-bounce control ([#1756](https://github.com/red1oon/bim-ootb/issues/1756)) ([c79120c](https://github.com/red1oon/bim-ootb/commit/c79120cb7f691e6e9e3ec3875417dc3689aef509))
+* **viewer:** Alt+S bounce light live — three r186 core, desktop + WebGPU only (§GI_LIVE) ([#1757](https://github.com/red1oon/bim-ootb/issues/1757)) ([02216f9](https://github.com/red1oon/bim-ootb/commit/02216f9368c79ae5527bdeef2d4755f1f5abf9be))
+
+
+### 🐛 Fixes
+
+* **film:** no frame reuse while a Sanity set is live inside a load-path hold (§FRAME_REUSE_SANITY, sw v1303) ([#1767](https://github.com/red1oon/bim-ootb/issues/1767)) ([247cb9a](https://github.com/red1oon/bim-ootb/commit/247cb9ae6e22fedd33e4a142040639bb4fd713fb))
+* **viewer:** Alt+S bounce orientation at low-contrast views never falls back to colour (§GI_ORIENT_RATIO) ([#1758](https://github.com/red1oon/bim-ootb/issues/1758)) ([25f6f97](https://github.com/red1oon/bim-ootb/commit/25f6f97dc6af1c2a1da333c3bc01e7b65e6958a9))
+* **viewer:** Alt+S Close button ends the still — viewer no longer stuck (§STILL_EXIT_NAV, sw v1295) ([#1765](https://github.com/red1oon/bim-ootb/issues/1765)) ([2fe6360](https://github.com/red1oon/bim-ootb/commit/2fe6360acb486462fbf71dbae4f0f1c8bbf6c599))
+* **viewer:** Alt+S owns the ghost view — no ghost-box shell during a still (§STILL_GHOST_OWNERSHIP) ([#1764](https://github.com/red1oon/bim-ootb/issues/1764)) ([f410933](https://github.com/red1oon/bim-ootb/commit/f41093319b4808d4e3ec63a2fa8f48e0e8721d86))
+* **viewer:** Alt+S row-order probe for views the geometry test can't decide (§GI_ROW_PROBE) ([#1759](https://github.com/red1oon/bim-ootb/issues/1759)) ([bd9089b](https://github.com/red1oon/bim-ootb/commit/bd9089b8981e05e7a459e2a5bc41e8fefedac68e))
+* **viewer:** films use the pre-[#1601](https://github.com/red1oon/bim-ootb/issues/1601) fill light — interiors no longer gloomy (§FILM_FILL_RESTORE) ([#1760](https://github.com/red1oon/bim-ootb/issues/1760)) ([b8f844f](https://github.com/red1oon/bim-ootb/commit/b8f844fb017f2c6b38252515eb7c957b690c3140))
+
+## [1.68.1](https://github.com/red1oon/bim-ootb/compare/v1.68.0...v1.68.1) (2026-09-18)
+
+
+### 🐛 Fixes
+
+* **modeller:** §XEDGE-GEOWIRE — the §REAL-AABB cross-edge fix never ran in production; wire it ([#1744](https://github.com/red1oon/bim-ootb/issues/1744)) ([cebd3a6](https://github.com/red1oon/bim-ootb/commit/cebd3a6d0337a57ce56d1bc57598239290997836))
+
+
+### 📝 Documentation
+
+* **modeller:** cross_edges.js — pointer to §ABUTS-ATTRIBUTE-PRIOR (proposed, not built) ([#1742](https://github.com/red1oon/bim-ootb/issues/1742)) ([4b2457c](https://github.com/red1oon/bim-ootb/commit/4b2457cc65a189301bc7af33861d85bfa9f4250b))
+
+## [1.68.0](https://github.com/red1oon/bim-ootb/compare/v1.67.0...v1.68.0) (2026-09-15)
+
+
+### ✨ Features
+
+* **erp:** bridge ad_modelvalidator AD table into the Fold-Engine plugin system ([#1739](https://github.com/red1oon/bim-ootb/issues/1739)) ([8bd2c6c](https://github.com/red1oon/bim-ootb/commit/8bd2c6cc3f19b672662c9acf1dcb88dd13a279da))
+
+
+### 🐛 Fixes
+
+* **ci:** §SW_AUDIT_QUOTE — strip comments before pairing quotes in the precache audit ([#1737](https://github.com/red1oon/bim-ootb/issues/1737)) ([3e8c6be](https://github.com/red1oon/bim-ootb/commit/3e8c6be2b23db92a0a375ac3a0866d63c9c3294c))
+* **modeller:** W-ARC-3AXIS closes row 28 + §MULTIRUN fixes the silently-single-run harness (row 24) ([#1738](https://github.com/red1oon/bim-ootb/issues/1738)) ([afa718e](https://github.com/red1oon/bim-ootb/commit/afa718e1c25da4374235d3e89d01011e574c94d0))
+
+## [1.67.0](https://github.com/red1oon/bim-ootb/compare/v1.66.0...v1.67.0) (2026-09-13)
+
+
+### ✨ Features
+
+* **4d:** §S7 legs 2-4 — the construction window on the element (panel + hover + pill) ([#1733](https://github.com/red1oon/bim-ootb/issues/1733)) ([5a494d2](https://github.com/red1oon/bim-ootb/commit/5a494d2f3eea525ec30a1d06e9a99ca126d5f7ca))
+* **4d:** §S7 windowForGuid — read an element's persisted construction window ([#1732](https://github.com/red1oon/bim-ootb/issues/1732)) ([833f8f2](https://github.com/red1oon/bim-ootb/commit/833f8f25eecf968cee09534a6d72dc09120eec53))
+
+
+### 🐛 Fixes
+
+* **4d:** re-derive a persisted schedule that no longer agrees with its own DB (§KERNEL_OPS_SCHED_AGREE) ([#1727](https://github.com/red1oon/bim-ootb/issues/1727)) ([e129bc2](https://github.com/red1oon/bim-ootb/commit/e129bc28caade90e97dcd4bf919c11f402863544))
+* **bake:** refuse a buildup film with no timeline, and report schedule coherence (§88.10e/§88.12) ([#1725](https://github.com/red1oon/bim-ootb/issues/1725)) ([c685aab](https://github.com/red1oon/bim-ootb/commit/c685aab7922fab76419eaf2fdb24967552b4b8ec))
+* **bake:** take the schedule audit back out of the bake, ship it as a witness ([#1726](https://github.com/red1oon/bim-ootb/issues/1726)) ([d993bc9](https://github.com/red1oon/bim-ootb/commit/d993bc94252a0c4f46e15e7c744f2fa0f3f99b6b))
+* **report:** §SUFFICIENCY_READS_THE_LIST — support_classes_present kept its own copy of the support classes (T12.6) ([#1728](https://github.com/red1oon/bim-ootb/issues/1728)) ([b7822d8](https://github.com/red1oon/bim-ootb/commit/b7822d8579af235b669894bf97ac1e3d38fadfc2))
+* **scripts:** §SQLJS_MISSING — the Node entry points required a sibling checkout under one developer's $HOME ([#1730](https://github.com/red1oon/bim-ootb/issues/1730)) ([fc7e4ac](https://github.com/red1oon/bim-ootb/commit/fc7e4ac61ec8ac4540459cd3e9ae210883f4a344))
+* **sw:** bump CACHE_VERSION v1170 -&gt; v1174 for T12.6 ([#1729](https://github.com/red1oon/bim-ootb/issues/1729)) ([90cd24e](https://github.com/red1oon/bim-ootb/commit/90cd24e4d0e50c64fd45ab064888c2d00ee54b6c))
+
+## [1.66.0](https://github.com/red1oon/bim-ootb/compare/v1.65.0...v1.66.0) (2026-09-12)
+
+
+### ✨ Features
+
+* **rules:** §RULE_REPORT — findings without the film, + a data-sufficiency and per-finding witness pass ([#1718](https://github.com/red1oon/bim-ootb/issues/1718)) ([719ebb9](https://github.com/red1oon/bim-ootb/commit/719ebb92455abe8cf78bca3534cd042c8585a0f3))
+
+
+### 🐛 Fixes
+
+* **support_sweep:** orphan exemption is classification + ground reachability, never grounded[i] (§GROUND_CONNECTED) ([#1717](https://github.com/red1oon/bim-ootb/issues/1717)) ([a9f88df](https://github.com/red1oon/bim-ootb/commit/a9f88df7365d284f87027bc4dbf33b72aabb8f12))
+
+
+### 📝 Documentation
+
+* **internal:** CodeScrapBook — measured 101 tour of the codebase ([#1719](https://github.com/red1oon/bim-ootb/issues/1719)) ([1cfce7f](https://github.com/red1oon/bim-ootb/commit/1cfce7fe49d74118c6dc772bde4b0b36f7b529c6))
+* **spec:** T11 §BENCH_CONTINUE — the next session's brief for the sanity benchmark ([#1721](https://github.com/red1oon/bim-ootb/issues/1721)) ([1f795c7](https://github.com/red1oon/bim-ootb/commit/1f795c7047bf46ce25abfae0689fab57f5b1079f))
+
+## [1.65.0](https://github.com/red1oon/bim-ootb/compare/v1.64.0...v1.65.0) (2026-09-10)
+
+
+### ✨ Features
+
+* **modeller:** §DAGEVU relationship-edge engine — openings anchor by default under grid stretch, ride is opt-in ([#1706](https://github.com/red1oon/bim-ootb/issues/1706)) ([76f8365](https://github.com/red1oon/bim-ootb/commit/76f8365c76b3d280bbb2fbd1d529e9dbda99f580))
+* **modeller:** §DAGEVU-SLIDE — along-host opening slide as the engine's second consumer; HostFillEdge.constrain() ([#1710](https://github.com/red1oon/bim-ootb/issues/1710)) ([20e4fd2](https://github.com/red1oon/bim-ootb/commit/20e4fd2843d317c6b567e2e7221059aa954ebc4b))
+* **readiness:** admin CPanel for Faizal — submission status + fitness checklist ([#1703](https://github.com/red1oon/bim-ootb/issues/1703)) ([7c3d392](https://github.com/red1oon/bim-ootb/commit/7c3d39292e442be69f37b07818ed03f3f11d9531))
+* **readiness:** open the pilot to real respondents — ethics clearance not required, real scoring and submission ship ([#1702](https://github.com/red1oon/bim-ootb/issues/1702)) ([cada5ff](https://github.com/red1oon/bim-ootb/commit/cada5ff53774f7fe603fa92307e4a598527fd581))
+
+
+### 🐛 Fixes
+
+* **modeller:** route soft-delete through the git-faithful history tree ([#1704](https://github.com/red1oon/bim-ootb/issues/1704)) ([a961f34](https://github.com/red1oon/bim-ootb/commit/a961f345fdc3e0765ed1456353826b6831a1fe8a))
+* **readiness:** admin CPanel — stop squeezing submission-status text into a narrow column ([#1705](https://github.com/red1oon/bim-ootb/issues/1705)) ([8b8fbc8](https://github.com/red1oon/bim-ootb/commit/8b8fbc8f1572143faf50b71471285a6cac77fb5c))
+
+
+### 📝 Documentation
+
+* **prompts:** spec Structural Sanity rule-based screening panel ([#1709](https://github.com/red1oon/bim-ootb/issues/1709)) ([468d047](https://github.com/red1oon/bim-ootb/commit/468d04730f16abd8f4a7cfabe0535c78b6c1e7ec))
+
+## [1.64.0](https://github.com/red1oon/bim-ootb/compare/v1.63.0...v1.64.0) (2026-09-08)
+
+
+### ✨ Features
+
+* **cinema:** Measure in the film — Alt-C Measure checkbox, datum, slab + linear beats, opening gate (§24–§36) ([#1697](https://github.com/red1oon/bim-ootb/issues/1697)) ([5b3d9ef](https://github.com/red1oon/bim-ootb/commit/5b3d9ef1c7d65f459f4a6cfe0ffb2c147314b4b7))
+* **cinema:** Measure to the end — §29 indoor beats, §37 walkable storey cards + datum second life, datum Z-anchor fix ([#1699](https://github.com/red1oon/bim-ootb/issues/1699)) ([f1ac7ce](https://github.com/red1oon/bim-ootb/commit/f1ac7ce1f921265ae6c1a4b7848596c472843ac7))
+
+## [1.63.0](https://github.com/red1oon/bim-ootb/compare/v1.62.0...v1.63.0) (2026-09-07)
+
+
+### ✨ Features
+
+* **cinema:** §CLASH_HUD_ORDER + §CLASH_HUD_PAIR_CARDS + pullback disc-pair highlight sync + Measure card ([#1693](https://github.com/red1oon/bim-ootb/issues/1693)) ([7ff4384](https://github.com/red1oon/bim-ootb/commit/7ff4384e291624173cc54d0d57914978747f857e))
+* **cinema:** the film's ending — disc-arrival clash sets, storey reveal under X-ray, Measure totals on the orbit ([#1696](https://github.com/red1oon/bim-ootb/issues/1696)) ([ed09eab](https://github.com/red1oon/bim-ootb/commit/ed09eab60c5e81569f5e6f652d8b8dc7ab9b776a))
+* **clash:** §PENDING.2/.3/.4 — list depth display, cross-caller narrowphase cache, clash_rules gear ([#1694](https://github.com/red1oon/bim-ootb/issues/1694)) ([64a0ed5](https://github.com/red1oon/bim-ootb/commit/64a0ed5d042456809a30934f8a21e154437a3afc))
+
+
+### 🐛 Fixes
+
+* **cinema:** §S274 — Silent-bake size dropdown crashed on every selection in production; add copy-bake-command link ([#1692](https://github.com/red1oon/bim-ootb/issues/1692)) ([024862c](https://github.com/red1oon/bim-ootb/commit/024862c9ec3ac6276a260d25adf0b229305877c6))
+
+## [1.62.0](https://github.com/red1oon/bim-ootb/compare/v1.61.0...v1.62.0) (2026-09-06)
+
+
+### ✨ Features
+
+* **cinema:** §CLASH_MARKER_OVERLAP_BOX + §CLASH_FILM_FLAT_FILTER — the marker is the oriented box of the real overlap solid; flat touches leave the film's set ([#1689](https://github.com/red1oon/bim-ootb/issues/1689)) ([22c8ad3](https://github.com/red1oon/bim-ootb/commit/22c8ad3a27d14a21a9703b1c0c7993a3b5f5f1b5))
+* **cinema:** §P2.4 + §CLASH_HUD_CARD — clash label 3rd row [tol mm / clash mm]; reveal roster gains the mesh-true clash card ([#1686](https://github.com/red1oon/bim-ootb/issues/1686)) ([0e72af1](https://github.com/red1oon/bim-ootb/commit/0e72af1c353d7a17f9e550beffb02b11a9405bda))
+* **clash:** §MESH_NARROWPHASE — triangle-exact clash verdict; 33.7% of the bbox list is false on Terminal ([#1676](https://github.com/red1oon/bim-ootb/issues/1676)) ([e6d48aa](https://github.com/red1oon/bim-ootb/commit/e6d48aa5b78f3a63fefb6237a60d5177178959d0))
+* **clash:** §MESH_OVERLAP_DEPTH — the exact box of the overlap solid on every mesh-true pair; the label's clash mm is now mesh-true, not the OBB proxy ([#1688](https://github.com/red1oon/bim-ootb/issues/1688)) ([273e1c5](https://github.com/red1oon/bim-ootb/commit/273e1c59159c52bc35ca4f52df12a995825c0cb6))
+
+
+### 🐛 Fixes
+
+* **cinema:** §SUN_ARC_TOPOUT_SNAP — dramatic dusk angle only after topout, pre-topout untouched ([#1685](https://github.com/red1oon/bim-ootb/issues/1685)) ([ae7b49e](https://github.com/red1oon/bim-ootb/commit/ae7b49ea32d862a38c9973309096f439444f0622))
+* persist §HR_COST alongside the gantt IDB cache, restore it on cache-hit ([#1682](https://github.com/red1oon/bim-ootb/issues/1682)) ([04e3dee](https://github.com/red1oon/bim-ootb/commit/04e3dee2e3b8f7d43f074e4433211317eae19e13))
+
+
+### ⚡ Performance
+
+* **still:** §R17_SHADOWMAP_RELEASE — the Alt+S 4096 shadow map is handed back on exit ([#1683](https://github.com/red1oon/bim-ootb/issues/1683)) ([fa71f16](https://github.com/red1oon/bim-ootb/commit/fa71f162bb8439268f4acff32ce2e16de31b0117))
+
+
+### ⏪ Reverts
+
+* **cinema:** §SUN_ARC_TOPOUT_SNAP — the sun's elevation is the single linear 55°→6° formula of the film fraction again (hand-revert of [#1685](https://github.com/red1oon/bim-ootb/issues/1685) against current main) ([#1691](https://github.com/red1oon/bim-ootb/issues/1691)) ([6363a71](https://github.com/red1oon/bim-ootb/commit/6363a71477d30fd4505c93df6f38a69e0abdf5fe))
+
+## [1.61.0](https://github.com/red1oon/bim-ootb/compare/v1.60.0...v1.61.0) (2026-09-05)
+
+
+### ✨ Features
+
+* **erp:** §ADFORM-TRXMATERIAL — form [#2](https://github.com/red1oon/bim-ootb/issues/2) of 49, the read face of the stock ledger ([#1672](https://github.com/red1oon/bim-ootb/issues/1672)) ([65383ac](https://github.com/red1oon/bim-ootb/commit/65383ac1c6352c9dcf1a0a1b9d7bbff2a78b8c49))
+* **erp:** §CALLOUT-CAMPAIGN — E-1's ranked callout gap worked, and the install call nobody made ([#1669](https://github.com/red1oon/bim-ootb/issues/1669)) ([9317ecf](https://github.com/red1oon/bim-ootb/commit/9317ecfabd3e817d9b0b2b5de10fcc76c5e416c1))
+
+
+### 🐛 Fixes
+
+* **cinema:** §BAKE_FILL_PIN — pin the bake's interior fill to the Alt+S baseline; §NIGHT_STILL_LIGHTS_ORDER — still budget on the first entry ([#1681](https://github.com/red1oon/bim-ootb/issues/1681)) ([82f14bb](https://github.com/red1oon/bim-ootb/commit/82f14bbec75e44390d43399c2208d6598f4299a0))
+* **cinema:** §CPE_REVEAL_LENS_QUAD_OFF — the lens quads honour the one-discipline slot too ([#1674](https://github.com/red1oon/bim-ootb/issues/1674)) ([8a1e5a9](https://github.com/red1oon/bim-ootb/commit/8a1e5a9eb38dd06d53383df8bc55c29204db3190))
+* **erp:** §AZ.3 — nest idempiere_agent.zip, and the instruction it made runnable ([#1677](https://github.com/red1oon/bim-ootb/issues/1677)) ([608ceb1](https://github.com/red1oon/bim-ootb/commit/608ceb1d18bd4a2cee9812d084b89f90a2944cf2))
+* **erp:** §PAGES-SERVES-THE-BRANCH — re-track the agent zips; the deploy artifact is published by nothing ([#1680](https://github.com/red1oon/bim-ootb/issues/1680)) ([7560d0a](https://github.com/red1oon/bim-ootb/commit/7560d0a29250b285cdac1d6706b4b651f2229845))
+* **erp:** §STALE-WITNESSES — poc_odoo_descriptor walks the login card that exists now ([#1673](https://github.com/red1oon/bim-ootb/issues/1673)) ([adab340](https://github.com/red1oon/bim-ootb/commit/adab3406cabe77d2c80a4feacbeb4b372e6732a3))
+* **viewer:** §DLOD_TM_OWNERSHIP — dlod.js stands down while the Time Machine owns instance matrices (missing glass/furniture in the Hospital CLI silent bake) ([#1660](https://github.com/red1oon/bim-ootb/issues/1660)) ([fcd4720](https://github.com/red1oon/bim-ootb/commit/fcd4720c87e278a2ae43864e6e2a2f49c1e2dd8d))
+
+
+### 📝 Documentation
+
+* **buildings:** HHS_Office_Federated IFC/DB analysis — the missing ground-floor front wall, cause found ([#1670](https://github.com/red1oon/bim-ootb/issues/1670)) ([2b7596a](https://github.com/red1oon/bim-ootb/commit/2b7596acbe4beb07e6a891b228be91a2f4814153))
+
+## [1.60.0](https://github.com/red1oon/bim-ootb/compare/v1.59.0...v1.60.0) (2026-09-04)
+
+
+### ✨ Features
+
+* **cli:** §CLI_BAKE_FLAG_OVERRIDE — no argument means the saved path decides, and an override can now say OFF ([#1647](https://github.com/red1oon/bim-ootb/issues/1647)) ([73702f2](https://github.com/red1oon/bim-ootb/commit/73702f226f14be0f147c8a245155a90c4621500f))
+* **cli:** §CLI_BAKE_PROGRESS + §CLI_BAKE_LAND_ON_ABORT — frame/ETA while it runs, and Ctrl-C lands the film ([#1651](https://github.com/red1oon/bim-ootb/issues/1651)) ([5933e13](https://github.com/red1oon/bim-ootb/commit/5933e1301f2ee90e8b0105ebe7a228cd21d53700))
+* **erp:** §AD-FORM-LIVE — the Form spine, and AD_Form 108 (VMatch) end to end ([#1664](https://github.com/red1oon/bim-ootb/issues/1664)) ([881e24c](https://github.com/red1oon/bim-ootb/commit/881e24cd9ce5e077be477908c25818046458eb14))
+* **erp:** §INOUT-CALLOUTS — the two named atoms, and the IsSOTrx coupling they exposed ([#1663](https://github.com/red1oon/bim-ootb/issues/1663)) ([6148d2a](https://github.com/red1oon/bim-ootb/commit/6148d2ab80c5d20911def62872d282cff2277c1d))
+* **erp:** §KIND2-READBACK — a generated document is finally readable by the app that generated it ([#1661](https://github.com/red1oon/bim-ootb/issues/1661)) ([05fd302](https://github.com/red1oon/bim-ootb/commit/05fd3024bcd362b0da92c1078227ff0ffd7385b8))
+* **erp+viewer:** §CL — the clipboard op-log relay, revived (E-6 triage of PR [#300](https://github.com/red1oon/bim-ootb/issues/300)) ([#1665](https://github.com/red1oon/bim-ootb/issues/1665)) ([2ac311a](https://github.com/red1oon/bim-ootb/commit/2ac311ac1772834d702fd10a4b87bb690f3398e3))
+* **erp:** E-4 — a completed M_InOut now moves stock (M_Transaction emit + on-hand fold) ([#1644](https://github.com/red1oon/bim-ootb/issues/1644)) ([21ab662](https://github.com/red1oon/bim-ootb/commit/21ab6628cc95fee82d4d5f0e40aaabb95e817c53))
+* **erp:** P2P Fix 5 — CreateFromInvoice, the line-maker that makes M_MatchInv fire (0 -&gt; 10) ([#1643](https://github.com/red1oon/bim-ootb/issues/1643)) ([077a1ec](https://github.com/red1oon/bim-ootb/commit/077a1ec844b1a5dd8cfcd4bbafa19ae39b17e960))
+* **erp:** the CreateFrom entry point — the three-way match closes through the real UI ([#1654](https://github.com/red1oon/bim-ootb/issues/1654)) ([692c2ff](https://github.com/red1oon/bim-ootb/commit/692c2ff4aeb3d4be7f9813032a37ce1137a73264))
+
+
+### 🐛 Fixes
+
+* **4d:** §CACHE_DB_KIND — the 4D cache judges the DB the viewer loads (meta when the split pair exists), keyed and logged by kind ([#1655](https://github.com/red1oon/bim-ootb/issues/1655)) ([65e3200](https://github.com/red1oon/bim-ootb/commit/65e3200e8cc3b919853cce2e56ba2faf9dfec2e5))
+* **4d:** §CACHE_DB_KIND — the 4D cache judges the DB the viewer loads (meta when the split pair exists), keyed and logged by kind ([#1657](https://github.com/red1oon/bim-ootb/issues/1657)) ([1b21388](https://github.com/red1oon/bim-ootb/commit/1b21388d8d12fc2d05ee2cedec06ccc8a559219d))
+* **4d:** §STOREY_DATUM_FRAME — the declared storey ladder must be in the geometry's vertical frame ([#1641](https://github.com/red1oon/bim-ootb/issues/1641)) ([f289da6](https://github.com/red1oon/bim-ootb/commit/f289da6b4ee460786069a4922c091299697f701e))
+* **4d:** §TM_PLAYED_LAYER_MIDAIR — the played-layer line judges its OWN layer, and names both numbers ([#1652](https://github.com/red1oon/bim-ootb/issues/1652)) ([765c480](https://github.com/red1oon/bim-ootb/commit/765c480467daa4ee9062fa0712ba9106b1392402))
+* **4d:** §TM_PLAYED_LAYER_MIDAIR — the played-layer line judges its OWN layer, and names both numbers ([#1656](https://github.com/red1oon/bim-ootb/issues/1656)) ([5049af4](https://github.com/red1oon/bim-ootb/commit/5049af419530d094a01842b16ace7c142a1c8cd8))
+* **bake:** §BAKE_INTERIOR_TOPUP — a bake pose whose frustum holds no fixture centre is no longer unlit ([#1642](https://github.com/red1oon/bim-ootb/issues/1642)) ([cd8dbff](https://github.com/red1oon/bim-ootb/commit/cd8dbff10f47f3974ec4cef88090988e5ff1e549))
+* **cli:** §HEADFUL_GPU_SELECT — headful takes the same GPU selector as real, so the A/B measures one variable ([#1653](https://github.com/red1oon/bim-ootb/issues/1653)) ([6c52873](https://github.com/red1oon/bim-ootb/commit/6c528738449c58801f82bf784deb0bcff099d125))
+* **cpe:** §CPE_FLAGS_PORTABLE — the saved path travels with its film flags, not just its geometry ([#1645](https://github.com/red1oon/bim-ootb/issues/1645)) ([15ca2d4](https://github.com/red1oon/bim-ootb/commit/15ca2d46386e6ba4765974ff2abf8d4713a76435))
+* **cpe:** §CPE_FLYBACK_FACE_TRAVEL — the Reveal fly-back faces where it is going, not where it arrived ([#1648](https://github.com/red1oon/bim-ootb/issues/1648)) ([56a8b41](https://github.com/red1oon/bim-ootb/commit/56a8b416fcb7fe7caf2e454e89cb5dceefa240c2))
+* **cpe:** §CPE_ROSTER_NOT_A_HIGHLIGHT — the Reveal slides are highlights only, not the last build-up card ([#1646](https://github.com/red1oon/bim-ootb/issues/1646)) ([c21c0ee](https://github.com/red1oon/bim-ootb/commit/c21c0ee5057b4fc20c5a01e2b8b4314da0ea6065))
+* **cpe:** §CPE_TAIL_LIGHTS_ALL_ONLY — the lamps come on for the all-together slot, not for each discipline ([#1649](https://github.com/red1oon/bim-ootb/issues/1649)) ([9128b4e](https://github.com/red1oon/bim-ootb/commit/9128b4e9bb9e3b7b79a1a19ed2e33b0cd6f5532c))
+* **erp:** commitGroup hashed every op TWICE — the batch write path was doing 2x the SHA-256 work ([#1638](https://github.com/red1oon/bim-ootb/issues/1638)) ([8564295](https://github.com/red1oon/bim-ootb/commit/8564295e70852e82f4f4935baa2a9006f47babb5))
+* **erp:** rebase() dropped user_tag, killing every non-default actor's signature on sync ([#1640](https://github.com/red1oon/bim-ootb/issues/1640)) ([e5034c2](https://github.com/red1oon/bim-ootb/commit/e5034c23d04d282d56ad229e3fc37e4560d55521))
+* **erp:** the FK picker could not offer a row you just created ([#1650](https://github.com/red1oon/bim-ootb/issues/1650)) ([4fe49fa](https://github.com/red1oon/bim-ootb/commit/4fe49facc1cafcfbc9c7c5c35784e3fb194cba6b))
+* **photoreal:** §SFR_UNIFORM_NOT_DEFINE — same policy, expressed as a uniform instead of a swapped map ([#1659](https://github.com/red1oon/bim-ootb/issues/1659)) ([5cddf01](https://github.com/red1oon/bim-ootb/commit/5cddf01a5b8f835474c1e589d4c7d7a63d832996))
+
+## [1.59.0](https://github.com/red1oon/bim-ootb/compare/v1.58.1...v1.59.0) (2026-09-03)
+
+
+### ✨ Features
+
+* **erp:** iDempiere parity — AD field set for the five document tables (§P1) + AD_Ref_List/Yes-No editors (§P2) ([#1613](https://github.com/red1oon/bim-ootb/issues/1613)) ([1dffb39](https://github.com/red1oon/bim-ootb/commit/1dffb397fea9d839aee8ba712735188aee037722))
+* **erp:** iDempiere parity — AD_Val_Rule reaches the live FK pickers (§P3) ([#1626](https://github.com/red1oon/bim-ootb/issues/1626)) ([bc470d7](https://github.com/red1oon/bim-ootb/commit/bc470d71ad5528e05c5d5cb5d1b79a4f7c7cceb5))
+* **erp:** iDempiere parity — whole-row mandatory check, AD_Ref_Table targets, GL_Category, DocNo both branches (§P7-§P10) ([#1636](https://github.com/red1oon/bim-ootb/issues/1636)) ([7168054](https://github.com/red1oon/bim-ootb/commit/7168054e6beb53458f98f7c39a1d0316397c2d23))
+* **photoreal:** §MEP_COLOR_SURVIVES_PHOTOREAL — MEP reads by trade in Alt+S/Alt+C instead of uniform grey metal ([#1621](https://github.com/red1oon/bim-ootb/issues/1621)) ([8d8320e](https://github.com/red1oon/bim-ootb/commit/8d8320eecd62a3200d58fdc37c9226192a7fa60e))
+* **viewer:** §DUCT_SILHOUETTE — a large duct's OUTLINE, not just its shading ([#1631](https://github.com/red1oon/bim-ootb/issues/1631)) ([da0521c](https://github.com/red1oon/bim-ootb/commit/da0521c482a9f99155bae53adaf9fbb3dfbcf265))
+
+
+### 🐛 Fixes
+
+* **4d:** §FUTURE-5A — relocate 7 of 11 hardcoded 5D policy constants into JSON ([#1616](https://github.com/red1oon/bim-ootb/issues/1616)) ([4e9487c](https://github.com/red1oon/bim-ootb/commit/4e9487c58992cfed12deb400cd68651b80fdd88c))
+* **4d:** §GANTT_EDIT_CLAMP toast on the link-creation re-apply path ([#1618](https://github.com/red1oon/bim-ootb/issues/1618)) ([92528e6](https://github.com/red1oon/bim-ootb/commit/92528e68b53c9490cd86a3a09a927bec4b2afe0b))
+* **4d:** §RETYPED_CONSTANTS — consolidate the two safe copies, REGISTER the rest (§I.5b, §I.5i) ([#1630](https://github.com/red1oon/bim-ootb/issues/1630)) ([8b14b4e](https://github.com/red1oon/bim-ootb/commit/8b14b4ea36dfa1c83c946b9b4d8732f679121d8d))
+* **4d:** §STAIR_SLAB_WIDEN — a stair tread exported as IfcSlab stops landing on day 0 ([#1625](https://github.com/red1oon/bim-ootb/issues/1625)) ([138af11](https://github.com/red1oon/bim-ootb/commit/138af115ea468ddbdaffc4a6e3888564203e2225))
+* **4d:** §STOREY_DATUM + §TPL_LADDER_BRIDGE — DAY-0 integrity to zero on all four buildings ([#1551](https://github.com/red1oon/bim-ootb/issues/1551)) ([5973650](https://github.com/red1oon/bim-ootb/commit/59736505aecba06c4dc56cef481e670292c69847))
+* **4d:** §STOREY_SUFFIX_PARITY — collapsePhase becomes a superset of the import-time rule (§I.5f) ([#1629](https://github.com/red1oon/bim-ootb/issues/1629)) ([b43c6e5](https://github.com/red1oon/bim-ootb/commit/b43c6e5c6dd900a8c6815c0330e06e765dbd527a))
+* **4d:** §TPL_MODEL — the THIRD task-grid producer names itself (§I.5g) ([#1628](https://github.com/red1oon/bim-ootb/issues/1628)) ([58873b6](https://github.com/red1oon/bim-ootb/commit/58873b6a3e32f67d601358e3b89488dd6456ce24))
+* **4d:** §W_D0_ATTRIBUTION — all 8 played-layer DAY-0 FAILs attributed, 3 of them this witness's own defects ([#1615](https://github.com/red1oon/bim-ootb/issues/1615)) ([f6c158e](https://github.com/red1oon/bim-ootb/commit/f6c158edfc0c668b626338f5c934e1018a83bd8d))
+* **4d:** delete viewer/rates/4D_policy.json — the config nobody loads ([#1617](https://github.com/red1oon/bim-ootb/issues/1617)) ([8fdec24](https://github.com/red1oon/bim-ootb/commit/8fdec24f216a557e238f3421b9f394a23944b56b))
+* **cinema:** §CPE_AIM_DEPTH_RETIRED — path-follow is the only automatic gaze rule ([#1619](https://github.com/red1oon/bim-ootb/issues/1619)) ([dfe5a58](https://github.com/red1oon/bim-ootb/commit/dfe5a58e9fdb89394653b410790488eb1300a575))
+* **cinema:** §CPE_REVEAL_ARCH_HOLD — hold ARC/STR until the camera is back on the first stick ([#1633](https://github.com/red1oon/bim-ootb/issues/1633)) ([1173314](https://github.com/red1oon/bim-ootb/commit/11733141cbbdddf5ed4db818f3f75295ee1f570b))
+* **erp:** two forward-ports the twin audit surfaced — ninja_model [@callout](https://github.com/callout) grammar + crud_core audit-column casing ([#1632](https://github.com/red1oon/bim-ootb/issues/1632)) ([8b50598](https://github.com/red1oon/bim-ootb/commit/8b50598d2040c1ae0dc938f0ce49b1fc55f468b4))
+* **photoreal:** §SUN_FILL_RATIO — the staged HDRI was lighting every matte wall, erasing the sun/shade read ([#1622](https://github.com/red1oon/bim-ootb/issues/1622)) ([85fd073](https://github.com/red1oon/bim-ootb/commit/85fd07326d581863687b45e1b0b1e0ce1a68f615))
+* **viewer:** §R15 — disarm the two controller rules by default; their own witness says FAIL ([#1637](https://github.com/red1oon/bim-ootb/issues/1637)) ([10c0b2c](https://github.com/red1oon/bim-ootb/commit/10c0b2ca8d3bdb2577dafc14b12318888f12a5bc))
+* **viewer:** §R15 — the DLOD mesh-budget controller integrates on stale, saturated feedback ([#1635](https://github.com/red1oon/bim-ootb/issues/1635)) ([4362b0f](https://github.com/red1oon/bim-ootb/commit/4362b0f9e70fe6ec883b86cf6f3729a288518486))
+* **witness:** §SFR_GROUP_RESTORE — the sun/fill witness was zeroing the fixture pool it measures ([#1634](https://github.com/red1oon/bim-ootb/issues/1634)) ([a1c8d03](https://github.com/red1oon/bim-ootb/commit/a1c8d0300476b42b8f136e44ad0ecff1f52ffd57))
+* **witness:** §W_D0A A4 — INCONCLUSIVE over an empty population, not FAIL ([#1624](https://github.com/red1oon/bim-ootb/issues/1624)) ([6850324](https://github.com/red1oon/bim-ootb/commit/68503243ee22eb3dcc254965bc3fb509ba1740d2))
+* **witness:** §W_PROGRESS — a killed cinema/aim run now names the last stage it finished ([#1623](https://github.com/red1oon/bim-ootb/issues/1623)) ([31fe1ca](https://github.com/red1oon/bim-ootb/commit/31fe1ca9fb02069061d12e4d9000abd58b2e39ea))
+
+## [1.58.1](https://github.com/red1oon/bim-ootb/compare/v1.58.0...v1.58.1) (2026-09-02)
+
+
+### 🐛 Fixes
+
+* **erp-fsm:** recover 3 DocumentEngine tail blocks the oracle's parse window hid (§P4-DEFECT) ([#1611](https://github.com/red1oon/bim-ootb/issues/1611)) ([9e4037c](https://github.com/red1oon/bim-ootb/commit/9e4037c87e39f1dd670407086dfff4f98ec91ce8))
+
+## [1.58.0](https://github.com/red1oon/bim-ootb/compare/v1.57.1...v1.58.0) (2026-09-02)
+
+
+### ✨ Features
+
+* **cinema:** §CLI_SILENT_BAKE — dev-only CLI silent bake taking a stored path + §NIGHT_BAKE_POOL bake perf fix ([#1602](https://github.com/red1oon/bim-ootb/issues/1602)) ([d37eb10](https://github.com/red1oon/bim-ootb/commit/d37eb109a3b571b24bb2568b3d1fdbee723361ee))
+* **erp:** disposable-host persistence in-app — signed backup/restore (sw v605) (§INTEG-WIRE-B) ([#203](https://github.com/red1oon/bim-ootb/issues/203)) ([071bdc7](https://github.com/red1oon/bim-ootb/commit/071bdc7f2e86b4fb761a34baed612e1ca28c845f))
+* **erp:** OK feedback dialog after both System Monitor resets ([#429](https://github.com/red1oon/bim-ootb/issues/429)) ([2cbe9ac](https://github.com/red1oon/bim-ootb/commit/2cbe9acb4ead4632551bd4c888068fa1fcb5d9a4))
+* **palette:** §MEP_DISC_PALETTE — the discipline band paints the viewer's OWN legend, and InstancedMeshes stop being 'Unknown' ([#1604](https://github.com/red1oon/bim-ootb/issues/1604)) ([318b4dd](https://github.com/red1oon/bim-ootb/commit/318b4dd3c9295cbf2f65b65ba6ff43c9a3e2891c))
+* **room_graph:** sub-human door height filter + sealed-room marking, exclude from Find Panel ([#1157](https://github.com/red1oon/bim-ootb/issues/1157)) ([34219f8](https://github.com/red1oon/bim-ootb/commit/34219f8cdc7ae169d36e03c097cf18e0b0b2fde5))
+* **viewer:** §WALL_SIDE_AND_LIGHT_FLOOR — class-keyed material.side + derived light floor ([#1601](https://github.com/red1oon/bim-ootb/issues/1601)) ([d16646d](https://github.com/red1oon/bim-ootb/commit/d16646db8375952b1dc340c3c59dde3145e97de8))
+
+
+### 🐛 Fixes
+
+* **4d:** §CACHE_PLAYED_LAYER — the cache carries BOTH schedule layers and every judge names the one it judges ([#1607](https://github.com/red1oon/bim-ootb/issues/1607)) ([614ab66](https://github.com/red1oon/bim-ootb/commit/614ab66e016286cce4cd422714359c3fdf68c1d3))
+* **4d:** §GANTT_CACHE_ERR_STACK — log the stack, the message alone cannot locate it ([#1318](https://github.com/red1oon/bim-ootb/issues/1318)) ([a490d7b](https://github.com/red1oon/bim-ootb/commit/a490d7b2b61fa57e60512d82a9bb0da733196771))
+* **4d:** §TM_REVEAL_TILED — the movie plays each element's own duration share of its bar, not a per-task affine ([#1605](https://github.com/red1oon/bim-ootb/issues/1605)) ([c8a6df6](https://github.com/red1oon/bim-ootb/commit/c8a6df61d1f1ab8c3ae53a12ffab5c947c6f8925))
+* **cpe:** §CPE_PIE_FLYOUT_DROP — the fly-out drops the pie; the revolving highlights take its column ([#1599](https://github.com/red1oon/bim-ootb/issues/1599)) ([4fb753c](https://github.com/red1oon/bim-ootb/commit/4fb753c61787ec24d19275573f470f9f90a91503))
+* **security:** harden before() in witness_room_graph_utility_penalty.js against shell injection ([#1606](https://github.com/red1oon/bim-ootb/issues/1606)) ([e9daafa](https://github.com/red1oon/bim-ootb/commit/e9daafa0d7c94c33954a0ded122c1c8b55f64e48))
+* **witness:** §VAC — the nine per-frame tags of §R13.9 can now report their own failure ([#1608](https://github.com/red1oon/bim-ootb/issues/1608)) ([bf600d4](https://github.com/red1oon/bim-ootb/commit/bf600d4a107e80ea3ed7d2bd6b8fe32eaa404959))
+
+
+### 📝 Documentation
+
+* **cpe:** §PIE_HOLD_PREDICATE — the pie-hold "never fires on Hospital" claim was measuring tasks, not staffed ops ([#1603](https://github.com/red1oon/bim-ootb/issues/1603)) ([e15da67](https://github.com/red1oon/bim-ootb/commit/e15da67c553ec5a08a6a0c8e16881a7d92ef5fd6))
+
+## [1.57.1](https://github.com/red1oon/bim-ootb/compare/v1.57.0...v1.57.1) (2026-09-01)
+
+
+### 🐛 Fixes
+
+* **cpe:** §CPE_AIM_DEPTH_FREEZE — the correction window blends from a FIXED gaze, frozen at the window's own edges ([#1598](https://github.com/red1oon/bim-ootb/issues/1598)) ([0984e37](https://github.com/red1oon/bim-ootb/commit/0984e37081c07afea0cd9f9afb9aee322d0137af))
+* **cpe:** §CPE_CARD_FIT — stat-card text truncated once the pie took its column ([#1592](https://github.com/red1oon/bim-ootb/issues/1592)) ([8ebfe82](https://github.com/red1oon/bim-ootb/commit/8ebfe8237a0d642c3a79370f33b0383483b572db))
+* **cpe:** §CPE_CORR_BRANCH — the 110 deg correction snap was a 2*pi branch flip, not the envelope ([#1597](https://github.com/red1oon/bim-ootb/issues/1597)) ([3c58a48](https://github.com/red1oon/bim-ootb/commit/3c58a480234945735dde9a182d47497e3d7b5e4d))
+* **palette:** §SUNGLASS_GROUPING_RULES — storey bands ramp by geometric ordinal; brown material-injection tip on the scrub ([#1594](https://github.com/red1oon/bim-ootb/issues/1594)) ([df0c462](https://github.com/red1oon/bim-ootb/commit/df0c4626ae264babdd95db2097554eac57ff9ade))
+* **viewer:** §CPE_MATERIAL_KEY — triplanar keys material_name FIRST, ifc_class as fallback ([#1595](https://github.com/red1oon/bim-ootb/issues/1595)) ([cd999e6](https://github.com/red1oon/bim-ootb/commit/cd999e61c33a4e973c4c048efddf743d448c594f))
+
+
+### ⚡ Performance
+
+* **still:** §R11 §PHOTO_PREWARM — take the one-time work off the first Alt+S ([#1590](https://github.com/red1oon/bim-ootb/issues/1590)) ([4876c22](https://github.com/red1oon/bim-ootb/commit/4876c2274fdf25b41088b58785055792a93e419b))
+
+## [1.57.0](https://github.com/red1oon/bim-ootb/compare/v1.56.0...v1.57.0) (2026-08-30)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_STATS_TAIL — two rounds, and only the Reveal round revolves ([#1587](https://github.com/red1oon/bim-ootb/issues/1587)) ([230459c](https://github.com/red1oon/bim-ootb/commit/230459c15bd4a3c82bcccfc92ebe7b4a559ae825))
+* **cpe:** resource panel + path overview box + curve smoothing + brush-stroke gaze ([#1580](https://github.com/red1oon/bim-ootb/issues/1580)) ([9b44e04](https://github.com/red1oon/bim-ootb/commit/9b44e047f54bc5ae7d69da0d81d3153e02c92d6a))
+
+
+### 🐛 Fixes
+
+* **cpe:** §CPE_HUD_ORDER — path box above the pie, untruncate trade names ([#1584](https://github.com/red1oon/bim-ootb/issues/1584)) ([25c8adc](https://github.com/red1oon/bim-ootb/commit/25c8adc03ab2ae6aef5c05795fea3fbcf479067a))
+* **cpe:** §CPE_PIE_HOLD — the pie holds the last real crew instead of vanishing ([#1586](https://github.com/red1oon/bim-ootb/issues/1586)) ([9057414](https://github.com/red1oon/bim-ootb/commit/9057414227f6b783f75e2eae406bfb1abf0db7d7))
+* **render:** transparent IFC materials were given their class's opaque METAL preset ([#1585](https://github.com/red1oon/bim-ootb/issues/1585)) ([81f5e4d](https://github.com/red1oon/bim-ootb/commit/81f5e4da5fcbdb73cbbf49a025d2aa7cf67ef979))
+
+
+### ⚡ Performance
+
+* **bake:** §GLOW_BUILDUP_EARLY_OUT + §CPE_BIG_STATS revolving value cards ([#1583](https://github.com/red1oon/bim-ootb/issues/1583)) ([a977fbc](https://github.com/red1oon/bim-ootb/commit/a977fbcb124eda94326b96d206cf1285d7f3e9f2))
+* **bake:** §R10 §MAXQ_FRAME_BUDGET — a baked frame costs 20 renders, not 40 ([#1588](https://github.com/red1oon/bim-ootb/issues/1588)) ([742ea66](https://github.com/red1oon/bim-ootb/commit/742ea66bd8733b251ee86a19bbefdeca602a2d01))
+* **mep:** reach Hospital's batched/instanced elements, halve the cost ([#1582](https://github.com/red1oon/bim-ootb/issues/1582)) ([8df684b](https://github.com/red1oon/bim-ootb/commit/8df684b97dd9a340b11ad6490ed5ff52e4ad4648))
+
+## [1.56.0](https://github.com/red1oon/bim-ootb/compare/v1.55.0...v1.56.0) (2026-08-29)
+
+
+### ✨ Features
+
+* **photo:** §TRIPLANAR_NORMAL — the missing third PBR map + warm cam fill ([#1579](https://github.com/red1oon/bim-ootb/issues/1579)) ([5099f74](https://github.com/red1oon/bim-ootb/commit/5099f74c539ed9593038124c4d66ea2728cf3c0f))
+
+
+### 🐛 Fixes
+
+* **merge:** merged IFC lost its geometry on save — geo fold died on a table-name mismatch ([#1578](https://github.com/red1oon/bim-ootb/issues/1578)) ([f8ddeb3](https://github.com/red1oon/bim-ootb/commit/f8ddeb395ec4bf10d6ef1f4490fd9d9979c634ad))
+* **open:** meta.db+geo.db pair silently dropped one half — both the Open picker and the ([#1576](https://github.com/red1oon/bim-ootb/issues/1576)) ([141c1c5](https://github.com/red1oon/bim-ootb/commit/141c1c526cbc81eadbea8d870236135667e44d4a))
+
+## [1.55.0](https://github.com/red1oon/bim-ootb/compare/v1.54.0...v1.55.0) (2026-08-27)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_CONE_ORIENT_ADJUST — drag the POV cone to fix a bad gaze, no stick added ([#1572](https://github.com/red1oon/bim-ootb/issues/1572)) ([e02de30](https://github.com/red1oon/bim-ootb/commit/e02de3027c53bc9dce1d3718ba76101c3d8df4fd))
+
+
+### 🐛 Fixes
+
+* **4d:** §PHASE_WATERMARK_FLOOR — gate on the phase's own predecessor, not prevOnLevel ([#1571](https://github.com/red1oon/bim-ootb/issues/1571)) ([37cf48f](https://github.com/red1oon/bim-ootb/commit/37cf48f613d85473ed16ecd5c279e9ece26ae52d))
+* **cpe:** §CPE_CONE_ORIENT_ADJUST — extend correction hold/decay, found+respected the rate-limiter's real ceiling ([#1573](https://github.com/red1oon/bim-ootb/issues/1573)) ([264314b](https://github.com/red1oon/bim-ootb/commit/264314b5911d1855d4cfd079f0dbb730b0e91a69))
+
+## [1.54.0](https://github.com/red1oon/bim-ootb/compare/v1.53.0...v1.54.0) (2026-08-27)
+
+
+### ✨ Features
+
+* **4d:** §TEMPLATE_INSTANTIATE — emit the task grid FROM 4D_template.json (§S69) ([#1535](https://github.com/red1oon/bim-ootb/issues/1535)) ([beb409f](https://github.com/red1oon/bim-ootb/commit/beb409fe459a6f544af5648600d0d2e8c338fa1c))
+* **4d:** §TPL_LEVEL_AXIS — task grid can use LevelDeriver, flag-gated OFF ([#1556](https://github.com/red1oon/bim-ootb/issues/1556)) ([25aa1a9](https://github.com/red1oon/bim-ootb/commit/25aa1a9b16bf7bb14a545d4dab3c51fe71e009d0))
+* **4d:** §TPL_MOVIE_BINDS_BARS — bind the movie to the bars, or §S69 is a regression (§S70) ([#1536](https://github.com/red1oon/bim-ootb/issues/1536)) ([148ee76](https://github.com/red1oon/bim-ootb/commit/148ee762076d92ada579bd4675c106c8e5aa5b79))
+* **4d:** Bar model — needs semantics, upward edge, geometry levels, trade ladder, granularity dial ([#1542](https://github.com/red1oon/bim-ootb/issues/1542)) ([44f42dd](https://github.com/red1oon/bim-ootb/commit/44f42ddb35e7350b5fd963604927f701d9f98686))
+* **4d:** needs() edge providers for the Bar model (§3, 4D_BAR_MODEL.md) ([#1538](https://github.com/red1oon/bim-ootb/issues/1538)) ([1e6b60c](https://github.com/red1oon/bim-ootb/commit/1e6b60ccfcbdf4e60876132b7feb623ed735c863))
+* **4d:** persist task grid in cache_4d_run.js + reveal-spread histogram probe ([#1558](https://github.com/red1oon/bim-ootb/issues/1558)) ([33b849f](https://github.com/red1oon/bim-ootb/commit/33b849fa8c48a60add4729c8ee3f97d89a33540f))
+* **4d:** split Architecture into Envelope/Closeup, and wire production to the 4D template ([#1548](https://github.com/red1oon/bim-ootb/issues/1548)) ([6b12783](https://github.com/red1oon/bim-ootb/commit/6b127835e830687deec8456ed64213afb883894f))
+* **4d:** template v1.2.0 — packed+sequential per user ruling, full band-monotonic ladder, per-gate red controls ([#1534](https://github.com/red1oon/bim-ootb/issues/1534)) ([32e5ade](https://github.com/red1oon/bim-ootb/commit/32e5adec20d346c91e44721fec70b86e2d745b87))
+* **4d:** the Bar model core — one type, one stored timeline, one pass ([#1537](https://github.com/red1oon/bim-ootb/issues/1537)) ([1bba958](https://github.com/red1oon/bim-ootb/commit/1bba95808ed3a64b0119883679eed2c45e93109f))
+* **4d:** the core programme template JSON — the artifact asked for months ago that never existed ([#1531](https://github.com/red1oon/bim-ootb/issues/1531)) ([7e1a5ec](https://github.com/red1oon/bim-ootb/commit/7e1a5ec4c32481fadf93e0f1b0096c546c0a5274))
+* **readiness:** §LLM_BRIDGE bridge-v2 — locale-currency check on the composed prompt ([#1546](https://github.com/red1oon/bim-ootb/issues/1546)) ([7195c31](https://github.com/red1oon/bim-ootb/commit/7195c31565842cc5aa0c28d45c6943ee136b9bb7))
+* **readiness:** remove draft/unadjudicated translation labeling (user directive) ([#1525](https://github.com/red1oon/bim-ootb/issues/1525)) ([4dfbffe](https://github.com/red1oon/bim-ootb/commit/4dfbffea3c3ccde9f85d31c6a21beffd351f5216))
+* **readiness:** sessionStorage language persistence + French/German/Italian/Spanish ([#1522](https://github.com/red1oon/bim-ootb/issues/1522)) ([d569d60](https://github.com/red1oon/bim-ootb/commit/d569d608ea982624e10db7dd8bc270136d34873d))
+
+
+### 🐛 Fixes
+
+* **4d:** §CACHE_EVICT_ONLY_ON_QUOTA_STRICT — require the positive QuotaExceededError match before evicting ([#1564](https://github.com/red1oon/bim-ootb/issues/1564)) ([5711c9e](https://github.com/red1oon/bim-ootb/commit/5711c9eb28fd3b1dc5e79c3ee2c38fc62113a273))
+* **4d:** §I.5c — stop narrowing §TPL_LAYER_ORDER's bearing relation to the wall-pool upper bound ([#1567](https://github.com/red1oon/bim-ootb/issues/1567)) ([cda73c1](https://github.com/red1oon/bim-ootb/commit/cda73c17ebf3d49f6d158348d2ffcec99d67435f))
+* **4d:** §S18 — the elevation patches were never uploaded to OCI, and Duplex's would have been discarded ([#1557](https://github.com/red1oon/bim-ootb/issues/1557)) ([e63fa5d](https://github.com/red1oon/bim-ootb/commit/e63fa5d01f3adceaff6e61423bbd266a7b7a399f))
+* **4d:** §STAIR_FLIGHT_GRID_VISIBILITY — give auditFloating the scheduler's support pool ([#1562](https://github.com/red1oon/bim-ootb/issues/1562)) ([afb61d7](https://github.com/red1oon/bim-ootb/commit/afb61d71efe7f565fc512c177079b32bff6af8b1))
+* **4d:** §STOREY_DATUM_FLOOR + §STOREY_ROW_EMIT — the injected storey datum is the FLOOR, and every walked storey gets a row ([#1552](https://github.com/red1oon/bim-ootb/issues/1552)) ([8b432a8](https://github.com/red1oon/bim-ootb/commit/8b432a82704c51579de97d4803263abe5106dee6))
+* **4d:** §TPL_MODEL — both branches on one stream, and stop the witness muting the failure one ([#1561](https://github.com/red1oon/bim-ootb/issues/1561)) ([bc9ae84](https://github.com/red1oon/bim-ootb/commit/bc9ae844d346c6b892f9129a1f1e865e20746d99))
+* **4d:** §TPL_MODEL — name which model ran, precache the template, and make the edit witness judge the canonical one ([#1553](https://github.com/red1oon/bim-ootb/issues/1553)) ([f38175d](https://github.com/red1oon/bim-ootb/commit/f38175d7067aabecfc58d00630476036f5052c50))
+* **4d:** §ZONE_WINDOW_COVERS_WORK — a zone's window must fit its own members' work (5/135 → 0/135) ([#1529](https://github.com/red1oon/bim-ootb/issues/1529)) ([9eac609](https://github.com/red1oon/bim-ootb/commit/9eac609d46761e1f801915ce6f83076f55a7fd8a))
+* **4d:** 4D_template v1.1.0 + the crew cap must bind the FINAL times (§S67) ([#1533](https://github.com/red1oon/bim-ootb/issues/1533)) ([1e14b1d](https://github.com/red1oon/bim-ootb/commit/1e14b1dc3f096f29a50b07d4a2b0b3c44b5fb285))
+* **4d:** a Gantt bar IS its task — stop deriving the bar's span from its member elements (§S65 STAGE 3) ([#1528](https://github.com/red1oon/bim-ootb/issues/1528)) ([0267b20](https://github.com/red1oon/bim-ootb/commit/0267b209f32b66c4ddff6f1138248619c2114ede))
+* **4d:** bind every element's kernel_ops write to its real task window — make the "two clocks" bug class structurally impossible ([#1520](https://github.com/red1oon/bim-ootb/issues/1520)) ([ae0e102](https://github.com/red1oon/bim-ootb/commit/ae0e102a8e08e33d850af2c47b76c5a86ef1732f))
+* **4d:** needs() is ANY-OF and ALL-OF, not one flat list ([#1540](https://github.com/red1oon/bim-ootb/issues/1540)) ([fcaef11](https://github.com/red1oon/bim-ootb/commit/fcaef1104378bb613511509a1b85ce46d7a4c744))
+* **4d:** replace element-window hard clamp with a per-task proportional rescale — v1 broke distribution, found live within the hour ([#1523](https://github.com/red1oon/bim-ootb/issues/1523)) ([77a6b2b](https://github.com/red1oon/bim-ootb/commit/77a6b2ba53cc0e04a8225974e18b8e4114f26929))
+* **4d:** Terminal §META_TRANSFORM_REPAIR v2 — regenerate against real ground truth ([#1566](https://github.com/red1oon/bim-ootb/issues/1566)) ([a2e582b](https://github.com/red1oon/bim-ootb/commit/a2e582bfa2ce7d4d524c6de691b30b1bdfd3a66c))
+* **4d:** the preset template itself — six §TPL_ZERO_MINUTE defects + the roof/MEP order (§S65 STAGE 2) ([#1527](https://github.com/red1oon/bim-ootb/issues/1527)) ([c30a21c](https://github.com/red1oon/bim-ootb/commit/c30a21c836aecc90a56366ba96ba3426caabd010))
+* **4d:** the TM persist data-loss — our own LRU evictor deleted the user's edit ([#1555](https://github.com/red1oon/bim-ootb/issues/1555)) ([1d968aa](https://github.com/red1oon/bim-ootb/commit/1d968aab1a7b08bb92530c244fcb8f8633429d3a))
+* **4d:** TPL_LAYER_ORDER — support order inside a task, with a self-check that fails on a no-op ([#1549](https://github.com/red1oon/bim-ootb/issues/1549)) ([1ca464c](https://github.com/red1oon/bim-ootb/commit/1ca464cee0333dba24f7ade04da33b694af8dba6))
+* **4d:** X-ray-off restore falls back to real per-material opacity (Clinic glass-loss root cause) ([#1565](https://github.com/red1oon/bim-ootb/issues/1565)) ([0d4ad58](https://github.com/red1oon/bim-ootb/commit/0d4ad58081779d9eb6b400043ea0ae6de42af4de))
+* **cpe:** §CPE_BUILDUP_ONSET_BLEND — buildup no longer bursts in the first film seconds ([#1570](https://github.com/red1oon/bim-ootb/issues/1570)) ([83638cf](https://github.com/red1oon/bim-ootb/commit/83638cf989828d6e87697d886112ab8fb9159f4a))
+* **deploy:** bump sw.js CACHE_VERSION for [#1520](https://github.com/red1oon/bim-ootb/issues/1520) — the element-window-clamp fix never reached existing users ([#1521](https://github.com/red1oon/bim-ootb/issues/1521)) ([4c0865f](https://github.com/red1oon/bim-ootb/commit/4c0865f149281905f3a20409b4135c3b5ad6ef29))
+* **deploy:** bump sw.js CACHE_VERSION for [#1523](https://github.com/red1oon/bim-ootb/issues/1523) — same gap repeated, caught immediately this time ([#1524](https://github.com/red1oon/bim-ootb/issues/1524)) ([ef210cf](https://github.com/red1oon/bim-ootb/commit/ef210cf3d12ab27901e8bd4d80d3de4c6d55b7f1))
+* **readiness:** .btn.sec near-invisible in both light AND dark mode ([#1544](https://github.com/red1oon/bim-ootb/issues/1544)) ([415c1b1](https://github.com/red1oon/bim-ootb/commit/415c1b15cbc530a3fef92f07e5aad20d24a10ed6))
+* **readiness:** 3 readability edits from user review, propagate to 6 language packs ([#1541](https://github.com/red1oon/bim-ootb/issues/1541)) ([303fd5e](https://github.com/red1oon/bim-ootb/commit/303fd5eca9a91f79c6f0ca7855c9c935ee23d745))
+* **readiness:** task B whitespace in composePrompt() locale line ([#1547](https://github.com/red1oon/bim-ootb/issues/1547)) ([98a8605](https://github.com/red1oon/bim-ootb/commit/98a8605a4a93d06bcb10a52cc533720fb981b9d9))
+* **readiness:** wire why.html figure captions and assess.html context selects to i18n ([#1518](https://github.com/red1oon/bim-ootb/issues/1518)) ([e2654e9](https://github.com/red1oon/bim-ootb/commit/e2654e950813f1c79f48d5a47f5b80505dc94c9d))
+
+
+### ⚡ Performance
+
+* **cinema:** §R10 — MaxQ bake skips the lens-quad rebuild when nothing changed ([#1559](https://github.com/red1oon/bim-ootb/issues/1559)) ([676a71b](https://github.com/red1oon/bim-ootb/commit/676a71bd7e02a6cdc42c2ee0a73a81679fc23a1b))
+
+## [1.53.0](https://github.com/red1oon/bim-ootb/compare/v1.52.0...v1.53.0) (2026-08-25)
+
+
+### ✨ Features
+
+* **readiness:** §HANDOVER — the visitor leaves holding their own model, as SQLite ([#1506](https://github.com/red1oon/bim-ootb/issues/1506)) ([9736932](https://github.com/red1oon/bim-ootb/commit/9736932fe5b26798700c59ba9aa85fbd895ae344))
+* **readiness:** §LANGUAGE_I18N_FULLTOOLKIT — extend ar/ms translation to the whole toolkit ([#1515](https://github.com/red1oon/bim-ootb/issues/1515)) ([74406e3](https://github.com/red1oon/bim-ootb/commit/74406e340a807bd989003a362c16089f3c9bc561))
+* **readiness:** §TRACKB — step 9 reads a real IFC and measures it, in the browser ([#1502](https://github.com/red1oon/bim-ootb/issues/1502)) ([31302d6](https://github.com/red1oon/bim-ootb/commit/31302d6759aa25976b854c685af1410e4e4c5edf))
+* **tm:** §TM_P6_FOLD — retire the Schedule Editor tab, fold P6/MSP interop + Diff into the TM panel ([#1509](https://github.com/red1oon/bim-ootb/issues/1509)) ([a515081](https://github.com/red1oon/bim-ootb/commit/a5150816e8a03b017829ef0911aed591824a1057))
+* **tm:** Office snapshot — TM state leaves the browser as PNG + deep-link (Copy Image / Copy Link) ([#1503](https://github.com/red1oon/bim-ootb/issues/1503)) ([01baea8](https://github.com/red1oon/bim-ootb/commit/01baea8f9aac13fb124cd3449d0f64309154a848))
+* **tm:** silent refusals get tips; a thrown edit recovers + offers closing other panels ([#1500](https://github.com/red1oon/bim-ootb/issues/1500)) ([b66a1f7](https://github.com/red1oon/bim-ootb/commit/b66a1f7605ab24fb0b8b2611cdd2ca6cdcff5099))
+* **witness:** add witness_kit — reusable schema+invariant+redControl builder for authoring new witnesses ([#1511](https://github.com/red1oon/bim-ootb/issues/1511)) ([5c73a5d](https://github.com/red1oon/bim-ootb/commit/5c73a5dd120c8c17d4040e120cd9ce5a3b0a7e4b))
+
+
+### 🐛 Fixes
+
+* **readiness:** a real build stamp, and the page tells you when your tab is stale ([#1507](https://github.com/red1oon/bim-ootb/issues/1507)) ([b8886fa](https://github.com/red1oon/bim-ootb/commit/b8886fa99a3bdb2c3de7958deb341eb1b5aeb72c))
+* **tm:** Alt+C bake loads the schedule silently, never opens the TM panel ([#1510](https://github.com/red1oon/bim-ootb/issues/1510)) ([4ceae54](https://github.com/red1oon/bim-ootb/commit/4ceae549df9c51a8e8e7152e5575e2e229758f70))
+* **tm:** Alt+C bake never generates a building's first-ever 4D schedule ([#1514](https://github.com/red1oon/bim-ootb/issues/1514)) ([a324133](https://github.com/red1oon/bim-ootb/commit/a3241330cc63159f0c369a1e56a74a93c9b30e01))
+
+
+### 📝 Documentation
+
+* **readiness:** §REGISTER_SYNC — publish the related work that was read but never shipped ([#1508](https://github.com/red1oon/bim-ootb/issues/1508)) ([4201628](https://github.com/red1oon/bim-ootb/commit/4201628a6e97f2ec01c418a4f08896d438229779))
+* **readiness:** §STORY — "can anyone else actually open your model?", and stop claiming a file is read ([#1501](https://github.com/red1oon/bim-ootb/issues/1501)) ([77ddd16](https://github.com/red1oon/bim-ootb/commit/77ddd16c82832aeb21b457c2b6777de6a42e7eff))
+* **witness-kit:** add JSDoc to Witness() builder and its chained methods ([#1512](https://github.com/red1oon/bim-ootb/issues/1512)) ([1bc3aa7](https://github.com/red1oon/bim-ootb/commit/1bc3aa7fc5d24fb1fa135372cc0236c85365f6f5))
+
+## [1.52.0](https://github.com/red1oon/bim-ootb/compare/v1.51.0...v1.52.0) (2026-08-24)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_CPM_LEGEND — a key for the float rail, in the drawer's own lock bar ([#1491](https://github.com/red1oon/bim-ootb/issues/1491)) ([705a48c](https://github.com/red1oon/bim-ootb/commit/705a48c6dac5b70b4663e7a84cd838c16be78935))
+* **erp:** wire record-level access gate into commitCrud (T-0 item 4) ([#1499](https://github.com/red1oon/bim-ootb/issues/1499)) ([b386436](https://github.com/red1oon/bim-ootb/commit/b386436dd9ade4389c7798e657c7584ad37fbaa5))
+* **gantt:** §GANTT_RESCHEDULE_ASAP — explicit ⏪ Pull Back (reschedule as early as possible) ([#1498](https://github.com/red1oon/bim-ootb/issues/1498)) ([5aca269](https://github.com/red1oon/bim-ootb/commit/5aca26978326cf1d339e9505e739990af83a83aa))
+* **readiness:** §LANGUAGE_I18N — Malay and Arabic instrument packs, shipped as labelled drafts ([#1497](https://github.com/red1oon/bim-ootb/issues/1497)) ([d064960](https://github.com/red1oon/bim-ootb/commit/d064960420291a2e06385c2c7c078a0c8a9489d9))
+* **readiness:** §LLM_BRIDGE — the guided conversation, run in the practitioner's own AI ([#1485](https://github.com/red1oon/bim-ootb/issues/1485)) ([bc17bb6](https://github.com/red1oon/bim-ootb/commit/bc17bb613c5030e5dd983dadf128fa75c4be75bb))
+
+
+### 🐛 Fixes
+
+* **4d:** §S22_EPOCH_FIX for E7 — the typed properties panel was writing 1970 dates ([#1482](https://github.com/red1oon/bim-ootb/issues/1482)) ([daf382e](https://github.com/red1oon/bim-ootb/commit/daf382e8200773caaf7d166938728088ac3afa53))
+* **4d:** §S78 — split-mode Gantt edits now persist under the key the reload reads ([#1494](https://github.com/red1oon/bim-ootb/issues/1494)) ([408d9d1](https://github.com/red1oon/bim-ootb/commit/408d9d175aef5d2e8fe5f506768c7ad3bd5bab91))
+* **4d:** the CPM float rail was painted over — draw it after the frames ([#1486](https://github.com/red1oon/bim-ootb/issues/1486)) ([ff8b5ee](https://github.com/red1oon/bim-ootb/commit/ff8b5ee7ba480007e2bfeba598545901f04137fd))
+* **erp-seed:** bake AD_Form (49) + ad_val_rule (332) into ad_seed.db additively ([#1496](https://github.com/red1oon/bim-ootb/issues/1496)) ([0b28347](https://github.com/red1oon/bim-ootb/commit/0b283472a2c69755d31b4122c923cd1c0b5223c6))
+* **erp:** ERP_PROJECT_REVIEW.md §2.1 — ship ad_access.js live, idmp_session.js delegates ([#1495](https://github.com/red1oon/bim-ootb/issues/1495)) ([e7fc1a9](https://github.com/red1oon/bim-ootb/commit/e7fc1a9adaeec547d9add0a488fb70afd04f4238))
+* **viewer:** §S76 — cacheKey K3 no-leading-slash gap closed; Hospital persistence probe finds a real split-mode P0 ([#1492](https://github.com/red1oon/bim-ootb/issues/1492)) ([166059a](https://github.com/red1oon/bim-ootb/commit/166059a9066e57ad6218caef581c4fe1ea15f5fe))
+
+
+### 📝 Documentation
+
+* **readiness:** §CONFORMANCE — consent, recommendation categories, scholarly identity, Limitations ([#1481](https://github.com/red1oon/bim-ootb/issues/1481)) ([d83f29d](https://github.com/red1oon/bim-ootb/commit/d83f29dad6565957d26c531df99db8dd3a62a059))
+* **readiness:** §DIFFERS — "How this differs from other assessments", and the prior art that constrains it ([#1490](https://github.com/red1oon/bim-ootb/issues/1490)) ([f883f3e](https://github.com/red1oon/bim-ootb/commit/f883f3ecf4d7a906b77314db0dd896ea31a84a21))
+
+
+### ♻️ Refactors
+
+* **erp:** §S60 — physically split crud_overlay.js's pure CORE into crud_core.js ([#1487](https://github.com/red1oon/bim-ootb/issues/1487)) ([a03b7d7](https://github.com/red1oon/bim-ootb/commit/a03b7d77e8ccf15218e0976cab3195948a810cd2))
+* **viewer:** §S59 — extract navigate_find.js's ERP-push block into find_erp_push.js ([#1489](https://github.com/red1oon/bim-ootb/issues/1489)) ([63aab47](https://github.com/red1oon/bim-ootb/commit/63aab4761a5fff1de83e8b1cc109732b835a1b5a))
+
+## [1.51.0](https://github.com/red1oon/bim-ootb/compare/v1.50.0...v1.51.0) (2026-08-23)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_CPM_ANNOTATE — drag → CPM annotate (float + critical path), never a re-solve ([#1475](https://github.com/red1oon/bim-ootb/issues/1475)) ([980982e](https://github.com/red1oon/bim-ootb/commit/980982ef56bd2ef27817af87fa389e096a2b8942))
+* **readiness:** synopsis becomes the front door, assessment moves to assess.html ([#1462](https://github.com/red1oon/bim-ootb/issues/1462)) ([bf5ac0e](https://github.com/red1oon/bim-ootb/commit/bf5ac0e40c96324be33196b4756cf78034ea2029))
+
+
+### 🐛 Fixes
+
+* **4d:** §GANTT_EDIT_PERSIST — Gantt edits survive a reload, and persistDb writes the slot the loader reads ([#1479](https://github.com/red1oon/bim-ootb/issues/1479)) ([4ee5a7d](https://github.com/red1oon/bim-ootb/commit/4ee5a7de4a8db26713080d712f5688d523032182))
+* **4d:** §GANTT_RETIME_RESYNC — two edit paths re-timed the model and never resynced the canvas ([#1474](https://github.com/red1oon/bim-ootb/issues/1474)) ([dcb8042](https://github.com/red1oon/bim-ootb/commit/dcb8042dd810e8ffc747615536439c3481a882fd))
+* **4d:** §S64 — auditFloating disagreed with the gate it claims to mirror; fleet floating 462 → 362 ([#1472](https://github.com/red1oon/bim-ootb/issues/1472)) ([d29acf0](https://github.com/red1oon/bim-ootb/commit/d29acf03b1136d55896b419fa027d7ae4a46a5e7))
+* **4d:** §TM_BAKE_LOCK — one shared refusal, and all 8 edit paths call it (was 2) ([#1477](https://github.com/red1oon/bim-ootb/issues/1477)) ([282769c](https://github.com/red1oon/bim-ootb/commit/282769c60abdb3e3850aff7b0034d9478107d9c1))
+
+
+### 📝 Documentation
+
+* **readiness:** §ANCHORS — verify the 20 criteria anchors; correct 4 labels and the Dubai footnote ([#1476](https://github.com/red1oon/bim-ootb/issues/1476)) ([89ad90f](https://github.com/red1oon/bim-ootb/commit/89ad90f13cba5ed37787902b09034e7193ea56c1))
+* **readiness:** §SOURCES — publish the source register as a page, and link every criterion to its clause ([#1478](https://github.com/red1oon/bim-ootb/issues/1478)) ([11fc185](https://github.com/red1oon/bim-ootb/commit/11fc185d27df95973fbbeb2e22b6ebc5675846f0))
+* **readiness:** cite the UAE claim — Dubai mandates BIM, the UAE does not ([#1473](https://github.com/red1oon/bim-ootb/issues/1473)) ([3b5a3e9](https://github.com/red1oon/bim-ootb/commit/3b5a3e9b25e65f6d3b0fb845c01e186e704ccfc4))
+* **readiness:** decode literal quote escapes in faq.html, and call the output a report ([#1469](https://github.com/red1oon/bim-ootb/issues/1469)) ([535a0e6](https://github.com/red1oon/bim-ootb/commit/535a0e6304be97f01d4a1f1b56ddfacf8c01f2ef))
+* **readiness:** drop the repeated project title from the front page ([#1465](https://github.com/red1oon/bim-ootb/issues/1465)) ([9caea51](https://github.com/red1oon/bim-ootb/commit/9caea510995b0ecec02629c922cc1b196f8c9380))
+* **readiness:** footnote every definition and mandate claim to a verified source ([#1471](https://github.com/red1oon/bim-ootb/issues/1471)) ([f073c7c](https://github.com/red1oon/bim-ootb/commit/f073c7c18ae15428641c3a20dc863dcc54930682))
+* **readiness:** restore the front-page title, shortened (relands [#1466](https://github.com/red1oon/bim-ootb/issues/1466) over [#1465](https://github.com/red1oon/bim-ootb/issues/1465)) ([#1467](https://github.com/red1oon/bim-ootb/issues/1467)) ([6ec0dcc](https://github.com/red1oon/bim-ootb/commit/6ec0dcc6debb93bc18fdf0a1b1fcd029dc272eec))
+* **readiness:** tone pass — professional academic register across four pages ([#1468](https://github.com/red1oon/bim-ootb/issues/1468)) ([9731ce9](https://github.com/red1oon/bim-ootb/commit/9731ce9bde8a98da2ef07508a419ae0f8e0ade9c))
+
+## [1.50.0](https://github.com/red1oon/bim-ootb/compare/v1.49.2...v1.50.0) (2026-08-22)
+
+
+### ✨ Features
+
+* **4d:** §S50 cell-grain schedule — (location, trade) ordering with per-building gate, graph engine retired where data supports it ([#1442](https://github.com/red1oon/bim-ootb/issues/1442)) ([eb832c1](https://github.com/red1oon/bim-ootb/commit/eb832c14fedc4983fc445853c649da5108743a81))
+* **4d:** §S51 — the Gantt reads the cell schedule (item d, drawer half) + the accepted-residue composition profile ([#1444](https://github.com/red1oon/bim-ootb/issues/1444)) ([81cdf27](https://github.com/red1oon/bim-ootb/commit/81cdf271558c538d27107cdc85e0f2c03556e9b9))
+* **4d:** §S55 witness — authored task identity vs the §S51 cell grain, measured ([#1448](https://github.com/red1oon/bim-ootb/issues/1448)) ([cab9ad5](https://github.com/red1oon/bim-ootb/commit/cab9ad5f4da560a297b98d3f807d9f393553f9bb))
+* **4d:** §S58 observability — the log lines that would have caught things ([#1449](https://github.com/red1oon/bim-ootb/issues/1449)) ([7b99405](https://github.com/red1oon/bim-ootb/commit/7b99405d80cc7ec94f03e71526ddeca49bcbedc8))
+* **4d:** the Gantt refuses edits while the film is recording (§TM_BAKE_LOCK, §S56) ([#1460](https://github.com/red1oon/bim-ootb/issues/1460)) ([06084f9](https://github.com/red1oon/bim-ootb/commit/06084f982417283021d1a938f07449c70da20d0b))
+* **readiness:** "Read more" explainer page, and wire the ? button to it ([#1451](https://github.com/red1oon/bim-ootb/issues/1451)) ([af6b168](https://github.com/red1oon/bim-ootb/commit/af6b16878b65425212acdb891301f05ab1a01b4e))
+* **readiness:** OpenBIM Readiness Assessment Toolkit — UI mockup for review ([#1450](https://github.com/red1oon/bim-ootb/issues/1450)) ([a98b62c](https://github.com/red1oon/bim-ootb/commit/a98b62cf4938e555e0b5d824ce6de7a6d1f4053c))
+* **readiness:** publish the research proposal in full, declarations, and plain answers ([#1461](https://github.com/red1oon/bim-ootb/issues/1461)) ([2c03a31](https://github.com/red1oon/bim-ootb/commit/2c03a317824bf5e22dcbef8d80a5bd6c1c1f38ef))
+
+
+### 🐛 Fixes
+
+* **4d:** the ERP-twin loaders never guess a building (§S54, item F2) ([#1447](https://github.com/red1oon/bim-ootb/issues/1447)) ([6dab2d1](https://github.com/red1oon/bim-ootb/commit/6dab2d1ab9282ce411258da00168e0d515e91263))
+* re-land the two follow-up commits that [#1452](https://github.com/red1oon/bim-ootb/issues/1452)/[#1453](https://github.com/red1oon/bim-ootb/issues/1453) squash-merges orphaned ([#1454](https://github.com/red1oon/bim-ootb/issues/1454)) ([2d60bdc](https://github.com/red1oon/bim-ootb/commit/2d60bdc5f49bde8b155a156b52705035b03ba39a))
+
+
+### 📝 Documentation
+
+* **4d:** code-side pointers for the midair judge divergence (ref §S58.5), with the measurement ([#1457](https://github.com/red1oon/bim-ootb/issues/1457)) ([db591fb](https://github.com/red1oon/bim-ootb/commit/db591fbde168864d33e977e8ac73334b31c9ad99))
+* **readiness:** adopt the funded proposal's language across both pages ([#1456](https://github.com/red1oon/bim-ootb/issues/1456)) ([f08d16b](https://github.com/red1oon/bim-ootb/commit/f08d16ba372f7abc63a9a3e3d8d3e04872dfe725))
+
+
+### ♻️ Refactors
+
+* **4d:** extract the Gantt bar model out of time_machine.js (§S53, item F3) ([#1446](https://github.com/red1oon/bim-ootb/issues/1446)) ([a0885e2](https://github.com/red1oon/bim-ootb/commit/a0885e2010e1b3f65a8db9c074da40cc2e647a7e))
+* **4d:** extract the support-order physics into viewer/support_sweep.js (§S58) ([#1455](https://github.com/red1oon/bim-ootb/issues/1455)) ([876face](https://github.com/red1oon/bim-ootb/commit/876face1a0a8d1a49445081119fbd7c3c5e42e63))
+* **4d:** extract the zone-index builder into viewer/zone_index.js (§S62), retiring a dead witness ([#1459](https://github.com/red1oon/bim-ootb/issues/1459)) ([90573ce](https://github.com/red1oon/bim-ootb/commit/90573ce5ce72f28faada975d903f526bbee75159))
+
+## [1.49.2](https://github.com/red1oon/bim-ootb/compare/v1.49.1...v1.49.2) (2026-08-20)
+
+
+### 🐛 Fixes
+
+* **4d:** §S26.2 — a support must be structure, not any lower touching box (float −27% to −81%, 7/7) ([#1439](https://github.com/red1oon/bim-ootb/issues/1439)) ([#1440](https://github.com/red1oon/bim-ootb/issues/1440)) ([9db62a6](https://github.com/red1oon/bim-ootb/commit/9db62a6fb592b24761ee92b69402ae4651f72780))
+* **4d:** W-MZ DB resolution is a RULE, not a dict — and re-lock W-MZ-8/W-MZ-4 with the cause named ([#1438](https://github.com/red1oon/bim-ootb/issues/1438)) ([b81f646](https://github.com/red1oon/bim-ootb/commit/b81f6466707ddac0c96b44632d9cb7ef15ee844a))
+
+## [1.49.1](https://github.com/red1oon/bim-ootb/compare/v1.49.0...v1.49.1) (2026-08-18)
+
+
+### 🐛 Fixes
+
+* **4d:** designatedSupport() never hangs a grounded element on carrier-above + directional floating judge ([#1435](https://github.com/red1oon/bim-ootb/issues/1435)) ([6a395ca](https://github.com/red1oon/bim-ootb/commit/6a395ca58ed5f98759e868ddfaea8ba6a7beb50d))
+
+## [1.49.0](https://github.com/red1oon/bim-ootb/compare/v1.48.0...v1.49.0) (2026-08-17)
+
+
+### ✨ Features
+
+* **4d:** ScheduleEngine — single-source schedule class (4D_GANTT_TM_REFACTOR.md stage 1) ([#1431](https://github.com/red1oon/bim-ootb/issues/1431)) ([07d6744](https://github.com/red1oon/bim-ootb/commit/07d6744f6d9094d97545151f097b7d5333c99791))
+
+
+### 🐛 Fixes
+
+* **4d:** §S15/S16 — activation memory probe + retire the STOREY_PHASE_TABLE landmine ([#1422](https://github.com/red1oon/bim-ootb/issues/1422)) ([9a56be9](https://github.com/red1oon/bim-ootb/commit/9a56be9863601bf328000874bebefcc18e9f6895))
+* **4d:** §S18 Part B — viewer-side storey-band merge from EXTRACTED Elevation ([#1424](https://github.com/red1oon/bim-ootb/issues/1424)) ([2535355](https://github.com/red1oon/bim-ootb/commit/25353559438d6931b9a14ba77c3020c1da3d310d))
+* **4d:** §S19 Part B — resolve E5, comment-only (already retired by S6) ([#1425](https://github.com/red1oon/bim-ootb/issues/1425)) ([7674940](https://github.com/red1oon/bim-ootb/commit/76749401ee367ce7a9303019282469e85796a6de))
+* **4d:** §S20 Part A — redesign dead-pipeline witnesses against the live CPM path ([#1426](https://github.com/red1oon/bim-ootb/issues/1426)) ([3a1a90e](https://github.com/red1oon/bim-ootb/commit/3a1a90e7ec5363f90e7617d85aba652180f26471))
+* **4d:** §S20 Part B — delete the dead legacy display-repair pipeline ([#1430](https://github.com/red1oon/bim-ootb/issues/1430)) ([8f8d3de](https://github.com/red1oon/bim-ootb/commit/8f8d3de087fca951892c257de7971649d21b8470))
+* **4d:** §S21 — real IfcBuildingStorey.Elevation + IfcBuilding parentage patch (Hospital) ([#1428](https://github.com/red1oon/bim-ootb/issues/1428)) ([c722124](https://github.com/red1oon/bim-ootb/commit/c7221244b62a6e7f4c62e38cf03c2df8a281ea1c))
+* **4d:** §S21 — real IfcBuildingStorey.Elevation + IfcBuilding parentage patch (Terminal) ([#1427](https://github.com/red1oon/bim-ootb/issues/1427)) ([c497c22](https://github.com/red1oon/bim-ootb/commit/c497c22ef0745ed3fe1abd490143c9539dce2cc2))
+* **4d:** §S22 — Gantt drag-later clock mismatch left elements invisible after scrub (bim-compiler #S22) ([#1429](https://github.com/red1oon/bim-ootb/issues/1429)) ([21b574b](https://github.com/red1oon/bim-ootb/commit/21b574b80c157aaf0f8de834991e39c85cc79e50))
+* **4d:** buildGanttTasks() bar-span rule — Tukey fence, no n=20 cliff (4D_GANTT_TM_REFACTOR.md stage 2) ([#1432](https://github.com/red1oon/bim-ootb/issues/1432)) ([dd3a746](https://github.com/red1oon/bim-ootb/commit/dd3a746ddb4bd1de079ca78afe35ed46dcbb1410))
+* **4d:** computeDays()'s Gantt axis-end — Tukey fence, the axis's own near-duplicate cliff (4D_GANTT_TM_REFACTOR.md) ([#1433](https://github.com/red1oon/bim-ootb/issues/1433)) ([035561e](https://github.com/red1oon/bim-ootb/commit/035561efc6f451aea653a467b544214cd6d9204a))
+* **4d:** E3 gate no longer exempts stragglers from their own phase's completion (4D_GANTT_TM_REFACTOR.md) ([#1434](https://github.com/red1oon/bim-ootb/issues/1434)) ([5ea6fcf](https://github.com/red1oon/bim-ootb/commit/5ea6fcf616f9e1d030d9d015d00496df65b9a730))
+
+## [1.48.0](https://github.com/red1oon/bim-ootb/compare/v1.47.0...v1.48.0) (2026-08-17)
+
+
+### ✨ Features
+
+* **4d:** §CPM_DISPLAY — CPM authors the display timeline; needle==appearance, floating 0 ([#1398](https://github.com/red1oon/bim-ootb/issues/1398)) ([50190e0](https://github.com/red1oon/bim-ootb/commit/50190e0011164484d5fc2e9bfeacbe070abb297b))
+* **4d:** §CPM_SPEC stages 1-3 — side-by-side CPM module, fleet floating 0/7 buildings ([#1396](https://github.com/red1oon/bim-ootb/issues/1396)) ([a5de597](https://github.com/red1oon/bim-ootb/commit/a5de597b74594a641ad9902753a4981775bb7350))
+* **4d:** §GROUNDWORK_SLAB (S9) — grade slabs+beams are Substructure; frame beams &lt;2d 16→0 engine-side ([#1410](https://github.com/red1oon/bim-ootb/issues/1410)) ([d631834](https://github.com/red1oon/bim-ootb/commit/d6318347fcec8e82690498e623d4c1ad555ae476))
+* **4d:** §S12 — fleet-wide split-pair audit + one generic repair generator (fleet now corrupt=0) ([#1417](https://github.com/red1oon/bim-ootb/issues/1417)) ([3ccf13d](https://github.com/red1oon/bim-ootb/commit/3ccf13d2ed52279508ecaa9a825db6df0eed293b))
+* **4d:** §S13 — storey-ladder audit, the measured cause of the Clinic bake report ([#1419](https://github.com/red1oon/bim-ootb/issues/1419)) ([4b7f5a9](https://github.com/red1oon/bim-ootb/commit/4b7f5a9a81c7d0fc5e300d88bab8df1581bda4ff))
+* **4d:** §S6_CREW_PASS — crew-aware CPM forward pass (serial SGS), §CREW_FEASIBILITY+§CREW_SPREAD_FLOOR fleet gates ([#1406](https://github.com/red1oon/bim-ootb/issues/1406)) ([382105f](https://github.com/red1oon/bim-ootb/commit/382105f54d1ac842572e4319585346f03df3cd62))
+* **cache:** §R6a cache revalidation — cachedFetch no longer trusts a hit forever ([#1418](https://github.com/red1oon/bim-ootb/issues/1418)) ([d9a9201](https://github.com/red1oon/bim-ootb/commit/d9a920170b54e45211a195411848d9e432f69519))
+* **photo:** §MIRROR_ROOM_PROBE — Alt+S glossy/metal materials reflect the real scene, not just sky ([#1407](https://github.com/red1oon/bim-ootb/issues/1407)) ([6b0c559](https://github.com/red1oon/bim-ootb/commit/6b0c55995879be1ed7d7087a70680bc51558ed58))
+* **photo:** §MIRROR_TRUE_REFLECT + §TRIPLANAR_MEP_GAPS — mirrors reflect the real room, MEP inline devices get real texture ([#1409](https://github.com/red1oon/bim-ootb/issues/1409)) ([6a0f89a](https://github.com/red1oon/bim-ootb/commit/6a0f89a0e58bccab58b5c17d6ef08bb6c9568c52))
+
+
+### 🐛 Fixes
+
+* **4d:** §S1_BAND_RANK — E4 storey hammocks + straggler group-key use 3m z-bands, not storey names ([#1401](https://github.com/red1oon/bim-ootb/issues/1401)) ([7b4c621](https://github.com/red1oon/bim-ootb/commit/7b4c62142d6a427511cb7369e85958dbdf677569))
+* **4d:** §S10_META_TRANSFORM_REPAIR — Terminal_meta.db per-element rebase corruption patched (2,074 rows), live world = probe world ([#1412](https://github.com/red1oon/bim-ootb/issues/1412)) ([cafff10](https://github.com/red1oon/bim-ootb/commit/cafff1094e7d060afe16da733b231c3d8ec543b7))
+* **4d:** §S11 — LTU_AHouse_meta.db transform corruption repaired (33,524 rows), live world = probe world ([#1416](https://github.com/red1oon/bim-ootb/issues/1416)) ([cc7493c](https://github.com/red1oon/bim-ootb/commit/cc7493c0da5e2909256d6ecc078f8c291f0d4073))
+* **4d:** §S2_TUKEY_ENVELOPE — task bars = classification-free robust envelope, not straggler min/max ([#1402](https://github.com/red1oon/bim-ootb/issues/1402)) ([26595a2](https://github.com/red1oon/bim-ootb/commit/26595a2d00c23a1c7c653dd01c81b0d56b5ad739))
+* **4d:** §S7_OUTLIER_DELTA — Gantt drag no longer collapses/inverts outside-window outlier ops ([#1408](https://github.com/red1oon/bim-ootb/issues/1408)) ([63ba9fa](https://github.com/red1oon/bim-ootb/commit/63ba9fab7790a8fcb9d087d6c50d37419c03a023))
+* **4d:** §ZONE_WINDOW_DAGWINS_CLIP — task bars = non-straggler envelopes; live Hospital schedule readable ([#1399](https://github.com/red1oon/bim-ootb/issues/1399)) ([40d5a4e](https://github.com/red1oon/bim-ootb/commit/40d5a4ebce47ef89ea7872e39394c0df32ac4589))
+* **photo:** mirror metalness — roughness fix alone wasn't enough ([#1415](https://github.com/red1oon/bim-ootb/issues/1415)) ([663648f](https://github.com/red1oon/bim-ootb/commit/663648f428e2a3f5f7ed410070140612176c78da))
+
+
+### ⚡ Performance
+
+* **4d:** §S4_RAW_SCHEDULE_REUSE — skip injectGantt's redundant computeSchedule call; measured floor ([#1404](https://github.com/red1oon/bim-ootb/issues/1404)) ([8209650](https://github.com/red1oon/bim-ootb/commit/8209650fe8898a36a6d72bc232da4630024e41a4))
+
+## [1.47.0](https://github.com/red1oon/bim-ootb/compare/v1.46.0...v1.47.0) (2026-08-16)
+
+
+### ✨ Features
+
+* **ground:** §GROUND_DETAIL — normal+roughness maps, fine detail multiply, anti-tiling blotch ([#1388](https://github.com/red1oon/bim-ootb/issues/1388)) ([4ef1755](https://github.com/red1oon/bim-ootb/commit/4ef1755e4ea030ccc39692715fcf5a323e676cca))
+
+
+### 🐛 Fixes
+
+* **4d:** §CJP_DAY_ROUNDING_TOL — chase-to-zero thread 2, fleet floating 265 -&gt; 133 (-49.8%) ([#1395](https://github.com/red1oon/bim-ootb/issues/1395)) ([0ee2ca0](https://github.com/red1oon/bim-ootb/commit/0ee2ca02440b3df7fd0ebd079b7bc2b66c5c2d7d))
+* **4d:** §CROSSTASK_JUDGE_PARITY — window-bounded judge-rule repair after _ogSupportSweep, captured floating 3090 -&gt; 656 across 7 buildings ([#1387](https://github.com/red1oon/bim-ootb/issues/1387)) ([7f02b31](https://github.com/red1oon/bim-ootb/commit/7f02b31d1c533ff9152b55d898cb7ba876c9067b))
+* **4d:** §GANTT_GAP_CLAMP_SPREAD — spread elements evenly within their Gantt bar without breaking window fidelity ([#1377](https://github.com/red1oon/bim-ootb/issues/1377)) ([4b052b8](https://github.com/red1oon/bim-ootb/commit/4b052b80b8f3a074512a0e848240e83b05ea0166))
+* **4d:** §GANTT_TASK_WINDOW_FIDELITY — place captured elements within their OWN task's window, not a global rescale ([#1368](https://github.com/red1oon/bim-ootb/issues/1368)) ([ff12293](https://github.com/red1oon/bim-ootb/commit/ff12293fb1bd03f4763c233d5235904ae750cb36))
+* **4d:** §OG_HANG_BAND — widen _ogSupportSweep's hang-repair radius 0.5m-&gt;9.5m ([#1375](https://github.com/red1oon/bim-ootb/issues/1375)) ([07fe42e](https://github.com/red1oon/bim-ootb/commit/07fe42ef09ce5ea7caf75367af202cc528db3945))
+* **4d:** §OG_HANG_UNBOUND — _ogSupportSweep's hang search now unbounded, matches hangGate/judge ([#1382](https://github.com/red1oon/bim-ootb/issues/1382)) ([b8e669c](https://github.com/red1oon/bim-ootb/commit/b8e669cb6afee577f2ca227d6eba57a13a037970))
+* **4d:** §OG_HANG_WINDOW_BOUND — hang-repair push must not exit its own task window ([#1376](https://github.com/red1oon/bim-ootb/issues/1376)) ([77f8234](https://github.com/red1oon/bim-ootb/commit/77f82344e4959146c46252ea576c4e7a0342669f))
+* **4d:** §ZONE_DISPLAY_AUTHORING — one schedule for movie and Gantt; real floating 2741 -&gt; 265 ([#1390](https://github.com/red1oon/bim-ootb/issues/1390)) ([164bd86](https://github.com/red1oon/bim-ootb/commit/164bd86cc2b4c1ffcfbbfc6736dc5a8d3b493065))
+* **4d:** remove §Z_STACK_XRAY_STAGING ghost — nothing appears until its support is actually finished ([#1372](https://github.com/red1oon/bim-ootb/issues/1372)) ([d6972fe](https://github.com/red1oon/bim-ootb/commit/d6972fe71f2450e87ac3e1833b008d7d7b008028))
+* **4d:** revert PR [#1364](https://github.com/red1oon/bim-ootb/issues/1364)'s _midairRepair bolt-on — desynced the captured schedule from its own Gantt-authored dates ([#1365](https://github.com/red1oon/bim-ootb/issues/1365)) ([235267a](https://github.com/red1oon/bim-ootb/commit/235267a10e242f4cd328f432815f894d8798b859))
+* **cinema:** §LTU_SUBSURFACE_BBOX — percentile z-fence on the building bbox; junk rows no longer sink the orbit underground ([#1386](https://github.com/red1oon/bim-ootb/issues/1386)) ([412e8df](https://github.com/red1oon/bim-ootb/commit/412e8df518d473e74446a25a72fe4b4431a85d2d))
+* **cpe:** Discipline Reveal — smooth pull-out-&gt;round-2 seam, sort discs, fade tail transitions ([#1394](https://github.com/red1oon/bim-ootb/issues/1394)) ([ac8f41c](https://github.com/red1oon/bim-ootb/commit/ac8f41cd96e06f9227c1437cfa5a556b32a7342d))
+* **data:** §HOSPITAL_COLOUR_BACKFILL — self-heal patch colours stale cached Hospital meta (23 classes, empty-guarded) ([#1385](https://github.com/red1oon/bim-ootb/issues/1385)) ([923f6e8](https://github.com/red1oon/bim-ootb/commit/923f6e8cb497ef53c224bc270ca409ef36823cf2))
+* **photo:** §ALTS_MEM_HOG — real Alt+S exit now disposes the photo-prop tree, not just hides it ([#1391](https://github.com/red1oon/bim-ootb/issues/1391)) ([81d2ecd](https://github.com/red1oon/bim-ootb/commit/81d2ecdfb71beb07ad9546333b7b489d061e43f2))
+* **photo:** §GROUND_EARTH_DEFAULT — Alt+S/Alt+C bake ground back to 'earth', Shadow cycle leads with it ([#1393](https://github.com/red1oon/bim-ootb/issues/1393)) ([6cce8ae](https://github.com/red1oon/bim-ootb/commit/6cce8ae54b3ab92c71540cc5672bb3cc16cf66ed))
+* **photo:** §SKY_SUNPOS_INIT — black sky on Alt+S: sunPosition uniform never initialized while sky hidden ([#1384](https://github.com/red1oon/bim-ootb/issues/1384)) ([0050d1c](https://github.com/red1oon/bim-ootb/commit/0050d1c97029c745e648c6ae5b822dd7fa13b99f))
+* **photo:** §STAGED_PL_CUT — halve night point-light intensity during Alt+S/Alt+C staging only ([#1389](https://github.com/red1oon/bim-ootb/issues/1389)) ([de0eb45](https://github.com/red1oon/bim-ootb/commit/de0eb4596d84267f6b798bcc762d50fcce6f5a64))
+* **photo:** §TRINORM_LINEAR — triplanar normFactor was sRGB-derived, applied in linear; metal crushed to literal black ([#1383](https://github.com/red1oon/bim-ootb/issues/1383)) ([32a39a6](https://github.com/red1oon/bim-ootb/commit/32a39a6a1b19ced38b3987f39556aaef1a02bbbd))
+* **photo:** cut residual reflection on metal further, 0.18-&gt;0.05 ([#1371](https://github.com/red1oon/bim-ootb/issues/1371)) ([719462c](https://github.com/red1oon/bim-ootb/commit/719462c3ce576c465cdcde9156ea02b6b5ae53b2))
+* **photo:** extend blue-tint fix to pipes, ducts, and MEP joints ([#1369](https://github.com/red1oon/bim-ootb/issues/1369)) ([878153b](https://github.com/red1oon/bim-ootb/commit/878153bf1090f8fe553ed7e0989c5125fae73964))
+* **photo:** recover the 13 MEP classes a squash-merge race dropped, zero out beam/railing ([#1373](https://github.com/red1oon/bim-ootb/issues/1373)) ([832dc1d](https://github.com/red1oon/bim-ootb/commit/832dc1d7ae4cc15b9ce39cc02d6eb300bbda9108))
+* **photo:** restore fixture illumination + sync sky to real sun after mood separation ([#1380](https://github.com/red1oon/bim-ootb/issues/1380)) ([80c2b35](https://github.com/red1oon/bim-ootb/commit/80c2b3515e5d1774cb25e8904b502dfde456c61f))
+* **photo:** revert sky-sync regression — sky was rendering black ([#1381](https://github.com/red1oon/bim-ootb/issues/1381)) ([1516eef](https://github.com/red1oon/bim-ootb/commit/1516eeff11f09f3d50d8431d09d54adae2fd4a07))
+* **photo:** stop double-boosting the sky's blue reflection on steel/rail materials ([#1367](https://github.com/red1oon/bim-ootb/issues/1367)) ([335acda](https://github.com/red1oon/bim-ootb/commit/335acdaaa414e96955bf7d48d64e6f1b20317e56))
+* **photo:** TAA jitter mismatch + decouple Alt+S sun from forced dusk mood ([#1379](https://github.com/red1oon/bim-ootb/issues/1379)) ([4f8a5c5](https://github.com/red1oon/bim-ootb/commit/4f8a5c57aaa3e0b551dfa382be2a916cda676155))
+
+
+### ♻️ Refactors
+
+* **4d:** §SCHEDULE_CLASSIFY_DEDUP — collapse time_machine.js's two matchRule copies ([#1374](https://github.com/red1oon/bim-ootb/issues/1374)) ([bb85dcb](https://github.com/red1oon/bim-ootb/commit/bb85dcb5cdf26370427766941f8266843595d5af))
+
+## [1.46.0](https://github.com/red1oon/bim-ootb/compare/v1.45.0...v1.46.0) (2026-08-15)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_DISCIPLINE_REVEAL Mechanism C — retrace reveal round, geometry/timeline stage ([#1350](https://github.com/red1oon/bim-ootb/issues/1350)) ([9eeb24f](https://github.com/red1oon/bim-ootb/commit/9eeb24ff85036597c501af963adc67bd2cf4b591))
+* **cpe:** §CPE_DISCIPLINE_REVEAL Mechanism C — visual layer (ARC/STR full hide, per-discipline tail) ([#1352](https://github.com/red1oon/bim-ootb/issues/1352)) ([18959f2](https://github.com/red1oon/bim-ootb/commit/18959f234092f54ed3daf6864c18ded23a1a18d5))
+* **cpe:** Discipline Reveal — pull-out + repeated-lap restructure ([#1362](https://github.com/red1oon/bim-ootb/issues/1362)) ([2b86a47](https://github.com/red1oon/bim-ootb/commit/2b86a47af47a72230d1bde2792ae57d4edf23fdc))
+
+
+### 🐛 Fixes
+
+* **4d:** §CAP_SHADOW_FIX — injectGantt's _cap var shadowing crashed the captured-schedule overlay every run, silently ([#1364](https://github.com/red1oon/bim-ootb/issues/1364)) ([a19e7d5](https://github.com/red1oon/bim-ootb/commit/a19e7d588c08e87da70c815540ea621055d102b9))
+* **4d:** §GANTT_SCHEDULE_STALE — authored Gantt never re-derived, unlike canvas ([#1359](https://github.com/red1oon/bim-ootb/issues/1359)) ([e44412c](https://github.com/red1oon/bim-ootb/commit/e44412c3418ad55ea96e314df15151199e18491f))
+* **4d:** §GANTT_SHIFT_HOURS_DESYNC — Gantt bars authored at 8h/day, canvas plays at 24h/day ([#1355](https://github.com/red1oon/bim-ootb/issues/1355)) ([e75c154](https://github.com/red1oon/bim-ootb/commit/e75c1548b7ed9d6b957c02c096606faed5341a69))
+* **cpe:** §CPE_DISCIPLINE_REVEAL — buildup must top out at the stop stick, not the orbit ([#1353](https://github.com/red1oon/bim-ootb/issues/1353)) ([13de1cf](https://github.com/red1oon/bim-ootb/commit/13de1cf017e145a47f3e504cfda80e3368a4824c))
+* **cpe:** §CPE_DISCIPLINE_REVEAL — Reveal checkbox must replan before Preview, not just after a bake ([#1354](https://github.com/red1oon/bim-ootb/issues/1354)) ([1ae29ce](https://github.com/red1oon/bim-ootb/commit/1ae29cefd8e5b616a76473b9604a38271c71356b))
+* **mep:** §MEP_DISC_TINT — MEP flow fallback + railing colour, was flat blue-grey ([#1356](https://github.com/red1oon/bim-ootb/issues/1356)) ([511836b](https://github.com/red1oon/bim-ootb/commit/511836b1fa3e365442cf52fca49ef40216066011))
+* **night:** reduce NIGHT_LIGHT_INTENSITY 2.5-&gt;2.0 (-20%) ([#1358](https://github.com/red1oon/bim-ootb/issues/1358)) ([b2d96dc](https://github.com/red1oon/bim-ootb/commit/b2d96dcc8720927578636f3cdae6cef3b8a91b1f))
+* **photo:** per-pixel grazing-incidence kernel scale for sun-shadow restore ([#1363](https://github.com/red1oon/bim-ootb/issues/1363)) ([3de6b49](https://github.com/red1oon/bim-ootb/commit/3de6b4945074433a1165123f2e046f198390459a))
+* **scene:** dispose orphaned PMREM env-map render targets, BVH on clearStreamed ([#1360](https://github.com/red1oon/bim-ootb/issues/1360)) ([562df87](https://github.com/red1oon/bim-ootb/commit/562df87348ea396223b81bba663c1d7a2b32df01))
+* **viewer:** §HOSPITAL_BLUE_TINT — steel/railing envMapIntensity, was letting real sky dominate real colour ([#1361](https://github.com/red1oon/bim-ootb/issues/1361)) ([161f46c](https://github.com/red1oon/bim-ootb/commit/161f46c26d32586ba637a74c73ebb3a188a4b5e3))
+
+## [1.45.0](https://github.com/red1oon/bim-ootb/compare/v1.44.0...v1.45.0) (2026-08-14)
+
+
+### ✨ Features
+
+* **cpe:** §CPE_AIM_DEPTH_BUILDUP candidate 2 — buildup-aware depth aim ([#1342](https://github.com/red1oon/bim-ootb/issues/1342)) ([9716a04](https://github.com/red1oon/bim-ootb/commit/9716a04f7b0d061af192105bebb71d86b30b451e))
+* **cpe:** §CPE_DISCIPLINE_REVEAL panel wiring — Reveal checkbox beside room titles ([#1349](https://github.com/red1oon/bim-ootb/issues/1349)) ([cfe5329](https://github.com/red1oon/bim-ootb/commit/cfe5329876b076dd03206b89d3ddb1f39a52923f))
+* **cpe:** §CPE_POV_MARKER — red camera gizmo on the main canvas during POV preview ([#1341](https://github.com/red1oon/bim-ootb/issues/1341)) ([3702d1e](https://github.com/red1oon/bim-ootb/commit/3702d1ec4e260b66c51f7291664ad19fe67b7dea))
+
+
+### 🐛 Fixes
+
+* **4d:** §GROUNDED_OVERRIDE_FIX — grounded classification was silently exempting real floaters ([#1338](https://github.com/red1oon/bim-ootb/issues/1338)) ([1515169](https://github.com/red1oon/bim-ootb/commit/15151698d350a805daca07e2251fbb08f6608acc))
+* **4d:** §STAIR_FLIGHT_GRID_VISIBILITY — stair flights are now real geoGate/DAG support sources ([#1345](https://github.com/red1oon/bim-ootb/issues/1345)) ([a2c30ee](https://github.com/red1oon/bim-ootb/commit/a2c30ee3b1f2e18d4be0999366236ce459a11bf9))
+* **cpe:** §CPE_AIM_DEPTH_BUILDUP candidate 1 — zSpan facade filter on _aimSubject ([#1340](https://github.com/red1oon/bim-ootb/issues/1340)) ([fd2faaa](https://github.com/red1oon/bim-ootb/commit/fd2faaa9c9a568034ec6ec1623a63b8e4489578e))
+* **cpe:** §CPE_AIM_SIMPLIFY — retire §CPE_AIM_DENSITY, §CPE_AIM_DEPTH trigger is now forward-clearance ([#1344](https://github.com/red1oon/bim-ootb/issues/1344)) ([6ab068c](https://github.com/red1oon/bim-ootb/commit/6ab068c062c0780995aecdf562c391cb40a37007))
+* **viewer:** §SUN_SHADOW_RESTORE — restore sun-shadow edge contrast N8AO's denoise was smearing ([#1346](https://github.com/red1oon/bim-ootb/issues/1346)) ([e97a772](https://github.com/red1oon/bim-ootb/commit/e97a7728a4d176a8a703baf075997c75da4f52aa))
+* **viewer:** N8AO denoise 12/8-&gt;7/5 — outdoor sun-shadow corner was drowned by the indoor noise fix ([#1343](https://github.com/red1oon/bim-ootb/issues/1343)) ([b71771d](https://github.com/red1oon/bim-ootb/commit/b71771dc551dfe211d7a2ca6c76999a702e96fb6))
+
+
+### ⚡ Performance
+
+* **4d:** _tierAuditRegate — full-array-rescan fixpoint -&gt; worklist/dirty-queue ([#1348](https://github.com/red1oon/bim-ootb/issues/1348)) ([6cd8c52](https://github.com/red1oon/bim-ootb/commit/6cd8c52f03402f1396cc5a9f9c2dd42f515577c4))
+
+## [1.44.0](https://github.com/red1oon/bim-ootb/compare/v1.43.0...v1.44.0) (2026-08-12)
+
+
+### ✨ Features
+
+* **5d:** §CREW_DEMAND + §HR_COST — per-trade labour cost, and the crew premise disproved ([#1315](https://github.com/red1oon/bim-ootb/issues/1315)) ([99babe7](https://github.com/red1oon/bim-ootb/commit/99babe7b588355193f41fd9e45ebfc923a9503e9))
+
+
+### 🐛 Fixes
+
+* **4d:** §ARCH_START_TEMPO/M1 — the 8-hour crew day (movie clock stops running crews 24/7) ([#1323](https://github.com/red1oon/bim-ootb/issues/1323)) ([27ae527](https://github.com/red1oon/bim-ootb/commit/27ae5279d41c2c4b8dac3e293cf1d41ad37e5aa9))
+* **4d:** §CURTAIN_WALL_OPENING — HHS Level-3 doors floated because openingGate's POOL, not its predicate, was wrong ([#1325](https://github.com/red1oon/bim-ootb/issues/1325)) ([83b1f69](https://github.com/red1oon/bim-ootb/commit/83b1f69535157359527108728258db3a800c68d5))
+* **4d:** §DAY_GAP_TAIL — witness_midair_zero has been dead since [#1313](https://github.com/red1oon/bim-ootb/issues/1313), and judging the wrong copy ([#1321](https://github.com/red1oon/bim-ootb/issues/1321)) ([1660c99](https://github.com/red1oon/bim-ootb/commit/1660c99f5658fa654265cb2c6fbcbab4ed159661))
+* **4d:** §DOOR_WINDOW_HOST_WALL_DISPLAY — openingGate's display-layer twin (the movie undid the gate) ([#1326](https://github.com/red1oon/bim-ootb/issues/1326)) ([0b97891](https://github.com/red1oon/bim-ootb/commit/0b97891430d26fe31928264912e9d7347efa1da2))
+* **4d:** §GANTT_CACHE_VERSION — bump for [#1319](https://github.com/red1oon/bim-ootb/issues/1319)'s hostGate, missed on first landing ([#1322](https://github.com/red1oon/bim-ootb/issues/1322)) ([6e1ca24](https://github.com/red1oon/bim-ootb/commit/6e1ca2442e887115a958e2091a9a79a01e5125e1))
+* **4d:** §GANTT_PHASE_CLOBBER — stop overwriting parameters.phase with the task NAME ([#1312](https://github.com/red1oon/bim-ootb/issues/1312)) ([42539c9](https://github.com/red1oon/bim-ootb/commit/42539c92eab9f226f6f0a10afea798e60edf6388))
+* **4d:** §HOSTED_BEFORE_HOST — a hosted element inherits its host's floor ([#1319](https://github.com/red1oon/bim-ootb/issues/1319)) ([c972778](https://github.com/red1oon/bim-ootb/commit/c97277854ec23bfd8194957a9e25cbbcc98d7cd9))
+* **4d:** §RULES_TABLE_SOURCE — re-sync sequence_rules.json to rates.js, the table the viewer actually runs ([#1329](https://github.com/red1oon/bim-ootb/issues/1329)) ([e0d6d4b](https://github.com/red1oon/bim-ootb/commit/e0d6d4b08bc946841069a1bded69cb5aff914b49))
+* **4d:** kill MEP dead-air (TIER2 per-element clamp) + restore 24h/day default (SHIFT_HOURS) ([#1333](https://github.com/red1oon/bim-ootb/issues/1333)) ([2463ff1](https://github.com/red1oon/bim-ootb/commit/2463ff158e49f3400eedc6ef17fbb593629e90e6))
+* **4d:** witness_kernel_ops_sched_version has been dead since [#1313](https://github.com/red1oon/bim-ootb/issues/1313) — and it guards the version bump ([#1324](https://github.com/red1oon/bim-ootb/issues/1324)) ([50885c1](https://github.com/red1oon/bim-ootb/commit/50885c1c4303acf80d4adc8472477ce4c4fb33e5))
+* **cinema:** §MOVIE_SHADOW_TM — bake shadow strength matched to Time Machine exactly ([#1316](https://github.com/red1oon/bim-ootb/issues/1316)) ([314185d](https://github.com/red1oon/bim-ootb/commit/314185d792d9d6a53443411d3f7d51f2f745652e))
+* **cpe:** §CPE_BUILDUP_ARM_GATE — the rehearsal armed onto an empty timeline ([#1310](https://github.com/red1oon/bim-ootb/issues/1310)) ([e799b97](https://github.com/red1oon/bim-ootb/commit/e799b97963b90c913af8a1faacdd259b2b8be8ea))
+* **viewer:** §17.17 occl-struct render-target bug + self-exclude/bias + LTU single-building fallback ([#1328](https://github.com/red1oon/bim-ootb/issues/1328)) ([f99b38f](https://github.com/red1oon/bim-ootb/commit/f99b38f8c6914f4258b38f5a407ad9c3fdc337b2))
+* **viewer:** §17.17.4 arm occlStructEnabled default-true, restore dropped init line (W-OCC3-ARM) ([#1330](https://github.com/red1oon/bim-ootb/issues/1330)) ([9d56919](https://github.com/red1oon/bim-ootb/commit/9d569195d09a5c088f775bc58efe1aa553658219))
+* **viewer:** §SWUPDATE_FIRST_CLAIM — no "Update ready" toast on the first controller ([#1311](https://github.com/red1oon/bim-ootb/issues/1311)) ([291bd29](https://github.com/red1oon/bim-ootb/commit/291bd29462968182cf8af8444a71201510102cba))
+* **viewer:** N8AO screen-space radius — fixes "far bright, up close dark" ([#1334](https://github.com/red1oon/bim-ootb/issues/1334)) ([682a54f](https://github.com/red1oon/bim-ootb/commit/682a54f00534d3df0cb0355bdc0488a27c45bdf4))
+* **viewer:** retune N8AO radius/intensity — Alt+G, Alt+S and Alt+C bakes read too dark/noisy ([#1331](https://github.com/red1oon/bim-ootb/issues/1331)) ([ffb23a4](https://github.com/red1oon/bim-ootb/commit/ffb23a486a44a185804ad4d0f9c217bf87d3c609))
+* **viewer:** SW precache install can serve stale HTTP-cached responses ([#1332](https://github.com/red1oon/bim-ootb/issues/1332)) ([e65a339](https://github.com/red1oon/bim-ootb/commit/e65a3396e2ca636e013ce0533017edc15be23c8d))
+
+
+### ⚡ Performance
+
+* **4d:** §TIER_SERIAL_BY_ZONE — backbone barrier scoped per derived zone, programme -27..-47% ([#1314](https://github.com/red1oon/bim-ootb/issues/1314)) ([1a20932](https://github.com/red1oon/bim-ootb/commit/1a20932f7ef43fb33fe7b46a4d05a620642a09a3))
+* **4d:** §XRAY_CACHE_MEMO + §TM_WARM — R4, both halves ruled by the user ([#1308](https://github.com/red1oon/bim-ootb/issues/1308)) ([14db2cd](https://github.com/red1oon/bim-ootb/commit/14db2cd918cb86f14cd4d302388029b5cf46d8b7))
+
+
+### ♻️ Refactors
+
+* **4d:** §ZONE_INDEX — one memoized spatial-zone index, two inline copies removed ([#1313](https://github.com/red1oon/bim-ootb/issues/1313)) ([475373b](https://github.com/red1oon/bim-ootb/commit/475373b81e83ee1d71d27ccac41d80177c9ba21f))
+
+## [1.43.0](https://github.com/red1oon/bim-ootb/compare/v1.42.0...v1.43.0) (2026-08-11)
+
+
+### ✨ Features
+
+* **4d:** §TIER_SERIAL phase-window collapse — two-tier display timeline (serial backbone + concurrent pool) ([#1282](https://github.com/red1oon/bim-ootb/issues/1282)) ([9197a09](https://github.com/red1oon/bim-ootb/commit/9197a099505bf08767ba5567ec7823a3d6187069))
+* **cinema:** camera-following fill light + noon-to-dusk sun arc ([#1284](https://github.com/red1oon/bim-ootb/issues/1284)) ([883dad2](https://github.com/red1oon/bim-ootb/commit/883dad28a6e0da117434b74cda71687c0649847a))
+* **viewer:** SW update toast -- no more 'clear site data' to get unstuck ([#1297](https://github.com/red1oon/bim-ootb/issues/1297)) ([1493a64](https://github.com/red1oon/bim-ootb/commit/1493a646840e6df2afd0cd1f37cd4564046632df))
+
+
+### 🐛 Fixes
+
+* **4d:** §DOOR_WINDOW_HOST_WALL — door/window can no longer start before the wall it's cut into finishes ([#1294](https://github.com/red1oon/bim-ootb/issues/1294)) ([aa15537](https://github.com/red1oon/bim-ootb/commit/aa15537370b972015825adecace7aef505025efc))
+* **4d:** §GANTT_LOCK_DELTA + midair-aware lock gate — the planner round-trip, and the trade [#1301](https://github.com/red1oon/bim-ootb/issues/1301) made ([#1303](https://github.com/red1oon/bim-ootb/issues/1303)) ([add18e5](https://github.com/red1oon/bim-ootb/commit/add18e59ef6287128b7e511e14358736609e2fe7))
+* **4d:** §HANG_NEAREST + pile reclass — Terminal/Hospital §SUPPORT_UNCHECKED root causes, 831→250 ([#1278](https://github.com/red1oon/bim-ootb/issues/1278)) ([366ed42](https://github.com/red1oon/bim-ootb/commit/366ed420fff3e3f0a9afa1e49a3f55fdfcf40e81))
+* **4d:** §KERNEL_OPS_SCHED_VERSION — stale materialized kernel_ops never reached a fixed schedule algorithm ([#1291](https://github.com/red1oon/bim-ootb/issues/1291)) ([fd3e021](https://github.com/red1oon/bim-ootb/commit/fd3e021ba2f7a306bfa4c6cefd29f35737f120d1))
+* **4d:** §MIDAIR_REPAIR — nothing appears before the first thing it touches (5,561 → 0) ([#1301](https://github.com/red1oon/bim-ootb/issues/1301)) ([bcec670](https://github.com/red1oon/bim-ootb/commit/bcec6706554aefef74282cf85889cda2551e092f))
+* **4d:** chase-to-zero — 3 witnesses un-rotted, LTU+JKR coverage locked, §PROMOTED_CARRIER_POOL guard/judge fix ([#1283](https://github.com/red1oon/bim-ootb/issues/1283)) ([83c7ef0](https://github.com/red1oon/bim-ootb/commit/83c7ef0c481fc639a35a99c6a35714f7c1e56073))
+* **4d:** closure pass — §OG_BEARING_BOUND (Part 2 Option C), slab-on-grade reclass, IfcPile Gap A, geo_support_leak witness un-rotted ([#1281](https://github.com/red1oon/bim-ootb/issues/1281)) ([7e02d7e](https://github.com/red1oon/bim-ootb/commit/7e02d7eb70bd526a94109aede8df6f278a826de2))
+* **4d:** Tier 2 starts after Tier 1 truly completes, not concurrent with it ([#1286](https://github.com/red1oon/bim-ootb/issues/1286)) ([929d097](https://github.com/red1oon/bim-ootb/commit/929d0975b42df75e35345760e61df6f4723dd9f3))
+* **cinema:** §SUN_ARC never reached output — call-order bug from [#1284](https://github.com/red1oon/bim-ootb/issues/1284) ([#1288](https://github.com/red1oon/bim-ootb/issues/1288)) ([5806d81](https://github.com/red1oon/bim-ootb/commit/5806d8156c72a34478bab66e2af9835c251c56b5))
+* **modeller:** §NOGEO_COMPOSE — Garage_ARC's 19 ghosts, the 8th and last building (source IFC found) ([#1280](https://github.com/red1oon/bim-ootb/issues/1280)) ([8e846d5](https://github.com/red1oon/bim-ootb/commit/8e846d56a50a398cc910a073bbc87c057f179565))
+* **photo:** §MAIN_BUILDING_SHADOW root cause — shadow.bias is normalised, not metres ([#1302](https://github.com/red1oon/bim-ootb/issues/1302)) ([6b4eddf](https://github.com/red1oon/bim-ootb/commit/6b4eddfe1330f92f294896f5cb0d9099173cf134))
+* **photo:** §PHOTO_SUN_SHADOW_REACH -- shadow frustum too small for low-elevation sun ([#1293](https://github.com/red1oon/bim-ootb/issues/1293)) ([800ad89](https://github.com/red1oon/bim-ootb/commit/800ad89532ccbe0b790644575f3c0596a355894e))
+* **photo:** double shadow map resolution -- small rooftop fixtures were washing out ([#1299](https://github.com/red1oon/bim-ootb/issues/1299)) ([f9ecab3](https://github.com/red1oon/bim-ootb/commit/f9ecab35ce79bb137cfc0146d61365c241faf68c))
+* **photo:** shadow camera was aimed at view-camera target, not the building ([#1295](https://github.com/red1oon/bim-ootb/issues/1295)) ([293c49b](https://github.com/red1oon/bim-ootb/commit/293c49b85d1d8ccb33aa5de1292409b690acb88b))
+* **viewer:** §CPE_WALK_ROLL_SNAP — POV walk camera rolled/toppled on diagonal mouse-look ([#1292](https://github.com/red1oon/bim-ootb/issues/1292)) ([f869c42](https://github.com/red1oon/bim-ootb/commit/f869c4268b7527309c6c7b3e2794dc53a941e8d8))
+* **viewer:** bump SW CACHE_VERSION for [#1288](https://github.com/red1oon/bim-ootb/issues/1288) -- missed on the original merge ([#1289](https://github.com/red1oon/bim-ootb/issues/1289)) ([3a36a0d](https://github.com/red1oon/bim-ootb/commit/3a36a0d8d2e845fe38502d097593f4104be3fc4d))
+* **viewer:** bump SW CACHE_VERSION for §CAM_LIGHT/§SUN_ARC (PR [#1284](https://github.com/red1oon/bim-ootb/issues/1284)) ([#1285](https://github.com/red1oon/bim-ootb/issues/1285)) ([1c3b989](https://github.com/red1oon/bim-ootb/commit/1c3b989b5612e6b7d9fdb09fb25ddb210a05204b))
+* **viewer:** bump SW CACHE_VERSION for PR [#1286](https://github.com/red1oon/bim-ootb/issues/1286) -- missed on the original merge ([#1287](https://github.com/red1oon/bim-ootb/issues/1287)) ([aaef1b4](https://github.com/red1oon/bim-ootb/commit/aaef1b40dfbf36977bf156fd0a1f8c6b36565833))
+
+
+### ⚡ Performance
+
+* **4d:** §GANTT_REFOLD_HANG — chunk-yield kernel_ops writer, synced against main ([#1304](https://github.com/red1oon/bim-ootb/issues/1304)) ([3a7e4ca](https://github.com/red1oon/bim-ootb/commit/3a7e4ca96294ad26d54d501af7e8d09a462bfdd4))
+* **4d:** §PERF_INCR_DEFER — no TM event-index rebuilds while a building streams ([#1306](https://github.com/red1oon/bim-ootb/issues/1306)) ([7e4bdba](https://github.com/red1oon/bim-ootb/commit/7e4bdba7ae048caa23cc9da65bce760fd18fa9d2))
+* **cinema:** §CPE_REPLAN_LAZY — cache the invariant plan prefix, one compute per editor session ([#1305](https://github.com/red1oon/bim-ootb/issues/1305)) ([03e1b71](https://github.com/red1oon/bim-ootb/commit/03e1b7141d1014a173d9971491de3f363a265a16))
+* **cinema:** §MAXQ_STAGE_KEEP — photo staging survives the bake's frame loop; frontier check indexed ([#1307](https://github.com/red1oon/bim-ootb/issues/1307)) ([4adb4bd](https://github.com/red1oon/bim-ootb/commit/4adb4bdd72193e402a5cc41f55e6c72116275854))
+
+## [1.42.0](https://github.com/red1oon/bim-ootb/compare/v1.41.1...v1.42.0) (2026-08-11)
+
+
+### ✨ Features
+
+* **4d:** §SUPPORT_UNCHECKED — close the big-element zero-support-check seam (warn-only) ([#1277](https://github.com/red1oon/bim-ootb/issues/1277)) ([db3453d](https://github.com/red1oon/bim-ootb/commit/db3453d860f0b2a2f6a82b012abf1a7d3b30bfa4))
+* **modeller:** port §NOGEO_COMPOSE ghost-compose + §PATCH_CHUNK chunked patching to Modeller open path ([#1273](https://github.com/red1oon/bim-ootb/issues/1273)) ([b1ff61a](https://github.com/red1oon/bim-ootb/commit/b1ff61a8956c3d349770c5f20dd51c224ab1615e))
+
+
+### 🐛 Fixes
+
+* **4d:** §NOGEO_COMPOSE — Clinic's 43 ghosts (4th affected building, never on the list) ([#1267](https://github.com/red1oon/bim-ootb/issues/1267)) ([78353a2](https://github.com/red1oon/bim-ootb/commit/78353a281673fb25bb9f72bf05f15e0c454d01b3))
+* **4d:** §NOGEO_COMPOSE — geometry-less aggregate-parent elements + patch chunking ([#1263](https://github.com/red1oon/bim-ootb/issues/1263)) ([a081480](https://github.com/red1oon/bim-ootb/commit/a081480a6fa8bf3647d2d03f8ec663162ed3cd2d))
+* **4d:** §NOGEO_COMPOSE — HHS_Office_Federated's 41 geometry-less aggregate-parent elements ([#1265](https://github.com/red1oon/bim-ootb/issues/1265)) ([a863e8a](https://github.com/red1oon/bim-ootb/commit/a863e8a95456203d1668fe2ada60731652498eda))
+* **4d:** §NOGEO_COMPOSE — HHS_Office_Federated's 41 ghosts + a committed witness ([#1266](https://github.com/red1oon/bim-ootb/issues/1266)) ([bbb9e00](https://github.com/red1oon/bim-ootb/commit/bbb9e00f9ee600a6ac388d96fb202165933ccccd))
+* **4d:** §TM_GEO_ORDER_CYCLES — Terminal support-DAG cycles 37,927→0, floating 45→8 ([#1276](https://github.com/red1oon/bim-ootb/issues/1276)) ([268a85f](https://github.com/red1oon/bim-ootb/commit/268a85f5ad1094a565e08531835d86e61863501c))
+* **4d:** sync buildings/patches/HHS_Office_Federated_extracted.db.sql to the served copy ([#1269](https://github.com/red1oon/bim-ootb/issues/1269)) ([560a057](https://github.com/red1oon/bim-ootb/commit/560a0577303db90e07676f09b8f9348b13f3235f))
+* **viewer:** chunk the needle-path patch apply — un-chunked 9,466-statement run bricked the wasm heap ([#1271](https://github.com/red1oon/bim-ootb/issues/1271)) ([ae68f7a](https://github.com/red1oon/bim-ootb/commit/ae68f7a763ebdb2080b5c46dcf69a4dda74dbed5))
+
+
+### 📝 Documentation
+
+* **prompts:** SHORTCUT_AUDIT_AND_GATE_NOISE_STUDY — add Phase 0 witness-harness precursor ([#1275](https://github.com/red1oon/bim-ootb/issues/1275)) ([724451f](https://github.com/red1oon/bim-ootb/commit/724451fdd262b696b4c1f89302978026fa6ae9d6))
+
+
+### ♻️ Refactors
+
+* **4d:** consolidate roof/load-path promotion classifier into _promoteRoofLoadPath + §TM_GEO_ORDER_CYCLES_REPRO witness ([#1272](https://github.com/red1oon/bim-ootb/issues/1272)) ([6239929](https://github.com/red1oon/bim-ootb/commit/623992999011cca8c9cb55ffdddb717dbb48196a))
+
+## [1.41.1](https://github.com/red1oon/bim-ootb/compare/v1.41.0...v1.41.1) (2026-08-08)
+
+
+### 🐛 Fixes
+
+* **4d:** §GANTT_STALE_CACHE — warm TM open still double-loaded the timeline ([#1257](https://github.com/red1oon/bim-ootb/issues/1257)) ([86eb1d5](https://github.com/red1oon/bim-ootb/commit/86eb1d5c8eed25ea24b6d5d5dbaa6ce4844aeaab))
+* **cinema:** §GLOW_LENS_BUILDUP_GATE — lens quad now follows the 4D buildup schedule ([#1260](https://github.com/red1oon/bim-ootb/issues/1260)) ([36a215f](https://github.com/red1oon/bim-ootb/commit/36a215f6d801b02077739ee54a88857d4e7c529d))
+* **cpe:** §CPE_VF_DPR_DOUBLE — scissor/viewport rect is CSS px; three.js applies the pixel ratio itself ([#1234](https://github.com/red1oon/bim-ootb/issues/1234)) ([142bcb1](https://github.com/red1oon/bim-ootb/commit/142bcb16aea15ae2446949c33a330de9c12adfb7))
+* **cpe:** §CPE_WALK_CTRL_DRAG_EXIT — OrbitControls disabled during walk, contextmenu suppressed ([#1261](https://github.com/red1oon/bim-ootb/issues/1261)) ([bdd707c](https://github.com/red1oon/bim-ootb/commit/bdd707cf3349539a17ad61f27c94150413a0ef7a))
+* **cpe:** §CPE_WALK_SNAP_GUARD — duplicate-stick guard with user's auto-Esc: same-spot re-click exits to review ([#1258](https://github.com/red1oon/bim-ootb/issues/1258)) ([2b8bc49](https://github.com/red1oon/bim-ootb/commit/2b8bc492cf8d5e63062b26bf43656c931637716a))
+* **dlod-nav:** §26 _boxIndex null-deref race on rapid o/o toggle ([#1259](https://github.com/red1oon/bim-ootb/issues/1259)) ([618943e](https://github.com/red1oon/bim-ootb/commit/618943e1e82a5233f77b3c0b1413ee6a8fef53cb))
+* **modeller:** §LAYER-SOLID-SEED — real per-layer OCCT solids seed the cut gate ([#1262](https://github.com/red1oon/bim-ootb/issues/1262)) ([0e719d2](https://github.com/red1oon/bim-ootb/commit/0e719d2d5c7d7559d8ea3c62532ca29fec0ca022))
+* **night:** §NIGHT_STILL_BOOST_GATE_FIX — nav mode was running with ~200 lights, not 30 ([#1255](https://github.com/red1oon/bim-ootb/issues/1255)) ([00d1925](https://github.com/red1oon/bim-ootb/commit/00d192563f9cba81829dff76930d082ce3db303c))
+
+## [1.41.0](https://github.com/red1oon/bim-ootb/compare/v1.40.0...v1.41.0) (2026-08-08)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_LOCK_INTEGRITY — lock-back verifies physical integrity, refuses on breach, names offenders ([#1244](https://github.com/red1oon/bim-ootb/issues/1244)) ([1165d03](https://github.com/red1oon/bim-ootb/commit/1165d03ae6f15b0356a9d44915f6e742a3901a03))
+* **4d:** §GEOMETRIC_SUPPORT_ORDER — placement order derived from geometry DAG, seq demoted to tiebreak ([#1242](https://github.com/red1oon/bim-ootb/issues/1242)) ([0fe8eb2](https://github.com/red1oon/bim-ootb/commit/0fe8eb2b0ae34e2dff210f462a634804330e9e14))
+* **cpe-walk:** §CPE_WALK_GAMEPAD_NAV — standard-mapping gamepad as third walk-mode input ([#1251](https://github.com/red1oon/bim-ootb/issues/1251)) ([b475d8c](https://github.com/red1oon/bim-ootb/commit/b475d8c5e6baeedaa931f044298c9a8cebb97ba7))
+* **cpe:** §CPE_WALK_EDIT_V1 — POV walk-mode input device for the CPE stick editor ([#1243](https://github.com/red1oon/bim-ootb/issues/1243)) ([9540939](https://github.com/red1oon/bim-ootb/commit/9540939825007961457c2b17426f460d09be226f))
+* **cpe:** §CPE_WALK_SCRUB_SPAWN — scrub inside the walk stretch pre-positions the shoes spawn (optional accelerator) ([#1249](https://github.com/red1oon/bim-ootb/issues/1249)) ([dbb4ed6](https://github.com/red1oon/bim-ootb/commit/dbb4ed66d81d9903312362d97b75acb1edb03bbf))
+* **cpe:** §CPE_WALK_SHOES_BTN — walk toggle moved onto B's frame header as shoes icon; eye-off force-stops walk; hallway witness promoted ([#1246](https://github.com/red1oon/bim-ootb/issues/1246)) ([bba8995](https://github.com/red1oon/bim-ootb/commit/bba89956d6448d2b43cce92e941bba34c3560e89))
+* **cpe:** §CPE_WALK_WEBXR_VR stopgap — WebXR feature-detect + session lifecycle, controller/pose stubbed ([#1253](https://github.com/red1oon/bim-ootb/issues/1253)) ([b7dcfac](https://github.com/red1oon/bim-ootb/commit/b7dcfacbabed00bda7d89ff1166bdaf6744b26c7))
+* **modeller:** wire Room Move + Item Drag into the UI (ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.5/§3) ([#1247](https://github.com/red1oon/bim-ootb/issues/1247)) ([87d9757](https://github.com/red1oon/bim-ootb/commit/87d97572f8b20bc7ce925c0cf4e7725d6cd4dbfa))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_LAYER_TRUTH — schedule-layer truth survives the task-window layer (walls-before-foundations regression) ([#1239](https://github.com/red1oon/bim-ootb/issues/1239)) ([d98faa9](https://github.com/red1oon/bim-ootb/commit/d98faa95e1133c066f50871e8d389e2c7aac96bf))
+* **4d:** §GANTT_RETIME_RESYNC — gantt edits blacked out the canvas (stale §PERF_INCR index + unsorted _ops + stale xray cache) ([#1240](https://github.com/red1oon/bim-ootb/issues/1240)) ([fa506ef](https://github.com/red1oon/bim-ootb/commit/fa506ef340edbf1f550a4bdfee5f52e0419f3ddc))
+* **4d:** §GANTT_SINGLE_LOAD — cold TM open ran injectGantt twice (4D_SCHEDULE_PERFECTION.md §GANTT_DOUBLE_LOAD) ([#1237](https://github.com/red1oon/bim-ootb/issues/1237)) ([279f560](https://github.com/red1oon/bim-ootb/commit/279f5602ab572a5651e1289d4bf908663f88f39f))
+* **cpe:** §CPE_WALK_SPAWN + §CPE_WALK_GLIDE + §CPE_WALK_ENTER_LOCK — walk is self-sufficient, trackpad-first ([#1248](https://github.com/red1oon/bim-ootb/issues/1248)) ([833c4ee](https://github.com/red1oon/bim-ootb/commit/833c4eed1582073cfc57e63d96e98254e3d03a20))
+* **night:** §NIGHT_MOBILE_MIN_PL cap + §NIGHT_MEM_WITNESS logging ([#1252](https://github.com/red1oon/bim-ootb/issues/1252)) ([17a490e](https://github.com/red1oon/bim-ootb/commit/17a490e9403ba08c0ea1729f98d06395067eab6a))
+* **night:** brightness round 3, nav budget 24-&gt;30, fix nightLights=0 witness bug ([#1254](https://github.com/red1oon/bim-ootb/issues/1254)) ([d255f89](https://github.com/red1oon/bim-ootb/commit/d255f89b414d60bd10381c10aaa5a53c84d6ca41))
+* **night:** quad rotation + drop-height + light-churn hiccup, brightness tune ([#1250](https://github.com/red1oon/bim-ootb/issues/1250)) ([733753e](https://github.com/red1oon/bim-ootb/commit/733753ecb2089b91e399487cdb4febaef60d39e5))
+
+## [1.40.0](https://github.com/red1oon/bim-ootb/compare/v1.39.1...v1.40.0) (2026-08-07)
+
+
+### ✨ Features
+
+* **4d:** §DEQ_V1 — default engine zero physics violations (fans-over-roof fixed, all-class audit) ([#1236](https://github.com/red1oon/bim-ootb/issues/1236)) ([e67d4f5](https://github.com/red1oon/bim-ootb/commit/e67d4f57684b5350f815a07e3d967ec4d6906e02))
+* **modeller:** whole-room move (GEOM_ROOM_MOVE) + gated free item drag ([#1224](https://github.com/red1oon/bim-ootb/issues/1224)) ([1b157f4](https://github.com/red1oon/bim-ootb/commit/1b157f4f9ca992ac0823950d61bc5bdcfe6693e9))
+
+
+### 🐛 Fixes
+
+* **cpe:** checkbox edit-detection, disable pin-click regression, plain POV frame, quiet version banners ([#1228](https://github.com/red1oon/bim-ootb/issues/1228)) ([db8a693](https://github.com/red1oon/bim-ootb/commit/db8a6936dfa2186836c145ac38902c9006beb2e3))
+* **cpe:** POV frame grips its picture (§CPE_VF_GRIP) + even buildup day tempo (§CPE_BUILDUP_EVEN_TEMPO) ([#1231](https://github.com/red1oon/bim-ootb/issues/1231)) ([4bc5bee](https://github.com/red1oon/bim-ootb/commit/4bc5bee512d08a8e4edd034ab164e18dff5c80ec))
+* **cpe:** POV rect is EXACT at any devicePixelRatio, and the timeline bar is fused to it (§CPE_VF_STACK) ([#1232](https://github.com/red1oon/bim-ootb/issues/1232)) ([b803c00](https://github.com/red1oon/bim-ootb/commit/b803c00140ace92eada8de086fdc7036efdaee6f))
+* **cpe:** scrub with BuildUp ON now drives the construction cursor (§CPE_SCRUB_BUILDUP_SYNC) ([#1226](https://github.com/red1oon/bim-ootb/issues/1226)) ([27f90a2](https://github.com/red1oon/bim-ootb/commit/27f90a25bc5e2633666dcfe7bc1648cfe290236d))
+* **cpe:** the grab zone is the DRAWN handle, not a fixed 18px (§CPE_GRAB_WYSIWYG) ([#1233](https://github.com/red1oon/bim-ootb/issues/1233)) ([c46a602](https://github.com/red1oon/bim-ootb/commit/c46a602f94effd3a10a43a10470993cb7494aa6f))
+* **tour:** add scrub-bar close button + Tab/space panel controls ([#1229](https://github.com/red1oon/bim-ootb/issues/1229)) ([751eab0](https://github.com/red1oon/bim-ootb/commit/751eab02dd41775ae1cd4608a2a218a03f2ab41a))
+
+
+### 📝 Documentation
+
+* **internal:** add PDF Terrain sample reference pair (source image + extraction output) ([#1227](https://github.com/red1oon/bim-ootb/issues/1227)) ([fdec1cc](https://github.com/red1oon/bim-ootb/commit/fdec1cc0ab9828f905ba67284a0b4afdbc60bcd0))
+* **prompts:** formalize the IfcOpenShell/Bonsai credit for the RiverIoT/Federation pattern ([#1225](https://github.com/red1oon/bim-ootb/issues/1225)) ([4e3b320](https://github.com/red1oon/bim-ootb/commit/4e3b3201105fe6cc63b95e2920adb4af5c6fc541))
+* **prompts:** spec a thorough shortcut-audit + WH-gate noise study (Fable dispatch) ([#1230](https://github.com/red1oon/bim-ootb/issues/1230)) ([d04cb5c](https://github.com/red1oon/bim-ootb/commit/d04cb5c11e207cc99ad73f14995af06d83351f02))
+
+## [1.39.1](https://github.com/red1oon/bim-ootb/compare/v1.39.0...v1.39.1) (2026-08-06)
+
+
+### 🐛 Fixes
+
+* **cpe:** craft B's frame FROM the actual scissor rect, not an independent CSS box ([#1218](https://github.com/red1oon/bim-ootb/issues/1218)) ([51c7624](https://github.com/red1oon/bim-ootb/commit/51c7624c9cfa9e7d4d5facd4e78f347cad3254cf))
+* **cpe:** explicit box-sizing:border-box on B's panel (Fable review follow-up) ([#1220](https://github.com/red1oon/bim-ootb/issues/1220)) ([985d177](https://github.com/red1oon/bim-ootb/commit/985d17754ec634ee6be4554402e688c84bc808b3))
+
+## [1.39.0](https://github.com/red1oon/bim-ootb/compare/v1.38.0...v1.39.0) (2026-08-05)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_GROUP_MOVE — MS-Word-style marquee-select drags a whole bar cluster together ([#1204](https://github.com/red1oon/bim-ootb/issues/1204)) ([16cc192](https://github.com/red1oon/bim-ootb/commit/16cc19239a7ba25c8686140df469f48ab31eb940))
+* **4d:** §TM_PANEL_RESIZE_H — Gantt drawer bottom edge is now draggable too ([#1208](https://github.com/red1oon/bim-ootb/issues/1208)) ([42bae02](https://github.com/red1oon/bim-ootb/commit/42bae02dc0171636b02a71be2ba7354652c37ab0))
+
+
+### 🐛 Fixes
+
+* **4d:** §TM_PANEL_RESIZE_H targets the inner Gantt box, not the outer panel shell ([#1216](https://github.com/red1oon/bim-ootb/issues/1216)) ([db77a72](https://github.com/red1oon/bim-ootb/commit/db77a72fe6e3be1c882175de64e118bd8447b341))
+* **4d+cinema:** §DLOD_VF_CAMGUARD_SIG — camera-moved edge-detector follows the resolved DLOD camera ([#1206](https://github.com/red1oon/bim-ootb/issues/1206)) ([b2e7915](https://github.com/red1oon/bim-ootb/commit/b2e7915f23d3ab819d8ec36fc6d4cd00e398cde2))
+* **cpe:** 3 issues — scrub panel eye-gating, playhead tick, POV frame diagnostic ([#1214](https://github.com/red1oon/bim-ootb/issues/1214)) ([c6098aa](https://github.com/red1oon/bim-ootb/commit/c6098aa210e48f75f3310f19f5778df2be864bde))
+* **cpe:** B's panel default position/z-index, scrub panel viewport overflow, both silent-before ([#1207](https://github.com/red1oon/bim-ootb/issues/1207)) ([d4ad43d](https://github.com/red1oon/bim-ootb/commit/d4ad43d640d89d6646e5de2dfee31210faad497e))
+* **cpe:** eye toggle now drives the timeline panel too, one control not two ([#1211](https://github.com/red1oon/bim-ootb/issues/1211)) ([7b0ee10](https://github.com/red1oon/bim-ootb/commit/7b0ee102f3c1c6c80c41c16f4273c6cdb3062119))
+* **cpe:** OPEN 2 AND-gate + OPEN 3 real root cause (drag never woke render loop) ([#1213](https://github.com/red1oon/bim-ootb/issues/1213)) ([e8a0c77](https://github.com/red1oon/bim-ootb/commit/e8a0c77897be963bfb02ddd332318d26cfc4e302))
+* **cpe:** OPEN 3 inset stretch, OPEN 4 DLOD/vfCam union, OPEN 5 scrub input trace ([#1212](https://github.com/red1oon/bim-ootb/issues/1212)) ([a497a67](https://github.com/red1oon/bim-ootb/commit/a497a674ff6d9d5f2b2489c7c1898b8ecae8b3e5))
+* **cpe:** POV alignment diagnostic — code-correlated instrumentation, not screenshot guessing ([#1203](https://github.com/red1oon/bim-ootb/issues/1203)) ([14a93ef](https://github.com/red1oon/bim-ootb/commit/14a93ef752174690311f73d0e7039579cb097a63))
+* **cpe:** retire drag/resize on B and the scrub panel — fixed bottom-left, eye-only ([#1217](https://github.com/red1oon/bim-ootb/issues/1217)) ([3216b38](https://github.com/red1oon/bim-ootb/commit/3216b38b67d29fd35b48ac1cc1554dc587ea31f3))
+* **cpe:** separate B's viewfinder from main-canvas perf/DLOD state — 3 real bugs ([#1209](https://github.com/red1oon/bim-ootb/issues/1209)) ([e62f1eb](https://github.com/red1oon/bim-ootb/commit/e62f1eb637f985077fd3b5f988f02b07b7402994))
+* **cpe:** single-owner toggling — Eye owns B+scrub panel, BuildUp owns Time Machine ([#1215](https://github.com/red1oon/bim-ootb/issues/1215)) ([ebaebd3](https://github.com/red1oon/bim-ootb/commit/ebaebd39d0f699b52f11381f39cc8d385ed47d54))
+* **room-graph:** log the silent no-alternative revisit fallback ([#1210](https://github.com/red1oon/bim-ootb/issues/1210)) ([8574e51](https://github.com/red1oon/bim-ootb/commit/8574e513136ac720730b141b0b779a09ee5545c8))
+
+## [1.38.0](https://github.com/red1oon/bim-ootb/compare/v1.37.0...v1.38.0) (2026-08-05)
+
+
+### ✨ Features
+
+* **4d:** §GANTT_AUTHOR_ENTRY native — Generate button calls the engine directly, no side panel ([#1194](https://github.com/red1oon/bim-ootb/issues/1194)) ([7052b0f](https://github.com/red1oon/bim-ootb/commit/7052b0fc2ba9a6cc4d26798e1e99465c71f21218))
+* **4d:** §TM_PANEL_RESIZE — drawer width is now draggable, auto-expands on Editing ([#1201](https://github.com/red1oon/bim-ootb/issues/1201)) ([bdfc9a5](https://github.com/red1oon/bim-ootb/commit/bdfc9a5914fd7170ac757ede075202ef05076a02))
+* **4d:** §TM_RULER_SHIFT — dragging the day ruler moves the whole project's start/finish, native generate now defaults to today ([#1202](https://github.com/red1oon/bim-ootb/issues/1202)) ([4c8fa35](https://github.com/red1oon/bim-ootb/commit/4c8fa356241a0215ffa84a61d699f39f12e01cb7))
+* **4d:** ↺ Undo edit — replaces the dead Copy Touched button ([#1188](https://github.com/red1oon/bim-ootb/issues/1188)) ([cb1817b](https://github.com/red1oon/bim-ootb/commit/cb1817b4838b8ba8eba372dd12ed750ae1de2efb))
+* **4d:** ⚑ Set Baseline — schedule variance, replaces the dead Copy New button ([#1190](https://github.com/red1oon/bim-ootb/issues/1190)) ([00d29d7](https://github.com/red1oon/bim-ootb/commit/00d29d7e955c3a3f46de328705dee08cbcfe45e4))
+* **4d:** the Time Machine Gantt drawer is now the editable 4D surface ([#1171](https://github.com/red1oon/bim-ootb/issues/1171)) ([490b7a7](https://github.com/red1oon/bim-ootb/commit/490b7a7fbc66fe72a47651ba9c371da32bf407e7))
+* **cpe:** §CPE_AIM_PIN — click-to-pin explicit look-target (Part C) ([#1172](https://github.com/red1oon/bim-ootb/issues/1172)) ([1835e12](https://github.com/red1oon/bim-ootb/commit/1835e12a1f9c799c12489818ce1e429b131041fb))
+
+
+### 🐛 Fixes
+
+* **4d:** §CLASS_UNMATCHED_FALLBACK — 3 real classes were silently defaulting ([#1186](https://github.com/red1oon/bim-ootb/issues/1186)) ([9521b90](https://github.com/red1oon/bim-ootb/commit/9521b900814c210e878ef8a341f32f68cfef161c))
+* **4d:** §CLASS_UNMATCHED_FALLBACK follow-up — widen witness to all 7 fixtures, close 2 more ([#1187](https://github.com/red1oon/bim-ootb/issues/1187)) ([72fbd2f](https://github.com/red1oon/bim-ootb/commit/72fbd2f282d2fb6923445adaed67f6fad8439d34))
+* **4d:** §GANTT_AXIS_OUTLIER + §GANTT_EDIT_LOCK — land remaining Gantt-editing branch work ([#1198](https://github.com/red1oon/bim-ootb/issues/1198)) ([e09d56c](https://github.com/red1oon/bim-ootb/commit/e09d56c7ddf05a60513a219470aa0a1ee304ec4b))
+* **4d:** §GANTT_OPS_BOOKKEEPING_LEAK — BUILDING_OPEN was polluting the real project timeline ([#1181](https://github.com/red1oon/bim-ootb/issues/1181)) ([dee5076](https://github.com/red1oon/bim-ootb/commit/dee5076b5d5bd387879df9a69d16262778e1c77c))
+* **4d:** §GEO_SUPPORT_LEAK — geoGate() missed real support fully contained in an element's own bbox ([#1183](https://github.com/red1oon/bim-ootb/issues/1183)) ([2bcabab](https://github.com/red1oon/bim-ootb/commit/2bcabab30a7dd27f79dcb8460e8561dd1f892787))
+* **4d:** §TM_CLOSE_RESTORE — closing Time Machine left xray-staged elements permanently ghosted ([#1182](https://github.com/red1oon/bim-ootb/issues/1182)) ([e1315e8](https://github.com/red1oon/bim-ootb/commit/e1315e8f745e71d6b18099da1966a37cf53da22b))
+* **4d+cinema:** materializeDefault exclusion + §DLOD_VF_CAMGUARD — orphaned by [#1198](https://github.com/red1oon/bim-ootb/issues/1198)'s squash-merge race ([#1199](https://github.com/red1oon/bim-ootb/issues/1199)) ([b9a175b](https://github.com/red1oon/bim-ootb/commit/b9a175b1ace54425a1646b66bcf3818ce71104bc))
+* **4d:** Gantt drawer browser-proof fixes + bar-rect debug hook ([#1173](https://github.com/red1oon/bim-ootb/issues/1173)) ([02b27bc](https://github.com/red1oon/bim-ootb/commit/02b27bcbc92b738dbca6b9a59e24fd9aa3aaf81d))
+* **cpe:** §CPE_SCRUB no longer moves the main canvas camera — regression fix ([#1177](https://github.com/red1oon/bim-ootb/issues/1177)) ([dc61d6b](https://github.com/red1oon/bim-ootb/commit/dc61d6bd83133479279757f9715a04cebd2afb2c))
+* **cpe:** §CPE_VIEWFINDER eye icon uses real open/shut eyelid sprites, not Lucide's slashed-eye ([#1179](https://github.com/red1oon/bim-ootb/issues/1179)) ([1c27f36](https://github.com/red1oon/bim-ootb/commit/1c27f367c430a63279790ad6ad96533a3f480a70))
+* **cpe:** §CPE_VIEWFINDER eye toggle shows open/closed state, not a static emoji ([#1174](https://github.com/red1oon/bim-ootb/issues/1174)) ([fb65f11](https://github.com/red1oon/bim-ootb/commit/fb65f1122624c7937876f17a2659a231c3735e57))
+* **cpe:** hide redundant Preview button + real POV alignment diagnostics + fix witness pause-flake ([#1192](https://github.com/red1oon/bim-ootb/issues/1192)) ([e477b57](https://github.com/red1oon/bim-ootb/commit/e477b57cec00dc06e5c3918bacb84eb71ced2013))
+* **cpe:** scrub bar goes standalone + drives B live again + play/pause + selection bearing ([#1184](https://github.com/red1oon/bim-ootb/issues/1184)) ([1830a34](https://github.com/red1oon/bim-ootb/commit/1830a34f65b34bd76c68d0a918c3a5cbc7a16a25))
+* **cpe:** scrub-play button drives POV only, main canvas stays parked ([#1197](https://github.com/red1oon/bim-ootb/issues/1197)) ([690344a](https://github.com/red1oon/bim-ootb/commit/690344ab63ecb71f12bcbff4cc5fa5fcfb5c2e95))
+* **cpe:** scrub/POV panels default clear of #cpe-panel, scrub-panel z-index above all ([#1195](https://github.com/red1oon/bim-ootb/issues/1195)) ([e993c5d](https://github.com/red1oon/bim-ootb/commit/e993c5d519813ad540b74f8894f2eaa41ecb85f6))
+* **deploy:** bump sw.js CACHE_VERSION v946-&gt;v947 — 4D fixes were shipping stale-cached ([#1189](https://github.com/red1oon/bim-ootb/issues/1189)) ([5bea1f1](https://github.com/red1oon/bim-ootb/commit/5bea1f1e4388c15af0a3e524ca74f5a40147176b))
+* **room-graph:** bridge isolated door-pair islands to circulation spine ([#1200](https://github.com/red1oon/bim-ootb/issues/1200)) ([5a68932](https://github.com/red1oon/bim-ootb/commit/5a6893211e2e2dcb8342ec97fb90b2269674e508))
+* **room-graph:** detour legalization also vetoes waypoints already placed earlier in this path ([#1178](https://github.com/red1oon/bim-ootb/issues/1178)) ([13ed584](https://github.com/red1oon/bim-ootb/commit/13ed58495ced4c351dec725bcc6b6b84dbfa2efd))
+
+
+### ⚡ Performance
+
+* **4d:** §OG_GRID_Z_BAND — root-cause the Generate-4D "hang", not just guessed ([#1193](https://github.com/red1oon/bim-ootb/issues/1193)) ([52a5ef1](https://github.com/red1oon/bim-ootb/commit/52a5ef13531103228d4f3030f8dc70cb73cc62f9))
+
+## [1.37.0](https://github.com/red1oon/bim-ootb/compare/v1.36.0...v1.37.0) (2026-08-03)
+
+
+### ✨ Features
+
+* **4d:** §4D_SCHEDULE_DIFF — grade an imported P6/MSP schedule against our real-quantity estimate ([#1161](https://github.com/red1oon/bim-ootb/issues/1161)) ([466cc69](https://github.com/red1oon/bim-ootb/commit/466cc69b490939ad97a865d2c4f69ed20e16cdaa))
+* **4d:** CPM Gap 1 (element-level, rolled up) — zone-granularity detail schedule ([#1160](https://github.com/red1oon/bim-ootb/issues/1160)) ([cea58e7](https://github.com/red1oon/bim-ootb/commit/cea58e7b20f70c94ecc5a607472e0b0c6eb6bb99))
+* **4d:** CPM Gap 1 (phase-level) — task_sequences edges + Gantt dependency arrows ([#1159](https://github.com/red1oon/bim-ootb/issues/1159)) ([e5d5b73](https://github.com/red1oon/bim-ootb/commit/e5d5b7380901c05ca45d02cb1bd8cd2bd99f304d))
+* **scene:** combined save/restore — camera, panel, xray, find-selection ride with staffage/cinema_path ([#1152](https://github.com/red1oon/bim-ootb/issues/1152)) ([738b19a](https://github.com/red1oon/bim-ootb/commit/738b19afc28c265f84d1ddffa506b416cbf06970))
+
+
+### 🐛 Fixes
+
+* **4d:** §PHASE_OVERLAP_BAND + §LABOR_QUANTITY_WEIGHT — real cause fixed, film hack removed ([#1154](https://github.com/red1oon/bim-ootb/issues/1154)) ([d35366a](https://github.com/red1oon/bim-ootb/commit/d35366ac2ccbdd6121ee8e8f0db97111753291ae))
+* **4d:** §TM_DURATION_SYNC — wire time_machine.js playback clock to the same area-weighted install-secs formula as schedule_author.js ([#1158](https://github.com/red1oon/bim-ootb/issues/1158)) ([e039443](https://github.com/red1oon/bim-ootb/commit/e0394434fec8464839ab6e584dc3d68cd0b0d307))
+* **4d:** applyDates() was a third un-fixed contiguous-cursor site, reverting §PHASE_OVERLAP_BAND ([#1155](https://github.com/red1oon/bim-ootb/issues/1155)) ([47e61dc](https://github.com/red1oon/bim-ootb/commit/47e61dc93a73fd196123a40515f6681929ef7bea))
+* **4d:** computeCpm fixedDates opt — close the zone-graph/movie duration divergence ([#1162](https://github.com/red1oon/bim-ootb/issues/1162)) ([5d489c7](https://github.com/red1oon/bim-ootb/commit/5d489c7e9abc45acd1cd250be7cca31bf21f4351))
+* **4d:** phase calendar width is workload-proportional, not flat phaseDays ([#1150](https://github.com/red1oon/bim-ootb/issues/1150)) ([93acd0d](https://github.com/red1oon/bim-ootb/commit/93acd0d1a837146201c6fce5c0c9d8f830bf74a0))
+* **cinema:** §CPE_EVEN_PHASE_PACING + §CPE_PHASE_STAGGER + §CPE_SETTLE_HOLD ([#1153](https://github.com/red1oon/bim-ootb/issues/1153)) ([a27d978](https://github.com/red1oon/bim-ootb/commit/a27d97895c0527e38f1884b26a7c6111c14bd668))
+* **cpe:** §CPE_SETTLE_HOLD had a residual 0.05s hardcoded floor, remove it entirely ([#1156](https://github.com/red1oon/bim-ootb/issues/1156)) ([8592b33](https://github.com/red1oon/bim-ootb/commit/8592b33bd9f62912ee66c1a43f4533a00e4dde31))
+
+## [1.36.0](https://github.com/red1oon/bim-ootb/compare/v1.35.0...v1.36.0) (2026-08-02)
+
+
+### ✨ Features
+
+* **4d:** §Z_STACK_XRAY_STAGING — x-ray unsupported elements until carriers land, sw v921 ([#1139](https://github.com/red1oon/bim-ootb/issues/1139)) ([bd59228](https://github.com/red1oon/bim-ootb/commit/bd59228f59e9d55f26af991a40fe64c8f4047ec6))
+* **cpe:** §CPE_DAY_COUNTER_POS — Day # counter corner is a movie-maker panel option ([#1130](https://github.com/red1oon/bim-ootb/issues/1130)) ([97569fb](https://github.com/red1oon/bim-ootb/commit/97569fb847003fe488e938f7b0290797fe0c9505))
+* **cpe:** §CPE_GAZE_ACQUIRE — the gaze acquires its subject fast and settles onto it ([#1131](https://github.com/red1oon/bim-ootb/issues/1131)) ([1fa1906](https://github.com/red1oon/bim-ootb/commit/1fa1906a6ec05d6ef03f8a65ede6127b2b800d3b))
+* **cpe:** §CPE_MAXQ_STATUS_DAY_LABEL — MaxQ bake HUD shows live Day # and room label, sw v926 ([#1145](https://github.com/red1oon/bim-ootb/issues/1145)) ([d128648](https://github.com/red1oon/bim-ootb/commit/d128648af4397aacf6722cf25d34a547af79eed8))
+* **cpe:** §CPE_PANEL_STATE — saved paths carry the panel context they were recorded under, sw v922 ([#1140](https://github.com/red1oon/bim-ootb/issues/1140)) ([23ad01f](https://github.com/red1oon/bim-ootb/commit/23ad01f7b566bc9a7da83fa27c90d1871ad9c500))
+* **cpe:** §CPE_ROOM_TITLE_COLLECTIVE — one composed caption everywhere + live [phase], sw v920 ([#1138](https://github.com/red1oon/bim-ootb/issues/1138)) ([3bfbbb4](https://github.com/red1oon/bim-ootb/commit/3bfbbb4b025140cf36c4c0c61487fba045ddc4db))
+* **cpe:** §CPE_ROOM_TITLE_GROUP — constant, composed, tempered labelling ([#1136](https://github.com/red1oon/bim-ootb/issues/1136)) ([628aaef](https://github.com/red1oon/bim-ootb/commit/628aaefcceb9ea7ff9c393ecec2a546f2622e6ad))
+* **cpe:** §CPE_STICK_APPROACH — MaxQ bake HUD shows "approaching Stick k/N" ([#1143](https://github.com/red1oon/bim-ootb/issues/1143)) ([1768db4](https://github.com/red1oon/bim-ootb/commit/1768db4dda712cd03475a0e309c719d1fdcf5c5b))
+
+
+### 🐛 Fixes
+
+* **4d:** §STAGGER_SUPPORT_ORDER — captured stagger orders by bearing surface, not centroid ([#1133](https://github.com/red1oon/bim-ootb/issues/1133)) ([72c362e](https://github.com/red1oon/bim-ootb/commit/72c362e972263111ce4471dfbb1329ea0fbcab70))
+* **cinema:** §CPE_GHOST_GROUND_TRIGGER — revert to first-above-ground-element, not 5% share ([#1148](https://github.com/red1oon/bim-ootb/issues/1148)) ([06a6c79](https://github.com/red1oon/bim-ootb/commit/06a6c79df3e6f6aa1b0e94d918edf1a4c0431aeb))
+* **cinema:** §GHOST_GROUND_LIVE_TRIGGER — opacity stuck at floor past trigger point ([#1148](https://github.com/red1oon/bim-ootb/issues/1148) regression) ([#1149](https://github.com/red1oon/bim-ootb/issues/1149)) ([4f6e9a9](https://github.com/red1oon/bim-ootb/commit/4f6e9a9f4fb3bcfbb15abf139949dc35563c94bd))
+* **cpe:** §CPE_BUILDUP investigation (no defect found) + §CPE_PACE_SWING_SOFTEN 1.6-&gt;1.45, sw v927 ([#1147](https://github.com/red1oon/bim-ootb/issues/1147)) ([4d617b9](https://github.com/red1oon/bim-ootb/commit/4d617b9559ab108bafbf1d52f456cd635547bc04))
+* **cpe:** §CPE_BUILDUP_DEFAULT_ON — build-as-it-plays checkbox defaults ON, sw v925 ([#1144](https://github.com/red1oon/bim-ootb/issues/1144)) ([cf84202](https://github.com/red1oon/bim-ootb/commit/cf8420290ef78678deb49afd8f2e4ee8e19fff4e))
+* **cpe:** §CPE_GAZE_ACQUIRE_SOFTEN — peak 3x→2x (135→90 deg/s), sw v919 ([#1137](https://github.com/red1oon/bim-ootb/issues/1137)) ([37d280c](https://github.com/red1oon/bim-ootb/commit/37d280cc70330360ef4ee08428aac4d6d55a1c06))
+* **cpe:** §CPE_ROOM_TITLE_LEVEL_CONSOLIDATE — group sight list by storey, not window unanimity ([#1142](https://github.com/red1oon/bim-ootb/issues/1142)) ([8f31606](https://github.com/red1oon/bim-ootb/commit/8f31606207289e427fafb58c691c9167e83ee32f))
+* **cpe:** hold default 0 + §CPE_BUILDUP_TOPOUT + §CPE_ROOM_TITLE_MULTI — three user reports off the 2026-08-02 Hospital bake ([#1135](https://github.com/red1oon/bim-ootb/issues/1135)) ([d264a16](https://github.com/red1oon/bim-ootb/commit/d264a161a2cfe54c065879131ff4d56c0fd7a1f5))
+* **photoreal:** §PHOTO_SKYLINE_SHADOW_FRUSTUM — skyline silhouette buildings now cast shadows ([#1141](https://github.com/red1oon/bim-ootb/issues/1141)) ([ac437dc](https://github.com/red1oon/bim-ootb/commit/ac437dce6998cf8aa7fccb8aa352f7a4cc45b81b))
+* **witness:** G-SH-4 reads its gaze bound from the shipped curve, not a literal 45 ([#1132](https://github.com/red1oon/bim-ootb/issues/1132)) ([0e77c9f](https://github.com/red1oon/bim-ootb/commit/0e77c9f5cb99f7a4fbc5ee01186776e57a7122ce))
+
+## [1.35.0](https://github.com/red1oon/bim-ootb/compare/v1.34.0...v1.35.0) (2026-08-01)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_STICK_HOLD + §CPE_AIM_LATCH + §CPE_GAZE_CONSTANT_RATE — a hold buys the turn its time ([#1126](https://github.com/red1oon/bim-ootb/issues/1126)) ([6ab0092](https://github.com/red1oon/bim-ootb/commit/6ab0092b47926e8f93f9a6dedc654d58ca27dbd4))
+* **cinema+4d:** 2026-08-02 batch — §4D_BAND_MONOTONIC, §CPE_DAY_COUNTER, §CPE_GHOST_PULL, room-title dwell/lead (sw v913, gantt cache 7) ([#1129](https://github.com/red1oon/bim-ootb/issues/1129)) ([fc58210](https://github.com/red1oon/bim-ootb/commit/fc58210e6701c40481ab2d667078f06653a54259))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_WALLS_BEFORE_ROOF — [#1120](https://github.com/red1oon/bim-ootb/issues/1120) promoted the boxes' roofs and left the roof they stand on ([#1128](https://github.com/red1oon/bim-ootb/issues/1128)) ([fcc06a1](https://github.com/red1oon/bim-ootb/commit/fcc06a1317da70b1d3c854247624c282ad4bbb36))
+* **4d:** §GANTT_CACHE_VERSION 4 → 5 — §4D_ROOF_LOAD_PATH could not reach a browser that had already cached ([#1123](https://github.com/red1oon/bim-ootb/issues/1123)) ([28d8214](https://github.com/red1oon/bim-ootb/commit/28d82144b1c3f21ffb8be13a3791d1b5ba2b338a))
+* **cinema:** §CPE_SPIN_WHIP — the spin flew 534°, was billed for 180°, and paid no noise ratio ([#1125](https://github.com/red1oon/bim-ootb/issues/1125)) ([e48dcdc](https://github.com/red1oon/bim-ootb/commit/e48dcdc73baa0dc110e28060872974b64df61b79))
+* **cinema:** §CPE_STICK_HOLD default moves to the LAST band (the exit), not the middle ([#1127](https://github.com/red1oon/bim-ootb/issues/1127)) ([9945364](https://github.com/red1oon/bim-ootb/commit/994536488ae6c08937d70e6f14847fa1b7f57122))
+
+## [1.34.0](https://github.com/red1oon/bim-ootb/compare/v1.33.0...v1.34.0) (2026-07-31)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_BUILDUP_WORK_PACED — the film advances by ELEMENTS PLACED, not calendar days ([#1116](https://github.com/red1oon/bim-ootb/issues/1116)) ([aa84dd9](https://github.com/red1oon/bim-ootb/commit/aa84dd9bbecb1e6dd4a1e157133308befebf0b7d))
+* **cinema:** §CPE_GHOST_GROUND — the foundation is built and BURIED; ghost the ground until it rises ([#1110](https://github.com/red1oon/bim-ootb/issues/1110)) ([ed10bb9](https://github.com/red1oon/bim-ootb/commit/ed10bb92eb2a694a0518463dcc55047dc845a53f))
+* **cinema:** §CPE_GHOST_GROUND_RATIO — the ground solidifies as the building rises, on any building ([#1112](https://github.com/red1oon/bim-ootb/issues/1112)) ([6397e45](https://github.com/red1oon/bim-ootb/commit/6397e457e153063940889df3292aefc1133b6091))
+* **cinema:** §CPE_ROOM_TITLE_GAZE — caption the room the camera is LOOKING INTO (1 -&gt; 15 on Hospital) ([#1119](https://github.com/red1oon/bim-ootb/issues/1119)) ([5677099](https://github.com/red1oon/bim-ootb/commit/5677099b88cac45d8c35f073436679d0b0a34089))
+* **cinema:** §CPE_ROOM_TITLE_HOLD — a caption stays up 3s, unless the next room takes over ([#1117](https://github.com/red1oon/bim-ootb/issues/1117)) ([bfd5971](https://github.com/red1oon/bim-ootb/commit/bfd5971dc0c5e341b8e59749f6d459127fd63fb2))
+* **cinema:** §CPE_ROOM_TITLE_LEAD — name the room you are HEADING INTO, 2s early ([#1118](https://github.com/red1oon/bim-ootb/issues/1118)) ([466f6e8](https://github.com/red1oon/bim-ootb/commit/466f6e8b9d8989327b22bae2f663fc205943cd20))
+
+
+### 🐛 Fixes
+
+* **4d:** §4D_ROOF_LOAD_PATH — slab role from load path, not storey name ([#1120](https://github.com/red1oon/bim-ootb/issues/1120)) ([18c68a8](https://github.com/red1oon/bim-ootb/commit/18c68a8c2014d4efa143c71c63ca13820d0fef5b))
+* **cinema:** §CPE_GHOST_GROUND — degrade instead of disable, and arm on the first tick ([#1115](https://github.com/red1oon/bim-ootb/issues/1115)) ([ad2a72a](https://github.com/red1oon/bim-ootb/commit/ad2a72a0c7f1d5b29c413ebaf037c33dec059009))
+* **cinema:** §CPE_GHOST_GROUND — every arm refusal now names itself in the log ([#1114](https://github.com/red1oon/bim-ootb/issues/1114)) ([60488ff](https://github.com/red1oon/bim-ootb/commit/60488ff0618285ce95c171aaab08796dd31e9568))
+* **cinema:** §CPE_GHOST_GROUND armed on a state no real bake is ever in — and the witness said so ([#1113](https://github.com/red1oon/bim-ootb/issues/1113)) ([90845d9](https://github.com/red1oon/bim-ootb/commit/90845d9b5cbd02ab990515dfe882ef46ee1056a7))
+* **cinema:** §CPE_PATH_NOT_PORTABLE — a saved path could not leave the machine, and nothing said so ([#1122](https://github.com/red1oon/bim-ootb/issues/1122)) ([57c52c4](https://github.com/red1oon/bim-ootb/commit/57c52c42a002e11c4d3f49a3853e1a072af3836b))
+* **cinema:** §CPE_WALK_BUDGET_NOISE_BLIND — the walk's SECONDS now obey the noise law ([#1121](https://github.com/red1oon/bim-ootb/issues/1121)) ([2a37cd7](https://github.com/red1oon/bim-ootb/commit/2a37cd7b7799dd5f57df608e901cb7e994777aa0))
+
+## [1.33.0](https://github.com/red1oon/bim-ootb/compare/v1.32.0...v1.33.0) (2026-07-30)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_AIM_DEPTH — face the furthest facade when boxed in, not the closest fleeting one ([#1101](https://github.com/red1oon/bim-ootb/issues/1101)) ([2bc17d1](https://github.com/red1oon/bim-ootb/commit/2bc17d137d09526e84f625e7fbc39440f8499699))
+* **modeller:** §ANCHOR — void-consumed hosts as invisible ride anchors (user-approved, guardrailed) ([#1095](https://github.com/red1oon/bim-ootb/issues/1095)) ([03891df](https://github.com/red1oon/bim-ootb/commit/03891df275184bed9312ce18ec333fb7713593b5))
+* **modeller:** §LOD400-LAYERS — layered walls reach the live residents + envelope refusal ([#1096](https://github.com/red1oon/bim-ootb/issues/1096)) ([8bf6035](https://github.com/red1oon/bim-ootb/commit/8bf6035e04c0f877ccd2f84227688611b393dd0a))
+
+
+### 🐛 Fixes
+
+* **4D:** §4D_FACADE_ORDER — populate the in-file SEQUENCE_NAME_OVERRIDES default (viewer.html never fetches the JSON) ([#1100](https://github.com/red1oon/bim-ootb/issues/1100)) ([1864c4c](https://github.com/red1oon/bim-ootb/commit/1864c4cb5b7ea7552f849dbfb172e72122be0121))
+* **4D:** glazed curtain-wall panels no longer erect before their host wall ([#1098](https://github.com/red1oon/bim-ootb/issues/1098)) ([c51cfcf](https://github.com/red1oon/bim-ootb/commit/c51cfcf57b54f08befd37ecc763acc664c6a9b9e))
+* **cinema:** §CPE_AIM_DEPTH — incoming-seam taper + buildup guard, radii clamp partial ([#1103](https://github.com/red1oon/bim-ootb/issues/1103)) ([05f39f1](https://github.com/red1oon/bim-ootb/commit/05f39f15ee9dde16e034a5e97deb38b6188e6849))
+* **cinema:** §CPE_HOSE_LENGTH_BLIND — the editor costed a curve that is never flown ([#1107](https://github.com/red1oon/bim-ootb/issues/1107)) ([4d3aa7d](https://github.com/red1oon/bim-ootb/commit/4d3aa7d3d08d4a46467fb03309dfae7ebcf6f146))
+* **cinema:** §CPE_REOPEN_NODE — the added node survives OK, and an unselected stick is dark blue ([#1104](https://github.com/red1oon/bim-ootb/issues/1104)) ([6ed67f8](https://github.com/red1oon/bim-ootb/commit/6ed67f83392caf4b9ea2b32f6f174e7b35eede55))
+* **cinema:** §CPE_ROOM_TITLE_HEIGHT_BLIND — a title named the room you were flying OVER ([#1108](https://github.com/red1oon/bim-ootb/issues/1108)) ([ef7caf3](https://github.com/red1oon/bim-ootb/commit/ef7caf3a34266376045292bb1b5b933f3723b627))
+* **cinema:** §CPE_STICK_RED_BAR — a stick is a RED bar with BLUE dots, not an all-blue smudge ([#1105](https://github.com/red1oon/bim-ootb/issues/1105)) ([d8209ac](https://github.com/red1oon/bim-ootb/commit/d8209acdd0d05662d99d572a141299d9ba62c2d8))
+* **modeller:** row 33 — withdraw the partial layer ship; §LAYER-GATE refuses the 2 clip-trimmed party walls loudly (W-E2E-LAYERS-RESIDENTS 8/8 vs LIVE, RED-first) ([#1099](https://github.com/red1oon/bim-ootb/issues/1099)) ([3f29f15](https://github.com/red1oon/bim-ootb/commit/3f29f159d40f6142c417007c225a021e62db50a4))
+* **modeller:** row 33 exception ruling — the two clipped party walls come back as 5 real slabs (W-E2E-LAYERS-RESIDENTS 8/8 vs LIVE, RED-first) ([#1102](https://github.com/red1oon/bim-ootb/issues/1102)) ([7cfedab](https://github.com/red1oon/bim-ootb/commit/7cfedabf778b9c3fa55b968407dbaae8ea56abd8))
+* **seams:** §F2 IDB cache version drift — 4D/5D re-download + ERP persist loss ([#1106](https://github.com/red1oon/bim-ootb/issues/1106)) ([d2766f5](https://github.com/red1oon/bim-ootb/commit/d2766f51db5d418fc09b43cffedd21c4a94977c5))
+
+## [1.32.0](https://github.com/red1oon/bim-ootb/compare/v1.31.0...v1.32.0) (2026-07-30)
+
+
+### ✨ Features
+
+* **viewer:** §CPE_ROOM_TITLE — the Film-Maker names the room as the camera enters it ([#1089](https://github.com/red1oon/bim-ootb/issues/1089)) ([aefcb1c](https://github.com/red1oon/bim-ootb/commit/aefcb1c7c87bc12efa2017ac1826fabbea2d5626))
+* **viewer:** §HOVER_NAME — hover the model, see friendly name + room ([#1085](https://github.com/red1oon/bim-ootb/issues/1085)) ([609139b](https://github.com/red1oon/bim-ootb/commit/609139b77f4b5017318e2e72d33b875d5a9c6899))
+* **viewer:** §SCENE_MERGE — File Open offers "merge into the current scene" instead of navigating away ([#1093](https://github.com/red1oon/bim-ootb/issues/1093)) ([3f41d18](https://github.com/red1oon/bim-ootb/commit/3f41d1848b5cf1ec366a26f32c797c697a464325))
+
+
+### 🐛 Fixes
+
+* **import:** bbox from vertices without Math.max.apply + bbox-ghost fallback for envelope-less models ([#1086](https://github.com/red1oon/bim-ootb/issues/1086)) ([6299772](https://github.com/red1oon/bim-ootb/commit/6299772345c1a7302c83d99043481989e6f1d894))
+* **modeller:** §GEO-SERVED — the live Modeller never received its mesh file, so it drew bounding boxes ([#1090](https://github.com/red1oon/bim-ootb/issues/1090)) ([84d9878](https://github.com/red1oon/bim-ootb/commit/84d9878b0fdc297fa889319165d699486a4646be))
+* **modeller:** bump service-worker cache v37→v38 so the §GEO-SERVED fix actually reaches a returning browser ([#1091](https://github.com/red1oon/bim-ootb/issues/1091)) ([be88cce](https://github.com/red1oon/bim-ootb/commit/be88cced1716536b89f2ae109fe70d6fb01e8921))
+* **modeller:** Walk-ALL tooltip + proxy-mode toast + §SEL-TINT-REFOLD ([#1094](https://github.com/red1oon/bim-ootb/issues/1094)) ([31206ac](https://github.com/red1oon/bim-ootb/commit/31206ace771691936c96c5990a86125a2cd86ba5))
+* **viewer:** §CACHE_KEY — stop re-downloading a building that's already in IndexedDB ([#1088](https://github.com/red1oon/bim-ootb/issues/1088)) ([b236e9e](https://github.com/red1oon/bim-ootb/commit/b236e9e0bee0a408ab2cdb1058ca0ca3ad743278))
+
+## [1.31.0](https://github.com/red1oon/bim-ootb/compare/v1.30.0...v1.31.0) (2026-07-28)
+
+
+### ✨ Features
+
+* **cinema:** §CPE_BUILDUP_REAL_SCHEDULE — reveal by the REAL schedule when one exists ([#1078](https://github.com/red1oon/bim-ootb/issues/1078)) ([3d440e5](https://github.com/red1oon/bim-ootb/commit/3d440e55c066cbc42e4d6bd6a8032e573bcc4b68))
+* **ifc:** KUL/ stress-test README + reusable large-IFC preflight script ([#1076](https://github.com/red1oon/bim-ootb/issues/1076)) ([79a0d79](https://github.com/red1oon/bim-ootb/commit/79a0d790c1d97f3aba49518b9972621a22c4f6e3))
+* **ifc:** preflight script also reports unique-shape vs placed-instance counts ([#1077](https://github.com/red1oon/bim-ootb/issues/1077)) ([11cebad](https://github.com/red1oon/bim-ootb/commit/11cebad147f6dec0ea901811f1361254e922ba05))
+* **photoreal:** §BILLBOARD_NAME_ELEMENT — the name plate is a real element, revealed last ([#1079](https://github.com/red1oon/bim-ootb/issues/1079)) ([c620bfc](https://github.com/red1oon/bim-ootb/commit/c620bfc251addf49fb9cb75a8fb70d801ba6e396))
+
+
+### 🐛 Fixes
+
+* **buildings:** restore HHS_Office_Federated_extracted.db — PR [#1071](https://github.com/red1oon/bim-ootb/issues/1071) replaced it with a symlink ([#1073](https://github.com/red1oon/bim-ootb/issues/1073)) ([5de3562](https://github.com/red1oon/bim-ootb/commit/5de3562f2248414a955c882e50437b0ad5edfc21))
+* **cinema:** §CPE_CLICK_SLOP — a 4px click on the pipe spawns a stick again ([#1083](https://github.com/red1oon/bim-ootb/issues/1083)) ([58ef91f](https://github.com/red1oon/bim-ootb/commit/58ef91f74b3b805e9b8bd5abe38a82b440b3956f))
+* **cinema:** §CPE_REOPEN_DOUBLE — re-open ADOPTS the authored bands instead of re-seeding them ([#1081](https://github.com/red1oon/bim-ootb/issues/1081)) ([994c0d6](https://github.com/red1oon/bim-ootb/commit/994c0d6f7baf8bf436b05708200de40e57f5b181))
+
+
+### ⚡ Performance
+
+* **viewer:** MergedMesh low-draw path restored (GUID-exact) + HBA opt-in — mobile LTU ([#1071](https://github.com/red1oon/bim-ootb/issues/1071)) ([f091f26](https://github.com/red1oon/bim-ootb/commit/f091f26a5ced174c188ffd2347befbe41ebf68f7))
+
+## [1.30.0](https://github.com/red1oon/bim-ootb/compare/v1.29.0...v1.30.0) (2026-07-27)
+
+
+### ✨ Features
+
+* **night:** §NIGHT_LIGHT_MIX + §NIGHT_MIX_RATIO — mixed colour temperature ([#1055](https://github.com/red1oon/bim-ootb/issues/1055)) ([a6c6caa](https://github.com/red1oon/bim-ootb/commit/a6c6caa45b02581e334733a5fef4f679cda8e59a))
+* **night:** §PHOTO_GLOW_SPRITE — luminaires light up in night mode, without touching a scene material ([#1057](https://github.com/red1oon/bim-ootb/issues/1057)) ([2941984](https://github.com/red1oon/bim-ootb/commit/294198430d579b37dd1a20d4b840cb6707e47dc2))
+* **photoreal:** §BILLBOARD_ART — billboard artwork quad, PNG-from-DB-folder with a notice fallback ([#1066](https://github.com/red1oon/bim-ootb/issues/1066)) ([9345273](https://github.com/red1oon/bim-ootb/commit/9345273a5f471cd49fb17b40e015f8305e8ac792))
+* **photoreal:** §BILLBOARD_SOURCE + §BILLBOARD_FIT + §BILLBOARD_ALWAYS ([#1069](https://github.com/red1oon/bim-ootb/issues/1069)) ([38753c0](https://github.com/red1oon/bim-ootb/commit/38753c0a98794c899b69220761699ccf00cfce16))
+* **photoreal:** §FACADE_WARM_COOL — the facade wash stops contradicting the scene's own two illuminants ([#1064](https://github.com/red1oon/bim-ootb/issues/1064)) ([41d3523](https://github.com/red1oon/bim-ootb/commit/41d35234805b445c2e3b19bb068cdccfd07bf265))
+* **viewer:** add Blank Viewer card to the Buildings/IFC hub ([#1068](https://github.com/red1oon/bim-ootb/issues/1068)) ([fbcd47c](https://github.com/red1oon/bim-ootb/commit/fbcd47ca4b8afba48890cc5d22c4dfe09e42a1aa))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_LOOKAHEAD_ARC — remove the look-ahead threshold that WAS the jerk ([#1044](https://github.com/red1oon/bim-ootb/issues/1044)) ([0eda490](https://github.com/red1oon/bim-ootb/commit/0eda490a06dd02b5e167848debf30102026c3db3))
+* **cinema:** §CPE_NOISE_LAW + drag scale/land-first + basis pin ([#1050](https://github.com/red1oon/bim-ootb/issues/1050)) ([2243034](https://github.com/red1oon/bim-ootb/commit/2243034d8d129cded55ca1a495d2d4f22e326e4e))
+* **cinema:** §CPE_PREVIEW_AFTER + P4 rotation gate + §CPE_DRAG_TRACK ([#1052](https://github.com/red1oon/bim-ootb/issues/1052)) ([998750e](https://github.com/red1oon/bim-ootb/commit/998750e9422097ac848aee1c054e9b4bcca7e0f0))
+* **cinema:** turn budget + longer bars + the instrument bug that hid both ([#1047](https://github.com/red1oon/bim-ootb/issues/1047)) ([fa6d251](https://github.com/red1oon/bim-ootb/commit/fa6d251dc92158d15405d001430f6b4ac2630ac3))
+* **maxq:** §MAXQ_ETA_TICK — progress readout driven by measured time, not frame count ([#1046](https://github.com/red1oon/bim-ootb/issues/1046)) ([de11b91](https://github.com/red1oon/bim-ootb/commit/de11b9145e7290fb5354c766c71c6dfaa0d0d247))
+* **maxq:** hidden-tab pause + §PHOTO_EMBER/§PHOTO_BLOOM + night-mode luminaire fixes ([#1054](https://github.com/red1oon/bim-ootb/issues/1054)) ([1d1f3ff](https://github.com/red1oon/bim-ootb/commit/1d1f3ff26614ef11bfd8b622f816a3ba25c53d75))
+* **modeller:** IFC-opened buildings render ZERO ARC geometry — seed the editable substrate ([#1062](https://github.com/red1oon/bim-ootb/issues/1062)) ([be5da13](https://github.com/red1oon/bim-ootb/commit/be5da13f1fe45f9a560696245809a4d31c98467b))
+* **modeller:** ship rel_fills_host for Duplex + SampleHouse — hosted doors actually ride now ([#1065](https://github.com/red1oon/bim-ootb/issues/1065)) ([c49c057](https://github.com/red1oon/bim-ootb/commit/c49c0577d68c5fdbdb34fd1a5829120f166db9b2))
+* **modeller:** ship SampleCastle rel_fills_host — stretchRide no longer no-ops for lack of the table ([#1051](https://github.com/red1oon/bim-ootb/issues/1051)) ([8de0644](https://github.com/red1oon/bim-ootb/commit/8de06447aba8bcda391c02d2165bb3714788f892))
+* **night:** §GLOW_EMIT_DOWN — recessed troffers and downlights were lit inside the ceiling ([#1058](https://github.com/red1oon/bim-ootb/issues/1058)) ([51c0a01](https://github.com/red1oon/bim-ootb/commit/51c0a0103bb6d3abb43c30da82c448bb4e41d192))
+* **night+bloom:** §BLOOM_BLACK_BOXES, §NIGHT_DIFFUSER, §LUM_VARIANT, §NIGHT_ROLE_EXCLUDE ([#1059](https://github.com/red1oon/bim-ootb/issues/1059)) ([5d6b2f3](https://github.com/red1oon/bim-ootb/commit/5d6b2f33ba6af2dac5a478347beb49f3490cd246))
+* **photoreal:** §GROUND_ALBEDO + §GROUND_COLOR_ORDER_FIX — the evening ground was at 1/3 brightness ([#1063](https://github.com/red1oon/bim-ootb/issues/1063)) ([10059e2](https://github.com/red1oon/bim-ootb/commit/10059e2e36fc67e66e85ff4bc09b8c74b7d7ebee))
+* **sw:** bump CACHE_VERSION v865-&gt;v866 + tools/effects/streaming ?v= — the fix was on main, the browser never got it ([#1061](https://github.com/red1oon/bim-ootb/issues/1061)) ([4b38804](https://github.com/red1oon/bim-ootb/commit/4b38804470c3cb33b056ee36739f0031411a5c23))
+
+
+### 📝 Documentation
+
+* **cinema:** §CPE_DRAG_TRACK — record WHY the amplification is wanted ([#1053](https://github.com/red1oon/bim-ootb/issues/1053)) ([432a049](https://github.com/red1oon/bim-ootb/commit/432a049c8d59edd8301a832a8da3a36683e14e3a))
+* **readme:** announce BIM OOTB Film-Maker (Alt+C), link the demo film ([#1049](https://github.com/red1oon/bim-ootb/issues/1049)) ([970414f](https://github.com/red1oon/bim-ootb/commit/970414f1c16a526cf107a310c54001e0e9aeead0))
+
+
+### ⏪ Reverts
+
+* **night:** strip every scene-material write and the material-cache split ([#1060](https://github.com/red1oon/bim-ootb/issues/1060)) ([33e7718](https://github.com/red1oon/bim-ootb/commit/33e77182afca06cc4cfba714387451e35b6d4889))
+* **photoreal:** §PHOTO_EMBER_DISARMED — turn the still-lighting batch OFF pending a dedicated session ([#1056](https://github.com/red1oon/bim-ootb/issues/1056)) ([819863e](https://github.com/red1oon/bim-ootb/commit/819863e9b86846b161df6cbc0772cb1bebe10f7f))
+* **precision-cam:** remove §RESET_AMBIENT_AUTO entirely — pivot went haywire in real use ([#1048](https://github.com/red1oon/bim-ootb/issues/1048)) ([bac40e6](https://github.com/red1oon/bim-ootb/commit/bac40e6ca6544f42ed58e111dc121debb4e68765))
+
+## [1.29.0](https://github.com/red1oon/bim-ootb/compare/v1.28.0...v1.29.0) (2026-07-27)
+
+
+### ✨ Features
+
+* **cinema:** §CINEMA_PATH_EDITOR — waypoint editor in the Alt+C gap ([#1023](https://github.com/red1oon/bim-ootb/issues/1023)) ([08bbd3e](https://github.com/red1oon/bim-ootb/commit/08bbd3e6c2692a2d9f4eeff1c9e30dc9766e7e9a))
+* **cinema:** §CPE_BANDS — rigid bands, tangent-matched connectors, full-film tube ([#1026](https://github.com/red1oon/bim-ootb/issues/1026)) ([ecbeacc](https://github.com/red1oon/bim-ootb/commit/ecbeacc9660c6772217166030290e8454f65a429))
+* **cinema:** §CPE_EVEN_TURN + §CPE_SEAM_CONTINUOUS + §CPE_UNDO ([#1042](https://github.com/red1oon/bim-ootb/issues/1042)) ([5687e14](https://github.com/red1oon/bim-ootb/commit/5687e1436e717f4a41c8bf5ee718591c182b26e8))
+* **cinema:** §CPE_PANEL_DRAG — the path editor panel moves by its header ([#1030](https://github.com/red1oon/bim-ootb/issues/1030)) ([1456d9a](https://github.com/red1oon/bim-ootb/commit/1456d9a83bd8fee8427b562883a66661ab06054d))
+* **cinema:** §CPE_SCREEN_PLANE drag + §CPE_PACING derived duration ([#1027](https://github.com/red1oon/bim-ootb/issues/1027)) ([8c310eb](https://github.com/red1oon/bim-ootb/commit/8c310eb8efe0d380abad69c721a98b7460d827fc))
+* **cinema:** §CPE_WALK 2.3m/s base pace + §CPE_DRAG_REACH gesture cap ([#1037](https://github.com/red1oon/bim-ootb/issues/1037)) ([758c45c](https://github.com/red1oon/bim-ootb/commit/758c45c62b196648f888204f6868a47f0a6a6c08))
+* **precision-cam:** §PIVOT_AMBIENT_AUTO — continuous nav by default, without touching Q/Fine/Reset ([#1039](https://github.com/red1oon/bim-ootb/issues/1039)) ([10d6670](https://github.com/red1oon/bim-ootb/commit/10d66700a7f7a6153dcac598b85e585363ac27f4))
+* **precision-cam:** §PIVOT_DEFAULT_ON — Auto-Pivot active by default, Fine wins over auto-recenter ([#1033](https://github.com/red1oon/bim-ootb/issues/1033)) ([da61ccb](https://github.com/red1oon/bim-ootb/commit/da61ccb28d7956fbfaf9cc0350040fde39042876))
+
+
+### 🐛 Fixes
+
+* **bugreport:** §BUGREPORT_MAILTO_LEN — cascade-truncate email log lines to fit mailto: length limit ([#1028](https://github.com/red1oon/bim-ootb/issues/1028)) ([fad6992](https://github.com/red1oon/bim-ootb/commit/fad6992a837162a4c2e060bd22370c2a012a5f73))
+* **cinema:** §CINEMA_DAMPING_BLEED — OrbitControls damping overwrites the authored cinema pose ([#1020](https://github.com/red1oon/bim-ootb/issues/1020)) ([8ad8877](https://github.com/red1oon/bim-ootb/commit/8ad8877f0558e5962c3d7465d132dac8f78eed00))
+* **cinema:** §CINEMA_PATH_EDITOR — no-hit fan is UNKNOWN not 60m, plus orange held-state feedback ([#1025](https://github.com/red1oon/bim-ootb/issues/1025)) ([15c54a0](https://github.com/red1oon/bim-ootb/commit/15c54a077e920b54fcc4653b894d7cd2ec7a82d5))
+* **cinema:** §CPE_DRAG_TELEPORT — mid-band drag moves by the gesture, not to the cursor ray ([#1035](https://github.com/red1oon/bim-ootb/issues/1035)) ([eecb9c5](https://github.com/red1oon/bim-ootb/commit/eecb9c5fc86fc247f2db1d0da3af585b588b29ad))
+* **cinema:** §CPE_OK_CRASH — OK after a path edit no longer kills the bake ([#1029](https://github.com/red1oon/bim-ootb/issues/1029)) ([db04360](https://github.com/red1oon/bim-ootb/commit/db043609ad44176781e6142f79adaab5a9ca3b95))
+* **cinema:** §CPE_PREVIEW_DIVERGENCE — the film you edit is the film that bakes ([#1031](https://github.com/red1oon/bim-ootb/issues/1031)) ([2fc4db9](https://github.com/red1oon/bim-ootb/commit/2fc4db9074ca1791d26705d2c433f77de59e833c))
+* **cinema:** remove §CPE_DRAG_REACH cap — G-DRAG-3 measured it BREAKING out-and-back ([#1038](https://github.com/red1oon/bim-ootb/issues/1038)) ([f23127c](https://github.com/red1oon/bim-ootb/commit/f23127c96ea9bd3ae91b21dd24441f685b21b5ca))
+* **precision-cam:** §RESET_AMBIENT_AUTO calls resetOrbit() (A), not recenterPivot() (Q) ([#1040](https://github.com/red1oon/bim-ootb/issues/1040)) ([325896c](https://github.com/red1oon/bim-ootb/commit/325896ccdf725b03bb8473b309a1df12af3e0007))
+* **precision-cam:** re-check Q/Fine at fire-time, not just at count-time ([#1041](https://github.com/red1oon/bim-ootb/issues/1041)) ([e89418e](https://github.com/red1oon/bim-ootb/commit/e89418ed09eeb129531822845aa9a8085a49f50b))
+* **staffage:** §STAFFAGE_OUTSIDE_VARIETY + §STAFFAGE_FLOOR_PHANTOM — one sprite for everyone, and figures 3.5m in the air ([#1022](https://github.com/red1oon/bim-ootb/issues/1022)) ([37ccd52](https://github.com/red1oon/bim-ootb/commit/37ccd52de3de0cecc101346bf1ba0f6484f9d9db))
+* **viewer:** Find-panel close-leak recovery + Hall/Corridor shell reveal ([#1019](https://github.com/red1oon/bim-ootb/issues/1019)) ([c564934](https://github.com/red1oon/bim-ootb/commit/c564934e06b790b8fb520c57b71f0564c61ad0be))
+
+
+### ⏪ Reverts
+
+* **precision-cam:** §PIVOT_DEFAULT_ON — back to opt-in, real usage showed drift + breaks Reset ([#1034](https://github.com/red1oon/bim-ootb/issues/1034)) ([08c0809](https://github.com/red1oon/bim-ootb/commit/08c0809fdccf2178e0a2deb9c25413f8f9a9cb8a))
+
+## [1.28.0](https://github.com/red1oon/bim-ootb/compare/v1.27.0...v1.28.0) (2026-07-26)
+
+
+### ✨ Features
+
+* **tour:** §TOUR-POLYLINE — Fly Tour flies the A* on-floor polyline, not node centroids ([#1012](https://github.com/red1oon/bim-ootb/issues/1012)) ([ee0b844](https://github.com/red1oon/bim-ootb/commit/ee0b8443b2e8f38abbbcace65693b61bc3aeeb00))
+* **viewer:** single room-select cuboid now shows its own real door(s) ([#1016](https://github.com/red1oon/bim-ootb/issues/1016)) ([dbff9f4](https://github.com/red1oon/bim-ootb/commit/dbff9f49bf5494e2684dabcb48d10d049735530a))
+
+
+### 🐛 Fixes
+
+* **cinema:** §CINEMA_TURN_SLERP — the look-back was a ONE-FRAME 180° snap, not a turn ([#1018](https://github.com/red1oon/bim-ootb/issues/1018)) ([1ccc024](https://github.com/red1oon/bim-ootb/commit/1ccc0244a579d2761dbe3dd5349f21d9d56eebe5))
+* **graph:** §G1-EXIT-IS-A-LIFT-DOOR step 1 — an `exit` node was a lift door; stop creating it ([#1014](https://github.com/red1oon/bim-ootb/issues/1014)) ([78036f6](https://github.com/red1oon/bim-ootb/commit/78036f66fc1fc58339b9a16002478e9f1de29a42))
+* **graph:** bound the detour search (§DETOUR-MID-MARGIN) + explain the door-revisit wiggle instead of trading it for a longer line ([#1010](https://github.com/red1oon/bim-ootb/issues/1010)) ([34c0286](https://github.com/red1oon/bim-ootb/commit/34c028621f79ca2d5b7ecdfa0bcf31ac940c82d7))
+* **graph:** Room→Path draws on real floor — raster union, door/stair thresholds, floor-plane raster (§17) ([#1006](https://github.com/red1oon/bim-ootb/issues/1006)) ([8356978](https://github.com/red1oon/bim-ootb/commit/8356978205879a4fdb02d218b167f8b6334af957))
+* **sw:** serve buildings/patches/*.sql network-first — an updated DB patch could never reach a client ([#1009](https://github.com/red1oon/bim-ootb/issues/1009)) ([ffb71b1](https://github.com/red1oon/bim-ootb/commit/ffb71b176d7d2d22f8575c83bb98f5a9c6486557))
+* **tour:** §SCRUB_BAR_LIFECYCLE — scrub bar returns after a canvas interrupt (11/11) ([#1002](https://github.com/red1oon/bim-ootb/issues/1002)) ([a2d01c7](https://github.com/red1oon/bim-ootb/commit/a2d01c7082b4e14b2a534ce36a8a5e0fc51671f8))
+* **viewer:** §ROOM_PATH — split the misnamed rooms=[] into stops=[] and via=[] ([#1007](https://github.com/red1oon/bim-ootb/issues/1007)) ([491413f](https://github.com/red1oon/bim-ootb/commit/491413ffb4e3e277c23b7e7f4a61dfb7f4bf57d2))
+* **viewer:** guarantee a fresh shadow reassert before Alt+S/Alt+C frame handoff (§PHOTO_SHADOW_FINALCAPTURE) ([#1004](https://github.com/red1oon/bim-ootb/issues/1004)) ([de7120f](https://github.com/red1oon/bim-ootb/commit/de7120f1d414996693b70c28e385d5694f89cc97))
+* **viewer:** salvage MaxQ bakes that lose their IDB connection or WebGL context mid-run ([#1011](https://github.com/red1oon/bim-ootb/issues/1011)) ([8f7be57](https://github.com/red1oon/bim-ootb/commit/8f7be576473d24f773c2442105aa93f3462495bf))
+* **viewer:** stop scene.js's throttled sky env-map regen from clobbering a staged HDRI (§ENVMAP_STOMP_GUARD) ([#1005](https://github.com/red1oon/bim-ootb/issues/1005)) ([9b01172](https://github.com/red1oon/bim-ootb/commit/9b01172f365c17be9fa6e3e6850230f0fd9e0546))
+
+## [1.27.0](https://github.com/red1oon/bim-ootb/compare/v1.26.0...v1.27.0) (2026-07-25)
+
+
+### ✨ Features
+
+* **deploy:** §PATCH-PROVENANCE-GATE — mechanical pre-upload check for OCI patches ([#998](https://github.com/red1oon/bim-ootb/issues/998)) ([9f18562](https://github.com/red1oon/bim-ootb/commit/9f18562f9d6ad91c348fc96c8d15c18f365ab569))
+* **graph:** §ROOM-SPINE-BRIDGE — connect stranded rooms to circulation; pathability 56%→86% ([#995](https://github.com/red1oon/bim-ootb/issues/995)) ([4a65a44](https://github.com/red1oon/bim-ootb/commit/4a65a44a4ff19f44abe3e4969f5edbd4203e4c5e))
+* **tour:** §SCRUB_PANEL_DRAG — draggable Fly Tour scrub panel (10/10 witnesses) ([#1000](https://github.com/red1oon/bim-ootb/issues/1000)) ([52682b5](https://github.com/red1oon/bim-ootb/commit/52682b51704d4c6fce358dc122462e81122d76f2))
+* **tour:** §TOUR_TIMELINE_SCRUB — continuous Fly Tour scrub bar, pose = f(T) ([#999](https://github.com/red1oon/bim-ootb/issues/999)) ([12ef411](https://github.com/red1oon/bim-ootb/commit/12ef411951792670b1536a1c9e7a110caf1ecc37))
+* **viewer:** Cinema/MaxQ Alt+C timing — 6/6 dive-out, roll-to-stop, HDRI race fix ([#978](https://github.com/red1oon/bim-ootb/issues/978)) ([cbb8cae](https://github.com/red1oon/bim-ootb/commit/cbb8cae99bafc756afcd593978c79ce07e21d145))
+* **viewer:** Fly Tour highlight-first routing — main hall → stairs → the rest ([#989](https://github.com/red1oon/bim-ootb/issues/989)) ([fab68d4](https://github.com/red1oon/bim-ootb/commit/fab68d4e026e22f430ac5c3ea69bb8cc83cbd3f5))
+
+
+### 🐛 Fixes
+
+* **graph:** §BRIDGE-ROUTED-LEGAL — gate room-spine bridges on a walkable ROUTE, not a straight chord ([#997](https://github.com/red1oon/bim-ootb/issues/997)) ([abc48cd](https://github.com/red1oon/bim-ootb/commit/abc48cd5922afe9dfc8ac56e7a79e5f65cc2adb2))
+* **graph:** §BRIDGE-WALL-LEGAL — gate room-spine bridges on a measured chord ([#996](https://github.com/red1oon/bim-ootb/issues/996)) ([290c6be](https://github.com/red1oon/bim-ootb/commit/290c6be49e3376ebfa657fd2a01d6eeb4c51dd9a))
+* **viewer:** bump TOUR_CACHE_VER v12→v13 — §HL-FIRST was masked by a stale cached route ([#991](https://github.com/red1oon/bim-ootb/issues/991)) ([5b8c071](https://github.com/red1oon/bim-ootb/commit/5b8c071846bcceff2841d3fd8494c0ed165e28b1))
+* **viewer:** Cinema orbit — symmetric smooth ease, MaxQ HDRI wait, exit-gaze corner fix ([#979](https://github.com/red1oon/bim-ootb/issues/979)) ([8d12254](https://github.com/red1oon/bim-ootb/commit/8d1225422f256de4c5c4806d4dd5b55ace176e30))
+* **viewer:** Fly Tour — SUSPECT_OPEN rooms are eligible highlight destinations ([#994](https://github.com/red1oon/bim-ootb/issues/994)) ([b951cae](https://github.com/red1oon/bim-ootb/commit/b951caeabdfc2cf64f5e631be055015cfa1a0b85))
+* **viewer:** Fly Tour flyPath — bound look-ahead to absolute distance, not fraction of total path ([#986](https://github.com/red1oon/bim-ootb/issues/986)) ([119b5f0](https://github.com/red1oon/bim-ootb/commit/119b5f0d56d0f69517fd05e4f4601f57fa5af55f))
+* **viewer:** Fly Tour interior pacing — 0.3x baseline + real-turn-angle slowdown, 2x entrance zoom ([#980](https://github.com/red1oon/bim-ootb/issues/980)) ([45d22b5](https://github.com/red1oon/bim-ootb/commit/45d22b522fb57b4493198e831944359092738b4e))
+* **viewer:** Fly Tour interior pacing — measure line-of-sight ahead, not omnidirectional min ([#985](https://github.com/red1oon/bim-ootb/issues/985)) ([6938759](https://github.com/red1oon/bim-ootb/commit/6938759b4c44dc55b3da612141e71d2d208b3091))
+* **viewer:** Fly Tour pacing — narrow clamp again + collapse to single PACE_SWING knob ([#988](https://github.com/red1oon/bim-ootb/issues/988)) ([c722195](https://github.com/red1oon/bim-ootb/commit/c7221953bf15f300ca6b10f7c18d885c8736878b))
+* **viewer:** Fly Tour pacing — narrow inverse-distance clamp range, less extreme ([#987](https://github.com/red1oon/bim-ootb/issues/987)) ([077391d](https://github.com/red1oon/bim-ootb/commit/077391d30d3df28461d13df726c426d6bc12c12a))
+* **viewer:** Fly Tour pacing v2 — real height/distance-based inverse law (orphaned from [#980](https://github.com/red1oon/bim-ootb/issues/980)) ([#984](https://github.com/red1oon/bim-ootb/issues/984)) ([3918140](https://github.com/red1oon/bim-ootb/commit/39181404cadf27c59d06743d4b6f5dc86adde619))
+
+
+### ⚡ Performance
+
+* **viewer:** object-count fix + walkTick damping fix (LTU 200-270ms→86.7ms) ([#981](https://github.com/red1oon/bim-ootb/issues/981)) ([1c2a625](https://github.com/red1oon/bim-ootb/commit/1c2a625b4f9688b369314d7f8811a088beea18cf))
+* **viewer:** skip redundant shadow-reassert traversals in Alt+S/Alt+C ([#983](https://github.com/red1oon/bim-ootb/issues/983)) ([0760a2b](https://github.com/red1oon/bim-ootb/commit/0760a2b1d57a0d6e5c2a831062317e43ebaf6402))
+
+
+### 📝 Documentation
+
+* **readme:** refresh stale commit/PR/module/building counts ([#992](https://github.com/red1oon/bim-ootb/issues/992)) ([754ce8d](https://github.com/red1oon/bim-ootb/commit/754ce8d11738b24364ee44693dda9baae1df8f4f))
+
+## [1.26.0](https://github.com/red1oon/bim-ootb/compare/v1.25.0...v1.26.0) (2026-07-22)
+
+
+### ✨ Features
+
+* **viewer:** R room-cycle + Home fill-frame keyboard shortcuts ([#969](https://github.com/red1oon/bim-ootb/issues/969)) ([ed1caa5](https://github.com/red1oon/bim-ootb/commit/ed1caa5e256822e952d499e7cd048167800baee3))
+* **viewer:** room-graph portal PVS, step 2 (FLY_TOUR_DLOD_SCALE.md §16) ([#971](https://github.com/red1oon/bim-ootb/issues/971)) ([cb503f4](https://github.com/red1oon/bim-ootb/commit/cb503f4bee5ba3b234799b7a2531ffed871421f6))
+
+## [1.25.0](https://github.com/red1oon/bim-ootb/compare/v1.24.0...v1.25.0) (2026-07-22)
+
+
+### ✨ Features
+
+* **erp:** Confirm & Post — Generate-Shipments/Invoices/PO results now actually commit ([#960](https://github.com/red1oon/bim-ootb/issues/960)) ([81518d2](https://github.com/red1oon/bim-ootb/commit/81518d2bf725dd5c27a9d48833fd23e3c05bba51))
+* **room-path:** raster-constrained A* polyline — the drawn route hugs real floor (§13 Stage B) ([#967](https://github.com/red1oon/bim-ootb/issues/967)) ([302f694](https://github.com/red1oon/bim-ootb/commit/302f694ea4ae51bfaba6c576571daa161cf77ec1))
+* **rooms:** §ROOM_WALKER_VERSION_STAMP stage 3 — HHS-only version-check pilot ([#939](https://github.com/red1oon/bim-ootb/issues/939)) ([811a7e3](https://github.com/red1oon/bim-ootb/commit/811a7e3f3180460f796e73e17158e080fe485964))
+* **rooms:** §ROOM_WALKER_VERSION_STAMP stage 4 — widen version-check fleet-wide ([#947](https://github.com/red1oon/bim-ootb/issues/947)) ([34e6495](https://github.com/red1oon/bim-ootb/commit/34e6495237b7f8231082e5c0edf5887d0c3b1a61))
+* **viewer:** 'o' DLOD-nav warms rooms via the existing ensureRooms path (idle-deferred) ([#942](https://github.com/red1oon/bim-ootb/issues/942)) ([b48a576](https://github.com/red1oon/bim-ootb/commit/b48a57676ab740826be5ac2db13a3e8b0a4062b4))
+* **viewer:** GPU capability degradation warning (FLY_TOUR_DLOD_SCALE.md §14) ([#965](https://github.com/red1oon/bim-ootb/issues/965)) ([9e33777](https://github.com/red1oon/bim-ootb/commit/9e337773913cc024503fa77c6d8bfedfefe4d529))
+* **viewer:** log active CACHE_VERSION at page onset (§BUILD_VERSION) ([#951](https://github.com/red1oon/bim-ootb/issues/951)) ([9bf2688](https://github.com/red1oon/bim-ootb/commit/9bf26881d6dcf2b05b8294951d6fd8fd45767857))
+* **viewer:** room-mismatch demote, step 1 (FLY_TOUR_DLOD_SCALE.md §13) ([#962](https://github.com/red1oon/bim-ootb/issues/962)) ([e84a079](https://github.com/red1oon/bim-ootb/commit/e84a079e6e36f1c52cd485c7a8f1f090fb65c922))
+* **viewer:** status-bar confirmation on Nav LOD toggle (user ask) — ON/OFF message, 5s auto-clear ([#941](https://github.com/red1oon/bim-ootb/issues/941)) ([7ba7537](https://github.com/red1oon/bim-ootb/commit/7ba75378e9c35a62eb385ac9c6b584e51240ce65))
+
+
+### 🐛 Fixes
+
+* **cinema:** spin-at-wall — glazing hits no longer trigger avoidance nudging (prompts/PHOTOREAL_STILL_RENDER.md §Issue 2a) ([#958](https://github.com/red1oon/bim-ootb/issues/958)) ([57a0f4d](https://github.com/red1oon/bim-ootb/commit/57a0f4dcef6d552f80822ed346cb35df96c57ad4))
+* **disc-walker:** STOREY-ZBAND — measured-interval Z guard for hostBind SIDE selection ([#963](https://github.com/red1oon/bim-ootb/issues/963)) ([e5dd2bf](https://github.com/red1oon/bim-ootb/commit/e5dd2bf38575ae8217436384275cc9a71f8f7451))
+* **erp:** C_Order.DeliveryRule/InvoiceRule now derive real AD_Column defaults, not left undefined ([#955](https://github.com/red1oon/bim-ootb/issues/955)) ([e27d1bf](https://github.com/red1oon/bim-ootb/commit/e27d1bfbdc0861c52014dc46aa7d54de869ae4e6))
+* **erp:** child-tab New forms seed their locked parent-link FK with the real parent pk ([#956](https://github.com/red1oon/bim-ootb/issues/956)) ([0269cec](https://github.com/red1oon/bim-ootb/commit/0269cec26b077f23c76ed8ad204cf02bc342c98a))
+* **erp:** cleanVals lets hook-derived CREATE fields ride the op — M_Warehouse_ID no longer dropped ([#944](https://github.com/red1oon/bim-ootb/issues/944)) ([b70f1ba](https://github.com/red1oon/bim-ootb/commit/b70f1baee406ea3614808085f846b0da7c4480e7))
+* **erp:** fold the op-log overlay into the Generate-Shipments/Invoices order picker ([#938](https://github.com/red1oon/bim-ootb/issues/938)) ([2033997](https://github.com/red1oon/bim-ootb/commit/20339977ad6602d28e3d40cec08dce2d5ff988e2))
+* **erp:** Generate-Shipments/Invoices handlers fold the op-log overlay, not just the raw base table ([#948](https://github.com/red1oon/bim-ootb/issues/948)) ([573a29f](https://github.com/red1oon/bim-ootb/commit/573a29f42687297b5703861149ec30c958e4c403))
+* **erp:** listTip's stdDefaults fold writes lowercase columns, not mixed-case — fixes AD_Org_ID=NaN ([#968](https://github.com/red1oon/bim-ootb/issues/968)) ([e73c23c](https://github.com/red1oon/bim-ootb/commit/e73c23cd9e94494b7d5e24a25778ebfc4581b46a))
+* **erp:** Sales vs Purchase Order windows now derive a real, distinct DocType/IsSOTrx ([#953](https://github.com/red1oon/bim-ootb/issues/953)) ([e9a35c7](https://github.com/red1oon/bim-ootb/commit/e9a35c7d2ea7ac61300eea4734c1f25db14c261e))
+* **raster:** split-DB-aware walkable-raster build — Terminal slabs 0/174 → 174/174 ([#964](https://github.com/red1oon/bim-ootb/issues/964)) ([f60344a](https://github.com/red1oon/bim-ootb/commit/f60344a64142caad38f47c4b61b9fe8b4ce943c1))
+* **room-graph:** tag door-carrying service rooms for routing (close §10 gap) ([#961](https://github.com/red1oon/bim-ootb/issues/961)) ([03a6cb7](https://github.com/red1oon/bim-ootb/commit/03a6cb702693806c87240b000f29a377247a55bb))
+* **room-graph:** utility-room routing penalty in shared Dijkstra weighting ([#959](https://github.com/red1oon/bim-ootb/issues/959)) ([6209f54](https://github.com/red1oon/bim-ootb/commit/6209f54971dfa21f4e79c0834242a0da0b29eca3))
+* **rooms:** Find Panel Room lens calls A.ensureRooms() itself — no longer depends on Fly/Cinema/DLOD warming it first ([#954](https://github.com/red1oon/bim-ootb/issues/954)) ([df5def1](https://github.com/red1oon/bim-ootb/commit/df5def1a26408be531ad60db68cde46078e43f42))
+* **rooms:** port containment storey-alias fix to room_walker.js (JS twin) ([#950](https://github.com/red1oon/bim-ootb/issues/950)) ([1db5117](https://github.com/red1oon/bim-ootb/commit/1db511785e49ffa2f760e7c727ffcd495ee51f9b))
+* **staffage:** Alt+P camera-room avoidance — dd floor + lateral-fan scaling (prompts/PHOTOREAL_STILL_RENDER.md §Issue 1) ([#957](https://github.com/red1oon/bim-ootb/issues/957)) ([33f20c9](https://github.com/red1oon/bim-ootb/commit/33f20c9592d4a50667506db1ee70bb09b25d3e7a))
+* **tour:** IDB route cache + single planning pass — Fly instant on repeat/refresh (TOUR_ROUTE_CACHE.md §5); quiet §PILL_SYNC/§DLOD_NAV log spam ([#940](https://github.com/red1oon/bim-ootb/issues/940)) ([b10f2dd](https://github.com/red1oon/bim-ootb/commit/b10f2dd7303e8dbf7f13b786ceb732f72aa602b8))
+* **viewer:** §CINEMA_SPACE_MEP_SKIP — dive candidates dominated by MEP/plant elements are excluded ([#949](https://github.com/red1oon/bim-ootb/issues/949)) ([9d070e2](https://github.com/red1oon/bim-ootb/commit/9d070e2bac4c067ee4e067b89466bf0434c181fc))
+* **viewer:** §MAXQ_STREAM_FIRST — MaxQ waits for geometry streaming before baking ([#945](https://github.com/red1oon/bim-ootb/issues/945)) ([8e57fb8](https://github.com/red1oon/bim-ootb/commit/8e57fb8a549cb8ff7f2a6390cfa1d445b566c470))
+* **viewer:** bust Fly tour route cache on stage-3 version recompile ([#946](https://github.com/red1oon/bim-ootb/issues/946)) ([7e20d3f](https://github.com/red1oon/bim-ootb/commit/7e20d3f3d9547f76dcf8f43288768338bf93a87a))
+* **viewer:** Nav LOD findable + 'o' shortcut — v1 registered the entry in no drawer list (user: can't find icon; 'b' taken by Background) ([#936](https://github.com/red1oon/bim-ootb/issues/936)) ([2a80960](https://github.com/red1oon/bim-ootb/commit/2a80960fb6ee7d7047ab3baedd295d71b42148fc))
+* **viewer:** NEEDLE_VERSION_STALE/FRAME_STALE log at console.log, not warn ([#952](https://github.com/red1oon/bim-ootb/issues/952)) ([1088805](https://github.com/red1oon/bim-ootb/commit/1088805448f89a1ff36fe6b6402390d76de07c36))
+
+
+### ⚡ Performance
+
+* **viewer:** chunked DLOD-nav evaluation — kills the 42ms in-flight eval hitch (user: 'still lagging in flight') ([#943](https://github.com/red1oon/bim-ootb/issues/943)) ([af6f492](https://github.com/red1oon/bim-ootb/commit/af6f492a17e58e73f8d1e033d426bc45d7a943b9))
+
 ## [1.24.0](https://github.com/red1oon/bim-ootb/compare/v1.23.0...v1.24.0) (2026-07-21)
 
 

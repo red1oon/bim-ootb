@@ -44,7 +44,16 @@ function seedTree(elements, opts) {
     // element has a real IfcSpace container (e.room, derived from rel_contained_in_space). Buildings with
     // no IfcSpace (rooms = weak handle) simply skip this level — NON-INVENT, never a fabricated room.
     var underStorey = sId;
-    if (e.room != null && e.room !== '') underStorey = ensure(sId + '|R|' + e.room, e.room, sId, 'room');
+    if (e.room != null && e.room !== '') {
+      underStorey = ensure(sId + '|R|' + e.room, e.room, sId, 'room');
+      // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1 — the grab target needs the room's real IfcSpace guid, not just
+      // its display name. `opts.roomGuidByName` (storey-scoped, built by seedFromDb below) is EXTRACT-not-invent:
+      // the guid was already read off spatial_structure, just never retained on this node until now.
+      if (!nodes[underStorey].guid && opts.roomGuidByName) {
+        var _rk = st + '|' + e.room;
+        if (opts.roomGuidByName[_rk] != null) nodes[underStorey].guid = opts.roomGuidByName[_rk];
+      }
+    }
     var dId = ensure(underStorey + '|D|' + dc, dc, underStorey, 'disc');
     var cId = ensure(dId + '|C|' + cl, cl, dId, 'class');
     // element leaf — guid is the id (globally unique, GUID-bound = rename/regroup-proof)
@@ -57,7 +66,8 @@ function seedTree(elements, opts) {
     var isLayer = layerOf[st] === true;
     var sId = ensure('S|' + st, isLayer ? (st + ' · layer') : st, ROOT, 'storey');
     if (isLayer) nodes[sId].layer = true;
-    ensure(sId + '|R|' + rm.name, rm.name, sId, 'room');
+    var rId = ensure(sId + '|R|' + rm.name, rm.name, sId, 'room');
+    if (rm.guid != null && !nodes[rId].guid) nodes[rId].guid = rm.guid;   // §2.1: real IfcSpace guid, carried through
   });
   return { nodes: nodes, roots: [ROOT] };
 }
@@ -100,9 +110,14 @@ function seedFromDb(db, opts) {
       var nm = v[1], stn = storeyName[v[2]], h = v[3];
       var habitableStorey = stn != null && doorStoreys[stn] > 0;
       var habitableAABB = (h == null) || (h >= MIN_H);    // no geometry → don't reject on the AABB leg
-      if (nm && habitableStorey && habitableAABB) { spaceRoom[v[0]] = nm; roomList.push({ name: nm, storey: stn }); }
+      if (nm && habitableStorey && habitableAABB) { spaceRoom[v[0]] = nm; roomList.push({ name: nm, storey: stn, guid: v[0] }); }
     });
   } catch (e) { /* spatial_structure lacks type/size_z (legacy DB) → no room level (graceful) */ }
+  // ROOM_MOVE_AND_ITEM_DRAG_SPEC.md §2.1 — storey-scoped name→guid map (two different storeys may legitimately
+  // share a room NAME, e.g. "Bathroom" on floors 1 and 2; scoping by storey keeps each its own real guid).
+  var roomGuidByName = {};
+  roomList.forEach(function (rm) { var k = (rm.storey || '') + '|' + rm.name; if (roomGuidByName[k] == null) roomGuidByName[k] = rm.guid; });
+  opts.roomGuidByName = roomGuidByName;
 
   // element → room: only when the containing space qualified as a room.
   var room = {};
