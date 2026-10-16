@@ -767,7 +767,7 @@
     var win = app._winCtx;
     if (win) for (k in win) fill(String(k).toLowerCase(), win[k]);
     fill('ad_client_id', app.clientId); fill('ad_org_id', app.orgId);
-    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today());
+    fill('ad_user_id', app.actor); fill('salesrep_id', app.actor); fill('date', today()); fill('showadvanced', app.showAdvanced);   // #ShowAdvanced (Login.java:531)
     // window context IsSOTrx = AD_Window.IsSOTrx (host sets APP._createIsSOTrx; _docCtx owns this question).
     if (app._createIsSOTrx === 'Y' || app._createIsSOTrx === 'N') fill('issotrx', app._createIsSOTrx);
     var ctx = {};
@@ -2989,7 +2989,7 @@
                       });
                     },
                     readTip: function (table, id) { return SIDE ? CORE.readTip(SIDE, table, id, _readBranch()) : null; }, history: history,
-                    changeLog: function (table, id) { return SIDE ? CORE.changeLog(SIDE, table, id) : null; },
+                    changeLog: function (table, id, opts) { return SIDE ? CORE.changeLog(SIDE, table, id, opts) : null; },   // §ADMIN-2 opts {roleChangeLog, insertLog, baseRow}
                     fieldLineage: function (table, id, col) { return SIDE ? CORE.fieldLineage(SIDE, table, id, col, _readBranch()) : []; },  // Item 3b (W-FIELD-LINEAGE) + BLUE FUTURE view
                     restoreDraft: restoreDraft, bufferDraft: _bufferDraft,   // Item 1 (W-DRAFT-RESTORE-LIVE): opt-in restore + leave-buffer (host/witness seam)
                     recordInfo: function (table, id) { return SIDE ? CORE.recordInfo(SIDE, table, id, _readBranch()) : null; },  // Item 3a (W-RECINFO): record-level who/when from the op-log

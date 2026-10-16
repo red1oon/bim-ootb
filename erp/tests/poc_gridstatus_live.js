@@ -22,6 +22,7 @@ async function openSalesOrderGrid(page, port, mobile) {
   const top = page.locator('input[placeholder*="Search menu" i]').first();
   if (await top.count() && await top.isVisible().catch(() => false)) { await top.click(); await top.fill('Sales Order'); await page.waitForTimeout(1200);
     await page.locator('text=/Sales Order$/i').first().click().catch(() => {}); await page.waitForTimeout(2500); }
+  await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
 }
 
 (async () => {

@@ -175,6 +175,8 @@
         row('Cache reset', '<button class="sm-reset sm-nuke" data-sm-reset>Reset to seed (full)</button> <span class="sm-dim">nuclear &mdash; drops the WHOLE local footprint: all your tenants, op-log, World history, plugins &amp; device key</span>') +
         '<tr class="sm-grp"><td colspan="2">Logs &amp; Trace</td></tr>' +
         row('Trace', 'the signed <b>op-log</b> is the trace &mdash; replayable, per-tenant (git-for-data). No server log file.') +
+        '<tr class="sm-grp"><td colspan="2">Housekeeping</td></tr>' +
+        '<tr><td colspan="2" id="sm-hk"><span class="sm-dim">reading runtime tables&hellip;</span></td></tr>' +
         '<tr class="sm-grp"><td colspan="2">Servers &amp; Cluster</td></tr>' +
         row('Background processors', 'Accounting / Alert / Scheduler / Workflow run <b>on-open or on-sync</b> &mdash; no always-on daemon to babysit.', true) +
         row('Cluster &amp; threads', 'one browser kernel &mdash; no cluster nodes, no JVM thread pool to tune.', true) +
@@ -204,7 +206,9 @@
     '#sm-root .sm-rf:hover{text-decoration:underline}' +
     '#sm-root .sm-reset{background:#0a4ea3;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}' +
     '#sm-root .sm-nuke{background:#b23030}' +
-    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}';
+    '#sm-root .sm-dim{color:#8a95a3;font-size:11px}' +
+    '#sm-root .sm-hk{width:100%;border-collapse:collapse}#sm-root .sm-hk td{padding:4px 6px;border-bottom:1px solid #eef1f5}' +
+    '#sm-root .sm-hk-red td{background:#fdecec;color:#8a1f1f;box-shadow:inset 0 0 8px rgba(214,40,40,.35)}';
 
   function ensureCss() { if (document.getElementById('sm-css')) return; var s = document.createElement('style'); s.id = 'sm-css'; s.textContent = CSS; document.head.appendChild(s); }
 
@@ -342,6 +346,25 @@
   }
 
   function close() { var r = document.getElementById('sm-root'); if (r) r.remove(); }
+  // §UDP-5 housekeeping panel (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-5, user decision 2026-10-16): runtime/log tables of this client
+  //   over the threshold glow red with "OK to Housekeep"; the scan + the signed deletes are the core's (IdmpHost.housekeeping).
+  //   Saved Parameters (named AD_PInstance) are never deleted. A signed delete shrinks the table, not the op-log bytes (named, ⛔ open).
+  function hkRender(root) {
+    var cell = root.querySelector('#sm-hk'), H = global.IdmpHost && global.IdmpHost.housekeeping;
+    if (!cell) return;
+    if (!H) { cell.innerHTML = '<span class="sm-dim">not available on this page</span>'; return; }
+    H.scan(function (r) {
+      if (!r.loggedIn) { cell.innerHTML = '<span class="sm-dim">log in to see this client&rsquo;s runtime tables</span>'; return; }
+      var html = '<table class="sm-hk">' + r.tables.map(function (t) {
+        return '<tr class="' + (t.red ? 'sm-hk-red' : '') + '" data-hk-table="' + esc(t.table) + '" data-hk-rows="' + t.rows + '"><td>' + esc(t.table) + '</td><td>' + t.rows + ' rows</td><td>' +
+          (t.red ? '<button class="sm-reset sm-hk-go" data-hk-go="' + esc(t.table) + '">OK to Housekeep</button>' : '') + '</td></tr>';
+      }).join('') + '</table><div class="sm-dim">red = over ' + r.threshold + ' rows; housekeep keeps the last ' + r.days + ' days and every Saved Parameter (named process instance)</div>';
+      cell.innerHTML = html;
+      Array.prototype.forEach.call(cell.querySelectorAll('[data-hk-go]'), function (b) {
+        b.addEventListener('click', function () { b.disabled = true; b.textContent = 'Housekeeping…'; H.run(b.getAttribute('data-hk-go'), function () { hkRender(root); }); });
+      });
+    });
+  }
   function open() {
     ensureCss();
     close();
@@ -354,6 +377,7 @@
       root.querySelectorAll('[data-sm-close]').forEach(function (el) { el.addEventListener('click', close); });
       var rb = root.querySelector('[data-sm-reset]'); if (rb) rb.addEventListener('click', resetToSeed);
       var rsb = root.querySelector('[data-sm-reset-seed]'); if (rsb) rsb.addEventListener('click', resetSeedClients);
+      try { hkRender(root); } catch (e) { console.log('§UDP5-HK panel failed: ' + e.message); }
     });
   }
 
