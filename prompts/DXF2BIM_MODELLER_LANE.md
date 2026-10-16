@@ -298,7 +298,9 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
 
 **D2 Storeys come only from plans.**
 - Storeys are the `@LEVEL` values of PLAN sheets. A ROOF sheet's `@LEVEL` also counts as stated.
-- `QF:set_storey_unstated {level}`: an elevation shows a level band with no stated level. A band is the bottom z of a closed axis-aligned rectangle on a layer typed `elevwall`, through the `@Z` calibration.
+- `QF:set_storey_unstated {level}`: an elevation shows a level band with no stated level.
+  - A band is a bottom z (through the `@Z` calibration) at which the closed axis-aligned rectangles on `elevwall` layers starting there, taken together, cover the elevation's full width (the min..max h of all its elevwall rectangles, joints ≤ `tol.grid`).
+  - Measured: the old set's wall pieces above windows start at 2.612 and 5.712 but do not span the face, so they are not bands. Its foundation rectangles at −1.25 do span it, and that is the model storey T/FDN, which has no plan.
 - Band bottoms within `tol.level` merge. One item is emitted per unstated z, naming the elevation and its rectangle handles.
 - Nothing is inferred from datum lines or texts.
 - Test: QS1 an elevation band at 6.0 with no plan → `set_storey_unstated 6`.
