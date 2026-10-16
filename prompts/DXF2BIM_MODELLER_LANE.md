@@ -493,6 +493,34 @@ Input: the std set regenerated from master `std2d.py` with `--door-ops` (a `door
 
 **Report:** the std-set verdict by cause after W1-W3, and rosetta_dx_shell std PASS/FAIL.
 
+**Results (2026-10-16, BIMCompiler branch `feat/dxf2bim-std-green`).**
+- **W1:** the model confirms `@WALLTOP` on neither storey, so nothing is written and the 40 wall-height gaps stay blocking. Interior walls that do not reach the slab underside:
+  - Level 1 (underside 2.795; 13 of 18 confirm): walls 1014 and 1019 (base 2.612, top 6.0), and 1029, 1037, 1038 (top 3.1)
+  - Level 2 (underside 6.0; 19 of 21 confirm): walls 1033 and 1034 (top 5.695)
+- **W2:**
+  - Before the fix, all 9 unmatched source windows were explained by the gap on their plan opening (A3, C2, C0, CE ×3, F1 ×3). None was silent.
+  - After the 0.001 mm marking fix, all 22 std windows match: DW-windows L1 4/4, L2 18/18, 0 window items in the verdict.
+  - Controls: M-W2 (a window removed, no gap) FAILs with "vanished without a trace"; M-W2g (removed, gap logged) gives "explained".
+- **W3:** door height gaps are now counted under openings (QG6).
+- **Std set verdict: blocked, 150.** By cause:
+  - doors, 102:
+    - `opening_unclassified` 74 (A-DOOR section contours)
+    - `no_host_cut` 14
+    - `no_elevation_height` 14
+    - rosetta_dx_shell DW-doors 0/14 with `GAP:door_no_strip`: the leaf-width arc ≠ the casing-inclusive source bbox, the same R3 issue §L1.3 fixed in rosetta_dx but not in rosetta_dx_shell
+  - interior wall heights, 40 (above)
+  - slab underside, 2
+  - roof storey, 6: `set_no_roof`, `set_storey_unstated` 6.0, `elev_height_dim_missing` 4
+  - windows, 0
+  - With a user-stated `@WALLTOP` it would be 110.
+- rosetta_dx_shell std: 27/4. The 4 FAILs are SL-d L2, RF-a (no roof plan), and DW-doors L1/L2.
+- Regression:
+  - unit suites 16/16: fail=0; test_qualify 53/53
+  - rosetta_dx_shell old: 35/36, the known RF-d
+  - old marked copies: byte-identical
+  - farm_heights: identical; t8: identical except timing
+  - rosetta_qualify: fail=0
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
