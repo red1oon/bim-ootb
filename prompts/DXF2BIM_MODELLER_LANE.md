@@ -352,6 +352,33 @@ Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` rege
 - `rosetta_qualify.js` reports the std verdict, then the same with `@WALLTOP` stated for both plan levels (labelled user-stated).
 - The expected residue is door items only (no arcs until the door-hinge lane), plus anything this run proves otherwise. That residue is reported, not asserted.
 
+### L2.4 Results of L2.3 (2026-10-16; BIMCompiler branch feat/dxf2bim-qualify-decisions)
+- `test_qualify.js`: 52/52 PASS. This adds QR2/QR3 roof, QS1 band vs window piece, QG1-QG5 gaps-once / `@WALLTOP`, QD4a/b exterior-only grid, and QN1-QN6 notes. Q2 is now exactly 6 `sheet_no_role` + 6 `units_unstated` + `set_no_plan` + `set_no_roof` + 4 `face_no_elev`.
+- **L1 std set, marked from the model (`mark_dx_set.js std`), pipeline `DXSET=std rosetta_dx_shell.js`.** Qualify: **blocked, 132**. Every drawing-standard check passes:
+  - G1 grid on axes and labels
+  - G3 dimension strings, texts and points
+  - G4 elevation grid and level datums
+  - layers, units
+  - Blocking, by cause:
+    - doors: `opening_unclassified` 74 (A-DOOR section contours with no swing arc; the door-hinge lane)
+    - interior wall heights: `no_elevation_height` 40. These become 40 advisory `convention_applied` when the user states `@WALLTOP` → 92.
+    - windows: `no_elevation_match` 5 and `no_host_cut` 5, on the same 5 A-GLAZ handles (GF A3, C2; FF C0, CE, F1). Also, rosetta_dx_shell's DW-windows check finds 9 source windows with no window in the std run, and 4 of them have no gap. Both are for the L1 writer or the reader's glazing match.
+    - slabs: `slab_no_underside` 2. GF has no storey below (§10.8 already says so). FF has no wall end below the top, because the std elevations draw the 2-storey exterior walls continuously from 0 to 6.0 (DB: Level 1 IfcWall z 0..6.0).
+    - roof storey: `set_no_roof` 1 (L1 writes no roof plan); `set_storey_unstated` 1 (elevation band 6.0, the model storey "Roof" with 4 parapet walls, has no plan); `elev_height_dim_missing` 4. The chain 3.1→6.0→6.457 is drawn, but 6.0 is not a stated level until a ROOF sheet states it.
+  - rosetta_dx_shell std: 23 PASS / 8 FAIL: doors, windows, Level 2 slab, roof outline.
+- **Old Duplex set:** 343 blocking.
+  - `set_storey_unstated` −1.25: the foundation band, model storey T/FDN, with no plan.
+  - 18 gaps superseded by the shell/cut stage.
+  - The roof sheet is now `@VIEW=ROOF` with `@LEVEL` 6.
+- Regression:
+  - unit suites 16/16: SUMMARY fail=0
+  - rosetta_dx_shell (old): 35/36, the known RF-d; it differs only in the roof marking line and run_id (expected: the roof sheet text changed)
+  - mark_dx_set old copies: byte-identical
+  - farm_heights: identical
+  - t8: identical except timing
+  - rosetta_qualify: fail=0
+- Finding for L1 (W1): two `std2d.py` runs into different directories give DXFs that differ in the OBJECTS section (LAYOUT / ACDBPLACEHOLDER order).
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
