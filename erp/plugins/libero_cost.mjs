@@ -509,7 +509,7 @@ export function create(ctx) {
   }
 
 
-  // ── the Order Receipt & Issue FORM as a generic descriptor (ad_form_generic.js; AD_Form 53007 org.eevolution.form.VOrderReceiptIssue; WOrderReceiptIssue :598-604 defaults) ──
+  // ── the Order Receipt & Issue FORM as a generic descriptor (ad_form_generic.js; AD_Form 53007 org.libero.form.VOrderReceiptIssue (org.eevolution.* before 2Pack_1.0.2); WOrderReceiptIssue :598-604 defaults) ──
 
   // ══ SLICE 5 - M6: Doc_PPCostCollector posting (acct/Doc_PPCostCollector.java @ b2adfea0; DocLine_CostCollector.java account lookup) ═══════════════════════
   // Registered as the posting class of PP_Cost_Collector (ctx.docClass.register); model_post.js Doc.post calls createFacts once per accounting schema.
@@ -612,7 +612,7 @@ export async function activate(ctx) {
   // FSM entry of AD_Table PP_Cost_Collector 53035 (MPPCostCollector: voidIt returns false :506, reActivateIt false :628, reverseAccrualIt false :622; reverseCorrectIt is DEFERRED)
   ctx.libero = Object.assign(ctx.libero || {}, { cost: m });   // the order chunk (close) reaches the collector entry points through the shared bundle ctx
   if (ctx.docClass) ctx.docClass.register('pp_cost_collector', m.docClass);   // M6: Doc_PPCostCollector, found by model_post Doc.post through DocPoster.docClassFor
-  if (ctx.form) ctx.form.register('org.eevolution.form.VOrderReceiptIssue', m.formDescriptor);   // AD_Form 53007: drawn by the generic form renderer, zero host code
+  if (ctx.form) ctx.form.register('org.libero.form.VOrderReceiptIssue', m.formDescriptor);   // AD_Form 53007 (Classname after Libero 2Pack_1.0.2): drawn by the generic form renderer, zero host code
   if (ctx.docFsm) ctx.docFsm.register(53035, { name: 'PP_Cost_Collector', reActivate: false, rc: false, ra: false, vo: {} });
 }
 export async function deactivate(ctx) { if (ctx && ctx.libero) delete ctx.libero.cost; }

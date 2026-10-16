@@ -3,9 +3,9 @@
 //   ADTabpanel.loadToolbarButtons; a process with AD_Form_ID opens the form, AbstractADWindowContent.executeButtonProcess0). The twin had no such table, so every legacy button was missing.
 //   T1 dictionary: the twin's ad_toolbarbutton rows == the pilot's (count; per row tab/process/component/seq/action)            X of N
 //   T2 per tab: the process buttons the twin draws for GardenAdmin == the pilot's rows for that tab whose process the role can run   (tabs judged = those in the role's menu)
-//   T3 the Libero bundle's rows (process 1000100 -> AD_Form 53007, button on tab 53054): the Manufacturing Order shows "Order Receipt & Issue"; a click opens AD_Form 53007
+//   T3 the Libero bundle's rows (its 2Pack_1.0.3, found by UU: process -> AD_Form 53007, button on tab 53054, access from MProcess.afterSave): the Manufacturing Order shows "Order Receipt & Issue"; a click opens AD_Form 53007
 //      with the order choice EMPTY (Libero's WOrderReceiptIssue never reads its ProcessInfo), the form knows the window record it came from; Process with the order picked = 3 collectors CO
-//   T4 bundle stopped -> its process, button and access rows are gone and the tab shows no button
+//   T4 bundle stopped -> its process, button and access rows STAY (legacy: Stop deactivates the code, dictionary rows are kept; ERP_FRIENDLY_OPS_LENS.md §20 DECIDED, §22 B5)
 //   Breaks: TBB_BREAK=noform (the AD_Form branch skipped) must turn T3 RED; TBB_BREAK=noaccess (role access ignored) must turn T2 RED where a hidden-by-access button exists.
 //   A comparison over nothing prints INCONCLUSIVE.
 // Run: [TBB_BREAK=noform|noaccess] node erp/tests/witness_ad_toolbarbutton.js > <log>
@@ -73,9 +73,12 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     console.log('§TBB T2 tabs=' + tabs.length + ' judged=' + t2judged + ' skipped=' + t2skip.length + ' ' + JSON.stringify(t2skip) + ' hiddenByAccessInLegacy=' + hiddenByAccess);
     verdict('T2', 'process buttons per tab: ' + (t2judged - t2bad.length) + ' of ' + t2judged + ' reachable tabs equal legacy for role ' + role + ' (' + t2skip.length + ' tabs outside the role\'s menu)', t2judged > 0 && !t2bad.length, { t2bad }, !t2judged);
     // T3 the Libero rows on the Manufacturing Order
-    await page.evaluate(() => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]'); let n = leaf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.classList && n.classList.contains('idmp-node')) n.classList.add('open'); n = n.parentElement; } leaf.click(); });
-    await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 }); await hold(1500);
-    const dictRows = { process: await q('SELECT ad_form_id, name FROM ad_process WHERE ad_process_id=1000100'), button: await q('SELECT ad_tab_id, ad_process_id FROM ad_toolbarbutton WHERE ad_toolbarbutton_id=1000100'), access: await q('SELECT ad_role_id FROM ad_process_access WHERE ad_process_id=1000100') };
+    // seed order 50000 (Fertilizer #50, DR): a transaction window now opens like legacy (only current rows, auto-New - origin/main #2042), so the order is reached as legacy reaches it, by zoom (AEnv.zoom)
+    const openOrder = async () => { await page.evaluate(() => window.IdmpHost.zoom(53009, null, 50000)); await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 }); await hold(1500);
+      console.log('§TBB order opened by zoom: ' + (PAGELOG.filter(l => /§ZOOM/.test(l)).pop() || 'no §ZOOM line')); };
+    await openOrder();
+    const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a02';
+    const dictRows = { process: await q("SELECT ad_form_id, name, ad_process_id FROM ad_process WHERE ad_process_uu='" + PUU + "'"), button: await q("SELECT b.ad_tab_id, b.ad_process_id FROM ad_toolbarbutton b JOIN ad_process p ON p.ad_process_id=b.ad_process_id AND p.ad_process_uu='" + PUU + "' WHERE b.ad_toolbarbutton_uu='" + BUU + "'"), access: await q("SELECT a.ad_role_id FROM ad_process_access a JOIN ad_process p ON p.ad_process_id=a.ad_process_id WHERE p.ad_process_uu='" + PUU + "' AND a.ad_role_id=" + Number(role)) };
     const btn = await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent));
     console.log('§TBB libero rows ' + JSON.stringify(dictRows) + ' toolbar=' + JSON.stringify(btn));
     let formState = null, coll = null, menuState = null;
@@ -90,7 +93,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
       await page.waitForSelector('[data-gform]', { timeout: 10000 }).catch(() => {}); await hold(1000);
       menuState = await page.evaluate(() => { const f = document.querySelector('[data-gform]'); if (!f) return null; const s = f.querySelector('[data-gform-param=PP_Order_ID]'); return { cls: f.getAttribute('data-gform'), order: s && s.selectedIndex >= 0 ? s.options[s.selectedIndex].textContent : '', choices: s ? s.options.length : 0, rows: document.querySelectorAll('tr[data-gform-row]').length }; });
       console.log('§TBB form from the MENU: ' + JSON.stringify(menuState));
-      await page.evaluate(() => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]'); leaf.click(); }); await page.waitForSelector('#idmp-toolbar [data-tbb]', { timeout: 20000 }); await hold(1200);
+      await openOrder(); await page.waitForSelector('#idmp-toolbar [data-tbb]', { timeout: 20000 });
       const n3 = PAGELOG.length; await page.click('#idmp-toolbar [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 10000 }).catch(() => {}); await hold(1200);
       formState = await page.evaluate(() => { const f = document.querySelector('[data-gform]'); if (!f) return null; const s = f.querySelector('[data-gform-param=PP_Order_ID]');
         return { cls: f.getAttribute('data-gform'), from: f.getAttribute('data-gform-from'), order: s ? (s.selectedIndex >= 0 ? (s.options[s.selectedIndex].textContent || '') : '') : 'absent', rows: document.querySelectorAll('tr[data-gform-row]').length }; });
@@ -104,16 +107,16 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
         coll = { order: opts[0].t, msg: await page.$eval('[data-gform-msg]', e => e.className + ' | ' + e.textContent).catch(() => ''), commit: PAGELOG.slice(nr).filter(l => /§AD-FORM-GENERIC commit/.test(l)).pop() || '' }; }
       console.log('§TBB process from the button form: ' + JSON.stringify(coll) + ' orderChoices=' + opts.length);
     }
-    verdict('T3', 'the bundle\'s 3 dictionary rows exist, the Manufacturing Order shows "Order Receipt & Issue", the click opens AD_Form 53007 (org.eevolution.form.VOrderReceiptIssue) exactly as the menu opens it (the Libero form ignores the record it came from), handed the window record',
+    verdict('T3', 'the bundle\'s 3 dictionary rows exist, the Manufacturing Order shows "Order Receipt & Issue", the click opens AD_Form 53007 (org.libero.form.VOrderReceiptIssue) exactly as the menu opens it (the Libero form ignores the record it came from), handed the window record',
       dictRows.process.length === 1 && Number(dictRows.process[0][0]) === 53007 && dictRows.button.length === 1 && dictRows.access.length === 1 && btn.some(b => /^PP_Order_ReceiptIssue=Order Receipt & Issue$/.test(b)) &&
-      !!formState && formState.cls === 'org.eevolution.form.VOrderReceiptIssue' && !!formState.from && /^PP_Order:/i.test(formState.from) && !!menuState && formState.order === menuState.order && formState.rows === menuState.rows,
+      !!formState && formState.cls === 'org.libero.form.VOrderReceiptIssue' && !!formState.from && /^PP_Order:/i.test(formState.from) && !!menuState && formState.order === menuState.order && formState.rows === menuState.rows,
       { dictRows, btn, formState, menuState });
     verdict('T3b', 'Process from that form commits its collectors (the same form run as the menu path)', !!coll && /committed=true/.test(coll.commit) && /ok/.test(coll.msg), { coll }, !coll);
     // T4 stop the bundle
     await page.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.idempiere.mfg'); }); await hold(800);
-    const after = { process: await q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id=1000100'), button: await q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id=1000100'), access: await q('SELECT COUNT(*) FROM ad_process_access WHERE ad_process_id=1000100') };
+    const after = { process: await q("SELECT COUNT(*) FROM ad_process WHERE ad_process_uu='" + PUU + "'"), button: await q("SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_uu='" + BUU + "'"), access: await q("SELECT COUNT(*) FROM ad_process_access a JOIN ad_process p ON p.ad_process_id=a.ad_process_id WHERE p.ad_process_uu='" + PUU + "' AND a.ad_role_id=" + Number(role)) };
     console.log('§TBB after stop ' + JSON.stringify(after));
-    verdict('T4', 'bundle stopped: its process, button and access rows are gone', [after.process, after.button, after.access].every(r => Number(r[0][0]) === 0), { after });
+    verdict('T4', 'bundle stopped: its process, button and access rows stay (legacy convention)', [after.process, after.button, after.access].every(r => Number(r[0][0]) === 1), { after });
     const errs = PAGELOG.filter(l => /^PAGEERR/.test(l)); verdict('T0', 'no page errors', !errs.length, errs.slice(0, 3));
   } catch (e) { fails++; console.log('§TBB ERROR ' + (e && e.stack || e)); }
   fs.writeFileSync(path.join(require('os').tmpdir(), 'witness_ad_toolbarbutton.page.log'), PAGELOG.join('\n'));

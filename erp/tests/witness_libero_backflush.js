@@ -196,7 +196,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
 
 
   // ── B9 the FORM as a generic descriptor: registered by the bundle, drawn by data, row quantities editable, one transaction ───────────────────
-  var AF = require(path.join(ERP, 'ad_form_generic.js')), FC = 'org.eevolution.form.VOrderReceiptIssue', withT = function (fn) { return fn(q, env()); };
+  var AF = require(path.join(ERP, 'ad_form_generic.js')), FC = 'org.libero.form.VOrderReceiptIssue', withT = function (fn) { return fn(q, env()); };
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
   var OI = newCompletedOrder('LB-I'), fg9 = onhand(FG);
   check('B9a the bundle registered the form descriptor for AD_Form 53007 through ctx.form (and nothing is registered before it started)', !!AF.get(FC) && AF.get(FC).params.length === 8 && AF.describe()[FC].length === 1, AF.describe());

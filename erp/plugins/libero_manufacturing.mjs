@@ -213,22 +213,9 @@ const DASH_MEASURE = [Object.assign({ pa_measure_id: 53201, ad_client_id: 11, na
 const DASH_GOAL = [Object.assign({ pa_goal_id: 53201, ad_client_id: 11, seqno: 5, name: 'Manufacturing Output', description: 'Quantity on live manufacturing orders', ad_role_id: 102, pa_colorschema_id: 100, issummary: 'N',
   pa_measure_id: 53201, relativeweight: 1, measuretarget: 20000, measurescope: 0, measuredisplay: 5, measureactual: 0, goalperformance: 0, charttype: 'BC' }, STD)];
 
-// §18 (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md): Order Receipt & Issue attached to the Manufacturing Order window THE AD WAY - rows, not code. A Process whose AD_Form_ID is the
-//   Libero form (53007), an AD_ToolBarButton on the Manufacturing Order header tab (53054) that runs it (ADTabpanel.loadToolbarButtons -> executeButtonProcess0 opens the form),
-//   and the role's process access (MRole.getProcessAccess gates the button). Not in upstream Libero (it reaches the form from the menu only); ids from the customization range,
-//   checked free in the seed and the reference DB. Staged and rolled back with the bundle like the menu rows.
-const ATTACH_FORM = {
-  process: [{ ad_process_id: 1000100, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: '2026-10-16 00:00:00', createdby: 100, updated: '2026-10-16 00:00:00', updatedby: 100,
-    value: 'PP_Order_ReceiptIssue', name: 'Order Receipt & Issue', description: 'Issue the components and receive the finished product of a Manufacturing Order (opens the Order Receipt & Issue form)',
-    help: null, accesslevel: '3', entitytype: 'EE01', procedurename: null, isreport: 'N', isdirectprint: 'N', ad_reportview_id: null, classname: null, statistic_count: 0, statistic_seconds: 0,
-    ad_printformat_id: null, workflowvalue: null, ad_workflow_id: null, isbetafunctionality: 'N', isserverprocess: 'N', showhelp: 'Y', jasperreport: null, ad_form_id: 53007,
-    copyfromprocess: 'N', ad_process_uu: '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', ad_ctxhelp_id: null, executiontype: null, allowmultipleexecution: 'Y', filenamepattern: null }],
-  button: [{ ad_toolbarbutton_id: 1000100, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: '2026-10-16 00:00:00', createdby: 100, updated: '2026-10-16 00:00:00', updatedby: 100,
-    actionclassname: null, actionname: null, classname: null, componentname: 'PP_Order_ReceiptIssue', iscustomization: 'N', keystroke_keycode: null, keystroke_modifiers: null,
-    name: 'Order Receipt & Issue', ad_toolbarbutton_uu: '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a02', action: 'W', ad_tab_id: 53054, ad_process_id: 1000100, displaylogic: null, seqno: 10,
-    isadvancedbutton: 'N', isaddseparator: 'N', entitytype: 'EE01', isshowmore: 'N', readonlylogic: null, pressedlogic: null }],
-  access: [{ ad_process_id: 1000100, ad_role_id: 102, ad_client_id: 11, ad_org_id: 0, isactive: 'Y', created: '2026-10-16 00:00:00', createdby: 100, updated: '2026-10-16 00:00:00', updatedby: 100, isreadwrite: 'Y', ad_process_access_uu: '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a03' }]
-};
+// §18/§22 (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md): Order Receipt & Issue attached to the Manufacturing Order window THE AD WAY - rows, not code: an AD_Process whose AD_Form_ID is the
+//   Libero form (53007) and an AD_ToolBarButton on the Manufacturing Order header tab (53054) that runs it. They ship as this bundle's own 2Pack (libero_2pack/2Pack_1.0.3.zip, the legacy
+//   PackOut.xml schema), applied by Pack In at Start after Libero's upstream 1.0.0-1.0.2; the role access comes from MProcess.afterSave (every IsManual='N' role), as in legacy. Rows stay on Stop.
 export const manifest = {
   id: 'org.idempiere.mfg',
   name: 'Libero Manufacturing',
@@ -237,8 +224,10 @@ export const manifest = {
   requires: {},
   activation: 'lazy',
   triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP', 'PP_Cost_Collector'] },
+  // the bundle's 2Packs (Incremental2PackActivator: META-INF/2Pack_<x.y.z>.zip, applied above the installed version, ascending, each once): Libero's own 1.0.0-1.0.2 (pshepetko @ b2adfea0) + ours
+  packs: ['libero_2pack/2Pack_1.0.0.zip', 'libero_2pack/2Pack_1.0.1.zip', 'libero_2pack/2Pack_1.0.2.zip', 'libero_2pack/2Pack_1.0.3.zip'],
+  // twin-only staging (the slim twin seed lacks these rows; legacy carries the EE01 menu inactive): refcounted, removed on Stop
   dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },
-    { table: 'ad_process', idCol: 'ad_process_id', rows: ATTACH_FORM.process }, { table: 'ad_toolbarbutton', idCol: 'ad_toolbarbutton_id', rows: ATTACH_FORM.button }, { table: 'ad_process_access', idCol: 'ad_process_id', rows: ATTACH_FORM.access },
     { table: 'pa_documentstatus', idCol: 'pa_documentstatus_id', rows: DASH_STATUS }, { table: 'pa_measurecalc', idCol: 'pa_measurecalc_id', rows: DASH_CALC },
     { table: 'pa_measure', idCol: 'pa_measure_id', rows: DASH_MEASURE }, { table: 'pa_goal', idCol: 'pa_goal_id', rows: DASH_GOAL }],
   chunks: { hot: ['./libero_pporder.mjs', './libero_cost.mjs', './libero_callouts.mjs'] },

@@ -1,13 +1,15 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-only  (ported from org.idempiere.mfg / Libero, GPLv2; file:line cites are into pshepetko/org.idempiere.mfg @ b2adfea0)
-// ⚠ DO NOT REMOVE — libero_callouts.mjs: HOT chunk of the Libero bundle - the window callouts the Manufacturing dictionary references. The AD names the classes
-//   org.eevolution.model.CalloutOrder (PP_Order.M_Product_ID / QtyEntered) and org.eevolution.model.CalloutCostCollector (PP_Cost_Collector.PP_Order_ID / PP_Order_Node_ID / MovementQty);
-//   the Libero source holds them as org.libero.callouts.CalloutOrder / CalloutCostCollector (an IColumnCallout factory maps the name), so they are registered here under the DICTIONARY's names.
+// ⚠ DO NOT REMOVE — libero_callouts.mjs: HOT chunk of the Libero bundle - the window callouts of the Manufacturing windows, as legacy Libero supplies them.
+//   Libero's 2Pack_1.0.2 nulls every AD_Column.Callout 'org.eevolution.model*' (PP_Order.M_Product_ID / QtyEntered, PP_Cost_Collector.PP_Order_ID / PP_Order_Node_ID / MovementQty, ...);
+//   the plugin then contributes them as org.adempiere.base.IColumnCallout extensions (plugin.xml @ b2adfea0: table + column -> org.libero.callouts.Callout_PP_Order / Callout_PP_Cost_Collector,
+//   whose start() dispatches on the column to org.libero.callouts.CalloutOrder / CalloutCostCollector). Registered the same way here (bim-compiler ERP_FRIENDLY_OPS_LENS.md §22 L1).
 //   Without them a New Manufacturing Order keeps QtyOrdered=1 whatever QtyEntered says and the Product does not fill the routing / BOM.
+//   plugin.xml entries for classes the twin never ported (Callout_PP_Product_BOM(Line), Callout_PP_Order_BOMLine, Callout_DD_OrderLine) are NOT registered (named, not invented).
 export async function activate(ctx) {
   const A = globalThis.AdCallout;
   const def = (fqcn, factory) => ctx.callout.defineCallout(fqcn, factory);
-  def('org.eevolution.model.CalloutOrder', function (CalloutEngine, R) {
+  const CalloutOrder = def('org.libero.callouts.CalloutOrder', function (CalloutEngine, R) {
     const Env = R.Env, RM = R.RM, M = R.M;
     const BD = (v) => (v == null ? Env.ZERO : v);
     function CalloutOrder() { CalloutEngine.call(this); }
@@ -59,7 +61,7 @@ export async function activate(ctx) {
     };
     return CalloutOrder;
   });
-  def('org.eevolution.model.CalloutCostCollector', function (CalloutEngine, R) {
+  const CalloutCostCollector = def('org.libero.callouts.CalloutCostCollector', function (CalloutEngine, R) {
     const Env = R.Env, RM = R.RM;
     function CalloutCostCollector() { CalloutEngine.call(this); }
     CalloutCostCollector.prototype = Object.create(CalloutEngine.prototype);
@@ -93,6 +95,23 @@ export async function activate(ctx) {
     };
     return CalloutCostCollector;
   });
+  // the IColumnCallout extensions (plugin.xml) and their start() bodies (Callout_PP_Order.java / Callout_PP_Cost_Collector.java @ b2adfea0)
+  const col = ctx.callout.defineColumnCallout;
+  if (col) {
+    col('PP_Order', ['QtyEntered', 'M_Product_ID'], 'org.libero.callouts.Callout_PP_Order', function (ctx2, WindowNo, mTab, mField, value) {
+      const c = new CalloutOrder();
+      if (mField.getColumnName() === 'QtyEntered') { c.qty(ctx2, WindowNo, mTab, mField, value); return c.qtyBatch(ctx2, WindowNo, mTab, mField, value); }
+      if (mField.getColumnName() === 'M_Product_ID') return c.product(ctx2, WindowNo, mTab, mField, value);
+      return null;
+    });
+    col('PP_Cost_Collector', ['PP_Order_ID', 'PP_Order_Node_ID', 'MovementQty'], 'org.libero.callouts.Callout_PP_Cost_Collector', function (ctx2, WindowNo, mTab, mField, value) {
+      const c = new CalloutCostCollector(), n = mField.getColumnName();
+      if (n === 'PP_Order_ID') return c.order(ctx2, WindowNo, mTab, mField, value);
+      if (n === 'PP_Order_Node_ID') return c.node(ctx2, WindowNo, mTab, mField, value);
+      if (n === 'MovementQty') return c.duration(ctx2, WindowNo, mTab, mField, value);
+      return null;
+    });
+  }
   void A;
 }
 export async function deactivate() {}

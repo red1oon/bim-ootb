@@ -123,13 +123,13 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ S1 card: what a plugin is, here and in legacy (read from the files) ═══
     await beat('s1', 'card: OSGi bundle vs one ES module');
     const mf = readOr(path.join(LIBERO_SRC, 'META-INF/MANIFEST.MF')), svc = (/Service-Component: ([^\n]+)/.exec(mf) || [])[1] || '?';
-    const lib = await page.evaluate(async () => { const x = window.PluginEngine._reg().get('org.idempiere.mfg'); const mod = x && x.url ? await import(x.url) : {}; const m = mod.manifest || {}; return { id: m.id, version: m.version, activation: m.activation, triggers: m.triggers && m.triggers.windows, dict: (m.dictionary || []).map(d => d.table + ' ' + d.rows.length), chunks: m.chunks && m.chunks.hot }; });
+    const lib = await page.evaluate(async () => { const x = window.PluginEngine._reg().get('org.idempiere.mfg'); const mod = x && x.url ? await import(x.url) : {}; const m = mod.manifest || {}; return { id: m.id, version: m.version, activation: m.activation, triggers: m.triggers && m.triggers.windows, dict: (m.dictionary || []).map(d => d.table + ' ' + d.rows.length), packs: (m.packs || []).map(p => p.split('/').pop()), chunks: m.chunks && m.chunks.hot }; });
     fact('card.legacy', 'MANIFEST.MF Service-Component=' + svc + ' | SymbolicName=' + ((/Bundle-SymbolicName: ([^\n;]+)/.exec(mf) || [])[1] || '?'));
     fact('card.here', JSON.stringify(lib));
     await card('One plugin, two shapes', 'Libero Manufacturing as an OSGi bundle in iDempiere, and as one ES module here.', ['iDempiere (OSGi)', 'Here (ES module)'],
       [{ label: 'Identity', cells: [{ v: 'META-INF/MANIFEST.MF', small: true }, { v: 'export const manifest = { id, version }', small: true }] },
        { label: 'Services', cells: [{ v: String(svc).replace(/, /g, '<br>'), small: true }, { v: 'activate(ctx): ctx.docAction · ctx.docClass · ctx.modelval · ctx.callout · ctx.form', small: true }] },
-       { label: 'Dictionary', cells: [{ v: '2Pack', small: true }, { v: 'manifest.dictionary: ' + (lib.dict || []).join(' · '), small: true }] },
+       { label: 'Dictionary', cells: [{ v: 'META-INF/2Pack_*.zip', small: true }, { v: 'manifest.packs: ' + (lib.packs || []).join(' · '), small: true }] },
        { label: 'Start', cells: [{ v: 'OSGi console: start / stop', small: true }, { v: 'Plugins & Releases: start / stop (' + (lib.activation || 'eager') + ' on window ' + (lib.triggers || []).join(',') + ')', small: true }] }]);
 
     // ═══ S2 live: the bundle's registrations, among them the form factory ═══
@@ -186,10 +186,10 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     const W = readOr(TBB_LOG), wl = (id) => W.split('\n').find(l => new RegExp('^§TBB ' + id + ' (PASS|FAIL)').test(l)) || '', v = (/§TBB_VERDICT (\S+) judged=(\d+) failed=(\d+)/.exec(W) || []);
     const t1 = (/(\d+) of (\d+) legacy rows/.exec(wl('T1')) || []), t2 = (/(\d+) of (\d+) reachable tabs/.exec(wl('T2')) || []);
     fact('card.witness', 'verdict=' + v.slice(1).join('/') + ' T1=' + t1.slice(1).join('/') + ' T2=' + t2.slice(1).join('/'));
-    await card('Three rows, checked', 'The Libero plugin ships them in its manifest; stopping the plugin removes them. The toolbar buttons themselves are the generic iDempiere mechanism.', ['', ''],
-      [{ label: 'AD_Process 1000100', cells: [{ v: 'Form = Order Receipt and Issue (53007)', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
-       { label: 'AD_ToolBarButton 1000100', cells: [{ v: 'Manufacturing Order tab (53054) → that process', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
-       { label: 'AD_Process_Access', cells: [{ v: 'GardenWorld Admin may run it', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
+    await card('Three rows, checked', 'The Libero plugin ships them as its own 2Pack (1.0.3), packed in at Start; stopping the plugin keeps them, as in iDempiere. The toolbar buttons themselves are the generic iDempiere mechanism.', ['', ''],
+      [{ label: 'AD_Process PP_Order_ReceiptIssue', cells: [{ v: 'Form = Order Receipt and Issue (53007)', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
+       { label: 'AD_ToolBarButton (2Pack 1.0.3)', cells: [{ v: 'Manufacturing Order tab (53054) → that process', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
+       { label: 'AD_Process_Access', cells: [{ v: 'every automatic role, GardenWorld Admin included (MProcess.afterSave)', small: true, tone: '#c9d4e0' }, { v: '', small: true }] },
        { label: 'Legacy toolbar buttons', cells: [{ v: (t1[1] || '?') + ' of ' + (t1[2] || '?'), rec: 'W-AD-TBB T1' }, { v: 'row for row', small: true, tone: '#7ee0a0' }] },
        { label: 'Tabs showing legacy\'s buttons', cells: [{ v: (t2[1] || '?') + ' of ' + (t2[2] || '?'), rec: 'W-AD-TBB T2' }, { v: 'for GardenWorld Admin', small: true, tone: '#7ee0a0' }] }]);
     await holdFor(); prevB = null;
@@ -203,16 +203,16 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('form.opened', (PAGELOG.slice(n7).filter(l => /§AD-TBB run|§AD-FORM-LIVE open|§AD-FORM-GENERIC open/.test(l)).join(' || ')).slice(0, 500));
     await pace(4000);
 
-    // ═══ S8 stop the plugin: the button, process and access rows go with it ═══
+    // ═══ S8 stop the plugin: the code stops, the dictionary rows stay (legacy convention, ERP_FRIENDLY_OPS_LENS.md §20 DECIDED / §22) ═══
     await holdFor(); prevB = null;
-    await card('Stop the plugin', 'Plugins & Releases, Libero Manufacturing.'); await beat('s8', 'stop Libero: the button is gone');
+    await card('Stop the plugin', 'Plugins & Releases, Libero Manufacturing.'); await beat('s8', 'stop Libero: the rows stay');
     await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(DRY ? 200 : 1500);
     await uncard(); await pace(1800);
     await hclick('#pr-osgi [data-oc-stop="org.idempiere.mfg"]'); await pace(1500);
-    fact('afterStop.rows', JSON.stringify({ process: await sql('SELECT COUNT(*) FROM ad_process WHERE ad_process_id=1000100'), button: await sql('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id=1000100'), access: await sql('SELECT COUNT(*) FROM ad_process_access WHERE ad_process_id=1000100') }));
+    fact('afterStop.rows', JSON.stringify({ process: await sql("SELECT COUNT(*) FROM ad_process WHERE ad_process_uu='6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01'"), button: await sql("SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_uu='6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a02'"), access: await sql("SELECT COUNT(*) FROM ad_process_access a JOIN ad_process p ON p.ad_process_id=a.ad_process_id WHERE p.ad_process_uu='6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01'"), packages: await sql("SELECT COUNT(*) FROM ad_package_imp WHERE name='org.idempiere.mfg' AND pk_status='Completed successfully'") }));
     await hclick('#pr-root [data-pr-close]'); await pace(800);
-    await openMenuById(53055); await page.waitForSelector(NEWB, { timeout: 20000 }); await pace(1500);   // reopen the order window: the tab re-reads its toolbar buttons
-    fact('afterStop.toolbar', JSON.stringify(await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb')))) + ' menuLeaf53055=' + await page.locator('#idmp-tree .idmp-row.leaf[data-menu-id="53055"]').count());
+    fact('afterStop.formDescriptor', String(await page.evaluate(() => !!(window.AdFormGeneric && window.AdFormGeneric.get('org.libero.form.VOrderReceiptIssue')))) + ' (the code is stopped; the rows above stay)');
+    fact('afterStop.menuRow53055', JSON.stringify(await sql('SELECT COUNT(*) FROM ad_menu WHERE ad_menu_id=53055')) + ' (twin-only staging from manifest.dictionary, removed on Stop; the tree on screen is the one drawn before)');
     await beat('end', 'end'); await hold(DRY ? 200 : 1000);
     gestFlush(); GPrevId = null;
     say('§ERP_FILM_CURSOR clicks=' + clicks + ' cursorOnTarget=' + cursorOk + (clicks === cursorOk ? ' OK' : ' WRONG'));

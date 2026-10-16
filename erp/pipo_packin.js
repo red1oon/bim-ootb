@@ -59,7 +59,7 @@
     if (!rootEl || rootEl.nodeName !== 'idempiere') throw new Error('not a PackOut.xml (root ' + (rootEl && rootEl.nodeName) + ')');
     var pack = { name: opts.name || rootEl.getAttribute('Name'), version: opts.version || rootEl.getAttribute('Version'), updateMode: String(rootEl.getAttribute('UpdateDictionary')).toLowerCase() === 'true',
       client: String(rootEl.getAttribute('Client') || '0').split('-')[0] };
-    var stat = { viewsMissing: [], functionsMissing: [], absentTables: {}, records: 0, processed: 0, skippedOfficial: 0, translationsSkipped: 0, genericForSpecial: {}, deferred: 0, unresolved: [], sql: { ok: 0, failed: 0 }, byTable: {}, details: [] };
+    var stat = { viewsMissing: [], functionsMissing: [], absentTables: {}, records: 0, processed: 0, skippedOfficial: 0, translationsSkipped: 0, genericForSpecial: {}, deferred: 0, unresolved: [], sql: { ok: 0, failed: 0 }, byTable: {}, details: [], afterSave: {}, afterSaveNotPorted: {} };
     var cols = {}; function colsOf(t) { var k = t.toLowerCase(); if (!cols[k]) { var r = q('pragma table_info(' + k + ')'); cols[k] = r.length ? r.reduce(function (m, c) { m[String(c.name).toLowerCase()] = 1; return m; }, {}) : null; } return cols[k]; }
     function propsOf(el) { var p = {}, kids = []; for (var c = el.firstElementChild; c; c = c.nextElementSibling) { if (c.hasAttribute('type')) kids.push(c); else p[c.nodeName] = c; } return { p: p, kids: kids }; }
     function nextId(table) {   // MSequence.getNextID for a table sequence (AD_Sequence Name = TableName, IsTableID = 'Y'); never an official id
@@ -75,6 +75,28 @@
       if (!key || !colsOf(key)) return { ok: false, why: 'reference table ' + key + ' absent' };
       var r = q('SELECT ' + key + '_id AS id FROM ' + key + ' WHERE ' + key + '_uu=?', [v])[0];   // IDFinder.findIdByColumn on the UUID column
       return r ? { ok: true, v: r.id } : { ok: false, why: key + ' uuid ' + v + ' not found' };
+    }
+    // PO.afterSave(newRecord) rules legacy runs because its Pack In saves through PO.saveEx; the twin writes SQL, so the rule is applied here (ERP_FRIENDLY_OPS_LENS.md §22 L3).
+    //   ad_process  MProcess.afterSave:511-524: an AD_Process_Access row for every role IsManual='N' (MRole.getOf, no client filter); MProcessAccess(MProcess,int):89-96 client/org from the role
+    //   any other table: not ported, counted (afterSaveNotPorted) so a pack that depends on one is visible
+    var AFTER_NEW = {
+      ad_process: function (r) {
+        if (!colsOf('ad_process_access')) return 0;
+        var roles = q("SELECT ad_role_id, ad_client_id, ad_org_id FROM ad_role WHERE ismanual='N' ORDER BY ad_role_id"), ac = colsOf('ad_process_access'), n = 0;
+        roles.forEach(function (ro) {
+          var f = { ad_process_id: r.ad_process_id, ad_role_id: ro.ad_role_id, ad_client_id: ro.ad_client_id, ad_org_id: ro.ad_org_id, isactive: 'Y', isreadwrite: 'Y' };
+          if (ac.created) { f.created = now; f.updated = now; f.createdby = 0; f.updatedby = 0; }
+          if (ac.ad_process_access_uu) f.ad_process_access_uu = uuid();
+          var ks = Object.keys(f); db.run('INSERT INTO ad_process_access (' + ks.join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k]; })); n++;
+        });
+        say('§PACKIN aftersave table=AD_Process id=' + r.ad_process_id + ' rule=MProcess.afterSave access-rows=' + n + ' (roles IsManual=N)');
+        return n;
+      }
+    };
+    function uuid() { return opts.uuid ? opts.uuid() : (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null); }
+    function afterNew(t, vals) {
+      if (AFTER_NEW[t]) { stat.afterSave[t] = (stat.afterSave[t] || 0) + AFTER_NEW[t](vals); return; }
+      stat.afterSaveNotPorted[t] = (stat.afterSaveNotPorted[t] || 0) + 1;
     }
     function record(el, parent, deferred) {
       var table = el.nodeName, t = table.toLowerCase(), type = el.getAttribute('type');
@@ -116,6 +138,7 @@
         if (c.isactive && vals.isactive == null) vals.isactive = 'Y';
         var ks = Object.keys(vals); db.run('INSERT INTO ' + t + ' (' + ks.join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return vals[k]; }));
         bt.new++; action = 'New';
+        afterNew(t, vals);
       }
       stat.processed++;
       stat.details.push({ table: table, id: vals[pk] != null ? vals[pk] : (row && row[pk]), uu: uu, action: action });
@@ -165,7 +188,7 @@
       stat.ok = false; stat.error = e.message;
     }
     say('§PACKIN pack=' + pack.name + ' version=' + pack.version + ' updateMode=' + pack.updateMode + ' ok=' + stat.ok + ' records=' + stat.records + ' processed=' + stat.processed + ' skippedOfficial=' + stat.skippedOfficial +
-      ' translationsSkipped=' + stat.translationsSkipped + ' sql=' + stat.sql.ok + '/' + (stat.sql.ok + stat.sql.failed) + ' genericForSpecial=' + JSON.stringify(stat.genericForSpecial) + ' absentTablesSkipped=' + JSON.stringify(stat.absentTables) + ' functionsMissing=[' + stat.functionsMissing.join(',') + '] viewsMissing=[' + stat.viewsMissing.join(',') + ']' + (stat.error ? ' error="' + stat.error + '"' : ''));
+      ' translationsSkipped=' + stat.translationsSkipped + ' sql=' + stat.sql.ok + '/' + (stat.sql.ok + stat.sql.failed) + ' genericForSpecial=' + JSON.stringify(stat.genericForSpecial) + ' absentTablesSkipped=' + JSON.stringify(stat.absentTables) + ' afterSave=' + JSON.stringify(stat.afterSave) + ' afterSaveNotPorted=' + JSON.stringify(stat.afterSaveNotPorted) + ' functionsMissing=[' + stat.functionsMissing.join(',') + '] viewsMissing=[' + stat.viewsMissing.join(',') + ']' + (stat.error ? ' error="' + stat.error + '"' : ''));
     stat.pack = pack;
     return stat;
   }
@@ -207,12 +230,29 @@
     say('§PACKIN incremental bundle=' + bundle + ' installed=[' + inst.join(',') + '] toApply=[' + todo.map(function (p) { return p.version; }).join(',') + ']');
     for (var i = 0; i < todo.length; i++) {
       var p = todo[i], xml = p.xml || (await packOutXml(p.bytes)).xml;
-      var st = apply(db, xml, { say: say, convertSql: opts.convertSql, hasFunction: opts.hasFunction, name: bundle, version: p.version });
+      var st = apply(db, xml, { say: say, convertSql: opts.convertSql, hasFunction: opts.hasFunction, uuid: opts.uuid, name: bundle, version: p.version });
       var rec = recordImport(db, bundle, p.version, st);
       results.push({ version: p.version, ok: st.ok, stat: st, imp: rec });
       if (!st.ok) break;   // legacy stops at the first failed version (the next ones depend on it)
     }
     return results;
   }
-  return { readZip: readZip, packOutXml: packOutXml, apply: apply, recordImport: recordImport, installedVersions: installedVersions, incremental: incremental, cmpVer: cmpVer, MAX_OFFICIAL_ID: MAX_OFFICIAL_ID };
+  // ── delta: what a Pack In wrote, to replay on the same base at the next load (ERP_FRIENDLY_OPS_LENS.md §22 B3/B4) ──
+  //   recording(db) -> a handle that delegates everything and keeps every SUCCESSFUL run(sql, params) in order (a failing statement throws before it is kept; its ROLLBACK TO is kept),
+  //   so replaying the list verbatim on the same base reproduces the same rows, ids, timestamps and UUs.
+  function recording(db) {
+    var log = [], h = Object.create(db);
+    h.run = function (sql, p) { var r = db.run(sql, p); log.push([sql, p == null ? null : p]); return r; };
+    h.exec = function (sql, p) { return db.exec(sql, p); };
+    h.prepare = function (sql) { return db.prepare(sql); };
+    h.getRowsModified = function () { return db.getRowsModified(); };
+    h.delta = function () { return log; };
+    return h;
+  }
+  function replay(db, delta) {
+    db.run('SAVEPOINT packreplay');
+    try { for (var i = 0; i < delta.length; i++) db.run(delta[i][0], delta[i][1] == null ? undefined : delta[i][1]); db.run('RELEASE packreplay'); return { ok: true, statements: delta.length }; }
+    catch (e) { db.run('ROLLBACK TO packreplay'); db.run('RELEASE packreplay'); return { ok: false, statements: i, error: e.message }; }
+  }
+  return { recording: recording, replay: replay, readZip: readZip, packOutXml: packOutXml, apply: apply, recordImport: recordImport, installedVersions: installedVersions, incremental: incremental, cmpVer: cmpVer, MAX_OFFICIAL_ID: MAX_OFFICIAL_ID };
 });
