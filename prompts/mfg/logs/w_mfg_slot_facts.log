@@ -1,0 +1,11 @@
+§ADTABLEMAP_LOADED overrides=37 hubs=10
+§MFG-SLOT-LOAD overrides=37 docTables=65 contain=533 break=facts
+§MFG-SLOT-S1 judged=25 diff=4
+  §MFG-SLOT S1 every layers-table table resolves to its slot FAIL {"diff":["PP_MRP: want documents got items","PP_Order: want documents got items","PP_Order_Node: want documents got items","PP_Cost_Collector: want documents got items"]}
+§MFG-SLOT-S2 population=55 bySlot={"items":37,"document_lines":11,"compiler":6,"documents":1} unlisted=26
+§MFG-SLOT-UNLISTED MP_AssetMeter=items MP_AssetMeter_Log=items MP_JobStandar=items MP_JobStandar_Resource=items MP_JobStandar_Task=items MP_Meter=items MP_Prognosis=items M_ForecastLine=items PP_Order_BOMLine_Trl=compiler PP_Order_BOMLine_v=items PP_Order_BOMLine_vt=items PP_Order_BOM_Header_v=items PP_Order_BOM_Header_vt=items PP_Order_BOM_Trl=compiler PP_Order_Header_v=items PP_Order_Header_vt=items PP_Order_Node_Trl=compiler PP_Order_Node_v=items PP_Order_Node_vt=items PP_Order_Workflow_Header_v=items PP_Order_Workflow_Header_vt=items PP_Order_Workflow_Trl=compiler PP_Product_BOMLine_Trl=compiler PP_Product_BOMLine_v=items PP_Product_BOMLine_vt=items PP_Product_BOM_Trl=compiler
+  §MFG-SLOT S2 every dictionary PP/MP/S_Resource/M_Forecast table resolves to a slot PASS
+  §MFG-SLOT S3 Maintenance headers=documents, tasks/resources=document_lines FAIL {"diff":["MP_Maintain: want documents got items","MP_OT: want documents got items","MP_OT_Request: want documents got items"]}
+§MFG-SLOT-S4 fact-dependent(no override, documents only via DocStatus)=PP_MRP,PP_Order,PP_Order_Node,PP_Cost_Collector | override-pinned=8
+  §MFG-SLOT S4 pinned slots are rule-produced (fact-dependent tables flip to items without facts) PASS
+§MFG-SLOT-VERDICT FAIL judged=4 failed=2 inconclusive=0

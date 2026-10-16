@@ -17,9 +17,19 @@
  *   A5 REAL-COLORS       — after the walk, each walked disc's InstancedMesh base colour == DW_COLOR[disc]
  *                          (not stuck on the 0xffb347 flash colour, proven by reading material.color, not
  *                          instanceColor, since the post-commit re-fold rebuilds meshes fresh either way).
- *   A6 COMMITTED         — op-log grew by the total placed count, signed + verifyChain OK.
+ *   A6 COMMITTED         — op-log grew by the total placed count PLUS the routed network's own signed rows
+ *                          (bend fittings / sweeps, read from the op-log — §WALK-BRIDGE-ALL), verifyChain OK.
  *   A7 VISIBLE           — the framebuffer changed after the walk (readPixels checksum differs).
  *   A8 NO-ERROR          — zero pageerror across the whole sequence.
+ *   A9 TOOLTIP           — (MODELLER_MASTER.md row 17) the synthetic __ALL__ row's ▶ affordance reads
+ *                          "Walk ALL services" (§WALKALL-MEP-ONLY, red1 2026-09-24: it walks the services only;
+ *                          was "Walk ALL disciplines"); an ordinary disc row keeps the
+ *                          singular "Walk this discipline".
+ *   A10 NO-PROXY-TOAST   — (row 18 negative control) Duplex (253 el.) < threshold (50000) ⇒ NO
+ *                          "reveal animation simplified" toast may fire on the normal path.
+ *   B3 PROXY-TOAST-ONCE  — (row 18) with the threshold lowered so proxyMode fires, the downgrade is
+ *                          surfaced to the USER exactly ONCE per walk-all run (§TOAST line), not per
+ *                          discipline (Duplex roster = 4 discs → 4 BATCH flashes, still 1 toast).
  *
  * PERF-GUARD NOTE (§4 of the walk-all spec): this witness runs on Duplex (253 scene elements), far below
  * window.DW_ALL_PROXY_THRESHOLD (50000) — the guard's proxyMode branch does NOT fire here by construction.
@@ -44,6 +54,9 @@ async function openDuplex(pg) {
   await pg.click('#b-open'); await sleep(200);
   await pg.click('#m-open-panel .mo-row[data-key="Duplex"]');
   await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
+  // Anti-race (2026-07-30, seen as a spurious A6 red: before.oplogLen read 0): __dwBuf lands BEFORE the
+  // arcseed commitSeedGroup (196 ops + verifyChain) finishes — wait for the seed to actually be in the log.
+  await pg.waitForFunction(() => window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length > 0, { timeout: 30000 }).catch(() => {});
   await sleep(2000);
 }
 
@@ -57,8 +70,18 @@ async function openDuplex(pg) {
   {
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    const proxyToasts = []; pg.on('console', m => { const t = m.text(); if (/^§TOAST/.test(t) && t.indexOf('reveal animation simplified') >= 0) proxyToasts.push(t); });
     const shot = (label) => pg.screenshot({ path: path.join(SHOTS, 'W-E2E-WALK-ALL-' + label + '.png') }).catch(() => {});
     await openDuplex(pg);
+
+    // A9 (MODELLER_MASTER.md row 17): read the REAL rendered title attributes off the production DOM.
+    const titles = await pg.evaluate(() => {
+      const allEl = document.querySelector('[data-bnode="dw-all"] .bn-walk');
+      const discEl = Array.from(document.querySelectorAll('.bn-walk')).find(el => { const row = el.closest('[data-bnode]'); return row && row.getAttribute('data-bnode') !== 'dw-all'; });
+      return { all: allEl ? allEl.getAttribute('title') : null, disc: discEl ? discEl.getAttribute('title') : null };
+    });
+    console.log('  §TOOLTIP ' + JSON.stringify(titles));
+    chk('A9 TOOLTIP (__ALL__ row plural, disc row singular)', titles.all === 'Walk ALL services' && titles.disc === 'Walk this discipline', JSON.stringify(titles));
 
     const roster = await pg.evaluate(() => window.DiscWalker.disciplines());
     const before = await pg.evaluate(() => {
@@ -111,7 +134,12 @@ async function openDuplex(pg) {
       const wd = gl.drawingBufferWidth, ht = gl.drawingBufferHeight, px = new Uint8Array(wd * ht * 4); gl.readPixels(0, 0, wd, ht, gl.RGBA, gl.UNSIGNED_BYTE, px);
       let s = 0; for (let i = 0; i < px.length; i += 257) s = (s + px[i]) >>> 0;
       const inserts = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').length;
-      return { result, glassStill, colorCheck, pix: s, oplogLen: window.Bonsai.oplog.length, inserts };
+      // §WALK-BRIDGE-ALL (MODELLER_MASTER §STRATEGY L1): once a walk ROUTES, it also signs the bend fittings at the
+      // routed runs' turns (dwfit, GEOM_INSERT with _dw.fit) and any GEOM_SWEEP runs with a real cross-section.
+      // Those are real committed rows of the walk, counted from the op-log itself, not assumed.
+      const routeRows = window.Bonsai.oplog._geomOps().filter(o => o.parameters && o.parameters._dw &&
+        (o.parameters._dw.fit || o.op_type === 'GEOM_SWEEP')).length;
+      return { result, glassStill, colorCheck, pix: s, oplogLen: window.Bonsai.oplog.length, inserts, routeRows };
     });
     const chain = await pg.evaluate(async () => { try { const db = await window.Bonsai.oplog._ensureDb(); const v = await window.KernelOps.verifyChain(db); return !!v.ok; } catch (e) { return 'ERR:' + e.message; } });
 
@@ -132,9 +160,10 @@ async function openDuplex(pg) {
     chk('A3 XRAY-APPLIED (mid-walk x-ray tinting present)', mid.tinted > 0 && mid.xrayed > 0, 'tinted=' + mid.tinted + ' xrayed=' + mid.xrayed + ' glass=' + mid.glass + ' glow=' + mid.glow + ' of total=' + mid.total);
     chk('A4 XRAY-CLEARED (no glass tint left after)', after.glassStill === 0, 'glassStill=' + after.glassStill);
     chk('A5 REAL-COLORS (settled to DW_COLOR, not stuck flash)', allColorsMatch, JSON.stringify(after.colorCheck));
-    chk('A6 COMMITTED (op-log grew by placedTotal, chain OK)', after.oplogLen === before.oplogLen + placedTotal && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' (+' + placedTotal + ') chain=' + chain);
+    chk('A6 COMMITTED (op-log grew by placedTotal + routed-network rows, chain OK)', after.oplogLen === before.oplogLen + placedTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + after.oplogLen + ' (+' + placedTotal + ' placed +' + after.routeRows + ' fittings/sweeps) chain=' + chain);
     chk('A7 VISIBLE (framebuffer changed)', before.pix !== after.pix, 'pix ' + before.pix + '→' + after.pix);
     chk('A8 NO-ERROR', errs.length === 0, errs.slice(0, 2).join(' | '));
+    chk('A10 NO-PROXY-TOAST (row 18 negative control: below threshold ⇒ silent)', proxyToasts.length === 0, 'proxyToasts=' + proxyToasts.length);
 
     await pg.close();
   }
@@ -143,14 +172,17 @@ async function openDuplex(pg) {
   {
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    const proxyToasts = []; pg.on('console', m => { const t = m.text(); if (/^§TOAST/.test(t) && t.indexOf('reveal animation simplified') >= 0) proxyToasts.push(t); });
     await openDuplex(pg);
     await pg.evaluate(() => { window.DW_ALL_PROXY_THRESHOLD = 10; });   // Duplex has 253 scene elements > 10 → guard fires
     await pg.click('[data-bnode="dw-all"]');
     const done = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 60000, polling: 250 }).then(() => true).catch(() => false);
     const result = await pg.evaluate(() => window.__dwAllResult);
     console.log('  §GUARD-RUN done=' + done + ' ' + JSON.stringify(result));
+    console.log('  §PROXY-TOASTS n=' + proxyToasts.length + ' ' + JSON.stringify(proxyToasts));
     chk('B1 PROXY-MODE FIRES when scene > threshold', done && result && result.proxyMode === true, 'proxyMode=' + (result && result.proxyMode));
     chk('B2 NO-ERROR in guard path', errs.length === 0, errs.slice(0, 2).join(' | '));
+    chk('B3 PROXY-TOAST-ONCE (row 18: downgrade surfaced to the user exactly once per run)', proxyToasts.length === 1, 'toasts=' + proxyToasts.length + ' (want 1; per-disc would be ' + ((result && result.walked && result.walked.length) || '?') + ')');
     await pg.close();
   }
 

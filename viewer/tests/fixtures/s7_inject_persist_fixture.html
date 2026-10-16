@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<title>§S7-INJECT-PERSIST fixture — NOT A PAGE, a minimal driver</title>
+<!--
+  viewer/tests/fixtures/s7_inject_persist_fixture.html — the subject page for
+  viewer/tests/witness_s7_inject_persist.js (W-S7-INJECT-PERSIST).
+
+  ⚠ NOT THE VIEWER. This is deliberately NOT viewer.html: what W-S7-INJECT-PERSIST needs to prove is
+  a real BROWSER IndexedDB write of a real, possibly-huge sql.js buffer (the ~127MiB single-value cap
+  §S7-INJECT-WHERE measured) — nothing about the 3D scene, streaming, or camera is under test. Loading
+  the full viewer (three.js, streaming.js, every eager module) would make this witness slow and couple
+  a persist-layer claim to unrelated rendering machinery. This fixture loads exactly the real,
+  unmodified production files the feature actually runs — schedule_gate.js, schedule_author.js,
+  schedule_read_4d.js, schedule_inject.js, lib/sql-wasm.js — the same convention boq_charts.html and
+  mep_report.html already use for a real sql.js page without the full viewer chrome.
+
+  window.__runInject(dbUrl, templateUrl, dbUrlOut) is the one seam the witness drives via
+  page.evaluate: fetch the real building DB + the real 4D_template.json (both served by the witness's
+  own tiny http server — see BLD_ROOT / REPO in the witness), build a minimal A={db,DB_URL,status},
+  and call the REAL window.ScheduleInject.inject(A, {template}) — nothing reimplemented here.
+-->
+<script src="../../lib/sql-wasm.js"></script>
+<!-- rates.js is a plain (non-module) script — its top-level `var SEQUENCE_RULES/SEQUENCE_DEFAULT/
+     LABOR_RATES/RATES` become window globals exactly as viewer.html loads it. materializeZones reads
+     these via global.SEQUENCE_RULES etc. when the caller does not pass them explicitly (schedule_
+     author_ui.js's real wizard relies on the SAME fallback) — without this tag every element floors
+     to SEQUENCE_DEFAULT's bare fallback and the template instantiation has nothing to classify by. -->
+<script src="../../rates.js"></script>
+<script src="../../schedule_gate.js"></script>
+<script src="../../schedule_author.js"></script>
+<script src="../../schedule_read_4d.js"></script>
+<script src="../../schedule_inject.js"></script>
+</head>
+<body>
+<div id="status-row"><div id="status">fixture idle</div></div>
+<script>
+  var A = { status: document.getElementById('status') };
+
+  window.__runInject = async function (dbUrl, templateUrl, dbUrlForKey) {
+    var SQL = await initSqlJs({ locateFile: function (f) { return '../../lib/' + f; } });
+    var dbBuf = await fetch(dbUrl).then(function (r) {
+      if (!r.ok) throw new Error('fetch db HTTP ' + r.status + ' ' + dbUrl);
+      return r.arrayBuffer();
+    });
+    var tpl = null;
+    if (templateUrl) {
+      try { tpl = await fetch(templateUrl).then(function (r) { return r.ok ? r.json() : null; }); }
+      catch (e) { tpl = null; }
+    }
+    A.db = new SQL.Database(new Uint8Array(dbBuf));
+    // The real DB_URL cachedFetch/persistDb key off — a plausible '../buildings/X.db' shape, NOT the
+    // http:// test-server URL __runInject actually fetched from (which only exists for this witness).
+    A.DB_URL = dbUrlForKey || dbUrl;
+
+    var before = { schedules: _count('schedules'), tasks: _count('tasks') };
+    var t0 = performance.now();
+    var res = await window.ScheduleInject.inject(A, { template: tpl });
+    var wallMs = performance.now() - t0;
+    var after = { schedules: _count('schedules'), tasks: _count('tasks') };
+
+    var sample = null;
+    if (res && res.ok) {
+      var gr = A.db.exec("SELECT te.guid FROM task_elements te LIMIT 1");
+      var guid = (gr.length && gr[0].values.length) ? gr[0].values[0][0] : null;
+      if (guid) sample = window.ScheduleRead4D.windowForGuid(A.db, guid, { scheduleAuthor: window.ScheduleAuthor });
+    }
+    function _count(t) {
+      try { var r = A.db.exec('SELECT COUNT(*) FROM ' + t); return r.length ? r[0].values[0][0] : 0; }
+      catch (e) { return -1; }
+    }
+    return { res: res, before: before, after: after, wallMs: wallMs, sample: sample, statusText: A.status.textContent };
+  };
+</script>
+</body>
+</html>

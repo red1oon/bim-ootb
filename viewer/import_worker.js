@@ -25,6 +25,7 @@ try {
   console.log('[S220] §WORKER_SRC cdn unpkg');
 }
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
+try { importScripts('ifc_surface_names.js'); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL load ' + eSN.message); }   // §IFC_SURFACE_NAMES
 
 // Discipline classification (same as Python pipeline)
 const DISC_MAP = {
@@ -74,13 +75,23 @@ function properClassName(typeCode) {
 }
 
 var VALID_DISCS = ['ARC','STR','MEP','PLB','ACMV','ELEC','FP','VENT','HEAT','SAN','COOL','VOID','AIR','DUCT','HVAC','MECH','FIRE','SPR','GAS','LIFT','CONV','CIV','LAND','EXT','INT','CEIL','ROOF','SITE','DEMO'];
+// §CIVIL_DISC (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §B.2a): civil discipline files name
+// themselves by these words (JELAPANG_ROAD FURNITURE.ifc …) — verbatim from the file names. Only these
+// are also matched inside space-separated words: matching ALL codes there turned "IFC4 Demo Library.ifc"
+// into DEMO (demolition) — measured by the filename sweep, 464 names on disk.
+var CIVIL_DISCS = ['ROAD','FURNITURE','LIGHTING','DRAINAGE','SIGNAGE','MARKING','EARTHWORK',
+  'GEOTECH','GABION','CHAINAGE','ROW'];   // §PARTNER_DISCS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md): the BIM partner's added files
 
 function discFromFilename(fname) {
   // Extract discipline from filename: LTU_AHouse_HEAT.ifc → HEAT
   var stem = fname.replace(/\.ifc$/i, '');
   var parts = stem.split(/[_\-]/);
   for (var i = parts.length - 1; i >= 0; i--) {
-    if (VALID_DISCS.indexOf(parts[i].toUpperCase()) >= 0) return parts[i].toUpperCase();
+    var up = parts[i].toUpperCase();
+    if (VALID_DISCS.indexOf(up) >= 0 || CIVIL_DISCS.indexOf(up) >= 0) return up;
+    // §CIVIL_DISC: civil exports use spaces inside a part ("ROAD FURNITURE") — civil words only.
+    var words = up.split(/\s+/);
+    for (var w = words.length - 1; w >= 0; w--) if (CIVIL_DISCS.indexOf(words[w]) >= 0) return words[w];
   }
   return null;
 }
@@ -174,7 +185,7 @@ self.onmessage = async function(e) {
       self.postMessage({ type: 'error', message: 'Failed to parse IFC. Check schema version — supported: IFC2x3, IFC4, IFC4x3.' });
       return;
     }
-    // Unit scaling applied AFTER tessellation via heuristic (web-ifc is inconsistent)
+    // Units: web-ifc normalises geometry to metres itself (§UNITS v3 below) — no rescale step.
 
     // ── S252: Build expressID → {r,g,b,a} colour map ──────────────────────
     // web-ifc 0.0.77 returns white for IFC4 Revit files that use IFCINDEXEDCOLOURMAP.
@@ -463,6 +474,8 @@ self.onmessage = async function(e) {
       IfcController: 1, IfcFlowInstrument: 1, IfcProtectiveDeviceTrippingUnit: 1 };
     var _skipCount = 0;
 
+    // §IFC_SURFACE_NAMES: authored finish names (IfcSurfaceStyle per part, IfcMaterial per element) — was dropped (material_name NULL)
+    var _sn = null; try { if (self.IfcSurfaceNames) _sn = IfcSurfaceNames.build(ifcApi, WebIFC, modelID); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL build ' + eSN.message); }
     for (const el of elements) {
       if (_SKIP_GEOM[el.ifcClass]) { _skipCount++; geomDone++; continue; }
       try {
@@ -491,6 +504,7 @@ self.onmessage = async function(e) {
             el._bboxZ = Math.max.apply(null, bzs) - Math.min.apply(null, bzs);
             if (geoCount > 1) continue; // skip box geometry, keep dimensions
           }
+          if (_sn) IfcSurfaceNames.addPart(_sn, el.expressID, geo.geometryExpressID, geo.color, idx.length / 3);   // §IFC_SURFACE_NAMES
           var m = geo.flatTransformation;
           var vc = verts.length / 6;
           // Transform vertices: web-ifc Y-up → IFC Z-up
@@ -569,15 +583,32 @@ self.onmessage = async function(e) {
             indices: idxBuf,
             normals: normals.buffer,
           });
-          // If no IFC bbox was extracted, compute from vertices
+          // If no IFC bbox was extracted, compute from vertices.
+          // Implementing IFC_LARGE_PRIVATE_STRESS_TEST.md §NEXT_SESSION item 2 — Witness: W-BBOX-BIGMESH
+          // §BBOX_SCALAR: was three vxs/vys/vzs arrays + Math.max.apply(null, arr). `apply` spreads the
+          // whole array onto the call stack AS ARGUMENTS; measured limit 125,570 args (poc_apply_overflow.js),
+          // and KUL070 meshes reach 248,782 verts — those threw "Maximum call stack size exceeded" and the
+          // element was §GEOM_SKIPped. This is NOT a rare fallback: nothing in this pipeline reads
+          // IfcBoundingBox (grep IFCBOUNDINGBOX = 0 in the KUL files; extractIFCtoDB.py and Bonsai's
+          // federation_preprocessor both derive AABBs from the geometry pass), so this is the STANDARD
+          // path for every import. Single scalar pass: no intermediate arrays, no stack growth, O(n).
           if (!el._bboxX) {
-            var vxs = [], vys = [], vzs = [];
+            var _mnx = Infinity, _mny = Infinity, _mnz = Infinity;
+            var _mxx = -Infinity, _mxy = -Infinity, _mxz = -Infinity;
             for (var vi2 = 0; vi2 < vertCount; vi2++) {
-              vxs.push(positions[vi2*3]); vys.push(positions[vi2*3+1]); vzs.push(positions[vi2*3+2]);
+              var _px = positions[vi2*3], _py = positions[vi2*3+1], _pz = positions[vi2*3+2];
+              if (_px < _mnx) _mnx = _px; if (_px > _mxx) _mxx = _px;
+              if (_py < _mny) _mny = _py; if (_py > _mxy) _mxy = _py;
+              if (_pz < _mnz) _mnz = _pz; if (_pz > _mxz) _mxz = _pz;
             }
-            el._bboxX = Math.max.apply(null, vxs) - Math.min.apply(null, vxs);
-            el._bboxY = Math.max.apply(null, vys) - Math.min.apply(null, vys);
-            el._bboxZ = Math.max.apply(null, vzs) - Math.min.apply(null, vzs);
+            el._bboxX = _mxx - _mnx;
+            el._bboxY = _mxy - _mny;
+            el._bboxZ = _mxz - _mnz;
+            if (vertCount > 125570) {
+              console.log('§BBOX_BIGMESH guid=' + el.guid + ' verts=' + vertCount +
+                ' bbox=' + el._bboxX.toFixed(2) + 'x' + el._bboxY.toFixed(2) + 'x' + el._bboxZ.toFixed(2) +
+                ' (over the 125,570 apply-limit that used to §GEOM_SKIP this element)');
+            }
           }
           transforms.push({ guid: el.guid, cx: cx, cy: cy, cz: cz, rx: 0, ry: 0, rz: 0,
             bx: el._bboxX, by: el._bboxY, bz: el._bboxZ });
@@ -614,6 +645,7 @@ self.onmessage = async function(e) {
         ' (no geometry → not a spatial element)');
     }
     const skipped = elements.length - geometries.length;
+    if (_sn) { try { for (const el of elements) { var _r = IfcSurfaceNames.resolve(_sn, el.expressID); el.matName = _r.matName; el.surfParts = _r.parts; } console.log(IfcSurfaceNames.statsLine(_sn, elements)); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL resolve ' + eSN.message); } }
     if (_skipCount) console.log('[S220] §GEOM_FAST_SKIP classes=' + Object.keys(_SKIP_GEOM).join(',') + ' count=' + _skipCount + ' (no GetFlatMesh call — saves OOM cycles)');
     console.log('[S220] §GEOM_SUMMARY elements=' + elements.length + ' renderable=' + renderableElements.length + ' ghosts=' + ghosts.length + ' materials=' + matCount);
 
@@ -646,20 +678,13 @@ self.onmessage = async function(e) {
 
     const storeys = [...new Set(renderableElements.map(e => e.storey))].sort();
 
-    // §UNITS v2 (2026-07-12, JKR georeferenced Revit series — see prompts/
-    // RESUME_ARCH_DISC_FILTER_STUCK_HIDDEN.md + RESUME_FLATTRANSFORMATION_POSITION_BUG.md):
-    // Discriminate units by model SPAN, never by absolute coordinate magnitude. The old
-    // `maxCoord > 500 ⇒ mm` test crushed georeferenced METER models (site at ~271km map
-    // easting, span 60m) x1/1000 — and it scaled centers+verts but NOT bbox_x/y/z, leaving
-    // every mm-import's bboxes 1000x too big (which is also what made the later bbox-ratio
-    // self-heal misfire into "geometry hell"). Rules:
-    //   span > 1500 in any axis (incl. element bbox extents) ⇒ mm model ⇒ scale centers,
-    //     verts AND bboxes by 0.001, together, once. (No real building spans 1.5km; a mm
-    //     building spans ≥ ~1500 even for a 1.5m shed.)
-    //   after unit normalisation, any axis whose coordinates sit > 10km from origin ⇒
-    //     georeferenced ⇒ REBASE that axis to a local origin (whole-metre offset, recorded
-    //     in project_metadata as georef_offset_*) — position is an offset problem, not a
-    //     unit problem, and float32 render/positions paths lose precision at map magnitude.
+    // §UNITS v3 (2026-10-04, CIVIL_HIGHWAY_JELAPANG.md §A): web-ifc (0.0.77) bakes the file's declared
+    // length unit into flatTransformation, so every element arrives HERE in metres — measured: a MILLI
+    // house 16.9 m, a MILLI hospital 101.5 m, a METRE highway 2050.4 m. The old v2 rule
+    // ("span > 1500 ⇒ mm ⇒ ×0.001") therefore never fired on a building and only fired on a genuinely
+    // >1.5 km metre model, crushing it 1000× (JELAPANG road: 2 km → 2 m). Removed — no rescale here.
+    //   Still: any axis whose coordinates sit > 10 km from origin ⇒ georeferenced ⇒ REBASE that axis
+    //   to a local origin (whole-metre offset, recorded in project_metadata as georef_offset_*).
     var autoScale = 1.0;
     var georefOffset = [0, 0, 0];
     if (transforms.length > 0) {
@@ -673,19 +698,6 @@ self.onmessage = async function(e) {
         _maxBbox = Math.max(_maxBbox, _t.bx || 0, _t.by || 0, _t.bz || 0);
       }
       var _span = Math.max(_maxC[0] - _minC[0], _maxC[1] - _minC[1], _maxC[2] - _minC[2], _maxBbox);
-      if (_span > 1500) {
-        autoScale = 0.001;
-        for (var ti = 0; ti < transforms.length; ti++) {
-          transforms[ti].cx *= 0.001; transforms[ti].cy *= 0.001; transforms[ti].cz *= 0.001;
-          transforms[ti].bx *= 0.001; transforms[ti].by *= 0.001; transforms[ti].bz *= 0.001;
-        }
-        for (var gi = 0; gi < geometries.length; gi++) {
-          var vBuf = new Float32Array(geometries[gi].vertices);
-          for (var vi = 0; vi < vBuf.length; vi++) vBuf[vi] *= 0.001;
-          geometries[gi].vertices = vBuf.buffer;
-        }
-        for (var _ax = 0; _ax < 3; _ax++) { _minC[_ax] *= 0.001; _maxC[_ax] *= 0.001; }
-      }
       var _computed = [0, 0, 0];
       for (var _ax = 0; _ax < 3; _ax++) {
         var _mid = (_minC[_ax] + _maxC[_ax]) / 2;
@@ -725,10 +737,9 @@ self.onmessage = async function(e) {
         }
         console.log('[S220] §GEOREF_REBASE offset=(' + georefOffset.join(',') + ') — georeferenced site rebased to local origin (offset kept in project_metadata)');
       }
-      console.log('[S220] §UNITS_V2 span=' + _span.toFixed(1) + ' autoScale=' + autoScale +
-        (autoScale !== 1.0 ? ' (mm→m, centers+verts+bboxes together)' : ' (already metres)'));
+      console.log('[S220] §UNITS_V3 span=' + _span.toFixed(1) + 'm autoScale=1 (web-ifc normalised to metres; no span rescale)');
     } else {
-      console.log('[S220] §UNITS_V2 span=n/a autoScale=1 (no transforms)');
+      console.log('[S220] §UNITS_V3 span=n/a autoScale=1 (no transforms) INCONCLUSIVE');
     }
 
     // §SITE_IDENTITY (2026-07-12): read this file's own IfcSite GlobalId + raw placement, scaled
@@ -787,6 +798,120 @@ self.onmessage = async function(e) {
     } catch (siteErr) {
       console.log('[S220] §SITE_IDENTITY_ERROR ' + siteErr.message);
     }
+
+    // ── §GEOREF (prompts/GEOREF_SUNPATH_COMPASS.md §2/§3.2) — Witness: W-GEOREF-ANGLE ─────────
+    // Implementing GEOREF_SUNPATH_COMPASS.md §3.2. This path wrote NO georef at all: before this,
+    // import_db_builder.js's project_metadata INSERT carried only project_name/import_date/
+    // building_name/source_uri, so a browser-imported building had no `true_north_angle` row and
+    // streaming.js's §TRUE_NORTH read fell through to its 0 default — the CLI path at least wrote
+    // a (stubbed) key; this one did not exist.
+    //
+    // ⚠ NOT the same mechanism as §GEOREF_REBASE above. That one subtracts a large coordinate
+    // magnitude to bring geometry back to a local origin and carries no lat/long at all. These
+    // are the site's real map coordinates and the model's real rotation. Both can be present,
+    // neither substitutes for the other.
+    //
+    // ⚠ SIGN — the one thing in here that a plausible-looking implementation gets backwards.
+    // TrueNorth points at true north IN MODEL COORDINATES, so true north sits at model-bearing
+    // atan2(tx, ty). The two consumers want the OPPOSITE angle: the bearing of MODEL north
+    // measured from TRUE north, because sitecam.js:81 does `heading - trueNorthAngle` on a true
+    // bearing and walk.js:275 rotates an east/north displacement into model X/Y. So the stored
+    // value is atan2(-tx, ty) in DEGREES. Cross-checked against the Python extractor
+    // (DAGCompiler/python/extractIFCtoDB.py `extract_georef`, same formula, same units) so the
+    // two import paths can never disagree about which way a building faces.
+    var georef = {
+      trueNorthAngle: 0, trueNorthSource: 'default_zero',
+      latitude: null, longitude: null, elevationM: null, latLongSource: 'unknown'
+    };
+    // IfcCompoundPlaneAngleMeasure -> decimal degrees. Components are [deg, min, sec,
+    // millionths-of-sec] and web-ifc hands each one back wrapped, so unwrap before arithmetic.
+    // Per the IFC spec every component carries the SAME sign, but exporters disagree:
+    // SampleHouse_ARC.ifc writes RefLongitude = (0, -7, -34, -450321) with an UNSIGNED zero
+    // degrees component. Take the sign from ANY negative component, then sum magnitudes — summing
+    // signed parts is right there by luck and wrong for a (-3, 30, 0)-style export.
+    function _cpaToDegrees(parts) {
+      if (!parts || !parts.length) return null;
+      var v = [], i, p;
+      for (i = 0; i < 4; i++) {
+        p = parts[i];
+        if (p == null) { v.push(0); continue; }
+        if (typeof p === 'number') v.push(p);
+        else if (typeof p.value === 'number') v.push(p.value);
+        else if (typeof p._representationValue === 'number') v.push(p._representationValue);
+        else return null;
+      }
+      var sign = (v[0] < 0 || v[1] < 0 || v[2] < 0 || v[3] < 0) ? -1 : 1;
+      return sign * (Math.abs(v[0]) + Math.abs(v[1]) / 60 + Math.abs(v[2]) / 3600 +
+                     Math.abs(v[3]) / 3600000000);
+    }
+    function _num(x) {
+      if (x == null) return null;
+      if (typeof x === 'number') return x;
+      if (typeof x.value === 'number') return x.value;
+      if (typeof x._representationValue === 'number') return x._representationValue;
+      return null;
+    }
+    try {
+      var ctxIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCGEOMETRICREPRESENTATIONCONTEXT);
+      for (var gci = 0; gci < ctxIds.size(); gci++) {
+        var _ctx = ifcApi.GetLine(modelID, ctxIds.get(gci));
+        if (!_ctx || !_ctx.TrueNorth || _ctx.TrueNorth.value == null) continue;
+        var _dir = ifcApi.GetLine(modelID, _ctx.TrueNorth.value);
+        var _dr = _dir && _dir.DirectionRatios;
+        if (!_dr || _dr.length < 2) continue;
+        // ⚠ TRUE NORTH MUST LIE IN THE GROUND PLANE, and some exporters write something that does
+        // not. FOUND IN THIS FLEET 2026-09-18 in four shipped source files (Clinic_Electrical_
+        // IFC2x3.ifc #11050, Clinic_HVAC_IFC2x3.ifc #76172, Ifc2x3_Duplex_Plumbing.ifc #40,
+        // LTU_AHouse_STR.ifc #66): TrueNorth = IFCDIRECTION((2.0, 6.12303176911189E-17, 1.0)) —
+        // a THREE-component direction with z = 1.0 and an XY part of length 2. Not a bearing, and
+        // not conformant (IFC defines TrueNorth in a 3D context as a 2D direction in the XY plane).
+        // Its first two ratios give atan2(-2, 0) = -90 deg exactly: precise, confident, and a
+        // quarter turn wrong on every site-camera and walk-mode fix. REFUSE it; say that it was
+        // refused, which is a different fact from "the file had none".
+        // Mirrors DAGCompiler/python/extractIFCtoDB.py `extract_georef` so the two import paths
+        // cannot disagree about which files are trustworthy.
+        var _tz = _dr.length > 2 ? _num(_dr[2]) : 0;
+        if (_tz != null && Math.abs(_tz) > 1e-6) {
+          georef.trueNorthSource = 'malformed_truenorth_ignored';
+          continue;
+        }
+        var _tx = _num(_dr[0]), _ty = _num(_dr[1]);
+        if (_tx == null || _ty == null || (!_tx && !_ty)) continue;
+        var _ang = Math.atan2(-_tx, _ty) * 180 / Math.PI;
+        // Revit writes cos(90 deg) as 6.123e-17 rather than 0, so "true north IS model north"
+        // arrives as ~-3.5e-15 deg. Snap that float noise; 1e-9 deg is 0.1 mm of arc.
+        georef.trueNorthAngle = Math.abs(_ang) < 1e-9 ? 0 : _ang;
+        georef.trueNorthSource = 'ifc_truenorth';   // a REAL authored 0 — not the old stub 0
+        break;
+      }
+    } catch (tnErr) {
+      console.log('[S220] §GEOREF_TRUENORTH_ERROR ' + tnErr.message);
+    }
+    try {
+      var _gsIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSITE);
+      for (var gsi = 0; gsi < _gsIds.size(); gsi++) {
+        var _gs = ifcApi.GetLine(modelID, _gsIds.get(gsi));
+        var _lat = _cpaToDegrees(_gs && _gs.RefLatitude);
+        var _lon = _cpaToDegrees(_gs && _gs.RefLongitude);
+        if (_lat == null || _lon == null) continue;  // a federated drop can carry a bare IfcSite
+        georef.latitude = _lat;
+        georef.longitude = _lon;
+        georef.latLongSource = 'ifc_site';
+        // RefElevation is an IfcLengthMeasure in the FILE's own length unit, not metres —
+        // _lengthUnitScale is the declared LENGTHUNIT read above, the SAME reason §SITE_IDENTITY
+        // could not use `autoScale` here (raw GetLine values are never auto-normalised).
+        var _re = _num(_gs && _gs.RefElevation);
+        if (_re != null) georef.elevationM = _re * _lengthUnitScale;
+        break;
+      }
+    } catch (geoErr) {
+      console.log('[S220] §GEOREF_SITE_ERROR ' + geoErr.message);
+    }
+    console.log('[S220] §GEOREF true_north=' + georef.trueNorthAngle.toFixed(6) + 'deg src=' +
+      georef.trueNorthSource + ' lat=' + (georef.latitude == null ? 'n/a' : georef.latitude.toFixed(8)) +
+      ' lon=' + (georef.longitude == null ? 'n/a' : georef.longitude.toFixed(8)) +
+      ' elev=' + (georef.elevationM == null ? 'n/a' : georef.elevationM.toFixed(4) + 'm') +
+      ' src=' + georef.latLongSource);
     console.log('[S220] §GEOM_DONE elements=' + elements.length + ' withGeometry=' + geometries.length + ' skipped=' + (elements.length - geometries.length) + ' withMaterial=' + matCount);
     post('progress', 95, 'Packaging results...');
 
@@ -975,6 +1100,49 @@ self.onmessage = async function(e) {
       console.log('§4D_NONE no scheduling data in this IFC');
     }
 
+    // §CIVIL_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S P-1 / §E.2): property labels for CIVIL
+    // discipline files only — a civil set carries its identity in psets (JKR DAK: 01_Component_Name MAINLINE /
+    // ROAD J2A…, 15_Name TRAFFIC SIGNAL, 16_Name + 17_Code sign codes, 02_Type + 03_Dimension drain sizes) while its
+    // element Name is a generic 'IfcBuildingElementProxy_<id>'. Building files are NOT read here (Revit sets carry
+    // dozens of props per element — that cost is a separate, measured decision) → building imports unchanged.
+    // One pass over IfcRelDefinesByProperties; property lines cached per pset; only non-empty single values kept.
+    var psets = [];
+    var _psDisc = discFromFilename(filename);
+    if (_psDisc && CIVIL_DISCS.indexOf(_psDisc) >= 0) {
+      var _psT0 = Date.now(), _psRels = 0, _psSets = 0, _guidOfId = {}, _psCache = {};
+      renderableElements.forEach(function (e) { _guidOfId[e.expressID] = e.guid; });
+      try {
+        var _rels = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES);
+        for (var _ri = 0; _ri < _rels.size(); _ri++) {
+          var _rel = ifcApi.GetLine(modelID, _rels.get(_ri)); _psRels++;
+          var _objs = (_rel.RelatedObjects || []).map(function (o) { return _guidOfId[o.value != null ? o.value : o]; }).filter(Boolean);
+          if (!_objs.length || !_rel.RelatingPropertyDefinition) continue;
+          var _pid = _rel.RelatingPropertyDefinition.value != null ? _rel.RelatingPropertyDefinition.value : _rel.RelatingPropertyDefinition;
+          var _vals = _psCache[_pid];
+          if (!_vals) {
+            _vals = [];
+            var _ps = ifcApi.GetLine(modelID, _pid);
+            if (_ps && _ps.HasProperties) {
+              _psSets++;
+              var _psName = (_ps.Name && _ps.Name.value) || '';
+              _ps.HasProperties.forEach(function (h) {
+                var _pr = ifcApi.GetLine(modelID, h.value != null ? h.value : h);
+                var _v = _pr && _pr.NominalValue && _pr.NominalValue.value;
+                if (_v == null) return;
+                _v = String(_v).trim();
+                if (!_v || _v === '-' || _v === '.') return;
+                _vals.push([_psName, (_pr.Name && _pr.Name.value) || '', _v]);
+              });
+            }
+            _psCache[_pid] = _vals;
+          }
+          for (var _oi = 0; _oi < _objs.length; _oi++) for (var _vi = 0; _vi < _vals.length; _vi++) psets.push([_objs[_oi], _vals[_vi][0], _vals[_vi][1], _vals[_vi][2]]);
+        }
+      } catch (psErr) { console.warn('§CIVIL_PSETS_ERR ' + psErr.message); }
+      console.log('§CIVIL_PSETS file=' + filename + ' disc=' + _psDisc + ' rels=' + _psRels + ' psets=' + _psSets +
+        ' values=' + psets.length + ' ms=' + (Date.now() - _psT0) + (psets.length ? '' : ' VACUOUS — no non-empty property values'));
+    }
+
     const result = {
       type: 'done',
       meta: {
@@ -985,11 +1153,12 @@ self.onmessage = async function(e) {
         disciplines: discCounts,
         flowTermSplit: flowTermSplit, // §FLOWTERM-NOTE: how the abstract IfcFlowTerminal was split by name
         storeys: storeys,
-        unitScale: autoScale,        // §UNITS_V2 — 0.001 when a mm-unit model was normalised to metres
+        unitScale: autoScale,        // §UNITS_V3 — always 1 (web-ifc delivers metres); kept for old-DB schema compat
         georefOffset: georefOffset,  // §GEOREF_REBASE — whole-metre site offset subtracted from centers
         appliedGeorefOffset: georefOffset, // alias, explicit name for §SITE_IDENTITY correction math
         siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
         siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
+        georef: georef,              // §GEOREF — real lat/long/elevation + true-north rotation
       },
       elements: renderableElements,
       geometries: geometries,
@@ -1001,6 +1170,7 @@ self.onmessage = async function(e) {
       taskSequences: taskSequences,
       taskElements: taskElements,
       calendars: calendars,  // T1b §5.2 — thin work-calendar carrier
+      psets: psets,          // §CIVIL_PSETS — [guid, pset, name, value]; empty for non-civil files
     };
 
     // Transfer array buffers for zero-copy

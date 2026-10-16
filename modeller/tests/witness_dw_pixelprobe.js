@@ -17,7 +17,7 @@
  *   node witnesses (W-RULE-CONNECTOR 4/4, W-ASSEMBLE-CONNECT 6/6, §DW-PRIM). Read the §-log; exit ≠ evidence.
  *
  * CLAIMS (FP walk on SampleCastle):
- *   P1 FIXTURE-BOXES   — dwRoot carries ≥1 FP fixture InstancedMesh with instances>0 (the §PRIM boxes rendered).
+ *   P1 FIXTURE-MESHES  — dwRoot carries ≥1 FP fixture InstancedMesh with instances>0 (real LOD400 meshes; §WALK-LOD400-ONLY: never boxes).
  *   P2 CONNECTOR-EDGES — dwRoot carries the §3c connector-edge LineSegments (edges>0) → the hookup render is WIRED.
  *   P3 CONNECT-LOG     — §DW-CONNECT fired with hookups == the enriched-fixture count (>0): the projected
  *                        connectorEnrich + edge render covered every enriched sprinkler. (COUNT is a value proven
@@ -62,6 +62,8 @@ const server = http.createServer((q, r) => {
   await pg.click('#b-open'); await sleep(200);
   await pg.click('#m-open-panel .mo-row[data-key="SampleCastle"]');
   await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 30000 }).catch(() => {});
+  // §WALK-LOD400-ONLY: the render draws ONLY real meshes resolved from the building's geo buffer — wait for it (was: boxes drawn at once).
+  await pg.waitForFunction(() => !!window.__dwGeoBuf, { timeout: 60000 }).catch(() => {});
   await sleep(500);
 
   const before = await pg.evaluate(() => window.__dwPixelProbe('FP'));
@@ -76,7 +78,12 @@ const server = http.createServer((q, r) => {
       DW.dwOpen(new SQL.Database(new Uint8Array(dxBuf)));               // residential primary
       DW.dwBorrow('FP', new SQL.Database(new Uint8Array(teBuf)));       // borrow FP/sprinkler from terminal
       const bdb = new SQL.Database(new Uint8Array(window.__dwBuf));
-      const w = DW.dwWalk('FP', bdb, 'SampleCastle');
+      // §NET-AUDIT WRONG-PATH (2026-09-27): production (_discWalkOne) walks with { schedule: true, geoDb }; the bare legacy call used here
+      // returns placements with no mesh hash, which rendered as boxes and are now refused (§WALK-LOD400-ONLY). Same call as production.
+      const _g = window.__dwGeoBuf ? new SQL.Database(new Uint8Array(window.__dwGeoBuf)) : null;
+      let w = DW.dwWalk('FP', bdb, 'SampleCastle', { schedule: true, geoDb: _g || undefined });
+      if ((w.refused || !w.placed) && !w.verdict) w = DW.dwWalk('FP', bdb, 'SampleCastle', { geoDb: _g || undefined });
+      if (_g) _g.close();
       DW.connectorEnrich(w.placements);                                // projected rule_connector → hookups
       window.__dwWalks = window.__dwWalks || {};
       window.__dwRender.walk('FP', w.placements);                      // the SAME render the live walk calls
@@ -102,7 +109,7 @@ const server = http.createServer((q, r) => {
 
   let pass = 0, fail = 0;
   const chk = (n, c, x) => { if (c) { pass++; console.log('  ✅ ' + n + (x ? '  ' + x : '')); } else { fail++; console.log('  ❌ ' + n + (x ? '  ' + x : '')); } };
-  chk('P1 FIXTURE-BOXES rendered', after.boxes > 0 && after.instances > 0, 'boxes=' + after.boxes + ' instances=' + after.instances);
+  chk('P1 FIXTURE-MESHES rendered (LOD400, no boxes)', after.boxes > 0 && after.instances > 0, 'boxes=' + after.boxes + ' instances=' + after.instances);
   chk('P2 §3c CONNECTOR-EDGES wired', after.edges > 0, 'connectorEdges=' + after.edges);
   chk('P3 §DW-CONNECT hookups == enriched (>0)', walk.enriched > 0 && hookups === String(walk.enriched), 'hookups=' + hookups + ' enriched=' + walk.enriched);
   chk('P4 PAINTED (canvas non-blank)', after.litPct > 0, 'litPixels=' + after.litPct + '%');

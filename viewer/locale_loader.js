@@ -15,6 +15,11 @@
   var _scripts = document.getElementsByTagName('script');
   var _thisScript = _scripts[_scripts.length - 1];
   var LOCALE_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'locales/';
+  // S226 §R2: LABELS come from viewer/i18n/<code>.json — BUILT (viewer/tools/build_trl.js) from the iDempiere-format
+  // sources viewer/i18n/ad_message_base.csv (AD_Message) ⋈ viewer/i18n/AD_Message_Trl_<lang>.xml. locales/<code>.js
+  // keeps only the COST data (currency, rate attribution, rates). Never edit the JSON — edit the XML and rebuild.
+  var I18N_BASE = _thisScript.src.replace(/[^/]*$/, '') + 'i18n/';
+  var LOCALE_VERSION = 8; // bump to invalidate cached locale packs (v7 = S226 §R2 split: labels JSON + cost .js; v8 = §R2d Help + §R3 Modeller rows)
 
   // ── Locale mapping: navigator.language → locale file code ──
   var LOCALE_MAP = {
@@ -73,21 +78,32 @@
     // 1. URL param override
     var urlLang = params.get('lang');
     if (urlLang && AVAILABLE_LOCALES.some(function(l) { return l.code === urlLang; })) {
-      return urlLang;
+      return _detected('url', urlLang, urlLang);
+    }
+    // 1b. S226 §R1.2 — a ?lang= that is not an exact Viewer code (the ERP hands over 'ar') resolves through LOCALE_MAP
+    if (urlLang) {
+      var mapped = LOCALE_MAP[urlLang.replace('_', '-')] || LOCALE_MAP[urlLang.split(/[-_]/)[0]];
+      if (mapped) return _detected('url-mapped', urlLang, mapped);
     }
     // 2. localStorage saved config
     try {
       var saved = JSON.parse(localStorage.getItem('bim_ootb_config'));
-      if (saved && saved.locale) return saved.locale;
+      if (saved && saved.locale) return _detected('saved', urlLang, saved.locale);
     } catch(e) { /* ignore */ }
     // 3. Browser language
     var browserLang = navigator.language || navigator.userLanguage || 'en';
     // Try exact match first, then prefix
-    if (LOCALE_MAP[browserLang]) return LOCALE_MAP[browserLang];
+    if (LOCALE_MAP[browserLang]) return _detected('browser', urlLang, LOCALE_MAP[browserLang]);
     var prefix = browserLang.split('-')[0];
-    if (LOCALE_MAP[prefix]) return LOCALE_MAP[prefix];
+    if (LOCALE_MAP[prefix]) return _detected('browser', urlLang, LOCALE_MAP[prefix]);
     // 4. Fallback
-    return 'en_MY';
+    return _detected('fallback', urlLang, 'en_MY');
+  }
+  // §TRL_DETECT — once per page load (detectLocale is also called by the picker/flag button)
+  var _detectLogged = false;
+  function _detected(src, req, code) {
+    if (!_detectLogged) { _detectLogged = true; console.log('§TRL_DETECT src=' + src + ' req=' + (req || '-') + ' code=' + code); }
+    return code;
   }
 
   // ── Deep merge: locale over defaults ──
@@ -107,7 +123,6 @@
   // ── Fetch locale from OCI or localStorage cache ──
   function fetchLocale(code, callback) {
     // Check localStorage cache first
-    var LOCALE_VERSION = 6; // bump to invalidate cached locales
     var cacheKey = 'bim_ootb_locale_' + code;
     try {
       var cached = localStorage.getItem(cacheKey);
@@ -163,6 +178,47 @@
         callback(err2, null);
       });
     });
+  }
+
+  // ── S226 §R2: fetch the built label pack i18n/<code>.json (localStorage cache, then network) ──
+  // Resolves to {} when nothing can be loaded: the page then shows the English that is already in its markup /
+  // _trl() defaults — honestly, and W-VIEWER-I18N counts it as a leak. Logs one §TRL_LABELS line per load.
+  function fetchLabels(code, callback) {
+    var cacheKey = 'bim_ootb_trl_' + code;
+    function done(src, labels, extra) {
+      var keys = Object.keys(labels || {}).length;
+      console.log('§TRL_LABELS locale=' + code + ' keys=' + keys + ' src=' + src + (extra ? ' ' + extra : ''));
+      callback(labels || {});
+    }
+    try {
+      var cached = JSON.parse(localStorage.getItem(cacheKey));
+      if (cached && cached.labels && cached.v === LOCALE_VERSION && cached.ts && Date.now() - cached.ts < 7 * 24 * 60 * 60 * 1000) {
+        done('cached', cached.labels); return;
+      }
+    } catch(e) { /* cache miss */ }
+    if (window._STANDALONE) { done('standalone', {}); return; }
+    fetch(I18N_BASE + code + '.json').then(function(resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    }).then(function(pack) {
+      var labels = (pack && pack.labels) || {};
+      try { localStorage.setItem(cacheKey, JSON.stringify({ labels: labels, ts: Date.now(), v: LOCALE_VERSION })); } catch(e) { /* storage full */ }
+      var b = pack && pack.built;
+      done('fetched', labels, b ? 'translated=' + b.translated + ' untranslated=' + b.untranslated : '');
+    }).catch(function(err) {
+      console.warn('§TRL_LABELS_FAIL locale=' + code + ' err=' + err.message);
+      done('fallback', {});
+    });
+  }
+
+  // ── S226 §R2: <html lang dir> follow the chosen locale (ar_SA is the one RTL script in AVAILABLE_LOCALES) ──
+  var HTML_LANG = { bl_BD: 'bn-Latn' };   // Banglish = Bengali in Latin script; every other code maps by its prefix
+  function applyLangDir(code) {
+    var html = document.documentElement; if (!html) return;
+    var lang = HTML_LANG[code] || code.split('_')[0];
+    var dir = code === 'ar_SA' ? 'rtl' : 'ltr';
+    html.setAttribute('lang', lang); html.setAttribute('dir', dir);
+    console.log('§TRL_LANGDIR locale=' + code + ' lang=' + lang + ' dir=' + dir);
   }
 
   // ── Apply URL param overrides (highest priority) ──
@@ -229,20 +285,22 @@
     if (!loc) return;
     var flag = isoToFlag(loc.iso);
     var toast = document.createElement('div');
+    toast.id = 'ootb-locale-toast';
     toast.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:9999;' +
       'background:rgba(0,0,0,0.8);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;' +
       'font-family:Segoe UI,sans-serif;backdrop-filter:blur(8px);border:1px solid rgba(79,195,247,0.3);' +
       'transition:opacity 0.5s;pointer-events:none';
-    toast.textContent = flag + ' ' + loc.name + ' \u2014 change in \u2699';
+    toast.textContent = flag + ' ' + loc.name + ' \u2014 ' + ((typeof _TRL !== 'undefined' && _TRL.ui_locale_toast_hint) || 'change in \u2699');
     document.body.appendChild(toast);
     setTimeout(function() { toast.style.opacity = '0'; }, 3000);
     setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 3500);
   }
 
   // ── Template string helper: _TRL.ui_flew_to.replace('{name}', x) ──
-  // Exposed globally for convenience
-  window._trl = function(key, replacements) {
-    var s = (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : key;
+  // Exposed globally for convenience. S226 §R2: 3rd arg = the English default the page shows until the label pack
+  // has landed (never the raw key); W-VIEWER-I18N checks that default == ad_message_base.csv msgtext.
+  window._trl = function(key, replacements, dflt) {
+    var s = (typeof _TRL !== 'undefined' && _TRL[key]) ? _TRL[key] : (dflt != null ? dflt : key);
     if (replacements) {
       for (var k in replacements) {
         s = s.replace('{' + k + '}', replacements[k]);
@@ -252,9 +310,26 @@
   };
 
   // ── Flag picker popup ──
+  // S226 §R3a (found by the Modeller trailer recorder, 2026-10-04): the popup opens at the flag button's left edge — with the
+  // button at the right edge of the screen (the Modeller's toolbar rail) half the flags landed OFF-SCREEN (es_ES at x=1443 on a
+  // 1440 px window) and could not be clicked by anyone. Keep the whole grid inside the viewport (8 px margin); open ABOVE the
+  // button when there is no room below. Witness: W-MODELLER-I18N (6) every flag inside the viewport + hit-testable.
+  function _placeFlagPopup(popup) {
+    var vw = window.innerWidth, vh = window.innerHeight, M = 8, pr = popup.getBoundingClientRect();
+    if (!pr.width) return;
+    var anchor = document.getElementById('header-flag-btn'), ar = anchor ? anchor.getBoundingClientRect() : null;
+    var left = Math.max(M, Math.min(pr.left, vw - pr.width - M));
+    var top = pr.top;
+    if (top + pr.height > vh - M) top = ar ? ar.top - pr.height - 6 : vh - pr.height - M;
+    top = Math.max(M, Math.min(top, vh - pr.height - M));
+    popup.style.left = left + 'px'; popup.style.top = top + 'px'; popup.style.right = 'auto';
+  }
   function toggleFlagPicker() {
+    // S226 §R2c: the click that OPENS the picker (e.g. the landing ⋯ rail's flag — PillBuilder fires on pointerup, the
+    // click follows) must not also count as the "outside click" that closes it — found by the Viewer trailer recorder.
+    window.__flagPickerOpenedAt = Date.now();
     var popup = document.getElementById('ootb-flag-popup');
-    if (popup) { popup.classList.toggle('active'); return; }
+    if (popup) { popup.classList.toggle('active'); if (popup.classList.contains('active')) _placeFlagPopup(popup); return; }
 
     // Position next to the header flag button
     var anchor = document.getElementById('header-flag-btn');
@@ -295,7 +370,16 @@
         try {
           localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: loc.code }));
           localStorage.removeItem('bim_ootb_locale_' + currentLocale);
+          localStorage.removeItem('bim_ootb_trl_' + currentLocale);
         } catch(e) { /* ignore */ }
+        // S226 §R1.2b — a ?lang= (e.g. from the ERP's Zoom Across) outranks the saved choice; rewrite it so the pick sticks
+        try {
+          var u = new URL(location.href);
+          if (u.searchParams.has('lang')) { u.searchParams.set('lang', loc.code); history.replaceState(null, '', u.toString()); }
+        } catch(e) { /* ignore */ }
+        // S226 §R2c — pages that opted in (window.__TRL_INPLACE: landing + viewer) switch WITHOUT a reload (keeps the
+        // streamed building, camera and open panels); report pages still reload (their charts are built once at init)
+        if (window.__TRL_INPLACE) { popup.classList.remove('active'); setLocale(loc.code).then(function() { if (popup.parentNode) popup.parentNode.removeChild(popup); }); return; }
         location.reload();
       };
       popup.appendChild(btn);
@@ -305,9 +389,11 @@
     var style = document.createElement('style');
     style.textContent = '#ootb-flag-popup.active{display:grid!important}';
     document.head.appendChild(style);
+    _placeFlagPopup(popup);
 
     // Close on outside click
     document.addEventListener('click', function(e) {
+      if (Date.now() - (window.__flagPickerOpenedAt || 0) < 400) return;   // the opening click itself
       if (!popup.contains(e.target) && e.target.id !== 'header-flag-btn') {
         popup.classList.remove('active');
       }
@@ -346,6 +432,186 @@
       var key = el.getAttribute('data-trl-placeholder');
       if (_TRL[key]) el.placeholder = _TRL[key];
     });
+    // S226 §R2: data-trl-html="key" → innerHTML (the few strings that carry inline markup, e.g. <br>)
+    document.querySelectorAll('[data-trl-html]').forEach(function(el) {
+      var key = el.getAttribute('data-trl-html');
+      if (_TRL[key]) el.innerHTML = _TRL[key];
+    });
+    // data-trl-tip="key" → data-tip attribute (landing Morpheus hover cards render CSS attr(data-tip))
+    document.querySelectorAll('[data-trl-tip]').forEach(function(el) {
+      var key = el.getAttribute('data-trl-tip');
+      if (_TRL[key]) el.setAttribute('data-tip', _TRL[key]);
+    });
+  }
+  window._applyTrlToDOM = applyTrlToDOM;   // pages that build markup late can re-run it (hub cards, drawers)
+
+  // §S8 (prompts/RATES_SOURCE_OF_TRUTH.md §5, 2026-09-30): the Modeller DISPLAYS an edit's cost Δ and must price it with the SAME rates the Viewer
+  // prices with — which are the user's LOCALE rates (this file overrides the global RATES/LABOR_RATES on load: en_US IfcWall 48/M2 vs the CIDB 145).
+  // A page that sets window.__TRL_NO_AUTORUN before loading this file gets the owners WITHOUT the side effects (no _TRL merge, no DOM translate,
+  // no toast, no event): it calls fetchLocale(detectLocale(), cb) then applyRateOverrides(data) itself. The Viewer never sets the flag.
+  if (window.__TRL_NO_AUTORUN) {
+    window._TRL_LOADER = { detectLocale: detectLocale, fetchLocale: fetchLocale, applyRateOverrides: applyRateOverrides, isoToFlag: isoToFlag, AVAILABLE_LOCALES: AVAILABLE_LOCALES, openFlagPicker: toggleFlagPicker, noAutorun: true };
+    return;
+  }
+
+  // ── S226 §R2c — in-place switch (Witness: W-VIEWER-LANG-INPLACE) ──
+  // Snapshots taken BEFORE the first locale is applied, so a switch starts from the same base the page booted with:
+  // _TRL's own defaults (boq_charts inline _TRL_DEFAULTS) and rates.js's RATES / LABOR_RATES / EQUIPMENT_RATES /
+  // RATES_DEFAULT. Objects are restored IN PLACE — other modules hold references to them.
+  function _clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+  function _restore(target, snap) {
+    if (!target || !snap) return;
+    Object.keys(target).forEach(function(k) { delete target[k]; });
+    Object.keys(snap).forEach(function(k) { target[k] = _clone(snap[k]); });
+  }
+  var _snap = null;
+  function _snapshot() {
+    _snap = {
+      trl: _clone(typeof _TRL !== 'undefined' ? _TRL : {}),
+      rates: typeof RATES !== 'undefined' ? _clone(RATES) : null,
+      labor: typeof LABOR_RATES !== 'undefined' ? _clone(LABOR_RATES) : null,
+      equip: typeof EQUIPMENT_RATES !== 'undefined' ? _clone(EQUIPMENT_RATES) : null,
+      rdef: typeof RATES_DEFAULT !== 'undefined' ? _clone(RATES_DEFAULT) : null
+    };
+  }
+  var _curCode = null, _curLabels = {};
+
+  // ── S226 §R3 — DICTIONARY PAGE (opt-in window.__TRL_DICT_PAGE; the Modeller) — Witness: W-MODELLER-I18N ──
+  // A page whose chrome is built in many places (static markup AND later JS panels) is translated by the dictionary itself,
+  // not by per-element tags: every text node / title / placeholder / aria-label whose WHOLE trimmed value equals a base
+  // English msgtext (i18n/en_MY.json) shows the current locale's text. The English is remembered on the node (__trlEn) so a
+  // later switch maps from English again; a node the app rewrites (its value is no longer what we wrote) is re-read as new
+  // English. Nodes added later are handled by one MutationObserver, batched per animation frame. Exact matches only.
+  var _dict = { en: null, map: {}, tpl: [], obs: null, q: [], raf: 0, n: 0 };
+  var _DICT_ATTRS = ['title', 'placeholder', 'aria-label'];
+  function _dictBuild(labels) {
+    var m = {}, en = _dict.en || {};
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e === 'string' && e.trim().length > 1 && typeof v === 'string' && v && !m[e.trim()]) m[e.trim()] = v; });
+    _dict.map = m;
+    // templates: an English msgtext with {name} slots ('{n} features', 'Confidence {p}% mean') matches a WHOLE value of that shape;
+    // the captured values are put into the locale's own template by name (a locale may reorder them)
+    var tp = [];
+    Object.keys(en).forEach(function(k) { var e = en[k], v = labels[k]; if (typeof e !== 'string' || typeof v !== 'string' || !v || !/\{\w+\}/.test(e)) return;
+      var names = [], src = e.trim().split(/(\{\w+\})/).map(function(part) { var mm = part.match(/^\{(\w+)\}$/); if (mm) { names.push(mm[1]); return '(.+?)'; } return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('');
+      if (!names.length || src.replace(/\(\.\+\?\)/g, '').length < 3) return;   // a bare '{x}' would match anything
+      tp.push({ re: new RegExp('^' + src + '$'), names: names, to: v }); });
+    _dict.tpl = tp;
+    return Object.keys(m).length;
+  }
+  function _dictLookup(en) {
+    var v = _dict.map[en]; if (v != null) return v;
+    for (var i = 0; i < _dict.tpl.length; i++) { var t = _dict.tpl[i], mm = en.match(t.re); if (!mm) continue;
+      var out = t.to; t.names.forEach(function(n, j) { out = out.split('{' + n + '}').join(mm[j + 1]); }); return out; }
+    return null;
+  }
+  function _dictText(t) {
+    var raw = t.nodeValue, cur = raw && raw.trim(); if (!cur) return;
+    if (t.__trlOut !== cur) t.__trlEn = cur.replace(/\s+/g, ' ');   // new or rewritten by the app → its English, whitespace runs collapsed as the screen shows them ('222 features  🔒 …')
+    var v = _dictLookup(t.__trlEn); if (v == null || v === cur) return;
+    t.__trlOut = v; t.nodeValue = raw.replace(cur, v); _dict.n++;
+  }
+  function _dictAttr(el, a) {
+    var cur = el.getAttribute(a); if (!cur) return; cur = cur.trim();
+    var st = el.__trlA || (el.__trlA = {}), r = st[a] || (st[a] = {});
+    if (r.out !== cur) r.en = cur.replace(/\s+/g, ' ');
+    var v = _dictLookup(r.en); if (v == null || v === cur) return;
+    r.out = v; el.setAttribute(a, v); _dict.n++;
+  }
+  function _dictSkip(n) { return /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.nodeName); }
+  function _dictApply(root) {
+    if (!root) return;
+    if (root.nodeType === 3) { if (root.parentNode && !_dictSkip(root.parentNode)) _dictText(root); return; }
+    if (root.nodeType !== 1 || _dictSkip(root)) return;
+    var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null), t;
+    while ((t = w.nextNode())) { if (t.parentNode && !_dictSkip(t.parentNode)) _dictText(t); }
+    _DICT_ATTRS.forEach(function(a) { if (root.hasAttribute(a)) _dictAttr(root, a); });
+    root.querySelectorAll('[title],[placeholder],[aria-label]').forEach(function(el) { _DICT_ATTRS.forEach(function(a) { if (el.hasAttribute(a)) _dictAttr(el, a); }); });
+  }
+  function _dictFlush() { _dict.raf = 0; var q = _dict.q; _dict.q = []; q.forEach(_dictApply); }
+  function _dictObserve() {
+    if (_dict.obs || typeof MutationObserver === 'undefined' || !document.body) return;
+    _dict.obs = new MutationObserver(function(muts) {
+      muts.forEach(function(m) { if (m.type === 'childList') m.addedNodes.forEach(function(n) { _dict.q.push(n); }); else _dict.q.push(m.target); });
+      if (!_dict.raf && _dict.q.length) _dict.raf = requestAnimationFrame(_dictFlush);
+    });
+    _dict.obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: _DICT_ATTRS });
+  }
+  // (re)translate the whole page into `labels`; loads the English base once
+  function _dictPage(code, labels, done) {
+    var t0 = Date.now();
+    function go() {
+      var keys = _dictBuild(labels || {}); _dict.n = 0;
+      var run = function() { _dictApply(document.body); _dictObserve();
+        console.log('§TRL_DICT_PAGE locale=' + code + ' map=' + keys + ' tpl=' + _dict.tpl.length + ' applied=' + _dict.n + ' ms=' + (Date.now() - t0) + ' observer=' + !!_dict.obs);
+        if (done) done(_dict.n); };
+      if (document.body) run(); else document.addEventListener('DOMContentLoaded', run);
+    }
+    if (_dict.en) return go();
+    if (code === 'en_MY') { _dict.en = labels || {}; return go(); }
+    fetchLabels('en_MY', function(en) { _dict.en = en || {}; go(); });
+  }
+  window._TRL_DICT = { apply: _dictApply, size: function() { return Object.keys(_dict.map).length; } };   // witness + late builders
+  // Text that modules rendered ONCE (via _trl at build time, no data-trl tag) is re-translated by the dictionary itself:
+  // every visible text node / title / placeholder whose whole trimmed value equals the OLD locale's label for a key
+  // becomes the NEW locale's label for that key. Exact whole-value matches only (never substrings), so data values are
+  // touched only if they are, character for character, a UI label.
+  function _retranslate(oldL, newL) {
+    var map = {}, n = 0;
+    Object.keys(newL).forEach(function(k) {
+      var o = oldL[k], v = newL[k];
+      if (typeof o === 'string' && typeof v === 'string' && o !== v && o.trim().length > 1 && !map[o.trim()]) map[o.trim()] = v;
+    });
+    if (!document.body || !Object.keys(map).length) return 0;
+    var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), t;
+    while ((t = w.nextNode())) {
+      var raw = t.nodeValue, key = raw && raw.trim();
+      if (key && map[key] && !(t.parentNode && /^(SCRIPT|STYLE|TEXTAREA)$/.test(t.parentNode.nodeName))) {
+        t.nodeValue = raw.replace(key, map[key]); n++;
+      }
+    }
+    document.querySelectorAll('[title],[placeholder],[aria-label],[data-tip]').forEach(function(el) {
+      ['title', 'placeholder', 'aria-label', 'data-tip'].forEach(function(a) {
+        var v = el.getAttribute(a); if (v && map[v.trim()]) { el.setAttribute(a, map[v.trim()]); n++; }
+      });
+    });
+    return n;
+  }
+  function setLocale(code) {
+    var t0 = Date.now(), from = _curCode;
+    if (!AVAILABLE_LOCALES.some(function(l) { return l.code === code; })) { console.warn('§TRL_SWITCH unknown-locale ' + code); return Promise.resolve(null); }
+    return new Promise(function(resolve) {
+      var labels = null, cost = null, costErr = null, pending = 2;
+      function part() { if (--pending) return;
+        if (!_snap) _snapshot();
+        var oldLabels = _curLabels;
+        _restore(_TRL, _snap.trl);
+        if (labels) deepMerge(_TRL, labels);
+        if (_snap.rates) _restore(RATES, _snap.rates);
+        if (_snap.labor) _restore(LABOR_RATES, _snap.labor);
+        if (_snap.equip) _restore(EQUIPMENT_RATES, _snap.equip);
+        if (_snap.rdef && typeof RATES_DEFAULT !== 'undefined') RATES_DEFAULT = _clone(_snap.rdef);
+        if (cost) { deepMerge(_TRL, cost); applyRateOverrides(cost); }
+        applyUrlOverrides(_TRL);
+        applyLangDir(code);
+        var tagged = document.querySelectorAll('[data-trl],[data-trl-title],[data-trl-placeholder],[data-trl-html],[data-trl-tip]').length;
+        applyTrlToDOM();
+        var mapped = window.__TRL_SWITCH_NO_RETRANSLATE ? 0 : (window.__TRL_DICT_PAGE ? -1 : _retranslate(oldLabels, labels || {}));   // the flag exists ONLY for W-VIEWER-I18N's (6) negative control; S226 §R3: a dictionary page maps from its English instead
+        if (window.__TRL_DICT_PAGE && !window.__TRL_SWITCH_NO_RETRANSLATE) _dictPage(code, labels || {});
+        _curCode = code; _curLabels = labels || {};
+        try {
+          localStorage.setItem('bim_ootb_config', JSON.stringify({ locale: code }));
+          var u = new URL(location.href);
+          if (u.searchParams.has('lang')) { u.searchParams.set('lang', code); history.replaceState(null, '', u.toString()); }
+        } catch(e) { /* ignore */ }
+        updateHeaderFlag();
+        window._TRL_READY = true;
+        window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: code, labels: Object.keys(_curLabels).length, inplace: true, costErr: costErr ? String(costErr.message || costErr) : null } }));
+        console.log('§TRL_SWITCH from=' + from + ' to=' + code + ' ms=' + (Date.now() - t0) + ' tagged=' + tagged + ' retranslated=' + mapped + ' cur=' + (_TRL.cur || '-'));
+        resolve({ from: from, to: code, ms: Date.now() - t0, tagged: tagged, retranslated: mapped });
+      }
+      fetchLabels(code, function(l) { labels = l; part(); });
+      fetchLocale(code, function(err, d) { cost = d; costErr = err; part(); });
+    });
   }
 
   // ── Main init ──
@@ -358,7 +624,18 @@
     window._TRL = {};
   }
 
-  fetchLocale(localeCode, function(err, data) {
+  // S226 §R2: labels (i18n/<code>.json) and cost data (locales/<code>.js) load in parallel; _TRL is assembled once
+  // both have answered — labels first, then the cost pack (which no longer carries labels, so cost keys win only on
+  // cost keys), then URL overrides. One trl-ready for the page, as before.
+  applyLangDir(localeCode);
+  var _labels = null, _cost = null, _costErr = null, _pending = 2;
+  function _part() { if (--_pending === 0) _assemble(); }
+  fetchLabels(localeCode, function(labels) { _labels = labels; _part(); });
+  fetchLocale(localeCode, function(err, data) { _cost = data; _costErr = err; _part(); });
+  function _assemble() {
+    var data = _cost, labels = _labels;
+    _snapshot(); _curCode = localeCode; _curLabels = labels || {};
+    if (labels) deepMerge(_TRL, labels);
     if (data) {
       deepMerge(_TRL, data);
       applyRateOverrides(data);
@@ -381,16 +658,22 @@
       } catch(e) { /* ignore */ }
     }
 
+    if (window.__TRL_DICT_PAGE) _dictPage(localeCode, labels || {});   // S226 §R3
+
     // Dispatch event for other scripts to know locale is ready
-    window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: localeCode } }));
-  });
+    window._TRL_READY = true;
+    window.dispatchEvent(new CustomEvent('trl-ready', { detail: { locale: localeCode, labels: Object.keys(labels || {}).length, costErr: _costErr ? String(_costErr.message || _costErr) : null } }));
+  }
 
   // Expose for other modules
   window._TRL_LOADER = {
     detectLocale: detectLocale,
     isoToFlag: isoToFlag,
     AVAILABLE_LOCALES: AVAILABLE_LOCALES,
-    openFlagPicker: toggleFlagPicker
+    openFlagPicker: toggleFlagPicker,
+    setLocale: setLocale,                                     // S226 §R2c — in place, no reload
+    fetchLocale: fetchLocale, applyRateOverrides: applyRateOverrides,   // S226 §R3 — the Modeller's lazy §S8 owner (edit_delta_ui.js) reuses the boot loader
+    current: function() { return _curCode; }
   };
 
 })();

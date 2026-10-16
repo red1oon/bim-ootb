@@ -41,6 +41,7 @@ async function openGrid(page) {
     if (u) { await u.click(); const okb = await page.$('#idmp-login-ok'); if (okb) await okb.click(); }
     await page.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {});
   });
+  await require('./legacy_open.js').showAllRows(page).then(st => st.length && console.log('§LEGACY-OPEN steps=' + st.join(',')));   // §UDP-4: the legacy user's path to the rows
   await page.waitForSelector('.idmp-grid tbody tr[data-ad-record]', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(700);
 }

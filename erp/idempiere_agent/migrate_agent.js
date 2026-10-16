@@ -60,7 +60,7 @@ var LIST_CLIENTS = !!process.env.ERP_LIST_CLIENTS || argv.indexOf('--list-client
 var MASTERS = !!process.env.ERP_MASTERS || argv.indexOf('--masters') >= 0;
 // Optional explicit target tenant; otherwise auto-seeked from AD_Client (§0.10a).
 var TARGET_CLIENT = process.env.ERP_CLIENT ? +process.env.ERP_CLIENT : null;
-var INSTANCES = path.join(__dirname, '..', 'build', 'erp', 'instances.json');
+var INSTANCES = process.env.ERP_INSTANCES || path.join(__dirname, '..', 'build', 'erp', 'instances.json');
 
 // Headline master allowlist — streamed visibly one §-line each ("watch them land").
 // Canonical AD casing for display; matched case-insensitively against PG table_name.
@@ -79,9 +79,25 @@ var HEADLINE_LC = {}; HEADLINE.forEach(function (n) { HEADLINE_LC[n.toLowerCase(
 // tables are KEPT (they are AD metadata, transaction-free) per the 2026-06-02 decision.
 var DENY_EXACT = ['m_transaction', 'm_storage', 'm_storageonhand', 'm_costdetail',
   'm_cost', 'm_costhistory', 'ad_changelog', 'ad_session', 'ad_accesslog',
-  'ad_pinstance', 'ad_pinstance_para', 'ad_pinstance_log', 'ad_wf_process',
+  'ad_pinstance_log', 'ad_wf_process',
   'ad_wf_processdata', 'ad_wf_activity', 'ad_wf_activityresult', 'ad_wf_eventaudit',
   'ad_recentitem', 'ad_issue', 'ad_ldapaccess'];
+// Runtime tables whose rows are partly USER DATA: in masters mode they are copied with a
+// ROW predicate instead of denied (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-1).
+// MPInstance.get (org.adempiere.base/.../MPInstance.java:527-585) shows a user every NAMED run
+// (Saved Parameter) plus "Last Run" entries read from at most the 10*LASTRUN_RECORD_COUNT newest
+// active unnamed runs per (process,user,client) (:543-573) - keep exactly those (RANK: ties kept).
+var LASTRUN_N = "COALESCE((SELECT max(s.value) FROM " + q(SCHEMA) + ".ad_sysconfig s WHERE s.name='LASTRUN_RECORD_COUNT'" +
+  " AND s.isactive='Y' AND s.ad_client_id=p.ad_client_id),(SELECT max(s.value) FROM " + q(SCHEMA) +
+  ".ad_sysconfig s WHERE s.name='LASTRUN_RECORD_COUNT' AND s.isactive='Y' AND s.ad_client_id=0),'5')::int";
+var PINSTANCE_KEEP = "SELECT k.ad_pinstance_id FROM (SELECT p.ad_pinstance_id, p.name, p.isactive, " + LASTRUN_N + " n, " +
+  "RANK() OVER (PARTITION BY p.ad_process_id, p.ad_user_id, p.ad_client_id, (p.name IS NULL AND p.isactive='Y') " +
+  "ORDER BY p.created DESC) rk FROM " + q(SCHEMA) + ".ad_pinstance p) k " +
+  "WHERE k.name IS NOT NULL OR (k.isactive='Y' AND k.rk <= 10 * k.n)";
+var ROW_KEEP = {
+  ad_pinstance: 'ad_pinstance_id IN (' + PINSTANCE_KEEP + ')',
+  ad_pinstance_para: 'ad_pinstance_id IN (' + PINSTANCE_KEEP + ')'
+};
 function isDenied(tn, docSet) {
   if (DENY_EXACT.indexOf(tn) >= 0) return true;          // (4)
   if (tn.indexOf('fact_acct') === 0) return true;        // (3)
@@ -284,8 +300,14 @@ function main() {
 
     // COPY data out (explicit column list = guaranteed order match).
     var collist = cs.map(function (c) { return q(c.name); }).join(',');
+    var where = (MASTERS && ROW_KEEP[tn]) ? ' WHERE ' + ROW_KEEP[tn] : '';
+    if (where) {
+      console.log('§MIGRATE-ROWFILTER table=' + tn + ' kept=' +
+        pgMeta('SELECT count(*) FROM ' + q(SCHEMA) + '.' + q(tn) + where)[0][0] + ' of=' +
+        pgMeta('SELECT count(*) FROM ' + q(SCHEMA) + '.' + q(tn))[0][0] + ' (§UDP-1 user-data rows)');
+    }
     var payload = pgCopy('COPY (SELECT ' + collist + ' FROM ' + q(SCHEMA) + '.' + q(tn) +
-      ') TO STDOUT');
+      where + ') TO STDOUT');
 
     var ins = sqlite.prepare('INSERT INTO ' + q(tn) + ' VALUES (' +
       cs.map(function () { return '?'; }).join(',') + ')');
@@ -407,6 +429,7 @@ function main() {
     reg.push({ instance: instance, source: srcKey, source_client_id: targetClient,
       client_name: clientName, reimport: reimport, out: path.basename(OUT),
       tables: doneTables, rows: totalRows, when: new Date().toISOString() });
+    fs.mkdirSync(path.dirname(INSTANCES), { recursive: true });
     fs.writeFileSync(INSTANCES, JSON.stringify(reg, null, 2));
 
     var head = HEADLINE.filter(function (h) { return headlineRows[h] != null; })

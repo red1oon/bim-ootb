@@ -1,0 +1,41 @@
+§PROBE menu chain=53014>53052>53053
+§PROBE header tab (before select): {"rows":18,"form":0,"status":""}
+§PROBE selected header row: null
+§PROBE tab 0 "Manufacturing Order" {"rows":0,"form":96,"status":""}
+§PROBE tab 1 "Order Parent Product" {"rows":1,"form":0,"status":""}
+§PROBE tab 2 "Orden BOM Translation" {"rows":1,"form":0,"status":""}
+§PROBE tab 3 "Components of the Manufacturing Order" {"rows":2,"form":0,"status":""}
+§PROBE tab 4 "Order Components Translation" {"rows":1,"form":0,"status":""}
+§PROBE tab 5 "Workflow" {"rows":1,"form":0,"status":""}
+§PROBE tab 6 "Workflow Translation" {"rows":1,"form":0,"status":""}
+§PROBE tab 7 "Order Activity" {"rows":1,"form":0,"status":""}
+§PROBE tab 8 "Order Activity Translation" {"rows":1,"form":0,"status":""}
+§PROBE tab 9 "Node Product" {"rows":1,"form":0,"status":""}
+§PROBE tab 10 "Node Asset" {"rows":1,"form":0,"status":""}
+§PROBE tab 11 "Transition Next" {"rows":1,"form":0,"status":""}
+§PROBE tab 12 "Cost" {"rows":1,"form":0,"status":""}
+§PROBE-LOG log §SPIKE-BEACON installed=Y captured=0 sample=(none-yet) buf=localStorage:bim_field_errors bound=50 telemetryPipe=N pii=N
+§PROBE-LOG log §FIELDHEALTH_LOADED v1 (4 widgets: field_errors/durability_ladder/db_size_gauge/environment)
+§PROBE-LOG log §AD-SEED-PATCH file=patches/ad_seed.db.sql statements=3109 changed=2751 failed=0 (self-heal, idempotent)
+§PROBE-LOG log §AD-SEED-PATCH file=patches/mfg.sql statements=78 changed=78 failed=0 (self-heal, idempotent)
+§PROBE-LOG log §BIM_OVERLAY none (NotFoundError)
+§PROBE-LOG log §SYSTEM-TENANT insert-fail AD_Org UNIQUE constraint failed: ad_org.ad_org_id
+§PROBE-LOG log §SYSTEM-TENANT insert-fail AD_Role UNIQUE constraint failed: ad_role.ad_role_id
+§PROBE-LOG log §SYSTEM-TENANT insert-fail AD_User_Roles UNIQUE constraint failed: ad_user_roles.ad_user_id, ad_user_roles.ad_role_id
+§PROBE-LOG log §SYSTEM-TENANT insert-fail AD_User_Roles UNIQUE constraint failed: ad_user_roles.ad_user_id, ad_user_roles.ad_role_id
+§PROBE-LOG log §SYSTEM-TENANT insert-fail AD_Role_OrgAccess UNIQUE constraint failed: ad_role_orgaccess.ad_role_id, ad_role_orgaccess.ad_org_id
+§PROBE-LOG log §GRIDFIELD-EXEMPT key=pp_order n=2 cols=[DocumentNo:DocumentNo,M_AttributeSetInstance_ID:M_AttributeSetInstance_ID] (GridField.isMandatory:377-385)
+§PROBE-LOG log §GRIDFIELD-DATATYPE-DEFAULT key=pp_order n=4 [line=0,isactive=N,floatbefored=0,floatafter=0] (GridField.defaultFromDatatype:1022-1051)
+§PROBE-LOG log §GRIDFIELD-EXPR-DEFAULT key=pp_order resolved=0 [] unresolved=1 [c_uom_id="@UOMConversion@=Y | @Processed@='Y'"] (GridField.defaultFromExpression:875-913)
+§PROBE-LOG log §GRIDFIELD-SYSPREF-DEFAULT key=pp_order n=1 [c_uom_id=100] (GridField stage 5 #ColumnName ← Login.loadDefault, FS-12)
+§PROBE-LOG log §GRIDFIELD-HIDDEN-DEFAULT key=pp_order n=4 [scheduletype=D,issotrx=N,isqtypercentage=N,assay=0] (GridTable.dataNew: every field, displayed or not)
+§PROBE-LOG log §GRIDFIELD-EXEMPT key=pp_order n=2 cols=[DocumentNo:DocumentNo,M_AttributeSetInstance_ID:M_AttributeSetInstance_ID] (GridField.isMandatory:377-385)
+§PROBE-LOG log §GRIDFIELD-DATATYPE-DEFAULT key=pp_order n=4 [line=0,isactive=N,floatbefored=0,floatafter=0] (GridField.defaultFromDatatype:1022-1051)
+§PROBE-LOG log §GRIDFIELD-EXPR-DEFAULT key=pp_order resolved=0 [] unresolved=1 [c_uom_id="@UOMConversion@=Y | @Processed@='Y'"] (GridField.defaultFromExpression:875-913)
+§PROBE-LOG log §GRIDFIELD-SYSPREF-DEFAULT key=pp_order n=1 [c_uom_id=100] (GridField stage 5 #ColumnName ← Login.loadDefault, FS-12)
+§PROBE-LOG log §GRIDFIELD-HIDDEN-DEFAULT key=pp_order n=4 [scheduletype=D,issotrx=N,isqtypercentage=N,assay=0] (GridTable.dataNew: every field, displayed or not)
+§PROBE-LOG log §GRIDFIELD-EXEMPT key=pp_order n=2 cols=[DocumentNo:DocumentNo,M_AttributeSetInstance_ID:M_AttributeSetInstance_ID] (GridField.isMandatory:377-385)
+§PROBE-LOG log §GRIDFIELD-DATATYPE-DEFAULT key=pp_order n=4 [line=0,isactive=N,floatbefored=0,floatafter=0] (GridField.defaultFromDatatype:1022-1051)
+§PROBE-LOG log §GRIDFIELD-EXPR-DEFAULT key=pp_order resolved=0 [] unresolved=1 [c_uom_id="@UOMConversion@=Y | @Processed@='Y'"] (GridField.defaultFromExpression:875-913)
+§PROBE-LOG log §GRIDFIELD-SYSPREF-DEFAULT key=pp_order n=1 [c_uom_id=100] (GridField stage 5 #ColumnName ← Login.loadDefault, FS-12)
+§PROBE-LOG log §GRIDFIELD-HIDDEN-DEFAULT key=pp_order n=4 [scheduletype=D,issotrx=N,isqtypercentage=N,assay=0] (GridTable.dataNew: every field, displayed or not)

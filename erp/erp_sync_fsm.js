@@ -176,19 +176,31 @@
    * @returns {Promise<{applied:number, head:number}>}
    */
   async function rebase(db, kernel, sequencer) {
-    var r = db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig FROM kernel_ops ORDER BY id');
+    // Implementing prompts/BACKEND_SUBSTRATE_LANE.md §RB.2 — Witness: W-REBASE-USERTAG.
+    // `user_tag` rides through the rewind+reapply for the SAME reason gid/branch_id/sig do (S7 above),
+    // and it is the one column that fix missed. kernel_ops.js:_canonicalV2 signs `actor: op.user_tag`,
+    // so a v2 content-signed row's signature ATTESTS its user_tag; the column DEFAULTs to 'local'
+    // (kernel_ops.js:42), so dropping it here silently rewrote every non-default actor's row to 'local'
+    // and sealChain — which does not re-sign a row that arrives with a sig — then verified a content
+    // hash the signature no longer covers. MEASURED before the fix: a row committed as `user:bob`
+    // came back `user_tag=local` and verifyChain went true -> false (why=signature, brokeAt=1).
+    var r = db.exec('SELECT op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig,user_tag FROM kernel_ops ORDER BY id');
     var local = (r.length ? r[0].values : []).map(function (row) {
       return { op_uuid: row[0], timestamp: row[1], op_type: row[2], parameters: row[3],
-               input_guids: row[4], output_guid: row[5], gid: row[6], branch_id: row[7], sig: row[8] };
+               input_guids: row[4], output_guid: row[5], gid: row[6], branch_id: row[7], sig: row[8],
+               user_tag: row[9] };
     });
     var pushRes = await sequencer.push(local); // idempotent ingest → canonical order (await: sync stub OR async HTTP relay)
     var canon = await sequencer.snapshot();    // the authoritative ordered log
     db.run('DELETE FROM kernel_ops');      // rewind: drop local order (ids restart at 1 — no AUTOINCREMENT)
     for (var i = 0; i < canon.length; i++) {
       var op = canon[i];
-      db.run('INSERT INTO kernel_ops (op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig) VALUES (?,?,?,?,?,?,?,?,?)',
+      db.run('INSERT INTO kernel_ops (op_uuid,timestamp,op_type,parameters,input_guids,output_guid,gid,branch_id,sig,user_tag) VALUES (?,?,?,?,?,?,?,?,?,?)',
         [op.op_uuid, op.timestamp, op.op_type, op.parameters, op.input_guids || null, op.output_guid || null,
-         op.gid || null, op.branch_id || null, op.sig || null]);
+         op.gid || null, op.branch_id || null, op.sig || null,
+         // fall back to the column DEFAULT only when the source row genuinely has none, so a
+         // pre-user_tag log still rebases to exactly the bytes it does today.
+         (op.user_tag != null ? op.user_tag : 'local')]);
     }
     await kernel.sealChain(db);             // re-seal over the canonical order (skips already-signed rows)
     console.log('§SYNC_FSM rebase applied=' + canon.length + ' head=' + (pushRes && pushRes.head != null ? pushRes.head : canon.length));

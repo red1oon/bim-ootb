@@ -108,8 +108,11 @@ runE2E('W-E2E-RSARM', async (t) => {
   const giz = await ringInfo(t);
   if (!giz) { t.assert('A5 DRAG-ROT', false, 'no ring'); return; }
   const th = 30 * Math.PI / 180;
-  const rdown = await t.proj(giz.c[0] + giz.R, giz.c[1], giz.c[2]);
-  const rup = await t.proj(giz.c[0] + giz.R * Math.cos(th), giz.c[1] + giz.R * Math.sin(th), giz.c[2]);
+  // §NET-AUDIT RACE (2026-09-26): grab the ring at 45°, not 0° — at 0° it crosses the X arrow (hit rotZ@4.16 vs x@4.18,
+  // measured), so a slightly different camera grabbed the arrow instead. The drag is still exactly 30°.
+  const th0 = 45 * Math.PI / 180;
+  const rdown = await t.proj(giz.c[0] + giz.R * Math.cos(th0), giz.c[1] + giz.R * Math.sin(th0), giz.c[2]);
+  const rup = await t.proj(giz.c[0] + giz.R * Math.cos(th0 + th), giz.c[1] + giz.R * Math.sin(th0 + th), giz.c[2]);
   await t.drag(rdown, rup, 12); await t.sleep(1500);
   const log2 = await t.oplog(); const rotOp = await t.lastOp();
   t.assert('A5 DRAG-ROT (one GEOM_ROTATE drot≈30 while armed)',

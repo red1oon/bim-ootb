@@ -1,0 +1,9 @@
+{
+  "_about": "Property labels a civil model carries, mapped to what the viewer does with them. Values come from the model's own psets (element_psets); edit per project template. Source of the defaults: JKR DAK pset template as delivered in JALAN JELAPANG (2026-10).",
+  "route_path": [
+    { "name": "01_Component_Name", "value": "MAINLINE" }
+  ],
+  "route_stops": [
+    { "value_like": "TRAFFIC SIGNAL%", "value_not_like": "%AHEAD%", "label": "Traffic signal" }
+  ]
+}

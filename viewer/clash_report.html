@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>BIM OOTB — Clash Coordination Report</title>
+<title data-trl="title_clash">BIM OOTB — Clash Coordination Report</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -32,17 +32,17 @@
 <body>
 
 <div class="toolbar">
-  <button onclick="_shareReport()">Share Report</button>
-  <button onclick="_copyUrl(this)" title="Copy shareable link">&#128203;</button>
-  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" title="Change locale" style="font-size:18px">&#127760;</button>
-  <button onclick="location.href='/'" title="Home" style="font-size:18px">&#127968;</button>
+  <button onclick="_shareReport()" data-trl="mep_share">Share Report</button>
+  <button onclick="_copyUrl(this)" data-trl-title="ui_tt_copy_link" title="Copy shareable link">&#128203;</button>
+  <button id="header-flag-btn" onclick="window._TRL_LOADER&&_TRL_LOADER.openFlagPicker()" data-trl-title="ui_tt_change_locale" title="Change locale" style="font-size:18px">&#127760;</button>
+  <button onclick="location.href='/'" data-trl-title="ui_tt_home" title="Home" style="font-size:18px">&#127968;</button>
 </div>
 
-<div id="report-content">Loading...</div>
+<div id="report-content" data-trl="ui_loading_ellipsis">Loading...</div>
 <div id="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js"></script>
-<script src="locale_loader.js?v=6"></script>
+<script src="locale_loader.js?v=13"></script>
 
 <script>
 var params = new URLSearchParams(location.search);
@@ -51,6 +51,8 @@ var BLD = params.get('bld') || '';
 var RULES_URL = params.get('rules') || '';
 
 function _log(msg) { console.log(msg); }
+// S226 §R2 — every label resolves through the AD_Message dictionary (viewer/i18n via locale_loader.js); the English is the default.
+function _t(k, fb, repl) { return (typeof _trl === 'function') ? _trl(k, repl || null, fb) : fb; }
 
 function _copyUrl(btn) {
   navigator.clipboard.writeText(location.href).then(function() {
@@ -68,9 +70,9 @@ function _shareReport() {
   a.click();
   var d = document.createElement('div');
   d.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;background:rgba(30,30,50,0.97);border-radius:12px;padding:24px 32px;border:1px solid rgba(79,195,247,0.5);text-align:center;font-family:Segoe UI,sans-serif';
-  d.innerHTML = '<div style="color:#4fc3f7;font-size:16px;font-weight:bold;margin-bottom:12px">Report Downloaded</div>' +
-    '<div style="color:#ccc;font-size:13px;margin-bottom:16px;max-width:360px">HTML file saved. Share via WhatsApp, Email, or any medium.<br>Recipient opens it in any browser — full charts, no setup needed.</div>' +
-    '<button onclick="this.parentElement.remove()" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">OK</button>';
+  d.innerHTML = '<div style="color:#4fc3f7;font-size:16px;font-weight:bold;margin-bottom:12px">' + _t('ui_report_downloaded', 'Report Downloaded') + '</div>' +
+    '<div style="color:#ccc;font-size:13px;margin-bottom:16px;max-width:360px">' + _t('ui_report_downloaded_body', 'HTML file saved. Share via WhatsApp, Email, or any medium.<br>Recipient opens it in any browser — full charts, no setup needed.') + '</div>' +
+    '<button onclick="this.parentElement.remove()" style="padding:8px 24px;background:#4fc3f7;color:#000;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">' + _t('ui_ok', 'OK') + '</button>';
   document.body.appendChild(d);
 }
 
@@ -118,12 +120,24 @@ function clashSeverity(overlap, rules) {
   return { level: 'clearance', color: sev.clearance.color, label: sev.clearance.label };
 }
 
-// ── R-tree clash counter (count only) ──
-function countClashesRtree(rules, discA, discB) {
-  var ignoreSet = {};
+// CIVIL_HIGHWAY_JELAPANG.md §V.1 — same rule as measure.js A._clashIgnoreSet (this page loads no viewer
+// scripts): a pair unions only the ignore_classes of its own rule family (default 'building').
+function ignoreSetFor(rules, discA, discB) {
+  var fam = 'building', ignoreSet = {};
   rules.clash_rules.forEach(function(r) {
+    if ((r.source.discipline === discA && r.target.discipline === discB) ||
+        (r.source.discipline === discB && r.target.discipline === discA)) fam = r.family || 'building';
+  });
+  rules.clash_rules.forEach(function(r) {
+    if ((r.family || 'building') !== fam) return;
     (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
   });
+  return ignoreSet;
+}
+
+// ── R-tree clash counter (count only) ──
+function countClashesRtree(rules, discA, discB) {
+  var ignoreSet = ignoreSetFor(rules, discA, discB);
   var ignoreFilter = Object.keys(ignoreSet).length ?
     ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
 
@@ -172,10 +186,7 @@ function countClashesRtree(rules, discA, discB) {
 
 // ── R-tree clash query (returns rows with details) ──
 function queryClashesRtree(rules, discA, discB, maxRows) {
-  var ignoreSet = {};
-  rules.clash_rules.forEach(function(r) {
-    (r.ignore_classes || []).forEach(function(c) { ignoreSet[c] = 1; });
-  });
+  var ignoreSet = ignoreSetFor(rules, discA, discB);
   var ignoreFilter = Object.keys(ignoreSet).length ?
     ' AND m.ifc_class NOT IN (' + Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',') + ')' : '';
 
@@ -410,9 +421,9 @@ async function init() {
   var headerHtml =
     '<div style="display:flex;gap:20px;margin-bottom:16px;align-items:stretch">' +
     '<div style="flex:0 0 auto;max-width:280px">' +
-    '<h1 style="font-size:24px;margin-bottom:6px;color:#4fc3f7">Clash Coordination Report</h1>' +
-    '<div class="subtitle">' + pairLabel + '<br>' + bldName + '<br>' + date + '<br>Storey: ' + storey +
-    '<br>' + totalCount + ' clashes' + (totalCount > allClashes.length ? ' (top ' + allClashes.length + ')' : '') + '</div>' +
+    '<h1 style="font-size:24px;margin-bottom:6px;color:#4fc3f7">' + _t('clash_report_title', 'Clash Coordination Report') + '</h1>' +
+    '<div class="subtitle">' + pairLabel + '<br>' + bldName + '<br>' + date + '<br>' + _t('h_storey', 'Storey') + ': ' + storey +
+    '<br>' + totalCount + ' ' + _t('clash_clashes_lbl', 'clashes') + (totalCount > allClashes.length ? ' (top ' + allClashes.length + ')' : '') + '</div>' +
     '</div>' +
     '<div style="flex:1;background:rgba(79,195,247,0.06);border:1px solid rgba(79,195,247,0.15);border-radius:8px;padding:20px 24px;line-height:2.2">' +
     '<b style="color:#4fc3f7;font-size:26px;display:block;margin-bottom:12px">Compliance &amp; Reference Standards</b>' +
@@ -431,22 +442,22 @@ async function init() {
   // Stat cards: same 4 as original
   var statHtml =
     '<div class="stat-cards">' +
-    '<div class="stat-card" title="Total bbox overlaps detected across all discipline pairs"><div class="num" style="color:#ff4444">' + totalCount + '</div><div class="lbl">Total Clashes</div></div>' +
-    '<div class="stat-card" title="Acknowledged clashes under investigation"><div class="num" style="color:#FFD700">' + sc['Reviewed'] + '</div><div class="lbl">Reviewed</div></div>' +
-    '<div class="stat-card" title="Clashes fixed in the model — ready for re-check"><div class="num" style="color:#4caf50">' + sc['Resolved'] + '</div><div class="lbl">Resolved</div></div>' +
-    '<div class="stat-card" title="Risk accepted — no design change needed"><div class="num" style="color:#888">' + sc['Accepted'] + '</div><div class="lbl">Accepted</div></div>' +
+    '<div class="stat-card" title="' + _t('clash_tt_total', 'Total bbox overlaps detected across all discipline pairs') + '"><div class="num" style="color:#ff4444">' + totalCount + '</div><div class="lbl">' + _t('clash_total', 'Total Clashes') + '</div></div>' +
+    '<div class="stat-card" title="' + _t('clash_tt_reviewed', 'Acknowledged clashes under investigation') + '"><div class="num" style="color:#FFD700">' + sc['Reviewed'] + '</div><div class="lbl">' + _t('clash_reviewed', 'Reviewed') + '</div></div>' +
+    '<div class="stat-card" title="' + _t('clash_tt_resolved', 'Clashes fixed in the model — ready for re-check') + '"><div class="num" style="color:#4caf50">' + sc['Resolved'] + '</div><div class="lbl">' + _t('clash_resolved', 'Resolved') + '</div></div>' +
+    '<div class="stat-card" title="' + _t('clash_tt_accepted', 'Risk accepted — no design change needed') + '"><div class="num" style="color:#888">' + sc['Accepted'] + '</div><div class="lbl">' + _t('clash_accepted', 'Accepted') + '</div></div>' +
     '</div>';
 
   // Charts: same 6 as original
   var chartsHtml =
     '<div class="charts">' +
-    '<div class="chart-box"><h2>By Discipline Pair</h2><canvas id="discChart"></canvas></div>' +
-    '<div class="chart-box"><h2>Discipline Risk Profile</h2><canvas id="radarChart"></canvas></div>' +
-    '<div class="chart-box"><h2>By Severity</h2><canvas id="sevChart"></canvas></div>' +
-    '<div class="chart-box"><h2>By Status</h2><canvas id="statusChart"></canvas></div>' +
-    '<div class="chart-box"><h2>Top Offenders \u2014 Fix These First</h2><canvas id="offenderChart"></canvas></div>' +
-    '<div class="chart-box"><h2>By Element Class</h2><canvas id="classChart"></canvas></div>' +
-    '<div class="chart-box full"><h2>Discipline Matrix Summary</h2><div id="matrixTable"></div></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_by_pair', 'By Discipline Pair') + '</h2><canvas id="discChart"></canvas></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_risk_profile', 'Discipline Risk Profile') + '</h2><canvas id="radarChart"></canvas></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_by_severity', 'By Severity') + '</h2><canvas id="sevChart"></canvas></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_by_status', 'By Status') + '</h2><canvas id="statusChart"></canvas></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_top_offenders', 'Top Offenders \u2014 Fix These First') + '</h2><canvas id="offenderChart"></canvas></div>' +
+    '<div class="chart-box"><h2>' + _t('clash_by_class', 'By Element Class') + '</h2><canvas id="classChart"></canvas></div>' +
+    '<div class="chart-box full"><h2>' + _t('clash_matrix_summary', 'Discipline Matrix Summary') + '</h2><div id="matrixTable"></div></div>' +
     '</div>';
 
   contentEl.innerHTML = headerHtml + statHtml + chartsHtml;
@@ -497,7 +508,7 @@ async function init() {
   });
 
   // Matrix summary table — same 8 columns as original
-  var tableHtml = '<table><thead><tr><th>Source</th><th>Target</th><th>Tolerance</th><th>Clashes</th><th>Reviewed</th><th>Resolved</th><th>Accepted</th><th>Open</th></tr></thead><tbody>';
+  var tableHtml = '<table><thead><tr><th>' + _t('clash_source', 'Source') + '</th><th>' + _t('clash_target', 'Target') + '</th><th>' + _t('clash_tolerance', 'Tolerance') + '</th><th>' + _t('clash_clashes', 'Clashes') + '</th><th>' + _t('clash_reviewed', 'Reviewed') + '</th><th>' + _t('clash_resolved', 'Resolved') + '</th><th>' + _t('clash_accepted', 'Accepted') + '</th><th>' + _t('ui_open', 'Open') + '</th></tr></thead><tbody>';
   pairSummary.forEach(function(ps) {
     var open = ps.count - ps.reviewed - ps.resolved - ps.accepted;
     var openColor = open > 0 ? '#ff4444' : '#4caf50';
@@ -515,10 +526,15 @@ async function init() {
   _log('§CLASH_REPORT_DONE total=' + totalCount + ' pairs=' + rules.clash_rules.length);
 }
 
-init().catch(function(e) {
-  document.getElementById('report-content').textContent = 'Error: ' + e.message;
-  console.error('§CLASH_INIT_ERR', e);
-});
+// S226 §R2 — render after the label pack has landed (same guard boq_charts.html/mep_report.html use); 3 s fallback.
+(function() {
+  var done = false;
+  function go() { if (done) return; done = true; init().catch(function(e) {
+    document.getElementById('report-content').textContent = 'Error: ' + e.message;
+    console.error('§CLASH_INIT_ERR', e);
+  }); }
+  if (window._TRL_READY) go(); else { window.addEventListener('trl-ready', go, { once: true }); setTimeout(go, 3000); }
+})();
 </script>
 </body>
 </html>

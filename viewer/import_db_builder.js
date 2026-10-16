@@ -34,6 +34,29 @@ function buildImportDBs(SQL, data) {
        'georef_offset_z', String(data.meta.georefOffset[2]), 'unit_scale', String(data.meta.unitScale || 1)]);
   }
 
+  // §GEOREF (prompts/GEOREF_SUNPATH_COMPASS.md §3.2) — Witness: W-GEOREF-ANGLE.
+  // The real map position and the real true-north rotation, read by import_worker.js. Before
+  // this, THIS PATH WROTE NEITHER: streaming.js:3398 queries project_metadata for
+  // 'true_north_angle' on every load and a browser-imported building had no such row, so
+  // sitecam.js and walk.js silently rotated by 0 on every one of them.
+  //
+  // ⚠ ALWAYS WRITTEN, even when the source IFC carries nothing (§4). A MISSING key and a key
+  // valued "unknown" are different facts: missing means "this DB predates the feature", present-
+  // and-unknown means "the feature ran and the source file has no location". Only the second is
+  // safe for a consumer to act on, and only because `site_latlong_source` says so.
+  //
+  // ⚠ lat/long absent is written as an EMPTY STRING, never 0/0. 0,0 is a real place in the Gulf
+  // of Guinea; writing it would turn "we do not know" into "we know, and it is there" — a sun
+  // path drawn from it would be confidently, invisibly wrong.
+  var _gr = (data.meta && data.meta.georef) || {};
+  db.run('INSERT OR REPLACE INTO project_metadata VALUES (?,?),(?,?),(?,?),(?,?),(?,?),(?,?)',
+    ['true_north_angle', String(_gr.trueNorthAngle == null ? 0 : _gr.trueNorthAngle),
+     'true_north_source', String(_gr.trueNorthSource || 'default_zero'),
+     'site_latitude', _gr.latitude == null ? '' : String(_gr.latitude),
+     'site_longitude', _gr.longitude == null ? '' : String(_gr.longitude),
+     'site_elevation_m', _gr.elevationM == null ? '' : String(_gr.elevationM),
+     'site_latlong_source', String(_gr.latLongSource || 'unknown')]);
+
   // Elements
   db.run('CREATE TABLE IF NOT EXISTS elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)');
   db.run('CREATE TABLE IF NOT EXISTS element_transforms (guid TEXT PRIMARY KEY, center_x REAL, center_y REAL, center_z REAL, rotation_x REAL, rotation_y REAL, rotation_z REAL, bbox_x REAL, bbox_y REAL, bbox_z REAL)');
@@ -45,9 +68,19 @@ function buildImportDBs(SQL, data) {
   var stmtEl = db.prepare('INSERT OR IGNORE INTO elements_meta VALUES (?,?,?,?,?,?,?,?)');
   for (var i = 0; i < data.elements.length; i++) {
     var el = data.elements[i];
-    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, null, el.material, buildingName]);
+    stmtEl.run([el.guid, el.ifcClass, el.name, el.storey, el.discipline, el.matName || null, el.material, buildingName]);   // §IFC_SURFACE_NAMES: was null
   }
   stmtEl.free();
+  // §IFC_SURFACE_NAMES: one row per placed geometry (part) — the authored surface style + its colour + triangle count, so a door's
+  // 'Door - Frame' and 'Door - Panel' stay distinct facts even while the mesh is merged per element.
+  db.run('CREATE TABLE IF NOT EXISTS element_surfaces (guid TEXT, part INTEGER, style_name TEXT, rgba TEXT, tri_count INTEGER, PRIMARY KEY (guid, part))');
+  var stmtSf = db.prepare('INSERT OR IGNORE INTO element_surfaces VALUES (?,?,?,?,?)'), _sfN = 0;
+  for (var si = 0; si < data.elements.length; si++) {
+    var sp = data.elements[si].surfParts; if (!sp) continue;
+    for (var pi = 0; pi < sp.length; pi++) { stmtSf.run([data.elements[si].guid, pi, sp[pi].style, sp[pi].rgba, sp[pi].tris]); _sfN++; }
+  }
+  stmtSf.free();
+  console.log('§IFC_SURFACE_NAMES_DB element_surfaces rows=' + _sfN + ' material_name set=' + data.elements.filter(function (e) { return !!e.matName; }).length + '/' + data.elements.length);
 
   var stmtTr = db.prepare('INSERT OR IGNORE INTO element_transforms VALUES (?,?,?,?,?,?,?,?,?,?)');
   for (var i = 0; i < data.transforms.length; i++) {
@@ -64,13 +97,29 @@ function buildImportDBs(SQL, data) {
 
   // Geometry BLOBs — same DB, keyed by geometry_hash (instanced, deduped)
   db.run('CREATE TABLE IF NOT EXISTS component_geometries (geometry_hash TEXT PRIMARY KEY, vertices BLOB, faces BLOB, normals BLOB, building TEXT)');
+  // §MESH_SLIM (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §MESH_SLIM): a civil import stores NO normals — the fleet
+  // format; the viewer derives them (scene.js A.blobToGeometry → computeVertexNormals). Measured JELAPANG: normals 251 MB =
+  // 42 % of geometry, 99.95 % equal to their own face normal. Civil = any element discipline in window.SEQUENCE_CIVIL
+  // (rates.js); a page without rates.js keeps the old behaviour (normals written).
+  var _civ = (typeof window !== 'undefined' && window.SEQUENCE_CIVIL) || null, _slim = false;
+  if (_civ) for (var ci = 0; ci < data.elements.length && !_slim; ci++) if (_civ[data.elements[ci].discipline]) _slim = true;
+  var _nDrop = 0, _nBytes = 0, _wB = 0, _wA = 0;
   var stmtGeo = db.prepare('INSERT OR IGNORE INTO component_geometries VALUES (?,?,?,?,?)');
   for (var i = 0; i < data.geometries.length; i++) {
     var g = data.geometries[i];
-    stmtGeo.run([g.geomHash, new Uint8Array(g.vertices), new Uint8Array(g.indices),
-      g.normals ? new Uint8Array(g.normals) : null, buildingName]);
+    if (_slim && g.normals) { _nDrop++; _nBytes += g.normals.byteLength; }
+    var _gv = g.vertices, _gi = g.indices;
+    if (_slim && window.VertexWeld) {   // §VERT_WELD_IMPORT: same weld as save (vertex_weld.js), civil only
+      var _wv = new Float32Array(_gv.buffer ? _gv.buffer.slice(_gv.byteOffset, _gv.byteOffset + _gv.byteLength) : _gv), _wi = new Uint32Array(_gi.buffer ? _gi.buffer.slice(_gi.byteOffset, _gi.byteOffset + _gi.byteLength) : _gi);
+      var _w = window.VertexWeld.weld(_wv, _wi);
+      if (_w) { _wB += _w.before; _wA += _w.after; _gv = _w.vertices.buffer; _gi = _w.faces.buffer; }
+    }
+    stmtGeo.run([g.geomHash, new Uint8Array(_gv), new Uint8Array(_gi),
+      (g.normals && !_slim) ? new Uint8Array(g.normals) : null, buildingName]);
   }
   stmtGeo.free();
+  if (_slim) console.log('§VERT_WELD_IMPORT vertsBefore=' + _wB + ' vertsAfter=' + _wA + (_wB === _wA ? ' INCONCLUSIVE(nothing welded)' : ''));
+  if (_slim) console.log('§MESH_SLIM_IMPORT civil=1 normalsDropped=' + _nDrop + ' bytes=' + _nBytes + ' (derived on load)');
 
   // §S267: bom_tree — IFC parent→child relationships (IfcRelVoids/Fills/Aggregates)
   if (data.bomTree && data.bomTree.length > 0) {
@@ -144,6 +193,18 @@ function buildImportDBs(SQL, data) {
     stmtCal.free();
   }
   console.log('[4D] §4D_TABLES schedules=' + _nSched + ' tasks=' + _nTask + ' sequences=' + _nSeq + ' taskElements=' + _nTE + ' calendars=' + _nCal);
+
+  // §CIVIL_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S P-1): property labels the worker read from civil
+  // discipline files. Table created ONLY when there are rows — a building import's DB gets no new table (NON-IMPACT).
+  if (data.psets && data.psets.length) {
+    db.run('CREATE TABLE IF NOT EXISTS element_psets (guid TEXT NOT NULL, pset TEXT, name TEXT NOT NULL, value TEXT)');
+    var stmtPs = db.prepare('INSERT INTO element_psets VALUES (?,?,?,?)');
+    for (var psi = 0; psi < data.psets.length; psi++) stmtPs.run(data.psets[psi]);
+    stmtPs.free();
+    db.run('CREATE INDEX IF NOT EXISTS idx_element_psets_name ON element_psets(name, value)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_element_psets_guid ON element_psets(guid)');
+    console.log('§CIVIL_PSETS_TABLE rows=' + data.psets.length);
+  }
 
   db.run('COMMIT');
 

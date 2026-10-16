@@ -1,0 +1,18 @@
+§MFG-ASOF-A1 BOM50006 as-of 2008-08-16=10,20,40 2008-09-21=10,20,40 2008-09-22=10,20,30,40 2030-01-01=10,20,30,40
+  §MFG-ASOF A1 REAL BOM 50006: line 30 absent before 2008-09-22, present ON the first day and after PASS
+§MFG-ASOF-A2 BOM50003 as-of 2008-09-21=10,30 2008-09-22=10,20,30
+  §MFG-ASOF A2 REAL BOM 50003: line 20 absent before 2008-09-22, present on it PASS
+§MFG-ASOF-A3 FIXTURE(copy of BOM 50006, ValidTo 2008-12-31 on line 10; no real ValidTo exists) 2008-12-30=10,20,30,40 2008-12-31=10,20,30,40 2009-01-01=20,30,40
+  §MFG-ASOF A3 FIXTURE ValidTo: last day included, the day after excluded (expired line must not reappear) PASS
+  §MFG-ASOF A4 header not effective = the null BOM of MPPProductBOM.get(valid) -> refused by name `no-bom`; missing as-of date -> refused (no clock read) PASS
+§MFG-ASOF-A5 dispatch=true,true ASOF-A(2008-08-16) lines=10,30 ASOF-B(2008-09-22) lines=10,20,30 live=860f5139 replay=860f5139
+  §MFG-ASOF A5 order created 2008-08-16 snapshots lines 10,30; created 2008-09-22 snapshots 10,20,30; replay == live PASS
+§MFG-ASOF-A8 REAL ValidFrom 2008-09-22 00:00:00: 23:59:59 the day before=10,20,40 at 00:00:00=10,20,30,40 | FIXTURE ValidTo 2008-12-31 00:00:00: at 00:00:00=10,20,30,40 00:00:01=10,20,30,40 10:00:00=10,20,30,40
+  §MFG-ASOF A8 exact timestamps: one second before ValidFrom out, ON it in; ValidTo midnight in at 00:00:00, out one second later (java Timestamp.after) FAIL {"f":[10,20,40],"g":[10,20,30,40],"h":[10,20,30,40],"i":[10,20,30,40],"j":[10,20,30,40]}
+§MFG-ASOF-A9 BOM 50003 lines=10,20,30 | FIXTURE copy with line 30 inactive=10,20 total active=2/3
+  §MFG-ASOF A9 an inactive line never enters the BOM (fixture); lines come back ordered by Line PASS
+§MFG-ASOF-A10 getDefault(136,org0)=PP_Product_BOM#50004 | product with no A/A BOM (50007)=null | with FIXTURE 2nd A/A BOM for 136: org0=null org11=PP_Product_BOM#50004 | get(136,2008-08-16)=PP_Product_BOM#50004 get(136,2003-01-01)=null get(50001,2008-08-16)=PP_Product_BOM#50003
+  §MFG-ASOF A10 default BOM: unique A/A BOM found; none -> null; two at org 0 -> null (ambiguous), with an org -> first; get(valid) null when the header is not yet valid PASS
+  §MFG-ASOF A6 non-vacuous: date windows excluded 2 line(s) PASS
+  §MFG-ASOF A7 explosion reads no clock (Date forbidden while the module runs; 3 lines exploded) PASS
+§MFG-ASOF-VERDICT FAIL break=daygran judged=10 failed=1 inconclusive=0

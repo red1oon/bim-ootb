@@ -7,8 +7,882 @@
 // Network-first for .html/.js (always fresh on deploy).
 // Cache-first for heavy assets (.wasm, images). DB files skip SW (IndexedDB handles them).
 //
+// v1087 (2026-08-25) §S65 §TPL_ZERO_MINUTE: rates.js + rates/sequence_rules.json + schedule_author.js
+// + time_machine.js all changed (preset 4D template fixes — see witness_sequence_template_lock.js).
+// All four are in PRECACHE_ASSETS, so without this bump an installed service worker keeps serving the
+// old table and the fix never reaches an existing user. That exact miss happened twice in 90 minutes
+// on 2026-08-25 (#1521 for #1520, then #1524 for #1523) — WITNESS_INTERFACE_FRAMEWORK.md §CRISIS
+// LESSON 4. Bumped in the SAME PR as the change, deliberately.
+// v1088 (2026-08-25) §GANTT_BAR_IS_ITS_TASK (§S65 STAGE 3): gantt_model.js + time_machine.js changed —
+// an authored Gantt bar is now drawn at its TASK'S window instead of a Tukey fence over its member
+// elements. Both files are in PRECACHE_ASSETS. v1087 shipped the STAGE 2 template fix (#1527); this is
+// a separate change and needs its own bump, per the twice-missed rule (§CRISIS LESSON 4).
+// v1089 (2026-08-25) §ZONE_WINDOW_COVERS_WORK: schedule_author.js changed — a zone task's window is
+// now floored at its own members' crew-days (5 over-committed windows across 4 buildings -> 0/135).
+// schedule_author.js is in PRECACHE_ASSETS; v1088 shipped the STAGE 3 drawer change (#1528), so this
+// separate change needs its own bump (§CRISIS LESSON 4).
+// MERGE NOTE (2026-09-02): this branch and origin/main both bumped to v1121 concurrently (§MEP_DISC_PALETTE
+// below took v1121 first). Same standing rule as every sw.js merge: KEEP BOTH notes, take the HIGHER
+// version, each separate change gets its OWN bump — so §TM_REVEAL_TILED is v1122.
+// v1174 (2026-09-13) §SUFFICIENCY_READS_THE_LIST (T12.6): rule_report.js, rule_checklist.js and
+// structural_sanity.js all changed — the data-sufficiency probe stops carrying its own stale copy
+// of the support-class lists and reads StructuralSanity's exports instead. All THREE are in
+// PRECACHE_ASSETS, so without this bump an installed worker keeps serving the old probe and the
+// false "IfcWall and IfcSlab are in neither support list" verdict never stops being printed —
+// §CRISIS LESSON 4, the miss that happened twice in 90 minutes on 2026-08-25.
+// Numbered v1174, not v1171: the concurrent film branch (fix/bucket-key-floor) is already at v1173
+// for the v87 bake. Taking a number ABOVE it means no two builds ever claim the same id and the
+// standing "take the HIGHER version" merge rule resolves cleanly in one direction.
+// v1122 (2026-09-02) §TM_REVEAL_TILED (4D_GANTT_TM_REFACTOR.md §FUTURE item 2 / §TM_REVEAL_SHIPPED):
+// time_machine.js changed — kernel_ops timestamps are now tiled inside each task bar (CPM order,
+// own-duration width, no dead air) instead of the per-task affine that left 44-71% of every bar
+// empty and piled a floor's slabs into one instant. time_machine.js is in PRECACHE_ASSETS, so an
+// installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
+// with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
-const CACHE_VERSION = 'v841';   // bump on each deploy; per-change detail is the git commit message.
+// v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
+// storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
+// not by which column is non-empty; on Hospital_meta.db the 56 local-frame elevation rows had won
+// over the 7 world-frame center_z rows and collapsed the building to ONE band (7 tasks, 509 d vs
+// 8 bands / 42 tasks / 318 d). Both files are in PRECACHE_ASSETS, so an installed service worker
+// keeps serving the collapse without this bump. Paired with _GANTT_CACHE_VERSION 38→39.
+// v1134 (2026-09-04) §BAKE_INTERIOR_TOPUP: the still/bake fixture-light selection is no longer
+// frustum-centre ONLY — a short in-frustum set is topped up to the still budget with the same
+// nearest-to-aim + §NIGHT_SPREAD rule navigation uses (_nightPickNearest, extracted VERBATIM so
+// nav and bake cannot drift apart), and the camera matrix is refreshed before the cull
+// (§BAKE_FRUSTUM_STALE). An interior pose whose frustum held no fixture centre previously left
+// every §NIGHT_BAKE_POOL slot at intensity 0 — the room lit by flat fill alone. tools.js?v=45->46.
+// v1135 (2026-09-04) §CPE_FLAGS_PORTABLE: the building DB's `cinema_path` table now carries the
+// four film flags (buildup, room_title, reveal, day_counter) alongside the path geometry it already
+// stored, so a path saved with Ctrl+S no longer travels with every feature silently OFF. Columns are
+// APPENDED and the reader PRAGMA-probes them, so old and new .db files open in both directions.
+// scene.js?v=60->60, effects.js?v=32->33.
+// v1136 (2026-09-04) §CPE_ROSTER_NOT_A_HIGHLIGHT: the Reveal round's revolving rotation is the
+// stat cards ONLY. The held build-up crew roster is no longer one of the slots — it holds,
+// un-rotated, through round 1 where it means something. A build-up slide is not a finished-building
+// highlight (user ruling). cinema_maxq.js?v= bumped in viewer.html.
+// v1137 (2026-09-04) §CPE_FLYBACK_FACE_TRAVEL: during the Reveal fly-back the camera now faces the
+// DIRECTION OF FLIGHT (the retrace tangent) instead of holding the angle of attack it arrived on,
+// which read as sideways on every corner. The two end turns are sized by the real angle at
+// CINEMA_TURN_DPS, not a fixed seam, because the reveal sub-beats are outside the gaze rate limiter.
+// effects.js?v=33->34.
+// v1138 (2026-09-04) §CPE_TAIL_LIGHTS_ALL_ONLY: during the disc parade's ONE-DISCIPLINE slots the
+// staged luminaires and their glow are OFF — the trade's delicate geometry reads on its own instead
+// of being washed out by lamps that filterDiscs has hidden anyway. The all-together slot keeps its
+// lights. Illumination is scaled to 0 rather than torn down, because §NIGHT_BAKE_POOL froze the
+// point-light COUNT for the whole bake on purpose. effects.js?v=34->35, cinema_maxq.js?v=10->11.
+// v1139 (2026-09-04) §SFR_UNIFORM_NOT_DEFINE: §SUN_FILL_RATIO's policy is unchanged, but it is no
+// longer expressed by swapping m.envMap — every material keeps ONE map and the matte set is held at
+// envMapIntensity 0 instead. The swap parked a second texture reference on every matte material for
+// the whole of staging, and updateSky() disposes the target it pointed at. Same picture, no live
+// reference to freed GPU memory. effects.js bumped in viewer.html.
+// v1140 (2026-09-04, revival of PR #300) §CL-2: wh_walk.js gains a collapsed 'Paste incoming op
+// log' receive box — paste base64 blob from POS -> pre-gate dedup by op_uuid -> commitGroup into the
+// IDB sidecar (idmp_kanban_proj) -> draftPick refresh -> the pending shipment surfaces in the
+// selector. Paste-twice safe.
+// v1141 (2026-09-04) §DLOD_TM_OWNERSHIP: dlod.js stands down while the Time Machine owns instance
+// matrices (time_machine.js _finishActivate → dlodDisable, deactivate → dlodEnable; dlodEnable/Tick
+// refuse under _tmOn). Root cause of the first Hospital CLI silent bake losing 24,992 instanced
+// elements (glass panes, mullions, furniture) at 47.9 s for the rest of the film — dlod.js captured
+// its _origMatrix refs after TM had zero-scaled them and "restored" zero. Also §CPE_CLIP_REVEAL_FILM_T
+// (cinema_maxq.js: the Reveal reads film time, not clip-local time) + dev-only --clip/--tap in
+// cli_silent_bake.js. dlod.js?v, time_machine.js?v, cinema_maxq.js?v bumped in viewer.html.
+// v1142 (2026-09-04) §CPE_REVEAL_LENS_QUAD_OFF: the still-render glow quad path (deleted v1410) never honoured
+// A._cpeRevealLightsOff — §CPE_TAIL_LIGHTS_ALL_ONLY turned off the round sprite and the point
+// lights for a one-discipline Reveal slot, but the additive lens quads kept drawing over the trade
+// being revealed. Gated by zeroing the material colour (not by teardown, so §R10's stage-keep guard
+// survives). effects.js bumped in viewer.html.
+// v1143 (2026-09-04) §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M): new viewer/clash_narrow.js —
+// the clash list's bbox-only rows are annotated with a triangle-exact verdict (OBB/SAT mid phase +
+// three-mesh-bvh intersectsGeometry, reusing the §BVH_DEFERRED trees). clash_matrix.js (qualify on cell
+// click) and measure.js (list render shows mesh-true / bbox-only) changed; all three are PRECACHE_ASSETS.
+// v1144 (2026-09-04) §CLASH_FILM_P1 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P1): new viewer/clash_film.js —
+// the mesh-true clash pairs as PERSISTENT world content in a baked film, red/blue instanced box
+// shells pulsing on FILM time. Not gated by the Time Machine: the markers stand from frame 0 over
+// empty ground so the viewer sees where the trouble will be before it is built. Per-instance fade
+// channel reserved for phase 2's near-and-facing labels. --clash/--no-clash on cli_silent_bake.js.
+// v1145 (2026-09-05) §CLASH_FILM_CONTACT_MARKER + §CLASH_FILM_PULSE_ENVELOPE + §CPE_BAKE_RES:
+// the clash marker is now the CLASH (two small boxes straddling the contact, sized from the
+// penetration) not the whole element — a 98.9 m slab was lighting up the floor and washing the sky.
+// The pulse is an asymmetric envelope (2 s rise, 1 s hold, 3 s fall, 2 s dark) instead of a sine
+// that never read as off. Alt+C gains a Clash pairs checkbox and a Silent-bake size select which
+// cli_silent_bake.js honours when --width/--height are absent.
+// v1145 (2026-09-05) §CLASH_FILM_P2 (MEP_CLASH_REVEAL_MOVIE.md §CLASH_FILM_P2): new viewer/clash_labels.js —
+// the in-scene label for a clash pair within 4.0 m of the camera (release 4.6 m), occluded or not,
+// any number, limited only by screen-space non-overlap. One half-transparent HUD panel per pair
+// (A-side name red above, B-side blue below, from rates.js desc), composited in _captureFrame's
+// 2D pass with a leader to the projected contact; labelled pairs hold solid via clashFilm.setFade.
+// cinema_maxq.js (hooks) + measure.js (setup) + viewer.html changed; all PRECACHE_ASSETS.
+// v1146 (2026-09-05) §CLASH_FILM_SKY_WASH: viewer/clash_film.js — each marker is clamped to a
+// constant small SCREEN size (6 % of frame height) per frame from the camera, so a marker near the
+// lens can no longer balloon over the sky; PEAK 0.55 → 0.30. cinema_maxq.js disposes the markers
+// on the THROW path too and guards the per-frame update. Also §CPE_CLIP_SUN_ARC_FILM_T: a --clip
+// bake's sun arc now reads the FILM fraction, not the clip-local one (it swept 55°→6° inside every clip).
+// v1147 (2026-09-05) §CLASH_LABEL_HUD_FAMILY: viewer/clash_labels.js — the label's text is now the
+// day counter's family (marker colours tinted 0.45 toward white, weight 700, the counter's corner
+// rule) instead of saturated rgb(255,33,26)/rgb(41,112,255) at 600; the leader line and dot carry a
+// dark halo under the white core so they hold contrast against a lit wall or the sky.
+// v1148 (2026-09-05) §P2.1 AMENDED: viewer/clash_labels.js — the label enter/release distance is 10.0 m /
+// 10.6 m (was 4.0 / 4.6; user: "10 meters or half of scene space" after a clip whose nearest pair was 7.98 m).
+// v1149 (2026-09-05) §R17_SHADOWMAP_RELEASE: effects.js — the Alt+S 4096² sun shadow map (and its
+// depth-texture-backed WebGLRenderTarget) is disposed and handed back to the GPU on still-mode exit
+// instead of retained, so repeated Alt+S sessions no longer accumulate a 128 MiB map / 64 MB live RT
+// at rest.
+// v1150 (2026-09-06) §SUN_ARC_TOPOUT_SNAP: effects.js/cinema_maxq.js — past the plan's topout
+// fraction, the sun arc eases to the dramatic 6° Alt+S angle over a short window instead of crawling
+// there at the film's last frame; the pre-topout formula is an untouched code branch (zero regression
+// to the outdoor shadow-to-sun-angle correlation during active construction). Fill/PL pin unchanged.
+// v1151 (2026-09-06) §P2.4 + §CLASH_HUD_CARD (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_labels.js — the
+//   clash label gains a 3rd row "[tolerance mm / clash mm]" (rule tolerance from clash_rules.json, clash
+//   from the pair's severityM); viewer/clash_film.js — stamps tolMm per pair, stats() exposes broad/
+//   falseExcluded; viewer/cpe_resource_panel.js — reveal-round roster gains a "mesh-true clashes
+//   flagged" card read from A.clashFilm.stats(), dropped when the film was never built.
+// v1152 (2026-09-06) §MESH_OVERLAP_DEPTH (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_narrow.js — every mesh-true
+//   CLASH record now carries depthMeshM/overlapMaxM/overlapA/overlapB/overlapExact/overlapCenter, the EXACT
+//   box of the overlap solid (intersection-curve endpoints + inside vertices, both frames); §CLASH_DEPTH_PROXY
+//   reports how far the SAT proxy sat from it. viewer/clash_labels.js — the [tol / clash] row reads the mesh
+//   figure (clashSrc=mesh), the OBB proxy only as a stated fallback. viewer/clash_film.js — build log counts.
+// v1153 (2026-09-06) §CLASH_MARKER_OVERLAP_BOX + §CLASH_FILM_FLAT_FILTER (MEP_CLASH_REVEAL_MOVIE.md): viewer/clash_film.js —
+//   the marker is the oriented box of the REAL overlap solid (overlapCenter + overlapA, A's rotation), split red/blue
+//   along the A→B-aligned axis, per-axis 0.30/1.20 m clamp; flat overlaps (<1 mm) are dropped from the film's set
+//   (verdict untouched). viewer/cpe_resource_panel.js — the clash card notes dropped flat touches.
+// v1154 (2026-09-06) §SUN_ARC_TOPOUT_SNAP REVERTED (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — the sun's elevation
+//   is the single linear 55°→6° formula of the film fraction again (#1685's post-topout snap removed, user: it was
+//   never to be touched); viewer/cinema_maxq.js — _sunArcStep(_tnFilm) single-argument. TOPOUT_SNAP_EASE_U and the
+//   _revealU wiring stay (the Reveal round and §PL_TOPOUT_UNPIN use them).
+// v1155 (2026-09-06) §PL_TOPOUT_UNPIN (MEP_CLASH_REVEAL_MOVIE.md): viewer/effects.js — past the plan's topout the bake's
+//   fixture point-lights ease from the staged Alt+S cut (0.5) to nav Night Mode's tuned 1.0 over the sun's own snap
+//   window; pre-topout byte-identical. viewer/cinema_maxq.js passes _revealU to the fill pin. (v1153 = #1689, v1154 = #1691.)
+// v1160 (2026-09-07) §FLYTHRU_CUES (MEP_CLASH_REVEAL_MOVIE.md §11/§12/§14): new viewer/cpe_flythru_cues.js
+//   + common/flythru_maths.js + common/storey_raster.js — baseline fly-through measurement cues.
+// v1157 (2026-09-06) §STOREY_HIGHLIGHT_REVEAL (MEP_CLASH_REVEAL_MOVIE.md): new viewer/cpe_storey_reveal.js —
+//   fills the LAST 5 REAL SECONDS of the `pullback` beat (ending exactly where `orbit` begins, plan.beats.rise
+//   — NOT the orbit beat itself) with each real storey (elements_meta, Ceiling/TOS pseudo-storeys excluded)
+//   tinting blue/green/yellow/orange in sequence (hba_lens.js's proven setColorAt/emissive tint pattern,
+//   restored on exit) plus a HUD card of real door count/footprint-estimate/compiled-room-count (room clause
+//   omitted at 0 — §VACUOUS). New "Storey highlight" checkbox in cinema_path_editor.js (off by default);
+//   cli_silent_bake.js gains --storey-reveal/--no-storey-reveal. viewer/cinema_maxq.js + cpe_room_title.js
+//   wire the same pure functions into both the bake loop and the editor's live preview so they can never
+//   disagree. Window narrowed mid-session (user correction) to leave the rest of `pullback` free for a
+//   separate discipline-pair clash-highlight feature (fix/hud-clash-measure-stats, different worktree).
+// v1156 (2026-09-06) §S274 FIX + §CPE_BAKE_RES_COMMAND (live crash reported from production): viewer/
+//   cinema_path_editor.js — the Silent-bake size dropdown's change handler read `A.renderer` (A is the
+//   app GETTER FUNCTION, not the object) and threw Cannot read properties of undefined (reading
+//   'domElement') on every selection; fixed to call A(). Also fixed two stale "Alt+M" references
+//   (the real shortcut is Alt+C) and added a "copy bake command" link that hands the user the exact
+//   `node cli_silent_bake.js ...` command for their own terminal — there is no server behind this
+//   page, so nothing here can run a bake for them.
+// v1164 (2026-09-08) §34's 3 user corrections (MEP_CLASH_REVEAL_MOVIE.md §34.1/§34.2/§34.3): cpe_flythru_cues.js
+//   never shows the 3D fill/outline box for ANY cue now (§32 had only skipped it for 'envelope'); dbMeasures()
+//   takes the §20.9 structural envelope (bom_extract.js's ENV_CLASSES, now exported) for envelope/ground/volume,
+//   logging all-vs-structural-vs-dropped once (a rogue IfcStair no longer stretches the building box); the datum's
+//   ground/upright grid lines in cpe_flythru_datum.js are now depth-tested ribbon quads (MeshBasicMaterial) sized
+//   from the real opening camera distance to a stated px target, replacing the 1px LineBasicMaterial hairline.
+// v1163 (2026-09-08) §SLAB_BEAT (MEP_CLASH_REVEAL_MOVIE.md §26): new viewer/cpe_slab_beat.js — one floor plate
+//   marked as it is laid (depth-tested tint + X, shine-through label), riding the Alt-C Measure checkbox; wired in
+//   cinema_maxq.js beside the datum; cli_silent_bake.js gains --measure/--no-measure (§28.1).
+// v1165 (2026-09-08) §36 W1/W3 (MEP_CLASH_REVEAL_MOVIE.md): datum sides/plane decided ONCE per life + drop ledger + §20.8 entry
+//   latch (cpe_flythru_datum.js); cue span sets locked per window (cpe_flythru_cues.js); §33 gate rebuilds the datum after Home.
+// v1166 (2026-09-08) §27 §LINEAR_BEAT: new viewer/cpe_linear_beat.js (column + beam dimension cues in the dive, rides Measure).
+// v1167 (2026-09-08) §29 §INDOOR_BEATS: new viewer/cpe_indoor_beats.js (hall walkable area, stair going, door type, clear height; rides Measure).
+// v1168 (2026-09-08) §37 §MEASURE_TO_THE_END: storey-reveal cards carry walkable m² (cpe_storey_reveal.js); the datum's second life on the pull-out (cpe_flythru_datum.js).
+// v1612 (2026-10-07) §SIGN_CHECK: road_standards.js + std_values.json added to PRECACHE_ASSETS; panels.js / scene.js /
+// main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
+// v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
+// v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
+const CACHE_VERSION = 'v1632';
+// v1622 (2026-10-08) §RS_TOGGLE: Road standards toggles from Inspect menu / j; closing clears speed-zone colours + discs.
+// v1628 (2026-10-09) §INSPECT_EARTH_ROAD fixes re-landed after the squash dropped them: level-shoulder + terrain-hole scan fixes, reach 60 m, EW excavator / RW shovelling icons; earthworks_overlay.js?v=2.
+// v1627 (2026-10-09) §INSPECT_EARTH_ROAD: earthworks_overlay.js (Inspect EW + RW panels, inferred Cut & Fill overlay) added to PRECACHE_ASSETS; std_values.json gains _cut_fill; panels.js ew/rw rows.
+// v1626 (2026-10-08) §ROAD_REPORT polish: grade value printed with 2 decimals next to its limit, sign chainages de-duplicated, environment terms + ground/drain discipline names from std_values.json; road_report.js?v=2, civil_sections.js?v=9, chainage_grid.js?v=3.
+// v1625 (2026-10-08) §ROAD_REPORT: road_report.js (The Road Report, R on civil models; Inspect row) added to PRECACHE_ASSETS; std_values.json gains _road_report.
+// v1624 (2026-10-08) §CHAINAGE_EVERYWHERE: every chainage readout (speed zones, Long/Cross) shows the model's chainage via A.civilChainLabel; chainage_grid.js?v=2, speed_zones.js?v=9, road_standards.js?v=5, civil_sections.js?v=8.
+// v1623 (2026-10-08) §CHAINAGE_GRID: chainage_grid.js (real chainage read from the model's CHAINAGE glyph solids, station ribbon/ticks/tags, hover chip, bottom strip) added to PRECACHE_ASSETS; std_values.json gains _chainage_map (?v=3); road_standards.js?v=4 mounts the Chainage section.
+// v1621 (2026-10-08) §SIGN_VS_SPEED + §LABEL_CLEAN: advance-placement check (ATJ 2B cl.2.2.8, std_values.json advance_placement), short legend/list tags with full provenance in tooltip + HUD; speed_zones.js?v=8, road_standards.js?v=3, std_values.json?v=2.
+// v1620 (2026-10-08) §DISC_ON_BOARD_AREA + §SPEED_SIGN_LIST: disc on the board itself (largest face-on footprint), Speed list = the 8 disc-bearing signs.
+// v1619 (2026-10-08) §DISC_ON_FACE + §PROFILE_AFTER_LOAD: speed discs placed on the board's real face (mesh), long section sampled after loading (80 km/h zone kept).
+// v1617 (2026-10-07) §ROUNDABOUT_ZONE: roundabout + approach speed zones (NCHRP 672 entry speed, ATJ 8/86 Table 4.1 SSD approach) in speed_zones.js?v=6; std_values.json geometric gains roundabout / stopping_sight_distance / speed_ramp (30 km/h = #fff3e0 -> red). speed_zones.js in PRECACHE_ASSETS (unchanged entry).
+// v1616 (2026-10-07) §SPEED_ZONE_TRUE_COLOUR: speed-zone road shows the legend colour (white material clone, fog off) — was grey-brown; speed_zones.js?v=5.
+// v1615 (2026-10-07) §SPEED_SIGN_DISC: speed-limit disc (zone speed) painted on each speed sign while Speed zones is on; speed_zones.js?v=5.
+// v1613 (2026-10-07) §STORE_STAMP: push-store writers reload when the store changed on disk (no stale tab writes old orders back).
+// v1611 (2026-10-07) §ZOOM-SAME-ITEM: a narrowed line zoom draws the Cost variance box again (Planned → Committed).
+// v1610 (2026-10-07) §ZOOM-SAME-ITEM: a red-pill line zoom narrows its class to the pushed GUIDs (within=) — lands on the same item.
+// v1609 (2026-10-07) §FIND_ROW_CLIPPED: Find tree height clamped so the cost · › ERP · open ↗ row always fits (saved findTreeH re-fits).
+// v1608 (2026-10-07) §ZOOM-REUSE + §ZOOM_LANDING_NO_RESTORE: red pill zooms in an open viewer tab (no reload); a ?find= landing skips the saved view's TM/camera/filter.
+// v1607 (2026-10-07) §NO_FALLTHROUGH: whatif_panel _pickProject no longer falls through to the newest phased project (Hospital).
+// v1606 (2026-10-07) §CROSS_POPUP_COMPACT: live cross popup — short header, wrapping short-name legend, no overlapping text; civil_sections.js?v=7.
+// v1605 (2026-10-07) §ZOOM-LINES: Find scope accepts ';'-joined <IfcClass>[:<DISCIPLINE>] line keys from the ERP red pill (was v1603 on its branch).
+// v1604 (2026-10-07) §CROSS_LIVE_POPUP: draggable live cross-section popup beside the cut while scrubbing (civil_sections.js); viewer.html civil_sections.js?v=6.
+// v1602 (2026-10-07) §CROSS_OUTPUT: Cross mode PNG + Section sheet (real mid-plane cut segments, discipline table); viewer.html civil_sections.js?v=5.
+// v1601 (2026-10-06) §PROFILE_LENS v1: Long mode = round lens over the 3D view (civil_sections.js rewritten; panel chart deleted), 1 m profile precompute, Profile PDF + PNG; viewer.html civil_sections.js?v=4.
+// v1600 (main)
+// v1597 (2026-10-06) §SKY_GHOST_SKYLINE: a civil model builds no fake-city skyline ring (effects.js?v=150); tools/sky_ghost_detect.js + viewer/tests/witness_sky_ghost.js.
+// v1596 (2026-10-06) navigate_find.js split move-only into nf_ui_history.js nf_tree_lens.js nf_highlight_cost.js nf_room.js nf_trees.js nf_isolate_drill.js nf_panel_search.js (lazy, main.js modules[], not precached); W-SPLIT-SURFACE + split_verify. navigate_find.js?v=64
+// v1595 (2026-10-06) §SECTION_CIVIL_MODES: Long/Cross are axis modes of the Cut section tool (tools.js A.sectionModes hook, civil_sections.js registers); floating 'Road profile' button deleted; viewer.html civil_sections.js?v=3, #sec-axes.
+// v1593 (2026-10-06) §LONG_SECTION + §CROSS_SECTION: new viewer/civil_sections.js (civil-only road profile panel + section plane square to the route); viewer.html civil_sections.js?v=2, main.js setupCivilSections.
+// v1594 (2026-10-06) §EW_VOLUME_SURFACE: earthworks_volume.js (ONE owner of the volume line) -> Alt+C ground card, model_check_report.html, boq_charts.html.
+// v1592 (2026-10-06) §EARTHWORKS_VOLUME option (a): open surface shows "≈ V m³ (E open edges, ±B m³)" (B measured over 14 fixed origin shifts); B>=V or a wrong-way edge stays "not measurable".
+// v1591 (2026-10-06) §EARTHWORKS_VOLUME: cpe_road_panels.js earthworks volume line on the planned card (closed-solid gate).
+// v1590 (2026-10-06) §CPE_CHECKBOX_SAVE: every Alt+C box marks the path edited + persists in cinema_path (8 new columns); effects.js?v=149 cinema_path_editor.js?v=23 cinema_maxq.js?v=42 scene.js?v=74.
+// v1562 (2026-10-05) §CPE_SEED_FEW count = full-length bands that fit the 45% band budget (Terminal 4), placed on waypoints nearest even arc spacing. effects.js?v=140.
+// v1561 (2026-10-04) §CPE_SEED_FEW Alt+C seeds 3 bands (first/middle/last), not one per route waypoint (Terminal 21 bands -> 704 m zig-zag); §CPE_STICK_CLEAR × on every middle band + 'clear sticks' button. effects.js?v=139 cinema_path_editor.js?v=20.
+// v1560 (2026-10-03) merge fix/sky-surface @58416ed0 (Alt+S stills-only, their v1557 below) + W4 fix (_consolidateBatched copies live slots). still_fault 13, gi_still 50, light_law 11 (ours), streaming 88.
+// sky-surface v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
+// v1559 (2026-10-03) W6 §F one record per film frame (phase ms, renders, calls/tris, exposure, lamps, HUD, luma, encode) + &filmlog=compact folds ~24 repeat tags to one line per film; W7 VACUOUS/NO-OP verdicts: §NIGHT_PL_INTENSITY_HEURISTIC on change + VACUOUS, §CPE_PIE_HOLD/§CPE_STATS_TAIL without a panel, §DLOD_BAKE_PROXY_RESULT, §FRAME_COST order-dependent calls dropped. cinema_maxq 35, tools 75, time_machine 81.
+// v1558 (2026-10-03) W4 film draw-call merge: A._consolidateBatched repaired to the flush contract (§WIND_FLIP material flag, _registerBatchSlot + bbox, slotGeo, only _batchMeta batches, DLOD-slotted kept, storey/disc maps filtered not wiped) and called once at film start under &consolidate=1. streaming 87, cinema_maxq 34.
+// v1557 (2026-10-03) W1 §CLI_BAKE_POSECHECK judged at the film time actually posed (pose tap +tF, __maxqPlanDurSec); W2 §HUD_OVERLAP alpha-aware (CROSSFADE apart, frame+alpha named, VACUOUS -> INCONCLUSIVE); W3 lamps: module-scope §115/§116 dedupe, film soft-cancel skips the nav pool rebuild, §INTERIOR_LIGHTS_WITNESS judges the owner (data|pool), §LAMPS + §LAMPS_SUMMARY. cinema_maxq 33, effects 138, tools 74.
+// v1556 (2026-10-03) merge of fix/sky-surface @d3bb44a7 (Alt+S stills-only: §FAULT_VACUOUS INCONCLUSIVE on samples=0, §FAULT_GI empty adapter -> n/a, §STILL_PRESS_TIME pressS/passes in PNG pose). still_fault 12, gi_still 49.
+// v1555 (2026-10-02) §REVEAL_DOOR_LEAK: renderAtTime writes a single mesh visible only if its discipline is not in hiddenDiscs (4D owns 'built', the discipline filter owns 'shown'); identical with nothing hidden. §PERF_TRAVERSE carries discKept. time_machine 80.
+// v1554 (2026-10-02) §REVEAL_TRAP opt-in &revealtrap=1: names the code that re-shows a mesh the reveal round hid (visible setter + stack, once per mesh) and names leaked meshes in §CPE_REVEAL_LEAK. Diagnostic only. effects 137.
+// v1553 (2026-10-02) §RENDER_INFO: draw calls + triangles of one jittered scene render (TAARenderPass) every 24th film capture. Logging only. cinema_maxq 32.
+// v1552 (2026-10-02) §GI_FILM_8BIT opt-in &gi8=1: film bounce pass renders into an rgba8 target (GPU does the x255 + clamp), 4 B/px readback, row copies + alpha mask instead of the per-pixel loop. gi_still 48.
+// v1551 (2026-10-02) §GI_FILM_PARTS timers (grab/geom/read/loop/comp per 24 frames) + opt-in &gifast=1 float->byte loop without Math.max/min (same bytes: Uint8ClampedArray clamps). gi_still 47.
+// v1550 (2026-10-02) §BAKE_LEAN opt-in &bakelean=1: L1 fold-done poll 5 ms (was 100), L2 env-map/glow safety timers armed once per film (were per frame). cinema_maxq 31, effects 136.
+// v1549 (2026-10-02) §CAPTURE_PARTS: per-frame split of _captureFrame (composer render / 3D draw incl. bounce hook / hud). Logging only. cinema_maxq 30.
+// v1548 (2026-10-02) §CAPTURE_SPLIT: §CAPTURE_ENC carries compMs (HUD composite before encode); §CAPTURE_TAIL hashMs + idbMs per frame. Logging only. cinema_maxq 29.
+// v1547 (2026-10-02) merge of fix/sky-surface @436b85cc (§WIND_FLIP: flipped-winding geometries DoubleSide, patches geometry_wind_flip; light-field fp unchanged per Alt+S) into fix/fast-bake v1546. scene 71, wind_flip 1, still_fault 11, streaming 86.
+// v1546 (2026-10-02) §SPEED_AB S-B2 opt-in &meterprime=auto: film meter skips its prime render once primed, self-checking (new program or dummy binding -> full prime that frame); §METER_PRIME counts. sourced_light 79.
+// v1545 (2026-10-02) §SPEED_AB opt-in arms: &capfmt=jpeg (&capq) capture encoder + §CAPTURE_ENC timing on every arm; &metereach=N film meter every Nth frame (metered=0|1 in §FILM_EXPOSURE). Defaults unchanged. effects 135, cinema_maxq 28.
+// v1544 (2026-10-02) merge of fix/sky-surface @f78a6579 (its v1532-v1536: §SKY_FIELD_FURNITURE REVERT key 21324567:90186, §LOCAL_EXPOSURE_BILATERAL, §FLOOR_F_SMOOTH opt-in, §ZONE_EYE_SKIP_OPEN, §DOME_GLOW) into fix/fast-bake v1543. light_zones 28, sourced_light 78, tools 73, gi_still 46.
+// v1543 (2026-10-02) §GI_FILM_CARRY: STALE only when the camera moved (frozen camera + identical pass is legitimate — HHS freeze false STALEs switched the bounce off). gi_still 45.
+// v1542 (2026-10-02) §FREEZE_PERF_ROOMS: CCTV panel counts logical rooms (room_guid, as room_graph.js:327), not boxes — HHS 100 boxes = 75 rooms. cpe_freeze_perf 5.
+// v1541 (2026-10-01) §FREEZE_ANIM line-by-line reveal on the hold clock (stack rows, info card, CCTV panel; reuse key carries it; &lpanim=0 static) + CCTV panel plain-English copy (§19.4). cpe_load_path 10, cpe_freeze_perf 4, cinema_maxq 27.
+// v1540 (2026-10-01) merge of feat/freeze-perf-panels (v1535-v1537: CCTV panel in the load-path freeze, §FREEZE_BANDS) into fix/fast-bake v1539.
+// v1539 (2026-10-01) §FILM_BLANK_FRAME (all-zero capture retried 0.5/2/5 s, else last good frame held; &blankframe=F:K test) + §FILM_GATE_EXPOSURE_SNAP (exposure jumps with the lighting-model switch; &gatesnap=0). effects 134, cinema_maxq 26.
+// v1538 (2026-10-01) merge of fix/sky-surface v1526-v1531 (IFC surface names, plaster texture, furniture polish, floor/object contact — stills) into fix/fast-bake v1534. sourced_light 77, contact_floor 4.
+// v1537 (2026-10-01) §FREEZE_PERF_PANEL wired through setupCpeFreezePerf(APP) (main.js replaced window.APP — the panel never reached the film). main 54, cpe_freeze_perf 3.
+// v1536 (2026-10-01) §FREEZE_BANDS: freeze panels get group-colour header bands + accent stripe (Structure blue, Security teal, Comfort violet; &lpbands=0 = old). cpe_load_path 9, cpe_freeze_perf 2.
+// v1535 (2026-10-01) §FREEZE_PERF_PANEL: new viewer/cpe_freeze_perf.js — Visual (CCTV coverage, best room) panel in the load-path freeze; Alt+C 'Visual' checkbox / --visual-panel. cpe_load_path 8, cpe_freeze_perf 1.
+// v1534 (2026-10-01) §GI_FILM_CARRY: films check every bounce pass (GPU errors / stale target), rebuild up to 2x then bounce off; no orientation cached from a failing GPU; bake_hires_offline.sh holds gpu.lock. gi_still 44.
+// v1533 (2026-10-01) merge of fix/sky-surface v1516-v1525 (MEP service colour, furniture in the sky field, lamp contact shadow off, local exposure, rated lamps) into fix/fast-bake v1532.
+// v1532 (2026-10-01) §INTERIOR_LIGHTS_ARC: interior lights off only with no ARC on screen (freeze / reveal hiding ARC), on otherwise. cinema_maxq 23.
+// v1531 (2026-10-01) §FILM_CAM_LIGHT eye light back in films (&filmcamlight=0 off); LightLaw ADAPT up 6 / down 4 EV/s (camera-like). effects 132, light_law 11.
+// v1530 (2026-10-01) §FILM_INHERIT items 1-4: §FILM_LAMP_DATA, §FILM_SHADOW_EDGE (per shot), §FILM_WINDOW_PULL (inside frames), §FILM_GLASS_ENV + mirrors (per shot); prebake writer keeps loaded parts. tools 71, sourced_light 75, effects 131, gi_still 42, cinema_maxq 22, scene 70.
+// v1529 (2026-10-01) §LOADPATH_STACK_ONLY: the freeze shows only the stack(s) + 2D info panel (building hidden, exposure held); &lpcontext=1 = old white cut-away. cpe_load_path 7, cinema_maxq 21.
+// v1528 (2026-10-01) §LOADPATH_VIEW_CULL: freeze pieces outside the fixed camera view skipped by the film camera (still cast shadows). cpe_load_path 6.
+// v1527 (2026-10-01) §LOADPATH_CLIP_SKIP: a clip without the freeze point inserts no freeze frames. cinema_maxq 20.
+// v1526 (2026-10-01) §FILM_GEOM_WHOLE: storey reveal counts as cut only inside its own window. cinema_maxq 19.
+// v1525 (2026-10-01) §FRAME_COST S5 film AO fold 12 -> 8 (measured at the floor), S4 load-path pixel diag on freeze frames only. cinema_maxq 18.
+// v1524 (2026-10-01) §PREBAKE: per-db patches/<db>.prebake.json — load-path shot (PB1) + window sides (PB2), key-checked, falls back to computing. scene 69, main 53, cpe_load_path 5, sky_portal 25.
+// v1523 (2026-10-01) freeze pan + rotation reuse key REMOVED (red1: original freeze had no drift checks). cpe_load_path 4, cinema_maxq 17.
+// v1522 (2026-10-01) freeze = hard freeze by default (&lppan opt-in), twins must sit inside the frozen frame. cpe_load_path 3, cinema_maxq 16 (reuse key carries the camera rotation).
+// v1521 (2026-10-01) §132 §LOADPATH_TWINS (same load path shown in several spots) + T4 out-and-back pan in the freeze; §LOADPATH_CLIP_CLOCK clip clock freezes through the hold. cpe_load_path 2, cinema_maxq 15.
+// v1520 (2026-10-01) §LOADPATH_HOLD_CAMDIR: camera position + view direction logged during the load-path freeze. cinema_maxq 14.
+// v1519 (2026-09-30) §FILM_GEOM_WHOLE gate on geometry (topout / storeys back / no hidden discs), §FILM_INHERIT_GATE logs first call, §SOURCED_OWN_COST timer. sourced_light 74, cinema_maxq 13.
+// v1518 (2026-09-30) §FILM_INHERIT: parity films stage SourcedLight (sky-view field) gated per frame on whole-building frames, portals retire under it; §FILM_FIELD_BY_BUILDING sidecar lookup by building (scene.js/main.js). effects 130, sky_portal 24, sourced_light 73, cinema_maxq 12, scene 68, main 52.
+// v1517/v1516 (2026-09-30) §FAST_BAKE FB1+FB2 sky-portal film classification (sky_portal.js 22-23).
+// sky-surface v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// sky-surface v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
+// sky-surface v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
+// sky-surface v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
+// sky-surface v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
+// sky-surface v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=70 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=69 streaming.js?v=85 still_fault.js?v=12.
+// v1565 (2026-10-04) A/B switches only, defaults unchanged: &csmlambda=<0..1> (cascade split; 1 = log, MEASURED HHS c0 tpp 3.51->1.60, SampleHouse 8.63->1.74) and &shadowwide=0. effects.js?v=133.
+// v1564 (2026-10-03) §SHADOW_WIDE_OTHER_CAMERA: mirror tiles + the §GLASS_ENV cube render with the sun box widened to the building union, cascades suspended (was: eye-fitted cascades -> sun speckle in mirrors). effects.js?v=132 shadow_cascade.js?v=2 glass_fresnel.js?v=15.
+// v1563 (2026-10-03) §GLASS_PLANAR_REFL mirrors: §MIRROR_OWN_MAT toilet mirrors join the planar mirror planes (their own shader reads the tile). glass_fresnel.js?v=14 effects.js?v=131.
+// v1562 (2026-10-03) §FAULT_GI_BLANK: an empty app frame under the bounce (underlay mean < 1) = FAULT (LTU inside printed OK at 74 % black). gi_still.js?v=51.
+// v1561 (2026-10-03) §GLASS_PLANAR_REFL: exterior panes on the K=6 largest on-screen glass planes reflect a per-plane mirror render (oblique near plane) instead of the eye-centred cube x sky gate; §GLASS_REFL_TRUTH witness (&refltruth=1); still_fault glassReflMirrored. glass_fresnel.js?v=13 effects.js?v=130 still_fault.js?v=14.
+// v1557 (2026-10-03) §FAULT_VACUOUS + §FAULT_GI S4b + §STILL_PRESS_TIME (v1547 content) + §FAULT_WHO (irOnly zones with their lamp count, glassLow material names). still_fault.js?v=13 gi_still.js?v=50.
+// v1546 (2026-10-02) §WIND_FLIP baked: rule moved to wind_flip.js (precached); patches/<db>.sql carry geometry_wind_flip (scripts/wind_flip_patch.js) so a shipped building skips the live count. scene.js?v=70 streaming.js?v=86 wind_flip.js?v=1.
+// v1545 (2026-10-02) §WIND_FLIP: geometries with flipped-winding edges (scene.js blobToGeometry census) put their bucket on DoubleSide — the Clinic 92 mm partitions were culled from one side (red1 …881490077 vault staircase = a zone boundary seen through an invisible wall). &windflip=0 off. scene.js?v=69 streaming.js?v=85 still_fault.js?v=11.
+// v1536 (2026-10-02) §DOME_GLOW: round fixtures emit from the whole dome (flux over 2x the face disc) with limb darkening, not the 45-deg axis cap (wall sconces patchy; &domeglow=0 = old). tools.js?v=71.
+// v1535 (2026-10-02) §ZONE_EYE_SKIP_OPEN: the eye walk steps past open-to-sky cells (HHS atrium floor beside the roof well lost its room's lamps; &zoneeyeopen=1 = old). sourced_light.js?v=77.
+// v1534 (2026-10-02) §FLOOR_F_SMOOTH (opt-in &floorfsmooth=1: measured no real gain) + §LOCAL_EXPOSURE_BILATERAL live. sourced_light.js?v=76.
+// v1533 (2026-10-02) §LOCAL_EXPOSURE_BILATERAL: the local-exposure base is a bilateral grid (Chen/Paris/Durand 2007, as UE5 Local Exposure) — no glow halo round dark objects against bright sky (synthetic witness: sky next to object +22 levels -> 0; dark-area lift kept +18). &localexpgrid=0 = old. gi_still.js?v=42.
+// v1532 (2026-10-02) §SKY_FIELD_FURNITURE REVERTED (light_zones.js back to 41144850^, key 21324567:90186): furniture pushed Hospital's occluder soup over the 6M budget, which drops ALL occluders (Hospital field occluderTris 5,819,012 -> 0); it had no measured gain and §FLOOR_CONTACT now shades under furniture. v1519 sidecars valid again. light_zones.js?v=28.
+// v1531 (2026-10-01) §OBJECT_CONTACT: beams + members no longer occluders (red1 'some patchy' — blotches on ceilings between beams). contact_floor.js?v=4.
+// v1530 (2026-10-01) §OBJECT_CONTACT reined in (red1 'a bit too strong'): strength 0.5 (was 1); light fittings / air terminals / generic flow terminals no longer shade the ceiling round them. contact_floor.js?v=3 sourced_light.js?v=75.
+// v1529 (2026-10-01) §OBJECT_CONTACT: distance field of in-room objects (ducts, pipes, furniture, railings, stairs, columns) around the camera darkens nearby walls / ceilings / floors for lamps + diffuse light (&objcontact=0 off); floor map now also railings / stairs / ramps, 4 levels nearest the camera. contact_floor.js?v=2 sourced_light.js?v=74.
+// v1528 (2026-10-01) §FLOOR_CONTACT: new viewer/contact_floor.js — exact form-factor occlusion of furniture over upward floor fragments (lamps + diffuse irradiance; &floorcontact=0 off). sourced_light.js?v=73.
+// v1527 (2026-10-01) §WALL_TEXTURE (R5 plaster texture, contrast 1.05; &r5tex=0) + §FURNITURE_POLISH (roughness 0.35; &furnpolish=0|r). streaming.js?v=84 import.js?v=5.
+// v1526 (2026-10-01) §IFC_SURFACE_NAMES: new viewer/ifc_surface_names.js — IFC load keeps the authored surface-style / material names (elements_meta.material_name + element_surfaces), was NULL.
+// v1515 (2026-09-30) §MIRROR_OWN_MAT stills only (films skip the room capture). effects.js?v=129.
+// v1514 (2026-09-30) §STILL_RES_DEFAULT_1440: Alt+S default 1440p (measured +10..70 % press time, 4k fails the bounce). effects.js?v=128.
+// v1513 (2026-09-30) merge fix/case4-column (§CSM_READBACK_GLASS) into fix/sky-surface. effects.js?v=127.   // bump on each deploy; per-change detail is the git commit message.
+// v1512 (2026-09-30) §WINDOW_PULL: view-out pixels (glass then outside) re-rendered at the EV15 daylight exposure and blended. gi_still.js?v=37.
+// v1511 (2026-09-30) §SKY_FIELD_OPEN_ROOF: open cells under a roof/canopy get exact F + exact ground-view Gd (were 1). light_zones.js?v=27.
+// v1510 (2026-09-30) §BEAM_UNDER_SLAB: IfcBeam materials polygonOffset(1,4) — coplanar slab tops win the depth fight. streaming.js?v=83.
+// v1509 (2026-09-30) §GI_REDIST_DEFAULT_OFF (&giredist=1 = on) + §MIRROR_PARALLAX (box-projected mirror env from the zone grid).
+//   gi_still.js?v=36 effects.js?v=126 glass_fresnel.js?v=11.
+// v1508 (2026-09-30) §MIRROR_OWN_MAT: IFC mirrors get their own material at Alt+S (IFC colour, metal 1, rough 0.02, env = the §GLASS_ENV
+//   capture, no sky gate); the shared MEP material is no longer mirror-finished. sourced_light.js?v=72 effects.js?v=125 glass_fresnel.js?v=10.
+// v1507 (2026-09-30) §SKY_FIELD_SMOOTH: covered cells := same-zone 3x3x3 mean F (the lattice's 0.5 m tiles, Terminal hall wall);
+//   &skysmooth=0 = v1506. light_zones.js?v=26.
+// v1506 (2026-09-30) §SKY_FIELD_EXACT_OPEN: the exact-all pass keeps only OPEN cells under stairs/beams; covered cells back to the
+//   v1502 lattice + §SKY_FIELD_EXACT lower bound (Clinic: exact covered cells cost -0.5..-1 EV indoors). &skyexactcov=1 = v1505. light_zones.js?v=25.
+// v1507c4 (2026-09-30) §CSM_READBACK_GLASS: effects.js cascade depth readback leaves out objects with ANY glass group (R10 window
+// arrays were drawn solid, capping the readback at the room's glass -> the hall behind it sat in no cascade box -> unshadowed sun).
+// v1505 (2026-09-30) §FIELD_KEY_CODE: the field key hashes light_zones.js CODE (comments/whitespace stripped) — comment edits no longer
+//   stale every sidecar; §EXACT_WHEN_BAKED: the heavy exact sky pass runs only when forced (bake: APP._stillSkyExactAll = true /
+//   &skyexactall=1) or when the loaded record was built with it; imports / unbaked buildings get the fast field. light_zones.js?v=24.
+// v1504 (2026-09-29) §ZONE_EYE: a visible surface's room = first non-solid cell stepping back along the eye ray (12 x 0.25 m),
+//   else the nearest-cell rule (sourced_light.js slFragZone; &zoneeye=0). Clinic toilet strip 39-59 -> 57-72 (own floor 65-75);
+//   Terminal corner strip 68 -> 172 (wall 185), 0 darker. viewer.html sourced_light.js?v=71. light_zones.js untouched (sidecar keys valid).
+// v1503 (2026-09-29) §SKY_FIELD_EXACT_ALL: every cell a surface reads (covered cells within 2 of SOLID, cells beside an un-rasterised
+//   OCCLUDER, and OPEN cells under/beside one — HHS under-stair floor F 1 -> 0.003, truth 0.003) gets the exact CIE-overcast x cos sky
+//   integral over the shell soup's BVH with ONE fixed 256-direction set (no per-cell jitter), replacing the 41-direction lattice
+//   (raise AND lower; supersedes the lower-only §SKY_FIELD_EXACT). Build is heavy (Hospital 1.15M cells, 294M rays, ~33 min) and is
+//   meant to be BAKED (§LIGHT_FIELD_PATCH sidecars). &skyexactall=0 / APP._stillSkyExactAll=false = v1502's field. light_zones.js?v=23.
+// v1502 (2026-09-29) merge fix/light-field-db (v1498 §LIGHT_FIELD_DB) onto look v1501; viewer.html light_zones.js?v=22 (merged file).
+// v1501 (2026-09-29) §SKY_FIELD_EXACT: every lattice sky contribution of a read cell bounded by 8 exact sub-direction rays (lower
+//   only; Hospital hall bright+blocked 23 -> 0, +29 s build) + §GI_WAIT_BUDGET (bounce wait 120 s -> while active, 900 s cap, logged)
+//   + §STILL_OVERLAY_GUARD (Alt+S clears X-Ray / ghost shell). viewer.html light_zones.js?v=21, effects.js?v=123, gi_still.js?v=35.
+// v1498 §LIGHT_FIELD_DB: the Alt+S light field saved inside the building .db (light_zones.js primeDb/dbPack, scene.js
+//   _writeLightFieldTable, main.js primeDb at open); viewer.html light_zones.js?v=21, scene.js?v=67, main.js?v=51 in the SAME commit.
+// v1496 (2026-09-28) Z26 §GLASS_REFL_OPEN: exact-ray reflection openness per exterior glass cell side, built once with the field
+//   (light_zones.js, shares the shell pass BVH): 12 az x 25 el table in the pane frame, blocked = T x rho_hit x F_hit; the zone
+//   texture G of the glass cell = cell-table index + 1; slSpecKeep + specVis read it before the voxel march (Clinic clerestory panes
+//   black from outside: the 0.5 m voxel thickening of eave / roof edges blocked the mirror ray). &glassopen=0 = the march,
+//   &glassblock=0 = opaque hits read 0. §FAULT glassReflDark follows §SPEC_SMOOTH. viewer.html light_zones.js?v=20,
+//   sourced_light.js?v=67, still_fault.js?v=10 in the SAME commit.
+// v1495 (2026-09-28) merge fix/z25-fixture-face (v1492 §FIXTURE_FACE) onto look v1494 (§GROUND_DOOR_CHECK).
+// v1490 (2026-09-28) Z14/S4 carried state: §GI_CARRY + §GI_GPU_ERRORS in gi_still.js — a bounce pass dropped by a WebGPU error (OOM on a
+//   shared card) left the previous press's pixels in the kept render target and composited them onto the next still; now counted,
+//   fingerprinted per press, FAIL/STALE ends the press and releases the renderer. viewer.html gi_still.js?v=34 in the SAME commit.
+// v1478 (2026-09-27) fix/alts-all-3 = fix/alts-all-2 (v1477) + fix/colour-truth (v1476, §ZERO Z19-Z21) merged; ### ALTS-ALL FIX 10+ on top.
+//   viewer.html light_zones.js?v=19, sourced_light.js?v=62 in the SAME commit (both sides edited them).
+//   + ### ALTS-ALL FIX 11 (MEP trade hue before the name hint; pipes/ducts/steel metal 0 unless bare-metal named; pipe/duct envInt
+//   0.05 dropped) streaming.js?v=79; FIX 13 GI energy bound gi_still.js?v=32 + SourcedLight.irR sourced_light.js?v=63.
+//   + ### ALTS-ALL FIX 14 (first-press black glass): zero vertex normals repaired at Alt+S staging (A._repairDegenerateNormals, O(tri)),
+//   §GLASS_ENV prefiltered by an explicit PMREMGenerator + re-capture while materials re-key; streaming.js?v=81 effects.js?v=117 glass_fresnel.js?v=9.
+//   + ### ALTS-ALL FIX 16 (plenum sun leak): the cascade depth readback draws each mesh with ITS side (was DoubleSide: culled back faces
+//   pulled the SDSM boxes onto the camera, visible surfaces fell in no box); effects.js?v=118.
+//   + ### ALTS-ALL FIX 17: §PHOTO_PROPS skyline boxes drawn from the §PHOTO_VARIATION seed (was Math.random per press); &photoseed= witness pin; effects.js?v=119.
+// v1476 (2026-09-27) fix/colour-truth §ZERO Z19-Z21: coloured zone IR, porcelain finish, placeholder = STD_MAT / MEP-trade proxy hue.
+// v1477 (2026-09-27) ### ALTS-ALL FIX 9: gi_still glass skip also leaves out MULTI-MATERIAL objects with a glass group (Terminal R10
+//   window arrays were solid in the geometry pass -> opaque glass in Alt+S); glass-skip line per press. FIX 1(e): a §SOURCED_REBIND during
+//   the accumulation restarts it. viewer.html gi_still.js?v=31, sourced_light.js?v=61 in the SAME commit. (v1476 = fix/colour-truth.)
+// v1475 (2026-09-27) ### ALTS-ALL FIX 1: ONE §METER per still (SourcedLight.meterFinal on the final staged scene; stage() logs
+//   §METER_DIAG only); meterRead primes + pushes before the read (§METER_BIND: fresh-key uniforms carried the dummy zone texture);
+//   §SOURCED_REBIND counts re-keyed materials; §METER_BIND rendered/calls/bufHash. FIX 7: light_zones.js never persists/reuses a
+//   field whose shell pass was skipped (no BVH). viewer.html sourced_light.js?v=60, effects.js?v=116, light_zones.js?v=18 in the SAME commit.
+// v1474 (2026-09-27) §ALTS_ALL: fix/film-law-v2 + Z10 AO indirect + Z11 bounce albedo merged; Z8 radius-free shell rule
+//   (light_zones.js, &shellreach=2 = B1); Z18 &gridblend=1 (sourced_light.js, default off); remeter all-sky VACUOUS guard.
+//   §FRAME_QA per-frame luma line in cinema_maxq.js (bake release gate). Z18 §SPEC_SMOOTH (default on, &specsmooth=0): continuous
+//   §GLASS_SPEC_GATE mirror march. Still torch staged before the stage meter (no VACUOUS torch remeter). §METER_STATE isolation line.
+//   cli_silent_bake.js --url-query.
+//   viewer.html light_law.js?v=6, sourced_light.js?v=59, effects.js?v=115, gi_still.js?v=30, light_zones.js?v=17, cinema_maxq.js?v=11 in the SAME commit.
+// v1473 (2026-09-27) §FILM_LAW v2 on the Alt+S torch build: S1 film meter/adapt (LightLaw.ADAPT/adaptEv, acesDiv=1), S2 no film fill,
+//   S3 CAM_LIGHT off -> §CAM_TORCH in parity films (Z17 film part, L1b). viewer.html light_law.js?v=5, sourced_light.js?v=58,
+//   effects.js?v=114, cinema_maxq.js?v=10 in the SAME commit.
+// v1471 (2026-09-27) combined Alt+S: §METER_EV v3 (band 40/90, ACES pre-scale kept, emitters hidden) + lamp truth + LightLaw + Z9 + Z12.
+// v1466 (2026-09-27) §ZERO Z9 ALBEDO sRGB: Alt+S decodes flat IFC albedos sRGB->linear via LightLaw (restore on Esc).
+// v1469 (2026-09-27) §ZERO Z12: Alt+S hemi ground half = rho_g x (sun sinE + E_sky) via LightLaw; §SUN_PENUMBRA diagnostic (0.53 deg disc).
+//   viewer.html light_law.js?v=1->2, effects.js?v=109->110 in the SAME commit.
+// v1467 (2026-09-27) §ZERO Z10 AO_INDIRECT: Alt+S AO in world metres (LightLaw.AO) applied to the materials' indirect terms (aomap patch).
+//   viewer.html light_law.js?v=1->2, sourced_light.js?v=54->55, effects.js?v=109->110 in the SAME commit.
+// v1468 (2026-09-27) §ZERO Z11 BOUNCE: gi_still second AO 0 (stills), real receiver albedo (SourcedLight.albedoMap, readback mode 13).
+//   viewer.html sourced_light.js?v=54->55, gi_still.js?v=28->29 in the SAME commit.
+// v1463 (2026-09-27) §LIGHT_LAW_MODULE: new viewer/light_law.js (window.LightLaw — calibration, scene sources, §METER_EV
+//   constants + formulas, cove levels, snapshot()+hash); scene.js / effects.js / sourced_light.js read it (pure refactor).
+//   viewer.html light_law.js?v=1 + sourced_light.js?v=53->54, effects.js?v=108->109, scene.js?v=65->65 in the SAME commit.
+
+// v1452 (2026-09-30) §S8 EDIT→Δ: new viewer/edit_delta.js (one pure Δ function) + edit_delta_viewer.js (Connect 'identity' subscriber, P3);
+//   hover_name.js?v=6 + picking.js?v=31 carry the Δ line. viewer.html script tags + PRECACHE_ASSETS in the SAME commit.
+// v1453 (2026-09-30) §S9 PROJECT ORDER READ: new viewer/proj_order_state.js (the ONE owner of the Project-Order read + Generate / delete&re-issue / VO);
+//   find_erp_push.js _ensureErpDb is OPFS-first (the diff.js VO precedent). viewer.html script tag + PRECACHE_ASSETS in the SAME commit.
+// v1454 (2026-09-30) §S9: proj_order_state.js?v=2 — projectKey (the ERP Project Value is the Viewer's building label; Duplex = Ifc2x3_Duplex_Federated, measured).
+// v1455 (2026-09-30) §S8: hover label wraps + stays inside the window (hover_name.js?v=7).
+// v1456 (2026-09-30) S8 one pricing basis (edit_delta.js?v=2) + S9 generic project key / VO = order-line difference (proj_order_state.js?v=3).
+// v1248 (2026-09-24) §SURFACE_R10: new viewer/surface_r10.js (single-style window pane/frame + door hardware/leaf split,
+//   a port of the r10 measurement); streaming.js draws split openings with geometry groups + a material array and a
+//   pane-discarding shadow depth material. viewer.html streaming.js?v=73->74 + surface_r10.js?v=1 in the SAME commit.
+// v1208 (2026-09-20) §13 the escape route's visual language (RED/YELLOW/BLUE/GREY + legend and
+// footnotes), the storey tint painting BOTH channels, §FINDINGS_HUD_CLEAR, the back-loaded
+// escape ease, the §13 card fit, the duplicated lower-third caption bar deleted, §75 applied to
+// the caption chain, and §SLAB_LABEL_STALE. Four commits of viewer modules had shipped on v1207
+// (1a133982, 99c38a3a, 2c487820 and this one) — a reused /tmp/silent-bake-profile-<port> would
+// have rendered the old ones and looked perfectly normal doing it.
+// v1207 (2026-09-20) MERGE — origin/feat/escape-route-reveal (§ESCAPE_ROUTE_REVEAL + §12 egress
+//   rules) folded into the §129.1 load-path freeze branch. Both lanes touch cinema_maxq's composite
+//   pass and both precache their own modules, so a client must never serve a half-and-half mix.
+//   Precache list is the UNION. Higher of the two versions taken, per this project's sw.js rule.
+// v1205 (2026-09-20) §129.52 the stat card no longer draws on top of the pie panel — the column offset was never advanced.
+// v1204 (2026-09-20) §129.51c a proxy engage/disengage edge forces one full TM pass — the flag was inert without it.
+// v1203 (2026-09-19) §129.51b the stand-down flag rises AHEAD of the storey window, not at arm (too late).
+// v1202 (2026-09-19) §129.51 the proxy also stands down for the storey reveal, arm to restore.
+// v1201 (2026-09-19) §129.50 the DLOD proxy stands down during the discipline reveal.
+// v1200 (2026-09-19) §129.49 the lights witness fails per FAMILY — one lit family no longer covers a dark one.
+// v1199 (2026-09-19) §129.48 the relight restored the PRE-GLOW dark values; now it restores the glow.
+// v1198 (2026-09-19) §CPE_REVEAL_LEAK — watch for a hidden discipline coming back without a slot change.
+// v1197 (2026-09-19) §129.47 relight only after the storeys return + §CPE_REVEAL_HIDDEN witness.
+// v1196 (2026-09-19) §DLOD_ONSCREEN_FIX — distance alone no longer boxes an on-screen element.
+// v1195 (2026-09-19) §FRAME_COST measurement + §DLOD_BAKE_PROXY hook (LARGE_DB_BAKE §8).
+// v1194 (2026-09-19) §129.45 shadow contact — normalBias carries the acne duty, depth bias stops detaching shadows from column bases.
+// v1193 (2026-09-19) §129.44 compass rose anchors to A.groundIfcZ, not the model bbox floor.
+// v1192 (2026-09-19) §129.42 fallback ranking + §129.43 NaN dimension guard.
+// v1191 (2026-09-19) §129.42 storey span leads the load-path ranking, ahead of camera visibility.
+// v1190 (2026-09-19) §HUD_ROW + §HUD_SCALE + §129.39 + §129.40 + §129.41 — five overlay modules
+//   changed together and they read each other's numbers, so a client must never serve a mix:
+//   cinema_maxq publishes window.__hudFontPx (the one sizing law) and lays the top ROW; the four
+//   overlays read that law and take the row's xOff; cpe_load_path gates chains on BEARING and
+//   finally sets ctx.font on its own card. An old cached cinema_maxq with a new cpe_load_path
+//   would size the card by a law that is not there.
+// v1189 (2026-09-19) MERGE — origin/main's §GEOREF/§SUN_PATH/§SUN_COMPASS/§SUN_ONE/§SUN_DAY/§SUN_CLOCK
+//   work (v1177-v1188, bim-ootb#1751 + #1752) folded into the §129.1 load-path freeze branch. Both
+//   lanes touch cinema_maxq's composite pass and both precache their own modules, so a client must
+//   never serve a half-and-half mix: the sun overlays read the freeze through window.__drawUnlessHold
+//   (published by cpe_load_path's own cinema_maxq, 5125f0da) and the ROSE hides on A._loadPathHudAlpha,
+//   so an old cached copy of EITHER module leaves the freeze half-applied. Precache list is the union
+//   of both lanes. ⚠ Still true, and still the first thing to check: rm -rf /tmp/silent-bake-profile-*
+//   before any preview bake — see v1180 below, a CACHE_VERSION bump alone does NOT evict that profile.
+// v1178 (2026-09-18) §GEOREF §SUN_PATH §SUN_COMPASS (bim-compiler prompts/GEOREF_SUNPATH_COMPASS.md
+//   §1-§8): import_worker.js now reads IfcSite RefLatitude/RefLongitude/RefElevation and
+//   IfcGeometricRepresentationContext.TrueNorth, and import_db_builder.js writes them to
+//   project_metadata — this path wrote NO georef at all before, so every browser-imported building
+//   had no true_north_angle row and sitecam.js/walk.js silently rotated by 0. New viewer/sun_path.js
+//   (NOAA solar position + §8 angle of attack, offline, no network) and viewer/cpe_sun_compass.js
+//   (a true-north rose on the ground with the 4D day-of-year, OFF unless the bake asks for it);
+//   both precached and script-tagged; cinema_maxq.js gains the sunCompass flag, and
+//   cinema_path_editor.js gains ONE Alt+C checkbox ("Sun compass") governing the whole overlay —
+//   rose + day-of-year + sun-angle readout together, off by default so every saved path re-bakes
+//   byte-identically. cli_silent_bake.js gains --sun-compass/--no-sun-compass.
+// v1188 (2026-09-19) §HUD_COLUMN + §129.1 FREEZE (red1, on a real 1852x960 frame): the sun
+//   readout moved OUT of bottom-left — the loadpath session's room box owns that corner now and
+//   mine was drawing underneath it — and into the day-counter column, under the clock. One owner
+//   of that corner's stacking, so collision is impossible by construction. Reserving against the
+//   centred caption (v1187) is retired: that caption is deleted by the same work.
+//   The §129.1 load-path FREEZE now clears this overlay like every other: both composites go
+//   through _drawUnlessHold, the ROSE is hidden explicitly (a scene object the HUD fade cannot
+//   reach), and the CLOCK is HELD rather than merely hidden — the film's fraction advances under
+//   a frozen frame, so the hands would have ticked invisibly and jumped on return. Resumes at the
+//   next proper frame. Frozen frames are excluded from the lit/dark tally.
+// v1187 (2026-09-19) §CPE_CAPTION_BAND: the §SUN_COMPASS bottom-left readout was landing ON the
+//   room-title caption — measured on an 854x480 HHS bake with EVERY overlay on, caption plate
+//   405.6..443.6 against the readout's middle line 418..443. cpe_room_title.js now publishes
+//   A.roomTitleBandSize (one owner of that arithmetic, like dayCounterBoxSize), cinema_maxq
+//   reserves it per frame when a caption is up, and the readout stacks above it. No caption, no
+//   reservation — it returns to the bottom.
+// v1186 (2026-09-19) §SUN_DAY (red1: "a new day film scheme — as it gives rightfully, a whole
+//   daylight sweep"): a date field beside the Sun compass, hover "enable geo-ref truth". Pin a date
+//   and the WHOLE film is lit on that one day with the hour sweeping 9:00-17:00 solar — one clean
+//   arc (21 Jun at Boston: 48 59 67 71 67 59 48 37 26) instead of the season fighting the clock
+//   (45 22 26 47 60 49 23 6). The BUILD still follows the 4D timeline; only the light is pinned,
+//   and the readout prints the LIT day so it and the Day counter cannot be confused.
+//   Empty = the shipped behaviour, so no saved path re-bakes differently. --sun-date on the CLI.
+// v1185 (2026-09-19) §SUN_CLOCK (red1): an analogue face with hour/minute hands showing the SOLAR
+//   hour each frame is lit at, in the day counter's own corner directly under it (bottom-left was
+//   already taken by the date/sun/facade lines). Ties to the compass toggle — no compass, no clock.
+//   It returns its drawn height so the path box and pie stack below it without overlap.
+// v1184 (2026-09-19) §SUN_ONE film clock SWEEPS (red1: the film runs all the days but samples
+//   different times of day "to give a perception of a single half day"). The solar hour now moves
+//   9:00 -> 17:00 with the film fraction while the DATE advances underneath, so the sun rises,
+//   peaks and sets across the film — what the old scripted 55->6 arc imitated, except real.
+//   Boston over 390 days: elevation 13 30 53 69 66 47 23 5 -2. Plus §SUN_ONE_ALL_DARK, judged over
+//   the whole run: a film dark in every frame is the truth inside the polar circle and a mistake
+//   anywhere else, and it says which.
+// v1183 (2026-09-19) §SUN_ONE film clock (sun_path.js + cpe_sun_compass.js): the DATE advances
+//   with the film, the TIME OF DAY is held at 10:00 SOLAR. Driving the light from the raw 4D
+//   cursor was astronomically perfect and a strobe — a real 8-frame Hospital bake gave elevation
+//   30.4, -33.7 (night), 18.2, 43.8 across four frames, because 390 days play in 80 seconds so
+//   each frame lands at an unrelated hour. Held hour: Boston runs 18.7..58.7 deg across the year,
+//   never below the horizon, largest month-to-month step 10.2 deg. Solar time, so it needs only
+//   the longitude — no timezone data, no DST.
+// v1182 (2026-09-19) §SUN_ONE (effects.js): there were TWO suns in a frame — the scripted 55->6
+//   arc at a fixed azimuth 200 lit the building, while the compass drew the real one. Measured
+//   77.7 deg apart in azimuth and 24.6 deg in elevation on one Hospital frame. With the compass
+//   ON, the REAL sun now drives updateSky too, so shadows and rose agree. Gated on the flag: every
+//   bake that does not ask for the compass keeps the scripted arc exactly as before.
+// v1181 (2026-09-19) §SUN_COMPASS readout regrouped (red1, after seeing a real frame): the date,
+//   the sun angles and the facade angle-of-attack are ONE fixed block bottom-left; the rose keeps
+//   only its "N". The date used to be pinned under the rose in world space, and Hospital frame 5/8
+//   — camera inside a washroom, ground not in view — had the sun line present and the date GONE.
+//   A film must not stop saying what day it is because of where the camera is.
+// v1180 (2026-09-19) §SUN_COMPASS two real fixes to cpe_sun_compass.js + cinema_maxq.js since
+//   v1179, so the version MUST move or a client keeps serving the old module: (1) the per-frame
+//   sunCompassAt call was inside `if (_buildup && _bkState)` and never ran on a buildup-off bake —
+//   the rose built, the log said so, and nothing was composited; (2) the day-of-year label said
+//   "Day 285 · 12 Oct" beside cpe_day_counter's "Day 390 / 390" — two different quantities sharing
+//   a word. Now "12 Oct · day 285 of the year".
+//   ⚠ A LOCAL PREVIEW BAKE CAN RENDER STALE JS, AND BUMPING THIS CONSTANT DOES NOT FIX IT.
+//   Measured 2026-09-19, three bakes: both fixes above were baked and the frames showed the OLD
+//   behaviour; bumping v1179 -> v1180 changed NOTHING. The cause is cli_silent_bake.js's
+//   `userDataDir: /tmp/silent-bake-profile-<port>`, which persists between runs and holds the
+//   service-worker registration and its Cache Storage. A CACHE_VERSION bump only takes effect when
+//   the NEW worker activates, and a new worker waits while the old one still controls the page — so
+//   the bump cannot evict anything on the next load. `rm -rf /tmp/silent-bake-profile-*` before the
+//   bake is what actually works; that run produced the correct frame on the first try.
+//   The bump below is still right for SHIPPING (two modules changed since v1179) — it just was not
+//   the fix, and reporting it as one would have been wrong.
+// v1179 (2026-09-19) §CPE_TOGGLE_ICONS: the Alt+C panel's seven overlay toggles are icon buttons
+//   that light amber when checked, built from ONE table instead of seven hand-written rows.
+//   COSMETIC ONLY — every checkbox id, handler, _state field, census entry and DOM-sync row is
+//   unchanged, and W-SUN-COMPASS-WIRING asserts the whole chain by name. The row hints moved into
+//   each button's title rather than being dropped. Icons: red1's traced compass (flat, inlined
+//   four icons from panels.js's own ISC-licensed Lucide set — ruler/triangle/disciplines plus a new
+//   ICONS.compass (the magnetic rose, NOT draftingCompass, which is the drawing instrument). Three
+//   slots stay caption-only rather than carrying invented placeholders.
+//   (A compass traced from clipart4585220.png was inlined and removed the same day —
+//   realclipart.com "Personal Use", not the Flaticon free tier it was believed to be. Lucide's own
+//   compass replaces it with no attribution obligation: viewer/icons/lucide/README.md, ISC.)
+// v1177 (2026-09-14) TM_4D5D_VARIANCE_LANE §S7-INJECT: new viewer/schedule_inject.js ("Generate
+//   programme" — materializeZones+persistDb on the fly, best-effort save, honest saved/session-only
+//   message); panels.js 'sched4d' pill gate changed from "has a schedule" to "engine capable" so the
+//   new action is reachable with no schedule yet (viewer.html script tag added); info_4d_panel.js
+//   now renders the schedule's provenance (generated vs authored) beside the window; time_machine.js
+//   exposes window.tm4DTemplate (the ONE _load4DTemplate, reused, never a second fetch). All of
+//   panels.js/info_4d_panel.js/time_machine.js/schedule_inject.js are in PRECACHE_ASSETS, so without
+//   this bump an installed worker keeps serving the old pill (schedule-carrying buildings only) and
+//   the on-the-fly action never reaches an existing user (§CRISIS LESSON 4).
+// v1175 (2026-09-13) TM_4D5D_VARIANCE_LANE §S7 legs 2-4: #info-4d block (viewer.html) + eager
+//   schedule_read_4d.js load; hover_name.js one-line 4D augmentation; panels.js data-gated
+//   'sched4d' pill; find_erp_push.js _show4DWindow + rendered cost matchCount (§S7-GRAIN).
+// v1169 (2026-09-08) §38.1a/§38.1b/§40: THREE FIXED FILM BOXES — new viewer/cpe_film_boxes.js (§HUD_BOX, §STATUS_BOX
+//   below it with four fixed rows, §MEASURE_BOX opposite, geometry a pure function of frame size + corner, never of the
+//   text); cinema_maxq.js retires the roaming lower-third caption plate for the bake and routes every Measure figure to
+//   the one panel; cpe_slab_beat.js posts the plate's MESH FOOTPRINT area there and draws a box outline instead of the X;
+//   new viewer/cpe_flyout_beats.js (wing spans + roof-edge-to-sill on the pull-out canvas, §38.2).
+// v1170 (2026-09-08) §42 FLICKER FOUND: cpe_flythru_datum.js's transparent ribbons had THREE's default
+//   depthWrite=true, so over a COMPLETE building the transparent queue's per-frame re-sort flipped large
+//   areas between building and sky — 42 frames of |dY|>15 (max 59.6), 100% inside §FLYTHRU_DATUM_LIFE2's
+//   148.70-169.10s window, 0 outside; three datum-free films show 0-2. depthWrite:false; depthTest stays
+//   TRUE (§17.5). New scripts/probe_film_flicker.py judges any baked mp4 for this.
+// v1171 (2026-09-08) §45 TINT DROPPED (user): cpe_slab_beat.js no longer repaints the model at all — the
+//   plate is named by a SHINE-THROUGH box outline (depthTest:false, renderOrder 951, the clash marks' own §7
+//   contract) plus its area in the fixed §MEASURE_BOX. MEASURED cause: all 23 |dY|>15 jumps of the 0-30s test
+//   bake sat on the tint's 9.38s pop + 2.2s envelope, and the tint wrote setColorAt into a SHARED instance/batch
+//   colour buffer every frame, so it could move pixels anywhere in the picture.
+// v1172 (2026-09-09) §46 §AO_EXCLUDE — THE FLICKER'S ROOT CAUSE. SSAOPass renders its depth/normal prepass
+//   with scene.overrideMaterial set, which IGNORES per-object depthWrite, so Measure's annotation geometry
+//   (datum ribbons, plate outline, hall tint) was written into the AO buffer as solid surface and occluded
+//   the whole picture. MEASURED: 42 frames of |dY|>15 inside LIFE2's window with Measure on vs 0 with
+//   --no-measure, and 39..104 swings against a flat 56 on the twin. effects.js now hides anything marked
+//   userData.excludeFromAO for that pass ONLY; the beauty pass and TAA fold are untouched.
+// v1173 (2026-09-13) MERGE — origin/main's hardened Sanity/Egress rules (#1715 #1718 #1720 #1724)
+//   folded into the rule-findings film branch, plus §88.7b's bucket-key revert. New cache version so
+//   no client serves a half-and-half mix of the two rule engines.
+// v1128 (2026-09-02) §SUN_FILL_RATIO: viewer/effects.js — the Alt+S staging HDRI
+// (belfast_sunset_puresky_1k) was being pushed onto EVERY material by _reassertPhotoEnvMap, matte
+// concrete and plaster included. IBL is non-directional and is NOT shadow-map-occluded in three.js,
+// so it lit walls facing AWAY from the sun as hard as walls facing it: measured away/sun separation
+// 1.0429 on Clinic (the away wall was BRIGHTER) and 0.9170 on Hospital, against 0.2408/0.2372 in
+// plain navigation. Matte materials now keep the plain-nav sky env map; glossy/mirror keep the HDRI
+// (42/42 and 70/70 asserted still on it). effects.js is in PRECACHE_ASSETS and viewer.html's query
+// is bumped effects.js?v=30->31 in the SAME PR (§CRISIS LESSON 4).
+// Witness: witness_sun_fill_ratio.js (§SFR_REDGREEN, RED CONTROL 0.0005/0.0000).
+// v1131 (2026-09-03) §R15 levers DEFAULT FALSE. #1635 auto-merged before the second
+// W-BUDGET-CONVERGE run returned; that run reports verdict=FAIL (as did the first) with THREE
+// phases 15-45% slower and whole-cycle dt_mean flipping sign between runs. The counters, the
+// richer §DLOD_NAV_BUDGET line and the §ROOM_OCCL_INDEX_ERR fix all stay; only the behaviour
+// change is disarmed until A-27 removes the demote-side fade cost. dlod_nav.js?v=3->4.
+// v1130 (2026-09-03) §R15 DLOD budget controller convergence: the §20 mesh-budget integrator ran
+// at 150 ms while its own feedback (activeElig, published once per completed chunked scan pass)
+// arrived every 387 ms — MEASURED 55.0% of control periods integrated an unrefreshed number — and
+// had no anti-windup, so it charged to MAX_BOOST against an aerial view where widening the distance
+// provably buys nothing. Two rules, both conditions rather than tuned constants: act once per
+// MEASUREMENT, and stop integrating in a direction the last step proved ineffective.
+// viewer.html dlod_nav.js?v=2->3 bumped in the SAME commit. Witness: witness/w_budget_converge.js.
+// v1129 (2026-09-02) §DUCT_SILHOUETTE: new viewer/silhouette_refine.js, hooked at the single
+// geometry choke point A.blobToGeometry (scene.js). §MEP_SMOOTH_NORMALS fixes SHADING at a 55
+// deg crease and provably cannot fix an OUTLINE, so a big duct stayed a visible N-gon while a
+// lamp did not — MEASURED, the two differ 50x in projected chord deviation, not in detection.
+// One level of uniform Phong subdivision on the elements whose own facet step still covers a
+// 1080p pixel at 5 m. Hard edges keep the plain midpoint, so flat surfaces are untouched.
+// viewer.html scene.js?v=59->59 and streaming.js?v=68->69 bumped in the SAME commit.
+// PRECACHE entry added in this same commit — a new module that is not precached is invisible
+// offline, and a precached scene.js served past a version bump would call a function that is
+// not there (the §CRISIS LESSON 4 failure mode noted under v1127).
+// v1127 (2026-09-02) §MEP_COLOR_SURVIVES_PHOTOREAL: streaming.js gives an MEP element its trade
+// HUE when its own colour carries none, keeping the element's own V (and every roughness/metalness/
+// envMap/triplanar term) untouched — so MEP reads by system in an Alt+S still and the Alt+C movie
+// instead of the uniform grey metal the metal triplanar texture multiplied out of the shipped
+// achromatic off-white default. §MEP_DISC_TINT's `!rgbaStr` gate + its 3-class DISC_TINT_CLASSES
+// list are subsumed by ONE owner, A._mepDiscAlbedo. viewer.html streaming.js?v=67->68 bumped in
+// the SAME commit (§CRISIS LESSON 4 — a precached streaming.js is served past a CACHE_VERSION bump
+// without its own ?v= change). The disc->hue mapping is an AUTHORED choice reusing A.DISC_COLORS
+// verbatim, NOT a published MEP standard — no such convention exists in the model data.
+// Witness: witness_mep_color_photoreal.js (W-MEP-COLOR-PHOTOREAL) — 55/55, five buildings, red
+// control + tier-1 byte-identity on the user's own fire-red lever (1300/1300 elements).
+// v1126 (2026-09-02) §CPE_AIM_DEPTH_RETIRED: viewer/effects.js — §CPE_AIM_DEPTH, the last automatic
+// exception to path-follow, is REMOVED on user directive ("its best to leave alone its pointing
+// along its path ... to stay simple and predictable"). Gone with it: §CPE_AIM_GRID, §CPE_AIM_LATCH
+// (the weight running-max; the Beat3→4 hand-off line is RENAMED §CPE_BEAT3_END_DIR, not removed),
+// §CPE_AIM_DEPTH_SERIES/_SCALE/_VERTICALITY/_OPEN_TAPER/_FWD_CLEAR/_BUILDUP, and §CPE_STICK_HOLD's
+// aim half (_holdBoostAt fed only _aimDepthApply — a held beat is now a pure rate dip). KEPT:
+// §CPE_AIM_PIN, the correction window, §CPE_AIM_DEPTH_FREEZE (#1598), §CPE_CORR_BRANCH (#1597).
+// effects.js is in PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=29->30 in the
+// SAME PR — without both an installed SW keeps serving the pre-change file (§CRISIS LESSON 4).
+// Witness: witness_cpe_aim_retire.js (7/7 depth-OFF, red control fails on the depth-ON arm).
+// v1125 (rebase of PR #1318 onto origin/main) §GANTT_CACHE_ERR_STACK: time_machine.js's
+// injectGantt cache-activate catch block now logs the stack + which phase failed (pre/post
+// loadOps) instead of the bare error message, which could not locate a live user's GUID-key
+// crash. Logging-only, no behavior change.
+// MERGE NOTE (2026-09-01, third of the day, same standing rule: KEEP BOTH notes, take the HIGHER
+// version, each separate change gets its OWN bump):
+// v1119 (2026-09-01) §WALL_SIDE_AND_LIGHT_FLOOR: streaming.js class-keyed material.side (census-
+// derived FRONT_SIDE_CLASSES, T1<=2% defect; §S260d "inconsistent normals" premise corrected —
+// measured false) + scene.js ambient/hemi lowered to the derived light floor so away-from-sun
+// faces darken. viewer.html streaming.js?v=65->66 + scene.js?v=58->58 bumped in the SAME commit.
+// Witness: witness_wall_side_light_floor.js (pick integrity + no-vanish + perf/mem gates).
+// v1120 (2026-09-01) §CLI_SILENT_BAKE (cinema_maxq.js?v=9 dev-only scripted bake entry) +
+// §NIGHT_BAKE_POOL (tools.js?v=44 — point-light COUNT frozen during a MaxQ bake; measured
+// 13-53 s/frame shader-recompile churn on the first headless Hospital bake, s4_300.log).
+// v1121 (2026-09-02) §MEP_DISC_PALETTE: the §SUNGLASS discipline band (ticks 56-65) paints from
+// A.DISC_COLORS — the viewer's OWN legend — instead of an alphabetic cycle through a generic earth
+// ramp (tools.js?v=44->45), and streaming.js?v=66->67 sets userData.disc on discipline-UNIFORM
+// InstancedMeshes so they stop falling into §SUNGLASS's 'Unknown' bucket. The disc->colour mapping
+// is an AUTHORED choice reusing an existing in-repo table, NOT an industry MEP standard — no such
+// convention exists in the model data. Witness: viewer/tests/witness_mep_disc_palette.js.
+// MERGE NOTE (2026-09-01): this branch and origin/main both bumped to a v1114/v1115 concurrently —
+// the conflict CLAUDE.md names sw.js as the magnet for. Resolved by its own rule: KEEP BOTH notes,
+// take the HIGHER version, and since §CPE_CORR_BRANCH is a SEPARATE change from §CPE_MATERIAL_KEY it
+// gets its OWN bump rather than riding v1115 (§CRISIS LESSON 4, the twice-missed rule).
+// v1116 (2026-09-01) §CPE_CORR_BRANCH: viewer/effects.js changed — _cpeCorrDirBlend's 2*pi branch is
+// now resolved ONCE per correction stroke (a port of §CINEMA_GAZE_SENSE's fix) instead of per sample
+// by round(raw/2pi), which is a step function of the underlying gaze and snapped the camera 110.44 deg
+// in ONE sample on Hospital where the walk's own worst sample is 13.28. effects.js is in
+// PRECACHE_ASSETS and viewer.html's query is bumped effects.js?v=27->28 in the SAME PR — without that
+// second bump a stale ?v= URL keeps serving the pre-fix file (the failure at v-note "why is this still
+// blue" below). Witness: witness_cpe_corr_brush.js 8/8 on Hospital, with an in-run A/B
+// (A._cpeCorrBranchOff) measuring 110.436 -> 13.114 deg/sample.
+// v1115 (2026-09-01) §CPE_MATERIAL_KEY: streaming.js triplanar texture lookup now keys the
+// element's OWN authored material_name FIRST and falls back to ifc_class (viewer.html
+// streaming.js?v=64->65 bumped in the same commit, per the v1030 lesson below).
+// v1114 (2026-09-01) §SUNGLASS_GROUPING_RULES + §SUNGLASS_BROWN_TRACK (bim-compiler
+// prompts/CINEMA_PATH_EDITOR.md §SESSION_2026-09-01C): palette storey bands (ticks 31-55) now a
+// monotonic ramp keyed on the storey's geometric ordinal (median world-Y), not alphabetic rank +
+// cycling list; class/disc bands byte-identical. Palette scrub track paints ticks 98-100 brown
+// (material-injection affordance). tools.js?v=42->43, viewer.html CSS — both in PRECACHE_ASSETS.
+// Witness: witness_sunglass_grouping_rules.js.
+// v1092 (2026-08-27) §R10 (bim-compiler prompts/CPE_4D_PERF_MEM_FINDINGS.md §7, extends R1's
+// §MAXQ_STAGE_KEEP contract): the MaxQ bake's per-frame glow quad rebuild (deleted v1410; viewer/effects.js)
+// now skips the dispose+rebuild when the TM-visible fixture count is unchanged since the last
+// stage — its geometry never reads A.camera, unlike the round glow sprite and §NIGHT_STILL_LIGHTS
+// (both untouched, both correctly camera-dependent). effects.js?v=26->27, both in PRECACHE_ASSETS.
+// Witness: witness_glow_lens_stage_keep.js, 7/7 PASS (Duplex A/B: baseline 29 stage/remove cycles
+// in 28 frames -> fix 2 stages + 27 skips, last-frame rect/round counts byte-identical both sides).
+// v1090 (2026-08-27) §TPL_MODEL: rates/4D_template.json ADDED to PRECACHE_ASSETS (it defines the
+// canonical task grid and was never precached, so offline/cold-SW silently ran the dead deriveZones
+// path), plus schedule_author.js now names which model ran at the fork. Both are precached, so
+// without this bump an installed worker keeps serving the version with neither.
+// v1084 (2026-08-25) §CPE_BUILDUP_REQUIRE_TM_FIRST (CINEMA_PATH_EDITOR.md, user ruling "no auto
+// JSON outside TM"): Alt+C's bake no longer generates a building's first-ever 4D schedule.
+// window.tmHasExistingSchedule() (time_machine.js) — read-only, no DB writes, never generates —
+// checks active ops / IDB gantt cache / kernel_ops before cinema_maxq.js ever calls
+// tmActivateForBake(). No schedule yet -> visible status "Open Time Machine first to build the
+// construction schedule — baking without it this time", bake continues as a plain flythrough with
+// no buildup. Once a schedule exists (from either source) every later bake reads it silently, same
+// as before — this is a one-time gate, not a per-bake check. Witness:
+// witness_cpe_buildup_require_tm_first.js.
+// v1083 (2026-08-25) §CPE_BUILDUP_ACTIVATE_POPS_PANEL (CINEMA_PATH_EDITOR.md): Alt+C's bake
+// (tmActivateForBake) no longer calls the real, panel-popping activate() — a new `silent` param
+// threaded through activate()->_activateAsync()->_finishActivate() loads the same schedule data
+// (_ops/_projectStart/_projectEnd, xray cache, computeDays, saveVisibility) without ever touching
+// the Time Machine panel DOM/canvas (no setToolbarHighlight/_panel.display/switchMode/renderAtTime/
+// updateStatus/drawGanttMini/drawDashboard/_loadTwin fetch). A real user Play is unaffected (silent
+// is falsy for every other caller). New window.tmDeactivateIfBakeOwned() (cinema_maxq.js, called on
+// every bake exit path) turns TM back off ONLY if the bake itself silently turned it on — a bake
+// that reuses an already-open real TM session leaves it untouched. Witness:
+// witness_cpe_buildup_activate_silent.js.
+// v1078 (2026-08-23) SCRIPT_LENGTH_REFACTOR_SEAMS.md §S59 candidate 2 — navigate_find.js's ERP-push
+// block extracted to NEW find_erp_push.js (loaded by main.js's lazy navigate list BEFORE
+// navigate_find.js?v=58). NOT precached ON PURPOSE: none of the lazy navigate_* sub-modules are
+// (navigate_find/grid/path/engine/controls, room_graph, hallway_backbone — only navigate.js is);
+// local .js is network-first, so online users fetch fresh. This bump purges stale runtime caches
+// so an offline fallback can never pair an old self-contained navigate_find.js with the new main.js.
+// v1064 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S58 — observability hardening, ADDITIVE LOGGING
+// ONLY, no rule or behaviour changed. (a) the three §GANTT_* proof lines now fire on every
+// model REBUILD instead of once per building, so an edit is auditable (rebuild=N ordinal).
+// (b) NEW §HOSTED_BEFORE_HOST line — it had no log line at all; first run exposed Terminal
+// 268/2367 hosted elements (11.3%) falling through unguarded. (c) NEW §GANTT_AXIS line.
+// (d) five silent catches now warn: §LABOR_QUANTITY_WEIGHT_SKIP, §HEAVY_MEMBER_SPEED_LIMIT_SKIP,
+// §WOULD_CYCLE_BLIND, §CASCADE_BLIND, §LOC_AXIS_PERSISTED_UNREADABLE.
+// v1063 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S54 (item F2): time_machine.js's two ERP-twin
+// loaders (_loadTwin/_loadShopfloor) no longer default a missing activeBuilding to 'Hospital' —
+// with no active building they now skip BEFORE the 25.8MB ad_seed.db fetch instead of attaching
+// another project's cost figures to an arbitrary IFC. Witness: witness_tm_erp_twin_guard.js.
+// v1062 (2026-08-21) 4D_GANTT_TM_REFACTOR.md §S53 (item F3): the Gantt bar MODEL extracted out of
+// time_machine.js into NEW gantt_model.js (precached above, viewer.html loads it first) —
+// buildGanttTasks/computeDays/_tukeyBound are now thin wrappers over it. Behaviour-preserving,
+// no rule changed; witness_midair_zero.js pass=49 fail=0 with every number identical.
+// v1061 (2026-08-21) §S51 item d (4D_GANTT_TM_REFACTOR.md §S51): the Gantt reads the cell
+// schedule — CELL-path generations stamp _cell into kernel_ops and buildGanttTasks groups bars by
+// it (graph-path buildings unchanged). _GANTT_CACHE_VERSION 36->37 regenerates pre-stamp ops.
+// v1060 (2026-08-21) §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50, user ruling: the
+// support graph is retired as the live precedence carrier). cpm_schedule.js gates per building
+// (representability >= 0.88 -> (location, trade) cell schedule; below -> graph engine unchanged);
+// NEW location_axis.js + lib/level_deriver.js precached; viewer.html loads both + room_walker
+// before cpm_schedule. _GANTT_CACHE_VERSION 35->36 — the schedule shape changes on gated buildings.
+// v1059 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, E3 gate fix: cpm_schedule.js's milestone() no longer
+// exempts stragglers from feeding their own phase's completion gate ("phase done" now means the
+// WHOLE group, not a filtered subset). Verified fleet-wide: floating=0/7 unaffected (only 'member'
+// tidiness edges changed, never E1/E2 physics); the gate itself now matches true bulk completion
+// exactly on Duplex/HHS/Hospital (e.g. HHS Level 1 t1Complete 0.2d->27.7d). Real, reported
+// caveat: ~24% of MEP Rough-in at HHS Level 1 still starts early via legitimate cycle-breaking
+// (the same deadlock-avoidance mechanism the removed exemption used to provide preemptively, now
+// resolved per-cycle by solve()'s existing Round-1 breaker instead) — not silently patched around.
+// _GANTT_CACHE_VERSION 34->35 bumped alongside.
+// v1058 (2026-08-18) 4D_GANTT_TM_REFACTOR.md, the axis near-duplicate fix: computeDays()'s
+// _ganttAxisEnd used the SAME cliff rule stage 2 fixed inside buildGanttTasks() (2nd-98th
+// percentile above n=20, true max below), applied to the GLOBAL end_ts population instead of one
+// bar's span. Fleet-measured live (before fix): every one of the 7 buildings had bars whose real
+// end exceeded the axis they were drawn against — worst LTU 17.8d/12 bars, Hospital 10.6d/5 bars
+// (top floors squashed toward the panel edge). Data-correct, draw-wrong. Now uses the same shared
+// _tukeyBound as the bar-span fix — 0 overflow, all 7 buildings, after. _GANTT_CACHE_VERSION
+// 33->34 bumped alongside.
+// v1057 (2026-08-17) 4D_GANTT_TM_REFACTOR.md stage 2: buildGanttTasks()'s bar-span rule replaced
+// (2nd-98th-percentile-above-n20/true-min-max-below -> uniform Tukey-fence, no cliff) — the
+// mechanism behind the live "one pile, full project length" report. _GANTT_CACHE_VERSION 32->33
+// bumped alongside so an already-persisted/cached schedule regenerates through the fixed path.
+// v1056 (2026-08-17) §S20 Part B (4D_GANTT_TM_REFACTOR.md): time_machine.js's dead legacy
+// display-repair chain (_twoTierRemap/_midairRepair/_tier1Serialize/_tierAuditRegate + their
+// _tier1Extents/_tier1Protrusion/_zoneOf/_TIER1_ORDER helpers — reachable only via the now-deleted
+// ?cpm4d=0 fallback, confirmed twice this lane never reached it live) DELETED, -540 lines. No
+// schedule-affecting logic changed (the CPM branch, the only path ever executed live, is byte-for-
+// byte unchanged) — _GANTT_CACHE_VERSION NOT bumped, fleet floating/storey/crew numbers measured
+// IDENTICAL before/after (probe_cpm_schedule.js, probe_cpm_display_path.js). This bump is precache
+// hygiene only (time_machine.js content changed).
+// v1051 (2026-08-16) §S7_OUTLIER_DELTA: Gantt drag/resize no longer collapses (437/gesture) or
+// INVERTS (217/gesture) the ops riding outside their task's drawn Tukey bar — outsiders get the
+// window's uniform start delta with true duration preserved (time_machine.js, 4D_GANTT_TM_REFACTOR.md §S7).
+// v1050 (2026-08-16) §MIRROR_ROOM_PROBE: Alt+S glossy/metal materials reflect a real one-time
+// CubeCamera capture of the actual scene (a room-representative point, same pivot heuristic
+// _cinemaPathPlan uses) instead of only the static sky/HDRI — user: "what does it take for
+// mirrors to truly reflect... try the single room-representative probe first" (effects.js?v=23).
+// A per-element name-keyword mirror boost was attempted and DROPPED (not shipped): A._matCache
+// only covers instanced/merged-tracked elements — Clinic's real "M_Mirror" elements render via
+// the batched path and never register a matCache entry, so there's nothing for a per-element
+// boost to attach to; fixing that needs a batched-mesh-aware path, out of scope here. Real bug
+// found+fixed in the same pass: dispose+rebuild every Alt+S cycle leaked +1 texture/cycle
+// (compounding, C1/C2/C3 measured 25,1,1) — fixed by building the probe ONCE and reusing it
+// across cycles (only disposed on a real building switch), same discipline as A._camLight.
+// v1049 (2026-08-16) §S6_CREW_PASS: crew-aware CPM forward pass (serial SGS), §CREW_FEASIBILITY +
+// §CREW_SPREAD_FLOOR fleet gates (#1406) — unrelated to this change.
+// v1048 (2026-08-16) bim-compiler prompts/4D_GANTT_TM_REFACTOR.md S1-S4 closeout: §S1_BAND_RANK
+// (cpm_schedule.js buildGraph — E4 storey hammocks + straggler group-key use 3m z-bands, not
+// per-storey-name rank, PR #1401); §S2_TUKEY_ENVELOPE (time_machine.js _tmDisplayRemap — task bars
+// are a classification-free Tukey-fenced robust envelope over ALL group members' true times,
+// replacing the straggler-classification min/max clip, PR #1402); §S4_RAW_SCHEDULE_REUSE
+// (time_machine.js injectGantt skips a redundant computeSchedule call when materializeZones already
+// computed it, PR #1404). _GANTT_CACHE_VERSION 29->30 — any building already materialized under the
+// old E4/bar-shape formulas will regenerate on next activation rather than replay stale schedules.
+// v1047 (2026-08-16) §ZONE_WINDOW_DAGWINS_CLIP: task bars = non-straggler envelopes (user:
+// "schedule looks gibberish" — every Hospital bar ran to project end, smeared by 11,215 dag-wins
+// stragglers); §CAP_RESCALE_SKIP: display-authored windows never re-spaced (views, not a second
+// schedule); §CPM_DISPLAY_EPOCH: one-truth reuse rigid-shifts the cached timeline onto the
+// requester's epoch (was landing uncovered ops in 1970). _GANTT_CACHE_VERSION 28->29.
+// v1046 (2026-08-16) §CPM_DISPLAY: time_machine.js display timeline authored by cpm_schedule.js
+// one-DAG forward pass (support/host/discipline/storey edges, SCC-condensed) at BOTH consumers
+// (kernel_ops write + materializeZones displayRemap) — floating 0 by construction, ?cpm4d=0 reverts.
+// cpm_schedule.js added to precache; _GANTT_CACHE_VERSION 27->28 regenerates cached schedules.
+// v1045 (2026-08-16) §CPE_DISCIPLINE_REVEAL_FLYBACK/§_ORDER/§_FADE: the pull-out->round-2 teleport
+// cut replaced with a fast eased retrace fly-back (new plan.beats.flyback boundary); tail-parade
+// discipline order now sorted ascending by real avg element bbox volume (element_transforms.bbox_x/
+// y/z), MEP forced last, "All Disciplines" capstone unchanged; tail-parade boundaries get a brief
+// overlap window (filterDiscs has no opacity channel — documented as an honest approximation, not a
+// literal fade) instead of an instant swap (effects.js?v=21->22, cinema_path_editor.js?v=14->15).
+// See bim-compiler prompts/CINEMA_DISCIPLINE_REVEAL.md's 2026-08-16 dated section for the full spec.
+// Collided with #1393's independent v1044 (§GROUND_EARTH_DEFAULT) — took one past it, per this
+// file's own KEEP-BOTH/take-the-higher merge convention.
+// v1044 (2026-08-16) §GROUND_EARTH_DEFAULT: Alt+S/Alt+C bake staging ground texture switched from
+// 'paved' back to 'earth' (effects.js?v=21) — user: "more realistic even surface feel", avoids
+// paved's rectangular slab-joint relief entirely. Shadow-mode toggle cycle reordered so 'earth' is
+// the first real choice (tools.js?v=42 _SG_CYCLE, panels.js?v=45 swatch row + tooltip).
+// v1043 (2026-08-16) §ZONE_DISPLAY_AUTHORING: task windows authored from the display timeline
+// (schedule_author.js displayRemap hook + time_machine.js _tmDisplayRemap), strict-bar sweep skipped
+// on display-authored schedules, §CJP live census in the §CROSSTASK_JUDGE_PARITY log line.
+// _GANTT_CACHE_VERSION 26->27. Probe §EXP8 Hospital: floating 664 -> 63, fidelity 97.03 -> 99.95.
+// Collided with #1389's independent v1042 — took one past it, per the KEEP-BOTH convention.
+// v1042 (2026-08-16) §STAGED_PL_CUT: night point-light intensity halved during Alt+S/Alt+C staging
+// only (effects.js?v=20, tools.js?v=41) — user directive, restores ground-slab shadow play in bakes.
+// v1041 (2026-08-16) §GROUND_DETAIL: ground normal/roughness maps + detail multiply + blotch
+// (tools.js?v=40, ground_config.json?v=2, 6 new textures/ground/*.jpg). Collided with #1387's
+// independent v1040 — took one past it, per this file's KEEP-BOTH/take-the-higher convention.
+// v1040 (2026-08-16) §CROSSTASK_JUDGE_PARITY: time_machine.js _cjpJudgeParity after _ogSupportSweep
+// — window-bounded judge-rule repair, captured floating 3090 -> 656 across the 7 buildings.
+// Collided with the independent same-day v1039 bump on main (#1385/#1386) — took one past it, per
+// this file's own KEEP-BOTH/take-the-higher merge convention.
+// v1031 (2026-08-15) streaming.js envInt: beam/railing->0, +13 remaining MEP device classes->0.05
+// (a prior PR's version bump for this same change was lost in a squash-merge race -- see git log).
+// v1030 (2026-08-15) §PIPE_DUCT_BLUE_TINT / §PHOTO_ENVMAP_DOUBLE_BOOST_FIX (bim-ootb PRs #1367,
+// #1369) shipped without a viewer.html script-version bump, so an already-cached browser kept
+// serving pre-fix effects.js/streaming.js under the same ?v= URL — user report "why is this still
+// blue" after both fixes were confirmed merged. Fix is the viewer.html bump (effects.js?v=17->18,
+// streaming.js?v=59->60) in this same commit; CACHE_VERSION bumped alongside per this project's own
+// standing convention (every deploy bumps it) so the offline precache path is refreshed too.
+// v1029 (2026-08-15) §CPE_DISCIPLINE_REVEAL_PULLOUT: the there-and-back retrace round replaced with
+// a pull-out + a single repeated forward lap (effects.js/cinema_maxq.js/cinema_path_editor.js/
+// cpe_room_title.js). New beat boundary plan.beats.pullout; A.cpeRevealCaptionAt (new) swaps the
+// room title to the discipline name during the tail's own slots; buildup topout now completes at
+// the end of the pull-out, not the instant of arrival. See bim-compiler prompts/
+// CINEMA_DISCIPLINE_REVEAL.md's dated "session 3" section for the full design/witness record.
+// v1028 (2026-08-14) §GANTT_SCHEDULE_STALE: the authored Gantt (schedules/tasks/task_elements) had
+// NO staleness signal at all, unlike kernel_ops (canvas), which self-heals via _genVersion/
+// _GANTT_CACHE_VERSION. Once materialized, a building's Gantt panel was frozen forever — never
+// re-derived however much the scheduling code (gates, display remap, §GANTT_SHIFT_HOURS_DESYNC
+// itself) changed since, while canvas kept rendering fresh placements. schedules.gen_version now
+// mirrors that same self-heal: a non-captured (synthetic SCH_AUTHORED), non-baselined schedule
+// materialized under an older gen_version is re-materialized in place the next time the Gantt
+// drawer builds its task index (buildTaskIndex, time_machine.js). Captured (imported) schedules and
+// anything with a baseline set are NEVER touched — verified with 6 direct cases (fresh/unstamped/
+// stale/baselined/re-stamped/captured), all match spec exactly. See
+// prompts/4D_SCHEDULE_PERFECTION.md §GANTT_SCHEDULE_STALE.
+// v1027 (2026-08-14) §GANTT_SHIFT_HOURS_DESYNC: schedule_author.js materializeZones() was calling
+// computeSchedule() without shiftHours, silently taking the internal 8h/day default while the real
+// canvas movie (time_machine.js injectGantt) runs at rates.js SHIFT_HOURS (24h) — Gantt bars authored
+// ~3x slower than canvas actually plays. Fixed (#1355): materializeZones forwards opts.shiftHours
+// (undefined stays byte-identical, witnesses unaffected); the two real UI entry points now pass
+// window.SHIFT_HOURS. Measured Hospital: old call span 88d (8h default) -> fixed call span 30d (24h),
+// 2.93x. Does NOT touch kernel_ops/canvas — _GANTT_CACHE_VERSION unchanged. Bumping THIS version only
+// so the browser actually fetches the fixed JS on next load (schedules/tasks tables are the
+// user-editable product and are never auto-regenerated once materialized — see
+// prompts/4D_SCHEDULE_PERFECTION.md). Landed as a follow-up commit — #1355 squash-merged before this
+// bump's push reached it (the sw.js-orphan-on-late-push landmine this project already documents).
+// v1026 (2026-08-14) §TIER_REGATE_WORKLIST: time_machine.js _tierAuditRegate rewritten from a
+// full-array-rescan fixpoint to a worklist/dirty-queue (SESSION 7's named, measured, not-fixed
+// bottleneck — 15,466ms of Terminal's 19,773ms 4D-gen wall time). A/B'd byte-identical against the
+// old algorithm on all 7 shipped buildings (scripts/probe_tier_regate_worklist.js in bim-compiler);
+// 6.1x Terminal, 8.0x LTU_AHouse, 3.0-5.4x the other 5. _GANTT_CACHE_VERSION 18->19 alongside this.
+// v1025 (2026-08-14) §SUN_SHADOW_RESTORE: effects.js _buildStillAO() adapter gains a mask/blend pass
+// that reconstructs world position from N8AO's own depth texture, samples A.sun.shadow.map the same
+// way three.js's own basic getShadow() shader chunk does, edge-detects the raw shadow term, and
+// blends the AO-composited image back toward the pre-AO sharp TAA beauty at detected sun-shadow
+// BOUNDARIES only — restores the contrast N8AO's denoiseRadius=7 blur (untouched, PR #1343) was
+// smearing across the sun-cast shadow edge. Witnessed: +18.7% contrast at a real Clinic sun-shadow
+// boundary, 40x tighter near-edge-vs-far-from-edge diff ratio (no bleed into ordinary AO contact
+// corners). Bump so returning browsers get the restore pass instead of the old AO-only composite.
+// v1022 (2026-08-13) §SUN_SHADOW_DROWNED: effects.js §PHOTO_AO denoiseRadius 12->7, denoiseSamples
+// 8->5 — "ever so slight" step up from Alt+G's own never-bumped 6/4 baseline (not a full revert),
+// user's own call after the full-revert-to-6 witness measured +9.9% beam-foot shadow contrast but
+// risked reintroducing #1331's pre-fix dark/noisy-indoors complaint at the far end. Bump so
+// returning browsers get the new denoise pair instead of the old always-8/12 one. Collided with
+// #1338's independent same-day v1021 bump (§GROUNDED_OVERRIDE_FIX, kept below) — took one past it,
+// per this file's own KEEP-BOTH/take-the-higher merge convention.
+// v1021 (2026-08-13) §GROUNDED_OVERRIDE_FIX: time_machine.js's _midairRepair/_midairAudit no longer
+// let "grounded" override a real detected floating violation — bump so returning browsers actually
+// regenerate the 1,105-element-wider repair instead of replaying a cached pre-fix schedule.
+// Collided with #1337's independent same-day v1020 bump (glow-lens soft-edge/shape-fit, kept below)
+// — took one past it, per this file's own KEEP-BOTH/take-the-higher merge convention.
+// v1020 (2026-08-13) soft-edge + shape-fit: still-render fixture glow quads (deleted v1410)
+// now use a feathered-rectangle canvas texture instead of a flat
+// untextured plane, and split round-ish fixtures (bbox aspect < 1.25) onto the round soft texture
+// instead of forcing every fixture into a rectangle — bump so returning browsers get the softened/
+// shape-fit look instead of the old hard-edged one.
+// v1019 (2026-08-13) §NIGHT_LIGHT_NEARFIELD: tools.js NIGHT_LIGHT_DECAY 1.5->1.0 — real
+// PointLights were blowing out to a flat highlight right up close under ACES tonemapping (bright
+// from afar, "not evident" close up) — bump so returning browsers get the retuned falloff.
+// v1018 (2026-08-13) §PHOTO_AO_EDGE: N8AO intensity 2->4 in effects.js/effects_gi_poc.js (corner/
+// edge contact shadow had gone invisible after the v1016 screenSpaceRadius fix) — bump so
+// returning browsers get the new intensity instead of a cached pre-fix pass. This PR's own v1017
+// collided with #1333's independent same-day bump (kept below, per this file's own KEEP-BOTH/
+// take-the-higher merge convention) — took one past it.
+// v1017 (2026-08-13) §TIER2_PER_ELEMENT_CLAMP + §SHIFT_HOURS: 4D schedule generation changed
+// (schedule_gate.js computeSchedule's crew shift + time_machine.js's Tier-2 remap) — bump so
+// returning browsers regenerate instead of replaying a cached pre-fix schedule/asset set.
+// Collided 3x this session, independent same-day bumps, none with a dedicated comment here (see
+// their commit messages): #1331 v1013->v1014 (N8AO retune), #1332 v1014->v1015 (SW precache
+// cache.add->fetch+put fix), #1334 v1015->v1016 (N8AO screen-space radius fix) — took one past
+// the highest per this file's own KEEP-BOTH/take-the-higher merge convention.
+// v1013 (2026-08-13) §17.17.4 (W-OCC3-ARM): occlStructEnabled armed default-true in dlod_nav.js —
+// bump so returning browsers actually get the new default instead of a cached copy.
+// v1012 (2026-08-13) §RULES_TABLE_SOURCE: rates/sequence_rules.json is PRECACHED (line ~234) and its
+// content changed — LABOR_RATES.ELECTRICIAN.productivity re-synced to rates.js's 15 class keys. Its
+// only readers are mep_report.html and boq_charts.html (viewer.html never calls loadSequenceRules),
+// so without this bump those two pages keep costing 7 electrical classes off a stale 8-key table.
+// Deliberately NOT accompanied by a _GANTT_CACHE_VERSION bump: the viewer's generated schedule is
+// byte-unchanged by this commit (it never reads the JSON, and the rates.js edit is comment-only), so
+// forcing every materialized building to re-bake would be churn with no behavioural difference.
 const CACHE_PREFIX = 'bim-ootb-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -21,9 +895,9 @@ const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 //       GET_PRECACHE) force-caches the FULL set on demand — GET_PRECACHE still returns SHELL+DEFERRED.
 // This drops the auto-install footprint EVERY first-visitor pays from ~10MB → ~1.5MB.
 const SHELL_LIBS = [
-  'lib/three.webgpu.min.js', // §S276: r184 WebGPU (imports three.core.min.js)
+  'lib/three.webgpu.min.js', // §GI_LIVE: r186 WebGPU (imports three.core.min.js) — was r184/r185 (§S276)
   'lib/three.module.min.js', // §S276: r184 standard ESM fallback
-  'lib/three.core.min.js',  // §S276: r184 core (split build)
+  'lib/three.core.min.js',  // §GI_LIVE: r186 core (split build); three.module.min.js (WebGL renderer) unchanged
   'lib/OrbitControls.module.js',  // §S276: r184 ESM
   'lib/sql-wasm.js',
   'lib/sql-wasm.wasm',
@@ -43,6 +917,7 @@ const SHELL_LIBS = [
   'lib/SSAOPass.js',
   'lib/OutlinePass.js',
   'lib/OutputPass.js',
+  'lib/BloomPass.js',
   // §CINEMA_SSAA (2026-07-18) + transitive-import completion: the 6 modules above `import` these
   // 8 (Pass/CopyShader ← everything; ShaderPass/MaskPass ← EffectComposer; SSAARenderPass ←
   // TAARenderPass; SimplexNoise/SSAOShader ← SSAOPass; OutputShader ← OutputPass) — precaching
@@ -103,25 +978,57 @@ const PRECACHE_ASSETS = [
   // Entry points
   'viewer.html',
   'boq_charts.html',
-  'mep_report.html',
+  'mep_report.html','model_check_report.html',
   'offline.html',
   'manifest.webmanifest',
   // Core viewer modules (order matches index.html script tags)
   'config.js',
   'db_resolve.js',
   'helpers.js',
+  'silhouette_refine.js',
+  'vertex_weld.js',
+  'surface_r10.js',
+  'sky_portal.js',
+  'sky_occlusion.js',
+  'light_zones.js',     // §LIGHT_ZONE: voxel light zones (Alt+S)
+  'still_fault.js',     // §FAULT: per-press self-check line (Alt+S)
+  'shadow_cascade.js',  // §STILL_SHADOW_CASCADE: Alt+S sun shadow from cascaded maps
+  'light_law.js',   // §LIGHT_LAW_MODULE: the photometric chain's values + formulas (one source for Alt+S, later Alt+C)
+  'contact_floor.js',   // §FLOOR_CONTACT: furniture occlusion map for upward floor fragments (form factor)
+  'sourced_light.js',   // §SOURCED_LIGHT: zone-bound lamps/portals, no sourceless sky indoors
+  'glass_fresnel.js',   // §GLASS_FRESNEL: Alt+S glass reflects with Schlick Fresnel   // §SKY_OCCLUSION: covered surfaces lose the open-sky hemi/env in Alt+S   // §SKY_PORTAL: Alt+S window panes as sky light sources
   'loader.js',
   'effects.js',
   'cinema_maxq.js',
+  'gi_still.js',  // §GI_LIVE: Alt+S bounce (desktop + WebGPU only); its two lib/gi modules cache on first use
+  'cinema_path_editor.js',
+  'cpe_walk.js',
+  'cpe_xr.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
   'input_registry.js',
+  'wind_flip.js',
   'scene.js',
   'streaming.js',
   'panels.js',
   'tools.js',
   'picking.js',
+  'hover_name.js',
+  'cpe_room_title.js',
+  'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','cpe_freeze_perf.js',
+  'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
+  'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',
   'clash_matrix.js',
+  'clash_narrow.js',
+  'clash_film.js',
+  'clash_labels.js',
+  'structural_sanity.js',
+  'egress_sanity.js',
+  'place_lookup.js',
+  'rule_report.js',
+  'rule_checklist.js',
+  'rule_findings_film.js',
   'measure.js',
   'sitecam.js',
   'issues.js',
@@ -131,6 +1038,12 @@ const PRECACHE_ASSETS = [
   'rates.js',
   'analysis_sidecar.js',
   'locale_loader.js',
+  // S226 §R2 (2026-10-03): the 18 BUILT label packs (viewer/i18n/<code>.json ← ad_message_base.csv ⋈ AD_Message_Trl_<lang>.xml,
+  // build_trl.js). locale_loader.js (precached, above) fetches i18n/<code>.json + locales/<code>.js; precached so a
+  // picked language survives offline. ~20 KB each. The XML/CSV sources are NOT served to the page.
+  'i18n/en_MY.json', 'i18n/en_US.json', 'i18n/en_GB.json', 'i18n/en_AU.json', 'i18n/ms_MY.json', 'i18n/de_DE.json',
+  'i18n/fr_FR.json', 'i18n/es_ES.json', 'i18n/zh_CN.json', 'i18n/th_TH.json', 'i18n/ja_JP.json', 'i18n/ko_KR.json',
+  'i18n/ar_SA.json', 'i18n/pt_BR.json', 'i18n/id_ID.json', 'i18n/bn_BD.json', 'i18n/bl_BD.json', 'i18n/af_ZA.json',
   'decoder.js',
   'nlp.js',
   'semantic_enrichment.js',
@@ -150,6 +1063,7 @@ const PRECACHE_ASSETS = [
   'main.js',
   // Workers (fetched on demand by import/export flows)
   'import_worker.js',
+  'ifc_surface_names.js',   // §IFC_SURFACE_NAMES (importScripts'd by import_worker.js)
   'ifc_export_worker.js',
   'mesh_import_worker.js',
   // Grid + 2D modules
@@ -180,20 +1094,39 @@ const PRECACHE_ASSETS = [
   'materialize.js',
   'doc_canvas.js',
   // Feature modules loaded by index.html
-  'kernel_ops.js',
+  '../erp/kernel_ops.js',   // the ONE kernel_ops (v13) — viewer-local copy no longer loaded by viewer.html
   'cost_panel.js',
   'clash_report.js',
   'clash_snag.js',
   'precision_cam.js',
   'schedule_gate.js',
+  'lib/level_deriver.js',   // §S50 — vertical axis of the cell-grain schedule
+  'location_axis.js',       // §S50 — rooms injection; lib/room_walker.js is network-first below
+  'cpm_schedule.js',
+  'gantt_model.js',      // §S53 (F3) — the Gantt bar model, extracted from time_machine.js
+  'zone_index.js',       // §S62 — median-Z storey banding, extracted from time_machine.js
+  'support_sweep.js',    // §S58 — support-order physics, extracted from time_machine.js
   'time_machine.js',
   'dlod_nav.js',
   'schedule_author.js',
+  'schedule_read_4d.js',
+  // §S7-OPEN (v1176): the #info-4d renderer, extracted out of the lazy Find bundle so a plain
+  // 3D-canvas pick can render it. KEEP BOTH on any precache conflict.
+  'info_4d_panel.js',
+  'edit_delta.js',
+  'edit_delta_viewer.js',
+  'proj_order_state.js',
+  // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
+  // sched4d pill. KEEP BOTH on any precache conflict.
+  // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without
+  // stripping them, so ONE apostrophe silently dropped every later entry and reported innocent files
+  // as unlisted. Hardened 2026-09-15, §SW_AUDIT_QUOTE — apostrophes and brackets in comments here are
+  // safe now, and two planted-failure checks in that audit keep them safe.)
+  'schedule_inject.js',
   'schedule_author_ui.js',
-  'foreign_schedule.js',
+  'foreign_schedule.js',    // §TM_P6_FOLD — lazy-loaded by the TM panel P6/MSP section; precached so it works offline
+  'schedule_diff.js',       // §TM_P6_FOLD — same (Diff-vs-Model engine)
   'schedule_sync.js',
-  'schedule_editor.html',
-  'schedule_editor_ui.js',
   'error_reporter.js',
   'print_sheet.js',
   'ghostglass.js',
@@ -204,6 +1137,12 @@ const PRECACHE_ASSETS = [
   // erp.html/idempiere.html below are now reroute STUBS that live in viewer/.
   'list_builder.js',
   'settings_editor.js',
+  'road_standards.js',
+  'speed_zones.js',
+  'chainage_grid.js',
+  'road_report.js',
+  'earthworks_overlay.js',
+  'std_values.json',
   'panel_nav.js',
   // Lazy-loaded modules
   'navigate.js',
@@ -218,11 +1157,20 @@ const PRECACHE_ASSETS = [
   'lib/httpvfs.js',
   // Config files
   'clash_rules.json',
+  'civil_labels.json',
   'grid_rules.json',
   'rates/cidb2024_my.json',
   // Shared sequence/labour rules — one source for 4D schedule baker + drone order.
   // Precached so loadSequenceRules() resolves offline (else falls to hardcoded).
   'rates/sequence_rules.json',
+  // §TPL_MODEL (2026-08-27) — the 4D programme template DEFINES the canonical task grid
+  // (schedule_author.js instantiateTemplate; user ruling 2026-08-27). It was NOT precached while
+  // sequence_rules.json above was, so on a cold SW or offline the fetch in time_machine.js
+  // _load4DTemplate() fails, _4dTemplate stays null, and materializeZones silently takes the dead
+  // deriveZones path. _4dTemplateTried makes that one-shot, so ONE failed fetch drops the
+  // canonical model for the whole session. Precached so the model of record always loads.
+  'rates/4D_template.json',
+  'rates/4D_template_civil.json','rates/road_rules.json',   // §CIVIL_TEMPLATE (CIVIL_HIGHWAY_JELAPANG.md §Q)
   // §S280g: ground texture config + default tile (grass) precached for offline shadow mode.
   // earth/paved are lazy (cacheFirst caches on first selection).
   'ground_config.json',
@@ -230,6 +1178,17 @@ const PRECACHE_ASSETS = [
   // §OFFLINE-GATEWAY-LEAK: was hardcoded network-first ("during tuning") — precached like every
   // other config file now so it stops re-hitting the network once cached.
   'sfx.json',
+  // W-SW-UNLISTED (2026-08-21, bim-compiler prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md §S61.2):
+  // 18 scripts viewer.html has always loaded that were never precached — invisible until the
+  // audit gained its second direction. Offline users got them from the network or not at all.
+  // 344 KB total, measured, against a shell that already precaches 121 assets.
+  // History + share + sfx:
+  '../common/history_tap.js', '../common/whole_history.js', '../common/history_bar.js',
+  '../common/about_diy.js', 'universal_history.js', 'share.js', 'sfx.js',
+  // ERP fold set (the viewer-side fold verbs and their FSM/decimal deps):
+  '../erp/bigdecimal.js', '../erp/ad_docfsm.js', 'blue_fold.js', 'proj_fold.js', 'vo_fold.js',
+  'proj_control.js', 'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js',
+  'proj_claim.js',
 ];
 
 self.addEventListener('install', (event) => {
@@ -238,11 +1197,21 @@ self.addEventListener('install', (event) => {
   const _installSet = [...PRECACHE_ASSETS, ...SHELL_LIBS];
   console.log('§PRECACHE-TRIM install set=' + _installSet.length + ' deferred=' + DEFERRED_LIBS.length +
     ' (web-ifc/xlsx/exceljs off the install path, ~8.9MB)');
+  // §SW_PRECACHE_STALE_FIX (2026-08-13): cache.add(url) fetches through the BROWSER's own HTTP
+  // cache — a same-origin GET with an unexpired Cache-Control (these static assets serve
+  // max-age=600) can be satisfied from that cache instead of hitting network, even during a
+  // brand-new install triggered by a real CACHE_VERSION bump. Real repro: edit a precached file,
+  // bump CACHE_VERSION, deploy — a browser that loaded the OLD file within the last 10 minutes
+  // silently re-precaches that same stale response into the NEW version's cache, and won't
+  // self-correct until the NEXT version bump. `{cache: 'reload'}` forces the underlying fetch to
+  // bypass HTTP cache validation, so install always pulls the real current network response.
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       Promise.all(
         _installSet.map(url =>
-          cache.add(url).catch(err => console.warn('§SW_PRECACHE_SKIP', url, err.message))
+          fetch(url, { cache: 'reload' })
+            .then(resp => cache.put(url, resp))
+            .catch(err => console.warn('§SW_PRECACHE_SKIP', url, err.message))
         )
       )
     )
@@ -284,6 +1253,20 @@ function isNetworkFirst(url) {
   // Precached local files — cache-first (CACHE_VERSION bump purges + refreshes)
   var filename = base.split('/').pop();
   if (_PRECACHE_SET.has(filename)) return false;
+  // §SQL-PATCH-NETWORK-FIRST (2026-07-25, measured on a real user session —
+  // VIEWER_FIND_PANEL_ROOM_ACCURACY.md §17): `buildings/patches/*.sql` used to fall through to
+  // cacheFirst, because only .html/.js were network-first and .sql matched nothing. That silently
+  // breaks THE PROJECT'S OWN DB-CHANGE DOCTRINE (CLAUDE.md §DB CHANGES): every DB fix ships as a
+  // small .sql applied at load by A._applyPendingPatch(), so an UPDATED patch could never reach an
+  // already-installed client — the SW kept serving the first body it ever cached. Proven live: the
+  // regenerated Hospital walkable raster went to OCI at 07:45:18Z, and a session SIX HOURS later
+  // (rooms_meta.built_at 13:37:44Z) still compiled against the OLD raster — its saved db carries the
+  // pre-fix Level 1 signature (x0=-0.0147 cols=304 rows=332 instead of x0=-12.5998 cols=403 rows=372)
+  // and its console reproduced all three pre-fix §PATH_LEGAL_DETOUR_FAIL legs exactly
+  // (34.2m/96, 39.5m/135, 10.1m/34). With the live patch applied to that same saved db: zero
+  // DETOUR_FAIL. networkFirst (not no-cache) keeps the offline PWA path intact — it falls back to the
+  // cached body when the network is gone, which is what §38-offline-pwa needs.
+  if (base.endsWith('.sql')) return true;
   // Unknown JS/HTML not in precache list — network-first (safe default)
   if (base.endsWith('.html') || base.endsWith('.js')) return true;
   return false;
