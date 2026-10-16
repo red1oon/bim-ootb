@@ -820,6 +820,50 @@ Decisions (coordinator, 2026-10-16), written as rules. Measured on the std set (
   - rosetta_qualify: fail=0
   - old marked copies: byte-identical (no `@BY`)
 
+### L2.8 Wall base from stated sources, one wall per footprint across storeys, R1b over cut walls (2026-10-16, before code)
+Decisions (coordinator, 2026-10-16), written as rules. Measured on master d06a63c8a (std set qualifies: 0 blocking / 36 advisory):
+- rosetta_dx_shell std 34/1. OV L2: doors 66/67 (150/152), "below=false".
+- Their host walls 1014/1019 (model z 2.612..6.0) are built from the FF level 3.1, so 2.612..3.1 is missing.
+- The section (cut X = 2.30425) draws 1014 as A-SECT B5 (2.612..3.1) + B7 (5.132..6.0). 1019 is not cut by the section and is interior, so no elevation shows it.
+- The same A-SECT layer holds foundation walls (−1.25..0) and the GF exterior wall (BD, 0..3.1) at the same `h` as FF pieces.
+- Same plan footprint on GF and FF: 2 pieces in each set, the 0.417 × 0.417 corner posts (std 107 / 10D; old 6E / E3). The model holds separate stacked walls there (0..3.1 and 3.1..6.0).
+
+**1. Wall base from the lowest stated source** (`Dxf2Shell.applyWallBases`, after the wall heights).
+- (a) Section, when the section cuts the piece: its along-range on the cut axis contains the `@CUT` coordinate.
+  - The section's wall rects are closed polylines on a layer typed `sectwall` (std map: A-SECT; until now `ignore`). They are mapped with the section's `@HAXIS` / `@Z` calibration. Their h-range equals the piece's cross range (±snap_tol).
+  - A rect counts for this plan's wall when:
+    - its z0 ≥ the next lower plan level (or ≥ this plan's level for the lowest plan; walls below the lowest storey are foundations, outside the set's storeys);
+    - its z0 < the piece's top; and
+    - the lower plan has no wall piece containing the point (cut, h-mid), because such a rect is that plan's wall.
+  - base = the lowest z0 of those rects; `base_source: 'section'`.
+  - S-SLAB rects are never wall material.
+- (b) Else the elevation's base (`applyWallHeights`): `base_source: 'elevation'`.
+- (c) Else the plan level: `base_source: 'plan_level'`. When the piece's model storey can't be stated, nothing in the drawings states a base below the plan level, so the pipeline logs advisory `GAP:wall_base_from_plan_level` (qualify: advisory) on interior pieces whose height came from a marking or slab_above.
+- The top is unchanged. Base and top never extend through a slab: the base is a section wall rect, never an S-SLAB.
+- rosetta_dx_shell OV: "wall below missing" is explained when the host piece carries `wall_base_from_plan_level` (the drawings state no base below). Target: std fail = 0.
+- Tests:
+  - WB1: a section-cut piece takes the section base
+  - WB2: a lower-plan rect (stacked wall) is not taken
+  - WB3: a foundation rect below the lowest plan is not taken
+  - WB4: an uncut interior piece → plan level + advisory
+  - WB5 (mutation): the section rect moved 50 mm → the base follows; the S-SLAB is never used
+
+**2. One wall per footprint across consecutive plans** (`Dxf2Shell.mergeStacked`, after the bases and tops).
+- Two pieces, on consecutive plans (by `@LEVEL`), with the same rect (±snap_tol), whose stated z-ranges OVERLAP or TOUCH (±elev_tol), are ONE wall.
+  - It is kept on the lower plan, with z = the union of the stated ranges and `height_source: 'stacked:<lower source>+<upper source>'`.
+  - The upper piece is removed and recorded as `merged_into`.
+  - Plans carry no GUIDs, so matching is by footprint only.
+  - Different footprints, or ranges separated by a gap, stay separate.
+- Duplex: the 2 corner posts per set (stacked 0..3.1 + 3.1..6.0) become one post 0..6.0. The volume is identical.
+  - rosetta_dx_shell R6 compares a merged piece with the union of the source walls that hold it (stacked).
+  - The OBJ hash changes; the element count drops by 2 per set.
+- Tests:
+  - MS1: a two-storey wall drawn on both plans with overlapping heights (0..6 each) → one wall 0..6
+  - MS2 (mutation): the upper footprint shifted 10 mm → two walls
+  - MS3: a gap between the ranges (0..2.8 / 3.1..6) → two walls
+
+**3. R1b over every cut wall** (rosetta_dx.js R1b and rosetta_dx_shell R1b-u). Recall is scored over every source wall the plan's cut plane cuts (any model storey), symmetric with R1a. The expected uncovered length uses the source openings the plane cuts (any storey) whose plan centre lies in that wall.
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
