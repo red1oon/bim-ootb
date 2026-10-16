@@ -1237,6 +1237,8 @@ Supersedes the labels parts of §L3.4 (its "Labels finding" route, `labels/<run_
 - L1 O1-O4 PASS: 2 passes, 29 shards, 31 objects (no labels) == fresh export; fills 36/36 (14 + 22) == the Node run, verdict qualifies.
 - L2 `DXF_LIB=oci` 17/17: `source=oci … passes=2`, C1 RUN-ID `0215ad6c…`, C1 FILLS 36/36; L3 C5 PASS; local mode 17/17.
 - Regression: `witness_dxf_import_node.js` old + std (std without labels) fail=0, `witness_dxf_meta_editor.js` fail=0, W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
+- Rebased on main `bc9fff0a` (#2071, §L4.4): sw.js v88, `dxf_import_ui.js?v=6`. Re-run: L2 `DXF_LIB=oci` 17/17 (C1 FILLS 36/36), `witness_dxf_meta_editor.js` 33/33 (E7 319 actions), L1 O1-O4, std import fail=0.
+- L2 flake (puppeteer "Waiting failed" right after the convert commit, 4 of ~9 OCI runs at load average 22-30, 0 of ~5 local runs): the witness now records renderer crashes (`PAGECRASH`), an unexpected browser disconnect and Chrome minidumps (`--crash-dumps-dir`, `DXF_CRASH_DIR`), and prints the error's cause. The one failing run with that capture showed no crash, no disconnect and no minidump; the next run (load 39) passed. Waits unchanged. Cause not yet identified (stated, open).
 
 ## L4. Metadata editor (Modeller panel, `#ins-panel` pattern, Lucide icons)
 - **Sections:**

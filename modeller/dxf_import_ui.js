@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '5';
+  var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
