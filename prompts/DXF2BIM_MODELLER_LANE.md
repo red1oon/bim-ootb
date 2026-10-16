@@ -483,7 +483,15 @@ Input: the std set regenerated from master `std2d.py` with `--door-ops` (a `door
   - W2-acc: the std run has 0 unexplained windows; each explained window names its gap handle.
   - W2-mut: the window gaps are filtered out of the ops before the check, and the check must FAIL.
 
-**Report:** the std-set verdict by cause after W1 and W2, and rosetta_dx_shell std PASS/FAIL.
+**W3 Shape attribution by layer** (found while coding). On the std set, 14 door `GAP:no_elevation_height` records (layer A-DOOR) are counted under walls, because the gap carries no `kind` and the code table maps `no_elevation_height` to walls.
+- New order: the record's `shape`, then `kind`, then **the rule type of the gap's `layer` in that sheet's maps**:
+  - `opening`, `glazing`, `elevdoor` → openings
+  - `wall`, `wallline` → walls
+  - otherwise the code table
+- `@WALLTOP` already keys on the layer's wall type, so it is unaffected.
+- Test QG6: a `no_elevation_height` on an A-DOOR layer → openings, not walls.
+
+**Report:** the std-set verdict by cause after W1-W3, and rosetta_dx_shell std PASS/FAIL.
 
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
