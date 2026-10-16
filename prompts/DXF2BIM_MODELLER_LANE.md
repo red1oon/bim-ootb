@@ -275,6 +275,80 @@ Duplex pipeline gaps come from `rosetta_dx_shell.js` (main variant A), which wri
   - farm_heights: log identical
   - t8_sandbox: identical except timing (configs moved to `set_configs.js`)
 
+### L2.3 Decisions on the L2 open questions (user, 2026-10-16), as rules before code
+(Numbered L2.3 because L2.2 already holds the L2 results.) KISS and non-invent. Each rule names its test. These rules supersede L2.1 wherever they differ.
+Measured first, on the L1 std set (BIMCompiler master 31aaca2db, `std2d.py` regenerated into the git-ignored `2D_Layout/output/STD/`):
+- Header `$DIMLFAC` = 100, yet every dimension block renders 1:1 (block `*D2` text `4835`, measured 4835 mm). The header value is the default for new dimensions, not the factor of the ones that exist (the per-style value is not parsed).
+- All overrides are `<>`.
+- Elevations draw datums LEVEL 1 0, LEVEL 2 3.1, ROOF 6.0 (the model storey "Roof", 4 parapet walls 6.0-6.609) and T/ROOF 6.457 (the highest IfcSlab, R11). Elevation A-WALL rectangles start at 0, 3.1 and 6.0. There is no roof plan sheet.
+- Doors: A-DOOR section contours only, no arcs (`GAP:door_hinge` ×14 in the writer log).
+
+**D1 Roof role.**
+- dxf2marks accepts `@VIEW=ROOF`. It requires `@SET @VIEW @UNITS @LEVEL @ROOF`:
+  - `@LEVEL` = the roof storey level (R1)
+  - `@ROOF` = the roof top (BASIC_SHAPES §5.3)
+- A ROOF sheet gets the role-independent checks (layers, units, dimension texts). It gets no grid or dimension-string checks, because it has no walls.
+- `QF:set_no_roof` (shape **roof** only): the set has no ROOF sheet; the roof outline needs one (BASIC_SHAPES R-O).
+- `QF:roof_level_mismatch`: an elevation's `@ROOF` differs from the ROOF sheet's `@ROOF` by more than `tol.level`.
+- `mark_dx_set.js` now also marks the old set's `DX_ROOF`, with `@LEVEL` and `@ROOF` from the model:
+  - `@LEVEL` = min wall minZ of storey "Roof"
+  - `@ROOF` = max Z of IfcRoof, else of the highest IfcSlab (R11)
+- Tests: QR1 roof sheet present → no roof item; QR2 roof sheet absent → `set_no_roof`, and only the roof shape is blocked; QR3 roof top differs → `roof_level_mismatch`.
+
+**D2 Storeys come only from plans.**
+- Storeys are the `@LEVEL` values of PLAN sheets. A ROOF sheet's `@LEVEL` also counts as stated.
+- `QF:set_storey_unstated {level}`: an elevation shows a level band with no stated level. A band is the bottom z of a closed axis-aligned rectangle on a layer typed `elevwall`, through the `@Z` calibration.
+- Band bottoms within `tol.level` merge. One item is emitted per unstated z, naming the elevation and its rectangle handles.
+- Nothing is inferred from datum lines or texts.
+- Test: QS1 an elevation band at 6.0 with no plan → `set_storey_unstated 6`.
+
+**D3 Gaps count once, against the final stage.**
+- `input.resolved{sheetId: [handles]}` = the handles that the final shell/cut stage resolved: every opening of a bridged void, those openings' part handles, and every placed fill's handle.
+- `GAP:no_host_cut` and `GAP:opening_unclassified` on a resolved handle are dropped as superseded, and counted in `checks.gaps_superseded`. Every other gap is kept.
+- Interior wall heights:
+  - `GAP:no_elevation_height` on a wall-layer entity (its layer's rule type is `wall` or `wallline` in that sheet's maps) blocks.
+  - The exception is a stated user convention: the new marking `@WALLTOP=<level>,slab_above` (any sheet; `<level>` must equal a PLAN `@LEVEL`, else `QF:walltop_unknown_storey`).
+  - Covered gaps become advisory `QF:convention_applied`, and the verdict lists `conventions: [{level, rule, sheet, handle, source: 'user-stated'}]`.
+  - Never a default: the marking tools do not write it. The rosetta shows the verdict without it and, separately labelled, with it.
+- Tests:
+  - QG1 superseded gaps dropped, others kept
+  - QG2 interior wall gap blocks without `@WALLTOP`
+  - QG3 advisory with it, plus `conventions` listed
+  - QG4 a door's `no_elevation_height` still blocks under `@WALLTOP`
+  - QG5 `@WALLTOP` naming no plan level → `walltop_unknown_storey`
+
+**D4 G1 reader rule for any DXF.**
+- `QF:grid_off_axis` (a stray grid line) is unchanged.
+- `QF:grid_missing` now applies to exterior envelope axes only: wall pieces whose outer face lies on the envelope face within `tol.grid`, with length ≥ `grid.min_wall_len`. Their axes merge within `tol.grid`, and each needs a parallel grid line.
+- Interior grid coverage is a writer-side rule only (L1 W2). The setting `layers.bearing` is removed.
+- Tests: QD4a an interior wall without a grid is not blocked; QD4b an exterior axis without a grid is blocked.
+
+**D5 Dimension overrides.**
+- A numeric text that differs from its measurement → `QF:dim_text_mismatch` (blocking), as before.
+- Recognised drafting notes are advisory `QF:dim_note {note, measured_m}`, with the measured value shown in the message:
+  - `EQ`
+  - `VERIFY` / `V.I.F.`
+  - `<length> TYP` / `TYPICAL` / `VERIFY` / `V.I.F.`, when the length equals the measurement. A differing length is `dim_text_mismatch`.
+- Any other non-length override stays `QF:dim_text_unreadable` (blocking), e.g. `VARIES`, `80" MIN CLEAR`.
+- Displayed text:
+  - An override of `<>` or nothing means the dimension block's single text, which is now checked too. It is the CAD rendering of the measurement.
+  - `$DIMLFAC` from the header is no longer applied (measured above). The measurement is compared at 1:1.
+- Tests: QN1 `EQ` advisory; QN2 `30 TYP` equal → advisory; QN3 `31 TYP` on 30 → mismatch; QN4 `VARIES` → unreadable; QN5 the block text differs from the measurement → mismatch.
+
+**Convergence: markings for the L1 std set** (G8 stays deferred in the writer).
+- `mark_dx_set.js` gains a std profile (`node mark_dx_set.js std`). It reads `2D_Layout/output/STD/DX_*_std.dxf` and writes `tests/dxf2bim/out/marked_std/DX_*_marked.dxf` (copies; originals untouched; git-ignored).
+- Evidence rules are as before:
+  - `@UNITS` from `$INSUNITS` = 4
+  - grids from A-GRID lines plus the nearest single-character label
+  - `@HAXIS` by unique fit against the GF plan grid
+  - `@FACE` from the sheet name (R11)
+  - `@Z` from A-ANNO-LEVL lines paired with their `±z.zzz` texts
+- From the model: `@LEVEL` (R1), and `@ROOF` on elevations (R11 T/ROOF).
+- The std layer maps are new constants in `set_configs.js` (`STD.*`), built from the R12 layer names: A-WALL is the elevation outline, and A-GLAZ-SILL, A-ANNO-NOTE and A-ANNO-TTLB are ignored.
+- The pipeline gaps come from `rosetta_dx_shell.js` with `DXSET=std`. It uses the same pipeline with the std maps. With no roof plan in the std set, the roof-plan stage yields its own gap, so the roof shape stays blocked.
+- `rosetta_qualify.js` reports the std verdict, then the same with `@WALLTOP` stated for both plan levels (labelled user-stated).
+- The expected residue is door items only (no arcs until the door-hinge lane), plus anything this run proves otherwise. That residue is reported, not asserted.
+
 ## L3. Import + convert in the Modeller
 - **Open chooser:**
   - new row "Open 2D drawings (.dxf)…" with `multiple`
