@@ -3192,6 +3192,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return row;
   }
   function _foldOrderRow(id) {
+    // §TIP-READ (ERP_FRIENDLY_OPS_LENS.md §32): the model's own tip-shadowed reader first - a session-made order's folded CRUD row lacks the columns the model defaults at write
+    //   (IsSOTrx), so the gate read "not a Sales Order" for an order the grid showed as one. Falls through to the old fold when there is no model reader.
+    var tipRow = _tipSql('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    if (tipRow) { try { var tdb = window.__crud && window.__crud.kernelDb && window.__crud.kernelDb(), tst = tdb && window.__crud.core.readTip(tdb, 'c_order', tipRow.c_order_id, null); if (tst != null) tipRow.docstatus = tst; } catch (e) {} return tipRow; }
     var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
     var c = window.__crud;
     if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') return base;
@@ -3202,6 +3206,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return row;
   }
   function _foldOrderLines(id) {
+    var tipLines = _tipSql('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    if (tipLines.length) return tipLines;   // §TIP-READ: same reader as the model
     var base = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
     var c = window.__crud;
     if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
