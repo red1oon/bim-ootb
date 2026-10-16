@@ -257,6 +257,28 @@ Written before the code. BIMCompiler branch `fix/std2d-det-r3` (same PR as §L1.
 - **Probe** (a scratch copy of the script with 0.1 mm rounding, R5): `GAP:no_elevation_match` 5 → 0; DW-windows Level 1 4/4, Level 2 18/18.
 - Fix belongs to L2 (`mark_dx_set.js`); reported, not edited.
 
+**L1.4 results (2026-10-16, BIMCompiler `fix/std2d-det-r3`).**
+- **F3:** W1 and W1-proc PASS with every run in a different folder (5 seeds × folder names and depths). W1-proc-control still differs with the fix disabled.
+- **F4 roof plan:** W8 PASS. The outline equals the Roof-storey wall envelope (0..8800 × −17800..0) and the skylights match 2/2. W8-control (outline moved 50 mm) FAILS as required.
+- **F5 section:** cut at X = 2304.25. W9 PASS: 11 slab/roof cuts, every z extent equals the DB. W9-control FAILS as required.
+  - Reader unit tests `test_section.js`: 17/17 PASS.
+  - Witness `rosetta_dx_section.js`, all PASS:
+    - **SX1:** FF slab 2.795..3.100 (t = 0.305) equals the source IfcSlab.
+    - **SX2:** GF −0.127..0.
+    - **SX3:** roof 6.000..6.457.
+    - **SX-slabZ:** PASS.
+    - **SX-control:** the FF underside moved 50 mm reads 2.745 and FAILS SX1, as required.
+- **Regression:**
+  - `tests/dxf2bim/test_*.js` 17/17 suites `SUMMARY fail=0`. test_qualify M1 now uses `@VIEW=DETAIL` as its invalid view, because SECTION is valid now.
+  - `rosetta_dx_shell` (old set): 35 PASS + the known RF-d.
+  - `rosetta_qualify`: `SUMMARY fail=0`.
+  - `rosetta_dx` with `STD_DIR`: `SUMMARY fail=0`.
+- **Still blocking the std verdict** (unchanged at 160, because the new sheets are not in the qualify input yet):
+  - `QF:set_no_roof` 1 and `QF:set_storey_unstated` 1: need DX_ROOF_std marked (`mark_dx_set.js std`, L2) and fed to DXSET=std rosetta_dx_shell / rosetta_qualify.
+  - `GAP:slab_no_underside` 2: needs DX_SECTION_std marked per this section and the std shell pipeline to pass `{section}` to `slabZ`. dxf2qualify must also accept a SECTION-role sheet.
+  - `GAP:no_elevation_match` 5: the F6 marker rounding.
+  - `GAP:no_elevation_height` 54 (14 with @WALLTOP), `GAP:opening_unclassified` 74, `GAP:no_host_cut` 19, `QF:elev_height_dim_missing` 4: pre-existing L2 / reader items.
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
