@@ -1401,5 +1401,32 @@ Why: BIMCompiler #195 (§14 LF-4) moved the std set's twelve 819 x 759 window pr
 - `witness_dxf_meta_editor.js` 33/33 (fail=0): E7 BLOCKED-BY-DOORS+WINDOWS (40 = 28 door items + 12 window `fill_unbound`); E7 WINDOW-PICKS 12/12 by real clicks in FRONT/REAR/LEFT/RIGHT (distinct 12, max Δ 0.001 mm, Δz 0); E7-ELEV-FALSIFY (a wall-line click: no tag, "No tag: … not on an opening layer"); E7 VERDICT 40 → 0 blocking, advisory 75 = the marked set's; E7-FALSIFY / RESTORE; E7 SAVED (only the 3 per-wall tops the UI never asks for); E7 CONVERT == E5 (135 inserts, 36 cuts). **E7 UI actions = 319** (65 selects, 142 typed, 84 clicks, 26 canvas clicks, 2 ticks).
 - Regression: `witness_dxf_convert.js` local 17/17 and `DXF_LIB=oci` 17/17 (C1 FILLS 36/36; load average 23, no crash this run); `witness_dxf_import_node.js` old + std fail=0; `witness_dxf_lib_oci_node.js` O1-O4; W-IFC-SPATIAL 4/4, W-IFC-EXPORT-SEED 7/7, W-BONSAI-IFC PASS.
 
+## L5. BIM → 2D export inside the Modeller (2026-10-17, spec before code)
+User flow (user, 2026-10-17): open the user's BIM in the Modeller so the user and the code can check all is proper and markings auto-derive; then Export → choose DXF.
+
+### L5.1 Steps
+- (a) Open IFC: exists (`bonsai_ifc.js`). Output of the open step is the Node-schema model DB (`scripts/extractIFC2DB.js` schema, one schema only, per lane 1).
+- (b) "Drawable?" report, computed from that DB, each line with a count and a source table: storeys (model elevations), wall hosts resolved (`rel_fills_host`/void) vs openings without host, walls/hosts with empty geometry, door handing present (`door_operation`), columns gridded. Unresolvable items are listed as `§GAP:<code>`, never filled.
+- (c) Markings derived from the model, `@BY=model`, same rules as `mark_dx_set.js std` (generalised to N storeys + Node schema, see below). Shown in the existing metadata editor (`dxf_meta_editor.js`) so the user can override (`@BY=user`).
+- (d) Export → "2D drawings (DXF)": writes the std set (plans per storey, 4 elevations, roof, section) with the markings embedded in the DXF (`DXF2BIM-MARK`, no sidecar).
+
+### L5.2 Decision: port std2d.py to JS (not Pyodide)
+Measured on `bim-compiler/2D_Layout/python`: std2d.py 1195 lines + section_cut.py 686 + model_db.py 63. Third-party use: ezdxf (DXF write), numpy (array ops: array/abs/round/unique/frombuffer, trivial in typed arrays), shapely (only `unary_union` x2, `intersection` x2, `make_valid` x3, `Polygon`/`LineString`/`box`).
+- JS port: shapely use is small; polygon boolean ops need one vetted library (polygon-clipping, pinned version) with `make_valid` replaced by a stated ring-cleaning step. DXF writing is plain text; the reader modules (`dxf2*.js`) already define the entity set to emit.
+- Pyodide: ships numpy/shapely wheels but adds a tens-of-MB runtime to a zero-install, offline-capable page, a second language to keep deterministic, and ezdxf via micropip at run time (network). Rejected.
+- Port is gated by parity, not by trust: same Duplex Node DB through std2d.py and the JS port must give the same per-layer entity counts, grid labels, dimension values, and plan polygon areas within the 7–24 mm² engine tolerance already recorded for #196. The Python writer stays as the oracle until parity holds, then is frozen as the test reference.
+
+### L5.3 Preconditions (from the RESUME block, unsolved today)
+Lanes 1–2 must reach their pass condition first, otherwise (b) would honestly report most SampleCastle openings as GAP: openings without a host (357 of 455), hosts with empty web-ifc geometry (65), HHS curtain walls without geometry. Also generalise `mark_dx_set.js` and `rosetta_dx_shell.js` (Duplex sheet list, `@SET=DX`, old-schema SQL, 1-char grid labels) to N storeys and the Node schema.
+
+### L5.4 Witnesses (each names the issue it proves)
+- W-L5-ROUNDTRIP: Duplex IFC → Modeller export → re-import → verdict Qualifies, 0 blocking. Proves export markings are complete.
+- W-L5-PARITY: JS vs std2d.py on the Duplex Node DB, counts/areas as above. Proves the port, not just that it runs.
+- W-L5-GAP-HONEST: SampleCastle export reports the §L1.6 gaps in (b) and does not invent hosts. Proves non-invent.
+- W-L5-NO-SIDECAR: exported set has exactly the DXF files, no `.json`/`.db` next to them.
+
+### L5.5 UI
+Export entry in the existing Modeller menu, Lucide icon from `icons.js`; drawable report in the `#ins-panel` pattern used by L4. No new pill types.
+
 ## Order
-basic shapes (running) → L1 → L2 → L3 → L4 → film (FILM_PLAN §10), English first.
+basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
