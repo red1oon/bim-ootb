@@ -187,6 +187,76 @@ Closes the R9 `GAP:door_hinge` upstream, as R9 asked: the extractor persists the
 - Unit suites `tests/dxf2bim/test_*.js` 16/16 `SUMMARY fail=0`. `rosetta_dx_shell.js` 35 PASS, 1 FAIL: the known RF-d roof top (6.5 drawn vs 6.457 source).
 - G8 / `DXF2BIM-MARK` for the std set: no writer on master yet. #179/#180 read markings, and `mark_dx_set.js` marks only the old set. So the std set was regenerated with door ops only: `2D_Layout/output/STD/` (14 arcs, 0 GAPs).
 
+### L1.4 Std set completion: folder determinism, roof plan, building section (+ reader), window-match finding (2026-10-16)
+Written before the code. BIMCompiler branch `fix/std2d-det-r3` (same PR as §L1.3).
+
+**F3 Determinism across folders.**
+- Reported by L2: std outputs written into different folders differ.
+- Measured on origin/master std2d: 10 processes (`PYTHONHASHSEED` 1..10) writing into folders of different names and depths. Only the CLASSES section ever differs (seeds 4, 7, 10). Its entries are named after object classes (LAYOUT, ACDBPLACEHOLDER). The folder makes no difference: same seed, different folders gives identical bytes. This is the §L1.3 F1 cause, already fixed.
+- W1 and W1-proc now write every run into a different folder (different names and depths), so a folder dependence would be caught.
+
+**F4 Roof plan sheet `DX_ROOF_std.dxf`** (no sheet stated the "Roof" storey, so qualify blocked the roof).
+- Storey: the highest storey whose IfcWalls start at its R1 elevation and that has no plan cut (Duplex: "Roof", R1 elevation 6.000, from the parapet walls).
+- Content, all from the model:
+  - **A-ROOF:** one closed outline = plan envelope of that storey's walls (the roof edge; `roofPlan` requires it to equal the top plan's wall envelope).
+  - **A-GLAZ:** each IfcWindow contained in that storey (skylights) as a closed plan bbox rectangle.
+  - The grid (G1/G2, the same lines as the plans).
+  - Dims: T2 grid-to-grid and T1 overall on 4 sides. There is no T3, because no wall is cut.
+  - Level texts on A-ANNO-LEVL: `<STOREY> +6.000` and `T/ROOF +6.457` (R11 roof top).
+  - Title `ROOF PLAN - ROOF (+6.000) 1:100`.
+- Markings: std2d writes none (as for every std sheet). Needed from `mark_dx_set.js std` (L2's script): `@SET=DX @VIEW=ROOF @UNITS=mm @NAME=ROOF PLAN @LEVEL=6 @ROOF=6.457`, the #182 form. @LEVEL = R1 elevation of the storey from the model; @ROOF = T/ROOF as on the std elevations.
+- Reader map: `set_configs.js` STD.MAP_ROOF = DX MAP_ROOF (A-ROOF roof, A-GLAZ glazing) + ignore for A-GRID, A-ANNO-DIMS, A-ANNO-LEVL, A-ANNO-TTLB.
+
+**F5 Building section sheet `DX_SECTION_std.dxf`** (the real place for slab thickness).
+- **Cut:** a vertical plane at constant X midway between grid lines 1 and 2 (convention: the first bay; Duplex X = 2304.25 mm). It cuts both storeys and the roof.
+- **Viewed toward −X:** the sheet's horizontal axis is plan +Y (h = y, mm) and vertical is z (mm).
+- **Geometry:** triangle meshes from the DB sliced by the plane (the `section_cut.slice_mesh` engine with axes permuted), chained into closed contours.
+  - **S-SLAB:** cut IfcSlab contours, except the R11 roof element. This includes the finish-floor slabs, which sit on top of the structural slab.
+  - **A-ROOF:** cut contours of the R11 roof element (IfcRoof, else the highest IfcSlab).
+  - **A-SECT:** cut IfcWall contours. A-WALL-PATT holds the poché hatch.
+- **Annotation, as on the elevations (R11):**
+  - level datum lines and texts on A-ANNO-LEVL for every plan storey plus the "Roof" storey and T/ROOF
+  - height dims (chain + overall) left of the section
+  - grid bubbles for the Y grid lines (letters) below
+  - title `SECTION A-A AT X=2304.25  1:100`
+- **Markings format (agreed here, before code; the reader enforces it):**
+  - `@VIEW=SECTION` needs `@SET`, `@UNITS`, `@HAXIS`, `@CUT`, `@GRIDH` (≥2), `@Z` (≥2). `@ROOF` is optional.
+  - `@CUT=<X|Y>,<plan coordinate in the sheet's @UNITS>`, e.g. `@CUT=X,2304.25`. The HAXIS axis must not equal the CUT axis (`MARK:axis_cut`).
+  - Alignment and z calibration work exactly as for ELEV (`align`: GRIDH vs plan grids, @Z pairs).
+  - Needed from `mark_dx_set.js std` (L2): the same evidence rules it uses for elevations, plus @CUT from the title text.
+- **Reader** (deploy/dev; `dxf2marks.js` accepts `SECTION` and `CUT`; `dxf2shell.js` gets new `sectionSlabs`):
+  - Every closed polyline on a layer typed `sectslab` (S-SLAB) or `roof` (A-ROOF) becomes a rectangle in (plan h, z) through the align map. A non-rectangle gives `GAP:section_not_rect`.
+  - For each stated plan level L, the slab at L = the S-SLAB rectangles whose **top** is within `elev_tol` of L. Its underside is their bottom.
+    - None found → `GAP:section_no_slab`.
+    - Undersides that disagree → `GAP:section_slab_conflict`.
+    - top − bottom ≤ tol → `GAP:section_bad_thickness`.
+  - Roof: the A-ROOF rectangle(s): bottom and top. When `@ROOF` is given, the top must equal it (else `GAP:section_roof_top_conflict`).
+  - `slabZ(upper, lower, cfg, opts)` takes `opts.section`. With a section slab at `upper.level`, it returns top/bottom from the section (`source: 'section'`). Without one, it behaves as before. When the elevation-derived top is also present and differs, it raises `GAP:slab_top_conflict`.
+- **Tests:**
+  - Unit (`tests/dxf2bim/test_section.js`):
+    - the marking keys and errors
+    - a synthetic section reading GF / FF / roof
+    - a finish floor on top of the slab is not taken as the slab
+    - a missing slab gives a GAP
+    - a non-rectangle gives a GAP
+    - conflicting undersides give a GAP
+    - `slabZ` uses the section
+    - mutation: the FF underside moved 50 mm, so the reader reports the moved value and the witness check fails
+  - Witness `tests/dxf2bim/rosetta_dx_section.js`, on a marked copy of the std section. The marking step in the test is from evidence plus the model levels, until `mark_dx_set.js std` does it.
+    - **SX1:** FF slab = 2.795..3.100 equals the source IfcSlab at the cut (the old set got it from wall ends).
+    - **SX2:** GF slab = −0.127..0.000.
+    - **SX3:** roof 6.000..6.457.
+    - **SX-control:** the FF underside line moved 50 mm in a copy must FAIL SX1.
+  - `test_std2d.py`:
+    - **W8 (roof plan):** outline = roof-storey wall envelope; skylights = the model's roof-storey IfcWindow bboxes 2/2.
+    - **W9 (section):** every S-SLAB/A-ROOF contour's z extent equals a model element's z extent at the cut (0.5 mm).
+
+**F6 The 5 std windows not matched to elevations** (GF A3, C2; FF C0, CE, F1).
+- The writer is right: the std elevation glazing equals the IFC window bboxes, and the plan window boxes equal them too.
+- **Cause:** `mark_dx_set.js` stores grid positions with `Math.round(c)`. The std grid lines sit on 0.5 mm (208.5, −17591.5 …), and JS rounds −x.5 toward +∞. So the −X / −Y elevations (REAR, LEFT) align 1 mm off, which is more than `snap_tol` 1 mm.
+- **Probe** (a scratch copy of the script with 0.1 mm rounding, R5): `GAP:no_elevation_match` 5 → 0; DW-windows Level 1 4/4, Level 2 18/18.
+- Fix belongs to L2 (`mark_dx_set.js`); reported, not edited.
+
 ## L2. Qualify verdict (reader side, module `dxf2qualify.js`)
 Input: the set of sheets + markings + settings. Output: `{verdict: 'qualifies'|'blocked', blocking:[...], advisory:[...]}` per basic shape.
 - **Blocking:**
