@@ -644,7 +644,10 @@
     const env = buildingEnv(model, model.grid_storey, gEl), fv = { x0: env[0], x1: env[1], y0: env[2], y1: env[3] }[side];   // C3
     const hr = e => { const a = hp(e.x0, e.y0), b = hp(e.x1, e.y1); return [mm(Math.min(a, b)), mm(Math.max(a, b))]; };
     const rect = (h0, h1, z0, z1) => [[h0, mm(z0)], [h1, mm(z0)], [h1, mm(z1)], [h0, mm(z1)]];
-    const fw = model.walls.filter(w => vis.has(w.storey) && Math.abs(w[side] - fv) <= EXT_FACE_TOL);
+    // §L1.18 (wing sets only, model.perStoreyEnv): a stepped building has a different outline per storey; the exterior walls of a storey are the walls on THAT storey's own envelope face
+    const sideIdx = { x0: 0, x1: 1, y0: 2, y1: 3 }[side], storeyFace = {};
+    if (model.perStoreyEnv) model.storeys.forEach(s => { const sw = model.walls.filter(w => w.storey === s.name); if (sw.length) storeyFace[s.name] = envelope(sw)[sideIdx]; });
+    const fw = model.walls.filter(w => vis.has(w.storey) && Math.abs(w[side] - (model.perStoreyEnv && w.storey in storeyFace ? storeyFace[w.storey] : fv)) <= EXT_FACE_TOL);
     fw.forEach(w => { const [h0, h1] = hr(w); doc.lwpoly('A-WALL', rect(h0, h1, w.z0, w.z1), true, tag(w.guid)); });
     const fcw = model.curtains.filter(c => Math.abs(c[side] - fv) <= EXT_FACE_TOL), pst = planStoreys(model);   // C4: an elevation rectangle PER STOREY with a band (importer pairing by storey level)
     fcw.forEach(w => { const [h0, h1] = hr(w); pst.forEach((ps, i) => {
@@ -885,7 +888,7 @@
     if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
-    model.longFaceR3 = true;   // §L1.17
+    model.longFaceR3 = true; model.perStoreyEnv = true;   // §L1.17, §L1.18
     log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
     return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };
   }
