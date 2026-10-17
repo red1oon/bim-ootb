@@ -41,7 +41,8 @@
   var ROLE_VIEW = { PLAN: 'plan', ELEV: 'elev', ROOF: 'roof', SECTION: 'section' };
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
-  var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'];
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
+  var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
   var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
@@ -201,9 +202,9 @@
     if (ui === 'level') return 'levelline';
     return ui;   // glazing, roof, dims, grid, ignore
   }
-  function uiOf(type) { return { wall: 'wall', elevwall: 'wall', sectwall: 'wall', opening: 'door', elevdoor: 'door', levelline: 'level', glazing: 'glazing', roof: 'roof', dims: 'dims', grid: 'grid', ignore: 'ignore' }[type] || null; }
+  function uiOf(type) { return { wall: 'wall', elevwall: 'wall', sectwall: 'wall', opening: 'door', elevdoor: 'door', levelline: 'level', glazing: 'glazing', roof: 'roof', dims: 'dims', grid: 'grid', ignore: 'ignore', column: 'column', beam: 'beam', footing: 'footing', gradebeam: 'gradebeam', member: 'member', plate: 'plate' }[type] || null; }
   function uiChoices(role) {   // only the choices the reader of that view accepts (Dxf2Marks.LAYER_TYPES)
-    var T = MK.LAYER_TYPES, ok = (T[VIEW_OF_ROLE[role]] || []).concat(T.ANY);
+    var T = MK.LAYER_TYPES, ok = (T[VIEW_OF_ROLE[role]] || []).concat(T.ANY, T.BODY || []);
     return LAYER_TYPES.concat(['roof']).filter(function (u, i, a) { return a.indexOf(u) === i && ok.indexOf(ruleType(u, role)) >= 0; });
   }
   function templateType(role, layer) {
@@ -663,7 +664,7 @@
         else if (st && (tt || !uiOf(st.type))) h += '<span class="dm-tt" title="@LAYER marking: overrides the set">' + esc(st.type) + ' · stated</span>' + srcLabel(st.mark);
         else { if (!st) nBad++;
           var cur = st ? uiOf(st.type) : '';
-          h += '<select class="dm-sel' + (st ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + [''].concat(uiChoices(role)).map(function (t) { return opt(t, cur); }).join('') + '</select>' + (st ? srcLabel(st.mark) : ''); }
+          h += '<select class="dm-sel' + (st ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + [''].concat(uiChoices(role)).map(function (t) { return opt(t, cur, t === 'gradebeam' ? 'grade beam' : undefined); }).join('') + '</select>' + (st ? srcLabel(st.mark) : ''); }
         h += '</div>';
       });
     });
