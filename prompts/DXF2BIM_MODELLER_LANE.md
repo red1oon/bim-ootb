@@ -1631,5 +1631,10 @@ Built as specified (wing sets only; `dropCollinear`, `§COLLINEAR_DROP` log line
 - Unchanged: straight-set parity (W-LOG/W-ENT), Duplex wing witnesses, W-L119.
 **Not claimed:** `no_dimension` (97, needs a stated sill/height), `no_host_cut` 142, `no_elevation_height` 175, `wall_below_min_thickness` 58.
 
+**L1.20b (amendment, measured the same day, BEFORE its code):** the union alone does not help: of 189 united Hospital door/window elements, 176 stay MULTI-ring because their parts are disjoint (no union bug: `union area == sum of parts`, max difference 0.30 mm2). Measured example: a door element of bbox 965 x 173 mm = a 813 x 51 leaf plus four 76 x 25 casing corner blocks at the four corners of the bbox; another is 1982 x 173 = two 915 x 51 leaves plus four corner blocks. The corner blocks are casing returns, not openings.
+- **Rule:** in a wing set, when the parts of one door/window element remain more than one ring after the union, the element is drawn as ONE rectangle: its own plan bbox (the element's IFC world bbox, in the wing frame). This is the same shape the writer already draws for an opening above or below the cut (`planOpenings`), so the convention exists. Condition: every part is an axis-aligned rectangle (4 vertices, edges on X/Y within 0.001 mm); otherwise the parts are kept (`§OPEN_BBOX_SKIP reason=part_not_axis_rect`). The bbox contains every part by construction (checked, logged). Logged `§OPEN_BBOX guid=<g> cls=<c> parts=<n> bbox=<w> x <d> mm`.
+- **What it adds (stated):** the drawn outline covers the gaps between the casing blocks and the leaf: area not in the section. It is the footprint of the door product with its casing, not the cut.
+- **Witnesses:** W-L120B-CONTAIN (every replaced element's bbox contains all its parts and equals the extent of the parts); W-L120B-CONTROL (an element with a rotated part is NOT replaced); W-L120B-OPEN (Hospital 85-deg wing `GAP:opening_unclassified` falls from 129; remainder listed); Duplex wing and straight-set parity unchanged.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
