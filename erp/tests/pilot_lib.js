@@ -24,7 +24,7 @@ async function openStation(browser, st, base, relayUrl, win) {
   st.page.on('pageerror', e => st.L.push('PAGEERR ' + e));
   st.page.on('dialog', d => d.accept().catch(() => {}));
   await st.page.goto(base + '/idempiere.html?login=GardenAdmin&window=' + win + '&relay=' + encodeURIComponent(relayUrl), { waitUntil: 'load' });
-  await st.page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 40000 });
+  await st.page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 40000 });
   await sleep(900);
 }
 async function waitLog(st, re, from, ms) {
@@ -36,8 +36,8 @@ async function waitLog(st, re, from, ms) {
 async function ringSale(st, base, relayUrl, qty) {
   const p = st.page, sel = (c) => '#idmp-inline-mount select[data-col="' + c + '"]';
   await p.goto(base + '/idempiere.html?login=GardenAdmin&window=143&relay=' + encodeURIComponent(relayUrl), { waitUntil: 'load' });
-  await p.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 40000 }); await sleep(900);
-  await p.click('#idmp-toolbar button[title^="New record"]'); await p.waitForSelector('#idmp-inline-mount .cfrow'); await sleep(700);
+  await p.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 40000 }); await sleep(900);
+  await p.click('#idmp-toolbar [data-tb="new"]'); await p.waitForSelector('#idmp-inline-mount .cfrow'); await sleep(700);
   await p.selectOption(sel('ad_org_id'), String(st.org)); await sleep(500);
   await p.selectOption(sel('m_warehouse_id'), String(st.wh)); await sleep(300);
   await p.selectOption(sel('c_bpartner_id'), '118'); await sleep(300);
@@ -45,11 +45,11 @@ async function ringSale(st, base, relayUrl, qty) {
   const dt = dts.find(o => /^POS Order/.test(o.t)); if (!dt) throw new Error('no POS Order doctype');
   await p.selectOption(sel('c_doctypetarget_id'), dt.v);
   let n0 = st.L.length;
-  await p.click('#idmp-toolbar button[title^="Save"]'); await sleep(1400);
+  await p.click('#idmp-toolbar [data-tb="save"]'); await sleep(1400);
   const sel1 = st.L.slice(n0).filter(l => /§CRUD-CREATE-SEL table=c_order id=/.test(l)).pop();
   const oid = Number((/id=(-?\d+)/.exec(sel1 || '') || [])[1]);
   await p.click('#idmp-tabstrip >> text=Order Line'); await sleep(900);
-  await p.click('#idmp-toolbar button[title^="New record"]'); await p.waitForSelector('#idmp-inline-mount .cfrow'); await sleep(700);
+  await p.click('#idmp-toolbar [data-tb="new"]'); await p.waitForSelector('#idmp-inline-mount .cfrow'); await sleep(700);
   await p.selectOption(sel('m_product_id'), '123'); await sleep(300);
   const qi = p.locator('#idmp-inline-mount input[data-col="qtyentered"]').first();
   await qi.fill(String(qty)); await qi.blur(); await sleep(300);
@@ -59,7 +59,7 @@ async function ringSale(st, base, relayUrl, qty) {
   const pe = p.locator('#idmp-inline-mount input[data-col="priceentered"]').first();
   await pe.fill('61.75'); await pe.blur();
   await p.locator('#idmp-inline-mount input[data-col="priceactual"]').first().fill('61.75').catch(() => {});
-  await p.click('#idmp-toolbar button[title^="Save"]'); await sleep(1400);
+  await p.click('#idmp-toolbar [data-tb="save"]'); await sleep(1400);
   await p.click('#idmp-tabstrip .idmp-adtab >> nth=0'); await sleep(900);
   await p.evaluate(i => { const tr = [...document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')].find(x => Number(x.getAttribute('data-ad-record')) === i); if (tr) tr.click(); }, oid);
   await sleep(900);

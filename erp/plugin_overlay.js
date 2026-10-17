@@ -269,7 +269,7 @@
   function _close(doc) { var o = doc.getElementById('pe-ov'); if (o) o.remove(); }
 
   // Optional bundles (ERP_FRIENDLY_OPS_LENS.md §30): offered, never auto-installed (the default screen stays the legacy twin's). An offer shows only while the bundle is not installed.
-  var OPTIONAL = [{ url: 'plugins/friendly_ops.mjs', id: 'org.kernel.friendly-ops', name: 'Friendly operations', blurb: 'Fewer clicks on the same books: Save & Complete, Add line, Save & back, related records.' }];
+  var OPTIONAL = global.PluginOffers || [];   // the one offers list lives in osgi_console.js (also drawn by the Plugins & Releases console)
   function _renderOffers(doc, bundles) {
     var box = doc.getElementById('pe-available'); if (!box) return;
     box.innerHTML = '';

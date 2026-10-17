@@ -86,6 +86,13 @@
     this.log = [];                 // §-lines the rules emit (host prints them; the witness reads them)
     this._newSeq = 0;
   }
+  // Trx.setSavepoint / rollback(savepoint) (DocManager.postDocument :390-470 posts every schema under one savepoint and rolls it back on an error): a deep copy of the
+  // group + the pending overlay (they share row objects, so they are copied TOGETHER); callers re-read their row objects after a rollback.
+  Trx.prototype.setSavepoint = function () {
+    var snap = { ops: this.ops, pend: this.pend, n: this._newSeq };
+    try { return structuredClone(snap); } catch (e) { return JSON.parse(JSON.stringify(snap)); }
+  };
+  Trx.prototype.rollbackTo = function (sp) { this.ops = sp.ops; this.pend = sp.pend; this._newSeq = sp.n; };
   Trx.prototype.keyCols = function (table) { return keyColsOf(this.q, table); };
   // single-column identity of a row: its key when the key is one column, else its <table>_uu (recorded identity).
   Trx.prototype.idCol = function (table) { var k = this.keyCols(table); return k.length === 1 ? k[0] : table + '_uu'; };
@@ -187,7 +194,11 @@
   Trx.prototype.groupOps = function () {
     var map = {}, out = [];
     this.ops.forEach(function (o, i) { if (o) { map[i] = out.length; out.push(o); } });
-    function fix(v) { if (isNewId(v)) { var i = Number(v.slice(NEW.length)); return { __opRef: map[i] }; } return v; }
+    // a '#new:i' INSIDE a longer text (a Doc.post AD_Note Reference "MInOut[<id>-<docno>,...]") becomes the token {{opref:<final index>}}, which the host
+    // (crud_overlay._resolveOpRefs) replaces with the pk that op gets - the same id law as the {__opRef} FKs.
+    function fix(v) { if (isNewId(v)) { var i = Number(v.slice(NEW.length)); return { __opRef: map[i] }; }
+      if (typeof v === 'string' && v.indexOf(NEW) > 0) return v.replace(/#new:(\d+)/g, function (m, d) { return map[Number(d)] == null ? m : '{{opref:' + map[Number(d)] + '}}'; });
+      return v; }
     var tail = [];
     var res = out.map(function (o, oi) {
       var c = JSON.parse(JSON.stringify(o));

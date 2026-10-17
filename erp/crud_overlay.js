@@ -2624,7 +2624,7 @@
   function _resolveOpRefs(db, ops) {
     var hasRef = ops.some(function (o) { return o && o.id && typeof o.id === 'object' && o.id.__opRef != null; }) || ops.some(function (o) {
       var f = o && o.fields; if (!f) return false;
-      for (var k in f) if (f.hasOwnProperty(k) && f[k] && typeof f[k] === 'object' && f[k].__opRef != null) return true;
+      for (var k in f) if (f.hasOwnProperty(k) && ((f[k] && typeof f[k] === 'object' && f[k].__opRef != null) || (typeof f[k] === 'string' && f[k].indexOf('{{opref:') >= 0))) return true;
       return false;
     }) || ops.some(function (o) { var c = o && o.changes; if (!c) return false;      // FS-16: an UPDATE may point at a row this group creates
       for (var k in c) if (c.hasOwnProperty(k) && c[k] && c[k].new && typeof c[k].new === 'object' && c[k].new.__opRef != null) return true; return false; });
@@ -2657,6 +2657,9 @@
           var idx = Number(v.__opRef);
           if (idx >= 0 && idx < ops.length) { f2[k] = -(nextId + idx); resolved++; any = true; continue; }
           unresolved++;
+        }
+        if (typeof v === 'string' && v.indexOf('{{opref:') >= 0) {   // §UDP-7 an id inside a text (the AD_Note Reference): the same id law, as text
+          v = v.replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { var ix = Number(d); if (ix >= 0 && ix < ops.length) { resolved++; return String(-(nextId + ix)); } unresolved++; return m; }); any = true;
         }
         f2[k] = v;
       }

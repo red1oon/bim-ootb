@@ -35,8 +35,8 @@ const judged = (label, n, cond, extra) => {
 };
 async function landed(page) { await page.waitForSelector('[data-ad-table]', { timeout: 20000 }); await page.waitForTimeout(500); }
 async function clickNew(page) {
-  await page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 15000 });
-  await page.click('#idmp-toolbar button[title^="New record"]');
+  await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 15000 });
+  await page.click('#idmp-toolbar [data-tb="new"]');
   await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 });
   await page.waitForTimeout(900);
 }

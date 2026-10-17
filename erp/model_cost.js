@@ -47,7 +47,20 @@
   function Cost(trx, row, isNew) {
     this.trx = trx; this.row = row; this.is_new = !!isNew; this.skipAvgQtyCheck = false;
     var s = this; COST_COLS.forEach(function (c) { s[c] = D(row[c]); });
+    // MCost.setCurrentQty :1917-1932 - EVERY assignment of CurrentQty (the loader excepted) is checked: an Average PO / Average Invoice cost may not go negative.
+    var cq = this.currentqty;
+    Object.defineProperty(this, 'currentqty', { enumerable: true, configurable: true, get: function () { return cq; }, set: function (v) {
+      if (!s.skipAvgQtyCheck) {
+        var ce = s.trx.get('m_costelement', s.row.m_costelement_id) || {};
+        if ((ce_.isAveragePO(ce) || ce_.isAverageInvoice(ce)) && D(v).signum() < 0)
+          throw javaEx('AverageCostingNegativeQtyException', 'Product=' + prodName(s) + ', Current Qty=' + cq + ', New Current Qty=' + D(v) + ', CostElement=' + ce.name + ', Schema=' + schemaName(s));
+      }
+      cq = v; } });
   }
+  // AdempiereException.toString() = class name + ": " + message; the class name is what Doc.post stores in the AD_Note ("Posting Error (<this>) ...").
+  function javaEx(cls, msg) { var e = new Error(msg); e.jclass = 'org.adempiere.exceptions.' + cls; e.jmessage = msg; e.toString = function () { return e.jclass + ': ' + msg; }; return e; }
+  function prodName(c) { var p = c.trx.get('m_product', c.row.m_product_id); return p ? p.name : '?'; }
+  function schemaName(c) { var a = c.trx.get('c_acctschema', c.row.c_acctschema_id); return a ? a.name : '?'; }
   Cost.prototype.save = function () {                                                       // PO.save of M_Cost
     var ch = {}, s = this; COST_COLS.forEach(function (c) { ch[c] = N(s[c]); });
     if (this.is_new) { this.row = this.trx.insert('m_cost', ML.newPO(this.trx, 'm_cost', Object.assign({}, this.row, ch))); this.is_new = false; }
@@ -60,7 +73,7 @@
     if (!this.skipAvgQtyCheck) {
       var ce = this.trx.get('m_costelement', this.row.m_costelement_id) || {};
       if ((ce_.isAveragePO(ce) || ce_.isAverageInvoice(ce)) && this.currentqty.add(qty).signum() < 0)
-        throw new Error('AverageCostingNegativeQtyException Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty + ', CostElement=' + ce.name);
+        throw javaEx('AverageCostingNegativeQtyException', 'Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty + ', CostElement=' + ce.name + ', Schema=' + schemaName(this));
     }
     this.cumulatedamt = this.cumulatedamt.add(amt); this.cumulatedqty = this.cumulatedqty.add(qty); this.currentqty = this.currentqty.add(qty);
   };
@@ -68,8 +81,8 @@
   Cost.prototype.setWeightedAverage = function (amt, qty) {
     if (amt.signum() === 0 && qty.signum() === 0) return;
     if (amt.signum() !== 0 && qty.signum() !== 0 && amt.signum() !== qty.signum()) amt = amt.negate();
-    if (qty.signum() === 0 && this.currentqty.signum() <= 0) throw new Error('AverageCostingZeroQtyException Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty);
-    if (!this.skipAvgQtyCheck && this.currentqty.add(qty).signum() < 0) throw new Error('AverageCostingNegativeQtyException Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty);
+    if (qty.signum() === 0 && this.currentqty.signum() <= 0) throw javaEx('AverageCostingZeroQtyException', 'Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty + ', CostElement=' + ((this.trx.get('m_costelement', this.row.m_costelement_id) || {}).name) + ', Schema=' + schemaName(this));
+    if (!this.skipAvgQtyCheck && this.currentqty.add(qty).signum() < 0) throw javaEx('AverageCostingNegativeQtyException', 'Product(ID)=' + this.row.m_product_id + ', Current Qty=' + this.currentqty + ', Trx Qty=' + qty + ', CostElement=' + ((this.trx.get('m_costelement', this.row.m_costelement_id) || {}).name) + ', Schema=' + schemaName(this));
     var sumQty = this.currentqty.add(qty);
     if (sumQty.signum() !== 0) {
       var oldSum = this.currentcostprice.multiply(this.currentqty), oldCost = oldSum.divide(sumQty, 12, HU), newCost = amt.divide(sumQty, 12, HU);

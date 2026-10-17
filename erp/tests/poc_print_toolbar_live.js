@@ -46,7 +46,7 @@ const server = http.createServer((req, res) => {
   const printBtn = () => page.evaluate(() => {
     const tb = document.getElementById('idmp-toolbar');
     const b = tb && Array.from(tb.querySelectorAll('button')).find(x => /\bPrint\b/.test((x.textContent || '') + ' ' + x.title) && !/Save/.test(x.textContent || ''));
-    return b ? { present: true, enabled: !b.disabled, printer: !!b.querySelector('svg') } : { present: false };
+    return b ? { present: true, enabled: !b.disabled, printer: !!b.querySelector('img[src$="Print24.png"]') } : { present: false };
   });
 
   // ── PART 1 — printable document (Sales Invoice, window 167 → C_Invoice in REPORT_MAP). ──

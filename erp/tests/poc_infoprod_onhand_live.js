@@ -52,7 +52,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const oh0 = await onhand(), tx0 = (await tip('SELECT COUNT(*) AS n FROM m_transaction'))[0].n;
   const WH = 103;   // HQ Warehouse (Mulch baseline 50 at locator 101)
   const info = async (label) => {
-    if (!(await pg.$('#idmp-infowin'))) { await hc('#idmp-toolbar [data-tb="productinfo"]'); await pg.waitForSelector('#idmp-infowin'); }
+    if (!(await pg.$('#idmp-infowin'))) { await pg.evaluate(() => window.AdInfoWindow.open({ tableName: 'M_Product', clientId: window.APP && window.APP.clientId, orgId: window.APP && window.APP.orgId }));   // Info Product has no toolbar button in legacy (AD_ToolBarButton 200056 inactive) await pg.waitForSelector('#idmp-infowin'); }
     await pg.fill('#idmp-infowin-crit input[data-col="Value"]', 'Mulch');
     await pg.selectOption('#idmp-infowin-crit select[data-col="M_Warehouse_ID"]', String(WH));
     await hc('#idmp-infowin [data-act="refresh"]'); await pg.waitForTimeout(500);
@@ -82,7 +82,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pick('c_doctypetarget_id', /^POS Order/); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
   const docnoShown = await pg.$eval(F('documentno'), e => e.value);
-  let n0 = logs.length; await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  let n0 = logs.length; await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
   const s1 = logs.slice(n0);
   ok('D1', 'a New order saved with the preview number ("' + docnoShown + '") is NOT rejected by the numeric pin',
     !s1.some(l => /§CRUD validate key=c_order verb=create REJECT/.test(l)) && s1.some(l => /§CRUD validate key=c_order verb=create ok/.test(l)),
@@ -94,7 +94,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForTimeout(900);
   await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
   await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
   await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900);
 

@@ -65,7 +65,7 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   const y0 = (await tip("SELECT COUNT(*) AS n FROM c_year WHERE fiscalyear='2031'"))[0].n;
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pg.fill(F('fiscalyear'), '2031'); await pg.locator(F('fiscalyear')).first().blur().catch(() => {}); await pg.waitForTimeout(400);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
   const yr = await tip("SELECT c_year_id AS id, c_calendar_id AS cal FROM c_year WHERE fiscalyear='2031'");
   ok('U0', 'Year 2031 saved through the UI (was ' + y0 + ' → ' + yr.length + ')', y0 === 0 && yr.length === 1, JSON.stringify(yr));
   if (yr.length !== 1) { console.log('§NC1-UI VERDICT INCONCLUSIVE no year created'); process.exit(2); }

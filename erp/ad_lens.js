@@ -9,9 +9,10 @@
   else root.AdLens = factory(root.LayeredRegistry);
 })(typeof self !== 'undefined' ? self : this, function (LR) {
   'use strict';
-  var REG_L = LR.create(), REG = {};
-  function register(id, desc, opts) { REG_L.add(id, desc, opts); REG[id] = REG_L.top(id).value; return Object.keys(REG).length; }
-  function unregister(id, owner) { var n = REG_L.remove(id, owner), t = REG_L.top(id); if (t) REG[id] = t.value; else delete REG[id]; return n; }
+  var REG_L = LR.create(), REG = {}, LISTEN = [];
+  function changed() { LISTEN.forEach(function (f) { try { f(); } catch (e) {} }); }   // the host redraws its toolbar when a lens is installed or stopped, so a window already open follows
+  function register(id, desc, opts) { REG_L.add(id, desc, opts); REG[id] = REG_L.top(id).value; changed(); return Object.keys(REG).length; }
+  function unregister(id, owner) { var n = REG_L.remove(id, owner), t = REG_L.top(id); if (t) REG[id] = t.value; else delete REG[id]; if (n) changed(); return n; }
   function removeOwner(owner) { var n = 0; REG_L.keys().forEach(function (k) { n += unregister(k, owner); }); return n; }
   function count() { return Object.keys(REG).length; }
   function describe() { var o = {}; REG_L.keys().sort().forEach(function (k) { o[k] = REG_L.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); }); return o; }
@@ -25,5 +26,6 @@
     return out;
   }
   function run(lens, actionId, api) { var d = REG[lens]; if (!d) throw new Error('no lens ' + lens); return d.run(actionId, api); }
-  return { register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, run: run };
+  function onChange(fn) { LISTEN.push(fn); }
+  return { onChange: onChange, register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, run: run };
 });

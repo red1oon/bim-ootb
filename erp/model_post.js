@@ -336,6 +336,38 @@
     }
   };
 
+  // Doc.post :541-760 on a non-Y/non-d result: DocManager rolled the savepoint back (nothing but the status survives), `save` writes Posted=<status>
+  // (:514-524, also after an error), and Doc.post stores an MNote (:706-750) - AD_Message PostingError-<status>, AD_User = the document's UpdatedBy, the
+  // document's client/org, Record = (table,id), Reference = Doc.toString() (= the PO's toString), TextMsg as built below. Ported for the document classes whose
+  // getAmount()/toString() are read: m_inout (Doc_InOut: amount 0, MInOut[id-docno,DocStatus=xx]); any other table keeps the status but writes NO note (named).
+  var NOTE_DOC = { m_inout: { cls: 'Doc_InOut', model: 'MInOut', amount: function () { return 0; } } };
+  function msgOf(trx, v, dflt) { var r = trx.q('SELECT msgtext AS t FROM ad_message WHERE value=? AND isactive=?', [v, 'Y'])[0]; return r && r.t != null ? r.t : dflt; }
+  function elOf(trx, c, dflt) { var r = trx.q('SELECT name AS n FROM ad_element WHERE lower(columnname)=?', [c.toLowerCase()])[0]; return r && r.n != null ? r.n : dflt; }
+  function usDate(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d)); return m ? m[2] + '/' + m[3] + '/' + m[1] : String(d); }   // DisplayType.getDateFormat(Date) en_US
+  function amt2(n) { var s = Number(n).toFixed(2).split('.'); return s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + s[1]; }                // DisplayType.getNumberFormat(Amount) en_US
+  function postError(trx, sp, table, id, dt, as, status, ex) {
+    trx.rollbackTo(sp);                                                                       // the savepoint: facts/costs/cost details of this attempt are gone
+    var doc = trx.get(table, id), key = table + '_id';
+    trx.update(table, doc, { posted: status });
+    trx.say('§MODEL-POST table=' + table + ' id=' + id + ' posted=' + status + ' error="' + String(ex).slice(0, 160) + '"');
+    var nd = NOTE_DOC[table];
+    if (!nd) { trx.say('§MODEL-UNPORTED-DEP AD_Note PostingError-' + status + ' for ' + table + ' not written — its Doc class text (getAmount/toString) is not ported (named)'); return false; }
+    var cols = ML.columnsOf(trx, 'ad_note'), mid = trx.q('SELECT ad_message_id AS i FROM ad_message WHERE value=?', ['PostingError-' + status])[0];
+    if (!Object.keys(cols).length || !mid) { trx.say('§MODEL-UNPORTED-DEP ad_note/ad_message absent — AD_Note not written (named)'); return false; }
+    var T_ = T.periodOpen(trx, doc.dateacct, dt ? dt.docbasetype : null, doc.ad_org_id), docStatus = (trx.q("SELECT name AS n FROM ad_ref_list WHERE ad_reference_id=131 AND value=?", [doc.docstatus])[0] || {}).n || doc.docstatus;
+    var yn = function (b) { return msgOf(trx, String(!!b), b ? 'Yes' : 'No'); };
+    var text = msgOf(trx, 'PostingError-' + status, 'Posting Error') + ' (' + String(ex) + ')' +
+      ' - .' + nd.cls + ' (' + (dt ? dt.docbasetype : '') + ' - ' + elOf(trx, 'DocumentNo', 'Document No') + '=' + doc.documentno +
+      ' - ' + elOf(trx, 'DateAcct', 'Account Date') + '=' + usDate(doc.dateacct) + ' - ' + msgOf(trx, 'Amount', 'Amount') + '=' + amt2(nd.amount(doc)) +
+      ' - ' + elOf(trx, 'DocStatus', 'Document Status') + '=' + docStatus + ' - ' + msgOf(trx, 'PeriodOpen', 'Period Open') + '=' + yn(T_) +
+      ' - ' + elOf(trx, 'IsBalanced', 'Balanced') + '=' + yn(true) + ' - ' + elOf(trx, 'C_AcctSchema_ID', 'Accounting Schema') + '=' + as.name;
+    var f = { ad_client_id: doc.ad_client_id, ad_org_id: doc.ad_org_id, ad_message_id: mid.i, ad_user_id: nz(doc.updatedby) ? doc.updatedby : trx.env.user, ad_table_id: TABLE_ID[table] || ML.tableIdOf(trx, table),
+      record_id: id, reference: nd.model + '[' + id + '-' + doc.documentno + ',DocStatus=' + doc.docstatus + ']', textmsg: text, processed: 'N' };
+    Object.keys(f).forEach(function (k) { if (!cols[k]) delete f[k]; });
+    trx.insert('ad_note', ML.newPO(trx, 'ad_note', f));
+    trx.say('§MODEL-POST AD_Note PostingError-' + status + ' table=' + table + ' id=' + id + ' text="' + text.slice(0, 200) + '"');
+    return false;
+  }
   // Doc.post (acct/Doc.java:246-420) for every schema; all-or-none per document: the doc is Posted='Y' only when every schema balanced.
   // DocManager.postDocument (acct/DocManager.java:390-470: every schema, all-or-none under one savepoint) ∘ Doc.post :560-700
   // (repost → deleteAcct :768-802 backs the schema's facts up into T_Fact_Acct_History first; deferred → Posted='d').
@@ -347,7 +379,8 @@
     if (!repost && (doc.posted === 'Y')) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' AlreadyPosted'); return false; }
     var dtId = docTypeIdOf(trx, table, doc), dt = dtId ? T.dt(trx, dtId) : null, glcat = dt ? dt.gl_category_id : null;
     if (!glcat && dt == null && BASETYPE[table] == null) { var g0 = trx.q("SELECT gl_category_id AS g FROM gl_category WHERE ad_client_id=? AND isdefault='Y'", [trx.env.client])[0]; glcat = g0 ? g0.g : null; }
-    var tid = TABLE_ID[table] || ML.tableIdOf(trx, table), per = periodId(trx, doc.dateacct), why = null, deferred = false, out = [];
+    var tid = TABLE_ID[table] || ML.tableIdOf(trx, table), per = periodId(trx, doc.dateacct), why = null, deferred = false, out = [], exc = null, excAs = null;
+    var sp = trx.setSavepoint();                                                              // DocManager.postDocument :390 - one savepoint around every schema
     schemas(trx).forEach(function (as) {
       if (why || deferred) return;
       if (repost) {                                                                            // Doc.deleteAcct :768-802
@@ -360,9 +393,11 @@
         }
       }
       var F = new Fact(trx, table, doc, as, glcat);
-      var ok = fn(trx, doc, as, F);
+      var ok;
+      try { ok = fn(trx, doc, as, F); }
+      catch (e) { if (!e || !e.jclass) throw e; exc = e; excAs = as; why = String(e); return; }   // Doc.post :680-686 - a Java exception from postLogic => status E, p_Error = e.toString() (a twin-side JS error is NOT one: it propagates)
       if (ok === 'DEFER') { deferred = true; return; }
-      if (!ok || F.err) { why = F.err || 'createFacts failed'; return; }
+      if (!ok || F.err) { why = F.err || 'createFacts failed'; excAs = as; return; }
       F.balance();
       F.lines.forEach(function (f) {
         var dl = f._dl; delete f._dl;
@@ -371,6 +406,11 @@
       });
     });
     if (deferred) { trx.update(table, doc, { posted: 'd' }); trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=d (deferred)'); return false; }
+    if (exc) return postError(trx, sp, table, doc[key], dt, excAs, 'E', exc);
+    // Doc.postLogic :817-830 - createFacts returned null with p_Error set by the Doc class ("No Costs for X", "Original Shipment/Receipt not posted yet", ...) => status E, the
+    //   same savepoint rollback + Posted + AD_Note as an exception (the note text carries p_Error alone, no class name). A twin-side "not ported - named" refusal is NOT a legacy
+    //   status: it keeps the old behaviour (Posted untouched, §MODEL-UNPORTED-DEP) so a missing port never masquerades as a legacy E.
+    if (why && !/not ported|UNPORTED|— named|- named/.test(why)) return postError(trx, sp, table, doc[key], dt, excAs, 'E', why);
     if (why) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="' + why + '" (AD_Note PostingError: §MODEL-UNPORTED-DEP MNote not written)'); return false; }
     out.forEach(function (f) {
       trx.insert('fact_acct', ML.newPO(trx, 'fact_acct', Object.assign({ ad_table_id: tid, record_id: doc[key], c_period_id: per, gl_category_id: glcat,

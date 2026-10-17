@@ -13,6 +13,10 @@
   'use strict';
 
   // OSGi Bundle states as the Felix console words them. Our registry's STOPPED returns to Resolved exactly as an OSGi stop does.
+  // Optional bundles the page OFFERS (ERP_FRIENDLY_OPS_LENS.md §30/§37): never auto-installed (the default screen stays the legacy twin's); an offer shows only while the bundle is not installed.
+  //   One list for both install faces (this console and the Plugin Engine card).
+  var GL = typeof window !== 'undefined' ? window : globalThis;
+  GL.PluginOffers = GL.PluginOffers || [{ url: 'plugins/friendly_ops.mjs', id: 'org.kernel.friendly-ops', name: 'Friendly operations', blurb: 'Fewer clicks on the same books: Save & Complete, Add line, Save & back, Ship, Invoice, related records.' }];
   var STATUS = { ACTIVE: 'Active', STARTING: 'Starting', INSTALLED: 'Installed', RESOLVED: 'Resolved', STOPPED: 'Resolved', UNINSTALLED: 'Uninstalled' };
   function statusOf(state) { return STATUS[state] || String(state || ''); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -83,11 +87,17 @@
     '.oc .oc-s-Active{color:#1a7f37;font-weight:700}.oc .oc-s-Starting{color:#b26a00;font-weight:700}.oc .oc-s-Resolved{color:#555}.oc .oc-s-Installed{color:#555;font-style:italic}' +
     '.oc .oc-ic{display:inline-block;width:22px;height:20px;line-height:18px;text-align:center;border:1px solid #9aa3ad;border-radius:2px;background:#fff;margin-right:2px;cursor:pointer;font-size:12px}.oc .oc-ic.off{opacity:.3;cursor:default}' +
     '.oc tr.oc-d td{background:#fbfcfd}.oc table.oc-kv{border-collapse:collapse;width:100%}.oc .oc-kv td{border:0;border-bottom:1px solid #eceff2;padding:2px 6px}.oc .oc-kv td:first-child{width:150px;font-weight:700;color:#444}' +
-    '.oc ul.oc-svc{margin:0;padding-left:16px}.oc .oc-inst{display:flex;gap:6px;align-items:center;padding:6px 0}.oc .oc-inst input{flex:1}';
+    '.oc ul.oc-svc{margin:0;padding-left:16px}.oc .oc-inst{display:flex;gap:6px;align-items:center;padding:6px 0}.oc .oc-inst input{flex:1}.oc .oc-offers{margin:6px 0;padding:8px 10px;border:1px solid #9bb7e0;background:#eef5ff;border-radius:6px}.oc .oc-offer{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0}.oc .oc-offer small{color:#556}';
   function ensureCss(doc) { if (doc.getElementById('oc-css')) return; var s = doc.createElement('style'); s.id = 'oc-css'; s.textContent = CSS; doc.head.appendChild(s); }
 
   // render(el, deps): deps = { systemName, version, builtins, list():plugin rows, describe(id), start(id), stop(id), refresh(id), uninstall(id), install(url), setPolicy(id, p), reload(), toast(msg) }
   var _open = {}, _filter = '', _showInstall = false;
+  function offersHtml(M) {
+    var have = {}; (M.all || []).forEach(function (r) { if (r.kind === 'plugin') have[r.key] = 1; });
+    var rows = (GL.PluginOffers || []).filter(function (o) { return !have[o.id]; });
+    if (!rows.length) return '';
+    return '<div class="oc-offers" data-oc-offers><b>Available on this page</b>' + rows.map(function (o) { return '<div class="oc-offer" data-oc-offerrow="' + esc(o.id) + '"><span><b>' + esc(o.name) + '</b> <small>' + esc(o.blurb) + '</small></span><button data-oc-offer="' + esc(o.id) + '">Install and start</button></div>'; }).join('') + '</div>';
+  }
   function render(el, deps) {
     var doc = el.ownerDocument; ensureCss(doc);
     var M = model({ systemName: deps.systemName, version: deps.version, builtins: deps.builtins, plugins: deps.list(), filter: _filter });
@@ -95,6 +105,7 @@
     var h = '<div class="oc"><div class="oc-bar"><b>BIM OOTB Web Console</b><span class="oc-tab on">Bundles</span></div>' +
       '<div class="oc-tools"><span>Apply Filter:</span><input type="text" data-oc-filter value="' + esc(_filter) + '"/><button data-oc-clear>Clear</button><button data-oc-reload>Reload</button><button data-oc-installtoggle>Install/Update...</button></div>' +
       (_showInstall ? '<div class="oc-inst"><span>Bundle URL:</span><input type="text" data-oc-url placeholder="plugins/my_bundle.mjs or https://.../bundle.mjs"/><button data-oc-doinstall>Install and start</button></div>' : '') +
+      offersHtml(M) +
       '<div class="oc-sum">' + esc(M.summary) + '</div>' +
       '<table class="oc-t"><thead><tr><th class="oc-id">Id</th><th>Name</th><th class="oc-ver">Version</th><th class="oc-st">Status</th><th class="oc-act">Actions</th></tr></thead><tbody>';
     M.rows.forEach(function (r, i) {
@@ -115,6 +126,7 @@
     q('[data-oc-clear]').onclick = function () { _filter = ''; render(el, deps); };
     q('[data-oc-reload]').onclick = function () { Promise.resolve(deps.reload && deps.reload()).then(function () { render(el, deps); }); };
     q('[data-oc-installtoggle]').onclick = function () { _showInstall = !_showInstall; render(el, deps); };
+    Array.prototype.forEach.call(el.querySelectorAll('[data-oc-offer]'), function (b) { b.onclick = function () { var o = (GL.PluginOffers || []).filter(function (x) { return x.id === b.getAttribute('data-oc-offer'); })[0]; if (o) act(function () { return deps.install(o.url); }, null, 'Installed')(); }; });
     var di = q('[data-oc-doinstall]'); if (di) di.onclick = function () { var u = q('[data-oc-url]').value.trim(); if (!u) { if (deps.toast) deps.toast('Enter a bundle URL'); return; } act(function () { return deps.install(u); }, null, 'Installed')(); };
     [].forEach.call(el.querySelectorAll('[data-oc-name]'), function (a) { a.onclick = function () { var k = a.getAttribute('data-oc-name'); _open[k] = !_open[k]; render(el, deps); }; });
     [['start', 'start', null], ['stop', 'stop', null], ['refresh', 'refresh', null], ['uninstall', 'uninstall', 'Uninstalled']].forEach(function (x) {

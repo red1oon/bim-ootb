@@ -52,8 +52,8 @@ async function landed(page) {
   await page.waitForTimeout(600);
 }
 async function clickNew(page) {
-  await page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 15000 });
-  await page.click('#idmp-toolbar button[title^="New record"]');
+  await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 15000 });
+  await page.click('#idmp-toolbar [data-tb="new"]');
   await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 });
   await page.waitForTimeout(600);
 }
@@ -78,7 +78,7 @@ const formState = (page) => page.evaluate(() => {
 // Save the way a user does on this surface: the toolbar Save (the E2E witness's proven gesture); the inline bar's
 // Save is the same handler but can sit below the fold of a 56-row form, which trips Playwright's actionability wait.
 async function clickSave(page) {
-  const tb = await page.$('#idmp-toolbar button[title^="Save"]');
+  const tb = await page.$('#idmp-toolbar [data-tb="save"]');
   if (tb) { await tb.click(); return 'toolbar'; }
   await page.evaluate(() => { const b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (b) b.click(); });
   return 'inline(js)';
@@ -123,7 +123,7 @@ function waiter(logs) {
       await page.click('#idmp-tabstrip >> text=' + c.childTab, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(900);
       const sn = await page.evaluate(() => window.IdmpGridTab && window.IdmpGridTab.snapshot());
-      const newOn = await page.$eval('#idmp-toolbar button[title^="New record"]', b => !b.disabled).catch(() => null);
+      const newOn = await page.$eval('#idmp-toolbar [data-tb="new"]', b => !b.disabled).catch(() => null);
       ok(c.table + ': AD tab ' + c.tab + ' IsReadOnly=Y / IsInsertRecord=N → New disabled, canInsert=false (GridTab.isInsertRecord)', newOn === false && !!sn && sn.canInsert === false, 'newEnabled=' + newOn + ' canInsert=' + (sn && sn.canInsert));
       await page.close(); continue;
     }
