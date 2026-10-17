@@ -59,4 +59,13 @@ runE2E('W-DXF-TICKS', async (t) => {
   await open([f('plan4.dxf', planDxf), f('elevseg.dxf', elevSeg)]);
   P = await props('elevseg.dxf'); const g7 = P.list.filter(p => p[0] === 'PR-Z-GROUND');
   t.assert('T7 a ground line drawn in two segments is found (80% over the group at one height) and a stray lower dimension line is not mistaken for it: @Z=0 at y 0', g7.length === 1 && g7[0][4] === 0, JSON.stringify(P.list));
+  // T8 CAD titles are mixed case and the face is named by compass: "South Elevation" -> VIEW=ELEV, FACE=minY (south = the minY face, north up: a stated convention, not evidence)
+  const elevTitled = doc(body() + txt('Tex', 100, -400, 'South Elevation'), [['@SET=T'], ['@VIEW=ELEV'], ['@UNITS=mm'], ['@NAME=E']]);
+  await open([f('plan5.dxf', planDxf), f('1S_ELEV_SOUTH.dxf', elevTitled)]);
+  P = await props('1S_ELEV_SOUTH.dxf');
+  t.assert('T8 mixed-case title "South Elevation" is read (PR-VIEW=ELEV on an unmarked sheet, see the raw shed) and once the view is stated "SOUTH" proposes FACE=minY with the convention named', P.list.some(p => p[0] === 'PR-FACE' && p[2] === 'minY' && /north up/.test(p[5] || '')), JSON.stringify(P.list));
+  const elevNoView = doc(body() + txt('Tex', 100, -400, 'South Elevation'), [['@SET=T'], ['@UNITS=mm']]);
+  await open([f('plan6.dxf', planDxf), f('e9.dxf', elevNoView)]);
+  P = await props('e9.dxf');
+  t.assert('T9 an unmarked sheet titled "South Elevation" (mixed case, as CAD writes it) gets PR-VIEW=ELEV', P.list.some(p => p[0] === 'PR-VIEW' && p[2] === 'ELEV'), JSON.stringify(P.list.map(p => p[0] + '=' + p[2])));
 });
