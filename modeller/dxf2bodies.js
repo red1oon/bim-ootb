@@ -13,6 +13,18 @@
   var KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
 
+  // §L7.13 labels: the drawing's own text that names a kind (exactly one distinct label per kind is applied, as a yellow default)
+  var WORD = { column: /\bcolumn\b/i, beam: /\bbeam\b/i, footing: /\bfooting\b/i, gradebeam: /\bgrade\s*beam\b/i, member: /\bmember\b/i, plate: /\bplate\b/i };
+  function cleanText(t) {   // strip MTEXT formatting codes: {\fArial|b0;text}, \P, \H1.0x; ...
+    return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/%%[cC]/g, '\u00d8').replace(/\s+/g, ' ').trim();
+  }
+  function labelsFor(sheets, kind) {
+    var seen = {};
+    sheets.forEach(function (sh) { (sh.dxf.entities || []).forEach(function (e) {
+      if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === 'DXF2BIM-MARK') return;
+      var t = cleanText(e.text); if (t && WORD[kind].test(t) && !(kind === 'beam' && WORD.gradebeam.test(t))) seen[t] = 1; }); });
+    return Object.keys(seen).sort();
+  }
   function bodyLayers(sheet, kind) { return ((sheet.desc && sheet.desc.layers) || []).filter(function (l) { return l.type === kind; }).map(function (l) { return l.layer; }); }
 
   // axis-aligned rectangular regions on the given layers: closed outlines as drawn, else loops of the loose lines (§L7.9, same tolerance)
@@ -64,7 +76,7 @@
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var elevs = sheets.filter(function (s) { return s.role === 'elev'; });
     var pairMaxM = opts.prepChoices && opts.prepChoices['bodies.pair_max_width'] !== undefined ? Number(opts.prepChoices['bodies.pair_max_width']) : 0.5, DEF = P.Defaults(), pairUsed = false;
-    var els = [], gaps = [], report = { kinds: {}, snap_tol: snap }, seen = {};
+    var els = [], gaps = [], report = { kinds: {}, snap_tol: snap, labels: {} }, seen = {}, names = {};
     if (!plans.length) { gaps.push({ code: 'GAP:body_no_plan', detail: 'no storey plan' }); return { els: els, gaps: gaps, report: report }; }
     var maps = elevs.map(function (es) { var al = MK.align(plans[0].desc, es.desc, alignTol); return { sheet: es, map: al.map && al.map.zOf ? al.map : null, why: al.map && al.map.zOf ? null : (al.errors || []).map(function (x) { return x.code; }).join(',') }; });
     maps.forEach(function (m) { if (!m.map) gaps.push({ code: 'GAP:body_elevation_not_aligned', sheet: m.sheet.name, detail: m.why }); });
@@ -75,17 +87,21 @@
         if (!m.map) return;
         var ly = bodyLayers(m.sheet, kind); if (!ly.length) return;
         var r = regions(m.sheet, ly, snap), k = m.map.k;
-        r.list = r.list.concat(pairRegions(m.sheet, ly, snap, pairMaxM / k));
+        var drawn = r.list;   // a line pair that is only the two sides of an already closed region is not a second region
+        r.list = drawn.concat(pairRegions(m.sheet, ly, snap, pairMaxM / k).filter(function (pr) { return !drawn.some(function (d) { return Math.abs(d.x0 - pr.x0) <= snap && Math.abs(d.x1 - pr.x1) <= snap && Math.abs(d.y0 - pr.y0) <= snap && Math.abs(d.y1 - pr.y1) <= snap; }); }));
         r.list.forEach(function (g) {
           var h = [m.map.toPlan(g.x0), m.map.toPlan(g.x1)].sort(function (a, b) { return a - b; });
           out.push({ axis: m.map.axis, p0: r6(h[0]), p1: r6(h[1]), z0: r6(m.map.zOf(Math.min(g.y0, g.y1))), z1: r6(m.map.zOf(Math.max(g.y0, g.y1))), sheet: m.sheet.name, handle: g.handle, pair: !!g.pair });
-          if (g.pair) pairUsed = true;
+
         });
       });
       return out;
     }
     KINDS.forEach(function (kind) {
       var rep = { plan_regions: 0, bodies: 0, gaps: 0, nonRect: 0 }, ER = null;
+      var chosenName = opts.prepChoices && opts.prepChoices[kind + '.type_name'];
+      var lab = labelsFor(sheets, kind); report.labels[kind] = lab;
+      if (lab.length === 1) names[kind] = chosenName !== undefined ? String(chosenName) : lab[0];
       plans.forEach(function (ps, pi) {
         var ly = bodyLayers(ps, kind); if (!ly.length) return;
         if (!ER) ER = elevRegions(kind);
@@ -107,7 +123,8 @@
           seen[guid] = 1;
           var st = plans.filter(function (p) { return p.level <= z.z0 + tolM; }).pop() || plans[0];
           els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (plans.indexOf(st) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
-            kind: kind, prov: 'drawn', ifc: P.ifcType(kind, null, null), members: g.members, z0: z.z0, z1: z.z1, height_source: 'elevation', match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+            kind: kind, prov: 'drawn', ifc: P.ifcType(kind, names[kind] || null, null), members: g.members, z0: z.z0, z1: z.z1, height_source: 'elevation', match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+          if (cands.some(function (c) { return c.pair; })) pairUsed = true;   // the default row exists only when a body was actually matched through a drawn line pair
           rep.bodies++;
         });
       });
@@ -115,6 +132,13 @@
     });
     if (pairUsed) DEF.assume('bodies.pair_max_width', pairMaxM, 'two parallel vertical lines closer than this are read as the two faces of one body in an elevation (metres); the drawing does not state it', [0.25, 0.5, 1]);
     if (opts.prepChoices && opts.prepChoices['bodies.pair_max_width'] !== undefined) DEF.override('bodies.pair_max_width', pairMaxM);
+    KINDS.forEach(function (kind) {
+      var used = els.some(function (e) { return e.kind === kind; }), lab = report.labels[kind] || [];
+      if (used && lab.length === 1) {
+        DEF.assume(kind + '.type_name', lab[0], 'the one label on the drawings that names this kind; the drawing does not link it to a particular body', [lab[0], '']);
+        if (opts.prepChoices && opts.prepChoices[kind + '.type_name'] !== undefined) DEF.override(kind + '.type_name', String(opts.prepChoices[kind + '.type_name']));
+      }
+    });
     report.centre = els.filter(function (e) { return e.match === 'centre'; }).length;
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }
