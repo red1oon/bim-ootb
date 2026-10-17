@@ -1621,5 +1621,15 @@ Built as specified (wing sets only; `dropCollinear`, `§COLLINEAR_DROP` log line
 - **Remaining 160, measured:** closed 4-vertex `A-DOOR` rectangles of **76 x 25 mm** (and 25 x 76) plus 915 x 51 / 813 x 51: one Hospital door is drawn as MANY contours (413 `A-DOOR` contours on the first plan: leaf, frame sides, casing returns, each its own rectangle, because the mesh is separate parts). The tiny ones are door parts, not openings. Next rule candidate (spec first): union the touching contours of ONE element into its outline (polygon-clipping is already vendored), logged per door, so the reader sees one outline per door as it does on the Duplex; witness = the union has the same area as the sum of the non-overlapping parts.
 - **Not changed by this rule:** `no_host_cut` 142, `no_elevation_height` 175, `wall_below_min_thickness` 58.
 
+### L1.20 Spec: one outline per door/window (union of touching contours of ONE element), 2026-10-17; spec BEFORE code
+**Evidence (Hospital 85-deg wing after L1.19):** 160 `GAP:opening_unclassified` remain, all closed 4-vertex `A-DOOR` rectangles of 76 x 25 / 25 x 76 / 915 x 51 / 813 x 51 mm; the first plan holds 413 `A-DOOR` contours for its doors: one door element is cut into many parts (leaf, frame sides, casing returns), each part its own contour, so the reader sees many small rectangles that are not an opening.
+**Rule (wing sets only, same flag as L1.18/L1.19; promoted to the Python oracle only when Duplex/SampleCastle/HHS show NO change):** for an IfcDoor / IfcWindow element with 2 or more contours on one plan, the contours are united (`polygon-clipping` union, vendored 0.15.7) into the outline(s) they form. A union result with a HOLE is not used (the element keeps its parts, logged `§OPEN_UNION_HOLE`); a result with more than one disjoint ring keeps those rings (logged). Logged per element `§OPEN_UNION guid=<g> cls=<c> parts=<n> -> rings=<m> area_sum=<a> area_union=<b>`. Walls and columns are NOT united (their parts are real separate hatched pieces, and the sliver / collinear rules already cover them).
+**Witnesses:**
+- W-L120-AREA: for every united element, union area <= sum of part areas and the union bbox == the bbox of the parts (proves nothing is lost or grown); where the parts do not overlap, union area == sum (to 1e-6 relative).
+- W-L120-CONTROL: two DISJOINT contours of one element stay two rings (the union does not bridge a gap).
+- W-L120-OPEN: Hospital 85-deg wing `GAP:opening_unclassified` falls from 160; the remainder is listed by shape and cause.
+- Unchanged: straight-set parity (W-LOG/W-ENT), Duplex wing witnesses, W-L119.
+**Not claimed:** `no_dimension` (97, needs a stated sill/height), `no_host_cut` 142, `no_elevation_height` 175, `wall_below_min_thickness` 58.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
