@@ -885,6 +885,14 @@
     tol = tol === undefined ? WING_TOL : tol;
     const keep = new Set(), FRAMED = WALLS.concat(['IfcColumn', 'IfcStair', 'IfcStairFlight', 'IfcSlab', 'IfcRoof', 'IfcFooting']);
     model.els.forEach(e => { if (FRAMED.indexOf(e.cls) < 0) return; const a = elementAngle(e); if (a && a.q >= WING_Q_MIN && angDiff90(a.deg, angle) <= tol) keep.add(e.guid); });
+    // §L1.23: a curtain wall is framed like a wall: the most common consistent angle of its plate/member parts decides; kept ones keep their parts and (via the host) their door parts
+    const curtKept = [];
+    (model.curtains || []).forEach(cw => {
+      const h = {}; cw.parts.forEach(p => { const a = elementAngle(p); if (a && a.q >= WING_Q_MIN) { const b = Math.round(a.deg) % 90; h[b] = (h[b] || 0) + 1; } });
+      const ks = Object.keys(h).map(Number).sort((a, b) => h[b] - h[a] || a - b);
+      if (ks.length && angDiff90(ks[0], angle) <= tol) { keep.add(cw.guid); cw.parts.forEach(p => keep.add(p.guid)); curtKept.push(cw); }
+    });
+    frameModel.lastCurt = { kept: curtKept.length, unframed: (model.curtains || []).length - curtKept.length };
     const unframed = {}; let total = 0;
     model.els.forEach(e => { if (FRAMED.indexOf(e.cls) >= 0) { total++; if (!keep.has(e.guid)) unframed[e.cls] = (unframed[e.cls] || 0) + 1; } });
     const hostEls = model.els.filter(e => keep.has(e.guid)), inBox = (e, h) => { const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2; return cx >= h.x0 && cx <= h.x1 && cy >= h.y0 && cy <= h.y1; };
@@ -908,7 +916,7 @@
       frameModel.lastSym = { kept: symKept, outside: symOther };
     }
     model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
-    model.curtains = []; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; });
+    model.curtains = curtKept; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); curtKept.forEach(c => { model.by_guid[c.guid] = c; });
     return { kept: keep.size, unframed, total };
   }
   function wingDominant(model) {   // the angle (deg, mod 90) carrying the most walls, 1-deg bins, ties to the smaller angle
@@ -931,6 +939,7 @@
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
     model.longFaceR3 = true; model.perStoreyEnv = true;   // §L1.17, §L1.18
+    if (frameModel.lastCurt) log.add(`§WING_CURTAINS kept=${frameModel.lastCurt.kept} unframed=${frameModel.lastCurt.unframed}`);
     if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} owned_by_another_wing=${frameModel.lastSym.outside}`);
     log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
     return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };

@@ -1675,5 +1675,14 @@ Built as specified (`§DOOR_NOSWING_BBOX`, wing sets only, a door with an arc is
 **Rule (wing sets only):** a curtain wall is framed like a wall: the angle of a curtain wall is the most common (1-deg bin) consistent angle of its plate/member parts (`elementAngle`, q >= 0.5); it is kept in the wing when that angle is within tol of the wing angle (mod 90); a curtain wall with no consistent part direction is NOT framed (counted). A kept curtain wall keeps all its parts and its door parts (doors follow their host, the curtain wall). Logged `§WING_CURTAINS kept=<n> unframed=<m>`.
 **Witnesses:** W-L123-GRID: HHS wing grid == straight grid (V2 of `witness_dxf_wing_vs_straight.js`, currently FAIL, must PASS); V1/V3/V4 unchanged; Duplex (no curtain walls) unchanged; Hospital wing curtain counts reported.
 
+#### L1.22 / L1.22b / L1.23 Results: the HHS check (2026-10-17)
+`witness_dxf_wing_vs_straight.js` (V1 read, V2 same grid, V3 not worse, V4 differences listed) on a REAL rectilinear building found two defects the Duplex could not show (it has no columns and no curtain walls), both fixed with their spec first:
+- **L1.22b round columns:** HHS wing refused (`missing GRIDX`): all 257 columns are round (q ~ 0), the angle rule dropped them. A symmetric column now follows its NEAREST wall (one owner per column, also when wings overlap). (An "inside the wall extent" first version was measured insufficient and replaced before release.)
+- **L1.23 curtain walls:** the wing set dropped every curtain wall (`model.curtains = []`), so V2 failed (14 X lines straight, 12 wing). A curtain wall is now framed by the angle of its parts.
+- **Result on HHS (merged):** wing set is read; grid equal; blocking 631 straight -> 600 wing; differences listed: door_no_strip 20->7, lod400_library_unreachable 48->61 (more openings classified, so more need a library), no_elevation_height 114->97, no_host_cut 51->38, slab_no_underside 3->2. An earlier "458" was inflated by the dropped curtain walls and is withdrawn. Duplex: identical (36 = 36). SampleCastle: SKIPPED, its straight set is itself refused by the reader (`MARK:conflict @TAG door ... has two texts`), an export marking defect of straight sets, separate item.
+- **Hospital 85-deg wing after both:** blocking 626 -> 685 (curtain walls now in play: no_elevation_height 175 -> 228, no_dimension 49 -> 67, others similar); verdict still blocked, not refused.
+- **Regression:** Duplex wing witnesses 30/7/85/45, W-L116-BACK B2+B4 4 angles, browser W-E2E-DXF-WING 7/7. sw.js v99.
+- **Finding for the lane:** the wing-only rules help a rectilinear building too (HHS 631 -> 600 with all differences explained), so promoting them to the straight path (and the Python oracle) is the natural next decision; not done.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
