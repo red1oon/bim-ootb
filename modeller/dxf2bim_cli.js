@@ -16,7 +16,7 @@
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
 // writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
 'use strict';
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), { Buffer } = require('buffer');
 const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2marks.js'), I = require('./dxf2bim_import.js'), P = require('./dxf2prep.js'),
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
