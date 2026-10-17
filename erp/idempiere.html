@@ -1828,10 +1828,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         openWindow(d.windowId, d.name, true);
       },
       openForm: function (formId, preset) { openAdForm(Number(formId), null, preset || null); },
+      // §FO-A2 (ERP_FRIENDLY_OPS_LENS.md §35): a "next step" runs a dictionary process from the record - the SAME run path as the process form's Run (_runProcessGuarded),
+      //   parameters = the process's own defaults, overridden by the preset; the result shows in the same ProcessModalDialog a button-launched process uses.
+      val: function (col) { return rec ? recVal(rec, col) : null; },
+      exists: function (sql) { if (keyVal == null) return false; return _tipSql(String(sql).replace(/:key\b/g, _lit(keyVal))).length > 0; },
+      runProcess: function (classname, preset) {
+        var pr = _sqlRows("SELECT ad_process_id FROM ad_process WHERE classname='" + String(classname).replace(/'/g, "''") + "' AND isactive='Y' ORDER BY ad_process_id")[0];
+        if (!pr || !window.AdProcess) { console.log('§OPS-LENS runProcess ' + classname + ' REFUSED no such process'); return null; }
+        var pid = Number(pr.ad_process_id);
+        _needBundles(_processTriggers(pid), function () {
+          _ensureProcHandlers(); var b = _b3(window.__idmpDb), proc = window.AdProcess.readProcess(b, pid), params = {};
+          proc.paras.forEach(function (pp) { var d = _resolveDefault(pp.defaultValue); if (d !== '' && d != null) params[pp.columnName] = d; });
+          Object.keys(preset || {}).forEach(function (k) { if (preset[k] != null) params[k] = preset[k]; });
+          _procRecord = { recordId: keyVal, table: tab.tableName };
+          console.log('§OPS-LENS runProcess proc=' + pid + ' class=' + classname + ' params=' + JSON.stringify(params));
+          _runProcessGuarded(proc, params, undefined);
+        });
+        return pid;
+      },
       // §FO-A1 (ERP_FRIENDLY_OPS_LENS.md §29): tab seams only - the tab click body, then the toolbar New; saving stays _saveAndNavigate / the model .save().
       level: tab ? (tab.tabLevel || 0) : 0,
       childTabs: function () { var w = _curWin(), out = [], lv = tab ? (tab.tabLevel || 0) : 0; if (!w || !w.tabs) return out;
-        for (var i = _activeTabIdx + 1; i < w.tabs.length; i++) { var l = w.tabs[i].tabLevel || 0; if (l <= lv) break; if (l === lv + 1) out.push({ idx: i, name: w.tabs[i].name }); } return out; },
+        for (var i = _activeTabIdx + 1; i < w.tabs.length; i++) { var l = w.tabs[i].tabLevel || 0; if (l <= lv) break; if (l === lv + 1) { var g = _gtFor(w.tabs[i]); if (g && (g.isReadOnly || !g.isInsertRecord)) continue; out.push({ idx: i, name: w.tabs[i].name }); } } return out.slice(0, 1); },   // the PRIMARY insertable detail tab only (a read-only or no-insert tab can never take Add; a bar of every child tab overflowed the toolbar)
       parentTab: function () { var w = _curWin(), lv = tab ? (tab.tabLevel || 0) : 0; if (!w || !w.tabs || !lv) return null;
         for (var i = _activeTabIdx - 1; i >= 0; i--) if ((w.tabs[i].tabLevel || 0) < lv) return { idx: i, name: w.tabs[i].name }; return null; },
       goTab: function (idx) { _activeTabIdx = idx; _viewMode = _openModeFor(idx); renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); console.log('§OPS-LENS goTab idx=' + idx); },
@@ -3071,7 +3089,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var res = ctx.dispatch(act);
         console.log('§AD-DOCFSM-LIVE table=' + ctx.tid + '(' + tab.tableName + ') record=' + ctx.recId +
           ' clicked=' + act + (res.ok ? ' from=' + res.from + ' to=' + res.to : ' REJECTED=' + res.reason));
-        if (res.ok) refreshForm();
+        if (res.ok) { refreshForm(); renderToolbar(); }   // toolbar too: a lens bar / enabled buttons follow the new DocStatus (ADWindowToolbar.enableButtons after a DocAction)
         else window.alert('Action ' + (ACTION_LABEL[act] || act) + ' rejected: ' + res.reason);
       });
       bar.appendChild(btn);
