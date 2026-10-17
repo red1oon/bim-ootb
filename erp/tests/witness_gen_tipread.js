@@ -96,6 +96,15 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const shr = await tip("SELECT docstatus AS s, documentno AS d, c_doctype_id AS t FROM m_inout WHERE m_inout_id < 0");
   const ivr = await tip("SELECT docstatus AS s, documentno AS d, c_doctype_id AS t, grandtotal AS g FROM c_invoice WHERE c_invoice_id < 0");
   ok('G3', 'an M_InOut and a COMPLETED C_Invoice (document type, number, total) now exist for it', Number(io[0].n) >= 1 && ivr.length >= 1 && ivr[0].s === 'CO' && ivr[0].d && Number(ivr[0].g) > 0 && shr.length >= 1 && shr[0].s === 'CO', 'inout=' + JSON.stringify(shr) + ' invoice=' + JSON.stringify(ivr));
+  // G4 the Payment window: picking the invoice generated in this session runs CalloutPayment.invoice (a synthetic negative pk is a value, not "no value"): PayAmt = the invoice total
+  const payMenu = await pg.evaluate(() => { const r = window.__idmpDb.exec("SELECT AD_Menu_ID FROM AD_Menu WHERE Action='W' AND AD_Window_ID=195 AND IsActive='Y'"); return (r.length ? r[0].values.map(x => x[0]) : []).find(i => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + i + '"]')); });
+  await openMenu(payMenu); await pg.waitForSelector('#idmp-toolbar [data-tb="new"]'); await pg.waitForTimeout(800);
+  await hc('#idmp-toolbar [data-tb="new"]'); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(800);
+  const popt = async (col, re) => { const o = (await opts(col)).find(x => x.v && re.test(x.t)); if (!o) throw new Error('no option ' + col); await pg.selectOption(F(col, 'select'), o.v); await pg.waitForTimeout(500); return o; };
+  await popt('ad_org_id', /^HQ/); await popt('c_bpartner_id', /Joe Block/);
+  const invOpt = (await opts('c_invoice_id')).find(x => x.v && Number(x.v) < 0);
+  let amt = null, disc = 0; if (invOpt) { await pg.selectOption(F('c_invoice_id', 'select'), invOpt.v); await pg.waitForTimeout(2500); amt = await pg.$eval(F('payamt'), e => e.value).catch(() => null); disc = await pg.$eval(F('discountamt'), e => e.value).catch(() => 0); }
+  ok('G4', 'Payment: picking the session-made invoice fills PayAmt with open - discount (callout ran)', !!invOpt && Number(amt) > 0 && Math.abs(Number(amt) + Number(disc) - Number(ivr[0].g)) < 0.005, 'PayAmt + DiscountAmt = invoice total (legacy CalloutPayment.invoice: open - discount); invoiceOption=' + (invOpt && invOpt.t) + ' payamt=' + amt + ' discount=' + disc + ' invoiceTotal=' + (ivr[0] && ivr[0].g));
   console.log('§GTR_VERDICT ' + (inconclusive ? 'INCONCLUSIVE' : fail ? 'RED' : 'GREEN') + ' pass=' + pass + ' fail=' + fail);
   await browser.close(); srv.close(); process.exit(fail || inconclusive ? 1 : 0);
 })().catch(e => { console.log('§GTR HARNESS-FAIL ' + e.message); process.exit(2); });
