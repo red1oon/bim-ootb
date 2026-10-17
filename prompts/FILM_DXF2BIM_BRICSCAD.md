@@ -1,7 +1,7 @@
 # ⚠ DO NOT REMOVE
 SCOPE: DRAFT storyboard + spec for the DXF2BIM chapter "From a BricsCAD 2D drawing to a costed ERP order" (user 2026-10-18: "Opening Chapter 'From BricsCAD 2D drawing to full ERP schedule and costing'"; "the film need not mention the farm or the sponsor, merely how a common BricsCAD file is processed").
 Read the logs after every run (recorder log, page log, witness logs): exit code is not evidence. Every spoken number comes from a § line or a named facts/ log line of THIS run. No "first", no "only". NEUTRAL NAMING: the drawing is "a common BricsCAD file"; the title block of EVERY sheet carries the client's name: no frame may show it (crop or blank the title block before any sheet is drawn on screen; check each rendered frame).
-Status: DRAFT. Not recorded. Items marked [RESULT?] depend on a run that has to be repeated fresh before the take.
+Status: DRAFT 1 RECORDED 2026-10-18 (live app, real raw sheets, narrated + subtitled, 130 s): `~/Videos/DXF2BIM_Chapter_BricsCAD_to_ERP_1920x1080_25fps_2026-10-18_draft1.mp4`; recorder `prompts/film_dxf2bim_bricscad_rec.js` (CDP screencast with its own frame timestamps: puppeteer's page.screencast drifted 24% from the wall clock), narration `prompts/film_narration_dxf2bim_bricscad_en.tsv`, assembled by BIMCompiler `prompts/film_dxf2bim_assemble.sh` (Kokoro voices). Facts of the take (§FILM_FACT in the recorder log): 3 sheets raw, 14 elevation grid marks + 18 plan grid marks, @Z=0 at y -4470.581, 32 columns + 32 footings, type name `12"x12" R.C.C Column`, IFC 64 typed, DB elements=64, Find 32 found, cost $ 1,268, Project Order contract $ 1,268 (saved). Frames checked: no title block or client text on screen (the sheets are never drawn). Not done: English only (the Malay track, music/credits review, a re-take with the title-block frame check automated).
 
 # §FILM-DXF2BIM-BRICSCAD — spec (2026-10-18)
 
@@ -32,4 +32,4 @@ Specs behind each beat: lane §L7.2 (yellow defaults, All defaults, shiver), §L
 - No GPU: SwiftShader frames; the speed is the page's, not the film's.
 - Defaults are shown as defaults (yellow) and are never presented as the drawing's own statements.
 
-## Frames already produced (2026-10-18, scratchpad `film/`): 01 opened raw (yellow), 02 accepted, 03 facts typed, 04 layers typed, 05/05b columns on the canvas, 06 Find + cost, 07 ERP pushed. [RESULT?] re-take after the type-name change (L7.13): names replace "IfcColumn 1".
+## Frames already produced earlier (2026-10-18, scratchpad `film/`, superseded by the recorded take): 01 opened raw (yellow), 02 accepted, 03 facts typed, 04 layers typed, 05/05b columns on the canvas, 06 Find + cost, 07 ERP pushed. [RESULT?] re-take after the type-name change (L7.13): names replace "IfcColumn 1".
