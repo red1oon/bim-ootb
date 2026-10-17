@@ -7,6 +7,8 @@
   else root.Std2d = factory(root.Std2dGeom, root.Std2dDxf, root.polygonClipping, root.Std2dScopes);
 })(this, function (G, DXF, PC, SCOPES) {
   'use strict';
+  // §L1.26: the wing-only rules are promoted to every set; STD2D_NO_PROMOTE=<l117,l118,l119,l121> switches rules OFF (tests only: the falsifier; no effect in a browser)
+  const OFF = new Set(((typeof process === 'object' && process.env && process.env.STD2D_NO_PROMOTE) || '').split(',')), promote = r => !OFF.has(r);
   const GRID_READABLE_MAX = 40, GRID_SUPPORT_MIN = 3;   // §L1.11
   const GRID_MERGE_TOL = 0.010, GRID_MIN_WALL_LEN = 1.0, EXT_FACE_TOL = 0.010, BEAR_OVERLAP = 0.50, FACE_PT_TOL = 0.005, PT_MERGE = 0.001;
   const LEAF_MIRROR_TOL = 0.001, VERTICAL_TOL = 1e-6, SINGLE_SWING = ['SINGLE_SWING_LEFT', 'SINGLE_SWING_RIGHT'], CUT_OFFSET = 1.2;
@@ -122,7 +124,7 @@
     if (dop) { dop.forEach(r => { doorOps[r.guid] = { op: r.op, source: r.source, x: r.x ? JSON.parse(r.x) : null, y: r.y ? JSON.parse(r.y) : null, z: r.z ? JSON.parse(r.z) : null, w: r.w, h: r.h }; }); log.add(`§DOOR_OPS table=door_operation db=model rows=${dop.length}`); }
     else log.add('§DOOR_OPS none (no door_operation table): every door keeps GAP:door_hinge');
     const byGuid = {}; els.forEach(e => { byGuid[e.guid] = e; }); curtains.forEach(c => { byGuid[c.guid] = c; });
-    return { els, walls, storeys, foundation: fnd, grid_storey: gridStorey, roofs, roof_top: roofTop, hosts, opening_of: openingOf, psets, voided_hosts: voided, curtains, by_guid: byGuid, door_ops: doorOps };
+    return { rules: { l117: promote('l117'), l118: promote('l118'), l119: promote('l119'), l121: promote('l121') }, els, walls, storeys, foundation: fnd, grid_storey: gridStorey, roofs, roof_top: roofTop, hosts, opening_of: openingOf, psets, voided_hosts: voided, curtains, by_guid: byGuid, door_ops: doorOps };
   }
 
   // ───────────────────────── geometry helpers ─────────────────────────
@@ -227,9 +229,9 @@
       const adjN = wallStoreys.slice(Math.max(0, k - 1), k).concat(wallStoreys.slice(k + 1, k + 2));
       const adj = model.walls.filter(w => adjN.indexOf(w.storey) >= 0);
       for (const w of sw) {
-        const ortho = model.longFaceR3 ? (orthogonal(w.v, w.f) || orthogonalLong(w.v, w.f)) : orthogonal(w.v, w.f);
+        const ortho = model.rules.l117 ? (orthogonal(w.v, w.f) || orthogonalLong(w.v, w.f)) : orthogonal(w.v, w.f);
         if (!ortho) { log.gap('GAP:wall_not_orthogonal', w.guid, 'not gridded (R3)'); continue; }
-        if (model.longFaceR3 && !orthogonal(w.v, w.f)) log.add(`§ENDFACE_R3 guid=${w.guid} axes from the long faces; end faces off-axis, contour unchanged`);
+        if (model.rules.l117 && !orthogonal(w.v, w.f)) log.add(`§ENDFACE_R3 guid=${w.guid} axes from the long faces; end faces off-axis, contour unchanged`);
         const [ax, pos, [a, b], L] = wallAxis(w);
         let bear = false, lb = false, stack = null;
         if (fnd) bear = sname === gs && bearsOn(ax, pos, a, b, L, fw) !== null;
@@ -563,8 +565,8 @@
         return pl;
       });
     });
-    if (model.perStoreyEnv) cut.forEach(c => { polys[c.guid] = (polys[c.guid] || []).map(pl => { const q = dropCollinear(pl); if (q.length !== pl.length) log.add(`§COLLINEAR_DROP guid=${c.guid} cls=${c.cls} before=${pl.length} after=${q.length}`); return q; }); });   // §L1.19 (wing sets)
-    if (model.perStoreyEnv) cut.forEach(c => {   // §L1.21: a door whose swing cannot be drawn is ONE footprint rectangle (a door WITH an arc is not touched)
+    if (model.rules.l119) cut.forEach(c => { polys[c.guid] = (polys[c.guid] || []).map(pl => { const q = dropCollinear(pl); if (q.length !== pl.length) log.add(`§COLLINEAR_DROP guid=${c.guid} cls=${c.cls} before=${pl.length} after=${q.length}`); return q; }); });   // §L1.19 (wing sets)
+    if (model.rules.l121) cut.forEach(c => {   // §L1.21: a door whose swing cannot be drawn is ONE footprint rectangle (a door WITH an arc is not touched)
       if (c.cls !== 'IfcDoor') return;
       const parts = polys[c.guid] || []; if (parts.length < 2) return;
       const sw_ = doorSwing(c), op = model.door_ops[c.guid], code = (sw_ ? doorHinge(c, op, sw_) : doorHingeIfc(c, op))[0];
@@ -673,8 +675,8 @@
     const rect = (h0, h1, z0, z1) => [[h0, mm(z0)], [h1, mm(z0)], [h1, mm(z1)], [h0, mm(z1)]];
     // §L1.18 (wing sets only, model.perStoreyEnv): a stepped building has a different outline per storey; the exterior walls of a storey are the walls on THAT storey's own envelope face
     const sideIdx = { x0: 0, x1: 1, y0: 2, y1: 3 }[side], storeyFace = {};
-    if (model.perStoreyEnv) model.storeys.forEach(s => { const sw = model.walls.filter(w => w.storey === s.name); if (sw.length) storeyFace[s.name] = envelope(sw)[sideIdx]; });
-    const fw = model.walls.filter(w => vis.has(w.storey) && Math.abs(w[side] - (model.perStoreyEnv && w.storey in storeyFace ? storeyFace[w.storey] : fv)) <= EXT_FACE_TOL);
+    if (model.rules.l118) model.storeys.forEach(s => { const sw = model.walls.filter(w => w.storey === s.name); if (sw.length) storeyFace[s.name] = envelope(sw)[sideIdx]; });
+    const fw = model.walls.filter(w => vis.has(w.storey) && Math.abs(w[side] - (model.rules.l118 && w.storey in storeyFace ? storeyFace[w.storey] : fv)) <= EXT_FACE_TOL);
     fw.forEach(w => { const [h0, h1] = hr(w); doc.lwpoly('A-WALL', rect(h0, h1, w.z0, w.z1), true, tag(w.guid)); });
     const fcw = model.curtains.filter(c => Math.abs(c[side] - fv) <= EXT_FACE_TOL), pst = planStoreys(model);   // C4: an elevation rectangle PER STOREY with a band (importer pairing by storey level)
     fcw.forEach(w => { const [h0, h1] = hr(w); pst.forEach((ps, i) => {
@@ -938,7 +940,7 @@
     if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
-    model.longFaceR3 = true; model.perStoreyEnv = true;   // §L1.17, §L1.18
+    model.rules = { l117: true, l118: true, l119: true, l121: true };   // §L1.17-§L1.21: a wing set always takes them
     if (frameModel.lastCurt) log.add(`§WING_CURTAINS kept=${frameModel.lastCurt.kept} unframed=${frameModel.lastCurt.unframed}`);
     if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} owned_by_another_wing=${frameModel.lastSym.outside}`);
     log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
