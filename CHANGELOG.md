@@ -4,6 +4,32 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.82.0](https://github.com/red1oon/bim-ootb/compare/v1.81.0...v1.82.0) (2026-10-17)
+
+
+### ✨ Features
+
+* **4d:** §CLASS_UNMATCHED_INHERITED — schema-exhaustive tier-2 classification fallback ([#1191](https://github.com/red1oon/bim-ootb/issues/1191)) ([76dce90](https://github.com/red1oon/bim-ootb/commit/76dce90c21bf01094b02655a581976fd70f1b4e6))
+* **maxq:** §MAXQ_OFFLINE_RUNNER — headless GPU movie baker (frees the user's browser) ([#1015](https://github.com/red1oon/bim-ootb/issues/1015)) ([04de29a](https://github.com/red1oon/bim-ootb/commit/04de29aa7977b8aa6633cd7c4c0a21b1f3238275))
+* **viewer:** BCF 2.1 export module — one topic per saved Issue (resync of [#676](https://github.com/red1oon/bim-ootb/issues/676), BCF half) ([#2079](https://github.com/red1oon/bim-ootb/issues/2079)) ([647f914](https://github.com/red1oon/bim-ootb/commit/647f914c0b15c0ef380e425a61a94b2413ca68e1))
+* **viewer:** OFFLINE_BUTTON_SURFACE — Settings panel row + SW ready fix (v641) ([#255](https://github.com/red1oon/bim-ootb/issues/255)) ([5a81396](https://github.com/red1oon/bim-ootb/commit/5a8139659cb043e0381ba240d6965b3f9834bacc))
+* **viewer:** register Alt+G GI Preview in the pill registry (findability) ([#966](https://github.com/red1oon/bim-ootb/issues/966)) ([e7c3e69](https://github.com/red1oon/bim-ootb/commit/e7c3e694da3ef6d5ccf72b046c15829d549bddec))
+
+
+### 🐛 Fixes
+
+* **4d:** §ARCH_AREA_WEIGHT — architecture installs by real size, not one flat rate per element ([#1317](https://github.com/red1oon/bim-ootb/issues/1317)) ([41b8b55](https://github.com/red1oon/bim-ootb/commit/41b8b55cf6c3956591a1bd9fa27b22de8fef2be2))
+
+
+### 📝 Documentation
+
+* **internal:** consolidate CodeScrapBook — §11-§17, stranded since PR [#1719](https://github.com/red1oon/bim-ootb/issues/1719)'s premature merge ([#1741](https://github.com/red1oon/bim-ootb/issues/1741)) ([c74b8be](https://github.com/red1oon/bim-ootb/commit/c74b8be84b33d6e2d1488941ed73a85d2ffb9a2a))
+
+
+### ♻️ Refactors
+
+* **time_machine:** split 10,558-line file into 8 parts (move-only) — stacked on [#1910](https://github.com/red1oon/bim-ootb/issues/1910) ([#1914](https://github.com/red1oon/bim-ootb/issues/1914)) ([569817d](https://github.com/red1oon/bim-ootb/commit/569817ded297595855d8f893e266890eea4444c3))
+
 ## [1.81.0](https://github.com/red1oon/bim-ootb/compare/v1.80.0...v1.81.0) (2026-10-15)
 
 
