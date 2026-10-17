@@ -1831,7 +1831,36 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // §FO-A2 (ERP_FRIENDLY_OPS_LENS.md §35): a "next step" runs a dictionary process from the record - the SAME run path as the process form's Run (_runProcessGuarded),
       //   parameters = the process's own defaults, overridden by the preset; the result shows in the same ProcessModalDialog a button-launched process uses.
       val: function (col) { return rec ? recVal(rec, col) : null; },
+      row: function (sql) { if (keyVal == null) return null; return _tipSql(String(sql).replace(/:key\b/g, _lit(keyVal)))[0] || null; },
       exists: function (sql) { if (keyVal == null) return false; return _tipSql(String(sql).replace(/:key\b/g, _lit(keyVal))).length > 0; },
+      // FO-A4 (ERP_FRIENDLY_OPS_LENS.md §39): open the default window of a table on a NEW record with the fields preset as if the user had picked them (each followed by the same change the
+      //   user's pick fires, so the callouts run in order). The window, New and the field pick are the host's own paths (openWindow, _openCreate, the form's change handlers).
+      openNew: function (tableName, preset) {
+        var tn = String(tableName).toLowerCase().replace(/'/g, ''), w = _sqlRows("SELECT w.ad_window_id AS id, w.name AS name FROM ad_table t JOIN ad_window w ON w.ad_window_id=t.ad_window_id WHERE lower(t.tablename)='" + tn + "'")[0];
+        if (!w) { console.log('§OPS-LENS openNew ' + tn + ' REFUSED no default window'); return null; }
+        var t0 = Date.now(), pre = Object.keys(preset || {}).map(function (k) { return [String(k).toLowerCase(), preset[k]]; }).filter(function (kv) { return kv[1] != null; });
+        console.log('§OPS-LENS openNew table=' + tn + ' window=' + w.id + ' preset=' + JSON.stringify(pre));
+        openWindow(Number(w.id), w.name);
+        (function waitNew() {
+          var nb = document.querySelector('#idmp-toolbar [data-tb="new"]'), ct = _curTab();
+          if (!(nb && ct && String(ct.tableName).toLowerCase() === tn) && Date.now() - t0 < 20000) { setTimeout(waitNew, 150); return; }
+          _openCreate();
+          (function waitForm() {
+            if (!document.querySelector('#idmp-inline-mount .cfrow') && Date.now() - t0 < 30000) { setTimeout(waitForm, 150); return; }
+            // the form's own New defaults (GridTab.dataNew callout fan, AD_Org_ID from the context ...) run just after it appears and would overwrite an earlier pick: let them finish first
+            if (!waitForm.settled) { waitForm.settled = true; setTimeout(waitForm, 1300); return; }
+            (function next(i) {
+              if (i >= pre.length) { console.log('§OPS-LENS openNew done table=' + tn); renderToolbar(); return; }
+              var el = document.querySelector('#idmp-inline-mount [data-col="' + pre[i][0] + '"]');
+              if (el) { if (el.tagName === 'SELECT' && !Array.prototype.some.call(el.options, function (o) { return o.value === String(pre[i][1]); })) { var o = document.createElement('option'); o.value = String(pre[i][1]); o.textContent = String(pre[i][1]); el.appendChild(o); }
+                el.value = String(pre[i][1]); el.dispatchEvent(new Event('change', { bubbles: true })); }
+              else console.log('§OPS-LENS openNew field ' + pre[i][0] + ' not on the form');
+              setTimeout(function () { next(i + 1); }, 500);
+            })(0);
+          })();
+        })();
+        return Number(w.id);
+      },
       runProcess: function (classname, preset) {
         var pr = _sqlRows("SELECT ad_process_id FROM ad_process WHERE classname='" + String(classname).replace(/'/g, "''") + "' AND isactive='Y' ORDER BY ad_process_id")[0];
         if (!pr || !window.AdProcess) { console.log('§OPS-LENS runProcess ' + classname + ' REFUSED no such process'); return null; }

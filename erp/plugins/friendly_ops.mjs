@@ -26,12 +26,16 @@ const NEXT = [
     when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtydelivered AND m_product_id IS NOT NULL" },
   { table: 'c_order', status: 'CO', id: 'invoice', label: 'Invoice', class: 'org.compiere.process.InvoiceGenerate',
     preset: { AD_Org_ID: 'ad_org_id', C_Order_ID: 'c_order_id' },
-    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtyinvoiced" }
+    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtyinvoiced" },
+  // FO-A4: a NEW record of another table with fields preset (a value starting '@' is read from the 'when' row, else from this record's column)
+  { table: 'c_order', status: 'CO', id: 'pay', label: 'Receive payment', newTable: 'c_payment',
+    preset: { AD_Org_ID: 'ad_org_id', C_BPartner_ID: 'c_bpartner_id', C_Invoice_ID: '@c_invoice_id' },
+    when: "SELECT c_invoice_id FROM c_invoice WHERE c_order_id=:key AND docstatus='CO' AND ispaid='N' ORDER BY c_invoice_id LIMIT 1" }
 ];
 function nextSteps(api) {
   if (!api.tab || api.keyVal == null || api.isNew || api.dirty) return [];
   const t = String(api.tab.tableName || '').toLowerCase(), st = String(api.val('docstatus') || '');
-  return NEXT.filter((n) => n.table === t && n.status === st && api.exists(n.when));
+  return NEXT.filter((n) => n.table === t && n.status === st && api.exists(n.when));   // a step whose 'when' finds nothing (nothing left to ship / invoice / pay) is not offered
 }
 
 function relatedForms(api) {
@@ -56,7 +60,9 @@ const lens = {
   run(actionId, api) {
     if (actionId === 'preview') return api.previewSave();
     const nx = /^next:(.+)$/.exec(actionId);
-    if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const pre = {}; Object.keys(n.preset).forEach((k) => { pre[k] = api.val(n.preset[k]); }); return api.runProcess(n.class, BREAK === 'nopreset' ? {} : pre); }
+    if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const wr = api.row(n.when) || {}; const pre = {}; Object.keys(n.preset).forEach((k) => { const v = n.preset[k]; pre[k] = v.charAt(0) === '@' ? wr[v.slice(1)] : api.val(v); });
+      if (n.newTable) return api.openNew(n.newTable, BREAK === 'nopreset' ? {} : pre);
+      return api.runProcess(n.class, BREAK === 'nopreset' ? {} : pre); }
     const ad = /^(add|back):(\d+)$/.exec(actionId);
     if (ad) { const idx = Number(ad[2]);
       if (ad[1] === 'add') return BREAK === 'noclimb' ? api.openChildNew(idx) : api.saveThen(() => api.openChildNew(idx));
