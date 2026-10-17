@@ -660,6 +660,7 @@
 <script src="processes/FactAcctReset.js?v=1"></script>
 <script src="processes/InOutCreateConfirm.js?v=1"></script>
 <script src="processes/InOutCreateInvoice.js?v=1"></script>
+<script src="processes/InvoiceGenerate.js?v=1"></script>
 <script src="processes/InventoryCountCreate.js?v=1"></script>
 <script src="processes/InventoryCountUpdate.js?v=1"></script>
 <script src="processes/InvoiceCreateInOut.js?v=1"></script>
@@ -3097,10 +3098,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // (shipment) via the createShipment archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2 — W-PROC-SHIP-LIVE.
     if (window.ERPEngine && typeof window.AdProcess.registerInOutGenerate === 'function')
       window.AdProcess.registerInOutGenerate(window.ERPEngine);
-    // §GENINV-LIVE — the KIND-2 InvoiceGenerate handler (AD_Process 119): a CO Sales Order → C_Invoice via the
-    // createInvoice archetype (newVerbs=0). AD_PROCESS_FOLD_LANE §P2-leg2 — Witness: W-PROC-INV-LIVE.
-    if (window.ERPEngine && typeof window.AdProcess.registerInvoiceGenerate === 'function')
-      window.AdProcess.registerInvoiceGenerate(window.ERPEngine);
     // §CREATEFROM-LIVE — CreateFromInvoice (AD_Process 200143): the P2P line-maker. It ADDS lines to an
     // EXISTING drafted vendor invoice (so it is NOT a buildDoc archetype), setting the M_InOutLine_ID that
     // AD_Field locks — the one thing erp_engine.completeInvoice needed to emit M_MatchInv.
@@ -4020,9 +4017,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // §GENSHIP-LIVE — InOutGenerate is record-scoped here (ship ONE order). The menu form is a warehouse-batch
     // selector; we offer the journey-coherent "ship this order" picker (CO Sales Orders), warehouse from the order.
     if (proc.classname === 'org.compiere.process.InOutGenerate') { renderOrderPicker(proc); return; }
-    // §GENINV-LIVE — InvoiceGenerate is record-scoped here (invoice ONE order). Same CO Sales Order picker as
-    // Generate Shipments; the order supplies the mandatory AD_Org_ID para (DocAction defaults to Complete).
-    if (proc.classname === 'org.compiere.process.InvoiceGenerate') { renderOrderPicker(proc); return; }
+    // InvoiceGenerate: the verbatim port (erp/processes/InvoiceGenerate.js) runs from the GENERIC parameter form below - no per-process picker (AD-LAYER LAW; ERP_FRIENDLY_OPS_LENS.md §33).
     // §CREATEFROM-LIVE — CreateFromInvoice (AD_Process 200143) is the P2P line-maker: it ADDS lines to an
     // EXISTING drafted vendor invoice, setting the M_InOutLine_ID that AD_Field locks IsReadOnly='Y' on tab
     // 291 — faithfully, because in real iDempiere only this process ever sets it. Its Java refuses unless
