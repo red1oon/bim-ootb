@@ -1470,5 +1470,28 @@ Input: the architect model plus the structural model of the same federated set (
 
 **L1.9/L1.10/L2.9/L5.8 results (2026-10-17).** BIMCompiler `feat/export-structure-columns` (stacked on #202), bim-ootb `feat/dxf2bim-sliver-rect`. Parity Python == JS (log + entity counts + DIMENSION points + A-GRID line/bubble coordinates) on HHS merged (1080 log lines, 9 sheets), Duplex x2, SampleCastle, HHS, HHS structure; the 19 BIMCompiler reader suites fail=0 (+2 tests for L2.9). HHS architect + structure through the Modeller importer: 9 of 9 sheets get a role, STD set detected, marking-class blocking 0; QF blocking 73 -> 1 (`grid_label_conflict` 6, `grid_label_order` 3, `grid_off_axis` 63 gone). **Open on HHS, stated:** `QF:set_storey_unstated` (the LEFT elevation shows a level band at z = 3.2278 m: a wall whose edge is not a storey, no plan states it) and 527 `GAP:*` (435 `opening_unclassified`: curtain-wall doors/glazing; 47 `no_elevation_height`; 30 `no_host_cut`; roof/section/slab gaps): the pipeline cannot yet read curtain-wall openings or web-ifc door hinges at this scale, so HHS stays `blocked` and is reported as such, not trimmed.
 
+## L6. Scoped sets: a large building drawn as a series, one scope per sheet (2026-10-17, spec before code)
+Why (user, 2026-10-17): a Hospital cannot honestly be one sheet per storey; a drafting office breaks it down by wing/zone with a match line and a key plan, and the sheets stay one set because they share ONE grid and ONE set of levels. The export does the same; the conversion integrity comes from the shared grid/levels and from every element being drawn exactly once, not from the sheet boundaries.
+### L6.1 Scope
+- A scope = a storey (or all) x a rectangle in **building-grid terms** (grid labels, e.g. X 3-9 x Y C-H) -> model mm from the one grid. Named by its labels (`GF_A-F_1-6`). The grid is the same object as in L1.1 R4-R6/L1.10: nothing new is invented, a scope cannot start between grid lines.
+- **User chooses** (Export panel "Split"): none (default, today's behaviour) | by storey (one sheet per storey is already the default) | by wing: pick a scope rectangle per wing by grid range, any number, may be left to the rest; or **Suggest**: when a storey's drawn contours exceed the budget (default 1500, a stated constant) the writer proposes the smallest split by recursive bisection along the grid line nearest the median of element centres, alternating X/Y; the user edits or accepts. The suggestion is deterministic and logged (`§SCOPE_SUGGEST`).
+### L6.2 Ownership (no loss, no double drawing)
+- Every element drawn on a plan belongs to exactly ONE scope of its storey: the scope containing the centre of its plan bbox (ties on a scope edge: the lower-left scope). It is drawn WHOLE in the owner sheet (never clipped), so a wall crossing a match line is complete in its owner and absent in the neighbour: the importer sees each wall once.
+- The neighbour's side of a match line carries only the match-line symbol (layer `A-ANNO-MATCH`, dashed line + text `MATCH LINE - SEE <scope>`), no geometry.
+- Dimensions: T1/T2/T3 run over the scope's own envelope; T2 uses the grid lines inside the scope plus the bounding ones.
+### L6.3 What is shared by every sheet
+`@SET`, `@UNITS`, `@LEVEL` of its storey, the FULL grid labels and positions of the lines inside the scope + one bay beyond on each side (`@GRIDX/@GRIDY` as today), the storey level texts. New marking **`@SCOPE=<name>,<x0>,<y0>,<x1>,<y1>`** (mm, the rectangle) on every scoped sheet; a sheet without it is the whole storey (today). Elevations, roof plan and section stay whole-building by default (light); an elevation scope is a later item.
+### L6.4 Importer
+- Sheets with the same `@LEVEL` and different `@SCOPE` are ONE storey: their wall/opening ops are concatenated before the pipeline (heights, hosts, convert unchanged).
+- New checks (blocking `QF:`): `scope_overlap` (two scope rectangles of one storey overlap by more than the grid merge tolerance), `scope_grid_disagree` (a grid label has two positions across sheets), `scope_level_conflict` (same scope name, two levels). Advisory: `scope_gap` (the union of a storey's scopes leaves part of the envelope undrawn), `scope_duplicate_piece` (the same wall rectangle in two sheets).
+### L6.5 Witnesses (each names its issue)
+- W-L6-PARTITION: for Duplex split into two wings and SampleCastle split by the suggestion, the sets of drawn GUIDs per storey are disjoint across scopes and their union equals the unscoped drawn set (issue: an element lost or drawn twice at a match line); control: one element moved to the wrong scope must FAIL.
+- W-L6-MERGE: Convert of the scoped set equals Convert of the unscoped set: same elements by class/storey/bbox (1 mm) (issue: the split changed the model); control: one sheet's @LEVEL changed must FAIL.
+- W-L6-GRID: the same label has the same position on every sheet (issue: a sheet carries its own grid).
+- W-L6-SCALE (Hospital ARC + STR, Node-schema extraction): writes in seconds; every sheet under the entity budget; the drawable report names scopes, counts and gaps; reports, does not trim.
+- Python == JS parity (W-LOG/W-ENT extended with the scope arguments) because the oracle remains the Python writer.
+### L6.6 Not in this slice
+Elevation/section scopes, scope-aware door-hinge fallbacks, per-discipline sets (MEP is a different lane: ARC + STR only here).
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
