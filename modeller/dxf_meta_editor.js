@@ -545,7 +545,7 @@
       '.dm-in,.dm-sel{background:#13151a;border:1px solid #2c303a;border-radius:7px;color:#c7cdd8;padding:4px 7px;font:inherit;font-size:11px;outline:none;min-width:0}',
       '.dm-in{flex:1}.dm-in:focus,.dm-sel:focus{border-color:#3a6ea5}.dm-in.need,.dm-sel.need{border-color:#a04848;background:#211517}',
       '.dm-in.n{width:62px;flex:0 0 auto}.dm-in.lab{width:38px;flex:0 0 auto}',
-      '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}',
+      '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}.dm-src.default{background:#f5d90a;color:#1a1a1a;border-radius:3px;padding:0 4px;width:auto}',
       '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}',
       '.dm-mk{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-family:ui-monospace,monospace;font-size:10.5px}.dm-mk:hover{background:#20232b}.dm-mk .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dm-ib{background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex;border-radius:5px}.dm-ib:hover{color:#c7cdd8;background:#2a2e38}.dm-ib .dm-ico{width:13px;height:13px}',
@@ -567,7 +567,7 @@
     document.head.appendChild(st);
   }
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
+  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
   function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(label === undefined ? (v === '' ? '—' : v) : label) + '</option>'; }
   function missingOf(sh) { var d = describeOf(sh), miss = []; d.errors.forEach(function (e) { if (e.code === 'MARK:missing') miss = miss.concat(e.keys || []); }); return { miss: miss, errors: d.errors.filter(function (e) { return e.code !== 'MARK:missing'; }), desc: d.desc }; }
   function field(sh, si, key, label, miss, kind, choices) {
