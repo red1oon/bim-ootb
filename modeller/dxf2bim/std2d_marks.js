@@ -91,16 +91,18 @@
     });
     const onPlan = res.filter(x => x.hs.length);
     if (onPlan.some(x => x.c)) { marks.push({ text: '@WALLTOP=' + lv3 + ',slab_above' }); say('  WALLTOP=' + lv3 + ',slab_above  [FROM_SOURCE_MODEL: ' + onPlan.filter(x => x.c).length + ' interior walls reach the slab underside]'); }
-    const perH = {};
-    onPlan.filter(x => !x.c).forEach(x => {
-      if (Math.abs(x.w.z0 - lv3) > ELEV_TOL) { say('  WALLTOP wall ' + x.w.id + ': base ' + x.w.z0 + ' is not the storey level, no marking (gap stays)'); return; }
-      x.hs.forEach(h => { const t = r3(x.w.top); if (perH[h] !== undefined && perH[h] !== t) perH[h] = null; else if (perH[h] !== null) perH[h] = t; });
+    const perH = {}, baseOf = {};
+    // §L1.24: a wall that starts below (or above) its storey level states its base FROM the model; it also gets the per-handle marking when it reaches the slab (the storey rule would give it base 0)
+    onPlan.filter(x => !x.c || Math.abs(x.w.z0 - lv3) > ELEV_TOL).forEach(x => {
+      const off = Math.abs(x.w.z0 - lv3) > ELEV_TOL, b = off ? r3(x.w.z0) : undefined;
+      x.hs.forEach(h => { const t = r3(x.w.top); if (perH[h] !== undefined && (perH[h] !== t || baseOf[h] !== b)) perH[h] = null; else if (perH[h] !== null) { perH[h] = t; baseOf[h] = b; } });
     });
     Object.keys(perH).sort((a, b) => parseInt(a, 16) - parseInt(b, 16)).forEach(h => {
       if (perH[h] === null) { say('  WALLTOP piece ' + h + ': matches walls with different tops, no marking (gap stays)'); return; }
       const other = onPlan.filter(x => x.c && x.hs.indexOf(h) >= 0 && Math.abs(x.w.top - perH[h]) > ELEV_TOL);
       if (other.length) { say('  WALLTOP piece ' + h + ': also in a confirmed wall with another top, no marking (gap stays)'); return; }
-      marks.push({ text: '@WALLTOP=handle:' + h + ',' + perH[h] }); say('  WALLTOP=handle:' + h + ',' + perH[h]);
+      const bs = baseOf[h] === undefined ? '' : ',' + baseOf[h];
+      marks.push({ text: '@WALLTOP=handle:' + h + ',' + perH[h] + bs }); say('  WALLTOP=handle:' + h + ',' + perH[h] + bs + (bs ? '  [base from the model wall z0, not the storey level]' : ''));
     });
     if (!onPlan.length) say('  WALLTOP not written for ' + st.name + ' (no interior wall on this plan)');
   }

@@ -181,12 +181,12 @@
   // L2.6 A: wall heights the plan's markings state (@WALLTOP); never a default. desc: the plan's described markings; U: slab underside above (m) for the storey rule.
   // Per-wall (handle:<h>,<z>) wins; the storey rule <level>,slab_above covers the other wall-height gaps of this plan. Only walls whose gap is GAP:no_elevation_height.
   function applyWallTops(opsAfter, opsBefore, desc, level, U) {
-    var per = {}, storey = (desc.walltop || []).some(function (w) { return Math.abs(w.level - level) <= 1e-9 && w.rule === 'slab_above'; }), pend = {}, out = [], rep = { marking: 0, slab_above: 0 };
-    (desc.walltop_walls || []).forEach(function (w) { per[w.wall] = w.z; });
+    var per = {}, perBase = {}, storey = (desc.walltop || []).some(function (w) { return Math.abs(w.level - level) <= 1e-9 && w.rule === 'slab_above'; }), pend = {}, out = [], rep = { marking: 0, slab_above: 0 };
+    (desc.walltop_walls || []).forEach(function (w) { per[w.wall] = w.z; perBase[w.wall] = w.base; });   // §L1.24: base (m, absolute) when the marking states one
     opsBefore.forEach(function (o) { if (o.op_type === 'DXF_WALL') pend[o.params.handle + '|' + o.params.part] = o; });
     opsAfter.forEach(function (o) {
       var w = o.op_type === 'DXF_GAP' && o.params.code === 'GAP:no_elevation_height' ? pend[o.params.handle + '|' + o.params.part] : null;
-      if (w && per[w.params.handle] !== undefined) { rep.marking++; out.push(Object.assign({}, w, { params: Object.assign({}, w.params, { base: 0, height: r6(per[w.params.handle] - level), pending_elevation: false, height_source: 'marking' }) })); return; }
+      if (w && per[w.params.handle] !== undefined) { rep.marking++; out.push(Object.assign({}, w, { params: Object.assign({}, w.params, perBase[w.params.handle] !== undefined ? { base: r6(perBase[w.params.handle] - level), height: r6(per[w.params.handle] - perBase[w.params.handle]), pending_elevation: false, height_source: 'marking' } : { base: 0, height: r6(per[w.params.handle] - level), pending_elevation: false, height_source: 'marking' }) })); return; }
       if (w && storey && typeof U === 'number') { rep.slab_above++; out.push(Object.assign({}, w, { params: Object.assign({}, w.params, { base: 0, height: r6(U - level), pending_elevation: false, height_source: 'slab_above_marking' }) })); return; }
       out.push(o);
     });

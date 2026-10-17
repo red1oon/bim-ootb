@@ -121,12 +121,13 @@
       } else if (key === 'WALLTOP') {                                                      // L2.3 D3: user-stated convention, never a default
         var wp = val.split(','), wl = Number(wp[0]);
         if (/^handle:/.test(wp[0])) {                                                       // L2.6 A: per-wall top, @WALLTOP=handle:<h>,<z_top_m>
-          var wh = wp[0].slice(7).trim(), wz = Number(wp[1]);
-          if (wp.length !== 2 || !/^[0-9A-Fa-f]+$/.test(wh) || wp[1].trim() === '' || !isFinite(wz)) { errors.push(err('MARK:malformed', '@WALLTOP=handle:<h>,<z_top_m> expected: ' + val, { handle: m.handle })); return; }
+          var wh = wp[0].slice(7).trim(), wz = Number(wp[1]), wb = wp.length === 3 ? Number(wp[2]) : undefined;   // §L1.24: optional third value = the wall's base elevation (m)
+          if ((wp.length !== 2 && wp.length !== 3) || !/^[0-9A-Fa-f]+$/.test(wh) || wp[1].trim() === '' || !isFinite(wz) || (wp.length === 3 && (wp[2].trim() === '' || !isFinite(wb)))) { errors.push(err('MARK:malformed', '@WALLTOP=handle:<h>,<z_top_m>[,<z_base_m>] expected: ' + val, { handle: m.handle })); return; }
           wh = wh.toUpperCase();
           var wd = d.walltop_walls.find(function (q) { return q.wall === wh; });
           if (wd && wd.z !== wz) { errors.push(err('MARK:conflict', '@WALLTOP handle ' + wh + ' has two tops: ' + wd.z + ' / ' + wz, { handle: m.handle })); return; }
-          if (!wd) d.walltop_walls.push({ wall: wh, z: wz, handle: m.handle, by: by });
+          if (wd && wd.base !== wb) { errors.push(err('MARK:conflict', '@WALLTOP handle ' + wh + ' has two bases: ' + wd.base + ' / ' + wb, { handle: m.handle })); return; }
+          if (!wd) { var ent = { wall: wh, z: wz, handle: m.handle, by: by }; if (wb !== undefined) ent.base = wb; d.walltop_walls.push(ent); }
           return;
         }
         if (wp.length !== 2 || wp[0].trim() === '' || !isFinite(wl) || wp[1] !== 'slab_above') { errors.push(err('MARK:malformed', '@WALLTOP needs <level>,slab_above or handle:<h>,<z_top_m>: ' + val, { handle: m.handle })); return; }
