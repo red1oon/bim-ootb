@@ -7,6 +7,7 @@
  *   D2 REPORT   — the report panel shows Drawable + the storeys/hosts/grid rows (text read from the live DOM).
  *   D3 ZIP      — the downloaded bytes pass Info-ZIP `unzip -t` (independent of our writer).
  *   D4 NO-SIDECAR — the zip entries are exactly the .dxf sheets.
+ *   D6 DB-INPUT — §L5.9: a Node-schema model .db handed to the same entry skips extraction and writes the same sheets as the Node pipeline on that .db; an old-schema .db is refused with the command to run.
  *   D5 PARITY   — every entry's text equals the Node run (modeller/dxf2bim modules, better-sqlite3-free sql.js path) on the same IFC, byte for byte.
  */
 'use strict';
@@ -48,4 +49,18 @@ runE2E('W-E2E-DXF-EXPORT', async (t) => {
   const want = Object.keys(Dm.files).sort(); let diff = [];
   want.forEach(n => { const p = path.join(dir, n); if (!fs.existsSync(p)) diff.push(n + ' missing'); else if (fs.readFileSync(p, 'utf8') !== Dm.files[n]) diff.push(n + ' differs'); });
   t.assert('D5 PARITY (browser zip == Node pipeline, byte for byte, ' + want.length + ' sheets)', diff.length === 0 && JSON.stringify(names) === JSON.stringify(want), diff.slice(0, 4).join('; ') || 'identical');
+  // D6: the same IFC extracted to a model .db (browser path export), handed to DxfExportUI.run(File('.db')) in the live page
+  const bytes = sdb.export(), b64db = Buffer.from(bytes).toString('base64');
+  const rr = await t.pg.evaluate(async (b64) => {
+    const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < u.length; i++) u[i] = bin.charCodeAt(i);
+    const B = await window.DxfExportUI.run(new File([u], 'DUPLEX.db'));
+    return B ? { files: Object.keys(B.marked || {}).sort(), sample: B.marked ? B.marked[Object.keys(B.marked).sort()[0]] : null, drawable: B.report.drawable } : null;
+  }, b64db);
+  const sameSample = rr && rr.sample === Dm.files[want[0]];
+  t.assert('D6 DB-INPUT (.db skips extraction; same sheets as the Node pipeline on that .db)', !!rr && rr.drawable && JSON.stringify(rr.files) === JSON.stringify(want) && sameSample, rr ? rr.files.length + ' sheets, first sheet ' + (sameSample ? 'identical' : 'differs') : 'null');
+  const bad = await t.pg.evaluate(async () => {   // an old-schema db (no element_world_bbox) is refused, not misread
+    const SQL = window.SQL, d = new SQL.Database(); d.run('CREATE TABLE elements_meta (guid TEXT)'); const u = d.export(); d.close();
+    await window.DxfExportUI.run(new File([u], 'OLD.db')); const p = document.getElementById('m-dxfexp-panel'); return p ? p.textContent : '';
+  });
+  t.assert('D6b OLD-SCHEMA REFUSED (names the extractor command)', /no element_world_bbox/.test(bad) && /extractIFC2DB/.test(bad), bad.replace(/\s+/g, ' ').slice(0, 160));
 });

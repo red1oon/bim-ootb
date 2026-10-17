@@ -145,7 +145,7 @@
       if (!file) return null;
     }
     try { var B = await build(file, renderBusy, extras); renderReport(B, file, extras); return B; }
-    catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(head + '<div style="color:#f59e0b">Could not read this IFC: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
+    catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(head + '<div style="color:#f59e0b">Could not read this file: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
   }
   window.DxfExportUI = { run: run, build: build, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
 })();
