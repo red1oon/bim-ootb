@@ -61,6 +61,82 @@
   var FACE_ORDER = ['minY', 'maxY', 'minX', 'maxX'];   // elevation order = the witness's FRONT, REAR, LEFT, RIGHT (deterministic, stated)
   function parse(text) { return new DxfParser().parseSync(text); }
 
+  // ---- §L6 scoped sets: a storey drawn as a KEY sheet (@SCOPE=KEY: grid, dimensions, levels, every marking) + wing/zone sheets (@SCOPE=<name>,x0,y0,x1,y1: the elements they own).
+  // Every sheet is a serialisation of ONE whole-storey document (same entity handles), so assembling = the KEY sheet + the geometry entities of every scope sheet (annotation layers of a
+  // scope sheet, its grid copy, title and match lines, are display only and are dropped). Done BEFORE role detection: the merged sheet is an ordinary whole-storey plan to the rest.
+  // Checks (blocking QF:, advisory): scope_no_key, scope_level_conflict, scope_overlap, scope_grid_disagree, scope_duplicate_piece | scope_gap.
+  var SCOPE_TOL = 10;   // sheet units of the sheet (mm for the std set): rectangles/grid positions closer than this agree (the grid merge tolerance, L1.1 R5)
+  function chunkDxf(text) {
+    var L = String(text).split(/\r?\n/), start = -1, end = -1, i;
+    for (i = 0; i + 3 < L.length; i += 2) {
+      if (start < 0) { if (L[i].trim() === '0' && L[i + 1].trim() === 'SECTION' && L[i + 2].trim() === '2' && L[i + 3].trim() === 'ENTITIES') start = i + 4; }
+      else if (L[i].trim() === '0' && L[i + 1].trim() === 'ENDSEC') { end = i; break; }
+    }
+    if (start < 0 || end < 0) return null;
+    var ents = [], cur = null;
+    for (i = start; i < end; i += 2) {
+      if (L[i].trim() === '0') { cur = { lines: [], layer: null, handle: null }; ents.push(cur); }
+      if (!cur) continue;
+      cur.lines.push(L[i], L[i + 1]);
+      var c = L[i].trim(); if (c === '8' && cur.layer === null) cur.layer = L[i + 1].trim(); if (c === '5' && cur.handle === null) cur.handle = L[i + 1].trim();
+    }
+    return { head: L.slice(0, start), ents: ents, tail: L.slice(end) };
+  }
+  function scopeOfText(text) {   // {level, scope:'KEY'|{name,rect}, grid:{X:{label:pos}, Y:{...}}} from the sheet's own markings, or null
+    var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc;
+    if (!d.scope || d.view !== 'PLAN') return null;
+    var g = { X: d.gridsX || {}, Y: d.gridsY || {} };
+    var sc = d.scope === 'KEY' ? 'KEY' : (function (a) { return { name: a[0], rect: a.slice(1).map(Number) }; })(String(d.scope).split(','));
+    return { level: d.level, base: String(d.name || '').split('__')[0] || ('L' + d.level), scope: sc, grid: g, desc: d };
+  }
+  function mergeScopes(files) {
+    var rep = { blocking: [], advisory: [], groups: [] }, info = files.map(function (f) { var o = null; try { o = scopeOfText(f.text); } catch (e) { o = null; } return o; });
+    var groups = {}; files.forEach(function (f, i) { if (info[i]) (groups[info[i].base] = groups[info[i].base] || []).push(i); });   // a KEY and its wings share @NAME up to '__'
+    var drop = {}, merged = {}, add = function (arr, code, sheet, msg) { arr.push({ code: code, sheet: sheet, message: msg }); };
+    Object.keys(groups).forEach(function (lv) {
+      var idx = groups[lv], keys = idx.filter(function (i) { return info[i].scope === 'KEY'; }), scs = idx.filter(function (i) { return info[i].scope !== 'KEY'; });
+      if (keys.length !== 1) { add(rep.blocking, 'QF:scope_no_key', files[idx[0]].name, 'storey ' + lv + ': ' + keys.length + ' KEY sheets (@SCOPE=KEY: exactly one per scoped storey)'); return; }
+      var K = keys[0], kinfo = info[K], kc = chunkDxf(files[K].text), grp = { level: kinfo.level, name: lv, key: files[K].name, scopes: scs.map(function (i) { return files[i].name; }) };
+      rep.groups.push(grp);
+      if (!kc) { add(rep.blocking, 'QF:scope_no_key', files[K].name, 'the KEY sheet has no ENTITIES section'); return; }
+      scs.forEach(function (i) { if (r6(info[i].desc.level) !== r6(kinfo.desc.level)) add(rep.blocking, 'QF:scope_level_conflict', files[i].name, 'scope ' + info[i].scope.name + ' @LEVEL=' + info[i].desc.level + ' but the KEY sheet @LEVEL=' + kinfo.desc.level); });
+      for (var a = 0; a < scs.length; a++) for (var b = a + 1; b < scs.length; b++) {
+        var A = info[scs[a]].scope.rect, Bq = info[scs[b]].scope.rect, ow = Math.min(A[2], Bq[2]) - Math.max(A[0], Bq[0]), oh = Math.min(A[3], Bq[3]) - Math.max(A[1], Bq[1]);
+        if (ow > SCOPE_TOL && oh > SCOPE_TOL) add(rep.blocking, 'QF:scope_overlap', files[scs[b]].name, 'scopes ' + info[scs[a]].scope.name + ' and ' + info[scs[b]].scope.name + ' overlap by ' + Math.round(ow) + ' x ' + Math.round(oh));
+      }
+      var area = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      scs.forEach(function (i) { var r = info[i].scope.rect; area += (r[2] - r[0]) * (r[3] - r[1]); x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); });
+      if (scs.length && (x1 - x0) * (y1 - y0) - area > SCOPE_TOL * (x1 - x0 + y1 - y0)) add(rep.advisory, 'QF:scope_gap', files[K].name, 'storey ' + lv + ': the scopes leave ' + Math.round(((x1 - x0) * (y1 - y0) - area) / 1e6) + ' m2 of their bounding rectangle undrawn');
+      scs.forEach(function (i) {
+        ['X', 'Y'].forEach(function (ax) { Object.keys(info[i].grid[ax]).forEach(function (lab) {
+          var kp = kinfo.grid[ax][lab], sp = info[i].grid[ax][lab];
+          if (kp === undefined || Math.abs(kp - sp) > SCOPE_TOL) add(rep.blocking, 'QF:scope_grid_disagree', files[i].name, 'grid ' + ax + lab + ' is at ' + sp + ' on scope ' + info[i].scope.name + ' but ' + (kp === undefined ? 'absent on the KEY sheet' : kp + ' on the KEY sheet'));
+        }); });
+      });
+      var seen = {}; kc.ents.forEach(function (e) { if (e.handle) seen[e.handle] = files[K].name; });
+      var extra = [];
+      scs.forEach(function (i) {
+        var c = chunkDxf(files[i].text); if (!c) { add(rep.blocking, 'QF:scope_no_key', files[i].name, 'no ENTITIES section'); return; }
+        c.ents.forEach(function (e) {
+          if (e.layer === 'A-GRID' || e.layer === 'DXF2BIM-MARK' || (e.layer && e.layer.indexOf('A-ANNO') === 0)) return;
+          if (e.handle && seen[e.handle]) { add(rep.blocking, 'QF:scope_duplicate_piece', files[i].name, 'entity ' + e.handle + ' is also on ' + seen[e.handle]); return; }
+          if (e.handle) seen[e.handle] = files[i].name; extra.push(e);
+        });
+      });
+      var text = kc.head.slice();
+      // the whole-storey entity order is the handle order of the writer (sequential): geometry sorted by handle, then the KEY's markings in their own order (pipeline outputs depend on entity order)
+      var isScopeMark = function (e) { for (var q = 0; q + 1 < e.lines.length; q += 2) if (e.lines[q].trim() === '1' && /^@SCOPE=/.test(e.lines[q + 1].trim())) return true; return false; };
+      var isMark = function (e) { return e.layer === 'DXF2BIM-MARK'; }, hv = function (e) { return e.handle ? parseInt(e.handle, 16) : Infinity; };
+      var geo = kc.ents.filter(function (e) { return !isMark(e); }).concat(extra).map(function (e, n) { return { e: e, n: n }; }).sort(function (a, b) { return hv(a.e) - hv(b.e) || a.n - b.n; }).map(function (x) { return x.e; });
+      geo.concat(kc.ents.filter(function (e) { return isMark(e) && !isScopeMark(e); })).forEach(function (e) { text = text.concat(e.lines); });
+      text = text.concat(kc.tail);
+      merged[K] = { name: files[K].name.replace(/__KEY(_std)?\.dxf$/i, '$1.dxf'), text: text.join('\n') };
+      scs.forEach(function (i) { drop[i] = true; });
+    });
+    var out = []; files.forEach(function (f, i) { if (drop[i]) return; out.push(merged[i] || f); });
+    return { files: out, report: rep };
+  }
+
   // ---- R1-R4 sheet roles from DXF2BIM-MARK markings only ----
   function readSheet(name, text, hashHex) {
     var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc;
@@ -78,9 +154,23 @@
     if (sh.role) sh.factor = MK.UNITS[d.units];
     return sh;
   }
+  // §L1.16: the wing frame a set was drawn in, from @FRAME=<deg>,<x mm>,<y mm> on its sheets (every sheet that has one must agree; mm sheets only). null = not a wing set.
+  function frameOfSheets(sheets) {
+    var fr = null, bad = null;
+    sheets.forEach(function (sh) {
+      var f = sh.desc && sh.desc.frame; if (!f) return;
+      var p = String(f).split(',').map(Number), mm = sh.desc.units === 'mm';
+      if (!mm) { bad = bad || { sheet: sh.name, reason: '@FRAME needs @UNITS=mm' }; return; }
+      var c = { angle: p[0], ox: p[1] / 1000, oy: p[2] / 1000, sheet: sh.name };
+      if (fr && (Math.abs(fr.angle - c.angle) > 1e-9 || Math.abs(fr.ox - c.ox) > 1e-9 || Math.abs(fr.oy - c.oy) > 1e-9)) bad = bad || { sheet: sh.name, reason: '@FRAME differs from ' + fr.sheet };
+      fr = fr || c;
+    });
+    return bad ? { error: bad } : fr;
+  }
   function readSheets(files, opts) {
-    var hashHex = (opts && opts.hashHex) || sha256Hex;
-    return files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
+    var hashHex = (opts && opts.hashHex) || sha256Hex, m = mergeScopes(files);   // §L6: scoped storeys are assembled first
+    var out = m.files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
+    out.scopeReport = m.report; return out;
   }
   // §L3.3 layer-map set (DX or STD): the set whose elevation-wall layer (its MAP_ELEV 'elevwall' rule, read from the copied config) has
   // entities on EVERY elevation sheet; both or neither -> null (the gate refuses, no guess).
@@ -99,6 +189,7 @@
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
+    ((sheets.scopeReport && sheets.scopeReport.blocking) || []).forEach(function (b) { refused.push({ sheet: b.sheet, reason: b.code + ': ' + b.message }); });   // §L6
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
@@ -351,6 +442,7 @@
     R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),
       plan_ops: planOps, gaps: qg, resolved: resolved };
     R.verdict = Q.qualify(R.qualifyInput, SET.QUALIFY);
+    R.frame = frameOfSheets(sheets);   // §L1.16
     return R;
   }
 
@@ -373,7 +465,13 @@
     var hashHex = opts.hashHex || sha256Hex, colorFor = opts.colorFor || function () { return undefined; };
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
     var assets = [], inserts = [], cuts = [], groups = [], skipped = [];
+    // §L1.16: a wing set was drawn rotated by -angle about (ox,oy); the model is turned back by +angle. Bodies are rotated as world vertices (so the baked mesh is already in
+    // place, placement.rot 0); a library fill keeps its mesh and gets the rotated centre + placement.rot. Openings of a framed wall are BAKED (no GEOM_CUT: the worker only cuts
+    // axis-aligned boxes and a GEOM_ROTATE on an insert is a no-op there, L1.16 slice 2).
+    var fr = opts.frame && !opts.frame.error ? opts.frame : null, fth = fr ? fr.angle * Math.PI / 180 : 0, fco = Math.cos(fth), fsi = Math.sin(fth);
+    var fpt = function (x, y) { return fr ? [fco * (x - fr.ox) - fsi * (y - fr.oy) + fr.ox, fsi * (x - fr.ox) + fco * (y - fr.oy) + fr.oy] : [x, y]; };
     function insert(guid, cls, storey, V, F, prov, uncut) {
+      if (fr) V = V.map(function (p) { var q = fpt(p[0], p[1]); return [q[0], q[1], p[2]]; });
       var a = asset(guid, V, F, uncut); assets.push(a);
       var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(a.centre[0]), y: r6(a.centre[1]), z: r6(a.centre[2] - a.halfZ), rot: 0 }, ifc_class: cls,
         storey: storey, provenance: prov };
@@ -405,6 +503,15 @@
         if (!pm) { skipped.push({ storey: st.name, openings: v.openings, reason: 'body not rectilinear', refuse: true }); return; }
         var bguid = hashHex(inf[0].input_guids.join('|') + '|gap-body').slice(0, 32);
         var prov = { dxf_handle: inf[0].params.infill_of.join('+'), layer: inf[0].params.layer, sheet: st.sheet, run_id: R.run_id };
+        if (fr) {   // baked: one prism per infill z-interval (the complement of the voids), same footprint rect; no GEOM_CUT
+          var bi = inf.map(function (o, i) {
+            var zlo = st.level + o.params.base, zhi = zlo + o.params.height, pi = S.prismRect(ring, [], r6(zlo), r6(zhi));
+            return pi ? insert(hashHex(bguid + '|baked|' + i).slice(0, 32), 'IfcWall', st.name, pi.vertices, pi.faces, prov, true) : -1;
+          });
+          if (bi.indexOf(-1) >= 0) { skipped.push({ storey: st.name, openings: v.openings, reason: 'framed body not rectilinear', refuse: true }); return; }
+          groups.push({ storey: st.name, body: bi[0], guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z, baked: bi });
+          return;
+        }
         var hi = insert(bguid, 'IfcWall', st.name, pm.vertices, pm.faces, prov, true);
         groups.push({ storey: st.name, body: hi, guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z });
         v.z.forEach(function (z, i) {
@@ -421,7 +528,7 @@
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];
       if (!a) { a = asset('x', G.vertices, G.faces, false); a.hash = 'lib-' + e.geometry_hash; libAsset[e.geometry_hash] = a; assets.push(a); }
-      var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(e.centre[0]), y: r6(e.centre[1]), z: r6(e.centre[2] - a.halfZ), rot: 0 }, ifc_class: e.class, storey: e.storey,
+      var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(fpt(e.centre[0], e.centre[1])[0]), y: r6(fpt(e.centre[0], e.centre[1])[1]), z: r6(e.centre[2] - a.halfZ), rot: fr ? r6(((fr.angle % 360) + 360) % 360) : 0 }, ifc_class: e.class, storey: e.storey,
         provenance: { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id, element_ref: e.element_ref, geometry_hash: e.geometry_hash, family_id: e.family_id } };
       if (typeof level[e.storey] === 'number') P.storey_elev = level[e.storey];
       var col = colorFor(e.class); if (col != null) P.color = col;
@@ -518,5 +625,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, frameOfSheets: frameOfSheets, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

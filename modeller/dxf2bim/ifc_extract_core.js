@@ -770,6 +770,7 @@ async function extractToDb(ctx) {
     }
   } catch (e) { log(`§ELEMENT_TYPE_FAIL ${e.message}`); }
   log(`§ELEMENT_TYPE rows=${typeRows.length}`);
+  const partRows = [];   // §L1.14 { parent, child, parentClass, childClass }: the decomposition (IfcRelAggregates) of every IfcCurtainWall: its panels (IfcPlate), mullions (IfcMember), doors
   const relFills = [];   // { opening, host, filling, hostClass, fillingClass }
   const psetRows = [];   // { guid, pset, name, value, source }
   {
@@ -804,6 +805,16 @@ async function extractToDb(ctx) {
         relFills.push({ opening: o.guid, host: h.guid, filling: f ? f.guid : null, hostClass: h.cls, fillingClass: f ? f.cls : null });
       }
     } catch (e) { log(`§REL_FILLS_HOST_FAIL ${e.message}`); }
+    try {   // §L1.14: a curtain wall carries no geometry of its own; its parts do. Parent class IfcCurtainWall only (additive table element_parts).
+      const aIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELAGGREGATES);
+      for (let i = 0; i < aIds.size(); i++) {
+        const r = ifcApi.GetLine(modelID, aIds.get(i));
+        if (!r.RelatingObject || !r.RelatedObjects) continue;
+        const p = infoOf(ref(r.RelatingObject));
+        if (!p || !p.guid || p.cls !== 'IfcCurtainWall') continue;
+        for (const oh of r.RelatedObjects) { const c = infoOf(ref(oh)); if (c && c.guid) partRows.push({ parent: p.guid, child: c.guid, parentClass: p.cls, childClass: c.cls }); }
+      }
+    } catch (e) { log(`§ELEMENT_PARTS_FAIL ${e.message}`); }
     try {
       const want = new Set(['IsExternal', 'LoadBearing']);
       const extracted = new Set(elements.map(e => e.expressID));
@@ -851,6 +862,7 @@ async function extractToDb(ctx) {
       }
     } catch (e) { log(`§PSET_COMMON_FAIL ${e.message}`); }
   }
+  log(`§ELEMENT_PARTS rows=${partRows.length}`);
   log(`§REL_FILLS_HOST rows=${relFills.length} filled=${relFills.filter(r => r.filling).length} void_only=${relFills.filter(r => !r.filling).length}`);
   log(`§PSET_COMMON rows=${psetRows.length} occurrence=${psetRows.filter(r => r.source === 'occurrence').length} type=${psetRows.filter(r => r.source === 'type').length}`);
 
@@ -963,6 +975,9 @@ async function extractToDb(ctx) {
   for (const w of worldBbox) wbStmt.run(w.guid, ...w.b);
   const rfStmt = db.prepare("INSERT OR IGNORE INTO rel_fills_host VALUES (?,?,?,?,?,'ifc:recovered')");
   for (const r of relFills) rfStmt.run(r.opening, r.host, r.filling, r.hostClass, r.fillingClass);
+  db.exec(`CREATE TABLE element_parts (parent_guid TEXT, child_guid TEXT, parent_class TEXT, child_class TEXT, PRIMARY KEY (parent_guid, child_guid))`);
+  const epStmt = db.prepare('INSERT OR IGNORE INTO element_parts VALUES (?,?,?,?)');
+  for (const r of partRows) epStmt.run(r.parent, r.child, r.parentClass, r.childClass);
   db.exec(`CREATE TABLE element_type (guid TEXT PRIMARY KEY, type_name TEXT, source TEXT)`);
   const etStmt = db.prepare('INSERT OR IGNORE INTO element_type VALUES (?,?,?)');
   for (const r of typeRows) etStmt.run(r.guid, r.name, r.source);
@@ -974,6 +989,33 @@ async function extractToDb(ctx) {
   log(`§SUMMARY elements=${elements.length} geometries=${geometries.length} uniqueHashes=${seenHashes.size} 4D_tasks=${tasks.length}`);
   log(`§S18_SPATIAL_STRUCTURE buildings=${Object.keys(buildingMap).length} storeys=${Object.keys(storeyMap).length} storeysWithElevation=${Object.values(storeyElevation).filter(v => v != null).length} storeysWithRealParent=${Object.keys(storeyParentBuildingGuid).length} relAggregates=${Object.keys(storeyParentBuildingGuid).length}`);
 }
+
+// §L5.8: a second IFC (e.g. the structural model of a federated set) contributes ONLY the listed classes (default IfcColumn) to the main DB: the column axes are
+// the building grid evidence the architect model does not state. Rows are copied as stored (same schema, same frame: both extracted with COORDINATE_TO_ORIGIN false),
+// guids already in the main DB are never overwritten. q = (sql) -> [row objects] over the extra DB; main = exec/prepare surface. Returns the number of elements merged.
+function mergeElements(main, qMain, qExtra, classes, log) {
+  log = log || function () {}; classes = classes || ['IfcColumn'];
+  const inList = classes.map(c => "'" + c + "'").join(',');
+  const have = new Set(qMain('SELECT guid FROM elements_meta').map(r => r.guid));
+  const rows = qExtra(`SELECT guid FROM elements_meta WHERE ifc_class IN (${inList}) ORDER BY guid`).map(r => r.guid).filter(g => !have.has(g));
+  if (!rows.length) { log('§MERGE classes=' + classes.join(',') + ' merged=0'); return 0; }
+  const guidSet = rows.map(g => "'" + g.replace(/'/g, "''") + "'").join(',');
+  const copy = (table, sql) => {
+    const data = qExtra(sql); if (!data.length) return 0;
+    const cols = Object.keys(data[0]), st = main.prepare(`INSERT OR IGNORE INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`);
+    data.forEach(r => st.run(...cols.map(c => r[c]))); return data.length;
+  };
+  const n = {};
+  n.meta = copy('elements_meta', `SELECT * FROM elements_meta WHERE guid IN (${guidSet})`);
+  n.transforms = copy('element_transforms', `SELECT * FROM element_transforms WHERE guid IN (${guidSet})`);
+  n.instances = copy('element_instances', `SELECT * FROM element_instances WHERE guid IN (${guidSet})`);
+  n.geometries = copy('component_geometries', `SELECT * FROM component_geometries WHERE geometry_hash IN (SELECT geometry_hash FROM element_instances WHERE guid IN (${guidSet}))`);
+  n.bbox = copy('element_world_bbox', `SELECT * FROM element_world_bbox WHERE guid IN (${guidSet})`);
+  n.psets = copy('element_pset_common', `SELECT * FROM element_pset_common WHERE guid IN (${guidSet})`);
+  log('§MERGE classes=' + classes.join(',') + ' merged=' + rows.length + ' ' + JSON.stringify(n));
+  return rows.length;
+}
+
 // Browser helpers: Uint8Array stand-in for Node's Buffer (from/concat only), and a sql.js Database wrapped to the exec/prepare().run() surface the core writes through.
 const browserBuf = {
   from: ab => new Uint8Array(ab.slice ? ab.slice(0) : ab),
@@ -982,5 +1024,5 @@ const browserBuf = {
 function sqljsDb(sqlDb) {
   return { exec: sql => { sqlDb.run(sql); }, prepare: sql => { const st = sqlDb.prepare(sql); return { run: (...a) => { st.run(a); } }; }, close: () => {} };
 }
-return { extractToDb, classifyDisc, DISC_MAP, browserBuf, sqljsDb };
+return { extractToDb, mergeElements, classifyDisc, DISC_MAP, browserBuf, sqljsDb };
 });
