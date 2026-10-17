@@ -183,6 +183,7 @@
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
     document.getElementById('dxf-lines').onclick = function () { setLines(!state.linesOn); };
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
+    if (window.DxfMetaEditor && window.DxfMetaEditor.attention) window.DxfMetaEditor.attention();   // §L7.2 shiver while suggestions are unconfirmed
     setLines(state.linesOn);
   }
   function status(t) { var s = document.getElementById('dxf-status'); if (s) s.textContent = t; }

@@ -243,7 +243,7 @@
       var ac = {}; v.advisory.forEach(function (x) { ac[x.code] = (ac[x.code] || 0) + 1; });
       console.log(TAG + ' verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' pipeline=' + (v.pipeline.ran ? 'ran run_id=' + v.pipeline.run_id.slice(0, 12) : 'NOT RUN (' + v.pipeline.why.slice(0, 200) + ')') +
         ' counts=' + JSON.stringify(v.counts) + ' ms=' + Math.round(performance.now() - t0));
-      render();
+      render(); attention();
     } catch (e) { S.busy = false; console.error(TAG + ' verdict failed ' + (e && e.stack || e)); renderHead(); }
   }
   // ---- canvas: zoom + highlight, Tag and Exclude tools ----
@@ -550,7 +550,7 @@
       '.dm-mk{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-family:ui-monospace,monospace;font-size:10.5px}.dm-mk:hover{background:#20232b}.dm-mk .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dm-ib{background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex;border-radius:5px}.dm-ib:hover{color:#c7cdd8;background:#2a2e38}.dm-ib .dm-ico{width:13px;height:13px}',
       '.dm-pr{display:flex;align-items:center;gap:6px;padding:3px 4px;border:1px dashed #3a4150;border-radius:6px;margin:3px 0;font-size:10.5px}.dm-pr .t{flex:1;min-width:0}.dm-pr .t b{font-family:ui-monospace,monospace;font-weight:500;color:#d7dce5}.dm-pr .w{display:block;color:#5b6473;font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.dm-pr .dm-ib{border:1px solid #2f6b45;color:#9be0b4}.dm-ref{font-size:9.5px;color:#5b6473;margin:2px 4px}',
+      '.dm-pr{background:rgba(245,217,10,.16);border:1px solid #b89f06}.dm-defrow{background:rgba(245,217,10,.16);border-radius:6px}.dm-pr .dm-ib{border:1px solid #2f6b45;color:#9be0b4}@keyframes dxfshiver{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px) rotate(-3deg)}40%{transform:translateX(2px) rotate(3deg)}60%{transform:translateX(-2px) rotate(-2deg)}80%{transform:translateX(2px) rotate(2deg)}}#dxf-meta.dxf-shiver{animation:dxfshiver .6s ease-in-out 3,dxfshiver .6s ease-in-out 8s 3;box-shadow:0 0 0 2px #f5d90a}@media (prefers-reduced-motion:reduce){#dxf-meta.dxf-shiver{animation:none}}.dm-ref{font-size:9.5px;color:#5b6473;margin:2px 4px}',
       '.dm-btn{display:inline-flex;align-items:center;gap:6px;background:#13151a;border:1px solid #2c303a;border-radius:8px;color:#c7cdd8;padding:5px 9px;cursor:pointer;font:inherit;font-size:11px}',
       '.dm-btn:hover{background:#1b1f27}.dm-btn.on{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn.primary{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn:disabled{opacity:.45;cursor:not-allowed}',
       '.dm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}',
@@ -641,7 +641,7 @@
       var m = get1(sh, 'UNITS'), iu = sh.dxf.header && sh.dxf.header.$INSUNITS, fs = HEADER_UNITS[iu];
       if (!m) nBad++;
       var p = (sh.prop ? sh.prop.list : []).filter(function (q) { return q.key === 'UNITS'; })[0], pi = p ? sh.prop.list.indexOf(p) : -1;
-      h += '<div class="dm-f"><label class="' + (m ? '' : 'need') + '" title="' + esc(sh.name) + '" style="width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</label>' +
+      h += '<div class="dm-f' + (p && !m ? ' dm-defrow' : '') + '"><label class="' + (m ? '' : 'need') + '" title="' + esc(sh.name) + '" style="width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</label>' +
         '<select class="dm-sel' + (m ? '' : ' need') + '" data-act="single" data-sheet="' + si + '" data-key="UNITS">' + ['', 'mm', 'cm', 'm', 'in', 'ft'].map(function (u) { return opt(u, m ? m.value : ''); }).join('') + '</select>' +
         '<span class="dm-ref" style="margin:0;flex:1;white-space:nowrap" title="$INSUNITS=' + esc(iu) + '">file says ' + esc(fs || 'nothing') + '</span>' +
         (p && !m ? '<button class="dm-ib" style="border:1px solid #2f6b45;color:#9be0b4" title="Confirm: use the file\'s ' + esc(p.value) + '" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button>' : '') + (m ? srcLabel(m) : '') + '</div>';
@@ -788,6 +788,13 @@
     return S.verdict.verdict === 'qualifies' ? '<span class="dm-chip ok" id="dm-chip" data-verdict="qualifies">' + IC.ok + 'Qualifies</span>'
       : '<span class="dm-chip bad" id="dm-chip" data-verdict="blocked">' + IC.warn + 'Blocked · ' + S.verdict.blocking.length + '</span>';
   }
+  function pending() { var n = 0; S.sheets.forEach(function (sh) { n += proposalsFor(sh).list.length; }); n += doorProposals().list.length; return n; }
+  function attention() {   // §L7.2: a value the drawing does not state, only suggested, is a default until confirmed: the Metadata button shivers (yellow ring) while any stands
+    var n = 0; try { n = pending(); } catch (e) { console.error(TAG + ' attention failed ' + (e && e.message)); }
+    S.attn = n; var b = document.getElementById('dxf-meta');
+    if (b) { b.classList.toggle('dxf-shiver', n > 0); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review' : 'Drawing metadata'; }
+    console.log(TAG + ' attention unconfirmed=' + n); return n;
+  }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
   function render() {
     if (!S.panel || S.panel.style.display === 'none') return;
@@ -889,10 +896,11 @@
     if (g && g.verdict) { S.verdict = g.verdict; S.verdict.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') }; S.lib = g.lib; S.busy = false; render();
       console.log(TAG + ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' (the import gate) counts=' + JSON.stringify(g.verdict.counts)); }
     else { render(); schedule(0); }
+    attention();
   }
   function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); }
 
-  window.DxfMetaEditor = { load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
+  window.DxfMetaEditor = { attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
     effText: effText, highlight: highlight, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
