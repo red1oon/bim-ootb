@@ -397,7 +397,7 @@
       try { ok = fn(trx, doc, as, F); }
       catch (e) { if (!e || !e.jclass) throw e; exc = e; excAs = as; why = String(e); return; }   // Doc.post :680-686 - a Java exception from postLogic => status E, p_Error = e.toString() (a twin-side JS error is NOT one: it propagates)
       if (ok === 'DEFER') { deferred = true; return; }
-      if (!ok || F.err) { why = F.err || 'createFacts failed'; return; }
+      if (!ok || F.err) { why = F.err || 'createFacts failed'; excAs = as; return; }
       F.balance();
       F.lines.forEach(function (f) {
         var dl = f._dl; delete f._dl;
@@ -407,6 +407,10 @@
     });
     if (deferred) { trx.update(table, doc, { posted: 'd' }); trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=d (deferred)'); return false; }
     if (exc) return postError(trx, sp, table, doc[key], dt, excAs, 'E', exc);
+    // Doc.postLogic :817-830 - createFacts returned null with p_Error set by the Doc class ("No Costs for X", "Original Shipment/Receipt not posted yet", ...) => status E, the
+    //   same savepoint rollback + Posted + AD_Note as an exception (the note text carries p_Error alone, no class name). A twin-side "not ported - named" refusal is NOT a legacy
+    //   status: it keeps the old behaviour (Posted untouched, §MODEL-UNPORTED-DEP) so a missing port never masquerades as a legacy E.
+    if (why && !/not ported|UNPORTED|— named|- named/.test(why)) return postError(trx, sp, table, doc[key], dt, excAs, 'E', why);
     if (why) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="' + why + '" (AD_Note PostingError: §MODEL-UNPORTED-DEP MNote not written)'); return false; }
     out.forEach(function (f) {
       trx.insert('fact_acct', ML.newPO(trx, 'fact_acct', Object.assign({ ad_table_id: tid, record_id: doc[key], c_period_id: per, gl_category_id: glcat,
