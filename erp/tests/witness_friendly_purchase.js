@@ -14,6 +14,7 @@ const J = (id, name, cond, d) => { judged++; if (!cond) fails++; console.log('  
 //   the open lines (M_MatchPO, QtyDelivered, on-hand, balanced Fact_Acct), Create Bill books a completed vendor invoice linked to the receipt lines (M_MatchInv, QtyInvoiced, balanced Fact_Acct);
 //   each button disappears once its work is done; plugin off = no buttons; Stop removes the rows. INCONCLUSIVE (never PASS) when no PO reaches CO.
 // Run: [FR_BREAK=nolines|nosql] node erp/tests/witness_friendly_purchase.js > <log>
+async function gearItems(pg) { const on = await pg.$eval('#idmp-toolbar [data-tb="process"]', e => !e.disabled).catch(() => false); if (!on) return []; await pg.click('#idmp-toolbar [data-tb="process"]'); await pg.waitForSelector('#idmp-proc-ov', { timeout: 5000 }).catch(() => {}); const r = await pg.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb'))); await pg.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return r; }   // 2026-10-17 §45: process shortcuts live in the gear (Process) popup
 async function run(base, browser, lens) {
   const pg = await (await browser.newContext({ viewport: { width: 1440, height: 810 } })).newPage();
   const logs = []; DBG = logs; PGX = pg; pg.on('console', m => logs.push(m.text())); pg.on('pageerror', e => logs.push('PAGEERR ' + e.message)); pg.on('dialog', d => d.accept());
@@ -41,7 +42,8 @@ async function run(base, browser, lens) {
   await pg.fill(F('qtyentered'), '5'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
   await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000); await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
   await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
-  const bars = () => pg.evaluate(() => Array.from(document.querySelectorAll('#idmp-toolbar [data-tbb]')).map(b => b.getAttribute('data-tbb')).filter(c => /^FO_Order_/.test(c)));
+  const bars = async () => (await gearItems(pg)).filter(c => /^FO_Order_/.test(c));
+  const gearClick = async (comp) => { await hc('#idmp-toolbar [data-tb="process"]'); await hc('#idmp-proc-ov [data-tbb="' + comp + '"]'); };
   const po = (await tip("SELECT c_order_id AS i, docstatus AS s, issotrx AS t FROM c_order WHERE c_order_id < 0 ORDER BY c_order_id DESC LIMIT 1"))[0];
   const R = { lens, po, bar0: await bars(), steps: {} };
   if (!lens || !po || po.s !== 'CO') return R;
@@ -49,7 +51,7 @@ async function run(base, browser, lens) {
   const fact = async (tbl, id) => (await tip("SELECT COUNT(*) AS n, COALESCE(SUM(amtacctdr),0) AS d, COALESCE(SUM(amtacctcr),0) AS c FROM fact_acct WHERE ad_table_id=" + tbl + " AND record_id=" + id))[0];
   const oh0 = await onhand();
   // Receive
-  const from1 = logs.length; await hc('#idmp-toolbar [data-tbb="FO_Order_Receive"]'); await pg.waitForTimeout(7000);
+  const from1 = logs.length; await gearClick('FO_Order_Receive'); await pg.waitForTimeout(7000);
   const okb1 = await pg.waitForSelector('#idmp-procdlg [data-procdlg-ok]', { timeout: 15000 }).then(() => true, () => false); if (okb1) { await hc('#idmp-procdlg [data-procdlg-ok]'); await pg.waitForTimeout(1500); }
   const rcpt = await tip("SELECT m_inout_id AS id, docstatus AS s, movementtype AS m, c_order_id AS o FROM m_inout WHERE m_inout_id < 0 AND c_order_id=" + po.i);
   const rl = rcpt[0] ? await tip("SELECT m_inoutline_id AS id, movementqty AS q, c_orderline_id AS ol FROM m_inoutline WHERE m_inout_id=" + rcpt[0].id) : [];
@@ -57,7 +59,7 @@ async function run(base, browser, lens) {
     delivered: Number(((await tip("SELECT SUM(qtydelivered) AS d FROM c_orderline WHERE c_order_id=" + po.i))[0] || {}).d), mpo: Number(((await tip("SELECT COUNT(*) AS n FROM m_matchpo WHERE m_matchpo_id < 0"))[0] || {}).n),
     dOnhand: (await onhand()) - oh0, fact: rcpt[0] ? await fact(319, rcpt[0].id) : null };
   // Create Bill
-  const from2 = logs.length; if (R.steps.recv.bar.includes('FO_Order_Bill')) { await hc('#idmp-toolbar [data-tbb="FO_Order_Bill"]'); await pg.waitForTimeout(7000);
+  const from2 = logs.length; if (R.steps.recv.bar.includes('FO_Order_Bill')) { await gearClick('FO_Order_Bill'); await pg.waitForTimeout(7000);
     const okb2 = await pg.waitForSelector('#idmp-procdlg [data-procdlg-ok]', { timeout: 15000 }).then(() => true, () => false); if (okb2) { await hc('#idmp-procdlg [data-procdlg-ok]'); await pg.waitForTimeout(1500); } }
   R.billLog = logs.slice(from2).filter(l => /POST|FACT|DOCACTION|MODEL-NAMED|PROC-|INVOICE|COMMIT/i.test(l)).slice(0, 40).map(l => l.slice(0, 240));
   const inv = await tip("SELECT c_invoice_id AS id, docstatus AS s, c_order_id AS o, grandtotal AS g, issotrx AS t FROM c_invoice WHERE c_invoice_id < 0 AND c_order_id=" + po.i);

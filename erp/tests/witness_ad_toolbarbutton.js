@@ -25,6 +25,9 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
   const base = 'http://localhost:' + server.address().port + '/erp';
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-gpu'] });
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 810 } })).newPage();
+  // 2026-10-17 (ERP_FRIENDLY_OPS_LENS.md §45): the tab's process buttons are items of the Process (gear) popup, as ProcessButtonPopup renders ADTabpanel.getToolbarButtons
+  async function gearItems(label) { const on = await page.$eval('#idmp-toolbar [data-tb="process"]', e => !e.disabled).catch(() => false); if (!on) return []; await page.click('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 5000 }).catch(() => {});
+    const r = await page.$$eval('#idmp-proc-ov [data-tbb]', (e, lb) => e.map(x => x.getAttribute('data-tbb') + (lb ? '=' + x.textContent : '')), !!label); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return r; }
   const PAGELOG = []; page.on('console', m => PAGELOG.push(m.text())); page.on('pageerror', e => PAGELOG.push('PAGEERR ' + e)); page.on('dialog', async d => { PAGELOG.push('DIALOG ' + d.message()); await d.accept(); });
   const hold = (ms) => page.waitForTimeout(ms);
   const q = (sql) => page.evaluate(s => { const r = window.__idmpDb.exec(s); return r.length ? r[0].values : []; }, sql);
@@ -62,13 +65,17 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     for (const t of tabs) {
       const want = pg("select b.componentname, b.ad_process_id from ad_toolbarbutton b join ad_process p on p.ad_process_id=b.ad_process_id and p.isactive='Y' where b.ad_tab_id=" + t.id + " and b.action='W' and b.ad_process_id is not null and b.isactive='Y' order by case when coalesce(b.seqno,0)=0 then b.ad_toolbarbutton_id else b.seqno end")
         .map(l => l.split('|')).filter(([, pid]) => { const ok = roleProcs.has(pid); if (!ok) hiddenByAccess++; return ok; }).map(([c]) => c).filter(c => !sqlLogic.has(c));
+      // ADTabpanel.getToolbarButtons: the tab's Button fields flagged IsToolbarButton Y/B come FIRST, then the AD_ToolBarButton process rows
+      const fieldWant = pg("select c.columnname, c.ad_process_id from ad_field f join ad_column c on c.ad_column_id=f.ad_column_id where f.ad_tab_id=" + t.id + " and c.ad_reference_id=28 and c.ad_process_id is not null and f.isactive='Y' and f.isdisplayed='Y' and c.columnname not in ('DocAction','Posted') and coalesce(nullif(f.istoolbarbutton,''),nullif(c.istoolbarbutton,''),'N') in ('Y','B') order by f.seqno")
+        .map(l => l.split('|')).filter(([, pid]) => roleProcs.has(pid) || true).map(([c]) => c);
+      want.unshift(...fieldWant);
       const n0 = PAGELOG.length;
       const opened = await page.evaluate(({ win, table }) => { const before = document.getElementById('idmp-status') ? document.getElementById('idmp-status').textContent : ''; window.IdmpHost.focus('tbb', { window: win, table: table }); return before; }, t);
       await hold(1800);
       const onTab = await page.evaluate(tn => { const a = document.querySelector('#idmp-tabstrip .idmp-adtab.active'); return a ? a.getAttribute('title') || a.textContent : null; }, t.table);
       const notInMenu = PAGELOG.slice(n0).some(l => /not in this menu/.test(l)) || await page.evaluate(() => /not in this menu/.test((document.getElementById('idmp-status') || {}).textContent || ''));
       if (notInMenu || !onTab || onTab.indexOf(t.table) < 0) { t2skip.push(t.win + '/' + t.table + (notInMenu ? ' (not in the role\'s menu)' : ' (tab not reached: ' + onTab + ')')); continue; }
-      const got = (await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb')))).filter(c => !sqlLogic.has(c));
+      const got = (await gearItems(false)).filter(c => !sqlLogic.has(c));
       t2judged++; if (JSON.stringify(got) !== JSON.stringify(want)) t2bad.push({ tab: t.id, win: t.win, table: t.table, got, want });
       console.log('§TBB tab ' + t.id + ' ' + t.win + '/' + t.table + ' got=' + JSON.stringify(got) + ' want=' + JSON.stringify(want));
     }
@@ -81,7 +88,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     await openOrder();
     const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a02';
     const dictRows = { process: await q("SELECT ad_form_id, name, ad_process_id FROM ad_process WHERE ad_process_uu='" + PUU + "'"), button: await q("SELECT b.ad_tab_id, b.ad_process_id FROM ad_toolbarbutton b JOIN ad_process p ON p.ad_process_id=b.ad_process_id AND p.ad_process_uu='" + PUU + "' WHERE b.ad_toolbarbutton_uu='" + BUU + "'"), access: await q("SELECT a.ad_role_id FROM ad_process_access a JOIN ad_process p ON p.ad_process_id=a.ad_process_id WHERE p.ad_process_uu='" + PUU + "' AND a.ad_role_id=" + Number(role)) };
-    const btn = await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent));
+    const btn = await gearItems(true);
     console.log('§TBB libero rows ' + JSON.stringify(dictRows) + ' toolbar=' + JSON.stringify(btn));
     let formState = null, coll = null, menuState = null;
     if (btn.some(b => /^PP_Order_ReceiptIssue=/.test(b))) {
@@ -95,8 +102,8 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
       await page.waitForSelector('[data-gform]', { timeout: 10000 }).catch(() => {}); await hold(1000);
       menuState = await page.evaluate(() => { const f = document.querySelector('[data-gform]'); if (!f) return null; const s = f.querySelector('[data-gform-param=PP_Order_ID]'); return { cls: f.getAttribute('data-gform'), order: s && s.selectedIndex >= 0 ? s.options[s.selectedIndex].textContent : '', choices: s ? s.options.length : 0, rows: document.querySelectorAll('tr[data-gform-row]').length }; });
       console.log('§TBB form from the MENU: ' + JSON.stringify(menuState));
-      await openOrder(); await page.waitForSelector('#idmp-toolbar [data-tbb]', { timeout: 20000 });
-      const n3 = PAGELOG.length; await page.click('#idmp-toolbar [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 10000 }).catch(() => {}); await hold(1200);
+      await openOrder(); await page.waitForSelector('#idmp-toolbar [data-tb="process"]:not([disabled])', { timeout: 20000 });
+      const n3 = PAGELOG.length; await page.click('#idmp-toolbar [data-tb="process"]'); await page.click('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 10000 }).catch(() => {}); await hold(1200);
       formState = await page.evaluate(() => { const f = document.querySelector('[data-gform]'); if (!f) return null; const s = f.querySelector('[data-gform-param=PP_Order_ID]');
         return { cls: f.getAttribute('data-gform'), from: f.getAttribute('data-gform-from'), order: s ? (s.selectedIndex >= 0 ? (s.options[s.selectedIndex].textContent || '') : '') : 'absent', rows: document.querySelectorAll('tr[data-gform-row]').length }; });
       formState = formState || { cls: null, note: 'no generic form opened (a process dialog instead?)' };
