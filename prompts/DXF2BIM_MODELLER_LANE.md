@@ -1615,5 +1615,11 @@ Finding: the Convert refusal "@LEVEL=171.811 is not a drawn elevation boundary" 
 - Straight-set parity (W-LOG/W-ENT) and the Duplex wing witnesses unchanged.
 **Not claimed:** `GAP:no_host_cut` (142), `no_elevation_height` (175), `wall_below_min_thickness` (58) are separate causes; the first may follow once doors classify (a classified door cuts its host), the others get their own measurement after this rule.
 
+#### L1.19 Results (2026-10-17)
+Built as specified (wing sets only; `dropCollinear`, `§COLLINEAR_DROP` log lines). **W-L119-AREA** pass (8 vertices -> 4, area and extent equal), **W-L119-CONTROL** pass (a 4 mm bend kept), straight-set parity W-LOG/W-ENT unchanged (py=318 = js), Duplex wing witnesses unchanged. sw.js v95.
+- **W-L119-OPEN, partly:** Hospital 85-deg wing `GAP:opening_unclassified` **257 -> 160**. The 96 doors that were 9-vertex rectangles now classify; 97 of them become rect openings that need a stated sill/height (`GAP:no_dimension` 97, the reader's `opening.rect.sill/height` config, not a guess).
+- **Remaining 160, measured:** closed 4-vertex `A-DOOR` rectangles of **76 x 25 mm** (and 25 x 76) plus 915 x 51 / 813 x 51: one Hospital door is drawn as MANY contours (413 `A-DOOR` contours on the first plan: leaf, frame sides, casing returns, each its own rectangle, because the mesh is separate parts). The tiny ones are door parts, not openings. Next rule candidate (spec first): union the touching contours of ONE element into its outline (polygon-clipping is already vendored), logged per door, so the reader sees one outline per door as it does on the Duplex; witness = the union has the same area as the sum of the non-overlapping parts.
+- **Not changed by this rule:** `no_host_cut` 142, `no_elevation_height` 175, `wall_below_min_thickness` 58.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.

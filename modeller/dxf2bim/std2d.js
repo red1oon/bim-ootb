@@ -180,6 +180,21 @@
     const L = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter(c => ROMAN_SKIP.indexOf(c) < 0);
     return i < L.length ? L[i] : L[Math.floor(i / L.length) - 1] + L[i % L.length];
   }
+  // §L1.19: drop every vertex on the straight line through its two neighbours (perpendicular distance <= COLLINEAR_TOL mm); same polygon, fewer vertices. Repeats until stable; never below 3.
+  const COLLINEAR_TOL = 0.001;
+  function dropCollinear(pl) {
+    let p = pl.slice(), changed = true;
+    while (changed && p.length > 3) {
+      changed = false;
+      for (let i = 0; i < p.length && p.length > 3; i++) {
+        const a = p[(i + p.length - 1) % p.length], b = p[i], c = p[(i + 1) % p.length], dx = c[0] - a[0], dy = c[1] - a[1], L = Math.hypot(dx, dy);
+        const d = L > 0 ? Math.abs((b[0] - a[0]) * dy - (b[1] - a[1]) * dx) / L : Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const between = L > 0 ? ((b[0] - a[0]) * dx + (b[1] - a[1]) * dy) / (L * L) : 0;
+        if (d <= COLLINEAR_TOL && between >= 0 && between <= 1) { p.splice(i, 1); changed = true; i--; }
+      }
+    }
+    return p;
+  }
   function planStoreys(model) {
     const g = model.storeys.find(s => s.name === model.grid_storey).elev;
     return model.storeys.filter(s => s.elev >= g && model.walls.some(w => w.storey === s.name && w.z0 <= s.elev + CUT_OFFSET && s.elev + CUT_OFFSET < w.z1));
@@ -548,6 +563,7 @@
         return pl;
       });
     });
+    if (model.perStoreyEnv) cut.forEach(c => { polys[c.guid] = (polys[c.guid] || []).map(pl => { const q = dropCollinear(pl); if (q.length !== pl.length) log.add(`§COLLINEAR_DROP guid=${c.guid} cls=${c.cls} before=${pl.length} after=${q.length}`); return q; }); });   // §L1.19 (wing sets)
     Object.keys(curt).forEach(g => { const r = curt[g].rect; polys[g] = [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]]; });   // C1
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
     let nW = 0, nC = 0;
@@ -913,5 +929,5 @@
     log.add(`§SUMMARY wing=${name} views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     return { files, log: log.lines, gaps: log.gaps, grid, model, wing: { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total } };
   }
-  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, wingAngles, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
+  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, wingAngles, dropCollinear, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
 });
