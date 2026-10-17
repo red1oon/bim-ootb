@@ -1553,5 +1553,11 @@ Decision (user): a scope carries a rotation, `@SCOPE=<name>,<rect>,<angle>`; ang
 - **Witnesses (each names its issue):** W-L116-ROT: Duplex rotated by 30 deg as a synthetic model must give the SAME entity counts, grid labels and dimension values as unrotated (proves the frame removes the rotation; control: angle 0 on the rotated model reproduces the L1.15 `wall_not_orthogonal` gaps). W-L116-BACK: export then import returns every element within 1e-6 m of the source (proves the rotate-back). W-L116-HOSP: Hospital reports per wing framed/unframed counts that sum to 1440, no wall silently dropped.
 - Build order: Python oracle `std2d.py` -> JS port `std2d*.js` -> importer + panel; each slice ends in its witness.
 
+#### L1.16 Results, slice 1 = writer (2026-10-17, BIMCompiler branch `feat/wing-frame`, stacked on #203)
+JS only (`std2d.js`: `elementAngle`, `frameModel`, `rotateModel`, `writeWingSet`); the Python oracle is NOT changed: W-L116-ROT compares the rotated run with the unrotated Duplex run itself, which is the stronger oracle for a rotation.
+- **W-L116-ROT** (`tests/dxf2bim/witness_wing_frame.js`): Duplex rotated in memory by 30, 7 and 85 deg; the wing frame finds the angle and gives the same per-layer entity counts (208 + 302 entities), the same texts (grid labels, dimension values) and the same grid lists as the unrotated Duplex: ALL PASS x3. Control (frame at 0 deg on the rotated model) frames 0 of 57 walls.
+- **W-L116-HOSP** (counts, no wall dropped): walls 1440 = framed + unframed in every wing: 85 deg frames 594 (unframed 846), 10 deg 224, 70 deg 165. Inside a wing, walls with an off-axis face still report `GAP:wall_not_orthogonal` (113 / 58 / 42) and columns `column_not_symmetric`; nothing is snapped. Picture: `~/Videos/dxf2bim_work/acid/hospital_L1_wing85_straightened.png` vs `hospital_L1_whole_today.png`.
+- **Not built yet:** W-L116-BACK (the importer rotates a wing back: `@SCOPE=<name>,<rect>,<angle>` in `std2d_marks.js`, `dxf2marks.js`, importer merge), the panel's per-angle suggest, a Hospital wing set through the Modeller. A wing has its OWN grid, so it is a separate set per angle, not a sheet of the L6 handle-union.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
