@@ -64,4 +64,28 @@ let u3 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3000], [1150, 2
 ok('B19 CONTROL faces overlapping by less than half of the shorter one are not a body: GAP:body_no_elevation', u3.els.length === 0 && u3.gaps.length === 1 && u3.gaps[0].code === 'GAP:body_no_elevation', JSON.stringify(u3.gaps.map(x => x.code)));
 let u4 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3000], [1150, 0, 3000], [1000, 0, 3000]])]]);
 ok('B20 CONTROL a third line between the two faces: they are not neighbours, no pair (the middle line pairs with a face only if it is the nearest)', u4.els.length <= 1);
+// §L7.14 several plans + a z range the user states
+const PLANM = (dx, dy, extra) => [['@SET=T'], ['@VIEW=PLAN'], ['@UNITS=mm'], ['@LEVEL=0'], ['@NAME=P'], ['@GRIDX=A', 1000 + dx, 0], ['@GRIDX=B', 4000 + dx, 0], ['@GRIDY=1', 0, 150 + dy], ['@GRIDY=2', 0, 2150 + dy]].concat(extra || []);
+const planAt = (layer, list, dx, dy, extra, y0, y1) => doc(list.map(([a, b], i) => poly(layer, a + dx, (y0 === undefined ? 0 : y0) + dy, b + dx, (y1 === undefined ? 300 : y1) + dy, layer + i)).join(''), PLANM(dx, dy, extra));
+const typedPlan = (layer, kind) => [['@LAYER=' + layer + ',' + kind]];
+const fnd = (dx, dy, extra) => planAt('Fo', [[800, 1200], [3800, 4200]], dx, dy, typedPlan('Fo', 'footing').concat(extra || []));
+const centreOf = e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]; };
+const base1 = planDxf(cols);
+let m1 = run([['plan.dxf', base1], ['south.dxf', elevDxf(3000)], ['found.dxf', fnd(5000, 700, [['@BODYZ=footing,-1.4,-1.1']])]]);
+const foot = m1.els.filter(e => e.kind === 'footing');
+ok('B21 a second plan with its own origin is aligned by shared grid labels: 2 footings land in the BASE frame (centres x 1.0 / 4.0 m, y 0.15 m)', foot.length === 2 && foot.every(e => Math.abs(centreOf(e)[1] - 0.15) < 1e-9) && [1, 4].every(x => foot.some(e => Math.abs(centreOf(e)[0] - x) < 1e-9)), JSON.stringify(foot.map(centreOf)));
+ok('B24 @BODYZ gives the missing range: z -1.4..-1.1, height_source stated, prov derived, IfcFooting/PAD_FOOTING', foot.every(e => e.z0 === -1.4 && e.z1 === -1.1 && e.height_source === 'stated' && e.prov === 'derived' && e.class === 'IfcFooting' && e.ifc.PredefinedType === 'PAD_FOOTING'), JSON.stringify(foot.map(e => [e.z0, e.z1, e.height_source, e.prov])));
+const badGrid = doc(poly('Fo', 800 + 5000, 700, 1200 + 5000, 1000, 'F0'), PLANM(5000, 700, typedPlan('Fo', 'footing')).map(m => m[0] === '@GRIDX=B' ? ['@GRIDX=B', 4000 + 5000 + 50, 0] : m));
+let m2 = run([['plan.dxf', base1], ['south.dxf', elevDxf(3000)], ['found.dxf', badGrid]]);
+ok('B22 CONTROL shared grid labels disagree by 50 mm: GAP:body_plan_not_aligned, none of that plan\'s bodies, the base plan still builds', m2.els.filter(e => e.kind === 'footing').length === 0 && m2.gaps.some(x => x.code === 'GAP:body_plan_not_aligned' && /disagree/.test(x.detail)) && m2.els.filter(e => e.kind === 'column').length === 3, JSON.stringify(m2.gaps.map(x => x.code + ':' + x.detail)));
+const colOnFound = planAt('Col', cols, 5000, 700, typedPlan('Col', 'column'));
+let m3 = run([['plan.dxf', base1], ['south.dxf', elevDxf(3000)], ['found.dxf', colOnFound]]);
+ok('B23 the same three columns drawn again on the second plan are ONE body each (deduplicated by footprint): 3 columns, no gaps', m3.els.filter(e => e.kind === 'column').length === 3 && m3.gaps.length === 0 && m3.report.kinds.column.dedup === 3, JSON.stringify(m3.report.kinds.column));
+const colStated = planAt('Col', [[9850, 10150]], 0, 0, [['@BODYZ=column,0.5,1.5']]);
+let m4 = run([['plan.dxf', planDxf(cols.concat([[9850, 10150]])).replace(/@LAYER=Col,column/, '@LAYER=Col,column')], ['south.dxf', elevDxf(3000)]]);
+let m5 = run([['plan.dxf', planDxf(cols.concat([[9850, 10150]]))], ['south.dxf', doc(cols.map(([a, b]) => lbox('Col', a, 0, b, 3000)).join(''), ELEV('minY').concat([['@BODYZ=column,0.5,1.5']]))]]);
+ok('B25 CONTROL a stated range never overrides drawn evidence: 3 columns keep 0..3 m (elevation), the 4th (no elevation) takes the stated 0.5..1.5 m', m5.els.filter(e => e.height_source === 'elevation' && e.z0 === 0 && e.z1 === 3).length === 3 && m5.els.filter(e => e.height_source === 'stated' && e.z0 === 0.5 && e.z1 === 1.5).length === 1, JSON.stringify(m5.els.map(e => [e.height_source, e.z0, e.z1])));
+ok('B26 CONTROL no statement: the 4th column stays GAP:body_no_elevation (never a default height)', m4.els.length === 3 && m4.gaps.length === 1 && m4.gaps[0].code === 'GAP:body_no_elevation' && /@BODYZ/.test(m4.gaps[0].detail));
+let m6 = run([['plan.dxf', base1], ['south.dxf', elevDxf(3000)], ['found.dxf', fnd(5000, 700, [['@BODYZ=footing,-1.4,-1.1']])], ['found2.dxf', fnd(0, 0, [['@BODYZ=footing,-2,-1.5']]).replace('@NAME=P', '@NAME=P2')]]);
+ok('B27 two sheets state different ranges for one kind: GAP:body_stated_z_conflict, no footing built', m6.els.filter(e => e.kind === 'footing').length === 0 && m6.gaps.some(x => x.code === 'GAP:body_stated_z_conflict'), JSON.stringify(m6.gaps.map(x => x.code)));
 console.log(fail ? 'W-BODIES FAIL ' + fail : 'W-BODIES PASS'); process.exit(fail ? 1 : 0);

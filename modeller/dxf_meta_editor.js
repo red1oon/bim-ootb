@@ -43,7 +43,7 @@
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -821,6 +821,23 @@
     return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows"><div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel. Accept them all, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>' + items.join('') +
       '<button class="dm-btn primary" data-act="acceptall" style="margin-top:6px">' + IC.check + '<span>Accept all</span></button></div>' : '');
   }
+  // §L7.14 "Body heights": kinds typed on a plan that no elevation shows get a z range STATED by the user (@BODYZ=<kind>,<z0>,<z1>, metres); it is the user's own statement, not a default
+  function bodyzRows() { var out = []; S.sheets.forEach(function (sh, si) { sh.marks.forEach(function (m, mi) { if (m.key === 'BODYZ') { var p = String(m.value).split(','); out.push({ si: si, mi: mi, kind: p[0], z0: p[1], z1: p[2], mark: m }); } }); }); return out; }
+  function renderBodyZ() {
+    var g = gateNow(); if (!g || !g.structure) return '';
+    var need = {}; ((g.R && g.R.gaps) || []).forEach(function (x) { if (x.code === 'GAP:body_no_elevation' && x.kind) need[x.kind] = (need[x.kind] || 0) + 1; });
+    var rows = bodyzRows(); if (!Object.keys(need).length && !rows.length) return '';
+    var h = '<div class="dm-ref" style="margin:2px 0 6px">No elevation shows these. State the z range (metres, from the drawing\'s detail) and they are built; until then they are left out.</div>';
+    Object.keys(need).sort().forEach(function (k) {
+      h += '<div class="dm-f" data-bodyz="' + esc(k) + '"><label style="width:118px">' + esc(k === 'gradebeam' ? 'grade beam' : k) + ' <span class="dm-ref" style="margin:0">' + need[k] + ' waiting</span></label>' +
+        '<input class="dm-in n" id="dm-bz-' + esc(k) + '-0" placeholder="z0 m" inputmode="decimal"><input class="dm-in n" id="dm-bz-' + esc(k) + '-1" placeholder="z1 m" inputmode="decimal">' +
+        '<button class="dm-btn" data-act="bodyzadd" data-kind="' + esc(k) + '">' + IC.plus + '<span>Add</span></button></div>';
+    });
+    rows.forEach(function (r) { h += '<div class="dm-f" data-bodyz-row="' + esc(r.kind) + '"><label style="width:auto;flex:1" title="@BODYZ marking">@BODYZ=' + esc(r.kind + ',' + r.z0 + ',' + r.z1) + '</label>' + srcLabel(r.mark) +
+      '<button class="dm-ib" title="Remove" data-act="bodyzdel" data-sheet="' + r.si + '" data-mi="' + r.mi + '">' + IC.trash + '</button></div>'; });
+    return secHead('bodyz', IC.ruler, 'Body heights', Object.keys(need).length ? Object.keys(need).reduce(function (n, k) { return n + need[k]; }, 0) + ' waiting' : 'stated', Object.keys(need).length) + (S.sec.bodyz ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
+  function sheetHasKind(sh, kind) { return sh.marks.some(function (m) { var l = m.key === 'LAYER' && layerOf(m); return l && l.type === kind; }); }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
     S.sheets.forEach(function (sh, si) {
@@ -878,7 +895,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -896,6 +913,11 @@
     document.getElementById('dm-save').onclick = function () { save(); };
     P.querySelectorAll('[data-act]').forEach(function (el) {
       var a = el.getAttribute('data-act');
+      if (a === 'bodyzadd') el.onclick = function () { var k = el.getAttribute('data-kind'), a0 = document.getElementById('dm-bz-' + k + '-0').value.trim(), a1 = document.getElementById('dm-bz-' + k + '-1').value.trim(), z0 = Number(a0), z1 = Number(a1);
+        if (!a0 || !a1 || !isFinite(z0) || !isFinite(z1) || !(z0 < z1)) { console.log(TAG + ' bodyz refused: two numbers with z0 < z1 are needed'); return; }
+        var sh = S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan' && sheetHasKind(q, k); })[0] || S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan'; })[0]; if (!sh) return;
+        sh.marks.push({ key: 'BODYZ', value: k + ',' + a0 + ',' + a1, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @BODYZ=' + k + ',' + a0 + ',' + a1); changed(); };
+      if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
       if (a === 'acceptall') el.onclick = function () { var n = 0, b; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); console.log(TAG + ' accept-all clicks=' + (n - 1)); attention(); };
       if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);

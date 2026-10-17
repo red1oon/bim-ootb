@@ -82,9 +82,27 @@
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var elevs = sheets.filter(function (s) { return s.role === 'elev'; });
     var pairMaxM = opts.prepChoices && opts.prepChoices['bodies.pair_max_width'] !== undefined ? Number(opts.prepChoices['bodies.pair_max_width']) : 0.5, DEF = P.Defaults(), pairUsed = false;
+    var levels = plans.map(function (p) { return p.level; }).filter(function (l, i, arr) { return arr.indexOf(l) === i; }).sort(function (x, y) { return x - y; });
     var els = [], gaps = [], report = { kinds: {}, snap_tol: snap, labels: {} }, seen = {}, names = {};
     if (!plans.length) { gaps.push({ code: 'GAP:body_no_plan', detail: 'no storey plan' }); return { els: els, gaps: gaps, report: report }; }
     var maps = elevs.map(function (es) { var al = MK.align(plans[0].desc, es.desc, alignTol); return { sheet: es, map: al.map && al.map.zOf ? al.map : null, why: al.map && al.map.zOf ? null : (al.errors || []).map(function (x) { return x.code; }).join(',') }; });
+    // §L7.14 every plan after the base is aligned to it by shared grid labels (translation only); a plan that cannot be aligned contributes nothing, loudly
+    function offsetOf(ps) {
+      var kb = plans[0].factor, k = ps.factor, res = { ok: true, x: 0, y: 0, why: [] };
+      [['gridsX', 'x'], ['gridsY', 'y']].forEach(function (a) {
+        var Bg = plans[0].desc[a[0]] || {}, Tg = ps.desc[a[0]] || {}, labs = Object.keys(Tg).filter(function (l) { return l in Bg; });
+        if (!labs.length) { res.ok = false; res.why.push('no shared ' + a[1].toUpperCase() + ' grid label'); return; }
+        var o = labs.map(function (l) { return Bg[l] * kb - Tg[l] * k; }), w = Math.max.apply(null, o.map(function (v) { return Math.abs(v - o[0]); }));
+        if (w > alignTol) { res.ok = false; res.why.push(a[1].toUpperCase() + ' grid labels disagree by ' + w.toFixed(4) + ' m'); return; }
+        res[a[1]] = o[0];
+      });
+      return res;
+    }
+    var pofs = plans.map(function (ps, pi) { return pi === 0 ? { ok: true, x: 0, y: 0, why: [] } : offsetOf(ps); });
+    var seenFp = {};
+    // §L7.14 the z range the USER states for a kind (@BODYZ on any sheet); two sheets stating different ranges -> conflict, nothing built for that kind from it
+    var stated = {};
+    sheets.forEach(function (sh) { ((sh.desc && sh.desc.bodyz) || []).forEach(function (b) { var o = stated[b.kind]; if (!o) stated[b.kind] = { z0: b.z0, z1: b.z1 }; else if (o.z0 !== b.z0 || o.z1 !== b.z1) o.conflict = true; }); });
     maps.forEach(function (m) { if (!m.map) gaps.push({ code: 'GAP:body_elevation_not_aligned', sheet: m.sheet.name, detail: m.why }); });
     // elevation regions per kind, in plan metres / absolute z metres
     function elevRegions(kind) {
@@ -110,26 +128,33 @@
       if (lab.length === 1) names[kind] = chosenName !== undefined ? String(chosenName) : lab[0];
       plans.forEach(function (ps, pi) {
         var ly = bodyLayers(ps, kind); if (!ly.length) return;
+        if (!pofs[pi].ok) { gaps.push({ code: 'GAP:body_plan_not_aligned', kind: kind, sheet: ps.name, handle: null, detail: pofs[pi].why.join('; ') + ' (aligned to ' + plans[0].name + ')' }); rep.gaps++; return; }
         if (!ER) ER = elevRegions(kind);
         var r = regions(ps, ly, snap), k = ps.factor;
         rep.nonRect += r.nonRect; rep.plan_regions += r.list.length;
         r.list.forEach(function (g) {
-          var x0 = r6(Math.min(g.x0, g.x1) * k), x1 = r6(Math.max(g.x0, g.x1) * k), y0 = r6(Math.min(g.y0, g.y1) * k), y1 = r6(Math.max(g.y0, g.y1) * k);
+          var x0 = r6(Math.min(g.x0, g.x1) * k + pofs[pi].x), x1 = r6(Math.max(g.x0, g.x1) * k + pofs[pi].x), y0 = r6(Math.min(g.y0, g.y1) * k + pofs[pi].y), y1 = r6(Math.max(g.y0, g.y1) * k + pofs[pi].y);
+          var fp = kind + '|' + [x0, y0, x1, y1].map(function (v) { return Math.round(v * 1000); }).join(',');
+          if (seenFp[fp]) { rep.dedup = (rep.dedup || 0) + 1; return; }   // the same footprint already came from an earlier plan
+          seenFp[fp] = 1;
           var interval = function (e) { var I = e.axis === 'X' ? [x0, x1] : [y0, y1]; return { I: I, dc: Math.abs((e.p0 + e.p1) / 2 - (I[0] + I[1]) / 2), dw: Math.abs((e.p1 - e.p0) - (I[1] - I[0])), w: I[1] - I[0] }; };
           var exact = ER.filter(function (e) { var q = interval(e); return Math.abs(e.p0 - q.I[0]) <= tolM && Math.abs(e.p1 - q.I[1]) <= tolM; }), matchKind = 'interval', cands = exact;
           if (!cands.length) { cands = ER.filter(function (e) { var q = interval(e); return q.dc <= tolM && q.dw <= 0.5 * q.w; }); matchKind = 'centre'; }   // same centre line, a narrower/wider drawn face: reported, never silent
           var distinct = []; cands.forEach(function (c) { if (!distinct.some(function (d) { return Math.abs(d.z0 - c.z0) <= tolM && Math.abs(d.z1 - c.z1) <= tolM; })) distinct.push(c); });
           var base = { kind: kind, sheet: ps.name, handle: g.handle, layer: g.layer };
-          if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' }, base)); rep.gaps++; return; }
+          var hsrc = 'elevation', st0 = stated[kind];
+          if (!distinct.length && st0 && st0.conflict) { gaps.push(Object.assign({ code: 'GAP:body_stated_z_conflict', detail: 'two sheets state different @BODYZ ranges for ' + kind }, base)); rep.gaps++; return; }
+          if (!distinct.length && st0) { distinct = [{ z0: st0.z0, z1: st0.z1 }]; cands = []; matchKind = null; hsrc = 'stated'; }
+          if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' + ' (state its z range with @BODYZ)' }, base)); rep.gaps++; return; }
           if (distinct.length > 1) { gaps.push(Object.assign({ code: 'GAP:body_ambiguous_z', detail: distinct.map(function (d) { return d.z0 + '..' + d.z1 + ' (' + d.sheet + ' ' + d.handle + ')'; }).join(' | ') }, base)); rep.gaps++; return; }
           var z = distinct[0], pm = S.prismRect([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], [], z.z0, z.z1);
           if (!pm) { gaps.push(Object.assign({ code: 'GAP:body_degenerate', detail: 'z range ' + z.z0 + '..' + z.z1 }, base)); rep.gaps++; return; }
           var guid = 'body-' + kind + '-' + pi + '-' + g.handle;
           if (seen[guid]) throw new Error('Dxf2Bodies: duplicate body id ' + guid);
           seen[guid] = 1;
-          var st = plans.filter(function (p) { return p.level <= z.z0 + tolM; }).pop() || plans[0];
-          els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (plans.indexOf(st) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
-            kind: kind, prov: 'drawn', ifc: P.ifcType(kind, names[kind] || null, null), members: g.members, z0: z.z0, z1: z.z1, height_source: 'elevation', match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+          var lv = levels.filter(function (l) { return l <= z.z0 + tolM; }).pop(); if (lv === undefined) lv = levels[0];   // several plans of one storey share ONE storey
+          els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
+            kind: kind, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, names[kind] || null, null), members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
           if (cands.some(function (c) { return c.pair; })) pairUsed = true;   // the default row exists only when a body was actually matched through a drawn line pair
           rep.bodies++;
         });

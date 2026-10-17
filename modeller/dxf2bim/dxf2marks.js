@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ'];
   var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -36,7 +36,7 @@
   }
 
   function describe(marks) {
-    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], by: {} }, errors = [];
+    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], by: {} }, errors = [];
     marks.forEach(function (m) {
       // lane spec L2.7 (5): @BY=model|user is a SUFFIX in the same TEXT and qualifies only that TEXT's marking; none -> 'file'
       var raw = m.raw, by = 'file', nBy = (raw.match(/@BY=/g) || []).length;
@@ -113,6 +113,12 @@
         var sdup = d.schedule.find(function (q) { return q.text === sent.text && q.class === sent.class; });
         if (sdup && JSON.stringify(Object.assign({}, sdup, { by: undefined })) !== JSON.stringify(sent)) { errors.push(err('MARK:conflict', '@SCHEDULE ' + sent.text + ' (' + sc + ') has two sizes', { handle: m.handle })); return; }
         if (!sdup) { sent.by = by; d.schedule.push(sent); }
+      } else if (key === 'BODYZ') {                                                          // bim-ootb lane L7.14: the z range (m) the USER states for a body kind no elevation shows: @BODYZ=<kind>,<z0>,<z1>
+        var bp = val.split(','), bk = (bp[0] || '').trim(), bn = bp.slice(1).map(Number);
+        if (LAYER_TYPES.BODY.indexOf(bk) < 0 || bp.length !== 3 || bp.slice(1).some(function (t, i) { return t.trim() === '' || !isFinite(bn[i]); }) || !(bn[0] < bn[1])) { errors.push(err('MARK:malformed', '@BODYZ needs <' + LAYER_TYPES.BODY.join('|') + '>,<z0 m>,<z1 m> with z0 < z1: ' + val, { handle: m.handle })); return; }
+        var bdup = d.bodyz.find(function (q) { return q.kind === bk; });
+        if (bdup && (bdup.z0 !== bn[0] || bdup.z1 !== bn[1])) { errors.push(err('MARK:conflict', '@BODYZ ' + bk + ' has two ranges', { handle: m.handle })); return; }
+        if (!bdup) d.bodyz.push({ kind: bk, z0: bn[0], z1: bn[1], by: by });
       } else if (key === 'LAYER') {                                                         // L4.2: name = everything before the LAST comma
         var lc = val.lastIndexOf(','), ln = lc > 0 ? val.slice(0, lc).trim() : '', lt = lc > 0 ? val.slice(lc + 1).trim() : '';
         if (!ln || !lt) { errors.push(err('MARK:malformed', '@LAYER needs <layer name>,<type>: ' + val, { handle: m.handle })); return; }
@@ -178,6 +184,7 @@
     d.openings.sort(function (p, q) { return p.h0 - q.h0 || p.y0 - q.y0 || p.h1 - q.h1 || p.y1 - q.y1 || (p.kind < q.kind ? -1 : p.kind > q.kind ? 1 : 0); });
     d.labels.sort(function (p, q) { return p.x - q.x || p.y - q.y || (p.z === undefined ? -1e9 : p.z) - (q.z === undefined ? -1e9 : q.z) || (p.class < q.class ? -1 : p.class > q.class ? 1 : 0); });
     d.tags.sort(function (p, q) { return p.x - q.x || p.y - q.y || (p.z === undefined ? -1e9 : p.z) - (q.z === undefined ? -1e9 : q.z) || (p.class < q.class ? -1 : p.class > q.class ? 1 : 0); });
+    d.bodyz.sort(function (p, q) { return p.kind < q.kind ? -1 : p.kind > q.kind ? 1 : 0; });
     d.schedule.sort(function (p, q) { return p.text < q.text ? -1 : p.text > q.text ? 1 : p.class < q.class ? -1 : p.class > q.class ? 1 : 0; });
     d.excludes.sort(function (p, q) { return p[0] - q[0] || p[1] - q[1] || p[2] - q[2] || p[3] - q[3]; });
     d.walltop.sort(function (p, q) { return p.level - q.level; });

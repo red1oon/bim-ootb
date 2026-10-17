@@ -60,4 +60,28 @@ runE2E('W-DXF-SHED', async (t) => {
   await facts(); await typeColumns();
   const gB = await gate(), zB = await zdist();
   t.assert('B1 plan + North + South: North is read right-to-left (FACE maxY from "North", 14 tick grid marks, HAXIS -X) and the SAME 32 bodies with the SAME heights come out: two independent elevations agree, 0 ambiguous', face.n && face.n.value === 'maxY' && face.grid === 14 && gB.ok && gB.st.bodies === 32 && gB.st.left_out === 0 && !gB.adv.includes('GAP:body_ambiguous_z') && JSON.stringify(zB) === JSON.stringify(zA), JSON.stringify({ face, gB, zB }));
+
+  // ---- Flow C (§L7.14): plan + foundation plan + South: footings from the foundation plan, their z range STATED by the user (detail: FGL to underside 5'-0" = 3" blinding + 12" footing + 45" column in the ground) ----
+  await open(['0_FLOOR_PLAN.dxf', '4_FOUNDATION_LAYOUT.dxf', '1S_ELEV_SOUTH.dxf']); await acceptAll();
+  const fm = await pg.evaluate(() => { const S = window.DxfMetaEditor.state.sheets; return S.map(sh => ({ n: sh.name, gx: sh.marks.filter(x => x.key === 'GRIDX').length, gy: sh.marks.filter(x => x.key === 'GRIDY').length })); });
+  t.assert('F1 the foundation plan\'s grid also comes from its dimension ticks (same 14 + 4 labels as the floor plan)', fm[0].gx === fm[2].gx && fm[0].gy === fm[2].gy && fm[0].gx === 14 && fm[0].gy === 4, JSON.stringify(fm));
+  const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
+  for (let i = 0; i < names.length; i++) { await type('#dm-f-' + i + '-SET', 'SHED'); await idle(); }
+  await type('#dm-f-0-LEVEL', '0'); await idle(); await type('#dm-f-2-LEVEL', '0'); await idle(); await acceptAll();
+  if (!(await pg.evaluate(() => (document.getElementById('dm-f-1-HAXIS') || {}).value))) { await pg.select('#dm-f-1-HAXIS', '+X'); await idle(); }
+  await pg.type('#dm-av-1-Z', '0.6096'); await pg.type('#dm-ap-1-Z', String(PL_Y['1S_ELEV_SOUTH.dxf']));
+  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="add"][data-group="Z"][data-sheet="1"]').click()); await idle();
+  await pg.evaluate(() => { const s = window.DxfMetaEditor.state; if (!s.sec.layers) document.querySelector('#dm-panel .dm-sh[data-sec="layers"]').click(); }); await sleep(400);
+  await pg.select('#dm-panel [data-layer-row="plan|Col"] select', 'column'); await idle(); await pg.select('#dm-panel [data-layer-row="elev|0"] select', 'column'); await idle();
+  await pg.select('#dm-panel [data-layer-row="plan|Fo"] select', 'footing'); await idle();
+  const w = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { ok: g.ok, st: g.structure, adv: [...new Set(g.verdict.advisory.map(a => a.code))], waiting: (document.querySelector('#dm-panel [data-bodyz="footing"]') || {}).textContent || null }; });
+  t.assert('F2 plan + foundation plan + South, layers typed: 32 columns (the foundation plan\'s columns dedupe with the floor plan\'s) built; the 32 footings wait for a height, listed in "Body heights" (no elevation shows them)', w.ok && w.st.bodies === 32 && w.st.left_out === 32 && w.adv.join() === 'GAP:body_no_elevation' && /32 waiting/.test(w.waiting || ''), JSON.stringify(w));
+  await pg.type('#dm-bz-footing-0', '-1.4478'); await pg.type('#dm-bz-footing-1', '-1.143');
+  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="bodyzadd"][data-kind="footing"]').click()); await idle();
+  const w2 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; const F = g.R.els.filter(e => e.kind === 'footing'), C = g.R.els.filter(e => e.kind === 'column'); const ext = F.map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return [((Math.max(...xs) - Math.min(...xs)) / 0.0254).toFixed(0), ((Math.max(...ys) - Math.min(...ys)) / 0.0254).toFixed(0)].join('x'); });
+    const cx = {}; C.forEach(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); cx[Math.round((Math.min(...xs) + Math.max(...xs)) / 2 * 1000) + ',' + Math.round((Math.min(...ys) + Math.max(...ys)) / 2 * 1000)] = 1; });
+    const centred = F.filter(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return cx[Math.round((Math.min(...xs) + Math.max(...xs)) / 2 * 1000) + ',' + Math.round((Math.min(...ys) + Math.max(...ys)) / 2 * 1000)]; }).length;
+    return { ok: g.ok, st: g.structure, nF: F.length, sizes: [...new Set(ext)], z: [...new Set(F.map(e => e.z0 + '..' + e.z1))], centred }; });
+  t.assert('F3 typing the range builds the 32 footings: 48 x 60 in as drawn (4\'-0" x 5\'-0", F-1), z -1.4478..-1.143 m as stated, EACH centred on a column of the floor plan (the two plans align by their shared grid labels)', w2.ok && w2.st.bodies === 64 && w2.st.left_out === 0 && w2.nF === 32 && w2.sizes.join() === '48x60' && w2.z.join() === '-1.4478..-1.143' && w2.centred === 32, JSON.stringify(w2));
 });
+
