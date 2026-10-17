@@ -1580,5 +1580,11 @@ Panel: a "WING (ROTATED FRAME)" section appears for a building whose walls are n
 - **Regression:** `witness_e2e_dxf_export.js` 14/14, `witness_dxf_wing_back.js` 4 angles, `witness_dxf_export_roundtrip.js`, `witness_dxf_scopes_merge.js`, BIMCompiler `witness_std2d_set.js` (prefix DXARC.DB).
 - **Still not done:** a real Hospital wing through Convert (walls with off-axis faces inside a wing stay `wall_not_orthogonal`); window family tagging for model-exported sets.
 
+#### Prior-art search, first pass (2026-10-17, three standard web searches; NOT exhaustive, no "first/unique" wording allowed on this basis)
+- **IFC -> 2D drawings:** BlenderBIM/IfcOpenShell drawing generation (SVG/PDF; DXF via conversion), K-BIM D-Generator (plans/sections/elevations to DWG, 2016, inactive), DComposer (PDF), BricsCAD BIM (commercial), ifcbuilder.ai (vendor claim: PDF/DXF with layers). No maintained open tool found that writes grid + 3-tier dimensions + embedded markings and re-imports.
+- **2D -> BIM:** CYPE and ARCHLine.XP (commercial DXF/DWG wall/door/window recognition, vendor figure 90-95 %), research with deep learning + rules (2023 Automation in Construction MEP; 2025 sketch-plan YOLO + rules; 2026 ECCC paper on OCR + text-geometry alignment, which names dimension/text alignment as the open problem). Ours differs by being rule-based and marking-driven, but a difference is not a first.
+- **Rotated wings:** only user-forum material (Archicad rotated grids, Shapr3D "rotate to orthogonal before DXF export"). Local frames per wing are ordinary drafting practice; we found no tool that derives wing angles from the model and writes `@FRAME` for a lossless turn-back. Unverified beyond these searches.
+- **Next if wanted:** Revit/Archicad project-base-point and work-plane docs, patents (Google Patents/Espacenet), a second pass on "drawing-to-model round trip with embedded markings".
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
