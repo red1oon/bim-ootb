@@ -5,7 +5,7 @@
 set -euo pipefail
 BC="$1"; REV="$2"; HERE="$(cd "$(dirname "$0")" && pwd)"; MOD="$(dirname "$HERE")"
 FULL="$(git -C "$BC" rev-parse --short=9 "$REV")"; SUBJ="$(git -C "$BC" log -1 --format=%s "$REV" | cut -c1-90)"
-FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config dxf2qualify std2d std2d_geom std2d_dxf std2d_marks polygon-clipping"
+FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config dxf2qualify std2d std2d_geom std2d_dxf std2d_marks std2d_scopes polygon-clipping"
 {
   echo "# dxf2bim/ — verbatim copies of the BIMCompiler DXF2BIM reader modules"
   echo

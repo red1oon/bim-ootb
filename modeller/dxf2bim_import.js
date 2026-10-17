@@ -61,6 +61,82 @@
   var FACE_ORDER = ['minY', 'maxY', 'minX', 'maxX'];   // elevation order = the witness's FRONT, REAR, LEFT, RIGHT (deterministic, stated)
   function parse(text) { return new DxfParser().parseSync(text); }
 
+  // ---- §L6 scoped sets: a storey drawn as a KEY sheet (@SCOPE=KEY: grid, dimensions, levels, every marking) + wing/zone sheets (@SCOPE=<name>,x0,y0,x1,y1: the elements they own).
+  // Every sheet is a serialisation of ONE whole-storey document (same entity handles), so assembling = the KEY sheet + the geometry entities of every scope sheet (annotation layers of a
+  // scope sheet, its grid copy, title and match lines, are display only and are dropped). Done BEFORE role detection: the merged sheet is an ordinary whole-storey plan to the rest.
+  // Checks (blocking QF:, advisory): scope_no_key, scope_level_conflict, scope_overlap, scope_grid_disagree, scope_duplicate_piece | scope_gap.
+  var SCOPE_TOL = 10;   // sheet units of the sheet (mm for the std set): rectangles/grid positions closer than this agree (the grid merge tolerance, L1.1 R5)
+  function chunkDxf(text) {
+    var L = String(text).split(/\r?\n/), start = -1, end = -1, i;
+    for (i = 0; i + 3 < L.length; i += 2) {
+      if (start < 0) { if (L[i].trim() === '0' && L[i + 1].trim() === 'SECTION' && L[i + 2].trim() === '2' && L[i + 3].trim() === 'ENTITIES') start = i + 4; }
+      else if (L[i].trim() === '0' && L[i + 1].trim() === 'ENDSEC') { end = i; break; }
+    }
+    if (start < 0 || end < 0) return null;
+    var ents = [], cur = null;
+    for (i = start; i < end; i += 2) {
+      if (L[i].trim() === '0') { cur = { lines: [], layer: null, handle: null }; ents.push(cur); }
+      if (!cur) continue;
+      cur.lines.push(L[i], L[i + 1]);
+      var c = L[i].trim(); if (c === '8' && cur.layer === null) cur.layer = L[i + 1].trim(); if (c === '5' && cur.handle === null) cur.handle = L[i + 1].trim();
+    }
+    return { head: L.slice(0, start), ents: ents, tail: L.slice(end) };
+  }
+  function scopeOfText(text) {   // {level, scope:'KEY'|{name,rect}, grid:{X:{label:pos}, Y:{...}}} from the sheet's own markings, or null
+    var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc;
+    if (!d.scope || d.view !== 'PLAN') return null;
+    var g = { X: d.gridsX || {}, Y: d.gridsY || {} };
+    var sc = d.scope === 'KEY' ? 'KEY' : (function (a) { return { name: a[0], rect: a.slice(1).map(Number) }; })(String(d.scope).split(','));
+    return { level: d.level, base: String(d.name || '').split('__')[0] || ('L' + d.level), scope: sc, grid: g, desc: d };
+  }
+  function mergeScopes(files) {
+    var rep = { blocking: [], advisory: [], groups: [] }, info = files.map(function (f) { var o = null; try { o = scopeOfText(f.text); } catch (e) { o = null; } return o; });
+    var groups = {}; files.forEach(function (f, i) { if (info[i]) (groups[info[i].base] = groups[info[i].base] || []).push(i); });   // a KEY and its wings share @NAME up to '__'
+    var drop = {}, merged = {}, add = function (arr, code, sheet, msg) { arr.push({ code: code, sheet: sheet, message: msg }); };
+    Object.keys(groups).forEach(function (lv) {
+      var idx = groups[lv], keys = idx.filter(function (i) { return info[i].scope === 'KEY'; }), scs = idx.filter(function (i) { return info[i].scope !== 'KEY'; });
+      if (keys.length !== 1) { add(rep.blocking, 'QF:scope_no_key', files[idx[0]].name, 'storey ' + lv + ': ' + keys.length + ' KEY sheets (@SCOPE=KEY: exactly one per scoped storey)'); return; }
+      var K = keys[0], kinfo = info[K], kc = chunkDxf(files[K].text), grp = { level: kinfo.level, name: lv, key: files[K].name, scopes: scs.map(function (i) { return files[i].name; }) };
+      rep.groups.push(grp);
+      if (!kc) { add(rep.blocking, 'QF:scope_no_key', files[K].name, 'the KEY sheet has no ENTITIES section'); return; }
+      scs.forEach(function (i) { if (r6(info[i].desc.level) !== r6(kinfo.desc.level)) add(rep.blocking, 'QF:scope_level_conflict', files[i].name, 'scope ' + info[i].scope.name + ' @LEVEL=' + info[i].desc.level + ' but the KEY sheet @LEVEL=' + kinfo.desc.level); });
+      for (var a = 0; a < scs.length; a++) for (var b = a + 1; b < scs.length; b++) {
+        var A = info[scs[a]].scope.rect, Bq = info[scs[b]].scope.rect, ow = Math.min(A[2], Bq[2]) - Math.max(A[0], Bq[0]), oh = Math.min(A[3], Bq[3]) - Math.max(A[1], Bq[1]);
+        if (ow > SCOPE_TOL && oh > SCOPE_TOL) add(rep.blocking, 'QF:scope_overlap', files[scs[b]].name, 'scopes ' + info[scs[a]].scope.name + ' and ' + info[scs[b]].scope.name + ' overlap by ' + Math.round(ow) + ' x ' + Math.round(oh));
+      }
+      var area = 0, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      scs.forEach(function (i) { var r = info[i].scope.rect; area += (r[2] - r[0]) * (r[3] - r[1]); x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); });
+      if (scs.length && (x1 - x0) * (y1 - y0) - area > SCOPE_TOL * (x1 - x0 + y1 - y0)) add(rep.advisory, 'QF:scope_gap', files[K].name, 'storey ' + lv + ': the scopes leave ' + Math.round(((x1 - x0) * (y1 - y0) - area) / 1e6) + ' m2 of their bounding rectangle undrawn');
+      scs.forEach(function (i) {
+        ['X', 'Y'].forEach(function (ax) { Object.keys(info[i].grid[ax]).forEach(function (lab) {
+          var kp = kinfo.grid[ax][lab], sp = info[i].grid[ax][lab];
+          if (kp === undefined || Math.abs(kp - sp) > SCOPE_TOL) add(rep.blocking, 'QF:scope_grid_disagree', files[i].name, 'grid ' + ax + lab + ' is at ' + sp + ' on scope ' + info[i].scope.name + ' but ' + (kp === undefined ? 'absent on the KEY sheet' : kp + ' on the KEY sheet'));
+        }); });
+      });
+      var seen = {}; kc.ents.forEach(function (e) { if (e.handle) seen[e.handle] = files[K].name; });
+      var extra = [];
+      scs.forEach(function (i) {
+        var c = chunkDxf(files[i].text); if (!c) { add(rep.blocking, 'QF:scope_no_key', files[i].name, 'no ENTITIES section'); return; }
+        c.ents.forEach(function (e) {
+          if (e.layer === 'A-GRID' || e.layer === 'DXF2BIM-MARK' || (e.layer && e.layer.indexOf('A-ANNO') === 0)) return;
+          if (e.handle && seen[e.handle]) { add(rep.blocking, 'QF:scope_duplicate_piece', files[i].name, 'entity ' + e.handle + ' is also on ' + seen[e.handle]); return; }
+          if (e.handle) seen[e.handle] = files[i].name; extra.push(e);
+        });
+      });
+      var text = kc.head.slice();
+      // the whole-storey entity order is the handle order of the writer (sequential): geometry sorted by handle, then the KEY's markings in their own order (pipeline outputs depend on entity order)
+      var isScopeMark = function (e) { for (var q = 0; q + 1 < e.lines.length; q += 2) if (e.lines[q].trim() === '1' && /^@SCOPE=/.test(e.lines[q + 1].trim())) return true; return false; };
+      var isMark = function (e) { return e.layer === 'DXF2BIM-MARK'; }, hv = function (e) { return e.handle ? parseInt(e.handle, 16) : Infinity; };
+      var geo = kc.ents.filter(function (e) { return !isMark(e); }).concat(extra).map(function (e, n) { return { e: e, n: n }; }).sort(function (a, b) { return hv(a.e) - hv(b.e) || a.n - b.n; }).map(function (x) { return x.e; });
+      geo.concat(kc.ents.filter(function (e) { return isMark(e) && !isScopeMark(e); })).forEach(function (e) { text = text.concat(e.lines); });
+      text = text.concat(kc.tail);
+      merged[K] = { name: files[K].name.replace(/__KEY(_std)?\.dxf$/i, '$1.dxf'), text: text.join('\n') };
+      scs.forEach(function (i) { drop[i] = true; });
+    });
+    var out = []; files.forEach(function (f, i) { if (drop[i]) return; out.push(merged[i] || f); });
+    return { files: out, report: rep };
+  }
+
   // ---- R1-R4 sheet roles from DXF2BIM-MARK markings only ----
   function readSheet(name, text, hashHex) {
     var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc;
@@ -79,8 +155,9 @@
     return sh;
   }
   function readSheets(files, opts) {
-    var hashHex = (opts && opts.hashHex) || sha256Hex;
-    return files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
+    var hashHex = (opts && opts.hashHex) || sha256Hex, m = mergeScopes(files);   // §L6: scoped storeys are assembled first
+    var out = m.files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
+    out.scopeReport = m.report; return out;
   }
   // §L3.3 layer-map set (DX or STD): the set whose elevation-wall layer (its MAP_ELEV 'elevwall' rule, read from the copied config) has
   // entities on EVERY elevation sheet; both or neither -> null (the gate refuses, no guess).
@@ -99,6 +176,7 @@
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
+    ((sheets.scopeReport && sheets.scopeReport.blocking) || []).forEach(function (b) { refused.push({ sheet: b.sheet, reason: b.code + ': ' + b.message }); });   // §L6
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
@@ -518,5 +596,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

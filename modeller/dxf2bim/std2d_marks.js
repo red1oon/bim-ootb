@@ -2,7 +2,7 @@
 // Port of tests/dxf2bim/mark_dx_set.js `std` profile, generalised: N storeys, Node-schema model, no Duplex sheet list. Every marking is derived from the
 // model (storey elevations, grid, wall/slab tops, IFC door sizes) and carries `@BY=model`. The Python-side oracle read the same facts back from the drawing;
 // here the writer and the marker share the one grid/level object, so they cannot disagree. Unresolvable items are logged `§MARK_GAP`, never filled.
-// deriveMarks(R, deps, opts) -> { files: {name: markedDxfText}, log }.  deps = { B (dxf2bim), DxfParser, hashHex, MK (dxf2marks), SHC (dxf2shell_config) }.
+// deriveMarks(R, deps, opts) -> { files: {name: markedDxfText}, log }.  deps = { B (dxf2bim), DxfParser, hashHex, MK (dxf2marks), SHC (dxf2shell_config), SCOPES (std2d_scopes, only for scoped sets) }.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.Std2dMarks = factory(); })(this, function () {
   'use strict';
   const ELEV_TOL = 0.003, EXT_FACE_TOL = 0.010;
@@ -12,17 +12,33 @@
 
   function deriveMarks(R, deps, opts) {
     opts = opts || {};
-    const M = R.model, grid = R.grid, set = opts.set || 'MODEL', out = {}, log = [];
+    const M = R.model, grid = R.grid, set = opts.set || 'MODEL', out = {}, log = [], SC = deps.SCOPES;
     const say = s => log.push(s), STD = deps.SHC.STD;
     const files = Object.keys(R.files);
     const viewOf = n => { const m = /_([A-Z0-9_]+)_std\.dxf$/.exec(n); return m ? m[1] : n; };
     const gEl = M.storeys.find(s => s.name === M.grid_storey).elev;
     const levelsOf = () => { const l = M.storeys.filter(s => s.elev >= gEl).map(s => s.elev); if (M.roof_top !== null) l.push(M.roof_top); return l.sort((a, b) => a - b); };
     for (const name of files) {
-      const view = viewOf(name), txt = R.files[name], marks = [];
+      let view = viewOf(name), txt = R.files[name], marks = [], scopeSheet = null;
+      const sm = /^(FLOOR_[A-Z0-9_]+?)__(KEY|[A-Z0-9_]+)$/.exec(view);   // §L6: a scoped plan sheet: <view>__KEY (annotation + every marking) or <view>__<scope>
+      if (sm) { view = sm[1]; scopeSheet = sm[2]; }
       const kind = /^FLOOR_/.test(view) ? 'PLAN' : view === 'ROOF' ? 'ROOF' : view === 'SECTION' ? 'SECTION' : 'ELEV';
-      say('== ' + name + ' (' + kind + ')');
+      say('== ' + name + ' (' + kind + (scopeSheet ? ', scope ' + scopeSheet : '') + ')');
+      if (scopeSheet && scopeSheet !== 'KEY') {   // a wing/zone sheet: the plan role + level + its rectangle + the grid lines drawn on it; every other marking is on the KEY sheet
+        const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev), sp = R.scoped[view], sh = sp.sheets.find(x => x.name === scopeSheet), E = sp.E;
+        const cl = (v, lo, hi) => Number.isFinite(v) ? v : (v < 0 ? lo : hi);
+        const rc = [cl(sh.rect[0], E[0], E[1]), cl(sh.rect[1], E[2], E[3]), cl(sh.rect[2], E[0], E[1]), cl(sh.rect[3], E[2], E[3])].map(v => Number(v.toFixed(3)));
+        marks.push({ text: '@SET=' + set }, { text: '@VIEW=PLAN' }, { text: '@UNITS=mm' }, { text: '@NAME=' + view + '__' + scopeSheet }, { text: '@LEVEL=' + lv3 }, { text: '@SCOPE=' + scopeSheet + ',' + rc.join(',') });
+        const keepX = SC.gridKeep(grid.x, sh.rect[0], sh.rect[2]), keepY = SC.gridKeep(grid.y, sh.rect[1], sh.rect[3]);
+        grid.x.filter(g => keepX.has(g[1] * 1000)).forEach(g => marks.push({ text: '@GRIDX=' + g[0], x: mm3(g[1]), y: 0 }));
+        grid.y.filter(g => keepY.has(g[1] * 1000)).forEach(g => marks.push({ text: '@GRIDY=' + g[0], x: 0, y: mm3(g[1]) }));
+        say('  SCOPE=' + scopeSheet + ' rect=' + rc.join(',') + ' LEVEL=' + lv3 + ' grid ' + keepX.size + 'x' + keepY.size);
+        out[name] = deps.MK.writeMarks(txt, marks.map(m => Object.assign({}, m, { text: m.text + ' @BY=model' })));
+        continue;
+      }
+      if (scopeSheet === 'KEY') txt = R.whole[view];   // the markings (WALLTOP handles, tags) are derived on the whole plan: same handles as every scope sheet
       marks.push({ text: '@SET=' + set }, { text: '@VIEW=' + kind }, { text: '@UNITS=mm' }, { text: '@NAME=' + view });
+      if (scopeSheet === 'KEY') marks.push({ text: '@SCOPE=KEY' });
       if (kind === 'PLAN') {
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev);
         marks.push({ text: '@LEVEL=' + lv3 }); say('  LEVEL=' + lv3 + '  [FROM_SOURCE_MODEL: storey placement of ' + st.name + ']');
@@ -49,7 +65,7 @@
         if (M.roof_top === null) say('  §MARK_GAP no @ROOF (no IfcRoof / IfcSlab)'); else marks.push({ text: '@ROOF=' + r3(M.roof_top) });
         say('  HAXIS/GRIDH/Z/ROOF from the model');
       }
-      out[name] = deps.MK.writeMarks(txt, marks.map(m => Object.assign({}, m, { text: m.text + ' @BY=model' })));
+      out[name] = deps.MK.writeMarks(scopeSheet === 'KEY' ? R.files[name] : txt, marks.map(m => Object.assign({}, m, { text: m.text + ' @BY=model' })), scopeSheet === 'KEY' ? { handleBase: R.scoped[view].maxHandle } : undefined);
       say('  marks=' + marks.length);
     }
     return { files: out, log };

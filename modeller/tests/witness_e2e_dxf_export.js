@@ -8,6 +8,7 @@
  *   D3 ZIP      — the downloaded bytes pass Info-ZIP `unzip -t` (independent of our writer).
  *   D4 NO-SIDECAR — the zip entries are exactly the .dxf sheets.
  *   D6 DB-INPUT — §L5.9: a Node-schema model .db handed to the same entry skips extraction and writes the same sheets as the Node pipeline on that .db; an old-schema .db is refused with the command to run.
+ *   D7 SPLIT — §L6: Suggest a split (budget 25) in the live panel lists wings; a merge and a split through the panel selects keep a partition; the downloaded zip (KEY + wing sheets per storey) is valid, and importing it back with the Modeller's importer assembles the SAME model as the unscoped set (ops by storey, `run_id`/derived hashes normalised).
  *   D5 PARITY   — every entry's text equals the Node run (modeller/dxf2bim modules, better-sqlite3-free sql.js path) on the same IFC, byte for byte.
  */
 'use strict';
@@ -63,4 +64,32 @@ runE2E('W-E2E-DXF-EXPORT', async (t) => {
     await window.DxfExportUI.run(new File([u], 'OLD.db')); const p = document.getElementById('m-dxfexp-panel'); return p ? p.textContent : '';
   });
   t.assert('D6b OLD-SCHEMA REFUSED (names the extractor command)', /no element_world_bbox/.test(bad) && /extractIFC2DB/.test(bad), bad.replace(/\s+/g, ' ').slice(0, 160));
+  // D7: suggest -> merge -> split through the real panel controls, download, re-import, same model
+  await t.pg.evaluate(async () => { const inp = document.getElementById('dxfexp-budget'); if (!inp) { const B0 = await window.DxfExportUI.run(window.__lastIfcFile); } });
+  await t.pg.waitForFunction(() => !!document.getElementById('dxfexp-suggest'), { timeout: 120000 });
+  await t.pg.evaluate(() => { const i = document.getElementById('dxfexp-budget'); i.value = '25'; document.getElementById('dxfexp-suggest').click(); });
+  await t.pg.waitForFunction(() => /wings by grid line/.test(document.getElementById('m-dxfexp-panel').textContent), { timeout: 120000 });
+  const n1 = await t.pg.evaluate(() => document.querySelectorAll('#dxfexp-scopes select[data-act="mg"]').length);
+  const rows1 = await t.pg.evaluate(() => (document.getElementById('m-dxfexp-panel').textContent.match(/(\d+) wings by grid line/) || [])[1]);
+  t.assert('D7a SUGGEST (panel lists wings with merge/split controls)', Number(rows1) >= 2 && n1 >= 1, rows1 + ' wings, ' + n1 + ' rows with a merge control');
+  await t.shot('scopes-suggested');
+  await t.pg.evaluate(() => { const el = document.querySelector('#dxfexp-scopes select[data-act="mg"]'); el.value = el.options[1].value; el.dispatchEvent(new Event('change')); });
+  await t.sleep(1500);
+  const rows2 = await t.pg.evaluate(() => (document.getElementById('m-dxfexp-panel').textContent.match(/(\d+) wings by grid line/) || [])[1] || '1');
+  t.assert('D7b MERGE (two wings sharing an edge become one)', Number(rows2) === Number(rows1) - 1 || Number(rows2) === 1, rows1 + ' -> ' + rows2);
+  const sx = await t.pg.evaluate(() => !!document.querySelector('#dxfexp-scopes select[data-act="sx"], #dxfexp-scopes select[data-act="sy"]'));
+  if (sx) { await t.pg.evaluate(() => { const el = document.querySelector('#dxfexp-scopes select[data-act="sx"], #dxfexp-scopes select[data-act="sy"]'); el.value = el.options[1].value; el.dispatchEvent(new Event('change')); }); await t.sleep(1500); }
+  const rows3 = await t.pg.evaluate(() => (document.getElementById('m-dxfexp-panel').textContent.match(/(\d+) wings by grid line/) || [])[1] || '1');
+  t.assert('D7c SPLIT (a wing is cut at a grid line)', !sx || Number(rows3) === Number(rows2) + 1, rows2 + ' -> ' + rows3);
+  await t.pg.evaluate(() => { window.__dl = null; }); await t.pg.click('#dxfexp-dl'); await t.sleep(1200);
+  const b64s = await t.pg.evaluate(async () => { const b = window.__dl; if (!b) return null; const u = new Uint8Array(await b.arrayBuffer()); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); });
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'wdxfscope-')), zp2 = path.join(dir2, 's.zip'); fs.writeFileSync(zp2, Buffer.from(b64s, 'base64'));
+  let ok2 = false; try { execSync('unzip -t ' + JSON.stringify(zp2) + ' 2>&1'); ok2 = true; } catch (e) { ok2 = false; }
+  const names2 = execSync('unzip -Z1 ' + JSON.stringify(zp2)).toString().trim().split('\n').sort(); execSync('cd ' + JSON.stringify(dir2) + ' && unzip -o -q s.zip');
+  const keysN = names2.filter(n => /__KEY_std\.dxf$/.test(n)).length, wingN = names2.filter(n => /__(?!KEY)[A-Z0-9_]+_std\.dxf$/.test(n)).length;
+  t.assert('D7d ZIP (valid; KEY + wing sheets; no sidecar)', ok2 && keysN === 2 && wingN >= 2 && names2.every(n => /\.dxf$/.test(n)), names2.length + ' files, ' + keysN + ' KEY, ' + wingN + ' wing sheets');
+  const f2 = names2.map(n => ({ name: n, text: fs.readFileSync(path.join(dir2, n), 'utf8') })), f0 = Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }));
+  const s2 = I.readSheets(f2), s0 = I.readSheets(f0), g2 = I.gate(s2, {}), c2 = I.convert(s2, {}), c0 = I.convert(s0, {});
+  const norm = c => (c.ST || []).map(st => st.name + ':' + (st.after || []).map(o => JSON.stringify(o, (k, v) => (k === 'run_id' ? undefined : typeof v === 'string' && /^[0-9a-f]{32,64}$/.test(v) ? '#' : typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v))).sort().join('|'));
+  t.assert('D7e ASSEMBLE-BACK (the downloaded wings import to the same model as the unscoped set)', g2.ok && s2.scopeReport.blocking.length === 0 && norm(c0).length > 0 && JSON.stringify(norm(c0)) === JSON.stringify(norm(c2)), 'gate=' + g2.ok + ' scope blocking=' + s2.scopeReport.blocking.length + ' storeys=' + norm(c2).length + ' ops=' + (c2.ST || []).reduce((a, st) => a + st.after.length, 0));
 });

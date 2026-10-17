@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER'];
   var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -56,6 +56,10 @@
           var rp = val.split(',').map(Number);
           if (rp.length !== 4 || rp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@REGION needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
           val = [Math.min(rp[0], rp[2]), Math.min(rp[1], rp[3]), Math.max(rp[0], rp[2]), Math.max(rp[1], rp[3])].join(',');
+        }
+        if (key === 'SCOPE') {                                                             // bim-ootb lane spec L6: @SCOPE=KEY (the storey's annotation sheet) | @SCOPE=<name>,x0,y0,x1,y1 (a wing/zone sheet, mm of the sheet's @UNITS)
+          var sp0 = val.split(',');
+          if (!(val === 'KEY' || (sp0.length === 5 && /^[A-Za-z0-9_]+$/.test(sp0[0]) && sp0.slice(1).every(function (n) { return n.trim() !== '' && isFinite(Number(n)); })))) { errors.push(err('MARK:malformed', '@SCOPE needs KEY or <name>,x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
         }
         if (key === 'VIEW' && val !== 'PLAN' && val !== 'ELEV' && val !== 'ROOF' && val !== 'SECTION') { errors.push(err('MARK:malformed', '@VIEW must be PLAN|ELEV|ROOF|SECTION: ' + val, { handle: m.handle })); return; }
         if (key === 'CUT') {                                                               // L1.4 F5: <X|Y>,<plan coordinate in the sheet's @UNITS>
@@ -246,6 +250,7 @@
       else if (inEnt && c === '0' && v === 'ENDSEC') { endIdx = i; break; }
     }
     if (endIdx < 0) throw new Error('writeMarks: no ENTITIES section');
+    if (opts.handleBase > maxH) maxH = opts.handleBase;   // §L6: a KEY sheet's markings must not reuse a handle of a scope sheet's entity
     var out = [];
     marks.forEach(function (m, n) {
       var h = (maxH + 1 + n).toString(16).toUpperCase();

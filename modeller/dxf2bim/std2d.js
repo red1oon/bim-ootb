@@ -3,9 +3,9 @@
 // Every value is from the model DB or a named convention constant (same constants as the oracle); unresolvable values are logged `§GAP`, nothing is guessed.
 // Read the log after every run (tests/dxf2bim/witness_std2d_set.js compares it with the Python log line for line).
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./std2d_geom.js'), require('./std2d_dxf.js'), require('./polygon-clipping.js'));
-  else root.Std2d = factory(root.Std2dGeom, root.Std2dDxf, root.polygonClipping);
-})(this, function (G, DXF, PC) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./std2d_geom.js'), require('./std2d_dxf.js'), require('./polygon-clipping.js'), require('./std2d_scopes.js'));
+  else root.Std2d = factory(root.Std2dGeom, root.Std2dDxf, root.polygonClipping, root.Std2dScopes);
+})(this, function (G, DXF, PC, SCOPES) {
   'use strict';
   const GRID_READABLE_MAX = 40, GRID_SUPPORT_MIN = 3;   // §L1.11
   const GRID_MERGE_TOL = 0.010, GRID_MIN_WALL_LEN = 1.0, EXT_FACE_TOL = 0.010, BEAR_OVERLAP = 0.50, FACE_PT_TOL = 0.005, PT_MERGE = 0.001;
@@ -385,7 +385,7 @@
 
   // ───────────────────────── drawing ─────────────────────────
   const newDoc = () => new DXF.Doc({ layers: LAYERS, scale: SCALE, dim: { txt: TXT_DIM, asz: 1.2 } });
-  function bubble(doc, cx, cy, label) { doc.circle('A-GRID', [cx, cy], BUBBLE_R * SCALE, { linetype: 'Continuous' }); doc.text('A-GRID', label, [cx, cy], TXT_BUBBLE * SCALE, { align: 'MIDDLE_CENTER' }); }
+  function bubble(doc, cx, cy, label, g) { doc.circle('A-GRID', [cx, cy], BUBBLE_R * SCALE, { linetype: 'Continuous', grid: g }); doc.text('A-GRID', label, [cx, cy], TXT_BUBBLE * SCALE, { align: 'MIDDLE_CENTER', grid: g }); }
   function dim(doc, p1, p2, base, angle, log, tag, outward) {
     const meas = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), need = (String(Math.round(meas)).length * 0.9 * TXT_DIM + 1.0) * SCALE;
     let loc = null;
@@ -411,8 +411,8 @@
   function gridPlan(doc, E, grid) {
     const ge = GRID_END * SCALE, bc = BUBBLE_C * SCALE;
     const tx = tiersOf(grid.x.map(g => mm(g[1]))), ty = tiersOf(grid.y.map(g => mm(g[1])));
-    grid.x.forEach(([lab, p], i) => { const x = mm(p), o = tx[i] * GRID_STAGGER; doc.line('A-GRID', [x, E[2] - ge - o], [x, E[3] + ge + o]); bubble(doc, x, E[2] - bc - o, lab); bubble(doc, x, E[3] + bc + o, lab); });
-    grid.y.forEach(([lab, p], i) => { const y = mm(p), o = ty[i] * GRID_STAGGER; doc.line('A-GRID', [E[0] - ge - o, y], [E[1] + ge + o, y]); bubble(doc, E[0] - bc - o, y, lab); bubble(doc, E[1] + bc + o, y, lab); });
+    grid.x.forEach(([lab, p], i) => { const x = mm(p), o = tx[i] * GRID_STAGGER, g = { axis: 'x', pos: x }; doc.line('A-GRID', [x, E[2] - ge - o], [x, E[3] + ge + o], { grid: g }); bubble(doc, x, E[2] - bc - o, lab, g); bubble(doc, x, E[3] + bc + o, lab, g); });
+    grid.y.forEach(([lab, p], i) => { const y = mm(p), o = ty[i] * GRID_STAGGER, g = { axis: 'y', pos: y }; doc.line('A-GRID', [E[0] - ge - o, y], [E[1] + ge + o, y], { grid: g }); bubble(doc, E[0] - bc - o, y, lab, g); bubble(doc, E[1] + bc + o, y, lab, g); });
   }
   function planDims(doc, E, grid, log, view, faceRuns) {
     const gx = grid.x.map(g => mm(g[1])), gy = grid.y.map(g => mm(g[1]));
@@ -518,6 +518,7 @@
     gridPlan(doc, E, grid);
     planDims(doc, E, grid, log, view, faceRuns);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
+    doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
   }
 
@@ -661,14 +662,30 @@
   }
 
   // q(sql) -> array of row objects (Node-schema model DB). prefix names the files: <prefix>_<VIEW>_std.dxf
-  function writeStdSet(q, prefix) {
-    const log = new Log(), files = {};
+  // opts (optional, §L6): { scopes: [{name, rect:[x0,y0,x1,y1] mm}] } or { suggest: true, budget } -> each plan storey is written as a KEY sheet + one sheet per scope that owns elements
+  function writeStdSet(q, prefix, opts) {
+    opts = opts || {};
+    const log = new Log(), files = {}, whole = {}, scoped = {};
     log.add(`§ENTRY std2d db=model prefix=${prefix}`);
     const model = loadModel(q, log);
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
+    let scopes = opts.scopes || null;
+    if (!scopes && opts.suggest) {
+      scopes = SCOPES.suggest({ model, grid, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })) } }, opts.budget);
+      log.add(`§SCOPE_SUGGEST budget=${opts.budget || SCOPES.BUDGET} scopes=${scopes.length} ` + scopes.map(s => `${s.name}[${s.rect.map(v => Number.isFinite(v) ? Math.round(v) : v).join(',')}]`).join(' '));
+    }
     const put = (name, doc) => { files[name] = doc.toString(); log.add(`§WRITE ${name}`); };
-    for (const s of planStoreys(model)) { const view = planView(s.name); put(`${prefix}_${view}_std.dxf`, writePlan(model, grid, s, view, log)); }
+    for (const s of planStoreys(model)) {
+      const view = planView(s.name), doc = writePlan(model, grid, s, view, log);
+      whole[view] = doc.toString();
+      const sp = scopes && scopes.length > 1 ? SCOPES.split(doc, { model, grid, storey: s, view, E: doc.E, scopes }) : null;
+      if (!sp || sp.sheets.length < 2) { files[`${prefix}_${view}_std.dxf`] = whole[view]; log.add(`§WRITE ${prefix}_${view}_std.dxf`); continue; }
+      scoped[view] = sp;
+      const kn = `${prefix}_${view}__KEY_std.dxf`; files[kn] = sp.key; log.add(`§WRITE ${kn}`);
+      sp.sheets.forEach(sh => { const n = `${prefix}_${view}__${sh.name}_std.dxf`; files[n] = sh.text; log.add(`§WRITE ${n}`); });
+      log.add(`§SCOPE view=${view} sheets=${sp.sheets.length} owned=${sp.sheets.map(sh => sh.name + ':' + sh.owned).join(',')}`);
+    }
     for (const face of Object.keys(ELEV_FACES)) put(`${prefix}_${face}_std.dxf`, writeElevation(model, grid, face, log));
     const rs = roofStorey(model);
     if (!rs) log.gap('GAP:no_roof_storey', '-', 'no storey above the grid storey without a floor plan; no roof plan'); else put(`${prefix}_ROOF_std.dxf`, writeRoofPlan(model, grid, rs, log));
@@ -676,7 +693,7 @@
     const codes = {}; log.gaps.forEach(g => { codes[g[0]] = (codes[g[0]] || 0) + 1; });
     log.add(`§SUMMARY views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     log.add('§GAP_SUMMARY {' + Object.keys(codes).map(k => `'${k}': ${codes[k]}`).join(', ') + '}');
-    return { files, log: log.lines, gaps: log.gaps, grid, model, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })), roof: rs } };
+    return { files, whole, scoped, scopes, log: log.lines, gaps: log.gaps, grid, model, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })), roof: rs } };
   }
   return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
 });
