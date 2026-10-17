@@ -78,5 +78,22 @@ runE2E('W-DXF-STRUCT', async (t) => {
   await pg.select('#dm-panel [data-default="column.type_name"] select', ''); await idle();
   const e8 = await pg.evaluate(() => ({ name: window.DxfImportUI.state.gate.R.els[0].ifc.type_name, kind: window.DxfImportUI.state.defaults.find(r => r.key === 'column.type_name').kind }));
   t.assert('S8c CONTROL choosing the empty option: no type name, the row is the user\'s', e8.name === null && e8.kind === 'chosen', JSON.stringify(e8));
+  // S9 (§L7.14) a second plan (the foundation plan, its own origin) + a z range the user states
+  const PLANF = [['@SET=T'], ['@VIEW=PLAN'], ['@UNITS=mm'], ['@LEVEL=0'], ['@NAME=F'], ['@GRIDX=A', 6000, 0], ['@GRIDX=B', 9000, 0], ['@GRIDY=1', 0, 850], ['@GRIDY=2', 0, 2850]];
+  const foundPlan = f('z_found.dxf', doc([[800, 1200], [3800, 4200]].map(([a, b], i) => poly('Fo', a + 5000, 700, b + 5000, 1000, 'F' + i)).join(''), PLANF));
+  await open([P, E, foundPlan]); await layersOpen();
+  await choose('plan', 'Col', 'column'); await choose('elev', 'Col', 'column'); await choose('plan', 'Fo', 'footing');
+  let a9 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { ok: g.ok, bodies: g.structure.bodies, left: g.structure.left_out, waiting: (document.querySelector('#dm-panel [data-bodyz="footing"]') || {}).textContent || null, sec: !!document.querySelector('#dm-panel .dm-sh[data-sec="bodyz"]') }; });
+  t.assert('S9 a second plan with footings: the "Body heights" section lists them as waiting (2) and they are left out (3 columns built, 2 left out), no height guessed', a9.ok && a9.bodies === 3 && a9.left === 2 && a9.sec && /2 waiting/.test(a9.waiting || ''), JSON.stringify(a9));
+  await pg.type('#dm-bz-footing-0', '-1.4'); await pg.type('#dm-bz-footing-1', '-1.1');
+  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="bodyzadd"][data-kind="footing"]').click()); await idle();
+  let b9 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate, F = g.R.els.filter(e => e.kind === 'footing'); return { bodies: g.structure.bodies, left: g.structure.left_out, F: F.map(e => [e.z0, e.z1, e.height_source, e.prov, e.storey, Math.round(e.vertices[0][0] * 1000), Math.round(e.vertices[0][1] * 1000)]), row: !!document.querySelector('#dm-panel [data-bodyz-row="footing"]') }; });
+  t.assert('S9b typing the range builds them: 5 bodies, 0 left out, the footings are stated (-1.4..-1.1 m, prov derived) on Level 1 and sit in the BASE frame (x 0.8 m / 3.8 m, y 0.0 m), the @BODYZ marking is a user row', b9.bodies === 5 && b9.left === 0 && b9.F.length === 2 && b9.F.every(r => r[0] === -1.4 && r[1] === -1.1 && r[2] === 'stated' && r[3] === 'derived' && r[4] === 'Level 1' && r[6] === 0) && b9.F.map(r => r[5]).sort((p, q) => p - q).join() === '800,3800' && b9.row, JSON.stringify(b9));
+  await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 60000 }); await t.sleep(800);
+  const c9 = await pg.evaluate(() => window.DxfImportUI.state.last.counts);
+  t.assert('S9c Convert: 3 IfcColumn + 2 IfcFooting, all on Level 1 (two plans of one storey are ONE storey)', c9['Level 1/IfcColumn'] === 3 && c9['Level 1/IfcFooting'] === 2 && Object.keys(c9).length === 2, JSON.stringify(c9));
+  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="bodyzdel"]').click()); await idle();
+  const d9 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { left: g.structure.left_out, row: !!document.querySelector('#dm-panel [data-bodyz-row]') }; });
+  t.assert('S9d CONTROL removing the statement puts them back to waiting (2 left out), never a remembered height', d9.left === 2 && !d9.row, JSON.stringify(d9));
 });
 
