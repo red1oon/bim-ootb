@@ -11,7 +11,7 @@
  *   R4 VERDICT  — convert(): verdict.verdict === 'qualifies' and blocking === 0, else FAIL with the codes.
  *   R5 NO-SIDECAR — the exported file list is exactly the .dxf sheets (no .json / .db / .txt).
  *   R6 CONTROL  — one sheet's @LEVEL marking removed from the exported text: R2 must lose that sheet's role (the witness can see a missing marking).
- * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_export_roundtrip.js <ifc> [PREFIX]
+ * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_export_roundtrip.js <ifc> [PREFIX] [structure.ifc: its columns are merged in]
  */
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
@@ -28,6 +28,12 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
   const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init();
   const sdb = new SQL.Database(), exLog = [];
   await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(ifc)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: path.basename(ifc), log: m => exLog.push(m) });
+  const qOf = db => sql => { const r = db.exec(sql); if (!r.length) return []; return r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))); };
+  if (process.argv[4]) {   // a second IFC (structure) contributing only its columns
+    const xdb = new SQL.Database(), xapi = new WebIFC.IfcAPI(); await xapi.Init();
+    await Core.extractToDb({ WebIFC, ifcApi: xapi, ifcData: new Uint8Array(fs.readFileSync(process.argv[4])), db: Core.sqljsDb(xdb), Buf: Core.browserBuf, buildingName: 'x', sourceName: path.basename(process.argv[4]), log: () => {} });
+    say('  MERGE columns from ' + path.basename(process.argv[4]) + ': ' + Core.mergeElements(Core.sqljsDb(sdb), qOf(sdb), qOf(xdb), ['IfcColumn'], m => exLog.push(m)));
+  }
   const n = sdb.exec('SELECT count(*) FROM elements_meta')[0].values[0][0];
   check('R1 EXTRACT', 'the browser extraction path produced no model', n > 0 && sdb.exec("SELECT count(*) FROM sqlite_master WHERE name='element_world_bbox'")[0].values[0][0] === 1, `elements=${n}`);
   const q = sql => { const r = sdb.exec(sql); if (!r.length) return []; return r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))); };
@@ -42,7 +48,7 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
   if (!v) { check('R4 VERDICT', 'convert produced no verdict', false, JSON.stringify(out.refused || out).slice(0, 300)); }
   else {
     say('  verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' counts=' + JSON.stringify(v.counts));
-    v.blocking.filter(b => b.code !== 'GAP:lod400_library_unreachable').forEach(b => say('   B ' + b.code + ' ' + b.sheet + ' ' + (b.message || '').slice(0, 140)));
+    v.blocking.filter(b => /^QF:/.test(b.code)).slice(0, 14).forEach(b => say('   B ' + b.code + ' ' + b.sheet + ' ' + (b.message || '').slice(0, 140)));
     // The export controls the markings and the sheet structure. Pipeline geometry gaps (GAP:*) are facts of the model/tessellator, library reachability is the OCI
     // library (not loaded in Node): both are listed above, neither is an export defect (rosetta_qualify.js Q2 draws the same line: marking codes only).
     const MARKING = /^QF:(sheet_no_role|units_unstated|plan_no_level|mark_missing|mark_invalid|set_mismatch|set_no_plan|set_no_roof|plan_level_duplicate|face_no_elev)$/;

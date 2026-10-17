@@ -11,6 +11,7 @@
   const LEAF_MIRROR_TOL = 0.001, VERTICAL_TOL = 1e-6, SINGLE_SWING = ['SINGLE_SWING_LEFT', 'SINGLE_SWING_RIGHT'], CUT_OFFSET = 1.2;
   const SCALE = 100, DIM_T3 = 10, DIM_T2 = 18, DIM_T1 = 26, GRID_END = 33, BUBBLE_C = 37, BUBBLE_R = 4.0;
   const TXT_DIM = 2.5, TXT_BUBBLE = 3.5, TXT_NOTE = 2.0, TXT_TITLE = 5.0, TXT_LEVEL = 2.5, ELEV_GRID_END = 12, ELEV_BUBBLE_C = 16, ELEV_DIM_CHAIN = 10, ELEV_DIM_OVERALL = 18;
+  const BUBBLE_MIN_SPACING = 840, GRID_STAGGER = 900;   // §L1.10 mm model: lines closer than 1.05 x bubble diameter get staggered bubbles; tier t extends line + bubble outward by t x GRID_STAGGER
   const DIM_NARROW = 4.5, LEVEL_EXT = 6, ROMAN_SKIP = ['I', 'O'];
   const WALLS = ['IfcWall', 'IfcWallStandardCase'], OPENINGS = ['IfcDoor', 'IfcWindow'];
   const PLAN_CUT_CLASSES = WALLS.concat(OPENINGS, ['IfcColumn', 'IfcStair', 'IfcStairFlight']);
@@ -145,10 +146,12 @@
     const g = model.storeys.find(s => s.name === model.grid_storey).elev;
     return model.storeys.filter(s => s.elev >= g && model.walls.some(w => w.storey === s.name && w.z0 <= s.elev + CUT_OFFSET && s.elev + CUT_OFFSET < w.z1));
   }
-  function roofStorey(model) {
+  function roofStorey(model) {   // §L1.4 F4 + §L1.9 (a roof storey without walls takes the roof plan when the model states a roof element)
     const g = model.storeys.find(s => s.name === model.grid_storey).elev, planned = new Set(planStoreys(model).map(s => s.name));
     const cand = model.storeys.filter(s => s.elev > g && !planned.has(s.name) && s.has_walls);
-    return cand.length ? cand[cand.length - 1] : null;
+    if (cand.length) return cand[cand.length - 1];
+    const nowall = model.storeys.filter(s => s.elev > g && !planned.has(s.name) && model.roofs.length);
+    return nowall.length ? nowall[nowall.length - 1] : null;
   }
   const planView = name => 'FLOOR_' + ((name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')) || 'UNNAMED');
 
@@ -370,10 +373,18 @@
     pts.forEach(v => { if (!out.length || v - out[out.length - 1] > PT_MERGE * 1000) out.push(v); });
     return out;
   }
+  function tiersOf(pos) {   // §L1.10: greedy in ascending position (ties by index); aligned to the input order
+    const t = {}; Array.from(pos.keys()).sort((a, b) => pos[a] - pos[b] || a - b).forEach(i => {
+      let k = 0; while (Object.keys(t).some(j => t[j] === k && Math.abs(pos[j] - pos[i]) < BUBBLE_MIN_SPACING)) k++;
+      t[i] = k;
+    });
+    return Array.from(pos.keys()).map(i => t[i]);
+  }
   function gridPlan(doc, E, grid) {
     const ge = GRID_END * SCALE, bc = BUBBLE_C * SCALE;
-    grid.x.forEach(([lab, p]) => { const x = mm(p); doc.line('A-GRID', [x, E[2] - ge], [x, E[3] + ge]); bubble(doc, x, E[2] - bc, lab); bubble(doc, x, E[3] + bc, lab); });
-    grid.y.forEach(([lab, p]) => { const y = mm(p); doc.line('A-GRID', [E[0] - ge, y], [E[1] + ge, y]); bubble(doc, E[0] - bc, y, lab); bubble(doc, E[1] + bc, y, lab); });
+    const tx = tiersOf(grid.x.map(g => mm(g[1]))), ty = tiersOf(grid.y.map(g => mm(g[1])));
+    grid.x.forEach(([lab, p], i) => { const x = mm(p), o = tx[i] * GRID_STAGGER; doc.line('A-GRID', [x, E[2] - ge - o], [x, E[3] + ge + o]); bubble(doc, x, E[2] - bc - o, lab); bubble(doc, x, E[3] + bc + o, lab); });
+    grid.y.forEach(([lab, p], i) => { const y = mm(p), o = ty[i] * GRID_STAGGER; doc.line('A-GRID', [E[0] - ge - o, y], [E[1] + ge + o, y]); bubble(doc, E[0] - bc - o, y, lab); bubble(doc, E[1] + bc + o, y, lab); });
   }
   function planDims(doc, E, grid, log, view, faceRuns) {
     const gx = grid.x.map(g => mm(g[1])), gy = grid.y.map(g => mm(g[1]));
@@ -514,15 +525,18 @@
     for (let i = 0; i + 1 < zs.length; i++) dim(doc, [H0, zs[i]], [H0, zs[i + 1]], [H0 - ELEV_DIM_CHAIN * SCALE, zs[i]], 90, log, `${face}/H/chain`, [-1, 0]);
     if (zs.length > 1) dim(doc, [H0, zs[0]], [H0, zs[zs.length - 1]], [H0 - ELEV_DIM_OVERALL * SCALE, zs[0]], 90, log, `${face}/H/overall`, [-1, 0]);
     const ax = (face === 'FRONT' || face === 'REAR') ? 'x' : 'y', zb = zs[0], zt = zs[zs.length - 1] + LEVEL_EXT * SCALE;
-    grid[ax].forEach(([lab, p]) => { const h = mm(ax === 'x' ? hp(p, 0) : hp(0, p)); doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE, lab); });
+    const hs = grid[ax].map(g => mm(ax === 'x' ? hp(g[1], 0) : hp(0, g[1]))), te = tiersOf(hs);   // §L1.10
+    grid[ax].forEach(([lab, p], i) => { const h = hs[i], o = te[i] * GRID_STAGGER; doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE - o], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE - o, lab); });
     doc.text('A-ANNO-TTLB', `${face} ELEVATION  1:${SCALE}`, [(H0 + H1) / 2, zb - (ELEV_BUBBLE_C + 12) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     return doc;
   }
   function writeRoofPlan(model, grid, storey, log) {
     log.add(`§VIEW ROOF storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
-    const doc = newDoc(), rw = model.walls.filter(w => w.storey === storey.name).sort((a, b) => (a.guid < b.guid ? -1 : 1)), E = envelope(rw).map(mm);
+    const doc = newDoc(); let rw = model.walls.filter(w => w.storey === storey.name).sort((a, b) => (a.guid < b.guid ? -1 : 1)), src = 'envelope of the roof storey walls';
+    if (!rw.length) { rw = model.roofs.slice().sort((a, b) => (a.guid < b.guid ? -1 : 1)); src = 'envelope of the roof element(s), §L1.9'; }   // §L1.9
+    const E = envelope(rw).map(mm);
     doc.lwpoly('A-ROOF', [[E[0], E[2]], [E[1], E[2]], [E[1], E[3]], [E[0], E[3]]], true, tag(rw.map(w => w.guid).join(',').slice(0, 255)));
-    log.add(`§ROOF_OUTLINE env=(${fx(E[0], 2)},${fx(E[2], 2)})-(${fx(E[1], 2)},${fx(E[3], 2)}) walls=${rw.length} (envelope of the roof storey walls)`);
+    log.add(`§ROOF_OUTLINE env=(${fx(E[0], 2)},${fx(E[2], 2)})-(${fx(E[1], 2)},${fx(E[3], 2)}) walls=${rw.length} (${src})`);
     model.els.filter(e => e.cls === 'IfcWindow' && e.storey === storey.name).sort((a, b) => (a.guid < b.guid ? -1 : 1)).forEach(k => {
       const x0 = mm(k.x0), x1 = mm(k.x1), y0 = mm(k.y0), y1 = mm(k.y1);
       doc.lwpoly('A-GLAZ', [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true, tag(k.guid));
@@ -570,7 +584,8 @@
     for (let i = 0; i + 1 < zs.length; i++) dim(doc, [H0, zs[i]], [H0, zs[i + 1]], [H0 - ELEV_DIM_CHAIN * SCALE, zs[i]], 90, log, 'SECTION/H/chain', [-1, 0]);
     if (zs.length > 1) dim(doc, [H0, zs[0]], [H0, zs[zs.length - 1]], [H0 - ELEV_DIM_OVERALL * SCALE, zs[0]], 90, log, 'SECTION/H/overall', [-1, 0]);
     const zb = Math.min(...zs.concat(zlo)), zt = Math.max(...zs.concat(zhi)) + LEVEL_EXT * SCALE;
-    grid.y.forEach(([lab, p]) => { const h = mm(p); doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE, lab); });
+    const hy = grid.y.map(g => mm(g[1])), ts = tiersOf(hy);   // §L1.10
+    grid.y.forEach(([lab, p], i) => { const h = hy[i], o = ts[i] * GRID_STAGGER; doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE - o], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE - o, lab); });
     doc.text('A-ANNO-TTLB', `SECTION A-A AT X=${fx(X * 1000, 2)}  1:${SCALE}`, [(H0 + H1) / 2, zb - (ELEV_BUBBLE_C + 12) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     return doc;
   }

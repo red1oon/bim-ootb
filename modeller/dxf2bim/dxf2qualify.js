@@ -269,6 +269,17 @@
     // ---------- grid + plan dimension strings (PLAN with role + units) ----------
     var gridOf = {}, allWs = [];                                                      // L2.3 D4: stray grid tested against every plan's walls (L1.1 R2: one building grid)
     plans.forEach(function (s) { if (input.plan_ops && input.plan_ops[s.id]) allWs = allWs.concat(wallRects(input.plan_ops[s.id])); });
+    // L2.9: column centres are grid evidence too (structural convention: grid lines run through column centres; std2d C2/LB4). The centre = bbox centre of a closed
+    // polyline on a column layer (settings.layers.cols, default S-COLS / A-COLS), metres. A set with no column layer is judged exactly as before.
+    var colL = (get(settings, 'layers.cols') && Array.isArray(settings.layers.cols)) ? settings.layers.cols : ['S-COLS', 'A-COLS'], allCols = [];
+    plans.forEach(function (s) {
+      if (!s.k) return;
+      s.ents.forEach(function (e) {
+        if (colL.indexOf(e.layer) < 0 || e.type !== 'LWPOLYLINE' || !e.shape || !e.vertices || e.vertices.length < 3) return;
+        var xs = e.vertices.map(function (v) { return v.x; }), ys = e.vertices.map(function (v) { return v.y; });
+        allCols.push({ x: (Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2 * s.k, y: (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2 * s.k });
+      });
+    });
     plans.forEach(function (s) {
       if (!s.k || !has('tol.grid') || !has('layers.grid')) return;
       var k = s.k, tolRaw = tolG / k, G = gridOf[s.id] = gridLines(s.ents, s.gridL, tolRaw);
@@ -296,6 +307,7 @@
       if (!env) { block('QF:check_skipped', s.id, [], null, s.id + ': the plan has no wall pieces, grid and dimension strings not checked', { check: 'grid_axis,dim_strings', need: 'DXF_WALL' }); return; }
       G.lines.forEach(function (L) {
         var P = L.pos * k, hit = allWs.some(function (w) { if (w.thkAxis !== L.axis) return false; var r = w.rect, f0 = L.axis === 'x' ? r[0] : r[1], f1 = L.axis === 'x' ? r[2] : r[3]; return Math.abs(w.axisPos - P) <= tolG + EPS || Math.abs(f0 - P) <= tolG + EPS || Math.abs(f1 - P) <= tolG + EPS; });
+        if (!hit) hit = allCols.some(function (c) { return Math.abs((L.axis === 'x' ? c.x : c.y) - P) <= tolG + EPS; });   // L2.9
         if (!hit) block('QF:grid_off_axis', s.id, L.handles, gpos(L), s.id + ': grid line ' + (L.label || '?') + ' at ' + L.axis + '=' + r6(P) + ' m is on no wall axis or face (tol ' + tolG + ' m)', { label: L.label, pos_m: r6(P) });
       });
       if (has('grid.min_wall_len')) ['x', 'y'].forEach(function (ax) {                // L2.3 D4: exterior envelope axes only (the reader cannot know load-bearing)

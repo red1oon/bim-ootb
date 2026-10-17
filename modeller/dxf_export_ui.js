@@ -48,7 +48,7 @@
   }
 
   // ---- the pipeline: IFC bytes -> model DB (browser path) -> std set -> markings -> report ----
-  async function build(file, step) {
+  async function build(file, step, extras) {   // extras: [File] — second IFCs (e.g. the structural model) contributing only their columns (grid evidence)
     await loadScripts();
     var prefix = (file.name || 'MODEL').replace(/\.ifc$/i, '').split(/[_\s.-]/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'MODEL';
     step('Reading ' + file.name);
@@ -58,6 +58,13 @@
     step('Extracting the model (web-ifc)');
     await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: data, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: file.name,
       log: function (m) { exLog.push(m); }, progress: function (m) { step(m); } });
+    var qOf = function (db) { return function (sql) { var r = db.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }; };
+    for (var xi = 0; xi < (extras || []).length; xi++) {
+      step('Reading ' + extras[xi].name + ' (columns for the grid)');
+      var xdb = new window.SQL.Database(), xapi = new window.WebIFC.IfcAPI(); await xapi.Init(function (p) { return new URL('lib/' + p, _base).href; });
+      await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: xapi, ifcData: new Uint8Array(await extras[xi].arrayBuffer()), db: Core.sqljsDb(xdb), Buf: Core.browserBuf, buildingName: extras[xi].name, sourceName: extras[xi].name, log: function () {}, progress: function () {} });
+      Core.mergeElements(Core.sqljsDb(sdb), qOf(sdb), qOf(xdb), ['IfcColumn'], function (m) { exLog.push(m); }); xdb.close();
+    }
     var q = function (sql) { var r = sdb.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); };
     step('Drawing the standard set');
     var R = window.Std2d.writeStdSet(q, prefix), report = window.Std2d.drawableReport(R), D = null;
@@ -67,7 +74,7 @@
     }
     sdb.close();
     console.log(TAG + ' built file=' + file.name + ' sheets=' + Object.keys(R.files).length + ' drawable=' + report.drawable + ' gaps=' + R.gaps.length);
-    return { prefix: prefix, R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], exLog: exLog };
+    return { prefix: prefix, extras: (extras || []).map(function (f) { return f.name; }), R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], exLog: exLog };
   }
 
   // ---- panel (same small-panel idiom as the Export chooser) ----
@@ -88,9 +95,10 @@
   function bindX(p) { var x = p.querySelector('#dxfexp-x'); if (x) x.onclick = close; }
   function renderBusy(msg) { var p = show(head + '<div style="padding:6px 2px">' + esc(msg) + '...</div>'); bindX(p); }
 
-  function renderReport(B, file) {
+  function renderReport(B, file, extras) {
     var r = B.report, h = head + '<div style="margin:0 2px 8px;color:' + (r.drawable ? '#4ade80' : '#f59e0b') + '">' + (r.drawable ? 'Drawable: the standard set was written from the model.' : 'Not drawable as a standard set: ' + esc(r.reasons.join('; ')) + '.') + '</div>';
     h += '<div style="display:flex;gap:8px;margin:0 0 10px;justify-content:flex-end">';
+    h += '<button id="dxfexp-add" title="A federated set\'s structural IFC: its columns give the building grid" style="background:#23262e;color:#c7cdd8;border:1px solid #2c303a;border-radius:8px;padding:6px 10px;cursor:pointer">Add structure IFC (columns)</button>';
     h += '<button id="dxfexp-log" style="background:#23262e;color:#c7cdd8;border:1px solid #2c303a;border-radius:8px;padding:6px 10px;cursor:pointer">Copy log</button>';
     if (B.marked) h += '<button id="dxfexp-dl" style="background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 12px;cursor:pointer">Download .zip (' + Object.keys(B.marked).length + ' sheets)</button>';
     h += '</div>';
@@ -103,6 +111,10 @@
     h += '</table>';
     var p = show(h); bindX(p);
     p.querySelector('#dxfexp-log').onclick = function () { var t = B.R.log.concat(B.markLog).join('\n'); if (navigator.clipboard) navigator.clipboard.writeText(t); console.log(TAG + ' log lines=' + t.split('\n').length); };
+    p.querySelector('#dxfexp-add').onclick = async function () {
+      var f = await new Promise(function (res) { var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc'; inp.onchange = function () { res(inp.files && inp.files[0] || null); }; inp.click(); });
+      if (f) run(file, (extras || []).concat([f]));
+    };
     var dl = p.querySelector('#dxfexp-dl');
     if (dl) dl.onclick = function () {
       var enc = new TextEncoder(), names = Object.keys(B.marked).sort(), z = zip(names.map(function (n) { return { name: n, bytes: enc.encode(B.marked[n]) }; }));
@@ -112,7 +124,7 @@
     };
   }
 
-  async function run(file) {
+  async function run(file, extras) {
     if (!file) file = window.__lastIfcFile || null;
     if (!file) {   // no IFC opened in this session: pick one (no fallback download of anything else)
       file = await new Promise(function (res) {
@@ -120,7 +132,7 @@
       });
       if (!file) return null;
     }
-    try { var B = await build(file, renderBusy); renderReport(B, file); return B; }
+    try { var B = await build(file, renderBusy, extras); renderReport(B, file, extras); return B; }
     catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(head + '<div style="color:#f59e0b">Could not read this IFC: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
   }
   window.DxfExportUI = { run: run, build: build, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
