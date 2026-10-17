@@ -98,6 +98,8 @@ var r2 = function (v) { return (Math.round(Number(v || 0) * 100) / 100).toFixed(
       var legSt = L.error != null ? 'E' : String(L.posted), lf = legSt === 'Y' ? (L.factRows || []).map(function (f) { return { s: f.s, a: f.a, dr: r2(f.dr), cr: r2(f.cr), qty: r2(f.qty), p: f.p }; }).map(key).sort() : [];
       var twSt = T.rows.length ? 'Y' : /posted=E/.test(T.why || '') ? 'E' : /posted=N/.test(T.why || '') ? 'N' : '?', tf = T.rows.map(key).sort();
       var norm = function (t) { return String(t).replace(/Document No=[^ ]+/, 'Document No=#').replace(/Account Date=[0-9\/]+/, 'Account Date=#').replace(/-?\d+\.\d+|(?<=[=, ])-?\d+(?=[,)])/g, '#').replace(/\{\{opref:\d+\}\}/g, '#'); };
+      var sumDr = function (a) { return a.filter(function (x) { return x.split(':')[0] === '101'; }).reduce(function (t, x) { return t + Number(x.split(':')[2]); }, 0).toFixed(2); };
+      log('§WCS-FACT m=' + m + ' doc=' + id + ' status legacy=' + legSt + ' twin=' + twSt + ' schema101 Dr legacy=' + sumDr(lf) + ' twin=' + sumDr(tf));
       var legNote = L.notes && L.notes[0] ? norm(L.notes[0].text) : null, twNote = T.notes && T.notes[0] ? norm(T.notes[0]) : null;
       judged++; var same = legSt === twSt && JSON.stringify(lf) === JSON.stringify(tf) && (legSt === 'Y' || legNote === twNote); if (same) match++;
       else diffs.push(id + ' legacy=' + legSt + (L.error ? '(' + String(L.error).slice(0, 70) + ')' : '') + ' ' + lf.length + 'f  twin=' + twSt + ' ' + tf.length + 'f' + (T.why ? ' why=' + T.why.slice(-160) : ''));
