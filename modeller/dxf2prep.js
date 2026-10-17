@@ -1,0 +1,125 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// dxf2prep.js — generic CAD pre-processor (prompts/DXF2BIM_MODELLER_LANE.md §L7). Pure functions, browser + Node.
+//   assertUniqueIds   one DXF entity with several loops must not give several bodies one guid
+//   lineLoops         closed regions from loose line work (CAD elevations drawn as lines, no closed rectangles)
+//   Defaults          every value NOT read from the drawing is a recorded default (yellow in the UI), stated values carry evidence handles
+//   ifcType           body kind -> IFC class + PredefinedType (+ type name from the drawing label); unknown kind throws
+// Nothing here guesses: a collision or an unknown kind throws, a default is listed, never silent.
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.Dxf2Prep = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  // ---- §L7.1(a) unique ids ----
+  function bodyId(handle, loopIndex, loopCount) { return loopCount > 1 ? handle + '-L' + loopIndex : String(handle); }
+  function assertUniqueIds(bodies) {
+    var seen = Object.create(null);
+    bodies.forEach(function (b) {
+      if (seen[b.guid]) throw new Error('Dxf2Prep: duplicate body id ' + b.guid + ' (' + seen[b.guid] + ' and ' + (b.handle || '?') + ')');
+      seen[b.guid] = b.handle || '?';
+    });
+    return bodies.length;
+  }
+
+  // ---- §L7.1(b) line loops ----
+  // segs: [{a:[x,y], b:[x,y], handle}] ; tol: snap tolerance (drawing units). Returns {loops:[{pts, area, handles}], dropped}
+  function lineLoops(segs, tol) {
+    tol = tol || 0.01;
+    var nodes = [], grid = Object.create(null);
+    function node(p) {
+      var cx = Math.round(p[0] / tol), cy = Math.round(p[1] / tol);
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+        var l = grid[(cx + dx) + ',' + (cy + dy)];
+        if (l) for (var i = 0; i < l.length; i++) if (Math.hypot(nodes[l[i]][0] - p[0], nodes[l[i]][1] - p[1]) <= tol) return l[i];
+      }
+      nodes.push([p[0], p[1]]); (grid[cx + ',' + cy] = grid[cx + ',' + cy] || []).push(nodes.length - 1); return nodes.length - 1;
+    }
+    var S = segs.map(function (s) { return { a: node(s.a), b: node(s.b), h: s.handle }; }).filter(function (s) { return s.a !== s.b; });
+    // split every segment at nodes lying on it and at proper crossings (T-junctions, X-crossings)
+    function onSeg(p, a, b) {
+      var abx = b[0] - a[0], aby = b[1] - a[1], L2 = abx * abx + aby * aby, t = ((p[0] - a[0]) * abx + (p[1] - a[1]) * aby) / L2;
+      if (t <= 1e-9 || t >= 1 - 1e-9) return null;
+      return Math.hypot(a[0] + t * abx - p[0], a[1] + t * aby - p[1]) <= tol ? t : null;
+    }
+    function cross(s1, s2) {
+      var a = nodes[s1.a], b = nodes[s1.b], c = nodes[s2.a], d = nodes[s2.b];
+      var r = [b[0] - a[0], b[1] - a[1]], q = [d[0] - c[0], d[1] - c[1]], den = r[0] * q[1] - r[1] * q[0];
+      if (Math.abs(den) < 1e-12) return null;
+      var t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+      return (t > 1e-9 && t < 1 - 1e-9 && u > 1e-9 && u < 1 - 1e-9) ? [a[0] + t * r[0], a[1] + t * r[1]] : null;
+    }
+    var out = [];
+    S.forEach(function (s, i) {
+      var cuts = [];
+      nodes.forEach(function (p, k) { if (k !== s.a && k !== s.b) { var t = onSeg(p, nodes[s.a], nodes[s.b]); if (t !== null) cuts.push([t, k]); } });
+      S.forEach(function (o, j) { if (j !== i) { var x = cross(s, o); if (x) { var k = node(x), t = onSeg(nodes[k], nodes[s.a], nodes[s.b]); if (t !== null) cuts.push([t, k]); } } });
+      cuts.sort(function (p, q) { return p[0] - q[0]; });
+      var prev = s.a; cuts.forEach(function (c) { if (c[1] !== prev) { out.push({ a: prev, b: c[1], h: s.h }); prev = c[1]; } });
+      if (prev !== s.b) out.push({ a: prev, b: s.b, h: s.h });
+    });
+    // unique undirected edges, keeping every contributing handle
+    var E = Object.create(null);
+    out.forEach(function (e) { var k = Math.min(e.a, e.b) + '_' + Math.max(e.a, e.b); (E[k] = E[k] || { a: Math.min(e.a, e.b), b: Math.max(e.a, e.b), hs: [] }).hs.push(e.h); });
+    var edges = Object.keys(E).map(function (k) { return E[k]; });
+    // half-edge face walk
+    var adj = {};
+    edges.forEach(function (e, i) { (adj[e.a] = adj[e.a] || []).push({ to: e.b, e: i }); (adj[e.b] = adj[e.b] || []).push({ to: e.a, e: i }); });
+    Object.keys(adj).forEach(function (n) { var p = nodes[n]; adj[n].forEach(function (h) { h.ang = Math.atan2(nodes[h.to][1] - p[1], nodes[h.to][0] - p[0]); }); adj[n].sort(function (x, y) { return x.ang - y.ang; }); });
+    var used = Object.create(null), loops = [], dropped = 0;
+    Object.keys(adj).forEach(function (n0) {
+      adj[n0].forEach(function (h0) {
+        var key0 = n0 + '>' + h0.to; if (used[key0]) return;
+        var path = [], hs = [], from = +n0, h = h0, guard = 0, ok = true;
+        while (guard++ < 10000) {
+          used[from + '>' + h.to] = 1; path.push(from); hs.push(h.e);
+          var at = h.to, list = adj[at], back = -1;
+          for (var i = 0; i < list.length; i++) if (list[i].to === from && list[i].e === h.e) { back = i; break; }
+          var next = list[(back - 1 + list.length) % list.length];   // next edge clockwise from the one we came on: walks the face on the left
+          from = at; h = next;
+          if (from === +n0 && h.to === h0.to) break;
+          if (used[from + '>' + h.to]) { ok = false; break; }
+        }
+        if (!ok || guard >= 10000) { dropped++; return; }
+        var area = 0; for (var k = 0; k < path.length; k++) { var p = nodes[path[k]], q = nodes[path[(k + 1) % path.length]]; area += p[0] * q[1] - q[0] * p[1]; }
+        area /= 2;
+        if (area <= tol * tol) return;                       // outer face / sliver: not a region
+        var handles = {}; hs.forEach(function (ei) { edges[ei].hs.forEach(function (x) { if (x != null) handles[x] = 1; }); });
+        loops.push({ pts: path.map(function (i) { return nodes[i].slice(); }), area: area, handles: Object.keys(handles) });
+      });
+    });
+    return { loops: loops, dropped: dropped };
+  }
+
+  // ---- §L7.2 defaults register ----
+  function Defaults() {
+    var rows = [];
+    return {
+      stated: function (key, value, evidence) { rows.push({ key: key, value: value, kind: 'stated', evidence: evidence }); },
+      assume: function (key, value, why, options) { rows.push({ key: key, value: value, kind: 'default', why: why, evidence: null, options: options || null }); },
+      override: function (key, value) { rows.forEach(function (r) { if (r.key === key && r.kind === 'default') { r.value = value; r.kind = 'chosen'; } }); },
+      rows: function () { return rows.slice(); },
+      defaults: function () { return rows.filter(function (r) { return r.kind === 'default'; }); },
+      hasIssues: function () { return rows.some(function (r) { return r.kind === 'default'; }); }
+    };
+  }
+
+  // ---- §L7.3 provenance ----
+  var PROV = { drawn: 'drawn', derived: 'derived', assumed: 'assumed' };
+  var PROV_COLOUR = { assumed: 0xff2d2d };   // red; drawn/derived keep the model colour
+
+  // ---- §L7.4 IFC typing ----
+  var KIND = {
+    column: ['IfcColumn', 'COLUMN'], footing: ['IfcFooting', 'PAD_FOOTING'], gradebeam: ['IfcBeam', 'BEAM'], beam: ['IfcBeam', 'BEAM'],
+    wall: ['IfcWall', 'STANDARD'], supportwall: ['IfcWall', 'STANDARD'], roof: ['IfcRoof', 'GABLE_ROOF'],
+    chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
+    door: ['IfcDoor', 'DOOR'], window: ['IfcWindow', 'WINDOW']
+  };
+  function ifcType(kind, typeName, material) {
+    var k = KIND[kind]; if (!k) throw new Error('Dxf2Prep: no IFC mapping for body kind "' + kind + '"');
+    return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };
+  }
+
+  return { bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
+});
