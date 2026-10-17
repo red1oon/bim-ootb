@@ -1733,5 +1733,18 @@ Built as specified: Python oracle + JS carry the same four rules, same constants
 - **Next, spec first:** the reader's LV rule (`dxf2bim_import.js`, BASIC_SHAPES_SPEC §2.3) accepts a level as drawn only when an elevation wall rectangle starts at it. The writer DOES draw every storey's datum line in the elevations (`levelsDrawn`, from the model's storeys). Candidate rule: a level is drawn when an elevation wall rectangle starts at it OR a drawn level datum line of that elevation exists; wall heights then come from the per-handle `@WALLTOP` base (L1.24), not from the elevation rectangle. This is a READER semantic change (BIMCompiler `docs/DXF2BIM_SPEC.md`) and needs the user's nod and the Duplex verdict witnesses (B4-style) before it ships.
 - Noted: the wing e2e logs one benign 404 for the optional git-ignored `dxf2bim/local/library_subset_duplex.json` in a fresh worktree; the library falls back to OCI.
 
+### L1.27 Spec: a plan level is "drawn" by a wall boundary OR a drawn level datum (reader change, approved by the user 2026-10-17 "OK"; spec BEFORE code)
+**Evidence:** SampleCastle (straight set, all 10 sheets have a role since L1.25) is refused by Convert: `@LEVEL=0 is not a drawn elevation boundary (BASIC_SHAPES_SPEC §2.3 LV)`. Its walls start 0.09 m BELOW their storey level in every storey, so no elevation wall rectangle has `z0 = level`; the Hospital has the same (-0.15 / -0.2 / -0.5 / -1.0). The writer draws every storey's datum line in each elevation (`levelsDrawn`, A-ANNO-LEVL, from the model's own storeys) and the reader already reads those lines (`elevs[].lines` from `levelLinesZ`), but the LV rule ignores them.
+**Rule (reader, `dxf2bim_import.js`; BIMCompiler `docs/DXF2BIM_BASIC_SHAPES_SPEC.md` §2.3 LV amended in the same change):**
+- A plan `@LEVEL` is accepted when (a) an elevation wall rectangle has `z0` equal to it within `elev_tol` (unchanged), OR (b) a drawn level datum line of an elevation lies at it within `elev_tol`. (b) is evidence that the level exists in the drawing; it states NOTHING about wall bases.
+- Wall heights are unchanged: `applyWallHeights` still matches only rectangles that start at the level; a wall with another base takes its height from its per-handle `@WALLTOP` (with the stated base, L1.24) or stays `GAP:no_elevation_height`. Nothing is guessed.
+- The top of the TOP storey: unchanged when a rectangle starts at its level; otherwise the lowest drawn datum line above it (beyond `elev_tol`) in any elevation; none -> refused, reason `no drawn level above the top storey`.
+- The evidence used is recorded per storey (`levelDrawn` = rectangle handles, new `levelDatum` = datum line handles) and shown in the report.
+**Witnesses:**
+- W-L127-DUPLEX: every existing importer witness is unchanged (the Duplex has BOTH a rectangle and a datum at each level, so rule (a) decides exactly as before): `witness_dxf_import_node.js` P1-P8, `witness_dxf_wing_back.js` B2+B4, `witness_dxf_export_roundtrip.js`, browser W-E2E-DXF-EXPORT 14/14 and W-E2E-DXF-WING 7/7.
+- W-L127-SC: SampleCastle straight set: Convert reaches a verdict (not refused); the verdict and blocking codes are LISTED, not claimed good.
+- W-L127-CONTROL: a level with neither a rectangle nor a datum (SampleCastle with `@LEVEL` moved to 4.2) is still refused with the LV reason; the top storey with no datum above it is refused with the new reason.
+**Not claimed:** SampleCastle qualifying; the heights of walls whose base differs from the level (they stay gaps or take `@WALLTOP`).
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
