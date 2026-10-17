@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `6edb02dce` — marks: @WALLTOP=handle:<h>,<z_top>[,<z_base>] (§L1.24): a wall that starts below its stor
+Commit: `62ca8a015` — Merge pull request #204 from red1oon/feat/wing-frame
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -23,4 +23,4 @@ Commit: `6edb02dce` — marks: @WALLTOP=handle:<h>,<z_top>[,<z_base>] (§L1.24):
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 6edb02dce:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 62ca8a015:deploy/dev/<file> | sha256sum` equals the column above.
