@@ -38,6 +38,7 @@
       }
       if (scopeSheet === 'KEY') txt = R.whole[view];   // the markings (WALLTOP handles, tags) are derived on the whole plan: same handles as every scope sheet
       marks.push({ text: '@SET=' + set }, { text: '@VIEW=' + kind }, { text: '@UNITS=mm' }, { text: '@NAME=' + view });
+      if (R.wing) marks.push({ text: '@FRAME=' + R.wing.angle + ',' + mm3(R.wing.ox) + ',' + mm3(R.wing.oy) });   // §L1.16: the sheet is drawn in the wing's own frame
       if (scopeSheet === 'KEY') marks.push({ text: '@SCOPE=KEY' });
       if (kind === 'PLAN') {
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev);

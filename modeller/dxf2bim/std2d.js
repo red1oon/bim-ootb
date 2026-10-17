@@ -763,6 +763,9 @@
     const log = new Log(), files = {}, whole = {}, scoped = {};
     log.add(`§ENTRY std2d db=model prefix=${prefix}`);
     const model = loadModel(q, log);
+    if (opts.premodel) opts.premodel(model);
+    let wing = null;
+    if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;
@@ -788,7 +791,101 @@
     const codes = {}; log.gaps.forEach(g => { codes[g[0]] = (codes[g[0]] || 0) + 1; });
     log.add(`§SUMMARY views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     log.add('§GAP_SUMMARY {' + Object.keys(codes).map(k => `'${k}': ${codes[k]}`).join(', ') + '}');
-    return { files, whole, scoped, scopes, log: log.lines, gaps: log.gaps, grid, model, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })), roof: rs } };
+    return { files, whole, scoped, scopes, wing, log: log.lines, gaps: log.gaps, grid, model, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })), roof: rs } };
   }
-  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
+
+  // ───────────────────────── §L1.16 per-wing frame ─────────────────────────
+  // The principal plan direction of an element, from its vertical faces: area-weighted circular mean of the face-normal angle folded mod 90 deg (4-theta trick).
+  // Returns {deg: [0,90), q: 0..1} (q = 1 when every vertical face is parallel/perpendicular to deg), or null when the element has no vertical face.
+  function elementAngle(e) {
+    const V = e.v, F = e.f; let sx = 0, sy = 0, w = 0;
+    for (let t = 0; t + 2 < F.length; t += 3) {
+      const a = F[t] * 3, b = F[t + 1] * 3, c = F[t + 2] * 3;
+      const u = [V[b] - V[a], V[b + 1] - V[a + 1], V[b + 2] - V[a + 2]], v = [V[c] - V[a], V[c + 1] - V[a + 1], V[c + 2] - V[a + 2]];
+      const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], ln = Math.hypot(n[0], n[1], n[2]);
+      if (!(ln > 1e-12) || Math.abs(n[2] / ln) > 0.01) continue;
+      const th = Math.atan2(n[1], n[0]), area = ln / 2; sx += area * Math.cos(4 * th); sy += area * Math.sin(4 * th); w += area;
+    }
+    if (!(w > 0)) return null;
+    let d = Math.atan2(sy, sx) / 4 * 180 / Math.PI; d = ((d % 90) + 90) % 90;
+    return { deg: d, q: Math.hypot(sx, sy) / w };
+  }
+  const angDiff90 = (a, b) => { const d = Math.abs(a - b) % 90; return Math.min(d, 90 - d); };
+  // Rotate the plan coordinates of every element about (ox, oy) by deg (CCW). World = v + c, so c moves with the rotation and v turns about the origin. Bboxes are recomputed
+  // from the mesh (an element without a mesh: from its rotated bbox corners). Door-operation axes turn with the model. Pure on the arrays; mutates the model.
+  function rotateModel(model, deg, ox, oy) {
+    const th = deg * Math.PI / 180, co = Math.cos(th), si = Math.sin(th), rot = (x, y) => [co * x - si * y, si * x + co * y];
+    const done = new Set();
+    const each = e => {
+      if (done.has(e)) return; done.add(e);
+      if (e.parts) { e.parts.forEach(each); const k = e.parts; e.x0 = Math.min(...k.map(p => p.x0)); e.x1 = Math.max(...k.map(p => p.x1)); e.y0 = Math.min(...k.map(p => p.y0)); e.y1 = Math.max(...k.map(p => p.y1)); return; }
+      const cs = [[e.x0, e.y0], [e.x1, e.y0], [e.x1, e.y1], [e.x0, e.y1]].map(p => { const r = rot(p[0] - ox, p[1] - oy); return [r[0] + ox, r[1] + oy]; });
+      const c = rot(e.c[0] - ox, e.c[1] - oy); e.c = [c[0] + ox, c[1] + oy, e.c[2]];
+      if (e.v.length) {
+        const V = e.v; let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (let k = 0; k < V.length; k += 3) { const r = rot(V[k], V[k + 1]); V[k] = r[0]; V[k + 1] = r[1]; x0 = Math.min(x0, r[0] + e.c[0]); x1 = Math.max(x1, r[0] + e.c[0]); y0 = Math.min(y0, r[1] + e.c[1]); y1 = Math.max(y1, r[1] + e.c[1]); }
+        e.x0 = x0; e.x1 = x1; e.y0 = y0; e.y1 = y1;
+      } else { e.x0 = Math.min(...cs.map(p => p[0])); e.x1 = Math.max(...cs.map(p => p[0])); e.y0 = Math.min(...cs.map(p => p[1])); e.y1 = Math.max(...cs.map(p => p[1])); }
+    };
+    model.els.forEach(each); (model.curtains || []).forEach(each);
+    Object.values(model.door_ops || {}).forEach(d => ['x', 'y', 'z'].forEach(k => { if (d[k] && d[k].length >= 2) { const r = rot(d[k][0], d[k][1]); d[k] = [r[0], r[1]].concat(d[k].slice(2)); } }));
+    return model;
+  }
+  // Keep only the elements that sit in the wing's frame: walls (and columns/stairs) whose principal direction is within `tol` deg of `angle` (mod 90) and whose faces are
+  // consistent, plus the doors/windows hosted by a kept wall. Everything else is NOT framed: it is counted, never drawn in this wing, never snapped.
+  // Returns {kept, unframed:{cls:n}, total} and replaces the model's element lists.
+  const WING_Q_MIN = 0.5, WING_TOL = 1.0;
+  function frameModel(model, angle, tol) {
+    tol = tol === undefined ? WING_TOL : tol;
+    const keep = new Set(), FRAMED = WALLS.concat(['IfcColumn', 'IfcStair', 'IfcStairFlight', 'IfcSlab', 'IfcRoof', 'IfcFooting']);
+    model.els.forEach(e => { if (FRAMED.indexOf(e.cls) < 0) return; const a = elementAngle(e); if (a && a.q >= WING_Q_MIN && angDiff90(a.deg, angle) <= tol) keep.add(e.guid); });
+    const unframed = {}; let total = 0;
+    model.els.forEach(e => { if (FRAMED.indexOf(e.cls) >= 0) { total++; if (!keep.has(e.guid)) unframed[e.cls] = (unframed[e.cls] || 0) + 1; } });
+    const hostEls = model.els.filter(e => keep.has(e.guid)), inBox = (e, h) => { const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2; return cx >= h.x0 && cx <= h.x1 && cy >= h.y0 && cy <= h.y1; };
+    model.els.forEach(e => {   // an opening follows its host (wall, roof, slab); one with no IFC host follows the kept element whose bbox holds its centre (resolved later by the mesh void, as in the whole set)
+      if (OPENINGS.indexOf(e.cls) < 0) return;
+      if ((model.hosts[e.guid] !== undefined && model.by_guid[model.hosts[e.guid]]) ? keep.has(model.hosts[e.guid]) : hostEls.some(h => inBox(e, h))) keep.add(e.guid);
+    });
+    model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
+    model.curtains = []; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; });
+    return { kept: keep.size, unframed, total };
+  }
+  function wingDominant(model) {   // the angle (deg, mod 90) carrying the most walls, 1-deg bins, ties to the smaller angle
+    const h = {}; model.walls.forEach(w => { const a = elementAngle(w); if (a && a.q >= WING_Q_MIN) { const b = Math.round(a.deg) % 90; h[b] = (h[b] || 0) + 1; } });
+    const ks = Object.keys(h).map(Number).sort((a, b) => h[b] - h[a] || a - b); return ks.length ? { deg: ks[0], n: h[ks[0]], hist: h } : null;
+  }
+  // wingOpts: { name, angle (deg; default = dominant), tol }. Filters the model to the wing and rotates it by -angle about the centre of the kept walls. Logs §WING.
+  function frameWing(model, wo, log) {
+    const dom = wo.angle === undefined ? wingDominant(model) : { deg: wo.angle };
+    if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return null; }
+    const angle = dom.deg, name = wo.name || 'WING' + angle, tol = wo.tol === undefined ? WING_TOL : wo.tol;
+    const fr = frameModel(model, angle, tol), wl = model.walls;
+    if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
+    const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
+    rotateModel(model, -angle, ox, oy);
+    log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
+    return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };
+  }
+  // opts: { name, angle (deg; default = dominant), tol, premodel(model) (test hook: applied right after loading) } -> plan sheets of ONE wing, in the wing's own frame
+  function writeWingSet(q, prefix, opts) {
+    opts = opts || {};
+    const log = new Log(), files = {};
+    log.add(`§ENTRY std2d wing db=model prefix=${prefix}`);
+    const model = loadModel(q, log);
+    if (opts.premodel) opts.premodel(model);
+    const dom = opts.angle === undefined ? wingDominant(model) : { deg: opts.angle };
+    if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return { files, log: log.lines, gaps: log.gaps }; }
+    const angle = dom.deg, name = opts.name || 'WING' + angle;
+    const fr = frameModel(model, angle, opts.tol);
+    const wl = model.walls; if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${opts.tol === undefined ? WING_TOL : opts.tol} deg of ${angle}`); return { files, log: log.lines, gaps: log.gaps }; }
+    const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
+    rotateModel(model, -angle, ox, oy);
+    log.add(`§WING name=${name} angle=${angle} tol=${opts.tol === undefined ? WING_TOL : opts.tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
+    resolveHosts(model, log);
+    const grid = deriveGrid(model, log);
+    for (const s of planStoreys(model)) { const view = planView(s.name), doc = writePlan(model, grid, s, view, log); files[`${prefix}_${view}__${name}_std.dxf`] = doc.toString(); log.add(`§WRITE ${prefix}_${view}__${name}_std.dxf`); }
+    log.add(`§SUMMARY wing=${name} views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
+    return { files, log: log.lines, gaps: log.gaps, grid, model, wing: { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total } };
+  }
+  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
 });

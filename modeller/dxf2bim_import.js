@@ -154,6 +154,19 @@
     if (sh.role) sh.factor = MK.UNITS[d.units];
     return sh;
   }
+  // §L1.16: the wing frame a set was drawn in, from @FRAME=<deg>,<x mm>,<y mm> on its sheets (every sheet that has one must agree; mm sheets only). null = not a wing set.
+  function frameOfSheets(sheets) {
+    var fr = null, bad = null;
+    sheets.forEach(function (sh) {
+      var f = sh.desc && sh.desc.frame; if (!f) return;
+      var p = String(f).split(',').map(Number), mm = sh.desc.units === 'mm';
+      if (!mm) { bad = bad || { sheet: sh.name, reason: '@FRAME needs @UNITS=mm' }; return; }
+      var c = { angle: p[0], ox: p[1] / 1000, oy: p[2] / 1000, sheet: sh.name };
+      if (fr && (Math.abs(fr.angle - c.angle) > 1e-9 || Math.abs(fr.ox - c.ox) > 1e-9 || Math.abs(fr.oy - c.oy) > 1e-9)) bad = bad || { sheet: sh.name, reason: '@FRAME differs from ' + fr.sheet };
+      fr = fr || c;
+    });
+    return bad ? { error: bad } : fr;
+  }
   function readSheets(files, opts) {
     var hashHex = (opts && opts.hashHex) || sha256Hex, m = mergeScopes(files);   // §L6: scoped storeys are assembled first
     var out = m.files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
@@ -429,6 +442,7 @@
     R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),
       plan_ops: planOps, gaps: qg, resolved: resolved };
     R.verdict = Q.qualify(R.qualifyInput, SET.QUALIFY);
+    R.frame = frameOfSheets(sheets);   // §L1.16
     return R;
   }
 
@@ -451,7 +465,13 @@
     var hashHex = opts.hashHex || sha256Hex, colorFor = opts.colorFor || function () { return undefined; };
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
     var assets = [], inserts = [], cuts = [], groups = [], skipped = [];
+    // §L1.16: a wing set was drawn rotated by -angle about (ox,oy); the model is turned back by +angle. Bodies are rotated as world vertices (so the baked mesh is already in
+    // place, placement.rot 0); a library fill keeps its mesh and gets the rotated centre + placement.rot. Openings of a framed wall are BAKED (no GEOM_CUT: the worker only cuts
+    // axis-aligned boxes and a GEOM_ROTATE on an insert is a no-op there, L1.16 slice 2).
+    var fr = opts.frame && !opts.frame.error ? opts.frame : null, fth = fr ? fr.angle * Math.PI / 180 : 0, fco = Math.cos(fth), fsi = Math.sin(fth);
+    var fpt = function (x, y) { return fr ? [fco * (x - fr.ox) - fsi * (y - fr.oy) + fr.ox, fsi * (x - fr.ox) + fco * (y - fr.oy) + fr.oy] : [x, y]; };
     function insert(guid, cls, storey, V, F, prov, uncut) {
+      if (fr) V = V.map(function (p) { var q = fpt(p[0], p[1]); return [q[0], q[1], p[2]]; });
       var a = asset(guid, V, F, uncut); assets.push(a);
       var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(a.centre[0]), y: r6(a.centre[1]), z: r6(a.centre[2] - a.halfZ), rot: 0 }, ifc_class: cls,
         storey: storey, provenance: prov };
@@ -483,6 +503,15 @@
         if (!pm) { skipped.push({ storey: st.name, openings: v.openings, reason: 'body not rectilinear', refuse: true }); return; }
         var bguid = hashHex(inf[0].input_guids.join('|') + '|gap-body').slice(0, 32);
         var prov = { dxf_handle: inf[0].params.infill_of.join('+'), layer: inf[0].params.layer, sheet: st.sheet, run_id: R.run_id };
+        if (fr) {   // baked: one prism per infill z-interval (the complement of the voids), same footprint rect; no GEOM_CUT
+          var bi = inf.map(function (o, i) {
+            var zlo = st.level + o.params.base, zhi = zlo + o.params.height, pi = S.prismRect(ring, [], r6(zlo), r6(zhi));
+            return pi ? insert(hashHex(bguid + '|baked|' + i).slice(0, 32), 'IfcWall', st.name, pi.vertices, pi.faces, prov, true) : -1;
+          });
+          if (bi.indexOf(-1) >= 0) { skipped.push({ storey: st.name, openings: v.openings, reason: 'framed body not rectilinear', refuse: true }); return; }
+          groups.push({ storey: st.name, body: bi[0], guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z, baked: bi });
+          return;
+        }
         var hi = insert(bguid, 'IfcWall', st.name, pm.vertices, pm.faces, prov, true);
         groups.push({ storey: st.name, body: hi, guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z });
         v.z.forEach(function (z, i) {
@@ -499,7 +528,7 @@
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];
       if (!a) { a = asset('x', G.vertices, G.faces, false); a.hash = 'lib-' + e.geometry_hash; libAsset[e.geometry_hash] = a; assets.push(a); }
-      var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(e.centre[0]), y: r6(e.centre[1]), z: r6(e.centre[2] - a.halfZ), rot: 0 }, ifc_class: e.class, storey: e.storey,
+      var P = { realGeomHash: a.hash, bbox: a.bbox, placement: { x: r6(fpt(e.centre[0], e.centre[1])[0]), y: r6(fpt(e.centre[0], e.centre[1])[1]), z: r6(e.centre[2] - a.halfZ), rot: fr ? r6(((fr.angle % 360) + 360) % 360) : 0 }, ifc_class: e.class, storey: e.storey,
         provenance: { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id, element_ref: e.element_ref, geometry_hash: e.geometry_hash, family_id: e.family_id } };
       if (typeof level[e.storey] === 'number') P.storey_elev = level[e.storey];
       var col = colorFor(e.class); if (col != null) P.color = col;
@@ -596,5 +625,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, frameOfSheets: frameOfSheets, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });
