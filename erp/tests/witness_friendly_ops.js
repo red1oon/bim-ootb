@@ -41,7 +41,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     for (const id of chain) { const open = await page.evaluate(i => { const r = document.querySelector('#idmp-tree .idmp-row[data-menu-id="' + i + '"]'); return r && r.parentElement.classList.contains('open'); }, id); if (!open) await click('#idmp-tree .idmp-row[data-menu-id="' + id + '"]', counted); }
     await click('#idmp-tree .idmp-row.leaf[data-menu-id="' + menuId + '"]', counted); await hold(1200);
   }
-  const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [title^="Save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
+  const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [data-tb="save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
   const optBy = async (col, re) => { const o = (await page.$$eval('#idmp-inline-mount select[data-col="' + col + '"] option', os => os.map(x => ({ v: x.value, t: x.text })))).find(x => x.v && re.test(x.t)); if (!o) throw new Error('no option ' + col + ' ' + re); return o.v; };
   const nOrders = async () => (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n;
   const lastOrder = async () => (await tip('SELECT pp_order_id AS id, documentno, docstatus FROM pp_order WHERE pp_order_id<0 ORDER BY pp_order_id ASC LIMIT 1'))[0];
@@ -171,7 +171,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     const why = (/(?:nothing sealed: |refused: )(.*)$/.exec(saveRef) || [])[1] || '';
     console.log('§FOPS refusal preview=' + JSON.stringify(pr) + ' save=' + JSON.stringify(saveRef.slice(0, 300)));
     verdict('F9', 'Preview shows the refusal Save gives ("' + why.slice(0, 90) + '"), and neither writes', !!pr && pr.state === 'refused' && !!why && pr.text.indexOf(why.slice(0, 60)) >= 0 && k9 === kA && c9 === cA && (await nOrders()) === c9, { pr, why, k9, kA, c9, cA }, !why);
-    await click('#idmp-toolbar [title^="Ignore"]', false).catch(() => {});
+    await click('#idmp-toolbar [data-tb="ignore"]', false).catch(() => {});
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const firstDiff = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) return { at: i, plain: a.slice(Math.max(0, i - 2), i + 3), lens: b.slice(Math.max(0, i - 2), i + 3) }; return null; };
     verdict('F2', 'Save & Complete: the lens fires the same ' + seqPc.length + ' model/doc events in the same order as Save then Complete, and both orders end CO', same(seqPc, seqLc) && oP && oP.docstatus === 'CO' && oL && oL.docstatus === 'CO' && oL.id !== oP.id,

@@ -40,10 +40,10 @@ async function run(base, browser, lens) {
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pick('c_doctypetarget_id', /^Standard Order/); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
   const lensBtn = async (re) => { const t = await pg.$$eval('#idmp-lensbar button', b => b.map(x => [x.getAttribute('data-lens-action'), x.innerText])); const h = t.find(x => re.test(x[1])); if (!h) throw new Error('no lens button ' + re + ' in ' + JSON.stringify(t)); await hc('#idmp-lensbar button[data-lens-action="' + h[0] + '"]'); await pg.waitForTimeout(2200); };
-  { await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800); await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · C_OrderLine"]'); await pg.waitForTimeout(1200); await hc(NEWB); await pg.waitForTimeout(900); }
+  { await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800); await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · C_OrderLine"]'); await pg.waitForTimeout(1200); await hc(NEWB); await pg.waitForTimeout(900); }
   await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
   GT.type++; await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
-  { await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000); await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000); }
+  { await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000); await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000); }
   await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
   const nChain = logs.length, g0 = GT.click + GT.select + GT.type;
   const openMenu = async (mid2) => {

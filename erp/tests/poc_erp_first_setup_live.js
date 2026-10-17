@@ -73,15 +73,15 @@ async function opts(page, col) {
 }
 async function openWin(page, base, login, win) {
   await page.goto(base + '/idempiere.html?login=' + encodeURIComponent(login) + '&window=' + win, { waitUntil: 'load' });
-  await page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 20000 });
+  await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 });
   await page.waitForTimeout(900);
 }
 async function clickNew(page) {
-  await page.click('#idmp-toolbar button[title^="New record"]');
+  await page.click('#idmp-toolbar [data-tb="new"]');
   await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 });
   await page.waitForTimeout(700);
 }
-async function save(page) { await page.click('#idmp-toolbar button[title^="Save"]'); await page.waitForTimeout(1400); }
+async function save(page) { await page.click('#idmp-toolbar [data-tb="save"]'); await page.waitForTimeout(1400); }
 async function setSel(page, col, val) { await page.selectOption('#idmp-inline-mount select[data-col="' + col + '"]', String(val)); await page.waitForTimeout(250); }
 async function fillBlur(page, col, val) {
   const loc = page.locator('#idmp-inline-mount input[data-col="' + col + '"]').first();

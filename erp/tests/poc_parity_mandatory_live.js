@@ -51,8 +51,8 @@ async function landed(page) {
   await page.waitForTimeout(500);
 }
 async function clickNew(page) {
-  await page.waitForSelector('#idmp-toolbar button[title^="New record"]', { timeout: 15000 });
-  await page.click('#idmp-toolbar button[title^="New record"]');
+  await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 15000 });
+  await page.click('#idmp-toolbar [data-tb="new"]');
   await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 });
   await page.waitForTimeout(700);
 }
@@ -92,7 +92,7 @@ async function clickNew(page) {
   await page.waitForTimeout(200);
   // Save the way a user does on this surface: the toolbar Save (the sibling witnesses' proven gesture) — the
   // inline bar's Save is the same handler but sits below the fold of a 56-row form, tripping actionability.
-  const tb = await page.$('#idmp-toolbar button[title^="Save"]');
+  const tb = await page.$('#idmp-toolbar [data-tb="save"]');
   if (tb) await tb.click();
   else await page.evaluate(() => { const b = document.querySelector('#idmp-inline-mount .ic-vb[data-v="save"]'); if (b) b.click(); });
   await page.waitForTimeout(1100);

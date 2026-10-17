@@ -16,7 +16,7 @@ async function showAllRows(page, opts) {
   if (await page.locator('#idmp-find-ov').count()) { await page.click('#idmp-find-ov [data-find-ok]'); steps.push('find-first:ok'); await wait(1000); }
   const autoNew = await page.evaluate(() => !!document.getElementById('idmp-inline-mount'));
   if (autoNew) {
-    const ign = page.locator('#idmp-inline-mount .ic-vb[data-v="ignore"], #idmp-toolbar button[title^="Ignore"]').first();
+    const ign = page.locator('#idmp-inline-mount .ic-vb[data-v="ignore"], #idmp-toolbar [data-tb="ignore"]').first();
     if (await ign.count()) { await ign.click().catch(() => {}); steps.push('auto-new:ignore'); await wait(700); }
   }
   const findBtn = page.locator('#idmp-toolbar [data-tb="find"]');

@@ -56,7 +56,7 @@ const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.spl
         const miss = want.filter(x => !dom.has(x)); tot.fields += want.length; nf += want.length; tot.missing += miss.length;
         if (miss.length) { missingAll.push(t.name + '=' + miss.join('/')); detail.push(t.name + ':' + (want.length - miss.length) + '/' + want.length); } else okTabs++;
         // leave an unsaved New: Ignore
-        const ig = pg.locator('#idmp-toolbar [title^="Ignore"]'); if (await ig.count() && await ig.first().isEnabled().catch(() => false)) await ig.first().click().catch(() => {});
+        const ig = pg.locator('#idmp-toolbar [data-tb="ignore"]'); if (await ig.count() && await ig.first().isEnabled().catch(() => false)) await ig.first().click().catch(() => {});
       }
       tot.tabsOk += okTabs; tot.trl += trlNo; tot.inconcl += inc ? 1 : 0;
       const winOk = tabsOk && !missingAll.length && !inc; if (winOk) tot.ok++;

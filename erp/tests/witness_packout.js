@@ -113,7 +113,7 @@ const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a
     if (!(await A.locator('#idmp-inline-mount').count())) { await A.click('.idmp-grid tbody tr'); await A.waitForTimeout(500); await A.click('#idmp-toolbar [data-tb="toggle"]'); await A.waitForTimeout(1200); }
     const NEWNAME = 'Order Receipt & Issue (edited for W-PACKOUT)';
     const NAMEF = A.locator('#idmp-inline-mount input[data-col="name"]').first(); await NAMEF.fill(NEWNAME); await NAMEF.dispatchEvent('change');
-    const nS = PAGELOG.length; await A.click('#idmp-toolbar [title^="Save"]'); await A.waitForTimeout(2500);
+    const nS = PAGELOG.length; await A.click('#idmp-toolbar [data-tb="save"]'); await A.waitForTimeout(2500);
     const saveLine = PAGELOG.slice(nS).filter(l => /§MODEL-AFTER-SAVE|§CRUD|committed=/.test(l)).slice(-1)[0] || '';
     const bid = await A.evaluate((uu) => { let r; window.__crud.withModelTrx(q => { r = q("SELECT ad_toolbarbutton_id AS id FROM ad_toolbarbutton WHERE ad_toolbarbutton_uu=?", [uu]); }); return r && r[0] ? r[0].id : null; }, BUU);
     const tbbTable = await A.evaluate(() => window.__idmpDb.exec("SELECT ad_table_id FROM ad_table WHERE tablename='AD_ToolBarButton'")[0].values[0][0]);
@@ -151,7 +151,7 @@ const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a
     const fill = async (c, v) => { const L = A.locator('#idmp-inline-mount :is(input,select,textarea)[data-col="' + c + '"]').first(); if (!(await L.count())) return 'absent'; const tag = await L.evaluate(e => e.tagName + ':' + (e.type || ''));
       if (/checkbox/.test(tag)) { if (!(await L.isChecked())) await L.click(); } else if (/SELECT/.test(tag)) { await L.selectOption(v); await L.dispatchEvent('change'); } else { await L.fill(v); await L.dispatchEvent('change'); } return 'ok'; };
     const f1 = [await fill('name', 'wpo_window'), await fill('pk_version', '1.0.5'), await fill('version', '13'), await fill('releaseno', 'all'), await fill('isexportdictionaryentity', 'Y')];
-    await A.click('#idmp-toolbar [title^="Save"]'); await A.waitForTimeout(2500);
+    await A.click('#idmp-toolbar [data-tb="save"]'); await A.waitForTimeout(2500);
     await A.click('#idmp-tabstrip .idmp-adtab[title$="· AD_Package_Exp_Detail"]'); await A.waitForTimeout(1500);
     if (!(await A.locator('#idmp-inline-mount').count())) { await A.click('#idmp-toolbar [data-tb="new"]'); await A.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 }); }
     console.log('§WPO O6 detail form: ' + JSON.stringify(await A.evaluate(() => ({ typeOptions: [...(document.querySelector('#idmp-inline-mount select[data-col="type"]') || { options: [] }).options].map(o => o.value + '=' + o.text).slice(0, 30) }))));
@@ -161,7 +161,7 @@ const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a
     const procOpt = await A.locator('#idmp-inline-mount select[data-col="ad_form_id"]').first().locator('option').evaluateAll(os => (os.find(o => /Order Receipt/.test(o.text)) || {}).value).catch(() => null);
     if (!procOpt) console.log('§WPO O6 form options: ' + JSON.stringify(await A.locator('#idmp-inline-mount select[data-col="ad_form_id"]').first().locator('option').evaluateAll(os => ({ n: os.length, match: os.filter(o => /Receipt/i.test(o.text)).map(o => o.value + '=' + o.text) }))));
     f2.push(procOpt ? await fill('ad_form_id', procOpt) : 'no form option');
-    await A.click('#idmp-toolbar [title^="Save"]'); await A.waitForTimeout(2500);
+    await A.click('#idmp-toolbar [data-tb="save"]'); await A.waitForTimeout(2500);
     await A.click('#idmp-tabstrip .idmp-adtab[title$="· AD_Package_Exp"]'); await A.waitForTimeout(1500);
     if (!(await A.locator('#idmp-inline-mount').count())) { await A.click('#idmp-toolbar [data-tb="toggle"]'); await A.waitForTimeout(1200); }   // the header comes back in grid view: the form shows its button
     console.log('§WPO O6 header form: ' + JSON.stringify(await A.evaluate(() => ({ cols: [...new Set([...document.querySelectorAll('#idmp-inline-mount [data-col]')].map(e => e.getAttribute('data-col')))], buttons: [...document.querySelectorAll('#idmp-inline-mount button, #idmp-inline-mount [data-btn], #idmp-inline-mount .idmp-btnfield')].map(e => e.outerHTML.slice(0, 160)).slice(0, 10) }))));

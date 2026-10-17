@@ -60,7 +60,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pick('c_doctypetarget_id', /^POS Order/); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
   const docnoShown = await pg.$eval(F('documentno'), e => e.value);
-  let n0 = logs.length; await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  let n0 = logs.length; await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
   const s1 = logs.slice(n0);
   ok('D1', 'a New order saved with the preview number ("' + docnoShown + '") is NOT rejected by the numeric pin',
     !s1.some(l => /§CRUD validate key=c_order verb=create REJECT/.test(l)) && s1.some(l => /§CRUD validate key=c_order verb=create ok/.test(l)),
@@ -72,7 +72,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForTimeout(900);
   await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
   await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
   if (!(await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: the header tab already remembers its form view
 
@@ -85,7 +85,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   ok('D3b', 'the group is signed and chain-verified', c.some(l => /§CRUD process committed key=c_order viaGroup=Y .*verifyChain=ok/.test(l)));
 
   // ── D4 · Zoom Across
-  n0 = logs.length; await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1800);
+  n0 = logs.length; await hc('#idmp-toolbar [data-tb="zoomacross"]'); await pg.waitForTimeout(1800);
   const z = logs.slice(n0).filter(l => /§ZOOM-ACROSS table=C_Order/.test(l)).pop() || '';
   ok('D4', 'Zoom Across lists the generated Shipment (Customer) and Sales Invoice', /Shipment \(Customer\)\(1\)/.test(z) && /Sales Invoice and Credit\/Debit Note\(1\)/.test(z), z.slice(0, 200));
   // ── D5 · drill into the Shipment
@@ -115,7 +115,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc('.idmp-wintab:has(.lbl:text-is("Sales Order"))'); await pg.waitForTimeout(900);
   if (/Grid/.test(await pg.$eval('#idmp-toolbar [data-tb="toggle"]', e => e.innerText).catch(() => ''))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(700); }
   await hc('#idmp-toolbar button[title="Last record"]'); await pg.waitForTimeout(700);
-  n0 = logs.length; await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1500);
+  n0 = logs.length; await hc('#idmp-toolbar [data-tb="zoomacross"]'); await pg.waitForTimeout(1500);
   const z7 = logs.slice(n0).filter(l => /§ZOOM-ACROSS table=C_Order/.test(l)).pop() || '';
   ok('D7b', 'after Last record, Zoom Across zooms THAT record (' + ordId + '), not the first one', new RegExp('key=C_Order_ID=' + ordId + ' ').test(z7) && /destinations=2 /.test(z7), z7.slice(0, 200));
 
@@ -126,16 +126,16 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pick('c_doctypetarget_id', /^POS Order/); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
   await pg.fill(F('paymentrule'), 'P'); await pg.locator(F('paymentrule')).first().blur().catch(() => {}); await pg.waitForTimeout(400);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · C_OrderLine"]'); await pg.waitForTimeout(1200);
   await hc(NEWB); await pg.waitForTimeout(900); await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
   await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
   if (!(await pg.evaluate(() => !!document.querySelector('#idmp-content #idmp-form, #idmp-content .idmp-form')))) { await hc('#idmp-toolbar [data-tb="toggle"]'); await pg.waitForTimeout(900); }   // §OPEN-MODE: the header tab already remembers its form view
   n0 = logs.length; await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(4500);
   const d8 = logs.slice(n0).filter(l => /§MODEL-DOCACTION table=c_order/.test(l)).pop() || '';
-  await hc('#idmp-toolbar [title^="Zoom Across"]'); await pg.waitForTimeout(1800);
+  await hc('#idmp-toolbar [data-tb="zoomacross"]'); await pg.waitForTimeout(1800);
   const z8 = logs.filter(l => /§ZOOM-ACROSS table=C_Order/.test(l)).pop() || '';
   const inv8 = await tip("SELECT ispaid,paymentrule FROM c_invoice WHERE c_invoice_id<0 AND paymentrule='P'"), pay8 = await tip('SELECT COUNT(*) AS n FROM c_payment WHERE c_payment_id<0 AND c_invoice_id IN (SELECT c_invoice_id FROM c_invoice WHERE paymentrule=\'P\' AND c_invoice_id<0)');
   ok('D8a', 'on-credit POS sale completes', /ok=true status=CO/.test(d8), d8.slice(0, 90));

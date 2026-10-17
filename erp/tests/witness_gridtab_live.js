@@ -191,9 +191,9 @@ const PAGELOG = [];
       const cf = await newRec('GTc');
       if (cf == null) r.arms.childNew = 'INCONCLUSIVE no child form';
       else {
-        let n = PL.length; await page.click('#idmp-toolbar button[title^="Save"]').catch(() => {}); await page.waitForTimeout(1600);
+        let n = PL.length; await page.click('#idmp-toolbar [data-tb="save"]').catch(() => {}); await page.waitForTimeout(1600);
         let sv = last(n, /§CRUD-CREATE-SEL table=|§CRUD validate key=\S+ verb=create REJECT|§AD-MODELVAL-LIVE .*REJECT/);
-        if (!/§CRUD-CREATE-SEL/.test(sv)) { await fill('GTc2', 1); n = PL.length; await page.click('#idmp-toolbar button[title^="Save"]').catch(() => {}); await page.waitForTimeout(1600);
+        if (!/§CRUD-CREATE-SEL/.test(sv)) { await fill('GTc2', 1); n = PL.length; await page.click('#idmp-toolbar [data-tb="save"]').catch(() => {}); await page.waitForTimeout(1600);
           sv = last(n, /§CRUD-CREATE-SEL table=|§CRUD validate key=\S+ verb=create REJECT|§AD-MODELVAL-LIVE .*REJECT/); }
         if (/§CRUD-CREATE-SEL/.test(sv)) {
           childSaved = true; await page.waitForTimeout(400);
@@ -206,7 +206,7 @@ const PAGELOG = [];
           else if (s2.rows.length !== 1 || mine !== 1) fails.push('MD-4/MD-2 after child save rows=' + s2.rows.length + ' linkedToHeader1=' + mine);
         } else {
           r.arms.childNew = 'INCONCLUSIVE child not saveable: ' + sv.slice(0, 120);
-          await page.click('#idmp-toolbar button[title^="Ignore"]').catch(() => {}); await page.waitForTimeout(700);   // the user abandons the line (dataIgnore)
+          await page.click('#idmp-toolbar [data-tb="ignore"]').catch(() => {}); await page.waitForTimeout(700);   // the user abandons the line (dataIgnore)
         }
       }
     }

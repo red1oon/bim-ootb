@@ -99,7 +99,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await hold(DRY ? 200 : 2500);
 
     // ═══ helpers for the order / collector beats ═══
-    const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [title^="Save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
+    const NEWB = '#idmp-toolbar [data-tb="new"]', SAVEB = '#idmp-toolbar [data-tb="save"]', F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
     const optBy = async (col, re) => { const o = (await page.$$eval('#idmp-inline-mount select[data-col="' + col + '"] option', os => os.map(x => ({ v: x.value, t: x.text })))).find(x => x.v && re.test(x.t)); if (!o) throw new Error('no option ' + col + ' ' + re); return o; };
     const hselect = async (sel, val) => { GT.select++; await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
     const tip = (q) => page.evaluate(x => window.__crud.withModelTrx(f => f(x)), q);
@@ -161,7 +161,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ B6 stock before: Info Product (the toolbar Product Info window) for the two components and the finished product ═══
     beat('b6', 'Info Product: on hand before');
     async function infoProduct(label, valueText, key) {
-      if (!(await page.$('#idmp-infowin'))) { await hclick('#idmp-toolbar [data-tb="productinfo"]'); await page.waitForSelector('#idmp-infowin'); await pace(600); }
+      if (!(await page.$('#idmp-infowin'))) { await page.evaluate(() => window.AdInfoWindow.open({ tableName: 'M_Product', clientId: window.APP && window.APP.clientId, orgId: window.APP && window.APP.orgId })); await page.waitForSelector('#idmp-infowin'); await pace(600); }
       await htype('#idmp-infowin-crit input[data-col="Value"]', valueText);
       await hselect('#idmp-infowin-crit select[data-col="M_Warehouse_ID"]', '50002');
       await hclick('#idmp-infowin [data-act="refresh"]'); await pace(1100);
@@ -189,7 +189,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('collectors.created', JSON.stringify(await tip("SELECT costcollectortype AS t, movementqty AS q, docstatus AS s FROM pp_cost_collector WHERE pp_cost_collector_id<0 ORDER BY pp_cost_collector_id")));
     fact('costDetails.all', JSON.stringify(await tip("SELECT c.costcollectortype AS t, d.amt, d.qty FROM m_costdetail d JOIN pp_cost_collector c ON c.pp_cost_collector_id=d.pp_cost_collector_id WHERE d.pp_cost_collector_id<0 AND d.c_acctschema_id=101 AND d.m_costelement_id=100 ORDER BY d.m_costdetail_id")));
     fact('storage.kg.afterBackflush', JSON.stringify(await tip('SELECT m_locator_id AS l, m_attributesetinstance_id AS a, qtyonhand AS q, substr(datematerialpolicy,1,10) AS d FROM m_storageonhand WHERE m_product_id=50008')));
-    await openMenuById(53055); await page.waitForSelector('#idmp-toolbar [data-tb="productinfo"]', { timeout: 20000 }); await pace(1200);   // back to the Manufacturing Order window for the Info Product look
+    await openMenuById(53055); await page.waitForSelector('#idmp-toolbar [data-tb="new"]', { timeout: 20000 }); await pace(1200);   // back to the Manufacturing Order window for the Info Product look
     beat('b6c', 'Info Product: on hand after the issues');
     const ip1 = { kg: await infoProduct('kg.afterIssue', 'Fertilizer', 50008), bag: await infoProduct('bag.afterIssue', 'Bag70', 50014) };
 
@@ -222,7 +222,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     const nR = PAGELOG.length; await hclick(SAVEB); await hold(DRY ? 2500 : 3500);
     fact('refusal.log', lastLog(nR, /§MODEL-SAVE-ROLLBACK|§CRUD validate.*REJECT/) || lastLog(nR, /refused/));
     fact('refusal.rows', 'pp_order count ' + cntB + ' -> ' + (await tip('SELECT COUNT(*) AS n FROM pp_order'))[0].n); await hold(DRY ? 200 : 2500);
-    await hclick('#idmp-toolbar [title^="Ignore"]').catch(() => {}); await pace(600);
+    await hclick('#idmp-toolbar [data-tb="ignore"]').catch(() => {}); await pace(600);
 
     // ═══ B10 stop the plugin from the panel: the opening screen returns to the baseline, the data stays ═══
     beat('b10', 'Stop the plugin');

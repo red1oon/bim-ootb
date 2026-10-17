@@ -37,7 +37,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     if (!pick.col) { verdict('C1', 'a grid with >= 2 rows and an editable cell', false, pick, true); throw new Error('no fixture'); }
     const cell = (k) => page.evaluate(({ k, col }) => { const td = document.querySelector('.idmp-grid tbody tr[data-ad-record="' + k + '"] td[data-ad-col="' + col + '"]'); return { editing: !!(td && td.classList.contains('idmp-cell-edit')), input: !!(td && td.querySelector('input.cfi, select.cfi')), grid: !!document.querySelector('.idmp-grid tbody tr[data-ad-record]') }; }, { k, col: pick.col });
     const click = (k) => page.evaluate(({ k, col }) => { const td = document.querySelector('.idmp-grid tbody tr[data-ad-record="' + k + '"] td[data-ad-col="' + col + '"]'); if (td) td.click(); return !!td; }, { k, col: pick.col });
-    const zoomKey = async () => { const n = logs.length; await page.locator('#idmp-toolbar button[title^="Zoom Across"]').first().click(); await page.waitForTimeout(800); await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    const zoomKey = async () => { const n = logs.length; await page.locator('#idmp-toolbar [data-tb="zoomacross"]').first().click(); await page.waitForTimeout(800); await page.keyboard.press('Escape'); await page.waitForTimeout(300);
       const l = logs.slice(n).find(x => /§ZOOM-ACROSS table=/.test(x)) || ''; const m = / key=\w+=(\S+)/.exec(l); return m ? m[1] : null; };
     // C1
     let n0 = logs.length; await click(pick.key1); await page.waitForTimeout(900);
