@@ -75,6 +75,7 @@ const PRECACHE_ASSETS = [
   // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
   'dxf_import_ui.js',
   'dxf2bim_import.js',
+  'dxf2prep.js',
   'dxf2bim/dxf2bim.js',
   'dxf2bim/dxf2marks.js',
   'dxf2bim/dxf2elev.js',

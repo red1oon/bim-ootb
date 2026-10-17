@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -197,6 +197,7 @@
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     state.sheets = window.Dxf2BimImport.readSheets(list);
     state.last = null; state.linesOn = true; state.setOverride = null;
+    runPrep({});
     await convertGate();
     state.sheets.forEach(function (s) {
       console.log(TAG + ' sheet=' + s.name + ' bytes=' + s.text.length + ' sha=' + s.sha.slice(0, 12) + ' marks=' + s.marks + ' role=' + (s.role || 'NONE') +
@@ -291,6 +292,19 @@
     if (!r.ok) throw new Error(u + ' HTTP ' + r.status);
     return r.json();
   }
+  // §L7.8 the pre-processor: line-work sheets get their closed regions found; every value it applies that nothing states becomes a state.defaults row (yellow in the editor)
+  function runPrep(choices) {
+    var P = window.Dxf2Prep; state.prep = {}; state.defaults = [];
+    if (!P) return;
+    var D = P.Defaults();
+    state.sheets.forEach(function (s) {
+      var r = P.prepare(s.dxf && s.dxf.entities, choices || {}, D);
+      if (r.lineWork) { state.prep[s.name] = { segments: r.segments, loops: r.loops.length, dropped: r.dropped, tol: r.tol };
+        console.log('§DXF-PREP sheet=' + s.name + ' line-work segments=' + r.segments + ' closed-regions=' + r.loops.length + ' dropped=' + r.dropped + ' snap_tol=' + r.tol); }
+    });
+    state.defaults = D.rows();
+    console.log('§DXF-PREP defaults=' + state.defaults.filter(function (r) { return r.kind === 'default'; }).length + ' choices=' + JSON.stringify(choices || {}));
+  }
   async function loadLibrary(sheets) {
     try {
       var r = await fetch(LIB_URL, { cache: 'no-store' });
@@ -342,6 +356,6 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { reprepare: runPrep, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

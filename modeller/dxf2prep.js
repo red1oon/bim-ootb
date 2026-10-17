@@ -105,6 +105,38 @@
     };
   }
 
+  // ---- §L7.8 prepare: line-work loop detection; every value it applies that nothing states is a Defaults row ----
+  var MARK_LAYER = 'DXF2BIM-MARK';
+  var TOL_OPTIONS = [0.001, 0.01, 0.1];
+  function segmentsOf(entities) {
+    var segs = [];
+    (entities || []).forEach(function (e) {
+      if (e.layer === MARK_LAYER) return;
+      var v = e.vertices;
+      if (e.type === 'LINE' && v && v.length >= 2) segs.push({ a: [v[0].x, v[0].y], b: [v[1].x, v[1].y], handle: e.handle });
+      else if (e.type === 'LWPOLYLINE' && v && v.length >= 2) {
+        for (var i = 0; i + 1 < v.length; i++) segs.push({ a: [v[i].x, v[i].y], b: [v[i + 1].x, v[i + 1].y], handle: e.handle });
+        if (e.shape && v.length > 2) segs.push({ a: [v[v.length - 1].x, v[v.length - 1].y], b: [v[0].x, v[0].y], handle: e.handle });
+      }
+    });
+    return segs;
+  }
+  function isLineWork(entities) {   // CAD line drawing: loose LINEs, no closed polyline outlines on the non-marking layers
+    var lines = 0, closed = 0;
+    (entities || []).forEach(function (e) { if (e.layer === MARK_LAYER) return; if (e.type === 'LINE') lines++; else if (e.type === 'LWPOLYLINE' && e.shape) closed++; });
+    return lines >= 8 && closed === 0;
+  }
+  // choices: {key: value} from the user (DxfMetaEditor.defaultChoices()); D: an optional shared Defaults register
+  function prepare(entities, choices, D) {
+    D = D || Defaults(); choices = choices || {};
+    if (!isLineWork(entities)) return { lineWork: false, segments: 0, loops: [], dropped: 0, defaults: D.rows(), tol: null };
+    if (!D.rows().some(function (r) { return r.key === 'loops.snap_tol'; })) D.assume('loops.snap_tol', 0.01, 'line ends closer than this are joined into one corner; the drawing does not state a tolerance (drawing units)', TOL_OPTIONS);
+    if (choices['loops.snap_tol'] !== undefined) D.override('loops.snap_tol', Number(choices['loops.snap_tol']));
+    var tol = D.rows().filter(function (r) { return r.key === 'loops.snap_tol'; })[0].value;
+    var segs = segmentsOf(entities), r = lineLoops(segs, tol);
+    return { lineWork: true, segments: segs.length, loops: r.loops, dropped: r.dropped, defaults: D.rows(), tol: tol };
+  }
+
   // ---- §L7.3 provenance ----
   var PROV = { drawn: 'drawn', derived: 'derived', assumed: 'assumed' };
   var PROV_COLOUR = { assumed: 0xff2d2d };   // red; drawn/derived keep the model colour
@@ -121,5 +153,5 @@
     return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };
   }
 
-  return { bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
+  return { prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
 });
