@@ -217,7 +217,15 @@
         if (nz(l.c_orderline_id) && (so || !nz(l.m_product_id))) {                            // :2111-2124
           var ol = trx.get('c_orderline', l.c_orderline_id);
           if (ol && l.qtyinvoiced != null) trx.update('c_orderline', ol, { qtyinvoiced: N(D(ol.qtyinvoiced).add(cmf ? D(l.qtyinvoiced).negate() : D(l.qtyinvoiced))) });
-        } else if (nz(l.c_orderline_id) && !so && nz(l.m_product_id)) trx.say('§MODEL-NAMED MMatchPO.create(invoice-first) MInvoice.java:2128 not ported line=' + l.c_invoiceline_id);
+        } else if (nz(l.c_orderline_id) && !so && nz(l.m_product_id) && !MO.isReversal(trx, 'c_invoice', inv.c_invoice_id)) {   // :2125-2160 Order Invoiced Qty updated via Matching Inv-PO (also created from MInOut when the invoice exists before the shipment)
+          var MMp = matchMod(), pq = cmf ? D(l.qtyinvoiced).negate() : D(l.qtyinvoiced);
+          var mpo = MMp.create(trx, trx.get('c_invoiceline', l.c_invoiceline_id), null, inv.dateinvoiced, pq);
+          if (mpo) {
+            if (!mpo.save()) { T.msg(trx, 'Could not create PO Matching'); return 'IN'; }
+            if (!Y(mpo.get('posted'))) MO.addDocsPostProcess(trx, 'm_matchpo', mpo.row);
+            MMp.miGetInvoiceLine(trx, l.c_invoiceline_id).forEach(function (mi) { if (!Y(mi.posted)) MO.addDocsPostProcess(trx, 'm_matchinv', mi); });
+          }
+        }
         if (nz(l.m_rmaline_id)) {                                                             // :2171-2185 Update QtyInvoiced RMA Line
           var rml = trx.get('m_rmaline', l.m_rmaline_id);
           if (rml) { var rr = ML.save(trx, 'm_rmaline', rml, { qtyinvoiced: N(D(rml.qtyinvoiced).add(D(l.qtyinvoiced))) }); if (!rr.ok && !rmaFail) rmaFail = 'Could not update RMA Line: ' + rr.error; }   // :2178-2182 m_processMsg + Invalid (reported after the loop)

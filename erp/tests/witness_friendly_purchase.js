@@ -66,7 +66,11 @@ async function run(base, browser, lens) {
   const il = inv[0] ? await tip("SELECT c_invoiceline_id AS id, qtyinvoiced AS q, m_inoutline_id AS iol FROM c_invoiceline WHERE c_invoice_id=" + inv[0].id) : [];
   R.steps.bill = { log: logs.slice(from2).filter(l => /§AD-PROC-LIVE proc=53404 .*dispatched=/.test(l)).pop() || '', inv, il, bar: await bars(),
     mi: Number(((await tip("SELECT COUNT(*) AS n FROM m_matchinv WHERE m_matchinv_id < 0"))[0] || {}).n), fact: inv[0] ? await fact(318, inv[0].id) : null,
-    invoiced: Number(((await tip("SELECT SUM(qtyinvoiced) AS d FROM c_orderline WHERE c_order_id=" + po.i))[0] || {}).d) };
+    invoiced: Number(((await tip("SELECT SUM(qtyinvoiced) AS d FROM c_orderline WHERE c_order_id=" + po.i))[0] || {}).d),
+    mpoLinked: Number(((await tip("SELECT COUNT(*) AS n FROM m_matchpo WHERE c_orderline_id IN (SELECT c_orderline_id FROM c_orderline WHERE c_order_id=" + po.i + ") AND c_invoiceline_id IS NOT NULL AND m_inoutline_id IS NOT NULL"))[0] || {}).n),
+    miN: Number(((await tip("SELECT COUNT(*) AS n FROM m_matchinv WHERE c_invoiceline_id IN (SELECT c_invoiceline_id FROM c_invoiceline WHERE c_invoice_id=" + (inv[0] ? inv[0].id : 0) + ")"))[0] || {}).n),
+    posted: inv[0] ? ((await tip("SELECT posted AS p FROM c_invoice WHERE c_invoice_id=" + inv[0].id))[0] || {}).p : null,
+    miFact: inv[0] ? (await tip("SELECT COUNT(*) AS n, COALESCE(SUM(amtacctdr),0) AS d, COALESCE(SUM(amtacctcr),0) AS c FROM fact_acct WHERE ad_table_id=472 AND record_id IN (SELECT m_matchinv_id FROM m_matchinv WHERE c_invoiceline_id IN (SELECT c_invoiceline_id FROM c_invoiceline WHERE c_invoice_id=" + inv[0].id + "))"))[0] : null };
   const cnt = () => pg.evaluate(() => { const q = t => { const r = window.__idmpDb.exec(t); return r.length ? Number(r[0].values[0][0]) : 0; }; return q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id IN (53431,53432,53433,53434)') + q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id IN (53401,53402,53403,53404)'); });
   R.rowsLive = await cnt(); await pg.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.kernel.friendly-ops'); }); await pg.waitForTimeout(500); R.rowsStopped = await cnt();
   R.pageErr = logs.filter(l => /^PAGEERR/.test(l)).slice(0, 3);
@@ -87,10 +91,12 @@ async function run(base, browser, lens) {
       J('P4', 'Receive: QtyDelivered = 5, on-hand +5, one M_MatchPO, receipt Fact_Acct balanced and non-empty', r.delivered === 5 && r.dOnhand === 5 && r.mpo >= 1 && r.fact && r.fact.n > 0 && Math.abs(r.fact.d - r.fact.c) < 0.005, JSON.stringify({ d: r.delivered, oh: r.dOnhand, mpo: r.mpo, f: r.fact }));
       J('P5', 'after Receive: Receive is gone, Create Bill is offered', !r.bar.includes('FO_Order_Receive') && r.bar.includes('FO_Order_Bill'), r.bar);
       J('P6', 'Create Bill: one completed vendor invoice of the PO whose line points at the receipt line, QtyInvoiced = 5, M_MatchInv written', b.inv.length === 1 && b.inv[0].s === 'CO' && b.inv[0].t === 'N' && b.il.length === 1 && Number(b.il[0].q) === 5 && r.rl[0] && Number(b.il[0].iol) === Number(r.rl[0].id) && b.mi >= 1, JSON.stringify([b.inv, b.il, b.mi]));
-      // P7 is NOT judged: the twin names two gaps in the MInvoice.completeIt / posting port that the plain path hits identically (§MODEL-POST "Doc_Invoice API not ported in model_post", §MODEL-NAMED "MMatchPO.create(invoice-first) MInvoice.java:2128 not ported"):
-      //   the vendor invoice's Fact_Acct and the order line's QtyInvoiced are not booked by the model layer. Printed, not asserted: a green here would claim books the twin does not write (spec §44.1).
-      const gaps = (on.billLog || []).filter(l => /MODEL-POST table=c_invoice|MMatchPO.create\(invoice-first\)/.test(l));
-      console.log('§FOPUR NAMED-GAP (not judged) invoice Fact_Acct n=' + (b.fact && b.fact.n) + ' order QtyInvoiced=' + b.invoiced + ' evidence=' + JSON.stringify(gaps.map(l => l.slice(0, 120))));
+      // P7 vs the REAL iDempiere: the P2P chain recorded on the pilot (ERP parallel run c5_po_chain, ~/.cache/pilot/c5_po_chain/ref_diff.json: PO 5 x 36 -> receipt -> AP invoice, all completed) ends with
+      //   C_OrderLine QtyDelivered 5 / QtyInvoiced 5, ONE M_MatchPO (qty 5) carrying BOTH the receipt line and the invoice line, ONE M_MatchInv (qty 5), Fact_Acct 4 rows each for the receipt (319),
+      //   the invoice (318) and the M_MatchInv (472), every document Posted='Y'. The same shape is asserted here (quantities scale with this PO).
+      J('P7', 'Create Bill vs the recorded legacy chain: invoice Fact_Acct 4 rows balanced, order QtyInvoiced = 5, one M_MatchPO carrying the invoice line and the receipt line, one M_MatchInv', b.fact && b.fact.n === 4 && Math.abs(b.fact.d - b.fact.c) < 0.005 && b.invoiced === 5 && b.mpoLinked === 1 && b.miN === 1 && b.posted === 'Y', JSON.stringify({ f: b.fact, inv: b.invoiced, mpoLinked: b.mpoLinked, mi: b.miN, posted: b.posted }));
+      // P7b NOT judged (named gap, spec §46.1): legacy posts the M_MatchInv (Doc_MatchInv, 4 Fact_Acct rows on table 472 in the recorded chain); the twin has no Doc_MatchInv / Doc_MatchPO class in model_post.
+      console.log('§FOPUR NAMED-GAP (not judged) M_MatchInv Fact_Acct twin n=' + (b.miFact && b.miFact.n) + ' legacy(recorded c5_po_chain) n=4 - Doc_MatchInv not ported (Doc_MatchInv.java 2878 lines)');
       J('P8', 'once received and billed neither button is offered', !b.bar.includes('FO_Order_Receive') && !b.bar.includes('FO_Order_Bill'), b.bar);
       J('P9', 'Stop removes every row (processes, buttons)', on.rowsLive === 8 && on.rowsStopped === 0, 'live ' + on.rowsLive + ' stopped ' + on.rowsStopped);
       J('P0', 'no page errors', !(on.pageErr || []).length, on.pageErr);
