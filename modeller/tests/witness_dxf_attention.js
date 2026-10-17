@@ -2,7 +2,8 @@
 /**
  * # ⚠ DO NOT REMOVE — W-DXF-ATTN: prompts/DXF2BIM_MODELLER_LANE.md §L7.2. Read the log after every run; exit code is not evidence.
  * Issue proved: a value the drawing does not state, only SUGGESTED by the editor, must be visible to the user (Metadata button shivers, suggestion rows yellow) until confirmed.
- *   A1 a raw sheet (units in the header, a title text, nothing marked) -> suggestions exist -> #dxf-meta has .dxf-shiver, rows .dm-pr are yellow
+ *   A0/A1 raw sheet: the editor auto-opens (no shiver while open); closed with values unconfirmed -> #dxf-meta shivers; reopen stops it; rows yellow
+ *   D1-D3 applied defaults (state.defaults rows) listed with a yellow `default` badge; a change makes them `you`
  *   A2 CONTROL a sheet that already states every marking the editor could suggest -> no shiver
  *   A3 confirming every suggestion (real clicks) -> unconfirmed 0 -> shiver gone, the markings are 'you'
  * Input is written here (tiny synthetic DXF); no local material needed.
@@ -22,15 +23,30 @@ runE2E('W-DXF-ATTN', async (t) => {
     await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 120000 }); await t.sleep(600); };
   const st = () => pg.evaluate(() => { const b = document.getElementById('dxf-meta'); return { shiver: !!b && b.classList.contains('dxf-shiver'), attn: window.DxfMetaEditor.state.attn, title: b && b.title }; });
   await open(path.join(dir, 'raw.dxf'));
-  let s = await st(); console.log('state raw', JSON.stringify(s));
-  t.assert('A1 raw sheet: suggestions pending -> Metadata button shivers', s.shiver === true && s.attn > 0, JSON.stringify(s));
-  await pg.evaluate(() => window.DxfMetaEditor.show()); await t.sleep(400);
+  let s = await st(); console.log('state raw (editor auto-opened)', JSON.stringify(s));
+  t.assert('A0 editor open after import: it shows the suggestions itself, so the button does not shiver', s.shiver === false && s.attn > 0, JSON.stringify(s));
   const yellow = await pg.evaluate(() => { const r = [...document.querySelectorAll('#dm-panel .dm-pr, #dm-panel .dm-defrow')]; return { n: r.length, bg: r.length ? getComputedStyle(r[0]).backgroundColor : null }; });
   t.assert('A1b suggestion rows are drawn on a yellow background', yellow.n > 0 && /245,\s*217,\s*10/.test(yellow.bg || ''), JSON.stringify(yellow));
+  await pg.evaluate(() => window.DxfMetaEditor.close()); await t.sleep(300);
+  s = await st(); console.log('state closed', JSON.stringify(s));
+  t.assert('A1 panel closed while values are still unconfirmed -> the Metadata button shivers (reminder)', s.shiver === true && s.attn > 0, JSON.stringify(s));
+  await pg.evaluate(() => window.DxfMetaEditor.show()); await t.sleep(300);
+  s = await st();
+  t.assert('A1c reopening stops the shiver', s.shiver === false, JSON.stringify(s));
+  // applied defaults (rows the import applied because the drawing does not state them): yellow `default` badge, a change makes it the user's
+  await pg.evaluate(() => { const st = window.DxfImportUI.state; st.defaults = [{ key: 'roof.sheet.thickness', value: 1, kind: 'default', why: 'not stated in the drawing', options: [0.5, 1, 1.5] }, { key: 'truss.spacing', value: 'every column line', kind: 'default', why: 'spacing is not drawn', options: ['every column line', 'every 2nd column line'] }]; window.DxfMetaEditor.show(); });
+  await t.sleep(400);
+  const dd = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-panel .dm-defrow[data-default]').length, badges: [...document.querySelectorAll('#dm-panel [data-default] .dm-src.default')].map(e => getComputedStyle(e).backgroundColor), attn: window.DxfMetaEditor.state.attn }));
+  t.assert('D1 applied defaults listed, each with a yellow `default` badge', dd.rows === 2 && dd.badges.length === 2 && dd.badges.every(b => /245,\s*217,\s*10/.test(b)), JSON.stringify(dd));
+  await pg.select('#dm-panel select[data-key="roof.sheet.thickness"]', '1.5'); await t.sleep(400);
+  const dc = await pg.evaluate(() => ({ choices: window.DxfMetaEditor.defaultChoices(), row: window.DxfImportUI.state.defaults[0], badge: document.querySelector('#dm-panel [data-default="roof.sheet.thickness"] .dm-src').dataset.src, left: window.DxfMetaEditor.state.attn }));
+  t.assert('D2 changing a default makes it the user\'s (badge `you`, value kept as a number, choice recorded)', dc.badge === 'user' && dc.row.kind === 'chosen' && dc.row.value === 1.5 && dc.choices['roof.sheet.thickness'] === '1.5', JSON.stringify(dc));
+  t.assert('D3 one default left unconfirmed -> still counted', dc.left >= 1, String(dc.left));
+  await pg.evaluate(() => { window.DxfImportUI.state.defaults = []; });
   for (let i = 0; i < 40; i++) { const n = await pg.evaluate(() => { const b = document.querySelector('#dm-panel [data-act="confirm"]'); if (b) { b.click(); return 1; } return 0; }); if (!n) break; await t.sleep(500); }
   await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 120000 }); await t.sleep(600);
   s = await st(); console.log('state confirmed', JSON.stringify(s));
-  t.assert('A3 every suggestion confirmed by real clicks -> shiver gone', s.shiver === false && s.attn === 0, JSON.stringify(s));
+  t.assert('A3 every suggestion confirmed by real clicks -> nothing unconfirmed', s.attn === 0 && s.shiver === false, JSON.stringify(s));
   const by = await pg.evaluate(() => window.DxfMetaEditor.state.sheets[0].marks.map(m => m.key + ':' + m.source));
   t.assert('A3b the confirmed values are the user\'s markings', by.length > 0 && by.every(x => /:user$/.test(x)), by.join(','));
   // A2 control: the confirmed marks written out and re-opened -> nothing left to suggest

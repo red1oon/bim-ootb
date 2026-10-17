@@ -42,7 +42,7 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'];
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -748,6 +748,20 @@
       '<button class="dm-btn' + (S.tool === 'exclude' ? ' on' : '') + '" data-act="tool" data-tool="exclude"' + (horiz.length ? '' : ' disabled') + '>' + IC.exclude + '<span>' + (S.tool === 'exclude' ? 'Drag a box' : 'Exclude area') + '</span></button></div>';
     return secHead('excludes', IC.exclude, 'Exclude areas', L.n || '') + (S.sec.excludes ? '<div class="dm-sb">' + h + L.h + '</div>' : '');
   }
+  // §L7.2 values the import APPLIED because the drawing does not state them (rows of state.defaults, from the pre-processor/importer): yellow while they are defaults; a change makes them the user's.
+  function defRows() { var st = window.DxfImportUI && window.DxfImportUI.state; return (st && st.defaults) || []; }
+  function renderDefaults() {
+    var rows = defRows(); if (!rows.length) return '';
+    var nDef = rows.filter(function (r) { return r.kind === 'default'; }).length, h = '';
+    rows.filter(function (r) { return r.kind === 'default' || r.kind === 'chosen'; }).forEach(function (r, i) {
+      var isDef = r.kind === 'default', opts = (r.options || []).slice(); if (opts.indexOf(r.value) < 0) opts.unshift(r.value);
+      h += '<div class="dm-f' + (isDef ? ' dm-defrow' : '') + '" data-default="' + esc(r.key) + '"><label title="' + esc(r.why || '') + '" style="width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.key) + '</label>' +
+        '<select class="dm-sel" data-act="defchoose" data-key="' + esc(r.key) + '">' + opts.map(function (o) { return opt(o, r.value); }).join('') + '</select>' +
+        (isDef ? '<span class="dm-src default" data-src="default" title="' + esc(r.why || 'not stated in the drawing') + '">default</span>' : '<span class="dm-src user" data-src="user">you</span>') + '</div>';
+    });
+    h = '<div class="dm-ref" style="margin:2px 0 6px">Applied because the drawing does not state them. Change one to make it yours.</div>' + h;
+    return secHead('defaults', IC.warn, 'Defaults applied', nDef ? nDef + ' default' : 'all confirmed', nDef) + (S.sec.defaults ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
     S.sheets.forEach(function (sh, si) {
@@ -788,11 +802,11 @@
     return S.verdict.verdict === 'qualifies' ? '<span class="dm-chip ok" id="dm-chip" data-verdict="qualifies">' + IC.ok + 'Qualifies</span>'
       : '<span class="dm-chip bad" id="dm-chip" data-verdict="blocked">' + IC.warn + 'Blocked · ' + S.verdict.blocking.length + '</span>';
   }
-  function pending() { var n = 0; S.sheets.forEach(function (sh) { n += proposalsFor(sh).list.length; }); n += doorProposals().list.length; return n; }
+  function pending() { var n = 0; S.sheets.forEach(function (sh) { n += proposalsFor(sh).list.length; }); n += doorProposals().list.length; n += defRows().filter(function (r) { return r.kind === 'default'; }).length; return n; }
   function attention() {   // §L7.2: a value the drawing does not state, only suggested, is a default until confirmed: the Metadata button shivers (yellow ring) while any stands
     var n = 0; try { n = pending(); } catch (e) { console.error(TAG + ' attention failed ' + (e && e.message)); }
-    S.attn = n; var b = document.getElementById('dxf-meta');
-    if (b) { b.classList.toggle('dxf-shiver', n > 0); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review' : 'Drawing metadata'; }
+    S.attn = n; var b = document.getElementById('dxf-meta'), closed = !S.panel || S.panel.style.display === 'none';
+    if (b) { b.classList.toggle('dxf-shiver', n > 0 && closed); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review' : 'Drawing metadata'; }
     console.log(TAG + ' attention unconfirmed=' + n); return n;
   }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
@@ -805,7 +819,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -823,6 +837,9 @@
     document.getElementById('dm-save').onclick = function () { save(); };
     P.querySelectorAll('[data-act]').forEach(function (el) {
       var a = el.getAttribute('data-act');
+      if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);
+        defRows().forEach(function (r) { if (r.key === k && (r.kind === 'default' || r.kind === 'chosen')) { r.value = (typeof r.value === 'number' && isFinite(num)) ? num : v; r.kind = 'chosen'; } });
+        S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = v; console.log(TAG + ' default-chosen ' + k + '=' + v); render(); attention(); };
       if (a === 'sec') el.onclick = function () { var k = el.getAttribute('data-sec'); S.sec[k] = !S.sec[k]; render(); };
       else if (a === 'card') el.onclick = function () { var k = el.getAttribute('data-sheet'); S.open[k] = !S.open[k]; render(); };
       else if (a === 'single') { el.onchange = function () { setSingle(sheetAt(el), el.getAttribute('data-key'), el.value); }; if (el.tagName === 'INPUT') el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; }
@@ -871,7 +888,7 @@
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
   }
-  function close() { if (S.panel) S.panel.style.display = 'none'; if (S.tool) setTool(S.tool); console.log(TAG + ' panel closed'); }
+  function close() { if (S.panel) S.panel.style.display = 'none'; if (S.tool) setTool(S.tool); console.log(TAG + ' panel closed'); attention(); }
 
   // ---- open: from the import (dxf_import_ui.js openFiles) ----
   function bind() { MK = window.Dxf2Marks; Q = window.Dxf2Qualify; I = window.Dxf2BimImport; B = window.Dxf2Bim; Cf = window.Dxf2ShellConfig;
@@ -898,9 +915,9 @@
     else { render(); schedule(0); }
     attention();
   }
-  function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); }
+  function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); attention(); }
 
-  window.DxfMetaEditor = { attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
+  window.DxfMetaEditor = { defaultChoices: function () { return S.defaultChoices || {}; }, attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
     effText: effText, highlight: highlight, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
