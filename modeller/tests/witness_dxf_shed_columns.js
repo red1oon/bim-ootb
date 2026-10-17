@@ -41,4 +41,7 @@ runE2E('W-DXF-SHED', async (t) => {
   await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 120000 }); await sleep(1500);
   const c = await pg.evaluate(() => ({ counts: window.DxfImportUI.state.last.counts, cuts: window.DxfImportUI.state.last.nCuts }));
   t.assert('H5 Convert: 24 IfcColumn on Level 1, 0 cuts; heights as drawn: 12 at 24..122 in, 12 at 24..60 in (FGL = 0)', c.counts['Level 1/IfcColumn'] === 24 && c.cuts === 0 && zr['24.0..122.0'] === 12 && zr['24.0..60.0'] === 12, JSON.stringify({ c, zr }));
+  const nm = await pg.evaluate(() => [...new Set(window.DxfImportUI.state.gate.R.els.map(e => e.ifc.type_name))]);
+  t.assert('H6 the 24 columns carry the drawing\'s own label as type name (the one text naming a column)', nm.length === 1 && nm[0] === '12"x12" R.C.C Column', JSON.stringify(nm));
 });
+

@@ -36,4 +36,21 @@ const r1 = run([['plan.dxf', planDxf(cols)], ['south.dxf', elevDxf(3000)]]), r2 
 ok('B8 deterministic: the same input twice gives the same bodies', JSON.stringify(r1.els) === JSON.stringify(r2.els));
 // the elevation drawn as LOOSE LINES gives the same columns (the shed case); a beam typed on the same layers is a different kind
 ok('B9 beam kind: a layer typed beam gives IfcBeam/BEAM', (() => { const p = planDxf(cols).replace(/@LAYER=Col,column/, '@LAYER=Col,beam'), e = elevDxf(3000).replace('@LAYER=Col,column', '@LAYER=Col,beam'); const x = run([['plan.dxf', p], ['south.dxf', e]]); return x.els.length === 3 && x.els.every(q => q.class === 'IfcBeam' && q.ifc.PredefinedType === 'BEAM'); })());
+// §L7.13 type names from the drawing's own labels
+const txtE = (layer, x, y, t, mt) => g(0, mt ? 'MTEXT' : 'TEXT') + g(8, layer) + g(10, x) + g(20, y) + g(30, 0) + g(40, 40) + g(1, t);
+const withLabels = (labels) => doc(cols.map(([a, b]) => lbox('Col', a, 0, b, 3000)).join('') + labels.map(([t, mt], i) => txtE('Tex', 100, -200 - 100 * i, t, mt)).join(''), ELEV('minY', [['@LAYER=Col,column']].slice(1)));
+ok('B16 no line pair was used by any body (closed boxes matched by interval): no pair-width default row', !run([['plan.dxf', planDxf(cols)], ['south.dxf', elevDxf(3000)]]).defaults.some(r => r.key === 'bodies.pair_max_width'));
+const named = (labels, o) => run([['plan.dxf', planDxf(cols)], ['south.dxf', withLabels(labels)]], o);
+let n1 = named([['12"x12" R.C.C Column']]);
+ok('B10 exactly one label naming the kind -> applied as ifc.type_name on every column + one yellow default row', n1.els.length === 3 && n1.els.every(e => e.ifc.type_name === '12"x12" R.C.C Column') && n1.defaults.filter(r => r.key === 'column.type_name' && r.kind === 'default').length === 1, JSON.stringify(n1.defaults.map(r => [r.key, r.value, r.kind])));
+let n2 = named([['12"x12" R.C.C Column'], ['14"x14" Column below grade']]);
+ok('B11 CONTROL two different labels naming the kind -> no name invented, candidates listed', n2.els.every(e => e.ifc.type_name === null) && n2.report.labels.column.length === 2 && !n2.defaults.some(r => r.key === 'column.type_name'));
+let n3 = named([['12"x12" R.C.C Column']], { prepChoices: { 'column.type_name': '' } });
+ok('B12 the user\'s choice (the empty option) wins: no name, the row is `chosen`', n3.els.every(e => e.ifc.type_name === null) && n3.defaults.find(r => r.key === 'column.type_name').kind === 'chosen');
+let n4 = named([['{\\fArial|b0|i0;12"x12" R.C.C Column}', true]]);
+ok('B13 MTEXT formatting codes are stripped from the label', n4.els.every(e => e.ifc.type_name === '12"x12" R.C.C Column'), String(n4.els[0] && n4.els[0].ifc.type_name));
+let n5 = named([['Beam B-1 12"x10"']]);
+ok('B14 a label for another kind (beam) does not name the columns', n5.els.every(e => e.ifc.type_name === null) && n5.report.labels.beam.length === 1);
+let n6 = named([['12"x12" R.C.C Column'], ['12"x12" R.C.C Column']]);
+ok('B15 the same label twice is one distinct label (still applied)', n6.els.every(e => e.ifc.type_name === '12"x12" R.C.C Column'));
 console.log(fail ? 'W-BODIES FAIL ' + fail : 'W-BODIES PASS'); process.exit(fail ? 1 : 0);

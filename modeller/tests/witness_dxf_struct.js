@@ -65,4 +65,18 @@ runE2E('W-DXF-STRUCT', async (t) => {
   await choose('plan', 'Col', 'column'); await choose('elev', 'Col', 'column'); await choose('plan', 'Wl', 'wall');
   let s6 = await gate();
   t.assert('S6 CONTROL a wall layer typed next to a body kind: refused as a mixed set (stated), Convert disabled', !s6.ok && s6.refused.some(r => /mixed sets are not supported/.test(r)) && s6.conv === false, JSON.stringify(s6).slice(0, 300));
+  // S8 type names from the drawing's own label (§L7.13): one label naming the kind -> a yellow default, carried to the insert; the user's empty choice removes it
+  const txtL = (layer, x, y, tx) => g(0, 'TEXT') + g(8, layer) + g(10, x) + g(20, y) + g(30, 0) + g(40, 40) + g(1, tx);
+  const EL = f('southL.dxf', doc(cols.map(([a, b]) => lbox('Col', a, 0, b, 3000)).join('') + txtL('Tex', 100, -300, '12"x12" R.C.C Column'), ELEV));
+  await open([f('planL.dxf', planDxf(cols)), EL]); await layersOpen();
+  await choose('plan', 'Col', 'column'); await choose('elev', 'Col', 'column');
+  const d8 = await pg.evaluate(() => { const r = document.querySelector('#dm-panel [data-default="column.type_name"]'); return { row: !!r, bg: r ? getComputedStyle(r).backgroundColor : null, inAll: !!document.querySelector('#dm-yellows [data-act="defkeep"][data-key="column.type_name"]'), name: window.DxfImportUI.state.gate.R.els[0].ifc.type_name }; });
+  t.assert('S8 the one label naming the kind is applied as a yellow default (Defaults applied + All defaults) and is the bodies\' type name', d8.row && /245,\s*217,\s*10/.test(d8.bg) && d8.inAll && d8.name === '12"x12" R.C.C Column', JSON.stringify(d8));
+  await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 60000 }); await t.sleep(800);
+  const l8 = await t.lastOp(), P8 = l8 && (l8.parameters || l8.params) || {};
+  t.assert('S8b Convert: the insert carries provenance.ifc.type_name (it becomes the IFC Name/ObjectType, the Viewer/ERP line name)', P8.provenance && P8.provenance.ifc && P8.provenance.ifc.type_name === '12"x12" R.C.C Column', JSON.stringify(P8.provenance && P8.provenance.ifc));
+  await pg.select('#dm-panel [data-default="column.type_name"] select', ''); await idle();
+  const e8 = await pg.evaluate(() => ({ name: window.DxfImportUI.state.gate.R.els[0].ifc.type_name, kind: window.DxfImportUI.state.defaults.find(r => r.key === 'column.type_name').kind }));
+  t.assert('S8c CONTROL choosing the empty option: no type name, the row is the user\'s', e8.name === null && e8.kind === 'chosen', JSON.stringify(e8));
 });
+
