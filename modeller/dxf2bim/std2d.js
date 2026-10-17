@@ -892,19 +892,20 @@
       if (OPENINGS.indexOf(e.cls) < 0) return;
       if ((model.hosts[e.guid] !== undefined && model.by_guid[model.hosts[e.guid]]) ? keep.has(model.hosts[e.guid]) : hostEls.some(h => inBox(e, h))) keep.add(e.guid);
     });
-    // §L1.22: a rotationally symmetric column has no direction (round: q ~ 0); it is kept when its centre lies inside the plan extent of the kept walls/slabs
-    const framed = model.els.filter(e => keep.has(e.guid) && (WALLS.indexOf(e.cls) >= 0 || e.cls === 'IfcSlab'));
-    if (framed.length) {
-      const ex = [Math.min(...framed.map(e => e.x0)), Math.max(...framed.map(e => e.x1)), Math.min(...framed.map(e => e.y0)), Math.max(...framed.map(e => e.y1))]; let symKept = 0, symOut = 0;
-      model.els.forEach(e => {
+    // §L1.22b: a rotationally symmetric column (round: no direction) belongs to the wing of its NEAREST wall (plan-bbox distance, ties to the smaller wall guid); one owner per column
+    {
+      const allWalls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0).sort((p, q) => (p.guid < q.guid ? -1 : 1));
+      let symKept = 0, symOther = 0;
+      if (allWalls.length) model.els.forEach(e => {
         if (e.cls !== 'IfcColumn' || keep.has(e.guid)) return;
         const a = elementAngle(e); if (a && a.q >= WING_Q_MIN) return;   // has a direction: the angle rule already decided
-        if (columnAxis(e.v, e.c) === null) return;   // not symmetric either: stays unframed
-        const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2;
-        if (cx >= ex[0] && cx <= ex[1] && cy >= ex[2] && cy <= ex[3]) { keep.add(e.guid); symKept++; delete unframed.IfcColumn; } else symOut++;
+        if (columnAxis(e.v, e.c) === null) return;                       // not symmetric either: stays unframed
+        const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2; let best = null, bd = Infinity;
+        allWalls.forEach(w => { const dx = Math.max(w.x0 - cx, 0, cx - w.x1), dy = Math.max(w.y0 - cy, 0, cy - w.y1), d = Math.hypot(dx, dy); if (d < bd) { bd = d; best = w; } });
+        if (best && keep.has(best.guid)) { keep.add(e.guid); symKept++; } else symOther++;
       });
-      if (symKept) { unframed.IfcColumn = model.els.filter(e => e.cls === 'IfcColumn' && !keep.has(e.guid)).length || undefined; if (!unframed.IfcColumn) delete unframed.IfcColumn; }
-      frameModel.lastSym = { kept: symKept, outside: symOut };
+      unframed.IfcColumn = model.els.filter(e => e.cls === 'IfcColumn' && !keep.has(e.guid)).length; if (!unframed.IfcColumn) delete unframed.IfcColumn;
+      frameModel.lastSym = { kept: symKept, outside: symOther };
     }
     model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
     model.curtains = []; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; });
@@ -930,7 +931,7 @@
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
     model.longFaceR3 = true; model.perStoreyEnv = true;   // §L1.17, §L1.18
-    if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} outside_extent=${frameModel.lastSym.outside}`);
+    if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} owned_by_another_wing=${frameModel.lastSym.outside}`);
     log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
     return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };
   }
