@@ -34,7 +34,7 @@ let pass = 0, fail = 0; const ok = (id, name, cond, detail) => { console.log((co
   const man = pg.locator(F('ismanual')).first(); if (await man.count()) { if (await man.isChecked().catch(() => false)) await man.uncheck(); } console.log('§NC9-UI IsManual default was Manual=Y (dictionary default); unticked for this role so MRole.updateAccessRecords runs');
   await pg.waitForTimeout(400);
   const t0 = Date.now(); const n0 = logs.length;
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForFunction(() => true); await pg.waitForTimeout(4000);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForFunction(() => true); await pg.waitForTimeout(4000);
   const dt = Date.now() - t0;
   const role = (await tip("SELECT ad_role_id AS id FROM ad_role WHERE name='NC9 UI Role'"))[0];
   ok('U0', 'role saved through the UI', !!role, role ? 'id ' + role.id : 'not found; log: ' + logs.slice(n0).filter(l => /REJECT|ERR|MODEL/.test(l)).slice(0, 3).join(' | '));

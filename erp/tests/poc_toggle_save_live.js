@@ -17,7 +17,7 @@ const OUT = []; const say = (s) => { OUT.push(s); console.log(s); };
   await new Promise(r => server.listen(0, r)); const base = 'http://localhost:' + server.address().port + '/erp';
   const b = await chromium.launch({ args: ['--no-sandbox', '--disable-gpu'] }); const page = await b.newPage();
   const LOG = []; page.on('console', m => LOG.push(m.text())); const errs = []; page.on('pageerror', e => errs.push(String(e)));
-  const SAVE = '#idmp-toolbar button[title$="(Alt+S)"]';
+  const SAVE = '#idmp-toolbar [data-tb="save"]';
   const saveDis = () => page.$eval(SAVE, x => x.disabled).catch(() => null);
   let pass = 0, fail = 0, inc = 0; const judge = (id, ok, ev) => { if (ok === null) inc++; else if (ok) pass++; else fail++; say('§W-TOGGLE-SAVE ' + id + ' ' + (ok === null ? 'INCONCLUSIVE' : ok ? 'PASS' : 'FAIL') + ' ' + ev); };
   try {

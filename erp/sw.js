@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v876';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v877';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -87,6 +87,44 @@ const PRECACHE_ASSETS = [
   'ad_parser.js',
   'ad_form_generic.js', // generic AD_Form engine (window.AdFormGeneric): a bundle describes a form, ONE renderer draws it
   'ad_lens.js',         // opt-in operations lens registry (window.AdLens): a bundle contributes record actions, ONE lens bar (bim-compiler ERP_FRIENDLY_OPS_LENS.md §15)
+  'ad_toolbar.js',    // §TB-ICONS window toolbar layout (window.AdToolbar)
+  'theme/default/images/Archive24.png',
+  'theme/default/images/Attachment24.png',
+  'theme/default/images/AttributeForm24.png',
+  'theme/default/images/CSVImport24.png',
+  'theme/default/images/Chat24.png',
+  'theme/default/images/Copy24.png',
+  'theme/default/images/Customize24.png',
+  'theme/default/images/Delete24.png',
+  'theme/default/images/Detail24.png',
+  'theme/default/images/Export24.png',
+  'theme/default/images/FileImport24.png',
+  'theme/default/images/Find24.png',
+  'theme/default/images/First24.png',
+  'theme/default/images/Help24.png',
+  'theme/default/images/Ignore24.png',
+  'theme/default/images/Info24.png',
+  'theme/default/images/Label24.png',
+  'theme/default/images/Last24.png',
+  'theme/default/images/Lock24.png',
+  'theme/default/images/Multi24.png',
+  'theme/default/images/New24.png',
+  'theme/default/images/Next24.png',
+  'theme/default/images/Parent24.png',
+  'theme/default/images/PostIt24.png',
+  'theme/default/images/Previous24.png',
+  'theme/default/images/Print24.png',
+  'theme/default/images/Process24.png',
+  'theme/default/images/Product24.png',
+  'theme/default/images/QuickForm24.png',
+  'theme/default/images/Refresh24.png',
+  'theme/default/images/Report24.png',
+  'theme/default/images/Request24.png',
+  'theme/default/images/Save24.png',
+  'theme/default/images/SaveCreate24.png',
+  'theme/default/images/ShowMore24.png',
+  'theme/default/images/WorkFlow24.png',
+  'theme/default/images/ZoomAcross24.png',
   'ad_recent.js',     // §UDP-6 AD_RecentItem engine (window.AdRecent), W-UDP6-ENGINE / W-UDP6-LIVE
   'pg_view_sql.js',   // the Postgres->SQLite view translator (window.PgViewSql): core views + plugin packs (§24, W-PLUGIN-SQLFN)
   'pipo_packin.js',   // Pack In of a bundle's 2Packs (window.PipoPackIn), bim-compiler ERP_FRIENDLY_OPS_LENS.md §22, W-PLUGIN-PACKS

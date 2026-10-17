@@ -115,7 +115,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const dl = logs.slice(from).find(l => /§UDP3-FIND delete/.test(l));
   ok('F9', 'Delete removes the saved query', !!dl && /committed=true/.test(dl) && !listed2.includes(QNAME), dl + ' list=' + JSON.stringify(listed2));
   // reset -> unfiltered again
-  await hc('[data-find-reset]'); await hc('[data-find-cancel]'); from = logs.length; await hc('#idmp-toolbar [data-tb="refresh"], #idmp-toolbar button[title^="Refresh"]'); await pg.waitForTimeout(1000);
+  await hc('[data-find-reset]'); await hc('[data-find-cancel]'); from = logs.length; await hc('#idmp-toolbar [data-tb="refresh"], #idmp-toolbar [data-tb="refresh"]'); await pg.waitForTimeout(1000);
   const w10 = lastRead(from), n10 = w10 ? (await seed('SELECT count(*) FROM C_Order WHERE ' + w10))[0][0] : null;
   ok('F10', 'Reset removes the query: the grid is back to the tab\'s own rows (history included after a Find, doOnFind :2662)', rowsLine(from) === Math.min(n10, 200) && !/UPPER|DocStatus='CO'|Processed='N'/.test(w10 || ''), 'rows=' + rowsLine(from) + ' whereCount=' + n10 + ' initial=' + before + ' where=' + w10);
   const real = errs.filter(e => !/ResizeObserver/.test(e));

@@ -50,7 +50,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(600);
   await pick('c_doctypetarget_id', new RegExp('^Standard Order')); await pick('c_bpartner_id', /Joe Block/); await pick('ad_org_id', /^HQ/);
   const docnoShown = await pg.$eval(F('documentno'), e => e.value);
-  let n0 = logs.length; await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1800);
+  let n0 = logs.length; await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
   const s1 = logs.slice(n0);
   ok('D1', 'a New order saved with the preview number ("' + docnoShown + '") is NOT rejected by the numeric pin',
     !s1.some(l => /§CRUD validate key=c_order verb=create REJECT/.test(l)) && s1.some(l => /§CRUD validate key=c_order verb=create ok/.test(l)),
@@ -62,7 +62,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   await hc(NEWB); await pg.waitForTimeout(900);
   await pick('m_product_id', /Mulch/); await pg.waitForTimeout(800);
   GT.type++; await pg.fill(F('qtyentered'), '1'); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(600);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000);
   await hc('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await pg.waitForTimeout(1000);
  
 

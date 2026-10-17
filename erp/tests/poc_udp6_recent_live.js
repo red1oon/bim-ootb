@@ -56,7 +56,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
       for (let i = 0; i < 60; i++) { const cur = await pg.evaluate(() => window.IdmpGridTab.snapshot().currentKey); if (String(cur) === String(pk)) break; await hc('#idmp-toolbar button[title^="Next record"]'); await pg.waitForTimeout(300); }
     }
     const v = await pg.$eval(F('name'), e => e.value); await pg.fill(F('name'), v + ' .'); await pg.locator(F('name')).blur().catch(() => {});
-    const from = logs.length; await hc('#idmp-toolbar button[title^="Save"]');
+    const from = logs.length; await hc('#idmp-toolbar [data-tb="save"]');
     for (let i = 0; i < 40; i++) { if (logs.slice(from).some(l => /§UDP6-RECENT/.test(l))) break; await pg.waitForTimeout(250); }
     await pg.waitForTimeout(600);
     const id = await pg.evaluate(() => window.IdmpGridTab.snapshot().currentKey);

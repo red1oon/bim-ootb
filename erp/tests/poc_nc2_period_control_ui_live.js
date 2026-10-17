@@ -58,7 +58,7 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   // Year 2033 + Create Periods (the NC-1 path)
   await hc(TAB('Year')); await pg.waitForTimeout(1200); await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(500);
   await pg.fill(F('fiscalyear'), '2033'); await pg.locator(F('fiscalyear')).first().blur().catch(() => {}); await pg.waitForTimeout(300);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1500);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1500);
   const yid = (await tip("SELECT c_year_id AS id FROM c_year WHERE fiscalyear='2033'"))[0];
   if (!yid) { console.log('§NC2-UI VERDICT INCONCLUSIVE no year'); process.exit(2); }
   await toForm(); await hc('[data-proc-btn]'); await pg.waitForSelector('[data-proc-run]'); await hc('[data-proc-run]'); await pg.waitForSelector('[data-procdlg-ok]'); await hc('[data-procdlg-ok]'); await pg.waitForTimeout(800);
@@ -105,7 +105,7 @@ function model(start, f) {   // MYear.createStdPeriods :228-281 — month add cl
   console.log('§NC2-UI Period Control form PeriodAction control=' + paTag);
   if (paTag === 'SELECT') await pg.selectOption(pa, 'O'); else if (paTag === 'INPUT') await pg.fill(F('periodaction'), 'O');
   await pg.locator(paTag === 'SELECT' ? pa : F('periodaction')).first().blur().catch(() => {}); await pg.waitForTimeout(300);
-  await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(1500);
+  await hc('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1500);
   const preset = await ac(P[1]); const wp = L.cases['NC2.4-preset'].actions;
   ok('NC2.4-preset', 'PeriodAction=O saved on ONE row (legacy ' + JSON.stringify(wp) + ')', JSON.stringify(preset) === JSON.stringify(wp), JSON.stringify(preset));
   await hc('[data-proc-btn]'); await pg.waitForSelector('[data-proc-run], [data-procdlg-ok]', { timeout: 8000 });
