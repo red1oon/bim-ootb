@@ -131,6 +131,20 @@
     return dx >= dy ? ['y', (w.y0 + w.y1) / 2, [w.x0, w.x1], dx] : ['x', (w.x0 + w.x1) / 2, [w.y0, w.y1], dy];
   }
   const envelope = ws => [Math.min(...ws.map(w => w.x0)), Math.max(...ws.map(w => w.x1)), Math.min(...ws.map(w => w.y0)), Math.max(...ws.map(w => w.y1))];
+  // §L1.17 (wing sets only, model.longFaceR3): a wall is orthogonal when the vertical faces parallel/perpendicular to its axes carry >= ORTHO_LONG_SHARE of the vertical-face area;
+  // the rest are end faces (mitred / angled junction ends). The contour is NOT changed: the plan still draws the true polygon.
+  const ORTHO_LONG_SHARE = 0.9;
+  function orthogonalLong(V, F) {
+    let on = 0, all = 0;
+    for (let t = 0; t + 2 < F.length; t += 3) {
+      const a = F[t] * 3, b = F[t + 1] * 3, c = F[t + 2] * 3;
+      const u = [V[b] - V[a], V[b + 1] - V[a + 1], V[b + 2] - V[a + 2]], w = [V[c] - V[a], V[c + 1] - V[a + 1], V[c + 2] - V[a + 2]];
+      const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], ln = Math.hypot(n[0], n[1], n[2]);
+      if (!(ln > 1e-12) || Math.abs(n[2] / ln) >= 0.01) continue;
+      all += ln; if (Math.abs(n[0] / ln) < 1e-3 || Math.abs(n[1] / ln) < 1e-3) on += ln;
+    }
+    return all > 0 && on / all >= ORTHO_LONG_SHARE;
+  }
   function orthogonal(V, F) {   // R3
     for (let t = 0; t + 2 < F.length; t += 3) {
       const a = F[t] * 3, b = F[t + 1] * 3, c = F[t + 2] * 3;
@@ -198,7 +212,9 @@
       const adjN = wallStoreys.slice(Math.max(0, k - 1), k).concat(wallStoreys.slice(k + 1, k + 2));
       const adj = model.walls.filter(w => adjN.indexOf(w.storey) >= 0);
       for (const w of sw) {
-        if (!orthogonal(w.v, w.f)) { log.gap('GAP:wall_not_orthogonal', w.guid, 'not gridded (R3)'); continue; }
+        const ortho = model.longFaceR3 ? (orthogonal(w.v, w.f) || orthogonalLong(w.v, w.f)) : orthogonal(w.v, w.f);
+        if (!ortho) { log.gap('GAP:wall_not_orthogonal', w.guid, 'not gridded (R3)'); continue; }
+        if (model.longFaceR3 && !orthogonal(w.v, w.f)) log.add(`§ENDFACE_R3 guid=${w.guid} axes from the long faces; end faces off-axis, contour unchanged`);
         const [ax, pos, [a, b], L] = wallAxis(w);
         let bear = false, lb = false, stack = null;
         if (fnd) bear = sname === gs && bearsOn(ax, pos, a, b, L, fw) !== null;
@@ -869,6 +885,7 @@
     if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
+    model.longFaceR3 = true;   // §L1.17
     log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
     return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };
   }
