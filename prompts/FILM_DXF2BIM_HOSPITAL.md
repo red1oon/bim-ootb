@@ -33,6 +33,9 @@ Status: DRAFT. Not recorded. Items marked [RESULT?] depend on a run that has to 
 | 9 | l01-l02 | limits card: curtain-wall doors/glass partitions the reader cannot classify (374 pieces on HHS), 345 of 440 door swings from the IFC convention not the mesh, roof outline from the top slab, no GPU, extraction not in the browser (9.5 min) | an unstated limit |
 | 10 | n01, end | next (the reader for glass partitions; elevation scopes), credits | — |
 
+## Finding that changes the story (2026-10-17, lane §L1.15, measured on the filming data)
+All 1440 Hospital walls are non-orthogonal (several wings at several angles); wall-based grid, host and opening-gap rules do not apply to them. The beats that rest on those rules (the "derived from load-bearing walls" grid, the door symbols on walls) must be reworded: the Hospital's grid is from its 604 columns (21 x 24 after the curtain-wall rules, 128 x 128 before the primary-line rule); walls are drawn as true polygons, not gridded; 505 openings have no gap. Beats 3-4 keep the column grid, 6-7 (series + assemble back) are unaffected, beat 9 (limits) names it first. Until §L1.15 is decided the film does not show the Hospital's wall plans as "complete".
+
 ## Honest framing (decisions recorded before the take)
 - Hospital to 3D is NOT claimed. Whole-building import of the Hospital is refused the same way with or without the split; the film shows that equality (the split changes nothing) and names the next cause.
 - Numbers on screen are the run's: elements, walls, doors, windows, columns, grid before/after, wings, per-wing counts, ms per step. No rounding up.
