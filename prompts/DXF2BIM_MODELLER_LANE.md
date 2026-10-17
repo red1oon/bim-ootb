@@ -1706,5 +1706,22 @@ Built as specified. **W-L125** (`tests/dxf2bim/witness_door_tag_conflict.js`, ta
 - **Decision recorded for the next session:** promote the wing-only rules (L1.17 long faces, L1.18 per-storey elevation outline, L1.19 collinear, L1.21 swingless door, L1.22/L1.23 columns + curtains, L1.24 already general) to the straight path AND the Python oracle. Evidence for: HHS wing 600 vs straight 631 with every difference listed; SampleCastle now stops at the very rule L1.18 fixes. Condition: straight-set parity (`witness_std2d_set.js` W-LOG/W-ENT) on Duplex, SampleCastle, HHS, and `witness_dxf_wing_vs_straight.js` equal-or-better, with the Python port done first (spec-first).
 - **BIMCompiler CI:** the `system-is-real` check has failed on 60 of its last 60 runs, on master itself and before the wing work: its browser gate tests the VIEWER (`toggleAllPanels` etc. missing from window exports) and a live OCI sandbox (`full/*.js -> 404`), both of which no longer live in BIMCompiler. Not changed (CI policy is the owner's call); recommended: repoint the browser gate at bim-ootb or retire it.
 
+### L1.26 Spec: promote the wing-only writer rules to every set, and to the Python oracle (decided 2026-10-17; spec BEFORE code)
+**Why:** the wing-only rules were built for non-rectilinear buildings but helped a real rectilinear one (HHS: wing 600 vs straight 631 blocking, every difference listed), and SampleCastle's straight export now stops at the very rule L1.18 solved for wings (`@LEVEL=0 is not a drawn elevation boundary`). Two code paths for one building is also a drift risk.
+**Rules promoted (definitions exactly as in the sections named; the framing itself, L1.16/L1.22/L1.23 and `@FRAME`, stays wing-only because it needs an angle):**
+- **L1.17** R3 judged on long faces (area-weighted >= 90 % of vertical-face area on the wall's axes); the contour is unchanged; log `§ENDFACE_R3` per such wall.
+- **L1.18** elevations draw each storey's own envelope walls (the walls on THAT storey's envelope face), not only the grid storey's.
+- **L1.19** collinear vertices (<= 0.001 mm) dropped from every cut contour (lossless); log `§COLLINEAR_DROP`.
+- **L1.21** a door whose swing cannot be drawn is ONE footprint rectangle when all its parts are axis-aligned rectangles (else `§DOOR_NOSWING_SKIP`); a door with an arc is never touched; log `§DOOR_NOSWING_BBOX`.
+(L1.24 `@WALLTOP` base and L1.25 door-tag points are already general.)
+**Order of work (each step a witness before the next):**
+1. Python `std2d.py` gets the four rules (same constants, same log lines, same order of operations as the JS).
+2. JS flags default ON for every set (`model.longFaceR3`, `model.perStoreyEnv` set in `loadModel`; collinear and swingless-door rules follow the same flag); wing sets unchanged.
+3. Parity: `witness_std2d_set.js` W-LOG + W-ENT (Python vs JS) on Duplex, SampleCastle, HHS (merged) and the Hospital, each in the SAME run as the old numbers: the log families `§ENDFACE_R3`, `§COLLINEAR_DROP`, `§DOOR_NOSWING_*` equal line for line.
+4. Regression ladder, all must hold: Duplex straight set byte-identical to before (no rule fires there: the evidence is the wing witnesses), `witness_dxf_export_roundtrip.js` QF blocking 0, `witness_dxf_wing_vs_straight.js` V1-V4 on Duplex + HHS (the straight set now takes the same rules, so the differences list shrinks to the framing only), W-E2E-DXF-EXPORT 14/14 and W-E2E-DXF-WING 7/7 in the browser.
+5. W-L126-SC: SampleCastle straight set is read AND reaches a verdict (the LV refusal is gone); the verdict and its blocking codes are listed, not claimed good.
+**Falsifier:** each rule is switchable off (`STD2D_NO_PROMOTE=<rule>` env for the tests only); with the rule off the SampleCastle LV refusal must return (proves L1.18 is what removed it).
+**Not claimed:** any model qualifying (Hospital 645, SampleCastle and HHS keep their own gaps).
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
