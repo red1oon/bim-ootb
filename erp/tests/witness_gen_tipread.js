@@ -79,7 +79,19 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const ordSt = (await tip('SELECT docstatus AS s FROM c_order WHERE c_order_id < 0'));
   if (!ordSt.length || ordSt[0].s !== 'CO') { inconclusive++; console.log('§GTR INCONCLUSIVE the session order never reached CO: ' + JSON.stringify(ordSt)); }
   const res = {};
-  for (const [mn, attr, tag] of [[193, 'data-genship-order', 'G1'], [192, 'data-geninv-order', 'G2']]) {
+  // G2 first needs the shipment (G1) only for the shipment-based rules; rule I (Immediate) invoices from the order lines, so the generic form is run after G1 like the user would
+  for (const [mn, attr, tag] of [[193, 'data-genship-order', 'G1'], [192, null, 'G2']]) {
+    if (!attr) {   // Generate Invoices = the verbatim InvoiceGenerate port through the GENERIC parameter form (no per-process picker)
+      await openMenu(mn); await pg.waitForSelector('[data-proc-param="C_Order_ID"]', { timeout: 15000 }); await pg.waitForTimeout(600);
+      const oid = await tip('SELECT c_order_id AS i FROM c_order WHERE c_order_id < 0 ORDER BY c_order_id DESC LIMIT 1');
+      const oc = await pg.$eval('[data-proc-param="C_Order_ID"]', e => e.tagName);
+      if (oc === 'SELECT') await pg.evaluate((id) => { const e = document.querySelector('[data-proc-param="C_Order_ID"]'); const o = document.createElement('option'); o.value = String(id); o.text = String(id); e.appendChild(o); e.value = String(id); }, oid[0].i);
+      else await pg.fill('[data-proc-param="C_Order_ID"]', String(oid[0].i));
+      GT.type++; const nn2 = logs.length; await hc('[data-proc-run]'); await pg.waitForTimeout(5000);
+      const line2 = logs.slice(nn2).filter(l => /§AD-PROC-LIVE proc=119 .*dispatched=/.test(l)).pop() || '', com = logs.slice(nn2).filter(l => /§PROC-COMMIT proc=119/.test(l)).pop() || '';
+      ok('G2', 'Generate Invoices (generic form, verbatim port) on the session-made order: ok=Y, committed', /ok=Y/.test(line2) && /committed=true/.test(com), line2.slice(0, 160) + ' | ' + com.slice(0, 120));
+      continue;
+    }
     await openMenu(mn); await pg.waitForSelector('select[' + attr + ']', { timeout: 15000 }); await pg.waitForTimeout(800);
     const o = (await pg.$$eval('select[' + attr + '] option', x => x.map(y => ({ v: y.value, t: y.text })))).filter(x => x.v && Number(x.v) < 0).pop();
     if (!o) { ok(tag, 'the session order is offered by the picker', false, 'no negative-id option'); continue; }
@@ -89,7 +101,8 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
     ok(tag, (tag === 'G1' ? 'Generate Shipments' : 'Generate Invoices') + ' on the session-made order: ok=Y rows>=1', /ok=Y/.test(line) && /rows=[1-9]/.test(line), line.slice(0, 260));
   }
   const io = await tip('SELECT COUNT(*) AS n FROM m_inout WHERE m_inout_id < 0'), iv = await tip('SELECT COUNT(*) AS n FROM c_invoice WHERE c_invoice_id < 0');
-  ok('G3', 'an M_InOut and a C_Invoice row now exist for it', Number(io[0].n) >= 1 && Number(iv[0].n) >= 1, 'inout=' + io[0].n + ' invoice=' + iv[0].n);
+  const ivr = await tip("SELECT docstatus AS s, documentno AS d, c_doctype_id AS t, grandtotal AS g FROM c_invoice WHERE c_invoice_id < 0");
+  ok('G3', 'an M_InOut and a COMPLETED C_Invoice (document type, number, total) now exist for it', Number(io[0].n) >= 1 && ivr.length >= 1 && ivr[0].s === 'CO' && ivr[0].d && Number(ivr[0].g) > 0, 'inout=' + io[0].n + ' invoice=' + JSON.stringify(ivr));
   console.log('§GTR_VERDICT ' + (inconclusive ? 'INCONCLUSIVE' : fail ? 'RED' : 'GREEN') + ' pass=' + pass + ' fail=' + fail);
   await browser.close(); srv.close(); process.exit(fail || inconclusive ? 1 : 0);
 })().catch(e => { console.log('§GTR HARNESS-FAIL ' + e.message); process.exit(2); });
