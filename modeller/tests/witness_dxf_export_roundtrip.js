@@ -26,8 +26,8 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
 (async () => {
   const ifc = process.argv[2], prefix = process.argv[3] || path.basename(ifc, '.ifc').split('_')[0].toUpperCase();
   const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init();
-  const sdb = new SQL.Database(), exLog = [];
-  await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(ifc)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: path.basename(ifc), log: m => exLog.push(m) });
+  const isDb = /\.db$/i.test(ifc), sdb = isDb ? new SQL.Database(new Uint8Array(fs.readFileSync(ifc))) : new SQL.Database(), exLog = [];
+  if (!isDb) await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(ifc)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: path.basename(ifc), log: m => exLog.push(m) });
   const qOf = db => sql => { const r = db.exec(sql); if (!r.length) return []; return r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))); };
   if (process.argv[4]) {   // a second IFC (structure) contributing only its columns
     const xdb = new SQL.Database(), xapi = new WebIFC.IfcAPI(); await xapi.Init();
@@ -47,6 +47,8 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
   const out = I.convert(sheets, {}), v = out.verdict;
   if (!v) { check('R4 VERDICT', 'convert produced no verdict', false, JSON.stringify(out.refused || out).slice(0, 300)); }
   else {
+    if (process.env.DETAIL) { const seen = {}; v.blocking.forEach(b => { const k = b.code; seen[k] = (seen[k] || 0) + 1; if (seen[k] <= 2) say('   D ' + b.code + ' ' + b.sheet + ' :: ' + String(b.message).slice(0, 220)); }); }
+    if (process.env.BYLAYER) { const m = {}; v.blocking.filter(b => /no_elevation_height|no_host_cut|opening_unclassified|door_no_strip|wall_below/.test(b.code)).forEach(b => { const lay = (/layer ([A-Z0-9-]+)/.exec(b.message) || [])[1] || '-', k = b.code + ' ' + lay; m[k] = (m[k] || 0) + 1; }); say('  BYLAYER ' + JSON.stringify(m)); }
     say('  verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' counts=' + JSON.stringify(v.counts));
     v.blocking.filter(b => /^QF:/.test(b.code)).slice(0, 14).forEach(b => say('   B ' + b.code + ' ' + b.sheet + ' ' + (b.message || '').slice(0, 140)));
     // The export controls the markings and the sheet structure. Pipeline geometry gaps (GAP:*) are facts of the model/tessellator, library reachability is the OCI

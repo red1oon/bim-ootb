@@ -51,9 +51,9 @@
   var _db = null;
   function closeDb() { try { if (_db) _db.close(); } catch (e) { } _db = null; }
   // (re)write the set for a scope choice: scopes = null (one sheet per storey) | [{name, rect}] (§L6: KEY + wing sheets per storey)
-  function make(q, prefix, scopes) {
+  function make(q, prefix, scopes, step) {
     var R = window.Std2d.writeStdSet(q, prefix, scopes && scopes.length > 1 ? { scopes: scopes } : undefined), report = window.Std2d.drawableReport(R), D = null;
-    if (report.drawable) D = window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix });
+    if (report.drawable) { if (step) step('Deriving markings from the model'); D = window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix }); }
     return { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [] };
   }
   async function build(file, step, extras) {   // extras: [File] — second IFCs (e.g. the structural model) contributing only their columns (grid evidence)
@@ -67,7 +67,7 @@
       if (!has) { ddb.close(); throw new Error('This .db has no element_world_bbox (not a model made by scripts/extractIFC2DB.js). Run: node scripts/extractIFC2DB.js --ifc <file.ifc> [--also <structure.ifc>] -o model.db'); }
       var qd = function (sql) { var r = ddb.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); };
       step('Drawing the standard set'); closeDb(); _db = ddb;
-      var Md = make(qd, prefix, null);
+      var Md = make(qd, prefix, null, step);
       console.log(TAG + ' built (.db) file=' + file.name + ' sheets=' + Object.keys(Md.R.files).length + ' drawable=' + Md.report.drawable);
       return Object.assign({ prefix: prefix, extras: [], q: qd, scopes: null, exLog: [] }, Md);
     }
@@ -85,7 +85,7 @@
     }
     var q = function (sql) { var r = sdb.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); };
     step('Drawing the standard set'); closeDb(); _db = sdb;
-    var Mi = make(q, prefix, null);
+    var Mi = make(q, prefix, null, step);
     console.log(TAG + ' built file=' + file.name + ' sheets=' + Object.keys(Mi.R.files).length + ' drawable=' + Mi.report.drawable + ' gaps=' + Mi.R.gaps.length);
     return Object.assign({ prefix: prefix, extras: (extras || []).map(function (f) { return f.name; }), q: q, scopes: null, exLog: exLog }, Mi);
   }
@@ -108,8 +108,26 @@
   }
   function scopeCounts(B, name) { var n = 0; Object.keys(B.R.scoped || {}).forEach(function (v) { B.R.scoped[v].sheets.forEach(function (s) { if (s.name === name) n = Math.max(n, s.owned); }); }); return n; }
 
+  // ---- timer (real, not an overlay): a running clock while work runs, a per-step list when it is done; shown in the panel header ----
+  var TM = { t0: 0, steps: [], cur: null, total: null, iv: null, last: null };
+  function tmFmt(ms) { var s = ms / 1000, m = Math.floor(s / 60); return m ? m + ':' + ('0' + (s - m * 60).toFixed(1)).slice(-4) : s.toFixed(1) + ' s'; }
+  function tmStart() { TM.t0 = performance.now(); TM.steps = []; TM.cur = null; TM.total = null; TM.last = null; }
+  function tmStep(label) { var now = performance.now(); if (TM.cur) TM.steps.push({ label: TM.cur.label, ms: now - TM.cur.t }); TM.cur = { label: label, t: now }; }
+  function tmEnd() { var now = performance.now(); if (TM.cur) { TM.steps.push({ label: TM.cur.label, ms: now - TM.cur.t }); TM.cur = null; } TM.total = now - TM.t0; }
+  function tmClockHtml() {
+    var run = TM.total === null && TM.t0 > 0;
+    return '<span id="dxfexp-clock" style="margin-left:auto;margin-right:10px;font:600 13px ui-monospace,monospace;color:' + (run ? '#f59e0b' : '#4ade80') + '" title="elapsed">' + CLOCK + ' ' + tmFmt(TM.total === null ? performance.now() - TM.t0 : TM.total) + '</span>';
+  }
+  function tmTick() { clearInterval(TM.iv); TM.iv = setInterval(function () { var el = document.getElementById('dxfexp-clock'); if (el && TM.total === null) el.lastChild.textContent = ' ' + tmFmt(performance.now() - TM.t0); else if (TM.total !== null) clearInterval(TM.iv); }, 100); }
+  function tmListHtml() {
+    var rows = TM.steps.concat(TM.cur ? [{ label: TM.cur.label + ' ...', ms: performance.now() - TM.cur.t }] : []);
+    return '<div id="dxfexp-times" style="margin:2px 0 8px;font:11px ui-monospace,monospace;color:#8b94a5">' + rows.map(function (r) { return '<div style="display:flex;justify-content:space-between"><span>' + esc(r.label) + '</span><span>' + tmFmt(r.ms) + '</span></div>'; }).join('') +
+      (TM.last ? '<div style="display:flex;justify-content:space-between;color:#c7cdd8"><span>' + esc(TM.last.label) + '</span><span>' + tmFmt(TM.last.ms) + '</span></div>' : '') + '</div>';
+  }
+
   // ---- panel (same small-panel idiom as the Export chooser) ----
   var COL = { ok: '#4ade80', gap: '#f59e0b', info: '#64748b' };
+  var CLOCK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
   var ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>';
   var panel = null;
   function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
@@ -122,17 +140,18 @@
   }
   function show(html) { var p = ensurePanel(); p.innerHTML = html; p.style.display = 'block'; return p; }
   function close() { if (panel) panel.style.display = 'none'; closeDb(); }
-  var head = '<div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px;color:#8b94a5;letter-spacing:.12em;font-size:10px">' + ICON + '<span>2D DRAWINGS (DXF)</span><span id="dxfexp-x" style="margin-left:auto;cursor:pointer;font-size:14px">&times;</span></div>';
+  function headHtml() { return '<div style="display:flex;align-items:center;gap:8px;margin:0 2px 8px;color:#8b94a5;letter-spacing:.12em;font-size:10px">' + ICON + '<span>2D DRAWINGS (DXF)</span>' + tmClockHtml() + '<span id="dxfexp-x" style="cursor:pointer;font-size:14px">&times;</span></div>'; }
   function bindX(p) { var x = p.querySelector('#dxfexp-x'); if (x) x.onclick = close; }
-  function renderBusy(msg) { var p = show(head + '<div style="padding:6px 2px">' + esc(msg) + '...</div>'); bindX(p); }
+  function renderBusy(msg) { var p = show(headHtml() + '<div style="padding:6px 2px">' + esc(msg) + '...</div>' + tmListHtml()); bindX(p); tmTick(); }
 
   function renderReport(B, file, extras) {
-    var r = B.report, h = head + '<div style="margin:0 2px 8px;color:' + (r.drawable ? '#4ade80' : '#f59e0b') + '">' + (r.drawable ? 'Drawable: the standard set was written from the model.' : 'Not drawable as a standard set: ' + esc(r.reasons.join('; ')) + '.') + '</div>';
+    var r = B.report, h = headHtml() + '<div style="margin:0 2px 8px;color:' + (r.drawable ? '#4ade80' : '#f59e0b') + '">' + (r.drawable ? 'Drawable: the standard set was written from the model.' : 'Not drawable as a standard set: ' + esc(r.reasons.join('; ')) + '.') + '</div>';
     h += '<div style="display:flex;gap:8px;margin:0 0 10px;justify-content:flex-end">';
     h += '<button id="dxfexp-add" title="A federated set\'s structural IFC: its columns give the building grid" style="background:#23262e;color:#c7cdd8;border:1px solid #2c303a;border-radius:8px;padding:6px 10px;cursor:pointer">Add structure IFC (columns)</button>';
     h += '<button id="dxfexp-log" style="background:#23262e;color:#c7cdd8;border:1px solid #2c303a;border-radius:8px;padding:6px 10px;cursor:pointer">Copy log</button>';
     if (B.marked) h += '<button id="dxfexp-dl" style="background:#2563eb;color:#fff;border:0;border-radius:8px;padding:6px 12px;cursor:pointer">Download .zip (' + Object.keys(B.marked).length + ' sheets)</button>';
     h += '</div>';
+    h += tmListHtml();   // per-step times of this run (+ the last action)
     var tbl = '';
     tbl += '<table style="width:100%;border-collapse:collapse">';
     r.rows.forEach(function (x) {
@@ -159,13 +178,13 @@
     }
     h += '</div>' + tbl;   // the sheets section first (the decision), the model facts below
     var p = show(h); bindX(p);
-    var redo = function (fn) { try { fn(); } catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); } renderReport(B, file, extras); };
-    p.querySelector('#dxfexp-suggest').onclick = function () { B.budget = Number(p.querySelector('#dxfexp-budget').value) || window.Std2dScopes.BUDGET; renderBusy('Suggesting a split'); setTimeout(function () { redo(function () { suggestScopes(B, B.budget); }); }, 20); };
-    var ns = p.querySelector('#dxfexp-nosplit'); if (ns) ns.onclick = function () { redo(function () { rebuild(B, null); }); };
+    var redo = function (fn, label) { var t0 = performance.now(); try { fn(); } catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); } TM.last = { label: label || 'Update', ms: performance.now() - t0 }; renderReport(B, file, extras); };
+    p.querySelector('#dxfexp-suggest').onclick = function () { B.budget = Number(p.querySelector('#dxfexp-budget').value) || window.Std2dScopes.BUDGET; renderBusy('Suggesting a split'); setTimeout(function () { redo(function () { suggestScopes(B, B.budget); }, 'Suggest a split + redraw'); }, 20); };
+    var ns = p.querySelector('#dxfexp-nosplit'); if (ns) ns.onclick = function () { redo(function () { rebuild(B, null); }, 'One sheet per storey + redraw'); };
     p.querySelectorAll('#dxfexp-scopes select').forEach(function (el) {
       el.onchange = function () {
         var act = el.getAttribute('data-act'), i = Number(el.getAttribute('data-i')), v = el.value; if (v === '') return;
-        redo(function () { if (act === 'mg') mergeScope(B, i, Number(v)); else splitScope(B, i, act === 'sx' ? 'x' : 'y', v); });
+        redo(function () { if (act === 'mg') mergeScope(B, i, Number(v)); else splitScope(B, i, act === 'sx' ? 'x' : 'y', v); }, act === 'mg' ? 'Merge wings + redraw' : 'Split wing + redraw');
       };
     });
     p.querySelector('#dxfexp-log').onclick = function () { var t = B.R.log.concat(B.markLog).join('\n'); if (navigator.clipboard) navigator.clipboard.writeText(t); console.log(TAG + ' log lines=' + t.split('\n').length); };
@@ -190,8 +209,11 @@
       });
       if (!file) return null;
     }
-    try { var B = await build(file, renderBusy, extras); renderReport(B, file, extras); return B; }
-    catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(head + '<div style="color:#f59e0b">Could not read this file: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
+    try {
+      tmStart(); tmTick();
+      var B = await build(file, function (m) { if (!/^tessellating/.test(m)) tmStep(m); renderBusy(m); }, extras); tmEnd(); renderReport(B, file, extras); return B;
+    }
+    catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(headHtml() + '<div style="color:#f59e0b">Could not read this file: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
   }
-  window.DxfExportUI = { run: run, build: build, make: make, suggestScopes: suggestScopes, splitScope: splitScope, mergeScope: mergeScope, rebuild: rebuild, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
+  window.DxfExportUI = { timer: TM, run: run, build: build, make: make, suggestScopes: suggestScopes, splitScope: splitScope, mergeScope: mergeScope, rebuild: rebuild, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
 })();

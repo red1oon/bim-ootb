@@ -16,9 +16,10 @@
   const DIM_NARROW = 4.5, LEVEL_EXT = 6, ROMAN_SKIP = ['I', 'O'];
   const WALLS = ['IfcWall', 'IfcWallStandardCase'], OPENINGS = ['IfcDoor', 'IfcWindow'];
   const PLAN_CUT_CLASSES = WALLS.concat(OPENINGS, ['IfcColumn', 'IfcStair', 'IfcStairFlight']);
+  const CURTAIN_MAX_THICK = 0.6;   // m, §L1.14: a curtain-wall band is thinner than this and at least 2 x its thickness long
   const GAP_MIN_AREA = 1.0, HOST_TOL = 0.001, GAP_ACROSS = 0.001, LEVEL_DIFF_TOL = 0.001;
   const LAYERS = {
-    'A-WALL-FULL': [7, 50, 'Continuous'], 'A-WALL-PRTN': [7, 35, 'Continuous'], 'A-WALL-PATT': [8, 13, 'Continuous'], 'A-WALL': [7, 35, 'Continuous'],
+    'A-WALL-FULL': [7, 50, 'Continuous'], 'A-WALL-PRTN': [7, 35, 'Continuous'], 'A-WALL-PATT': [8, 13, 'Continuous'], 'A-WALL': [7, 35, 'Continuous'], 'A-WALL-CURT': [4, 25, 'Continuous'],
     'A-DOOR': [3, 25, 'Continuous'], 'A-GLAZ': [4, 18, 'Continuous'], 'A-GLAZ-SILL': [4, 25, 'Continuous'], 'A-GRID': [1, 18, 'CENTER'],
     'A-ANNO-DIMS': [7, 18, 'Continuous'], 'A-ANNO-LEVL': [6, 18, 'Continuous'], 'A-ANNO-NOTE': [1, 18, 'Continuous'], 'A-ANNO-TTLB': [7, 25, 'Continuous'],
     'A-ROOF': [5, 35, 'Continuous'], 'A-SECT': [7, 50, 'Continuous'], 'S-SLAB': [2, 50, 'Continuous'], 'S-COLS': [2, 50, 'Continuous'], 'A-COLS': [7, 50, 'Continuous'],
@@ -47,12 +48,14 @@
   // ───────────────────────── model (Node-schema DB through q(sql) -> [{...}]) ─────────────────────────
   function loadModel(q, log) {
     log.add('§DB schema=node');
+    const hasParts = q("SELECT name FROM sqlite_master WHERE type='table' AND name='element_parts'").length > 0;   // §L1.14
     const rows = q(`SELECT m.guid guid, m.ifc_class cls, m.element_name name, COALESCE(m.storey,'') storey, (SELECT type_name FROM element_type et WHERE et.guid = m.guid) etype,
         r.minX x0, r.maxX x1, r.minY y0, r.maxY y1, r.minZ z0, r.maxZ z1, COALESCE(t.center_x,0) cx, COALESCE(t.center_y,0) cy, COALESCE(t.center_z,0) cz,
         b.vertices vb, b.faces fb
       FROM elements_meta m JOIN element_world_bbox r ON r.guid = m.guid LEFT JOIN element_transforms t ON t.guid = m.guid
       LEFT JOIN element_instances i ON i.guid = m.guid LEFT JOIN component_geometries b ON b.geometry_hash = i.geometry_hash
       WHERE m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcDoor','IfcWindow','IfcSlab','IfcRoof','IfcFooting','IfcColumn','IfcOpeningElement','IfcStair','IfcStairFlight')
+         ${hasParts ? "OR m.guid IN (SELECT child_guid FROM element_parts WHERE parent_class = 'IfcCurtainWall' AND child_class IN ('IfcPlate','IfcMember'))" : ''}
       ORDER BY m.guid`);
     const storeyNames = q("SELECT name FROM spatial_structure WHERE type='IfcBuildingStorey' ORDER BY guid").map(r => r.name);
     const fills = q('SELECT opening_guid o, host_guid h, filling_guid f FROM rel_fills_host');
@@ -71,6 +74,21 @@
     const els = rows.map(r => ({ guid: r.guid, cls: r.cls, name: r.name || '', storey: r.storey, etype: r.etype || '', x0: r.x0, x1: r.x1, y0: r.y0, y1: r.y1, z0: r.z0, z1: r.z1,
       c: [r.cx, r.cy, r.cz], v: asF32(r.vb), f: asI32(r.fb) }));
     const walls = els.filter(e => WALLS.indexOf(e.cls) >= 0);
+    const curtains = [], byEl = {}; els.forEach(e => { byEl[e.guid] = e; });   // §L1.14
+    const partRows = hasParts ? q("SELECT parent_guid, child_guid, child_class FROM element_parts WHERE parent_class = 'IfcCurtainWall' ORDER BY parent_guid, child_guid") : [];
+    if (partRows.length) {
+      const pk = {}; partRows.forEach(r => { (pk[r.parent_guid] = pk[r.parent_guid] || []).push(r); });
+      q("SELECT guid, element_name name FROM elements_meta WHERE ifc_class = 'IfcCurtainWall' ORDER BY guid").forEach(r => {
+        const kids = (pk[r.guid] || []).filter(p => (p.child_class === 'IfcPlate' || p.child_class === 'IfcMember') && byEl[p.child_guid]).map(p => byEl[p.child_guid]);
+        const doors = (pk[r.guid] || []).filter(p => p.child_class === 'IfcDoor').map(p => p.child_guid);
+        if (!kids.length) return;
+        const cw = { guid: r.guid, cls: 'IfcCurtainWall', name: r.name || '', storey: '', x0: Math.min(...kids.map(k => k.x0)), x1: Math.max(...kids.map(k => k.x1)), y0: Math.min(...kids.map(k => k.y0)), y1: Math.max(...kids.map(k => k.y1)),
+          z0: Math.min(...kids.map(k => k.z0)), z1: Math.max(...kids.map(k => k.z1)), c: [0, 0, 0], v: new Float32Array(0), f: new Int32Array(0), parts: kids, doors };
+        curtains.push(cw);
+        doors.forEach(dg => { if (!(dg in hosts)) hosts[dg] = r.guid; });   // C2: a door that is a part of the curtain wall is hosted by it
+      });
+      log.add(`§CURTAINS walls=${curtains.length} parts=${curtains.reduce((a, c) => a + c.parts.length, 0)} doors=${curtains.reduce((a, c) => a + c.doors.length, 0)}`);
+    }
     const storeys = [];
     Array.from(new Set(storeyNames)).sort().forEach(s => {
       const sw = walls.filter(w => w.storey === s), r1 = sw.length ? Math.min(...sw.map(w => w.z0)) : null, pz = selev[s];
@@ -93,13 +111,18 @@
     if (!roofs.length) { const sl = els.filter(e => e.cls === 'IfcSlab'); if (sl.length) { const top = Math.max(...sl.map(e => e.z1)); roofs = sl.filter(e => e.z1 === top); } }
     const roofTop = roofs.length ? Math.max(...roofs.map(e => e.z1)) : null;
     if (roofTop === null) log.gap('GAP:roof_top', '-', 'no IfcRoof / IfcSlab'); else log.add(`§LEVEL T/ROOF=${fx(roofTop, 4)} m from ${pyList(roofs.map(r => r.guid))} (R11)`);
+    curtains.forEach(cw => cw.doors.forEach(dg => {   // C2: a curtain wall's door parts carry storey 'Unknown': they stand on the highest storey at or below their base
+      const d = byEl[dg]; if (!d || (d.storey !== '' && d.storey !== 'Unknown')) return;
+      const below = storeys.filter(st => st.elev <= d.z0 + 0.05);
+      if (below.length) { d.storey = below[below.length - 1].name; log.add(`§STOREY_BY_Z guid=${dg} z0=${fx(d.z0, 3)} -> '${d.storey}' (curtain-wall door part)`); }
+    }));
     const doorOps = {};
     const dop = q("SELECT name FROM sqlite_master WHERE type='table' AND name='door_operation'").length
       ? q('SELECT guid, operation_type op, source, x_axis x, y_axis y, z_axis z, overall_width w, overall_height h FROM door_operation ORDER BY guid') : null;
     if (dop) { dop.forEach(r => { doorOps[r.guid] = { op: r.op, source: r.source, x: r.x ? JSON.parse(r.x) : null, y: r.y ? JSON.parse(r.y) : null, z: r.z ? JSON.parse(r.z) : null, w: r.w, h: r.h }; }); log.add(`§DOOR_OPS table=door_operation db=model rows=${dop.length}`); }
     else log.add('§DOOR_OPS none (no door_operation table): every door keeps GAP:door_hinge');
-    const byGuid = {}; els.forEach(e => { byGuid[e.guid] = e; });
-    return { els, walls, storeys, foundation: fnd, grid_storey: gridStorey, roofs, roof_top: roofTop, hosts, opening_of: openingOf, psets, voided_hosts: voided, by_guid: byGuid, door_ops: doorOps };
+    const byGuid = {}; els.forEach(e => { byGuid[e.guid] = e; }); curtains.forEach(c => { byGuid[c.guid] = c; });
+    return { els, walls, storeys, foundation: fnd, grid_storey: gridStorey, roofs, roof_top: roofTop, hosts, opening_of: openingOf, psets, voided_hosts: voided, curtains, by_guid: byGuid, door_ops: doorOps };
   }
 
   // ───────────────────────── geometry helpers ─────────────────────────
@@ -169,7 +192,9 @@
     const wallStoreys = model.storeys.filter(s => s.has_walls).map(s => s.name), ent = { x: [], y: [] }, gridded = new Set(), extGuids = new Set();
     log.add(`§GRID_EVIDENCE regime=${fnd ? 'footing (R4a on the grid storey)' : 'no footing (LB1 pset, LB2 continuity, LB3 exterior, LB4 columns)'}`);
     for (const st of planStoreys(model)) {
-      const sname = st.name, sw = model.walls.filter(w => w.storey === sname), env = envelope(sw), k = wallStoreys.indexOf(sname);
+      const sname = st.name, sw = model.walls.filter(w => w.storey === sname), k = wallStoreys.indexOf(sname);
+      let env = envelope(sw);
+      Object.values(curtainBands(model, st.elev + CUT_OFFSET, log)).forEach(cb => { const e = cb.env; env = [Math.min(env[0], e[0]), Math.max(env[1], e[1]), Math.min(env[2], e[2]), Math.max(env[3], e[3])]; });   // C3
       const adjN = wallStoreys.slice(Math.max(0, k - 1), k).concat(wallStoreys.slice(k + 1, k + 2));
       const adj = model.walls.filter(w => adjN.indexOf(w.storey) >= 0);
       for (const w of sw) {
@@ -187,6 +212,13 @@
         log.add(`§WALL guid=${w.guid} storey='${sname}' axis=${ax}=${fx(pos, 4)} len=${fx(L, 3)} bear=${B(bear)} ext=${B(ext)} pset_lb=${B(lb)} stacked=${stack === null ? 'None' : "'" + stack + "'"} gridded=${B(keep)}`);
         if (keep) { ent[ax].push([pos, w.guid]); gridded.add(w.guid); if (ext) extGuids.add(w.guid); }
       }
+      Object.keys(curtainBands(model, st.elev + CUT_OFFSET, log)).sort().forEach(cwg => {   // C6: a curtain-wall facade is an exterior wall: its axis is grid evidence
+        const [x0, x1, y0, y1] = curtainBands(model, st.elev + CUT_OFFSET, log)[cwg].env, cax = (x1 - x0) >= (y1 - y0) ? 'y' : 'x', cpos = cax === 'y' ? (y0 + y1) / 2 : (x0 + x1) / 2, cL = cax === 'y' ? x1 - x0 : y1 - y0;
+        const bandsAll = Object.values(curtainBands(model, st.elev + CUT_OFFSET, log)), envC = [Math.min(...bandsAll.map(b => b.env[0])), Math.max(...bandsAll.map(b => b.env[1])), Math.min(...bandsAll.map(b => b.env[2])), Math.max(...bandsAll.map(b => b.env[3]))];
+        const ex = e => cax === 'y' ? (Math.abs(y0 - e[2]) <= EXT_FACE_TOL || Math.abs(y1 - e[3]) <= EXT_FACE_TOL) : (Math.abs(x0 - e[0]) <= EXT_FACE_TOL || Math.abs(x1 - e[1]) <= EXT_FACE_TOL), cext = ex(env) || ex(envC), ckeep = cext && cL >= GRID_MIN_WALL_LEN;   // exterior: on the storey envelope or on the envelope of the curtain bands (the facade)
+        log.add(`§CURTAIN_GRID guid=${cwg} storey='${sname}' axis=${cax}=${fx(cpos, 4)} len=${fx(cL, 3)} ext=${cext ? 'True' : 'False'} gridded=${ckeep ? 'True' : 'False'}`);
+        if (ckeep) { ent[cax].push([cpos, cwg]); gridded.add(cwg); extGuids.add(cwg); }
+      });
       model.els.filter(e => e.cls === 'IfcColumn' && e.storey === sname).sort((p, q) => (p.guid < q.guid ? -1 : 1)).forEach(c => {
         const ca = columnAxis(c.v, c.c);
         if (!ca) { log.gap('GAP:column_not_symmetric', c.guid, 'plan section neither point-symmetric nor a ring about its vertex mean; not gridded (C2)'); return; }
@@ -256,8 +288,8 @@
       if (OPENINGS.indexOf(e.cls) < 0) continue;
       const g = e.guid, h = model.hosts[g];
       if (h !== undefined) {
-        hostAll[g] = h; hostSrc[g] = 'ifc'; n.ifc++;
         const hw = model.by_guid[h];
+        hostAll[g] = h; hostSrc[g] = (hw && hw.cls === 'IfcCurtainWall') ? 'ifc_part' : 'ifc'; n.ifc++;   // C2
         if (hw && WALLS.indexOf(hw.cls) >= 0) {
           const hv = hole(hw, e, cache);
           if (hv) holeM[g] = [hv, 'mesh_hole'];
@@ -322,6 +354,15 @@
       const hw = model.by_guid[h];
       if (!hw && model.voided_hosts.has(h)) { log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=host_voided (§L1.7 V1)`); res.push([e, pos]); continue; }
       if (!hw) { log.gap('GAP:opening_host_no_geometry', g, `host=${h} has no mesh/bbox in the DB (not drawn on any plan)`); res.push([e, pos]); continue; }
+      if (hw.cls === 'IfcCurtainWall') {   // §L1.14 C2: the gap in the curtain band, from the door's own extent along the run
+        const band = ((model._cb && model._cb[String(Number(cutZ.toFixed(6)))] || {}).out || {})[h];
+        if (!band) { log.gap('GAP:opening_host_not_cut', g, `host=${h} curtain wall not drawn at cut_z=${fx(cutZ, 3)}`); res.push([e, pos]); continue; }
+        const r = band.rect, ax = (r[2] - r[0]) >= (r[3] - r[1]) ? 'y' : 'x', [a0, a1] = ax === 'y' ? [e.x0, e.x1] : [e.y0, e.y1];
+        const rr = ax === 'y' ? [mm(a0), r[1] - GAP_ACROSS * 1000, mm(a1), r[3] + GAP_ACROSS * 1000] : [r[0] - GAP_ACROSS * 1000, mm(a0), r[2] + GAP_ACROSS * 1000, mm(a1)];
+        const [np, changed] = subtractGap(polys[h] || [], rr, ax === 'y' ? 0 : 1); polys[h] = np;
+        log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=${changed ? 'drawn' : 'in_cut'} along=(${fx(a0 * 1000, 2)},${fx(a1 * 1000, 2)}) from=part_bbox`);
+        res.push([e, pos]); continue;
+      }
       if (WALLS.indexOf(hw.cls) < 0) { log.gap('GAP:opening_host_not_wall', g, `host=${h} class=${hw.cls}`); res.push([e, pos]); continue; }
       if (!cutWalls.has(h)) { log.gap('GAP:opening_host_not_cut', g, `host=${h} z=(${fx(hw.z0, 3)},${fx(hw.z1, 3)}) cut_z=${fx(cutZ, 3)}`); res.push([e, pos]); continue; }
       const [[a0, a1], hsrc] = model.hole[g], ax = wallAxis(hw)[0];
@@ -435,13 +476,48 @@
   }
   const tag = guid => ({ guid });
 
+  // §L1.14 C1: per curtain wall the union of its parts' sections at the cut plane is ONE band when thin (<= CURTAIN_MAX_THICK) and at least twice as long; else GAP:curtainwall_not_a_run.
+  // Cached per cut plane (the log is written once, by the first call).
+  function curtainBands(model, cutZ, log) {
+    const cache = model._cb = model._cb || {}, key = String(Number(cutZ.toFixed(6)));
+    if (!cache[key]) {
+      const out = {}, lines = [], gaps = [];
+      for (const cw of model.curtains) {
+        if (!(cw.z0 < cutZ && cutZ < cw.z1)) continue;
+        let xs0 = Infinity, xs1 = -Infinity, ys0 = Infinity, ys1 = -Infinity, n = 0, any = false;
+        for (const k of cw.parts) {
+          if (!(k.z0 < cutZ && cutZ < k.z1) || !k.v.length || !k.f.length) continue;
+          for (const ch of G.chainSegments(G.sliceMesh(worldVerts(k), k.f, cutZ))) if (ch.length >= 3) { n++; any = true; ch.forEach(q => { xs0 = Math.min(xs0, q[0]); xs1 = Math.max(xs1, q[0]); ys0 = Math.min(ys0, q[1]); ys1 = Math.max(ys1, q[1]); }); }
+        }
+        if (!any) continue;
+        const thin = Math.min(xs1 - xs0, ys1 - ys0), length = Math.max(xs1 - xs0, ys1 - ys0);
+        if (thin <= CURTAIN_MAX_THICK && length >= 2 * thin) {
+          out[cw.guid] = { rect: [mm(xs0), mm(ys0), mm(xs1), mm(ys1)], env: [xs0, xs1, ys0, ys1], parts: cw.parts.length, cut: n };
+          lines.push(`§CURTAIN guid=${cw.guid} cut_z=${fx(cutZ, 3)} rect=(${fx(mm(xs0), 2)},${fx(mm(ys0), 2)})-(${fx(mm(xs1), 2)},${fx(mm(ys1), 2)}) parts=${cw.parts.length} cut=${n}`);
+        } else gaps.push(['GAP:curtainwall_not_a_run', cw.guid, `section at cut_z=${fx(cutZ, 3)} is ${fx(thin * 1000, 0)} x ${fx(length * 1000, 0)} mm (band needs thickness <= ${fx(CURTAIN_MAX_THICK * 1000, 0)} and length >= 2 x thickness); not drawn`]);
+      }
+      cache[key] = { out, lines, gaps, emitted: false };
+    }
+    const c = cache[key];
+    if (log && !c.emitted) { c.emitted = true; c.lines.forEach(l => log.add(l)); c.gaps.forEach(g => log.gap(g[0], g[1], g[2])); }   // the first caller with a log writes them (deriveGrid runs before the plans)
+    return c.out;
+  }
+  function buildingEnv(model, gs, gEl, log) {   // walls of the grid storey + the curtain bands at its cut plane (C3)
+    let env = envelope(model.walls.filter(w => w.storey === gs));
+    Object.values(curtainBands(model, gEl + CUT_OFFSET, log)).forEach(c => { const e = c.env; env = [Math.min(env[0], e[0]), Math.max(env[1], e[1]), Math.min(env[2], e[2]), Math.max(env[3], e[3])]; });
+    return env;
+  }
+
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
     const cut = model.els.filter(e => PLAN_CUT_CLASSES.indexOf(e.cls) >= 0 && e.v.length && e.f.length && e.z0 < cutZ && cutZ < e.z1).sort((a, b) => (a.guid < b.guid ? -1 : 1));
     const sw = model.walls.filter(w => w.z0 < cutZ && cutZ < w.z1), other = sw.filter(w => w.storey !== storey.name).map(w => w.guid + '@' + w.storey).sort();
     log.add(`§PLAN_CUT view=${view} cut_z=${fx(cutZ, 3)} walls=${sw.length} (other-storey walls=${other.length}: ${other.join(' ')})`);
-    const env = envelope(sw), E = env.map(mm), faceRuns = { S: [], N: [], W: [], E: [] }, onAxis = new Set();
+    const curt = curtainBands(model, cutZ, log);   // §L1.14
+    let env = envelope(sw);
+    Object.values(curt).forEach(c => { env = [Math.min(env[0], c.env[0]), Math.max(env[1], c.env[1]), Math.min(env[2], c.env[2]), Math.max(env[3], c.env[3])]; });   // C3
+    const E = env.map(mm), faceRuns = { S: [], N: [], W: [], E: [] }, onAxis = new Set();
     for (const w of sw) { const [ax, pos] = wallAxis(w); if (grid[ax].some(g => Math.abs(pos - g[1]) <= GRID_MERGE_TOL)) onAxis.add(w.guid); }
     const polys = {};
     cut.forEach(c => {
@@ -456,7 +532,8 @@
         return pl;
       });
     });
-    const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid)), polys, log);
+    Object.keys(curt).forEach(g => { const r = curt[g].rect; polys[g] = [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]]; });   // C1
+    const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
     let nW = 0, nC = 0;
     for (const c of cut) for (const pts of (polys[c.guid] || [])) {
       if (WALLS.indexOf(c.cls) >= 0 || c.cls === 'IfcColumn') {
@@ -475,6 +552,16 @@
       else doc.lwpoly(c.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', pts, true, tag(c.guid));
     }
     log.add(`§PLAN wall contours=${nW} column contours=${nC} cut_z=${fx(cutZ, 3)}`);
+    let nCw = 0;
+    Object.keys(curt).sort().forEach(g => (polys[g] || []).forEach(pts => {   // C1: layer A-WALL-CURT, tagged with the curtain wall GUID, no hatch (glazing)
+      doc.lwpoly('A-WALL-CURT', pts, true, tag(g)); nCw++;
+      [['S', q => Math.abs(q[1] - E[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - E[3]) <= FACE_PT_TOL * 1000, 0],
+       ['W', q => Math.abs(q[0] - E[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - E[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
+        const run = pts.filter(on).map(q => q[along]);
+        if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) faceRuns[side].push([Math.min(...run), Math.max(...run)]);
+      });
+    }));
+    if (Object.keys(curt).length) log.add(`§PLAN curtain walls=${nCw}`);
     const nO = { above: 0, below: 0 };
     for (const [e, pos] of ops) {
       if (pos === 'cut') continue;
@@ -538,12 +625,18 @@
     log.add(`§VIEW ${face} face=${side}`);
     const doc = newDoc(), gEl = model.storeys.find(s => s.name === model.grid_storey).elev, vis = new Set(model.storeys.filter(s => s.elev >= gEl).map(s => s.name));
     model.storeys.forEach(s => { if (!vis.has(s.name)) log.add(`§ELEV_SKIP storey='${s.name}' elev=${fx(s.elev, 4)} below grid storey (R11)`); });
-    const env = envelope(model.walls.filter(w => w.storey === model.grid_storey)), fv = { x0: env[0], x1: env[1], y0: env[2], y1: env[3] }[side];
+    const env = buildingEnv(model, model.grid_storey, gEl), fv = { x0: env[0], x1: env[1], y0: env[2], y1: env[3] }[side];   // C3
     const hr = e => { const a = hp(e.x0, e.y0), b = hp(e.x1, e.y1); return [mm(Math.min(a, b)), mm(Math.max(a, b))]; };
     const rect = (h0, h1, z0, z1) => [[h0, mm(z0)], [h1, mm(z0)], [h1, mm(z1)], [h0, mm(z1)]];
     const fw = model.walls.filter(w => vis.has(w.storey) && Math.abs(w[side] - fv) <= EXT_FACE_TOL);
     fw.forEach(w => { const [h0, h1] = hr(w); doc.lwpoly('A-WALL', rect(h0, h1, w.z0, w.z1), true, tag(w.guid)); });
-    const fwg = new Set(fw.map(w => w.guid)); let nOp = 0;
+    const fcw = model.curtains.filter(c => Math.abs(c[side] - fv) <= EXT_FACE_TOL), pst = planStoreys(model);   // C4: an elevation rectangle PER STOREY with a band (importer pairing by storey level)
+    fcw.forEach(w => { const [h0, h1] = hr(w); pst.forEach((ps, i) => {
+      if (!curtainBands(model, ps.elev + CUT_OFFSET)[w.guid]) return;
+      const zt = Math.min(i + 1 < pst.length ? pst[i + 1].elev : w.z1, w.z1);
+      doc.lwpoly('A-WALL', rect(h0, h1, ps.elev, zt), true, tag(w.guid));
+    }); });
+    const fwg = new Set(fw.map(w => w.guid).concat(fcw.map(w => w.guid))); let nOp = 0;
     for (const e of model.els) {
       if (OPENINGS.indexOf(e.cls) < 0 || !fwg.has(model.host_all[e.guid])) continue;
       if (((e.x1 - e.x0) >= (e.y1 - e.y0)) !== (side === 'y0' || side === 'y1')) continue;
@@ -616,7 +709,7 @@
     const gEl = model.storeys.find(s => s.name === model.grid_storey).elev, levels = model.storeys.filter(s => s.elev >= gEl).map(s => [s.name.toUpperCase(), s.elev]);
     if (model.roof_top !== null) levels.push(['T/ROOF', model.roof_top]);
     levels.sort((a, b) => a[1] - b[1]);
-    const env = envelope(model.walls.filter(w => w.storey === model.grid_storey)), H0 = mm(env[2]), H1 = mm(env[3]);
+    const env = buildingEnv(model, model.grid_storey, gEl), H0 = mm(env[2]), H1 = mm(env[3]);   // C3
     levelsDrawn(doc, log, 'SECTION', levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
     const zs = levels.map(l => mm(l[1]));
     for (let i = 0; i + 1 < zs.length; i++) dim(doc, [H0, zs[i]], [H0, zs[i + 1]], [H0 - ELEV_DIM_CHAIN * SCALE, zs[i]], 90, log, 'SECTION/H/chain', [-1, 0]);

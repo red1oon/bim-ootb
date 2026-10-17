@@ -770,6 +770,7 @@ async function extractToDb(ctx) {
     }
   } catch (e) { log(`§ELEMENT_TYPE_FAIL ${e.message}`); }
   log(`§ELEMENT_TYPE rows=${typeRows.length}`);
+  const partRows = [];   // §L1.14 { parent, child, parentClass, childClass }: the decomposition (IfcRelAggregates) of every IfcCurtainWall: its panels (IfcPlate), mullions (IfcMember), doors
   const relFills = [];   // { opening, host, filling, hostClass, fillingClass }
   const psetRows = [];   // { guid, pset, name, value, source }
   {
@@ -804,6 +805,16 @@ async function extractToDb(ctx) {
         relFills.push({ opening: o.guid, host: h.guid, filling: f ? f.guid : null, hostClass: h.cls, fillingClass: f ? f.cls : null });
       }
     } catch (e) { log(`§REL_FILLS_HOST_FAIL ${e.message}`); }
+    try {   // §L1.14: a curtain wall carries no geometry of its own; its parts do. Parent class IfcCurtainWall only (additive table element_parts).
+      const aIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELAGGREGATES);
+      for (let i = 0; i < aIds.size(); i++) {
+        const r = ifcApi.GetLine(modelID, aIds.get(i));
+        if (!r.RelatingObject || !r.RelatedObjects) continue;
+        const p = infoOf(ref(r.RelatingObject));
+        if (!p || !p.guid || p.cls !== 'IfcCurtainWall') continue;
+        for (const oh of r.RelatedObjects) { const c = infoOf(ref(oh)); if (c && c.guid) partRows.push({ parent: p.guid, child: c.guid, parentClass: p.cls, childClass: c.cls }); }
+      }
+    } catch (e) { log(`§ELEMENT_PARTS_FAIL ${e.message}`); }
     try {
       const want = new Set(['IsExternal', 'LoadBearing']);
       const extracted = new Set(elements.map(e => e.expressID));
@@ -851,6 +862,7 @@ async function extractToDb(ctx) {
       }
     } catch (e) { log(`§PSET_COMMON_FAIL ${e.message}`); }
   }
+  log(`§ELEMENT_PARTS rows=${partRows.length}`);
   log(`§REL_FILLS_HOST rows=${relFills.length} filled=${relFills.filter(r => r.filling).length} void_only=${relFills.filter(r => !r.filling).length}`);
   log(`§PSET_COMMON rows=${psetRows.length} occurrence=${psetRows.filter(r => r.source === 'occurrence').length} type=${psetRows.filter(r => r.source === 'type').length}`);
 
@@ -963,6 +975,9 @@ async function extractToDb(ctx) {
   for (const w of worldBbox) wbStmt.run(w.guid, ...w.b);
   const rfStmt = db.prepare("INSERT OR IGNORE INTO rel_fills_host VALUES (?,?,?,?,?,'ifc:recovered')");
   for (const r of relFills) rfStmt.run(r.opening, r.host, r.filling, r.hostClass, r.fillingClass);
+  db.exec(`CREATE TABLE element_parts (parent_guid TEXT, child_guid TEXT, parent_class TEXT, child_class TEXT, PRIMARY KEY (parent_guid, child_guid))`);
+  const epStmt = db.prepare('INSERT OR IGNORE INTO element_parts VALUES (?,?,?,?)');
+  for (const r of partRows) epStmt.run(r.parent, r.child, r.parentClass, r.childClass);
   db.exec(`CREATE TABLE element_type (guid TEXT PRIMARY KEY, type_name TEXT, source TEXT)`);
   const etStmt = db.prepare('INSERT OR IGNORE INTO element_type VALUES (?,?,?)');
   for (const r of typeRows) etStmt.run(r.guid, r.name, r.source);

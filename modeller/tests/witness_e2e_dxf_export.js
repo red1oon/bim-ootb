@@ -9,6 +9,7 @@
  *   D4 NO-SIDECAR — the zip entries are exactly the .dxf sheets.
  *   D6 DB-INPUT — §L5.9: a Node-schema model .db handed to the same entry skips extraction and writes the same sheets as the Node pipeline on that .db; an old-schema .db is refused with the command to run.
  *   D7 SPLIT — §L6: Suggest a split (budget 25) in the live panel lists wings; a merge and a split through the panel selects keep a partition; the downloaded zip (KEY + wing sheets per storey) is valid, and importing it back with the Modeller's importer assembles the SAME model as the unscoped set (ops by storey, `run_id`/derived hashes normalised).
+ *   D8 TIMER — the panel shows a real elapsed clock and a per-step time list (Reading / Extracting / Drawing / Markings) for the run, and the time of the last action (Suggest / merge / split).
  *   D5 PARITY   — every entry's text equals the Node run (modeller/dxf2bim modules, better-sqlite3-free sql.js path) on the same IFC, byte for byte.
  */
 'use strict';
@@ -92,4 +93,6 @@ runE2E('W-E2E-DXF-EXPORT', async (t) => {
   const s2 = I.readSheets(f2), s0 = I.readSheets(f0), g2 = I.gate(s2, {}), c2 = I.convert(s2, {}), c0 = I.convert(s0, {});
   const norm = c => (c.ST || []).map(st => st.name + ':' + (st.after || []).map(o => JSON.stringify(o, (k, v) => (k === 'run_id' ? undefined : typeof v === 'string' && /^[0-9a-f]{32,64}$/.test(v) ? '#' : typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v))).sort().join('|'));
   t.assert('D7e ASSEMBLE-BACK (the downloaded wings import to the same model as the unscoped set)', g2.ok && s2.scopeReport.blocking.length === 0 && norm(c0).length > 0 && JSON.stringify(norm(c0)) === JSON.stringify(norm(c2)), 'gate=' + g2.ok + ' scope blocking=' + s2.scopeReport.blocking.length + ' storeys=' + norm(c2).length + ' ops=' + (c2.ST || []).reduce((a, st) => a + st.after.length, 0));
+  const tm = await t.pg.evaluate(() => ({ total: window.DxfExportUI.timer.total, steps: window.DxfExportUI.timer.steps.map(x => x.label + '=' + Math.round(x.ms) + 'ms'), clock: (document.getElementById('dxfexp-clock') || {}).textContent, last: window.DxfExportUI.timer.last && window.DxfExportUI.timer.last.label }));
+  t.assert('D8 TIMER (elapsed clock + step list + last action)', tm.total >= 0 && tm.steps.length >= 3 && /\d/.test(tm.clock || '') && !!tm.last, `clock=${(tm.clock || '').trim()} steps=${tm.steps.join(', ')} last=${tm.last}`);
 });
