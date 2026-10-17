@@ -10,10 +10,15 @@
   const TAG = '§IFC';
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src : location.href;
   const GUID_AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$';
-  function guid(n) {                          // deterministic 22-char IfcGloballyUniqueId (no Math.random)
-    let s = '', x = (n + 1) * 2654435761 >>> 0;
-    for (let i = 0; i < 22; i++) { s += GUID_AB[x % 64]; x = (x * 1103515245 + 12345) >>> 0; }
-    return s;
+  function guid(n) {                          // deterministic 22-char IfcGloballyUniqueId (no Math.random), UNIQUE per n
+    // Bug fixed 2026-10-18: the old LCG took x % 64 (its LOW bits have period 64), so at most 64 distinct ids existed: a 457-product export
+    // had 64 duplicated GlobalIds and the extractor collapsed products. Now: the last 6 chars ARE n (base-64, unique for n < 2^36), the first
+    // char is 0-3 (IFC compressed-GUID rule), the middle 15 chars are mixed from n (high bits, murmur finalizer).
+    let h = (n + 1) >>> 0; h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    let s = GUID_AB[52 + ((h >>> 30) & 3)];
+    for (let i = 1; i < 16; i++) { h = (Math.imul(h, 1103515245) + 12345) >>> 0; s += GUID_AB[h >>> 26]; }
+    let m = n; const t = []; for (let i = 0; i < 6; i++) { t.unshift(GUID_AB[m % 64]); m = Math.floor(m / 64); }
+    return s + t.join('');
   }
 
   // ── GEOM_ARRAY export mapping (prompts/BONSAI_ARRAY_PATTERN_SPEC.md Task 5) ────────────────────────
@@ -121,10 +126,10 @@
       };
       const contain = (e, type) => { if (type === T.IFCOPENINGELEMENT) return; const st = storeyFor(_curOp); (st ? st.products : buildingProducts).push(e); };
 
-      const productFromRep = (rep, type, name, gn, extra) => {   // an already-built IfcShapeRepresentation -> a product
+      const productFromRep = (rep, type, name, gn, extra, objType) => {   // an already-built IfcShapeRepresentation -> a product
         const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
         const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn));
-        const args = [g, null, label(name), null, null, null, pds, null];
+        const args = [g, null, label(name), null, objType ? label(objType) : null, null, pds, null];
         if (extra) args.push(...extra);                       // IfcOpeningElement adds Tag + PredefinedType
         const e = api.CreateIfcEntity(mID, type, ...args);
         api.WriteLine(mID, e);
@@ -183,7 +188,7 @@
         IfcFlowTerminal: 'IFCFLOWTERMINAL', IfcStair: 'IFCSTAIR', IfcFooting: 'IFCFOOTING',
         IfcController: 'IFCCONTROLLER'
       };
-      let seeded = 0, seedAnchors = 0, seedNoMesh = 0, seedProxy = 0, seedTris = 0;
+      let seedTyped = 0, seeded = 0, seedAnchors = 0, seedNoMesh = 0, seedProxy = 0, seedTris = 0;
       const seedByClass = {};
 
       // One IfcTriangulatedFaceSet from a mesh's WORLD-space position/index buffers (IFC4 native
@@ -221,7 +226,11 @@
           if (!_CLASS_MAP[cls]) seedProxy++;
           seedByClass[cls] = (seedByClass[cls] || 0) + 1;
           const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
-          productFromRep(rep, T[ent], (P.ifc_class || 'Element') + ' ' + op.id, gn++);
+          // §L7.4 typing for 4D/5D: the importer's per-body IFC typing (provenance.ifc) travels into the file: Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum
+          const tp = P.provenance && P.provenance.ifc && P.provenance.ifc.ifc_class === cls ? P.provenance.ifc : null, PDE = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum' };
+          const pdx = tp && tp.PredefinedType && PDE[ent] ? [enumOf(PDE[ent], tp.PredefinedType)] : null;
+          productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
+          if (tp) seedTyped++;
           seeded++;
           continue;
         }
@@ -331,9 +340,9 @@
       // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were
       // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
-        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' byClass=' + JSON.stringify(seedByClass));
+        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' byClass=' + JSON.stringify(seedByClass));
       return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,
-               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedByClass };
+               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedByClass };
     },
 
     // Build + trigger a browser download of the .ifc file.

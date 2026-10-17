@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -183,6 +183,7 @@
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
     document.getElementById('dxf-lines').onclick = function () { setLines(!state.linesOn); };
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
+    if (window.DxfMetaEditor && window.DxfMetaEditor.attention) window.DxfMetaEditor.attention();   // §L7.2 shiver while suggestions are unconfirmed
     setLines(state.linesOn);
   }
   function status(t) { var s = document.getElementById('dxf-status'); if (s) s.textContent = t; }
@@ -194,8 +195,9 @@
       return (typeof f.text === 'function' ? f.text() : Promise.resolve(f.text)).then(function (t) { return { name: f.name, text: t }; });
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
-    state.sheets = window.Dxf2BimImport.readSheets(list);
+    state.sheets = window.Dxf2BimImport.readSheets(list, { prepChoices: (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {} });
     state.last = null; state.linesOn = true; state.setOverride = null;
+    runPrep();
     await convertGate();
     state.sheets.forEach(function (s) {
       console.log(TAG + ' sheet=' + s.name + ' bytes=' + s.text.length + ' sha=' + s.sha.slice(0, 12) + ' marks=' + s.marks + ' role=' + (s.role || 'NONE') +
@@ -290,6 +292,21 @@
     if (!r.ok) throw new Error(u + ' HTTP ' + r.status);
     return r.json();
   }
+  // §L7.8/L7.9 the pre-processor: a line-work ELEV/SECTION sheet had its closed rectangles synthesised by the reader (sheet.synth); the tolerance it applied is a default row
+  // (yellow in the editor) unless the user chose it. Sheets the reader did not use it on emit nothing.
+  function runPrep() {
+    var P = window.Dxf2Prep; state.prep = {}; state.defaults = [];
+    if (!P) return;
+    var D = P.Defaults();
+    state.sheets.forEach(function (s) {
+      if (!s.synth) return;
+      state.prep[s.name] = { segments: s.synth.segments, loops: s.synth.rects, nonRect: s.synth.nonRect, mixed: s.synth.mixed, tol: s.synth.tol };
+      if (!D.rows().some(function (r) { return r.key === 'loops.snap_tol'; })) D.assume('loops.snap_tol', P.SNAP_TOL_DEFAULT, 'line ends closer than this are joined into one corner; the drawing does not state a tolerance (drawing units)', [0.001, 0.01, 0.1]);
+      if (s.synth.chosen) D.override('loops.snap_tol', s.synth.tol);
+      console.log('§DXF-PREP sheet=' + s.name + ' line-work segments=' + s.synth.segments + ' wall-rectangles=' + s.synth.rects + ' non-rect=' + s.synth.nonRect + ' mixed-layer=' + s.synth.mixed + ' snap_tol=' + s.synth.tol + (s.synth.chosen ? ' (chosen)' : ' (default)'));
+    });
+    state.defaults = D.rows();
+  }
   async function loadLibrary(sheets) {
     try {
       var r = await fetch(LIB_URL, { cache: 'no-store' });
@@ -331,7 +348,7 @@
     var sig = function () { return JSON.stringify(state.sheets.map(function (s) { return [s.name, s.role, s.level, s.face, s.roofZ, s.cut, s.factor, s.desc && [s.desc.gridsX, s.desc.gridsY, s.desc.gridsH, s.desc.zs, s.desc.haxis]]; })) +
       JSON.stringify(state.sheets.map(function (s) { return s.desc && s.desc.layers || null; })) + (state.gate && state.gate.set); };
     var before = state.sheets ? sig() : null, seq = ++_gateSeq;
-    state.sheets = sheets; state.setOverride = setOverride || null;
+    state.sheets = sheets; state.setOverride = setOverride || null; runPrep();
     var g = await convertGate();
     if (seq === _gateSeq && sig() !== before) { console.log(TAG + ' canvas rebuilt from the edited markings'); buildCanvas(state.sheets, true); }
     return g;

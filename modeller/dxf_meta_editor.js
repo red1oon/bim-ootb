@@ -42,7 +42,7 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'];
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, units: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -86,8 +86,8 @@
     return MK.writeMarks(sh.stripped || (sh.stripped = strip(sh.text)), sh.marks.map(function (m) { return { text: markText(m), x: m.x, y: m.y }; }));
   }
   function effSheet(sh) {   // Dxf2BimImport.readSheet of the effective text, cached per marking signature
-    var k = sh.name + '|' + sigOf(sh);
-    if (!S.cache[k]) { var t = effText(sh); S.cache[k] = I.readSheet(sh.name, t, I.sha256Hex); S.cache[k].effText = t; }
+    var k = sh.name + '|' + sigOf(sh) + '|' + JSON.stringify(S.defaultChoices || {});
+    if (!S.cache[k]) { var t = effText(sh); S.cache[k] = I.readSheet(sh.name, t, I.sha256Hex, { prepChoices: S.defaultChoices || {} }); S.cache[k].effText = t; }
     return S.cache[k];
   }
   function describeOf(sh) { return MK.describe(sh.marks.map(function (m, i) { return { raw: markText(m), x: m.x, y: m.y, handle: (i + 1).toString(16) }; })); }
@@ -243,7 +243,7 @@
       var ac = {}; v.advisory.forEach(function (x) { ac[x.code] = (ac[x.code] || 0) + 1; });
       console.log(TAG + ' verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' pipeline=' + (v.pipeline.ran ? 'ran run_id=' + v.pipeline.run_id.slice(0, 12) : 'NOT RUN (' + v.pipeline.why.slice(0, 200) + ')') +
         ' counts=' + JSON.stringify(v.counts) + ' ms=' + Math.round(performance.now() - t0));
-      render();
+      render(); attention();
     } catch (e) { S.busy = false; console.error(TAG + ' verdict failed ' + (e && e.stack || e)); renderHead(); }
   }
   // ---- canvas: zoom + highlight, Tag and Exclude tools ----
@@ -545,12 +545,12 @@
       '.dm-in,.dm-sel{background:#13151a;border:1px solid #2c303a;border-radius:7px;color:#c7cdd8;padding:4px 7px;font:inherit;font-size:11px;outline:none;min-width:0}',
       '.dm-in{flex:1}.dm-in:focus,.dm-sel:focus{border-color:#3a6ea5}.dm-in.need,.dm-sel.need{border-color:#a04848;background:#211517}',
       '.dm-in.n{width:62px;flex:0 0 auto}.dm-in.lab{width:38px;flex:0 0 auto}',
-      '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}',
+      '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}.dm-src.default{background:#f5d90a;color:#1a1a1a;border-radius:3px;padding:0 4px;width:auto}',
       '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}',
       '.dm-mk{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-family:ui-monospace,monospace;font-size:10.5px}.dm-mk:hover{background:#20232b}.dm-mk .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dm-ib{background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex;border-radius:5px}.dm-ib:hover{color:#c7cdd8;background:#2a2e38}.dm-ib .dm-ico{width:13px;height:13px}',
       '.dm-pr{display:flex;align-items:center;gap:6px;padding:3px 4px;border:1px dashed #3a4150;border-radius:6px;margin:3px 0;font-size:10.5px}.dm-pr .t{flex:1;min-width:0}.dm-pr .t b{font-family:ui-monospace,monospace;font-weight:500;color:#d7dce5}.dm-pr .w{display:block;color:#5b6473;font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-      '.dm-pr .dm-ib{border:1px solid #2f6b45;color:#9be0b4}.dm-ref{font-size:9.5px;color:#5b6473;margin:2px 4px}',
+      '.dm-pr{background:rgba(245,217,10,.16);border:1px solid #b89f06}.dm-defrow{background:rgba(245,217,10,.16);border-radius:6px}.dm-pr .dm-ib{border:1px solid #2f6b45;color:#9be0b4}@keyframes dxfshiver{0%,100%{transform:translateX(0)}20%{transform:translateX(-2px) rotate(-3deg)}40%{transform:translateX(2px) rotate(3deg)}60%{transform:translateX(-2px) rotate(-2deg)}80%{transform:translateX(2px) rotate(2deg)}}#dxf-meta.dxf-shiver{animation:dxfshiver .6s ease-in-out 3,dxfshiver .6s ease-in-out 8s 3;box-shadow:0 0 0 2px #f5d90a}@media (prefers-reduced-motion:reduce){#dxf-meta.dxf-shiver{animation:none}}.dm-ref{font-size:9.5px;color:#5b6473;margin:2px 4px}',
       '.dm-btn{display:inline-flex;align-items:center;gap:6px;background:#13151a;border:1px solid #2c303a;border-radius:8px;color:#c7cdd8;padding:5px 9px;cursor:pointer;font:inherit;font-size:11px}',
       '.dm-btn:hover{background:#1b1f27}.dm-btn.on{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn.primary{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn:disabled{opacity:.45;cursor:not-allowed}',
       '.dm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}',
@@ -567,7 +567,7 @@
     document.head.appendChild(st);
   }
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
+  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
   function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(label === undefined ? (v === '' ? '—' : v) : label) + '</option>'; }
   function missingOf(sh) { var d = describeOf(sh), miss = []; d.errors.forEach(function (e) { if (e.code === 'MARK:missing') miss = miss.concat(e.keys || []); }); return { miss: miss, errors: d.errors.filter(function (e) { return e.code !== 'MARK:missing'; }), desc: d.desc }; }
   function field(sh, si, key, label, miss, kind, choices) {
@@ -641,7 +641,7 @@
       var m = get1(sh, 'UNITS'), iu = sh.dxf.header && sh.dxf.header.$INSUNITS, fs = HEADER_UNITS[iu];
       if (!m) nBad++;
       var p = (sh.prop ? sh.prop.list : []).filter(function (q) { return q.key === 'UNITS'; })[0], pi = p ? sh.prop.list.indexOf(p) : -1;
-      h += '<div class="dm-f"><label class="' + (m ? '' : 'need') + '" title="' + esc(sh.name) + '" style="width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</label>' +
+      h += '<div class="dm-f' + (p && !m ? ' dm-defrow' : '') + '"><label class="' + (m ? '' : 'need') + '" title="' + esc(sh.name) + '" style="width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</label>' +
         '<select class="dm-sel' + (m ? '' : ' need') + '" data-act="single" data-sheet="' + si + '" data-key="UNITS">' + ['', 'mm', 'cm', 'm', 'in', 'ft'].map(function (u) { return opt(u, m ? m.value : ''); }).join('') + '</select>' +
         '<span class="dm-ref" style="margin:0;flex:1;white-space:nowrap" title="$INSUNITS=' + esc(iu) + '">file says ' + esc(fs || 'nothing') + '</span>' +
         (p && !m ? '<button class="dm-ib" style="border:1px solid #2f6b45;color:#9be0b4" title="Confirm: use the file\'s ' + esc(p.value) + '" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button>' : '') + (m ? srcLabel(m) : '') + '</div>';
@@ -748,6 +748,38 @@
       '<button class="dm-btn' + (S.tool === 'exclude' ? ' on' : '') + '" data-act="tool" data-tool="exclude"' + (horiz.length ? '' : ' disabled') + '>' + IC.exclude + '<span>' + (S.tool === 'exclude' ? 'Drag a box' : 'Exclude area') + '</span></button></div>';
     return secHead('excludes', IC.exclude, 'Exclude areas', L.n || '') + (S.sec.excludes ? '<div class="dm-sb">' + h + L.h + '</div>' : '');
   }
+  // §L7.2 values the import APPLIED because the drawing does not state them (rows of state.defaults, from the pre-processor/importer): yellow while they are defaults; a change makes them the user's.
+  function defRows() { var st = window.DxfImportUI && window.DxfImportUI.state; return (st && st.defaults) || []; }
+  function refeed() { schedule(0); }   // §L7.8: a choice changes the cache key of effSheet, so the sheets are re-read with it and the gate re-runs
+  function renderDefaults() {
+    var rows = defRows(); if (!rows.length) return '';
+    var nDef = rows.filter(function (r) { return r.kind === 'default'; }).length, h = '';
+    rows.filter(function (r) { return r.kind === 'default' || r.kind === 'chosen'; }).forEach(function (r, i) {
+      var isDef = r.kind === 'default', opts = (r.options || []).slice(); if (opts.indexOf(r.value) < 0) opts.unshift(r.value);
+      h += '<div class="dm-f' + (isDef ? ' dm-defrow' : '') + '" data-default="' + esc(r.key) + '"><label title="' + esc(r.why || '') + '" style="width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.key) + '</label>' +
+        '<select class="dm-sel" data-act="defchoose" data-key="' + esc(r.key) + '">' + opts.map(function (o) { return opt(o, r.value); }).join('') + '</select>' +
+        (isDef ? '<span class="dm-src default" data-src="default" title="' + esc(r.why || 'not stated in the drawing') + '">default</span>' : '<span class="dm-src user" data-src="user">you</span>') + '</div>';
+    });
+    var pr = (window.DxfImportUI && window.DxfImportUI.state.prep) || {};
+    Object.keys(pr).forEach(function (n) { h += '<div class="dm-ref" data-prep="' + esc(n) + '">' + esc(n.replace(/\.dxf$/i, '')) + ': line work: <b>' + pr[n].loops + '</b> wall rectangles synthesised (' + pr[n].segments + ' segments, snap ' + pr[n].tol + (pr[n].nonRect ? ', ' + pr[n].nonRect + ' non-rectangular skipped' : '') + (pr[n].mixed ? ', ' + pr[n].mixed + ' mixed-layer skipped' : '') + '); which layers are walls is the Layers section</div>'; });
+    h = '<div class="dm-ref" style="margin:2px 0 6px">Applied because the drawing does not state them. Change one to make it yours.</div>' + h;
+    return secHead('defaults', IC.warn, 'Defaults applied', nDef ? nDef + ' default' : 'all confirmed', nDef) + (S.sec.defaults ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
+  // §L7.2 ONE place that repeats every yellow item (suggestions per sheet, door suggestions, applied defaults); each row has its own tick, "Accept all" takes the lot.
+  // Nothing here gates Convert: ignoring it (and the shiver) keeps the defaults and the DB can be saved for a trial.
+  function renderYellows() {
+    var items = [], DP = doorProposals(); S.dprops = DP.list;
+    S.sheets.forEach(function (sh, si) { sh.prop = proposalsFor(sh); sh.prop.list.forEach(function (p, pi) {
+      items.push('<div class="dm-pr"><span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' +
+        '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>'); }); });
+    DP.list.forEach(function (p, i) { items.push('<div class="dm-pr"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' +
+      '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>'); });
+    defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { items.push('<div class="dm-pr"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' +
+      '<button class="dm-ib" title="Keep this value" data-act="defkeep" data-key="' + esc(r.key) + '">' + IC.check + '</button></div>'); });
+    if (!items.length) return '';
+    return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows"><div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel. Accept them all, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>' + items.join('') +
+      '<button class="dm-btn primary" data-act="acceptall" style="margin-top:6px">' + IC.check + '<span>Accept all</span></button></div>' : '');
+  }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
     S.sheets.forEach(function (sh, si) {
@@ -788,6 +820,13 @@
     return S.verdict.verdict === 'qualifies' ? '<span class="dm-chip ok" id="dm-chip" data-verdict="qualifies">' + IC.ok + 'Qualifies</span>'
       : '<span class="dm-chip bad" id="dm-chip" data-verdict="blocked">' + IC.warn + 'Blocked · ' + S.verdict.blocking.length + '</span>';
   }
+  function pending() { var n = 0; S.sheets.forEach(function (sh) { n += proposalsFor(sh).list.length; }); n += doorProposals().list.length; n += defRows().filter(function (r) { return r.kind === 'default'; }).length; return n; }
+  function attention() {   // §L7.2: a value the drawing does not state, only suggested, is a default until confirmed: the Metadata button shivers (yellow ring) while any stands
+    var n = 0; try { n = pending(); } catch (e) { console.error(TAG + ' attention failed ' + (e && e.message)); }
+    S.attn = n; var b = document.getElementById('dxf-meta'), closed = !S.panel || S.panel.style.display === 'none';
+    if (b) { b.classList.toggle('dxf-shiver', n > 0 && closed); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review' : 'Drawing metadata'; }
+    console.log(TAG + ' attention unconfirmed=' + n); return n;
+  }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
   function render() {
     if (!S.panel || S.panel.style.display === 'none') return;
@@ -798,7 +837,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -816,6 +855,11 @@
     document.getElementById('dm-save').onclick = function () { save(); };
     P.querySelectorAll('[data-act]').forEach(function (el) {
       var a = el.getAttribute('data-act');
+      if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
+      if (a === 'acceptall') el.onclick = function () { var n = 0, b; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); console.log(TAG + ' accept-all clicks=' + (n - 1)); attention(); };
+      if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);
+        defRows().forEach(function (r) { if (r.key === k && (r.kind === 'default' || r.kind === 'chosen')) { r.value = (typeof r.value === 'number' && isFinite(num)) ? num : v; r.kind = 'chosen'; } });
+        S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = v; console.log(TAG + ' default-chosen ' + k + '=' + v); refeed(); render(); attention(); };
       if (a === 'sec') el.onclick = function () { var k = el.getAttribute('data-sec'); S.sec[k] = !S.sec[k]; render(); };
       else if (a === 'card') el.onclick = function () { var k = el.getAttribute('data-sheet'); S.open[k] = !S.open[k]; render(); };
       else if (a === 'single') { el.onchange = function () { setSingle(sheetAt(el), el.getAttribute('data-key'), el.value); }; if (el.tagName === 'INPUT') el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; }
@@ -864,7 +908,7 @@
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
   }
-  function close() { if (S.panel) S.panel.style.display = 'none'; if (S.tool) setTool(S.tool); console.log(TAG + ' panel closed'); }
+  function close() { if (S.panel) S.panel.style.display = 'none'; if (S.tool) setTool(S.tool); console.log(TAG + ' panel closed'); attention(); }
 
   // ---- open: from the import (dxf_import_ui.js openFiles) ----
   function bind() { MK = window.Dxf2Marks; Q = window.Dxf2Qualify; I = window.Dxf2BimImport; B = window.Dxf2Bim; Cf = window.Dxf2ShellConfig;
@@ -879,7 +923,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
+    S.defaultChoices = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
@@ -889,10 +933,11 @@
     if (g && g.verdict) { S.verdict = g.verdict; S.verdict.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') }; S.lib = g.lib; S.busy = false; render();
       console.log(TAG + ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' (the import gate) counts=' + JSON.stringify(g.verdict.counts)); }
     else { render(); schedule(0); }
+    attention();
   }
-  function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); }
+  function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); attention(); }
 
-  window.DxfMetaEditor = { load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
+  window.DxfMetaEditor = { defaultChoices: function () { return S.defaultChoices || {}; }, attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
     effText: effText, highlight: highlight, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');

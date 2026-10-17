@@ -52,4 +52,19 @@ ok('DF4 stated rows keep their evidence handles', D.rows()[0].evidence[0] === '1
 const t = P.ifcType('purlin', 'Purlin 1.5"x1.5"x1/4" Angle', 'steel');
 ok('IT1 purlin -> IfcMember/PURLIN with the drawing label', t.ifc_class === 'IfcMember' && t.PredefinedType === 'PURLIN' && t.type_name.startsWith('Purlin'));
 ok('IT2 FALSIFIER: an unmapped kind fails loudly, no silent IfcBuildingElementProxy', throws(() => P.ifcType('flux-capacitor')));
+// W-PREP-EMIT (§L7.8) — issue: a value the pre-processor applies must be a visible default, and a user choice must change the result
+const L = (a, b, c, d, h) => ({ type: 'LINE', layer: '0', handle: h, vertices: [{ x: a, y: b }, { x: c, y: d }] });
+const box = (x0, y0, x1, y1, h, gap) => [L(x0, y0, x1, y0, h + 1), L(x1, y0, x1, y1, h + 2), L(x1, y1, x0, y1, h + 3), L(x0, y0 + (gap || 0), x0, y1, h + 4)];
+const sheet = box(0, 0, 10, 5, 'A').concat(box(20, 0, 30, 5, 'B', 0.05));   // B's left side starts 0.05 above its corner: an open corner
+let E = P.prepare(sheet, {});
+ok('EM1 a line-work sheet emits exactly one default, loops.snap_tol = 0.01', E.lineWork && E.defaults.filter(r => r.kind === 'default').length === 1 && E.defaults[0].key === 'loops.snap_tol' && E.defaults[0].value === 0.01, JSON.stringify(E.defaults.map(r => [r.key, r.value, r.kind])));
+ok('EM2 at the default tolerance the open corner stays open: 1 region', E.loops.length === 1, String(E.loops.length));
+ok('EM3 CONTROL a user choice changes the result: tol 0.1 closes the corner (2 regions)', P.prepare(sheet, { 'loops.snap_tol': 0.1 }).loops.length === 2);
+ok('EM3b CONTROL tol 0.001 keeps it open (1 region)', P.prepare(sheet, { 'loops.snap_tol': 0.001 }).loops.length === 1);
+ok('EM4 the choice is recorded as chosen (no longer a default)', P.prepare(sheet, { 'loops.snap_tol': 0.1 }).defaults[0].kind === 'chosen');
+const closedSheet = [{ type: 'LWPOLYLINE', layer: 'A-WALL', shape: true, handle: 'P', vertices: [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 5 }, { x: 0, y: 5 }] }].concat(box(0, 0, 10, 5, 'A'), box(20, 0, 30, 5, 'B'));
+ok('EM5 a sheet with a closed polyline is not line work: NO default emitted (no yellow noise)', !P.prepare(closedSheet, {}).lineWork && P.prepare(closedSheet, {}).defaults.length === 0);
+ok('EM6 marking-layer texts/lines are ignored by the segment reader', P.segmentsOf([{ type: 'LINE', layer: 'DXF2BIM-MARK', vertices: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }]).length === 0);
+const D2 = P.Defaults(); P.prepare(sheet, {}, D2); P.prepare(sheet, {}, D2);
+ok('EM7 two line-work sheets share ONE tolerance row', D2.rows().length === 1);
 console.log(fail ? 'W-PREP FAIL ' + fail : 'W-PREP PASS'); process.exit(fail ? 1 : 0);
