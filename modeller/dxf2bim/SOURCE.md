@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `62ca8a015` — Merge pull request #204 from red1oon/feat/wing-frame
+Commit: `3bc414b30` — Merge pull request #205 from red1oon/fix/door-tag-conflict
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -17,10 +17,10 @@ Commit: `62ca8a015` — Merge pull request #204 from red1oon/feat/wing-frame
 | dxf2bim/std2d.js | deploy/dev/std2d.js | 3fd456494cc5b9109509cae9e2efa67b39d43d37b95d9351c161255c29cff215 |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | 4cfd7a941e5f224f3b5643c07d742ea48e51a5f44add7d2d19af8bd5741e915d |
-| dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | c60e8293fa12b39a8d956d64d42569b20bb3df4c57b00e362050d5b8e8aedad2 |
+| dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | dfe0cc0bf5e8ae811ef3729e60bac11b893662beff87bca0cc56906ccac511f4 |
 | dxf2bim/std2d_scopes.js | deploy/dev/std2d_scopes.js | f9fcada1ad0f7bf2276d2cf5f8818748ef41ebe2af7ba4b857c3390a5edf5420 |
 | dxf2bim/polygon-clipping.js | deploy/dev/polygon-clipping.js | de2bdc061b61d537f7d12f6519f46e35113f0f246b6a06293a08b615454946cf |
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 62ca8a015:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 3bc414b30:deploy/dev/<file> | sha256sum` equals the column above.
