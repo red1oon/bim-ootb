@@ -3465,8 +3465,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var s = String(dv);
     if (s === '@#AD_Client_ID@') return _session ? String(_session.client.id) : '';
     if (s === '@#AD_Org_ID@') return (_session && _session.org) ? String(_session.org.id) : '';
+    var m = /^@([A-Za-z0-9_]+)(?::[^@]*)?@$/.exec(s);   // §FRIENDLY-ROWS (ERP_FRIENDLY_OPS_LENS.md §42): @Column@ = the launching record's value (ProcessParameterPanel -> Env.parseContext(windowNo))
+    if (m && _procRecord && _procRecord.row && window.__frBreak !== 'noctx') { var v = recVal(_procRecord.row, m[1]); return (v == null) ? '' : String(v); }
     if (/^@.*@$/.test(s)) return '';
     return s;
+  }
+  // DisplayLogic '@SQL=...' (Evaluator.parseSQLLogic): @Col@ / @Col:0@ become the record's values, the query runs, any row = true. Not a boolean expression, so the evaluator never sees it.
+  function _sqlLogicShows(dl, rec) {
+    var sql = String(dl).trim().replace(/^@SQL=/i, '').replace(/@([A-Za-z0-9_]+)(?::[^@]*)?@/g, function (_, c) { var v = recVal(rec, c); return (v == null || v === '') ? '0' : _lit(v); });
+    try { var n = _tipSql(sql).length; console.log('§AD-TBB sqllogic rows=' + n + ' ds=' + recVal(rec, 'docstatus') + ' dbds=' + JSON.stringify(_tipSql('SELECT docstatus FROM c_order WHERE c_order_id=' + _lit(recVal(rec, 'c_order_id') || 0))) + ' sql=' + sql.replace(/\s+/g, ' ').slice(-90)); return n > 0; }
+    catch (e) { console.log('§AD-TBB sqllogic ERROR ' + e.message); return false; }
   }
   // ProcessModalDialog (ADTabpanel.actionButton → ProcessModalDialog): a process launched from a record's Button field opens as a MODAL DIALOG over the
   // window — the window, its tab strip and toolbar stay put; OK closes the dialog and refreshes the tab. Menu-launched processes keep the full pane.
@@ -4073,9 +4081,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var hidden = (role != null && _tableExists('AD_ToolBarButtonRestrict')) ? _sqlRows("SELECT ad_toolbarbutton_id AS id FROM ad_toolbarbuttonrestrict WHERE isactive='Y' AND action='W' AND ad_role_id=" + role +
       " AND (ad_tab_id IS NULL OR ad_tab_id=" + Number(tab.id) + ")").map(function (r) { return Number(r.id); }) : [];
     var procSet = window.__tbbBreak === 'noaccess' ? null : ((_session && _session.procSet) || null);   // __tbbBreak: W-AD-TBB negative controls only
-    var out = rows.filter(function (r) { return (!procSet || procSet[r.pid]) && hidden.indexOf(Number(r.id)) < 0; });
+    // the role's process access is read live (MRole.getProcessAccess): rows a plugin staged after login are not in the login-time procSet
+    var live = {}; if (procSet && role != null) _sqlRows("SELECT ad_process_id AS p FROM ad_process_access WHERE isactive='Y' AND ad_role_id=" + role).forEach(function (a) { live[Number(a.p)] = 1; });
+    var out = rows.filter(function (r) { return (!procSet || procSet[r.pid] || live[Number(r.pid)]) && hidden.indexOf(Number(r.id)) < 0; });
     console.log('§AD-TBB tab=' + tab.id + '(' + tab.tableName + ') rows=' + rows.length + ' shown=' + out.length + ' [' + out.map(function (r) { return r.comp + '->' + r.pid; }).join(',') + ']' +
-      (rows.length !== out.length ? ' hidden=' + rows.filter(function (r) { return out.indexOf(r) < 0; }).map(function (r) { return r.comp + (procSet && !procSet[r.pid] ? '(no process access)' : '(restricted)'); }).join(',') : ''));
+      (rows.length !== out.length ? ' hidden=' + rows.filter(function (r) { return out.indexOf(r) < 0; }).map(function (r) { return r.comp + (procSet && !procSet[r.pid] && !live[Number(r.pid)] ? '(no process access)' : '(restricted)'); }).join(',') : ''));
     return out;
   }
   function _renderTabProcessButtons(tb) {
@@ -4084,12 +4094,13 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     tb.appendChild(el('span', 'sep'));
     bs.forEach(function (r) {
       var b = el('button', null, String(r.pname)); b.title = r.pdesc || r.pname; b.setAttribute('data-tbb', r.comp); b.setAttribute('data-tbb-process', r.pid);
-      if (r.dl && String(r.dl).trim() && window.AdEvaluator && rec) {   // ToolbarProcessButton.dynamicDisplay: DisplayLogic over the current row (same evaluator as field DisplayLogic)
+      if (r.dl && /^@SQL=/i.test(String(r.dl).trim()) && rec) { if (window.__frBreak !== 'nosql' && !_sqlLogicShows(r.dl, rec)) return; }
+      else if (r.dl && String(r.dl).trim() && window.AdEvaluator && rec) {   // ToolbarProcessButton.dynamicDisplay: DisplayLogic over the current row (same evaluator as field DisplayLogic)
         var show; try { show = window.AdEvaluator.evaluate(String(r.dl), rec, rec) !== false; } catch (e) { show = true; } if (!show) return;
       }
       b.addEventListener('click', function () {
         console.log('§AD-TBB click comp=' + r.comp + ' process=' + r.pid + ' table=' + tab.tableName + ' record=' + pk);
-        _saveAndNavigate(function () { var rr = _records[_recIdx] || null; _runButtonProcess(Number(r.pid), String(r.pname), { recordId: rr && kc ? recVal(rr, kc) : pk, table: tab.tableName, tableId: tab.tableId || null }); }, 'process');
+        _saveAndNavigate(function () { var rr = _records[_recIdx] || null; _runButtonProcess(Number(r.pid), String(r.pname), { recordId: rr && kc ? recVal(rr, kc) : pk, table: tab.tableName, tableId: tab.tableId || null, row: rr }); }, 'process');
       });
       tb.appendChild(b);
     });
@@ -4996,7 +5007,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       b.setAttribute('data-proc-btn', bt.col); b.title = 'AD_Process ' + bt.pid;
       b.addEventListener('click', function () {
         console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' table=' + tab.tableName + ' record=' + pk);
-        _saveAndNavigate(function () { _runButtonProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName, tableId: tab.tableId || null }); }, 'process');
+        _saveAndNavigate(function () { _runButtonProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName, tableId: tab.tableId || null, row: _records[_recIdx] || null }); }, 'process');
       });
       wrap.appendChild(b); fld.appendChild(wrap); formEl.appendChild(fld);
     });
@@ -5353,6 +5364,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try { _overlayDocTip(_curTab(), _records); } catch (er) {}
       console.log('§DOC-COMMIT-LIVE refold table=' + t + ' id=' + (d.id == null ? '?' : d.id) + ' to=' + (d.to || '?') + ' view=' + _viewMode);
       if (_viewMode === 'form') refreshForm(); else renderBody();
+      try { if (document.getElementById('idmp-toolbar')) renderToolbar(); } catch (er2) {}   // toolbar buttons whose DisplayLogic reads the stored row (@SQL=) follow the committed status (ADWindowToolbar.enableButtons)
       return;
     }
     // S2/J4 — a signed CRUD write (New/edit/delete) committed on a DATA table. Re-fold listTip over the loaded
