@@ -493,7 +493,7 @@
 <script src="ad_docfsm.js?v=1"></script>
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=1"></script>
-<script src="ad_lens.js?v=1"></script>
+<script src="ad_lens.js?v=2"></script>
 <script src="ad_modelval.js?v=4"></script>
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
@@ -532,7 +532,7 @@
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
-<script src="osgi_console.js?v=1"></script>
+<script src="osgi_console.js?v=2"></script>
 <script src="plugin_release.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
@@ -561,7 +561,7 @@
 <script src="pg_view_sql.js?v=1"></script>  <!-- ONE Postgres->SQLite view translator (core views + plugin packs), ERP_FRIENDLY_OPS_LENS.md §24 -->
 <script src="pipo_packin.js?v=2"></script>
 <script src="pipo_packout.js?v=1"></script>  <!-- Pack Out to a real 2Pack (ERP_FRIENDLY_OPS_LENS.md §25) -->  <!-- Pack In of a bundle's 2Packs (bim-compiler ERP_FRIENDLY_OPS_LENS.md §20.A/§22) -->
-<script src="plugin_overlay.js?v=6"></script>
+<script src="plugin_overlay.js?v=7"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
      readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
      way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
@@ -1915,6 +1915,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
     tb.appendChild(bar);
   }
+
+  // a lens installed or stopped while a window is open: redraw its toolbar at once (the film showed a stopped plugin's buttons staying until the next navigation)
+  if (window.AdLens && window.AdLens.onChange) window.AdLens.onChange(function () { if (document.getElementById('idmp-toolbar') && typeof _curWin === 'function' && _curWin()) renderToolbar(); });
 
   // ── Zoom Across (iDempiere btnZoomAcross / WZoomAcross / ZoomInfoFactory) — WHERE-USED drill ──────────────
   //   For the current record (table T, key col KC, pk value K), fold the AD: every table that (a) has a column
