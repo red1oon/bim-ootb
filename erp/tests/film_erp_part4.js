@@ -1,4 +1,4 @@
-// ⚠ DO NOT REMOVE — ERP film PART IV: "SQLite based Kernel ERP, getting friendlier" (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §37). A CONTINUATION of Part II (nothing repeated): one-click install of the friendly plugin, built-in Ninja bundles in the pill tray, Add row / Save & back, Ship and Invoice from the order. RAW take (no narration; cards carry the numbers).
+// ⚠ DO NOT REMOVE — ERP film PART IV: "SQLite based Kernel ERP, getting friendlier" (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §37). A CONTINUATION of Part II (nothing repeated): Plugins & Releases from the main page with the one-click offer, the Ninja ModelMaker pill, Add row / Save & back, Ship, Invoice and Receive payment from the order. The chapter intro card is added in POST (prompts/film_part4_assemble.sh). RAW take (no narration; cards carry the numbers).
 // ONE take, CPU only, English UI, real mouse/keyboard on the real page. Every fact is a §ERP_FILM_FACT read from the live in-browser DB/DOM. READ <out>/erp_film.log and <out>/erp_film.page.log before any conclusion; exit code is not evidence.
 // The claims the film SHOWS are proven by W-FO-OPTIN, W-NINJA-BUNDLES, W-FO-A1, W-FO-A2, W-GEN-TIPREAD (erp/tests/). Cards read their numbers from those witnesses' logs, never from this run.
 // Run: [DRY=1] [REPO=<worktree root>] [BEAT_MIN='{"q0":14.0,...}'] [FOA1_LOG=<W-FO-A1 log>] [FOA2_LOG=<W-FO-A2 log>] node erp/tests/film_erp_part4.js <outDir>
@@ -98,40 +98,34 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
   const openConsole = async () => { await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(700); };
   const closeConsole = async () => { await hclick('#pr-root [data-pr-close]'); await pace(500); };
   const readOr2 = (f) => readOr(f);
-  const FOA1 = process.env.FOA1_LOG || path.join(HOMEDIR, 'bim-compiler/build/erp/logs_odoo_observe/w_fo_a1_run3.log'), FOA2 = process.env.FOA2_LOG || path.join(HOMEDIR, 'bim-compiler/build/erp/logs_odoo_observe/w_fo_a2_run7.log');
+  const FOA1 = process.env.FOA1_LOG || path.join(HOMEDIR, 'bim-compiler/build/erp/logs_odoo_observe/w_fo_a1_run3.log'), FOA2 = process.env.FOA2_LOG || path.join(HOMEDIR, 'bim-compiler/build/erp/logs_odoo_observe/w_fo_a2_pay5.log');
   try {
-    // ═══ P0 title card; behind it the login screen and the Plugins & Releases console ═══
-    await card('Getting friendlier', 'The SQLite based Kernel ERP, with the friendly plugin: the same documents and postings as iDempiere, fewer steps to reach them. Optional, and off until you install it.');
-    await cast(); await page.mouse.move(720, 500); await beat('p0', 'title card');
-    await ipc('#idmp-release-link'); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(DRY ? 200 : 2500);
-
-    // ═══ P1 offered, not imposed: the console lists what is on the page; the friendly plugin is an offer, one click ═══
-    await beat('p1', 'offer in the console'); await uncard(); await pace(1500);
+    // ═══ P0/P1 the take opens on the login screen (the chapter intro card is added in POST, like the other films): Plugins & Releases from the main page, then the one-click offer ═══
+    await cast(); await page.mouse.move(720, 500); await beat('p1', 'Plugins & Releases from the main page, then the offer'); await pace(1500);
+    await hclick('#idmp-release-link'); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pace(2500);
     fact('console.rowsBefore', JSON.stringify(await rowsOf()));
+    fact('console.ninjaRows', JSON.stringify((await rowsOf()).filter(r => /Ninja/i.test(r.name))));
     fact('console.offer', String(await page.locator('[data-oc-offerrow="' + FID + '"]').count()) + ' offer row(s)');
     await glide('[data-oc-offerrow="' + FID + '"]'); await pace(2200);
     const n1 = PAGELOG.length; await hclick('[data-oc-offer="' + FID + '"]'); await hold(DRY ? 1500 : 2800);
     fact('console.installed', JSON.stringify((await rowsOf()).find(r => /Friendly/i.test(r.name))) + ' | ' + (PAGELOG.slice(n1).filter(l => /§PLUGIN-START/.test(l)).pop() || '') + ' | offerRowsNow=' + (await page.locator('[data-oc-offerrow="' + FID + '"]').count()));
+    await pace(1500); await closeConsole();
 
-    // ═══ P3 behind a short card: log in, open the Sales Order window ═══
-    await beat('p3', 'card: a sales order');
-    await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds the buttons on the order itself.');
+    // ═══ P3 behind a short card: log in ═══
+    await beat('p3', 'card: log in');
+    await card('A sales order, start to finish', 'The plugin is installed. Log in as GardenAdmin.'); await pace(600);
     await ipc("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await ipc("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible');
     await ipc('#idmp-login-ok'); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);
     await uncard(); await pace(800);
-    // ═══ P2 core bundles are bundles: the Excel Report Ninja stops and starts on its own, its pill follows ═══
-    await beat('p2', 'Ninja pill follows its bundle');
-    fact('pills.before', JSON.stringify(await pills()));
-    await closeConsole(); await hclick('#idmp-pill-trigger'); await pace(1200); await glide('#pill-ninja'); await pace(1800);
-    fact('pills.tray', JSON.stringify(await pills()));
-    await openConsole(); const n2 = PAGELOG.length; await hclick('[data-oc-stop="' + NX + '"]'); await pace(1500);
-    fact('ninja.stopped', JSON.stringify((await rowsOf()).find(r => /Excel/i.test(r.name))) + ' | ' + (PAGELOG.slice(n2).filter(l => /§PILL-CONTRIB remove/.test(l)).pop() || ''));
-    await closeConsole(); await pace(1800); fact('pills.afterStop', JSON.stringify(await pills()));
-    await openConsole(); const n3 = PAGELOG.length; await hclick('[data-oc-start="' + NX + '"]'); await pace(1500);
-    fact('ninja.started', JSON.stringify((await rowsOf()).find(r => /Excel/i.test(r.name))) + ' | ' + (PAGELOG.slice(n3).filter(l => /§PILL-CONTRIB add/.test(l)).pop() || ''));
-    await closeConsole(); await pace(1500); fact('pills.afterStart', JSON.stringify(await pills())); await glide('#pill-ninja'); await pace(1500); await hclick('#idmp-pill-trigger'); await pace(700);
 
+    // ═══ P2 the pill tray: Ninja (ModelMaker) is one of the built-in bundles; its pill opens the model maker ═══
+    await beat('p2', 'pill tray, Ninja ModelMaker');
+    fact('pills.tray', JSON.stringify(await pills()));
+    await hclick('#idmp-pill-trigger'); await pace(1200); await glide('#pill-ninjacreate'); await pace(1800);
+    const nn = PAGELOG.length; await hclick('#pill-ninjacreate'); await page.waitForSelector('#pe-ov', { timeout: 10000 }); await pace(3000);
+    fact('ninja.modelmaker', JSON.stringify(await page.evaluate(() => ({ overlay: !!document.getElementById('pe-ov'), createFace: (document.getElementById('pe-create-body') || {}).style ? document.getElementById('pe-create-body').style.display !== 'none' : null, ninjaLine: ((document.querySelector('.pe-ninja') || {}).textContent || '').slice(0, 80) }))) + ' | ' + (PAGELOG.slice(nn).filter(l => /NINJA-PILL|PLUGIN-PILL/.test(l)).pop() || ''));
+    await hclick('#pe-close'); await pace(900); await hclick('#idmp-pill-trigger'); await pace(700);
     await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds the buttons on the order itself.'); await pace(600);
     await menuBehind(await menuIdOf(143)); await page.waitForSelector(NEWB, { timeout: 20000 }); await hold(1200);
 
@@ -163,13 +157,18 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('order.docs', JSON.stringify({ shipment: await tip('SELECT docstatus AS s, documentno AS d FROM m_inout WHERE m_inout_id<0'), invoice: await tip('SELECT docstatus AS s, documentno AS d, grandtotal AS g FROM c_invoice WHERE c_invoice_id<0') }));
     fact('lens.barAfter', JSON.stringify(await lensBar()));
 
-    // ═══ P6 what is linked to the order, with counts ═══
-    await beat('p6', 'related counts');
-    const relSel = '[data-lens-action^="' + EN + ':rel:"]:has-text("Shipment")';
-    await glide(relSel); await pace(1500);
-    await hclick(relSel); await pace(2000);
-    if (!(await page.locator('.idmp-grid tbody tr').count())) { await hclick('#idmp-toolbar [data-tb="toggle"]'); await pace(700); }
-    fact('related.grid', (await page.locator('.idmp-grid tbody tr').count()) + ' rows | ' + lastLog(0, /§ZOOM-ACROSS-OPEN/)); await pace(1500);
+    // ═══ P6 Receive payment: the Payment window opens on a new record with the invoice already chosen; Save & Complete ═══
+    await beat('p6', 'Receive payment');
+    const paySel = '[data-lens-action="' + EN + ':next:pay"]';
+    await page.waitForSelector(paySel, { timeout: 15000 }); await glide(paySel); await pace(1200);
+    const nP = PAGELOG.length; await hclick(paySel);
+    await page.waitForFunction(() => { const e = document.querySelector('#idmp-inline-mount [data-col="c_invoice_id"]'); return e && e.value; }, null, { timeout: 40000 }); await pace(3500);
+    fact('pay.preset', JSON.stringify(await page.evaluate(() => ({ org: (document.querySelector('#idmp-inline-mount [data-col="ad_org_id"]') || {}).value, bp: (document.querySelector('#idmp-inline-mount [data-col="c_bpartner_id"]') || {}).value, inv: (document.querySelector('#idmp-inline-mount [data-col="c_invoice_id"]') || {}).value, amt: (document.querySelector('#idmp-inline-mount [data-col="payamt"]') || {}).value, disc: (document.querySelector('#idmp-inline-mount [data-col="discountamt"]') || {}).value })) ) + ' | ' + lastLog(nP, /§OPS-LENS openNew done/));
+    await page.waitForSelector('[data-lens-action="' + EN + ':save-complete"]', { timeout: 15000 }); await pace(900);
+    const nS = PAGELOG.length; await hclick('[data-lens-action="' + EN + ':save-complete"]');
+    for (let i = 0; i < 80 && !lastLog(nS, /§MODEL-DOCACTION table=c_payment/); i++) await page.waitForTimeout(250);
+    await hold(DRY ? 600 : 2500);
+    fact('pay.complete', lastLog(nS, /§MODEL-DOCACTION table=c_payment/)); fact('pay.books', JSON.stringify({ payment: await tip('SELECT docstatus AS s, documentno AS d, payamt AS a, discountamt AS disc FROM c_payment WHERE c_payment_id<0'), invoicePaid: await tip('SELECT ispaid AS p FROM c_invoice WHERE c_invoice_id<0') }));
 
     // ═══ P7 card: counted steps and what the witnesses checked (numbers read from their logs) ═══
     await beat('p7', 'card: counted');
@@ -180,20 +179,13 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     const v1 = (/§FOA1_VERDICT (\S+)/.exec(L1) || [])[1], v2 = (/§FOA2_VERDICT (\S+)/.exec(L2) || [])[1];
     fact('card.numbers', JSON.stringify({ orderEntry: a1, shipInvoice: a2, events: [ev1, ev2], verdicts: [v1, v2] }));
     const tot = [a1[0] + a2[0], a1[1] + a2[1]], okAll = v1 === 'GREEN' && v2 === 'GREEN' && !isNaN(tot[0]);
-    await card('Counted, not guessed', 'A standard order entered, completed, shipped and invoiced. A step is a click, a pick from a list or a typed field.', ['Plain', 'With the plugin'],
-      [{ label: 'Enter and complete the order', cells: [{ v: a1[0] }, { v: a1[1] }] }, { label: 'Ship and invoice it', cells: [{ v: a2[0] }, { v: a2[1] }] },
+    await card('Counted, not guessed', 'A standard order entered, completed, shipped, invoiced and paid. A step is a click, a pick from a list or a typed field.', ['Plain', 'With the plugin'],
+      [{ label: 'Enter and complete the order', cells: [{ v: a1[0] }, { v: a1[1] }] }, { label: 'Ship, invoice, receive payment', cells: [{ v: a2[0] }, { v: a2[1] }] },
        { label: 'Total steps', cells: [{ v: tot[0] }, { v: tot[1] }] },
        { label: 'Model events, same order', cells: [{ v: ev1 + ' / ' + ev2, small: true, tone: '#c9d4e0' }, { v: okAll ? 'equal' : 'NOT VERIFIED', small: true, tone: okAll ? '#7ee0a0' : '#ff9b8a' }] },
-       { label: 'Shipment, invoice, quantities', cells: [{ v: '', small: true }, { v: okAll ? 'identical rows' : 'NOT VERIFIED', small: true, tone: okAll ? '#7ee0a0' : '#ff9b8a' }] }]);
+       { label: 'Shipment, invoice, payment, quantities', cells: [{ v: '', small: true }, { v: okAll ? 'identical rows' : 'NOT VERIFIED', small: true, tone: okAll ? '#7ee0a0' : '#ff9b8a' }] }]);
     await hold(DRY ? 200 : 6000);
 
-    // ═══ P8 stop the plugin: the same order, the plain toolbar ═══
-    await beat('p8', 'stop the plugin');
-    await openConsole(); await uncard(); await pace(1000);
-    await hclick('#pr-osgi [data-oc-stop="' + FID + '"]'); await pace(1500);
-    fact('lens.afterStop', JSON.stringify({ lenses: await page.evaluate(() => window.AdLens.count()), row: (await rowsOf()).find(r => /Friendly/i.test(r.name)) }));
-    await closeConsole(); await pace(1500);
-    fact('plain.toolbar', JSON.stringify({ lensBar: await page.locator('#idmp-lensbar').count() }));
     await beat('end', 'end'); await hold(DRY ? 200 : 1500);
     gestFlush(); GPrevId = null;
     say('§ERP_FILM_CURSOR clicks=' + clicks + ' cursorOnTarget=' + cursorOk + (clicks === cursorOk ? ' OK' : ' WRONG'));
