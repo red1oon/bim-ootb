@@ -95,8 +95,8 @@ async function run(base, browser, lens) {
       //   C_OrderLine QtyDelivered 5 / QtyInvoiced 5, ONE M_MatchPO (qty 5) carrying BOTH the receipt line and the invoice line, ONE M_MatchInv (qty 5), Fact_Acct 4 rows each for the receipt (319),
       //   the invoice (318) and the M_MatchInv (472), every document Posted='Y'. The same shape is asserted here (quantities scale with this PO).
       J('P7', 'Create Bill vs the recorded legacy chain: invoice Fact_Acct 4 rows balanced, order QtyInvoiced = 5, one M_MatchPO carrying the invoice line and the receipt line, one M_MatchInv', b.fact && b.fact.n === 4 && Math.abs(b.fact.d - b.fact.c) < 0.005 && b.invoiced === 5 && b.mpoLinked === 1 && b.miN === 1 && b.posted === 'Y', JSON.stringify({ f: b.fact, inv: b.invoiced, mpoLinked: b.mpoLinked, mi: b.miN, posted: b.posted }));
-      // P7b NOT judged (named gap, spec §46.1): legacy posts the M_MatchInv (Doc_MatchInv, 4 Fact_Acct rows on table 472 in the recorded chain); the twin has no Doc_MatchInv / Doc_MatchPO class in model_post.
-      console.log('§FOPUR NAMED-GAP (not judged) M_MatchInv Fact_Acct twin n=' + (b.miFact && b.miFact.n) + ' legacy(recorded c5_po_chain) n=4 - Doc_MatchInv not ported (Doc_MatchInv.java 2878 lines)');
+      // P7b (spec §48, Doc_MatchInv ported): the M_MatchInv posts like legacy's recorded chain - 4 Fact_Acct rows on table 472, balanced (price = invoice price, so no variance line).
+      J('P7b', 'Create Bill: the M_MatchInv is posted - Fact_Acct 4 rows on table 472, balanced (legacy recorded c5_po_chain: 4)', b.miFact && b.miFact.n === 4 && Math.abs(b.miFact.d - b.miFact.c) < 0.005, JSON.stringify(b.miFact));
       J('P8', 'once received and billed neither button is offered', !b.bar.includes('FO_Order_Receive') && !b.bar.includes('FO_Order_Bill'), b.bar);
       J('P9', 'Stop removes every row (processes, buttons)', on.rowsLive === 8 && on.rowsStopped === 0, 'live ' + on.rowsLive + ' stopped ' + on.rowsStopped);
       J('P0', 'no page errors', !(on.pageErr || []).length, on.pageErr);

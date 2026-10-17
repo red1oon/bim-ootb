@@ -975,7 +975,7 @@
     if (classname && JAVA[classname] && typeof ctx.runInTrx === 'function') {
       var jr = ctx.runInTrx(function (query, env) {
         return runJava(query, env, { AD_Process_ID: proc.AD_Process_ID, className: classname, title: proc.name,
-          Record_ID: info.Record_ID || 0, Table_ID: info.Table_ID || 0, params: info.params || {} });
+          Record_ID: info.Record_ID || 0, Table_ID: info.Table_ID || 0, params: info.params || {}, AD_PInstance_ID: info.AD_PInstance_ID || 0, AD_InfoWindow_ID: info.AD_InfoWindow_ID || 0 });   // an Info-Window-launched process: its T_Selection rows are keyed by the instance
       }) || { ok: false, summary: 'no transaction' , ops: [], logs: [] };
       (jr.log || []).forEach(function (l) { if (typeof console !== 'undefined') console.log(l); });
       return { ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname, kind: 'java', dispatched: true,
