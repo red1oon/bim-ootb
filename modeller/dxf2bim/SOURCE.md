@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `3c10009f7` — Revert "std2d wing sets: one outline per door (union of touching parts, bbox of disjoint a
+Commit: `548047127` — std2d wing sets: a door without a stated swing is drawn as its footprint (§L1.21); arc do
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -14,7 +14,7 @@ Commit: `3c10009f7` — Revert "std2d wing sets: one outline per door (union of 
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
 | dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | 56f464ad4feca88ad30073bcc492c949a9bdf4dc1950f73c574f1ff09194a181 |
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 118589837c66cb6352fa7effbb4e5ca7e2a959c339a535179c4bcb0d239254c2 |
-| dxf2bim/std2d.js | deploy/dev/std2d.js | a5d0212d73465e192c1f987653251c4a23efd10ca6123e1ea3436b4698f607b6 |
+| dxf2bim/std2d.js | deploy/dev/std2d.js | ef26e840a70e43648302c87d40b37e5fba839f66de6cfbf8fe171a28f1067267 |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | 4cfd7a941e5f224f3b5643c07d742ea48e51a5f44add7d2d19af8bd5741e915d |
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | 4f304e34efbe051c720a5cb30f4cee2445d29116ada16aaa3d32bb4226acc42e |
@@ -23,4 +23,4 @@ Commit: `3c10009f7` — Revert "std2d wing sets: one outline per door (union of 
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 3c10009f7:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 548047127:deploy/dev/<file> | sha256sum` equals the column above.

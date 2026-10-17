@@ -564,6 +564,17 @@
       });
     });
     if (model.perStoreyEnv) cut.forEach(c => { polys[c.guid] = (polys[c.guid] || []).map(pl => { const q = dropCollinear(pl); if (q.length !== pl.length) log.add(`§COLLINEAR_DROP guid=${c.guid} cls=${c.cls} before=${pl.length} after=${q.length}`); return q; }); });   // §L1.19 (wing sets)
+    if (model.perStoreyEnv) cut.forEach(c => {   // §L1.21: a door whose swing cannot be drawn is ONE footprint rectangle (a door WITH an arc is not touched)
+      if (c.cls !== 'IfcDoor') return;
+      const parts = polys[c.guid] || []; if (parts.length < 2) return;
+      const sw_ = doorSwing(c), op = model.door_ops[c.guid], code = (sw_ ? doorHinge(c, op, sw_) : doorHingeIfc(c, op))[0];
+      if (code === 'ok') return;
+      const axisRect = P => P.length === 4 && P.every((q, i) => { const n = P[(i + 1) % 4]; return Math.abs(q[0] - n[0]) <= 0.001 || Math.abs(q[1] - n[1]) <= 0.001; });
+      if (!parts.every(axisRect)) { log.add(`§DOOR_NOSWING_SKIP guid=${c.guid} reason=part_not_axis_rect`); return; }
+      const xs = [].concat(...parts.map(P => P.map(q => q[0]))), ys = [].concat(...parts.map(P => P.map(q => q[1]))), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      polys[c.guid] = [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]];
+      log.add(`§DOOR_NOSWING_BBOX guid=${c.guid} parts=${parts.length} bbox=${fx(x1 - x0, 1)} x ${fx(y1 - y0, 1)} mm (${code})`);
+    });
     Object.keys(curt).forEach(g => { const r = curt[g].rect; polys[g] = [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]]; });   // C1
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
     let nW = 0, nC = 0;

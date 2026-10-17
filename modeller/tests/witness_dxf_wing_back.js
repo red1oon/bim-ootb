@@ -7,6 +7,7 @@
  *   B1 FRAME    — frameOfSheets reads @FRAME from the wing set's sheets (angle, centre) and nothing from the straight set.
  *   B2 BODIES   — wing import (frame = the marking) vs straight import baked with angle 0 and then rotated by +ANGLE about the same centre: same body count, same classes,
  *                 every body's world vertex set equal within TOL (1e-4 m, DXF is mm with 3 decimals).
+ *   B4 VERDICT  — the reader's verdict (blocking codes with counts) on the wing set equals the one on the straight set: no rule may change what the reader sees as a door/window.
  *   B3 CONTROL  — the same wing import with the frame IGNORED (not turned back) must NOT match (the witness can see a missing rotation).
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_wing_back.js <Node model .db> [ANGLE=30]
  */
@@ -48,6 +49,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   const A = bodies(straight.T, true), Bv = bodies(wing.T, false), mAB = match(A, Bv), miss = mAB.bad;
   check('B2 BODIES', 'a wing body is not where the straight building rotated by +angle puts it', A.length === Bv.length && A.length > 0 && miss === 0, `straight bodies=${A.length} wing bodies=${Bv.length} unmatched=${miss} worst vertex deviation=${mAB.worst.toExponential(2)} m (TOL ${TOL} m) fills straight=${straight.T.fills.length} wing=${wing.T.fills.length}`);
   const missI = match(A, bodies(ignored.T, false)).bad;
+  const codes = r => { const m = {}; (r.out.verdict ? r.out.verdict.blocking : []).forEach(b => { m[b.code] = (m[b.code] || 0) + 1; }); return JSON.stringify(Object.keys(m).sort().map(k => [k, m[k]])); };
+  check('B4 VERDICT', 'the wing set is judged differently by the reader than the same building drawn straight (a rule changed what a door/window looks like: the L1.20 lesson)', codes(straight) === codes(wing) && !!wing.out.verdict, `straight=${codes(straight)} wing=${codes(wing)} verdicts ${straight.out.verdict && straight.out.verdict.verdict}/${wing.out.verdict && wing.out.verdict.verdict}`);
   check('B3 CONTROL', 'ignoring @FRAME (no turn-back) still matches: the witness cannot see the rotation', missI > 0, `unmatched without the turn-back=${missI}`);
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });

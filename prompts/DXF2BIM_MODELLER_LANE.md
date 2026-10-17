@@ -1652,5 +1652,10 @@ Built as specified and measured: Hospital 85-deg wing `opening_unclassified` 257
 - W-L121-CONTROL: a door WITH an arc keeps its parts; a swingless door with a tilted part keeps its parts.
 **Not claimed:** the Hospital qualifying (sill/height, `no_host_cut` 142, `no_elevation_height` 175, `wall_below_min_thickness` 58 remain).
 
+#### L1.21 Results (2026-10-17)
+Built as specified (`§DOOR_NOSWING_BBOX`, wing sets only, a door with an arc is never touched). **W-L121-DUPLEX:** Duplex wing set unchanged (0 swingless doors, `witness_wing_frame.js` 30/7/85/45 deg ALL PASS), **B4 VERDICT** added to `witness_dxf_wing_back.js` (wing verdict codes with counts == straight verdict; PASS at 4 angles) and FALSIFIED: run against the reverted L1.20 code it FAILS in Node with `GAP:no_dimension` x12 extra, so the check that was missing when L1.20 passed is now in place; browser **W-E2E-DXF-WING 7/7**. sw.js v98.
+- **W-L121-OPEN:** Hospital 85-deg wing: 45 swingless doors drawn as their footprint, 0 skipped; `GAP:opening_unclassified` 160 -> **0**; total blocking **834 -> 626** (verdict still blocked). Remaining by code: no_elevation_height 175, lod400_library_unreachable 120 (no library in Node), QF:dim_point_missing 66, no_dimension 49 (= the swingless doors + others: a stated sill/height, not guessed), wall_below_min_thickness 58, QF:grid_off_axis 32, no_host_cut 22, door_part_ambiguous 16, slab_no_exterior_wall 16, QF:dim_missing 16, no_elevation_for_face 12, no_host 10, section_no_slab 8, QF:elev_height_dim_missing 8, others <= 4.
+- **Next candidates, by size:** `no_elevation_height` 175 (walls whose height the elevations do not state on a stepped wing), `QF:dim_point_missing` 66 + `QF:grid_off_axis` 32 (wing marking/grid questions: are they new from the wing frame or from the Hospital's grid?), then `wall_below_min_thickness` 58.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
