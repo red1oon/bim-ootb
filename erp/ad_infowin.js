@@ -60,12 +60,14 @@
   function fmtCell(v, ref) { if (ref === 20 || ref === 17) return v === 'Y' ? '☑' : (v === 'N' ? '☐' : ''); if (ref === 29) return fmtQty(v); if (ref === 37 || ref === 12) return fmtAmt(v); return v == null ? '' : String(v); }
 
   // ── dictionary → definition (InfoWindow constructor / loadInfoWindowData)
-  function definition(tableName, clientId) {
-    var iw = adQ('SELECT w.* FROM ad_infowindow w JOIN ad_table t ON t.ad_table_id=w.ad_table_id WHERE UPPER(t.tablename)=UPPER(?) AND w.isactive=\'Y\' AND w.ad_client_id IN (0,?) ORDER BY w.ad_client_id DESC, w.ad_infowindow_id', [tableName, clientId || 0])[0];
+  function definition(tableName, clientId, infoWindowId) {
+    var iw = infoWindowId ? adQ('SELECT w.*, t.tablename AS tablename FROM ad_infowindow w JOIN ad_table t ON t.ad_table_id=w.ad_table_id WHERE w.ad_infowindow_id=? AND w.isactive=\'Y\'', [infoWindowId])[0]
+      : adQ('SELECT w.*, t.tablename AS tablename FROM ad_infowindow w JOIN ad_table t ON t.ad_table_id=w.ad_table_id WHERE UPPER(t.tablename)=UPPER(?) AND w.isactive=\'Y\' AND w.ad_client_id IN (0,?) ORDER BY w.ad_client_id DESC, w.ad_infowindow_id', [tableName, clientId || 0])[0];
     if (!iw) return null;
     var cols = adQ('SELECT * FROM ad_infocolumn WHERE ad_infowindow_id=? AND isactive=\'Y\' ORDER BY seqno', [iw.ad_infowindow_id]);
-    var m = /^\s*(\w+)\s+(\w+)/.exec(iw.fromclause || '');
-    return { iw: iw, cols: cols, table: m ? m[1] : tableName, alias: m ? m[2] : '', keycol: tableName + '_ID' };
+    var m = /^\s*(\w+)\s+(\w+)/.exec(iw.fromclause || ''), tn = infoWindowId ? iw.tablename : tableName;
+    var keyCol = cols.filter(function (c) { return c.iskey === 'Y'; })[0];   // a view without a key column (M_InOut_CreateFrom_v): rows are keyed by position, the selection is the column values
+    return { iw: iw, cols: cols, table: m ? m[1] : tn, alias: m ? m[2] : '', keycol: infoWindowId ? (keyCol ? keyCol.columnname : null) : tn + '_ID' };
   }
 
   // InfoWindow.getSQLFilter (InfoWindow.java:1385-1500) -> criteria WHERE; selectclause '0' columns only publish context. PURE (no DOM): the window and W-INFOWIN-SQL both call it.
@@ -76,19 +78,21 @@
     critVals.forEach(function (x) {
       var cc = x.def, v = x.value;
       if (v == null || String(v).trim() === '' || cc.selectclause === '0') return;
-      var col = stripAs(cc.selectclause), op = cc.queryoperator || '=', fnc = cc.queryfunction, clause = col;
+      var colP = parseContextForSql(stripAs(cc.selectclause), c); if (!colP) return;                               // a criterion's SelectClause may read the context too: COALESCE(v.M_Locator_ID,@M_Locator_ID@)
+      var col = colP.sql, op = cc.queryoperator || '=', fnc = cc.queryfunction, clause = col;
       if (fnc && fnc.trim()) clause = fnc.indexOf('?') >= 0 ? fnc.replace('?', col) : fnc + '(' + col + ')';
       var up = clause.toUpperCase().indexOf('UPPER(') === 0, val = v;
+      if (/_ID$/i.test(cc.columnname) && String(v).trim() !== '' && !isNaN(Number(v))) val = Number(v);   // InfoWindow.setParameters: an ID editor's value binds as an Integer, not text
       if (op === 'Like' || op === 'LIKE') { op = 'LIKE'; if (!/%$/.test(val)) val += '%'; }
       else if (op === 'FullLike') { op = 'LIKE'; if (!/^%/.test(val)) val = '%' + val; if (!/%$/.test(val)) val += '%'; }
-      where.push(clause + ' ' + op + (up ? ' UPPER(?)' : ' ?')); cparams.push(val);
+      where.push(clause + ' ' + op + (up ? ' UPPER(?)' : ' ?')); Array.prototype.push.apply(cparams, colP.params); cparams.push(val);
     });
     var extra = hook.baseFilter ? hook.baseFilter(c, def) : '';
     var fromP = parseContextForSql(def.iw.fromclause, c); if (!fromP) return null;
     var fromSql = fromP.sql.replace(/\s+/g, ' ');
     var baseTxt = [def.alias + '.ad_client_id IN (0,' + (Number(client) || 0) + ')'].concat(def.iw.whereclause ? ['(' + def.iw.whereclause + ')'] : [], extra ? [extra] : []).join(' AND ');
     var baseP = parseContextForSql(baseTxt, c); if (!baseP) return null;
-    var cols = [def.alias + '.' + def.keycol + ' AS k'], colParams = [];
+    var cols = [(def.keycol ? def.alias + '.' + def.keycol : 'NULL') + ' AS k'], colParams = [];
     for (var i = 0; i < disp.length; i++) {
       var pc = parseContextForSql(stripAs(disp[i].selectclause), c); if (!pc) return null;
       var ok = colOk(pc.sql, fromSql, pc.params.concat(fromP.params));
@@ -103,15 +107,18 @@
   function open(opts) {
     opts = opts || {};
     var tableName = opts.tableName || 'M_Product', client = opts.clientId, doc = document;
-    var def = definition(tableName, client);
-    if (!def) { log('§INFOWIN table=' + tableName + ' NO-DEFINITION (no AD_InfoWindow row) — nothing to open'); return null; }
-    var hook = HOOKS[tableName.toUpperCase()] || {};
+    var def = definition(tableName, client, opts.infoWindowId);
+    if (!def) { log('§INFOWIN table=' + tableName + ' infowindow=' + (opts.infoWindowId || '') + ' NO-DEFINITION (no AD_InfoWindow row) — nothing to open'); return null; }
+    if (opts.infoWindowId) tableName = def.table;
+    var hook = HOOKS[String(tableName).toUpperCase()] || {};
+    var selMode = !!opts.infoWindowId, procs = selMode ? adQ('SELECT ip.ad_process_id AS id, p.name AS name FROM ad_infoprocess ip JOIN ad_process p ON p.ad_process_id=ip.ad_process_id WHERE ip.ad_infowindow_id=? AND ip.isactive=\'Y\' ORDER BY ip.seqno', [def.iw.ad_infowindow_id]) : [];
     var old = doc.getElementById('idmp-infowin'); if (old) old.remove();
     var ctx = Object.assign({}, opts.ctx || {});
     // initParameters (InfoProductWindow.java): warehouse default from the login context
     if (hook.initContext) hook.initContext(ctx, opts);
     var crit = def.cols.filter(function (c) { return c.isquerycriteria === 'Y'; });
-    var disp = def.cols.filter(function (c) { return c.isdisplayed === 'Y'; });
+    var disp = def.cols.filter(function (c) { return selMode ? c.selectclause !== '0' : c.isdisplayed === 'Y'; });   // selection mode reads every column: the process gets the hidden ones (C_OrderLine_ID) too
+    var shown = function (d) { return d.isdisplayed === 'Y'; }, editable = function (d) { return selMode && d.isreadonly === 'N' && shown(d); };
     log('§INFOWIN open table=' + tableName + ' infowindow=' + def.iw.ad_infowindow_id + ' "' + def.iw.name + '" criteria=' + crit.length + ' displayed=' + disp.length + ' ctx=' + JSON.stringify(ctx));
 
     var ov = doc.createElement('div'); ov.id = 'idmp-infowin';
@@ -130,22 +137,36 @@
       if (c.ad_reference_id === 35) return;   // ASI editor (InfoPAttributeInstance) — named-deferred
       var lab = doc.createElement('label'); lab.style.cssText = 'display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--idmp-muted,#555)'; lab.appendChild(doc.createTextNode(c.name));
       var ed;
-      if (c.ad_reference_id === 19 || c.ad_reference_id === 30) {   // TableDir / Search → a picker over the referenced table (name column)
+      if (c.ad_reference_id === 19 || c.ad_reference_id === 30 || c.ad_reference_id === 31) {   // TableDir / Search / Locator → a picker over the referenced table (name column)
         ed = doc.createElement('select'); var tn = c.columnname.replace(/_ID$/i, '');
         var opt = doc.createElement('option'); opt.value = ''; opt.textContent = ''; ed.appendChild(opt);
-        try { adQ('SELECT ' + c.columnname + ' AS k, name AS n FROM ' + tn + " WHERE isactive='Y' AND ad_client_id IN (0," + (Number(client) || 0) + ') ORDER BY name LIMIT 500').forEach(function (r) { var o = doc.createElement('option'); o.value = r.k; o.textContent = r.n; ed.appendChild(o); }); } catch (e) { log('§INFOWIN-COL-SKIP picker ' + c.columnname); }
+        try { var idc = (adQ("SELECT c.columnname AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND c.isidentifier='Y' ORDER BY c.seqno LIMIT 1", [tn])[0] || {}).c || 'name'; (selMode ? tipQ : adQ)('SELECT ' + c.columnname + ' AS k, ' + idc + ' AS n FROM ' + tn + " WHERE isactive='Y' AND ad_client_id IN (0," + (Number(client) || 0) + ') ORDER BY ' + idc + ' LIMIT 500').forEach(function (r) { var o = doc.createElement('option'); o.value = r.k; o.textContent = r.n; ed.appendChild(o); }); } catch (e) { log('§INFOWIN-COL-SKIP picker ' + c.columnname); }
       } else if (c.ad_reference_id === 17 || c.ad_reference_id === 20) {
         ed = doc.createElement('select'); [['', ''], ['Y', 'Yes'], ['N', 'No']].forEach(function (p) { var o = doc.createElement('option'); o.value = p[0]; o.textContent = p[1]; ed.appendChild(o); });
       } else { ed = doc.createElement('input'); ed.type = 'text'; ed.addEventListener('keydown', function (e) { if (e.key === 'Enter') refresh(); }); }
       ed.setAttribute('data-col', c.columnname); lab.appendChild(ed); cp.appendChild(lab); editors[c.columnname] = { el: ed, def: c };
     });
     if (ctx.M_Warehouse_ID && editors.M_Warehouse_ID) editors.M_Warehouse_ID.el.value = ctx.M_Warehouse_ID;
+    if (selMode) crit.forEach(function (c) {                                                                  // criteria default = the dictionary DefaultValue (@Var@ from the window context), hidden by DisplayLogic
+      var ed = editors[c.columnname]; if (!ed) return;
+      var dv = c.defaultvalue, m = dv && /^@(\w+)@$/.exec(dv);                                                 // GridField.getDefault: a literal, @Var@ from the window context, or @SQL= (first column of the first row)
+      if (m) dv = ctx[m[1]];
+      else if (dv && /^@SQL=/i.test(dv)) { var pq = parseContextForSql(dv.replace(/^@SQL=/i, ''), ctx); dv = null; try { var dr = pq && tipQ(pq.sql, pq.params)[0]; if (dr) dv = dr[Object.keys(dr)[0]]; } catch (e) { log('§INFOWIN-DEFAULT-ERR ' + c.columnname + ' ' + String(e.message || e).slice(0, 80)); } }
+      else if (dv && /^@/.test(dv)) dv = null;
+      if (dv != null && String(dv) !== '' && String(dv) !== '0') ed.el.value = dv;
+      var vis = !c.displaylogic || !g.AdEvaluator || g.AdEvaluator.evaluate(c.displaylogic, null, ctx) !== false;
+      if (!vis) { ed.el.value = ''; ed.el.parentNode.style.display = 'none'; ed.hidden = true; }
+    });
     box.appendChild(cp);
     var bar = doc.createElement('div'); bar.style.cssText = 'padding:6px 14px;display:flex;gap:8px;border-bottom:1px solid var(--idmp-border,#e0e0e0)';
     var bRef = doc.createElement('button'); bRef.textContent = 'Refresh'; bRef.setAttribute('data-act', 'refresh'); bRef.onclick = function () { refresh(); };
     var bRst = doc.createElement('button'); bRst.textContent = 'Reset'; bRst.setAttribute('data-act', 'reset'); bRst.onclick = function () { Object.keys(editors).forEach(function (k) { if (k !== 'M_Warehouse_ID') editors[k].el.value = ''; }); };
     var cnt = doc.createElement('span'); cnt.id = 'idmp-infowin-count'; cnt.style.cssText = 'margin-left:auto;color:var(--idmp-muted,#555)';
-    bar.appendChild(bRef); bar.appendChild(bRst); bar.appendChild(cnt); box.appendChild(bar);
+    bar.appendChild(bRef); bar.appendChild(bRst);
+    var procBtns = procs.map(function (pr) {                                                                  // InfoWindow.renderParameterPane: the AD_InfoProcess buttons, enabled only with a selection (enableButtons)
+      var b = doc.createElement('button'); b.textContent = pr.name; b.setAttribute('data-infoproc', pr.id); b.disabled = true;
+      b.onclick = function () { runPicked(pr); }; bar.appendChild(b); return b; });
+    bar.appendChild(cnt); box.appendChild(bar);
 
     var resWrap = doc.createElement('div'); resWrap.style.cssText = 'flex:1 1 55%;overflow:auto;min-height:80px'; box.appendChild(resWrap);
     var south = doc.createElement('div'); south.style.cssText = 'flex:0 0 38%;border-top:2px solid var(--idmp-border,#c9c9c9);display:flex;flex-direction:column;min-height:120px'; box.appendChild(south);
@@ -163,18 +184,45 @@
     function buildSql(c) {
       return buildInfoSql(def, c, crit.map(function (cc) { var ed = editors[cc.columnname]; return { def: cc, value: ed ? ed.el.value : '' }; }), hook, client, disp);
     }
+    // InfoPanel.enableButtons: the process buttons need >= 1 selected row. InfoPanel.runProcess -> saveResultSelection + createT_Selection_InfoWindow: every selected row, every column (edited values win).
+    function pickedRows() {
+      return Array.prototype.map.call(resWrap.querySelectorAll('input[data-pick]:checked'), function (cb) {
+        var ri = Number(cb.getAttribute('data-pick')), tr = cb.closest('tr'), r = state.rows[ri], vals = {};
+        disp.forEach(function (d, i) { var ed = tr.querySelector('[data-edit="' + d.columnname + '"]'); vals[d.columnname] = ed && g.__iwBreak !== 'noedit' ? ed.value : r['c' + i]; });   // __iwBreak: W-CREATEFROM-INFOWIN negative control only
+        return { key: r.k, values: vals };
+      });
+    }
+    function syncButtons() { var n = resWrap.querySelectorAll('input[data-pick]:checked').length; procBtns.forEach(function (b) { b.disabled = n === 0; }); }
+    function runPicked(pr) {
+      var picks = pickedRows(); if (!picks.length) return;
+      log('§INFOWIN run process=' + pr.id + ' "' + pr.name + '" infowindow=' + def.iw.ad_infowindow_id + ' picked=' + picks.length + ' rows=' + JSON.stringify(picks.map(function (x) { return x.values; })));
+      if (typeof opts.onRun === 'function') opts.onRun(pr, picks, def, function () { ov.remove(); });
+    }
     function refresh() {
       var c = currentCtx(), b = buildSql(c);
       if (!b) { log('§INFOWIN parse-FAILED unresolved context variable (Env.parseContextForSql returned "") ctx=' + JSON.stringify(c)); state.lastSql = ''; state.rows = []; resWrap.innerHTML = ''; cnt.textContent = '0 record(s)'; return; }
       state.lastSql = b.sql;
       var rows; try { rows = tipQ(b.sql, b.params); } catch (e) { log('§INFOWIN query-ERROR ' + String(e.message || e).slice(0, 160) + ' sql=' + b.sql.slice(0, 200)); rows = []; }
       state.rows = rows; state.sel = null;
-      var h = '<table class="idmp-infowin-grid" style="border-collapse:collapse;width:100%"><thead><tr>' + disp.map(function (d) { return '<th style="text-align:' + (d.ad_reference_id === 29 || d.ad_reference_id === 37 ? 'right' : 'left') + ';padding:3px 8px;border-bottom:1px solid #aaa;position:sticky;top:0;background:var(--idmp-panel,#fff)">' + esc(d.name) + '</th>'; }).join('') + '</tr></thead><tbody>';
-      rows.forEach(function (r, ri) { h += '<tr data-key="' + esc(r.k) + '" data-ri="' + ri + '" style="cursor:pointer">' + disp.map(function (d, i) { return '<td data-col="' + esc(d.columnname) + '" data-v="' + esc(r['c' + i]) + '" style="padding:3px 8px;border-bottom:1px solid #eee;text-align:' + (d.ad_reference_id === 29 || d.ad_reference_id === 37 ? 'right' : 'left') + '">' + esc(fmtCell(r['c' + i], d.ad_reference_id)) + '</td>'; }).join('') + '</tr>'; });
+      var sh = disp.map(function (d, i) { return { d: d, i: i }; }).filter(function (x) { return !selMode || shown(x.d); });
+      var h = '<table class="idmp-infowin-grid" style="border-collapse:collapse;width:100%"><thead><tr>' + (selMode ? '<th></th>' : '') + sh.map(function (x) { return x.d; }).map(function (d) { return '<th style="text-align:' + (d.ad_reference_id === 29 || d.ad_reference_id === 37 ? 'right' : 'left') + ';padding:3px 8px;border-bottom:1px solid #aaa;position:sticky;top:0;background:var(--idmp-panel,#fff)">' + esc(d.name) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      var locOpts = null;
+      function cellHtml(d, i, r) {
+        var v = r['c' + i], right = d.ad_reference_id === 29 || d.ad_reference_id === 37;
+        if (editable(d) && d.ad_reference_id === 29) return '<input type="number" step="any" data-edit="' + esc(d.columnname) + '" value="' + esc(v == null ? '' : v) + '" style="width:90px;text-align:right">';   // ColumnInfo editable: a Quantity column edits in the grid
+        if (editable(d) && d.ad_reference_id === 31) {                                                           // Locator: choose among the warehouse's locators
+          if (!locOpts) { try { locOpts = adQ("SELECT m_locator_id AS k, value AS n FROM m_locator WHERE isactive='Y' ORDER BY value LIMIT 500"); } catch (e) { locOpts = []; } }
+          return '<select data-edit="' + esc(d.columnname) + '">' + locOpts.map(function (o) { return '<option value="' + esc(o.k) + '"' + (String(o.k) === String(v) ? ' selected' : '') + '>' + esc(o.n) + '</option>'; }).join('') + '</select>';
+        }
+        return esc(fmtCell(v, d.ad_reference_id));
+      }
+      rows.forEach(function (r, ri) { h += '<tr data-key="' + esc(r.k) + '" data-ri="' + ri + '" style="cursor:pointer">' + (selMode ? '<td><input type="checkbox" data-pick="' + ri + '"></td>' : '') + sh.map(function (x) { var d = x.d, i = x.i; return '<td data-col="' + esc(d.columnname) + '" data-v="' + esc(r['c' + i]) + '" style="padding:3px 8px;border-bottom:1px solid #eee;text-align:' + (d.ad_reference_id === 29 || d.ad_reference_id === 37 ? 'right' : 'left') + '">' + cellHtml(d, i, r) + '</td>'; }).join('') + '</tr>'; });
       resWrap.innerHTML = h + '</tbody></table>';
       cnt.textContent = rows.length + ' record(s)';
-      Array.prototype.forEach.call(resWrap.querySelectorAll('tbody tr'), function (tr) { tr.addEventListener('click', function () { select(Number(tr.getAttribute('data-ri'))); }); });
-      log('§INFOWIN refresh table=' + tableName + ' rows=' + rows.length + ' ctx=' + JSON.stringify({ M_Warehouse_ID: c.M_Warehouse_ID }) + ' sql=' + b.sql.replace(/\s+/g, ' ').slice(0, 260));
+      Array.prototype.forEach.call(resWrap.querySelectorAll('tbody tr'), function (tr) { tr.addEventListener('click', function (e) { if (/^(INPUT|SELECT)$/.test(e.target.tagName)) return; select(Number(tr.getAttribute('data-ri'))); }); });
+      Array.prototype.forEach.call(resWrap.querySelectorAll('input[data-pick]'), function (cb) { cb.addEventListener('change', syncButtons); });
+      syncButtons();
+      log('§INFOWIN refresh table=' + tableName + ' rows=' + rows.length + ' ctx=' + JSON.stringify({ M_Warehouse_ID: c.M_Warehouse_ID }) + ' sql=' + b.sql.replace(/\s+/g, ' ').slice(0, 1400) + ' params=' + JSON.stringify(b.params));
       if (rows.length) log('§INFOWIN row0 ' + JSON.stringify(disp.reduce(function (o, d, i) { o[d.columnname] = rows[0]['c' + i]; return o; }, { key: rows[0].k })));
       renderTabs();
       if (rows.length) select(0);
@@ -208,7 +256,7 @@
       log('§INFOWIN tab=' + t.id + ' key=' + state.sel.k + ' rows=' + (res.rows ? res.rows.length : 0) + (res.rows && res.rows.length ? ' row0=' + JSON.stringify(res.rows[0]) : '') + (res.totals ? ' totals=' + JSON.stringify(res.totals) : ''));
     }
     renderTabs();
-    return { refresh: refresh, el: ov, state: state, buildSql: function () { return buildSql(currentCtx()); }, set: function (col, v) { if (editors[col]) editors[col].el.value = v; } };
+    return { refresh: refresh, el: ov, state: state, pickedRows: pickedRows, buildSql: function () { return buildSql(currentCtx()); }, set: function (col, v) { if (editors[col]) editors[col].el.value = v; } };
   }
 
   // ═══ InfoProductWindow hooks (the Java subclass) ═══════════════════════════════════════════════════════════════════════════════════════

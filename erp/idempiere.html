@@ -3470,6 +3470,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (s === '@#AD_Org_ID@') return (_session && _session.org) ? String(_session.org.id) : '';
     var m = /^@([A-Za-z0-9_]+)(?::[^@]*)?@$/.exec(s);   // §FRIENDLY-ROWS (ERP_FRIENDLY_OPS_LENS.md §42): @Column@ = the launching record's value (ProcessParameterPanel -> Env.parseContext(windowNo))
     if (m && _procRecord && _procRecord.row && window.__frBreak !== 'noctx') { var v = recVal(_procRecord.row, m[1]); return (v == null) ? '' : String(v); }
+    if (/^@SQL=/i.test(s) && _procRecord && _procRecord.row) {   // GridField.getDefault: "@SQL=..." - @Col@ = the launching record's value, the first column of the first row
+      var sq = s.replace(/^@SQL=/i, '').replace(/@([A-Za-z0-9_]+)(?::[^@]*)?@/g, function (_, c) { var v = recVal(_procRecord.row, c); return (v == null || v === '') ? '0' : _lit(v); });
+      try { var dr = _tipSql(sq)[0]; if (dr) { var dk = Object.keys(dr)[0]; return dr[dk] == null ? '' : String(dr[dk]); } } catch (e) { console.log('§AD-DEFAULT @SQL ERROR ' + e.message); }
+      return '';
+    }
     if (/^@.*@$/.test(s)) return '';
     return s;
   }
@@ -3482,7 +3487,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // ProcessModalDialog (ADTabpanel.actionButton → ProcessModalDialog): a process launched from a record's Button field opens as a MODAL DIALOG over the
   // window — the window, its tab strip and toolbar stay put; OK closes the dialog and refreshes the tab. Menu-launched processes keep the full pane.
   function _closeProcDialog(refresh) {
-    var o = document.getElementById('idmp-procdlg'); if (o) o.remove(); _procRecord = null;
+    var o = document.getElementById('idmp-procdlg'); if (o) o.remove(); _procRecord = null; _procExtra = null;
     if (refresh) { try { renderActiveTab(); } catch (e) { console.log('§AD-BUTTON refresh failed ' + e.message); } }
   }
   function _showProcDialog(pane, isResult) {
@@ -4065,6 +4070,30 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §AD-TBB (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §18): a process launched from a window (a Button field or an AD_ToolBarButton) =
   //   AbstractADWindowContent.executeButtonProcess0 (:4138-4175): AD_Process.AD_Form_ID != 0 -> ADForm.openForm(formId, gridTab, ProcessInfo(Table_ID, Record_ID)),
   //   else the process dialog with the record. ONE helper for both entry points (the form branch was missing for Button fields too).
+  // A Button column with AD_InfoWindow_ID (M_InOut.CreateLinesFrom): the Info Window IS the selection (AbstractADWindowContent.executionButtonInfoWindow0 -> InfoManager.create(WindowNo, AD_InfoWindow_ID)).
+  //   The generic engine (ad_infowin.js, driven by AD_InfoWindow / AD_InfoColumn / AD_InfoProcess) lists the rows; its process button writes the picked rows as T_Selection / T_Selection_InfoWindow of a fresh
+  //   AD_PInstance_ID (InfoPanel.runProcess :2693-2740, createT_Selection_InfoWindow :2824-2939), then the process opens its parameter dialog with the record as context, and the run carries AD_InfoWindow_ID +
+  //   AD_PInstance_ID (ProcessInfo.setAD_InfoWindow_ID). No per-process code: ANY Button/InfoWindow pair in the dictionary behaves the same (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §49, W-CREATEFROM-INFOWIN).
+  var _procExtra = null, _pinSeq = 0;
+  function _runButtonInfoWindow(iwId, name, rec) {
+    if (!window.AdInfoWindow) { status('Info window engine not loaded'); return; }
+    var ctx = {};   // Env.setContext(WindowNo, ColumnName, value) for the record's columns: the dictionary text reads @ColumnName@ in its proper case
+    _sqlRows('SELECT c.columnname AS c FROM ad_column c WHERE c.ad_table_id=(SELECT ad_table_id FROM ad_table WHERE lower(tablename)=lower(' + _lit(rec && rec.table) + '))').forEach(function (r) { var v = rec && rec.row ? recVal(rec.row, r.c) : null; if (v !== '' && v != null) ctx[r.c] = v; });
+    var iw = window.AdInfoWindow.open({ infoWindowId: iwId, clientId: window.APP && window.APP.clientId, ctx: ctx, onRun: function (pr, picks, def, close) {
+      var pin = -(++_pinSeq) - Date.now() % 100000 * 1000, db = window.__idmpDb;                                  // a transient instance id; T_Selection is never replicated or signed
+      db.run('DELETE FROM t_selection WHERE ad_pinstance_id<0'); db.run('DELETE FROM t_selection_infowindow WHERE ad_pinstance_id<0');
+      picks.forEach(function (pk, i) {
+        var tid = i + 1, tblId = pk.values.AD_Table_ID != null && pk.values.AD_Table_ID !== '' ? String(pk.values.AD_Table_ID) : String(def.iw.ad_table_id);
+        db.run('INSERT INTO t_selection (ad_pinstance_id, t_selection_id, viewid) VALUES (?,?,?)', [pin, tid, tblId]);
+        Object.keys(pk.values).forEach(function (col) { var v = pk.values[col]; if (v == null || v === '') return; var num = v !== '' && !isNaN(Number(v)) && String(v).trim() !== '';
+          db.run('INSERT INTO t_selection_infowindow (ad_pinstance_id, t_selection_id, columnname, value_string, value_number) VALUES (?,?,?,?,?)', [pin, tid, col, num ? null : String(v), num ? Number(v) : null]); });
+      });
+      console.log('§INFOWIN-SELECTION pinstance=' + pin + ' infowindow=' + iwId + ' process=' + pr.id + ' rows=' + picks.length + ' t_selection=' + JSON.stringify(_sqlRows('SELECT t_selection_id AS i, viewid AS v FROM t_selection WHERE ad_pinstance_id=' + pin)));
+      _procExtra = { AD_InfoWindow_ID: iwId, AD_PInstance_ID: pin };
+      close(); _runButtonProcess(Number(pr.id), pr.name, rec);
+    } });
+    if (iw) iw.refresh();
+  }
   function _runButtonProcess(processId, name, rec) {
     var pr = _sqlRows('SELECT ad_form_id, name FROM ad_process WHERE ad_process_id=' + Number(processId))[0] || {};
     var formId = Number(pr.ad_form_id) || 0;
@@ -4655,6 +4684,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var b = _b3(window.__idmpDb);
     var info = { AD_Process_ID: proc.AD_Process_ID, params: params };
     if (recordId != null) info.Record_ID = recordId;          // §GENPO-LIVE — record-scoped processes (getRecord_ID)
+    if (_procExtra) { info.AD_InfoWindow_ID = _procExtra.AD_InfoWindow_ID; info.AD_PInstance_ID = _procExtra.AD_PInstance_ID; _procExtra = null; }   // launched from an Info Window (_runButtonInfoWindow)
     var res = window.AdProcess.dispatch(b, info, _procCtx());
     // FS-16 (§FS2n): a process whose doIt WRITES (ImportBPartner) returns its rows as one CRUD op group; iDempiere commits
     //   inside doIt, so the host commits it now — ONE signed group (FKs by {__opRef}, resolved at commit).
@@ -5006,17 +5036,18 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _procRecord = null;   // {recordId, table} of the button that opened the process pane; consumed by runProcess calls from the param form
   function _appendButtonFields(formEl, tab, rec, pk) {
     if (!rec || pk == null || String(pk) === '' || !tab.id) return;
-    var btns = _sqlRows("SELECT f.name AS fname, c.columnname AS col, c.ad_process_id AS pid FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id " +
-      "WHERE f.ad_tab_id=" + Number(tab.id) + " AND COALESCE(f.isactive,'Y')='Y' AND COALESCE(f.isdisplayed,'Y')='Y' AND c.ad_reference_id=28 AND c.ad_process_id IS NOT NULL " +
+    var btns = _sqlRows("SELECT f.name AS fname, c.columnname AS col, c.ad_process_id AS pid, c.ad_infowindow_id AS iw FROM ad_field f JOIN ad_column c ON c.ad_column_id=f.ad_column_id " +
+      "WHERE f.ad_tab_id=" + Number(tab.id) + " AND COALESCE(f.isactive,'Y')='Y' AND COALESCE(f.isdisplayed,'Y')='Y' AND c.ad_reference_id=28 AND (c.ad_process_id IS NOT NULL OR c.ad_infowindow_id IS NOT NULL) " +
       "AND c.columnname NOT IN ('DocAction','Posted') AND COALESCE(NULLIF(f.istoolbarbutton,''), NULLIF(c.istoolbarbutton,''), 'N') <> 'Y' ORDER BY f.seqno");
     btns.forEach(function (bt) {
       var fld = el('div', 'idmp-fld idmp-btn-fld');
       fld.setAttribute('data-ad-table', tab.tableName); fld.setAttribute('data-ad-column', bt.col);
       fld.appendChild(el('label', null, ''));
       var wrap = el('div', 'val'), b = el('button', 'idmp-procbtn', String(bt.fname).trim());
-      b.setAttribute('data-proc-btn', bt.col); b.title = 'AD_Process ' + bt.pid;
+      b.setAttribute('data-proc-btn', bt.col); b.title = Number(bt.iw) > 0 ? 'AD_InfoWindow ' + bt.iw : 'AD_Process ' + bt.pid;
       b.addEventListener('click', function () {
-        console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' table=' + tab.tableName + ' record=' + pk);
+        console.log('§AD-BUTTON click col=' + bt.col + ' proc=' + bt.pid + ' infowindow=' + (bt.iw || '') + ' table=' + tab.tableName + ' record=' + pk);
+        if (Number(bt.iw) > 0) { _saveAndNavigate(function () { _runButtonInfoWindow(Number(bt.iw), String(bt.fname).trim(), { recordId: pk, table: tab.tableName, tableId: tab.tableId || null, row: _records[_recIdx] || null }); }, 'process'); return; }
         _saveAndNavigate(function () { _runButtonProcess(Number(bt.pid), String(bt.fname).trim(), { recordId: pk, table: tab.tableName, tableId: tab.tableId || null, row: _records[_recIdx] || null }); }, 'process');
       });
       wrap.appendChild(b); fld.appendChild(wrap); formEl.appendChild(fld);
