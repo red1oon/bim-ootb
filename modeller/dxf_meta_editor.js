@@ -137,6 +137,46 @@
     Object.keys(res).sort().forEach(function (lab) { if (res[lab].bad) return; var p = posOf(key, res[lab].c, res[lab].c);
       out.push({ rule: 'PR-GRID', key: key, value: lab, x: p.x, y: p.y, why: 'grid line ' + res[lab].h + ' + label ' + lab }); });
   }
+  // §L7.11 PR-GRID-TICK: CAD grid labels sit next to the dimension chain's short extension ticks (the label text is inserted a little off the grid position).
+  // A label's tick = the ONE short axis-aligned line within 0.5 m along / 1.0 m across; none or several -> refused with the reason; a tick shared by two labels -> both refused.
+  function propGridTicks(sh, vertical, out, refused, key) {
+    var k = unitsK(sh); if (!k) return;
+    var have = {}; out.forEach(function (p) { if (p.key === key) have[p.value] = 1; });
+    var along = 0.5 / k, across = 1.0 / k, shortL = 1.0 / k, tolAx = 0.001 / k;
+    var T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && /^([A-Z]|\d{1,3})$/.test(String(e.text || '').trim()); });
+    var ticks = sh.dxf.entities.filter(function (e) { if (e.type !== 'LINE' || !e.vertices || e.vertices.length < 2) return false; var a = e.vertices[0], b = e.vertices[1];
+      var axisOk = vertical ? Math.abs(a.x - b.x) <= tolAx : Math.abs(a.y - b.y) <= tolAx; return axisOk && Math.hypot(a.x - b.x, a.y - b.y) <= shortL && Math.hypot(a.x - b.x, a.y - b.y) > tolAx; });
+    var claims = {}, pick = {};
+    T.forEach(function (t) {
+      var lab = String(t.text).trim(); if (have[lab]) return;
+      var p = txtPos(t), al = vertical ? p[0] : p[1], ac = vertical ? p[1] : p[0];
+      var cand = ticks.filter(function (e) { var a = e.vertices[0], b = e.vertices[1], c = vertical ? a.x : a.y;
+        var ends = vertical ? [a.y, b.y] : [a.x, b.x]; return Math.abs(c - al) <= along && ends.some(function (v) { return Math.abs(v - ac) <= across; }); });
+      if (cand.length > 1) refused.push({ rule: 'PR-GRID-TICK', why: 'label ' + lab + ': ' + cand.length + ' ticks within 0.5 m (ambiguous)' });
+      if (cand.length !== 1) return;   // no tick near: not a grid label (dimension texts, elevations numbers): no noise
+      var tk = cand[0], key2 = tk.handle; (claims[key2] = claims[key2] || []).push(lab); pick[lab] = { tick: tk, off: (vertical ? tk.vertices[0].x : tk.vertices[0].y) - al };
+    });
+    Object.keys(pick).sort().forEach(function (lab) {
+      var tk = pick[lab].tick;
+      if (claims[tk.handle].length > 1) { refused.push({ rule: 'PR-GRID-TICK', why: 'label ' + lab + ': its tick ' + tk.handle + ' is also claimed by ' + claims[tk.handle].filter(function (l) { return l !== lab; }).join(',') }); return; }
+      var c = Number((vertical ? tk.vertices[0].x : tk.vertices[0].y).toFixed(3)), q = posOf(key, c, c);
+      out.push({ rule: 'PR-GRID-TICK', key: key, value: lab, x: q.x, y: q.y, why: 'dimension tick ' + tk.handle + ' (label text is ' + Number(pick[lab].off.toFixed(2)) + ' ' + (unitsOf(sh) || 'units') + ' off it)' });
+    });
+  }
+  function unitsOf(sh) { var u = get1(sh, 'UNITS'); return u ? u.value : null; }
+  // §L7.11 PR-Z-GROUND: the longest horizontal line at the lowest y, spanning >= 80% of the sheet = the ground line = z 0. No second @Z is invented.
+  function propZGround(sh, out, refused) {
+    var H = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer !== LAYER && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= 1e-9; });
+    var xs = []; sh.dxf.entities.forEach(function (e) { if (e.layer === LAYER || !e.vertices) return; e.vertices.forEach(function (v) { if (typeof v.x === 'number') xs.push(v.x); }); });
+    if (!H.length || !xs.length) { refused.push({ rule: 'PR-Z-GROUND', why: 'no horizontal line' }); return; }
+    var W = Math.max.apply(null, xs) - Math.min.apply(null, xs), by = {};
+    H.forEach(function (e) { var y = Number(e.vertices[0].y.toFixed(4)); (by[y] = by[y] || { n: 0, len: 0, h: e.handle, max: 0 }); var L = Math.abs(e.vertices[0].x - e.vertices[1].x); by[y].len += L; by[y].n++; if (L > by[y].max) { by[y].max = L; by[y].h = e.handle; } });
+    // the ground line may be drawn in segments: the lines at one y together must cover >= 80% of the sheet; of those y the LOWEST is the ground
+    var ys = Object.keys(by).map(Number).filter(function (y) { return by[y].len >= 0.8 * W; }).sort(function (a, b) { return a - b; });
+    if (!ys.length) { var best = Math.max.apply(null, Object.keys(by).map(function (y) { return by[y].len; })); refused.push({ rule: 'PR-Z-GROUND', why: 'no horizontal line (or line group at one height) covers 80% of the sheet; best ' + Math.round(100 * best / W) + '%' }); return; }
+    var y0 = ys[0], g = by[y0];
+    out.push({ rule: 'PR-Z-GROUND', key: 'Z', value: '0', x: 0, y: Number(y0.toFixed(3)), why: 'ground line ' + g.h + (g.n > 1 ? ' + ' + (g.n - 1) + ' more segment(s)' : '') + ' (lowest line covering ' + Math.round(100 * g.len / W) + '% of the sheet); a second @Z is yours to state' });
+  }
   function propZ(sh, out, refused) {                          // mark_dx_set.js levelPairs: level text +-z.zzz paired by its own y or a level line
     var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z', why: 'units unknown' }); return; }
     var LL = levelLayers(), tol = 0.001 / k, seen = {};
@@ -164,8 +204,8 @@
     var sets = {}; S.sheets.forEach(function (o) { if (o !== sh) { var m = get1(o, 'SET'); if (m) sets[m.value] = 1; } });
     if (Object.keys(sets).length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: Object.keys(sets)[0], x: 0, y: 0, why: 'the other sheets state it' });
     var nm = sh.name.toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
-    if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); }
-    if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propZ(sh, out, refused); }
+    if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
+    if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
     if (v === 'ELEV') {
       if (faces.length === 1) out.push({ rule: 'PR-FACE', key: 'FACE', value: faces[0][1], x: 0, y: 0, why: 'sheet name ' + faces[0][0] + ' (repo convention R11, not evidence)' });
       var hx = propHaxis(sh); if (hx.value) out.push(hx); else refused.push(hx);
