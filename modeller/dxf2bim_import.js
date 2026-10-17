@@ -138,9 +138,18 @@
   }
 
   // ---- R1-R4 sheet roles from DXF2BIM-MARK markings only ----
-  function readSheet(name, text, hashHex) {
-    var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc;
-    var sh = { name: name, text: text, sha: hashHex(text), dxf: dxf, marks: marks.length, desc: d, errors: de.errors, role: null, why: null };
+  function readSheet(name, text, hashHex, opts) {
+    var dxf = parse(text), marks = MK.readMarks(dxf.entities), de = MK.describe(marks), d = de.desc, synth = null, shaIn = text;
+    // §L7.9 line-work elevation/section: closed rectangle outlines are synthesised from the loose lines (on the members' own layer), so the reader's elevwall rule finds them
+    var PR = (typeof self !== 'undefined' && self.Dxf2Prep) || (typeof require === 'function' && opts && opts.prep) || null;
+    var wl = (d.layers || []).filter(function (l) { return l.type === 'elevwall' || l.type === 'sectwall'; }).map(function (l) { return l.layer; });
+    if (PR && (d.view === 'ELEV' || d.view === 'SECTION') && wl.length && PR.hasLineWork(dxf.entities, wl)) {
+      var ch = opts && opts.prepChoices && opts.prepChoices['loops.snap_tol'], tol = ch !== undefined && isFinite(Number(ch)) ? Number(ch) : PR.SNAP_TOL_DEFAULT;
+      // member LINEs are replaced by their outline (the reader would otherwise read each loose line on an elevwall layer as a zero-area rectangle)
+      var sy = PR.synthRects(dxf.entities, tol, wl); dxf.entities = dxf.entities.filter(function (e, i) { return !(e.type === 'LINE' && sy.consumed[i]); }).concat(sy.entities); shaIn = text + '|loops:' + tol;
+      synth = { tol: tol, chosen: ch !== undefined, rects: sy.rects, nonRect: sy.nonRect, mixed: sy.mixed, loops: sy.loops, segments: sy.segments };
+    }
+    var sh = { name: name, text: text, sha: hashHex(shaIn), synth: synth, dxf: dxf, marks: marks.length, desc: d, errors: de.errors, role: null, why: null };
     var missing = [], other = [];
     de.errors.forEach(function (e) { if (e.code === 'MARK:missing') missing = missing.concat(e.keys || []); else other.push(e.code + ' ' + (e.message || '')); });
     if (!marks.length) sh.why = 'no DXF2BIM-MARK marking';
@@ -169,7 +178,7 @@
   }
   function readSheets(files, opts) {
     var hashHex = (opts && opts.hashHex) || sha256Hex, m = mergeScopes(files);   // §L6: scoped storeys are assembled first
-    var out = m.files.map(function (f) { return readSheet(f.name, f.text, hashHex); });
+    var out = m.files.map(function (f) { return readSheet(f.name, f.text, hashHex, opts); });
     out.scopeReport = m.report; return out;
   }
   // §L3.3 layer-map set (DX or STD): the set whose elevation-wall layer (its MAP_ELEV 'elevwall' rule, read from the copied config) has

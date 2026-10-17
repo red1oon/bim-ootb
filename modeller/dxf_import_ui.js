@@ -195,9 +195,9 @@
       return (typeof f.text === 'function' ? f.text() : Promise.resolve(f.text)).then(function (t) { return { name: f.name, text: t }; });
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
-    state.sheets = window.Dxf2BimImport.readSheets(list);
+    state.sheets = window.Dxf2BimImport.readSheets(list, { prepChoices: (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {} });
     state.last = null; state.linesOn = true; state.setOverride = null;
-    runPrep({});
+    runPrep();
     await convertGate();
     state.sheets.forEach(function (s) {
       console.log(TAG + ' sheet=' + s.name + ' bytes=' + s.text.length + ' sha=' + s.sha.slice(0, 12) + ' marks=' + s.marks + ' role=' + (s.role || 'NONE') +
@@ -292,18 +292,20 @@
     if (!r.ok) throw new Error(u + ' HTTP ' + r.status);
     return r.json();
   }
-  // §L7.8 the pre-processor: line-work sheets get their closed regions found; every value it applies that nothing states becomes a state.defaults row (yellow in the editor)
-  function runPrep(choices) {
+  // §L7.8/L7.9 the pre-processor: a line-work ELEV/SECTION sheet had its closed rectangles synthesised by the reader (sheet.synth); the tolerance it applied is a default row
+  // (yellow in the editor) unless the user chose it. Sheets the reader did not use it on emit nothing.
+  function runPrep() {
     var P = window.Dxf2Prep; state.prep = {}; state.defaults = [];
     if (!P) return;
     var D = P.Defaults();
     state.sheets.forEach(function (s) {
-      var r = P.prepare(s.dxf && s.dxf.entities, choices || {}, D);
-      if (r.lineWork) { state.prep[s.name] = { segments: r.segments, loops: r.loops.length, dropped: r.dropped, tol: r.tol };
-        console.log('§DXF-PREP sheet=' + s.name + ' line-work segments=' + r.segments + ' closed-regions=' + r.loops.length + ' dropped=' + r.dropped + ' snap_tol=' + r.tol); }
+      if (!s.synth) return;
+      state.prep[s.name] = { segments: s.synth.segments, loops: s.synth.rects, nonRect: s.synth.nonRect, mixed: s.synth.mixed, tol: s.synth.tol };
+      if (!D.rows().some(function (r) { return r.key === 'loops.snap_tol'; })) D.assume('loops.snap_tol', P.SNAP_TOL_DEFAULT, 'line ends closer than this are joined into one corner; the drawing does not state a tolerance (drawing units)', [0.001, 0.01, 0.1]);
+      if (s.synth.chosen) D.override('loops.snap_tol', s.synth.tol);
+      console.log('§DXF-PREP sheet=' + s.name + ' line-work segments=' + s.synth.segments + ' wall-rectangles=' + s.synth.rects + ' non-rect=' + s.synth.nonRect + ' mixed-layer=' + s.synth.mixed + ' snap_tol=' + s.synth.tol + (s.synth.chosen ? ' (chosen)' : ' (default)'));
     });
     state.defaults = D.rows();
-    console.log('§DXF-PREP defaults=' + state.defaults.filter(function (r) { return r.kind === 'default'; }).length + ' choices=' + JSON.stringify(choices || {}));
   }
   async function loadLibrary(sheets) {
     try {
@@ -346,7 +348,7 @@
     var sig = function () { return JSON.stringify(state.sheets.map(function (s) { return [s.name, s.role, s.level, s.face, s.roofZ, s.cut, s.factor, s.desc && [s.desc.gridsX, s.desc.gridsY, s.desc.gridsH, s.desc.zs, s.desc.haxis]]; })) +
       JSON.stringify(state.sheets.map(function (s) { return s.desc && s.desc.layers || null; })) + (state.gate && state.gate.set); };
     var before = state.sheets ? sig() : null, seq = ++_gateSeq;
-    state.sheets = sheets; state.setOverride = setOverride || null;
+    state.sheets = sheets; state.setOverride = setOverride || null; runPrep();
     var g = await convertGate();
     if (seq === _gateSeq && sig() !== before) { console.log(TAG + ' canvas rebuilt from the edited markings'); buildCanvas(state.sheets, true); }
     return g;
@@ -356,6 +358,6 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { reprepare: runPrep, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

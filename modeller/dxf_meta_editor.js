@@ -86,8 +86,8 @@
     return MK.writeMarks(sh.stripped || (sh.stripped = strip(sh.text)), sh.marks.map(function (m) { return { text: markText(m), x: m.x, y: m.y }; }));
   }
   function effSheet(sh) {   // Dxf2BimImport.readSheet of the effective text, cached per marking signature
-    var k = sh.name + '|' + sigOf(sh);
-    if (!S.cache[k]) { var t = effText(sh); S.cache[k] = I.readSheet(sh.name, t, I.sha256Hex); S.cache[k].effText = t; }
+    var k = sh.name + '|' + sigOf(sh) + '|' + JSON.stringify(S.defaultChoices || {});
+    if (!S.cache[k]) { var t = effText(sh); S.cache[k] = I.readSheet(sh.name, t, I.sha256Hex, { prepChoices: S.defaultChoices || {} }); S.cache[k].effText = t; }
     return S.cache[k];
   }
   function describeOf(sh) { return MK.describe(sh.marks.map(function (m, i) { return { raw: markText(m), x: m.x, y: m.y, handle: (i + 1).toString(16) }; })); }
@@ -750,7 +750,7 @@
   }
   // §L7.2 values the import APPLIED because the drawing does not state them (rows of state.defaults, from the pre-processor/importer): yellow while they are defaults; a change makes them the user's.
   function defRows() { var st = window.DxfImportUI && window.DxfImportUI.state; return (st && st.defaults) || []; }
-  function refeed() { var U = window.DxfImportUI; if (U && U.reprepare) { var keep = S.defaultChoices || {}; U.reprepare(keep); } }   // §L7.8: the pre-processor re-runs with the user's choice
+  function refeed() { schedule(0); }   // §L7.8: a choice changes the cache key of effSheet, so the sheets are re-read with it and the gate re-runs
   function renderDefaults() {
     var rows = defRows(); if (!rows.length) return '';
     var nDef = rows.filter(function (r) { return r.kind === 'default'; }).length, h = '';
@@ -761,7 +761,7 @@
         (isDef ? '<span class="dm-src default" data-src="default" title="' + esc(r.why || 'not stated in the drawing') + '">default</span>' : '<span class="dm-src user" data-src="user">you</span>') + '</div>';
     });
     var pr = (window.DxfImportUI && window.DxfImportUI.state.prep) || {};
-    Object.keys(pr).forEach(function (n) { h += '<div class="dm-ref" data-prep="' + esc(n) + '">' + esc(n.replace(/\.dxf$/i, '')) + ': closed regions found in the line work: <b>' + pr[n].loops + '</b> (' + pr[n].segments + ' segments, snap ' + pr[n].tol + '; the reader does not use them yet)</div>'; });
+    Object.keys(pr).forEach(function (n) { h += '<div class="dm-ref" data-prep="' + esc(n) + '">' + esc(n.replace(/\.dxf$/i, '')) + ': line work: <b>' + pr[n].loops + '</b> wall rectangles synthesised (' + pr[n].segments + ' segments, snap ' + pr[n].tol + (pr[n].nonRect ? ', ' + pr[n].nonRect + ' non-rectangular skipped' : '') + (pr[n].mixed ? ', ' + pr[n].mixed + ' mixed-layer skipped' : '') + '); which layers are walls is the Layers section</div>'; });
     h = '<div class="dm-ref" style="margin:2px 0 6px">Applied because the drawing does not state them. Change one to make it yours.</div>' + h;
     return secHead('defaults', IC.warn, 'Defaults applied', nDef ? nDef + ' default' : 'all confirmed', nDef) + (S.sec.defaults ? '<div class="dm-sb">' + h + '</div>' : '');
   }

@@ -1,0 +1,46 @@
+// W-LOOPS-READER (prompts/DXF2BIM_MODELLER_LANE.md §L7.9). Issue: a CAD elevation is loose lines, the reader's elevwall rule found no closed outline.
+// Read the log after every run; exit code is not evidence. Node only; synthetic DXF written here.
+const I = require('../dxf2bim_import.js'), P = require('../dxf2prep.js'), E = require('../dxf2bim/dxf2elev.js');
+let fail = 0; const ok = (n, c, i) => { console.log((c ? 'PASS ' : 'FAIL ') + n + (i ? '  ' + i : '')); if (!c) fail++; };
+const ln = (x0, y0, x1, y1, layer) => ['0', 'LINE', '8', layer || 'WALL', '10', x0, '20', y0, '30', 0, '11', x1, '21', y1, '31', 0];
+const box = (x0, y0, x1, y1, layer, gap) => [ln(x0, y0, x1, y0, layer), ln(x1, y0, x1, y1, layer), ln(x1, y1, x0, y1, layer), ln(x0, y0 + (gap || 0), x0, y1, layer)].flat();
+const mark = (t, i) => ['0', 'TEXT', '8', 'DXF2BIM-MARK', '10', 0, '20', -100 * (i + 1), '30', 0, '40', 20, '1', t];
+const dxf = (ents, marks) => ['0', 'SECTION', '2', 'ENTITIES'].concat(ents.flat(), (marks || []).map(mark).flat(), ['0', 'ENDSEC', '0', 'EOF']).join('\n');
+const MAP = { rules: [{ match: 'exact', pattern: 'WALL', type: 'elevwall' }] }, ID = { toPlan: v => v, zOf: v => v };
+const read = (text, o) => I.readSheet('e.dxf', text, I.sha256Hex, Object.assign({ prep: P }, o || {}));
+const solid = L => L.filter(r => r.p1 - r.p0 > 1e-9 && r.z1 - r.z0 > 1e-9);
+const rects = sh => solid(E.elevWallRects(sh.dxf.entities, MAP, ID));
+const three = [box(0, 0, 10, 5), box(20, 0, 30, 5), box(40, 0, 50, 5)], VIEW = ['@VIEW=ELEV', '@LAYER=WALL,elevwall'];
+
+const rawEnt = new (require('../lib/dxf-parser.js'))().parseSync(dxf(three, [])).entities, beforeAll = E.elevWallRects(rawEnt, MAP, ID);
+ok('R0 the loose lines alone give the reader no wall rectangle with area (the shed finding); each line is read as a zero-area rectangle (12)', solid(beforeAll).length === 0 && beforeAll.length === 12, solid(beforeAll).length + ' solid of ' + beforeAll.length);
+let sh = read(dxf(three, VIEW)), R = rects(sh);
+ok('R1a the member LINEs are replaced by their outline: the reader now sees exactly 3 rectangles in total, no zero-area ones', E.elevWallRects(sh.dxf.entities, MAP, ID).length === 3);
+ok('R1 marked @VIEW=ELEV: 3 rectangles from 12 lines, positions == the drawn corners', R.length === 3 && R.every((r, i) => Math.abs(r.p0 - i * 20) < 1e-9 && Math.abs(r.p1 - (i * 20 + 10)) < 1e-9 && Math.abs(r.z0) < 1e-9 && Math.abs(r.z1 - 5) < 1e-9), JSON.stringify(R.map(r => [r.p0, r.p1, r.z0, r.z1])));
+ok('R1b the synthetic outlines carry their member line handles', sh.dxf.entities.filter(e => e.synthetic).every(e => e.members.length === 4));
+const open1 = dxf([box(0, 0, 10, 5), box(20, 0, 30, 5, 'WALL', 0.05), box(40, 0, 50, 5)], VIEW);
+ok('R2 CONTROL an open corner (gap 0.05): 2 rectangles at tol 0.01', rects(read(open1)).length === 2);
+ok('R2b CONTROL tol 0.1 (a user choice) closes it: 3 rectangles', rects(read(open1, { prepChoices: { 'loops.snap_tol': 0.1 } })).length === 3);
+const mixed = dxf([[ln(0, 0, 10, 0, 'WALL'), ln(10, 0, 10, 5, 'WALL'), ln(10, 5, 0, 5, 'DOOR'), ln(0, 5, 0, 0, 'WALL')].flat()].concat(box(20, 0, 30, 5), box(40, 0, 50, 5)), VIEW);
+sh = read(mixed.replace('@LAYER=WALL,elevwall', '@LAYER=WALL,elevwall\n0\nTEXT\n8\nDXF2BIM-MARK\n10\n0\n20\n-900\n30\n0\n40\n20\n1\n@LAYER=DOOR,elevwall'));
+ok('R3 with BOTH layers typed, a loop whose lines sit on two layers is not synthesised, and is counted mixed', rects(sh).length === 2 && sh.synth.mixed === 1, JSON.stringify(sh.synth));
+sh = read(mixed);
+ok('R3b with only WALL typed, the side drawn on DOOR cannot close the loop: no outline, nothing invented', rects(sh).length === 2 && sh.synth.mixed === 0 && sh.synth.rects === 2, JSON.stringify(sh.synth));
+const tri = dxf([[ln(0, 0, 10, 0), ln(10, 0, 5, 4), ln(5, 4, 0, 0)].flat()].concat(box(20, 0, 30, 5), box(40, 0, 50, 5)), VIEW);
+sh = read(tri);
+ok('R4 a gable triangle is not a rectangle: not synthesised (2 outlines), counted nonRect (its 3 sloped lines stay as drawn)', sh.dxf.entities.filter(e => e.synthetic).length === 2 && sh.synth.nonRect === 1, JSON.stringify(sh.synth));
+const plain = dxf(three, ['@VIEW=PLAN', '@LAYER=WALL,elevwall']), shp = read(plain), raw = new (require('../lib/dxf-parser.js'))().parseSync(plain).entities;
+ok('R5 the same lines marked @VIEW=PLAN: entities untouched, no synth', shp.synth === null && shp.dxf.entities.length === raw.length);
+const poly = dxf(three.concat([[ '0', 'LWPOLYLINE', '8', 'WALL', '90', 4, '70', 1, '10', 0, '20', 0, '10', 5, '20', 0, '10', 5, '20', 5, '10', 0, '20', 5 ]]), VIEW), shq = read(poly);
+ok('R6 a sheet that already has a closed outline is not line work: untouched, sha == hash(text)', shq.synth === null && shq.sha === I.sha256Hex(poly));
+const a = read(dxf(three, VIEW)), b = read(dxf(three, VIEW), { prepChoices: { 'loops.snap_tol': 0.1 } });
+ok('R7 run identity: same text, different tolerance -> different sha', a.sha !== b.sha && a.synth.tol === 0.01 && b.synth.tol === 0.1 && b.synth.chosen === true);
+ok('R8 without the pre-processor module the reader is exactly as before (no synth, sha == hash(text))', (() => { const x = I.readSheet('e.dxf', dxf(three, VIEW), I.sha256Hex); return x.synth === null && x.sha === I.sha256Hex(dxf(three, VIEW)); })());
+ok('R9 handles absent or colliding (a mark TEXT sharing a LINE\'s handle, as the editor writes them): same 3 rectangles', rects(read(dxf(three, VIEW))).length === 3);
+const noLayer = read(dxf(three, ['@VIEW=ELEV']));
+ok('R10 nothing is synthesised until the USER types the layer elevwall (@LAYER): view alone changes nothing; sha == hash(text)', noLayer.synth === null && noLayer.sha === I.sha256Hex(dxf(three, ['@VIEW=ELEV'])));
+const other = read(dxf(three, ['@VIEW=ELEV', '@LAYER=DOOR,elevwall']));
+ok('R11 a typed layer with no lines on it synthesises nothing', other.synth === null);
+const twoLayers = dxf(three.concat([box(60, 0, 70, 5, 'DOOR')]), VIEW), tl = read(twoLayers);
+ok('R12 only the typed layer is read: the DOOR-layer rectangle is left as drawn lines', tl.synth.rects === 3 && tl.dxf.entities.filter(e => e.type === 'LINE' && e.layer === 'DOOR').length === 4);
+console.log(fail ? 'W-LOOPS-READER FAIL ' + fail : 'W-LOOPS-READER PASS'); process.exit(fail ? 1 : 0);

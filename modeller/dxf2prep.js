@@ -108,15 +108,17 @@
   // ---- §L7.8 prepare: line-work loop detection; every value it applies that nothing states is a Defaults row ----
   var MARK_LAYER = 'DXF2BIM-MARK';
   var TOL_OPTIONS = [0.001, 0.01, 0.1];
-  function segmentsOf(entities) {
+  function segmentsOf(entities, byIndex, layers) {   // layers (optional): only entities on these layers   // byIndex: segment.handle = the entity's index (DXF handles are not always present or unique)
     var segs = [];
-    (entities || []).forEach(function (e) {
+    (entities || []).forEach(function (e, ei) {
+      var hid = byIndex ? ei : e.handle;
+      if (layers && layers.indexOf(e.layer) < 0) return;
       if (e.layer === MARK_LAYER) return;
       var v = e.vertices;
-      if (e.type === 'LINE' && v && v.length >= 2) segs.push({ a: [v[0].x, v[0].y], b: [v[1].x, v[1].y], handle: e.handle });
+      if (e.type === 'LINE' && v && v.length >= 2) segs.push({ a: [v[0].x, v[0].y], b: [v[1].x, v[1].y], handle: hid });
       else if (e.type === 'LWPOLYLINE' && v && v.length >= 2) {
-        for (var i = 0; i + 1 < v.length; i++) segs.push({ a: [v[i].x, v[i].y], b: [v[i + 1].x, v[i + 1].y], handle: e.handle });
-        if (e.shape && v.length > 2) segs.push({ a: [v[v.length - 1].x, v[v.length - 1].y], b: [v[0].x, v[0].y], handle: e.handle });
+        for (var i = 0; i + 1 < v.length; i++) segs.push({ a: [v[i].x, v[i].y], b: [v[i + 1].x, v[i + 1].y], handle: hid });
+        if (e.shape && v.length > 2) segs.push({ a: [v[v.length - 1].x, v[v.length - 1].y], b: [v[0].x, v[0].y], handle: hid });
       }
     });
     return segs;
@@ -125,6 +127,10 @@
     var lines = 0, closed = 0;
     (entities || []).forEach(function (e) { if (e.layer === MARK_LAYER) return; if (e.type === 'LINE') lines++; else if (e.type === 'LWPOLYLINE' && e.shape) closed++; });
     return lines >= 8 && closed === 0;
+  }
+  function hasLineWork(entities, layers) {   // >= 4 loose LINEs on a user-typed wall layer that has no closed outline of its own
+    var closed = {}, n = {}; (entities || []).forEach(function (e) { if (e.type === 'LWPOLYLINE' && e.shape) closed[e.layer] = 1; else if (e.type === 'LINE') n[e.layer] = (n[e.layer] || 0) + 1; });
+    return layers.some(function (l) { return !closed[l] && (n[l] || 0) >= 4; });
   }
   // choices: {key: value} from the user (DxfMetaEditor.defaultChoices()); D: an optional shared Defaults register
   function prepare(entities, choices, D) {
@@ -135,6 +141,32 @@
     var tol = D.rows().filter(function (r) { return r.key === 'loops.snap_tol'; })[0].value;
     var segs = segmentsOf(entities), r = lineLoops(segs, tol);
     return { lineWork: true, segments: segs.length, loops: r.loops, dropped: r.dropped, defaults: D.rows(), tol: tol };
+  }
+
+  // §L7.9 synthesise closed rectangle outlines from line work: one closed 4-vertex LWPOLYLINE per axis-aligned rectangular loop whose member lines share ONE layer.
+  function reduceCollinear(pts, tol) {
+    var out = pts.slice(), changed = true;
+    while (changed && out.length > 3) { changed = false;
+      for (var i = 0; i < out.length; i++) { var a = out[(i + out.length - 1) % out.length], b = out[i], c = out[(i + 1) % out.length];
+        if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) <= tol * Math.hypot(c[0] - a[0], c[1] - a[1])) { out.splice(i, 1); changed = true; break; } } }
+    return out;
+  }
+  function synthRects(entities, tol, layers) {   // layers: the layers the USER typed elevwall/sectwall; a layer that already has a closed outline is not line work and is left alone
+    var hasClosed = {}; (entities || []).forEach(function (e) { if (e.type === 'LWPOLYLINE' && e.shape) hasClosed[e.layer] = 1; });
+    layers = (layers || []).filter(function (l) { return !hasClosed[l]; });
+    var segs = segmentsOf(entities, true, layers), r = lineLoops(segs, tol), made = [], nonRect = 0, mixed = 0, n = 0, consumed = {};
+    r.loops.forEach(function (l) {
+      var q = reduceCollinear(l.pts, tol);
+      var rect = q.length === 4 && q.every(function (p, i) { var o = q[(i + 1) % 4]; return Math.abs(p[0] - o[0]) <= tol || Math.abs(p[1] - o[1]) <= tol; });
+      if (!rect) { nonRect++; return; }
+      var layers = {}; l.handles.forEach(function (ei) { layers[entities[ei].layer] = 1; });
+      var ls = Object.keys(layers); if (ls.length !== 1) { mixed++; return; }
+      var xs = q.map(function (p) { return p[0]; }), ys = q.map(function (p) { return p[1]; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+      l.handles.forEach(function (ei) { consumed[ei] = 1; });
+      made.push({ type: 'LWPOLYLINE', layer: ls[0], handle: 'loop-' + (++n), shape: true, synthetic: true, members: l.handles.map(function (ei) { return entities[ei].handle; }),
+        vertices: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] });
+    });
+    return { entities: made, consumed: consumed, rects: made.length, nonRect: nonRect, mixed: mixed, loops: r.loops.length, segments: segs.length, dropped: r.dropped };
   }
 
   // ---- §L7.3 provenance ----
@@ -153,5 +185,5 @@
     return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };
   }
 
-  return { prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
+  return { hasLineWork: hasLineWork, synthRects: synthRects, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
 });

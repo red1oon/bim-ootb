@@ -21,7 +21,7 @@ const L8 = (x0, y0, x1, y1) => ['0', 'LINE', '8', '0', '10', String(x0), '20', S
 const box = (x0, y0, x1, y1, gap) => [L8(x0, y0, x1, y0), L8(x1, y0, x1, y1), L8(x1, y1, x0, y1), L8(x0, y0 + (gap || 0), x0, y1)].flat();
 fs.writeFileSync(path.join(dir, 'raw.dxf'), dxf([]));
 fs.writeFileSync(path.join(dir, 'lines.dxf'), ['0', 'SECTION', '2', 'HEADER', '9', '$INSUNITS', '70', '4', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES']
-  .concat(box(0, 0, 10, 5), box(20, 0, 30, 5, 0.05), ['0', 'ENDSEC', '0', 'EOF']).join('\n'));
+  .concat(box(0, 0, 10, 5), box(20, 0, 30, 5, 0.05), ['0', 'TEXT', '8', 'DXF2BIM-MARK', '10', '0', '20', '-100', '30', '0', '40', '20', '1', '@LAYER=0,elevwall'], ['0', 'ENDSEC', '0', 'EOF']).join('\n'));
 const YEL = /245,\s*217,\s*10/;
 runE2E('W-DXF-ATTN', async (t) => {
   const pg = t.pg;
@@ -53,27 +53,30 @@ runE2E('W-DXF-ATTN', async (t) => {
   await open(path.join(dir, 'marked.dxf')); s = await st();
   t.assert('A2 CONTROL: a sheet stating what could be suggested -> no shiver', s.shiver === false && s.attn === 0, JSON.stringify(s));
 
-  // ---- Part 2: line-work sheet, the pre-processor applies a default ----
+  // ---- Part 2: line-work ELEVATION sheet; the reader synthesises its wall rectangles, the tolerance it applies is a default ----
   await open(path.join(dir, 'lines.dxf'));
-  const e1 = await pg.evaluate(() => { const U = window.DxfImportUI.state, r = U.defaults.filter(x => x.key === 'loops.snap_tol'), pr = U.prep['lines.dxf']; return { n: r.length, kind: r[0] && r[0].kind, value: r[0] && r[0].value, loops: pr && pr.loops, segs: pr && pr.segments }; });
-  t.assert('E1 opening a line-work DXF: the pre-processor APPLIED one default (snap tolerance 0.01) and reports the regions found (1 of 2: one corner is open)', e1.n === 1 && e1.kind === 'default' && e1.value === 0.01 && e1.loops === 1 && e1.segs === 8, JSON.stringify(e1));
+  const e0 = await pg.evaluate(() => ({ defaults: window.DxfImportUI.state.defaults.length, synth: window.DxfImportUI.state.sheets[0].synth }));
+  t.assert('E0 line-work sheet with its layer typed elevwall but no @VIEW yet: the reader has not used the tolerance -> NO default row (no yellow noise)', e0.defaults === 0 && e0.synth === null, JSON.stringify(e0));
+  await pg.select('#dm-panel select[data-key="VIEW"]', 'ELEV'); await idle();
+  const e1 = await pg.evaluate(() => { const U = window.DxfImportUI.state, r = U.defaults.filter(x => x.key === 'loops.snap_tol'), pr = U.prep['lines.dxf']; return { n: r.length, kind: r[0] && r[0].kind, value: r[0] && r[0].value, rects: pr && pr.loops, segs: pr && pr.segments }; });
+  t.assert('E1 user marks the sheet @VIEW=ELEV: the reader synthesised wall rectangles and APPLIED one default (snap tolerance 0.01): 1 of 2 rectangles (one corner is open)', e1.n === 1 && e1.kind === 'default' && e1.value === 0.01 && e1.rects === 1 && e1.segs === 8, JSON.stringify(e1));
   const e1b = await pg.evaluate(() => { const r = document.querySelector('#dm-panel [data-default="loops.snap_tol"]'); return { row: !!r, bg: r ? getComputedStyle(r).backgroundColor : null, badge: !!document.querySelector('#dm-panel [data-default="loops.snap_tol"] .dm-src.default'), inAll: !!document.querySelector('#dm-yellows .dm-pr [data-act="defkeep"][data-key="loops.snap_tol"]'), report: (document.querySelector('#dm-panel [data-prep="lines.dxf"]') || {}).textContent }; });
-  t.assert('E1b yellow in "Defaults applied" (badge `default`) and again in "All defaults", with the regions-found line', e1b.row && YEL.test(e1b.bg) && e1b.badge && e1b.inAll && /found in the line work: 1/.test(e1b.report || ''), JSON.stringify(e1b));
+  t.assert('E1b yellow in "Defaults applied" (badge `default`) and again in "All defaults", with the rectangles line', e1b.row && YEL.test(e1b.bg) && e1b.badge && e1b.inAll && /line work: 1 wall rectangles synthesised/.test(e1b.report || ''), JSON.stringify(e1b));
   const y1 = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-yellows .dm-pr').length, attn: window.DxfMetaEditor.state.attn, blocking: window.DxfMetaEditor.state.verdict.blocking.length }));
   t.assert('Y1 the "All defaults" list holds every yellow item once (suggestion + applied default)', y1.rows === y1.attn && y1.rows >= 2, JSON.stringify(y1));
   await close(); s = await st();
   t.assert('E1c closed with those unconfirmed -> the Metadata button shivers; ignoring is valid: the verdict that gates Convert is not changed by the default', s.shiver === true && (await pg.evaluate(() => window.DxfMetaEditor.state.verdict.blocking.length)) === y1.blocking, JSON.stringify(s));
   await show();
-  await pg.select('#dm-panel select[data-key="loops.snap_tol"]', '0.1'); await t.sleep(500);
+  await pg.select('#dm-panel select[data-key="loops.snap_tol"]', '0.1'); await idle();
   const e2 = await pg.evaluate(() => { const U = window.DxfImportUI.state; return { loops: U.prep['lines.dxf'].loops, tol: U.prep['lines.dxf'].tol, kind: U.defaults.filter(x => x.key === 'loops.snap_tol')[0].kind, badge: document.querySelector('#dm-panel [data-default="loops.snap_tol"] .dm-src').dataset.src, report: (document.querySelector('#dm-panel [data-prep="lines.dxf"]') || {}).textContent }; });
-  t.assert('E2 CONTROL choosing tolerance 0.1 re-runs the pre-processor: the open corner closes (1 -> 2 regions), the row is now the user\'s (`you`)', e2.loops === 2 && e2.tol === 0.1 && e2.kind === 'chosen' && e2.badge === 'user' && /found in the line work: 2/.test(e2.report || ''), JSON.stringify(e2));
-  await open(path.join(dir, 'lines.dxf'));
+  t.assert('E2 CONTROL choosing tolerance 0.1 re-runs the pre-processor: the open corner closes (1 -> 2 rectangles), the row is now the user\'s (`you`)', e2.loops === 2 && e2.tol === 0.1 && e2.kind === 'chosen' && e2.badge === 'user' && /line work: 2 wall rectangles synthesised/.test(e2.report || ''), JSON.stringify(e2));
+  await open(path.join(dir, 'lines.dxf')); await pg.select('#dm-panel select[data-key="VIEW"]', 'ELEV'); await idle();
   await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="defkeep"]').click()); await t.sleep(400);
   const y1b = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-yellows .dm-pr').length, tol: window.DxfImportUI.state.prep['lines.dxf'].tol, kind: window.DxfImportUI.state.defaults[0].kind }));
   t.assert('Y1b one tick in "All defaults" keeps that value (tolerance stays 0.01) as the user\'s and removes just that row', y1b.rows === y1.rows - 1 && y1b.tol === 0.01 && y1b.kind === 'chosen', JSON.stringify(y1b));
   await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="acceptall"]').click()); await t.sleep(900);
   const y2 = await pg.evaluate(() => ({ attn: window.DxfMetaEditor.state.attn, rows: document.querySelectorAll('#dm-yellows .dm-pr').length, marks: window.DxfMetaEditor.state.sheets[0].marks.map(m => m.key + ':' + m.source) }));
-  t.assert('Y2 Accept all: nothing yellow left, suggestions written as `user` markings', y2.attn === 0 && y2.rows === 0 && y2.marks.length >= 1 && y2.marks.every(x => /:user$/.test(x)), JSON.stringify(y2));
+  t.assert('Y2 Accept all: nothing yellow left, suggestions written as `user` markings', y2.attn === 0 && y2.rows === 0 && y2.marks.filter(x => /:user$/.test(x)).length >= 1 && y2.marks.filter(x => !/:file$/.test(x)).every(x => /:user$/.test(x)), JSON.stringify(y2));
   await open(path.join(dir, 'raw.dxf'));
   t.assert('E3 a sheet that is not line work leaves state.defaults empty (no yellow noise)', (await pg.evaluate(() => window.DxfImportUI.state.defaults.length)) === 0);
 });
