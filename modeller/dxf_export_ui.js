@@ -51,10 +51,12 @@
   var _db = null;
   function closeDb() { try { if (_db) _db.close(); } catch (e) { } _db = null; }
   // (re)write the set for a scope choice: scopes = null (one sheet per storey) | [{name, rect}] (§L6: KEY + wing sheets per storey)
-  function make(q, prefix, scopes, step) {
-    var R = window.Std2d.writeStdSet(q, prefix, scopes && scopes.length > 1 ? { scopes: scopes } : undefined), report = window.Std2d.drawableReport(R), D = null;
+  // wing (§L1.16): null | {angle, name}: the set is ONE wing drawn in its own frame (markings carry @FRAME; the importer turns it back)
+  function make(q, prefix, scopes, step, wing) {
+    var wo = {}; if (scopes && scopes.length > 1) wo.scopes = scopes; if (wing) wo.wing = { angle: wing.angle, name: wing.name };
+    var R = window.Std2d.writeStdSet(q, prefix, wo), report = window.Std2d.drawableReport(R), D = null;
     if (report.drawable) { if (step) step('Deriving markings from the model'); D = window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix }); }
-    return { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [] };
+    return { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], wings: wing ? undefined : window.Std2d.wingAngles(R.model) };
   }
   async function build(file, step, extras) {   // extras: [File] — second IFCs (e.g. the structural model) contributing only their columns (grid evidence)
     await loadScripts();
@@ -90,7 +92,8 @@
     return Object.assign({ prefix: prefix, extras: (extras || []).map(function (f) { return f.name; }), q: q, scopes: null, exLog: exLog }, Mi);
   }
   // §L6 scope operations on the current partition (always a partition of the building: split cuts one rectangle at a grid line, merge unites two that share a full edge)
-  function rebuild(B, scopes) { B.scopes = scopes && scopes.length > 1 ? scopes : null; Object.assign(B, make(B.q, B.prefix, B.scopes)); return B; }
+  function rebuild(B, scopes) { var keep = B.wings; B.scopes = scopes && scopes.length > 1 ? scopes : null; Object.assign(B, make(B.q, B.prefix, B.scopes, null, B.wing)); if (!B.wings) B.wings = keep; return B; }
+  function setWing(B, deg) { B.wing = deg === null || deg === '' || deg === undefined ? null : { angle: Number(deg), name: 'W' + Number(deg) }; return rebuild(B, null); }
   function suggestScopes(B, budget) { var sc = window.Std2dScopes.suggest(B.R, budget); return rebuild(B, sc); }
   function nameAll(B, list) { var used = new Set(); return list.map(function (s) { return { name: window.Std2dScopes.nameOf(B.R.grid, s.rect, used), rect: s.rect }; }); }
   function splitScope(B, i, axis, label) {
@@ -176,10 +179,17 @@
         h += '</div>';
       });
     }
+    var wingsHere = (B.wings || []).filter(function (w) { return B.wings.length > 1 || w.deg !== 0; });
+    if (wingsHere.length || B.wing) {   // §L1.16: a building whose walls are not on X/Y: one wing at a time, drawn in its own frame
+      h += '<div id="dxfexp-wings" style="margin-top:12px;padding-top:10px;border-top:1px solid #2c303a"><div style="color:#8b94a5;letter-spacing:.12em;font-size:10px;margin-bottom:6px">WING (ROTATED FRAME)</div>';
+      h += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">Draw <select id="dxfexp-wing" style="' + sel + '"><option value="">the whole building</option>' + (B.wings || []).map(function (w) { return '<option value="' + w.deg + '"' + (B.wing && B.wing.angle === w.deg ? ' selected' : '') + '>wing at ' + w.deg + '\u00b0 (' + w.n + ' walls)</option>'; }).join('') + '</select></div>';
+      h += '<div style="color:#5b6473;font-size:10.5px">' + (B.R.wing ? 'Wing at ' + B.R.wing.angle + '\u00b0: ' + B.R.wing.framed + ' of ' + B.R.wing.total + ' framed elements drawn straight; the rest is left out and counted, never snapped. Every sheet carries @FRAME so the importer turns the wing back into place.' : 'The walls of this building are not on X/Y. Pick a wing to draw it straight in its own frame.') + '</div></div>';
+    }
     h += '</div>' + tbl;   // the sheets section first (the decision), the model facts below
     var p = show(h); bindX(p);
     var redo = function (fn, label) { var t0 = performance.now(); try { fn(); } catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); } TM.last = { label: label || 'Update', ms: performance.now() - t0 }; renderReport(B, file, extras); };
     p.querySelector('#dxfexp-suggest').onclick = function () { B.budget = Number(p.querySelector('#dxfexp-budget').value) || window.Std2dScopes.BUDGET; renderBusy('Suggesting a split'); setTimeout(function () { redo(function () { suggestScopes(B, B.budget); }, 'Suggest a split + redraw'); }, 20); };
+    var wsel = p.querySelector('#dxfexp-wing'); if (wsel) wsel.onchange = function () { var v = wsel.value; redo(function () { setWing(B, v === '' ? null : Number(v)); }, v === '' ? 'Whole building + redraw' : 'Wing ' + v + ' + redraw'); };
     var ns = p.querySelector('#dxfexp-nosplit'); if (ns) ns.onclick = function () { redo(function () { rebuild(B, null); }, 'One sheet per storey + redraw'); };
     p.querySelectorAll('#dxfexp-scopes select').forEach(function (el) {
       el.onchange = function () {
@@ -195,7 +205,7 @@
     var dl = p.querySelector('#dxfexp-dl');
     if (dl) dl.onclick = function () {
       var enc = new TextEncoder(), names = Object.keys(B.marked).sort(), z = zip(names.map(function (n) { return { name: n, bytes: enc.encode(B.marked[n]) }; }));
-      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([z], { type: 'application/zip' })); a.download = B.prefix + '_2D_std.zip';
+      var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([z], { type: 'application/zip' })); a.download = B.prefix + (B.wing ? '_W' + B.wing.angle : '') + '_2D_std.zip';
       document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
       console.log(TAG + ' downloaded ' + a.download + ' bytes=' + z.length + ' files=' + names.length);
     };
@@ -215,5 +225,5 @@
     }
     catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); var p = show(headHtml() + '<div style="color:#f59e0b">Could not read this file: ' + esc(e && e.message || e) + '</div>'); bindX(p); return null; }
   }
-  window.DxfExportUI = { timer: TM, run: run, build: build, make: make, suggestScopes: suggestScopes, splitScope: splitScope, mergeScope: mergeScope, rebuild: rebuild, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
+  window.DxfExportUI = { timer: TM, run: run, build: build, make: make, suggestScopes: suggestScopes, splitScope: splitScope, mergeScope: mergeScope, rebuild: rebuild, setWing: setWing, zip: zip, crc32: crc32, loadScripts: loadScripts, close: close };
 })();

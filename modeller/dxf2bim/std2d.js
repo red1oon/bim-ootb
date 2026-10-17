@@ -854,6 +854,12 @@
     const h = {}; model.walls.forEach(w => { const a = elementAngle(w); if (a && a.q >= WING_Q_MIN) { const b = Math.round(a.deg) % 90; h[b] = (h[b] || 0) + 1; } });
     const ks = Object.keys(h).map(Number).sort((a, b) => h[b] - h[a] || a - b); return ks.length ? { deg: ks[0], n: h[ks[0]], hist: h } : null;
   }
+  // the angle families of a model's walls (deg mod 90, 1-deg bins) that carry >= minShare of the walls with a consistent direction: [{deg, n}] largest first. The export panel offers these as wings.
+  function wingAngles(model, minShare) {
+    const d = wingDominant(model); if (!d) return [];
+    const tot = Object.values(d.hist).reduce((a, b) => a + b, 0), min = Math.max(1, (minShare === undefined ? 0.05 : minShare) * tot);
+    return Object.keys(d.hist).map(Number).filter(k => d.hist[k] >= min).sort((a, b) => d.hist[b] - d.hist[a] || a - b).map(k => ({ deg: k, n: d.hist[k] }));
+  }
   // wingOpts: { name, angle (deg; default = dominant), tol }. Filters the model to the wing and rotates it by -angle about the centre of the kept walls. Logs §WING.
   function frameWing(model, wo, log) {
     const dom = wo.angle === undefined ? wingDominant(model) : { deg: wo.angle };
@@ -887,5 +893,5 @@
     log.add(`§SUMMARY wing=${name} views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     return { files, log: log.lines, gaps: log.gaps, grid, model, wing: { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total } };
   }
-  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
+  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, wingAngles, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
 });
