@@ -21,13 +21,14 @@ function tokens(line) { return line.match(/"[^"]*"|'[^']*'|\S+/g).map(t => t.rep
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsadv-')); o.dir = dir;
   const agent = await Agent.create(o), C = agent.creds;
   v('A1', 'ws_agent.js create (the page\'s own command) -> ' + C.serviceTypes.join(', '), C.serviceTypes.length === 5 && C.canWrite, C);
+  v('A1b', 'the page\'s own flags are in force: ' + JSON.stringify(C.policy), C.policy.maxWritesPerHour === 20 && !C.policy.approveWrites && Math.abs((Date.parse(C.policy.expiresAt) - Date.now()) / 3600000 - 24) < 0.1, C.policy);
   let refused = null; try { const o2 = Agent.args(argv.concat(['--docaction', 'C_Order:CO'])); o2.dir = dir; o2.name = 'x-final'; await Agent.create(o2); } catch (e) { refused = e.message; }
   v('A2', 'the page\'s claim "--docaction C_Order:CO would be refused without --allow-final" holds: "' + refused + '"', !!refused && /allow-final/.test(refused), { refused });
   // 2 the host, plugin ACTIVE
   const cfg = path.join(dir, 'ws_host.json'), jr = path.join(dir, 'ws_journal.jsonl'); fs.writeFileSync(cfg, JSON.stringify({ plugin: 'org.idempiere.webservices', state: 'ACTIVE' }));
   const server = await start(0, [], { config: cfg, agentsDir: dir, journal: jr }); const B = 'http://127.0.0.1:' + server.address().port, K = server.kernel;
   await new Promise(r => setTimeout(r, 900));
-  const vars = { USER: C.user, PASS: C.pass, CLIENT: C.clientId, ROLE: C.roleId, ORG: C.orgId, WH: C.warehouseId };
+  const vars = { AGENT: C.agent, USER: C.user, PASS: C.pass, CLIENT: C.clientId, ROLE: C.roleId, ORG: C.orgId, WH: C.warehouseId };
   // 3 the runnable blocks, in page order
   const re = /<!-- ws-run ([^>]*?) -->\s*```(xml|json)\n([\s\S]*?)```/g; let m, ran = 0, writes = 0;
   while ((m = re.exec(md))) {
