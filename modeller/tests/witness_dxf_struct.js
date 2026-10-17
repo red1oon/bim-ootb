@@ -50,6 +50,19 @@ runE2E('W-DXF-STRUCT', async (t) => {
   const conv = await pg.evaluate(() => { const L = window.DxfImportUI.state.last; return { counts: L.counts, n: L.nInserts, cuts: L.nCuts }; });
   const P1 = lastOp && (lastOp.parameters || lastOp.params) || {}, bb = P1.bbox || [];
   t.assert('S3 real Convert: 3 IfcColumn inserts on Level 1, no cuts, provenance.ifc = IfcColumn/COLUMN, drawn z height 3 m', conv.n === 3 && conv.cuts === 0 && conv.counts['Level 1/IfcColumn'] === 3 && after.len - before.len === 3 && P1.provenance && P1.provenance.ifc && P1.provenance.ifc.PredefinedType === 'COLUMN' && bb.length === 6 && Math.abs((bb[5] - bb[4]) - 3) < 1e-6, JSON.stringify({ conv, d: after.len - before.len, ifc: P1.provenance && P1.provenance.ifc, bb }));
+  // S10 (§L8) PARITY: the page's IFC and the headless writer's IFC (dxf2ifc.js over the same effective sheets) are the same model: same products (class, Name, ObjectType, PredefinedType), same storey, same vertices (float32 vs float64 tolerance)
+  const brow = await pg.evaluate(async () => { const r = await window.Bonsai.ifc.build(); return { text: new TextDecoder().decode(r.bytes), eff: window.DxfMetaEditor.state.sheets.map(sh => ({ name: sh.name, text: window.DxfMetaEditor.effText(sh) })) }; });
+  const CLIm = require('../dxf2bim_cli.js'), dd = fs.mkdtempSync(path.join(os.tmpdir(), 'par-')), paths = brow.eff.map(x => { const q = path.join(dd, x.name); fs.writeFileSync(q, x.text); return q; });
+  const cres = CLIm.run({ sheets: paths, layer: [], datum: [], haxis: [], bodyz: [], choice: [], accept: false, set: null, level: null, ifc: false }, () => {});
+  const node = await CLIm.writeIfc(cres, dd), nodeText = fs.readFileSync(path.join(dd, 'model.ifc'), 'utf8');
+  const prods = tx => (tx.match(/#\d+=IFC(COLUMN|BEAM|FOOTING|MEMBER|PLATE|WALL|ROOF)\('[^']*',\$,'[^']*',\$,[^,]*,\$,#\d+,\$,[^)]*\)/g) || []).map(l => l.replace(/#\d+=/, '').replace(/\('[^']*'/, "('G'").replace(/#\d+/g, '#')).sort();
+  const pts = tx => { const out = []; (tx.match(/IFCCARTESIANPOINTLIST3D\(\(([^;]*)\)\)\);/g) || []).forEach(l => { const nums = (l.match(/-?\d+\.?\d*(?:E[-+]?\d+)?/gi) || []).map(Number); out.push(nums); }); return out; };
+  const bp = prods(brow.text), np = prods(nodeText);
+  const bv = pts(brow.text).map(a => a.slice(0).sort((x, y) => x - y)), nv = pts(nodeText).map(a => a.slice(0).sort((x, y) => x - y));
+  const norm = L => L.map(a => a.map(v => (Math.round(v * 1000) / 1000 + 0).toFixed(3)).join(',')).sort();
+  const storeyOf = tx => (tx.match(/IFCBUILDINGSTOREY\('[^']*',\$,'([^']*)'/) || [])[1];
+  t.assert('S10 PARITY page IFC == headless IFC: 3 IfcColumn products with the same Name/ObjectType/PredefinedType, the same storey, and the same vertices (3 mm)', bp.length === 3 && JSON.stringify(bp) === JSON.stringify(np) && storeyOf(brow.text) === storeyOf(nodeText) && JSON.stringify(norm(bv)) === JSON.stringify(norm(nv)), JSON.stringify({ prodEq: JSON.stringify(bp) === JSON.stringify(np), bs: storeyOf(brow.text), ns: storeyOf(nodeText), nb: bv.length, nn: nv.length, b0: norm(bv).slice(0, 1), n0: norm(nv).slice(0, 1) }));
+
   // S7 round trip: the effective sheets (the markings the user's choices wrote) re-opened
   const eff = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => ({ name: sh.name, text: window.DxfMetaEditor.effText(sh) })));
   const RP = eff.map(x => f('rt_' + x.name, x.text));
@@ -96,4 +109,3 @@ runE2E('W-DXF-STRUCT', async (t) => {
   const d9 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { left: g.structure.left_out, row: !!document.querySelector('#dm-panel [data-bodyz-row]') }; });
   t.assert('S9d CONTROL removing the statement puts them back to waiting (2 left out), never a remembered height', d9.left === 2 && !d9.row, JSON.stringify(d9));
 });
-

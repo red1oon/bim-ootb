@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// dxf2bim_cli.js — the DXF2BIM structure chain WITHOUT the Modeller (lane §L8): raw 2D sheets -> accepted suggestions -> the few facts a person states -> typed body layers -> bodies.
+// The same pure modules the page uses (dxf2suggest.js, dxf2prep.js, dxf2bodies.js, dxf2structure.js, dxf2bim_import.js): nothing here knows a drawing; every rule is witnessed in Node.
+//
+// usage: node dxf2bim_cli.js --sheets a.dxf b.dxf ... --out <dir> [--accept-suggestions]
+//          [--set NAME] [--level N] [--datum <sheet-substr>:<z m>@<drawing y>] [--haxis <sheet-substr>:<+X|-X|+Y|-Y>]
+//          [--layer <plan|elev|section|roof>:<layer>=<kind>] [--bodyz <kind>=<z0 m>,<z1 m>] [--choice <key>=<value>] [--ifc]
+//   --accept-suggestions  accept every suggestion (PR-*) until none is left (the page's "Accept all"), before and after the typed facts
+//   --set / --level       @SET on every sheet without one / @LEVEL on every plan sheet            (the page's Set / Level (m) fields)
+//   --datum               one @Z level datum: the sheet whose name contains <sheet-substr>        (the page's "Level datums (@Z)" add row)
+//   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer     (the page's Layers select)
+//   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
+//   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
+//   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
+// writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
+'use strict';
+const fs = require('fs'), path = require('path'), { Buffer } = require('buffer');
+const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2marks.js'), I = require('./dxf2bim_import.js'), P = require('./dxf2prep.js'),
+  B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
+
+function parseArgs(argv) {
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], choice: [], out: null, accept: false, set: null, level: null, ifc: false };
+  for (let i = 0; i < argv.length; i++) {
+    const k = argv[i];
+    if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
+    else if (k === '--accept-suggestions') a.accept = true;
+    else if (k === '--ifc') a.ifc = true;
+    else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
+    else if (['--layer', '--datum', '--haxis', '--bodyz', '--choice'].includes(k)) a[k.slice(2)].push(argv[++i]);
+    else throw new Error('unknown argument ' + k);
+  }
+  if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
+  return a;
+}
+const ROLE_VIEW = { plan: 'PLAN', elev: 'ELEV', section: 'SECTION', roof: 'ROOF' };
+
+function load(file) {
+  const text = fs.readFileSync(file, 'utf8'), dxf = new DxfParser().parseSync(text);
+  const marks = MK.readMarks(dxf.entities).map(m => { const r = /^@([A-Z]+)=(.*)$/.exec(m.raw.replace(/\s+@BY=\S+$/, '')); return { key: r[1], value: r[2], x: m.x, y: m.y, source: 'file' }; });
+  const sh = { name: path.basename(file), text, dxf, marks };
+  sh.fileSig = marks.map(m => [SG.markText(m, true), m.x, m.y]);
+  return sh;
+}
+
+function run(args, log) {
+  const say = log || (s => console.log(s));
+  const sheets = args.sheets.map(load);
+  const SETX = I.setWith('DX');
+  const ctx = { MK, sheets: () => sheets,
+    gridLayers: sh => SETX.QUALIFY.layers.grid.concat(sh.marks.filter(m => m.key === 'LAYER' && /,grid$/.test(m.value)).map(m => m.value.replace(/,grid$/, ''))),
+    levelLayers: () => SETX.MAP_LEVL.rules.filter(r => r.type === 'levelline').map(r => r.pattern) };
+  const sug = SG.create(ctx), get1 = SG.get1, viewOf = SG.viewOf;
+  const put = (sh, key, value, x, y, rule) => {   // the page's confirm: a single key replaces, a multi key adds (once)
+    const multi = SG.SINGLE_POS[key] !== undefined || ['EXCLUDE', 'WALLTOP', 'TAG', 'LAYER', 'BODYZ', 'SCHEDULE', 'LABEL', 'OPENING'].includes(key);
+    if (!multi) sh.marks = sh.marks.filter(q => q.key !== key);
+    else if (sh.marks.some(q => SG.canonOne(q) === SG.canonOne({ key, value, x: x || 0, y: y || 0 }))) return false;
+    sh.marks.push({ key, value: String(value), x: x || 0, y: y || 0, source: 'user', rule: rule || null });
+    say('§CLI mark sheet=' + sh.name + ' @' + key + '=' + value + (x || y ? ' at ' + x + ',' + y : '') + (rule ? ' (' + rule + ')' : ''));
+    return true;
+  };
+  const acceptAll = (tag) => {
+    let total = 0;
+    for (let round = 1; round <= 8; round++) {
+      let n = 0;
+      sheets.forEach(sh => { sug.proposalsFor(sh).list.forEach(p => { if (put(sh, p.key, p.value, p.x, p.y, p.rule)) n++; }); });
+      total += n; if (!n) break;
+    }
+    say('§CLI accept-all ' + tag + ' accepted=' + total); return total;
+  };
+  if (args.accept) acceptAll('1');
+  if (args.set) sheets.forEach(sh => { if (!get1(sh, 'SET')) put(sh, 'SET', args.set); });
+  if (args.level !== null) sheets.forEach(sh => { if (viewOf(sh) === 'PLAN') put(sh, 'LEVEL', args.level); });
+  if (args.accept) acceptAll('2');
+  args.haxis.forEach(h => { const [n, v] = h.split(':'); const sh = sheets.find(s => s.name.includes(n)); if (!sh) throw new Error('--haxis: no sheet ' + n); put(sh, 'HAXIS', v); });
+  args.datum.forEach(d => { const m = /^(.+?):([-\d.]+)@([-\d.]+)$/.exec(d); if (!m) throw new Error('--datum <sheet>:<z>@<y>: ' + d); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--datum: no sheet ' + m[1]); put(sh, 'Z', m[2], 0, Number(m[3])); });
+  if (args.accept) acceptAll('3');
+  args.layer.forEach(l => { const m = /^(plan|elev|section|roof):(.+)=([a-z]+)$/.exec(l); if (!m) throw new Error('--layer <role>:<layer>=<kind>: ' + l);
+    sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && sh.dxf.entities.some(e => e.layer === m[2])).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
+  args.bodyz.forEach(b => { const m = /^([a-z]+)=([-\d.]+),([-\d.]+)$/.exec(b); if (!m) throw new Error('--bodyz <kind>=<z0>,<z1>: ' + b); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--bodyz: no plan sheet'); put(sh, 'BODYZ', m[1] + ',' + m[2] + ',' + m[3]); });
+  const choices = {}; args.choice.forEach(c => { const i = c.indexOf('='); choices[c.slice(0, i)] = c.slice(i + 1); });
+
+  // effective sheets -> the importer's own reader (with the pre-processor) -> the structure judgement
+  const eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) }));
+  const read = I.readSheets(eff, { prep: P, prepChoices: choices });
+  const out = ST.judge(read, { I, B, choices });
+  say('§CLI ' + out.log);
+  return { sheets, eff, read, out, choices };
+}
+
+function write(res, dir) {
+  fs.mkdirSync(path.join(dir, 'marked'), { recursive: true });
+  res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
+  const g = res.out.gate, R = g.R;
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), run_id: R && R.run_id }, null, 1));
+  const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
+  fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
+  if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
+  return bodies;
+}
+
+function webIfc() {
+  for (const m of ['web-ifc', process.env.WEB_IFC, path.join(process.env.HOME || '', 'bim-compiler/node_modules/web-ifc')]) { if (!m) continue; try { return require(m); } catch (e) { /* next */ } }
+  throw new Error('--ifc needs web-ifc (npm i web-ifc, or set WEB_IFC=<dir>)');
+}
+async function writeIfc(res, dir) {
+  const W = webIfc(), api = new W.IfcAPI(); await api.Init();
+  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc' });
+  fs.writeFileSync(path.join(dir, 'model.ifc'), Buffer.from(r.bytes));
+  return r;
+}
+
+if (require.main === module) {
+  (async () => {
+  try {
+    const args = parseArgs(process.argv.slice(2)), res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
+    if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
+    const by = {}; bodies.forEach(b => { const k = b.class; by[k] = (by[k] || 0) + 1; });
+    console.log('§CLI result ok=' + g.ok + ' bodies=' + bodies.length + ' byClass=' + JSON.stringify(by) + ' left_out=' + (g.structure ? g.structure.left_out : '-') + ' out=' + path.resolve(args.out));
+    process.exit(g.ok ? 0 : 2);
+  } catch (e) { console.error('§CLI ERROR ' + (e && e.message)); process.exit(1); }
+  })();
+}
+module.exports = { run, write, parseArgs, writeIfc };

@@ -1,0 +1,87 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// dxf2ifc.js — IFC4 writer for the typed BODIES the structure chain produces (lane §L8): no window, no scene; web-ifc is INJECTED (Node: require('web-ifc'); browser: WebIFC global),
+// exactly like ifc_extract_core.js. It mirrors the seeded-product path of bonsai_ifc.js (IfcProject > IfcSite > IfcBuilding > IfcBuildingStorey, products contained, each body an
+// IfcTriangulatedFaceSet shape, Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum) so the CLI and the page give the same file (witnessed: W-CLI-IFC).
+//   build(elements, { api, WebIFC, name }) -> { bytes, seeded, typed, byClass, proxyTyped, storeys }
+//   element = { class: 'IfcColumn', name, objectType, predefined, storey, storey_elev, vertices: [[x,y,z]...] (world, metres), faces: [[a,b,c]...] (0-based) }
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.Dxf2Ifc = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+  const GUID_AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$';
+  function guid(n) {   // deterministic 22-char IfcGloballyUniqueId, unique per n (same construction as bonsai_ifc.js)
+    let h = (n + 1) >>> 0; h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    let s = GUID_AB[52 + ((h >>> 30) & 3)];
+    for (let i = 1; i < 16; i++) { h = (Math.imul(h, 1103515245) + 12345) >>> 0; s += GUID_AB[h >>> 26]; }
+    let m = n; const t = []; for (let i = 0; i < 6; i++) { t.unshift(GUID_AB[m % 64]); m = Math.floor(m / 64); }
+    return s + t.join('');
+  }
+  const CLASS_MAP = { IfcWall: 'IFCWALL', IfcSlab: 'IFCSLAB', IfcColumn: 'IFCCOLUMN', IfcBeam: 'IFCBEAM', IfcRoof: 'IFCROOF', IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER',
+    IfcFooting: 'IFCFOOTING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
+  const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum' };
+
+  function build(elements, o) {
+    const api = o.api, T = o.WebIFC;
+    const mID = api.CreateModel({ schema: 'IFC4', name: o.name || 'dxf2bim.ifc' });
+    const len = v => api.CreateIfcType(mID, T.IFCLENGTHMEASURE, v), real = v => api.CreateIfcType(mID, T.IFCREAL, v), label = v => api.CreateIfcType(mID, T.IFCLABEL, v), pos1 = v => api.CreateIfcType(mID, T.IFCPOSITIVEINTEGER, v);
+    const z3 = () => api.CreateIfcEntity(mID, T.IFCDIRECTION, [real(0), real(0), real(1)]), x3 = () => api.CreateIfcEntity(mID, T.IFCDIRECTION, [real(1), real(0), real(0)]);
+    const place3 = p => api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT3D, api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(p[0]), len(p[1]), len(p[2])]), z3(), x3());
+    const enumOf = (E, v) => (T.IFC4 && T.IFC4[E] && T.IFC4[E][v]) || { type: 3, value: v };
+    const siUnit = (ut, nm) => api.CreateIfcEntity(mID, T.IFCSIUNIT, enumOf('IfcUnitEnum', ut), null, enumOf('IfcSIUnitName', nm));
+    const units = api.CreateIfcEntity(mID, T.IFCUNITASSIGNMENT, [siUnit('LENGTHUNIT', 'METRE'), siUnit('AREAUNIT', 'SQUARE_METRE'), siUnit('VOLUMEUNIT', 'CUBIC_METRE'), siUnit('PLANEANGLEUNIT', 'RADIAN')]);
+    const ctx = api.CreateIfcEntity(mID, T.IFCGEOMETRICREPRESENTATIONCONTEXT, null, label('Model'), api.CreateIfcType(mID, T.IFCDIMENSIONCOUNT, 3), real(1e-5), place3([0, 0, 0]), null);
+    const spatialGid = k => api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(1000000 + k));
+    const localPl = (rel, z) => api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, rel, place3([0, 0, z || 0]));
+    const project = api.CreateIfcEntity(mID, T.IFCPROJECT, spatialGid(0), null, label('Bonsai model'), null, null, null, null, [ctx], units);
+    const sitePl = localPl(null, 0), bldPl = localPl(sitePl, 0);
+    const site = api.CreateIfcEntity(mID, T.IFCSITE, spatialGid(1), null, label('Site'), null, null, sitePl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null, null, null);
+    const building = api.CreateIfcEntity(mID, T.IFCBUILDING, spatialGid(2), null, label('Building'), null, null, bldPl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null);
+    [project, site, building].forEach(e => api.WriteLine(mID, e));
+    const storeys = new Map(), buildingProducts = [];
+    const storeyFor = el => {
+      if (el.storey == null || el.storey_elev == null || !isFinite(+el.storey_elev)) return null;
+      if (!storeys.has(el.storey)) {
+        const e = api.CreateIfcEntity(mID, T.IFCBUILDINGSTOREY, spatialGid(10 + storeys.size), null, label(String(el.storey)), null, null, localPl(bldPl, +el.storey_elev), null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), len(+el.storey_elev));
+        api.WriteLine(mID, e); storeys.set(el.storey, { e, elev: +el.storey_elev, products: [] });
+      }
+      return storeys.get(el.storey);
+    };
+    let gn = 0, seeded = 0, typed = 0, proxy = 0; const byClass = {};
+    elements.forEach(el => {
+      const coords = el.vertices.map(v => [len(v[0]), len(v[1]), len(v[2])]);
+      const ptList = api.CreateIfcEntity(mID, T.IFCCARTESIANPOINTLIST3D, coords, null);
+      const tris = el.faces.map(f => [pos1(f[0] + 1), pos1(f[1] + 1), pos1(f[2] + 1)]);
+      const fs = api.CreateIfcEntity(mID, T.IFCTRIANGULATEDFACESET, ptList, null, null, tris, null);
+      const ent = CLASS_MAP[el.class] || 'IFCBUILDINGELEMENTPROXY'; if (!CLASS_MAP[el.class]) proxy++;
+      byClass[el.class] = (byClass[el.class] || 0) + 1;
+      const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
+      const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
+      const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
+      const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, null, pds, null];
+      if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
+      const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);
+      const st = storeyFor(el); (st ? st.products : buildingProducts).push(e);
+      if (el.name || el.objectType) typed++;
+      seeded++;
+    });
+    const rel = (type, a, b) => api.WriteLine(mID, api.CreateIfcEntity(mID, type, spatialGid(500000 + (gn++)), null, null, null, a, b));
+    rel(T.IFCRELAGGREGATES, project, [site]); rel(T.IFCRELAGGREGATES, site, [building]);
+    const stList = [...storeys.values()].sort((a, b) => a.elev - b.elev);
+    if (stList.length) rel(T.IFCRELAGGREGATES, building, stList.map(s => s.e));
+    for (const st of stList) if (st.products.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, st.products, st.e);
+    if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
+    const bytes = api.SaveModel(mID); api.CloseModel(mID);
+    return { bytes, seeded, typed, byClass, proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
+  }
+
+  // the importer's `els` (Dxf2Bodies / toOps form) -> writer elements
+  function fromEls(els, ST) {
+    const elev = {}; (ST || []).forEach(s => { elev[s.name] = s.level; });
+    return els.map((e, i) => ({ class: e.class, name: (e.ifc && e.ifc.type_name) || (e.class + ' ' + (i + 1)),   // unnamed: class + its 1-based order (the page's names are class + op id: the same when the set is the page's first convert)
+      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null,
+      storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
+  }
+  return { build: build, fromEls: fromEls, guid: guid };
+});
