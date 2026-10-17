@@ -493,7 +493,11 @@
     // 1. every non-infill, non-fill element as its own body (fills: none in the page; with a library they are listed, see C1-PORT)
     R.els.forEach(function (e) {
       if (R.infillGuid[e.guid] || e.class === 'IfcDoor' || e.class === 'IfcWindow') return;
-      insert(e.guid, e.class, e.storey, e.vertices, e.faces, { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id });
+      var pv = { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id };
+      if (e.prov) pv.prov_kind = e.prov;                        // §L7.3 drawn | derived | assumed
+      if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
+      var ix = insert(e.guid, e.class, e.storey, e.vertices, e.faces, pv);
+      if (e.prov === 'assumed') inserts[ix].params.color = 0xff2d2d;   // §L7.3 RED = no drawing evidence for the body's existence/position
     });
     // 2. each §6 void group: ONE uncut body G x strip x [zb,zt] + one GEOM_CUT per opening z-interval (§SLIDE-SEED form)
     R.ST.forEach(function (st) {
