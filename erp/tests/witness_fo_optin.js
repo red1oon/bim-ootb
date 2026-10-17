@@ -53,6 +53,13 @@ const J = (id, claim, cond, info) => { judged++; if (!cond) fails++; console.log
     await page.evaluate(async (id) => { const r = window.PluginEngine._reg(); await r.uninstallBundle(id); await window.PluginEngine.persist(); }, ID);
     await openPE(); const of4 = await offer(); await closePE();
     J('O4', 'Stop: no lens bar; Uninstall: offer row back', o4.form && o4.bar === null && of4, { o4, of4 });
+    // O5 the Plugins & Releases console (the Felix-style Bundles page) offers the same bundle: one click installs and starts it; the offer then disappears
+    await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await page.waitForTimeout(500);
+    const of5 = await page.evaluate((id) => !!document.querySelector('[data-oc-offerrow="' + id + '"]'), ID);
+    await page.click('[data-oc-offer="' + ID + '"]'); await page.waitForTimeout(2500);
+    const st5 = await state(), of5b = await page.evaluate((id) => !!document.querySelector('[data-oc-offerrow="' + id + '"]'), ID);
+    await page.evaluate(() => { const c = document.querySelector('[data-pr-close]'); if (c) c.click(); });
+    J('O5', 'Plugins & Releases console: offer present, one click -> ' + st5 + ', offer gone', of5 && st5 === 'ACTIVE' && !of5b, { of5, st5, of5b });
   } catch (e) { console.log('§WFO HARNESS-FAIL ' + e.message); fails++; }
   fs.writeFileSync(require('os').tmpdir() + '/witness_fo_optin.page.log', LOG.join('\n'));
   await browser.close(); server.close();
