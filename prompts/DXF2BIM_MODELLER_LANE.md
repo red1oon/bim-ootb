@@ -1493,5 +1493,13 @@ Why (user, 2026-10-17): a Hospital cannot honestly be one sheet per storey; a dr
 ### L6.6 Not in this slice
 Elevation/section scopes, scope-aware door-hinge fallbacks, per-discipline sets (MEP is a different lane: ARC + STR only here).
 
+### L1.11 A readable grid: primary lines when the derived grid is too dense (2026-10-17, spec before code; Python oracle first)
+Finding (Hospital ARC + STR, 15,306 + 255 elements; no IFC of the five tested states an IfcGrid, so the grid is always derived): R4-R6/LB1-LB4/C2 give 128 x 128 lines, unreadable at 1:100 and useless as the shared grid of a scoped set (L6). Duplex (3x4), HHS (12x13), SampleCastle (28x31) are readable and must not change.
+- **Rule.** Per axis, when the clustered lines exceed GRID_READABLE_MAX (= 40, the number of bubbles a 1:100 side holds at the stagger of L1.10 without the tiers exceeding three), a line is kept when it is supported by at least k distinct elements (walls and columns whose axis falls in its cluster, over all plan storeys) OR a wall on it is exterior (R4(b)); k starts at 3 and rises by 1 until the axis has at most GRID_READABLE_MAX lines or k exceeds the largest support (then only exterior lines remain, even if above the cap: stated, not hidden). Labels are assigned after the filter. Columns/walls of a dropped line are no longer `gridded`.
+- Log `§GRID_PRIMARY axis=x lines=128 -> 36 support>=3 dropped=92` (or `§GRID_PRIMARY axis=x within cap 12`); Python `derive_grid` and JS `deriveGrid` in the same commit.
+- Witness W-GRID-PRIMARY: (a) Duplex, HHS merged, SampleCastle outputs unchanged (parity + their pre-rule logs: no `dropped`); (b) Hospital: both axes <= 40 or only-exterior with a stated reason, Python == JS; control: a doctored threshold changes the line count.
+### L5.9 A model .db as input (large models)
+Extraction of the Hospital takes 9 min 24 s and 1.8 GB in Node (web-ifc wasm), too much for the browser. Export > 2D drawings accepts a Node-schema `.db` made by `scripts/extractIFC2DB.js` (and `--also` for the structure file) and skips extraction; a `.db` without `element_world_bbox` is refused with the command to run, never read as another schema.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.

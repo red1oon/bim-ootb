@@ -51,8 +51,20 @@
   async function build(file, step, extras) {   // extras: [File] — second IFCs (e.g. the structural model) contributing only their columns (grid evidence)
     await loadScripts();
     var prefix = (file.name || 'MODEL').replace(/\.ifc$/i, '').split(/[_\s.-]/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'MODEL';
+    var isDb = /\.(db|sqlite)$/i.test(file.name || '');
     step('Reading ' + file.name);
     var data = new Uint8Array(await file.arrayBuffer());
+    if (isDb) {   // §L5.9: a Node-schema model .db (scripts/extractIFC2DB.js [--also structure.ifc]) skips extraction
+      var ddb = new window.SQL.Database(data), has = ddb.exec("SELECT count(*) FROM sqlite_master WHERE name='element_world_bbox'")[0].values[0][0];
+      if (!has) { ddb.close(); throw new Error('This .db has no element_world_bbox (not a model made by scripts/extractIFC2DB.js). Run: node scripts/extractIFC2DB.js --ifc <file.ifc> [--also <structure.ifc>] -o model.db'); }
+      var qd = function (sql) { var r = ddb.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); };
+      step('Drawing the standard set');
+      var Rd = window.Std2d.writeStdSet(qd, prefix), repd = window.Std2d.drawableReport(Rd), Dd = null;
+      if (repd.drawable) { step('Deriving markings from the model'); Dd = window.Std2dMarks.deriveMarks(Rd, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig }, { set: prefix }); }
+      ddb.close();
+      console.log(TAG + ' built (.db) file=' + file.name + ' sheets=' + Object.keys(Rd.files).length + ' drawable=' + repd.drawable);
+      return { prefix: prefix, extras: [], R: Rd, report: repd, marked: Dd ? Dd.files : null, markLog: Dd ? Dd.log : [], exLog: [] };
+    }
     var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
     var Core = window.IfcExtractCore, sdb = new window.SQL.Database(), exLog = [];
     step('Extracting the model (web-ifc)');
@@ -128,7 +140,7 @@
     if (!file) file = window.__lastIfcFile || null;
     if (!file) {   // no IFC opened in this session: pick one (no fallback download of anything else)
       file = await new Promise(function (res) {
-        var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc'; inp.onchange = function () { res(inp.files && inp.files[0] || null); }; inp.click();
+        var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ifc,.db,.sqlite'; inp.onchange = function () { res(inp.files && inp.files[0] || null); }; inp.click();
       });
       if (!file) return null;
     }

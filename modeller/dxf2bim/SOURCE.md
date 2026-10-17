@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `2c0c1a82e` — std2d §L1.10 staggered grid bubbles (Python + JS, A-GRID coordinates in the parity witnes
+Commit: `025a489b1` — std2d §L1.11 primary grid when the derived grid exceeds 40 lines/axis (Python + JS; Hospi
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -14,7 +14,7 @@ Commit: `2c0c1a82e` — std2d §L1.10 staggered grid bubbles (Python + JS, A-GRI
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
 | dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | e682bc8dc1e2aacf1c258bdc20419506acbd9e5bceec215bc93db3762587eca5 |
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 118589837c66cb6352fa7effbb4e5ca7e2a959c339a535179c4bcb0d239254c2 |
-| dxf2bim/std2d.js | deploy/dev/std2d.js | 5b93aa58fc4fce398178908ec94f65a88170f8955c2ddfc8bb6369b424ad2073 |
+| dxf2bim/std2d.js | deploy/dev/std2d.js | 8d8c53e4653d2197e4bdab27ffb267a5db9a8dd2b65aaa6a609bdd026a16b66d |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | b048dbd18853177e3235d460200fa86e4c81a6b815a943e94d744b00e47f5f6d |
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | 67704c069ce55d6a7053c22d3fc5a56c74e507e16d90661d7b357d13c01ba551 |
@@ -22,4 +22,4 @@ Commit: `2c0c1a82e` — std2d §L1.10 staggered grid bubbles (Python + JS, A-GRI
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 17adc6400915ce5a6c54edf01fe0dc33a0c9435a62660303881a7706361290a8 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 2c0c1a82e:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 025a489b1:deploy/dev/<file> | sha256sum` equals the column above.

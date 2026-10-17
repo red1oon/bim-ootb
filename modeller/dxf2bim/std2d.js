@@ -7,6 +7,7 @@
   else root.Std2d = factory(root.Std2dGeom, root.Std2dDxf, root.polygonClipping);
 })(this, function (G, DXF, PC) {
   'use strict';
+  const GRID_READABLE_MAX = 40, GRID_SUPPORT_MIN = 3;   // §L1.11
   const GRID_MERGE_TOL = 0.010, GRID_MIN_WALL_LEN = 1.0, EXT_FACE_TOL = 0.010, BEAR_OVERLAP = 0.50, FACE_PT_TOL = 0.005, PT_MERGE = 0.001;
   const LEAF_MIRROR_TOL = 0.001, VERTICAL_TOL = 1e-6, SINGLE_SWING = ['SINGLE_SWING_LEFT', 'SINGLE_SWING_RIGHT'], CUT_OFFSET = 1.2;
   const SCALE = 100, DIM_T3 = 10, DIM_T2 = 18, DIM_T1 = 26, GRID_END = 33, BUBBLE_C = 37, BUBBLE_R = 4.0;
@@ -155,9 +156,15 @@
   }
   const planView = name => 'FLOOR_' + ((name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')) || 'UNNAMED');
 
+  // §L1.11 pure: clusters = [[ [pos, guid], ... ], ...]; keep a cluster with >= k distinct supporting elements or an exterior wall; k from GRID_SUPPORT_MIN up until <= GRID_READABLE_MAX
+  function primaryClusters(clusters, extGuids) {
+    const support = cl => new Set(cl.map(c => c[1])).size, top = Math.max(...clusters.map(support)); let k = GRID_SUPPORT_MIN, keep;
+    for (;;) { keep = clusters.filter(cl => support(cl) >= k || cl.some(c => extGuids.has(c[1]))); if (keep.length <= GRID_READABLE_MAX || k > top) break; k++; }
+    return { keep, k };
+  }
   function deriveGrid(model, log) {
     const fnd = model.foundation, gs = model.grid_storey, fw = model.walls.filter(w => w.storey === fnd);
-    const wallStoreys = model.storeys.filter(s => s.has_walls).map(s => s.name), ent = { x: [], y: [] }, gridded = new Set();
+    const wallStoreys = model.storeys.filter(s => s.has_walls).map(s => s.name), ent = { x: [], y: [] }, gridded = new Set(), extGuids = new Set();
     log.add(`§GRID_EVIDENCE regime=${fnd ? 'footing (R4a on the grid storey)' : 'no footing (LB1 pset, LB2 continuity, LB3 exterior, LB4 columns)'}`);
     for (const st of planStoreys(model)) {
       const sname = st.name, sw = model.walls.filter(w => w.storey === sname), env = envelope(sw), k = wallStoreys.indexOf(sname);
@@ -176,7 +183,7 @@
         const keep = (bear || ext || lb || stack !== null) && L >= GRID_MIN_WALL_LEN;
         const B = x => (x ? 'True' : 'False');
         log.add(`§WALL guid=${w.guid} storey='${sname}' axis=${ax}=${fx(pos, 4)} len=${fx(L, 3)} bear=${B(bear)} ext=${B(ext)} pset_lb=${B(lb)} stacked=${stack === null ? 'None' : "'" + stack + "'"} gridded=${B(keep)}`);
-        if (keep) { ent[ax].push([pos, w.guid]); gridded.add(w.guid); }
+        if (keep) { ent[ax].push([pos, w.guid]); gridded.add(w.guid); if (ext) extGuids.add(w.guid); }
       }
       model.els.filter(e => e.cls === 'IfcColumn' && e.storey === sname).sort((p, q) => (p.guid < q.guid ? -1 : 1)).forEach(c => {
         const ca = columnAxis(c.v, c.c);
@@ -186,21 +193,30 @@
       });
     }
     const out = {};
+    let primary = false;
     for (const ax of ['x', 'y']) {
-      const clusters = [];
+      let clusters = [];
       ent[ax].sort((p, q) => p[0] - q[0] || (p[1] < q[1] ? -1 : 1)).forEach(([pos, g]) => {
         const last = clusters[clusters.length - 1];
         if (last && pos - last[last.length - 1][0] <= GRID_MERGE_TOL) last.push([pos, g]); else clusters.push([[pos, g]]);
       });
+      if (clusters.length > GRID_READABLE_MAX) {   // §L1.11: primary lines only
+        const n0 = clusters.length, P = primaryClusters(clusters, extGuids), keep = P.keep, k = P.k;
+        primary = true;
+        log.add(`§GRID_PRIMARY axis=${ax} lines=${n0} -> ${keep.length} support>=${k} dropped=${n0 - keep.length}` + (keep.length <= GRID_READABLE_MAX ? '' : ` (only exterior lines remain, above the cap ${GRID_READABLE_MAX})`));
+        clusters = keep;
+      }
       out[ax] = clusters.map((cl, i) => [gridLabel(ax, i), Number((pySum(cl.map(c => c[0])) / cl.length).toFixed(4)), cl.map(c => c[1]).sort()]);
       out[ax].forEach(([lab, p, g]) => log.add(`§GRID ${lab} axis=${ax} pos=${fx(p, 4)} m walls=${g.length}`));
     }
+    if (primary) { const onLine = new Set(); ['x', 'y'].forEach(ax => out[ax].forEach(L => L[2].forEach(g => onLine.add(g)))); Array.from(gridded).forEach(g => { if (!onLine.has(g)) gridded.delete(g); }); }
     out.gridded = gridded; out.env = envelope(model.walls.filter(w => w.storey === gs));
     return out;
   }
 
   // ── hosts (§L1.6 O1): the void of a wall around an opening, from the wall's own mesh sliced at the opening's mid-height ──
-  function worldVerts(e) { const V = new Float32Array(e.v.length); for (let k = 0; k < V.length; k += 3) { V[k] = e.v[k] + e.c[0]; V[k + 1] = e.v[k + 1] + e.c[1]; V[k + 2] = e.v[k + 2] + e.c[2]; } return V; }
+  function worldVerts(e) { const V = new Float64Array(e.v.length);   // float64 like numpy (float32 world coordinates flip degenerate contours at site elevations ~170 m)
+    for (let k = 0; k < V.length; k += 3) { V[k] = e.v[k] + e.c[0]; V[k + 1] = e.v[k + 1] + e.c[1]; V[k + 2] = e.v[k + 2] + e.c[2]; } return V; }
   function sliceRings(e, z) {
     if (!e.v.length || !e.f.length) return null;
     const rings = [];
@@ -554,7 +570,7 @@
     const W = worldVerts(e); let mn = 1e300, mx = -1e300;
     for (let k = 0; k < W.length; k += 3) { mn = Math.min(mn, W[k]); mx = Math.max(mx, W[k]); }
     if (!(mn < x && x < mx)) return [];
-    const P = new Float32Array(W.length); for (let k = 0; k < W.length; k += 3) { P[k] = W[k + 1]; P[k + 1] = W[k + 2]; P[k + 2] = W[k]; }
+    const P = new Float64Array(W.length); for (let k = 0; k < W.length; k += 3) { P[k] = W[k + 1]; P[k + 1] = W[k + 2]; P[k + 2] = W[k]; }
     return G.chainSegments(G.sliceMesh(P, e.f, x)).filter(c => c.length >= 3);
   }
   function writeSection(model, grid, log) {
@@ -643,5 +659,5 @@
     log.add('§GAP_SUMMARY {' + Object.keys(codes).map(k => `'${k}': ${codes[k]}`).join(', ') + '}');
     return { files, log: log.lines, gaps: log.gaps, grid, model, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })), roof: rs } };
   }
-  return { drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
+  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
 });
