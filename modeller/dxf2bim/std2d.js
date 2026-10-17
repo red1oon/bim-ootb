@@ -371,6 +371,18 @@
     return ['ok', { hinge: [sh * X[0] + t1 * Y[0], sh * X[1] + t1 * Y[1]], width: s1 - s0, X, Y, closed: left ? X : [-X[0], -X[1]] }];
   }
 
+  // §L1.12 the swing when the mesh gives no leaf offset (R9) but the IFC states everything a swing needs (single-swing type, vertical z, axis-aligned X/Y, OverallWidth):
+  // a swing door opens toward +Y of its placement; hinge = LEFT/RIGHT jamb = bbox centre along X -/+ OverallWidth/2, at the bbox centre along Y.
+  function doorHingeIfc(d, op) {
+    if (!op || SINGLE_SWING.indexOf(op.op) < 0) return ['GAP:door_swing', 'leaf offset not found (R9)'];
+    if (!(op.x && op.y && op.z) || Math.max(Math.abs(op.z[0]), Math.abs(op.z[1]), Math.abs(op.z[2] - 1)) > VERTICAL_TOL) return ['GAP:door_swing', 'leaf offset not found (R9); placement axes missing or not vertical, no IFC-convention swing (§L1.12)'];
+    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]];
+    if (!(Math.min(Math.abs(X[0]), Math.abs(X[1])) < 1e-6 && Math.min(Math.abs(Y[0]), Math.abs(Y[1])) < 1e-6) || !op.w) return ['GAP:door_swing', 'leaf offset not found (R9); axes not axis-aligned or no OverallWidth, no IFC-convention swing (§L1.12)'];
+    const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
+    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), left = op.op.endsWith('LEFT'), sh = left ? sc - w / 2 : sc + w / 2;
+    return ['ok', { hinge: [sh * X[0] + tc * Y[0], sh * X[1] + tc * Y[1]], width: w, X, Y, closed: left ? X : [-X[0], -X[1]] }];
+  }
+
   // ───────────────────────── drawing ─────────────────────────
   const newDoc = () => new DXF.Doc({ layers: LAYERS, scale: SCALE, dim: { txt: TXT_DIM, asz: 1.2 } });
   function bubble(doc, cx, cy, label) { doc.circle('A-GRID', [cx, cy], BUBBLE_R * SCALE, { linetype: 'Continuous' }); doc.text('A-GRID', label, [cx, cy], TXT_BUBBLE * SCALE, { align: 'MIDDLE_CENTER' }); }
@@ -471,17 +483,24 @@
     log.add(`§PLAN openings above cut=${nO.above} (dashed) below cut=${nO.below}`);
     for (const d of model.els.filter(e => e.cls === 'IfcDoor' && e.storey === storey.name)) {
       const sw_ = doorSwing(d), cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2;
-      if (!sw_) { log.gap('GAP:door_swing', d.guid, 'leaf offset not found (R9)'); continue; }
-      const [ta, sgn] = sw_;
-      log.add(`§DOOR guid=${d.guid} swing_axis=${ta} swing_sign=${sgn > 0 ? '+1' : '-1'} (R9 leaf offset)`);
-      const op = model.door_ops[d.guid], [code, res] = doorHinge(d, op, sw_);
+      const op = model.door_ops[d.guid]; let basis = '', code, res;
+      if (!sw_) {   // §L1.12: no leaf offset in the mesh: the IFC-stated swing, or the gap as before
+        [code, res] = doorHingeIfc(d, op);
+        if (code !== 'ok') { log.gap(code, d.guid, res); continue; }
+        basis = ' basis=ifc_convention';
+        log.add(`§DOOR guid=${d.guid} swing=ifc_convention (R9 leaf offset not found; opens toward +Y of the IFC placement)`);
+      } else {
+        var ta = sw_[0], sgn = sw_[1];
+        log.add(`§DOOR guid=${d.guid} swing_axis=${ta} swing_sign=${sgn > 0 ? '+1' : '-1'} (R9 leaf offset)`);
+        [code, res] = doorHinge(d, op, sw_);
+      }
       if (code === 'ok') {
         const H = res.hinge, w = res.width, Y = res.Y, C = res.closed, hm = [mm(H[0]), mm(H[1])], O = [H[0] + w * Y[0], H[1] + w * Y[1]];
         doc.line('A-DOOR', hm, [mm(O[0]), mm(O[1])], tag(d.guid));
         const ac = Math.atan2(C[1], C[0]) * 180 / Math.PI, ao = Math.atan2(Y[1], Y[0]) * 180 / Math.PI, ccw = C[0] * Y[1] - C[1] * Y[0] > 0;
         const mod = a => ((a % 360) + 360) % 360, st = ccw ? ac : ao, en = ccw ? ao : ac;
         doc.arc('A-DOOR', hm, mm(w), Number(mod(st).toFixed(6)), Number(mod(en).toFixed(6)), tag(d.guid));
-        log.add(`§DOOR_ARC guid=${d.guid} op=${op.op} source=${op.source} hinge=(${fx(hm[0], 2)},${fx(hm[1], 2)}) width=${fx(w * 1000, 1)} swing=+Y(${fx(Y[0], 6)},${fx(Y[1], 6)}) arc=${fx(mod(st), 1)}->${fx(mod(en), 1)}`);
+        log.add(`§DOOR_ARC guid=${d.guid} op=${op.op} source=${op.source} hinge=(${fx(hm[0], 2)},${fx(hm[1], 2)}) width=${fx(w * 1000, 1)} swing=+Y(${fx(Y[0], 6)},${fx(Y[1], 6)}) arc=${fx(mod(st), 1)}->${fx(mod(en), 1)}${basis}`);
         continue;
       }
       log.gap(code, d.guid, res);
