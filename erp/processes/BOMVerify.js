@@ -45,7 +45,7 @@
       return '#' + counter;
     };
     BOMVerify.prototype.checkProduct = function (product) {                          // :136-143
-      if (product.isBOM() && !has(this.checkedproducts, product.get_ID())) this.validateProduct(product);
+      if (product && product.isBOM() && !has(this.checkedproducts, product.get_ID())) this.validateProduct(product);   // `new MProduct(ctx, missingId)` is a blank product (IsBOM false), not a null (seen over the web service: M_Product_ID=999999 answers 'Product Checked')
     };
     BOMVerify.prototype.log = function (key, args, product) {                        // addLog / addBufferLog by p_fromButton
       var msg = X.A.Msg.getMsg(this.getCtx(), key, args);
