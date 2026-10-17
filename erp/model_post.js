@@ -38,6 +38,8 @@
     asset: function (t, p, s) { return vc(t, 'm_product_acct', 'p_asset_acct', 'm_product_id', p, s); },
     nir: function (t, bp, s) { var g = t.get('c_bpartner', bp); return g ? vc(t, 'c_bp_group_acct', 'notinvoicedreceipts_acct', 'c_bp_group_id', g.c_bp_group_id, s) : null; },
     taxDue: function (t, x, s) { return vc(t, 'c_tax_acct', 't_due_acct', 'c_tax_id', x, s); },
+    inventoryClearing: function (t, p, s) { return vc(t, 'm_product_acct', 'p_inventoryclearing_acct', 'm_product_id', p, s); },
+    chargeExpense: function (t, c, s) { return vc(t, 'c_charge_acct', 'ch_expense_acct', 'c_charge_id', c, s); },
     taxCredit: function (t, x, s) { return vc(t, 'c_tax_acct', 't_credit_acct', 'c_tax_id', x, s); },
     inTransit: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_intransit_acct', 'c_bankaccount_id', b, s); },
     unallocated: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_unallocatedcash_acct', 'c_bankaccount_id', b, s); }
@@ -69,13 +71,31 @@
       amtsourcedr: dr ? N(dr.setScale(src, HU)) : 0, amtsourcecr: cr ? N(cr.setScale(src, HU)) : 0,
       amtacctdr: dr ? N(dr.multiply(r).setScale(prec, HU)) : 0, amtacctcr: cr ? N(cr.multiply(r).setScale(prec, HU)) : 0 }, extra || {}));
   };
-  // Fact.isBalanced/balanceSource — a rounding difference on the converted side is booked to the larger line (Fact.balanceAccounting)
+  // Fact.balanceAccounting (acct/Fact.java:548-635): the accounted DR-CR difference is booked either as a Currency Balancing line on the schema's CurrencyBalancing_Acct (AcctSchemaGL.UseCurrencyBalancing=Y,
+  //   switched to the other side when it would add to the biggest balance-sheet line's side) or, without it, onto the biggest BALANCE-SHEET line (else the biggest P&L line) by FactLine.currencyCorrect :792-813.
+  //   Found by W-POST-INVOICE: legacy booked a -0.01 balancing line on schema 200000 where the old "larger line" shortcut adjusted the receivable instead.
+  function isBalanceSheet(trx, accountId) { var e = nz(accountId) ? trx.get('c_elementvalue', accountId) : null; return !!e && (e.accounttype === 'A' || e.accounttype === 'L' || e.accounttype === 'O'); }   // MElementValue.isBalanceSheet
   Fact.prototype.balance = function () {
-    var dr = Z, cr = Z; this.lines.forEach(function (l) { dr = dr.add(D(l.amtacctdr)); cr = cr.add(D(l.amtacctcr)); });
+    var self = this, trx = this.trx, dr = Z, cr = Z; this.lines.forEach(function (l) { dr = dr.add(D(l.amtacctdr)); cr = cr.add(D(l.amtacctcr)); });
     var diff = dr.subtract(cr); if (diff.signum() === 0 || !this.lines.length) return;
-    var big = this.lines.slice().sort(function (a, b) { return Math.abs(b.amtacctdr + b.amtacctcr) - Math.abs(a.amtacctdr + a.amtacctcr); })[0];
-    if (diff.signum() > 0) { if (big.amtacctcr) big.amtacctcr = N(D(big.amtacctcr).add(diff)); else big.amtacctdr = N(D(big.amtacctdr).subtract(diff)); }
-    else { if (big.amtacctdr) big.amtacctdr = N(D(big.amtacctdr).subtract(diff)); else big.amtacctcr = N(D(big.amtacctcr).add(diff)); }
+    var BS = null, BSamt = Z, PL = null, PLamt = Z;
+    this.lines.forEach(function (l) { var amt = D(l.amtacctdr).subtract(D(l.amtacctcr)).abs(), bs = isBalanceSheet(trx, l.account_id);
+      if (bs && amt.compareTo(BSamt) > 0) { BSamt = amt; BS = l; } else if (!bs && amt.compareTo(PLamt) > 0) { PLamt = amt; PL = l; } });
+    var gl = trx.q('SELECT usecurrencybalancing AS u, currencybalancing_acct AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', [this.as.c_acctschema_id])[0];
+    if (gl && gl.u === 'Y') {
+      var vcRow = nz(gl.a) ? trx.get('c_validcombination', gl.a) : null;
+      if (!vcRow) { this.err = this.err || 'CurrencyBalancing_Acct not resolvable'; return; }
+      var isDR = diff.signum() < 0, difference = diff.abs(), drAmt = isDR ? difference : Z, crAmt = isDR ? Z : difference;
+      var bsDrSrc = BS ? D(BS.amtsourcedr).subtract(D(BS.amtsourcecr)).signum() !== -1 : false;
+      if (BS && ((bsDrSrc && isDR) || (!bsDrSrc && !isDR))) { drAmt = Z; crAmt = Z; if (isDR) crAmt = difference.negate(); else drAmt = difference.negate(); }
+      this.lines.push({ c_acctschema_id: this.as.c_acctschema_id, account_id: vcRow.account_id, c_currency_id: this.doc.c_currency_id != null ? this.doc.c_currency_id : this.as.c_currency_id, postingtype: 'A',
+        amtsourcedr: 0, amtsourcecr: 0, amtacctdr: N(drAmt), amtacctcr: N(crAmt), ad_org_id: this.doc.ad_org_id, c_bpartner_id: this.doc.c_bpartner_id });
+      return;
+    }
+    var line = BS || PL; if (!line) { this.err = this.err || 'No Line found'; return; }
+    var negative = diff.signum() < 0, adjustDr = D(line.amtacctdr).abs().compareTo(D(line.amtacctcr).abs()) > 0;
+    if (adjustDr) line.amtacctdr = N(D(line.amtacctdr).subtract(diff)); else line.amtacctcr = N(D(line.amtacctcr).add(diff));
+    void negative;
   };
 
   // ══ Doc / DocLine / FactLine — the faithful framework (acct/Doc.java, DocLine.java, Fact.java :112-170, FactLine.java) ══
@@ -290,6 +310,47 @@
   }
   function isBalancedAcct(F) { var s = Z; F.lines.forEach(function (l) { s = s.add(D(l.amtacctdr)).subtract(D(l.amtacctcr)); }); return s.signum() === 0; }
 
+  // Doc_Invoice.createFacts DOCTYPE_APInvoice (Doc_Invoice.java:605-775), W-POST-INVOICE (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §46): TaxCredit DR per tax; per line DR Product InventoryClearing (an item) /
+  //   Product or Charge Expense (other), amount = LineNetAmt, Qty = +QtyInvoiced (DocLine.setQty, not a sales trx); Vendor Liability CR GrandTotal; locations from BPartner to Org; updateProductPO (:1534-1569).
+  //   NAMED, never faked: tax-included invoices, summary / sales-expense taxes, header charge, reversals (updateReverseLine), landed cost (:landedCost), trade-discount posting and service-product cost details (MCostDetail.createInvoice).
+  function Doc_InvoiceAPI(trx, inv, as, F, dt, base, hasDesc) {
+    var cur = inv.c_currency_id, sch = as.c_acctschema_id, named = function (m) { F.err = m + ' — named'; return false; };
+    if (Y(inv.istaxincluded)) return named('API tax-included invoice not ported (loadLines :213-300)');
+    if (nz(inv.reversal_id)) return named('API invoice reversal not ported (updateReverseLine)');
+    if (nz(inv.chargeamt) && D(inv.chargeamt).signum() !== 0) return named('API header charge not ported');
+    if (Y(as.istradediscountposted)) return named('API trade-discount posting not ported');
+    var taxes = trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }), i;
+    for (i = 0; i < taxes.length; i++) { var tx = trx.get('c_tax', taxes[i].c_tax_id); if (tx && (Y(tx.issummary) || Y(tx.issalestax))) return named('API summary / sales-expense tax not ported'); }
+    taxes.forEach(function (t) { F.line(ACCT.taxCredit(trx, t.c_tax_id, sch), cur, t.taxamt, null, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
+    var lines = trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).filter(function (l) { return !Y(l.isdescription); });
+    for (i = 0; i < lines.length; i++) {
+      var l = lines[i], prod = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null, item = !!prod && T.isItem(prod), acct;
+      var lc = []; try { lc = trx.q('SELECT 1 AS x FROM c_landedcost WHERE c_invoiceline_id=?', [l.c_invoiceline_id]); } catch (e) { lc = []; }
+      if (lc.length) return named('API landed cost not ported');
+      if (prod && !item) return named('API service-product line (MCostDetail.createInvoice) not ported');
+      if (item) acct = ACCT.inventoryClearing(trx, l.m_product_id, sch);
+      else if (nz(l.c_charge_id)) acct = ACCT.chargeExpense(trx, l.c_charge_id, sch);
+      else acct = ACCT.expense(trx, l.m_product_id, sch);
+      F.line(acct, cur, l.linenetamt, null, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id, c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(D(l.qtyinvoiced)),
+        description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') }));
+    }
+    var gross = D(inv.grandtotal), liab = ACCT.liability(trx, inv.c_bpartner_id, sch);          // payables == payablesServices (Doc_Invoice :713-718): the whole GrandTotal on one account
+    if (gross.signum() > 0) F.line(liab, cur, null, gross, Object.assign({ qty: 0 }, base)); else if (gross.signum() < 0) F.line(liab, cur, gross.negate(), null, Object.assign({ qty: 0 }, base));
+    F.lines.forEach(function (f) { f.c_locfrom_id = locOfBP(trx, inv.c_bpartner_location_id); f.c_locto_id = locOfOrg(trx, f.ad_org_id); });   // setLocationFromBPartner(true) / setLocationFromOrg(false)
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [inv.ad_client_id])[0];
+    if (ci && String(ci.a) === String(sch)) updateProductPO(trx, inv, lines);                   // updateProductPO :1534: only the client's FIRST schema
+    return !F.err;
+  }
+  // Doc_Invoice.updateProductPO: M_Product_PO.PriceLastInv = the invoice's first line price per (product, vendor), converted to the PO's currency on the invoice date
+  function updateProductPO(trx, inv, lines) {
+    var seen = {};
+    lines.forEach(function (l) { if (!nz(l.m_product_id) || seen[l.m_product_id]) return; seen[l.m_product_id] = 1;
+      trx.find('m_product_po', { m_product_id: l.m_product_id, c_bpartner_id: inv.c_bpartner_id }).forEach(function (po) {
+        var first = lines.filter(function (x) { return String(x.m_product_id) === String(l.m_product_id); }).sort(function (a, b) { return Number(a.c_invoiceline_id) - Number(b.c_invoiceline_id); })[0], px = D(first.priceactual);
+        if (nz(po.c_currency_id) && String(po.c_currency_id) !== String(inv.c_currency_id)) { var r = rate(trx, inv.c_currency_id, po.c_currency_id, inv.dateinvoiced, inv.c_conversiontype_id); if (!r) return; px = px.multiply(r).setScale(T.precisionOf(trx, po.c_currency_id), HU); }
+        trx.update('m_product_po', po, { pricelastinv: N(px) });
+      }); });
+  }
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
@@ -299,6 +360,7 @@
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
       var hasDesc = function (v) { return v != null && String(v).length > 0; };
       var base = { ad_org_id: inv.ad_org_id, c_bpartner_id: inv.c_bpartner_id, c_locfrom_id: from, c_locto_id: to, description: inv.documentno + (hasDesc(inv.description) ? ' (' + inv.description + ')' : '') };
+      if (dt.docbasetype === 'API') return Doc_InvoiceAPI(trx, inv, as, F, dt, base, hasDesc);
       if (dt.docbasetype !== 'ARI') { F.err = 'Doc_Invoice ' + dt.docbasetype + ' not ported in model_post — named'; return false; }
       F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), cur, inv.grandtotal, null, Object.assign({ qty: 0 }, base));
       trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }).forEach(function (t) {
