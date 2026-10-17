@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `3bc414b30` — Merge pull request #205 from red1oon/fix/door-tag-conflict
+Commit: `22e4b59ae` — Merge pull request #206 from red1oon/feat/promote-wing-rules
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -14,7 +14,7 @@ Commit: `3bc414b30` — Merge pull request #205 from red1oon/fix/door-tag-confli
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
 | dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | 56f464ad4feca88ad30073bcc492c949a9bdf4dc1950f73c574f1ff09194a181 |
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 118589837c66cb6352fa7effbb4e5ca7e2a959c339a535179c4bcb0d239254c2 |
-| dxf2bim/std2d.js | deploy/dev/std2d.js | 3fd456494cc5b9109509cae9e2efa67b39d43d37b95d9351c161255c29cff215 |
+| dxf2bim/std2d.js | deploy/dev/std2d.js | baa19ee43521e4933d450fa49998bc336e67e9655aa52f7fd63908d86795b468 |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | 4cfd7a941e5f224f3b5643c07d742ea48e51a5f44add7d2d19af8bd5741e915d |
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | dfe0cc0bf5e8ae811ef3729e60bac11b893662beff87bca0cc56906ccac511f4 |
@@ -23,4 +23,4 @@ Commit: `3bc414b30` — Merge pull request #205 from red1oon/fix/door-tag-confli
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show 3bc414b30:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 22e4b59ae:deploy/dev/<file> | sha256sum` equals the column above.
