@@ -18,7 +18,8 @@
     ELEV: ['elevwall', 'elevdoor', 'glazing', 'levelline', 'ignore'],                  // Dxf2Elev.elevWallRects / elevClusters('glazing'|'elevdoor'), Dxf2Shell.levelLinesZ
     ROOF: ['roof', 'glazing', 'ignore'],                                               // Dxf2Shell.roofPlan
     SECTION: ['sectslab', 'sectwall', 'roof', 'ignore'],                               // Dxf2Shell.sectionSlabs (+ L2.8 section walls)
-    ANY: ['dims', 'grid'] };
+    ANY: ['dims', 'grid'],
+    BODY: ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'] };   // bim-ootb lane L7.10: the user types a layer with a BODY kind (any view); every existing reader maps it to 'ignore', the bodies module reads it
   function err(code, message, extra) { return Object.assign({ code: code, message: message }, extra || {}); }
 
   // entities: parsed by dxf-parser (TEXT/MTEXT with .text and .startPoint/.position)
@@ -152,8 +153,8 @@
       d.tags = d.tags.filter(function (q) { if (q.z === undefined) return true; errors.push(err('MARK:malformed', '@TAG z= is not allowed in an ELEV view (z comes from the position): ' + q.text)); return false; });
     }
     if (d.layers && LAYER_TYPES[d.view]) d.layers = d.layers.filter(function (q) {      // checked after the loop: the view may come later in handle order
-      if (LAYER_TYPES[d.view].indexOf(q.type) >= 0 || LAYER_TYPES.ANY.indexOf(q.type) >= 0) return true;
-      errors.push(err('MARK:layer_type', '@LAYER ' + q.layer + ',' + q.type + ': a ' + d.view + ' sheet reads ' + LAYER_TYPES[d.view].concat(LAYER_TYPES.ANY).join('|'), { handle: q.handle, layer: q.layer, type: q.type, view: d.view })); return false;
+      if (LAYER_TYPES[d.view].indexOf(q.type) >= 0 || LAYER_TYPES.ANY.indexOf(q.type) >= 0 || LAYER_TYPES.BODY.indexOf(q.type) >= 0) return true;
+      errors.push(err('MARK:layer_type', '@LAYER ' + q.layer + ',' + q.type + ': a ' + d.view + ' sheet reads ' + LAYER_TYPES[d.view].concat(LAYER_TYPES.ANY, LAYER_TYPES.BODY).join('|'), { handle: q.handle, layer: q.layer, type: q.type, view: d.view })); return false;
     });
     {
       var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined; });
@@ -189,7 +190,7 @@
   // (Dxf2Bim.matchRule: first match wins), so a stated rule overrides the configured set's rule for that layer and nothing else.
   function layerMap(desc) {
     if (!desc || !desc.layers || !desc.layers.length) return null;
-    return { version: 1, rules: desc.layers.map(function (q) { return { match: 'exact', pattern: q.layer, type: LAYER_TYPES.ANY.indexOf(q.type) >= 0 ? 'ignore' : q.type }; }) };
+    return { version: 1, rules: desc.layers.map(function (q) { return { match: 'exact', pattern: q.layer, type: LAYER_TYPES.ANY.indexOf(q.type) >= 0 || LAYER_TYPES.BODY.indexOf(q.type) >= 0 ? 'ignore' : q.type }; }) };
   }
   function withLayers(map, desc) {
     var lm = layerMap(desc); if (!lm) return map;
