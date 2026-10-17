@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `a0d479c06` — std2d wing sets: drop collinear vertices from cut contours (§L1.19); W-L119-AREA/CONTROL;
+Commit: `3c10009f7` — Revert "std2d wing sets: one outline per door (union of touching parts, bbox of disjoint a
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -23,4 +23,4 @@ Commit: `a0d479c06` — std2d wing sets: drop collinear vertices from cut contou
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show a0d479c06:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 3c10009f7:deploy/dev/<file> | sha256sum` equals the column above.

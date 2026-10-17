@@ -25,7 +25,8 @@ runE2E('W-E2E-DXF-WING', async (t) => {
   t.assert('W1 PANEL (the WING control lists the angle family of the rotated building)', opts.length === 2 && opts[1].indexOf('=' + ANG) > 0, JSON.stringify(opts));
   await t.shot('wing-offered');
   await t.pg.evaluate((a) => { const el = document.getElementById('dxfexp-wing'); el.value = String(a); el.dispatchEvent(new Event('change')); }, ANG);
-  await t.pg.waitForFunction(() => /framed elements drawn straight/.test(document.getElementById('m-dxfexp-panel').textContent), { timeout: 240000 });
+  try { await t.pg.waitForFunction(() => /framed elements drawn straight/.test(document.getElementById('m-dxfexp-panel').textContent), { timeout: 120000 }); }
+  catch (e) { console.log('  STALL panel=', (await t.pg.evaluate(() => document.getElementById('m-dxfexp-panel').textContent.replace(/\s+/g, ' ').slice(0, 700))), 'sel=', await t.pg.evaluate(() => { const s = document.getElementById('dxfexp-wing'); return s ? s.value + '/' + s.onchange : 'none'; }), 'logs=', JSON.stringify((t.slog || []).slice(-6))); throw e; }
   const info = await t.pg.evaluate(() => (document.getElementById('m-dxfexp-panel').textContent.match(/Wing at [^.]*\./) || [''])[0]);
   await t.shot('wing-chosen');
   await t.pg.evaluate(() => { window.__dl = null; }); await t.pg.click('#dxfexp-dl'); await t.sleep(1200);

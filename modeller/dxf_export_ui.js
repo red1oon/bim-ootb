@@ -179,13 +179,14 @@
         h += '</div>';
       });
     }
+    h += '</div>';   // end of the SHEETS section; the wing section is its own block (its select must not get the sheets handlers)
     var wingsHere = (B.wings || []).filter(function (w) { return B.wings.length > 1 || w.deg !== 0; });
     if (wingsHere.length || B.wing) {   // §L1.16: a building whose walls are not on X/Y: one wing at a time, drawn in its own frame
       h += '<div id="dxfexp-wings" style="margin-top:12px;padding-top:10px;border-top:1px solid #2c303a"><div style="color:#8b94a5;letter-spacing:.12em;font-size:10px;margin-bottom:6px">WING (ROTATED FRAME)</div>';
       h += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">Draw <select id="dxfexp-wing" style="' + sel + '"><option value="">the whole building</option>' + (B.wings || []).map(function (w) { return '<option value="' + w.deg + '"' + (B.wing && B.wing.angle === w.deg ? ' selected' : '') + '>wing at ' + w.deg + '\u00b0 (' + w.n + ' walls)</option>'; }).join('') + '</select></div>';
       h += '<div style="color:#5b6473;font-size:10.5px">' + (B.R.wing ? 'Wing at ' + B.R.wing.angle + '\u00b0: ' + B.R.wing.framed + ' of ' + B.R.wing.total + ' framed elements drawn straight; the rest is left out and counted, never snapped. Every sheet carries @FRAME so the importer turns the wing back into place.' : 'The walls of this building are not on X/Y. Pick a wing to draw it straight in its own frame.') + '</div></div>';
     }
-    h += '</div>' + tbl;   // the sheets section first (the decision), the model facts below
+    h += tbl;   // the sheets section first (the decision), the model facts below
     var p = show(h); bindX(p);
     var redo = function (fn, label) { var t0 = performance.now(); try { fn(); } catch (e) { console.error(TAG + ' ' + (e && e.stack || e)); } TM.last = { label: label || 'Update', ms: performance.now() - t0 }; renderReport(B, file, extras); };
     p.querySelector('#dxfexp-suggest').onclick = function () { B.budget = Number(p.querySelector('#dxfexp-budget').value) || window.Std2dScopes.BUDGET; renderBusy('Suggesting a split'); setTimeout(function () { redo(function () { suggestScopes(B, B.budget); }, 'Suggest a split + redraw'); }, 20); };
