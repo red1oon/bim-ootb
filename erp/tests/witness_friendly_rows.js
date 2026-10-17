@@ -86,6 +86,7 @@ async function run(base, browser, lens) {
       const from = logs.length; await hc('[data-proc-run]'); await pg.waitForTimeout(6000);
       (id === 118 ? (ok1 = procLine(id, from)) : (ok2 = procLine(id, from)));
     }
+    barPay = await pg.evaluate(() => Array.from(document.querySelectorAll('#idmp-lensbar button')).map(b => b.getAttribute('data-lens-action')));
     { await openMenu(payMenuId); await pg.waitForSelector(NEWB, { timeout: 15000 }); await pg.waitForTimeout(800); await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(800);
       await pick('ad_org_id', /^HQ/); await pick('c_bpartner_id', /Joe Block/);
       const io = (await pg.$$eval('#idmp-inline-mount select[data-col="c_invoice_id"] option', x => x.map(y => ({ v: y.value, t: y.text })))).find(x => x.v && Number(x.v) < 0);
@@ -115,6 +116,7 @@ async function run(base, browser, lens) {
     J('A2', 'plugin active: 18 dictionary rows staged and the Order tab shows Ship and Invoice as toolbar buttons at DocStatus CO', on.rowsLive === 18 && ['FO_Order_Ship', 'FO_Order_Invoice'].every(x => on.bar0.includes(x)), 'rows ' + on.rowsLive + ' bar ' + on.bar0);
     J('A3', '@SQL= DisplayLogic: once shipped and invoiced neither button is offered', !on.barAfter.some(x => /^FO_Order_/.test(x)), 'bar after ' + on.barAfter);
     J('A4', 'window-context defaults: the Ship form opens with the order\'s warehouse and partner, the Invoice form with its org and order', on.formShip && String(on.formShip.w) === String(on.oo.w) && String(on.formShip.b) === String(on.oo.b) && on.formInv && String(on.formInv.o) === String(on.oo.i) && String(on.formInv.g) === '11', JSON.stringify([on.formShip, on.formInv, on.oo]));
+    J('A6', 'owner 2026-10-17: Receive payment (no legacy equivalent) is on the screen only while the plugin is active: absent when off, offered when on', off.barPay.length === 0 && on.barPay.includes('friendly-ops:next:pay'), 'off ' + off.barPay + ' on ' + on.barPay);
     J('A5', 'Stop removes every row', on.rowsStopped === 0, 'rows after stop ' + on.rowsStopped);
     if (!off.ev.length || !on.ev.length) { incon++; console.log('  INCONCLUSIVE empty event trace'); }
     J('B', 'chain gestures strictly fewer with the lens (' + on.chainGestures + ' < ' + off.chainGestures + ')', on.chainGestures < off.chainGestures);
