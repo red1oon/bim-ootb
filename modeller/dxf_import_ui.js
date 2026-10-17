@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2bodies.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -174,7 +174,7 @@
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
     h += '</div><div class="ip-foot"><button class="dxf-btn" id="dxf-lines"></button><button class="dxf-btn" id="dxf-meta" title="Drawing metadata">' + ICON.meta + '<span>Metadata</span></button><button class="dxf-btn primary" id="dxf-convert"' + (state.gate.ok ? '' : ' disabled') + '>' + ICON.box + '<span>Convert</span></button>' +
-      '<div id="dxf-status">' + (state.gate.ok ? 'Qualifies (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
+      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory: no elevation or conflicting heights)' : '') + '. Walls, slabs and roof are not read in a structure set.' : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
         : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
@@ -258,7 +258,41 @@
 
   // ---- §L3.3 the ONE convert gate (shared with the L4 metadata editor): roles R1-R5 -> the pipeline with the local library subset
   // -> Dxf2Qualify verdict on the run's own gaps. Convert is allowed only when roles pass AND the verdict qualifies. ----
+  // §L7.12 STRUCTURE set: any sheet states a body kind (column, beam, ...). The wall/slab/roof pipeline is not run; Dxf2Bodies builds the bodies (plan footprint x elevation z range),
+  // roles are judged as in the standard gate, every GAP:body_* is advisory (those bodies are left out, never defaulted), mixed sets are refused (stated).
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];
+  var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'elevdoor', 'sectslab', 'sectwall', 'roof', 'levelline'];
+  function isStructure(sheets) { return !!window.Dxf2Bodies && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
+  function structureGate() {
+    var I = window.Dxf2BimImport, B = window.Dxf2Bodies, sheets = state.sheets, refused = [];
+    sheets.filter(function (s) { return !s.role; }).forEach(function (s) { refused.push({ sheet: s.name, reason: s.why || 'no role' }); });
+    if (sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return WALLISH.indexOf(l.type) >= 0; }); }))
+      refused.push({ sheet: '(set)', reason: 'mixed sets are not supported yet: body kinds and wall / slab / opening / roof layers are typed together' });
+    var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
+    if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
+    if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
+    var choices = (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {};
+    var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices });
+    var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
+    var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
+    if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
+      blocking.push({ code: 'QF:no_bodies', sheet: '(set)', handles: [], message: 'no body could be built: type the body layers on a plan AND an elevation' });
+    advisory.filter(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }).forEach(function (a) { blocking.push(a); });
+    var counts = { bodies: res.els.length, left_out: res.gaps.length }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
+    var verdict = { verdict: blocking.length || refused.length ? 'blocked' : 'qualifies', blocking: blocking, advisory: advisory, counts: counts, by_shape: { walls: { blocking: 0, advisory: 0 }, slabs: { blocking: 0, advisory: 0 }, roof: { blocking: 0, advisory: 0 }, openings: { blocking: 0, advisory: 0 } } };   // by_shape: the editor's wall/slab/roof/opening table (a structure set reads none of them)
+    var runId = I.sha256Hex(JSON.stringify({ structure: 1, sheets: sheets.map(function (s) { return s.sha; }), snap: res.report && res.report.snap_tol }));
+    var R = { els: res.els, ST: plans.map(function (p, i) { return { name: 'Level ' + (i + 1), sheet: p.name, level: p.level, bridge: { voids: [] }, infill: [], fills: { gaps: [] } }; }),
+      infillGuid: {}, libGeom: {}, run_id: runId, set: 'STRUCT', gaps: res.gaps, refused: null, fillGaps: [], bodies: res };
+    var g = { ok: !refused.length && !blocking.length, set: null, setFrom: 'structure', roles: { ok: !refused.length, set: null, evidence: 'structure', refused: refused }, refused: refused,
+      verdict: verdict, R: R, lib: null, structure: { bodies: res.els.length, left_out: res.gaps.length } };
+    if (res.defaults && res.defaults.length) state.defaults = (state.defaults || []).concat(res.defaults);
+    state.gate = g;
+    console.log(TAG + ' gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + res.gaps.length + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300));
+    if (state.panel) renderPanel();
+    return g;
+  }
   async function convertGate() {
+    if (isStructure(state.sheets)) return structureGate();
     var I = window.Dxf2BimImport, roles = I.gate(state.sheets, { set: state.setOverride });   // §L4.1: + the set the editor states (layer rules are @LAYER markings, §L4.2)
     var g = { ok: false, set: roles.set, setFrom: roles.setFrom, roles: roles, refused: roles.refused.slice(), verdict: null, R: null, lib: null };
     if (roles.ok) {
