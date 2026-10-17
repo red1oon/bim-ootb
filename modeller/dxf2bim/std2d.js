@@ -152,7 +152,9 @@
     const cand = model.storeys.filter(s => s.elev > g && !planned.has(s.name) && s.has_walls);
     if (cand.length) return cand[cand.length - 1];
     const nowall = model.storeys.filter(s => s.elev > g && !planned.has(s.name) && model.roofs.length);
-    return nowall.length ? nowall[nowall.length - 1] : null;
+    if (nowall.length) return nowall[nowall.length - 1];
+    if (model.roofs.length && Math.min(...model.roofs.map(r => r.z0)) > g) return { name: 'ROOF', elev: Math.min(...model.roofs.map(r => r.z0)), src: 'roof element z0', has_walls: false };   // §L1.13
+    return null;
   }
   const planView = name => 'FLOOR_' + ((name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')) || 'UNNAMED');
 

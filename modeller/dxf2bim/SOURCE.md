@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `dd66bec7f` — scoped sets: KEY markings use handles above every sheet's entities (writeMarks handleBase)
+Commit: `f0d5052ea` — std2d §L1.13 roof plan from a pseudo-storey at the roof element's lowest z when no storey
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -14,7 +14,7 @@ Commit: `dd66bec7f` — scoped sets: KEY markings use handles above every sheet'
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
 | dxf2bim/dxf2shell_config.js | deploy/dev/dxf2shell_config.js | e682bc8dc1e2aacf1c258bdc20419506acbd9e5bceec215bc93db3762587eca5 |
 | dxf2bim/dxf2qualify.js | deploy/dev/dxf2qualify.js | 118589837c66cb6352fa7effbb4e5ca7e2a959c339a535179c4bcb0d239254c2 |
-| dxf2bim/std2d.js | deploy/dev/std2d.js | 8627ff357f5575a77ae48fb53e6c77c82ca77e5e05fb72f0bbfc871c3ce9d38c |
+| dxf2bim/std2d.js | deploy/dev/std2d.js | d523ebfc07fd3866d78483b3f1f4abea07f7f5716da3ccad55ac3538c9bd2be0 |
 | dxf2bim/std2d_geom.js | deploy/dev/std2d_geom.js | 46903de12432a6dec1a470c12fcbb89a78717b292874a486ad325a81527148a6 |
 | dxf2bim/std2d_dxf.js | deploy/dev/std2d_dxf.js | 4cfd7a941e5f224f3b5643c07d742ea48e51a5f44add7d2d19af8bd5741e915d |
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | 0237a1087302eab02bbb530c97d594c1693454f24077683d36c3d53e5091db01 |
@@ -23,4 +23,4 @@ Commit: `dd66bec7f` — scoped sets: KEY markings use handles above every sheet'
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 17adc6400915ce5a6c54edf01fe0dc33a0c9435a62660303881a7706361290a8 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show dd66bec7f:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show f0d5052ea:deploy/dev/<file> | sha256sum` equals the column above.

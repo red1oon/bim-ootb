@@ -8,7 +8,7 @@
  *   M3 SAME-MODEL — convert(scoped) storey ops == convert(unscoped) storey ops (sorted, content-equal; `run_id` and the 32-64-hex ids and hashes derived from it are normalised: they hash the sheet BYTES, which differ in entity order; handles, geometry and every parameter stay compared) and the verdict (verdict, blocking, advisory by code) is equal.
  *   C1..C5 CHECKS — each doctored scoped set is refused/flagged with the named code: a scope @LEVEL changed (scope_level_conflict), two rectangles overlapped (scope_overlap), a grid position moved
  *     (scope_grid_disagree), the KEY sheet removed (scope_no_key), one scope sheet's piece duplicated into another (scope_duplicate_piece).
- * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_scopes_merge.js <ifc> [PREFIX] [budget]
+ * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_scopes_merge.js <ifc | model.db> [PREFIX] [budget]
  */
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
@@ -22,8 +22,10 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
 (async () => {
   const ifc = process.argv[2], prefix = process.argv[3] || 'DX', budget = Number(process.argv[4] || 25);
   const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(), sdb = new SQL.Database(); await api.Init();
-  await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(ifc)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: path.basename(ifc), log: () => {} });
-  const q = sql => { const r = sdb.exec(sql); return r.length ? r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))) : []; };
+  let sdbUse = sdb;
+  if (/\.db$/i.test(ifc)) sdbUse = new SQL.Database(new Uint8Array(fs.readFileSync(ifc)));   // a model .db made by scripts/extractIFC2DB.js (large models)
+  else await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(ifc)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: path.basename(ifc), log: () => {} });
+  const q = sql => { const r = sdbUse.exec(sql); return r.length ? r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))) : []; };
   const deps = { B, DxfParser, hashHex, MK, SHC, SCOPES: SC };
   const R0 = S.writeStdSet(q, prefix), M0 = Mk.deriveMarks(R0, deps, { set: prefix }), R1 = S.writeStdSet(q, prefix, { suggest: true, budget }), M1 = Mk.deriveMarks(R1, deps, { set: prefix });
   const f0 = Object.keys(M0.files).map(n => ({ name: n, text: M0.files[n] })), f1 = Object.keys(M1.files).map(n => ({ name: n, text: M1.files[n] }));
@@ -35,7 +37,8 @@ const check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL
   const c0 = I.convert(s0, {}), c1 = I.convert(s1, {});
   const norm = c => (c.ST || []).map(st => st.name + ':' + (st.after || []).map(o => JSON.stringify(o, (k, v) => (k === 'run_id' ? undefined : typeof v === 'string' && /^[0-9a-f]{32,64}$/.test(v) ? '#id' : typeof v === 'number' ? Math.round(v * 1e6) / 1e6 : v))).sort().join('|'));
   const n0 = norm(c0), n1 = norm(c1), vd = c => c.verdict ? JSON.stringify([c.verdict.verdict, c.verdict.blocking.length, c.verdict.advisory.length, c.verdict.counts]) : 'none';
-  check('M3 SAME-MODEL', 'splitting the storeys changed the converted model or the verdict', (!g0.ok || n0.length > 0) && JSON.stringify(n0) === JSON.stringify(n1) && vd(c0) === vd(c1), `storeys=${n0.length} ops=${(c0.ST || []).reduce((a, st) => a + st.after.length, 0)} verdict ${vd(c0).slice(0, 60)} == ${vd(c1).slice(0, 60)}`);
+  const rf = c => JSON.stringify(c.refused || null);
+  check('M3 SAME-MODEL', 'splitting the storeys changed the converted model, the verdict or the refusal', (!g0.ok || n0.length > 0 || !!c0.refused) && JSON.stringify(n0) === JSON.stringify(n1) && vd(c0) === vd(c1) && rf(c0) === rf(c1), `${c0.refused ? 'both refused: ' + rf(c0).slice(0, 140) + ' ' : ''}storeys=${n0.length} ops=${(c0.ST || []).reduce((a, st) => a + st.after.length, 0)} verdict ${vd(c0).slice(0, 60)} == ${vd(c1).slice(0, 60)}`);
   if (process.env.DIFF) { n0.forEach((x, i) => { if (x !== n1[i]) { const a = x.split('|'), b = n1[i].split('|'); console.log('DIFF storey', i, a.length, b.length); const sb = new Set(b), sa = new Set(a); const ou = a.filter(o => !sb.has(o))[0] || '', os_ = b.filter(o => !sa.has(o))[0] || ''; let k = 0; while (k < ou.length && ou[k] === os_[k]) k++; console.log(' first difference at', k, '\n  unscoped:', ou.slice(Math.max(0, k - 120), k + 160), '\n  scoped:  ', os_.slice(Math.max(0, k - 120), k + 160)); } }); }
   // doctored scoped sets: each must be flagged
   const edit = (pred, fn) => f1.map(f => (pred(f) ? { name: f.name, text: fn(f.text) } : f));
