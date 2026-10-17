@@ -1,47 +1,63 @@
 #!/usr/bin/env node
 /**
- * # ⚠ DO NOT REMOVE — W-DXF-SHED: prompts/DXF2BIM_MODELLER_LANE.md §L7.10-L7.12. Read the log after every run; exit code is not evidence.
+ * # ⚠ DO NOT REMOVE — W-DXF-SHED: prompts/DXF2BIM_MODELLER_LANE.md §L7.10-L7.13. Read the log after every run; exit code is not evidence.
  * Real CAD (an open-sided shed, DWG-derived DXF, inches; local material, SKIP when absent: $SHED_SHEETS or ~/Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/).
  * Issue proved: a common CAD drawing set, RAW (no markings), reaches the Modeller through the product alone: suggestions accepted, only the facts the drawing cannot state typed
- * (SET name, the plan level, the second level datum), the layers typed Column -> typed columns on the canvas, nothing else invented.
- *   H1 raw: only UNITS/VIEW/NAME suggested (no plan/elevation roles yet)   H2 after Accept all: grid positions come from the dimension TICKS (14 on the elevation), ground-line @Z=0
- *   H3 after the typed facts both sheets have roles   H4 layers typed Column -> structure set: 24 bodies, 8 left out (advisory), Convert enabled
- *   H5 Convert: 24 IfcColumn on Level 1, heights from the elevation (12 full 24..122 in above FGL, 12 drawn 36 in tall), 0 cuts
+ * (SET name, the plan level, the PL datum), the layers typed Column -> typed columns on the canvas, nothing else invented.
+ *   Flow A (plan + South elevation): H1 raw: only UNITS/VIEW/NAME suggested   H2 Accept all: grid from the dimension TICKS (14), ground-line @Z=0, FACE minY from "South"
+ *   H3 typed facts -> both sheets have roles   H4 layers typed Column -> structure set: ALL 32 columns built, 0 left out   H5 Convert: 32 IfcColumn on Level 1, heights as drawn
+ *   H6 type name = the drawing's own label   Flow B (plan + North + South): B1 North reads right-to-left (HAXIS -X, FACE maxY from "North", ticks reversed) and the SAME 32 bodies with the
+ *   SAME heights come out, 0 ambiguous_z: two independent elevations agree (nothing guessed to reconcile them)
  */
 const fs = require('fs'), path = require('path');
 const SH = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
 if (!fs.existsSync(path.join(SH, '0_FLOOR_PLAN.dxf'))) { console.log('SKIP W-DXF-SHED: local shed sheets not present'); process.exit(0); }
 const { runE2E } = require('./e2e_harness');
+const PL_Y = { '1S_ELEV_SOUTH.dxf': -4446.6, '1N_ELEV_NORTH.dxf': -3895.2 };   // the line the PL label sits on (ground + 24 in), read from each elevation
 runE2E('W-DXF-SHED', async (t) => {
   const pg = t.pg, sleep = t.sleep;
   const idle = async () => { await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 180000 }); await sleep(900); };
-  await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
-  const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept([SH + '0_FLOOR_PLAN.dxf', SH + '1S_ELEV_SOUTH.dxf']);
-  await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 180000 }); await sleep(1500);
-  const sug = () => pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.prop.list.map(p => p.rule).join(',')));
-  const s1 = await sug();
-  t.assert('H1 raw shed sheets: the first suggestions are UNITS / VIEW / NAME only', s1.every(x => /^PR-UNITS,PR-VIEW,PR-NAME$/.test(x)), JSON.stringify(s1));
   const acceptAll = async () => { await pg.evaluate(() => { const b = document.querySelector('#dm-yellows [data-act="acceptall"]'); if (b) b.click(); }); await idle(); };
-  await acceptAll();
-  const m = await pg.evaluate(() => { const E = window.DxfMetaEditor.state.sheets[1].marks, v = {}; E.forEach(x => { if (x.key === 'GRIDH') v[x.value] = Number(x.value && x.x); }); return { gridh: E.filter(x => x.key === 'GRIDH').length, z: E.filter(x => x.key === 'Z').map(x => [x.value, x.y]), face: (E.find(x => x.key === 'FACE') || {}).value, src: [...new Set(E.map(x => x.source))] }; });
-  t.assert('H2 Accept all: 14 elevation grid marks from the dimension ticks, @Z=0 at the ground line (y -4470.581), FACE minY from "South", all `user`', m.gridh === 14 && m.z.length === 1 && m.z[0][0] === '0' && Math.abs(m.z[0][1] + 4470.581) < 1e-3 && m.face === 'minY' && m.src.join() === 'user', JSON.stringify(m));
   const type = async (sel, v) => { await pg.click(sel, { clickCount: 3 }); await pg.type(sel, String(v)); await pg.keyboard.press('Tab'); await sleep(500); };
-  await type('#dm-f-0-SET', 'SHED'); await idle(); await type('#dm-f-1-SET', 'SHED'); await idle(); await type('#dm-f-0-LEVEL', '0'); await idle(); await acceptAll();
-  if (!(await pg.evaluate(() => (document.getElementById('dm-f-1-HAXIS') || {}).value))) { await pg.select('#dm-f-1-HAXIS', '+X'); await idle(); }
-  await pg.type('#dm-av-1-Z', '0.6096'); await pg.type('#dm-ap-1-Z', '-4446.6');
-  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="add"][data-group="Z"]').click()); await idle();
+  const open = async (names) => { await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
+    const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept(names.map(n => SH + n));
+    await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 180000 }); await sleep(1500); };
+  const facts = async () => {   // SET on every sheet, the plan level, HAXIS if still open, the PL datum on every elevation
+    const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
+    for (let i = 0; i < names.length; i++) { await type('#dm-f-' + i + '-SET', 'SHED'); await idle(); }
+    await type('#dm-f-0-LEVEL', '0'); await idle(); await acceptAll();
+    for (let i = 1; i < names.length; i++) { if (!(await pg.evaluate((k) => (document.getElementById('dm-f-' + k + '-HAXIS') || {}).value, i))) { await pg.select('#dm-f-' + i + '-HAXIS', /NORTH/.test(names[i]) ? '-X' : '+X'); await idle(); } }
+    for (let i = 1; i < names.length; i++) { await pg.type('#dm-av-' + i + '-Z', '0.6096'); await pg.type('#dm-ap-' + i + '-Z', String(PL_Y[names[i]]));
+      await pg.evaluate((k) => document.querySelector('#dm-panel [data-act="add"][data-group="Z"][data-sheet="' + k + '"]').click(), i); await idle(); }
+    return names; };
+  const typeColumns = async () => { await pg.evaluate(() => { const s = window.DxfMetaEditor.state; if (!s.sec.layers) document.querySelector('#dm-panel .dm-sh[data-sec="layers"]').click(); }); await sleep(400);
+    await pg.select('#dm-panel [data-layer-row="plan|Col"] select', 'column'); await idle(); await pg.select('#dm-panel [data-layer-row="elev|0"] select', 'column'); await idle(); };
+  const zdist = () => pg.evaluate(() => { const z = {}; window.DxfImportUI.state.gate.R.els.forEach(e => { const k = (e.z0 / 0.0254).toFixed(0) + '..' + (e.z1 / 0.0254).toFixed(0); z[k] = (z[k] || 0) + 1; }); return z; });
+  const gate = () => pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { ok: g.ok, st: g.structure, adv: [...new Set(g.verdict.advisory.map(a => a.code))], refused: g.refused.map(r => r.reason), conv: !document.getElementById('dxf-convert').disabled }; });
+
+  // ---- Flow A: plan + South elevation ----
+  await open(['0_FLOOR_PLAN.dxf', '1S_ELEV_SOUTH.dxf']);
+  const s1 = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.prop.list.map(p => p.rule).join(',')));
+  t.assert('H1 raw shed sheets: the first suggestions are UNITS / VIEW / NAME only', s1.every(x => /^PR-UNITS,PR-VIEW,PR-NAME$/.test(x)), JSON.stringify(s1));
+  await acceptAll();
+  const m = await pg.evaluate(() => { const E = window.DxfMetaEditor.state.sheets[1].marks; return { gridh: E.filter(x => x.key === 'GRIDH').length, z: E.filter(x => x.key === 'Z').map(x => [x.value, x.y]), face: (E.find(x => x.key === 'FACE') || {}).value, src: [...new Set(E.map(x => x.source))] }; });
+  t.assert('H2 Accept all: 14 elevation grid marks from the dimension ticks, @Z=0 at the ground line (y -4470.581), FACE minY from "South", all `user`', m.gridh === 14 && m.z.length === 1 && m.z[0][0] === '0' && Math.abs(m.z[0][1] + 4470.581) < 1e-3 && m.face === 'minY' && m.src.join() === 'user', JSON.stringify(m));
+  await facts();
   const roles = await pg.evaluate(() => window.DxfImportUI.state.sheets.map(s => s.name + ':' + (s.role || 'NONE')));
   t.assert('H3 after the typed facts (SET, LEVEL, the PL datum +24 in) both sheets have roles', roles.join() === '0_FLOOR_PLAN.dxf:plan,1S_ELEV_SOUTH.dxf:elev', JSON.stringify(roles));
-  await pg.evaluate(() => { const s = window.DxfMetaEditor.state; if (!s.sec.layers) document.querySelector('#dm-panel .dm-sh[data-sec="layers"]').click(); }); await sleep(400);
-  await pg.select('#dm-panel [data-layer-row="plan|Col"] select', 'column'); await idle();
-  await pg.select('#dm-panel [data-layer-row="elev|0"] select', 'column'); await idle();
-  const g = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { ok: g.ok, st: g.structure, adv: [...new Set(g.verdict.advisory.map(a => a.code))], conv: !document.getElementById('dxf-convert').disabled }; });
-  t.assert('H4 layers typed Column -> structure set: 24 bodies, 8 left out (advisory GAP:body_no_elevation only), Convert enabled', g.ok && g.st.bodies === 24 && g.st.left_out === 8 && g.adv.join() === 'GAP:body_no_elevation' && g.conv, JSON.stringify(g));
-  const zr = await pg.evaluate(() => { const z = {}; window.DxfImportUI.state.gate.R.els.forEach(e => { const k = (e.z0 / 0.0254).toFixed(1) + '..' + (e.z1 / 0.0254).toFixed(1); z[k] = (z[k] || 0) + 1; }); return z; });
+  await typeColumns();
+  const g = await gate(), zA = await zdist();
+  t.assert('H4 layers typed Column -> structure set: ALL 32 columns built, 0 left out, no advisory, Convert enabled', g.ok && g.st.bodies === 32 && g.st.left_out === 0 && g.adv.length === 0 && g.conv, JSON.stringify(g));
   await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 120000 }); await sleep(1500);
   const c = await pg.evaluate(() => ({ counts: window.DxfImportUI.state.last.counts, cuts: window.DxfImportUI.state.last.nCuts }));
-  t.assert('H5 Convert: 24 IfcColumn on Level 1, 0 cuts; heights as drawn: 12 at 24..122 in, 12 at 24..60 in (FGL = 0)', c.counts['Level 1/IfcColumn'] === 24 && c.cuts === 0 && zr['24.0..122.0'] === 12 && zr['24.0..60.0'] === 12, JSON.stringify({ c, zr }));
+  t.assert('H5 Convert: 32 IfcColumn on Level 1, 0 cuts; heights as drawn: 16 at 24..122 in, 12 at 24..60 in (right block drawn 36 in tall), 4 at 24..120 (east end) above FGL', c.counts['Level 1/IfcColumn'] === 32 && c.cuts === 0 && zA['24..122'] === 16 && zA['24..60'] === 12 && zA['24..120'] === 4, JSON.stringify({ c, zA }));
   const nm = await pg.evaluate(() => [...new Set(window.DxfImportUI.state.gate.R.els.map(e => e.ifc.type_name))]);
-  t.assert('H6 the 24 columns carry the drawing\'s own label as type name (the one text naming a column)', nm.length === 1 && nm[0] === '12"x12" R.C.C Column', JSON.stringify(nm));
-});
+  t.assert('H6 the 32 columns carry the drawing\'s own label as type name (the one text naming a column)', nm.length === 1 && nm[0] === '12"x12" R.C.C Column', JSON.stringify(nm));
 
+  // ---- Flow B: plan + North + South ----
+  await open(['0_FLOOR_PLAN.dxf', '1N_ELEV_NORTH.dxf', '1S_ELEV_SOUTH.dxf']); await acceptAll();
+  const face = await pg.evaluate(() => ({ n: window.DxfMetaEditor.state.sheets[1].marks.find(x => x.key === 'FACE'), grid: window.DxfMetaEditor.state.sheets[1].marks.filter(x => x.key === 'GRIDH').length }));
+  await facts(); await typeColumns();
+  const gB = await gate(), zB = await zdist();
+  t.assert('B1 plan + North + South: North is read right-to-left (FACE maxY from "North", 14 tick grid marks, HAXIS -X) and the SAME 32 bodies with the SAME heights come out: two independent elevations agree, 0 ambiguous', face.n && face.n.value === 'maxY' && face.grid === 14 && gB.ok && gB.st.bodies === 32 && gB.st.left_out === 0 && !gB.adv.includes('GAP:body_ambiguous_z') && JSON.stringify(zB) === JSON.stringify(zA), JSON.stringify({ face, gB, zB }));
+});

@@ -53,18 +53,24 @@
     sheet.dxf.entities.forEach(function (e) {
       if (e.type !== 'LINE' || layers.indexOf(e.layer) < 0 || !e.vertices || e.vertices.length < 2) return;
       var a = e.vertices[0], b = e.vertices[1];
-      if (Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) > tol) V.push({ x: (a.x + b.x) / 2, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y), handle: String(e.handle), layer: e.layer });
+      if (Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) > tol) V.push({ x: (a.x + b.x) / 2, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y), handles: [String(e.handle)], layer: e.layer });
     });
+    // CAD draws one face as several collinear pieces (split at a datum or a wall): merge touching/overlapping pieces on the same x into one line first
     V.sort(function (p, q) { return p.x - q.x || p.y0 - q.y0; });
+    var M = [];
+    V.forEach(function (v) { var l = M[M.length - 1]; if (l && Math.abs(l.x - v.x) <= tol && v.y0 <= l.y1 + tol) { l.y1 = Math.max(l.y1, v.y1); l.handles = l.handles.concat(v.handles); } else M.push({ x: v.x, y0: v.y0, y1: v.y1, handles: v.handles.slice(), layer: v.layer }); });
+    V = M;
     var out = [], used = {};
     for (var i = 0; i < V.length; i++) for (var j = i + 1; j < V.length; j++) {
       var d = V[j].x - V[i].x; if (d > pairMax) break; if (d <= tol) continue;
-      if (Math.abs(V[i].y0 - V[j].y0) <= tol && Math.abs(V[i].y1 - V[j].y1) <= tol && !used[i] && !used[j]) {
-        var between = V.some(function (q, k) { return k !== i && k !== j && q.x > V[i].x + tol && q.x < V[j].x - tol && q.y1 > V[i].y0 + tol && q.y0 < V[i].y1 - tol; });
-        if (between) continue;
-        used[i] = used[j] = 1; out.push({ x0: V[i].x, x1: V[j].x, y0: V[i].y0, y1: V[i].y1, handle: V[i].handle + '+' + V[j].handle, members: [V[i].handle, V[j].handle], layer: V[i].layer, pair: true });
-        break;
-      }
+      // the two faces bound a body only where BOTH exist: the region height is the overlap of their extents (>= 50% of the longer line), so a face drawn longer (down to a footing line) does not stretch the body
+      var o0 = Math.max(V[i].y0, V[j].y0), o1 = Math.min(V[i].y1, V[j].y1), longer = Math.max(V[i].y1 - V[i].y0, V[j].y1 - V[j].y0);
+      if (!(o1 - o0 > 0) || (o1 - o0) < 0.5 * longer || used[i] || used[j]) continue;
+      var between = V.some(function (q, k) { return k !== i && k !== j && q.x > V[i].x + tol && q.x < V[j].x - tol && q.y1 > o0 + tol && q.y0 < o1 - tol; });
+      if (between) continue;
+      used[i] = used[j] = 1;
+      out.push({ x0: V[i].x, x1: V[j].x, y0: o0, y1: o1, handle: V[i].handles[0] + '+' + V[j].handles[0], members: V[i].handles.concat(V[j].handles), layer: V[i].layer, pair: true });
+      break;
     }
     return out;
   }

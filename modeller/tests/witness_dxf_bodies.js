@@ -53,4 +53,15 @@ let n5 = named([['Beam B-1 12"x10"']]);
 ok('B14 a label for another kind (beam) does not name the columns', n5.els.every(e => e.ifc.type_name === null) && n5.report.labels.beam.length === 1);
 let n6 = named([['12"x12" R.C.C Column'], ['12"x12" R.C.C Column']]);
 ok('B15 the same label twice is one distinct label (still applied)', n6.els.every(e => e.ifc.type_name === '12"x12" R.C.C Column'));
+// §L7.10 gap closure: CAD draws a column as two faces that need not be equally long, and a face may be drawn in collinear pieces
+const faces = (L) => doc(L.map(([x, y0, y1]) => line('Col', x, y0, x, y1)).join(''), ELEV('minY'));
+const plan1 = planDxf([[850, 1150]]);
+let u1 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3200], [1150, 200, 3000]])]]);
+ok('B17 faces of unequal length: the body takes the OVERLAP of the two faces (0.2..3.0 m), not the longer one', u1.els.length === 1 && Math.abs(u1.els[0].z0 - 0.2) < 1e-9 && Math.abs(u1.els[0].z1 - 3) < 1e-9 && u1.els[0].match === 'interval', JSON.stringify(u1.els.map(e => [e.z0, e.z1, e.match])));
+let u2 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3000], [1150, 0, 1500], [1150, 1500, 3000]])]]);
+ok('B18 a face drawn in two touching collinear pieces is one face: the body is 0..3 m', u2.els.length === 1 && u2.els[0].z0 === 0 && u2.els[0].z1 === 3, JSON.stringify(u2.els.map(e => [e.z0, e.z1])));
+let u3 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3000], [1150, 2800, 3000]])]]);
+ok('B19 CONTROL faces overlapping by less than half of the shorter one are not a body: GAP:body_no_elevation', u3.els.length === 0 && u3.gaps.length === 1 && u3.gaps[0].code === 'GAP:body_no_elevation', JSON.stringify(u3.gaps.map(x => x.code)));
+let u4 = run([['plan.dxf', plan1], ['south.dxf', faces([[850, 0, 3000], [1150, 0, 3000], [1000, 0, 3000]])]]);
+ok('B20 CONTROL a third line between the two faces: they are not neighbours, no pair (the middle line pairs with a face only if it is the nearest)', u4.els.length <= 1);
 console.log(fail ? 'W-BODIES FAIL ' + fail : 'W-BODIES PASS'); process.exit(fail ? 1 : 0);
