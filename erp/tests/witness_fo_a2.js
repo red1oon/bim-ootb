@@ -53,7 +53,9 @@ async function run(base, browser, lens) {
   const oo = (await tip('SELECT c_order_id AS i, m_warehouse_id AS w, c_bpartner_id AS b FROM c_order WHERE c_order_id < 0 ORDER BY c_order_id DESC LIMIT 1'))[0];
   const bar0 = await pg.evaluate(() => Array.from(document.querySelectorAll('#idmp-lensbar button')).map(b => b.getAttribute('data-lens-action')));
   const procLine = (id, from) => logs.slice(from).filter(l => new RegExp('§AD-PROC-LIVE proc=' + id + ' .*dispatched=').test(l)).pop() || '';
-  let ok1 = '', ok2 = '';
+  let ok1 = '', ok2 = '', payForm = null, payDa = '', barPay = [];
+  const payMenuId = await pg.evaluate(() => { const r = window.__idmpDb.exec("SELECT AD_Menu_ID FROM AD_Menu WHERE Action='W' AND AD_Window_ID=195 AND IsActive='Y'"); return (r.length ? r[0].values.map(x => x[0]) : []).find(i => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + i + '"]')); });
+
   if (lens) {
     for (const [act, id] of [['friendly-ops:next:ship', 118], ['friendly-ops:next:invoice', 119]]) {
       const sel = '#idmp-lensbar button[data-lens-action="' + act + '"]'; await pg.waitForSelector(sel, { timeout: 8000 }).catch(() => {});
@@ -62,7 +64,14 @@ async function run(base, browser, lens) {
       const okb = await pg.waitForSelector('#idmp-procdlg [data-procdlg-ok]', { timeout: 20000 }).then(() => true, () => false);
       if (okb) { await hc('#idmp-procdlg [data-procdlg-ok]'); await pg.waitForTimeout(1200); }   // the result dialog's OK (a real gesture, counted)
     }
-    // the order window is still on screen: refresh state for the second button
+    barPay = await pg.evaluate(() => Array.from(document.querySelectorAll('#idmp-lensbar button')).map(b => b.getAttribute('data-lens-action')));
+    // FO-A4: Receive payment (a Payment record preset with the invoice), then the lens's own Save & Complete
+    { const sel = '#idmp-lensbar button[data-lens-action="friendly-ops:next:pay"]'; await pg.waitForSelector(sel, { timeout: 8000 }).catch(() => {});
+      const from = logs.length; await hc(sel);
+      await pg.waitForFunction(() => { const e = document.querySelector('#idmp-inline-mount [data-col="c_invoice_id"]'); return e && e.value; }, null, { timeout: 40000 }).catch(() => {}); await pg.waitForTimeout(3000);
+      payForm = await pg.evaluate(() => ({ inv: (document.querySelector('#idmp-inline-mount [data-col="c_invoice_id"]') || {}).value, amt: (document.querySelector('#idmp-inline-mount [data-col="payamt"]') || {}).value }));
+      const sc = '#idmp-lensbar button[data-lens-action="friendly-ops:save-complete"]'; await pg.waitForSelector(sc, { timeout: 8000 }).catch(() => {}); await hc(sc); await pg.waitForTimeout(5000);
+      payDa = logs.slice(from).filter(l => /§MODEL-DOCACTION table=c_payment/.test(l)).pop() || ''; }
   } else {
     for (const [mn, id] of [[193, 118], [192, 119]]) {
       await openMenu(mn); await pg.waitForSelector('[data-proc-param]', { timeout: 15000 }); await pg.waitForTimeout(800);
@@ -73,13 +82,22 @@ async function run(base, browser, lens) {
       const from = logs.length; await hc('[data-proc-run]'); await pg.waitForTimeout(6000);
       (id === 118 ? (ok1 = procLine(id, from)) : (ok2 = procLine(id, from)));
     }
+    { await openMenu(payMenuId); await pg.waitForSelector(NEWB, { timeout: 15000 }); await pg.waitForTimeout(800); await hc(NEWB); await pg.waitForSelector('#idmp-inline-mount .cfrow'); await pg.waitForTimeout(800);
+      await pick('ad_org_id', /^HQ/); await pick('c_bpartner_id', /Joe Block/);
+      const io = (await pg.$$eval('#idmp-inline-mount select[data-col="c_invoice_id"] option', x => x.map(y => ({ v: y.value, t: y.text })))).find(x => x.v && Number(x.v) < 0);
+      GT.select++; await pg.selectOption(F('c_invoice_id', 'select'), io.v); await pg.waitForTimeout(2500);
+      payForm = await pg.evaluate(() => ({ inv: (document.querySelector('#idmp-inline-mount [data-col="c_invoice_id"]') || {}).value, amt: (document.querySelector('#idmp-inline-mount [data-col="payamt"]') || {}).value }));
+      await hc('#idmp-toolbar [title^="Save"]'); await pg.waitForTimeout(2000); const from = logs.length; await hc('[data-doc-action="CO"]'); await pg.waitForTimeout(5000);
+      payDa = logs.slice(from).filter(l => /§MODEL-DOCACTION table=c_payment/.test(l)).pop() || ''; }
   }
   const chainGestures = GT.click + GT.select + GT.type - g0;
   const ev = logs.slice(nChain).map(l => /^§EVENT_SEQ n=\d+ table=(\S+) event=(\S+)/.exec(l)).filter(Boolean).map(m => m[2] + '@' + m[1]);
   const shr = await tip("SELECT docstatus AS s, c_doctype_id AS t, movementtype AS m, m_warehouse_id AS w FROM m_inout WHERE m_inout_id < 0");
   const ivr = await tip("SELECT docstatus AS s, c_doctypetarget_id AS t, grandtotal AS g, c_order_id AS o FROM c_invoice WHERE c_invoice_id < 0");
+  const pay = await tip("SELECT docstatus AS s, payamt AS a, discountamt AS d, isreceipt AS r FROM c_payment WHERE c_payment_id < 0");
+  const inp = await tip("SELECT ispaid AS p FROM c_invoice WHERE c_invoice_id < 0");
   const ord = await tip("SELECT SUM(qtydelivered) AS d, SUM(qtyinvoiced) AS i FROM c_orderline WHERE c_order_id < 0");
-  return { lens, chainGestures, ev, bar0, ok1, ok2, books: JSON.stringify({ shr, ivr, ord }) };
+  return { lens, chainGestures, ev, bar0, barPay, ok1, ok2, payForm: JSON.stringify(payForm), payDa, books: JSON.stringify({ shr, ivr, ord, pay, inp }) };
 }
 (async () => {
   await new Promise(r => srv.listen(0, r)); const base = 'http://localhost:' + srv.address().port + '/erp';
@@ -88,12 +106,13 @@ async function run(base, browser, lens) {
     const off = await run(base, browser, false), on = await run(base, browser, true);
     console.log('§FOA2 off=' + JSON.stringify({ g: off.chainGestures, ev: off.ev.length }) + ' on=' + JSON.stringify({ g: on.chainGestures, ev: on.ev.length, bar: on.bar0 }));
     J('A1', 'lens not installed: no Ship/Invoice buttons on the completed order', !off.bar0.some(x => /next:/.test(x)), off.bar0);
-    J('A2', 'lens installed: Ship and Invoice are offered on the completed order', ['friendly-ops:next:ship', 'friendly-ops:next:invoice'].every(x => on.bar0.includes(x)), on.bar0);
+    J('A2', 'lens installed: Ship and Invoice are offered on the completed order, Receive payment once it is invoiced', ['friendly-ops:next:ship', 'friendly-ops:next:invoice'].every(x => on.bar0.includes(x)) && on.barPay.includes('friendly-ops:next:pay'), on.bar0);
     if (!off.ev.length || !on.ev.length) { incon++; console.log('  INCONCLUSIVE empty event trace'); }
     J('B', 'chain gestures strictly fewer with the lens (' + on.chainGestures + ' < ' + off.chainGestures + ')', on.chainGestures < off.chainGestures);
     J('C', '§EVENT_SEQ of the two processes equal event for event (' + off.ev.length + ' vs ' + on.ev.length + ')', off.ev.length > 0 && JSON.stringify(off.ev) === JSON.stringify(on.ev), 'first diff ' + off.ev.findIndex((e, i) => e !== on.ev[i]));
     J('D', 'shipment, invoice and order quantities equal', off.books === on.books && /"s":"CO"/.test(on.books), 'off ' + off.books + ' on ' + on.books);
     J('E', 'both process runs ok=Y on the lens path', /ok=Y/.test(on.ok1) && /ok=Y/.test(on.ok2), on.ok1.slice(0, 120) + ' | ' + on.ok2.slice(0, 120));
+    J('F', 'Receive payment: the preset payment completes (status CO) and the invoice is paid, identical to the plain Payment window', /ok=true status=CO/.test(on.payDa) && /ok=true status=CO/.test(off.payDa) && /"p":"Y"/.test(on.books) && JSON.parse(on.payForm).amt === JSON.parse(off.payForm).amt && Number(JSON.parse(on.payForm).amt) > 0, 'on ' + on.payForm + ' off ' + off.payForm + ' | ' + on.payDa.slice(0, 90));
   } catch (e) { console.log('§FOA2 HARNESS-FAIL ' + e.message); fails++; }
   await browser.close(); srv.close();
   console.log('§FOA2_VERDICT ' + (incon ? 'INCONCLUSIVE' : fails ? 'RED' : 'GREEN') + ' judged=' + judged + ' failed=' + fails);
