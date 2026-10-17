@@ -296,12 +296,22 @@
     }
     R.elevs = elevs;
     var allRects = [].concat.apply([], elevs.map(function (e) { return e.walls; }));
+    var allDatum = [].concat.apply([], elevs.map(function (e) { return e.lines || []; }));   // §L1.27: drawn level datum lines (z in metres, absolute)
     var ST = plans.map(function (p, i) { return { name: 'Level ' + (i + 1), sheet: p.name, sh: p, level: p.level }; });
     for (var si = 0; si < ST.length; si++) {
       var st = ST[si];
       st.levelDrawn = allRects.filter(function (r) { return Math.abs(r.z0 - st.level) <= CFG.elev_tol; }).map(function (r) { return r.handle; });
-      if (!st.levelDrawn.length) return refuse(st.sheet, '@LEVEL=' + st.level + ' is not a drawn elevation boundary (BASIC_SHAPES_SPEC §2.3 LV)');
-      var nxt = ST[si + 1] ? ST[si + 1].level : Math.max.apply(null, allRects.filter(function (r) { return Math.abs(r.z0 - st.level) <= CFG.elev_tol; }).map(function (r) { return r.z1; }));
+      // §L1.27: a level is also drawn by a level datum line of an elevation (it states nothing about wall bases: heights still come from rectangles that start at the level, or @WALLTOP)
+      st.levelDatum = allDatum.filter(function (l) { return Math.abs(l.z - st.level) <= CFG.elev_tol; }).map(function (l) { return l.handle; });
+      if (!st.levelDrawn.length && !st.levelDatum.length) return refuse(st.sheet, '@LEVEL=' + st.level + ' is not a drawn elevation boundary (BASIC_SHAPES_SPEC §2.3 LV)');
+      var nxt;
+      if (ST[si + 1]) nxt = ST[si + 1].level;
+      else if (st.levelDrawn.length) nxt = Math.max.apply(null, allRects.filter(function (r) { return Math.abs(r.z0 - st.level) <= CFG.elev_tol; }).map(function (r) { return r.z1; }));
+      else {   // no rectangle starts at the top storey's level: the lowest drawn datum above it
+        var above = allDatum.filter(function (l) { return l.z > st.level + CFG.elev_tol; }).map(function (l) { return l.z; });
+        if (!above.length) return refuse(st.sheet, '@LEVEL=' + st.level + ': no drawn level above the top storey (§L1.27)');
+        nxt = Math.min.apply(null, above);
+      }
       st.top = nxt;
       var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
       var ops = E.applyElevations(run.ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex }).ops;
