@@ -1666,5 +1666,9 @@ Built as specified (`§DOOR_NOSWING_BBOX`, wing sets only, a door with an arc is
 - W-L122-VS-STRAIGHT: `witness_dxf_wing_vs_straight.js`: for a rectilinear model the reader's blocking codes with counts on the wing set equal the straight set's, OR every difference is listed against the rule that causes it (no silent difference). Run on Duplex and HHS (merged).
 - W-L122-CONTROL: a model with no symmetric columns (Duplex) unchanged.
 
+**L1.22b (amendment, measured the same day, BEFORE its code):** `witness_dxf_wing_vs_straight.js` V2 FAILED on HHS: the straight grid has 14 X lines, the wing 12 (`-12.704` and `53.033` missing): round columns standing OUTSIDE the plan extent of the walls (canopy / edge columns) were dropped by the "centre inside the extent" rule, and the building grid is built from them. The extent rule is the wrong test.
+- **Rule (replaces the extent test):** a symmetric column belongs to the wing of its NEAREST wall: the wall (of any angle, kept or not) with the smallest plan-bbox distance to the column centre (0 when inside; ties to the smaller wall guid). It is kept when that wall is in the wing's kept set. This gives ONE owner per symmetric column even when wings overlap (closes the "stated limit" above) and keeps edge columns with the building they stand next to. Logged as before plus `§WING_COLUMN_OWNER guid=<g> nearest=<wall> dist_mm=<d>` only for a column whose nearest wall is NOT in this wing (so the log is small).
+- **Witness unchanged:** V1 read, V2 same grid, V3 not worse, V4 differences listed, on Duplex and HHS (merged).
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
