@@ -194,20 +194,20 @@
     var iu = sh.dxf.header && sh.dxf.header.$INSUNITS;
     if (HEADER_UNITS[iu]) out.push({ rule: 'PR-UNITS', key: 'UNITS', value: HEADER_UNITS[iu], x: 0, y: 0, why: 'file says ' + HEADER_UNITS[iu] + ' ($INSUNITS=' + iu + ')' });
     else refused.push({ rule: 'PR-UNITS', why: '$INSUNITS ' + (iu === undefined ? 'absent' : iu + ' not a length unit') });
-    var titles = {}; sh.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && /(PLAN|ELEVATION|SECTION)\s*$/.test(String(e.text || '').trim())) titles[String(e.text).trim()] = 1; });
+    var titles = {}; sh.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && /(PLAN|ELEVATION|SECTION)\s*$/i.test(String(e.text || '').trim())) titles[String(e.text).trim()] = 1; });
     var tl = Object.keys(titles);
     if (tl.length === 1) {
-      var t = tl[0], vw = /ROOF PLAN$/.test(t) ? 'ROOF' : /PLAN$/.test(t) ? 'PLAN' : /ELEVATION$/.test(t) ? 'ELEV' : 'SECTION';
+      var t = tl[0], vw = /ROOF PLAN$/i.test(t) ? 'ROOF' : /PLAN$/i.test(t) ? 'PLAN' : /ELEVATION$/i.test(t) ? 'ELEV' : 'SECTION';
       out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
       out.push({ rule: 'PR-NAME', key: 'NAME', value: t, x: 0, y: 0, why: 'title text' });
     } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });
     var sets = {}; S.sheets.forEach(function (o) { if (o !== sh) { var m = get1(o, 'SET'); if (m) sets[m.value] = 1; } });
     if (Object.keys(sets).length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: Object.keys(sets)[0], x: 0, y: 0, why: 'the other sheets state it' });
-    var nm = sh.name.toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
+    var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
     if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
     if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
     if (v === 'ELEV') {
-      if (faces.length === 1) out.push({ rule: 'PR-FACE', key: 'FACE', value: faces[0][1], x: 0, y: 0, why: 'sheet name ' + faces[0][0] + ' (repo convention R11, not evidence)' });
+      if (faces.length === 1) out.push({ rule: 'PR-FACE', key: 'FACE', value: faces[0][1], x: 0, y: 0, why: 'sheet name / title ' + faces[0][0] + (/^(SOUTH|NORTH|WEST|EAST)$/.test(faces[0][0]) ? ' = the ' + faces[0][1] + ' face with north up (convention, not evidence)' : ' (repo convention R11, not evidence)') });
       var hx = propHaxis(sh); if (hx.value) out.push(hx); else refused.push(hx);
     }
     var have = {}; sh.marks.forEach(function (m) { have[canonOne(m)] = 1; });
