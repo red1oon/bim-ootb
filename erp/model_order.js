@@ -48,7 +48,11 @@
   // MOrder.beforeSave :1282-1291 default price list, then setM_PriceList_ID :908-917 (Currency + IsTaxIncluded follow the list). ONE implementation of the choice: ERPEngine.orderPriceListDefault
   // (pure; the same function the bim-compiler twin runs). No active list of the order's SO/PO kind => legacy NPE "pl is null" => the save is refused.
   function engineMod() { return (typeof module !== 'undefined' && module.exports) ? require('./erp_engine') : (typeof window !== 'undefined' ? window.ERPEngine : globalThis.ERPEngine); }
-  ML.registerModel('c_order', { beforeSave: function (trx, o) {
+  // MOrder.setInitialDefaults :441-479 (new MOrder(ctx, 0, trx)); the clock-valued ones (DateAcct/DatePromised/DateOrdered = now) are listed in initialClock for newPO to stamp from the session clock
+  var ORDER_DEFAULTS = { docstatus: 'DR', docaction: 'PR', deliveryrule: 'A', freightcostrule: 'I', invoicerule: 'I', paymentrule: 'P', priorityrule: '5', deliveryviarule: 'P', isdiscountprinted: 'N', isselected: 'N',
+    istaxincluded: 'N', issotrx: 'Y', isdropship: 'N', sendemail: 'N', isapproved: 'N', isprinted: 'N', iscreditapproved: 'N', isdelivered: 'N', isinvoiced: 'N', istransferred: 'N', isselfservice: 'N', processed: 'N', processing: 'N', posted: 'N',
+    freightamt: 0, chargeamt: 0, totallines: 0, grandtotal: 0 };
+  ML.registerModel('c_order', { initialDefaults: ORDER_DEFAULTS, initialClock: ['dateacct', 'datepromised', 'dateordered'], beforeSave: function (trx, o) {
     if (!nz(o.c_doctype_id)) o.c_doctype_id = 0;
     if (!nz(o.m_pricelist_id)) {
       var EE = engineMod(); if (!EE || typeof EE.orderPriceListDefault !== 'function') { if (trx.say) trx.say('§MODEL-UNPORTED-DEP MOrder.beforeSave:1282-1291 needs erp_engine.orderPriceListDefault, not loaded on this host'); return null; }

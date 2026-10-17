@@ -21,8 +21,8 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §OC-LI
   const r0 = await rows(), s0 = await summary();
   console.log('§OC-LIVE-1 rows=' + r0.length + ' first=' + JSON.stringify(r0[0]) + ' summary="' + s0 + '"');
   const head = await pg.evaluate(() => ({ bar: (document.querySelector('#pr-osgi .oc-bar b') || {}).textContent, cols: [...document.querySelectorAll('#pr-osgi table.oc-t thead th')].map(t => t.textContent.trim()) }));
-  ok('C1 the Felix-style page: title bar, columns Id | Name | Version | Status | Actions, Id 0 = the system bundle, built-in modules listed Active', head.cols.join('|') === 'Id|Name|Version|Status|Actions' && /Web Console/.test(head.bar) && r0[0].id === '0' && /system bundle/.test(r0[0].name) && r0.length >= 10 && r0.every(r => r.status === 'Active'), { head: head, r0: r0.slice(0, 2) });
-  ok('C2 the Felix summary sentence ("Bundle information: N bundles in total - all N bundles active.")', /^Bundle information: \d+ bundles in total - all \d+ bundles active\.$/.test(s0), s0);
+  ok('C1 the Felix-style page: title bar, columns Id | Name | Version | Status | Actions, Id 0 = the system bundle, built-in modules listed Active', head.cols.join('|') === 'Id|Name|Version|Status|Actions' && /Web Console/.test(head.bar) && r0[0].id === '0' && /system bundle/.test(r0[0].name) && r0.length >= 10 && r0.every(r => /Web Services/.test(r.name) ? r.status === 'Installed' : r.status === 'Active'), { head: head, r0: r0.slice(0, 2), off: r0.filter(r => r.status !== 'Active') });   // the Web Services bundle ships INSTALLED, NOT started (legacy: nothing reachable until switched on, ERP_WS_API.md S6); every other built-in is Active
+  ok('C2 the Felix summary sentence ("Bundle information: N bundles in total - all N bundles active.")', /^Bundle information: \d+ bundles in total - (all \d+ bundles active|\d+ bundles active, 1 bundle installed)\.$/.test(s0), s0);   // 1 bundle installed = Web Services, default off
   // install the lazy fixture through the console's own Install/Update box
   await pg.click('#pr-osgi [data-oc-installtoggle]'); await pg.waitForSelector('#pr-osgi [data-oc-url]');
   await pg.fill('#pr-osgi [data-oc-url]', `http://localhost:${port}/erp/tests/fixtures/lazy_probe.mjs`); await pg.click('#pr-osgi [data-oc-doinstall]'); await pg.waitForTimeout(1500);
@@ -49,7 +49,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §OC-LI
   console.log('§OC-LIVE-4 after a full page reload: ' + JSON.stringify(l4));
   ok('C7 a full page reload restores the stack from persistence: the lazy bundle is back (started, not yet activated = Starting)', !!l4 && l4.status === 'Starting', { l4: l4 });
   await pg.click('#pr-osgi [data-oc-uninstall="com.test.lazy-probe"]'); await pg.waitForTimeout(600);
-  ok('C8 Uninstall removes the row and the summary returns to "all N bundles active"', !(await rows()).some(r => /lazy-probe/.test(r.name)) && /all \d+ bundles active/.test(await summary()), { sum: await summary() });
+  ok('C8 Uninstall removes the row and the summary returns to "all N bundles active"', !(await rows()).some(r => /lazy-probe/.test(r.name)) && /(all \d+ bundles active|\d+ bundles active, 1 bundle installed)/.test(await summary()), { sum: await summary() });
   ok('C9 zero page errors', errs.length === 0, errs.slice(0, 3));
   console.log('§OC-LIVE-VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' failed=' + fails); await browser.close(); srv.close(); process.exit(fails ? 1 : 0);
 })().catch(e => { console.log('§OC-LIVE-VERDICT FAIL harness: ' + e.stack); process.exit(2); });

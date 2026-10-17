@@ -232,6 +232,7 @@
     var row = {}, env = trx.env;
     // the M class ctor's setInitialDefaults (registered as MODEL[table].initialDefaults — clock-valued ones are left to the caller)
     var M = MODEL[table]; if (M && M.initialDefaults) Object.keys(M.initialDefaults).forEach(function (c) { row[c] = M.initialDefaults[c]; });
+    if (M && M.initialClock) M.initialClock.forEach(function (c) { row[c] = trx.env.date; });   // the ctor's new Timestamp(System.currentTimeMillis()) defaults (ERP_WS_API.md S2: a WS-created order)
     var cols0 = columnsOf(trx, table);   // only the columns the table has (C_InvoiceLine/C_InvoiceTax carry no Posted/Processing)
     ['processed', 'processing', 'posted'].forEach(function (c) { if (cols0[c]) row[c] = 'N'; });
     row.isactive = 'Y';

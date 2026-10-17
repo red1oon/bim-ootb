@@ -188,15 +188,26 @@
   // Built-in bundles (§27): shipped with the page like the bundles of a default OSGi distribution. A builtin this browser has never seen is installed + started ONCE and
   //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
   var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs'];
+  // INSTALLED BUT NOT STARTED: legacy ships these bundles in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Web Services = ERP_WS_API.md S6.
+  var INSTALL_ONLY = ['plugins/webservices.mjs'];
   function _builtins() {
     if (typeof location === 'undefined') return Promise.resolve();
     return _kvGet('builtins_seen', []).then(function (seen) {
-      var todo = BUILTINS.map(function (u) { return new URL(u, location.href).href; }).filter(function (u) { return seen.indexOf(u) < 0; });
-      if (!todo.length) return null;
-      return todo.reduce(function (p, u) {
-        return p.then(function () { return _reg.installBundle(u); }).then(function (b) { return _reg.startBundle(b.id || (b.manifest && b.manifest.id)); })
-          .then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed+started url=' + u); }, function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN failed url=' + u + ': ' + e.message); });
-      }, Promise.resolve()).then(function () { return _kvPut('builtins_seen', seen); }).then(function () { return _persist(); });
+      var abs = function (u) { return new URL(u, location.href).href; };
+      var offTodo = INSTALL_ONLY.map(abs).filter(function (u) { return seen.indexOf(u) < 0; });
+      var todo = BUILTINS.map(abs).filter(function (u) { return seen.indexOf(u) < 0; });
+      if (!todo.length && !offTodo.length) return null;
+      // install-only bundles first (default off: Plugins & Releases shows them Installed, not Active)
+      var offP = offTodo.reduce(function (p, u) {
+        return p.then(function () { return _reg.installBundle(u); }).then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed (NOT started: default off) url=' + u); },
+          function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN install failed url=' + u + ' ' + e.message); });
+      }, Promise.resolve());
+      return offP.then(function () {
+        return todo.reduce(function (p, u) {
+          return p.then(function () { return _reg.installBundle(u); }).then(function (b) { return _reg.startBundle(b.id || (b.manifest && b.manifest.id)); })
+            .then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed+started url=' + u); }, function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN failed url=' + u + ' ' + e.message); });
+        }, Promise.resolve());
+      }).then(function () { return _kvPut('builtins_seen', seen); }).then(function () { return _persist(); });
     });
   }
 

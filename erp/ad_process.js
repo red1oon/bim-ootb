@@ -963,7 +963,7 @@
 
     // prepare(): reject before doIt() if params are invalid — faithful to SvrProcess.process() aborting
     // when prepare() throws / parameters are missing.
-    if (!validate.ok) {
+    if (!validate.ok && !info.noValidate) {   // info.noValidate: the web service (Process.runProcess/fillParameter) fills only the given parameters and checks nothing
       return {
         ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname,
         dispatched: false, reason: 'param-validation-failed', validate: validate,

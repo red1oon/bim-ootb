@@ -263,6 +263,7 @@ const PRECACHE_ASSETS = [
   'plugins/widget_callout.mjs',     // example bundle — M_Product.Name → upper (C-1)
   'plugins/production_validator.mjs',// example bundle — M_Production BEFORE_SAVE qty<0 reject (C-2)
   'plugins/wip_token.mjs',          // example bundle — {Production.WIP} token from seed (C-3)
+  'plugins/webservices.mjs',        // built-in, INSTALLED BUT STOPPED (default off, ERP_WS_API.md S6)
   'plugins/ninja_excel.mjs',        // built-in bundle: the Excel Report pill (ERP_FRIENDLY_OPS_LENS.md §27)
   'plugins/ninja_create.mjs',       // built-in bundle: the Ninja pill + the Plugin Engine's Create face (§27)
   'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
