@@ -42,9 +42,21 @@ runE2E('W-DXF-ATTN', async (t) => {
   const dc = await pg.evaluate(() => ({ choices: window.DxfMetaEditor.defaultChoices(), row: window.DxfImportUI.state.defaults[0], badge: document.querySelector('#dm-panel [data-default="roof.sheet.thickness"] .dm-src').dataset.src, left: window.DxfMetaEditor.state.attn }));
   t.assert('D2 changing a default makes it the user\'s (badge `you`, value kept as a number, choice recorded)', dc.badge === 'user' && dc.row.kind === 'chosen' && dc.row.value === 1.5 && dc.choices['roof.sheet.thickness'] === '1.5', JSON.stringify(dc));
   t.assert('D3 one default left unconfirmed -> still counted', dc.left >= 1, String(dc.left));
+  // one place that repeats every yellow item
+  const y1 = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-yellows .dm-pr').length, attn: window.DxfMetaEditor.state.attn, blocking: window.DxfMetaEditor.state.verdict.blocking.length }));
+  t.assert('Y1 the "All defaults" section lists every yellow item (suggestions + applied defaults) once', y1.rows === y1.attn && y1.rows >= 4, JSON.stringify(y1));
+  await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="confirm"]').click()); await t.sleep(500);
+  await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 120000 }); await t.sleep(400);
+  const y1b = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-yellows .dm-pr').length, attn: window.DxfMetaEditor.state.attn, blocking: window.DxfMetaEditor.state.verdict.blocking.length }));
+  t.assert('Y1b ticking one row there removes just that one', y1b.rows === y1.rows - 1 && y1b.attn === y1.attn - 1, JSON.stringify(y1b));
+  await pg.evaluate(() => window.DxfMetaEditor.close()); await t.sleep(300);
+  const ig = await pg.evaluate(() => { const b = document.getElementById('dxf-meta'); return { shiver: b.classList.contains('dxf-shiver'), attn: window.DxfMetaEditor.state.attn, blocking: window.DxfMetaEditor.state.verdict.blocking.length, verdict: window.DxfMetaEditor.state.verdict.verdict }; });
+  t.assert('Y3 IGNORE path: closed with yellows left -> shiver on, defaults stay applied, the verdict (what gates Convert) is unchanged by them', ig.shiver && ig.attn > 0 && ig.blocking === y1b.blocking, JSON.stringify(ig));
+  await pg.evaluate(() => window.DxfMetaEditor.show()); await t.sleep(300);
+  await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="acceptall"]').click()); await t.sleep(900);
+  const y2 = await pg.evaluate(() => ({ attn: window.DxfMetaEditor.state.attn, rows: document.querySelectorAll('#dm-yellows .dm-pr').length, defs: window.DxfImportUI.state.defaults.map(r => r.key + ':' + r.kind), marks: window.DxfMetaEditor.state.sheets[0].marks.map(m => m.key + ':' + m.source) }));
+  t.assert('Y2 Accept all takes every yellow: nothing left, applied defaults kept as the user\'s, suggestions written as `user` markings', y2.attn === 0 && y2.rows === 0 && y2.defs.every(x => /:chosen$/.test(x)) && y2.marks.length >= 3 && y2.marks.every(x => /:user$/.test(x)), JSON.stringify(y2));
   await pg.evaluate(() => { window.DxfImportUI.state.defaults = []; });
-  for (let i = 0; i < 40; i++) { const n = await pg.evaluate(() => { const b = document.querySelector('#dm-panel [data-act="confirm"]'); if (b) { b.click(); return 1; } return 0; }); if (!n) break; await t.sleep(500); }
-  await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 120000 }); await t.sleep(600);
   s = await st(); console.log('state confirmed', JSON.stringify(s));
   t.assert('A3 every suggestion confirmed by real clicks -> nothing unconfirmed', s.attn === 0 && s.shiver === false, JSON.stringify(s));
   const by = await pg.evaluate(() => window.DxfMetaEditor.state.sheets[0].marks.map(m => m.key + ':' + m.source));
