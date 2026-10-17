@@ -59,11 +59,11 @@ function build(db) {
     return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock,
       uuid: function () { uu++; return crypto.randomUUID(); } };
   }
-  const journal = [], hooks = { onJournal: null };   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
+  const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
   function commit(session, ops, meta) {
     const e0 = env(session), ids = apply(ops, { now: e0.now, user: e0.user, client: e0.client, org: e0.org });
     const prev = journal.length ? journal[journal.length - 1].hash : '0'.repeat(64);
-    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: meta || null, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
+    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: (meta || ctxMeta.v) ? Object.assign({}, meta || {}, ctxMeta.v || {}) : null, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
     entry.hash = crypto.createHash('sha256').update(prev + JSON.stringify([entry.seq, entry.actor, entry.meta, entry.opsDigest])).digest('hex');
     journal.push(entry); if (hooks.onJournal) hooks.onJournal(entry); return ids;
   }
@@ -75,7 +75,7 @@ function build(db) {
     let ids = []; if (ok && ops.length) ids = commit(session, ops, meta);
     return Object.assign({}, r, { ok: ok, ops: ops, ids: ids, log: trx.log, trx: trx });
   }
-  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, env: env, journal: journal, hooks: hooks, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
+  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
 }
 // verifyJournal(text) -> { ok, entries, actors:{actor:n}, brokenAt } : re-derives every hash from the previous one; a changed, removed or reordered line breaks the chain from there on
 function verifyJournal(text) {

@@ -5,7 +5,7 @@
 // usage: node erp/ws_server.js [port] [extra.sql ...]     (extra SQL files are applied after the seed patch: tenant config such as web-service access rows)
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
-const WS = require('./ws_adinterface.js'), Kernel = require('./ws_kernel.js'), JsonBinding = require('./ws_json.js');
+const Policy = require('./ws_policy.js'), WS = require('./ws_adinterface.js'), Kernel = require('./ws_kernel.js'), JsonBinding = require('./ws_json.js');
 async function openDb(extraSql) {
   const initSqlJs = require(process.env.SQLJS || (os.homedir() + '/bim-ootb/tests/node_modules/sql.js'));
   const SQL = await initSqlJs(); const db = new SQL.Database(fs.readFileSync(path.join(__dirname, 'ad_seed.db')));
@@ -20,10 +20,20 @@ async function start(port, extraSql, opts) {
   opts = opts || {};
   // DEFAULT OFF when started from the command line: the bundle must be exported ACTIVE from the Web Services plugin (erp/plugins/webservices.mjs). Read at every request, so Stop takes effect at once.
   const isOn = () => { if (!opts.config) return opts.enabled !== false; try { return JSON.parse(fs.readFileSync(opts.config, 'utf8')).state === 'ACTIVE'; } catch (e) { return false; } };
-  const kernel = await Kernel.load(extraSql), ad = WS.create({ q: kernel.q, kernel }), journal = kernel.journal;
+  const kernel = await Kernel.load(extraSql);
+  const policy = Policy.create({ q: kernel.q, run: kernel.run, onAlert: (a) => { console.log('§WS-ALERT ' + a.kind + ' ' + a.who + ' - ' + a.detail); if (opts.alerts) { try { fs.appendFileSync(opts.alerts, JSON.stringify(a) + '\n'); } catch (e) { /* no alert file */ } } } });
+  const ad = WS.create({ q: kernel.q, kernel, policy: opts.noPolicy ? null : policy }),   // noPolicy: W-WS-LIMITS negative control only
+     journal = kernel.journal;
+  const savePending = () => { if (opts.agentsDir) { try { fs.writeFileSync(path.join(opts.agentsDir, 'pending.json'), JSON.stringify(policy.list(), null, 2)); } catch (e) { /* dir absent */ } } };
   if (opts.journal) { try { const prev = fs.readFileSync(opts.journal, 'utf8').split('\n').filter(Boolean); const last = prev.length ? JSON.parse(prev[prev.length - 1]) : null; if (last) { kernel.journal.push(last); } } catch (e) { /* no journal yet */ } kernel.hooks.onJournal = (e) => fs.appendFileSync(opts.journal, JSON.stringify(e) + '\n'); }
   if (opts.agentsDir) {   // tenant admin boundary = the filesystem: SQL files dropped in this directory are applied once, in name order, while the host runs (a revoke takes effect on the next request)
-    const seen = {}; const scan = () => { try { fs.readdirSync(opts.agentsDir).filter(f => /\.sql$/.test(f)).sort().forEach(f => { const fp = path.join(opts.agentsDir, f), m = fs.statSync(fp).mtimeMs; if (seen[f] !== m) { seen[f] = m; try { kernel.run(fs.readFileSync(fp, 'utf8')); console.log('§WS agents-dir applied ' + f); } catch (e) { console.log('§WS agents-dir FAILED ' + f + ' ' + e.message); } } }); } catch (e) { /* dir absent */ } }; scan(); server_scan = setInterval(scan, 500); }
+    const seen = {}; const scan = () => { try { fs.readdirSync(opts.agentsDir).filter(f => /\.(sql|json)$/.test(f) && f !== 'pending.json' && !/^\./.test(f)).sort().forEach(f => { const fp = path.join(opts.agentsDir, f), m = fs.statSync(fp).mtimeMs; if (seen[f] !== m) { seen[f] = m;
+        if (/\.sql$/.test(f)) { try { kernel.run(fs.readFileSync(fp, 'utf8')); console.log('§WS agents-dir applied ' + f); } catch (e) { console.log('§WS agents-dir FAILED ' + f + ' ' + e.message); } }
+        else if (/^(approve|reject)-\d+\.json$/.test(f)) {   // a person's decision on a staged request (ws_agent.js approve|reject)
+          try { const d = JSON.parse(fs.readFileSync(fp, 'utf8')); let out;
+            if (/^approve/.test(f)) { out = policy.approve(d.id, d.digest, d.approver || 'unknown', (pr) => { kernel.ctxMeta.v = { approvedBy: d.approver || 'unknown', stagedId: pr.id }; try { return ad.handle(pr.method, pr.body, { approved: true }); } finally { kernel.ctxMeta.v = null; } }); }
+            else out = policy.reject(d.id, d.approver || 'unknown');
+            fs.writeFileSync(fp.replace(/\.json$/, '.result.txt'), JSON.stringify({ ok: out.ok, error: out.error || null, answer: out.result ? String(out.result).slice(0, 600) : null }, null, 2)); savePending(); console.log('§WS decision ' + f + ' ok=' + out.ok); } catch (e) { console.log('§WS decision FAILED ' + f + ' ' + e.message); } } } }); } catch (e) { /* dir absent */ } }; scan(); server_scan = setInterval(scan, 500); }
   const server = http.createServer((req, res) => {
     const m = /^\/ADInterface\/services\/rest\/model_adservice\/(\w+)$/.exec(req.url.split('?')[0]);
     if (!isOn()) { console.log('§WS off (plugin org.idempiere.webservices is not ACTIVE in ' + (opts.config || 'the host options') + ') -> 404'); res.writeHead(404); res.end(); return; }   // a stopped bundle serves nothing
@@ -31,7 +41,7 @@ async function start(port, extraSql, opts) {
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {
       const asJson = /json/i.test(String(req.headers['content-type'] || '')), tableHint = asJson ? ((/"(?:TableName|tableName)"\s*:\s*"([^"]*)"/.exec(body) || [])[1] || null) : null;
       if (asJson) { try { body = JsonBinding.toXml(body); } catch (e) { res.writeHead(400); res.end('{"Error":"Bad JSON request"}'); return; } }
-      let out, status = 200; try { out = ad.handle(m[1], body); if (out && typeof out === 'object') { status = out.status; out = out.body; } } catch (e) { out = '<?xml version="1.0" encoding="UTF-8"?><_0:WindowTabData xmlns:_0="http://idempiere.org/ADInterface/1_0"><_0:Error>' + String(e.message).replace(/</g, '&lt;') + '</_0:Error></_0:WindowTabData>'; }
+      let out, status = 200; try { out = ad.handle(m[1], body); savePending(); if (out && typeof out === 'object') { status = out.status; out = out.body; } } catch (e) { out = '<?xml version="1.0" encoding="UTF-8"?><_0:WindowTabData xmlns:_0="http://idempiere.org/ADInterface/1_0"><_0:Error>' + String(e.message).replace(/</g, '&lt;') + '</_0:Error></_0:WindowTabData>'; }
       console.log('§WS ' + m[1] + ' bytes=' + out.length + ' err=' + (/<_0:Error>/.test(out) ? (/<_0:Error>([^<]*)/.exec(out) || [])[1] : '-'));
       // a fault: legacy answers HTTP 500 with the Jetty HTML page, or an EMPTY body when the client asked for application/xml (the fault cannot be serialised as XML) - observed on the pilot
       if (asJson && status === 200) { out = JsonBinding.toJson(out, ad.typeOf, tableHint); console.log('§WS json ' + m[1] + ' bytes=' + out.length); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(out); return; }
@@ -41,7 +51,7 @@ async function start(port, extraSql, opts) {
   });
   await new Promise(r => server.listen(port || 0, opts.host || '127.0.0.1', r));
   // LOOPBACK ONLY unless --bind says otherwise: the service has no TLS (docs/ERP_AI_ADVISORY.md)
-  server.kernel = kernel; server.on('close', () => { if (server_scan) clearInterval(server_scan); }); return server;
+  server.kernel = kernel; server.policy = policy; server.on('close', () => { if (server_scan) clearInterval(server_scan); }); return server;
 }
 module.exports = { start, openDb };
 if (require.main === module) {

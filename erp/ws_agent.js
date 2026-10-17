@@ -10,6 +10,13 @@
 //                                --create TABLE:Col,Col a NEW create type whose input columns are exactly those (needs --write)
 //                                --docaction TABLE:PR   a NEW doc-action type with the action FIXED (legacy's constant parameter; the AI cannot choose another). Prepare ('PR') needs --write;
 //                                                       Complete/Close/Void/Reverse/ReActivate (CO CL VO RC RA RE) are refused unless --allow-final is given on purpose
+//         policy flags (enforced by the HOST, ws_policy.js; defaults chosen from OWASP / NSA-CISA agent guidance):
+//           --expires <hours>            the identity switches itself off after this long (default 168 = 7 days; --no-expiry to turn it off on purpose)
+//           --max-writes-per-hour <n>    sliding-window write cap (default 50)      --max-calls-per-minute <n>   all calls (default 120)
+//           --approve-writes             every write is STAGED; a person approves the exact request:  node erp/ws_agent.js pending|approve|reject --dir <agentsDir> ...
+//         node erp/ws_agent.js pending --dir <agentsDir>                          list staged requests (id, method, digest)
+//         node erp/ws_agent.js approve --dir <agentsDir> --id <n> --digest <first 12 chars> [--approver <name>]   run that request, once, as the agent
+//         node erp/ws_agent.js reject  --dir <agentsDir> --id <n> [--approver <name>]
 //         node erp/ws_agent.js revoke  --dir <agentsDir> --name <agent>
 //         node erp/ws_agent.js audit   --journal <file.jsonl>
 // --write is REQUIRED to grant any create/update/delete/set_docaction/run_process type: a read-only request that lists a write type is refused (no silent privilege).
@@ -22,11 +29,12 @@ const lit = (v) => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" 
 function nextN(dir) { try { return fs.readdirSync(dir).filter(f => /^agent-.*\.sql$/.test(f) && !/revoke/.test(f)).length; } catch (e) { return 0; } }
 async function create(o) {
   const dir = o.dir, name = o.name, client = Number(o.client || 11), org = Number(o.org || 11), types = String(o.types || '').split(',').map(s => s.trim()).filter(Boolean), write = !!o.write;
+  const tp = 'AI_' + String(name || '').replace(/\W+/g, '_') + '_';   // service-type names are PER IDENTITY: two agents never share (or collide on) a type, so a grant never leaks across identities
   const mk = [];   // NEW service types generated from --read / --create / --docaction
   const spec = (v) => { const [t, cs] = String(v).split(':'); return { table: t, cols: (cs || '').split(',').map(x => x.trim()).filter(Boolean) }; };
-  [].concat(o.read || []).forEach(v => { const x = spec(v); mk.push({ kind: 'read', method: 50028, table: x.table, cols: x.cols, value: 'AI_Query_' + x.table }); });
-  [].concat(o.create || []).forEach(v => { const x = spec(v); mk.push({ kind: 'create', method: 50024, table: x.table, cols: x.cols, value: 'AI_Create_' + x.table }); });
-  [].concat(o.docaction || []).forEach(v => { const x = spec(v), act = x.cols[0]; if (!act) throw new Error('--docaction needs TABLE:ACTION'); if (/^(CO|CL|VO|RC|RA|RE)$/.test(act) && !o['allow-final']) throw new Error('refused: --docaction ' + x.table + ':' + act + ' completes, closes, voids or reverses a document; add --allow-final to grant that on purpose'); mk.push({ kind: 'docaction', method: 50021, table: x.table, cols: [], act: act, value: 'AI_DocAction_' + x.table + '_' + act }); });
+  [].concat(o.read || []).forEach(v => { const x = spec(v); mk.push({ kind: 'read', method: 50028, table: x.table, cols: x.cols, value: tp + 'Query_' + x.table }); });
+  [].concat(o.create || []).forEach(v => { const x = spec(v); mk.push({ kind: 'create', method: 50024, table: x.table, cols: x.cols, value: tp + 'Create_' + x.table }); });
+  [].concat(o.docaction || []).forEach(v => { const x = spec(v), act = x.cols[0]; if (!act) throw new Error('--docaction needs TABLE:ACTION'); if (/^(CO|CL|VO|RC|RA|RE)$/.test(act) && !o['allow-final']) throw new Error('refused: --docaction ' + x.table + ':' + act + ' completes, closes, voids or reverses a document; add --allow-final to grant that on purpose'); mk.push({ kind: 'docaction', method: 50021, table: x.table, cols: [], act: act, value: tp + 'DocAction_' + x.table + '_' + act }); });
   if (!dir || !name || (!types.length && !mk.length)) throw new Error('create needs --dir, --name and at least one of --types / --read / --create / --docaction (there is no "all")');
   fs.mkdirSync(dir, { recursive: true });
   const K = await Kernel.load([]);   // reads the tenant dictionary to resolve the types and refuse what was not asked for
@@ -36,12 +44,16 @@ async function create(o) {
   if (writes.length && !write) throw new Error('refused: ' + writes.map(r => r.value).join(', ') + ' can change data; add --write to grant them on purpose');
   const wh = K.one('SELECT m_warehouse_id AS id FROM m_warehouse WHERE ad_org_id=? AND isactive=? ORDER BY m_warehouse_id', [org, 'Y']);
   mk.forEach(m => { const t = K.one('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=lower(?)', [m.table]); if (!t) throw new Error('table not found: ' + m.table); m.tableId = t.id; m.cols.forEach(c => { if (!K.one('SELECT 1 AS x FROM ad_column WHERE ad_table_id=? AND lower(columnname)=lower(?)', [t.id, c])) throw new Error('column not found: ' + m.table + '.' + c); }); });
+  const pol = { calls: Number(o['max-calls-per-minute'] || 120), writes: Number(o['max-writes-per-hour'] || 50), approve: !!o['approve-writes'],
+    expires: o['no-expiry'] ? null : new Date(Date.now() + Number(o.expires || 168) * 3600 * 1000).toISOString() };
   const n = nextN(dir), uid = 1700000 + n, rid = 1700000 + n, pass = crypto.randomBytes(18).toString('base64url');
   const sql = [
     '-- ws_agent.js create ' + name + ' (' + new Date().toISOString() + '): ONE identity, ONE organisation, ' + rows.length + ' service types' + (write ? ' (WRITE granted on purpose)' : ' (read only)'),
     `INSERT INTO ad_role (ad_role_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, description, userlevel, roletype, isaccessallorgs, ismanual) VALUES (${rid}, ${client}, 0, 'Y', datetime('now'), 100, datetime('now'), 100, ${lit('WS agent ' + name)}, 'least-privilege web-service role (ws_agent.js)', ' CO', 'WS', 'N', 'Y');`,
     `INSERT INTO ad_role_orgaccess (ad_role_id, ad_org_id, ad_client_id, isactive, created, createdby, updated, updatedby) VALUES (${rid}, ${org}, ${client}, 'Y', datetime('now'), 100, datetime('now'), 100);`,
     `INSERT INTO ad_user (ad_user_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, password, description) VALUES (${uid}, ${client}, 0, 'Y', datetime('now'), 100, datetime('now'), 100, ${lit(name)}, ${lit(pass)}, 'web-service identity (ws_agent.js)');`,
+    `CREATE TABLE IF NOT EXISTS ws_agent_policy (ad_user_id INTEGER, max_calls_per_minute INTEGER, max_writes_per_hour INTEGER, expires_at TEXT, approve_writes TEXT);`,
+    `INSERT INTO ws_agent_policy (ad_user_id, max_calls_per_minute, max_writes_per_hour, expires_at, approve_writes) VALUES (${uid}, ${pol.calls}, ${pol.writes}, ${lit(pol.expires)}, ${lit(pol.approve ? 'Y' : 'N')});`,
     `INSERT INTO ad_user_roles (ad_user_id, ad_role_id, ad_client_id, isactive, created, createdby, updated, updatedby) VALUES (${uid}, ${rid}, ${client}, 'Y', datetime('now'), 100, datetime('now'), 100);`]
     .concat(rows.map(r => `INSERT INTO ws_webservicetypeaccess (ad_client_id, ad_org_id, ad_role_id, createdby, updatedby, ws_webservicetype_id, isactive, isreadwrite, ws_webservicetypeaccess_uu) VALUES (${client}, 0, ${rid}, 100, 100, ${r.id}, 'Y', ${lit(METHOD_KIND[r.m] === 'write' ? 'Y' : 'N')}, ${lit(crypto.randomUUID())});`));
   mk.forEach((m, i) => {   // the rows an admin would key in the Web Service Security window (WS_WebServiceType + Para + FieldInput + FieldOutput), then granted to THIS role only
@@ -57,7 +69,7 @@ async function create(o) {
   });
   const file = path.join(dir, 'agent-' + String(n).padStart(3, '0') + '-' + name.replace(/\W+/g, '_') + '.sql'); fs.writeFileSync(file, sql.join('\n') + '\n');
   fs.writeFileSync(path.join(dir, '.agent-' + name.replace(/\W+/g, '_') + '.json'), JSON.stringify({ name, userId: uid, roleId: rid, client, org }));
-  const creds = { user: name, pass, clientId: client, roleId: rid, orgId: org, warehouseId: wh ? wh.id : 0, serviceTypes: rows.map(r => r.value).concat(mk.map(m => m.value)), canWrite: writes.length > 0 };
+  const creds = { typePrefix: tp, agent: String(name).replace(/\W+/g, '_'), user: name, pass, clientId: client, roleId: rid, orgId: org, warehouseId: wh ? wh.id : 0, serviceTypes: rows.map(r => r.value).concat(mk.map(m => m.value)), canWrite: writes.length > 0, policy: { maxCallsPerMinute: pol.calls, maxWritesPerHour: pol.writes, expiresAt: pol.expires, approveWrites: pol.approve } };
   return { file, creds };
 }
 function revoke(o) {
@@ -71,6 +83,13 @@ if (require.main === module) {
   const o = args(process.argv.slice(2)), cmd = o._[0];
   (async () => {
     if (cmd === 'create') { const r = await create(o); console.log('§WS-AGENT created ' + r.file); console.log(JSON.stringify(r.creds, null, 2)); console.log('Store the password now as a secret; it is not shown again.'); }
+    else if (cmd === 'pending') { let l = []; try { l = JSON.parse(fs.readFileSync(path.join(o.dir, 'pending.json'), 'utf8')); } catch (e) { /* none yet */ } console.log('§WS-PENDING ' + JSON.stringify(l)); }
+    else if (cmd === 'approve' || cmd === 'reject') {
+      if (!o.id || (cmd === 'approve' && !o.digest)) throw new Error(cmd + ' needs --id' + (cmd === 'approve' ? ' and --digest (the first 12 characters shown by `pending`: an approval is bound to the exact request)' : ''));
+      const f = path.join(o.dir, cmd + '-' + Number(o.id) + '.json'); try { fs.unlinkSync(f.replace(/\.json$/, '.result.txt')); } catch (e) { /* none */ } fs.writeFileSync(f, JSON.stringify({ id: Number(o.id), digest: o.digest || null, approver: o.approver || require('os').userInfo().username }));
+      const rf = f.replace(/\.json$/, '.result.txt'); for (let i = 0; i < 30 && !fs.existsSync(rf); i++) await new Promise(r => setTimeout(r, 200));
+      console.log('§WS-DECISION ' + (fs.existsSync(rf) ? fs.readFileSync(rf, 'utf8').replace(/\s+/g, ' ') : 'written; the host has not answered yet (is it running with --agents ' + o.dir + '?)'));
+    }
     else if (cmd === 'revoke') { const r = revoke(o); console.log('§WS-AGENT revoke written ' + r.file); }
     else if (cmd === 'audit') { const v = Kernel.verifyJournal(fs.readFileSync(o.journal, 'utf8')); console.log('§WS-AUDIT ' + JSON.stringify(v)); process.exit(v.ok ? 0 : 1); }
     else { console.log('usage: ws_agent.js create|revoke|audit (see the header of this file)'); process.exit(2); }
