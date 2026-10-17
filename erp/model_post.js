@@ -15,7 +15,7 @@
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -351,10 +351,107 @@
         trx.update('m_product_po', po, { pricelastinv: N(px) });
       }); });
   }
+
+  // Doc_MatchInv.createFacts (Doc_MatchInv.java:145-430) ∘ processInvoicePriceVariance (:433-640) ∘ createMatchInvCostDetail (:642-760), W-POST-MATCHINV (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §48).
+  //   DR NotInvoicedReceipts (BP group) copied from the receipt's posted fact; CR InventoryClearing (service: Expense) copied from the invoice's posted fact; IPV = the difference, booked per costing method.
+  //   NAMED, never faked: reversal match, foreign-currency invoice WHEN gain/loss or rounding corrections would add lines (fxNoCorrection decides), cash-basis schema, credit-memo match, shipment match, PO commitment release, tax-included / distributed-tax and landed-cost cost-detail branches.
+  function Doc_MatchInv(trx, mi, as, F) {
+    var named = function (m) { F.err = m + ' - named'; return false; }, M = mc();
+    var il = nz(mi.c_invoiceline_id) ? trx.get('c_invoiceline', mi.c_invoiceline_id) : null, rl = nz(mi.m_inoutline_id) ? trx.get('m_inoutline', mi.m_inoutline_id) : null, qty = D(mi.qty);
+    if (!il) return named('MatchInv without an invoice line');
+    var inv = trx.get('c_invoice', il.c_invoice_id), ctx = Doc(trx, 'm_matchinv', mi, { dateDoc: mi.datetrx, qty: qty, c_bpartner_id: inv.c_bpartner_id, c_currency_id: as.c_currency_id });
+    if (!nz(mi.m_product_id) || qty.signum() === 0 || (rl && D(rl.movementqty).signum() === 0)) return true;               // :166-173 nothing to do
+    if (!rl) { var idt = T.dt(trx, inv.c_doctype_id).docbasetype; if (idt === 'APC' || idt === 'ARC') return named('MatchInv credit memo (createCreditMemoFacts) not ported'); return true; }
+    var rio = trx.get('m_inout', rl.m_inout_id), rdt = T.dt(trx, rio.c_doctype_id);
+    if (rdt.docbasetype === 'MMS') return named('MatchInv shipment match (createMatShipmentFacts) not ported');
+    if (nz(mi.reversal_id)) return named('MatchInv reversal not ported');
+    var fx = String(inv.c_currency_id) !== String(as.c_currency_id);
+    if (!Y(as.isaccrual)) return named('MatchInv cash-basis schema not ported');
+    if (Y(as.iscreatepocommitment)) return named('MatchInv PO commitment release (Doc_Order.getCommitmentRelease) not ported');
+    var prod = T.product(trx, mi.m_product_id), service = isService(prod), cur = as.c_currency_id;
+    var mult = qty.divide(D(rl.movementqty), 12, HU);
+    var dr = createLine(F, ctx, null, ACCT.nir(trx, inv.c_bpartner_id, as.c_acctschema_id), cur, D(1), null);                // NotInvoicedReceipts DR (amount 1, replaced by the receipt's posted line)
+    if (!dr) { F.err = F.err || 'No Product Costs'; return false; }
+    dr.qty = N(qty);
+    if (!updateReverseLine(F, dr, TABLE_ID.m_inout, rl.m_inout_id, rl.m_inoutline_id, mult)) { F.err = 'Mat.Receipt not posted yet'; return false; }
+    var expense = service ? productAcct(trx, mi.m_product_id, 'p_expense_acct', as) : productAcct(trx, mi.m_product_id, 'p_inventoryclearing_acct', as);
+    var lineNet = D(il.linenetamt), mult2 = qty.divide(D(il.qtyinvoiced), 12, HU);
+    if (mult2.compareTo(D(1)) !== 0) lineNet = lineNet.multiply(mult2);
+    if (service) lineNet = acctBalance(dr);                                                                                    // book out the exact receipt amount
+    var cr = createLine(F, ctx, null, expense, cur, null, lineNet);
+    if (!cr) { cr = createLine(F, ctx, null, expense, cur, null, D(1)); if (cr) { cr.amtacctcr = 0; cr.amtsourcecr = 0; } else { F.err = F.err || 'InventoryClearing line not created'; return false; } }
+    cr.qty = N(qty.negate());
+    if (!updateReverseLine(F, cr, TABLE_ID.c_invoice, il.c_invoice_id, il.c_invoiceline_id, mult2)) { F.err = 'Invoice not posted yet'; return false; }
+    ['c_activity_id', 'c_campaign_id', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_uom_id', 'c_charge_id', 'a_asset_id', 'user1_id', 'user2_id', 'c_costcenter_id', 'c_department_id', 'm_attributesetinstance_id']
+      .forEach(function (c) { cr[c] = nz(il[c]) ? il[c] : null; });
+    var el = trx.q("SELECT isbalanced AS b FROM c_acctschema_element WHERE c_acctschema_id=? AND elementtype='OO'", [as.c_acctschema_id])[0], interOrg = !!el && Y(el.b) && String(rl.ad_org_id) !== String(il.ad_org_id);
+    if (!Y(as.ispostifclearingequal) && dr.account_id === cr.account_id && !interOrg && D(dr.amtsourcedr).compareTo(D(cr.amtsourcecr)) === 0) { removeLine(F, dr); removeLine(F, cr); }   // :388-401
+    if (fx && !fxNoCorrection(trx, as, dr, cr, rl, il, mi)) return named('MatchInv foreign-currency gain/loss or rounding correction (createReceiptGainLoss / createInvoiceGainLoss / *RoundingCorrection) not ported');
+    var ipv = acctBalance(cr).add(acctBalance(dr)).negate();                                                                   // :404
+    if (ipv.signum() !== 0 && !invoicePriceVariance(trx, F, as, mi, il, rl, ctx, prod, service, ipv, qty)) return false;
+    return costDetailInvoice(trx, F, as, mi, il, rl, inv, qty, M);
+  }
+  // Foreign-currency invoice: Java adds gain/loss + rounding-correction lines (createReceiptGainLoss :2282, createInvoiceGainLoss :1466, *RoundingCorrection :1592/:2398). Ported here is only the DECISION whether they add anything:
+  //   a "full" source match with a non-zero accounted difference (receipt NIR account / invoice clearing account) books gain/loss lines; a line matched by more than one M_MatchInv is where the rounding corrections act.
+  //   Either => false (the caller refuses by name); otherwise Java books nothing extra and the base path is the whole posting.
+  function fxNoCorrection(trx, as, dr, cr, rl, il, mi) {
+    function sums(tid, rec, acct) { var rows = trx.find('fact_acct', { c_acctschema_id: as.c_acctschema_id, ad_table_id: tid, record_id: rec, account_id: acct, postingtype: 'A' }); if (!rows.length) return null;
+      var s = { sd: Z, ad: Z, sc: Z, ac: Z }; rows.forEach(function (f) { s.sd = s.sd.add(D(f.amtsourcedr)); s.ad = s.ad.add(D(f.amtacctdr)); s.sc = s.sc.add(D(f.amtsourcecr)); s.ac = s.ac.add(D(f.amtacctcr)); });
+      return s.sd.signum() === 0 && s.ad.signum() === 0 ? { src: s.sc, acct: s.ac } : { src: s.sd, acct: s.ad }; }
+    var r = sums(TABLE_ID.m_inout, rl.m_inout_id, dr.account_id), i = sums(TABLE_ID.c_invoice, il.c_invoice_id, cr.account_id);
+    if (r && D(dr.amtsourcedr).compareTo(r.src) === 0 && D(dr.amtacctdr).abs().subtract(r.acct.abs()).signum() !== 0) return false;
+    if (i && D(cr.amtsourcecr).compareTo(i.src) === 0 && D(cr.amtacctcr).abs().subtract(i.acct.abs()).signum() !== 0) return false;
+    return trx.find('m_matchinv', { m_inoutline_id: rl.m_inoutline_id }).length <= 1 && trx.find('m_matchinv', { c_invoiceline_id: il.c_invoiceline_id }).length <= 1;
+  }
+  // processInvoicePriceVariance :433-640 (the non-reversal path)
+  function invoicePriceVariance(trx, F, as, mi, il, rl, ctx, prod, service, ipv, qty) {
+    var M = mc(), method = M.costingMethod(trx, prod, as), amtVariance = Z, amtAsset = Z, stock = false, cur = as.c_currency_id;
+    if (method === 'A' && nz(il.m_product_id)) {                                                                                // AveragePO: stock coverage
+      stock = true;
+      var org = rl.ad_org_id, asi = mi.m_attributesetinstance_id || 0, lvl = as.costinglevel;
+      if (lvl === 'C') { org = 0; asi = 0; } else if (lvl === 'O') asi = 0; else if (lvl === 'B') org = 0;
+      var ce = M.getMaterialCostElement(trx, as, method), cd = M.getMatchInvoice(trx, as, mi.m_product_id, asi, mi.m_matchinv_id, 0), qtyCost;
+      if (cd) qtyCost = D(cd.currentqty);
+      else { var c = M.getCostInfo(trx, org, il.m_product_id, as.m_costtype_id, as.c_acctschema_id, ce.m_costelement_id, asi, ctx.dateAcct, null); qtyCost = c ? D(c.currentqty) : Z; }
+      if (qtyCost.compareTo(qty) < 0) { amtAsset = qtyCost.multiply(ipv).divide(qty, M.costingPrecision(trx, as), HU); amtVariance = ipv.subtract(amtAsset); } else amtAsset = ipv;
+    }
+    var sp = trx.setSavepoint(), zeroQty = false;                                                                               // Trx savepoint around createMatchInvoice
+    try { if (!M.createMatchInvoice(trx, as, il.ad_org_id, il.m_product_id, il.m_attributesetinstance_id || 0, mi.m_matchinv_id, 0, stock ? amtAsset : ipv, Z, 'Invoice Price Variance', ctx.dateAcct, 0)) { F.err = 'Failed to create cost detail record'; return false; } }
+    catch (e) { if (e && e.jclass && /AverageCostingZeroQtyException/.test(e.jclass)) { zeroQty = true; trx.rollbackTo(sp); } else throw e; }
+    var account = service ? productAcct(trx, mi.m_product_id, 'p_expense_acct', as) : productAcct(trx, mi.m_product_id, 'p_asset_acct', as);
+    function book(acct, amt) {                                                                                                  // Fact.createLine(null, acct, cur, Balance): >= 0 DR, < 0 CR
+      var f = createLine(F, ctx, null, acct, cur, amt.signum() >= 0 ? amt : null, amt.signum() < 0 ? amt.negate() : null); if (!f) return null;
+      ['c_activity_id', 'c_campaign_id', 'c_project_id', 'c_projectphase_id', 'c_projecttask_id', 'c_uom_id', 'c_charge_id', 'a_asset_id', 'user1_id', 'user2_id', 'm_product_id', 'c_costcenter_id', 'c_department_id', 'm_attributesetinstance_id']
+        .forEach(function (c) { f[c] = nz(il[c]) ? il[c] : null; }); f.qty = N(ctx.qty); return f; }                           // updateFactLine :655-671
+    if (method === 'A') {
+      if (amtVariance.signum() !== 0) book(productAcct(trx, mi.m_product_id, 'p_averagecostvariance_acct', as), amtVariance);
+      if (amtAsset.signum() !== 0) book(account, amtAsset);
+    } else if (method === 'I') { if (!zeroQty) book(account, ipv); }
+    else book(productAcct(trx, mi.m_product_id, 'p_invoicepricevariance_acct', as), ipv);                                       // standard: the IPV account
+    return !F.err;
+  }
+  // createMatchInvCostDetail :642-760 -> MCostDetail.createInvoice (the invoice-line cost detail by the matched total); plain-tax path only
+  function costDetailInvoice(trx, F, as, mi, il, rl, inv, qty, M) {
+    var tax = nz(il.c_tax_id) ? trx.get('c_tax', il.c_tax_id) : null;
+    if (Y(inv.istaxincluded) || (tax && (Y(tax.issummary) || Y(tax.isdistributetaxwithlineitem)))) { F.err = 'MatchInv cost detail with included / distributed tax not ported - named'; return false; }
+    var lc = []; try { lc = trx.q('SELECT 1 AS x FROM c_orderlandedcostallocation WHERE c_orderline_id=?', [rl.c_orderline_id || 0]); } catch (e) { lc = []; }
+    if (lc.length) { F.err = 'MatchInv landed-cost allocation not ported - named'; return false; }
+    var lineNet = D(il.linenetamt), mult = qty.divide(D(il.qtyinvoiced), 12, HU); if (mult.compareTo(D(1)) !== 0) lineNet = lineNet.multiply(mult);
+    var tQty = Z, tAmt = Z;
+    trx.find('m_matchinv', { c_invoiceline_id: il.c_invoiceline_id }).forEach(function (m) {
+      if (Y(m.posted) && String(m.m_matchinv_id) !== String(mi.m_matchinv_id) && String(m.m_attributesetinstance_id || 0) === String(mi.m_attributesetinstance_id || 0) && String(m.dateacct).slice(0, 10) === String(mi.dateacct).slice(0, 10)) {
+        tQty = tQty.add(D(m.qty)); tAmt = tAmt.add(D(il.linenetamt).multiply(D(m.qty).divide(D(il.qtyinvoiced), 12, HU))); } });
+    tAmt = tAmt.add(lineNet);
+    var rio = trx.get('m_inout', rl.m_inout_id); tQty = tQty.add(rio.movementtype === 'V-' ? qty.negate() : qty);               // vendor returns: negative qty
+    if (!M.createInvoice(trx, as, mi.ad_org_id, mi.m_product_id, mi.m_attributesetinstance_id || 0, il.c_invoiceline_id, 0, tAmt, tQty, mi.description, mi.dateacct, 0)) { F.err = 'Failed to create cost detail record'; return false; }
+    return !F.err;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
     m_inout: function (trx, io, as, F) { return Doc_InOut(trx, io, as, F); },
+    m_matchinv: function (trx, mi, as, F) { return Doc_MatchInv(trx, mi, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
