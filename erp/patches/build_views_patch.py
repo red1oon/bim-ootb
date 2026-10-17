@@ -5,8 +5,8 @@
 # usage: build_views_patch.py <ad_seed.db.sql>   (the previous views section, between the markers, is replaced)
 import re, subprocess, sys, os
 OUT = sys.argv[1]
-EXTRA_TABLES = ['m_locatortype']      # tables a shipped view/UDF reads that the seed lacks: DDL extracted from the pilot (information_schema); legacy has no rows either
-VIEWS = ['m_storage', 'm_product_stock_v', 'm_product_substituterelated_v', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
+EXTRA_TABLES = ['m_locatortype', 't_selection', 't_selection_infowindow']      # tables a shipped view/UDF reads that the seed lacks: DDL extracted from the pilot (information_schema); legacy has no rows either
+VIEWS = ['m_inout_createfrom_v', 'm_storage', 'm_product_stock_v', 'm_product_substituterelated_v', 'rv_c_invoice', 'rv_orderdetail', 'c_salesdashboard', 'rv_pp_mrp', 'rv_unprocessed', 'm_inoutlinema_v', 'm_movementlinema_v', 'rv_c_invoiceline', 'fact_acct_balance',
          'rv_requestupdates', 'm_costmovement_v', 'ad_allusers_v', 'ad_allroles_v', 'ad_alluserroles_v', 'ad_allclients_v', 'ad_sessioninfo_v']   # dependency order (rv_c_invoice before its users). m_storage: legacy = a VIEW over M_StorageOnHand/M_StorageReservation; the seed carried a stale 20-row TABLE copy of M_StorageOnHand nobody writes (the model layer writes M_StorageOnHand) - replaced
 BEGIN, END = '-- >>> VIEWS (build_views_patch.py)', '-- <<< VIEWS'
 def pg(sql):

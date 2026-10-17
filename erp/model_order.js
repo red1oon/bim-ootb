@@ -630,6 +630,26 @@
 
   // setInitialDefaults of the generated documents (MInOut.java:585-600)
   ML.registerModel('m_inout', { initialDefaults: { issotrx: 'N', deliveryrule: 'A', deliveryviarule: 'P', freightcostrule: 'I', docstatus: 'DR', docaction: 'CO', priorityrule: '5', nopackages: 0, isintransit: 'N', isprinted: 'N', sendemail: 'N', isindispute: 'N' } });
+  // MInOutLine.beforeSave :561-720 (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §43 P2 - Witness: W-CREATEFROM-INOUT). Ported: parent-processed refusal, item locator default (:597-620), Line No (:623-628),
+  //   default UOM (:630-637), rounding (:638-642), order-line product match (:707-719), locator vs document warehouse (:665-672), SO needs an order line (:655-662). NOT ported (named): pending
+  //   confirmations (:569-595), locator-type shipping check, auto-generate lot ASI, ChargeOrProductMandatory.
+  ML.registerModel('m_inoutline', { beforeSave: function (trx, l, isNew) {
+    var io = trx.get('m_inout', l.m_inout_id); if (!io) return null;
+    if (isNew && Y(io.processed)) return 'ParentComplete';
+    var prod = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
+    if (prod && T.isItem(prod) && !nz(l.m_locator_id) && !nz(l.c_charge_id)) {
+      var wh = io.m_warehouse_id, pl = nz(prod.m_locator_id) ? trx.get('m_locator', prod.m_locator_id) : null;
+      if (pl && String(pl.m_warehouse_id) === String(wh)) l.m_locator_id = prod.m_locator_id;
+      else { var dl = trx.q("SELECT * FROM m_locator WHERE m_warehouse_id=? AND isactive='Y' ORDER BY isdefault DESC, x, y, z", [wh])[0]; if (dl) l.m_locator_id = dl.m_locator_id; }
+      if (!nz(l.m_locator_id)) return 'FillMandatory M_Locator_ID';
+    }
+    if (!Number(l.line)) { var mx = 0; trx.find('m_inoutline', { m_inout_id: l.m_inout_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; /* DB.getSQLValueEx in the same Trx: sees lines saved earlier in this run */ }
+    if (!nz(l.c_uom_id)) { var u = trx.q("SELECT c_uom_id FROM c_uom WHERE isactive='Y' AND isdefault='Y' ORDER BY c_uom_id")[0]; if (u) l.c_uom_id = u.c_uom_id; }
+    if (!nz(l.c_orderline_id) && !nz(l.m_rmaline_id) && Y(io.issotrx)) return 'FillMandatory C_OrderLine_ID';
+    if (nz(l.m_locator_id)) { var loc = trx.get('m_locator', l.m_locator_id); if (loc && String(loc.m_warehouse_id) !== String(io.m_warehouse_id)) return 'WarehouseLocatorConflict'; }
+    if (nz(l.c_orderline_id)) { var ol = trx.get('c_orderline', l.c_orderline_id); if (ol && Number(ol.m_product_id || 0) !== Number(l.m_product_id || 0)) return 'MInOutLineAndOrderLineProductDifferent'; }
+    return null;
+  } });
   ML.registerDocAction('c_order', MOrder);
   ML.registerDocAction('m_inout', MInOut);
 
