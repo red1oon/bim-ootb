@@ -253,7 +253,7 @@ function r2(v) { return Math.round(Number(v || 0) * 100) / 100; }
     log('§W-VOID-RUN case=NEG-UNPOSTED order=' + s.id + ' ok=' + v.ok + ' failingKeys=' + bad.join(','));
     var rv = one('SELECT posted FROM m_inout WHERE c_order_id=? AND reversal_id IS NOT NULL ORDER BY m_inout_id DESC', [s.id]);
     verdict('NEG-UNPOSTED', [eq('books_check_detects', 'the witness reports FAIL on post_ship_rev when the original was never posted', bad.indexOf('post_ship_rev') >= 0, true),
-      eq('reversal_not_posted', 'Doc_InOut :298 "Original Shipment/Receipt not posted yet" → the reversal stays Posted=N', rv && rv.posted, 'N')]);
+      eq('reversal_not_posted', 'Doc_InOut :298 "Original Shipment/Receipt not posted yet" → createFacts null → Doc.post status E (MEASURED on the pilot, §UDP-7: 11 reversal shipments at Posted=E with exactly this error; the old expectation N was a twin assumption)', rv && rv.posted, 'E')]);
   })();
 
   // NOLINES (§ERP-DEPTH-FILM O2): completing an order with no lines is refused by MOrder.prepareIt with @NoLines@ = "No Document Lines found" (legacy AD_Message NoLines). The app installs MV.installDefaultHooks()
