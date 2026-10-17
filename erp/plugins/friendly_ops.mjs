@@ -7,6 +7,7 @@
 //   FO-M4 open a related form - on a saved record: every generic AD_Form with a menu leaf and a parameter named like this record's key opens with that key already chosen.
 //   FO-M1 Preview - while editing a record whose model has an afterSave: what Save would write (the same Save chain, never committed).
 //   FO-A1 Add <child tab> / Save & back - header: Save, open the child tab and its New in one gesture; child row: Save, back to the parent tab (tab seams only).
+//   FO-A2 Next step - a completed document offers the follow-on dictionary process (Ship, Invoice) with its parameters taken from the record; descriptors below are data.
 //   FO-B related counts - on a saved record: one button per Zoom Across destination, "<window> (<count>)", opening it exactly as Zoom Across does.
 export const manifest = {
   id: 'org.kernel.friendly-ops',
@@ -18,6 +19,21 @@ export const manifest = {
 
 const BREAK = (typeof globalThis !== 'undefined' && globalThis.__FOPS_BREAK) || null;   // witness-only negative control (W-FRIENDLY-OPS F5)
 
+// FO-A2 descriptors: DATA, resolved against the dictionary at run time (process by classname, parameters from the record's columns, applicability by a query on the record).
+const NEXT = [
+  { table: 'c_order', status: 'CO', id: 'ship', label: 'Ship', class: 'org.compiere.process.InOutGenerate',
+    preset: { M_Warehouse_ID: 'm_warehouse_id', C_BPartner_ID: 'c_bpartner_id' },
+    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtydelivered AND m_product_id IS NOT NULL" },
+  { table: 'c_order', status: 'CO', id: 'invoice', label: 'Invoice', class: 'org.compiere.process.InvoiceGenerate',
+    preset: { AD_Org_ID: 'ad_org_id', C_Order_ID: 'c_order_id' },
+    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtyinvoiced" }
+];
+function nextSteps(api) {
+  if (!api.tab || api.keyVal == null || api.isNew || api.dirty) return [];
+  const t = String(api.tab.tableName || '').toLowerCase(), st = String(api.val('docstatus') || '');
+  return NEXT.filter((n) => n.table === t && n.status === st && api.exists(n.when));
+}
+
 function relatedForms(api) {
   if (!api.keyCol || api.keyVal == null || api.isNew) return [];
   const k = String(api.keyCol).toLowerCase();
@@ -27,6 +43,7 @@ function relatedForms(api) {
 const lens = {
   actions(api) {
     const out = [];
+    nextSteps(api).forEach((n) => out.push({ id: 'next:' + n.id, label: n.label, title: n.label + ' this document: runs the dictionary process with this record\'s values already set' }));
     if (api.editing && api.hasAfterSave && (api.isNew || api.dirty)) out.push({ id: 'preview', label: 'Preview', title: 'Show what Save will write, without saving' });
     if (api.editing && api.hasDocFsm && (api.isNew || api.legal.indexOf('CO') >= 0)) out.push({ id: 'save-complete', label: 'Save & Complete', title: 'Save this document, then Complete it (the same Save and Complete as the toolbar and the action bar)' });
     if (api.editing || api.keyVal != null) api.childTabs().forEach((c) => out.push({ id: 'add:' + c.idx, label: 'Add ' + c.name, title: 'Save this record, then open a new ' + c.name + ' row (one step instead of Save, tab, New)' }));
@@ -38,6 +55,8 @@ const lens = {
   },
   run(actionId, api) {
     if (actionId === 'preview') return api.previewSave();
+    const nx = /^next:(.+)$/.exec(actionId);
+    if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const pre = {}; Object.keys(n.preset).forEach((k) => { pre[k] = api.val(n.preset[k]); }); return api.runProcess(n.class, BREAK === 'nopreset' ? {} : pre); }
     const ad = /^(add|back):(\d+)$/.exec(actionId);
     if (ad) { const idx = Number(ad[2]);
       if (ad[1] === 'add') return BREAK === 'noclimb' ? api.openChildNew(idx) : api.saveThen(() => api.openChildNew(idx));
