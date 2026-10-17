@@ -1622,9 +1622,28 @@
         console.log('§MV-TIP-SHADOW table=' + t + ' base=' + base.length + ' tip=' + rows.length + ' created=' + ((folded && folded.created) || []).length);
       } catch (e) { try { db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e2) {} console.log('§MV-TIP-SHADOW table=' + t + ' FAILED ' + ((e && e.message) || e) + ' → raw bundle'); }
     });
+    // §VIEW-SHADOW (ERP_FRIENDLY_OPS_LENS.md §44): a view in main resolves its tables in main, so it never sees the temp shadows above (M_InOut_CreateFrom_v listed no line of a PO made this session).
+    //   A TEMP copy of every main view that reads a shadowed table (directly or through another such view) resolves temp-first: the dictionary views see the tip like the tables do.
+    if (done.length) {
+      try {
+        var vs = db.exec("SELECT name, sql FROM main.sqlite_master WHERE type='view'"), list = vs.length ? vs[0].values : [], have = done.slice(), made = [], again = true;
+        while (again) {
+          again = false;
+          list.forEach(function (v) {
+            var vn = String(v[0]).toLowerCase(); if (have.indexOf(vn) >= 0) return;
+            var txt = String(v[1]).toLowerCase();
+            if (have.some(function (t) { return new RegExp('\\b' + t + '\\b').test(txt); })) {
+              try { db.run('DROP VIEW IF EXISTS temp.' + v[0]); db.run(String(v[1]).replace(/^\s*CREATE\s+VIEW/i, 'CREATE TEMP VIEW')); have.push(vn); made.push('view:' + v[0]); again = true; }
+              catch (ev) { console.log('§MV-TIP-SHADOW view=' + v[0] + ' FAILED ' + ((ev && ev.message) || ev)); }
+            }
+          });
+        }
+        if (made.length) { done = made.concat(done); console.log('§MV-TIP-SHADOW views=' + made.length + ' [' + made.map(function (m) { return m.slice(5); }).join(',') + ']'); }
+      } catch (e3) { console.log('§MV-TIP-SHADOW views FAILED ' + ((e3 && e3.message) || e3)); }
+    }
     return done;
   }
-  function _tipShadowOff(db, done) { (done || []).forEach(function (t) { try { db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e) {} }); }
+  function _tipShadowOff(db, done) { (done || []).forEach(function (t) { try { if (String(t).indexOf('view:') === 0) db.run('DROP VIEW IF EXISTS temp.' + t.slice(5)); else db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e) {} }); }
   // ══ MODEL LAYER seam (bim-compiler prompts/ERP_MODEL_LAYER.md §Seams — Witness: W-MODEL-ORACLE, pilot replay) ══════
   // modelRun(spec, cb): ModelLayer.run over the bundle with EVERY session-written table tip-shadowed (so the model
   // reads what the user sees), env = the session's client/org/user + the recorded clock. cb(result|null).

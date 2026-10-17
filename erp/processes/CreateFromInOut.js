@@ -117,6 +117,9 @@
       }
       var r = X.save(trx, 'M_InOut', cur, ch); if (!r.ok) throw new Error(r.error || 'SaveError');   // saveEx
     };
+    // shared with plugin processes that compose the legacy pieces (friendly-ops Receive, ERP_FRIENDLY_OPS_LENS.md §44): the SAME createLineFrom / updateFrom, not a copy
+    CreateFromInOut.createLineFrom = function (trx, inout, a) { var C = P.PSUP.docgen.ctor(), T = P.PSUP.docgen.T(); return CreateFromInOut.prototype.createLineFrom.call({}, trx, C, T, inout, a.orderLine || 0, a.invoiceLine || 0, a.rmaLine || 0, a.product || 0, a.uom || 0, a.qty, a.locator || 0); };
+    CreateFromInOut.updateFrom = function (trx, inout, order, invoice, rma) { return CreateFromInOut.prototype.updateFrom.call({}, trx, inout, order, invoice, rma); };
     return CreateFromInOut;
   });
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
