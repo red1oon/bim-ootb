@@ -2,6 +2,7 @@
 // THE ISSUE it proves/disproves, in a REAL browser through the page's own buttons: the opt-in friendly-ops lens (plugins/friendly_ops.mjs) shortens the Manufacturing Order
 //   flow (Save & Complete in one gesture; Order Receipt & Issue opened from the order with the order already chosen) WITHOUT changing the model/doc event sequence
 //   (§EVENT_SEQ) or the result, and WITHOUT changing the twin while it is not installed.
+//   RETIRED F2/F3/F4/F8 (see ERP_FRIENDLY_OPS_LENS.md §42). Kept: F1, F6, F7, F9 (F5 skipsave went with Save & Complete).
 //   F1 lens absent -> no #idmp-lensbar (twin L&F unchanged)      F2 Save+Complete: plain == lens, event for event, both orders CO
 //   F3 backflush: plain (menu, pick order, Process) == lens (record button, Process), event for event, same collectors
 //   F4 gestures lens < plain, counted here                         F5 FOPS_BREAK=skipsave (lens completes WITHOUT saving) must go RED
@@ -125,40 +126,9 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
       panel = await page.evaluate(() => { const b = document.querySelector('[data-save-preview]'); return b ? { state: b.getAttribute('data-save-preview'), tables: [...b.querySelectorAll('[data-preview-table]')].map(h => h.getAttribute('data-preview-table') + ':' + h.textContent), text: b.textContent.replace(/\s+/g, ' ').slice(0, 500) } : null; });
       console.log('§FOPS lens preview panel: ' + JSON.stringify(panel)); await click('[data-preview-close]', false); }
     verdict('F6b', 'the lens Preview button draws the same tables as the seam preview', !!panel && panel.state === 'ok' && JSON.stringify(panel.tables.map(t => t.split(':')[0]).sort()) === JSON.stringify([...new Set(pv.ops.map(o => o.table))].sort()), { panel, pvTables: [...new Set(pv.ops.map(o => o.table))] });
-    const nL0 = PAGELOG.length; gReset();
-    if (lensBtns.indexOf('friendly-ops:save-complete') >= 0) { await click('[data-lens-action="friendly-ops:save-complete"]'); }
-    const oL = await waitStatus('CO'); await hold(1500);
-    const gLc = gReset(), seqLc = seqSince(nL0);
-    const lensBtns2 = await page.$$eval('[data-lens-action]', e => e.map(x => x.getAttribute('data-lens-action')));
-    console.log('§FOPS lens bar on the completed order: ' + JSON.stringify(lensBtns2));
-    const sL0 = await stock(), nL1 = PAGELOG.length; const fb = lensBtns2.find(a => /^friendly-ops:form:/.test(a));
-    let preset = null;
-    if (fb) { await click('[data-lens-action="' + fb + '"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await hold(800);
-      preset = await page.$eval('[data-gform-param=PP_Order_ID]', s => (s.options[s.selectedIndex] || {}).textContent);
-      await click('[data-gform-run]'); for (let i = 0; i < 80 && !(await page.$eval('[data-gform-msg]', e => e.textContent).catch(() => '')); i++) await hold(250); await hold(1500); }
-    const gLb = gReset(), seqLb = seqSince(nL1), colL = oL ? await collectors(oL.id) : [], dL = delta(sL0, await stock());
-    console.log('§FOPS lens order=' + JSON.stringify(oL) + ' saveComplete.gestures=' + JSON.stringify(gLc) + ' events=' + seqLc.length + ' formPreset=' + JSON.stringify(preset) + ' backflush.gestures=' + JSON.stringify(gLb) + ' events=' + seqLb.length + ' collectors=' + JSON.stringify(colL) + ' stockDelta=' + JSON.stringify(dL));
-
-    // F8 back on the order: related counts
-    await openMenuById(53055, false); await page.waitForSelector(NEWB, { timeout: 20000 }); await hold(800);
-    if (await page.locator('.idmp-grid tbody tr').count() === 0) await click('#idmp-toolbar [data-tb="toggle"]', false);
-    const rowSel = '.idmp-grid tbody tr:has(td:text-is("' + (oL && oL.documentno) + '"))';
-    const rowHit = await page.locator(rowSel).count();
-    console.log('§FOPS F8 locate order ' + (oL && oL.documentno) + ': grid rows=' + (await page.locator('.idmp-grid tbody tr').count()) + ' headers=' + JSON.stringify(await page.$$eval('.idmp-grid thead th', e => e.map(x => x.textContent.trim()).slice(0, 12))) + ' rowHit=' + rowHit + ' findDialog=' + (await page.locator('.idmp-find, #idmp-find, [data-find-dialog]').count()));
-    if (rowHit) { await click(rowSel, false); await hold(800); }
-    console.log('§FOPS F8 lens buttons on the selected order: ' + JSON.stringify(await page.$$eval('[data-lens-action]', e => e.map(x => x.getAttribute('data-lens-action')))));   // a grid click must make the row current (W-GRID-CLICK, bim-ootb #2080)
-    const rel = await page.$$eval('[data-lens-action^="friendly-ops:rel:"]', e => e.map(x => ({ a: x.getAttribute('data-lens-action'), label: x.textContent })));
-    const relChk = [];
-    for (const r of rel) { const m = /^friendly-ops:rel:(\d+):(.+)$/.exec(r.a), n = Number((/\((\d+)\)$/.exec(r.label) || [])[1]);
-      const q = (await tip('SELECT COUNT(*) AS n FROM ' + m[2] + ' WHERE pp_order_id=' + oL.id))[0].n; relChk.push({ table: m[2], label: r.label, shown: n, tip: q }); }
-    console.log('§FOPS lens related counts on order ' + (oL && oL.documentno) + ': ' + JSON.stringify(relChk));
-    const cc = relChk.find(x => /pp_cost_collector/i.test(x.table));
-    let ccRows = null;
-    if (cc) { await click('[data-lens-action="friendly-ops:rel:' + rel.find(r => /pp_cost_collector/i.test(r.a)).a.split(':').slice(2).join(':') + '"]', false); await hold(2000);
-      if (await page.locator('.idmp-grid tbody tr').count() === 0) await click('#idmp-toolbar [data-tb="toggle"]', false);
-      ccRows = await page.locator('.idmp-grid tbody tr').count(); }
-    verdict('F8', 'related counts: every lens count equals the tip count (' + relChk.length + ' buttons), the order shows Cost Collector (3) and opening it lists ' + ccRows + ' rows', relChk.length > 0 && relChk.every(x => x.shown === Number(x.tip)) && !!cc && cc.shown === 3 && ccRows === 3, { relChk, ccRows }, !relChk.length);
+    // F2/F3/F4/F8 (Save & Complete, related form, gesture count, related counts) RETIRED 2026-10-17 (ERP_FRIENDLY_OPS_LENS.md §42): legacy has the gear DocAction submenu, the detail tabs and Zoom Across.
     // F9 refusal seen in the preview == Save's refusal
+    await click('#idmp-toolbar [data-tb="ignore"]', false).catch(() => {}); await hold(800);   // leave the Preview-only order form (the retired Save & Complete used to end it)
     await openMenuById(53055, false); await page.waitForSelector(NEWB, { timeout: 20000 }); await hold(600);
     await fillOrder({ start: '2007-01-01' });
     const k9 = await kmax(), c9 = await nOrders(), n9 = PAGELOG.length;
@@ -174,12 +144,6 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     await click('#idmp-toolbar [data-tb="ignore"]', false).catch(() => {});
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const firstDiff = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) return { at: i, plain: a.slice(Math.max(0, i - 2), i + 3), lens: b.slice(Math.max(0, i - 2), i + 3) }; return null; };
-    verdict('F2', 'Save & Complete: the lens fires the same ' + seqPc.length + ' model/doc events in the same order as Save then Complete, and both orders end CO', same(seqPc, seqLc) && oP && oP.docstatus === 'CO' && oL && oL.docstatus === 'CO' && oL.id !== oP.id,
-      { plainN: seqPc.length, lensN: seqLc.length, diff: firstDiff(seqPc, seqLc), oP, oL }, !seqPc.length || !seqLc.length);
-    verdict('F3', 'Order Receipt & Issue opened from the order: same ' + seqPb.length + ' events in order as the menu path, the order is pre-chosen, same collectors and stock deltas', same(seqPb, seqLb) && same(colP.map(c => c.slice(0, 1).concat(c.slice(2))), colL.map(c => c.slice(0, 1).concat(c.slice(2)))) && same(dP, dL) && !!preset && oL && preset.startsWith(oL.documentno + ' '),
-      { plainN: seqPb.length, lensN: seqLb.length, diff: firstDiff(seqPb, seqLb), colP, colL, dP, dL, preset }, !seqPb.length || !seqLb.length);
-    const tot = (g) => g.click + g.select + g.type, plainG = tot(gPc) + tot(gPb), lensG = tot(gLc) + tot(gLb);
-    verdict('F4', 'gestures from a filled order to backflushed: plain ' + plainG + ' (save+complete ' + tot(gPc) + ', backflush ' + tot(gPb) + ') > lens ' + lensG + ' (' + tot(gLc) + ' + ' + tot(gLb) + ')', lensG < plainG && lensG > 0, { gPc, gPb, gLc, gLb });
     const errs = PAGELOG.filter(l => /^PAGEERR/.test(l)); verdict('F0', 'no page errors', !errs.length, errs.slice(0, 3));
   } catch (e) { fails++; console.log('§FOPS ERROR ' + (e && e.stack || e)); }
   fs.writeFileSync(path.join(require('os').tmpdir(), 'witness_friendly_ops.page.log'), PAGELOG.join('\n'));

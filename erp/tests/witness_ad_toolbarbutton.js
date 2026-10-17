@@ -56,17 +56,19 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     // T2 every legacy tab with process buttons, as GardenAdmin
     const tabs = pg("select t.ad_tab_id, w.name, tb.tablename, t.tablevel from ad_tab t join ad_window w on w.ad_window_id=t.ad_window_id join ad_table tb on tb.ad_table_id=t.ad_table_id where t.ad_tab_id in (select ad_tab_id from ad_toolbarbutton where action='W' and ad_process_id is not null and isactive='Y') order by 1").map(l => { const [id, win, table, lvl] = l.split('|'); return { id: Number(id), win, table, lvl: Number(lvl) }; });
     const roleProcs = new Set(pg('select ad_process_id from ad_process_access where isactive=\'Y\' and ad_role_id=' + Number(role)));
+    // @SQL= DisplayLogic buttons are shown or hidden by the record on screen (Evaluator.parseSQLLogic, 2026-10-17 ERP_FRIENDLY_OPS_LENS.md §42): judged by W-FRIENDLY-ROWS A2/A3 both ways, not by this tab-level list
+    const sqlLogic = new Set(pg("select componentname from ad_toolbarbutton where isactive='Y' and displaylogic like '@SQL=%'").map(l => l.split('|')[0]));
     let t2judged = 0, t2bad = [], t2skip = [], hiddenByAccess = 0;
     for (const t of tabs) {
       const want = pg("select b.componentname, b.ad_process_id from ad_toolbarbutton b join ad_process p on p.ad_process_id=b.ad_process_id and p.isactive='Y' where b.ad_tab_id=" + t.id + " and b.action='W' and b.ad_process_id is not null and b.isactive='Y' order by case when coalesce(b.seqno,0)=0 then b.ad_toolbarbutton_id else b.seqno end")
-        .map(l => l.split('|')).filter(([, pid]) => { const ok = roleProcs.has(pid); if (!ok) hiddenByAccess++; return ok; }).map(([c]) => c);
+        .map(l => l.split('|')).filter(([, pid]) => { const ok = roleProcs.has(pid); if (!ok) hiddenByAccess++; return ok; }).map(([c]) => c).filter(c => !sqlLogic.has(c));
       const n0 = PAGELOG.length;
       const opened = await page.evaluate(({ win, table }) => { const before = document.getElementById('idmp-status') ? document.getElementById('idmp-status').textContent : ''; window.IdmpHost.focus('tbb', { window: win, table: table }); return before; }, t);
       await hold(1800);
       const onTab = await page.evaluate(tn => { const a = document.querySelector('#idmp-tabstrip .idmp-adtab.active'); return a ? a.getAttribute('title') || a.textContent : null; }, t.table);
       const notInMenu = PAGELOG.slice(n0).some(l => /not in this menu/.test(l)) || await page.evaluate(() => /not in this menu/.test((document.getElementById('idmp-status') || {}).textContent || ''));
       if (notInMenu || !onTab || onTab.indexOf(t.table) < 0) { t2skip.push(t.win + '/' + t.table + (notInMenu ? ' (not in the role\'s menu)' : ' (tab not reached: ' + onTab + ')')); continue; }
-      const got = await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb')));
+      const got = (await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb')))).filter(c => !sqlLogic.has(c));
       t2judged++; if (JSON.stringify(got) !== JSON.stringify(want)) t2bad.push({ tab: t.id, win: t.win, table: t.table, got, want });
       console.log('§TBB tab ' + t.id + ' ' + t.win + '/' + t.table + ' got=' + JSON.stringify(got) + ' want=' + JSON.stringify(want));
     }

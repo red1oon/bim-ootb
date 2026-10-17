@@ -9,25 +9,46 @@
 //   FO-A1 Add <child tab> / Save & back - header: Save, open the child tab and its New in one gesture; child row: Save, back to the parent tab (tab seams only).
 //   FO-A2 Next step - a completed document offers the follow-on dictionary process (Ship, Invoice) with its parameters taken from the record; descriptors below are data.
 //   FO-B related counts - on a saved record: one button per Zoom Across destination, "<window> (<count>)", opening it exactly as Zoom Across does.
+
+// §42 (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md): Ship / Invoice THE AD WAY - dictionary rows rendered by the host's one toolbar, no lens button. Same classnames as the verbatim ports
+//   (InOutGenerate 118, InvoiceGenerate 119); the variants default their parameters from the Order (@Column@ = window context) and show only while the order has something left (@SQL= DisplayLogic).
+const NOW = '2026-10-17 00:00:00';
+const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
+const P_SHIP = 53401, P_INV = 53402;
+const proc = (id, value, name, description, classname) => Object.assign({ ad_process_id: id, value, name, description, accesslevel: '1', isreport: 'N', isdirectprint: 'N', classname, statistic_count: 0, statistic_seconds: 0,
+  isbetafunctionality: 'N', isserverprocess: 'N', showhelp: 'Y', allowmultipleexecution: 'Y' }, STD);
+// [id, process, name, columnname, seq, ref, refValue, valRule, mandatory, default]
+const PARA = [[9534011, P_SHIP, 'Warehouse', 'M_Warehouse_ID', 10, 19, null, null, 'Y', '@M_Warehouse_ID@'], [9534012, P_SHIP, 'Business Partner', 'C_BPartner_ID', 20, 30, null, null, 'N', '@C_BPartner_ID@'],
+  [9534013, P_SHIP, 'Document Action', 'DocAction', 50, 17, 135, 219, 'N', 'CO'], [9534014, P_SHIP, 'Consolidate to one Document', 'ConsolidateDocument', 60, 20, null, null, 'N', 'Y'],
+  [9534021, P_INV, 'Organization', 'AD_Org_ID', 15, 18, 130, null, 'Y', '@AD_Org_ID@'], [9534022, P_INV, 'Order', 'C_Order_ID', 20, 19, null, 134, 'N', '@C_Order_ID@'],
+  [9534023, P_INV, 'Document Action', 'DocAction', 40, 17, 135, 219, 'Y', 'CO'], [9534024, P_INV, 'Consolidate to one Document', 'ConsolidateDocument', 50, 20, null, null, 'N', 'Y']]
+  .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: r[1], name: r[2], columnname: r[3], seqno: r[4], ad_reference_id: r[5], ad_reference_value_id: r[6], ad_val_rule_id: r[7], ismandatory: r[8],
+    defaultvalue: r[9], fieldlength: 0, iscentrallymaintained: 'Y', isrange: 'N' }, STD));
+const ACCESS = [P_SHIP, P_INV].flatMap((pid) => [102, 103, 200001].map((role) => { const r = Object.assign({ ad_process_id: pid, ad_role_id: role, isreadwrite: 'Y', ad_process_access_uu: 'fo-rows-' + pid + '-' + role }, STD); delete r.entitytype; return r; }));
+const leftSql = (col) => '@SQL=SELECT 1 FROM C_Order o JOIN C_OrderLine ol ON ol.C_Order_ID=o.C_Order_ID WHERE o.C_Order_ID=@C_Order_ID:0@ AND o.DocStatus=\'CO\' AND ol.M_Product_ID IS NOT NULL AND ol.QtyOrdered<>ol.' + col;
+const button = (id, comp, name, pid, seq, dl) => Object.assign({ ad_toolbarbutton_id: id, componentname: comp, name, action: 'W', ad_tab_id: 186, ad_process_id: pid, seqno: seq, displaylogic: dl,
+  iscustomization: 'N', isadvancedbutton: 'N', isaddseparator: 'N', isshowmore: 'N' }, STD);
+
 export const manifest = {
   id: 'org.kernel.friendly-ops',
   name: 'Friendly operations lens',
-  version: '0.2.0',
+  version: '0.3.0',
   engineVersion: '>=0.9.0',
-  requires: {}
+  requires: {},
+  dictionary: [
+    { table: 'ad_process', idCol: 'ad_process_id', rows: [proc(P_SHIP, 'FO_Order_Ship', 'Ship', 'Generate the shipment for this order', 'org.compiere.process.InOutGenerate'),
+      proc(P_INV, 'FO_Order_Invoice', 'Invoice', 'Generate the invoice for this order', 'org.compiere.process.InvoiceGenerate')] },
+    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: PARA },
+    { table: 'ad_process_access', idCol: 'ad_process_access_uu', rows: ACCESS },
+    { table: 'ad_toolbarbutton', idCol: 'ad_toolbarbutton_id', rows: [button(53431, 'FO_Order_Ship', 'Ship', P_SHIP, 20, leftSql('QtyDelivered')), button(53432, 'FO_Order_Invoice', 'Invoice', P_INV, 30, leftSql('QtyInvoiced'))] }
+  ]
 };
 
 const BREAK = (typeof globalThis !== 'undefined' && globalThis.__FOPS_BREAK) || null;   // witness-only negative control (W-FRIENDLY-OPS F5)
 
-// FO-A2 descriptors: DATA, resolved against the dictionary at run time (process by classname, parameters from the record's columns, applicability by a query on the record).
+// FO-A4 descriptor (Receive payment): DATA. Ship / Invoice are no longer here: they are dictionary rows (manifest.dictionary below, ERP_FRIENDLY_OPS_LENS.md §42).
 const NEXT = [
-  { table: 'c_order', status: 'CO', id: 'ship', label: 'Ship', class: 'org.compiere.process.InOutGenerate',
-    preset: { M_Warehouse_ID: 'm_warehouse_id', C_BPartner_ID: 'c_bpartner_id' },
-    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtydelivered AND m_product_id IS NOT NULL" },
-  { table: 'c_order', status: 'CO', id: 'invoice', label: 'Invoice', class: 'org.compiere.process.InvoiceGenerate',
-    preset: { AD_Org_ID: 'ad_org_id', C_Order_ID: 'c_order_id' },
-    when: "SELECT 1 FROM c_orderline WHERE c_order_id=:key AND qtyordered<>qtyinvoiced" },
-  // FO-A4: a NEW record of another table with fields preset (a value starting '@' is read from the 'when' row, else from this record's column)
+  // a NEW record of another table with fields preset (a value starting '@' is read from the 'when' row, else from this record's column)
   { table: 'c_order', status: 'CO', id: 'pay', label: 'Receive payment', newTable: 'c_payment',
     preset: { AD_Org_ID: 'ad_org_id', C_BPartner_ID: 'c_bpartner_id', C_Invoice_ID: '@c_invoice_id' },
     when: "SELECT c_invoice_id FROM c_invoice WHERE c_order_id=:key AND docstatus='CO' AND ispaid='N' ORDER BY c_invoice_id LIMIT 1" }
@@ -38,23 +59,11 @@ function nextSteps(api) {
   return NEXT.filter((n) => n.table === t && n.status === st && api.exists(n.when));   // a step whose 'when' finds nothing (nothing left to ship / invoice / pay) is not offered
 }
 
-function relatedForms(api) {
-  if (!api.keyCol || api.keyVal == null || api.isNew) return [];
-  const k = String(api.keyCol).toLowerCase();
-  return api.forms().map((f) => ({ f, p: f.params.find((n) => String(n).toLowerCase() === k) })).filter((x) => x.p);
-}
-
 const lens = {
   actions(api) {
     const out = [];
     nextSteps(api).forEach((n) => out.push({ id: 'next:' + n.id, label: n.label, title: n.label + ' this document: runs the dictionary process with this record\'s values already set' }));
     if (api.editing && api.hasAfterSave && (api.isNew || api.dirty)) out.push({ id: 'preview', label: 'Preview', title: 'Show what Save will write, without saving' });
-    if (api.editing && api.hasDocFsm && (api.isNew || api.legal.indexOf('CO') >= 0)) out.push({ id: 'save-complete', label: 'Save & Complete', title: 'Save this document, then Complete it (the same Save and Complete as the toolbar and the action bar)' });
-    if (api.editing || api.keyVal != null) api.childTabs().forEach((c) => out.push({ id: 'add:' + c.idx, label: 'Add ' + c.name, title: 'Save this record, then open a new ' + c.name + ' row (one step instead of Save, tab, New)' }));
-    const pt = api.level > 0 && api.editing ? api.parentTab() : null;
-    if (pt) out.push({ id: 'back:' + pt.idx, label: 'Save & back to ' + pt.name, title: 'Save this row and return to ' + pt.name });
-    relatedForms(api).forEach(({ f }) => out.push({ id: 'form:' + f.formId, label: f.name, title: 'Open ' + f.name + ' for this record' }));
-    if (!api.isNew) api.related().forEach((d) => out.push({ id: 'rel:' + d.windowId + ':' + d.table, label: d.name + ' (' + d.count + ')', title: d.count + ' ' + d.name + ' record(s) for this one' }));
     return out;
   },
   run(actionId, api) {
@@ -62,22 +71,7 @@ const lens = {
     const nx = /^next:(.+)$/.exec(actionId);
     if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const wr = api.row(n.when) || {}; const pre = {}; Object.keys(n.preset).forEach((k) => { const v = n.preset[k]; pre[k] = v.charAt(0) === '@' ? wr[v.slice(1)] : api.val(v); });
       if (n.newTable) return api.openNew(n.newTable, BREAK === 'nopreset' ? {} : pre);
-      return api.runProcess(n.class, BREAK === 'nopreset' ? {} : pre); }
-    const ad = /^(add|back):(\d+)$/.exec(actionId);
-    if (ad) { const idx = Number(ad[2]);
-      if (ad[1] === 'add') return BREAK === 'noclimb' ? api.openChildNew(idx) : api.saveThen(() => api.openChildNew(idx));
-      return api.saveThen(() => api.goTab(idx)); }
-    const r = /^rel:(\d+):(.+)$/.exec(actionId);
-    if (r) { const d = api.related().find((x) => String(x.windowId) === r[1] && x.table === r[2]); return d ? api.openRelated(d) : null; }
-    if (actionId === 'save-complete') {
-      if (BREAK === 'skipsave') return api.docAction('CO');
-      return api.saveThen(() => api.docAction('CO'));
-    }
-    const m = /^form:(\d+)$/.exec(actionId);
-    if (m) {
-      const hit = relatedForms(api).find(({ f }) => f.formId === Number(m[1]));
-      if (hit) return api.openForm(hit.f.formId, { [hit.p]: api.keyVal });
-    }
+      return null; }
     return null;
   }
 };
