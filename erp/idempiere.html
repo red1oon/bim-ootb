@@ -1847,6 +1847,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           _openCreate();
           (function waitForm() {
             if (!document.querySelector('#idmp-inline-mount .cfrow') && Date.now() - t0 < 30000) { setTimeout(waitForm, 150); return; }
+            // the form's own New defaults (GridTab.dataNew callout fan, AD_Org_ID from the context ...) run just after it appears and would overwrite an earlier pick: let them finish first
+            if (!waitForm.settled) { waitForm.settled = true; setTimeout(waitForm, 1300); return; }
             (function next(i) {
               if (i >= pre.length) { console.log('§OPS-LENS openNew done table=' + tn); renderToolbar(); return; }
               var el = document.querySelector('#idmp-inline-mount [data-col="' + pre[i][0] + '"]');
