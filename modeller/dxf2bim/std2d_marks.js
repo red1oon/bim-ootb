@@ -116,9 +116,14 @@
       if (sz.length !== 1 || sz[0] === 'none' || /,/.test(t)) { say('  SCHEDULE ' + t + ': REFUSED, sizes ' + JSON.stringify(sz)); return; }
       const [w, h] = sz[0].split('x').map(Number); marks.push({ text: '@SCHEDULE=' + t + ',door,' + w + ',' + h }); say('  SCHEDULE=' + t + ',door,' + w + ',' + h);
     });
+    // §L1.25: two door types at one plan point would be two different @TAG texts at one point (a marking conflict the reader refuses): that point is not tagged
+    const at = x => [Number(((x.x0 + x.x1) / 2 * 1000).toFixed(3)), Number(((x.y0 + x.y1) / 2 * 1000).toFixed(3))], ptTypes = {};
+    here.forEach(x => { const k = at(x).join(','); (ptTypes[k] = ptTypes[k] || new Set()).add(x.etype); });
+    const said = {};
     here.forEach(x => {
       if (types.indexOf(x.etype) < 0) return;
-      const p = [Number(((x.x0 + x.x1) / 2 * 1000).toFixed(3)), Number(((x.y0 + x.y1) / 2 * 1000).toFixed(3))];
+      const p = at(x), k = p.join(',');
+      if (ptTypes[k].size > 1) { if (!said[k]) { said[k] = 1; say('  §MARK_GAP TAG door at (' + p[0] + ',' + p[1] + '): types ' + Array.from(ptTypes[k]).sort().join(' / ') + ' differ, not tagged'); } return; }
       marks.push({ text: '@TAG=door,' + x.etype, x: p[0], y: p[1] });
     });
   }
