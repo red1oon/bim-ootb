@@ -1746,5 +1746,12 @@ Built as specified: Python oracle + JS carry the same four rules, same constants
 - W-L127-CONTROL: a level with neither a rectangle nor a datum (SampleCastle with `@LEVEL` moved to 4.2) is still refused with the LV reason; the top storey with no datum above it is refused with the new reason.
 **Not claimed:** SampleCastle qualifying; the heights of walls whose base differs from the level (they stay gaps or take `@WALLTOP`).
 
+#### L1.27 Results (2026-10-17)
+Built as specified in `dxf2bim_import.js` (`allDatum`, `st.levelDatum`, top of the top storey from the lowest datum above); BIMCompiler `docs/DXF2BIM_BASIC_SHAPES_SPEC.md` §2.3 LV amended the same day. sw.js v103.
+- **W-L127** (`modeller/tests/witness_dxf_level_datum.js`): L1 SampleCastle straight set: Convert reaches a verdict (was refused): `blocked`, 1081 blocking; storeys 0 (rect 0 / datum 4), 3 (rect 22 / datum 4), 6 (rect 5 / datum 4), 9 (rect 0 / datum 4, top 12); L2 levels 0 and 9 are accepted by the datum ALONE (the new rule is what lets them through); L3 CONTROL a ground level moved to 0.5 (no rectangle, no datum) is still refused with the LV reason; L4 Duplex: every level has rectangles AND datums. All PASS.
+- **W-L127-DUPLEX:** old importer (origin/main) vs new, on the Duplex and HHS: verdict, blocking codes with messages, advisory and EVERY storey's ops identical (36 and 600 blocking). `witness_dxf_export_roundtrip.js` 0 / `witness_dxf_scopes_merge.js` / `witness_dxf_wing_back.js` B2+B4 / `witness_dxf_wing_vs_straight.js` V1-V4 pass; browser W-E2E-DXF-EXPORT 14/14 and W-E2E-DXF-WING 7/7. NOT run: `witness_dxf_import_node.js` P1-P8 (needs BIMCompiler's local rosetta `out/` set, absent on this machine); the old-vs-new comparison above covers the Duplex path it would check.
+- **Not tested:** the second refusal (`no drawn level above the top storey`): no SampleCastle variant isolates it (a datum above always exists); it is a guard, covered by reading the code only.
+- **SampleCastle after the rule (listed, not claimed good):** blocked 1081: opening_unclassified 491, no_dimension 189, wall_below_min_thickness 101, no_host_cut 80, grid_off_axis 68, no_elevation_for_face 49, no_host 29, no_elevation_height 13, no_elevation_match 13, slab_no_exterior_wall 9, bad_outline 4, others <= 5. 491 unclassified openings and 189 no_dimension are the next measurement (SampleCastle doors/windows through the reader's opening model), as the Hospital's were.
+
 ## Order
 basic shapes (running) → L1 → L2 → L3 → L4 → L5 (after L1.6 acid test) → film (FILM_PLAN §10), English first.
