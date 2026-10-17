@@ -691,6 +691,12 @@
     }
     return v;
   };
+  // a negative ID that IS a row of the field's referenced table (the tip-shadowed reader the callout runs under): the twin's synthetic pk of a record made in this session (crud_core.js -opId).
+  //   Real iDempiere ids are never negative, so there this is always false and the Java rule is unchanged (ERP_FRIENDLY_OPS_LENS.md §34/§38, W-GEN-TIPREAD G4).
+  function sessionRow(field, v) {
+    var vo = field && field.vo; if (!vo || !vo.refTable || !vo.refKey) return false;
+    try { return RUNTIME.DB.query('SELECT 1 AS x FROM ' + vo.refTable + ' WHERE ' + vo.refKey + '=?', [v]).length > 0; } catch (e) { return false; }
+  }
   // setValue :2849-2885 (+ GridTable.setValueAt :1387-1440 + ADTabpanel.dataStatusChanged :1692-1712)
   GridTab.prototype.setValue = function (field, value) {
     if (typeof field === 'string') { if (field == null) return 'NoColumn'; field = this.getField(field); }
@@ -699,7 +705,7 @@
     if (value !== null && value !== undefined && !(value instanceof BD) && !(value instanceof Timestamp) && typeof value !== 'boolean') value = typed(dt, value);
     if (value === undefined) value = null;
     if (typeof value === 'number' && Number.isInteger(value)) {
-      if (value < 0 && DT.isID(dt)) value = null;
+      if (value < 0 && DT.isID(dt)) { if (!sessionRow(field, value)) value = null; }   // GridTab.java:2870 (negative ID -> null) holds for every legacy id; a SYNTHETIC pk (-opId) of a row created in this session exists in the referenced table, so it is a value
       else if (value === 0 && field.isLookup()) { if (ZERO_ID_TABLES.indexOf(field.vo.refTable || '') < 0) value = null; }
     }
     var oldValue = field.getValue();
