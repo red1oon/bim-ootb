@@ -11,8 +11,6 @@
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
   var P = D.P, DFM = D.DF, r6 = function (v) { return Number(Number(v).toFixed(6)); };
-  var BOX = [[4, 5, 6], [4, 6, 7], [0, 2, 1], [0, 3, 2], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
-  function vol(m) { var v = 0; m.faces.forEach(function (f) { var a = m.vertices[f[0]], b = m.vertices[f[1]], c = m.vertices[f[2]]; v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6; }); return v; }
 
   // sheets: readSheets output; bodies: the els already built (their lowest column base gives the floor); opts: { numbers, doorH, doorT, floorZ }
   function buildDoors(sheets, bodies, opts) {
@@ -45,7 +43,7 @@
         var hx = c.x * k, hy = c.y * k, w = R * k, nx = -uy, ny = ux, z0 = floorZ, z1 = floorZ + H, hh = t / 2;
         var V = [[hx + nx * hh, hy + ny * hh, z0], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z0], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z0], [hx - nx * hh, hy - ny * hh, z0],
           [hx + nx * hh, hy + ny * hh, z1], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z1], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z1], [hx - nx * hh, hy - ny * hh, z1]].map(function (q) { return [r6(q[0]), r6(q[1]), r6(q[2])]; });
-        var m = { vertices: V, faces: BOX.map(function (f) { return f.slice(); }) }; if (vol(m) < 0) m.faces = m.faces.map(function (f) { return [f[0], f[2], f[1]]; });
+        var m = P.Solid.box(V);
         els.push({ guid: id, class: P.ifcType('doorswing').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: a.handle, layer: a.layer, sheet: ps.name, kind: 'doorswing', prov: 'derived',
           ifc: P.ifcType('doorswing', 'Door ' + r6(w) + ' m', null), mark: null, z0: r6(z0), z1: r6(z1), height_source: 'default', size: { w: { number: r6(w), source: 'drawn' }, t: { number: r6(t), source: tsrc }, d: { number: r6(H), source: hsrc } }, members: [a.handle] });
       });

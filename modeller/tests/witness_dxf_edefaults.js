@@ -46,7 +46,12 @@ runE2E('W-DXF-EDEFAULTS', async (t) => {
   const bi = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel [data-edef]')].findIndex(r => r.getAttribute('data-edef') === 'building.type'));
   await pg.select('#dm-ed-' + bi, 'Farming Shed'); await pg.click('#dm-panel [data-act="edefset"][data-key="building.type"]'); await idle(); await secOpen(); s = await st();
   t.assert('E6 the Building type selector (a select, options General | Farming Shed) set to Farming Shed: the door becomes 1.83 m (the cited 6 ft door, source type) and the saved sheets carry @DEFAULT=building.type,Farming Shed', s.doorH === 1.83 && s.src === 'type' && (await pg.evaluate(() => window.DxfMetaEditor.state.sheets.some(sh => window.DxfMetaEditor.effText(sh).includes('@DEFAULT=building.type,Farming Shed')))), JSON.stringify(s));
+  await pg.evaluate(() => { const s = window.DxfMetaEditor.state; if (!s.sec.typology) document.querySelector('#dm-panel .dm-sh[data-sec="typology"]').click(); }); await sleep(400);
+  const typ = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel [data-typ]')].map(r => r.getAttribute('data-typ')));
+  t.assert('E7 (§L22) as Farming Shed the Typology section lists advisories (the 4 test columns are not measurable as a house here, but the expected classes IfcFan/IfcCovering/IfcRoof/IfcSlab are reported missing)', typ.includes('TYP:expected_missing') && typ.includes('TYP:expected_present'), JSON.stringify(typ));
   await pg.click('#dm-panel [data-act="edefdel"][data-key="building.type"]'); await idle(); await secOpen(); s = await st();
+  const typ0 = await pg.evaluate(() => document.querySelectorAll('#dm-panel [data-typ]').length + '/' + !!document.querySelector('#dm-panel .dm-sh[data-sec="typology"]'));
+  t.assert('E8 (§L22) back to General: no Typology section at all (the typology never speaks without a stated type)', typ0 === '0/false', typ0);
   for (const bad of ['tall', '-2']) { await pg.evaluate((i, v) => { document.querySelector('#dm-ed-' + i).value = v; }, s.idx, bad); await pg.click('#dm-panel [data-act="edefset"][data-key="door.height"]'); await sleep(600); }
   s = await st();
   t.assert('E5 CONTROL a text or negative value writes no marking (refused, the default stays)', s.marks.length === 0 && s.doorH === 2.1, JSON.stringify(s));
