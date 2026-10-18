@@ -59,7 +59,7 @@
           if (!(zf < zg && zg < c.z0)) { gaps.push({ code: 'GAP:synth_column_levels', detail: 'column ' + (c.guid || i) + ': footing top ' + r6(zf) + ', grade ' + r6(zg) + ', base ' + r6(c.z0) + ' are not in order', handle: c.handle }); return; }
           [['below', zf, zg, bs, bs, 'Column below grade'], ['stub', zg, c.z0, cb.mx[0] - cb.mn[0], cb.mx[1] - cb.mn[1], 'Column grade to base']].forEach(function (q) {
             var m3 = prismBox(r6(cx - q[3] / 2), r6(cy - q[4] / 2), r6(q[1]), r6(cx + q[3] / 2), r6(cy + q[4] / 2), r6(q[2])); nb++;
-            els.push({ guid: 'synth-col' + q[0] + '-' + i, class: P.ifcType('column').ifc_class, storey: storey, vertices: m3.vertices, faces: m3.faces, handle: c.handle || 'synth', layer: c.layer || '(synthetic)', sheet: c.sheet || '(set)', kind: 'column', prov: 'derived',
+            els.push({ guid: 'synth-col' + q[0] + '-' + i, class: P.ifcType('column').ifc_class, storey: storey, vertices: m3.vertices, faces: m3.faces, handle: c.handle || 'synth', layer: c.layer || '(synthetic)', sheet: c.sheet || '(set)', kind: 'column', prov: 'derived', part_of: c.guid, part_type: (c.ifc && c.ifc.type_name) || null,
               ifc: P.ifcType('column', q[5], null), mark: null, z0: r6(q[1]), z1: r6(q[2]), height_source: 'derived', size: { x: { number: r6(q[3]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' }, y: { number: r6(q[4]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' } }, members: [] });
           });
         });

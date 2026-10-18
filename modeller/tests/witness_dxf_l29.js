@@ -18,7 +18,7 @@ const run = (name, extraSheets, extra) => { const o = path.join(dir, name), r = 
   '--bodyz', 'footing=-1.4478,-1.143', '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794'], extra || []), { encoding: 'utf8' });
   const line = (r.stdout.match(/§CLI result .*/) || [''])[0]; console.log('  ' + name + ': ' + line.replace(/ out=\S+/, '') + (r.status ? ' rc=' + r.status + (r.stderr || '').slice(0, 200) : ''));
   return { line, bodies: JSON.parse(fs.readFileSync(path.join(o, 'bodies.json'), 'utf8')), ops: JSON.parse(fs.readFileSync(path.join(o, 'ops.json'), 'utf8')).inserts, ifc: fs.readFileSync(path.join(o, 'model.ifc'), 'utf8'), rc: r.status }; };
-const A = run('with-details', ['5_DETAILS'], ['--default', 'synth.column.belowgrade.size=0.3556']), B = run('no-details', [], []), C = run('details-no-size', ['5_DETAILS'], []);
+const A = run('with-details', ['5_DETAILS'], ['--default', 'synth.column.belowgrade.size=0.3556']), B = run('no-details', [], []), C = run('details-size-zero', ['5_DETAILS'], ['--default', 'synth.column.belowgrade.size=0']);
 const props = r => r.ops.map(o => o.params.provenance.ifc.props), kindOf = (r, k) => props(r).filter(p => p.Kind === k);
 const all = (a, f) => a.length > 0 && a.every(f);
 ok('N2 accepted + scoped: concrete bodies fc 24 / fy 500; columns+footings 1:1.5:3; slab 1:2:4; beams no ratio; panels no note', A.rc === 0 && /ok=true/.test(A.line) &&
@@ -31,7 +31,7 @@ ok('H1 size stated: 448 -> 512 bodies, columns 32 -> 96', B.bodies.length === 44
 const foot = A.bodies.filter(b => b.kind === 'footing'), bel = A.bodies.filter(b => /^synth-colbelow-/.test(b.guid)), stub = A.bodies.filter(b => /^synth-colstub-/.test(b.guid)), baseCols = A.bodies.filter(b => b.kind === 'column' && !/^synth-/.test(b.guid));
 const zf = Math.max.apply(null, foot.map(f => f.z1)), mm = (a, b) => Math.abs(a - b) < 0.001;
 ok('H2 below body: footing top -> base - 0.6096 within 1 mm; sizes 0.3556 stated / 0.3048 inherited', bel.length === 32 && stub.length === 32 && all(bel, b => mm(b.z0, zf) && mm(b.z1, baseCols[0].z0 - 0.6096) && b.size.x.number === 0.3556 && b.size.x.source === 'stated') && all(stub, b => mm(b.z0, baseCols[0].z0 - 0.6096) && mm(b.z1, baseCols[0].z0) && b.size.x.number === 0.3048 && b.size.x.source === 'inherited'), 'below z ' + (bel[0] && bel[0].z0) + '..' + (bel[0] && bel[0].z1));
-ok('H3 control: size not stated -> 448 bodies, no synth-col body', C.bodies.length === 448 && !C.bodies.some(b => /^synth-col/.test(b.guid)), 'bodies ' + C.bodies.length);
+ok('H3 control: size stated 0 (beats the schedule, §L30) -> 448 bodies, no synth-col body', C.bodies.length === 448 && !C.bodies.some(b => /^synth-col/.test(b.guid)), 'bodies ' + C.bodies.length);
 ok('N4 model.ifc carries the Note_ properties', /Note_fc_MPa/.test(A.ifc) && /Note_CastingRatio/.test(A.ifc) && !/Note_fc_MPa/.test(B.ifc), 'fc rows ' + (A.ifc.match(/Note_fc_MPa/g) || []).length);
 // P1 the PAGE (the real Modeller) on the marked settings sheets the CLI wrote (5_DETAILS included): accepted, Complete + Convert -> 512 inserts, the notes on a column's provenance
 (async () => {
