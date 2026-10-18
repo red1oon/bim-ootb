@@ -5,11 +5,11 @@
 // regions of the same kind whose horizontal interval equals the plan interval give the z range (through the existing MK.align map). Nothing is guessed:
 // no elevation counterpart -> GAP:body_no_elevation, different heights -> GAP:body_ambiguous_z; neither makes a body. Output is the importer's `els` form.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ MK: require('./dxf2bim/dxf2marks.js'), S: require('./dxf2bim/dxf2shell.js'), P: require('./dxf2prep.js') });
-  else root.Dxf2Bodies = factory({ MK: root.Dxf2Marks, S: root.Dxf2Shell, P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ MK: require('./dxf2bim/dxf2marks.js'), S: require('./dxf2bim/dxf2shell.js'), P: require('./dxf2prep.js'), PR: require('./dxf2pair.js') });
+  else root.Dxf2Bodies = factory({ MK: root.Dxf2Marks, S: root.Dxf2Shell, P: root.Dxf2Prep, PR: root.Dxf2Pair });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var MK = D.MK, S = D.S, P = D.P;
+  var MK = D.MK, S = D.S, P = D.P, PR = D.PR;
   var KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
 
@@ -176,23 +176,101 @@
       });
       return out;
     }
+    // plan regions of a kind on a sheet (drawn regions, band pieces, @EXCLUDE applied), memoised: the size pass and the body pass read the same list
+    var prCache = {};
+    function planR(ps, ly, kind) {
+      var key = ps.name + '|' + kind; if (prCache[key]) return prCache[key];
+      var k = ps.factor, r = regions(ps, ly, snap, BAND_KINDS.indexOf(kind) >= 0);
+      if (BAND_KINDS.indexOf(kind) >= 0) { const drawn0 = r.list.slice(); [true, false].forEach(function (hz) { bandRegions(ps, ly, snap, pairMaxM / k, hz).forEach(function (bd) { if (!drawn0.some(function (d) { return sameRegion(d, bd, snap); })) r.list.push(bd); }); }); }
+      // §L9.3 the user's @EXCLUDE rectangles (drawing units, this sheet): a region wholly inside one is skipped and counted, never silently
+      var exr = (ps.desc && ps.desc.excludes) || [], nEx = 0;
+      if (exr.length) r.list = r.list.filter(function (g) { var inside = exr.some(function (e) { return Math.min(g.x0, g.x1) >= e[0] - snap && Math.max(g.x0, g.x1) <= e[2] + snap && Math.min(g.y0, g.y1) >= e[1] - snap && Math.max(g.y0, g.y1) <= e[3] + snap; }); if (inside) nEx++; return !inside; });
+      return (prCache[key] = { r: r, nEx: nEx });
+    }
+    // §L10.6 stated sizes: legend rows (set-level) + instance marks (kind-aware) + other sheets' marks by translation vote -> one pair per body side; user numbers (opts.numbers[guid]) win.
+    // Returns, per plan index, an array parallel to that plan's region list: {x:{...}, y:{...}} in sheet units, or null when the sheet's unit is not in/mm/m.
+    var legend = {}; if (PR) sheets.forEach(function (sh) { var u = unitName(sh.factor); if (u && sh.dxf) Object.assign(legend, PR.legendOf(sh.dxf.entities, u)); });
+    function unitName(k) { return Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; }
+    function sizesForKind(kind) {
+      var out = {}; if (!PR || !Object.keys(legend).length || BAND_KINDS.indexOf(kind) >= 0) return out;   // a band kind's legend row is its CROSS-SECTION (B-1 = 12" x 10": width x depth), not its plan length: not applied here (see the lane doc)
+      var lab = [], src = null;   // per plan: rects, own labelling
+      plans.forEach(function (ps, pi) {
+        var ly = bodyLayers(ps, kind), u = unitName(ps.factor); if (!ly.length || !u || !pofs[pi].ok) return;
+        var list = planR(ps, ly, kind).r.list, rects = list.map(function (g, i) { return { id: pi + ':' + i, sheet: ps.name, kind: kind, pts: [[g.x0, g.y0], [g.x1, g.y0], [g.x1, g.y1], [g.x0, g.y1]] }; });
+        var mk = PR.markPoints(ps.dxf.entities, legend), lr = mk.length ? PR.labelRects(rects, mk, legend) : null;
+        lab.push({ pi: pi, ps: ps, u: u, rects: rects, lr: lr });
+        if (lr && !src && lr.lengths.some(function (l) { return l.label != null; })) src = { rects: rects, marks: lr.marks };
+      });
+      lab.forEach(function (L) {
+        var lr = L.lr, via = null;
+        if (!lr && src) { var inh = PR.inheritLabels(L.rects, src.rects, src.marks, legend, 0.01 / (L.ps.factor || 1)); lr = inh; via = inh.match; }
+        if (!lr) return;
+        var dims = PR.dimsOf(L.ps.dxf.entities, L.ps.name), res = PR.pair(lr.lengths, dims, { unit: L.u });
+        var byId = {}; res.pairs.forEach(function (pp) { byId[pp.id] = pp; });
+        out[L.pi] = L.rects.map(function (rc, i) {
+          // sides 0 and 2 run along x (first edge), 1 and 3 along y: the pair of opposite sides must agree; the x extent is the pair of side 0
+          var px = byId[rc.id + ':0'], py = byId[rc.id + ':1'], px2 = byId[rc.id + ':2'], py2 = byId[rc.id + ':3'];
+          return { x: px, y: py, x2: px2, y2: py2, via: via && via.matched ? via.matched[rc.id] || null : null, rows: res.rows };
+        });
+      });
+      return out;
+    }
+    // the number in force drives the extent (§L10): a user number (opts.numbers[guid] = {x,y} metres) beats a label/dimension number; an axis with no number keeps the drawn extent.
+    // Alignment is best effort: centred on the drawn centre (ALIGN:floating), reported on the body. Metres in, metres out.
+    var sizeRows = [];
+    function sizeOf(si, guid, x0, x1, y0, y1, k) {
+      var u = opts.numbers && opts.numbers[guid] || {}, ax = {}, out = { x0: x0, x1: x1, y0: y0, y1: y1, info: null };
+      [['x', x0, x1, si && si.x, si && si.x2], ['y', y0, y1, si && si.y, si && si.y2]].forEach(function (a) {
+        var drawn = a[2] - a[1], n = null, src = null, cls = null, pair = a[3];
+        if (u[a[0]] != null) { n = Number(u[a[0]]); src = 'user'; cls = Math.abs(n - drawn) <= 0.0006 ? 'PAIRED_AGREE' : 'USER'; }
+        else if (pair && pair.number != null) { n = pair.number * k; src = pair.source; cls = pair.class; }
+        if (n != null && isFinite(n) && n > 0) {
+          ax[a[0]] = { drawn: r6(drawn), number: r6(n), class: cls, source: src, rule: pair ? pair.rule : 'user' };
+          if (Math.abs(n - drawn) > 1e-9) { var c = (a[1] + a[2]) / 2; if (a[0] === 'x') { out.x0 = r6(c - n / 2); out.x1 = r6(c + n / 2); } else { out.y0 = r6(c - n / 2); out.y1 = r6(c + n / 2); } ax[a[0]].align = 'ALIGN:floating'; }
+          if (cls === 'PAIRED_CONFLICT' && src !== 'user') sizeRows.push({ guid: guid, axis: a[0], drawn: r6(drawn), number: r6(n), source: src, ratio: pair.ratio });
+        } else if (si && pair) ax[a[0]] = { drawn: r6(drawn), number: null, class: pair.class, source: null };
+      });
+      if (ax.x || ax.y) out.info = ax;
+      return out;
+    }
+    // §L10.7 a band kind's legend row is its CROSS-SECTION (B-1 = 12" x 10": width x depth). WIDTH is the extent across the span in plan, DEPTH the z extent. The legend gives no order, so the
+    // assignment that fits the drawing best is taken. Anchoring (best effort, a yellow default): the plan width is centred on the drawn band; the depth keeps the SOFFIT (z0) because a beam bears
+    // on its supports from below, so a deeper beam grows upward. A user number (opts.numbers[guid].w / .d, metres) beats the label.
+    function crossSection(kind, mark, guid, x0, x1, y0, y1, z, k) {
+      var u = opts.numbers && opts.numbers[guid] || {}, un = unitName(k), nums = mark && legend[mark] && un && PR ? legend[mark].nums.slice(0, 2).map(function (v) { return v * k; }) : null;
+      if (!nums && u.w == null && u.d == null) return null;
+      var spanX = (x1 - x0) >= (y1 - y0), dW = spanX ? (y1 - y0) : (x1 - x0), dD = z.z1 - z.z0, w = null, d = null, ws = null, ds = null, info = {};
+      if (nums) { var keep = Math.abs(dW - nums[0]) + Math.abs(dD - nums[1]), swap = Math.abs(dW - nums[1]) + Math.abs(dD - nums[0]); w = keep <= swap + 1e-9 ? nums[0] : nums[1]; d = keep <= swap + 1e-9 ? nums[1] : nums[0]; ws = ds = 'label'; }
+      if (u.w != null) { w = Number(u.w); ws = 'user'; } if (u.d != null) { d = Number(u.d); ds = 'user'; }
+      var out = { x0: x0, x1: x1, y0: y0, y1: y1, info: null }, zz = { z0: z.z0, z1: z.z1, sheet: z.sheet, handle: z.handle, pair: z.pair };
+      function one(ax, drawn, n, src) {
+        if (n == null || !isFinite(n) || n <= 0) return null;
+        var pr = src === 'user' ? { class: Math.abs(n - drawn) <= 0.0006 ? 'PAIRED_AGREE' : 'USER', rule: 'user' } : PR.pair([{ id: 'x', a: [0, 0], b: [drawn / k, 0], label: n / k }], [], { unit: un }).pairs[0];
+        var cls = pr.class, row = { drawn: r6(drawn), number: r6(n), class: cls, source: src, rule: pr.rule || 'single' };
+        if (Math.abs(n - drawn) > 1e-9) row.align = 'ALIGN:floating';
+        if (cls === 'PAIRED_CONFLICT' && src !== 'user') sizeRows.push({ guid: guid, axis: ax, drawn: r6(drawn), number: r6(n), source: src, ratio: pr.ratio });
+        return row;
+      }
+      info.w = one('w', dW, w, ws); info.d = one('d', dD, d, ds);
+      if (info.w && Math.abs(info.w.number - dW) > 1e-9) { if (spanX) { var cy = (y0 + y1) / 2; out.y0 = r6(cy - w / 2); out.y1 = r6(cy + w / 2); } else { var cx = (x0 + x1) / 2; out.x0 = r6(cx - w / 2); out.x1 = r6(cx + w / 2); } }
+      if (info.d && Math.abs(info.d.number - dD) > 1e-9) zz.z1 = r6(z.z0 + d);
+      out.info = { w: info.w, d: info.d, anchor: 'soffit' };
+      return { sz: out, z: zz };
+    }
     KINDS.forEach(function (kind) {
       var rep = { plan_regions: 0, bodies: 0, gaps: 0, nonRect: 0 }, ER = null;
       var chosenName = opts.prepChoices && opts.prepChoices[kind + '.type_name'];
       var lab = labelsFor(sheets, kind); report.labels[kind] = lab;
+      var SZ = sizesForKind(kind);
       if (lab.length === 1) names[kind] = chosenName !== undefined ? String(chosenName) : lab[0];
       plans.forEach(function (ps, pi) {
         var ly = bodyLayers(ps, kind); if (!ly.length) return;
         if (!pofs[pi].ok) { gaps.push({ code: 'GAP:body_plan_not_aligned', kind: kind, sheet: ps.name, handle: null, detail: pofs[pi].why.join('; ') + ' (aligned to ' + plans[0].name + ')' }); rep.gaps++; return; }
         if (!ER) ER = elevRegions(kind);
-        var r = regions(ps, ly, snap, BAND_KINDS.indexOf(kind) >= 0), k = ps.factor;
-        if (BAND_KINDS.indexOf(kind) >= 0) { const drawn0 = r.list.slice(); [true, false].forEach(function (hz) { bandRegions(ps, ly, snap, pairMaxM / k, hz).forEach(function (bd) { if (!drawn0.some(function (d) { return sameRegion(d, bd, snap); })) r.list.push(bd); }); }); }
-        // §L9.3 the user's @EXCLUDE rectangles (drawing units, this sheet): a region wholly inside one is skipped and counted, never silently
-        var exr = (ps.desc && ps.desc.excludes) || [], nEx = 0;
-        if (exr.length) r.list = r.list.filter(function (g) { var inside = exr.some(function (e) { return Math.min(g.x0, g.x1) >= e[0] - snap && Math.max(g.x0, g.x1) <= e[2] + snap && Math.min(g.y0, g.y1) >= e[1] - snap && Math.max(g.y0, g.y1) <= e[3] + snap; }); if (inside) nEx++; return !inside; });
+        var pr0 = planR(ps, ly, kind), r = pr0.r, nEx = pr0.nEx, k = ps.factor;
         rep.excluded = (rep.excluded || 0) + nEx;
         rep.nonRect += r.nonRect; rep.plan_regions += r.list.length;
-        r.list.forEach(function (g) {
+        r.list.forEach(function (g, gi) {
           var x0 = r6(Math.min(g.x0, g.x1) * k + pofs[pi].x), x1 = r6(Math.max(g.x0, g.x1) * k + pofs[pi].x), y0 = r6(Math.min(g.y0, g.y1) * k + pofs[pi].y), y1 = r6(Math.max(g.y0, g.y1) * k + pofs[pi].y);
           var fp = kind + '|' + [x0, y0, x1, y1].map(function (v) { return Math.round(v * 1000); }).join(',');
           if (seenFp[fp]) { rep.dedup = (rep.dedup || 0) + 1; return; }   // the same footprint already came from an earlier plan
@@ -210,14 +288,15 @@
           if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' + ' (state its z range with @BODYZ)' }, base)); rep.gaps++; return; }
           if (distinct.length > 1) { gaps.push(Object.assign({ code: 'GAP:body_ambiguous_z', detail: distinct.map(function (d) { return d.z0 + '..' + d.z1 + ' (' + d.sheet + ' ' + d.handle + ')'; }).join(' | ') }, base)); rep.gaps++; return; }
           var mark = BAND_KINDS.indexOf(kind) >= 0 ? nearMark(ps, g, 5.0 / k) : null;   // §L9.4 per-region type mark (B-1 / B-2)
-          var z = distinct[0], pm = S.prismRect([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], [], z.z0, z.z1);
+          var z = distinct[0], guid = 'body-' + kind + '-' + pi + '-' + g.handle, sz = sizeOf(SZ[pi] && SZ[pi][gi], guid, x0, x1, y0, y1, k);
+          if (BAND_KINDS.indexOf(kind) >= 0) { var cs = crossSection(kind, mark, guid, x0, x1, y0, y1, z, k); if (cs) { sz = cs.sz; z = cs.z; } }
+          var pm = S.prismRect([[sz.x0, sz.y0], [sz.x1, sz.y0], [sz.x1, sz.y1], [sz.x0, sz.y1]], [], z.z0, z.z1);
           if (!pm) { gaps.push(Object.assign({ code: 'GAP:body_degenerate', detail: 'z range ' + z.z0 + '..' + z.z1 }, base)); rep.gaps++; return; }
-          var guid = 'body-' + kind + '-' + pi + '-' + g.handle;
           if (seen[guid]) throw new Error('Dxf2Bodies: duplicate body id ' + guid);
           seen[guid] = 1;
           var lv = levels.filter(function (l) { return l <= z.z0 + tolM; }).pop(); if (lv === undefined) lv = levels[0];   // several plans of one storey share ONE storey
           els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
-            kind: kind, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, mark || names[kind] || null, null), mark: mark, band: !!g.band, width_m: g.width ? r6(g.width * k) : null, members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+            kind: kind, size: sz.info, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, mark || names[kind] || null, null), mark: mark, band: !!g.band, width_m: g.width ? r6(g.width * k) : null, members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
           if (cands.some(function (c) { return c.pair; })) pairUsed = true;   // the default row exists only when a body was actually matched through a drawn line pair
           rep.bodies++;
         });
@@ -233,6 +312,7 @@
         if (opts.prepChoices && opts.prepChoices[kind + '.type_name'] !== undefined) DEF.override(kind + '.type_name', String(opts.prepChoices[kind + '.type_name']));
       }
     });
+    report.size_conflicts = sizeRows;   // one entry per body side whose stated number replaced the drawn extent (yellow rows in the product)
     report.centre = els.filter(function (e) { return e.match === 'centre'; }).length;
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }

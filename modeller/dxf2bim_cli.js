@@ -88,15 +88,20 @@ function run(args, log) {
   const read = I.readSheets(eff, { prep: P, prepChoices: choices });
   const out = ST.judge(read, { I, B, choices });
   say('§CLI ' + out.log);
-  return { sheets, eff, read, out, choices };
+  // §L10.8 every typed dimension override against its own measured length (per sheet unit), one row per distinct conflict
+  const PR = require('./dxf2pair.js'), audit = { rows: [], counts: {} };
+  read.forEach(sh => { const k = sh.factor, u = Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; if (!u || !sh.dxf) return;
+    const a = PR.auditDims(PR.dimsOf(sh.dxf.entities, sh.name), { unit: u }); a.rows.forEach(r => audit.rows.push(r)); Object.keys(a.counts).forEach(c => { audit.counts[c] = (audit.counts[c] || 0) + a.counts[c]; }); });
+  say('§DIMAUDIT ' + Object.keys(audit.counts).map(c => c + '=' + audit.counts[c]).join(' ') + ' rows=' + audit.rows.length);
+  return { sheets, eff, read, out, choices, audit };
 }
 
 function write(res, dir) {
   fs.mkdirSync(path.join(dir, 'marked'), { recursive: true });
   res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
   const g = res.out.gate, R = g.R;
-  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
-  const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
+  const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, mark: e.mark || null, size: e.size || null, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
   if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
   return bodies;
