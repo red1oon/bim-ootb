@@ -105,7 +105,11 @@
     const fndSt = Array.from(new Set(els.filter(e => e.cls === 'IfcFooting').map(e => e.storey))).sort();
     let fnd = null;
     if (fndSt.length !== 1) log.gap('GAP:foundation_storey', '-', 'storeys with IfcFooting=' + pyList(fndSt) + '; need exactly 1'); else fnd = fndSt[0];
-    const fe = storeys.find(s => s.name === fnd), fndElev = fe ? fe.elev : null;
+    let fe = storeys.find(s => s.name === fnd), fndElev = fe ? fe.elev : null;
+    if (fnd !== null && !storeys.some(s => s.has_walls && s.elev > fndElev) && storeys.some(s => s.name === fnd && s.has_walls)) {   // R2' (lane §L21): footings share the only walled storey (a single-storey shed): no foundation storey, that storey is the grid storey
+      log.add(`§STOREY_SINGLE footings share the walled storey '${fnd}': no foundation storey (R2')`);
+      fnd = null; fndElev = null;
+    }
     const above = storeys.filter(s => s.has_walls && (fndElev === null || s.elev > fndElev));
     const gridStorey = above.length ? above[0].name : null;
     log.add(`§STOREY foundation=${fnd === null ? 'None' : "'" + fnd + "'"} grid_storey=${gridStorey === null ? 'None' : "'" + gridStorey + "'"} (R2)`);

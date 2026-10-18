@@ -6,12 +6,12 @@
 //   isStructure(sheets)                       -> bool
 //   judge(sheets, { I: Dxf2BimImport, B: Dxf2Bodies, choices }) -> { gate, defaults, log }   (gate = the importer's gate shape: ok, set:null, roles, refused, verdict, R, structure)
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.Dxf2Structure = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./dxf2prep.js'));
+  else root.Dxf2Structure = factory(root.Dxf2Prep);
+})(typeof self !== 'undefined' ? self : this, function (PREP) {
   'use strict';
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];
-  var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'elevdoor', 'sectslab', 'sectwall', 'roof', 'levelline'];
+  var BODY_KINDS = PREP.BODY_KINDS;   // §L24 one table (dxf2prep)
+  var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'sectslab', 'sectwall', 'roof', 'levelline'];
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
   function judge(sheets, ctx) {
     var I = ctx.I, B = ctx.B, refused = [];
@@ -54,6 +54,13 @@
     // §L13.3 material dress: every body's IFC typing carries the reference's material (IfcMaterial + IfcRelAssociatesMaterial in the IFC writers)
     var BL = ctx.BL || (typeof module === 'object' && module.exports ? require('./dxf2bill.js') : (typeof self !== 'undefined' ? self.Dxf2Bill : null));
     if (BL && ctx.ref) res.els.forEach(function (e) { var m = BL.materialOf(e.class, e.ifc && e.ifc.type_name, ctx.ref); if (m && e.ifc) e.ifc = Object.assign({}, e.ifc, { material: m }); });
+    // §L26 the standard display colour of each material + the per-mesh evidence metadata (Pset_Dxf2Bim) travel in the body's IFC typing; a material without a palette entry is listed, never coloured at random
+    if (ctx.ref && ctx.ref.material_colour) { var PAL = ctx.ref.material_colour, miss = {};
+      res.els.forEach(function (e) { if (!e.ifc) return; var c = e.ifc.material && PAL[e.ifc.material];
+        var sz = e.size || {}, basis = Object.keys(sz).filter(function (k) { return sz[k] && typeof sz[k] === 'object' && sz[k].source; }).map(function (k) { return k + ':' + sz[k].source; }).join(' ');
+        if (!c && e.ifc.material) miss[e.ifc.material] = 1;
+        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: { Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis } }); });
+      Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))

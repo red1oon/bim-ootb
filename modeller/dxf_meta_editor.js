@@ -41,9 +41,9 @@
   var ROLE_VIEW = { PLAN: 'plan', ELEV: 'elev', ROOF: 'roof', SECTION: 'section' };
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
+  var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -752,6 +752,15 @@
     });
     return secHead('edefaults', IC.ruler, 'Element defaults', nStated + ' stated · ' + nUsed + ' used', 0) + (S.sec.edefaults ? '<div class="dm-sb">' + h + '</div>' : '');
   }
+  // §L22 "Typology": advisories (never blocking) that set the model next to the cited ranges of the building type in force; nothing here changes a body or a default.
+  function renderTypology() {
+    var g = gateNow(); if (!g || !g.structure || !g.R || !g.R.defaults_table || !window.Dxf2Typology) return '';
+    var tr = g.R.defaults_table.filter(function (r) { return r.key === 'building.type'; })[0], T = window.Dxf2Typology.advise(g.R.els || [], tr ? tr.value : null, window.DxfImportUI.state.defaultsRef);
+    if (!T.rows.length) return '';
+    var h = '<div class="dm-ref" style="margin:2px 0 6px">' + esc(T.type) + ': advisories from cited ranges (' + esc(T.rows[0].source) + '). They compare; they never change a body or a setting.</div>';
+    T.rows.forEach(function (r) { h += '<div class="dm-f" data-typ="' + esc(r.code) + '"><label style="width:auto;flex:1" title="' + esc(r.source) + '">' + esc(r.message) + '</label></div>'; });
+    return secHead('typology', IC.ruler, 'Typology', T.rows.length + ' advisories', 0) + (S.sec.typology ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function sheetHasKind(sh, kind) { return sh.marks.some(function (m) { var l = m.key === 'LAYER' && layerOf(m); return l && l.type === kind; }); }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
@@ -810,7 +819,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';

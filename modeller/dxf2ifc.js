@@ -22,6 +22,29 @@
     IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcCovering: 'IFCCOVERING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
   const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum' };
 
+  // §L26 appearance + per-mesh metadata. ctx = { api, T (web-ifc), mID, enumOf, label, gid(n) -> IfcGloballyUniqueId }. style(fs, [r,g,b]) = one shared IfcSurfaceStyle per colour, applied by an IfcStyledItem
+  // on the product's tessellated item (the way every IFC reader takes a colour); pset(product, props) = one IfcPropertySet 'Pset_Dxf2Bim' of IfcText values + the IfcRelDefinesByProperties.
+  function appearance(c) {
+    const api = c.api, T = c.T, mID = c.mID, ratio = v => api.CreateIfcType(mID, T.IFCNORMALISEDRATIOMEASURE, v), cache = {}; let n = 0;
+    function style(item, rgb) {
+      if (!rgb) return false;
+      const key = rgb.join(',');
+      if (!cache[key]) {
+        const col = api.CreateIfcEntity(mID, T.IFCCOLOURRGB, null, ratio(rgb[0]), ratio(rgb[1]), ratio(rgb[2]));
+        const rend = api.CreateIfcEntity(mID, T.IFCSURFACESTYLERENDERING, col, null, null, null, null, null, null, null, c.enumOf('IfcReflectanceMethodEnum', 'NOTDEFINED'));
+        cache[key] = api.CreateIfcEntity(mID, T.IFCSURFACESTYLE, c.label('colour ' + key), c.enumOf('IfcSurfaceSide', 'BOTH'), [rend]);
+      }
+      api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCSTYLEDITEM, item, [cache[key]], null)); return true;
+    }
+    function pset(prod, props) {
+      const names = Object.keys(props || {}).filter(k => props[k] !== '' && props[k] != null).sort(); if (!names.length) return false;
+      const hp = names.map(k => api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, c.label(k), null, api.CreateIfcType(mID, T.IFCTEXT, String(props[k])), null));
+      const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, c.gid(3000000 + 2 * n), null, c.label('Pset_Dxf2Bim'), null, hp); api.WriteLine(mID, ps);
+      api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, c.gid(3000000 + 2 * n + 1), null, null, null, [prod], ps)); n++; return true;
+    }
+    return { style: style, pset: pset, styles: () => Object.keys(cache).length, psets: () => n };
+  }
+
   function build(elements, o) {
     const api = o.api, T = o.WebIFC;
     const mID = api.CreateModel({ schema: 'IFC4', name: o.name || 'dxf2bim.ifc' });
@@ -48,7 +71,7 @@
       }
       return storeys.get(el.storey);
     };
-    let gn = 0, seeded = 0, typed = 0, proxy = 0; const byClass = {}, matProducts = {};
+    const AP = appearance({ api, T, mID, enumOf, label, gid: spatialGid}); let gn = 0, seeded = 0, typed = 0, proxy = 0, coloured = 0, withPset = 0; const byClass = {}, matProducts = {};
     elements.forEach(el => {
       const coords = el.vertices.map(v => [len(v[0]), len(v[1]), len(v[2])]);
       const ptList = api.CreateIfcEntity(mID, T.IFCCARTESIANPOINTLIST3D, coords, null);
@@ -62,6 +85,7 @@
       const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, null, pds, null];
       if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
       const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);
+      if (AP.style(fs, el.colour)) coloured++; if (AP.pset(e, el.props)) withPset++;
       const st = storeyFor(el); (st ? st.products : buildingProducts).push(e);
       if (el.material) (matProducts[el.material] = matProducts[el.material] || []).push(e);
       if (el.name || el.objectType) typed++;
@@ -75,15 +99,15 @@
     if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
     Object.keys(matProducts).sort().forEach(name => { const mat = api.CreateIfcEntity(mID, T.IFCMATERIAL, label(name), null, null); api.WriteLine(mID, mat); rel(T.IFCRELASSOCIATESMATERIAL, matProducts[name], mat); });
     const bytes = api.SaveModel(mID); api.CloseModel(mID);
-    return { bytes, seeded, typed, byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
+    return { bytes, seeded, typed, coloured, withPset, styles: AP.styles(), byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
   }
 
   // the importer's `els` (Dxf2Bodies / toOps form) -> writer elements
   function fromEls(els, ST) {
     const elev = {}; (ST || []).forEach(s => { elev[s.name] = s.level; });
     return els.map((e, i) => ({ class: e.class, name: (e.ifc && e.ifc.type_name) || (e.class + ' ' + (i + 1)),   // unnamed: class + its 1-based order (the page's names are class + op id: the same when the set is the page's first convert)
-      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null,
+      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: e.ifc && e.ifc.props || null,
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
-  return { build: build, fromEls: fromEls, guid: guid };
+  return { build: build, fromEls: fromEls, guid: guid, appearance: appearance };
 });

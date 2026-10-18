@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2defaults.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -172,6 +172,7 @@
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
     });
     if (state.gate.structure) h += '<label class="dxf-complete" title="Add the floor slab and the gabled roof the drawings imply. They are computed from drawn evidence plus stated conventions, shown amber, and listed as yellow defaults."><input type="checkbox" id="dxf-complete"' + (state.complete ? ' checked' : '') + '> Complete the building (floor slab, roof): amber, estimated</label>';
+    if (state.gate.structure) h += '<label class="dxf-complete" style="color:#9fb4c8" title="Show how each body is evidenced instead of its material: derived = amber, assumed = red. Off: each material in its standard colour."><input type="checkbox" id="dxf-evidence"' + (state.evidence ? ' checked' : '') + '> Evidence colours (drawn / derived / assumed)</label>';
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
@@ -184,6 +185,7 @@
     document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; };
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
     var cb = document.getElementById('dxf-complete');
+    var ev = document.getElementById('dxf-evidence'); if (ev) ev.onchange = function () { state.evidence = !!ev.checked; };   // read at Convert
     if (cb) cb.onchange = function () { state.complete = !!cb.checked; state.defaults = (state.defaults || []).filter(function (d) { return !/^synth\./.test(d.key); }); structureGate(); };
     document.getElementById('dxf-lines').onclick = function () { setLines(!state.linesOn); };
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
@@ -223,7 +225,7 @@
     if (R.refused) { console.log(TAGC + ' REFUSED ' + JSON.stringify(R.refused)); status('Convert refused: ' + R.refused.map(function (r) { return r.sheet + ' (' + r.reason + ')'; }).join('; ')); return { refused: R.refused }; }
     var colorFor = window.ArcEditable && window.ArcEditable.colorFor ? function (c) { return window.ArcEditable.colorFor(c); } : null;
     if (R.frame && R.frame.error) { console.log(TAGC + ' REFUSED frame ' + JSON.stringify(R.frame.error)); status('Convert refused: @FRAME ' + R.frame.error.reason + ' (' + R.frame.error.sheet + ')'); return { refused: [R.frame.error] }; }
-    var T = I.toOps(R, { colorFor: colorFor, frame: R.frame || null });   // §L1.16: a wing set is turned back by its @FRAME
+    var T = I.toOps(R, { colorFor: colorFor, frame: R.frame || null, evidenceColours: !!state.evidence });   // §L1.16: a wing set is turned back by its @FRAME
     if (R.frame) console.log(TAGC + ' wing frame angle=' + R.frame.angle + ' centre=' + R.frame.ox + ',' + R.frame.oy + ' (openings baked, bodies turned back)');
     var bad = T.skipped.filter(function (x) { return x.refuse; });
     if (bad.length) { console.log(TAGC + ' REFUSED body ' + JSON.stringify(bad)); status('Convert refused: an opening body does not add up (' + bad.length + ')'); return { refused: bad }; }

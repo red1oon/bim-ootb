@@ -209,6 +209,8 @@
       };
 
       const matProducts = {};
+      const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + Pset_Dxf2Bim from the body's typing
+      let seedColoured = 0, seedPsets = 0;
       for (const op of ops) {
         _curOp = op;
         if (op.op_type === 'GEOM_INSERT') {
@@ -233,6 +235,7 @@
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
+          if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
           seeded++;
           continue;
         }
@@ -344,9 +347,9 @@
       // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were
       // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
-        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' byClass=' + JSON.stringify(seedByClass));
+        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' coloured=' + seedColoured + ' psets=' + seedPsets + ' byClass=' + JSON.stringify(seedByClass));
       return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,
-               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedByClass };
+               seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedColoured, seedPsets, seedByClass };
     },
 
     // Build + trigger a browser download of the .ifc file.

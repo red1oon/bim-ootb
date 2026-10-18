@@ -145,7 +145,7 @@ if (require.main === module) {
   (async () => {
   try {
     const args = parseArgs(process.argv.slice(2)), res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
-    if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
+    if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' coloured=' + r.coloured + ' psets=' + r.withPset + ' styles=' + r.styles + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
     const by = {}; bodies.forEach(b => { const k = b.class; by[k] = (by[k] || 0) + 1; });
     console.log('§CLI result ok=' + g.ok + ' bodies=' + bodies.length + ' byClass=' + JSON.stringify(by) + ' left_out=' + (g.structure ? g.structure.left_out : '-') + ' out=' + path.resolve(args.out));
     process.exit(g.ok ? 0 : 2);

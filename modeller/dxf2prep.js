@@ -180,10 +180,21 @@
     member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], fan: ['IfcFan', 'PROPELLORAXIAL'], net: ['IfcCovering', 'CLADDING'], doorswing: ['IfcDoor', 'DOOR'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
     door: ['IfcDoor', 'DOOR'], window: ['IfcWindow', 'WINDOW']
   };
+  // the body kinds a drawing layer can be typed as (the editor's menu, the structure judge's list, dxf2marks LAYER_TYPES.BODY must equal this: W-KINDS). A new kind = one KIND row + one entry here + its builder.
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];
   function ifcType(kind, typeName, material) {
     var k = KIND[kind]; if (!k) throw new Error('Dxf2Prep: no IFC mapping for body kind "' + kind + '"');
     return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };
   }
 
-  return { hasLineWork: hasLineWork, synthRects: synthRects, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND };
+  // ---- §L24 shared solid helper: ONE box topology, signed volume, outward winding (was copied into doors / section / synth) ----
+  var Solid = (function () {
+    var BOX = [[4, 5, 6], [4, 6, 7], [0, 2, 1], [0, 3, 2], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];   // 8 corners: 0-3 the bottom ring, 4-7 the top ring above it
+    function vol(m) { var v = 0; m.faces.forEach(function (f) { var a = m.vertices[f[0]], b = m.vertices[f[1]], c = m.vertices[f[2]]; v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6; }); return v; }
+    function outward(m) { if (vol(m) < 0) m.faces = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); return m; }
+    function box(V) { return outward({ vertices: V, faces: BOX.map(function (f) { return f.slice(); }) }); }   // V = 8 corners (bottom ring then top ring); faces outward
+    return { BOX: BOX, vol: vol, outward: outward, box: box };
+  })();
+
+  return { hasLineWork: hasLineWork, synthRects: synthRects, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND, BODY_KINDS: BODY_KINDS, Solid: Solid };
 });
