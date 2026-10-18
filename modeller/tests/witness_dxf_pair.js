@@ -98,20 +98,34 @@ else {
   const kd = Pr.labelRects([Object.assign(rect('colfo', 0, 0, 12, 12), { kind: 'column' })], Pr.markPoints([T(20, 6, 'F-1'), T(28, 6, 'C-1')], leg), leg);
   ok('L9 a column-typed rect takes the column mark (C-1) even when the footing mark F-1 is nearer (prefix convention C=column, F=footing, a yellow default); a footing rect takes F-1', kd.lengths[0].mark === 'C-1' && Pr.labelRects([Object.assign(rect('f', 0, 0, 48, 60), { kind: 'footing' })], Pr.markPoints([T(60, 30, 'C-1'), T(70, 30, 'F-1')], leg), leg).lengths[0].mark === 'F-1');
   ok('L10 FALSIFIER without the kind the same two marks are ambiguous or wrong: nothing labelled when they tie', Pr.labelRects([rect('t', 0, 0, 12, 12)], Pr.markPoints([T(26, 6, 'C-1'), T(-14, 6, 'F-1')], leg), leg).notes.length === 1);
+  // ---- cross-sheet inheritance (issue: the floor plan states no marks; its columns are the SAME members the foundation plan marks) ----
+  {
+    const rc = (id, x, y, k) => Object.assign(rect(id, x, y, x + 12, y + 12), { kind: k || 'column' });
+    const src = [rc('s0', 0, 0), rc('s1', 120, 0), rc('s2', 240, 0), rc('s3', 0, 200)], dst = src.map((r, i) => rc('d' + i, r.pts[0][0] + 5000, r.pts[0][1] - 300));
+    const sm = { s0: 'C-1', s1: 'C-1', s2: 'C-1', s3: 'C-1' };
+    const inh = Pr.inheritLabels(dst, src, sm, leg), RI = Pr.pair(inh.lengths, []);
+    ok('X1 the same 4 columns drawn at another origin (+5000,-300) are matched by translation and inherit C-1: 16 sides PAIRED_AGREE, via the source id', inh.match.ok && inh.match.dx === -5000 && inh.match.dy === 300 && RI.summary.agree === 16 && inh.lengths[0].via === 's0', inh.match.votes + ' votes');
+    const extra = dst.concat([rc('d9', 7000, 7000)]), inh2 = Pr.inheritLabels(extra, src, sm, leg);
+    ok('X2 CONTROL a member with no counterpart (d9) is GAP:label_no_match and UNPAIRED, the others still inherit', inh2.notes.length === 1 && inh2.notes[0].id === 'd9' && inh2.notes[0].code === 'GAP:label_no_match' && Pr.pair(inh2.lengths, []).summary.unpaired === 4);
+    const scat = [rc('e0', 0, 0), rc('e1', 777, 31), rc('e2', 90, 4000), rc('e3', 3000, 12)], inh3 = Pr.inheritLabels(scat, src, sm, leg);
+    ok('X3 CONTROL unrelated layouts: no translation explains half of the members -> GAP:label_sheets_not_alignable, nothing inherited (no guessed size)', !inh3.match.ok && inh3.lengths.every(l => l.label == null) && inh3.notes.every(n => n.code === 'GAP:label_sheets_not_alignable'));
+    ok('X4 a kind never matches another kind (a footing rect at a column position does not inherit the column mark)', Object.keys(Pr.matchByTranslation([rc('f0', 0, 0, 'footing')], src, 1).matched).length === 0);
+    const dst2 = src.map((r, i) => rc('d' + i, r.pts[0][0] + 5000, r.pts[0][1] - 300)); dst2[2] = Object.assign(rect('d2', 5231, -300, 5261, -288), { kind: 'column' });
+    const RJ = Pr.pair(Pr.inheritLabels(dst2, src, sm, leg).lengths, []);
+    ok('X5 CONTROL a matched column drawn 30x12 against the inherited 12x12 = CONFLICT on its two 30 sides, label in force', RJ.summary.conflict === 2 && RJ.pairs.filter(p => p.class === 'PAIRED_CONFLICT').every(p => p.number === 12));
+  }
   const SH2 = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
   if (!fs.existsSync(path.join(SH2, '0_FLOOR_PLAN.dxf'))) console.log('SKIP P9c: local shed sheets not present');
   else {
     const P2 = require('../lib/dxf-parser.js'), Dq = P2.default || P2, lt = [], notes = [], KIND = { Col: 'column', Fo: 'footing' }, docs = {};
     ['4_FOUNDATION_LAYOUT.dxf', '0_FLOOR_PLAN.dxf'].forEach(f => { docs[f] = new (Dq.DxfParser || Dq)().parseSync(fs.readFileSync(path.join(SH2, f), 'utf8')); });
     const lg = Object.assign({}, ...Object.values(docs).map(d => Pr.legendOf(d.entities, 'in')));   // the legend is a set-level fact: the plan sheet has none, the foundation sheet states it
-    Object.keys(docs).forEach(f => {
-      const d = docs[f], mk = Pr.markPoints(d.entities, lg);
-      const rects = d.entities.filter(e => e.type === 'LWPOLYLINE' && e.shape && e.vertices.length === 4 && KIND[e.layer]).map(e => ({ id: f + ':' + e.handle, sheet: f, kind: KIND[e.layer], pts: e.vertices.map(v => [v.x, v.y]) }));
-      const o = Pr.labelRects(rects, mk, lg); lt.push(...o.lengths); notes.push(...o.notes);
-      console.log(f + ' legend=' + JSON.stringify(Object.keys(lg)) + ' marks=' + mk.length + ' rects=' + rects.length + ' unlabelled=' + o.notes.length);
-    });
+    const rectsOf = f => docs[f].entities.filter(e => e.type === 'LWPOLYLINE' && e.shape && e.vertices.length === 4 && KIND[e.layer]).map(e => ({ id: f + ':' + e.handle, sheet: f, kind: KIND[e.layer], pts: e.vertices.map(v => [v.x, v.y]) }));
+    const fR = rectsOf('4_FOUNDATION_LAYOUT.dxf'), fo = Pr.labelRects(fR, Pr.markPoints(docs['4_FOUNDATION_LAYOUT.dxf'].entities, lg), lg); lt.push(...fo.lengths); notes.push(...fo.notes);
+    const pR = rectsOf('0_FLOOR_PLAN.dxf'), inh = Pr.inheritLabels(pR.filter(r => r.kind === 'column'), fR.filter(r => r.kind === 'column'), fo.marks, lg, 1); lt.push(...inh.lengths); notes.push(...inh.notes);
+    console.log('foundation rects=' + fR.length + ' unlabelled=' + fo.notes.length + '  floor columns=' + pR.length + ' matched=' + inh.match.votes + ' translation=(' + inh.match.dx.toFixed(1) + ',' + inh.match.dy.toFixed(1) + ') unmatched=' + inh.notes.length);
     const RL = Pr.pair(lt, []); console.log('labels ' + RL.log + ' rows=' + RL.rows.length);
-    ok('P9c real shed: footings (48x60) and columns (12x12) paired by legend label with 0 conflicts; rects without a mark are GAP:label_* and UNPAIRED, never dropped', RL.summary.lengths === lt.length && RL.summary.conflict === 0 && RL.summary.agree > 0 && RL.summary.agree + RL.summary.unpaired === lt.length, 'agree=' + RL.summary.agree + ' unpaired=' + RL.summary.unpaired);
+    ok('P9c real shed: footings (48x60) and columns (12x12) paired by legend label with 0 conflicts; rects without a mark are GAP:label_* and UNPAIRED, never dropped', RL.summary.lengths === lt.length && RL.summary.conflict === 0 && RL.summary.agree > 0 && RL.summary.agree + RL.summary.unpaired === lt.length && RL.summary.agree >= 256, 'agree=' + RL.summary.agree + ' unpaired=' + RL.summary.unpaired);
   }
 }
 console.log(fail ? 'FAIL W-PAIR ' + fail : 'PASS W-PAIR'); process.exit(fail ? 1 : 0);
