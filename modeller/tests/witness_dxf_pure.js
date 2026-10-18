@@ -34,6 +34,16 @@ ok('SG5 a ground line drawn in two segments is found; a stray lower short line i
 // the shed's West elevation: the ground line (764) is 79% of a sheet widened by leaders and a title block, and a wider beam-top line (950) lies ABOVE it: the ground is still the lowest of the long groups
 r = sug([plan, sheet('elev.dxf', doc(line('0', 0, 0, 7640, 0) + line('0', 1000, 240, 7100, 240) + line('0', 0, 1200, 9500, 1200) + line('0', 500, 0, 500, 3000) + txt('Tex', 12000, 300, 'a note far to the right') + line('Dim', 12000, 0, 12000, 100), ELEVM))], 'elev.dxf');
 ok('SG5b the ground line is the LOWEST group >= 60% of the longest, not the first >= 80% of the sheet width: @Z=0 at y 0 although a 9500 mm line lies above it and the sheet is widened by a far note', r.list.filter(p => p.rule === 'PR-Z-GROUND').length === 1 && r.list.find(p => p.rule === 'PR-Z-GROUND').y === 0, JSON.stringify(rules(r)));
+// §L14 sections: "Section A-A (Truss Detail)" is a SECTION title; the cut line is the two "A" labels at one x on the plan; HAXIS fits the section's grid labels
+const secPlan = sheet('plan.dxf', doc(line('Col', 850, 0, 1150, 0) + txt('Tex', 2500, 4500, 'A') + txt('Tex', 2500, -500, 'A') + txt('Tex', -300, 150, 'A') , PLANM));
+const secBody = line('0', 0, 0, 8000, 0) + txt('Tex', 400, -400, 'Section A-A (Truss Detail)');
+const SECM = [['@SET=T'], ['@UNITS=mm'], ['@GRIDH=1', 150, 0], ['@GRIDH=2', 2150, 0], ['@Z=0', 0, 0], ['@Z=3', 0, 3000]];
+r = sug([secPlan, sheet('sec.dxf', doc(secBody, SECM))], 'sec.dxf');
+ok('SG10 the title "Section A-A (Truss Detail)" proposes VIEW=SECTION (the title does not END with SECTION)', r.list.some(p => p.rule === 'PR-VIEW' && p.value === 'SECTION'), JSON.stringify(rules(r)));
+r = sug([secPlan, sheet('sec.dxf', doc(secBody, SECM.concat([['@VIEW=SECTION']])))], 'sec.dxf');
+ok('SG11 PR-CUT: the two "A" labels on the plan at x 2500 are the section line: @CUT=X,2500; the lone grid label "A" at x -300 is not a pair', r.list.some(p => p.rule === 'PR-CUT' && p.value === 'X,2500'), JSON.stringify(rules(r)));
+r = sug([sheet('plan.dxf', doc(line('Col', 850, 0, 1150, 0) + txt('Tex', 2500, 4500, 'A') + txt('Tex', 2500, -500, 'A') + txt('Tex', 6000, 4500, 'A') + txt('Tex', 6000, -500, 'A'), PLANM)), sheet('sec.dxf', doc(secBody, SECM.concat([['@VIEW=SECTION']])))], 'sec.dxf');
+ok('SG12 CONTROL two A-pairs on the plan (two section lines named A): no CUT is proposed, the refusal says why (nothing guessed)', !r.list.some(p => p.rule === 'PR-CUT') && r.refused.some(x => x.rule === 'PR-CUT' && /\d aligned pairs/.test(x.why)), JSON.stringify(r.refused.map(x => x.rule + ':' + x.why)));
 r = sug([plan, sheet('e.dxf', doc(body() + txt('Tex', 100, -400, 'South Elevation'), [['@SET=T'], ['@UNITS=mm']]))], 'e.dxf');
 ok('SG6 an unmarked sheet titled "South Elevation" (mixed case): PR-VIEW=ELEV', r.list.some(p => p.rule === 'PR-VIEW' && p.value === 'ELEV'), JSON.stringify(rules(r)));
 r = sug([plan, sheet('1S_ELEV_SOUTH.dxf', doc(body() + txt('Tex', 100, -400, 'South Elevation'), [['@SET=T'], ['@VIEW=ELEV'], ['@UNITS=mm'], ['@NAME=E']]))], '1S_ELEV_SOUTH.dxf');
