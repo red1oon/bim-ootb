@@ -16,7 +16,7 @@
   var MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
-  var LABEL = /^([^A-Za-z]+?)\s*(brick|block|concrete|masonry|rcc|stone)?\s*wall\b/i;
+  var LABEL = /^([^A-Za-z]+?)\s*(?:[A-Za-z]+\s+)?wall\b/i;   // "10\" Brick Wall", "5\" Support Wall, H-24\"": a thickness, one descriptor word, "wall"
 
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
   function unitName(k) { return Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; }
@@ -102,6 +102,9 @@
           else if (dist.length > 1) { gaps.push(Object.assign({ code: 'GAP:panel_thickness_ambiguous', detail: dist.map(function (d) { return d.text; }).join(' | ') + ' both reach this height band' }, lp.base)); rep.left_out++; return; }
         } else { gaps.push(Object.assign({ code: 'GAP:panel_label_ambiguous', detail: 'two thickness labels point into this panel' }, lp.base)); rep.left_out++; return; }
         if (t == null) { gaps.push(Object.assign({ code: 'GAP:panel_no_thickness', detail: 'no thickness label points into this panel and none overlaps it in height (state it: @SIZE=' + lp.id + ',w,<m>)' }, lp.base)); rep.left_out++; return; }
+        // §L10 the number rule on the label: a stated height in the same label ("5\" Support Wall, H-24\"") against the drawn panel height; a conflict is surfaced (advisory), the drawn geometry stands
+        var hm = lp.label && /\bH\s*-\s*(\d+(?:\.\d+)?)\s*"/i.exec(lp.label.text);
+        if (hm) { var hs = Number(hm[1]) * 0.0254, hd = lp.z1 - lp.z0, rel = Math.abs(hd - hs) / hs; if (rel > 0.06) gaps.push(Object.assign({ code: 'GAP:panel_label_height', detail: 'the label "' + lp.label.text + '" states a height of ' + r6(hs) + ' m; the drawn panel is ' + r6(hd) + ' m high (ratio ' + r6(hd / hs) + '): the drawing is built, the number is for you to resolve' }, lp.base)); }
         // mesh: the prism extrudes the (along, z) polygon over the plane coordinate; permute onto the face
         var m = M.prism(lp.poly, plane + t / 2, t);
         if (!m) { gaps.push(Object.assign({ code: 'GAP:panel_degenerate', detail: 'the outline could not be triangulated' }, lp.base)); rep.left_out++; return; }

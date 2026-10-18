@@ -59,6 +59,11 @@ ok('PN14 determinism: the same sheets twice give identical panels', JSON.stringi
 const sh = read([['plan.dxf', planDxf], ['west.dxf', westDxf(two)]]), j = ST.judge(sh, { I, B });
 ok('PN15 the structure judge builds the panels with the other bodies: panel kind is a body kind, 2 bodies, 0 blocking, defaults carried', ST.isStructure(sh, B) && j.gate.structure && j.gate.structure.bodies === 2 && j.gate.verdict.blocking.length === 0 && j.defaults.some(d => d.key === 'panel.plane'), j.log);
 
+// a label that states a height ("5\" Support Wall, H-24\"") against the drawn panel height: advisory, geometry as drawn
+r = build([['plan.dxf', planDxf], ['west.dxf', westDxf(poly('H1', 'Wall', [LOW]) + LD('L1', [[500, 1000], [700, -300], [900, -300]]) + tx('5" Support Wall, H-24"', 900, -300))]]);
+ok('PN17 the label states H-24" (0.6096 m) but the drawn panel is 2.0 m high: GAP:panel_label_height (ratio 3.28), the panel is still built as drawn (the thickness 5" from the same label)', r.els.length === 1 && r.els[0].size.t.number === 0.127 && r.gaps.some(x => x.code === 'GAP:panel_label_height' && /0.6096/.test(x.detail) && /3\.28/.test(x.detail)), JSON.stringify(r.gaps).slice(0, 220));
+r = build([['plan.dxf', planDxf], ['west.dxf', westDxf(poly('H1', 'Wall', [LOW]) + LD('L1', [[500, 1000], [700, -300], [900, -300]]) + tx('5" Support Wall, H-79"', 900, -300))]]);
+ok('PN18 CONTROL a stated height that agrees (H-79" = 2.007 m against 2.0 m): no height advisory', r.els.length === 1 && !r.gaps.some(x => x.code === 'GAP:panel_label_height'));
 // real shed (local material, SKIP when absent): the West and East gable ends
 const SH = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
 if (!fs.existsSync(path.join(SH, '2_ELEV_WEST.dxf'))) console.log('SKIP PN16: local shed sheets not present');
