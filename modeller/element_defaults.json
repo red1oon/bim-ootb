@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "about": "Element defaults (prompts/DXF2BIM_MODELLER_LANE.md \u00a7L18). One entry per setting a 2D layout may not carry. kind 'std' = a value with a named source in this repo or the rate pack; 'guess' = typical practice, to be confirmed. A person states a value with @DEFAULT=<key>,<value> in the drawing (or in the editor / CLI); otherwise the default is used to determine measurements and the row is yellow. A 2D layout carries these only when it comes fully formed from an IFC model.",
  "defaults": {
   "wall.thickness": {
@@ -481,6 +481,81 @@
     "2 x column pitch"
    ],
    "used_by": "dxf2section"
+  },
+  "building.type": {
+   "element": "Building",
+   "value": "General",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "the kind of building; it selects the type-specific defaults and organises the reference component library. A person states it (@DEFAULT=building.type,Farming Shed)",
+   "options": [
+    "General",
+    "Farming Shed"
+   ],
+   "used_by": "dxf2defaults (selects the building-type overrides)"
+  }
+ },
+ "building_types": {
+  "General": {
+   "about": "no type-specific overrides: the base defaults apply",
+   "sources": [],
+   "overrides": {}
+  },
+  "Farming Shed": {
+   "about": "poultry / livestock sheds: open-sided or tunnel-ventilated houses with brick low walls, wire net above, gable-end fans, evaporative pads, outward-opening doors. Bangladesh broiler houses are 'open sided natural house' with cross-ventilation through wire net (SAU lecture); wide tunnel houses add end fans and pads.",
+   "sources": [
+    {
+     "label": "TNAU poultry house construction",
+     "url": "https://agritech.tnau.ac.in/expert_system/poultry/Poultry%20House%20Construction.html",
+     "confidence": "medium (India, general tropical)"
+    },
+    {
+     "label": "Sher-e-Bangla Agricultural University, broiler shed",
+     "url": "https://www.sau.edu.bd/public/uploads/pdf/dept/class_lecture/24_2020-08-11_5f32f1c00ed0c.pdf",
+     "confidence": "medium (Bangladesh, no dimensions)"
+    }
+   ],
+   "overrides": {
+    "door.height": {
+     "value": 1.83,
+     "basis": "Farming Shed: preferred door 6 x 2.5 ft opening outward (TNAU)"
+    },
+    "door.width": {
+     "value": 0.762,
+     "basis": "Farming Shed: preferred door 6 x 2.5 ft (TNAU)"
+    },
+    "synth.roof.overhang": {
+     "value": 1.0668,
+     "basis": "Farming Shed: roof overhang at least 3.5 ft to keep rain out (TNAU)"
+    }
+   },
+   "expect": [
+    "IfcFan",
+    "IfcCovering",
+    "IfcDoor",
+    "IfcRoof",
+    "IfcSlab"
+   ],
+   "typical": {
+    "note": "ranges for plausibility advisories, never ground truth",
+    "width_open_sided_ft": [
+     15,
+     25
+    ],
+    "width_environment_controlled_ft_min": 40,
+    "eave_ft": [
+     6,
+     7
+    ],
+    "centre_ft": [
+     10,
+     12
+    ],
+    "airspeed_fpm": [
+     492,
+     700
+    ]
+   }
   }
  }
 }
