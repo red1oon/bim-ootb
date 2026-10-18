@@ -128,4 +128,24 @@ else {
     ok('P9c real shed: footings (48x60) and columns (12x12) paired by legend label with 0 conflicts; rects without a mark are GAP:label_* and UNPAIRED, never dropped', RL.summary.lengths === lt.length && RL.summary.conflict === 0 && RL.summary.agree > 0 && RL.summary.agree + RL.summary.unpaired === lt.length && RL.summary.agree >= 256, 'agree=' + RL.summary.agree + ' unpaired=' + RL.summary.unpaired);
   }
 }
+
+// ---- §L10.8 dimension audit (issue: a typed override can silently disagree with its own measurement: shed 410'-0" x5 vs 1,560 in) ----
+{
+  const dm = (h, meas, text, sheet) => D(h, 0, 0, meas, 0, meas, text, sheet || 's');
+  const A = Pr.auditDims([dm('a', 120, ''), dm('b', 120, '<>'), dm('c', 192, '16\'-0"'), dm('d', 202.57, '16\'-0"'), dm('e', 1560, '410\'-0"'), dm('f', 1560, '410\'-0"'), dm('g', 58.2, 'L/5'), dm('h', 51, '12"', 'detail')], { nts: [] });
+  ok('D1 auto-measured dims are counted only (2); an override equal to its measure agrees (192 = 16\'-0"); 5.5% off is ROUNDED; 410\'-0" vs 1560 is a CONFLICT with ratio 0.3171; L/5 is NOT_A_LENGTH, never guessed', A.counts.auto === 2 && A.counts.agree === 1 && A.counts.rounded === 1 && A.counts.conflict === 3 && A.counts.not_a_length === 1 && A.rows.some(r => r.text === '410\'-0"' && r.ratio === 0.3171), A.log);
+  ok('D2 the two 410\'-0" repeats collapse to ONE row with 2 handles', A.rows.filter(r => r.text === '410\'-0"').length === 1 && A.rows.find(r => r.text === '410\'-0"').handles.length === 2);
+  const N = Pr.auditDims([dm('h', 51, '12"', 'detail'), dm('i', 120, '', 'detail')], { nts: ['detail'] });
+  ok('D3 a number on a declared NTS sheet is NTS_DETAIL, not a conflict (no yellow conflict, one listed row)', N.counts.conflict === 0 && N.counts.nts === 1 && N.rows[0].class === 'NTS_DETAIL');
+  ok('D4 FALSIFIER editing the stated text flips the class (192 "16\'-0\"" agree -> "12\'-0\"" conflict)', Pr.auditDims([dm('x', 192, '16\'-0"')]).counts.agree === 1 && Pr.auditDims([dm('x', 192, '12\'-0"')]).counts.conflict === 1);
+  const SHD = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
+  if (!fs.existsSync(path.join(SHD, '0_FLOOR_PLAN.dxf'))) console.log('SKIP D5: local shed sheets not present');
+  else {
+    const Pp = require('../lib/dxf-parser.js'), Dd = Pp.default || Pp, all = [];
+    fs.readdirSync(SHD).filter(f => /^[0-9N].*\.dxf$/.test(f) && !/^1_/.test(f)).sort().forEach(f => { const d = new (Dd.DxfParser || Dd)().parseSync(fs.readFileSync(path.join(SHD, f), 'utf8')); all.push(...Pr.dimsOf(d.entities, f)); });
+    const R = Pr.auditDims(all, { unit: 'in' }), big = R.rows.filter(r => r.class === 'PAIRED_CONFLICT').sort((a, b) => b.handles.length - a.handles.length);
+    console.log(R.log + '  dims=' + all.length + '  top conflict: ' + (big[0] ? big[0].text + ' measured ' + big[0].measured + ' x' + big[0].handles.length : '-'));
+    ok('D5 real shed: every one of the dimensions is accounted for (auto + agree + rounded + conflict + not_a_length + nts == total) and the 410\'-0" vs 1,560 in conflict is a row', R.counts.auto + R.counts.agree + R.counts.rounded + R.counts.conflict + R.counts.not_a_length + R.counts.nts === all.length && R.rows.some(r => r.text === '410\'-0"' && r.class === 'PAIRED_CONFLICT'), R.log);
+  }
+}
 console.log(fail ? 'FAIL W-PAIR ' + fail : 'PASS W-PAIR'); process.exit(fail ? 1 : 0);

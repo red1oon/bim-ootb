@@ -216,6 +216,27 @@
     return { lengths: out, notes: notes, match: m };
   }
 
+  // ---- dimension audit (§L10.8): every typed override against the dimension's OWN measured length ----
+  // dims: dimsOf(...). Auto-measured dimensions agree by construction and are only counted. An override that parses as a length is classed AGREE / ROUNDED / CONFLICT (ratio = measured / stated);
+  // one that does not parse (L/5, "ld", notes) is NOT_A_LENGTH, never guessed. Repeats collapse to one row per (text, measured). NTS sheets (opts.nts) are listed but not called conflicts.
+  function auditDims(dims, opts) {
+    opts = opts || {}; var unit = opts.unit || 'in', T = Object.assign(defaults(unit), opts.tol || {}), nts = {}, byKey = {}, rows = [], c = { auto: 0, agree: 0, rounded: 0, conflict: 0, not_a_length: 0, nts: 0 };
+    (opts.nts || []).forEach(function (sn) { nts[sn] = 1; });
+    (dims || []).forEach(function (d) {
+      var t = d.text; if (t === '' || t == null || t === '<>') { c.auto++; return; }
+      var n = parseNumber(t, unit), meas = d.measure, cls;
+      if (n == null) cls = 'NOT_A_LENGTH'; else if (meas == null) cls = 'NO_MEASURE'; else cls = classify(meas, n, T);
+      if (nts[d.sheet]) { c.nts++; cls = 'NTS_DETAIL'; }
+      else if (cls === 'PAIRED_AGREE') c.agree++; else if (cls === 'PAIRED_ROUNDED') c.rounded++; else if (cls === 'PAIRED_CONFLICT') c.conflict++; else c.not_a_length++;
+      if (cls === 'PAIRED_AGREE') return;
+      var key = cls + '|' + clean(t) + '|' + (meas == null ? '' : meas.toFixed(1));
+      if (!byKey[key]) { byKey[key] = { class: cls, text: clean(t), stated: n, measured: meas, ratio: n && meas ? +(meas / n).toFixed(4) : null, handles: [], sheets: {} }; rows.push(byKey[key]); }
+      byKey[key].handles.push(d.handle); byKey[key].sheets[d.sheet || '?'] = 1;
+    });
+    rows.forEach(function (r) { r.sheets = Object.keys(r.sheets); });
+    return { rows: rows, counts: c, log: '§DIMAUDIT auto=' + c.auto + ' agree=' + c.agree + ' rounded=' + c.rounded + ' conflict=' + c.conflict + ' not_a_length=' + c.not_a_length + ' nts=' + c.nts + ' rows=' + rows.length };
+  }
+
   // Best-effort side alignment (§L10 4a). a,b = end points along 1D axis coordinates; pinA/pinB = the side is fixed by grid/datum/neighbour.
   function align(a, b, number, pinA, pinB, tol) {
     tol = tol == null ? 1e-9 : tol; var dir = b >= a ? 1 : -1, len = Math.abs(b - a), res = len - number;
@@ -224,5 +245,5 @@
     if (pinB) return { a: b - dir * number, b: b, residual: 0, code: 'OK' };
     var c = (a + b) / 2; return { a: c - dir * number / 2, b: c + dir * number / 2, residual: 0, code: 'ALIGN:floating' };
   }
-  return { matchByTranslation: matchByTranslation, inheritLabels: inheritLabels, legendOf: legendOf, markPoints: markPoints, labelRects: labelRects, parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
+  return { auditDims: auditDims, matchByTranslation: matchByTranslation, inheritLabels: inheritLabels, legendOf: legendOf, markPoints: markPoints, labelRects: labelRects, parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
 });
