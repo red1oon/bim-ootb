@@ -75,4 +75,43 @@ else {
   const RP = Pr.pair(pitch, dims, { unit: 'in' }); console.log('pitch ' + RP.log + ' rows=' + RP.rows.length);
   ok('P9b real shed: consecutive column/footing centre pitches reach their dimension chains (some paired, none silently dropped)', RP.summary.lengths === pitch.length && pitch.length > 0 && RP.summary.agree + RP.summary.rounded + RP.summary.conflict > 0, 'paired=' + (RP.summary.agree + RP.summary.rounded + RP.summary.conflict) + ' of ' + pitch.length);
 }
+// ---- slice 2: legend + instance marks give the stated size of a member (issue: 548 sides had no stated source) ----
+{
+  const T = (x, y, t) => ({ type: 'TEXT', text: t, startPoint: { x, y } });
+  const leg = Pr.legendOf([T(0, 0, 'C-1 = 12"x12"'), T(0, 0, 'F-1 = 4\'-0"x5\'-0"'), T(0, 0, 'B-1 = 12" x 10"'), T(0, 0, 'Size (L x B)'), T(0, 0, 'Column-12"x12"')], 'in');
+  ok('L1 legend "MARK = AxB" parsed (C-1 12x12, F-1 48x60 in, B-1 12x10); free text and "Column-12x12" are not legends', JSON.stringify(Object.keys(leg).sort()) === '["B-1","C-1","F-1"]' && leg['F-1'].nums.join() === '48,60', JSON.stringify(leg));
+  const rect = (id, x0, y0, x1, y1) => ({ id, sheet: 's', pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+  const marks = Pr.markPoints([T(30, 30, 'F-1'), T(500, 30, 'C-1'), T(40, 40, 'Splice*')], leg);
+  const lr = Pr.labelRects([rect('fo', 0, 0, 48, 60), rect('col', 480, 0, 492, 12)], marks, leg), R = Pr.pair(lr.lengths, []);
+  ok('L2 a 48x60 footing with the mark F-1 beside it: sides pair with the label 48,60,48,60 -> PAIRED_AGREE via label', lr.lengths.filter(l => l.id.startsWith('fo')).map(l => l.label).join() === '48,60,48,60' && R.pairs.filter(p => p.id.startsWith('fo')).every(p => p.class === 'PAIRED_AGREE' && p.source === 'label'));
+  ok('L3 a 12x12 column with C-1: AGREE on all four sides', R.pairs.filter(p => p.id.startsWith('col')).every(p => p.class === 'PAIRED_AGREE'));
+  const RB = Pr.pair(Pr.labelRects([rect('fo2', 0, 0, 48, 36)], Pr.markPoints([T(30, 30, 'F-1')], leg), leg).lengths, []);
+  ok('L4 CONTROL drawn 48x36 labelled F-1 (48x60): the two 36 sides are CONFLICT with the label number 60 in force, one yellow row', RB.pairs.filter(p => p.class === 'PAIRED_CONFLICT').length === 2 && RB.pairs.filter(p => p.class === 'PAIRED_CONFLICT').every(p => p.number === 60 && Math.abs(p.ratio - 0.6) < 1e-9) && RB.summary.agree === 2 && RB.rows.length === 1, RB.log);
+  const none = Pr.labelRects([rect('far', 0, 0, 12, 12)], Pr.markPoints([T(5000, 5000, 'C-1')], leg), leg);
+  ok('L5 CONTROL a mark far away labels nothing: GAP:label_no_mark_in_range, sides UNPAIRED (no guessed size)', none.notes.length === 1 && none.notes[0].code === 'GAP:label_no_mark_in_range' && Pr.pair(none.lengths, []).summary.unpaired === 4);
+  const amb = Pr.labelRects([rect('mid', 0, 0, 12, 12)], Pr.markPoints([T(26, 6, 'C-1'), T(-14, 6, 'F-1')], leg), leg);
+  ok('L6 CONTROL two different marks equally near: GAP:label_ambiguous_mark, nothing labelled', amb.notes.length === 1 && /ambiguous_mark/.test(amb.notes[0].code));
+  const R7 = Pr.pair(lr.lengths.filter(l => l.id.startsWith('fo:0')), [D('d', 0, -5, 48, -5, 48, '')]);
+  ok('L7 a label and an agreeing dimension on one length: both listed, one number in force, no row', R7.pairs[0].candidates.length === 2 && R7.pairs[0].class === 'PAIRED_AGREE' && R7.rows.length === 0);
+  const R8 = Pr.pair(lr.lengths.filter(l => l.id.startsWith('fo:0')), [D('d', 0, -5, 48, -5, 48, '30"')]);
+  ok('L8 a label (48) and a conflicting dimension override (30"): both listed, rule = agrees_with_own_measure picks the label, the dimension shown', R8.pairs[0].number === 48 && R8.pairs[0].candidates.length === 2, R8.pairs[0].rule);
+  const kd = Pr.labelRects([Object.assign(rect('colfo', 0, 0, 12, 12), { kind: 'column' })], Pr.markPoints([T(20, 6, 'F-1'), T(28, 6, 'C-1')], leg), leg);
+  ok('L9 a column-typed rect takes the column mark (C-1) even when the footing mark F-1 is nearer (prefix convention C=column, F=footing, a yellow default); a footing rect takes F-1', kd.lengths[0].mark === 'C-1' && Pr.labelRects([Object.assign(rect('f', 0, 0, 48, 60), { kind: 'footing' })], Pr.markPoints([T(60, 30, 'C-1'), T(70, 30, 'F-1')], leg), leg).lengths[0].mark === 'F-1');
+  ok('L10 FALSIFIER without the kind the same two marks are ambiguous or wrong: nothing labelled when they tie', Pr.labelRects([rect('t', 0, 0, 12, 12)], Pr.markPoints([T(26, 6, 'C-1'), T(-14, 6, 'F-1')], leg), leg).notes.length === 1);
+  const SH2 = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
+  if (!fs.existsSync(path.join(SH2, '0_FLOOR_PLAN.dxf'))) console.log('SKIP P9c: local shed sheets not present');
+  else {
+    const P2 = require('../lib/dxf-parser.js'), Dq = P2.default || P2, lt = [], notes = [], KIND = { Col: 'column', Fo: 'footing' }, docs = {};
+    ['4_FOUNDATION_LAYOUT.dxf', '0_FLOOR_PLAN.dxf'].forEach(f => { docs[f] = new (Dq.DxfParser || Dq)().parseSync(fs.readFileSync(path.join(SH2, f), 'utf8')); });
+    const lg = Object.assign({}, ...Object.values(docs).map(d => Pr.legendOf(d.entities, 'in')));   // the legend is a set-level fact: the plan sheet has none, the foundation sheet states it
+    Object.keys(docs).forEach(f => {
+      const d = docs[f], mk = Pr.markPoints(d.entities, lg);
+      const rects = d.entities.filter(e => e.type === 'LWPOLYLINE' && e.shape && e.vertices.length === 4 && KIND[e.layer]).map(e => ({ id: f + ':' + e.handle, sheet: f, kind: KIND[e.layer], pts: e.vertices.map(v => [v.x, v.y]) }));
+      const o = Pr.labelRects(rects, mk, lg); lt.push(...o.lengths); notes.push(...o.notes);
+      console.log(f + ' legend=' + JSON.stringify(Object.keys(lg)) + ' marks=' + mk.length + ' rects=' + rects.length + ' unlabelled=' + o.notes.length);
+    });
+    const RL = Pr.pair(lt, []); console.log('labels ' + RL.log + ' rows=' + RL.rows.length);
+    ok('P9c real shed: footings (48x60) and columns (12x12) paired by legend label with 0 conflicts; rects without a mark are GAP:label_* and UNPAIRED, never dropped', RL.summary.lengths === lt.length && RL.summary.conflict === 0 && RL.summary.agree > 0 && RL.summary.agree + RL.summary.unpaired === lt.length, 'agree=' + RL.summary.agree + ' unpaired=' + RL.summary.unpaired);
+  }
+}
 console.log(fail ? 'FAIL W-PAIR ' + fail : 'PASS W-PAIR'); process.exit(fail ? 1 : 0);
