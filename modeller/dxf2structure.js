@@ -15,7 +15,10 @@
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
   function judge(sheets, ctx) {
     var I = ctx.I, B = ctx.B, refused = [];
-    sheets.filter(function (s) { return !s.role; }).forEach(function (s) { refused.push({ sheet: s.name, reason: s.why || 'no role' }); });
+    // §L29 a details sheet (no role, but it states general notes: concrete grade, steel grade, casting ratios) is a NOTES sheet: read for its text, never refused
+    var NT = ctx.NT || (typeof module === 'object' && module.exports ? require('./dxf2notes.js') : (typeof self !== 'undefined' ? self.Dxf2Notes : null));
+    var notes = NT ? NT.read(sheets.filter(function (s) { return !s.role; })) : { rows: [], sheets: [] };
+    sheets.filter(function (s) { return !s.role && notes.sheets.indexOf(s.name) < 0; }).forEach(function (s) { refused.push({ sheet: s.name, reason: s.why || 'no role' }); });
     if (sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return WALLISH.indexOf(l.type) >= 0; }); }))
       refused.push({ sheet: '(set)', reason: 'mixed sets are not supported yet: body kinds and wall / slab / opening / roof layers are typed together' });
     var n = function (r) { return sheets.filter(function (s) { return s.role === r; }).length; };
@@ -59,8 +62,9 @@
       res.els.forEach(function (e) { if (!e.ifc) return; var c = e.ifc.material && PAL[e.ifc.material];
         var sz = e.size || {}, basis = Object.keys(sz).filter(function (k) { return sz[k] && typeof sz[k] === 'object' && sz[k].source; }).map(function (k) { return k + ':' + sz[k].source; }).join(' ');
         if (!c && e.ifc.material) miss[e.ifc.material] = 1;
-        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: { Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis } }); });
+        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: Object.assign({ Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis }, NT ? NT.propsFor(e, notes.rows) : {}) }); });
       Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
+    res.notes = notes;
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
