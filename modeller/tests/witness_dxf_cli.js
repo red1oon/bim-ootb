@@ -33,6 +33,14 @@ const mk = ['0_plan_marked.dxf', '1S_elev_south_marked.dxf'].map(f => path.join(
 const rb = cp.spawnSync('node', [CLI, '--sheets', ...mk, '--out', path.join(dir, 'rt')], { encoding: 'utf8' });
 const b2 = JSON.parse(fs.readFileSync(path.join(dir, 'rt', 'bodies.json'), 'utf8'));
 ok('C5 round trip: the marked sheets alone (no flags) -> the same 3 bodies, same z', rb.status === 0 && b2.length === 3 && JSON.stringify(b2.map(b => [b.z0, b.z1, b.kind])) === JSON.stringify(bodies.map(b => [b.z0, b.z1, b.kind])), (rb.stdout.match(/§CLI result .*/) || [''])[0]);
+// §L10.9 the user's number from the command line: --size <body id>:<axis>=<metres> writes @SIZE on the first plan sheet and the body is rebuilt with it
+{
+  const gid = bodies[0].guid, x0 = (bodies[0].bbox[3] - bodies[0].bbox[0]), rs = sh(FACTS.concat(['--size', gid + ':x=0.45'])), od = (rs.stdout.match(/out=(\S+)/) || [])[1];
+  const bs = rs.status === 0 ? JSON.parse(fs.readFileSync(path.join(rs.stdout.match(/§CLI result[^\n]*out=(\S+)/)[1], 'bodies.json'), 'utf8')) : [], b0 = bs.find(b => b.guid === gid), bo = bs.find(b => b.guid !== gid);
+  ok('C18 --size <id>:x=0.45 widens exactly that body to 0.45 m (source user), the others keep the drawn extent; the marking is in the settings sheet', rs.status === 0 && b0 && Math.abs((b0.bbox[3] - b0.bbox[0]) - 0.45) < 1e-6 && b0.size.x.source === 'user' && Math.abs((bo.bbox[3] - bo.bbox[0]) - x0) < 1e-6 && /@SIZE=/.test(fs.readFileSync(path.join(rs.stdout.match(/§CLI result[^\n]*out=(\S+)/)[1], 'marked', '0_plan_marked.dxf'), 'utf8')), 'drawn=' + x0);
+  const rbad = sh(FACTS.concat(['--size', 'oops']));
+  ok('C19 CONTROL a malformed --size is an error (exit 1), not ignored', rbad.status === 1);
+}
 r = sh(['--accept-suggestions', '--set', 'T', '--level', '0', '--datum', '1S_elev:3@3000']);
 ok('C6 CONTROL no layer typed: not a structure set, exit 2, no bodies invented', r.status === 2 && /bodies=0/.test(r.stdout), (r.stdout.match(/§CLI result .*/) || [''])[0]);
 r = sh(FACTS.concat(['--layer', 'plan:Wall=wall']));

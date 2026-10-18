@@ -2,13 +2,13 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `f2ef00799` — dxf2marks: @BODYZ=<kind>,<z0>,<z1> - the z range the user states for a body kind no elevat
+Commit: `27839c82a` — DXF2BIM marks: @SIZE=<body id>,<x|y|w|d>,<metres> (the user's number for one body side, la
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
 | dxf2bim/dxf2bim.js | deploy/dev/dxf2bim.js | 815fb190044ba1ba949a2fbf21d6b546db1e3130d1512109085e83d7ea96dfa5 |
 | dxf2bim/dxf2elev.js | deploy/dev/dxf2elev.js | 26672c28ce495c90a3465ef516f7f6f10711776a09c835093491fafe1d8b2d0b |
-| dxf2bim/dxf2marks.js | deploy/dev/dxf2marks.js | 4cf9e51dd06f65dabd85e45f34c6cdeb6aa4e58a20667fd07fc7e2dc47bc35fa |
+| dxf2bim/dxf2marks.js | deploy/dev/dxf2marks.js | 4ac43df0145db16d4bfd818148057b47626bc55656abaf60765cc8300f7a9e1a |
 | dxf2bim/dxf2mesh.js | deploy/dev/dxf2mesh.js | 67157a627b4408230948e62b93810f0be91e362d9f8458deedc98813d3a17fc2 |
 | dxf2bim/dxf2types.js | deploy/dev/dxf2types.js | aa0364a564356a9d6ddcebd71b237b5cb36b5368e00cf9ebbea181b0d1df0b1c |
 | dxf2bim/dxf2shell.js | deploy/dev/dxf2shell.js | 1edc8535d79abcc98688538f68fef97aaa3d3967602e747a3809a1354d00ff67 |
@@ -23,4 +23,4 @@ Commit: `f2ef00799` — dxf2marks: @BODYZ=<kind>,<z0>,<z1> - the z range the use
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show f2ef00799:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show 27839c82a:deploy/dev/<file> | sha256sum` equals the column above.

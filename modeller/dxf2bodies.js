@@ -215,11 +215,14 @@
       });
       return out;
     }
+    // the user's numbers: @SIZE=<body id>,<x|y|w|d>,<metres> markings on any sheet, then opts.numbers[guid] (the caller's edits win over the file's)
+    var markNums = {}; sheets.forEach(function (sh) { ((sh.desc && sh.desc.sizes) || []).forEach(function (q) { (markNums[q.id] = markNums[q.id] || {})[q.axis] = q.value; }); });
+    function userN(guid) { return Object.assign({}, markNums[guid], opts.numbers && opts.numbers[guid]); }
     // the number in force drives the extent (§L10): a user number (opts.numbers[guid] = {x,y} metres) beats a label/dimension number; an axis with no number keeps the drawn extent.
     // Alignment is best effort: centred on the drawn centre (ALIGN:floating), reported on the body. Metres in, metres out.
     var sizeRows = [];
     function sizeOf(si, guid, x0, x1, y0, y1, k) {
-      var u = opts.numbers && opts.numbers[guid] || {}, ax = {}, out = { x0: x0, x1: x1, y0: y0, y1: y1, info: null };
+      var u = userN(guid), ax = {}, out = { x0: x0, x1: x1, y0: y0, y1: y1, info: null };
       [['x', x0, x1, si && si.x, si && si.x2], ['y', y0, y1, si && si.y, si && si.y2]].forEach(function (a) {
         var drawn = a[2] - a[1], n = null, src = null, cls = null, pair = a[3];
         if (u[a[0]] != null) { n = Number(u[a[0]]); src = 'user'; cls = Math.abs(n - drawn) <= 0.0006 ? 'PAIRED_AGREE' : 'USER'; }
@@ -237,7 +240,7 @@
     // assignment that fits the drawing best is taken. Anchoring (best effort, a yellow default): the plan width is centred on the drawn band; the depth keeps the SOFFIT (z0) because a beam bears
     // on its supports from below, so a deeper beam grows upward. A user number (opts.numbers[guid].w / .d, metres) beats the label.
     function crossSection(kind, mark, guid, x0, x1, y0, y1, z, k) {
-      var u = opts.numbers && opts.numbers[guid] || {}, un = unitName(k), nums = mark && legend[mark] && un && PR ? legend[mark].nums.slice(0, 2).map(function (v) { return v * k; }) : null;
+      var u = userN(guid), un = unitName(k), nums = mark && legend[mark] && un && PR ? legend[mark].nums.slice(0, 2).map(function (v) { return v * k; }) : null;
       if (!nums && u.w == null && u.d == null) return null;
       var spanX = (x1 - x0) >= (y1 - y0), dW = spanX ? (y1 - y0) : (x1 - x0), dD = z.z1 - z.z0, w = null, d = null, ws = null, ds = null, info = {};
       if (nums) { var keep = Math.abs(dW - nums[0]) + Math.abs(dD - nums[1]), swap = Math.abs(dW - nums[1]) + Math.abs(dD - nums[0]); w = keep <= swap + 1e-9 ? nums[0] : nums[1]; d = keep <= swap + 1e-9 ? nums[1] : nums[0]; ws = ds = 'label'; }
