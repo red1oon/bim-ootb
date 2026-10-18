@@ -44,7 +44,7 @@
   var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
   var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
-    vtab: 'blocking', wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
+    vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
   function parseRaw(raw) {
@@ -136,14 +136,14 @@
       var m = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return l && l.layer === layer; })[0]; if (m) return { mark: m, type: layerOf(m).type }; }
     return null;
   }
-  function setLayerRule(role, layer, ui) {
+  function setLayerRule(role, layer, ui, only) {   // only (§L9): one sheet by name; otherwise every sheet of the role that holds the layer
     var n = 0;
     S.sheets.forEach(function (sh) {
-      if (ROLE_VIEW[viewOf(sh)] !== role || !sh.dxf.entities.some(function (e) { return e.layer === layer; })) return;
+      if (ROLE_VIEW[viewOf(sh)] !== role || (only && sh.name !== only) || !sh.dxf.entities.some(function (e) { return e.layer === layer; })) return;
       sh.marks = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return !(l && l.layer === layer); });
       if (ui) { sh.marks.push({ key: 'LAYER', value: layer + ',' + ruleType(ui, role), x: 0, y: 0, source: 'user' }); n++; }
     });
-    console.log(TAG + ' layer role=' + role + ' layer=' + layer + ' -> ' + (ui ? '@LAYER=' + layer + ',' + ruleType(ui, role) + ' on ' + n + ' sheet(s)' : '(cleared)'));
+    console.log(TAG + ' layer role=' + role + ' layer=' + layer + (only ? ' sheet=' + only : '') + ' -> ' + (ui ? '@LAYER=' + layer + ',' + ruleType(ui, role) + ' on ' + n + ' sheet(s)' : '(cleared)'));
     changed();
   }
 
@@ -473,7 +473,7 @@
       '.dm-btn{display:inline-flex;align-items:center;gap:6px;background:#13151a;border:1px solid #2c303a;border-radius:8px;color:#c7cdd8;padding:5px 9px;cursor:pointer;font:inherit;font-size:11px}',
       '.dm-btn:hover{background:#1b1f27}.dm-btn.on{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn.primary{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn:disabled{opacity:.45;cursor:not-allowed}',
       '.dm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}',
-      '.dm-lay{display:flex;align-items:center;gap:6px;padding:3px 4px}.dm-lay .nm{flex:1;font-family:ui-monospace,monospace;font-size:10.5px;overflow:hidden;text-overflow:ellipsis}.dm-lay .n{color:#5b6473;font-size:9.5px;width:28px;text-align:right}',
+      '.dm-lay{display:flex;align-items:center;gap:6px;padding:3px 4px}.dm-lay-sub{padding-left:22px;background:rgba(255,255,255,.03)}.dm-lay .nm{flex:1;font-family:ui-monospace,monospace;font-size:10.5px;overflow:hidden;text-overflow:ellipsis}.dm-lay .n{color:#5b6473;font-size:9.5px;width:28px;text-align:right}',
       '.dm-tt{font-size:9.5px;border:1px solid #2c303a;border-radius:6px;padding:1px 6px;color:#9aa3b2}',
       '.dm-shape{display:grid;grid-template-columns:1fr 46px 46px;gap:2px 6px;font-size:11px;margin:2px 0 6px}.dm-shape .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-shape .b{color:#f2a3a3;text-align:right;font-family:ui-monospace,monospace}.dm-shape .a{color:#f0c674;text-align:right;font-family:ui-monospace,monospace}.dm-shape .z{color:#5b6473}',
       '.dm-tabs{display:flex;gap:5px;margin:4px 0}',
@@ -569,8 +569,8 @@
     return secHead('units', IC.ruler, 'Units', nBad ? nBad + ' unconfirmed' : 'confirmed', nBad) + (S.sec.units ? '<div class="dm-sb">' + h + '</div>' : '');
   }
   function renderLayers() {
-    var byRole = {}, nBad = 0, h = '';
-    S.sheets.forEach(function (sh) { var role = ROLE_VIEW[viewOf(sh)] || 'none'; sh.dxf.entities.forEach(function (e) { if (e.layer === LAYER) return; var R = byRole[role] = byRole[role] || {}; R[e.layer] = (R[e.layer] || 0) + 1; }); });
+    var byRole = {}, nBad = 0, h = '', onSheets = {};
+    S.sheets.forEach(function (sh) { var role = ROLE_VIEW[viewOf(sh)] || 'none'; var seenHere = {}; sh.dxf.entities.forEach(function (e) { if (e.layer === LAYER) return; var R = byRole[role] = byRole[role] || {}; R[e.layer] = (R[e.layer] || 0) + 1; if (!seenHere[e.layer]) { seenHere[e.layer] = 1; (onSheets[role + '|' + e.layer] = onSheets[role + '|' + e.layer] || []).push(sh); } }); });
     ['plan', 'elev', 'roof', 'section', 'none'].forEach(function (role) {
       if (!byRole[role]) return;
       h += '<div class="dm-sub">' + (role === 'none' ? 'Sheets without a role (choose a role first)' : role.toUpperCase() + ' sheets') + '</div>';
@@ -581,9 +581,16 @@
         else if (tt && !st) h += '<span class="dm-tt" title="layer set ' + esc(curSet()) + ' (dxf2shell_config.js)">' + esc(tt) + ' · template</span>';
         else if (st && (tt || !uiOf(st.type))) h += '<span class="dm-tt" title="@LAYER marking: overrides the set">' + esc(st.type) + ' · stated</span>' + srcLabel(st.mark);
         else { if (!st) nBad++;
-          var cur = st ? uiOf(st.type) : '';
-          h += '<select class="dm-sel' + (st ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + [''].concat(uiChoices(role)).map(function (t) { return opt(t, cur, t === 'gradebeam' ? 'grade beam' : undefined); }).join('') + '</select>' + (st ? srcLabel(st.mark) : ''); }
+          var cur = st ? uiOf(st.type) : '', multi = (onSheets[role + '|' + L] || []).length > 1, kinds = multi ? (onSheets[role + '|' + L]).map(function (sh) { var m = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return l && l.layer === L; })[0]; return m ? layerOf(m).type : ''; }) : [], mixed = multi && kinds.some(function (k) { return k !== kinds[0]; });
+          if (mixed) cur = '__mixed';
+          h += '<select class="dm-sel' + (st ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '">' + (mixed ? '<option value="__mixed" selected disabled>(per sheet)</option>' : '') + [''].concat(uiChoices(role)).map(function (t) { return opt(t, cur, t === 'gradebeam' ? 'grade beam' : undefined); }).join('') + '</select>' + (st ? srcLabel(st.mark) : ''); }
+        var key = role + '|' + L, shs = onSheets[key] || [];
+        if (role !== 'none' && shs.length > 1) h += '<button class="dm-ib" title="Type this layer sheet by sheet" data-act="laysplit" data-key="' + esc(key) + '">' + (S.split[key] ? IC.chevD : IC.chevR) + '</button>';
         h += '</div>';
+        if (role !== 'none' && shs.length > 1 && S.split[key]) shs.forEach(function (sh) {   // §L9: one select per sheet (a layer name shared by several sheets, e.g. Dim, is a beam on ONE of them)
+          var m1 = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return l && l.layer === L; })[0], c1 = m1 ? uiOf(layerOf(m1).type) : '';
+          h += '<div class="dm-lay dm-lay-sub" data-layer-row="' + esc(key + '|' + sh.name) + '"><span class="nm" title="' + esc(sh.name) + '">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</span><span class="n">' + sh.dxf.entities.filter(function (e) { return e.layer === L; }).length + '</span>' +
+            '<select class="dm-sel' + (m1 ? '' : ' need') + '" data-act="layer" data-role="' + role + '" data-layer="' + esc(L) + '" data-sheet="' + esc(sh.name) + '">' + [''].concat(uiChoices(role)).map(function (t) { return opt(t, c1, t === 'gradebeam' ? 'grade beam' : undefined); }).join('') + '</select></div>'; });
       });
     });
     var g = gateNow(), ev = g && g.roles ? (g.roles.evidence !== undefined ? g.roles.evidence : g.roles.set) : null;
@@ -818,7 +825,8 @@
       else if (a === 'confirm') el.onclick = function () { var sh = sheetAt(el), p = sh.prop.list[Number(el.getAttribute('data-pi'))];
         if (SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG'].indexOf(p.key) < 0) { sh.marks = sh.marks.filter(function (q) { return q.key !== p.key; }); sh.marks.push({ key: p.key, value: p.value, x: 0, y: 0, source: 'user', rule: p.rule }); console.log(TAG + ' confirm sheet=' + sh.name + ' ' + p.rule + ' @' + p.key + '=' + p.value); changed(); }
         else addMulti(sh, p.key, p.value, p.x, p.y, p.rule); };
-      else if (a === 'layer') el.onchange = function () { setLayerRule(el.getAttribute('data-role'), el.getAttribute('data-layer'), el.value || null); };
+      else if (a === 'layer') el.onchange = function () { setLayerRule(el.getAttribute('data-role'), el.getAttribute('data-layer'), el.value && el.value !== '__mixed' ? el.value : null, el.getAttribute('data-sheet') || undefined); };
+      else if (a === 'laysplit') el.onclick = function () { var k = el.getAttribute('data-key'); S.split[k] = !S.split[k]; render(); };
       else if (a === 'tool') el.onclick = function () { setTool(el.getAttribute('data-tool')); };
       else if (a === 'exsheet') el.onchange = function () { S.exSheet = el.value; };
       else if (a === 'tpl') el.onchange = function () { S.setOverride = el.value || null; console.log(TAG + ' layer set=' + (S.setOverride || 'from the drawings')); changed(); };
@@ -864,7 +872,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.defaultChoices = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
+    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();

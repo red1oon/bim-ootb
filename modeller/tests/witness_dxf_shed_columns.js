@@ -83,5 +83,25 @@ runE2E('W-DXF-SHED', async (t) => {
     const centred = F.filter(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return cx[Math.round((Math.min(...xs) + Math.max(...xs)) / 2 * 1000) + ',' + Math.round((Math.min(...ys) + Math.max(...ys)) / 2 * 1000)]; }).length;
     return { ok: g.ok, st: g.structure, nF: F.length, sizes: [...new Set(ext)], z: [...new Set(F.map(e => e.z0 + '..' + e.z1))], centred }; });
   t.assert('F3 typing the range builds the 32 footings: 48 x 60 in as drawn (4\'-0" x 5\'-0", F-1), z -1.4478..-1.143 m as stated, EACH centred on a column of the floor plan (the two plans align by their shared grid labels)', w2.ok && w2.st.bodies === 64 && w2.st.left_out === 0 && w2.nF === 32 && w2.sizes.join() === '48x60' && w2.z.join() === '-1.4478..-1.143' && w2.centred === 32, JSON.stringify(w2));
+
+  // ---- Flow D (§L9): + the beam-layout plan. The shared layer Dim holds dimensions on the other plans: typed beam on THAT sheet only (per-sheet row) ----
+  await open(['0_FLOOR_PLAN.dxf', '1S_ELEV_SOUTH.dxf', '3_BEAM_LAYOUT.dxf', '4_FOUNDATION_LAYOUT.dxf']); await acceptAll();
+  const nD = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
+  for (let i = 0; i < nD.length; i++) { await type('#dm-f-' + i + '-SET', 'SHED'); await idle(); }
+  for (const i of [0, 2, 3]) { await type('#dm-f-' + i + '-LEVEL', '0'); await idle(); }
+  await acceptAll();
+  if (!(await pg.evaluate(() => (document.getElementById('dm-f-1-HAXIS') || {}).value))) { await pg.select('#dm-f-1-HAXIS', '+X'); await idle(); }
+  await pg.type('#dm-av-1-Z', '0.6096'); await pg.type('#dm-ap-1-Z', String(PL_Y['1S_ELEV_SOUTH.dxf']));
+  await pg.evaluate(() => document.querySelector('#dm-panel [data-act="add"][data-group="Z"][data-sheet="1"]').click()); await idle();
+  await pg.evaluate(() => { const s = window.DxfMetaEditor.state; if (!s.sec.layers) document.querySelector('#dm-panel .dm-sh[data-sec="layers"]').click(); }); await sleep(400);
+  await pg.select('#dm-panel [data-layer-row="plan|Col"] select', 'column'); await idle(); await pg.select('#dm-panel [data-layer-row="elev|0"] select', 'column'); await idle();
+  await pg.select('#dm-panel [data-layer-row="plan|Fo"] select', 'footing'); await idle();
+  await pg.evaluate(() => { const b = document.querySelector('#dm-panel [data-act="laysplit"][data-key="plan|Dim"]'); if (b) b.click(); }); await sleep(400);
+  const subs = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel [data-layer-row^="plan|Dim|"]')].map(e => e.getAttribute('data-layer-row').split('|')[2]));
+  await pg.select('#dm-panel [data-layer-row="plan|Dim|3_BEAM_LAYOUT.dxf"] select', 'beam'); await idle();
+  const d = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate, B = g.R.els.filter(e => e.kind === 'beam'), W = {}; g.R.gaps.forEach(x => { W[x.kind] = (W[x.kind] || 0) + 1; });
+    return { ok: g.ok, bodies: g.structure.bodies, beams: B.length, z: [...new Set(B.map(e => (e.z0 / 0.0254).toFixed(0) + '..' + (e.z1 / 0.0254).toFixed(0) + ' ' + e.height_source))], waiting: W, sec: (document.querySelector('#dm-panel [data-bodyz="beam"]') || {}).textContent || null,
+      dimMarks: window.DxfMetaEditor.state.sheets.map(sh => sh.name + ':' + sh.marks.filter(m => m.key === 'LAYER' && /^Dim,/.test(m.value)).length) }; });
+  t.assert('D1 beams on the real shed through the page: the shared layer Dim typed beam on 3_BEAM_LAYOUT only (the floor and foundation plans keep their dimension lines untyped); 17 spans at 122..132 in from the elevation band; the other 22 regions + 32 footings wait in "Body heights" (no elevation evidence)', subs.length === 3 && d.dimMarks.filter(x => /:1$/.test(x)).length === 1 && /3_BEAM_LAYOUT\.dxf:1/.test(d.dimMarks.join()) && d.ok && d.beams === 17 && d.z.join() === '122..132 elevation' && d.waiting.beam === 22 && d.waiting.footing === 32 && /22 waiting/.test(d.sec || ''), JSON.stringify({ subs, d }));
 });
 
