@@ -28,11 +28,12 @@ runE2E('W-SHED-CHAIN', async (t) => {
   const open = async (files) => { await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true, timeout: 20000 });
     const [ch] = await Promise.all([pg.waitForFileChooser({ timeout: 20000 }), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept(files);
     await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 180000 }); await sleep(1500); };
-  await open(marked);
+  const TM = {}; const lap = (k, t0) => { TM[k] = +((Date.now() - t0) / 1000).toFixed(2); console.log('§TIMING ' + k + ' ' + TM[k] + ' s'); };
+  let T0 = Date.now(); await open(marked); lap('open_8_sheets_to_verdict', T0);
   await pg.evaluate(() => { const c = document.getElementById('dxf-complete'); if (c && !c.checked) c.click(); }); await sleep(2500);
   const bodies = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return g && g.structure ? g.structure.bodies : -1; });
-  const before = await t.oplog();
-  await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 120000 }); await sleep(2500);
+  const before = await t.oplog(); T0 = Date.now();
+  await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 120000 }); lap('convert_click_to_448_inserts', T0); await sleep(2500);
   const after = await t.oplog(), conv = await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts }));
   const ops = await pg.evaluate(() => window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').slice(-448).map(o => { const P = o.parameters || o.params || {}; const pv = P.provenance || {}; return { c: P.color, cls: P.ifc_class, ifc: pv.ifc || null, prov: pv.prov_kind || null }; }));
   const cols = {}; ops.forEach(o => { const k = o.ifc && o.ifc.material || 'none'; (cols[k] = cols[k] || new Set()).add(o.c); });
@@ -44,7 +45,9 @@ runE2E('W-SHED-CHAIN', async (t) => {
   const fit = await pg.$('#b-fit'); if (fit) { await fit.click(); await sleep(1500); }
   await t.shot('canvas');
   // IFC4 from the page's own writer
+  T0 = Date.now();
   const ifcT = await pg.evaluate(async () => { const r = await window.Bonsai.ifc.build(); let s = ''; const b = r.bytes; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return s; });
+  lap('ifc4_export_in_page', T0);
   const ifcPath = path.join(OUT, 'page.ifc'); fs.writeFileSync(ifcPath, Buffer.from(ifcT, 'latin1'));
   const nStyled = (ifcT.match(/IFCSTYLEDITEM\(/g) || []).length, nPset = (ifcT.match(/IFCPROPERTYSET\(/g) || []).length;
   t.assert('S2b the page\'s IFC4 carries a styled item and a Pset_Dxf2Bim for every product', nStyled === 448 && nPset === 448 && /Pset_Dxf2Bim/.test(ifcT), 'styledItems=' + nStyled + ' psets=' + nPset);
@@ -53,7 +56,7 @@ runE2E('W-SHED-CHAIN', async (t) => {
   const extract = async (file) => { const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init(); const sdb = new SQL.Database();
     await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(file)), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: 'ShedChain', sourceName: path.basename(file), log: () => {} }); return sdb; };
   const q = (db, sql) => { const r = db.exec(sql); return r.length ? r[0].values.map(v => Object.fromEntries(r[0].columns.map((c, i) => [c, v[i]]))) : []; };
-  const db = await extract(ifcPath);
+  T0 = Date.now(); const db = await extract(ifcPath); lap('ifc_to_db_extract_sqljs', T0); console.log('§SIZE ifc_bytes=' + fs.statSync(ifcPath).size + ' db_bytes=' + db.export().length);
   const n = q(db, 'select count(*) n from elements_meta')[0].n, mn = q(db, 'select count(*) n from elements_meta where material_name is not null')[0].n, rg = q(db, 'select distinct material_rgba r from elements_meta').map(r => r.r), pv = q(db, "select count(*) n from element_dxf2bim where name='Provenance'")[0].n;
   t.assert('S3 IFC4 -> the usual extractor: 448 elements, material_name on all 448, material_rgba = the palette (8 distinct, not one beige), element_dxf2bim Provenance on all 448', n === 448 && mn === 448 && rg.length === 8 && !rg.includes('0.920,0.900,0.850,1.000') && pv === 448, `elements=${n} material_name=${mn} colours=${rg.length} provenance=${pv}`);
   const SQLw = await initSqlJs(); fs.writeFileSync(VDB, Buffer.from(db.export()));
@@ -66,7 +69,7 @@ runE2E('W-SHED-CHAIN', async (t) => {
     const base = pg.url().replace(/\/modeller\/.*$/, '');
     const vp = await pg.browser().newPage(); await vp.setViewport({ width: 1280, height: 860 }); const vlog = []; vp.on('console', m => { const x = m.text(); if (/^§/.test(x)) vlog.push(x); }); vp.on('pageerror', e => vlog.push('PAGEERROR ' + String(e).slice(0, 160)));
     await vp.goto(base + '/viewer/viewer.html?db=buildings/' + NAME, { waitUntil: 'load', timeout: 120000 });
-    await vp.waitForFunction('window.APP && window.APP.db && window.APP.dbQuery', { timeout: 240000 }); await sleep(6000);
+    T0 = Date.now(); await vp.waitForFunction('window.APP && window.APP.db && window.APP.dbQuery', { timeout: 240000 }); await vp.waitForFunction(() => /DONE/.test(document.body.innerText || ''), { timeout: 240000 }); lap('viewer_open_to_rendered', T0); await sleep(6000);
     const vv = await vp.evaluate(() => { const r = window.APP.dbQuery("SELECT count(*) n FROM elements_meta"), w = window.APP.dbQuery("SELECT count(*) n FROM elements_meta WHERE ifc_class='IfcWall'"), c = window.APP.dbQuery("SELECT count(DISTINCT material_rgba) n FROM elements_meta"); const f = x => (x && x[0] && (x[0].n !== undefined ? x[0].n : x[0][0])) ; return { n: f(r), w: f(w), c: f(c) }; });
     await vp.screenshot({ path: path.join(OUT, 'viewer.png') }); fs.copyFileSync(path.join(OUT, 'viewer.png'), path.join(__dirname, 'e2e_shots', 'W-SHED-CHAIN-viewer.png'));
     t.assert('S4 the Viewer opens the DB: 448 elements, 41 walls, 8 distinct colours, no page error', vv.n === 448 && vv.w === 41 && vv.c === 8 && !vlog.some(l => /^PAGEERROR/.test(l)), JSON.stringify(vv) + ' ' + vlog.filter(l => /^PAGEERROR/.test(l)).join(';'));
