@@ -13,7 +13,7 @@ const door = arc('Rod', 1000, 1000, 900, 0, 90, 'A1') + line('Rod', 1000, 1000, 
 const read = (extra) => I.readSheets([{ name: 'plan.dxf', text: doc(door, PLAN.concat(extra || [])) }], { prep: P });
 const D = ref.defaults, keys = Object.keys(D);
 
-ok('DF1 the registry is READY for the element types: ' + keys.length + ' dotted keys; each has an element class, a unit, a kind (std | guess), a basis sentence and a value; numeric ones are positive numbers; every option list contains the default or is a text setting', keys.length >= 40 && keys.every(k => /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(k) && D[k].element && D[k].unit && ['std', 'guess'].includes(D[k].kind) && D[k].basis && D[k].value !== undefined && (D[k].unit === 'text' || (typeof D[k].value === 'number' && D[k].value >= 0)) && (!D[k].options || D[k].unit === 'text' || D[k].options.includes(D[k].value))), keys.filter(k => !D[k].basis).join());
+ok('DF1 the registry is READY for the element types: ' + keys.length + ' dotted keys; each has an element class, a unit, a kind (std | guess), a basis sentence and a value; numeric ones are positive numbers; every option list contains the default or is a text setting', keys.length >= 41 && keys.every(k => /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(k) && D[k].element && D[k].unit && ['std', 'guess'].includes(D[k].kind) && D[k].basis && D[k].value !== undefined && (D[k].unit === 'text' || (typeof D[k].value === 'number' && D[k].value >= 0)) && (!D[k].options || D[k].unit === 'text' || D[k].options.includes(D[k].value))), keys.filter(k => !D[k].basis).join());
 const classes = new Set(keys.map(k => D[k].element)), need = Object.keys(synth.parts).filter(c => c !== 'IfcWallStandardCase');
 ok('DF2 COVERAGE: every IFC class the bill knows (' + need.join(', ') + ') has at least one default, plus stairs, railings, ramps, piles, ceilings, curtain walls', need.every(c => classes.has(c)) && ['IfcStair', 'IfcRailing', 'IfcRamp', 'IfcPile', 'IfcCovering', 'IfcCurtainWall'].every(c => classes.has(c)), need.filter(c => !classes.has(c)).join());
 const std = keys.filter(k => D[k].kind === 'std');
@@ -36,4 +36,18 @@ ok('DF10 the person states @DEFAULT=door.height,2.4 in the drawing set: the door
 const mod = JSON.parse(JSON.stringify(ref)); mod.defaults['door.height'].value = 2.0;
 r = DR.buildDoors(read(), [], { ref: mod });
 ok('DF11 FALSIFIER editing the registry JSON changes the result (door.height 2.0 -> a 2.0 m door): the reference, not the code, holds the value', r.els[0].size.d.number === 2.0);
+// ---- §L20 the building type ----
+const BT = ref.building_types;
+ok('DF12 the Building Type is a setting (building.type, options General | Farming Shed) and organises type-specific defaults: each type lists its sources (label, url, confidence) and overrides, and every override has a CITED basis and names a registry key', D['building.type'] && D['building.type'].options.every(o => BT[o]) && Object.keys(BT).every(t => (BT[t].sources || []).every(x => x.label && x.url && x.confidence) && Object.keys(BT[t].overrides).every(k => D[k] && BT[t].overrides[k].basis && typeof BT[t].overrides[k].value === typeof D[k].value)) && BT['Farming Shed'].sources.length >= 2);
+let dt = DF.create(null, [], {});
+ok('DF13 General (nothing stated): door.height is the base guess 2.1 m', dt.type() === 'General' && dt.num('door.height') === 2.1 && dt.source('door.height') === 'default');
+dt = DF.create(null, [{ desc: { defaults: [{ key: 'building.type', value: 'Farming Shed', by: 'user' }] } }], {});
+const dh = dt.num('door.height'), ov = dt.num('synth.roof.overhang'), rw = dt.rows();
+ok('DF14 @DEFAULT=building.type,Farming Shed switches the cited type values on: door.height 1.83 m (6 ft door, TNAU), roof overhang 1.0668 m (3.5 ft), source "type"; the rows say so in their basis', dt.type() === 'Farming Shed' && dh === 1.83 && ov === 1.0668 && dt.source('door.height') === 'type' && rw.find(r => r.key === 'door.height').why.includes('Farming Shed') && dt.table().find(r => r.key === 'door.height').source === 'type');
+dt = DF.create(null, [{ desc: { defaults: [{ key: 'building.type', value: 'Farming Shed', by: 'user' }, { key: 'door.height', value: '2.4', by: 'user' }] } }], {});
+ok('DF15 a value the person states still beats the type: door.height 2.4 stated under Farming Shed', dt.num('door.height') === 2.4 && dt.source('door.height') === 'stated');
+dt = DF.create(null, [{ desc: { defaults: [{ key: 'building.type', value: 'Skyscraper', by: 'user' }] } }], {});
+ok('DF16 CONTROL an unknown building type falls back to General (no invented type values)', dt.type() === 'General' && dt.num('door.height') === 2.1);
+r = DR.buildDoors(read([['@DEFAULT=building.type,Farming Shed']]), [], {});
+ok('DF17 through the doors: under Farming Shed the door is 1.83 m (source type), the row basis names the type', r.els[0].size.d.number === 1.83 && r.els[0].size.d.source === 'type' && /Farming Shed/.test(r.defaults.find(x => x.key === 'door.height').why));
 console.log(fail ? 'FAIL W-DEFAULTS ' + fail : 'PASS W-DEFAULTS'); process.exit(fail ? 1 : 0);
