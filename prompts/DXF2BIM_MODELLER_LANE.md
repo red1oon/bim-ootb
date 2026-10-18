@@ -2035,3 +2035,21 @@ Built: number grammar (feet-inch, fractions, MTEXT codes stripped; `L/5`, `ld`, 
 **Evidence (shed plan, layer `Rod`).** Three `Door` labels sit at the drawing's doors. Each is drawn as the usual symbol: an ARC about the hinge (radius = the leaf width, a quarter circle) and the OPEN leaf as a line (here a pair of lines 1.25 in apart = the leaf thickness) from the hinge to one end of the arc. The closed leaf is the other end of the arc. West end near grid A and near grid D: 33 in leaves; east side near grid 42: a double leaf, 2 x 27 in. Four more swings of 21.7 in have NO drawn open leaf. No height is drawn anywhere, and the elevations show no door outline.
 **Rule.** `modeller/dxf2doors.js` (pure; BIMCompiler kind `doorswing`, #218): on a plan layer typed `doorswing` every ARC sweeping 60-190 degrees is a door leaf; the line(s) from the hinge to a point one radius away identify the OPEN end of the arc, so the CLOSED leaf runs from the hinge the other way, one radius long; thickness = the spacing of two parallel open-leaf lines (drawn) else `door.thickness` (yellow default 0.04 m); height = `door.height` (yellow default 2.1 m; `@SIZE=<door id>,d,<m>` and `,w,<m>` state height and thickness); floor = the lowest drawn column base (else 0); IfcDoor/DOOR, `derived` (amber), priced as the pack's `IfcDoor` per leaf. A swing with no drawn open leaf is **not built** and listed (`GAP:door_closed_unknown`): which end of the arc is the closed leaf cannot be told. Not done: cutting the opening out of the wall panel the door stands in (the panels still run through the gap).
 **Witnesses.** W-DOORS DR1-DR10 (closed leaf along +x from a 0..90 deg arc, drawn thickness from the double line, volume, defaults, single-line leaf default, no-leaf gap, circle and short arc ignored, right-hand hinge, user height/thickness, floor from columns, two doors + determinism), W-CLI C35. **Real shed: 4 IfcDoor** (two 33 in = 0.839 m end doors, the 2 x 27 in = 0.685 m double leaf), leaf thickness 1.25 in from the drawing, height 2.1 m (yellow); the 4 swings of 21.7 in are listed. Whole shed C31: **448 bodies** (+4 doors), IFC4 read back as 448.
+
+## L17 Yellow-banded items: what the drawings leave open (2026-10-18; owner: "It's noted in specs. Yellow banded items")
+These are not blockers. Each is either a yellow default the product applies and lists, a visible conflict row, or an item the drawing itself declares open. They are carried in the specs, never decided in code.
+| item | state | where |
+|---|---|---|
+| truss spacing, right block = left block | default: the column pitch from the cut; copies assumed (red) | `section.spacing`, §L14 |
+| roof sheet thickness, overhang | defaults 0.0254 m, 0 | `synth.roof.*`, §L13.2 |
+| floor slab thickness, extent | defaults 0.25 m (the pack), outermost grid lines | `synth.slab.*`, §L13.2 |
+| fan depth | default 0.3 m | `fan.depth`, §L11.3 |
+| net thickness (the ZIGZAG hatches, owner: a net) | default 5 mm | `net.thickness`, §L11.4 |
+| door height, single-line leaf thickness | defaults 2.1 m, 0.04 m | `door.height`, `door.thickness`, §L16 |
+| the four 21.7 in swings with no drawn open leaf | listed, not built | `GAP:door_closed_unknown`, §L16 |
+| EC pads | NOT built: the plan labels say "Length may vary", only one of the three carries a leader, no pad outline is drawn and the thickness sits in a detail section; nothing to extrude without inventing an extent | owner item |
+| 24 in plan text vs 96/98 in brick on the elevations | both kept; the brick is built as drawn | §L11.2 |
+| B-2 beam depth 10 in drawn vs 12 in labelled | conflict row, the label number in force | §L10, §L10.7 |
+| `410'-0"` dimension text vs 1,560 in drawn | conflict row in the dimension audit | §L10.8 |
+| doors cutting their opening in the wall panel | not done (the panel runs through the gap) | §L16 |
+| steel/RCC class mismatch in the rate pack (IfcColumn priced as steel), no netting/fan rate | rates are the pack's class rates; the line shows the pack description | §L13.1 |
