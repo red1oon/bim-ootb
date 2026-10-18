@@ -41,6 +41,9 @@
       var sy = SY.complete(sheets, res.els, ctx.complete);
       res.els = res.els.concat(sy.els); res.gaps = res.gaps.concat(sy.gaps); res.defaults = (res.defaults || []).concat(sy.defaults);
     }
+    // §L13.3 material dress: every body's IFC typing carries the reference's material (IfcMaterial + IfcRelAssociatesMaterial in the IFC writers)
+    var BL = ctx.BL || (typeof module === 'object' && module.exports ? require('./dxf2bill.js') : (typeof self !== 'undefined' ? self.Dxf2Bill : null));
+    if (BL && ctx.ref) res.els.forEach(function (e) { var m = BL.materialOf(e.class, e.ifc && e.ifc.type_name, ctx.ref); if (m && e.ifc) e.ifc = Object.assign({}, e.ifc, { material: m }); });
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))

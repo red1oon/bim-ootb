@@ -48,7 +48,7 @@
       }
       return storeys.get(el.storey);
     };
-    let gn = 0, seeded = 0, typed = 0, proxy = 0; const byClass = {};
+    let gn = 0, seeded = 0, typed = 0, proxy = 0; const byClass = {}, matProducts = {};
     elements.forEach(el => {
       const coords = el.vertices.map(v => [len(v[0]), len(v[1]), len(v[2])]);
       const ptList = api.CreateIfcEntity(mID, T.IFCCARTESIANPOINTLIST3D, coords, null);
@@ -63,6 +63,7 @@
       if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
       const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);
       const st = storeyFor(el); (st ? st.products : buildingProducts).push(e);
+      if (el.material) (matProducts[el.material] = matProducts[el.material] || []).push(e);
       if (el.name || el.objectType) typed++;
       seeded++;
     });
@@ -72,15 +73,16 @@
     if (stList.length) rel(T.IFCRELAGGREGATES, building, stList.map(s => s.e));
     for (const st of stList) if (st.products.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, st.products, st.e);
     if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
+    Object.keys(matProducts).sort().forEach(name => { const mat = api.CreateIfcEntity(mID, T.IFCMATERIAL, label(name), null, null); api.WriteLine(mID, mat); rel(T.IFCRELASSOCIATESMATERIAL, matProducts[name], mat); });
     const bytes = api.SaveModel(mID); api.CloseModel(mID);
-    return { bytes, seeded, typed, byClass, proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
+    return { bytes, seeded, typed, byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
   }
 
   // the importer's `els` (Dxf2Bodies / toOps form) -> writer elements
   function fromEls(els, ST) {
     const elev = {}; (ST || []).forEach(s => { elev[s.name] = s.level; });
     return els.map((e, i) => ({ class: e.class, name: (e.ifc && e.ifc.type_name) || (e.class + ' ' + (i + 1)),   // unnamed: class + its 1-based order (the page's names are class + op id: the same when the set is the page's first convert)
-      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null,
+      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null,
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
   return { build: build, fromEls: fromEls, guid: guid };

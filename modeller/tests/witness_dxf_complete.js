@@ -44,6 +44,9 @@ runE2E('W-DXF-COMPLETE', async (t) => {
   const lastOp = await t.lastOp(), P1 = lastOp && (lastOp.parameters || lastOp.params) || {};
   t.assert('K3 real Convert: 11 inserts incl. 1 IfcSlab and 2 IfcRoof on Level 1', conv.n === 11 && conv.counts['Level 1/IfcSlab'] === 1 && conv.counts['Level 1/IfcRoof'] === 2 && after.len - before.len === 11, JSON.stringify(conv));
   t.assert('K3b the last insert (a synthetic roof sheet) carries the AMBER colour 0xffb347 and provenance derived, IfcRoof', P1.color === 0xffb347 && P1.provenance && P1.provenance.prov_kind === 'derived' && P1.provenance.ifc && P1.provenance.ifc.ifc_class === 'IfcRoof', JSON.stringify({ color: P1.color, prov: P1.provenance && P1.provenance.prov_kind }));
+  const ifcT = await pg.evaluate(async () => { const r = await window.Bonsai.ifc.build(); return new TextDecoder().decode(r.bytes); });
+  const mats = [...new Set((ifcT.match(/IFCMATERIAL\('[^']*'/g) || []).map(m => m.slice(13, -1)))].sort();
+  t.assert('K3c the exported IFC4 carries the material dress: IFCMATERIAL Reinforced concrete (columns, slab), Brick masonry (the 10"/5" Brick Wall panels), Profiled metal roofing (roof), each associated by IFCRELASSOCIATESMATERIAL', JSON.stringify(mats) === JSON.stringify(['Brick masonry', 'Profiled metal roofing', 'Reinforced concrete']) && (ifcT.match(/IFCRELASSOCIATESMATERIAL\(/g) || []).length === 3, JSON.stringify(mats));
   await tick(false); s = await st();
   t.assert('K4 unticked: back to 8 bodies and the synth.* defaults are gone', s.structure && s.structure.bodies === 8 && s.defaults.length === 0 && !s.checked, JSON.stringify(s));
 });
