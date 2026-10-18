@@ -96,7 +96,7 @@ function write(res, dir) {
   res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
   const g = res.out.gate, R = g.R;
   fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
-  const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
+  const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, size: e.size || null, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
   if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
   return bodies;
