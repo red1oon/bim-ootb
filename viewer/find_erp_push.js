@@ -266,6 +266,7 @@
         return;
       }
       P.render(A, guid);
+      try { if (global.InfoDxf2Bim) global.InfoDxf2Bim.render(A, guid); } catch (e) {}   // §L28: same pick, the drawing-set provenance block
     }
 
     // BIM→Project: every › ERP push outcome gets audio + a clear status (user: "good practice — a status
