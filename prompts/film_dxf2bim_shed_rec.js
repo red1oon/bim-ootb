@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const SH = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
 const OUT = path.resolve(process.argv[2] || '.'); fs.mkdirSync(OUT, { recursive: true });
-const BEAT_MIN = JSON.parse(fs.readFileSync(process.env.BEAT_MIN, 'utf8'));
+const BEAT_MIN = JSON.parse(fs.readFileSync(process.env.BEAT_MIN, 'utf8')), TOUR_SEC = Number(process.env.TOUR_SEC || 0);   // TOUR_SEC: the length of the spliced Viewer tour (§L31)
 const PNG = process.env.SHEETS_PNG || path.join(process.env.HOME, 'Videos/dxf2bim_film_work/shed/sheets_png');
 const BCR = process.env.BC_REPO || '/tmp/wt-bc-r2', NM = path.join(process.env.HOME, 'bim-compiler', 'node_modules');   // the extractor with the §L26 metadata + better-sqlite3
 const img = n => 'data:image/png;base64,' + fs.readFileSync(path.join(PNG, n + '.png')).toString('base64');
@@ -49,7 +49,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const typeIn = async (sel, v) => { await pg.click(sel, { clickCount: 3 }); await pg.type(sel, String(v), { delay: 70 }); await pg.keyboard.press('Tab'); await sleep(500); };
 
   // ---- the settings sheets: the product CLI writes the same marked DXFs the page saves (layers typed, datums, ranges) ----
-  const SHEETS8 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS'].map(x => SH + x + '.dxf');
+  const SHEETS8 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'].map(x => SH + x + '.dxf');   // v5 (§L29/§L30): the details sheet joins the set (notes + schedules read, below-grade section from its column schedule, no --default)
   const cliOut = path.join(OUT, 'cli'); fs.rmSync(cliOut, { recursive: true, force: true });
   const cr = cp.spawnSync('node', [path.join(ROOT, 'modeller', 'dxf2bim_cli.js'), '--sheets'].concat(SHEETS8, ['--out', cliOut, '--complete', '--ifc', '--accept-suggestions', '--set', 'SHED', '--level', '0',
     '--datum', '1S_ELEV:0.6096@-4446.6', '--datum', '1N_ELEV:0.6096@-3895.2', '--datum', '2_ELEV:0.6096@-4515.7264', '--datum', '7_ELEV:0.6096@-3766.442', '--datum', '8_SECTION:0.6096@-3726.416',
@@ -124,42 +124,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await card('<div style="font-family:DejaVu Sans Mono,monospace;font-size:24px;text-align:left;color:#9be0b4" id="term">$ node scripts/extractIFC2DB.js --ifc shed.ifc -o ' + DBNAME + '</div>');
   await sleep(1800);
   await pg.evaluate((lines) => { document.getElementById('term').innerHTML = '$ node scripts/extractIFC2DB.js --ifc shed.ifc -o ShedFilm3_extracted.db<br>' + lines.map(l => l.replace(/</g, '&lt;')).join('<br>'); }, sum.concat(['', 'elements_meta: ' + nel + ' elements, ' + mat + ' materials, ' + col + ' colours', 'element_dxf2bim: ' + prv + ' provenance rows (sheet + handle per mesh)'])); await sleep(1500);
-  // ---- v01: the Viewer, 3D ----
-  await hold(); await uncard();   // the Viewer loads (wireframe, then solid) BEFORE its beat starts: the narration speaks of colours only once they are on screen
-  await pg.goto(base + '/viewer/viewer.html?db=buildings/' + DBNAME, { waitUntil: 'load', timeout: 120000 });
-  await pg.waitForFunction('window.APP && window.APP.db && window.APP.dbQuery && window.ProjFold && window.APP._SQL', { timeout: 240000 });
-  await pg.waitForFunction(() => /DONE/.test((document.body.innerText || '')), { timeout: 240000 }); await sleep(3500);
-  await beat('v01'); await chapter(5, 'viewer');
-  // ---- v01: Shadow ground (h); v01o orbit (render-paced: a camera step waits for two painted frames); v01n Night (n) + Alt+G; v01f Fly tour (l) ----
-  const must = (ok, what) => { if (!ok) throw new Error('mode not ON: ' + what); };
-  await pg.keyboard.press('h'); await sleep(3500);
-  const sg = await pg.evaluate(() => window.APP._shadowGroundKey); fact('shadowGround', sg); must(sg && sg !== 'off', 'shadow ground');
-  await beat('v01o');
-  const vorb = await pg.evaluate(async () => { const A = window.APP, c = A.controls, t = c.target, p0 = A.camera.position.clone(), N = 36, ax = Math.abs(A.camera.up.y) > 0.5 ? 'y' : 'z', o = ax === 'y' ? ['x', 'z'] : ['x', 'y'], raf = () => new Promise(r => requestAnimationFrame(() => r()));
-    const r = Math.hypot(p0[o[0]] - t[o[0]], p0[o[1]] - t[o[1]]), a0 = Math.atan2(p0[o[1]] - t[o[1]], p0[o[0]] - t[o[0]]), t0 = performance.now(), maxd = [];
-    for (let i = 1; i <= N; i++) { const a = a0 + 2 * Math.PI * i / N; A.camera.position[o[0]] = t[o[0]] + r * Math.cos(a); A.camera.position[o[1]] = t[o[1]] + r * Math.sin(a); c.update(); if (A.markDirty) A.markDirty(); await raf(); await raf(); await new Promise(r => setTimeout(r, 60)); if (i === N / 2) maxd.push(+A.camera.position.distanceTo(p0).toFixed(2)); }
-    return { steps: N, up: ax, radius: +r.toFixed(2), halfway_from_start_m: maxd[0], seconds: +((performance.now() - t0) / 1000).toFixed(1) }; });
-  fact('viewer-orbit', vorb); must(vorb.halfway_from_start_m > 1, 'orbit moved the camera');
-  await beat('v01n');
-  await pg.keyboard.press('n'); await sleep(2500);
-  const nt = await pg.evaluate(() => !!window.APP._nightMode); fact('night', nt); must(nt, 'night');
-  await beat('v01f');
-  await pg.keyboard.press('l'); await pg.waitForFunction('window.APP.flyActive===true && window.APP.walkActions && window.APP.walkActions.length', { timeout: 60000 }); await sleep(2500);
-  await pg.evaluate(() => { window.APP.cycleWalkSpeed(); window.APP.cycleWalkSpeed(); });   // 4x: the tour's dt is clamped to 0.1 s per frame and headless frames are slow (§L26.4)
-  await sleep(Math.max(4000, BEAT_MIN.v01f * 1000 - 2500));
-  const fly = await pg.evaluate(() => ({ active: !!window.APP.flyActive, actions: window.APP.walkActions.length, speed: window.APP.walkSpeedMult, status: (window.APP.status && window.APP.status.textContent || '').slice(0, 80) }));
-  fact('fly', fly); must(fly.active, 'Fly tour'); await pg.keyboard.press('l'); await sleep(1500);
-  await beat('v01g');
-  await pg.keyboard.down('Alt'); await pg.keyboard.press('g'); await pg.keyboard.up('Alt');
-  await pg.waitForFunction('window.APP._giComposerActive===true', { timeout: 20000 }).catch(() => {}); await sleep(4000);
-  const modes = await pg.evaluate(() => ({ shadowGround: window.APP._shadowGroundKey, night: !!window.APP._nightMode, gi: !!window.APP._giComposerActive }));
-  fact('modes', modes); must(modes.shadowGround !== 'off', 'shadow ground'); must(modes.night, 'night'); must(modes.gi, 'Alt+G');
-  // ---- v02: Find walls, pick one ----
-  await beat('v02');
-  await pg.evaluate(() => window.APP.openFindPanel('IfcWall')); await sleep(3000);
-  fact('find', await pg.evaluate(() => document.querySelectorAll('.find-result-item').length));
-  await pg.evaluate(() => { const r = document.querySelector('.find-result-item'); if (r) r.click(); }); await sleep(3000);
-  fact('find-panel', await pg.evaluate(() => { const p = document.getElementById('find-panel'); return p ? (p.innerText || '').replace(/\s+/g, ' ').slice(0, 260) : null; }));
+  // ---- v01: chapter 5 opens with the owner's own Viewer tour (film v5, §L31): the laggy headless 3D beats (orbit, night, fly, Alt+G, Find) are gone. This take only HOLDS a card for the tour's length; the assembler lays the tour clips (video + their own sound) over exactly this window ----
+  await hold();
+  await card('<div style="font-size:60px;font-weight:bold;letter-spacing:4px;color:#F3EEE8">THE VIEWER</div><div style="font-size:30px;color:#FF6B78;margin-top:18px">(the tour is spliced here)</div>');
+  await beat('v01'); await chapter(5, 'viewer'); fact('tour_window', { start_beat: 'v01', seconds: TOUR_SEC });
+  await sleep(TOUR_SEC * 1000 + 600); await uncard();
   // ---- v03: the 5D page ----
   await hold(); await pg.goto(base + '/viewer/boq_charts.html?db=buildings/' + DBNAME, { waitUntil: 'load', timeout: 120000 });
   await pg.waitForFunction('document.body.innerText.indexOf("Elements") >= 0 && document.body.innerText.indexOf("$") >= 0', { timeout: 120000 }); await sleep(2500);
