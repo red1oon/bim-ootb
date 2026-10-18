@@ -6,13 +6,14 @@
 //
 // usage: node dxf2bim_cli.js --sheets a.dxf b.dxf ... --out <dir> [--accept-suggestions]
 //          [--set NAME] [--level N] [--datum <sheet-substr>:<z m>@<drawing y>] [--haxis <sheet-substr>:<+X|-X|+Y|-Y>]
-//          [--layer <plan|elev|section|roof>:<layer>=<kind>[@<sheet-substr>]] [--exclude <sheet-substr>:x0,y0,x1,y1] [--bodyz <kind>=<z0 m>,<z1 m>] [--choice <key>=<value>] [--ifc]
+//          [--layer <plan|elev|section|roof>:<layer>=<kind>[@<sheet-substr>]] [--exclude <sheet-substr>:x0,y0,x1,y1] [--bodyz <kind>=<z0 m>,<z1 m>] [--size <body id>:<x|y|w|d>=<metres>] [--choice <key>=<value>] [--ifc]
 //   --accept-suggestions  accept every suggestion (PR-*) until none is left (the page's "Accept all"), before and after the typed facts
 //   --set / --level       @SET on every sheet without one / @LEVEL on every plan sheet            (the page's Set / Level (m) fields)
 //   --datum               one @Z level datum: the sheet whose name contains <sheet-substr>        (the page's "Level datums (@Z)" add row)
 //   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer (the page's pooled Layers select), or only on the sheets whose name contains <sheet-substr> (the page's per-sheet row)
 //   --exclude             @EXCLUDE=x0,y0,x1,y1 (drawing units) on the sheet whose name contains <sheet-substr>: plan regions wholly inside are skipped and counted (the page's Exclude tool)
 //   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
+//   --size                @SIZE=<body id>,<x|y|w|d>,<metres> on the first plan sheet              (the user's number for one body side, §L10.9)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
 // writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
@@ -22,14 +23,14 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
     else if (k === '--accept-suggestions') a.accept = true;
     else if (k === '--ifc') a.ifc = true;
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
-    else if (['--layer', '--datum', '--haxis', '--bodyz', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
+    else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
   }
   if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
@@ -81,6 +82,7 @@ function run(args, log) {
     sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && (!m[4] || sh.name.includes(m[4])) && sh.dxf.entities.some(e => e.layer === m[2])).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
   (args.exclude || []).forEach(x => { const m = /^(.+?):([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)$/.exec(x); if (!m) throw new Error('--exclude <sheet>:x0,y0,x1,y1: ' + x); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--exclude: no sheet ' + m[1]); put(sh, 'EXCLUDE', m.slice(2, 6).join(',')); });
   args.bodyz.forEach(b => { const m = /^([a-z]+)=([-\d.]+),([-\d.]+)$/.exec(b); if (!m) throw new Error('--bodyz <kind>=<z0>,<z1>: ' + b); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--bodyz: no plan sheet'); put(sh, 'BODYZ', m[1] + ',' + m[2] + ',' + m[3]); });
+  (args.size || []).forEach(z => { const m = /^(.+):([xywd])=([\d.]+)$/.exec(z); if (!m) throw new Error('--size <body id>:<x|y|w|d>=<metres>: ' + z); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--size: no plan sheet'); put(sh, 'SIZE', m[1] + ',' + m[2] + ',' + m[3]); });
   const choices = {}; args.choice.forEach(c => { const i = c.indexOf('='); choices[c.slice(0, i)] = c.slice(i + 1); });
 
   // effective sheets -> the importer's own reader (with the pre-processor) -> the structure judgement

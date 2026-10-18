@@ -43,7 +43,7 @@
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -722,6 +722,21 @@
       '<button class="dm-ib" title="Remove" data-act="bodyzdel" data-sheet="' + r.si + '" data-mi="' + r.mi + '">' + IC.trash + '</button></div>'; });
     return secHead('bodyz', IC.ruler, 'Body heights', Object.keys(need).length ? Object.keys(need).reduce(function (n, k) { return n + need[k]; }, 0) + ' waiting' : 'stated', Object.keys(need).length) + (S.sec.bodyz ? '<div class="dm-sb">' + h + '</div>' : '');
   }
+  // §L10.9 "Stated sizes": where a stated number (legend label / dimension) replaced a drawn extent, or the user wants another number, the NUMBER is what is checked and corrected.
+  // A row per conflicting body side shows drawn -> stated; typing a number and Set writes @SIZE=<body id>,<x|y|w|d>,<metres> (the user's own statement); removing it restores the label's number.
+  function sizeRows() { var out = []; S.sheets.forEach(function (sh, si) { sh.marks.forEach(function (m, mi) { if (m.key === 'SIZE') { var p = String(m.value).split(','); out.push({ si: si, mi: mi, id: p[0], axis: p[1], value: p[2], mark: m }); } }); }); return out; }
+  function renderSizes() {
+    var g = gateNow(); if (!g || !g.structure) return '';
+    var conf = (g.R && g.R.bodies && g.R.bodies.report && g.R.bodies.report.size_conflicts) || [], rows = sizeRows(); if (!conf.length && !rows.length) return '';
+    var h = '<div class="dm-ref" style="margin:2px 0 6px">The drawing\'s stated number (label or dimension) differs from the drawn length. The number is used. Type another number (metres) to correct it; the body is recalculated.</div>';
+    conf.forEach(function (c, i) {
+      h += '<div class="dm-f" data-size-conf="' + esc(c.guid + '|' + c.axis) + '"><label style="width:auto;flex:1" title="drawn ' + c.drawn + ' m, stated ' + c.number + ' m (' + esc(c.source) + ')">' + esc(c.guid) + ' <b>' + esc(c.axis) + '</b> <span class="dm-ref" style="margin:0">' + c.drawn + ' &rarr; ' + c.number + ' m</span></label>' +
+        '<input class="dm-in n" id="dm-sz-' + i + '" placeholder="m" inputmode="decimal" value="' + esc(c.number) + '"><button class="dm-btn" data-act="sizeadd" data-guid="' + esc(c.guid) + '" data-axis="' + esc(c.axis) + '" data-i="' + i + '">' + IC.check + '<span>Set</span></button></div>';
+    });
+    rows.forEach(function (r) { h += '<div class="dm-f" data-size-row="' + esc(r.id + '|' + r.axis) + '"><label style="width:auto;flex:1" title="@SIZE marking">@SIZE=' + esc(r.id + ',' + r.axis + ',' + r.value) + '</label>' + srcLabel(r.mark) +
+      '<button class="dm-ib" title="Remove" data-act="sizedel" data-sheet="' + r.si + '" data-mi="' + r.mi + '">' + IC.trash + '</button></div>'; });
+    return secHead('sizes', IC.ruler, 'Stated sizes', conf.length + ' differ', conf.length) + (S.sec.sizes ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function sheetHasKind(sh, kind) { return sh.marks.some(function (m) { var l = m.key === 'LAYER' && layerOf(m); return l && l.type === kind; }); }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
@@ -780,7 +795,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -802,6 +817,12 @@
         if (!a0 || !a1 || !isFinite(z0) || !isFinite(z1) || !(z0 < z1)) { console.log(TAG + ' bodyz refused: two numbers with z0 < z1 are needed'); return; }
         var sh = S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan' && sheetHasKind(q, k); })[0] || S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan'; })[0]; if (!sh) return;
         sh.marks.push({ key: 'BODYZ', value: k + ',' + a0 + ',' + a1, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @BODYZ=' + k + ',' + a0 + ',' + a1); changed(); };
+      if (a === 'sizeadd') el.onclick = function () { var gd = el.getAttribute('data-guid'), ax = el.getAttribute('data-axis'), raw = document.getElementById('dm-sz-' + el.getAttribute('data-i')).value.trim(), v = Number(raw);
+        if (!raw || !isFinite(v) || !(v > 0)) { console.log(TAG + ' size refused: a number of metres above zero is needed'); return; }
+        var sh = S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan'; })[0]; if (!sh) return;
+        sh.marks = sh.marks.filter(function (q) { return !(q.key === 'SIZE' && String(q.value).split(',').slice(0, 2).join(',') === gd + ',' + ax); });
+        sh.marks.push({ key: 'SIZE', value: gd + ',' + ax + ',' + raw, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @SIZE=' + gd + ',' + ax + ',' + raw); changed(); };
+      if (a === 'sizedel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
       if (a === 'acceptall') el.onclick = function () { var n = 0, b; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); console.log(TAG + ' accept-all clicks=' + (n - 1)); attention(); };
