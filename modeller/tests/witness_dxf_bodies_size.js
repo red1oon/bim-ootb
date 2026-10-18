@@ -38,4 +38,28 @@ const far = run([['plan.dxf', planDxf(tx('C-1 = 350x350', 6000, 900) + tx('C-1',
 ok('S7 CONTROL the only mark is far away: no size is applied (drawn 300x300 kept), the sides are recorded UNPAIRED with no number, nothing guessed', far.els.length === 2 && far.els.every(e => Math.abs(ext(e)[0] - 0.3) < 1e-9 && e.size.x.class === 'UNPAIRED' && e.size.x.number === null) && far.report.size_conflicts.length === 0);
 const agree = run([['plan.dxf', planDxf(tx('C-1 = 300x300', 6000, 900) + tx('C-1', 1000, 600) + tx('C-1', 4000, 600))], ['south.dxf', elevDxf()]]);
 ok('S8 a label that agrees with the drawing: size recorded as PAIRED_AGREE, extent identical, no report row', agree.els.every(e => e.size && e.size.x.class === 'PAIRED_AGREE' && Math.abs(ext(e)[0] - 0.3) < 1e-9) && agree.report.size_conflicts.length === 0);
+
+// ---- §L10.7 band kinds: the legend row is a CROSS-SECTION (width x depth), never the plan length ----
+{
+  const PLANB = (extra) => [['@SET=T'], ['@VIEW=PLAN'], ['@UNITS=mm'], ['@LEVEL=0'], ['@NAME=P'], ['@GRIDX=A', 1000, 0], ['@GRIDX=B', 4000, 0], ['@GRIDY=1', 0, 150], ['@GRIDY=2', 0, 2150], ['@LAYER=Bm,beam']];
+  const ELEVB = [['@SET=T'], ['@VIEW=ELEV'], ['@FACE=minY'], ['@HAXIS=+X'], ['@UNITS=mm'], ['@NAME=E'], ['@GRIDH=A', 1000, 0], ['@GRIDH=B', 4000, 0], ['@Z=0', 0, 0], ['@Z=3', 0, 3000], ['@LAYER=Bm,beam']];
+  const GAPS = [[0, 850], [1150, 3850], [4150, 6850], [7150, 8000]];
+  const beamLines = (y0, y1) => line('Bm', 0, y0, 8000, y0) + GAPS.map(([a, b]) => line('Bm', a, y1, b, y1)).join('');
+  const plan = (legend) => doc(beamLines(1000, 1300) + (legend ? tx('B-1 = ' + legend, 9000, 2000) + [500, 2500, 5500, 7500].map(x => tx('B-1', x, 1150)).join('') : ''), PLANB());
+  const elev = () => doc(line('Bm', 0, 3300, 8000, 3300) + GAPS.map(([a, b]) => line('Bm', a, 3000, b, 3000)).join(''), ELEVB);
+  const rb = (legend, o) => run([['plan.dxf', plan(legend)], ['south.dxf', elev()]], o), xr = e => { const xs = e.vertices.map(v => v[0]); return [Math.min(...xs), Math.max(...xs)].map(v => Math.round(v * 1e6) / 1e6); };
+  const zr = e => { const zs = e.vertices.map(v => v[2]); return [Math.min(...zs), Math.max(...zs)].map(v => Math.round(v * 1e6) / 1e6); }, yr = e => { const ys = e.vertices.map(v => v[1]); return [Math.min(...ys), Math.max(...ys)].map(v => Math.round(v * 1e6) / 1e6); };
+  const base = rb(null), spans = JSON.stringify(base.els.map(xr));
+  let b = rb('300x400');
+  ok('BS1 B-1 = 300x400 on a drawn 300 wide x 300 deep beam: depth is the conflict (0.4 in force), width agrees; the soffit stays at 3.0 m, the top grows to 3.4 m (anchor soffit)', b.els.length === 4 && b.els.every(e => zr(e)[0] === 3 && zr(e)[1] === 3.4 && yr(e)[1] - yr(e)[0] > 0.2999 && yr(e)[1] - yr(e)[0] < 0.3001 && e.size.d.class === 'PAIRED_CONFLICT' && e.size.w.class === 'PAIRED_AGREE'), b.els.map(zr).join(' | '));
+  ok('BS2 the span LENGTHS never change (the cross-section is not the plan length: the W-CLI C13d regression)', JSON.stringify(b.els.map(xr)) === spans);
+  b = rb('400x300');
+  ok('BS3 a TIE (square drawn section 300x300 against 400x300): the legend order is the convention, width first -> plan width 0.4, depth agrees (z top stays 3.3)', b.els.every(e => Math.abs(yr(e)[1] - yr(e)[0] - 0.4) < 1e-6 && zr(e)[1] === 3.3));
+  b = rb('350x300');
+  ok('BS4 a width conflict (350 against the drawn 300) widens the plan band to 0.35 m, centred on the drawn centre line y = 1.15 m; depth agrees', b.els.every(e => Math.abs(yr(e)[1] - yr(e)[0] - 0.35) < 1e-6 && Math.abs((yr(e)[0] + yr(e)[1]) / 2 - 1.15) < 1e-6 && zr(e)[1] === 3.3));
+  ok('BS5 CONTROL without a legend row the beams are exactly as drawn (z 3.0..3.3, no size info)', base.els.every(e => zr(e)[0] === 3 && zr(e)[1] === 3.3 && !e.size));
+  const g0 = rb('300x400').els[0].guid, ub = rb('300x400', { numbers: { [g0]: { d: 0.45 } } });
+  ok('BS6 a user depth (0.45 m) beats the label for that span only; the other spans keep 0.4', ub.els.find(e => e.guid === g0).size.d.source === 'user' && zr(ub.els.find(e => e.guid === g0))[1] === 3.45 && ub.els.filter(e => e.guid !== g0).every(e => zr(e)[1] === 3.4));
+  ok('BS7 report.size_conflicts lists each conflicting beam side once (4 spans x depth)', rb('300x400').report.size_conflicts.length === 4 && rb('300x400').report.size_conflicts.every(x => x.axis === 'd' && x.number === 0.4 && x.drawn === 0.3));
+}
 console.log(fail ? 'FAIL W-BODY-SIZE ' + fail : 'PASS W-BODY-SIZE'); process.exit(fail ? 1 : 0);

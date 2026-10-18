@@ -233,6 +233,30 @@
       if (ax.x || ax.y) out.info = ax;
       return out;
     }
+    // §L10.7 a band kind's legend row is its CROSS-SECTION (B-1 = 12" x 10": width x depth). WIDTH is the extent across the span in plan, DEPTH the z extent. The legend gives no order, so the
+    // assignment that fits the drawing best is taken. Anchoring (best effort, a yellow default): the plan width is centred on the drawn band; the depth keeps the SOFFIT (z0) because a beam bears
+    // on its supports from below, so a deeper beam grows upward. A user number (opts.numbers[guid].w / .d, metres) beats the label.
+    function crossSection(kind, mark, guid, x0, x1, y0, y1, z, k) {
+      var u = opts.numbers && opts.numbers[guid] || {}, un = unitName(k), nums = mark && legend[mark] && un && PR ? legend[mark].nums.slice(0, 2).map(function (v) { return v * k; }) : null;
+      if (!nums && u.w == null && u.d == null) return null;
+      var spanX = (x1 - x0) >= (y1 - y0), dW = spanX ? (y1 - y0) : (x1 - x0), dD = z.z1 - z.z0, w = null, d = null, ws = null, ds = null, info = {};
+      if (nums) { var keep = Math.abs(dW - nums[0]) + Math.abs(dD - nums[1]), swap = Math.abs(dW - nums[1]) + Math.abs(dD - nums[0]); w = keep <= swap + 1e-9 ? nums[0] : nums[1]; d = keep <= swap + 1e-9 ? nums[1] : nums[0]; ws = ds = 'label'; }
+      if (u.w != null) { w = Number(u.w); ws = 'user'; } if (u.d != null) { d = Number(u.d); ds = 'user'; }
+      var out = { x0: x0, x1: x1, y0: y0, y1: y1, info: null }, zz = { z0: z.z0, z1: z.z1, sheet: z.sheet, handle: z.handle, pair: z.pair };
+      function one(ax, drawn, n, src) {
+        if (n == null || !isFinite(n) || n <= 0) return null;
+        var pr = src === 'user' ? { class: Math.abs(n - drawn) <= 0.0006 ? 'PAIRED_AGREE' : 'USER', rule: 'user' } : PR.pair([{ id: 'x', a: [0, 0], b: [drawn / k, 0], label: n / k }], [], { unit: un }).pairs[0];
+        var cls = pr.class, row = { drawn: r6(drawn), number: r6(n), class: cls, source: src, rule: pr.rule || 'single' };
+        if (Math.abs(n - drawn) > 1e-9) row.align = 'ALIGN:floating';
+        if (cls === 'PAIRED_CONFLICT' && src !== 'user') sizeRows.push({ guid: guid, axis: ax, drawn: r6(drawn), number: r6(n), source: src, ratio: pr.ratio });
+        return row;
+      }
+      info.w = one('w', dW, w, ws); info.d = one('d', dD, d, ds);
+      if (info.w && Math.abs(info.w.number - dW) > 1e-9) { if (spanX) { var cy = (y0 + y1) / 2; out.y0 = r6(cy - w / 2); out.y1 = r6(cy + w / 2); } else { var cx = (x0 + x1) / 2; out.x0 = r6(cx - w / 2); out.x1 = r6(cx + w / 2); } }
+      if (info.d && Math.abs(info.d.number - dD) > 1e-9) zz.z1 = r6(z.z0 + d);
+      out.info = { w: info.w, d: info.d, anchor: 'soffit' };
+      return { sz: out, z: zz };
+    }
     KINDS.forEach(function (kind) {
       var rep = { plan_regions: 0, bodies: 0, gaps: 0, nonRect: 0 }, ER = null;
       var chosenName = opts.prepChoices && opts.prepChoices[kind + '.type_name'];
@@ -265,6 +289,7 @@
           if (distinct.length > 1) { gaps.push(Object.assign({ code: 'GAP:body_ambiguous_z', detail: distinct.map(function (d) { return d.z0 + '..' + d.z1 + ' (' + d.sheet + ' ' + d.handle + ')'; }).join(' | ') }, base)); rep.gaps++; return; }
           var mark = BAND_KINDS.indexOf(kind) >= 0 ? nearMark(ps, g, 5.0 / k) : null;   // §L9.4 per-region type mark (B-1 / B-2)
           var z = distinct[0], guid = 'body-' + kind + '-' + pi + '-' + g.handle, sz = sizeOf(SZ[pi] && SZ[pi][gi], guid, x0, x1, y0, y1, k);
+          if (BAND_KINDS.indexOf(kind) >= 0) { var cs = crossSection(kind, mark, guid, x0, x1, y0, y1, z, k); if (cs) { sz = cs.sz; z = cs.z; } }
           var pm = S.prismRect([[sz.x0, sz.y0], [sz.x1, sz.y0], [sz.x1, sz.y1], [sz.x0, sz.y1]], [], z.z0, z.z1);
           if (!pm) { gaps.push(Object.assign({ code: 'GAP:body_degenerate', detail: 'z range ' + z.z0 + '..' + z.z1 }, base)); rep.gaps++; return; }
           if (seen[guid]) throw new Error('Dxf2Bodies: duplicate body id ' + guid);

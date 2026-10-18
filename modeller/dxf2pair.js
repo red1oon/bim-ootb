@@ -181,7 +181,7 @@
       if (mark) {
         var n = legend[mark].nums.slice(0, 2), l0 = hyp(sides[0].a, sides[0].b), l1 = hyp(sides[1].a, sides[1].b);
         var keep = Math.abs(l0 - n[0]) + Math.abs(l1 - n[1]), swap = Math.abs(l0 - n[1]) + Math.abs(l1 - n[0]);   // the legend does not say which number is which side: take the assignment that fits the drawing best (reported as the pair's measured vs number)
-        var a0 = keep <= swap ? n[0] : n[1], a1 = keep <= swap ? n[1] : n[0];
+        var a0 = keep <= swap + 1e-9 ? n[0] : n[1], a1 = keep <= swap + 1e-9 ? n[1] : n[0];
         lab[0] = lab[2] = a0; lab[1] = lab[3] = a1;
       } else notes.push({ id: r.id, code: 'GAP:label_' + why });
       sides.forEach(function (sd, i) { out.push({ id: r.id + ':' + i, a: sd.a, b: sd.b, sheet: r.sheet, label: lab[i], mark: mark }); });
