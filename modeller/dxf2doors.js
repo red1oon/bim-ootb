@@ -6,17 +6,17 @@
 // Drawn: position, width, hinge side, (often) leaf thickness. Not drawn: height (and the door's thickness when the leaf is one line): yellow defaults. A swing with no drawn open leaf is left out and
 // listed (GAP:door_closed_unknown): which end of the arc is the closed leaf cannot be told.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ P: require('./dxf2prep.js') });
-  else root.Dxf2Doors = factory({ P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ P: require('./dxf2prep.js'), DF: require('./dxf2defaults.js') });
+  else root.Dxf2Doors = factory({ P: root.Dxf2Prep, DF: root.Dxf2Defaults });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
+  var P = D.P, DFM = D.DF, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var BOX = [[4, 5, 6], [4, 6, 7], [0, 2, 1], [0, 3, 2], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]];
   function vol(m) { var v = 0; m.faces.forEach(function (f) { var a = m.vertices[f[0]], b = m.vertices[f[1]], c = m.vertices[f[2]]; v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6; }); return v; }
 
   // sheets: readSheets output; bodies: the els already built (their lowest column base gives the floor); opts: { numbers, doorH, doorT, floorZ }
   function buildDoors(sheets, bodies, opts) {
-    opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), hUsed = false, tUsed = false;
+    opts = opts || {}; var els = [], gaps = [], own = !opts.DF, DF = opts.DF || DFM.create(opts.ref, sheets, opts.choices);
     var markNums = {}; sheets.forEach(function (sh) { ((sh.desc && sh.desc.sizes) || []).forEach(function (q) { (markNums[q.id] = markNums[q.id] || {})[q.axis] = q.value; }); });
     var userN = function (id) { return Object.assign({}, markNums[id], opts.numbers && opts.numbers[id]); };
     var plans = sheets.filter(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'doorswing'; }); });
@@ -40,8 +40,8 @@
         var t = null, tsrc = null, u = userN(id);
         if (u.w > 0) { t = Number(u.w); tsrc = 'user'; }
         else if (leaf.length === 2) { var a0 = leaf[0].l.vertices, a1 = leaf[1].l.vertices, sp = Math.abs((a1[0].x - a0[0].x) * ux + (a1[0].y - a0[0].y) * uy);   /* the open leaf's two faces are apart ALONG the closed-leaf direction */ if (sp > 1e-6 && sp < 0.2 * R) { t = sp * k; tsrc = 'drawn'; } }
-        if (t == null) { t = opts.doorT > 0 ? opts.doorT : 0.04; tsrc = 'default'; tUsed = true; }
-        var H = u.d > 0 ? Number(u.d) : (opts.doorH > 0 ? opts.doorH : 2.1), hsrc = u.d > 0 ? 'user' : 'default'; if (hsrc === 'default') hUsed = true;
+        if (t == null) { t = DF.use('door.thickness'); tsrc = DF.source('door.thickness'); }
+        var H = u.d > 0 ? Number(u.d) : DF.use('door.height'), hsrc = u.d > 0 ? 'user' : DF.source('door.height');
         var hx = c.x * k, hy = c.y * k, w = R * k, nx = -uy, ny = ux, z0 = floorZ, z1 = floorZ + H, hh = t / 2;
         var V = [[hx + nx * hh, hy + ny * hh, z0], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z0], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z0], [hx - nx * hh, hy - ny * hh, z0],
           [hx + nx * hh, hy + ny * hh, z1], [hx + ux * w + nx * hh, hy + uy * w + ny * hh, z1], [hx + ux * w - nx * hh, hy + uy * w - ny * hh, z1], [hx - nx * hh, hy - ny * hh, z1]].map(function (q) { return [r6(q[0]), r6(q[1]), r6(q[2])]; });
@@ -50,9 +50,7 @@
           ifc: P.ifcType('doorswing', 'Door ' + r6(w) + ' m', null), mark: null, z0: r6(z0), z1: r6(z1), height_source: 'default', size: { w: { number: r6(w), source: 'drawn' }, t: { number: r6(t), source: tsrc }, d: { number: r6(H), source: hsrc } }, members: [a.handle] });
       });
     });
-    if (hUsed) DEF.assume('door.height', String(opts.doorH > 0 ? opts.doorH : 2.1), 'no door height is drawn; the width (the swing radius), the position and the hinge side are', ['2.0', '2.1', '2.4']);
-    if (tUsed) DEF.assume('door.thickness', String(opts.doorT > 0 ? opts.doorT : 0.04), 'some door leaves are drawn as a single line (no thickness); those take this default (the double-line leaves state theirs)', ['0.04', '0.05']);
-    return { els: els, gaps: gaps, defaults: DEF.rows() };
+    return { els: els, gaps: gaps, defaults: own ? DF.rows() : [] };
   }
   return { buildDoors: buildDoors };
 });

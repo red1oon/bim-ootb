@@ -28,7 +28,7 @@ const bb = e => [0, 1, 2].map(i => { const a = e.vertices.map(v => v[i]); return
 
 let sh = read([['plan.dxf', planDxf], ['south.dxf', southDxf], ['west.dxf', west], ['east.dxf', east]]), j = ST.judge(sh, { I, B }), els = j.gate.R.els;
 ok('SY0 the drawn part first: 4 columns + 4 panels (2 lower, 2 gable tops: West and East ends), 0 blocking', els.filter(e => e.kind === 'column').length === 4 && els.filter(e => e.kind === 'panel').length === 4 && j.gate.verdict.blocking.length === 0, j.log);
-let r = SY.complete(sh, els, { slabT: 0.25, roofT: 0.0254 });
+let r = SY.complete(sh, els, {});
 const slab = r.els.find(e => e.kind === 'slab'), roofs = r.els.filter(e => e.kind === 'roof');
 ok('SY1 ground slab: footprint = the outermost grid lines (x 1..7 m, y 0.15..4.15 m), top = the lowest column base (0), 0.25 m thick, IfcSlab/BASESLAB, derived', slab && JSON.stringify(bb(slab)) === JSON.stringify([[1, 7], [0.15, 4.15], [-0.25, 0]]) && slab.class === 'IfcSlab' && slab.prov === 'derived' && slab.ifc.PredefinedType === 'BASESLAB', slab && JSON.stringify(bb(slab)));
 ok('SY1b slab volume = 6 x 4 x 0.25 = 6 m3 with outward windings', slab && Math.abs(mesh(slab) - 6) < 1e-9, slab && mesh(slab).toFixed(6));
@@ -36,17 +36,17 @@ ok('SY2 gabled roof: two sloping sheets, eave z 3.0 m at y 0.15 and 4.15, ridge 
 const slopeLen = Math.hypot(2, 0.5), want = 6 * slopeLen * 0.0254;
 ok('SY3 each roof sheet: volume = length 6 m x slope length ' + slopeLen.toFixed(4) + ' m x 0.0254 m (relative 1e-4: vertex rounding), windings outward; slope ' + roofs[0].size.slope_deg.toFixed(2) + ' deg = atan(0.5 / 2)', roofs.every(e => Math.abs(mesh(e) - want) / want < 1e-4) && Math.abs(roofs[0].size.slope_deg - Math.atan2(0.5, 2) * 180 / Math.PI) < 1e-6, roofs.map(e => mesh(e).toFixed(6)).join());
 ok('SY4 yellow defaults listed: slab thickness, slab footprint, roof sheet thickness, roof overhang (0): every synthetic value is a stated assumption', ['synth.slab.thickness', 'synth.slab.footprint', 'synth.roof.sheet_thickness', 'synth.roof.overhang'].every(k => r.defaults.some(d => d.key === k && d.kind === 'default')));
-const oh = SY.complete(sh, els, { slabT: 0.25, overhang: 0.5 }).els.filter(e => e.kind === 'roof');
+const oh = SY.complete(sh, els, { choices: { 'synth.roof.overhang': '0.5' } }).els.filter(e => e.kind === 'roof');
 ok('SY5 an overhang the user states (0.5 m) lengthens the roof at both ends (x 0.5 .. 7.5)', oh.length === 2 && oh.every(e => Math.abs(bb(e)[0][0] - 0.5) < 1e-6 && Math.abs(bb(e)[0][1] - 7.5) < 1e-6));
-r = SY.complete(sh, els.filter(e => e.kind !== 'panel'), { slabT: 0.25 });
+r = SY.complete(sh, els.filter(e => e.kind !== 'panel'), {});
 ok('SY6 CONTROL no gable panel: GAP:synth_roof_no_gable, NO roof, the slab is still made', r.els.filter(e => e.kind === 'roof').length === 0 && r.els.some(e => e.kind === 'slab') && r.gaps.some(x => x.code === 'GAP:synth_roof_no_gable'));
-r = SY.complete(sh, els.filter(e => e.kind !== 'panel' || /-0-/.test(e.guid)), { slabT: 0.25 });
+r = SY.complete(sh, els.filter(e => e.kind !== 'panel' || /-0-/.test(e.guid)), {});
 ok('SY7 CONTROL only one end gable drawn: GAP:synth_roof_one_end (the length is unknown), NO roof', r.els.filter(e => e.kind === 'roof').length === 0 && r.gaps.some(x => x.code === 'GAP:synth_roof_one_end'), JSON.stringify(r.gaps));
-r = SY.complete(sh, els.filter(e => e.kind !== 'column'), { slabT: 0.25 });
+r = SY.complete(sh, els.filter(e => e.kind !== 'column'), {});
 ok('SY8 CONTROL no drawn column: GAP:synth_slab_no_columns, NO slab (the floor level is unknown), the roof is still made', r.els.filter(e => e.kind === 'slab').length === 0 && r.gaps.some(x => x.code === 'GAP:synth_slab_no_columns') && r.els.filter(e => e.kind === 'roof').length === 2);
-ok('SY9 deterministic: the same inputs twice give the same synthetic parts', JSON.stringify(SY.complete(sh, els, { slabT: 0.25 })) === JSON.stringify(SY.complete(sh, els, { slabT: 0.25 })));
+ok('SY9 deterministic: the same inputs twice give the same synthetic parts', JSON.stringify(SY.complete(sh, els, {})) === JSON.stringify(SY.complete(sh, els, {})));
 // the bill sees the synthetic parts: slab + roof priced by their stated formulas, split under 'derived'
-const all = els.concat(SY.complete(sh, els, { slabT: 0.25 }).els), bl = BL.bill(all, { ref, pack });
+const all = els.concat(SY.complete(sh, els, {}).els), bl = BL.bill(all, { ref, pack });
 const sl = bl.lines.find(l => l.class === 'IfcSlab'), rl = bl.lines.filter(l => l.class === 'IfcRoof');
 ok('SY10 the bill prices them: slab A = 24 m2 x pack IfcSlab rate x factor t/t_ref (0.25 / 0.25 = 1); roof A = 2 x 6 x slope length m2 x the pack IfcRoof rate; totals show them under derived', sl && Math.abs(sl.quantity - 24) < 1e-6 && sl.factor === 1 && Math.abs(sl.amount - 24 * pack.materials.IfcSlab.rate) < 1e-3 && rl.length === 2 && Math.abs(rl[0].quantity - 6 * slopeLen) < 1e-4 && bl.totals.by_prov.derived > sl.amount, bl.log);
 console.log(fail ? 'FAIL W-SYNTH ' + fail : 'PASS W-SYNTH'); process.exit(fail ? 1 : 0);

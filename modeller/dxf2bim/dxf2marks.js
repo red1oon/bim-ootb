@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT'];
   var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -36,7 +36,7 @@
   }
 
   function describe(marks) {
-    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], by: {} }, errors = [];
+    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], defaults: [], by: {} }, errors = [];
     marks.forEach(function (m) {
       // lane spec L2.7 (5): @BY=model|user is a SUFFIX in the same TEXT and qualifies only that TEXT's marking; none -> 'file'
       var raw = m.raw, by = 'file', nBy = (raw.match(/@BY=/g) || []).length;
@@ -125,6 +125,12 @@
         var zdup = d.sizes.find(function (q) { return q.id === zg && q.axis === za; });
         if (zdup && zdup.value !== zv) { errors.push(err('MARK:conflict', '@SIZE ' + zg + ' ' + za + ' has two values', { handle: m.handle })); return; }
         if (!zdup) d.sizes.push({ id: zg, axis: za, value: zv, by: by });
+      } else if (key === 'DEFAULT') {                                                       // bim-ootb lane L18: a SETTING the user states for an element type the drawings do not carry: @DEFAULT=<key>,<value>
+        var fk = val.indexOf(','), dk = fk > 0 ? val.slice(0, fk).trim() : '', dv = fk > 0 ? val.slice(fk + 1).trim() : '';
+        if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(dk) || dv === '') { errors.push(err('MARK:malformed', '@DEFAULT needs <dotted.key>,<value>: ' + val, { handle: m.handle })); return; }
+        var ddup = d.defaults.find(function (q) { return q.key === dk; });
+        if (ddup && ddup.value !== dv) { errors.push(err('MARK:conflict', '@DEFAULT ' + dk + ' has two values', { handle: m.handle })); return; }
+        if (!ddup) d.defaults.push({ key: dk, value: dv, by: by });
       } else if (key === 'LAYER') {                                                         // L4.2: name = everything before the LAST comma
         var lc = val.lastIndexOf(','), ln = lc > 0 ? val.slice(0, lc).trim() : '', lt = lc > 0 ? val.slice(lc + 1).trim() : '';
         if (!ln || !lt) { errors.push(err('MARK:malformed', '@LAYER needs <layer name>,<type>: ' + val, { handle: m.handle })); return; }
@@ -190,6 +196,7 @@
     d.openings.sort(function (p, q) { return p.h0 - q.h0 || p.y0 - q.y0 || p.h1 - q.h1 || p.y1 - q.y1 || (p.kind < q.kind ? -1 : p.kind > q.kind ? 1 : 0); });
     d.labels.sort(function (p, q) { return p.x - q.x || p.y - q.y || (p.z === undefined ? -1e9 : p.z) - (q.z === undefined ? -1e9 : q.z) || (p.class < q.class ? -1 : p.class > q.class ? 1 : 0); });
     d.tags.sort(function (p, q) { return p.x - q.x || p.y - q.y || (p.z === undefined ? -1e9 : p.z) - (q.z === undefined ? -1e9 : q.z) || (p.class < q.class ? -1 : p.class > q.class ? 1 : 0); });
+    d.defaults.sort(function (p, q) { return p.key < q.key ? -1 : p.key > q.key ? 1 : 0; });
     d.sizes.sort(function (p, q) { return p.id < q.id ? -1 : p.id > q.id ? 1 : p.axis < q.axis ? -1 : p.axis > q.axis ? 1 : 0; });
     d.bodyz.sort(function (p, q) { return p.kind < q.kind ? -1 : p.kind > q.kind ? 1 : 0; });
     d.schedule.sort(function (p, q) { return p.text < q.text ? -1 : p.text > q.text ? 1 : p.class < q.class ? -1 : p.class > q.class ? 1 : 0; });

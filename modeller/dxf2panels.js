@@ -9,11 +9,11 @@
 //   holes      a loop inside another loop of its hatch would be a hole: not supported yet -> GAP:panel_hole_unsupported (no body invented)
 // The mesh is the existing ear-clipped prism (dxf2mesh), axes permuted onto the face; winding is checked by volume.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
-  else root.Dxf2Panels = factory({ MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
+  else root.Dxf2Panels = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
+  var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
   var NET_RE = /zigzag|mesh|net\b|wire/i;
@@ -33,7 +33,7 @@
 
   // sheets: readSheets output (role 'elev' sheets carry .hatches from the importer, .text); opts: { numbers, prepChoices }
   function buildPanels(sheets, opts) {
-    opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), report = { sheets: {}, panels: 0 };
+    opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), own = !opts.DF, DF = opts.DF || DFM.create(opts.ref, sheets, opts.choices), report = { sheets: {}, panels: 0 };
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var markNums = {}; sheets.forEach(function (sh) { ((sh.desc && sh.desc.sizes) || []).forEach(function (q) { (markNums[q.id] = markNums[q.id] || {})[q.axis] = q.value; }); });
     var userN = function (id) { return Object.assign({}, markNums[id], opts.numbers && opts.numbers[id]); };
@@ -127,7 +127,7 @@
         hs.filter(function (h) { return netL.indexOf(h.layer) >= 0 && NET_RE.test(h.pattern || ''); }).forEach(function (h) {
           h.loops.filter(function (l) { return l.closed; }).forEach(function (l, li, all) {
             var key = l.pts.map(function (q) { return Math.round(q[0] * 1000) + ',' + Math.round(q[1] * 1000); }).sort().join(';'); if (seenNet[key]) { report.nets_dup = (report.nets_dup || 0) + 1; return; } seenNet[key] = 1;
-            var id = 'body-net-' + ei + '-' + h.handle + (all.length > 1 ? '-L' + li : ''), u = userN(id), t = u.w > 0 ? Number(u.w) : (opts.netT > 0 ? opts.netT : 0.005), poly = dropCollinear(l.pts).map(function (q) { return [map.toPlan(q[0]), map.zOf(q[1])]; });
+            var id = 'body-net-' + ei + '-' + h.handle + (all.length > 1 ? '-L' + li : ''), u = userN(id), t = u.w > 0 ? Number(u.w) : DF.use('net.thickness'), poly = dropCollinear(l.pts).map(function (q) { return [map.toPlan(q[0]), map.zOf(q[1])]; });
             var m = M.prism(poly, plane + t / 2, t); if (!m) { gaps.push({ code: 'GAP:net_degenerate', sheet: es.name, kind: 'net', handle: h.handle, detail: 'the outline could not be triangulated' }); return; }
             var V3, F3;
             if (F.coord === 'X') { V3 = m.vertices.map(function (q2) { return [r6(q2[2]), r6(q2[0]), r6(q2[1])]; }); F3 = m.faces; }
@@ -135,7 +135,7 @@
             var nm = { vertices: V3, faces: F3 }; if (volume(nm) < 0) nm.faces = nm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
             var zz = poly.map(function (q) { return q[1]; });
             els.push({ guid: id, class: P.ifcType('net').ifc_class, storey: 'Level 1', vertices: nm.vertices, faces: nm.faces, handle: h.handle + (all.length > 1 ? '-L' + li : ''), layer: h.layer, sheet: es.name, kind: 'net', prov: 'derived',
-              ifc: P.ifcType('net', 'Netting', null), mark: null, z0: r6(Math.min.apply(null, zz)), z1: r6(Math.max.apply(null, zz)), height_source: 'elevation', size: { t: { number: r6(t), source: u.w > 0 ? 'user' : 'default' }, plane: r6(plane), pattern: h.pattern }, members: [h.handle] });
+              ifc: P.ifcType('net', 'Netting', null), mark: null, z0: r6(Math.min.apply(null, zz)), z1: r6(Math.max.apply(null, zz)), height_source: 'elevation', size: { t: { number: r6(t), source: u.w > 0 ? 'user' : DF.source('net.thickness') }, plane: r6(plane), pattern: h.pattern }, members: [h.handle] });
             report.nets = (report.nets || 0) + 1; netsUsed = true;
           });
         });
@@ -150,7 +150,7 @@
           if (!g) groups.push({ cx: c.center.x, cy: c.center.y, r: c.radius, h: c.handle, n: 1 }); else { g.n++; if (c.radius > g.r) { g.r = c.radius; g.h = c.handle; } }
         });
         groups.forEach(function (g) {
-          var id = 'body-fan-' + ei + '-' + g.h, u = userN(id), depth = u.w > 0 ? Number(u.w) : (opts.fanDepth > 0 ? opts.fanDepth : 0.3), R = g.r * k, cu = map.toPlan(g.cx), cv = map.zOf(g.cy), poly = [];
+          var id = 'body-fan-' + ei + '-' + g.h, u = userN(id), depth = u.w > 0 ? Number(u.w) : DF.use('fan.depth'), R = g.r * k, cu = map.toPlan(g.cx), cv = map.zOf(g.cy), poly = [];
           for (var q = 0; q < 24; q++) poly.push([cu + R * Math.cos(2 * Math.PI * q / 24), cv + R * Math.sin(2 * Math.PI * q / 24)]);
           var m = M.prism(poly, plane + depth / 2, depth); if (!m) { gaps.push({ code: 'GAP:fan_degenerate', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the circle could not be extruded' }); return; }
           var V2, F2;
@@ -158,16 +158,14 @@
           else { V2 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F2 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
           var fm = { vertices: V2, faces: F2 }; if (volume(fm) < 0) fm.faces = fm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
           els.push({ guid: id, class: P.ifcType('fan').ifc_class, storey: 'Level 1', vertices: fm.vertices, faces: fm.faces, handle: g.h, layer: es.desc.layers.filter(function (l) { return l.type === 'fan'; })[0].layer, sheet: es.name, kind: 'fan', prov: 'derived',
-            ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : 'default' }, plane: r6(plane), rings: g.n }, members: [g.h] });
+            ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : DF.source('fan.depth') }, plane: r6(plane), rings: g.n }, members: [g.h] });
           report.fans = (report.fans || 0) + 1; fansUsed = true;
         });
       }
     });
-    if (planUsed) DEF.assume('panel.plane', 'end grid line, centred', 'a wall panel is drawn on the elevation, which does not say whether it is flush with the grid line or centred on it; the outermost grid line on the face\'s side is used and the thickness is centred on it', ['end grid line, centred']);
+    if (planUsed) DF.use('panel.plane');
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
-    if (netsUsed) DEF.assume('net.thickness', String(opts.netT > 0 ? opts.netT : 0.005), 'the netting thickness is not drawn; the area (the hatch boundary) is. Cost is by area', ['0.002', '0.005', '0.01']);
-    if (fansUsed) DEF.assume('fan.depth', String(opts.fanDepth > 0 ? opts.fanDepth : 0.3), 'the fan housing depth is not drawn; the diameter is (the outer circle). Position: centred on the wall plane', ['0.2', '0.3', '0.4']);
-    return { els: els, gaps: gaps, defaults: DEF.rows(), report: report };
+    return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
   return { buildPanels: buildPanels, LABEL: LABEL };
 });
