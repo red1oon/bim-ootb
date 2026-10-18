@@ -493,6 +493,22 @@
     "Farming Shed"
    ],
    "used_by": "dxf2defaults (selects the building-type overrides)"
+  },
+  "synth.column.belowgrade.size": {
+   "element": "IfcColumn",
+   "value": 0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "0 = not stated: no below-grade column is built; state the schedule's below-grade section (e.g. 0.3556 for 14 in)",
+   "used_by": "dxf2synth (--complete)"
+  },
+  "synth.column.grade_to_base": {
+   "element": "IfcColumn",
+   "value": 0.6096,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "grade to the column base (plinth): 2 ft, the datum read from a column detail",
+   "used_by": "dxf2synth (--complete)"
   }
  },
  "building_types": {

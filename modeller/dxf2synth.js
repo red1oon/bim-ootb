@@ -3,6 +3,7 @@
 // dxf2synth.js — best-effort completion (prompts/DXF2BIM_MODELLER_LANE.md §L13.2). Pure, Node + browser.
 // Adds the parts a drawing set implies but does not draw, each marked `derived` (computed from drawn evidence plus a stated convention) or `assumed`, each with a yellow default:
 //   ground slab   footprint = the outermost grid lines of the base plan; top = the lowest base of the drawn columns (they stand on it); thickness = the rate pack's slab description (250 mm)
+//   column below grade (§L29)   only when a section is stated (`synth.column.belowgrade.size` > 0): footing top -> grade at that section, grade -> the column base at the column's own section; grade = base - `synth.column.grade_to_base`
 //   gabled roof   eaves at the base corners of the highest end-gable panels, ridge at their apex, length = distance between the two gable planes; sheet thickness = display default
 // Nothing here is drawn: a missing input is a gap (GAP:synth_*), never a guess.
 (function (root, factory) {
@@ -44,6 +45,25 @@
       var top = Math.min.apply(null, cols.map(function (b) { return b.z0; })), m = prismBox(x0, y0, top - slabT, x1, y1, top);
       els.push({ guid: 'synth-slab-ground', class: P.ifcType('slab').ifc_class, storey: storey, vertices: m.vertices, faces: m.faces, handle: 'synth', layer: '(synthetic)', sheet: '(set)', kind: 'slab', prov: 'derived',
         ifc: P.ifcType('slab', 'Ground floor slab', null), mark: null, z0: r6(top - slabT), z1: r6(top), height_source: 'derived', size: { t: { number: slabT, source: 'default' } }, members: [] });
+    }
+    // ---- column below grade (§L29): a column schedule states a larger section below grade; one body from the footing top to grade (that section) and one from grade to the column base (the column's own section) ----
+    var ftg = bodies.filter(function (b) { return b.kind === 'footing'; });
+    if (cols.length && ftg.length) {
+      var bs = DF.use('synth.column.belowgrade.size');
+      if (bs > 0) {
+        var gh = DF.use('synth.column.grade_to_base'), bb2 = function (b) { var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity]; b.vertices.forEach(function (p) { for (var k = 0; k < 3; k++) { if (p[k] < mn[k]) mn[k] = p[k]; if (p[k] > mx[k]) mx[k] = p[k]; } }); return { mn: mn, mx: mx }; }, fb = ftg.map(function (f) { return { f: f, b: bb2(f) }; }), nb = 0;
+        cols.forEach(function (c, i) {
+          var cb = bb2(c), cx = (cb.mn[0] + cb.mx[0]) / 2, cy = (cb.mn[1] + cb.mx[1]) / 2, ft = fb.filter(function (q) { return cx >= q.b.mn[0] && cx <= q.b.mx[0] && cy >= q.b.mn[1] && cy <= q.b.mx[1]; })[0];
+          if (!ft) { gaps.push({ code: 'GAP:synth_column_no_footing', detail: 'column ' + (c.guid || i) + ' stands on no drawn footing: no below-grade part', handle: c.handle }); return; }
+          var zf = ft.b.mx[2], zg = c.z0 - gh;
+          if (!(zf < zg && zg < c.z0)) { gaps.push({ code: 'GAP:synth_column_levels', detail: 'column ' + (c.guid || i) + ': footing top ' + r6(zf) + ', grade ' + r6(zg) + ', base ' + r6(c.z0) + ' are not in order', handle: c.handle }); return; }
+          [['below', zf, zg, bs, bs, 'Column below grade'], ['stub', zg, c.z0, cb.mx[0] - cb.mn[0], cb.mx[1] - cb.mn[1], 'Column grade to base']].forEach(function (q) {
+            var m3 = prismBox(r6(cx - q[3] / 2), r6(cy - q[4] / 2), r6(q[1]), r6(cx + q[3] / 2), r6(cy + q[4] / 2), r6(q[2])); nb++;
+            els.push({ guid: 'synth-col' + q[0] + '-' + i, class: P.ifcType('column').ifc_class, storey: storey, vertices: m3.vertices, faces: m3.faces, handle: c.handle || 'synth', layer: c.layer || '(synthetic)', sheet: c.sheet || '(set)', kind: 'column', prov: 'derived',
+              ifc: P.ifcType('column', q[5], null), mark: null, z0: r6(q[1]), z1: r6(q[2]), height_source: 'derived', size: { x: { number: r6(q[3]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' }, y: { number: r6(q[4]), source: q[0] === 'below' ? DF.source('synth.column.belowgrade.size') : 'inherited' } }, members: [] });
+          });
+        });
+      }
     }
     // ---- gabled roof from the end-gable panels ----
     var pan = bodies.filter(function (b) { return b.kind === 'panel'; });
