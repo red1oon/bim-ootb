@@ -4,7 +4,7 @@
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the 448-body shed IFC (built by the product CLI from the eight real sheets, the exact ALLARGS line of witness_dxf_cli.js C31),
  * written back to a standard 2D set by std2d.js, puts columns, the building grid, doors and walls at the SAME COORDINATES as the ORIGINAL 0_FLOOR_PLAN.dxf (1 mm).
- *   F1 PREMISE  F2 COLUMNS  F3 GRID  F4 DOORS  F5 WALLS  F6 ACCOUNT  F7 CONTROL (the checks can fail)  F8 DOOR-IN-WALL (spatial invariant, §L21.2)
+ *   F1 R2PRIME  F2 COLUMNS  F3 GRID  F4 DOORS  F5 WALLS  F6 ACCOUNT  F7 CONTROL (the checks can fail)  F8 DOOR-IN-WALL (spatial invariant, §L21.2)
  * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_fullcircle.js   (needs ~/Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/)
  */
 'use strict';
@@ -44,13 +44,11 @@ const boxDist = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
   const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init(); const sdb = new SQL.Database();
   await Core.extractToDb({ WebIFC, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(path.join(out, 'model.ifc'))), db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: 'SHED', sourceName: 'model.ifc', log: () => {} });
   const q = sql => { const x = sdb.exec(sql); if (!x.length) return []; return x[0].values.map(v => Object.fromEntries(x[0].columns.map((c, i) => [c, v[i]]))); };
-  // F1 PREMISE
-  let thrown = null; try { S.writeStdSet(q, 'SHED'); } catch (e) { thrown = e.message; }
-  check('F1 PREMISE', 'the unmodified writer can plan the shed (then rule R2\' would be unnecessary)', thrown !== null && /elev/.test(thrown), 'writeStdSet throws: ' + thrown);
-  // R2' through the writer's own hook (spec §L21): the only walled storey is the footing storey -> no foundation storey, it is the grid storey
-  let applied = '';
-  const R = S.writeStdSet(q, 'SHED', { premodel: m => { if (m.foundation && m.grid_storey === null && m.storeys.filter(s => s.has_walls).length === 1) { applied = `R2' foundation '${m.foundation}' -> null; grid_storey = '${m.storeys.find(s => s.has_walls).name}'`; m.grid_storey = m.storeys.find(s => s.has_walls).name; m.foundation = null; } } });
-  say('  ' + (applied || 'R2\' NOT applied') + '; files=' + Object.keys(R.files).join(' ') + '; gaps=' + JSON.stringify(R.log.filter(l => l.indexOf('§GAP_SUMMARY') === 0)));
+  // F1 R2' (BIMCompiler #220): the unaided writer plans the single-storey shed (it threw before; see §L21)
+  let thrown = null, R = null; try { R = S.writeStdSet(q, 'SHED'); } catch (e) { thrown = e.message; }
+  check('F1 R2PRIME', 'the unmodified writer cannot plan the single-storey shed', thrown === null && R.log.some(l => l.indexOf('§STOREY_SINGLE') === 0) && Object.keys(R.files).some(f => /FLOOR_/.test(f)), thrown || R.log.filter(l => /^§STOREY/.test(l)).join(' / '));
+  if (!R) process.exit(1);
+  say('  files=' + Object.keys(R.files).join(' ') + '; gaps=' + JSON.stringify(R.log.filter(l => l.indexOf('§GAP_SUMMARY') === 0)));
   const planName = Object.keys(R.files).find(f => /FLOOR_/.test(f)), reg = parse(R.files[planName]), org = parse(fs.readFileSync(SHD + '0_FLOOR_PLAN.dxf', 'utf8'));
   const E = (d, layer, type) => d.entities.filter(e => e.layer === layer && (!type || e.type === type));
   // F2 COLUMNS
