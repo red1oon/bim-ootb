@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "about": "Reference for the best-effort building (prompts/DXF2BIM_MODELLER_LANE.md §L13). Data only. Each IFC class has ONE part entry: the material, and the quantity FORMULA over named measures of the body's mesh. Rates are never stated here: rate_ref names the class in the rate pack (viewer/rates/<pack>.json materials[class]); a class with no pack rate costs 0 and is listed.",
+  "measures": {
+    "V": "volume of the mesh, m3",
+    "A": "area of the largest pair of parallel faces, m2 (the plate, wall or slab face; exact for prisms)",
+    "t": "V / A, m (thickness of a plate-like body)",
+    "L": "longest bounding-box dimension, m",
+    "N": "1 (one body)"
+  },
+  "tint": { "drawn": null, "derived": "0xffb347", "assumed": "0xff2d2d" },
+  "parts": {
+    "IfcWall":    { "material": "Masonry wall",         "quantity": { "basis": "area",   "formula": "A", "unit": "M2" }, "factor": { "formula": "t / t_ref", "t_ref": "pack_desc_mm", "why": "the pack rate is per m2 at the thickness in its description; a thicker wall costs proportionally more per m2" },
+                    "materialByLabel": [ { "match": "brick", "material": "Brick masonry" }, { "match": "block", "material": "Concrete blockwork" } ], "rate_ref": { "class": "IfcWall" } },
+    "IfcSlab":    { "material": "Reinforced concrete",  "quantity": { "basis": "area",   "formula": "A", "unit": "M2" }, "factor": { "formula": "t / t_ref", "t_ref": "pack_desc_mm", "why": "pack rate is per m2 of slab at the thickness in its description" }, "rate_ref": { "class": "IfcSlab" } },
+    "IfcRoof":    { "material": "Profiled metal roofing", "quantity": { "basis": "area", "formula": "A", "unit": "M2" }, "rate_ref": { "class": "IfcRoof" } },
+    "IfcFooting": { "material": "Reinforced concrete",  "quantity": { "basis": "volume", "formula": "V", "unit": "M3" }, "rate_ref": { "class": "IfcFooting" } },
+    "IfcColumn":  { "material": "Reinforced concrete",  "quantity": { "basis": "length", "formula": "L", "unit": "M" },  "rate_ref": { "class": "IfcColumn" } },
+    "IfcBeam":    { "material": "Reinforced concrete",  "quantity": { "basis": "length", "formula": "L", "unit": "M" },  "rate_ref": { "class": "IfcBeam" } },
+    "IfcMember":  { "material": "Steel section",        "quantity": { "basis": "length", "formula": "L", "unit": "M" },  "rate_ref": { "class": "IfcMember" } },
+    "IfcPlate":   { "material": "Steel plate",          "quantity": { "basis": "area",   "formula": "A", "unit": "M2" }, "rate_ref": { "class": "IfcPlate" } },
+    "IfcDoor":    { "material": "Door set",             "quantity": { "basis": "count",  "formula": "N", "unit": "EA" }, "rate_ref": { "class": "IfcDoor" } },
+    "IfcWindow":  { "material": "Window",               "quantity": { "basis": "count",  "formula": "N", "unit": "EA" }, "rate_ref": { "class": "IfcWindow" } }
+  }
+}
