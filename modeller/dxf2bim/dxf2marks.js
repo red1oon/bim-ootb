@@ -125,7 +125,7 @@
         var zdup = d.sizes.find(function (q) { return q.id === zg && q.axis === za; });
         if (zdup && zdup.value !== zv) { errors.push(err('MARK:conflict', '@SIZE ' + zg + ' ' + za + ' has two values', { handle: m.handle })); return; }
         if (!zdup) d.sizes.push({ id: zg, axis: za, value: zv, by: by });
-      } else if (key === 'DEFAULT') {
+      } else if (key === 'DEFAULT') {                                                       // bim-ootb lane L18: a SETTING the user states for an element type the drawings do not carry: @DEFAULT=<key>,<value>
         var fk = val.indexOf(','), dk = fk > 0 ? val.slice(0, fk).trim() : '', dv = fk > 0 ? val.slice(fk + 1).trim() : '';
         if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(dk) || dv === '') { errors.push(err('MARK:malformed', '@DEFAULT needs <dotted.key>,<value>: ' + val, { handle: m.handle })); return; }
         var ddup = d.defaults.find(function (q) { return q.key === dk; });
