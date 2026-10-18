@@ -16,7 +16,7 @@
   var MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
-  var LABEL = /^([^A-Za-z]+?)\s*(brick|block|concrete|masonry|rcc|stone)?\s*wall\b/i;
+  var LABEL = /^([^A-Za-z]+?)\s*(?:[A-Za-z]+\s+)?wall\b/i;   // "10\" Brick Wall", "5\" Support Wall, H-24\"": a thickness, one descriptor word, "wall"
 
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
   function unitName(k) { return Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; }
@@ -36,10 +36,10 @@
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var markNums = {}; sheets.forEach(function (sh) { ((sh.desc && sh.desc.sizes) || []).forEach(function (q) { (markNums[q.id] = markNums[q.id] || {})[q.axis] = q.value; }); });
     var userN = function (id) { return Object.assign({}, markNums[id], opts.numbers && opts.numbers[id]); };
-    var elevs = sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel'; }); });
+    var elevs = sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel' || l.type === 'fan'; }); });
     if (!elevs.length) return { els: els, gaps: gaps, defaults: [], report: report };
     if (!plans.length) { gaps.push({ code: 'GAP:panel_no_plan', detail: 'a plan is needed for the grid' }); return { els: els, gaps: gaps, defaults: [], report: report }; }
-    var planUsed = false, tUsed = false, inherited = [];
+    var planUsed = false, tUsed = false, inherited = [], fansUsed = false;
     elevs.forEach(function (es, ei) {
       var rep = report.sheets[es.name] = { hatches: 0, loops: 0, panels: 0, left_out: 0 };
       var F = FACE[es.face]; if (!F) { gaps.push({ code: 'GAP:panel_face', sheet: es.name, detail: 'elevation face ' + es.face + ' is not minX/maxX/minY/maxY' }); return; }
@@ -102,6 +102,9 @@
           else if (dist.length > 1) { gaps.push(Object.assign({ code: 'GAP:panel_thickness_ambiguous', detail: dist.map(function (d) { return d.text; }).join(' | ') + ' both reach this height band' }, lp.base)); rep.left_out++; return; }
         } else { gaps.push(Object.assign({ code: 'GAP:panel_label_ambiguous', detail: 'two thickness labels point into this panel' }, lp.base)); rep.left_out++; return; }
         if (t == null) { gaps.push(Object.assign({ code: 'GAP:panel_no_thickness', detail: 'no thickness label points into this panel and none overlaps it in height (state it: @SIZE=' + lp.id + ',w,<m>)' }, lp.base)); rep.left_out++; return; }
+        // §L10 the number rule on the label: a stated height in the same label ("5\" Support Wall, H-24\"") against the drawn panel height; a conflict is surfaced (advisory), the drawn geometry stands
+        var hm = lp.label && /\bH\s*-\s*(\d+(?:\.\d+)?)\s*"/i.exec(lp.label.text);
+        if (hm) { var hs = Number(hm[1]) * 0.0254, hd = lp.z1 - lp.z0, rel = Math.abs(hd - hs) / hs; if (rel > 0.06) gaps.push(Object.assign({ code: 'GAP:panel_label_height', detail: 'the label "' + lp.label.text + '" states a height of ' + r6(hs) + ' m; the drawn panel is ' + r6(hd) + ' m high (ratio ' + r6(hd / hs) + '): the drawing is built, the number is for you to resolve' }, lp.base)); }
         // mesh: the prism extrudes the (along, z) polygon over the plane coordinate; permute onto the face
         var m = M.prism(lp.poly, plane + t / 2, t);
         if (!m) { gaps.push(Object.assign({ code: 'GAP:panel_degenerate', detail: 'the outline could not be triangulated' }, lp.base)); rep.left_out++; return; }
@@ -115,9 +118,32 @@
           size: { t: { number: r6(t), source: src, text: text }, plane: r6(plane), pattern: lp.h.pattern }, members: [lp.h.handle] });
         rep.panels++; report.panels++;
       });
+      // §L11.3 fans: concentric CIRCLEs of a layer typed `fan` on this elevation (the outer circle is the housing, the inner the hub): a disc of that diameter on the wall plane, depth a yellow default
+      var fanL = es.desc.layers.filter(function (l) { return l.type === 'fan'; }).map(function (l) { return l.layer; });
+      if (fanL.length && un) {
+        var groups = [];
+        es.dxf.entities.forEach(function (c) {
+          if (c.type !== 'CIRCLE' || fanL.indexOf(c.layer) < 0 || !c.center || !(c.radius > 0)) return;
+          var g = groups.filter(function (q) { return Math.hypot(q.cx - c.center.x, q.cy - c.center.y) <= 0.001 / k; })[0];
+          if (!g) groups.push({ cx: c.center.x, cy: c.center.y, r: c.radius, h: c.handle, n: 1 }); else { g.n++; if (c.radius > g.r) { g.r = c.radius; g.h = c.handle; } }
+        });
+        groups.forEach(function (g) {
+          var id = 'body-fan-' + ei + '-' + g.h, u = userN(id), depth = u.w > 0 ? Number(u.w) : (opts.fanDepth > 0 ? opts.fanDepth : 0.3), R = g.r * k, cu = map.toPlan(g.cx), cv = map.zOf(g.cy), poly = [];
+          for (var q = 0; q < 24; q++) poly.push([cu + R * Math.cos(2 * Math.PI * q / 24), cv + R * Math.sin(2 * Math.PI * q / 24)]);
+          var m = M.prism(poly, plane + depth / 2, depth); if (!m) { gaps.push({ code: 'GAP:fan_degenerate', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the circle could not be extruded' }); return; }
+          var V2, F2;
+          if (F.coord === 'X') { V2 = m.vertices.map(function (q2) { return [r6(q2[2]), r6(q2[0]), r6(q2[1])]; }); F2 = m.faces; }
+          else { V2 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F2 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
+          var fm = { vertices: V2, faces: F2 }; if (volume(fm) < 0) fm.faces = fm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
+          els.push({ guid: id, class: P.ifcType('fan').ifc_class, storey: 'Level 1', vertices: fm.vertices, faces: fm.faces, handle: g.h, layer: es.desc.layers.filter(function (l) { return l.type === 'fan'; })[0].layer, sheet: es.name, kind: 'fan', prov: 'derived',
+            ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : 'default' }, plane: r6(plane), rings: g.n }, members: [g.h] });
+          report.fans = (report.fans || 0) + 1; fansUsed = true;
+        });
+      }
     });
     if (planUsed) DEF.assume('panel.plane', 'end grid line, centred', 'a wall panel is drawn on the elevation, which does not say whether it is flush with the grid line or centred on it; the outermost grid line on the face\'s side is used and the thickness is centred on it', ['end grid line, centred']);
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
+    if (fansUsed) DEF.assume('fan.depth', String(opts.fanDepth > 0 ? opts.fanDepth : 0.3), 'the fan housing depth is not drawn; the diameter is (the outer circle). Position: centred on the wall plane', ['0.2', '0.3', '0.4']);
     return { els: els, gaps: gaps, defaults: DEF.rows(), report: report };
   }
   return { buildPanels: buildPanels, LABEL: LABEL };
