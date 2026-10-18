@@ -96,14 +96,18 @@ function run(args, log) {
   read.forEach(sh => { const k = sh.factor, u = Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; if (!u || !sh.dxf) return;
     const a = PR.auditDims(PR.dimsOf(sh.dxf.entities, sh.name), { unit: u }); a.rows.forEach(r => audit.rows.push(r)); Object.keys(a.counts).forEach(c => { audit.counts[c] = (audit.counts[c] || 0) + a.counts[c]; }); });
   say('§DIMAUDIT ' + Object.keys(audit.counts).map(c => c + '=' + audit.counts[c]).join(' ') + ' rows=' + audit.rows.length);
-  return { sheets, eff, read, out, choices, audit };
+  // §L12 entity accounting: every model-space entity is read by the product or listed as dropped
+  const AC = require('./dxf2account.js'), HT = require('./dxf2hatch.js'), account = { sheets: {}, dropped: {} };
+  sheets.forEach(sh => { const a = AC.account(sh.text, sh.dxf.entities, { HATCH: HT.parseHatches(sh.text).hatches.length, LEADER: HT.parseLeaders(sh.text).length }); account.sheets[sh.name] = { total: a.total, dropped: a.dropped }; a.dropped.forEach(d => { account.dropped[d.type] = (account.dropped[d.type] || 0) + d.n; }); });
+  say('§ACCOUNT entities=' + Object.keys(account.sheets).reduce((n, k) => n + account.sheets[k].total, 0) + ' dropped=' + (Object.keys(account.dropped).map(k => k + ':' + account.dropped[k]).join(',') || 'none'));
+  return { sheets, eff, read, out, choices, audit, account };
 }
 
 function write(res, dir) {
   fs.mkdirSync(path.join(dir, 'marked'), { recursive: true });
   res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
   const g = res.out.gate, R = g.R;
-  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ entity_account: res.account, dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
   const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, mark: e.mark || null, size: e.size || null, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
   if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
