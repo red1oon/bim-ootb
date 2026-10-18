@@ -504,13 +504,17 @@
     }
     // 1. every non-infill, non-fill element as its own body (fills: none in the page; with a library they are listed, see C1-PORT)
     R.els.forEach(function (e) {
-      if (R.infillGuid[e.guid] || e.class === 'IfcDoor' || e.class === 'IfcWindow') return;
+      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
       var pv = { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id };
       if (e.prov) pv.prov_kind = e.prov;                        // §L7.3 drawn | derived | assumed
       if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
       var ix = insert(e.guid, e.class, e.storey, e.vertices, e.faces, pv);
-      if (e.prov === 'assumed') inserts[ix].params.color = 0xff2d2d;   // §L7.3 RED = no drawing evidence for the body's existence/position
-      else if (e.prov === 'derived') inserts[ix].params.color = 0xffb347;   // §L13 AMBER = computed from drawn evidence plus a stated convention (synthetic slab/roof, inherited thickness, stated range)
+      var mc = e.ifc && e.ifc.colour;                               // §L26 the standard material colour (synthetic_ref.json material_colour) is the canvas colour; no entry = neutral grey
+      if (mc) inserts[ix].params.color = (Math.round(mc[0] * 255) << 16) | (Math.round(mc[1] * 255) << 8) | Math.round(mc[2] * 255);
+      if (opts.evidenceColours || !mc) {                            // the evidence lens (or no material colour at all): the old tint
+        if (e.prov === 'assumed') inserts[ix].params.color = 0xff2d2d;   // §L7.3 RED = no drawing evidence for the body's existence/position
+        else if (e.prov === 'derived') inserts[ix].params.color = 0xffb347;   // §L13 AMBER = computed from drawn evidence plus a stated convention (synthetic slab/roof, inherited thickness, stated range)
+      }
     });
     // 2. each §6 void group: ONE uncut body G x strip x [zb,zt] + one GEOM_CUT per opening z-interval (§SLIDE-SEED form)
     R.ST.forEach(function (st) {
@@ -550,7 +554,7 @@
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
     R.els.forEach(function (e) {
-      if (e.class !== 'IfcDoor' && e.class !== 'IfcWindow') return;
+      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing') return;
       var G = R.libGeom && R.libGeom[e.geometry_hash];
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];

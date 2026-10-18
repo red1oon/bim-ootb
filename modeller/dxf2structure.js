@@ -54,6 +54,13 @@
     // §L13.3 material dress: every body's IFC typing carries the reference's material (IfcMaterial + IfcRelAssociatesMaterial in the IFC writers)
     var BL = ctx.BL || (typeof module === 'object' && module.exports ? require('./dxf2bill.js') : (typeof self !== 'undefined' ? self.Dxf2Bill : null));
     if (BL && ctx.ref) res.els.forEach(function (e) { var m = BL.materialOf(e.class, e.ifc && e.ifc.type_name, ctx.ref); if (m && e.ifc) e.ifc = Object.assign({}, e.ifc, { material: m }); });
+    // §L26 the standard display colour of each material + the per-mesh evidence metadata (Pset_Dxf2Bim) travel in the body's IFC typing; a material without a palette entry is listed, never coloured at random
+    if (ctx.ref && ctx.ref.material_colour) { var PAL = ctx.ref.material_colour, miss = {};
+      res.els.forEach(function (e) { if (!e.ifc) return; var c = e.ifc.material && PAL[e.ifc.material];
+        var sz = e.size || {}, basis = Object.keys(sz).filter(function (k) { return sz[k] && typeof sz[k] === 'object' && sz[k].source; }).map(function (k) { return k + ':' + sz[k].source; }).join(' ');
+        if (!c && e.ifc.material) miss[e.ifc.material] = 1;
+        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: { Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis } }); });
+      Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))

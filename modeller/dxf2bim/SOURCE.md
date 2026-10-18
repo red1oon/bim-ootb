@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `cf588bf9b` — DXF2BIM std2d R2': footings sharing the only walled storey = no foundation storey (single-
+Commit: `c3eb99e6b` — extractor: material_name + element_dxf2bim table for files carrying Pset_Dxf2Bim (gated; D
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -20,7 +20,7 @@ Commit: `cf588bf9b` — DXF2BIM std2d R2': footings sharing the only walled stor
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | dfe0cc0bf5e8ae811ef3729e60bac11b893662beff87bca0cc56906ccac511f4 |
 | dxf2bim/std2d_scopes.js | deploy/dev/std2d_scopes.js | f9fcada1ad0f7bf2276d2cf5f8818748ef41ebe2af7ba4b857c3390a5edf5420 |
 | dxf2bim/polygon-clipping.js | deploy/dev/polygon-clipping.js | de2bdc061b61d537f7d12f6519f46e35113f0f246b6a06293a08b615454946cf |
-| dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | 46b258862ce87a05ecbfa183b26ec4619ccfacbc14bd4dd14a58568deaa6ad4f |
+| dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | a6983807130c9898b7809430e397221383018ad84924db4e27eaabf240ba55ce |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show cf588bf9b:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show c3eb99e6b:deploy/dev/<file> | sha256sum` equals the column above.

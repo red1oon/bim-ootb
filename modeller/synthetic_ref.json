@@ -8,6 +8,19 @@
     "L": "longest bounding-box dimension, m",
     "N": "1 (one body)"
   },
+  "material_colour": {
+    "about": "DISPLAY convention (prompts/DXF2BIM_MODELLER_LANE.md section L26): the standard colour each material is shown in, [r,g,b] 0..1. Not a measurement. A material with no entry is shown neutral grey and listed as no_colour.",
+    "Reinforced concrete": [0.62, 0.62, 0.60],
+    "Brick masonry": [0.69, 0.36, 0.28],
+    "Profiled metal roofing": [0.60, 0.68, 0.76],
+    "Netting": [0.45, 0.68, 0.45],
+    "Axial extraction fan": [0.30, 0.36, 0.42],
+    "Door set": [0.58, 0.42, 0.26],
+    "Steel section": [0.42, 0.47, 0.53],
+    "Steel plate": [0.34, 0.38, 0.44],
+    "Masonry wall": [0.72, 0.60, 0.50],
+    "Concrete blockwork": [0.70, 0.70, 0.68]
+  },
   "tint": {
     "drawn": null,
     "derived": "0xffb347",
