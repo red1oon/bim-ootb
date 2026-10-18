@@ -22,13 +22,19 @@
     var seen = {};
     sheets.forEach(function (sh) { (sh.dxf.entities || []).forEach(function (e) {
       if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === 'DXF2BIM-MARK') return;
-      var t = cleanText(e.text); if (t && WORD[kind].test(t) && !(kind === 'beam' && WORD.gradebeam.test(t))) seen[t] = 1; }); });
+      var t = cleanText(e.text); if (!t || /(plan|elevation|section)\s*$/i.test(t)) return;   // a sheet TITLE ("Beam Lay out Plan") never names a kind
+      if (WORD[kind].test(t) && !(kind === 'beam' && WORD.gradebeam.test(t))) seen[t] = 1; }); });
     return Object.keys(seen).sort();
   }
+  // an ELEVATION layer typed with ANY body kind is body line work (one CAD layer usually holds the column faces AND the beam band); which regions are read from it depends on the PLAN kind being matched
+  // (column/footing/plate: closed outlines, loops, vertical face pairs; beam/gradebeam/member: closed outlines + horizontal bands), so the elevation typing only says "this layer is body line work"
+  // the FRAME kinds (column, beam, gradebeam, member) share elevation line work; footing and plate use only a layer typed with their OWN kind (a column-typed elevation layer must never give a footing a height by centre line)
+  var FRAME = ['column', 'beam', 'gradebeam', 'member'];
+  function anyBodyLayers(sheet, kind) { return ((sheet.desc && sheet.desc.layers) || []).filter(function (l) { return l.type === kind || (FRAME.indexOf(kind) >= 0 && FRAME.indexOf(l.type) >= 0); }).map(function (l) { return l.layer; }); }
   function bodyLayers(sheet, kind) { return ((sheet.desc && sheet.desc.layers) || []).filter(function (l) { return l.type === kind; }).map(function (l) { return l.layer; }); }
 
   // axis-aligned rectangular regions on the given layers: closed outlines as drawn, else loops of the loose lines (§L7.9, same tolerance)
-  function regions(sheet, layers, tol) {
+  function regions(sheet, layers, tol, noLoops) {   // noLoops: band kinds read their loose lines as BANDS (§L9), not as the faces the crossing lines happen to enclose
     var out = [], nonRect = 0, ents = sheet.dxf.entities;
     ents.forEach(function (e) {
       if (!(e.type === 'LWPOLYLINE' && e.shape) || layers.indexOf(e.layer) < 0 || !(e.vertices || []).length) return;
@@ -38,7 +44,7 @@
       if (!rect) { nonRect++; return; }
       out.push({ x0: x0, y0: y0, x1: x1, y1: y1, handle: String(e.handle), members: [String(e.handle)], layer: e.layer });
     });
-    var sy = P.synthRects(ents, tol, layers);   // layers that already hold closed outlines are skipped inside
+    var sy = noLoops ? { entities: [], nonRect: 0, mixed: 0 } : P.synthRects(ents, tol, layers);   // layers that already hold closed outlines are skipped inside
     sy.entities.forEach(function (e) {
       var xs = e.vertices.map(function (v) { return v.x; }), ys = e.vertices.map(function (v) { return v.y; });
       out.push({ x0: Math.min.apply(null, xs), y0: Math.min.apply(null, ys), x1: Math.max.apply(null, xs), y1: Math.max.apply(null, ys), handle: e.handle, members: e.members, layer: e.layer });
@@ -56,9 +62,11 @@
       if (Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) > tol) V.push({ x: (a.x + b.x) / 2, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y), handles: [String(e.handle)], layer: e.layer });
     });
     // CAD draws one face as several collinear pieces (split at a datum or a wall): merge touching/overlapping pieces on the same x into one line first
-    V.sort(function (p, q) { return p.x - q.x || p.y0 - q.y0; });
+    // CAD coordinates carry float noise (1e-11): sort by the QUANTISED position, then by extent, or pieces of one line interleave and the merge swallows the wrong ones
+    var qz = function (c) { return Math.round(c / tol); };
+    V.sort(function (p, q) { return qz(p.x) - qz(q.x) || p.y0 - q.y0; });
     var M = [];
-    V.forEach(function (v) { var l = M[M.length - 1]; if (l && Math.abs(l.x - v.x) <= tol && v.y0 <= l.y1 + tol) { l.y1 = Math.max(l.y1, v.y1); l.handles = l.handles.concat(v.handles); } else M.push({ x: v.x, y0: v.y0, y1: v.y1, handles: v.handles.slice(), layer: v.layer }); });
+    V.forEach(function (v) { var l = M[M.length - 1]; if (l && qz(l.x) === qz(v.x) && v.y0 <= l.y1 + tol) { l.y0 = Math.min(l.y0, v.y0); l.y1 = Math.max(l.y1, v.y1); l.handles = l.handles.concat(v.handles); } else M.push({ x: v.x, y0: v.y0, y1: v.y1, handles: v.handles.slice(), layer: v.layer }); });
     V = M;
     var out = [], used = {};
     for (var i = 0; i < V.length; i++) for (var j = i + 1; j < V.length; j++) {
@@ -73,6 +81,51 @@
       break;
     }
     return out;
+  }
+
+  // §L9 BAND regions (beams, grade beams, members): two neighbouring parallel axis-aligned LINEs closer than widthMax bound a band over the OVERLAP of their extents. One long edge + the PIECES of the
+  // other edge give one region per piece (the span between column faces: no bridging); the shorter edge must lie within the longer one (tol) or overlap it by >= 50% of the longer (the column rule).
+  // horizontal=true: lines along x (the band spans x, its width is in y); false: lines along y.
+  var BAND_KINDS = ['beam', 'gradebeam', 'member'];
+  function bandRegions(sheet, layers, tol, widthMax, horizontal) {
+    var V = [];
+    sheet.dxf.entities.forEach(function (e) {
+      if (e.type !== 'LINE' || layers.indexOf(e.layer) < 0 || !e.vertices || e.vertices.length < 2) return;
+      var a = e.vertices[0], b = e.vertices[1], along = horizontal ? Math.abs(a.y - b.y) <= tol && Math.abs(a.x - b.x) > tol : Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) > tol;
+      if (!along) return;
+      V.push(horizontal ? { c: (a.y + b.y) / 2, a0: Math.min(a.x, b.x), a1: Math.max(a.x, b.x), h: String(e.handle) } : { c: (a.x + b.x) / 2, a0: Math.min(a.y, b.y), a1: Math.max(a.y, b.y), h: String(e.handle) });
+    });
+    var qz = function (c) { return Math.round(c / tol); };   // quantised position: float noise must not reorder the lines
+    V.sort(function (p, q) { return qz(p.c) - qz(q.c) || p.a0 - q.a0; });
+    // NO merging of touching collinear pieces here (unlike column faces): a column's top line touches the beam soffit pieces on both sides and would fuse them into one line across the column (the beam would be bridged);
+    // every drawn line stays itself, a span is the OVERLAP of the long edge with one piece of the other edge
+    var M = V.map(function (v) { return { c: v.c, a0: v.a0, a1: v.a1, hs: [v.h] }; });
+    var out = [];
+    for (var i = 0; i < M.length; i++) for (var j = i + 1; j < M.length; j++) {
+      var dd = M[j].c - M[i].c; if (dd > widthMax) break; if (dd <= tol) continue;
+      var o0 = Math.max(M[i].a0, M[j].a0), o1 = Math.min(M[i].a1, M[j].a1), L1 = M[i].a1 - M[i].a0, L2 = M[j].a1 - M[j].a0, longer = Math.max(L1, L2), shorter = Math.min(L1, L2);
+      if (!(o1 - o0 > tol) || !((o1 - o0) >= shorter - tol || (o1 - o0) >= 0.5 * longer)) continue;
+      var between = M.some(function (q, k) { return k !== i && k !== j && q.c > M[i].c + tol && q.c < M[j].c - tol && q.a1 > o0 + tol && q.a0 < o1 - tol; });
+      if (between) continue;
+      out.push(horizontal ? { x0: o0, x1: o1, y0: M[i].c, y1: M[j].c, handle: M[i].hs[0] + '+' + M[j].hs[0], members: M[i].hs.concat(M[j].hs), layer: sheet.dxf.entities.filter(function (e) { return String(e.handle) === M[i].hs[0]; })[0].layer, band: true, width: dd }
+        : { x0: M[i].c, x1: M[j].c, y0: o0, y1: o1, handle: M[i].hs[0] + '+' + M[j].hs[0], members: M[i].hs.concat(M[j].hs), layer: sheet.dxf.entities.filter(function (e) { return String(e.handle) === M[i].hs[0]; })[0].layer, band: true, width: dd });
+    }
+    return out;
+  }
+  var sameRegion = function (a, b, tol) { return Math.abs(a.x0 - b.x0) <= tol && Math.abs(a.x1 - b.x1) <= tol && Math.abs(a.y0 - b.y0) <= tol && Math.abs(a.y1 - b.y1) <= tol; };
+  // §L9.4 the type mark (B-1, F-2, ...) written next to a band region: the nearest such label within maxD (drawing units); two DIFFERENT marks about equally near name nothing
+  function nearMark(sheet, g, maxD) {
+    var cx = (g.x0 + g.x1) / 2, cy = (g.y0 + g.y1) / 2, c = [];
+    sheet.dxf.entities.forEach(function (e) {
+      if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === 'DXF2BIM-MARK') return;
+      var t = cleanText(e.text); if (!/^[A-Z]{1,3}-\d+$/.test(t)) return;
+      var p = e.startPoint || e.position || {}; if (typeof p.x !== 'number') return;
+      var d = Math.hypot(p.x - cx, p.y - cy); if (d <= maxD) c.push({ t: t, d: d });
+    });
+    c.sort(function (a, b) { return a.d - b.d; });
+    if (!c.length) return null;
+    var other = c.filter(function (x) { return x.t !== c[0].t; })[0];
+    return other && other.d < 1.25 * c[0].d ? null : c[0].t;
   }
 
   function buildBodies(sheets, opts) {
@@ -109,10 +162,12 @@
       var out = [];
       maps.forEach(function (m) {
         if (!m.map) return;
-        var ly = bodyLayers(m.sheet, kind); if (!ly.length) return;
-        var r = regions(m.sheet, ly, snap), k = m.map.k;
+        var ly = anyBodyLayers(m.sheet, kind); if (!ly.length) return;
+        var r = regions(m.sheet, ly, snap, BAND_KINDS.indexOf(kind) >= 0), k = m.map.k;
         var drawn = r.list;   // a line pair that is only the two sides of an already closed region is not a second region
-        r.list = drawn.concat(pairRegions(m.sheet, ly, snap, pairMaxM / k).filter(function (pr) { return !drawn.some(function (d) { return Math.abs(d.x0 - pr.x0) <= snap && Math.abs(d.x1 - pr.x1) <= snap && Math.abs(d.y0 - pr.y0) <= snap && Math.abs(d.y1 - pr.y1) <= snap; }); }));
+        if (BAND_KINDS.indexOf(kind) >= 0) drawn = drawn.concat(bandRegions(m.sheet, ly, snap, pairMaxM / k, true).filter(function (bd) { return !drawn.some(function (d) { return sameRegion(d, bd, snap); }); }));   // §L9: elevation bands (top line + soffit pieces)
+        var pairs = BAND_KINDS.indexOf(kind) >= 0 ? [] : pairRegions(m.sheet, ly, snap, pairMaxM / k);
+        r.list = drawn.concat(pairs.filter(function (pr) { return !drawn.some(function (d) { return sameRegion(d, pr, snap); }); }));
         r.list.forEach(function (g) {
           var h = [m.map.toPlan(g.x0), m.map.toPlan(g.x1)].sort(function (a, b) { return a - b; });
           out.push({ axis: m.map.axis, p0: r6(h[0]), p1: r6(h[1]), z0: r6(m.map.zOf(Math.min(g.y0, g.y1))), z1: r6(m.map.zOf(Math.max(g.y0, g.y1))), sheet: m.sheet.name, handle: g.handle, pair: !!g.pair });
@@ -130,7 +185,12 @@
         var ly = bodyLayers(ps, kind); if (!ly.length) return;
         if (!pofs[pi].ok) { gaps.push({ code: 'GAP:body_plan_not_aligned', kind: kind, sheet: ps.name, handle: null, detail: pofs[pi].why.join('; ') + ' (aligned to ' + plans[0].name + ')' }); rep.gaps++; return; }
         if (!ER) ER = elevRegions(kind);
-        var r = regions(ps, ly, snap), k = ps.factor;
+        var r = regions(ps, ly, snap, BAND_KINDS.indexOf(kind) >= 0), k = ps.factor;
+        if (BAND_KINDS.indexOf(kind) >= 0) { const drawn0 = r.list.slice(); [true, false].forEach(function (hz) { bandRegions(ps, ly, snap, pairMaxM / k, hz).forEach(function (bd) { if (!drawn0.some(function (d) { return sameRegion(d, bd, snap); })) r.list.push(bd); }); }); }
+        // §L9.3 the user's @EXCLUDE rectangles (drawing units, this sheet): a region wholly inside one is skipped and counted, never silently
+        var exr = (ps.desc && ps.desc.excludes) || [], nEx = 0;
+        if (exr.length) r.list = r.list.filter(function (g) { var inside = exr.some(function (e) { return Math.min(g.x0, g.x1) >= e[0] - snap && Math.max(g.x0, g.x1) <= e[2] + snap && Math.min(g.y0, g.y1) >= e[1] - snap && Math.max(g.y0, g.y1) <= e[3] + snap; }); if (inside) nEx++; return !inside; });
+        rep.excluded = (rep.excluded || 0) + nEx;
         rep.nonRect += r.nonRect; rep.plan_regions += r.list.length;
         r.list.forEach(function (g) {
           var x0 = r6(Math.min(g.x0, g.x1) * k + pofs[pi].x), x1 = r6(Math.max(g.x0, g.x1) * k + pofs[pi].x), y0 = r6(Math.min(g.y0, g.y1) * k + pofs[pi].y), y1 = r6(Math.max(g.y0, g.y1) * k + pofs[pi].y);
@@ -139,7 +199,9 @@
           seenFp[fp] = 1;
           var interval = function (e) { var I = e.axis === 'X' ? [x0, x1] : [y0, y1]; return { I: I, dc: Math.abs((e.p0 + e.p1) / 2 - (I[0] + I[1]) / 2), dw: Math.abs((e.p1 - e.p0) - (I[1] - I[0])), w: I[1] - I[0] }; };
           var exact = ER.filter(function (e) { var q = interval(e); return Math.abs(e.p0 - q.I[0]) <= tolM && Math.abs(e.p1 - q.I[1]) <= tolM; }), matchKind = 'interval', cands = exact;
-          if (!cands.length) { cands = ER.filter(function (e) { var q = interval(e); return q.dc <= tolM && q.dw <= 0.5 * q.w; }); matchKind = 'centre'; }   // same centre line, a narrower/wider drawn face: reported, never silent
+          if (!cands.length) { cands = ER.filter(function (e) { var q = interval(e); return q.dc <= tolM && q.dw <= 0.5 * q.w; }); matchKind = 'centre'; }
+          // §L9 a span drawn in pieces (a label clips the line: the shed's 04-05 bay is two 50 in pieces) lies WITHIN the elevation band of its bay: it inherits that band's height (contained, never wider than the band)
+          if (!cands.length && BAND_KINDS.indexOf(kind) >= 0) { cands = ER.filter(function (e) { var q = interval(e); return q.I[0] >= e.p0 - tolM && q.I[1] <= e.p1 + tolM && (e.p1 - e.p0) <= 3.5 * q.w; }); matchKind = 'within'; }   // only a band of ABOUT the bay's size (<= 3.5x the piece): a narrow region inside a long band (an end beam inside the plinth line) must not borrow its height   // same centre line, a narrower/wider drawn face: reported, never silent
           var distinct = []; cands.forEach(function (c) { if (!distinct.some(function (d) { return Math.abs(d.z0 - c.z0) <= tolM && Math.abs(d.z1 - c.z1) <= tolM; })) distinct.push(c); });
           var base = { kind: kind, sheet: ps.name, handle: g.handle, layer: g.layer };
           var hsrc = 'elevation', st0 = stated[kind];
@@ -147,6 +209,7 @@
           if (!distinct.length && st0) { distinct = [{ z0: st0.z0, z1: st0.z1 }]; cands = []; matchKind = null; hsrc = 'stated'; }
           if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' + ' (state its z range with @BODYZ)' }, base)); rep.gaps++; return; }
           if (distinct.length > 1) { gaps.push(Object.assign({ code: 'GAP:body_ambiguous_z', detail: distinct.map(function (d) { return d.z0 + '..' + d.z1 + ' (' + d.sheet + ' ' + d.handle + ')'; }).join(' | ') }, base)); rep.gaps++; return; }
+          var mark = BAND_KINDS.indexOf(kind) >= 0 ? nearMark(ps, g, 5.0 / k) : null;   // §L9.4 per-region type mark (B-1 / B-2)
           var z = distinct[0], pm = S.prismRect([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], [], z.z0, z.z1);
           if (!pm) { gaps.push(Object.assign({ code: 'GAP:body_degenerate', detail: 'z range ' + z.z0 + '..' + z.z1 }, base)); rep.gaps++; return; }
           var guid = 'body-' + kind + '-' + pi + '-' + g.handle;
@@ -154,7 +217,7 @@
           seen[guid] = 1;
           var lv = levels.filter(function (l) { return l <= z.z0 + tolM; }).pop(); if (lv === undefined) lv = levels[0];   // several plans of one storey share ONE storey
           els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
-            kind: kind, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, names[kind] || null, null), members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+            kind: kind, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, mark || names[kind] || null, null), mark: mark, band: !!g.band, width_m: g.width ? r6(g.width * k) : null, members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
           if (cands.some(function (c) { return c.pair; })) pairUsed = true;   // the default row exists only when a body was actually matched through a drawn line pair
           rep.bodies++;
         });
@@ -174,5 +237,5 @@
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }
 
-  return { buildBodies: buildBodies, KINDS: KINDS };
+  return { buildBodies: buildBodies, KINDS: KINDS, bandRegions: bandRegions };
 });

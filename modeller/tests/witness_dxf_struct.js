@@ -108,4 +108,19 @@ runE2E('W-DXF-STRUCT', async (t) => {
   await pg.evaluate(() => document.querySelector('#dm-panel [data-act="bodyzdel"]').click()); await idle();
   const d9 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate; return { left: g.structure.left_out, row: !!document.querySelector('#dm-panel [data-bodyz-row]') }; });
   t.assert('S9d CONTROL removing the statement puts them back to waiting (2 left out), never a remembered height', d9.left === 2 && !d9.row, JSON.stringify(d9));
+  // S11 (§L9) beams: a layer name SHARED by two plan sheets (Dim) is typed beam on ONE of them (per-sheet row); the beam sheet has its own origin; the elevation band (layer typed column) gives the heights
+  const GP = [[0, 850], [1150, 3850], [4150, 6850], [7150, 8000]];
+  const bandPlan = (dx, dy) => line('Dim', 0 + dx, 1000 + dy, 8000 + dx, 1000 + dy) + GP.map(([a, b]) => line('Dim', a + dx, 1300 + dy, b + dx, 1300 + dy)).join('');
+  const planS = f('a_plan.dxf', doc(cols.map(([a, b], i) => poly('Col', a, 0, b, 300, 'C' + i)).join('') + line('Dim', 0, 5000, 8000, 5000) + line('Dim', 0, 5300, 8000, 5300), PLAN));
+  const PLANB = [['@SET=T'], ['@VIEW=PLAN'], ['@UNITS=mm'], ['@LEVEL=0'], ['@NAME=B'], ['@GRIDX=A', 6000, 0], ['@GRIDX=B', 9000, 0], ['@GRIDY=1', 0, 850], ['@GRIDY=2', 0, 2850]];
+  const beamPlan = f('z_beams.dxf', doc(bandPlan(5000, 700), PLANB));
+  const elevB = f('southB.dxf', doc(cols.map(([a, b]) => lbox('Col', a, 0, b, 3000)).join('') + line('Col', 0, 3300, 8000, 3300) + GP.map(([a, b]) => line('Col', a, 3000, b, 3000)).join(''), ELEV));
+  await open([planS, elevB, beamPlan]); await layersOpen();
+  await choose('plan', 'Col', 'column'); await choose('elev', 'Col', 'column');
+  await pg.evaluate(() => { const b = document.querySelector('#dm-panel [data-act="laysplit"][data-key="plan|Dim"]'); if (b) b.click(); }); await t.sleep(400);
+  const sub = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel [data-layer-row^="plan|Dim|"]')].map(e => e.getAttribute('data-layer-row')));
+  await pg.select('#dm-panel [data-layer-row="plan|Dim|z_beams.dxf"] select', 'beam'); await idle();
+  const m11 = await pg.evaluate(() => { const g = window.DxfImportUI.state.gate, S = window.DxfMetaEditor.state.sheets, B = g.R.els.filter(e => e.kind === 'beam'); return { layerMarks: S.map(sh => sh.name + ':' + sh.marks.filter(m => m.key === 'LAYER').map(m => m.value).join(';')), ok: g.ok, bodies: g.structure.bodies, left: g.structure.left_out, beams: B.length, z: [...new Set(B.map(e => e.z0 + '..' + e.z1))], xs: B.map(e => Math.round(Math.min(...e.vertices.map(v => v[0])) * 1000)).sort((p, q) => p - q), pooled: (document.querySelector('#dm-panel [data-layer-row="plan|Dim"] select') || {}).value }; });
+  t.assert('S11 per-sheet layer typing: the shared layer Dim is typed beam on the beam sheet ONLY (the plan sheet\'s own Dim lines stay untyped and produce nothing), the beam sheet (own origin) aligns by its grid labels: 4 spans at x 0 / 1.15 / 4.15 / 7.15 m in the base frame, z 3.0..3.3 m from the elevation band; the pooled row reads "(per sheet)"', sub.length === 2 && !/Dim/.test(m11.layerMarks.find(x => /^a_plan/.test(x))) && /z_beams\.dxf:.*Dim,beam/.test(m11.layerMarks.join('|')) && m11.ok && m11.beams === 4 && m11.left === 0 && m11.z.join() === '3..3.3' && m11.xs.join() === '0,1150,4150,7150' && m11.pooled === '__mixed', JSON.stringify(m11));
 });
+

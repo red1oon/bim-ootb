@@ -6,11 +6,12 @@
 //
 // usage: node dxf2bim_cli.js --sheets a.dxf b.dxf ... --out <dir> [--accept-suggestions]
 //          [--set NAME] [--level N] [--datum <sheet-substr>:<z m>@<drawing y>] [--haxis <sheet-substr>:<+X|-X|+Y|-Y>]
-//          [--layer <plan|elev|section|roof>:<layer>=<kind>] [--bodyz <kind>=<z0 m>,<z1 m>] [--choice <key>=<value>] [--ifc]
+//          [--layer <plan|elev|section|roof>:<layer>=<kind>[@<sheet-substr>]] [--exclude <sheet-substr>:x0,y0,x1,y1] [--bodyz <kind>=<z0 m>,<z1 m>] [--choice <key>=<value>] [--ifc]
 //   --accept-suggestions  accept every suggestion (PR-*) until none is left (the page's "Accept all"), before and after the typed facts
 //   --set / --level       @SET on every sheet without one / @LEVEL on every plan sheet            (the page's Set / Level (m) fields)
 //   --datum               one @Z level datum: the sheet whose name contains <sheet-substr>        (the page's "Level datums (@Z)" add row)
-//   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer     (the page's Layers select)
+//   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer (the page's pooled Layers select), or only on the sheets whose name contains <sheet-substr> (the page's per-sheet row)
+//   --exclude             @EXCLUDE=x0,y0,x1,y1 (drawing units) on the sheet whose name contains <sheet-substr>: plan regions wholly inside are skipped and counted (the page's Exclude tool)
 //   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
@@ -21,14 +22,14 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], choice: [], out: null, accept: false, set: null, level: null, ifc: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
     else if (k === '--accept-suggestions') a.accept = true;
     else if (k === '--ifc') a.ifc = true;
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
-    else if (['--layer', '--datum', '--haxis', '--bodyz', '--choice'].includes(k)) a[k.slice(2)].push(argv[++i]);
+    else if (['--layer', '--datum', '--haxis', '--bodyz', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
   }
   if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
@@ -76,8 +77,9 @@ function run(args, log) {
   args.haxis.forEach(h => { const [n, v] = h.split(':'); const sh = sheets.find(s => s.name.includes(n)); if (!sh) throw new Error('--haxis: no sheet ' + n); put(sh, 'HAXIS', v); });
   args.datum.forEach(d => { const m = /^(.+?):([-\d.]+)@([-\d.]+)$/.exec(d); if (!m) throw new Error('--datum <sheet>:<z>@<y>: ' + d); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--datum: no sheet ' + m[1]); put(sh, 'Z', m[2], 0, Number(m[3])); });
   if (args.accept) acceptAll('3');
-  args.layer.forEach(l => { const m = /^(plan|elev|section|roof):(.+)=([a-z]+)$/.exec(l); if (!m) throw new Error('--layer <role>:<layer>=<kind>: ' + l);
-    sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && sh.dxf.entities.some(e => e.layer === m[2])).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
+  args.layer.forEach(l => { const m = /^(plan|elev|section|roof):(.+)=([a-z]+)(?:@(.+))?$/.exec(l); if (!m) throw new Error('--layer <role>:<layer>=<kind>[@<sheet>]: ' + l);
+    sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && (!m[4] || sh.name.includes(m[4])) && sh.dxf.entities.some(e => e.layer === m[2])).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
+  (args.exclude || []).forEach(x => { const m = /^(.+?):([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)$/.exec(x); if (!m) throw new Error('--exclude <sheet>:x0,y0,x1,y1: ' + x); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--exclude: no sheet ' + m[1]); put(sh, 'EXCLUDE', m.slice(2, 6).join(',')); });
   args.bodyz.forEach(b => { const m = /^([a-z]+)=([-\d.]+),([-\d.]+)$/.exec(b); if (!m) throw new Error('--bodyz <kind>=<z0>,<z1>: ' + b); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--bodyz: no plan sheet'); put(sh, 'BODYZ', m[1] + ',' + m[2] + ',' + m[3]); });
   const choices = {}; args.choice.forEach(c => { const i = c.indexOf('='); choices[c.slice(0, i)] = c.slice(i + 1); });
 
@@ -93,7 +95,7 @@ function write(res, dir) {
   fs.mkdirSync(path.join(dir, 'marked'), { recursive: true });
   res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
   const g = res.out.gate, R = g.R;
-  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), run_id: R && R.run_id }, null, 1));
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
   const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
   if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
