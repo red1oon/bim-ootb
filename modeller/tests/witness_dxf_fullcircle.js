@@ -4,7 +4,7 @@
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the 448-body shed IFC (built by the product CLI from the eight real sheets, the exact ALLARGS line of witness_dxf_cli.js C31),
  * written back to a standard 2D set by std2d.js, puts columns, the building grid, doors and walls at the SAME COORDINATES as the ORIGINAL 0_FLOOR_PLAN.dxf (1 mm).
- *   F1 PREMISE  F2 COLUMNS  F3 GRID  F4 DOORS  F5 WALLS  F6 ACCOUNT  F7 CONTROL (the checks can fail)
+ *   F1 PREMISE  F2 COLUMNS  F3 GRID  F4 DOORS  F5 WALLS  F6 ACCOUNT  F7 CONTROL (the checks can fail)  F8 DOOR-IN-WALL (spatial invariant, §L21.2)
  * Usage: NODE_PATH=<dir with web-ifc, sql.js> node modeller/tests/witness_dxf_fullcircle.js   (needs ~/Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/)
  */
 'use strict';
@@ -84,6 +84,16 @@ const boxDist = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
   say('  ACCOUNT ' + Object.keys(cls).sort().map(c => `${c} ${cls[c]} (${why[c] || 'UNEXPLAINED'})`).join('; '));
   const unwalled = wb.filter((b, j) => !touched.has(j)).map(b => b.guid + ' z' + b.z0.toFixed(2) + '-' + b.z1.toFixed(2));
   check('F6 ACCOUNT', 'a body class has neither plan content nor a stated reason', Object.keys(cls).every(c => why[c]), `${Object.keys(cls).length} classes explained; ${unwalled.length} of ${wb.length} wall bodies have no contour inside: ${unwalled.slice(0, 8).join(', ')}${unwalled.length > 8 ? ' ...' : ''}`);
+  // F8 DOOR-IN-WALL (§L21.2): a door overlaps no wall body in 3D, and sits in a gap of its own wall line with wall bodies bounding it on both sides
+  const wall3 = wb.map(b => b.bbox.map(v => v * 1000)), clr = [];
+  const dd = bodies.filter(b => b.class === 'IfcDoor').map(b => ({ g: b.guid, b: b.bbox.map(v => v * 1000) }));
+  const overlaps = dd.filter(d => wall3.some(w => w[0] < d.b[3] && w[3] > d.b[0] && w[1] < d.b[4] && w[4] > d.b[1] && w[2] < d.b[5] && w[5] > d.b[2]));
+  dd.forEach(d => {   // the wall line runs along x (door depth << width); neighbours: wall bodies (any direction: a gable end counts) touching the door's y band +-200 mm, to its left and right
+    const near = wall3.filter(w => w[1] - 200 < d.b[4] && w[4] + 200 > d.b[1]);
+    const left = near.filter(w => w[3] <= d.b[0] + 0.5).map(w => d.b[0] - w[3]), right = near.filter(w => w[0] >= d.b[3] - 0.5).map(w => w[0] - d.b[3]);
+    clr.push(left.length && right.length ? `${d.g.replace('body-door-0-', '')} ${Math.min(...left).toFixed(0)}|${Math.min(...right).toFixed(0)}` : `${d.g} NO-NEIGHBOUR`);
+  });
+  check('F8 DOOR-IN-WALL', 'a door overlaps a wall body, or is not bounded by walls on its own wall line (so there is no opening to cut)', dd.length === 4 && overlaps.length === 0 && clr.every(c => !/NO-NEIGHBOUR/.test(c)), `doors=${dd.length} overlapping wall bodies=${overlaps.length}; clearance left|right to the neighbouring panels (mm): ${clr.join('; ')}`);
   // F7 CONTROL
   const moved = rc.map((b, i) => i === 0 ? b.map(v => v + 2) : b), dropped = rc.slice(1), mv = match(oc, moved, boxDist), dr = match(oc, dropped, boxDist);
   const gmoved = rg.map((g, i) => i === 0 ? [g[0], g[1] + 2] : g), mg = match(og, gmoved, gd);
