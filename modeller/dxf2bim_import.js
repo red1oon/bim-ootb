@@ -510,6 +510,7 @@
       if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
       var ix = insert(e.guid, e.class, e.storey, e.vertices, e.faces, pv);
       if (e.prov === 'assumed') inserts[ix].params.color = 0xff2d2d;   // §L7.3 RED = no drawing evidence for the body's existence/position
+      else if (e.prov === 'derived') inserts[ix].params.color = 0xffb347;   // §L13 AMBER = computed from drawn evidence plus a stated convention (synthetic slab/roof, inherited thickness, stated range)
     });
     // 2. each §6 void group: ONE uncut body G x strip x [zb,zt] + one GEOM_CUT per opening z-interval (§SLIDE-SEED form)
     R.ST.forEach(function (st) {

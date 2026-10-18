@@ -29,6 +29,12 @@
       var pn = PN.buildPanels(sheets, { numbers: ctx.numbers });
       res.els = res.els.concat(pn.els); res.gaps = res.gaps.concat(pn.gaps); res.defaults = (res.defaults || []).concat(pn.defaults); res.report = Object.assign({}, res.report, { panels: pn.report });
     }
+    // §L13.2 best-effort completion (opt-in: ctx.complete = { slabT, roofT, overhang }): the floor slab and the gabled roof the drawings imply, derived + yellow defaults
+    var SY = ctx.SY || (typeof module === 'object' && module.exports ? require('./dxf2synth.js') : (typeof self !== 'undefined' ? self.Dxf2Synth : null));
+    if (SY && ctx.complete && !refused.length) {
+      var sy = SY.complete(sheets, res.els, ctx.complete);
+      res.els = res.els.concat(sy.els); res.gaps = res.gaps.concat(sy.gaps); res.defaults = (res.defaults || []).concat(sy.defaults);
+    }
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))

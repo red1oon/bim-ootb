@@ -13,6 +13,7 @@
 //   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer (the page's pooled Layers select), or only on the sheets whose name contains <sheet-substr> (the page's per-sheet row)
 //   --exclude             @EXCLUDE=x0,y0,x1,y1 (drawing units) on the sheet whose name contains <sheet-substr>: plan regions wholly inside are skipped and counted (the page's Exclude tool)
 //   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
+//   --complete            add the floor slab and the gabled roof the drawings imply (derived, amber, yellow defaults; §L13.2)
 //   --pack                rate pack name for bill.json (default cidb2024_my; viewer/rates/<name>.json)
 //   --size                @SIZE=<body id>,<x|y|w|d>,<metres> on the first plan sheet              (the user's number for one body side, §L10.9)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
@@ -24,12 +25,13 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
     else if (k === '--accept-suggestions') a.accept = true;
     else if (k === '--ifc') a.ifc = true;
+    else if (k === '--complete') a.complete = true;
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
     else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
@@ -90,7 +92,9 @@ function run(args, log) {
   // effective sheets -> the importer's own reader (with the pre-processor) -> the structure judgement
   const eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) }));
   const read = I.readSheets(eff, { prep: P, prepChoices: choices });
-  const out = ST.judge(read, { I, B, choices });
+  const packName = (args.pack && args.pack[0]) || 'cidb2024_my', packFile = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json'), packJ = fs.existsSync(packFile) ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : null;
+  const BL0 = require('./dxf2bill.js'), complete = args.complete ? { slabT: packJ ? BL0.tRefOf(packJ.materials.IfcSlab) : null } : null;
+  const out = ST.judge(read, { I, B, choices, complete });
   say('§CLI ' + out.log);
   // §L10.8 every typed dimension override against its own measured length (per sheet unit), one row per distinct conflict
   const PR = require('./dxf2pair.js'), audit = { rows: [], counts: {} };
@@ -103,8 +107,8 @@ function run(args, log) {
   say('§ACCOUNT entities=' + Object.keys(account.sheets).reduce((n, k) => n + account.sheets[k].total, 0) + ' dropped=' + (Object.keys(account.dropped).map(k => k + ':' + account.dropped[k]).join(',') || 'none'));
   // §L13.1 the bill: every body priced by the reference's stated formula x the rate pack's class rate (nothing guessed: no rate = 0 + flag)
   let billRes = null;
-  { const BL = require('./dxf2bill.js'), packName = (args.pack && args.pack[0]) || 'cidb2024_my', pf = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json');
-    if (fs.existsSync(pf) && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: JSON.parse(fs.readFileSync(pf, 'utf8')), packName }); say(billRes.log); } }
+  { const BL = require('./dxf2bill.js'), pf = packFile;
+    if (packJ && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: packJ, packName }); say(billRes.log); } }
   return { sheets, eff, read, out, choices, audit, account, bill: billRes };
 }
 
