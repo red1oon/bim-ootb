@@ -186,7 +186,34 @@
       } else notes.push({ id: r.id, code: 'GAP:label_' + why });
       sides.forEach(function (sd, i) { out.push({ id: r.id + ':' + i, a: sd.a, b: sd.b, sheet: r.sheet, label: lab[i], mark: mark }); });
     });
-    return { lengths: out, notes: notes };
+    var byRect = {}; out.forEach(function (l) { byRect[l.id.replace(/:\d$/, '')] = l.mark; });
+    return { lengths: out, notes: notes, marks: byRect };
+  }
+  function centreOf(r) { var xs = r.pts.map(function (q) { return q[0]; }), ys = r.pts.map(function (q) { return q[1]; }); return [(Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2, (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2]; }
+  // Two sheets draw the same members at different origins (one model space, several frames). Best-effort translation: vote over all centre differences of equal kind, keep the winner
+  // when it explains at least half of the smaller set; every other member is reported unmatched. Deterministic (ties: lexicographically smallest translation).
+  function matchByTranslation(targets, sources, tol) {
+    tol = tol == null ? 1 : tol; var votes = {};
+    targets.forEach(function (t, ti) { var ct = centreOf(t); sources.forEach(function (s2) { if ((t.kind || '') !== (s2.kind || '')) return; var cs = centreOf(s2), dx = cs[0] - ct[0], dy = cs[1] - ct[1], k = Math.round(dx / tol) + ',' + Math.round(dy / tol); (votes[k] = votes[k] || { n: 0, dx: dx, dy: dy }).n++; }); });
+    var best = null; Object.keys(votes).sort().forEach(function (k) { if (!best || votes[k].n > best.n) best = votes[k]; });
+    if (!best) return { matched: {}, votes: 0, dx: 0, dy: 0, ok: false };
+    var matched = {}, used = {};
+    targets.forEach(function (t) { var ct = centreOf(t), hit = null, hd = Infinity;
+      sources.forEach(function (s2, si) { if ((t.kind || '') !== (s2.kind || '') || used[si]) return; var cs = centreOf(s2), d = Math.hypot(cs[0] - ct[0] - best.dx, cs[1] - ct[1] - best.dy); if (d <= tol * 1.5 && d < hd) { hd = d; hit = si; } });
+      if (hit != null) { used[hit] = 1; matched[t.id] = sources[hit].id; } });
+    var n = Object.keys(matched).length, ok = n >= 0.5 * Math.min(targets.length, sources.length) && n > 0;
+    return { matched: ok ? matched : {}, votes: n, dx: best.dx, dy: best.dy, ok: ok };
+  }
+  // targets that have no instance mark inherit the mark of the matched source member (another sheet); the labelled lengths say so (via)
+  function inheritLabels(targets, sources, sourceMarks, legend, tol) {
+    var m = matchByTranslation(targets, sources, tol), out = [], notes = [];
+    targets.forEach(function (t) {
+      var mark = m.matched[t.id] ? sourceMarks[m.matched[t.id]] : null;
+      if (!mark) { notes.push({ id: t.id, code: m.ok ? 'GAP:label_no_match' : 'GAP:label_sheets_not_alignable' }); }
+      var one = labelRects([t], mark ? [{ mark: mark, p: centreOf(t) }] : [], legend, { radius: 1 });
+      one.lengths.forEach(function (l) { l.via = mark ? m.matched[t.id] : null; out.push(l); });
+    });
+    return { lengths: out, notes: notes, match: m };
   }
 
   // Best-effort side alignment (§L10 4a). a,b = end points along 1D axis coordinates; pinA/pinB = the side is fixed by grid/datum/neighbour.
@@ -197,5 +224,5 @@
     if (pinB) return { a: b - dir * number, b: b, residual: 0, code: 'OK' };
     var c = (a + b) / 2; return { a: c - dir * number / 2, b: c + dir * number / 2, residual: 0, code: 'ALIGN:floating' };
   }
-  return { legendOf: legendOf, markPoints: markPoints, labelRects: labelRects, parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
+  return { matchByTranslation: matchByTranslation, inheritLabels: inheritLabels, legendOf: legendOf, markPoints: markPoints, labelRects: labelRects, parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
 });
