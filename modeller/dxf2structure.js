@@ -6,11 +6,11 @@
 //   isStructure(sheets)                       -> bool
 //   judge(sheets, { I: Dxf2BimImport, B: Dxf2Bodies, choices }) -> { gate, defaults, log }   (gate = the importer's gate shape: ok, set:null, roles, refused, verdict, R, structure)
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.Dxf2Structure = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./dxf2prep.js'));
+  else root.Dxf2Structure = factory(root.Dxf2Prep);
+})(typeof self !== 'undefined' ? self : this, function (PREP) {
   'use strict';
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];
+  var BODY_KINDS = PREP.BODY_KINDS;   // §L24 one table (dxf2prep)
   var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'elevdoor', 'sectslab', 'sectwall', 'roof', 'levelline'];
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
   function judge(sheets, ctx) {

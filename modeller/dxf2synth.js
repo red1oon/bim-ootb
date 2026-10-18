@@ -13,7 +13,7 @@
   var P = D.P, DFM = D.DF, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   function prismBox(x0, y0, z0, x1, y1, z1) {
     var V = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
-    return { vertices: V, faces: [[4, 5, 6], [4, 6, 7], [0, 2, 1], [0, 3, 2], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]] };
+    return { vertices: V, faces: P.Solid.BOX.map(function (f) { return f.slice(); }) };   // winding as before: the callers' own checks decide (output must stay byte-identical)
   }
   // a sloping slab: a parallelogram (x0..x1 along the length, from the edge point (ya, za) to (yb, zb)), thickened DOWN by t measured perpendicular to the slope
   function slopeSlab(x0, x1, ya, za, yb, zb, t, up) {
