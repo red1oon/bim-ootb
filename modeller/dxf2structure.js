@@ -11,7 +11,7 @@
 })(typeof self !== 'undefined' ? self : this, function (PREP) {
   'use strict';
   var BODY_KINDS = PREP.BODY_KINDS;   // §L24 one table (dxf2prep)
-  var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'elevdoor', 'sectslab', 'sectwall', 'roof', 'levelline'];
+  var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'sectslab', 'sectwall', 'roof', 'levelline'];
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
   function judge(sheets, ctx) {
     var I = ctx.I, B = ctx.B, refused = [];
