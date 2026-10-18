@@ -13,6 +13,7 @@
 //   --layer               @LAYER=<layer>,<kind> on every sheet of that role holding the layer (the page's pooled Layers select), or only on the sheets whose name contains <sheet-substr> (the page's per-sheet row)
 //   --exclude             @EXCLUDE=x0,y0,x1,y1 (drawing units) on the sheet whose name contains <sheet-substr>: plan regions wholly inside are skipped and counted (the page's Exclude tool)
 //   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
+//   --pack                rate pack name for bill.json (default cidb2024_my; viewer/rates/<name>.json)
 //   --size                @SIZE=<body id>,<x|y|w|d>,<metres> on the first plan sheet              (the user's number for one body side, §L10.9)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
@@ -23,14 +24,14 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
     else if (k === '--accept-suggestions') a.accept = true;
     else if (k === '--ifc') a.ifc = true;
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
-    else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
+    else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
   }
   if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
@@ -100,7 +101,11 @@ function run(args, log) {
   const AC = require('./dxf2account.js'), HT = require('./dxf2hatch.js'), account = { sheets: {}, dropped: {} };
   sheets.forEach(sh => { const a = AC.account(sh.text, sh.dxf.entities, { HATCH: HT.parseHatches(sh.text).hatches.length, LEADER: HT.parseLeaders(sh.text).length }); account.sheets[sh.name] = { total: a.total, dropped: a.dropped }; a.dropped.forEach(d => { account.dropped[d.type] = (account.dropped[d.type] || 0) + d.n; }); });
   say('§ACCOUNT entities=' + Object.keys(account.sheets).reduce((n, k) => n + account.sheets[k].total, 0) + ' dropped=' + (Object.keys(account.dropped).map(k => k + ':' + account.dropped[k]).join(',') || 'none'));
-  return { sheets, eff, read, out, choices, audit, account };
+  // §L13.1 the bill: every body priced by the reference's stated formula x the rate pack's class rate (nothing guessed: no rate = 0 + flag)
+  let billRes = null;
+  { const BL = require('./dxf2bill.js'), packName = (args.pack && args.pack[0]) || 'cidb2024_my', pf = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json');
+    if (fs.existsSync(pf) && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: JSON.parse(fs.readFileSync(pf, 'utf8')), packName }); say(billRes.log); } }
+  return { sheets, eff, read, out, choices, audit, account, bill: billRes };
 }
 
 function write(res, dir) {
@@ -109,6 +114,7 @@ function write(res, dir) {
   const g = res.out.gate, R = g.R;
   fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ entity_account: res.account, dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
   const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, mark: e.mark || null, size: e.size || null, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
+  if (res.bill) fs.writeFileSync(path.join(dir, 'bill.json'), JSON.stringify(res.bill, null, 1));
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
   if (g.ok) { const T = I.toOps(R, { hashHex: I.sha256Hex }); fs.writeFileSync(path.join(dir, 'ops.json'), JSON.stringify({ run_id: R.run_id, inserts: T.inserts.map(o => ({ op_type: o.op_type, outputGuid: o.outputGuid, params: o.params })), assets: T.assets.length, skipped: T.skipped }, null, 1)); }
   return bodies;
