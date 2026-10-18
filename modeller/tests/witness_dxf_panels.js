@@ -77,6 +77,19 @@ fr = build([['plan.dxf', planDxf], ['west.dxf', doc(circ('Rod', 1000, 1500, 700,
 ok('PN22 CONTROL a circle on another layer (Other) is not a fan', fr.els.length === 1 && fr.els[0].handle === 'F1');
 fr = build([['plan.dxf', planDxf], ['west.dxf', doc(circ('Rod', 1000, 1500, 700, 'F1') + circ('Rod', 3000, 1500, 700, 'F4'), WEST([['@LAYER=Rod,fan']]).filter(m => !/Wall,panel/.test(m[0])))]]);
 ok('PN23 two separate fans (centres 2 m apart) are two bodies with distinct ids', fr.els.length === 2 && new Set(fr.els.map(e => e.guid)).size === 2);
+// ---- §L11.4 nets: the ZIGZAG/mesh-pattern hatches of a layer typed `net` ----
+const hatchP = (handle, layer, pat, vs) => g(0, 'HATCH') + g(5, handle) + g(8, layer) + g(100, 'AcDbHatch') + g(10, 0) + g(20, 0) + g(30, 0) + g(2, pat) + g(70, 0) + g(71, 0) + g(91, 1) + g(92, 3) + g(72, 0) + g(73, 1) + g(93, vs.length) + vs.map(v => g(10, v[0]) + g(20, v[1])).join('') + g(97, 0) + g(75, 1) + g(76, 1) + g(98, 0);
+const NETQ = [[600, 2000], [3600, 2000], [3600, 2900], [600, 2900]];
+const netMarks = WEST([['@LAYER=Dim,net']]).filter(m => !/Wall,panel/.test(m[0]));
+let nr = build([['plan.dxf', planDxf], ['west.dxf', doc(hatchP('N1', 'Dim', 'ZIGZAG', NETQ) + hatchP('N2', 'Dim', 'ZIGZAG', NETQ), netMarks)]]);
+const net = nr.els[0];
+ok('PN24 a ZIGZAG hatch on a layer typed net = a thin IfcCovering/CLADDING sheet: 3.0 m x 0.9 m, 5 mm thick (yellow default net.thickness) centred on the wall plane, z 2.0 .. 2.9 m, derived; the SAME boundary stored twice (two hatch objects) is ONE net', nr.els.length === 1 && net.class === 'IfcCovering' && net.ifc.PredefinedType === 'CLADDING' && net.size.t.number === 0.005 && net.size.t.source === 'default' && Math.abs(vol(net) - 3.0 * 0.9 * 0.005) < 1e-6 && net.prov === 'derived' && nr.defaults.some(d => d.key === 'net.thickness' && d.kind === 'default') && nr.report.sheets['west.dxf'] !== undefined, JSON.stringify(net && bb(net)));
+nr = build([['plan.dxf', planDxf], ['west.dxf', doc(hatchP('N1', 'Dim', 'ANSI31', NETQ), netMarks)]]);
+ok('PN25 CONTROL a hatch of another pattern (ANSI31, an arrow head or a section fill) on the net layer is not a net', nr.els.length === 0 && nr.gaps.length === 0);
+nr = build([['plan.dxf', planDxf], ['west.dxf', doc(hatchP('N1', 'Dim', 'ZIGZAG', NETQ), netMarks)]], { numbers: { 'body-net-0-N1': { w: 0.01 } } });
+ok('PN26 the user states the net thickness (@SIZE w = 0.01 m): built at 10 mm, source user', nr.els.length === 1 && nr.els[0].size.t.number === 0.01 && nr.els[0].size.t.source === 'user');
+nr = build([['plan.dxf', planDxf], ['west.dxf', doc(hatchP('N1', 'Other', 'ZIGZAG', NETQ), netMarks)]]);
+ok('PN27 FALSIFIER the zigzag is on a layer that is not typed net (Other): no net', nr.els.length === 0);
 // real shed (local material, SKIP when absent): the West and East gable ends
 const SH = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
 if (!fs.existsSync(path.join(SH, '2_ELEV_WEST.dxf'))) console.log('SKIP PN16: local shed sheets not present');

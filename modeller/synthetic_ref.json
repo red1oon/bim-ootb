@@ -155,6 +155,18 @@
         "class": "IfcFlowMovingDevice"
       },
       "notes": "the pack has no fan class; a fan is a flow moving device"
+    },
+    "IfcCovering": {
+      "material": "Netting",
+      "quantity": {
+        "basis": "area",
+        "formula": "A",
+        "unit": "M2"
+      },
+      "rate_ref": {
+        "class": "IfcCovering"
+      },
+      "notes": "the pack's IfcCovering is a floor/ceiling finish per m2: the nearest class for a cladding sheet; replace the rate with a netting rate when the pack has one"
     }
   }
 }

@@ -19,8 +19,8 @@
     return s + t.join('');
   }
   const CLASS_MAP = { IfcWall: 'IFCWALL', IfcSlab: 'IFCSLAB', IfcColumn: 'IFCCOLUMN', IfcBeam: 'IFCBEAM', IfcRoof: 'IFCROOF', IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER',
-    IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
-  const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum' };
+    IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcCovering: 'IFCCOVERING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
+  const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum' };
 
   function build(elements, o) {
     const api = o.api, T = o.WebIFC;
