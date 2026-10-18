@@ -186,7 +186,7 @@
         IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY',
         IfcBuildingElementPart: 'IFCBUILDINGELEMENTPART', IfcCurtainWall: 'IFCCURTAINWALL',
         IfcFlowTerminal: 'IFCFLOWTERMINAL', IfcStair: 'IFCSTAIR', IfcFooting: 'IFCFOOTING',
-        IfcController: 'IFCCONTROLLER'
+        IfcController: 'IFCCONTROLLER', IfcFan: 'IFCFAN'
       };
       let seedTyped = 0, seeded = 0, seedAnchors = 0, seedNoMesh = 0, seedProxy = 0, seedTris = 0;
       const seedByClass = {};
@@ -228,7 +228,7 @@
           seedByClass[cls] = (seedByClass[cls] || 0) + 1;
           const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
           // §L7.4 typing for 4D/5D: the importer's per-body IFC typing (provenance.ifc) travels into the file: Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum
-          const tp = P.provenance && P.provenance.ifc && P.provenance.ifc.ifc_class === cls ? P.provenance.ifc : null, PDE = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum' };
+          const tp = P.provenance && P.provenance.ifc && P.provenance.ifc.ifc_class === cls ? P.provenance.ifc : null, PDE = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum' };
           const pdx = tp && tp.PredefinedType && PDE[ent] ? [enumOf(PDE[ent], tp.PredefinedType)] : null;
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
