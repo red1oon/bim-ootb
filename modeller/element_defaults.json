@@ -1,0 +1,486 @@
+{
+ "version": 1,
+ "about": "Element defaults (prompts/DXF2BIM_MODELLER_LANE.md \u00a7L18). One entry per setting a 2D layout may not carry. kind 'std' = a value with a named source in this repo or the rate pack; 'guess' = typical practice, to be confirmed. A person states a value with @DEFAULT=<key>,<value> in the drawing (or in the editor / CLI); otherwise the default is used to determine measurements and the row is yellow. A 2D layout carries these only when it comes fully formed from an IFC model.",
+ "defaults": {
+  "wall.thickness": {
+   "element": "IfcWall",
+   "value": 0.15,
+   "unit": "m",
+   "kind": "std",
+   "basis": "rate pack: 'Blockwork Wall 150mm' (viewer/rates/cidb2024_my.json IfcWall)",
+   "options": [
+    0.1,
+    0.115,
+    0.15,
+    0.2,
+    0.225
+   ]
+  },
+  "wall.height": {
+   "element": "IfcWall",
+   "value": 3.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical storey wall height; not stated by a plan",
+   "options": [
+    2.4,
+    2.7,
+    3.0,
+    3.6
+   ]
+  },
+  "wall.base": {
+   "element": "IfcWall",
+   "value": 0.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "floor level of the storey"
+  },
+  "synth.slab.thickness": {
+   "element": "IfcSlab",
+   "value": 0.25,
+   "unit": "m",
+   "kind": "std",
+   "basis": "rate pack: 'RC Slab 250mm' (viewer/rates/cidb2024_my.json IfcSlab)",
+   "options": [
+    0.15,
+    0.2,
+    0.25
+   ],
+   "used_by": "dxf2synth (--complete)"
+  },
+  "synth.slab.footprint": {
+   "element": "IfcSlab",
+   "value": "outermost grid lines",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "the slab edge is taken at the outermost grid lines of the base plan",
+   "options": [
+    "outermost grid lines"
+   ],
+   "used_by": "dxf2synth (--complete)"
+  },
+  "synth.roof.sheet_thickness": {
+   "element": "IfcRoof",
+   "value": 0.0254,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "display thickness of a roofing sheet (1 in); the cost is by area",
+   "options": [
+    0.0254,
+    0.05
+   ],
+   "used_by": "dxf2synth (--complete)"
+  },
+  "synth.roof.overhang": {
+   "element": "IfcRoof",
+   "value": 0.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "the roof is cut at the gable planes until an overhang is stated",
+   "options": [
+    0,
+    0.4572,
+    0.6
+   ],
+   "used_by": "dxf2synth (--complete)"
+  },
+  "roof.slope_deg": {
+   "element": "IfcRoof",
+   "value": 15.0,
+   "unit": "deg",
+   "kind": "guess",
+   "basis": "typical light roof pitch; used only when no gable or section gives the slope",
+   "options": [
+    10,
+    15,
+    17.5,
+    22.5
+   ]
+  },
+  "door.height": {
+   "element": "IfcDoor",
+   "value": 2.1,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical door set height; plans do not draw it",
+   "options": [
+    2.0,
+    2.1,
+    2.4
+   ],
+   "used_by": "dxf2doors"
+  },
+  "door.thickness": {
+   "element": "IfcDoor",
+   "value": 0.04,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical leaf thickness for a leaf drawn as one line",
+   "options": [
+    0.04,
+    0.05
+   ],
+   "used_by": "dxf2doors"
+  },
+  "door.width": {
+   "element": "IfcDoor",
+   "value": 0.9,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical single leaf; used only for a door tag with no drawn swing or gap",
+   "options": [
+    0.8,
+    0.9,
+    1.0
+   ]
+  },
+  "window.width": {
+   "element": "IfcWindow",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical window width; used when a plan symbol gives no width",
+   "options": [
+    0.9,
+    1.2,
+    1.5
+   ]
+  },
+  "window.height": {
+   "element": "IfcWindow",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical window height",
+   "options": [
+    1.0,
+    1.2,
+    1.5
+   ]
+  },
+  "window.sill": {
+   "element": "IfcWindow",
+   "value": 0.9,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical sill height above the floor",
+   "options": [
+    0.9,
+    1.0,
+    1.1
+   ]
+  },
+  "column.size": {
+   "element": "IfcColumn",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "square section when a column symbol gives none",
+   "options": [
+    0.2,
+    0.25,
+    0.3,
+    0.4
+   ]
+  },
+  "column.height": {
+   "element": "IfcColumn",
+   "value": 3.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "storey height when no elevation gives it",
+   "options": [
+    2.7,
+    3.0,
+    3.6
+   ]
+  },
+  "beam.width": {
+   "element": "IfcBeam",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "section width when no label or band gives it",
+   "options": [
+    0.2,
+    0.25,
+    0.3
+   ]
+  },
+  "beam.depth": {
+   "element": "IfcBeam",
+   "value": 0.45,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "section depth when no label or band gives it",
+   "options": [
+    0.3,
+    0.45,
+    0.6
+   ]
+  },
+  "footing.length": {
+   "element": "IfcFooting",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "pad footing plan length when no schedule gives it",
+   "options": [
+    1.0,
+    1.2,
+    1.5
+   ]
+  },
+  "footing.width": {
+   "element": "IfcFooting",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "pad footing plan width",
+   "options": [
+    1.0,
+    1.2,
+    1.5
+   ]
+  },
+  "footing.depth": {
+   "element": "IfcFooting",
+   "value": 0.4,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "pad footing thickness",
+   "options": [
+    0.3,
+    0.4,
+    0.6
+   ]
+  },
+  "gradebeam.width": {
+   "element": "IfcBeam",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "grade beam width when no label gives it",
+   "options": [
+    0.2,
+    0.3
+   ]
+  },
+  "gradebeam.depth": {
+   "element": "IfcBeam",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "grade beam depth",
+   "options": [
+    0.3,
+    0.45
+   ]
+  },
+  "stair.riser": {
+   "element": "IfcStair",
+   "value": 0.175,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical riser height; a stair symbol carries no riser",
+   "options": [
+    0.15,
+    0.175,
+    0.19
+   ]
+  },
+  "stair.going": {
+   "element": "IfcStair",
+   "value": 0.25,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical tread depth",
+   "options": [
+    0.25,
+    0.28,
+    0.3
+   ]
+  },
+  "stair.width": {
+   "element": "IfcStair",
+   "value": 1.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical flight width",
+   "options": [
+    0.9,
+    1.0,
+    1.2
+   ]
+  },
+  "railing.height": {
+   "element": "IfcRailing",
+   "value": 1.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical guard height",
+   "options": [
+    0.9,
+    1.0,
+    1.1
+   ]
+  },
+  "railing.post_spacing": {
+   "element": "IfcRailing",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical post spacing",
+   "options": [
+    1.0,
+    1.2,
+    1.5
+   ]
+  },
+  "ramp.slope": {
+   "element": "IfcRamp",
+   "value": 0.0833,
+   "unit": "ratio",
+   "kind": "guess",
+   "basis": "1:12, a typical accessible ramp",
+   "options": [
+    0.0625,
+    0.0833,
+    0.1
+   ]
+  },
+  "ceiling.thickness": {
+   "element": "IfcCovering",
+   "value": 0.012,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "board thickness when a ceiling is implied",
+   "options": [
+    0.009,
+    0.012,
+    0.015
+   ]
+  },
+  "floorfinish.thickness": {
+   "element": "IfcCovering",
+   "value": 0.02,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "floor finish thickness when implied",
+   "options": [
+    0.01,
+    0.02,
+    0.05
+   ]
+  },
+  "pile.diameter": {
+   "element": "IfcPile",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical bored pile diameter",
+   "options": [
+    0.3,
+    0.45,
+    0.6
+   ]
+  },
+  "pile.length": {
+   "element": "IfcPile",
+   "value": 12.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "no pile length is drawn on a layout",
+   "options": [
+    6,
+    12,
+    18
+   ]
+  },
+  "curtainwall.mullion": {
+   "element": "IfcCurtainWall",
+   "value": 0.05,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "typical mullion width",
+   "options": [
+    0.05,
+    0.06
+   ]
+  },
+  "plate.thickness": {
+   "element": "IfcPlate",
+   "value": 0.00635,
+   "unit": "m",
+   "kind": "std",
+   "basis": "1/4 in, the thickness the truss section's own label states (a plate with no label takes it)",
+   "options": [
+    0.00476,
+    0.00635,
+    0.0095
+   ]
+  },
+  "member.size": {
+   "element": "IfcMember",
+   "value": 0.04,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "square envelope for a member with no label or size",
+   "options": [
+    0.04,
+    0.05,
+    0.075
+   ]
+  },
+  "fan.depth": {
+   "element": "IfcFan",
+   "value": 0.3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "housing depth; the diameter is drawn",
+   "options": [
+    0.2,
+    0.3,
+    0.4
+   ],
+   "used_by": "dxf2panels"
+  },
+  "net.thickness": {
+   "element": "IfcCovering",
+   "value": 0.005,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "netting sheet thickness; the area is drawn",
+   "options": [
+    0.002,
+    0.005,
+    0.01
+   ],
+   "used_by": "dxf2panels"
+  },
+  "panel.plane": {
+   "element": "IfcWall",
+   "value": "end grid line, centred",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "an elevation panel is placed on the outermost grid line of its face, centred",
+   "options": [
+    "end grid line, centred"
+   ],
+   "used_by": "dxf2panels"
+  },
+  "section.spacing": {
+   "element": "IfcMember",
+   "value": "column pitch",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a section drawn once repeats at the column pitch from its cut",
+   "options": [
+    "column pitch",
+    "2 x column pitch"
+   ],
+   "used_by": "dxf2section"
+  }
+ }
+}

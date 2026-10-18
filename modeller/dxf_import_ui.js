@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2defaults.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -23,7 +23,7 @@
           s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s);
         });
       });
-    }, Promise.resolve()).then(function () { return fetch(new URL('synthetic_ref.json?v=' + V, _base).href).then(function (r) { return r.json(); }).then(function (j) { state.ref = j; }).catch(function () { state.ref = null; }); })   // §L13 the reference: materials (and the bill's formulas)
+    }, Promise.resolve()).then(function () { return fetch(new URL('synthetic_ref.json?v=' + V, _base).href).then(function (r) { return r.json(); }).then(function (j) { state.ref = j; }).catch(function () { state.ref = null; }); }).then(function () { return fetch(new URL('element_defaults.json?v=' + V, _base).href).then(function (r) { return r.json(); }).then(function (j) { state.defaultsRef = j; }).catch(function () { state.defaultsRef = null; }); })   // §L13 the reference: materials (and the bill's formulas)
       .then(function () { console.log(TAG + ' modules loaded n=' + SCRIPTS.length + ' ref=' + (state.ref ? 'v' + state.ref.version : 'none')); return true; })
       .catch(function (e) { _loaded = null; console.error(TAG + ' ' + e.message); throw e; });
     return _loaded;
@@ -268,7 +268,7 @@
   function isStructure(sheets) { return !!window.Dxf2Structure && window.Dxf2Structure.isStructure(sheets, window.Dxf2Bodies); }
   function structureGate() {
     var choices = (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {};
-    var out = window.Dxf2Structure.judge(state.sheets, { I: window.Dxf2BimImport, B: window.Dxf2Bodies, choices: choices, complete: state.complete ? { slabT: 0.25 } : null, ref: state.ref || null }), g = out.gate;
+    var out = window.Dxf2Structure.judge(state.sheets, { I: window.Dxf2BimImport, B: window.Dxf2Bodies, choices: choices, complete: state.complete ? {} : null, ref: state.ref || null, defaultsRef: state.defaultsRef || null }), g = out.gate;
     if (out.defaults.length) state.defaults = (state.defaults || []).concat(out.defaults);
     state.gate = g;
     console.log(TAG + ' ' + out.log);

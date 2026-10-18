@@ -5,11 +5,11 @@
 // `plate` (each closed outline is a plate in the section plane), `member` (each outline is a run along the building, e.g. a purlin). The cut (`@CUT`) says where the drawn
 // section sits; copies repeat at a spacing (default: the column pitch, a yellow default) over the grid extent. The copy AT the cut is `derived`, the others `assumed` (red).
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
-  else root.Dxf2Section = factory({ MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
+  else root.Dxf2Section = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
+  var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var NOT_SECTION = /\b(beam|column|wall|footing|slab|grade|roof|sheet)\b/i;   // a label that names another element ("Beam-1 (12\"x10\")", "12\"x12\" Column") is not a member size
   var SIZE_RE = /(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"/i, PLATE_RE = /(\d+\/\d+|\d+(?:\.\d+)?)\s*(")?\s*thick(?:ness)?\s*plate/i;
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -20,7 +20,7 @@
   function segDist(p, a, b) { var dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0; return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); }
 
   function buildSections(sheets, opts) {
-    opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), report = { sheets: {} };
+    opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), own = !opts.DF, DF = opts.DF || DFM.create(opts.ref, sheets, opts.choices), report = { sheets: {} };
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var secs = sheets.filter(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); });
     if (!secs.length) return { els: els, gaps: gaps, defaults: [], report: report };
@@ -37,7 +37,10 @@
       var grids = cutAxis === 'X' ? pl.desc.gridsX : pl.desc.gridsY, gv = Object.keys(grids || {}).map(function (l) { return grids[l] * pl.factor; }).sort(function (a, b) { return a - b; });
       if (gv.length < 2) { gaps.push({ code: 'GAP:section_no_grid', sheet: ss.name, detail: 'the base plan needs grid lines along ' + cutAxis }); return; }
       var pitch = Infinity; for (var gi = 1; gi < gv.length; gi++) if (gv[gi] - gv[gi - 1] > 1e-6 && gv[gi] - gv[gi - 1] < pitch) pitch = gv[gi] - gv[gi - 1];
-      var uS = userN('section-spacing'), spacing = uS.x > 0 ? Number(uS.x) : pitch; spacingUsed = true;
+      var uS = userN('section-spacing'), spacing;
+      if (uS.x > 0) spacing = Number(uS.x);
+      else { var sv = String(DF.use('section.spacing')), mm = /^\s*(\d+(?:\.\d+)?)\s*x\s*column pitch\s*$/i.exec(sv); spacing = /^\s*column pitch\s*$/i.test(sv) ? pitch : mm ? Number(mm[1]) * pitch : (isFinite(Number(sv)) && Number(sv) > 0 ? Number(sv) : pitch); }
+      spacingUsed = true;
       var stations = [], s0 = cutM - Math.floor((cutM - gv[0] + 1e-6) / spacing) * spacing;
       for (var st = s0; st <= gv[gv.length - 1] + 1e-6; st += spacing) stations.push(r6(st));
       var atCut = function (s) { return Math.abs(s - cutM) < 1e-4; };
@@ -104,10 +107,9 @@
           ifc: P.ifcType('member', 'Section run', null), mark: null, z0: r6(v0), z1: r6(v1), height_source: 'section', size: { run: [r6(n0), r6(n1)] }, members: [e.handle] }); rep.runs++;
       });
     });
-    if (spacingUsed) DEF.assume('section.spacing', 'column pitch', 'the drawing shows one section; the copies along the building repeat at the column pitch from the cut (the real spacing is not drawn)', ['column pitch', '2 x column pitch']);
     if (sizeDefaulted) DEF.assume('section.bar.size', String(sizeDefaulted) + ' bars', sizeDefaulted + ' bars have no label pointing at them: they take the most common labelled size (square envelope)', ['most common labelled size']);
     if (plateT) DEF.assume('section.plate.thickness', 'the sheet\'s thickness-plate label', 'the plate thickness label does not point into a plate; its value is applied to every plate of the section', ['label value']);
-    return { els: els, gaps: gaps, defaults: DEF.rows(), report: report };
+    return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
   return { buildSections: buildSections, SIZE_RE: SIZE_RE };
 });

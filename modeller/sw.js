@@ -77,6 +77,8 @@ const PRECACHE_ASSETS = [
   'dxf2bim_import.js',
   'dxf2prep.js',
   'dxf2pair.js',
+  'dxf2defaults.js',
+  'element_defaults.json',
   'dxf2hatch.js',
   'dxf2panels.js',
   'dxf2section.js',

@@ -43,7 +43,7 @@
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
   var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -737,6 +737,21 @@
       '<button class="dm-ib" title="Remove" data-act="sizedel" data-sheet="' + r.si + '" data-mi="' + r.mi + '">' + IC.trash + '</button></div>'; });
     return secHead('sizes', IC.ruler, 'Stated sizes', conf.length + ' differ', conf.length) + (S.sec.sizes ? '<div class="dm-sb">' + h + '</div>' : '');
   }
+  // §L18 "Element defaults": EVERY setting a 2D layout may not carry (a door's height, a window's sill, a stair's riser...), with the value in force and where it came from. A yellow tag says std (a named
+  // source) or guess; typing a value and Set writes @DEFAULT=<key>,<value> into the drawing set (the user's own statement); removing it returns to the default. Unstated defaults are used to determine measurements.
+  function defaultMarks() { var out = []; S.sheets.forEach(function (sh, si) { sh.marks.forEach(function (m, mi) { if (m.key === 'DEFAULT') { var i = String(m.value).indexOf(','); out.push({ si: si, mi: mi, key: String(m.value).slice(0, i), value: String(m.value).slice(i + 1) }); } }); }); return out; }
+  function renderElementDefaults() {
+    var g = gateNow(); if (!g || !g.structure || !g.R || !g.R.defaults_table) return '';
+    var tb = g.R.defaults_table, stated = defaultMarks(), nStated = tb.filter(function (r) { return r.source === 'file'; }).length, nUsed = tb.filter(function (r) { return r.used; }).length, h = '', last = '';
+    h += '<div class="dm-ref" style="margin:2px 0 6px">Settings the drawings may not carry. A value you state is kept in the drawing set; otherwise the default (a standard value or a guess, tagged) is used to determine the measurement. Highlighted = used in this model.</div>';
+    tb.slice().sort(function (a, b) { return a.element < b.element ? -1 : a.element > b.element ? 1 : a.key < b.key ? -1 : 1; }).forEach(function (r, i) {
+      if (r.element !== last) { last = r.element; h += '<div class="dm-sub">' + esc(r.element) + '</div>'; }
+      h += '<div class="dm-f' + (r.used ? ' dm-defrow' : '') + '" data-edef="' + esc(r.key) + '"><label style="width:auto;flex:1" title="' + esc(r.basis) + '">' + esc(r.key) + ' <span class="dm-ref" style="margin:0">' + esc(r.kind === 'std' ? 'standard' : 'guess') + (r.unit && r.unit !== 'text' ? ' · ' + esc(r.unit) : '') + (r.source !== 'default' ? ' · ' + (r.source === 'file' ? 'stated' : 'chosen') : '') + '</span></label>' +
+        '<input class="dm-in n" id="dm-ed-' + i + '" value="' + esc(r.value) + '" ' + (r.unit === 'text' ? '' : 'inputmode="decimal"') + '><button class="dm-btn" data-act="edefset" data-key="' + esc(r.key) + '" data-i="' + i + '">' + IC.check + '<span>Set</span></button>' +
+        (r.source === 'file' ? '<button class="dm-ib" title="Remove (back to the default)" data-act="edefdel" data-key="' + esc(r.key) + '">' + IC.trash + '</button>' : '') + '</div>';
+    });
+    return secHead('edefaults', IC.ruler, 'Element defaults', nStated + ' stated · ' + nUsed + ' used', 0) + (S.sec.edefaults ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function sheetHasKind(sh, kind) { return sh.marks.some(function (m) { var l = m.key === 'LAYER' && layerOf(m); return l && l.type === kind; }); }
   function renderWalltops() {
     var h = '', v = S.verdict, nB = 0;
@@ -795,7 +810,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -823,6 +838,12 @@
         sh.marks = sh.marks.filter(function (q) { return !(q.key === 'SIZE' && String(q.value).split(',').slice(0, 2).join(',') === gd + ',' + ax); });
         sh.marks.push({ key: 'SIZE', value: gd + ',' + ax + ',' + raw, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @SIZE=' + gd + ',' + ax + ',' + raw); changed(); };
       if (a === 'sizedel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
+      if (a === 'edefset') el.onclick = function () { var key = el.getAttribute('data-key'), raw = document.getElementById('dm-ed-' + el.getAttribute('data-i')).value.trim(); if (!raw) return;
+        var row = ((gateNow().R || {}).defaults_table || []).filter(function (q) { return q.key === key; })[0]; if (row && row.unit !== 'text' && !(isFinite(Number(raw)) && Number(raw) >= 0)) { console.log(TAG + ' default refused: ' + key + ' needs a non-negative number'); return; }
+        var sh = S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan'; })[0]; if (!sh) return;
+        sh.marks = sh.marks.filter(function (q) { return !(q.key === 'DEFAULT' && String(q.value).split(',')[0] === key); });
+        sh.marks.push({ key: 'DEFAULT', value: key + ',' + raw, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @DEFAULT=' + key + ',' + raw); changed(); };
+      if (a === 'edefdel') el.onclick = function () { var key = el.getAttribute('data-key'); S.sheets.forEach(function (sh) { var n = sh.marks.length; sh.marks = sh.marks.filter(function (q) { return !(q.key === 'DEFAULT' && String(q.value).split(',')[0] === key); }); if (sh.marks.length !== n) console.log(TAG + ' remove sheet=' + sh.name + ' @DEFAULT=' + key); }); changed(); };
       if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
       if (a === 'acceptall') el.onclick = function () { var n = 0, b; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); console.log(TAG + ' accept-all clicks=' + (n - 1)); attention(); };

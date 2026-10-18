@@ -14,6 +14,7 @@
 //   --exclude             @EXCLUDE=x0,y0,x1,y1 (drawing units) on the sheet whose name contains <sheet-substr>: plan regions wholly inside are skipped and counted (the page's Exclude tool)
 //   --bodyz               @BODYZ=<kind>,<z0>,<z1> on the first plan sheet                         (the page's "Body heights" add row)
 //   --complete            add the floor slab and the gabled roof the drawings imply (derived, amber, yellow defaults; §L13.2)
+//   --default             @DEFAULT=<key>,<value> on the first plan sheet (a setting for an element the drawings do not carry; §L18): --default door.height=2.4
 //   --pack                rate pack name for bill.json (default cidb2024_my; viewer/rates/<name>.json)
 //   --size                @SIZE=<body id>,<x|y|w|d>,<metres> on the first plan sheet              (the user's number for one body side, §L10.9)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
@@ -25,7 +26,7 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
@@ -33,7 +34,7 @@ function parseArgs(argv) {
     else if (k === '--ifc') a.ifc = true;
     else if (k === '--complete') a.complete = true;
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
-    else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
+    else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--default', '--choice', '--exclude'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
   }
   if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
@@ -87,13 +88,14 @@ function run(args, log) {
   (args.exclude || []).forEach(x => { const m = /^(.+?):([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)$/.exec(x); if (!m) throw new Error('--exclude <sheet>:x0,y0,x1,y1: ' + x); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--exclude: no sheet ' + m[1]); put(sh, 'EXCLUDE', m.slice(2, 6).join(',')); });
   args.bodyz.forEach(b => { const m = /^([a-z]+)=([-\d.]+),([-\d.]+)$/.exec(b); if (!m) throw new Error('--bodyz <kind>=<z0>,<z1>: ' + b); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--bodyz: no plan sheet'); put(sh, 'BODYZ', m[1] + ',' + m[2] + ',' + m[3]); });
   (args.size || []).forEach(z => { const m = /^(.+):([xywd])=([\d.]+)$/.exec(z); if (!m) throw new Error('--size <body id>:<x|y|w|d>=<metres>: ' + z); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--size: no plan sheet'); put(sh, 'SIZE', m[1] + ',' + m[2] + ',' + m[3]); });
+  (args.default || []).forEach(z => { const m = /^([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)=(.+)$/.exec(z); if (!m) throw new Error('--default <dotted.key>=<value>: ' + z); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--default: no plan sheet'); put(sh, 'DEFAULT', m[1] + ',' + m[2]); });
   const choices = {}; args.choice.forEach(c => { const i = c.indexOf('='); choices[c.slice(0, i)] = c.slice(i + 1); });
 
   // effective sheets -> the importer's own reader (with the pre-processor) -> the structure judgement
   const eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) }));
   const read = I.readSheets(eff, { prep: P, prepChoices: choices });
   const packName = (args.pack && args.pack[0]) || 'cidb2024_my', packFile = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json'), packJ = fs.existsSync(packFile) ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : null;
-  const BL0 = require('./dxf2bill.js'), complete = args.complete ? { slabT: packJ ? BL0.tRefOf(packJ.materials.IfcSlab) : null } : null;
+  const BL0 = require('./dxf2bill.js'), complete = args.complete ? {} : null;
   const refJ = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8'));
   const out = ST.judge(read, { I, B, choices, complete, ref: refJ });
   say('§CLI ' + out.log);
@@ -117,7 +119,7 @@ function write(res, dir) {
   fs.mkdirSync(path.join(dir, 'marked'), { recursive: true });
   res.eff.forEach(f => fs.writeFileSync(path.join(dir, 'marked', f.name.replace(/\.dxf$/i, '') + '_marked.dxf'), f.text));
   const g = res.out.gate, R = g.R;
-  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ entity_account: res.account, dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
+  fs.writeFileSync(path.join(dir, 'verdict.json'), JSON.stringify({ defaults_table: g.R && g.R.defaults_table, defaults_invalid: g.R && g.R.defaults_invalid, entity_account: res.account, dimension_audit: res.audit, ok: g.ok, structure: g.structure, verdict: g.verdict, refused: g.refused, defaults: res.out.defaults.map(r => ({ key: r.key, value: r.value, kind: r.kind })), report: R && R.bodies && R.bodies.report, run_id: R && R.run_id }, null, 1));
   const bodies = (R && R.els || []).map(e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return { guid: e.guid, mark: e.mark || null, size: e.size || null, class: e.class, kind: e.kind, storey: e.storey, z0: e.z0, z1: e.z1, height_source: e.height_source, prov: e.prov, ifc: e.ifc, sheet: e.sheet, handle: e.handle, bbox: [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1] }; });
   if (res.bill) fs.writeFileSync(path.join(dir, 'bill.json'), JSON.stringify(res.bill, null, 1));
   fs.writeFileSync(path.join(dir, 'bodies.json'), JSON.stringify(bodies, null, 1));
