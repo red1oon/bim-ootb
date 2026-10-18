@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '6';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2synth.js', 'dxf2suggest.js', 'dxf2structure.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -142,7 +142,7 @@
   function css() {
     if (document.getElementById('dxf-css')) return;
     var st = document.createElement('style'); st.id = 'dxf-css';
-    st.textContent = '#dxf-panel{position:fixed;left:252px;top:60px;width:264px;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;z-index:31;color:#c7cdd8;font:12px system-ui,sans-serif;overflow:hidden;transition:left .18s ease}' +
+    st.textContent = '.dxf-complete{display:flex;gap:6px;align-items:center;margin:8px 10px 2px;font-size:11px;color:#ffb347;cursor:pointer}.dxf-complete input{accent-color:#ffb347}#dxf-panel{position:fixed;left:252px;top:60px;width:264px;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;z-index:31;color:#c7cdd8;font:12px system-ui,sans-serif;overflow:hidden;transition:left .18s ease}' +
       'body.ol-collapsed #dxf-panel{left:12px}#dxf-panel .ip-head{display:flex;align-items:center;gap:8px;padding:10px 10px 9px;border-bottom:1px solid #23262e}' +
       '#dxf-panel .ip-title{font-size:10px;letter-spacing:.14em;color:#5b6473}#dxf-panel .dxf-x{margin-left:auto;background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex}' +
       '#dxf-body{max-height:300px;overflow:auto;padding:6px 8px 8px}.dxf-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.dxf-row:hover{background:#23262e}' +
@@ -170,6 +170,7 @@
       h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
     });
+    if (state.gate.structure) h += '<label class="dxf-complete" title="Add the floor slab and the gabled roof the drawings imply. They are computed from drawn evidence plus stated conventions, shown amber, and listed as yellow defaults."><input type="checkbox" id="dxf-complete"' + (state.complete ? ' checked' : '') + '> Complete the building (floor slab, roof): amber, estimated</label>';
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
@@ -181,6 +182,8 @@
     p.style.display = 'block';
     document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; };
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
+    var cb = document.getElementById('dxf-complete');
+    if (cb) cb.onchange = function () { state.complete = !!cb.checked; state.defaults = (state.defaults || []).filter(function (d) { return !/^synth\./.test(d.key); }); structureGate(); };
     document.getElementById('dxf-lines').onclick = function () { setLines(!state.linesOn); };
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
     if (window.DxfMetaEditor && window.DxfMetaEditor.attention) window.DxfMetaEditor.attention();   // §L7.2 shiver while suggestions are unconfirmed
@@ -264,7 +267,7 @@
   function isStructure(sheets) { return !!window.Dxf2Structure && window.Dxf2Structure.isStructure(sheets, window.Dxf2Bodies); }
   function structureGate() {
     var choices = (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {};
-    var out = window.Dxf2Structure.judge(state.sheets, { I: window.Dxf2BimImport, B: window.Dxf2Bodies, choices: choices }), g = out.gate;
+    var out = window.Dxf2Structure.judge(state.sheets, { I: window.Dxf2BimImport, B: window.Dxf2Bodies, choices: choices, complete: state.complete ? { slabT: 0.25 } : null }), g = out.gate;
     if (out.defaults.length) state.defaults = (state.defaults || []).concat(out.defaults);
     state.gate = g;
     console.log(TAG + ' ' + out.log);
