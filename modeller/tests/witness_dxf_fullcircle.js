@@ -92,6 +92,13 @@ const boxDist = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
     clr.push(left.length && right.length ? `${d.g.replace('body-door-0-', '')} ${Math.min(...left).toFixed(0)}|${Math.min(...right).toFixed(0)}` : `${d.g} NO-NEIGHBOUR`);
   });
   check('F8 DOOR-IN-WALL', 'a door overlaps a wall body, or is not bounded by walls on its own wall line (so there is no opening to cut)', dd.length === 4 && overlaps.length === 0 && clr.every(c => !/NO-NEIGHBOUR/.test(c)), `doors=${dd.length} overlapping wall bodies=${overlaps.length}; clearance left|right to the neighbouring panels (mm): ${clr.join('; ')}`);
+  // F9 ELEVATION LEVELS (§L21.3): every height a regenerated elevation draws (walls, roof, level marks) is a height the ORIGINAL elevation sheets draw (1 mm), else it is listed as derived
+  const DATUM = { '1S_ELEV_SOUTH': -4446.6, '1N_ELEV_NORTH': -3895.2, '2_ELEV_WEST': -4515.7264, '7_ELEV_EAST': -3766.442 }, Z0 = 0.6096;   // the stated datums of the ALLARGS line: z 0.6096 m at that sheet y (inches)
+  const origZ = []; Object.keys(DATUM).forEach(n => { parse(fs.readFileSync(SHD + n + '.dxf', 'utf8')).entities.forEach(e => (e.vertices || []).forEach(v => origZ.push((Z0 + (v.y - DATUM[n]) * 0.0254) * 1000))); });
+  const faces = Object.keys(R.files).filter(f => /_(FRONT|REAR|LEFT|RIGHT)_/.test(f)), regZ = new Map();
+  faces.forEach(f => parse(R.files[f]).entities.filter(e => /^A-(WALL|ROOF)$/.test(e.layer)).forEach(e => e.vertices.forEach(v => { const k = Math.round(v.y * 10) / 10; if (!regZ.has(k)) regZ.set(k, e.layer); })));
+  const near = z => Math.min(...origZ.map(o => Math.abs(o - z))), zs = [...regZ.keys()].sort((a, b) => a - b), closed = zs.filter(z => near(z) <= TOL), open = zs.filter(z => near(z) > TOL);
+  check('F9 ELEVATION LEVELS', 'a height drawn by a regenerated elevation wall/roof is not drawn by any original elevation (1 mm)', open.every(z => regZ.get(z) === 'A-ROOF') && closed.length >= 4, `${zs.length} distinct heights over ${faces.length} elevations: ${closed.length} equal an original height (${closed.map(z => z.toFixed(1)).join(', ')}); not drawn on any original elevation (all A-ROOF = derived synthetic roof, §L13.2): ${open.map(z => z.toFixed(1) + ' nearest ' + near(z).toFixed(1) + ' mm away').join(', ') || 'none'}; worst closed deviation ${Math.max(0, ...closed.map(near)).toFixed(4)} mm`);
   // F7 CONTROL
   const moved = rc.map((b, i) => i === 0 ? b.map(v => v + 2) : b), dropped = rc.slice(1), mv = match(oc, moved, boxDist), dr = match(oc, dropped, boxDist);
   const gmoved = rg.map((g, i) => i === 0 ? [g[0], g[1] + 2] : g), mg = match(og, gmoved, gd);
