@@ -105,6 +105,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 }); await sleep(2500);
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   await pg.evaluate(() => { ['dxf-panel', 'dm-panel'].forEach(i => { const e = document.getElementById(i); if (e) e.style.display = 'none'; }); }); const fit = await pg.$('#b-fit'); if (fit) await fit.click(); await sleep(2500);
+  // §L26.4: one full orbit of the Modeller camera about the converted shed (Z up)
+  const orb = await pg.evaluate(async () => { const A = window.A, c = A.controls, t = c.target, p0 = A.camera.position.clone(), r = Math.hypot(p0.x - t.x, p0.y - t.y), a0 = Math.atan2(p0.y - t.y, p0.x - t.x), N = 36;
+    for (let i = 1; i <= N; i++) { const a = a0 + 2 * Math.PI * i / N; A.camera.position.set(t.x + r * Math.cos(a), t.y + r * Math.sin(a), p0.z); c.update(); if (A.markDirty) A.markDirty(); await new Promise(r => setTimeout(r, 110)); }
+    return { steps: N, azimuth0: +a0.toFixed(3), radius: +r.toFixed(2), moved: +A.camera.position.distanceTo(p0).toFixed(3) }; });
+  fact('modeller-orbit', orb); await sleep(800);
   fact('colours', await pg.evaluate(() => { const o = window.Bonsai.oplog._geomOps().filter(x => x.op_type === 'GEOM_INSERT').slice(-448), m = {}; o.forEach(x => { const P = x.parameters || x.params || {}, k = (P.provenance && P.provenance.ifc && P.provenance.ifc.material) || 'none'; m[k] = '0x' + (P.color || 0).toString(16); }); return m; }));
   const ifc = await pg.evaluate(async () => { const r = await window.Bonsai.ifc.build(); let s = ''; const b = r.bytes; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return { text: s, seeded: r.seeded, typed: r.seedTyped, coloured: r.seedColoured, psets: r.seedPsets }; });
   fs.writeFileSync(path.join(OUT, 'shed.ifc'), Buffer.from(ifc.text, 'latin1')); fact('ifc', { seeded: ifc.seeded, typed: ifc.typed, coloured: ifc.coloured, psets: ifc.psets });
@@ -125,6 +130,30 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await pg.waitForFunction('window.APP && window.APP.db && window.APP.dbQuery && window.ProjFold && window.APP._SQL', { timeout: 240000 });
   await pg.waitForFunction(() => /DONE/.test((document.body.innerText || '')), { timeout: 240000 }); await sleep(3500);
   await beat('v01'); await chapter(5, 'viewer');
+  // ---- v01: Shadow ground (h); v01o orbit (render-paced: a camera step waits for two painted frames); v01n Night (n) + Alt+G; v01f Fly tour (l) ----
+  const must = (ok, what) => { if (!ok) throw new Error('mode not ON: ' + what); };
+  await pg.keyboard.press('h'); await sleep(3500);
+  const sg = await pg.evaluate(() => window.APP._shadowGroundKey); fact('shadowGround', sg); must(sg && sg !== 'off', 'shadow ground');
+  await beat('v01o');
+  const vorb = await pg.evaluate(async () => { const A = window.APP, c = A.controls, t = c.target, p0 = A.camera.position.clone(), N = 36, ax = Math.abs(A.camera.up.y) > 0.5 ? 'y' : 'z', o = ax === 'y' ? ['x', 'z'] : ['x', 'y'], raf = () => new Promise(r => requestAnimationFrame(() => r()));
+    const r = Math.hypot(p0[o[0]] - t[o[0]], p0[o[1]] - t[o[1]]), a0 = Math.atan2(p0[o[1]] - t[o[1]], p0[o[0]] - t[o[0]]), t0 = performance.now(), maxd = [];
+    for (let i = 1; i <= N; i++) { const a = a0 + 2 * Math.PI * i / N; A.camera.position[o[0]] = t[o[0]] + r * Math.cos(a); A.camera.position[o[1]] = t[o[1]] + r * Math.sin(a); c.update(); if (A.markDirty) A.markDirty(); await raf(); await raf(); await new Promise(r => setTimeout(r, 60)); if (i === N / 2) maxd.push(+A.camera.position.distanceTo(p0).toFixed(2)); }
+    return { steps: N, up: ax, radius: +r.toFixed(2), halfway_from_start_m: maxd[0], seconds: +((performance.now() - t0) / 1000).toFixed(1) }; });
+  fact('viewer-orbit', vorb); must(vorb.halfway_from_start_m > 1, 'orbit moved the camera');
+  await beat('v01n');
+  await pg.keyboard.press('n'); await sleep(2500);
+  const nt = await pg.evaluate(() => !!window.APP._nightMode); fact('night', nt); must(nt, 'night');
+  await beat('v01f');
+  await pg.keyboard.press('l'); await pg.waitForFunction('window.APP.flyActive===true && window.APP.walkActions && window.APP.walkActions.length', { timeout: 60000 }); await sleep(2500);
+  await pg.evaluate(() => { window.APP.cycleWalkSpeed(); window.APP.cycleWalkSpeed(); });   // 4x: the tour's dt is clamped to 0.1 s per frame and headless frames are slow (§L26.4)
+  await sleep(Math.max(4000, BEAT_MIN.v01f * 1000 - 2500));
+  const fly = await pg.evaluate(() => ({ active: !!window.APP.flyActive, actions: window.APP.walkActions.length, speed: window.APP.walkSpeedMult, status: (window.APP.status && window.APP.status.textContent || '').slice(0, 80) }));
+  fact('fly', fly); must(fly.active, 'Fly tour'); await pg.keyboard.press('l'); await sleep(1500);
+  await beat('v01g');
+  await pg.keyboard.down('Alt'); await pg.keyboard.press('g'); await pg.keyboard.up('Alt');
+  await pg.waitForFunction('window.APP._giComposerActive===true', { timeout: 20000 }).catch(() => {}); await sleep(4000);
+  const modes = await pg.evaluate(() => ({ shadowGround: window.APP._shadowGroundKey, night: !!window.APP._nightMode, gi: !!window.APP._giComposerActive }));
+  fact('modes', modes); must(modes.shadowGround !== 'off', 'shadow ground'); must(modes.night, 'night'); must(modes.gi, 'Alt+G');
   // ---- v02: Find walls, pick one ----
   await beat('v02');
   await pg.evaluate(() => window.APP.openFindPanel('IfcWall')); await sleep(3000);
