@@ -136,6 +136,59 @@
     return { pairs: pairs, rows: rows, summary: sum, log: '§PAIR lengths=' + sum.lengths + ' agree=' + sum.agree + ' rounded=' + sum.rounded + ' conflict=' + sum.conflict + ' unpaired=' + sum.unpaired + ' nts=' + sum.nts + ' open=' + sum.open };
   }
 
+
+  // ---- label source (§L10 slice 2): legend "C-1 = 12"x12"" + instance marks "C-1" near each body ----
+  var MARK = /^[A-Z]{1,3}-?\d+$/;
+  // drafting convention for a mark's prefix (a YELLOW default in the product, overridable): GB before B, longest prefix wins
+  var MARK_KIND = { GB: 'gradebeam', C: 'column', F: 'footing', B: 'beam', W: 'window', D: 'door' };
+  function kindOfMark(m, table) { var t = table || MARK_KIND, pre = /^[A-Z]+/.exec(m)[0]; while (pre) { if (t[pre]) return t[pre]; pre = pre.slice(0, -1); } return null; }
+  var LEG = /^([A-Z]{1,3}-?\d+)\s*=\s*(.+)$/;
+  function legendOf(entities, unit) {   // -> { mark: { nums:[sizes in sheet units], text } }; "x", "X" or the multiplication sign separates
+    var out = {};
+    (entities || []).forEach(function (e) {
+      if (e.type !== 'TEXT' && e.type !== 'MTEXT') return;
+      var m = LEG.exec(clean(e.text)); if (!m) return;
+      var parts = m[2].split(/\s*[xX×]\s*/).map(function (t) { return parseNumber(t, unit); });
+      if (parts.length >= 2 && parts.every(function (v) { return v != null; })) out[m[1]] = { nums: parts, text: clean(e.text) };
+    });
+    return out;
+  }
+  function markPoints(entities, legend) {   // instance marks: text that is exactly a legend mark
+    var pts = [];
+    (entities || []).forEach(function (e) {
+      if (e.type !== 'TEXT' && e.type !== 'MTEXT') return;
+      var t = clean(e.text); if (!MARK.test(t) || !legend[t]) return;
+      var p = e.startPoint || e.position || e.anchorPoint; if (p) pts.push({ mark: t, p: [p.x, p.y] });
+    });
+    return pts;
+  }
+  // rects: [{id, sheet, pts:[[x,y]x4]}]; each gets the unambiguous nearest instance mark within radius; its legend sizes label the 4 sides (larger number <-> longer side pair)
+  function labelRects(rects, marks, legend, opts) {
+    opts = opts || {}; var out = [], notes = [];
+    // default search radius: half the pitch to the nearest same-kind neighbour (a mark cannot belong to a body closer to another), never less than 3x the body
+    var cen = function (r) { var xs = r.pts.map(function (q) { return q[0]; }), ys = r.pts.map(function (q) { return q[1]; }); return [(Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2, (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2]; };
+    var cs = rects.map(cen);
+    rects.forEach(function (r, ri) {
+      var nn = Infinity; rects.forEach(function (o, oi) { if (oi !== ri && (o.kind || '') === (r.kind || '')) { var dd = hyp(cs[ri], cs[oi]); if (dd > 0 && dd < nn) nn = dd; } });
+      var xs = r.pts.map(function (q) { return q[0]; }), ys = r.pts.map(function (q) { return q[1]; }), c = [(Math.min.apply(null, xs) + Math.max.apply(null, xs)) / 2, (Math.min.apply(null, ys) + Math.max.apply(null, ys)) / 2];
+      var ext = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, ys) - Math.min.apply(null, ys)), rad = opts.radius || Math.max(ext * 3, nn === Infinity ? 0 : nn / 2, 1);
+      var near = marks.filter(function (m) { var k = kindOfMark(m.mark, opts.markKind); return !r.kind || !k || k === r.kind; }).map(function (m) { return { m: m, d: hyp(c, m.p) }; }).filter(function (x) { return x.d <= rad; }).sort(function (a, b) { return a.d - b.d; });
+      var mark = null, why = null;
+      if (!near.length) why = 'no_mark_in_range';
+      else if (near.length > 1 && near[1].m.mark !== near[0].m.mark && near[1].d < near[0].d * 1.5) why = 'ambiguous_mark:' + near[0].m.mark + '/' + near[1].m.mark;
+      else mark = near[0].m.mark;
+      var sides = [0, 1, 2, 3].map(function (i) { return { a: r.pts[i], b: r.pts[(i + 1) % 4] }; }), lab = [null, null, null, null];
+      if (mark) {
+        var n = legend[mark].nums.slice(0, 2), l0 = hyp(sides[0].a, sides[0].b), l1 = hyp(sides[1].a, sides[1].b);
+        var keep = Math.abs(l0 - n[0]) + Math.abs(l1 - n[1]), swap = Math.abs(l0 - n[1]) + Math.abs(l1 - n[0]);   // the legend does not say which number is which side: take the assignment that fits the drawing best (reported as the pair's measured vs number)
+        var a0 = keep <= swap ? n[0] : n[1], a1 = keep <= swap ? n[1] : n[0];
+        lab[0] = lab[2] = a0; lab[1] = lab[3] = a1;
+      } else notes.push({ id: r.id, code: 'GAP:label_' + why });
+      sides.forEach(function (sd, i) { out.push({ id: r.id + ':' + i, a: sd.a, b: sd.b, sheet: r.sheet, label: lab[i], mark: mark }); });
+    });
+    return { lengths: out, notes: notes };
+  }
+
   // Best-effort side alignment (§L10 4a). a,b = end points along 1D axis coordinates; pinA/pinB = the side is fixed by grid/datum/neighbour.
   function align(a, b, number, pinA, pinB, tol) {
     tol = tol == null ? 1e-9 : tol; var dir = b >= a ? 1 : -1, len = Math.abs(b - a), res = len - number;
@@ -144,5 +197,5 @@
     if (pinB) return { a: b - dir * number, b: b, residual: 0, code: 'OK' };
     var c = (a + b) / 2; return { a: c - dir * number / 2, b: c + dir * number / 2, residual: 0, code: 'ALIGN:floating' };
   }
-  return { parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
+  return { legendOf: legendOf, markPoints: markPoints, labelRects: labelRects, parseNumber: parseNumber, dimsOf: dimsOf, pair: pair, align: align, defaults: defaults };
 });
