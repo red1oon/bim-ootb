@@ -150,6 +150,9 @@
       synth = { tol: tol, chosen: ch !== undefined, rects: sy.rects, nonRect: sy.nonRect, mixed: sy.mixed, loops: sy.loops, segments: sy.segments };
     }
     var sh = { name: name, text: text, sha: hashHex(shaIn), synth: synth, dxf: dxf, marks: marks.length, desc: d, errors: de.errors, role: null, why: null };
+    // §L11 HATCH loops (dxf-parser has none): read from the text on elevations, where wall panels are drawn as hatches; the layers they sit on are listed so the user can type them
+    var HH = (typeof self !== 'undefined' && self.Dxf2Hatch) || (typeof module === 'object' && module.exports ? require('./dxf2hatch.js') : null);
+    if (HH && /\nHATCH\r?\n/.test(text)) { sh.hatches = HH.parseHatches(text); sh.hatchLayers = sh.hatches.hatches.reduce(function (o, h) { if (h.layer) o[h.layer] = (o[h.layer] || 0) + 1; return o; }, {}); }
     var missing = [], other = [];
     de.errors.forEach(function (e) { if (e.code === 'MARK:missing') missing = missing.concat(e.keys || []); else other.push(e.code + ' ' + (e.message || '')); });
     if (!marks.length) sh.why = 'no DXF2BIM-MARK marking';

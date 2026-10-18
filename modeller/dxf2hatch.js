@@ -92,6 +92,29 @@
     }
     return { hatches: hatches, gaps: gaps };
   }
+  // LEADER entities (dxf-parser has none): the arrow TIP is the first vertex, the label sits at the last. -> [{handle, layer, pts:[[x,y],...]}]
+  function parseLeaders(text) {
+    var P = pairs(text), out = [];
+    for (var i = 0; i < P.length; i++) {
+      if (!(P[i][0] === '0' && P[i][1] === 'LEADER')) continue;
+      var L = { handle: null, layer: null, pts: [] }, j = i + 1;
+      for (; j < P.length && P[j][0] !== '0'; j++) {
+        var c = P[j][0], v = P[j][1];
+        if (c === '5' && L.handle === null) L.handle = v; else if (c === '8') L.layer = v;
+        else if (c === '10' && P[j + 1] && P[j + 1][0] === '20') L.pts.push([Number(v), Number(P[j + 1][1])]);
+      }
+      if (L.pts.length >= 2) out.push(L);
+      i = j - 1;
+    }
+    return out;
+  }
+  function inPoly(pt, poly) {
+    var c = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      if ((poly[i][1] > pt[1]) !== (poly[j][1] > pt[1]) && pt[0] < (poly[j][0] - poly[i][0]) * (pt[1] - poly[i][1]) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c;
+    }
+    return c;
+  }
   function area(pts) { var a = 0; for (var i = 0; i < pts.length; i++) { var p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
-  return { parseHatches: parseHatches, area: area };
+  return { parseHatches: parseHatches, parseLeaders: parseLeaders, inPoly: inPoly, area: area };
 });
