@@ -94,7 +94,8 @@ function run(args, log) {
   const read = I.readSheets(eff, { prep: P, prepChoices: choices });
   const packName = (args.pack && args.pack[0]) || 'cidb2024_my', packFile = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json'), packJ = fs.existsSync(packFile) ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : null;
   const BL0 = require('./dxf2bill.js'), complete = args.complete ? { slabT: packJ ? BL0.tRefOf(packJ.materials.IfcSlab) : null } : null;
-  const out = ST.judge(read, { I, B, choices, complete });
+  const refJ = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8'));
+  const out = ST.judge(read, { I, B, choices, complete, ref: refJ });
   say('§CLI ' + out.log);
   // §L10.8 every typed dimension override against its own measured length (per sheet unit), one row per distinct conflict
   const PR = require('./dxf2pair.js'), audit = { rows: [], counts: {} };

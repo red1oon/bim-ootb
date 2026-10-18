@@ -58,6 +58,12 @@
   }
   var BASIS_UNIT = { area: 'M2', volume: 'M3', length: 'M', count: 'EA' };
 
+  // the material a body is dressed in: the reference's part material, overridden by the first materialByLabel entry whose pattern the type label matches
+  function materialOf(cls, label, ref) {
+    var part = ref && ref.parts && ref.parts[cls]; if (!part) return null;
+    var mat = part.material; (part.materialByLabel || []).forEach(function (m) { if (label && new RegExp(m.match, 'i').test(label)) mat = m.material; });
+    return mat;
+  }
   // bodies: [{guid, kind, class, prov, vertices, faces, ifc:{type_name}}]; opts: { ref, pack: {meta, materials}, packName }
   function bill(bodies, opts) {
     var ref = opts.ref, pack = opts.pack || { materials: {} }, lines = [], flags = [], tot = { amount: 0, by_prov: { drawn: 0, derived: 0, assumed: 0 }, by_class: {} };
@@ -92,5 +98,5 @@
     return { pack: opts.packName || (pack.meta && pack.meta.name) || null, currency: cur, lines: lines, totals: tot, flags: flags,
       log: '§BILL lines=' + lines.length + ' amount=' + tot.amount + (cur ? ' ' + cur : '') + ' drawn=' + tot.by_prov.drawn + ' derived=' + tot.by_prov.derived + ' assumed=' + tot.by_prov.assumed + ' flags=' + flags.length };
   }
-  return { evalFormula: evalFormula, measures: measures, bill: bill, tRefOf: tRefOf };
+  return { evalFormula: evalFormula, measures: measures, bill: bill, tRefOf: tRefOf, materialOf: materialOf };
 });

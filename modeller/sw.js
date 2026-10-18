@@ -81,6 +81,8 @@ const PRECACHE_ASSETS = [
   'dxf2panels.js',
   'dxf2section.js',
   'dxf2synth.js',
+  'dxf2bill.js',
+  'synthetic_ref.json',
   'dxf2bodies.js',
   'dxf2suggest.js',
   'dxf2structure.js',

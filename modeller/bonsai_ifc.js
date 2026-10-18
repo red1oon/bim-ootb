@@ -208,6 +208,7 @@
         return api.CreateIfcEntity(mID, T.IFCTRIANGULATEDFACESET, ptList, null, null, tris, null);
       };
 
+      const matProducts = {};
       for (const op of ops) {
         _curOp = op;
         if (op.op_type === 'GEOM_INSERT') {
@@ -229,8 +230,9 @@
           // §L7.4 typing for 4D/5D: the importer's per-body IFC typing (provenance.ifc) travels into the file: Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum
           const tp = P.provenance && P.provenance.ifc && P.provenance.ifc.ifc_class === cls ? P.provenance.ifc : null, PDE = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum' };
           const pdx = tp && tp.PredefinedType && PDE[ent] ? [enumOf(PDE[ent], tp.PredefinedType)] : null;
-          productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
+          const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
+          if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
           seeded++;
           continue;
         }
@@ -332,6 +334,8 @@
       if (stList.length) rel(T.IFCRELAGGREGATES, building, stList.map(s => s.e));
       for (const st of stList) if (st.products.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, st.products, st.e);
       if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
+      Object.keys(matProducts).sort().forEach(name => { const mat = api.CreateIfcEntity(mID, T.IFCMATERIAL, label(name), null, null); api.WriteLine(mID, mat); rel(T.IFCRELASSOCIATESMATERIAL, matProducts[name], mat); });
+      if (Object.keys(matProducts).length) console.log(TAG + ' §IFC-MATERIAL ' + JSON.stringify(Object.keys(matProducts).sort().map(n => [n, matProducts[n].length])));
       console.log(TAG + ' §IFC-SPATIAL storeys=' + stList.length + ' ' + JSON.stringify(stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length])) +
         ' inBuilding=' + buildingProducts.length + ' contexts=1');
       const bytes = api.SaveModel(mID);
