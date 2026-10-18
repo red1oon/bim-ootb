@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `c3eb99e6b` — extractor: material_name + element_dxf2bim table for files carrying Pset_Dxf2Bim (gated; D
+Commit: `ffb478578` — extractor: per-mesh DXF2BIM metadata (material_name, element_dxf2bim) — stacked on #220 
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -23,4 +23,4 @@ Commit: `c3eb99e6b` — extractor: material_name + element_dxf2bim table for fil
 | dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | a6983807130c9898b7809430e397221383018ad84924db4e27eaabf240ba55ce |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show c3eb99e6b:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show ffb478578:deploy/dev/<file> | sha256sum` equals the column above.
