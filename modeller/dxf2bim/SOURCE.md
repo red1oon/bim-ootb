@@ -2,7 +2,7 @@
 
 Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
 
-Commit: `ffb478578` — extractor: per-mesh DXF2BIM metadata (material_name, element_dxf2bim) — stacked on #220 
+Commit: `d1fc92a8c` — extractor: one transaction for the write phase (shed 16.4 s -> 0.4 s, Duplex 6.4 s -> 0.6 
 
 | file | BIMCompiler source | sha256 |
 |---|---|---|
@@ -20,7 +20,7 @@ Commit: `ffb478578` — extractor: per-mesh DXF2BIM metadata (material_name, ele
 | dxf2bim/std2d_marks.js | deploy/dev/std2d_marks.js | dfe0cc0bf5e8ae811ef3729e60bac11b893662beff87bca0cc56906ccac511f4 |
 | dxf2bim/std2d_scopes.js | deploy/dev/std2d_scopes.js | f9fcada1ad0f7bf2276d2cf5f8818748ef41ebe2af7ba4b857c3390a5edf5420 |
 | dxf2bim/polygon-clipping.js | deploy/dev/polygon-clipping.js | de2bdc061b61d537f7d12f6519f46e35113f0f246b6a06293a08b615454946cf |
-| dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | a6983807130c9898b7809430e397221383018ad84924db4e27eaabf240ba55ce |
+| dxf2bim/ifc_extract_core.js | scripts/ifc_extract_core.js (the Node extractor body; one extractor, two hosts) | f823e6f07db8e20f1b39a067f001a2f61a50e2d84cce626c6f9f8a60ae0a5487 |
 | lib/dxf-parser.js | deploy/dev/dxf-parser.js (gdsestimating/dxf-parser, MIT, minified) | 8c4c9fa93250356e14dde6f156891d62a257cd759611072995b89ce3aa9c9ab8 |
 
-Check: `git -C <BIMCompiler> show ffb478578:deploy/dev/<file> | sha256sum` equals the column above.
+Check: `git -C <BIMCompiler> show d1fc92a8c:deploy/dev/<file> | sha256sum` equals the column above.

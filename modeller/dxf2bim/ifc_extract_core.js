@@ -899,6 +899,7 @@ async function extractToDb(ctx) {
 
   // ── Write SQLite DB ──
   const db = ctx.db;   // better-sqlite3 or a sql.js adapter: exec(sql), prepare(sql).run(...args)
+  db.exec('BEGIN');   // ONE transaction for the whole write phase: every row used to be its own disk commit (a 448-element model took 5-44 s, almost all of it fsync); same rows, same order
 
   db.exec(`CREATE TABLE project_metadata (key TEXT PRIMARY KEY, value TEXT)`);
   db.exec(`CREATE TABLE elements_meta (guid TEXT PRIMARY KEY, ifc_class TEXT, element_name TEXT, storey TEXT, discipline TEXT, material_name TEXT, material_rgba TEXT, building TEXT)`);
@@ -1020,6 +1021,7 @@ async function extractToDb(ctx) {
   log(`§WORLD_BBOX rows=${worldBbox.length}`);
 
 
+  db.exec('COMMIT');
   log(`§SUMMARY elements=${elements.length} geometries=${geometries.length} uniqueHashes=${seenHashes.size} 4D_tasks=${tasks.length}`);
   log(`§S18_SPATIAL_STRUCTURE buildings=${Object.keys(buildingMap).length} storeys=${Object.keys(storeyMap).length} storeysWithElevation=${Object.values(storeyElevation).filter(v => v != null).length} storeysWithRealParent=${Object.keys(storeyParentBuildingGuid).length} relAggregates=${Object.keys(storeyParentBuildingGuid).length}`);
 }
