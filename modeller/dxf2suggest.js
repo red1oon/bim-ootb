@@ -98,7 +98,7 @@
       });
     }
     function unitsOf(sh) { var u = get1(sh, 'UNITS'); return u ? u.value : null; }
-    // §L7.11 PR-Z-GROUND: the longest horizontal line at the lowest y, spanning >= 80% of the sheet = the ground line = z 0. No second @Z is invented.
+    // §L7.11 PR-Z-GROUND: the lowest horizontal line group that is at least 60% of the longest one (and 30% of the sheet) = the ground line = z 0. No second @Z is invented.
     function propZGround(sh, out, refused) {
       var H = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer !== LAYER && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= 1e-9; });
       var xs = []; sh.dxf.entities.forEach(function (e) { if (e.layer === LAYER || !e.vertices) return; e.vertices.forEach(function (v) { if (typeof v.x === 'number') xs.push(v.x); }); });
@@ -106,10 +106,13 @@
       var W = Math.max.apply(null, xs) - Math.min.apply(null, xs), by = {};
       H.forEach(function (e) { var y = Number(e.vertices[0].y.toFixed(4)); (by[y] = by[y] || { n: 0, len: 0, h: e.handle, max: 0 }); var L = Math.abs(e.vertices[0].x - e.vertices[1].x); by[y].len += L; by[y].n++; if (L > by[y].max) { by[y].max = L; by[y].h = e.handle; } });
       // the ground line may be drawn in segments: the lines at one y together must cover >= 80% of the sheet; of those y the LOWEST is the ground
-      var ys = Object.keys(by).map(Number).filter(function (y) { return by[y].len >= 0.8 * W; }).sort(function (a, b) { return a - b; });
+      // reference = the longest line group (not the sheet width: text, leaders and a title block widen the sheet, the shed's West elevation draws its 764 in ground line on a 962 in wide sheet = 79%); of the groups
+      // >= 60% of the longest, the LOWEST is the ground
+      var maxLen = Math.max.apply(null, Object.keys(by).map(function (y) { return by[y].len; }));
+      var ys = Object.keys(by).map(Number).filter(function (y) { return by[y].len >= 0.6 * maxLen && by[y].len >= 0.3 * W; }).sort(function (a, b) { return a - b; });
       if (!ys.length) { var best = Math.max.apply(null, Object.keys(by).map(function (y) { return by[y].len; })); refused.push({ rule: 'PR-Z-GROUND', why: 'no horizontal line (or line group at one height) covers 80% of the sheet; best ' + Math.round(100 * best / W) + '%' }); return; }
       var y0 = ys[0], g = by[y0];
-      out.push({ rule: 'PR-Z-GROUND', key: 'Z', value: '0', x: 0, y: Number(y0.toFixed(3)), why: 'ground line ' + g.h + (g.n > 1 ? ' + ' + (g.n - 1) + ' more segment(s)' : '') + ' (lowest line covering ' + Math.round(100 * g.len / W) + '% of the sheet); a second @Z is yours to state' });
+      out.push({ rule: 'PR-Z-GROUND', key: 'Z', value: '0', x: 0, y: Number(y0.toFixed(3)), why: 'ground line ' + g.h + (g.n > 1 ? ' + ' + (g.n - 1) + ' more segment(s)' : '') + ' (lowest line group covering ' + Math.round(100 * g.len / maxLen) + '% of the longest one); a second @Z is yours to state' });
     }
     function propZ(sh, out, refused) {                          // mark_dx_set.js levelPairs: level text +-z.zzz paired by its own y or a level line
       var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z', why: 'units unknown' }); return; }

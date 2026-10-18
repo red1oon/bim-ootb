@@ -29,6 +29,10 @@ r = H.parseHatches(doc(head('A7', 'Wall', 'BLOCKS') + g(91, 1) + polyPath([[0, 0
 const bumpArea = bl => Math.abs(H.area(H.parseHatches(doc(head('B', 'Wall', 'BLOCKS') + g(91, 1) + polyPath([[0, 0], [100, 0], [100, 50], [0, 50]], true, bl) + tail)).hatches[0].loops[0].pts));
 ok('H7 a polyline bulge of 1 (a semicircle, r 25) on the right side adds or removes exactly the half disc area (981.7) depending on its sign; no bulge = 5000', r.hatches[0].loops[0].arc && Math.abs(bumpArea([0, 0, 0, 0]) - 5000) < 1e-9 && [bumpArea([0, 1, 0, 0]), bumpArea([0, -1, 0, 0])].sort((x, y) => x - y).every((v, i) => Math.abs(v - (i ? 5000 + 981.75 : 5000 - 981.75)) < 15), [bumpArea([0, 1, 0, 0]).toFixed(1), bumpArea([0, -1, 0, 0]).toFixed(1)].join(' / '));
 ok('H8 FALSIFIER the text of a drawing with no hatches yields none and no gap', H.parseHatches(doc(g(0, 'LINE') + g(8, 'X') + g(10, 0) + g(20, 0) + g(11, 1) + g(21, 1))).hatches.length === 0);
+const LD = (h, pts) => g(0, 'LEADER') + g(5, h) + g(8, 'Dim') + g(100, 'AcDbLeader') + g(76, pts.length) + pts.map(p => g(10, p[0]) + g(20, p[1]) + g(30, 0)).join('');
+const ls = H.parseLeaders(doc(LD('L1', [[10, 10], [20, 40], [35, 40]]) + LD('L2', [[1, 1]]) + g(0, 'LINE') + g(8, 'X') + g(10, 0) + g(20, 0) + g(11, 1) + g(21, 1)));
+ok('H10 LEADER entities: tip = first vertex, label end = last; a one-vertex stub is not a leader; other entities are ignored', ls.length === 1 && ls[0].handle === 'L1' && ls[0].pts[0].join() === '10,10' && ls[0].pts[2].join() === '35,40');
+ok('H11 inPoly: a point inside the 100x50 box, one outside, one in the notch of an L shape', H.inPoly([50, 25], rect) && !H.inPoly([150, 25], rect) && !H.inPoly([25, 40], [[0, 0], [100, 0], [100, 50], [50, 50], [50, 25], [0, 25]]));
 // H9 the real shed: every hatch of the source sheets is accounted for (raw count == parsed count) and all loops close
 const SH = process.env.SHED_SHEETS || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets/');
 if (!fs.existsSync(path.join(SH, '0_FLOOR_PLAN.dxf'))) console.log('SKIP H9: local shed sheets not present');

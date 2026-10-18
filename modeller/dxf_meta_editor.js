@@ -41,7 +41,7 @@
   var ROLE_VIEW = { PLAN: 'plan', ELEV: 'elev', ROOF: 'roof', SECTION: 'section' };
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel'];   // §L7.12 body kinds (dxf2marks LAYER_TYPES.BODY)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
   var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
@@ -139,7 +139,7 @@
   function setLayerRule(role, layer, ui, only) {   // only (§L9): one sheet by name; otherwise every sheet of the role that holds the layer
     var n = 0;
     S.sheets.forEach(function (sh) {
-      if (ROLE_VIEW[viewOf(sh)] !== role || (only && sh.name !== only) || !sh.dxf.entities.some(function (e) { return e.layer === layer; })) return;
+      if (ROLE_VIEW[viewOf(sh)] !== role || (only && sh.name !== only) || !(sh.dxf.entities.some(function (e) { return e.layer === layer; }) || (sh.hatchLayers && sh.hatchLayers[layer]))) return;
       sh.marks = sh.marks.filter(function (q) { var l = q.key === 'LAYER' && layerOf(q); return !(l && l.layer === layer); });
       if (ui) { sh.marks.push({ key: 'LAYER', value: layer + ',' + ruleType(ui, role), x: 0, y: 0, source: 'user' }); n++; }
     });
@@ -570,7 +570,7 @@
   }
   function renderLayers() {
     var byRole = {}, nBad = 0, h = '', onSheets = {};
-    S.sheets.forEach(function (sh) { var role = ROLE_VIEW[viewOf(sh)] || 'none'; var seenHere = {}; sh.dxf.entities.forEach(function (e) { if (e.layer === LAYER) return; var R = byRole[role] = byRole[role] || {}; R[e.layer] = (R[e.layer] || 0) + 1; if (!seenHere[e.layer]) { seenHere[e.layer] = 1; (onSheets[role + '|' + e.layer] = onSheets[role + '|' + e.layer] || []).push(sh); } }); });
+    S.sheets.forEach(function (sh) { var role = ROLE_VIEW[viewOf(sh)] || 'none'; var seenHere = {}; sh.dxf.entities.concat(Object.keys(sh.hatchLayers || {}).map(function (l) { return { layer: l, hatchOnly: sh.hatchLayers[l] }; })).forEach(function (e) { if (e.layer === LAYER) return; var R = byRole[role] = byRole[role] || {}; R[e.layer] = (R[e.layer] || 0) + (e.hatchOnly || 1); if (!seenHere[e.layer]) { seenHere[e.layer] = 1; (onSheets[role + '|' + e.layer] = onSheets[role + '|' + e.layer] || []).push(sh); } }); });
     ['plan', 'elev', 'roof', 'section', 'none'].forEach(function (role) {
       if (!byRole[role]) return;
       h += '<div class="dm-sub">' + (role === 'none' ? 'Sheets without a role (choose a role first)' : role.toUpperCase() + ' sheets') + '</div>';
@@ -888,7 +888,7 @@
     bind(); S.cache = {};
     S.sheets = sheets.map(function (s) {
       var marks = MK.readMarks(s.dxf.entities).map(function (m) { var p = parseRaw(m.raw); return { key: p.key, value: p.value, by: p.by, raw: m.raw, x: m.x, y: m.y, handle: m.handle, source: 'file' }; });
-      var sh = { name: s.name, text: s.text, dxf: s.dxf, marks: marks };
+      var sh = { name: s.name, text: s.text, dxf: s.dxf, marks: marks, hatchLayers: s.hatchLayers || null };
       sh.fileSig = marks.map(function (m) { return [m.raw, m.x, m.y]; });
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;

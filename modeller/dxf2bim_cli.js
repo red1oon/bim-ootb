@@ -42,6 +42,7 @@ function load(file) {
   const text = fs.readFileSync(file, 'utf8'), dxf = new DxfParser().parseSync(text);
   const marks = MK.readMarks(dxf.entities).map(m => { const r = /^@([A-Z]+)=(.*)$/.exec(m.raw.replace(/\s+@BY=\S+$/, '')); return { key: r[1], value: r[2], x: m.x, y: m.y, source: 'file' }; });
   const sh = { name: path.basename(file), text, dxf, marks };
+  if (/\nHATCH\r?\n/.test(text)) { sh.hatchLayers = {}; require('./dxf2hatch.js').parseHatches(text).hatches.forEach(h => { if (h.layer) sh.hatchLayers[h.layer] = (sh.hatchLayers[h.layer] || 0) + 1; }); }   // layers that hold only hatches are typeable too (§L11)
   sh.fileSig = marks.map(m => [SG.markText(m, true), m.x, m.y]);
   return sh;
 }
@@ -79,7 +80,7 @@ function run(args, log) {
   args.datum.forEach(d => { const m = /^(.+?):([-\d.]+)@([-\d.]+)$/.exec(d); if (!m) throw new Error('--datum <sheet>:<z>@<y>: ' + d); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--datum: no sheet ' + m[1]); put(sh, 'Z', m[2], 0, Number(m[3])); });
   if (args.accept) acceptAll('3');
   args.layer.forEach(l => { const m = /^(plan|elev|section|roof):(.+)=([a-z]+)(?:@(.+))?$/.exec(l); if (!m) throw new Error('--layer <role>:<layer>=<kind>[@<sheet>]: ' + l);
-    sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && (!m[4] || sh.name.includes(m[4])) && sh.dxf.entities.some(e => e.layer === m[2])).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
+    sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && (!m[4] || sh.name.includes(m[4])) && (sh.dxf.entities.some(e => e.layer === m[2]) || (sh.hatchLayers && sh.hatchLayers[m[2]]))).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
   (args.exclude || []).forEach(x => { const m = /^(.+?):([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)$/.exec(x); if (!m) throw new Error('--exclude <sheet>:x0,y0,x1,y1: ' + x); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--exclude: no sheet ' + m[1]); put(sh, 'EXCLUDE', m.slice(2, 6).join(',')); });
   args.bodyz.forEach(b => { const m = /^([a-z]+)=([-\d.]+),([-\d.]+)$/.exec(b); if (!m) throw new Error('--bodyz <kind>=<z0>,<z1>: ' + b); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--bodyz: no plan sheet'); put(sh, 'BODYZ', m[1] + ',' + m[2] + ',' + m[3]); });
   (args.size || []).forEach(z => { const m = /^(.+):([xywd])=([\d.]+)$/.exec(z); if (!m) throw new Error('--size <body id>:<x|y|w|d>=<metres>: ' + z); const sh = sheets.find(s => viewOf(s) === 'PLAN'); if (!sh) throw new Error('--size: no plan sheet'); put(sh, 'SIZE', m[1] + ',' + m[2] + ',' + m[3]); });
