@@ -16,6 +16,7 @@
   var MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
+  var NET_RE = /zigzag|mesh|net\b|wire/i;
   var LABEL = /^([^A-Za-z]+?)\s*(?:[A-Za-z]+\s+)?wall\b/i;   // "10\" Brick Wall", "5\" Support Wall, H-24\"": a thickness, one descriptor word, "wall"
 
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -36,10 +37,10 @@
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var markNums = {}; sheets.forEach(function (sh) { ((sh.desc && sh.desc.sizes) || []).forEach(function (q) { (markNums[q.id] = markNums[q.id] || {})[q.axis] = q.value; }); });
     var userN = function (id) { return Object.assign({}, markNums[id], opts.numbers && opts.numbers[id]); };
-    var elevs = sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel' || l.type === 'fan'; }); });
+    var elevs = sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel' || l.type === 'fan' || l.type === 'net'; }); });
     if (!elevs.length) return { els: els, gaps: gaps, defaults: [], report: report };
     if (!plans.length) { gaps.push({ code: 'GAP:panel_no_plan', detail: 'a plan is needed for the grid' }); return { els: els, gaps: gaps, defaults: [], report: report }; }
-    var planUsed = false, tUsed = false, inherited = [], fansUsed = false;
+    var planUsed = false, tUsed = false, inherited = [], fansUsed = false, netsUsed = false;
     elevs.forEach(function (es, ei) {
       var rep = report.sheets[es.name] = { hatches: 0, loops: 0, panels: 0, left_out: 0 };
       var F = FACE[es.face]; if (!F) { gaps.push({ code: 'GAP:panel_face', sheet: es.name, detail: 'elevation face ' + es.face + ' is not minX/maxX/minY/maxY' }); return; }
@@ -118,6 +119,27 @@
           size: { t: { number: r6(t), source: src, text: text }, plane: r6(plane), pattern: lp.h.pattern }, members: [lp.h.handle] });
         rep.panels++; report.panels++;
       });
+      // §L11.4 nets: the mesh-pattern hatches (ZIGZAG, MESH, NET, WIRE) of a layer typed `net`: a thin cladding sheet over the opening above a low panel (a farm's ventilation net). The pattern is the evidence of
+      // kind; the thickness is not drawn (yellow default 5 mm; @SIZE w states it). Two hatch objects with the same boundary (the drawing stores the zigzag twice) are ONE net.
+      var netL = es.desc.layers.filter(function (l) { return l.type === 'net'; }).map(function (l) { return l.layer; });
+      if (netL.length) {
+        var seenNet = {};
+        hs.filter(function (h) { return netL.indexOf(h.layer) >= 0 && NET_RE.test(h.pattern || ''); }).forEach(function (h) {
+          h.loops.filter(function (l) { return l.closed; }).forEach(function (l, li, all) {
+            var key = l.pts.map(function (q) { return Math.round(q[0] * 1000) + ',' + Math.round(q[1] * 1000); }).sort().join(';'); if (seenNet[key]) { report.nets_dup = (report.nets_dup || 0) + 1; return; } seenNet[key] = 1;
+            var id = 'body-net-' + ei + '-' + h.handle + (all.length > 1 ? '-L' + li : ''), u = userN(id), t = u.w > 0 ? Number(u.w) : (opts.netT > 0 ? opts.netT : 0.005), poly = dropCollinear(l.pts).map(function (q) { return [map.toPlan(q[0]), map.zOf(q[1])]; });
+            var m = M.prism(poly, plane + t / 2, t); if (!m) { gaps.push({ code: 'GAP:net_degenerate', sheet: es.name, kind: 'net', handle: h.handle, detail: 'the outline could not be triangulated' }); return; }
+            var V3, F3;
+            if (F.coord === 'X') { V3 = m.vertices.map(function (q2) { return [r6(q2[2]), r6(q2[0]), r6(q2[1])]; }); F3 = m.faces; }
+            else { V3 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F3 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
+            var nm = { vertices: V3, faces: F3 }; if (volume(nm) < 0) nm.faces = nm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
+            var zz = poly.map(function (q) { return q[1]; });
+            els.push({ guid: id, class: P.ifcType('net').ifc_class, storey: 'Level 1', vertices: nm.vertices, faces: nm.faces, handle: h.handle + (all.length > 1 ? '-L' + li : ''), layer: h.layer, sheet: es.name, kind: 'net', prov: 'derived',
+              ifc: P.ifcType('net', 'Netting', null), mark: null, z0: r6(Math.min.apply(null, zz)), z1: r6(Math.max.apply(null, zz)), height_source: 'elevation', size: { t: { number: r6(t), source: u.w > 0 ? 'user' : 'default' }, plane: r6(plane), pattern: h.pattern }, members: [h.handle] });
+            report.nets = (report.nets || 0) + 1; netsUsed = true;
+          });
+        });
+      }
       // §L11.3 fans: concentric CIRCLEs of a layer typed `fan` on this elevation (the outer circle is the housing, the inner the hub): a disc of that diameter on the wall plane, depth a yellow default
       var fanL = es.desc.layers.filter(function (l) { return l.type === 'fan'; }).map(function (l) { return l.layer; });
       if (fanL.length && un) {
@@ -143,6 +165,7 @@
     });
     if (planUsed) DEF.assume('panel.plane', 'end grid line, centred', 'a wall panel is drawn on the elevation, which does not say whether it is flush with the grid line or centred on it; the outermost grid line on the face\'s side is used and the thickness is centred on it', ['end grid line, centred']);
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
+    if (netsUsed) DEF.assume('net.thickness', String(opts.netT > 0 ? opts.netT : 0.005), 'the netting thickness is not drawn; the area (the hatch boundary) is. Cost is by area', ['0.002', '0.005', '0.01']);
     if (fansUsed) DEF.assume('fan.depth', String(opts.fanDepth > 0 ? opts.fanDepth : 0.3), 'the fan housing depth is not drawn; the diameter is (the outer circle). Position: centred on the wall plane', ['0.2', '0.3', '0.4']);
     return { els: els, gaps: gaps, defaults: DEF.rows(), report: report };
   }
