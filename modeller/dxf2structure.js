@@ -10,7 +10,7 @@
   else root.Dxf2Structure = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net'];
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];
   var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'elevdoor', 'sectslab', 'sectwall', 'roof', 'levelline'];
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
   function judge(sheets, ctx) {
@@ -28,6 +28,12 @@
     if (PN && !refused.length && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel' || l.type === 'fan' || l.type === 'net'; }); })) {
       var pn = PN.buildPanels(sheets, { numbers: ctx.numbers });
       res.els = res.els.concat(pn.els); res.gaps = res.gaps.concat(pn.gaps); res.defaults = (res.defaults || []).concat(pn.defaults); res.report = Object.assign({}, res.report, { panels: pn.report });
+    }
+    // §L16 door leaves from plan swing symbols (a plan layer typed `doorswing`), after the other bodies (the floor level comes from the drawn columns)
+    var DR = ctx.DR || (typeof module === 'object' && module.exports ? require('./dxf2doors.js') : (typeof self !== 'undefined' ? self.Dxf2Doors : null));
+    if (DR && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'doorswing'; }); })) {
+      var dr = DR.buildDoors(sheets, res.els, { numbers: ctx.numbers });
+      res.els = res.els.concat(dr.els); res.gaps = res.gaps.concat(dr.gaps); res.defaults = (res.defaults || []).concat(dr.defaults);
     }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));

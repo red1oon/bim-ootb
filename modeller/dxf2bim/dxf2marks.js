@@ -19,7 +19,7 @@
     ROOF: ['roof', 'glazing', 'ignore'],                                               // Dxf2Shell.roofPlan
     SECTION: ['sectslab', 'sectwall', 'roof', 'ignore'],                               // Dxf2Shell.sectionSlabs (+ L2.8 section walls)
     ANY: ['dims', 'grid'],
-    BODY: ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net'] };   // bim-ootb lane L7.10 (+ L11 panel = an elevation HATCH layer read as wall panels; + L14 bar = LINE members of a SECTION sheet; + L11.3 fan = concentric CIRCLEs on an elevation; + L11.4 net = the ZIGZAG/mesh-pattern hatches of an elevation layer): the user types a layer with a BODY kind (any view); every existing reader maps it to 'ignore', the bodies module reads it
+    BODY: ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'] };   // bim-ootb lane L7.10 (+ L11 panel = an elevation HATCH layer read as wall panels; + L14 bar = LINE members of a SECTION sheet; + L11.3 fan = concentric CIRCLEs on an elevation; + L11.4 net = the ZIGZAG/mesh-pattern hatches of an elevation layer; + L16 doorswing = ARC swing symbols of a plan layer): the user types a layer with a BODY kind (any view); every existing reader maps it to 'ignore', the bodies module reads it
   function err(code, message, extra) { return Object.assign({ code: code, message: message }, extra || {}); }
 
   // entities: parsed by dxf-parser (TEXT/MTEXT with .text and .startPoint/.position)
