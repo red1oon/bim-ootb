@@ -131,7 +131,7 @@
       var iu = sh.dxf.header && sh.dxf.header.$INSUNITS;
       if (HEADER_UNITS[iu]) out.push({ rule: 'PR-UNITS', key: 'UNITS', value: HEADER_UNITS[iu], x: 0, y: 0, why: 'file says ' + HEADER_UNITS[iu] + ' ($INSUNITS=' + iu + ')' });
       else refused.push({ rule: 'PR-UNITS', why: '$INSUNITS ' + (iu === undefined ? 'absent' : iu + ' not a length unit') });
-      var titles = {}; sh.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && /(PLAN|ELEVATION|SECTION)\s*$/i.test(String(e.text || '').trim())) titles[String(e.text).trim()] = 1; });
+      var titles = {}; sh.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(String(e.text || '').trim()) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(String(e.text || '').trim()))) titles[String(e.text).trim()] = 1; });   // "Section A-A" / "Section A-A (Truss Detail)"
       var tl = Object.keys(titles);
       if (tl.length === 1) {
         var t = tl[0], vw = /ROOF PLAN$/i.test(t) ? 'ROOF' : /PLAN$/i.test(t) ? 'PLAN' : /ELEVATION$/i.test(t) ? 'ELEV' : 'SECTION';
@@ -143,6 +143,21 @@
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
+      if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
+        var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
+        if (secName && get1(sh, 'HAXIS') !== undefined) {
+          ctx.sheets().filter(function (o) { return o !== sh && viewOf(o) === 'PLAN'; }).forEach(function (pl) {
+            var ks = unitsK(sh), kp = unitsK(pl), at = pl.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && String(e.text || '').trim().toUpperCase() === secName.toUpperCase(); }).map(txtPos);
+            var pairs = []; for (var i = 0; i < at.length; i++) for (var j = i + 1; j < at.length; j++) {
+              if (Math.abs(at[i][0] - at[j][0]) <= 1e-6 * Math.max(1, Math.abs(at[i][0])) * 1e3 && Math.abs(at[i][1] - at[j][1]) > 0) pairs.push(['X', at[i][0]]);
+              else if (Math.abs(at[i][1] - at[j][1]) <= 1e-6 * Math.max(1, Math.abs(at[i][1])) * 1e3 && Math.abs(at[i][0] - at[j][0]) > 0) pairs.push(['Y', at[i][1]]);
+            }
+            if (pairs.length === 1 && kp && ks && !cutDone) { cutDone = true; out.push({ rule: 'PR-CUT', key: 'CUT', value: pairs[0][0] + ',' + Number((pairs[0][1] * kp / ks).toFixed(4)), x: 0, y: 0, why: 'the two "' + secName + '" labels of the section line on ' + pl.name }); }
+            else if (!cutDone) refused.push({ rule: 'PR-CUT', why: pairs.length + ' aligned pairs of the label "' + secName + '" on ' + pl.name + ' (need exactly 1)' });
+          });
+        } else if (!secName) refused.push({ rule: 'PR-CUT', why: 'the title does not name the section as "Section X-X"' });
+      }
+      if (v === 'SECTION') { var hxs = propHaxis(sh); if (hxs.value) out.push(hxs); else refused.push(hxs); }
       if (v === 'ELEV') {
         if (faces.length === 1) out.push({ rule: 'PR-FACE', key: 'FACE', value: faces[0][1], x: 0, y: 0, why: 'sheet name / title ' + faces[0][0] + (/^(SOUTH|NORTH|WEST|EAST)$/.test(faces[0][0]) ? ' = the ' + faces[0][1] + ' face with north up (convention, not evidence)' : ' (repo convention R11, not evidence)') });
         var hx = propHaxis(sh); if (hx.value) out.push(hx); else refused.push(hx);

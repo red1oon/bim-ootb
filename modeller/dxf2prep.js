@@ -177,7 +177,7 @@
   var KIND = {
     column: ['IfcColumn', 'COLUMN'], footing: ['IfcFooting', 'PAD_FOOTING'], gradebeam: ['IfcBeam', 'BEAM'], beam: ['IfcBeam', 'BEAM'],
     wall: ['IfcWall', 'STANDARD'], supportwall: ['IfcWall', 'STANDARD'], roof: ['IfcRoof', 'GABLE_ROOF'],
-    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
+    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
     door: ['IfcDoor', 'DOOR'], window: ['IfcWindow', 'WINDOW']
   };
   function ifcType(kind, typeName, material) {
