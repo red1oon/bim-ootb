@@ -17,7 +17,7 @@
     var I = ctx.I, B = ctx.B, refused = [];
     // §L29 a details sheet (no role, but it states general notes: concrete grade, steel grade, casting ratios) is a NOTES sheet: read for its text, never refused
     var NT = ctx.NT || (typeof module === 'object' && module.exports ? require('./dxf2notes.js') : (typeof self !== 'undefined' ? self.Dxf2Notes : null));
-    var notes = NT ? NT.read(sheets.filter(function (s) { return !s.role; })) : { rows: [], sheets: [] };
+    var notes = NT ? NT.read(sheets.filter(function (s) { return !s.role; })) : { rows: [], sheets: [], schedules: null };
     sheets.filter(function (s) { return !s.role && notes.sheets.indexOf(s.name) < 0; }).forEach(function (s) { refused.push({ sheet: s.name, reason: s.why || 'no role' }); });
     if (sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return WALLISH.indexOf(l.type) >= 0; }); }))
       refused.push({ sheet: '(set)', reason: 'mixed sets are not supported yet: body kinds and wall / slab / opening / roof layers are typed together' });
@@ -27,7 +27,7 @@
     var choices = ctx.choices || {};
     var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices });
     // §L18 the element-defaults registry: the drawing's @DEFAULT markings > the editor's choices > element_defaults.json; modules call DF.use(key) when they APPLY a default; the yellow rows come from DF
-    var DFM = ctx.DFM || (typeof module === 'object' && module.exports ? require('./dxf2defaults.js') : (typeof self !== 'undefined' ? self.Dxf2Defaults : null)), DF = DFM ? DFM.create(ctx.defaultsRef || null, sheets, choices) : null;
+    var DFM = ctx.DFM || (typeof module === 'object' && module.exports ? require('./dxf2defaults.js') : (typeof self !== 'undefined' ? self.Dxf2Defaults : null)), DF = DFM ? DFM.create(ctx.defaultsRef || null, sheets, choices, notes.schedules && notes.schedules.derived.belowgrade ? { 'synth.column.belowgrade.size': notes.schedules.derived.belowgrade } : null) : null;
     if (DF && DF.has('building.type')) DF.use('building.type');   // the building type is always a visible setting (yellow until stated)
     // §L11.2 wall panels from elevation hatch loops (a hatch layer typed `panel`): built alongside the plan/elevation bodies, same gaps/defaults channels
     var PN = ctx.PN || (typeof module === 'object' && module.exports ? require('./dxf2panels.js') : (typeof self !== 'undefined' ? self.Dxf2Panels : null));
@@ -53,6 +53,7 @@
       var sy = SY.complete(sheets, res.els, { DF: DF });
       res.els = res.els.concat(sy.els); res.gaps = res.gaps.concat(sy.gaps); res.defaults = (res.defaults || []).concat(sy.defaults);
     }
+    if (notes.schedules) { notes.schedules.gaps.forEach(function (g) { res.gaps.push({ code: g.code, detail: g.detail }); }); notes.schedules.unassigned.forEach(function (u) { res.gaps.push({ code: 'GAP:schedule_cell_unassigned', sheet: u.sheet, handle: u.handle, detail: '"' + u.text + '": ' + u.why }); }); }
     if (DF) { res.defaults = (res.defaults || []).concat(DF.rows()); res.defaults_table = DF.table(); res.defaults_invalid = DF.invalid(); }
     // §L13.3 material dress: every body's IFC typing carries the reference's material (IfcMaterial + IfcRelAssociatesMaterial in the IFC writers)
     var BL = ctx.BL || (typeof module === 'object' && module.exports ? require('./dxf2bill.js') : (typeof self !== 'undefined' ? self.Dxf2Bill : null));
@@ -62,7 +63,7 @@
       res.els.forEach(function (e) { if (!e.ifc) return; var c = e.ifc.material && PAL[e.ifc.material];
         var sz = e.size || {}, basis = Object.keys(sz).filter(function (k) { return sz[k] && typeof sz[k] === 'object' && sz[k].source; }).map(function (k) { return k + ':' + sz[k].source; }).join(' ');
         if (!c && e.ifc.material) miss[e.ifc.material] = 1;
-        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: Object.assign({ Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis }, NT ? NT.propsFor(e, notes.rows) : {}) }); });
+        e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: Object.assign({ Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis }, NT ? NT.propsFor(e, notes.rows) : {}, NT && notes.schedules ? NT.schedProps(e, notes.schedules.tables) : {}) }); });
       Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
     res.notes = notes;
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
