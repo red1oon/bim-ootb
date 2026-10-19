@@ -1,0 +1,112 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "dxf2bim-bodies/1",
+ "title": "bodies.json: one entry per body the product built",
+ "type": "array",
+ "items": {
+  "type": "object",
+  "required": [
+   "guid",
+   "class",
+   "kind",
+   "storey",
+   "z0",
+   "z1",
+   "prov",
+   "ifc",
+   "sheet",
+   "handle",
+   "size",
+   "bbox"
+  ],
+  "properties": {
+   "guid": {
+    "type": "string",
+    "minLength": 1
+   },
+   "class": {
+    "type": "string",
+    "pattern": "^Ifc[A-Za-z0-9]+$"
+   },
+   "kind": {
+    "type": "string"
+   },
+   "storey": {
+    "type": "string"
+   },
+   "z0": {
+    "type": "number"
+   },
+   "z1": {
+    "type": "number"
+   },
+   "height_source": {
+    "type": "string"
+   },
+   "prov": {
+    "enum": [
+     "drawn",
+     "derived",
+     "assumed"
+    ],
+    "description": "evidence tier: measured from a drawn entity / computed from drawn evidence plus a stated convention / no drawn evidence"
+   },
+   "ifc": {
+    "type": "object",
+    "required": [
+     "ifc_class"
+    ],
+    "properties": {
+     "ifc_class": {
+      "type": "string"
+     },
+     "PredefinedType": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "type_name": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "material": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "colour": {},
+     "props": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "the evidence set Dxf2Bim_Evidence (+ Note_*, NoteSource_*, Sched_*, SchedSource_*, SchedBasis_*)"
+     }
+    }
+   },
+   "sheet": {
+    "type": "string"
+   },
+   "handle": {
+    "type": "string"
+   },
+   "size": {
+    "type": [
+     "object",
+     "null"
+    ]
+   },
+   "bbox": {
+    "type": "array",
+    "items": {
+     "type": "number"
+    },
+    "minItems": 4
+   }
+  }
+ }
+}
