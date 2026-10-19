@@ -18,6 +18,8 @@
   'use strict';
   var TAG = '§DXF-IMPORT';
   var DxfParser = L.DxfParser, B = L.B, MK = L.MK, E = L.E, M = L.M, T = L.T, S = L.S, C = L.C, Q = L.Q;
+  // F6 D11: a plan states the thinnest wall piece it reads as a wall (@WALLMIN, metres); without it the set config stands
+  function cfgFor(desc) { var w = desc && desc.wallmin !== undefined ? Number(desc.wallmin) : NaN; return isFinite(w) && w > 0 ? Object.assign({}, C.CFG, { wall: Object.assign({}, C.CFG.wall, { min_thickness: w }) }) : C.CFG; }
 
   // ---- SHA-256 (FIPS 180-4), synchronous, over the UTF-8 bytes of a string: the modules need a sync hashHex (crypto.subtle is async).
   // Equality with Node crypto is witnessed by C1 (run_id hashes every sheet text and every storey run id).
@@ -222,7 +224,7 @@
     var mapsOf = function (v) { return !SET ? null : v === 'PLAN' ? [SET.MAP_PLAN] : v === 'ROOF' ? [SET.MAP_ROOF] : v === 'SECTION' ? [SET.MAP_SECT] : v === 'ELEV' ? [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []) : null; };
     sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).forEach(function (sh) {
       var f = { name: sh.name, dxf: sh.dxf }, lm = mapsOf(sh.desc.view); if (lm) f.layer_maps = lm; files.push(f);
-      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, MK.withLayers(SET.MAP_PLAN, sh.desc), CFG, { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
+      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, MK.withLayers(SET.MAP_PLAN, sh.desc), cfgFor(sh.desc), { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
     });
     return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
@@ -231,7 +233,7 @@
   // the editor's Doors section resolves a canvas click and places a @TAG with the reader's own door geometry. Pure; metres.
   function planDoors(sheet, setName, opts) {
     var SET = setWith(setName); if (!SET || !sheet || sheet.desc.view !== 'PLAN' || !(sheet.desc.units in MK.UNITS)) return null;
-    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), C.CFG, { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
+    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), cfgFor(sheet.desc), { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
     return { factor: MK.UNITS[sheet.desc.units], snap_tol: C.CFG.snap_tol, doors: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge; }).map(function (o) {
       var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }) };
   }
@@ -269,7 +271,7 @@
     var z = Math.round((cl.z0 + cl.z1) / 2 * 1e4) / 1e4;
     var pl = P.filter(function (s) { return s.desc.level <= z; }).pop();
     if (!pl) return no('z ' + z + ' is below the lowest plan level ' + P[0].desc.level);
-    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), C.CFG, { DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
+    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), cfgFor(pl.desc), { DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
     var walls = run.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; });
     if (!walls.length) return no('plan ' + pl.name + ' has no wall pieces (no envelope)');
     var env = S.envelope(walls), face = elev.desc.face, ax = (face === 'minY' || face === 'maxY') ? 0 : 1, fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face];
@@ -325,7 +327,7 @@
         nxt = Math.min.apply(null, above);
       }
       st.top = nxt;
-      var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), CFG, deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
+      var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), cfgFor(st.sh.desc), deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
       var ops = E.applyElevations(run.ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex }).ops;
       ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
       // L2.6 C: the plan's door tags label the doors before their heights; a door no elevation shows takes the scheduled height
