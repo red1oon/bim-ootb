@@ -136,6 +136,44 @@
   },
   "report": {
    "type": "object"
+  },
+  "layer_ledger": {
+   "type": [
+    "object",
+    "null"
+   ],
+   "description": "per layer: what is on it, how it was typed, how much of it produced a body (dxf2ledger.js)",
+   "properties": {
+    "totals": {
+     "type": "object"
+    },
+    "rows": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "sheet",
+       "layer",
+       "geometry",
+       "status"
+      ],
+      "properties": {
+       "status": {
+        "enum": [
+         "settings",
+         "annotation",
+         "ignored_by_choice",
+         "used",
+         "partly_used",
+         "evidence",
+         "typed_no_output",
+         "unread"
+        ]
+       }
+      }
+     }
+    }
+   }
   }
  }
 }

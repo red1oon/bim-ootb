@@ -126,10 +126,11 @@
       };
       const contain = (e, type) => { if (type === T.IFCOPENINGELEMENT) return; const st = storeyFor(_curOp); (st ? st.products : buildingProducts).push(e); };
 
+      const worldPl = api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, null, place3([0, 0, 0]));
       const productFromRep = (rep, type, name, gn, extra, objType) => {   // an already-built IfcShapeRepresentation -> a product
         const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
         const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn));
-        const args = [g, null, label(name), null, objType ? label(objType) : null, null, pds, null];
+        const args = [g, null, label(name), null, objType ? label(objType) : null, worldPl, pds, null];   // §F1: IfcProduct.WR1: a product with a Representation needs an ObjectPlacement (geometry is in world coordinates: shared identity)
         if (extra) args.push(...extra);                       // IfcOpeningElement adds Tag + PredefinedType
         const e = api.CreateIfcEntity(mID, type, ...args);
         api.WriteLine(mID, e);

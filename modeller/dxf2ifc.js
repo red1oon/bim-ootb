@@ -74,6 +74,7 @@
     const units = api.CreateIfcEntity(mID, T.IFCUNITASSIGNMENT, [siUnit('LENGTHUNIT', 'METRE'), siUnit('AREAUNIT', 'SQUARE_METRE'), siUnit('VOLUMEUNIT', 'CUBIC_METRE'), siUnit('PLANEANGLEUNIT', 'RADIAN')]);
     const ctx = api.CreateIfcEntity(mID, T.IFCGEOMETRICREPRESENTATIONCONTEXT, null, label('Model'), api.CreateIfcType(mID, T.IFCDIMENSIONCOUNT, 3), real(1e-5), place3([0, 0, 0]), null);
     const spatialGid = k => api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(1000000 + k));
+    const worldPl = api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, null, place3([0, 0, 0]));
     const localPl = (rel, z) => api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, rel, place3([0, 0, z || 0]));
     const project = api.CreateIfcEntity(mID, T.IFCPROJECT, spatialGid(0), null, label('Bonsai model'), null, null, null, null, [ctx], units);
     const sitePl = localPl(null, 0), bldPl = localPl(sitePl, 0);
@@ -100,7 +101,7 @@
       const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
       const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
       const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
-      const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, null, pds, null];
+      const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, worldPl, pds, null];   // §F1: IfcProduct.WR1 (EXPRESS): a product with a Representation needs an ObjectPlacement; the geometry is in world coordinates, so the placement is the shared identity
       const oa = openingAttrs(ent, bboxOf(el.vertices ? el.vertices.map(v => [v[0], v[1], v[2]]) : null), { api, T, mID, enumOf }, el.predefined);
       if (oa) args.push(...oa); else if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
       const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);

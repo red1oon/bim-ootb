@@ -66,6 +66,9 @@
         e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: Object.assign({ Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis }, NT ? NT.propsFor(e, notes.rows) : {}, NT && notes.schedules ? NT.schedProps(e, notes.schedules.tables) : {}) }); });
       Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
     res.notes = notes;
+    // §F3b the layer ledger: what is on every layer, how it was typed, how much of it produced a body (the entity account only says the parser read it)
+    var LG = ctx.LG || (typeof module === 'object' && module.exports ? require('./dxf2ledger.js') : (typeof self !== 'undefined' ? self.Dxf2Ledger : null));
+    res.ledger = LG ? LG.build(sheets, res.els) : null;
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; });
     var blocking = [], advisory = res.gaps.map(function (x) { return { code: x.code, sheet: x.sheet || '(set)', handles: x.handle ? [x.handle] : [], message: (x.kind ? x.kind + ': ' : '') + (x.detail || '') }; });
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
@@ -78,7 +81,7 @@
       infillGuid: {}, libGeom: {}, run_id: runId, set: 'STRUCT', gaps: res.gaps, refused: null, fillGaps: [], bodies: res, defaults_table: res.defaults_table || null, defaults_invalid: res.defaults_invalid || [] };
     var g = { ok: !refused.length && !blocking.length, set: null, setFrom: 'structure', roles: { ok: !refused.length, set: null, evidence: 'structure', refused: refused }, refused: refused,
       verdict: verdict, R: R, lib: null, structure: { bodies: res.els.length, left_out: res.gaps.length } };
-    return { gate: g, defaults: res.defaults || [], log: 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + res.gaps.length + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
+    return { gate: g, defaults: res.defaults || [], ledger: res.ledger || null, log: 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + res.gaps.length + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
   }
 
   return { isStructure: isStructure, judge: judge, BODY_KINDS: BODY_KINDS, WALLISH: WALLISH };

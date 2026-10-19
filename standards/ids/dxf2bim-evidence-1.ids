@@ -1,0 +1,208 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ids xmlns="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd">
+    <info>
+        <title>DXF2BIM evidence requirements</title>
+        <version>1</version>
+        <description>What every IFC written by the DXF2BIM product promises: each element names the drawing sheet and entity it came from and the evidence tier of its geometry; the spatial structure exists; every element has a material; the reserved Pset_ name is not used for the evidence set.</description>
+        <author>dxf2bim@invalid.example</author>
+        <purpose>validation of DXF2BIM output</purpose>
+        <milestone>each export</milestone>
+    </info>
+    <specifications>
+        <specification name="Every element carries its evidence" ifcVersion="IFC4" description="Each element has Dxf2Bim_Evidence with Provenance (drawn | derived | assumed), SourceSheet, SourceHandle, SourceLayer and Kind.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCCOLUMN" />
+                            <xs:enumeration value="IFCBEAM" />
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCFOOTING" />
+                            <xs:enumeration value="IFCFAN" />
+                            <xs:enumeration value="IFCCOVERING" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCMEMBER" />
+                            <xs:enumeration value="IFCPLATE" />
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCBUILDINGELEMENTPROXY" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Dxf2Bim_Evidence</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>Provenance</simpleValue>
+                    </baseName>
+                    <value>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="drawn" />
+                            <xs:enumeration value="derived" />
+                            <xs:enumeration value="assumed" />
+                        </xs:restriction>
+                    </value>
+                </property>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Dxf2Bim_Evidence</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>SourceSheet</simpleValue>
+                    </baseName>
+                </property>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Dxf2Bim_Evidence</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>SourceHandle</simpleValue>
+                    </baseName>
+                </property>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Dxf2Bim_Evidence</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>SourceLayer</simpleValue>
+                    </baseName>
+                </property>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Dxf2Bim_Evidence</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>Kind</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="Project exists and is named" ifcVersion="IFC4" description="The spatial structure is present.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCPROJECT</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Site exists and is named" ifcVersion="IFC4" description="The spatial structure is present.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSITE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Building exists and is named" ifcVersion="IFC4" description="The spatial structure is present.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDING</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Buildingstorey exists and is named" ifcVersion="IFC4" description="The spatial structure is present.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDINGSTOREY</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="Every element has a material" ifcVersion="IFC4" description="Every element is associated with a material.">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCCOLUMN" />
+                            <xs:enumeration value="IFCBEAM" />
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCFOOTING" />
+                            <xs:enumeration value="IFCFAN" />
+                            <xs:enumeration value="IFCCOVERING" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCMEMBER" />
+                            <xs:enumeration value="IFCPLATE" />
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCBUILDINGELEMENTPROXY" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <material cardinality="required" />
+            </requirements>
+        </specification>
+        <specification name="The evidence set does not use a reserved Pset_ name" ifcVersion="IFC4" description="Pset_Dxf2Bim (the name before 2026-10-19) must not appear: the Pset_ prefix is reserved for buildingSMART-defined sets.">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCCOLUMN" />
+                            <xs:enumeration value="IFCBEAM" />
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCFOOTING" />
+                            <xs:enumeration value="IFCFAN" />
+                            <xs:enumeration value="IFCCOVERING" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCMEMBER" />
+                            <xs:enumeration value="IFCPLATE" />
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCBUILDINGELEMENTPROXY" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="prohibited">
+                    <propertySet>
+                        <simpleValue>Pset_Dxf2Bim</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>Provenance</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+    </specifications>
+</ids>
