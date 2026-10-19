@@ -1,0 +1,100 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "dxf2bim-standard-pack/1",
+ "title": "a jurisdiction's standards pack: every row cites its source; only verified_text rows may carry a machine check",
+ "type": "object",
+ "required": [
+  "format",
+  "jurisdiction",
+  "pack",
+  "document",
+  "rows"
+ ],
+ "properties": {
+  "format": {
+   "const": "dxf2bim-standard-pack/1"
+  },
+  "jurisdiction": {
+   "type": "string",
+   "pattern": "^[A-Z]{2}$"
+  },
+  "scope_note": {
+   "type": "string"
+  },
+  "document": {
+   "type": "object",
+   "required": [
+    "id",
+    "title",
+    "retrieved"
+   ]
+  },
+  "rows": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "locator",
+     "status",
+     "review"
+    ],
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}\\."
+     },
+     "status": {
+      "enum": [
+       "verified_text",
+       "pointer",
+       "unverified"
+      ]
+     },
+     "review": {
+      "type": "string"
+     },
+     "quote": {
+      "type": "string"
+     },
+     "quote_tokens": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "check": {
+      "type": "object",
+      "required": [
+       "kind",
+       "subject",
+       "op",
+       "value"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "min_value",
+         "max_value",
+         "min_ratio",
+         "max_ratio",
+         "min_count",
+         "min_size"
+        ]
+       },
+       "op": {
+        "enum": [
+         ">=",
+         "<="
+        ]
+       }
+      }
+     },
+     "needs": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ }
+}

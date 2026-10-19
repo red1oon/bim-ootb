@@ -1,0 +1,622 @@
+{
+ "format": "dxf2bim-standard-pack/1",
+ "jurisdiction": "MY",
+ "pack": "UBBL (model by-laws)",
+ "document": {
+  "id": "UBBL-2021-amend",
+  "title": "Uniform Building (Amendment) By-Laws 2021 (model by-laws; each state adopts them with its own commencement date)",
+  "reproduction": "https://oshware.com/legal/building-safety/uniform-building-by-laws-1984/ (a reproduction, NOT the gazette; the text states: 'Only the Uniform Building By-Laws of each respective state has empowerment powers')",
+  "gazette_pdfs_unreachable": "jkt.kpkt.gov.my fails TLS verification from the build machine (not bypassed)",
+  "retrieved": "2026-10-19"
+ },
+ "scope_note": "The UBBL is a MODEL by-law adopted state by state with different commencement dates and local amendments: a finding must name the state and the version the project is under; this pack is the model text only. Advisory only; never a legal determination.",
+ "rows": [
+  {
+   "id": "MY.UBBL.39.1.light",
+   "locator": "By-law 39(1)",
+   "applies_to": {
+    "space": "room for residential, business or other purposes (not hospital, not school)"
+   },
+   "check": {
+    "kind": "min_ratio",
+    "subject": "window_area/clear_floor_area",
+    "op": ">=",
+    "value": 0.1
+   },
+   "quote": "having a total area of not less than 10 percent of the clear floor area of such room",
+   "quote_tokens": [
+    "10 percent",
+    "clear floor area"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.39.1.vent",
+   "locator": "By-law 39(1)",
+   "applies_to": {
+    "space": "as 39(1)"
+   },
+   "check": {
+    "kind": "min_ratio",
+    "subject": "openable_area/clear_floor_area",
+    "op": ">=",
+    "value": 0.05,
+    "derived_from": "not less than half out of this 10 percent"
+   },
+   "quote": "not less than half out of this 10 percent floor area shall have openings capable of allowing a free uninterrupted passage of air",
+   "quote_tokens": [
+    "half",
+    "10 percent"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional",
+   "note": "value = half of 10 percent, derived by arithmetic from the quoted text"
+  },
+  {
+   "id": "MY.UBBL.39.2.light",
+   "locator": "By-law 39(2)",
+   "applies_to": {
+    "space": "room for the accommodation of patients in a hospital"
+   },
+   "check": {
+    "kind": "min_ratio",
+    "subject": "window_area/clear_floor_area",
+    "op": ">=",
+    "value": 0.15
+   },
+   "quote": "windows having a total area of not less than 15 percent of clear floor area of such room",
+   "quote_tokens": [
+    "15 percent"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.39.3.light",
+   "locator": "By-law 39(3)",
+   "applies_to": {
+    "space": "room for conducting classes in a school"
+   },
+   "check": {
+    "kind": "min_ratio",
+    "subject": "window_area/clear_floor_area",
+    "op": ">=",
+    "value": 0.2
+   },
+   "quote": "windows having a total area of not less than 20 percent of clear floor area of such room",
+   "quote_tokens": [
+    "20 percent"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.39.4.opening",
+   "locator": "By-law 39(4)",
+   "applies_to": {
+    "space": "water closet, latrine, urinal or bathroom"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "opening_area_per_fitting",
+    "op": ">=",
+    "value": 0.2,
+    "unit": "m2"
+   },
+   "quote": "openings having a total area of not less than 0.2 square metre per water closet, urinal, latrine or bathroom",
+   "quote_tokens": [
+    "0.2 square metre"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.1.first",
+   "locator": "By-law 42(1)",
+   "applies_to": {
+    "space": "first habitable room in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 11,
+    "unit": "m2"
+   },
+   "quote": "The area of the first habitable room in a residential building shall be not less than 11 square metres",
+   "quote_tokens": [
+    "11 square metres",
+    "first habitable room"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.1.second",
+   "locator": "By-law 42(1)",
+   "applies_to": {
+    "space": "second habitable room in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 9.3,
+    "unit": "m2"
+   },
+   "quote": "the second habitable room be not less than 9.3 square metres",
+   "quote_tokens": [
+    "9.3 square metres",
+    "second habitable room"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.1.other",
+   "locator": "By-law 42(1)",
+   "applies_to": {
+    "space": "all other rooms in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 6.5,
+    "unit": "m2"
+   },
+   "quote": "and all other rooms be not less than 6.5 square metres in area",
+   "quote_tokens": [
+    "6.5 square metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.2.width",
+   "locator": "By-law 42(2)",
+   "applies_to": {
+    "space": "every habitable room in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_width",
+    "op": ">=",
+    "value": 2,
+    "unit": "m"
+   },
+   "quote": "The width of every habitable room in a residential building shall be not less than 2 metres",
+   "quote_tokens": [
+    "2 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.3.kitchen_area",
+   "locator": "By-law 42(3)",
+   "applies_to": {
+    "space": "kitchen in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 4.5,
+    "unit": "m2"
+   },
+   "quote": "The area and width of a kitchen in a residential building shall be not less than 4.5 square metres and 1.5 metres respectively",
+   "quote_tokens": [
+    "4.5 square metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.42.3.kitchen_width",
+   "locator": "By-law 42(3)",
+   "applies_to": {
+    "space": "kitchen in a residential building"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_width",
+    "op": ">=",
+    "value": 1.5,
+    "unit": "m"
+   },
+   "quote": "The area and width of a kitchen in a residential building shall be not less than 4.5 square metres and 1.5 metres respectively",
+   "quote_tokens": [
+    "1.5 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.43.a",
+   "locator": "By-law 43(a)",
+   "applies_to": {
+    "space": "latrine or water closet with pedestal-type fittings"
+   },
+   "check": {
+    "kind": "min_size",
+    "subject": "plan_dimensions",
+    "op": ">=",
+    "value": [
+     1.5,
+     0.75
+    ],
+    "unit": "m"
+   },
+   "quote": "in the case of latrines or water closets with pedestal-type closet fittings, not less than 1.5 metres by 0.75 metre",
+   "quote_tokens": [
+    "1.5 metres by 0.75 metre"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.43.b",
+   "locator": "By-law 43(b)",
+   "applies_to": {
+    "space": "water closet with other than pedestal-type fittings"
+   },
+   "check": {
+    "kind": "min_size",
+    "subject": "plan_dimensions",
+    "op": ">=",
+    "value": [
+     1.25,
+     0.75
+    ],
+    "unit": "m"
+   },
+   "quote": "not less than 1.25 metres by 0.75 metre",
+   "quote_tokens": [
+    "1.25 metres by 0.75 metre"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.43.c",
+   "locator": "By-law 43(c)",
+   "applies_to": {
+    "space": "bathroom"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 1.5,
+    "unit": "m2",
+    "also": {
+     "subject": "room_width",
+     "op": ">=",
+     "value": 0.75,
+     "unit": "m"
+    }
+   },
+   "quote": "in the case of bathrooms, not less than 1.5 square metres with a width of not less than 0.75 metre",
+   "quote_tokens": [
+    "1.5 square metres",
+    "0.75 metre"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.43.d",
+   "locator": "By-law 43(d)",
+   "applies_to": {
+    "space": "bathroom with closet fittings"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "floor_area",
+    "op": ">=",
+    "value": 2,
+    "unit": "m2",
+    "also": {
+     "subject": "room_width",
+     "op": ">=",
+     "value": 0.75,
+     "unit": "m"
+    }
+   },
+   "quote": "in the case of bathrooms with closet fittings, not less than 2 square metres with a width of not less than 0.75 metre",
+   "quote_tokens": [
+    "2 square metres",
+    "0.75 metre"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.44.1.a",
+   "locator": "By-law 44(1)(a)",
+   "applies_to": {
+    "space": "living room or bedroom in a residential building other than a shophouse"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_height",
+    "op": ">=",
+    "value": 2.5,
+    "unit": "m"
+   },
+   "quote": "for living rooms and bedrooms, not less than 2.5 metres",
+   "quote_tokens": [
+    "2.5 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.44.1.b",
+   "locator": "By-law 44(1)(b)",
+   "applies_to": {
+    "space": "kitchen in a residential building other than a shophouse"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_height",
+    "op": ">=",
+    "value": 2.25,
+    "unit": "m"
+   },
+   "quote": "for kitchens, not less than 2.25 metres",
+   "quote_tokens": [
+    "2.25 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.44.1.c",
+   "locator": "By-law 44(1)(c)",
+   "applies_to": {
+    "space": "bathroom, water closet, latrine, porch, balcony, verandah, garage and like"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_height",
+    "op": ">=",
+    "value": 2,
+    "unit": "m"
+   },
+   "quote": "for bathrooms, water closets, latrines, porches, balconies, verandahs, garages and like, not less than 2 metres",
+   "quote_tokens": [
+    "2 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.44.3.ground",
+   "locator": "By-law 44(3)",
+   "applies_to": {
+    "space": "ground floor room of a shophouse"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_height",
+    "op": ">=",
+    "value": 3,
+    "unit": "m"
+   },
+   "quote": "In shophouses the height of ground floor rooms shall be not less than 3 metres",
+   "quote_tokens": [
+    "3 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.44.3.upper",
+   "locator": "By-law 44(3)",
+   "applies_to": {
+    "space": "upper floor room of a shophouse"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "room_height",
+    "op": ">=",
+    "value": 2.5,
+    "unit": "m"
+   },
+   "quote": "and the height of upper floor rooms shall be not less than 2.5 metres",
+   "quote_tokens": [
+    "2.5 metres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.165.2.direct",
+   "locator": "By-law 165(2)",
+   "applies_to": {
+    "space": "open areas"
+   },
+   "check": {
+    "kind": "max_ratio",
+    "subject": "direct_distance/permitted_travel_distance",
+    "op": "<=",
+    "value": 0.6667,
+    "derived_from": "two-thirds"
+   },
+   "quote": "In the case of open areas the distance to exits shall be measured from the most remote point of occupancy provided that the direct distance shall not exceed two-thirds the permitted travel distance",
+   "quote_tokens": [
+    "two-thirds"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional",
+   "note": "the permitted travel distance itself is in the Seventh Schedule (see pointer row)"
+  },
+  {
+   "id": "MY.UBBL.165.3.room",
+   "locator": "By-law 165(3)",
+   "applies_to": {
+    "space": "individual room occupied by not more than six persons"
+   },
+   "check": {
+    "kind": "max_value",
+    "subject": "distance_from_most_remote_point_to_room_door",
+    "op": "<=",
+    "value": 9,
+    "unit": "m",
+    "alternative": "or any other area determined by the Fire and Rescue Department"
+   },
+   "quote": "In any individual room which is subjected to the occupancy of not more than six persons, the travel distance shall be measured from the door of such a room: Provided that the travel distance from the most remote point in the room to the room door does not exceed 9 metres or any other area determined by the Fire and Rescue Department",
+   "quote_tokens": [
+    "9 metres",
+    "six persons"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.166.1.exits",
+   "locator": "By-law 166(1)",
+   "applies_to": {
+    "space": "each storey"
+   },
+   "check": {
+    "kind": "min_count",
+    "subject": "separate_exits_per_storey",
+    "op": ">=",
+    "value": 2,
+    "except": "as permitted by by-law 167 (listed as Deleted in this text)"
+   },
+   "quote": "not less than two separate exits shall be provided from each storey",
+   "quote_tokens": [
+    "two separate exits"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.168.1.stairs",
+   "locator": "By-law 168(1)",
+   "applies_to": {
+    "space": "every upper floor"
+   },
+   "check": {
+    "kind": "min_count",
+    "subject": "separate_staircases",
+    "op": ">=",
+    "value": 2,
+    "except": "as provided for in by-law 194"
+   },
+   "quote": "every upper floor shall have means of egress via at least two separate staircases",
+   "quote_tokens": [
+    "two separate staircases"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.168.3.handrail",
+   "locator": "By-law 168(3)",
+   "applies_to": {
+    "space": "staircase"
+   },
+   "check": {
+    "kind": "max_value",
+    "subject": "handrail_encroachment_on_clear_width",
+    "op": "<=",
+    "value": 80,
+    "unit": "mm"
+   },
+   "quote": "handrails may be permitted to encroach on this width to a maximum of 80 millimetres",
+   "quote_tokens": [
+    "80 millimetres"
+   ],
+   "status": "verified_text",
+   "confidence": "reproduction (secondary); gazette comparison pending",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.165.4.schedule",
+   "locator": "By-law 165(4); 166(2); 170(b)",
+   "status": "pointer",
+   "quote": "The maximum travel distances to exits and dead end limits shall be as specified in the Seventh Schedule of these By-laws",
+   "quote_tokens": [
+    "Seventh Schedule"
+   ],
+   "needs": "the Seventh Schedule table (maximum travel distances, dead-end limits, occupant load / exit width): NOT present in the retrieved text; no number may be used for a finding until it is read from the gazette or a verified reproduction",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.168.2.width",
+   "locator": "By-law 168(2)",
+   "status": "pointer",
+   "quote": "calculated in accordance with provisions in the Seventh Schedule to these By-laws",
+   "quote_tokens": [
+    "Seventh Schedule"
+   ],
+   "needs": "staircase width is derived from the occupancy load per the Seventh Schedule (not a flat figure); also 224A(8)(b) refers staircase width to the Eleventh Schedule: neither schedule was retrieved",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.rise_going",
+   "locator": "(not found)",
+   "status": "unverified",
+   "needs": "stair rise and going: not found in the retrieved text (By-laws 194-202 give none); a secondary blog summary says risers max 180 mm and tread min 255 mm: not accepted as a source",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.compartment_220",
+   "locator": "By-law 220 (cited by the library, not retrieved)",
+   "status": "unverified",
+   "needs": "By-law 220 text",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.UBBL.door_width",
+   "locator": "(not found)",
+   "status": "unverified",
+   "needs": "minimum door width and height: By-law 37 (cited by the library) is 'Projections over the street'; the by-law that sets door sizes was not found in the retrieved text",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.MS1184.accessibility",
+   "locator": "MS 1184",
+   "status": "unverified",
+   "needs": "the Malaysian Standard text (a paid standard, not retrieved)",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "MY.MS1228.plumbing",
+   "locator": "MS 1228 / MS IEC 60364 / MS 1195",
+   "status": "unverified",
+   "needs": "the Malaysian Standard texts (not retrieved)",
+   "review": "pending owner / professional"
+  }
+ ]
+}
