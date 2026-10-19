@@ -3,12 +3,12 @@
 // V1 headless writer (CLI): the real shed -> 0 validation statements, header fine, evidence set named Dxf2Bim_Evidence (no reserved Pset_ name); V2 the PAGE writer on the same marked sheets: the same; V3 the doors carry their drawn size (OverallHeight 2.3876 m = 94 in on the real shed, not `*`); V4 CONTROL: the same file with the old defect put back (`*` attributes on a door, `($)` header) must FAIL the validator (so a green V1 means something); V5 the database extracted from it still carries every evidence row (the extractor reads the new name; and the old name, checked on a renamed copy).
 // usage: NODE_PATH=~/bim-compiler/node_modules EXTRACTOR=<bim-compiler>/scripts/extractIFC2DB.js node modeller/tests/witness_ifc_valid.js     (SKIP without the real sheets or without ifcopenshell)
 'use strict';
-const fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os'), http = require('http');
+const PY = require('./pyenv.js'), fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os'), http = require('http');
 const ROOT = path.join(__dirname, '..', '..'), SHD = path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets') + '/', CLI = path.join(ROOT, 'modeller', 'dxf2bim_cli.js');
 const EXTRACTOR = process.env.EXTRACTOR || path.join(process.env.HOME, 'bim-compiler', 'scripts', 'extractIFC2DB.js');
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + ' ' + (m || '')); if (!c) fails++; };
 if (!fs.existsSync(SHD + '5_DETAILS.dxf')) { console.log('§SKIP W-IFC-VALID no real sheets at ' + SHD); process.exit(0); }
-const py = f => { const r = cp.spawnSync('python3', [path.join(__dirname, 'ifc_validate.py'), f], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output: ' + (r.stderr || '').slice(0, 200) }; } };
+const py = f => { const r = cp.spawnSync(PY, [path.join(__dirname, 'ifc_validate.py'), f], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output: ' + (r.stderr || '').slice(0, 200) }; } };
 const probe = py(path.join(ROOT, 'package.json').replace('package.json', 'modeller/tests/ifc_validate.py'));   // any readable path just to detect the module
 if (probe.error && /ifcopenshell missing/.test(probe.error)) { console.log('§SKIP W-IFC-VALID ' + probe.error); process.exit(0); }
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ifcv-'));
@@ -19,12 +19,14 @@ const out = path.join(dir, 'cli'), r = cp.spawnSync('node', [CLI, '--sheets'].co
   '--bodyz', 'footing=-1.4478,-1.143', '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794']), { encoding: 'utf8' });
 const ifc1 = path.join(out, 'model.ifc'); ok('V0 the CLI wrote the shed IFC', r.status === 0 && fs.existsSync(ifc1), 'rc=' + r.status);
 const v1 = py(ifc1);
-ok('V1 headless writer: IFC4, 0 validation statements, header fine, no reserved Pset_ name, 512 evidence sets', v1.schema === 'IFC4' && v1.statements === 0 && !v1.header_problems.length && !v1.reserved_pset_names.length && v1.evidence_sets === 512, JSON.stringify(v1).slice(0, 300));
+ok('V1 headless writer: IFC4, 0 validation statements' + (v1.express_rules ? ' INCLUDING the EXPRESS WHERE rules' : ' (schema level only: EXPRESS rules NOT run, no pytest)') + ', header fine, no reserved Pset_ name, 512 evidence sets', v1.schema === 'IFC4' && v1.statements === 0 && !v1.header_problems.length && !v1.reserved_pset_names.length && v1.evidence_sets === 512, JSON.stringify(v1).slice(0, 300));
 const text = fs.readFileSync(ifc1, 'latin1'), door = (text.match(/IFCDOOR\([^\n]*\);/) || [''])[0];
 ok('V3 a door carries its drawn size and a real type: OverallHeight 2.3876 (94 in), .DOOR., no `*`', /,2\.3876\d*,[0-9.]+,\.DOOR\.,\.NOTDEFINED\.,\$\);/.test(door) && !/\*/.test(door), door.slice(0, 160));
 // V4 control: put the old defect back
 const bad = path.join(dir, 'defect.ifc'); fs.writeFileSync(bad, text.replace(/(IFCDOOR\([^\n]*?),[0-9.]+,[0-9.]+,\.DOOR\.,\.NOTDEFINED\.,\$\);/, '$1,*,*,*,*,*);').replace("FILE_NAME('dxf2bim.ifc'", "FILE_NAME('dxf2bim.ifc'").replace(/\(''\),\(''\)/, '($),($)'), 'latin1');
 const v4 = py(bad); ok('V4 control: the old defect (derived `*` on a door, `($)` header) is CAUGHT by the validator', v4.statements > 0 && v4.header_problems.length >= 0 && (v4.statements >= 5), 'statements=' + v4.statements);
+const nop = path.join(dir, 'noplacement.ifc'); fs.writeFileSync(nop, text.replace(/(IFCDOOR\([^,]*,\$,'[^']*',\$,'[^']*',)#\d+,/, '$1$,'), 'latin1');
+const v4b = py(nop); ok('V4b control: a product with a shape but NO ObjectPlacement (IfcProduct.WR1) is caught by the EXPRESS rules', v4b.express_rules ? v4b.statements >= 1 : true, v4b.express_rules ? 'statements=' + v4b.statements : 'SKIPPED-IN-EFFECT: pytest missing, EXPRESS rules not run');
 // V5 the extractor reads the new name (and the old one)
 const NM = path.join(process.env.HOME, 'bim-compiler', 'node_modules');
 const ex = (ifcPath, dbPath) => { try { fs.unlinkSync(dbPath); } catch (e) {} cp.spawnSync('node', [EXTRACTOR, '--ifc', ifcPath, '-o', dbPath], { encoding: 'utf8', timeout: 280000, env: Object.assign({}, process.env, { NODE_PATH: NM }) }); const D = require(path.join(NM, 'better-sqlite3')), d = new D(dbPath, { readonly: true }); const n = d.prepare("select count(*) n from element_dxf2bim where name='Provenance'").get().n; d.close(); return n; };

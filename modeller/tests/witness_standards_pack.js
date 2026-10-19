@@ -3,7 +3,7 @@
 // P1 every pack validates against standards/schema; P2 every verified_text row has a verbatim quote and EVERY quote_token occurs in that quote; P3 ids are unique and carry the pack's jurisdiction; only verified_text rows carry a machine `check`; P4 every number in a check traces to a number in the row's tokens (digits, a number word, a percent, or a stated derivation); P5 the Bangladesh skeleton has no rule yet (no check, no verified_text) until the code text is obtained; P6 CONTROL: a row with a number that is not in its quote, and a row with a check but no source, are both REJECTED by the same checker.
 // usage: node modeller/tests/witness_standards_pack.js
 'use strict';
-const fs = require('fs'), path = require('path'), cp = require('child_process'), S = path.join(__dirname, '..', '..', 'standards');
+const PY = require('./pyenv.js'), fs = require('fs'), path = require('path'), cp = require('child_process'), S = path.join(__dirname, '..', '..', 'standards');
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + ' ' + (m || '')); if (!c) fails++; };
 const norm = t => String(t).toLowerCase().replace(/\s+/g, ' ').trim(), W = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
 const numsOf = tokens => { const out = new Set(); (tokens || []).forEach(t => { (String(t).match(/\d+(?:\.\d+)?/g) || []).forEach(n => { out.add(Number(n)); if (/percent/i.test(t)) out.add(Number(n) / 100); }); String(t).toLowerCase().split(/[^a-z]+/).forEach(w => { if (W[w]) out.add(W[w]); }); }); return out; };
@@ -21,7 +21,7 @@ function checkRow(row) {   // -> list of problems
 }
 const files = []; fs.readdirSync(S).filter(d => fs.statSync(path.join(S, d)).isDirectory() && d !== 'schema').forEach(d => fs.readdirSync(path.join(S, d)).filter(f => f.endsWith('.json')).forEach(f => files.push(path.join(S, d, f))));
 const packs = files.map(f => ({ f, j: JSON.parse(fs.readFileSync(f, 'utf8')) }));
-const sv = packs.map(({ f }) => { const r = cp.spawnSync('python3', [path.join(__dirname, 'json_validate.py'), path.join(S, 'schema', 'dxf2bim-standard-pack.schema.json'), f], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output ' + (r.stderr || '').slice(0, 100) }; } });
+const sv = packs.map(({ f }) => { const r = cp.spawnSync(PY, [path.join(__dirname, 'json_validate.py'), path.join(S, 'schema', 'dxf2bim-standard-pack.schema.json'), f], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output ' + (r.stderr || '').slice(0, 100) }; } });
 if (sv.some(v => v.error && /jsonschema missing/.test(v.error))) console.log('§SKIP P1 jsonschema missing'); else ok('P1 ' + packs.length + ' packs validate against the schema', sv.every(v => v.n === 0), JSON.stringify(sv.map(v => v.error || v.n)));
 const probs = packs.flatMap(({ j }) => j.rows.map(r => ({ id: r.id, p: checkRow(r) })).filter(x => x.p.length));
 ok('P2 every verified_text row: verbatim quote present, every token occurs in it, every check number traces to its tokens (' + packs.reduce((a, { j }) => a + j.rows.filter(r => r.status === 'verified_text').length, 0) + ' rows)', probs.length === 0, JSON.stringify(probs.slice(0, 4)));
