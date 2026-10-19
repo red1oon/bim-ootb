@@ -896,6 +896,16 @@
   // consistent, plus the doors/windows hosted by a kept wall. Everything else is NOT framed: it is counted, never drawn in this wing, never snapped.
   // Returns {kept, unframed:{cls:n}, total} and replaces the model's element lists.
   const WING_Q_MIN = 0.5, WING_TOL = 1.0;
+  // §F6 D14: the wing is rotated by the MODAL direction of its kept walls (0.1-deg buckets, mean of the walls within 0.15 deg of the mode), not by the 1-deg bin that selected them
+  // (a family at 2.5 deg, binned to 3, left every door 0.5 deg off its wall: the closed leaf ended ~8 mm off the hinge's axis line and `door_no_strip` stood). The mode, not the
+  // mean: a few skewed walls moved the mean of the 70-deg wing by 0.1 deg and made it worse. A result within 0.01 deg of the bin is the bin (integer families unchanged).
+  function wingMeanAngle(walls, bin) {
+    const as = []; walls.forEach(w => { const a = elementAngle(w); if (a && a.q >= WING_Q_MIN) { let d = a.deg; if (d - bin > 45) d -= 90; if (bin - d > 45) d += 90; as.push(d); } });
+    if (!as.length) return bin;
+    const h = {}; as.forEach(d => { const k = Math.round(d * 10); h[k] = (h[k] || 0) + 1; });
+    const mode = Number(Object.keys(h).sort((x, y) => h[y] - h[x] || x - y)[0]) / 10, near = as.filter(d => Math.abs(d - mode) <= 0.15), d = near.reduce((x, y) => x + y, 0) / near.length;
+    return Math.abs(d - bin) < 0.01 || Math.abs(d - bin) > WING_TOL ? bin : Number(d.toFixed(6));
+  }
   function frameModel(model, angle, tol) {
     tol = tol === undefined ? WING_TOL : tol;
     const keep = new Set(), FRAMED = WALLS.concat(['IfcColumn', 'IfcStair', 'IfcStairFlight', 'IfcSlab', 'IfcRoof', 'IfcFooting']);
@@ -948,8 +958,8 @@
   function frameWing(model, wo, log) {
     const dom = wo.angle === undefined ? wingDominant(model) : { deg: wo.angle };
     if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return null; }
-    const angle = dom.deg, name = wo.name || 'WING' + angle, tol = wo.tol === undefined ? WING_TOL : wo.tol;
-    const fr = frameModel(model, angle, tol), wl = model.walls;
+    const bin = dom.deg, name = wo.name || 'WING' + bin, tol = wo.tol === undefined ? WING_TOL : wo.tol;
+    const fr = frameModel(model, bin, tol), wl = model.walls, angle = wingMeanAngle(wl, bin);
     if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
@@ -968,9 +978,9 @@
     if (opts.premodel) opts.premodel(model);
     const dom = opts.angle === undefined ? wingDominant(model) : { deg: opts.angle };
     if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return { files, log: log.lines, gaps: log.gaps }; }
-    const angle = dom.deg, name = opts.name || 'WING' + angle;
-    const fr = frameModel(model, angle, opts.tol);
-    const wl = model.walls; if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${opts.tol === undefined ? WING_TOL : opts.tol} deg of ${angle}`); return { files, log: log.lines, gaps: log.gaps }; }
+    const bin = dom.deg, name = opts.name || 'WING' + bin;
+    const fr = frameModel(model, bin, opts.tol);
+    const wl = model.walls, angle = wingMeanAngle(wl, bin); if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${opts.tol === undefined ? WING_TOL : opts.tol} deg of ${angle}`); return { files, log: log.lines, gaps: log.gaps }; }
     const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
     log.add(`§WING name=${name} angle=${angle} tol=${opts.tol === undefined ? WING_TOL : opts.tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
