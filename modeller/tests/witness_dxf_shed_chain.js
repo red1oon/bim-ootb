@@ -2,7 +2,7 @@
 /**
  * # ⚠ DO NOT REMOVE — W-SHED-CHAIN: prompts/DXF2BIM_MODELLER_LANE.md §L26. Read the log after every run; exit code is not evidence.
  * Issue proved or disproved: the WHOLE shed (the nine real sheets (incl. the details sheet), 512 bodies) goes from the settings sheets through the PAGE to a 3D canvas in standard material colours with per-mesh
- * metadata, out as IFC4 -> the usual extractor DB (material name, colour, Pset_Dxf2Bim rows), and opens in the Viewer and on the 4D/5D page (boq_charts) with the same 512 elements.
+ * metadata, out as IFC4 -> the usual extractor DB (material name, colour, Dxf2Bim_Evidence rows), and opens in the Viewer and on the 4D/5D page (boq_charts) with the same 512 elements.
  *   S1 page: open the marked sheets, tick Complete, Convert -> 512 inserts with provenance.ifc (class, type name, material, colour, props)   S2 canvas colours = the palette (8 distinct), toggle lens
  *   S3 IFC4 -> DB: 512 elements, material_name 512, rgba = the palette, element_dxf2bim Provenance 512   S4 Viewer opens the DB: 512 elements, Find IfcWall 41, screenshot
  *   S5 boq_charts (4D/5D) opens the DB: schedule tasks > 0, BOQ lines > 0   CONTROL: an IFC written without the styles gives ONE colour (the witness can see the gap)
@@ -50,7 +50,7 @@ runE2E('W-SHED-CHAIN', async (t) => {
   lap('ifc4_export_in_page', T0);
   const ifcPath = path.join(OUT, 'page.ifc'); fs.writeFileSync(ifcPath, Buffer.from(ifcT, 'latin1'));
   const nStyled = (ifcT.match(/IFCSTYLEDITEM\(/g) || []).length, nPset = (ifcT.match(/IFCPROPERTYSET\(/g) || []).length;
-  t.assert('S2b the page\'s IFC4 carries a styled item and a Pset_Dxf2Bim for every product', nStyled === 512 && nPset === 512 && /Pset_Dxf2Bim/.test(ifcT), 'styledItems=' + nStyled + ' psets=' + nPset);
+  t.assert('S2b the page\'s IFC4 carries a styled item and a Dxf2Bim_Evidence set for every product', nStyled === 512 && nPset === 512 && /Dxf2Bim_Evidence/.test(ifcT), 'styledItems=' + nStyled + ' psets=' + nPset);
   // extractor (the shared core, sql.js) -> DB
   const WebIFC = require('web-ifc'), initSqlJs = require('sql.js'), Core = require(path.join(M, 'dxf2bim', 'ifc_extract_core.js'));
   const extract = async (file) => { const SQL = await initSqlJs(), api = new WebIFC.IfcAPI(); await api.Init(); const sdb = new SQL.Database();

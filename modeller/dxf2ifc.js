@@ -18,12 +18,30 @@
     let m = n; const t = []; for (let i = 0; i < 6; i++) { t.unshift(GUID_AB[m % 64]); m = Math.floor(m / 64); }
     return s + t.join('');
   }
+  const EVIDENCE_PSET = 'Dxf2Bim_Evidence';
+  // §F1 (prompts/DXF2BIM_FOUNDATION_LANE.md): IfcDoor / IfcWindow carry five attributes after Tag (OverallHeight, OverallWidth, PredefinedType, OperationType | PartitioningType, UserDefined...). web-ifc fills missing ones with `*`
+  // (the derived-attribute marker), which is invalid IFC4 (ifcopenshell.validate: 5 errors per door). Heights and widths come from the body's own bounding box (height = z extent, width = the larger plan extent: the leaf); an unknown or non-positive size is written as `$`, never invented; the type is the plain enum, the operation / partitioning NOTDEFINED (no hinge side or panel layout is read).
+  function openingAttrs(ent, bb, H, predefined) {
+    if (ent !== 'IFCDOOR' && ent !== 'IFCWINDOW') return null;
+    const dz = bb ? bb.mx[2] - bb.mn[2] : 0, dp = bb ? Math.max(bb.mx[0] - bb.mn[0], bb.mx[1] - bb.mn[1]) : 0, pm = v => (v > 1e-6 ? H.api.CreateIfcType(H.mID, H.T.IFCPOSITIVELENGTHMEASURE, Number(v.toFixed(6))) : null);
+    return ent === 'IFCDOOR' ? [pm(dz), pm(dp), H.enumOf('IfcDoorTypeEnum', predefined || 'DOOR'), H.enumOf('IfcDoorTypeOperationEnum', 'NOTDEFINED'), null]
+                             : [pm(dz), pm(dp), H.enumOf('IfcWindowTypeEnum', predefined || 'WINDOW'), H.enumOf('IfcWindowTypePartitioningEnum', 'NOTDEFINED'), null];
+  }
+  // bounding box of a flat [x,y,z] vertex list or of three.js position data
+  function bboxOf(verts) { if (!verts || !verts.length) return null; const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity]; for (const v of verts) for (let k = 0; k < 3; k++) { if (v[k] < mn[k]) mn[k] = v[k]; if (v[k] > mx[k]) mx[k] = v[k]; } return { mn, mx }; }
+  // §F1 the STEP header web-ifc writes has `($)` author and organisation lists and a `$` authorisation: FILE_NAME requires strings there. Only the header text is touched.
+  function fixHeader(bytes) {
+    const n = Math.min(bytes.length, 1500); let h = ''; for (let i = 0; i < n; i++) h += String.fromCharCode(bytes[i]);
+    const h2 = h.replace(/(FILE_NAME\('[^']*','[^']*',)\(\$\),\(\$\),('[^']*','[^']*',)\$\)/, "$1(''),(''),$2'')");
+    if (h2 === h) return bytes;
+    const out = new Uint8Array(bytes.length - n + h2.length); for (let i = 0; i < h2.length; i++) out[i] = h2.charCodeAt(i); out.set(bytes.subarray(n), h2.length); return out;
+  }
   const CLASS_MAP = { IfcWall: 'IFCWALL', IfcSlab: 'IFCSLAB', IfcColumn: 'IFCCOLUMN', IfcBeam: 'IFCBEAM', IfcRoof: 'IFCROOF', IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER',
     IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcCovering: 'IFCCOVERING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
   const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum' };
 
   // §L26 appearance + per-mesh metadata. ctx = { api, T (web-ifc), mID, enumOf, label, gid(n) -> IfcGloballyUniqueId }. style(fs, [r,g,b]) = one shared IfcSurfaceStyle per colour, applied by an IfcStyledItem
-  // on the product's tessellated item (the way every IFC reader takes a colour); pset(product, props) = one IfcPropertySet 'Pset_Dxf2Bim' of IfcText values + the IfcRelDefinesByProperties.
+  // on the product's tessellated item (the way every IFC reader takes a colour); pset(product, props) = one IfcPropertySet 'Dxf2Bim_Evidence' (the `Pset_` prefix is reserved for buildingSMART-defined sets) of IfcText values + the IfcRelDefinesByProperties.
   function appearance(c) {
     const api = c.api, T = c.T, mID = c.mID, ratio = v => api.CreateIfcType(mID, T.IFCNORMALISEDRATIOMEASURE, v), cache = {}; let n = 0;
     function style(item, rgb) {
@@ -39,7 +57,7 @@
     function pset(prod, props) {
       const names = Object.keys(props || {}).filter(k => props[k] !== '' && props[k] != null).sort(); if (!names.length) return false;
       const hp = names.map(k => api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, c.label(k), null, api.CreateIfcType(mID, T.IFCTEXT, String(props[k])), null));
-      const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, c.gid(3000000 + 2 * n), null, c.label('Pset_Dxf2Bim'), null, hp); api.WriteLine(mID, ps);
+      const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, c.gid(3000000 + 2 * n), null, c.label(EVIDENCE_PSET), null, hp); api.WriteLine(mID, ps);
       api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, c.gid(3000000 + 2 * n + 1), null, null, null, [prod], ps)); n++; return true;
     }
     return { style: style, pset: pset, styles: () => Object.keys(cache).length, psets: () => n };
@@ -83,7 +101,8 @@
       const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
       const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
       const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, null, pds, null];
-      if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
+      const oa = openingAttrs(ent, bboxOf(el.vertices ? el.vertices.map(v => [v[0], v[1], v[2]]) : null), { api, T, mID, enumOf }, el.predefined);
+      if (oa) args.push(...oa); else if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
       const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);
       if (AP.style(fs, el.colour)) coloured++; if (AP.pset(e, el.props)) withPset++;
       const st = storeyFor(el); (st ? st.products : buildingProducts).push(e);
@@ -98,7 +117,7 @@
     for (const st of stList) if (st.products.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, st.products, st.e);
     if (buildingProducts.length) rel(T.IFCRELCONTAINEDINSPATIALSTRUCTURE, buildingProducts, building);
     Object.keys(matProducts).sort().forEach(name => { const mat = api.CreateIfcEntity(mID, T.IFCMATERIAL, label(name), null, null); api.WriteLine(mID, mat); rel(T.IFCRELASSOCIATESMATERIAL, matProducts[name], mat); });
-    const bytes = api.SaveModel(mID); api.CloseModel(mID);
+    const bytes = fixHeader(api.SaveModel(mID)); api.CloseModel(mID);
     return { bytes, seeded, typed, coloured, withPset, styles: AP.styles(), byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
   }
 
@@ -109,5 +128,5 @@
       objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: e.ifc && e.ifc.props || null,
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
-  return { build: build, fromEls: fromEls, guid: guid, appearance: appearance };
+  return { build: build, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET };
 });

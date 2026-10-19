@@ -209,7 +209,7 @@
       };
 
       const matProducts = {};
-      const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + Pset_Dxf2Bim from the body's typing
+      const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + the evidence set Dxf2Bim_Evidence from the body's typing
       let seedColoured = 0, seedPsets = 0;
       for (const op of ops) {
         _curOp = op;
@@ -231,7 +231,11 @@
           const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
           // §L7.4 typing for 4D/5D: the importer's per-body IFC typing (provenance.ifc) travels into the file: Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum
           const tp = P.provenance && P.provenance.ifc && P.provenance.ifc.ifc_class === cls ? P.provenance.ifc : null, PDE = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum' };
-          const pdx = tp && tp.PredefinedType && PDE[ent] ? [enumOf(PDE[ent], tp.PredefinedType)] : null;
+          let pdx = tp && tp.PredefinedType && PDE[ent] ? [enumOf(PDE[ent], tp.PredefinedType)] : null;
+          if ((ent === 'IFCDOOR' || ent === 'IFCWINDOW') && window.Dxf2Ifc) {   // §F1: five attributes after Tag, from the body's own bounding box (see dxf2ifc.js openingAttrs)
+            const gp = mesh.geometry.attributes.position, vv = []; for (let i = 0; i < gp.count; i++) vv.push([gp.getX(i), gp.getY(i), gp.getZ(i)]);
+            pdx = window.Dxf2Ifc.openingAttrs(ent, window.Dxf2Ifc.bboxOf(vv), { api, T, mID, enumOf }, tp && tp.PredefinedType);
+          }
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
@@ -341,7 +345,7 @@
       if (Object.keys(matProducts).length) console.log(TAG + ' §IFC-MATERIAL ' + JSON.stringify(Object.keys(matProducts).sort().map(n => [n, matProducts[n].length])));
       console.log(TAG + ' §IFC-SPATIAL storeys=' + stList.length + ' ' + JSON.stringify(stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length])) +
         ' inBuilding=' + buildingProducts.length + ' contexts=1');
-      const bytes = api.SaveModel(mID);
+      const bytes = window.Dxf2Ifc ? window.Dxf2Ifc.fixHeader(api.SaveModel(mID)) : api.SaveModel(mID);
       api.CloseModel(mID);
       console.log(TAG + ' build walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
       // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were

@@ -58,7 +58,7 @@
     // §L13.3 material dress: every body's IFC typing carries the reference's material (IfcMaterial + IfcRelAssociatesMaterial in the IFC writers)
     var BL = ctx.BL || (typeof module === 'object' && module.exports ? require('./dxf2bill.js') : (typeof self !== 'undefined' ? self.Dxf2Bill : null));
     if (BL && ctx.ref) res.els.forEach(function (e) { var m = BL.materialOf(e.class, e.ifc && e.ifc.type_name, ctx.ref); if (m && e.ifc) e.ifc = Object.assign({}, e.ifc, { material: m }); });
-    // §L26 the standard display colour of each material + the per-mesh evidence metadata (Pset_Dxf2Bim) travel in the body's IFC typing; a material without a palette entry is listed, never coloured at random
+    // §L26 the standard display colour of each material + the per-mesh evidence metadata (Dxf2Bim_Evidence) travel in the body's IFC typing; a material without a palette entry is listed, never coloured at random
     if (ctx.ref && ctx.ref.material_colour) { var PAL = ctx.ref.material_colour, miss = {};
       res.els.forEach(function (e) { if (!e.ifc) return; var c = e.ifc.material && PAL[e.ifc.material];
         var sz = e.size || {}, basis = Object.keys(sz).filter(function (k) { return sz[k] && typeof sz[k] === 'object' && sz[k].source; }).map(function (k) { return k + ':' + sz[k].source; }).join(' ');
