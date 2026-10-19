@@ -584,8 +584,12 @@
     });
     Object.keys(curt).forEach(g => { const r = curt[g].rect; polys[g] = [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]]; });   // C1
     // §F6 D10: the face the wall-run dimension points are measured against is the DRAWN face (the contours of the walls and curtain bands drawn on this plan), as the reader's envelope is: the model bounding box can stand 25 mm outside the drawn contour on a rotated wing (Hospital Level 1), which left 22 wall ends without a dimension point
-    const dr = [Infinity, -Infinity, Infinity, -Infinity];
-    cut.filter(c => WALLS.indexOf(c.cls) >= 0).map(c => c.guid).concat(Object.keys(curt)).forEach(g => (polys[g] || []).forEach(pl => pl.forEach(q => { dr[0] = Math.min(dr[0], q[0]); dr[1] = Math.max(dr[1], q[0]); dr[2] = Math.min(dr[2], q[1]); dr[3] = Math.max(dr[3], q[1]); })));
+    const dr = [Infinity, -Infinity, Infinity, -Infinity], sideOf = pl => { const xs = pl.map(q => q[0]), ys = pl.map(q => q[1]); return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 1000; };
+    const gidsF = cut.filter(c => WALLS.indexOf(c.cls) >= 0).map(c => c.guid).concat(Object.keys(curt));
+    // (e) the reader does not read a piece thinner than the plan's reading limit (D11: the thinnest piece >= 10 mm when some are under the 50 mm default, else 50 mm): such a piece is not part of its envelope either
+    const thinSides = []; gidsF.forEach(g => (polys[g] || []).forEach(pl => { const t = sideOf(pl); if (t >= 0.010 && t < 0.05) thinSides.push(t); }));
+    const readMin = thinSides.length ? Math.floor(Math.min(...thinSides) * 1000) / 1000 : 0.05;
+    gidsF.forEach(g => (polys[g] || []).forEach(pl => { if (sideOf(pl) < readMin - 1e-9) return; pl.forEach(q => { dr[0] = Math.min(dr[0], q[0]); dr[1] = Math.max(dr[1], q[0]); dr[2] = Math.min(dr[2], q[1]); dr[3] = Math.max(dr[3], q[1]); }); }));
     const F = isFinite(dr[0]) ? dr : E;
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
     let nW = 0, nC = 0;
