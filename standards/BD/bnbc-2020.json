@@ -1,0 +1,130 @@
+{
+ "format": "dxf2bim-standard-pack/1",
+ "jurisdiction": "BD",
+ "pack": "BNBC 2020 (first rows)",
+ "document": {
+  "id": "BNBC-2020",
+  "title": "Bangladesh National Building Code (BNBC) 2020",
+  "structure_secondary": "Volume 1: Parts 1-5 (Part 3 general building requirements, Part 4 fire protection); Volume 2: Part 6 structural design; Volume 3: Parts 7-10 (Part 9 alteration and addition); published by the Ministry of Housing and Public Works, gazetted 2021 (from a university slide deck and library catalogues, NOT the code)",
+  "retrieved": "2026-10-19",
+  "source_file": "BNBC-2020-Gazetted-Enhanced-unlocked.pdf (gazetted 2021-02-11, 2,499 pp; text layer read with pdftotext; page = PDF page index)"
+ },
+ "scope_note": "Rows below quote the gazetted BNBC 2020 text. Everything else stays unverified. Advisory only; never a legal determination.",
+ "rows": [
+  {
+   "id": "BD.BNBC.3.9.3.door_width",
+   "locator": "Part 4 Ch 3, 3.9.3 (PDF p.323)",
+   "applies_to": {
+    "space": "exit door"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "exit_door_clear_width_m",
+    "op": ">=",
+    "value": 1
+   },
+   "quote": "The width of a door shall not be less than 1 m and the height shall be not less than 2 m.",
+   "quote_tokens": [
+    "1 m",
+    "2 m"
+   ],
+   "status": "verified_text",
+   "confidence": "gazetted PDF text layer, read 2026-10-19",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "BD.BNBC.3.9.3.door_height",
+   "locator": "Part 4 Ch 3, 3.9.3 (PDF p.323)",
+   "applies_to": {
+    "space": "exit door"
+   },
+   "check": {
+    "kind": "min_value",
+    "subject": "exit_door_height_m",
+    "op": ">=",
+    "value": 2
+   },
+   "quote": "The width of a door shall not be less than 1 m and the height shall be not less than 2 m.",
+   "quote_tokens": [
+    "1 m",
+    "2 m"
+   ],
+   "status": "verified_text",
+   "confidence": "gazetted PDF text layer, read 2026-10-19",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "BD.BNBC.T4.3.4.storage.travel",
+   "locator": "Part 4 Table 4.3.4 (PDF p.323)",
+   "applies_to": {
+    "space": "Occupancy H Storage, space with one exit door"
+   },
+   "check": {
+    "kind": "max_value",
+    "subject": "travel_distance_m",
+    "op": "<=",
+    "value": 30
+   },
+   "quote": "H Storage 30 30",
+   "quote_tokens": [
+    "H Storage",
+    "30"
+   ],
+   "status": "verified_text",
+   "confidence": "gazetted PDF text layer, read 2026-10-19",
+   "review": "pending owner / professional",
+   "note": "Table 4.3.4 columns: Occupancy | Maximum Design Occupant Load | Maximum Travel Distance (m); this row is H Storage = 30 and 30. Quote is the extracted row text."
+  },
+  {
+   "id": "BD.BNBC.T4.3.4.storage.load",
+   "locator": "Part 4 Table 4.3.4 (PDF p.323)",
+   "applies_to": {
+    "space": "Occupancy H Storage, space with one exit door"
+   },
+   "check": {
+    "kind": "max_value",
+    "subject": "occupant_load",
+    "op": "<=",
+    "value": 30
+   },
+   "quote": "H Storage 30 30",
+   "quote_tokens": [
+    "H Storage",
+    "30"
+   ],
+   "status": "verified_text",
+   "confidence": "gazetted PDF text layer, read 2026-10-19",
+   "review": "pending owner / professional",
+   "note": "Table 4.3.4 columns: Occupancy | Maximum Design Occupant Load | Maximum Travel Distance (m); this row is H Storage = 30 and 30. Quote is the extracted row text."
+  },
+  {
+   "id": "BD.BNBC.T3.2.6.farm.large",
+   "locator": "Part 3 Table 3.2.6 (PDF p.135)",
+   "applies_to": {
+    "space": "large farm house, storage quantity unlimited"
+   },
+   "quote": "Large farm house, storage quantity unlimited H or J",
+   "quote_tokens": [
+    "Large farm house",
+    "H or J"
+   ],
+   "status": "pointer",
+   "review": "pending owner / professional",
+   "needs": "shed occupancy class: the table says \"H or J\" for a large farm house; which applies depends on the stored material (J = hazardous). A person decides."
+  },
+  {
+   "id": "BD.BNBC.fire.zones",
+   "locator": "Part 4 - to be located",
+   "status": "unverified",
+   "needs": "fire zones, travel distance, exit and stair requirements for that occupancy",
+   "review": "pending owner / professional"
+  },
+  {
+   "id": "BD.BNBC.structural.materials",
+   "locator": "Part 6 - to be located",
+   "status": "unverified",
+   "needs": "minimum concrete strength and reinforcement grade: to be compared with a project's STATED design basis (the details sheet of the shed states f'c 24 MPa, fy 500 MPa and casting ratios: a design basis, not a code rule)",
+   "review": "pending owner / professional"
+  }
+ ]
+}
