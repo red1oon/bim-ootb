@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — W-INFO-DXF2BIM (prompts/DXF2BIM_MODELLER_LANE.md §L28). Scope: the Viewer info panel's `#info-dxf2bim` block. READ THE LOG: exit code alone is not evidence.
 // Issue it proves/disproves: per-mesh provenance (element_dxf2bim) is visible on pick for every shed element, and a DB without those rows (Duplex) shows no empty box.
-// usage: SHED_DB=<ShedFilm*_extracted.db> NODE_PATH=~/bim-compiler/node_modules node viewer/tests/witness_info_dxf2bim.js   (SKIP without the shed DB)
+// usage: SHED_DB=<a shed *_extracted.db with element_dxf2bim rows; default SYSNOVA/DXF2BIM/ShedDrawing/model/ShedDrawing_512_extracted.db> NODE_PATH=~/bim-compiler/node_modules node viewer/tests/witness_info_dxf2bim.js   (SKIP without the shed DB)
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
 const ROOT = path.join(__dirname, '..', '..');
 const Database = require('better-sqlite3');
-const SHED = process.env.SHED_DB || path.join(process.env.HOME, 'Videos/dxf2bim_film_work/shed/rec8/ShedFilm3_extracted.db');
+const SHED = process.env.SHED_DB || path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/model/ShedDrawing_512_extracted.db')   // the finished model (build_model.sh rebuilds it);
 const DUP = path.join(ROOT, 'modeller', 'Duplex_extracted.db');
 let fails = 0; const ck = (id, ok, msg) => { console.log((ok ? '§PASS ' : '§FAIL ') + id + ' ' + msg); if (!ok) fails++; };
 if (!fs.existsSync(SHED)) { console.log('§SKIP W-INFO-DXF2BIM no shed DB at ' + SHED); process.exit(0); }
@@ -22,7 +22,7 @@ for (const p of picks) { const ok = P.render(a, p.g), row = sh.prepare("select v
   ck('I1', ok && box.style.display === 'block' && box.innerHTML.includes('>' + row.v + '<') && box.innerHTML.includes(String(sheet.v).replace(/&/g, '&amp;')), p.c + ' visible, Provenance=' + row.v + ' SourceSheet=' + sheet.v); }
 const all = sh.prepare('select guid g from elements_meta').all(); let okn = 0, bad = 0;
 for (const e of all) { const r = P.render(a, e.g), v = sh.prepare("select value v from element_dxf2bim where guid=? and name='Provenance'").get(e.g); if (r && v && box.innerHTML.includes('>' + v.v + '<')) okn++; else bad++; }
-ck('I2', all.length === 448 && okn === 448 && bad === 0, 'rendered ' + okn + '/' + all.length + ' (bad ' + bad + ')');
+ck('I2', all.length === 512 && okn === 512 && bad === 0, 'rendered ' + okn + '/' + all.length + ' (bad ' + bad + ')');
 const dp = new Database(DUP, { readonly: true }), da = A(dp), dg = dp.prepare('select guid g from elements_meta limit 3').all(); let hid = 0;
 for (const e of dg) { const r = P.render(da, e.g); if (!r && box.style.display === 'none') hid++; }
 ck('I3', hid === 3, 'Duplex (no element_dxf2bim rows) block hidden for ' + hid + '/3 picks');
