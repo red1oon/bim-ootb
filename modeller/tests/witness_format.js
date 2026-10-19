@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+// ⚠ DO NOT REMOVE — W-FORMAT (prompts/DXF2BIM_FOUNDATION_LANE.md §2). Issue it proves or disproves: "another tool or another session can read our files without reading our code": the outputs match their published schemas, the format document is generated from the code (and cannot lag it), and the schemas actually catch a broken file.
+// F1 the real shed's four outputs + format.json validate against modeller/schemas/*.schema.json (python jsonschema; SKIP loudly without it or without the real sheets); F2 every file carries the version (`format` = dxf2bim-run/1, format.json lists the files); F3 CONTROL: a body with its evidence tier removed and a verdict with the wrong version FAIL the schema (a green F1 means something); F4 the generated document names every marks key in the code (27), every registry row (43) and every body kind, and fails if the code has a key the generator does not describe; F5 the document is identical to a fresh generation when FORMAT_DOC points at a copy (docs repo).
+// usage: NODE_PATH=~/bim-compiler/node_modules [FORMAT_DOC=<path to DXF2BIM_FORMAT.md>] node modeller/tests/witness_format.js
+'use strict';
+const fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os');
+const M = path.join(__dirname, '..'), SHD = path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets') + '/', CLI = path.join(M, 'dxf2bim_cli.js');
+let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + ' ' + (m || '')); if (!c) fails++; };
+const G = require('../tools/gen_format_doc.js'), doc = cp.spawnSync('node', [path.join(M, 'tools', 'gen_format_doc.js')], { encoding: 'utf8' }).stdout;
+const undescribed = G.SINGLE.concat(G.MULTI).filter(k => !G.MEANING[k]);
+ok('F4 the document names every marks key (' + (G.SINGLE.length + G.MULTI.length) + '), every registry row (' + Object.keys(G.REG).length + '), every body kind (' + Object.keys(G.KIND).length + '); no key the generator cannot describe', !undescribed.length && G.SINGLE.concat(G.MULTI).every(k => doc.includes('`@' + k + '`')) && Object.keys(G.REG).every(k => doc.includes('`' + k + '`')) && Object.keys(G.KIND).every(k => doc.includes('| `' + k + '` |')), 'undescribed=' + JSON.stringify(undescribed));
+if (process.env.FORMAT_DOC) ok('F5 the published document equals a fresh generation', fs.existsSync(process.env.FORMAT_DOC) && fs.readFileSync(process.env.FORMAT_DOC, 'utf8') === doc, process.env.FORMAT_DOC);
+else console.log('§NOTE F5 not run (set FORMAT_DOC to compare the published document)');
+const pv = (schema, file) => { const r = cp.spawnSync('python3', [path.join(__dirname, 'json_validate.py'), path.join(M, 'schemas', schema), file], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output ' + (r.stderr || '').slice(0, 120) }; } };
+if (!fs.existsSync(SHD + '5_DETAILS.dxf')) { console.log('§SKIP W-FORMAT (F1-F3) no real sheets at ' + SHD); console.log('§W-FORMAT ' + (fails ? 'FAIL ' + fails : 'PASS (partial: F4 only)')); process.exit(fails ? 1 : 0); }
+const probe = pv('dxf2bim-bodies.schema.json', path.join(M, 'schemas', 'dxf2bim-bodies.schema.json')); if (probe.error && /jsonschema missing/.test(probe.error)) { console.log('§SKIP W-FORMAT (F1-F3) ' + probe.error); process.exit(fails ? 1 : 0); }
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fmt-')), names = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
+const r = cp.spawnSync('node', [CLI, '--sheets'].concat(names.map(n => SHD + n + '.dxf'), ['--out', dir, '--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',
+  '--datum', '1S_ELEV:0.6096@-4446.6', '--datum', '1N_ELEV:0.6096@-3895.2', '--datum', '2_ELEV:0.6096@-4515.7264', '--datum', '7_ELEV:0.6096@-3766.442', '--datum', '8_SECTION:0.6096@-3726.416',
+  '--layer', 'plan:Col=column', '--layer', 'elev:0=column@1S_ELEV', '--layer', 'plan:Fo=footing', '--layer', 'plan:Dim=beam@3_BEAM', '--layer', 'elev:Wall=panel', '--layer', 'elev:Rod=fan', '--layer', 'elev:Dim=net', '--layer', 'plan:Rod=doorswing@0_FLOOR', '--layer', 'section:Fo=bar', '--layer', 'elev:Win=elevdoor',
+  '--bodyz', 'footing=-1.4478,-1.143', '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794']), { encoding: 'utf8' });
+ok('F0 the CLI ran on the real shed', r.status === 0, 'rc=' + r.status);
+const res = ['bodies', 'verdict', 'ops', 'bill'].map(n => [n, pv('dxf2bim-' + n + '.schema.json', path.join(dir, n + '.json'))]);
+ok('F1 bodies, verdict, ops and bill validate against their published schemas', res.every(([n, v]) => v.n === 0), res.map(([n, v]) => n + ':' + (v.error || v.n) + (v.errors && v.errors.length ? ' ' + JSON.stringify(v.errors[0]) : '')).join(' | '));
+const fm = JSON.parse(fs.readFileSync(path.join(dir, 'format.json'), 'utf8')), vj = JSON.parse(fs.readFileSync(path.join(dir, 'verdict.json'), 'utf8')), oj = JSON.parse(fs.readFileSync(path.join(dir, 'ops.json'), 'utf8')), bj = JSON.parse(fs.readFileSync(path.join(dir, 'bill.json'), 'utf8'));
+ok('F2 every object output states dxf2bim-run/1 and format.json lists the files and the marks version', [vj, oj, bj, fm].every(x => x.format === 'dxf2bim-run/1') && fm.marks_format === 'dxf2bim-marks/1' && ['verdict.json', 'bodies.json', 'ops.json', 'bill.json'].every(f => fm.files[f]), JSON.stringify(Object.keys(fm.files)));
+const bodies = JSON.parse(fs.readFileSync(path.join(dir, 'bodies.json'), 'utf8')); delete bodies[3].prov; fs.writeFileSync(path.join(dir, 'bodies_broken.json'), JSON.stringify(bodies));
+vj.format = 'dxf2bim-run/9'; fs.writeFileSync(path.join(dir, 'verdict_wrongver.json'), JSON.stringify(vj));
+const c1 = pv('dxf2bim-bodies.schema.json', path.join(dir, 'bodies_broken.json')), c2 = pv('dxf2bim-verdict.schema.json', path.join(dir, 'verdict_wrongver.json'));
+ok('F3 control: a body without its evidence tier and a verdict with another version both FAIL the schema', c1.n > 0 && c2.n > 0, 'bodies_broken errors=' + c1.n + ' wrong_version errors=' + c2.n);
+console.log('§W-FORMAT ' + (fails ? 'FAIL ' + fails : 'PASS')); process.exit(fails ? 1 : 0);

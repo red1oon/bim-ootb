@@ -1,0 +1,59 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "dxf2bim-ops/1",
+ "title": "ops.json: the geometry operations the Modeller canvas replays",
+ "type": "object",
+ "required": [
+  "format",
+  "run_id",
+  "inserts"
+ ],
+ "properties": {
+  "format": {
+   "type": "string",
+   "const": "dxf2bim-run/1",
+   "description": "output contract version; a reader checks it first"
+  },
+  "run_id": {
+   "type": "string"
+  },
+  "inserts": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "op_type",
+     "outputGuid",
+     "params"
+    ],
+    "properties": {
+     "op_type": {
+      "const": "GEOM_INSERT"
+     },
+     "params": {
+      "type": "object",
+      "required": [
+       "ifc_class",
+       "provenance",
+       "bbox"
+      ],
+      "properties": {
+       "provenance": {
+        "type": "object",
+        "required": [
+         "ifc"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  "assets": {
+   "type": "number"
+  },
+  "skipped": {
+   "type": "array"
+  }
+ }
+}

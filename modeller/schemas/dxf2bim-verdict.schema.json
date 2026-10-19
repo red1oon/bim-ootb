@@ -1,0 +1,141 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "dxf2bim-verdict/1",
+ "title": "verdict.json: the gate, the defaults in force, the audits",
+ "type": "object",
+ "required": [
+  "format",
+  "ok",
+  "verdict",
+  "defaults",
+  "defaults_table",
+  "run_id",
+  "structure"
+ ],
+ "properties": {
+  "format": {
+   "type": "string",
+   "const": "dxf2bim-run/1",
+   "description": "output contract version; a reader checks it first"
+  },
+  "ok": {
+   "type": "boolean"
+  },
+  "run_id": {
+   "type": "string",
+   "pattern": "^[0-9a-f]{16,64}$"
+  },
+  "verdict": {
+   "type": "object",
+   "required": [
+    "verdict",
+    "blocking",
+    "advisory",
+    "counts"
+   ],
+   "properties": {
+    "verdict": {
+     "enum": [
+      "qualifies",
+      "blocked"
+     ]
+    },
+    "blocking": {
+     "type": "array"
+    },
+    "advisory": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "code"
+      ],
+      "properties": {
+       "code": {
+        "type": "string",
+        "pattern": "^(GAP|QF|MARK):"
+       }
+      }
+     }
+    },
+    "counts": {
+     "type": "object"
+    }
+   }
+  },
+  "defaults": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "value",
+     "kind"
+    ],
+    "properties": {
+     "key": {
+      "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "default",
+       "stated",
+       "chosen"
+      ]
+     },
+     "evidence": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "why": {
+      "type": [
+       "string",
+       "null"
+      ]
+     }
+    }
+   }
+  },
+  "defaults_table": {
+   "type": "array",
+   "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": [
+     "key",
+     "unit",
+     "kind",
+     "default"
+    ],
+    "properties": {
+     "kind": {
+      "enum": [
+       "std",
+       "guess"
+      ]
+     }
+    }
+   }
+  },
+  "refused": {
+   "type": "array"
+  },
+  "structure": {
+   "type": "object"
+  },
+  "typology": {
+   "type": "object"
+  },
+  "entity_account": {
+   "type": "object"
+  },
+  "dimension_audit": {
+   "type": "object"
+  },
+  "report": {
+   "type": "object"
+  }
+ }
+}
