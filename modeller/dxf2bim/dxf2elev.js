@@ -148,9 +148,9 @@
     var sched = opts.schedule || null, walls = {}; ops.forEach(function (o) { if (o.op_type === 'DXF_WALL') walls[o.output_guid] = o; });
     function gapOp(w, code, extra) { return { op_type: 'DXF_GAP', params: Object.assign({ run_id: w.params.run_id, handle: w.params.handle, layer: w.params.layer, code: code }, extra || {}), input_guids: [], output_guid: null }; }
     ops.forEach(function (o) {
-      if (!(o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.pending_elevation)) { out.push(o); return; }
+      if (!(o.op_type === 'DXF_OPENING' && (o.params.kind === 'door' || (o.params.kind === 'rect' && o.params.category === 'door')) && o.params.pending_elevation)) { out.push(o); return; }
       var P = o.params, w = walls[P.host_wall], found = null;
-      if (w) {
+      if (w && P.hinge) {
         var W = w.params;
         var H = P.hinge, th0 = P.swing_start_deg * Math.PI / 180, th1 = P.swing_end_deg * Math.PI / 180;
         var Ps = [H[0] + P.width * Math.cos(th0), H[1] + P.width * Math.sin(th0)], Pe = [H[0] + P.width * Math.cos(th1), H[1] + P.width * Math.sin(th1)];
