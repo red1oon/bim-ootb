@@ -5,7 +5,7 @@
 //   concrete grade   f'c = <n> MPa            -> fc_MPa       (every concrete body)
 //   steel grade      fy = <n> MPa             -> fy_MPa       (every concrete body)
 //   casting ratio    <elements> Casting Ratio = a:b:c   -> CastingRatio on exactly the listed element words (footing, column, grade beam, beam, floor)
-// A text that does not match is not a note: nothing is guessed. read(sheets) -> { rows, sheets } ; propsFor(el, rows) -> the Pset_Dxf2Bim rows for one body.
+// A text that does not match is not a note: nothing is guessed. read(sheets) -> { rows, sheets } ; propsFor(el, rows) -> the Dxf2Bim_Evidence rows for one body.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.Dxf2Notes = factory();

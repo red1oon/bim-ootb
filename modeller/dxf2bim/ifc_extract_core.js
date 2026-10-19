@@ -385,7 +385,8 @@ async function extractToDb(ctx) {
   } catch(e) {}
   log(`§MATERIALS resolved=${Object.keys(elementMaterialColor).length} elements with IFC material color`);
 
-  // ── §L26 (bim-ootb DXF2BIM lane): the metadata the DXF2BIM product writes per mesh. Gated on the file carrying a `Pset_Dxf2Bim`, so every other IFC extracts exactly as before.
+  // ── §L26 (bim-ootb DXF2BIM lane): the metadata the DXF2BIM product writes per mesh. Gated on the file carrying the evidence set `Dxf2Bim_Evidence` (renamed 2026-10-19 from `Pset_Dxf2Bim`: the `Pset_` prefix is reserved for buildingSMART-defined sets; the old name is still read so existing IFCs extract unchanged), so every other IFC extracts exactly as before.
+  const DXF2BIM_PSETS = ['Dxf2Bim_Evidence', 'Pset_Dxf2Bim'];
   const dxf2bimRows = [], elementMaterialName = {};   // dxf2bimRows: { expressID, name, value }
   try {
     const dIds0 = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES);
@@ -394,7 +395,7 @@ async function extractToDb(ctx) {
         const r = ifcApi.GetLine(modelID, dIds0.get(i));
         if (!r.RelatingPropertyDefinition || !r.RelatedObjects) continue;
         const ps = ifcApi.GetLine(modelID, r.RelatingPropertyDefinition.value);
-        if (!ps || !ps.Name || ps.Name.value !== 'Pset_Dxf2Bim') continue;
+        if (!ps || !ps.Name || DXF2BIM_PSETS.indexOf(ps.Name.value) < 0) continue;
         const props = [];
         for (const ph of ps.HasProperties || []) { const p = ifcApi.GetLine(modelID, ph.value); if (p && p.Name && p.NominalValue) props.push([p.Name.value, String(p.NominalValue.value)]); }
         for (const oh of r.RelatedObjects) for (const [n, v] of props) dxf2bimRows.push({ expressID: oh.value, name: n, value: v });
@@ -1011,7 +1012,7 @@ async function extractToDb(ctx) {
   db.exec(`CREATE TABLE element_type (guid TEXT PRIMARY KEY, type_name TEXT, source TEXT)`);
   const etStmt = db.prepare('INSERT OR IGNORE INTO element_type VALUES (?,?,?)');
   for (const r of typeRows) etStmt.run(r.guid, r.name, r.source);
-  if (dxf2bimRows.length) {   // §L26: only for files that carry Pset_Dxf2Bim (the table does not exist otherwise: other DBs are unchanged)
+  if (dxf2bimRows.length) {   // §L26: only for files that carry the evidence set (Dxf2Bim_Evidence, or the older Pset_Dxf2Bim) (the table does not exist otherwise: other DBs are unchanged)
     db.exec(`CREATE TABLE element_dxf2bim (guid TEXT, name TEXT, value TEXT, PRIMARY KEY (guid, name))`);
     const dxStmt = db.prepare('INSERT OR IGNORE INTO element_dxf2bim VALUES (?,?,?)'), gOf = new Map(elements.map(e => [e.expressID, e.guid]));
     for (const r of dxf2bimRows) if (gOf.has(r.expressID)) dxStmt.run(gOf.get(r.expressID), r.name, r.value);
