@@ -44,7 +44,7 @@
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev);
         marks.push({ text: '@LEVEL=' + lv3 }); say('  LEVEL=' + lv3 + '  [FROM_SOURCE_MODEL: storey placement of ' + st.name + ']');
         planWallTop(M, st, lv3, txt, marks, deps, say);
-        planDoors(M, st, marks, say);
+        planDoors(M, st, marks, say, txt, deps);
         grid.x.forEach(g => { marks.push({ text: '@GRIDX=' + g[0], x: mm3(g[1]), y: 0 }); });
         grid.y.forEach(g => { marks.push({ text: '@GRIDY=' + g[0], x: 0, y: mm3(g[1]) }); });
         say('  GRIDX ' + grid.x.map(g => g[0]) + ' GRIDY ' + grid.y.map(g => g[0]) + '  [building grid of the model]');
@@ -104,27 +104,42 @@
       const bs = baseOf[h] === undefined ? '' : ',' + baseOf[h];
       marks.push({ text: '@WALLTOP=handle:' + h + ',' + perH[h] + bs }); say('  WALLTOP=handle:' + h + ',' + perH[h] + bs + (bs ? '  [base from the model wall z0, not the storey level]' : ''));
     });
+    // §3d F6 D4: interior curtain bands are on no elevation and the storey rule covers wall layers only: state each band's top (and base) FROM the model's own curtain extent
+    const stOf = z => { const below = (M.storeys || []).filter(q => q.elev <= z + 0.05); return below.length ? below[below.length - 1].name : null; };
+    const CW = (M.curtains || []).filter(c => stOf(c.z0) === st.name).map(c => ({ a: r6(c.x0), b: r6(c.y0), c: r6(c.x1), d: r6(c.y1), z0: r6(c.z0), top: r6(c.z1) })).filter(w => !ext(w));
+    const perC = {};
+    CW.forEach(w => { pieces.filter(o => o.params.layer && /CURT/i.test(o.params.layer) && inW(o.params.rect, w)).forEach(o => { const h = o.params.handle, b = Math.abs(w.z0 - lv3) > ELEV_TOL ? r3(w.z0) : undefined, t = r3(w.top); if (perC[h] !== undefined && (perC[h].t !== t || perC[h].b !== b)) perC[h] = null; else if (perC[h] !== null) perC[h] = { t, b }; }); });
+    Object.keys(perC).sort((a, b) => parseInt(a, 16) - parseInt(b, 16)).forEach(h => {
+      if (perC[h] === null || perH[h] !== undefined) { say('  WALLTOP curtain piece ' + h + ': ambiguous or already stated, no marking (gap stays)'); return; }
+      const bs = perC[h].b === undefined ? '' : ',' + perC[h].b;
+      marks.push({ text: '@WALLTOP=handle:' + h + ',' + perC[h].t + bs }); say('  WALLTOP=handle:' + h + ',' + perC[h].t + bs + '  [FROM_SOURCE_MODEL: curtain band extent]');
+    });
     if (!onPlan.length) say('  WALLTOP not written for ' + st.name + ' (no interior wall on this plan)');
   }
 
   // L2.6 C: door schedule + tags from the IFC OverallWidth/OverallHeight (door_operation)
-  function planDoors(M, st, marks, say) {
-    const ops = M.door_ops, all = M.els.filter(e => e.cls === 'IfcDoor'), here = all.filter(x => x.storey === st.name), types = Array.from(new Set(here.map(x => x.etype))).sort();
+  function planDoors(M, st, marks, say, txt, deps) {
+    const ops = M.door_ops, all = M.els.filter(e => e.cls === 'IfcDoor'), here = all.filter(x => x.storey === st.name);
     if (!Object.keys(ops).length) { say('  §MARK_GAP SCHEDULE/TAG not written: no door_operation in the model'); return; }
-    types.forEach(t => {
-      const sz = Array.from(new Set(all.filter(x => x.etype === t).map(x => ops[x.guid] && ops[x.guid].w != null ? (ops[x.guid].w * 1000).toFixed(1) + 'x' + (ops[x.guid].h * 1000).toFixed(1) : 'none')));
-      if (sz.length !== 1 || sz[0] === 'none' || /,/.test(t)) { say('  SCHEDULE ' + t + ': REFUSED, sizes ' + JSON.stringify(sz)); return; }
-      const [w, h] = sz[0].split('x').map(Number); marks.push({ text: '@SCHEDULE=' + t + ',door,' + w + ',' + h }); say('  SCHEDULE=' + t + ',door,' + w + ',' + h);
-    });
-    // §L1.25: two door types at one plan point would be two different @TAG texts at one point (a marking conflict the reader refuses): that point is not tagged
+    // §3d F6 D5: one type name can carry several sizes (HHS: one family, 3-5 sizes); the label then carries the size ("<type> [WxH]") so every door keeps its OWN stated size; a type with one size keeps the plain label
+    const szOf = x => ops[x.guid] && ops[x.guid].w != null ? (ops[x.guid].w * 1000).toFixed(1) + 'x' + (ops[x.guid].h * 1000).toFixed(1) : null;
+    const sizesOfType = {}; all.forEach(x => { (sizesOfType[x.etype] = sizesOfType[x.etype] || new Set()).add(szOf(x)); });
+    const labelOf = x => { const sz = szOf(x), ss = sizesOfType[x.etype]; if (sz === null || ss.has(null) || /[,\[\]]/.test(x.etype)) return null; return ss.size === 1 ? x.etype : x.etype + ' [' + sz + ']'; };
+    const labels = Array.from(new Set(here.map(labelOf).filter(l => l !== null))).sort();
+    here.filter(x => labelOf(x) === null).forEach(x => say('  SCHEDULE ' + x.etype + ': REFUSED for one door (size not stated or type name has , [ ])'));
+    labels.forEach(l => { const x = here.find(d => labelOf(d) === l), [w, h] = szOf(x).split('x').map(Number); marks.push({ text: '@SCHEDULE=' + l + ',door,' + w + ',' + h }); say('  SCHEDULE=' + l + ',door,' + w + ',' + h); });
+    // §L1.25: two door labels at one plan point would be two different @TAG texts at one point (a marking conflict the reader refuses): that point is not tagged
     const at = x => [Number(((x.x0 + x.x1) / 2 * 1000).toFixed(3)), Number(((x.y0 + x.y1) / 2 * 1000).toFixed(3))], ptTypes = {};
-    here.forEach(x => { const k = at(x).join(','); (ptTypes[k] = ptTypes[k] || new Set()).add(x.etype); });
+    here.forEach(x => { const k = at(x).join(','); (ptTypes[k] = ptTypes[k] || new Set()).add(labelOf(x)); });
+    // §3d F6 D6: the tag must fall in the door's DRAWN swing box (the reader's rule); the model's bbox centre can lie on the other side of the wall line (HHS: 143 mm off, 30 doors untagged). The drawn doors are read back from this very sheet; a tag outside every swing box moves to the centre of the unique nearest box within one leaf width, else it stays
+    const drawn = deps.B.run(txt, deps.SHC.STD.MAP_PLAN, deps.SHC.CFG, { DxfParser: deps.DxfParser, hashHex: deps.hashHex, library: [] }).ops.filter(o => o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge).map(o => { const P = o.params, H = P.hinge, pts = [H].concat([P.swing_start_deg, P.swing_end_deg].map(a => [H[0] + P.width * Math.cos(a * Math.PI / 180), H[1] + P.width * Math.sin(a * Math.PI / 180)])); const xs = pts.map(q => q[0] * 1000), ys = pts.map(q => q[1] * 1000); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), w: P.width * 1000 }; });
+    const moved = p => { if (drawn.some(b => p[0] >= b.x0 && p[0] <= b.x1 && p[1] >= b.y0 && p[1] <= b.y1)) return p; const cand = drawn.map(b => ({ b, d: Math.hypot(Math.max(b.x0 - p[0], 0, p[0] - b.x1), Math.max(b.y0 - p[1], 0, p[1] - b.y1)) })).filter(c => c.d <= c.b.w).sort((a, c) => a.d - c.d); if (!cand.length || (cand.length > 1 && cand[1].d - cand[0].d < 1)) return p; const b = cand[0].b; return [Number(((b.x0 + b.x1) / 2).toFixed(3)), Number(((b.y0 + b.y1) / 2).toFixed(3))]; };
     const said = {};
     here.forEach(x => {
-      if (types.indexOf(x.etype) < 0) return;
-      const p = at(x), k = p.join(',');
+      const l = labelOf(x); if (l === null) return;
+      const p = moved(at(x)), k = at(x).join(',');
       if (ptTypes[k].size > 1) { if (!said[k]) { said[k] = 1; say('  §MARK_GAP TAG door at (' + p[0] + ',' + p[1] + '): types ' + Array.from(ptTypes[k]).sort().join(' / ') + ' differ, not tagged'); } return; }
-      marks.push({ text: '@TAG=door,' + x.etype, x: p[0], y: p[1] });
+      marks.push({ text: '@TAG=door,' + l, x: p[0], y: p[1] });
     });
   }
   return { deriveMarks };
