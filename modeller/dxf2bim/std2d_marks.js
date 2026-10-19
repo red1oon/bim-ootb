@@ -116,13 +116,19 @@
       const bs = perX[h].b === undefined ? '' : ',' + perX[h].b;
       marks.push({ text: '@WALLTOP=handle:' + h + ',' + perX[h].t + bs }); say('  WALLTOP=handle:' + h + ',' + perX[h].t + bs + '  [FROM_SOURCE_MODEL: wall crossed by the cut plane, labelled another storey]');
     });
+    // §3d F6 D8: an EXTERIOR wall whose base is not the storey level cannot take its height from an elevation rectangle (the reader accepts only rectangles that start at the level): state its top and base FROM the model per drawn piece, as L1.24 does for interior walls; a piece shared by walls with different tops or bases is left alone
+    const perE = {};
+    W.filter(ext).concat(X.filter(extX)).filter(w => Math.abs(w.z0 - lv3) > ELEV_TOL).forEach(w => { pieces.filter(o => inW(o.params.rect, w)).forEach(o => { const h = o.params.handle, b = r3(w.z0), t = r3(w.top); if (perE[h] !== undefined && (perE[h] === null || perE[h].t !== t || perE[h].b !== b)) perE[h] = null; else perE[h] = { t, b }; }); });
+    Object.keys(perE).sort((a, b) => parseInt(a, 16) - parseInt(b, 16)).forEach(h => {
+      if (perE[h] === null || marks.some(m => m.text.indexOf('@WALLTOP=handle:' + h + ',') === 0)) { say('  WALLTOP exterior piece ' + h + ': walls with different tops or bases, or already stated, no marking (gap stays)'); return; }
+      marks.push({ text: '@WALLTOP=handle:' + h + ',' + perE[h].t + ',' + perE[h].b }); say('  WALLTOP=handle:' + h + ',' + perE[h].t + ',' + perE[h].b + '  [FROM_SOURCE_MODEL: exterior wall base differs from the storey level]');
+    });
     // §3d F6 D4: interior curtain bands are on no elevation and the storey rule covers wall layers only: state each band's top (and base) FROM the model's own curtain extent
-    const stOf = z => { const below = (M.storeys || []).filter(q => q.elev <= z + 0.05); return below.length ? below[below.length - 1].name : null; };
-    const CW = (M.curtains || []).filter(c => stOf(c.z0) === st.name).map(c => ({ a: r6(c.x0), b: r6(c.y0), c: r6(c.x1), d: r6(c.y1), z0: r6(c.z0), top: r6(c.z1) })).filter(w => !ext(w));
+    const CW = (M.curtains || []).filter(c => c.z0 < cutZ && cutZ < c.z1).map(c => ({ a: r6(c.x0), b: r6(c.y0), c: r6(c.x1), d: r6(c.y1), z0: r6(c.z0), top: r6(c.z1) }));
     const perC = {};
     CW.forEach(w => { pieces.filter(o => o.params.layer && /CURT/i.test(o.params.layer) && inW(o.params.rect, w)).forEach(o => { const h = o.params.handle, b = Math.abs(w.z0 - lv3) > ELEV_TOL ? r3(w.z0) : undefined, t = r3(w.top); if (perC[h] !== undefined && (perC[h].t !== t || perC[h].b !== b)) perC[h] = null; else if (perC[h] !== null) perC[h] = { t, b }; }); });
     Object.keys(perC).sort((a, b) => parseInt(a, 16) - parseInt(b, 16)).forEach(h => {
-      if (perC[h] === null || perH[h] !== undefined || perX[h] !== undefined) { say('  WALLTOP curtain piece ' + h + ': ambiguous or already stated, no marking (gap stays)'); return; }
+      if (perC[h] === null || perH[h] !== undefined || perX[h] !== undefined || marks.some(m => m.text.indexOf('@WALLTOP=handle:' + h + ',') === 0)) { say('  WALLTOP curtain piece ' + h + ': ambiguous or already stated, no marking (gap stays)'); return; }
       const bs = perC[h].b === undefined ? '' : ',' + perC[h].b;
       marks.push({ text: '@WALLTOP=handle:' + h + ',' + perC[h].t + bs }); say('  WALLTOP=handle:' + h + ',' + perC[h].t + bs + '  [FROM_SOURCE_MODEL: curtain band extent]');
     });
