@@ -470,7 +470,11 @@
         // D3 swing disc: still unattached -> the door whose hinge is within width + snap_tol of the piece's endpoint centroid (hardware, leaf, frame inside the swing)
         if (!hit.length) {
           var dcx = 0, dcy = 0; segs.forEach(function (sg) { dcx += sg.a[0] + sg.b[0]; dcy += sg.a[1] + sg.b[1]; }); dcx /= 2 * segs.length; dcy /= 2 * segs.length;
-          elems.forEach(function (door) { if (door.op === 'DXF_OPENING' && door.params.kind === 'door' && Math.hypot(dcx - door.params.hinge[0], dcy - door.params.hinge[1]) <= door.params.width + tolS) hit.push(door); });
+          elems.forEach(function (door) { if (door.op === 'DXF_OPENING' && door.params.kind === 'door' && Math.hypot(dcx - door.params.hinge[0], dcy - door.params.hinge[1]) <= door.params.width + (has(config, ['opening', 'casing']) ? config.opening.casing : tolS)) hit.push(door); });
+          if (hit.length > 1) {   // the swing it sits deepest in wins (distance to the hinge as a share of the leaf width); a tie stays ambiguous
+            var rr = hit.map(function (d) { return Math.hypot(dcx - d.params.hinge[0], dcy - d.params.hinge[1]) / d.params.width; }), rmin = Math.min.apply(null, rr), best = hit.filter(function (d, i) { return rr[i] <= rmin + 1e-9; });
+            if (best.length === 1) hit = best;
+          }
         }
         if (!hit.length) return;
         segs.forEach(function (sg) { sg.used = true; });
@@ -490,6 +494,38 @@
       var comps = Object.keys(groups).map(function (k) { return groups[k]; });
       comps.forEach(function (c) { c.sort(function (p, q) { return hnum(p.e.handle) - hnum(q.e.handle) || p.part - q.part; }); });
       comps.sort(function (p, q) { return hnum(p[0].e.handle) - hnum(q[0].e.handle) || p[0].part - q[0].part; });
+      // D12 (c): leaves of 4 segments that share a FULL edge (the leaves of a double door, axis-aligned) are ONE rectangle opening, their union, when the union has exactly their total area; any other component of several entities is split per entity before the rectangle test.
+      comps = comps.reduce(function (acc, c) {
+        var by = {}; c.forEach(function (sg) { (by[sg.e.handle] = by[sg.e.handle] || []).push(sg); });
+        var hs = Object.keys(by).sort(function (p, q) { return hnum(p) - hnum(q); });
+        if (!(c.length > 4 && hs.length > 1 && hs.every(function (h) { return by[h].length === 4; }))) { acc.push(c); return acc; }
+        var bbx = {}; hs.forEach(function (h) { var xs = [], ys = []; by[h].forEach(function (sg) { xs.push(sg.a[0], sg.b[0]); ys.push(sg.a[1], sg.b[1]); }); bbx[h] = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)]; });
+        var gp = {}; hs.forEach(function (h) { gp[h] = h; }); var gf = function (h) { while (gp[h] !== h) h = gp[h]; return h; };
+        for (var i = 0; i < hs.length; i++) for (var j = i + 1; j < hs.length; j++) {
+          var A = bbx[hs[i]], B2 = bbx[hs[j]];
+          var sx = (Math.abs(A[2] - B2[0]) <= tolS || Math.abs(B2[2] - A[0]) <= tolS) && Math.abs(A[1] - B2[1]) <= tolS && Math.abs(A[3] - B2[3]) <= tolS;
+          var sy = (Math.abs(A[3] - B2[1]) <= tolS || Math.abs(B2[3] - A[1]) <= tolS) && Math.abs(A[0] - B2[0]) <= tolS && Math.abs(A[2] - B2[2]) <= tolS;
+          var same = Math.abs(A[0] - B2[0]) <= tolS && Math.abs(A[1] - B2[1]) <= tolS && Math.abs(A[2] - B2[2]) <= tolS && Math.abs(A[3] - B2[3]) <= tolS;
+          if (sx || sy || same) gp[gf(hs[j])] = gf(hs[i]);
+        }
+        var grp = {}; hs.forEach(function (h) { (grp[gf(h)] = grp[gf(h)] || []).push(h); });
+        Object.keys(grp).sort(function (p, q) { return hnum(p) - hnum(q); }).forEach(function (k) {
+          var g = grp[k].sort(function (p, q) { return hnum(p) - hnum(q); });
+          if (g.length > 1) {
+            var U = [Math.min.apply(null, g.map(function (h) { return bbx[h][0]; })), Math.min.apply(null, g.map(function (h) { return bbx[h][1]; })), Math.max.apply(null, g.map(function (h) { return bbx[h][2]; })), Math.max.apply(null, g.map(function (h) { return bbx[h][3]; }))];
+            var seenB = [], area = 0;   // two products drawn on the SAME footprint (e.g. leaf + panel) count once
+            g.forEach(function (h) { var Bh = bbx[h]; if (seenB.some(function (o) { return Math.abs(o[0] - Bh[0]) <= tolS && Math.abs(o[1] - Bh[1]) <= tolS && Math.abs(o[2] - Bh[2]) <= tolS && Math.abs(o[3] - Bh[3]) <= tolS; })) return; seenB.push(Bh); area += (Bh[2] - Bh[0]) * (Bh[3] - Bh[1]); });
+            if (Math.abs((U[2] - U[0]) * (U[3] - U[1]) - area) <= 1e-6) {
+              var orig = []; g.forEach(function (h) { orig = orig.concat(by[h]); });
+              var cs = [[U[0], U[1]], [U[2], U[1]], [U[2], U[3]], [U[0], U[3]]];
+              acc.push(cs.map(function (q, i) { return { e: by[g[0]][0].e, part: i, a: q, b: cs[(i + 1) % 4], used: false, orig: orig, also: i === 0 ? g.slice(1).map(function (h) { return { handle: h, part: 0 }; }) : [] }; }));
+              return;
+            }
+          }
+          g.forEach(function (h) { acc.push(by[h]); });
+        });
+        return acc;
+      }, []);
       comps.forEach(function (c) {
         if (c.length !== 4) return;
         var ends = []; c.forEach(function (sg) { ends.push(sg.a, sg.b); });
@@ -505,8 +541,8 @@
         var centre = [r6(cx / 8), r6(cy / 8)];
         var ang = Math.atan2(dirs[li][1], dirs[li][0]) * 180 / Math.PI; ang = ((ang % 180) + 180) % 180; ang = r6(ang) === 180 ? 0 : r6(ang);
         var first = c[0].e;
-        c.forEach(function (sg) { sg.used = true; });
-        var members = c.map(function (sg) { return { handle: sg.e.handle, part: sg.part }; });
+        c.forEach(function (sg) { sg.used = true; if (sg.orig) sg.orig.forEach(function (o) { o.used = true; }); });
+        var members = c.map(function (sg) { return { handle: sg.e.handle, part: sg.part }; }).concat([].concat.apply([], c.map(function (sg) { return sg.also || []; })));
         var asDoor = !!(config.opening && config.opening.rect && config.opening.rect.door === true);   // D9: a rectangle on an opening layer is a door footprint (height from its label)
         if (!has(config, ['host_tol']) || (!asDoor && (!has(config, ['opening', 'rect', 'sill']) || !has(config, ['opening', 'rect', 'height'])))) {
           var seen = {}; c.forEach(function (sg) { if (!seen[sg.e.handle]) { seen[sg.e.handle] = 1; gap('GAP:no_dimension', sg.e, { need: 'host_tol,opening.rect.sill,opening.rect.height', members: members }); } });
@@ -523,6 +559,25 @@
           sill: asDoor ? 0 : config.opening.rect.sill, height: asDoor ? null : config.opening.rect.height, category: asDoor ? 'door' : undefined, pending_elevation: asDoor ? true : undefined, members: members } });
         gap('GAP:no_host_cut', first, { host_handle: host.e.handle, host_part: host.part, rect: true });
       });
+      // D12 (b): a rectangle door (D9) takes the unattached entities whose endpoint centroid lies in its footprint grown by the casing; two footprints = ambiguous (listed)
+      if (has(config, ['opening', 'casing'])) {
+        var rdoors = elems.filter(function (x) { return x.op === 'DXF_OPENING' && x.params.kind === 'rect' && x.params.category === 'door'; });
+        if (rdoors.length) {
+          var left0 = {}; oSegs.forEach(function (sg) { if (!sg.used) (left0[sg.e.handle] = left0[sg.e.handle] || []).push(sg); });
+          Object.keys(left0).sort(function (p, q) { return hnum(p) - hnum(q); }).forEach(function (h) {
+            var segs = left0[h], cx = 0, cy = 0; segs.forEach(function (sg) { cx += sg.a[0] + sg.b[0]; cy += sg.a[1] + sg.b[1]; }); cx /= 2 * segs.length; cy /= 2 * segs.length;
+            var over = [], hit = rdoors.filter(function (d) {
+              var q = d.params, a = q.angle_deg * Math.PI / 180, dx = cx - q.centre[0], dy = cy - q.centre[1], u = dx * Math.cos(a) + dy * Math.sin(a), v = -dx * Math.sin(a) + dy * Math.cos(a);
+              var ov = Math.max(Math.abs(u) - q.width / 2, Math.abs(v) - q.depth / 2, 0);   // how far outside the bare footprint (0 = inside it)
+              if (ov > config.opening.casing) return false; over.push(ov); return true; });
+            if (hit.length > 1) { var mn = Math.min.apply(null, over), at = hit.filter(function (d, i) { return over[i] <= mn + 1e-9; }); if (at.length === 1) hit = at; }   // the footprint it lies in (or nearest to) wins; a tie stays ambiguous
+            if (!hit.length) return;
+            segs.forEach(function (sg) { sg.used = true; });
+            if (hit.length > 1) { gap('GAP:door_part_ambiguous', segs[0].e, { doors: hit.map(function (d) { return d.e.handle; }).sort(function (p, q) { return hnum(p) - hnum(q); }) }); return; }
+            hit[0].params.parts = hit[0].params.parts || []; segs.forEach(function (sg) { hit[0].params.parts.push({ handle: sg.e.handle, part: sg.part }); });
+          });
+        }
+      }
       // W4 leftovers: one gap per entity that still has unconsumed segments
       var left = {};
       oSegs.forEach(function (sg) { if (!sg.used) { left[sg.e.handle] = left[sg.e.handle] || { e: sg.e, n: 0 }; left[sg.e.handle].n++; } });

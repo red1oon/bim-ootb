@@ -18,7 +18,7 @@
   var MAP_LEVL = { version: 1, rules: [{ match: 'exact', pattern: 'A-ANNO-LEVL', type: 'levelline' }, { match: 'exact', pattern: 'A-ELEV-LEVL', type: 'levelline' }] };
   var MAP_ROOF = { version: 1, rules: [{ match: 'exact', pattern: 'A-ROOF', type: 'roof' }, { match: 'exact', pattern: 'A-GLAZ', type: 'glazing' }] };
   var CFG = { version: 1, units: 'mm', snap_tol: 0.001, elev_tol: 0.003, host_tol: 0.3, align_tol: 0.05, wall_mode: 'footprint',
-    wall: { height_from_elevation: true, min_thickness: 0.05, polygon_footprint: true }, opening: { door: { from_elevation: true, min_width: 0.5 }, window: { from_elevation: true }, rect: { door: true }, gap_min: 0.3, gap_max: 5 } };
+    wall: { height_from_elevation: true, min_thickness: 0.05, polygon_footprint: true }, opening: { door: { from_elevation: true, min_width: 0.5 }, window: { from_elevation: true }, rect: { door: true }, casing: 0.076, gap_min: 0.3, gap_max: 5 } };
   // type binding (rosetta_dx_types chain): SANDBOX sets by id prefix, prefer DUPLEX_NOMINAL; fills: size_tol
   var TYPES = { size_tol: 0.005, prefer: ['DUPLEX_NOMINAL'], sets: [['DUPLEX_', 'DUPLEX_NOMINAL'], ['US_', 'US_BBOX']] };
   var FILL = { size_tol: 0.005 };
