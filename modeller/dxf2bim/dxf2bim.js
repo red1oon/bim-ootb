@@ -467,6 +467,11 @@
       entOrder.forEach(function (h) {
         var segs = byEnt[h], hit = touch[h].slice();
         if (!hit.length) elems.forEach(function (door) { if (door.op === 'DXF_OPENING' && door.params.kind === 'door' && door.params.opening_box && inBox(segs, door.params.opening_box)) hit.push(door); });
+        // D3 swing disc: still unattached -> the door whose hinge is within width + snap_tol of the piece's endpoint centroid (hardware, leaf, frame inside the swing)
+        if (!hit.length) {
+          var dcx = 0, dcy = 0; segs.forEach(function (sg) { dcx += sg.a[0] + sg.b[0]; dcy += sg.a[1] + sg.b[1]; }); dcx /= 2 * segs.length; dcy /= 2 * segs.length;
+          elems.forEach(function (door) { if (door.op === 'DXF_OPENING' && door.params.kind === 'door' && Math.hypot(dcx - door.params.hinge[0], dcy - door.params.hinge[1]) <= door.params.width + tolS) hit.push(door); });
+        }
         if (!hit.length) return;
         segs.forEach(function (sg) { sg.used = true; });
         if (hit.length > 1) { gap('GAP:door_part_ambiguous', segs[0].e, { doors: hit.map(function (d) { return d.e.handle; }).sort(function (p, q) { return hnum(p) - hnum(q); }) }); return; }
