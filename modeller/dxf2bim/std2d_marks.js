@@ -43,6 +43,7 @@
       if (kind === 'PLAN') {
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev);
         marks.push({ text: '@LEVEL=' + lv3 }); say('  LEVEL=' + lv3 + '  [FROM_SOURCE_MODEL: storey placement of ' + st.name + ']');
+        planWallMin(txt, marks, deps, say);
         planWallTop(M, st, lv3, txt, marks, deps, say);
         planDoors(M, st, marks, say, txt, deps);
         grid.x.forEach(g => { marks.push({ text: '@GRIDX=' + g[0], x: mm3(g[1]), y: 0 }); });
@@ -72,6 +73,14 @@
     return { files: out, log };
   }
 
+  // §F6 D11: a plan that draws wall pieces thinner than the set's 50 mm reading limit states the thinnest piece it wants read, FROM the model's own drawn pieces; pieces under 10 mm (the plan merge tolerance, L1.8 S1: tessellation slivers) are not accepted and stay listed
+  function planWallMin(txt, marks, deps, say) {
+    const cfg0 = deps.SHC.CFG, all = deps.B.run(txt, deps.SHC.STD.MAP_PLAN, Object.assign({}, cfg0, { wall: Object.assign({}, cfg0.wall, { min_thickness: 0 }) }), { DxfParser: deps.DxfParser, hashHex: deps.hashHex, library: [] }).ops.filter(o => o.op_type === 'DXF_WALL' && typeof o.params.thickness === 'number');
+    const ts = all.map(o => o.params.thickness).filter(t => t >= 0.010 && t < cfg0.wall.min_thickness);
+    if (!ts.length) return;
+    const t = Math.floor(Math.min(...ts) * 1000) / 1000;
+    marks.push({ text: '@WALLMIN=' + t }); say('  WALLMIN=' + t + '  [FROM_SOURCE_MODEL: thinnest drawn wall piece >= 10 mm; ' + ts.length + ' piece(s) below the ' + cfg0.wall.min_thickness + ' m default]');
+  }
   // L2.5 W1 + L2.6 A: wall tops from the model, per wall where the storey rule does not hold
   function planWallTop(M, st, lv3, txt, marks, deps, say) {
     const sw = M.walls.filter(w => w.storey === st.name);
@@ -80,7 +89,8 @@
     const SL = M.els.filter(e => e.cls === 'IfcSlab').map(e => ({ id: e.guid, a: r6(e.x0), b: r6(e.y0), c: r6(e.x1), d: r6(e.y1), z0: r6(e.z0) }));
     const E = [Math.min(...W.map(w => w.a)), Math.min(...W.map(w => w.b)), Math.max(...W.map(w => w.c)), Math.max(...W.map(w => w.d))];
     const ext = w => Math.abs(w.a - E[0]) <= EXT_FACE_TOL || Math.abs(w.b - E[1]) <= EXT_FACE_TOL || Math.abs(w.c - E[2]) <= EXT_FACE_TOL || Math.abs(w.d - E[3]) <= EXT_FACE_TOL;
-    const pieces = deps.B.run(txt, deps.SHC.STD.MAP_PLAN, deps.SHC.CFG, { DxfParser: deps.DxfParser, hashHex: deps.hashHex, library: [] }).ops.filter(o => o.op_type === 'DXF_WALL' && o.params.rect);
+    const wm = marks.find(m => /^@WALLMIN=/.test(m.text)), cfgEff = wm ? Object.assign({}, deps.SHC.CFG, { wall: Object.assign({}, deps.SHC.CFG.wall, { min_thickness: Number(wm.text.slice(9)) }) }) : deps.SHC.CFG;   // the plan is read with its own @WALLMIN
+    const pieces = deps.B.run(txt, deps.SHC.STD.MAP_PLAN, cfgEff, { DxfParser: deps.DxfParser, hashHex: deps.hashHex, library: [] }).ops.filter(o => o.op_type === 'DXF_WALL' && o.params.rect);
     const inW = (r, w) => r[0] >= w.a - 0.002 && r[1] >= w.b - 0.002 && r[2] <= w.c + 0.002 && r[3] <= w.d + 0.002;
     const res = [];
     W.filter(w => !ext(w)).forEach(w => {
