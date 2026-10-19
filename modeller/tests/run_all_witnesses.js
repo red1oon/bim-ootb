@@ -6,7 +6,7 @@
 const fs = require('fs'), path = require('path'), cp = require('child_process');
 const T = __dirname, V = path.join(T, '..', '..', 'viewer', 'tests'), BASE = path.join(T, 'witness_status_baseline.json');
 const upd = process.argv.includes('--update'), only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
-const files = fs.readdirSync(T).filter(f => /^witness_(dxf_.*|ifc_valid|format|standards_pack)\.js$/.test(f)).sort().map(f => path.join(T, f)).concat([path.join(V, 'witness_info_dxf2bim.js')]).filter(f => !only || f.includes(only));
+const files = fs.readdirSync(T).filter(f => /^witness_(dxf_.*|ifc_valid|format|standards_pack|ids)\.js$/.test(f)).sort().map(f => path.join(T, f)).concat([path.join(V, 'witness_info_dxf2bim.js')]).filter(f => !only || f.includes(only));
 const ENVSIG = /ENOENT|MISSING input|Cannot find module '\/home\/[^']*\/(Projects\/)?bim-compiler|cannot be readonly|Received undefined|file is not a database|no such file or directory/;
 const res = {};
 files.forEach(f => {
