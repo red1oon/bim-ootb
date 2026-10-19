@@ -507,15 +507,20 @@
         var first = c[0].e;
         c.forEach(function (sg) { sg.used = true; });
         var members = c.map(function (sg) { return { handle: sg.e.handle, part: sg.part }; });
-        if (!has(config, ['host_tol']) || !has(config, ['opening', 'rect', 'sill']) || !has(config, ['opening', 'rect', 'height'])) {
+        var asDoor = !!(config.opening && config.opening.rect && config.opening.rect.door === true);   // D9: a rectangle on an opening layer is a door footprint (height from its label)
+        if (!has(config, ['host_tol']) || (!asDoor && (!has(config, ['opening', 'rect', 'sill']) || !has(config, ['opening', 'rect', 'height'])))) {
           var seen = {}; c.forEach(function (sg) { if (!seen[sg.e.handle]) { seen[sg.e.handle] = 1; gap('GAP:no_dimension', sg.e, { need: 'host_tol,opening.rect.sill,opening.rect.height', members: members }); } });
           return;
         }
         var host = hostFor(centre);
+        if (!host && asDoor) {   // D9: a door footprint lies in the GAP between two wall pieces; its two long-axis ends touch those pieces: the nearer piece hosts it (tie: lower handle, as hostFor)
+          var ux = dirs[li][0], uy = dirs[li][1], hl = dirs[li][2] / 2, hA = hostFor([r6(centre[0] - ux * hl), r6(centre[1] - uy * hl)]), hB = hostFor([r6(centre[0] + ux * hl), r6(centre[1] + uy * hl)]);
+          host = hA && hB ? (hnum(hA.e.handle) <= hnum(hB.e.handle) ? hA : hB) : (hA || hB);
+        }
         if (!host) { var seen2 = {}; c.forEach(function (sg) { if (!seen2[sg.e.handle]) { seen2[sg.e.handle] = 1; gap('GAP:no_host', sg.e, { centre: centre, members: members }); } }); return; }
         elems.push({ op: 'DXF_OPENING', e: first, part: c[0].part, hostRef: host, params: {
           kind: 'rect', width: r6(dirs[li][2]), depth: r6(dirs[si][2]), centre: centre, angle_deg: ang,
-          sill: config.opening.rect.sill, height: config.opening.rect.height, members: members } });
+          sill: asDoor ? 0 : config.opening.rect.sill, height: asDoor ? null : config.opening.rect.height, category: asDoor ? 'door' : undefined, pending_elevation: asDoor ? true : undefined, members: members } });
         gap('GAP:no_host_cut', first, { host_handle: host.e.handle, host_part: host.part, rect: true });
       });
       // W4 leftovers: one gap per entity that still has unconsumed segments
