@@ -1,0 +1,23 @@
+{
+ "dxf2account.js": 0,
+ "dxf2bill.js": 6,
+ "dxf2bim_cli.js": 4,
+ "dxf2bim_import.js": 46,
+ "dxf2bodies.js": 17,
+ "dxf2defaults.js": 0,
+ "dxf2doors.js": 12,
+ "dxf2hatch.js": 4,
+ "dxf2ifc.js": 9,
+ "dxf2library_types.js": 0,
+ "dxf2notes.js": 5,
+ "dxf2pair.js": 5,
+ "dxf2panels.js": 10,
+ "dxf2prep.js": 13,
+ "dxf2section.js": 11,
+ "dxf2structure.js": 0,
+ "dxf2suggest.js": 12,
+ "dxf2synth.js": 9,
+ "dxf2typology.js": 0,
+ "dxf_import_ui.js": 5,
+ "dxf_meta_editor.js": 3
+}

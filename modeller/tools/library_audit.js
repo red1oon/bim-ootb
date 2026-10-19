@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+// ⚠ DO NOT REMOVE — foundation lane F5 step 1 (prompts/DXF2BIM_FOUNDATION_LANE.md §5). READ-ONLY, reproducible: the facts about component_library.db that the library decisions rest on. usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tools/library_audit.js <component_library.db> <out.json>
+'use strict';
+const fs = require('fs'), D = require('better-sqlite3'), d = new D(process.argv[2], { readonly: true }), q = (s, ...p) => d.prepare(s).all(...p), one = (s) => d.prepare(s).get();
+const tbl = n => !!one("select 1 x from sqlite_master where type='table' and name='" + n + "'"), cnt = n => tbl(n) ? one('select count(*) n from ' + n).n : null;
+const bytes = {}; try { q('select name, sum(pgsize) b from dbstat group by name').forEach(r => { bytes[r.name] = r.b; }); } catch (e) {}
+const byType = q('select t.ifc_class c, t.category cat, t.discipline disc, count(*) n, count(distinct g.geometry_hash) h, coalesce(sum(length(g.vertices)+length(g.faces)),0) b from component_definitions c join component_types t on t.id=c.type_id left join component_geometries g on g.geometry_hash=c.geometry_hash group by t.id order by n desc');
+const total = one('select count(*) n from component_definitions').n, tot = byType.reduce((a, r) => a + r.n, 0);
+const dupNames = q('select name, count(*) n, count(distinct geometry_hash) h from component_definitions group by name having n>1 order by n desc limit 12');
+const meshPerSize = byType.filter(r => ['IfcPlate', 'IfcPipeFitting', 'IfcPipeSegment', 'IfcDuctFitting', 'IfcDuctSegment', 'IfcFlowFitting', 'IfcFlowSegment'].includes(r.c));
+const res = { measured: new Date().toISOString().slice(0, 10), file: process.argv[2], file_bytes: fs.statSync(process.argv[2]).size, definitions: total, distinct_hashes: one('select count(distinct geometry_hash) n from component_definitions').n, distinct_names: one('select count(distinct name) n from component_definitions').n, types: byType.length,
+  geometry_table_bytes: bytes.component_geometries || null, placements: cnt('ad_element_placement'), buildings_in_registry: tbl('ad_building_registry') ? q('select building_id, building_name, building_type from ad_building_registry') : [], placements_by_building: tbl('ad_element_placement') ? q('select building_id b, count(*) n from ad_element_placement group by 1 order by n desc limit 8') : [],
+  by_class: byType, mesh_per_size_classes: meshPerSize.map(r => ({ class: r.c, n: r.n })), mesh_per_size_share: +(meshPerSize.reduce((a, r) => a + r.n, 0) / total).toFixed(3), repeated_names: dupNames,
+  curated: { ad_opening_family: cnt('ad_opening_family'), ad_wall_type: cnt('ad_wall_type'), ad_column_type: cnt('ad_column_type'), ad_beam_type: cnt('ad_beam_type'), ad_railing_type: cnt('ad_railing_type'), ad_floor_type: cnt('ad_floor_type'), ad_covering_type: cnt('ad_covering_type'), ad_building_template: cnt('ad_building_template'), ad_space_type: cnt('ad_space_type'), material_layers: cnt('material_layers'), surface_styles: cnt('surface_styles') },
+  standards: { ad_building_code: cnt('ad_building_code'), ad_jurisdiction_codes: cnt('ad_jurisdiction_codes'), ad_code_requirement: cnt('ad_code_requirement'), ad_check_threshold: cnt('ad_check_threshold'), ad_check_applicability: cnt('ad_check_applicability'), ad_egress_travel: cnt('ad_egress_travel'), ad_stair_requirement: cnt('ad_stair_requirement') } };
+res.orphan_definitions = total - tot;   // definitions whose type_id has no row in component_types: reported, never silently dropped
+res.orphans = res.orphan_definitions ? q('select c.id, c.type_id, c.name from component_definitions c left join component_types t on t.id=c.type_id where t.id is null limit 10') : [];
+if (res.orphan_definitions) console.log('§FINDING ' + res.orphan_definitions + ' definition(s) with no component_types row: ' + JSON.stringify(res.orphans));
+fs.writeFileSync(process.argv[3], JSON.stringify(res, null, 1));
+console.log('§LIBRARY_AUDIT definitions=' + total + ' distinct_hashes=' + res.distinct_hashes + ' types=' + res.types + ' mesh_per_size_share=' + res.mesh_per_size_share + ' geometry_bytes=' + res.geometry_table_bytes);
