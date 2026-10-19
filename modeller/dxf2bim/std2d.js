@@ -10,7 +10,7 @@
   // §L1.26: the wing-only rules are promoted to every set; STD2D_NO_PROMOTE=<l117,l118,l119,l121> switches rules OFF (tests only: the falsifier; no effect in a browser)
   const OFF = new Set(((typeof process === 'object' && process.env && process.env.STD2D_NO_PROMOTE) || '').split(',')), promote = r => !OFF.has(r);
   const GRID_READABLE_MAX = 40, GRID_SUPPORT_MIN = 3;   // §L1.11
-  const GRID_MERGE_TOL = 0.010, GRID_MIN_WALL_LEN = 1.0, EXT_FACE_TOL = 0.010, BEAR_OVERLAP = 0.50, FACE_PT_TOL = 0.005, PT_MERGE = 0.001;
+  const GRID_MERGE_TOL = 0.010, GRID_MIN_WALL_LEN = 1.0, EXT_FACE_TOL = 0.010, BEAR_OVERLAP = 0.50, FACE_PT_TOL = 0.010, PT_MERGE = 0.001;
   const LEAF_MIRROR_TOL = 0.001, VERTICAL_TOL = 1e-6, SINGLE_SWING = ['SINGLE_SWING_LEFT', 'SINGLE_SWING_RIGHT'], CUT_OFFSET = 1.2;
   const SCALE = 100, DIM_T3 = 10, DIM_T2 = 18, DIM_T1 = 26, GRID_END = 33, BUBBLE_C = 37, BUBBLE_R = 4.0;
   const TXT_DIM = 2.5, TXT_BUBBLE = 3.5, TXT_NOTE = 2.0, TXT_TITLE = 5.0, TXT_LEVEL = 2.5, ELEV_GRID_END = 12, ELEV_BUBBLE_C = 16, ELEV_DIM_CHAIN = 10, ELEV_DIM_OVERALL = 18;
@@ -494,7 +494,8 @@
     grid.x.forEach(([lab, p], i) => { const x = mm(p), o = tx[i] * GRID_STAGGER, g = { axis: 'x', pos: x }; doc.line('A-GRID', [x, E[2] - ge - o], [x, E[3] + ge + o], { grid: g }); bubble(doc, x, E[2] - bc - o, lab, g); bubble(doc, x, E[3] + bc + o, lab, g); });
     grid.y.forEach(([lab, p], i) => { const y = mm(p), o = ty[i] * GRID_STAGGER, g = { axis: 'y', pos: y }; doc.line('A-GRID', [E[0] - ge - o, y], [E[1] + ge + o, y], { grid: g }); bubble(doc, E[0] - bc - o, y, lab, g); bubble(doc, E[1] + bc + o, y, lab, g); });
   }
-  function planDims(doc, E, grid, log, view, faceRuns) {
+  function planDims(doc, E0, grid, log, view, faceRuns, F) {
+    const E = F || E0;   // D10: the drawn extents when given (the reader's envelope), else the model envelope
     const gx = grid.x.map(g => mm(g[1])), gy = grid.y.map(g => mm(g[1]));
     const sides = { S: [E[2], -1, true], N: [E[3], 1, true], W: [E[0], -1, false], E: [E[1], 1, false] };
     for (const side of Object.keys(sides)) {
@@ -582,6 +583,10 @@
       log.add(`§DOOR_NOSWING_BBOX guid=${c.guid} parts=${parts.length} bbox=${fx(x1 - x0, 1)} x ${fx(y1 - y0, 1)} mm (${code})`);
     });
     Object.keys(curt).forEach(g => { const r = curt[g].rect; polys[g] = [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]]; });   // C1
+    // §F6 D10: the face the wall-run dimension points are measured against is the DRAWN face (the contours of the walls and curtain bands drawn on this plan), as the reader's envelope is: the model bounding box can stand 25 mm outside the drawn contour on a rotated wing (Hospital Level 1), which left 22 wall ends without a dimension point
+    const dr = [Infinity, -Infinity, Infinity, -Infinity];
+    cut.filter(c => WALLS.indexOf(c.cls) >= 0).map(c => c.guid).concat(Object.keys(curt)).forEach(g => (polys[g] || []).forEach(pl => pl.forEach(q => { dr[0] = Math.min(dr[0], q[0]); dr[1] = Math.max(dr[1], q[0]); dr[2] = Math.min(dr[2], q[1]); dr[3] = Math.max(dr[3], q[1]); })));
+    const F = isFinite(dr[0]) ? dr : E;
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
     let nW = 0, nC = 0;
     for (const c of cut) for (const pts of (polys[c.guid] || [])) {
@@ -592,9 +597,9 @@
         } else {
           doc.lwpoly(onAxis.has(c.guid) ? 'A-WALL-FULL' : 'A-WALL-PRTN', pts, true, tag(c.guid)); doc.hatch('A-WALL-PATT', 8, pts); nW++;
         }
-        [['S', q => Math.abs(q[1] - E[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - E[3]) <= FACE_PT_TOL * 1000, 0],
-         ['W', q => Math.abs(q[0] - E[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - E[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
-          const run = pts.filter(on).map(q => q[along]);
+        [['S', q => Math.abs(q[1] - F[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - F[3]) <= FACE_PT_TOL * 1000, 0],
+         ['W', q => Math.abs(q[0] - F[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - F[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
+          const run = pts.some(on) ? pts.map(q => q[along]) : [];   // D10: a piece touching the face counts with its whole extent along it (the reader reads a wall piece as its bounding rectangle)
           if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) faceRuns[side].push([Math.min(...run), Math.max(...run)]);
         });
       } else if (c.cls === 'IfcStair' || c.cls === 'IfcStairFlight') doc.lwpoly('A-FLOR-STRS', pts, true, tag(c.guid));
@@ -604,9 +609,9 @@
     let nCw = 0;
     Object.keys(curt).sort().forEach(g => (polys[g] || []).forEach(pts => {   // C1: layer A-WALL-CURT, tagged with the curtain wall GUID, no hatch (glazing)
       doc.lwpoly('A-WALL-CURT', pts, true, tag(g)); nCw++;
-      [['S', q => Math.abs(q[1] - E[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - E[3]) <= FACE_PT_TOL * 1000, 0],
-       ['W', q => Math.abs(q[0] - E[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - E[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
-        const run = pts.filter(on).map(q => q[along]);
+      [['S', q => Math.abs(q[1] - F[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - F[3]) <= FACE_PT_TOL * 1000, 0],
+       ['W', q => Math.abs(q[0] - F[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - F[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
+        const run = pts.some(on) ? pts.map(q => q[along]) : [];   // D10: a piece touching the face counts with its whole extent along it (the reader reads a wall piece as its bounding rectangle)
         if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) faceRuns[side].push([Math.min(...run), Math.max(...run)]);
       });
     }));
@@ -654,7 +659,7 @@
       for (const s of segs) { const key = JSON.stringify(s); if (seen.has(key)) continue; seen.add(key); doc.line('A-GLAZ-SILL', s[0], s[1], tag(wd.guid)); }
     }
     gridPlan(doc, E, grid);
-    planDims(doc, E, grid, log, view, faceRuns);
+    planDims(doc, E, grid, log, view, faceRuns, F);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
