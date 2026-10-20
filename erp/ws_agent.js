@@ -17,6 +17,8 @@
 //         node erp/ws_agent.js pending --dir <agentsDir>                          list staged requests (id, method, digest)
 //         node erp/ws_agent.js approve --dir <agentsDir> --id <n> --digest <first 12 chars> [--approver <name>]   run that request, once, as the agent
 //         node erp/ws_agent.js reject  --dir <agentsDir> --id <n> [--approver <name>]
+//         --principals alice,bob       register the people who may stand behind this agent; each gets a signing key (printed once)
+//         --require-principal          refuse any call that is not signed on behalf of a registered person (journal then names who asked)
 //         node erp/ws_agent.js revoke  --dir <agentsDir> --name <agent>
 //         node erp/ws_agent.js audit   --journal <file.jsonl>
 // --write is REQUIRED to grant any create/update/delete/set_docaction/run_process type: a read-only request that lists a write type is refused (no silent privilege).
@@ -46,14 +48,18 @@ async function create(o) {
   mk.forEach(m => { const t = K.one('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=lower(?)', [m.table]); if (!t) throw new Error('table not found: ' + m.table); m.tableId = t.id; m.cols.forEach(c => { if (!K.one('SELECT 1 AS x FROM ad_column WHERE ad_table_id=? AND lower(columnname)=lower(?)', [t.id, c])) throw new Error('column not found: ' + m.table + '.' + c); }); });
   const pol = { calls: Number(o['max-calls-per-minute'] || 120), writes: Number(o['max-writes-per-hour'] || 50), approve: !!o['approve-writes'],
     expires: o['no-expiry'] ? null : new Date(Date.now() + Number(o.expires || 168) * 3600 * 1000).toISOString() };
+  const principals = String(o.principals || '').split(',').map(x => x.trim()).filter(Boolean).map(nm => ({ name: nm, key: crypto.randomBytes(32).toString('hex') }));   // one signing key per PERSON, shown once to that person; the agent never holds it
+  if (o['require-principal'] && !principals.length) throw new Error('--require-principal needs --principals <name,...>');
   const n = nextN(dir), uid = 1700000 + n, rid = 1700000 + n, pass = crypto.randomBytes(18).toString('base64url');
   const sql = [
     '-- ws_agent.js create ' + name + ' (' + new Date().toISOString() + '): ONE identity, ONE organisation, ' + rows.length + ' service types' + (write ? ' (WRITE granted on purpose)' : ' (read only)'),
     `INSERT INTO ad_role (ad_role_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, description, userlevel, roletype, isaccessallorgs, ismanual) VALUES (${rid}, ${client}, 0, 'Y', datetime('now'), 100, datetime('now'), 100, ${lit('WS agent ' + name)}, 'least-privilege web-service role (ws_agent.js)', ' CO', 'WS', 'N', 'Y');`,
     `INSERT INTO ad_role_orgaccess (ad_role_id, ad_org_id, ad_client_id, isactive, created, createdby, updated, updatedby) VALUES (${rid}, ${org}, ${client}, 'Y', datetime('now'), 100, datetime('now'), 100);`,
     `INSERT INTO ad_user (ad_user_id, ad_client_id, ad_org_id, isactive, created, createdby, updated, updatedby, name, password, description) VALUES (${uid}, ${client}, 0, 'Y', datetime('now'), 100, datetime('now'), 100, ${lit(name)}, ${lit(pass)}, 'web-service identity (ws_agent.js)');`,
-    `CREATE TABLE IF NOT EXISTS ws_agent_policy (ad_user_id INTEGER, max_calls_per_minute INTEGER, max_writes_per_hour INTEGER, expires_at TEXT, approve_writes TEXT);`,
-    `INSERT INTO ws_agent_policy (ad_user_id, max_calls_per_minute, max_writes_per_hour, expires_at, approve_writes) VALUES (${uid}, ${pol.calls}, ${pol.writes}, ${lit(pol.expires)}, ${lit(pol.approve ? 'Y' : 'N')});`,
+    `CREATE TABLE IF NOT EXISTS ws_agent_policy (ad_user_id INTEGER, max_calls_per_minute INTEGER, max_writes_per_hour INTEGER, expires_at TEXT, approve_writes TEXT, require_principal TEXT);`,
+    `CREATE TABLE IF NOT EXISTS ws_agent_principal (ad_user_id INTEGER, principal TEXT, key TEXT);`,
+    `INSERT INTO ws_agent_policy (ad_user_id, max_calls_per_minute, max_writes_per_hour, expires_at, approve_writes, require_principal) VALUES (${uid}, ${pol.calls}, ${pol.writes}, ${lit(pol.expires)}, ${lit(pol.approve ? 'Y' : 'N')}, ${lit(o['require-principal'] ? 'Y' : 'N')});`,
+    ...principals.map(pn => `INSERT INTO ws_agent_principal (ad_user_id, principal, key) VALUES (${uid}, ${lit(pn.name)}, ${lit(pn.key)});`),
     `INSERT INTO ad_user_roles (ad_user_id, ad_role_id, ad_client_id, isactive, created, createdby, updated, updatedby) VALUES (${uid}, ${rid}, ${client}, 'Y', datetime('now'), 100, datetime('now'), 100);`]
     .concat(rows.map(r => `INSERT INTO ws_webservicetypeaccess (ad_client_id, ad_org_id, ad_role_id, createdby, updatedby, ws_webservicetype_id, isactive, isreadwrite, ws_webservicetypeaccess_uu) VALUES (${client}, 0, ${rid}, 100, 100, ${r.id}, 'Y', ${lit(METHOD_KIND[r.m] === 'write' ? 'Y' : 'N')}, ${lit(crypto.randomUUID())});`));
   mk.forEach((m, i) => {   // the rows an admin would key in the Web Service Security window (WS_WebServiceType + Para + FieldInput + FieldOutput), then granted to THIS role only
@@ -69,7 +75,7 @@ async function create(o) {
   });
   const file = path.join(dir, 'agent-' + String(n).padStart(3, '0') + '-' + name.replace(/\W+/g, '_') + '.sql'); fs.writeFileSync(file, sql.join('\n') + '\n');
   fs.writeFileSync(path.join(dir, '.agent-' + name.replace(/\W+/g, '_') + '.json'), JSON.stringify({ name, userId: uid, roleId: rid, client, org }));
-  const creds = { typePrefix: tp, agent: String(name).replace(/\W+/g, '_'), user: name, pass, clientId: client, roleId: rid, orgId: org, warehouseId: wh ? wh.id : 0, serviceTypes: rows.map(r => r.value).concat(mk.map(m => m.value)), canWrite: writes.length > 0, policy: { maxCallsPerMinute: pol.calls, maxWritesPerHour: pol.writes, expiresAt: pol.expires, approveWrites: pol.approve } };
+  const creds = { typePrefix: tp, agent: String(name).replace(/\W+/g, '_'), user: name, pass, clientId: client, roleId: rid, orgId: org, warehouseId: wh ? wh.id : 0, serviceTypes: rows.map(r => r.value).concat(mk.map(m => m.value)), canWrite: writes.length > 0, policy: { maxCallsPerMinute: pol.calls, maxWritesPerHour: pol.writes, expiresAt: pol.expires, approveWrites: pol.approve, requirePrincipal: !!o['require-principal'] }, principals: principals };   // principals[].key = the PERSON's signing key (HMAC-SHA256 of sha256(body), headers X-On-Behalf-Of / X-On-Behalf-Sig); give it to the person, NOT to the agent
   return { file, creds };
 }
 function revoke(o) {

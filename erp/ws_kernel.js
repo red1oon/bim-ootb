@@ -79,13 +79,13 @@ function build(db) {
 }
 // verifyJournal(text) -> { ok, entries, actors:{actor:n}, brokenAt } : re-derives every hash from the previous one; a changed, removed or reordered line breaks the chain from there on
 function verifyJournal(text) {
-  const lines = text.split('\n').filter(Boolean); let prev = '0'.repeat(64); const actors = {};
+  const lines = text.split('\n').filter(Boolean); let prev = '0'.repeat(64); const actors = {}, principals = {};
   for (let i = 0; i < lines.length; i++) {
     let e; try { e = JSON.parse(lines[i]); } catch (x) { return { ok: false, entries: i, actors: actors, brokenAt: i + 1, why: 'unparseable' }; }
     const h = crypto.createHash('sha256').update(prev + JSON.stringify([e.seq, e.actor, e.meta, e.opsDigest])).digest('hex');
     if (e.prev !== prev || e.hash !== h) return { ok: false, entries: i, actors: actors, brokenAt: i + 1, why: e.prev !== prev ? 'prev-hash' : 'content' };
-    actors[e.actor] = (actors[e.actor] || 0) + 1; prev = e.hash;
+    actors[e.actor] = (actors[e.actor] || 0) + 1; { const pn = (e.meta && e.meta.onBehalfOf) || '(unsigned)'; principals[pn] = (principals[pn] || 0) + 1; } prev = e.hash;
   }
-  return { ok: true, entries: lines.length, actors: actors, brokenAt: null };
+  return { ok: true, entries: lines.length, actors: actors, principals: principals, brokenAt: null };
 }
 module.exports = { load: load, build: build, verifyJournal: verifyJournal };
