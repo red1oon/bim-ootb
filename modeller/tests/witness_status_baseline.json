@@ -9,6 +9,7 @@
   "witness_dxf_libtypes:ENV",
   "witness_dxf_meta_editor:ENV",
   "witness_dxf_scopes_merge:ENV",
+  "witness_dxf_sidecar:ENV",
   "witness_dxf_wing_back:ENV",
   "witness_dxf_wing_vs_straight:ENV"
  ]
