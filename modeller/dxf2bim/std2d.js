@@ -565,6 +565,42 @@
     doc.text('A-ANNO-NOTE', `TRUE NORTH (${n.source})`, [cx, cy - R - 450], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
     log.add(`§NORTH stated source=${n.source} model_north_from_true=${fx(n.angle, 4)} sheet_arrow=(${fx(ux, 5)},${fx(uy, 5)})`);
   }
+  // §F7 stairs: tread outlines and the up direction, READ from the stair's own mesh (no tread count is assumed): the horizontal up-facing faces at each distinct height are the treads and landings of
+  // that step; their outline = the edges that belong to ONE face of the step; the up path joins the step centroids from the lowest to the highest and ends in an arrowhead.
+  // Only steps between the storey floor and the cut plane are drawn (what a plan shows below its cut). Returns { steps: [{z, edges:[[x0,y0,x1,y1] mm]}], path: [[x,y] mm] } or null.
+  function stairSteps(e, zLo, zHi) {
+    const V = e.v, F = e.f, byZ = new Map();
+    for (let t = 0; t + 2 < F.length; t += 3) {
+      const ia = [F[t], F[t + 1], F[t + 2]], P = ia.map(i => [V[i * 3] + e.c[0], V[i * 3 + 1] + e.c[1], V[i * 3 + 2] + e.c[2]]);
+      const u = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]], w = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
+      const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(n[0], n[1], n[2]);
+      if (!(l > 1e-12) || n[2] / l < 0.99) continue;
+      const z = (P[0][2] + P[1][2] + P[2][2]) / 3; if (z < zLo - 0.002 || z > zHi + 0.002) continue;
+      const k = Math.round(z * 1000); (byZ.get(k) || byZ.set(k, []).get(k)).push(P);
+    }
+    const steps = [], key = p => Math.round(p[0] * 10000) + ',' + Math.round(p[1] * 10000);
+    [...byZ.keys()].sort((a, b) => a - b).forEach(k => {
+      const cnt = new Map(), seg = new Map(); let cx = 0, cy = 0, ca = 0;
+      byZ.get(k).forEach(P => {
+        const a = (P[1][0] - P[0][0]) * (P[2][1] - P[0][1]) - (P[2][0] - P[0][0]) * (P[1][1] - P[0][1]); const ar = Math.abs(a) / 2; ca += ar; cx += ar * (P[0][0] + P[1][0] + P[2][0]) / 3; cy += ar * (P[0][1] + P[1][1] + P[2][1]) / 3;
+        for (let i = 0; i < 3; i++) { const A = P[i], B = P[(i + 1) % 3], ka = key(A), kb = key(B), ek = ka < kb ? ka + '|' + kb : kb + '|' + ka; cnt.set(ek, (cnt.get(ek) || 0) + 1); seg.set(ek, [A[0], A[1], B[0], B[1]]); }
+      });
+      const edges = []; cnt.forEach((n, ek) => { if (n === 1) edges.push(seg.get(ek).map(mm)); });
+      if (edges.length && ca > 0) steps.push({ z: k / 1000, edges, c: [mm(cx / ca), mm(cy / ca)] });
+    });
+    return steps.length ? { steps, path: steps.map(st => st.c) } : null;
+  }
+  function stairMark(doc, e, zLo, zHi, log) {
+    const R = stairSteps(e, zLo, zHi); if (!R) return 0;
+    R.steps.forEach(st => st.edges.forEach(g => doc.line('A-FLOR-STRS', [g[0], g[1]], [g[2], g[3]], tag(e.guid))));
+    if (R.path.length >= 2) {
+      const pth = R.path; doc.lwpoly('A-FLOR-STRS', pth, false, tag(e.guid));
+      const a = pth[pth.length - 2], b = pth[pth.length - 1], d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d, h = 250;
+      doc.lwpoly('A-FLOR-STRS', [b, [b[0] - ux * 2 * h + uy * h, b[1] - uy * 2 * h - ux * h], [b[0] - ux * 2 * h - uy * h, b[1] - uy * 2 * h + ux * h]], true, tag(e.guid));
+      doc.text('A-FLOR-STRS', 'UP', [pth[0][0], pth[0][1]], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER', guid: e.guid });
+    }
+    log.add(`§STAIR_STEPS guid=${e.guid} steps=${R.steps.length} z=${fx(R.steps[0].z, 3)}..${fx(R.steps[R.steps.length - 1].z, 3)}`); return R.steps.length;
+  }
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -628,6 +664,7 @@
       } else if (c.cls === 'IfcStair' || c.cls === 'IfcStairFlight') doc.lwpoly('A-FLOR-STRS', pts, true, tag(c.guid));
       else doc.lwpoly(c.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', pts, true, tag(c.guid));
     }
+    if (model.stairSymbol !== false) cut.filter(c => c.cls === 'IfcStair' || c.cls === 'IfcStairFlight').forEach(c => stairMark(doc, c, storey.elev, cutZ, log));   // §F7: treads + up arrow from the mesh
     log.add(`§PLAN wall contours=${nW} column contours=${nC} cut_z=${fx(cutZ, 3)}`);
     let nCw = 0;
     Object.keys(curt).sort().forEach(g => (polys[g] || []).forEach(pts => {   // C1: layer A-WALL-CURT, tagged with the curtain wall GUID, no hatch (glazing)
@@ -850,7 +887,7 @@
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
-    model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
+    model.stairSymbol = opts.stairSymbol; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;
