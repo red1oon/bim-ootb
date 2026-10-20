@@ -37,14 +37,16 @@
     return stack[0].children[0];
   }
   function unesc(s) { return String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&'); }
-  function typed(kind, s) { s = unesc(s); if (kind === 'int' || kind === 'dec') { var n = Number(s); return isFinite(n) && s.trim() !== '' ? n : s; } return s; }
+  function typed(kind, s) { s = unesc(s); if (kind === 'bool' && (s === 'true' || s === 'false')) return s === 'true'; if (kind === 'int' || kind === 'dec') { var n = Number(s); return isFinite(n) && s.trim() !== '' ? n : s; } return s; }
   var INT_ATTR = { NumRows: 1, TotalRows: 1, StartRow: 1, RecordID: 1 }, BOOL_ATTR = { IsError: 1, IsReport: 1, IsRolledBack: 1 };
   function conv(n, ctx) {
     var o = {};
+    if (n.name === 'RowCount' && !n.children.length) return Number(n.text);
+    if (n.name === 'Success' && !n.children.length) return n.text === 'true';
     Object.keys(n.attrs).forEach(function (k) {
       var v = n.attrs[k];
       if (INT_ATTR[k]) o['@' + k] = Number(v); else if (BOOL_ATTR[k]) o['@' + k] = v === 'true';
-      else if (k === 'value' && n.name === 'outputField') o['@value'] = typed(ctx.typeOf(ctx.table, n.attrs.column), v);
+      else if (k === 'value' && n.name === 'outputField') o['@value'] = typed(ctx.typeOf(ctx.table, n.attrs.column, true), v);
       else o['@' + k] = unesc(v);
     });
     var groups = {}, order = [];
@@ -53,6 +55,7 @@
       var arr = groups[name].map(function (c) {
         if (name === 'val') { if (c.attrs.nil === 'true') return { '@nil': true }; return typed(ctx.typeOf(ctx.table, ctx.column), c.text || ''); }
         if (name === 'field') ctx.column = c.attrs.column;
+        if (name === 'StandardResponse' && Array.isArray(ctx.tables)) ctx.table = ctx.tables[ctx.idx++];   // composite: the n-th response answers the n-th operation's table
         return conv(c, ctx);
       });
       o[name] = arr.length === 1 && name !== 'outputField' && name !== 'field' ? arr[0] : (arr.length === 1 ? arr[0] : arr);   // JAXB-JSON: a single child is an object, several are an array (observed: DataRow, field, outputField)
@@ -62,11 +65,8 @@
     return o;
   }
   function toJson(xml, typeOf, table) {
-    var root = parse(xml), ctx = { typeOf: typeOf || function () { return 'str'; }, table: table, column: null }, body = {};
+    var root = parse(xml), ctx = { typeOf: typeOf || function () { return 'str'; }, table: Array.isArray(table) ? null : table, tables: Array.isArray(table) ? table : null, idx: 0, column: null }, body = {};
     var out = conv(root, ctx);
-    if (root.name === 'WindowTabData' && !root.children.some(function (c) { return c.name === 'Error'; })) {   // the JSON mapping adds RowCount/Success beside the data (observed)
-      var nr = Number(root.attrs.NumRows || 0); out.RowCount = nr; out.Success = root.children.some(function (c) { return c.name === 'DataSet'; });   // observed: Success = a DataSet came back (an empty query is true, a missing record is false)
-    }
     if (typeof out !== 'object') out = {};
     body[root.name] = out; return JSON.stringify(body);
   }

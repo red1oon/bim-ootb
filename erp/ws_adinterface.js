@@ -442,7 +442,7 @@
         cs.forEach(function (c) { var v = row[c]; if (v == null) skip = true; vals.push(v); where.push(c + '=?'); });
         if (skip) continue;                                                                                                                                         // NULLs never collide
         var hit = one('SELECT ' + table + '_id AS id FROM ' + table + ' WHERE ' + where.join(' AND ') + (selfId != null ? ' AND ' + table + '_id<>?' : ''), selfId != null ? vals.concat([selfId]) : vals);
-        if (hit) return 'ERROR: duplicate key value violates unique constraint "' + ix[i].indexname + '"';
+        if (hit) return 'ERROR: duplicate key value violates unique constraint "' + ix[i].indexname + '"\n  Detail: Key (' + cs.join(', ') + ')=(' + vals.join(', ') + ') already exists.';   // PG's own Detail line
       }
       return null;
     }
@@ -540,10 +540,11 @@
       return std(id, false, null, outputFields(a.type, saved)).replace('<_0:StandardResponse RecordID="' + id + '"', '<_0:StandardResponse RecordID="' + id + '" IsError="false"');   // setDocAction sets IsError=false explicitly (:293)
     }
 
-    function typeOf(table, column) {   // the Java class of a column as the JSON binding sees it (DisplayType.getClass): numbers stay numbers
+    function typeOf(table, column, forOutput) {   // the Java class of a column as the JSON binding sees it (DisplayType.getClass): numbers stay numbers; an output field of a Yes-No column is a Boolean
+      if (!table && column && /_ID$/.test(column)) return 'int';   // get_list: key columns of a reference
       if (!table || !column) return 'str';
       var c = one("SELECT c.ad_reference_id AS ref FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [table, column]);
-      var k = c ? classOf(c.ref) : 'str'; return k === 'bool' || k === 'ts' ? 'str' : k;
+      var k = c ? classOf(c.ref) : 'str'; if (k === 'bool' && forOutput) return 'bool'; return k === 'bool' || k === 'ts' ? 'str' : k;
     }
     var API = {
       typeOf: typeOf,

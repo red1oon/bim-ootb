@@ -46,7 +46,7 @@ async function start(port, extraSql, opts) {
     if (!m || req.method !== 'POST') { res.writeHead(m ? 405 : 404); res.end(); return; }
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {
       const rawBody = body, onBehalf = req.headers['x-on-behalf-of'] ? { name: String(req.headers['x-on-behalf-of']), sig: String(req.headers['x-on-behalf-sig'] || ''), raw: rawBody } : null;
-      const asJson = /json/i.test(String(req.headers['content-type'] || '')), tableHint = asJson ? ((/"(?:TableName|tableName)"\s*:\s*"([^"]*)"/.exec(body) || [])[1] || null) : null;
+      const asJson = /json/i.test(String(req.headers['content-type'] || '')), tableHint = asJson ? (m[1] === 'composite_operation' ? (body.match(/"(?:TableName|tableName)"\s*:\s*"[^"]*"/g) || []).map(x => /:\s*"([^"]*)"/.exec(x)[1]) : ((/"(?:TableName|tableName)"\s*:\s*"([^"]*)"/.exec(body) || [])[1] || null)) : null;
       if (asJson) { try { body = JsonBinding.toXml(body); } catch (e) { res.writeHead(400); res.end('{"Error":"Bad JSON request"}'); return; } }
       let out, status = 200; try { out = ad.handle(m[1], body, { onBehalf: onBehalf }); savePending(); if (out && typeof out === 'object') { status = out.status; out = out.body; } } catch (e) { out = '<?xml version="1.0" encoding="UTF-8"?><_0:WindowTabData xmlns:_0="http://idempiere.org/ADInterface/1_0"><_0:Error>' + String(e.message).replace(/</g, '&lt;') + '</_0:Error></_0:WindowTabData>'; }
       kernel.ctxMeta.v = null;
