@@ -216,7 +216,7 @@ function setupWing2D(A) {
     var foot = el('div', 'padding:3px 8px;background:#1d242d;color:#9ab;font-size:11px'); foot.id = 'wing-2d-foot';
     foot.textContent = M.R.gaps.length + ' writer gap(s) · ' + names.length + ' sheets · turn ' + P.turn.toFixed(1) + '° · pivot ' + P.pivot.join(', ') + ' · click the drawing to fill the canvas';
     card.style.display = 'flex'; card.style.flexDirection = 'column'; card.appendChild(head); card.appendChild(cv); card.appendChild(foot); document.body.appendChild(card);
-    var big = false, small = { w: 380, h: 280 };
+    var big = false, small = (function () { var cw = A.canvas.getBoundingClientRect().width, w = Math.round(Math.min(380, cw * 0.6)); return { w: w, h: Math.round(w * 0.74) }; })();   // a phone gets a smaller card
     function place() {
       var b = A.canvas.getBoundingClientRect();
       if (big) { card.style.left = b.left + 'px'; card.style.top = b.top + 'px'; card.style.width = b.width + 'px'; card.style.height = b.height + 'px'; cv.style.cursor = 'grab'; }
