@@ -10,7 +10,7 @@ const { start } = require('../ws_server.js');
 const { PILOT, pg, crud, docActionXml, post, norm, sqliteInsertsFromPilot } = require('./ws_diff_common.js');
 const HDR = [['AD_Org_ID', '11'], ['C_DocTypeTarget_ID', '133'], ['IsSOTrx', 'Y'], ['DateOrdered', '2006-12-15 00:00:00'], ['DateAcct', '2006-12-15 00:00:00'], ['DatePromised', '2006-12-15 00:00:00'], ['C_BPartner_ID', '117'], ['C_BPartner_Location_ID', '112'], ['Bill_BPartner_ID', '117'], ['Bill_Location_ID', '112'],
   ['M_Warehouse_ID', '103'], ['M_PriceList_ID', '101'], ['C_Currency_ID', '100'], ['C_PaymentTerm_ID', '106'], ['PaymentRule', 'P'], ['InvoiceRule', 'I'], ['DeliveryRule', 'F'], ['DeliveryViaRule', 'P'], ['FreightCostRule', 'I'], ['PriorityRule', '5'], ['SalesRep_ID', '101']];
-const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line', '10'], ['M_Product_ID', '134'], ['QtyEntered', '2'], ['QtyOrdered', '2'], ['C_UOM_ID', '100'], ['PriceEntered', '60'], ['PriceActual', '60'], ['PriceList', '60'], ['C_Tax_ID', '104']];
+const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line', '10'], ['M_Product_ID', '126'], ['QtyEntered', '2'], ['QtyOrdered', '2'], ['C_UOM_ID', '101'], ['PriceEntered', '45'], ['PriceActual', '45'], ['PriceList', '45'], ['C_Tax_ID', '104']];
 (async () => {
   const fx = sqliteInsertsFromPilot(900000, 900003); const fxFile = path.join(os.tmpdir(), 'ws_docaction_fixture.sql'); fs.writeFileSync(fxFile, fx.sql);
   console.log('§WSA fixture rows copied from the pilot=' + fx.n);

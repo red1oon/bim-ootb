@@ -37,16 +37,23 @@ function build(db) {
   const colsOf = (t) => cols[t] || (cols[t] = q('PRAGMA table_info(' + t + ')').map(function (c) { return c.name.toLowerCase(); }));
   function newId(t) { if (nextId[t] == null) { const m = one('SELECT MAX(' + t + '_id) AS m FROM ' + t); nextId[t] = Math.max(Number(m.m || 0), 1000000); } return ++nextId[t]; }
   // apply an op group the way commitGroup + the listTip fold do (CREATE gets a fresh key, {__opRef}/{{opref:n}} resolved, UPDATE/DELETE by key)
+  let comp = null;   // composite transaction (CompositeServiceImpl): ops apply at once (later operations must see them) with an undo log; the journal waits for the commit
+  function undoOf(o, cs, t) {
+    const idc = o.idCol || t + '_id';
+    if (o.op_type === 'CRUD_UPDATE' || o.op_type === 'CRUD_DELETE') { const rid = (o.id && typeof o.id === 'object' && o.id.__opRef != null) ? null : o.id; const row = rid == null ? null : one('SELECT * FROM ' + t + ' WHERE ' + idc + '=?', [rid]); if (row) comp.undo.push({ kind: o.op_type === 'CRUD_UPDATE' ? 'restore' : 'reinsert', table: t, idc: idc, id: rid, row: row }); }
+  }
   function apply(ops, std) {   // std = PO.setStandardDefaults / beforeSave stamps from the session (PO.java:1973-2000): Created/CreatedBy/Updated/UpdatedBy, Client/Org, the UUID column
     const ids = [], fix = (v) => (v && typeof v === 'object' && v.__opRef != null ? ids[v.__opRef] : v);
     ops.forEach(function (o, i) {
       const t = o.table, cs = colsOf(t); if (!cs.length) { ids[i] = null; return; }
+      if (comp) undoOf(Object.assign({}, o, { id: fix(o.id) }), cs, t);
       if (o.op_type === 'CRUD_CREATE') {
         const f = Object.assign({}, o.fields), pk = t + '_id';
         if (cs.indexOf(pk) >= 0) { f[pk] = newId(t); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];
         if (std) { if (cs.indexOf('created') >= 0 && f.created == null) f.created = std.now; if (cs.indexOf('createdby') >= 0 && f.createdby == null) f.createdby = std.user; if (cs.indexOf('updated') >= 0 && f.updated == null) f.updated = std.now; if (cs.indexOf('updatedby') >= 0 && f.updatedby == null) f.updatedby = std.user;
           if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = crypto.randomUUID(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
         Object.keys(f).forEach(function (k) { f[k] = typeof f[k] === 'string' ? f[k].replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { return String(ids[Number(d)]); }) : f[k]; f[k] = fix(f[k]); if (cs.indexOf(k) < 0) delete f[k]; });
+        if (comp && cs.indexOf(pk) >= 0) comp.undo.push({ kind: 'delete', table: t, idc: pk, id: f[pk] });
         const ks = Object.keys(f); db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k] === undefined ? null : f[k]; }));
       } else if (o.op_type === 'CRUD_UPDATE') {
         const kk = Object.keys(o.changes).filter(function (k) { return cs.indexOf(k) >= 0; });
@@ -66,11 +73,26 @@ function build(db) {
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
   function commit(session, ops, meta) {
     const e0 = env(session), ids = apply(ops, { now: e0.now, user: e0.user, client: e0.client, org: e0.org });
+    if (comp) { comp.pend.push({ session: session, ops: ops, meta: (meta || ctxMeta.v) ? Object.assign({}, meta || {}, ctxMeta.v || {}) : null }); return ids; }
+    return journalOf(session, ops, meta ? Object.assign({}, meta, ctxMeta.v || {}) : (ctxMeta.v ? Object.assign({}, ctxMeta.v) : null), ids);
+  }
+  function journalOf(session, ops, metaAll, ids) {
     const prev = journal.length ? journal[journal.length - 1].hash : '0'.repeat(64);
-    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: (meta || ctxMeta.v) ? Object.assign({}, meta || {}, ctxMeta.v || {}) : null, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
+    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: metaAll, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
     entry.hash = crypto.createHash('sha256').update(prev + JSON.stringify([entry.seq, entry.actor, entry.meta, entry.opsDigest])).digest('hex');
     journal.push(entry); if (hooks.onJournal) hooks.onJournal(entry); return ids;
   }
+  function compositeBegin() { comp = { undo: [], pend: [] }; }
+  function compositeCommit() { if (!comp) return; const p = comp.pend; comp.undo = []; comp.pend = []; p.forEach(function (x) { journalOf(x.session, x.ops, x.meta, []); }); }   // the journal gets the group at commit, in order
+  function compositeRollback() {
+    if (!comp) return; const u = comp.undo; comp.undo = []; comp.pend = [];
+    for (let i = u.length - 1; i >= 0; i--) {
+      const x = u[i];
+      if (x.kind === 'delete') db.run('DELETE FROM ' + x.table + ' WHERE ' + x.idc + '=?', [x.id]);
+      else { if (x.kind === 'restore') db.run('DELETE FROM ' + x.table + ' WHERE ' + x.idc + '=?', [x.id]); const ks = Object.keys(x.row); db.run('INSERT INTO ' + x.table + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return x.row[k] === undefined ? null : x.row[k]; })); }
+    }
+  }
+  function compositeEnd() { comp = null; }
   // run fn(trx) in one Trx; on ok apply+journal its op group, on failure apply nothing (legacy: rollbackAndSetError)
   function inTrx(session, meta, fn) {
     const trx = new ML.Trx(q, env(session)); let r;
@@ -79,7 +101,7 @@ function build(db) {
     let ids = []; if (ok && ops.length) ids = commit(session, ops, meta);
     return Object.assign({}, r, { ok: ok, ops: ops, ids: ids, log: trx.log, trx: trx });
   }
-  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
+  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, composite: { begin: compositeBegin, commit: compositeCommit, rollback: compositeRollback, end: compositeEnd }, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
 }
 // verifyJournal(text) -> { ok, entries, actors:{actor:n}, brokenAt } : re-derives every hash from the previous one; a changed, removed or reordered line breaks the chain from there on
 function verifyJournal(text) {

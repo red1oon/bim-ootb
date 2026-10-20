@@ -9,7 +9,7 @@
 // Pure of HTTP. The host gives { q, run(sql), now() }.
 'use strict';
 const crypto = require('crypto');
-const WRITE_METHODS = /^(create_data|update_data|delete_data|set_docaction|run_process|create_update_data)$/;
+const WRITE_METHODS = /^(create_data|update_data|delete_data|set_docaction|run_process|create_update_data|composite_operation)$/;
 function create(host) {
   const q = host.q, now = host.now || (() => Date.now());
   const calls = {}, writes = {}, pending = [], alerts = [];   // userId -> [timestamps]
