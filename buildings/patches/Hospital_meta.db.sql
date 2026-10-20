@@ -38223,3 +38223,16 @@ INSERT OR REPLACE INTO geometry_wind_flip VALUES ('309a474ba74ba680', 24, 'wf1:w
 INSERT OR REPLACE INTO geometry_wind_flip VALUES ('1932b1750a6ee3d6', 24, 'wf1:weld1e-4:pair2same');
 INSERT OR REPLACE INTO geometry_wind_flip VALUES ('38aae467b71d405c', 48, 'wf1:weld1e-4:pair2same');
 -- §WIND_FLIP END
+-- §GEOREF_META (2026-10-21): the Hospital's real georef, in the patch file the SPLIT viewer actually fetches. The same six rows already sit in
+-- viewer/buildings/patches/Hospital_extracted.db.sql (ruling and evidence there: TrueNorth (-0.0871557427476695, 0.996194698091745) of
+-- internal/UNMERGED/Hospital_IFC2x3_ARC.ifc, atan2(-x, y) = +5.000000 deg, its IFC4 twin byte-identical; IfcSite lat/lon/elevation), but the Viewer opens
+-- Hospital_meta.db and fetches buildings/patches/Hospital_meta.db.sql, so those rows never reached it: sitecam / walk read 0 and the 2D plan sheets said
+-- NORTH NOT STATED. Values are copied, not recomputed. INSERT OR REPLACE: idempotent. viewer/sitecam.js:81 and viewer/walk.js:275 will now rotate by 5 deg
+-- on the Hospital: the intended fix, and the place a sign error would show first.
+CREATE TABLE IF NOT EXISTS project_metadata (key TEXT PRIMARY KEY, value TEXT);
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('true_north_angle','5.000000');
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('true_north_source','ifc_truenorth');
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('site_latitude','42.35842896');
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('site_longitude','-71.05977631');
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('site_elevation_m','165.8112');
+INSERT OR REPLACE INTO project_metadata (key,value) VALUES ('site_latlong_source','ifc_site');
