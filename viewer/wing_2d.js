@@ -239,11 +239,10 @@ function setupWing2D(A) {
     for (var i = 0; i < ids.length; i++) { var e = document.getElementById(ids[i]); if (!e) continue; var r = e.getBoundingClientRect(); if (r.width > 4 && r.height > 4 && e.offsetParent !== null) return { el: e, x: r.left + r.width / 2, y: r.top + r.height / 2, id: ids[i] }; }
     return null;
   }
-  function pulse(e) { try { var old = e.style.transition, ob = e.style.boxShadow; e.style.transition = 'box-shadow .25s'; e.style.boxShadow = '0 0 0 3px #4ade80, 0 0 14px #4ade80'; setTimeout(function () { e.style.boxShadow = ob; setTimeout(function () { e.style.transition = old; }, 300); }, 650); } catch (x) { } }
-  // a few quick frames: Cancel returns to the plane in the building area; Save (to = savedTarget()) flies to the pill area and shrinks into it, which pulses green
+  // a few quick frames: Cancel returns to the plane in the building area; Save (to = savedTarget()) flies to the pill area and shrinks into it (nothing is animated on the pill itself)
   function closeOverlay(silent, instant, to) {
     if (!OV) return; var c = OV.card, from = instant ? null : (to || projectPlane()); try { window.removeEventListener('resize', OV.place); } catch (e) { } OV = null;
-    if (from) { c.style.pointerEvents = 'none'; c.style.left = from.x + 'px'; c.style.top = from.y + 'px'; c.style.width = '10px'; c.style.height = '10px'; c.style.opacity = '0'; setTimeout(function () { c.remove(); if (to && to.el) pulse(to.el); }, 320); } else c.remove();
+    if (from) { c.style.pointerEvents = 'none'; c.style.left = from.x + 'px'; c.style.top = from.y + 'px'; c.style.width = '10px'; c.style.height = '10px'; c.style.opacity = '0'; setTimeout(function () { c.remove(); }, 320); } else c.remove();
     if (!silent) log('_CLOSE nothing saved; plane stays turn=' + (S.last ? S.last.turn : '-'));
   }
   function doSave(M, P, wing) {
