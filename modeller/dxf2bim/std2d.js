@@ -546,6 +546,25 @@
     return env;
   }
 
+  // §F7 north: opts.north = { angle, source } with angle = the bearing of MODEL north measured from TRUE north (the georef's `true_north_angle`, atan2(-x, y) of the IFC TrueNorth,
+  // prompts/GEOREF_SUNPATH_COMPASS.md §2) and source = its `true_north_source`; only 'ifc_truenorth' is a stated north. opts.north === null = the caller has no georef: the sheet says so.
+  // undefined = not asked (the legacy sheets are byte-identical). True north in MODEL coordinates is (-sin B, cos B); a wing sheet is turned by -angle, so the vector is turned with it.
+  function northOf(north) {
+    if (north === undefined) return undefined; if (north === null) return { stated: false, why: 'north not stated' };
+    if (north.source !== 'ifc_truenorth' || !Number.isFinite(north.angle)) return { stated: false, why: 'north not stated (' + (north.source || 'no source') + ')' };
+    const b = north.angle * Math.PI / 180; return { stated: true, x: -Math.sin(b), y: Math.cos(b), source: north.source, angle: north.angle };
+  }
+  function turnNorth(n, deg) { if (!n || !n.stated || !deg) return n; const a = -deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return Object.assign({}, n, { x: c * n.x - s * n.y, y: s * n.x + c * n.y }); }
+  function northMark(doc, n, E, log) {   // a north arrow in a circle at the lower right, level with the sheet title; or the words "north not stated"
+    if (n === undefined) return; const cx = E[1] - 1500, cy = E[2] - (BUBBLE_C + 14) * SCALE + 500, R = 800;
+    if (!n.stated) { doc.text('A-ANNO-NOTE', n.why.toUpperCase(), [cx, cy], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' }); log.add('§NORTH ' + n.why); return; }
+    const L = Math.hypot(n.x, n.y) || 1, ux = n.x / L, uy = n.y / L, px = -uy, py = ux, tip = [cx + ux * R * 1.1, cy + uy * R * 1.1], back = [cx - ux * R * 0.8, cy - uy * R * 0.8];
+    doc.circle('A-ANNO-TTLB', [cx, cy], R); doc.line('A-ANNO-TTLB', back, tip);
+    doc.lwpoly('A-ANNO-TTLB', [tip, [cx + ux * R * 0.35 + px * R * 0.3, cy + uy * R * 0.35 + py * R * 0.3], [cx + ux * R * 0.35 - px * R * 0.3, cy + uy * R * 0.35 - py * R * 0.3]], true);
+    doc.text('A-ANNO-TTLB', 'N', [cx + ux * R * 1.7, cy + uy * R * 1.7], TXT_TITLE * SCALE * 0.7, { align: 'MIDDLE_CENTER' });
+    doc.text('A-ANNO-NOTE', `TRUE NORTH (${n.source})`, [cx, cy - R - 450], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
+    log.add(`§NORTH stated source=${n.source} model_north_from_true=${fx(n.angle, 4)} sheet_arrow=(${fx(ux, 5)},${fx(uy, 5)})`);
+  }
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -665,6 +684,7 @@
     gridPlan(doc, E, grid);
     planDims(doc, E, grid, log, view, faceRuns, F);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
+    northMark(doc, model.north, E, log);
     doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
   }
@@ -741,6 +761,7 @@
     doc.text('A-ANNO-LEVL', `${storey.name.toUpperCase()} ${fs(storey.elev, 3)}`, [tx, ty], TXT_LEVEL * SCALE, { align: 'BOTTOM_LEFT' });
     if (model.roof_top !== null) doc.text('A-ANNO-LEVL', `T/ROOF ${fs(model.roof_top, 3)}`, [tx, ty - 4.0 * SCALE], TXT_LEVEL * SCALE, { align: 'BOTTOM_LEFT' });
     doc.text('A-ANNO-TTLB', `ROOF PLAN - ${storey.name.toUpperCase()} (${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
+    northMark(doc, model.north, E, log);
     return doc;
   }
   function cutX(e, x) {
@@ -829,6 +850,7 @@
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
+    model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;

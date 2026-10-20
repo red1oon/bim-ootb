@@ -8,6 +8,7 @@
   "witness_dxf_lib_oci_node:ENV",
   "witness_dxf_libtypes:ENV",
   "witness_dxf_meta_editor:ENV",
+  "witness_dxf_north:ENV",
   "witness_dxf_scopes_merge:ENV",
   "witness_dxf_sheet_view:ENV",
   "witness_dxf_sidecar:ENV",
