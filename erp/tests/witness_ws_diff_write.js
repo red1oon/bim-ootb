@@ -36,6 +36,9 @@ const rowKey = (vals) => vals.map(v => v == null || v === '' ? '∅' : (/^-?\d+(
     { n: 'update_ok', m: 'update_data', c: (id) => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id, action: 'Update', fields: [['Name', 'WS Write One B'], ['IsVendor', 'Y'], ['TaxID', 'T-1']] }), usesId: 1 },
     { n: 'update_no_change_values', m: 'update_data', c: (id) => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id, action: 'Update', fields: [['Name', 'WS Write One B']] }), usesId: 1 },
     { n: 'update_missing_record', m: 'update_data', c: () => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id: 99999999, action: 'Update', fields: [['Name', 'x']] }) },
+    { n: 'update_recordid0_complete', seqLoose: 1, m: 'update_data', c: () => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id: 0, action: 'Update', fields: [['Name', 'WS Rec0'], ['IsVendor', 'Y'], ['TaxID', 'T-0']] }) },
+    { n: 'update_recordid0_partial', m: 'update_data', c: () => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id: 0, action: 'Update', fields: [['TaxID', 'T-0']] }) },
+    { n: 'delete_recordid0', m: 'delete_data', c: () => ({ type: 'WsfDeleteBP', table: 'C_BPartner', id: 0, action: 'Delete' }) },
     { n: 'update_column_not_allowed', m: 'update_data', c: (id) => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id, action: 'Update', fields: [['Description', 'no']] }), usesId: 1 },
     { n: 'update_bad_fk', m: 'update_data', c: (id) => ({ type: 'WsfUpdateBP', table: 'C_BPartner', id, action: 'Update', fields: [['C_BP_Group_ID', '999999']] }), usesId: 1 },
     { n: 'delete_ok', m: 'delete_data', c: (id) => ({ type: 'WsfDeleteBP', table: 'C_BPartner', id, action: 'Delete' }), usesId: 1, del: 1 },
@@ -51,12 +54,14 @@ const rowKey = (vals) => vals.map(v => v == null || v === '' ? '∅' : (/^-?\d+(
       res[side] = { n: nr, row: (s.keep || s.usesId) && ids[side] ? rowOf(side, ids[side]) : null, raw: r.text.slice(0, 300) };
     }
     judged++;
-    const idN = (side) => JSON.stringify(res[side].n).split(String(ids[side])).join('#'); const same = idN('pilot') === idN('twin') && JSON.stringify(res.pilot.row && rowKey(res.pilot.row)) === JSON.stringify(res.twin.row && rowKey(res.twin.row));
+    const idN = (side) => { let t = JSON.stringify(res[side].n).split(String(ids[side])).join('#'); if (s.seqLoose) t = t.replace(/\["C_BPartner_ID","\d+",null\]/, '["C_BPartner_ID","#",null]').replace(/\["Value","\d{8}",null\]/, '["Value","SEQ",null]').replace(/\["SO_CreditLimit","0(\.0)?",null\]/, '["SO_CreditLimit","0",null]'); return t; };   // seqLoose (declared, counted apart): a document-sequence Value and a new id differ per system; Env.ZERO prints 0.0 in legacy (named gap, ERP_DEPTH_FILM)
+    const same = idN('pilot') === idN('twin') && JSON.stringify(res.pilot.row && rowKey(res.pilot.row)) === JSON.stringify(res.twin.row && rowKey(res.twin.row));
     if (res.pilot.n.ok) writesCompared++;
     if (!same) failed++;
     console.log('§WSW ' + s.n + ' ' + (same ? 'MATCH' : 'DIFF') + ' ' + (same ? JSON.stringify(res.pilot.n).slice(0, 200) : '\n   legacy=' + JSON.stringify(res.pilot.n) + ' row=' + (res.pilot.row && rowKey(res.pilot.row)) + '\n   twin  =' + JSON.stringify(res.twin.n) + ' row=' + (res.twin.row && rowKey(res.twin.row))));
   }
   pg("delete from c_bpartner where value like 'WSW%'");
+    try { pg("delete from c_bp_customer_acct where c_bpartner_id in (select c_bpartner_id from c_bpartner where name='WS Rec0'); delete from c_bp_vendor_acct where c_bpartner_id in (select c_bpartner_id from c_bpartner where name='WS Rec0'); delete from ad_treenodebp where node_id in (select c_bpartner_id from c_bpartner where name='WS Rec0'); delete from c_bpartner where name='WS Rec0'"); } catch (e) { console.log('§WSW cleanup of the recordid0 rows on the pilot FAILED ' + e.message.split('\n')[0]); }   // RecordID=0 on update CREATES a record on the pilot: leave its books as found
   const verdict = writesCompared === 0 ? 'INCONCLUSIVE' : failed ? 'RED' : 'GREEN';
   console.log('§WSW_VERDICT ' + verdict + ' judged=' + judged + ' failed=' + failed + ' successfulWritesCompared=' + writesCompared + ' journalEntries=' + K.journal.length);
   server.close(); process.exit(verdict === 'GREEN' ? 0 : 1);

@@ -22,13 +22,17 @@ function build(db) {
   A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });
   const ML = require('./model_layer.js');
   fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { require('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } });
-  ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post'].forEach(function (m) { require('./' + m + '.js'); });
+  ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post', 'model_master'].forEach(function (m) { require('./' + m + '.js'); });
   function q(sql, params) {
     const st = db.prepare(sql), out = [];
     try { if (params && params.length) st.bind(params.map(function (v) { return v === undefined ? null : v; })); while (st.step()) { const o = st.getAsObject(), r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); }
     return out;
   }
   const one = (sql, p) => q(sql, p || [])[0] || null;
+  // the page's §AD-MODELVAL-LIVE install (crud_overlay.js _installAllModelVal): every ported M*.beforeSave validator, db captured in the hook closures. Without it a web-service save skipped them all.
+  const MV = require('./ad_modelval.js'), shim = { prepare: function (sql) { const flat = (a) => [].concat.apply([], [].slice.call(a)); return { all: function () { return q(sql, flat(arguments)); }, get: function () { return q(sql, flat(arguments))[0]; } }; } };
+  Object.keys(MV).forEach(function (m) { if (/^install[A-Z].*SaveHooks$/.test(m) && typeof MV[m] === 'function') { try { MV[m](shim); } catch (e) { console.log('§WS modelval installer ' + m + ' skipped (' + e.message + ')'); } } });
+  if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); } catch (e) { /* none */ } }
   const cols = {}, nextId = {};
   const colsOf = (t) => cols[t] || (cols[t] = q('PRAGMA table_info(' + t + ')').map(function (c) { return c.name.toLowerCase(); }));
   function newId(t) { if (nextId[t] == null) { const m = one('SELECT MAX(' + t + '_id) AS m FROM ' + t); nextId[t] = Math.max(Number(m.m || 0), 1000000); } return ++nextId[t]; }
@@ -56,7 +60,7 @@ function build(db) {
   let clock = Date.now(), uu = 0;
   function env(s) {   // the session of the WS login, like Env.getCtx() for the request
     clock += 1000; const d = new Date(clock), day = d.toISOString().slice(0, 10);
-    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock,
+    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock, ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
       uuid: function () { uu++; return crypto.randomUUID(); } };
   }
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)

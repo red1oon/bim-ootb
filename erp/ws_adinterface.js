@@ -243,14 +243,14 @@
     function hasDdlDefault(table, c) { return !!one("SELECT 1 AS x FROM ad_ddl_default WHERE tablename=? AND lower(columnname)=?", [table, c]); }
     function requireKernel() { return K ? null : 'Web service write side is not enabled on this host'; }
 
-    function createData(p) {
-      var pre = prelude('createData', p); if (pre.err) return std(null, true, pre.err);
-      var tn = pre.crud.tableName, t = tn && tableOf(tn); if (!t) return std(null, true, 'No table ' + tn);                                                          // :794
+    function createData(p, viaUpdate) {   // viaUpdate: RecordID=0 on update_data -> table.getPO(0) is a NEW blank PO, the fields are set and it is SAVED = a create (ModelADServiceImpl :1285, observed on the pilot)
+      var pre = prelude(viaUpdate ? 'updateData' : 'createData', p); if (pre.err) return std(viaUpdate ? 0 : null, true, pre.err);
+      var tn = pre.crud.tableName, t = tn && tableOf(tn); if (!t) return std(viaUpdate ? 0 : null, true, 'No table ' + tn);                                                          // :794
       var row = K.ML.newPO({ q: q, env: K.env(pre.session) }, t.t, {}), err = scanFields(pre.type, row, p.crud.fields, t.t, false);
-      if (err) return std(null, true, err);
-      err = (K.breakMode === 'nofk') ? null : fkError(t.t, row); if (err) return std(null, true, 'Cannot save record in ' + tn + ': ' + err);   // breakMode: W-WS-DIFF-WRITE negative control only                                                         // :823-825
-      var r = K.inTrx(pre.session, { ws: 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); return pre2 ? { ok: false, error: pre2 } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo)
-      if (!r.ok) return std(null, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
+      if (err) return std(viaUpdate ? 0 : null, true, err);
+      err = (K.breakMode === 'nofk') ? null : fkError(t.t, row); if (err) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + err);   // breakMode: W-WS-DIFF-WRITE negative control only                                                         // :823-825
+      var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); return pre2 ? { ok: false, error: pre2 } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo)
+      if (!r.ok) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
       var idx = -1; r.ops.forEach(function (o, i) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i; });
       var id = r.ids[idx], saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t;
       return std(id, false, null, outputFields(pre.type, saved));
@@ -258,6 +258,7 @@
     function updateData(p) {
       var pre = prelude('updateData', p); if (pre.err) return std(null, true, pre.err);
       var tn = pre.crud.tableName, id = pre.crud.recordId, t = tn && tableOf(tn); if (!t) return std(id, true, 'No table ' + tn);
+      if (id === 0) return createData(p, true);
       var cur = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); if (!cur) return std(id, true, 'No Record ' + id + ' in ' + tn);                           // :1272
       var proc = cur.processed === 'Y', row = Object.assign({}, cur), err = scanFields(pre.type, row, p.crud.fields, t.t, proc);
       if (err) return std(id, true, err);
@@ -270,6 +271,7 @@
     function deleteData(p) {
       var pre = prelude('deleteData', p); if (pre.err) return std(null, true, pre.err);
       var tn = pre.crud.tableName, id = pre.crud.recordId, t = tn && tableOf(tn); if (!t) return std(id, true, 'No table ' + tn);
+      if (id === 0) return std(0, true, 'Cannot commit transaction after delete record -1 in ' + tn);   // getPO(0) is a blank PO: delete() answers true, its get_ID() is -1, the commit then fails (pilot)
       if (!one('SELECT 1 AS x FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id])) return std(id, true, 'No Record ' + id + ' in ' + tn);                                    // :719
       var r = K.inTrx(pre.session, { ws: 'delete_data', type: pre.type.value, id: id }, function (trx, ML) { return ML.remove(trx, t.t, trx.get(t.t, id)); });
       if (!r.ok) return std(id, true, 'Cannot delete record ' + id + ' in ' + tn + ': ' + (r.error || 'DeleteError'));                                                   // :722
@@ -306,6 +308,12 @@
         tn = v1.v; id = v2.v == null || v2.v === '0' ? 0 : parseInt(v2.v, 10); act = v3.v;
       } catch (e) { return std(null, true, e.message); }
       var t = tn && tableOf(tn); if (!t) return std(id, true, 'No table ' + tn);                                                                                        // :239
+      if (id === 0 && !(typeof K === 'undefined' || !K)) {   // blank PO: set DocAction, save (:246-250) - a failing beforeSave answers its message
+        var nb = K.ML.newPO({ q: q, env: K.env(l.session) }, t.t, {}); nb.docaction = act;
+        var rb = K.inTrx(l.session, { ws: 'set_docaction', type: a.type.value, id: 0 }, function (trx, ML) { var sv = ML.save(trx, t.t, null, nb); return sv.ok ? { ok: true, row: sv.row } : { ok: false, error: sv.error }; });
+        if (!rb.ok) return std(0, true, 'Cannot save before set docAction: ' + (rb.error || 'no log message'));
+        id = rb.ids[0];
+      }
       var cur = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); if (!cur) return std(id, true, 'No Record ' + id + ' in ' + tn);                           // :243
       if (cur.docstatus != null && FSM && act !== '--') {   // DocumentEngine.processIt :263-289: the action must be valid for the status, else IllegalStateException (e.toString() is the message, :269)
         var legal; try { legal = t.t === 'c_order' ? FSM.legalActionsOrder(dbShim, { docStatus: cur.docstatus, isSOTrx: cur.issotrx, doctypeId: cur.c_doctype_id, processing: cur.processing }) : FSM.legalActions(dbShim, cur.c_doctype_id, cur.docstatus).actions; } catch (e) { legal = null; }
