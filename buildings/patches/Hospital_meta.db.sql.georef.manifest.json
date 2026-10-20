@@ -1,0 +1,55 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-10-20T18:03:52.527Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-found",
+    "sha": "c7dd67a25833c63d48ab14e0362b8407f30a9317",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Hospital_meta.db",
+    "etag": "a84c5022-e123-45f0-b93a-be52cf82fa3b",
+    "content-md5": "S4DRfFRDGYsXcxoXfqsH8Q==",
+    "size": "4163894",
+    "last-modified": "Sat, 15 Aug 2026 17:20:49 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "(uploaded artifact = the OCI object served on 2026-10-21, md5 6dfa92c5872357691c8cd47e78a48104, plus the \u00a7GEOREF_META block of buildings/patches/Hospital_meta.db.sql)",
+    "bytes": 2594309,
+    "md5": "2493c319971e2a10e52d8a4de4ad3828",
+    "md5_b64": "JJPDGZceKhDlLYpN5K04KA==",
+    "object": "buildings/patches/Hospital_meta.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": true,
+    "etag": "3342d90b-d667-44f6-84ed-102f5b44aeea",
+    "size": "2592837",
+    "last-modified": "Thu, 27 Aug 2026 01:09:20 GMT"
+  },
+  "verification": {
+    "cmd": "node scripts/probe_georef_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "\u00a7GEOREF_DEPLOY ok   site_elevation_m=165.8112",
+      "\u00a7GEOREF_DEPLOY ok   site_latlong_source=ifc_site",
+      "\u00a7GEOREF_DEPLOY ok   served keys kept building_name=Hospital import_date=2026-05-02",
+      "\u00a7GEOREF_DEPLOY ok   5.000000 deg reproduces the IFC TrueNorth vector (-0.087155742747658, 0.996194698091746)",
+      "\u00a7GEOREF_DEPLOY ok   walkable raster rows survive: 7",
+      "\u00a7GEOREF_DEPLOY PASS"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-10-20T18:03:54.808Z",
+    "etag": "d4e7313d-d053-41a7-ace9-edf1bdf7e723",
+    "verified": true
+  },
+  "note": "The repo's buildings/patches/Hospital_meta.db.sql also carries the 23-class colour backfill (#1385) that was never uploaded; this upload deliberately did NOT ship it: only the georef block was added to the served bytes."
+}
