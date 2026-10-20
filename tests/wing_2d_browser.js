@@ -35,6 +35,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   await p.waitForFunction(() => document.getElementById('wing-2d-overlay'), { timeout: 90000 }); await p.waitForTimeout(1200);
   const ov = await p.evaluate(() => APP.wing2dState().overlay), nTabs = await p.locator('#wing-2d-overlay button').count();
   check('B4', 'overlay shown; drawn entities == the sheet\'s entities', ov && ov.drawn && ov.drawn.stats && JSON.stringify(ov.drawn.stats.by_type) === JSON.stringify(ov.drawn.stats.drawn_by_type) && ov.drawn.entities > 0, JSON.stringify(ov && ov.drawn && ov.drawn.stats && ov.drawn.stats.drawn_by_type) + ' tabs+buttons=' + nTabs);
+  await p.waitForTimeout(500); const ov2 = await p.evaluate(() => APP.wing2dState().overlay);
+  check('B4a', 'the small card rests clear of the building (projected out of the building area)', ov2.big === false && ov2.overlapBuilding === 0 && ov2.building, 'rest=' + ov2.rest + ' overlap=' + ov2.overlapBuilding + ' building=' + JSON.stringify(ov2.building && { x0: Math.round(ov2.building.x0), x1: Math.round(ov2.building.x1) }) + ' card=' + JSON.stringify({ x0: Math.round(ov2.rect.x0), x1: Math.round(ov2.rect.x1) }));
   await p.click('#wing-2d-canvas'); await p.waitForTimeout(1000); check('B4b', 'a click fills the canvas', (await p.evaluate(() => APP.wing2dState().overlay.big)) === true, 'big=true');
   const before = await p.evaluate(() => JSON.stringify(APP.wing2dState().plane)), [dl] = await Promise.all([p.waitForEvent('download'), p.click('#wing-2d-save')]);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wing2d-')), zp = path.join(dir, 'w.zip'); fs.copyFileSync(await dl.path(), zp);
@@ -43,6 +45,10 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   check('B5', 'the saved zip imports in the Modeller path with the frame stated', names.length === 9 && !out.refused && fr && !fr.error && out.verdict && out.verdict.blocking.length > 0, 'sheets=' + names.length + ' frame=' + JSON.stringify(fr) + ' blocking=' + (out.verdict && out.verdict.blocking.length));
   await p.waitForTimeout(400); const after = await p.evaluate(() => ({ plane: JSON.stringify(APP.wing2dState().plane), gone: !document.getElementById('wing-2d-overlay') }));
   check('B6', 'plane unchanged after Save, overlay gone', after.plane === before && after.gone, 'unchanged=' + (after.plane === before));
+  await p.evaluate(() => { window.__e = APP.wing2dExport(); }); await p.waitForFunction(() => document.getElementById('wing-2d-overlay') && APP.wing2dState().overlay, { timeout: 90000 }); await p.waitForTimeout(600);
+  let got = false; p.once('download', () => { got = true; }); await p.click('#wing-2d-close'); await p.waitForTimeout(700);
+  const cx = await p.evaluate(() => ({ plane: JSON.stringify(APP.wing2dState().plane), gone: !document.getElementById('wing-2d-overlay') }));
+  check('B6b', 'Cancel saves nothing, removes the card, leaves the plane', !got && cx.gone && cx.plane === before, 'download=' + got + ' gone=' + cx.gone + ' unchanged=' + (cx.plane === before));
   const errs = logs.filter(l => /PAGEERROR|WING2D_EXPORT_FAIL/.test(l)); check('B7', 'no page error', errs.length === 0, errs.join(' | ').slice(0, 200));
   say(logs.filter(l => /WING2D/.test(l)).join('\n')); await b.close(); say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });
