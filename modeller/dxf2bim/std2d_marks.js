@@ -54,7 +54,7 @@
         if (M.roof_top === null) say('  §MARK_GAP no @ROOF (no IfcRoof / IfcSlab)'); else marks.push({ text: '@ROOF=' + r3(M.roof_top) });
       } else {
         if (kind === 'SECTION') {
-          const xs = grid.x.map(g => g[1]), X = Number(((xs[0] + xs[1]) / 2).toFixed(6)); marks.push({ text: '@CUT=X,' + Number((X * 1000).toFixed(2)) });
+          const xs = grid.x.map(g => g[1]), X = R.model && Number.isFinite(R.model.sectionX) ? R.model.sectionX : Number(((xs[0] + xs[1]) / 2).toFixed(6)); marks.push({ text: '@CUT=X,' + Number((X * 1000).toFixed(2)) });
           marks.push({ text: '@HAXIS=' + HAXIS.SECTION });
           grid.y.forEach(g => marks.push({ text: '@GRIDH=' + g[0], x: mm3(g[1]), y: 0 }));
         } else {

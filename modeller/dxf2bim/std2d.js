@@ -817,8 +817,9 @@
     const P = new Float64Array(W.length); for (let k = 0; k < W.length; k += 3) { P[k] = W[k + 1]; P[k + 1] = W[k + 2]; P[k + 2] = W[k]; }
     return G.chainSegments(G.sliceMesh(P, e.f, x)).filter(c => c.length >= 3);
   }
-  function writeSection(model, grid, log) {
-    const xs = grid.x.map(g => g[1]), X = xs.length >= 2 ? Number(((xs[0] + xs[1]) / 2).toFixed(6)) : null;
+  function writeSection(model, grid, log, Xat) {   // Xat (§F7): a stated cut position in model metres (the 2D wand's plane midpoint); undefined = midway between the first two grid lines, as always
+    const xs = grid.x.map(g => g[1]), X = Number.isFinite(Xat) ? Number(Xat.toFixed(6)) : xs.length >= 2 ? Number(((xs[0] + xs[1]) / 2).toFixed(6)) : null;
+    model.sectionX = X;
     if (X === null) { log.gap('GAP:section_no_bay', '-', 'fewer than 2 X grid lines; no section'); return null; }
     log.add(`§VIEW SECTION cut X=${fx(X * 1000, 2)} mm viewed toward -X (h = +y)`);
     const doc = newDoc(), roofG = new Set(model.roofs.map(r => r.guid)), n = { 'S-SLAB': 0, 'A-ROOF': 0, 'A-SECT': 0 }, zlo = [], zhi = [];
@@ -917,7 +918,7 @@
     for (const face of Object.keys(ELEV_FACES)) put(`${prefix}_${face}_std.dxf`, writeElevation(model, grid, face, log));
     const rs = roofStorey(model);
     if (!rs) log.gap('GAP:no_roof_storey', '-', 'no storey above the grid storey without a floor plan; no roof plan'); else put(`${prefix}_ROOF_std.dxf`, writeRoofPlan(model, grid, rs, log));
-    const sec = writeSection(model, grid, log); if (sec) put(`${prefix}_SECTION_std.dxf`, sec);
+    const sec = writeSection(model, grid, log, opts.sectionAt === 'pivot' ? (wing ? wing.ox : undefined) : (typeof opts.sectionAt === 'number' ? opts.sectionAt : undefined)); if (sec) put(`${prefix}_SECTION_std.dxf`, sec);
     const codes = {}; log.gaps.forEach(g => { codes[g[0]] = (codes[g[0]] || 0) + 1; });
     log.add(`§SUMMARY views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     log.add('§GAP_SUMMARY {' + Object.keys(codes).map(k => `'${k}': ${codes[k]}`).join(', ') + '}');

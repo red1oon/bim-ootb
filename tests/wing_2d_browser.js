@@ -51,6 +51,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   await p.waitForTimeout(500); const after = await p.evaluate(() => ({ plane: JSON.stringify(APP.wing2dState().plane), gone: !document.getElementById('wing-2d-overlay') }));
   const planTxt = fs.readFileSync(path.join(dir, 'x', names.filter(n => /FLOOR_LEVEL_1/.test(n))[0]), 'utf8'), wantN = north && north.source === 'ifc_truenorth' ? /TRUE NORTH \(ifc_truenorth\)/ : /NORTH NOT STATED/;
   check('B8', 'the saved plan carries the north the Viewer db states (an arrow), or says north is not stated', wantN.test(planTxt), 'georef=' + JSON.stringify(north) + ' sheet has ' + (/TRUE NORTH/.test(planTxt) ? 'arrow' : /NORTH NOT STATED/.test(planTxt) ? 'NORTH NOT STATED' : 'neither'));
+  const secF = names.filter(n => /SECTION/.test(n))[0], cutM = secF && /@CUT=X,([-\d.]+)/.exec(fs.readFileSync(path.join(dir, 'x', secF), 'utf8')), px = JSON.parse(before).pivot[0] * 1000;
+  check('B9', 'the saved section is cut where the plane stands (@CUT = the plane midpoint X, mm)', cutM && Math.abs(Number(cutM[1]) - px) < 1.5, 'cut=' + (cutM && cutM[1]) + ' plane mid x mm=' + px.toFixed(2));
   check('B6', 'plane unchanged after Save, overlay gone', after.plane === before && after.gone, 'unchanged=' + (after.plane === before));
   await p.evaluate(() => { window.__e = APP.wing2dExport(); }); await p.waitForFunction(() => document.getElementById('wing-2d-overlay') && APP.wing2dState().overlay, { timeout: 90000 }); await p.waitForTimeout(600);
   let got = false; p.once('download', () => { got = true; }); await p.click('#wing-2d-close'); await p.waitForTimeout(700);
