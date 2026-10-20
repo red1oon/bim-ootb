@@ -24,6 +24,8 @@ const rowKey = (vals) => vals.map(v => v == null || v === '' ? '∅' : (/^-?\d+(
     { n: 'create_ok', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW1'], ['Name', 'WS Write One'], ['C_BP_Group_ID', '104'], ['SO_CreditLimit', '12.5'], ['IsCustomer', 'Y']] }), keep: 1 },
     { n: 'create_duplicate_value', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW1'], ['Name', 'Dup'], ['C_BP_Group_ID', '104']] }) },
     { n: 'create_no_name', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW2'], ['C_BP_Group_ID', '104']] }) },
+    { n: 'create_lval_name', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSL1'], ['Name', 'WS Lval'], ['C_BP_Group_ID', null, 'Standard'], ['SO_CreditLimit', '5']] }), keep: 1 },
+    { n: 'create_lval_unknown', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSL2'], ['Name', 'n'], ['C_BP_Group_ID', null, 'NoSuchGroup']] }) },
     { n: 'create_bad_fk', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW3'], ['Name', 'n'], ['C_BP_Group_ID', '999999']] }) },
     { n: 'create_bad_decimal', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW4'], ['Name', 'n'], ['SO_CreditLimit', 'abc']] }) },
     { n: 'create_bad_boolean', m: 'create_data', c: () => ({ type: 'WsfCreateBP', table: 'C_BPartner', action: 'Create', fields: [['Value', 'WSW5'], ['Name', 'n'], ['IsCustomer', 'maybe']] }) },
