@@ -601,6 +601,14 @@
     }
     log.add(`§STAIR_STEPS guid=${e.guid} steps=${R.steps.length} z=${fx(R.steps[0].z, 3)}..${fx(R.steps[R.steps.length - 1].z, 3)}`); return R.steps.length;
   }
+  // §F7 scale bar (opt-in: opts.scaleBar === true): a 5 m bar in five 1 m segments (alternate segments filled), labelled 0 and 5 m, at the lower left level with the sheet title; drawn at the sheet's own
+  // scale (1:SCALE, sheet units = model mm), so it is a derivation, not a value.
+  function scaleBarMark(doc, E) {
+    const x0 = E[0] + 1500, y0 = E[2] - (BUBBLE_C + 14) * SCALE + 300, seg = 1000, h = 200;
+    doc.line('A-ANNO-TTLB', [x0, y0], [x0 + 5 * seg, y0]);
+    for (let i = 0; i < 5; i++) { const a = x0 + i * seg, r = [[a, y0], [a + seg, y0], [a + seg, y0 + h], [a, y0 + h]]; doc.lwpoly('A-ANNO-TTLB', r, true); if (i % 2 === 0) doc.hatch('A-ANNO-TTLB', 7, r); }
+    doc.text('A-ANNO-TTLB', '0', [x0, y0 - 350], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' }); doc.text('A-ANNO-TTLB', '5 m', [x0 + 5 * seg, y0 - 350], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
+  }
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -721,7 +729,7 @@
     gridPlan(doc, E, grid);
     planDims(doc, E, grid, log, view, faceRuns, F);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
-    northMark(doc, model.north, E, log);
+    northMark(doc, model.north, E, log); if (model.scaleBar === true) scaleBarMark(doc, E);
     doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
   }
@@ -798,7 +806,7 @@
     doc.text('A-ANNO-LEVL', `${storey.name.toUpperCase()} ${fs(storey.elev, 3)}`, [tx, ty], TXT_LEVEL * SCALE, { align: 'BOTTOM_LEFT' });
     if (model.roof_top !== null) doc.text('A-ANNO-LEVL', `T/ROOF ${fs(model.roof_top, 3)}`, [tx, ty - 4.0 * SCALE], TXT_LEVEL * SCALE, { align: 'BOTTOM_LEFT' });
     doc.text('A-ANNO-TTLB', `ROOF PLAN - ${storey.name.toUpperCase()} (${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
-    northMark(doc, model.north, E, log);
+    northMark(doc, model.north, E, log); if (model.scaleBar === true) scaleBarMark(doc, E);
     return doc;
   }
   function cutX(e, x) {
@@ -887,7 +895,7 @@
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
-    model.stairSymbol = opts.stairSymbol; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
+    model.stairSymbol = opts.stairSymbol; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;
