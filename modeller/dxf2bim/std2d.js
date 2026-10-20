@@ -835,6 +835,8 @@
         log.add(`§SECT_CUT guid=${e.guid} class=${e.cls} layer=${layer} z=(${fx(Math.min(...z), 2)},${fx(Math.max(...z), 2)}) h=(${fx(Math.min(...pts.map(p => p[0])), 2)},${fx(Math.max(...pts.map(p => p[0])), 2)})`);
       }
     }
+    // §F7: the plates / members of a curtain wall the cut passes through, on their own layer (the reader's section rules read S-SLAB / A-ROOF / A-SECT only, so they add no reading)
+    if (model.sectionCurtain !== false) { let nc = 0; (model.curtains || []).forEach(cw => cw.parts.forEach(pt => cutX(pt, X).forEach(ct => { const pts = ct.map(p => [mm(p[0]), mm(p[1])]); doc.lwpoly('A-WALL-CURT', pts, true, tag(pt.guid)); nc++; const z = pts.map(p => p[1]); zlo.push(Math.min(...z)); zhi.push(Math.max(...z)); }))); if (nc) log.add(`§SECTION_CURTAIN contours=${nc}`); }
     log.add(`§SECTION contours={'S-SLAB': ${n['S-SLAB']}, 'A-ROOF': ${n['A-ROOF']}, 'A-SECT': ${n['A-SECT']}}`);
     const gEl = model.storeys.find(s => s.name === model.grid_storey).elev, levels = model.storeys.filter(s => s.elev >= gEl).map(s => [s.name.toUpperCase(), s.elev]);
     if (model.roof_top !== null) levels.push(['T/ROOF', model.roof_top]);
@@ -896,7 +898,7 @@
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
-    model.stairSymbol = opts.stairSymbol; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
+    model.stairSymbol = opts.stairSymbol; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;
