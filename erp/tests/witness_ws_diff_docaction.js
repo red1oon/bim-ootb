@@ -10,20 +10,22 @@ const { start } = require('../ws_server.js');
 const { PILOT, pg, crud, docActionXml, post, norm, sqliteInsertsFromPilot } = require('./ws_diff_common.js');
 const HDR = [['AD_Org_ID', '11'], ['C_DocTypeTarget_ID', '133'], ['IsSOTrx', 'Y'], ['DateOrdered', '2006-12-15 00:00:00'], ['DateAcct', '2006-12-15 00:00:00'], ['DatePromised', '2006-12-15 00:00:00'], ['C_BPartner_ID', '117'], ['C_BPartner_Location_ID', '112'], ['Bill_BPartner_ID', '117'], ['Bill_Location_ID', '112'],
   ['M_Warehouse_ID', '103'], ['M_PriceList_ID', '101'], ['C_Currency_ID', '100'], ['C_PaymentTerm_ID', '106'], ['PaymentRule', 'P'], ['InvoiceRule', 'I'], ['DeliveryRule', 'F'], ['DeliveryViaRule', 'P'], ['FreightCostRule', 'I'], ['PriorityRule', '5'], ['SalesRep_ID', '101']];
+const LINE134 = (oid) => LINE(oid).map(([k, v]) => (k === 'M_Product_ID' ? [k, '134'] : k === 'C_UOM_ID' ? [k, '100'] : /^Price/.test(k) ? [k, '60'] : [k, v]));   // Patio Table: a stocked product with Average-PO costing
 const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line', '10'], ['M_Product_ID', '126'], ['QtyEntered', '2'], ['QtyOrdered', '2'], ['C_UOM_ID', '101'], ['PriceEntered', '45'], ['PriceActual', '45'], ['PriceList', '45'], ['C_Tax_ID', '104']];
 (async () => {
   const fx = sqliteInsertsFromPilot(900000, 900003); const fxFile = path.join(os.tmpdir(), 'ws_docaction_fixture.sql'); fs.writeFileSync(fxFile, fx.sql);
   console.log('§WSA fixture rows copied from the pilot=' + fx.n);
   const server = await start(0, [fxFile]); const TWIN = 'http://localhost:' + server.address().port, K = server.kernel;
   const oid = { pilot: null, twin: null }, oid2 = { pilot: null, twin: null };
-  const slot = (s) => (s.o === 'b' ? oid2 : oid);
+  const SL = { a: oid, b: oid2, c: { pilot: null, twin: null }, d: { pilot: null, twin: null }, e: { pilot: null, twin: null } };
+  const slot = (s) => SL[s.o || 'a'];
   const state = (side, id) => {
     const AGG = side === 'pilot' ? "string_agg(distinct docstatus,',')" : 'group_concat(distinct docstatus)';   // the documents the order produced
     if (!id) return null;
     const rows = (sql) => side === 'pilot' ? pg(sql) : K.q(sql.replace(/\bad_client_id=11\b/g, 'ad_client_id=11')).map(r => Object.values(r));
     const one = (sql) => rows(sql)[0] || [];
     const o = one('select docstatus, docaction, processed, posted, round(grandtotal,2), round(totallines,2), isdelivered, isinvoiced from c_order where c_order_id=' + id);
-    const sh = one('select count(*), coalesce(' + AGG + ',\'\') from m_inout where c_order_id=' + id).join(',');
+    const sh = one('select count(*), coalesce(' + (side === 'pilot' ? "string_agg(distinct docstatus||coalesce(posted,''),',')" : "group_concat(distinct docstatus||coalesce(posted,''))") + ',\'\') from m_inout where c_order_id=' + id).join(',');   // shipment DocStatus+Posted: CON = completed, posting not tried, COY = posted, COE = posting error
     const inv = one('select count(*), coalesce(' + AGG + ',\'\') from c_invoice where c_order_id=' + id).join(',');
     const facts = one('select count(*), round(coalesce(sum(amtacctdr),0),2), round(coalesce(sum(amtacctcr),0),2) from fact_acct where (ad_table_id=259 and record_id=' + id + ') or (ad_table_id=319 and record_id in (select m_inout_id from m_inout where c_order_id=' + id + ')) or (ad_table_id=318 and record_id in (select c_invoice_id from c_invoice where c_order_id=' + id + '))').map((v, k) => (k === 0 ? String(v) : Number(v).toFixed(2))).join(',');
     const f2 = (v) => (/^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v).toFixed(2) : String(v));
@@ -47,9 +49,26 @@ const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line'
     { n: 'create_order_norate', m: 'create_data', o: 'b', c: () => ({ type: 'Pilot_createData_C_Order', table: 'C_Order', action: 'Create', fields: HDR.map(([k, v]) => (k === 'C_Currency_ID' ? [k, '304'] : [k, v])) }), setId: 'b' },
     { n: 'create_line_norate', m: 'create_data', o: 'b', c: (s) => ({ type: 'Pilot_createData_C_OrderLine', table: 'C_OrderLine', action: 'Create', fields: LINE(oid2[s]) }), st: 'b' },
     { n: 'complete_no_currency_rate', m: 'set_docaction', o: 'b', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid2[s], action: 'CO' }), st: 'b', ok: 1 },
+    { n: 'stock_reset', m: null, reset: 1 },
+    { n: 'create_order_stock1', m: 'create_data', o: 'c', c: () => ({ type: 'Pilot_createData_C_Order', table: 'C_Order', action: 'Create', fields: HDR }), setId: 'c' },
+    { n: 'create_line_stock1', m: 'create_data', o: 'c', c: (s) => ({ type: 'Pilot_createData_C_OrderLine', table: 'C_OrderLine', action: 'Create', fields: LINE134(SL.c[s]) }), st: 'c' },
+    { n: 'complete_stock1_posts_Y', m: 'set_docaction', o: 'c', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: SL.c[s], action: 'CO' }), st: 'c', ok: 1 },
+    { n: 'create_order_stock2', m: 'create_data', o: 'd', c: () => ({ type: 'Pilot_createData_C_Order', table: 'C_Order', action: 'Create', fields: HDR }), setId: 'd' },
+    { n: 'create_line_stock2', m: 'create_data', o: 'd', c: (s) => ({ type: 'Pilot_createData_C_OrderLine', table: 'C_OrderLine', action: 'Create', fields: LINE134(SL.d[s]) }), st: 'd' },
+    { n: 'complete_stock2_posts_Y', m: 'set_docaction', o: 'd', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: SL.d[s], action: 'CO' }), st: 'd', ok: 1 },
+    { n: 'create_order_stock3', m: 'create_data', o: 'e', c: () => ({ type: 'Pilot_createData_C_Order', table: 'C_Order', action: 'Create', fields: HDR }), setId: 'e' },
+    { n: 'create_line_stock3', m: 'create_data', o: 'e', c: (s) => ({ type: 'Pilot_createData_C_OrderLine', table: 'C_OrderLine', action: 'Create', fields: LINE134(SL.e[s]) }), st: 'e' },
+    { n: 'complete_stock3_shipment_Posted_E', m: 'set_docaction', o: 'e', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: SL.e[s], action: 'CO' }), st: 'e', ok: 1 },
     { n: 'role_without_access', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'CO' }), login: { roleId: 103 } },
   ];
+  const resetCost = () => {   // both sides: Patio Table (134) Average-PO stock = 4 and no cost history/detail, so exactly two shipments of 2 post and the third cannot (AverageCostingNegativeQtyException -> Posted=E)
+    pg("update m_cost set currentqty=4 where m_product_id=134 and m_costelement_id in (100,102,103) and c_acctschema_id in (101,200000)"); pg("delete from m_costhistory where m_product_id=134"); pg("delete from m_costdetail where m_product_id=134");
+    K.run("UPDATE m_cost SET currentqty=4 WHERE m_product_id=134 AND m_costelement_id IN (100,102,103) AND c_acctschema_id IN (101,200000);\nDELETE FROM m_costhistory WHERE m_product_id=134;\nDELETE FROM m_costdetail WHERE m_product_id=134;\n");
+    const have = K.q("SELECT count(*) n FROM m_cost WHERE m_product_id=134 AND m_costelement_id=103 AND c_acctschema_id IN (101,200000) AND currentqty=4")[0].n;
+    console.log('§WSA stock reset: pilot+twin Average-PO stock of product 134 = 4 (twin rows with 4: ' + have + ')');
+  };
   for (const s of STEPS) {
+    if (s.reset) { resetCost(); continue; }
     const res = {};
     for (const side of ['pilot', 'twin']) {
       const body = s.m === 'set_docaction' ? docActionXml(s.d(side), s.login) : crud(s.c(side), s.login);
