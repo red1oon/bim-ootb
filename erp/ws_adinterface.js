@@ -314,6 +314,7 @@
         var out = ML.runWorkflow(trx, t.t, id, act);                                                                                                                       // :249-279 save DocAction, processIt, save
         return out.ok ? { ok: true } : { ok: false, error: out.msg || 'processIt failed' };
       });
+      if (!r.ok && /^model threw: /.test(r.error || '')) return std(id, true, 'org.adempiere.exceptions.AdempiereException: ' + parseTranslation((r.error || '').slice(13).replace(/^FailedProcessingDocument/, '@FailedProcessingDocument@')));   // an AdempiereException thrown out of processIt reaches the caller as e.toString() (WebServiceFacade catch), not the :267 message
       if (!r.ok) return std(id, true, parseTranslation('@FailedProcessingDocument@: ' + (r.error || '')));                                                                   // :267
       var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t;
       return std(id, false, null, outputFields(a.type, saved));

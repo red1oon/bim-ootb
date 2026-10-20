@@ -16,6 +16,7 @@ const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line'
   console.log('§WSA fixture rows copied from the pilot=' + fx.n);
   const server = await start(0, [fxFile]); const TWIN = 'http://localhost:' + server.address().port, K = server.kernel;
   const oid = { pilot: null, twin: null }, oid2 = { pilot: null, twin: null };
+  const slot = (s) => (s.o === 'b' ? oid2 : oid);
   const state = (side, id) => {
     const AGG = side === 'pilot' ? "string_agg(distinct docstatus,',')" : 'group_concat(distinct docstatus)';   // the documents the order produced
     if (!id) return null;
@@ -42,6 +43,9 @@ const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line'
     { n: 'update_completed_order', m: 'update_data', c: (s) => ({ type: 'Pilot_updateData_C_Order', table: 'C_Order', id: oid[s], action: 'Update', fields: [['Description', 'edit after complete']] }), st: 'a' },
     { n: 'complete_again', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'CO' }), st: 'a' },
     { n: 'void_completed', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'VO' }), st: 'a', ok: 1 },
+    { n: 'create_order_norate', m: 'create_data', o: 'b', c: () => ({ type: 'Pilot_createData_C_Order', table: 'C_Order', action: 'Create', fields: HDR.map(([k, v]) => (k === 'C_Currency_ID' ? [k, '304'] : [k, v])) }), setId: 'b' },
+    { n: 'create_line_norate', m: 'create_data', o: 'b', c: (s) => ({ type: 'Pilot_createData_C_OrderLine', table: 'C_OrderLine', action: 'Create', fields: LINE(oid2[s]) }), st: 'b' },
+    { n: 'complete_no_currency_rate', m: 'set_docaction', o: 'b', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid2[s], action: 'CO' }), st: 'b', ok: 1 },
     { n: 'role_without_access', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'CO' }), login: { roleId: 103 } },
   ];
   for (const s of STEPS) {
@@ -49,10 +53,10 @@ const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line'
     for (const side of ['pilot', 'twin']) {
       const body = s.m === 'set_docaction' ? docActionXml(s.d(side), s.login) : crud(s.c(side), s.login);
       const r = await post(side === 'pilot' ? PILOT : TWIN, s.m, body); const n = norm(r);
-      if (s.setId && n.ok) { const m = /RecordID="(\d+)"/.exec(r.text); oid[side] = m ? Number(m[1]) : null; }
-      res[side] = { n, st: s.st ? state(side, oid[side]) : null };
+      if (s.setId && n.ok) { const m = /RecordID="(\d+)"/.exec(r.text); slot(s)[side] = m ? Number(m[1]) : null; }
+      res[side] = { n, st: s.st ? state(side, slot(s)[side]) : null };
     }
-    const idN = (side) => (JSON.stringify(res[side].n) + '§' + res[side].st).split(String(oid[side])).join('#').replace(/Order Document No=\S+|DocumentNo[=:]\s*\S+/g, 'DocNo');
+    const idN = (side) => (JSON.stringify(res[side].n) + '§' + res[side].st).split(String(slot(s)[side])).join('#').replace(/Order Document No=\S+|DocumentNo[=:]\s*\S+/g, 'DocNo');
     const same = idN('pilot') === idN('twin'); judged++; if (!same) failed++; if (same && res.pilot.n.ok && s.ok) actionsOk++;
     console.log('§WSA ' + s.n + ' ' + (same ? 'MATCH' : 'DIFF') + ' ' + (same ? JSON.stringify(res.pilot.n).slice(0, 160) + (res.pilot.st ? ' ' + res.pilot.st : '') : '\n   legacy=' + JSON.stringify(res.pilot.n) + ' ' + res.pilot.st + '\n   twin  =' + JSON.stringify(res.twin.n) + ' ' + res.twin.st));
   }
