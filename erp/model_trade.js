@@ -301,6 +301,21 @@
     var r = rate(trx, cur, as.c_currency_id, date, null);
     return r ? D(amt).multiply(r).setScale(precisionOf(trx, as.c_currency_id), HU) : D(amt);
   }
+  // CreditManagerInvoice :100-127 — GrandTotal into the client currency: IsOverrideCurrencyRate -> amt*CurrencyRate, else MConversionRate.convertBase;
+  // no rate -> MConversionRateUtil.getErrorMessage('ErrorConvertingCurrencyToBaseCurrency') = AD_Message text {0..3}, date as {3,date,short} (M/d/yy)
+  function toBase(trx, doc, amt) {
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
+    if (!as || String(as.c_currency_id) === String(doc.c_currency_id)) return { amt: D(amt) };
+    var prec = precisionOf(trx, as.c_currency_id);
+    if (doc.isoverridecurrencyrate === 'Y') return { amt: D(amt).multiply(D(doc.currencyrate)).setScale(prec, HU) };
+    var r = rate(trx, doc.c_currency_id, as.c_currency_id, doc.dateacct, doc.c_conversiontype_id, doc.ad_org_id);
+    if (r) return { amt: D(amt).multiply(r).setScale(prec, HU) };
+    var ct = nz(doc.c_conversiontype_id) ? doc.c_conversiontype_id : (trx.q("SELECT c_conversiontype_id AS c FROM c_conversiontype WHERE isdefault='Y' AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0] || {}).c;
+    var iso = function (id) { return (trx.get('c_currency', id) || {}).iso_code; }, ctn = (trx.get('c_conversiontype', ct) || {}).name;
+    var d = String(doc.dateacct || '').slice(0, 10).split('-'), ds = d.length === 3 ? Number(d[1]) + '/' + Number(d[2]) + '/' + d[0].slice(2) : '';
+    var m = (trx.q("SELECT msgtext AS t FROM ad_message WHERE value='ErrorConvertingCurrencyToBaseCurrency'")[0] || {}).t || '';
+    return { err: m.replace('{0}', iso(doc.c_currency_id)).replace('{1}', iso(as.c_currency_id)).replace('{2}', ctn).replace('{3,date,short}', ds) };
+  }
   // MBPartner.setTotalOpenBalance :711-757 — SUM(currencyBase(invoiceOpen …)) / currencyBase(paymentAvailable …)
   function bpOpenBalance(trx, bpId) {
     var credit = Z, bal = Z;
@@ -859,5 +874,5 @@
   return Object.assign({}, PXT, PXS, { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
     precisionOf: precisionOf, tax: tax, calcTax: calcTax, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
-    creditStatus: creditStatus, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z });
+    creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z });
 });

@@ -150,6 +150,8 @@
     var o = nz(inv.c_order_id) ? trx.get('c_order', inv.c_order_id) : null, fromPOS = !!(o && nz(o.c_pos_id));
     var bp = trx.get('c_bpartner', inv.c_bpartner_id); if (!bp) return null;
     var amt = D(inv.grandtotal); if (isCM(trx, inv)) amt = amt.negate();                     // getGrandTotal(true) — CM adjusted
+    var cv = T.toBase(trx, inv, amt); if (cv.err) return cv.err;                              // :100-127 convertBase / override rate; null -> ErrorConvertingCurrencyToBaseCurrency
+    amt = cv.amt;
     if (action === 'RE') amt = amt.negate();
     var bal = D(bp.totalopenbalance), ch = {};
     if (Y(inv.issotrx)) {
