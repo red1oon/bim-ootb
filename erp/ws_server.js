@@ -21,8 +21,14 @@ async function start(port, extraSql, opts) {
   // DEFAULT OFF when started from the command line: the bundle must be exported ACTIVE from the Web Services plugin (erp/plugins/webservices.mjs). Read at every request, so Stop takes effect at once.
   const isOn = () => { if (!opts.config) return opts.enabled !== false; try { return JSON.parse(fs.readFileSync(opts.config, 'utf8')).state === 'ACTIVE'; } catch (e) { return false; } };
   const kernel = await Kernel.load(extraSql);
+  if (opts.hashPasswords) {   // MUser.setPassword with USER_PASSWORD_HASH=Y (:518-556) for every plain-stored user: SHA-512 x310000 over a random 128-bit salt (the system algorithm), then the switch (MUser.get :230-277)
+    const PW = require('./ws_password.js'), alg = ((kernel.one("SELECT value FROM ad_sysconfig WHERE name='USER_PASSWORD_HASH_ALGORITHM' AND ad_client_id=0") || {}).value) || 'SHA-512';
+    let n = 0; kernel.q("SELECT ad_user_id AS id, password FROM ad_user WHERE password IS NOT NULL AND salt IS NULL").forEach(function (u) { const salt = require('crypto').randomBytes(16).toString('hex');
+      kernel.run("UPDATE ad_user SET password='" + PW.passwordHash(alg, String(u.password), salt) + "', salt='" + salt + "', passwordhashalgorithm='" + alg + "', saltalgorithm='DRBG' WHERE ad_user_id=" + Number(u.id) + ";\n"); n++; });
+    kernel.run("UPDATE ad_sysconfig SET value='Y' WHERE name='USER_PASSWORD_HASH';\n"); console.log('§WS passwords hashed users=' + n + ' algorithm=' + alg);
+  }
   const policy = Policy.create({ q: kernel.q, run: kernel.run, onAlert: (a) => { console.log('§WS-ALERT ' + a.kind + ' ' + a.who + ' - ' + a.detail); if (opts.alerts) { try { fs.appendFileSync(opts.alerts, JSON.stringify(a) + '\n'); } catch (e) { /* no alert file */ } } } });
-  const ad = WS.create({ q: kernel.q, kernel, policy: opts.noPolicy ? null : policy }),   // noPolicy: W-WS-LIMITS negative control only
+  const ad = WS.create({ q: kernel.q, kernel, passwordMatch: require('./ws_password.js').isMatchHash, policy: opts.noPolicy ? null : policy }),   // noPolicy: W-WS-LIMITS negative control only
      journal = kernel.journal;
   const savePending = () => { if (opts.agentsDir) { try { fs.writeFileSync(path.join(opts.agentsDir, 'pending.json'), JSON.stringify(policy.list(), null, 2)); } catch (e) { /* dir absent */ } } };
   if (opts.journal) { try { const prev = fs.readFileSync(opts.journal, 'utf8').split('\n').filter(Boolean); const last = prev.length ? JSON.parse(prev[prev.length - 1]) : null; if (last) { kernel.journal.push(last); } } catch (e) { /* no journal yet */ } kernel.hooks.onJournal = (e) => fs.appendFileSync(opts.journal, JSON.stringify(e) + '\n'); }
@@ -58,7 +64,7 @@ async function start(port, extraSql, opts) {
 module.exports = { start, openDb };
 if (require.main === module) {
   const a = process.argv.slice(2), o = { config: null, agentsDir: null, journal: null }, sql = []; let port = 8089;
-  for (let i = 0; i < a.length; i++) { if (a[i] === '--config') o.config = a[++i]; else if (a[i] === '--agents') o.agentsDir = a[++i]; else if (a[i] === '--journal') o.journal = a[++i]; else if (a[i] === '--bind') { o.host = a[++i]; if (o.host !== '127.0.0.1' && o.host !== 'localhost') console.log('§WS WARNING --bind ' + o.host + ': the host speaks plain HTTP with the password in every request - put TLS (a reverse proxy) in front, never expose it directly'); } else if (/^\d+$/.test(a[i])) port = Number(a[i]); else sql.push(a[i]); }
+  for (let i = 0; i < a.length; i++) { if (a[i] === '--config') o.config = a[++i]; else if (a[i] === '--agents') o.agentsDir = a[++i]; else if (a[i] === '--journal') o.journal = a[++i]; else if (a[i] === '--hash-passwords') o.hashPasswords = true; else if (a[i] === '--bind') { o.host = a[++i]; if (o.host !== '127.0.0.1' && o.host !== 'localhost') console.log('§WS WARNING --bind ' + o.host + ': the host speaks plain HTTP with the password in every request - put TLS (a reverse proxy) in front, never expose it directly'); } else if (/^\d+$/.test(a[i])) port = Number(a[i]); else sql.push(a[i]); }
   if (!o.config) o.config = path.join(process.cwd(), 'ws_host.json');   // absent file = OFF
   start(port, sql, o).then(s => console.log('§WS listening port=' + s.address().port + ' plugin=' + (JSON.parse((() => { try { return fs.readFileSync(o.config, 'utf8'); } catch (e) { return '{}'; } })()).state || 'OFF (no ' + o.config + ')')));
 }

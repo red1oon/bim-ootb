@@ -11930,3 +11930,9 @@ INSERT OR IGNORE INTO ad_infoprocess ("ad_infoprocess_id","ad_client_id","ad_org
 -- <<< INFOPROCESS
 -- AD_Role_Included (role inclusion; AbstractService.ROLE_ACCESS_SQL reads it for web-service access) - table was absent from the shipped bundle (W-WS-DIFF-MISC)
 CREATE TABLE IF NOT EXISTS ad_role_included (ad_client_id NUMERIC, ad_org_id NUMERIC, ad_role_id NUMERIC, included_role_id NUMERIC, seqno NUMERIC, isactive TEXT, created TEXT, createdby NUMERIC, updated TEXT, updatedby NUMERIC, ad_role_included_uu TEXT);
+-- Password hashing switch + per-user hash columns (W-WS-DIFF-PASSWORD; MUser.get :230, Secure.getPasswordHash). Stock value N = plain compare, as the pilot ships it.
+INSERT OR IGNORE INTO ad_sysconfig (ad_sysconfig_id,ad_client_id,ad_org_id,isactive,name,value,configurationlevel,entitytype,ad_sysconfig_uu) VALUES (200013,0,0,'Y','USER_PASSWORD_HASH','N','S','D','569577c3-3bfa-4d0f-a2e3-d98752164667');
+INSERT OR IGNORE INTO ad_sysconfig (ad_sysconfig_id,ad_client_id,ad_org_id,isactive,name,value,configurationlevel,entitytype,ad_sysconfig_uu) VALUES (200285,0,0,'Y','USER_PASSWORD_HASH_ALGORITHM','SHA-512','S','D','019a38f5-9e1d-787e-9050-17d6b00cfd6c');
+ALTER TABLE ad_user ADD COLUMN salt TEXT;
+ALTER TABLE ad_user ADD COLUMN passwordhashalgorithm TEXT;
+ALTER TABLE ad_user ADD COLUMN saltalgorithm TEXT;
