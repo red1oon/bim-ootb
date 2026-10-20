@@ -27,7 +27,7 @@
   // measure never called the recorder, SECTION_CUT committed but was in no profile. They record as read-only
   // 'event' moments (look-restore on scrub, NEVER a kernel mutation), gated by a new `event` bucket that is
   // ON from `mid` up (so the default `max` shows them; `low`/`off` keep them out).
-  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true };
+  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true, 'WING_PLANE': true, 'EXPORT_2D': true };
   var PROFILES = {
     low:  { op: { 'BUILDING_OPEN': true }, view: {}, event: {} },
     mid:  { op: _EDITS, view: {}, event: _EVENTS },
@@ -309,7 +309,7 @@
   // Tags the adapter ALREADY pushes explicitly (op / pick / nav / detail) — skip so the drain never doubles them.
   var _EXPLICIT_TAGS = { KERNEL_OP: 1, BUILDING_OPEN: 1, GRID_MOVE: 1, ELEMENT_PLACE: 1, ELEMENT_PICK: 1,
                          PICK: 1, FOCUS: 1, PHASE_LENS: 1, FILTER: 1, ROOM: 1,
-                         CLASH_INSPECT: 1, SECTION_CUT: 1, MEASURE: 1 };
+                         CLASH_INSPECT: 1, SECTION_CUT: 1, MEASURE: 1, WING_PLANE: 1, EXPORT_2D: 1 };
   var _tapHW = -1;        // high-water: the last consumed crumb index (e.t), so we never re-mint
   var _draining = false;  // re-entry guard (the drain's own §HIST_TAP_DOT/§HIST_PUSH are DENYed in the tap too)
   function _drainTap() {
@@ -361,7 +361,7 @@
   // §2 chip icon by WHAT: single element → discipline icon · building-open → home · group/scope → magnifier.
   var _DISC_ICON = { STR: 'discSTR', ARC: 'discARC', MEP: 'discMEP', FP: 'discFP', ELEC: 'discELEC', ACMV: 'discACMV', PLMB: 'discPLMB' };
   // A1 detail events get their action's own icon so the dot reads at a glance.
-  var _EVENT_ICON = { 'CLASH_INSPECT': 'triangle', 'SECTION_CUT': 'scissors', 'MEASURE': 'ruler' };
+  var _EVENT_ICON = { 'CLASH_INSPECT': 'triangle', 'SECTION_CUT': 'scissors', 'MEASURE': 'ruler', 'WING_PLANE': 'scissors', 'EXPORT_2D': 'search' };
   function _stepIcon(e) {
     if (e.kind === 'pick') return _DISC_ICON[String((e.params && e.params.disc) || '').toUpperCase()] || null;
     if (e.kind === 'event') return _EVENT_ICON[e.type] || 'search';
