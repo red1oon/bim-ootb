@@ -958,17 +958,21 @@
   }
   // wingOpts: { name, angle (deg; default = dominant), tol }. Filters the model to the wing and rotates it by -angle about the centre of the kept walls. Logs §WING.
   function frameWing(model, wo, log) {
-    const dom = wo.angle === undefined ? wingDominant(model) : { deg: wo.angle };
+    // §F7 the 2D wand: `turn` (deg, any real) is the direction of the plane's edge = the sheet's +X, full circle: the family (mod 90) picks the walls, the sheet is turned by the family's own
+    // direction plus the quarter turns `turn` asks for (0 / 90 / 180 / 270 = four sheet orientations of one frame); `pivot` [x, y] (model metres) replaces the envelope centre. Both are stated in @FRAME.
+    const hasTurn = typeof wo.turn === 'number' && isFinite(wo.turn), turn = hasTurn ? ((wo.turn % 360) + 360) % 360 : null;
+    const dom = wo.angle !== undefined ? { deg: wo.angle } : hasTurn ? { deg: Math.round(turn % 90) % 90 } : wingDominant(model);
     if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return null; }
     const bin = dom.deg, name = wo.name || 'WING' + bin, tol = wo.tol === undefined ? WING_TOL : wo.tol;
-    const fr = frameModel(model, bin, tol), wl = model.walls, angle = wingMeanAngle(wl, bin);
-    if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${angle}`); return null; }
-    const env0 = envelope(wl), ox = (env0[0] + env0[1]) / 2, oy = (env0[2] + env0[3]) / 2;
+    const fr = frameModel(model, bin, tol), wl = model.walls, fam = wingMeanAngle(wl, bin);
+    if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${fam}`); return null; }
+    const angle = hasTurn ? Number((fam + 90 * Math.round((turn - fam) / 90)).toFixed(6)) : fam;
+    const env0 = envelope(wl), pv = Array.isArray(wo.pivot) && wo.pivot.length === 2 && wo.pivot.every(Number.isFinite) ? wo.pivot : null, ox = pv ? pv[0] : (env0[0] + env0[1]) / 2, oy = pv ? pv[1] : (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
     model.rules = { l117: true, l118: true, l119: true, l121: true };   // §L1.17-§L1.21: a wing set always takes them
     if (frameModel.lastCurt) log.add(`§WING_CURTAINS kept=${frameModel.lastCurt.kept} unframed=${frameModel.lastCurt.unframed}`);
     if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} owned_by_another_wing=${frameModel.lastSym.outside}`);
-    log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
+    log.add(`§WING name=${name} angle=${angle} tol=${tol} centre=${fx(ox, 4)},${fx(oy, 4)}${pv ? ' pivot=stated' : ''} kept=${fr.kept} framed_walls=${wl.length} unframed=${JSON.stringify(fr.unframed)}`);
     return { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total };
   }
   // opts: { name, angle (deg; default = dominant), tol, premodel(model) (test hook: applied right after loading) } -> plan sheets of ONE wing, in the wing's own frame
