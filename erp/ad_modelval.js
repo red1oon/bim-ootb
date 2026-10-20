@@ -130,7 +130,8 @@
         // payment-term / price-list parts of setBPartner ride the existing :1282/:1315 hooks below.
         var r = info.record, dd = d(info);
         var locNow = (dd.c_bpartner_location_id !== undefined) ? dd.c_bpartner_location_id : r.c_bpartner_location_id;
-        if (Number(locNow) || !Number(r.c_bpartner_id)) return null;   // FS-13: synthetic (negative) ids count as set
+        if (Number(locNow)) return null;   // FS-13: synthetic (negative) ids count as set
+        if (!Number(r.c_bpartner_id)) return 'Business Partner has no Ship To Address - null_null';   // :1269-1270 `new MBPartner(ctx, 0)` has no location -> :772-774 throws (BPartnerNoShipToAddress, args = the blank partner's Value_Name)
         var bp = null;   // a slimmed bundle without c_bpartner.salesrep_id (bim-compiler's glassbowl_data.db fixture) → no BP sales rep: conservative, never invented
         try { bp = db.prepare('SELECT salesrep_id FROM c_bpartner WHERE c_bpartner_id=?').get(Number(r.c_bpartner_id)); } catch (eGap) { bp = null; }
         if (bp && Number(bp.salesrep_id) > 0 && !(Number(r.salesrep_id) > 0)) dd.salesrep_id = Number(bp.salesrep_id);

@@ -38,6 +38,7 @@ const LINE = (oid) => [['AD_Org_ID', '11'], ['C_Order_ID', String(oid)], ['Line'
     { n: 'update_header', m: 'update_data', c: (s) => ({ type: 'Pilot_updateData_C_Order', table: 'C_Order', id: oid[s], action: 'Update', fields: [['Description', 'via web service']] }), st: 'a' },
     { n: 'docaction_invalid', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'ZZ' }), st: 'a' },
     { n: 'docaction_missing_record', m: 'set_docaction', d: () => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: 99999999, action: 'CO' }) },
+    { n: 'docaction_recordid0', m: 'set_docaction', d: () => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: 0, action: 'CO' }) },
     { n: 'docaction_unknown_table', m: 'set_docaction', d: () => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_NoSuchTable', id: 1, action: 'CO' }) },
     { n: 'complete_ok', m: 'set_docaction', d: (s) => ({ type: 'Pilot_setDocAction_C_Order', table: 'C_Order', id: oid[s], action: 'CO' }), st: 'a', ok: 1 },
     { n: 'update_completed_order', m: 'update_data', c: (s) => ({ type: 'Pilot_updateData_C_Order', table: 'C_Order', id: oid[s], action: 'Update', fields: [['Description', 'edit after complete']] }), st: 'a' },
