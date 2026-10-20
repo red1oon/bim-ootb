@@ -24,8 +24,9 @@
   // ModelCRUDRequest -> { crud:{serviceType,tableName,recordId,filter,action,offset,limit,fields[]}, login:{...} }
   function parseRequest(xml) {
     var crudX = (/<(?:\w+:)?ModelCRUD>([\s\S]*?)<\/(?:\w+:)?ModelCRUD>/.exec(xml) || [])[1] || '', loginX = (/<(?:\w+:)?ADLoginRequest>([\s\S]*?)<\/(?:\w+:)?ADLoginRequest>/.exec(xml) || [])[1] || '';
+    // lval = DataField attribute (idempiere-schema.xsd :44)
     var fields = [], re = /<(?:\w+:)?field\b([^>]*)>([\s\S]*?)<\/(?:\w+:)?field>/g, m;
-    while ((m = re.exec(crudX))) { var col = (/column="([^"]*)"/.exec(m[1]) || [])[1]; if (col != null) fields.push({ column: col, val: tag(m[2], 'val'), lval: tag(m[2], 'lval') }); }
+    while ((m = re.exec(crudX))) { var col = (/\bcolumn="([^"]*)"/.exec(m[1]) || [])[1], lv = (/\blval="([^"]*)"/.exec(m[1]) || [])[1]; if (col != null) fields.push({ column: col, val: tag(m[2], 'val'), lval: lv == null ? null : unesc(lv) }); }
     var num = function (n) { var v = tag(crudX, n); return v == null || v === '' ? 0 : parseInt(v, 10); };
     var sdaX = (/<(?:\w+:)?ModelSetDocAction>([\s\S]*?)<\/(?:\w+:)?ModelSetDocAction>/.exec(xml) || [])[1];
     var sda = sdaX == null ? null : { serviceType: tag(sdaX, 'serviceType'), tableName: tag(sdaX, 'tableName'), recordId: parseInt(tag(sdaX, 'recordID') || '0', 10), recordIdVar: tag(sdaX, 'recordIDVariable'), docAction: tag(sdaX, 'docAction') };
