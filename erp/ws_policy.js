@@ -23,6 +23,16 @@ function create(host) {
     opts = opts || {};
     const pol = policyOf(session.userId); if (!pol) return null;
     const who = session.actor, t = now();
+    // on-behalf-of: the person the agent acts for must SIGN the exact request (HMAC-SHA256 over sha256(body) with the key issued to that person at create time);
+    // a stated name is never taken on trust. Verified -> opts.principal (journalled); bad signature -> refused; absent -> allowed unless the identity was created with --require-principal.
+    const ob = opts.onBehalf;
+    if (opts.approved) { /* the signature was checked when the request was staged; the person approving is journalled apart */ }
+    else if (ob && ob.name) {
+      const row = (function () { try { return (q('SELECT key FROM ws_agent_principal WHERE ad_user_id=? AND principal=?', [session.userId, ob.name]) || [])[0]; } catch (e) { return null; } })();
+      const want = row ? crypto.createHmac('sha256', row.key).update(digest(ob.raw != null ? ob.raw : body)).digest('hex') : null;
+      if (!want || String(ob.sig || '') !== want) { alert('principal-mismatch', who, 'on-behalf-of "' + ob.name + '" ' + (row ? 'signature does not match the request' : 'is not a registered person for this identity')); return { error: 'Web Service Error: on-behalf-of signature invalid' }; }
+      opts.principal = ob.name;
+    } else if (pol.require_principal === 'Y') { alert('principal-missing', who, 'request without a signed on-behalf-of person'); return { error: 'Web Service Error: this identity must name, and sign for, the person it acts for' }; }
     if (pol.expires_at && t >= Date.parse(pol.expires_at)) {                       // short-lived identity: expiry = revoke
       try { host.run("UPDATE ad_user SET isactive='N' WHERE ad_user_id=" + Number(session.userId) + ";\nUPDATE ad_role SET isactive='N' WHERE ad_role_id=" + Number(session.roleId) + ";\n"); } catch (e) { /* kernel absent */ }
       alert('expired', who, 'identity expired at ' + pol.expires_at + ' and was deactivated');
@@ -36,7 +46,7 @@ function create(host) {
     if (pol.max_writes_per_hour && w.length >= Number(pol.max_writes_per_hour)) { alert('write-limit', who, w.length + ' writes in the last hour (limit ' + pol.max_writes_per_hour + ')'); return { error: 'Web Service Error: write limit reached for this identity (' + pol.max_writes_per_hour + ' per hour); nothing was written' }; }
     if (pol.approve_writes === 'Y' && !opts.approved) {                            // approval bound to the exact action
       const id = nextId++, d = digest(body);
-      pending.push({ id: id, at: new Date(t).toISOString(), actor: who, userId: session.userId, method: method, digest: d, body: body, state: 'PENDING' });
+      pending.push({ id: id, principal: opts.principal || null, at: new Date(t).toISOString(), actor: who, userId: session.userId, method: method, digest: d, body: body, state: 'PENDING' });
       alert('staged', who, 'request #' + id + ' ' + method + ' staged for a person (digest ' + d.slice(0, 12) + ')');
       return { staged: id, digest: d, error: 'Pending approval: request #' + id + ' (' + method + ') was staged for a person and NOTHING was written. Do not retry; a person approves it by its digest ' + d.slice(0, 12) + '.' };
     }

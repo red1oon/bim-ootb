@@ -31,7 +31,7 @@ async function start(port, extraSql, opts) {
         if (/\.sql$/.test(f)) { try { kernel.run(fs.readFileSync(fp, 'utf8')); console.log('§WS agents-dir applied ' + f); } catch (e) { console.log('§WS agents-dir FAILED ' + f + ' ' + e.message); } }
         else if (/^(approve|reject)-\d+\.json$/.test(f)) {   // a person's decision on a staged request (ws_agent.js approve|reject)
           try { const d = JSON.parse(fs.readFileSync(fp, 'utf8')); let out;
-            if (/^approve/.test(f)) { out = policy.approve(d.id, d.digest, d.approver || 'unknown', (pr) => { kernel.ctxMeta.v = { approvedBy: d.approver || 'unknown', stagedId: pr.id }; try { return ad.handle(pr.method, pr.body, { approved: true }); } finally { kernel.ctxMeta.v = null; } }); }
+            if (/^approve/.test(f)) { out = policy.approve(d.id, d.digest, d.approver || 'unknown', (pr) => { kernel.ctxMeta.v = { approvedBy: d.approver || 'unknown', stagedId: pr.id, onBehalfOf: pr.principal || null }; try { return ad.handle(pr.method, pr.body, { approved: true }); } finally { kernel.ctxMeta.v = null; } }); }
             else out = policy.reject(d.id, d.approver || 'unknown');
             fs.writeFileSync(fp.replace(/\.json$/, '.result.txt'), JSON.stringify({ ok: out.ok, error: out.error || null, answer: out.result ? String(out.result).slice(0, 600) : null }, null, 2)); savePending(); console.log('§WS decision ' + f + ' ok=' + out.ok); } catch (e) { console.log('§WS decision FAILED ' + f + ' ' + e.message); } } } }); } catch (e) { /* dir absent */ } }; scan(); server_scan = setInterval(scan, 500); }
   const server = http.createServer((req, res) => {
@@ -39,9 +39,11 @@ async function start(port, extraSql, opts) {
     if (!isOn()) { console.log('§WS off (plugin org.idempiere.webservices is not ACTIVE in ' + (opts.config || 'the host options') + ') -> 404'); res.writeHead(404); res.end(); return; }   // a stopped bundle serves nothing
     if (!m || req.method !== 'POST') { res.writeHead(m ? 405 : 404); res.end(); return; }
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {
+      const rawBody = body, onBehalf = req.headers['x-on-behalf-of'] ? { name: String(req.headers['x-on-behalf-of']), sig: String(req.headers['x-on-behalf-sig'] || ''), raw: rawBody } : null;
       const asJson = /json/i.test(String(req.headers['content-type'] || '')), tableHint = asJson ? ((/"(?:TableName|tableName)"\s*:\s*"([^"]*)"/.exec(body) || [])[1] || null) : null;
       if (asJson) { try { body = JsonBinding.toXml(body); } catch (e) { res.writeHead(400); res.end('{"Error":"Bad JSON request"}'); return; } }
-      let out, status = 200; try { out = ad.handle(m[1], body); savePending(); if (out && typeof out === 'object') { status = out.status; out = out.body; } } catch (e) { out = '<?xml version="1.0" encoding="UTF-8"?><_0:WindowTabData xmlns:_0="http://idempiere.org/ADInterface/1_0"><_0:Error>' + String(e.message).replace(/</g, '&lt;') + '</_0:Error></_0:WindowTabData>'; }
+      let out, status = 200; try { out = ad.handle(m[1], body, { onBehalf: onBehalf }); savePending(); if (out && typeof out === 'object') { status = out.status; out = out.body; } } catch (e) { out = '<?xml version="1.0" encoding="UTF-8"?><_0:WindowTabData xmlns:_0="http://idempiere.org/ADInterface/1_0"><_0:Error>' + String(e.message).replace(/</g, '&lt;') + '</_0:Error></_0:WindowTabData>'; }
+      kernel.ctxMeta.v = null;
       console.log('§WS ' + m[1] + ' bytes=' + out.length + ' err=' + (/<_0:Error>/.test(out) ? (/<_0:Error>([^<]*)/.exec(out) || [])[1] : '-'));
       // a fault: legacy answers HTTP 500 with the Jetty HTML page, or an EMPTY body when the client asked for application/xml (the fault cannot be serialised as XML) - observed on the pilot
       if (asJson && status === 200) { out = JsonBinding.toJson(out, ad.typeOf, tableHint); console.log('§WS json ' + m[1] + ' bytes=' + out.length); res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(out); return; }

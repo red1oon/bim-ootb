@@ -333,7 +333,8 @@
         if (host.policy && /^(read_data|query_data|create_data|update_data|delete_data|set_docaction|run_process)$/.test(method)) {   // host-enforced policy (ws_policy.js): expiry, rate/volume limits, staged approval - BEFORE any work
           var lg = login(p.login);
           if (lg.session) {
-            var pr = host.policy.before(lg.session, method, xml, { approved: !!(hopts && hopts.approved) });
+            var po = { approved: !!(hopts && hopts.approved), onBehalf: hopts && hopts.onBehalf }, pr = host.policy.before(lg.session, method, xml, po);
+            if (po.principal && K && K.ctxMeta) K.ctxMeta.v = Object.assign({}, K.ctxMeta.v || {}, { onBehalfOf: po.principal });   // the server clears it after the call
             if (pr && pr.error) return /^(read_data|query_data)$/.test(method) ? wtdError(pr.error) : method === 'run_process' ? ('<?xml version="1.0" encoding="UTF-8"?>\n<_0:RunProcessResponse IsError="true" xmlns:_0="' + NS + '"><_0:Error>' + esc(pr.error) + '</_0:Error><_0:Summary></_0:Summary><_0:LogInfo/></_0:RunProcessResponse>') : std(null, true, pr.error);
           }
         }
