@@ -54,16 +54,17 @@ function setupWing2D(A) {
   var _mods = null;
   function loadModules() {
     if (_mods) return _mods;
+    var t0 = performance.now();
     _mods = loadScript('../modeller/dxf_export_ui.js?v=1').then(function () { return window.DxfExportUI.loadScripts(); }).then(function () { return window.DxfSheetView || loadScript('dxf_sheet_view.js?v=1'); })
-      .catch(function (e) { _mods = null; throw e; });
+      .then(function () { log('_MODULES ms=' + Math.round(performance.now() - t0)); }).catch(function (e) { _mods = null; throw e; });
     return _mods;
   }
   function qOf(db) { return function (sql) { return rows(db, sql); }; }
   function angDiff90(a, b) { var d = Math.abs(a - b) % 90; return Math.min(d, 90 - d); }
   function analyse() {   // the wall directions (mod 90) of the model, for snapping and the live count
-    var Sd = window.Std2d, m = Sd.loadModel(qOf(S.side), { add: function () {}, gap: function () {} });
+    var t0 = performance.now(), Sd = window.Std2d, m = Sd.loadModel(qOf(S.side), { add: function () {}, gap: function () {} });
     S.walls = m.walls.map(function (w) { var a = Sd.elementAngle(w); return a && a.q >= 0.5 ? a.deg : null; }).filter(function (v) { return v !== null; });
-    S.fam = Sd.wingAngles(m); log('_SIDECAR walls=' + S.walls.length + ' families=' + JSON.stringify(S.fam));
+    S.fam = Sd.wingAngles(m); log('_SIDECAR walls=' + S.walls.length + ' families=' + JSON.stringify(S.fam) + ' analyse_ms=' + Math.round(performance.now() - t0));
     refreshTools();
   }
   function framedCount(turn) { var b = ((turn % 90) + 90) % 90; return S.walls.filter(function (d) { return angDiff90(d, b) <= FAM_TOL; }).length; }
