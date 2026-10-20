@@ -45,6 +45,7 @@
 // v1642 (2026-10-20) §F7 wing_2d.js changed (PRECACHE_ASSETS): the pill is no longer pulsed when Save flies the 2D card into the pill area.
 // v1643 (2026-10-20) §F7 wing_2d.js changed (PRECACHE_ASSETS): the Viewer passes its georef true north to the 2D writer (north arrow on plan sheets, or NORTH NOT STATED).
 // v1644 (2026-10-21) §F7 wing_2d.js changed (PRECACHE_ASSETS): the 2D plans ask the writer for a 5 m scale bar.
+// v1645 (2026-10-21) §F7 wing_2d.js changed (PRECACHE_ASSETS): the 2D overlay card is sized to the screen (60% of the width on a phone).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
 // v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
 // storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
@@ -203,7 +204,7 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1644';
+const CACHE_VERSION = 'v1645';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
