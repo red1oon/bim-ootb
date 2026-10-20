@@ -49,10 +49,11 @@ function build(db) {
       if (comp) undoOf(Object.assign({}, o, { id: fix(o.id) }), cs, t);
       if (o.op_type === 'CRUD_CREATE') {
         const f = Object.assign({}, o.fields), pk = t + '_id';
-        if (cs.indexOf(pk) >= 0) { f[pk] = newId(t); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];
+        if (cs.indexOf(pk) >= 0) { if (f[pk] == null) f[pk] = newId(t); else nextId[t] = Math.max(nextId[t] == null ? 0 : nextId[t], Number(f[pk])); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];   // a replayed op already carries its id
         if (std) { if (cs.indexOf('created') >= 0 && f.created == null) f.created = std.now; if (cs.indexOf('createdby') >= 0 && f.createdby == null) f.createdby = std.user; if (cs.indexOf('updated') >= 0 && f.updated == null) f.updated = std.now; if (cs.indexOf('updatedby') >= 0 && f.updatedby == null) f.updatedby = std.user;
           if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = crypto.randomUUID(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
         Object.keys(f).forEach(function (k) { f[k] = typeof f[k] === 'string' ? f[k].replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { return String(ids[Number(d)]); }) : f[k]; f[k] = fix(f[k]); if (cs.indexOf(k) < 0) delete f[k]; });
+        o.fields = f;   // the op now holds exactly what was written (id, stamps, uuid): the journal payload replays it verbatim
         if (comp && cs.indexOf(pk) >= 0) comp.undo.push({ kind: 'delete', table: t, idc: pk, id: f[pk] });
         const ks = Object.keys(f); db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k] === undefined ? null : f[k]; }));
       } else if (o.op_type === 'CRUD_UPDATE') {
@@ -72,18 +73,34 @@ function build(db) {
   }
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
   function commit(session, ops, meta) {
-    const e0 = env(session), ids = apply(ops, { now: e0.now, user: e0.user, client: e0.client, org: e0.org });
-    if (comp) { comp.pend.push({ session: session, ops: ops, meta: (meta || ctxMeta.v) ? Object.assign({}, meta || {}, ctxMeta.v || {}) : null }); return ids; }
-    return journalOf(session, ops, meta ? Object.assign({}, meta, ctxMeta.v || {}) : (ctxMeta.v ? Object.assign({}, ctxMeta.v) : null), ids);
+    const e0 = env(session), std = { now: e0.now, user: e0.user, client: e0.client, org: e0.org }, ids = apply(ops, std);
+    if (comp) { comp.pend.push({ session: session, ops: ops, std: std, meta: (meta || ctxMeta.v) ? Object.assign({}, meta || {}, ctxMeta.v || {}) : null }); return ids; }
+    return journalOf(session, ops, meta ? Object.assign({}, meta, ctxMeta.v || {}) : (ctxMeta.v ? Object.assign({}, ctxMeta.v) : null), ids, std);
   }
-  function journalOf(session, ops, metaAll, ids) {
+  function journalOf(session, ops, metaAll, ids, std) {
     const prev = journal.length ? journal[journal.length - 1].hash : '0'.repeat(64);
     const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: metaAll, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
     entry.hash = crypto.createHash('sha256').update(prev + JSON.stringify([entry.seq, entry.actor, entry.meta, entry.opsDigest])).digest('hex');
+    entry.payload = { std: std, ops: ops };   // NOT in the hash chain; its digest is (opsDigest): a changed payload is detected on replay
     journal.push(entry); if (hooks.onJournal) hooks.onJournal(entry); return ids;
   }
+  // replay(text): rebuild a host's data from its journal file - the chain is verified FIRST (a broken line refuses the whole replay), every payload must match its opsDigest, then the
+  // op groups are applied in order exactly as written (ids, stamps, uuids included). Returns { entries, replayed, skipped }.
+  function replay(text) {
+    const v = verifyJournal(text); if (!v.ok) throw new Error('journal does not verify: broken at line ' + v.brokenAt + ' (' + v.why + ')');
+    let replayed = 0, skipped = 0;
+    text.split('\n').filter(Boolean).forEach(function (ln) {
+      const e = JSON.parse(ln);
+      if (e.payload && e.payload.ops) {
+        if (crypto.createHash('sha256').update(JSON.stringify(e.payload.ops)).digest('hex') !== e.opsDigest) throw new Error('journal payload of seq ' + e.seq + ' does not match its digest');
+        apply(e.payload.ops, e.payload.std); replayed++;
+      } else skipped++;
+      journal.push(e);
+    });
+    return { entries: journal.length, replayed: replayed, skipped: skipped };
+  }
   function compositeBegin() { comp = { undo: [], pend: [] }; }
-  function compositeCommit() { if (!comp) return; const p = comp.pend; comp.undo = []; comp.pend = []; p.forEach(function (x) { journalOf(x.session, x.ops, x.meta, []); }); }   // the journal gets the group at commit, in order
+  function compositeCommit() { if (!comp) return; const p = comp.pend; comp.undo = []; comp.pend = []; p.forEach(function (x) { journalOf(x.session, x.ops, x.meta, [], x.std); }); }   // the journal gets the group at commit, in order
   function compositeRollback() {
     if (!comp) return; const u = comp.undo; comp.undo = []; comp.pend = [];
     for (let i = u.length - 1; i >= 0; i--) {
@@ -101,7 +118,7 @@ function build(db) {
     let ids = []; if (ok && ops.length) ids = commit(session, ops, meta);
     return Object.assign({}, r, { ok: ok, ops: ops, ids: ids, log: trx.log, trx: trx });
   }
-  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, composite: { begin: compositeBegin, commit: compositeCommit, rollback: compositeRollback, end: compositeEnd }, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
+  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, replay: replay, composite: { begin: compositeBegin, commit: compositeCommit, rollback: compositeRollback, end: compositeEnd }, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
 }
 // verifyJournal(text) -> { ok, entries, actors:{actor:n}, brokenAt } : re-derives every hash from the previous one; a changed, removed or reordered line breaks the chain from there on
 function verifyJournal(text) {
