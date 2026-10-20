@@ -40,7 +40,7 @@
     if (rp) crudX = '<serviceType>' + (rp.serviceType || '') + '</serviceType>';
     return {
       docAction: sda, runProcess: rp, getList: gl,
-      crud: { serviceType: tag(crudX, 'serviceType'), tableName: tag(crudX, 'TableName'), recordId: num('RecordID'), filter: tag(crudX, 'Filter'), action: tag(crudX, 'Action'), offset: num('Offset'), limit: num('Limit'), fields: fields, hasDataRow: /<(?:\w+:)?DataRow/.test(crudX) },
+      crud: { serviceType: tag(crudX, 'serviceType'), tableName: tag(crudX, 'TableName'), recordId: num('RecordID'), recordIdVar: tag(crudX, 'recordIDVariable'), filter: tag(crudX, 'Filter'), action: tag(crudX, 'Action'), offset: num('Offset'), limit: num('Limit'), fields: fields, hasDataRow: /<(?:\w+:)?DataRow/.test(crudX) },
       login: { user: tag(loginX, 'user'), pass: tag(loginX, 'pass'), lang: tag(loginX, 'lang'), clientId: parseInt(tag(loginX, 'ClientID') || '0', 10), roleId: parseInt(tag(loginX, 'RoleID') || '0', 10), orgId: parseInt(tag(loginX, 'OrgID') || '0', 10), warehouseId: parseInt(tag(loginX, 'WarehouseID') || '0', 10), stage: parseInt(tag(loginX, 'stage') || '0', 10) }
     };
   }
@@ -73,14 +73,14 @@
       var whs = q("SELECT m_warehouse_id AS id FROM m_warehouse WHERE isactive='Y' AND ad_org_id=?", [l.orgId]);
       if (whs.length) { if (!whs.some(function (w) { return Number(w.id) === l.warehouseId; })) return { error: 'Error logging in - warehouse not allowed for this org' }; }   // :185-186
       else if (l.warehouseId > 0) return { error: 'Error logging in - warehouse not allowed for this org' };                                                          // :188-189
-      return { session: { actor: 'ws:' + l.user + '/client:' + l.clientId + '/role:' + l.roleId, userId: Number(user.ad_user_id), roleId: l.roleId, clientId: l.clientId, orgId: l.orgId, warehouseId: l.warehouseId, allOrgs: role.allorgs === 'Y' } };
+      return { session: curSession = { actor: 'ws:' + l.user + '/client:' + l.clientId + '/role:' + l.roleId, userId: Number(user.ad_user_id), roleId: l.roleId, clientId: l.clientId, orgId: l.orgId, warehouseId: l.warehouseId, allOrgs: role.allorgs === 'Y' } };
     }
 
     // AbstractService.authenticate :221-285
-    function authenticate(session, methodValue, serviceTypeValue) {
-      var mid = METHOD[methodValue]; if (!mid) return { error: 'Method ' + methodValue + ' not registered' };                                                           // :228-229
+    function authenticate(session, methodValue, serviceTypeValue, wsId) {
+      var mid = methodValue === 'composite' ? 200001 : METHOD[methodValue]; if (!mid) return { error: 'Method ' + methodValue + ' not registered' };                                                           // :228-229
       var t = one("SELECT * FROM ws_webservicetype WHERE ad_client_id IN (0, ?) AND ws_webservice_id=? AND ws_webservicemethod_id=? AND value=? AND isactive='Y' ORDER BY ad_client_id DESC",
-        [session.clientId, WS_ID, mid, serviceTypeValue]);
+        [session.clientId, wsId || WS_ID, mid, serviceTypeValue]);
       if (!t) return { error: 'Service type ' + serviceTypeValue + ' not configured' };                                                                                  // :248
       var acc = one("SELECT isactive FROM ws_webservicetypeaccess WHERE ad_role_id IN (SELECT ad_role_id FROM ad_role WHERE ad_role_id=? UNION SELECT included_role_id FROM ad_role_included WHERE ad_role_id=?) AND ws_webservicetype_id=?", [session.roleId, session.roleId, t.ws_webservicetype_id]);          // AbstractService.ROLE_ACCESS_SQL :72-75 (the role itself UNION its AD_Role_Included roles)
       if (!acc || acc.isactive !== 'Y') return { error: "Web Service Error: Login role does not have access to the service type '" + serviceTypeValue + "'" };         // :270
@@ -131,10 +131,11 @@
       var pre = prelude('readData', p); if (pre.err) return wtdError(pre.err);
       var tn = pre.crud.tableName, t = tn && tableOf(tn);
       if (!t) return fault('Web service type ' + pre.type.value + ': table ' + tn + ' not found');                                                                      // :1368 (fault)
-      var cols = outputColumns(pre.type, tn), key = tn + '_id';
-      var row = one('SELECT * FROM ' + t.t + ' WHERE ' + key + '=?', [pre.crud.recordId]);
-      if (!row) return wtd('NumRows="0" TotalRows="0" StartRow="0"', '');                                                                                                  // :1375-1382 (PO null)
-      return wtd('NumRows="1" TotalRows="1" StartRow="1"', '<_0:DataSet><_0:DataRow>' + cols.map(function (c) { var v = row[c.toLowerCase()]; return '<_0:field column="' + esc(c) + '">' + cell(v) + '</_0:field>'; }).join('') + '</_0:DataRow></_0:DataSet>');
+      var cols = outputColumns(pre.type, tn), key = tn + '_id', rid = pre.crud.recordId;
+      if (p.crud.recordIdVar && p.crud.recordIdVar.charAt(0) === '@') { var rv1 = parseVarSql(p.crud.recordIdVar, null, curSession); if (rv1 == null) return wtdError('Cannot resolve variable: ' + p.crud.recordIdVar); rid = parseInt(rv1, 10); }   // :1353-1362
+      var row = one('SELECT * FROM ' + t.t + ' WHERE ' + key + '=?', [rid]);
+      if (!row) return wtd('NumRows="0" TotalRows="0" StartRow="0"', '<_0:RowCount>0</_0:RowCount><_0:Success>false</_0:Success>');                                // :1373-1382 (PO null)
+      return wtd('NumRows="1" TotalRows="1" StartRow="1"', '<_0:DataSet><_0:DataRow>' + cols.map(function (c) { var v = row[c.toLowerCase()]; return '<_0:field column="' + esc(c) + '">' + cell(v) + '</_0:field>'; }).join('') + '</_0:DataRow></_0:DataSet><_0:RowCount>1</_0:RowCount><_0:Success>true</_0:Success>');   // :1398-1405
     }
 
     // ModelADServiceImpl.queryData :1419-1578
@@ -155,14 +156,115 @@
           else return fault('Web service type ' + pre.type.value + ': input column ' + f.column + ' not allowed');                                                       // :1507-1511
         }
       }
-      if (pre.crud.filter) sql += ' AND ' + pre.crud.filter;                                                                                                               // :1518-1521 (parseSQL: @vars@ not ported)
+      if (pre.crud.filter) { var fsql = pre.crud.filter; if (fsql.indexOf('@') >= 0) { try { fsql = parseSQLVars(' WHERE ' + fsql, params, null, curSession).replace(/^ WHERE /i, ''); } catch (e) { if (e.isFault) throw e; return fault(e.message); } } sql += ' AND ' + fsql; }   // :1516-1521 parseSQL
       var rows; try { rows = q(sql, params); } catch (e) { return wtdError(String(e && e.message || e)); }
       var offset = p.crud.offset || 0, limit = p.crud.limit || 0, cnt = 0, out = [];
       rows.forEach(function (r) { cnt++; if (offset >= cnt || (limit > 0 && offset + limit < cnt)) return; out.push(r); });                                               // :1536-1538
-      var body = '<_0:DataSet>' + out.map(function (r) { return '<_0:DataRow>' + cols.map(function (c) { return '<_0:field column="' + esc(c) + '">' + cell(r[c.toLowerCase()]) + '</_0:field>'; }).join('') + '</_0:DataRow>'; }).join('') + '</_0:DataSet>';
+      var body = (out.length ? '<_0:DataSet>' + out.map(function (r) { return '<_0:DataRow>' + cols.map(function (c) { return '<_0:field column="' + esc(c) + '">' + cell(r[c.toLowerCase()]) + '</_0:field>'; }).join('') + '</_0:DataRow>'; }).join('') + '</_0:DataSet>' : '<_0:DataSet/>') + '<_0:RowCount>' + out.length + '</_0:RowCount><_0:Success>true</_0:Success>';   // :1531-1558 (DataSet always created; RowCount, Success)
       return wtd('NumRows="' + out.length + '" TotalRows="' + cnt + '" StartRow="' + offset + '"', body);
     }
 
+
+    // ══ REQUEST CONTEXT + @VARIABLES (AbstractService.parseVariable :460-520, ModelADServiceImpl.parseVariable :1146-1175) ═══════════════════════════════════════════════════════
+    var rctx = {}, curSession = null;
+    function faultErr(msg) { var e = new Error(msg); e.isFault = true; return e; }
+    function ctxProp(name, session) {   // CompiereService.getCtx().getProperty("#...") of the WS login
+      var m = { '#AD_Client_ID': session.clientId, '#AD_Org_ID': session.orgId, '#AD_User_ID': session.userId, '#AD_Role_ID': session.roleId, '#M_Warehouse_ID': session.warehouseId, '#AD_Language': 'en_US' };
+      return m[name] == null ? null : String(m[name]);
+    }
+    function roVal(obj, col) { var k = String(col).toLowerCase(); return Object.prototype.hasOwnProperty.call(obj, k) && obj[k] != null ? obj[k] : null; }
+    // value of "@..." given in a field (setValueAccordingToClass): '#x' = login property, 'x' = request variable, 'Table.col' = a column of a record created/updated earlier in this request
+    function parseVarField(colName, str, session) {
+      var vn = str.slice(1);
+      if (vn.charAt(0) === '#') return ctxProp(vn, session);
+      var dot = vn.indexOf('.');
+      if (dot < 0) return Object.prototype.hasOwnProperty.call(rctx, vn) ? rctx[vn] : null;
+      var tbl = vn.slice(0, dot), col = vn.slice(dot + 1);
+      if (col.indexOf('.') >= 0) throw faultErr(str + ' contains un supported multi level object resolution');
+      var obj = rctx[tbl]; if (!obj || typeof obj !== 'object' || !obj.__po) throw faultErr(' input column ' + colName + ' can not found object of ' + tbl + '. Request variable ' + str + ' can not resolved');
+      return roVal(obj, col);
+    }
+    // AbstractService.parseVariable(varName, po, poInfo, requestCtx): recordIDVariable, ctx-variable inputs, @tokens@ in Filter / IdentifierLogic
+    function parseVarSql(vn, po, session) {
+      if (vn.charAt(0) === '@') vn = vn.slice(1);
+      var dot = vn.indexOf('.');
+      if (dot < 0) {
+        if (vn.charAt(0) === '#') { var v = ctxProp(vn, session); return v != null && /_ID$/.test(vn) ? parseInt(v, 10) : v; }
+        var val = null; if (po && roVal(po, vn) != null && colExists(po.__table, vn)) val = roVal(po, vn);
+        return val != null ? val : (Object.prototype.hasOwnProperty.call(rctx, vn) ? rctx[vn] : null);
+      }
+      var tbl = vn.slice(0, dot), col = vn.slice(dot + 1);
+      if (col.indexOf('.') >= 0) throw faultErr(' can not resolve ' + vn + '. contains un supported multi level object resolution');
+      var obj = rctx[tbl]; if (!obj || typeof obj !== 'object' || !obj.__po) throw faultErr(' can not found object of ' + tbl + '. Request variable ' + vn + ' can not resolved');
+      return roVal(obj, col);
+    }
+    function colExists(table, col) { return !!table && !!one("SELECT 1 AS x FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [table, col]); }
+    function parseSQLVars(sql, params, po, session) {   // AbstractService.parseSQL :393-440
+      if (sql.toLowerCase().indexOf(' where ') === -1) throw new Error('Invalid SQL: Query do not have any filtering criteria');
+      var out = '';
+      while (sql.indexOf('@') >= 0) {
+        var a = sql.indexOf('@'); out += sql.slice(0, a); sql = sql.slice(a + 1);
+        var b = sql.indexOf('@'); if (b === -1) throw new Error("Missing closing '@' in SQL");
+        var token = sql.slice(0, b), nullable = false; if (token.charAt(0) === '!') { nullable = true; token = token.slice(1); }
+        sql = sql.slice(b + 1);
+        var v = parseVarSql(token, po, session);
+        if (v == null && nullable) { var ix = out.lastIndexOf('='); out = out.slice(0, ix) + ' Is Null '; }
+        else if (v == null) throw new Error("Can not resolve variable '" + token + "' in sql");
+        else { out += ' ? '; params.push(v); }
+      }
+      return out + sql;
+    }
+    function putPO(table, row) { var r = Object.assign({}, row); Object.defineProperty(r, '__po', { value: true, enumerable: false }); Object.defineProperty(r, '__table', { value: table, enumerable: false, writable: true }); rctx[tableProper(table)] = r; }
+    function tableProper(t) { return (one("SELECT tablename FROM ad_table WHERE lower(tablename)=lower(?)", [t]) || {}).tablename || t; }
+
+    // ══ COMPOSITE (com.trekglobal.ws.CompositeServiceImpl): ordered operations in ONE transaction; any failed operation rolls back everything since the last commit (IsRolledBack) ═════════
+    var NS_ATTR = / xmlns:_0="[^"]*"/, XML_DECL = /^<\?xml[^>]*\?>\s*/;
+    function embed(xml) { return String(xml).replace(XML_DECL, '').replace(NS_ATTR, ''); }
+    function markRolledBack(x) { return x.replace(/^(<_0:StandardResponse\b[^>]*?)(\/?>)/, '$1 IsRolledBack="true"$2'); }
+    function compErr(msg, rolled) { return '<_0:StandardResponse IsError="true"' + (rolled ? ' IsRolledBack="true"' : '') + '><_0:Error>' + esc(msg) + '</_0:Error></_0:StandardResponse>'; }
+    function compWrap(blocks) { return '<?xml version="1.0" encoding="UTF-8"?>\n<_0:CompositeResponses xmlns:_0="' + NS + '">' + blocks.map(function (b) { return '<_0:CompositeResponse>' + b.join('') + '</_0:CompositeResponse>'; }).join('') + '</_0:CompositeResponses>'; }
+    function composite(xml, hopts) {
+      var head = xml.slice(0, Math.max(0, xml.search(/<(?:\w+:)?operations\b/))) || xml, loginX = (/<(?:\w+:)?ADLoginRequest>[\s\S]*?<\/(?:\w+:)?ADLoginRequest>/.exec(xml) || [''])[0];
+      var p = parseRequest(head + '<ModelCRUD><serviceType>' + (tag(head, 'serviceType') || '') + '</serviceType></ModelCRUD>');
+      var l = login(p.login); if (l.error) return compWrap([[compErr(l.error, false)]]);
+      var st = tag(head.replace(/<(?:\w+:)?ADLoginRequest>[\s\S]*?<\/(?:\w+:)?ADLoginRequest>/, ''), 'serviceType');
+      var a = authenticate(l.session, 'composite', st, 200001); if (a.error) return compWrap([[compErr(a.error, false)]]);
+      var needK = requireKernel(); if (needK) return compWrap([[compErr(needK, false)]]);
+      var blocks = [], K2 = K.composite, PORT = { createData: 'create_data', readData: 'read_data', updateData: 'update_data', deleteData: 'delete_data', runProcess: 'run_process', setDocAction: 'set_docaction', createUpdateData: 'create_update_data' };
+      var opsRe = /<(?:\w+:)?operations>([\s\S]*?)<\/(?:\w+:)?operations>/g, mb;
+      K2.begin();
+      try {
+        while ((mb = opsRe.exec(xml))) {
+          var ops = [], opRe = /<(?:\w+:)?operation\b([^>]*)>([\s\S]*?)<\/(?:\w+:)?operation>/g, mo;
+          while ((mo = opRe.exec(mb[1]))) ops.push({ pre: /\bpreCommit="true"/.test(mo[1]), post: /\bpostCommit="true"/.test(mo[1]), port: tag(mo[2], 'TargetPort'), crud: (/<(?:\w+:)?ModelCRUD>[\s\S]*?<\/(?:\w+:)?ModelCRUD>/.exec(mo[2]) || [null])[0], sda: (/<(?:\w+:)?ModelSetDocAction>[\s\S]*?<\/(?:\w+:)?ModelSetDocAction>/.exec(mo[2]) || [null])[0], rp: (/<(?:\w+:)?ModelRunProcess\b[\s\S]*?<\/(?:\w+:)?ModelRunProcess>/.exec(mo[2]) || [null])[0] });
+          if (!ops.length) continue;
+          var comp = [], agg = [];
+          blocks.push(comp);
+          var rollback = function (msg) { agg.forEach(function (x, i) { agg[i] = markRolledBack(x); }); if (msg != null && agg.length) agg[agg.length - 1] = agg[agg.length - 1].replace(/<_0:Error>[\s\S]*?<\/_0:Error>/, '').replace(/^(<_0:StandardResponse\b[^>]*?)(\/?>)/, function (m0, h, e) { return (/IsError=/.test(h) ? h : h + ' IsError="true"') + (e === '/>' ? '>' : '>'); }).replace(/<\/_0:StandardResponse>$/, '<_0:Error>' + esc(msg) + '</_0:Error></_0:StandardResponse>'); comp.push.apply(comp, agg); agg.length = 0; K2.rollback(); };
+          var commit = function () { K2.commit(); comp.push.apply(comp, agg); agg.length = 0; };
+          var ok = true;
+          for (var oi = 0; oi < ops.length && ok; oi++) {
+            var op = ops[oi];
+            if (op.pre) commit();
+            var m = PORT[op.port], body = null, respX = null;
+            if (m === 'run_process') { if (!op.rp) { agg.push(compErr('Operation runProcess must required ModelRunProcess', false)); rollback(null); ok = false; break; } body = '<ModelRunProcessRequest xmlns="' + NS + '">' + op.rp + loginX + '</ModelRunProcessRequest>'; }
+            else if (m === 'set_docaction') { if (!op.sda) { agg.push(compErr('Operation updateData must required ModelSetDocAction', false)); rollback(null); ok = false; break; } body = '<ModelSetDocActionRequest xmlns="' + NS + '">' + op.sda + loginX + '</ModelSetDocActionRequest>'; }
+            else if (m) { if (!op.crud) { if (m === 'read_data') { agg.push('<_0:StandardResponse><_0:Error>Operation readData must required ModelCRUD</_0:Error></_0:StandardResponse>'); continue; } agg.push(compErr('Operation ' + op.port + ' must required ModelCRUD', false)); rollback(null); ok = false; break; } body = '<ModelCRUDRequest xmlns="' + NS + '">' + op.crud + loginX + '</ModelCRUDRequest>'; }
+            else continue;
+            var out = API.handleOne(m, body, { composite: true, internal: true });
+            if (m === 'read_data') respX = '<_0:StandardResponse IsError="false">' + embed(out) + '</_0:StandardResponse>';
+            else if (m === 'run_process') { var e1 = /IsError="true"/.test(out.slice(0, 200)); respX = '<_0:StandardResponse' + (e1 ? ' IsError="true"' : '') + '>' + embed(out) + '</_0:StandardResponse>'; }
+            else respX = embed(out);
+            agg.push(respX);
+            if (/^<_0:StandardResponse\b[^>]*\bIsError="true"/.test(respX) && m !== 'read_data') { rollback(null); ok = false; break; }
+            if (op.post) commit();
+          }
+          if (ok) commit();
+        }
+      } catch (e) { K2.rollback(); K2.end(); throw e; }
+      K2.end();
+      return compWrap(blocks);
+    }
 
     // ModelADServiceImpl.getList :464-665 - the entries of an AD_Reference: a LIST (AD_Ref_List rows) or a TABLE reference (AD_Ref_Table: key, Value if IsValueDisplayed, then the identifier columns)
     function listErr(msg) { return wtd('', '<_0:DataSet/><_0:Success>false</_0:Success><_0:Error>' + esc(msg) + '</_0:Error><_0:ErrorInfo>' + esc(msg) + '</_0:ErrorInfo>'); }
@@ -217,7 +319,7 @@
         var w = [], par = [];
         for (var i = 0; i < keys.length; i++) {
           var kc = keys[i], cv = holder[kc.c.toLowerCase()];
-          if (kc.logic) return std(null, true, 'Web service type ' + a.type.value + ': IdentifierLogic (dynamic SQL, @vars@) is not ported');
+          if (kc.logic) { try { var lsql = parseSQLVars(kc.logic, par, holder, curSession); w.push('ot.' + kc.c + ' = (' + lsql + ')'); resolved.push('DYN SQL'); } catch (e) { if (e.isFault) throw e; return std(null, true, e.message); } continue; }   // :969-974
           if (cv == null && kc.nul === 'Y') w.push('ot.' + kc.c + ' IS NULL');
           else if (cv == null) return std(null, true, 'Web service type ' + a.type.value + ': Record Identifier column ' + kc.c + ' must be set');
           else { w.push('ot.' + kc.c + '=?'); par.push(cv); resolved.push(cv); }
@@ -237,7 +339,7 @@
       });
       if (!r.ok) return std(null, true, 'Cannot save record in ' + tname + ': ' + (r.error || 'SaveError'));
       var id = rid; if (!id) { var idx = -1; r.ops.forEach(function (o, i2) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i2; }); id = r.ids[idx]; }
-      var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t;
+      var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(a.type, saved));
     }
 
@@ -273,7 +375,7 @@
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i], fi = inp[f.column];
         if (!fi) return 'Web service type ' + type.value + ': input column ' + f.column + ' not allowed';                                                          // :1223-1225
-        if (!fi.col) continue;                                                                                                                                      // context variable: not ported (named)
+        if (!fi.col) { var vcls = classOf(fi.ref), vv = f.val != null && f.val.length > 0 && f.val.charAt(0) === '@' ? parseVarSql(f.val, row, curSession) : (f.val == null || f.val === '' ? null : convertToObj(f.val, /^(Posted|Processed|Processing)$/.test(fi.var) ? 'bool' : /^Record_ID$/.test(fi.var) ? 'int' : /^(AD_Language|EntityType)$/.test(fi.var) ? 'str' : vcls, fi.var)); rctx[fi.var] = vv; continue; }   // a context-variable input (no column): kept in the request context for @fi.var@ / @fi.var
         var col = one("SELECT lower(columnname) AS c, ad_reference_id AS ref, ad_reference_value_id AS rv, isalwaysupdateable AS alw, iskey AS k, columnsql FROM ad_column WHERE ad_column_id=?", [fi.ad_column_id]);
         if (!col) return 'Web service type ' + type.value + ': input column ' + f.column + ' does not exist';                                                       // :1203-1206
         if (processed && col.alw !== 'Y') return 'Web service type ' + type.value + ': input column ' + f.column + ' value could not be set: Document Processed';       // :1209-1211
@@ -286,7 +388,12 @@
             if (!hit) throw new Error(' Invalid Lookup value:' + f.lval);
             val = hit.id;
           } else if (f.val == null || f.val === '') val = null;
-          else val = convertToObj(f.val, classOf(col.ref), f.column);
+          else {
+            var cls = classOf(col.ref), pv = f.val.charAt(0) === '@' ? parseVarField(f.column, f.val, curSession) : null;   // setValueAccordingToClass :1125-1135
+            if (pv == null) val = convertToObj(f.val, cls, f.column);
+            else if (typeof pv === 'string' && cls !== 'str') val = convertToObj(pv, cls, f.column);
+            else val = pv;
+          }
         } catch (e) { return 'Web service type ' + type.value + ': input column ' + f.column + ' value could not be set: ' + e.message; }
         row[col.c] = val;
       }
@@ -341,7 +448,7 @@
       var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); return pre2 ? { ok: false, error: pre2 } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo)
       if (!r.ok) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
       var idx = -1; r.ops.forEach(function (o, i) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i; });
-      var id = r.ids[idx], saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t;
+      var id = r.ids[idx], saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(pre.type, saved));
     }
     function updateData(p) {
@@ -354,7 +461,7 @@
       err = fkError(t.t, row); if (err) return std(id, true, 'Cannot save record in ' + tn + ': ' + err);
       var r = K.inTrx(pre.session, { ws: 'update_data', type: pre.type.value, id: id }, function (trx, ML) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, id); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, id), ch); return sv.ok ? { ok: true, row: sv.row } : { ok: false, error: sv.error }; });
       if (!r.ok) return std(id, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));
-      var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t;
+      var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(pre.type, saved));
     }
     function deleteData(p) {
@@ -376,7 +483,8 @@
       if (mid > 0 && pid <= 0) { var mm = one("SELECT ad_process_id AS id FROM ad_menu WHERE ad_menu_id=? AND action='P'", [mid]); pid = mm ? Number(mm.id) : 0; }
       var proc = pid > 0 ? one("SELECT ad_process_id FROM ad_process WHERE ad_process_id=? AND isactive='Y'", [pid]) : null;
       if (!proc) return resp(true, 'Process not found');                                                                                                             // Process.java:215
-      var params = {}; (d.fields || []).forEach(function (f) { if (f.column === 'AD_Record_ID') { if (f.val) rid = parseInt(f.val, 10) || rid; } else if (f.val != null && f.val !== '') params[f.column] = f.val; });
+      var params = {}; (d.fields || []).forEach(function (f) { var fv = f.val; if (fv && fv.charAt(0) === '@') { var pv2 = parseVarField(f.column, fv, curSession); if (pv2 != null) fv = String(pv2); }   // Process.java :261 (request variables in parameters)
+        if (f.column === 'AD_Record_ID') { if (fv) rid = parseInt(fv, 10) || rid; } else if (fv != null && fv !== '') params[f.column] = fv; });
       var AP = typeof require === 'function' ? require('./ad_process.js') : self.AdProcess;
       var dbS = { prepare: function (sql) { return { get: function () { return one(sql, [].slice.call(arguments)); }, all: function () { return q(sql, [].slice.call(arguments)); }, run: function () {} }; } };
       var ctx = { runInTrx: function (fn) { var env = K.env(l.session); var jr = fn(K.q, env); if (jr && jr.ok && jr.ops && jr.ops.length) K.commit(l.session, jr.ops, { ws: 'run_process', type: a.type.value, process: pid }); return jr; } };
@@ -384,6 +492,7 @@
       if (!res.dispatched) return resp(true, res.message || res.reason || 'process not run');
       var lg = ((res.result && res.result.logs) || []).map(function (x) { return typeof x === 'string' ? x : (x.msg || x.message || x.m || JSON.stringify(x)); });
       var logs = lg.length ? '<![CDATA[<table width="100%" border="1" cellspacing="0" cellpadding="2">' + lg.map(function (t) { return '<tr><td>' + t + '</td></tr>'; }).join('') + '</table>]]>' : '';   // ProcessInfo.getLogInfo(true)
+      rctx[a.type.value + '_Summary'] = (res.result && res.result.summary) || res.message || '';   // :445
       return resp(!!(res.result && res.result.isError) || res.ok === false, (res.result && res.result.summary) || res.message || '', logs);
     }
     function setDocAction(p) {
@@ -396,6 +505,8 @@
         [v1, v2, v3].forEach(function (v) { if (v.fault) throw new Error(v.fault); });
         tn = v1.v; id = v2.v == null || v2.v === '0' ? 0 : parseInt(v2.v, 10); act = v3.v;
       } catch (e) { return std(null, true, e.message); }
+      if (d.recordIdVar && d.recordIdVar.charAt(0) === '@') { var rv0 = parseVarSql(d.recordIdVar, null, curSession); if (rv0 == null) return std(id, true, 'Cannot resolve variable: ' + d.recordIdVar); id = parseInt(rv0, 10); }   // :222-232
+      rctx.DocAction = act;                                                                                                                                         // :255
       var t = tn && tableOf(tn); if (!t) return std(id, true, 'No table ' + tn);                                                                                        // :239
       if (id === 0 && !(typeof K === 'undefined' || !K)) {   // blank PO: set DocAction, save (:246-250) - a failing beforeSave answers its message
         var nb = K.ML.newPO({ q: q, env: K.env(l.session) }, t.t, {}); nb.docaction = act;
@@ -412,10 +523,11 @@
         var out = ML.runWorkflow(trx, t.t, id, act);                                                                                                                       // :249-279 save DocAction, processIt, save
         return out.ok ? { ok: true } : { ok: false, error: out.msg || 'processIt failed' };
       });
+      if (process.env.WS_DEBUG && r.log) console.log('§WS-DEBUG set_docaction log\n' + r.log.join('\n'));
       if (!r.ok && /^model threw: /.test(r.error || '')) return std(id, true, 'org.adempiere.exceptions.AdempiereException: ' + parseTranslation((r.error || '').slice(13).replace(/^FailedProcessingDocument/, '@FailedProcessingDocument@')));   // an AdempiereException thrown out of processIt reaches the caller as e.toString() (WebServiceFacade catch), not the :267 message
       if (!r.ok) return std(id, true, parseTranslation('@FailedProcessingDocument@: ' + (r.error || '')));                                                                   // :267
       var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t;
-      return std(id, false, null, outputFields(a.type, saved));
+      return std(id, false, null, outputFields(a.type, saved)).replace('<_0:StandardResponse RecordID="' + id + '"', '<_0:StandardResponse RecordID="' + id + '" IsError="false"');   // setDocAction sets IsError=false explicitly (:293)
     }
 
     function typeOf(table, column) {   // the Java class of a column as the JSON binding sees it (DisplayType.getClass): numbers stay numbers
@@ -423,14 +535,18 @@
       var c = one("SELECT c.ad_reference_id AS ref FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [table, column]);
       var k = c ? classOf(c.ref) : 'str'; return k === 'bool' || k === 'ts' ? 'str' : k;
     }
-    return {
+    var API = {
       typeOf: typeOf,
       handle: function (method, xml, hopts) {
+        hopts = hopts || {}; if (!hopts.composite) rctx = {};   // HttpServletRequest attribute "RequestCtx": one map per request, shared by the operations of a composite
+        try { if (method === 'composite_operation') return composite(xml, hopts); return API.handleOne(method, xml, hopts); } catch (e) { if (e && e.isFault) return fault(e.message); throw e; }
+      },
+      handleOne: function (method, xml, hopts) {
         var p; try { p = parseRequest(xml); } catch (e) { return wtdError('Bad request: ' + e.message); }
-        if (host.policy && /^(read_data|query_data|get_list|create_data|create_update_data|update_data|delete_data|set_docaction|run_process)$/.test(method)) {   // host-enforced policy (ws_policy.js): expiry, rate/volume limits, staged approval - BEFORE any work
+        if (host.policy && /^(read_data|query_data|get_list|create_data|create_update_data|update_data|delete_data|set_docaction|run_process|composite_operation)$/.test(method)) {   // host-enforced policy (ws_policy.js): expiry, rate/volume limits, staged approval - BEFORE any work
           var lg = login(p.login);
           if (lg.session) {
-            var po = { approved: !!(hopts && hopts.approved), onBehalf: hopts && hopts.onBehalf }, pr = host.policy.before(lg.session, method, xml, po);
+            var po = { approved: !!(hopts && hopts.approved), onBehalf: hopts && hopts.onBehalf }, pr = (hopts.composite ? null : host.policy.before(lg.session, method, xml, po));
             if (po.principal && K && K.ctxMeta) K.ctxMeta.v = Object.assign({}, K.ctxMeta.v || {}, { onBehalfOf: po.principal });   // the server clears it after the call
             if (pr && pr.error) return /^(read_data|query_data|get_list)$/.test(method) ? wtdError(pr.error) : method === 'run_process' ? ('<?xml version="1.0" encoding="UTF-8"?>\n<_0:RunProcessResponse IsError="true" xmlns:_0="' + NS + '"><_0:Error>' + esc(pr.error) + '</_0:Error><_0:Summary></_0:Summary><_0:LogInfo/></_0:RunProcessResponse>') : std(null, true, pr.error);
           }
@@ -449,6 +565,7 @@
         return wtdError('Method ' + method + ' not registered');
       }
     };
+    return API;
   }
   return { create: create, parseRequest: parseRequest };
 });

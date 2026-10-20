@@ -41,7 +41,7 @@ async function start(port, extraSql, opts) {
             else out = policy.reject(d.id, d.approver || 'unknown');
             fs.writeFileSync(fp.replace(/\.json$/, '.result.txt'), JSON.stringify({ ok: out.ok, error: out.error || null, answer: out.result ? String(out.result).slice(0, 600) : null }, null, 2)); savePending(); console.log('§WS decision ' + f + ' ok=' + out.ok); } catch (e) { console.log('§WS decision FAILED ' + f + ' ' + e.message); } } } }); } catch (e) { /* dir absent */ } }; scan(); server_scan = setInterval(scan, 500); }
   const server = http.createServer((req, res) => {
-    const m = /^\/ADInterface\/services\/rest\/model_adservice\/(\w+)$/.exec(req.url.split('?')[0]);
+    const m = /^\/ADInterface\/services\/rest\/(?:model_adservice|composite_service)\/(\w+)$/.exec(req.url.split('?')[0]);   // composite_service/composite_operation -> method composite_operation
     if (!isOn()) { console.log('§WS off (plugin org.idempiere.webservices is not ACTIVE in ' + (opts.config || 'the host options') + ') -> 404'); res.writeHead(404); res.end(); return; }   // a stopped bundle serves nothing
     if (!m || req.method !== 'POST') { res.writeHead(m ? 405 : 404); res.end(); return; }
     let body = ''; req.on('data', c => { body += c; }); req.on('end', () => {
