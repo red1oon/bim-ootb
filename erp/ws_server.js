@@ -28,10 +28,10 @@ async function start(port, extraSql, opts) {
     kernel.run("UPDATE ad_sysconfig SET value='Y' WHERE name='USER_PASSWORD_HASH';\n"); console.log('§WS passwords hashed users=' + n + ' algorithm=' + alg);
   }
   const policy = Policy.create({ q: kernel.q, run: kernel.run, onAlert: (a) => { console.log('§WS-ALERT ' + a.kind + ' ' + a.who + ' - ' + a.detail); if (opts.alerts) { try { fs.appendFileSync(opts.alerts, JSON.stringify(a) + '\n'); } catch (e) { /* no alert file */ } } } });
-  const ad = WS.create({ q: kernel.q, kernel, passwordMatch: require('./ws_password.js').isMatchHash, policy: opts.noPolicy ? null : policy }),   // noPolicy: W-WS-LIMITS negative control only
+  const ad = WS.create({ q: kernel.q, kernel, validators: opts.validators || [], passwordMatch: require('./ws_password.js').isMatchHash, policy: opts.noPolicy ? null : policy }),   // noPolicy: W-WS-LIMITS negative control only
      journal = kernel.journal;
   const savePending = () => { if (opts.agentsDir) { try { fs.writeFileSync(path.join(opts.agentsDir, 'pending.json'), JSON.stringify(policy.list(), null, 2)); } catch (e) { /* dir absent */ } } };
-  if (opts.journal) { try { const prev = fs.readFileSync(opts.journal, 'utf8').split('\n').filter(Boolean); const last = prev.length ? JSON.parse(prev[prev.length - 1]) : null; if (last) { kernel.journal.push(last); } } catch (e) { /* no journal yet */ } kernel.hooks.onJournal = (e) => fs.appendFileSync(opts.journal, JSON.stringify(e) + '\n'); }
+  if (opts.journal) { let txt = ''; try { txt = fs.readFileSync(opts.journal, 'utf8'); } catch (e) { /* no journal yet */ } if (txt) { const rp = kernel.replay(txt); console.log('§WS journal replayed entries=' + rp.entries + ' applied=' + rp.replayed + ' withoutPayload=' + rp.skipped); } kernel.hooks.onJournal = (e) => fs.appendFileSync(opts.journal, JSON.stringify(e) + '\n'); }
   if (opts.agentsDir) {   // tenant admin boundary = the filesystem: SQL files dropped in this directory are applied once, in name order, while the host runs (a revoke takes effect on the next request)
     const seen = {}; const scan = () => { try { fs.readdirSync(opts.agentsDir).filter(f => /\.(sql|json)$/.test(f) && f !== 'pending.json' && !/^\./.test(f)).sort().forEach(f => { const fp = path.join(opts.agentsDir, f), m = fs.statSync(fp).mtimeMs; if (seen[f] !== m) { seen[f] = m;
         if (/\.sql$/.test(f)) { try { kernel.run(fs.readFileSync(fp, 'utf8')); console.log('§WS agents-dir applied ' + f); } catch (e) { console.log('§WS agents-dir FAILED ' + f + ' ' + e.message); } }
@@ -63,8 +63,9 @@ async function start(port, extraSql, opts) {
 }
 module.exports = { start, openDb };
 if (require.main === module) {
+  // --validators <module.js>: a module exporting [{ type, validate, login }] (IWSValidator)
   const a = process.argv.slice(2), o = { config: null, agentsDir: null, journal: null }, sql = []; let port = 8089;
-  for (let i = 0; i < a.length; i++) { if (a[i] === '--config') o.config = a[++i]; else if (a[i] === '--agents') o.agentsDir = a[++i]; else if (a[i] === '--journal') o.journal = a[++i]; else if (a[i] === '--hash-passwords') o.hashPasswords = true; else if (a[i] === '--bind') { o.host = a[++i]; if (o.host !== '127.0.0.1' && o.host !== 'localhost') console.log('§WS WARNING --bind ' + o.host + ': the host speaks plain HTTP with the password in every request - put TLS (a reverse proxy) in front, never expose it directly'); } else if (/^\d+$/.test(a[i])) port = Number(a[i]); else sql.push(a[i]); }
+  for (let i = 0; i < a.length; i++) { if (a[i] === '--config') o.config = a[++i]; else if (a[i] === '--agents') o.agentsDir = a[++i]; else if (a[i] === '--journal') o.journal = a[++i]; else if (a[i] === '--hash-passwords') o.hashPasswords = true; else if (a[i] === '--validators') o.validators = (o.validators || []).concat(require(path.resolve(a[++i]))); else if (a[i] === '--bind') { o.host = a[++i]; if (o.host !== '127.0.0.1' && o.host !== 'localhost') console.log('§WS WARNING --bind ' + o.host + ': the host speaks plain HTTP with the password in every request - put TLS (a reverse proxy) in front, never expose it directly'); } else if (/^\d+$/.test(a[i])) port = Number(a[i]); else sql.push(a[i]); }
   if (!o.config) o.config = path.join(process.cwd(), 'ws_host.json');   // absent file = OFF
   start(port, sql, o).then(s => console.log('§WS listening port=' + s.address().port + ' plugin=' + (JSON.parse((() => { try { return fs.readFileSync(o.config, 'utf8'); } catch (e) { return '{}'; } })()).state || 'OFF (no ' + o.config + ')')));
 }

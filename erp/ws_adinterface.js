@@ -50,7 +50,14 @@
     var one = function (sql, p) { return (q(sql, p) || [])[0] || null; };
 
     // AbstractService.login :91-209 + Login.getClients/getRoles/getOrgs/getWarehouses (messages verbatim)
+    // IWSValidator (org.idempiere.webservices.IWSValidator + AbstractService.invokeWSValidator/invokeLoginValidator :615-665): the extension point. host.validators = [{ type:'GLOBAL'|<service type value>, validate(po,type,fields,timing,ctx), login(req,type,timing) }];
+    // GLOBAL ones run first; one that throws (Error) refuses the request with its message and nothing is written. The plugin host (not core code) registers them.
+    var TIMING = { BEFORE_PARSE: 1, AFTER_PARSE: 2, BEFORE_SAVE: 3, AFTER_SAVE: 4, BEFORE_LOGIN: 5, AFTER_LOGIN: 6, ON_AUTHORIZATION: 7, BEFORE_PROCESS: 8, AFTER_PROCESS: 9 };
+    function validatorsFor(typeValue) { var all = host.validators || []; return all.filter(function (v) { return v.type === 'GLOBAL'; }).concat(typeValue == null ? [] : all.filter(function (v) { return v.type === typeValue; })); }
+    function invokeV(type, timing, po, fields) { var vs = validatorsFor(type.value); for (var i = 0; i < vs.length; i++) { if (!vs[i].validate) continue; try { vs[i].validate(po, type, fields, timing, rctx); } catch (e) { return e && e.message != null ? e.message : String(e); } } return null; }
+    function invokeLoginV(req, type, timing) { var vs = validatorsFor(type ? type.value : null); for (var i = 0; i < vs.length; i++) { if (!vs[i].login) continue; try { vs[i].login(req, type, timing); } catch (e) { return e && e.message != null ? e.message : String(e); } } return null; }
     function login(l) {
+      var vb = invokeLoginV(l, null, TIMING.BEFORE_LOGIN); if (vb) return { error: vb };
       // MUser.get(ctx, name, password) :230-290: USER_PASSWORD_HASH (system level) -> authenticateHash (algorithm + salt per user), else the stored text equals the given one
       var hashOn = (function () { try { var sc = one("SELECT value FROM ad_sysconfig WHERE name='USER_PASSWORD_HASH' AND ad_client_id=0 AND isactive='Y'"); return !!sc && sc.value === 'Y'; } catch (e) { return false; } })();
       var cands = l.user ? q("SELECT * FROM ad_user WHERE isactive='Y' AND (name=? OR email=?) ORDER BY ad_user_id", [l.user, l.user]) : [];
@@ -73,6 +80,7 @@
       var whs = q("SELECT m_warehouse_id AS id FROM m_warehouse WHERE isactive='Y' AND ad_org_id=?", [l.orgId]);
       if (whs.length) { if (!whs.some(function (w) { return Number(w.id) === l.warehouseId; })) return { error: 'Error logging in - warehouse not allowed for this org' }; }   // :185-186
       else if (l.warehouseId > 0) return { error: 'Error logging in - warehouse not allowed for this org' };                                                          // :188-189
+      var va = invokeLoginV(l, null, TIMING.AFTER_LOGIN); if (va) return { error: va };
       return { session: curSession = { actor: 'ws:' + l.user + '/client:' + l.clientId + '/role:' + l.roleId, userId: Number(user.ad_user_id), roleId: l.roleId, clientId: l.clientId, orgId: l.orgId, warehouseId: l.warehouseId, allOrgs: role.allorgs === 'Y' } };
     }
 
@@ -83,7 +91,8 @@
         [session.clientId, wsId || WS_ID, mid, serviceTypeValue]);
       if (!t) return { error: 'Service type ' + serviceTypeValue + ' not configured' };                                                                                  // :248
       var acc = one("SELECT isactive FROM ws_webservicetypeaccess WHERE ad_role_id IN (SELECT ad_role_id FROM ad_role WHERE ad_role_id=? UNION SELECT included_role_id FROM ad_role_included WHERE ad_role_id=?) AND ws_webservicetype_id=?", [session.roleId, session.roleId, t.ws_webservicetype_id]);          // AbstractService.ROLE_ACCESS_SQL :72-75 (the role itself UNION its AD_Role_Included roles)
-      if (!acc || acc.isactive !== 'Y') return { error: "Web Service Error: Login role does not have access to the service type '" + serviceTypeValue + "'" };         // :270
+      if (!acc || acc.isactive !== 'Y') return { error: "Web Service Error: Login role does not have access to the service type '" + serviceTypeValue + "'" };
+      var vo = invokeLoginV(null, t, TIMING.ON_AUTHORIZATION); if (vo) return { error: vo };         // :270
       return { type: t };
     }
 
@@ -309,7 +318,7 @@
       var a = authenticate(l.session, 'createData', p.crud.serviceType); if (a.error) return std(null, true, a.error);
       var v = validateCRUD(a.type, p.crud); if (v.fault) return std(null, true, v.fault);
       var tn = v.crud.tableName, t = tn && tableOf(tn); if (!t) return std(null, true, 'No table ' + tn);
-      var holder = K.ML.newPO({ q: q, env: K.env(l.session) }, t.t, {}), err = scanFields(a.type, holder, p.crud.fields, t.t, false);
+      var holder = K.ML.newPO({ q: q, env: K.env(l.session) }, t.t, {}), err = invokeV(a.type, TIMING.BEFORE_PARSE, holder, p.crud.fields) || scanFields(a.type, holder, p.crud.fields, t.t, false) || invokeV(a.type, TIMING.AFTER_PARSE, holder, p.crud.fields);
       if (err) return std(null, true, err);
       var action = v.crud.action, isCreate = action === 'Create' || action === 'CreateUpdate', isUpdate = action === 'Update' || action === 'CreateUpdate';
       var keys = q("SELECT c.columnname AS c, f.isnullidentifier AS nul, f.identifierlogic AS logic FROM ws_webservicefieldinput f JOIN ad_column c ON c.ad_column_id=f.ad_column_id WHERE f.ws_webservicetype_id=? AND f.isactive='Y' AND f.isidentifier='Y' ORDER BY f.ws_webservicefieldinput_id", [a.type.ws_webservicetype_id]);
@@ -332,12 +341,13 @@
       if (rid > 0 && !isUpdate) return std(null, true, 'Record already presents with ' + tname + '_ID = ' + rid);
       var cur = rid ? one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [rid]) : null, row = cur ? Object.assign({}, cur) : K.ML.newPO({ q: q, env: K.env(l.session) }, t.t, {});
       p.crud.fields.forEach(function (f) { var c = f.column.toLowerCase(); if (c in holder) row[c] = holder[c]; });                                                      // holder -> persistent PO (set_ValueNoCheck)
+      err = invokeV(a.type, TIMING.BEFORE_SAVE, row, p.crud.fields); if (err) return std(null, true, err);
       err = fkError(t.t, row); if (err) return std(null, true, 'Cannot save record in ' + tname + ': ' + err);
       var r = K.inTrx(l.session, { ws: 'create_update_data', type: a.type.value, id: rid || undefined }, function (trx, ML) {
-        if (cur) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, rid); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, rid), ch); return sv.ok ? { ok: true, row: sv.row } : { ok: false, error: sv.error }; }
-        var sv2 = ML.save(trx, t.t, null, row); if (!sv2.ok) return { ok: false, error: sv2.error }; var pre2 = pgNotNull(t.t, sv2.row) || uniqueError(t.t, sv2.row, null); return pre2 ? { ok: false, error: pre2 } : { ok: true, row: sv2.row };
+        if (cur) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, rid); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, rid), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va1 = invokeV(a.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va1 ? { ok: false, error: va1, plain: true } : { ok: true, row: sv.row }; }
+        var sv2 = ML.save(trx, t.t, null, row); if (!sv2.ok) return { ok: false, error: sv2.error }; var pre2 = pgNotNull(t.t, sv2.row) || uniqueError(t.t, sv2.row, null); if (pre2) return { ok: false, error: pre2 }; var va2 = invokeV(a.type, TIMING.AFTER_SAVE, sv2.row, p.crud.fields); return va2 ? { ok: false, error: va2, plain: true } : { ok: true, row: sv2.row };
       });
-      if (!r.ok) return std(null, true, 'Cannot save record in ' + tname + ': ' + (r.error || 'SaveError'));
+      if (!r.ok) return std(null, true, r.plain ? r.error : 'Cannot save record in ' + tname + ': ' + (r.error || 'SaveError'));
       var id = rid; if (!id) { var idx = -1; r.ops.forEach(function (o, i2) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i2; }); id = r.ids[idx]; }
       var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(a.type, saved));
@@ -442,11 +452,11 @@
     function createData(p, viaUpdate) {   // viaUpdate: RecordID=0 on update_data -> table.getPO(0) is a NEW blank PO, the fields are set and it is SAVED = a create (ModelADServiceImpl :1285, observed on the pilot)
       var pre = prelude(viaUpdate ? 'updateData' : 'createData', p); if (pre.err) return std(viaUpdate ? 0 : null, true, pre.err);
       var tn = pre.crud.tableName, t = tn && tableOf(tn); if (!t) return std(viaUpdate ? 0 : null, true, 'No table ' + tn);                                                          // :794
-      var row = K.ML.newPO({ q: q, env: K.env(pre.session) }, t.t, {}), err = scanFields(pre.type, row, p.crud.fields, t.t, false);
+      var row = K.ML.newPO({ q: q, env: K.env(pre.session) }, t.t, {}), err = invokeV(pre.type, TIMING.BEFORE_PARSE, row, p.crud.fields) || scanFields(pre.type, row, p.crud.fields, t.t, false) || invokeV(pre.type, TIMING.AFTER_PARSE, row, p.crud.fields) || invokeV(pre.type, TIMING.BEFORE_SAVE, row, p.crud.fields);
       if (err) return std(viaUpdate ? 0 : null, true, err);
       err = (K.breakMode === 'nofk') ? null : fkError(t.t, row); if (err) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + err);   // breakMode: W-WS-DIFF-WRITE negative control only                                                         // :823-825
-      var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); return pre2 ? { ok: false, error: pre2 } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo)
-      if (!r.ok) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
+      var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); if (pre2) return { ok: false, error: pre2 }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo); AFTER_SAVE refusing = rollbackAndSetError (nothing committed)
+      if (!r.ok) return std(viaUpdate ? 0 : null, true, r.plain ? r.error : 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
       var idx = -1; r.ops.forEach(function (o, i) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i; });
       var id = r.ids[idx], saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(pre.type, saved));
@@ -456,11 +466,11 @@
       var tn = pre.crud.tableName, id = pre.crud.recordId, t = tn && tableOf(tn); if (!t) return std(id, true, 'No table ' + tn);
       if (id === 0) return createData(p, true);
       var cur = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); if (!cur) return std(id, true, 'No Record ' + id + ' in ' + tn);                           // :1272
-      var proc = cur.processed === 'Y', row = Object.assign({}, cur), err = scanFields(pre.type, row, p.crud.fields, t.t, proc);
+      var proc = cur.processed === 'Y', row = Object.assign({}, cur), err = invokeV(pre.type, TIMING.BEFORE_PARSE, row, p.crud.fields) || scanFields(pre.type, row, p.crud.fields, t.t, proc) || invokeV(pre.type, TIMING.AFTER_PARSE, row, p.crud.fields) || invokeV(pre.type, TIMING.BEFORE_SAVE, row, p.crud.fields);
       if (err) return std(id, true, err);
       err = fkError(t.t, row); if (err) return std(id, true, 'Cannot save record in ' + tn + ': ' + err);
-      var r = K.inTrx(pre.session, { ws: 'update_data', type: pre.type.value, id: id }, function (trx, ML) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, id); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, id), ch); return sv.ok ? { ok: true, row: sv.row } : { ok: false, error: sv.error }; });
-      if (!r.ok) return std(id, true, 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));
+      var r = K.inTrx(pre.session, { ws: 'update_data', type: pre.type.value, id: id }, function (trx, ML) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, id); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, id), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });
+      if (!r.ok) return std(id, true, r.plain ? r.error : 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));
       var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(pre.type, saved));
     }
