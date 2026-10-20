@@ -4,7 +4,7 @@
 // bim-compiler prompts/ERP_WS_API.md S1 (read side: login, authenticate, read_data, query_data). Wire contract = idempiere-schema.xsd as used by bim-ootb viewer/erp_rest_push.js and
 // bim-compiler scripts/pilot/pilot_ref.js: POST /ADInterface/services/rest/model_adservice/<method>, XML body ModelCRUDRequest{ModelCRUD, ADLoginRequest}, stateless login in every call.
 // TWIN CARDINAL RULE: every error string below is the legacy string, cited to its Java file:line; a request legacy answers one way is answered the same way here (witness: W-WS-DIFF-READ).
-// NAMED, not faked: password hashing/salt (plain compare only), role inclusion (AD_Role_Included), ad_role_orgaccess edge cases, MRole.addAccessSQL beyond client/org, IWSValidator hooks,
+// NAMED, not faked: Argon2 password hashes, ad_role_orgaccess edge cases, MRole.addAccessSQL beyond client/org, IWSValidator hooks,
 // the PG text collation of a Filter such as name>'S' (SQLite compares bytes).
 // Pure module: no I/O. The host gives { q(sql, params) -> [rows with lower-case keys] }.
 (function (root, factory) {
@@ -51,8 +51,16 @@
 
     // AbstractService.login :91-209 + Login.getClients/getRoles/getOrgs/getWarehouses (messages verbatim)
     function login(l) {
-      var user = l.user ? one("SELECT ad_user_id, name, password FROM ad_user WHERE isactive='Y' AND (name=? OR email=?)", [l.user, l.user]) : null;
-      if (!user || user.password == null || String(user.password) !== String(l.pass)) return { error: 'Error login - User invalid' };                              // :117-118
+      // MUser.get(ctx, name, password) :230-290: USER_PASSWORD_HASH (system level) -> authenticateHash (algorithm + salt per user), else the stored text equals the given one
+      var hashOn = (function () { try { var sc = one("SELECT value FROM ad_sysconfig WHERE name='USER_PASSWORD_HASH' AND ad_client_id=0 AND isactive='Y'"); return !!sc && sc.value === 'Y'; } catch (e) { return false; } })();
+      var cands = l.user ? q("SELECT * FROM ad_user WHERE isactive='Y' AND (name=? OR email=?) ORDER BY ad_user_id", [l.user, l.user]) : [];
+      var user = null;
+      for (var ci = 0; ci < cands.length && !user; ci++) {
+        var cu = cands[ci];
+        if (hashOn) { if (host.passwordMatch && host.passwordMatch(cu.passwordhashalgorithm, cu.password, cu.salt, String(l.pass))) user = cu; }
+        else if (cu.password != null && String(cu.password) === String(l.pass)) user = cu;
+      }
+      if (!user) return { error: 'Error login - User invalid' };                                                                                                     // :117-118
       var roles = q("SELECT DISTINCT r.ad_role_id AS id, r.ad_client_id AS client, r.isaccessallorgs AS allorgs FROM ad_user_roles ur JOIN ad_role r ON r.ad_role_id=ur.ad_role_id JOIN ad_client c ON c.ad_client_id=r.ad_client_id " +
         "WHERE ur.ad_user_id=? AND ur.isactive='Y' AND r.isactive='Y' AND c.isactive='Y' AND (r.roletype IS NULL OR r.roletype='WS')", [user.ad_user_id]);                  // ROLE_TYPES_WEBSERVICE = NULL,WS (AbstractService.java:71)
       if (!roles.length) return { error: 'Error login - User invalid' };
