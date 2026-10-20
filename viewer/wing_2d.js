@@ -163,6 +163,13 @@ function setupWing2D(A) {
   }
   function say(m) { var e = document.getElementById('wing-2d-msg'); if (e) { e.textContent = m || ''; e.style.display = m ? 'block' : 'none'; } if (m) log('_MSG ' + m); }
 
+  // true north from the Viewer's own db (the georef the extractor wrote or `buildings/patches/<name>.sql` injected at load: project_metadata true_north_angle + true_north_source);
+  // null = the building has none, and the sheet says "north not stated" instead of drawing a guess
+  function georefNorth() {
+    var m = {}; q1("SELECT key,value FROM project_metadata WHERE key IN ('true_north_angle','true_north_source')").forEach(function (r) { m[r[0]] = r[1]; });
+    var a = parseFloat(m.true_north_angle); if (!isFinite(a) || !m.true_north_source) { log('_NORTH none in the Viewer db (' + JSON.stringify(m) + ')'); S.north = null; return null; }
+    log('_NORTH angle=' + a + ' source=' + m.true_north_source); S.north = { angle: a, source: m.true_north_source }; return S.north;
+  }
   // ---- export + overlay ----
 
   // where the building stands on the screen (its 8 bound corners projected), and the corner of the canvas where the card rests: the one that covers the least of the building and of
@@ -193,7 +200,7 @@ function setupWing2D(A) {
     return loadSide().then(function () { return loadModules(); }).then(function () {
       var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
-      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing);
+      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth());
       if (!M.R.wing) throw new Error('This plane frames no walls.');
       log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
       showOverlay(M, P, wing);
@@ -272,7 +279,7 @@ function setupWing2D(A) {
   };
   // test / replay hooks: the same state a person drags, set directly
   A.wing2dSet = function (p0, p1) { if (!S.p0) initPlane(); if (p0) S.p0 = p0.slice(); if (p1) S.p1 = p1.slice(); if (S.g) updateGizmo(); refreshTools(); commitPlane('set'); return planeParams(); };
-  A.wing2dState = function () { return { on: S.on, plane: S.p0 ? planeParams() : null, fam: S.fam, side: !!S.side, overlay: OV ? OV.state() : null }; };
+  A.wing2dState = function () { return { on: S.on, plane: S.p0 ? planeParams() : null, fam: S.fam, side: !!S.side, north: S.north, overlay: OV ? OV.state() : null }; };
   A.wing2dClose = function () { closeOverlay(false); };
   A._wing2d = S;
   setInterval(function () { try { if (A.sectionOn && A.refreshSectionModes) A.refreshSectionModes(); } catch (e) { } }, 1500);
