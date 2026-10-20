@@ -64,7 +64,7 @@
   // MOBILE_PERF.md §OPEN LEVERS 2 fix (a): conservative deny-list — ONLY ops proven
   // non-mutating skip the full-DB persist. Every edit op (GRID_*, DISC_SWITCH, ENACT_MOVE,
   // SECTION_CUT, VIEW_FILTER, history replays) persists exactly as before.
-  var READONLY_OPS = { ELEMENT_PICK: 1, BUILDING_OPEN: 1 };
+  var READONLY_OPS = { ELEMENT_PICK: 1, BUILDING_OPEN: 1, WING_PLANE: 1, EXPORT_2D: 1 };   // §F7: the 2D wand's plane and save are view state, not edits
 
   function commitOp(db, opType, params, inputGuids, outputGuid, opUuid, ts) {
     ensureTable(db);

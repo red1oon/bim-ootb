@@ -39,6 +39,7 @@
 // empty and piled a floor's slabs into one instant. time_machine.js is in PRECACHE_ASSETS, so an
 // installed service worker keeps serving the affine without this bump (§CRISIS LESSON 4). Paired
 // with _GANTT_CACHE_VERSION 37→38 (the IDB kernel_ops self-heal) in the same commit.
+// v1639 (2026-10-20) §F7 the 2D wand: new viewer/wing_2d.js (Section Cut mode '2D': plane + draggable edges + 2D button + overlay) and viewer/dxf_sheet_view.js (sheet renderer), both in PRECACHE_ASSETS; viewer.html, main.js, kernel_ops.js (WING_PLANE / EXPORT_2D read-only ops), universal_history.js changed.
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
 // v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
 // storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
@@ -197,7 +198,7 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1638';
+const CACHE_VERSION = 'v1639';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1029,7 +1030,7 @@ const PRECACHE_ASSETS = [
   'hover_name.js',
   'cpe_room_title.js',
   'cpe_day_counter.js','cpe_path_overview.js','cpe_resource_panel.js','cpe_storey_reveal.js','cpe_flythru_dims.js',
-  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','lp_chain.js','lp_geom_pick.js','lp_build.js','lp_backdrop_diag.js','lp_apply_restore.js','lp_hud.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','cpe_freeze_perf.js',
+  'cpe_flythru_cues.js','cpe_flythru_datum.js','sun_path.js','cpe_sun_compass.js','lp_chain.js','lp_geom_pick.js','lp_build.js','lp_backdrop_diag.js','lp_apply_restore.js','lp_hud.js','cpe_load_path.js','road_check.js','earthworks_volume.js','cpe_road_panels.js','civil_sections.js','wing_2d.js','dxf_sheet_view.js','cpe_freeze_perf.js',
   'cpe_ledger_ticker.js','cpe_slab_beat.js','cpe_linear_beat.js','cpe_indoor_beats.js','cpe_flyout_beats.js',
   'cpe_film_boxes.js','../common/flythru_maths.js','../common/storey_raster.js','cpe_escape_route.js',
   'tour.js',

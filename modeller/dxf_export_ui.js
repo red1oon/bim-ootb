@@ -53,7 +53,7 @@
   // (re)write the set for a scope choice: scopes = null (one sheet per storey) | [{name, rect}] (§L6: KEY + wing sheets per storey)
   // wing (§L1.16): null | {angle, name}: the set is ONE wing drawn in its own frame (markings carry @FRAME; the importer turns it back)
   function make(q, prefix, scopes, step, wing) {
-    var wo = {}; if (scopes && scopes.length > 1) wo.scopes = scopes; if (wing) wo.wing = { angle: wing.angle, name: wing.name };
+    var wo = {}; if (scopes && scopes.length > 1) wo.scopes = scopes; if (wing) { wo.wing = { angle: wing.angle, name: wing.name }; if (typeof wing.turn === 'number') wo.wing.turn = wing.turn; if (wing.pivot) wo.wing.pivot = wing.pivot; }   // §F7: the 2D wand's full-circle turn and stated pivot
     var R = window.Std2d.writeStdSet(q, prefix, wo), report = window.Std2d.drawableReport(R), D = null;
     if (report.drawable) { if (step) step('Deriving markings from the model'); D = window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix }); }
     return { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], wings: wing ? undefined : window.Std2d.wingAngles(R.model) };
