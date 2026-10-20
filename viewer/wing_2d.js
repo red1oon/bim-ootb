@@ -99,7 +99,7 @@ function setupWing2D(A) {
   function initPlane() {
     var r = q1("SELECT min(t.center_x),max(t.center_x),min(t.center_y),max(t.center_y),min(t.center_z),max(t.center_z) FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcSlab')")[0];
     if (!r || r[0] === null) r = [-10, 10, -10, 10, 0, 10];
-    S.p0 = [r[0], r[2] - 2]; S.p1 = [r[1], r[2] - 2]; S.z0 = r[4] - 1; S.z1 = r[5] + 2;
+    S.p0 = [r[0], r[2] - 2]; S.p1 = [r[1], r[2] - 2]; S.z0 = r[4] - 1; S.z1 = r[5] + 2; S.bb = [r[0], r[1], r[2], r[3], r[4], r[5]];
   }
 
   // ---- pointer: drag the plane (body) or an edge handle; OrbitControls is parked while a drag runs ----
@@ -164,6 +164,28 @@ function setupWing2D(A) {
   function say(m) { var e = document.getElementById('wing-2d-msg'); if (e) { e.textContent = m || ''; e.style.display = m ? 'block' : 'none'; } if (m) log('_MSG ' + m); }
 
   // ---- export + overlay ----
+
+  // where the building stands on the screen (its 8 bound corners projected), and the corner of the canvas where the card rests: the one that covers the least of the building and of
+  // the Section Cut panel (a person must see the model and the layout side by side: the layout is projected OUT of the building area)
+  function buildingRect() {
+    try {
+      if (!S.bb) return null; var b = S.bb, cv = A.canvas.getBoundingClientRect(), x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      [b[0], b[1]].forEach(function (x) { [b[2], b[3]].forEach(function (y) { [b[4], b[5]].forEach(function (z) {
+        var c = three(x, y, z), v = new THREE.Vector3(c.x, c.y, c.z).project(A.camera), px = cv.left + (v.x * 0.5 + 0.5) * cv.width, py = cv.top + (-v.y * 0.5 + 0.5) * cv.height;
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }); }); });
+      return { x0: x0, y0: y0, x1: x1, y1: y1 };
+    } catch (e) { return null; }
+  }
+  function overlap(a, b) { var w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0); return w > 0 && h > 0 ? w * h : 0; }
+  function restRect(w, h) {
+    var cv = A.canvas.getBoundingClientRect(), m = 16, bld = buildingRect(), pn = document.getElementById('section-slider-panel'), pr = pn && pn.offsetParent !== null ? pn.getBoundingClientRect() : null;
+    var obst = [bld, pr && { x0: pr.left, y0: pr.top, x1: pr.right, y1: pr.bottom }].filter(Boolean), best = null;
+    [['br', cv.right - w - m, cv.bottom - h - 70], ['bl', cv.left + m, cv.bottom - h - 70], ['tl', cv.left + m, cv.top + m], ['tr', cv.right - w - m, cv.top + m]].forEach(function (c) {
+      var r = { x0: c[1], y0: c[2], x1: c[1] + w, y1: c[2] + h }, sc = obst.reduce(function (a, o) { return a + overlap(r, o); }, 0);
+      if (!best || sc < best.sc) best = { sc: sc, name: c[0], x0: r.x0, y0: r.y0, w: w, h: h };
+    });
+    return best;
+  }
   var OV = null;
   function prefixOf() { var n = (A.activeBuilding || (new URLSearchParams(location.search).get('db') || 'MODEL').split('/').pop()).replace(/_extracted\.db$|\.db$/i, ''); return n.split(/[_\s.-]/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'MODEL'; }
   A.wing2dExport = function () {
@@ -178,10 +200,10 @@ function setupWing2D(A) {
     }).catch(function (e) { say(e.message); log('_EXPORT_FAIL ' + e.message); }).then(function () { if (b) b.disabled = false; });
   };
   function showOverlay(M, P, wing) {
-    closeOverlay(true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), cur = names[0], view = null, drag = null;
-    var card = el('div', 'position:fixed;z-index:70;background:#14171c;border:1px solid #4fc3f7;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);overflow:hidden;font:12px sans-serif;color:#ddd;transition:all .35s ease;touch-action:none'); card.id = 'wing-2d-overlay';
+    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), cur = names[0], view = null, drag = null;
+    var card = el('div', 'position:fixed;z-index:70;background:#14171c;border:1px solid #4fc3f7;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);overflow:hidden;font:12px sans-serif;color:#ddd;transition:left .3s cubic-bezier(.2,.8,.2,1),top .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1),height .3s cubic-bezier(.2,.8,.2,1),opacity .2s;touch-action:none'); card.id = 'wing-2d-overlay';
     var head = el('div', 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1d242d;user-select:none'), tabs = el('div', 'display:flex;gap:4px;flex:1;overflow:auto');
-    var save = el('button', 'background:#2e7d32;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Save'), close = el('button', 'background:#555;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Close');
+    var save = el('button', 'background:#2e7d32;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Save'), close = el('button', 'background:#555;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Cancel');
     save.id = 'wing-2d-save'; close.id = 'wing-2d-close'; head.appendChild(tabs); head.appendChild(save); head.appendChild(close);
     var cv = document.createElement('canvas'); cv.style.cssText = 'display:block;width:100%;flex:1;cursor:zoom-in'; cv.id = 'wing-2d-canvas';
     var foot = el('div', 'padding:3px 8px;background:#1d242d;color:#9ab;font-size:11px'); foot.id = 'wing-2d-foot';
@@ -191,7 +213,7 @@ function setupWing2D(A) {
     function place() {
       var b = A.canvas.getBoundingClientRect();
       if (big) { card.style.left = b.left + 'px'; card.style.top = b.top + 'px'; card.style.width = b.width + 'px'; card.style.height = b.height + 'px'; cv.style.cursor = 'grab'; }
-      else { card.style.left = (b.right - small.w - 16) + 'px'; card.style.top = (b.bottom - small.h - 70) + 'px'; card.style.width = small.w + 'px'; card.style.height = small.h + 'px'; cv.style.cursor = 'zoom-in'; }
+      else { var rr = restRect(small.w, small.h); card.__rest = rr; card.style.left = rr.x0 + 'px'; card.style.top = rr.y0 + 'px'; card.style.width = small.w + 'px'; card.style.height = small.h + 'px'; cv.style.cursor = 'zoom-in'; }
     }
     function draw() {
       var r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height)); cv.width = w * dpr; cv.height = h * dpr;
@@ -207,11 +229,15 @@ function setupWing2D(A) {
     ['mousedown', 'dblclick', 'contextmenu', 'touchstart'].forEach(function (n) { card.addEventListener(n, function (e) { e.stopPropagation(); }); });
     save.onclick = function () { doSave(M, P, wing); }; close.onclick = function () { closeOverlay(false); };
     var from = projectPlane(); if (from) { card.style.left = from.x + 'px'; card.style.top = from.y + 'px'; card.style.width = '10px'; card.style.height = '10px'; card.style.opacity = '0'; requestAnimationFrame(function () { card.style.opacity = '1'; place(); setTimeout(draw, 380); }); } else { place(); draw(); }
-    tabsRender(); OV = { card: card, M: M, P: P, redraw: draw, state: function () { return { big: big, sheet: cur, view: view, drawn: card.__drawn }; } }; window.addEventListener('resize', place); OV.place = place;
+    tabsRender(); OV = { card: card, M: M, P: P, redraw: draw, state: function () { var r = card.getBoundingClientRect(); return { big: big, sheet: cur, view: view, drawn: card.__drawn, rect: { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom }, rest: card.__rest && card.__rest.name, building: buildingRect(), overlapBuilding: big ? null : overlap({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom }, buildingRect() || { x0: 0, y0: 0, x1: 0, y1: 0 }) }; } }; window.addEventListener('resize', place); OV.place = place;
     log('_OVERLAY shown sheets=' + names.length);
   }
   function projectPlane() { try { var G = geom(), c = three(G.mid[0], G.mid[1], (S.z0 + S.z1) / 2), v = new THREE.Vector3(c.x, c.y, c.z).project(A.camera), b = A.canvas.getBoundingClientRect(); return { x: b.left + (v.x * 0.5 + 0.5) * b.width, y: b.top + (-v.y * 0.5 + 0.5) * b.height }; } catch (e) { return null; } }
-  function closeOverlay(silent) { if (OV) { try { window.removeEventListener('resize', OV.place); OV.card.remove(); } catch (e) { } OV = null; if (!silent) log('_CLOSE nothing saved; plane stays turn=' + (S.last ? S.last.turn : '-')); } }
+  function closeOverlay(silent, instant) {   // a few quick frames back toward the plane, then gone (Cancel and Save both end here; Save has already written its zip)
+    if (!OV) return; var c = OV.card, from = instant ? null : projectPlane(); try { window.removeEventListener('resize', OV.place); } catch (e) { } OV = null;
+    if (from) { c.style.pointerEvents = 'none'; c.style.left = from.x + 'px'; c.style.top = from.y + 'px'; c.style.width = '10px'; c.style.height = '10px'; c.style.opacity = '0'; setTimeout(function () { c.remove(); }, 320); } else c.remove();
+    if (!silent) log('_CLOSE nothing saved; plane stays turn=' + (S.last ? S.last.turn : '-'));
+  }
   function doSave(M, P, wing) {
     var X = window.DxfExportUI, enc = new TextEncoder(), files = M.marked || M.R.files, names = Object.keys(files).sort(), z = X.zip(names.map(function (n) { return { name: n, bytes: enc.encode(files[n]) }; }));
     var name = prefixOf() + '_W' + Math.round(P.turn) + '_2D.zip', a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([z], { type: 'application/zip' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -234,7 +260,7 @@ function setupWing2D(A) {
     scrub: function () {},
     exit: function () {
       S.on = false; if (S.g) S.g.visible = false; buildTools(false); var sl = document.getElementById('section-slider'); if (sl) sl.parentNode.style.display = '';
-      A.canvas.removeEventListener('pointerdown', onDown, true); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); if (A.controls) A.controls.enabled = true; closeOverlay(true); if (A.markDirty) A.markDirty();
+      A.canvas.removeEventListener('pointerdown', onDown, true); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); if (A.controls) A.controls.enabled = true; closeOverlay(true, true); if (A.markDirty) A.markDirty();
     }
   };
   // test / replay hooks: the same state a person drags, set directly
