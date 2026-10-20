@@ -200,7 +200,7 @@ function setupWing2D(A) {
     return loadSide().then(function () { return loadModules(); }).then(function () {
       var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
-      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true });
+      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot' });
       if (!M.R.wing) throw new Error('This plane frames no walls.');
       log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
       showOverlay(M, P, wing);
