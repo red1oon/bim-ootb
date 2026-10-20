@@ -12,6 +12,7 @@
   "witness_dxf_scopes_merge:ENV",
   "witness_dxf_sheet_view:ENV",
   "witness_dxf_sidecar:ENV",
+  "witness_dxf_stairs:ENV",
   "witness_dxf_wand:ENV",
   "witness_dxf_wing_back:ENV",
   "witness_dxf_wing_vs_straight:ENV"
