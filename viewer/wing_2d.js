@@ -233,9 +233,17 @@ function setupWing2D(A) {
     log('_OVERLAY shown sheets=' + names.length);
   }
   function projectPlane() { try { var G = geom(), c = three(G.mid[0], G.mid[1], (S.z0 + S.z1) / 2), v = new THREE.Vector3(c.x, c.y, c.z).project(A.camera), b = A.canvas.getBoundingClientRect(); return { x: b.left + (v.x * 0.5 + 0.5) * b.width, y: b.top + (-v.y * 0.5 + 0.5) * b.height }; } catch (e) { return null; } }
-  function closeOverlay(silent, instant) {   // a few quick frames back toward the plane, then gone (Cancel and Save both end here; Save has already written its zip)
-    if (!OV) return; var c = OV.card, from = instant ? null : projectPlane(); try { window.removeEventListener('resize', OV.place); } catch (e) { } OV = null;
-    if (from) { c.style.pointerEvents = 'none'; c.style.left = from.x + 'px'; c.style.top = from.y + 'px'; c.style.width = '10px'; c.style.height = '10px'; c.style.opacity = '0'; setTimeout(function () { c.remove(); }, 320); } else c.remove();
+  // where "saved" lives: the first VISIBLE of the Save pill, the icon pill, the mobile trigger (the right-side pill area); null = no visible pill
+  function savedTarget() {
+    var ids = ['pill-save', 'icon-pill', 'mobile-trigger'];
+    for (var i = 0; i < ids.length; i++) { var e = document.getElementById(ids[i]); if (!e) continue; var r = e.getBoundingClientRect(); if (r.width > 4 && r.height > 4 && e.offsetParent !== null) return { el: e, x: r.left + r.width / 2, y: r.top + r.height / 2, id: ids[i] }; }
+    return null;
+  }
+  function pulse(e) { try { var old = e.style.transition, ob = e.style.boxShadow; e.style.transition = 'box-shadow .25s'; e.style.boxShadow = '0 0 0 3px #4ade80, 0 0 14px #4ade80'; setTimeout(function () { e.style.boxShadow = ob; setTimeout(function () { e.style.transition = old; }, 300); }, 650); } catch (x) { } }
+  // a few quick frames: Cancel returns to the plane in the building area; Save (to = savedTarget()) flies to the pill area and shrinks into it, which pulses green
+  function closeOverlay(silent, instant, to) {
+    if (!OV) return; var c = OV.card, from = instant ? null : (to || projectPlane()); try { window.removeEventListener('resize', OV.place); } catch (e) { } OV = null;
+    if (from) { c.style.pointerEvents = 'none'; c.style.left = from.x + 'px'; c.style.top = from.y + 'px'; c.style.width = '10px'; c.style.height = '10px'; c.style.opacity = '0'; setTimeout(function () { c.remove(); if (to && to.el) pulse(to.el); }, 320); } else c.remove();
     if (!silent) log('_CLOSE nothing saved; plane stays turn=' + (S.last ? S.last.turn : '-'));
   }
   function doSave(M, P, wing) {
@@ -244,7 +252,7 @@ function setupWing2D(A) {
     var rec = { turn: P.turn, pivot: P.pivot, sheets: names.length, file: name, gaps: M.R.gaps.length, marked: !!M.marked };
     log('_SAVE ' + JSON.stringify(rec)); try { if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'EXPORT_2D', Object.assign({ plane: P }, rec)); } catch (e) { }
     try { if (window.UniversalHistory && UniversalHistory.recordEvent) UniversalHistory.recordEvent('EXPORT_2D', '2D layout ' + P.turn.toFixed(1) + '°', rec); } catch (e) { }
-    closeOverlay(true);
+    var to = savedTarget(); log('_SAVE flies to ' + (to ? to.id : 'no visible pill (returns to the plane)')); closeOverlay(true, false, to);
   }
 
   // ---- the Section Cut mode ----
