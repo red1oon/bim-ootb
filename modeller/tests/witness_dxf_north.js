@@ -32,5 +32,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
     check('N3', nm + ': no arrow, the words NORTH NOT STATED on every plan + roof sheet', has(R, /NORTH NOT STATED/) && !/TRUE NORTH \(/.test(Object.values(R.files).join('')), 'sheets=' + planFiles(R).length);
   });
   check('N4', 'CONTROL the arrow of turn 0 and turn 180 differ', vecs[0] && vecs[180] && Math.hypot(vecs[0][0] - vecs[180][0], vecs[0][1] - vecs[180][1]) > 1, JSON.stringify([vecs[0], vecs[180]]));
+  const sb = S.writeStdSet(q, 'N', { wing: W(fam), scaleBar: true }), plain = S.writeStdSet(q, 'N', { wing: W(fam) });
+  const barLen = t => { const m = /\n0\nLINE\n[^]*?8\nA-ANNO-TTLB\n[^]*?10\n([-\d.]+)\n20\n([-\d.]+)\n30\n0.0\n11\n([-\d.]+)\n21\n([-\d.]+)\n/g; let r, best = null; while ((r = m.exec(t))) { const L = Math.hypot(r[3] - r[1], r[4] - r[2]); if (Math.abs(L - 5000) < 1e-6) best = L; } return best; };
+  check('N5', 'scaleBar: a 5 m bar (5000 mm sheet units at 1:100) and the labels 0 / 5 m on every plan + roof sheet; none without the option', planFiles(sb).every(f => barLen(sb.files[f]) === 5000 && /\n1\n5 m\n/.test(sb.files[f])) && !planFiles(plain).some(f => /\n1\n5 m\n/.test(plain.files[f])), 'sheets=' + planFiles(sb).length);
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })();
