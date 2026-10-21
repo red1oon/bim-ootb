@@ -11,11 +11,15 @@
   "witness_dxf_libtypes:ENV",
   "witness_dxf_meta_editor:ENV",
   "witness_dxf_north:ENV",
+  "witness_dxf_quality:ENV",
+  "witness_dxf_rooms:ENV",
   "witness_dxf_scopes_merge:ENV",
   "witness_dxf_sheet_view:ENV",
   "witness_dxf_sidecar:ENV",
   "witness_dxf_stairs:ENV",
   "witness_dxf_wand:ENV",
+  "witness_dxf_window_angled:ENV",
+  "witness_dxf_window_schedule:ENV",
   "witness_dxf_wing_back:ENV",
   "witness_dxf_wing_vs_straight:ENV"
  ]
