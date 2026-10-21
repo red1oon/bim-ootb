@@ -8,7 +8,7 @@ export const DEFERRED = [
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
-  'milestone and subcontracting activities (closeActivities, createPO); Doc_PPCostCollector Receipt scrap branch (named refusals)'
+  'subcontracting activities (createPO); Doc_PPCostCollector Receipt scrap branch (named refusals). Milestones ARE ported, incl. the upstream quirk that refuses every milestone report (spec slice 6 §MILESTONE)'
 ];
 export const SOURCE = { routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
@@ -337,7 +337,39 @@ export function create(ctx) {
   function activityNode(trx, cc) { const n = Number(cc.pp_order_node_id) !== 0 && cc.pp_order_node_id != null ? trx.get('pp_order_node', cc.pp_order_node_id) : null; if (!n) throw new Error('FillMandatory: PP_Order_Node_ID'); return n; }
   function activityGuards(trx, node) {
     if (node.issubcontracting === 'Y') throw new Error('DEFERRED: subcontracting activities (MPPCostCollector.createPO) are not ported - nothing was written');
-    if (node.ismilestone === 'Y') throw new Error('DEFERRED: milestone activities (MPPOrderWorkflow.closeActivities auto-reports earlier activities) are not ported - nothing was written');
+  }
+  function nodesInOrder(trx, o) {
+    const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return [];
+    const client = (n) => Number(n.ad_client_id || 0) === 0 || Number(n.ad_client_id) === Number(o.ad_client_id);
+    const all = trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter((n) => active(n) && client(n)), byId = {}; all.forEach((n) => { byId[n.pp_order_node_id] = n; });
+    const list = [];
+    const add = (id) => {
+      const n = byId[id]; if (!n) return; if (list.indexOf(n) < 0) list.push(n);
+      const nexts = []; trx.find('pp_order_nodenext', { pp_order_node_id: n.pp_order_node_id }).filter((x) => active(x) && client(x)).sort((a, b) => Number(a.seqno) - Number(b.seqno) || Number(a.pp_order_nodenext_id) - Number(b.pp_order_nodenext_id)).forEach((x) => {
+        const c = byId[x.pp_order_next_id]; if (c && list.indexOf(c) < 0) { list.push(c); nexts.push(x.pp_order_next_id); }
+      });
+      nexts.forEach(add);
+    };
+    add(wf.pp_order_node_id);
+    all.forEach((n) => { if (list.indexOf(n) < 0) list.push(n); });
+    return list;
+  }  // MPPOrderWorkflow.closeActivities(activity, movementDate, milestone) :583-640 - from the reporting activity BACK through getPrevious (= the previous node in getNodesInOrder, :435-448);
+  //   milestone=true stops at an EARLIER milestone. fromNodeId 0 = the last node (MPPOrder.closeIt :830 closeActivities(getLastNode, getUpdated(), false)).
+  function closeActivities(trx, o, fromNodeId, when, milestone) {
+    const nodes = nodesInOrder(trx, o); if (!nodes.length) return;
+    let i = fromNodeId ? nodes.findIndex((n) => Number(n.pp_order_node_id) === Number(fromNodeId)) : nodes.length - 1;
+    if (i < 0) throw new Error('Activity and Order Workflow not matching');
+    for (; i >= 0; i--) {
+      let node = trx.get('pp_order_node', nodes[i].pp_order_node_id);
+      if (milestone && node.ismilestone === 'Y' && Number(node.pp_order_node_id) !== Number(fromNodeId)) break;   // :596-599 break the cycle
+      if (node.docstatus === 'DR') {
+        const qtyToDeliver = dec(node.qtyrequiered).subtract(dec(node.qtydelivered)); if (qtyToDeliver.signum() <= 0) continue;
+        const setup = Number(node.setuptimerequiered || 0) - Number(node.setuptimereal || 0), dur = estimateWorkingTime(node, qtyToDeliver);
+        const loc = trx.find('m_locator', { m_warehouse_id: o.m_warehouse_id }).filter(active).sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.m_locator_id) - Number(b.m_locator_id))[0];
+        createCollector(trx, o, { type: '160', docTypeId: mccDocType(trx), locatorId: loc ? loc.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: node.s_resource_id, bomLineId: 0, nodeId: node.pp_order_node_id, productId: o.m_product_id, movementDate: when, qty: qtyToDeliver, scrap: 0, reject: 0, durationSetup: setup, duration: dur });
+        nodeCloseIt(trx, node.pp_order_node_id); trx.say('§LIBERO-CLOSEACT from=' + fromNodeId + ' milestone=' + milestone + ' reported=' + node.pp_order_node_id + ' qty=' + qtyToDeliver.toString());
+      } else if (node.docstatus === 'CO' || node.docstatus === 'IP') { nodeCloseIt(trx, node.pp_order_node_id); trx.say('§LIBERO-CLOSEACT from=' + fromNodeId + ' milestone=' + milestone + ' closed=' + node.pp_order_node_id); }
+    }
   }
   // ── Usage Variance collectors (120) - MPPCostCollector.completeIt :528-554 + CostEngine.createUsageVariances :485-519 ───────────────────────────────────
   function usageComplete(trx, cc) {
@@ -384,6 +416,9 @@ export function create(ctx) {
     po.set('qtydelivered', num(dec(node.qtydelivered).add(dec(cc.movementqty)))).set('qtyscrap', num(dec(node.qtyscrap).add(dec(cc.scrappedqty)))).set('qtyreject', num(dec(node.qtyreject).add(dec(cc.qtyreject))));
     po.set('durationreal', Number(node.durationreal || 0) + Math.trunc(Number(cc.durationreal || 0))).set('setuptimereal', Number(node.setuptimereal || 0) + Math.trunc(Number(cc.setuptimereal || 0)));
     if (!po.save()) throw new Error(po.error);
+    // :349-354 a MILESTONE reports every earlier activity back to the previous milestone. UPSTREAM QUIRK (named, kept - prompts/mfg/LIBERO_ACTIVITY_SLICE6_SPEC.md §MILESTONE): the loop starts AT this
+    //   activity, so it closes the milestone node itself, and completeIt (:478-482) then refuses it as processed - the report and the collectors it made roll back.
+    if (node.ismilestone === 'Y') closeActivities(trx, trx.get('pp_order', cc.pp_order_id), node.pp_order_node_id, cc.movementdate, true);
   }
   // MPPCostCollector.completeIt activity branch :474-526
   function activityComplete(trx, cc) {
@@ -603,7 +638,7 @@ export function create(ctx) {
     }
   };
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration, createUsageVariances, estimateWorkingTime, nodeCloseIt, mccDocType };
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration, createUsageVariances, estimateWorkingTime, nodeCloseIt, mccDocType, nodesInOrder, closeActivities };
 }
 export async function activate(ctx) {
   const m = create(ctx);

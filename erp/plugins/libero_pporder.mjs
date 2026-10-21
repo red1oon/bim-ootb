@@ -341,8 +341,7 @@ export function create(ctx) {
       const cur = trx.get('pp_order', doc.pp_order_id);
       if (cur.isapproved !== 'Y') orderDoc.approveIt(trx, cur);
       const e = createStandardCosts(trx, trx.get('pp_order', doc.pp_order_id)); if (e) { trx._msg = e; return 'IN'; }
-      const ms = trx.find('pp_order_node', { pp_order_id: doc.pp_order_id }).filter((n) => n.ismilestone === 'Y');   // autoReportActivities :1455-1491 - milestone routings NOT ported
-      if (ms.length) { trx._msg = 'DEFERRED: milestone activity auto-reporting (Activity Control collectors) is not ported yet'; return 'IN'; }
+      autoReportActivities(trx, trx.get('pp_order', doc.pp_order_id));                    // :1455-1491 (called from completeIt :715)
       trx.update('pp_order', trx.get('pp_order', doc.pp_order_id), { docaction: 'CL' });
       return 'CO';
     },
@@ -390,7 +389,7 @@ export function create(ctx) {
         const old = dec(line.qtyrequiered);
         if (old.compareTo(dec(line.qtydelivered)) !== 0) { const po = ML.po(trx, 'pp_order_bomline', line); po.set('qtyrequiered', line.qtydelivered).set('description', addDesc(line.description, msgT(trx, '@closed@ @QtyRequired@ (' + old.toString() + ')'))); if (!po.save()) throw new Error(po.error); }
       }
-      if (SOURCE.closeActivities) closeActivities(trx, trx.get('pp_order', o.pp_order_id), cost, when);   // :830-831 closeActivities(lastNode, getUpdated(), false)
+      if (SOURCE.closeActivities) cost.closeActivities(trx, trx.get('pp_order', o.pp_order_id), 0, when, false);   // :830-831 closeActivities(lastNode, getUpdated(), false)
       let cur = trx.get('pp_order', o.pp_order_id); const oldQ = dec(cur.qtyordered);
       if (oldQ.signum() !== 0) { const po = ML.po(trx, 'pp_order', cur); po.set('description', addDesc(cur.description, msgT(trx, '@closed@ @QtyOrdered@ : (' + oldQ.toString() + ')'))).set('qtyordered', cur.qtydelivered); if (!po.save()) throw new Error(po.error); }   // :833-839
       cur = trx.get('pp_order', o.pp_order_id); const rec = Object.assign({}, cur);
@@ -404,22 +403,23 @@ export function create(ctx) {
     getSummary(trx, doc) { return 'Manufacturing Order ' + (doc && doc.documentno); }
   };
   // MPPOrderWorkflow.getNodesInOrder :311-344 + addNodesSF :352-385 (first node, then its transitions sibling-first, then any node without a transition)
-  function nodesInOrder(trx, o) {
-    const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return [];
-    const client = (n) => Number(n.ad_client_id || 0) === 0 || Number(n.ad_client_id) === Number(o.ad_client_id);
-    const all = trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter((n) => active(n) && client(n)), byId = {}; all.forEach((n) => { byId[n.pp_order_node_id] = n; });
-    const list = [];
-    const add = (id) => {
-      const n = byId[id]; if (!n) return; if (list.indexOf(n) < 0) list.push(n);
-      const nexts = []; trx.find('pp_order_nodenext', { pp_order_node_id: n.pp_order_node_id }).filter((x) => active(x) && client(x)).sort((a, b) => Number(a.seqno) - Number(b.seqno) || Number(a.pp_order_nodenext_id) - Number(b.pp_order_nodenext_id)).forEach((x) => {
-        const c = byId[x.pp_order_next_id]; if (c && list.indexOf(c) < 0) { list.push(c); nexts.push(x.pp_order_next_id); }
-      });
-      nexts.forEach(add);
-    };
-    add(wf.pp_order_node_id);
-    all.forEach((n) => { if (list.indexOf(n) < 0) list.push(n); });
-    return list;
+  // MPPOrder.autoReportActivities :1455-1491 - a MILESTONE that is subcontracting or the routing's start node is reported at once (Activity Control, QtyToDeliver, no duration, DateUpdated).
+  //   getNodes() has no ORDER BY in the Java (the DB's order): pp_order_node_id ascending here. A refusal of the collector (subcontracting createPO, the milestone quirk) refuses the order's completion.
+  function autoReportActivities(trx, o) {
+    const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return;
+    const nodes = trx.find('pp_order_node', { pp_order_workflow_id: wf.pp_order_workflow_id }).filter((n) => active(n) && (Number(n.ad_client_id || 0) === 0 || Number(n.ad_client_id) === Number(o.ad_client_id))).sort((a, b) => Number(a.pp_order_node_id) - Number(b.pp_order_node_id));
+    const cost = nodes.some((n) => n.ismilestone === 'Y') ? libCost() : null;
+    for (const n of nodes) {
+      if (n.ismilestone !== 'Y' || !(n.issubcontracting === 'Y' || Number(n.pp_order_node_id) === Number(wf.pp_order_node_id))) continue;
+      const fresh = trx.get('pp_order_node', n.pp_order_node_id);
+      const dl = defaultLocator(trx, o.m_warehouse_id);   // MPPOrder.getM_Locator_ID :1356-1360 = the warehouse's default locator
+      cost.createCollector(trx, o, { type: '160', docTypeId: cost.mccDocType(trx), locatorId: dl ? dl.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: o.s_resource_id, bomLineId: 0, nodeId: n.pp_order_node_id, productId: o.m_product_id,
+        movementDate: o.updated || (trx.env && trx.env.now) || null, qty: dec(fresh.qtyrequiered).subtract(dec(fresh.qtydelivered)), scrap: 0, reject: 0, durationSetup: 0, duration: 0 });
+    }
   }
+  const libCost = () => { const c = ctx.libero && ctx.libero.cost; if (!c) throw new Error('the cost chunk is not active (collector entry points unavailable)'); return c; };
+  const nodesInOrder = (trx, o) => libCost().nodesInOrder(trx, o);   // MPPOrderWorkflow.getNodesInOrder - ONE implementation, in libero_cost.mjs
+
   // MPPOrder.createVariances :1578-1595 + createUsageVariance(line) :1597-1646 + createUsageVariance(node) :1648-1695
   function createVariances(trx, o, cost, when) {
     const dt = cost.mccDocType(trx), sumCC = (where, col) => trx.find('pp_cost_collector', where).filter((c) => c.docstatus === 'CO' || c.docstatus === 'CL').reduce((a, c) => a.add(dec(c[col])), dec(0));
@@ -440,19 +440,7 @@ export function create(ctx) {
       cost.createCollector(trx, o, { type: '120', docTypeId: dt, locatorId: d ? d.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: n.s_resource_id, bomLineId: 0, nodeId: n.pp_order_node_id, productId: o.m_product_id, movementDate: when, qty: qtyOpen, scrap: 0, reject: 0, durationSetup: sVar, duration: dVar });
     }
   }
-  // MPPOrderWorkflow.closeActivities(lastNode, date, milestone=false) :583-640
-  function closeActivities(trx, o, cost, when) {
-    const nodes = nodesInOrder(trx, o); if (!nodes.length) return;
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      let node = trx.get('pp_order_node', nodes[i].pp_order_node_id);
-      if (node.docstatus === 'DR') {
-        const qtyToDeliver = dec(node.qtyrequiered).subtract(dec(node.qtydelivered)); if (qtyToDeliver.signum() <= 0) continue;
-        const setup = Number(node.setuptimerequiered || 0) - Number(node.setuptimereal || 0), dur = cost.estimateWorkingTime(node, qtyToDeliver), d = defaultLocator(trx, o.m_warehouse_id);
-        cost.createCollector(trx, o, { type: '160', docTypeId: cost.mccDocType(trx), locatorId: d ? d.m_locator_id : 0, asiId: o.m_attributesetinstance_id || 0, resourceId: node.s_resource_id, bomLineId: 0, nodeId: node.pp_order_node_id, productId: o.m_product_id, movementDate: when, qty: qtyToDeliver, scrap: 0, reject: 0, durationSetup: setup, duration: dur });
-        cost.nodeCloseIt(trx, node.pp_order_node_id);
-      } else if (node.docstatus === 'CO' || node.docstatus === 'IP') cost.nodeCloseIt(trx, node.pp_order_node_id);
-    }
-  }
+
   // Msg.parseTranslation: @token@ -> AD_Message.MsgText, else AD_Element.Name, else the token itself (Msg.translate :740-742)
   function msgT(trx, text) {
     return String(text).replace(/@([^@]+)@/g, (m, t) => { const am = trx.find('ad_message', { value: t })[0]; if (am && am.msgtext) return am.msgtext; const ae = trx.find('ad_element', { columnname: t })[0]; return ae ? ae.name : t; });
