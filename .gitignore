@@ -92,3 +92,4 @@ buildings/patches/*.prebake.json
 # DXF2BIM §L3.2: LOD400 library subset (library data) generated LOCALLY by BIMCompiler scripts/export_library_subset.js.
 # Never committed (no library data / DB on GitHub); deploy = OCI.
 modeller/dxf2bim/local/
+!buildings/HHS_Office_Federated_2d.db

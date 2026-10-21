@@ -902,6 +902,20 @@
     resolveHosts(model, log);
     const grid = deriveGrid(model, log);
     let scopes = opts.scopes || null;
+    // §F7 W-WAND-EXTENT: the plane's edge range [[x0,y0],[x1,y1]] (model m) = ONE §L6 scope in the wing frame: X = the turned ends' range (mm), Y unbounded; the rest goes to REST
+    if (opts.extent) {
+      const ex = opts.extent, ok = Array.isArray(ex) && ex.length === 2 && ex.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
+      if (!ok) log.add('§EXTENT ignored=malformed');
+      else if (!wing) log.add('§EXTENT ignored=no_wing');
+      else if (scopes) log.add('§EXTENT ignored=scopes_stated');
+      else {
+        const th = -wing.angle * Math.PI / 180, tx = p => Math.cos(th) * (p[0] - wing.ox) - Math.sin(th) * (p[1] - wing.oy) + wing.ox;
+        // a disjoint partition (the importer refuses overlapping scope rectangles, so no implicit REST): the plane's range first, then what lies before / after it along X
+        const r3 = v => Number(v.toFixed(3)), a = r3(Math.min(tx(ex[0]), tx(ex[1])) * 1000), b = r3(Math.max(tx(ex[0]), tx(ex[1])) * 1000), used = new Set(['KEY', 'REST']);
+        scopes = [[a, -Infinity, b, Infinity], [-Infinity, -Infinity, a, Infinity], [b, -Infinity, Infinity, Infinity]].map(rect => ({ name: SCOPES.nameOf(grid, rect, used), rect }));
+        log.add(`§EXTENT p0=${fx(ex[0][0], 4)},${fx(ex[0][1], 4)} p1=${fx(ex[1][0], 4)},${fx(ex[1][1], 4)} turned_x=${Math.round(a)}..${Math.round(b)} mm scope=${scopes[0].name} before=${scopes[1].name} after=${scopes[2].name}`);
+      }
+    }
     if (!scopes && opts.suggest) {
       scopes = SCOPES.suggest({ model, grid, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })) } }, opts.budget);
       log.add(`§SCOPE_SUGGEST budget=${opts.budget || SCOPES.BUDGET} scopes=${scopes.length} ` + scopes.map(s => `${s.name}[${s.rect.map(v => Number.isFinite(v) ? Math.round(v) : v).join(',')}]`).join(' '));

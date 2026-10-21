@@ -200,14 +200,14 @@ function setupWing2D(A) {
     return loadSide().then(function () { return loadModules(); }).then(function () {
       var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
-      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot' });
+      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot', extent: [P.p0, P.p1] });
       if (!M.R.wing) throw new Error('This plane frames no walls.');
-      log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
+      log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' scope=' + (M.R.scopes && M.R.scopes[0] ? M.R.scopes[0].name : '-') + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
       showOverlay(M, P, wing);
     }).catch(function (e) { say(e.message); log('_EXPORT_FAIL ' + e.message); }).then(function () { if (b) b.disabled = false; });
   };
   function showOverlay(M, P, wing) {
-    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), cur = names[0], view = null, drag = null;
+    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), sc = M.R.scopes && M.R.scopes[0] ? '__' + M.R.scopes[0].name + '_std.dxf' : null, cur = (sc && names.filter(function (n) { return n.slice(-sc.length) === sc; })[0]) || names[0], view = null, drag = null;
     var card = el('div', 'position:fixed;z-index:70;background:#14171c;border:1px solid #4fc3f7;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);overflow:hidden;font:12px sans-serif;color:#ddd;transition:left .3s cubic-bezier(.2,.8,.2,1),top .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1),height .3s cubic-bezier(.2,.8,.2,1),opacity .2s;touch-action:none'); card.id = 'wing-2d-overlay';
     var head = el('div', 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1d242d;user-select:none'), tabs = el('div', 'display:flex;gap:4px;flex:1;overflow:auto');
     var save = el('button', 'background:#2e7d32;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Save'), close = el('button', 'background:#555;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Cancel');

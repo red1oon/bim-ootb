@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * # ⚠ DO NOT REMOVE — W-WAND-360 / W-WAND-PIVOT: prompts/DXF2BIM_FOUNDATION_LANE.md F7. Read the log after every run.
+ * # ⚠ DO NOT REMOVE — W-WAND-360 / W-WAND-PIVOT / W-WAND-EXTENT: prompts/DXF2BIM_FOUNDATION_LANE.md F7. Read the log after every run.
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the 2D wand states a FULL-circle turn and a PIVOT; a set exported at any turn (0 / 90 / 180 / 270) and pivot is imported by the Modeller
  * importer and turned back by its own @FRAME to the SAME place. Reference = the wing exported with turn 0 and the default pivot.
@@ -9,6 +9,8 @@
  *   T3 BODIES  — import with the marked frame: the same bodies (class, vertex set within 2.5 mm (two snap steps)) as the reference, for turn 90 / 180 / 270 and for a stated pivot.
  *   T4 VERDICT — the reader's blocking codes are identical to the reference's: a turn or a pivot must not change what the reader sees.
  *   T5 CONTROL — turn 180 imported with the frame IGNORED does not match (the witness can see a missing turn-back).
+ *   T8 EXTENT  — the plane's edge range is ONE §L6 scope of the plans (E1 ownership recomputed in the UNturned model, E2 = the hand-built §L6 set, E3 a plane longer than the wing = no extent,
+ *               E4 no extent = legacy, E5 the marked set is taken by the reader, E6 its verdict equals the whole set's).
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_wand.js <Node model .db>
  */
 'use strict';
@@ -78,6 +80,27 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
     const codes2 = R => { const Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC }, { set: 'W' }), out = I.convert(I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {}), c = {}; (out.verdict ? out.verdict.blocking : []).forEach(b => { c[b.code] = (c[b.code] || 0) + 1; }); return JSON.stringify(c); };
     return { others, nOn, nOff, curtains: on.model.curtains.length, same: codes2(on) === codes2(off) }; })();
   check('T7', 'section curtain contours: only the section sheet changes, A-WALL-CURT appears only with curtain walls, the reader verdict is unchanged', cs.others && (cs.curtains === 0 ? cs.nOn === cs.nOff : cs.nOn >= cs.nOff) && cs.same, JSON.stringify(cs));
+  // T8 W-WAND-EXTENT: the plane's edge range = ONE §L6 scope of the plan sheets. The witness recomputes ownership in the UNturned model: centre projected on the frame axis vs the projected plane ends
+  (() => {
+    const c = [(e0[0] + e0[1]) / 2, (e0[2] + e0[3]) / 2], wing = { name: 'W', angle: F0, turn: F0, pivot: c }, base = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot' });
+    const th = base.wing.angle * Math.PI / 180, ax = [Math.cos(th), Math.sin(th)], s = p => (p[0] - c[0]) * ax[0] + (p[1] - c[1]) * ax[1];
+    const ext = m0.walls.map(w => s([(w.x0 + w.x1) / 2, (w.y0 + w.y1) / 2])), half = (Math.max(...ext) - Math.min(...ext)) / 4, P0 = [c[0] - half * ax[0], c[1] - half * ax[1]], P1 = [c[0] + half * ax[0], c[1] + half * ax[1]];
+    const R = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', extent: [P0, P1] }), lo = Math.min(s(P0), s(P1)), hi = Math.max(s(P0), s(P1)), name = R.scopes && R.scopes[0] && R.scopes[0].name, views = Object.keys(R.scoped || {});
+    let inside = 0, outside = 0, wrong = [], edge = 0;
+    views.forEach(v => { const own = R.scoped[v].owners; Object.keys(own).forEach(g => { const e = m0.by_guid[g.split(',')[0]]; if (!e || ['IfcDoor', 'IfcWindow'].indexOf(e.cls) >= 0) return;   // an opening follows its host (§L6): checked through the host's own row
+      const v2 = s([(e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2]); if (Math.abs(v2 - lo) < 1e-3 || Math.abs(v2 - hi) < 1e-3) { edge++; return; } const want = v2 >= lo && v2 < hi ? name : v2 < lo ? R.scopes[1].name : R.scopes[2].name; if (want === name) inside++; else outside++; if (own[g] !== want) wrong.push(g + ':' + own[g] + '!=' + want); }); });
+    check('T8', 'E1 extent: every element on the plane scope sheet has its UNturned centre within the plane ends (projected on the frame axis), every other on the before / after scope by side', views.length > 0 && inside > 0 && outside > 0 && !wrong.length, `scope=${name} views=${views.length} inside=${inside} rest=${outside} at_edge=${edge} wrong=${wrong.length} ${wrong.slice(0, 3).join(' ')}`);
+    const r3 = v => Number(v.toFixed(3)), rect = [r3(Math.min(s(P0), s(P1)) * 1000 + c[0] * 1000), -Infinity, r3(Math.max(s(P0), s(P1)) * 1000 + c[0] * 1000), Infinity], L6 = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', scopes: [rect, [-Infinity, -Infinity, rect[0], Infinity], [rect[2], -Infinity, Infinity, Infinity]].map((r, i) => ({ name: R.scopes[i].name, rect: r })) });
+    const eq = (A, B2) => Object.keys(A.files).length === Object.keys(B2.files).length && Object.keys(A.files).every(f => A.files[f] === B2.files[f]);
+    check('T8', 'E2 extent = the §L6 scoped set with the equal rectangles (x = pivot + projection on the frame axis, to 0.001 mm), byte for byte', eq(R, L6), 'files=' + Object.keys(R.files).length + ' rect_mm=' + rect.map(v => Number.isFinite(v) ? v.toFixed(6) : v).join(',') + ' writer=' + R.scopes[0].rect.map(v => Number.isFinite(v) ? v.toFixed(6) : v).join(','));
+    const big = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', extent: [[c[0] - 1e4 * ax[0], c[1] - 1e4 * ax[1]], [c[0] + 1e4 * ax[0], c[1] + 1e4 * ax[1]]] });
+    check('T8', 'E3 a plane longer than the wing = the whole plans, byte-equal to no extent', eq(big, base), 'files=' + Object.keys(big.files).length + '/' + Object.keys(base.files).length);
+    check('T8', 'E4 no extent: no §EXTENT line and no scoped sheet (legacy path)', !base.log.some(l => /§EXTENT/.test(l)) && !Object.keys(base.files).some(f => /__/.test(f)), 'files=' + Object.keys(base.files).length);
+    const Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC, SCOPES: require(D + 'std2d_scopes.js') }, { set: 'W' }), out = I.convert(I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {});
+    check('T8', 'E5 the extent set is marked (KEY + plane scope + before / after) and the reader takes it', !out.refused && !!out.verdict && Object.keys(Dm.files).some(f => f.indexOf('__' + name + '_') >= 0), 'sheets=' + Object.keys(Dm.files).length + ' blocking=' + (out.verdict ? out.verdict.blocking.length : '-') + ' refused=' + JSON.stringify(out.refused || null));
+    const vc = R2 => { const Dm2 = Mk.deriveMarks(R2, { B, DxfParser, hashHex, MK, SHC, SCOPES: require(D + 'std2d_scopes.js') }, { set: 'W' }), o = I.convert(I.readSheets(Object.keys(Dm2.files).map(n => ({ name: n, text: Dm2.files[n] }))), {}), m = {}; (o.verdict ? o.verdict.blocking : []).forEach(b => { m[b.code] = (m[b.code] || 0) + 1; }); return JSON.stringify(Object.keys(m).sort().map(k => [k, m[k]])); };
+    const vE = vc(R), vW = vc(base); check('T8', 'E6 the reader judges the extent set exactly as the whole set (a scope only partitions the sheets)', vE === vW, vE === vW ? vE.slice(0, 120) : 'extent ' + vE.slice(0, 120) + ' whole ' + vW.slice(0, 120));
+  })();
   const ig = run(F0 + 180, null, true); check('T5', 'CONTROL turn 180 with the frame ignored does not match', match(refB, bodies(ig.T)).bad > 0, 'unmatched=' + match(refB, bodies(ig.T)).bad);
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('FATAL', e); process.exit(2); });
