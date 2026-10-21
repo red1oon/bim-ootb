@@ -847,6 +847,41 @@
       var cc = sqlInt(trx, 'SELECT C_Currency_ID FROM M_PriceList WHERE M_PriceList_ID=?', [o.get('m_pricelist_id')]);
       o.set('c_currency_id', cc !== 0 && cc !== -1 ? cc : Env.getContextAsInt(ctx, '$C_Currency_ID'));
     }
+    if (!nz(o.get('salesrep_id'))) { var sr = Env.getContextAsInt(ctx, '#SalesRep_ID'); if (sr !== 0) o.set('salesrep_id', sr); }                      // :1302-1308 Default Sales Rep
+    if (!nz(o.get('c_doctypetarget_id'))) {                                                                       // :1310-1312 setC_DocTypeTarget_ID(DocSubTypeSO_Standard)
+      var sd = sqlInt(trx, "SELECT C_DocType_ID FROM C_DocType WHERE AD_Client_ID=? AND AD_Org_ID IN (0," + nz(o.get('ad_org_id')) + ") AND DocSubTypeSO='SO' AND IsSOTrx='Y' AND IsActive='Y' ORDER BY AD_Org_ID DESC, IsDefault DESC", [trx.env.client]);
+      if (sd > 0) { o.set('c_doctypetarget_id', sd); o.set('issotrx', 'Y'); }
+    }
+    if (!nz(o.get('c_paymentterm_id'))) {                                                                         // :1314-1328 Default Payment Term: context, else the client's default
+      var pt = Env.getContextAsInt(ctx, '#C_PaymentTerm_ID');
+      if (pt === 0) pt = sqlInt(trx, "SELECT C_PaymentTerm_ID FROM C_PaymentTerm WHERE AD_Client_ID=? AND IsDefault='Y' AND IsActive='Y'", [trx.env.client]);
+      if (pt > 0) o.set('c_paymentterm_id', pt);
+    }
+  };
+  // MOrder.setBPartner(MBPartner) :712-786 - defaults from the partner (SO or PO side by the order's CURRENT IsSOTrx), ship-to / bill-to locations, the single contact
+  S.MOrder_setBPartner = function (trx, o, bp) {
+    if (!bp) return;
+    var so = T.Y(o.get('issotrx')), ii;
+    o.set('c_bpartner_id', bp.c_bpartner_id);
+    ii = nz(so ? bp.c_paymentterm_id : bp.po_paymentterm_id); if (ii !== 0) o.set('c_paymentterm_id', ii);
+    ii = nz(so ? bp.m_pricelist_id : bp.po_pricelist_id); if (ii !== 0) o.set('m_pricelist_id', ii);
+    if (bp.deliveryrule != null) o.set('deliveryrule', bp.deliveryrule); if (bp.deliveryviarule != null) o.set('deliveryviarule', bp.deliveryviarule);
+    if (bp.invoicerule != null) o.set('invoicerule', bp.invoicerule);
+    var pr = so ? bp.paymentrule : (bp.paymentrulepo != null && bp.paymentrulepo !== '' ? bp.paymentrulepo : bp.paymentrule); if (pr != null) o.set('paymentrule', pr);
+    ii = nz(bp.salesrep_id); if (ii !== 0) o.set('salesrep_id', ii);
+    var locs = trx.find('c_bpartner_location', { c_bpartner_id: bp.c_bpartner_id }).filter(function (l) { return l.isactive !== 'N'; }).sort(function (a, b) { return Number(a.c_bpartner_location_id) - Number(b.c_bpartner_location_id); });
+    locs.forEach(function (l) { if (T.Y(l.isshipto)) o.set('c_bpartner_location_id', l.c_bpartner_location_id); if (T.Y(l.isbillto)) o.set('bill_location_id', l.c_bpartner_location_id); });
+    if (!nz(o.get('c_bpartner_location_id')) && locs.length) o.set('c_bpartner_location_id', locs[0].c_bpartner_location_id);
+    if (!nz(o.get('bill_location_id')) && locs.length) o.set('bill_location_id', locs[0].c_bpartner_location_id);
+    if (!nz(o.get('c_bpartner_location_id'))) throw new Error('BPartnerNoShipToAddressException: ' + bp.name);
+    if (!nz(o.get('bill_location_id'))) throw new Error('BPartnerNoBillToAddressException: ' + bp.name);
+    var cs = trx.find('ad_user', { c_bpartner_id: bp.c_bpartner_id }).filter(function (u) { return u.isactive !== 'N'; }); if (cs.length === 1) o.set('ad_user_id', cs[0].ad_user_id);
+  };
+  // MOrder.setC_DocTypeTarget_ID() :685-705 - SO: Standard Order (subtype SO); PO: the client's POO, org-specific first, default first
+  S.MOrder_setDocTypeTargetDefault = function (trx, o) {
+    var org = nz(o.get('ad_org_id')), so = T.Y(o.get('issotrx'));
+    var rows = trx.q("SELECT c_doctype_id AS d, ad_org_id AS org, isdefault AS def FROM c_doctype WHERE ad_client_id=? AND ad_org_id IN (0," + org + ")" + (so ? " AND docsubtypeso='SO' AND issotrx='Y' AND isactive='Y'" : " AND docbasetype='POO'") + " ORDER BY ad_org_id DESC, isdefault DESC", [trx.env.client]);
+    if (rows.length) o.set('c_doctypetarget_id', rows[0].d);
   };
   // new MOrderLine(order) :185-192 ∘ setInitialDefaults :159-179 ∘ setOrder :227-239
   S.MOrderLine_new = function (trx, order) {

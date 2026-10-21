@@ -8,7 +8,7 @@ export const DEFERRED = [
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
-  'subcontracting activities (createPO); Doc_PPCostCollector Receipt scrap branch (named refusals). Milestones ARE ported, incl. the upstream quirk that refuses every milestone report (spec slice 6 §MILESTONE)'
+  'Doc_PPCostCollector Receipt scrap branch (named refusal). Milestones and subcontracting (createPO) ARE ported, incl. two upstream quirks (spec slice 6 §MILESTONE, §SUBCONTRACT)'
 ];
 export const SOURCE = { routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
@@ -228,6 +228,9 @@ export function create(ctx) {
     completeIt(trx, d0) {
       const nm = NOT_PORTED(d0); if (nm) { trx._msg = nm; return 'IN'; }
       const cc = trx.get('pp_cost_collector', d0.pp_cost_collector_id);
+      if (isActivity(cc) && Number(cc.pp_order_node_id || 0) !== 0) { const sn = trx.get('pp_order_node', cc.pp_order_node_id); if (sn && sn.issubcontracting === 'Y') {   // :483-510 returns before every other branch
+        if (nodeProcessed(sn)) { trx._msg = 'Order Activity Already Processed - ' + nodeStr(sn); return 'IN'; }
+        try { return subcontractComplete(trx, cc); } catch (e) { trx._msg = e.message; return 'IN'; } } }
       try {
         const qty = dec(cc.movementqty), scrap = dec(cc.scrappedqty), rej = dec(cc.qtyreject);
         if (isIssue(cc) || isReceipt(cc)) {
@@ -336,7 +339,6 @@ export function create(ctx) {
   }
   function activityNode(trx, cc) { const n = Number(cc.pp_order_node_id) !== 0 && cc.pp_order_node_id != null ? trx.get('pp_order_node', cc.pp_order_node_id) : null; if (!n) throw new Error('FillMandatory: PP_Order_Node_ID'); return n; }
   function activityGuards(trx, node) {
-    if (node.issubcontracting === 'Y') throw new Error('DEFERRED: subcontracting activities (MPPCostCollector.createPO) are not ported - nothing was written');
   }
   function nodesInOrder(trx, o) {
     const wf = trx.find('pp_order_workflow', { pp_order_id: o.pp_order_id })[0]; if (!wf) return [];
@@ -405,11 +407,73 @@ export function create(ctx) {
     if (uc > 0) cycles = cycles.divide(D(uc), 0, 'UP');
     return bdValueOf(Number(node.duration || 0) * Math.trunc(Number(cycles.toString())));
   }
+  // MPPCostCollector.createPO :843-944 - one Purchase Order per vendor of the activity's SUBCONTRACTING products, a line per product of MovementQty x node-product Qty (Order_Min, Order_Pack)
+  //   UPSTREAM ORDER kept: setBPartner runs BEFORE setIsSOTrx(false), so the new order takes the partner's SALES payment term / price list / payment rule (named quirk, spec §SUBCONTRACT).
+  const MO = () => globalThis.ModelOrder, MI = () => globalThis.ModelInvoice;   // MI().inTrxRuntime: the session Ctx + the callout runtime bound to this Trx (MOrder.beforeSave reads Env)
+  function createPO(trx, cc, activity) {
+    const orders = {}, cur = () => trx.get('pp_cost_collector', cc.pp_cost_collector_id); let msg = '';
+    const subs = trx.find('pp_order_node_product', { pp_order_node_id: activity.pp_order_node_id }).filter((r) => active(r) && r.issubcontracting === 'Y');
+    const elName = (col) => { const e = trx.find('ad_element', { columnname: col })[0]; return e ? e.name : col; };   // Msg.translate(ctx, ColumnName)
+    for (const sub of subs) {
+      const product = trx.get('m_product', sub.m_product_id);
+      if (product.ispurchased !== 'Y' || product.producttype !== 'S') throw new Error('The Product: ' + product.name + ' Do not is Purchase or Service Type');
+      let bpId = Number(activity.c_bpartner_id || 0), ppo = null;
+      const ppos = trx.find('m_product_po', { m_product_id: product.m_product_id }).filter(active).sort((a, b) => (b.iscurrentvendor === 'Y') - (a.iscurrentvendor === 'Y'));
+      for (const p of ppos) { if (bpId === Number(p.c_bpartner_id)) { ppo = p; break; } if (p.iscurrentvendor === 'Y' && Number(p.c_bpartner_id || 0) !== 0) { bpId = Number(p.c_bpartner_id); ppo = p; break; } }
+      if (bpId <= 0 || !ppo) throw new Error('NoVendorForProductException: ' + product.name);
+      const today = String(trx.env.date || '').slice(0, 10), dp = new Date(today + 'T00:00:00Z'); dp.setUTCDate(dp.getUTCDate() + Number(ppo.deliverytime_promised || 0));
+      const datePromised = dp.toISOString().slice(0, 10) + ' 00:00:00';
+      let order = orders[bpId];
+      if (!order) {
+        const vendor = trx.get('c_bpartner', bpId), o = MO().MOrder_new(trx), ppOrder = trx.get('pp_order', cc.pp_order_id);
+        o.set('ad_org_id', cc.ad_org_id); MO().MOrder_setBPartner(trx, o, vendor); o.set('issotrx', 'N'); MO().MOrder_setDocTypeTargetDefault(trx, o);
+        o.set('datepromised', datePromised).set('description', elName('PP_Order_ID') + ':' + ppOrder.documentno).set('docstatus', 'DR').set('docaction', 'CO')
+          .set('ad_user_id', cc.ad_user_id || null).set('m_warehouse_id', cc.m_warehouse_id);
+        const saved = MI().inTrxRuntime(trx, (ctx) => { MO().MOrder_beforeSaveNew(trx, o, ctx); return o.save(); });
+        if (!saved) throw new Error(o.error || 'Could not create Purchase Order');
+        order = orders[bpId] = o; { const so = trx.get('c_order', o.id()); trx.say('§LIBERO-CREATEPO-HDR order=' + so.c_order_id + ' docno=' + so.documentno + ' pricelist=' + so.m_pricelist_id + ' dt=' + so.c_doctypetarget_id + ' bp=' + so.c_bpartner_id + ' term=' + so.c_paymentterm_id + ' rule=' + so.paymentrule + ' so=' + so.issotrx); }
+        const docno = trx.get('c_order', o.id()).documentno, c0 = cur();
+        trx.update('pp_cost_collector', c0, { description: c0.description ? c0.description + ' | ' + elName('C_Order_ID') + ': ' + docno : elName('C_Order_ID') + ': ' + docno });
+        msg += elName('C_Order_ID') + ' : ' + docno + ' - ' + elName('C_BPartner_ID') + ' : ' + vendor.name + ' , ';
+      }
+      let qty = dec(cc.movementqty).multiply(dec(sub.qty));
+      if (dec(ppo.order_min).signum() > 0 && qty.compareTo(dec(ppo.order_min)) < 0) qty = dec(ppo.order_min);   // BigDecimal.max
+      if (dec(ppo.order_pack).signum() > 0 && qty.signum() > 0) qty = dec(ppo.order_pack).multiply(qty.divide(dec(ppo.order_pack), 0, 'UP'));
+      const ol = MO().MOrderLine_new(trx, order);
+      ol.set('m_product_id', product.m_product_id).set('description', activity.description == null ? null : activity.description).set('m_warehouse_id', cc.m_warehouse_id)
+        .set('qtyentered', num(qty)).set('qtyordered', num(qty)).set('pp_cost_collector_id', cc.pp_cost_collector_id).set('datepromised', datePromised);
+      if (!MI().inTrxRuntime(trx, () => ol.save())) throw new Error(ol.error || 'Could not create Purchase Order Line');
+      trx.update('pp_cost_collector', cur(), { processed: 'Y' });                          // setProcessed(true) :941
+      trx.say('§LIBERO-CREATEPO collector=' + cc.pp_cost_collector_id + ' vendor=' + bpId + ' order=' + order.id() + ' product=' + product.m_product_id + ' qty=' + qty.toString());
+    }
+    return msg;
+  }
+  // completeIt :483-510 - a subcontracting activity completes only when every PO line of this collector is delivered; then the activity is Completed
+  function subcontractComplete(trx, cc) {
+    const lines = trx.find('c_orderline', { pp_cost_collector_id: cc.pp_cost_collector_id });
+    let st = 'CO', m = 'The quantity do not is complete for next Purchase Order : ';
+    for (const l of lines) { if (dec(l.qtydelivered).compareTo(dec(l.qtyordered)) < 0) st = 'IP'; m += trx.get('c_order', l.c_order_id).documentno + ','; }
+    if (st === 'IP') { trx._msg = m; return 'IP'; }
+    trx.update('pp_cost_collector', trx.get('pp_cost_collector', cc.pp_cost_collector_id), { processed: 'Y', docaction: 'CL', docstatus: 'CO' });
+    const node = trx.get('pp_order_node', cc.pp_order_node_id), po = ML.po(trx, 'pp_order_node', node);
+    po.set('docstatus', 'CO').set('docaction', '--'); if (!po.save()) throw new Error(po.error);   // MPPOrderNode.completeIt :377-382
+    nodeSetDateFinish(trx, trx.get('pp_order_node', node.pp_order_node_id), true);
+    return 'CO';
+  }
   // MPPCostCollector.prepareIt activity branch :327-366
   function activityPrepare(trx, cc) {
     const node = activityNode(trx, cc);
     if (node.docstatus === 'CO') throw new Error('Order Activity Already Processed - ' + nodeStr(node));
     activityGuards(trx, node);
+    if (node.issubcontracting === 'Y') {                                                   // :322-339 subcontracting: a purchase order per vendor, the activity In Progress, the collector waits
+      if (node.docstatus === 'IP' && cc.docstatus === 'IP') return;
+      if (node.docstatus === 'IP' && (cc.docstatus == null || cc.docstatus === 'DR')) throw new Error('Order Activity Already Processed - ' + nodeStr(node));
+      const msg = createPO(trx, cc, node);
+      const po = ML.po(trx, 'pp_order_node', trx.get('pp_order_node', node.pp_order_node_id));
+      if (nodeProcessed(po.row)) throw new Error('Cannot change status from ' + po.row.docstatus + ' to IP');   // setInProgress :427-442
+      po.set('docstatus', 'IP').set('docaction', 'CO'); if (!po.row.datestart) po.set('datestart', dateStart(trx, cc)); if (!po.save()) throw new Error(po.error);
+      trx._subMsg = msg; return;
+    }
     if (nodeProcessed(node)) throw new Error('Cannot change status from ' + node.docstatus + ' to IP');
     const po = ML.po(trx, 'pp_order_node', node);
     po.set('docstatus', 'IP').set('docaction', 'CO'); if (!node.datestart) po.set('datestart', dateStart(trx, cc));
