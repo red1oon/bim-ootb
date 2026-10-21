@@ -65,7 +65,14 @@
       if (!(o.op_type === 'DXF_OPENING' && o.params.kind === 'window' && o.params.pending_elevation)) { out.push(o); return; }
       var bb = o.params.bbox, faces = Object.keys(FACES).filter(function (f) { return FACES[f](bb); });
       var have = faces.filter(function (f) { return elevs.some(function (e) { return e.face === f; }); });
-      if (!have.length) { out.push(gapOp(o, 'GAP:no_elevation_for_face', { faces: faces })); return; }
+      if (!have.length) {   // §F8 D24: a window no elevation shows takes sill + height from its schedule entry (via its plan tag), when the entry states a sill
+        var se = opts.schedule && o.params.label !== undefined ? opts.schedule[o.params.label] : null;
+        if (se && se.class === 'window' && typeof se.sill === 'number' && typeof se.height === 'number') {
+          out.push({ op_type: 'DXF_OPENING', params: Object.assign({}, o.params, { sill: se.sill, height: se.height, pending_elevation: false, height_source: 'schedule', schedule_label: o.params.label }), input_guids: [], output_guid: opts.hashHex(o.output_guid + '|sched').slice(0, 32) });
+          return;
+        }
+        out.push(gapOp(o, 'GAP:no_elevation_for_face', { faces: faces })); return;
+      }
       var found = [], seen = {};
       have.forEach(function (f) {
         var a0 = AXIS[f] === 'X' ? bb[0] : bb[1], a1 = AXIS[f] === 'X' ? bb[2] : bb[3];

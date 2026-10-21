@@ -52,6 +52,7 @@
         planWallMin(txt, marks, deps, say);
         planWallTop(M, st, lv3, txt, marks, deps, say);
         planDoors(M, st, marks, say, txt, deps);
+        if (opts.windowSchedule !== false) planWindows(M, st, marks, say, R.log);   // §F8 D24 (opts.windowSchedule=false: test hook, W-WIN-SCHED S4)
         grid.x.forEach(g => { marks.push({ text: '@GRIDX=' + g[0], x: mm3(g[1]), y: 0 }); });
         grid.y.forEach(g => { marks.push({ text: '@GRIDY=' + g[0], x: 0, y: mm3(g[1]) }); });
         say('  GRIDX ' + grid.x.map(g => g[0]) + ' GRIDY ' + grid.y.map(g => g[0]) + '  [building grid of the model]');
@@ -178,6 +179,28 @@
     });
     // §F7 D15 safety: two different labels at one FINAL point (after the move) are the same conflict as §L1.25: neither is tagged, stated
     pend.forEach(t => { if (finalAt[t.fk].size > 1) { if (!said['f' + t.fk]) { said['f' + t.fk] = 1; say('  §MARK_GAP TAG door at (' + t.p[0] + ',' + t.p[1] + '): moved tags ' + Array.from(finalAt[t.fk]).sort().join(' / ') + ' meet, not tagged'); } return; } marks.push({ text: '@TAG=door,' + t.l, x: t.p[0], y: t.p[1] }); });
+  }
+  // §F8 D24: the window schedule + tags. Size from what the writer drew: w = the gap cut along the wall (§OPENING along), h = the window's own z extent, sill = z0 minus the
+  // storey elevation (mm, 0.1). A type with one size keeps its name as the label, else "<type> [WxH S<sill>]" (as doors D5). A window with no gap, or a type name with , [ ] is refused, stated.
+  function planWindows(M, st, marks, say, rlog) {
+    const along = {};
+    rlog.forEach(l => { if (l.indexOf('§OPENING ') !== 0 || l.indexOf('cls=IfcWindow') < 0 || / pos=above /.test(l)) return; const g = /guid=(\S+)/.exec(l)[1];
+      const a = /along=\(([-\d.]+),([-\d.]+)\)/.exec(l) || /along=([-\d.]+)\.\.([-\d.]+)/.exec(l); if (a) along[g] = Math.abs(+a[2] - +a[1]); });
+    const here = M.els.filter(e => e.cls === 'IfcWindow' && e.storey === st.name && along[e.guid] !== undefined && Number.isFinite(e.z0) && Number.isFinite(e.z1));
+    if (!here.length) return;
+    const szOf = x => along[x.guid].toFixed(1) + 'x' + ((x.z1 - x.z0) * 1000).toFixed(1) + ' S' + ((x.z0 - st.elev) * 1000).toFixed(1);
+    const sizes = {}; M.els.filter(e => e.cls === 'IfcWindow' && along[e.guid] !== undefined).forEach(x => { (sizes[x.etype] = sizes[x.etype] || new Set()).add(szOf(x)); });
+    here.forEach(x => { if (!sizes[x.etype]) (sizes[x.etype] = new Set()).add(szOf(x)); });
+    const labelOf = x => /[,\[\]]/.test(x.etype || '') || !x.etype ? null : sizes[x.etype].size === 1 ? x.etype : x.etype + ' [' + szOf(x) + ']';
+    here.filter(x => labelOf(x) === null).forEach(x => say('  SCHEDULE window ' + x.guid + ': REFUSED (no type name, or it has , [ ])'));
+    const labels = Array.from(new Set(here.map(labelOf).filter(l => l !== null))).sort();
+    labels.forEach(l => { const x = here.find(w => labelOf(w) === l), m = /^([\d.]+)x([\d.]+) S(-?[\d.]+)$/.exec(szOf(x)); marks.push({ text: '@SCHEDULE=' + l + ',window,' + Number(m[1]) + ',' + Number(m[2]) + ',' + Number(m[3]) }); say('  SCHEDULE=' + l + ',window,' + m[1] + ',' + m[2] + ',' + m[3]); });
+    const at = x => [Number(((x.x0 + x.x1) / 2 * 1000).toFixed(3)), Number(((x.y0 + x.y1) / 2 * 1000).toFixed(3))], pt = {};
+    here.forEach(x => { const l = labelOf(x); if (l === null) return; const k = at(x).join(','); (pt[k] = pt[k] || new Set()).add(l); });
+    const said = {};
+    here.forEach(x => { const l = labelOf(x); if (l === null) return; const p = at(x), k = p.join(',');
+      if (pt[k].size > 1) { if (!said[k]) { said[k] = 1; say('  §MARK_GAP TAG window at (' + p[0] + ',' + p[1] + '): types ' + Array.from(pt[k]).sort().join(' / ') + ' differ, not tagged'); } return; }
+      if (said['d' + k]) return; said['d' + k] = 1; marks.push({ text: '@TAG=window,' + l, x: p[0], y: p[1] }); });
   }
   return { deriveMarks };
 });

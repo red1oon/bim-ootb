@@ -290,6 +290,14 @@
       if (strip.some(function (w) { var r = w.params.rect; return r[ai] < c - tol && r[ai + 2] > c + tol; })) { note('GAP:opening_inside_piece', o, { c: r6(c) }); return; }
       var A = null, B = null;
       strip.forEach(function (w) { var r = w.params.rect; if (r[ai + 2] <= c + tol && (!A || r[ai + 2] > A.params.rect[ai + 2])) A = w; if (r[ai] >= c - tol && (!B || r[ai] < B.params.rect[ai])) B = w; });
+      if ((!A || !B) && q.kind === 'window') {   // §F8 D24b: a window drawn thinner than its wall (its own frame) sits INSIDE the wall's thickness: bounded by the nearest piece on
+        // each side whose band contains the window band (the two may differ in thickness, e.g. corner pieces); the void / infill takes the band both share. Only when the exact match found no bounded strip
+        var cont = ws.filter(function (w) { var r = w.params.rect; return r[ci] <= cr[0] + tol && r[ci + 2] >= cr[1] - tol; }), a = null, b = null;
+        cont.forEach(function (w) { var r = w.params.rect; if (r[ai + 2] <= c + tol && (!a || r[ai + 2] > a.params.rect[ai + 2])) a = w; if (r[ai] >= c - tol && (!b || r[ai] < b.params.rect[ai])) b = w; });
+        if (a && b && !cont.some(function (w) { var r = w.params.rect; return r[ai] < c - tol && r[ai + 2] > c + tol; })) {
+          var ra = a.params.rect, rb = b.params.rect; A = a; B = b; cr = [Math.max(ra[ci], rb[ci]), Math.min(ra[ci + 2], rb[ci + 2])]; o.params.in_wall_band = cr.map(r6);
+        }
+      }
       if (!A || !B) { note('GAP:opening_gap_unbounded', o, { c: r6(c), before: A && A.params.handle, after: B && B.params.handle }); return; }
       var key = A.output_guid + '|' + B.output_guid;
       (groups[key] = groups[key] || { A: A, B: B, ai: ai, ci: ci, cr: cr, s0: A.params.rect[ai + 2], s1: B.params.rect[ai], items: [] }).items.push({ o: o, z0: r6(z0), z1: r6(z1), c: r6(c) });
