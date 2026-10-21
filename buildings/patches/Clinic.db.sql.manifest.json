@@ -1,0 +1,51 @@
+{
+  "schema": "oci-patch-provenance/1",
+  "generated_at": "2026-10-21T21:11:04.738Z",
+  "bucket": "bim-ootb",
+  "engine": {
+    "worktree": "/tmp/wt-f7-clinic",
+    "sha": "13aff9f2d265c63073d8d307658e3dfb8b4711e7",
+    "behind_origin_main": 0,
+    "ahead_origin_main": 1,
+    "clean": true,
+    "dirty_paths": []
+  },
+  "served_db": {
+    "object": "buildings/Clinic.db",
+    "etag": "93af8176-18a0-4221-9aa9-3f1f19597507",
+    "content-md5": "L+8J4xhb4tVtBw4ALOvxlg==",
+    "size": "51313125",
+    "last-modified": "Sun, 30 Aug 2026 14:10:48 GMT",
+    "content-encoding": "gzip"
+  },
+  "artifact": {
+    "file": "buildings/patches/Clinic.db.sql",
+    "bytes": 7285,
+    "md5": "7c915bdc624502449e1012fd6ad55418",
+    "md5_b64": "fJFb3GJFAkSeEBL9atVUGA==",
+    "object": "buildings/patches/Clinic.db.sql",
+    "content_type": "application/sql"
+  },
+  "target": {
+    "exists": false
+  },
+  "verification": {
+    "cmd": "node scripts/probe_storey_patch_deploy.js --patch buildings/patches/Clinic.db.sql --ifc /home/red1/bim-compiler/internal/UNMERGED/Clinic_Architectural_IFC2x3.ifc --ifc /home/red1/bim-compiler/internal/UNMERGED/Clinic_Electrical_IFC2x3.ifc --ifc /home/red1/bim-compiler/internal/UNMERGED/Clinic_HVAC_IFC2x3.ifc --ifc /home/red1/bim-compiler/internal/UNMERGED/Clinic_Plumbing_IFC2x3.ifc --ifc /home/red1/bim-compiler/internal/UNMERGED/Clinic_Structural_IFC2x3.ifc  --gate-db \"$GATE_DB\" && node scripts/probe_s18_elevation_deploy.js --gate-db \"$GATE_DB\"",
+    "exit": 0,
+    "tail": [
+      "§STOREY_DEPLOY PASS S3 | the patch touches spatial_structure only | statements=22 touching another table=0",
+      "§STOREY_DEPLOY PASS S4 | a second apply (the needle path re-runs the patch on the live db) changes nothing | rows 20",
+      "§STOREY_DEPLOY PASS S5 | every elements_meta.storey label except Unknown is a declared storey name | labels=8 undeclared=[\"Unknown\"]",
+      "§STOREY_DEPLOY PASS S6 | the §S18 query (schedule_author.js) returns rows and deriveStoreyMergeMap bands = the distinct datums the IFCs state | rows=16 names=7 bands=4 datums=[-1,0,4.57,9.25] map={\"TOF Footing\":\"TOF Footing\",\"First Floor\":\"First Floor\",\"Level 1\":\"First Floor\",\"Second Floor\":\"Second Floor\",\"Level 2\":\"Second Floor\",\"Roof - Mech\":\"Roof - Mech\",\"Roof - Main\":\"Roof - Mech\"}",
+      "§STOREY_DEPLOY PASS",
+      "§S18_DEPLOY gate-db PASS — 16 storey datums survive the room compile, 7 names -> 4 bands"
+    ]
+  },
+  "verdict": "PASS",
+  "failures": [],
+  "uploaded": {
+    "at": "2026-10-21T21:11:07.650Z",
+    "etag": "b98f7c62-5e70-455e-82ee-2649c4f9bf67",
+    "verified": true
+  }
+}
