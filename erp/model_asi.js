@@ -70,7 +70,7 @@
     var today = o.today || new Date().toISOString().slice(0, 10), lotRow = null, lotCtlUpd = null, snCtlUpd = null;
     var autoNew = mode !== 'dialog';
     if (!o.productWindow) {
-      if (s.islot === 'Y') {
+      if (s.islot === 'Y' || autoNew) {   // getLot(true) / generateLot create from the lot control whatever IsLot says (MAttributeSetInstance.java:294-318, :444-459)
         if ((vin.newLot || (autoNew && !vin.lot)) && Number(s.m_lotctl_id) > 0) {                    // getLot(true) -> createLot :306-318
           var lc = one(r, 'SELECT * FROM m_lotctl WHERE m_lotctl_id=?', [s.m_lotctl_id]);
           if (!lc) { out.errors.push('M_LotCtl ' + s.m_lotctl_id + ' not found'); return out; }
@@ -82,16 +82,16 @@
           if (ex) lotRow = { existing: ex.m_lot_id };
         }
       }
-      if (s.isserno === 'Y') {
-        if ((vin.newSerNo || (autoNew && !vin.serno)) && Number(s.m_sernoctl_id) > 0) {              // getSerNo(true) :354-367
+      if (s.isserno === 'Y' || mode === 'create') {   // generateLot makes the LOT only; create also takes Serial No and Guarantee Date (:419-437)
+        if ((vin.newSerNo || (mode === 'create' && !vin.serno)) && Number(s.m_sernoctl_id) > 0) {              // getSerNo(true) :354-367
           var sc = one(r, 'SELECT * FROM m_sernoctl WHERE m_sernoctl_id=?', [s.m_sernoctl_id]);
           if (!sc) { out.errors.push('M_SerNoCtl ' + s.m_sernoctl_id + ' not found'); return out; }
           var c2 = counter(sc); v.serno = c2.name; snCtlUpd = { key: 'm_sernoctl', id: sc.m_sernoctl_id, fields: { currentnext: c2.next } };
         } else if (vin.serno != null && vin.serno !== '') v.serno = String(vin.serno);
       }
-      if (s.isguaranteedate === 'Y') {
+      if (s.isguaranteedate === 'Y' || mode === 'create') {
         if (vin.guaranteedate) v.guaranteedate = String(vin.guaranteedate).length === 10 ? vin.guaranteedate + ' 00:00:00' : vin.guaranteedate;
-        else if (autoNew && Number(s.guaranteedays) > 0) v.guaranteedate = addDays(today, s.guaranteedays);   // getGuaranteeDate(true) :274-285
+        else if (mode === 'create' && Number(s.guaranteedays) > 0) v.guaranteedate = addDays(today, s.guaranteedays);   // getGuaranteeDate(true) :274-285
       }
       if (mode === 'dialog') {                                                                       // WPAttributeDialog.saveSelection mandatory block
         if (s.islot === 'Y' && s.islotmandatory === 'Y' && !v.lot) out.mandatory.push('Lot');
@@ -192,6 +192,20 @@
     }
     return trx.q(sql, prm).filter(function (r) { return Number(r.qtyonhand) !== 0; });
   }
+
+  // MStorageOnHand.getWarehouseNegative :579-660 - the NEGATIVE on-hand rows of the product (instance-free when asiId = 0) a receipt fills first (MInOut.autoBalanceNegative :2477-2500):
+  //   locator priority DESC, then DateMaterialPolicy (guarantee date when the set says so) asc FiFo / desc LiFo, then instance id, then QtyOnHand DESC (least negative first).
+  function negatives(trx, o) {
+    if ((!o.warehouseId && !o.locatorId) || !o.productId) return [];
+    var p = trx.get('m_product', o.productId) || {}, prm = [Number(o.locatorId) > 0 ? o.locatorId : o.warehouseId, o.productId];
+    var as = Number(p.m_attributeset_id) > 0 ? trx.get('m_attributeset', p.m_attributeset_id) : null, useGD = !!as && as.isguaranteedate === 'Y' && as.useguaranteedateformpolicy === 'Y';
+    var sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id LEFT JOIN m_attributesetinstance asi ON asi.m_attributesetinstance_id=s.m_attributesetinstance_id WHERE ' +
+      (Number(o.locatorId) > 0 ? 'l.m_locator_id=?' : 'l.m_warehouse_id=?') + ' AND s.m_product_id=? AND s.qtyonhand < 0';
+    if (Number(o.asiId) > 0) { sql += ' AND s.m_attributesetinstance_id=?'; prm.push(o.asiId); } else if (Number(o.asiId) === 0) sql += ' AND (s.m_attributesetinstance_id=0 OR s.m_attributesetinstance_id IS NULL)';
+    sql += useGD ? ' ORDER BY l.priorityno DESC, asi.guaranteedate' + (o.fifo ? '' : ' DESC')
+      : ' ORDER BY l.priorityno DESC, s.datematerialpolicy' + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC');
+    return trx.q(sql + ', s.qtyonhand DESC', prm);
+  }
   // MAttributeSetInstance.afterSave :430-450 - a NEW instance saved with an empty Description gets its own id as the Description
   ML.registerModel('m_attributesetinstance', { afterSave: function (trx, row, isNew) {
     if (isNew && (row.description == null || String(row.description).trim() === '')) {
@@ -211,5 +225,5 @@
       if (s.isinstanceattribute !== want) trx.update('m_attributeset', s, { isinstanceattribute: want });
       return null;
     } });
-  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg, storages: storages, mmFifo: mmFifo };
+  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg, storages: storages, negatives: negatives, mmFifo: mmFifo };
 });
