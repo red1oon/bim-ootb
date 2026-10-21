@@ -24,6 +24,10 @@
       if (sm) { view = sm[1]; scopeSheet = sm[2]; }
       const kind = /^FLOOR_/.test(view) ? 'PLAN' : view === 'ROOF' ? 'ROOF' : view === 'SECTION' ? 'SECTION' : 'ELEV';
       say('== ' + name + ' (' + kind + (scopeSheet ? ', scope ' + scopeSheet : '') + ')');
+      if (view === 'PLANE_VIEW') {   // §F7 the view at the plane: a DRAWING (not read back); it states only who it is and its frame
+        const mk = [{ text: '@SET=' + set }, { text: '@VIEW=DRAWING' }, { text: '@UNITS=mm' }, { text: '@NAME=' + view }]; if (R.wing) mk.push({ text: '@FRAME=' + R.wing.angle + ',' + mm3(R.wing.ox) + ',' + mm3(R.wing.oy) });
+        out[name] = deps.MK.writeMarks(txt, mk.map(m => Object.assign({}, m, { text: m.text + ' @BY=model' }))); say('  DRAWING: not read back'); continue;
+      }
       if (scopeSheet && scopeSheet !== 'KEY') {   // a wing/zone sheet: the plan role + level + its rectangle + the grid lines drawn on it; every other marking is on the KEY sheet
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev), sp = R.scoped[view], sh = sp.sheets.find(x => x.name === scopeSheet), E = sp.E;
         const cl = (v, lo, hi) => Number.isFinite(v) ? v : (v < 0 ? lo : hi);
