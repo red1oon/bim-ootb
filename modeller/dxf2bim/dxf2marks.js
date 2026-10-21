@@ -10,7 +10,7 @@
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
   var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT'];
-  var NEED = { PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
+  var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
   var LAYER_TYPES = {
@@ -72,7 +72,7 @@
           if (val.trim() === '' || !isFinite(wmn) || wmn <= 0 || wmn > 1) { errors.push(err('MARK:malformed', '@WALLMIN needs a thickness in metres (0 < t <= 1): ' + val, { handle: m.handle })); return; }
           val = String(wmn);
         }
-        if (key === 'VIEW' && val !== 'PLAN' && val !== 'ELEV' && val !== 'ROOF' && val !== 'SECTION') { errors.push(err('MARK:malformed', '@VIEW must be PLAN|ELEV|ROOF|SECTION: ' + val, { handle: m.handle })); return; }
+        if (key === 'VIEW' && val !== 'PLAN' && val !== 'ELEV' && val !== 'ROOF' && val !== 'SECTION' && val !== 'DRAWING') { errors.push(err('MARK:malformed', '@VIEW must be PLAN|ELEV|ROOF|SECTION|DRAWING: ' + val, { handle: m.handle })); return; }
         if (key === 'CUT') {                                                               // L1.4 F5: <X|Y>,<plan coordinate in the sheet's @UNITS>
           var cp = val.split(','), cv = Number(cp[1]);
           if (cp.length !== 2 || (cp[0] !== 'X' && cp[0] !== 'Y') || cp[1].trim() === '' || !isFinite(cv)) { errors.push(err('MARK:malformed', '@CUT needs X|Y,<coordinate>: ' + val, { handle: m.handle })); return; }
