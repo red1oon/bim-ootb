@@ -969,8 +969,17 @@
       let d = near(e); if (OPEN.indexOf(e.cls) >= 0) { const h = model.by_guid[model.host_all && model.host_all[e.guid]]; if (h) d = Math.min(d, near(h)) - 0.001; }   // an opening shows in its wall
       const a = hx(e.x0), b = hx(e.x1); return { e, d, r: [[[Math.min(a, b), mm(e.z0)], [Math.max(a, b), mm(e.z0)], [Math.max(a, b), mm(e.z1)], [Math.min(a, b), mm(e.z1)], [Math.min(a, b), mm(e.z0)]]] };
     }).sort((p, q) => p.d - q.d || (p.e.guid < q.e.guid ? -1 : 1));
-    let U = [], drawn = 0, hidden = 0, pieces = 0; const vis = {};
+    let U = [], drawn = 0, hidden = 0, pieces = 0, quick = 0; const vis = {}, seen = [];
+    // §F7 W1 (speed): every item is an axis-aligned rect, so "wholly behind the nearer items" is decided exactly by rect subtraction against the rects already drawn;
+    // only an item with something left goes through polygon-clipping (LTU: 7,117 of 7,555 items are hidden)
+    const sub = (p, q) => { if (q[0] >= p[2] || q[2] <= p[0] || q[1] >= p[3] || q[3] <= p[1]) return [p]; const o = [];
+      if (q[0] > p[0]) o.push([p[0], p[1], q[0], p[3]]); if (q[2] < p[2]) o.push([q[2], p[1], p[2], p[3]]);
+      const x0 = Math.max(p[0], q[0]), x1 = Math.min(p[2], q[2]); if (q[1] > p[1]) o.push([x0, p[1], x1, q[1]]); if (q[3] < p[3]) o.push([x0, q[3], x1, p[3]]); return o; };
+    const covered = b => { let left = [b]; for (let i = 0; i < seen.length && left.length; i++) { const q = seen[i]; if (q[0] >= b[2] || q[2] <= b[0] || q[1] >= b[3] || q[3] <= b[1]) continue; left = [].concat(...left.map(p => sub(p, q))); } return !left.length; };
     items.forEach(it => {
+      const b = [it.r[0][0][0], it.r[0][0][1], it.r[0][2][0], it.r[0][2][1]];
+      if (seen.length && covered(b)) { hidden++; quick++; vis[it.e.guid] = 0; return; }   // U already holds b: the union would not change
+      seen.push(b);
       let V; try { V = U.length ? PC.difference(it.r, U) : [it.r]; } catch (e) { V = [it.r]; }
       if (!V.length) { hidden++; vis[it.e.guid] = 0; } else { drawn++; vis[it.e.guid] = V.length; V.forEach(poly => { pieces++; doc.lwpoly(layerOf(it.e.cls), poly[0].slice(0, -1), true, tag(it.e.guid)); }); }
       try { U = U.length ? PC.union(U, it.r) : [it.r]; } catch (e) { }
@@ -984,7 +993,7 @@
     gx.forEach(([lab], i) => { const h = hs[i], o = te[i] * GRID_STAGGER; doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE - o], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE - o, lab); });
     doc.text('A-ANNO-TTLB', `VIEW AT THE PLANE  1:${SCALE}`, [(H0 + H1) / 2, zb - (ELEV_BUBBLE_C + 12) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     model.planeView = { items: items.length, drawn, hidden, pieces, vis };
-    log.add(`§PLANE_VIEW items=${items.length} drawn=${drawn} hidden=${hidden} pieces=${pieces} levels=${levels.map(l => l[0]).join(',')} dir=${dir}`);
+    log.add(`§PLANE_VIEW items=${items.length} drawn=${drawn} hidden=${hidden} (by rect cover ${quick}) pieces=${pieces} levels=${levels.map(l => l[0]).join(',')} dir=${dir}`);
     return doc;
   }
   function writeRoofPlan(model, grid, storey, log) {

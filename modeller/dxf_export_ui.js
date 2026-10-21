@@ -15,15 +15,14 @@
   var _loaded = null;
   function loadScripts() {
     if (_loaded) return _loaded;
-    _loaded = SCRIPTS.reduce(function (p, src) {
-      return p.then(function () {
-        if (src === 'lib/dxf-parser.js' && window.DxfParser) return null;   // already there (the importer loaded it)
-        return new Promise(function (res, rej) {
-          var s = document.createElement('script'); s.src = new URL(src + '?v=' + V, _base).href;
-          s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s);
-        });
+    // all fetched at once, executed in list order (dynamic scripts with async = false run in insertion order): the 2D wand's cold first press waited ~4 s for them one by one (§F7 W3)
+    _loaded = Promise.all(SCRIPTS.map(function (src) {
+      if (src === 'lib/dxf-parser.js' && window.DxfParser) return null;   // already there (the importer loaded it)
+      return new Promise(function (res, rej) {
+        var s = document.createElement('script'); s.async = false; s.src = new URL(src + '?v=' + V, _base).href;
+        s.onload = res; s.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(s);
       });
-    }, Promise.resolve()).then(function () { console.log(TAG + ' modules loaded n=' + SCRIPTS.length); return true; })
+    })).then(function () { console.log(TAG + ' modules loaded n=' + SCRIPTS.length); return true; })
       .catch(function (e) { _loaded = null; console.error(TAG + ' ' + e.message); throw e; });
     return _loaded;
   }
@@ -55,9 +54,12 @@
   // §F7: `north` = { angle, source } from the georef, or null = not stated (undefined = not asked)
   function make(q, prefix, scopes, step, wing, north, extra) {
     var wo = {}; if (extra && extra.scaleBar === true) wo.scaleBar = true; if (extra && extra.sectionAt !== undefined) wo.sectionAt = extra.sectionAt; if (extra && extra.extent) wo.extent = extra.extent; if (extra && typeof extra.depth === 'number') wo.depth = extra.depth; if (extra && Array.isArray(extra.rooms)) { wo.rooms = extra.rooms; wo.roomsSource = extra.roomsSource; } if (north !== undefined) wo.north = north; if (scopes && scopes.length > 1) wo.scopes = scopes; if (wing) { wo.wing = { angle: wing.angle, name: wing.name }; if (typeof wing.turn === 'number') wo.wing.turn = wing.turn; if (wing.pivot) wo.wing.pivot = wing.pivot; }   // §F7: the 2D wand's full-circle turn and stated pivot
-    var R = window.Std2d.writeStdSet(q, prefix, wo), report = window.Std2d.drawableReport(R), D = null;
-    if (report.drawable) { if (step) step('Deriving markings from the model'); D = window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix }); }
-    return { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], wings: wing ? undefined : window.Std2d.wingAngles(R.model) };
+    var R = window.Std2d.writeStdSet(q, prefix, wo), report = window.Std2d.drawableReport(R), D = null, lazy = !!(extra && extra.lazyMarks === true);
+    var derive = function () { return window.Std2dMarks.deriveMarks(R, { B: window.Dxf2Bim, DxfParser: window.DxfParser, hashHex: window.Dxf2BimImport.sha256Hex, MK: window.Dxf2Marks, SHC: window.Dxf2ShellConfig, SCOPES: window.Std2dScopes }, { set: prefix }); };
+    if (report.drawable && !lazy) { if (step) step('Deriving markings from the model'); D = derive(); }
+    var out = { R: R, report: report, marked: D ? D.files : null, markLog: D ? D.log : [], wings: wing ? undefined : window.Std2d.wingAngles(R.model) };
+    if (lazy && report.drawable) out.deriveMarks = function () { if (!out.marked) { D = derive(); out.marked = D.files; out.markLog = D.log; } return out.marked; };   // §F7 W2: the 2D wand derives the markings on Save (the card draws the sheets themselves)
+    return out;
   }
   async function build(file, step, extras) {   // extras: [File] — second IFCs (e.g. the structural model) contributing only their columns (grid evidence)
     await loadScripts();

@@ -44,10 +44,10 @@ function setupWing2D(A) {
   }
   function loadSide() {
     if (S.side) return Promise.resolve(S.side); if (S.sideLoading) return S.sideLoading;
-    var url = sidecarUrl(), t0 = performance.now();
+    var url = sidecarUrl(), t0 = performance.now(), mods = loadModules();   // §F7 W3: the writer's modules load while the sidecar downloads
     S.sideLoading = fetch(url).then(function (r) { if (!r.ok) throw new Error('no 2D sidecar for this building (' + r.status + ' ' + url + ')'); return r.arrayBuffer(); })
       .then(function (buf) {
-        var db = new A.db.constructor(new Uint8Array(buf)); log('_SIDECAR url=' + url + ' bytes=' + buf.byteLength + ' ms=' + Math.round(performance.now() - t0)); return loadModules().then(function () { S.side = db; analyse(); return db; });
+        var db = new A.db.constructor(new Uint8Array(buf)); log('_SIDECAR url=' + url + ' bytes=' + buf.byteLength + ' ms=' + Math.round(performance.now() - t0)); return mods.then(function () { S.side = db; analyse(); return db; });
       }).catch(function (e) { S.sideLoading = null; throw e; });
     return S.sideLoading;
   }
@@ -65,7 +65,16 @@ function setupWing2D(A) {
     var t0 = performance.now(), Sd = window.Std2d, m = Sd.loadModel(qOf(S.side), { add: function () {}, gap: function () {} });
     S.walls = m.walls.map(function (w) { var a = Sd.elementAngle(w); return a && a.q >= 0.5 ? a.deg : null; }).filter(function (v) { return v !== null; });
     S.fam = Sd.wingAngles(m); log('_SIDECAR walls=' + S.walls.length + ' families=' + JSON.stringify(S.fam) + ' analyse_ms=' + Math.round(performance.now() - t0));
-    refreshTools();
+    defaultTurn(); refreshTools();
+  }
+  // §F7 the plane is placed before the walls are known (the sidecar comes on the first press); an untouched plane that frames no wall family is turned about its
+  // midpoint onto the largest family by the smallest turn (Hospital: families 85 / 10 / 70 ..., the default 0 deg framed none and the first 2D press failed)
+  function defaultTurn() {
+    if (!S.init || !S.p0 || !S.fam || !S.fam.length || S.p0.join() !== S.init.p0.join() || S.p1.join() !== S.init.p1.join()) return;
+    var G = geom(); if (S.fam.some(function (f) { return angDiff90(f.deg, G.turn) <= FAM_TOL; })) return;
+    var d = S.fam[0].deg, t = d > 45 ? d - 90 : d, r = t * Math.PI / 180, h = G.L / 2;
+    S.p0 = [G.mid[0] - h * Math.cos(r), G.mid[1] - h * Math.sin(r)]; S.p1 = [G.mid[0] + h * Math.cos(r), G.mid[1] + h * Math.sin(r)]; S.init = { p0: S.p0.slice(), p1: S.p1.slice() };
+    if (S.g) updateGizmo(); log('_DEFAULT_TURN from=' + G.turn.toFixed(1) + ' to=' + t + ' family=' + d + ' (the untouched plane framed no wall family)');
   }
   function framedCount(turn) { var b = ((turn % 90) + 90) % 90; return S.walls.filter(function (d) { return angDiff90(d, b) <= FAM_TOL; }).length; }
   function snapTurn(turn) {   // nearest family direction (any quarter turn) within SNAP_DEG, else the free angle
@@ -108,7 +117,7 @@ function setupWing2D(A) {
   function initPlane() {
     var r = q1("SELECT min(t.center_x),max(t.center_x),min(t.center_y),max(t.center_y),min(t.center_z),max(t.center_z) FROM element_transforms t JOIN elements_meta m ON m.guid=t.guid WHERE m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcSlab')")[0];
     if (!r || r[0] === null) r = [-10, 10, -10, 10, 0, 10];
-    S.p0 = [r[0], r[2] - 2]; S.p1 = [r[1], r[2] - 2]; S.z0 = r[4] - 1; S.z1 = r[5] + 2; S.bb = [r[0], r[1], r[2], r[3], r[4], r[5]];
+    S.p0 = [r[0], r[2] - 2]; S.p1 = [r[1], r[2] - 2]; S.z0 = r[4] - 1; S.z1 = r[5] + 2; S.bb = [r[0], r[1], r[2], r[3], r[4], r[5]]; S.init = { p0: S.p0.slice(), p1: S.p1.slice() };
   }
 
   // ---- pointer: drag the plane (body) or an edge handle; OrbitControls is parked while a drag runs ----
@@ -220,9 +229,10 @@ function setupWing2D(A) {
     if (!S.p0) return Promise.resolve(null); say(''); var P = planeParams(), t0 = performance.now(), b = document.getElementById('wing-2d-btn'); if (b) b.disabled = true;
     var rooms = null;
     return loadSide().then(function () { return loadModules(); }).then(function () { return roomsForWriter(); }).then(function (rm) {
-      rooms = rm; var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
+      rooms = rm; P = planeParams();   // the sidecar's walls may have turned an untouched plane (defaultTurn)
+      var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
-      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot', extent: [P.p0, P.p1], depth: P.depth || undefined, rooms: rooms, roomsSource: 'the Viewer room injection' });
+      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot', extent: [P.p0, P.p1], depth: P.depth || undefined, rooms: rooms, roomsSource: 'the Viewer room injection', lazyMarks: true });
       if (!M.R.wing) throw new Error('This plane frames no walls.');
       log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' box=' + (((M.R.log || []).filter(function (l) { return /§EXTENT/.test(l); })[0]) || '-').replace(/^§EXTENT /, '') + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
       showOverlay(M, P, wing);
@@ -282,6 +292,7 @@ function setupWing2D(A) {
     if (!silent) log('_CLOSE nothing saved; plane stays turn=' + (S.last ? S.last.turn : '-'));
   }
   function doSave(M, P, wing) {
+    var tm = performance.now(); if (!M.marked && M.deriveMarks) { M.deriveMarks(); log('_MARKS ms=' + Math.round(performance.now() - tm)); }   // §F7 W2: markings made on Save
     var X = window.DxfExportUI, enc = new TextEncoder(), files = M.marked || M.R.files, names = Object.keys(files).sort(), z = X.zip(names.map(function (n) { return { name: n, bytes: enc.encode(files[n]) }; }));
     var name = prefixOf() + '_W' + Math.round(P.turn) + '_2D.zip', a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([z], { type: 'application/zip' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
     var rec = { turn: P.turn, pivot: P.pivot, sheets: names.length, file: name, gaps: M.R.gaps.length, marked: !!M.marked };
