@@ -30,7 +30,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   const cutOf = {}; (on.model || {}).els; const stor = S.planStoreys(on.model);
   let okSteps = true, detail = []; logged.forEach(L => { const e = on.model.by_guid[L.g], hits = stor.filter(s => e.z0 < s.elev + 1.2 && e.z1 > s.elev + 1.2).map(s => stepsOf(e, s.elev, s.elev + 1.2)); const want = hits.filter(h => h > 0); if (!want.includes(L.n)) okSteps = false; detail.push(L.n + '/' + want.join('|')); });
   check('S2', 'drawn step count == independent distinct-height count (floor..cut plane), per stair', logged.length > 0 && okSteps, 'stairs drawn=' + logged.length + ' (drawn/independent) ' + detail.slice(0, 8).join(' '));
-  const planF = Object.keys(on.files).filter(f => /FLOOR_LEVEL/.test(f)), arrows = f => (on.files[f].match(/A-FLOR-STRS\n100\nAcDbPolyline\n90\n3\n70\n1\n/g) || []).length, ups = f => (on.files[f].match(/\n1\nUP\n/g) || []).length;
+  const planF = Object.keys(on.files).filter(f => on.views.plan.some(v => f.endsWith('_' + v.view + '_std.dxf'))),   // the set's own plan sheets (a storey need not be called 'Level': LTU's are 'VÅNING n')
+    arrows = f => (on.files[f].match(/A-FLOR-STRS\n100\nAcDbPolyline\n90\n3\n70\n1\n/g) || []).length, ups = f => (on.files[f].match(/\n1\nUP\n/g) || []).length;
   const nArrow = planF.reduce((a, f) => a + arrows(f), 0), nUp = planF.reduce((a, f) => a + ups(f), 0), want2 = logged.filter(L => L.n >= 2).length;
   check('S3', 'one arrowhead and one UP per stair with 2+ steps', nArrow === want2 && nUp === want2, `arrowheads=${nArrow} UP=${nUp} stairs(2+)=${want2}`);
   const diff = Object.keys(on.files).filter(k => on.files[k] !== off.files[k]), hold = Object.keys(on.files).filter(f => /A-FLOR-STRS/.test(on.files[f]) && /\n1\nUP\n/.test(on.files[f]));
