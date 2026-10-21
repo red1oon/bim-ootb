@@ -389,19 +389,33 @@
       return best && best.w;
     }
     var oSegs = [], doorPts = [];                            // §12: segments on opening layers + door anchor points
+    // §F7 D17-R: a DOUBLE door = two arcs of one radius whose hinges are two radii apart, each closed end at the midpoint between the hinges: ONE door of the full width (leaves=2),
+    // the second arc absorbed. (Two single doors hinged back to back with their leaves meeting draw the same thing: read as a double door, stated.)
+    var arcs = openingEnts.filter(function (e) { return e.type === 'ARC'; }), pairOf = {}, absorbed = {}, tolP = has(config, ['snap_tol']) ? config.snap_tol : 0.001;
+    var ends = function (e) { return [e.startAngle, e.endAngle].map(function (a) { return [m(e.center.x + e.radius * Math.cos(a)), m(e.center.y + e.radius * Math.sin(a))]; }); };
+    arcs.forEach(function (a, i) { if (pairOf[a.handle] || absorbed[a.handle]) return; arcs.slice(i + 1).some(function (b) {
+      if (pairOf[b.handle] || absorbed[b.handle] || Math.abs(m(a.radius) - m(b.radius)) > tolP) return false;
+      var A = [m(a.center.x), m(a.center.y)], Bc = [m(b.center.x), m(b.center.y)], r = m(a.radius); if (Math.abs(Math.hypot(A[0] - Bc[0], A[1] - Bc[1]) - 2 * r) > tolP) return false;
+      var Mid = [(A[0] + Bc[0]) / 2, (A[1] + Bc[1]) / 2], atM = function (e) { return ends(e).some(function (p) { return Math.hypot(p[0] - Mid[0], p[1] - Mid[1]) <= tolP; }); };
+      if (!atM(a) || !atM(b)) return false;
+      pairOf[a.handle] = b; absorbed[b.handle] = a; return true; }); });
     openingEnts.forEach(function (e) {
+      if (e.type === 'ARC' && absorbed[e.handle]) return;   // D17-R: the second leaf of a double door
       if (e.type === 'ARC') {
         if (!has(config, ['host_tol'])) { gap('GAP:no_dimension', e, { need: 'host_tol' }); return; }
         var doorFromElev = !!(config.opening && config.opening.door && config.opening.door.from_elevation === true);
         if (!doorFromElev && !has(config, ['opening', 'door', 'height'])) { gap('GAP:no_dimension', e, { need: 'opening.door.height' }); return; }
-        if (has(config, ['opening', 'door', 'min_width']) && m(e.radius) < config.opening.door.min_width) { gap('GAP:door_below_min_width', e, { width: m(e.radius) }); return; }
-        var hinge = [m(e.center.x), m(e.center.y)], width = m(e.radius);
+        var pb = pairOf[e.handle], fullW = pb ? 2 * m(e.radius) : m(e.radius);   // D17-R: a double door's width is both leaves
+        if (has(config, ['opening', 'door', 'min_width']) && fullW < config.opening.door.min_width) { gap('GAP:door_below_min_width', e, { width: fullW }); return; }
+        var hinge = [m(e.center.x), m(e.center.y)], width = fullW;
         var host = hostFor(hinge);
         if (!host) { gap('GAP:no_host', e, { hinge: hinge }); return; }
         var door = { op: 'DXF_OPENING', e: e, part: 0, hostRef: host, params: {
           kind: 'door', hinge: hinge, width: width, height: doorFromElev ? null : config.opening.door.height, pending_elevation: doorFromElev, height_fallback: (doorFromElev && has(config, ['opening', 'door', 'height'])) ? config.opening.door.height : null,
           swing_start_deg: r6(e.startAngle * 180 / Math.PI), swing_end_deg: r6(e.endAngle * 180 / Math.PI), parts: [] } };
+        if (pb) { door.params.leaves = 2; door.params.leaf_width = m(e.radius); door.params.pair_handle = pb.handle; door.params.swing_start_deg = r6(e.startAngle * 180 / Math.PI); }
         elems.push(door);
+        if (pb) ends(pb).concat([[m(pb.center.x), m(pb.center.y)]]).forEach(function (p) { doorPts.push({ door: door, p: p }); });
         doorPts.push({ door: door, p: hinge },
           { door: door, p: [m(e.center.x + e.radius * Math.cos(e.startAngle)), m(e.center.y + e.radius * Math.sin(e.startAngle))] },
           { door: door, p: [m(e.center.x + e.radius * Math.cos(e.endAngle)), m(e.center.y + e.radius * Math.sin(e.endAngle))] });
