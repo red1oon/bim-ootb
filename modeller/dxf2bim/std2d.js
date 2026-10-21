@@ -854,7 +854,7 @@
         if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) { if (sideOf(pts) < readMin - 1e-9) { thinRun++; return; } faceRuns[side].push([Math.min(...run), Math.max(...run)]); }   // D27
       });
     }));
-    if (thinRun || colRun) log.add(`§FACE_RUN_DROP view=${view} thin=${thinRun} (pieces under the reading limit ${fx(readMin, 3)} m) columns=${colRun} touching a face: not wall-run points (D27)`);
+    if (thinRun || colRun) log.add(`§FACE_RUN_DROP view=${view} thin=${thinRun} (pieces under the reading limit ${fx(readMin, 3)} m) columns=${colRun} touching a face: not wall-run points (D30)`);
     if (Object.keys(curt).length) log.add(`§PLAN curtain walls=${nCw}`);
     const nO = { above: 0, below: 0 };
     for (const [e, pos] of ops) {
@@ -1068,7 +1068,14 @@
     return G.chainSegments(G.sliceMesh(P, e.f, x)).filter(c => c.length >= 3);
   }
   function writeSection(model, grid, log, Xat) {   // Xat (§F7): a stated cut position in model metres (the 2D wand's plane midpoint); undefined = midway between the first two grid lines, as always
-    const xs = grid.x.map(g => g[1]), X = Number.isFinite(Xat) ? Number(Xat.toFixed(6)) : xs.length >= 2 ? Number(((xs[0] + xs[1]) / 2).toFixed(6)) : null;
+    const xs = grid.x.map(g => g[1]);
+    let X = Number.isFinite(Xat) ? Number(Xat.toFixed(6)) : xs.length >= 2 ? Number(((xs[0] + xs[1]) / 2).toFixed(6)) : null;
+    if (!Number.isFinite(Xat) && xs.length >= 2) {   // §F8 D30: no stated cut: the first grid bay whose midpoint crosses a slab of the most plan storeys (the floors the reader reads from the section); the first bay when it already shows them all
+      const sts = planStoreys(model), slabs = model.els.filter(e => e.cls === 'IfcSlab'), cov = x => sts.filter(st => slabs.some(e => e.storey === st.name && e.x0 < x && x < e.x1)).length;
+      let bi = 0, bc = -1; for (let i = 0; i + 1 < xs.length; i++) { const c = cov((xs[i] + xs[i + 1]) / 2); if (c > bc) { bc = c; bi = i; } }
+      const c0 = cov((xs[0] + xs[1]) / 2); if (bi > 0 && bc > c0) X = Number(((xs[bi] + xs[bi + 1]) / 2).toFixed(6));
+      log.add(`§SECTION_CUT_CHOICE bays=${xs.length - 1} first_bay_floors=${c0}/${sts.length} chosen_bay=${bi > 0 && bc > c0 ? bi : 0} floors=${Math.max(bc, c0)}/${sts.length} (D30)`);
+    }
     model.sectionX = X;
     if (X === null) { log.gap('GAP:section_no_bay', '-', 'fewer than 2 X grid lines; no section'); return null; }
     log.add(`§VIEW SECTION cut X=${fx(X * 1000, 2)} mm viewed toward -X (h = +y)`);

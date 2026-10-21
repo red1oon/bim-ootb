@@ -294,7 +294,8 @@
         // each side whose band contains the window band (the two may differ in thickness, e.g. corner pieces); the void / infill takes the band both share. Only when the exact match found no bounded strip
         var cont = ws.filter(function (w) { var r = w.params.rect; return r[ci] <= cr[0] + tol && r[ci + 2] >= cr[1] - tol; }), a = null, b = null;
         cont.forEach(function (w) { var r = w.params.rect; if (r[ai + 2] <= c + tol && (!a || r[ai + 2] > a.params.rect[ai + 2])) a = w; if (r[ai] >= c - tol && (!b || r[ai] < b.params.rect[ai])) b = w; });
-        if (a && b && !cont.some(function (w) { var r = w.params.rect; return r[ai] < c - tol && r[ai + 2] > c + tol; })) {
+        var e0 = q.bbox[ai], e1 = q.bbox[ai + 2];   // the bounding pieces meet the window's own ends (the writer cuts the gap at the window): never a piece further along the wall line
+        if (a && b && Math.abs(a.params.rect[ai + 2] - e0) <= tol && Math.abs(b.params.rect[ai] - e1) <= tol && !cont.some(function (w) { var r = w.params.rect; return r[ai] < c - tol && r[ai + 2] > c + tol; })) {
           var ra = a.params.rect, rb = b.params.rect; A = a; B = b; cr = [Math.max(ra[ci], rb[ci]), Math.min(ra[ci + 2], rb[ci + 2])]; o.params.in_wall_band = cr.map(r6);
         }
       }
