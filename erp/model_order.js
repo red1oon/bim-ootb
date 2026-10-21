@@ -80,6 +80,7 @@
       if (nz(l.c_charge_id) && nz(l.m_product_id)) l.m_product_id = null;
       if (!nz(l.m_product_id)) l.m_attributesetinstance_id = 0;
       else { var perr = PXO.MOrderLine_beforeSavePricing(trx, l, o); if (perr) return perr; }                // :821-850 (S2b)
+      PXO.MOrderLine_setTaxIfMissing(trx, l, o);                                                              // :865-867 if (getC_Tax_ID() == 0) setTax() (a line saved without the window callout: a process, the WebService)
       if (!nz(l.c_uom_id)) { var p = T.product(trx, l.m_product_id); if (p) l.c_uom_id = p.c_uom_id; }
       if (!Number(l.line)) { var mx = 0; trx.find('c_orderline', { c_order_id: o.c_order_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }
       var prec = T.precisionOf(trx, o.c_currency_id), bd = D(l.priceentered).multiply(D(l.qtyentered));
@@ -707,6 +708,13 @@
     if (ii === 0) { say(trx, '§MODEL-SEVERE MOrderLine.setTax No Tax found'); return false; }
     line.set('c_tax_id', ii); return true;
   }
+  // MOrderLine.beforeSave :865-867 - the tax of a line that arrives without one; `l` is the plain row of the save (get/set adapter for olSetTax)
+  S.MOrderLine_setTaxIfMissing = function (trx, l, order) {
+    if (nz(l.c_tax_id) || !nz(l.m_product_id) && !nz(l.c_charge_id)) return;
+    var ctx = trx.env.ctx || A().loginContext({ client: trx.env.client, org: trx.env.org, role: trx.env.role || 0, user: trx.env.user, wh: trx.env.wh, date: trx.env.date });
+    var h = { get: function (c) { return l[c]; }, set: function (c, v) { l[c] = v; return h; } };
+    olSetTax(trx, ctx, h, order);
+  };
   // MOrderLine.getDescriptionStrippingCloseTag :1101-1110 — Pattern "( \\| )?Close \\(.*\\)" split + concat
   function stripCloseTag(d) { return d == null ? d : String(d).replace(/( \| )?Close \(.*\)/g, ''); }
 
@@ -862,7 +870,7 @@
   S.MOrder_setBPartner = function (trx, o, bp) {
     if (!bp) return;
     var so = T.Y(o.get('issotrx')), ii;
-    o.set('c_bpartner_id', bp.c_bpartner_id);
+    o.set('c_bpartner_id', bp.c_bpartner_id).set('bill_bpartner_id', bp.c_bpartner_id);                   // setC_BPartner_ID (Ship+Bill) :571-575
     ii = nz(so ? bp.c_paymentterm_id : bp.po_paymentterm_id); if (ii !== 0) o.set('c_paymentterm_id', ii);
     ii = nz(so ? bp.m_pricelist_id : bp.po_pricelist_id); if (ii !== 0) o.set('m_pricelist_id', ii);
     if (bp.deliveryrule != null) o.set('deliveryrule', bp.deliveryrule); if (bp.deliveryviarule != null) o.set('deliveryviarule', bp.deliveryviarule);
@@ -875,7 +883,7 @@
     if (!nz(o.get('bill_location_id')) && locs.length) o.set('bill_location_id', locs[0].c_bpartner_location_id);
     if (!nz(o.get('c_bpartner_location_id'))) throw new Error('BPartnerNoShipToAddressException: ' + bp.name);
     if (!nz(o.get('bill_location_id'))) throw new Error('BPartnerNoBillToAddressException: ' + bp.name);
-    var cs = trx.find('ad_user', { c_bpartner_id: bp.c_bpartner_id }).filter(function (u) { return u.isactive !== 'N'; }); if (cs.length === 1) o.set('ad_user_id', cs[0].ad_user_id);
+    var cs = trx.find('ad_user', { c_bpartner_id: bp.c_bpartner_id }).filter(function (u) { return u.isactive !== 'N'; }); if (cs.length === 1) o.set('ad_user_id', cs[0].ad_user_id).set('bill_user_id', cs[0].ad_user_id);   // setAD_User_ID (Ship+Bill) :591-595
   };
   // MOrder.setC_DocTypeTarget_ID() :685-705 - SO: Standard Order (subtype SO); PO: the client's POO, org-specific first, default first
   S.MOrder_setDocTypeTargetDefault = function (trx, o) {
@@ -912,6 +920,17 @@
     if (!T.nz(l.get('c_uom_id'))) l.set('c_uom_id', pp.getC_UOM_ID());
   };
 
+  // MRequisitionLine.setPrice() :234-267 - pp.setRequisitionLine + setM_PriceList_ID -> PriceActual = getPriceStd (a Charge line takes the charge amount first)
+  S.MRequisitionLine_setPrice = function (trx, l, priceListId) {
+    if (nz(l.get('c_charge_id'))) { var ch = trx.get('c_charge', l.get('c_charge_id')); if (ch) l.set('priceactual', ch.chargeamt); }
+    if (!nz(l.get('m_product_id'))) return;
+    var pl = nz(priceListId) ? priceListId : nz((trx.get('m_requisition', l.get('m_requisition_id')) || {}).m_pricelist_id);
+    if (!pl) throw new Error('PriceList unknown!');
+    var pp = R().M.Core.getProductPricing();
+    pp.setRequisitionLine({ getM_Product_ID: function () { return nz(l.get('m_product_id')); }, getC_BPartner_ID: function () { return nz(l.get('c_bpartner_id')); }, getQty: function () { return T.D(l.get('qty')); } }, null);
+    pp.setM_PriceList_ID(pl);
+    l.set('priceactual', pp.getPriceStd());
+  };
   // ══ MInOutConfirm.create(ship, confirmType, checkExisting) :64-93 — was inline in InOutCreateConfirm.js ═══════════
   S.MInOutConfirm_create = function (trx, ship, confirmType, checkExisting) {
     var D = T.D, N = T.N;
@@ -997,6 +1016,48 @@
     validatePaySchedule(trx, 'c_invoice', trx.get('c_invoice', invoiceId));                // MInvoicePaySchedule.afterSave -> parent.validatePaySchedule
     return true;
   }
+  // ══ MRequisition + MRequisitionLine (ERP_FRIENDLY_OPS_LENS.md §64; Witness: witness_replenish_diff.js R5) - the create path of ReplenishReportProduction.createRequisition. NOT ported here: the DocAction side (prepareIt/completeIt),
+  //   MRequisition.createPDF - refused by name where used. Java: org.adempiere.base/src/org/compiere/model/MRequisition.java + MRequisitionLine.java.
+  ML.registerModel('m_requisition', {
+    initialDefaults: { docaction: 'CO', docstatus: 'DR', priorityrule: '5', totallines: 0, isapproved: 'N', posted: 'N', processed: 'N' }, initialClock: ['datedoc', 'daterequired'],   // setInitialDefaults :85-95
+    beforeSave: function (trx, r) {                                                                                  // :198-204 default PriceList: MPriceList.getDefault(ctx,false) else (ctx,true) :111-140
+      if (nz(r.m_pricelist_id)) return null;
+      var cl = nz(r.ad_client_id) ? r.ad_client_id : trx.env.client;
+      for (var so = 0; so < 2; so++) {
+        var pl = trx.q("SELECT m_pricelist_id FROM m_pricelist WHERE ad_client_id=? AND isdefault='Y' AND issopricelist=? AND isactive='Y' ORDER BY m_pricelist_id", [cl, so ? 'Y' : 'N'])[0];
+        if (pl) { r.m_pricelist_id = pl.m_pricelist_id; break; }
+      }
+      return null;
+    }
+  });
+  function reqLineUpdateHeader(trx, id) {                                                                            // MRequisitionLine.updateHeader :346-363 (UPDATE M_Requisition SET TotalLines = SUM(LineNetAmt))
+    var tot = Z; trx.find('m_requisitionline', { m_requisition_id: id }).forEach(function (l) { tot = tot.add(D(l.linenetamt)); });
+    var h = trx.get('m_requisition', id); if (!h) return 'Header update #0';
+    trx.update('m_requisition', h, { totallines: N(tot) }); return null;
+  }
+  ML.registerModel('m_requisitionline', {
+    initialDefaults: { line: 0, linenetamt: 0, priceactual: 0, qty: 1 },                                             // setInitialDefaults :156-161
+    beforeSave: function (trx, l, isNew) {                                                                           // :279-320
+      var h = trx.get('m_requisition', l.m_requisition_id);
+      if (isNew && h && Y(h.processed)) return 'ParentComplete';                                                    // :281-284
+      if (!Number(l.line)) { var mx = 0; trx.find('m_requisitionline', { m_requisition_id: l.m_requisition_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }   // :286-291
+      if (nz(l.m_product_id) && nz(l.c_charge_id)) l.c_charge_id = 0;                                                // :293-294
+      if (nz(l.m_attributesetinstance_id) && nz(l.c_charge_id)) l.m_attributesetinstance_id = 0;                      // :296-297
+      var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
+      if (p && !nz(l.c_uom_id)) l.c_uom_id = p.c_uom_id;                                                              // :299-302
+      if (D(l.priceactual).signum() === 0) {                                                                         // :304-305 setPrice()
+        var holder = { get: function (c) { return l[c]; }, set: function (c, v) { l[c] = v; return holder; } };
+        PXO.MRequisitionLine_setPrice(trx, holder, nz(h && h.m_pricelist_id));
+      }
+      l.linenetamt = N(D(l.qty).multiply(D(l.priceactual)));                                                          // :306 setLineNetAmt() = Qty x PriceActual (no rounding upstream)
+      var dt = h && nz(h.c_doctype_id) ? trx.get('c_doctype', h.c_doctype_id) : null;                                  // :311-317 ChargeOrProductMandatory
+      if (dt && Y(dt.ischargeorproductmandatory) && !nz(l.c_charge_id) && !nz(l.m_product_id) && (D(l.priceactual).signum() !== 0 || D(l.qty).signum() !== 0)) return '@FillMandatory@ ChargeOrProductMandatory';
+      return null;
+    },
+    afterSave: function (trx, l) { return reqLineUpdateHeader(trx, l.m_requisition_id); },                           // :322-328
+    afterDelete: function (trx, l) { return reqLineUpdateHeader(trx, l.m_requisition_id); }                          // :330-336
+  });
+
   return Object.assign({}, PXO, { createPaySchedule: createPaySchedule, validatePaySchedule: validatePaySchedule, copyOrderPaySchedule: copyOrderPaySchedule, ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
     setReversal: setReversal, isReversal: isReversal, idNum: idNum, backDateAllowed: backDateAllowed, backDateCostingNamed: backDateCostingNamed, MInOut_copyFrom: MInOut_copyFrom });
 });

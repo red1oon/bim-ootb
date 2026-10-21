@@ -389,19 +389,18 @@
       typeOf: function (t) { return t.movementtype; },
       absQtyOf: function (t) { return Math.abs(ci(t.movementqty)); }
     });
-    var out = [];
+    var out = [], c2 = function (n) { return (n / 100).toFixed(2); };
     rctx.replenishRows.forEach(function (r) {
       if (r.replenishtype === '0') return;
-      var available = (onhand[r.m_product_id] || 0) - rctx.reservation(r.m_product_id, 'Y') + rctx.reservation(r.m_product_id, 'N');
-      var max = ci(r.level_max), min = ci(r.level_min), qto = null;
-      if (r.replenishtype === '1') qto = (available <= min) ? (max - available) : 0;       // reorder-below-min
-      else if (r.replenishtype === '2') qto = (max - available);                            // maintain-max
-      // Implementing RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS.md §T1-SPEC core.1 — Witness: W-REPLEN-STAGE.
-      // Round UP to the policy's QtyBatchSize multiple (the real ReplenishReport rounding);
-      // NULL/0 batch → byte-identical to the un-batched fold.
+      // ONE QtyToOrder calc, shared with the Replenish Report process (erp_engine.replenishQtyToOrder, ReplenishReportProduction.fillTable :326-366, ERP_FRIENDLY_OPS_LENS.md §64).
+      // The lens has no vendor row (M_Product_PO) here: Order_Min = Order_Pack = 1, exactly the Java's own second INSERT (:250-276, "no partner" rows).
+      var qto = ci(E.replenishQtyToOrder({ type: r.replenishtype, onHand: c2(onhand[r.m_product_id] || 0), reserved: c2(rctx.reservation(r.m_product_id, 'Y')), ordered: c2(rctx.reservation(r.m_product_id, 'N')),
+        levelMin: r.level_min, levelMax: r.level_max, orderMin: 1, orderPack: 1 }));
+      // LENS ADDITION (not in ReplenishReportProduction, which only uses QtyBatchSize to SPLIT production orders :784-806): round UP to the policy's QtyBatchSize multiple.
+      // Implementing RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS.md §T1-SPEC core.1 — Witness: W-REPLEN-STAGE. NULL/0 batch → byte-identical to the un-batched fold.
       var batch = ci(r.qtybatchsize);
-      if (qto != null && qto > 0 && batch > 0) qto = Math.ceil(qto / batch) * batch;
-      if (qto != null && qto >= 100) out.push({
+      if (qto > 0 && batch > 0) qto = Math.ceil(qto / batch) * batch;
+      if (qto >= 100) out.push({     // T_Replenish "QtyToOrder < 1" delete :430-436
         m_product_id: r.m_product_id, m_warehouse_id: r.m_warehouse_id, qtytoorder: qto / 100,
         qtybatchsize: r.qtybatchsize || null, m_warehousesource_id: r.m_warehousesource_id || null
       });
