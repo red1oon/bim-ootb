@@ -712,6 +712,42 @@
     const [c, r] = dbl ? doorDouble(d, as) : doorHingeIfc(d, as); if (c !== 'ok') return [c, r + ' (D18 default)'];
     return ['ok', { leaves: dbl ? r.leaves : [r], value: as.op, basis: `${std[std.side.toLowerCase()]} of ${std.n} stated single-swing doors swing ${std.side}; single leaves ${fx(std.minW * 1000, 0)}..${fx(std.maxW * 1000, 0)} mm; this door ${fx(op.w * 1000, 0)} mm -> ${dbl ? 'double (wider than any stated leaf, each half within the stated range)' : 'single'}` }];
   }
+  // §F7 D22 ROOMS on the plans, from the caller (the Viewer's Room Injection, A.allRoomVolumes): rects in model metres, grouped by logical room guid; turned with the wing,
+  // kept by the box (label point in the box), placed on the plan of the storey whose elevation is the highest <= the room's mid height. Compiled rooms (guid RM_*) are YELLOW.
+  function loadRooms(model, rooms, src, wing, log) {
+    if (!Array.isArray(rooms) || !rooms.length) return;
+    const by = {}, order = []; let bad = 0;
+    rooms.forEach(r => { if (!r || ![r.cx, r.cy, r.cz, r.sx, r.sy].every(Number.isFinite) || !(r.sx > 0 && r.sy > 0)) { bad++; return; } const g = String(r.guid || '');
+      if (!by[g]) { by[g] = { guid: g, name: String(r.name || ''), compiled: /^RM_/.test(g), rects: [] }; order.push(g); } by[g].rects.push(r); });
+    const th = wing ? -wing.angle * Math.PI / 180 : 0, co = Math.cos(th), si = Math.sin(th), T = (x, y) => wing ? [co * (x - wing.ox) - si * (y - wing.oy) + wing.ox, si * (x - wing.ox) + co * (y - wing.oy) + wing.oy] : [x, y];
+    model.rooms = order.map(g => { const R = by[g], big = R.rects.slice().sort((a, b) => b.sx * b.sy - a.sx * a.sy)[0];
+      return { guid: g, name: R.name, compiled: R.compiled, at: T(big.cx, big.cy), cz: R.rects.reduce((a, r) => a + r.cz, 0) / R.rects.length, area: R.rects.reduce((a, r) => a + r.sx * r.sy, 0), n: R.rects.length }; });
+    model.roomsSource = String(src || 'not stated');
+    log.add(`§ROOMS source="${model.roomsSource}" rects=${rooms.length} rooms=${model.rooms.length} compiled=${model.rooms.filter(r => r.compiled).length} malformed=${bad} (D22)`);
+  }
+  function boxRooms(model, bx, log) {
+    if (!model.rooms) return; const n0 = model.rooms.length;
+    model.rooms = model.rooms.filter(r => r.at[0] >= bx.a && r.at[0] < bx.b && r.at[1] >= bx.y0 && r.at[1] < bx.y1);
+    log.add(`§ROOMS_BOX kept=${model.rooms.length}/${n0} (label point in the box)`);
+  }
+  function roomLabel(r, storey) {   // the name as given, without its leading marks (the compiler's approximate / suspect signs) or the storey name it repeats
+    let t = r.name.replace(/^[^A-Za-z0-9]+/, '').trim(); if (storey && t.toLowerCase().indexOf(storey.name.toLowerCase() + ' ') === 0) t = t.slice(storey.name.length + 1).trim();
+    return t || r.guid;
+  }
+  function planRooms(doc, model, storey, E, log) {
+    if (!model.rooms || !model.rooms.length) return 0;
+    const st = model.storeys.slice().sort((a, b) => a.elev - b.elev), mine = model.rooms.filter(r => { let o = null; st.forEach(s => { if (s.elev <= r.cz) o = s; }); return o && o.name === storey.name; });
+    if (!mine.length) return 0;
+    mine.forEach(r => { const layer = r.compiled ? 'A-AREA-IDEN-DFLT' : 'A-AREA-IDEN';
+      if (!doc.layers[layer]) doc.layers = Object.assign({}, doc.layers, { [layer]: [r.compiled ? 2 : 7, 25, 'Continuous'] });   // only a sheet that draws a room carries the layer
+      const txt = roomLabel(r, storey), p = [mm(r.at[0]), mm(r.at[1])], h = TXT_NOTE * SCALE;
+      doc.text(layer, txt.toUpperCase(), [p[0], p[1] + h * 0.7], h, { align: 'MIDDLE_CENTER' }); doc.text(layer, `${fx(r.area, 1)} M2`, [p[0], p[1] - h * 0.7], h, { align: 'MIDDLE_CENTER' });
+      log.add(`§ROOM_LABEL guid=${r.guid} storey='${storey.name}' at=(${fx(p[0], 1)},${fx(p[1], 1)}) layer=${layer} text="${txt}" area=${fx(r.area, 2)} rects=${r.n} (D22)`); });
+    const nc = mine.filter(r => r.compiled).length;
+    doc.text('A-ANNO-NOTE', `ROOMS: ${mine.length} FROM ${model.roomsSource.toUpperCase()}${nc ? `; YELLOW = ${nc} COMPILED FROM THE WALL ENCLOSURE, NOT IN THE IFC` : ''}`, [E[0], E[2] - (BUBBLE_C + 32) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
+    log.add(`§ROOMS_PLAN storey='${storey.name}' drawn=${mine.length} compiled=${nc} (D22)`);
+    return mine.length;
+  }
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -856,6 +892,7 @@
     planDims(doc, E, grid, log, view, faceRuns, F);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     northMark(doc, model.north, E, log); if (model.scaleBar === true) scaleBarMark(doc, E);
+    planRooms(doc, model, storey, E, log);   // §F7 D22
     if (dflt.length) {   // §F7 D18: the yellow band states itself on the sheet (the basis), and the set carries @DEFAULT=door.operation_standard (marks)
       const sd = doorStandard(model); model.doorDefaults = (model.doorDefaults || []).concat(dflt);
       doc.text('A-ANNO-NOTE', `YELLOW = DEFAULT: ${dflt.length} DOOR(S) THE MODEL GIVES NO OPERATION FOR, DRAWN FROM THIS BUILDING'S STANDARD (${sd.left} LEFT / ${sd.right} RIGHT OF ${sd.n} STATED; SINGLE LEAVES ${fx(sd.minW * 1000, 0)}-${fx(sd.maxW * 1000, 0)} MM)`, [E[0], E[2] - (BUBBLE_C + 20) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
@@ -1047,6 +1084,7 @@
     if (!R.views.roof) reasons.push('no roof storey above the grid storey: no roof plan, and the importer needs one to qualify the set');
     row('Sheets written', Object.keys(R.files).length, Object.keys(R.files).map(f => f.replace(/^.*?_(.*)_std\.dxf$/, '$1')).join(', '), 'ok');
     if (M.doorDefaults && M.doorDefaults.length) { const sd = M._doorStd; row('Doors drawn from the building standard (yellow, A-DOOR-DFLT)', M.doorDefaults.length, `${sd.left} LEFT / ${sd.right} RIGHT of ${sd.n} stated; single leaves ${fx(sd.minW * 1000, 0)}..${fx(sd.maxW * 1000, 0)} mm`, 'default'); }
+    if (M.rooms) row('Rooms labelled on the plans (D22)', R.log.filter(l => l.indexOf('§ROOM_LABEL') === 0).length + ' of ' + M.rooms.length, M.roomsSource + '; compiled rooms yellow (A-AREA-IDEN-DFLT)', 'default');
     if (M.doorConflicts && M.doorConflicts.length) row('Doors whose model leaf contradicts the stated swing (yellow, A-DOOR-DFLT, D19)', M.doorConflicts.length, 'drawn as the IFC states (§L1.12); the mesh leaf lies on the other side: a model finding (§DOOR_HANDING_CONFLICT)', 'default');
     const codes = Object.keys(gapN).sort();
     if (codes.length) row('Gaps (listed, none filled in)', codes.map(c => c.replace('GAP:', '') + ' ' + gapN[c]).join(', '), 'log lines §GAP', 'gap');
@@ -1063,11 +1101,12 @@
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log, !!opts.extent);   // §L1.16: this set is ONE wing, drawn in its own frame (§F7 with a box: every angle, the box decides)
+    loadRooms(model, opts.rooms, opts.roomsSource, wing, log);   // §F7 D22
     model.stairSymbol = opts.stairSymbol; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     let grid;
     if (opts.extent && wing) {   // §F7 W-WAND-BOX: the grid of the family wing (same labels as the whole wing set; its host / grid lines are not this set's), then the box at any angle, hosts resolved on the box
       const L0 = new Log(); resolveHosts(model, L0); const g0 = deriveGrid(model, L0), bx = boxWing(model, wing, opts.extent, opts.depth, log);
-      resolveHosts(model, log); grid = bx ? boxGrid(g0, bx, log) : deriveGrid(model, log);
+      if (bx) boxRooms(model, bx, log); resolveHosts(model, log); grid = bx ? boxGrid(g0, bx, log) : deriveGrid(model, log);
     } else {
       if (opts.extent) log.add('§EXTENT ignored=no_wing');
       resolveHosts(model, log); grid = deriveGrid(model, log);

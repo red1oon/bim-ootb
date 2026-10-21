@@ -52,6 +52,7 @@
 // v1649 (2026-10-21) §F7 wing_2d.js changed (PRECACHE_ASSETS): the 2D card opens on the elevation that faces the plane (§WING2D_FACE).
 // v1650 (2026-10-21) §F7 wing_2d.js changed (PRECACHE_ASSETS): the 2D card opens on the view at the plane (PLANE_VIEW) when the set has one.
 // v1651 (2026-10-21) §F7 wing_2d.js changed (PRECACHE_ASSETS): a handle seen through the plane is picked before the plane body (the depth handle behind the plane was unreachable).
+// v1652 (2026-10-22) §F7 D22 wing_2d.js changed (PRECACHE_ASSETS): the 2D plans carry the rooms of the Find panel's Room Injection (A.allRoomVolumes, loaded on the first press); main.js navigate_find.js?v=65 (the wand's module load does not arm the ghost auto-shell).
 // DEPLOY: bump CACHE_VERSION on every OCI upload. Old caches are purged on activate.
 // v1133 (2026-09-03) §STOREY_DATUM_FRAME: schedule_author.js + time_machine.js changed — the declared
 // storey ladder is now chosen by VERTICAL FRAME (its span must contain the element base-Z median),
@@ -210,7 +211,7 @@
 // main.js / viewer.html / i18n changed (Road standards row, key j). Above main's v1611.
 // v1614 (2026-10-07) §SPEED_ZONES: speed_zones.js added to PRECACHE_ASSETS; std_values.json gains `geometric`; road_standards.js mounts the Speed section; main.js/viewer.html wire it. Above main's v1613.
 // v1618 (2026-10-07) §SIGNAL_JUNCTION_ZONE + discs on sign faces: ONE controlled-node engine (geometric.node_kinds: roundabout, signal_junction), flat two-sided discs on sign boards, borrowed-board discs + MISSING SPEED SIGN rows; speed_zones.js?v=7; std_values.json geometric gains node_kinds / signal_junction / disc_snap_m.
-const CACHE_VERSION = 'v1651';
+const CACHE_VERSION = 'v1652';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
