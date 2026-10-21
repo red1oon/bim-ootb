@@ -123,6 +123,7 @@
    ],
    "used_by": "dxf2doors"
   },
+  "door.operation_standard": { "element": "IfcDoor", "value": "SINGLE_SWING_LEFT", "unit": "text", "kind": "guess", "basis": "the running standard of a 2D set's doors whose operation the model does not state (F7 D18): the majority side of the building's stated single-swing doors; drawn yellow on A-DOOR-DFLT", "options": ["SINGLE_SWING_LEFT", "SINGLE_SWING_RIGHT"], "used_by": "std2d (writer), dxf2bim_import (report)" },
   "door.width": {
    "element": "IfcDoor",
    "value": 0.9,
