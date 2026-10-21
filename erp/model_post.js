@@ -15,7 +15,7 @@
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -97,6 +97,26 @@
     if (adjustDr) line.amtacctdr = N(D(line.amtacctdr).subtract(diff)); else line.amtacctcr = N(D(line.amtacctcr).add(diff));
     void negative;
   };
+
+  // Fact.isSegmentBalanced(OO) :334-396 / balanceSegments :405-499 (Doc.postLogic :851-870, between balanceSource and balanceAccounting, EVERY Doc): with the OO element IsBalanced the SOURCE balance per org must be zero
+  //   in all but one org; otherwise every org with a non-zero balance gets an IntercompanyDueTo / DueFrom line (AcctSchemaGL) on that org (Balance.isReversal: DR<=0 && CR<=0).
+  Fact.prototype.segmentsBalanced = function () {
+    var m = {}, n = 0; this.lines.forEach(function (l) { var k = Number(l.ad_org_id || 0); m[k] = (m[k] || Z).add(D(l.amtsourcedr)).subtract(D(l.amtsourcecr)); });
+    Object.keys(m).forEach(function (k) { if (m[k].signum() !== 0) n++; }); return n <= 1;
+  };
+  Fact.prototype.balanceSegments = function (ctx) {
+    var self = this, trx = this.trx, el = trx.q("SELECT isbalanced AS b FROM c_acctschema_element WHERE c_acctschema_id=? AND elementtype='OO'", [this.as.c_acctschema_id])[0];
+    if (!el || !Y(el.b) || !this.lines.length || this.segmentsBalanced()) return;
+    var gl = trx.q('SELECT intercompanydueto_acct AS t, intercompanyduefrom_acct AS f FROM c_acctschema_gl WHERE c_acctschema_id=?', [this.as.c_acctschema_id])[0], m = {}, keys = [];
+    this.lines.forEach(function (l) { var k = Number(l.ad_org_id || 0); if (!m[k]) { m[k] = { dr: Z, cr: Z }; keys.push(k); } m[k].dr = m[k].dr.add(D(l.amtsourcedr)); m[k].cr = m[k].cr.add(D(l.amtsourcecr)); });
+    keys.sort(function (a, b) { return a - b; }).forEach(function (k) {
+      var b = m[k], bal = b.dr.subtract(b.cr); if (bal.signum() === 0) return;
+      var rev = b.dr.signum() <= 0 && b.cr.signum() <= 0, post = rev ? bal.abs().negate() : bal.abs(), vcId = bal.signum() < 0 ? (rev ? gl && gl.t : gl && gl.f) : (rev ? gl && gl.f : gl && gl.t);
+      var vcr = nz(vcId) ? trx.get('c_validcombination', vcId) : null; if (!vcr) { self.err = self.err || 'Intercompany Due account not resolvable'; return; }
+      var fl = createLine(self, ctx, null, vcr.account_id, self.as.c_currency_id, bal.signum() < 0 ? post : null, bal.signum() < 0 ? null : post);   // setAmtSource(cur, DR|CR = getPostBalance) then convert(); AD_Org_ID = the segment key
+      if (fl) fl.ad_org_id = k; });
+  };
+  var BREAK_SEG = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) === 'nosegments';   // witness negative control only (W-POST-MOVEMENT)
 
   // ══ Doc / DocLine / FactLine — the faithful framework (acct/Doc.java, DocLine.java, Fact.java :112-170, FactLine.java) ══
   // Used by the Doc ports below that were written against it (receipt, AP invoice, MatchPO, MatchInv); a FactLine is a
@@ -199,7 +219,7 @@
     var as = F.as, p = T.product(trx, dl.m_product_id), M = mc();
     function pc(cd) { var c = M.getProductCosts(trx, p, dl.pcAsi != null ? dl.pcAsi : (dl.m_attributesetinstance_id || 0), as, dl.ad_org_id, null, dl.pcQty, dl.c_orderline_id || 0, zeroOK, dl.dateAcct || ctx.dateAcct, cd, false); return c == null ? Z : c; }
     if (byCd && as.costingmethod !== 'S') {
-      var cd = trx.find('m_costdetail', { m_inoutline_id: dl.id, m_attributesetinstance_id: dl.pcAsi != null ? dl.pcAsi : (dl.m_attributesetinstance_id || 0), c_acctschema_id: as.c_acctschema_id })[0];
+      var cd = trx.find('m_costdetail', Object.assign({ m_attributesetinstance_id: dl.pcAsi != null ? dl.pcAsi : (dl.m_attributesetinstance_id || 0), c_acctschema_id: as.c_acctschema_id }, dl.cdKey || { m_inoutline_id: dl.id }))[0];   // dl.cdKey = the where clause of getProductCosts(as, org, zeroOK, "M_MovementLine_ID=? AND IsSOTrx='N'") :791-808
       if (cd) { var amt = D(cd.amt), pcost = pc(cd); if (amt.signum() !== 0 && pcost.signum() !== 0 && amt.signum() !== pcost.signum()) return amt.signum() > 0 ? pcost.negate() : pcost; return pcost; }
     }
     return pc(null);
@@ -537,12 +557,53 @@
     return true;
   }
 
+  // Doc_Movement (acct/Doc_Movement.java :60-330) - loadDocumentDetails :70-84, loadLines :90-110, createFacts :128-300. In-transit + MMovementConfirm and landed cost are NAMED (spec §60), not judged.
+  function Doc_Movement(trx, mv, as, F) {
+    var M = mc(), ctx = Doc(trx, 'm_movement', mv, { dateDoc: mv.movementdate, dateAcct: mv.movementdate, c_currency_id: as.c_currency_id, m_warehouse_id: null }), revId = nz(mv.reversal_id) ? Number(mv.reversal_id) : 0;
+    var lines = trx.find('m_movementline', { m_movement_id: mv.m_movement_id }, ['line']).map(function (l) {                // loadLines: qty = MovementQty (setQty(…, false))
+      var dl = DocLine(trx, 'm_movementline', l); dl.qty = D(l.movementqty); dl.pcQty = D(l.movementqty); dl.reversalLine_ID = l.reversalline_id; dl.cdKey = { m_movementline_id: l.m_movementline_id, issotrx: 'N' }; return dl; });
+    var locOrg = function (id) { var r = nz(id) ? trx.get('m_locator', id) : null; return r ? r.ad_org_id : null; };         // FactLine.getAD_Org_ID :944-976 (the locator's org once the locator is set)
+    var signed = function (dl, acct, amt) { return amt.signum() < 0 ? createLine(F, ctx, dl, acct, as.c_currency_id, null, amt.abs()) : createLine(F, ctx, dl, acct, as.c_currency_id, amt, null); };   // Fact.createLine(docLine, account, cur, Amt) :200-211
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], p = T.product(trx, line.m_product_id), costs = null, rev = !!revId && nz(line.reversalLine_ID) !== 0, ml = line.row;   // isReversal(line) :310-312
+      if (!p) { F.err = 'Doc_Movement line without product - named'; return false; }
+      if (!rev) {
+        if (M.costingLevel(trx, p, as) === 'B' && !nz(line.m_attributesetinstance_id)) {                                   // :146-169 batch-lot without ASI: the MA rows' cost
+          var mas = trx.find('m_movementlinema', { m_movementline_id: line.id });
+          if (mas.length) { costs = Z; mas.forEach(function (ma) { var qa = D(ma.movementqty); if (qa.signum() !== line.qty.signum()) qa = qa.negate(); line.pcQty = qa; line.pcAsi = ma.m_attributesetinstance_id; costs = costs.add(lineProductCosts(trx, F, ctx, line, true, true)); }); line.pcAsi = null; line.pcQty = line.qty; }
+        } else costs = lineProductCosts(trx, F, ctx, line, true, true);                                                    // :171-181 MZ Goodwill: the move's cost detail, else current cost
+        if (costs == null) { F.err = 'Doc_Movement batch-lot line without MovementLineMA (legacy NPE, costs.negate()) - named'; return false; }
+      } else costs = Z;                                                                                                    // :186
+      var dr = signed(line, productAcct(trx, line.m_product_id, 'p_asset_acct', as), costs.negate());                     // ** Inventory DR CR :190-196 (from (-) CR)
+      if (!dr) continue;
+      dr.m_locator_id = line.m_locator_id; dr.ad_org_id = locOrg(line.m_locator_id); dr.m_attributesetinstance_id = nz(line.m_attributesetinstance_id) ? line.m_attributesetinstance_id : 0; dr.m_warehouse_id = null; dr.qty = N(line.qty.negate());
+      if (rev && !updateReverseLine(F, dr, TABLE_ID.m_movement, revId, line.reversalLine_ID, 1)) { F.err = 'Original Inventory Move not posted yet'; return false; }   // :204-212
+      var cr = signed(line, productAcct(trx, line.m_product_id, 'p_asset_acct', as), costs);                               // ** InventoryTo :216-222 (to (+) DR)
+      if (!cr) continue;
+      cr.m_locator_id = ml.m_locatorto_id; cr.ad_org_id = locOrg(ml.m_locatorto_id); cr.m_attributesetinstance_id = nz(ml.m_attributesetinstanceto_id) ? ml.m_attributesetinstanceto_id : 0; cr.m_warehouse_id = null; cr.qty = N(line.qty);
+      if (rev) {
+        if (!updateReverseLine(F, cr, TABLE_ID.m_movement, revId, line.reversalLine_ID, 1, dr)) { F.err = 'Original Inventory Move not posted yet'; return false; }   // :230-238
+        costs = acctBalance(cr);                                                                                           // get original cost
+      }
+      if (String(dr.ad_org_id) !== String(cr.ad_org_id)) {                                                                 // :241 only for between-org movements
+        if (M.costingLevel(trx, p, as) !== 'O') continue;
+        var desc = line.description == null ? '' : line.description, refFrom = 0, refTo = 0, later = nz(line.reversalLine_ID) && Number(line.reversalLine_ID) > 0 && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID));
+        if (later) { var cf = M.getMovement(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0, true); if (cf) refFrom = cf.m_costdetail_id; }
+        if (!M.createMovement(trx, as, dr.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, costs.negate(), line.qty.negate(), true, desc + '(|->)', ctx.dateAcct, refFrom)) { F.err = 'Failed to create cost detail record'; return false; }
+        if (later) { var ct = M.getMovement(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0, false); if (ct) refTo = ct.m_costdetail_id; }
+        if (!M.createMovement(trx, as, cr.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, costs, line.qty, false, desc + '(|<-)', ctx.dateAcct, refTo)) { F.err = 'Failed to create cost detail record'; return false; }
+      }
+    }
+    return true;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
     m_inout: function (trx, io, as, F) { return Doc_InOut(trx, io, as, F); },
     m_matchinv: function (trx, mi, as, F) { return Doc_MatchInv(trx, mi, as, F); },
     m_matchpo: function (trx, mp, as, F) { return Doc_MatchPO(trx, mp, as, F); },
+    m_movement: function (trx, mv, as, F) { return Doc_Movement(trx, mv, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
@@ -636,7 +697,7 @@
     if (!repost && (doc.posted === 'Y')) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' AlreadyPosted'); return false; }
     var dtId = docTypeIdOf(trx, table, doc), dt = dtId ? T.dt(trx, dtId) : null, glcat = dt ? dt.gl_category_id : null;
     if (!glcat && dt == null && BASETYPE[table] == null) { var g0 = trx.q("SELECT gl_category_id AS g FROM gl_category WHERE ad_client_id=? AND isdefault='Y'", [trx.env.client])[0]; glcat = g0 ? g0.g : null; }
-    var tid = TABLE_ID[table] || ML.tableIdOf(trx, table), per = periodId(trx, doc.dateacct), why = null, deferred = false, out = [], exc = null, excAs = null;
+    var tid = TABLE_ID[table] || ML.tableIdOf(trx, table), per = periodId(trx, doc.dateacct || doc.movementdate), why = null, deferred = false, out = [], exc = null, excAs = null;
     var sp = trx.setSavepoint();                                                              // DocManager.postDocument :390 - one savepoint around every schema
     schemas(trx).forEach(function (as) {
       if (why || deferred) return;
@@ -655,10 +716,13 @@
       catch (e) { if (!e || !e.jclass) throw e; exc = e; excAs = as; why = String(e); return; }   // Doc.post :680-686 - a Java exception from postLogic => status E, p_Error = e.toString() (a twin-side JS error is NOT one: it propagates)
       if (ok === 'DEFER') { deferred = true; return; }
       if (!ok || F.err) { why = F.err || 'createFacts failed'; excAs = as; return; }
+      F.lines.forEach(function (f) { if (!nz(f.ad_org_id)) f.ad_org_id = f._dl && nz(f._dl.ad_org_id) ? f._dl.ad_org_id : doc.ad_org_id; });   // FactLine.getAD_Org_ID default (line, else doc) - resolved BEFORE the segment check reads it
+      if (!BREAK_SEG) F.balanceSegments(Doc(trx, table, doc, { dateDoc: doc.movementdate || doc.datetrx || doc.dateinvoiced || doc.dateacct, dateAcct: doc.dateacct || doc.movementdate, c_currency_id: as.c_currency_id }));   // Doc.postLogic :851-870 (balanceSource n/a: the twin books source = accounted base)
+      if (F.err) { why = F.err; excAs = as; return; }
       F.balance();
       F.lines.forEach(function (f) {
         var dl = f._dl; delete f._dl;
-        if (!nz(f.ad_org_id)) f.ad_org_id = dl && nz(dl.ad_org_id) ? dl.ad_org_id : doc.ad_org_id;   // FactLine.getAD_Org_ID default (line, else doc)
+        if (!nz(f.ad_org_id)) f.ad_org_id = dl && nz(dl.ad_org_id) ? dl.ad_org_id : doc.ad_org_id;
         out.push(f);
       });
     });
@@ -672,7 +736,7 @@
     if (why) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="' + why + '" (AD_Note PostingError: §MODEL-UNPORTED-DEP MNote not written)'); return false; }
     out.forEach(function (f) {
       trx.insert('fact_acct', ML.newPO(trx, 'fact_acct', Object.assign({ ad_table_id: tid, record_id: doc[key], c_period_id: per, gl_category_id: glcat,
-        dateacct: doc.dateacct, datetrx: doc.dateinvoiced || doc.movementdate || doc.datetrx || doc.dateacct }, f)));
+        dateacct: doc.dateacct || doc.movementdate, datetrx: doc.dateinvoiced || doc.movementdate || doc.datetrx || doc.dateacct }, f)));
     });
     trx.update(table, doc, { posted: 'Y' });
     trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=Y facts=' + out.length);
