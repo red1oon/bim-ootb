@@ -1,0 +1,92 @@
+--- /home/red1/bim-compiler/scripts/pilot/oracle/src/org/bimootb/oracle/Oracle.java	2026-10-21 10:32:42.458661410 +0800
++++ oracle/src/org/bimootb/oracle/Oracle.java	2026-10-21 16:22:19.324416574 +0800
+@@ -121,6 +121,7 @@
+ 			if ("postdoc".equals(op)) return postdoc(ctx, req);
+ 			if ("creditmemo".equals(op)) return creditmemo(ctx, req);
+ 			if ("makedoc".equals(op)) return makedoc(ctx, req);
++			if ("validactions".equals(op)) return validactions(ctx, req);
+ 			if ("userqueries".equals(op)) {   // §UDP-3: FindWindow's saved-query list (MUserQuery.get) + userCanSave per entry
+ 				JSONArray a = new JSONArray();
+ 				for (MUserQuery uq : MUserQuery.get(ctx, req.getInt("tab"))) a.put(new JSONObject().put("id", uq.getAD_UserQuery_ID()).put("name", uq.getName()).put("canSave", uq.userCanSave()));
+@@ -460,15 +461,41 @@
+ 				hdr.saveEx();
+ 				o.put("processed", ok).put("docStatus", da.getDocStatus()).put("processMsg", da.getProcessMsg() == null ? JSONObject.NULL : da.getProcessMsg());
+ 			}
+-			JSONObject qs = req.optJSONObject("queries"), res = new JSONObject();
+-			if (qs != null) for (String name : qs.keySet()) {
+-				JSONArray rows = new JSONArray();
+-				try (PreparedStatement ps = DB.prepareStatement(qs.getString(name), trxName)) {
+-					ps.setInt(1, id);
+-					try (ResultSet rs = ps.executeQuery()) { ResultSetMetaData md = rs.getMetaData(); while (rs.next()) { JSONObject r = new JSONObject(); for (int c = 1; c <= md.getColumnCount(); c++) r.put(md.getColumnLabel(c).toLowerCase(), toJson(rs.getObject(c))); rows.put(r); } }
++			// §MAKEDOC-ACTIONS (LIBERO_DD_SPEC.md §5): `actions` = a list of doc actions applied in turn to the SAME document, each on a freshly loaded PO (a UI / WebService round trip);
++			//   `queriesEach` = the asked rows are returned after EVERY step too (steps[i].rows). A step that throws ends the list and is returned as steps[i].exception.
++			JSONObject qs = req.optJSONObject("queries");
++			if (qs != null && req.optBoolean("queriesBefore")) o.put("rowsBefore", runQueries(qs, id, trxName));   // the state before the first action (the document just built)
++			JSONArray acts = req.optJSONArray("actions"), steps = new JSONArray();
++			for (int i = 0; acts != null && i < acts.length(); i++) {
++				JSONObject st = new JSONObject();
++				st.put("action", acts.optJSONObject(i) != null ? "set" : acts.getString(i));
++				try {
++					PO cur = MTable.get(ctx, h.getString("table")).getPO(id, trxName);
++					JSONObject setObj = acts.optJSONObject(i);
++					if (setObj != null) {   // {"set":{"Col":v,..}} = an edit of the header (a window save), not a doc action
++						st.put("action", "set");
++						JSONObject sf = setObj.getJSONObject("set");
++						for (String k : sf.keySet()) cur.set_ValueOfColumn(k, sf.get(k) == JSONObject.NULL ? null : fromPlain(cur, k, sf.get(k)));
++						cur.saveEx();
++						st.put("processed", true);
++						if (qs != null && req.optBoolean("queriesEach")) st.put("rows", runQueries(qs, id, trxName));
++						steps.put(st);
++						continue;
++					}
++					org.compiere.process.DocAction da = (org.compiere.process.DocAction) cur;
++					if (req.optBoolean("noPost")) cur.set_Attribute(org.compiere.process.DocumentEngine.DOCUMENT_POST_IMMEDIATE_AFTER_COMPLETE, Boolean.FALSE);   // the sanctioned switch (DocumentEngine.processIt: postNow=false) - the twin side is env.noPost
++					boolean ok = da.processIt(acts.getString(i));
++					cur.saveEx();
++					st.put("processed", ok).put("docStatus", da.getDocStatus()).put("processMsg", da.getProcessMsg() == null ? JSONObject.NULL : da.getProcessMsg());
++				} catch (Throwable e) {
++					st.put("exception", e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
+ 				}
+-				res.put(name, rows);
++				if (qs != null && req.optBoolean("queriesEach")) st.put("rows", runQueries(qs, id, trxName));
++				steps.put(st);
++				if (st.has("exception")) break;
+ 			}
++			if (acts != null) o.put("steps", steps);
++			JSONObject res = qs == null ? new JSONObject() : runQueries(qs, id, trxName);
+ 			o.put("rows", res);
+ 		} catch (Throwable e) {
+ 			o.put("exception", e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage()));
+@@ -478,6 +505,32 @@
+ 		}
+ 		return new JSONObject().put("ok", true).put("doc", o);
+ 	}
++	// §VALIDACTIONS (LIBERO_DD_SPEC.md §5 D9): DocumentEngine.getValidActions for one table over a list of DocStatus values (period open + back-date allowed), the REAL static method.
++	private static JSONObject validactions(Properties ctx, JSONObject req) throws Exception {
++		int tableId = MTable.getTable_ID(req.getString("table"));
++		JSONObject out = new JSONObject();
++		JSONArray sts = req.getJSONArray("statuses");
++		for (int i = 0; i < sts.length(); i++) {
++			String[] options = new String[20], docAction = new String[1];
++			int n = org.compiere.process.DocumentEngine.getValidActions(sts.getString(i), "N", null, req.optString("isSOTrx", "N"), tableId, docAction, options, true, true, MTable.get(ctx, req.getString("table")).getPO(0, null));
++			JSONArray a = new JSONArray();
++			for (int k = 0; k < n; k++) a.put(options[k]);
++			out.put(sts.getString(i), a);
++		}
++		return new JSONObject().put("ok", true).put("tableId", tableId).put("actions", out);
++	}
++	private static JSONObject runQueries(JSONObject qs, int id, String trxName) throws Exception {
++		JSONObject res = new JSONObject();
++		for (String name : qs.keySet()) {
++			JSONArray rows = new JSONArray();
++			try (PreparedStatement ps = DB.prepareStatement(qs.getString(name), trxName)) {
++				ps.setInt(1, id);
++				try (ResultSet rs = ps.executeQuery()) { ResultSetMetaData md = rs.getMetaData(); while (rs.next()) { JSONObject r = new JSONObject(); for (int c = 1; c <= md.getColumnCount(); c++) r.put(md.getColumnLabel(c).toLowerCase(), toJson(rs.getObject(c))); rows.put(r); } }
++			}
++			res.put(name, rows);
++		}
++		return res;
++	}
+ 	private static Object fromPlain(PO po, String col, Object v) {
+ 		int idx = po.get_ColumnIndex(col);
+ 		Class<?> c = idx >= 0 ? POInfo.getPOInfo(po.getCtx(), po.get_Table_ID()).getColumnClass(idx) : null;

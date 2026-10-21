@@ -625,7 +625,12 @@
   // (repost → deleteAcct :768-802 backs the schema's facts up into T_Fact_Acct_History first; deferred → Posted='d').
   function post(trx, table, doc, opts) {
     var plug = _DP() && _DP().docClassFor(table), fn = DOC[table] || (plug && typeof plug.createFacts === 'function' ? plug.createFacts : null), key = table + '_id';   // a bundle's posting class (legacy IDocFactory): DocPoster registry, ONE registry for preview and Trx posting
-    if (!fn) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="no Doc class ported"'); return false; }
+    if (!fn) {
+      // DefaultDocumentFactory.getDocument :87-107 THROWS AdempiereUserError "Doc Class invalid" when legacy has no Doc_<Table> class at all (a table with a Posted column and no class in core, e.g. DD_Order without Libero's
+      //   Doc_DDOrder - SQLiteIDEMPIERE.md §72.1 F36): the completion itself fails. A class legacy HAS but the twin has not ported stays the soft "no Doc class ported" note below.
+      var dpx = _DP(), tcols = ML.columnsOf(trx, table); if (tcols.posted && dpx && typeof dpx.legacyDocClassExists === 'function' && !dpx.legacyDocClassExists(tcols.__tableName)) throw new Error('Doc Class invalid: ' + dpx.legacyDocClassOf(tcols.__tableName));
+      trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="no Doc class ported"'); return false;
+    }
     doc = trx.get(table, doc[key]);
     var repost = !opts || opts.repost !== false;                                              // DocumentEngine.postImmediate → repost=true (:249)
     if (!repost && (doc.posted === 'Y')) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' AlreadyPosted'); return false; }

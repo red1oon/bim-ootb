@@ -1,0 +1,291 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — model_movement.js: MMovement + MMovementLine (Inventory Move) model/DocAction classes, ported and REGISTERED into model_layer.js. Spec: prompts/mfg/LIBERO_DD_SPEC.md §3.
+//   Witness: erp/tests/witness_movement_diff.js (READ THE LOG: §MVD lines). Why it exists: the twin had NO model-layer M_Movement (only the stand-alone ERPEngine.completeMovement on the old M_Storage table), so a
+//   Libero DOC_AFTER_COMPLETE hook on M_Movement (erp/plugins/libero_dd.mjs) could never fire. Java root: org.adempiere.base/src/org/compiere/model/MMovement.java + MMovementLine.java + MMovementLineMA.java.
+//   Not ported = NAMED refusal ("... not ported - named"), never silent: the in-transit doctype confirmation (MMovementConfirm), mandatory-ASI validation (IDEMPIERE-1770), back-date re-costing.
+'use strict';
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_layer'), require('./model_trade'), require('./model_order'));
+  else root.ModelMovement = factory(root.ModelLayer, root.ModelTrade, root.ModelOrder);
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, MO) {
+  var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
+  var fire = function (trx, timing, table, row) { return ML.fire(trx, timing, table, row); };
+  var BREAK = (typeof process !== 'undefined' && process.env && process.env.MV_BREAK) || '';   // witness negative controls only (MV_BREAK=nofrom|nopolicy)
+  var same = function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
+  var day = function (d) { return d ? String(d).slice(0, 10) + ' 00:00:00' : null; };   // Util.removeTime
+  function mvLines(trx, mv) { return trx.find('m_movementline', { m_movement_id: mv.m_movement_id }, ['line', 'm_movementline_id']); }   // MMovement.getLines :122-141 ORDER BY Line, M_MovementLine_ID
+  function uomPrecision(trx, uomId) { var u = nz(uomId) ? trx.get('c_uom', uomId) : null; return u ? Number(u.stdprecision) : 0; }
+  function asiToOf(l) { return nz(l.m_attributesetinstanceto_id) ? l.m_attributesetinstanceto_id : (String(l.m_locator_id) === String(l.m_locatorto_id) ? (l.m_attributesetinstance_id || 0) : 0); }   // MMovementLine.getM_AttributeSetInstanceTo_ID :109-116 (override)
+
+  // ══ models ══════════════════════════════════════════════════════════════════════════════════════════════════
+  ML.registerModel('m_movement', {
+    initialDefaults: { docaction: 'CO', docstatus: 'DR', isapproved: 'N', isintransit: 'N', posted: 'N', processed: 'N' }, initialClock: ['movementdate'],   // MMovement.setInitialDefaults :89-97
+    beforeSave: function (trx, mv) {   // :210-229 - no doctype -> the first MaterialMovement doctype of the client (MDocType.getOfDocBaseType: active, IsDefault DESC, C_DocType_ID)
+      if (!nz(mv.c_doctype_id)) {
+        var dt = trx.q("SELECT c_doctype_id FROM c_doctype WHERE ad_client_id=? AND docbasetype='MMM' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id", [nz(mv.ad_client_id) ? mv.ad_client_id : trx.env.client])[0];
+        if (dt) mv.c_doctype_id = dt.c_doctype_id; else return '@NotFound@ @C_DocType_ID@';
+      }
+      return null;
+    }
+  });
+  ML.registerModel('m_movementline', {
+    initialDefaults: { m_attributesetinstance_id: 0, movementqty: 0, targetqty: 0, scrappedqty: 0, confirmedqty: 0, processed: 'N' },   // MMovementLine.setInitialDefaults :73-80
+    beforeSave: function (trx, l, isNew, old) {   // MMovementLine.beforeSave :175-269 (the pending-confirmation guard :182-188 cannot trip: the twin has no M_MovementConfirm - prepareIt refuses to create one)
+      var mv = trx.get('m_movement', l.m_movement_id); if (!mv) return null;
+      if (isNew && Y(mv.processed)) return 'ParentComplete';                                                                                // :177-181
+      if (!Number(l.line)) { var mx = 0; trx.find('m_movementline', { m_movement_id: l.m_movement_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }   // :189-196
+      if (String(l.m_locator_id) === String(l.m_locatorto_id) && String(l.m_attributesetinstance_id || 0) === String(asiToOf(l))) return '@M_Locator_ID@ == @M_LocatorTo_ID@ and @M_AttributeSetInstance_ID@ == @M_AttributeSetInstanceTo_ID@';   // :197-203
+      var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
+      if (!nz(l.c_uom_id) && p) l.c_uom_id = p.c_uom_id;                                                                                    // :204-207 setDefaultC_UOM_ID
+      var mq = D(l.movementqty);
+      if (mq.signum() === 0) {                                                                                                              // :208-234 zero quantity
+        var da = mv.docaction, ds = mv.docstatus, unproc = /^(DR|IN|IP|AP|NA)$/.test(ds || '');
+        if (!((da === 'VO' && unproc) || (da === 'CO' && ds === 'IP'))) return '@FillMandatory@ MovementQty';
+      }
+      if (p && !same(l.c_uom_id, p.c_uom_id) && mq.signum() !== 0 && (l.qtyentered == null || D(l.qtyentered).signum() === 0)) return 'Please provide a valid Entered Quantity or use the default UOM';   // :235-242
+      if (isNew && mq.signum() !== 0 && (l.qtyentered == null || D(l.qtyentered).signum() === 0)) l.qtyentered = l.movementqty;            // :244-250 backward compatibility
+      if ((isNew || !same(l.movementqty, old && old.movementqty)) && p) l.movementqty = N(D(l.movementqty).setScale(uomPrecision(trx, p.c_uom_id), HU));   // :252-253 setMovementQty :146-157
+      if ((isNew || !same(l.qtyentered, old && old.qtyentered) || !same(l.c_uom_id, old && old.c_uom_id)) && l.qtyentered != null && nz(l.c_uom_id)) l.qtyentered = N(D(l.qtyentered).setScale(uomPrecision(trx, l.c_uom_id), HU));   // :254-257
+      if (asiToOf(l) === 0 && String(l.m_locator_id) !== String(l.m_locatorto_id) && nz(l.m_attributesetinstance_id)) l.m_attributesetinstanceto_id = l.m_attributesetinstance_id;   // :258-267
+      return null;
+    }
+  });
+
+  // ══ MStorageOnHand ports (the pieces MMovement.completeIt needs) ══════════════════════════════════════════════
+  // getWarehouse(ctx, 0, product, asi, null, FiFo, positiveOnly, M_Locator_ID, trx) :398-520 - ASI 0 = all instances. ORDER BY l.PriorityNo DESC, DateMaterialPolicy (COALESCE(asi.GuaranteeDate, ..) when the product uses it), ASI [, QtyOnHand DESC]
+  function getWarehouse(trx, productId, asi, fifo, positiveOnly, locatorId) {
+    if (!nz(locatorId) || !nz(productId)) return [];
+    var all = !nz(asi), p = T.product(trx, productId), useGd = p && Y(p.isuseguaranteedateformpolicy), lo = trx.get('m_locator', locatorId), prio = lo ? Number(lo.priorityno || 0) : 0;
+    var rows = trx.find('m_storageonhand', { m_locator_id: locatorId, m_product_id: productId }).filter(function (s) {
+      var q = D(s.qtyonhand); if (positiveOnly ? q.signum() <= 0 : q.signum() === 0) return false;
+      return all || String(s.m_attributesetinstance_id || 0) === String(asi);
+    });
+    function key(s) { if (all && useGd && nz(s.m_attributesetinstance_id)) { var a = trx.get('m_attributesetinstance', s.m_attributesetinstance_id); if (a && a.guaranteedate) return String(a.guaranteedate); } return String(s.datematerialpolicy || ''); }
+    rows.sort(function (a, b) {
+      var ka = key(a), kb = key(b), c = ka < kb ? -1 : ka > kb ? 1 : 0; if (!fifo) c = -c;
+      if (!c) { var x = Number(a.m_attributesetinstance_id || 0), y = Number(b.m_attributesetinstance_id || 0); c = fifo ? x - y : y - x; }
+      if (!c && all) c = D(b.qtyonhand).compareTo(D(a.qtyonhand));
+      return c;
+    });
+    void prio; return rows;
+  }
+  // MStorageOnHand.add with dateMPolicy: getCreate(.. dateMPolicy=null ..) matches ANY existing row of (locator, product, ASI) else creates one dated today (:731-747)
+  function sAdd(trx, locatorId, productId, asi, qty, dmp) {
+    if (D(qty).signum() === 0) return null;
+    if (dmp == null) {
+      var ex = trx.find('m_storageonhand', { m_locator_id: locatorId, m_product_id: productId }).filter(function (s) { return String(s.m_attributesetinstance_id || 0) === String(asi || 0); })
+        .sort(function (a, b) { return String(a.datematerialpolicy) < String(b.datematerialpolicy) ? -1 : 1; })[0];
+      dmp = ex ? ex.datematerialpolicy : trx.env.date;
+    }
+    return T.storageAdd(trx, locatorId, productId, asi, qty, dmp);
+  }
+  function mmFifo(trx, p) { var cat = trx.get('m_product_category', p.m_product_category_id) || {}; return (cat.mmpolicy || (trx.get('ad_client', trx.env.client) || {}).mmpolicy || 'F') === 'F'; }   // MProduct.getMMPolicy
+
+  // MMovementLineMA
+  function maInsert(trx, line, asi, qty, dmp, auto) {   // MMovementLineMA ctor :150-178
+    return trx.insert('m_movementlinema', ML.newPO(trx, 'm_movementlinema', { ad_client_id: line.ad_client_id, ad_org_id: line.ad_org_id, m_movementline_id: line.m_movementline_id,
+      m_attributesetinstance_id: asi || 0, movementqty: N(qty), datematerialpolicy: day(dmp), isautogenerated: auto ? 'Y' : 'N', isactive: 'Y' }));
+  }
+  function maList(trx, line) { return trx.find('m_movementlinema', { m_movementline_id: line.m_movementline_id }); }
+  function maManualQty(trx, line) { var q = Z; maList(trx, line).forEach(function (m) { if (m.isautogenerated === 'N') q = q.add(D(m.movementqty)); }); return q; }   // getManualQty :230-237
+  // MMovement.checkMaterialPolicy :736-800
+  function checkMaterialPolicy(trx, mv, line, qtyToDeliver) {
+    maList(trx, line).forEach(function (m) { if (m.isautogenerated === 'Y') trx.del('m_movementlinema', m); });                                   // deleteMovementLineMA (IsAutoGenerated='Y')
+    if (qtyToDeliver.signum() === 0) return;
+    if (BREAK === 'nopolicy') return;
+    if (nz(line.m_attributesetinstance_id)) return;                                                                                              // :747 only a line without ASI
+    var p = T.product(trx, line.m_product_id), fifo = mmFifo(trx, p), st = getWarehouse(trx, line.m_product_id, 0, fifo, true, line.m_locator_id);
+    for (var i = 0; i < st.length; i++) {
+      var q = D(st[i].qtyonhand);
+      if (q.compareTo(qtyToDeliver) >= 0) { maInsert(trx, line, st[i].m_attributesetinstance_id, qtyToDeliver, st[i].datematerialpolicy, true); qtyToDeliver = Z; }
+      else { maInsert(trx, line, st[i].m_attributesetinstance_id, q, st[i].datematerialpolicy, true); qtyToDeliver = qtyToDeliver.subtract(q); }
+      if (qtyToDeliver.signum() === 0) break;
+    }
+    if (qtyToDeliver.signum() !== 0) {                                                                                                           // :783-790 addOrCreate(line, 0, rest, MovementDate)
+      var ex = trx.find('m_movementlinema', { m_movementline_id: line.m_movementline_id, m_attributesetinstance_id: 0 }).filter(function (m) { return day(m.datematerialpolicy) === day(mv.movementdate); })[0];
+      if (ex) trx.update('m_movementlinema', ex, { movementqty: N(D(ex.movementqty).add(qtyToDeliver)) }); else maInsert(trx, line, 0, qtyToDeliver, mv.movementdate, true);
+    }
+  }
+  function transaction(trx, line, type, locator, asi, qty, date) {   // MTransaction ctor + setM_MovementLine_ID
+    trx.insert('m_transaction', ML.newPO(trx, 'm_transaction', { ad_org_id: line.ad_org_id, movementtype: type, m_locator_id: locator, m_product_id: line.m_product_id,
+      m_attributesetinstance_id: asi || 0, movementqty: N(qty), movementdate: date, m_movementline_id: line.m_movementline_id }));
+  }
+  function setProcessed(trx, mv, flag) {   // MMovement.setProcessed :232-246 (+ the header; raw UPDATE of the lines)
+    var ch = { processed: flag }; if (flag === 'Y' && !Number(mv.processedon) && trx.env.nowMillis != null) ch.processedon = trx.env.nowMillis;
+    trx.update('m_movement', mv, ch);
+    trx.find('m_movementline', { m_movement_id: mv.m_movement_id }).forEach(function (l) { trx.update('m_movementline', l, { processed: flag }); });
+  }
+
+  // ══ MMovement DocAction ═════════════════════════════════════════════════════════════════════════════════════
+  var MMovement = {
+    prepareIt: function (trx, mv) {   // :290-368
+      var m = fire(trx, 'BEFORE_PREPARE', 'm_movement', mv); if (m) { T.msg(trx, m); return 'IN'; }
+      var d = T.dt(trx, mv.c_doctype_id); if (!d) { T.msg(trx, 'No Document Type (MDocType.get is null - legacy NullPointerException)'); return 'IN'; }
+      if (!T.periodOpen(trx, mv.movementdate, d.docbasetype, mv.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }                       // :299-303
+      if (!MO.backDateAllowed(trx, mv.movementdate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return 'IN'; }                                       // :305-309
+      var ls = mvLines(trx, mv); if (!ls.length) { T.msg(trx, '@NoLines@'); return 'IN'; }                                                         // :311-316
+      for (var i = 0; i < ls.length; i++) {                                                                                                         // :318-352 mandatory ASI (IDEMPIERE-1770)
+        var p = nz(ls[i].m_product_id) ? T.product(trx, ls[i].m_product_id) : null, as = p && nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null;
+        if (as && as.mandatorytype && as.mandatorytype !== 'N') { T.msg(trx, 'MMovement.prepareIt mandatory ASI validation (MMovement.java:317-352, attribute set ' + as.m_attributeset_id + ' MandatoryType=' + as.mandatorytype + ') not ported - named'); return 'IN'; }
+      }
+      if (Y(d.isintransit) && !MO.isReversal(trx, 'm_movement', mv.m_movement_id)) { T.msg(trx, 'MMovement.createConfirmation -> MMovementConfirm.create (MMovement.java:355-356, :371-379; doctype ' + d.c_doctype_id + ' IsInTransit=Y) not ported - named'); return 'IN'; }   // :355-356
+      m = fire(trx, 'AFTER_PREPARE', 'm_movement', mv); if (m) { T.msg(trx, m); return 'IN'; }                                                      // :358-361
+      if (mv.docaction !== 'CO') trx.update('m_movement', mv, { docaction: 'CO' });                                                                // :362-365
+      trx._justPrepared = 'm_movement:' + mv.m_movement_id;
+      return 'IP';
+    },
+    completeIt: function (trx, mv) {   // :409-702
+      if (trx._justPrepared !== 'm_movement:' + mv.m_movement_id) { var st = MMovement.prepareIt(trx, mv); if (st !== 'IP') return st; }          // :410-419 re-check
+      trx._justPrepared = null; mv = trx.get('m_movement', mv.m_movement_id);
+      var d = T.dt(trx, mv.c_doctype_id);
+      if (Y(d.isoverwritedateoncomplete)) {                                                                                                         // setDefiniteDocumentNo :421 (body :717-733)
+        var today = String(trx.env.date).slice(0, 10) + ' 00:00:00'; trx.update('m_movement', mv, { movementdate: today });
+        if (!T.periodOpen(trx, today, d.docbasetype, mv.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }
+        if (!MO.backDateAllowed(trx, today)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return 'IN'; }
+      }
+      if (Y(d.isoverwriteseqoncomplete)) { var dn = T.getDocumentNoByDocType(trx, mv.c_doctype_id, true, mv); if (dn != null) trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { documentno: dn }); }
+      mv = trx.get('m_movement', mv.m_movement_id);
+      var m = fire(trx, 'BEFORE_COMPLETE', 'm_movement', mv); if (m) { T.msg(trx, m); return 'IN'; }                                              // :423-426
+      // pendingConfirmations :427-430: none can exist (no M_MovementConfirm in the twin; prepareIt names the in-transit doctype)
+      if (!Y(mv.isapproved)) trx.update('m_movement', mv, { isapproved: 'Y' });                                                                    // :432-434 approveIt
+      var rev = MO.isReversal(trx, 'm_movement', mv.m_movement_id);
+      if (!rev) { var bd = MO.backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return 'IN'; } }                                                 // :437-444 periodClosedCheckForBackDateTrx(null) (:1173-1226)
+      var errors = '', ls = mvLines(trx, mv);
+      for (var li = 0; li < ls.length; li++) {                                                                                                      // :454-678
+        var line = ls[li], p = nz(line.m_product_id) ? T.product(trx, line.m_product_id) : null, trxFrom = false;
+        if (!(p && T.isStocked(p))) continue;
+        var mq = D(line.movementqty), asi = line.m_attributesetinstance_id || 0, asiTo = asiToOf(line), fifo = mmFifo(trx, p), err;
+        if (!rev) {                                                                                                                                 // :463-475
+          var qtyMA = maManualQty(trx, line);
+          if (qtyMA.compareTo(mq) > 0) { T.msg(trx, '@Over_Qty_On_Attribute_Tab@ ' + line.line); return 'IN'; }
+          checkMaterialPolicy(trx, mv, line, mq.subtract(qtyMA));
+        }
+        if (!nz(asi)) {                                                                                                                             // :478-538 one pair of storage moves + transactions per MA
+          var mas = maList(trx, line);
+          for (var j = 0; j < mas.length; j++) {
+            var ma = mas[j], q = D(ma.movementqty);
+            err = BREAK === 'nofrom' ? null : sAdd(trx, line.m_locator_id, line.m_product_id, ma.m_attributesetinstance_id, q.negate(), ma.datematerialpolicy);
+            if (err) { errors += 'Line ' + line.line + ': ' + err + '\n'; continue; }
+            var asiToMA = asiTo; if (!nz(asiToMA) && String(line.m_locator_id) !== String(line.m_locatorto_id)) asiToMA = ma.m_attributesetinstance_id;   // :497-503 only can be same asi if locator is different
+            err = sAdd(trx, line.m_locatorto_id, line.m_product_id, asiToMA, q, ma.datematerialpolicy);
+            if (err) { errors += 'Line ' + line.line + ': ' + err + '\n'; continue; }
+            transaction(trx, line, 'M-', line.m_locator_id, ma.m_attributesetinstance_id, q.negate(), mv.movementdate);                              // :517-526
+            transaction(trx, line, 'M+', line.m_locatorto_id, asiToMA, q, mv.movementdate);                                                          // :528-536
+            trxFrom = true;
+          }
+        }
+        if (!trxFrom) {                                                                                                                             // :540-669 Fallback - We have ASI
+          var sts = mq.signum() > 0 ? getWarehouse(trx, line.m_product_id, asi, fifo, false, line.m_locator_id) : getWarehouse(trx, line.m_product_id, asiTo, fifo, false, line.m_locatorto_id), dmp = null;
+          for (var k = 0; k < sts.length; k++) if (D(sts[k].qtyonhand).compareTo(mq) >= 0) { dmp = sts[k].datematerialpolicy; break; }
+          if (dmp == null && sts.length) dmp = sts[0].datematerialpolicy;
+          var eff = dmp;
+          if (eff == null && mq.negate().signum() > 0 && nz(p.m_attributeset_id) && asi > 0) { var as1 = trx.get('m_attributeset', p.m_attributeset_id), ai1 = trx.get('m_attributesetinstance', asi); if (as1 && Y(as1.isuseguaranteedateformpolicy) && ai1 && ai1.guaranteedate) eff = ai1.guaranteedate; }
+          if (eff == null && mq.negate().signum() > 0) eff = mv.movementdate;
+          err = BREAK === 'nofrom' ? null : sAdd(trx, line.m_locator_id, line.m_product_id, asi, mq.negate(), eff);
+          if (err) { errors += 'Line ' + line.line + ': ' + err + '\n'; continue; }
+          if (asi > 0 && asiTo > 0 && asi !== asiTo) {                                                                                              // :593-619 different ASIs: re-lookup the target storage
+            dmp = null;
+            var st2 = mq.signum() > 0 ? getWarehouse(trx, line.m_product_id, asiTo, fifo, false, line.m_locatorto_id) : getWarehouse(trx, line.m_product_id, asi, fifo, false, line.m_locator_id);
+            for (var k2 = 0; k2 < st2.length; k2++) if (D(st2[k2].qtyonhand).add(mq).compareTo(Z) >= 0) { dmp = st2[k2].datematerialpolicy; break; }
+            if (dmp == null && st2.length) dmp = st2[0].datematerialpolicy;
+          }
+          eff = dmp;                                                                                                                                // :623 NB: without a re-lookup the FROM storage's date is carried to the target
+          if (eff == null && mq.signum() > 0 && nz(p.m_attributeset_id) && asiTo > 0) { var as2 = trx.get('m_attributeset', p.m_attributeset_id), ai2 = trx.get('m_attributesetinstance', asiTo); if (as2 && Y(as2.isuseguaranteedateformpolicy) && ai2 && ai2.guaranteedate) eff = ai2.guaranteedate; }
+          if (eff == null && mq.signum() > 0) eff = mv.movementdate;
+          err = sAdd(trx, line.m_locatorto_id, line.m_product_id, asiTo, mq, eff);
+          if (err) { errors += 'Line ' + line.line + ': ' + err + '\n'; continue; }
+          transaction(trx, line, 'M-', line.m_locator_id, asi, mq.negate(), mv.movementdate);                                                       // :648-657
+          transaction(trx, line, 'M+', line.m_locatorto_id, asiTo, mq, mv.movementdate);                                                            // :659-668
+        }
+      }
+      if (errors) { T.msg(trx, errors); return 'IN'; }                                                                                              // :680-684
+      m = fire(trx, 'AFTER_COMPLETE', 'm_movement', trx.get('m_movement', mv.m_movement_id)); if (m) { T.msg(trx, m); return 'IN'; }              // :687-691 user validation (Libero's DOC_AFTER_COMPLETE hook lands here)
+      var cur = trx.get('m_movement', mv.m_movement_id); setProcessed(trx, cur, 'Y');                                                                // :695
+      trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { docaction: 'CL' });                                                       // :696
+      return 'CO';
+    },
+    // :803-880 voidIt - an unprocessed movement: lines to 0; a completed one: reverseCorrect (period open + back-date allowed) else reverseAccrual
+    voidIt: function (trx, mv) {
+      if (/^(CL|RE|VO)$/.test(mv.docstatus || '')) { T.msg(trx, 'Document Closed: ' + mv.docstatus); return false; }                                // :805-812
+      if (/^(DR|IN|IP|AP|NA)$/.test(mv.docstatus || '')) {                                                                                          // :814-841
+        var m = fire(trx, 'BEFORE_VOID', 'm_movement', mv); if (m) { T.msg(trx, m); return false; }
+        mvLines(trx, mv).forEach(function (l) {
+          var old = D(l.movementqty);
+          if (old.signum() !== 0) { var r = ML.save(trx, 'm_movementline', l, { movementqty: 0, description: l.description == null || l.description === '' ? 'Void (' + old.toString() + ')' : l.description + ' | Void (' + old.toString() + ')' }); if (!r.ok) throw new Error(r.error); }
+        });
+      } else {                                                                                                                                      // :843-866
+        var d = T.dt(trx, mv.c_doctype_id), accrual = !T.periodOpen(trx, mv.movementdate, d.docbasetype, mv.ad_org_id) || !MO.backDateAllowed(trx, mv.movementdate);
+        return accrual ? MMovement.reverseAccrualIt(trx, mv) : MMovement.reverseCorrectIt(trx, mv);
+      }
+      var m2 = fire(trx, 'AFTER_VOID', 'm_movement', trx.get('m_movement', mv.m_movement_id)); if (m2) { T.msg(trx, m2); return false; }              // :868-870
+      var cur = trx.get('m_movement', mv.m_movement_id); setProcessed(trx, cur, 'Y'); trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { docaction: '--', docstatus: 'VO' });   // :872-873 + DocumentEngine.voidIt
+      return true;
+    },
+    closeIt: function (trx, mv) {   // :882-903
+      var m = fire(trx, 'BEFORE_CLOSE', 'm_movement', mv); if (m) { T.msg(trx, m); return false; }
+      trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { docaction: '--' });
+      m = fire(trx, 'AFTER_CLOSE', 'm_movement', trx.get('m_movement', mv.m_movement_id)); if (m) { T.msg(trx, m); return false; }
+      trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { docstatus: 'CL' });                                                       // DocumentEngine.closeIt
+      return true;
+    },
+    reverseCorrectIt: function (trx, mv) { return reverseIt(trx, mv, false); },   // :905-929
+    reverseAccrualIt: function (trx, mv) { return reverseIt(trx, mv, true); },    // :1044-1069
+    reActivateIt: function (trx, mv) {   // :1071-1090 validators only, returns false
+      var m = fire(trx, 'BEFORE_REACTIVATE', 'm_movement', mv) || fire(trx, 'AFTER_REACTIVATE', 'm_movement', mv); if (m) T.msg(trx, m); return false;
+    },
+    approveIt: function (trx, mv) { trx.update('m_movement', mv, { isapproved: 'Y' }); return true; },
+    rejectIt: function (trx, mv) { trx.update('m_movement', mv, { isapproved: 'N' }); return true; },
+    getSummary: function (trx, mv) {   // :1092-1109
+      var el = trx.q("SELECT name FROM ad_element WHERE lower(columnname)='approvalamt'")[0];
+      return (mv.documentno || '') + ': ' + (el ? el.name : 'ApprovalAmt') + '=' + (mv.approvalamt == null ? '0' : mv.approvalamt) + ' (#' + mvLines(trx, mv).length + ')' + (mv.description ? ' - ' + mv.description : '');
+    }
+  };
+  function reverseIt(trx, mv, accrual) {
+    var tb = accrual ? 'REVERSEACCRUAL' : 'REVERSECORRECT';
+    var m = fire(trx, 'BEFORE_' + tb, 'm_movement', mv); if (m) { T.msg(trx, m); return false; }
+    var rv = reverse(trx, mv, accrual); if (!rv) return false;
+    T.msg(trx, rv.documentno);
+    m = fire(trx, 'AFTER_' + tb, 'm_movement', trx.get('m_movement', mv.m_movement_id)); if (m) { T.msg(trx, m); return false; }
+    return true;
+  }
+  // MMovement.reverse(accrual) :932-1042
+  function reverse(trx, mv, accrual) {
+    var reversalDate = accrual ? trx.env.date : mv.movementdate; if (reversalDate == null) reversalDate = trx.env.date;
+    var d = T.dt(trx, mv.c_doctype_id);
+    if (!T.periodOpen(trx, reversalDate, d.docbasetype, mv.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return null; }                              // :939-944
+    if (!MO.backDateAllowed(trx, reversalDate)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return null; }                                              // :945-949
+    var bd = MO.backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return null; }                                                                   // :951-957
+    var rvPO = ML.newRecord(trx, 'm_movement', {});                                                                                                   // :959 new MMovement(ctx, 0) -> setInitialDefaults
+    ML.copyValues(trx, 'm_movement', mv, rvPO, mv.ad_client_id, mv.ad_org_id);
+    rvPO.set('docstatus', 'DR').set('docaction', 'CO').set('isapproved', 'N').set('isintransit', 'N').set('posted', 'N').set('processed', 'N').set('movementdate', reversalDate);   // :960-966
+    rvPO.set('documentno', mv.documentno + '^').set('description', (mv.description == null || mv.description === '' ? '' : mv.description + ' | ') + '{->' + mv.documentno + ')').set('reversal_id', mv.m_movement_id);   // :967-973 REVERSE_INDICATOR, addDescription
+    if (!rvPO.save()) { T.msg(trx, 'Could not create Movement Reversal'); return null; }
+    var rvId = rvPO.id(); MO.setReversal(trx, 'm_movement', rvId);                                                                                    // :980 setReversal(true)
+    var oLines = mvLines(trx, mv);
+    for (var i = 0; i < oLines.length; i++) {                                                                                                         // :982-1001
+      var o = oLines[i], rl = ML.newRecord(trx, 'm_movementline', {});
+      ML.copyValues(trx, 'm_movementline', o, rl, o.ad_client_id, o.ad_org_id);
+      rl.set('m_movement_id', rvId).set('reversalline_id', o.m_movementline_id).set('c_uom_id', o.c_uom_id)
+        .set('movementqty', N(D(o.movementqty).negate())).set('qtyentered', N(D(o.qtyentered).negate())).set('targetqty', 0).set('scrappedqty', 0).set('confirmedqty', 0).set('processed', 'N');
+      if (!rl.save()) { T.msg(trx, 'Could not create Movement Reversal Line for @Line@ ' + o.line + ' (' + rl.error + ')'); return null; }
+      var rLine = trx.get('m_movementline', rl.id());
+      if (!nz(rLine.m_attributesetinstance_id)) maList(trx, o).forEach(function (ma) {                                                               // :1002-1013 copy MA, negated
+        maInsert(trx, rLine, ma.m_attributesetinstance_id, D(ma.movementqty).negate(), ma.datematerialpolicy, true);
+      });
+    }
+    var res = ML.processIt(trx, 'm_movement', rvId, 'CO');                                                                                            // :1018-1022
+    var rvRow = trx.get('m_movement', rvId);
+    if (!res.ok || rvRow.docstatus !== 'CO') { T.msg(trx, 'Reversal ERROR: ' + (res.msg || res.status)); return null; }
+    MMovement.closeIt(trx, rvRow);                                                                                                                    // :1023
+    trx.update('m_movement', trx.get('m_movement', rvId), { docstatus: 'RE', docaction: '--' });                                                      // :1024-1026
+    var cur = trx.get('m_movement', mv.m_movement_id);                                                                                                // :1028-1034
+    T.addDescription(trx, 'm_movement', cur, '(' + rvRow.documentno + '<-)');
+    var c2 = trx.get('m_movement', mv.m_movement_id); setProcessed(trx, c2, 'Y');
+    trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { reversal_id: rvId, docstatus: 'RE', docaction: '--' });
+    return trx.get('m_movement', rvId);
+  }
+  ML.registerDocAction('m_movement', MMovement);
+
+  return { MMovement: MMovement, getWarehouse: getWarehouse, checkMaterialPolicy: checkMaterialPolicy };
+});

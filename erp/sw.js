@@ -175,7 +175,7 @@ const PRECACHE_ASSETS = [
   'erp_postings.js',   // FRONTEND_LANE_MASTER §2 Item C — frozen read-fold (UMD copy, window.ERPPostings)
   'accts_posted.js',   // Accts-Posted lens (buildCtx/buildPostedVM/mount/mountAccordion, window.AcctsPosted)
   'post_resolver.js',  // POSTING_PREVIEW_PANEL.md — token→account resolver (UMD, window.PostResolver), FOLD-frozen
-  'ad_workflow.js', 'model_layer.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
+  'ad_workflow.js', 'model_layer.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_dd.js', 'model_movement.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
   'doc_poster.js',     // POSTING_PREVIEW_PANEL.md — per-doc GL derivation (UMD, window.DocPoster), == fact_acct(318)
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
   'ad_callout.js',
