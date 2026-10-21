@@ -393,11 +393,31 @@
 
   // DocumentEngine.processIt(action) — process/DocumentEngine.java:301-360 + prepareIt :489-498 + completeIt.
   // The document's DocStatus is written by the ENGINE (setDocStatus after each step), DocAction by the class.
+  // DocumentEngine.getActionOptions :730-762 - the ENGINE's coarse action list per DocStatus (distinct from, and narrower than, getValidActions which the UI offers: a Distribution Order
+  // offers Close while InProgress yet the engine below refuses it - the oracle showed it, LIBERO_DD_SPEC.md §RESULT D-CLOSE-IP)
+  function engineActions(st) {
+    if (st === 'IN') return ['PR', 'IN', 'XL', 'VO'];
+    if (st === 'DR') return ['PR', 'IN', 'CO', 'XL', 'VO'];
+    if (st === 'IP' || st === 'AP') return ['CO', 'WC', 'AP', 'RJ', 'XL', 'VO', 'PR'];
+    if (st === 'NA') return ['RJ', 'PR', 'XL', 'VO'];
+    if (st === 'WP' || st === 'WC') return ['CO', 'WC', 'RE', 'VO', 'CL'];
+    if (st === 'CO') return ['CL', 'RE', 'RA', 'RC', 'PO', 'VO'];
+    if (st === 'CL') return ['PO', 'RE'];
+    if (st === 'RE' || st === 'VO') return ['PO'];
+    return [];
+  }
   function processIt(trx, table, id, action) {
     table = table.toLowerCase();
     var impl = DOCS[table], doc = trx.get(table, id);
     if (!impl) return { ok: false, status: doc && doc.docstatus, msg: 'no DocAction class registered for ' + table };
     if (!doc) return { ok: false, status: null, msg: table + ' ' + id + ' not found' };
+    // DocumentEngine.processIt(processAction, docAction) :248-296: the requested (workflow) action when valid for the status, else the document's own DocAction, else nothing / refused
+    var eng = engineActions(doc.docstatus || 'DR'), docAct = doc.docaction;
+    if (eng.indexOf(action) < 0) {
+      if (eng.indexOf(docAct) >= 0) { trx.say('§MODEL-ENGINE action ' + action + ' not valid for status ' + doc.docstatus + ' - DocumentEngine runs the document DocAction ' + docAct + ' (:259-261)'); action = docAct; }
+      else if (action === '--' || docAct === '--') return { ok: true, status: doc.docstatus, msg: trx._msg };
+      else return { ok: false, status: doc.docstatus, msg: 'Status=' + doc.docstatus + ' - Invalid Actions: Process=' + action + ', Doc=' + docAct };
+    }
     trx._msg = null; ev(trx, 'DOC:' + action, table);
     function setStatus(s) { trx.update(table, doc, { docstatus: s }); }
     var st = doc.docstatus;

@@ -224,7 +224,7 @@ export const manifest = {
   requires: {},
   activation: 'lazy',
   triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP', 'PP_Cost_Collector',
-    'C_Order', 'C_OrderLine', 'M_Requisition', 'M_RequisitionLine', 'M_Forecast', 'M_ForecastLine', 'M_InOut', 'M_Product'] },   // + the core tables MFG_Validator.initialize registers (:66-115; DD_Order / M_Movement: no DD tables in the base)
+    'C_Order', 'C_OrderLine', 'M_Requisition', 'M_RequisitionLine', 'M_Forecast', 'M_ForecastLine', 'M_InOut', 'M_Product', 'DD_Order', 'DD_OrderLine', 'M_Movement'] },   // + the core tables MFG_Validator.initialize registers (:70-115; the DD tables are physical since libero_dd.mjs, prompts/mfg/LIBERO_DD_SPEC.md)
   // the bundle's 2Packs (Incremental2PackActivator: META-INF/2Pack_<x.y.z>.zip, applied above the installed version, ascending, each once): Libero's own 1.0.0-1.0.2 (pshepetko @ b2adfea0) + ours
   // the bodies of 2Pack_1.0.0's four CREATE FUNCTION statements (PL/pgSQL there, JS here; §24): bound with the packs, kept while they are installed
   sqlFunctions: './libero_sqlfn.mjs',
@@ -243,7 +243,7 @@ export const manifest = {
   dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },
     { table: 'pa_documentstatus', idCol: 'pa_documentstatus_id', rows: DASH_STATUS }, { table: 'pa_measurecalc', idCol: 'pa_measurecalc_id', rows: DASH_CALC },
     { table: 'pa_measure', idCol: 'pa_measure_id', rows: DASH_MEASURE }, { table: 'pa_goal', idCol: 'pa_goal_id', rows: DASH_GOAL }],
-  chunks: { hot: ['./libero_pporder.mjs', './libero_cost.mjs', './libero_callouts.mjs', './libero_mto.mjs'] },
+  chunks: { hot: ['./libero_pporder.mjs', './libero_cost.mjs', './libero_callouts.mjs', './libero_mto.mjs', './libero_dd.mjs'] },
   budget: { kb: 14, note: 'slice 1: model classes + MRP validators; the cost side adds ~8k Java lines' }
 };
 

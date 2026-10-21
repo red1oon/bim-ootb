@@ -204,6 +204,7 @@ function removeDocClassOwner(owner) { return _DOCC.removeOwner(owner); }
 function docClassFor(table) { var t = _DOCC.top(String(table || '').toLowerCase()); return t ? t.value : null; }
 function describeDocClasses() { var o = {}; _DOCC.keys().sort().forEach(function (k) { o[k] = _DOCC.layers(k).map(function (r) { return r.owner + '@' + r.rank; }); }); return o; }
 function legacyDocClassOf(tableName) { var t = String(tableName); return 'Doc_' + (t.indexOf('_') === 1 ? t.substring(2) : t).replace(/_/g, ''); }
+function legacyDocClassExists(tableName) { return LEGACY_DOC_CLASSES.indexOf(legacyDocClassOf(tableName).substring(4)) >= 0; }   // the core accounting classes (a bundle's IDocFactory class is docClassFor)
 // → the refusal text legacy gives, or null. hasPostedColumn = the table's AD_Column 'Posted' exists (SQLite dictionary).
 function immediatePostingRefusal(db, tableName, hasPostedColumn, client) {
   if (!hasPostedColumn || !isClientAccountingImmediate(db, client)) return null;
@@ -1598,7 +1599,7 @@ function derivePostings(db, recordRef, schema, R) {
 
 function _R() { try { return (typeof require !== 'undefined') ? require('./post_resolver') : null; } catch (e) { return null; } }
 
-var _api = { registerDocClass: registerDocClass, unregisterDocClass: unregisterDocClass, removeDocClassOwner: removeDocClassOwner, docClassFor: docClassFor, describeDocClasses: describeDocClasses, derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
+var _api = { legacyDocClassExists: legacyDocClassExists, legacyDocClassOf: legacyDocClassOf, registerDocClass: registerDocClass, unregisterDocClass: unregisterDocClass, removeDocClassOwner: removeDocClassOwner, docClassFor: docClassFor, describeDocClasses: describeDocClasses, derivePostings: derivePostings, deriveInvoice: deriveInvoice, deriveInOut: deriveInOut, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, deriveMovement: deriveMovement, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 // Internal helpers for witnesses, exposed on the Node module ONLY (never on window.DocPoster): the public _api is not widened.

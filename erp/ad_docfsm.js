@@ -197,6 +197,9 @@
         // canReactivateThisDocType test, unlike invoice/payment/journal/bankstmt — do NOT gate it on
         // iscanbereactivated); MDepositBatch.voidIt:203-257 terminal-reject + bank-statement-line gate → VO;
         // RC:552/RA:558 stubs return false; reActivateIt:564-598 gated → true
+    53037: { name: 'DD_Order', reActivate: true, ra: false, block: 'ddorder', vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
+        // MDDOrder (org.eevolution.model, core): getValidActions :1266-1280 -> Drafted/InProgress/Invalid offer Close, Completed offers Void + ReActivate, BOTH UNGATED;
+        // voidIt:1013 / reActivateIt:1213 return true (reActivate -> IP); reverseAccrualIt:1193 returns false; reverseCorrectIt:1173 = voidIt (RC is not offered)
     623: { name: 'M_ProjectIssue', reActivate: false },
         // MProjectIssue delegates to DocActionDelegate (:377-417) and REGISTERS Reverse_Correct/Accrual
         // callables (doReverse, :126-127) → RC/RA→RE and void = the H-2 default delegation (delegate
@@ -238,6 +241,7 @@
     else if (s === 'AP') a.push('CO', 'VO');                            // :1044-1048
     else if (s === 'CO') a.push('CL');                                  // :1050-1053 generic
     else if (s === 'WP' || s === 'WC') a.push('VO', 'PR');              // :1055-1060
+    if (fam.block === 'ddorder' && (s === 'DR' || s === 'IP' || s === 'IN')) a.push('CL');   // Distribution Order :1268-1273 (Drafted / InProgress / Invalid -> Close)
     if (s === 'CO') {                                                   // the per-table Completed block
       var dt = rec.doctypeId ? db.prepare('SELECT iscanbereactivated FROM c_doctype WHERE c_doctype_id=?').get(Number(rec.doctypeId)) : null;
       var canReact = !!(dt && dt.iscanbereactivated === 'Y');
@@ -266,6 +270,8 @@
         a.push('VO');                                                   // UNGATED: no periodOpen/canReact test
       } else if (blk === 'banktransfer') {                              // BankTransfer :1313-1320 — CO→Void
         a.push('VO');                                                   // UNGATED
+      } else if (blk === 'ddorder') {                                   // Distribution Order :1275-1279 - CO -> Void + ReActivate, UNGATED
+        a.push('VO', 'RE');
       } else if (blk === 'depositbatch') {                              // DepositBatch :1323-1330 — CO→Void+ReActivate
         a.push('VO', 'RE');                                             // BOTH UNGATED (no canReactivateThisDocType)
       }
