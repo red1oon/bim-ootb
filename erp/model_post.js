@@ -448,11 +448,101 @@
     return !F.err;
   }
 
+  // Doc_MatchPO (Doc_MatchPO.java:94-560), W-POST-MATCHPO (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §53). loadDocumentDetails: no receipt line -> look for one through the not-matched M_MatchPO of the
+  //   same order line (MatchPOAutoMatch.getNotMatchedMatchPOList :40-140) -> still none and no Ref_MatchPO => DEFERRED (Doc.post :614-618, Posted='d'). createFacts: MCostDetail.createOrder (:584-690)
+  //   for every costing method; ONLY under Standard costing a PPV pair P_PPV / PPVOffset of (poCost x qty - standard costs). NAMED, never faked: reversal, landed cost, foreign currency, a
+  //   tax-included / summary / distribute-with-line tax on the order line, credit-memo M_MatchPO in the not-matched list.
+  function glAcct(trx, col, schema) { var r = trx.q('SELECT ' + col + ' AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', [schema])[0]; if (!r || r.a == null) return null; var v = trx.q('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=?', [r.a])[0]; return v ? v.e : null; }
+  function lineSigned(F, ctx, acct, cur, amt) { amt = D(amt); return amt.signum() < 0 ? createLine(F, ctx, null, acct, cur, null, amt.negate()) : createLine(F, ctx, null, acct, cur, amt, null); }   // Fact.createLine(dl, acct, cur, Amt)
+  function docStatusOf(trx, table, id) { var h = trx.get(table, id); return h ? h.docstatus : null; }
+  function matchPOInOutLine(trx, mp) {                                                        // loadDocumentDetails :115-196 - the receipt line this invoice-side match settles
+    var named = null, mpos = trx.find('m_matchpo', { c_orderline_id: mp.c_orderline_id }), notMatched = [];
+    mpos.forEach(function (m) {
+      if (nz(m.reversal_id) || nz(m.ref_matchpo_id)) return;
+      if (D(m.qty).signum() < 0 && nz(m.c_invoiceline_id) && !nz(m.m_inoutline_id)) { var il0 = trx.get('c_invoiceline', m.c_invoiceline_id), st0 = il0 ? docStatusOf(trx, 'c_invoice', il0.c_invoice_id) : null; if (st0 === 'CO' || st0 === 'CL') { named = 'Doc_MatchPO credit-memo match in getNotMatchedMatchPOList'; return; } }
+      notMatched.push(m);
+    });
+    if (named) return { named: named };
+    notMatched.sort(function (a, b) { return Number(a.m_matchpo_id) - Number(b.m_matchpo_id); });
+    var noInvoice = [], noShip = [], postedNoShip = [];
+    notMatched.forEach(function (m) {
+      if (nz(m.m_inoutline_id) && !nz(m.c_invoiceline_id) && !nz(m.reversal_id)) { var iol = trx.get('m_inoutline', m.m_inoutline_id), st = iol ? docStatusOf(trx, 'm_inout', iol.m_inout_id) : null; if (st === 'CO' || st === 'CL') noInvoice.push(m); }
+      else if (!nz(m.m_inoutline_id) && !nz(m.reversal_id)) { var il = trx.get('c_invoiceline', m.c_invoiceline_id), st2 = il ? docStatusOf(trx, 'c_invoice', il.c_invoice_id) : null;
+        if (st2 === 'CO' || st2 === 'CL') (Y(m.posted) ? postedNoShip : noShip).push({ id: m.m_matchpo_id, q: D(m.qty) }); }
+    });
+    for (var i = 0; i < noInvoice.length; i++) {
+      var qty = D(noInvoice[i].qty), found = 0;
+      for (var a = 0; a < postedNoShip.length && qty.signum() !== 0; a++) { var h = postedNoShip[a]; if (h.q.compareTo(qty) >= 0) { h.q = h.q.subtract(qty); qty = Z; } else if (h.q.signum() > 0) { qty = qty.subtract(h.q); h.q = Z; } }
+      if (qty.signum() === 0) continue;
+      for (var b = 0; b < noShip.length; b++) { var g = noShip[b];
+        if (g.q.compareTo(qty) >= 0) { g.q = g.q.subtract(qty); qty = Z; } else if (g.q.signum() > 0) { qty = qty.subtract(g.q); g.q = Z; }
+        if (g.q.signum() === 0 && String(g.id) === String(mp.m_matchpo_id)) { found = noInvoice[i].m_inoutline_id; break; }
+        if (qty.signum() === 0) break; }
+      if (found) return { iol: found };
+    }
+    return { iol: 0 };
+  }
+  function Doc_MatchPO(trx, mp, as, F) {
+    var named = function (m) { F.err = m + ' - named'; return false; }, M = mc(), qty = D(mp.qty);
+    var iolId = nz(mp.m_inoutline_id) ? Number(mp.m_inoutline_id) : 0;
+    if (!iolId) { var f = matchPOInOutLine(trx, mp); if (f.named) return named(f.named); iolId = f.iol; }
+    if (!iolId && !nz(mp.ref_matchpo_id)) return 'DEFER';                                         // :198-202
+    if (iolId && mp.posted === 'd') { var io0 = trx.get('m_inout', trx.get('m_inoutline', iolId).m_inout_id);   // :204-217 a deferred match takes the receipt's later DateAcct
+      if (String(io0.dateacct).slice(0, 10) > String(mp.dateacct).slice(0, 10)) { trx.update('m_matchpo', mp, { dateacct: io0.dateacct, datetrx: io0.dateacct }); mp = trx.get('m_matchpo', mp.m_matchpo_id); } }
+    var ol = trx.get('c_orderline', mp.c_orderline_id), ctx = Doc(trx, 'm_matchpo', mp, { dateDoc: mp.datetrx, qty: qty, c_currency_id: as.c_currency_id });
+    if (!nz(mp.m_product_id) || qty.signum() === 0) return true;                                   // :247-254
+    if (!iolId) {                                                                                  // :256-271
+      trx.find('m_matchpo', { c_orderline_id: ol.c_orderline_id }).some(function (m) { if (nz(m.m_inoutline_id) && !nz(m.c_invoiceline_id)) { var l = trx.get('m_inoutline', m.m_inoutline_id), st = l ? docStatusOf(trx, 'm_inout', l.m_inout_id) : null;
+        if ((st === 'CO' || st === 'CL') && D(m.qty).compareTo(qty) <= 0) { iolId = Number(m.m_inoutline_id); return true; } } return false; });
+    }
+    if (!iolId) { if (nz(mp.ref_matchpo_id)) return true; F.err = 'NoPostingIfNotMatchedToShipment'; return false; }   // :273-279
+    if (nz(mp.reversal_id)) return named('Doc_MatchPO reversal (updateReverseLine) not ported');
+    var lc = []; try { lc = trx.q('SELECT 1 AS x FROM c_orderlandedcostallocation WHERE c_orderline_id=?', [ol.c_orderline_id]); } catch (e) { lc = []; }
+    if (lc.length) return named('Doc_MatchPO landed cost allocation not ported');
+    var poCost = D(ol.pricecost || 0), tax = nz(ol.c_tax_id) ? trx.get('c_tax', ol.c_tax_id) : null, oh = trx.get('c_order', ol.c_order_id);
+    if (poCost.signum() === 0) {                                                                   // :290-342
+      poCost = D(ol.priceactual);
+      if (tax && (Y(tax.issummary) || Y(tax.isdistributetaxwithlineitem) || (Y(oh.istaxincluded) && D(tax.rate).signum() !== 0))) return named('Doc_MatchPO tax-included / summary / distribute-with-line tax cost correction not ported');
+    }
+    var rl = trx.get('m_inoutline', iolId), io = trx.get('m_inout', rl.m_inout_id), isReturn = io.movementtype === 'V-';
+    var prec = Number(as.costingprecision);
+    if (String(ol.c_currency_id) !== String(as.c_currency_id)) {                                  // :383-399 Different currency: the order's rate on the receipt's DateAcct
+      var fx = rate(trx, oh.c_currency_id, as.c_currency_id, io.dateacct, oh.c_conversiontype_id, ol.ad_org_id);
+      if (fx == null) { F.err = 'PurchaseOrderNotConvertible ' + as.name; return false; }
+      poCost = poCost.multiply(fx); if (poCost.scale() > prec) poCost = poCost.setScale(prec, HU);
+    }
+    // createMatchPOCostDetail :584-690 - total amount and qty of this order line's receipt matches on the same DateAcct + ASI
+    var tQty = Z, tAmt = Z;
+    trx.find('m_matchpo', { c_orderline_id: ol.c_orderline_id }).forEach(function (m) {
+      if (String(m.m_attributesetinstance_id || 0) === String(mp.m_attributesetinstance_id || 0) && String(m.m_matchpo_id) !== String(mp.m_matchpo_id) && String(m.dateacct).slice(0, 10) === String(mp.dateacct).slice(0, 10) && nz(m.m_inoutline_id)) {
+        var q2 = isReturn ? D(m.qty).negate() : D(m.qty); tQty = tQty.add(q2); tAmt = tAmt.add(poCost.multiply(q2)); } });
+    var delivered = poCost.multiply(qty);
+    tAmt = tAmt.add(isReturn ? delivered.negate() : delivered); tQty = tQty.add(isReturn ? qty.negate() : qty);
+    if (tAmt.scale() > prec) tAmt = tAmt.setScale(prec, HU);
+    if (!M.createOrder(trx, as, ol.ad_org_id, mp.m_product_id, mp.m_attributesetinstance_id || 0, ol.c_orderline_id, 0, tAmt, tQty, ol.description, mp.dateacct, 0)) { F.err = 'SaveError'; return false; }
+    var totalCost = poCost.multiply(qty), prod = T.product(trx, mp.m_product_id);                 // :408-419
+    var costs = M.getProductCosts(trx, prod, mp.m_attributesetinstance_id || 0, as, mp.ad_org_id, 'S', qty, ol.c_orderline_id, false, mp.dateacct, null, false);
+    if (M.costingMethod(trx, prod, as) !== 'S') return true;                                     // :421 / :549-552 no PPV
+    if (costs == null || D(costs).signum() === 0) { if (D(ol.priceactual).signum() === 0) costs = Z; else { F.err = 'Resubmit - No Costs for ' + prod.name; return false; } }
+    var diff = totalCost.subtract(D(costs)); if (diff.signum() === 0) return true;
+    var dims = { c_bpartner_id: ol.c_bpartner_id, c_activity_id: ol.c_activity_id, c_campaign_id: ol.c_campaign_id, c_project_id: ol.c_project_id, c_projectphase_id: ol.c_projectphase_id, c_projecttask_id: ol.c_projecttask_id,
+      c_uom_id: ol.c_uom_id, user1_id: ol.user1_id, user2_id: ol.user2_id, c_charge_id: ol.c_charge_id, c_costcenter_id: ol.c_costcenter_id, c_department_id: ol.c_department_id, m_attributesetinstance_id: ol.m_attributesetinstance_id };
+    var setDims = function (fl, q) { Object.keys(dims).forEach(function (c) { fl[c] = nz(dims[c]) ? dims[c] : null; }); fl.qty = N(q); };
+    var cr = lineSigned(F, ctx, productAcct(trx, mp.m_product_id, 'p_purchasepricevariance_acct', as), as.c_currency_id, isReturn ? diff.negate() : diff);
+    if (cr) setDims(cr, isReturn ? qty.negate() : qty);
+    var dr = lineSigned(F, ctx, glAcct(trx, 'ppvoffset_acct', as.c_acctschema_id), as.c_currency_id, isReturn ? diff : diff.negate());
+    if (dr) setDims(dr, isReturn ? qty : qty.negate());
+    var el = trx.q("SELECT isbalanced AS b FROM c_acctschema_element WHERE c_acctschema_id=? AND elementtype='OO'", [as.c_acctschema_id])[0], interOrg = !!el && Y(el.b) && String(rl.ad_org_id) !== String(ol.ad_org_id);
+    if (!Y(as.ispostifclearingequal) && dr && cr && dr.account_id === cr.account_id && !interOrg && D(dr.amtsourcedr).compareTo(D(cr.amtsourcecr)) === 0) { removeLine(F, dr); removeLine(F, cr); }   // :521-534
+    return true;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
     m_inout: function (trx, io, as, F) { return Doc_InOut(trx, io, as, F); },
     m_matchinv: function (trx, mi, as, F) { return Doc_MatchInv(trx, mi, as, F); },
+    m_matchpo: function (trx, mp, as, F) { return Doc_MatchPO(trx, mp, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
@@ -567,7 +657,8 @@
         out.push(f);
       });
     });
-    if (deferred) { trx.update(table, doc, { posted: 'd' }); trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=d (deferred)'); return false; }
+    if (deferred) { trx.rollbackTo(sp); trx.update(table, doc, { posted: 'd' });   // Doc.post :612-618 defers before deleteAcct
+      trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=d (deferred)'); return false; }
     if (exc) return postError(trx, sp, table, doc[key], dt, excAs, 'E', exc);
     // Doc.postLogic :817-830 - createFacts returned null with p_Error set by the Doc class ("No Costs for X", "Original Shipment/Receipt not posted yet", ...) => status E, the
     //   same savepoint rollback + Posted + AD_Note as an exception (the note text carries p_Error alone, no class name). A twin-side "not ported - named" refusal is NOT a legacy
