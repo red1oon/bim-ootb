@@ -6,7 +6,8 @@
  * Measured before: Hospital 440 / 440 doors without a swing (angled walls), Clinic 6 stated double doors, HHS 34 doors whose operation the IFC does not state.
  *   L  LEGACY   — the Duplex set (axis-aligned, every door stated single swing) is byte-identical to the writer without D16-D18 (BASE=<repo root of the old writer>, optional).
  *   A1 ANGLED   — the Duplex turned 30 deg (DX_ROT30) draws as many door arcs as the Duplex, each hinge = the Duplex hinge turned 30 deg (1 mm), same width, same swing direction.
- *   A2 ANGLED   — on the given model every door arc's hinge lies in its door's plan bbox + 50 mm (a swing drawn on its own door).
+ *   A2 ANGLED   — on the given model every door arc's hinge lies in its door's plan bbox + 50 mm (a swing drawn on its own door), except a door whose bbox centre is off its
+ *                 host wall (D23, §DOOR_ACROSS_HOST: hinged on the wall; W-DOOR-CUT C4 checks it there).
  *   A3 GAP      — every rotated gap (§OPENING ... gap=drawn_rotated) leaves the door centre outside every A-WALL polygon of that plan.
  *   D1 DOUBLE   — every stated DOUBLE_DOOR_SINGLE_SWING draws two arcs of OverallWidth / 2 centred on its two jambs (1 mm).
  *   F1 DEFAULT  — every door drawn from the standard is on A-DOOR-DFLT (yellow), never on A-DOOR; a sheet with one states the basis note, @DEFAULT=door.operation_standard and
@@ -41,8 +42,9 @@ const P = new DxfParser();
     if (process.env.BASE) { const SB = require(path.join(process.env.BASE, 'modeller/dxf2bim/std2d.js')), Rl = SB.writeStdSet(qa, 'W', {}); check('L', 'the Duplex set is byte-identical to the writer before D16-D18', Object.keys(Rl.files).every(n => Rl.files[n] === Ra.files[n]) && Object.keys(Rl.files).length === Object.keys(Ra.files).length, 'files=' + Object.keys(Ra.files).length); }
   }
   const q = open(process.argv[2]), R = S.writeStdSet(q, 'W', {}), Mo = R.model, A = arcsOf(R);
-  const off = Object.keys(A).filter(k => { const d = Mo.by_guid[k], h = A[k].h; return !(h[0] >= d.x0 * 1000 - 50 && h[0] <= d.x1 * 1000 + 50 && h[1] >= d.y0 * 1000 - 50 && h[1] <= d.y1 * 1000 + 50); });
-  check('A2', 'every door arc is hinged on its own door (hinge in the door bbox + 50 mm)', Object.keys(A).length > 0 && off.length === 0, `arcs=${Object.keys(A).length} angled_basis=${R.log.filter(l => /ifc_convention_rotated|swing_axis=frame/.test(l)).length} off=${off.length} ${off.slice(0, 3).join(' ')}`);
+  const onWall = new Set(R.log.filter(l => /^§DOOR_ACROSS_HOST guid=/.test(l)).map(l => /guid=(\S+)/.exec(l)[1]));   // D23: hinged on its host wall (checked by W-DOOR-CUT C4), not on its own bbox
+  const off = Object.keys(A).filter(k => { if (onWall.has(k)) return false; const d = Mo.by_guid[k], h = A[k].h; return !(h[0] >= d.x0 * 1000 - 50 && h[0] <= d.x1 * 1000 + 50 && h[1] >= d.y0 * 1000 - 50 && h[1] <= d.y1 * 1000 + 50); });
+  check('A2', 'every door arc is hinged on its own door (hinge in the door bbox + 50 mm), or on its host wall when its bbox centre is off the wall (D23)', Object.keys(A).length > 0 && off.length === 0, `arcs=${Object.keys(A).length} on_wall_d23=${onWall.size} angled_basis=${R.log.filter(l => /ifc_convention_rotated|swing_axis=frame/.test(l)).length} off=${off.length} ${off.slice(0, 3).join(' ')}`);
   // A3: rotated gaps really open the wall at the door
   const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
   const rotated = R.log.filter(l => /gap=drawn_rotated/.test(l)).map(l => /guid=(\S+)/.exec(l)[1]); let blocked = [];

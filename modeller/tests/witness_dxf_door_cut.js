@@ -10,6 +10,8 @@
  *                 cut in the wall with no swing (GAP:door_handing_conflict).
  *   C3 STATED   — a door whose mesh contradicts its stated handing is drawn YELLOW (A-DOOR-DFLT), never A-DOOR, logged §DOOR_HANDING_CONFLICT, its sheet states it
  *                 (YELLOW = UNCHECKED note, @LAYER=A-DOOR-DFLT marking) and it is no longer a GAP.
+ *   C4 ON WALL  — a door drawn by the IFC convention or the standard whose bbox centre lies off its host wall (D23, §DOOR_ACROSS_HOST) is hinged on the host wall:
+ *                 every arc of it is centred within the host contour's extent across the door (1 mm); before D23 the LTU overhead doors stood 1.65 m inside the room.
  *   INFO        — swings with no wall drawn at them (GAP:opening_host_not_cut / opening_no_host on a door with an arc): a model fact, counted, not changed.
  * Optional TURN=<deg>: the same on the wand's box set (pivot = wall envelope centre, plane 1 km long, no depth), as the Viewer calls it.
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_door_cut.js <Node model .db | _2d.db sidecar> [more dbs]
@@ -58,6 +60,14 @@ const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1
       const stillGap = R.gaps.filter(g => g[0] === 'GAP:door_handing_conflict' && conf.indexOf(g[1]) >= 0).length;
       check('C3', `[${tagd}] a door whose mesh contradicts its stated handing is drawn yellow, stated on its sheet, no longer a GAP`, conflictOnDoor === 0 && stated && stillGap === 0, `conflicts=${conf.length} on_A-DOOR=${conflictOnDoor} sheets_stated=${stated} still_gap=${stillGap}`);
     } else say(`INFO C3 | [${tagd}] no handing conflict in this model`);
+    const across = R.log.filter(l => /^§DOOR_ACROSS_HOST guid=/.test(l)).map(l => { const m = /guid=(\S+) .*host_contour=([-\d.]+)\.\.([-\d.]+)/.exec(l); return { g: m[1], t0: +m[2], t1: +m[3] }; });
+    if (across.length) { let off = [], nArc = 0;
+      R.views.plan.forEach(({ view, storey }) => { const name = Object.keys(R.files).find(n => n.endsWith('_' + view + '_std.dxf')); if (!name) return; const arcs = P.parseSync(R.files[name]).entities.filter(e => e.type === 'ARC' && /^A-DOOR(-DFLT)?$/.test(e.layer));
+        across.filter(a => Mo.by_guid[a.g].storey === storey.name).forEach(a => { const d = Mo.by_guid[a.g], op = Mo.door_ops[a.g], Y = [op.y[0], op.y[1]], T = 100;
+          arcs.filter(e => e.center.x >= d.x0 * 1000 - T - 2000 && e.center.x <= d.x1 * 1000 + T + 2000 && e.center.y >= d.y0 * 1000 - T - 2000 && e.center.y <= d.y1 * 1000 + T + 2000 && Math.abs(e.radius - (Number(op.w) * 1000 / (R.log.some(l => l.indexOf('§DOOR_DEFAULT guid=' + a.g) === 0 && /leaves=2/.test(l)) ? 2 : 1))) < 1)
+            .forEach(e => { nArc++; const t = (e.center.x * Y[0] + e.center.y * Y[1]) / 1000; if (t < a.t0 - 0.001 || t > a.t1 + 0.001) off.push(a.g); }); }); });
+      check('C4', `[${tagd}] a door whose bbox centre is off its wall is hinged on the wall (its arcs within the host contour across the door)`, off.length === 0 && nArc >= across.length, `doors=${across.length} arcs_checked=${nArc} arcs_off=${off.length} ${[...new Set(off)].slice(0, 3).join(' ')}`);
+    } else say(`INFO C4 | [${tagd}] no door with its bbox centre off its wall`);
     const midAir = R.gaps.filter(g => /opening_host_not_cut|opening_no_host/.test(g[0]) && arcLog.has(g[1]) && Mo.by_guid[g[1]] && Mo.by_guid[g[1]].cls === 'IfcDoor');
     say(`INFO swing_no_wall | [${tagd}] doors drawn with a swing where no host wall is drawn (model fact, listed GAP): ${midAir.length} ${JSON.stringify(midAir.reduce((a, g) => (a[g[0]] = (a[g[0]] || 0) + 1, a), {}))}`);
   }
