@@ -3,7 +3,8 @@
 // ⚠ DO NOT REMOVE — model_movement.js: MMovement + MMovementLine (Inventory Move) model/DocAction classes, ported and REGISTERED into model_layer.js. Spec: prompts/mfg/LIBERO_DD_SPEC.md §3.
 //   Witness: erp/tests/witness_movement_diff.js (READ THE LOG: §MVD lines). Why it exists: the twin had NO model-layer M_Movement (only the stand-alone ERPEngine.completeMovement on the old M_Storage table), so a
 //   Libero DOC_AFTER_COMPLETE hook on M_Movement (erp/plugins/libero_dd.mjs) could never fire. Java root: org.adempiere.base/src/org/compiere/model/MMovement.java + MMovementLine.java + MMovementLineMA.java.
-//   Not ported = NAMED refusal ("... not ported - named"), never silent: the in-transit doctype confirmation (MMovementConfirm), mandatory-ASI validation (IDEMPIERE-1770), back-date re-costing.
+//   MMovementConfirm + MMovementLineConfirm (the in-transit two-step) are ported below (prompts/ERP_FRIENDLY_OPS_LENS.md §61, Witness: erp/tests/witness_movement_confirm.js); a confirm DIFFERENCE/SCRAPPED qty is the NAMED refusal (no MInventory model in the twin).
+//   Not ported = NAMED refusal ("... not ported - named"), never silent: mandatory-ASI validation (IDEMPIERE-1770), back-date re-costing.
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_layer'), require('./model_trade'), require('./model_order'));
@@ -12,6 +13,7 @@
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
   var fire = function (trx, timing, table, row) { return ML.fire(trx, timing, table, row); };
   var BREAK = (typeof process !== 'undefined' && process.env && process.env.MV_BREAK) || '';   // witness negative controls only (MV_BREAK=nofrom|nopolicy)
+  var LMC_BREAK = (typeof process !== 'undefined' && process.env && process.env.LMC_BREAK) || '';   // witness negative controls only (LMC_BREAK=noguard drops :427-430; noguardline drops :182-188; noconfirm skips createConfirmation)
   var same = function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
   var day = function (d) { return d ? String(d).slice(0, 10) + ' 00:00:00' : null; };   // Util.removeTime
   function mvLines(trx, mv) { return trx.find('m_movementline', { m_movement_id: mv.m_movement_id }, ['line', 'm_movementline_id']); }   // MMovement.getLines :122-141 ORDER BY Line, M_MovementLine_ID
@@ -31,9 +33,10 @@
   });
   ML.registerModel('m_movementline', {
     initialDefaults: { m_attributesetinstance_id: 0, movementqty: 0, targetqty: 0, scrappedqty: 0, confirmedqty: 0, processed: 'N' },   // MMovementLine.setInitialDefaults :73-80
-    beforeSave: function (trx, l, isNew, old) {   // MMovementLine.beforeSave :175-269 (the pending-confirmation guard :182-188 cannot trip: the twin has no M_MovementConfirm - prepareIt refuses to create one)
+    beforeSave: function (trx, l, isNew, old) {   // MMovementLine.beforeSave :175-269 (+ the pending-confirmation guard :182-188)
       var mv = trx.get('m_movement', l.m_movement_id); if (!mv) return null;
       if (isNew && Y(mv.processed)) return 'ParentComplete';                                                                                // :177-181
+      if (LMC_BREAK !== 'noguardline' && pendingConfirmations(trx, mv) && (isNew || (!same(l.movementqty, old && old.movementqty) && same(l.targetqty, old && old.targetqty)))) return 'SaveError: @Open@: @M_MovementConfirm_ID@';   // :182-188 no new line / MovementQty change while a confirm is open
       if (!Number(l.line)) { var mx = 0; trx.find('m_movementline', { m_movement_id: l.m_movement_id }).forEach(function (x) { mx = Math.max(mx, Number(x.line) || 0); }); l.line = mx + 10; }   // :189-196
       if (String(l.m_locator_id) === String(l.m_locatorto_id) && String(l.m_attributesetinstance_id || 0) === String(asiToOf(l))) return '@M_Locator_ID@ == @M_LocatorTo_ID@ and @M_AttributeSetInstance_ID@ == @M_AttributeSetInstanceTo_ID@';   // :197-203
       var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null;
@@ -117,6 +120,32 @@
     trx.find('m_movementline', { m_movement_id: mv.m_movement_id }).forEach(function (l) { trx.update('m_movementline', l, { processed: flag }); });
   }
 
+  // MMovement.getConfirmations :144-154 / pendingConfirmations :704-712 (an unprocessed M_MovementConfirm of this movement)
+  function confirmsOf(trx, mv) { return trx.find('m_movementconfirm', { m_movement_id: mv.m_movement_id }); }
+  function pendingConfirmations(trx, mv) { return !!mv.m_movement_id && confirmsOf(trx, mv).some(function (c) { return !Y(c.processed); }); }
+  // MMovement.createConfirmation :371-378 -> MMovementConfirm.create(move,false) :62-90: one header, one MMovementLineConfirm per movement line (TargetQty = ConfirmedQty = MovementQty, MMovementLineConfirm.setMovementLine)
+  function createConfirmation(trx, mv) {
+    if (confirmsOf(trx, mv).length) return;
+    var r = ML.save(trx, 'm_movementconfirm', null, ML.newPO(trx, 'm_movementconfirm', { ad_client_id: mv.ad_client_id, ad_org_id: mv.ad_org_id, m_movement_id: mv.m_movement_id }));   // new MMovementConfirm(move) :104-109 setClientOrg + setM_Movement_ID
+    if (!r.ok) throw new Error('MMovementConfirm not created: ' + r.error);
+    mvLines(trx, mv).forEach(function (ml) {
+      var c = ML.save(trx, 'm_movementlineconfirm', null, ML.newPO(trx, 'm_movementlineconfirm', { ad_client_id: r.row.ad_client_id, ad_org_id: r.row.ad_org_id, m_movementconfirm_id: r.row.m_movementconfirm_id, m_movementline_id: ml.m_movementline_id, targetqty: ml.movementqty, confirmedqty: ml.movementqty }));
+      if (!c.ok) throw new Error('MMovementLineConfirm not created: ' + c.error);
+    });
+  }
+  function cLines(trx, cf) { return trx.find('m_movementlineconfirm', { m_movementconfirm_id: cf.m_movementconfirm_id }, ['m_movementlineconfirm_id']); }   // MMovementConfirm.getLines :156-185
+
+  ML.registerModel('m_movementconfirm', { initialDefaults: { docaction: 'CO', docstatus: 'DR', isapproved: 'N', processed: 'N' } });   // MMovementConfirm.setInitialDefaults :88-94
+  ML.registerModel('m_movementlineconfirm', {
+    initialDefaults: { confirmedqty: 0, differenceqty: 0, scrappedqty: 0, targetqty: 0, processed: 'N' },   // MMovementLineConfirm.setInitialDefaults
+    beforeSave: function (trx, l, isNew) {   // MMovementLineConfirm.beforeSave
+      var parent = trx.get('m_movementconfirm', l.m_movementconfirm_id);
+      if (isNew && parent && Y(parent.processed)) return 'ParentComplete';   // newRecord && parent.isProcessed()
+      l.differenceqty = N(D(l.targetqty).subtract(D(l.confirmedqty)));       // Difference = Target - Confirmed
+      return null;
+    }
+  });
+
   // ══ MMovement DocAction ═════════════════════════════════════════════════════════════════════════════════════
   var MMovement = {
     prepareIt: function (trx, mv) {   // :290-368
@@ -129,7 +158,7 @@
         var p = nz(ls[i].m_product_id) ? T.product(trx, ls[i].m_product_id) : null, as = p && nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null;
         if (as && as.mandatorytype && as.mandatorytype !== 'N') { T.msg(trx, 'MMovement.prepareIt mandatory ASI validation (MMovement.java:317-352, attribute set ' + as.m_attributeset_id + ' MandatoryType=' + as.mandatorytype + ') not ported - named'); return 'IN'; }
       }
-      if (Y(d.isintransit) && !MO.isReversal(trx, 'm_movement', mv.m_movement_id)) { T.msg(trx, 'MMovement.createConfirmation -> MMovementConfirm.create (MMovement.java:355-356, :371-379; doctype ' + d.c_doctype_id + ' IsInTransit=Y) not ported - named'); return 'IN'; }   // :355-356
+      if (Y(d.isintransit) && !MO.isReversal(trx, 'm_movement', mv.m_movement_id) && LMC_BREAK !== 'noconfirm') createConfirmation(trx, mv);   // :355-356 createConfirmation :371-378
       m = fire(trx, 'AFTER_PREPARE', 'm_movement', mv); if (m) { T.msg(trx, m); return 'IN'; }                                                      // :358-361
       if (mv.docaction !== 'CO') trx.update('m_movement', mv, { docaction: 'CO' });                                                                // :362-365
       trx._justPrepared = 'm_movement:' + mv.m_movement_id;
@@ -147,7 +176,7 @@
       if (Y(d.isoverwriteseqoncomplete)) { var dn = T.getDocumentNoByDocType(trx, mv.c_doctype_id, true, mv); if (dn != null) trx.update('m_movement', trx.get('m_movement', mv.m_movement_id), { documentno: dn }); }
       mv = trx.get('m_movement', mv.m_movement_id);
       var m = fire(trx, 'BEFORE_COMPLETE', 'm_movement', mv); if (m) { T.msg(trx, m); return 'IN'; }                                              // :423-426
-      // pendingConfirmations :427-430: none can exist (no M_MovementConfirm in the twin; prepareIt names the in-transit doctype)
+      if (LMC_BREAK !== 'noguard' && pendingConfirmations(trx, mv)) { T.msg(trx, '@Open@: @M_MovementConfirm_ID@'); return 'IP'; }              // :427-430 (pendingConfirmations :704-712): goods stay at the source, the doc stays InProgress
       if (!Y(mv.isapproved)) trx.update('m_movement', mv, { isapproved: 'Y' });                                                                    // :432-434 approveIt
       var rev = MO.isReversal(trx, 'm_movement', mv.m_movement_id);
       if (!rev) { var bd = MO.backDateCostingNamed(trx); if (bd) { T.msg(trx, bd); return 'IN'; } }                                                 // :437-444 periodClosedCheckForBackDateTrx(null) (:1173-1226)
@@ -287,5 +316,63 @@
   }
   ML.registerDocAction('m_movement', MMovement);
 
-  return { MMovement: MMovement, getWarehouse: getWarehouse, checkMaterialPolicy: checkMaterialPolicy };
+  // ══ MMovementConfirm DocAction (MMovementConfirm.java) ═══════════════════════════════════════════════════════
+  var MMovementConfirm = {
+    prepareIt: function (trx, cf) {   // :313-355
+      var m = fire(trx, 'BEFORE_PREPARE', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return 'IN'; }
+      var when = cf.updated ? String(cf.updated).slice(0, 10) + ' 00:00:00' : trx.env.date;
+      if (!T.periodOpen(trx, when, 'MMM', cf.ad_org_id)) { T.msg(trx, '@PeriodClosed@'); return 'IN'; }                                  // :321-326 (getUpdated())
+      if (!MO.backDateAllowed(trx, when)) { T.msg(trx, '@BackDateTrxNotAllowed@'); return 'IN'; }                                         // :328-332
+      if (!cLines(trx, cf).length) { T.msg(trx, '@NoLines@'); return 'IN'; }                                                              // :334-339 (the isFullyConfirmed loop :340-346 has no effect)
+      m = fire(trx, 'AFTER_PREPARE', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return 'IN'; }                                     // :348-351
+      if (cf.docaction !== 'CO') trx.update('m_movementconfirm', cf, { docaction: 'CO' });
+      trx._justPrepared = 'm_movementconfirm:' + cf.m_movementconfirm_id;
+      return 'IP';
+    },
+    completeIt: function (trx, cf) {   // :387-486
+      if (trx._justPrepared !== 'm_movementconfirm:' + cf.m_movementconfirm_id) { var st = MMovementConfirm.prepareIt(trx, cf); if (st !== 'IP') return st; }   // :390-397 re-check
+      trx._justPrepared = null; cf = trx.get('m_movementconfirm', cf.m_movementconfirm_id);
+      var m = fire(trx, 'BEFORE_COMPLETE', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return 'IN'; }                               // :399-402
+      if (!Y(cf.isapproved)) trx.update('m_movementconfirm', cf, { isapproved: 'Y' });                                                    // :404-406 implicit approval
+      var ls = cLines(trx, cf);
+      for (var i = 0; i < ls.length; i++) {                                                                                                // :412-444
+        var cl = ls[i], ml = trx.get('m_movementline', cl.m_movementline_id);
+        var r = ml ? ML.save(trx, 'm_movementline', ml, { targetqty: cl.targetqty, movementqty: cl.confirmedqty, confirmedqty: cl.confirmedqty, scrappedqty: cl.scrappedqty }) : { ok: false, error: 'movement line ' + cl.m_movementline_id + ' not found' };   // MMovementLineConfirm.processLine
+        if (!r.ok) { T.msg(trx, 'ShipLine not saved - ' + cl.m_movementlineconfirm_id + ' (' + r.error + ')'); return 'IN'; }              // :418-422
+        if (D(cl.targetqty).compareTo(D(cl.confirmedqty)) === 0 && D(cl.scrappedqty).signum() === 0) trx.update('m_movementlineconfirm', cl, { processed: 'Y' });   // :424-428 isFullyConfirmed && Scrapped==0
+        else { T.msg(trx, 'MMovementConfirm.createDifferenceDoc (MMovementConfirm.java:497-600: Difference=' + D(cl.targetqty).subtract(D(cl.confirmedqty)).toString() + ' Scrapped=' + D(cl.scrappedqty).toString() + ') needs an MInventory model - not ported - named'); return 'IN'; }   // :430-445 'Difference Doc not created'
+      }
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'Y' });                         // :449-450 setProcessed(true) before the workflow (lifts the pending guard)
+      var res = ML.processIt(trx, 'm_movement', cf.m_movement_id, 'CO');                                                                   // :451 MWorkflow.runDocumentActionWorkflow(move, Complete)
+      if (!res.ok) { T.msg(trx, res.msg || ('Movement ' + res.status)); trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'N' }); return 'IN'; }   // :452-457
+      m = fire(trx, 'AFTER_COMPLETE', 'm_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id)); if (m) { T.msg(trx, m); return 'IN'; }   // :479-484
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'Y', docaction: 'CL' });       // :486-488
+      return 'CO';
+    },
+    voidIt: function (trx, cf) {   // :608-651
+      var m = fire(trx, 'BEFORE_VOID', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return false; }
+      cLines(trx, cf).forEach(function (cl) { trx.update('m_movementlineconfirm', cl, { targetqty: 0, confirmedqty: 0, scrappedqty: 0, differenceqty: 0, processed: 'Y' }); });   // :618-626
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'Y' });                         // :628-630 so the movement lines may change
+      var res = ML.processIt(trx, 'm_movement', cf.m_movement_id, 'VO');                                                                   // :632 voiding the confirm voids the movement
+      if (!res.ok) { T.msg(trx, res.msg || ('Movement ' + res.status)); trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'N' }); return false; }   // :633-638
+      m = fire(trx, 'AFTER_VOID', 'm_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id)); if (m) { T.msg(trx, m); return false; }
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { docaction: '--', docstatus: 'VO' });       // :645 + DocumentEngine.voidIt
+      return true;
+    },
+    closeIt: function (trx, cf) {   // :653-675
+      var m = fire(trx, 'BEFORE_CLOSE', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return false; }
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { docaction: '--' });
+      m = fire(trx, 'AFTER_CLOSE', 'm_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id)); if (m) { T.msg(trx, m); return false; }
+      trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { docstatus: 'CL' });
+      return true;
+    },
+    reActivateIt: function (trx, cf) { var m = fire(trx, 'BEFORE_REACTIVATE', 'm_movementconfirm', cf) || fire(trx, 'AFTER_REACTIVATE', 'm_movementconfirm', cf); if (m) T.msg(trx, m); return false; },   // :727-743 validators only, returns false
+    reverseCorrectIt: function (trx, cf) { var m = fire(trx, 'BEFORE_REVERSECORRECT', 'm_movementconfirm', cf) || fire(trx, 'AFTER_REVERSECORRECT', 'm_movementconfirm', cf); if (m) T.msg(trx, m); return false; },   // :677-694 not implemented, false
+    reverseAccrualIt: function (trx, cf) { var m = fire(trx, 'BEFORE_REVERSEACCRUAL', 'm_movementconfirm', cf) || fire(trx, 'AFTER_REVERSEACCRUAL', 'm_movementconfirm', cf); if (m) T.msg(trx, m); return false; },   // :696-713
+    approveIt: function (trx, cf) { trx.update('m_movementconfirm', cf, { isapproved: 'Y' }); return true; },
+    rejectIt: function (trx, cf) { trx.update('m_movementconfirm', cf, { isapproved: 'N' }); return true; }
+  };
+  ML.registerDocAction('m_movementconfirm', MMovementConfirm);
+
+  return { MMovement: MMovement, MMovementConfirm: MMovementConfirm, pendingConfirmations: pendingConfirmations, getWarehouse: getWarehouse, checkMaterialPolicy: checkMaterialPolicy };
 });
