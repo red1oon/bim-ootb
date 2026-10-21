@@ -388,6 +388,24 @@
       });
       return best && best.w;
     }
+    // §F7 D20: a door hinge on an ANGLED (F9 polygon) wall is off the wall's bbox centre line by up to length x sin(angle) / 2: with no centre line within host_tol,
+    // the polygon wall whose drawn outline holds the hinge or passes within host_tol of it hosts the door (0 inside; ties as hostFor). Rectangle walls are not concerned.
+    function hostByOutline(pt) {
+      var tol = config.host_tol, best = null;
+      elems.forEach(function (w) {
+        if (w.op !== 'DXF_WALL' || !w.params.polygon || !w.params.outline) return;
+        var P = w.params.outline, inside = false, d = Infinity;
+        for (var i = 0, j = P.length - 1; i < P.length; j = i++) {
+          if ((P[i][1] > pt[1]) !== (P[j][1] > pt[1]) && pt[0] < (P[j][0] - P[i][0]) * (pt[1] - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]) inside = !inside;
+          d = Math.min(d, dist2seg(pt, P[j], P[i]));
+        }
+        d = inside ? 0 : r6(d);
+        if (d > tol) return;
+        var key = [d, hnum(w.e.handle), w.part];
+        if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && (key[1] < best.key[1] || (key[1] === best.key[1] && key[2] < best.key[2])))) best = { key: key, w: w };
+      });
+      return best && best.w;
+    }
     var oSegs = [], doorPts = [];                            // §12: segments on opening layers + door anchor points
     // §F7 D17-R: a DOUBLE door = two arcs of one radius whose hinges are two radii apart, each closed end at the midpoint between the hinges: ONE door of the full width (leaves=2),
     // the second arc absorbed. (Two single doors hinged back to back with their leaves meeting draw the same thing: read as a double door, stated.)
@@ -408,11 +426,13 @@
         var pb = pairOf[e.handle], fullW = pb ? 2 * m(e.radius) : m(e.radius);   // D17-R: a double door's width is both leaves
         if (has(config, ['opening', 'door', 'min_width']) && fullW < config.opening.door.min_width) { gap('GAP:door_below_min_width', e, { width: fullW }); return; }
         var hinge = [m(e.center.x), m(e.center.y)], width = fullW;
-        var host = hostFor(hinge);
+        var host = hostFor(hinge), hostBasis = null;
+        if (!host) { host = hostByOutline(hinge); if (host) hostBasis = 'outline'; }   // §F7 D20
         if (!host) { gap('GAP:no_host', e, { hinge: hinge }); return; }
         var door = { op: 'DXF_OPENING', e: e, part: 0, hostRef: host, params: {
           kind: 'door', hinge: hinge, width: width, height: doorFromElev ? null : config.opening.door.height, pending_elevation: doorFromElev, height_fallback: (doorFromElev && has(config, ['opening', 'door', 'height'])) ? config.opening.door.height : null,
           swing_start_deg: r6(e.startAngle * 180 / Math.PI), swing_end_deg: r6(e.endAngle * 180 / Math.PI), parts: [] } };
+        if (hostBasis) door.params.host_basis = hostBasis;
         if (pb) { door.params.leaves = 2; door.params.leaf_width = m(e.radius); door.params.pair_handle = pb.handle; door.params.swing_start_deg = r6(e.startAngle * 180 / Math.PI); }
         elems.push(door);
         if (pb) ends(pb).concat([[m(pb.center.x), m(pb.center.y)]]).forEach(function (p) { doorPts.push({ door: door, p: p }); });
