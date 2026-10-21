@@ -243,7 +243,7 @@ export const manifest = {
   dictionary: [{ table: 'ad_menu', idCol: 'ad_menu_id', rows: MENU.map((r) => Object.assign({}, r, { isactive: 'Y' })) },
     { table: 'pa_documentstatus', idCol: 'pa_documentstatus_id', rows: DASH_STATUS }, { table: 'pa_measurecalc', idCol: 'pa_measurecalc_id', rows: DASH_CALC },
     { table: 'pa_measure', idCol: 'pa_measure_id', rows: DASH_MEASURE }, { table: 'pa_goal', idCol: 'pa_goal_id', rows: DASH_GOAL }],
-  chunks: { hot: ['./libero_pporder.mjs', './libero_cost.mjs', './libero_callouts.mjs', './libero_dd.mjs'] },
+  chunks: { hot: ['./libero_pporder.mjs', './libero_cost.mjs', './libero_callouts.mjs', './libero_mto.mjs', './libero_dd.mjs'] },
   budget: { kb: 14, note: 'slice 1: model classes + MRP validators; the cost side adds ~8k Java lines' }
 };
 

@@ -10,7 +10,7 @@ export const DEFERRED = [
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
   'Doc_PPCostCollector Receipt scrap branch (named refusal). Milestones and subcontracting (createPO) ARE ported, incl. two upstream quirks (spec slice 6 §MILESTONE, §SUBCONTRACT)'
 ];
-export const SOURCE = { traceByLot: true, activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { milestoneSelfClose: false, traceByLot: true, activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: true, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
@@ -405,6 +405,7 @@ export function create(ctx) {
     for (; i >= 0; i--) {
       let node = trx.get('pp_order_node', nodes[i].pp_order_node_id);
       if (milestone && node.ismilestone === 'Y' && Number(node.pp_order_node_id) !== Number(fromNodeId)) break;   // :596-599 break the cycle
+      if (milestone && !SOURCE.milestoneSelfClose && Number(node.pp_order_node_id) === Number(fromNodeId)) continue;   // DECLARED DEVIATION (owner 2026-10-21, §57.1): the reporting milestone is NOT closed here - it completes on its own qty rule; upstream closed it, so completeIt refused every milestone report
       if (node.docstatus === 'DR') {
         const qtyToDeliver = dec(node.qtyrequiered).subtract(dec(node.qtydelivered)); if (qtyToDeliver.signum() <= 0) continue;
         const setup = Number(node.setuptimerequiered || 0) - Number(node.setuptimereal || 0), dur = estimateWorkingTime(node, qtyToDeliver);
@@ -521,8 +522,8 @@ export function create(ctx) {
     po.set('qtydelivered', num(dec(node.qtydelivered).add(dec(cc.movementqty)))).set('qtyscrap', num(dec(node.qtyscrap).add(dec(cc.scrappedqty)))).set('qtyreject', num(dec(node.qtyreject).add(dec(cc.qtyreject))));
     po.set('durationreal', Number(node.durationreal || 0) + Math.trunc(Number(cc.durationreal || 0))).set('setuptimereal', Number(node.setuptimereal || 0) + Math.trunc(Number(cc.setuptimereal || 0)));
     if (!po.save()) throw new Error(po.error);
-    // :349-354 a MILESTONE reports every earlier activity back to the previous milestone. UPSTREAM QUIRK (named, kept - prompts/mfg/LIBERO_ACTIVITY_SLICE6_SPEC.md §MILESTONE): the loop starts AT this
-    //   activity, so it closes the milestone node itself, and completeIt (:478-482) then refuses it as processed - the report and the collectors it made roll back.
+    // :349-354 a MILESTONE reports every earlier activity back to the previous milestone. Upstream the loop starts AT this activity and closes it, so completeIt (:478-482) refused every
+    //   milestone report - FIXED as a declared deviation (SOURCE.milestoneSelfClose=false; true restores upstream; spec §MILESTONE-FIX).
     if (node.ismilestone === 'Y') closeActivities(trx, trx.get('pp_order', cc.pp_order_id), node.pp_order_node_id, cc.movementdate, true);
   }
   // MPPCostCollector.completeIt activity branch :474-526
@@ -708,7 +709,7 @@ export function create(ctx) {
     const cur = as.c_currency_id, prec = Number((trx.get('c_currency', cur) || {}).stdprecision == null ? 2 : trx.get('c_currency', cur).stdprecision);
     const rnd = (v) => (v.scale() > prec ? v.setScale(prec, RM_HALF_UP) : v);
     // getCostDetails() :384-392 is NOT filtered by accounting schema (Libero/ADempiere/logilite forks all read): with two schemas every cost detail of BOTH feeds each schema's fact. Kept (twin rule);
-    // SOURCE.detailsPerSchema=true filters by the schema being posted (the correct books). Measured on GardenWorld (2 schemas): the Receipt posts twice -> Work in Process credited 35080 vs debited 17540 (witness B10, named Q-M6-1).
+    // DECLARED DEVIATION (owner 2026-10-21, §57.2): SOURCE.detailsPerSchema=true (default) filters by the schema being posted (the correct books); false = upstream. Measured on GardenWorld (2 schemas): the Receipt posts twice -> Work in Process credited 35080 vs debited 17540 (witness B10, named Q-M6-1).
     const details = trx.find('m_costdetail', { pp_cost_collector_id: cc.pp_cost_collector_id }).filter((cd) => !SOURCE.detailsPerSchema || Number(cd.c_acctschema_id) === Number(as.c_acctschema_id)).sort((a, b) => Number(a.m_costdetail_id) - Number(b.m_costdetail_id));
     const el = (id) => trx.get('m_costelement', id) || {};
     const type = String(cc.costcollectortype);

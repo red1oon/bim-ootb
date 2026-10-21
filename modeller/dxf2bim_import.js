@@ -162,7 +162,8 @@
     else if (d.view === 'PLAN' && typeof d.level === 'number' && !missing.length) { sh.role = 'plan'; sh.level = d.level; }
     else if (d.view === 'ELEV' && d.face && !missing.length) { sh.role = 'elev'; sh.face = d.face; }
     else if (d.view === 'ROOF' && typeof d.roof === 'number' && !missing.length) { sh.role = 'roof'; sh.roofZ = d.roof; }   // BIMCompiler #182 (lane L2.3 D1): @VIEW=ROOF + @LEVEL + @ROOF
-    else if (d.view === 'SECTION' && d.cut && !missing.length) { sh.role = 'section'; sh.cut = d.cut; }   // §L3.3 R5: @VIEW=SECTION (NEED SET,VIEW,UNITS,HAXIS,CUT + GRIDH, Z)
+    else if (d.view === 'SECTION' && d.cut && !missing.length) { sh.role = 'section'; sh.cut = d.cut; }
+    else if (d.view === 'DRAWING' && !missing.length) { sh.role = 'drawing'; }   // §F7: a drawing issued for reading (the view at the plane): listed, never converted   // §L3.3 R5: @VIEW=SECTION (NEED SET,VIEW,UNITS,HAXIS,CUT + GRIDH, Z)
     else sh.why = 'markings name no role (view=' + d.view + (missing.length ? ', missing ' + missing.join(',') : '') + ')';
     if (sh.role && !(d.units in MK.UNITS)) { sh.role = null; sh.why = 'no @UNITS'; }
     if (sh.role) sh.factor = MK.UNITS[d.units];

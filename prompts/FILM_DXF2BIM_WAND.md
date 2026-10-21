@@ -1,0 +1,28 @@
+# ⚠ DO NOT REMOVE
+SCOPE: spec + storyboard of the film "One wing, out of the 3D: 2D sheets from a hospital model" (owner 2026-10-21: "a dedicated film showing that off first, how a load Hospital navigate to a wing to do the successful 2D render export"). The Viewer's 2D wand (lane `prompts/DXF2BIM_FOUNDATION_LANE.md` §F7) on the Hospital, live data. Read the logs after every run (recorder `film.log`, the page's `§WING2D_*` lines): exit code is not evidence. Every number on screen or spoken comes from a § line of THIS take (`§FILM_FACT`). Plain tone: no "first", "only", "novel" (prior-art search is not done, lane §F7), no superlatives; limits are shown as plainly as features. Neutral naming: the Hospital is the repository's open sample set (architecture + structure IFC); no client or sponsor name. Media stay local (`~/Videos/dxf2bim_film_work/wand/`); the repo gets this spec, the recorder, the TSV.
+Status: SPEC v2 (2026-10-21). Not recorded. Needs PR #2245 live (box at every angle, view at the plane).
+
+## What the film proves (storyboard v2, owner 2026-10-21: "start from when loaded", "the green stack on the left", "a perpendicular 2D of one wing", "just a wing", "the plane should get an elevation view")
+The Hospital is already loaded. The person lays the 2D plane in front of one wing (the green-roof south-west block), turns and shortens it with its end handle, drags the green depth handle across the wing, and gets that wing alone as 2D: the VIEW AT THE PLANE (the wing as seen from the plane, hidden parts removed), its plans, and the section cut perpendicular to the plane through its middle, saved as DXF with the frame stamped. The 3D is never cut.
+
+| # | beat | on screen (real clicks / drags in the live Viewer) | fact shown / spoken (source line) | issue it would expose |
+|---|---|---|---|---|
+| 0 | c1 / h01 | chapter card 1 THE HOSPITAL over the loaded model, seen from the south-west; a slow orbit; the green-roof block in front | elements (page status) | a model the page did not load |
+| 1 | c2 / s01 | chapter card 2 THE BOX; Section Cut, mode `2D`: the plane stands at the building's edge, nothing is cut | wall directions from the model (`wing2dState().fam`) | a plane that clips the model |
+| 2 | s02 | the plane is dragged in front of the block; its end handle is dragged so it lies along the block's face (snaps to the wall family) and is as long as the block | turn, length (`§WING2D_PLANE`) | a snap the model does not have |
+| 3 | s03 | the green handle is dragged across the block: the box footprint covers it | depth (`§WING2D_PLANE ... depth=`) | a box that does not hold the wing |
+| 4 | c3 / x01 | chapter card 3 JUST THE WING; `2D`: the card opens on the VIEW AT THE PLANE | elements kept of the model, sheets (`§WING2D_EXPORT ... kept=n/N`) | a drawing of more than the box |
+| 5 | x02 | the card fills the canvas; zoom on the view at the plane | drawn = the sheet's entities (`overlay.drawn.stats`) | a drawing that is not the writer's |
+| 6 | x03 | tab: a plan of the wing | entities | — |
+| 7 | x04 | tab: SECTION, cut perpendicular to the plane through its middle | `@CUT` X = the pivot | a section somewhere else |
+| 8 | x05 | Save: the zip's file list + `@FRAME` | names, frame (read from the saved zip) | a saved set that differs from the shown one |
+| 9 | c4 / l01 | chapter card 4 LIMITS; a plain limits card | writer gaps of this box; the view at the plane is a drawing, not read back; curved walls give "not orthogonal" gaps; recorded on a desktop GPU | an unstated limit |
+| 10 | end | credits | — | — |
+
+## How it is recorded
+- Recorder `prompts/film_dxf2bim_wand_rec.js`, same anatomy as `film_dxf2bim_shed_rec.js`: puppeteer, CDP screencast frames with their own timestamps, `§FILM_CHAPTER` / `§FILM_BEAT` / `§FILM_FACT` lines, one backdrop still per chapter. 1920 x 1080. The Viewer page is the LIVE one (`https://red1oon.github.io/bim-ootb/viewer/viewer.html?db=<OCI>/buildings/Hospital_extracted.db`), so the film shows what a person gets today.
+- Drags are real pointer events on the plane and its handles (projected from `APP._wing2d.parts`), never `wing2dSet`; the CAMERA is tweened by the recorder (eased, over the Viewer's own controls), stated here. Recording starts after the model is loaded. Headless Chrome on the real GPU (ANGLE over EGL; NVIDIA by PRIME offload): software GL starves the Hospital.
+- Narration: TSV `prompts/film_narration_dxf2bim_wand_en.tsv` (same columns as the BricsCAD film: id, lang, source, SHORT, DETAIL, two voices F / M), fitted and muxed with the compiler's `film_narration_poly.py` / `film_narration_mux.py`; chapter cards from `film_title_cards.py` with `FILM_SET=wand`; music bed `film_music_bed.py`.
+
+## Acceptance
+0 page errors in the take; every `§FILM_FACT` the narration quotes is present in `film.log`; §NARR_FIT all DETAIL or SHORT, 0 SKIP; frames == silent master; -16 to -17 LUFS; no black frames; a contact sheet read frame by frame (the plane visible on the wing, the card legible, no toast over the drawing); grep of subtitles and card text for client names / "first" / "only" / "novel" = 0.

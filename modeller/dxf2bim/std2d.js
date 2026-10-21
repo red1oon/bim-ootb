@@ -787,6 +787,33 @@
     doc.text('A-ANNO-TTLB', `${face} ELEVATION  1:${SCALE}`, [(H0 + H1) / 2, zb - (ELEV_BUBBLE_C + 12) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     return doc;
   }
+  // §F7 the view AT the plane: the box's elements as seen from the plane (looking to its facing side), nearest first, hidden parts removed. A drawing export (@VIEW=DRAWING), not read back.
+  function writePlaneView(model, grid, box, log) {
+    const doc = newDoc(), dir = box.dir, hx = x => mm(dir > 0 ? x : -x), OPEN = ['IfcDoor', 'IfcWindow'], skip = ['IfcOpeningElement'];
+    const layerOf = c => c === 'IfcDoor' ? 'A-DOOR' : c === 'IfcWindow' ? 'A-GLAZ' : (c === 'IfcPlate' || c === 'IfcMember' || c === 'IfcCurtainWall') ? 'A-WALL-CURT' : c === 'IfcRoof' ? 'A-ROOF' : 'A-WALL';
+    const near = e => (dir > 0 ? e.y0 - box.oy : box.oy - e.y1);
+    const items = model.els.filter(e => skip.indexOf(e.cls) < 0 && Number.isFinite(e.z0) && Number.isFinite(e.z1) && e.z1 > e.z0 && e.x1 > e.x0).map(e => {
+      let d = near(e); if (OPEN.indexOf(e.cls) >= 0) { const h = model.by_guid[model.host_all && model.host_all[e.guid]]; if (h) d = Math.min(d, near(h)) - 0.001; }   // an opening shows in its wall
+      const a = hx(e.x0), b = hx(e.x1); return { e, d, r: [[[Math.min(a, b), mm(e.z0)], [Math.max(a, b), mm(e.z0)], [Math.max(a, b), mm(e.z1)], [Math.min(a, b), mm(e.z1)], [Math.min(a, b), mm(e.z0)]]] };
+    }).sort((p, q) => p.d - q.d || (p.e.guid < q.e.guid ? -1 : 1));
+    let U = [], drawn = 0, hidden = 0, pieces = 0; const vis = {};
+    items.forEach(it => {
+      let V; try { V = U.length ? PC.difference(it.r, U) : [it.r]; } catch (e) { V = [it.r]; }
+      if (!V.length) { hidden++; vis[it.e.guid] = 0; } else { drawn++; vis[it.e.guid] = V.length; V.forEach(poly => { pieces++; doc.lwpoly(layerOf(it.e.cls), poly[0].slice(0, -1), true, tag(it.e.guid)); }); }
+      try { U = U.length ? PC.union(U, it.r) : [it.r]; } catch (e) { }
+    });
+    const zs0 = items.map(i => i.e.z0), zs1 = items.map(i => i.e.z1), zmin = Math.min(...zs0), zmax = Math.max(...zs1), H0 = Math.min(hx(box.a), hx(box.b)), H1 = Math.max(hx(box.a), hx(box.b));
+    const levels = model.storeys.filter(s => s.elev >= zmin - 0.01 && s.elev <= zmax + 0.01).map(s => [s.name.toUpperCase(), s.elev]).sort((a, b) => a[1] - b[1]);
+    if (!levels.length || zmax - levels[levels.length - 1][1] > 0.5) levels.push(['TOP OF BOX', zmax]);
+    levelsDrawn(doc, log, 'PLANE_VIEW', levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
+    const zb = mm(levels[0][1]), zt = mm(levels[levels.length - 1][1]) + LEVEL_EXT * SCALE;
+    const gx = grid.x.filter(g => g[1] >= box.a && g[1] < box.b), hs = gx.map(g => hx(g[1])), te = tiersOf(hs);
+    gx.forEach(([lab], i) => { const h = hs[i], o = te[i] * GRID_STAGGER; doc.line('A-GRID', [h, zb - ELEV_GRID_END * SCALE - o], [h, zt]); bubble(doc, h, zb - ELEV_BUBBLE_C * SCALE - o, lab); });
+    doc.text('A-ANNO-TTLB', `VIEW AT THE PLANE  1:${SCALE}`, [(H0 + H1) / 2, zb - (ELEV_BUBBLE_C + 12) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
+    model.planeView = { items: items.length, drawn, hidden, pieces, vis };
+    log.add(`§PLANE_VIEW items=${items.length} drawn=${drawn} hidden=${hidden} pieces=${pieces} levels=${levels.map(l => l[0]).join(',')} dir=${dir}`);
+    return doc;
+  }
   function writeRoofPlan(model, grid, storey, log) {
     log.add(`§VIEW ROOF storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(); let rw = model.walls.filter(w => w.storey === storey.name).sort((a, b) => (a.guid < b.guid ? -1 : 1)), src = 'envelope of the roof storey walls';
@@ -897,25 +924,17 @@
     const model = loadModel(q, log);
     if (opts.premodel) opts.premodel(model);
     let wing = null;
-    if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
+    if (opts.wing) wing = frameWing(model, opts.wing, log, !!opts.extent);   // §L1.16: this set is ONE wing, drawn in its own frame (§F7 with a box: every angle, the box decides)
     model.stairSymbol = opts.stairSymbol; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
-    resolveHosts(model, log);
-    const grid = deriveGrid(model, log);
-    let scopes = opts.scopes || null;
-    // §F7 W-WAND-EXTENT: the plane's edge range [[x0,y0],[x1,y1]] (model m) = ONE §L6 scope in the wing frame: X = the turned ends' range (mm), Y unbounded; the rest goes to REST
-    if (opts.extent) {
-      const ex = opts.extent, ok = Array.isArray(ex) && ex.length === 2 && ex.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
-      if (!ok) log.add('§EXTENT ignored=malformed');
-      else if (!wing) log.add('§EXTENT ignored=no_wing');
-      else if (scopes) log.add('§EXTENT ignored=scopes_stated');
-      else {
-        const th = -wing.angle * Math.PI / 180, tx = p => Math.cos(th) * (p[0] - wing.ox) - Math.sin(th) * (p[1] - wing.oy) + wing.ox;
-        // a disjoint partition (the importer refuses overlapping scope rectangles, so no implicit REST): the plane's range first, then what lies before / after it along X
-        const r3 = v => Number(v.toFixed(3)), a = r3(Math.min(tx(ex[0]), tx(ex[1])) * 1000), b = r3(Math.max(tx(ex[0]), tx(ex[1])) * 1000), used = new Set(['KEY', 'REST']);
-        scopes = [[a, -Infinity, b, Infinity], [-Infinity, -Infinity, a, Infinity], [b, -Infinity, Infinity, Infinity]].map(rect => ({ name: SCOPES.nameOf(grid, rect, used), rect }));
-        log.add(`§EXTENT p0=${fx(ex[0][0], 4)},${fx(ex[0][1], 4)} p1=${fx(ex[1][0], 4)},${fx(ex[1][1], 4)} turned_x=${Math.round(a)}..${Math.round(b)} mm scope=${scopes[0].name} before=${scopes[1].name} after=${scopes[2].name}`);
-      }
+    let grid;
+    if (opts.extent && wing) {   // §F7 W-WAND-BOX: the grid of the family wing (same labels as the whole wing set; its host / grid lines are not this set's), then the box at any angle, hosts resolved on the box
+      const L0 = new Log(); resolveHosts(model, L0); const g0 = deriveGrid(model, L0), bx = boxWing(model, wing, opts.extent, opts.depth, log);
+      resolveHosts(model, log); grid = bx ? boxGrid(g0, bx, log) : deriveGrid(model, log);
+    } else {
+      if (opts.extent) log.add('§EXTENT ignored=no_wing');
+      resolveHosts(model, log); grid = deriveGrid(model, log);
     }
+    let scopes = opts.scopes || null;
     if (!scopes && opts.suggest) {
       scopes = SCOPES.suggest({ model, grid, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })) } }, opts.budget);
       log.add(`§SCOPE_SUGGEST budget=${opts.budget || SCOPES.BUDGET} scopes=${scopes.length} ` + scopes.map(s => `${s.name}[${s.rect.map(v => Number.isFinite(v) ? Math.round(v) : v).join(',')}]`).join(' '));
@@ -934,6 +953,7 @@
     for (const face of Object.keys(ELEV_FACES)) put(`${prefix}_${face}_std.dxf`, writeElevation(model, grid, face, log));
     const rs = roofStorey(model);
     if (!rs) log.gap('GAP:no_roof_storey', '-', 'no storey above the grid storey without a floor plan; no roof plan'); else put(`${prefix}_ROOF_std.dxf`, writeRoofPlan(model, grid, rs, log));
+    if (model.box) put(`${prefix}_PLANE_VIEW_std.dxf`, writePlaneView(model, grid, model.box, log));   // §F7: the box seen from the plane (a DRAWING, not read back)
     const sec = writeSection(model, grid, log, opts.sectionAt === 'pivot' ? (wing ? wing.ox : undefined) : (typeof opts.sectionAt === 'number' ? opts.sectionAt : undefined)); if (sec) put(`${prefix}_SECTION_std.dxf`, sec);
     const codes = {}; log.gaps.forEach(g => { codes[g[0]] = (codes[g[0]] || 0) + 1; });
     log.add(`§SUMMARY views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
@@ -1030,6 +1050,43 @@
     model.curtains = curtKept; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); curtKept.forEach(c => { model.by_guid[c.guid] = c; });
     return { kept: keep.size, unframed, total };
   }
+  // §F7 W-WAND-BOX (owner 2026-10-21: "just a wing", "clip all to plane", a depth handle): in the turned frame the plane lies along X at the pivot's Y; its ends give X = [a, b]; depth d (m,
+  // signed: + = the plane's facing side, the sheet's +Y) gives Y = [oy, oy + d]; no depth = Y unbounded. Keeps the elements whose plan centre lies in the box (half-open [lo, hi)); an opening follows
+  // its host, a curtain wall's parts follow the curtain wall. Every sheet (plans, elevations, section, roof, grid) is then written from the box alone.
+  function boxWing(model, wing, ex, depth, log) {
+    const ok = Array.isArray(ex) && ex.length === 2 && ex.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
+    if (!ok) { log.add('§EXTENT ignored=malformed'); return null; } if (!wing) { log.add('§EXTENT ignored=no_wing'); return null; }
+    const th = -wing.angle * Math.PI / 180, tx = p => Math.cos(th) * (p[0] - wing.ox) - Math.sin(th) * (p[1] - wing.oy) + wing.ox;
+    const a = Math.min(tx(ex[0]), tx(ex[1])), b = Math.max(tx(ex[0]), tx(ex[1])), d = Number.isFinite(depth) && depth !== 0 ? depth : null;
+    const y0 = d === null ? -Infinity : Math.min(wing.oy, wing.oy + d), y1 = d === null ? Infinity : Math.max(wing.oy, wing.oy + d);
+    const inBox = e => { const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2; return cx >= a && cx < b && cy >= y0 && cy < y1; };
+    if (model._extra) {   // every angle back in (turned already, frameWing)
+      model.els = model.els.concat(model._extra.els); model.curtains = (model.curtains || []).concat(model._extra.curtains); model.roofs = model.roofs.concat(model._extra.roofs); model._extra = null;
+      model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); model.curtains.forEach(c => { model.by_guid[c.guid] = c; });
+    }
+    const keep = new Set(), n0 = model.els.length;
+    model.els.forEach(e => { if (OPENINGS.indexOf(e.cls) < 0 && inBox(e)) keep.add(e.guid); });
+    const curt = (model.curtains || []).filter(c => inBox(c)); curt.forEach(c => { keep.add(c.guid); c.parts.forEach(p => keep.add(p.guid)); });
+    model.els.forEach(e => {   // after the curtain walls: a door can be hosted by one
+      if (OPENINGS.indexOf(e.cls) < 0) return; const h = model.hosts[e.guid]; if (h !== undefined && model.by_guid[h] ? keep.has(h) : inBox(e)) keep.add(e.guid); });
+    model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
+    model.curtains = curt; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); curt.forEach(c => { model.by_guid[c.guid] = c; });
+    log.add(`§EXTENT p0=${fx(ex[0][0], 4)},${fx(ex[0][1], 4)} p1=${fx(ex[1][0], 4)},${fx(ex[1][1], 4)} box_x=${fx(a, 3)}..${fx(b, 3)} box_y=${d === null ? 'unbounded' : fx(y0, 3) + '..' + fx(y1, 3)} kept=${model.els.length}/${n0} walls=${model.walls.length} curtains=${curt.length}`);
+    model.box = { a, b, y0, y1, oy: wing.oy, dir: d === null || d > 0 ? 1 : -1 };
+    // the box's own height: storeys above the top of its elements are not drawn (levels, plans) and T/ROOF is the box top (stated: the highest element top in the box)
+    const tops = model.els.filter(e => Number.isFinite(e.z1)).map(e => e.z1);
+    if (tops.length) { const zt = Math.max(...tops), n1 = model.storeys.length; model.storeys = model.storeys.filter(st => st.elev <= zt + 0.01 || st.name === model.grid_storey);
+      if (model.roof_top === null || model.roof_top > zt) model.roof_top = zt; log.add(`§EXTENT_TOP top=${fx(zt, 4)} storeys=${model.storeys.length}/${n1} T/ROOF=${fx(model.roof_top, 4)} (the highest element top in the box)`); }
+    return { a, b, y0, y1 };
+  }
+  // the box keeps the grid lines inside its range plus the nearest one beyond each side (as an §L6 scope sheet does): labels stay the whole wing's
+  function boxGrid(grid, bx, log) {
+    const clip = (lines, lo, hi) => { const inR = lines.filter(g => g[1] >= lo && g[1] < hi), below = lines.filter(g => g[1] < lo).sort((p, q) => q[1] - p[1])[0], above = lines.filter(g => g[1] >= hi).sort((p, q) => p[1] - q[1])[0];
+      return lines.filter(g => inR.indexOf(g) >= 0 || g === below || g === above); };
+    const out = Object.assign({}, grid, { x: clip(grid.x, bx.a, bx.b), y: clip(grid.y, bx.y0, bx.y1) });
+    log.add(`§EXTENT_GRID x=${out.x.map(g => g[0]).join(',')} (${out.x.length}/${grid.x.length}) y=${out.y.map(g => g[0]).join(',')} (${out.y.length}/${grid.y.length})`);
+    return out;
+  }
   function wingDominant(model) {   // the angle (deg, mod 90) carrying the most walls, 1-deg bins, ties to the smaller angle
     const h = {}; model.walls.forEach(w => { const a = elementAngle(w); if (a && a.q >= WING_Q_MIN) { const b = Math.round(a.deg) % 90; h[b] = (h[b] || 0) + 1; } });
     const ks = Object.keys(h).map(Number).sort((a, b) => h[b] - h[a] || a - b); return ks.length ? { deg: ks[0], n: h[ks[0]], hist: h } : null;
@@ -1041,18 +1098,24 @@
     return Object.keys(d.hist).map(Number).filter(k => d.hist[k] >= min).sort((a, b) => d.hist[b] - d.hist[a] || a - b).map(k => ({ deg: k, n: d.hist[k] }));
   }
   // wingOpts: { name, angle (deg; default = dominant), tol }. Filters the model to the wing and rotates it by -angle about the centre of the kept walls. Logs §WING.
-  function frameWing(model, wo, log) {
+  function frameWing(model, wo, log, allAngles) {
     // §F7 the 2D wand: `turn` (deg, any real) is the direction of the plane's edge = the sheet's +X, full circle: the family (mod 90) picks the walls, the sheet is turned by the family's own
     // direction plus the quarter turns `turn` asks for (0 / 90 / 180 / 270 = four sheet orientations of one frame); `pivot` [x, y] (model metres) replaces the envelope centre. Both are stated in @FRAME.
     const hasTurn = typeof wo.turn === 'number' && isFinite(wo.turn), turn = hasTurn ? ((wo.turn % 360) + 360) % 360 : null;
     const dom = wo.angle !== undefined ? { deg: wo.angle } : hasTurn ? { deg: Math.round(turn % 90) % 90 } : wingDominant(model);
     if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return null; }
     const bin = dom.deg, name = wo.name || 'WING' + bin, tol = wo.tol === undefined ? WING_TOL : wo.tol;
+    const full = allAngles ? { els: model.els.slice(), curtains: (model.curtains || []).slice(), roofs: model.roofs.slice() } : null;
     const fr = frameModel(model, bin, tol), wl = model.walls, fam = wingMeanAngle(wl, bin);
     if (!wl.length) { log.gap('GAP:wing_no_walls', '-', `no wall within ${tol} deg of ${fam}`); return null; }
     const angle = hasTurn ? Number((fam + 90 * Math.round((turn - fam) / 90)).toFixed(6)) : fam;
     const env0 = envelope(wl), pv = Array.isArray(wo.pivot) && wo.pivot.length === 2 && wo.pivot.every(Number.isFinite) ? wo.pivot : null, ox = pv ? pv[0] : (env0[0] + env0[1]) / 2, oy = pv ? pv[1] : (env0[2] + env0[3]) / 2;
     rotateModel(model, -angle, ox, oy);
+    if (full) {   // §F7 W-WAND-BOX: the family sets the frame (angle, grid); the elements of every other angle are turned the same way and wait for the box, which decides what is kept
+      const kept = new Set(model.els.map(e => e.guid)), kc = new Set((model.curtains || []).map(c => c.guid)), kr = new Set(model.roofs.map(r => r.guid));
+      const ex = { els: full.els.filter(e => !kept.has(e.guid)), curtains: full.curtains.filter(c => !kc.has(c.guid)) }; rotateModel(ex, -angle, ox, oy);
+      model._extra = { els: ex.els, curtains: ex.curtains, roofs: full.roofs.filter(r => !kr.has(r.guid)) };
+    }
     model.rules = { l117: true, l118: true, l119: true, l121: true };   // §L1.17-§L1.21: a wing set always takes them
     if (frameModel.lastCurt) log.add(`§WING_CURTAINS kept=${frameModel.lastCurt.kept} unframed=${frameModel.lastCurt.unframed}`);
     if (frameModel.lastSym) log.add(`§WING_COLUMNS_SYMMETRIC kept=${frameModel.lastSym.kept} owned_by_another_wing=${frameModel.lastSym.outside}`);

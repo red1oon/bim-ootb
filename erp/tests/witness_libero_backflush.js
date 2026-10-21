@@ -78,7 +78,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
 
   // break flips (the module instance is shared with the running bundle)
   var COSTMOD = await import(LCpath);
-  if (BREAK === 'perschema') COSTMOD.SOURCE.detailsPerSchema = true; if (BREAK === 'perrow') COSTMOD.SOURCE.perRow = false; if (BREAK === 'scrapdiv') COSTMOD.SOURCE.scrapDivide = true;
+  COSTMOD.SOURCE.detailsPerSchema = BREAK === 'perschema';   // B2..B10d MEASURE the upstream posting (Q-M6-1: no schema filter); B10e then the default (filtered) - the deviation is proven by contrast if (BREAK === 'perrow') COSTMOD.SOURCE.perRow = false; if (BREAK === 'scrapdiv') COSTMOD.SOURCE.scrapDivide = true;
   var DATE = TODAY + ' 00:00:00';
   function fixtureStock(kgRows, bag) {
     db.run("DELETE FROM m_storageonhand WHERE m_product_id IN (" + [FG, KG, BAG].join(',') + ")");
@@ -136,7 +136,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LBACK ' + n +
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
   var OJ = newCompletedOrder('LB-J'), rJ = runProcess(OJ.pp_order_id, { rule: 'BackFlush', movementDate: DATE }), idsJ = ccs(OJ.pp_order_id).map(function (c) { return c.id; });
   var faJ = q('SELECT record_id AS r, account_id AS a, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=53035 AND record_id IN (' + idsJ.join(',') + ') ORDER BY fact_acct_id'), sumJ = function (acct, col) { return faJ.filter(function (f) { return f.a === acct; }).reduce(function (a, f) { return a + Number(f[col]); }, 0); };
-  COSTMOD.SOURCE.detailsPerSchema = BREAK === 'perschema';
+  COSTMOD.SOURCE.detailsPerSchema = true;   // the module default from here on (declared deviation §57.2)
   check('B10e with SOURCE.detailsPerSchema the books close: 6 lines, WIP DR 17540 = CR 17540, Asset DR 17540 = CR 17540', rJ.ok && faJ.length === 6 && close(sumJ(wipEl, 'dr'), 17540) && close(sumJ(wipEl, 'cr'), 17540) && close(sumJ(astEl, 'dr'), 17540) && close(sumJ(astEl, 'cr'), 17540), { n: faJ.length });
 
   // ── B3 integrity: the same model events, in the same order, as the plain collector path ──────────────────────────
