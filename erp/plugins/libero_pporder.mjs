@@ -9,15 +9,16 @@ export const DEFERRED = [
   'MPPOrderBOMLine.explodePhantom - fixtures carry no phantom',
   'MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)',
   'MPPOrder.beforeSave #M_Warehouse_ID context default',
-  'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
+  'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)',
+  'MPPMRP.createMOMakeTo (MTO/MTK order from a sales order line), MFG_Validator.updateMPPOrder (kit completion by shipment), DD_Order / M_Movement hooks (no DD tables in the base)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
+export const SOURCE = { ferryStatic: true, voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
   const D = ML.D, BD = D(0).constructor, ZERO = D(0), ONE = D(1), HUNDRED = D(100);
-  const lc = (v) => (v == null ? v : String(v));
+  const lc = (v) => (v == null ? v : String(v)), idSet = (v) => v != null && v !== '' && Number(v) !== 0;   // a session row carries a NEGATIVE key: 'set' = non-zero
   // java.sql.Timestamp compare: canonical 'YYYY-MM-DD HH:MM:SS' orders chronologically as a string (== M4's ts())
   const ts = (v) => { if (v == null || v === '') return ''; const t = String(v).replace('T', ' ').replace(/Z$/, '').replace(/\.\d+$/, ''); return t.length === 10 ? t + ' 00:00:00' : t; };
   // MPPProductBOM.isValidFromTo :362-371 / MPPProductBOMLine.isValidFromTo :304-313 (identical bodies)
@@ -253,7 +254,10 @@ export function create(ctx) {
 
   // ── MPPMRP (MFG_Validator AFTER_NEW/AFTER_CHANGE -> MPPMRP.PP_Order / PP_Order_BOMLine) ──────────────
   const SRC_COLS = { pp_order: ['ad_org_id', 'm_product_id', 'c_uom_id', 'datepromised', 'qtyordered', 'qtydelivered', 'pp_product_bom_id', 'ad_workflow_id', 'docstatus'],
-    pp_order_bomline: ['m_product_id', 'c_uom_id', 'm_warehouse_id', 'qtyentered', 'qtydelivered'] };
+    pp_order_bomline: ['m_product_id', 'c_uom_id', 'm_warehouse_id', 'qtyentered', 'qtydelivered'],
+    // s_sourceColumnNames :386-420 for the core tables MFG_Validator hooks
+    c_order: ['datepromised', 'docstatus'], c_orderline: ['ad_org_id', 'dateordered', 'datepromised', 'c_bpartner_id', 'm_warehouse_id', 'm_product_id', 'c_uom_id', 'qtyordered', 'qtydelivered'],
+    m_requisition: ['daterequired', 'm_warehouse_id'], m_requisitionline: ['ad_org_id', 'm_product_id', 'qty', 'c_orderline_id'], m_forecast: [], m_forecastline: ['ad_org_id', 'datepromised', 'm_warehouse_id', 'm_product_id', 'qty'] };
   function isChanged(table, rec, old, isNew) {   // MPPMRP.isChanged :462-482
     const cols = SRC_COLS[table]; if (isNew) return true;
     if (old && lc(old.isactive) !== lc(rec.isactive)) return true;
@@ -265,8 +269,16 @@ export function create(ctx) {
     m.datestartschedule = o.datestartschedule; m.datefinishschedule = SOURCE.mrpFinishFromOrder ? o.datefinishschedule : o.datestartschedule; m.s_resource_id = o.s_resource_id; m.docstatus = mrpDocStatus(o.docstatus);
   }
   function mrpFor(trx, o, extra, firstWhere) { return trx.find('pp_mrp', Object.assign({ ad_client_id: o.ad_client_id }, firstWhere)).filter((r) => r.ordertype === 'MOP')[0] || null; }
+  // MPPMRP's STATIC C_Order_ID / C_OrderLine_ID (:83-84, set by C_OrderLine, read by EVERY later `new MPPMRP(ctx,0)` :644-652) - JVM-wide state in Java, module-wide here. UPSTREAM QUIRK (named, kept):
+  //   after any order line, a new MRP row of an unrelated document carries that sales order (and its MO). SOURCE.ferryStatic=false disables it.
+  const FERRY = { c_order_id: 0, c_orderline_id: 0 };
+  function mrpCtorDefaults(trx) {
+    const f = { value: 'MRP', name: 'MRP', isavailable: 'N', datesimulation: (trx.env || {}).now || null };
+    if (SOURCE.ferryStatic && Number(FERRY.c_order_id) !== 0) { f.c_order_id = FERRY.c_order_id; f.c_orderline_id = FERRY.c_orderline_id; const mo = trx.find('pp_order', { c_orderline_id: FERRY.c_orderline_id })[0]; if (mo) f.pp_order_id = mo.pp_order_id; }
+    return f;
+  }
   function saveMrp(trx, row, fields) {   // new MPPMRP(ctx,0) defaults (:640-650) then saveEx
-    const p = row ? ML.po(trx, 'pp_mrp', row) : ML.newRecord(trx, 'pp_mrp', Object.assign({ value: 'MRP', isavailable: 'N', datesimulation: (trx.env || {}).now || null }, fields));
+    const p = row ? ML.po(trx, 'pp_mrp', row) : ML.newRecord(trx, 'pp_mrp', Object.assign(mrpCtorDefaults(trx), fields));
     if (row) Object.keys(fields).forEach((k) => p.set(k, fields[k]));
     return p.save() ? null : p.error;
   }
@@ -308,6 +320,125 @@ export function create(ctx) {
     return fn(trx, info.record);
   };
 
+
+  // ══ CORE-TABLE HOOKS - MFG_Validator (org.idempiere.component, :60-450) -> MPPMRP.C_Order/C_OrderLine/M_Requisition*/M_Forecast* + deleteMRP + DOC_AFTER_COMPLETE (spec prompts/mfg/LIBERO_CORE_HOOKS_SPEC.md) ══
+  // getQuery(po, typeMRP, orderType) :595-630 - rows of THIS client keyed by <table>_ID (firstOnly = the lowest PP_MRP_ID here: the Java has no ORDER BY)
+  function mrpQuery(trx, table, rec, typeMrp, orderType) {
+    const w = { ad_client_id: rec.ad_client_id }; w[table + '_id'] = rec[table + '_id'];
+    return trx.find('pp_mrp', w).filter((m) => (!typeMrp || m.typemrp === typeMrp) && (!orderType || m.ordertype === orderType)).sort((a, b) => Number(a.pp_mrp_id) - Number(b.pp_mrp_id));
+  }
+  const released = (s) => s === 'IP' || s === 'CO';
+  function setCOrder(m, o) { m.c_order_id = o.c_order_id; m.c_bpartner_id = o.c_bpartner_id; m.docstatus = o.docstatus; if (o.issotrx === 'Y') { m.ordertype = 'SOO'; m.typemrp = 'D'; } else { m.ordertype = 'POO'; m.typemrp = 'S'; } }   // setC_Order :694-708
+  // MPPMRP.C_OrderLine :849-901
+  function mrpCOrderLine(trx, ol) {
+    const ord = trx.get('c_order', ol.c_order_id), isRel = released(ord.docstatus);
+    const ex = (ord.issotrx === 'Y' && isRel) ? mrpQuery(trx, 'c_orderline', ol, 'D', 'SOO')[0] : mrpQuery(trx, 'c_orderline', ol)[0];
+    const f = {}; setCOrder(f, ord);
+    FERRY.c_order_id = ol.c_order_id; FERRY.c_orderline_id = ol.c_orderline_id;                                    // :872-874 (set AFTER the row's ctor ran)
+    Object.assign(f, { ad_org_id: ol.ad_org_id, c_orderline_id: ol.c_orderline_id, description: ol.description == null ? null : ol.description, name: 'OrderLine', datepromised: ol.datepromised, dateordered: ol.dateordered,
+      m_warehouse_id: ol.m_warehouse_id, m_product_id: ol.m_product_id, qty: num(dec(ol.qtyordered).subtract(dec(ol.qtydelivered))), docstatus: 'IP' });
+    let e = saveMrp(trx, ex || null, f); if (e) return e;
+    const dt = trx.get('c_doctype', ord.c_doctypetarget_id);
+    if (dt && dt.docsubtypeso === 'SO' && trx.find('pp_product_bom', { m_product_id: ol.m_product_id }).some((b) => (b.bomtype === 'O' || b.bomtype === 'K') && b.bomuse === 'M'))
+      return 'DEFERRED: MPPMRP.createMOMakeTo (Make-to-Order / Make-to-Kit manufacturing order from a sales order line) is not ported - nothing was written';
+    trx.say('§LIBERO-MRP C_OrderLine line=' + ol.c_orderline_id + ' ' + f.ordertype + '/' + f.typemrp + ' qty=' + f.qty + (ex ? ' (updated ' + ex.pp_mrp_id + ')' : ' (new)'));
+    return null;
+  }
+  // MPPMRP.C_Order :799-845
+  function mrpCOrder(trx, o, old) {
+    const dt = trx.get('c_doctype', o.c_doctypetarget_id), so = o.issotrx === 'Y';
+    if (!((dt && dt.docsubtypeso === 'SO') || !so)) return null;
+    if (released(o.docstatus) || !so) for (const l of trx.find('c_orderline', { c_order_id: o.c_order_id }, ['line'])) { const e = mrpCOrderLine(trx, l); if (e) return e; }
+    if (!old || lc(old.docstatus) !== lc(o.docstatus) || lc(old.c_bpartner_id) !== lc(o.c_bpartner_id)) {
+      for (const m of mrpQuery(trx, 'c_order', o)) {
+        const ch = { c_order_id: o.c_order_id, c_bpartner_id: o.c_bpartner_id };
+        if ((m.docstatus === 'CO' || m.docstatus === 'CL') && dec(m.qty).signum() === 0 && m.ordertype !== 'SOO') { /* :827-830 kept as is */ }
+        else ch.docstatus = released(o.docstatus) ? 'IP' : 'DR';
+        const e = saveMrp(trx, m, ch); if (e) return e;
+      }
+    }
+    return null;
+  }
+  // MPPMRP.M_Requisition :1140-1150 / M_RequisitionLine :1154-1192 (setM_Requisition :718-730)
+  function setMReq(f, r) { Object.assign(f, { m_requisition_id: r.m_requisition_id, ordertype: 'POR', typemrp: 'S', dateordered: r.datedoc, datepromised: r.daterequired, datestartschedule: r.datedoc, datefinishschedule: r.daterequired, m_warehouse_id: r.m_warehouse_id }); }
+  function mrpReq(trx, r) { for (const m of mrpQuery(trx, 'm_requisition', r)) { const f = {}; setMReq(f, r); const e = saveMrp(trx, m, f); if (e) return e; } return null; }
+  function mrpReqLine(trx, rl) {
+    const ex = mrpQuery(trx, 'm_requisitionline', rl)[0], r = trx.get('m_requisition', rl.m_requisition_id), f = ex ? {} : { m_requisition_id: rl.m_requisition_id, m_requisitionline_id: rl.m_requisitionline_id };
+    setMReq(f, r); Object.assign(f, { ad_org_id: rl.ad_org_id, name: 'MRP', description: rl.description == null ? null : rl.description, m_product_id: rl.m_product_id });
+    let qty = dec(rl.qty).subtract(dec(rl.qtyordered));
+    if (r.docstatus === 'CL') { f.docstatus = 'CO'; qty = dec(0); } else if (r.docstatus === 'VO') { f.docstatus = 'VO'; qty = dec(0); }
+    else if (qty.signum() === 0) f.docstatus = 'CO'; else if (dec(rl.qtyordered).signum() > 0) f.docstatus = 'IP'; else f.docstatus = 'DR';
+    f.qty = num(qty);
+    const e = saveMrp(trx, ex || null, f); if (!e) trx.say('§LIBERO-MRP M_RequisitionLine line=' + rl.m_requisitionline_id + ' qty=' + f.qty + ' status=' + f.docstatus); return e;
+  }
+  // MPPMRP.M_Forecast :756-764 - setM_Forecast on every row, NOT saved upstream (named quirk: a forecast header change does not reach its MRP rows); M_ForecastLine :769-795
+  function mrpForecast() { return null; }
+  function mrpForecastLine(trx, fl) {
+    const f0 = trx.get('m_forecast', fl.m_forecast_id), ex = mrpQuery(trx, 'm_forecastline', fl)[0];
+    const f = ex ? {} : { m_forecastline_id: fl.m_forecastline_id };
+    Object.assign(f, { ordertype: 'FCT', typemrp: 'D', m_forecast_id: f0.m_forecast_id, description: f0.description == null ? null : f0.description, name: 'MRP', ad_org_id: fl.ad_org_id, datepromised: fl.datepromised,
+      datestartschedule: fl.datepromised, datefinishschedule: fl.datepromised, dateordered: fl.datepromised, m_warehouse_id: fl.m_warehouse_id, m_product_id: fl.m_product_id, qty: fl.qty, docstatus: 'IP' });
+    return saveMrp(trx, ex || null, f);
+  }
+  // MPPMRP.deleteMRP :493-583 for the core tables (the PP_Order branches stay in mrpDeleteOrder / mrpDeleteBomLine)
+  function mrpDeleteCore(trx, table, rec) {
+    const w = { ad_client_id: rec.ad_client_id }; w[table + '_id'] = rec[table + '_id'];
+    if (table === 'c_order' && rec.issotrx === 'Y') {
+      if (trx.find('pp_mrp', w).some((m) => m.docstatus === 'DR' && idSet(m.m_requisition_id))) return 'DEFERRED: MPPMRP.deleteMRP voiding draft Requisitions generated by MRP is not ported - nothing was written';
+      for (const m of trx.find('pp_mrp', w).filter((m) => m.ordertype === 'SOO')) { const e = saveMrp(trx, m, { c_order_id: null, c_orderline_id: null }); if (e) return e; }
+    }
+    if (table === 'c_orderline') { const mo = trx.find('pp_order', { c_orderline_id: rec.c_orderline_id })[0]; if (mo && mo.processed !== 'Y') { const r = ML.remove(trx, 'pp_order', mo); if (r && r.ok === false) return r.error; } }   // the generated MO
+    trx.find('pp_mrp', w).filter((m) => m.docstatus === 'DR' || m.docstatus === 'VO').forEach((m) => trx.del('pp_mrp', m));
+    if (table === 'c_order' && rec.issotrx === 'Y' && rec.docstatus === 'VO') trx.find('pp_mrp', w).filter((m) => m.ordertype === 'SOO').forEach((m) => trx.del('pp_mrp', m));
+    trx.say('§LIBERO-MRP deleteMRP ' + table + '=' + rec[table + '_id']);
+    return null;
+  }
+  // doHandleEvent :118-270 - the event switch: delete / void / inactive -> deleteMRP; else the per-table rule
+  const isVoidedDoc = (trx, table, rec) => { const d = table === 'c_orderline' ? trx.get('c_order', rec.c_order_id) : (table === 'm_requisitionline' ? null : rec); return !!d && d.docstatus === 'VO'; };
+  const coreHook = (table, timing) => (c, info) => {
+    const trx = c && c.trx, rec = info && info.record; if (!trx || !rec) return null;
+    const isDel = timing === 'BEFORE_DELETE', isNew = timing === 'AFTER_NEW', old = info.recordOld || null;
+    if (isDel || isVoidedDoc(trx, table, rec) || rec.isactive === 'N') return mrpDeleteCore(trx, table, rec);
+    const isChange = isNew || (timing === 'AFTER_CHANGE' && isChanged(table, rec, old, false));
+    if (table === 'c_order') {
+      if (isChange && rec.issotrx !== 'Y') return mrpCOrder(trx, rec, old);
+      if (timing === 'AFTER_CHANGE' && rec.issotrx === 'Y' && (released(rec.docstatus) || isChanged(table, rec, old, false))) return mrpCOrder(trx, rec, old);
+      return null;
+    }
+    if (!isChange) return null;
+    if (table === 'c_orderline') { const o = trx.get('c_order', rec.c_order_id); return (o.issotrx !== 'Y' || released(o.docstatus)) ? mrpCOrderLine(trx, rec) : null; }
+    if (table === 'm_requisition') return mrpReq(trx, rec);
+    if (table === 'm_requisitionline') return mrpReqLine(trx, rec);
+    if (table === 'm_forecast') return mrpForecast(trx, rec);
+    if (table === 'm_forecastline') return mrpForecastLine(trx, rec);
+    return null;
+  };
+  // MProduct PO_BEFORE_CHANGE :161-166 - the UOM of a product with MRP records cannot change
+  const productUomGuard = (c, info) => { const trx = c && c.trx, rec = info && info.record, old = info && info.recordOld; if (!trx || !rec || !old) return null;
+    return lc(rec.c_uom_id) !== lc(old.c_uom_id) && trx.find('pp_mrp', { m_product_id: rec.m_product_id }).length ? '@SaveUomError@' : null; };
+  // M_InOut DOC_AFTER_COMPLETE :285-320 - a vendor receipt completes the subcontracting collector of its PO line (qtyOrdered >= qtyDelivered, upstream test kept); a customer shipment of a
+  //   Make-to-Kit order (updateMPPOrder :376-445) is DEFERRED by name when such an order exists (none -> the Java returns early, so nothing to do)
+  const inoutComplete = (c, info) => {
+    const trx = c && c.trx, io = info && info.record; if (!trx || !io) return null;
+    const lines = trx.find('m_inoutline', { m_inout_id: io.m_inout_id });
+    if (io.issotrx === 'Y') {
+      for (const l of lines) if (idSet(l.c_orderline_id) && trx.find('pp_order', { c_orderline_id: l.c_orderline_id }).some((o) => o.docstatus === 'IP' || o.docstatus === 'CO'))
+        return 'DEFERRED: MFG_Validator.updateMPPOrder (Make-to-Kit order completed by its shipment) is not ported - nothing was written';
+      return null;
+    }
+    const cc = ctx.libero && ctx.libero.cost; if (!cc) return null;
+    for (const l of lines) {
+      for (const ol of trx.find('c_orderline', { c_orderline_id: l.c_orderline_id }).filter((x) => idSet(x.pp_cost_collector_id))) {
+        if (dec(ol.qtyordered).compareTo(dec(ol.qtydelivered)) >= 0) {
+          const col = trx.get('pp_cost_collector', ol.pp_cost_collector_id), st = cc.docActions.pp_cost_collector.completeIt(trx, col);
+          trx.update('pp_cost_collector', trx.get('pp_cost_collector', col.pp_cost_collector_id), { docstatus: st, docaction: 'CL' });
+          trx.say('§LIBERO-SUBCONTRACT-RECEIPT inout=' + io.m_inout_id + ' collector=' + col.pp_cost_collector_id + ' -> ' + st);
+          return null;                                                                     // :312 return after the first collector
+        }
+      }
+    }
+    return null;
+  };
   // ── MPPOrder DocAction (DocumentEngine contract: fn(trx, doc) -> status; the engine writes DocStatus) ─────────────────────────────────────────────────
   function reserveLine(trx, row) {          // MPPOrderBOMLine.reserveStock() called directly (prepareIt :640-648): no changed-column gate
     const rec = Object.assign({}, row), parent = trx.get('pp_order', rec.pp_order_id);
@@ -493,7 +624,10 @@ export function create(ctx) {
       ['pp_order_bomline', 'AFTER_NEW', 'Libero.MPPMRP.PP_Order_BOMLine', validator('pp_order_bomline', mrpBomLine)],
       ['pp_order_bomline', 'AFTER_CHANGE', 'Libero.MPPMRP.PP_Order_BOMLine', validator('pp_order_bomline', mrpBomLine)],
       ['pp_order', 'BEFORE_DELETE', 'Libero.MPPMRP.deleteMRP', (c, info) => (c && c.trx && info && info.record ? mrpDeleteOrder(c.trx, info.record) : null)],
-      ['pp_order_bomline', 'BEFORE_DELETE', 'Libero.MPPMRP.deleteMRP', (c, info) => (c && c.trx && info && info.record ? mrpDeleteBomLine(c.trx, info.record) : null)]
+      ['pp_order_bomline', 'BEFORE_DELETE', 'Libero.MPPMRP.deleteMRP', (c, info) => (c && c.trx && info && info.record ? mrpDeleteBomLine(c.trx, info.record) : null)],
+      ...['c_order', 'c_orderline', 'm_requisition', 'm_requisitionline', 'm_forecast', 'm_forecastline'].flatMap((t) => ['AFTER_NEW', 'AFTER_CHANGE', 'BEFORE_DELETE'].map((tm) => [t, tm, 'Libero.MFG_Validator.' + t, coreHook(t, tm)])),
+      ['m_product', 'BEFORE_CHANGE', 'Libero.MFG_Validator.m_product', productUomGuard],
+      ['m_inout', 'AFTER_COMPLETE', 'Libero.MFG_Validator.m_inout', inoutComplete]
     ]
   };
 }

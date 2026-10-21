@@ -322,6 +322,7 @@
     if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, live, { recordOld: old }) || fire(trx, 'AFTER_SAVE', table, live, { recordOld: old });
     if (e3) return { ok: false, error: e3 };
+    (trx._saved = trx._saved || {})[table + ':' + live[trx.idCol(table)]] = Object.assign({}, live);   // PO.save resets is_ValueChanged: the next save of the SAME PO diffs from here (runWorkflow §DOC-SAVE)
     return { ok: true, row: live };
   }
   // PO.saveNew :3563-3605 — a new row's DocumentNo ('<…>' = a preview → empty) from C_DocTypeTarget_ID when the table has that
@@ -462,8 +463,16 @@
       var text = null;
       if (node.action === 'D') {
         var da = (node.docaction && node.docaction !== '--') ? node.docaction : trx.get(table, id).docaction;   // DocAuto = the doc's own
+        var before = Object.assign({}, trx.get(table, id)), skey = table + ':' + id; if (trx._saved) delete trx._saved[skey];
         res = processIt(trx, table, id, da);
+        if (trx._saved && trx._saved[skey]) before = trx._saved[skey];   // the action saved the document itself (e.g. voidIt :767-775): m_po's changed-columns restart there
         text = impl && impl.getSummary ? impl.getSummary(trx, trx.get(table, id)) : null;
+        // MWFActivity.performWork :1131-1140 - `m_po.save()` AFTER doc.processIt, success or not: the document's own changes (DocStatus, Processed, DocAction ...) are saved through PO.save, so
+        //   beforeSave, the BEFORE/AFTER_CHANGE model validators (recordOld = the row before the action) and afterSave run, as in legacy (MFG_Validator's C_Order AFTER_CHANGE reads it;
+        //   bim-compiler prompts/mfg ... LIBERO_CORE_HOOKS_SPEC.md §DOC-SAVE). A refused save = "SaveError": the node fails.
+        var now = trx.get(table, id), chg = {};
+        if (now) Object.keys(now).forEach(function (k) { if (!same(now[k], before[k]) || (now[k] == null) !== (before[k] == null)) chg[k] = now[k]; });
+        if (Object.keys(chg).length) { var sv = save(trx, table, before, chg); if (!sv.ok) { res = { ok: false, status: null, msg: sv.error || 'SaveError' }; } }
         if (!res.ok) { abort = res.msg || ('DocAction ' + da + ' failed'); trx.update('ad_wf_activity', act, { wfstate: 'CA', processed: 'Y', textmsg: abort }); break; }
       } else if (node.action !== 'Z') { abort = 'node action ' + node.action + ' not modeled (named, MWFActivity.performWork)'; break; }
       trx.update('ad_wf_activity', act, { wfstate: 'CC', processed: 'Y', textmsg: text });
