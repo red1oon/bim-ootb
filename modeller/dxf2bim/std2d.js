@@ -222,46 +222,63 @@
     for (;;) { keep = clusters.filter(cl => support(cl) >= k || cl.some(c => extGuids.has(c[1]))); if (keep.length <= GRID_READABLE_MAX || k > top) break; k++; }
     return { keep, k };
   }
+  // §F7 D25: a wall as THIS plan draws it: the bounding box of its cut contour(s) at cutZ (a coordinate within PT_MERGE of the model bbox keeps the bbox value), or null when the plane draws none of it.
+  // The contours are cached per element and cut plane (writePlan draws the same ones).
+  function cutContours(model, e, cutZ) {
+    const C = model._ctr = model._ctr || new WeakMap(); let m = C.get(e); if (!m) C.set(e, m = {});
+    const k = String(cutZ); if (!(k in m)) m[k] = G.elementContours(e.v, e.f, e.c, cutZ); return m[k];
+  }
+  function drawnWall(model, w, cutZ, log) {
+    const cs = cutContours(model, w, cutZ).filter(ct => ct.points.length >= 3); if (!cs.length) return null;
+    const xs = [].concat(...cs.map(ct => ct.points.map(p => p[0]))), ys = [].concat(...cs.map(ct => ct.points.map(p => p[1])));
+    const keep = (d, b) => (Math.abs(d - b) <= PT_MERGE ? b : d), r = { x0: keep(Math.min(...xs), w.x0), x1: keep(Math.max(...xs), w.x1), y0: keep(Math.min(...ys), w.y0), y1: keep(Math.max(...ys), w.y1) };
+    if (log && (r.x0 !== w.x0 || r.x1 !== w.x1 || r.y0 !== w.y0 || r.y1 !== w.y1)) log.add(`§GRID_DRAWN_WALL guid=${w.guid} cut_z=${fx(cutZ, 3)} bbox=(${fx(w.x0, 4)},${fx(w.y0, 4)})-(${fx(w.x1, 4)},${fx(w.y1, 4)}) drawn=(${fx(r.x0, 4)},${fx(r.y0, 4)})-(${fx(r.x1, 4)},${fx(r.y1, 4)}) (D25)`);
+    const along = (r.x1 - r.x0) >= (r.y1 - r.y0) ? 0 : 1, len = cs.reduce((t, ct) => { const q = ct.points.map(p => p[along]); return t + Math.max(...q) - Math.min(...q); }, 0);   // the length the plane draws: the pieces' extents along the wall (end slivers beside a curtain wall's void draw ~0)
+    return Object.assign({ guid: w.guid, storey: w.storey, cls: w.cls, v: w.v, f: w.f, c: w.c, drawnLen: len, pieces: cs.length }, r);
+  }
   function deriveGrid(model, log) {
     const fnd = model.foundation, gs = model.grid_storey, fw = model.walls.filter(w => w.storey === fnd);
     const wallStoreys = model.storeys.filter(s => s.has_walls).map(s => s.name), ent = { x: [], y: [] }, gridded = new Set(), extGuids = new Set();
     log.add(`§GRID_EVIDENCE regime=${fnd ? 'footing (R4a on the grid storey)' : 'no footing (LB1 pset, LB2 continuity, LB3 exterior, LB4 columns)'}`);
+    const seenEv = new Set(), seenGap = new Set(), push = (ax, pos, g) => { const key = g + '|' + ax + '|' + pos.toFixed(6); if (seenEv.has(key)) return; seenEv.add(key); ent[ax].push([pos, g]); };   // D25: one entry per element and position
+    const adjOf = {}; wallStoreys.forEach((n, k) => { const adjN = wallStoreys.slice(Math.max(0, k - 1), k).concat(wallStoreys.slice(k + 1, k + 2)); adjOf[n] = model.walls.filter(w => adjN.indexOf(w.storey) >= 0); });
     for (const st of planStoreys(model)) {
-      const sname = st.name, sw = model.walls.filter(w => w.storey === sname), k = wallStoreys.indexOf(sname);
+      const sname = st.name, cutZ = st.elev + CUT_OFFSET, cutW = model.walls.filter(w => w.v.length && w.f.length && w.z0 < cutZ && cutZ < w.z1);   // D25: the walls this plan draws (any storey)
+      const sw = cutW.map(w => drawnWall(model, w, cutZ, log)).filter(Boolean);
+      log.add(`§GRID_DRAWN storey='${sname}' cut_z=${fx(cutZ, 3)} walls=${sw.length} (other storeys ${sw.filter(w => w.storey !== sname).length}, cut but no contour ${cutW.length - sw.length}) storey walls not cut=${model.walls.filter(w => w.storey === sname && !(w.z0 < cutZ && cutZ < w.z1)).length} (D25)`);
       let env = envelope(sw);
-      Object.values(curtainBands(model, st.elev + CUT_OFFSET, log)).forEach(cb => { const e = cb.env; env = [Math.min(env[0], e[0]), Math.max(env[1], e[1]), Math.min(env[2], e[2]), Math.max(env[3], e[3])]; });   // C3
-      const adjN = wallStoreys.slice(Math.max(0, k - 1), k).concat(wallStoreys.slice(k + 1, k + 2));
-      const adj = model.walls.filter(w => adjN.indexOf(w.storey) >= 0);
+      Object.values(curtainBands(model, cutZ, log)).forEach(cb => { const e = cb.env; env = [Math.min(env[0], e[0]), Math.max(env[1], e[1]), Math.min(env[2], e[2]), Math.max(env[3], e[3])]; });   // C3
       for (const w of sw) {
         const ortho = model.rules.l117 ? (orthogonal(w.v, w.f) || orthogonalLong(w.v, w.f)) : orthogonal(w.v, w.f);
-        if (!ortho) { log.gap('GAP:wall_not_orthogonal', w.guid, 'not gridded (R3)'); continue; }
-        if (model.rules.l117 && !orthogonal(w.v, w.f)) log.add(`§ENDFACE_R3 guid=${w.guid} axes from the long faces; end faces off-axis, contour unchanged`);
+        if (!ortho) { if (!seenGap.has(w.guid)) log.gap('GAP:wall_not_orthogonal', w.guid, 'not gridded (R3)'); seenGap.add(w.guid); continue; }
+        if (model.rules.l117 && !orthogonal(w.v, w.f) && !seenGap.has(w.guid)) { log.add(`§ENDFACE_R3 guid=${w.guid} axes from the long faces; end faces off-axis, contour unchanged`); seenGap.add(w.guid); }
         const [ax, pos, [a, b], L] = wallAxis(w);
         let bear = false, lb = false, stack = null;
-        if (fnd) bear = sname === gs && bearsOn(ax, pos, a, b, L, fw) !== null;
+        if (fnd) bear = w.storey === gs && bearsOn(ax, pos, a, b, L, fw) !== null;
         else {
           const stated = model.psets[w.guid + '|LoadBearing']; lb = stated === 'TRUE';
-          stack = (stated !== 'TRUE' && stated !== 'FALSE') ? bearsOn(ax, pos, a, b, L, adj) : null;
+          stack = (stated !== 'TRUE' && stated !== 'FALSE') ? bearsOn(ax, pos, a, b, L, adjOf[w.storey] || []) : null;
         }
         const ext = ax === 'y' ? (Math.abs(w.y0 - env[2]) <= EXT_FACE_TOL || Math.abs(w.y1 - env[3]) <= EXT_FACE_TOL) : (Math.abs(w.x0 - env[0]) <= EXT_FACE_TOL || Math.abs(w.x1 - env[1]) <= EXT_FACE_TOL);
-        const keep = (bear || ext || lb || stack !== null) && L >= GRID_MIN_WALL_LEN;
+        const Ld = Math.min(L, w.drawnLen), keep = (bear || ext || lb || stack !== null) && Ld >= GRID_MIN_WALL_LEN;   // D25: the drawn length (pieces along the wall), never more than the bbox length
         const B = x => (x ? 'True' : 'False');
-        log.add(`§WALL guid=${w.guid} storey='${sname}' axis=${ax}=${fx(pos, 4)} len=${fx(L, 3)} bear=${B(bear)} ext=${B(ext)} pset_lb=${B(lb)} stacked=${stack === null ? 'None' : "'" + stack + "'"} gridded=${B(keep)}`);
-        if (keep) { ent[ax].push([pos, w.guid]); gridded.add(w.guid); if (ext) extGuids.add(w.guid); }
+        log.add(`§WALL guid=${w.guid} storey='${w.storey}'${w.storey !== sname ? ` plan='${sname}'` : ''} axis=${ax}=${fx(pos, 4)} len=${fx(L, 3)}${Ld < L - PT_MERGE ? ` drawn_len=${fx(Ld, 3)} pieces=${w.pieces}` : ''} bear=${B(bear)} ext=${B(ext)} pset_lb=${B(lb)} stacked=${stack === null ? 'None' : "'" + stack + "'"} gridded=${B(keep)}`);
+        if (keep) { push(ax, pos, w.guid); gridded.add(w.guid); if (ext) extGuids.add(w.guid); }
       }
-      Object.keys(curtainBands(model, st.elev + CUT_OFFSET, log)).sort().forEach(cwg => {   // C6: a curtain-wall facade is an exterior wall: its axis is grid evidence
-        const [x0, x1, y0, y1] = curtainBands(model, st.elev + CUT_OFFSET, log)[cwg].env, cax = (x1 - x0) >= (y1 - y0) ? 'y' : 'x', cpos = cax === 'y' ? (y0 + y1) / 2 : (x0 + x1) / 2, cL = cax === 'y' ? x1 - x0 : y1 - y0;
-        const bandsAll = Object.values(curtainBands(model, st.elev + CUT_OFFSET, log)), envC = [Math.min(...bandsAll.map(b => b.env[0])), Math.max(...bandsAll.map(b => b.env[1])), Math.min(...bandsAll.map(b => b.env[2])), Math.max(...bandsAll.map(b => b.env[3]))];
+      Object.keys(curtainBands(model, cutZ, log)).sort().forEach(cwg => {   // C6: a curtain-wall facade is an exterior wall: its axis is grid evidence
+        const [x0, x1, y0, y1] = curtainBands(model, cutZ, log)[cwg].env, cax = (x1 - x0) >= (y1 - y0) ? 'y' : 'x', cpos = cax === 'y' ? (y0 + y1) / 2 : (x0 + x1) / 2, cL = cax === 'y' ? x1 - x0 : y1 - y0;
+        const bandsAll = Object.values(curtainBands(model, cutZ, log)), envC = [Math.min(...bandsAll.map(b => b.env[0])), Math.max(...bandsAll.map(b => b.env[1])), Math.min(...bandsAll.map(b => b.env[2])), Math.max(...bandsAll.map(b => b.env[3]))];
         const ex = e => cax === 'y' ? (Math.abs(y0 - e[2]) <= EXT_FACE_TOL || Math.abs(y1 - e[3]) <= EXT_FACE_TOL) : (Math.abs(x0 - e[0]) <= EXT_FACE_TOL || Math.abs(x1 - e[1]) <= EXT_FACE_TOL), cext = ex(env) || ex(envC), ckeep = cext && cL >= GRID_MIN_WALL_LEN;   // exterior: on the storey envelope or on the envelope of the curtain bands (the facade)
         log.add(`§CURTAIN_GRID guid=${cwg} storey='${sname}' axis=${cax}=${fx(cpos, 4)} len=${fx(cL, 3)} ext=${cext ? 'True' : 'False'} gridded=${ckeep ? 'True' : 'False'}`);
-        if (ckeep) { ent[cax].push([cpos, cwg]); gridded.add(cwg); extGuids.add(cwg); }
+        if (ckeep) { push(cax, cpos, cwg); gridded.add(cwg); extGuids.add(cwg); }
       });
-      model.els.filter(e => e.cls === 'IfcColumn' && e.storey === sname).sort((p, q) => (p.guid < q.guid ? -1 : 1)).forEach(c => {
+      model.els.filter(e => e.cls === 'IfcColumn' && e.v.length && e.f.length && e.z0 < cutZ && cutZ < e.z1).sort((p, q) => (p.guid < q.guid ? -1 : 1)).forEach(c => {   // D25: the columns this plan cuts (any storey)
         const ca = columnAxis(c.v, c.c);
-        if (!ca) { log.gap('GAP:column_not_symmetric', c.guid, 'plan section neither point-symmetric nor a ring about its vertex mean; not gridded (C2)'); return; }
-        ent.x.push([ca[0], c.guid]); ent.y.push([ca[1], c.guid]); gridded.add(c.guid);
-        log.add(`§COLUMN_GRID guid=${c.guid} storey='${sname}' centre=(${fx(ca[0], 4)},${fx(ca[1], 4)}) (C2)`);
+        if (!ca) { if (!seenGap.has(c.guid)) log.gap('GAP:column_not_symmetric', c.guid, 'plan section neither point-symmetric nor a ring about its vertex mean; not gridded (C2)'); seenGap.add(c.guid); return; }
+        push('x', ca[0], c.guid); push('y', ca[1], c.guid); gridded.add(c.guid);
+        log.add(`§COLUMN_GRID guid=${c.guid} storey='${c.storey}'${c.storey !== sname ? ` plan='${sname}'` : ''} centre=(${fx(ca[0], 4)},${fx(ca[1], 4)}) (C2)`);
       });
+      model.els.filter(e => e.cls === 'IfcColumn' && e.storey === sname && !(e.z0 < cutZ && cutZ < e.z1)).forEach(c => log.add(`§COLUMN_UNCUT guid=${c.guid} storey='${sname}' z=${fx(c.z0, 3)}..${fx(c.z1, 3)} cut_z=${fx(cutZ, 3)}: not drawn on the plan, no grid evidence (D25)`));
     }
     const out = {};
     let primary = false;
@@ -568,7 +585,9 @@
     });
     return Array.from(pos.keys()).map(i => t[i]);
   }
-  function gridPlan(doc, E, grid) {
+  function gridPlan(doc, E0, grid) {
+    const gxs = grid.x.map(g => mm(g[1])), gys = grid.y.map(g => mm(g[1]));   // D28: the bubbles stand beyond the outermost grid line, not only beyond the walls of this plan (a line outside the plan crossed the other axis' bubble row)
+    const E = [Math.min(E0[0], ...gxs), Math.max(E0[1], ...gxs), Math.min(E0[2], ...gys), Math.max(E0[3], ...gys)];
     const ge = GRID_END * SCALE, bc = BUBBLE_C * SCALE;
     const tx = tiersOf(grid.x.map(g => mm(g[1]))), ty = tiersOf(grid.y.map(g => mm(g[1])));
     grid.x.forEach(([lab, p], i) => { const x = mm(p), o = tx[i] * GRID_STAGGER, g = { axis: 'x', pos: x }; doc.line('A-GRID', [x, E[2] - ge - o], [x, E[3] + ge + o], { grid: g }); bubble(doc, x, E[2] - bc - o, lab, g); bubble(doc, x, E[3] + bc + o, lab, g); });
@@ -771,10 +790,10 @@
     let env = envelope(sw);
     Object.values(curt).forEach(c => { env = [Math.min(env[0], c.env[0]), Math.max(env[1], c.env[1]), Math.min(env[2], c.env[2]), Math.max(env[3], c.env[3])]; });   // C3
     const E = env.map(mm), faceRuns = { S: [], N: [], W: [], E: [] }, onAxis = new Set();
-    for (const w of sw) { const [ax, pos] = wallAxis(w); if (grid[ax].some(g => Math.abs(pos - g[1]) <= GRID_MERGE_TOL)) onAxis.add(w.guid); }
+    for (const w of sw) { const dw = drawnWall(model, w, cutZ) || w, [ax, pos] = wallAxis(dw); if (grid[ax].some(g => Math.abs(pos - g[1]) <= GRID_MERGE_TOL)) onAxis.add(w.guid); }   // D25: the drawn axis
     const polys = {};
     cut.forEach(c => {
-      polys[c.guid] = G.elementContours(c.v, c.f, c.c, cutZ).map(ct => ct.points.map(p => [mm(p[0]), mm(p[1])])).filter(p => p.length >= 3);
+      polys[c.guid] = cutContours(model, c, cutZ).map(ct => ct.points.map(p => [mm(p[0]), mm(p[1])])).filter(p => p.length >= 3);
       // §L1.8 S1: an orthogonal wall is rectilinear (R3); a contour of it whose mean width (area / longest bbox side) is below the plan merge tolerance is a
       // tessellation sliver of a rectilinear remnant (web-ifc meshes a 0.6 mm wall end as a wedge) and becomes its bounding rectangle
       if (WALLS.indexOf(c.cls) >= 0 && orthogonal(c.v, c.f)) polys[c.guid] = polys[c.guid].map(pl => {
@@ -807,7 +826,7 @@
     gidsF.forEach(g => (polys[g] || []).forEach(pl => { if (sideOf(pl) < readMin - 1e-9) return; pl.forEach(q => { dr[0] = Math.min(dr[0], q[0]); dr[1] = Math.max(dr[1], q[0]); dr[2] = Math.min(dr[2], q[1]); dr[3] = Math.max(dr[3], q[1]); }); }));
     const F = isFinite(dr[0]) ? dr : E;
     const ops = planOpenings(model, storey, cutZ, new Set(sw.map(w => w.guid).concat(Object.keys(curt))), polys, log);
-    let nW = 0, nC = 0;
+    let nW = 0, nC = 0, thinRun = 0, colRun = 0;
     for (const c of cut) for (const pts of (polys[c.guid] || [])) {
       if (WALLS.indexOf(c.cls) >= 0 || c.cls === 'IfcColumn') {
         if (c.cls === 'IfcColumn') {
@@ -819,7 +838,7 @@
         [['S', q => Math.abs(q[1] - F[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - F[3]) <= FACE_PT_TOL * 1000, 0],
          ['W', q => Math.abs(q[0] - F[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - F[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
           const run = pts.some(on) ? pts.map(q => q[along]) : [];   // D10: a piece touching the face counts with its whole extent along it (the reader reads a wall piece as its bounding rectangle)
-          if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) faceRuns[side].push([Math.min(...run), Math.max(...run)]);
+          if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) { if (c.cls === 'IfcColumn') { colRun++; return; } if (sideOf(pts) < readMin - 1e-9) { thinRun++; return; } faceRuns[side].push([Math.min(...run), Math.max(...run)]); }   // D27: a column, or a piece the reader does not read, is in no wall run
         });
       } else if (c.cls === 'IfcStair' || c.cls === 'IfcStairFlight') doc.lwpoly('A-FLOR-STRS', pts, true, tag(c.guid));
       else doc.lwpoly(c.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', pts, true, tag(c.guid));
@@ -832,9 +851,10 @@
       [['S', q => Math.abs(q[1] - F[2]) <= FACE_PT_TOL * 1000, 0], ['N', q => Math.abs(q[1] - F[3]) <= FACE_PT_TOL * 1000, 0],
        ['W', q => Math.abs(q[0] - F[0]) <= FACE_PT_TOL * 1000, 1], ['E', q => Math.abs(q[0] - F[1]) <= FACE_PT_TOL * 1000, 1]].forEach(([side, on, along]) => {
         const run = pts.some(on) ? pts.map(q => q[along]) : [];   // D10: a piece touching the face counts with its whole extent along it (the reader reads a wall piece as its bounding rectangle)
-        if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) faceRuns[side].push([Math.min(...run), Math.max(...run)]);
+        if (run.length >= 2 && Math.max(...run) - Math.min(...run) > PT_MERGE * 1000) { if (sideOf(pts) < readMin - 1e-9) { thinRun++; return; } faceRuns[side].push([Math.min(...run), Math.max(...run)]); }   // D27
       });
     }));
+    if (thinRun || colRun) log.add(`§FACE_RUN_DROP view=${view} thin=${thinRun} (pieces under the reading limit ${fx(readMin, 3)} m) columns=${colRun} touching a face: not wall-run points (D27)`);
     if (Object.keys(curt).length) log.add(`§PLAN curtain walls=${nCw}`);
     const nO = { above: 0, below: 0 };
     for (const [e, pos] of ops) {
@@ -921,6 +941,15 @@
     return doc;
   }
 
+  // §F7 D26: the levels an elevation / the section draws are the levels the set STATES: each plan's @LEVEL, the roof plan's @LEVEL, T/ROOF (@ROOF); a storey without a plan in this set is not drawn (logged once per sheet)
+  function levelsStated(model, log, tagName) {
+    const gEl = model.storeys.find(s => s.name === model.grid_storey).elev, ps = planStoreys(model), rs = roofStorey(model), names = new Set(ps.map(s => s.name));
+    const levels = ps.map(s => [s.name.toUpperCase(), s.elev]);
+    if (rs && !names.has(rs.name)) { levels.push([rs.name.toUpperCase(), rs.elev]); names.add(rs.name); }
+    if (model.roof_top !== null) levels.push(['T/ROOF', model.roof_top]);
+    model.storeys.filter(s => s.elev >= gEl && !names.has(s.name)).forEach(s => log.add(`§LEVEL_UNSTATED ${tagName} storey='${s.name}' elev=${fx(s.elev, 4)}: no plan of this set states it, not drawn (D26)`));
+    return levels.sort((a, b) => a[1] - b[1]);
+  }
   function levelsDrawn(doc, log, tagName, levels, lx0, lx1) {
     for (const [name, z] of levels) {
       const Z = mm(z), t = 1.5 * SCALE;
@@ -961,9 +990,7 @@
     model.roofs.forEach(r => { const [h0, h1] = hr(r); doc.lwpoly('A-ROOF', rect(h0, h1, r.z0, r.z1), true, tag(r.guid)); });
     log.add(`§ELEV ${face} walls=${fw.length} openings=${nOp} roofs=${model.roofs.length}`);
     const xs = [hp(env[0], env[2]), hp(env[1], env[3])], H0 = mm(Math.min(...xs)), H1 = mm(Math.max(...xs));
-    const levels = model.storeys.filter(s => vis.has(s.name)).map(s => [s.name.toUpperCase(), s.elev]);
-    if (model.roof_top !== null) levels.push(['T/ROOF', model.roof_top]);
-    levels.sort((a, b) => a[1] - b[1]);
+    const levels = levelsStated(model, log, face);   // D26
     levelsDrawn(doc, log, face, levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
     const zs = levels.map(l => mm(l[1]));
     for (let i = 0; i + 1 < zs.length; i++) dim(doc, [H0, zs[i]], [H0, zs[i + 1]], [H0 - ELEV_DIM_CHAIN * SCALE, zs[i]], 90, log, `${face}/H/chain`, [-1, 0]);
@@ -1061,9 +1088,7 @@
     // §F7: the plates / members of a curtain wall the cut passes through, on their own layer (the reader's section rules read S-SLAB / A-ROOF / A-SECT only, so they add no reading)
     if (model.sectionCurtain !== false) { let nc = 0; (model.curtains || []).forEach(cw => cw.parts.forEach(pt => cutX(pt, X).forEach(ct => { const pts = ct.map(p => [mm(p[0]), mm(p[1])]); doc.lwpoly('A-WALL-CURT', pts, true, tag(pt.guid)); nc++; const z = pts.map(p => p[1]); zlo.push(Math.min(...z)); zhi.push(Math.max(...z)); }))); if (nc) log.add(`§SECTION_CURTAIN contours=${nc}`); }
     log.add(`§SECTION contours={'S-SLAB': ${n['S-SLAB']}, 'A-ROOF': ${n['A-ROOF']}, 'A-SECT': ${n['A-SECT']}}`);
-    const gEl = model.storeys.find(s => s.name === model.grid_storey).elev, levels = model.storeys.filter(s => s.elev >= gEl).map(s => [s.name.toUpperCase(), s.elev]);
-    if (model.roof_top !== null) levels.push(['T/ROOF', model.roof_top]);
-    levels.sort((a, b) => a[1] - b[1]);
+    const gEl = model.storeys.find(s => s.name === model.grid_storey).elev, levels = levelsStated(model, log, 'SECTION');   // D26
     const env = buildingEnv(model, model.grid_storey, gEl), H0 = mm(env[2]), H1 = mm(env[3]);   // C3
     levelsDrawn(doc, log, 'SECTION', levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
     const zs = levels.map(l => mm(l[1]));

@@ -131,8 +131,20 @@
   function wallRects(ops) {
     return (ops || []).filter(function (o) { return o.op_type === 'DXF_WALL' && o.params && o.params.rect; }).map(function (o) {
       var r = o.params.rect, w = r[2] - r[0], h = r[3] - r[1];
-      return { rect: r, handle: o.params.handle, layer: o.params.layer, thkAxis: w <= h ? 'x' : 'y', along: w <= h ? 'y' : 'x', len: Math.max(w, h), axisPos: w <= h ? (r[0] + r[2]) / 2 : (r[1] + r[3]) / 2, infill: !!o.params.infill };
+      return { rect: r, handle: o.params.handle, layer: o.params.layer, thkAxis: w <= h ? 'x' : 'y', along: w <= h ? 'y' : 'x', len: Math.max(w, h), axisPos: w <= h ? (r[0] + r[2]) / 2 : (r[1] + r[3]) / 2, infill: !!o.params.infill, split: !!o.params.split_from };
     }).filter(function (w) { return !w.infill; });
+  }
+  // §F7 D29: the pieces one drawn outline was split into (`split_from`, same handle) that run the same way are, for G1, also that outline's rectangle: a 257 mm wall with a 90 mm notch at
+  // one end is one wall on the grid (axis = the outline's), not two strips. Returns one synthetic rect per outline with >= 2 such pieces ({outline: true}).
+  function outlineRects(ws) {
+    var g = {}, out = [];
+    ws.forEach(function (w) { if (w.split) (g[w.handle + '|' + w.thkAxis] = g[w.handle + '|' + w.thkAxis] || []).push(w); });
+    Object.keys(g).sort().forEach(function (k) {
+      var ps = g[k]; if (ps.length < 2) return;
+      var r = [Math.min.apply(null, ps.map(function (w) { return w.rect[0]; })), Math.min.apply(null, ps.map(function (w) { return w.rect[1]; })), Math.max.apply(null, ps.map(function (w) { return w.rect[2]; })), Math.max.apply(null, ps.map(function (w) { return w.rect[3]; }))];
+      out.push({ rect: r, handle: ps[0].handle, layer: ps[0].layer, thkAxis: ps[0].thkAxis, along: ps[0].along, len: Math.max(r[2] - r[0], r[3] - r[1]), axisPos: ps[0].thkAxis === 'x' ? (r[0] + r[2]) / 2 : (r[1] + r[3]) / 2, outline: true });
+    });
+    return out;
   }
   function envelopeOf(ws) {
     if (!ws.length) return null;
@@ -268,7 +280,7 @@
 
     // ---------- grid + plan dimension strings (PLAN with role + units) ----------
     var gridOf = {}, allWs = [];                                                      // L2.3 D4: stray grid tested against every plan's walls (L1.1 R2: one building grid)
-    plans.forEach(function (s) { if (input.plan_ops && input.plan_ops[s.id]) allWs = allWs.concat(wallRects(input.plan_ops[s.id])); });
+    plans.forEach(function (s) { if (input.plan_ops && input.plan_ops[s.id]) { var w0 = wallRects(input.plan_ops[s.id]); allWs = allWs.concat(w0, outlineRects(w0)); } });   // D29: + each split outline
     // L2.9: column centres are grid evidence too (structural convention: grid lines run through column centres; std2d C2/LB4). The centre = bbox centre of a closed
     // polyline on a column layer (settings.layers.cols, default S-COLS / A-COLS), metres. A set with no column layer is judged exactly as before.
     var colL = (get(settings, 'layers.cols') && Array.isArray(settings.layers.cols)) ? settings.layers.cols : ['S-COLS', 'A-COLS'], allCols = [];
@@ -310,12 +322,14 @@
         if (!hit) hit = allCols.some(function (c) { return Math.abs((L.axis === 'x' ? c.x : c.y) - P) <= tolG + EPS; });   // L2.9
         if (!hit) block('QF:grid_off_axis', s.id, L.handles, gpos(L), s.id + ': grid line ' + (L.label || '?') + ' at ' + L.axis + '=' + r6(P) + ' m is on no wall axis or face (tol ' + tolG + ' m)', { label: L.label, pos_m: r6(P) });
       });
+      var outl = outlineRects(ws);
       if (has('grid.min_wall_len')) ['x', 'y'].forEach(function (ax) {                // L2.3 D4: exterior envelope axes only (the reader cannot know load-bearing)
         var bw = ws.filter(function (w) { var r = w.rect, ext = ax === 'x' ? Math.abs(r[0] - env[0]) <= tolG + EPS || Math.abs(r[2] - env[2]) <= tolG + EPS : Math.abs(r[1] - env[1]) <= tolG + EPS || Math.abs(r[3] - env[3]) <= tolG + EPS; return w.thkAxis === ax && ext && w.len >= settings.grid.min_wall_len - EPS; }).sort(function (a, b) { return a.axisPos - b.axisPos || hnum(a.handle) - hnum(b.handle); });
         var cl = []; bw.forEach(function (w) { var c = cl[cl.length - 1]; if (c && w.axisPos - c[c.length - 1].axisPos <= tolG + EPS) c.push(w); else cl.push([w]); });
         cl.forEach(function (c) {
           var P = c.reduce(function (n, w) { return n + w.axisPos; }, 0) / c.length;
           if (G.lines.some(function (L) { return L.axis === ax && Math.abs(L.pos * k - P) <= tolG + EPS; })) return;
+          if (c.every(function (w) { var o = w.split && outl.find(function (q) { return q.handle === w.handle && q.thkAxis === w.thkAxis; }); return o && G.lines.some(function (L) { return L.axis === ax && Math.abs(L.pos * k - o.axisPos) <= tolG + EPS; }); })) return;   // D29: on its outline's grid line
           var w0 = c[0], mid = ax === 'x' ? { x: r6(P / k), y: r6((w0.rect[1] + w0.rect[3]) / 2 / k) } : { x: r6((w0.rect[0] + w0.rect[2]) / 2 / k), y: r6(P / k) };
           block('QF:grid_missing', s.id, c.map(function (w) { return w.handle; }), mid, s.id + ': exterior wall axis ' + ax + '=' + r6(P) + ' m (' + c.length + ' piece' + (c.length > 1 ? 's' : '') + ' on ' + c.map(function (w) { return w.layer; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(',') + ') has no grid line (G1)', { axis: ax, pos_m: r6(P), walls: c.map(function (w) { return w.handle; }) });
         });
