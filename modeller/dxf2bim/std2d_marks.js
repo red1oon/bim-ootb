@@ -44,7 +44,7 @@
       if (scopeSheet === 'KEY') txt = R.whole[view];   // the markings (WALLTOP handles, tags) are derived on the whole plan: same handles as every scope sheet
       marks.push({ text: '@SET=' + set }, { text: '@VIEW=' + kind }, { text: '@UNITS=mm' }, { text: '@NAME=' + view });
       if (R.wing) marks.push({ text: '@FRAME=' + R.wing.angle + ',' + mm3(R.wing.ox) + ',' + mm3(R.wing.oy) });   // §L1.16: the sheet is drawn in the wing's own frame
-      if (kind === 'PLAN' && M.doorDefaults && M.doorDefaults.length && M._doorStd && /A-DOOR-DFLT/.test(txt)) marks.push({ text: '@DEFAULT=door.operation_standard,SINGLE_SWING_' + M._doorStd.side }, { text: '@LAYER=A-DOOR-DFLT,opening' });   // §F7 D18: the standard the yellow doors were drawn from
+      if (kind === 'PLAN' && /A-DOOR-DFLT/.test(txt)) { if (M.doorDefaults && M._doorStd && M.doorDefaults.some(g => txt.indexOf(g) >= 0)) marks.push({ text: '@DEFAULT=door.operation_standard,SINGLE_SWING_' + M._doorStd.side }); marks.push({ text: '@LAYER=A-DOOR-DFLT,opening' }); }   // §F7 D18: the standard the yellow doors were drawn from
       if (scopeSheet === 'KEY') marks.push({ text: '@SCOPE=KEY' });
       if (kind === 'PLAN') {
         const st = R.views.plan.find(v => v.view === view).storey, lv3 = r3(st.elev);

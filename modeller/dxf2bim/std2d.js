@@ -702,7 +702,7 @@
       if (c.cls !== 'IfcDoor') return;
       const parts = polys[c.guid] || []; if (parts.length < 2) return;
       const sw_ = doorSwing(c), op = model.door_ops[c.guid], code = (sw_ ? doorHinge(c, op, sw_) : doorHingeIfc(c, op))[0];
-      if (code === 'ok') return;
+      if (code === 'ok' || code === 'GAP:door_handing_conflict' && doorHingeIfc(c, op)[0] === 'ok') return;   // §F7 D19: a handing conflict is drawn (yellow)
       const axisRect = P => P.length === 4 && P.every((q, i) => { const n = P[(i + 1) % 4]; return Math.abs(q[0] - n[0]) <= 0.001 || Math.abs(q[1] - n[1]) <= 0.001; });
       if (!parts.every(axisRect)) { log.add(`§DOOR_NOSWING_SKIP guid=${c.guid} reason=part_not_axis_rect`); return; }
       const xs = [].concat(...parts.map(P => P.map(q => q[0]))), ys = [].concat(...parts.map(P => P.map(q => q[1]))), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -756,7 +756,7 @@
       doc.lwpoly(layer, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true, tag(e.guid)); nO[pos]++;
     }
     log.add(`§PLAN openings above cut=${nO.above} (dashed) below cut=${nO.below}`);
-    const dflt = [], dfltAt = {};   // §F7 D18 doors drawn from the building's standard (yellow); a default is drawn once per footprint
+    const dflt = [], dfltAt = {}, conf = [];   // conf: §F7 D19 doors whose mesh contradicts their stated handing (yellow)   // §F7 D18 doors drawn from the building's standard (yellow); a default is drawn once per footprint
     for (const d of model.els.filter(e => e.cls === 'IfcDoor' && e.storey === storey.name)) {
       const op = model.door_ops[d.guid], cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2; let basis = '', code, res;
       const oY = op && op.x && op.y ? [op.y[0], op.y[1]] : null, angled = oY && horizFrame([op.x[0], op.x[1]], oY) && !axisAligned([op.x[0], op.x[1]], oY);
@@ -781,6 +781,15 @@
         var ta = sw_[0], sgn = sw_[1];
         log.add(`§DOOR guid=${d.guid} swing_axis=${ta} swing_sign=${sgn > 0 ? '+1' : '-1'} (R9 leaf offset)`);
         [code, res] = doorHinge(d, op, sw_);
+        if (code === 'GAP:door_handing_conflict') {   // §F7 D19: the stated handing outranks the R9 inference, drawn YELLOW (unchecked), the conflict stated; unplaceable keeps the GAP
+          const [ic, ir] = doorHingeIfc(d, op);
+          if (ic === 'ok') {
+            drawLeaf(doc, d, ir, 'A-DOOR-DFLT'); conf.push(d.guid);
+            log.add(`§DOOR_HANDING_CONFLICT guid=${d.guid} ${res} (finding)`);
+            log.add(`§DOOR_DEFAULT guid=${d.guid} op_stated=${op.op} drawn=${op.op} leaves=1 layer=A-DOOR-DFLT basis="handing conflict: the mesh leaf lies on the -Y side, the IFC opens +Y; drawn as the IFC states (§L1.12)" (D19)`);
+            continue;
+          }
+        }
       }
       if (code === 'ok') {
         const H = res.hinge, w = res.width, Y = res.Y, C = res.closed, hm = [mm(H[0]), mm(H[1])], O = [H[0] + w * Y[0], H[1] + w * Y[1]];
@@ -812,6 +821,11 @@
       const sd = doorStandard(model); model.doorDefaults = (model.doorDefaults || []).concat(dflt);
       doc.text('A-ANNO-NOTE', `YELLOW = DEFAULT: ${dflt.length} DOOR(S) THE MODEL GIVES NO OPERATION FOR, DRAWN FROM THIS BUILDING'S STANDARD (${sd.left} LEFT / ${sd.right} RIGHT OF ${sd.n} STATED; SINGLE LEAVES ${fx(sd.minW * 1000, 0)}-${fx(sd.maxW * 1000, 0)} MM)`, [E[0], E[2] - (BUBBLE_C + 20) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
       log.add(`§DOOR_STANDARD storey='${storey.name}' defaults=${dflt.length} stated=${sd.n} left=${sd.left} right=${sd.right} side=${sd.side} widest_single=${fx(sd.maxW * 1000, 0)}mm`);
+    }
+    if (conf.length) {   // §F7 D19
+      model.doorConflicts = (model.doorConflicts || []).concat(conf);
+      doc.text('A-ANNO-NOTE', `YELLOW = UNCHECKED: ${conf.length} DOOR(S) WHOSE LEAF IN THE MODEL LIES ON THE OTHER SIDE THAN THE STATED SWING, DRAWN AS THE IFC STATES`, [E[0], E[2] - (BUBBLE_C + (dflt.length ? 26 : 20)) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
+      log.add(`§DOOR_CONFLICTS storey='${storey.name}' drawn_yellow=${conf.length} (D19)`);
     }
     doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
@@ -994,6 +1008,7 @@
     if (!R.views.roof) reasons.push('no roof storey above the grid storey: no roof plan, and the importer needs one to qualify the set');
     row('Sheets written', Object.keys(R.files).length, Object.keys(R.files).map(f => f.replace(/^.*?_(.*)_std\.dxf$/, '$1')).join(', '), 'ok');
     if (M.doorDefaults && M.doorDefaults.length) { const sd = M._doorStd; row('Doors drawn from the building standard (yellow, A-DOOR-DFLT)', M.doorDefaults.length, `${sd.left} LEFT / ${sd.right} RIGHT of ${sd.n} stated; single leaves ${fx(sd.minW * 1000, 0)}..${fx(sd.maxW * 1000, 0)} mm`, 'default'); }
+    if (M.doorConflicts && M.doorConflicts.length) row('Doors whose model leaf contradicts the stated swing (yellow, A-DOOR-DFLT, D19)', M.doorConflicts.length, 'drawn as the IFC states (§L1.12); the mesh leaf lies on the other side: a model finding (§DOOR_HANDING_CONFLICT)', 'default');
     const codes = Object.keys(gapN).sort();
     if (codes.length) row('Gaps (listed, none filled in)', codes.map(c => c.replace('GAP:', '') + ' ' + gapN[c]).join(', '), 'log lines §GAP', 'gap');
     return { drawable: reasons.length === 0, reasons, rows };
