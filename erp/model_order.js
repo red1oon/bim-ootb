@@ -164,10 +164,9 @@
       calculateOrderTaxTotal(trx, o);
       o = trx.get('c_order', o.c_order_id);
       if (D(o.grandtotal).signum() !== 0 && (o.paymentrule === 'P' || o.paymentrule === 'D')) {     // :1672-1686 createPaySchedule
-        var term = trx.get('c_paymentterm', o.c_paymentterm_id);
-        if (!term) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }
-        if (trx.find('c_payschedule', { c_paymentterm_id: o.c_paymentterm_id }).length) { T.msg(trx, 'MPaymentTerm.applyOrder schedule (MOrder.java:2054) not ported — named'); return 'IN'; }
-      }
+        if (!createPaySchedule(trx, 'c_order', o)) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }
+        o = trx.get('c_order', o.c_order_id);
+      } else if (trx.find('c_orderpayschedule', { c_order_id: o.c_order_id }).length) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }   // :1679-1685
       var cm = creditOrder(trx, o, d); if (cm) { T.msg(trx, cm); return 'IN'; }              // :1688-1697
       m = fire(trx, 'AFTER_PREPARE', 'c_order', o); if (m) { T.msg(trx, m); return 'IN'; }
       trx._justPrepared = 'c_order:' + o.c_order_id;
@@ -905,6 +904,64 @@
     return S;
   })(ML);
 
-  return Object.assign({}, PXO, { ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
+  // ══ Pay schedule, ONE implementation for order and invoice (W-POST-CREDITMEMO T-PAYSCHED, W-ORDER-PAYSCHED; bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §51/§54):
+  //   MOrder/MInvoice.createPaySchedule (MOrder :2054-2077, MInvoice :1911-1934) ∘ MPaymentTerm.applyOrder/apply + apply(Order)Schedule/NoSchedule (:204-358) ∘ MOrderPaySchedule/MInvoicePaySchedule(doc, schedule)
+  //   (:149-182 both) ∘ validatePaySchedule (MOrder :1146-1178, MInvoice :1107-1139). The per-row afterSave validate collapses to ONE validate after the rows + remainder: same end state.
+  var PS = { c_order: { sched: 'c_orderpayschedule', key: 'c_order_id', date: 'dateordered' }, c_invoice: { sched: 'c_invoicepayschedule', key: 'c_invoice_id', date: 'dateinvoiced' } };
+  function psAddDays(d, n) { var t = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }   // TimeUtil.addDays
+  function psRows(trx, table, id) { var S = PS[table], w = {}; w[S.key] = id; return trx.find(S.sched, w); }
+  function validatePaySchedule(trx, table, doc) {
+    var S = PS[table], rows = psRows(trx, table, doc[S.key]).filter(function (r) { return r.isactive !== 'N'; });
+    if (!rows.length) { if (Y(doc.ispayschedulevalid)) trx.update(table, doc, { ispayschedulevalid: 'N' }); return false; }
+    var total = Z; rows.forEach(function (r) { if (r.dueamt != null) total = total.add(D(r.dueamt)); });
+    var valid = D(doc.grandtotal).compareTo(total) === 0, v = valid ? 'Y' : 'N';
+    if ((doc.ispayschedulevalid || 'N') !== v) trx.update(table, doc, { ispayschedulevalid: v });
+    rows.forEach(function (r) { if ((r.isvalid || 'N') !== v) trx.update(S.sched, r, { isvalid: v }); });
+    return valid;
+  }
+  function createPaySchedule(trx, table, doc) {
+    if (!nz(doc.c_paymentterm_id)) return false;
+    var pt = trx.get('c_paymentterm', doc.c_paymentterm_id); if (!pt) return false;
+    var sched = trx.find('c_payschedule', { c_paymentterm_id: pt.c_paymentterm_id }, ['netdays']).filter(function (r) { return r.isactive !== 'N'; });
+    if (psRows(trx, table, doc[PS[table].key]).length) return sched.length === 0 ? false : validatePaySchedule(trx, table, doc);
+    var isValid = applyPaymentTerm(trx, table, pt, doc, sched);
+    return sched.length === 0 ? true : isValid;
+  }
+  function applyPaymentTerm(trx, table, pt, doc, sched) {
+    var S = PS[table], id = doc[S.key];
+    if (!(doc.paymentrule === 'P' || doc.paymentrule === 'D') || D(doc.grandtotal).signum() === 0) return false;
+    var dropRows = function () { psRows(trx, table, id).forEach(function (r) { trx.del(S.sched, r); }); }, fresh = function () { return trx.get(table, id); };
+    if (!Y(pt.isvalid) || !sched.length) {                                                   // apply(Order)NoSchedule
+      dropRows(); var f = fresh(), ch = {};
+      if (String(f.c_paymentterm_id) !== String(pt.c_paymentterm_id)) ch.c_paymentterm_id = pt.c_paymentterm_id;
+      if (Y(f.ispayschedulevalid)) ch.ispayschedulevalid = 'N';
+      if (Object.keys(ch).length) trx.update(table, f, ch);
+      return false;
+    }
+    dropRows();                                                                              // apply(Order)Schedule
+    var scale = T.precisionOf(trx, doc.c_currency_id), remainder = D(doc.grandtotal), last = null, day = String(doc[S.date]).slice(0, 10);
+    sched.forEach(function (ps) {
+      var due = D(doc.grandtotal).multiply(D(ps.percentage)).divide(D(100), scale, HU), disc = due.multiply(D(ps.discount || 0)).divide(D(100), scale, HU), f = { c_payschedule_id: ps.c_payschedule_id, ad_client_id: doc.ad_client_id, ad_org_id: doc.ad_org_id,
+        dueamt: N(due), discountamt: N(disc), isvalid: 'Y', duedate: psAddDays(day, Number(ps.netdays || 0)) + ' 00:00:00', discountdate: psAddDays(day, Number(ps.discountdays || 0)) + ' 00:00:00', processed: 'N' };
+      f[S.key] = id; last = trx.insert(S.sched, ML.newPO(trx, S.sched, f)); remainder = remainder.subtract(due); });
+    if (remainder.signum() !== 0 && last) { var lr = psRows(trx, table, id).slice(-1)[0]; trx.update(S.sched, lr, { dueamt: N(D(lr.dueamt).add(remainder)) }); }
+    var f2 = fresh(); if (String(f2.c_paymentterm_id) !== String(pt.c_paymentterm_id)) { trx.update(table, f2, { c_paymentterm_id: pt.c_paymentterm_id }); f2 = fresh(); }
+    return validatePaySchedule(trx, table, f2);
+  }
+  // copy C_OrderPaySchedule -> C_InvoicePaySchedule: MOrder.createInvoice :2566-2577 (percent null) / MInvoice.updateFrom :3402-3432 (proportional DueAmt when the totals differ); PO.copyValues + C_Invoice_ID/AD_Org/Processing/IsActive
+  function copyOrderPaySchedule(trx, orderId, invoiceId, order) {
+    var opss = trx.find('c_orderpayschedule', { c_order_id: orderId }); if (!opss.length) return true;
+    var inv = trx.get('c_invoice', invoiceId), percent = null, scale = 0;
+    if (order) { var ogt = D(order.grandtotal), igt = D(inv.grandtotal); if (ogt.compareTo(igt) !== 0) percent = igt.divide(ogt, 10, HU); scale = T.precisionOf(trx, order.c_currency_id); }
+    opss.forEach(function (ops) {
+      var f = {}; ML.copyValues(trx, 'c_invoicepayschedule', ops, { set: function (c, v) { f[c] = v; } }, ops.ad_client_id, ops.ad_org_id);
+      if (percent != null) { var p = D(ops.dueamt).multiply(percent); if (p.scale() > scale) p = p.setScale(scale, HU); f.dueamt = N(p); }
+      Object.assign(f, { c_invoice_id: invoiceId, ad_org_id: ops.ad_org_id, processing: ops.processing, isactive: ops.isactive });
+      trx.insert('c_invoicepayschedule', ML.newPO(trx, 'c_invoicepayschedule', f));
+    });
+    validatePaySchedule(trx, 'c_invoice', trx.get('c_invoice', invoiceId));                // MInvoicePaySchedule.afterSave -> parent.validatePaySchedule
+    return true;
+  }
+  return Object.assign({}, PXO, { createPaySchedule: createPaySchedule, validatePaySchedule: validatePaySchedule, copyOrderPaySchedule: copyOrderPaySchedule, ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
     setReversal: setReversal, isReversal: isReversal, idNum: idNum, backDateAllowed: backDateAllowed, backDateCostingNamed: backDateCostingNamed, MInOut_copyFrom: MInOut_copyFrom });
 });
