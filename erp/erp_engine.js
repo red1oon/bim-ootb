@@ -512,6 +512,22 @@ function completeInventory(inventory, lines, opts) {
   return { ok: true, ops: ops };
 }
 
+// replenishQtyToOrder — the ONE QtyToOrder calc of the Replenish Report (ReplenishReportProduction.fillTable :218-438 = ReplenishReport :294-327; ERP_FRIENDLY_OPS_LENS.md §64): the process port
+// (processes/ReplenishReportProduction.js) and the POS lens (pos_core.js replenishSuggest) both call it. Exact decimals (Postgres NUMERIC), inputs decimal strings/numbers, result a decimal string.
+//   type '1' reorder below min :326-336 · type '2' maintain max :339-345 · else (custom '9') 0 until the class sets it · Order_Min :348-356 (only 0 < q < Order_Min) · Order_Pack :359-366
+//   (q - MOD(q,pack) + pack where MOD <> 0 and q > 0; MOD = truncated remainder, sign of the dividend). The T_Replenish "QtyToOrder < 1" delete (:430-436) stays with the caller.
+function replenishQtyToOrder(p) {
+  var f = ['onHand', 'reserved', 'ordered', 'levelMin', 'levelMax', 'orderMin', 'orderPack'].map(function (k) { return _dec(p[k] == null ? 0 : p[k]); });
+  var K = f.reduce(function (m, x) { return Math.max(m, x.k); }, 0), U = function (x) { return x.n * 10n ** BigInt(K - x.k); };
+  var oh = U(f[0]), rs = U(f[1]), od = U(f[2]), mn = U(f[3]), mx = U(f[4]), om = U(f[5]), op = U(f[6]), avail = oh - rs + od, q = 0n;
+  if (p.type === '1') q = avail <= mn ? mx - oh + rs - od : 0n;
+  else if (p.type === '2') q = mx - oh + rs - od;
+  if (q < om && q > 0n) q = om;
+  if (op !== 0n && q % op !== 0n && q > 0n) q = q - (q % op) + op;
+  var neg = q < 0n, a = neg ? -q : q, s = a.toString().padStart(K + 1, '0'), ip = s.slice(0, s.length - K), fp = K ? s.slice(s.length - K).replace(/0+$/, '') : '';
+  return (neg ? '-' : '') + ip + (fp ? '.' + fp : '');
+}
+
 // ── TAX (prompts/SQLiteIDEMPIERE.md §45, F11) — Witness: M3 T1 + the tax keys of every scenario ─────────────────────────────────────
 // Integer-exact decimal helpers (BigInt): amounts in minor units (cents at precision 2); rates as decimal strings.
 function _dec(str) { var t = String(str == null ? '0' : str).trim(), neg = t[0] === '-'; if (neg) t = t.slice(1); var p = t.split('.'), f = p[1] || ''; return { n: BigInt((neg ? '-' : '') + (p[0] || '0') + f), k: f.length }; }
@@ -1389,7 +1405,7 @@ return {
   faRegisterAsset: faRegisterAsset, faCompleteAddition: faCompleteAddition, faBuildDepreciation: faBuildDepreciation, faCompleteDepreciationEntry: faCompleteDepreciationEntry, faCompleteDisposal: faCompleteDisposal, faCompleteReval: faCompleteReval, faMonthEnd: _faMonthEnd,
   resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
   match: match, buildDoc: buildDoc, DOC_SPECS: DOC_SPECS, explodeBOM: explodeBOM,
-  movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting,
+  movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting, replenishQtyToOrder: replenishQtyToOrder,
   VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt,
   movementTypeOf: movementTypeOf, stockMoves: stockMoves
 };
