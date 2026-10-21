@@ -384,18 +384,56 @@
   }
   // §F7 D16: the gap of a door in an angled wall, a rectangle in the door's placement frame: along X = centre +- OverallWidth / 2, across Y = the host contour's extent (vertices within
   // 1 m along X, else all) +- GAP_ACROSS. null = no frame / width (the gap stays a listed GAP as before)
-  function rotatedGap(model, e, contours) {
-    const op = model.door_ops[e.guid]; if (!op || !op.x || !op.y || !op.w || !contours.length) return null;
-    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y)) return null;
-    const cx = (e.x0 + e.x1) / 2 * 1000, cy = (e.y0 + e.y1) / 2 * 1000, sc = cx * X[0] + cy * X[1], tcen = cx * Y[0] + cy * Y[1], w = Number(op.w) * 1000;
+  function rotatedGap(model, e, contours, fr) {
+    let X, Y, sc, w; const cx = (e.x0 + e.x1) / 2 * 1000, cy = (e.y0 + e.y1) / 2 * 1000;
+    if (fr) { X = fr.X; Y = fr.Y; sc = (fr.s0 + fr.s1) / 2; w = fr.s1 - fr.s0; if (!contours.length || !(w > 0)) return null; }   // §F7 D21: the window's frame from its host edge
+    else {
+      const op = model.door_ops[e.guid]; if (!op || !op.x || !op.y || !op.w || !contours.length) return null;
+      X = [op.x[0], op.x[1]]; Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y)) return null; sc = cx * X[0] + cy * X[1]; w = Number(op.w) * 1000;
+    }
+    const tcen = cx * Y[0] + cy * Y[1];
     const pts = [].concat(...contours), S = p => p[0] * X[0] + p[1] * X[1], T = p => p[0] * Y[0] + p[1] * Y[1];
     let near = pts.filter(p => Math.abs(S(p) - sc) <= w / 2 + 1000); if (near.length < 2) near = pts;
     const ts = near.map(T), t0 = Math.min(...ts, tcen) - GAP_ACROSS * 1000, t1 = Math.max(...ts, tcen) + GAP_ACROSS * 1000, s0 = sc - w / 2, s1 = sc + w / 2;
     const P = (a, b) => [a * X[0] + b * Y[0], a * X[1] + b * Y[1]], R = [[P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1), P(s0, t0)]], out = []; let changed = false;
-    for (const c of contours) { let D; try { D = PC.difference(toPoly(c), R); } catch (x) { D = [toPoly(c)]; }
-      const a0 = polyArea(toPoly(c)), a1 = D.reduce((a, q) => a + polyArea(q), 0); if (Math.abs(a0 - a1) > 1) changed = true;
+    for (const c of contours) {   // a removed piece counts as in the axis path (overlapPieces): area > GAP_MIN_AREA and wider than PT_MERGE along the opening; else the contour is kept as is (no float slivers)
+      let I; try { I = PC.intersection(toPoly(c), R); } catch (x) { I = []; }
+      const real = I.some(q => { const ss = q[0].map(S); return polyArea(q) > GAP_MIN_AREA && Math.max(...ss) - Math.min(...ss) > PT_MERGE * 1000; });
+      if (!real) { out.push(c); continue; }
+      let D; try { D = PC.difference(toPoly(c), R); } catch (x) { D = [toPoly(c)]; } changed = true;
       D.forEach(poly => { if (polyArea(poly) < GAP_MIN_AREA) return; out.push(poly[0].slice(0, -1).map(p => [Number(p[0].toFixed(2)), Number(p[1].toFixed(2))])); }); }
     return { out, changed, X, s0: s0 / 1000, s1: s1 / 1000, t0: t0 / 1000, t1: t1 / 1000 };
+  }
+  // §F7 D21: a window in an angled wall has no placement axes: its frame is the direction of a host contour EDGE (>= 100 mm), the one across which the window's own
+  // mesh is THINNEST (a window is thin across its wall; a jamb return or an end face is not its wall's direction), X = that edge's direction; along X = the host wall's
+  // void at the window's mid height in that frame (as hole() does on an axis), else the window's own mesh on X. The gap is then cut as D16's rotated rectangle.
+  // null = no mesh / no edge (the GAP stays)
+  function edgeGap(model, e, hw, contours, cache) {
+    if (!contours.length || !e.v || !e.v.length) return null;
+    const cx = (e.x0 + e.x1) / 2 * 1000, cy = (e.y0 + e.y1) / 2 * 1000, nv = e.v.length / 3, wx = [], wy = []; let best = null;
+    for (let i = 0; i < nv; i++) { wx.push(e.v[i * 3] + e.c[0]); wy.push(e.v[i * 3 + 1] + e.c[1]); }
+    const across = Y => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < nv; i++) { const t = wx[i] * Y[0] + wy[i] * Y[1]; if (t < lo) lo = t; if (t > hi) hi = t; } return hi - lo; };
+    for (const c of contours) for (let i = 0; i < c.length; i++) {
+      const a = c[i], b = c[(i + 1) % c.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 100) continue;
+      const X = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], th = across([-X[1], X[0]]);
+      if (!best || th < best.th - 1e-6) best = { th, X, d: 0 };
+    }
+    if (!best) return null;
+    const X = best.X, Y = [-X[1], X[0]], S = p => p[0] * X[0] + p[1] * X[1], T = p => p[0] * Y[0] + p[1] * Y[1], sc = S([cx / 1000, cy / 1000]);
+    let s0 = null, s1 = null, src = 'host_void';
+    const zm = Number(((e.z0 + e.z1) / 2).toFixed(6)), key = hw.guid + '@' + zm; if (!(key in cache)) cache[key] = sliceRings(hw, zm);
+    if (cache[key]) {
+      const iv = []; cache[key].forEach(r => ringIntervals(r.map(p => [S(p), T(p)]), 0, T([cx / 1000, cy / 1000])).forEach(i => iv.push(i)));
+      const merged = []; iv.sort((a, b) => a[0] - b[0]).forEach(i => { const l = merged[merged.length - 1]; if (l && i[0] <= l[1]) l[1] = Math.max(l[1], i[1]); else merged.push(i.slice()); });
+      const left = merged.filter(i => i[1] <= sc).map(i => i[1]), right = merged.filter(i => i[0] >= sc).map(i => i[0]);
+      if (!merged.some(i => i[0] <= sc && sc <= i[1]) && left.length && right.length) { s0 = Math.max(...left) * 1000; s1 = Math.min(...right) * 1000; }
+    }
+    if (s0 === null) {   // no void at the window's height: the window's own mesh along X
+      src = 'window_mesh'; s0 = Infinity; s1 = -Infinity;
+      for (let i = 0; i < e.v.length / 3; i++) { const v = (e.v[i * 3] + e.c[0]) * X[0] + (e.v[i * 3 + 1] + e.c[1]) * X[1]; if (v < s0) s0 = v; if (v > s1) s1 = v; }
+      s0 *= 1000; s1 *= 1000;
+    }
+    return { X, Y, s0, s1, thick: best.th * 1000, src };
   }
   function planOpenings(model, storey, cutZ, cutWalls, polys, log) {
     const res = [];
@@ -421,8 +459,9 @@
       const rect = ax === 'y' ? [mm(a0), mm(hw.y0 - GAP_ACROSS), mm(a1), mm(hw.y1 + GAP_ACROSS)] : [mm(hw.x0 - GAP_ACROSS), mm(a0), mm(hw.x1 + GAP_ACROSS), mm(a1)];
       const k = ax === 'y' ? 0 : 1;
       if (!planOrthogonal(polys[h] || [], rect, k)) {
-        const rg = e.cls === 'IfcDoor' ? rotatedGap(model, e, polys[h] || []) : null;   // §F7 D16: a door in an angled wall: the gap in the door's own frame
-        if (rg) { polys[h] = rg.out; log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=${rg.changed ? 'drawn_rotated' : 'in_cut'} frame=(${fx(rg.X[0], 6)},${fx(rg.X[1], 6)}) along=${fx(rg.s0 * 1000, 2)}..${fx(rg.s1 * 1000, 2)} across=${fx(rg.t0 * 1000, 2)}..${fx(rg.t1 * 1000, 2)} (D16)`); res.push([e, pos]); continue; }
+        const ef = e.cls === 'IfcWindow' ? edgeGap(model, e, hw, polys[h] || [], model._d21 || (model._d21 = {})) : null;   // §F7 D21: a window: the frame of the host edge it sits on
+        const rg = e.cls === 'IfcDoor' ? rotatedGap(model, e, polys[h] || []) : ef ? rotatedGap(model, e, polys[h] || [], ef) : null;   // §F7 D16: a door in an angled wall: the gap in the door's own frame
+        if (rg) { polys[h] = rg.out; log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=${rg.changed ? 'drawn_rotated' : 'in_cut'} frame=(${fx(rg.X[0], 6)},${fx(rg.X[1], 6)}) along=${fx(rg.s0 * 1000, 2)}..${fx(rg.s1 * 1000, 2)} across=${fx(rg.t0 * 1000, 2)}..${fx(rg.t1 * 1000, 2)} ${ef ? 'frame_from=host_edge window_across=' + fx(ef.thick, 1) + 'mm along_from=' + ef.src + ' (D21)' : '(D16)'}`); res.push([e, pos]); continue; }
         log.gap('GAP:opening_host_not_orthogonal', g, `host=${h}: its plan contour inside the gap has an edge neither X- nor Y-aligned`); res.push([e, pos]); continue;
       }
       const [np, changed] = subtractGap(polys[h] || [], rect, k); polys[h] = np;
