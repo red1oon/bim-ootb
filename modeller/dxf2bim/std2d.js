@@ -530,7 +530,7 @@
     // §F7 D16: any horizontal orthogonal frame (an angled wall's door), not only axis-aligned; the projections below hold at any angle
     if (!horizFrame(X, Y) || !op.w) return ['GAP:door_swing', 'leaf offset not found (R9); placement X / Y not a horizontal orthogonal frame or no OverallWidth, no IFC-convention swing (§L1.12)'];
     const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
-    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), left = op.op.endsWith('LEFT'), sh = left ? sc - w / 2 : sc + w / 2;
+    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = d._tc !== undefined ? d._tc : (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), left = op.op.endsWith('LEFT'), sh = left ? sc - w / 2 : sc + w / 2;   // _tc: §F7 D23
     return ['ok', { hinge: [sh * X[0] + tc * Y[0], sh * X[1] + tc * Y[1]], width: w, X, Y, closed: left ? X : [-X[0], -X[1]] }];
   }
 
@@ -539,7 +539,7 @@
     if (!(op.x && op.y && op.z) || Math.max(Math.abs(op.z[0]), Math.abs(op.z[1]), Math.abs(op.z[2] - 1)) > VERTICAL_TOL) return ['GAP:door_hinge', `double door: placement axes missing or not vertical (D17); no arc drawn`];
     const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y) || !op.w) return ['GAP:door_hinge', 'double door: no horizontal orthogonal frame or no OverallWidth (D17); no arc drawn'];
     const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
-    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), P = a => [a * X[0] + tc * Y[0], a * X[1] + tc * Y[1]];
+    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = d._tc !== undefined ? d._tc : (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), P = a => [a * X[0] + tc * Y[0], a * X[1] + tc * Y[1]];   // _tc: §F7 D23
     return ['ok', { leaves: [{ hinge: P(sc - w / 2), width: w / 2, X, Y, closed: X }, { hinge: P(sc + w / 2), width: w / 2, X, Y, closed: [-X[0], -X[1]] }] }];
   }
 
@@ -698,6 +698,19 @@
     const ac = Math.atan2(C[1], C[0]) * 180 / Math.PI, ao = Math.atan2(Y[1], Y[0]) * 180 / Math.PI, ccw = C[0] * Y[1] - C[1] * Y[0] > 0, mod = a => ((a % 360) + 360) % 360, st = ccw ? ac : ao, en = ccw ? ao : ac;
     doc.arc(layer, hm, mm(w), Number(mod(st).toFixed(6)), Number(mod(en).toFixed(6)), tag(d.guid));
   }
+  // §F7 D23: a door drawn by the IFC convention or the standard stands on its bbox centre across the door; when that centre lies OFF its host wall's drawn contour
+  // (LTU overhead doors: the bbox holds a 3.1 m track, the centre stood 1.55 m inside the room) the hinge line is the host contour's centre across the door,
+  // from the contour vertices within the door's half width + 1 m along it. undefined = no frame / no host contour / the centre is in the wall (nothing changes)
+  function acrossFromHost(model, d, op, polys, log) {
+    const h = model.host_all && model.host_all[d.guid], C = h !== undefined ? polys[h] : null; if (!C || !C.length || !op || !op.x || !op.y || !op.w) return undefined;
+    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y)) return undefined;
+    const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
+    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tb = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w);
+    const near = [].concat(...C).map(p => [p[0] / 1000, p[1] / 1000]).filter(p => Math.abs(p[0] * X[0] + p[1] * X[1] - sc) <= w / 2 + 1); if (near.length < 2) return undefined;
+    const ts = near.map(p => p[0] * Y[0] + p[1] * Y[1]), t0 = Math.min(...ts), t1 = Math.max(...ts);
+    if (tb >= t0 - 0.001 && tb <= t1 + 0.001) return undefined;
+    const tc = (t0 + t1) / 2; log.add(`§DOOR_ACROSS_HOST guid=${d.guid} host=${h} bbox_centre_across=${fx(tb, 4)} host_contour=${fx(t0, 4)}..${fx(t1, 4)} -> ${fx(tc, 4)} (D23: the bbox centre is off its wall)`); return tc;
+  }
   // §F7 D18 the building's RUNNING STANDARD for a door whose operation the IFC does not state: from its own stated single-swing doors (widest leaf, majority side; ties LEFT). null = none stated
   function doorStandard(model) {
     if (model._doorStd !== undefined) return model._doorStd;
@@ -834,6 +847,7 @@
     const dflt = [], dfltAt = {}, conf = [];   // conf: §F7 D19 doors whose mesh contradicts their stated handing (yellow)   // §F7 D18 doors drawn from the building's standard (yellow); a default is drawn once per footprint
     for (const d of model.els.filter(e => e.cls === 'IfcDoor' && e.storey === storey.name)) {
       const op = model.door_ops[d.guid], cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2; let basis = '', code, res;
+      d._tc = acrossFromHost(model, d, op, polys, log);   // §F7 D23
       const oY = op && op.x && op.y ? [op.y[0], op.y[1]] : null, angled = oY && horizFrame([op.x[0], op.x[1]], oY) && !axisAligned([op.x[0], op.x[1]], oY);
       if (!op || SINGLE_SWING.indexOf(op.op) < 0 && op.op !== 'DOUBLE_DOOR_SINGLE_SWING') {   // §F7 D18: the operation is not stated: the building's running standard, YELLOW (A-DOOR-DFLT), never A-DOOR
         const fk = [d.x0, d.x1, d.y0, d.y1].map(v => Math.round(v * 1000)).join(',');
