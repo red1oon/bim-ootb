@@ -216,19 +216,22 @@ function setupWing2D(A) {
   function prefixOf() { var n = (A.activeBuilding || (new URLSearchParams(location.search).get('db') || 'MODEL').split('/').pop()).replace(/_extracted\.db$|\.db$/i, ''); return n.split(/[_\s.-]/)[0].toUpperCase().replace(/[^A-Z0-9]/g, '') || 'MODEL'; }
   // §F7 D22: the rooms of the 2D plans = the Find panel's Room Injection (A.allRoomVolumes), turned into model metres; the room module is loaded on the
   // first press, as the still and film paths load it. null = not available (the sheets then carry no rooms and the log says why)
-  function roomsForWriter() {
+  function roomsForWriter() {   // one promise per building: started when the 2D mode opens, in parallel with the sidecar (the live LTU took 8.6 s, after the sidecar)
+    if (S.roomsP && S.roomsBld === A.activeBuilding) return S.roomsP; S.roomsBld = A.activeBuilding; S.roomsP = roomsLoad(); return S.roomsP;
+  }
+  function roomsLoad() {
     var t = performance.now(), go = Promise.resolve();
     if (typeof A.loadNavigate === 'function' && !A._navigateLoaded) { if (!A._navLoadedBy) A._navLoadedBy = 'wand'; go = A.loadNavigate(); }
     return go.then(function () { return typeof A.ensureRooms === 'function' ? A.ensureRooms({}) : null; }).then(function () {
       if (typeof A.allRoomVolumes !== 'function' || typeof A.three2ifc !== 'function') { log('_ROOMS source=none (room injection not loaded)'); return null; }
       var out = (A.allRoomVolumes() || []).map(function (b) { var c = A.three2ifc(b.center.x, b.center.y, b.center.z); return { guid: b.guid, name: b.name, category: b.category, cx: c.ix, cy: c.iy, cz: c.iz, sx: b.size.x, sy: b.size.z, sz: b.size.y }; });
       log('_ROOMS source=room_injection rects=' + out.length + ' ms=' + Math.round(performance.now() - t)); return out;
-    }).catch(function (e) { log('_ROOMS_FAIL ' + e.message); return null; });
+    }).catch(function (e) { log('_ROOMS_FAIL ' + e.message); S.roomsP = null; return null; });
   }
   A.wing2dExport = function () {
     if (!S.p0) return Promise.resolve(null); say(''); var P = planeParams(), t0 = performance.now(), b = document.getElementById('wing-2d-btn'); if (b) b.disabled = true;
     var rooms = null;
-    return loadSide().then(function () { return loadModules(); }).then(function () { return roomsForWriter(); }).then(function (rm) {
+    return Promise.all([loadSide().then(function () { return loadModules(); }), roomsForWriter()]).then(function (all) { var rm = all[1];
       rooms = rm; P = planeParams();   // the sidecar's walls may have turned an untouched plane (defaultTurn)
       var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
@@ -309,7 +312,7 @@ function setupWing2D(A) {
       clearClipping(); S.on = true; var sl = document.getElementById('section-slider'); if (sl) sl.parentNode.style.display = 'none'; var sv = document.getElementById('section-val'); if (sv) sv.textContent = '2D wing plane';
       if (!S.p0) initPlane(); buildGizmo(); S.g.visible = true; updateGizmo(); buildTools(true); refreshTools(); say('');
       A.canvas.addEventListener('pointerdown', onDown, true); window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
-      loadSide().catch(function (e) { say(e.message); }); log('_ENTER plane=' + JSON.stringify(planeParams()));
+      loadSide().catch(function (e) { say(e.message); }); roomsForWriter(); log('_ENTER plane=' + JSON.stringify(planeParams()));
     },
     scrub: function () {},
     exit: function () {
