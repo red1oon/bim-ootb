@@ -223,7 +223,7 @@ function setupWing2D(A) {
     var f = oy < (y0 + y1) / 2 ? 'FRONT' : 'REAR'; log('_FACE face=' + f + ' plane_y=' + oy.toFixed(3) + ' walls_y=' + y0.toFixed(3) + '..' + y1.toFixed(3)); return f;
   }
   function showOverlay(M, P, wing) {
-    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), fc = facingFace(M.R), cur = (fc && names.filter(function (n) { return n.slice(-('_' + fc + '_std.dxf').length) === '_' + fc + '_std.dxf'; })[0]) || names[0], view = null, drag = null;
+    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), fc = facingFace(M.R), pick = function (v) { return names.filter(function (n) { return n.slice(-('_' + v + '_std.dxf').length) === '_' + v + '_std.dxf'; })[0]; }, cur = pick('PLANE_VIEW') || (fc && pick(fc)) || names[0], view = null, drag = null;
     var card = el('div', 'position:fixed;z-index:70;background:#14171c;border:1px solid #4fc3f7;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);overflow:hidden;font:12px sans-serif;color:#ddd;transition:left .3s cubic-bezier(.2,.8,.2,1),top .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1),height .3s cubic-bezier(.2,.8,.2,1),opacity .2s;touch-action:none'); card.id = 'wing-2d-overlay';
     var head = el('div', 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1d242d;user-select:none'), tabs = el('div', 'display:flex;gap:4px;flex:1;overflow:auto');
     var save = el('button', 'background:#2e7d32;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Save'), close = el('button', 'background:#555;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Cancel');

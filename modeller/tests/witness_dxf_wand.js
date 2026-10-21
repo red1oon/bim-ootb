@@ -11,6 +11,7 @@
  *   T5 CONTROL — turn 180 imported with the frame IGNORED does not match (the witness can see a missing turn-back).
  *   T8 BOX     — the plane's length and its depth clip the wing to a box (E1 ownership recomputed in the UNturned model, E2 a long plane with no depth = no extent, E3 legacy,
  *               E4 every sheet from the box, E5 the reader takes the marked set).
+ *   T9 VIEW    — the view at the plane: V1 none lost, V2 hidden = covered by nearer (recomputed), V3 @VIEW=DRAWING set aside by the reader.
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_wand.js <Node model .db>
  */
 'use strict';
@@ -89,19 +90,27 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
     const P0 = [c[0] - half * ax[0], c[1] - half * ax[1]], P1 = [c[0] + half * ax[0], c[1] + half * ax[1]], lo = s(P0), hi = s(P1);
     const R = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', extent: [P0, P1], depth }), kept = new Set(R.model.els.map(e => e.guid)), parts = new Set();
     (R.model.curtains || []).forEach(cw => cw.parts.forEach(p => parts.add(p.guid)));
-    const all = S.loadModel(q, { add() {}, gap() {} }); S.frameModel(all, F0);   // the wing (angle family) before the box: the box only removes
+    const all = S.loadModel(q, { add() {}, gap() {} });   // the WHOLE model: with a box every angle is kept (the box is the wing; the family only orients the sheet)
     let wrong = [], inN = 0, outN = 0, edge = 0;
     all.els.forEach(e => { if (['IfcDoor', 'IfcWindow'].indexOf(e.cls) >= 0 || parts.has(e.guid)) return; const m = [(e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2], a = s(m), b = t(m);
       if (Math.abs(a - lo) < 1e-6 || Math.abs(a - hi) < 1e-6 || Math.abs(b) < 1e-6 || Math.abs(b - depth) < 1e-6) { edge++; return; }
       const want = a >= Math.min(lo, hi) && a < Math.max(lo, hi) && b >= 0 && b < depth; if (want) inN++; else outN++; if (want !== kept.has(e.guid)) wrong.push(e.cls + ':' + e.guid + (want ? ':missing' : ':extra')); });
     check('T8', 'E1 box: every element of the wing whose UNturned centre lies within the plane ends (frame axis) and [0, depth) on the facing side is drawn, every other is not', inN > 0 && outN > 0 && !wrong.length, `kept=${inN} dropped=${outN} at_edge=${edge} wrong=${wrong.length} ${wrong.slice(0, 3).join(' ')} depth=${depth.toFixed(2)}`);
     const eq = (A, B2) => Object.keys(A.files).length === Object.keys(B2.files).length && Object.keys(A.files).every(f => A.files[f] === B2.files[f]);
-    const big = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', extent: [[c[0] - 1e4 * ax[0], c[1] - 1e4 * ax[1]], [c[0] + 1e4 * ax[0], c[1] + 1e4 * ax[1]]] });
-    check('T8', 'E2 a plane longer than the wing with no depth = byte-equal to no extent', eq(big, base), 'files=' + Object.keys(big.files).length + '/' + Object.keys(base.files).length);
+    const big = S.writeStdSet(q, 'W', { wing, sectionAt: 'pivot', extent: [[c[0] - 1e4 * ax[0], c[1] - 1e4 * ax[1]], [c[0] + 1e4 * ax[0], c[1] + 1e4 * ax[1]]] }), km = /kept=(\d+)\/(\d+)/.exec(big.log.find(l => /§EXTENT p0/.test(l)) || '');
+    check('T8', 'E2 a plane longer than the model with no depth keeps every element, at every angle (doors hosted by curtain walls included)', km && km[1] === km[2] && Number(km[2]) === all.els.length, 'kept=' + (km && km[1] + '/' + km[2]) + ' model=' + all.els.length);
     check('T8', 'E3 no extent: no §EXTENT line (legacy path)', !base.log.some(l => /§EXTENT/.test(l)), 'files=' + Object.keys(base.files).length);
     const ents = R2 => Object.keys(R2.files).reduce((n, f) => n + (R2.files[f].match(/\n0\n(LINE|ARC|CIRCLE|LWPOLYLINE|HATCH|TEXT)\n/g) || []).length, 0);
     check('T8', 'E4 every sheet comes from the box: fewer elements and fewer entities than the whole wing', R.model.els.length < base.model.els.length && ents(R) < ents(base), 'elements ' + R.model.els.length + '/' + base.model.els.length + ' entities ' + ents(R) + '/' + ents(base));
     const Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC, SCOPES: require(D + 'std2d_scopes.js') }, { set: 'W' }), out = I.convert(I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {});
+    // T9 the view at the plane: every box element is drawn or fully hidden; a hidden one is covered by the union of nearer ones (recomputed here with polygon-clipping); the reader sets the drawing aside
+    const PCL = require(D + 'polygon-clipping.js'), pv = R.model.planeView, vis = pv ? pv.vis : {}, items = R.model.els.filter(e => e.cls !== 'IfcOpeningElement' && e.z1 > e.z0 && e.x1 > e.x0);
+    check('T9', 'V1 every box element is in the view: drawn or fully hidden, none lost', pv && items.length === pv.items && pv.drawn + pv.hidden === pv.items && pv.drawn > 0 && items.every(e => e.guid in vis), pv ? `items=${pv.items} drawn=${pv.drawn} hidden=${pv.hidden} pieces=${pv.pieces}` : 'no plane view');
+    const oy = R.wing.oy, rect = e => [[[e.x0, e.z0], [e.x1, e.z0], [e.x1, e.z1], [e.x0, e.z1], [e.x0, e.z0]]], hid = items.filter(e => vis[e.guid] === 0 && ['IfcDoor', 'IfcWindow'].indexOf(e.cls) < 0).slice(0, 40);
+    const notCovered = hid.filter(e => { const near = items.filter(o => o !== e && (o.y0 - oy) < (e.y0 - oy) - 1e-9); if (!near.length) return true; let U = rect(near[0]); near.slice(1).forEach(o => { try { U = PCL.union(U, rect(o)); } catch (x) { } });
+      let D2; try { D2 = PCL.difference(rect(e), U); } catch (x) { return false; } const area = D2.reduce((a, poly) => a + Math.abs(poly[0].reduce((s2, p2, i, A2) => s2 + (i ? (A2[i - 1][0] * p2[1] - p2[0] * A2[i - 1][1]) : 0), 0)) / 2, 0); return area > 1e-6; });
+    check('T9', 'V2 a hidden element lies behind nearer ones that cover it (depth order, recomputed)', hid.length === 0 || notCovered.length === 0, `checked=${hid.length} not_covered=${notCovered.length} ${notCovered.slice(0, 3).map(e => e.cls + ':' + e.guid).join(' ')}`);
+    check('T9', 'V3 the drawing sheet is marked @VIEW=DRAWING and the reader sets it aside', /@VIEW=DRAWING/.test(Dm.files['W_PLANE_VIEW_std.dxf'] || '') && !out.refused, 'refused=' + JSON.stringify(out.refused || null).slice(0, 120));
     check('T8', 'E5 the box set is marked and the reader takes it', !out.refused && !!out.verdict, 'sheets=' + Object.keys(Dm.files).length + ' blocking=' + (out.verdict ? out.verdict.blocking.length : '-') + ' refused=' + JSON.stringify(out.refused || null).slice(0, 200));
   })();
   const ig = run(F0 + 180, null, true); check('T5', 'CONTROL turn 180 with the frame ignored does not match', match(refB, bodies(ig.T)).bad > 0, 'unmatched=' + match(refB, bodies(ig.T)).bad);
