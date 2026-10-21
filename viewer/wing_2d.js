@@ -120,7 +120,7 @@ function setupWing2D(A) {
   }
   function pick(e) {
     var T = window.THREE, rc = new T.Raycaster(), n = ndc(e); rc.setFromCamera(new T.Vector2(n.x, n.y), A.camera);
-    var hit = rc.intersectObjects([S.parts.hd, S.parts.h0, S.parts.h1, S.parts.plane], false)[0]; return hit ? hit.object.name : null;
+    var hits = rc.intersectObjects([S.parts.hd, S.parts.h0, S.parts.h1, S.parts.plane], false), hit = hits.filter(function (x) { return x.object.name !== 'plane'; })[0] || hits[0]; return hit ? hit.object.name : null;   // the handles draw on top (no depth test): a handle seen through the plane wins over the plane body
   }
   function onDown(e) {
     if (!S.on || e.button !== 0) return; var what = pick(e); if (!what) return;
