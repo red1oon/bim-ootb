@@ -382,6 +382,21 @@
     }
     return [out, changed];
   }
+  // §F7 D16: the gap of a door in an angled wall, a rectangle in the door's placement frame: along X = centre +- OverallWidth / 2, across Y = the host contour's extent (vertices within
+  // 1 m along X, else all) +- GAP_ACROSS. null = no frame / width (the gap stays a listed GAP as before)
+  function rotatedGap(model, e, contours) {
+    const op = model.door_ops[e.guid]; if (!op || !op.x || !op.y || !op.w || !contours.length) return null;
+    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y)) return null;
+    const cx = (e.x0 + e.x1) / 2 * 1000, cy = (e.y0 + e.y1) / 2 * 1000, sc = cx * X[0] + cy * X[1], tcen = cx * Y[0] + cy * Y[1], w = Number(op.w) * 1000;
+    const pts = [].concat(...contours), S = p => p[0] * X[0] + p[1] * X[1], T = p => p[0] * Y[0] + p[1] * Y[1];
+    let near = pts.filter(p => Math.abs(S(p) - sc) <= w / 2 + 1000); if (near.length < 2) near = pts;
+    const ts = near.map(T), t0 = Math.min(...ts, tcen) - GAP_ACROSS * 1000, t1 = Math.max(...ts, tcen) + GAP_ACROSS * 1000, s0 = sc - w / 2, s1 = sc + w / 2;
+    const P = (a, b) => [a * X[0] + b * Y[0], a * X[1] + b * Y[1]], R = [[P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1), P(s0, t0)]], out = []; let changed = false;
+    for (const c of contours) { let D; try { D = PC.difference(toPoly(c), R); } catch (x) { D = [toPoly(c)]; }
+      const a0 = polyArea(toPoly(c)), a1 = D.reduce((a, q) => a + polyArea(q), 0); if (Math.abs(a0 - a1) > 1) changed = true;
+      D.forEach(poly => { if (polyArea(poly) < GAP_MIN_AREA) return; out.push(poly[0].slice(0, -1).map(p => [Number(p[0].toFixed(2)), Number(p[1].toFixed(2))])); }); }
+    return { out, changed, X, s0: s0 / 1000, s1: s1 / 1000, t0: t0 / 1000, t1: t1 / 1000 };
+  }
   function planOpenings(model, storey, cutZ, cutWalls, polys, log) {
     const res = [];
     for (const e of model.els) {
@@ -405,7 +420,11 @@
       const [[a0, a1], hsrc] = model.hole[g], ax = wallAxis(hw)[0];
       const rect = ax === 'y' ? [mm(a0), mm(hw.y0 - GAP_ACROSS), mm(a1), mm(hw.y1 + GAP_ACROSS)] : [mm(hw.x0 - GAP_ACROSS), mm(a0), mm(hw.x1 + GAP_ACROSS), mm(a1)];
       const k = ax === 'y' ? 0 : 1;
-      if (!planOrthogonal(polys[h] || [], rect, k)) { log.gap('GAP:opening_host_not_orthogonal', g, `host=${h}: its plan contour inside the gap has an edge neither X- nor Y-aligned`); res.push([e, pos]); continue; }
+      if (!planOrthogonal(polys[h] || [], rect, k)) {
+        const rg = e.cls === 'IfcDoor' ? rotatedGap(model, e, polys[h] || []) : null;   // §F7 D16: a door in an angled wall: the gap in the door's own frame
+        if (rg) { polys[h] = rg.out; log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=${rg.changed ? 'drawn_rotated' : 'in_cut'} frame=(${fx(rg.X[0], 6)},${fx(rg.X[1], 6)}) along=${fx(rg.s0 * 1000, 2)}..${fx(rg.s1 * 1000, 2)} across=${fx(rg.t0 * 1000, 2)}..${fx(rg.t1 * 1000, 2)} (D16)`); res.push([e, pos]); continue; }
+        log.gap('GAP:opening_host_not_orthogonal', g, `host=${h}: its plan contour inside the gap has an edge neither X- nor Y-aligned`); res.push([e, pos]); continue;
+      }
       const [np, changed] = subtractGap(polys[h] || [], rect, k); polys[h] = np;
       log.add(`§OPENING guid=${g} cls=${e.cls} host=${h} host_source=${model.host_src[g]} pos=${pos} gap=${changed ? 'drawn' : 'in_cut'} along=(${fx(a0 * 1000, 2)},${fx(a1 * 1000, 2)}) from=${hsrc}`);
       res.push([e, pos]);
@@ -426,6 +445,16 @@
     if (inner.every(x => x < 0)) return [ta === 0 ? 'x' : 'y', -1];
     return null;
   }
+  // §F7 D16: the same leaf-offset test (R9) along the door's OWN placement Y, for a door in an angled wall (world x / y say nothing there)
+  function doorSwingFrame(d, Y) {
+    if (!d.v.length) return null;
+    const n = d.v.length / 3, t = Array.from({ length: n }, (_, i) => d.v[i * 3] * Y[0] + d.v[i * 3 + 1] * Y[1]), tm = (Math.min(...t) + Math.max(...t)) / 2;
+    const vals = uniq(t.map(x => r4(x - tm))), inner = vals.filter(x => !vals.some(y => Math.abs(y + x) <= LEAF_MIRROR_TOL));
+    if (!inner.length) return null;
+    if (inner.every(x => x > 0)) return ['frame', 1];
+    if (inner.every(x => x < 0)) return ['frame', -1];
+    return null;
+  }
   function components(n, F) {
     const par = Array.from({ length: n }, (_, i) => i), find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
     for (let t = 0; t + 2 < F.length; t += 3) for (const [x, y] of [[F[t], F[t + 1]], [F[t + 1], F[t + 2]]]) { const rx = find(x), ry = find(y); if (rx !== ry) par[rx] = ry; }
@@ -435,7 +464,7 @@
     if (!op) return ['GAP:door_hinge', 'no door_operation row; no arc drawn'];
     if (SINGLE_SWING.indexOf(op.op) < 0) return ['GAP:door_hinge', `operation_type=${op.op} not drawn (H1: single swing only); no arc drawn`];
     if (!(op.x && op.y && op.z) || Math.max(Math.abs(op.z[0]), Math.abs(op.z[1]), Math.abs(op.z[2] - 1)) > VERTICAL_TOL) return ['GAP:door_hinge', `placement axes missing or not vertical z=${JSON.stringify(op.z)} (H1); no arc drawn`];
-    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]], [ta, sgn] = swing, r9 = ta === 'x' ? [sgn, 0] : [0, sgn];
+    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]], [ta, sgn] = swing, r9 = ta === 'frame' ? [sgn * Y[0], sgn * Y[1]] : ta === 'x' ? [sgn, 0] : [0, sgn];
     if (r9[0] * Y[0] + r9[1] * Y[1] <= 0.5) return ['GAP:door_handing_conflict', `mesh leaf offset ${ta}${sgn > 0 ? '+1' : '-1'} vs IFC +Y=[${Y.map(v => Number(v.toFixed(6)))}] op=${op.op}; no arc drawn`];
     const n = d.v.length / 3, t = Array.from({ length: n }, (_, i) => d.v[i * 3] * Y[0] + d.v[i * 3 + 1] * Y[1]);
     const tmid = (Math.min(...t) + Math.max(...t)) / 2, tc = t.map(x => x - tmid), vals = uniq(tc.map(r4)), inner = vals.filter(x => !vals.some(y => Math.abs(y + x) <= LEAF_MIRROR_TOL));
@@ -453,14 +482,26 @@
 
   // §L1.12 the swing when the mesh gives no leaf offset (R9) but the IFC states everything a swing needs (single-swing type, vertical z, axis-aligned X/Y, OverallWidth):
   // a swing door opens toward +Y of its placement; hinge = LEFT/RIGHT jamb = bbox centre along X -/+ OverallWidth/2, at the bbox centre along Y.
+  const horizFrame = (X, Y) => Math.abs(Math.hypot(X[0], X[1]) - 1) < 1e-3 && Math.abs(Math.hypot(Y[0], Y[1]) - 1) < 1e-3 && Math.abs(X[0] * Y[0] + X[1] * Y[1]) < 1e-3;
+  const axisAligned = (X, Y) => Math.min(Math.abs(X[0]), Math.abs(X[1])) < 1e-6 && Math.min(Math.abs(Y[0]), Math.abs(Y[1])) < 1e-6;
   function doorHingeIfc(d, op) {
     if (!op || SINGLE_SWING.indexOf(op.op) < 0) return ['GAP:door_swing', 'leaf offset not found (R9)'];
     if (!(op.x && op.y && op.z) || Math.max(Math.abs(op.z[0]), Math.abs(op.z[1]), Math.abs(op.z[2] - 1)) > VERTICAL_TOL) return ['GAP:door_swing', 'leaf offset not found (R9); placement axes missing or not vertical, no IFC-convention swing (§L1.12)'];
     const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]];
-    if (!(Math.min(Math.abs(X[0]), Math.abs(X[1])) < 1e-6 && Math.min(Math.abs(Y[0]), Math.abs(Y[1])) < 1e-6) || !op.w) return ['GAP:door_swing', 'leaf offset not found (R9); axes not axis-aligned or no OverallWidth, no IFC-convention swing (§L1.12)'];
+    // §F7 D16: any horizontal orthogonal frame (an angled wall's door), not only axis-aligned; the projections below hold at any angle
+    if (!horizFrame(X, Y) || !op.w) return ['GAP:door_swing', 'leaf offset not found (R9); placement X / Y not a horizontal orthogonal frame or no OverallWidth, no IFC-convention swing (§L1.12)'];
     const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
     const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), left = op.op.endsWith('LEFT'), sh = left ? sc - w / 2 : sc + w / 2;
     return ['ok', { hinge: [sh * X[0] + tc * Y[0], sh * X[1] + tc * Y[1]], width: w, X, Y, closed: left ? X : [-X[0], -X[1]] }];
+  }
+
+  // §F7 D17: DOUBLE_DOOR_SINGLE_SWING = two leaves of OverallWidth / 2 hinged at the two jambs (bbox centre along X -/+ OverallWidth / 2, at the bbox centre along Y), both opening to +Y
+  function doorDouble(d, op) {
+    if (!(op.x && op.y && op.z) || Math.max(Math.abs(op.z[0]), Math.abs(op.z[1]), Math.abs(op.z[2] - 1)) > VERTICAL_TOL) return ['GAP:door_hinge', `double door: placement axes missing or not vertical (D17); no arc drawn`];
+    const X = [op.x[0], op.x[1]], Y = [op.y[0], op.y[1]]; if (!horizFrame(X, Y) || !op.w) return ['GAP:door_hinge', 'double door: no horizontal orthogonal frame or no OverallWidth (D17); no arc drawn'];
+    const cn = [[d.x0, d.y0], [d.x1, d.y0], [d.x1, d.y1], [d.x0, d.y1]], cs = cn.map(c => c[0] * X[0] + c[1] * X[1]), ct = cn.map(c => c[0] * Y[0] + c[1] * Y[1]);
+    const sc = (Math.min(...cs) + Math.max(...cs)) / 2, tc = (Math.min(...ct) + Math.max(...ct)) / 2, w = Number(op.w), P = a => [a * X[0] + tc * Y[0], a * X[1] + tc * Y[1]];
+    return ['ok', { leaves: [{ hinge: P(sc - w / 2), width: w / 2, X, Y, closed: X }, { hinge: P(sc + w / 2), width: w / 2, X, Y, closed: [-X[0], -X[1]] }] }];
   }
 
   // ───────────────────────── drawing ─────────────────────────
@@ -609,6 +650,29 @@
     for (let i = 0; i < 5; i++) { const a = x0 + i * seg, r = [[a, y0], [a + seg, y0], [a + seg, y0 + h], [a, y0 + h]]; doc.lwpoly('A-ANNO-TTLB', r, true); if (i % 2 === 0) doc.hatch('A-ANNO-TTLB', 7, r); }
     doc.text('A-ANNO-TTLB', '0', [x0, y0 - 350], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' }); doc.text('A-ANNO-TTLB', '5 m', [x0 + 5 * seg, y0 - 350], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
   }
+  // one leaf: the open line from the hinge along +Y and the arc from the closed direction to +Y (the same drawing as a single swing)
+  function drawLeaf(doc, d, L, layer) {
+    layer = layer || 'A-DOOR';
+    if (layer === 'A-DOOR-DFLT' && !doc.layers[layer]) doc.layers = Object.assign({}, doc.layers, { 'A-DOOR-DFLT': [2, 25, 'Continuous'] });   // only a sheet that draws a default carries the yellow layer
+    const H = L.hinge, w = L.width, Y = L.Y, C = L.closed, hm = [mm(H[0]), mm(H[1])], O = [H[0] + w * Y[0], H[1] + w * Y[1]];
+    doc.line(layer, hm, [mm(O[0]), mm(O[1])], tag(d.guid));
+    const ac = Math.atan2(C[1], C[0]) * 180 / Math.PI, ao = Math.atan2(Y[1], Y[0]) * 180 / Math.PI, ccw = C[0] * Y[1] - C[1] * Y[0] > 0, mod = a => ((a % 360) + 360) % 360, st = ccw ? ac : ao, en = ccw ? ao : ac;
+    doc.arc(layer, hm, mm(w), Number(mod(st).toFixed(6)), Number(mod(en).toFixed(6)), tag(d.guid));
+  }
+  // §F7 D18 the building's RUNNING STANDARD for a door whose operation the IFC does not state: from its own stated single-swing doors (widest leaf, majority side; ties LEFT). null = none stated
+  function doorStandard(model) {
+    if (model._doorStd !== undefined) return model._doorStd;
+    const st = Object.values(model.door_ops || {}).filter(o => SINGLE_SWING.indexOf(o.op) >= 0 && Number(o.w) > 0), L = st.filter(o => o.op.endsWith('LEFT')).length;
+    model._doorStd = st.length ? { n: st.length, left: L, right: st.length - L, side: L >= st.length - L ? 'LEFT' : 'RIGHT', maxW: Math.max(...st.map(o => Number(o.w))), minW: Math.min(...st.map(o => Number(o.w))) } : null;
+    return model._doorStd;
+  }
+  function doorDefault(d, op, std) {
+    if (!std) return ['GAP:door_hinge', 'operation not stated and the building states no single-swing door: no standard to draw from (D18)'];
+    if (!op || !op.w) return ['GAP:door_hinge', 'operation not stated and no OverallWidth: the standard cannot place it (D18)'];
+    const dbl = Number(op.w) > std.maxW && Number(op.w) / 2 >= std.minW, as = Object.assign({}, op, { op: dbl ? 'DOUBLE_DOOR_SINGLE_SWING' : 'SINGLE_SWING_' + std.side });
+    const [c, r] = dbl ? doorDouble(d, as) : doorHingeIfc(d, as); if (c !== 'ok') return [c, r + ' (D18 default)'];
+    return ['ok', { leaves: dbl ? r.leaves : [r], value: as.op, basis: `${std[std.side.toLowerCase()]} of ${std.n} stated single-swing doors swing ${std.side}; single leaves ${fx(std.minW * 1000, 0)}..${fx(std.maxW * 1000, 0)} mm; this door ${fx(op.w * 1000, 0)} mm -> ${dbl ? 'double (wider than any stated leaf, each half within the stated range)' : 'single'}` }];
+  }
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -692,13 +756,26 @@
       doc.lwpoly(layer, [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], true, tag(e.guid)); nO[pos]++;
     }
     log.add(`§PLAN openings above cut=${nO.above} (dashed) below cut=${nO.below}`);
+    const dflt = [], dfltAt = {};   // §F7 D18 doors drawn from the building's standard (yellow); a default is drawn once per footprint
     for (const d of model.els.filter(e => e.cls === 'IfcDoor' && e.storey === storey.name)) {
-      const sw_ = doorSwing(d), cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2;
-      const op = model.door_ops[d.guid]; let basis = '', code, res;
+      const op = model.door_ops[d.guid], cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2; let basis = '', code, res;
+      const oY = op && op.x && op.y ? [op.y[0], op.y[1]] : null, angled = oY && horizFrame([op.x[0], op.x[1]], oY) && !axisAligned([op.x[0], op.x[1]], oY);
+      if (!op || SINGLE_SWING.indexOf(op.op) < 0 && op.op !== 'DOUBLE_DOOR_SINGLE_SWING') {   // §F7 D18: the operation is not stated: the building's running standard, YELLOW (A-DOOR-DFLT), never A-DOOR
+        const fk = [d.x0, d.x1, d.y0, d.y1].map(v => Math.round(v * 1000)).join(',');
+        if (dfltAt[fk]) { log.add(`§DOOR_DEFAULT_DUP guid=${d.guid} same footprint as ${dfltAt[fk]}: two door elements at one place in the model, the default drawn once (finding)`); continue; }
+        const [fc, fr] = doorDefault(d, op, doorStandard(model)); if (fc !== 'ok') { log.gap(fc, d.guid, fr); continue; } dfltAt[fk] = d.guid;
+        fr.leaves.forEach(L => drawLeaf(doc, d, L, 'A-DOOR-DFLT')); dflt.push(d.guid);
+        log.add(`§DOOR_DEFAULT guid=${d.guid} op_stated=${op ? op.op : 'none'} drawn=${fr.value} leaves=${fr.leaves.length} layer=A-DOOR-DFLT basis="${fr.basis}" (D18)`); continue;
+      }
+      if (op && op.op === 'DOUBLE_DOOR_SINGLE_SWING') {   // §F7 D17
+        const [dc, dr] = doorDouble(d, op); if (dc !== 'ok') { log.gap(dc, d.guid, dr); continue; }
+        dr.leaves.forEach(L => drawLeaf(doc, d, L)); log.add(`§DOOR_ARC guid=${d.guid} op=${op.op} source=${op.source} leaves=2 width=${fx(dr.leaves[0].width * 2000, 1)} basis=ifc_convention_double (D17)`); continue;
+      }
+      const sw_ = angled ? doorSwingFrame(d, oY) : doorSwing(d);   // §F7 D16: an angled door's leaf is found along its own Y
       if (!sw_) {   // §L1.12: no leaf offset in the mesh: the IFC-stated swing, or the gap as before
         [code, res] = doorHingeIfc(d, op);
         if (code !== 'ok') { log.gap(code, d.guid, res); continue; }
-        basis = ' basis=ifc_convention';
+        basis = axisAligned(res.X, res.Y) ? ' basis=ifc_convention' : ' basis=ifc_convention_rotated';
         log.add(`§DOOR guid=${d.guid} swing=ifc_convention (R9 leaf offset not found; opens toward +Y of the IFC placement)`);
       } else {
         var ta = sw_[0], sgn = sw_[1];
@@ -715,6 +792,7 @@
         continue;
       }
       log.gap(code, d.guid, res);
+      if (ta === 'frame') continue;   // D16: no axis-aligned spot for the HINGE ? note of an angled door; the gap line states it
       const half = (ta === 'x' ? d.x1 - d.x0 : d.y1 - d.y0) / 2, off = half + 0.2;
       const [nx, ny] = ta === 'x' ? [cx + sgn * off, cy] : [cx, cy + sgn * off];
       doc.text('A-ANNO-NOTE', 'HINGE ?', [mm(nx), mm(ny)], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER', rot: ta === 'x' ? 90 : 0, guid: d.guid });
@@ -730,6 +808,11 @@
     planDims(doc, E, grid, log, view, faceRuns, F);
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     northMark(doc, model.north, E, log); if (model.scaleBar === true) scaleBarMark(doc, E);
+    if (dflt.length) {   // §F7 D18: the yellow band states itself on the sheet (the basis), and the set carries @DEFAULT=door.operation_standard (marks)
+      const sd = doorStandard(model); model.doorDefaults = (model.doorDefaults || []).concat(dflt);
+      doc.text('A-ANNO-NOTE', `YELLOW = DEFAULT: ${dflt.length} DOOR(S) THE MODEL GIVES NO OPERATION FOR, DRAWN FROM THIS BUILDING'S STANDARD (${sd.left} LEFT / ${sd.right} RIGHT OF ${sd.n} STATED; SINGLE LEAVES ${fx(sd.minW * 1000, 0)}-${fx(sd.maxW * 1000, 0)} MM)`, [E[0], E[2] - (BUBBLE_C + 20) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
+      log.add(`§DOOR_STANDARD storey='${storey.name}' defaults=${dflt.length} stated=${sd.n} left=${sd.left} right=${sd.right} side=${sd.side} widest_single=${fx(sd.maxW * 1000, 0)}mm`);
+    }
     doc.E = E;   // storey envelope (mm), for the scoped split (§L6)
     return doc;
   }
@@ -910,6 +993,7 @@
     row('Roof storey / T/ROOF', `${R.views.roof ? R.views.roof.name : 'none'} / ${M.roof_top === null ? 'none' : fs(M.roof_top, 3) + ' m'}`, 'IfcRoof or highest IfcSlab (R11)', R.views.roof && M.roof_top !== null ? 'ok' : 'gap');
     if (!R.views.roof) reasons.push('no roof storey above the grid storey: no roof plan, and the importer needs one to qualify the set');
     row('Sheets written', Object.keys(R.files).length, Object.keys(R.files).map(f => f.replace(/^.*?_(.*)_std\.dxf$/, '$1')).join(', '), 'ok');
+    if (M.doorDefaults && M.doorDefaults.length) { const sd = M._doorStd; row('Doors drawn from the building standard (yellow, A-DOOR-DFLT)', M.doorDefaults.length, `${sd.left} LEFT / ${sd.right} RIGHT of ${sd.n} stated; single leaves ${fx(sd.minW * 1000, 0)}..${fx(sd.maxW * 1000, 0)} mm`, 'default'); }
     const codes = Object.keys(gapN).sort();
     if (codes.length) row('Gaps (listed, none filled in)', codes.map(c => c.replace('GAP:', '') + ' ' + gapN[c]).join(', '), 'log lines §GAP', 'gap');
     return { drawable: reasons.length === 0, reasons, rows };

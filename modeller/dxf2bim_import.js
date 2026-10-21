@@ -467,6 +467,8 @@
     R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),
       plan_ops: planOps, gaps: qg, resolved: resolved };
     R.verdict = Q.qualify(R.qualifyInput, SET.QUALIFY);
+    // §F7 D18: doors read from A-DOOR-DFLT were drawn from the building's standard, not stated by the model: a YELLOW default, listed, never a model fact
+    R.defaultDoors = Object.keys(planOps).reduce(function (n, k) { return n + (planOps[k] || []).filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params && o.params.layer === 'A-DOOR-DFLT'; }).length; }, 0);
     R.frame = frameOfSheets(sheets);   // §L1.16
     return R;
   }
