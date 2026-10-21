@@ -197,9 +197,9 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
 
     // ═══ S7 live (page B): the button on the order opens the form ═══
     await uncard(); await pace(1000);
-    fact('order.toolbar', JSON.stringify(await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent))));
-    await glide('#idmp-toolbar [data-tbb="PP_Order_ReceiptIssue"]'); await pace(1500);
-    const n7 = PAGELOG.length; await hclick('#idmp-toolbar [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(1500);
+    fact('order.toolbar', JSON.stringify(await (async () => { await page.click('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {}); const v = await page.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent)); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return v; })()));
+    await glide('#idmp-toolbar [data-tb="process"]'); await pace(600); await hclick('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]', { timeout: 8000 }); await glide('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'); await pace(1500);   // §45.1: process shortcuts live in the GEAR popup
+    const n7 = PAGELOG.length; await (async () => { if (!(await page.$('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'))) { await hclick('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]', { timeout: 8000 }); } await hclick('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'); })(); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(1500);
     fact('form.opened', (PAGELOG.slice(n7).filter(l => /§AD-TBB run|§AD-FORM-LIVE open|§AD-FORM-GENERIC open/.test(l)).join(' || ')).slice(0, 500));
     await pace(4000);
 

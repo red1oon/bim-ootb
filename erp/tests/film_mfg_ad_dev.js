@@ -200,8 +200,8 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await holdFor(); prevB = null;
     page = pB; await page.bringToFront(); await card('On the order', 'Logged in as GardenWorld Admin.'); await hold(DRY ? 200 : 1200); await cast(); await beat('d6', 'the button on the order');
     await uncard(); await pace(1000);
-    fact('order.toolbar', JSON.stringify(await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent))));
-    const n6 = PAGELOG.length; await hclick('#idmp-toolbar [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(1500);
+    fact('order.toolbar', JSON.stringify(await (async () => { await page.click('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {}); const v = await page.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent)); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return v; })()));
+    const n6 = PAGELOG.length; await (async () => { if (!(await page.$('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'))) { await hclick('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]', { timeout: 8000 }); } await hclick('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'); })(); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(1500);
     fact('form.opened', (PAGELOG.slice(n6).filter(l => /§AD-TBB run|§AD-FORM-GENERIC open/.test(l)).join(' || ')).slice(0, 400));
     await pace(3000);
 
@@ -215,7 +215,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('afterStop.code', JSON.stringify({ state: await page.evaluate(() => window.PluginEngine._reg().get('org.idempiere.mfg').state), formDescriptor: await page.evaluate(() => !!(window.AdFormGeneric && window.AdFormGeneric.get('org.libero.form.VOrderReceiptIssue'))) }));
     await hclick('#pr-root [data-pr-close]'); await pace(800);
     await zoomOrder();
-    fact('afterStop.toolbar', JSON.stringify(await page.$$eval('#idmp-toolbar [data-tbb]', e => e.map(x => x.getAttribute('data-tbb')))));
+    fact('afterStop.toolbar', JSON.stringify(await (async () => { await page.click('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {}); const v = await page.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb'))); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return v; })()));
     await pace(3000);
     await beat('end', 'end'); await hold(DRY ? 200 : 1000);
     gestFlush(); GPrevId = null;

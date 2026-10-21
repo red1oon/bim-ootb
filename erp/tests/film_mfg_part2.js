@@ -95,7 +95,8 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
   const hselect = async (sel, val) => { GT.select++; await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
   const hdate = async (sel, v) => { GT.type++; await glide(sel); await page.fill(sel, v); await page.locator(sel).first().dispatchEvent('change'); await hold(DRY ? 60 : 400); };
   const rowsOf = () => page.evaluate(() => [...document.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)')].map(tr => ({ id: tr.cells[0].textContent.trim(), name: tr.cells[1].textContent.trim(), status: tr.cells[3].textContent.trim() })));
-  const lensBar = () => page.$$eval('[data-lens-action]', e => e.map(x => x.textContent));
+  const lensBar = () => page.$$eval('[data-lens-action]', e => e.map(x => x.textContent));   // the overlay actions still offered (Preview)
+  const gearItems = async () => { const on = await page.$eval('#idmp-toolbar [data-tb="process"]', e => !e.disabled).catch(() => false); if (!on) return []; await ipc('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {}); const v = await page.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent)); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return v; };   // §45: process steps live in the GEAR popup
   async function openMenuById(menuId) {
     const chain = await page.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); if (!leaf) return null; const out = []; let n = leaf.parentElement.parentElement;
       while (n && n.id !== 'idmp-tree') { if (n.classList.contains('idmp-node')) out.unshift(n.querySelector(':scope > .idmp-row').getAttribute('data-menu-id')); n = n.parentElement; } return out; }, menuId);
@@ -163,18 +164,18 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await closePreview();
     await hdate(F('datestartschedule'), '2008-08-16'); await pace(500);
 
-    // ═══ Q4 Save & Complete ═══
-    await beat('q4', 'Save & Complete');
-    const nSC = PAGELOG.length; await hclick('[data-lens-action="friendly-ops:save-complete"]');
+    // ═══ Q4 Save, then Complete (the legacy toolbar and DocAction - §40: no lens bar) ═══
+    await beat('q4', 'Save, then Complete');
+    const nSC = PAGELOG.length; await hclick('#idmp-toolbar [data-tb="save"]'); await page.waitForSelector('[data-doc-action="CO"]', { timeout: 20000 }); await pace(1200); await hclick('[data-doc-action="CO"]');
     let o = null; for (let i = 0; i < 60; i++) { o = (await tip('SELECT pp_order_id AS id, documentno, qtyordered, docstatus FROM pp_order WHERE pp_order_id<0 ORDER BY pp_order_id ASC LIMIT 1'))[0]; if (o && o.docstatus === 'CO') break; await page.waitForTimeout(200); }
     await hold(DRY ? 600 : 1500);
-    fact('lens.saveComplete', JSON.stringify(o) + ' | ' + (PAGELOG.slice(nSC).filter(l => /§OPS-LENS docAction/.test(l)).pop() || ''));
-    fact('lens.children', JSON.stringify({ bomLines: (await tip('SELECT COUNT(*) AS n FROM pp_order_bomline WHERE pp_order_id=' + o.id))[0].n, mrp: (await tip('SELECT COUNT(*) AS n FROM pp_mrp WHERE pp_order_id=' + o.id))[0].n }));
-    fact('lens.barOnOrder', JSON.stringify(await lensBar()));
+    fact('order.complete', JSON.stringify(o) + ' | ' + (PAGELOG.slice(nSC).filter(l => /§MODEL-DOCACTION table=pp_order/.test(l)).pop() || ''));
+    fact('order.children', JSON.stringify({ bomLines: (await tip('SELECT COUNT(*) AS n FROM pp_order_bomline WHERE pp_order_id=' + o.id))[0].n, mrp: (await tip('SELECT COUNT(*) AS n FROM pp_mrp WHERE pp_order_id=' + o.id))[0].n }));
+    fact('gear.onOrder', JSON.stringify(await gearItems()));
 
     // ═══ Q5 the order opens its own Receipt & Issue ═══
     await beat('q5', 'Receipt & Issue from the order');
-    await hclick('[data-lens-action^="friendly-ops:form:"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(2000);
+    await hclick('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]', { timeout: 10000 }); await pace(800); await hclick('#idmp-proc-ov [data-tbb="PP_Order_ReceiptIssue"]'); await page.waitForSelector('[data-gform]', { timeout: 20000 }); await pace(2000);
     fact('form.preset', await page.$eval('[data-gform-param=PP_Order_ID]', e => (e.options[e.selectedIndex] || {}).textContent));
     const nP = PAGELOG.length; await hclick('[data-gform-run]');
     for (let i = 0; i < 80 && !(await page.$eval('[data-gform-msg]', e => e.textContent).catch(() => '')); i++) await page.waitForTimeout(250);
@@ -191,9 +192,10 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
 
     // ═══ Q6 what is linked to the order, with counts ═══
     await beat('q6', 'related counts: Cost Collector (3)'); await uncard(); await pace(1200);
-    fact('lens.related', JSON.stringify(await lensBar()) + ' tipCollectors=' + (await tip('SELECT COUNT(*) AS n FROM pp_cost_collector WHERE pp_order_id=' + o.id))[0].n);
-    await glide('[data-lens-action^="friendly-ops:rel:"]'); await pace(1500);
-    await hclick('[data-lens-action^="friendly-ops:rel:"]'); await pace(1800);
+    fact('related.tip', 'tipCollectors=' + (await tip('SELECT COUNT(*) AS n FROM pp_cost_collector WHERE pp_order_id=' + o.id))[0].n);
+    await glide('#idmp-toolbar [data-tb="zoomacross"]'); await pace(900); await hclick('#idmp-toolbar [data-tb="zoomacross"]'); await page.waitForSelector('#idmp-zoom-ov', { timeout: 10000 }); await pace(1500);   // legacy Zoom Across
+    fact('zoom.dests', JSON.stringify(await page.$$eval('#idmp-zoom-ov div > span:first-child', e => e.map(x => x.textContent + ' ' + ((x.nextSibling || {}).textContent || '')))));
+    const ccSel = '#idmp-zoom-ov div:has(> span:text-matches("Cost Collector", "i"))'; await glide(ccSel); await pace(1200); await hclick(ccSel); await pace(1800);
     if (!(await page.locator('.idmp-grid tbody tr').count())) { await hclick('#idmp-toolbar [data-tb="toggle"]'); await pace(700); }
     fact('collectors.grid', (await page.locator('.idmp-grid tbody tr').count()) + ' rows | ' + (PAGELOG.filter(l => /§ZOOM-ACROSS-OPEN/.test(l)).pop() || ''));
 
