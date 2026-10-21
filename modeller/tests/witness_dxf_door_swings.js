@@ -11,6 +11,12 @@
  *   D1 DOUBLE   — every stated DOUBLE_DOOR_SINGLE_SWING draws two arcs of OverallWidth / 2 centred on its two jambs (1 mm).
  *   F1 DEFAULT  — every door drawn from the standard is on A-DOOR-DFLT (yellow), never on A-DOOR; a sheet with one states the basis note, @DEFAULT=door.operation_standard and
  *                 @LAYER=A-DOOR-DFLT; the reader takes the set and counts its yellow doors.
+ *                 D20: EVERY default drawn (once per footprint; §DOOR_DEFAULT_DUP is the same door twice, not drawn again) is read back as a default:
+ *                 read_as_default == defaults (Hospital: 2 doubles on 5-deg walls were refused GAP:no_host, hinge on the wall but off its bbox centre line),
+ *                 except a default the reader refuses GAP:no_host with NO wall within host_tol of its drawn hinge: listed one by one (INFO F1), counted
+ *                 (refused_no_wall), never silent (LTU: 2 overhead doors drawn at their 3.1 m deep bbox centre, 1.65 m off the wall: a writer finding).
+ *   H1 NO_HOST   — D20: a door arc the reader refuses GAP:no_host really has no wall at its hinge (further than host_tol from every wall centre line AND every
+ *                 polygon wall outline); the count per building is stated, never silent.
  *   F2 DEFAULT  — with no stated single-swing door in the building (every operation made NOTDEFINED by the test hook) no default is drawn: nothing to stand on.
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_door_swings.js <Node model .db> [DX_ROT30.db DXARC.db]
  */
@@ -51,16 +57,28 @@ const P = new DxfParser();
     const jambs = [sc - w / 2, sc + w / 2].map(a => [(a * X[0] + tc * Y[0]) * 1000, (a * X[1] + tc * Y[1]) * 1000]), arcs = P.parseSync(R.files[name]).entities.filter(e => e.type === 'ARC' && e.layer === 'A-DOOR');
     const ok = jambs.every(j => arcs.some(a => Math.hypot(a.center.x - j[0], a.center.y - j[1]) <= 1 && Math.abs(a.radius - w * 500) <= 1)); if (!ok) dblBad.push(g); });
   if (dbl.length) check('D1', 'every stated double door draws two arcs of half its width centred on its two jambs', dblBad.length === 0, `double=${dbl.length} bad=${dblBad.length}`); else say('INFO D1 | no stated double door in this model');
-  // F1: defaults are yellow, stated, read back as defaults
+  // the reader over the whole set once (F1, H1)
+  const Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC, SCOPES: SC }, { set: 'W' }), out = I.convert(I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {}), po = out.qualifyInput ? out.qualifyInput.plan_ops : {}, tol = SHC.CFG.host_tol;
+  const d2s = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; let t = L ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+  const wallDist = (h, ws) => Math.min(Infinity, ...ws.map(w => Math.min(d2s(h, w.params.start, w.params.end), !(w.params.polygon && w.params.outline) ? Infinity : inPoly(h, w.params.outline) ? 0 : Math.min(...w.params.outline.map((a, i, P) => d2s(h, a, P[(i + 1) % P.length]))))));
+  const noHost = []; let byOutline = 0;   // every GAP:no_host door arc: [sheet, handle, hinge, distance to the nearest wall centre line / polygon outline]
+  Object.keys(po).forEach(sh => { const ws = po[sh].filter(o => o.op_type === 'DXF_WALL');
+    byOutline += po[sh].filter(o => o.op_type === 'DXF_OPENING' && o.params.host_basis === 'outline').length;
+    po[sh].filter(o => o.op_type === 'DXF_GAP' && o.params.code === 'GAP:no_host' && o.params.hinge).forEach(o => noHost.push({ sh, handle: o.params.handle, layer: o.params.layer, hinge: o.params.hinge, dist: wallDist(o.params.hinge, ws) })); });
+  // F1: defaults are yellow, stated, and EVERY one is read back as a default, or is a listed reader refusal (GAP:no_host with no wall at the drawn hinge, H1)
   const dflt = R.log.filter(l => /§DOOR_DEFAULT guid=/.test(l)).map(l => /guid=(\S+)/.exec(l)[1]);
   if (dflt.length) {
-    const Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC, SCOPES: SC }, { set: 'W' }); let onDoor = 0, sheetsOk = true;
+    let onDoor = 0, sheetsOk = true; const refused = [];
     R.views.plan.forEach(({ view, storey }) => { const name = Object.keys(R.files).find(n => n.endsWith('_' + view + '_std.dxf')); if (!name) return; const ents = P.parseSync(R.files[name]).entities, mine = dflt.map(g => Mo.by_guid[g]).filter(d => d.storey === storey.name); if (!mine.length) return;
-      mine.forEach(d => { if (ents.some(e => e.type === 'ARC' && e.layer === 'A-DOOR' && e.center.x >= d.x0 * 1000 - 50 && e.center.x <= d.x1 * 1000 + 50 && e.center.y >= d.y0 * 1000 - 50 && e.center.y <= d.y1 * 1000 + 50)) onDoor++; });
+      mine.forEach(d => { const inBox = e => e.type === 'ARC' && e.center.x >= d.x0 * 1000 - 50 && e.center.x <= d.x1 * 1000 + 50 && e.center.y >= d.y0 * 1000 - 50 && e.center.y <= d.y1 * 1000 + 50; if (ents.some(e => e.layer === 'A-DOOR' && inBox(e))) onDoor++;
+        const hs = P.parseSync(Dm.files[name] || '').entities.filter(e => e.layer === 'A-DOOR-DFLT' && inBox(e)).map(e => e.handle), r = noHost.find(x => x.sh === name && hs.indexOf(x.handle) >= 0); if (r) refused.push({ guid: d.guid, r }); });
       const mt = Dm.files[name] || ''; if (!(/YELLOW = DEFAULT/.test(R.files[name]) && /@DEFAULT=door\.operation_standard,SINGLE_SWING_(LEFT|RIGHT)/.test(mt) && /@LAYER=A-DOOR-DFLT,opening/.test(mt))) sheetsOk = false; });
-    const out = I.convert(I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {});
-    check('F1', 'doors drawn from the standard are yellow (A-DOOR-DFLT) and never A-DOOR, their sheets state the basis + @DEFAULT + @LAYER, and the reader counts them as defaults', onDoor === 0 && sheetsOk && !out.refused && out.defaultDoors > 0, `defaults=${dflt.length} dup=${R.log.filter(l => /§DOOR_DEFAULT_DUP/.test(l)).length} on_A-DOOR=${onDoor} sheets_stated=${sheetsOk} read_as_default=${out.defaultDoors} blocking=${out.verdict ? out.verdict.blocking.length : '-'}`);
+    refused.forEach(x => say(`INFO F1 | default not read back, listed: guid=${x.guid} ${x.r.sh}:${x.r.handle} GAP:no_host hinge=(${x.r.hinge.join(',')}) nearest wall ${x.r.dist.toFixed(3)} m > host_tol ${tol} m (the drawn hinge is off every wall)`));
+    check('F1', 'doors drawn from the standard are yellow (A-DOOR-DFLT) and never A-DOOR, their sheets state the basis + @DEFAULT + @LAYER, and EVERY one is read back as a default or is a listed refusal with no wall at its drawn hinge (D20)', onDoor === 0 && sheetsOk && !out.refused && out.defaultDoors > 0 && out.defaultDoors + refused.length === dflt.length && refused.every(x => x.r.dist > tol), `defaults=${dflt.length} dup=${R.log.filter(l => /§DOOR_DEFAULT_DUP/.test(l)).length} on_A-DOOR=${onDoor} sheets_stated=${sheetsOk} read_as_default=${out.defaultDoors} refused_no_wall=${refused.length} blocking=${out.verdict ? out.verdict.blocking.length : '-'}`);
   } else say('INFO F1 | no door without a stated operation in this model');
+  // H1 (D20): every GAP:no_host door arc has no wall at its hinge (no centre line and no polygon outline within host_tol)
+  const nearWall = noHost.filter(x => x.dist <= tol);
+  check('H1', 'a door arc refused GAP:no_host has no wall at its hinge (no centre line and no polygon outline within host_tol): listed, never a missed host', nearWall.length === 0, `no_host=${noHost.length} (A-DOOR-DFLT ${noHost.filter(x => x.layer === 'A-DOOR-DFLT').length}) with_wall_at_hinge=${nearWall.length} hosted_by_outline=${byOutline} host_tol=${tol} nearest_wall_min=${noHost.length ? Math.min(...noHost.map(x => x.dist)).toFixed(3) : '-'} m ${nearWall.slice(0, 3).map(x => x.sh + ':' + x.handle).join(' ')}`);
   const R2 = S.writeStdSet(q, 'W', { premodel: m => { Object.values(m.door_ops || {}).forEach(o => { o.op = 'NOTDEFINED'; }); } });
   check('F2', 'no stated single-swing door in the building -> no default drawn (nothing to stand on), each such door a listed gap', !R2.log.some(l => /§DOOR_DEFAULT guid=/.test(l)) && R2.gaps.some(g => /no standard to draw from/.test(g[2] || '')), `defaults=${R2.log.filter(l => /§DOOR_DEFAULT guid=/.test(l)).length} no_standard_gaps=${R2.gaps.filter(g => /no standard/.test(g[2] || '')).length}`);
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
