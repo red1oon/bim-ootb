@@ -223,6 +223,7 @@ function setupWing2D(A) {
       else { var rr = restRect(small.w, small.h); card.__rest = rr; card.style.left = rr.x0 + 'px'; card.style.top = rr.y0 + 'px'; card.style.width = small.w + 'px'; card.style.height = small.h + 'px'; cv.style.cursor = 'zoom-in'; }
     }
     function draw() {
+      if (!card.isConnected || cv.getBoundingClientRect().width < 60 || cv.getBoundingClientRect().height < 60) return;   // removed, or still a few px wide mid-flight: nothing to draw yet
       var r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height)); cv.width = w * dpr; cv.height = h * dpr;
       var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); var D = V.toDrawList(V.parse(M.R.files[cur])), bb = V.bounds(D.list); if (!bb) return; if (!view || view.cur !== cur) view = Object.assign(V.fit(bb, w, h), { cur: cur, bb: bb });
       V.paintCanvas(ctx, D.list, view, w, h); card.__drawn = { sheet: cur, entities: D.list.length, stats: D.stats };

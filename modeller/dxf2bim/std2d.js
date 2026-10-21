@@ -555,14 +555,14 @@
     const b = north.angle * Math.PI / 180; return { stated: true, x: -Math.sin(b), y: Math.cos(b), source: north.source, angle: north.angle };
   }
   function turnNorth(n, deg) { if (!n || !n.stated || !deg) return n; const a = -deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return Object.assign({}, n, { x: c * n.x - s * n.y, y: s * n.x + c * n.y }); }
-  function northMark(doc, n, E, log) {   // a north arrow in a circle at the lower right, level with the sheet title; or the words "north not stated"
+  function northMark(doc, n, E, log) {   // a north arrow at the lower right, level with the sheet title (no circle, no lone N: both read as a grid bubble / label); or the words "north not stated"
     if (n === undefined) return; const cx = E[1] - 1500, cy = E[2] - (BUBBLE_C + 14) * SCALE + 500, R = 800;
     if (!n.stated) { doc.text('A-ANNO-NOTE', n.why.toUpperCase(), [cx, cy], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' }); log.add('§NORTH ' + n.why); return; }
     const L = Math.hypot(n.x, n.y) || 1, ux = n.x / L, uy = n.y / L, px = -uy, py = ux, tip = [cx + ux * R * 1.1, cy + uy * R * 1.1], back = [cx - ux * R * 0.8, cy - uy * R * 0.8];
-    doc.circle('A-ANNO-TTLB', [cx, cy], R); doc.line('A-ANNO-TTLB', back, tip);
+    doc.line('A-ANNO-TTLB', back, tip);   // no circle: the importer reads a circle + a text as a grid bubble, and an 'N' bubble beside a grid line gave grid_label_conflict / grid_label_order
     doc.lwpoly('A-ANNO-TTLB', [tip, [cx + ux * R * 0.35 + px * R * 0.3, cy + uy * R * 0.35 + py * R * 0.3], [cx + ux * R * 0.35 - px * R * 0.3, cy + uy * R * 0.35 - py * R * 0.3]], true);
-    doc.text('A-ANNO-TTLB', 'N', [cx + ux * R * 1.7, cy + uy * R * 1.7], TXT_TITLE * SCALE * 0.7, { align: 'MIDDLE_CENTER' });
-    doc.text('A-ANNO-NOTE', `TRUE NORTH (${n.source})`, [cx, cy - R - 450], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
+    // no lone 'N' text either: the importer reads a one-letter text near a grid line as that grid line's label (grid_label_conflict); the caption says what the arrow is
+    doc.text('A-ANNO-NOTE', `N = TRUE NORTH (${n.source})`, [cx, cy - R - 450], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER' });
     log.add(`§NORTH stated source=${n.source} model_north_from_true=${fx(n.angle, 4)} sheet_arrow=(${fx(ux, 5)},${fx(uy, 5)})`);
   }
   // §F7 stairs: tread outlines and the up direction, READ from the stair's own mesh (no tread count is assumed): the horizontal up-facing faces at each distinct height are the treads and landings of
