@@ -11,7 +11,9 @@ const OUT = path.resolve(process.argv[2] || '.'); fs.mkdirSync(OUT, { recursive:
 const BEAT_MIN = process.argv[3] ? JSON.parse(fs.readFileSync(process.argv[3], 'utf8')) : {};
 const OCI = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
 const URL = (process.env.VIEWER || 'https://red1oon.github.io/bim-ootb/viewer/viewer.html') + '?db=' + OCI + 'buildings/Hospital_extracted.db&ghost=1';
-const WING = { deg: 70, centre: [6.57, 103.06], u: [-28.4, 22.32] };   // the 70-deg wing: walls of family 70 in the writer's extraction (prompts/FILM_DXF2BIM_WAND.md, measured with Std2d.frameModel)
+// the green-roof south-west block (sighted 2026-10-21: roof-garden slabs at z 176.9, centre 5.1, 68.7, 42 x 26 m; its face runs along the 85-deg family's quarter 355): the plane's two ends in front of
+// its south face, the depth across it; the camera views (target IFC m, azimuth / elevation deg, distance m)
+const GREEN = { p0: [-17, 52.4], p1: [26.8, 48.57], depth: 30, view: { t: [15, 85, 175], az: 225, el: 38, d: 120 }, work: { t: [5, 62, 172], az: 230, el: 40, d: 95 } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1', __GLX_VENDOR_LIBRARY_NAME: 'nvidia', __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' });
 (async () => {
@@ -47,64 +49,55 @@ const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1',
   const plane = () => pg.evaluate(() => APP.wing2dState().plane);
   const dragPath = async pts => { await pg.mouse.move(pts[0].x, pts[0].y, { steps: 6 }); await sleep(300); await pg.mouse.down(); for (const p of pts.slice(1)) { await pg.mouse.move(p.x, p.y, { steps: 2 }); await sleep(28); } await sleep(250); await pg.mouse.up(); await sleep(600); };
 
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
-  const T0 = now();
-  // ---- chapter 1 LOAD ----
-  await card('<div style="font-size:30px;color:#9aa3b2">Loading the Hospital sample model</div>');
-  await chapter(1, 'load', process.env.STILL1 || null);
-  await beat('c1');
-  await pg.goto(URL, { timeout: 180000 });
-  await uncard();
-  await beat('h01');
-  for (let i = 0; i < 120; i++) { const st = await pg.evaluate(() => ((document.getElementById('s-active') || {}).textContent || '')); if (/DONE/.test(st)) { fact('loaded', st.trim()); fact('load_s', (now() - T0).toFixed(1)); break; } await sleep(1000); }
+  // ---- load OFF camera (owner: "start from when loaded") ----
+  const T0 = now(); await pg.goto(URL, { timeout: 180000 });
+  for (let i = 0; i < 180; i++) { const st = await pg.evaluate(() => ((document.getElementById('s-active') || {}).textContent || '')); if (/DONE/.test(st)) { fact('loaded', st.trim()); fact('load_s', (now() - T0).toFixed(1)); break; } await sleep(1000); }
   await sleep(1500);
-  await beat('h02'); await orbit(70, 9000); await sleep(500);
-  // ---- chapter 2 THE PLANE ----
-  await chapter(2, 'plane');
-  await beat('s01');
+  await camTo(GREEN.view.t, GREEN.view.az, GREEN.view.el, GREEN.view.d, 10); await sleep(1500);
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+  // ---- chapter 1 THE HOSPITAL ----
+  await chapter(1, 'hospital'); await beat('h01');
+  await orbit(-35, 9000); await sleep(400); await orbit(35, 7000);
+  // ---- chapter 2 THE BOX ----
+  await chapter(2, 'box'); await beat('s01');
   await pg.evaluate(() => APP.toggleSection()); await sleep(1500);
   await pg.click('#sec-axis-wing'); await pg.waitForFunction(() => APP.wing2dState().side, { timeout: 120000 });
   const st0 = await pg.evaluate(() => APP.wing2dState()); fact('families', st0.fam.map(f => f.deg + ':' + f.n).join(' ')); fact('plane0', st0.plane);
   fact('nothing_cut', await pg.evaluate(() => APP.renderer.localClippingEnabled === false));
-  await sleep(2000);
-  // the target: the plane's midpoint on the wing's centre, turned to the wing (its length is the Viewer's default; the drag never changes a length)
-  const L = st0.plane.length, th = WING.deg * Math.PI / 180, ax = [Math.cos(th), Math.sin(th)], um = (WING.u[0] + WING.u[1]) / 2, M = [WING.centre[0] + um * ax[0], WING.centre[1] + um * ax[1]];
-  const S0 = [M[0] - L / 2 * ax[0], M[1] - L / 2 * ax[1]];   // the fixed end after the turn
+  await camTo(GREEN.work.t, GREEN.work.az, GREEN.work.el, GREEN.work.d, 3000); await sleep(1500);
   await beat('s02');
-  const mid0 = [(st0.plane.p0[0] + st0.plane.p1[0]) / 2, (st0.plane.p0[1] + st0.plane.p1[1]) / 2], z = (st0.plane.z[0] + st0.plane.z[1]) / 2;
-  const span = [Math.min(mid0[0], S0[0], M[0]) - 20, Math.max(st0.plane.p1[0], S0[0] + L, M[0]) + 20, Math.min(mid0[1], S0[1], M[1]) - 20, Math.max(mid0[1], S0[1] + L * ax[1], M[1]) + 20];
-  const tg = [(span[0] + span[1]) / 2, (span[2] + span[3]) / 2, z - 10], D = 1.05 * Math.max(span[1] - span[0], span[3] - span[2]);
-  await camTo(tg, -60, 48, D, 3500); await sleep(800);
-  // (1) drag the plane body: its west end onto the wing's start (the plane is still at 0 deg)
-  const dx = S0[0] - st0.plane.p0[0], dy = S0[1] - st0.plane.p0[1], body = [];
+  // (1) the plane body: its west end to the block's south-west corner
+  const mid0 = [(st0.plane.p0[0] + st0.plane.p1[0]) / 2, (st0.plane.p0[1] + st0.plane.p1[1]) / 2], dx = GREEN.p0[0] - st0.plane.p0[0], dy = GREEN.p0[1] - st0.plane.p0[1], body = [];
   for (let i = 0; i <= 40; i++) { const k = i / 40; body.push(await scr(mid0[0] + dx * k, mid0[1] + dy * k)); }
-  await dragPath(body); const st1 = await plane(); fact('after_move', st1);
-  await sleep(1200);
-  // (2) drag the east handle round the fixed west end, 0 -> the wing direction (it snaps within 3 deg)
-  const arc = []; for (let i = 0; i <= 60; i++) { const a = (WING.deg + 1.5) * Math.PI / 180 * i / 60; arc.push(await scr(st1.p0[0] + L * Math.cos(a), st1.p0[1] + L * Math.sin(a))); }
-  await dragPath(arc); const st2 = await plane(); fact('after_turn', st2); fact('plane_log', lastLog(/§WING2D_PLANE/));
-  fact('panel', await pg.evaluate(() => (document.getElementById('section-slider-panel') || document.body).innerText.replace(/\s+/g, ' ').slice(0, 300)));
-  await camTo([st2.pivot[0], st2.pivot[1], z - 10], -70 + WING.deg - 90, 40, L * 1.15, 3500); await sleep(1500);
-  // ---- chapter 3 THE SHEETS ----
-  await chapter(3, 'sheets');
-  await beat('x01');
-  await pg.click('#wing-2d-btn'); await pg.waitForFunction(() => document.getElementById('wing-2d-overlay'), { timeout: 120000 }); await sleep(1500);
-  fact('export_log', lastLog(/§WING2D_EXPORT/)); fact('north_log', lastLog(/§WING2D_NORTH/)); fact('sidecar_log', plog.filter(l => /§WING2D_SIDECAR/.test(l)).join(' | '));
+  await dragPath(body); const st1 = await plane(); fact('after_move', st1); await sleep(900);
+  // (2) the end handle: along the block's face and as long as the block (it snaps to the wall family)
+  const arc = []; for (let i = 0; i <= 50; i++) { const k = i / 50; arc.push(await scr(st1.p1[0] + (GREEN.p1[0] - st1.p1[0]) * k, st1.p1[1] + (GREEN.p1[1] - st1.p1[1]) * k)); }
+  await dragPath(arc); const st2 = await plane(); fact('after_turn', st2); await sleep(900);
+  await beat('s03');
+  // (3) the green depth handle: across the block
+  const hdFrom = await pg.evaluate(() => { const v = APP._wing2d.parts.hd.position.clone().project(APP.camera), r = APP.canvas.getBoundingClientRect(); return { x: r.left + (v.x * .5 + .5) * r.width, y: r.top + (-v.y * .5 + .5) * r.height }; });
+  const up = [-(st2.p1[1] - st2.p0[1]) / st2.length, (st2.p1[0] - st2.p0[0]) / st2.length], dpts = [hdFrom];
+  for (let i = 1; i <= 40; i++) { const k = i / 40, dd = 4 + (GREEN.depth - 4) * k; dpts.push(await scr(st2.pivot[0] + up[0] * dd, st2.pivot[1] + up[1] * dd)); }
+  await dragPath(dpts); const st3 = await plane(); fact('after_depth', st3); fact('plane_log', lastLog(/§WING2D_PLANE/));
+  fact('panel', await pg.evaluate(() => document.getElementById('wing-2d-state').textContent));
+  await sleep(1500);
+  // ---- chapter 3 JUST THE WING ----
+  await chapter(3, 'wing'); await beat('x01');
+  await pg.click('#wing-2d-btn'); await pg.waitForFunction(() => { const o = APP.wing2dState().overlay; return o && o.drawn; }, { timeout: 120000, polling: 250 }); await sleep(1500);
+  fact('export_log', lastLog(/§WING2D_EXPORT/)); fact('face_log', lastLog(/§WING2D_FACE/)); fact('north_log', lastLog(/§WING2D_NORTH/));
   const ov = await pg.evaluate(() => { const o = APP.wing2dState().overlay; return { sheet: o.sheet, drawn: o.drawn && o.drawn.entities, ok: !!(o.drawn && o.drawn.stats && JSON.stringify(o.drawn.stats.by_type) === JSON.stringify(o.drawn.stats.drawn_by_type)), foot: document.getElementById('wing-2d-foot').textContent }; });
-  fact('card', ov);
-  await sleep(2500);
+  fact('card', ov); await sleep(2500);
   await beat('x02');
   await pg.click('#wing-2d-canvas'); await sleep(1800);
   const cv = await pg.evaluate(() => { const r = document.getElementById('wing-2d-canvas').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-  await pg.mouse.move(cv.x + 200, cv.y - 60); for (let i = 0; i < 6; i++) { await pg.mouse.wheel({ deltaY: -240 }); await sleep(260); }
-  await sleep(1200); await pg.mouse.down(); await pg.mouse.move(cv.x - 120, cv.y + 40, { steps: 30 }); await pg.mouse.up(); await sleep(1500);
+  await pg.mouse.move(cv.x, cv.y + 80); for (let i = 0; i < 3; i++) { await pg.mouse.wheel({ deltaY: -240 }); await sleep(300); }
+  await sleep(1500); await pg.mouse.down(); await pg.mouse.move(cv.x + 160, cv.y + 40, { steps: 30 }); await pg.mouse.up(); await sleep(1500);
   const tabs = await pg.evaluate(() => [...document.querySelectorAll('#wing-2d-overlay button')].map(b => b.textContent).filter(t => t !== 'Save' && t !== 'Cancel')); fact('tabs', tabs);
   const visit = async name => { await pg.evaluate(n => { const b = [...document.querySelectorAll('#wing-2d-overlay button')].find(x => x.textContent === n); if (b) b.scrollIntoView({ inline: 'center' }); }, name); await sleep(400);
-    const h = (await pg.$$('#wing-2d-overlay button')); for (const b of h) { if ((await b.evaluate(x => x.textContent)) === name) { await b.click(); break; } } await sleep(2600);
+    for (const b of await pg.$$('#wing-2d-overlay button')) { if ((await b.evaluate(x => x.textContent)) === name) { await b.click(); break; } } await sleep(2600);
     fact('sheet_' + name, await pg.evaluate(() => { const o = APP.wing2dState().overlay; return { drawn: o.drawn && o.drawn.entities, ok: !!(o.drawn && o.drawn.stats && JSON.stringify(o.drawn.stats.by_type) === JSON.stringify(o.drawn.stats.drawn_by_type)) }; })); };
-  await beat('x03'); for (const n of ['FRONT', 'SECTION']) if (tabs.includes(n)) await visit(n);
-  await beat('x04'); for (const n of ['ROOF']) if (tabs.includes(n)) await visit(n);
-  const plan = tabs.find(t => /^FLOOR_LEVEL_2/.test(t)) || tabs[0]; await visit(plan);
+  await beat('x03'); await visit(tabs.find(t => /^FLOOR_LEVEL_2/.test(t)) || tabs[0]);
+  await beat('x04'); if (tabs.includes('SECTION')) await visit('SECTION');
   // ---- save ----
   await beat('x05');
   const before = fs.readdirSync(OUT); await pg.click('#wing-2d-save'); let zip = null;
@@ -116,11 +109,10 @@ const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1',
   } else fact('zip', 'NONE');
   await beat('x06'); await sleep(1000); await uncard(); await sleep(1200);
   // ---- chapter 4 LIMITS ----
-  await chapter(4, 'limits');
-  await beat('l01');
+  await chapter(4, 'limits'); await beat('l01');
   const gaps = (ov.foot.match(/(\d+) writer gap/) || [])[1];
   await card('<div style="font-size:24px;color:#9aa3b2;letter-spacing:3px;margin-bottom:24px">WHAT THIS DOES NOT DO YET</div><div style="text-align:left;font-size:26px;line-height:1.7">' +
-    ['The writer lists ' + gaps + ' gaps for this wing, none filled in.', 'Elevations draw only the walls on the wing\'s outer face.', 'Room names are not drawn: the rooms are computed, not named.', 'Recorded on a desktop; a phone is not measured.'].map(s => '· ' + s).join('<br>') + '</div>');
+    ['The writer lists ' + gaps + ' gaps for this box, none filled in.', 'The view at the plane is a drawing; it is not read back into 3D.', 'Curved walls are drawn, but stated as not orthogonal.', 'Recorded on a desktop GPU; a phone is not measured.'].map(x => '· ' + x).join('<br>') + '</div>');
   await beat('end');
   await card('<div style="font-size:24px;color:#9aa3b2">Hospital: the repository\'s open IFC sample (architecture + structure)<br>Viewer: red1oon.github.io/bim-ootb · data from the live bucket</div>');
   await hold(); await sleep(1200);
