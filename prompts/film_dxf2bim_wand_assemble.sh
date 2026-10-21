@@ -1,13 +1,20 @@
 #!/bin/bash
 # ⚠ DO NOT REMOVE — the 2D wand film (prompts/FILM_DXF2BIM_WAND.md): recorder take + narration (EN, Kokoro local) + chapter cards (FILM_SET=wand) + soft music bed. Read every log line it prints.
-# usage: film_dxf2bim_wand_assemble.sh <take dir (film.mp4, backdrops.txt) > <take log (film.log with §FILM_BEAT/CHAPTER)> <tsv> <out.mp4>   (FILM_CARDS_PY = the cards script with the wand set)
+# usage: film_dxf2bim_wand_assemble.sh <take dir (film.mp4, backdrops.txt) > <take log (film.log with §FILM_BEAT/CHAPTER)> <tsv> <out.mp4>   (FILM_CARDS_PY = the compiler's film_title_cards.py, run with FILM_SET=wand; BEAT_MIN_JSON = the recorder's beat_min.json)
 set -e
-REC=$(readlink -f $1); LOG=$(readlink -f $2); TSV=$(readlink -f $3); OUT=$(readlink -m $4); P=~/bim-compiler/prompts; CARDS=${FILM_CARDS_PY:?set FILM_CARDS_PY}; W=$REC/work_en; rm -rf $W; mkdir -p $W; cd $W
-VD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 $REC/film.mp4)
-cp $REC/film.mp4 silent_master.mp4; grep -E "§FILM_(BEAT|CHAPTER)" $LOG > beats.log
+REC=$(readlink -f $1); LOG=$(readlink -f $2); TSV=$(readlink -f $3); OUT=$(readlink -m $4); BM=$(readlink -f ${BEAT_MIN_JSON:?set BEAT_MIN_JSON}); P=~/bim-compiler/prompts; CARDS=${FILM_CARDS_PY:?set FILM_CARDS_PY}; W=$REC/work_en; rm -rf $W; mkdir -p $W; cd $W
+VD0=$(ffprobe -v error -show_entries format=duration -of csv=p=0 $REC/film.mp4)
+grep -E "§FILM_(BEAT|CHAPTER)" $LOG > beats.log
+# §LAST_BEAT (FILM_DXF2BIM_WAND.md "The last beat"): the screencast stops sending frames on the static end card, so pad the master to the recorder's own hold of the last beat, then close that beat with a terminal one (the fitter slots a beat up to the NEXT beat)
+read LAST TL PAD <<< $(python3 -I -c 'import re,json,sys;b=[(m.group(1),float(m.group(2))) for m in re.finditer(r"§FILM_BEAT id=(\S+) t=([\d.]+)",open(sys.argv[1]).read())];k,t=max(b,key=lambda x:x[1]);m=json.load(open(sys.argv[2]));print(k,t,max(0.0,t+m[k]+0.8+1.2-float(sys.argv[3])))' beats.log $BM $VD0)
+[ -n "$PAD" ] || { echo "§LAST_BEAT FAIL no pad (beat log / BEAT_MIN_JSON)"; exit 1; }
+ffmpeg -v error -y -i $REC/film.mp4 -vf "tpad=stop_mode=clone:stop_duration=$PAD,format=yuv420p" -c:v libx264 -crf 17 -preset medium silent_master.mp4
+VD=$(ffprobe -v error -show_entries format=duration -of csv=p=0 silent_master.mp4); echo "§LAST_BEAT id=$LAST t=$TL take=$VD0 pad=$PAD master=$VD"
+{ cat beats.log; echo "§FILM_BEAT id=_fin t=$VD"; } > beats_fit.log   # the fitter only; the cards keep the take's beats (tags end at the last beat, the end card stays clean)
 CR='Voices: AI (Kokoro, local)  ·  Script: red1'
-for i in 1 2 3; do POLY_CREDIT="$CR" python3 $P/film_narration_poly.py $TSV beats.log fit $VD > fit.log 2>&1; grep -q "lang=en wrong=0 rc=0" fit.log && break; sleep 2; done
+for i in 1 2 3; do POLY_CREDIT="$CR" python3 $P/film_narration_poly.py $TSV beats_fit.log fit $VD > fit.log 2>&1; grep -q "lang=en wrong=0 rc=0" fit.log && break; sleep 2; done
 grep -E "POLY_TONE" fit.log; echo "DETAIL=$(grep -c 'pick=DETAIL' fit.log) of $(grep -c POLY_FIT fit.log) SHORT=$(grep -c 'pick=SHORT' fit.log) SKIP=$(grep -c 'pick=SKIP' fit.log)"
+NF=$(grep -c POLY_FIT fit.log); NR=$(grep -c . $TSV); [ "$NF" = "$NR" ] || { echo "§LAST_BEAT FAIL fitted=$NF rows=$NR (a row had no slot)"; exit 1; }
 rm -rf cards; FILM_SET=wand python3 $CARDS beats.log $REC/backdrops.txt fit/poly.ass silent_master.mp4 cards | tee cards.log
 grep -q "§CARDS FAIL" cards.log && exit 1
 cp cards/carded.ass fit/poly.ass
