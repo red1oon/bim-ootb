@@ -15,50 +15,6 @@
   function invLines(trx, i) { return trx.find('c_invoiceline', { c_invoice_id: i.c_invoice_id }, ['line']).filter(function (l) { return l.isactive !== 'N'; }); }
   function isCM(trx, i) { return PXI.isCreditMemo(trx, i); }   // MInvoice.isCreditMemo :1072-1077 — ONE copy (PXI, below)
 
-  // ══ MInvoice.createPaySchedule :1911-1934 ∘ MPaymentTerm.apply/applySchedule/applyNoSchedule :204-289 ∘ MInvoicePaySchedule(invoice, paySchedule) :149-182 ∘ MInvoice.validatePaySchedule :1107-1139
-  //   (W-POST-CREDITMEMO: the credit-memo fixture of a 50%/50% term refused to complete). The per-row afterSave validate collapses to ONE validate after the rows + remainder are written: same end state.
-  function addDays(d, n) { var t = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }   // TimeUtil.addDays
-  function validatePaySchedule(trx, inv) {
-    var rows = trx.find('c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id }).filter(function (r) { return r.isactive !== 'N'; });
-    if (!rows.length) { if (Y(inv.ispayschedulevalid)) trx.update('c_invoice', inv, { ispayschedulevalid: 'N' }); return false; }
-    var total = Z; rows.forEach(function (r) { if (r.dueamt != null) total = total.add(D(r.dueamt)); });
-    var valid = D(inv.grandtotal).compareTo(total) === 0, v = valid ? 'Y' : 'N';
-    if ((inv.ispayschedulevalid || 'N') !== v) trx.update('c_invoice', inv, { ispayschedulevalid: v });
-    rows.forEach(function (r) { if ((r.isvalid || 'N') !== v) trx.update('c_invoicepayschedule', r, { isvalid: v }); });
-    return valid;
-  }
-  function createPaySchedule(trx, inv) {
-    if (!nz(inv.c_paymentterm_id)) return false;
-    var pt = trx.get('c_paymentterm', inv.c_paymentterm_id); if (!pt) return false;
-    var sched = trx.find('c_payschedule', { c_paymentterm_id: pt.c_paymentterm_id }, ['netdays']).filter(function (r) { return r.isactive !== 'N'; });
-    var have = trx.find('c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id });
-    if (have.length) return sched.length === 0 ? false : validatePaySchedule(trx, inv);
-    var isValid = applyPaymentTerm(trx, pt, inv, sched);
-    return sched.length === 0 ? true : isValid;
-  }
-  function applyPaymentTerm(trx, pt, inv, sched) {
-    if (!(inv.paymentrule === 'P' || inv.paymentrule === 'D') || D(inv.grandtotal).signum() === 0) return false;
-    var dropRows = function () { trx.find('c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id }).forEach(function (r) { trx.del('c_invoicepayschedule', r); }); };
-    var fresh = function () { return trx.get('c_invoice', inv.c_invoice_id); };
-    if (!Y(pt.isvalid) || !sched.length) {                                                   // applyNoSchedule
-      dropRows(); var f = fresh(), ch = {};
-      if (String(f.c_paymentterm_id) !== String(pt.c_paymentterm_id)) ch.c_paymentterm_id = pt.c_paymentterm_id;
-      if (Y(f.ispayschedulevalid)) ch.ispayschedulevalid = 'N';
-      if (Object.keys(ch).length) trx.update('c_invoice', f, ch);
-      return false;
-    }
-    dropRows();                                                                              // applySchedule
-    var scale = T.precisionOf(trx, inv.c_currency_id), remainder = D(inv.grandtotal), last = null, day = String(inv.dateinvoiced).slice(0, 10);
-    sched.forEach(function (ps) {
-      var due = D(inv.grandtotal).multiply(D(ps.percentage)).divide(D(100), scale, HU), disc = due.multiply(D(ps.discount || 0)).divide(D(100), scale, HU);
-      last = trx.insert('c_invoicepayschedule', ML.newPO(trx, 'c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id, c_payschedule_id: ps.c_payschedule_id, ad_client_id: inv.ad_client_id, ad_org_id: inv.ad_org_id,
-        dueamt: N(due), discountamt: N(disc), isvalid: 'Y', duedate: addDays(day, Number(ps.netdays || 0)) + ' 00:00:00', discountdate: addDays(day, Number(ps.discountdays || 0)) + ' 00:00:00', processed: 'N' }));
-      remainder = remainder.subtract(due); });
-    if (remainder.signum() !== 0 && last) { var lr = trx.find('c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id }).slice(-1)[0]; trx.update('c_invoicepayschedule', lr, { dueamt: N(D(lr.dueamt).add(remainder)) }); }
-    var f2 = fresh(); if (String(f2.c_paymentterm_id) !== String(pt.c_paymentterm_id)) { trx.update('c_invoice', f2, { c_paymentterm_id: pt.c_paymentterm_id }); f2 = fresh(); }
-    return validatePaySchedule(trx, f2);
-  }
-
   // ══ StandardTaxProvider.calculateInvoiceTaxTotal :166-238 ∘ MInvoiceTax.calculateTaxFromLines ═══════════════════
   function calculateInvoiceTaxTotal(trx, inv) {
     var prec = T.precisionOf(trx, inv.c_currency_id), incl = Y(inv.istaxincluded), ls = invLines(trx, inv), total = Z, seen = {}, keep = {};
@@ -139,7 +95,7 @@
         if (!il.save()) { T.msg(trx, 'Could not create Invoice Line from Order Line'); return null; }
       }
     }
-    if (trx.find('c_orderpayschedule', { c_order_id: o.c_order_id }).length) { T.msg(trx, 'copy C_OrderPaySchedule→C_InvoicePaySchedule (MOrder.java:2566) §MODEL-UNPORTED-DEP'); return null; }
+    if (!MO.copyOrderPaySchedule(trx, o.c_order_id, invoice.id(), null)) { T.msg(trx, 'ERROR: creating pay schedule for invoice from order ' + o.c_order_id); return null; }   // MOrder.createInvoice :2566-2577
     var res = ML.processIt(trx, 'c_invoice', invoice.id(), 'CO');
     if (!res.ok) throw new Error('FailedProcessingDocument - ' + (res.msg || res.status));
     var inv = trx.get('c_invoice', invoice.id());
@@ -222,7 +178,7 @@
       if (!nz(inv.c_doctype_id)) { T.msg(trx, 'No Document Type'); return 'IN'; }
       calculateInvoiceTaxTotal(trx, inv); inv = trx.get('c_invoice', inv.c_invoice_id);
       if (D(inv.grandtotal).signum() !== 0 && (inv.paymentrule === 'P' || inv.paymentrule === 'D')) {   // MInvoice.java:1750-1757
-        if (!createPaySchedule(trx, inv)) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }
+        if (!MO.createPaySchedule(trx, 'c_invoice', inv)) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }
         inv = trx.get('c_invoice', inv.c_invoice_id);
       } else if (trx.find('c_invoicepayschedule', { c_invoice_id: inv.c_invoice_id }).length) { T.msg(trx, '@ErrorPaymentSchedule@'); return 'IN'; }   // :1758-1764
       var cm = creditInvoice(trx, inv, 'PR'); if (cm) { T.msg(trx, cm); return 'IN'; }

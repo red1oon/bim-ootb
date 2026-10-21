@@ -4,8 +4,7 @@
 // (org.adempiere.base.process/src/org/compiere/process/CreateFromInvoice.java) + MInvoice.createLineFrom / updateFrom (org.adempiere.base/src/org/compiere/model/MInvoice.java:3262-3440).
 // bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §52 - Witness: W-CREATEFROM-INVOICE-IW. The Info Window (AD_InfoWindow 200024, the C_Invoice.CreateLinesFrom Button) IS the selection: the picked
 // rows are T_Selection / T_Selection_InfoWindow rows of this AD_PInstance_ID, written by the generic info-window engine (ad_infowin.js), read here exactly as the Java reads them.
-// NAMED, not faked: the M_RMALine branch (setRMALine / getOfRMALine), a line with neither receipt nor order line (setPrice/setTax), a product UOM that needs MUOMConversion, and the
-// order pay-schedule copy of updateFrom (MOrderPaySchedule) - each refuses loudly.
+// NAMED, not faked: the M_RMALine branch (setRMALine / getOfRMALine), a line with neither receipt nor order line (setPrice/setTax), a product UOM that needs MUOMConversion - each refuses loudly.
 (function (global) {
   'use strict';
   var P = (typeof module !== 'undefined' && module.exports) ? require('../ad_process.js') : global.AdProcess;
@@ -27,6 +26,7 @@
       throw new Error('@NotSupported@');
     };
     // Java's `X_ID > 0` reads `!== 0` here: a record made in this session carries a NEGATIVE tip id until commit (same as CreateFromInOut.js)
+    function MO() { return (typeof module !== 'undefined' && module.exports) ? require('../model_order.js') : global.ModelOrder; }
     function id0(v) { return v == null || v === '' ? 0 : Number(v); }
     CreateFromInvoice.prototype.createLines = function () {
       var A = X.A, trx = this.get_TrxName(), C = P.PSUP.docgen.ctor(), T = P.PSUP.docgen.T(), self = this, ML = X.ML;
@@ -101,8 +101,8 @@
       var cur = trx.get('c_invoice', this.p_C_Invoice_ID);
       var r = X.save(trx, 'C_Invoice', cur, { paymentrule: order.paymentrule, c_paymentterm_id: order.c_paymentterm_id, salesrep_id: order.salesrep_id || null });
       if (!r.ok) throw new Error(r.error || 'SaveError');
-      if (trx.find('c_orderpayschedule', { c_order_id: order.c_order_id }).length && !trx.find('c_invoicepayschedule', { c_invoice_id: cur.c_invoice_id }).length)
-        throw new Error('CreateFromInvoice: updateFrom copy of C_OrderPaySchedule (MOrderPaySchedule) is not ported');
+      if (!trx.find('c_invoicepayschedule', { c_invoice_id: cur.c_invoice_id }).length)          // :3400-3433 copy the order's schedule when the invoice has none (proportional DueAmt)
+        MO().copyOrderPaySchedule(trx, order.c_order_id, cur.c_invoice_id, order);
     };
     return CreateFromInvoice;
   });
