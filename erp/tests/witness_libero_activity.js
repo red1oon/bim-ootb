@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-LIBERO-ACTIVITY (spec prompts/mfg/LIBERO_ACTIVITY_SLICE6_SPEC.md). READ THE LOG after every run: verdict = §LACT-VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: an Activity Control collector (type 160) books the labour / burden cost of a routing step the way Libero does - duration converted to the resource UOM, cost details per element,
-//   the order activity closed when its quantity is done, and the accounting posted - and refuses what it does not port. Every number is hand-computed (see the spec). Breaks (MUST exit 1): LACT_BREAK=nobase|noclose|batchmult
+//   the order activity closed when its quantity is done, and the accounting posted - and refuses what it does not port. Every number is hand-computed (see the spec). Breaks (MUST exit 1): LACT_BREAK=nobase|noclose|batchmult|norate (activity rate variance off)
 'use strict';
 var fs = require('fs'), path = require('path');
 if (!global.window) global.window = {};
@@ -100,7 +100,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LACT ' + n + 
 
 
   var COSTMOD2 = COSTMOD;
-  if (BREAK === 'nobase') COSTMOD.SOURCE.routeBase = false; if (BREAK === 'noclose') COSTMOD.SOURCE.closeNode = false; if (BREAK === 'batchmult') COSTMOD.SOURCE.batchMult = false;
+  if (BREAK === 'nobase') COSTMOD.SOURCE.routeBase = false; if (BREAK === 'noclose') COSTMOD.SOURCE.closeNode = false; if (BREAK === 'batchmult') COSTMOD.SOURCE.batchMult = false; if (BREAK === 'norate') COSTMOD.SOURCE.activityRate = false;
   // FIXTURE (labelled): the resource product 50024 (UOM Hour) costs Standard; Labor (element 105) 12.00 and Burden (50000) 3.00 per hour; the order carries QtyBatchs = 2
   var RP = 50024; stdOn(true); db.run('UPDATE m_product_category_acct SET costingmethod=\'S\' WHERE m_product_category_id=50003');
   function rprice(el, v) { db.run('UPDATE m_cost SET currentcostprice=? WHERE m_product_id=? AND m_costelement_id=? AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0', [v, RP, el]); }
@@ -214,6 +214,50 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LACT ' + n + 
   mute(); var rS3 = doAction('pp_cost_collector', ccS.pp_cost_collector_id, 'CO'); unmute(); var cs3 = one('SELECT docstatus AS s, docaction AS a, processed AS p FROM pp_cost_collector WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]), nS3 = one('SELECT docstatus AS s, docaction AS a, datefinish AS df FROM pp_order_node WHERE pp_order_node_id=?', [nodeS.pp_order_node_id]);
   log('§LACT-A9c after delivery ok=' + rS3.ok + ' msg=' + (rS3.msg || '') + ' cc=' + JSON.stringify(cs3) + ' node=' + JSON.stringify(nS3));
   check('A9c once the PO line is delivered the collector completes (CO, DocAction CL) and the activity is Completed (CO, DocAction --, DateFinish set)', rS3.ok && cs3.s === 'CO' && cs3.a === 'CL' && nS3.s === 'CO' && nS3.a === '--' && !!nS3.df, { ok: rS3.ok, msg: rS3.msg, cc: cs3, node: nS3 });
+
+  // ── VARIANCES (spec §VARIANCES; CostEngine.createRateVariances :525-581 activity branch, createMethodVariances :583-656, MPPCostCollector.completeIt :555-556) ──────────────────────
+  var HQ = 0.5016666666666667;   // the A1 hour base: (0+1+2) x QtyBatchs 2 + 1800 = 1806 s / 3600
+  var vdet = function (ccId) { return q('SELECT m_product_id AS p, m_costelement_id AS e, amt, qty FROM m_costdetail WHERE pp_cost_collector_id=? AND c_acctschema_id=101 ORDER BY m_costdetail_id', [ccId]); };
+  var ccOf = function (oid, t) { return q("SELECT * FROM pp_cost_collector WHERE pp_order_id=? AND costcollectortype=? ORDER BY pp_cost_collector_id", [oid, t]); };
+  // RV1 LABELLED FIXTURE (the slice-3 method: a direct M_Cost edit is undone by cost history, so the ORDER'S SNAPSHOT moves): PP_Order_Cost Labor of the resource product 12 -> 10 after completion;
+  //   the activity books a RATE variance (140): (-actual, -qty) and (std, qty) copies of its Labor detail
+  //   hand: Labor detail qty = -HQ ; amtStd = round4(10 x -HQ) = -5.0167 ; amtActual = round4(12 x -HQ) = -6.02 -> details (+6.02, +HQ) and (-5.0167, -HQ); Burden unchanged (3 = 3) -> no Burden variance
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500); rprice(105, 12); rprice(50000, 3);
+  var OR = newCompletedOrder('LA-R'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OR.pp_order_id]); db.run('UPDATE pp_order_cost SET currentcostprice=10 WHERE pp_order_id=? AND m_product_id=? AND m_costelement_id=105 AND c_acctschema_id=101', [OR.pp_order_id, RP]);
+  var nodeR = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OR.pp_order_id]), rR = activity(OR, nodeR, 100, 1800, 0), rv = ccOf(OR.pp_order_id, '140'), rvd = rv.length ? vdet(rv[0].pp_cost_collector_id) : [];
+  (rR.log || []).filter(function (l) { return /LIBERO-RATE|ACTIVITY-COST|LIBERO-ACT|LIBERO-COMPLETE/.test(l); }).slice(0, 8).forEach(function (l) { log('    ' + String(l).slice(0, 260)); });
+  log('§LACT-RV1 cc160 details=' + JSON.stringify(vdet((ccOf(OR.pp_order_id, '160')[0] || {}).pp_cost_collector_id).map(function (d) { return d.p + '/' + d.e + ':' + d.amt + '/' + d.qty; })) + ' snapshot=' + JSON.stringify(q('SELECT m_product_id AS p, m_costelement_id AS e, currentcostprice AS c FROM pp_order_cost WHERE pp_order_id=? AND m_product_id=50024', [OR.pp_order_id])));
+  log('§LACT-RV1 ok=' + rR.ok + ' msg=' + (rR.msg || '') + ' rate collectors=' + rv.length + ' details=' + JSON.stringify(rvd.map(function (d) { return d.e + ':' + d.amt + '/' + d.qty; })));
+  var lab = rvd.filter(function (d) { return S(d.e) === 105; });
+  check('RV1 an Activity Control whose order snapshot holds Labor 10 against the actual 12 books ONE Rate Variance collector (140, CO) with Labor details +6.02/+' + HQ + ' and -5.0167/-' + HQ + ', no Burden detail', rR.ok && rv.length === 1 && rv[0].docstatus === 'CO' && lab.length === 2 && close(lab[0].amt, 6.02, 0.00005) && close(lab[0].qty, HQ, 1e-9) && close(lab[1].amt, -5.0167, 0.00005) && close(lab[1].qty, -HQ, 1e-9) && !rvd.some(function (d) { return S(d.e) === 50000; }), { ok: rR.ok, msg: rR.msg, rv: rv.length, rvd: rvd });
+  // MV1 LABELLED FIXTURE: the activity is REPORTED on resource 50000 "Fertilizer Plant" (product 50018, Labor 20) while the routing says 50006 (product 50024, Labor 12, Burden 3) -> a METHOD CHANGE collector (130)
+  //   hand (qty = the resource base value = HQ): Labor: (+20 x HQ = 10.0333.., +HQ, 50018) and (-12 x HQ = -6.02, -HQ, 50024); Burden: actual 0 vs std 3 -> (0, +HQ, 50018) and (-1.505, -HQ, 50024)
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  db.run('UPDATE m_cost SET currentcostprice=20 WHERE m_product_id=50018 AND m_costelement_id=105 AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0');
+  var OMv = newCompletedOrder('LA-V'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OMv.pp_order_id]);
+  var nodeV = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OMv.pp_order_id]);
+  mute(); var rV = ML.run(q, Object.assign(env(), T), { table: 'pp_order', timing: 'PROCESS', fn: function (trx) {
+    lib.createCollector(trx, trx.get('pp_order', OMv.pp_order_id), { type: '160', docTypeId: DT_MCC, locatorId: LOC, asiId: 0, movementDate: DATE, qty: 100, scrap: 0, reject: 0, bomLineId: 0, nodeId: nodeV.pp_order_node_id, resourceId: 50000, productId: FG, durationSetup: 0, duration: 1800 });
+    return { ok: true }; } }); unmute(); if (rV.ok) apply(rV.ops);
+  db.run('UPDATE m_cost SET currentcostprice=0 WHERE m_product_id=50018 AND m_costelement_id=105 AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0');
+  var mv = ccOf(OMv.pp_order_id, '130'), mvd = mv.length ? vdet(mv[0].pp_cost_collector_id).filter(function (d) { return S(d.p) === 50018 || S(d.p) === 50024; }) : [];
+  log('§LACT-MV1 ok=' + rV.ok + ' msg=' + (rV.msg || '') + ' method collectors=' + mv.length + ' resource details=' + JSON.stringify(mvd.map(function (d) { return d.p + '/' + d.e + ':' + d.amt + '/' + d.qty; })));
+  var g = function (p, e) { return mvd.filter(function (d) { return S(d.p) === p && S(d.e) === e; })[0]; };
+  check('MV1 an activity reported on resource 50000 instead of the routing resource 50006 books ONE Method Change collector (130, CO): Labor +10.0333/+HQ on 50018 and -6.02/-HQ on 50024, Burden 0/+HQ on 50018 and -1.505/-HQ on 50024',
+    rV.ok && mv.length === 1 && mv[0].docstatus === 'CO' && g(50018, 105) && close(g(50018, 105).amt, 20 * HQ, 0.0001) && close(g(50018, 105).qty, HQ, 1e-9) && g(50024, 105) && close(g(50024, 105).amt, -12 * HQ, 0.0001) && close(g(50024, 105).qty, -HQ, 1e-9) && g(50018, 50000) && close(g(50018, 50000).amt, 0) && g(50024, 50000) && close(g(50024, 50000).amt, -3 * HQ, 0.0001),
+    { ok: rV.ok, msg: rV.msg, mv: mv.length, mvd: mvd });
+  // MC1 a Method Change collector (130) on a BOM line (Libero createIssue makes one for a line with QtyBatch 0 and QtyBOM 0): it is an ISSUE (the line's QtyDelivered moves) but a VARIANCE (no stock
+  //   movement), and createMethodVariances books its product at the ACTUAL price: KG Material 2.5 x 10 = 25 (qty 10)
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OMc = newCompletedOrder('LA-MC'), kgl = bomLines(OMc.pp_order_id).filter(function (l) { return S(l.m_product_id) === KG; })[0], kgBefore = S(kgl.qtydelivered || 0);
+  mute(); var rMc = ML.run(q, Object.assign(env(), T), { table: 'pp_order', timing: 'PROCESS', fn: function (trx) {
+    lib.createCollector(trx, trx.get('pp_order', OMc.pp_order_id), { type: '130', docTypeId: DT_MCC, locatorId: LOC, asiId: 0, movementDate: DATE, qty: 10, scrap: 0, reject: 0, bomLineId: kgl.pp_order_bomline_id, nodeId: 0, resourceId: OMc.s_resource_id, productId: KG, durationSetup: 0, duration: 0 });
+    return { ok: true }; } }); unmute(); if (rMc.ok) apply(rMc.ops);
+  var mc = ccOf(OMc.pp_order_id, '130'), mcd = mc.length ? vdet(mc[0].pp_cost_collector_id) : [], kgAfter = S(one('SELECT qtydelivered AS q FROM pp_order_bomline WHERE pp_order_bomline_id=?', [kgl.pp_order_bomline_id]).q);
+  var mtx = mc.length ? q('SELECT COUNT(*) AS n FROM m_transaction WHERE pp_cost_collector_id=?', [mc[0].pp_cost_collector_id])[0].n : -1;
+  log('§LACT-MC1 ok=' + rMc.ok + ' msg=' + (rMc.msg || '') + ' collectors=' + mc.length + ' details=' + JSON.stringify(mcd.map(function (d) { return d.p + '/' + d.e + ':' + d.amt + '/' + d.qty; })) + ' KG delivered ' + kgBefore + ' -> ' + kgAfter + ' transactions=' + mtx);
+  var mat = mcd.filter(function (d) { return S(d.e) === 100; })[0];
+  check('MC1 a Method Change collector (130) on the KG line completes: the line QtyDelivered +10, NO stock transaction, and a Material detail on KG of 2.5 x 10 = 25 / qty 10', rMc.ok && mc.length === 1 && mc[0].docstatus === 'CO' && close(kgAfter - kgBefore, 10) && S(mtx) === 0 && mat && S(mat.p) === KG && close(mat.amt, 25, 0.0001) && close(mat.qty, 10), { ok: rMc.ok, msg: rMc.msg, mcd: mcd, kg: [kgBefore, kgAfter], mtx: mtx });
 
   COSTMOD.DEFERRED.forEach(function (d) { log('§LIBERO-DEFERRED ' + d); });
   var v = !judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§LACT-VERDICT ' + v + ' break=' + (BREAK || 'none') + ' judged=' + judged + ' failed=' + fails); process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 3);

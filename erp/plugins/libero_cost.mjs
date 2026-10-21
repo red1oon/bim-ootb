@@ -4,13 +4,13 @@
 //   Receipt (100), StorageEngine.createTransaction, CostEngine.createCostDetail / createRateVariances. Core ports are REUSED (ModelTrade storage, ModelCost MCostDetail, ModelMaster acct schemas). Pure: no clock, no random.
 //   Every type it does not port is REFUSED by name (never a silent no-op).
 export const DEFERRED = [
-  'Method Change variance collectors (130) and CostEngine.createMethodVariances (resource differs from routing); Mix variance (150) completion beyond the bomline update; rate variances for Activity Control collectors',
+  'Mix variance (150) completion beyond the bomline update',
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
   'Doc_PPCostCollector Receipt scrap branch (named refusal). Milestones and subcontracting (createPO) ARE ported, incl. two upstream quirks (spec slice 6 §MILESTONE, §SUBCONTRACT)'
 ];
-export const SOURCE = { routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
@@ -180,34 +180,74 @@ export function create(ctx) {
     }
   }
   // CostEngine.createRateVariances :520-585 (Component Issue only here: Activity Control is deferred)
+  // CostEngine.createVarianceCostCollector :330-345 - a copy of the source collector (copyValues), Drafted, the variance type, no DocumentNo
+  function varianceCollector(trx, cc, type) {
+    const cp = Object.assign({}, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); ['pp_cost_collector_id', 'pp_cost_collector_uu', 'documentno', 'created', 'updated', 'createdby', 'updatedby'].forEach((k) => delete cp[k]);
+    Object.assign(cp, { processing: 'N', processed: 'N', docstatus: 'DR', docaction: 'CO', costcollectortype: type });
+    const r = ML.newRecord(trx, 'pp_cost_collector', cp); if (!r.save()) throw new Error(r.error); return r.row;
+  }
+  // CostEngine.createVarianceCostDetail :411-440 - a copy of `cd` (when given) or a fresh detail of `product` (ASI 0), on the variance collector, amt/qty set, then processed
+  function varianceDetail(trx, ccv, amt, q, cd, product, as, el) {
+    let h;
+    if (cd) { const cp = Object.assign({}, cd); ['m_costdetail_id', 'm_costdetail_uu', 'created', 'updated', 'createdby', 'updatedby'].forEach((k) => delete cp[k]);
+      Object.assign(cp, { processed: 'N', deltaamt: 0, deltaqty: 0 }); if (product) Object.assign(cp, { m_product_id: product.m_product_id, m_attributesetinstance_id: 0 }); h = { row: cp, isNew: true }; }
+    else h = MC().cdNew(trx, as, ccv.ad_org_id, product.m_product_id, 0, el.m_costelement_id, amt, q, '', null, 0);
+    Object.assign(h.row, { pp_cost_collector_id: ccv.pp_cost_collector_id, c_acctschema_id: as.c_acctschema_id, m_costelement_id: el.m_costelement_id, amt: num(amt), qty: num(q) });
+    MC().cdSave(trx, h); if (h.row.processed !== 'Y') MC().cdProcess(trx, h);
+  }
+  const wfNodeResource = (trx, cc) => { const n = trx.get('pp_order_node', cc.pp_order_node_id), w = n && trx.get('ad_wf_node', n.ad_wf_node_id); return w ? w.s_resource_id : null; };   // getPP_Order_Node().getAD_WF_Node().getS_Resource_ID()
+  // CostEngine.createRateVariances :525-581 - Activity Control (the routing resource's product) and Component Issue (the BOM line product): std vs actual per element
   function createRateVariances(trx, cc) {
-    if (!isType(cc, T_ISSUE)) return null;
-    const product = trx.get('m_product', trx.get('pp_order_bomline', cc.pp_order_bomline_id).m_product_id); let ccrv = null;
+    let product;
+    if (isActivity(cc)) { if (!SOURCE.activityRate) return null; product = resourceProduct(trx, wfNodeResource(trx, cc)); trx.say('§LIBERO-RATE-ACT collector=' + cc.documentno + ' wfResource=' + wfNodeResource(trx, cc) + ' product=' + (product && product.m_product_id)); if (!product) return null; }
+    else if (isType(cc, T_ISSUE)) product = trx.get('m_product', trx.get('pp_order_bomline', cc.pp_order_bomline_id).m_product_id);
+    else return null;
+    let ccrv = null;
     for (const as of acctSchemas(trx, cc.ad_org_id)) for (const el of elements(trx)) {
       const cd = trx.find('m_costdetail', { pp_cost_collector_id: cc.pp_cost_collector_id, m_costelement_id: el.m_costelement_id }, ['m_costdetail_id'])[0]; if (!cd) continue;
       const qty = dec(cd.qty), std = standardPrice(trx, cc, product, as, el), act = actualPrice(trx, cc, product, as, el);
-      if (el.costelementtype === 'M') trx.say('§LIBERO-RATE-CHECK collector=' + cc.documentno + ' schema=' + as.c_acctschema_id + ' element=' + el.m_costelement_id + ' std=' + std.toString() + ' actual=' + act.toString() + ' qty=' + qty.toString());
+      if (el.costelementtype === 'M' || isActivity(cc)) trx.say('§LIBERO-RATE-CHECK collector=' + cc.documentno + ' schema=' + as.c_acctschema_id + ' element=' + el.m_costelement_id + ' std=' + std.toString() + ' actual=' + act.toString() + ' qty=' + qty.toString());
       const amtStd = roundCost(trx, std.multiply(qty), as), amtAct = roundCost(trx, act.multiply(qty), as);
       if (amtStd.compareTo(amtAct) === 0) continue;
-      if (!ccrv) {   // createVarianceCostCollector :330-345 (copyValues of the issue, Drafted, type Rate Variance, no DocumentNo)
-        const cp = Object.assign({}, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); ['pp_cost_collector_id', 'pp_cost_collector_uu', 'documentno', 'created', 'updated', 'createdby', 'updatedby'].forEach((k) => delete cp[k]);
-        Object.assign(cp, { processing: 'N', processed: 'N', docstatus: 'DR', docaction: 'CO', costcollectortype: T_RATE });
-        const r = ML.newRecord(trx, 'pp_cost_collector', cp); if (!r.save()) return r.error; ccrv = r.row;
-      }
-      const vd = (amt, q) => {   // createVarianceCostDetail :347-380 (copy of the issue's detail, own collector, amt/qty set)
-        const cp = Object.assign({}, cd); ['m_costdetail_id', 'm_costdetail_uu', 'created', 'updated', 'createdby', 'updatedby'].forEach((k) => delete cp[k]);
-        Object.assign(cp, { processed: 'N', pp_cost_collector_id: ccrv.pp_cost_collector_id, c_acctschema_id: as.c_acctschema_id, m_costelement_id: el.m_costelement_id, amt: num(amt), qty: num(q), deltaamt: 0, deltaqty: 0 });
-        const h = { row: cp, isNew: true }; MC().cdSave(trx, h); if (h.row.processed !== 'Y') MC().cdProcess(trx, h);
-      };
-      vd(amtAct.negate(), qty.negate()); vd(amtStd, qty);
-      trx.say('§LIBERO-RATE-VARIANCE collector=' + cc.documentno + ' element=' + el.m_costelement_id + ' std=' + amtStd.toString() + ' actual=' + amtAct.toString());
+      if (!ccrv) ccrv = varianceCollector(trx, cc, T_RATE);
+      varianceDetail(trx, ccrv, amtAct.negate(), qty.negate(), cd, null, as, el); varianceDetail(trx, ccrv, amtStd, qty, cd, null, as, el);
+      trx.say('§LIBERO-RATE-VARIANCE collector=' + cc.documentno + ' type=' + cc.costcollectortype + ' element=' + el.m_costelement_id + ' std=' + amtStd.toString() + ' actual=' + amtAct.toString());
     }
     if (ccrv) { const r = ML.processIt(trx, 'pp_cost_collector', ccrv.pp_cost_collector_id, 'CO'); if (!r.ok) return r.msg || 'rate variance collector not completed'; }
     return null;
   }
+  // CostEngine.createMethodVariances :583-656 - (a) a Method Change collector books its own product at the ACTUAL price per element; (b) an Activity reported on a resource other than the
+  //   routing's books actual - standard resource cost on a new Method Change collector (std/actual priced as ACTUAL cost of each resource's product, qty = the resource base value)
+  function createMethodVariances(trx, cc) {
+    if (isType(cc, T_METHOD)) {
+      const product = trx.get('m_product', cc.m_product_id), qty = dec(cc.movementqty);
+      for (const as of acctSchemas(trx, cc.ad_org_id)) for (const el of elements(trx)) {
+        const amt = actualPrice(trx, cc, product, as, el).multiply(qty);                       // not rounded upstream
+        varianceDetail(trx, cc, amt, qty, null, product, as, el);
+      }
+      trx.say('§LIBERO-METHOD-VARIANCE collector=' + cc.documentno + ' (method change) product=' + product.m_product_id + ' qty=' + qty.toString());
+      return null;
+    }
+    if (!isActivity(cc)) return null;
+    const stdRes = wfNodeResource(trx, cc), actRes = cc.s_resource_id;
+    if (Number(stdRes) === Number(actRes)) return null;
+    let ccmv = null; const fg = trx.get('m_product', cc.m_product_id), pStd = resourceProduct(trx, stdRes), pAct = resourceProduct(trx, actRes);
+    for (const as of acctSchemas(trx, cc.ad_org_id)) for (const el of elements(trx)) {
+      void fg;
+      const ps = actualPrice(trx, cc, pStd, as, el), pa = actualPrice(trx, cc, pAct, as, el);
+      if (ps.compareTo(pa) === 0) continue;
+      if (!ccmv) ccmv = varianceCollector(trx, cc, T_METHOD);
+      const qty = getResourceBaseValue(trx, actRes, cc);
+      varianceDetail(trx, ccmv, pa.multiply(qty), qty, null, pAct, as, el); varianceDetail(trx, ccmv, ps.multiply(qty).negate(), qty.negate(), null, pStd, as, el);
+      trx.say('§LIBERO-METHOD-VARIANCE collector=' + cc.documentno + ' resource std=' + stdRes + ' actual=' + actRes + ' element=' + el.m_costelement_id + ' std=' + ps.toString() + ' actual=' + pa.toString() + ' qty=' + qty.toString());
+    }
+    if (ccmv) { const r = ML.processIt(trx, 'pp_cost_collector', ccmv.pp_cost_collector_id, 'CO'); if (!r.ok) return r.msg || 'method variance collector not completed'; }
+    return null;
+  }
+
 
   // ── DocAction (MPPCostCollector.prepareIt :300-387 / completeIt :404-570), Issue + Receipt only ─────────────────────────
-  const NOT_PORTED = (cc) => (isType(cc, T_METHOD) ? 'DEFERRED: Method Change variance collectors (130) are not ported yet' : null);   // Rate (140) and Mix (150) completions are a bomline/order update only
+  const NOT_PORTED = () => null;   // every collector type is ported (Method Change 130: createMethodVariances; Rate 140 / Mix 150 completions are a bomline/order update only)
   function asiMandatory(trx, product, isSO) {   // MProduct.isASIMandatory
     for (const as of MM().clientAcctSchemas(trx, product.ad_client_id)) if (MC().costingLevel(trx, product, as) === 'B') return true;
     if (!Number(product.m_attributeset_id || 0)) return false;
@@ -252,6 +292,7 @@ export function create(ctx) {
         if (isActivity(cc)) activityComplete(trx, cc);
         else if (isType(cc, T_USAGE)) usageComplete(trx, cc);
         let e = createRateVariances(trx, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); if (e) throw new Error(e);
+        e = createMethodVariances(trx, trx.get('pp_cost_collector', cc.pp_cost_collector_id)); if (e) throw new Error(e);   // :555-556
         trx.update('pp_cost_collector', trx.get('pp_cost_collector', cc.pp_cost_collector_id), { processed: 'Y', docaction: 'CL' });
       } catch (e) { trx._msg = e.message; trx.say('§LIBERO-COMPLETE-REFUSED collector=' + d0.documentno + ' type=' + d0.costcollectortype + ' ' + e.message + (e.stack ? ' @' + String(e.stack).split('\n').slice(1, 4).join(' <- ') : '')); return 'IN'; }
       return 'CO';
