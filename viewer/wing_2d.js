@@ -83,7 +83,11 @@ function setupWing2D(A) {
     var edge = new T.LineSegments(new T.EdgesGeometry(new T.PlaneGeometry(1, 1)), new T.LineBasicMaterial({ color: 0x4fc3f7, depthTest: false })); edge.name = 'edges'; plane.add(edge);
     var h0 = new T.Mesh(new T.BoxGeometry(1, 1, 1), mat(0xffd54f, 0.9)), h1 = new T.Mesh(new T.BoxGeometry(1, 1, 1), mat(0xffd54f, 0.9)); h0.name = 'h0'; h1.name = 'h1'; g.add(h0, h1);
     var arrow = new T.ArrowHelper(new T.Vector3(0, 0, 1), new T.Vector3(0, 0, 0), 1, 0x4fc3f7, 0.25, 0.15); arrow.name = 'up'; arrow.traverse(function (o) { if (o.material) { o.material.depthTest = false; } o.renderOrder = 999; }); g.add(arrow);
-    S.parts = { plane: plane, h0: h0, h1: h1, arrow: arrow }; S.g = g; A.scene.add(g);
+    // §F7 W-WAND-BOX: the depth handle (green) + the box footprint on the plane's base: the 2D is clipped to the box (plane length x depth)
+    var hd = new T.Mesh(new T.BoxGeometry(1, 1, 1), mat(0x81c784, 0.95)); hd.name = 'hd'; g.add(hd);
+    var fg = new T.BufferGeometry(); fg.setAttribute('position', new T.BufferAttribute(new Float32Array(18), 3)); var foot = new T.Mesh(fg, mat(0x81c784, 0.22)); foot.name = 'foot'; g.add(foot);
+    var fl = new T.LineLoop(new T.BufferGeometry().setAttribute('position', new T.BufferAttribute(new Float32Array(12), 3)), new T.LineBasicMaterial({ color: 0x81c784, depthTest: false })); fl.name = 'footline'; g.add(fl);
+    S.parts = { plane: plane, h0: h0, h1: h1, arrow: arrow, hd: hd, foot: foot, footline: fl }; S.g = g; A.scene.add(g);
   }
   function updateGizmo() {
     if (!S.g) return; var T = window.THREE, G = geom(), a = three(S.p0[0], S.p0[1], S.z0), b = three(S.p1[0], S.p1[1], S.z0), H = S.z1 - S.z0;
@@ -94,6 +98,11 @@ function setupWing2D(A) {
     [[S.parts.h0, a], [S.parts.h1, b]].forEach(function (pr) { pr[0].position.set(pr[1].x, c.y, pr[1].z); pr[0].scale.set(hw, H, hw); });
     var up = three(G.mid[0] + G.up[0] * 3, G.mid[1] + G.up[1] * 3, (S.z0 + S.z1) / 2); S.parts.arrow.position.set(c.x, c.y, c.z);
     S.parts.arrow.setDirection(new T.Vector3(up.x - c.x, 0, up.z - c.z).normalize()); S.parts.arrow.setLength(3, 0.8, 0.5);
+    var dd = S.depth || 0, hp = three(G.mid[0] + G.up[0] * (dd || 4), G.mid[1] + G.up[1] * (dd || 4), (S.z0 + S.z1) / 2); S.parts.hd.position.set(hp.x, hp.y, hp.z); S.parts.hd.scale.set(hw * 1.6, hw * 1.6, hw * 1.6);
+    var q = [S.p0, S.p1, [S.p1[0] + G.up[0] * dd, S.p1[1] + G.up[1] * dd], [S.p0[0] + G.up[0] * dd, S.p0[1] + G.up[1] * dd]].map(function (v) { return three(v[0], v[1], S.z0 + 0.05); });
+    var fp = S.parts.foot.geometry.attributes.position, ix = [0, 1, 2, 0, 2, 3]; ix.forEach(function (k, i) { fp.setXYZ(i, q[k].x, q[k].y, q[k].z); }); fp.needsUpdate = true;
+    var lp = S.parts.footline.geometry.attributes.position; q.forEach(function (v, i) { lp.setXYZ(i, v.x, v.y, v.z); }); lp.needsUpdate = true;
+    S.parts.foot.visible = S.parts.footline.visible = dd > 0;
     if (A.markDirty) A.markDirty();
   }
   function initPlane() {
@@ -111,12 +120,12 @@ function setupWing2D(A) {
   }
   function pick(e) {
     var T = window.THREE, rc = new T.Raycaster(), n = ndc(e); rc.setFromCamera(new T.Vector2(n.x, n.y), A.camera);
-    var hit = rc.intersectObjects([S.parts.h0, S.parts.h1, S.parts.plane], false)[0]; return hit ? hit.object.name : null;
+    var hit = rc.intersectObjects([S.parts.hd, S.parts.h0, S.parts.h1, S.parts.plane], false)[0]; return hit ? hit.object.name : null;
   }
   function onDown(e) {
     if (!S.on || e.button !== 0) return; var what = pick(e); if (!what) return;
     var g = hitGround(e); if (!g) return; e.stopPropagation(); e.preventDefault();
-    S.drag = { what: what, g0: g, p0: S.p0.slice(), p1: S.p1.slice() }; if (A.controls) A.controls.enabled = false;
+    S.drag = { what: what, g0: g, p0: S.p0.slice(), p1: S.p1.slice(), depth: S.depth || 0 }; if (A.controls) A.controls.enabled = false;
     try { A.canvas.setPointerCapture(e.pointerId); } catch (x) {}
   }
   function onMove(e) {
@@ -124,6 +133,7 @@ function setupWing2D(A) {
     if (!S.drag) { A.canvas.style.cursor = pick(e) ? 'grab' : ''; return; }
     var g = hitGround(e); if (!g) return; var D = S.drag, dx = g[0] - D.g0[0], dy = g[1] - D.g0[1];
     if (D.what === 'plane') { S.p0 = [D.p0[0] + dx, D.p0[1] + dy]; S.p1 = [D.p1[0] + dx, D.p1[1] + dy]; }
+    else if (D.what === 'hd') { var G0 = geom(), d = (g[0] - G0.mid[0]) * G0.up[0] + (g[1] - G0.mid[1]) * G0.up[1]; S.depth = d < 1 ? 0 : d; }   // under 1 m = no depth (unbounded across the plane)
     else {
       var fixed = D.what === 'h1' ? D.p0 : D.p1, mv = [(D.what === 'h1' ? D.p1[0] : D.p0[0]) + dx, (D.what === 'h1' ? D.p1[1] : D.p0[1]) + dy];
       var vx = mv[0] - fixed[0], vy = mv[1] - fixed[1], L = Math.hypot(vx, vy); if (L < 0.5) return;
@@ -138,9 +148,9 @@ function setupWing2D(A) {
     if (!S.drag) return; var D = S.drag; S.drag = null; if (A.controls) A.controls.enabled = true; try { A.canvas.releasePointerCapture(e.pointerId); } catch (x) {}
     commitPlane(D.what);
   }
-  function planeParams() { var G = geom(); return { turn: Number(G.turn.toFixed(4)), pivot: [Number(G.mid[0].toFixed(4)), Number(G.mid[1].toFixed(4))], length: Number(G.L.toFixed(3)), p0: S.p0.map(function (v) { return Number(v.toFixed(4)); }), p1: S.p1.map(function (v) { return Number(v.toFixed(4)); }), z: [Number(S.z0.toFixed(3)), Number(S.z1.toFixed(3))] }; }
+  function planeParams() { var G = geom(); return { turn: Number(G.turn.toFixed(4)), pivot: [Number(G.mid[0].toFixed(4)), Number(G.mid[1].toFixed(4))], length: Number(G.L.toFixed(3)), p0: S.p0.map(function (v) { return Number(v.toFixed(4)); }), p1: S.p1.map(function (v) { return Number(v.toFixed(4)); }), z: [Number(S.z0.toFixed(3)), Number(S.z1.toFixed(3))], depth: Number((S.depth || 0).toFixed(3)) }; }
   function commitPlane(how) {
-    var P = planeParams(); S.last = P; log('_PLANE how=' + how + ' turn=' + P.turn + ' pivot=' + JSON.stringify(P.pivot) + ' length=' + P.length + ' framed=' + framedCount(P.turn));
+    var P = planeParams(); S.last = P; log('_PLANE how=' + how + ' turn=' + P.turn + ' pivot=' + JSON.stringify(P.pivot) + ' length=' + P.length + ' depth=' + P.depth + ' framed=' + framedCount(P.turn));
     try { if (window.KernelOps && A.db) KernelOps.commitOp(A.db, 'WING_PLANE', P); } catch (e) { log('_PLANE op failed ' + e.message); }
     try { if (window.UniversalHistory && UniversalHistory.recordEvent) UniversalHistory.recordEvent('WING_PLANE', 'Wing plane ' + P.turn.toFixed(1) + '°', P); } catch (e) { }
   }
@@ -148,13 +158,13 @@ function setupWing2D(A) {
   // ---- the panel tools (inside the Section Cut panel) ----
   function refreshTools() {
     if (!S.tools) return; var G = S.p0 ? geom() : null, st = S.tools.querySelector('#wing-2d-state');
-    st.textContent = G ? G.turn.toFixed(1) + '° · ' + G.L.toFixed(1) + ' m · ' + (S.side ? framedCount(G.turn) + ' walls framed' : 'reading walls…') : '';
+    st.textContent = G ? G.turn.toFixed(1) + '° · ' + G.L.toFixed(1) + ' m' + (S.depth ? ' × ' + S.depth.toFixed(1) + ' m' : '') + ' · ' + (S.side ? framedCount(G.turn) + ' walls framed' : 'reading walls…') : '';
   }
   function buildTools(show) {
     var panel = document.getElementById('section-slider-panel'); if (!panel) return;
     if (!S.tools) {
       var t = el('div', 'margin-top:6px;display:flex;flex-direction:column;gap:6px'); t.id = 'wing-2d-tools';
-      t.appendChild(el('div', 'font-size:11px;color:#ccc', 'Drag the plane onto a wing; drag an edge to turn it. Nothing is cut.'));
+      t.appendChild(el('div', 'font-size:11px;color:#ccc', 'Drag the plane onto a wing; drag an edge to turn it; drag the green handle to set how deep the box reaches. Nothing is cut.'));
       var row = el('div', 'display:flex;gap:6px;align-items:center'), b = el('button', 'background:#4fc3f7;color:#000;border:1px solid #666;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:12px'); b.id = 'wing-2d-btn'; b.innerHTML = ICON + ' 2D'; b.title = 'Draw this wing as a 2D layout'; b.onclick = function () { A.wing2dExport(); };
       var st = el('span', 'font-size:11px;color:#9ad;white-space:nowrap'); st.id = 'wing-2d-state'; row.appendChild(b); row.appendChild(st); t.appendChild(row);
       var msg = el('div', 'font-size:11px;color:#f90;display:none'); msg.id = 'wing-2d-msg'; t.appendChild(msg); panel.appendChild(t); S.tools = t;
@@ -200,14 +210,20 @@ function setupWing2D(A) {
     return loadSide().then(function () { return loadModules(); }).then(function () {
       var bin = (S.fam.filter(function (f) { return angDiff90(f.deg, P.turn) <= FAM_TOL; })[0] || {}).deg;
       if (bin === undefined) throw new Error('No wall of this model runs along ' + P.turn.toFixed(1) + '° (families: ' + S.fam.map(function (f) { return f.deg + '°'; }).join(', ') + '). Drag the edge onto a wall direction.');
-      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot', extent: [P.p0, P.p1] });
+      var wing = { name: 'W' + Math.round(P.turn), angle: bin, turn: P.turn, pivot: P.pivot }, M = window.DxfExportUI.make(qOf(S.side), prefixOf(), null, null, wing, georefNorth(), { scaleBar: true, sectionAt: 'pivot', extent: [P.p0, P.p1], depth: P.depth || undefined });
       if (!M.R.wing) throw new Error('This plane frames no walls.');
-      log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' scope=' + (M.R.scopes && M.R.scopes[0] ? M.R.scopes[0].name : '-') + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
+      log('_EXPORT turn=' + P.turn + ' bin=' + bin + ' box=' + (((M.R.log || []).filter(function (l) { return /§EXTENT/.test(l); })[0]) || '-').replace(/^§EXTENT /, '') + ' sheets=' + Object.keys(M.R.files).length + ' gaps=' + M.R.gaps.length + ' drawable=' + M.report.drawable + ' ms=' + Math.round(performance.now() - t0));
       showOverlay(M, P, wing);
     }).catch(function (e) { say(e.message); log('_EXPORT_FAIL ' + e.message); }).then(function () { if (b) b.disabled = false; });
   };
+  // the elevation that faces the plane (owner 2026-10-21): in the sheet frame the plane lies along X at the pivot's Y; FRONT = the writer's y0 face, REAR = y1
+  function facingFace(R) {
+    var w = R && R.model && R.model.walls, oy = R && R.wing && R.wing.oy; if (!w || !w.length || typeof oy !== 'number') return null;
+    var y0 = Infinity, y1 = -Infinity; w.forEach(function (a) { y0 = Math.min(y0, a.y0); y1 = Math.max(y1, a.y1); });
+    var f = oy < (y0 + y1) / 2 ? 'FRONT' : 'REAR'; log('_FACE face=' + f + ' plane_y=' + oy.toFixed(3) + ' walls_y=' + y0.toFixed(3) + '..' + y1.toFixed(3)); return f;
+  }
   function showOverlay(M, P, wing) {
-    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), sc = M.R.scopes && M.R.scopes[0] ? '__' + M.R.scopes[0].name + '_std.dxf' : null, cur = (sc && names.filter(function (n) { return n.slice(-sc.length) === sc; })[0]) || names[0], view = null, drag = null;
+    closeOverlay(true, true); var V = window.DxfSheetView, names = Object.keys(M.R.files).sort(), fc = facingFace(M.R), cur = (fc && names.filter(function (n) { return n.slice(-('_' + fc + '_std.dxf').length) === '_' + fc + '_std.dxf'; })[0]) || names[0], view = null, drag = null;
     var card = el('div', 'position:fixed;z-index:70;background:#14171c;border:1px solid #4fc3f7;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.55);overflow:hidden;font:12px sans-serif;color:#ddd;transition:left .3s cubic-bezier(.2,.8,.2,1),top .3s cubic-bezier(.2,.8,.2,1),width .3s cubic-bezier(.2,.8,.2,1),height .3s cubic-bezier(.2,.8,.2,1),opacity .2s;touch-action:none'); card.id = 'wing-2d-overlay';
     var head = el('div', 'display:flex;align-items:center;gap:6px;padding:4px 8px;background:#1d242d;user-select:none'), tabs = el('div', 'display:flex;gap:4px;flex:1;overflow:auto');
     var save = el('button', 'background:#2e7d32;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Save'), close = el('button', 'background:#555;color:#fff;border:0;border-radius:4px;padding:3px 10px;cursor:pointer', 'Cancel');
@@ -279,7 +295,7 @@ function setupWing2D(A) {
     }
   };
   // test / replay hooks: the same state a person drags, set directly
-  A.wing2dSet = function (p0, p1) { if (!S.p0) initPlane(); if (p0) S.p0 = p0.slice(); if (p1) S.p1 = p1.slice(); if (S.g) updateGizmo(); refreshTools(); commitPlane('set'); return planeParams(); };
+  A.wing2dSet = function (p0, p1, depth) { if (!S.p0) initPlane(); if (p0) S.p0 = p0.slice(); if (p1) S.p1 = p1.slice(); if (typeof depth === 'number') S.depth = depth > 0 ? depth : 0; if (S.g) updateGizmo(); refreshTools(); commitPlane('set'); return planeParams(); };
   A.wing2dState = function () { return { on: S.on, plane: S.p0 ? planeParams() : null, fam: S.fam, side: !!S.side, north: S.north, overlay: OV ? OV.state() : null }; };
   A.wing2dClose = function () { closeOverlay(false); };
   A._wing2d = S;

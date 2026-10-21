@@ -900,22 +900,9 @@
     if (opts.wing) wing = frameWing(model, opts.wing, log);   // §L1.16: this set is ONE wing, drawn in its own frame
     model.stairSymbol = opts.stairSymbol; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     resolveHosts(model, log);
-    const grid = deriveGrid(model, log);
+    let grid = deriveGrid(model, log);
+    if (opts.extent) { const bx = boxWing(model, wing, opts.extent, opts.depth, log); if (bx) grid = boxGrid(grid, bx, log); }   // §F7 W-WAND-BOX: the wing's grid (same labels as the whole set), clipped to the box
     let scopes = opts.scopes || null;
-    // §F7 W-WAND-EXTENT: the plane's edge range [[x0,y0],[x1,y1]] (model m) = ONE §L6 scope in the wing frame: X = the turned ends' range (mm), Y unbounded; the rest goes to REST
-    if (opts.extent) {
-      const ex = opts.extent, ok = Array.isArray(ex) && ex.length === 2 && ex.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
-      if (!ok) log.add('§EXTENT ignored=malformed');
-      else if (!wing) log.add('§EXTENT ignored=no_wing');
-      else if (scopes) log.add('§EXTENT ignored=scopes_stated');
-      else {
-        const th = -wing.angle * Math.PI / 180, tx = p => Math.cos(th) * (p[0] - wing.ox) - Math.sin(th) * (p[1] - wing.oy) + wing.ox;
-        // a disjoint partition (the importer refuses overlapping scope rectangles, so no implicit REST): the plane's range first, then what lies before / after it along X
-        const r3 = v => Number(v.toFixed(3)), a = r3(Math.min(tx(ex[0]), tx(ex[1])) * 1000), b = r3(Math.max(tx(ex[0]), tx(ex[1])) * 1000), used = new Set(['KEY', 'REST']);
-        scopes = [[a, -Infinity, b, Infinity], [-Infinity, -Infinity, a, Infinity], [b, -Infinity, Infinity, Infinity]].map(rect => ({ name: SCOPES.nameOf(grid, rect, used), rect }));
-        log.add(`§EXTENT p0=${fx(ex[0][0], 4)},${fx(ex[0][1], 4)} p1=${fx(ex[1][0], 4)},${fx(ex[1][1], 4)} turned_x=${Math.round(a)}..${Math.round(b)} mm scope=${scopes[0].name} before=${scopes[1].name} after=${scopes[2].name}`);
-      }
-    }
     if (!scopes && opts.suggest) {
       scopes = SCOPES.suggest({ model, grid, views: { plan: planStoreys(model).map(st => ({ view: planView(st.name), storey: st })) } }, opts.budget);
       log.add(`§SCOPE_SUGGEST budget=${opts.budget || SCOPES.BUDGET} scopes=${scopes.length} ` + scopes.map(s => `${s.name}[${s.rect.map(v => Number.isFinite(v) ? Math.round(v) : v).join(',')}]`).join(' '));
@@ -1029,6 +1016,34 @@
     model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
     model.curtains = curtKept; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); curtKept.forEach(c => { model.by_guid[c.guid] = c; });
     return { kept: keep.size, unframed, total };
+  }
+  // §F7 W-WAND-BOX (owner 2026-10-21: "just a wing", "clip all to plane", a depth handle): in the turned frame the plane lies along X at the pivot's Y; its ends give X = [a, b]; depth d (m,
+  // signed: + = the plane's facing side, the sheet's +Y) gives Y = [oy, oy + d]; no depth = Y unbounded. Keeps the elements whose plan centre lies in the box (half-open [lo, hi)); an opening follows
+  // its host, a curtain wall's parts follow the curtain wall. Every sheet (plans, elevations, section, roof, grid) is then written from the box alone.
+  function boxWing(model, wing, ex, depth, log) {
+    const ok = Array.isArray(ex) && ex.length === 2 && ex.every(p => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
+    if (!ok) { log.add('§EXTENT ignored=malformed'); return null; } if (!wing) { log.add('§EXTENT ignored=no_wing'); return null; }
+    const th = -wing.angle * Math.PI / 180, tx = p => Math.cos(th) * (p[0] - wing.ox) - Math.sin(th) * (p[1] - wing.oy) + wing.ox;
+    const a = Math.min(tx(ex[0]), tx(ex[1])), b = Math.max(tx(ex[0]), tx(ex[1])), d = Number.isFinite(depth) && depth !== 0 ? depth : null;
+    const y0 = d === null ? -Infinity : Math.min(wing.oy, wing.oy + d), y1 = d === null ? Infinity : Math.max(wing.oy, wing.oy + d);
+    const inBox = e => { const cx = (e.x0 + e.x1) / 2, cy = (e.y0 + e.y1) / 2; return cx >= a && cx < b && cy >= y0 && cy < y1; };
+    const keep = new Set(), n0 = model.els.length;
+    model.els.forEach(e => { if (OPENINGS.indexOf(e.cls) < 0 && inBox(e)) keep.add(e.guid); });
+    const curt = (model.curtains || []).filter(c => inBox(c)); curt.forEach(c => { keep.add(c.guid); c.parts.forEach(p => keep.add(p.guid)); });
+    model.els.forEach(e => {   // after the curtain walls: a door can be hosted by one
+      if (OPENINGS.indexOf(e.cls) < 0) return; const h = model.hosts[e.guid]; if (h !== undefined && model.by_guid[h] ? keep.has(h) : inBox(e)) keep.add(e.guid); });
+    model.els = model.els.filter(e => keep.has(e.guid)); model.walls = model.els.filter(e => WALLS.indexOf(e.cls) >= 0);
+    model.curtains = curt; model.roofs = model.roofs.filter(r => keep.has(r.guid)); model.by_guid = {}; model.els.forEach(e => { model.by_guid[e.guid] = e; }); curt.forEach(c => { model.by_guid[c.guid] = c; });
+    log.add(`§EXTENT p0=${fx(ex[0][0], 4)},${fx(ex[0][1], 4)} p1=${fx(ex[1][0], 4)},${fx(ex[1][1], 4)} box_x=${fx(a, 3)}..${fx(b, 3)} box_y=${d === null ? 'unbounded' : fx(y0, 3) + '..' + fx(y1, 3)} kept=${model.els.length}/${n0} walls=${model.walls.length} curtains=${curt.length}`);
+    return { a, b, y0, y1 };
+  }
+  // the box keeps the grid lines inside its range plus the nearest one beyond each side (as an §L6 scope sheet does): labels stay the whole wing's
+  function boxGrid(grid, bx, log) {
+    const clip = (lines, lo, hi) => { const inR = lines.filter(g => g[1] >= lo && g[1] < hi), below = lines.filter(g => g[1] < lo).sort((p, q) => q[1] - p[1])[0], above = lines.filter(g => g[1] >= hi).sort((p, q) => p[1] - q[1])[0];
+      return lines.filter(g => inR.indexOf(g) >= 0 || g === below || g === above); };
+    const out = Object.assign({}, grid, { x: clip(grid.x, bx.a, bx.b), y: clip(grid.y, bx.y0, bx.y1) });
+    log.add(`§EXTENT_GRID x=${out.x.map(g => g[0]).join(',')} (${out.x.length}/${grid.x.length}) y=${out.y.map(g => g[0]).join(',')} (${out.y.length}/${grid.y.length})`);
+    return out;
   }
   function wingDominant(model) {   // the angle (deg, mod 90) carrying the most walls, 1-deg bins, ties to the smaller angle
     const h = {}; model.walls.forEach(w => { const a = elementAngle(w); if (a && a.q >= WING_Q_MIN) { const b = Math.round(a.deg) % 90; h[b] = (h[b] || 0) + 1; } });
