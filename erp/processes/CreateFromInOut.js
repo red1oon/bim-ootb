@@ -35,7 +35,8 @@
       var pin = this.getAD_PInstance_ID();
       trx.q('SELECT t.t_selection_id AS id, CAST(t.viewid AS INTEGER) AS tid FROM t_selection t WHERE t.ad_pinstance_id=?', [pin]).forEach(function (r) {   // :97-122
         if (self.selectionIDList.indexOf(r.id) < 0) self.selectionIDList.push(r.id);
-        self.selectionValueMap['T_' + r.id] = r.id;
+        var kc = trx.q("SELECT c.columnname AS c FROM ad_column c WHERE c.ad_table_id=? AND c.iskey='Y' ORDER BY c.ad_column_id", [r.tid])[0];   // MTable.get(AD_Table_ID).getKeyColumns()[0]
+        self.selectionValueMap[(kc ? kc.c : 'T') + '_' + r.id] = r.id;
       });
       trx.q('SELECT t_selection_id AS id, columnname AS c, value_string AS s, value_number AS n, value_date AS d FROM t_selection_infowindow WHERE ad_pinstance_id=? ORDER BY t_selection_id, columnname', [pin]).forEach(function (r) {   // :124-163
         var v = null;

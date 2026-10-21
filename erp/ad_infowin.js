@@ -66,8 +66,10 @@
     if (!iw) return null;
     var cols = adQ('SELECT * FROM ad_infocolumn WHERE ad_infowindow_id=? AND isactive=\'Y\' ORDER BY seqno', [iw.ad_infowindow_id]);
     var m = /^\s*(\w+)\s+(\w+)/.exec(iw.fromclause || ''), tn = infoWindowId ? iw.tablename : tableName;
-    var keyCol = cols.filter(function (c) { return c.iskey === 'Y'; })[0];   // a view without a key column (M_InOut_CreateFrom_v): rows are keyed by position, the selection is the column values
-    return { iw: iw, cols: cols, table: m ? m[1] : tn, alias: m ? m[2] : '', keycol: infoWindowId ? (keyCol ? keyCol.columnname : null) : tn + '_ID' };
+    // the row key = the info column flagged IsKey (InfoWindow.java:940-941 keyColumnOfView), else the main key `<TableName>_ID` (DefaultInfoFactory.create :259-266; InfoWindow :1234 "use main key")
+    //   - C_Invoice_CreateFrom_v_ID / M_InOut_CreateFrom_v_ID, which T_Selection_ID carries and CreateFromInvoice maps to the line of the row's AD_Table_ID (ERP_FRIENDLY_OPS_LENS.md §52)
+    var keyCol = cols.filter(function (c) { return c.iskey === 'Y'; })[0];
+    return { iw: iw, cols: cols, table: m ? m[1] : tn, alias: m ? m[2] : '', keycol: keyCol ? keyCol.columnname : tn + '_ID' };
   }
 
   // InfoWindow.getSQLFilter (InfoWindow.java:1385-1500) -> criteria WHERE; selectclause '0' columns only publish context. PURE (no DOM): the window and W-INFOWIN-SQL both call it.
