@@ -206,7 +206,7 @@
   // coerce a raw form value to its stored shape (number -> Number) for the op payload.
   function coerce(type, val) {
     if (val == null || val === '') return null;
-    if (type === 'number' || type === 'fk' || type === 'location') return Number(val);   // FS-13: a C_Location_ID
+    if (type === 'number' || type === 'fk' || type === 'location' || type === 'pattribute') return Number(val);   // FS-13: a C_Location_ID; AS-1: an M_AttributeSetInstance_ID
     return String(val);
   }
   // ON CREATE ONLY: also carry any hook-derived, undeclared column already merged into `values` (saveForm's
@@ -753,11 +753,13 @@
       case 17: return 'list'; case 20: return 'yesno';
       // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
       // fallback: 10 String · 14 Text · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
-      // · 34 Memo · 35 PAttribute · 38 PrinterName.
+      // · 34 Memo · 38 PrinterName.   (35 PAttribute has its own editor, below)
       // FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b): 21 Location is its own
       // editor (WLocationEditor) — an address dialog that saves an MLocation and sets the id — not free text.
       case 21: return 'location';
-      case 10: case 14: case 23: case 25: case 31: case 32: case 33: case 34: case 35: case 38: return 'string';
+      // AS-1 (prompts/ERP_PRODUCT_ATTRIBUTE_ASI.md): 35 PAttribute is its own editor (WPAttributeEditor -> WPAttributeDialog): an Attribute Set Instance picker/creator, not free text
+      case 35: return 'pattribute';
+      case 10: case 14: case 23: case 25: case 31: case 32: case 33: case 34: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }
   }
