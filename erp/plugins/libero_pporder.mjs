@@ -9,8 +9,7 @@ export const DEFERRED = [
   'MPPOrderBOMLine.explodePhantom - fixtures carry no phantom',
   'MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)',
   'MPPOrder.beforeSave #M_Warehouse_ID context default',
-  'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)',
-  'DD_Order / M_Movement hooks (being ported: LIBERO_DD_SPEC.md)'
+  'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
 export const SOURCE = { ferryStatic: false, voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
@@ -656,5 +655,8 @@ export async function activate(ctx) {
   // the document-action FSM entry (ad_docfsm DOC_FAMILY) of AD_Table PP_Order 53027: prepare/complete are ported; void/close/reverse/re-activate are DEFERRED (MPPOrder.voidIt/closeIt/reActivateIt), so no Void arm is offered (vo: {}).
   if (ctx.docFsm) ctx.docFsm.register(53027, { name: 'PP_Order', reActivate: true, rc: true, ra: false, vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO' } });
   m.validators.forEach((v) => ctx.modelval.registerValidator(v[0], v[1], v[2], v[3]));
+  // Doc_PPOrder (Libero, via MFG_DocFactory :46-70): loadDocumentDetails returns STATUS_Posted as p_Error, so Doc.post returns before any fact (Doc.java:611-613) - registered so model_post's
+  //   "Doc Class invalid" rule (DefaultDocumentFactory) finds a class for PP_Order while the bundle is active
+  if (ctx.docClass) ctx.docClass.register('pp_order', { createFacts(trx, doc, as, F) { F.err = 'Doc_PPOrder.loadDocumentDetails returns STATUS_Posted as p_Error and Doc.post returns it before any fact (Doc.java:611-613): nothing posted - named'; return false; }, basis: 'pp_order' });
 }
 export async function deactivate() {}

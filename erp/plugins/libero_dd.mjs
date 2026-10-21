@@ -107,9 +107,8 @@ export function create(ctx) {
   //   the completion succeeds and nothing is posted (Posted stays N). Hand-computed - the pilot has no Libero, so there is no oracle for this class.
   const docClass = { createFacts(trx, doc, as, F) { F.err = 'Doc_DDOrder.loadDocumentDetails returns STATUS_Posted as p_Error and Doc.post returns it before any fact (Doc.java:611-613): nothing posted - named'; return false; }, basis: 'dd_order' };
 
-  const docClassPP = { createFacts(trx, doc, as, F) { F.err = 'Doc_PPOrder.loadDocumentDetails returns STATUS_Posted as p_Error and Doc.post returns it before any fact (Doc.java:611-613): nothing posted - named'; return false; }, basis: 'pp_order' };
   return {
-    docClassPP, docClass, ddHook, movementComplete, isChanged, mrpDDOrderLine, mrpDDOrder, deleteMrp,
+    docClass, ddHook, movementComplete, isChanged, mrpDDOrderLine, mrpDDOrder, deleteMrp,
     validators: [
       ...['dd_order', 'dd_orderline'].flatMap((t) => ['AFTER_NEW', 'AFTER_CHANGE', 'BEFORE_DELETE'].map((tm) => [t, tm, 'Libero.MFG_Validator.' + t, ddHook(t, tm)])),
       ['m_movement', 'AFTER_COMPLETE', 'Libero.MFG_Validator.m_movement', movementComplete]
@@ -121,9 +120,8 @@ export function create(ctx) {
 export async function activate(ctx) {
   const m = create(ctx);
   m.validators.forEach((v) => ctx.modelval.registerValidator(v[0], v[1], v[2], v[3]));
-  if (ctx.docClass) {   // MFG_DocFactory (Libero IDocFactory :46-70) hands out Doc_DDOrder / Doc_PPOrder / Doc_PPCostCollector; model_post finds them through DocPoster.docClassFor. pp_cost_collector: libero_cost.mjs.
+  if (ctx.docClass) {   // MFG_DocFactory (Libero IDocFactory :46-70) hands out Doc_DDOrder / Doc_PPOrder / Doc_PPCostCollector; model_post finds them through DocPoster.docClassFor. pp_order: libero_pporder.mjs, pp_cost_collector: libero_cost.mjs.
     ctx.docClass.register('dd_order', m.docClass);
-    ctx.docClass.register('pp_order', m.docClassPP);   // Doc_PPOrder is the same empty class for MPPOrder (Libero Doc_PPOrder.java). Registered HERE because the model_post strict rule (DefaultDocumentFactory "Doc Class invalid") needs it and libero_pporder.mjs is not ours to touch in this lane - move it there
   }
 }
 export async function deactivate() {}
