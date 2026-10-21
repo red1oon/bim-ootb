@@ -143,6 +143,29 @@
     trx.say('§ASI created id=' + id + ' set=' + asiPlan.fields.m_attributeset_id + ' lot=' + (asiPlan.fields.lot || '') + ' serno=' + (asiPlan.fields.serno || '') + ' gd=' + (asiPlan.fields.guaranteedate || '') + ' desc="' + p.description + '"');
     return { ok: true, asi: id, description: p.description, lot: lot ? lot.m_lot_id : null };
   }
+
+  // ── mandatory-ASI rule: ONE implementation for every document (AS-2). Java MProduct.isASIMandatoryFor MProduct.java:1028-1056 + MAttributeSet.excludeTableEntry :318-337.
+  //   Batch/Lot costing on ANY client schema makes an instance always mandatory; otherwise only an INSTANCE attribute set can require one: outgoing (SO) -> MandatoryType Always (Y), or
+  //   the type the caller passes ('S' = When Shipping, MInOut.prepareIt); incoming -> Always only. MAttributeSetExclude (set + table + IsSOTrx) switches the check off per document table.
+  function dep(name, file) { var g = typeof window !== 'undefined' ? window : globalThis; if (g[name]) return g[name]; if (typeof require === 'function') { try { return require(file); } catch (e) { return null; } } return null; }
+  function asiMandatoryFor(trx, p, mandatoryType, isSOTrx) {
+    var MM = dep('ModelMaster', './model_master'), MC = dep('ModelCost', './model_cost');
+    if (MM && MC) { var schemas = MM.clientAcctSchemas ? MM.clientAcctSchemas(trx, p.ad_client_id) : [];
+      for (var i = 0; i < schemas.length; i++) if (MC.costingLevel(trx, p, schemas[i]) === 'B') return true; }
+    if (!p.m_attributeset_id || Number(p.m_attributeset_id) === 0) return false;
+    var s = trx.get('m_attributeset', p.m_attributeset_id);
+    if (!s || s.isinstanceattribute !== 'Y') return false;
+    var always = s.mandatorytype === 'Y', mandatory = (s.mandatorytype && s.mandatorytype !== 'N') || s.islotmandatory === 'Y' || s.issernomandatory === 'Y' || s.isguaranteedatemandatory === 'Y';
+    if (isSOTrx) return always || (mandatory && mandatoryType != null && s.mandatorytype === mandatoryType);
+    return always;
+  }
+  function excludeTableEntry(trx, p, tableName, isSOTrx) {   // MAttributeSetExclude rows of the product's set for this document table + direction
+    if (!p.m_attributeset_id) return false;
+    var t = trx.q('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?', [String(tableName).toLowerCase()])[0]; if (!t) return false;
+    try { return trx.q("SELECT 1 AS x FROM m_attributesetexclude WHERE m_attributeset_id=? AND ad_table_id=? AND issotrx=? AND isactive='Y'", [p.m_attributeset_id, t.id, isSOTrx ? 'Y' : 'N']).length > 0; } catch (e) { return false; }
+  }
+  // the refusal text of MOrder.prepareIt :1639-1647 / MInOut.prepareIt :1537-1540
+  function mandatoryMsg(line, p) { return '@M_AttributeSet_ID@ @IsMandatory@ (@Line@ #' + line + ', @M_Product_ID@=' + p.value + ')'; }
   // MAttributeSetInstance.afterSave :430-450 - a NEW instance saved with an empty Description gets its own id as the Description
   ML.registerModel('m_attributesetinstance', { afterSave: function (trx, row, isNew) {
     if (isNew && (row.description == null || String(row.description).trim() === '')) {
@@ -162,5 +185,5 @@
       if (s.isinstanceattribute !== want) trx.update('m_attributeset', s, { isinstanceattribute: want });
       return null;
     } });
-  return { form: form, plan: plan, create: create, describe: describe, counter: counter };
+  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg };
 });
