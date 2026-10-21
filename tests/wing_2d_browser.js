@@ -5,10 +5,11 @@
  * THE ISSUE THIS PROVES OR DISPROVES: in the real Viewer (headless Chromium), Section Cut offers the `2D` mode for a building of more than 2 storeys; its plane stands on the
  * model and cuts nothing; dragging an edge handle with real pointer events turns the plane; the 2D button draws the wing's layout as an overlay whose drawn entity count equals
  * the DXF's; Save downloads a zip that the Modeller importer reads (frame stated, no refusal); the plane is exactly as it was after Save / Close.
+ *   B10 EXTENT — the plane's edge range bounds the plans (KEY + plane scope + before / after when shorter than the wing), the card opens on the plane scope sheet
  *   B1 OFFER   — the `2D` mode button exists after Section Cut opens (HHS: 4 storeys)        B2 PLANE  — plane state, framed walls > 0, nothing clipped
  *   B3 DRAG    — a pointer drag of the east handle changes the turn (and keeps the west end)  B4 EXPORT — overlay shown, 9 sheets, drawn entities == parsed entities
  *   B5 SAVE    — a zip with every sheet, importable, @FRAME present                          B6 RESTORE — plane unchanged after Save, overlay gone
- * NEEDS (not in the repo): a local viewer db and its sidecar: buildings/HHS_Office_Federated_extracted.db and buildings/HHS_Office_Federated_2d.db
+ * NEEDS: a local viewer db and its sidecar: buildings/HHS_Office_Federated_extracted.db and buildings/HHS_Office_Federated_2d.db (both tracked since 2026-10-21)
  *   (the sidecar from modeller/dxf2bim/std2d_sidecar.js build() over the writer's extraction of the same IFC). Serve the repo root: python3 -m http.server 8191.
  * Usage: PW=<dir holding @playwright/test> NODE_PATH=<dir with sql.js> node tests/wing_2d_browser.js [http://localhost:8191]
  */
@@ -44,7 +45,9 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wing2d-')), zp = path.join(dir, 'w.zip'); fs.copyFileSync(await dl.path(), zp);
   execFileSync('python3', ['-I', '-c', 'import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;z.extractall(sys.argv[2])', zp, path.join(dir, 'x')]);
   const I = require(path.join(__dirname, '..', 'modeller', 'dxf2bim_import.js')), names = fs.readdirSync(path.join(dir, 'x')), sheets = I.readSheets(names.map(f => ({ name: f, text: fs.readFileSync(path.join(dir, 'x', f), 'utf8') }))), out = I.convert(sheets, {}), fr = I.frameOfSheets(sheets);
-  check('B5', 'the saved zip imports in the Modeller path with the frame stated', names.length === 9 && !out.refused && fr && !fr.error && out.verdict && out.verdict.blocking.length > 0, 'sheets=' + names.length + ' frame=' + JSON.stringify(fr) + ' blocking=' + (out.verdict && out.verdict.blocking.length));
+  const plans = names.filter(n => /_FLOOR_/.test(n)), keys = plans.filter(n => /__KEY_std/.test(n)), split = keys.length > 0, others = names.filter(n => !/_FLOOR_/.test(n)).length;   // W-WAND-EXTENT: a plane shorter than the wing splits each plan into KEY + plane scope + before / after
+  check('B10', 'the plane range is the plan extent: each plan is whole (plane covers the wing) or KEY + the plane scope + at least one more scope; the card opened on the plane scope sheet', others === 6 && (!split || (keys.length * 3 >= plans.length - keys.length && plans.length - keys.length >= 2 * keys.length)) && (!split || (ov.drawn && /__X[A-Z0-9_]*_std\.dxf$/.test(ov.drawn.sheet) && !/__KEY_/.test(ov.drawn.sheet))), 'plans=' + plans.length + ' keys=' + keys.length + ' others=' + others + ' first card sheet=' + (ov.drawn && ov.drawn.sheet));
+  check('B5', 'the saved zip imports in the Modeller path with the frame stated', names.length >= 9 && !out.refused && fr && !fr.error && out.verdict && out.verdict.blocking.length > 0, 'sheets=' + names.length + ' frame=' + JSON.stringify(fr) + ' blocking=' + (out.verdict && out.verdict.blocking.length));
   const north = await p.evaluate(() => APP.wing2dState().north);
   await p.waitForTimeout(600); const rec = await p.evaluate(() => window.__rec), last = rec[rec.length - 1], first = rec[0];
   check('B6a', 'Save flies to the pill area in a few frames (frames recorded, the card narrows and its centre moves toward the target; the frame count varies with the renderer)', !tgt || (rec.length >= 2 && last.w < first.w && Math.hypot(last.x - tgt.x, last.y - tgt.y) < Math.hypot(first.x - tgt.x, first.y - tgt.y)), 'target=' + JSON.stringify(tgt) + ' frames=' + rec.length + ' first=' + JSON.stringify(first) + ' last=' + JSON.stringify(last));
