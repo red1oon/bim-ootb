@@ -14,7 +14,7 @@
   var CUSTOM = {};   // Core.getReplenish(className) :393-401 - the registered ReplenishInterface implementations: name -> function (wh, tReplenishRow) -> BigDecimal|null
   var BRK = (NODE && process.env && process.env.LRR_BREAK) || '';   // witness negative control only: LRR_BREAK=noprod drops the production-line UPDATE (:292-303)
   P.defineProcess('org.compiere.process.ReplenishReportProduction', function (SvrProcess, X) {
-    function mods() { return NODE ? { MT: require('../model_trade'), MO: require('../model_order'), ML: require('../model_layer'), CT: require('../model_ctor'), E: require('../erp_engine') } : { MT: global.ModelTrade, MO: global.ModelOrder, ML: global.ModelLayer, CT: global.ModelCtor, E: global.ERPEngine }; }
+    function mods() { return NODE ? { MT: require('../model_trade'), MO: require('../model_order'), ML: require('../model_layer'), CT: require('../model_ctor'), AS: require('../model_asi'), E: require('../erp_engine') } : { MT: global.ModelTrade, MO: global.ModelOrder, ML: global.ModelLayer, CT: global.ModelCtor, AS: global.ModelAsi, E: global.ERPEngine }; }
     function ReplenishReportProduction() {
       SvrProcess.call(this); this.p_M_Warehouse_ID = 0; this.p_C_BPartner_ID = 0; this.p_ReplenishmentCreate = null; this.p_C_DocType_ID = 0; this.m_info = ''; this.p_M_Product_Category_ID = 0; this.isKanban = null; this.rows = [];
     }
@@ -209,19 +209,7 @@
       });
       this.m_info = '#' + noReqs + info;
     };
-    // MStorageOnHand.getWarehouse(ctx, whId, product, 0, null, FiFo, false, 0, trx) :398-520 - all instances: ORDER BY l.PriorityNo DESC, DateMaterialPolicy [DESC, ASI DESC when not FiFo | , ASI], QtyOnHand DESC
-    function storageWarehouse(trx, whId, productId, fifo) {
-      var p = trx.get('m_product', productId), useGd = p && p.isuseguaranteedateformpolicy === 'Y';
-      var rows = trx.q('SELECT s.M_Locator_ID AS loc, s.M_AttributeSetInstance_ID AS asi, s.QtyOnHand AS q, s.DateMaterialPolicy AS dmp, l.PriorityNo AS pr, a.GuaranteeDate AS gd FROM M_StorageOnHand s INNER JOIN M_Locator l ON (l.M_Locator_ID=s.M_Locator_ID) LEFT OUTER JOIN M_AttributeSetInstance a ON (s.M_AttributeSetInstance_ID=a.M_AttributeSetInstance_ID) WHERE l.M_Warehouse_ID=? AND s.M_Product_ID=? AND s.QtyOnHand <> 0', [whId, productId]);
-      var key = function (r) { return String(useGd && r.gd ? r.gd : (r.dmp || '')); }, sgn = fifo ? 1 : -1;
-      rows.sort(function (a, b) {
-        var c = Number(b.pr || 0) - Number(a.pr || 0); if (c) return c;
-        var ka = key(a), kb = key(b); c = ka < kb ? -sgn : ka > kb ? sgn : 0; if (c) return c;
-        c = (Number(a.asi || 0) - Number(b.asi || 0)) * sgn; if (c) return c;
-        return Number(b.q) - Number(a.q);
-      });
-      return rows;
-    }
+    // MStorageOnHand.getWarehouse(ctx, whId, product, 0, null, FiFo, false, 0, trx) :398-520 = the ONE port, ModelAsi.storages (AS-8: this file's own copy read a product column that does not exist, isuseguaranteedateformpolicy)
     ReplenishReportProduction.prototype.createMovements = function (trx, M) {          // :543-644
       var MLo = M.ML, MT = M.MT, D = MT.D, noMoves = 0, info = '', moveId = null, curSrc = 0, curWh = 0, self = this, stop = false;
       var reps = this.getReplenish(function (t) { return t.m_warehousesource_id != null && Number(t.c_bpartner_id) > 0; });   // :554
@@ -240,9 +228,9 @@
           noMoves++; info += ' - ' + cur.documentno;
         }
         var locTo = M.CT.defaultLocator(trx, wh.m_warehouse_id);                           // :591 wh.getDefaultLocator()
-        var product = trx.get('m_product', rep.m_product_id), cat = trx.get('m_product_category', product.m_product_category_id) || {}, cl = trx.get('ad_client', trx.env.client) || {};
-        var fifo = (cat.mmpolicy || cl.mmpolicy || 'F') === 'F';                           // MProduct.getMMPolicy :594
-        var storages = storageWarehouse(trx, whSource.m_warehouse_id, rep.m_product_id, fifo);   // :595-597
+        var product = trx.get('m_product', rep.m_product_id);
+        var fifo = M.AS.mmFifo(trx, product);                                // MProduct.getMMPolicy :594
+        var storages = M.AS.storages(trx, { warehouseId: whSource.m_warehouse_id, productId: rep.m_product_id, asiId: 0, fifo: fifo, positiveOnly: false, locatorId: 0 }).map(function (r) { return { loc: r.m_locator_id, asi: r.m_attributesetinstance_id, q: r.qtyonhand }; });   // :595-597
         var target = rep.qtytoorder;
         for (var j = 0; j < storages.length; j++) {
           var s = storages[j];

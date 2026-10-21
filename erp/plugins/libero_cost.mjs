@@ -7,7 +7,7 @@ export const DEFERRED = [
   'Mix variance (150) completion beyond the bomline update',
   'MPPOrder.closeIt (order Close) - backflush with isCloseDocument is REFUSED by name',
   'MPPCostCollector.reverseCorrectIt / voidIt (voidIt is false upstream) and subcontracting createPO',
-  'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
+  'StorageEngine: MAttributeSetInstance.create lot/serial/guarantee generation (the MStorageOnHand.getWarehouse guarantee-date filter is now core ModelAsi.storages)',
   'Doc_PPCostCollector Receipt scrap branch (named refusal). Milestones and subcontracting (createPO) ARE ported, incl. two upstream quirks (spec slice 6 §MILESTONE, §SUBCONTRACT)'
 ];
 export const SOURCE = { milestoneSelfClose: false, traceByLot: true, activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: true, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
@@ -58,36 +58,24 @@ export function create(ctx) {
 
   // ── StorageEngine ───────────────────────────────────────────────────────────────────────────────────────────────
   const stocked = (p) => !!p && p.isstocked === 'Y' && p.producttype === 'I';
-  function mmPolicyFifo(trx, p) { const cat = trx.get('m_product_category', p.m_product_category_id) || {}, cl = trx.get('ad_client', trx.env.client) || {}; return (cat.mmpolicy || cl.mmpolicy || 'F') === 'F'; }
   function newAsi(trx, product) {   // MAttributeSetInstance.create (lot/serial/guarantee generation DEFERRED)
     const r = ML.newRecord(trx, 'm_attributesetinstance', { ad_client_id: product.ad_client_id, ad_org_id: 0, m_attributeset_id: product.m_attributeset_id || 0 }); if (!r.save()) throw new Error(r.error); return r.row.m_attributesetinstance_id;
   }
-  // MStorageOnHand.getWarehouse(wh, product, asi, minGuaranteeDate, fifo, positiveOnly, locator) :398-533 (guarantee-date filter DEFERRED)
-  function getWarehouse(trx, whId, productId, asi, fifo, positiveOnly, locatorId) {
-    let rows = trx.find('m_storageonhand', { m_product_id: productId }).filter((s) => {
-      const loc = trx.get('m_locator', s.m_locator_id); if (!loc) return false;
-      if (locatorId > 0 ? Number(s.m_locator_id) !== Number(locatorId) : Number(loc.m_warehouse_id) !== Number(whId)) return false;
-      if (asi && Number(s.m_attributesetinstance_id || 0) !== Number(asi)) return false;
-      const q = dec(s.qtyonhand); return positiveOnly ? q.signum() > 0 : q.signum() !== 0;
-    });
-    const pri = (s) => Number((trx.get('m_locator', s.m_locator_id) || {}).priorityno || 0), dmp = (s) => String(s.datematerialpolicy || '');
-    rows.sort((a, b) => (pri(b) - pri(a)) || (fifo ? (dmp(a) < dmp(b) ? -1 : dmp(a) > dmp(b) ? 1 : Number(a.m_attributesetinstance_id) - Number(b.m_attributesetinstance_id))
-      : (dmp(a) < dmp(b) ? 1 : dmp(a) > dmp(b) ? -1 : Number(b.m_attributesetinstance_id) - Number(a.m_attributesetinstance_id))));
-    return rows;
-  }
+  // MStorageOnHand.getWarehouse / MProduct.getMMPolicy: ONE implementation in core, ModelAsi.storages / mmFifo (AS-8: this file's own copy - no guarantee-date filter, no tie-break - is gone)
+  const MA = () => globalThis.ModelAsi;
   function createMA(trx, cc, asi, qty) { const r = ML.newRecord(trx, 'pp_cost_collectorma', { ad_org_id: cc.ad_org_id, pp_cost_collector_id: cc.pp_cost_collector_id, m_attributesetinstance_id: asi, movementqty: num(qty) }); if (!r.save()) throw new Error(r.error); }
   // StorageEngine.checkMaterialPolicy :146-250 on the collector; returns the updated asi (or unchanged)
   function checkMaterialPolicy(trx, cc, mt, date, whId, product) {
     trx.find('pp_cost_collectorma', { pp_cost_collector_id: cc.pp_cost_collector_id }).forEach((r) => ML.po(trx, 'pp_cost_collectorma', r).deleteEx());   // deleteMA
-    const incoming = mt.charAt(1) === '+', fifo = mmPolicyFifo(trx, product), qty = dec(cc.movementqty); let asi = asiOf(cc.m_attributesetinstance_id);
+    const incoming = mt.charAt(1) === '+', fifo = MA().mmFifo(trx, product), qty = dec(cc.movementqty); let asi = asiOf(cc.m_attributesetinstance_id);
     if (asi === 0) {
       if (incoming) {
-        const neg = getWarehouse(trx, whId, cc.m_product_id, 0, fifo, false, cc.m_locator_id).filter((s) => dec(s.qtyonhand).signum() < 0)[0];   // "auto balance negative on hand"
+        const neg = MA().storages(trx, { warehouseId: whId, productId: cc.m_product_id, asiId: 0, fifo, positiveOnly: false, locatorId: cc.m_locator_id }).filter((s) => dec(s.qtyonhand).signum() < 0)[0];   // "auto balance negative on hand"
         asi = neg ? neg.m_attributesetinstance_id : newAsi(trx, product);                                                              // "always create asi so fifo/lifo work"
         cc.m_attributesetinstance_id = asi; createMA(trx, cc, asi, qty);
       } else {
         let left = qty;
-        for (const st of getWarehouse(trx, whId, cc.m_product_id, 0, fifo, true, cc.m_locator_id)) {
+        for (const st of MA().storages(trx, { warehouseId: whId, productId: cc.m_product_id, asiId: 0, fifo, positiveOnly: true, locatorId: cc.m_locator_id })) {
           const oh = dec(st.qtyonhand);
           if (oh.compareTo(left) >= 0) { createMA(trx, cc, st.m_attributesetinstance_id, left); left = ZERO; } else { createMA(trx, cc, st.m_attributesetinstance_id, oh); left = left.subtract(oh); }
           if (left.signum() === 0) break;
@@ -583,10 +571,10 @@ export function create(ctx) {
     if (!res.ok) throw new Error(res.msg || ('DocAction CO refused, status ' + res.status));
     return trx.get('pp_cost_collector', id);
   }
-  // MPPOrder.getStorages :206-251 (guarantee-date filter DEFERRED)
+  // MPPOrder.getStorages :206-251
   function getStorages(trx, productId, whId, asiId) {
     const pr = trx.get('m_product', productId); if (!stocked(pr)) return [];
-    return getWarehouse(trx, whId, productId, Number(pr.m_attributesetinstance_id || 0) === 0 ? (asiId || 0) : 0, mmPolicyFifo(trx, pr), true, 0);
+    return MA().storages(trx, { warehouseId: whId, productId, asiId: Number(pr.m_attributesetinstance_id || 0) === 0 ? (asiId || 0) : 0, fifo: MA().mmFifo(trx, pr), positiveOnly: true, locatorId: 0 });
   }
   const onHandOf = (storages) => storages.reduce((a, s) => a.add(dec(s.qtyonhand)), ZERO);
   // MPPOrder.createIssue :1256-1330
