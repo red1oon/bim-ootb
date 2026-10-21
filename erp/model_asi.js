@@ -166,46 +166,66 @@
   }
   // the refusal text of MOrder.prepareIt :1639-1647 / MInOut.prepareIt :1537-1540
   function mandatoryMsg(line, p) { return '@M_AttributeSet_ID@ @IsMandatory@ (@Line@ #' + line + ', @M_Product_ID@=' + p.value + ')'; }
-  // ── material policy storage query: ONE implementation of MStorageOnHand.getWarehouse MStorageOnHand.java:398-533 (AS-3). `asiId` 0 = all instances (guarantee-date filter + optional guarantee-date ordering
-  //   apply); a given instance = exactly that instance. Order: locator priority DESC, then DateMaterialPolicy (or COALESCE(GuaranteeDate, DateMaterialPolicy) when the product says
-  //   "use guarantee date for material policy") ASC for FiFo / DESC for LiFo, then instance id (asc FiFo / desc LiFo), then QtyOnHand DESC. Rows come back as plain objects.
+  // ── MStorageOnHand.getWarehouse / getWarehouseNegative: ONE implementation for every caller (AS-3, converged by AS-8 - model_movement.getWarehouse, model_inventory.getWarehouseNegative, libero's copy and
+  //   InOutGenerate's copy are gone). It READS THROUGH THE TRX (trx.find / trx.get = base rows overlaid with the Trx's own pending writes), as the Java reads through its trxName: a document that completes
+  //   in the same Trx as an earlier one (a movement confirm's inventory documents) sees the earlier one's storage writes. The old base-SQL port did not (measured: a phantom -1 row, W-MOVEMENT-CONFIRM e5b).
+  //   Rows come back as the Trx's own row objects (callers that only read them for display copy them first).
+  var nz = T.nz, D = T.D;
   function mmFifo(trx, p) {   // MProduct.getMMPolicy :990-996: the product category's policy, else the client's; MClient.MMPOLICY_FiFo = 'F'
     var cat = (p.m_product_category_id != null ? trx.get('m_product_category', p.m_product_category_id) : null) || {}, cl = trx.get('ad_client', trx.env.client) || {};
     return (cat.mmpolicy || cl.mmpolicy || 'F') === 'F';
   }
-  function storages(trx, o) {
-    if ((!o.warehouseId && !o.locatorId) || !o.productId) return [];
-    var p = trx.get('m_product', o.productId) || {}, all = !Number(o.asiId || 0), prm = [], sql;
-    var as = Number(p.m_attributeset_id) > 0 ? trx.get('m_attributeset', p.m_attributeset_id) : null, useGD = !!as && as.isguaranteedate === 'Y' && as.useguaranteedateformpolicy === 'Y';   // MProduct.isUseGuaranteeDateForMPolicy :1002-1010 (the SET's flags, not a product column)
-    var whereLoc = Number(o.locatorId) > 0 ? 'l.m_locator_id=?' : 'l.m_warehouse_id=?'; prm.push(Number(o.locatorId) > 0 ? o.locatorId : o.warehouseId);
-    var qtyCond = o.positiveOnly ? ' AND s.qtyonhand > 0' : ' AND s.qtyonhand <> 0';
-    if (!all) {
-      sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE ' + whereLoc + ' AND s.m_product_id=? AND COALESCE(s.m_attributesetinstance_id,0)=?' + qtyCond +
-        ' ORDER BY l.priorityno DESC, s.datematerialpolicy' + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC');
-      prm.push(o.productId, Number(o.asiId));
-    } else {
-      sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id LEFT JOIN m_attributesetinstance asi ON asi.m_attributesetinstance_id=s.m_attributesetinstance_id WHERE ' + whereLoc + ' AND s.m_product_id=?' + qtyCond;
-      prm.push(o.productId);
-      if (o.minGuaranteeDate) { sql += ' AND (asi.guaranteedate IS NULL OR date(asi.guaranteedate) > date(?))'; prm.push(String(o.minGuaranteeDate).slice(0, 10)); }
-      var key = useGD ? 'COALESCE(asi.guaranteedate, s.datematerialpolicy)' : 's.datematerialpolicy';
-      sql += ' ORDER BY l.priorityno DESC, ' + key + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC') + ', s.qtyonhand DESC';
+  // MProduct.isUseGuaranteeDateForMPolicy :1002-1010 = the product's Attribute SET has IsGuaranteeDate AND UseGuaranteeDateForMPolicy (the SET's flags, not a product column - the finding of W-ASI-POLICY)
+  function useGuaranteeDate(trx, p) { var as = p && nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null; return !!as && as.isguaranteedate === 'Y' && as.useguaranteedateformpolicy === 'Y'; }
+  // the storage rows of one product at the locator (o.locatorId) or at every locator of the warehouse (o.warehouseId, used when no locator is given - MStorageOnHand.java :411-415 "M_Locator_ID > 0")
+  function storageBase(trx, o, qtyOk) {
+    var byLoc = nz(o.locatorId), prio = {}, rows;
+    if (byLoc) { var l = trx.get('m_locator', o.locatorId); prio[String(o.locatorId)] = l ? Number(l.priorityno || 0) : 0; rows = trx.find('m_storageonhand', { m_locator_id: o.locatorId, m_product_id: o.productId }); }
+    else {
+      trx.find('m_locator', { m_warehouse_id: o.warehouseId }).forEach(function (l) { prio[String(l.m_locator_id)] = Number(l.priorityno || 0); });
+      rows = trx.find('m_storageonhand', { m_product_id: o.productId }).filter(function (s) { return prio[String(s.m_locator_id)] != null; });
     }
-    return trx.q(sql, prm).filter(function (r) { return Number(r.qtyonhand) !== 0; });
+    return { rows: rows.filter(function (s) { return qtyOk(D(s.qtyonhand)); }), prio: function (s) { return prio[String(s.m_locator_id)] || 0; } };
+  }
+  function sortStorage(rows, fifo, prio, key, qtyDesc) {   // ORDER BY l.PriorityNo DESC, <key> ASC (FiFo) / DESC (LiFo), instance id (asc FiFo / desc LiFo) [, QtyOnHand DESC]
+    return rows.sort(function (a, b) {
+      var c = prio(b) - prio(a); if (c) return c;
+      var ka = key(a), kb = key(b); c = ka < kb ? -1 : ka > kb ? 1 : 0; if (!fifo) c = -c;
+      if (key.tie !== false && !c) { var x = Number(a.m_attributesetinstance_id) || 0, y = Number(b.m_attributesetinstance_id) || 0; c = fifo ? x - y : y - x; }
+      if (!c && qtyDesc) c = D(b.qtyonhand).compareTo(D(a.qtyonhand));
+      return c;
+    });
+  }
+  var gdate = function (d) { return String(d).slice(0, 10); };
+  // getWarehouse :398-533. `asiId` 0 = all instances (minGuaranteeDate filter + optional guarantee-date ordering apply); a given instance = exactly that instance (the filter is ignored, :418 + :512-518).
+  //   Order: locator priority DESC, then DateMaterialPolicy (or COALESCE(GuaranteeDate, DateMaterialPolicy) when the product says "use guarantee date for material policy") ASC for FiFo / DESC for LiFo,
+  //   then instance id (asc FiFo / desc LiFo), then (all instances only) QtyOnHand DESC. Zero-quantity rows are never returned.
+  function storages(trx, o) {
+    if ((!nz(o.warehouseId) && !nz(o.locatorId)) || !nz(o.productId)) return [];
+    var all = !nz(o.asiId), p = trx.get('m_product', o.productId) || {}, useGD = useGuaranteeDate(trx, p), asis = {};
+    var asiOf = function (s) { if (!nz(s.m_attributesetinstance_id)) return null; var k = String(s.m_attributesetinstance_id); return k in asis ? asis[k] : (asis[k] = trx.get('m_attributesetinstance', s.m_attributesetinstance_id)); };
+    var base = storageBase(trx, o, function (q) { return o.positiveOnly ? q.signum() > 0 : q.signum() !== 0; }), rows = base.rows;
+    if (!all) rows = rows.filter(function (s) { return String(s.m_attributesetinstance_id || 0) === String(o.asiId); });
+    else if (o.minGuaranteeDate) rows = rows.filter(function (s) { var a = asiOf(s); return !a || !a.guaranteedate || gdate(a.guaranteedate) > gdate(o.minGuaranteeDate); });
+    var key = function (s) { if (all && useGD) { var a = asiOf(s); if (a && a.guaranteedate) return String(a.guaranteedate); } return String(s.datematerialpolicy || ''); };
+    return sortStorage(rows, o.fifo, base.prio, key, all);
+  }
+  // getWarehouseNegative :579-680 - the NEGATIVE on-hand rows a receipt / count fills first (MInOut.autoBalanceNegative :2477-2500, MInventory.checkMaterialPolicy). asiId > 0 = that instance, 0 = the rows
+  //   WITHOUT an instance, omitted/negative = every instance. When the product uses the guarantee date: ORDER BY priority DESC, asi.GuaranteeDate (asc FiFo / desc LiFo; NULLs last ascending like PostgreSQL,
+  //   no instance-id tie-break) else priority DESC, DateMaterialPolicy, instance id; always then QtyOnHand DESC (least negative first).
+  function negatives(trx, o) {
+    if ((!nz(o.warehouseId) && !nz(o.locatorId)) || !nz(o.productId)) return [];
+    var a0 = o.asiId == null ? -1 : o.asiId, p = trx.get('m_product', o.productId) || {}, useGD = useGuaranteeDate(trx, p), asis = {};
+    var asiOf = function (s) { if (!nz(s.m_attributesetinstance_id)) return null; var k = String(s.m_attributesetinstance_id); return k in asis ? asis[k] : (asis[k] = trx.get('m_attributesetinstance', s.m_attributesetinstance_id)); };
+    var base = storageBase(trx, o, function (q) { return q.signum() < 0; }), rows = base.rows;
+    if (o.minGuaranteeDate) rows = rows.filter(function (s) { var a = asiOf(s); return !a || !a.guaranteedate || gdate(a.guaranteedate) > gdate(o.minGuaranteeDate); });
+    if (a0 === -1 || (typeof a0 === 'number' && a0 < 0)) { /* every instance */ } else if (nz(a0)) rows = rows.filter(function (s) { return String(s.m_attributesetinstance_id || 0) === String(a0); });
+    else rows = rows.filter(function (s) { return !nz(s.m_attributesetinstance_id); });
+    var key = function (s) { if (useGD) { var a = asiOf(s); return a && a.guaranteedate ? String(a.guaranteedate) : '￿'; } return String(s.datematerialpolicy || ''); };
+    key.tie = !useGD;
+    return sortStorage(rows, o.fifo, base.prio, key, true);
   }
 
-  // MStorageOnHand.getWarehouseNegative :579-660 - the NEGATIVE on-hand rows of the product (instance-free when asiId = 0) a receipt fills first (MInOut.autoBalanceNegative :2477-2500):
-  //   locator priority DESC, then DateMaterialPolicy (guarantee date when the set says so) asc FiFo / desc LiFo, then instance id, then QtyOnHand DESC (least negative first).
-  function negatives(trx, o) {
-    if ((!o.warehouseId && !o.locatorId) || !o.productId) return [];
-    var p = trx.get('m_product', o.productId) || {}, prm = [Number(o.locatorId) > 0 ? o.locatorId : o.warehouseId, o.productId];
-    var as = Number(p.m_attributeset_id) > 0 ? trx.get('m_attributeset', p.m_attributeset_id) : null, useGD = !!as && as.isguaranteedate === 'Y' && as.useguaranteedateformpolicy === 'Y';
-    var sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id LEFT JOIN m_attributesetinstance asi ON asi.m_attributesetinstance_id=s.m_attributesetinstance_id WHERE ' +
-      (Number(o.locatorId) > 0 ? 'l.m_locator_id=?' : 'l.m_warehouse_id=?') + ' AND s.m_product_id=? AND s.qtyonhand < 0';
-    if (Number(o.asiId) > 0) { sql += ' AND s.m_attributesetinstance_id=?'; prm.push(o.asiId); } else if (Number(o.asiId) === 0) sql += ' AND (s.m_attributesetinstance_id=0 OR s.m_attributesetinstance_id IS NULL)';
-    sql += useGD ? ' ORDER BY l.priorityno DESC, asi.guaranteedate' + (o.fifo ? '' : ' DESC')
-      : ' ORDER BY l.priorityno DESC, s.datematerialpolicy' + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC');
-    return trx.q(sql + ', s.qtyonhand DESC', prm);
-  }
   // MAttributeSetInstance.afterSave :430-450 - a NEW instance saved with an empty Description gets its own id as the Description
   ML.registerModel('m_attributesetinstance', { afterSave: function (trx, row, isNew) {
     if (isNew && (row.description == null || String(row.description).trim() === '')) {
@@ -225,5 +245,5 @@
       if (s.isinstanceattribute !== want) trx.update('m_attributeset', s, { isinstanceattribute: want });
       return null;
     } });
-  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg, storages: storages, negatives: negatives, mmFifo: mmFifo };
+  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg, storages: storages, negatives: negatives, mmFifo: mmFifo, useGuaranteeDate: useGuaranteeDate };
 });

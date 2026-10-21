@@ -55,25 +55,22 @@
     };
     function iso(v) { return v instanceof Date ? v.toISOString().slice(0, 10) : (v == null ? v : String(v).slice(0, 10)); }   // dates bind as yyyy-mm-dd text
     function D(A, v) { return A.toBD(String(v == null ? 0 : v)); }
+    function asiMod() { return (typeof globalThis !== 'undefined' && globalThis.ModelAsi) || (typeof require === 'function' ? require('../model_asi') : null); }
     // MStorageOnHand.getWarehouse :376-536 (+ the locator-type filter of getStorages :624-648)
     InOutGenerate.prototype.getStorages = function (wh, productId, asiId, minGuaranteeDate, fifo) {
       var A = X.A, trx = this.get_TrxName(), key = [wh, productId, asiId, minGuaranteeDate, fifo].join('|');
       if (this.m_map[key]) return this.m_map[key];
       // ONE getWarehouse implementation (model_asi.js storages; AS-3): this file's own copy read a product column that does not exist (isuseguaranteedateformpolicy - the flag is the Attribute Set's)
-      var MA = (typeof globalThis !== 'undefined' && globalThis.ModelAsi) || (typeof require === 'function' ? require('../model_asi') : null);
+      var MA = asiMod();
       var rows = MA.storages(trx, { warehouseId: wh, productId: productId, asiId: asiId, minGuaranteeDate: minGuaranteeDate, fifo: fifo, positiveOnly: false });
-      rows = rows.filter(function (soh) {                                                // IDEMPIERE-2668: locators enabled for shipping
+      rows = rows.map(function (r) { return Object.assign({}, r); }).filter(function (soh) {                                                // IDEMPIERE-2668: locators enabled for shipping
         var loc = trx.get('m_locator', soh.m_locator_id); if (!loc || !loc.m_locatortype_id) return true;
         var lt = trx.get('m_locatortype', loc.m_locatortype_id); return !lt || lt.isavailableforshipping !== 'N';
       });
       rows.forEach(function (r) { r.qtyonhand = D(A, r.qtyonhand); });                    // in-memory BigDecimal, adjusted like the Java objects, never saved
       return (this.m_map[key] = rows);
     };
-    InOutGenerate.prototype.mmPolicyFifo = function (product) {                          // MProduct.getMMPolicy :990-996
-      var trx = this.get_TrxName(), pc = product.m_product_category_id ? trx.get('m_product_category', product.m_product_category_id) : null, pol = pc && pc.mmpolicy;
-      if (!pol) { var cl = trx.get('ad_client', trx.env.client); pol = cl && cl.mmpolicy; }
-      return pol === 'F';
-    };
+    InOutGenerate.prototype.mmPolicyFifo = function (product) { return asiMod().mmFifo(this.get_TrxName(), product); };   // MProduct.getMMPolicy :990-996 = ModelAsi.mmFifo (AS-8: this file's own copy removed)
     InOutGenerate.prototype.generate = function (orders) {                               // :213-436
       var A = X.A, Env = A.Env, trx = this.get_TrxName();
       for (var n = 0; n < orders.length; n++) {
