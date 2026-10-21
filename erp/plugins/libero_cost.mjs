@@ -10,7 +10,7 @@ export const DEFERRED = [
   'StorageEngine: MStorageOnHand.getWarehouse guarantee-date filter and MAttributeSetInstance.create lot/serial/guarantee generation',
   'Doc_PPCostCollector Receipt scrap branch (named refusal). Milestones and subcontracting (createPO) ARE ported, incl. two upstream quirks (spec slice 6 §MILESTONE, §SUBCONTRACT)'
 ];
-export const SOURCE = { activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
+export const SOURCE = { traceByLot: true, activityRate: true, routeBase: true, batchMult: true, closeNode: true, detailsPerSchema: false, calculateFG: true, perRow: true, scrapDivide: false };   // LBACK_BREAK=perrow|scrapdiv flip these to prove the backflush witness sees the storage-row and no-scrap-divide rules   // LCOST_BREAK=calcfg flips it to prove the witness sees the finished-goods cost rule
 const T_RECEIPT = '100', T_ISSUE = '110', T_USAGE = '120', T_METHOD = '130', T_RATE = '140', T_MIX = '150', T_ACTIVITY = '160';
 
 export function create(ctx) {
@@ -535,6 +535,42 @@ export function create(ctx) {
     if (SOURCE.closeNode && dec(n2.qtydelivered).compareTo(dec(n2.qtyrequiered)) >= 0) nodeCloseIt(trx, node.pp_order_node_id);
   }
 
+  // ══ M9 TRACE - lot genealogy derived from the collectors (prompts/mfg/LIBERO_TRACE_M9_SPEC.md; Witness: W-MFG-TRACE) ═══════════════════════════════════════════
+  // Upstream never writes PP_Cost_CollectorMA (only MFG_ModelFactory names it), so the lot of each move is the M_Transaction the collector wrote (StorageEngine: an issue takes the storage row's ASI,
+  //   a receipt gets a fresh ASI). An edge = (order, collector, type, product, lot, qty, date). Backward from a finished lot: its receipt collector(s) -> the order -> the order's ISSUE collectors
+  //   (stock-moving: isIssue && !isVariance) -> their lots -> recurse. Forward: the reverse. Read-only; nothing is written.
+  function lotMoves(trx, productId, asiId) {
+    return trx.find('m_transaction', SOURCE.traceByLot ? { m_product_id: productId, m_attributesetinstance_id: asiId } : { m_product_id: productId }).filter((t) => idSet(t.pp_cost_collector_id)).map((t) => ({ t, cc: trx.get('pp_cost_collector', t.pp_cost_collector_id) }))
+      .filter((x) => x.cc && (x.cc.docstatus === 'CO' || x.cc.docstatus === 'CL'));
+  }
+  function edgesOf(trx, cc) { return trx.find('m_transaction', { pp_cost_collector_id: cc.pp_cost_collector_id }).map((t) => ({ order: Number(cc.pp_order_id), collector: String(cc.documentno), type: String(cc.costcollectortype),
+    product: Number(t.m_product_id), lot: Number(t.m_attributesetinstance_id || 0), qty: dec(t.movementqty).toString(), ccQty: dec(cc.movementqty).toString(), date: String(t.movementdate || '').slice(0, 19) })).sort((a, b) => (a.product - b.product) || (a.lot - b.lot) || a.collector.localeCompare(b.collector)); }
+  function genealogy(trx, productId, asiId, dir, depth) {
+    depth = depth == null ? 8 : depth; const seen = {};
+    const walk = (p, a, d) => {
+      const key = p + '@' + a; if (seen[key] || d > depth) return { product: p, lot: a, cycle: !!seen[key], links: [] }; seen[key] = 1;
+      const links = [];
+      for (const m of lotMoves(trx, p, a)) {
+        const wantSelf = dir === 'back' ? isReceipt(m.cc) : (isIssue(m.cc) && !isVariance(m.cc)); if (!wantSelf) continue;
+        const others = trx.find('pp_cost_collector', { pp_order_id: m.cc.pp_order_id }).filter((x) => (x.docstatus === 'CO' || x.docstatus === 'CL') && (dir === 'back' ? (isIssue(x) && !isVariance(x)) : isReceipt(x)))
+          .sort((x, y) => String(x.documentno).localeCompare(String(y.documentno)));
+        for (const o of others) for (const e of edgesOf(trx, o)) links.push(Object.assign({ via: String(m.cc.documentno) }, e, { from: walk(e.product, e.lot, d + 1) }));
+      }
+      return { product: p, lot: a, links };
+    };
+    const tree = walk(Number(productId), Number(asiId || 0), 0);
+    trx.say('§LIBERO-TRACE dir=' + dir + ' root=' + productId + '@' + (asiId || 0) + ' links=' + tree.links.length);
+    return tree;
+  }
+  // the exported slice: canonical JSON (sorted keys) of BOTH directions of one lot; verifySlice recomputes it from the collectors and names the first difference
+  const canon = (v) => (Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
+  function exportSlice(trx, productId, asiId) { const s = { kind: 'libero-lot-genealogy', v: 1, product: Number(productId), lot: Number(asiId || 0), backward: genealogy(trx, productId, asiId, 'back'), forward: genealogy(trx, productId, asiId, 'fwd') }; return { slice: s, text: canon(s) }; }
+  function verifySlice(trx, slice) {
+    const now = exportSlice(trx, slice.product, slice.lot).text, was = canon(slice);
+    if (now === was) return { ok: true };
+    let i = 0; while (i < now.length && now[i] === was[i]) i++;
+    return { ok: false, at: i, was: was.slice(Math.max(0, i - 60), i + 60), now: now.slice(Math.max(0, i - 60), i + 60) };
+  }
   // ══ SLICE 4 - the legacy ONE-STEP entry points (prompts/mfg/LIBERO_BACKFLUSH_SLICE4_SPEC.md) ═══════════════════════
   const mccDocType = (trx) => { const d = trx.find('c_doctype', { docbasetype: 'MCC' }).filter((r) => active(r) && (r.ad_client_id == null || Number(r.ad_client_id) === Number(trx.env.client)))
     .sort((a, b) => (b.isdefault === 'Y') - (a.isdefault === 'Y') || Number(a.c_doctype_id) - Number(b.c_doctype_id))[0]; if (!d) throw new Error('No Manufacturing Cost Collector document type (MDocType.getDocType MCC)'); return d.c_doctype_id; };
@@ -743,7 +779,7 @@ export function create(ctx) {
     }
   };
 
-  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration, createUsageVariances, estimateWorkingTime, nodeCloseIt, mccDocType, nodesInOrder, closeActivities };
+  return { models: { pp_cost_collector: { beforeSave } }, docActions: { pp_cost_collector: doc }, collectorFields, createCostDetail, calculateFG, createCollector, getStorages, createIssue, createReceipt, isQtyAvailable, backflushRows, backflush, formDescriptor, docClass, createActivityControl, getResourceBaseValue, calculateDuration, convertDuration, createUsageVariances, estimateWorkingTime, nodeCloseIt, mccDocType, nodesInOrder, closeActivities, genealogy, exportSlice, verifySlice };
 }
 export async function activate(ctx) {
   const m = create(ctx);
