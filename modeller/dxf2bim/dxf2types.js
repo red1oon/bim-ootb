@@ -198,7 +198,7 @@
     var f = units[desc.units], out = {};
     if (typeof f !== 'number') return out;
     (desc.schedule || []).forEach(function (e) {
-      var v = { class: e.class }; if (e.class === 'wall') v.thickness = r6(e.t * f); else { v.width = r6(e.w * f); v.height = r6(e.h * f); }
+      var v = { class: e.class }; if (e.class === 'wall') v.thickness = r6(e.t * f); else { v.width = r6(e.w * f); v.height = r6(e.h * f); if (typeof e.sill === 'number') v.sill = r6(e.sill * f); }   // sill: §F8 D24
       out[e.text] = v;
     });
     return out;

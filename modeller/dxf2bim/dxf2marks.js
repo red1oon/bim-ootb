@@ -112,9 +112,9 @@
         if (d.allowance[ac] && (d.allowance[ac].w !== an[0] || d.allowance[ac].h !== an[1])) { errors.push(err('MARK:conflict', '@ALLOWANCE ' + ac + ' has two values', { handle: m.handle })); return; }
         d.allowance[ac] = { w: an[0], h: an[1] };
       } else if (key === 'SCHEDULE') {
-        var sp = val.split(','), sc = sp[1], sn = sp.slice(2).map(Number), sok = (sc === 'wall' && sp.length === 3) || ((sc === 'door' || sc === 'window') && sp.length === 4);
-        if (!sok || sp[0].trim() === '' || sn.some(function (n, i) { return !isFinite(n) || sp[i + 2].trim() === ''; })) { errors.push(err('MARK:malformed', '@SCHEDULE needs text,door|window,w,h or text,wall,t: ' + val, { handle: m.handle })); return; }
-        var sent = sc === 'wall' ? { text: sp[0], class: sc, t: sn[0] } : { text: sp[0], class: sc, w: sn[0], h: sn[1] };
+        var sp = val.split(','), sc = sp[1], sn = sp.slice(2).map(Number), sok = (sc === 'wall' && sp.length === 3) || ((sc === 'door' || sc === 'window') && sp.length === 4) || (sc === 'window' && sp.length === 5);   // §F8 D24: a window's optional 5th value = its sill above the level
+        if (!sok || sp[0].trim() === '' || sn.some(function (n, i) { return !isFinite(n) || sp[i + 2].trim() === ''; })) { errors.push(err('MARK:malformed', '@SCHEDULE needs text,door|window,w,h (window: [,sill]) or text,wall,t: ' + val, { handle: m.handle })); return; }
+        var sent = sc === 'wall' ? { text: sp[0], class: sc, t: sn[0] } : { text: sp[0], class: sc, w: sn[0], h: sn[1] }; if (sp.length === 5) sent.sill = sn[2];
         var sdup = d.schedule.find(function (q) { return q.text === sent.text && q.class === sent.class; });
         if (sdup && JSON.stringify(Object.assign({}, sdup, { by: undefined })) !== JSON.stringify(sent)) { errors.push(err('MARK:conflict', '@SCHEDULE ' + sent.text + ' (' + sc + ') has two sizes', { handle: m.handle })); return; }
         if (!sdup) { sent.by = by; d.schedule.push(sent); }

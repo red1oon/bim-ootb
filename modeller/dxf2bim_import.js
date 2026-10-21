@@ -329,11 +329,11 @@
       }
       st.top = nxt;
       var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), cfgFor(st.sh.desc), deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
-      var ops = E.applyElevations(run.ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex }).ops;
-      ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
-      // L2.6 C: the plan's door tags label the doors before their heights; a door no elevation shows takes the scheduled height
-      var pd = st.sh.desc, sch = T.scheduleFromDesc(pd, MK.UNITS);
+      // L2.6 C: the plan's tags label the doors (and, §F8 D24, the windows) before their heights; a door or window no elevation shows takes the scheduled height
+      var pd = st.sh.desc, sch = T.scheduleFromDesc(pd, MK.UNITS), ops = run.ops;
       if ((pd.tags || []).length) { var tg = T.applyTags(ops, [{ desc: pd }], MK.UNITS, { snap_tol: CFG.snap_tol, level: st.level }); ops = tg.ops; st.tagged = tg.labelled; }
+      ops = E.applyElevations(ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex, schedule: Object.keys(sch).length ? sch : null }).ops;
+      ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
       var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: C.CASING });
       ops = dh.ops; st.doorRep = dh.report;
       st.after = ops;
