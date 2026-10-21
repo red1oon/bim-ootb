@@ -67,7 +67,9 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     const r0 = await rowsOf(); fact('console.before', r0.length + ' bundles; ' + await sum());
     await hclick('#pr-osgi [data-oc-installtoggle]'); await page.waitForSelector('#pr-osgi [data-oc-url]'); await pace(500);
     const n1 = PAGELOG.length; await htype('#pr-osgi [data-oc-url]', 'plugins/libero_manufacturing.mjs'); await hclick('#pr-osgi [data-oc-doinstall]'); await hold(DRY ? 1500 : 2200);
-    const r1 = await rowsOf(), mfg = r1.find(r => /Libero|mfg/i.test(r.name));
+    fact('install.log', PAGELOG.slice(n1).filter(l => /PLUGIN|rror|refus/i.test(l)).slice(-6).join(' | ').slice(0, 900));
+    let r1 = await rowsOf(), mfg = r1.find(r => /Libero|mfg|Manufactur/i.test(r.name)); for (let i = 0; i < 40 && !mfg; i++) { await page.waitForTimeout(250); r1 = await rowsOf(); mfg = r1.find(r => /Libero|mfg|Manufactur/i.test(r.name)); }   // the console re-renders after the signed install op
+    if (!mfg) fact('console.rows', JSON.stringify(r1.map(r => r.name)));
     fact('console.after', JSON.stringify(mfg) + ' | ' + await sum()); fact('startLog', lastLog(n1, /§PLUGIN-START/));
     await hclick('#pr-osgi a.oc-nm[data-oc-name="' + mfg.id + '"]'); await pace(2500);
     fact('detail', (await page.evaluate(() => (document.querySelector('#pr-osgi tr.oc-d') || {}).textContent || '')).replace(/\s+/g, ' ').slice(0, 380));

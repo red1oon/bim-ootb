@@ -80,7 +80,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
   const hselect = async (sel, val) => { GT.select++; await glide(sel); await page.selectOption(sel, val); await hold(DRY ? 60 : 500); };
   const hdate = async (sel, v) => { GT.type++; await glide(sel); await page.fill(sel, v); await page.locator(sel).first().dispatchEvent('change'); await hold(DRY ? 60 : 400); };
   const rowsOf = () => page.evaluate(() => [...document.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)')].map(tr => ({ id: tr.cells[0].textContent.trim(), name: tr.cells[1].textContent.trim(), status: tr.cells[3].textContent.trim() })));
-  const lensBar = () => page.$$eval('[data-lens-action]', e => e.map(x => x.textContent));
+  const gearItems = async () => { const on = await page.$eval('#idmp-toolbar [data-tb="process"]', e => !e.disabled).catch(() => false); if (!on) return []; await ipc('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov', { timeout: 8000 }).catch(() => {}); const v = await page.$$eval('#idmp-proc-ov [data-tbb]', e => e.map(x => x.getAttribute('data-tbb') + '=' + x.textContent)); await page.evaluate(() => { const o = document.getElementById('idmp-proc-ov'); if (o) o.remove(); }); return v; };   // §45: the plugin's steps live in the GEAR popup (no lens bar)
   async function openMenuById(menuId) {
     const chain = await page.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); if (!leaf) return null; const out = []; let n = leaf.parentElement.parentElement;
       while (n && n.id !== 'idmp-tree') { if (n.classList.contains('idmp-node')) out.unshift(n.querySelector(':scope > .idmp-row').getAttribute('data-menu-id')); n = n.parentElement; } return out; }, menuId);
@@ -115,7 +115,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
 
     // ═══ P3 behind a short card: log in, open the Sales Order window ═══
     await beat('p3', 'card: a sales order');
-    await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds the buttons on the order itself.');
+    await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds its next steps to the order\'s Process (gear) menu.');
     await ipc("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await ipc("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible');
     await ipc('#idmp-login-ok'); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);
@@ -135,39 +135,42 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds the buttons on the order itself.'); await pace(600);
     await menuBehind(await menuIdOf(143)); await page.waitForSelector(NEWB, { timeout: 20000 }); await hold(1200);
 
-    // ═══ P4 the order: header, then Add Order Line (Save + line tab + New in ONE click), line, Save & back ═══
-    await beat('p4', 'order header + Add Order Line'); await uncard(); await pace(800);
+    // ═══ P4 the order: header, Save, the Order Line tab, New, the line, Save, back to the header (legacy gestures, §40) ═══
+    await beat('p4', 'order header + order line'); await uncard(); await pace(800);
     await hclick(NEWB); await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 10000 }); await pace(900);
     await hselect(F('c_doctypetarget_id', 'select'), (await optBy('c_doctypetarget_id', /^Standard Order/)).v);
     await hselect(F('c_bpartner_id', 'select'), (await optBy('c_bpartner_id', /Joe Block/)).v);
     await hselect(F('ad_org_id', 'select'), (await optBy('ad_org_id', /^HQ/)).v); await pace(700);
-    fact('lens.barHeader', JSON.stringify(await lensBar()));
-    await hclick('[data-lens-action^="' + EN + ':add:"]'); await page.waitForSelector(F('m_product_id', 'select'), { timeout: 15000 }); await pace(1200);
+    await hclick('#idmp-toolbar [data-tb="save"]'); await hold(DRY ? 900 : 1800); fact('gear.header', JSON.stringify(await gearItems()));
+    await hclick('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · C_OrderLine"]'); await hold(DRY ? 700 : 1200); await hclick(NEWB); await page.waitForSelector(F('m_product_id', 'select'), { timeout: 15000 }); await pace(1200);
     await hselect(F('m_product_id', 'select'), (await optBy('m_product_id', /Mulch/)).v); await pace(600);
     await htype(F('qtyentered'), '1'); await page.locator(F('qtyentered')).first().blur().catch(() => {}); await pace(700);
-    fact('lens.barLine', JSON.stringify(await lensBar()));
-    await hclick('[data-lens-action^="' + EN + ':back:"]'); await page.waitForSelector('[data-doc-action="CO"]', { timeout: 20000 }); await pace(1200);
+    await hclick('#idmp-toolbar [data-tb="save"]'); await hold(DRY ? 900 : 1800);
+    await hclick('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · C_Order"]'); await page.waitForSelector('[data-doc-action="CO"]', { timeout: 20000 }); await pace(1200);
     const nC = PAGELOG.length; await hclick('[data-doc-action="CO"]');
-    for (let i = 0; i < 60 && !(await page.locator('[data-lens-action="' + EN + ':next:ship"]').count()); i++) await page.waitForTimeout(250);
+    for (let i = 0; i < 60; i++) { const st = await tip('SELECT docstatus AS s FROM c_order WHERE c_order_id<0 ORDER BY c_order_id DESC LIMIT 1'); if (st[0] && st[0].s === 'CO') break; await page.waitForTimeout(250); }
     await hold(DRY ? 600 : 1500);
-    fact('order.complete', lastLog(nC, /§MODEL-DOCACTION table=c_order/)); fact('lens.barOnOrder', JSON.stringify(await lensBar()));
+    fact('order.complete', lastLog(nC, /§MODEL-DOCACTION table=c_order/)); fact('gear.onOrder', JSON.stringify(await gearItems()));
 
     // ═══ P5 the next steps, from the order: Ship, then Invoice ═══
     await beat('p5', 'Ship, Invoice');
-    for (const [act, pid] of [['ship', 118], ['invoice', 119]]) {
-      const nn = PAGELOG.length; await hclick('[data-lens-action="' + EN + ':next:' + act + '"]');
+    for (const [act, pid, comp] of [['ship', 118, 'FO_Order_Ship'], ['invoice', 119, 'FO_Order_Invoice']]) {
+      const nn = PAGELOG.length; await hclick('#idmp-toolbar [data-tb="process"]'); await page.waitForSelector('#idmp-proc-ov [data-tbb="' + comp + '"]', { timeout: 10000 }); await pace(700); await hclick('#idmp-proc-ov [data-tbb="' + comp + '"]');
+      await page.waitForSelector('[data-proc-run]', { timeout: 15000 }); await pace(900); await hclick('[data-proc-run]');
       await page.waitForSelector('#idmp-procdlg [data-procdlg-ok]', { timeout: 30000 }); await pace(2200);
-      fact('next.' + act, lastLog(nn, new RegExp('§AD-PROC-LIVE proc=' + pid + ' .*dispatched=')) + ' | ' + lastLog(nn, new RegExp('§PROC-COMMIT proc=' + pid)));
+      const pids = '(' + pid + '|' + (pid === 118 ? 53401 : 53402) + ')';   // the friendly variants of 118 / 119 (§44 plugin AD_Process rows)
+      fact('next.' + act, lastLog(nn, new RegExp('§AD-PROC-LIVE proc=' + pids + ' .*dispatched=')) + ' | ' + lastLog(nn, new RegExp('§PROC-COMMIT proc=' + pids)));
       await hclick('#idmp-procdlg [data-procdlg-ok]'); await pace(1500);
     }
     fact('order.docs', JSON.stringify({ shipment: await tip('SELECT docstatus AS s, documentno AS d FROM m_inout WHERE m_inout_id<0'), invoice: await tip('SELECT docstatus AS s, documentno AS d, grandtotal AS g FROM c_invoice WHERE c_invoice_id<0') }));
-    fact('lens.barAfter', JSON.stringify(await lensBar()));
+    fact('gear.after', JSON.stringify(await gearItems()));
 
     // ═══ P6 what is linked to the order, with counts ═══
     await beat('p6', 'related counts');
-    const relSel = '[data-lens-action^="' + EN + ':rel:"]:has-text("Shipment")';
-    await glide(relSel); await pace(1500);
-    await hclick(relSel); await pace(2000);
+    await glide('#idmp-toolbar [data-tb="zoomacross"]'); await pace(900); await hclick('#idmp-toolbar [data-tb="zoomacross"]'); await page.waitForSelector('#idmp-zoom-ov', { timeout: 10000 }); await pace(1500);   // legacy Zoom Across: the documents that reference this order, with counts
+    const relSel = '#idmp-zoom-ov div:has(> span:text-matches("Shipment", "i"))';
+    fact('zoom.dests', JSON.stringify(await page.$$eval('#idmp-zoom-ov div > span:first-child', e => e.map(x => x.textContent + ' ' + ((x.nextSibling || {}).textContent || '')))));
+    await glide(relSel); await pace(1200); await hclick(relSel); await pace(2000);
     if (!(await page.locator('.idmp-grid tbody tr').count())) { await hclick('#idmp-toolbar [data-tb="toggle"]'); await pace(700); }
     fact('related.grid', (await page.locator('.idmp-grid tbody tr').count()) + ' rows | ' + lastLog(0, /§ZOOM-ACROSS-OPEN/)); await pace(1500);
 
