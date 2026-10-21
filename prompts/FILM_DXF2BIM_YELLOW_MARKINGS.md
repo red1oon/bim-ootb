@@ -1,0 +1,131 @@
+# ⚠ DO NOT REMOVE
+SCOPE: PLAN (spec + storyboard + draft narration) of the film "Yellow until it is yours: the markings of a DXF2BIM drawing" (owner 2026-10-22: "Plan the next film to really go in depth the 'Yellow Markings', at least for the basics, and need not cover entire, but enough for users to grasp the concept how the markers are setup and used by our approach"). NO take is recorded and NO product code is changed until the owner approves this plan. Read the logs after every run (recorder `take.log`, the page's `§DXF-META` lines, the set writer's `§FILM_SETS` line): exit code is not evidence; a take with `§PAGEERR` or a missing `§FILM_FACT` is not a take. Every number on screen or spoken comes from a `§FILM_FACT` line of THIS take: the narration TSV holds `{fact}` placeholders, never a number typed in advance. Plain tone: no "first", "only", "novel", no superlatives; limits are shown as plainly as features, and a step the usability walk found broken is never shown as if it works. Neutral naming: the input is the Duplex, the repository's open IFC sample, written as 2D by our own writer; the shed sheets are private material and are NOT used in this film; no client or sponsor name anywhere. Media stay local (`~/Videos/dxf2bim_film_work/yellow/`); the repo gets this spec, the recorder, the TSV.
+Status: PLAN 2026-10-22, awaiting the owner's go. Dry walk done on `origin/main` `a66cea3d` and re-run after rebase on `f89b7f67` (#2276, D30 section cut: same values; results below: every beat's UI exists; two product gaps found that touch chapter 1, one known bug that touches chapter 2). Not recorded.
+
+## Goal
+A user who has never seen DXF2BIM grasps, in about four and a half minutes, from one real session in the Modeller:
+- (a) what a marking is: a short text `@KEY=value` on the layer `DXF2BIM-MARK` inside the DXF; the drawing carries its own meaning, nothing is kept in a side file;
+- (b) where markings come from: derived from the model by our own export (`@BY=model`), stated by the user (`@BY=user`), or suggested from the drawing (yellow, until accepted);
+- (c) the yellow rule: suggested, never silent, yellow until it is yours; accept one, accept all, override by typing;
+- (d) the basic datums, enough to read one plan and one elevation: set / view / name / units, `@LEVEL`, grid labels (`@GRIDX/Y/H`), `@FACE` + `@HAXIS` + `@Z`, `@ROOF`, `@CUT`;
+- (e) what the reader does with them: the verdict, qualifies or blocking items listed, never filled;
+- (f) the round trip: the marked copies carry the markings inside the DXF; re-opening them needs no choices.
+
+## Audience
+CAD users and building owners who will open their own DXF sets in the Modeller (desktop browser). No BIM vocabulary assumed beyond "plan, elevation, section, level, grid".
+
+## Input (neutral sample only)
+The Duplex standard set written by our writer from the Duplex model DB (`/tmp/db2/DXARC.db`, the scratch copy every DXF2BIM witness uses): 8 sheets (2 plans, 4 elevations, roof plan, section).
+- **Model-marked set** = `std2d.writeStdSet` + `std2d_marks.deriveMarks` (every marking `@BY=model`): what our own 3D-to-2D export hands over.
+- **Plain set** = `writeStdSet` alone (no `DXF2BIM-MARK` text at all): "a common CAD drawing", what a CAD program hands you.
+- Written at take time by a small set writer (new, below), from the worktree the take runs on; it logs `§FILM_SETS sheets=8 marked_marks=<n> plain_marks=0 by=<counts>`. Dry walk: `sheets marked=8 plain=8 plain_with_mark_layer=0 by={"@BY=model":148}`.
+
+## Chapters (5) and target length
+Target about 4 min 35 s = 275 s, the sum of the chapter estimates below (planning estimate: the sum of the DETAIL lines at the fitter's pace plus the action holds; the real length is `§POLY_DUR` + 1 s per beat from the measure pass). Justification: five concepts, each needs one real action and its visible consequence; the wand film carried one gesture in 122 s; this film carries five, so about twice that, kept under five minutes by leaving doors, windows, layers and defaults to the limits card.
+
+| # | chapter card (FILM_SET=yellow) | concept | beats | estimate |
+|---|---|---|---|---|
+| 1 | INSIDE / THE DRAWING | (a) + (b): a marking is a text in the DXF; @BY | m01-m04 | 55 s |
+| 2 | YELLOW / UNTIL YOURS | (c): suggestion, accept one, accept all, override | y01-y05 | 70 s |
+| 3 | THE / DATUMS | (d): set, level, roof, face, axis, z, grids, cut | d01-d04 | 60 s |
+| 4 | THE / VERDICT | (e): listed, never filled | v01-v03 | 40 s |
+| 5 | IT / TRAVELS | (f): saved inside the DXF, re-open, limits | t01-t02, l01, end | 50 s |
+
+## Beats
+Page = the Modeller (`modeller/modeller.html`), 1920 x 1080. Selectors and values below are from the dry walk (section "Dry walk"). "Fact" = the `§FILM_FACT <key> <value>` line the recorder must print in that beat; the narration placeholder of the same name is filled from it.
+
+| beat | on screen | the real UI action that produces it | §FILM_FACT keys (dry-walk value) | narration |
+|---|---|---|---|---|
+| c1 / m01 | card 1 INSIDE THE DRAWING; then the Modeller: the 2D Drawings panel lists 8 sheets with roles (PLAN @0, ELEV minY...), the Drawing metadata panel: Sheets "complete", Units "from model" on every sheet, the sheets standing in 3D on the canvas | `#b-open` -> `#m-open-panel .mo-row[data-key="__dxf"]` -> file chooser with the 8 model-marked files; wait `!DxfMetaEditor.state.busy && state.verdict` | `sheets` (8), `model_marks` (148), `model_yellow` (0), `model_src` ({"model":8} visible labels) | m01 |
+| m02 | a CODE CARD: the TEXT entities of the FRONT elevation as they stand in the file (`0 TEXT / 8 DXF2BIM-MARK / 20 3100 / 1 @Z=3.1 @BY=model`, with `@VIEW=ELEV`, `@FACE=minY`, `@HAXIS=+X` above); the `@Z` line and its y highlighted | recorder reads the model-marked FRONT sheet (Node, group-code walk, no product code) and shows the lines on a film card (as the wand film's zip card) | `mark_lines` (the 5 lines shown), `mark_z` (3.1), `mark_z_y` (3100) | m02 |
+| m03 | the same card, the `@BY=` suffixes highlighted; a third line shows a marking with no suffix (stated in the file) | recorder card; the no-suffix example is the grammar's own rule (`dxf2marks.js` describe: no `@BY` -> `file`), shown as text, not invented data | `by_counts` ({"@BY=model":148}) | m03 |
+| m04 | fresh page; the plain set opens: Blocked · 31, every sheet NO ROLE / "no DXF2BIM-MARK marking", the yellow list (ALL DEFAULTS, 10 yellow) | same open path with the 8 plain files | `plain_marks` (0), `open_blocking` (31), `open_yellow` (10) | m04 |
+| c2 / y01 | card 2 YELLOW UNTIL YOURS; the yellow list: 8 rows `@UNITS=mm · PR-UNITS: file says mm ($INSUNITS=4)`, `@VIEW=SECTION` and `@NAME=...` from the section title; the sheet's Units field is empty | scroll `#dm-body` to the top (mouse wheel over the panel) | `r1_rows` (10), `r1_rules` ({"PR-UNITS":8,"PR-VIEW":1,"PR-NAME":1}), `r1_sample` (row 1 text) | y01 |
+| y02 | one tick: the first row goes, the list says 9 yellow, that sheet's units show "you"; then Accept all: the list empties | click `#dm-yellows [data-act="confirm"]` (first), then `#dm-yellows [data-act="acceptall"]` | `one_row` (text), `one_left` (9), `one_src` ("you"), `r1_after_yellow` (0) | y02 |
+| y03 | each sheet's Role picked from its dropdown (the SECTION was suggested and already accepted); the list grows: 49 rows, one per grid line, level datum, face and the cut | `selectOption('#dm-f-<i>-VIEW', PLAN / ELEV / ROOF)` on the 7 sheets whose field is empty (i = 0..6) | `role_picks` (7), `role_why` ("PR-VIEW not proposed: no title text ending PLAN / ELEVATION / SECTION"), `r2_rows` (49), `r2_rules` ({"PR-GRID":28,"PR-Z":16,"PR-FACE":4,"PR-CUT":1}) | y03 |
+| y04 | the `@CUT` row (`@CUT=Y,-17591.5 · PR-CUT: the two "A" labels of the section line on ..._FLOOR_LEVEL_1`) beside the section title (`SECTION A-A AT X=2304.25  1:100`, from the sheet card's Name row); the Cut field typed `X,2304.25`: the row goes (48), the field says "you" | scroll to the row; click `#dm-f-7-CUT`, type, Tab (the field is EMPTY before: a suggestion fills nothing) | `cut_suggested` ("Y,-17591.5"), `cut_title` ("X=2304.25", read from the title text), `cut_typed` ("X,2304.25"), `r2_after_cut` (48), `cut_src` ("you") | y04 |
+| y05 | the list scrolled to its end: Accept all (about 1,100 px below the visible part of the panel); 0 yellow | mouse wheel over `#dm-body` to the button, click `#dm-yellows [data-act="acceptall"]` | `acceptall_below_px` (1119), `r2_after` (0) | y05 |
+| c3 / d01 | card 3 THE DATUMS; Set typed once on sheet 0; 7 rows `@SET=DUPLEX · PR-SET: the other sheets state it`; Accept all | click `#dm-f-0-SET`, type `DUPLEX`, Tab; Accept all | `set_typed` ("DUPLEX"), `r3_rows` (7) | d01 |
+| d02 | the two plan Level fields typed from the plan titles (`LEVEL 2 PLAN (FFL +3.100)`); 5 rows `@HAXIS=+X · PR-HAXIS: unique grid fit against ..._FLOOR_LEVEL_1`; Accept all | type `#dm-f-0-LEVEL` `0`, `#dm-f-1-LEVEL` `3.1`; Accept all | `level_1` (0), `level_2` (3.1), `level_title` (title text), `r4_rows` (5) | d02 |
+| d03 | the roof plan's Level `6`, then the Roof field on the roof plan, the 4 elevations and the section, each `6.457` (from the `T/ROOF +6.457` level text) | type `#dm-f-6-LEVEL` `6`; type each empty `#dm-panel input[id$="-ROOF"]` (dry walk: `dm-f-2..7-ROOF`) | `roof_level` (6), `roof_top` (6.457), `roof_typed` (6), `after_roof_blocking` (84 in the film's order, cut typed first; `dry2.js`) | d03 |
+| d04 | the FRONT sheet's card expanded: Face minY, Horizontal axis +X, four `@Z` (0 / 3.1 / 6 / 6.457), three `@GRIDH`, every one "you"; then the canvas: camera eases to the FRONT elevation standing on its face, the plans at their levels, the section on its cut | click the FRONT sheet card header; recorder camera tween (`window.A.camera` / `A.controls`, Z up, stated) | `front_marks` (the card's keys), `sheets_done_blocking` (84) | d04 |
+| c4 / v01 | card 4 THE VERDICT; the Verdict section: walls 44 / openings 40 blocking; Blocking 84; one item clicked: the canvas zooms to it | scroll to `.dm-sh[data-sec="verdict"]`; click the first `#dm-panel .dm-it:not(.nopos)`; recorder re-centres the zoomed point in the free canvas right of the panels (as the wand film's `centreOn`) | `verdict` ({"blocking":84,"advisory":38,"codes":{...}}), `item` (code + message), `item_cam` (camera before / after) | v01 |
+| v02 | Wall tops: "Interior walls run to the slab above" ticked on each plan; 84 -> 40 | click `#dm-panel .dm-sh[data-sec="walltops"]`; click each unchecked `input[data-act="walltop"]` | `walltop_ticks` (2), `walltop_blocking` (40), `walltop_codes` ({"GAP:fill_unbound":12,"GAP:no_elevation_height":14,"GAP:no_host_cut":14}) | v02 |
+| v03 | the 2D Drawings panel's status line: "Convert refused: qualify verdict blocked, 40 blocking item(s)."; the Doors section header "28 blocking" | read `#dxf-status`, scroll to `.dm-sh[data-sec="doors"]` | `convert_status` (text), `doors_head` (text) | v03 |
+| c5 / t01 | card 5 IT TRAVELS; Save marked copies: the note "Downloaded: ..._marked.dxf ... The opened files are unchanged."; then a CODE CARD of the saved SECTION copy: `@CUT=X,2304.25 @BY=user`, `@Z=3.1 @BY=user` at y 3100, `@ROOF=6.457 @BY=user` | click `#dm-save`; recorder saves the 8 downloads to the take dir and reads them (Node) | `saved_n` (8), `saved_names`, `saved_lines` (the lines shown), `saved_by` ({"@BY=user":<n>}) | t01 |
+| t02 | fresh page; the 8 marked copies open: 0 yellow, every value "you", Blocked · 40, the same list | open path with the 8 saved files | `reopen_yellow` (0), `reopen_blocking` (40), `reopen_same` (true = same codes as `walltop_codes`) | t02 |
+| l01 | a plain LIMITS card (text below) | recorder card | `limits` (the lines shown) | l01 |
+| end | credits | recorder card | - | end |
+
+**Limits card text (draft; numbers filled from the take):** "Not shown: doors and windows (schedule rows, tags), layers, element defaults, the yellow band on exported plans." · "The suggested section cut is wrong on our standard sets: check it against the title." (drop this line if P3 is built before the take) · "Titles that end in a scale are not read: the role is picked by hand." · "The roof top is typed on {roof_typed} sheets." · "Round two of the list is {r2_rows} rows; Accept all is at its end." · "Recorded on a desktop browser; a phone is not measured."
+
+## Chapter cards (proposed `FILM_SET=yellow`, compiler `film_title_cards.py`, same anatomy as `wand`)
+| n | chapter | title | subtitle | line |
+|---|---|---|---|---|
+| 1 | CHAPTER 1 | INSIDE | THE DRAWING | A marking is a short text in the DXF. |
+| 2 | CHAPTER 2 | YELLOW | UNTIL YOURS | Suggested, never silent. Accept, or type over. |
+| 3 | CHAPTER 3 | THE | DATUMS | Role, set, level, roof, face, axis, heights, grid, cut. |
+| 4 | CHAPTER 4 | THE | VERDICT | What is missing is listed, never filled. |
+| 5 | CHAPTER 5 | IT | TRAVELS | Saved inside the drawing; opened again with no choices. |
+Tags: INSIDE THE DRAWING / YELLOW UNTIL YOURS / THE DATUMS / THE VERDICT / IT TRAVELS; series `BIM OOTB  ·  MODELLER  ·  DXF2BIM`.
+
+## Rules for this film
+- The take is the real Modeller driven by real clicks, selects, typing and wheel scrolls (puppeteer, CDP screencast, as the wand recorder); never a state call where a user action exists (`DxfMetaEditor` / `DxfImportUI` state is READ for facts only). The camera is tweened by the recorder (stated here). Film cards (chapter backdrops, the code cards, limits, credits) are the only non-product pixels; the code cards show lines READ from the files of this take.
+- Never show a broken step as working: the `@CUT` row is shown as wrong and typed over BEFORE Accept all (the dry walk proved that Accept all would take the wrong cut and label it "you": `A_cut_field_before_override Y,-17591.5 src=you`; on the Duplex the verdict then blocks it as `MARK:axis_cut`, a check that holds only when the wrong axis matches the section's horizontal axis, so the film says "check it", not "the verdict catches it").
+- "Yellow until it is yours" is shown literally: the field stays empty while the row is yellow (y01, y04), and turns "you" after the tick or the typed value.
+- Numbers: placeholders only. The filler (new, below) refuses a TSV with an unfilled `{...}` and a fact whose value is missing from `take.log`.
+- No shed sheet, no client or sponsor name, no title block of a private set; the Duplex sheets carry no title block names.
+
+## Dry walk (2026-10-22, `origin/main` `a66cea3d`, re-run on `f89b7f67` with identical values, worktree `/tmp/wt-film-yellow`)
+Real Modeller from a local server (`python3 -m http.server 8198` at the worktree root: port 8197 was held by another session's Playwright driver), Playwright (`~/bim-ootb/tests/node_modules/@playwright/test`), headless Chromium on the GPU, 1920 x 1080, real clicks / selects / typing. Scripts and screenshots: session scratchpad only (`yfilm/dry.js`, `dry2.js`, `gen.js`, `shots/`), not committed. Log lines (`§DRY`):
+- Open (plain): `open_ms 1093`; both panels open by themselves (`panel_visible true dxf_panel true`); `Blocked · 31` (`QF:sheet_no_role 8, QF:units_unstated 8, QF:check_skipped 8, QF:face_no_elev 4, ...`), `10 yellow` (`PR-UNITS 8, PR-VIEW 1, PR-NAME 1`), Accept all visible (363 px above the panel bottom). The canvas is EMPTY until sheets have their role and facts.
+- Accept one: first row `@UNITS=mm ... PR-UNITS: file says mm ($INSUNITS=4)` -> 9 yellow, `{"user":1}`. Accept all: 0 yellow, `Blocked · 23`.
+- Roles: 7 picks (SECTION already from PR-VIEW); round 2 = 49 rows (`PR-GRID 28, PR-Z 16, PR-FACE 4, PR-CUT 1`), Accept all 1,119 px below the visible part. Faces carry the reason `sheet name / title FRONT (repo convention R11, not evidence)`; datums `PR-Z: level text B8 + level line B6`.
+- `@CUT`: suggested `Y,-17591.5` (`PR-CUT: the two "A" labels of the section line on DUPLEX_FLOOR_LEVEL_1_std.dxf`) against the title `SECTION A-A AT X=2304.25  1:100`: the usability report's bug P3 is still on main. The Cut field is EMPTY while the row is yellow; typing `X,2304.25` removes the row (49 -> 48) and the field says "you". After Accept all without the check, the field holds the wrong cut labelled "you".
+- Set once -> 7 rows `PR-SET: the other sheets state it`; plan levels -> 5 rows `PR-HAXIS: unique grid fit`; roof: 6 empty Roof fields (`dm-f-2..7-ROOF`); then, with the wrong cut accepted, `Blocked · 2` (`GAP:pipeline_not_run`, `QF:mark_invalid`: the grammar refuses `@HAXIS +Y runs along the cut axis Y,-17591.5`, checked with `Dxf2Marks.describe`), so on the Duplex the verdict does catch the wrong cut, as a blocking item, not as a hint at the row; with the cut typed first (`dry2.js`) the roof step goes straight to `Blocked · 84`; sheets complete -> `Blocked · 84` (`GAP:no_elevation_height 58, GAP:no_host_cut 14, GAP:fill_unbound 12`), 96 "you" labels visible.
+- Wall tops: 2 ticks -> `Blocked · 40` (`fill_unbound 12, no_elevation_height 14, no_host_cut 14`); `#dxf-status` = `Convert refused: qualify verdict blocked, 40 blocking item(s).`; Doors header `28 blocking`. Verdict item click: 40 items, `nopos=0`, the camera moves (`[10.33,-6.83,10.83] -> [8.94,-21.52,6.18]`); the zoomed spot can fall behind the panels (re-centre needed).
+- Save marked copies: 8 downloads `DUPLEX_*_std_marked.dxf`, note "The opened files are unchanged."; every saved marking ends `@BY=user`; `@Z` texts sit at their datum's y (`@Z=3.1 @BY=user` at y 3100), single keys at 0,0.
+- Re-open saved copies: `Blocked · 40`, same codes, 0 yellow, `{"user":8}` visible labels.
+- Model-marked set: 0 yellow, labels "from model", `Blocked · 12` (`GAP:fill_unbound 12`: the stacked windows need a product; our export does not write window tags), `Convert refused ... 12`.
+- Round totals 10 / 49 / 7 / 5 = 71, as the usability report (`prompts/DXF2BIM_USABILITY_REPORT.md` §2).
+
+## Product gaps found by the dry walk (dependencies)
+| id | gap (evidence) | beats | wait for it? |
+|---|---|---|---|
+| D-1 | **Marking handles above `$HANDSEED`.** `Dxf2Marks.writeMarks` numbers the new TEXT handles from the highest handle it saw in the file up to the end of ENTITIES and does not raise `$HANDSEED`: the roof sheet's markings are `10F4..` with `$HANDSEED=10F3`. ezdxf reports "non-unique entity handle" on EVERY marking of both the model-marked set (6 to 27 per sheet) and the user-saved copies (5 to 15 per sheet); the plain set reports 0. A strict CAD AUDIT may repair or complain. | m02, t01 (the claim "a normal DXF any CAD program opens") | Recommended small fix before the take (raise `$HANDSEED` past the last marking). Without it the film does NOT open the files in another program and says only "a text on its own layer" (the code card reads the file; no claim about other programs). |
+| D-2 | **Marking text height = 1 drawing unit** (`writeMarks` `40 = opts.height || 1`): on a mm sheet the text is 1 mm tall, about 0.1 px when the 17.8 m Duplex sheet fills 1920 px; a person opening the marked copy in CAD cannot see the markings without zooming to the point. The Modeller canvas never draws `DXF2BIM-MARK` texts (`dxf_import_ui.js` skips the layer). | m02, t01 | Not blocking: the film shows the markings as a CODE CARD read from the file. If the owner wants the markings VISIBLE in a rendered sheet (an ezdxf render, `film_dxf2bim_render_sheets.py`), the writer must size them first (a product decision; the film never enlarges them itself). |
+| P3 | Wrong suggested `@CUT` (usability report; still on main). | y04, l01 | Not blocking: the film types over it and says "check it". If P3 is built before the take, y04 shows the corrected row's source (the title) and says "check it against the title"; the override is then shown on the typed set name / levels only, and the limits line is dropped. |
+| P2 | Ungrouped list, Accept all at its end (usability report). | y03, y05 | Not blocking. If P2 is approved for the next session, record after it (it changes y03 / y05 only: grouped rows, Accept all at the top); otherwise record today's list and state the length on the limits card. |
+| P6 | Titles ending in a scale are not read (7 role picks). | y03 | Not blocking; the picks are shown and the reason row (`PR-VIEW not proposed ...`) is on screen. |
+| P5 | `@ROOF` typed 6 times. | d03 | Not blocking; stated plainly. |
+| P11 | 8 separate downloads. | t01 | Not blocking; the recorder accepts the downloads (headless). |
+| C-1 | Chapter cards: the compiler's `film_title_cards.py` has no `FILM_SET=yellow` block. | assembly | Needed before assembly (BIMCompiler PR, same anatomy as `wand`: 5 cards, tags, series `BIM OOTB  ·  MODELLER  ·  DXF2BIM`). |
+
+## New recorder support (to be written only after the owner's go)
+- `prompts/film_dxf2bim_yellow_sets.js`: writes the plain + model-marked Duplex sets from the worktree's writer (the dry walk's `gen.js` is the template: `writeStdSet` + `deriveMarks`), prints `§FILM_SETS`.
+- `prompts/film_dxf2bim_yellow_rec.js`: the wand recorder's anatomy (puppeteer, CDP screencast with frame timestamps, `§FILM_CHAPTER` / `§FILM_BEAT` / `§FILM_FACT`, one backdrop still per chapter, `BEAT_MIN` holds), plus:
+  - a **visible pointer** (headless screencast shows no cursor): a DOM dot that follows the recorder's real `mouse.move` steps and a short ring on each click (`pointer-events: none`, stated here); without it the ticks and picks are invisible;
+  - **wheel scrolling** of `#dm-body` (real `mouse.wheel` over the panel) to bring a row or Accept all into view, never `scrollIntoView` on screen;
+  - the 2D open path with a file chooser (as `film_dxf2bim_shed_rec.js` `openFiles`), and download capture (`Browser.setDownloadBehavior`, as the wand recorder);
+  - a Modeller **camera tween** on `window.A.camera` / `A.controls` (Z up; the wand's `camTo` / `centreOn` without `ifc2three`), used in d04 and to re-centre the verdict zoom in v01 into the canvas right of the panels;
+  - **code cards** built from lines read from this take's files (Node group-code walk over `0 TEXT ... 8 DXF2BIM-MARK ... 1 <text>`), with the read line printed as `§FILM_FACT`.
+- `prompts/film_narration_fill.js`: fills `{key}` in the TSV from the take's `§FILM_FACT` lines (value verbatim, a JSON field by `{key.field}`), writes `<tsv>.filled.tsv`, prints `§FILL key=value` per placeholder, exits 1 on an unfilled placeholder or a missing fact.
+- `prompts/film_dxf2bim_yellow_assemble.sh`: the wand assembler with `FILM_SET=yellow` and the filled TSV (the last-beat pad stays).
+
+## Narration
+`prompts/film_narration_dxf2bim_yellow_en.tsv`, the wand film's columns: id, lang, source, SHORT, DETAIL; two voices F / M (`F: ... | M: ...`). Every number is a `{fact}` placeholder. Kokoro voices, local; fitted and muxed with the compiler's `film_narration_poly.py` / `film_narration_mux.py`; music bed `film_music_bed.py`.
+
+## The three hardest beats
+1. **m02 / t01, the marking inside the drawing.** The product never draws a marking (the Modeller skips the layer; the writer makes it 1 unit tall, D-2) and its handles collide on load (D-1), so the one picture that defines the concept is a code card, not a sheet. It must read as "this is in the file", not as a slide: the card shows the file name, the group codes and the read line, and t01 repeats it on the copy the viewer just watched being saved.
+2. **y04, the cut check.** A live bug sits in the middle of the chapter about trusting yellow. The beat must show the wrong row, its stated source (two grid bubbles), the title that contradicts it, and the override, in that order, before any Accept all; if P3 lands, the beat changes shape (above).
+3. **y03 / y05, round two.** 49 rows in one ungrouped list, Accept all 1,119 px below the visible part: scrolling it at a legible pace costs screen time, and the viewer must still see that each row names its source. The plan: wheel through the first rows slowly (grid, then a datum, then a face), then a faster scroll to the button; P2 would remove the problem.
+
+## Acceptance (house style)
+0 page errors in the take; every `§FILM_FACT` the TSV quotes is present in `take.log` and `film_narration_fill.js` prints 0 unfilled; `§NARR_FIT` all DETAIL or SHORT, 0 SKIP, fitted rows == TSV rows; frames == silent master; -16 to -17 LUFS; no black frames; a contact sheet read frame by frame (the yellow rows legible at 1080p, the pointer visible on every click, the Cut field empty before y04 and "you" after, the code cards' lines identical to the facts, no toast over a panel); the dry-walk numbers re-measured by the take (a different number goes into the narration through its fact, never by hand); grep of subtitles and card text for client names / "first" / "only" / "novel" = 0; no frame of a private set.
+
+## Run (after the owner's go)
+1. Worktree off `origin/main`; `NODE_PATH=~/bim-compiler/node_modules node prompts/film_dxf2bim_yellow_sets.js /tmp/db2/DXARC.db <take dir>/sets > sets.log` (read `§FILM_SETS`).
+2. `python3 ~/bim-compiler/prompts/film_narration_poly.py prompts/film_narration_dxf2bim_yellow_en.tsv measure` with the dry-walk values filled (a measure-only fill) -> `beat_min.json` (= `§POLY_DUR` + 1 s).
+3. `node prompts/film_dxf2bim_yellow_rec.js <take dir> beat_min.json > take.log` (live Modeller `https://red1oon.github.io/bim-ootb/modeller/modeller.html`, `SITE=` for a local server); read `take.log`: `§PAGEERR` = 0, every fact present.
+4. `node prompts/film_narration_fill.js prompts/film_narration_dxf2bim_yellow_en.tsv take.log` -> `.filled.tsv` (read every `§FILL`).
+5. `BEAT_MIN_JSON=beat_min.json FILM_CARDS_PY=~/bim-compiler/prompts/film_title_cards.py prompts/film_dxf2bim_yellow_assemble.sh <take dir> take.log <filled tsv> <out.mp4>` + loudnorm I=-16.5 (two-pass, video copied); read every line it prints; then the acceptance list.
