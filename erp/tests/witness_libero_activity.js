@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // ⚠ DO NOT REMOVE — W-LIBERO-ACTIVITY (spec prompts/mfg/LIBERO_ACTIVITY_SLICE6_SPEC.md). READ THE LOG after every run: verdict = §LACT-VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: an Activity Control collector (type 160) books the labour / burden cost of a routing step the way Libero does - duration converted to the resource UOM, cost details per element,
-//   the order activity closed when its quantity is done, and the accounting posted - and refuses what it does not port. Every number is hand-computed (see the spec). Breaks (MUST exit 1): LACT_BREAK=nobase|noclose|batchmult|norate (activity rate variance off)
+//   the order activity closed when its quantity is done, and the accounting posted - and refuses what it does not port. Every number is hand-computed (see the spec). Breaks (MUST exit 1): LACT_BREAK=nobase|noclose|batchmult|norate (activity rate variance off)|msquirk (the upstream milestone self-close)
 'use strict';
 var fs = require('fs'), path = require('path');
 if (!global.window) global.window = {};
@@ -100,7 +100,7 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LACT ' + n + 
 
 
   var COSTMOD2 = COSTMOD;
-  if (BREAK === 'nobase') COSTMOD.SOURCE.routeBase = false; if (BREAK === 'noclose') COSTMOD.SOURCE.closeNode = false; if (BREAK === 'batchmult') COSTMOD.SOURCE.batchMult = false; if (BREAK === 'norate') COSTMOD.SOURCE.activityRate = false;
+  if (BREAK === 'nobase') COSTMOD.SOURCE.routeBase = false; if (BREAK === 'noclose') COSTMOD.SOURCE.closeNode = false; if (BREAK === 'batchmult') COSTMOD.SOURCE.batchMult = false; if (BREAK === 'norate') COSTMOD.SOURCE.activityRate = false; if (BREAK === 'msquirk') COSTMOD.SOURCE.milestoneSelfClose = true;
   // FIXTURE (labelled): the resource product 50024 (UOM Hour) costs Standard; Labor (element 105) 12.00 and Burden (50000) 3.00 per hour; the order carries QtyBatchs = 2
   var RP = 50024; stdOn(true); db.run('UPDATE m_product_category_acct SET costingmethod=\'S\' WHERE m_product_category_id=50003');
   function rprice(el, v) { db.run('UPDATE m_cost SET currentcostprice=? WHERE m_product_id=? AND m_costelement_id=? AND c_acctschema_id=101 AND m_costtype_id=100 AND ad_org_id=0', [v, RP, el]); }
@@ -150,25 +150,29 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LACT ' + n + 
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
   var OB = newCompletedOrder('LA-B'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OB.pp_order_id]); db.run("UPDATE pp_order_node SET ismilestone='Y' WHERE pp_order_id=?", [OB.pp_order_id]);
   var nodeB = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OB.pp_order_id]), nB = nCC(OB.pp_order_id), r3 = activity(OB, nodeB, 100, 1800, 0);
-  // UPSTREAM QUIRK, ported (spec §MILESTONE): prepareIt :349-354 closeActivities(activity, date, true) starts AT the milestone and closes it; completeIt :478-482 then refuses it as processed
-  check('A6 a MILESTONE activity is refused the legacy way: "Order Activity Already Processed - MPPOrderNode[id-Packing Process]" (closeActivities closed it in prepare) and nothing is written', !r3.ok && /Order Activity Already Processed - MPPOrderNode\[\d+-Packing Process\]/.test(String(r3.msg)) && nCC(OB.pp_order_id) === nB && one('SELECT docstatus AS s FROM pp_order_node WHERE pp_order_node_id=?', [nodeB.pp_order_node_id]).s === 'DR', { ok: r3.ok, msg: r3.msg });
-  // A6b two activities: N1 (plain) -> N2 (milestone, a labelled fixture copy of N1). Reporting N2 reports N1 first (an Activity Control collector of N1's open qty, N1 closed) - then the quirk refuses N2,
-  //   and the WHOLE report rolls back: no collector on either node, N1 back to Draft
-  db.run("UPDATE pp_order_node SET ismilestone='N' WHERE pp_order_id=?", [OB.pp_order_id]);
-  var n1row = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OB.pp_order_id]), n2id = 9990001, nnId = 9990002, ncols = colsOf('pp_order_node');
+  // MILESTONE (spec §MILESTONE-FIX, declared deviation 2026-10-21): the reporting milestone is NOT closed by closeActivities, so it completes on its own quantity rule
+  var ccOfNode = function (nid) { return q("SELECT pp_cost_collector_id AS id, movementqty AS q, docstatus AS s FROM pp_cost_collector WHERE pp_order_node_id=? AND costcollectortype='160' ORDER BY pp_cost_collector_id", [nid]); };
+  var nB1 = one('SELECT docstatus AS s, qtydelivered AS qd FROM pp_order_node WHERE pp_order_node_id=?', [nodeB.pp_order_node_id]);
+  check('A6 a single MILESTONE activity report completes like a plain one: collector CO, the node Closed with QtyDelivered 100', r3.ok && nB1.s === 'CL' && close(S(nB1.qd), 100) && ccOfNode(nodeB.pp_order_node_id).length === 1, { ok: r3.ok, msg: r3.msg, node: nB1 });
+  // A6b a FRESH order: N1 (plain, Draft) -> N2 (milestone, a labelled fixture copy of N1). Reporting N2 first reports N1 (an Activity Control collector of N1's open qty 100), closing it, then N2 completes
+  fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
+  var OB2 = newCompletedOrder('LA-B2'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OB2.pp_order_id]);
+  var n1row = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OB2.pp_order_id]), n2id = 9990001, nnId = 9990002, ncols = colsOf('pp_order_node');
   db.run('INSERT INTO pp_order_node (' + ncols.map(function (c) { return '"' + c + '"'; }).join(',') + ') SELECT ' + ncols.map(function (c) { return c === 'pp_order_node_id' ? String(n2id) : c === 'ismilestone' ? "'Y'" : c === 'value' ? "'Milestone'" : c === 'name' ? "'Milestone Step'" : c === 'pp_order_node_uu' ? "'ms-fixture-uu'" : '"' + c + '"'; }).join(',') + ' FROM pp_order_node WHERE pp_order_node_id=?', [n1row.pp_order_node_id]);
-  var nncols = colsOf('pp_order_nodenext'), nnv = { pp_order_nodenext_id: nnId, ad_client_id: 11, ad_org_id: n1row.ad_org_id, isactive: 'Y', pp_order_id: OB.pp_order_id, pp_order_node_id: n1row.pp_order_node_id, pp_order_next_id: n2id, seqno: 10, entitytype: 'EE01', isstdusertransition: 'N', created: DATE, updated: DATE, createdby: 100, updatedby: 100 };
+  var nncols = colsOf('pp_order_nodenext'), nnv = { pp_order_nodenext_id: nnId, ad_client_id: 11, ad_org_id: n1row.ad_org_id, isactive: 'Y', pp_order_id: OB2.pp_order_id, pp_order_node_id: n1row.pp_order_node_id, pp_order_next_id: n2id, seqno: 10, entitytype: 'EE01', isstdusertransition: 'N', created: DATE, updated: DATE, createdby: 100, updatedby: 100 };
   var nnk = Object.keys(nnv).filter(function (k) { return nncols.indexOf(k) >= 0; }); db.run('INSERT INTO pp_order_nodenext (' + nnk.join(',') + ') VALUES (' + nnk.map(function () { return '?'; }).join(',') + ')', nnk.map(function (k) { return nnv[k]; }));
-  var nB2 = nCC(OB.pp_order_id), n2row = one('SELECT * FROM pp_order_node WHERE pp_order_node_id=?', [n2id]), r3b = activity(OB, n2row, 100, 1800, 0);
-  var n1after = one('SELECT docstatus AS s, qtydelivered AS qd FROM pp_order_node WHERE pp_order_node_id=?', [n1row.pp_order_node_id]);
-  log('§LACT-A6b two-node milestone report ok=' + r3b.ok + ' msg=' + (r3b.msg || '') + ' N1=' + JSON.stringify(n1after) + ' collectors ' + nB2 + ' -> ' + nCC(OB.pp_order_id));
-  check('A6b reporting a milestone N2 behind a plain N1: refused "Order Activity Already Processed - MPPOrderNode[' + n2id + '-Milestone Step]", N1 WAS reported inside the attempt (§LIBERO-CLOSEACT reported=N1 qty=100) and that report rolls back (no collector, N1 Draft, QtyDelivered 0)', (r3b.log || []).some(function (l) { return new RegExp('§LIBERO-CLOSEACT from=' + n2id + ' milestone=true reported=' + n1row.pp_order_node_id + ' qty=100').test(l); }) && !r3b.ok && new RegExp('Order Activity Already Processed - MPPOrderNode\\[' + n2id + '-Milestone Step\\]').test(String(r3b.msg)) && nCC(OB.pp_order_id) === nB2 && n1after.s === 'DR' && close(S(n1after.qd), 0), { ok: r3b.ok, msg: r3b.msg, n1after: n1after, trace: (r3b.log || []).filter(function (l) { return /CLOSEACT/.test(l); }) });
-  // A6c MPPOrder.autoReportActivities :1455-1491: completing an order whose START node is a milestone auto-reports it -> the same quirk refuses the order's completion
+  var n2row = one('SELECT * FROM pp_order_node WHERE pp_order_node_id=?', [n2id]), r3b = activity(OB2, n2row, 100, 1800, 0);
+  var n1after = one('SELECT docstatus AS s, qtydelivered AS qd FROM pp_order_node WHERE pp_order_node_id=?', [n1row.pp_order_node_id]), n2after = one('SELECT docstatus AS s, qtydelivered AS qd FROM pp_order_node WHERE pp_order_node_id=?', [n2id]);
+  var c1 = ccOfNode(n1row.pp_order_node_id), c2 = ccOfNode(n2id);
+  log('§LACT-A6b two-node milestone report ok=' + r3b.ok + ' msg=' + (r3b.msg || '') + ' N1=' + JSON.stringify(n1after) + ' ' + JSON.stringify(c1) + ' N2=' + JSON.stringify(n2after) + ' ' + JSON.stringify(c2));
+  check('A6b reporting the milestone N2 behind a plain Draft N1: N1 is auto-reported (ONE collector qty 100, CO) and Closed, then N2 completes (its collector CO) and Closes - both QtyDelivered 100', r3b.ok && c1.length === 1 && close(S(c1[0].q), 100) && c1[0].s === 'CO' && n1after.s === 'CL' && close(S(n1after.qd), 100) && c2.length === 1 && c2[0].s === 'CO' && n2after.s === 'CL' && close(S(n2after.qd), 100) && (r3b.log || []).some(function (l) { return /§LIBERO-CLOSEACT from=9990001 milestone=true reported=/.test(l); }), { ok: r3b.ok, msg: r3b.msg, n1: n1after, c1: c1, n2: n2after, c2: c2 });
+  // A6c MPPOrder.autoReportActivities :1455-1491: completing an order whose START node is a milestone auto-reports it (QtyToDeliver 100, no duration) and the order completes
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
   mute(); var AM = mkOrder('LA-M'); unmute(); db.run("UPDATE pp_order_node SET ismilestone='Y' WHERE pp_order_id=?", [AM.o.pp_order_id]);
   mute(); var rM = doAction('pp_order', AM.o.pp_order_id, 'CO'); unmute(); var om = one('SELECT docstatus AS s FROM pp_order WHERE pp_order_id=?', [AM.o.pp_order_id]);
-  log('§LACT-A6c order complete with a milestone start node ok=' + rM.ok + ' msg=' + (rM.msg || '') + ' status=' + om.s + ' collectors=' + nCC(AM.o.pp_order_id) + ' order.updated=' + one('SELECT updated AS u, created AS c FROM pp_order WHERE pp_order_id=?', [AM.o.pp_order_id]).u);
-  check('A6c completing an order whose start node is a milestone runs autoReportActivities and is refused by the same quirk: order not completed, no collector', !rM.ok && /Order Activity Already Processed/.test(String(rM.msg)) && om.s !== 'CO' && nCC(AM.o.pp_order_id) === 0, { ok: rM.ok, msg: rM.msg, s: om.s });
+  var amNode = one('SELECT pp_order_node_id AS id, docstatus AS s FROM pp_order_node WHERE pp_order_id=?', [AM.o.pp_order_id]), amCc = ccOfNode(amNode.id);
+  log('§LACT-A6c order complete with a milestone start node ok=' + rM.ok + ' msg=' + (rM.msg || '') + ' status=' + om.s + ' node=' + JSON.stringify(amNode) + ' collectors=' + JSON.stringify(amCc));
+  check('A6c completing an order whose start node is a milestone: the order is CO, the start node auto-reported by ONE collector (qty 100, CO) and Closed', rM.ok && om.s === 'CO' && amCc.length === 1 && close(S(amCc[0].q), 100) && amCc[0].s === 'CO' && amNode.s === 'CL', { ok: rM.ok, msg: rM.msg, s: om.s, node: amNode, cc: amCc });
   // A7 events: the activity collector fires the same save + completion events as the plain path
   fixtureStock([{ asi: 0, qty: 10000, date: '2026-01-01 00:00:00' }], 500);
   var OC = newCompletedOrder('LA-C'); db.run('UPDATE pp_order SET qtybatchs=2 WHERE pp_order_id=?', [OC.pp_order_id]); var nodeC = one('SELECT * FROM pp_order_node WHERE pp_order_id=?', [OC.pp_order_id]);
@@ -210,10 +214,21 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §LACT ' + n + 
   // A9b completing again while the PO is not delivered: stays IP with "The quantity do not is complete for next Purchase Order : <docno>,"; A9c after delivery: CO, the activity Completed
   mute(); var rS2 = doAction('pp_cost_collector', ccS.pp_cost_collector_id, 'CO'); unmute(); var cs2 = one('SELECT docstatus AS s FROM pp_cost_collector WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]);
   check('A9b completing the collector before the PO is delivered keeps it In Progress ("The quantity do not is complete for next Purchase Order : ' + (olS[0] && olS[0].dn) + ',") and creates no second PO', cs2.s === 'IP' && /The quantity do not is complete for next Purchase Order : /.test(String(rS2.msg || '') + JSON.stringify(rS2.log || [])) && q('SELECT 1 AS x FROM c_orderline WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]).length === 1, { ok: rS2.ok, msg: rS2.msg, s: cs2.s });
-  db.run('UPDATE c_orderline SET qtydelivered=qtyordered WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]);
-  mute(); var rS3 = doAction('pp_cost_collector', ccS.pp_cost_collector_id, 'CO'); unmute(); var cs3 = one('SELECT docstatus AS s, docaction AS a, processed AS p FROM pp_cost_collector WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]), nS3 = one('SELECT docstatus AS s, docaction AS a, datefinish AS df FROM pp_order_node WHERE pp_order_node_id=?', [nodeS.pp_order_node_id]);
+  // A9c the PO is DELIVERED through a real vendor Material Receipt (doc type 122, the PO line, qty 300) completed by its DocAction: MFG_Validator DOC_AFTER_COMPLETE M_InOut (:285-320)
+  //   completes the waiting subcontract collector (no manual step) - the hook coded in #2240, judged here
+  var pol = one('SELECT * FROM c_orderline WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]), poh = one('SELECT * FROM c_order WHERE c_order_id=?', [pol.c_order_id]);
+  function msave(table, fields) { var t0 = new ML.Trx(q, env()), r = ML.run(q, env(), { table: table, timing: 'SAVE', changes: ML.newPO(t0, table, fields) }); if (r.ok) apply(r.ops); return r; }
+  mute(); var poc = ML.run(q, env(), { table: 'c_order', timing: 'DOCACTION', id: pol.c_order_id, action: 'CO' }); if (poc.ok) apply(poc.ops); unmute();
+  var rh = msave('m_inout', { ad_org_id: poh.ad_org_id, c_doctype_id: 122, issotrx: 'N', movementtype: 'V+', c_bpartner_id: poh.c_bpartner_id, c_bpartner_location_id: poh.c_bpartner_location_id, m_warehouse_id: poh.m_warehouse_id, c_order_id: poh.c_order_id,
+    movementdate: DATE, dateacct: DATE, docstatus: 'DR', docaction: 'CO', deliveryrule: 'A', deliveryviarule: 'P', freightcostrule: 'I', priorityrule: '5', processed: 'N', posted: 'N', isapproved: 'N', isintransit: 'N', isprinted: 'N', isinvoiced: 'N', issotrx: 'N', sendemail: 'N', isdropship: 'N' });
+  var ioId = one('SELECT MAX(m_inout_id) AS id FROM m_inout').id;
+  var rl = msave('m_inoutline', { m_inout_id: ioId, ad_org_id: poh.ad_org_id, line: 10, m_product_id: pol.m_product_id, c_uom_id: pol.c_uom_id, qtyentered: 300, movementqty: 300, m_locator_id: 50001, c_orderline_id: pol.c_orderline_id, m_attributesetinstance_id: 0, isdescription: 'N', processed: 'N', isinvoiced: 'N' });
+  mute(); var rio = ML.run(q, env(), { table: 'm_inout', timing: 'DOCACTION', id: ioId, action: 'CO' }); if (rio.ok) apply(rio.ops); unmute();
+  var rS3 = rio, ioSt = one('SELECT docstatus AS s FROM m_inout WHERE m_inout_id=?', [ioId]).s;
+  log('§LACT-A9c PO ' + poh.documentno + ' complete ok=' + poc.ok + ' (' + (poc.msg || '') + ') receipt ' + ioId + ' header ok=' + rh.ok + ' line ok=' + rl.ok + ' (' + (rl.msg || rl.error || '') + ') complete ok=' + rio.ok + ' (' + (rio.msg || '') + ') status=' + ioSt + ' hook=' + JSON.stringify((rio.log || []).filter(function (l) { return /SUBCONTRACT-RECEIPT/.test(l); })));
+  var cs3 = one('SELECT docstatus AS s, docaction AS a, processed AS p FROM pp_cost_collector WHERE pp_cost_collector_id=?', [ccS.pp_cost_collector_id]), nS3 = one('SELECT docstatus AS s, docaction AS a, datefinish AS df FROM pp_order_node WHERE pp_order_node_id=?', [nodeS.pp_order_node_id]);
   log('§LACT-A9c after delivery ok=' + rS3.ok + ' msg=' + (rS3.msg || '') + ' cc=' + JSON.stringify(cs3) + ' node=' + JSON.stringify(nS3));
-  check('A9c once the PO line is delivered the collector completes (CO, DocAction CL) and the activity is Completed (CO, DocAction --, DateFinish set)', rS3.ok && cs3.s === 'CO' && cs3.a === 'CL' && nS3.s === 'CO' && nS3.a === '--' && !!nS3.df, { ok: rS3.ok, msg: rS3.msg, cc: cs3, node: nS3 });
+  check('A9c the vendor RECEIPT of the PO line (completed through its DocAction) completes the subcontract collector by the M_InOut hook (CO, DocAction CL) and the activity is Completed (CO, --, DateFinish)', rS3.ok && ioSt === 'CO' && cs3.s === 'CO' && cs3.a === 'CL' && nS3.s === 'CO' && nS3.a === '--' && !!nS3.df, { ok: rS3.ok, msg: rS3.msg, cc: cs3, node: nS3 });
 
   // ── VARIANCES (spec §VARIANCES; CostEngine.createRateVariances :525-581 activity branch, createMethodVariances :583-656, MPPCostCollector.completeIt :555-556) ──────────────────────
   var HQ = 0.5016666666666667;   // the A1 hour base: (0+1+2) x QtyBatchs 2 + 1800 = 1806 s / 3600
