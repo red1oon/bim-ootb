@@ -496,22 +496,6 @@ function prepareInvoice(hdr, lines, ctx) {
   return { ok: true, ops: ops, lines: out, taxes: r.rows, totalLines: r.totalLines, grandTotal: r.grandTotal };
 }
 
-// completeInventory — M_Inventory CO as ops. Implementing prompts/SQLiteIDEMPIERE.md §59 (F18) — Witness: M3 PI1/PI2.
-// MInventory.completeIt (MInventory.java:525-540): per line qtyDiff = QtyCount − QtyBook (Physical Inventory) or −QtyInternalUse (Internal Use); 0 ⇒ no movement (:587);
-// storage at the line locator += qtyDiff. No lines ⇒ @NoLines@ (prepareIt). inventory = { m_inventory_id, docsubtypeinv 'PI'|'IU' }.
-function completeInventory(inventory, lines, opts) {
-  opts = opts || {};
-  if (!lines || !lines.length) return { ok: false, reason: 'NoLines' };
-  var ops = [];
-  lines.forEach(function (l) {
-    var diff = inventory.docsubtypeinv === 'IU' ? -Number(l.qtyinternaluse || 0) : Number(l.qtycount || 0) - Number(l.qtybook || 0);
-    if (diff === 0 || (opts.isStocked && !opts.isStocked(l.m_product_id))) return;
-    ops.push({ op_type: 'MOVE_STOCK', table: 'M_Storage', m_product_id: l.m_product_id, m_locator_id: l.m_locator_id, qty: diff });
-  });
-  ops.push({ op_type: 'SET_STATUS', table: 'M_Inventory', id: inventory.m_inventory_id, doc_status: 'CO' });
-  return { ok: true, ops: ops };
-}
-
 // replenishQtyToOrder — the ONE QtyToOrder calc of the Replenish Report (ReplenishReportProduction.fillTable :218-438 = ReplenishReport :294-327; ERP_FRIENDLY_OPS_LENS.md §64): the process port
 // (processes/ReplenishReportProduction.js) and the POS lens (pos_core.js replenishSuggest) both call it. Exact decimals (Postgres NUMERIC), inputs decimal strings/numbers, result a decimal string.
 //   type '1' reorder below min :326-336 · type '2' maintain max :339-345 · else (custom '9') 0 until the class sets it · Order_Min :348-356 (only 0 < q < Order_Min) · Order_Pack :359-366
@@ -1403,7 +1387,7 @@ return {
   rmaCheckQty: rmaCheckQty, rmaLineSave: rmaLineSave, completeRMA: completeRMA, rmaReceiptEffects: rmaReceiptEffects,
   completeCash: completeCash, completeJournal: completeJournal, completeBankStatement: completeBankStatement, completeProjectIssue: completeProjectIssue, completeDDOrder: completeDDOrder, prepareRequisition: prepareRequisition, matchFromInvoice: matchFromInvoice, completeInOut: completeInOut, reverseInOut: reverseInOut, reverseInvoice: reverseInvoice, bpOpenBalance: bpOpenBalance, orderReserve: orderReserve, inoutOrderLineEffects: inoutOrderLineEffects, invoiceOrderLineEffects: invoiceOrderLineEffects,
   faRegisterAsset: faRegisterAsset, faCompleteAddition: faCompleteAddition, faBuildDepreciation: faBuildDepreciation, faCompleteDepreciationEntry: faCompleteDepreciationEntry, faCompleteDisposal: faCompleteDisposal, faCompleteReval: faCompleteReval, faMonthEnd: _faMonthEnd,
-  resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, completeInventory: completeInventory, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
+  resolveCtx: resolveCtx, dialectShim: dialectShim, evalGuard: evalGuard, voidOrder: voidOrder, completeMovement: completeMovement, completePayment: completePayment, prepareInvoice: prepareInvoice, creditCheckOrder: creditCheckOrder, orderPriceListDefault: orderPriceListDefault, priceAt: priceAt, periodOpen: periodOpen, acctSetupGap: acctSetupGap, calcTax: calcTax, taxLookup: taxLookup, orderTaxes: orderTaxes,
   match: match, buildDoc: buildDoc, DOC_SPECS: DOC_SPECS, explodeBOM: explodeBOM,
   movementSign: movementSign, qtyOnHand: qtyOnHand, reversePosting: reversePosting, replenishQtyToOrder: replenishQtyToOrder,
   VERBS: VERBS, completeOrder: completeOrder, completeInvoice: completeInvoice, completeReceipt: completeReceipt,

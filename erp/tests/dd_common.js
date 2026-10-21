@@ -26,7 +26,7 @@ async function boot(opts) {
   globalThis.ModelLayer = ML; globalThis.ModelTrade = require(path.join(ERP, 'model_trade.js'));
   ['model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_master', 'model_rma', 'model_post'].forEach(function (m) { try { require(path.join(ERP, m + '.js')); } catch (e) { /* optional */ } });
   globalThis.ModelCost = require(path.join(ERP, 'model_cost.js')); globalThis.ModelMaster = require(path.join(ERP, 'model_master.js'));
-  H.DD = require(path.join(ERP, 'model_dd.js')); H.MVT = require(path.join(ERP, 'model_movement.js')); globalThis.ModelDD = H.DD; globalThis.ModelMovement = H.MVT;
+  H.DD = require(path.join(ERP, 'model_dd.js')); H.MVT = require(path.join(ERP, 'model_movement.js')); H.INV = require(path.join(ERP, 'model_inventory.js')); globalThis.ModelDD = H.DD; globalThis.ModelMovement = H.MVT;
   MV.installDefaultHooks();
   H.A = A; H.ML = ML; H.MV = MV; H.PR = PR; H.FSM = require(path.join(ERP, 'ad_docfsm.js'));
   function q(sql, params) {

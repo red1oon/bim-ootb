@@ -9,13 +9,14 @@
 // Doc classes ported here: Doc_Order (no facts — commitment accounting off), Doc_InOut (customer shipment C- / vendor
 // receipt V+ via NotInvoicedReceipts), Doc_Invoice (ARI/ARC/API), Doc_Payment, Doc_AllocationHdr (payment↔invoice,
 // no discount/write-off/FX-gain legs — those return a NAMED refusal, the doc stays Posted='N').
+// Doc_Movement (§60) and Doc_Inventory (§67: Physical Inventory / Internal Use / Cost Adjustment) are ported below on the same Doc/DocLine/createLine framework.
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_layer'), require('./model_trade'), require('./bigdecimal'));
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -139,7 +140,8 @@
   }
   // a DocLine from a line PO (DocLine ctor :88-150 — column reads)
   function DocLine(trx, table, l, extra) {
-    return Object.assign({ table: table, row: l, id: l[table + '_id'], line: l.line, description: l.description, m_product_id: l.m_product_id, c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id,
+    var prod = nz(l.m_product_id) && l.c_uom_id == null ? trx.get('m_product', l.m_product_id) : null;   // DocLine.getC_UOM_ID :874-890 - the line's own C_UOM_ID, else the product's Storage UOM (a PO without the column, e.g. M_InventoryLine, books the product UOM)
+    return Object.assign({ table: table, row: l, id: l[table + '_id'], line: l.line, description: l.description, m_product_id: l.m_product_id, c_uom_id: l.c_uom_id != null ? l.c_uom_id : (prod ? prod.c_uom_id : l.c_uom_id), c_tax_id: l.c_tax_id,
       c_bpartner_id: l.c_bpartner_id, m_warehouse_id: l.m_warehouse_id, m_locator_id: l.m_locator_id, ad_org_id: l.ad_org_id, ad_orgtrx_id: l.ad_orgtrx_id, c_project_id: l.c_project_id,
       c_projectphase_id: l.c_projectphase_id, c_projecttask_id: l.c_projecttask_id, c_campaign_id: l.c_campaign_id, c_activity_id: l.c_activity_id, c_charge_id: l.c_charge_id,
       a_asset_id: l.a_asset_id, m_attributesetinstance_id: l.m_attributesetinstance_id, user1_id: l.user1_id, user2_id: l.user2_id, c_costcenter_id: l.c_costcenter_id,
@@ -562,7 +564,7 @@
     var M = mc(), ctx = Doc(trx, 'm_movement', mv, { dateDoc: mv.movementdate, dateAcct: mv.movementdate, c_currency_id: as.c_currency_id, m_warehouse_id: null }), revId = nz(mv.reversal_id) ? Number(mv.reversal_id) : 0;
     var lines = trx.find('m_movementline', { m_movement_id: mv.m_movement_id }, ['line']).map(function (l) {                // loadLines: qty = MovementQty (setQty(…, false))
       var dl = DocLine(trx, 'm_movementline', l); dl.qty = D(l.movementqty); dl.pcQty = D(l.movementqty); dl.reversalLine_ID = l.reversalline_id; dl.cdKey = { m_movementline_id: l.m_movementline_id, issotrx: 'N' }; return dl; });
-    var locOrg = function (id) { var r = nz(id) ? trx.get('m_locator', id) : null; return r ? r.ad_org_id : null; };         // FactLine.getAD_Org_ID :944-976 (the locator's org once the locator is set)
+    var locOrg = function (id) { return locatorOrg(trx, id); };                                                           // FactLine.getAD_Org_ID :944-976 (the locator's org once the locator is set)
     var signed = function (dl, acct, amt) { return amt.signum() < 0 ? createLine(F, ctx, dl, acct, as.c_currency_id, null, amt.abs()) : createLine(F, ctx, dl, acct, as.c_currency_id, amt, null); };   // Fact.createLine(docLine, account, cur, Amt) :200-211
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i], p = T.product(trx, line.m_product_id), costs = null, rev = !!revId && nz(line.reversalLine_ID) !== 0, ml = line.row;   // isReversal(line) :310-312
@@ -597,6 +599,90 @@
     return true;
   }
 
+
+  // FactLine.getAD_Org_ID :944-976 Prio 1 - the org of the FactLine's locator once it is set (Doc_Movement, Doc_Inventory)
+  function locatorOrg(trx, id) { var r = nz(id) ? trx.get('m_locator', id) : null; return r ? r.ad_org_id : null; }
+  // Doc.getValidCombination_ID :1500-1590 has NO default fallback (a missing row = no account = no line): the warehouse differences account (ACCTTYPE_InvDifferences :1505-1510) and MCharge.getAccount :51-68
+  function acctOf(trx, table, col, keyCol, key, schema) {
+    var r = trx.q('SELECT ' + col + ' AS a FROM ' + table + ' WHERE ' + keyCol + '=? AND c_acctschema_id=?', [key, schema])[0];
+    if (!r || !nz(r.a)) return null; var v = trx.q('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=?', [r.a])[0]; return v ? v.e : null;
+  }
+  var LINV_NOCLEARING = (typeof process !== 'undefined' && process.env && process.env.LINV_BREAK) === 'noclearing';   // witness negative control only (W-INVENTORY): the offset leg is booked on the asset account itself
+  // Doc_Inventory (acct/Doc_Inventory.java :40-520) - loadDocumentDetails :80-104, loadLines :111-187, createFacts :212-518. Physical Inventory / Internal Use / Cost Adjustment (spec §67).
+  //   DR Product Asset / CR (the line's Charge expense | the warehouse Inventory Differences account | for a Cost Adjustment the product Cost Adjustment account) at the line's cost x signed Qty
+  //   (Cost Adjustment: the NewCost-CurrentCost difference x the cost's current Qty); the cost detail (MCostDetail.createInventory) is written for every line.
+  function convertCosting(trx, M, amt, from, to, date) {   // MConversionRate.convert(.., isCosting=true) :126-148 - rate x amt, HALF_UP to the COSTING precision only when the scale exceeds it
+    if (String(from) === String(to) || D(amt).signum() === 0) return D(amt);
+    var r = rate(trx, from, to, date, 0); if (!r) return null; var v = r.multiply(D(amt)), p = M.costingPrecision(trx, { c_currency_id: to });
+    return v.scale() > p ? v.setScale(p, HU) : v;
+  }
+  function Doc_Inventory(trx, inv, as, F) {
+    var M = mc(), dtp = T.dt(trx, inv.c_doctype_id), parentSub = dtp ? dtp.docsubtypeinv : null, revId = nz(inv.reversal_id) ? Number(inv.reversal_id) : 0, CA = parentSub === 'CA';
+    var docCur = CA ? (nz(inv.c_currency_id) ? inv.c_currency_id : M.caSchema(trx, { ad_client_id: inv.ad_client_id, c_currency_id: null }).c_currency_id) : as.c_currency_id;   // :88-97 / :217 a Cost Adjustment keeps the document currency (empty = the primary schema's), every other subtype books in the schema currency
+    var ctx = Doc(trx, 'm_inventory', inv, { dateDoc: inv.movementdate, dateAcct: inv.movementdate, c_currency_id: docCur });                           // loadDocumentDetails: DateDoc = DateAcct = MovementDate
+    if (CA && String(M.caSchema(trx, inv).c_acctschema_id) === String(as.c_acctschema_id)) {                                                                // loadLines :113-132 refresh the line's CurrentCostPrice when the cost moved since it was saved
+      trx.find('m_inventoryline', { m_inventory_id: inv.m_inventory_id }, ['line']).forEach(function (l) { var ccp = M.currentCostPriceForCA(trx, inv, l); if (ccp != null && ccp.compareTo(D(l.currentcostprice)) !== 0) trx.update('m_inventoryline', l, { currentcostprice: N(ccp) }); });
+    }
+    var lines = trx.find('m_inventoryline', { m_inventory_id: inv.m_inventory_id }, ['line', 'm_inventoryline_id']).filter(function (l) { return Y(l.isactive); }).map(function (l) {   // loadLines :134-187
+      var sub = parentSub || (D(l.qtyinternaluse).signum() !== 0 ? 'IU' : 'PI'), diff = Z, amtDiff = Z;                                                       // an empty parent subtype is the IDEMPIERE-675 backward compatibility
+      if (sub === 'IU') diff = D(l.qtyinternaluse).negate(); else if (sub === 'PI') diff = D(l.qtycount).subtract(D(l.qtybook)); else if (sub === 'CA') amtDiff = D(l.newcostprice).subtract(D(l.currentcostprice));
+      var dl = DocLine(trx, 'm_inventoryline', l); dl.qty = diff; dl.pcQty = diff; dl.amtSource = amtDiff; dl.reversalLine_ID = l.reversalline_id; dl.cdKey = { m_inventoryline_id: l.m_inventoryline_id }; return dl; });   // setQty(qtyDiff, false) = ProductCost qty too; setAmount(amtDiff); cost detail where "M_InventoryLine_ID=?"
+    var cur = docCur, costMap = {}, docMethod = inv.costingmethod;
+    var signed = function (dl, acct, amt) { return amt.signum() < 0 ? createLine(F, ctx, dl, acct, cur, null, amt.abs()) : createLine(F, ctx, dl, acct, cur, amt, null); };   // Fact.createLine(docLine, account, cur, Amt) :205-211
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i], p = T.product(trx, line.m_product_id), costs = null, adjustmentDiff = null, doPosting = true, level = null, rev = !!revId && nz(line.reversalLine_ID) !== 0, batch = p && M.costingLevel(trx, p, as) === 'B';   // isReversal(line) :519-521
+      if (CA) {                                                                                                                                              // :224-247
+        if (!T.isStocked(p)) doPosting = false; else { level = M.costingLevel(trx, p, as); if (docMethod !== M.costingMethod(trx, p, as)) doPosting = false; }
+        var org = line.ad_org_id, asiId = line.m_attributesetinstance_id || 0; if (level === 'C') { org = 0; asiId = 0; } else if (level === 'O') asiId = 0; else if (level === 'B') org = 0;
+        var ce = M.getMaterialCostElement(trx, as, docMethod), cd0 = ce ? M.getInventory(trx, as, p.m_product_id, asiId, line.id, ce.m_costelement_id) : null;
+        var info = ce ? M.getCostInfo(trx, org, p.m_product_id, as.m_costtype_id, as.c_acctschema_id, ce.m_costelement_id, asiId, ctx.dateAcct, cd0) : null;      // MCost.getCostInfo(product, asi, as, org, ce, dateAcct, cd) :251-258
+        if (!info) { F.err = 'Doc_Inventory Cost Adjustment: no cost info for ' + p.name + ' (legacy NullPointerException) - named'; return false; }
+        adjustmentDiff = line.amtSource; costs = line.amtSource.multiply(D(info.currentqty));                                                                   // :259-261
+      } else if (!rev) {                                                                                                                                     // :281-340
+        if (batch && !nz(line.m_attributesetinstance_id)) {                                                                                                  // :284-306 batch-lot without ASI: the MA rows' cost
+          var mas = trx.find('m_inventorylinema', { m_inventoryline_id: line.id });
+          if (mas.length) { costs = Z; mas.forEach(function (ma) { line.pcQty = D(ma.movementqty).negate(); line.pcAsi = ma.m_attributesetinstance_id; var mc_ = lineProductCosts(trx, F, ctx, line, true, true); costMap[line.id + '_' + ma.m_attributesetinstance_id] = mc_; costs = costs.add(mc_); }); line.pcAsi = null; line.pcQty = line.qty; }
+        } else costs = lineProductCosts(trx, F, ctx, line, true, true);                                                                                      // :307-320 MZ Goodwill: the line's cost detail, else the current cost
+        if (costs == null || costs.signum() === 0) {                                                                                                         // :322-345
+          if (T.isStocked(p)) {
+            var cnt = trx.q("SELECT COUNT(*) AS n FROM m_costdetail WHERE m_product_id=? AND processed='Y' AND amt=0 AND qty>0 AND (c_orderline_id>0 OR c_invoiceline_id>0)", [p.m_product_id])[0];
+            if (cnt && Number(cnt.n) > 0) costs = Z; else { F.err = 'No Costs for ' + p.name; return false; }
+          } else continue;                                                                                                                                   // ignore service
+        }
+      } else costs = D(1);                                                                                                                                   // :346-350 updated below
+      if (doPosting) {
+        var dr = signed(line, productAcct(trx, line.m_product_id, 'p_asset_acct', as), costs);                                                               // :352-355 Inventory DR CR
+        if (dr) {
+          dr.m_locator_id = line.m_locator_id; dr.ad_org_id = locatorOrg(trx, line.m_locator_id);                                                            // :357 (+ FactLine.getAD_Org_ID)
+          if (rev) {
+            if (!updateReverseLine(F, dr, TABLE_ID.m_inventory, revId, line.reversalLine_ID, 1)) { F.err = 'Original Physical Inventory not posted yet'; return false; }   // :359-367
+            costs = acctBalance(dr);                                                                                                                         // get original cost
+          }
+          var invDiff = nz(line.c_charge_id) ? acctOf(trx, 'c_charge_acct', 'ch_expense_acct', 'c_charge_id', line.c_charge_id, as.c_acctschema_id) : null;  // :372-384 InventoryDiff DR CR or Charge (MCharge.getAccount)
+          if (invDiff == null) invDiff = CA ? productAcct(trx, line.m_product_id, 'p_costadjustment_acct', as) : acctOf(trx, 'm_warehouse_acct', 'w_differences_acct', 'm_warehouse_id', inv.m_warehouse_id, as.c_acctschema_id);   // :386-390 ProductCost P_CostAdjustment | Doc.getAccount(ACCTTYPE_InvDifferences)
+          if (LINV_NOCLEARING) invDiff = productAcct(trx, line.m_product_id, 'p_asset_acct', as);
+          var cr = signed(line, invDiff, costs.negate());                                                                                                    // :392-394
+          if (cr) {
+            cr.m_locator_id = line.m_locator_id; cr.qty = N(line.qty.negate());                                                                              // :397-399
+            cr.ad_org_id = nz(line.c_charge_id) ? line.ad_org_id : locatorOrg(trx, line.m_locator_id);                                                       // :400-401 explicit overwrite for charge, else the locator's org
+            if (rev && !updateReverseLine(F, cr, TABLE_ID.m_inventory, revId, line.reversalLine_ID, 1, dr)) { F.err = 'Original Physical Inventory not posted yet'; return false; }   // :402-413
+          }
+        }
+      }
+      var amt = CA ? adjustmentDiff : costs;                                                                                                                 // :417-424 costDetailAmt
+      if (CA && String(docCur) !== String(as.c_currency_id)) { amt = convertCosting(trx, M, amt, docCur, as.c_currency_id, ctx.dateAcct); if (amt == null) { F.err = 'No conversion from ' + docCur + ' to ' + as.c_currency_id; return false; } }   // :418-424
+      var refFor = function (asi) { var ref = 0; if (nz(line.reversalLine_ID) && Number(line.reversalLine_ID) > 0 && (ML.isNewId(line.id) || Number(line.id) > Number(line.reversalLine_ID))) { var ocd = M.getInventory(trx, as, line.m_product_id, asi, line.reversalLine_ID, 0); if (ocd) ref = ocd.m_costdetail_id; } return ref; };   // :437-446 / :462-471 / :486-495
+      if (batch && !nz(line.m_attributesetinstance_id)) {                                                                                                    // :425-459 one cost detail per MA
+        trx.find('m_inventorylinema', { m_inventoryline_id: line.id }).forEach(function (ma) {
+          var q = D(ma.movementqty), maCost = costMap[line.id + '_' + ma.m_attributesetinstance_id]; if (q.signum() !== line.qty.signum()) q = q.negate(); if (maCost == null) return; if (maCost.signum() !== amt.signum()) maCost = maCost.negate();
+          if (!M.createInventory(trx, as, line.ad_org_id, line.m_product_id, ma.m_attributesetinstance_id, line.id, 0, maCost, q, line.description, ctx.dateAcct, refFor(ma.m_attributesetinstance_id))) F.err = 'Failed to create cost detail record';
+        });
+        if (F.err) return false;
+      } else if (!M.createInventory(trx, as, line.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, amt, line.qty, line.description, ctx.dateAcct, refFor(line.m_attributesetinstance_id || 0))) { F.err = 'Failed to create cost detail record'; return false; }   // :474-503 Cost Detail (also when a Cost Adjustment line is not posted)
+    }
+    return true;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
@@ -604,6 +690,7 @@
     m_matchinv: function (trx, mi, as, F) { return Doc_MatchInv(trx, mi, as, F); },
     m_matchpo: function (trx, mp, as, F) { return Doc_MatchPO(trx, mp, as, F); },
     m_movement: function (trx, mv, as, F) { return Doc_Movement(trx, mv, as, F); },
+    m_inventory: function (trx, inv, as, F) { return Doc_Inventory(trx, inv, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
