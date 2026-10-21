@@ -10,10 +10,10 @@ export const DEFERRED = [
   'MPPOrderBOMLine.reserveStock - the MStorageOnHand.add(...,0) touch (the QtyReserved update IS ported)',
   'MPPOrder.beforeSave #M_Warehouse_ID context default',
   'MPPMRP.deleteMRP: voiding draft Requisitions and MResourceAssignment cleanup (no requisition/resource-assignment port yet)',
-  'MPPMRP.createMOMakeTo (MTO/MTK order from a sales order line), MFG_Validator.updateMPPOrder (kit completion by shipment), DD_Order / M_Movement hooks (no DD tables in the base)'
+  'DD_Order / M_Movement hooks (being ported: LIBERO_DD_SPEC.md)'
 ];
 // the three constants the SEED-vs-SOURCE decision rests on (spec "DECISION RECORDED"); LIBERO_BREAK flips them to prove the witness sees them.
-export const SOURCE = { ferryStatic: true, voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
+export const SOURCE = { ferryStatic: false, voidNodes: true, voidGuard: true, closeVariances: true, closeActivities: true, explodeOnce: true, uomPrecision: true, bomUseCopied: true, mrpFinishFromOrder: true, mrpDelete: true, cyclesRounded: true, orderStock: 'reservation' };
 
 export function create(ctx) {
   const ML = ctx.docAction;                                  // the ModelLayer facade (D, N, registerModel inherited)
@@ -274,7 +274,8 @@ export function create(ctx) {
   const FERRY = { c_order_id: 0, c_orderline_id: 0 };
   function mrpCtorDefaults(trx) {
     const f = { value: 'MRP', name: 'MRP', isavailable: 'N', datesimulation: (trx.env || {}).now || null };
-    if (SOURCE.ferryStatic && Number(FERRY.c_order_id) !== 0) { f.c_order_id = FERRY.c_order_id; f.c_orderline_id = FERRY.c_orderline_id; const mo = trx.find('pp_order', { c_orderline_id: FERRY.c_orderline_id })[0]; if (mo) f.pp_order_id = mo.pp_order_id; }
+    if (Number(FERRY.c_order_id) !== 0) {   // set JVM-wide (ferryStatic) or only while this line's MO is created (the fix)
+      f.c_order_id = FERRY.c_order_id; f.c_orderline_id = FERRY.c_orderline_id; const mo = trx.find('pp_order', { c_orderline_id: FERRY.c_orderline_id })[0]; if (mo) f.pp_order_id = mo.pp_order_id; }
     return f;
   }
   function saveMrp(trx, row, fields) {   // new MPPMRP(ctx,0) defaults (:640-650) then saveEx
@@ -282,10 +283,17 @@ export function create(ctx) {
     if (row) Object.keys(fields).forEach((k) => p.set(k, fields[k]));
     return p.save() ? null : p.error;
   }
+  // MPPMRP.PP_Order :960-969 / PP_Order_BOMLine :1011-1020 - the static SO ids, kept only when they name a SALES order (else 0)
+  function ferryIds(trx) {
+    let o = Number(FERRY.c_order_id || 0), l = Number(FERRY.c_orderline_id || 0);
+    if (o !== 0) { const so = trx.get('c_order', o); if (!so || so.issotrx !== 'Y') o = 0; }
+    if (l !== 0) { const ol = trx.get('c_orderline', l), so2 = ol && trx.get('c_order', ol.c_order_id); if (!so2 || so2.issotrx !== 'Y') l = 0; }
+    return { c_order_id: o || null, c_orderline_id: l || null };
+  }
   function mrpPPOrder(trx, o) {   // MPPMRP.PP_Order :946-985
     const sup = trx.find('pp_mrp', { ad_client_id: o.ad_client_id, pp_order_id: o.pp_order_id, typemrp: 'S', ordertype: 'MOP' }).filter((r) => r.pp_order_bomline_id == null)[0] || null;
     const f = {}; const tmp = {}; setPPOrder(tmp, o);
-    Object.assign(f, tmp, { ad_org_id: sup ? sup.ad_org_id : o.ad_org_id, typemrp: 'S', m_product_id: o.m_product_id, m_warehouse_id: o.m_warehouse_id, qty: num(dec(o.qtyordered).subtract(dec(o.qtydelivered))), c_order_id: null, c_orderline_id: null });
+    Object.assign(f, tmp, { ad_org_id: sup ? sup.ad_org_id : o.ad_org_id, typemrp: 'S', m_product_id: o.m_product_id, m_warehouse_id: o.m_warehouse_id, qty: num(dec(o.qtyordered).subtract(dec(o.qtydelivered))) }, ferryIds(trx));
     let e = saveMrp(trx, sup, f); if (e) return e;
     for (const d of trx.find('pp_mrp', { ad_client_id: o.ad_client_id, pp_order_id: o.pp_order_id, typemrp: 'D', ordertype: 'MOP' })) { const t2 = {}; setPPOrder(t2, o); e = saveMrp(trx, d, t2); if (e) return e; }
     return null;
@@ -295,7 +303,7 @@ export function create(ctx) {
     if (obl.componenttype === 'CP' || obl.componenttype === 'BY') { typeMrp = 'S'; qty = qty.negate(); }
     const existing = trx.find('pp_mrp', { ad_client_id: obl.ad_client_id, pp_order_bomline_id: obl.pp_order_bomline_id }).filter((r) => r.ordertype === 'MOP')[0] || null;
     const parent = trx.get('pp_order', obl.pp_order_id), f = {}; setPPOrder(f, parent);
-    Object.assign(f, { c_order_id: null, c_orderline_id: null, ad_org_id: obl.ad_org_id, typemrp: typeMrp, m_warehouse_id: obl.m_warehouse_id, m_product_id: obl.m_product_id, qty: num(qty) });
+    Object.assign(f, ferryIds(trx), { ad_org_id: obl.ad_org_id, typemrp: typeMrp, m_warehouse_id: obl.m_warehouse_id, m_product_id: obl.m_product_id, qty: num(qty) });
     if (!existing) f.pp_order_bomline_id = obl.pp_order_bomline_id;
     return saveMrp(trx, existing, f);
   }
@@ -334,13 +342,20 @@ export function create(ctx) {
     const ord = trx.get('c_order', ol.c_order_id), isRel = released(ord.docstatus);
     const ex = (ord.issotrx === 'Y' && isRel) ? mrpQuery(trx, 'c_orderline', ol, 'D', 'SOO')[0] : mrpQuery(trx, 'c_orderline', ol)[0];
     const f = {}; setCOrder(f, ord);
-    FERRY.c_order_id = ol.c_order_id; FERRY.c_orderline_id = ol.c_orderline_id;                                    // :872-874 (set AFTER the row's ctor ran)
+    if (SOURCE.ferryStatic) { FERRY.c_order_id = ol.c_order_id; FERRY.c_orderline_id = ol.c_orderline_id; }        // :872-874 upstream: a JVM-wide static from here on (SOURCE.ferryStatic=true)
     Object.assign(f, { ad_org_id: ol.ad_org_id, c_orderline_id: ol.c_orderline_id, description: ol.description == null ? null : ol.description, name: 'OrderLine', datepromised: ol.datepromised, dateordered: ol.dateordered,
       m_warehouse_id: ol.m_warehouse_id, m_product_id: ol.m_product_id, qty: num(dec(ol.qtyordered).subtract(dec(ol.qtydelivered))), docstatus: 'IP' });
     let e = saveMrp(trx, ex || null, f); if (e) return e;
     const dt = trx.get('c_doctype', ord.c_doctypetarget_id);
-    if (dt && dt.docsubtypeso === 'SO' && trx.find('pp_product_bom', { m_product_id: ol.m_product_id }).some((b) => (b.bomtype === 'O' || b.bomtype === 'K') && b.bomuse === 'M'))
-      return 'DEFERRED: MPPMRP.createMOMakeTo (Make-to-Order / Make-to-Kit manufacturing order from a sales order line) is not ported - nothing was written';
+    if (dt && dt.docsubtypeso === 'SO' && trx.find('pp_product_bom', { m_product_id: ol.m_product_id }).some((b) => (b.bomtype === 'O' || b.bomtype === 'K') && b.bomuse === 'M')) {   // :888-899
+      const mto = ctx.libero && ctx.libero.mto; if (!mto) return 'the Make-to-Order chunk is not active';
+      const row = mrpQuery(trx, 'c_orderline', ol, f.typemrp, f.ordertype)[0];
+      // DECLARED DEVIATION (§57.3): the SO ids reach ONLY the MRP rows made while THIS line's MO is created (the purpose of the upstream static), never unrelated documents later
+      const ferry = (on) => { if (SOURCE.ferryStatic) return; if (on) { FERRY.c_order_id = ol.c_order_id; FERRY.c_orderline_id = ol.c_orderline_id; } else { FERRY.c_order_id = 0; FERRY.c_orderline_id = 0; } };
+      let res; try { res = mto.createMOMakeTo(trx, row, trx.get('c_orderline', ol.c_orderline_id), dec(ol.qtyordered), ferry); } catch (ex) { return String(ex && ex.message || ex); }
+      if (typeof res === 'string') return res;
+      e = saveMrp(trx, trx.get('pp_mrp', row.pp_mrp_id), { s_resource_id: res || null }); if (e) return e;
+    }
     trx.say('§LIBERO-MRP C_OrderLine line=' + ol.c_orderline_id + ' ' + f.ordertype + '/' + f.typemrp + ' qty=' + f.qty + (ex ? ' (updated ' + ex.pp_mrp_id + ')' : ' (new)'));
     return null;
   }
@@ -422,8 +437,9 @@ export function create(ctx) {
     const trx = c && c.trx, io = info && info.record; if (!trx || !io) return null;
     const lines = trx.find('m_inoutline', { m_inout_id: io.m_inout_id });
     if (io.issotrx === 'Y') {
-      for (const l of lines) if (idSet(l.c_orderline_id) && trx.find('pp_order', { c_orderline_id: l.c_orderline_id }).some((o) => o.docstatus === 'IP' || o.docstatus === 'CO'))
-        return 'DEFERRED: MFG_Validator.updateMPPOrder (Make-to-Kit order completed by its shipment) is not ported - nothing was written';
+      const mto = ctx.libero && ctx.libero.mto, cost = ctx.libero && ctx.libero.cost;
+      for (const l of lines) if (idSet(l.c_orderline_id) || idSet(l.m_rmaline_id)) { if (!mto || !cost) return 'the Make-to-Kit chunks are not active';   // :287-293 updateMPPOrder per shipment line
+        try { const e2 = mto.updateMPPOrder(trx, l, cost, orderDoc); if (e2) return e2; } catch (ex) { return String(ex && ex.message || ex); } }
       return null;
     }
     const cc = ctx.libero && ctx.libero.cost; if (!cc) return null;
