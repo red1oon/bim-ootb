@@ -166,6 +166,32 @@
   }
   // the refusal text of MOrder.prepareIt :1639-1647 / MInOut.prepareIt :1537-1540
   function mandatoryMsg(line, p) { return '@M_AttributeSet_ID@ @IsMandatory@ (@Line@ #' + line + ', @M_Product_ID@=' + p.value + ')'; }
+  // ── material policy storage query: ONE implementation of MStorageOnHand.getWarehouse MStorageOnHand.java:398-533 (AS-3). `asiId` 0 = all instances (guarantee-date filter + optional guarantee-date ordering
+  //   apply); a given instance = exactly that instance. Order: locator priority DESC, then DateMaterialPolicy (or COALESCE(GuaranteeDate, DateMaterialPolicy) when the product says
+  //   "use guarantee date for material policy") ASC for FiFo / DESC for LiFo, then instance id (asc FiFo / desc LiFo), then QtyOnHand DESC. Rows come back as plain objects.
+  function mmFifo(trx, p) {   // MProduct.getMMPolicy :990-996: the product category's policy, else the client's; MClient.MMPOLICY_FiFo = 'F'
+    var cat = (p.m_product_category_id != null ? trx.get('m_product_category', p.m_product_category_id) : null) || {}, cl = trx.get('ad_client', trx.env.client) || {};
+    return (cat.mmpolicy || cl.mmpolicy || 'F') === 'F';
+  }
+  function storages(trx, o) {
+    if ((!o.warehouseId && !o.locatorId) || !o.productId) return [];
+    var p = trx.get('m_product', o.productId) || {}, all = !Number(o.asiId || 0), prm = [], sql;
+    var as = Number(p.m_attributeset_id) > 0 ? trx.get('m_attributeset', p.m_attributeset_id) : null, useGD = !!as && as.isguaranteedate === 'Y' && as.useguaranteedateformpolicy === 'Y';   // MProduct.isUseGuaranteeDateForMPolicy :1002-1010 (the SET's flags, not a product column)
+    var whereLoc = Number(o.locatorId) > 0 ? 'l.m_locator_id=?' : 'l.m_warehouse_id=?'; prm.push(Number(o.locatorId) > 0 ? o.locatorId : o.warehouseId);
+    var qtyCond = o.positiveOnly ? ' AND s.qtyonhand > 0' : ' AND s.qtyonhand <> 0';
+    if (!all) {
+      sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE ' + whereLoc + ' AND s.m_product_id=? AND COALESCE(s.m_attributesetinstance_id,0)=?' + qtyCond +
+        ' ORDER BY l.priorityno DESC, s.datematerialpolicy' + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC');
+      prm.push(o.productId, Number(o.asiId));
+    } else {
+      sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id LEFT JOIN m_attributesetinstance asi ON asi.m_attributesetinstance_id=s.m_attributesetinstance_id WHERE ' + whereLoc + ' AND s.m_product_id=?' + qtyCond;
+      prm.push(o.productId);
+      if (o.minGuaranteeDate) { sql += ' AND (asi.guaranteedate IS NULL OR date(asi.guaranteedate) > date(?))'; prm.push(String(o.minGuaranteeDate).slice(0, 10)); }
+      var key = useGD ? 'COALESCE(asi.guaranteedate, s.datematerialpolicy)' : 's.datematerialpolicy';
+      sql += ' ORDER BY l.priorityno DESC, ' + key + (o.fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC') + ', s.qtyonhand DESC';
+    }
+    return trx.q(sql, prm).filter(function (r) { return Number(r.qtyonhand) !== 0; });
+  }
   // MAttributeSetInstance.afterSave :430-450 - a NEW instance saved with an empty Description gets its own id as the Description
   ML.registerModel('m_attributesetinstance', { afterSave: function (trx, row, isNew) {
     if (isNew && (row.description == null || String(row.description).trim() === '')) {
@@ -185,5 +211,5 @@
       if (s.isinstanceattribute !== want) trx.update('m_attributeset', s, { isinstanceattribute: want });
       return null;
     } });
-  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg };
+  return { form: form, plan: plan, create: create, describe: describe, counter: counter, asiMandatoryFor: asiMandatoryFor, excludeTableEntry: excludeTableEntry, mandatoryMsg: mandatoryMsg, storages: storages, mmFifo: mmFifo };
 });
