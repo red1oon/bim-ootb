@@ -161,6 +161,25 @@
     return cost;
   }
 
+  // ══ MInventoryLine.getCurrentCostPriceForCostAdjustment (MInventoryLine.java:484-540) ∘ the schema pick shared by MInventoryLine.beforeSave :362-378, MInventory.completeIt :540-556 and Doc_Inventory.loadLines :113-125 ═══
+  // the primary schema of the client, else (document currency differs) the LAST client schema in that currency
+  function caSchema(trx, inv) {
+    var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [inv.ad_client_id])[0], as = ci ? trx.get('c_acctschema', ci.a) : null;
+    if (as && nz(inv.c_currency_id) && String(as.c_currency_id) !== String(inv.c_currency_id)) trx.q("SELECT * FROM c_acctschema WHERE ad_client_id=? AND isactive='Y' ORDER BY c_acctschema_id", [inv.ad_client_id]).forEach(function (a) { if (String(a.c_currency_id) === String(inv.c_currency_id)) as = a; });
+    return as;
+  }
+  function currentCostPriceForCA(trx, inv, line) {   // null = no cost record (MInventoryLine returns null)
+    var as = caSchema(trx, inv), org = line.ad_org_id, asi = line.m_attributesetinstance_id || 0, lvl = as.costinglevel;
+    if (lvl === 'C') { org = 0; asi = 0; } else if (lvl === 'O') asi = 0; else if (lvl === 'B') org = 0;
+    var ce = getMaterialCostElement(trx, as, inv.costingmethod); if (!ce) return null;
+    var lineId = line.m_inventoryline_id; if (nz(line.reversalline_id) && Number(line.reversalline_id) > 0 && (ML.isNewId(lineId) || Number(lineId) > Number(line.reversalline_id))) lineId = line.reversalline_id;
+    var cd = nz(lineId) ? getInventory(trx, as, line.m_product_id, asi, lineId, 0) : null, h = cd ? historyByCd(trx, org, as.m_costtype_id, as.c_acctschema_id, ce.costingmethod, ce.m_costelement_id, asi, cd) : null;
+    if (!h) h = historyByDate(trx, org, line.m_product_id, as.m_costtype_id, as.c_acctschema_id, ce.costingmethod, ce.m_costelement_id, asi, inv.movementdate);
+    if (h) return h.currentcostprice;
+    var c = costGet(trx, org, line.m_product_id, as.m_costtype_id, as.c_acctschema_id, ce.m_costelement_id, asi);
+    return c ? D(c.currentcostprice) : null;
+  }
+
   // ══ MCostQueue ════════════════════════════════════════════════════════════════════════════════════════════════
   function Queue(trx, row, isNew) { this.trx = trx; this.row = row; this.is_new = isNew; this.currentcostprice = D(row.currentcostprice); this.currentqty = D(row.currentqty); }
   Queue.prototype.save = function () {
@@ -316,6 +335,7 @@
   function getInvoice(trx, as, productId, asi, ilId, ceId, dateAcct) { return getByLineDate(trx, 'c_invoiceline_id', as, productId, asi, ilId, ceId, dateAcct, true); }
   function getShipment(trx, as, productId, asi, iolId, ceId) { return cdGet(trx, { m_inoutline_id: iolId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // :847-851
   function getMovement(trx, as, productId, asi, mlId, ceId, from) { return cdGet(trx, { m_movementline_id: mlId, issotrx: from ? 'Y' : 'N' }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // MCostDetail.getMovement :859-866 (M_MovementLine_ID=? AND IsSOTrx=Y|N AND Coalesce(M_CostElement_ID,0)=?)
+  function getInventory(trx, as, productId, asi, ilId, ceId) { return cdGet(trx, { m_inventoryline_id: ilId, m_product_id: productId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // MCostDetail.getInventory :853-857 (M_InventoryLine_ID=? AND Coalesce(M_CostElement_ID,0)=? AND M_Product_ID=?)
   function getMatchInvoice(trx, as, productId, asi, miId, ceId) { return cdGet(trx, { m_matchinv_id: miId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // :879-883
   // new MCostDetail(as, org, product, asi, ce, amt, qty, desc, dateAcct, ref) :1137-1155 ∘ setInitialDefaults :1083-1091
   function cdNew(trx, as, org, productId, asi, ceId, amt, qty, desc, dateAcct, refId) {
@@ -350,12 +370,12 @@
   }
   function cdSet(h, col, v) { if (h.isNew) h.row[col] = v; else { h.changes = h.changes || {}; h.orig = h.orig || {}; if (!(col in h.orig)) h.orig[col] = h.row[col]; h.changes[col] = v; h.row[col] = v; } }
   function cdSetAmtQty(h, col, v) { if (Y(h.row.processed)) throw new Error('Cannot change ' + col + ' - processed'); cdSet(h, col, N(v == null ? Z : v)); }   // setAmt/setQty :1162-1186
-  // the shared body of createOrder :111-155 / createInvoice :206-250 / createShipment :303-351 / createMatchInvoice :678-722
+  // the shared body of createOrder :111-155 / createInvoice :206-250 / createShipment :303-351 / createMatchInvoice :678-722 / createInventory :397-444
   function createX(trx, kind, as, org, productId, asi, lineId, ceId, amt, qty, desc, isSO, dateAcct, refId) {
     amt = D(amt); qty = D(qty);
-    var col = { order: 'c_orderline_id', invoice: 'c_invoiceline_id', shipment: 'm_inoutline_id', matchinv: 'm_matchinv_id', movement: 'm_movementline_id' }[kind];
+    var col = { order: 'c_orderline_id', invoice: 'c_invoiceline_id', shipment: 'm_inoutline_id', matchinv: 'm_matchinv_id', movement: 'm_movementline_id', inventory: 'm_inventoryline_id' }[kind];
     var row = kind === 'order' ? getOrder(trx, as, productId, asi, lineId, ceId, dateAcct) : kind === 'invoice' ? getInvoice(trx, as, productId, asi, lineId, ceId, dateAcct)
-      : kind === 'shipment' ? getShipment(trx, as, productId, asi, lineId, ceId) : kind === 'movement' ? getMovement(trx, as, productId, asi, lineId, ceId, isSO) : getMatchInvoice(trx, as, productId, asi, lineId, ceId);
+      : kind === 'shipment' ? getShipment(trx, as, productId, asi, lineId, ceId) : kind === 'movement' ? getMovement(trx, as, productId, asi, lineId, ceId, isSO) : kind === 'inventory' ? getInventory(trx, as, productId, asi, lineId, ceId) : getMatchInvoice(trx, as, productId, asi, lineId, ceId);
     var h = row ? { row: row, isNew: false, changes: {} } : null;
     if (h && (kind === 'order' || kind === 'invoice') && !isDelta(h.row) && refId > 0) cdSet(h, 'isbackdate', 'Y');
     if (!h) {
@@ -376,6 +396,7 @@
   function createInvoice(trx, as, org, productId, asi, ilId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'invoice', as, org, productId, asi, ilId, ceId, amt, qty, desc, false, dateAcct, refId); }
   function createShipment(trx, as, org, productId, asi, iolId, ceId, amt, qty, desc, isSO, dateAcct, refId) { return createX(trx, 'shipment', as, org, productId, asi, iolId, ceId, amt, qty, desc, isSO, dateAcct, refId); }
   function createMovement(trx, as, org, productId, asi, mlId, ceId, amt, qty, from, desc, dateAcct, refId) { return createX(trx, 'movement', as, org, productId, asi, mlId, ceId, amt, qty, desc, from, dateAcct, refId); }   // MCostDetail.createMovement :464-541 (the shared body; `from` rides the isSO slot)
+  function createInventory(trx, as, org, productId, asi, ilId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'inventory', as, org, productId, asi, ilId, ceId, amt, qty, desc, false, dateAcct, refId); }   // MCostDetail.createInventory :397-444 (the shared body; Doc_Inventory)
   function createMatchInvoice(trx, as, org, productId, asi, miId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'matchinv', as, org, productId, asi, miId, ceId, amt, qty, desc, false, dateAcct, refId); }
 
   // MCostDetail.process() :1305-1418
@@ -544,7 +565,7 @@
 
   return { CM: CM, ce: ce_, costingMethod: costingMethod, costingLevel: costingLevel, costingPrecision: costingPrecision, getCostingMethods: getCostingMethods,
     getMaterialCostElement: getMaterialCostElement, getCost: getCost, getCostInfo: getCostInfo, getSeedCosts: getSeedCosts, getProductCosts: getProductCosts,
-    getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment, getMovement: getMovement, createMovement: createMovement,
+    getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment, getMovement: getMovement, createMovement: createMovement, getInventory: getInventory, createInventory: createInventory, currentCostPriceForCA: currentCostPriceForCA, caSchema: caSchema,
     getMatchInvoice: getMatchInvoice, createOrder: createOrder, createInvoice: createInvoice, createShipment: createShipment, createMatchInvoice: createMatchInvoice,
     processProduct: processProduct, processProductAll: processProductAll, currencyConvert: currencyConvert,
     cdNew: cdNew, cdSave: cdSave, cdProcess: cdProcess, cdSet: cdSet, cdSetAmtQty: cdSetAmtQty };   // the MCostDetail record primitives, for model classes that create details of their own kind (Libero CostEngine)
