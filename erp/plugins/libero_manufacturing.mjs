@@ -223,7 +223,8 @@ export const manifest = {
   engineVersion: '>=0.9.0',
   requires: {},
   activation: 'lazy',
-  triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP', 'PP_Cost_Collector'] },
+  triggers: { windows: [53009], tables: ['PP_Order', 'PP_Order_BOM', 'PP_Order_BOMLine', 'PP_MRP', 'PP_Cost_Collector',
+    'C_Order', 'C_OrderLine', 'M_Requisition', 'M_RequisitionLine', 'M_Forecast', 'M_ForecastLine', 'M_InOut', 'M_Product'] },   // + the core tables MFG_Validator.initialize registers (:66-115; DD_Order / M_Movement: no DD tables in the base)
   // the bundle's 2Packs (Incremental2PackActivator: META-INF/2Pack_<x.y.z>.zip, applied above the installed version, ascending, each once): Libero's own 1.0.0-1.0.2 (pshepetko @ b2adfea0) + ours
   // the bodies of 2Pack_1.0.0's four CREATE FUNCTION statements (PL/pgSQL there, JS here; §24): bound with the packs, kept while they are installed
   sqlFunctions: './libero_sqlfn.mjs',
