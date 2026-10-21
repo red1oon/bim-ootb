@@ -2,6 +2,7 @@
  "note": "witnesses that cannot run on the build machine and why; a change here fails the runner until a person reads it",
  "env_or_skip": [
   "witness_dxf_convert:ENV",
+  "witness_dxf_door_tag:ENV",
   "witness_dxf_export_roundtrip:ENV",
   "witness_dxf_import_node:ENV",
   "witness_dxf_level_datum:ENV",

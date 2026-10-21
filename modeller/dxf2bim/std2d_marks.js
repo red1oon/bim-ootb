@@ -8,6 +8,7 @@
   const ELEV_TOL = 0.003, EXT_FACE_TOL = 0.010;
   const FACE = { FRONT: 'minY', REAR: 'maxY', LEFT: 'minX', RIGHT: 'maxX' }, HAXIS = { FRONT: '+X', REAR: '-X', LEFT: '-Y', RIGHT: '+Y', SECTION: '+Y' };   // ELEV_FACES h(x,y) of std2d.js
   const HP = { FRONT: (x, y) => x, REAR: (x, y) => -x, LEFT: (x, y) => -y, RIGHT: (x, y) => y };
+  const TOUCH = 1;   // mm: §F7 D15 a swing box and its door's plan extent meet on the opening line (snap-scale tolerance)
   const r3 = v => Number(Number(v).toFixed(3)), mm3 = v => Number((Number(v) * 1000).toFixed(3)), r6 = v => Number(Number(v).toFixed(6));
 
   function deriveMarks(R, deps, opts) {
@@ -165,14 +166,17 @@
     here.forEach(x => { const k = at(x).join(','); (ptTypes[k] = ptTypes[k] || new Set()).add(labelOf(x)); });
     // §3d F6 D6: the tag must fall in the door's DRAWN swing box (the reader's rule); the model's bbox centre can lie on the other side of the wall line (HHS: 143 mm off, 30 doors untagged). The drawn doors are read back from this very sheet; a tag outside every swing box moves to the centre of the unique nearest box within one leaf width, else it stays
     const drawn = deps.B.run(txt, deps.SHC.STD.MAP_PLAN, deps.SHC.CFG, { DxfParser: deps.DxfParser, hashHex: deps.hashHex, library: [] }).ops.filter(o => o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge).map(o => { const P = o.params, H = P.hinge, pts = [H].concat([P.swing_start_deg, P.swing_end_deg].map(a => [H[0] + P.width * Math.cos(a * Math.PI / 180), H[1] + P.width * Math.sin(a * Math.PI / 180)])); const xs = pts.map(q => q[0] * 1000), ys = pts.map(q => q[1] * 1000); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys), w: P.width * 1000 }; });
-    const moved = p => { if (drawn.some(b => p[0] >= b.x0 && p[0] <= b.x1 && p[1] >= b.y0 && p[1] <= b.y1)) return p; const cand = drawn.map(b => ({ b, d: Math.hypot(Math.max(b.x0 - p[0], 0, p[0] - b.x1), Math.max(b.y0 - p[1], 0, p[1] - b.y1)) })).filter(c => c.d <= c.b.w).sort((a, c) => a.d - c.d); if (!cand.length || (cand.length > 1 && cand[1].d - cand[0].d < 1)) return p; const b = cand[0].b; return [Number(((b.x0 + b.x1) / 2).toFixed(3)), Number(((b.y0 + b.y1) / 2).toFixed(3))]; };
-    const said = {};
+    const touches = (b, x) => b.x0 <= x.x1 * 1000 + TOUCH && b.x1 >= x.x0 * 1000 - TOUCH && b.y0 <= x.y1 * 1000 + TOUCH && b.y1 >= x.y0 * 1000 - TOUCH;   // §F7 D15: a swing box hinges on its door's own opening line, so it touches the door's plan extent
+    const moved = (p, x) => { if (drawn.some(b => p[0] >= b.x0 && p[0] <= b.x1 && p[1] >= b.y0 && p[1] <= b.y1)) return p; const cand = drawn.map(b => ({ b, d: Math.hypot(Math.max(b.x0 - p[0], 0, p[0] - b.x1), Math.max(b.y0 - p[1], 0, p[1] - b.y1)) })).filter(c => c.d <= c.b.w && touches(c.b, x)).sort((a, c) => a.d - c.d); if (!cand.length || (cand.length > 1 && cand[1].d - cand[0].d < 1)) return p; const b = cand[0].b; return [Number(((b.x0 + b.x1) / 2).toFixed(3)), Number(((b.y0 + b.y1) / 2).toFixed(3))]; };
+    const said = {}, finalAt = {}, pend = [];
     here.forEach(x => {
       const l = labelOf(x); if (l === null) return;
-      const p = moved(at(x)), k = at(x).join(',');
+      const p = moved(at(x), x), k = at(x).join(',');
       if (ptTypes[k].size > 1) { if (!said[k]) { said[k] = 1; say('  §MARK_GAP TAG door at (' + p[0] + ',' + p[1] + '): types ' + Array.from(ptTypes[k]).sort().join(' / ') + ' differ, not tagged'); } return; }
-      marks.push({ text: '@TAG=door,' + l, x: p[0], y: p[1] });
+      const fk = p.join(','); (finalAt[fk] = finalAt[fk] || new Set()).add(l); pend.push({ l, p, fk });
     });
+    // §F7 D15 safety: two different labels at one FINAL point (after the move) are the same conflict as §L1.25: neither is tagged, stated
+    pend.forEach(t => { if (finalAt[t.fk].size > 1) { if (!said['f' + t.fk]) { said['f' + t.fk] = 1; say('  §MARK_GAP TAG door at (' + t.p[0] + ',' + t.p[1] + '): moved tags ' + Array.from(finalAt[t.fk]).sort().join(' / ') + ' meet, not tagged'); } return; } marks.push({ text: '@TAG=door,' + t.l, x: t.p[0], y: t.p[1] }); });
   }
   return { deriveMarks };
 });
