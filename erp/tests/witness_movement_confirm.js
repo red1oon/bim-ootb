@@ -23,7 +23,7 @@ var NAMEDGAP = function (id, what) { named++; log('  ◼ NAMED-GAP ' + id + ' ' 
   log('§MVC-SEED patches ok=' + H.patchOk + ' failed=' + H.patchBad + ' today=' + TODAY + ' break=' + (BREAK || 'none'));
   var hasConfirmTbl = !!H.one("SELECT name FROM sqlite_master WHERE name='m_movementconfirm'") && !!H.one("SELECT name FROM sqlite_master WHERE name='m_movementlineconfirm'");
   ok('S0', 'twin seed has m_movementconfirm + m_movementlineconfirm (erp/patches/ad_seed.db.sql §MOVCONFIRM-PORT)', hasConfirmTbl);
-  var postPorted = /DOC\.m_movement\b|DOC\['m_movement'\]/.test(fs.readFileSync(path.join(H.ERP, 'model_post.js'), 'utf8'));
+  var postPorted = /DOC\.m_movement\b|DOC\['m_movement'\]|^\s*m_movement\s*:\s*function/m.test(fs.readFileSync(path.join(H.ERP, 'model_post.js'), 'utf8'));
   log('§MVC-POST doc_movement_ported=' + postPorted + (postPorted ? '' : ' -> posting pending §60: Fact_Acct is not judged for the completed move, only "none while open"'));
   var DT = 9100143, HQ = 11, ST = 12, FROM = 101, TO = 102, PA = 124, PB = 123;
   var one = H.one, onhand = function (loc, p) { var r = one('SELECT COALESCE(SUM(qtyonhand),0) AS s FROM m_storageonhand WHERE m_locator_id=? AND m_product_id=?', [loc, p]); return Number(r.s); };
