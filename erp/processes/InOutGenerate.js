@@ -59,17 +59,9 @@
     InOutGenerate.prototype.getStorages = function (wh, productId, asiId, minGuaranteeDate, fifo) {
       var A = X.A, trx = this.get_TrxName(), key = [wh, productId, asiId, minGuaranteeDate, fifo].join('|');
       if (this.m_map[key]) return this.m_map[key];
-      var all = !asiId, sql, p = [wh, productId], product = trx.get('m_product', productId);
-      if (!all) {
-        sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE l.m_warehouse_id=? AND s.m_product_id=? AND COALESCE(s.m_attributesetinstance_id,0)=? AND s.qtyonhand<>0 ORDER BY l.priorityno DESC, s.datematerialpolicy' + (fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC');
-        p.push(asiId);
-      } else {
-        sql = 'SELECT s.* FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id LEFT JOIN m_attributesetinstance asi ON asi.m_attributesetinstance_id=s.m_attributesetinstance_id WHERE l.m_warehouse_id=? AND s.m_product_id=? AND s.qtyonhand<>0';
-        if (minGuaranteeDate != null) { sql += ' AND (asi.guaranteedate IS NULL OR date(asi.guaranteedate)>date(?))'; p.push(iso(minGuaranteeDate)); }
-        var useGD = product && product.isuseguaranteedateformpolicy === 'Y';
-        sql += ' ORDER BY l.priorityno DESC, ' + (useGD ? 'COALESCE(asi.guaranteedate,s.datematerialpolicy)' : 's.datematerialpolicy') + (fifo ? ', s.m_attributesetinstance_id' : ' DESC, s.m_attributesetinstance_id DESC') + ', s.qtyonhand DESC';
-      }
-      var rows = trx.q(sql, p).filter(function (r) { return D(A, r.qtyonhand).signum() !== 0; });
+      // ONE getWarehouse implementation (model_asi.js storages; AS-3): this file's own copy read a product column that does not exist (isuseguaranteedateformpolicy - the flag is the Attribute Set's)
+      var MA = (typeof globalThis !== 'undefined' && globalThis.ModelAsi) || (typeof require === 'function' ? require('../model_asi') : null);
+      var rows = MA.storages(trx, { warehouseId: wh, productId: productId, asiId: asiId, minGuaranteeDate: minGuaranteeDate, fifo: fifo, positiveOnly: false });
       rows = rows.filter(function (soh) {                                                // IDEMPIERE-2668: locators enabled for shipping
         var loc = trx.get('m_locator', soh.m_locator_id); if (!loc || !loc.m_locatortype_id) return true;
         var lt = trx.get('m_locatortype', loc.m_locatortype_id); return !lt || lt.isavailableforshipping !== 'N';
