@@ -641,6 +641,7 @@
     }
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
     if (f.type === 'location') return _locFieldHtml(f, v, ro);   // FS-13 — WLocationEditor
+    if (f.type === 'pattribute') return _asiFieldHtml(f, v, ro); // AS-1 — WPAttributeEditor / WPAttributeDialog
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
     if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
       var raw = v; v = normDateValue('date', v);
@@ -739,6 +740,112 @@
       if (b.hasAttribute('data-loc-edit')) _locOpen(b.getAttribute('data-loc-edit'), root);
       else if (b.hasAttribute('data-loc-ok')) _locOk(b.getAttribute('data-loc-ok'), root);
       else { var p = root.querySelector('[data-loc-for]'); if (p) p.style.display = 'none'; }
+    }, true);
+  }
+  // ── AS-1 PAttribute editor (bim-compiler prompts/ERP_PRODUCT_ATTRIBUTE_ASI.md §4 AS-1 - Witness: W-ASI-CREATE) ──────────────────────────────────────────
+  // ONE generic editor for EVERY column of AD_Reference 35 (DisplayType.PAttribute -> WPAttributeEditor -> WPAttributeDialog): the field shows the instance id + its Description and an
+  // "Attribute..." button; the panel is built from the product's Attribute Set by ModelAsi.form (Lot / Serial No / Guarantee Date / attributes, "New" where the set has a lot or serial
+  // counter) or picks an EXISTING instance of the same set. OK commits ONE signed op group (the instance, its M_Lot, its M_AttributeInstance rows, the counter update) from
+  // ModelAsi.plan - the same plan the model layer uses, so a receipt-line auto-generated lot and a dialog save cannot differ. NOT ported, named: Reference / multi-select attribute types.
+  function _asiFieldHtml(f, v, ro) {
+    return '<span class=cfasi data-asi-wrap="' + f.col + '"><input class=cfi type="text" data-col="' + f.col + '" data-asi-ref="1" value="' + esc(v) + '" readonly' + ro + ' style="width:7em">' +
+      ' <span class=cfasi-txt data-asi-txt="' + f.col + '"></span>' + (f.readonly ? '' : ' <button type=button class=cfb data-asi-edit="' + f.col + '">Attribute…</button>') +
+      '<span class=cfasi-panel data-asi-for="' + f.col + '" style="display:none;flex-direction:column;gap:3px;margin-top:4px"></span></span>';
+  }
+  function _asiReader(db) {
+    return { q: function (sql, p) { var r = db.exec(sql, p || []); if (!r.length) return []; return r[0].values.map(function (vv) { var o = {}; r[0].columns.forEach(function (c, i) { o[String(c).toLowerCase()] = vv[i]; }); return o; }); } };
+  }
+  function _asiRow(label, html) { return '<span><span class=cfdim style="display:inline-block;width:9em">' + esc(label) + '</span>' + html + '</span>'; }
+  function _asiProduct(wrap, productWindow) {   // the Product of the form: the M_Product_ID control (on the Product window itself, its own key)
+    var host = wrap.closest('#crudForm,.cfhost') || fhost || global.document, el = host.querySelector('[data-col="m_product_id"]');
+    return Number(el && el.value || 0);
+  }
+  function _asiTable(wrap) { var rowEl = wrap.closest('[data-ad-table]'); return rowEl ? String(rowEl.getAttribute('data-ad-table')).toLowerCase() : ''; }
+  function _asiOpen(col, wrap) {
+    var panel = wrap.querySelector('[data-asi-for="' + col + '"]'); if (!panel) return;
+    if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+    var MA = global.ModelAsi; if (!MA) { toast('Attribute editor not loaded'); return; }
+    withBundle(function (db) {
+      var r = _asiReader(db), tbl = _asiTable(wrap), productWindow = tbl === 'm_product', pid = _asiProduct(wrap, productWindow);
+      if (!pid) { panel.innerHTML = '<span class=cfdim>Choose the Product first</span>'; panel.style.display = 'flex'; return; }
+      var fm = MA.form(r, pid, productWindow);
+      if (!fm.ok) { panel.innerHTML = '<span class=cfdim>' + esc(fm.reason) + '</span>'; panel.style.display = 'flex'; console.log('§ASI-EDITOR open col=' + col + ' product=' + pid + ' ' + fm.reason); return; }
+      var today = new Date().toISOString().slice(0, 10), h = '';
+      var ex = r.q('SELECT m_attributesetinstance_id AS id, description FROM m_attributesetinstance WHERE m_attributeset_id=? AND m_attributesetinstance_id>0 ORDER BY m_attributesetinstance_id DESC LIMIT 200', [fm.setId]);
+      h += _asiRow('Existing', '<select class=cfi data-asi="existing"><option value="">(new instance)</option>' + ex.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc((x.description || '') + ' (' + x.id + ')') + '</option>'; }).join('') + '</select>');
+      if (fm.lot) h += _asiRow('Lot', '<input class=cfi type="text" data-asi="lot">' + (fm.lotCounter ? ' <button type=button class=cfb data-asi-new="lot">New</button>' : ''));
+      if (fm.serno) h += _asiRow('Serial No', '<input class=cfi type="text" data-asi="serno">' + (fm.sernoCounter ? ' <button type=button class=cfb data-asi-new="serno">New</button>' : ''));
+      if (fm.guaranteedate) { var gd = fm.guaranteeDays > 0 ? new Date(Date.parse(today + 'T00:00:00Z') + fm.guaranteeDays * 86400000).toISOString().slice(0, 10) : ''; h += _asiRow('Guarantee Date', '<input class=cfi type="date" data-asi="guaranteedate" value="' + gd + '">'); }
+      fm.attributes.forEach(function (a) {
+        var c = a.type === 'L' ? '<select class=cfi data-asi-attr="' + a.id + '"><option value=""></option>' + (a.options || []).map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.name) + '</option>'; }).join('') + '</select>'
+          : '<input class=cfi type="' + (a.type === 'N' ? 'number' : a.type === 'D' ? 'date' : 'text') + '" step="any" data-asi-attr="' + a.id + '">';
+        h += _asiRow(a.name + (a.mandatory ? ' *' : ''), c);
+      });
+      h += '<span><button type=button class=cfb data-asi-ok="' + col + '">OK</button> <button type=button class=cfb data-asi-cancel="' + col + '">Cancel</button></span>';
+      panel.innerHTML = h; panel.style.display = 'flex'; panel._asiForm = fm; panel._newLot = false; panel._newSerNo = false;
+      console.log('§ASI-EDITOR open col=' + col + ' table=' + tbl + ' product=' + pid + ' set=' + fm.setId + ' lot=' + fm.lot + ' serno=' + fm.serno + ' guarantee=' + fm.guaranteedate + ' attributes=' + fm.attributes.length + ' existing=' + ex.length);
+    });
+  }
+  function _asiOk(col, wrap) {
+    var panel = wrap.querySelector('[data-asi-for="' + col + '"]'), idEl = wrap.querySelector('[data-col="' + col + '"]'), MA = global.ModelAsi;
+    if (!panel || !idEl || !MA || !panel._asiForm) return;
+    var g = function (k) { var x = panel.querySelector('[data-asi="' + k + '"]'); return x ? x.value : ''; };
+    var done = function (id, text) { _setVal(idEl, id); try { idEl.dispatchEvent(new Event('change', { bubbles: true })); } catch (ev) {} var t = wrap.querySelector('[data-asi-txt="' + col + '"]'); if (t) t.textContent = text || ''; panel.style.display = 'none'; };
+    var exist = g('existing');
+    if (exist) { done(Number(exist), (panel.querySelector('[data-asi="existing"] option:checked') || {}).textContent); console.log('§ASI-EDITOR picked existing id=' + exist); return; }
+    withBundle(function (db) {
+      var r = _asiReader(db), fm = panel._asiForm, pid = _asiProduct(wrap, fm.productWindow);
+      var attrs = {}; panel.querySelectorAll('[data-asi-attr]').forEach(function (x) { attrs[x.getAttribute('data-asi-attr')] = x.value; });
+      var vals = { lot: panel._newLot ? '' : g('lot'), serno: panel._newSerNo ? '' : g('serno'), guaranteedate: g('guaranteedate'), newLot: !!panel._newLot, newSerNo: !!panel._newSerNo, attrs: attrs };
+      var pl = MA.plan(r, { productId: pid, mode: 'dialog', productWindow: fm.productWindow, today: new Date().toISOString().slice(0, 10), values: vals, org: (global.APP && global.APP.orgId) != null ? global.APP.orgId : 0 });
+      if (!pl.ok) { toast(pl.errors.join('; ')); console.log('§ASI-EDITOR refused ' + pl.errors.join('; ')); return; }
+      var ops = [], asiRow = pl.rows[0], lotIdx = -1, asiIdx;
+      var mk = function (table, fields) {
+        var keys = Object.keys(fields), e = { key: table, fields: keys.map(function (k) { return { col: k, type: /_id$/.test(k) || /^(valuenumber|currentnext)$/.test(k) ? 'number' : 'string' }; }) };
+        var op = CORE.buildOp('create', e, fields, null, { orgId: fields.ad_org_id != null ? fields.ad_org_id : 0 });
+        keys.forEach(function (k) { if (fields[k] && typeof fields[k] === 'object') op.fields[k] = fields[k]; });
+        return op;
+      };
+      if (asiRow.lotRef) { ops.push(mk('m_lot', pl.rows[1].fields)); lotIdx = ops.length - 1; }
+      var af = Object.assign({}, asiRow.fields); Object.keys(af).forEach(function (k) { if (af[k] == null) delete af[k]; });
+      if (lotIdx >= 0) af.m_lot_id = { __opRef: lotIdx };
+      ops.push(mk('m_attributesetinstance', af)); asiIdx = ops.length - 1;
+      pl.rows.forEach(function (rw) {
+        if (rw.table === 'm_attributeinstance') ops.push(mk('m_attributeinstance', Object.assign({ m_attributesetinstance_id: { __opRef: asiIdx } }, rw.fields)));
+        else if (rw.update) {
+          var cur = r.q('SELECT currentnext FROM ' + rw.update.key + ' WHERE ' + rw.update.key + '_id=?', [rw.update.id])[0];
+          ops.push({ op_type: 'CRUD_UPDATE', key: rw.update.key, table: rw.update.key, verb: 'update', id: rw.update.id, changes: { currentnext: { old: cur ? cur.currentnext : null, new: rw.update.fields.currentnext } } });
+        }
+      });
+      applyOpGroup(ops, function (res) {
+        if (!res || !res.committed || !res.ids || !res.ids.length) { console.log('§ASI-EDITOR create FAIL reason=' + (res && res.reason)); toast('Attribute Set Instance not saved'); return; }
+        var newId = -Number(res.ids[asiIdx]);   // crud_core.listTip: a CRUD_CREATE row's pk is -opId
+        done(newId, pl.description);
+        console.log('§ASI-EDITOR created id=' + newId + ' set=' + fm.setId + ' desc="' + pl.description + '" ops=' + ops.length + ' gid=' + res.gid + ' verifyChain=' + (res.verifyOk ? 'ok' : 'FAIL'));
+      });
+    });
+  }
+  function _asiNew(kind, wrap) {   // the "New" button: show the next number the counter will hand out (MLotCtl / MSerNoCtl); the counter itself moves only when OK commits
+    var panel = wrap.querySelector('[data-asi-for]'), fm = panel && panel._asiForm, MA = global.ModelAsi; if (!fm || !MA) return;
+    withBundle(function (db) {
+      var r = _asiReader(db), set = r.q('SELECT m_lotctl_id, m_sernoctl_id FROM m_attributeset WHERE m_attributeset_id=?', [fm.setId])[0] || {};
+      var ctl = kind === 'lot' ? r.q('SELECT * FROM m_lotctl WHERE m_lotctl_id=?', [set.m_lotctl_id])[0] : r.q('SELECT * FROM m_sernoctl WHERE m_sernoctl_id=?', [set.m_sernoctl_id])[0];
+      if (!ctl) return;
+      var inp = panel.querySelector('[data-asi="' + kind + '"]'); if (inp) { inp.value = MA.counter(ctl).name; inp.readOnly = true; }
+      if (kind === 'lot') panel._newLot = true; else panel._newSerNo = true;
+    });
+  }
+  if (global.document && !global.__asiEditorBound) {
+    global.__asiEditorBound = true;
+    global.document.addEventListener('click', function (ev) {
+      var t = ev.target && ev.target.closest ? ev.target : null; if (!t) return;
+      var b = t.closest('[data-asi-edit],[data-asi-ok],[data-asi-cancel],[data-asi-new]'); if (!b) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var wrap = b.closest('[data-asi-wrap]'); if (!wrap) return;
+      if (b.hasAttribute('data-asi-edit')) _asiOpen(b.getAttribute('data-asi-edit'), wrap);
+      else if (b.hasAttribute('data-asi-ok')) _asiOk(b.getAttribute('data-asi-ok'), wrap);
+      else if (b.hasAttribute('data-asi-new')) _asiNew(b.getAttribute('data-asi-new'), wrap);
+      else { var p = wrap.querySelector('[data-asi-for]'); if (p) p.style.display = 'none'; }
     }, true);
   }
   // ── §P3 AD_Val_Rule (ERP_IDEMPIERE_UX_PARITY.md §IMPL-P3 — Witness: W-PARITY-VALRULE) ────────────────────
