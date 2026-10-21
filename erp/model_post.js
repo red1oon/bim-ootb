@@ -314,31 +314,32 @@
   //   Product or Charge Expense (other), amount = LineNetAmt, Qty = +QtyInvoiced (DocLine.setQty, not a sales trx); Vendor Liability CR GrandTotal; locations from BPartner to Org; updateProductPO (:1534-1569).
   //   NAMED, never faked: tax-included invoices, summary / sales-expense taxes, header charge, reversals (updateReverseLine), landed cost (:landedCost), trade-discount posting and service-product cost details (MCostDetail.createInvoice).
   function Doc_InvoiceAPI(trx, inv, as, F, dt, base, hasDesc) {
-    var cur = inv.c_currency_id, sch = as.c_acctschema_id, named = function (m) { F.err = m + ' — named'; return false; };
-    if (Y(inv.istaxincluded)) return named('API tax-included invoice not ported (loadLines :213-300)');
-    if (nz(inv.reversal_id)) return named('API invoice reversal not ported (updateReverseLine)');
-    if (nz(inv.chargeamt) && D(inv.chargeamt).signum() !== 0) return named('API header charge not ported');
-    if (Y(as.istradediscountposted)) return named('API trade-discount posting not ported');
+    var cm = dt.docbasetype === 'APC', cur = inv.c_currency_id, sch = as.c_acctschema_id, named = function (m) { F.err = m + ' — named'; return false; };
+    if (Y(inv.istaxincluded)) return named((cm ? 'APC ' : 'API ')+'tax-included invoice not ported (loadLines :213-300)');
+    if (nz(inv.reversal_id)) return named((cm ? 'APC ' : 'API ')+'invoice reversal not ported (updateReverseLine)');
+    if (nz(inv.chargeamt) && D(inv.chargeamt).signum() !== 0) return named((cm ? 'APC ' : 'API ')+'header charge not ported');
+    if (Y(as.istradediscountposted)) return named((cm ? 'APC ' : 'API ')+'trade-discount posting not ported');
     var taxes = trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }), i;
-    for (i = 0; i < taxes.length; i++) { var tx = trx.get('c_tax', taxes[i].c_tax_id); if (tx && (Y(tx.issummary) || Y(tx.issalestax))) return named('API summary / sales-expense tax not ported'); }
-    taxes.forEach(function (t) { F.line(ACCT.taxCredit(trx, t.c_tax_id, sch), cur, t.taxamt, null, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
+    for (i = 0; i < taxes.length; i++) { var tx = trx.get('c_tax', taxes[i].c_tax_id); if (tx && (Y(tx.issummary) || Y(tx.issalestax))) return named((cm ? 'APC ' : 'API ')+'summary / sales-expense tax not ported'); }
+    taxes.forEach(function (t) { F.line(ACCT.taxCredit(trx, t.c_tax_id, sch), cur, cm ? null : t.taxamt, cm ? t.taxamt : null, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });   // APC: the same account on the CR side (:775-)
     var lines = trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).filter(function (l) { return !Y(l.isdescription); });
     for (i = 0; i < lines.length; i++) {
       var l = lines[i], prod = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null, item = !!prod && T.isItem(prod), acct;
       var lc = []; try { lc = trx.q('SELECT 1 AS x FROM c_landedcost WHERE c_invoiceline_id=?', [l.c_invoiceline_id]); } catch (e) { lc = []; }
-      if (lc.length) return named('API landed cost not ported');
-      if (prod && !item) return named('API service-product line (MCostDetail.createInvoice) not ported');
+      if (lc.length) return named((cm ? 'APC ' : 'API ')+'landed cost not ported');
+      if (prod && !item) return named((cm ? 'APC ' : 'API ')+'service-product line (MCostDetail.createInvoice) not ported');
       if (item) acct = ACCT.inventoryClearing(trx, l.m_product_id, sch);
       else if (nz(l.c_charge_id)) acct = ACCT.chargeExpense(trx, l.c_charge_id, sch);
       else acct = ACCT.expense(trx, l.m_product_id, sch);
-      F.line(acct, cur, l.linenetamt, null, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id, c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(D(l.qtyinvoiced)),
+      F.line(acct, cur, cm ? null : l.linenetamt, cm ? l.linenetamt : null, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id, c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(cm ? D(l.qtyinvoiced).negate() : D(l.qtyinvoiced)),   // DocLine.setQty: credit memo negates, then a purchase keeps the sign
         description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') }));
     }
     var gross = D(inv.grandtotal), liab = ACCT.liability(trx, inv.c_bpartner_id, sch);          // payables == payablesServices (Doc_Invoice :713-718): the whole GrandTotal on one account
-    if (gross.signum() > 0) F.line(liab, cur, null, gross, Object.assign({ qty: 0 }, base)); else if (gross.signum() < 0) F.line(liab, cur, gross.negate(), null, Object.assign({ qty: 0 }, base));
+    var crSide = !cm;                                                                          // APC: Liability DR (:~875) instead of CR
+    if (gross.signum() > 0) F.line(liab, cur, crSide ? null : gross, crSide ? gross : null, Object.assign({ qty: 0 }, base)); else if (gross.signum() < 0) F.line(liab, cur, crSide ? gross.negate() : null, crSide ? null : gross.negate(), Object.assign({ qty: 0 }, base));
     F.lines.forEach(function (f) { f.c_locfrom_id = locOfBP(trx, inv.c_bpartner_location_id); f.c_locto_id = locOfOrg(trx, f.ad_org_id); });   // setLocationFromBPartner(true) / setLocationFromOrg(false)
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [inv.ad_client_id])[0];
-    if (ci && String(ci.a) === String(sch)) updateProductPO(trx, inv, lines);                   // updateProductPO :1534: only the client's FIRST schema
+    if (!cm && ci && String(ci.a) === String(sch)) updateProductPO(trx, inv, lines);                   // updateProductPO :1534: only the client's FIRST schema
     return !F.err;
   }
   // Doc_Invoice.updateProductPO: M_Product_PO.PriceLastInv = the invoice's first line price per (product, vendor), converted to the PO's currency on the invoice date
@@ -457,15 +458,17 @@
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
       var hasDesc = function (v) { return v != null && String(v).length > 0; };
       var base = { ad_org_id: inv.ad_org_id, c_bpartner_id: inv.c_bpartner_id, c_locfrom_id: from, c_locto_id: to, description: inv.documentno + (hasDesc(inv.description) ? ' (' + inv.description + ')' : '') };
-      if (dt.docbasetype === 'API') return Doc_InvoiceAPI(trx, inv, as, F, dt, base, hasDesc);
-      if (dt.docbasetype !== 'ARI') { F.err = 'Doc_Invoice ' + dt.docbasetype + ' not ported in model_post — named'; return false; }
-      F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), cur, inv.grandtotal, null, Object.assign({ qty: 0 }, base));
+      if (dt.docbasetype === 'API' || dt.docbasetype === 'APC') return Doc_InvoiceAPI(trx, inv, as, F, dt, base, hasDesc);
+      if (dt.docbasetype !== 'ARI' && dt.docbasetype !== 'ARC') { F.err = 'Doc_Invoice ' + dt.docbasetype + ' not ported in model_post — named'; return false; }
+      var cm = dt.docbasetype === 'ARC';                                                      // Doc_Invoice ARC :521-: the same lines on the opposite side; qty = +QtyInvoiced (DocLine.setQty negates twice)
+      if (cm && (Y(inv.istaxincluded) || nz(inv.reversal_id) || (nz(inv.chargeamt) && D(inv.chargeamt).signum() !== 0) || Y(as.istradediscountposted))) { F.err = 'ARC tax-included / reversal / header charge / trade-discount posting not ported — named'; return false; }
+      F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), cur, cm ? null : inv.grandtotal, cm ? inv.grandtotal : null, Object.assign({ qty: 0 }, base));
       trx.find('c_invoicetax', { c_invoice_id: inv.c_invoice_id }).forEach(function (t) {
-        F.line(ACCT.taxDue(trx, t.c_tax_id, as.c_acctschema_id), cur, null, t.taxamt, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
+        F.line(ACCT.taxDue(trx, t.c_tax_id, as.c_acctschema_id), cur, cm ? t.taxamt : null, cm ? null : t.taxamt, Object.assign({ c_tax_id: t.c_tax_id, qty: 0 }, base)); });
       trx.find('c_invoiceline', { c_invoice_id: inv.c_invoice_id }, ['line']).forEach(function (l) {
         if (!nz(l.m_product_id)) { F.err = 'charge/description invoice line posting not ported — named'; return; }
-        F.line(ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id), cur, null, l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
-          c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') })); });
+        F.line(ACCT.revenue(trx, l.m_product_id, as.c_acctschema_id), cur, cm ? l.linenetamt : null, cm ? null : l.linenetamt, Object.assign({}, base, { line_id: l.c_invoiceline_id, m_product_id: l.m_product_id,
+          c_uom_id: l.c_uom_id, c_tax_id: l.c_tax_id, qty: N(cm ? D(l.qtyinvoiced) : D(l.qtyinvoiced).negate()), description: inv.documentno + ' #' + l.line + (hasDesc(l.description) ? ' (' + l.description + ')' : hasDesc(inv.description) ? ' (' + inv.description + ')' : '') })); });
       return !F.err;
     },
     c_payment: function (trx, p, as, F) {                                                    // Doc_Payment.createFacts — receipt: DR BankInTransit / CR UnallocatedCash

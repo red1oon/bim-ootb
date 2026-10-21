@@ -87,7 +87,7 @@ var r2 = function (v) { return (Math.round(Number(v || 0) * 100) / 100).toFixed(
     var same = legSt === twSt && JSON.stringify(lf) === JSON.stringify(tf); bt.judged++; if (same) bt.match++; else bt.diffs.push(d.id);
     log('§WPI doc=' + d.id + ' ' + d.dbt + ' ' + (same ? 'EQUAL' : 'DIFF') + ' legacy=' + legSt + '/' + lf.length + ' twin=' + twSt + '/' + tf.length + (same ? '' : '\n      legacy: ' + lf.join(' ') + '\n      twin:   ' + tf.join(' ') + (T.why ? '\n      why: ' + T.why.slice(-200) : '')));
   }
-  ['ARI', 'API', 'ARC', 'APC'].forEach(function (t) { var v = byType[t]; if (!v) { ok('T-' + t, t + ': a shared completed ' + t + ' invoice to judge', null, 'none shared between the pilot and the twin seed'); return; }
+  ['ARI', 'API', 'ARC', 'APC'].forEach(function (t) { var v = byType[t]; if (!v) { ok('T-' + t, t + ': a shared completed ' + t + ' invoice to judge', null, 'none shared between the pilot and the twin seed (ARC/APC: see witness_post_creditmemo_diff.js, fixture built by the oracle op creditmemo)'); return; }
     ok('T-' + t, t + ': twin books == legacy on ' + v.judged + ' shared invoice(s)', v.match === v.judged, v.diffs.slice(0, 6).join(' | ')); });
   log('§WPI-SUMMARY ' + (fail ? 'FAIL' : inc ? 'INCONCLUSIVE' : 'PASS') + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : inc ? 3 : 0);
