@@ -45,7 +45,7 @@
     MAP_ELEV: { version: 1, rules: [{ match: 'exact', pattern: 'A-GLAZ', type: 'glazing' }, { match: 'exact', pattern: 'A-WALL', type: 'elevwall' }, { match: 'exact', pattern: 'A-DOOR', type: 'elevdoor' }] },
     MAP_LEVL: MAP_LEVL,
     // lane spec L1.4 F4/F5: the std ROOF plan (DX roof map + the R12 annotation layers ignored) and the SECTION sheet
-    MAP_ROOF: { version: 1, rules: MAP_ROOF.rules.concat(['A-GRID', 'A-ANNO-DIMS', 'A-ANNO-LEVL', 'A-ANNO-TTLB'].map(ign)) },
+    MAP_ROOF: { version: 1, rules: MAP_ROOF.rules.concat(['A-GRID', 'A-ANNO-DIMS', 'A-ANNO-LEVL', 'A-ANNO-TTLB', 'A-ANNO-NOTE'].map(ign)) },   // §F7: A-ANNO-NOTE = the north arrow's caption / 'NORTH NOT STATED' on the roof sheet (the plan map already ignores it)
     MAP_SECT: { version: 1, rules: [{ match: 'exact', pattern: 'S-SLAB', type: 'sectslab' }, { match: 'exact', pattern: 'A-ROOF', type: 'roof' }, { match: 'exact', pattern: 'A-SECT', type: 'sectwall' }].concat(['A-WALL-PATT', 'A-WALL-CURT', 'A-GRID', 'A-ANNO-DIMS', 'A-ANNO-LEVL', 'A-ANNO-TTLB'].map(ign)) },   // §F7: A-WALL-CURT = the curtain-wall plates / members the section cut passes through: drawn, read as nothing
     EXCL_ELEV: { version: 1, rules: ['A-GLAZ-SILL', 'A-ROOF', 'A-GRID', 'A-ANNO-DIMS', 'A-ANNO-NOTE', 'A-ANNO-TTLB'].map(ign) },
     QUALIFY: QUALIFY };

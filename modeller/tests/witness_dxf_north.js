@@ -5,14 +5,14 @@
  * THE ISSUE THIS PROVES OR DISPROVES: a plan / roof sheet carries a north arrow ONLY when a real north is stated (true_north_source = 'ifc_truenorth'), it points where true north is IN THE SHEET'S
  * FRAME (turned with the wing), and a building with no stated north says so in words instead of drawing a guess. Asking for no north leaves every sheet byte-identical.
  *   N1 LEGACY  — opts.north undefined: every file equals the file written with no north option at all.
- *   N2 ARROW   — north {5 deg, ifc_truenorth}: every plan and the roof sheet has the arrow (circle + 'N' + 'TRUE NORTH (ifc_truenorth)'); the logged sheet vector equals the model vector (-sin B, cos B) turned by -turn,
+ *   N2 ARROW   — north {5 deg, ifc_truenorth}: every plan and the roof sheet has the arrow (a north arrow + the caption 'N = TRUE NORTH (ifc_truenorth)'; no circle and no lone 'N': the importer reads those as a grid bubble / label); the logged sheet vector equals the model vector (-sin B, cos B) turned by -turn,
  *                for turn 0 / 90 / 180 / 270 and a 70 deg wing.
  *   N3 UNSTATED— north null, source 'default_zero', 'malformed_truenorth_ignored', a missing angle: no arrow, the words 'NORTH NOT STATED' on every plan and the roof sheet.
  *   N4 CONTROL — the arrow differs between turn 0 and turn 180 (the witness can see a missing turn).
  * Usage: NODE_PATH=<dir with sql.js> node modeller/tests/witness_dxf_north.js <Node model .db>
  */
 'use strict';
-const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js'), S = require(path.join(__dirname, '..', 'dxf2bim', 'std2d.js'));
+const fs = require('fs'), path = require('path'), crypto = require('crypto'), initSqlJs = require('sql.js'), M = path.join(__dirname, '..'), D = path.join(M, 'dxf2bim') + '/', S = require(D + 'std2d.js'), Mk = require(D + 'std2d_marks.js'), MK = require(D + 'dxf2marks.js'), Bm = require(D + 'dxf2bim.js'), SHC = require(D + 'dxf2shell_config.js'), DxfParser = require(path.join(M, 'lib/dxf-parser.js')), I = require(path.join(M, 'dxf2bim_import.js')), hashHex = x => crypto.createHash('sha256').update(x).digest('hex');
 let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL ') + id + ' | ' + issue + ' | ' + d); };
 (async () => {
   const SQL = await initSqlJs(), db = new SQL.Database(new Uint8Array(fs.readFileSync(process.argv[2])));
@@ -35,5 +35,8 @@ let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { i
   const sb = S.writeStdSet(q, 'N', { wing: W(fam), scaleBar: true }), plain = S.writeStdSet(q, 'N', { wing: W(fam) });
   const barLen = t => { const m = /\n0\nLINE\n[^]*?8\nA-ANNO-TTLB\n[^]*?10\n([-\d.]+)\n20\n([-\d.]+)\n30\n0.0\n11\n([-\d.]+)\n21\n([-\d.]+)\n/g; let r, best = null; while ((r = m.exec(t))) { const L = Math.hypot(r[3] - r[1], r[4] - r[2]); if (Math.abs(L - 5000) < 1e-6) best = L; } return best; };
   check('N5', 'scaleBar: a 5 m bar (5000 mm sheet units at 1:100) and the labels 0 / 5 m on every plan + roof sheet; none without the option', planFiles(sb).every(f => barLen(sb.files[f]) === 5000 && /\n1\n5 m\n/.test(sb.files[f])) && !planFiles(plain).some(f => /\n1\n5 m\n/.test(plain.files[f])), 'sheets=' + planFiles(sb).length);
+  const verdict = R => { const Dm = Mk.deriveMarks(R, { B: Bm, DxfParser, hashHex, MK, SHC }, { set: 'N' }), out = I.convert(I.readSheets(Object.keys(Dm.files).map(f => ({ name: f, text: Dm.files[f] }))), {}), c = {}; (out.verdict ? out.verdict.blocking : []).forEach(b => { c[b.code] = (c[b.code] || 0) + 1; }); return JSON.stringify(c); };
+  const v0 = verdict(plain), v1 = verdict(S.writeStdSet(q, 'N', { wing: W(fam), north: { angle: B, source: 'ifc_truenorth' }, scaleBar: true })), v2 = verdict(S.writeStdSet(q, 'N', { wing: W(fam), north: null, scaleBar: true }));
+  check('N6', 'the reader judges the set identically with the north arrow, with NORTH NOT STATED, and with the scale bar (their text layers are ignored on plan AND roof sheets: the roof map once reported A-ANNO-NOTE as unmapped)', v0 === v1 && v0 === v2, v0.slice(0, 100));
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })();

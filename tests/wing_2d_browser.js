@@ -14,12 +14,12 @@
  */
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), crypto = require('crypto'), { execFileSync } = require('child_process');
-const { chromium } = require(path.join(process.env.PW || path.join(process.env.HOME, 'bim-ootb/tests/node_modules'), '@playwright/test'));
+const PW = require(path.join(process.env.PW || path.join(process.env.HOME, 'bim-ootb/tests/node_modules'), '@playwright/test')), ENGINE = process.env.BROWSER || 'chromium', chromium = PW[ENGINE];   // BROWSER=chromium|webkit|firefox
 const BASE = process.argv[2] || 'http://localhost:8191', DB = process.env.WING_DB || '../buildings/HHS_Office_Federated_extracted.db';
 let fail = 0; const say = s => console.log(s), check = (id, issue, ok, d) => { if (!ok) fail++; say((ok ? 'PASS ' : 'FAIL ') + id + ' | ' + issue + ' | ' + d); };
 (async () => {
-  const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  const p = await (await b.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true })).newPage(), logs = []; p.on('console', m => logs.push(m.text())); p.on('pageerror', e => logs.push('PAGEERROR ' + e.message));
+  const b = await chromium.launch(ENGINE === 'chromium' ? { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] } : {});
+  const p = await (await b.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true })).newPage(), logs = []; p.on('console', m => logs.push(m.text())); p.on('pageerror', e => logs.push('PAGEERROR ' + e.message + ' @ ' + String(e.stack || '').split('\n').slice(0, 3).join(' | ')));
   await p.goto(BASE + '/viewer/viewer.html?db=' + DB + '&ghost=1');
   await p.waitForFunction(() => window.APP && APP.scene && /DONE/.test((document.getElementById('s-active') || {}).textContent || ''), { timeout: 120000 });
   await p.waitForTimeout(2500); await p.evaluate(() => APP.toggleSection()); await p.waitForTimeout(2200);

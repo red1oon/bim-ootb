@@ -62,7 +62,8 @@
     return x0 > x1 ? null : { x0, y0, x1, y1 };
   }
   // view = {cx, cy (sheet point at the canvas centre), s (px per sheet unit)}; sheet y is UP, canvas y is DOWN
-  const fit = (b, w, h, pad) => { pad = pad === undefined ? 24 : pad; const s = Math.min((w - 2 * pad) / ((b.x1 - b.x0) || 1), (h - 2 * pad) / ((b.y1 - b.y0) || 1)); return { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, s }; };
+    // the scale is never <= 0: a card still flying out is a few px wide, and a negative scale gives a negative arc radius (IndexSizeError in WebKit)
+  const fit = (b, w, h, pad) => { pad = pad === undefined ? 24 : pad; const s = Math.max(1e-9, Math.min((w - 2 * pad) / ((b.x1 - b.x0) || 1), (h - 2 * pad) / ((b.y1 - b.y0) || 1))); return { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, s }; };
   const sx = (v, x, w) => w / 2 + (x - v.cx) * v.s, sy = (v, y, h) => h / 2 - (y - v.cy) * v.s;
   function paintCanvas(ctx, list, v, w, h) {
     ctx.clearRect(0, 0, w, h); ctx.lineWidth = 1; ctx.lineJoin = 'round';
@@ -71,8 +72,8 @@
       if (d.k === 'line') { ctx.moveTo(sx(v, d.a[0], w), sy(v, d.a[1], h)); ctx.lineTo(sx(v, d.b[0], w), sy(v, d.b[1], h)); ctx.stroke(); }
       else if (d.k === 'poly') { d.pts.forEach((p, i) => i ? ctx.lineTo(sx(v, p[0], w), sy(v, p[1], h)) : ctx.moveTo(sx(v, p[0], w), sy(v, p[1], h))); if (d.closed) ctx.closePath(); ctx.stroke(); }
       else if (d.k === 'fill') { ctx.globalAlpha = 0.35; d.pts.forEach((p, i) => i ? ctx.lineTo(sx(v, p[0], w), sy(v, p[1], h)) : ctx.moveTo(sx(v, p[0], w), sy(v, p[1], h))); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
-      else if (d.k === 'circle') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), d.r * v.s, 0, Math.PI * 2); ctx.stroke(); }
-      else if (d.k === 'arc') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), d.r * v.s, -d.a0 * Math.PI / 180, -d.a1 * Math.PI / 180, true); ctx.stroke(); }
+      else if (d.k === 'circle') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), Math.max(0, d.r * v.s), 0, Math.PI * 2); ctx.stroke(); }
+      else if (d.k === 'arc') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), Math.max(0, d.r * v.s), -d.a0 * Math.PI / 180, -d.a1 * Math.PI / 180, true); ctx.stroke(); }
       else if (d.k === 'text') { const px = Math.max(6, d.h * v.s); ctx.font = px + 'px sans-serif'; ctx.textAlign = d.mid ? 'center' : 'left'; ctx.textBaseline = d.mid ? 'middle' : 'alphabetic'; ctx.save(); ctx.translate(sx(v, d.p[0], w), sy(v, d.p[1], h)); if (d.rot) ctx.rotate(-d.rot * Math.PI / 180); ctx.fillText(d.s, 0, 0); ctx.restore(); }
     });
   }
