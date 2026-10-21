@@ -13,7 +13,7 @@ const OCI = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/b
 const URL = (process.env.VIEWER || 'https://red1oon.github.io/bim-ootb/viewer/viewer.html') + '?db=' + OCI + 'buildings/Hospital_extracted.db&ghost=1';
 // the green-roof south-west block (sighted 2026-10-21: roof-garden slabs at z 176.9, centre 5.1, 68.7, 42 x 26 m; its face runs along the 85-deg family's quarter 355): the plane's two ends in front of
 // its south face, the depth across it; the camera views (target IFC m, azimuth / elevation deg, distance m)
-const GREEN = { p0: [-17, 52.4], p1: [26.8, 48.57], depth: 30, view: { t: [15, 85, 175], az: 225, el: 38, d: 120 }, work: { t: [5, 62, 172], az: 230, el: 40, d: 95 } };
+const GREEN = { p0: [-17, 52.4], p1: [26.8, 48.57], depth: 30, view: { t: [30, 92, 182], az: 225, el: 30, d: 140 }, work: { t: [8, 64, 178], az: 230, el: 30, d: 95 } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1', __GLX_VENDOR_LIBRARY_NAME: 'nvidia', __EGL_VENDOR_LIBRARY_FILENAMES: '/usr/share/glvnd/egl_vendor.d/10_nvidia.json' });
 (async () => {
@@ -45,15 +45,21 @@ const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1',
   const orbit = (deg, ms) => pg.evaluate((deg, ms) => new Promise(res => { const A = window.APP, T = window.THREE, ctl = A.controls, c = A.camera, o = ctl.target.clone(), v0 = c.position.clone().sub(o), t0 = performance.now();
     (function step() { const k = Math.min(1, (performance.now() - t0) / ms), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, v = v0.clone().applyAxisAngle(new T.Vector3(0, 1, 0), deg * Math.PI / 180 * s);
       c.position.copy(o).add(v); ctl.update(); if (A.markDirty) A.markDirty(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), deg, ms);
+  // measured centring: project the IFC point, then shift camera + target along the view's right / up so it lands at the screen centre (two passes; the Viewer may move the target after a set)
+  const centreOn = async (pt, ms) => { for (let k = 0; k < 2; k++) await pg.evaluate((pt, ms) => new Promise(res => { const A = window.APP, T = window.THREE, c = A.camera, ctl = A.controls, t3 = A.ifc2three(pt[0], pt[1], pt[2]);
+      c.updateMatrixWorld(); const v = new T.Vector3(t3.x, t3.y, t3.z).project(c), dist = c.position.distanceTo(ctl.target), hh = dist * Math.tan(c.fov * Math.PI / 360), hw = hh * c.aspect;
+      const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0), up = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 1), d = right.multiplyScalar(v.x * hw).add(up.multiplyScalar(v.y * hh));
+      const p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now(); (function step() { const kk = Math.min(1, (performance.now() - t0) / ms), e = kk < .5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2;
+        c.position.copy(p0).addScaledVector(d, e); ctl.target.copy(q0).addScaledVector(d, e); ctl.update(); if (A.markDirty) A.markDirty(); if (kk < 1) requestAnimationFrame(step); else res(); })(); }), pt, k ? 300 : ms); };
   const scr = (x, y) => pg.evaluate((x, y) => { const A = window.APP, S = A._wing2d, z = (S.z0 + S.z1) / 2, t = A.ifc2three(x, y, z), v = new window.THREE.Vector3(t.x, t.y, t.z).project(A.camera), r = A.canvas.getBoundingClientRect(); return { x: r.left + (v.x * .5 + .5) * r.width, y: r.top + (-v.y * .5 + .5) * r.height }; }, x, y);
   const plane = () => pg.evaluate(() => APP.wing2dState().plane);
   const dragPath = async pts => { await pg.mouse.move(pts[0].x, pts[0].y, { steps: 6 }); await sleep(300); await pg.mouse.down(); for (const p of pts.slice(1)) { await pg.mouse.move(p.x, p.y, { steps: 2 }); await sleep(28); } await sleep(250); await pg.mouse.up(); await sleep(600); };
 
   // ---- load OFF camera (owner: "start from when loaded") ----
   const T0 = now(); await pg.goto(URL, { timeout: 180000 });
-  for (let i = 0; i < 180; i++) { const st = await pg.evaluate(() => ((document.getElementById('s-active') || {}).textContent || '')); if (/DONE/.test(st)) { fact('loaded', st.trim()); fact('load_s', (now() - T0).toFixed(1)); break; } await sleep(1000); }
+  for (let i = 0; i < 180; i++) { const st = await pg.evaluate(() => ((document.getElementById('s-active') || {}).textContent || '')); if (/DONE/.test(st)) { fact('loaded', st.trim()); fact('elements', (plog.join('\n').match(/(\d+) shown=\1/) || [])[1] || 'unknown'); fact('load_s', (now() - T0).toFixed(1)); break; } await sleep(1000); }
   await sleep(1500);
-  await camTo(GREEN.view.t, GREEN.view.az, GREEN.view.el, GREEN.view.d, 10); await sleep(1500);
+  await camTo(GREEN.view.t, GREEN.view.az, GREEN.view.el, GREEN.view.d, 10); await sleep(800); await centreOn(GREEN.view.t, 10); await sleep(1200);
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
   // ---- chapter 1 THE HOSPITAL ----
   await chapter(1, 'hospital'); await beat('h01');
@@ -64,7 +70,7 @@ const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1',
   await pg.click('#sec-axis-wing'); await pg.waitForFunction(() => APP.wing2dState().side, { timeout: 120000 });
   const st0 = await pg.evaluate(() => APP.wing2dState()); fact('families', st0.fam.map(f => f.deg + ':' + f.n).join(' ')); fact('plane0', st0.plane);
   fact('nothing_cut', await pg.evaluate(() => APP.renderer.localClippingEnabled === false));
-  await camTo(GREEN.work.t, GREEN.work.az, GREEN.work.el, GREEN.work.d, 3000); await sleep(1500);
+  await camTo(GREEN.work.t, GREEN.work.az, GREEN.work.el, GREEN.work.d, 3000); await centreOn(GREEN.work.t, 900); await sleep(1200);
   await beat('s02');
   // (1) the plane body: its west end to the block's south-west corner
   const mid0 = [(st0.plane.p0[0] + st0.plane.p1[0]) / 2, (st0.plane.p0[1] + st0.plane.p1[1]) / 2], dx = GREEN.p0[0] - st0.plane.p0[0], dy = GREEN.p0[1] - st0.plane.p0[1], body = [];
@@ -90,7 +96,7 @@ const GPU_ENV = Object.assign({}, process.env, { __NV_PRIME_RENDER_OFFLOAD: '1',
   await beat('x02');
   await pg.click('#wing-2d-canvas'); await sleep(1800);
   const cv = await pg.evaluate(() => { const r = document.getElementById('wing-2d-canvas').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-  await pg.mouse.move(cv.x, cv.y + 80); for (let i = 0; i < 3; i++) { await pg.mouse.wheel({ deltaY: -240 }); await sleep(300); }
+  await pg.mouse.move(cv.x, cv.y + 80); await pg.mouse.wheel({ deltaY: -200 }); await sleep(300);
   await sleep(1500); await pg.mouse.down(); await pg.mouse.move(cv.x + 160, cv.y + 40, { steps: 30 }); await pg.mouse.up(); await sleep(1500);
   const tabs = await pg.evaluate(() => [...document.querySelectorAll('#wing-2d-overlay button')].map(b => b.textContent).filter(t => t !== 'Save' && t !== 'Cancel')); fact('tabs', tabs);
   const visit = async name => { await pg.evaluate(n => { const b = [...document.querySelectorAll('#wing-2d-overlay button')].find(x => x.textContent === n); if (b) b.scrollIntoView({ inline: 'center' }); }, name); await sleep(400);
