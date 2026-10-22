@@ -117,6 +117,7 @@
       var fl = createLine(self, ctx, null, vcr.account_id, self.as.c_currency_id, bal.signum() < 0 ? post : null, bal.signum() < 0 ? null : post);   // setAmtSource(cur, DR|CR = getPostBalance) then convert(); AD_Org_ID = the segment key
       if (fl) fl.ad_org_id = k; });
   };
+  var LBL_BREAK = (typeof process !== 'undefined' && process.env && process.env.LBL_BREAK) || '';   // witness negative controls only (W-ASI-BATCHREV): nofind = findReversalCostDetailAmt finds nothing; norevmas = the reversal line's MA rows are not read
   var BREAK_SEG = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) === 'nosegments';   // witness negative control only (W-POST-MOVEMENT)
 
   // ══ Doc / DocLine / FactLine — the faithful framework (acct/Doc.java, DocLine.java, Fact.java :112-170, FactLine.java) ══
@@ -226,6 +227,11 @@
     }
     return pc(null);
   }
+  // Doc_InOut.findReversalCostDetailAmt :1128-1139 - the Amt of the ORIGINAL line's cost detail for this instance (schema + ASI + M_InOutLine + product); null when there is none
+  function findReversalCostDetailAmt(trx, as, productId, ma, reversalLineId) {
+    var cd = trx.find('m_costdetail', { c_acctschema_id: as.c_acctschema_id, m_attributesetinstance_id: ma.m_attributesetinstance_id || 0, m_inoutline_id: reversalLineId, m_product_id: productId })[0];
+    return cd && LBL_BREAK !== 'nofind' ? D(cd.amt) : null;
+  }
   // Doc_InOut — loadDocumentDetails :84-113, loadLines :121-153, createFacts :185-1120 (MMS-SO, MMR-PO ported; MMR-SO / MMS-PO named)
   function Doc_InOut(trx, io, as, F) {
     var dt = T.dt(trx, io.c_doctype_id), so = Y(io.issotrx), dbt = dt.docbasetype, M = mc();
@@ -252,7 +258,7 @@
           }
         } else {
           costs = Z;                                                                           // :266-270 "temp to avoid NPE"
-          if (batchLot && !nz(line.m_attributesetinstance_id)) { F.err = 'Doc_InOut batch-lot reversal (findReversalCostDetailAmt, Doc_InOut.java:343-348) — §MODEL-UNPORTED-DEP'; return false; }
+          if (batchLot && !nz(line.m_attributesetinstance_id) && LBL_BREAK !== 'norevmas') mas = trx.find('m_inoutlinema', { m_inoutline_id: line.id });   // :330-338 the reversal line's own (negated) MA rows
         }
         var dr = createLine(F, ctx, line, productAcct(trx, line.m_product_id, 'p_cogs_acct', as), as.c_currency_id, costs, null);
         if (!dr) { F.err = 'FactLine DR not created: ' + line.id; return false; }
@@ -274,9 +280,12 @@
         if (nz(line.reversalLine_ID) && laterThan(line.id, line.reversalLine_ID)) { var ocd = M.getShipment(trx, as, line.m_product_id, line.m_attributesetinstance_id || 0, line.reversalLine_ID, 0); if (ocd) refCd = ocd.m_costdetail_id; }
         if (batchLot && !nz(line.m_attributesetinstance_id) && mas && mas.length) {
           for (var j = 0; j < mas.length; j++) { var ma = mas[j], q = D(ma.movementqty); if (q.signum() !== line.qty.signum()) q = q.negate();
-            var amt = ma._cost; if (amt == null) amt = costs.divide(line.pcQty, costs.scale(), HU).multiply(q);
-            else if (line.pcQty.signum() !== line.qty.signum() && amt.signum() !== costs.signum() * -1) amt = amt.negate();
-            if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, ma.m_attributesetinstance_id, line.id, 0, amt, q, line.description, true, line.dateAcct || ctx.dateAcct, 0)) { F.err = 'Failed to create cost detail record'; return false; } }
+            var amt = ma._cost;                                                                // batchLotCostMap.get(ma) (non-reversal lines only)
+            if (amt == null && rev) { amt = findReversalCostDetailAmt(trx, as, line.m_product_id, ma, line.reversalLine_ID); if (amt != null) amt = amt.negate(); }   // :342-348
+            if (amt == null) amt = costs.divide(line.pcQty, costs.scale(), HU).multiply(q);
+            else if (!rev && line.pcQty.signum() !== line.qty.signum() && amt.signum() !== costs.signum() * -1) amt = amt.negate();   // :357-363
+            var refMa = 0; if (nz(line.reversalLine_ID) && laterThan(line.id, line.reversalLine_ID)) { var ocdMa = M.getShipment(trx, as, line.m_product_id, ma.m_attributesetinstance_id || 0, line.reversalLine_ID, 0); if (ocdMa) refMa = ocdMa.m_costdetail_id; }   // :363-370 per-MA Ref_CostDetail_ID
+            if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, ma.m_attributesetinstance_id, line.id, 0, amt, q, line.description, true, line.dateAcct || ctx.dateAcct, refMa)) { F.err = 'Failed to create cost detail record'; return false; } }
         } else {
           var amt2 = costs; if (line.pcQty.signum() !== line.qty.signum() && !rev) amt2 = amt2.negate();   // :386-387 / :414-415 (not for a reversal)
           if (!M.createShipment(trx, as, line.ad_org_id, line.m_product_id, line.m_attributesetinstance_id || 0, line.id, 0, amt2, line.qty, line.description, true, line.dateAcct || ctx.dateAcct, refCd)) { F.err = 'Failed to create cost detail record'; return false; }
