@@ -19,7 +19,8 @@
     "Steel section": [0.42, 0.47, 0.53],
     "Steel plate": [0.34, 0.38, 0.44],
     "Masonry wall": [0.72, 0.60, 0.50],
-    "Concrete blockwork": [0.70, 0.70, 0.68]
+    "Concrete blockwork": [0.70, 0.70, 0.68],
+    "Curtain wall (glazed)": [0.62, 0.74, 0.82]
   },
   "tint": {
     "drawn": null,
@@ -52,6 +53,12 @@
       "rate_ref": {
         "class": "IfcWall"
       }
+    },
+    "IfcCurtainWall": {
+      "material": "Curtain wall (glazed)",
+      "quantity": { "basis": "area", "formula": "A", "unit": "M2" },
+      "why": "§D45: a curtain band is priced per m2 of face at the pack rate, with no thickness factor (its thickness is the mullion depth, not a solid)",
+      "rate_ref": { "class": "IfcCurtainWall" }
     },
     "IfcSlab": {
       "material": "Reinforced concrete",
