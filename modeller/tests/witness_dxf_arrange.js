@@ -124,6 +124,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 
   // ---------- A12 (§D41): the build-up is progressive (phases across all sheets), the caption says which sheet / what was done. Proves/disproves: the old sheet-by-sheet order let the pieces cohere only at the very last step ----------
   if (SHED_RAW && RAW9.every(n => fs.existsSync(path.join(SHED_RAW, n + '.dxf')))) {
+    await pg.waitForFunction(() => !window.DxfImportUI.state.arr || !window.DxfImportUI.state.arr.playing, { timeout: 120000, polling: 100 }); await sleep(300);   // the play-on-open of A9b must be over (a second arrange() call would only stop it)
     const R12 = await pg.evaluate(() => new Promise(async res => {
       const U = window.DxfImportUI, cen = P => { let x = 0, y = 0, n = 0; for (let i = 0; i < P.length; i += 3) { x += P[i]; y += P[i + 1]; n++; } return [x / n, y / n]; };
       const out = { steps: [], caps: [] }; let prev = null;

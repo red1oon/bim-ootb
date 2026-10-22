@@ -717,14 +717,15 @@
     css();
     var p = state.panel || document.createElement('div'); p.id = 'dxf-panel';
     var h = '<div class="ip-head">' + ICON.layers + '<span class="ip-title">2D DRAWINGS · ' + state.sheets.length + ' SHEETS</span><button class="dxf-x" id="dxf-fold" title="Fold the panel away: more canvas">' + (state.slim ? ICON.foldR : ICON.foldL) + '</button><button class="dxf-x" id="dxf-close" title="Close">' + ICON.x + '</button></div><div id="dxf-body">';
+    // §D40b the two option boxes sit above the sheet list: below it they scrolled out of sight under the footer for a long set (9 sheets)
+    if (state.gate.structure) h += '<label class="dxf-complete" title="Add the floor slab and the gabled roof the drawings imply. They are computed from drawn evidence plus stated conventions, shown amber, and listed as yellow defaults."><input type="checkbox" id="dxf-complete"' + (state.complete ? ' checked' : '') + '> Complete the building (floor slab, roof): amber, estimated</label>';
+    if (state.gate.structure) h += '<label class="dxf-complete" style="color:#9fb4c8" title="Show how each body is evidenced instead of its material: derived = amber, assumed = red. Off: each material in its standard colour."><input type="checkbox" id="dxf-evidence"' + (state.evidence ? ' checked' : '') + '> Evidence colours (drawn / derived / assumed)</label>';
     state.sheets.forEach(function (s) {
       h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
       var L = state.arr && state.arr.live && !state.arr.playing && state.arr.lacks && state.arr.lacks[s.name];   // §D34 the Arrange view: what the effective values do not give
       if (L && L.length) h += '<div class="dxf-pv">Arrange: ' + esc(L.join('; ')) + '</div>';
     });
-    if (state.gate.structure) h += '<label class="dxf-complete" title="Add the floor slab and the gabled roof the drawings imply. They are computed from drawn evidence plus stated conventions, shown amber, and listed as yellow defaults."><input type="checkbox" id="dxf-complete"' + (state.complete ? ' checked' : '') + '> Complete the building (floor slab, roof): amber, estimated</label>';
-    if (state.gate.structure) h += '<label class="dxf-complete" style="color:#9fb4c8" title="Show how each body is evidenced instead of its material: derived = amber, assumed = red. Off: each material in its standard colour."><input type="checkbox" id="dxf-evidence"' + (state.evidence ? ' checked' : '') + '> Evidence colours (drawn / derived / assumed)</label>';
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
