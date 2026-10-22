@@ -37,6 +37,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
       document.addEventListener('mouseup', () => { d.style.transform = ''; }, true); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mk); else mk(); });
   const cdp = await pg.createCDPSession();
+  const SAVED = path.join(OUT, 'saved'); fs.rmSync(SAVED, { recursive: true, force: true }); fs.mkdirSync(SAVED, { recursive: true });
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: SAVED }).catch(() => cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: SAVED }));
   const fact = (k, v) => console.log('§FILM_FACT ' + k + ' ' + (typeof v === 'string' ? v : JSON.stringify(v)));
   const FR = path.join(OUT, 'frames'); fs.rmSync(FR, { recursive: true, force: true }); fs.mkdirSync(FR, { recursive: true });
   const frames = []; let nf = 0, lastDim = '';
@@ -65,6 +67,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
       if ((want < 0 && st <= 0) || (want > 0 && st >= mxs - 1)) return;
       if (mx < b.x + 20 || mx > b.x + b.w - 20 || my < b.y + 20 || my > b.y + b.h - 20) await moveTo(b.x + b.w * .55, b.y + b.h * .5, 450);
       await pg.mouse.wheel({ deltaY: Math.sign(want) * Math.min(step, Math.abs(want)) }); await sleep(pace); } };
+  const pick = async (sel, v) => { await pointAt(sel); await sleep(300); await pg.select(sel, v); await sleep(200); await idle(); };
   const wheelTop = async () => { const b = await bodyRect(); await moveTo(b.x + b.w * .55, b.y + b.h * .5, 450); for (let g = 0; g < 80 && (await pg.$eval('#dm-body', e => e.scrollTop)) > 0; g++) { await pg.mouse.wheel({ deltaY: -120 }); await sleep(60); } };
   const inPanel = sel => pg.$eval(sel, e => !!e.closest('#dm-body')).catch(() => false);
   const pointAt = async (sel, ms, side) => { if (await inPanel(sel)) await wheelTo(sel); const r = await rect(sel); await moveTo(side ? r.x + r.w - Math.min(70, r.w * .15) : r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, ms); return r; };
@@ -81,7 +84,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   // the camera: frame the arrangement (or the canvas group) in the strip the panels leave free
   const camFrame = (dirDeg, elDeg, fill, ms) => pg.evaluate((dirDeg, elDeg, fill, ms) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
       const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets'), bb = new T.Box3().setFromObject(g), ctr = bb.getCenter(new T.Vector3()), rad = bb.getSize(new T.Vector3()).length() / 2;
-      const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
+      const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
       const fw = (x1 - x0) / innerWidth, a = dirDeg * Math.PI / 180, e = elDeg * Math.PI / 180, vfov = c.fov * Math.PI / 180, hfov = 2 * Math.atan(Math.tan(vfov / 2) * c.aspect * fw);
       const dist = rad / Math.sin(Math.min(vfov, hfov) / 2) * fill, dir = new T.Vector3(Math.cos(e) * Math.cos(a), Math.cos(e) * Math.sin(a), Math.sin(e));
       const right = new T.Vector3().crossVectors(dir.clone().negate(), new T.Vector3(0, 0, 1)).normalize(), ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, hw = dist * Math.tan(vfov / 2) * c.aspect;
@@ -103,11 +106,23 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const logHas = re => plog.filter(t => re.test(t));
 
   // ================= TAKE =================
+  const readMarks = f => marks(f).map(e => e['1'].replace(/ @BY=.*/, ''));
+  const markedOf = name => dxfs(MARKED).find(f => path.basename(f).startsWith(name.replace(/\.dxf$/i, '') + '_marked'));
+  const strip = (async () => 0);
+  // §FILM_SHARE: how much of the role sheets lies inside the free canvas strip, every 2 s (a witness of "always in frame")
+  const shareNow = () => pg.evaluate(() => { try { const A = window.A, T = window.THREE, U = window.DxfImportUI.state, g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (!g) return null;
+      const role = new Set(U.arr ? U.arr.items.filter(it => it.view).map(it => it.name) : Object.keys(U.canvas || {})); const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect();
+      const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })), v = new T.Vector3(); let n = 0, inn = 0;
+      g.traverse(o => { const nm = o.userData && (o.userData.arrSheet || o.userData.dxfSheet); if (!o.geometry || !o.geometry.attributes.position || !nm || !role.has(nm)) return; const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i += 30) { v.set(a[i], a[i + 1], a[i + 2]).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) inn++; } });
+      return n ? inn / n : null; } catch (e) { return null; } });
+  let tScreen0 = 0; const shares = []; let sampling = false;
+  const sampler = setInterval(async () => { if (!sampling || !tScreen0) return; const sh = await shareNow().catch(() => null); if (sh !== null) { shares.push([now() - tScreen0, sh]); console.log('§FILM_SHARE t=' + (now() - tScreen0).toFixed(1) + ' share=' + sh.toFixed(2) + ' beat=' + beatId); } }, 2000);
+
   await fresh();
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 }); tScreen0 = now(); sampling = true;
   await sleep(600);
-  const STEP_MS = 900, HOLD_MS = Math.max(3000, Math.round(((BEAT_MIN.w01 || 12) - 7.5) * 1000));   // the pile holds while w01 is told: beat start -> play start is about 6.3 s (take1)
-  // ---- chapter 1 AS DRAWN: the raw set opens; the play starts on open and holds the pile first ----
+  const STEP_MS = 900, HOLD_MS = Math.max(3000, Math.round(((BEAT_MIN.w01 || 12) - 7.5) * 1000));
+  // ---- chapter 1 AS DRAWN ----
   chapter(1, 'drawn'); await beat('w01'); await sleep(2500);
   await arm(STEP_MS, HOLD_MS);
   const rawFiles = dxfs(RAW); fact('sheets', String(rawFiles.length)); fact('raw_marks', String(rawFiles.reduce((s, f) => s + marks(f).length, 0)));
@@ -126,73 +141,117 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const startLog = logHas(/§DXF-ARRANGE start /)[0] || ''; fact('steps', ((/steps=(\d+)/.exec(startLog)) || [])[1] || 'none'); fact('yellow_steps', ((/yellow=(\d+)/.exec(startLog)) || [])[1] || 'none');
   const half = Math.floor(Number(((/steps=(\d+)/.exec(startLog)) || [])[1]) / 2);
   await pg.waitForFunction(h => window.__steps.length >= h, { timeout: 120000, polling: 50 }, half);
-  await beat('w03'); const mid = await pg.evaluate(() => window.__steps[window.__steps.length - 1]); fact('mid_step', mid);
+  await beat('w03');
   await pg.waitForFunction(() => { const A = window.DxfImportUI.state.arr; return !A || !A.playing; }, { timeout: 240000, polling: 100 });
   fact('play_s', ((now() - t0play)).toFixed(1));
-  const doneLog = logHas(/§DXF-ARRANGE done /)[0] || ''; fact('play_ms', ((/ ms=(\d+)/.exec(doneLog)) || [])[1] || 'none'); fact('final_equal', ((/final_equal=(\w+)/.exec(doneLog)) || [])[1] || 'none');
-  const lvSteps = await pg.evaluate(() => window.__steps.filter(s => s.key === 'LEVEL')); fact('level_steps', String(lvSteps.length)); fact('level_value', lvSteps.length ? lvSteps[0].value : 'none');
   { const ks = await pg.evaluate(() => window.__steps.map(x => x.key)), ph = k => k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4;
     [1, 2, 3, 4].forEach(q => fact('phase' + q, String(ks.filter(k => ph(k) === q).length))); }
+  const lvSteps = await pg.evaluate(() => window.__steps.filter(s => s.key === 'LEVEL')); fact('level_steps', String(lvSteps.length)); fact('level_value', lvSteps.length ? lvSteps[0].value : 'none');
   await sleep(800); const as = await arrState(); fact('tinted', String(as ? as.tinted : 'none')); fact('tinted_inferred', String(as ? as.tintInf : 'none'));
-  await camFrame(-62, 24, 1.0, 2800); await beat('w04'); await sleep(2500);
-  // ---- chapter 3 ONE HEIGHT MISSING ----
-  chapter(3, 'height');
-  await beat('w05'); await backdrop(3);
+  await beat('w04'); await sleep(2500);
+  // ---- chapter 3 WHAT A PERSON STATES ----
+  chapter(3, 'states'); await beat('w05'); await backdrop(3);
   const v0 = await verdict(); fact('open_blocking', String(v0.blocking)); fact('open_yellow_rows', String(await yrows()));
-  await wheelTop(); await acceptY(); await sleep(1500);   // yellow until it is yours: Accept all makes every defaulted value yours
-  const v0b = await verdict(); fact('after_accept_blocking', String(v0b.blocking)); fact('after_accept_codes', v0b.codes); fact('after_accept_yellow', String(await yrows()));
-  await clickAt('#dxf-convert', 800); await sleep(1500);
-  fact('convert_refused', await pg.$eval('#dxf-status', e => e.innerText.trim())); await pointAt('#dxf-status', 700); await sleep(1500);
-  // the five second heights are READ from the CLI-marked set's own @Z markings (the larger of each sheet's two), then typed over the same sheets in the page
+  await wheelTop(); await acceptY(); await sleep(1500);
+  const v1 = await verdict(); fact('after_accept_blocking', String(v1.blocking)); fact('after_accept_yellow', String(await yrows()));
+  await clickAt('#dxf-convert', 800); await sleep(1500); fact('convert_refused', await pg.$eval('#dxf-status', e => e.innerText.trim())); await pointAt('#dxf-status', 700); await sleep(1200);
+  await clickAt('#dxf-fold', 600); await sleep(500);   // D39: more canvas for the typing that follows
   const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
-  const second = {}; dxfs(MARKED).forEach(f => { const m = marks(f).filter(e => /^@Z=/.test(e['1'])); if (m.length >= 2) { const z = m.map(e => ({ z: Number(/^@Z=(\S+)/.exec(e['1'])[1]), y: e['20'] })).sort((a, b) => b.z - a.z)[0]; second[path.basename(f).replace(/_marked\.dxf$/i, '')] = z; } });
-  fact('second_heights', second); fact('second_z', String(Object.values(second)[0].z));
+  const roleOf = {}; names.forEach(n => { const f = markedOf(n), v = f && readMarks(f).find(m => /^@VIEW=/.test(m)); roleOf[n] = v ? v.replace('@VIEW=', '') : null; });
+  const slow = { set: true, z: true, layer: true, bz: true };   // the first of each kind is typed slowly, the rest fast
+  // (a) the set name: one word, READ from the marked set, fills the SET row of every sheet
   await beat('w06');
-  await clickAt('#dxf-fold', 600); await sleep(500);   // D39: the 2D Drawings panel folds away, the metadata panel gives the canvas more room
-  await camFrame(-62, 24, 0.9, 2200); orbitZ(70, 60000).catch(() => { });   // the canvas keeps moving while the heights are typed (not awaited; the page is reloaded for chapter 4)
-  let typed = 0; for (let si = 0; si < names.length; si++) { const key = names[si].replace(/\.dxf$/i, ''), z = second[key]; if (!z) continue; const fast = typed > 0;
+  const setName = readMarks(markedOf(names[0])).find(m => /^@SET=/.test(m)).replace('@SET=', ''); fact('set_name', setName);
+  if (!(await pg.$('#dm-f-0-SET'))) await clickEl('#dm-panel [data-act="card"][data-sheet="0"]', 700);
+  await wheelTo('#dm-f-0-SET', { step: 120, pace: 60 }); await typeIn('#dm-f-0-SET', setName); await idle(); fact('set_rows', String(await yrows())); await sleep(1200); await acceptY(); await sleep(800);
+  const v2 = await verdict(); fact('after_set_blocking', String(v2.blocking));
+  // (b) the second height of each elevation / section: the panel asks; the values are READ from the marked set's own @Z markings
+  await beat('w07');
+  const second = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; const m = marks(f).filter(e => /^@Z=/.test(e['1'])); if (m.length >= 2) { const z = m.map(e => ({ z: Number(/^@Z=(\S+)/.exec(e['1'])[1]), y: e['20'] })).sort((a, b) => b.z - a.z)[0]; second[n] = z; } });
+  fact('second_z', String(Object.values(second)[0].z)); let typed = 0;
+  for (let si = 0; si < names.length; si++) { const z = second[names[si]]; if (!z) continue; const fast = typed > 0;
     if (!(await pg.$('#dm-av-' + si + '-Z'))) await clickEl('#dm-panel [data-act="card"][data-sheet="' + si + '"]', fast ? 300 : 700);
     await wheelTo('#dm-av-' + si + '-Z', { step: 120, pace: fast ? 25 : 60 });
     if (!fast) { fact('height_question', await pg.evaluate(si => { const v = document.getElementById('dm-av-' + si + '-Z'), q = v.closest('.dm-row').previousElementSibling; return q && q.classList.contains('dm-ask') ? q.innerText : 'none'; }, si)); await sleep(2500); }
     await typeIn('#dm-av-' + si + '-Z', z.z, fast); await typeIn('#dm-ap-' + si + '-Z', z.y, fast);
     await clickEl('#dm-panel [data-act="add"][data-sheet="' + si + '"][data-group="Z"]', fast ? 250 : 600); typed++; await sleep(fast ? 150 : 400); }
-  fact('heights_typed', String(typed)); await wheelTop();
-  fact('yellow_rows_after_typing', String(await yrows())); await acceptY(); await sleep(1500);
-  const as2 = await arrState(); fact('tinted_after', String(as2 ? as2.tinted : 0)); const v1 = await verdict(); fact('blocking_after_heights', String(v1.blocking)); fact('codes_after_heights', v1.codes);
-  // ---- chapter 4 ONE SHED: the processed set opens placed, with no replay (§D38) ----
-  chapter(4, 'shed'); await beat('w07'); await backdrop(4);
-  const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
-  await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(dxfs(MARKED)); await sleep(2500);
-  fact('processed_skip_on_open', String(logHas(/skip-on-open/).length - skip0)); fact('processed_replays', String(logHas(/§DXF-ARRANGE start /).length - start0));
-  fact('processed_blocking', String((await verdict()).blocking)); fact('processed_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
-  await camFrame(-62, 24, 1.0, 2800); await beat('w08');
+  fact('heights_typed', String(typed)); await wheelTop(); await acceptY(); await sleep(800);
+  const v3 = await verdict(); fact('after_heights_blocking', String(v3.blocking));
+  // (c) what each CAD layer is: the types READ from the marked set's own @LAYER markings, chosen in the Layers section (the layers the set states; the others stay as they are)
+  await beat('w08');
+  const stated = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; readMarks(f).filter(m => /^@LAYER=/.test(m)).forEach(m => { const [l, t] = m.replace('@LAYER=', '').split(','); const role = { PLAN: 'plan', ELEV: 'elev', SECTION: 'section', ROOF: 'roof' }[roleOf[n]]; (stated[role + '|' + l] = stated[role + '|' + l] || new Set()).add(t); }); });
+  fact('layers_to_state', String(Object.keys(stated).length));
+  if (!(await pg.$('#dm-panel select[data-act="layer"]'))) await clickEl('#dm-panel [data-sec="layers"]', 700);
+  let nLay = 0; for (const key of Object.keys(stated)) { const [role, layer] = key.split('|'), t = [...stated[key]]; if (t.length !== 1) { fact('layer_mixed', key); continue; } const ui = t[0] === 'elevdoor' ? 'door' : t[0];
+    const sel = '#dm-panel select[data-act="layer"][data-role="' + role + '"][data-layer="' + layer.replace(/"/g, '\\"') + '"]:not([data-sheet])'; if (!(await pg.$(sel))) { fact('layer_missing', key); continue; }
+    const fast = nLay > 0; await wheelTo(sel, { step: 120, pace: fast ? 25 : 60 }); await pointAt(sel, fast ? 240 : 650); await sleep(fast ? 80 : 300); await pg.select(sel, ui); await sleep(fast ? 100 : 250); await idle(); nLay++; }
+  fact('layers_stated', String(nLay)); const v4 = await verdict(); fact('after_layers_blocking', String(v4.blocking)); await sleep(1200);
+  // (d) the body heights no elevation shows, READ from @BODYZ
+  await beat('w09');
+  const bz = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; readMarks(f).filter(m => /^@BODYZ=/.test(m)).forEach(m => { const [kind, a, b] = m.replace('@BODYZ=', '').split(','); bz[kind] = [a, b]; }); });
+  if (!(await pg.$('#dm-panel [data-bodyz]'))) { const h = await pg.$('#dm-panel [data-sec="bodyz"]'); if (h) await clickEl('#dm-panel [data-sec="bodyz"]', 700); }
+  const waiting = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel [data-bodyz]')].map(e => e.dataset.bodyz)); fact('bodyz_waiting', waiting);
+  let nBz = 0; for (const kind of Object.keys(bz)) { if (!(await pg.$('#dm-bz-' + kind + '-0'))) continue; const fast = nBz > 0; await wheelTo('#dm-bz-' + kind + '-0', { step: 120, pace: fast ? 25 : 60 });
+    await typeIn('#dm-bz-' + kind + '-0', bz[kind][0], fast); await typeIn('#dm-bz-' + kind + '-1', bz[kind][1], fast); await clickEl('#dm-panel [data-act="bodyzadd"][data-kind="' + kind + '"]', fast ? 250 : 600); nBz++; await sleep(300); }
+  fact('bodyz_typed', String(nBz)); const v5 = await verdict(); fact('after_bodyz_blocking', String(v5.blocking));
+  // (e) one stray area excluded: a REAL drag with the Exclude tool on the beam plan, from the @EXCLUDE box of the marked set
+  const ex = readMarks(markedOf('3_BEAM_LAYOUT.dxf')).find(m => /^@EXCLUDE=/.test(m)).replace('@EXCLUDE=', '').split(',').map(Number); fact('exclude_from_set', ex.join(','));
+  const exStatus0 = await pg.$eval('#dxf-status', e => e.innerText.trim());
+  if (!(await pg.$('#dm-panel [data-act="exsheet"]'))) await clickEl('#dm-panel [data-sec="excludes"]', 700);
+  await wheelTo('#dm-panel [data-act="exsheet"]', { step: 120, pace: 40 }); await pick('#dm-panel [data-act="exsheet"]', '3_BEAM_LAYOUT.dxf'); await clickAt('#dm-panel [data-act="tool"][data-tool="exclude"]', 650); await sleep(300);
+  const kz = await pg.evaluate(() => { const c = window.DxfImportUI.state.canvas['3_BEAM_LAYOUT.dxf']; return { k: c.k, z: c.z }; });
+  await pg.evaluate((ex, k, z) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, cx = (ex[0] + ex[2]) / 2 * k, cy = (ex[1] + ex[3]) / 2 * k;
+    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
+    const p0 = c.position.clone(), q0 = ctl.target.clone(), q1 = new T.Vector3(cx, cy, z), p1 = new T.Vector3(cx, cy - 4, z + 30); c.up.set(0, 0, 1);
+    const save = { p: c.position.clone(), q: ctl.target.clone() }; c.position.copy(p1); ctl.target.copy(q1); ctl.update(); c.updateMatrixWorld();
+    const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect, sh = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw);
+    const P1 = p1.clone().add(sh), Q1 = q1.clone().add(sh); c.position.copy(p0); ctl.target.copy(q0); ctl.update(); const t0 = performance.now();
+    (function step() { const kk = Math.min(1, (performance.now() - t0) / 2200), s = kk < .5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (kk < 1) requestAnimationFrame(step); else res(); })(); }), ex, kz.k, kz.z);
+  await sleep(500);
+  const px = await pg.evaluate((ex, k, z) => { const A = window.A, T = window.THREE, cv = A.renderer.domElement.getBoundingClientRect(), f = (x, y) => { const v = new T.Vector3(x * k, y * k, z).project(A.camera); return [cv.left + (v.x + 1) / 2 * cv.width, cv.top + (1 - v.y) / 2 * cv.height]; }; return { a: f(ex[0], ex[1]), b: f(ex[2], ex[3]) }; }, ex, kz.k, kz.z);
+  await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(900); await idle();
+  fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
+  const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
+  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1500);
+  // ---- chapter 4 ONE SHED: Complete the building, Convert, the panels away, the finish ----
+  chapter(4, 'shed'); await beat('w10'); await backdrop(4);
+  await clickAt('#dxf-fold', 500); await sleep(400);   // unfold: the option boxes are in this panel
   if (await pg.$('#dxf-complete')) { await clickAt('#dxf-complete', 700); await sleep(600); } fact('complete_ticked', String(await pg.evaluate(() => { const e = document.getElementById('dxf-complete'); return !!(e && e.checked); })));
   await clickAt('#dxf-convert', 800); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 }); await sleep(2500);
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
-    fact('n_slab', String(sum(/IfcSlab$/))); fact('n_roof', String(sum(/IfcRoof$/))); fact('n_covering', String(sum(/IfcCovering$/)));
-    fact('n_columns', String(sum(/IfcColumn$/))); fact('n_beams', String(sum(/IfcBeam$/))); fact('n_footings', String(sum(/IfcFooting$/))); fact('n_walls', String(sum(/IfcWall$/))); fact('n_members', String(sum(/IfcMember$/))); }
-  // the finished shed: the product's own zoom-to-fit, then slid into the free strip right of the panels, closer, and one slow fly round it
+    ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
+  // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
+  const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
+  let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
+  await sleep(1200); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f)).sort(); fact('saved_n', String(saved.length));
+  await clickAt('#dm-close', 600); await sleep(400); await clickAt('#dxf-fold', 500); await sleep(500);   // what is not needed any more is folded away: the canvas is all the shed
   await clickAt('#b-fit', 700); await sleep(1800);
   await pg.evaluate(() => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
-    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
+    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
     c.updateMatrixWorld(); const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect;
     const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now();
-    (function step() { const k = Math.min(1, (performance.now() - t0) / 2600), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - 0.28 * s);
+    (function step() { const k = Math.min(1, (performance.now() - t0) / 2600), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - 0.22 * s);
       ctl.target.copy(tg); c.position.copy(tg).add(d); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }));
   await orbitZ(110, 14000);
-  // ---- chapter 5 LIMITS ----
-  chapter(5, 'limits'); await beat('l01'); await backdrop(5);
-  const LIM = ['The layer types, the body heights and one excluded area of the processed set were stated by the product\'s command line with the owner\'s settings; they are not typed in this take.',
-    'A set whose plans state no level gets level 0 as an orange default; a plan title that names a storey is refused, its level is yours to state.',
-    'After Accept all and ' + typed + ' stated heights, ' + v1.blocking + ' items still block Convert here: layer types, body heights and the roof are not stated in this take.',
-    'The sheets here are a client\'s private drawings; the set is not published.',
-    'Recorded on a desktop browser at 133 % zoom; a phone is not measured.'];
+  // ---- chapter 5 OPENS PLACED NEXT TIME ----
+  chapter(5, 'placed'); await beat('w11'); await backdrop(5);
+  const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
+  await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(saved.map(f => path.join(SAVED, f))); await sleep(2500);
+  fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
+  { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
+  await sleep(1500);
+  // ---- closing card ----
+  chapter(6, 'close'); await beat('l01');
+  const LIM = ['Not shown: doors and windows as schedules (rows and tags), and the rules that read the roof beyond the default.',
+    'The values typed here are the ones this drawing set states in its own saved markings; a different set asks for its own.'];
   fact('limits', LIM);
-  await card('<div style="font-size:19px;color:#9aa3b2;letter-spacing:3px;margin-bottom:20px">WHAT THIS FILM DOES NOT SHOW, AND WHAT IS NOT DONE YET</div><div style="text-align:left;font-size:21px;line-height:1.75;max-width:1200px">' + LIM.map(x => '· ' + esc(x)).join('<br>') + '</div>');
+  await card('<div style="font-size:19px;color:#9aa3b2;letter-spacing:3px;margin-bottom:20px">WHAT THIS FILM DOES NOT SHOW</div><div style="text-align:left;font-size:21px;line-height:1.75;max-width:1200px">' + LIM.map(x => '· ' + esc(x)).join('<br>') + '</div>');
   await beat('end');
   await card('<div style="font-size:20px;color:#9aa3b2;line-height:1.8">A common BricsCAD 2D set: nine drawings, one shed<br>Modeller: red1oon.github.io/bim-ootb/modeller · every number from this take</div>');
   await hold(); await sleep(1200);
+  sampling = false; clearInterval(sampler);
+  { const inCh = shares.filter(([t, v]) => t > 8); const mn = inCh.length ? Math.min(...inCh.map(x => x[1])) : null; console.log('§FILM_SHARE_SUMMARY samples=' + shares.length + ' min=' + (mn === null ? 'n/a' : mn.toFixed(2)) + ' below0.6=' + inCh.filter(x => x[1] < 0.6).map(x => x[0].toFixed(0) + 's').join(',')); }
   await cdp.send('Page.stopScreencast'); await br.close();
   const t0 = frames[0].ts, lines = [];
   frames.forEach((fr, i) => { const d = i + 1 < frames.length ? Math.max(0.001, frames[i + 1].ts - fr.ts) : 1.0; lines.push("file '" + fr.f + "'", 'duration ' + d.toFixed(4)); });
@@ -201,7 +260,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   console.log('§FILM_SYNC firstFrame=' + t0.toFixed(3) + ' firstBeat=' + beatLog[0][1].toFixed(3) + ' lastFrame=' + frames[frames.length - 1].ts.toFixed(3) + ' frames=' + frames.length + ' ffmpeg_rc=' + mk.status + ' ' + (mk.stderr || '').slice(0, 200));
   beatLog.forEach(([id, ep]) => console.log('§FILM_BEAT id=' + id + ' t=' + Math.max(0, ep - t0).toFixed(3)));
   chapLog.forEach(([n, key, ep]) => console.log('§FILM_CHAPTER n=' + n + ' key=' + key + ' t=' + Math.max(0, ep - t0).toFixed(3)));
-  fs.writeFileSync(path.join(OUT, 'backdrops.txt'), chapLog.map(([n]) => 'c' + n + ' ' + path.join(OUT, 'bd' + n + '.png')).join('\n') + '\n');
+  fs.writeFileSync(path.join(OUT, 'backdrops.txt'), chapLog.filter(([n]) => n <= 5).map(([n]) => 'c' + n + ' ' + path.join(OUT, 'bd' + n + '.png')).join('\n') + '\n');
   fs.writeFileSync(path.join(OUT, 'page.log'), plog.join('\n'));
   fs.rmSync(FR, { recursive: true, force: true });
   console.log('§FILM_REC sec=' + (frames[frames.length - 1].ts - t0 + 1).toFixed(1) + ' out=' + path.join(OUT, 'film.mp4'));

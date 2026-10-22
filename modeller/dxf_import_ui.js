@@ -154,6 +154,7 @@
     });
     A.scene.add(g); state.group = g; g.visible = state.linesOn && !(state.arr && state.arr.live);   // §D34: hidden while the Arrange view stands in for it
     if (!noFrame) frameObject(g);
+    { var gb = new THREE.Box3().setFromObject(g); if (!gb.isEmpty()) gridFollow([[gb.min.x, gb.min.y, gb.min.z], [gb.max.x, gb.max.y, gb.max.z]]); }
     return g;
   }
   function frameObject(obj) {   // camera only (the Modeller's iso direction, as frameBox)
@@ -303,12 +304,12 @@
     var q = ax.map(function (v) { v.sort(function (x, y) { return x - y; }); return [v[Math.floor(v.length * 0.01)], v[Math.min(v.length - 1, Math.ceil(v.length * 0.99) - 1)]]; });
     return [[q[0][0], q[1][0], q[2][0]], [q[0][1], q[1][1], q[2][1]]];
   }
-  function camFor(b, dir) {   // frameObject's view of a box (dir: §D36 the fly's view direction, default the iso one), fitted into the canvas strip the panels leave free (right of the open panels, as the editor's zoom)
+  function camFor(b, dir, tight) {   // frameObject's view of a box (dir: §D36 the fly's view direction, default the iso one), fitted into the canvas strip the panels leave free (right of the open panels, as the editor's zoom)
     var THREE = window.THREE, A = window.A, c = new THREE.Vector3((b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, (b[0][2] + b[1][2]) / 2), r = Math.max(b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2], 0.5) * 0.5;
     var cv = A.renderer.domElement.getBoundingClientRect(), pr = cv.left;
     ['dxf-panel', 'dm-panel'].forEach(function (id) { var e = document.getElementById(id); if (e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0) pr = Math.max(pr, e.getBoundingClientRect().right); });
     var W = Math.max(cv.right - pr - 24, cv.width * 0.3), th = Math.tan((A.camera.fov * Math.PI / 180) / 2);
-    var dist = Math.max(r / th, r / (th * W / cv.height)) * 1.3 + r, d = (dir ? dir.clone() : new THREE.Vector3(1, -1, 1.3)).normalize(), p = c.clone().addScaledVector(d, dist), t = c.clone();
+    var dist = tight ? Math.max(r / th, r / (th * W / cv.height)) * 0.9 + r * 0.1 : Math.max(r / th, r / (th * W / cv.height)) * 1.3 + r, d = (dir ? dir.clone() : new THREE.Vector3(1, -1, 1.3)).normalize(), p = c.clone().addScaledVector(d, dist), t = c.clone();
     var dxPx = (pr + (cv.right - pr) / 2) - (cv.left + cv.width / 2);
     if (dxPx > 0) { var m = new THREE.Matrix4().lookAt(p, t, new THREE.Vector3(0, 0, 1)), right = new THREE.Vector3().setFromMatrixColumn(m, 0), wpp = 2 * dist * th / cv.height; right.multiplyScalar(-dxPx * wpp); p.add(right); t.add(right); }
     return { t: t, p: p };
@@ -369,6 +370,16 @@
     document.body.classList.toggle('dxf-slim', on); if (p) p.classList.toggle('dxf-slimmed', on);
     var f = document.getElementById('dxf-fold'); if (f) { f.innerHTML = state.slim ? ICON.foldR : ICON.foldL; f.title = state.slim ? 'Unfold the panel' : 'Fold the panel away: more canvas'; }
   }
+  // ---- §D42 fill the canvas, the grid under the build ----
+  function viewBoxOf(items, pick) { return boxOf(items.filter(function (o) { return o.view; }).map(pick)); }
+  function gridFollow(b) {
+    var A = window.A, G = A && A.scene && A.scene.children.filter(function (o) { return o.type === 'GridHelper'; })[0]; if (!G) return;
+    if (!G.userData.dxfHome) G.userData.dxfHome = { p: G.position.clone(), s: G.scale.clone() };
+    if (!b) { G.position.copy(G.userData.dxfHome.p); G.scale.copy(G.userData.dxfHome.s); return; }
+    var sx = b[1][0] - b[0][0], sy = b[1][1] - b[0][1], side = Math.max(sx, sy, 1), f = Math.max(1, Math.ceil(side * 1.6 / 40));
+    G.scale.set(f, 1, f); var q = 10 * f; G.position.set(Math.round((b[0][0] + b[1][0]) / 2 / q) * q, Math.round((b[0][1] + b[1][1]) / 2 / q) * q, G.userData.dxfHome.p.z);
+    if (A.requestRender) A.requestRender();
+  }
   // ---- §D41 build-up order, the camera on the whole assembly, the caption (prompts/DXF2BIM_ARRANGE.md §D41) ----
   var PHASES = ['Scale', 'Orient', 'Assemble', 'Name'];
   function phaseOf(k) { return k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4; }
@@ -406,9 +417,9 @@
   function capClear() { var c = document.getElementById('dxf-arr-cap'); if (c) c.remove(); }
   function followAll(cur) {   // the camera frames the whole assembly in progress: the moving sheet's current box united with every other sheet's last-applied box
     var A = window.A, R = state.arr, p0 = A.camera.position.clone(), t0 = A.controls.target.clone(), n = 0;
-    var ob = boxOf(R.items.filter(function (o) { return o !== cur; }).map(function (o) { return o.stages[o.applied]; }));
+    var ob = viewBoxOf(R.items.filter(function (o) { return o !== cur; }), function (o) { return o.stages[o.applied]; });
     return function (e, P) { if (!P) return; if (e < 1 && (n++ % 2)) return; var mb = boxOf([P]), b = mb && ob ? [[Math.min(mb[0][0], ob[0][0]), Math.min(mb[0][1], ob[0][1]), Math.min(mb[0][2], ob[0][2])], [Math.max(mb[1][0], ob[1][0]), Math.max(mb[1][1], ob[1][1]), Math.max(mb[1][2], ob[1][2])]] : (mb || ob); if (!b) return;
-      var to = camFor(b), w = ease(Math.min(1, e / 0.5)); A.camera.up.set(0, 0, 1); A.controls.target.lerpVectors(t0, to.t, w); A.camera.position.lerpVectors(p0, to.p, w); A.controls.update(); if (A.requestRender) A.requestRender(); };
+      var to = camFor(b, null, true), w = ease(Math.min(1, e / 0.5)); A.camera.up.set(0, 0, 1); A.controls.target.lerpVectors(t0, to.t, w); A.camera.position.lerpVectors(p0, to.p, w); A.controls.update(); if (A.requestRender) A.requestRender(); };
   }
   function arrange(opts) {
     opts = opts || {};
@@ -431,12 +442,13 @@
     items.forEach(function (it) { if (it.off) console.log(TAGA + ' note sheet=' + it.name + (it.off.ok ? (it.off.x || it.off.y ? ' moves onto ' : ' is already on ') + it.ref.name + ' by its shared grid labels (Dxf2Bodies.planOffset, as Convert\'s bodies): dx=' + Math.round(it.off.x * 1e6) / 1e6 + ' dy=' + Math.round(it.off.y * 1e6) / 1e6 + ' m' + ((it.off.x || it.off.y) && !(state.gate && state.gate.structure) ? ' (a wall set: its Convert does not move plans)' : '') : ' stays where drawn: ' + it.off.why.join('; '))); });
     minimise(true); setArrBtn(); status('Arrange: the ' + items.length + ' sheets as drawn, 1 drawing unit = 1 mm, z = 0 (a starting point, not a reading).');
     var pb = {}; ME.pvSet({ bands: pb });
-    var bx = boxOf(items.map(function (it) { return it.stages[0]; }));
+    var bx = viewBoxOf(items, function (it) { return it.stages[0]; }) || boxOf(items.map(function (it) { return it.stages[0]; }));
     R.done = (async function () {
-      if (bx) { var c0 = camTween(camFor(bx)); c0(1); }
+      await new Promise(function (r) { setTimeout(r, 280); });   // §D42 the panels finish their slide (D39) before the frame is computed against the free strip
+      if (bx) { var c0 = camTween(camFor(bx, null, true)); c0(1); gridFollow(bx); }
       arrStyle(null); await tween(holdMs, function () {});
       var p1 = [];
-      var flushUnits = async function () { if (!p1.length) return; var G = p1; p1 = []; var ub = boxOf(items.map(function (o) { return o.stages[o.applied]; })), cu = ub ? camTween(camFor(ub)) : function () { };
+      var flushUnits = async function () { if (!p1.length) return; var G = p1; p1 = []; var ub = viewBoxOf(items, function (o) { return o.stages[o.applied]; }), cu = ub ? camTween(camFor(ub, null, true)) : function () { }; gridFollow(ub);
         await tween(stepMs * 1.8, function (e) { G.forEach(function (g) { arrWrite(g.it, g.mv(e)); if (g.recol) g.it.obj.forEach(function (ls) { ls.material.color.copy(g.cA).lerp(g.cB, ease(e)); }); }); cu(e); }); G.forEach(function (g) { arrWrite(g.it, g.P1); }); };
       for (var i = 0; i < all.length && !R.stop; i++) {
         var it = all[i].it, st = all[i].st, j = it.applied + 1, P0 = it.stages[j - 1], P1 = it.stages[j];
@@ -466,7 +478,8 @@
       R.lacks = {}; items.forEach(function (it) { var L = lacksOf(it); R.lacks[it.name] = L;
         if (!it.view) console.log(TAGA + ' skip sheet=' + it.name + ' why=' + L[0]);
         else console.log(TAGA + ' stands sheet=' + it.name + ' placed=' + (state.canvas && state.canvas[it.name] ? 'canvas' : it.place && it.steps.length && it.need.every(function (k) { return it.steps.some(function (s) { return s.key === k; }); }) ? 'full-preview' : 'partial') + (it.tintFinal ? ' tint=yellow' : '') + (it.defFinal ? ' face=panel.plane-default' : '') + ' lacks=' + (L.join('; ') || 'nothing')); });
-      var fb = boxOf(items.filter(function (it) { return it.view; }).map(function (it) { return it.stages[it.stages.length - 1]; })); if (fb) { var cf = camTween(camFor(fb)); cf(1); }
+      await new Promise(function (r) { setTimeout(r, 280); });   // §D42 the panels are back at their width: the final frame is fitted to the strip they leave
+      var fb = viewBoxOf(items, function (it) { return it.stages[it.stages.length - 1]; }); if (fb) { var cf = camTween(camFor(fb, null, true)); cf(1); gridFollow(fb); }
       R.ms = Math.round(performance.now() - t0); R.cmp = cmp; state.arrLast = { final: R.final, cmp: cmp, steps: R.steps, lacks: R.lacks, ms: R.ms, tinted: items.filter(function (it) { return it.tintFinal; }).map(function (it) { return it.name; }) };
       console.log(TAGA + ' done steps=' + R.steps.length + '/' + all.length + ' ms=' + R.ms + ' final_equal=' + cmp.equal + ' compared=' + cmp.compared + ' worst=' + cmp.worst + (cmp.bad.length ? ' bad=' + cmp.bad.join(',') : '') + ' tinted=' + items.filter(function (it) { return it.tintFinal; }).length);
       var res = { steps: R.steps.length, total: all.length, ms: R.ms, final_equal: cmp.equal, compared: cmp.compared, worst: cmp.worst };
@@ -741,7 +754,7 @@
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
     p.style.display = 'block';
-    document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; applySlim(); };
+    document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; applySlim(); gridFollow(null); };
     document.getElementById('dxf-fold').onclick = function () { state.slim = !state.slim; applySlim(); };
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
     var cb = document.getElementById('dxf-complete');
