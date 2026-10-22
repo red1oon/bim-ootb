@@ -481,7 +481,8 @@
       '.dm-it{display:flex;gap:7px;align-items:flex-start;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:10.5px;line-height:1.35}.dm-it:hover{background:#20232b}.dm-it.nopos{cursor:default}',
       '.dm-it .c{font-family:ui-monospace,monospace;color:#f2a3a3;flex:0 0 auto;width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-it.adv .c{color:#f0c674}.dm-it .m{color:#9aa3b2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
       '#dm-panel .ip-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid #23262e}#dm-note{width:100%;font-size:10.5px;color:#7f8aa0;line-height:1.4}',
-      '@keyframes dmspin{to{transform:rotate(360deg)}}.dm-spin{animation:dmspin 1s linear infinite}'
+      '@keyframes dmspin{to{transform:rotate(360deg)}}.dm-spin{animation:dmspin 1s linear infinite}',
+      '.dm-focus{outline:2px solid #f5d90a!important;outline-offset:1px;border-radius:6px}@keyframes dmpv{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}.dm-pv.dm-new{animation:dmpv .35s ease-out}.dm-pv .dm-later{font-size:9px;color:#8a7d2a;white-space:nowrap}'
     ].join('');
     document.head.appendChild(st);
   }
@@ -546,7 +547,7 @@
         if (v === 'SECTION') h += field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'CUT', 'Cut', mi.miss) + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num');   // §L4.3: the section states @ROOF (§L2.6 E)
         if (v === 'ELEV' || v === 'SECTION') { h += multiBlock(sh, si, ['GRIDH'], 'Grid lines', mi.miss, 'GRIDH') + multiBlock(sh, si, ['Z'], 'Level datums (@Z)', mi.miss, 'Z'); }
         mi.errors.forEach(function (e) { h += '<div class="dm-ref" style="color:#f2a3a3">' + esc(e.code + ' ' + e.message) + '</div>'; });
-        h += proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);
+        h += S.pv ? previewBlock(si) : proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);   // §D34: while the Arrange view stands, the card lists every yellow value placing it (all rounds)
         (sh.prop ? sh.prop.refused : []).filter(function (r) { return r.rule !== 'PR-UNITS'; }).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
         h += '</div>';
       }
@@ -561,7 +562,7 @@
       if (!m) nBad++;
       var p = (sh.prop ? sh.prop.list : []).filter(function (q) { return q.key === 'UNITS'; })[0], pi = p ? sh.prop.list.indexOf(p) : -1;
       h += '<div class="dm-f' + (p && !m ? ' dm-defrow' : '') + '"><label class="' + (m ? '' : 'need') + '" title="' + esc(sh.name) + '" style="width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(sh.name.replace(/\.dxf$/i, '')) + '</label>' +
-        '<select class="dm-sel' + (m ? '' : ' need') + '" data-act="single" data-sheet="' + si + '" data-key="UNITS">' + ['', 'mm', 'cm', 'm', 'in', 'ft'].map(function (u) { return opt(u, m ? m.value : ''); }).join('') + '</select>' +
+        '<select class="dm-sel' + (m ? '' : ' need') + '" id="dm-f-' + si + '-UNITS" data-act="single" data-sheet="' + si + '" data-key="UNITS">' + ['', 'mm', 'cm', 'm', 'in', 'ft'].map(function (u) { return opt(u, m ? m.value : ''); }).join('') + '</select>' +
         '<span class="dm-ref" style="margin:0;flex:1;white-space:nowrap" title="$INSUNITS=' + esc(iu) + '">file says ' + esc(fs || 'nothing') + '</span>' +
         (p && !m ? '<button class="dm-ib" style="border:1px solid #2f6b45;color:#9be0b4" title="Confirm: use the file\'s ' + esc(p.value) + '" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button>' : '') + (m ? srcLabel(m) : '') + '</div>';
     });
@@ -828,6 +829,7 @@
     S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); if (S.draft[k] !== undefined) el.value = S.draft[k]; });
     ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el && S.draft[id] !== undefined) el.value = S.draft[id]; });
     if (fid) { var f = document.getElementById(fid); if (f) { f.focus(); if (focusVal && focusVal.sel === '#' + fid && f.value !== focusVal.v) { f.value = focusVal.v; try { f.setSelectionRange(focusVal.s, focusVal.s); } catch (e) { /* select */ } } } }
+    if (S.focus) focusTargets(S.focus).forEach(function (el) { el.classList.add('dm-focus'); });
     wire();
   }
   function sheetAt(el) { return S.sheets[Number(el.getAttribute('data-sheet'))]; }
@@ -908,6 +910,78 @@
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
   }
+  // ---- §D34 ARRANGE (prompts/DXF2BIM_ARRANGE.md): the effective markings of every sheet = its markings + the yellow suggestions, the later rounds computed
+  // as if the earlier yellow values were in place (a second Dxf2Suggest over shadow copies; nothing is accepted, saved or added to S.sheets) ----
+  var PV_ROUNDS = 6, _pv = null;
+  function preview() {
+    var key = JSON.stringify(S.sheets.map(sigOf)) + '|' + JSON.stringify(S.defaultChoices || {}) + '|' + (S.setOverride || '') + '|' + curSet();
+    if (_pv && _pv.key === key) return _pv.out;
+    var sh0 = S.sheets.map(function (sh) { return { name: sh.name, text: sh.text, dxf: sh.dxf, hatchLayers: sh.hatchLayers, marks: sh.marks.slice() }; });
+    var SG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return sh0; }, gridLayers: gridLayers, levelLayers: levelLayers });
+    var yel = sh0.map(function () { return []; }), refused = sh0.map(function () { return []; }), r;
+    for (r = 1; r <= PV_ROUNDS; r++) {
+      var round = sh0.map(function (sh) { return SG.proposalsFor(sh); }), n = 0;
+      round.forEach(function (P, si) {
+        if (r === 1) refused[si] = P.refused;
+        P.list.forEach(function (p, pi) {
+          var row = { key: p.key, value: p.value, x: p.x, y: p.y, rule: p.rule, why: p.why, round: r, pi: r === 1 ? pi : -1 }, single = SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG'].indexOf(p.key) < 0, q = posOf(p.key, p.x, p.y);
+          if (single) sh0[si].marks = sh0[si].marks.filter(function (m) { return m.key !== p.key; });
+          sh0[si].marks.push({ key: p.key, value: String(p.value), x: single ? 0 : q.x, y: single ? 0 : q.y, source: 'yellow' });
+          yel[si].push(row); n++;
+        });
+      });
+      if (!n) break;
+    }
+    var out = S.sheets.map(function (sh, si) {
+      var d = MK.describe(sh0[si].marks.map(function (m, i) { return { raw: markText(m), x: m.x, y: m.y, handle: (i + 1).toString(16) }; }));
+      return { si: si, name: sh.name, marks: sh.marks.map(function (m) { return { key: m.key, value: m.value, x: m.x, y: m.y, source: m.source === 'user' ? 'user' : 'file' }; }), yellow: yel[si], refused: refused[si], desc: d.desc, errors: d.errors,
+        effText: function () { return MK.writeMarks(sh.stripped || (sh.stripped = strip(sh.text)), sh0[si].marks.map(function (m) { return { text: markText(m), x: m.x, y: m.y }; })); } };
+    });
+    _pv = { key: key, out: out };
+    console.log(TAG + ' preview rounds=' + Math.min(r, PV_ROUNDS) + ' yellow=' + out.map(function (o) { return o.yellow.length; }).join(','));
+    return out;
+  }
+  function previewBlock(si) {   // S.pv: { all: true } (the view stands: every yellow row) | { bands: { si: [KEY, ...] } } (play: the bands revealed so far)
+    var P = preview()[si], keys = S.pv.all ? null : (S.pv.bands[si] || []), h = '';
+    var rows = P.yellow.filter(function (y) { return !keys || keys.indexOf(y.key) >= 0; });
+    if (keys) rows.sort(function (a, b) { return keys.indexOf(a.key) - keys.indexOf(b.key); });
+    else if (S.pv.order && S.pv.order[si]) { var o = S.pv.order[si]; rows.sort(function (a, b) { return (o.indexOf(a.key) < 0 ? 99 : o.indexOf(a.key)) - (o.indexOf(b.key) < 0 ? 99 : o.indexOf(b.key)); }); }
+    if (!rows.length) return '';
+    h += '<div class="dm-sub">' + IC.bulb + 'Defaults placing this sheet (yellow: not yours yet)</div>';
+    rows.forEach(function (y) {
+      var ps = SINGLE_POS[y.key], fresh = S.pv.fresh && S.pv.fresh.si === si && S.pv.fresh.key === y.key;
+      h += '<div class="dm-pr dm-pv' + (fresh ? ' dm-new' : '') + '" data-pv-key="' + esc(y.key) + '" data-pv="' + esc(y.key + '=' + y.value) + '"><span class="t"><b>@' + y.key + '=' + esc(y.value) + (ps === 'x' ? ' x ' + num(y.x) : ps === 'y' ? ' y ' + num(y.y) : '') + '</b><span class="w">' + esc(y.rule + ': ' + y.why) + '</span></span>' +
+        (y.pi >= 0 ? '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + y.pi + '">' + IC.check + '</button>' : '<span class="dm-later" title="suggested once the values above are yours">after the above</span>') + '</div>';
+    });
+    return h;
+  }
+  function pvSet(pv) { S.pv = pv || null; render(); }
+  function focusTargets(F) {
+    var P = S.panel; if (!P) return [];
+    if (F.yellow) return Array.prototype.slice.call(P.querySelectorAll('[data-card="' + F.si + '"] .dm-pv[data-pv-key="' + F.key + '"]'));
+    if (F.key === 'Z' || F.key === 'GRIDH' || F.key === 'GRIDX' || F.key === 'GRIDY') return Array.prototype.slice.call(P.querySelectorAll('[data-card="' + F.si + '"] .dm-mk[data-mark^="' + F.key + '="]'));
+    var el = document.getElementById('dm-f-' + F.si + '-' + F.key); return el ? [el] : [];
+  }
+  // focusField: every section but Sheets collapsed (+ Units for an accepted @UNITS: its field lives there), every other card closed, the field / rows / yellow band in view and outlined
+  function focusField(si, key, yellow) {
+    if (!S.panel) return [];
+    if (!S.fsave) S.fsave = { sec: Object.assign({}, S.sec), open: Object.assign({}, S.open), top: (document.getElementById('dm-body') || {}).scrollTop || 0, shown: S.panel.style.display !== 'none' };
+    Object.keys(S.sec).forEach(function (k) { S.sec[k] = k === 'sheets' || (k === 'units' && key === 'UNITS' && !yellow); });
+    S.open = {}; S.open[si] = true; S.focus = { si: si, key: key, yellow: !!yellow };
+    S.panel.style.display = 'flex'; render();
+    var T = focusTargets(S.focus), body = document.getElementById('dm-body');
+    if (T.length && body) {
+      var br = body.getBoundingClientRect(), top = Math.min.apply(null, T.map(function (e) { return e.getBoundingClientRect().top; })), bot = Math.max.apply(null, T.map(function (e) { return e.getBoundingClientRect().bottom; }));
+      var want = bot - top <= br.height - 16 ? (top + bot) / 2 - (br.top + br.height / 2) : top - br.top - 8;   // the band centred when it fits, else its first row at the top
+      body.scrollTop += want;
+    }
+    return T;
+  }
+  function focusEnd() {
+    var F = S.fsave; S.focus = null; S.fsave = null; if (!F) return;
+    S.sec = F.sec; S.open = F.open; if (!F.shown && S.panel) S.panel.style.display = 'none';
+    render(); var b = document.getElementById('dm-body'); if (b) b.scrollTop = F.top;
+  }
   function close() { if (S.panel) S.panel.style.display = 'none'; if (S.tool) setTool(S.tool); console.log(TAG + ' panel closed'); attention(); }
 
   // ---- open: from the import (dxf_import_ui.js openFiles) ----
@@ -923,7 +997,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {};
+    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null;
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
@@ -938,7 +1012,7 @@
   function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); attention(); }
 
   window.DxfMetaEditor = { defaultChoices: function () { return S.defaultChoices || {}; }, attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
-    effText: effText, highlight: highlight, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
+    effText: effText, highlight: highlight, preview: preview, pvSet: pvSet, focusField: focusField, focusEnd: focusEnd, focusTargets: function () { return S.focus ? focusTargets(S.focus) : []; }, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
 })();
