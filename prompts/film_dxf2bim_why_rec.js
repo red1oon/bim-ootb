@@ -182,9 +182,17 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const stated = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; readMarks(f).filter(m => /^@LAYER=/.test(m)).forEach(m => { const [l, t] = m.replace('@LAYER=', '').split(','); const role = { PLAN: 'plan', ELEV: 'elev', SECTION: 'section', ROOF: 'roof' }[roleOf[n]]; (stated[role + '|' + l] = stated[role + '|' + l] || new Set()).add(t); }); });
   fact('layers_to_state', String(Object.keys(stated).length));
   if (!(await pg.$('#dm-panel select[data-act="layer"]'))) await clickEl('#dm-panel [data-sec="layers"]', 700);
-  let nLay = 0; for (const key of Object.keys(stated)) { const [role, layer] = key.split('|'), t = [...stated[key]]; if (t.length !== 1) { fact('layer_mixed', key); continue; } const ui = t[0] === 'elevdoor' ? 'door' : t[0];
-    const sel = '#dm-panel select[data-act="layer"][data-role="' + role + '"][data-layer="' + layer.replace(/"/g, '\\"') + '"]:not([data-sheet])'; if (!(await pg.$(sel))) { fact('layer_missing', key); continue; }
-    const fast = nLay > 0; await wheelTo(sel, { step: 120, pace: fast ? 25 : 60 }); await pointAt(sel, fast ? 240 : 650); await sleep(fast ? 80 : 300); await pg.select(sel, ui); await sleep(fast ? 100 : 250); await idle(); nLay++; }
+  const statedSheets = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; readMarks(f).filter(m => /^@LAYER=/.test(m)).forEach(m => { const [l] = m.replace('@LAYER=', '').split(','); const role = { PLAN: 'plan', ELEV: 'elev', SECTION: 'section', ROOF: 'roof' }[roleOf[n]]; (statedSheets[role + '|' + l] = statedSheets[role + '|' + l] || new Set()).add(n); }); });
+  const selOf = (role, layer, sheet) => '#dm-panel select[data-act="layer"][data-role="' + role + '"][data-layer="' + layer.replace(/"/g, '\\"') + '"]' + (sheet ? '[data-sheet="' + sheet + '"]' : ':not([data-sheet])');
+  const pickSel = async (sel, ui, fast) => { await wheelTo(sel, { step: 120, pace: fast ? 25 : 60 }); await pointAt(sel, fast ? 240 : 650); await sleep(fast ? 80 : 300); await pg.select(sel, ui); await sleep(fast ? 100 : 250); await idle(); };
+  let nLay = 0, nSplit = 0; for (const key of Object.keys(stated)) { const [role, layer] = key.split('|'), t = [...stated[key]]; if (t.length !== 1) { fact('layer_mixed', key); continue; } const ui = t[0] === 'elevdoor' ? 'door' : t[0], want = statedSheets[key], fast = nLay > 0;
+    const rowBtn = '[data-layer-row="' + role + '|' + layer + '"] [data-act="laysplit"]';
+    if (await pg.$(rowBtn)) { if (!(await pg.$('[data-layer-row^="' + role + '|' + layer + '|"]'))) await clickEl(rowBtn, fast ? 250 : 600); }
+    const all = await pg.evaluate((role, layer) => [...document.querySelectorAll('[data-layer-row^="' + role + '|' + layer + '|"]')].map(e => e.dataset.layerRow.split('|')[2]), role, layer);
+    if (!all.length || (all.length === want.size && all.every(n => want.has(n)))) { if (!(await pg.$(selOf(role, layer)))) { fact('layer_missing', key); continue; } await pickSel(selOf(role, layer), ui, fast); }
+    else for (const n of want) { if (!(await pg.$(selOf(role, layer, n)))) { fact('layer_missing', key + '|' + n); continue; } await pickSel(selOf(role, layer, n), ui, fast); nSplit++; }
+    nLay++; }
+  fact('layers_split_by_sheet', String(nSplit));
   fact('layers_stated', String(nLay)); const v4 = await verdict(); fact('after_layers_blocking', String(v4.blocking)); await sleep(1200);
   // (d) the body heights no elevation shows, READ from @BODYZ
   await beat('w09');
