@@ -203,8 +203,16 @@
   }
   function planStoreys(model) {
     const g = model.storeys.find(s => s.name === model.grid_storey).elev;
-    return model.storeys.filter(s => s.elev >= g && model.walls.some(w => w.storey === s.name && w.z0 <= s.elev + CUT_OFFSET && s.elev + CUT_OFFSET < w.z1));
+    const base = model.storeys.filter(s => s.elev >= g && model.walls.some(w => w.storey === s.name && w.z0 <= s.elev + CUT_OFFSET && s.elev + CUT_OFFSET < w.z1));
+    // §D50: a storey whose cut plane lies above the next plan storey's level has no floor of its own (JKR 00 Aras Tanah +81.0 under 01 Aras Satu +81.2): its plan would draw the next
+    // storey's walls and door / window bodies again with no openings. The next plan absorbs it (its openings, swings, windows, slabs).
+    const out = [];
+    base.forEach((s, i) => { const nx = base[i + 1];
+      if (nx && s.elev + CUT_OFFSET > nx.elev + 1e-9) { nx.absorbs = nx.absorbs || []; if (nx.absorbs.indexOf(s.name) < 0) { nx.absorbs.push(s.name); if (model._log) model._log.add(`§STOREY_ABSORBED storey='${s.name}' elev=${fx(s.elev, 4)} into='${nx.name}' elev=${fx(nx.elev, 4)}: its cut ${fx(s.elev + CUT_OFFSET, 3)} lies above the next level (D50)`); } return; }
+      out.push(s); });
+    return out;
   }
+  function ofPlan(storey, e) { return e.storey === storey.name || !!(storey.absorbs && storey.absorbs.indexOf(e.storey) >= 0); }   // §D50 the plan's own storey and the storeys it absorbs
   function roofStorey(model) {   // §L1.4 F4 + §L1.9 (a roof storey without walls takes the roof plan when the model states a roof element)
     const g = model.storeys.find(s => s.name === model.grid_storey).elev, planned = new Set(planStoreys(model).map(s => s.name));
     const cand = model.storeys.filter(s => s.elev > g && !planned.has(s.name) && s.has_walls);
@@ -455,7 +463,7 @@
   function planOpenings(model, storey, cutZ, cutWalls, polys, log) {
     const res = [];
     for (const e of model.els) {
-      if (OPENINGS.indexOf(e.cls) < 0 || e.storey !== storey.name) continue;
+      if (OPENINGS.indexOf(e.cls) < 0 || !ofPlan(storey, e)) continue;
       const g = e.guid, pos = e.z0 >= cutZ ? 'above' : (e.z1 <= cutZ ? 'below' : 'cut'), h = model.host_all[g];
       if (h === undefined) { log.add(`§OPENING guid=${g} cls=${e.cls} host=None pos=${pos} gap=none`); res.push([e, pos]); continue; }
       const hw = model.by_guid[h];
@@ -865,7 +873,7 @@
     }
     log.add(`§PLAN openings above cut=${nO.above} (dashed) below cut=${nO.below}`);
     const dflt = [], dfltAt = {}, conf = [];   // conf: §F7 D19 doors whose mesh contradicts their stated handing (yellow)   // §F7 D18 doors drawn from the building's standard (yellow); a default is drawn once per footprint
-    for (const d of model.els.filter(e => e.cls === 'IfcDoor' && e.storey === storey.name)) {
+    for (const d of model.els.filter(e => e.cls === 'IfcDoor' && ofPlan(storey, e))) {
       const op = model.door_ops[d.guid], cx = (d.x0 + d.x1) / 2, cy = (d.y0 + d.y1) / 2; let basis = '', code, res;
       d._tc = acrossFromHost(model, d, op, polys, log);   // §F7 D23
       const oY = op && op.x && op.y ? [op.y[0], op.y[1]] : null, angled = oY && horizFrame([op.x[0], op.x[1]], oY) && !axisAligned([op.x[0], op.x[1]], oY);
@@ -916,7 +924,7 @@
       doc.text('A-ANNO-NOTE', 'HINGE ?', [mm(nx), mm(ny)], TXT_NOTE * SCALE, { align: 'MIDDLE_CENTER', rot: ta === 'x' ? 90 : 0, guid: d.guid });
     }
     const seen = new Set();
-    for (const wd of model.els.filter(e => e.cls === 'IfcWindow' && e.storey === storey.name)) {
+    for (const wd of model.els.filter(e => e.cls === 'IfcWindow' && ofPlan(storey, e))) {
       const host = model.by_guid[model.host_all[wd.guid]];
       if (!host || WALLS.indexOf(host.cls) < 0) { log.gap('GAP:window_no_host', wd.guid, 'no wall host (rel_fills_host or mesh void, §L1.6 O1)'); continue; }
       const segs = wallAxis(host)[0] === 'y' ? [host.y0, host.y1].map(f => [[mm(wd.x0), mm(f)], [mm(wd.x1), mm(f)]]) : [host.x0, host.x1].map(f => [[mm(f), mm(wd.y0)], [mm(f), mm(wd.y1)]]);
@@ -1088,7 +1096,7 @@
     const xs = grid.x.map(g => g[1]);
     let X = Number.isFinite(Xat) ? Number(Xat.toFixed(6)) : xs.length >= 2 ? Number(((xs[0] + xs[1]) / 2).toFixed(6)) : null;
     if (!Number.isFinite(Xat) && xs.length >= 2) {   // §F8 D30: no stated cut: the first grid bay whose midpoint crosses a slab of the most plan storeys (the floors the reader reads from the section); the first bay when it already shows them all
-      const sts = planStoreys(model), slabs = model.els.filter(e => e.cls === 'IfcSlab'), cov = x => sts.filter(st => slabs.some(e => e.storey === st.name && e.x0 < x && x < e.x1)).length;
+      const sts = planStoreys(model), slabs = model.els.filter(e => e.cls === 'IfcSlab'), cov = x => sts.filter(st => slabs.some(e => ofPlan(st, e) && e.x0 < x && x < e.x1)).length;
       let bi = 0, bc = -1; for (let i = 0; i + 1 < xs.length; i++) { const c = cov((xs[i] + xs[i + 1]) / 2); if (c > bc) { bc = c; bi = i; } }
       const c0 = cov((xs[0] + xs[1]) / 2); if (bi > 0 && bc > c0) X = Number(((xs[bi] + xs[bi + 1]) / 2).toFixed(6));
       log.add(`§SECTION_CUT_CHOICE bays=${xs.length - 1} first_bay_floors=${c0}/${sts.length} chosen_bay=${bi > 0 && bc > c0 ? bi : 0} floors=${Math.max(bc, c0)}/${sts.length} (D30)`);
@@ -1169,7 +1177,7 @@
     opts = opts || {};
     const log = new Log(), files = {}, whole = {}, scoped = {};
     log.add(`§ENTRY std2d db=model prefix=${prefix}`);
-    const model = loadModel(q, log);
+    const model = loadModel(q, log); Object.defineProperty(model, '_log', { value: log, enumerable: false });   // §D50 planStoreys states an absorbed storey once
     if (opts.premodel) opts.premodel(model);
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log, !!opts.extent);   // §L1.16: this set is ONE wing, drawn in its own frame (§F7 with a box: every angle, the box decides)
@@ -1376,7 +1384,7 @@
     opts = opts || {};
     const log = new Log(), files = {};
     log.add(`§ENTRY std2d wing db=model prefix=${prefix}`);
-    const model = loadModel(q, log);
+    const model = loadModel(q, log); Object.defineProperty(model, '_log', { value: log, enumerable: false });   // §D50 planStoreys states an absorbed storey once
     if (opts.premodel) opts.premodel(model);
     const dom = opts.angle === undefined ? wingDominant(model) : { deg: opts.angle };
     if (!dom) { log.gap('GAP:wing_no_walls', '-', 'no wall with a consistent plan direction'); return { files, log: log.lines, gaps: log.gaps }; }

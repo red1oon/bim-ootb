@@ -337,3 +337,15 @@ strictly nearer than every other (the others named in the reason); a tie is refu
 **D48 RESULT (2026-10-23): BUILT.** `dxf2suggest.js propGrid`: labels `^([A-Z]{1,2}|\d{1,3})$`; several qualifying labels -> the one strictly nearest the axis. W-GRID-LABEL fail=0: G1 every grid marking
 of the model read from the plain set, 0 wrong: Duplex 32 / 32, HHS 160 / 160 (were 123), Clinic 290 / 290; G2 the raw shed's 91 grid markings = origin/main's; G3 a tie on the axis refused, a
 4-character text ignored (Duplex, HHS, Clinic). Modeller sw v127.
+
+## §D50 A STOREY WITH NO FLOOR OF ITS OWN HAS NO PLAN (owner 2026-10-23: "continue tuning the system with other buildings ... the original JKR model")
+**Witness claim first (W-STOREY-ABSORB, `modeller/tests/witness_dxf_storey_absorb.js`).** A1 a storey whose plan cut (level + `CUT_OFFSET` 1.2 m) lies above the next plan storey's level gets no plan:
+the next plan ABSORBS it (draws its openings, door swings, windows, its slabs count as that plan's) and the log says `§STOREY_ABSORBED`. JKR: `00 Aras Tanah` (+81.0) into `01 Aras Satu` (+81.2): 4 plans -> 3.
+A2 every door and window of the absorbed storey is drawn as an opening on the absorbing plan, none as a bare cut outline. A3 the round trip of JKR (model markings) reads with fewer blocking items, the
+drop is on the codes the duplicate plan caused (`no_host`, `opening_unclassified`, `no_elevation_for_face` on the 00 plan), measured before / after. A4 no other building changes: Duplex, HHS,
+Clinic, LTU (storeys >= 2.7 m apart) byte-identical sets against origin/main.
+**Measured first (2026-10-23, JKR IFC4 ARC + STR, `/tmp/db2/JKR2.db`):** storeys 81.0 / 81.2 / 84.5 / 87.8 / 91.1 (Malay names). Plans 00 (cut 82.2) and 01 (cut 82.4) draw the SAME 159 walls (the 00 walls run
+81.0 -> 87.8; D25 draws any storey's walls the plane cuts), but the openings only of their own storey (`planOpenings`: `e.storey === storey.name`), while the cut contours of every door / window body the
+plane crosses are drawn on `A-DOOR` / `A-GLAZ` (std2d.js:844): plan 00 holds 238 `A-DOOR` + 304 `A-GLAZ` entities of storey 01's doors and windows with no opening definition. Reader, full model
+markings: 902 blocking, of them on plan 00: `no_host_cut` 189, `no_elevation_for_face` 108, `no_host` 106, `no_elevation_height` 87, `opening_unclassified` 67. Other buildings' storey gaps: Duplex
+3.1, HHS 3.5, Clinic 4.57, LTU 3.0, Hospital 3.0 (Level 7A -> 7) or more: none under 1.2 m.
