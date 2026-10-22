@@ -151,6 +151,24 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     ok('A12c[shed raw] the caption says which sheet and what was done at every step: it names the sheet, shows a phase chip and an evidence tier, lies inside the viewport, and is gone after the play', capOk && R12.after === false, 'captions=' + R12.caps.length + ' bad=' + R12.caps.filter(c => !(c.text && c.in)).length + ' afterPlay=' + R12.after + ' e.g. ' + JSON.stringify((R12.caps[19] || {}).text));
   } else skip('A12', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');
 
+  // ---------- A14 (§D42): the pile and the build FILL the canvas, the grid follows the build. Proves/disproves: the old 1.3 x margin left the pile at about half the free strip, and the ground grid stayed 680 m away at the origin ----------
+  if (SHED_RAW && RAW9.every(n => fs.existsSync(path.join(SHED_RAW, n + '.dxf')))) {
+    await pg.waitForFunction(() => !window.DxfImportUI.state.arr || !window.DxfImportUI.state.arr.playing, { timeout: 120000, polling: 100 }); await sleep(300);
+    const R14 = await pg.evaluate(() => new Promise(async res => {
+      const U = window.DxfImportUI, A = window.A, T = window.THREE, out = { start: null, end: null, grid: null };
+      const measure = () => { const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); const role = new Set(U.state.arr ? U.state.arr.items.filter(it => it.view).map(it => it.name) : Object.keys(U.state.canvas || {}));
+        const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect(), pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })), sw = cv.right - pr - 24, v = new T.Vector3();
+        let n = 0, inn = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9, wx0 = 1e9, wx1 = -1e9, wy0 = 1e9, wy1 = -1e9;
+        g.traverse(o => { const nm = o.userData && (o.userData.arrSheet || o.userData.dxfSheet); if (!o.geometry || !o.geometry.attributes.position || !nm || !role.has(nm)) return; const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i += 30) { wx0 = Math.min(wx0, a[i]); wx1 = Math.max(wx1, a[i]); wy0 = Math.min(wy0, a[i + 1]); wy1 = Math.max(wy1, a[i + 1]); v.set(a[i], a[i + 1], a[i + 2]).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) { inn++; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } } });
+        const G = A.scene.children.find(o => o.type === 'GridHelper'), gs = G ? 40 * G.scale.x : 0;
+        return { share: n ? inn / n : 0, fill: Math.max((x1 - x0) / sw, (y1 - y0) / cv.height), cx: (wx0 + wx1) / 2, cy: (wy0 + wy1) / 2, side: Math.max(wx1 - wx0, wy1 - wy0), gx: G ? G.position.x : null, gy: G ? G.position.y : null, gside: gs, cell: gs / 40 }; };
+      await U.arrange({ stepMs: 30, holdMs: 100, onStep: async info => { if (info.i === 1) out.start = measure(); } });
+      out.end = measure(); res(out); }));
+    const good = m => m && m.share >= 0.7 && m.fill >= 0.6, gridOk = m => m && Math.abs(m.gx - m.cx) <= 10 * m.cell && Math.abs(m.gy - m.cy) <= 10 * m.cell && m.gside >= 1.2 * m.side;   // snapped to 10 cells
+    ok('A14a[shed raw] the start pile and the finished build each fill the free canvas: >= 70 % of the role sheets\' points inside the strip and the united box >= 60 % of it', good(R14.start) && good(R14.end), 'start ' + JSON.stringify({ share: +R14.start.share.toFixed(2), fill: +R14.start.fill.toFixed(2) }) + ' end ' + JSON.stringify({ share: +R14.end.share.toFixed(2), fill: +R14.end.fill.toFixed(2) }));
+    ok('A14b[shed raw] the ground grid follows the build: centred within one cell of the role sheets\' centre and >= 1.2 x their larger side (start pile and end)', gridOk(R14.start) && gridOk(R14.end), 'start grid=' + [R14.start.gx, R14.start.gy, R14.start.gside].join('/') + ' build=' + [R14.start.cx.toFixed(0), R14.start.cy.toFixed(0), R14.start.side.toFixed(0)].join('/') + ' | end grid=' + [R14.end.gx, R14.end.gy, R14.end.gside].join('/') + ' build=' + [R14.end.cx.toFixed(0), R14.end.cy.toFixed(0), R14.end.side.toFixed(0)].join('/'));
+  } else skip('A14', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');
+
   // ---------- the plain Duplex set: A3b ----------
   if (duplex) {
     await openSet(dxfs(path.join(duplex, 'plain')), false); alog.length = 0;
@@ -242,6 +260,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       L0.marks === 0 && L0.tinted > 0 && moved1.length > 0 && moved1.every(n => n === 0) && L1.yellowPlacing === 0 && (L1.tinted === null || L1.tinted.length === 0) && a1.length === 8 && a1.every(x => x.worst <= 1e-6) && errs.length === e0,
       'before: marks=' + L0.marks + ' tinted=' + L0.tinted + ' | first accept syncs moved=' + moved1.join(',') + ' | after: tinted=' + JSON.stringify(L1.tinted) + ' canvas=' + a1.map(x => x.n.replace(/\.dxf$/, '') + ':' + x.worst).join(' ') + ' errors=' + (errs.length - e0) + ' st0.gate=' + st0.gate);
   }
+  { await pg.click('#dxf-close'); await sleep(300); const gh = await pg.evaluate(() => { const G = window.A.scene.children.find(o => o.type === 'GridHelper'); return { x: G.position.x, y: G.position.y, s: G.scale.x }; });
+    ok('A14c closing the 2D Drawings panel puts the grid back at its home (origin, scale 1)', gh.x === 0 && gh.y === 0 && gh.s === 1, JSON.stringify(gh)); }
   console.log('  page errors total=' + errs.length);
   await br.close(); srv.close();
   console.log('§W-ARRANGE ' + (fails ? 'FAIL ' + fails : 'PASS')); process.exit(fails ? 1 : 0);
