@@ -239,8 +239,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
     (function step() { const kk = Math.min(1, (performance.now() - t0) / 2200), s = kk < .5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (kk < 1) requestAnimationFrame(step); else res(); })(); }), ex, kz.k, kz.z);
   await sleep(500);
   const px = await pg.evaluate((ex, k, z) => { const A = window.A, T = window.THREE, cv = A.renderer.domElement.getBoundingClientRect(), f = (x, y) => { const v = new T.Vector3(x * k, y * k, z).project(A.camera); return [cv.left + (v.x + 1) / 2 * cv.width, cv.top + (1 - v.y) / 2 * cv.height]; }; return { a: f(ex[0], ex[1]), b: f(ex[2], ex[3]) }; }, ex, kz.k, kz.z);
-  await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(900); await idle();
-  fitCentre(0.9, 1800).catch(() => { });   // straight back to the whole build while the facts are read
+  await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); fitCentre(0.9, 1600).catch(() => { }); await sleep(300); await idle();   // straight back to the whole build: the zoomed view of the excluded strip is empty by definition
   fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
   const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await sleep(2200);
