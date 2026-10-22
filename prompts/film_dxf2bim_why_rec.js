@@ -106,6 +106,14 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const logHas = re => plog.filter(t => re.test(t));
 
   // ================= TAKE =================
+  // the product's own zoom-to-fit, then slid into the strip the OPEN panels leave free (fixed panels have no offsetParent: tested by display and width) and dollied closer by `zoom`
+  const fitCentre = async (zoom) => { await clickAt('#b-fit', 600); await sleep(1500);
+    await pg.evaluate(zm => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
+      const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
+      c.updateMatrixWorld(); const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect;
+      const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now();
+      (function step() { const k = Math.min(1, (performance.now() - t0) / 2400), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - zm * s);
+        ctl.target.copy(tg); c.position.copy(tg).add(d); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), zoom); };
   const readMarks = f => marks(f).map(e => e['1'].replace(/ @BY=.*/, ''));
   const markedOf = name => dxfs(MARKED).find(f => path.basename(f).startsWith(name.replace(/\.dxf$/i, '') + '_marked'));
   const strip = (async () => 0);
@@ -220,7 +228,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(900); await idle();
   fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
-  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1500);
+  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await fitCentre(0.1); await sleep(800);
   // ---- chapter 4 ONE SHED: Complete the building, Convert, the panels away, the finish ----
   chapter(4, 'shed'); await beat('w10'); await backdrop(4);
   await clickAt('#dxf-fold', 500); await sleep(400);   // unfold: the option boxes are in this panel
@@ -229,24 +237,19 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
     ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
+  await fitCentre(0.1); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
   // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
   const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
   let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
   await sleep(1200); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f)).sort(); fact('saved_n', String(saved.length));
   await clickAt('#dm-close', 600); await sleep(400); await clickAt('#dxf-fold', 500); await sleep(500);   // what is not needed any more is folded away: the canvas is all the shed
-  await clickAt('#b-fit', 700); await sleep(1800);
-  await pg.evaluate(() => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
-    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
-    c.updateMatrixWorld(); const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect;
-    const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now();
-    (function step() { const k = Math.min(1, (performance.now() - t0) / 2600), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - 0.22 * s);
-      ctl.target.copy(tg); c.position.copy(tg).add(d); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }));
+  await fitCentre(0.22);
   await orbitZ(110, 14000);
   // ---- chapter 5 OPENS PLACED NEXT TIME ----
-  chapter(5, 'placed'); await beat('w11'); await backdrop(5);
+  chapter(5, 'placed'); await beat('c5'); await backdrop(5);
   const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
   await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(saved.map(f => path.join(SAVED, f))); await sleep(2500);
-  fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
+  await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
   { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
   await sleep(1500);
   // ---- closing card ----
