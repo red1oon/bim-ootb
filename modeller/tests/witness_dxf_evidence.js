@@ -18,7 +18,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const ROOT = path.join(__dirname, '..', '..'), DB = process.argv[2] || '/tmp/db2/DXARC.db';
 const SHED_RAW = process.env.SHED_RAW_DIR || '';
 const RAW9 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
-const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred' };   // the spec's table
+const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred' };   // the spec's table
 const HANDLE_RULES = ['PR-GRID-TICK', 'PR-GRID', 'PR-Z-GROUND', 'PR-Z'];   // the rules whose `why` names the entity they read
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
@@ -31,7 +31,7 @@ function cliTally(files, level) {
   const CLI = require(path.join(ROOT, 'modeller', 'dxf2bim_cli.js')), lines = [];
   const args = CLI.parseArgs(['--sheets'].concat(files, ['--out', fs.mkdtempSync(path.join(os.tmpdir(), 'evcli-')), '--accept-suggestions'], level === null ? [] : ['--level', String(level)]));
   CLI.run(args, s => lines.push(s));
-  const t = { stated: 0, read: 0, inferred: 0, none: 0 }; lines.forEach(l => { const m = /^§CLI mark .*\((PR-[A-Z-]+)\)$/.exec(l); if (m) t[SPEC[m[1]] || 'none']++; });
+  const t = { stated: 0, read: 0, inferred: 0, none: 0 }; lines.forEach(l => { const m = /^§CLI mark .*\((PR-[A-Z-]+)\)$/.exec(l); if (m && !(m[1] === 'PR-LEVEL' && level !== null)) t[SPEC[m[1]] || 'none']++; });   // §D37: a typed --level replaces the PR-LEVEL default, so it is no longer a suggestion row
   return t;
 }
 

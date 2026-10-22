@@ -170,14 +170,14 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     // A8: a typed value moves the sheet live: @LEVEL=0 typed on the plans gives the reference plan, so HAXIS is suggested (yellow) and the other plans align: the view tweens them from where they stand
     const before8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
     alog.length = 0;
-    for (let si = 0; si < names.length; si++) if (/FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(names[si])) await typeField(si, 'LEVEL', '0');
+    for (let si = 0; si < names.length; si++) if (/FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(names[si])) await typeField(si, 'LEVEL', '3');
     await idle(); await sleep(2500);
     if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_level0.png') });
     const sync8 = alog.filter(l => / sync moved=/.test(l)), movedNames = Array.from(new Set([].concat.apply([], sync8.map(l => ((/moved=\d+ \(([^)]*)\)/.exec(l) || [])[1] || '').split(',').filter(Boolean)))));
     const after8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
-    const want8 = names.filter(n => /ELEV|SECTION|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(n)), shifted = want8.filter(n => before8[n] && after8[n] && Math.hypot(after8[n][0] - before8[n][0], after8[n][1] - before8[n][1]) > 1);
-    ok('A8[shed raw] a typed value moves the sheet live: @LEVEL=0 typed in the panel after play -> the view tweens (sync tween) the 4 elevations, the section (HAXIS now suggested: turned onto the plan grid) and the 2 other plans (aligned by their grid labels) from where they stood',
-      want8.every(n => movedNames.indexOf(n) >= 0) && shifted.length === want8.length && sync8.some(l => /tween=700ms/.test(l)), 'moved=' + movedNames.map(n => n.replace(/\.dxf$/, '')).join(',') + ' shifted>1m=' + shifted.length + '/' + want8.length + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
+    const want8 = names.filter(n => /FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(n)), lifted = want8.filter(n => before8[n] && after8[n] && Math.abs((after8[n][2] - before8[n][2]) - 3) < 1e-6);
+    ok('A8[shed raw] a typed value moves the sheet live (§D37: @LEVEL=0 is now the orange default already in place, so the typed value is 3): @LEVEL=3 typed on the 3 plans after play -> each plan is lifted by exactly 3.000 m in the view (sync tween)',
+      want8.length === 3 && lifted.length === 3 && sync8.some(l => /tween=700ms/.test(l)), 'lifted=' + lifted.map(n => n.replace(/\.dxf$/, '')).join(',') + ' dz=' + want8.map(n => before8[n] && after8[n] ? (after8[n][2] - before8[n][2]).toFixed(4) : 'na').join('/') + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
     for (let si = 0; si < names.length; si++) { const k = Object.keys(DATUM).filter(q => names[si].indexOf(q) === 0)[0]; if (k) await addZ(si, 0.6096, DATUM[k]); }
     await idle(); await sleep(1500); await acceptAll(); await idle(); await sleep(2500);
     const L1 = await pg.evaluate(() => { const U = window.DxfImportUI.state; return { live: !!U.arr, tinted: (U.arrLast && U.arrLast.tinted) || null, canvas: Object.keys(U.canvas || {}), roles: U.sheets.map(s => s.role), yellowPlacing: window.DxfMetaEditor.preview().reduce((n, p) => n + p.yellow.filter(y => ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDH', 'FACE', 'CUT'].indexOf(y.key) >= 0).length, 0) }; });
