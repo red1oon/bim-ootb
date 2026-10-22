@@ -23,6 +23,7 @@ const DATUM = { '1S_ELEV': -4446.6, '1N_ELEV': -3895.2, '2_ELEV': -4515.7264, '7
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const FILL_MIN = Number(process.env.FILL_MIN || 0.3);   // measured min 0.48 median 0.58 (A12d); 0.3 leaves room and fails a return to tiny sheets
 const SHOTS = process.env.ARRANGE_SHOTS || null;   // optional: a folder for the review screenshots (never the repo: the shed shows its title block)
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
@@ -132,6 +133,10 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
         const A = U.state.arr, c = document.getElementById('dxf-arr-cap'); if (prev) { const b = c ? c.getBoundingClientRect() : null; out.caps.push({ prev, text: c ? c.innerText : null, in: b ? (b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight) : false }); }
         const fin = A.items.map(it => cen(it.stages[it.stages.length - 1])), now = A.items.map(it => cen(it.stages[it.applied]));
         out.steps.push({ i: info.i, key: info.key, sheet: info.sheet, moves: info.moves, settled: A.items.filter((it, k) => Math.hypot(now[k][0] - fin[k][0], now[k][1] - fin[k][1]) <= 2).length, n: A.items.length });
+        { const T = window.THREE, cam = window.A.camera; cam.updateMatrixWorld(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; const v = new T.Vector3(), cv = window.A.renderer.domElement.getBoundingClientRect();
+          A.items.forEach(it => { const P = it.cur; for (let i = 0; i < P.length; i += 30) { v.set(P[i], P[i + 1], P[i + 2]).project(cam); const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } });
+          const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })), sw = cv.right - pr - 24, sh = cv.height;
+          out.steps[out.steps.length - 1].fill = Math.max((Math.min(x1, cv.right) - Math.max(x0, pr)) / sw, (Math.min(y1, cv.bottom) - Math.max(y0, cv.top)) / sh); }
         prev = info; } });
       out.after = !!document.getElementById('dxf-arr-cap'); res(out); }));
     const PH = k => k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4, KO = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'FACE', 'CUT'];
@@ -140,6 +145,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     ok('A12a[shed raw] phases run across all sheets: the phase sequence over the ' + R12.steps.length + ' steps is non-decreasing (1 scale, 2 orient, 3 assemble, 4 name) and each sheet keeps its own key order', mono && rankOk && ph.includes(1) && ph.includes(2) && ph.includes(3), 'phases=' + [1, 2, 3, 4].map(q => ph.filter(v => v === q).length).join('/'));
     const p3 = R12.steps.filter(x => PH(x.key) === 3), s3 = p3.map(x => x.settled), jumps = s3.map((v, i) => i ? v - s3[i - 1] : 0), distinct = Array.from(new Set(s3));
     ok('A12b[shed raw] the assembly grows piece by piece, not in one jump: through the assemble phase the count of sheets settled (centre within 2 m of its final place) never falls, never rises by more than 2 in one step, and passes through >= 4 distinct values', s3.length > 0 && jumps.every(d => d >= 0 && d <= 2) && distinct.length >= 4, 'settled over assemble steps=' + s3.join(',') + ' of ' + (R12.steps[0] || {}).n);
+    const fills = R12.steps.slice(1).map(x => x.fill).filter(f => f !== undefined).sort((a, b) => a - b), med = fills[Math.floor(fills.length / 2)] || 0;
+    ok('A12d[shed raw] the canvas is never empty: at every step after the first the sheets cover a measurable share of the free canvas strip (the larger of the width and height fractions of the united screen box)', fills.length > 40 && fills[0] >= FILL_MIN && med >= 0.3, 'min=' + (fills[0] || 0).toFixed(2) + ' median=' + med.toFixed(2) + ' n=' + fills.length + ' first10=' + R12.steps.slice(1, 11).map(x => (x.fill || 0).toFixed(2)).join(','));
     const capOk = R12.caps.length === R12.steps.length - 1 && R12.caps.every(c => c.text && c.in && c.text.toLowerCase().indexOf(c.prev.sheet.replace(/\.dxf$/i, '').replace(/^\d+[A-Z]?_/, '').replace(/_/g, ' ').toLowerCase()) >= 0 && /STATED|DEFAULT|INFERRED/.test(c.text) && /SCALE|ORIENT|ASSEMBLE|NAME/.test(c.text));
     ok('A12c[shed raw] the caption says which sheet and what was done at every step: it names the sheet, shows a phase chip and an evidence tier, lies inside the viewport, and is gone after the play', capOk && R12.after === false, 'captions=' + R12.caps.length + ' bad=' + R12.caps.filter(c => !(c.text && c.in)).length + ' afterPlay=' + R12.after + ' e.g. ' + JSON.stringify((R12.caps[19] || {}).text));
   } else skip('A12', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');

@@ -435,6 +435,9 @@
     R.done = (async function () {
       if (bx) { var c0 = camTween(camFor(bx)); c0(1); }
       arrStyle(null); await tween(holdMs, function () {});
+      var p1 = [];
+      var flushUnits = async function () { if (!p1.length) return; var G = p1; p1 = []; var ub = boxOf(items.map(function (o) { return o.stages[o.applied]; })), cu = ub ? camTween(camFor(ub)) : function () { };
+        await tween(stepMs * 1.8, function (e) { G.forEach(function (g) { arrWrite(g.it, g.mv(e)); if (g.recol) g.it.obj.forEach(function (ls) { ls.material.color.copy(g.cA).lerp(g.cB, ease(e)); }); }); cu(e); }); G.forEach(function (g) { arrWrite(g.it, g.P1); }); };
       for (var i = 0; i < all.length && !R.stop; i++) {
         var it = all[i].it, st = all[i].st, j = it.applied + 1, P0 = it.stages[j - 1], P1 = it.stages[j];
         if (st.yellow) { (pb[it.si] = pb[it.si] || []).push(st.key); ME.state.pv.fresh = { si: it.si, key: st.key }; }
@@ -446,12 +449,15 @@
         R.steps.push(info);
         if (opts.onStep) await opts.onStep(info);
         arrStyle(it);
+        if (phaseOf(st.key) > 1) await flushUnits();
         var mv = stepMotion(it, st, P0, P1), cam = followAll(it); arrCap(i + 1, all.length, it, st, items);
         var wasT = it.tint || it.dtint, wasI = it.tintInf, cA = colOf(it); if (st.yellow && st.moves) it.tint = true; if (st.inf && st.moves) it.tintInf = true; if (st.dflt) it.dtint = true;
         var cB = colOf(it), recol = (!wasT && (it.tint || it.dtint)) || (!wasI && it.tintInf);
+        if (phaseOf(st.key) === 1) { p1.push({ it: it, mv: mv, P1: P1, recol: recol, cA: cA, cB: cB }); it.applied = j; await tween(stepMs * 0.2, function () { }); continue; }   // §D41 the units pass is announced sheet by sheet and applied to all sheets together (flushUnits)
         await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (recol) it.obj.forEach(function (ls) { ls.material.color.copy(cA).lerp(cB, ease(e)); }); });
         it.applied = j; arrWrite(it, P1);
       }
+      await flushUnits();
       if (R.stop) console.log(TAGA + ' stopped at step ' + R.steps.length + ': every sheet to its last stage');
       items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; it.tintInf = it.tintInfFinal; it.dtint = it.defFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
       R.playing = false; R.stop = false; arrStyle(null); capClear();
