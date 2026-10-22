@@ -200,6 +200,11 @@
     53037: { name: 'DD_Order', reActivate: true, ra: false, block: 'ddorder', vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO', CO: 'VO' } },
         // MDDOrder (org.eevolution.model, core): getValidActions :1266-1280 -> Drafted/InProgress/Invalid offer Close, Completed offers Void + ReActivate, BOTH UNGATED;
         // voidIt:1013 / reActivateIt:1213 return true (reActivate -> IP); reverseAccrualIt:1193 returns false; reverseCorrectIt:1173 = voidIt (RC is not offered)
+    738: { name: 'M_MovementConfirm', reActivate: false, rc: false, ra: false,
+           vo: { DR: 'VO', IP: 'VO', IN: 'VO', AP: 'VO', NA: 'VO' } },
+        // MMovementConfirm (core): generic getValidActions only (no per-table arm); voidIt:627-666 zeroes the confirm lines and voids the MOVEMENT through
+        // runDocumentActionWorkflow, then the engine sets VO; closeIt:675-690 is a plain close; reverseCorrectIt:698 / reverseAccrualIt:719 / reActivateIt:740 always return false.
+        // (§61 ported the model side; without this entry the Move Confirmation window offered no Complete - ERP_FRIENDLY_OPS_LENS §70.)
     623: { name: 'M_ProjectIssue', reActivate: false },
         // MProjectIssue delegates to DocActionDelegate (:377-417) and REGISTERS Reverse_Correct/Accrual
         // callables (doReverse, :126-127) → RC/RA→RE and void = the H-2 default delegation (delegate

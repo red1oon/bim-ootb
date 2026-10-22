@@ -290,7 +290,7 @@
     if (verb === 'update') {
       var changes = {};
       (entry.fields || []).forEach(function (f) {
-        if (f.readonly) return;
+        if (f.readonly && !(ctx.derived && ctx.derived.indexOf(f.col) >= 0)) return;   // a read-only column is the USER's lock; what the model's beforeSave derived into it (PO.beforeSave set_Value) is still written - MMovementLineConfirm.beforeSave :170-172 Difference = Target - Confirmed
         var nv = values[f.col], ov = originals ? originals[f.col] : undefined;
         if (String(nv == null ? '' : nv) !== String(ov == null ? '' : ov)) changes[f.col] = { old: ov == null ? null : ov, new: coerce(f.type, nv) };
       });
