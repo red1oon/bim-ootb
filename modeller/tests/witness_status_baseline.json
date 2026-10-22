@@ -19,6 +19,7 @@
   "witness_dxf_sidecar:ENV",
   "witness_dxf_slab_outline:ENV",
   "witness_dxf_stairs:ENV",
+  "witness_dxf_tag_width:ENV",
   "witness_dxf_title:ENV",
   "witness_dxf_wand:ENV",
   "witness_dxf_window_angled:ENV",

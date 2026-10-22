@@ -306,3 +306,21 @@ T4 sets whose titles carry none of these forms read exactly as before (the raw s
 a section title `... AT X=<n>` / `AT Y=<n>` gives `@CUT=<axis>,<n>` (the sheet's drawing units) and the label-pair rule is not run on that sheet.
 **Measured first (R2 of the review):** plain HHS 8 / 9 sheets refused for no role, Duplex 7 / 8; after the role picks, `@LEVEL=0` on 3 / 1 plans and a wrong cut on both; 19 / 17 statements a user typed
 that the sheets state. Not in scope: titles in other languages (refused as today, listed).
+
+## §D47 TAG DOORS BY WIDTH, ONE DECISION PER SCHEDULE ROW (architect review 2026-10-23 F8, proposal R4.2; usability report P1)
+**Witness claim first (W-TAG-WIDTH, `modeller/tests/witness_dxf_tag_width.js`).** W1 given the set's door schedule rows (the model's, typed once as a user would), every untagged plan door whose
+drawn leaf width equals exactly ONE row's width (to the reader's `snap_tol`) is proposed that row's mark, and every proposed mark equals the model's own tag for that door (0 wrong). W2 a door whose
+width matches no row is listed with its width, never tagged (HHS: the 30 doors drawn 48.9 mm wider than their row, the known `door_no_strip` doors). W3 falsifier: a second row with the same width
+(another mark) refuses every door of that width, listing both rows. W4 the set with the model's tags on the matched doors REPLACED by the rule's tags reads to the same verdict (code for code).
+**Measured first (2026-10-23, the marked standard sets):** plan doors with a model tag: HHS 99 (59 at 885 mm = row 885, 10 at 760 = row 760, 28 at 933.9 and 2 at 808.9 = rows 885 / 760 + 48.9),
+Duplex 14 (6 / 4 / 2 / 2, every one = its row). The model's door type is a function of the leaf width on both sets (purity 1.000, review RT-H4); the injected rooms add nothing to it.
+**Rule.** `Dxf2Suggest.tagByWidth(doors, rows, {factor, tol})` (pure): rows `{mark, w}` in the plan's units; per row the untagged doors with `|width / factor - w| <= tol / factor`; a width claimed by
+two rows -> refused with both marks; returns groups `{mark, w, doors:[handle]}` + `left` (doors matching no row, with widths) + `refused`. The editor's door suggestions show ONE inferred row
+per group ("@TAG=door,<mark> on N doors, leaf width w"), confirmed with one click (each door written by the existing `writeTag`, which still refuses a door whose centre lies in two door boxes);
+Accept all takes the groups like any other row. Tier: inferred (orange): the width match is a convention over a stated schedule, not a text on the door.
+**Effect (R2 accounting):** HHS 133 per-door tags -> the rows (typed once) + 1 click per row; the 30 off-width doors stay listed (they are engine findings already). Duplex 24 -> 0 tags.
+**D47 RESULT (2026-10-23): BUILT.** `Dxf2Suggest.tagByWidth` (pure) + the editor's door suggestions (`PR-TAG-WIDTH`, one row per schedule mark, tier inferred, one click tags the group under one render
+and one check: `S.batch`). W-TAG-WIDTH fail=0: W1 Duplex 14 / 14 proposed = the model's tags; HHS 86 proposed, 69 judged against a model tag, 0 wrong (17 doors the model leaves untagged, not judged);
+Clinic 16 proposed, 10 judged, 0 wrong, **234 refused: Clinic door types share a leaf width (865 mm at 1500 and 2134 high), so width alone does not decide them: listed, never guessed**; W2 HHS 30 left
+(933.9 / 808.9 mm = the off-hinge doors); W3 a same-width twin row refuses every door of that width (Duplex 6, HHS 59, Clinic 8); W4 the rule's tags read to the model's verdict code for code
+(36 / 166 / 359); W5 the page (Duplex, headless software GL): 4 rows, 4 clicks, 14 tags, 0 page errors (was 14 door picks + misses). Modeller sw v126.

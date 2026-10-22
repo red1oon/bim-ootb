@@ -217,5 +217,19 @@
 
     return { proposalsFor: proposalsFor, unitsK: unitsK, txtPos: txtPos };
   }
-  return { create: create, stripMarks: stripMarks, markText: markText, effText: effText, get1: get1, viewOf: viewOf, canonOne: canonOne, posOf: posOf, layerOf: layerOf, HEADER_UNITS: HEADER_UNITS, SINGLE_POS: SINGLE_POS, LAYER: LAYER };
+  // §D47 tag doors by width, ONE decision per schedule row (pure). doors [{handle, width (m), tagged}], rows [{mark, w (plan units)}], opts {factor (units -> m), tol (m)}.
+  // A door takes a row's mark when its drawn leaf width equals exactly one row's width; two rows of one width -> refused (both named); no row -> left (with the width). Tagged doors are not touched.
+  function tagByWidth(doors, rows, opts) {
+    var f = opts.factor, tol = opts.tol, R = [], groups = {}, left = [], refused = [];
+    rows.forEach(function (r) { var w = Number(r.w); if (w > 0 && !R.some(function (q) { return q.mark === r.mark; })) R.push({ mark: r.mark, w: w }); });
+    doors.forEach(function (d) {
+      if (d.tagged) return;
+      var dw = d.width / f, hit = R.filter(function (r) { return Math.abs(dw - r.w) <= tol / f; });
+      if (hit.length === 1) (groups[hit[0].mark] = groups[hit[0].mark] || { mark: hit[0].mark, w: hit[0].w, doors: [] }).doors.push(d.handle);
+      else if (hit.length > 1) refused.push({ handle: d.handle, width: Number(dw.toFixed(3)), marks: hit.map(function (r) { return r.mark; }) });
+      else left.push({ handle: d.handle, width: Number(dw.toFixed(3)) });
+    });
+    return { groups: Object.keys(groups).sort().map(function (k) { return groups[k]; }), left: left, refused: refused };
+  }
+  return { create: create, tagByWidth: tagByWidth, stripMarks: stripMarks, markText: markText, effText: effText, get1: get1, viewOf: viewOf, canonOne: canonOne, posOf: posOf, layerOf: layerOf, HEADER_UNITS: HEADER_UNITS, SINGLE_POS: SINGLE_POS, LAYER: LAYER };
 });
