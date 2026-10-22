@@ -15,8 +15,8 @@ const fill = cell => cell.replace(/\{([A-Za-z0-9_]+)(?:\.([A-Za-z0-9_:]+))?\}/g,
   let v = facts[k]; if (f) { try { const o = JSON.parse(v); v = o[f]; } catch (e) { v = undefined; } if (v === undefined) { miss++; console.log('§FILL MISSING ' + all); return all; } v = String(v); }
   if (!seen[all]) { seen[all] = 1; console.log('§FILL ' + all.slice(1, -1) + '=' + v); } return v; });
 const rows = fs.readFileSync(tsv, 'utf8').split('\n').filter(l => l.trim()).map(l => l.split('\t'));
-const out = rows.map(r => r.map((c, i) => (i === 3 || i === 4) ? fill(c) : c).join('\t')).join('\n') + '\n';
-const left = (out.split('\n').map(l => l.split('\t').slice(3, 5).join('\t')).join('\n').match(/\{[^}]*\}/g) || []);
+const out = rows.map(r => r.map((c, i) => (i >= 3 && i <= 6) ? fill(c) : c).join('\t')).join('\n') + '\n';
+const left = (out.split('\n').map(l => l.split('\t').slice(3, 7).join('\t')).join('\n').match(/\{[^}]*\}/g) || []);
 const dst = outArg || tsv.replace(/\.tsv$/, '') + '.filled.tsv'; fs.writeFileSync(dst, out);
 console.log('§FILL_DONE rows=' + rows.length + ' placeholders=' + Object.keys(seen).length + ' missing=' + miss + ' left=' + left.length + ' out=' + dst);
 process.exit(miss || left.length ? 1 : 0);
