@@ -8,9 +8,9 @@
 //   Not ported = NAMED refusal ("... not ported - named"), never silent: mandatory-ASI validation (IDEMPIERE-1770), back-date re-costing.
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_layer'), require('./model_trade'), require('./model_order'));
-  else root.ModelMovement = factory(root.ModelLayer, root.ModelTrade, root.ModelOrder);
-})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, MO) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./model_layer'), require('./model_trade'), require('./model_order'), require('./model_asi'));
+  else root.ModelMovement = factory(root.ModelLayer, root.ModelTrade, root.ModelOrder, root.ModelAsi);
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, MO, ASI) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
   var fire = function (trx, timing, table, row) { return ML.fire(trx, timing, table, row); };
   var BREAK = (typeof process !== 'undefined' && process.env && process.env.MV_BREAK) || '';   // witness negative controls only (MV_BREAK=nofrom|nopolicy)
@@ -57,29 +57,7 @@
   });
 
   // ══ MStorageOnHand ports (the pieces MMovement.completeIt needs) ══════════════════════════════════════════════
-  // MProduct.isUseGuaranteeDateForMPolicy :1002-1010 = the product's Attribute SET has IsGuaranteeDate AND UseGuaranteeDateForMPolicy (the SET's flags, not a product column - the finding of W-ASI-POLICY, model_asi.js storages)
-  function useGuaranteeDate(trx, p) { var as = p && nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null; return !!as && Y(as.isguaranteedate) && Y(as.useguaranteedateformpolicy); }
-  // getWarehouse(ctx, 0, product, asi, null, FiFo, positiveOnly, M_Locator_ID, trx) :398-520 - ASI 0 = all instances. ORDER BY l.PriorityNo DESC, DateMaterialPolicy (COALESCE(asi.GuaranteeDate, ..) when the product uses it), ASI [, QtyOnHand DESC]
-  function getWarehouse(trx, productId, asi, fifo, positiveOnly, locatorId, whId) {   // whId: the warehouse-level call (M_Locator_ID=0 -> every locator of M_Warehouse_ID, ORDER BY l.PriorityNo DESC first) - MInventory.checkMaterialPolicy :: getWarehouse(wh, product, 0, null, false, true, 0)
-    if ((!nz(locatorId) && !nz(whId)) || !nz(productId)) return [];
-    var all = !nz(asi), p = T.product(trx, productId), useGd = useGuaranteeDate(trx, p);
-    var prio = function (s) { var l = trx.get('m_locator', s.m_locator_id); return l ? Number(l.priorityno || 0) : 0; };
-    var base = nz(locatorId) ? trx.find('m_storageonhand', { m_locator_id: locatorId, m_product_id: productId })
-      : trx.find('m_storageonhand', { m_product_id: productId }).filter(function (s) { var l = trx.get('m_locator', s.m_locator_id); return l && String(l.m_warehouse_id) === String(whId); });
-    var rows = base.filter(function (s) {
-      var q = D(s.qtyonhand); if (positiveOnly ? q.signum() <= 0 : q.signum() === 0) return false;
-      return all || String(s.m_attributesetinstance_id || 0) === String(asi);
-    });
-    function key(s) { if (all && useGd && nz(s.m_attributesetinstance_id)) { var a = trx.get('m_attributesetinstance', s.m_attributesetinstance_id); if (a && a.guaranteedate) return String(a.guaranteedate); } return String(s.datematerialpolicy || ''); }
-    rows.sort(function (a, b) {
-      var pr = prio(b) - prio(a); if (pr) return pr;                                                                                              // l.PriorityNo DESC
-      var ka = key(a), kb = key(b), c = ka < kb ? -1 : ka > kb ? 1 : 0; if (!fifo) c = -c;
-      if (!c) { var x = Number(a.m_attributesetinstance_id || 0), y = Number(b.m_attributesetinstance_id || 0); c = fifo ? x - y : y - x; }
-      if (!c && all) c = D(b.qtyonhand).compareTo(D(a.qtyonhand));
-      return c;
-    });
-    return rows;
-  }
+  // MStorageOnHand.getWarehouse / MProduct.getMMPolicy: ONE implementation, ModelAsi.storages / ModelAsi.mmFifo (AS-8: this file's own Trx-reading copy moved there, plus the guarantee-date filter it lacked)
   // MStorageOnHand.add with dateMPolicy: getCreate(.. dateMPolicy=null ..) matches ANY existing row of (locator, product, ASI) else creates one dated today (:731-747)
   function sAdd(trx, locatorId, productId, asi, qty, dmp, dli) {   // dli = dateLastInventory (MStorageOnHand.add(.., dateMPolicy, dateLastInventory, trx) :817-847 -> updateDateLastInventory :873)
     if (D(qty).signum() === 0) return null;
@@ -92,7 +70,6 @@
     if (!err && dli != null) { var row = trx.find('m_storageonhand', { m_locator_id: locatorId, m_product_id: productId, m_attributesetinstance_id: asi || 0 }).filter(function (s) { return day(s.datematerialpolicy) === day(dmp); })[0]; if (row) trx.update('m_storageonhand', row, { datelastinventory: dli }); }
     return err;
   }
-  function mmFifo(trx, p) { var cat = trx.get('m_product_category', p.m_product_category_id) || {}; return (cat.mmpolicy || (trx.get('ad_client', trx.env.client) || {}).mmpolicy || 'F') === 'F'; }   // MProduct.getMMPolicy
 
   // MMovementLineMA
   function maInsert(trx, line, asi, qty, dmp, auto) {   // MMovementLineMA ctor :150-178
@@ -107,7 +84,7 @@
     if (qtyToDeliver.signum() === 0) return;
     if (BREAK === 'nopolicy') return;
     if (nz(line.m_attributesetinstance_id)) return;                                                                                              // :747 only a line without ASI
-    var p = T.product(trx, line.m_product_id), fifo = mmFifo(trx, p), st = getWarehouse(trx, line.m_product_id, 0, fifo, true, line.m_locator_id);
+    var p = T.product(trx, line.m_product_id), fifo = ASI.mmFifo(trx, p), st = ASI.storages(trx, { productId: line.m_product_id, asiId: 0, fifo: fifo, positiveOnly: true, locatorId: line.m_locator_id });
     for (var i = 0; i < st.length; i++) {
       var q = D(st[i].qtyonhand);
       if (q.compareTo(qtyToDeliver) >= 0) { maInsert(trx, line, st[i].m_attributesetinstance_id, qtyToDeliver, st[i].datematerialpolicy, true); qtyToDeliver = Z; }
@@ -193,7 +170,7 @@
       for (var li = 0; li < ls.length; li++) {                                                                                                      // :454-678
         var line = ls[li], p = nz(line.m_product_id) ? T.product(trx, line.m_product_id) : null, trxFrom = false;
         if (!(p && T.isStocked(p))) continue;
-        var mq = D(line.movementqty), asi = line.m_attributesetinstance_id || 0, asiTo = asiToOf(line), fifo = mmFifo(trx, p), err;
+        var mq = D(line.movementqty), asi = line.m_attributesetinstance_id || 0, asiTo = asiToOf(line), fifo = ASI.mmFifo(trx, p), err;
         if (!rev) {                                                                                                                                 // :463-475
           var qtyMA = maManualQty(trx, line);
           if (qtyMA.compareTo(mq) > 0) { T.msg(trx, '@Over_Qty_On_Attribute_Tab@ ' + line.line); return 'IN'; }
@@ -214,7 +191,7 @@
           }
         }
         if (!trxFrom) {                                                                                                                             // :540-669 Fallback - We have ASI
-          var sts = mq.signum() > 0 ? getWarehouse(trx, line.m_product_id, asi, fifo, false, line.m_locator_id) : getWarehouse(trx, line.m_product_id, asiTo, fifo, false, line.m_locatorto_id), dmp = null;
+          var sts = mq.signum() > 0 ? ASI.storages(trx, { productId: line.m_product_id, asiId: asi, fifo: fifo, positiveOnly: false, locatorId: line.m_locator_id }) : ASI.storages(trx, { productId: line.m_product_id, asiId: asiTo, fifo: fifo, positiveOnly: false, locatorId: line.m_locatorto_id }), dmp = null;
           for (var k = 0; k < sts.length; k++) if (D(sts[k].qtyonhand).compareTo(mq) >= 0) { dmp = sts[k].datematerialpolicy; break; }
           if (dmp == null && sts.length) dmp = sts[0].datematerialpolicy;
           var eff = dmp;
@@ -224,7 +201,7 @@
           if (err) { errors += 'Line ' + line.line + ': ' + err + '\n'; continue; }
           if (asi > 0 && asiTo > 0 && asi !== asiTo) {                                                                                              // :593-619 different ASIs: re-lookup the target storage
             dmp = null;
-            var st2 = mq.signum() > 0 ? getWarehouse(trx, line.m_product_id, asiTo, fifo, false, line.m_locatorto_id) : getWarehouse(trx, line.m_product_id, asi, fifo, false, line.m_locator_id);
+            var st2 = mq.signum() > 0 ? ASI.storages(trx, { productId: line.m_product_id, asiId: asiTo, fifo: fifo, positiveOnly: false, locatorId: line.m_locatorto_id }) : ASI.storages(trx, { productId: line.m_product_id, asiId: asi, fifo: fifo, positiveOnly: false, locatorId: line.m_locator_id });
             for (var k2 = 0; k2 < st2.length; k2++) if (D(st2[k2].qtyonhand).add(mq).compareTo(Z) >= 0) { dmp = st2[k2].datematerialpolicy; break; }
             if (dmp == null && st2.length) dmp = st2[0].datematerialpolicy;
           }
@@ -439,5 +416,5 @@
   };
   ML.registerDocAction('m_movementconfirm', MMovementConfirm);
 
-  return { MMovement: MMovement, MMovementConfirm: MMovementConfirm, pendingConfirmations: pendingConfirmations, getWarehouse: getWarehouse, checkMaterialPolicy: checkMaterialPolicy, sAdd: sAdd, mmFifo: mmFifo, uomPrecision: uomPrecision, day: day, useGuaranteeDate: useGuaranteeDate };
+  return { MMovement: MMovement, MMovementConfirm: MMovementConfirm, pendingConfirmations: pendingConfirmations, checkMaterialPolicy: checkMaterialPolicy, sAdd: sAdd, uomPrecision: uomPrecision, day: day };
 });

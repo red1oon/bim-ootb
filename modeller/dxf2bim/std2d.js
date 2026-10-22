@@ -978,6 +978,23 @@
       const zt = Math.min(i + 1 < pst.length ? pst[i + 1].elev : w.z1, w.z1);
       doc.lwpoly('A-WALL', rect(h0, h1, ps.elev, zt), true, tag(w.guid));
     }); });
+    // §F8 D31: a curtain wall set into the facade (behind the face by more than 10 mm, at most the depth of the face's flush walls; for a stepped wing the storey's own face) is
+    // visible: drawn per storey band on A-WALL-CURT, stated by @LAYER=A-WALL-CURT,elevcurtain (marks); a band wholly behind a flush wall rectangle is hidden, not drawn
+    const xf = side === 'x0' || side === 'x1', par = w => xf ? (w.y1 - w.y0) > (w.x1 - w.x0) : (w.x1 - w.x0) > (w.y1 - w.y0), thick = w => xf ? w.x1 - w.x0 : w.y1 - w.y0, back = (c, ref) => side === 'x0' ? c.x0 - ref : side === 'x1' ? ref - c.x1 : side === 'y0' ? c.y0 - ref : ref - c.y1;
+    const fcwSet = new Set(fcw.map(c => c.guid)), wr = fw.map(w => { const [h0, h1] = hr(w); return { h0, h1, z0: w.z0, z1: w.z1, st: w.storey }; }); let nSet = 0;
+    // only a curtain wall running ALONG this face (seen edge-on it is a sliver another face's plan band would pair with)
+    // opts.curtainSetBack=false: test hook (W-CURTAIN-ELEV C4)
+    if (model.curtainSetBack !== false) model.curtains.filter(c => !fcwSet.has(c.guid) && par(c)).forEach(w => { const [h0, h1] = hr(w); pst.forEach((ps, i) => {
+      if (!curtainBands(model, ps.elev + CUT_OFFSET)[w.guid]) return;
+      const ref = model.rules.l118 && ps.name in storeyFace ? storeyFace[ps.name] : fv, pf = fw.filter(par), sw = pf.filter(x => x.storey === ps.name), depth = Math.max(EXT_FACE_TOL, ...(sw.length ? sw : pf).map(thick)), d = back(w, ref);
+      if (d < -EXT_FACE_TOL || d > depth + 1e-9 || (ref === fv && d <= EXT_FACE_TOL)) return;
+      const zt = Math.min(i + 1 < pst.length ? pst[i + 1].elev : w.z1, w.z1);
+      if (wr.some(r => r.h0 <= h0 + 1 && r.h1 >= h1 - 1 && r.z0 <= ps.elev + LEVEL_DIFF_TOL && r.z1 >= zt - LEVEL_DIFF_TOL)) return;
+      const zb = Math.max(ps.elev, w.z0);   // the glazing's own bottom (a sill wall below it is a wall, drawn as such)
+      if (zt <= zb + LEVEL_DIFF_TOL) return;
+      doc.lwpoly('A-WALL-CURT', rect(h0, h1, zb, zt), true, tag(w.guid)); nSet++;
+      log.add(`§ELEV_CURTAIN_SET ${face} guid=${w.guid} storey='${ps.name}' set_back=${fx(d * 1000, 1)}mm depth=${fx(depth * 1000, 1)}mm z=${fx(zb, 3)}..${fx(zt, 3)} (D31)`);
+    }); });
     const fwg = new Set(fw.map(w => w.guid).concat(fcw.map(w => w.guid))); let nOp = 0;
     for (const e of model.els) {
       if (OPENINGS.indexOf(e.cls) < 0 || !fwg.has(model.host_all[e.guid])) continue;
@@ -988,7 +1005,7 @@
       nOp++;
     }
     model.roofs.forEach(r => { const [h0, h1] = hr(r); doc.lwpoly('A-ROOF', rect(h0, h1, r.z0, r.z1), true, tag(r.guid)); });
-    log.add(`§ELEV ${face} walls=${fw.length} openings=${nOp} roofs=${model.roofs.length}`);
+    log.add(`§ELEV ${face} walls=${fw.length} openings=${nOp} roofs=${model.roofs.length}${nSet ? ' curtain_set_back=' + nSet : ''}`);
     const xs = [hp(env[0], env[2]), hp(env[1], env[3])], H0 = mm(Math.min(...xs)), H1 = mm(Math.max(...xs));
     const levels = levelsStated(model, log, face);   // D26
     levelsDrawn(doc, log, face, levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
@@ -1157,7 +1174,7 @@
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log, !!opts.extent);   // §L1.16: this set is ONE wing, drawn in its own frame (§F7 with a box: every angle, the box decides)
     loadRooms(model, opts.rooms, opts.roomsSource, wing, log);   // §F7 D22
-    model.stairSymbol = opts.stairSymbol; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
+    model.stairSymbol = opts.stairSymbol; model.curtainSetBack = opts.curtainSetBack; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     let grid;
     if (opts.extent && wing) {   // §F7 W-WAND-BOX: the grid of the family wing (same labels as the whole wing set; its host / grid lines are not this set's), then the box at any angle, hosts resolved on the box
       const L0 = new Log(); resolveHosts(model, L0); const g0 = deriveGrid(model, L0), bx = boxWing(model, wing, opts.extent, opts.depth, log);

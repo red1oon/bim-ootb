@@ -4,8 +4,8 @@
 //   Spec: bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §67. Witness: erp/tests/witness_inventory_diff.js (READ THE LOG: §INV lines). Posting = DOC.m_inventory (Doc_Inventory) in model_post.js; the cost detail = model_cost.js createInventory.
 //   Why it exists: the twin had NO model-layer M_Inventory (only the old op-path ERPEngine.completeInventory, removed in §67), so MMovementConfirm's Difference/Scrapped Qty (createDifferenceDoc) was a named refusal.
 //   Java root: org.adempiere.base/src/org/compiere/model/MInventory.java + MInventoryLine.java + MInventoryLineMA.java. ASI/MA handling is kept verbatim to the Java (the Product Attribute lane may refine the shared pieces).
-//   Storage reads use model_movement.getWarehouse (reads through the Trx, so it sees the writes of its own transaction) and NOT ModelAsi.storages/negatives (SQL on the base DB only): the confirm completes its inventory documents in the SAME Trx after the move,
-//   and with the base-only read the scrapped qty left a phantom negative row at the target (measured, witness_movement_confirm case e5b: row 102/124 = -1). The two ports of MStorageOnHand.getWarehouse should converge on the Trx-reading one.
+//   Storage reads use ModelAsi.storages / negatives, which read through the Trx (they see the writes of their own transaction; AS-8 converged the former base-SQL port and this file's own copy onto it): the confirm completes its inventory documents in the SAME Trx after the move,
+//   and with the base-only read the scrapped qty left a phantom negative row at the target (measured, witness_movement_confirm case e5b: row 102/124 = -1). (one port of MStorageOnHand.getWarehouse now, AS-8).
 //   Not ported = NAMED refusal ("... not ported - named"), never silent: back-date re-costing (periodClosedCheckForBackDateTrx :1292-1370). Cost Adjustment (doc method vs the schemas' method, NewCost - CurrentCost x the cost's Qty) IS ported (MInventoryLine.beforeSave :397-438, completeIt :530-556, Doc_Inventory CA branch).
 'use strict';
 (function (root, factory) {
@@ -15,7 +15,7 @@
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
   var fire = function (trx, timing, table, row) { return ML.fire(trx, timing, table, row); };
   var LINV_BREAK = (typeof process !== 'undefined' && process.env && process.env.LINV_BREAK) || '';   // witness negative controls only (LINV_BREAK=nostorage drops the storage move; noclearing is read by model_post)
-  var day = MVT.day, sAdd = MVT.sAdd, mmFifo = MVT.mmFifo, getWarehouse = MVT.getWarehouse, uomPrecision = MVT.uomPrecision;
+  var day = MVT.day, sAdd = MVT.sAdd, uomPrecision = MVT.uomPrecision;   // storage reads: ModelAsi.storages / negatives = the ONE MStorageOnHand.getWarehouse / getWarehouseNegative (AS-8)
   var same = function (a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); };
   function elementName(trx, col) { var r = trx.q('SELECT name FROM ad_element WHERE lower(columnname)=?', [col.toLowerCase()])[0]; return r && r.name != null ? r.name : col; }   // Msg.getElement
   function subtypeOf(trx, inv) { var d = T.dt(trx, inv.c_doctype_id); return d ? d.docsubtypeinv : null; }                                                    // MDocType.getDocSubTypeInv
@@ -95,20 +95,6 @@
     }
   });
 
-  // MStorageOnHand.getWarehouseNegative :579-680 (asi 0 = the rows without an instance) ORDER BY l.PriorityNo DESC, DateMaterialPolicy [, asi], QtyOnHand DESC (GuaranteeDate when the product uses it)
-  function getWarehouseNegative(trx, whId, productId, fifo, locatorId) {
-    if ((!nz(whId) && !nz(locatorId)) || !nz(productId)) return [];
-    var base = nz(locatorId) ? trx.find('m_storageonhand', { m_locator_id: locatorId, m_product_id: productId })
-      : trx.find('m_storageonhand', { m_product_id: productId }).filter(function (s) { var l = trx.get('m_locator', s.m_locator_id); return l && String(l.m_warehouse_id) === String(whId); });
-    var p = T.product(trx, productId), useGd = MVT.useGuaranteeDate(trx, p), prio = function (s) { var l = trx.get('m_locator', s.m_locator_id); return l ? Number(l.priorityno || 0) : 0; };
-    var key = function (s) { if (useGd && nz(s.m_attributesetinstance_id)) { var a = trx.get('m_attributesetinstance', s.m_attributesetinstance_id); return a && a.guaranteedate ? String(a.guaranteedate) : ''; } return String(s.datematerialpolicy || ''); };
-    return base.filter(function (s) { return D(s.qtyonhand).signum() < 0 && !nz(s.m_attributesetinstance_id); }).sort(function (a, b) {
-      var c = prio(b) - prio(a); if (c) return c;
-      var ka = key(a), kb = key(b); c = ka < kb ? -1 : ka > kb ? 1 : 0; if (!fifo) c = -c;
-      if (!c) { var x = Number(a.m_attributesetinstance_id || 0), y = Number(b.m_attributesetinstance_id || 0); c = fifo ? x - y : y - x; }
-      return c || D(b.qtyonhand).compareTo(D(a.qtyonhand));
-    });
-  }
   function isSerial(trx, p) { var as = p && nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null; return !!as && Y(as.isinstanceattribute) && Y(as.isserno); }   // MProduct.isSerial :1180-1189
   function serNo(trx, asi) { var a = trx.get('m_attributesetinstance', asi); return a && a.serno != null && String(a.serno).trim() !== ''; }
 
@@ -117,9 +103,9 @@
     maList(trx, line).forEach(function (m) { if (m.isautogenerated === 'Y') trx.del('m_inventorylinema', m); });                                             // deleteInventoryLineMA :765 (MInventoryLineMA :102-112)
     if (qtyDiff.signum() === 0) return null;
     if (nz(line.m_attributesetinstance_id)) return null;
-    var p = T.product(trx, line.m_product_id), serial = isSerial(trx, p), fifo = mmFifo(trx, p);
+    var p = T.product(trx, line.m_product_id), serial = isSerial(trx, p), fifo = ASI_.mmFifo(trx, p);
     if (qtyDiff.signum() > 0) {                                                                                                                                // Incoming Trx
-      getWarehouseNegative(trx, inv.m_warehouse_id, line.m_product_id, fifo, line.m_locator_id).forEach(function (s) {                                          // auto balance negative on hand
+      ASI_.negatives(trx, { warehouseId: inv.m_warehouse_id, productId: line.m_product_id, asiId: 0, fifo: fifo, locatorId: line.m_locator_id }).forEach(function (s) {                                          // auto balance negative on hand
         if (qtyDiff.signum() === 0) return;
         var maQty = qtyDiff;
         if (maQty.compareTo(D(s.qtyonhand).negate()) > 0) maQty = D(s.qtyonhand).negate();
@@ -128,7 +114,7 @@
       if (qtyDiff.signum() > 0) {
         var as = nz(p.m_attributeset_id) ? trx.get('m_attributeset', p.m_attributeset_id) : null;
         if (as && Y(as.isinstanceattribute)) {                                                                                                                 // add quantity to the last attributesetinstance
-          getWarehouse(trx, line.m_product_id, 0, false, true, 0, inv.m_warehouse_id).forEach(function (s) {
+          ASI_.storages(trx, { warehouseId: inv.m_warehouse_id, productId: line.m_product_id, asiId: 0, fifo: false, positiveOnly: true }).forEach(function (s) {
             if (qtyDiff.signum() === 0 || !nz(s.m_attributesetinstance_id)) return;
             if (serial && serNo(trx, s.m_attributesetinstance_id)) return;
             maInsert(trx, line, s.m_attributesetinstance_id, qtyDiff.negate(), s.datematerialpolicy, true); qtyDiff = Z;
@@ -149,7 +135,7 @@
       }
     } else {                                                                                                                                                  // Outgoing Trx
       var toDeliver = qtyDiff.negate();
-      getWarehouse(trx, line.m_product_id, 0, fifo, true, line.m_locator_id, inv.m_warehouse_id).forEach(function (s) {
+      ASI_.storages(trx, { warehouseId: inv.m_warehouse_id, productId: line.m_product_id, asiId: 0, fifo: fifo, positiveOnly: true, locatorId: line.m_locator_id }).forEach(function (s) {
         if (toDeliver.signum() === 0) return;
         if (serial && nz(s.m_attributesetinstance_id) && serNo(trx, s.m_attributesetinstance_id)) return;
         if (D(s.qtyonhand).compareTo(toDeliver) >= 0) { maInsert(trx, line, s.m_attributesetinstance_id, toDeliver, s.datematerialpolicy, true); toDeliver = Z; }
@@ -214,7 +200,7 @@
           if (ccp != null && ccp.compareTo(D(line.currentcostprice)) !== 0) { T.msg(trx, 'Current Cost for Line ' + line.line + ' have changed.'); return 'IN'; }
         }
         if (sub === 'PI' && !rev) {                                                                                                                            // :558-586 Date Last Inventory on the line's storage rows
-          var rows = !nz(line.m_attributesetinstance_id) ? getWarehouse(trx, line.m_product_id, 0, mmFifo(trx, p), true, line.m_locator_id, inv.m_warehouse_id)   // getWarehouse(wh, product, 0, null, fifo, positiveOnly=true, locator)
+          var rows = !nz(line.m_attributesetinstance_id) ? ASI_.storages(trx, { warehouseId: inv.m_warehouse_id, productId: line.m_product_id, asiId: 0, fifo: ASI_.mmFifo(trx, p), positiveOnly: true, locatorId: line.m_locator_id })   // getWarehouse(wh, product, 0, null, fifo, positiveOnly=true, locator)
             : trx.find('m_storageonhand', { m_locator_id: line.m_locator_id, m_product_id: line.m_product_id, m_attributesetinstance_id: line.m_attributesetinstance_id });                                    // getAll(product, locator, asi)
           rows.forEach(function (s) { trx.update('m_storageonhand', s, { datelastinventory: inv.movementdate }); });
         }
@@ -336,5 +322,5 @@
   }
   ML.registerDocAction('m_inventory', MInventory);
 
-  return { MInventory: MInventory, checkMaterialPolicy: checkMaterialPolicy, lineQtyDiff: lineQtyDiff, getWarehouseNegative: getWarehouseNegative };
+  return { MInventory: MInventory, checkMaterialPolicy: checkMaterialPolicy, lineQtyDiff: lineQtyDiff };
 });
