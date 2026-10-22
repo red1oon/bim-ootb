@@ -355,3 +355,32 @@ model-marked round trip 902 -> 343 blocking (no_host 120 -> 14, opening_unclassi
 Duplex / HHS / Clinic / LTU sheets byte-identical to origin/main. `run_all_witnesses` (with the raw shed) = origin/main + the new witness. JKR yellow stage (plain set, Accept all): every role,
 level, roof, cut, grid (225) and datum (30) = the model's (D46 / D48 hold on the Malay storey names). Left on JKR: the 98 `no_elevation_for_face` are window PART sections (50x50 / 50x100 mullions,
 1290x20 panes) read as glazing openings (the Hospital's D13 finding): next, a window-parts rule like D3's door parts. Modeller sw v128.
+
+## §D51 BEST-EFFORT SLAB WHEN THE WALLS DO NOT DRAW A RECTANGLE (owner 2026-10-23: "best effort default dims and costs ... user option to edit in the JSON later ... fast best effort default to reduce grunt work"; amends §D44)
+**Witness claim first (W-SLAB-ESTIMATE, `modeller/tests/witness_dxf_slab_estimate.js`).** E1 a storey that D44 left without a slab now gets ONE amber slab (prov `derived`) over the cells the walls bound on
+both axes (row AND column inside the first wall run from each side; interior walls inside, exterior walls outside), its area = that cell area, and ONE advisory `GAP:slab_outline_estimated` stating the
+area, the rectangle's area and the setting to change. E2 the setting `slab.outline_when_not_rect` (`element_defaults.json`, value `walls_bounded`; options `walls_bounded` | `none`) stated `none` with
+`@DEFAULT` on a plan gives D44's outcome (no slab, `GAP:slab_outline_not_rectangular`): the user's word wins. E3 a set whose walls draw a rectangle (Duplex) is byte-identical to BASE. E4 nothing but
+slabs changes (every other element identical by guid + vertices).
+**Measured first (the review session):** HHS walls-bounded 1,050 / 1,325 / 1,215 m2 = 3,590 m2 against the model's 150 mm floor slabs 3,975 m2 (-10% in total; per storey -43% / -17% / +125%: the L3
+slab has a void the walls do not show); the rectangle was 10,473 m2 (+163%). It is a default, not a reading: amber, listed, one JSON value or one marking to turn it off.
+
+## §D52 A BRIDGE IS NO LONGER THAN AN OPENING GAP (architect review F14)
+**Witness claim first (W-BRIDGE-LONG, `modeller/tests/witness_dxf_bridge_long.js`).** B1 no bridge (infill over / under openings between two wall pieces) is longer than `opening.gap_max` (5 m, the
+config's own opening-gap limit): the openings of a longer gap are listed `GAP:opening_gap_unbounded` with the gap length, no infill and no void are made for them. B2 a set with no gap over the limit
+(Duplex, HHS, JKR: 0 / 0 / 0 measured) converts byte-identical to BASE. B3 falsifier: the Duplex Level 1 with its wall piece FB removed (a missing wall next to a door): no 11.6 m bridge, the door listed.
+**Measured first:** bridges longer than 5 m: Duplex 0 of 52, HHS 0 of 86, JKR 0 of 30, Clinic 6 of 346 (14.74, 7.32, 8.12, 7.12, 7.12 m on Level 1 and 31.50 m on Level 2, each over 1-2 openings):
+`bridgeOpenings` bridged the whole distance between the two nearest pieces of the strip, so a wall missing next to a door became a lintel the length of the missing wall.
+
+## §D53 BEST-EFFORT MATERIALS: THE REFERENCE BY CLASS, A FIRM'S CATALOGUE BY THICKNESS (architect review F6 / R4.4; owner 2026-10-23: best-effort defaults, editable in JSON)
+**Witness claim first (W-MATERIAL, `modeller/tests/witness_dxf_material.js`).** M1 with no catalogue every converted wall, curtain wall, slab and roof carries a material from `synthetic_ref.json`
+(`parts[class].material`, the JSON the structure path already uses), its source stated (`reference`). M2 with a catalogue learned from the SAME model (`modeller/tools/catalogue_from_ifc.js`), a
+thickness with ONE material gives the model wall's material (>= 99% of the pieces that lie in one model wall); a thickness with several takes the most frequent and names the others
+(`material_alt`), the model's material among them (>= 99%). (Measured while building: HHS 115 mm is Ziegel on 62 walls and Lamellen on 7, but the 7 are long: 110 pieces against 91, so
+thickness alone cannot choose; the 0.938 'purity' counted walls, not pieces.) M3 a catalogue from ANOTHER firm (JKR on HHS) is applied where a thickness matches but its materials are the other firm's: they equal the HHS model's for
+< 10% of the pieces (measured first: JKR's 175 / 300 mm rows give HHS walls a precast panel / ceramic finish) (the falsifier that keeps catalogues per firm). M4 held out: learned on the first two storeys, the one-material claim on the rest, and the ambiguous ones named unless the training storeys never used that material (counted: `unseen`). M5 nothing else changes: guid, class, vertices of
+every element identical to the run without materials.
+**Rules.** `convert(sheets, { ref, catalogue })`: thickness = the drawn wall's thinner plan side (mm, rounded), slab = its depth; catalogue row = the most frequent entry for that exact thickness,
+stated as `<name>: n of m <class> of t mm` (two or more materials for one thickness: the most frequent, the others named in `material_alt`); no row = the reference. The IFC writers already write
+`e.ifc.material` (IfcMaterial + IfcRelAssociatesMaterial); the Viewer db then carries `material_name` for the BOM and the material lens. The catalogue is a file the user keeps or edits;
+`catalogue_from_ifc.js` writes it from the firm's own IFC (counts only, nothing invented).

@@ -860,7 +860,7 @@
     var g = { ok: false, set: roles.set, setFrom: roles.setFrom, roles: roles, refused: roles.refused.slice(), verdict: null, R: null, lib: null };
     if (roles.ok) {
       g.lib = await loadLibrary(state.sheets);
-      var R = I.convert(state.sheets, { library: g.lib || undefined, set: state.setOverride }); g.R = R;
+      var R = I.convert(state.sheets, { library: g.lib || undefined, set: state.setOverride, defaultsRef: state.defaultsRef || undefined, ref: state.ref || undefined, catalogue: state.catalogue || undefined }); g.R = R;   // §D51 the page's registry (element_defaults.json) for the best-effort settings
       if (R.refused) g.refused = R.refused;
       else {
         g.verdict = R.verdict;

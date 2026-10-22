@@ -33,6 +33,10 @@
       var c = [(X[i] + X[i + 1]) / 2, (Y[j] + Y[j + 1]) / 2];
       solid[j].push(inPoly(c, outline) && !holes.some(function (h) { return inPoly(c, h); }));
     } }
+    return prismCells(X, Y, solid, z0, z1);
+  }
+  function prismCells(X, Y, solid, z0, z1) {   // §D51: the mesh of a rectilinear cell set (solid[j][i] over the X / Y grid), split out of prismRect unchanged
+    var nx = X.length - 1, ny = Y.length - 1;
     var V = [], F = [], idx = {};
     function vid(i, j, top) { var k = i + ',' + j + ',' + (top ? 1 : 0); if (!(k in idx)) { idx[k] = V.length; V.push([X[i], Y[j], top ? r6(z1) : r6(z0)]); } return idx[k]; }
     function S(i, j) { return i >= 0 && j >= 0 && i < nx && j < ny && solid[j][i]; }
@@ -50,6 +54,26 @@
     }
     if (!F.length) return null;
     return { vertices: V, faces: F };
+  }
+  // §D51 best effort: the cells the walls bound on BOTH axes (row and column inside the first wall run from each side). Pieces as D44's cover (wall rects, bridges <= gap_max, opening boxes).
+  // Interior walls lie inside, exterior walls outside. Returns { X, Y, solid, area, cells } or null; the caller makes the mesh (prismCells) and states it as a default (amber), never a reading.
+  function boundedCells(ops, cfg, extra) {
+    var ws = walls(ops).filter(function (o) { return o.params.rect && !o.params.infill; }).map(function (o) { return o.params.rect; });
+    var rects = ws.concat(((extra && extra.bridges) || []).filter(function (o) { return o.params.rect && !(o.params.length > cfg.opening.gap_max); }).map(function (o) { return o.params.rect; }))
+      .concat(ops.filter(function (o) { return o.op_type === 'DXF_OPENING'; }).map(function (o) { return openingRect(o.params.opening_box); }).filter(Boolean));
+    if (!rects.length) return null;
+    var X = uniq([].concat.apply([], rects.map(function (r) { return [r6(r[0]), r6(r[2])]; }))), Y = uniq([].concat.apply([], rects.map(function (r) { return [r6(r[1]), r6(r[3])]; })));
+    var nx = X.length - 1, ny = Y.length - 1, W = [], ix = function (v) { return X.indexOf(r6(v)); }, iy = function (v) { return Y.indexOf(r6(v)); };
+    for (var j = 0; j < ny; j++) { W.push([]); for (var i = 0; i < nx; i++) W[j].push(false); }
+    rects.forEach(function (r) { for (var i = ix(r[0]); i < ix(r[2]); i++) for (var j = iy(r[1]); j < iy(r[3]); j++) W[j][i] = true; });
+    function span(n, at) { var a = 0; while (a < n && !at(a)) a++; if (a === n) return null; while (a < n && at(a)) a++; var b = n - 1; while (b >= 0 && !at(b)) b--; while (b >= 0 && at(b)) b--; return a <= b ? [a, b] : null; }
+    var row = [], col = [], solid = [], area = 0, cells = 0;
+    for (j = 0; j < ny; j++) row.push(span(nx, function (i) { return W[j][i]; }));
+    for (i = 0; i < nx; i++) col.push(span(ny, function (jj) { return W[jj][i]; }));
+    for (j = 0; j < ny; j++) { solid.push([]); for (i = 0; i < nx; i++) {
+      var on = !!(row[j] && col[i] && i >= row[j][0] && i <= row[j][1] && j >= col[i][0] && j <= col[i][1]); solid[j].push(on);
+      if (on) { area += (X[i + 1] - X[i]) * (Y[j + 1] - Y[j]); cells++; } } }
+    return cells ? { X: X, Y: Y, solid: solid, area: r6(area), cells: cells } : null;
   }
 
   // ---- §4.1 S-O inner ring of the exterior walls (rectangular envelope only) ----
@@ -339,6 +363,7 @@
     Object.keys(groups).sort().forEach(function (key) {
       var g = groups[key], A = g.A, B = g.B, zbA = level + A.params.base, ztA = zbA + A.params.height, zbB = level + B.params.base, ztB = zbB + B.params.height;
       g.items.forEach(function (it) { used[it.o.output_guid] = 1; });
+      if (g.s1 - g.s0 > cfg.opening.gap_max + tol) { g.items.forEach(function (it) { note('GAP:opening_gap_unbounded', it.o, { c: it.c, gap: r6(g.s1 - g.s0), gap_max: cfg.opening.gap_max, reason: 'the gap between the wall pieces is longer than an opening gap: no wall is bridged over it (D52)' }); }); return; }   // §D52
       if (Math.abs(zbA - zbB) > ztol || Math.abs(ztA - ztB) > ztol) { g.items.forEach(function (it) { note('GAP:gap_height_conflict', it.o, { a: [r6(zbA), r6(ztA)], b: [r6(zbB), r6(ztB)] }); }); return; }
       var zb = r6(Math.min(zbA, zbB)), zt = r6(Math.max(ztA, ztB));
       var bad = g.items.filter(function (it) { return it.z0 < zb - ztol || it.z1 > zt + ztol; });
@@ -500,5 +525,5 @@
   }
 
   return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
-    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
+    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, boundedCells: boundedCells, prismCells: prismCells, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });

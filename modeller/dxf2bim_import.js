@@ -10,7 +10,7 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory({ DxfParser: require('./lib/dxf-parser.js'), B: require('./dxf2bim/dxf2bim.js'), MK: require('./dxf2bim/dxf2marks.js'),
       E: require('./dxf2bim/dxf2elev.js'), M: require('./dxf2bim/dxf2mesh.js'), T: require('./dxf2bim/dxf2types.js'), S: require('./dxf2bim/dxf2shell.js'),
-      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js') });
+      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js'), REF: require('./element_defaults.json'), SREF: require('./synthetic_ref.json') });
   } else {
     root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig, Q: root.Dxf2Qualify });
   }
@@ -201,6 +201,36 @@
   }
   // §L4.2: layer rules are @LAYER markings now (Dxf2Marks.withLayers per sheet); the L4.1 session rules are gone. setWith = the set by name.
   function setWith(name) { return SETS[name] || null; }
+  // §D53 best-effort materials. opts.ref = synthetic_ref.json (the page passes its loaded copy; Node: the shipped one), opts.catalogue = a firm catalogue (modeller/tools/catalogue_from_ifc.js).
+  // A wall / slab whose drawn thickness has a catalogue row takes its most frequent material (the count stated); otherwise the reference's material for its class. Geometry is never touched.
+  var MAT_TAB = { IfcWall: 'walls', IfcSlab: 'slabs' };
+  function thicknessMm(e) {
+    var xs = e.vertices.map(function (v) { return v[0]; }), ys = e.vertices.map(function (v) { return v[1]; }), zs = e.vertices.map(function (v) { return v[2]; });
+    var dx = Math.max.apply(null, xs) - Math.min.apply(null, xs), dy = Math.max.apply(null, ys) - Math.min.apply(null, ys), dz = Math.max.apply(null, zs) - Math.min.apply(null, zs);
+    return Math.round((e.class === 'IfcSlab' || e.class === 'IfcRoof' ? dz : Math.min(dx, dy)) * 1000);
+  }
+  function applyMaterials(els, opts) {
+    var ref = (opts && opts.ref) || L.SREF, cat = opts && opts.catalogue;
+    if (!ref || !ref.parts) return;
+    els.forEach(function (e) {
+      if (!e.vertices || !e.vertices.length || e.ifc && e.ifc.material) return;
+      var part = ref.parts[e.class]; if (!part && !MAT_TAB[e.class]) return;
+      var t = thicknessMm(e), rows = cat && MAT_TAB[e.class] && cat[MAT_TAB[e.class]] && cat[MAT_TAB[e.class]][String(t)];
+      if (rows && rows.length && rows[0].material) {
+        var tot = rows.reduce(function (a, r) { return a + r.n; }, 0);
+        e.ifc = Object.assign({ ifc_class: e.class }, e.ifc, { material: rows[0].material, type_name: rows[0].type || undefined, material_source: (cat.name || 'catalogue') + ': ' + rows[0].n + ' of ' + tot + ' ' + MAT_TAB[e.class] + ' of ' + t + ' mm',
+          material_alt: rows.length > 1 ? rows.slice(1).map(function (r) { return r.n + 'x ' + r.material; }) : undefined, thickness_mm: t });
+      } else if (part) e.ifc = Object.assign({ ifc_class: e.class }, e.ifc, { material: part.material, material_source: 'reference (synthetic_ref.json ' + e.class + ')', thickness_mm: t });
+    });
+  }
+  // §D51 the best-effort slab setting: a plan's @DEFAULT > the registry the caller passes (opts.defaultsRef, the page's element_defaults.json) > the registry shipped with this module > walls_bounded
+  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect';
+  function slabOutlineSetting(sheets, opts) {
+    var st = null; (sheets || []).forEach(function (sh) { ((sh.desc && sh.desc.defaults) || []).forEach(function (q) { if (q.key === SLAB_OUTLINE_KEY && st === null) st = q.value; }); });
+    if (st !== null) return st;
+    var ref = (opts && opts.defaultsRef) || L.REF, e = ref && ref.defaults && ref.defaults[SLAB_OUTLINE_KEY];
+    return e && e.value ? e.value : 'walls_bounded';
+  }
   function curtainLayer(set, layer) { return !!(set && set.CURTAIN && set.CURTAIN.indexOf(layer) >= 0); }   // §D45
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
@@ -366,7 +396,7 @@
         lowerPieces: lower ? lower.before.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; }).map(function (o) { return o.params.rect; }) : [], section: sec, tol: CFG.snap_tol });
       st.after = wb.ops; st.baseAdv = wb.advisories; st.baseRep = wb.report;
     });
-    ST.forEach(function (st) { st.ring = S.innerRing(st.after, CFG, { bridges: S.bridgeOpenings(st.after, CFG, { level: st.level, hashHex: hashHex }).infill }); });   // §D44 the bridges count as face cover
+    ST.forEach(function (st) { st.ringBridges = S.bridgeOpenings(st.after, CFG, { level: st.level, hashHex: hashHex }).infill; st.ring = S.innerRing(st.after, CFG, { bridges: st.ringBridges }); });   // §D44 the bridges count as face cover
     R.roofPlan = S.roofPlan(roofSh.dxf.entities, MK.withLayers(SET.MAP_ROOF, roofSh.desc), roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
     R.roofSheet = roofSh.name;
     R.run_id = C.runId(B.canon, hashHex, ST.map(function (st) { return st.run_id; }), sheets.map(function (s) { return s.sha; }), SET.maps);
@@ -433,6 +463,15 @@
         var pm = S.prismRect(st.ring.outline, [], sz.bottom, sz.top);
         if (pm) els.push({ guid: hashHex('slab|' + st.name + '|' + J(st.ring.outline)).slice(0, 32), class: 'IfcSlab', handle: (st.ring.members || []).join(','), layer: 'A-WALL-*', piece: 0, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet });
       }
+      else if (typeof sz.thickness === 'number' && (st.ring.gaps || []).some(function (x) { return x.code === 'GAP:slab_outline_not_rectangular'; }) && slabOutlineSetting(sheets, opts) === 'walls_bounded') {
+        // §D51 best effort: the cells the walls bound on both axes, amber (derived), stated as a default with the setting that turns it off
+        var bc = S.boundedCells(st.after, CFG, { bridges: st.ringBridges }), pe = bc && S.prismCells(bc.X, bc.Y, bc.solid, sz.bottom, sz.top);
+        if (pe) {
+          els.push({ guid: hashHex('slab-est|' + st.name + '|' + bc.area).slice(0, 32), class: 'IfcSlab', handle: 'estimated', layer: 'A-WALL-*', piece: 0, vertices: pe.vertices, faces: pe.faces, storey: st.name, sheet: st.sheet, prov: 'derived' });
+          st.ring.gaps = st.ring.gaps.map(function (x) { return x.code !== 'GAP:slab_outline_not_rectangular' ? x : Object.assign({}, x, { code: 'GAP:slab_outline_estimated', estimated_m2: bc.area, setting: SLAB_OUTLINE_KEY,
+            reason: 'the walls do not draw a rectangle: a best-effort slab of ' + bc.area + ' m2 (the area the walls bound on both axes) was made, amber; the rectangle would be ' + x.rect_m2 + ' m2. Turn it off with @DEFAULT=' + SLAB_OUTLINE_KEY + ',none or in element_defaults.json' }); });
+        }
+      }
       st.fills.elements.forEach(function (e) { els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });
     });
     if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
@@ -440,6 +479,7 @@
       if (rpm) els.push({ guid: hashHex('roof|' + J(TOP.ring.outline)).slice(0, 32), class: 'IfcRoof', handle: R.roofPlan.roof_handle, layer: 'A-ROOF', piece: 0, vertices: rpm.vertices, faces: rpm.faces, storey: 'Roof', sheet: roofSh.name });
     }
     els.forEach(function (e) { if (e.volume === undefined) { e.volume = r6(M.volume(e)); e.watertight = M.watertight(e); } });
+    applyMaterials(els, opts);   // §D53 best-effort materials (reference by class, a firm catalogue by thickness)
     R.els = els;
     R.libGeom = {}; if (library) library.geoms.forEach(function (gm) { if (gm.vertices && gm.vertices.length) R.libGeom[gm.geometry_hash] = gm; });
     // infill identity: the mesh guid meshFromOps gives each infill op (asked of the module, not re-derived)
