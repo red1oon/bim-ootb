@@ -126,6 +126,19 @@
       Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }).forEach(function (z) { out.push({ rule: 'PR-Z', key: 'Z', value: String(z), x: 0, y: seen[z].y, why: seen[z].why }); });
       if (!Object.keys(seen).length) refused.push({ rule: 'PR-Z', why: 'no level text pairs with its height or a level line' });
     }
+    var STOREY_RE = /\b(LEVEL\s*[-+]?\d+|STOREY|STORY|BASEMENT|MEZZANINE|(GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|\d+(ST|ND|RD|TH))\s+FLOOR)\b/i;
+    function propLevel(sh, tl, out, refused) {   // §D37 PR-LEVEL: no plan of the set states a level and no title names a storey -> @LEVEL=0, inferred (orange)
+      if (typeof process !== 'undefined' && process.env && process.env.DXF_NO_PRLEVEL) return;
+      if (get1(sh, 'LEVEL')) return;
+      var stated = ctx.sheets().filter(function (o) { var l = get1(o, 'LEVEL'); return viewOf(o) === 'PLAN' && l && l.rule !== 'PR-LEVEL'; });   // a level this rule's own accept wrote is not a stated one: the other plans keep their default
+      if (stated.length) return;
+      var names = []; ctx.sheets().filter(function (o) { return viewOf(o) === 'PLAN'; }).forEach(function (o) {   // the set's plans: sheet names + their title texts (a text ending PLAN)
+        names.push(o.name); o.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && /PLAN\s*$/i.test(String(e.text || '').trim())) names.push(String(e.text).trim()); }); });
+      names = names.concat(tl);
+      var hit = names.filter(function (n) { return STOREY_RE.test(String(n)); })[0];
+      if (hit) { refused.push({ rule: 'PR-LEVEL', why: 'title "' + hit + '" names a storey: its level is not a default' }); return; }
+      out.push({ rule: 'PR-LEVEL', key: 'LEVEL', value: '0', x: 0, y: 0, why: 'no plan of the set states a level and no title names a storey: the default ground level (the CLI\'s --level 0)' });
+    }
     function proposalsFor(sh) {
       var out = [], refused = [], v = viewOf(sh);
       var iu = sh.dxf.header && sh.dxf.header.$INSUNITS;
@@ -142,6 +155,7 @@
       if (Object.keys(sets).length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: Object.keys(sets)[0], x: 0, y: 0, why: 'the other sheets state it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
+      if (v === 'PLAN') propLevel(sh, tl, out, refused);
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;

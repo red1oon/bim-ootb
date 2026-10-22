@@ -47,7 +47,7 @@
   // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
   var TAGE = '§DXF-EVIDENCE';
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read',
-    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'default': 'inferred' };
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
   function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
@@ -566,7 +566,7 @@
         if (v === 'SECTION') h += field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'CUT', 'Cut', mi.miss) + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num');   // §L4.3: the section states @ROOF (§L2.6 E)
         if (v === 'ELEV' || v === 'SECTION') { h += multiBlock(sh, si, ['GRIDH'], 'Grid lines', mi.miss, 'GRIDH') + multiBlock(sh, si, ['Z'], 'Level datums (@Z)', mi.miss, 'Z'); }
         mi.errors.forEach(function (e) { h += '<div class="dm-ref" style="color:#f2a3a3">' + esc(e.code + ' ' + e.message) + '</div>'; });
-        h += S.pv ? previewBlock(si) : proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);   // §D34: while the Arrange view stands, the card lists every yellow value placing it (all rounds)
+        h += S.pv ? previewBlock(si) : proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'LEVEL', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);   // §D34: while the Arrange view stands, the card lists every yellow value placing it (all rounds)
         (sh.prop ? sh.prop.refused : []).filter(function (r) { return r.rule !== 'PR-UNITS'; }).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
         h += '</div>';
       }
