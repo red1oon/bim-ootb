@@ -352,6 +352,12 @@
     if (state.group) state.group.visible = state.linesOn;
     if (window.DxfMetaEditor && window.DxfMetaEditor.state.pv) window.DxfMetaEditor.pvSet(null);
   }
+  // §D38 the morph is for RAW sets: it plays on open only while some value is still defaulted (yellow); a set whose markings are all stated opens at its final placement
+  function arrWanted() {
+    var n = arrPlan().reduce(function (a, it) { return a + it.steps.filter(function (st) { return st.yellow; }).length; }, 0);
+    if (!n) console.log(TAGA + ' skip-on-open: no yellow step, every value is stated in the set, it opens placed');
+    return n > 0;
+  }
   function arrNeeded(R) { return R.items.some(function (it) { return it.tintFinal || (it.view && lacksOf(it).length && it.stages.length > 1 && maxDiff(it.stages[it.stages.length - 1], it.stages[0]) > 1e-12 && !(state.canvas && state.canvas[it.name])); }); }
   function handOver(why) { console.log(TAGA + ' hand-over to the canvas (' + why + ')'); arrClear(); if (state.panel) renderPanel(); if (window.A && window.A.requestRender) window.A.requestRender(); }
   function minimise(on) { var p = document.getElementById('dxf-panel'); if (p) p.classList.toggle('dxf-min', !!on); }
@@ -710,7 +716,7 @@
     buildCanvas(state.sheets);
     renderPanel();
     if (window.DxfMetaEditor) window.DxfMetaEditor.load(state.sheets);   // §L4.1: every marking shown and editable; it re-judges through convertGate()
-    if (how && how.chooser && state.arrangeOnOpen && window.DxfMetaEditor) arrange(state.arrangeOpts).catch(function (e) { console.error(TAGA + ' failed ' + (e && e.stack || e)); });   // §D34 play on open
+    if (how && how.chooser && state.arrangeOnOpen && window.DxfMetaEditor && arrWanted()) arrange(state.arrangeOpts).catch(function (e) { console.error(TAGA + ' failed ' + (e && e.stack || e)); });   // §D34 play on open
     return { sheets: state.sheets.map(function (s) { return { name: s.name, role: s.role, why: s.why, level: s.level, face: s.face, roofZ: s.roofZ }; }), gate: state.gate };
   }
 

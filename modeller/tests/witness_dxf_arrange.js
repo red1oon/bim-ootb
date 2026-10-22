@@ -108,6 +108,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   if (duplex) await markedSet('duplex', path.join(duplex, 'marked')); else { ['A1', 'A2', 'A3', 'A4', 'A5'].forEach(a => skip(a + '[duplex]', 'no DXARC.db at ' + DB + ' (the Duplex sets are written from it)')); }
   if (fs.existsSync(SHED_MARKED) && dxfs(SHED_MARKED).length === 9) await markedSet('shed', SHED_MARKED); else ['A1', 'A2', 'A3', 'A4', 'A5'].forEach(a => skip(a + '[shed]', 'LOCAL MATERIAL ABSENT: ' + SHED_MARKED + ' (9 CLI-marked shed sheets)'));
 
+  // ---------- A9 (§D38): the morph is for RAW sets. Proves/disproves: a fully marked set no longer replays on open; a set with defaulted (yellow) values still does ----------
+  if (fs.existsSync(SHED_MARKED) && dxfs(SHED_MARKED).length === 9) {
+    alog.length = 0; await openSet(dxfs(SHED_MARKED), true);
+    const m = await pg.evaluate(() => ({ arr: !!window.DxfImportUI.state.arr, sheets: window.DxfImportUI.state.sheets.filter(s => s.role && s.role !== 'drawing').length }));
+    const skipped = alog.filter(l => /skip-on-open/.test(l)).length, started = alog.filter(l => / start /.test(l)).length;
+    ok('A9a[shed marked] a processed set opens placed, no morph: skip-on-open logged once, 0 start lines, no arrangement object, sheets with a role > 0', skipped === 1 && started === 0 && !m.arr && m.sheets > 0, 'skip=' + skipped + ' start=' + started + ' arr=' + m.arr + ' roles=' + m.sheets);
+  } else skip('A9a', 'LOCAL MATERIAL ABSENT (INCONCLUSIVE: nothing judged): ' + SHED_MARKED);
+  if (SHED_RAW && RAW9.every(n => fs.existsSync(path.join(SHED_RAW, n + '.dxf')))) {
+    alog.length = 0; await openSet(RAW9.map(n => path.join(SHED_RAW, n + '.dxf')), true); await sleep(1500);
+    const st2 = alog.filter(l => / start /.test(l)).map(l => (l.match(/yellow=(\d+)/) || [])[1]), sk2 = alog.filter(l => /skip-on-open/.test(l)).length;
+    ok('A9b[shed raw] a raw set (yellow values) still plays on open: 1 start line with yellow > 0, no skip', st2.length === 1 && Number(st2[0]) > 0 && sk2 === 0, 'start yellow=' + st2.join(',') + ' skip=' + sk2);
+    await pg.evaluate(() => window.DxfImportUI.arrangeStop && window.DxfImportUI.arrangeStop());
+  } else skip('A9b', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');
+
   // ---------- the plain Duplex set: A3b ----------
   if (duplex) {
     await openSet(dxfs(path.join(duplex, 'plain')), false); alog.length = 0;
