@@ -107,18 +107,31 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
   // ================= TAKE =================
   // the product's own zoom-to-fit, then slid into the strip the OPEN panels leave free (fixed panels have no offsetParent: tested by display and width) and dollied closer by `zoom`
-  const fitCentre = async (zoom) => { await clickAt('#b-fit', 600); await sleep(1500);
-    await pg.evaluate(zm => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
-      const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
-      c.updateMatrixWorld(); const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect;
-      const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now();
-      (function step() { const k = Math.min(1, (performance.now() - t0) / 2400), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - zm * s);
-        ctl.target.copy(tg); c.position.copy(tg).add(d); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), zoom); };
+  const fitCentre = async (fill, ms) => { await pg.evaluate(([fill, ms]) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, box = new T.Box3();
+      const built = A.scene.children.filter(o => /^Bonsai/.test(o.name || '') && o.visible);   // the converted shed, when there is one (else the placed sheets)
+      if (built.length) built.forEach(o => box.union(new T.Box3().setFromObject(o)));
+      else { const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (g) box.setFromObject(g); }
+      if (box.isEmpty()) { res(); return; }
+      const ctr = box.getCenter(new T.Vector3()), size = box.getSize(new T.Vector3()), r = Math.max(size.x, size.y, size.z * 2, 0.5) * 0.5;
+      const pr = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...pr), x1 = innerWidth - 70;
+      const th = Math.tan(c.fov * Math.PI / 360), W = x1 - x0, dist = Math.max(r / th, r / (th * (W / innerHeight) * 1.0)) * fill + r * 0.1, dir = new T.Vector3(1, -1, 1.1).normalize();
+      c.up.set(0, 0, 1); const p0 = c.position.clone(), q0 = ctl.target.clone();
+      // aim at the centre, then slide camera + target along the view's right so the centre lands mid free strip
+      c.position.copy(ctr).addScaledVector(dir, dist); ctl.target.copy(ctr); ctl.update(); c.updateMatrixWorld();
+      const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, hw = dist * th * c.aspect, sh = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), P1 = c.position.clone().add(sh), Q1 = ctl.target.clone().add(sh);
+      c.position.copy(p0); ctl.target.copy(q0); ctl.update(); const t0 = performance.now();
+      (function step() { const k = Math.min(1, (performance.now() - t0) / ms), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), [fill, ms || 2400]); };
   const readMarks = f => marks(f).map(e => e['1'].replace(/ @BY=.*/, ''));
   const markedOf = name => dxfs(MARKED).find(f => path.basename(f).startsWith(name.replace(/\.dxf$/i, '') + '_marked'));
   const strip = (async () => 0);
   // §FILM_SHARE: how much of the role sheets lies inside the free canvas strip, every 2 s (a witness of "always in frame")
-  const shareNow = () => pg.evaluate(() => { try { const A = window.A, T = window.THREE, U = window.DxfImportUI.state, g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (!g) return null;
+  const shareNow = () => pg.evaluate(() => { try { const A = window.A, T = window.THREE, U = window.DxfImportUI.state;
+      const bo = A.scene.children.filter(o => /^Bonsai/.test(o.name || '') && o.visible);
+      if (bo.length) { const b = new T.Box3(); bo.forEach(o => b.union(new T.Box3().setFromObject(o))); const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
+        const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })); let inn = 0, n = 0;
+        for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { v.set(x, y, z).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) inn++; }
+        return inn / n; }
+      const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (!g) return null;
       const role = new Set(U.arr ? U.arr.items.filter(it => it.view).map(it => it.name) : Object.keys(U.canvas || {})); const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect();
       const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })), v = new T.Vector3(); let n = 0, inn = 0;
       g.traverse(o => { const nm = o.userData && (o.userData.arrSheet || o.userData.dxfSheet); if (!o.geometry || !o.geometry.attributes.position || !nm || !role.has(nm)) return; const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i += 30) { v.set(a[i], a[i + 1], a[i + 2]).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) inn++; } });
@@ -228,7 +241,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(900); await idle();
   fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
-  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await fitCentre(0.1); await sleep(800);
+  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await fitCentre(0.9); await sleep(800);
   // ---- chapter 4 ONE SHED: Complete the building, Convert, the panels away, the finish ----
   chapter(4, 'shed'); await beat('w10'); await backdrop(4);
   await clickAt('#dxf-fold', 500); await sleep(400);   // unfold: the option boxes are in this panel
@@ -237,19 +250,19 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
     ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
-  await fitCentre(0.1); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
+  await fitCentre(0.85); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
   // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
   const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
   let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
   await sleep(1200); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f)).sort(); fact('saved_n', String(saved.length));
   await clickAt('#dm-close', 600); await sleep(400); await clickAt('#dxf-fold', 500); await sleep(500);   // what is not needed any more is folded away: the canvas is all the shed
-  await fitCentre(0.22);
+  await fitCentre(0.8);
   await orbitZ(110, 14000);
   // ---- chapter 5 OPENS PLACED NEXT TIME ----
   chapter(5, 'placed'); await beat('c5'); await backdrop(5);
   const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
   await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(saved.map(f => path.join(SAVED, f))); await sleep(2500);
-  await fitCentre(0.08); await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
+  await fitCentre(0.9); await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
   { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
   await sleep(1500);
   // ---- closing card ----
