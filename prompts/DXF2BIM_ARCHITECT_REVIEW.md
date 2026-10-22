@@ -60,5 +60,5 @@ would show it wrong on another set, and which tier it lives in.
 
 ## 5. State at hand-off (verified 2026-10-22/23)
 Guide redone and live in the docs source (`docs/DXF2BIMGuide.md`; the GH Pages deploy through `scripts/safe_gh_deploy.sh` is the owner's call); in-app overlay has the 2D-drawings steps (bim-ootb #2297, sw v123);
-reverse hand-off verified (512 = 512, same classes); film v4 (EN) exists and the Malay version is in progress (`FILM_DXF2BIM_WHY_MARKINGS.md §MALAY VERSION`). Known limits already in the guide: component library local so
+reverse hand-off verified (512 = 512, same classes); film v4 (EN) and its Malay version are done, local only (`FILM_DXF2BIM_WHY_MARKINGS.md §MALAY VERSION`; cards PR bim-compiler #237 merged); the guide is not yet deployed to GH Pages. Known limits already in the guide: component library local so
 door/window fills may be 0; roof/slab estimated (amber); 4 bodies left out on the shed (no elevation / conflicting heights); door and window schedules not read.
