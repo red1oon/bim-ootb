@@ -18,7 +18,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const ROOT = path.join(__dirname, '..', '..'), DB = process.argv[2] || '/tmp/db2/DXARC.db';
 const SHED_RAW = process.env.SHED_RAW_DIR || '';
 const RAW9 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
-const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred' };   // the spec's table
+const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred' };   // the spec's table
 const HANDLE_RULES = ['PR-GRID-TICK', 'PR-GRID', 'PR-Z-GROUND', 'PR-Z'];   // the rules whose `why` names the entity they read
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
@@ -143,14 +143,14 @@ function cliTally(files, level) {
     ok('E2[duplex plain] the tier counts are the list\'s: round 1 and round 2 counted from the rows (each row\'s mark = its tier, orange = inferred) = the §DXF-EVIDENCE log = the preview rounds (the suggestion engine over shadow copies)',
       eq3(r1, l1) && eq3(r1, pv[1]) && eq3(r2, l2) && eq3(r2, pv[2]) && !r1.bad && !r2.bad && r1.rows === r1.stated + r1.read + r1.inferred && single1,
       'round1 rows=' + s3(r1) + ' log=' + s3(l1) + ' preview=' + s3(pv[1]) + ' | round2 rows=' + s3(r2) + ' log=' + s3(l2) + ' preview=' + s3(pv[2]) + ' | one kind -> Accept all only=' + single1);
-    // the roles the titles do not give (they end in a scale): typed by the user, then the Arrange view (preview placement of the yellow values)
+    // the roles and levels typed by the user (since §D46 the titles give them too: a typed value replaces the yellow one), then the Arrange view (preview placement of the yellow values)
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
     for (let i = 0; i < names.length; i++) { if (/FLOOR_LEVEL/.test(names[i])) await typeField(i, 'VIEW', 'PLAN'); if (/FRONT|REAR|LEFT|RIGHT/.test(names[i])) await typeField(i, 'VIEW', 'ELEV'); }
     for (let i = 0; i < names.length; i++) { if (/LEVEL_1/.test(names[i])) await typeField(i, 'LEVEL', '0'); if (/LEVEL_2/.test(names[i])) await typeField(i, 'LEVEL', '3.1'); }
     await pg.evaluate(() => window.DxfImportUI.arrange({ stepMs: 15, holdMs: 15 })); await idle(); await sleep(800); await cardsOpen(); await sleep(400);
     await shot('duplex_list_tiers');
     const st0 = await state();
-    await flyRules('duplex', ['PR-GRID', 'PR-Z', 'PR-CUT', 'PR-FACE', 'PR-HAXIS']);
+    await flyRules('duplex', ['PR-GRID', 'PR-Z', 'PR-CUT-TITLE', 'PR-FACE', 'PR-HAXIS']);   // §D46: the Duplex section title states the cut (AT X=); the label-pair PR-CUT (wrong on our sets) is no longer offered
     const rs = await restoreChecks(), st1 = await state();
     ok('E5[duplex] only a view: markings / verdict / saved texts / gate byte-identical before and after ' + (5 + 3) + ' row clicks; the row again, Esc and a click on the canvas each restore (no overlay, every opacity as before); 0 page errors',
       same(st0, st1) && rs.again && rs.esc && rs.canvas && rs.arrStill && errs.length === e0, JSON.stringify(rs) + ' errors=' + (errs.length - e0));

@@ -126,7 +126,25 @@
       Object.keys(seen).map(Number).sort(function (a, b) { return a - b; }).forEach(function (z) { out.push({ rule: 'PR-Z', key: 'Z', value: String(z), x: 0, y: seen[z].y, why: seen[z].why }); });
       if (!Object.keys(seen).length) refused.push({ rule: 'PR-Z', why: 'no level text pairs with its height or a level line' });
     }
-    var STOREY_RE = /\b(LEVEL\s*[-+]?\d+|STOREY|STORY|BASEMENT|MEZZANINE|(GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|\d+(ST|ND|RD|TH))\s+FLOOR)\b/i;
+    // §D46: '_' separates words in sheet names (FLOOR_LEVEL_1), so the storey test does not use \b, which treats '_' as a letter
+    var STOREY_RE = /(?:^|[^A-Za-z0-9])(LEVEL[\s_]*[-+]?\d+|STOREY|STORY|BASEMENT|MEZZANINE|(GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|\d+(ST|ND|RD|TH))[\s_]+FLOOR)(?![A-Za-z0-9])/i;
+    // §D46 (a) a title's core: its scale, a trailing parenthetical and a "PLAN - qualifier" tail removed (LEVEL 2 PLAN (FFL +3.800)  1:100 -> LEVEL 2 PLAN; ROOF PLAN - ROOF LEVEL (+10.900) -> ROOF PLAN)
+    function noScale(t) { return String(t || '').trim().replace(/\s+(?:SCALE\s*)?1\s*:\s*\d+(?:\.\d+)?\s*$/i, '').trim(); }
+    function titleCore(t) { return noScale(t).replace(/\s*\([^()]*\)\s*$/, '').replace(/^(.*?\b(?:PLAN|ELEVATION|SECTION))\s+-\s+.*$/i, '$1').trim(); }
+    // §D46 (b) PR-LEVEL-TITLE: a plan / roof title holding "(<words> <signed decimal>)" states the level (metres, as PR-Z reads level texts)
+    function propLevelTitle(sh, tl, out) {
+      if (tl.length !== 1 || get1(sh, 'LEVEL')) return false;
+      var m = /\(\s*(?:[A-Za-z][A-Za-z ./]*?\s*)?([+-]\d+\.\d+)\s*\)/.exec(noScale(tl[0])); if (!m) return false;
+      out.push({ rule: 'PR-LEVEL-TITLE', key: 'LEVEL', value: String(Number(m[1])), x: 0, y: 0, why: 'title text "' + tl[0] + '"' }); return true;
+    }
+    // §D46 (c) PR-ROOF: "T/ROOF +10.695" / "TOP OF ROOF +10.695" on an elevation, section or roof plan states the roof top; two values on one sheet = refused
+    function propRoof(sh, out, refused) {
+      if (get1(sh, 'ROOF')) return;
+      var vals = {}; sh.dxf.entities.forEach(function (e) { if ((e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER) { var m = /^(?:T\/ROOF|TOP OF ROOF)\s*([+-]\d+\.\d+)$/i.exec(String(e.text || '').trim()); if (m) vals[String(Number(m[1]))] = String(e.text).trim(); } });
+      var v = Object.keys(vals); if (!v.length) return;
+      if (v.length > 1) { refused.push({ rule: 'PR-ROOF', why: v.length + ' different roof-top texts: ' + v.map(function (k) { return '"' + vals[k] + '"'; }).join(', ') }); return; }
+      out.push({ rule: 'PR-ROOF', key: 'ROOF', value: v[0], x: 0, y: 0, why: 'text "' + vals[v[0]] + '"' });
+    }
     function propLevel(sh, tl, out, refused) {   // §D37 PR-LEVEL: no plan of the set states a level and no title names a storey -> @LEVEL=0, inferred (orange)
       if (typeof process !== 'undefined' && process.env && process.env.DXF_NO_PRLEVEL) return;
       if (get1(sh, 'LEVEL')) return;
@@ -144,22 +162,25 @@
       var iu = sh.dxf.header && sh.dxf.header.$INSUNITS;
       if (HEADER_UNITS[iu]) out.push({ rule: 'PR-UNITS', key: 'UNITS', value: HEADER_UNITS[iu], x: 0, y: 0, why: 'file says ' + HEADER_UNITS[iu] + ' ($INSUNITS=' + iu + ')' });
       else refused.push({ rule: 'PR-UNITS', why: '$INSUNITS ' + (iu === undefined ? 'absent' : iu + ' not a length unit') });
-      var titles = {}; sh.dxf.entities.forEach(function (e) { if (e.type === 'TEXT' && e.layer !== LAYER && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(String(e.text || '').trim()) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(String(e.text || '').trim()))) titles[String(e.text).trim()] = 1; });   // "Section A-A" / "Section A-A (Truss Detail)"
+      var titles = {}; sh.dxf.entities.forEach(function (e) { var c = e.type === 'TEXT' && e.layer !== LAYER ? titleCore(e.text) : ''; if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c))) titles[String(e.text).trim()] = c; });   // §D46 (a) on the title's core   // "Section A-A" / "Section A-A (Truss Detail)"
       var tl = Object.keys(titles);
       if (tl.length === 1) {
-        var t = tl[0], vw = /ROOF PLAN$/i.test(t) ? 'ROOF' : /PLAN$/i.test(t) ? 'PLAN' : /ELEVATION$/i.test(t) ? 'ELEV' : 'SECTION';
+        var t = tl[0], tc = titles[t], vw = /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) ? 'PLAN' : /ELEVATION$/i.test(tc) ? 'ELEV' : 'SECTION';
         out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
-        out.push({ rule: 'PR-NAME', key: 'NAME', value: t, x: 0, y: 0, why: 'title text' });
+        out.push({ rule: 'PR-NAME', key: 'NAME', value: noScale(t), x: 0, y: 0, why: 'title text' });
       } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });
       var sets = {}; ctx.sheets().forEach(function (o) { if (o !== sh) { var m = get1(o, 'SET'); if (m) sets[m.value] = 1; } });
       if (Object.keys(sets).length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: Object.keys(sets)[0], x: 0, y: 0, why: 'the other sheets state it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
-      if (v === 'PLAN') propLevel(sh, tl, out, refused);
+      if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN') propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
+      if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
-        if (secName && get1(sh, 'HAXIS') !== undefined) {
+        var ct = /\bAT\s+([XY])\s*=\s*([-+]?\d+(?:\.\d+)?)\b/i.exec(noScale(tl[0] || ''));   // §D46 (d) the title states the cut: the label pairs are not looked at
+        if (ct && !get1(sh, 'CUT')) { cutDone = true; out.push({ rule: 'PR-CUT-TITLE', key: 'CUT', value: ct[1].toUpperCase() + ',' + Number(ct[2]), x: 0, y: 0, why: 'title text "' + tl[0] + '"' }); }
+        if (secName && !cutDone && get1(sh, 'HAXIS') !== undefined) {
           ctx.sheets().filter(function (o) { return o !== sh && viewOf(o) === 'PLAN'; }).forEach(function (pl) {
             var ks = unitsK(sh), kp = unitsK(pl), at = pl.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && String(e.text || '').trim().toUpperCase() === secName.toUpperCase(); }).map(txtPos);
             var pairs = []; for (var i = 0; i < at.length; i++) for (var j = i + 1; j < at.length; j++) {
@@ -169,7 +190,7 @@
             if (pairs.length === 1 && kp && ks && !cutDone) { cutDone = true; out.push({ rule: 'PR-CUT', key: 'CUT', value: pairs[0][0] + ',' + Number((pairs[0][1] * kp / ks).toFixed(4)), x: 0, y: 0, why: 'the two "' + secName + '" labels of the section line on ' + pl.name }); }
             else if (!cutDone) refused.push({ rule: 'PR-CUT', why: pairs.length + ' aligned pairs of the label "' + secName + '" on ' + pl.name + ' (need exactly 1)' });
           });
-        } else if (!secName) refused.push({ rule: 'PR-CUT', why: 'the title does not name the section as "Section X-X"' });
+        } else if (!secName && !cutDone) refused.push({ rule: 'PR-CUT', why: 'the title does not name the section as "Section X-X"' });
       }
       if (v === 'SECTION') { var hxs = propHaxis(sh); if (hxs.value) out.push(hxs); else refused.push(hxs); }
       if (v === 'ELEV') {

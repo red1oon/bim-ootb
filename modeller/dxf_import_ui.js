@@ -515,7 +515,7 @@
   // STANDS NOW (the Arrange view's preview placement while the view stands, else the canvas; a sheet neither draws is shown at its preview placement, or as
   // drawn when no value places it), framed in the canvas right of the panels; the evidence highlighted (thick), every other sheet dimmed; Esc, a click on the
   // canvas or the row again restores. A VIEW: nothing is marked, accepted, judged or saved. Log §DXF-EVIDENCE. ----
-  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-VIEW': 1, 'PR-NAME': 1 };   // HLC: the verdict zoom's highlight
+  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
   function allOf(segOf) { var P = []; Object.keys(segOf).forEach(function (h) { var a = segOf[h]; for (var i = 0; i < a.length; i++) P.push(a[i]); }); return P; }
   function wbox(P) { if (!P.length) return null; var b = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]; for (var i = 0; i < P.length; i += 3) for (var a = 0; a < 3; a++) { if (P[i + a] < b[0][a]) b[0][a] = P[i + a]; if (P[i + a] > b[1][a]) b[1][a] = P[i + a]; } return b; }
   function evSheet(name, X) {   // where the sheet stands now: { mode canvas | preview | as drawn, w (drawing units -> world m), segOf, drawn (already on screen), d (its desc), dxf }

@@ -292,3 +292,17 @@ IfcWall without the rule. Regression: `run_all_witnesses` origin/main 35 PASS / 
 identical on origin/main: `struct`, `ticks`, `guardrails` G3, `ifc_valid`); hand-run door_tag / door_cut / north / stairs / sheet_view / section_onlevel / window_schedule / wand on Duplex / HHS / Clinic:
 48 / 48 runs identical to origin/main. HHS verdict 166 blocking unchanged. **Found on the way (not fixed):** `bridgeOpenings` bridges the whole gap between two wall pieces when an opening sits in it,
 so a wall missing next to a door becomes an 11.6 m bridge (Duplex control); a bridge longer than `gap_max` should be a gap. Modeller sw v124.
+## §D46 READ WHAT THE TITLES AND LEVEL TEXTS ALREADY SAY (architect review 2026-10-23 F3 / F4 / F5 / F9 / F12, proposal R4.3)
+**Witness claim first (W-TITLE, `modeller/tests/witness_dxf_title.js`).** T1 the PLAIN standard set (no markings) through Accept all alone gives every sheet its role (HHS 9 / 9, Duplex 8 / 8;
+were 1 / 9 and 1 / 8). T2 the accepted `@VIEW`, `@LEVEL`, `@ROOF`, `@CUT` equal the model's own markings on every sheet that carries them (HHS 9 + 4 + 6 + 1, Duplex 8 + 3 + 6 + 1), 0 wrong
+(were 4 / 2 wrong: `@LEVEL=0` on the plans, the cut from grid bubble A). T3 falsifiers: a plan title with no level (`LEVEL 2 PLAN  1:100`) gives no `@LEVEL` and refuses the 0 default (the title
+names a storey); an elevation with two different `T/ROOF` values gives no `@ROOF` and says why; a sheet with a second title text (`KEY PLAN`) still refuses its role as two titles that disagree.
+T4 sets whose titles carry none of these forms read exactly as before (the raw shed when `$SHED_RAW_DIR` is set: the accepted marks byte-identical to origin/main; else INCONCLUSIVE).
+**Rules (`modeller/dxf2suggest.js`; every value READ from a text the sheet holds, the text quoted as the evidence; numbers in level texts are metres, as `PR-Z` already reads them).**
+(a) A title is read on its CORE: trailing scale (`1:100`, `SCALE 1:50`) and a trailing parenthetical removed, and `<...> PLAN - <qualifier>` cut after PLAN / ELEVATION / SECTION; the role rule and the
+"titles disagree" count work on the cores; `@NAME` = the title without its scale. (b) `PR-LEVEL-TITLE`: a PLAN or ROOF title holding `(<words> <signed decimal>)` (`(FFL +3.800)`, `(+10.900)`) gives
+`@LEVEL` = that number; it runs before the D37 default, and a title that names a storey (now also `FLOOR_LEVEL_1`: `_` counts as a separator) still refuses the 0 default when it carries no number.
+(c) `PR-ROOF`: on an elevation, section or roof plan, the text `T/ROOF <signed decimal>` or `TOP OF ROOF <signed decimal>` gives `@ROOF`; two different values on one sheet = refused. (d) `PR-CUT-TITLE`:
+a section title `... AT X=<n>` / `AT Y=<n>` gives `@CUT=<axis>,<n>` (the sheet's drawing units) and the label-pair rule is not run on that sheet.
+**Measured first (R2 of the review):** plain HHS 8 / 9 sheets refused for no role, Duplex 7 / 8; after the role picks, `@LEVEL=0` on 3 / 1 plans and a wrong cut on both; 19 / 17 statements a user typed
+that the sheets state. Not in scope: titles in other languages (refused as today, listed).
