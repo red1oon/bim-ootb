@@ -292,3 +292,48 @@ IfcWall without the rule. Regression: `run_all_witnesses` origin/main 35 PASS / 
 identical on origin/main: `struct`, `ticks`, `guardrails` G3, `ifc_valid`); hand-run door_tag / door_cut / north / stairs / sheet_view / section_onlevel / window_schedule / wand on Duplex / HHS / Clinic:
 48 / 48 runs identical to origin/main. HHS verdict 166 blocking unchanged. **Found on the way (not fixed):** `bridgeOpenings` bridges the whole gap between two wall pieces when an opening sits in it,
 so a wall missing next to a door becomes an 11.6 m bridge (Duplex control); a bridge longer than `gap_max` should be a gap. Modeller sw v124.
+## §D46 READ WHAT THE TITLES AND LEVEL TEXTS ALREADY SAY (architect review 2026-10-23 F3 / F4 / F5 / F9 / F12, proposal R4.3)
+**Witness claim first (W-TITLE, `modeller/tests/witness_dxf_title.js`).** T1 the PLAIN standard set (no markings) through Accept all alone gives every sheet its role (HHS 9 / 9, Duplex 8 / 8;
+were 1 / 9 and 1 / 8). T2 the accepted `@VIEW`, `@LEVEL`, `@ROOF`, `@CUT` equal the model's own markings on every sheet that carries them (HHS 9 + 4 + 6 + 1, Duplex 8 + 3 + 6 + 1), 0 wrong
+(were 4 / 2 wrong: `@LEVEL=0` on the plans, the cut from grid bubble A). T3 falsifiers: a plan title with no level (`LEVEL 2 PLAN  1:100`) gives no `@LEVEL` and refuses the 0 default (the title
+names a storey); an elevation with two different `T/ROOF` values gives no `@ROOF` and says why; a sheet with a second title text (`KEY PLAN`) still refuses its role as two titles that disagree.
+T4 sets whose titles carry none of these forms read exactly as before (the raw shed when `$SHED_RAW_DIR` is set: the accepted marks byte-identical to origin/main; else INCONCLUSIVE).
+**Rules (`modeller/dxf2suggest.js`; every value READ from a text the sheet holds, the text quoted as the evidence; numbers in level texts are metres, as `PR-Z` already reads them).**
+(a) A title is read on its CORE: trailing scale (`1:100`, `SCALE 1:50`) and a trailing parenthetical removed, and `<...> PLAN - <qualifier>` cut after PLAN / ELEVATION / SECTION; the role rule and the
+"titles disagree" count work on the cores; `@NAME` = the title without its scale. (b) `PR-LEVEL-TITLE`: a PLAN or ROOF title holding `(<words> <signed decimal>)` (`(FFL +3.800)`, `(+10.900)`) gives
+`@LEVEL` = that number; it runs before the D37 default, and a title that names a storey (now also `FLOOR_LEVEL_1`: `_` counts as a separator) still refuses the 0 default when it carries no number.
+(c) `PR-ROOF`: on an elevation, section or roof plan, the text `T/ROOF <signed decimal>` or `TOP OF ROOF <signed decimal>` gives `@ROOF`; two different values on one sheet = refused. (d) `PR-CUT-TITLE`:
+a section title `... AT X=<n>` / `AT Y=<n>` gives `@CUT=<axis>,<n>` (the sheet's drawing units) and the label-pair rule is not run on that sheet.
+**Measured first (R2 of the review):** plain HHS 8 / 9 sheets refused for no role, Duplex 7 / 8; after the role picks, `@LEVEL=0` on 3 / 1 plans and a wrong cut on both; 19 / 17 statements a user typed
+that the sheets state. Not in scope: titles in other languages (refused as today, listed).
+
+## §D47 TAG DOORS BY WIDTH, ONE DECISION PER SCHEDULE ROW (architect review 2026-10-23 F8, proposal R4.2; usability report P1)
+**Witness claim first (W-TAG-WIDTH, `modeller/tests/witness_dxf_tag_width.js`).** W1 given the set's door schedule rows (the model's, typed once as a user would), every untagged plan door whose
+drawn leaf width equals exactly ONE row's width (to the reader's `snap_tol`) is proposed that row's mark, and every proposed mark equals the model's own tag for that door (0 wrong). W2 a door whose
+width matches no row is listed with its width, never tagged (HHS: the 30 doors drawn 48.9 mm wider than their row, the known `door_no_strip` doors). W3 falsifier: a second row with the same width
+(another mark) refuses every door of that width, listing both rows. W4 the set with the model's tags on the matched doors REPLACED by the rule's tags reads to the same verdict (code for code).
+**Measured first (2026-10-23, the marked standard sets):** plan doors with a model tag: HHS 99 (59 at 885 mm = row 885, 10 at 760 = row 760, 28 at 933.9 and 2 at 808.9 = rows 885 / 760 + 48.9),
+Duplex 14 (6 / 4 / 2 / 2, every one = its row). The model's door type is a function of the leaf width on both sets (purity 1.000, review RT-H4); the injected rooms add nothing to it.
+**Rule.** `Dxf2Suggest.tagByWidth(doors, rows, {factor, tol})` (pure): rows `{mark, w}` in the plan's units; per row the untagged doors with `|width / factor - w| <= tol / factor`; a width claimed by
+two rows -> refused with both marks; returns groups `{mark, w, doors:[handle]}` + `left` (doors matching no row, with widths) + `refused`. The editor's door suggestions show ONE inferred row
+per group ("@TAG=door,<mark> on N doors, leaf width w"), confirmed with one click (each door written by the existing `writeTag`, which still refuses a door whose centre lies in two door boxes);
+Accept all takes the groups like any other row. Tier: inferred (orange): the width match is a convention over a stated schedule, not a text on the door.
+**Effect (R2 accounting):** HHS 133 per-door tags -> the rows (typed once) + 1 click per row; the 30 off-width doors stay listed (they are engine findings already). Duplex 24 -> 0 tags.
+**D47 RESULT (2026-10-23): BUILT.** `Dxf2Suggest.tagByWidth` (pure) + the editor's door suggestions (`PR-TAG-WIDTH`, one row per schedule mark, tier inferred, one click tags the group under one render
+and one check: `S.batch`). W-TAG-WIDTH fail=0: W1 Duplex 14 / 14 proposed = the model's tags; HHS 86 proposed, 69 judged against a model tag, 0 wrong (17 doors the model leaves untagged, not judged);
+Clinic 16 proposed, 10 judged, 0 wrong, **234 refused: Clinic door types share a leaf width (865 mm at 1500 and 2134 high), so width alone does not decide them: listed, never guessed**; W2 HHS 30 left
+(933.9 / 808.9 mm = the off-hinge doors); W3 a same-width twin row refuses every door of that width (Duplex 6, HHS 59, Clinic 8); W4 the rule's tags read to the model's verdict code for code
+(36 / 166 / 359); W5 the page (Duplex, headless software GL): 4 rows, 4 clicks, 14 tags, 0 page errors (was 14 door picks + misses). Modeller sw v126.
+
+## §D48 GRID LABELS: TWO-CHARACTER LABELS, AND THE LABEL ON THE LINE WINS (architect review 2026-10-23 F10)
+**Witness claim first (W-GRID-LABEL, `modeller/tests/witness_dxf_grid_label.js`).** G1 the PLAIN standard set through Accept all: every `@GRIDX` / `@GRIDY` / `@GRIDH` of the model's markings is
+accepted with the same label at the same position (HHS 160 / 160; were 123: 37 missing), 0 wrong. G2 Duplex and the raw shed (when `SHED_RAW_DIR` and `BASE` are set): the accepted grid markings
+equal BASE's (nothing that read before reads differently). G3 falsifiers: a grid line with two labels at the SAME distance from its axis is refused (both named); a 4-character label is not a grid label.
+**Measured first (HHS plain, `PR-GRID` refusals per plan):** 5 lines "0 candidate labels" = the labels `10`..`14` (the label filter is `^[A-Z0-9]$`, one character; `PR-GRID-TICK` beside it already takes
+`^([A-Z]|\d{1,3})$`); 2 lines "2 candidate labels" = grid pairs 40 mm (`A`/`B`) and 49 mm (`P`/`Q`) apart whose staggered bubbles (the writer's §L1.10 tiers, a common drafting practice) put the
+neighbour's label within the 60 mm `along` tolerance of the line end; each label's own text sits exactly on its axis (0 mm). The same two causes on the elevations and the section (`GRIDH`).
+**Rule (`dxf2suggest.js propGrid`).** Labels `^([A-Z]{1,2}|\d{1,3})$`. When several label texts qualify for one line, the one whose insertion point lies nearest the line's axis is taken if it is
+strictly nearer than every other (the others named in the reason); a tie is refused as today. Each label still belongs to one line only (`label X on two lines` stays a refusal).
+**D48 RESULT (2026-10-23): BUILT.** `dxf2suggest.js propGrid`: labels `^([A-Z]{1,2}|\d{1,3})$`; several qualifying labels -> the one strictly nearest the axis. W-GRID-LABEL fail=0: G1 every grid marking
+of the model read from the plain set, 0 wrong: Duplex 32 / 32, HHS 160 / 160 (were 123), Clinic 290 / 290; G2 the raw shed's 91 grid markings = origin/main's; G3 a tie on the axis refused, a
+4-character text ignored (Duplex, HHS, Clinic). Modeller sw v127.

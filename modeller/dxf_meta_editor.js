@@ -46,7 +46,8 @@
   // states it, read = a text names it, inferred = geometry or a convention (orange). Every suggestion stays yellow, not yours, until accepted. W-EVIDENCE E1: every
   // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
   var TAGE = '§DXF-EVIDENCE';
-  var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read',
+  var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read',   // §D46: each READ from a text the sheet holds
+    'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
     'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
@@ -166,7 +167,7 @@
 
   // ---- the live verdict: the ONE gate (DxfImportUI.convertGate via applySheets) judges the EFFECTIVE sheets; this editor only shows it ----
   var _t = null;
-  function changed() { S.saved = null; syncSchedule(); render(); schedule(); }
+  function changed() { if (S.batch) return; S.saved = null; syncSchedule(); render(); schedule(); }   // §D47 S.batch: a group confirm writes many tags, one render + one check
   function schedule(ms) { clearTimeout(_t); S.busy = true; renderHead(); if (window.DxfImportUI.holdGate) window.DxfImportUI.holdGate('Checking the drawings…'); _t = setTimeout(run, ms === undefined ? 250 : ms); }
   async function run() {
     var tok = ++S.token, t0 = performance.now();
@@ -411,7 +412,7 @@
   var ROW_RE = /^\s*([A-Za-z0-9][A-Za-z0-9._\/-]*)\s*(?:\^I|\t|\s)\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*(.*)$/;
   function cleanText(t) { return String(t || '').replace(/\{\\[^;]*;/g, '').replace(/[{}]/g, '').replace(/\\[A-Za-z]\d*;?/g, function (m) { return m === '\\P' ? m : ''; }); }
   function doorProposals() {   // §L4.3 PR-SCHEDULE / PR-TAG: evidence only (the drawing's own text), never a marking until ticked
-    var out = [], refused = [], have = {}; schedRows().forEach(function (r) { if (!r.missing) have[r.mark] = r; });
+    var out = [], refused = [], have = {}, wgrp = {}, wleft = 0; schedRows().forEach(function (r) { if (!r.missing) have[r.mark] = r; });
     plans().forEach(function (sh) {
       var u = get1(sh, 'UNITS'), T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; });
       var lines = []; T.forEach(function (e) { cleanText(e.text).split('\\P').forEach(function (l) { lines.push({ t: l, h: e.handle }); }); });
@@ -429,13 +430,25 @@
         });
       }
       var D = doorsOf(sh); if (!D || !D.doors.length) return;
+      var byText = {};
       sh.dxf.entities.filter(function (e) { return e.type === 'TEXT' && e.layer !== LAYER && have[String(e.text || '').trim()]; }).forEach(function (e) {
         var mk = String(e.text).trim(), p = txtPos(e), x = p[0] * D.factor, y = p[1] * D.factor, hit = D.doors.filter(function (d) { return inDoor(d, x, y, D.snap_tol); });
         if (hit.length !== 1) { refused.push({ rule: 'PR-TAG', why: 'text "' + mk + '" (' + e.handle + ') lies in ' + hit.length + ' door boxes' }); return; }
         var cur = doorTags(sh, D, hit[0]); if (cur.some(function (m) { return tagText(m) === mk; })) return;
-        out.push({ rule: 'PR-TAG', mark: mk, sheet: sh.name, handle: hit[0].handle, why: 'text ' + e.handle + ' "' + mk + '" in door ' + hit[0].handle + '\'s box' });
+        out.push({ rule: 'PR-TAG', mark: mk, sheet: sh.name, handle: hit[0].handle, why: 'text ' + e.handle + ' "' + mk + '" in door ' + hit[0].handle + '\'s box' }); byText[hit[0].handle] = 1;
       });
+      // §D47 PR-TAG-WIDTH: the untagged doors (no tag, no text proposal) whose leaf width equals one schedule row's width; grouped per mark across the plans below
+      var rowsW = Object.keys(have).map(function (k) { return { mark: k, w: have[k].w }; }).filter(function (r) { return Number(r.w) > 0; });
+      if (rowsW.length) {
+        var tb = window.Dxf2Suggest.tagByWidth(D.doors.map(function (d) { return { handle: d.handle, width: d.width, tagged: !!byText[d.handle] || doorTags(sh, D, d).length > 0 }; }), rowsW, { factor: D.factor, tol: D.snap_tol });
+        tb.groups.forEach(function (g) { var G = wgrp[g.mark] = wgrp[g.mark] || { mark: g.mark, w: g.w, doors: [] }; g.doors.forEach(function (h) { G.doors.push({ sheet: sh.name, handle: h }); }); });
+        tb.refused.forEach(function (r) { refused.push({ rule: 'PR-TAG-WIDTH', why: 'door ' + r.handle + ' on ' + sh.name.replace(/\.dxf$/i, '') + ': leaf ' + r.width + ' matches ' + r.marks.length + ' schedule rows (' + r.marks.join(', ') + ')' }); });
+        wleft += tb.left.length;
+      }
     });
+    Object.keys(wgrp).sort().forEach(function (k) { var G = wgrp[k];
+      out.push({ rule: 'PR-TAG-WIDTH', mark: G.mark, doors: G.doors, w: G.w, sheet: G.doors[0].sheet, why: G.doors.length + ' untagged door(s) with leaf width ' + G.w + ' = schedule row ' + G.mark + ' (' + Array.from(new Set(G.doors.map(function (d) { return d.sheet.replace(/\.dxf$/i, ''); }))).join(', ') + ')' }); });
+    if (wleft) refused.push({ rule: 'PR-TAG-WIDTH', why: wleft + ' untagged door(s) match no schedule row by width: tag them by hand' });
     return { list: out, refused: refused };
   }
 
@@ -666,7 +679,7 @@
       '<span></span><span></span><button class="dm-ib" title="Add the row" data-act="dsadd"' + (U.units ? '' : ' disabled') + '>' + IC.plus + '</button></div>';
     if (DP.list.length) {
       h += '<div class="dm-sub">' + IC.bulb + 'Suggestions from the drawing text (not markings until ticked)</div>';
-      DP.list.forEach(function (p, i) { h += '<div class="dm-pr" data-dprop="' + esc(p.rule + ':' + p.mark + (p.handle ? '@' + p.handle : '')) + '"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=door,' + p.mark + '  door ' + p.handle) + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
+      DP.list.forEach(function (p, i) { h += '<div class="dm-pr" data-dprop="' + esc(p.rule + ':' + p.mark + (p.handle ? '@' + p.handle : '')) + '"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=door,' + p.mark + '  on ' + p.doors.length + ' doors' : '@TAG=door,' + p.mark + '  door ' + p.handle) + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
         '<button class="dm-ib" title="Confirm this suggestion" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>'; });
     }
     DP.refused.slice(0, 8).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
@@ -723,8 +736,8 @@
       items.push(prOpen(si, p) + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
         '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p)); }); });
     DP.list.forEach(function (p, i) { var t = tierOf(p.rule) || 'inferred', si = S.sheets.map(function (q) { return q.name; }).indexOf(p.sheet); n[t]++; src.door++;   // §L4.3 the door rules: the drawing's text
-      var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : ''), x: 0, y: 0, why: p.why };
-      items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
+      var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : p.doors ? '@' + p.doors.length + 'doors' : ''), x: 0, y: 0, why: p.why };
+      items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=' + p.mark + ' on ' + p.doors.length + ' doors' : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
       '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>' + (si >= 0 ? prNote(si, row) : '')); });
     defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { var t = TIER['default']; n[t]++; src.def++;   // an applied default: a convention (no sheet entity to fly to)
       items.push('<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="default"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' + tierMark(t) +
@@ -942,7 +955,10 @@
         var w = el.getAttribute('data-dim') === 'w' ? el.value : r.w, hh = el.getAttribute('data-dim') === 'h' ? el.value : r.h; if (String(w).trim() !== '' && String(hh).trim() !== '') setRow(mk, w, hh); }; }
       else if (a === 'drm') el.onclick = function () { removeRow(el.getAttribute('data-mark')); };
       else if (a === 'dconfirm') el.onclick = function () { var p = S.dprops[Number(el.getAttribute('data-i'))]; if (!p) return;
-        if (p.rule === 'PR-SCHEDULE') setRow(p.mark, p.w, p.h, p.rule); else writeTag(p.sheet, p.handle, p.mark, p.rule); };
+        if (p.rule === 'PR-SCHEDULE') setRow(p.mark, p.w, p.h, p.rule);
+        else if (p.rule === 'PR-TAG-WIDTH') { var ok = 0; S.batch = true; try { p.doors.forEach(function (d) { if (writeTag(d.sheet, d.handle, p.mark, p.rule)) ok++; }); } finally { S.batch = false; }   // §D47 one click per group
+          console.log(TAG + ' tag by width mark=' + p.mark + ' doors=' + p.doors.length + ' tagged=' + ok + ' refused=' + (p.doors.length - ok)); changed(); }
+        else writeTag(p.sheet, p.handle, p.mark, p.rule); };
       else if (a === 'dtag') el.onclick = function () { var pk = S.dpick; if (!pk) return; var nw = document.getElementById('dm-dt-new').value.trim(), mk = nw || document.getElementById('dm-dt-sel').value; if (!mk) { S.dmsg = 'Pick a schedule mark or type a new one.'; render(); return; } writeTag(pk.sheet, pk.handle, mk); };
       else if (a === 'dzoom') el.onclick = function () { highlight({ code: 'door', sheet: el.getAttribute('data-sheet'), handles: [el.getAttribute('data-h')], pos: null }); };
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };

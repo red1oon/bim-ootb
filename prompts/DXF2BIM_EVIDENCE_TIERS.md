@@ -11,8 +11,8 @@ Status: BUILT 2026-10-22 (branch f8/evidence-tiers, on D34). W-EVIDENCE `modelle
 | tier | rules | row look |
 |---|---|---|
 | stated: the file states it | PR-UNITS (`$INSUNITS`), PR-SET (the other sheets state it) | yellow, mark "stated" |
-| read: a text names it | PR-VIEW, PR-NAME (title text), PR-Z (level text on its line), PR-GRID (label on its grid line) | yellow, mark "read" |
-| inferred: geometry or a convention | PR-GRID-TICK, PR-Z-GROUND, PR-FACE, PR-HAXIS, PR-CUT, PR-LEVEL (§D37) | orange, mark "inferred" |
+| read: a text names it | PR-VIEW, PR-NAME (title text), PR-Z (level text on its line), PR-GRID (label on its grid line), PR-LEVEL-TITLE (`(FFL +n)` in a plan title), PR-ROOF (`T/ROOF +n`), PR-CUT-TITLE (`AT X=n` in a section title) (§D46) | yellow, mark "read" |
+| inferred: geometry or a convention | PR-GRID-TICK, PR-Z-GROUND, PR-FACE, PR-HAXIS, PR-CUT, PR-LEVEL (§D37), PR-TAG-WIDTH (a door's leaf width = one schedule row's, §D47) | orange, mark "inferred" |
 Every suggestion stays NOT yours until accepted (the yellow rule). Accepted = green "you" as today; refused / blocking = red as today.
 
 ## Behaviour
@@ -24,7 +24,7 @@ Every suggestion stays NOT yours until accepted (the yellow rule). Accepted = gr
    - PR-FACE: the elevation on its face plane beside the plan's outer wall (the plan's envelope edge highlighted);
    - PR-HAXIS: the elevation's grid lines carried down onto the plan's grid lines (a mirror shows as crossing lines);
    - PR-CUT: the two section labels on the plan + the section standing at the cut;
-   - PR-UNITS / PR-SET / PR-VIEW / PR-NAME: the sheet as a whole (no single entity).
+   - PR-UNITS / PR-SET / PR-VIEW / PR-NAME / PR-LEVEL-TITLE / PR-ROOF / PR-CUT-TITLE (§D46): the sheet as a whole (no single entity).
    A row whose sheet is not placed says so and frames the sheet as drawn.
 4. Logs: `§DXF-EVIDENCE tiers stated=<n> read=<n> inferred=<n>`; per click `§DXF-EVIDENCE fly sheet=<name> rule=<rule> handle=<h> cam=<before>-><after>`.
 

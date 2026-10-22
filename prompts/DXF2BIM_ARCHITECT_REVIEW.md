@@ -174,3 +174,30 @@ a set is 1.000 on both. So the common library is of conventions, and the type an
 ### R5. NEXT
 Build order proposed: F1 + F2 (silent 5D errors) -> R4.3 (F3 / F4 / F5 / F9: one reader) -> R4.2 -> R4.1 -> F10 -> R4.4. Parts A.1-A.3 (drift, hard-code hunt, mutation matrix) and B (guide walk)
 of this brief are still open; this session did not run them. Every proposal keeps the three outcomes: correct, a red ask naming the field, or left out and listed.
+
+## RESULT 2026-10-23 (session 1, part 2: built "as laid out", owner: "Proceed as you laid out")
+Built, each spec'd first in `DXF2BIM_FOUNDATION_LANE.md` with its witness claim, measured on Duplex / HHS / Clinic (+ LTU for D44/D45, the raw shed where it applies):
+| Item | Rule | Witness | Effect measured |
+|---|---|---|---|
+| F1 | §D44 no rectangle slab the walls do not draw (left out and listed) | W-SLAB-OUTLINE | HHS 10,473 m2 of invented slab -> 0 + 3 advisories; Clinic 2, LTU 1; Duplex byte-identical (#2302) |
+| F2 | §D45 curtain band = IfcCurtainWall, billed per m2 | W-CURTAIN | HHS 68 pieces (721 m3 of "masonry") -> IfcCurtainWall, 750 / M2 (#2302) |
+| F3 F4 F5 F9 F12 | §D46 read titles and level texts (role from the title core, PR-LEVEL-TITLE, PR-ROOF, PR-CUT-TITLE) | W-TITLE | plain sets: roles HHS 1 -> 9 / 9, Duplex 1 -> 8 / 8; every level / roof / cut = the model's, 0 wrong (were 4 / 2 wrong); raw shed unchanged |
+| F8 | §D47 tag doors by width, one row per schedule mark (PR-TAG-WIDTH) | W-TAG-WIDTH | Duplex 14 tags in 4 clicks (page); HHS 86 proposed, 0 wrong; Clinic 234 refused (types share a width): listed |
+| F10 | §D48 two-character grid labels; the label on the line wins | W-GRID-LABEL | HHS grids 123 -> 160 / 160, Clinic 290 / 290, 0 wrong; raw shed unchanged |
+**Statements to the full answer key after D46 + D48 (R2 accounting, ladder re-run):** HHS 506 -> 438 (titles 19, grids 37, NAME / DEFAULT not needed 12); Duplex 78 -> 53. With D47 the 133 / 24
+per-door tags become one click per schedule row (HHS 10 rows, Duplex 4), so the per-door work goes to the rows plus the doors width cannot decide.
+**R4.1 (self-calibrated wall tops) NOT BUILT: its premise is refuted by measurement.** With the key's `@WALLTOP` removed, the walls that get a height from the drawing are the exterior ones on the
+elevations (HHS 38, Duplex 26), and their tops sit AT the next level (HHS 28 of 38 at 0.000, 10 at 0.300) while the interior walls the key states stop 0.300 below it (HHS 220 of 268). A rule
+learned from the measured walls would put most HHS interior walls 0.3 m too high. The per-storey group decision already exists in the editor ("Interior walls run to the slab above", one tick
+per plan, `@WALLTOP=<level>,slab_above`), so the 268 per-wall statements overstate the user's effort; what is missing is only that the tick is not OFFERED. Proposal (not built): offer it as an
+inferred row per plan when that plan has walls with no elevation height and the section states the slab above, naming how many walls it covers. On HHS it would set Level 2 and 3 interior walls to
+the model's tops (106 walls) and Level 1 to 3.8 against the model's 3.5 (the model's walls stop at a ceiling the drawings do not show): the user still states that one number.
+**R4.4 "your last job is your library" (spec only, §D49 to be written when the owner says go).** A firm's own model (IFC or extracted db) -> `catalogue.json`: wall thickness -> {type, material
+layers, count}, door leaf width -> {type, height, count}, slab thickness -> material. Read as yellow suggestions with "seen n times in <catalogue>"; a thickness with two materials = a choice
+listing both with counts. Measured basis: HHS thickness -> material 0.938 (115 mm Ziegel 62 / Lamellen 7); across buildings 0 (RT-H6), so the catalogue is the firm's, the rules are common.
+Witness claim to write first: learned on HHS Level 1-2 walls, applied to Level 3: hit rate; learned on Duplex, applied to HHS: 0 (the falsifier that keeps it per firm).
+**Found on the way (open):** F13 `modeller/dxf2bim/SOURCE.md` says the reader modules are verbatim copies of bim-compiler that must not be edited here, but since F8 (#2271 / #2276 / #2280) and
+now D44-D48 they are edited here and bim-compiler master is behind (`dxf2shell.js`, `dxf2bim.js`, `dxf2shell_config.js`, `std2d.js` differ): one source must be named (owner decision).
+F14 `bridgeOpenings` bridges the whole gap between two wall pieces when an opening sits in it (Duplex control: a missing wall next to a door became an 11.6 m bridge); a bridge longer than
+`gap_max` should be a gap. F15 the slab outline is a fact the plans must state: the writer draws no slab edge on the plans, so a non-rectangular building has no slab after D44 until the writer
+draws one (a slab-edge layer) and the reader reads it.

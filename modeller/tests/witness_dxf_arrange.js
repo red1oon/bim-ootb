@@ -175,7 +175,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     const before = await state(); const res = await play(); await sleep(300); const W = await pg.evaluate(() => window.__arr), after = await state();
     const flat = await pg.evaluate(() => { const L = window.DxfImportUI.state.arrLast; return L ? Object.keys(L.lacks).filter(n => /^no role/.test(L.lacks[n][0] || '')).length : -1; });
     const finding = alog.filter(l => /finding sheets without a role=/.test(l))[0] || '';
-    ok('A3b[duplex plain] no marking, no accepted step: every step is a yellow band; roles are not proposed for the sheets whose titles end in a scale, they stay flat as drawn (stated in the log)', W.steps.length === res.total && W.steps.every(s => s.yellow) && flat >= 1 && /stay flat as drawn/.test(finding) && same(before, after), 'steps=' + res.total + ' yellow=' + W.steps.filter(s => s.yellow).length + ' flat=' + flat + ' keys=' + Array.from(new Set(W.steps.map(s => s.key))).join(','));
+    // §D46: our titles end in a scale ("FRONT ELEVATION  1:100"); their core gives the role now, so no sheet stays flat (this check asserted the opposite before D46: the defect, stated)
+    ok('A3b[duplex plain] no marking, no accepted step: every step is a yellow band; the titles that end in a scale give their roles (§D46), no sheet stays flat; nothing is yours after the play', W.steps.length === res.total && W.steps.every(s => s.yellow) && flat === 0 && W.steps.some(s => s.key === 'VIEW') && !/stay flat as drawn/.test(finding) && same(before, after), 'steps=' + res.total + ' yellow=' + W.steps.filter(s => s.yellow).length + ' flat=' + flat + ' keys=' + Array.from(new Set(W.steps.map(s => s.key))).join(','));
   } else skip('A3b[duplex plain]', 'no DXARC.db');
 
   // ---------- the raw shed: A6 (play on open, every step a yellow band in panel order) + A7 (yellow is not yours) ----------
