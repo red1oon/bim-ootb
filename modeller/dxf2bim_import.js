@@ -190,7 +190,7 @@
   // §L3.3 layer-map set (DX or STD): the set whose elevation-wall layer (its MAP_ELEV 'elevwall' rule, read from the copied config) has
   // entities on EVERY elevation sheet; both or neither -> null (the gate refuses, no guess).
   var SETS = { DX: { MAP_PLAN: C.MAP_PLAN, MAP_ELEV: C.MAP_ELEV, MAP_LEVL: C.MAP_LEVL, MAP_ROOF: C.MAP_ROOF, MAP_SECT: C.STD.MAP_SECT, EXCL_ELEV: null, QUALIFY: C.QUALIFY, maps: undefined },
-    STD: { MAP_PLAN: C.STD.MAP_PLAN, MAP_ELEV: C.STD.MAP_ELEV, MAP_LEVL: C.STD.MAP_LEVL, MAP_ROOF: C.STD.MAP_ROOF, MAP_SECT: C.STD.MAP_SECT, EXCL_ELEV: C.STD.EXCL_ELEV, QUALIFY: C.STD.QUALIFY,
+    STD: { MAP_PLAN: C.STD.MAP_PLAN, MAP_ELEV: C.STD.MAP_ELEV, MAP_LEVL: C.STD.MAP_LEVL, MAP_ROOF: C.STD.MAP_ROOF, MAP_SECT: C.STD.MAP_SECT, EXCL_ELEV: C.STD.EXCL_ELEV, QUALIFY: C.STD.QUALIFY, CURTAIN: C.STD.CURTAIN,
       maps: { plan: C.STD.MAP_PLAN, elev: C.STD.MAP_ELEV, levl: C.STD.MAP_LEVL, roof: C.STD.MAP_ROOF, sect: C.STD.MAP_SECT } } };
   function elevWallLayers(map) { return map.rules.filter(function (r) { return r.type === 'elevwall' && r.match === 'exact'; }).map(function (r) { return r.pattern; }); }
   function setOf(sheets) {
@@ -201,6 +201,7 @@
   }
   // §L4.2: layer rules are @LAYER markings now (Dxf2Marks.withLayers per sheet); the L4.1 session rules are gone. setWith = the set by name.
   function setWith(name) { return SETS[name] || null; }
+  function curtainLayer(set, layer) { return !!(set && set.CURTAIN && set.CURTAIN.indexOf(layer) >= 0); }   // §D45
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
     var refused = sheets.filter(function (s) { return !s.role; }).map(function (s) { return { sheet: s.name, reason: s.why }; });
@@ -365,7 +366,7 @@
         lowerPieces: lower ? lower.before.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; }).map(function (o) { return o.params.rect; }) : [], section: sec, tol: CFG.snap_tol });
       st.after = wb.ops; st.baseAdv = wb.advisories; st.baseRep = wb.report;
     });
-    ST.forEach(function (st) { st.ring = S.innerRing(st.after, CFG); });
+    ST.forEach(function (st) { st.ring = S.innerRing(st.after, CFG, { bridges: S.bridgeOpenings(st.after, CFG, { level: st.level, hashHex: hashHex }).infill }); });   // §D44 the bridges count as face cover
     R.roofPlan = S.roofPlan(roofSh.dxf.entities, MK.withLayers(SET.MAP_ROOF, roofSh.desc), roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
     R.roofSheet = roofSh.name;
     R.run_id = C.runId(B.canon, hashHex, ST.map(function (st) { return st.run_id; }), sheets.map(function (s) { return s.sha; }), SET.maps);
@@ -426,7 +427,7 @@
       var wallOps = st.meshWalls.concat(st.infill);
       var m = M.meshFromOps(wallOps, { level: st.level, hashHex: hashHex, snapTol: CFG.snap_tol });
       st.meshGaps = m.gaps;
-      m.elements.forEach(function (e) { els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });
+      m.elements.forEach(function (e) { if (e.class === 'IfcWall' && curtainLayer(SET, e.layer)) e.class = 'IfcCurtainWall'; els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });   // §D45
       var sz = R.slabZ[st.name];
       if (st.ring.outline && typeof sz.thickness === 'number') {
         var pm = S.prismRect(st.ring.outline, [], sz.bottom, sz.top);
@@ -539,16 +540,17 @@
         if (!pm) { skipped.push({ storey: st.name, openings: v.openings, reason: 'body not rectilinear', refuse: true }); return; }
         var bguid = hashHex(inf[0].input_guids.join('|') + '|gap-body').slice(0, 32);
         var prov = { dxf_handle: inf[0].params.infill_of.join('+'), layer: inf[0].params.layer, sheet: st.sheet, run_id: R.run_id };
+        var wallCls = curtainLayer(setWith(R.set), inf[0].params.layer) ? 'IfcCurtainWall' : 'IfcWall';   // §D45 the body around an opening in a curtain band is the curtain wall
         if (fr) {   // baked: one prism per infill z-interval (the complement of the voids), same footprint rect; no GEOM_CUT
           var bi = inf.map(function (o, i) {
             var zlo = st.level + o.params.base, zhi = zlo + o.params.height, pi = S.prismRect(ring, [], r6(zlo), r6(zhi));
-            return pi ? insert(hashHex(bguid + '|baked|' + i).slice(0, 32), 'IfcWall', st.name, pi.vertices, pi.faces, prov, true) : -1;
+            return pi ? insert(hashHex(bguid + '|baked|' + i).slice(0, 32), wallCls, st.name, pi.vertices, pi.faces, prov, true) : -1;
           });
           if (bi.indexOf(-1) >= 0) { skipped.push({ storey: st.name, openings: v.openings, reason: 'framed body not rectilinear', refuse: true }); return; }
           groups.push({ storey: st.name, body: bi[0], guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z, baked: bi });
           return;
         }
-        var hi = insert(bguid, 'IfcWall', st.name, pm.vertices, pm.faces, prov, true);
+        var hi = insert(bguid, wallCls, st.name, pm.vertices, pm.faces, prov, true);
         groups.push({ storey: st.name, body: hi, guid: 'dxf-' + bguid, rect: rc, zb: r6(zb), zt: r6(zt), openings: v.openings, infill: inf.map(function (o) { return o.output_guid; }), voids: v.z });
         v.z.forEach(function (z, i) {
           cuts.push({ op_type: 'GEOM_CUT', params: { parent: hi, void: { c1: [rc[0], rc[1], z[0]], c2: [rc[2], rc[3], z[1]] }, slide: { opening: v.openings.join('+'), filling: null, fillingFid: null },

@@ -58,7 +58,24 @@
     return [Math.min.apply(null, r.map(function (q) { return q[0]; })), Math.min.apply(null, r.map(function (q) { return q[1]; })),
       Math.max.apply(null, r.map(function (q) { return q[2]; })), Math.max.apply(null, r.map(function (q) { return q[3]; }))];
   }
-  function innerRing(ops, cfg) {
+  // §D44: the inner-face rectangle is the slab only when the walls DRAW a rectangle: every envelope face covered >= RECT_MIN_COVER of its length by pieces on the face plane
+  // (wall rects, opening bridges, opening boxes). Measured 2026-10-23: Duplex 1.000 on every face; Clinic min 0.067-0.472, HHS 0.042-0.046 (notched / L plans). The 0.1 margin is for
+  // openings drawn with no bridge. Below it the outline is a fact the drawing does not state: no slab, GAP:slab_outline_not_rectangular (advisory), never an invented polygon.
+  var RECT_MIN_COVER = 0.9;
+  function faceCover(E, rects, tol) {
+    var FACES = { minX: [0, 1], maxX: [2, 1], minY: [1, 0], maxY: [3, 0] }, out = {};
+    Object.keys(FACES).forEach(function (f) {
+      var pi = FACES[f][0], ax = FACES[f][1], lo = ax ? E[1] : E[0], hi = ax ? E[3] : E[2];
+      var iv = rects.filter(function (r) { return Math.abs(r[pi] - E[pi]) <= tol; }).map(function (r) { return ax ? [r[1], r[3]] : [r[0], r[2]]; }).sort(function (a, b) { return a[0] - b[0]; });
+      var L = 0, cur = null;
+      iv.forEach(function (v) { if (!cur || v[0] > cur[1] + tol) { if (cur) L += cur[1] - cur[0]; cur = v.slice(); } else cur[1] = Math.max(cur[1], v[1]); });
+      if (cur) L += cur[1] - cur[0];
+      out[f] = hi > lo ? r6(L / (hi - lo)) : 0;
+    });
+    return out;
+  }
+  function openingRect(b) { return !b || !b.along || !b.band ? null : b.axis === 'x' ? [b.along[0], b.band[0], b.along[1], b.band[1]] : [b.band[0], b.along[0], b.band[1], b.along[1]]; }
+  function innerRing(ops, cfg, extra) {
     var tol = cfg.snap_tol, ws = walls(ops).filter(function (o) { return o.params.rect && !o.params.infill; }), gaps = [];
     if (!ws.length) return { outline: null, gaps: [{ code: 'GAP:slab_no_exterior_wall', face: 'all' }] };
     var E = envelope(ws), lines = {}, members = [];
@@ -80,7 +97,15 @@
     });
     if (gaps.length) return { outline: null, gaps: gaps, envelope: E };
     var x0 = lines.minX, x1 = lines.maxX, y0 = lines.minY, y1 = lines.maxY;
-    return { outline: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], envelope: E, gaps: [], members: uniq(members.map(hnum)).map(function (n) { return n.toString(16).toUpperCase(); }) };
+    var cov;
+    if (extra) {   // §D44 (the caller passes the bridges; without them the rule is not applied, as before)
+      var pieces = ws.map(function (o) { return o.params.rect; }).concat((extra.bridges || []).filter(function (o) { return o.params.rect && !(o.params.length > cfg.opening.gap_max); }).map(function (o) { return o.params.rect; }))   // a bridge longer than an opening gap is no cover
+        .concat(ops.filter(function (o) { return o.op_type === 'DXF_OPENING'; }).map(function (o) { return openingRect(o.params.opening_box); }).filter(Boolean));
+      var low; cov = faceCover(E, pieces, tol); low = Object.keys(cov).filter(function (f) { return cov[f] < RECT_MIN_COVER; });
+      if (low.length) return { outline: null, envelope: E, cover: cov, gaps: [{ code: 'GAP:slab_outline_not_rectangular', faces: low, cover: cov, min_cover: RECT_MIN_COVER,
+        rect_m2: r6((x1 - x0) * (y1 - y0)), reason: 'the walls do not draw a rectangle (face cover ' + low.map(function (f) { return f + ' ' + cov[f]; }).join(', ') + ' < ' + RECT_MIN_COVER + '): the slab outline is not stated, so no slab is made' }] };
+    }
+    return { outline: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], envelope: E, gaps: [], cover: extra ? cov : undefined, members: uniq(members.map(hnum)).map(function (n) { return n.toString(16).toUpperCase(); }) };
   }
 
   // ---- §4.2 S-Z top / underside from elevation-derived wall heights ----
@@ -475,5 +500,5 @@
   }
 
   return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
-    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
+    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });
