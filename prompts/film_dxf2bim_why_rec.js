@@ -240,9 +240,10 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await sleep(500);
   const px = await pg.evaluate((ex, k, z) => { const A = window.A, T = window.THREE, cv = A.renderer.domElement.getBoundingClientRect(), f = (x, y) => { const v = new T.Vector3(x * k, y * k, z).project(A.camera); return [cv.left + (v.x + 1) / 2 * cv.width, cv.top + (1 - v.y) / 2 * cv.height]; }; return { a: f(ex[0], ex[1]), b: f(ex[2], ex[3]) }; }, ex, kz.k, kz.z);
   await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(900); await idle();
+  fitCentre(0.9, 1800).catch(() => { });   // straight back to the whole build while the facts are read
   fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
-  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await fitCentre(0.9); await sleep(800);
+  const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await sleep(2200);
   // ---- chapter 4 ONE SHED: Complete the building, Convert, the panels away, the finish ----
   chapter(4, 'shed'); await beat('w10'); await backdrop(4);
   await clickAt('#dxf-fold', 500); await sleep(400);   // unfold: the option boxes are in this panel
@@ -251,7 +252,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
     ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
-  await fitCentre(1.3); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
+  await fitCentre(1.5); orbitZ(30, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
   // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
   const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
   let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
