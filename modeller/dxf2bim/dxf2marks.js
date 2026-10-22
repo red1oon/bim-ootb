@@ -289,6 +289,9 @@
       var h = (maxH + 1 + n).toString(16).toUpperCase();
       out.push('0', 'TEXT', '5', h, '8', LAYER, '10', String(m.x || 0), '20', String(m.y || 0), '30', '0', '40', String(opts.height || 1), '1', m.text);
     });
+    // §F8 D32: $HANDSEED must exceed every handle in the file (DXF reference); the new markings take handles above the old maximum, so the seed moves past the last one
+    var last = maxH + marks.length;
+    for (var k = 0; k + 3 < endIdx; k += 2) if (lines[k].trim() === '9' && lines[k + 1].trim() === '$HANDSEED' && lines[k + 2].trim() === '5') { if (parseInt(lines[k + 3].trim(), 16) <= last) lines[k + 3] = (last + 1).toString(16).toUpperCase(); break; }
     return lines.slice(0, endIdx).concat(out, lines.slice(endIdx)).join(eol);
   }
 
