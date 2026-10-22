@@ -17,7 +17,7 @@ const fs = require('fs'), path = require('path'), os = require('os'), cp = requi
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const ROOT = path.join(__dirname, '..', '..'), DB = process.argv[2] || '/tmp/db2/DXARC.db';
 const SHED_MARKED = path.join(process.env.HOME, 'Videos/dxf2bim_film_work/why/cli/marked');
-const SHED_RAW = path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets');
+const SHED_RAW = process.env.SHED_RAW_DIR || '';   // the raw BricsCAD shed sheets: private local material, given by env (never a path in the repo); SKIP when unset
 const RAW9 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
 const DATUM = { '1S_ELEV': -4446.6, '1N_ELEV': -3895.2, '2_ELEV': -4515.7264, '7_ELEV': -3766.442, '8_SECTION': -3726.416 };   // the CLI run's stated second datums (0.6096 m at drawing y)
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
