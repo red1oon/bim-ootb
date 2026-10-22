@@ -128,6 +128,20 @@
     return other && other.d < 1.25 * c[0].d ? null : c[0].t;
   }
 
+  // §L7.14 the ONE plan-to-plan alignment (bodies here; the Modeller canvas and its Arrange view, D34): the translation (metres) that puts plan ps on the base plan by their
+  // shared GRIDX / GRIDY labels; every shared label must agree within alignTol, else ok=false with the reasons
+  function planOffset(base, ps, alignTol) {
+    var kb = base.factor, k = ps.factor, res = { ok: true, x: 0, y: 0, why: [] };
+    [['gridsX', 'x'], ['gridsY', 'y']].forEach(function (a) {
+      var Bg = base.desc[a[0]] || {}, Tg = ps.desc[a[0]] || {}, labs = Object.keys(Tg).filter(function (l) { return l in Bg; });
+      if (!labs.length) { res.ok = false; res.why.push('no shared ' + a[1].toUpperCase() + ' grid label'); return; }
+      var o = labs.map(function (l) { return Bg[l] * kb - Tg[l] * k; }), w = Math.max.apply(null, o.map(function (v) { return Math.abs(v - o[0]); }));
+      if (w > alignTol) { res.ok = false; res.why.push(a[1].toUpperCase() + ' grid labels disagree by ' + w.toFixed(4) + ' m'); return; }
+      res[a[1]] = o[0];
+    });
+    return res;
+  }
+
   function buildBodies(sheets, opts) {
     opts = opts || {};
     var tolM = opts.tol !== undefined ? opts.tol : 0.003, alignTol = opts.alignTol !== undefined ? opts.alignTol : 0.001;
@@ -140,17 +154,7 @@
     if (!plans.length) { gaps.push({ code: 'GAP:body_no_plan', detail: 'no storey plan' }); return { els: els, gaps: gaps, report: report }; }
     var maps = elevs.map(function (es) { var al = MK.align(plans[0].desc, es.desc, alignTol); return { sheet: es, map: al.map && al.map.zOf ? al.map : null, why: al.map && al.map.zOf ? null : (al.errors || []).map(function (x) { return x.code; }).join(',') }; });
     // §L7.14 every plan after the base is aligned to it by shared grid labels (translation only); a plan that cannot be aligned contributes nothing, loudly
-    function offsetOf(ps) {
-      var kb = plans[0].factor, k = ps.factor, res = { ok: true, x: 0, y: 0, why: [] };
-      [['gridsX', 'x'], ['gridsY', 'y']].forEach(function (a) {
-        var Bg = plans[0].desc[a[0]] || {}, Tg = ps.desc[a[0]] || {}, labs = Object.keys(Tg).filter(function (l) { return l in Bg; });
-        if (!labs.length) { res.ok = false; res.why.push('no shared ' + a[1].toUpperCase() + ' grid label'); return; }
-        var o = labs.map(function (l) { return Bg[l] * kb - Tg[l] * k; }), w = Math.max.apply(null, o.map(function (v) { return Math.abs(v - o[0]); }));
-        if (w > alignTol) { res.ok = false; res.why.push(a[1].toUpperCase() + ' grid labels disagree by ' + w.toFixed(4) + ' m'); return; }
-        res[a[1]] = o[0];
-      });
-      return res;
-    }
+    function offsetOf(ps) { return planOffset(plans[0], ps, alignTol); }
     var pofs = plans.map(function (ps, pi) { return pi === 0 ? { ok: true, x: 0, y: 0, why: [] } : offsetOf(ps); });
     var seenFp = {};
     // §L7.14 the z range the USER states for a kind (@BODYZ on any sheet); two sheets stating different ranges -> conflict, nothing built for that kind from it
@@ -320,5 +324,5 @@
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }
 
-  return { buildBodies: buildBodies, KINDS: KINDS, bandRegions: bandRegions };
+  return { buildBodies: buildBodies, planOffset: planOffset, KINDS: KINDS, bandRegions: bandRegions };
 });

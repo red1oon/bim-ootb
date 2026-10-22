@@ -80,14 +80,27 @@
       var ws = run.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; }); if (ws.length) return Sh.envelope(ws); } catch (e) { console.warn(TAG + ' envelope failed ' + e.message); }
     return null;
   }
+  var ALIGN_TOL = 0.001;   // Dxf2Bodies.buildBodies' alignTol default (the structure judge passes none)
+  function planOff(s, plans) {   // a plan after the base: the bodies' plan-to-plan alignment (Dxf2Bodies.planOffset, shared GRIDX / GRIDY labels); the base: none
+    if (s.role !== 'plan' || !plans.length || s === plans[0] || !window.Dxf2Bodies || !window.Dxf2Bodies.planOffset) return null;
+    return window.Dxf2Bodies.planOffset(plans[0], s, ALIGN_TOL);
+  }
+  function faceOf(face, plans, env) {   // the face plane: the lowest plan's wall envelope; without one, the panel.plane default (the end grid line of the base plan, Dxf2Panels.facePlane)
+    if (env) return { v: { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face], dflt: false };
+    var g = window.Dxf2Panels && window.Dxf2Panels.facePlane ? window.Dxf2Panels.facePlane(plans[0], face) : null;
+    return g === null ? null : { v: g, dflt: true };
+  }
   function placeOf(s, plans, env, Cf) {
     var MK = window.Dxf2Marks, k = s.factor || 1;
-    if (s.role === 'plan' || s.role === 'roof') { var z = s.role === 'plan' ? s.level : s.roofZ; return { k: k, z: z, w: function (x, y) { return [x * k, y * k, z]; } }; }
-    if (s.role === 'elev' && plans.length && env) {
-      var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL);
+    if (s.role === 'plan' || s.role === 'roof') { var z = s.role === 'plan' ? s.level : s.roofZ, off = planOff(s, plans);
+      if (off && off.ok && (off.x || off.y)) { var ox = off.x, oy = off.y; return { k: k, z: z, off: off, w: function (x, y) { return [x * k + ox, y * k + oy, z]; } }; }
+      return { k: k, z: z, off: off, w: function (x, y) { return [x * k, y * k, z]; } }; }
+    if (s.role === 'elev' && plans.length) {
+      var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), fp = faceOf(s.face, plans, env);
+      if (!fp) return { k: k, w: null, why: 'not drawn (role=elev): no wall envelope and no grid on the face side of the base plan' };
       if (!al.map || !al.map.zOf) return { k: k, w: null, warn: 'elevation does not align: not drawn ' + JSON.stringify(al.errors) };
-      var fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[s.face], ax = al.map.axis;
-      return { k: k, map: al.map, fc: fc, w: function (h, v) { var a = al.map.toPlan(h), zz = al.map.zOf(v); return ax === 'X' ? [a, fc, zz] : [fc, a, zz]; } };
+      var fc = fp.v, ax = al.map.axis;
+      return { k: k, map: al.map, fc: fc, faceDefault: fp.dflt, w: function (h, v) { var a = al.map.toPlan(h), zz = al.map.zOf(v); return ax === 'X' ? [a, fc, zz] : [fc, a, zz]; } };
     }
     if (s.role === 'section' && plans.length) {   // §L3.3 R5: on its cut plane; (h, v) -> map.axis = toPlan(h), cut axis = @CUT x units, z = zOf(v)
       var sa = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), cp = String(s.cut).split(','), cutAx = cp[0], cutV = Number(cp[1]) * k;
@@ -111,6 +124,8 @@
       var maps = mapsFor(s.role, Cf).map(function (m) { return MK.withLayers(m, s.desc); }), pl = placeOf(s, plans, env, Cf), k = pl.k, z = pl.z, w = pl.w;   // §L4.2 the sheet's @LAYER rules
       if (!w) { if (pl.warn) console.warn(TAG + ' sheet=' + s.name + ' ' + pl.warn); else console.log(TAG + ' sheet=' + s.name + ' ' + pl.why); return; }
       if (pl.cutPlane) s.cutPlane = pl.cutPlane;
+      if (pl.off) console.log(TAG + ' sheet=' + s.name + ' plan aligned to ' + plans[0].name + ' by its shared grid labels: ' + (pl.off.ok ? 'dx=' + Math.round(pl.off.x * 1e6) / 1e6 + ' dy=' + Math.round(pl.off.y * 1e6) / 1e6 + ' m' : 'refused (' + pl.off.why.join('; ') + '): drawn where it is'));
+      if (pl.faceDefault) console.log(TAG + ' sheet=' + s.name + ' face plane ' + s.face + '=' + Math.round(pl.fc * 1e6) / 1e6 + ' m: the end grid line of ' + plans[0].name + ' (panel.plane default: no wall envelope), drawn tinted as a default');
       var bright = [], dim = [], skipped = {}, typeBox = {}, hB = [], hD = [], segOf = {};   // §L4.1: per-segment handle + per-handle world segments (editor zoom / highlight / Tag pick)
       s.dxf.entities.forEach(function (e) {
         var t = readLayer(Bm, maps, e.layer), sg = segs2d([e]);
@@ -125,10 +140,12 @@
       [[bright, 0.95, hB], [dim, 0.16, hD]].forEach(function (pair) {
         if (!pair[0].length) return;
         var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pair[0], 3));
-        var ls = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: COL[s.role] || COL.none, transparent: true, opacity: pair[1], depthWrite: false }));
+        var ls = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: pl.faceDefault ? new THREE.Color(COL[s.role]).lerp(new THREE.Color(YEL), 0.75) : COL[s.role] || COL.none, transparent: true, opacity: pair[1], depthWrite: false }));
         ls.name = 'dxf:' + s.name + (pair[1] < 0.5 ? ':dim' : ''); ls.userData.dxfSheet = s.name; ls.userData.segHandles = pair[2]; ls.renderOrder = 2; g.add(ls);
       });
       state.canvas[s.name] = { role: s.role, bright: bright.length / 6, dim: dim.length / 6, typeBox: typeBox, face: s.face || null, cut: s.cutPlane || null, toWorld: w, segOf: segOf, k: k, z: z };
+      if (pl.faceDefault) state.canvas[s.name].faceDefault = 'panel.plane';
+      if (pl.off && pl.off.ok && (pl.off.x || pl.off.y)) state.canvas[s.name].offset = [pl.off.x, pl.off.y];
       console.log(TAG + ' canvas sheet=' + s.name + ' role=' + s.role + ' segments read-layers=' + (bright.length / 6) + ' other=' + (dim.length / 6) + ' notDrawn=' + JSON.stringify(skipped) +
         ' box=' + JSON.stringify(Object.keys(typeBox).reduce(function (o, q) { o[q] = typeBox[q].map(function (v) { return Math.round(v * 1000) / 1000; }); return o; }, {})));
     });
@@ -157,7 +174,7 @@
   // computed only from the values applied so far; the last stage of a sheet the canvas places IS placeOf's w (buildCanvas). Log §DXF-ARRANGE. ----
   var TAGA = '§DXF-ARRANGE', K0 = 0.001, YEL = 0xf5d90a;
   var KEY_ORDER = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'FACE', 'CUT'];   // the placing keys, in the order a sheet is placed
-  var NEED = { PLAN: ['UNITS', 'VIEW', 'LEVEL'], ROOF: ['UNITS', 'VIEW', 'ROOF'], ELEV: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], SECTION: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] };
+  var NEED = { PLAN: ['UNITS', 'VIEW', 'LEVEL', 'GRIDX', 'GRIDY'], ROOF: ['UNITS', 'VIEW', 'ROOF'], ELEV: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], SECTION: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] };
   var VIEW_ROLE = { PLAN: 'plan', ROOF: 'roof', ELEV: 'elev', SECTION: 'section' }, RANK = { PLAN: 0, ROOF: 1, ELEV: 2, SECTION: 3 };
   var _envMemo = {};
   function arrPlan() {   // the items (one per sheet: effective desc, its placement parts, its steps) from the editor's preview
@@ -174,14 +191,16 @@
       it.ref = ref; it.env = env; it.need = NEED[v] || ['UNITS']; it.zs = d.zs && d.zs.length ? d.zs[0] : null;
       if ((v === 'ELEV' || v === 'SECTION') && d.haxis) it.hax = { axis: d.haxis.slice(1), s: d.haxis[0] === '+' ? 1 : -1 };
       if (it.hax && ref && it.k) { var al = MK.align(ref.d, d, Cf.MARK_ALIGN_TOL); it.map = al.map; it.alErr = (al.errors || []).map(function (e) { return e.code; }).filter(function (c) { return c !== 'MARK:level_scale_fail'; }); }
-      it.fc = v === 'ELEV' && d.face && env ? { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[d.face] : null;
+      var refP = ref ? { desc: ref.d, factor: ref.k } : null, fp = v === 'ELEV' && d.face && refP ? faceOf(d.face, [refP], env) : null;
+      it.fc = fp ? fp.v : null; it.fcDefault = !!(fp && fp.dflt);
+      if (v === 'PLAN' && ref && it !== ref && it.k && window.Dxf2Bodies && window.Dxf2Bodies.planOffset) it.off = window.Dxf2Bodies.planOffset(refP, { desc: d, factor: it.k }, ALIGN_TOL);
       if (v === 'SECTION' && d.cut && it.k) { var cp = String(d.cut).split(','); it.cut = { ax: cp[0], v: Number(cp[1]) * it.k }; }
       var exact = !it.P.yellow.length && it.s.role ? placeOf(it.s, bcPlans, state.envelope, Cf) : null;   // the canvas's own placement (same w)
       if (exact && exact.w) it.place = exact;
       else if (ref && (v === 'PLAN' || v === 'ROOF' || v === 'ELEV' || v === 'SECTION') && it.k) {   // the same placeOf over the effective desc (one datum is enough here: the preview rule, the gate still needs 2)
         var ps = { role: VIEW_ROLE[v], factor: it.k, desc: d, level: d.level, roofZ: d.roof, face: d.face, cut: d.cut };
         if ((v === 'PLAN' && typeof d.level === 'number') || (v === 'ROOF' && typeof d.roof === 'number') || (v === 'ELEV' && d.face && d.haxis && it.zs) || (v === 'SECTION' && d.cut && d.haxis && it.zs)) {
-          var pl = placeOf(ps, [{ desc: ref.d }], env, Cf); if (pl.w) it.place = pl; }
+          var pl = placeOf(ps, [it === ref ? ps : refP], env, Cf); if (pl.w) it.place = pl; }
       }
       // the steps: accepted placing markings (one per key) + yellow bands (one per key, all rows of that key), merged in KEY_ORDER; other yellow keys after
       var acc = {}; it.P.marks.forEach(function (m) { if (it.need.indexOf(m.key) >= 0) acc[m.key] = acc[m.key] || []; if (acc[m.key]) acc[m.key].push(m); });
@@ -210,6 +229,8 @@
       return function (h, y) { var a = tp ? tp(h) : c0 + sg * (h - hc) * k, z = zf(y); return ax === 'X' ? [a, pp, z] : [pp, a, z]; };
     }
     var zz = v === 'PLAN' && A.LEVEL && typeof d.level === 'number' ? d.level : v === 'ROOF' && A.ROOF && typeof d.roof === 'number' ? d.roof : 0;
+    var ox = A.GRIDX && A.UNITS && it.off && it.off.ok ? it.off.x : 0, oy = A.GRIDY && A.UNITS && it.off && it.off.ok ? it.off.y : 0;   // a plan after the base: moved onto it by the bodies' alignment
+    if (ox || oy) return function (x, y) { return [x * k + ox, y * k + oy, zz]; };
     return function (x, y) { return [x * k, y * k, zz]; };
   }
   function whyStill(it, key, A) {   // a step that moves nothing says why
@@ -218,11 +239,11 @@
     if (key === 'VIEW') return v === 'PLAN' || v === 'ROOF' ? 'a plan lies flat: unchanged' : 'not a placing view';
     if (key === 'LEVEL') return v === 'ROOF' ? 'a roof plan is lifted by @ROOF' : 'level ' + d.level + ': already at z = 0';
     if (key === 'ROOF') return v === 'ROOF' ? 'roof at z = 0' : 'the roof top: read by the pipeline, nothing moves';
-    if (key === 'GRIDX' || key === 'GRIDY') return 'the plan grid the elevations align to: the plan does not move';
+    if (key === 'GRIDX' || key === 'GRIDY') return v !== 'PLAN' ? 'not a placing value' : !it.ref || it.ref === it ? 'the reference plan: the grid the elevations and the other plans align to' : !it.off ? 'needs @UNITS' : !it.off.ok ? 'not aligned to ' + it.ref.name + ': ' + it.off.why.join('; ') + ' (drawn where it is)' : 'already on ' + it.ref.name + '\'s grid';
     if (key === 'Z') return !A.UNITS ? 'needs @UNITS' : 'the datum is at its own height';
     if (key === 'HAXIS') return d.haxis === '+X' ? '+X: unchanged' : 'unchanged';
     if (key === 'GRIDH') return !it.hax || !A.HAXIS ? 'needs @HAXIS' + (it.ref ? '' : ' (no plan with @LEVEL to fit against)') : !it.map ? 'does not align: ' + (it.alErr || []).join(',') : 'already on the grid';
-    if (key === 'FACE') return !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.fc === null || it.fc === undefined ? 'no face plane: the lowest plan has no wall envelope' : 'already on its face';
+    if (key === 'FACE') return !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.fc === null || it.fc === undefined ? 'no face plane: no wall envelope and no grid on that side of the base plan' : 'already on its face';
     if (key === 'CUT') return !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.cut && it.cut.ax === it.hax.axis ? 'the cut runs along @HAXIS' : 'already on its cut';
     return key === 'NAME' ? 'names the sheet' : key === 'SET' ? 'names the set' : 'not a placing value';
   }
@@ -236,7 +257,7 @@
       if (!d.zs.length) L.push('@Z'); else if (d.zs.length < 2) L.push('one height: a second is needed to convert');
       if (!d.haxis) L.push('@HAXIS' + (it.ref ? '' : ' (no plan with @LEVEL to fit against)'));
       else if (!it.map) L.push('grid alignment (' + ((it.alErr || []).join(',') || 'no reference plan') + ')');
-      if (v === 'ELEV' && !d.face) L.push('@FACE'); else if (v === 'ELEV' && (it.fc === null || it.fc === undefined)) L.push('a face plane (the lowest plan has no wall envelope)');
+      if (v === 'ELEV' && !d.face) L.push('@FACE'); else if (v === 'ELEV' && (it.fc === null || it.fc === undefined)) L.push('a face plane (no wall envelope, no grid on that side of the base plan)');
       if (v === 'SECTION' && !d.cut) L.push('@CUT');
     }
     return L;
@@ -251,13 +272,14 @@
   }
   function posOfRaw(raw, f) { var out = new Float64Array(raw.length / 2 * 3); for (var i = 0, j = 0; i < raw.length; i += 2, j += 3) { var p = f(raw[i], raw[i + 1]); out[j] = p[0]; out[j + 1] = p[1]; out[j + 2] = p[2]; } return out; }
   function maxDiff(a, b) { var m = 0; for (var i = 0; i < a.length; i++) { var x = Math.abs(a[i] - b[i]); if (x > m) m = x; } return m; }
-  function colOf(it) { var c = new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none); return it.tint ? c.lerp(new window.THREE.Color(YEL), 0.75) : c; }
+  function colOf(it) { var c = new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none); return it.tint || it.dtint ? c.lerp(new window.THREE.Color(YEL), 0.75) : c; }
   function chain(it) {   // the stages of the sheet (stage 0 .. one per step) as world positions, + which steps move it
     var A = {}, raw = it.raw.b.concat(it.raw.d), hs = []; for (var i = 0; i < raw.length; i += 2) hs.push(raw[i]); hs.sort(function (a, b) { return a - b; });
     it.hc = hs.length ? (hs[Math.floor(hs.length * 0.01)] + hs[Math.ceil(hs.length * 0.99) - 1]) / 2 : 0;   // the sheet's own horizontal centre (drawing units, 1st..99th percentile)
     var st = [posOfRaw(raw, stageFn(it, A))];
     it.steps.forEach(function (s) { A[s.key] = true; var p = posOfRaw(raw, stageFn(it, A)); s.moves = maxDiff(p, st[st.length - 1]) > 1e-12; if (!s.moves) s.why = whyStill(it, s.key, A); st.push(p); });
     it.stages = st; it.tintFinal = it.steps.some(function (s) { return s.yellow && s.moves; });
+    it.steps.forEach(function (s) { s.dflt = s.key === 'FACE' && s.moves && it.fcDefault; }); it.defFinal = it.steps.some(function (s) { return s.dflt; });   // the panel.plane default places it
   }
   function arrObjects(it, g) {
     var THREE = window.THREE, nb = it.raw.b.length / 2, nd = it.raw.d.length / 2; it.obj = [];
@@ -347,9 +369,7 @@
     console.log(TAGA + ' start sheets=' + items.length + ' steps=' + all.length + ' yellow=' + nY + ' stage0="1 drawing unit = 1 mm, z = 0: a starting point, not a reading"');
     var noRole = items.filter(function (it) { return !it.view; });
     if (noRole.length) console.log(TAGA + ' finding sheets without a role=' + noRole.length + ' (' + noRole.map(function (it) { return it.name + ': ' + lacksOf(it)[0]; }).join('; ') + '): they stay flat as drawn');
-    items.forEach(function (it) { if (it.view === 'PLAN' && it.ref && it.ref !== it && typeof it.d.level === 'number') {
-      var sh = Object.keys(it.d.gridsX).filter(function (l) { return l in it.ref.d.gridsX; }).slice(0, 1).map(function (l) { return 'grid ' + l + ' dx=' + Math.round((it.d.gridsX[l] * it.k - it.ref.d.gridsX[l] * it.ref.k) * 1000) / 1000 + ' m'; });
-      console.log(TAGA + ' note sheet=' + it.name + ' stays where drawn: the pipeline has no plan-to-plan alignment (every plan at x*k, y*k, the reference ' + it.ref.name + ')' + (sh.length ? '; ' + sh[0] : '')); } });
+    items.forEach(function (it) { if (it.off) console.log(TAGA + ' note sheet=' + it.name + (it.off.ok ? (it.off.x || it.off.y ? ' moves onto ' : ' is already on ') + it.ref.name + ' by its shared grid labels (Dxf2Bodies.planOffset, as Convert\'s bodies): dx=' + Math.round(it.off.x * 1e6) / 1e6 + ' dy=' + Math.round(it.off.y * 1e6) / 1e6 + ' m' + ((it.off.x || it.off.y) && !(state.gate && state.gate.structure) ? ' (a wall set: its Convert does not move plans)' : '') : ' stays where drawn: ' + it.off.why.join('; '))); });
     minimise(true); setArrBtn(); status('Arrange: the ' + items.length + ' sheets as drawn, 1 drawing unit = 1 mm, z = 0 (a starting point, not a reading).');
     var pb = {}; ME.pvSet({ bands: pb });
     var bx = boxOf(items.map(function (it) { return it.stages[0]; }));
@@ -360,7 +380,7 @@
         var it = all[i].it, st = all[i].st, j = it.applied + 1, P0 = it.stages[j - 1], P1 = it.stages[j];
         if (st.yellow) { (pb[it.si] = pb[it.si] || []).push(st.key); ME.state.pv.fresh = { si: it.si, key: st.key }; }
         var T = ME.focusField(it.si, st.key, st.yellow);
-        var line = 'step ' + (i + 1) + ' sheet=' + it.name + ' key=' + st.key + ' value=' + st.value + ' src=' + (st.yellow ? 'yellow' : st.rows[0].source) + ' morph=' + (st.moves ? (st.key === 'VIEW' ? 'stand' : st.key === 'HAXIS' ? (it.hax.axis === 'Y' ? 'turn' : '') + (it.hax.s < 0 ? 'mirror' : '') || 'none' : st.key === 'UNITS' ? 'scale' : st.key === 'LEVEL' || st.key === 'ROOF' || st.key === 'Z' ? 'lift' : 'move') : 'none why=' + st.why);
+        var line = 'step ' + (i + 1) + ' sheet=' + it.name + ' key=' + st.key + ' value=' + st.value + ' src=' + (st.yellow ? 'yellow' : st.rows[0].source) + ' morph=' + (st.moves ? (st.key === 'GRIDX' && it.off ? 'move dx=' + Math.round(it.off.x * 1e6) / 1e6 : st.key === 'GRIDY' && it.off ? 'move dy=' + Math.round(it.off.y * 1e6) / 1e6 : st.key === 'VIEW' ? 'stand' : st.key === 'HAXIS' ? (it.hax.axis === 'Y' ? 'turn' : '') + (it.hax.s < 0 ? 'mirror' : '') || 'none' : st.key === 'UNITS' ? 'scale' : st.key === 'LEVEL' || st.key === 'ROOF' || st.key === 'Z' ? 'lift' : 'move') + (st.dflt ? ' default=panel.plane (the end grid line ' + Math.round(it.fc * 1e6) / 1e6 + ' m, no wall envelope)' : '') : 'none why=' + st.why);
         console.log(TAGA + ' ' + line); R.log.push(line);
         status('Step ' + (i + 1) + '/' + all.length + ' · ' + it.name.replace(/\.dxf$/i, '') + ' · @' + st.key + '=' + st.value + (st.yellow ? ' (yellow: not yours yet)' : '') + (st.moves ? '' : ' · ' + st.why));
         var info = { i: i + 1, sheet: it.name, si: it.si, key: st.key, value: st.value, yellow: st.yellow, moves: st.moves, focused: T.map(function (e) { return e.id || e.getAttribute('data-pv') || e.getAttribute('data-mark'); }) };
@@ -368,23 +388,24 @@
         if (opts.onStep) await opts.onStep(info);
         arrStyle(it);
         var mv = stepMotion(it, st, P0, P1), cam = followCam();
-        if (st.yellow && st.moves) it.tint = true;
-        await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (st.yellow && st.moves) it.obj.forEach(function (ls) { ls.material.color.copy(new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none).lerp(new window.THREE.Color(YEL), 0.75 * ease(e))); }); });
+        var wasT = it.tint || it.dtint; if (st.yellow && st.moves) it.tint = true; if (st.dflt) it.dtint = true;
+        await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (!wasT && (it.tint || it.dtint)) it.obj.forEach(function (ls) { ls.material.color.copy(new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none).lerp(new window.THREE.Color(YEL), 0.75 * ease(e))); }); });
         it.applied = j; arrWrite(it, P1);
       }
       if (R.stop) console.log(TAGA + ' stopped at step ' + R.steps.length + ': every sheet to its last stage');
-      items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
+      items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; it.dtint = it.defFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
       R.playing = false; R.stop = false; arrStyle(null);
       ME.focusEnd(); minimise(false);
       var cmp = compareCanvas(R); R.final = {}; items.forEach(function (it) { R.final[it.name] = finalSegOf(it); });
       R.lacks = {}; items.forEach(function (it) { var L = lacksOf(it); R.lacks[it.name] = L;
         if (!it.view) console.log(TAGA + ' skip sheet=' + it.name + ' why=' + L[0]);
-        else console.log(TAGA + ' stands sheet=' + it.name + ' placed=' + (state.canvas && state.canvas[it.name] ? 'canvas' : it.place && it.steps.length && it.need.every(function (k) { return it.steps.some(function (s) { return s.key === k; }); }) ? 'full-preview' : 'partial') + (it.tintFinal ? ' tint=yellow' : '') + ' lacks=' + (L.join('; ') || 'nothing')); });
+        else console.log(TAGA + ' stands sheet=' + it.name + ' placed=' + (state.canvas && state.canvas[it.name] ? 'canvas' : it.place && it.steps.length && it.need.every(function (k) { return it.steps.some(function (s) { return s.key === k; }); }) ? 'full-preview' : 'partial') + (it.tintFinal ? ' tint=yellow' : '') + (it.defFinal ? ' face=panel.plane-default' : '') + ' lacks=' + (L.join('; ') || 'nothing')); });
       var fb = boxOf(items.filter(function (it) { return it.view; }).map(function (it) { return it.stages[it.stages.length - 1]; })); if (fb) { var cf = camTween(camFor(fb)); cf(1); }
       R.ms = Math.round(performance.now() - t0); R.cmp = cmp; state.arrLast = { final: R.final, cmp: cmp, steps: R.steps, lacks: R.lacks, ms: R.ms, tinted: items.filter(function (it) { return it.tintFinal; }).map(function (it) { return it.name; }) };
       console.log(TAGA + ' done steps=' + R.steps.length + '/' + all.length + ' ms=' + R.ms + ' final_equal=' + cmp.equal + ' compared=' + cmp.compared + ' worst=' + cmp.worst + (cmp.bad.length ? ' bad=' + cmp.bad.join(',') : '') + ' tinted=' + items.filter(function (it) { return it.tintFinal; }).length);
       var res = { steps: R.steps.length, total: all.length, ms: R.ms, final_equal: cmp.equal, compared: cmp.compared, worst: cmp.worst };
-      if (!arrNeeded(R)) handOver('nothing yellow or partly placed: the canvas shows the same'); else { ME.pvSet({ all: true, order: orderOf(items) }); setArrBtn(); if (state.panel) renderPanel(); }
+      if (R.dirty) { R.dirty = false; console.log(TAGA + ' values changed during play: sync'); arrSync(); }
+      else if (!arrNeeded(R)) handOver('nothing yellow or partly placed: the canvas shows the same'); else { ME.pvSet({ all: true, order: orderOf(items) }); setArrBtn(); if (state.panel) renderPanel(); }
       return res;
     })();
     return R.done;
@@ -393,14 +414,14 @@
   function arrangeStop() { var R = state.arr; if (!R) return; if (R.playing) R.stop = true; else handOver('stop'); }
   // the live view after play: an accepted / typed value turns the tint solid; a changed value moves the sheet from where it stands to the new place
   function arrSync() {
-    var R = state.arr; if (!R) return; if (R.playing) { if (R.syncing) R.again = true; return; }
+    var R = state.arr; if (!R) return; if (R.playing) { if (R.syncing) R.again = true; else R.dirty = true; return; }   // a value typed during play: re-synced when the play ends
     var items = arrPlan(), moved = [], old = {}; R.items.forEach(function (it) { old[it.name] = it; });
-    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = it.tintFinal; it.applied = it.steps.length; var o = old[it.name];
+    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = it.tintFinal; it.dtint = it.defFinal; it.applied = it.steps.length; var o = old[it.name];
       var F = it.stages[it.stages.length - 1];
       if (o && o.cur && o.cur.length === F.length) { it.obj = o.obj; if (maxDiff(o.cur, F) > 1e-9) moved.push({ it: it, P0: o.cur, P1: F }); else arrWrite(it, F); }
       else { (o ? o.obj : []).forEach(function (ls) { R.group.remove(ls); ls.geometry.dispose(); }); arrObjects(it, R.group); arrWrite(it, F); } });
     R.items = items; arrStyle(null);
-    console.log(TAGA + ' sync moved=' + moved.length + ' tinted=' + items.filter(function (it) { return it.tintFinal; }).length);
+    console.log(TAGA + ' sync moved=' + moved.length + (moved.length ? ' (' + moved.map(function (m) { return m.it.name; }).join(',') + ') tween=700ms' : '') + ' tinted=' + items.filter(function (it) { return it.tintFinal; }).length);
     R.final = {}; items.forEach(function (it) { R.final[it.name] = finalSegOf(it); }); R.cmp = compareCanvas(R); R.lacks = {}; items.forEach(function (it) { R.lacks[it.name] = lacksOf(it); });
     state.arrLast = { final: R.final, cmp: R.cmp, steps: R.steps, lacks: R.lacks, ms: R.ms, sync: true, tinted: items.filter(function (it) { return it.tintFinal; }).map(function (it) { return it.name; }) };
     var fin = function () { if (!arrNeeded(R)) handOver('every placing value is yours: the canvas shows the same (final_equal=' + R.cmp.equal + ' compared=' + R.cmp.compared + ')'); else { window.DxfMetaEditor.pvSet({ all: true, order: orderOf(items) }); if (state.panel) renderPanel(); } };

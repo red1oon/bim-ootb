@@ -23,6 +23,7 @@ const DATUM = { '1S_ELEV': -4446.6, '1N_ELEV': -3895.2, '2_ELEV': -4515.7264, '7
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const SHOTS = process.env.ARRANGE_SHOTS || null;   // optional: a folder for the review screenshots (never the repo: the shed shows its title block)
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
 (async () => {
@@ -79,9 +80,9 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       res.push({ n: n, segs: Object.keys(a).reduce((s, h) => s + a[h].length / 6, 0), worst: w }); });
     return res; });
   const expectedSteps = () => pg.evaluate(() => {   // A3 oracle: the placing keys each sheet's ACCEPTED desc states (as the canvas read it), by its role
-    const NEED = { plan: ['UNITS', 'VIEW', 'LEVEL'], roof: ['UNITS', 'VIEW', 'ROOF'], elev: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], section: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] }, VR = { PLAN: 'plan', ROOF: 'roof', ELEV: 'elev', SECTION: 'section' };
+    const NEED = { plan: ['UNITS', 'VIEW', 'LEVEL', 'GRIDX', 'GRIDY'], roof: ['UNITS', 'VIEW', 'ROOF'], elev: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], section: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] }, VR = { PLAN: 'plan', ROOF: 'roof', ELEV: 'elev', SECTION: 'section' };
     const o = {}; window.DxfImportUI.state.sheets.forEach(s => { const d = s.desc, need = NEED[VR[d.view]] || ['UNITS'];
-      o[s.name] = need.filter(k => k === 'Z' ? d.zs.length : k === 'GRIDH' ? Object.keys(d.gridsH).length : d[k.toLowerCase()] !== undefined); }); return o; });
+      o[s.name] = need.filter(k => k === 'Z' ? d.zs.length : k === 'GRIDH' ? Object.keys(d.gridsH).length : k === 'GRIDX' ? Object.keys(d.gridsX).length : k === 'GRIDY' ? Object.keys(d.gridsY).length : d[k.toLowerCase()] !== undefined); }); return o; });
   const restoredOk = (b, a) => { const x = JSON.parse(b), y = JSON.parse(a); return JSON.stringify(x.sec) === JSON.stringify(y.sec) && JSON.stringify(x.open) === JSON.stringify(y.open) && Math.abs(x.top - y.top) <= 1 && !y.min; };
 
   // ---------- a marked set: A1-A5 ----------
@@ -89,10 +90,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     await openSet(dxfs(dir), false);
     const before = await state(), snap0 = await pg.evaluate(() => window.__arrSnap()), exp = await expectedSteps(), e0 = errs.length; alog.length = 0;
     const res = await play(); await sleep(400);
+    if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_' + tag + '_final.png') });
     const W = await pg.evaluate(() => window.__arr), snap1 = await pg.evaluate(() => window.__arrSnap()), after = await state();
     console.log('  ' + tag + ': ' + JSON.stringify(res) + ' log: ' + alog.filter(l => / done | hand-over/.test(l)).join(' | ').slice(0, 300));
-    const a1 = await A1(), canv = a1.length;
-    ok('A1[' + tag + '] the arrangement ends where the canvas places the sheet: every segment end of every placed sheet = buildCanvas (1e-6 m)', canv > 0 && a1.every(x => x.worst <= 1e-6) && res.final_equal === true && res.compared === canv, a1.map(x => x.n.replace(/(_std|_marked)?\.dxf$/, '') + ':' + x.segs + '/' + x.worst).join(' '));
+    const a1 = await A1(), canv = a1.length, roles = await pg.evaluate(() => window.DxfImportUI.state.sheets.filter(s => s.role && s.role !== 'drawing').length);
+    ok('A1[' + tag + '] the arrangement ends where the canvas places the sheet: every segment end of every placed sheet = buildCanvas (1e-6 m); every sheet with a role is placed (' + canv + '/' + roles + ')', canv > 0 && canv === roles && a1.every(x => x.worst <= 1e-6) && res.final_equal === true && res.compared === canv, a1.map(x => x.n.replace(/(_std|_marked)?\.dxf$/, '') + ':' + x.segs + '/' + x.worst).join(' '));
     const s0 = W.stage0 || [];
     ok('A2[' + tag + '] stage 0 is the file as drawn: raw x 0.001, z = 0, for every sheet, placed or not', s0.length === after.texts.length && s0.every(x => x.worst <= 1e-6 && x.z0 && x.n > 0), s0.map(x => x.name.replace(/(_std|_marked)?\.dxf$/, '') + ':' + x.n + '/' + (isFinite(x.worst) ? x.worst.toExponential(1) : 'count')).join(' '));
     const got = {}; W.steps.forEach(s => { (got[s.sheet] = got[s.sheet] || []).push(s.key + (s.yellow ? '*' : '')); });
@@ -149,15 +151,26 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     await acceptAll();
     const sync1 = alog.filter(l => / sync /.test(l)), moved1 = sync1.map(l => Number((/moved=(\d+)/.exec(l) || [])[1] || 0));
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.name));
-    await typeField(0, 'SET', 'SHED');
+    await typeField(0, 'SET', 'SHED'); await idle(); await sleep(1500);
+    // A8: a typed value moves the sheet live: @LEVEL=0 typed on the plans gives the reference plan, so HAXIS is suggested (yellow) and the other plans align: the view tweens them from where they stand
+    const before8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
+    alog.length = 0;
     for (let si = 0; si < names.length; si++) if (/FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(names[si])) await typeField(si, 'LEVEL', '0');
+    await idle(); await sleep(2500);
+    if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_level0.png') });
+    const sync8 = alog.filter(l => / sync moved=/.test(l)), movedNames = Array.from(new Set([].concat.apply([], sync8.map(l => ((/moved=\d+ \(([^)]*)\)/.exec(l) || [])[1] || '').split(',').filter(Boolean)))));
+    const after8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
+    const want8 = names.filter(n => /ELEV|SECTION|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(n)), shifted = want8.filter(n => before8[n] && after8[n] && Math.hypot(after8[n][0] - before8[n][0], after8[n][1] - before8[n][1]) > 1);
+    ok('A8[shed raw] a typed value moves the sheet live: @LEVEL=0 typed in the panel after play -> the view tweens (sync tween) the 4 elevations, the section (HAXIS now suggested: turned onto the plan grid) and the 2 other plans (aligned by their grid labels) from where they stood',
+      want8.every(n => movedNames.indexOf(n) >= 0) && shifted.length === want8.length && sync8.some(l => /tween=700ms/.test(l)), 'moved=' + movedNames.map(n => n.replace(/\.dxf$/, '')).join(',') + ' shifted>1m=' + shifted.length + '/' + want8.length + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
     for (let si = 0; si < names.length; si++) { const k = Object.keys(DATUM).filter(q => names[si].indexOf(q) === 0)[0]; if (k) await addZ(si, 0.6096, DATUM[k]); }
     await idle(); await sleep(1500); await acceptAll(); await idle(); await sleep(2500);
     const L1 = await pg.evaluate(() => { const U = window.DxfImportUI.state; return { live: !!U.arr, tinted: (U.arrLast && U.arrLast.tinted) || null, canvas: Object.keys(U.canvas || {}), roles: U.sheets.map(s => s.role), yellowPlacing: window.DxfMetaEditor.preview().reduce((n, p) => n + p.yellow.filter(y => ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDH', 'FACE', 'CUT'].indexOf(y.key) >= 0).length, 0) }; });
     const a1 = await A1();
+    if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_typed.png') });
     console.log('  shed raw after Accept all + typed: ' + JSON.stringify({ live: L1.live, tinted: L1.tinted, canvas: L1.canvas.length, roles: L1.roles, yellowPlacing: L1.yellowPlacing, syncMovedOnFirstAccept: moved1 }));
     ok('A7[shed raw] yellow is not yours: the play left the accepted markings / verdict / texts as opened (0 accepted before Accept all); accepting the yellow values re-morphs nothing (sync moved=0); after Accept all + the CLI\'s stated values typed in the panel no tint is left and every sheet the canvas places ends where buildCanvas puts it',
-      L0.marks === 0 && L0.tinted > 0 && moved1.length > 0 && moved1.every(n => n === 0) && L1.yellowPlacing === 0 && (L1.tinted === null || L1.tinted.length === 0) && a1.length >= 4 && a1.every(x => x.worst <= 1e-6) && errs.length === e0,
+      L0.marks === 0 && L0.tinted > 0 && moved1.length > 0 && moved1.every(n => n === 0) && L1.yellowPlacing === 0 && (L1.tinted === null || L1.tinted.length === 0) && a1.length === 8 && a1.every(x => x.worst <= 1e-6) && errs.length === e0,
       'before: marks=' + L0.marks + ' tinted=' + L0.tinted + ' | first accept syncs moved=' + moved1.join(',') + ' | after: tinted=' + JSON.stringify(L1.tinted) + ' canvas=' + a1.map(x => x.n.replace(/\.dxf$/, '') + ':' + x.worst).join(' ') + ' errors=' + (errs.length - e0) + ' st0.gate=' + st0.gate);
   }
   console.log('  page errors total=' + errs.length);

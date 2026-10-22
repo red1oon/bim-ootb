@@ -31,6 +31,14 @@
     return v;
   }
 
+  // the panel.plane default (the ONE face plane without a wall envelope: here, the Modeller canvas and its Arrange view, D34): the outermost grid line of the base plan on the
+  // face's side (metres), or null when the base plan has no grid on that coordinate
+  function facePlane(base, face) {
+    var F = FACE[face]; if (!F) return null;
+    var gr = F.coord === 'X' ? base.desc.gridsX : base.desc.gridsY, gv = Object.keys(gr || {}).map(function (l) { return gr[l] * base.factor; });
+    if (!gv.length) return null;
+    return F.pick === 'min' ? Math.min.apply(null, gv) : Math.max.apply(null, gv);
+  }
   // sheets: readSheets output (role 'elev' sheets carry .hatches from the importer, .text); opts: { numbers, prepChoices }
   function buildPanels(sheets, opts) {
     opts = opts || {}; var els = [], gaps = [], DEF = P.Defaults(), own = !opts.DF, DF = opts.DF || DFM.create(opts.ref, sheets, opts.choices), report = { sheets: {}, panels: 0 };
@@ -48,9 +56,9 @@
       if (!(al.map && al.map.zOf)) { gaps.push({ code: 'GAP:panel_elevation_not_aligned', sheet: es.name, detail: (al.errors || []).map(function (x) { return x.code; }).join(',') }); return; }
       var map = al.map, k = es.factor, un = unitName(k);
       if (map.axis !== F.axis) { gaps.push({ code: 'GAP:panel_axis', sheet: es.name, detail: 'face ' + es.face + ' runs along ' + F.axis + ' but the horizontal axis is ' + map.axis }); return; }
-      var gr = F.coord === 'X' ? plans[0].desc.gridsX : plans[0].desc.gridsY, gv = Object.keys(gr || {}).map(function (l) { return gr[l] * plans[0].factor; });
-      if (!gv.length) { gaps.push({ code: 'GAP:panel_no_grid', sheet: es.name, detail: 'the base plan has no grid on ' + F.coord }); return; }
-      var plane = F.pick === 'min' ? Math.min.apply(null, gv) : Math.max.apply(null, gv); planUsed = true;
+      var plane = facePlane(plans[0], es.face);
+      if (plane === null) { gaps.push({ code: 'GAP:panel_no_grid', sheet: es.name, detail: 'the base plan has no grid on ' + F.coord }); return; }
+      planUsed = true;
       var layers = es.desc.layers.filter(function (l) { return l.type === 'panel'; }).map(function (l) { return l.layer; });
       var hs = (es.hatches && es.hatches.hatches) || []; (es.hatches && es.hatches.gaps || []).forEach(function (g) { gaps.push(Object.assign({ sheet: es.name }, g)); });
       // loops of the typed layers, in drawing units, with their polygons in plan metres / absolute z
@@ -167,5 +175,5 @@
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
     return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
-  return { buildPanels: buildPanels, LABEL: LABEL };
+  return { buildPanels: buildPanels, facePlane: facePlane, LABEL: LABEL };
 });
