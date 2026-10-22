@@ -253,7 +253,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
   await sleep(1500);
   // ---- closing card ----
-  chapter(6, 'close'); await beat('l01');
+  await beat('l01');
   const LIM = ['Not shown: doors and windows as schedules (rows and tags), and the rules that read the roof beyond the default.',
     'The values typed here are the ones this drawing set states in its own saved markings; a different set asks for its own.'];
   fact('limits', LIM);
