@@ -109,8 +109,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   // the product's own zoom-to-fit, then slid into the strip the OPEN panels leave free (fixed panels have no offsetParent: tested by display and width) and dollied closer by `zoom`
   const fitCentre = async (fill, ms) => { await pg.evaluate(([fill, ms]) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, box = new T.Box3();
       const built = A.scene.children.filter(o => /^Bonsai/.test(o.name || '') && o.visible);   // the converted shed, when there is one (else the placed sheets)
-      if (built.length) built.forEach(o => box.union(new T.Box3().setFromObject(o)));
-      else { const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (g) box.setFromObject(g); }
+      built.forEach(o => { const b = new T.Box3().setFromObject(o); if (!b.isEmpty()) box.union(b); });
+      if (box.isEmpty()) { const g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (g) box.setFromObject(g); }
       if (box.isEmpty()) { res(); return; }
       const ctr = box.getCenter(new T.Vector3()), size = box.getSize(new T.Vector3()), r = Math.max(size.x, size.y, size.z * 2, 0.5) * 0.5;
       const pr = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...pr), x1 = innerWidth - 70;
@@ -127,7 +127,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   // §FILM_SHARE: how much of the role sheets lies inside the free canvas strip, every 2 s (a witness of "always in frame")
   const shareNow = () => pg.evaluate(() => { try { const A = window.A, T = window.THREE, U = window.DxfImportUI.state;
       const bo = A.scene.children.filter(o => /^Bonsai/.test(o.name || '') && o.visible);
-      if (bo.length) { const b = new T.Box3(); bo.forEach(o => b.union(new T.Box3().setFromObject(o))); const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
+      const b = new T.Box3(); bo.forEach(o => { const q = new T.Box3().setFromObject(o); if (!q.isEmpty()) b.union(q); });
+      if (!b.isEmpty()) { const cam = A.camera; cam.updateMatrixWorld(); const cv = A.renderer.domElement.getBoundingClientRect(), v = new T.Vector3();
         const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })); let inn = 0, n = 0;
         for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { v.set(x, y, z).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) inn++; }
         return inn / n; }
@@ -250,13 +251,13 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
     ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
-  await fitCentre(0.85); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
+  await fitCentre(1.3); orbitZ(45, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
   // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
   const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
   let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
   await sleep(1200); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f)).sort(); fact('saved_n', String(saved.length));
   await clickAt('#dm-close', 600); await sleep(400); await clickAt('#dxf-fold', 500); await sleep(500);   // what is not needed any more is folded away: the canvas is all the shed
-  await fitCentre(0.8);
+  await fitCentre(1.15);
   await orbitZ(110, 14000);
   // ---- chapter 5 OPENS PLACED NEXT TIME ----
   chapter(5, 'placed'); await beat('c5'); await backdrop(5);
