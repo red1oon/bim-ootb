@@ -133,8 +133,15 @@
     slabs.sort(function (a, b) { return hnum(a.handle) - hnum(b.handle); }); roofs.sort(function (a, b) { return hnum(a.handle) - hnum(b.handle); });
     var out = {};
     (levels || []).slice().sort(function (a, b) { return a - b; }).forEach(function (L) {
-      var at = slabs.filter(function (s) { return Math.abs(s.top - L) <= tol; });
+      var at = slabs.filter(function (s) { return Math.abs(s.top - L) <= tol; }), onLevel = false;
+      if (!at.length) { at = slabs.filter(function (s) { return Math.abs(s.bottom - L) <= tol; }); onLevel = at.length > 0; }   // §F8 D33: the storey placed at its slab's underside (HHS): the slab sitting ON the level
       if (!at.length) { gaps.push({ code: 'GAP:section_no_slab', level: L }); return; }
+      if (onLevel) {
+        var T = agree(at.map(function (s) { return { z: s.top }; }), tol);
+        if (!T.ok) { gaps.push({ code: 'GAP:section_slab_conflict', level: L, values: T.values }); return; }
+        out[String(L)] = { level: L, top: r6(T.z), bottom: r6(L), thickness: r6(T.z - L), source: 'section', on_level: true, from: at.map(function (s) { return s.handle; }) };
+        return;
+      }
       var B = agree(at.map(function (s) { return { z: s.bottom }; }), tol);
       if (!B.ok) { gaps.push({ code: 'GAP:section_slab_conflict', level: L, values: B.values }); return; }
       var bottom = r6(B.z), top = r6(L);
