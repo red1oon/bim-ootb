@@ -482,7 +482,7 @@
       '.dm-in{flex:1}.dm-in:focus,.dm-sel:focus{border-color:#3a6ea5}.dm-in.need,.dm-sel.need{border-color:#a04848;background:#211517}',
       '.dm-in.n{width:62px;flex:0 0 auto}.dm-in.lab{width:38px;flex:0 0 auto}',
       '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}.dm-src.default{background:#f5d90a;color:#1a1a1a;border-radius:3px;padding:0 4px;width:auto}',
-      '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}',
+      '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}.dm-hs{display:block;color:#e8ecf3;font-size:11px;margin-top:1px}.dm-ask{font-size:11px;line-height:1.45;color:#f2a3a3;margin:2px 0 5px}',
       '.dm-mk{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-family:ui-monospace,monospace;font-size:10.5px}.dm-mk:hover{background:#20232b}.dm-mk .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dm-ib{background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex;border-radius:5px}.dm-ib:hover{color:#c7cdd8;background:#2a2e38}.dm-ib .dm-ico{width:13px;height:13px}',
       '.dm-pr{display:flex;align-items:center;gap:6px;padding:3px 4px;border:1px dashed #3a4150;border-radius:6px;margin:3px 0;font-size:10.5px}.dm-pr .t{flex:1;min-width:0}.dm-pr .t b{font-family:ui-monospace,monospace;font-weight:500;color:#d7dce5}.dm-pr .w{display:block;color:#5b6473;font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -525,9 +525,13 @@
         '<button class="dm-ib" title="Remove" data-act="rm" data-sheet="' + si + '" data-idx="' + idx + '">' + IC.trash + '</button></div>';
     });
     var kSel = keys.length > 1 ? '<select class="dm-sel" data-add-key="' + si + '-' + needKey + '">' + keys.map(function (k) { return opt(k, keys[0]); }).join('') + '</select>' : '';
-    var isZ = needKey === 'Z';
-    h += '<div class="dm-row">' + kSel + '<input class="dm-in lab" id="dm-av-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'z m' : 'label') + '" data-add-val="' + si + '-' + needKey + '" spellcheck="false">' +
-      '<input class="dm-in n" id="dm-ap-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'drawing y' : keys.length > 1 ? 'x or y' : 'x') + '" data-add-pos="' + si + '-' + needKey + '" inputmode="decimal">' +
+    var isZ = needKey === 'Z', nd = need && isZ ? ' need' : '';
+    if (need && isZ) {   // §D40 the question, from what the sheet already states
+      var z0 = sh.marks.filter(function (m) { return m.key === 'Z'; })[0];
+      h += '<div class="dm-ask" data-ask="Z">' + (z0 ? 'One height is known: ' + esc(z0.value) + ' m at y ' + num(z0.y) + '. Give a second:' : 'No height is known yet. Give two:') + ' read a level text or a dimension on this sheet, type it in metres, and the y where it is drawn.</div>';
+    }
+    h += '<div class="dm-row">' + kSel + '<input class="dm-in lab' + nd + '" id="dm-av-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'height, m' : 'label') + '" data-add-val="' + si + '-' + needKey + '" spellcheck="false">' +
+      '<input class="dm-in n' + nd + '" id="dm-ap-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'y where drawn' : keys.length > 1 ? 'x or y' : 'x') + '" data-add-pos="' + si + '-' + needKey + '" inputmode="decimal">' +
       '<button class="dm-btn" data-act="add" data-sheet="' + si + '" data-group="' + needKey + '" data-keys="' + keys.join(',') + '">' + IC.plus + '<span>Add</span></button></div>';
     return h;
   }
@@ -537,7 +541,7 @@
     h += '<div class="dm-sub">' + IC.bulb + 'Suggestions (not markings until ticked)</div>';
     list.forEach(function (p) {
       var pi = P.list.indexOf(p), ps = SINGLE_POS[p.key];
-      h += prOpen(si, p).replace('<div class="dm-pr', '<div data-prop="' + esc(p.rule + ':' + p.key + '=' + p.value) + '" class="dm-pr') + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + (ps === 'x' ? ' x ' + num(p.x) : ps === 'y' ? ' y ' + num(p.y) : '') + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
+      h += prOpen(si, p).replace('<div class="dm-pr', '<div data-prop="' + esc(p.rule + ':' + p.key + '=' + p.value) + '" class="dm-pr') + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + (ps === 'x' ? ' x ' + num(p.x) : ps === 'y' ? ' y ' + num(p.y) : '') + '</b><span class="dm-hs">' + esc(humanMark(p.key, p.value, p.x, p.y)) + '</span><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
         '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p);
     });
     return h;
@@ -1000,16 +1004,35 @@
     console.log(TAG + ' preview rounds=' + Math.min(r, PV_ROUNDS) + ' yellow=' + out.map(function (o) { return o.yellow.length; }).join(','));
     return out;
   }
+  // §D41.4 the same row in plain words (a function of key / value / position only), shown under the @KEY=value text: WHAT the row says about the sheet
+  function humanMark(k, v, x, y) {
+    var u = { in: 'inches', ft: 'feet', mm: 'millimetres', cm: 'centimetres', m: 'metres' };
+    switch (k) {
+      case 'UNITS': return 'The drawing is in ' + (u[v] || v);
+      case 'VIEW': return v === 'PLAN' ? 'This sheet is a plan: it lies flat' : v === 'ELEV' ? 'This sheet is an elevation: it stands up' : v === 'SECTION' ? 'This sheet is a section: it stands up' : v === 'ROOF' ? 'This sheet is a roof plan' : 'Role: ' + v;
+      case 'NAME': return 'The sheet is titled "' + v + '"';
+      case 'LEVEL': return 'This plan sits at level ' + v + ' m' + (Number(v) === 0 ? ' (the ground)' : '');
+      case 'GRIDX': return 'Grid line ' + v + ' runs at x ' + num(x);
+      case 'GRIDY': return 'Grid line ' + v + ' runs at y ' + num(y);
+      case 'GRIDH': return 'Grid line ' + v + ' of this elevation sits at x ' + num(x);
+      case 'Z': return 'Height ' + v + ' m is drawn at y ' + num(y);
+      case 'HAXIS': return 'Its horizontal runs along ' + v + ' of the plan';
+      case 'FACE': return 'It faces the ' + ({ minY: 'front (-Y)', maxY: 'rear (+Y)', minX: 'west end (-X)', maxX: 'east end (+X)' }[v] || v) + ' of the building';
+      case 'CUT': return 'The section is cut along ' + String(v).replace(',', ' = ');
+      case 'ROOF': return 'The roof top is at ' + v + ' m';
+      default: return '';
+    }
+  }
   function previewBlock(si) {   // S.pv: { all: true } (the view stands: every yellow row) | { bands: { si: [KEY, ...] } } (play: the bands revealed so far)
     var P = preview()[si], keys = S.pv.all ? null : (S.pv.bands[si] || []), h = '';
     var rows = P.yellow.filter(function (y) { return !keys || keys.indexOf(y.key) >= 0; });
     if (keys) rows.sort(function (a, b) { return keys.indexOf(a.key) - keys.indexOf(b.key); });
     else if (S.pv.order && S.pv.order[si]) { var o = S.pv.order[si]; rows.sort(function (a, b) { return (o.indexOf(a.key) < 0 ? 99 : o.indexOf(a.key)) - (o.indexOf(b.key) < 0 ? 99 : o.indexOf(b.key)); }); }
     if (!rows.length) return '';
-    h += '<div class="dm-sub">' + IC.bulb + 'Defaults placing this sheet (yellow: not yours yet)</div>';
+    h += '<div class="dm-sub">' + IC.bulb + 'Defaults placing ' + esc(String(S.sheets[si].name).replace(/\.dxf$/i, '')) + ' (yellow: not yours yet)</div>';
     rows.forEach(function (y) {
       var ps = SINGLE_POS[y.key], fresh = S.pv.fresh && S.pv.fresh.si === si && S.pv.fresh.key === y.key;
-      h += prOpen(si, y, ' dm-pv' + (fresh ? ' dm-new' : '')).replace('<div class="dm-pr', '<div data-pv-key="' + esc(y.key) + '" data-pv="' + esc(y.key + '=' + y.value) + '" class="dm-pr') + '<span class="t"><b>@' + y.key + '=' + esc(y.value) + (ps === 'x' ? ' x ' + num(y.x) : ps === 'y' ? ' y ' + num(y.y) : '') + '</b><span class="w">' + esc(y.rule + ': ' + y.why) + '</span></span>' + prTail(si, y) +
+      h += prOpen(si, y, ' dm-pv' + (fresh ? ' dm-new' : '')).replace('<div class="dm-pr', '<div data-pv-key="' + esc(y.key) + '" data-pv="' + esc(y.key + '=' + y.value) + '" class="dm-pr') + '<span class="t"><b>@' + y.key + '=' + esc(y.value) + (ps === 'x' ? ' x ' + num(y.x) : ps === 'y' ? ' y ' + num(y.y) : '') + '</b><span class="dm-hs">' + esc(humanMark(y.key, y.value, y.x, y.y)) + '</span><span class="w">' + esc(y.rule + ': ' + y.why) + '</span></span>' + prTail(si, y) +
         (y.pi >= 0 ? '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + y.pi + '">' + IC.check + '</button>' : '<span class="dm-later" title="suggested once the values above are yours">after the above</span>') + '</div>' + prNote(si, y);
     });
     return h;

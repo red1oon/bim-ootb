@@ -23,6 +23,7 @@ const DATUM = { '1S_ELEV': -4446.6, '1N_ELEV': -3895.2, '2_ELEV': -4515.7264, '7
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const FILL_MIN = Number(process.env.FILL_MIN || 0.3);   // measured min 0.48 median 0.58 (A12d); 0.3 leaves room and fails a return to tiny sheets
 const SHOTS = process.env.ARRANGE_SHOTS || null;   // optional: a folder for the review screenshots (never the repo: the shed shows its title block)
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
@@ -122,6 +123,34 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     await pg.evaluate(() => window.DxfImportUI.arrangeStop && window.DxfImportUI.arrangeStop());
   } else skip('A9b', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');
 
+  // ---------- A12 (§D41): the build-up is progressive (phases across all sheets), the caption says which sheet / what was done. Proves/disproves: the old sheet-by-sheet order let the pieces cohere only at the very last step ----------
+  if (SHED_RAW && RAW9.every(n => fs.existsSync(path.join(SHED_RAW, n + '.dxf')))) {
+    await pg.waitForFunction(() => !window.DxfImportUI.state.arr || !window.DxfImportUI.state.arr.playing, { timeout: 120000, polling: 100 }); await sleep(300);   // the play-on-open of A9b must be over (a second arrange() call would only stop it)
+    const R12 = await pg.evaluate(() => new Promise(async res => {
+      const U = window.DxfImportUI, cen = P => { let x = 0, y = 0, n = 0; for (let i = 0; i < P.length; i += 3) { x += P[i]; y += P[i + 1]; n++; } return [x / n, y / n]; };
+      const out = { steps: [], caps: [] }; let prev = null;
+      await U.arrange({ stepMs: 30, holdMs: 30, onStep: async info => {
+        const A = U.state.arr, c = document.getElementById('dxf-arr-cap'); if (prev) { const b = c ? c.getBoundingClientRect() : null; out.caps.push({ prev, text: c ? c.innerText : null, in: b ? (b.left >= 0 && b.right <= innerWidth && b.top >= 0 && b.bottom <= innerHeight) : false }); }
+        const fin = A.items.map(it => cen(it.stages[it.stages.length - 1])), now = A.items.map(it => cen(it.stages[it.applied]));
+        out.steps.push({ i: info.i, key: info.key, sheet: info.sheet, moves: info.moves, settled: A.items.filter((it, k) => Math.hypot(now[k][0] - fin[k][0], now[k][1] - fin[k][1]) <= 2).length, n: A.items.length });
+        { const T = window.THREE, cam = window.A.camera; cam.updateMatrixWorld(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; const v = new T.Vector3(), cv = window.A.renderer.domElement.getBoundingClientRect();
+          A.items.forEach(it => { const P = it.cur; for (let i = 0; i < P.length; i += 30) { v.set(P[i], P[i + 1], P[i + 2]).project(cam); const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } });
+          const pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })), sw = cv.right - pr - 24, sh = cv.height;
+          out.steps[out.steps.length - 1].fill = Math.max((Math.min(x1, cv.right) - Math.max(x0, pr)) / sw, (Math.min(y1, cv.bottom) - Math.max(y0, cv.top)) / sh); }
+        prev = info; } });
+      out.after = !!document.getElementById('dxf-arr-cap'); res(out); }));
+    const PH = k => k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4, KO = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'FACE', 'CUT'];
+    const ph = R12.steps.map(x => PH(x.key)), mono = ph.every((v, i) => i === 0 || v >= ph[i - 1]);
+    const bySheet = {}; R12.steps.forEach(x => (bySheet[x.sheet] = bySheet[x.sheet] || []).push(x.key)); const rankOk = Object.values(bySheet).every(ks => { const r = ks.filter(k => KO.indexOf(k) >= 0).map(k => KO.indexOf(k)); return r.every((v, i) => i === 0 || v >= r[i - 1]); });
+    ok('A12a[shed raw] phases run across all sheets: the phase sequence over the ' + R12.steps.length + ' steps is non-decreasing (1 scale, 2 orient, 3 assemble, 4 name) and each sheet keeps its own key order', mono && rankOk && ph.includes(1) && ph.includes(2) && ph.includes(3), 'phases=' + [1, 2, 3, 4].map(q => ph.filter(v => v === q).length).join('/'));
+    const p3 = R12.steps.filter(x => PH(x.key) === 3), s3 = p3.map(x => x.settled), jumps = s3.map((v, i) => i ? v - s3[i - 1] : 0), distinct = Array.from(new Set(s3));
+    ok('A12b[shed raw] the assembly grows piece by piece, not in one jump: through the assemble phase the count of sheets settled (centre within 2 m of its final place) never falls, never rises by more than 2 in one step, and passes through >= 4 distinct values', s3.length > 0 && jumps.every(d => d >= 0 && d <= 2) && distinct.length >= 4, 'settled over assemble steps=' + s3.join(',') + ' of ' + (R12.steps[0] || {}).n);
+    const fills = R12.steps.slice(1).map(x => x.fill).filter(f => f !== undefined).sort((a, b) => a - b), med = fills[Math.floor(fills.length / 2)] || 0;
+    ok('A12d[shed raw] the canvas is never empty: at every step after the first the sheets cover a measurable share of the free canvas strip (the larger of the width and height fractions of the united screen box)', fills.length > 40 && fills[0] >= FILL_MIN && med >= 0.3, 'min=' + (fills[0] || 0).toFixed(2) + ' median=' + med.toFixed(2) + ' n=' + fills.length + ' first10=' + R12.steps.slice(1, 11).map(x => (x.fill || 0).toFixed(2)).join(','));
+    const capOk = R12.caps.length === R12.steps.length - 1 && R12.caps.every(c => c.text && c.in && c.text.toLowerCase().indexOf(c.prev.sheet.replace(/\.dxf$/i, '').replace(/^\d+[A-Z]?_/, '').replace(/_/g, ' ').toLowerCase()) >= 0 && /STATED|DEFAULT|INFERRED/.test(c.text) && /SCALE|ORIENT|ASSEMBLE|NAME/.test(c.text));
+    ok('A12c[shed raw] the caption says which sheet and what was done at every step: it names the sheet, shows a phase chip and an evidence tier, lies inside the viewport, and is gone after the play', capOk && R12.after === false, 'captions=' + R12.caps.length + ' bad=' + R12.caps.filter(c => !(c.text && c.in)).length + ' afterPlay=' + R12.after + ' e.g. ' + JSON.stringify((R12.caps[19] || {}).text));
+  } else skip('A12', 'SHED_RAW_DIR unset (INCONCLUSIVE: nothing judged)');
+
   // ---------- the plain Duplex set: A3b ----------
   if (duplex) {
     await openSet(dxfs(path.join(duplex, 'plain')), false); alog.length = 0;
@@ -166,6 +195,20 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     await acceptAll();
     const sync1 = alog.filter(l => / sync /.test(l)), moved1 = sync1.map(l => Number((/moved=(\d+)/.exec(l) || [])[1] || 0));
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.name));
+    // A10 (§D39): the slim panel. Proves/disproves: folding the 2D Drawings panel gives its width to the canvas and the metadata panel follows; the play folds and restores it
+    const geo = () => pg.evaluate(() => { const r = id => { const e = document.getElementById(id); if (!e || e.style.display === 'none') return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right }; }; return { dxf: r('dxf-panel'), dm: r('dm-panel'), slim: document.body.classList.contains('dxf-slim') }; });
+    const g0 = await geo(); await pg.click('#dxf-fold'); await sleep(600); const g1 = await geo(); await pg.click('#dxf-fold'); await sleep(600); const g2 = await geo();
+    ok('A10a[shed raw] fold: the metadata panel sits 10 px right of the slim bar (the unfolded gap) and the canvas gains >= 200 px; unfold restores the old geometry exactly',
+      !g0.slim && g1.slim && Math.abs(g1.dm.l - (g1.dxf.r + 10)) <= 1 && g0.dm.l - g1.dm.l >= 200 && !g2.slim && Math.abs(g2.dm.l - g0.dm.l) <= 1, 'before dm.left=' + g0.dm.l.toFixed(0) + ' folded dm.left=' + g1.dm.l.toFixed(0) + ' (bar right ' + g1.dxf.r.toFixed(0) + ') after=' + g2.dm.l.toFixed(0));
+    const pr = pg.evaluate(() => window.DxfImportUI.arrange({ stepMs: 40, holdMs: 40 }).then(() => 1)); await sleep(500); const gp = await geo(); await pr; await sleep(700); const gq = await geo();
+    ok('A10b[shed raw] the Arrange play folds the panel while it plays and restores it after (the user had not folded it)', gp.slim && !gq.slim && Math.abs(gq.dm.l - g0.dm.l) <= 1, 'during slim=' + gp.slim + ' after slim=' + gq.slim + ' dm.left ' + gq.dm.l.toFixed(0));
+    // A11 (§D40): the height question. Proves/disproves: an elevation / section that needs a second height says what to give, from what the sheet states, and its inputs are red-outlined
+    const askOf = si => pg.evaluate(si => { const S = window.DxfMetaEditor.state; if (!S.open[si]) document.querySelector('#dm-panel [data-act="card"][data-sheet="' + si + '"]').click();
+      const v = document.getElementById('dm-av-' + si + '-Z'), p = document.getElementById('dm-ap-' + si + '-Z'); if (!v) return null; const ask = v.closest('.dm-row').previousElementSibling, z0 = S.sheets[si].marks.filter(m => m.key === 'Z')[0];
+      return { ask: ask && ask.classList.contains('dm-ask') ? ask.innerText : null, y: z0 ? String(Number(Number(z0.y).toFixed(6))) : null, needV: v.classList.contains('need'), needP: p.classList.contains('need'), ph: v.placeholder + '|' + p.placeholder }; }, si);
+    const eIdx = names.map((n, i) => /ELEV|SECTION/.test(n) ? i : -1).filter(i => i >= 0), asks = []; for (const si of eIdx) asks.push(await askOf(si));
+    ok('A11a[shed raw] each of the ' + eIdx.length + ' elevation / section cards asks for the second height: the question quotes the sheet\'s own ground y, both inputs carry `need`, the placeholders say what goes in',
+      eIdx.length === 5 && asks.every(a => a && a.ask && a.y && a.ask.indexOf('One height is known') === 0 && a.ask.indexOf('at y ' + a.y) > 0 && a.needV && a.needP && a.ph === 'height, m|y where drawn'), asks.map(a => a ? (a.y + ':' + (a.needV && a.needP)) : 'null').join(' '));
     await typeField(0, 'SET', 'SHED'); await idle(); await sleep(1500);
     // A8: a typed value moves the sheet live: @LEVEL=0 typed on the plans gives the reference plan, so HAXIS is suggested (yellow) and the other plans align: the view tweens them from where they stand
     const before8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
@@ -179,6 +222,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     ok('A8[shed raw] a typed value moves the sheet live (§D37: @LEVEL=0 is now the orange default already in place, so the typed value is 3): @LEVEL=3 typed on the 3 plans after play -> each plan is lifted by exactly 3.000 m in the view (sync tween)',
       want8.length === 3 && lifted.length === 3 && sync8.some(l => /tween=700ms/.test(l)), 'lifted=' + lifted.map(n => n.replace(/\.dxf$/, '')).join(',') + ' dz=' + want8.map(n => before8[n] && after8[n] ? (after8[n][2] - before8[n][2]).toFixed(4) : 'na').join('/') + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
     for (let si = 0; si < names.length; si++) { const k = Object.keys(DATUM).filter(q => names[si].indexOf(q) === 0)[0]; if (k) await addZ(si, 0.6096, DATUM[k]); }
+    { const left = []; for (const si of eIdx) { const a = await pg.evaluate(si => { const v = document.getElementById('dm-av-' + si + '-Z'); const q = v && v.closest('.dm-row').previousElementSibling; return v ? { ask: !!(q && q.classList.contains('dm-ask')), need: v.classList.contains('need') } : null; }, si); if (a && (a.ask || a.need)) left.push(si); }
+      ok('A11b[shed raw] once the second height is added the question and the red outline are gone on all 5 cards', left.length === 0, 'cards still asking=' + left.join(',')); }
     await idle(); await sleep(1500); await acceptAll(); await idle(); await sleep(2500);
     const L1 = await pg.evaluate(() => { const U = window.DxfImportUI.state; return { live: !!U.arr, tinted: (U.arrLast && U.arrLast.tinted) || null, canvas: Object.keys(U.canvas || {}), roles: U.sheets.map(s => s.role), yellowPlacing: window.DxfMetaEditor.preview().reduce((n, p) => n + p.yellow.filter(y => ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDH', 'FACE', 'CUT'].indexOf(y.key) >= 0).length, 0) }; });
     const a1 = await A1();
