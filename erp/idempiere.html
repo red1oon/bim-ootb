@@ -4280,7 +4280,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _showProcPane(pane);
     console.log('§W-GENESIS-SYSADMIN-LIVE wizard-mount proc=' + proc.AD_Process_ID + ' in-chrome=Y');
   }
-  function _procTableDirSelect(pp, dflt, orderBy) {
+  // ProcessParameterPanel.processDependencies :1088 - a lookup whose AD_Val_Rule names another parameter (C_DocType.DocBaseType='@ReplenishmentCreate@') is re-queried when that parameter changes
+  function _procRuleWhere(code, vals) {
+    var open = false, w = String(code || '').replace(/@([A-Za-z0-9_]+)@/g, function (m, n) { if (vals && vals[n] != null) return String(vals[n]).replace(/'/g, "''"); open = true; return m; });
+    return open ? null : w;
+  }
+  function _procTableDirSelect(pp, dflt, orderBy, ruleCode, getVals) {
     var tbl = String(pp.columnName).replace(/_ID$/i, ''), key = pp.columnName, sel = document.createElement('select');
     var blank = el('option', null, ''); blank.value = ''; sel.appendChild(blank);
     var ids = _sqlRows("SELECT c.ColumnName AS cn FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)=lower('" +
@@ -4289,9 +4294,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var disp = ids.map(function (c) { return "COALESCE(CAST(" + c + " AS TEXT),'')"; }).join(" || '_' || ");
     var cli = (_session && _session.client) ? Number(_session.client.id) : null, acc = '';
     if (cli != null && _colExists(tbl, 'AD_Client_ID')) acc = ' AND ' + (cli === 0 ? 'AD_Client_ID=0' : 'AD_Client_ID IN (0,' + cli + ')');
-    var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + ' ORDER BY ' + (orderBy || '2'));
-    rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (dflt != null && String(dflt) === String(r.k)) o.selected = true; sel.appendChild(o); });
-    console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"');
+    var fill = function () {
+      var rw = ruleCode ? _procRuleWhere(ruleCode, getVals ? getVals() : {}) : '';
+      var keep = sel.value; while (sel.options.length > 1) sel.remove(1);
+      var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + (rw ? ' AND (' + rw + ')' : '') + ' ORDER BY ' + (orderBy || '2'));   // a rule that reads a context variable we cannot resolve here (rw === null) filters nothing and says so in the log line
+      rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if ((keep || (dflt != null ? String(dflt) : '')) === String(r.k)) o.selected = true; sel.appendChild(o); });
+      console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"' + (ruleCode ? ' valrule=' + (rw === null ? 'UNRESOLVED' : rw) : ''));
+    };
+    fill(); if (ruleCode) sel._refilter = fill;
     return sel;
   }
   // §UDP-2 — Saved Parameters / Last Run in the generic process dialog (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2; Witness: W-UDP2-LIVE).
@@ -4415,13 +4425,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       .forEach(function (r) { if (r.displaylogic) dlMap[r.columnname] = r.displaylogic; });
     var defaults = {};
     proc.paras.forEach(function (pp) { defaults[pp.columnName] = _resolveDefault(pp.defaultValue); });
-    var hidden = [];
+    var hidden = [], flds = {};
+    var curVals = function () { var v = {}; Object.keys(defaults).forEach(function (k) { v[k] = defaults[k]; }); proc.paras.forEach(function (q) { var i = pane.querySelector('[data-proc-param="' + q.columnName + '"]'); if (i) v[q.columnName] = i.value; }); return v; };
     proc.paras.forEach(function (pp) {
-      var dl = dlMap[pp.columnName];
-      if (dl && window.AdEvaluator) {
-        var show; try { show = window.AdEvaluator.evaluate(dl, defaults, defaults) !== false; } catch (e) { show = true; }
-        if (!show) { hidden.push(pp.columnName); return; }
-      }
       var fld = el('div', 'fld' + (pp.mandatory ? ' mand' : ''));
       fld.appendChild(el('label', null, pp.name));
       var inp;
@@ -4436,11 +4442,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           var ob = rt.ob ? String(rt.ob).replace(new RegExp('^' + rt.tn + '\\.', 'i'), '').replace(/\b[A-Za-z_]+\./g, '') : null;
           inp = _procTableDirSelect(pp, defaults[pp.columnName], ob);
         }
-      } else if (Number(pp.ad_reference_id) === 19 && !(pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '')) {
+      } else if (Number(pp.ad_reference_id) === 19) {
         // FS-9 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2i — Witness: W-ERP-FIRST-SETUP S24b). TableDir =
         // MLookupFactory.getLookup_TableDir (:812-905): key = the column, display = the table's IsIdentifier columns
         // by SeqNo joined '_', ORDER BY display, + MRole.addAccessSQL's client clause (:902; the FS-5 clause).
-        inp = _procTableDirSelect(pp, defaults[pp.columnName]);
+        var vr = pp.ad_val_rule_id != null && String(pp.ad_val_rule_id) !== '' ? _sqlRows('SELECT code FROM ad_val_rule WHERE ad_val_rule_id=' + Number(pp.ad_val_rule_id))[0] : null;
+        inp = _procTableDirSelect(pp, defaults[pp.columnName], null, vr && vr.code, curVals);
       }
       else if (Number(pp.ad_reference_id) === 17 && pp.ad_reference_value_id != null) {
         // WTableDirEditor over MLookupFactory.getLookup_List (ORDER BY Name): a List parameter is a combo of the reference's AD_Ref_List (name shown, value kept).
@@ -4457,9 +4464,26 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       inp.setAttribute('data-proc-param', pp.columnName);
       inp.title = pp.columnName + ' · ' + pp.type + (pp.mandatory ? ' · mandatory' : '');
       fld.appendChild(inp);
+      flds[pp.columnName] = fld;
       pane.appendChild(fld);
     });
-    if (hidden.length) console.log('§AD-PROC-LIVE proc=' + proc.AD_Process_ID + ' paras hidden by DisplayLogic: [' + hidden.join(',') + ']');
+    // ProcessParameterPanel.dynamicDisplay :1240-1283 (called from valueChange :1078-1094): show/hide every parameter by its DisplayLogic against the CURRENT values, on load and after each change
+    var dynamicDisplay = function (first) {
+      var vals = curVals(), nowHidden = [];
+      proc.paras.forEach(function (pp) {
+        var dl = dlMap[pp.columnName], f = flds[pp.columnName], show = true;
+        if (dl && window.AdEvaluator) { try { show = window.AdEvaluator.evaluate(dl, vals, vals) !== false; } catch (e) { show = true; } }
+        if (f) { f.style.display = show ? '' : 'none'; f.setAttribute('data-hidden', show ? '0' : '1'); }
+        if (!show) nowHidden.push(pp.columnName);
+      });
+      if (first ? nowHidden.length : nowHidden.join() !== hidden.join()) console.log('§AD-PROC-LIVE proc=' + proc.AD_Process_ID + ' paras hidden by DisplayLogic: [' + nowHidden.join(',') + ']' + (first ? '' : ' (after a change)'));
+      hidden = nowHidden;
+    };
+    pane.addEventListener('change', function () {
+      proc.paras.forEach(function (pp) { var i = pane.querySelector('[data-proc-param="' + pp.columnName + '"]'); if (i && i._refilter) i._refilter(); });
+      dynamicDisplay(false);
+    });
+    dynamicDisplay(true);
     var saved = _procSavedRow(proc, pane);
     var err = el('div', 'err');
     var actions = el('div', 'actions');
@@ -4469,7 +4493,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var params = {};
       proc.paras.forEach(function (pp) {
         var inp = pane.querySelector('[data-proc-param="' + pp.columnName + '"]');
-        if (inp && inp.value !== '') params[pp.columnName] = inp.value;
+        if (inp && inp.value !== '' && !(flds[pp.columnName] && flds[pp.columnName].getAttribute('data-hidden') === '1')) params[pp.columnName] = inp.value;
       });
       // §PROC_PARAM_VALIDATE — the spine's prepare() gate: missing mandatory / bad type → REJECT, no dispatch.
       var v = window.AdProcess.validateParams(proc, params);

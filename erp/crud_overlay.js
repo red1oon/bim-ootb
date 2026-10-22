@@ -1341,7 +1341,7 @@
         return;
       }
       console.log('§CRUD validate key=' + e.key + ' verb=' + verb + ' ok');
-      var op = CORE.buildOp(verb, e, vals, orig, { id: id });
+      var op = CORE.buildOp(verb, e, vals, orig, { id: id, derived: appliedCols });
       if (_previewMode) { _previewRun(op); return; }   // §SAVE-PREVIEW: stop before applyOp
       if (op.op_type === 'CRUD_UPDATE') {
         // §CP — a callout-set column with no form field is part of the GridTab row; it is saved like any changed column
