@@ -35,16 +35,33 @@
     chevR: SVG('<path d="m9 18 6-6-6-6"/>'),
     chevD: SVG('<path d="m6 9 6 6 6-6"/>'),
     crosshair: SVG('<circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/>'),
-    loader: SVG('<path d="M21 12a9 9 0 1 1-6.219-8.56"/>')
+    loader: SVG('<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'),
+    pencil: SVG('<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>')
   };
 
   var ROLE_VIEW = { PLAN: 'plan', ELEV: 'elev', ROOF: 'roof', SECTION: 'section' };
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
+  // §D36 EVIDENCE TIERS (prompts/DXF2BIM_EVIDENCE_TIERS.md): the KIND of evidence a rule reads, fixed per rule (no rule states a confidence number): stated = the file
+  // states it, read = a text names it, inferred = geometry or a convention (orange). Every suggestion stays yellow, not yours, until accepted. W-EVIDENCE E1: every
+  // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
+  var TAGE = '§DXF-EVIDENCE';
+  var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read',
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'default': 'inferred' };
+  var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
+  function tierOf(rule) { return TIER[rule] || null; }
+  function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
+  function evId(si, p) { return si + '|' + p.rule + '|' + p.key + '|' + p.value + '|' + num(p.x || 0) + '|' + num(p.y || 0); }
+  function prOpen(si, p, extra) {   // a suggestion row: tier class + mark, clickable (fly to its evidence); its id registered for the click
+    var t = tierOf(p.rule) || 'inferred', id = evId(si, p); S.evRows[id] = { si: si, rule: p.rule, key: p.key, value: p.value, x: p.x, y: p.y, why: p.why };
+    return '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + (S.ev === id ? ' dm-evon' : '') + (extra || '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '" data-ev="' + esc(id) + '" title="Click: fly to the evidence on the sheet as it stands">';
+  }
+  function prTail(si, p) { var id = evId(si, p); return tierMark(tierOf(p.rule)) + (S.ev === id ? '<button class="dm-ib dm-tyo" title="Type over: the field with this value, yours once you change or confirm it" data-act="typeover" data-ev="' + esc(id) + '">' + IC.pencil + '</button>' : ''); }
+  function prNote(si, p) { return S.ev === evId(si, p) && S.evNote ? '<div class="dm-evnote">' + esc(S.evNote) + '</div>' : ''; }
   var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
   var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
-    vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
+    vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
   function parseRaw(raw) {
@@ -482,6 +499,8 @@
       '.dm-it .c{font-family:ui-monospace,monospace;color:#f2a3a3;flex:0 0 auto;width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-it.adv .c{color:#f0c674}.dm-it .m{color:#9aa3b2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
       '#dm-panel .ip-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid #23262e}#dm-note{width:100%;font-size:10.5px;color:#7f8aa0;line-height:1.4}',
       '@keyframes dmspin{to{transform:rotate(360deg)}}.dm-spin{animation:dmspin 1s linear infinite}',
+      '.dm-pr.inf{background:rgba(255,122,26,.16);border-color:#c2560a}.dm-tier{font-size:9px;font-family:ui-monospace,monospace;border:1px solid #8a7d2a;color:#e0c64a;border-radius:4px;padding:0 4px;flex:0 0 auto}.dm-tier.inferred{border-color:#c2560a;color:#ff9a4d}' +
+      '.dm-pr[data-ev]{cursor:pointer}.dm-pr[data-ev]:hover{filter:brightness(1.18)}.dm-pr.dm-evon{outline:2px solid #f5d90a;outline-offset:1px}.dm-pr.inf.dm-evon{outline-color:#ff7a1a}.dm-pr .dm-tyo{border-color:#3a6ea5;color:#cfe3f6}.dm-evnote{font-size:9.5px;color:#ff9a4d;margin:0 4px 5px;line-height:1.35}.dm-btn.inf{background:#2a1a10;border-color:#c2560a;color:#ffc59a}',
       '.dm-focus{outline:2px solid #f5d90a!important;outline-offset:1px;border-radius:6px}@keyframes dmpv{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}.dm-pv.dm-new{animation:dmpv .35s ease-out}.dm-pv .dm-later{font-size:9px;color:#8a7d2a;white-space:nowrap}'
     ].join('');
     document.head.appendChild(st);
@@ -518,8 +537,8 @@
     h += '<div class="dm-sub">' + IC.bulb + 'Suggestions (not markings until ticked)</div>';
     list.forEach(function (p) {
       var pi = P.list.indexOf(p), ps = SINGLE_POS[p.key];
-      h += '<div class="dm-pr" data-prop="' + esc(p.rule + ':' + p.key + '=' + p.value) + '"><span class="t"><b>@' + p.key + '=' + esc(p.value) + (ps === 'x' ? ' x ' + num(p.x) : ps === 'y' ? ' y ' + num(p.y) : '') + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
-        '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>';
+      h += prOpen(si, p).replace('<div class="dm-pr', '<div data-prop="' + esc(p.rule + ':' + p.key + '=' + p.value) + '" class="dm-pr') + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + (ps === 'x' ? ' x ' + num(p.x) : ps === 'y' ? ' y ' + num(p.y) : '') + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
+        '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p);
     });
     return h;
   }
@@ -695,17 +714,26 @@
   // §L7.2 ONE place that repeats every yellow item (suggestions per sheet, door suggestions, applied defaults); each row has its own tick, "Accept all" takes the lot.
   // Nothing here gates Convert: ignoring it (and the shiver) keeps the defaults and the DB can be saved for a trial.
   function renderYellows() {
-    var items = [], DP = doorProposals(); S.dprops = DP.list;
-    S.sheets.forEach(function (sh, si) { sh.prop = proposalsFor(sh); sh.prop.list.forEach(function (p, pi) {
-      items.push('<div class="dm-pr"><span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' +
-        '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>'); }); });
-    DP.list.forEach(function (p, i) { items.push('<div class="dm-pr"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' +
-      '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>'); });
-    defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { items.push('<div class="dm-pr"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' +
+    var items = [], DP = doorProposals(), n = { stated: 0, read: 0, inferred: 0 }, src = { sug: 0, door: 0, def: 0 }; S.dprops = DP.list;
+    S.sheets.forEach(function (sh, si) { sh.prop = proposalsFor(sh); sh.prop.list.forEach(function (p, pi) { n[tierOf(p.rule) || 'inferred']++; src.sug++;
+      items.push(prOpen(si, p) + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
+        '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p)); }); });
+    DP.list.forEach(function (p, i) { var t = tierOf(p.rule) || 'inferred', si = S.sheets.map(function (q) { return q.name; }).indexOf(p.sheet); n[t]++; src.door++;   // §L4.3 the door rules: the drawing's text
+      var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : ''), x: 0, y: 0, why: p.why };
+      items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
+      '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>' + (si >= 0 ? prNote(si, row) : '')); });
+    defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { var t = TIER['default']; n[t]++; src.def++;   // an applied default: a convention (no sheet entity to fly to)
+      items.push('<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="default"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' + tierMark(t) +
       '<button class="dm-ib" title="Keep this value" data-act="defkeep" data-key="' + esc(r.key) + '">' + IC.check + '</button></div>'); });
+    var sig = n.stated + '/' + n.read + '/' + n.inferred + '/' + src.sug + '/' + src.door + '/' + src.def;   // §D36 the tier counts of the list, logged when they change
+    if (sig !== S.tierSig && !S.tierHold) { S.tierSig = sig; S.tiers = { stated: n.stated, read: n.read, inferred: n.inferred, rows: items.length, sug: src.sug, door: src.door, def: src.def };
+      console.log(TAGE + ' tiers stated=' + n.stated + ' read=' + n.read + ' inferred=' + n.inferred + ' rows=' + items.length + ' (the list: sheet suggestions ' + src.sug + ', door ' + src.door + ', applied defaults ' + src.def + ')'); }
     if (!items.length) return '';
-    return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows"><div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel. Accept them all, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>' + items.join('') +
-      '<button class="dm-btn primary" data-act="acceptall" style="margin-top:6px">' + IC.check + '<span>Accept all</span></button></div>' : '');
+    var both = n.stated + n.read > 0 && n.inferred > 0;   // §D36 split accept: one button per kind of evidence; the single Accept all only when one kind is present
+    var btns = both ? '<div class="dm-row" style="margin-top:6px"><button class="dm-btn primary" data-act="acceptsr" title="Accept every row the file states or a text names (the inferred rows stay)">' + IC.check + '<span>Accept stated + read</span></button>' +
+      '<button class="dm-btn inf" data-act="acceptinf" title="Accept every inferred row (geometry or a convention): check them first, a click on a row shows its evidence">' + IC.check + '<span>Accept inferred</span></button></div>'
+      : '<button class="dm-btn primary" data-act="acceptall" style="margin-top:6px">' + IC.check + '<span>Accept all</span></button>';
+    return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows"><div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel; orange rows are inferred (geometry or a convention). Click a row to see its evidence on the sheet. Accept them, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>' + items.join('') + btns + '</div>' : '');
   }
   // §L7.14 "Body heights": kinds typed on a plan that no elevation shows get a z range STATED by the user (@BODYZ=<kind>,<z0>,<z1>, metres); it is the user's own statement, not a default
   function bodyzRows() { var out = []; S.sheets.forEach(function (sh, si) { sh.marks.forEach(function (m, mi) { if (m.key === 'BODYZ') { var p = String(m.value).split(','); out.push({ si: si, mi: mi, kind: p[0], z0: p[1], z1: p[2], mark: m }); } }); }); return out; }
@@ -818,13 +846,16 @@
     if (S.panel) S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); S.draft[k] = el.value; });
     ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el) S.draft[id] = el.value; });
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
-    S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); });
+    S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); }); S.evRows = {};   // §D36 the rows register themselves as they are drawn
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
       '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
     S.panel.innerHTML = h;
+    if (S.tierHold) { /* an accept loop: logged once at its end */ } else if (S.pv && S.pv.all) { var pn = { stated: 0, read: 0, inferred: 0 }; preview().forEach(function (P) { P.yellow.forEach(function (y) { pn[tierOf(y.rule) || 'inferred']++; }); });   // §D36 every round, while the Arrange view stands
+      var ps = pn.stated + '/' + pn.read + '/' + pn.inferred; if (ps !== S.pvTierSig) { S.pvTierSig = ps; S.pvTiers = pn; console.log(TAGE + ' preview-tiers stated=' + pn.stated + ' read=' + pn.read + ' inferred=' + pn.inferred + ' rows=' + (pn.stated + pn.read + pn.inferred) + ' (every round: the Arrange view, in the sheet cards)'); } }
+    else S.pvTierSig = null;
     var nb = document.getElementById('dm-body'); nb.scrollTop = top;
     S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); if (S.draft[k] !== undefined) el.value = S.draft[k]; });
     ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el && S.draft[id] !== undefined) el.value = S.draft[id]; });
@@ -857,7 +888,11 @@
       if (a === 'edefdel') el.onclick = function () { var key = el.getAttribute('data-key'); S.sheets.forEach(function (sh) { var n = sh.marks.length; sh.marks = sh.marks.filter(function (q) { return !(q.key === 'DEFAULT' && String(q.value).split(',')[0] === key); }); if (sh.marks.length !== n) console.log(TAG + ' remove sheet=' + sh.name + ' @DEFAULT=' + key); }); changed(); };
       if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
-      if (a === 'acceptall') el.onclick = function () { var n = 0, b; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); console.log(TAG + ' accept-all clicks=' + (n - 1)); attention(); };
+      if (a === 'acceptall') el.onclick = function () { var n = 0, b; S.tierHold = true; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); S.tierHold = false; console.log(TAG + ' accept-all clicks=' + (n - 1)); render(); attention(); };
+      if (a === 'acceptsr' || a === 'acceptinf') el.onclick = function () { var ts = a === 'acceptsr' ? ['stated', 'read'] : ['inferred'], sel = [], n = 0, b;   // §D36 each takes only its rows (and the rows of its kind a later round brings)
+        ts.forEach(function (t) { ['confirm', 'dconfirm', 'defkeep'].forEach(function (k) { sel.push('#dm-yellows .dm-pr[data-tier="' + t + '"] [data-act="' + k + '"]'); }); });
+        S.tierHold = true; while (n++ < 300 && (b = S.panel.querySelector(sel.join(',')))) b.click(); S.tierHold = false; console.log(TAG + ' accept tier=' + ts.join('+') + ' clicks=' + (n - 1)); render(); attention(); };
+      if (a === 'typeover') el.onclick = function (e) { e.stopPropagation(); typeOver(el.getAttribute('data-ev')); };
       if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);
         defRows().forEach(function (r) { if (r.key === k && (r.kind === 'default' || r.kind === 'chosen')) { r.value = (typeof r.value === 'number' && isFinite(num)) ? num : v; r.kind = 'chosen'; } });
         S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = v; console.log(TAG + ' default-chosen ' + k + '=' + v); refeed(); render(); attention(); };
@@ -909,6 +944,30 @@
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
+    P.querySelectorAll('.dm-pr[data-ev]').forEach(function (el) { el.addEventListener('click', function (e) { if (e.target.closest('button,select,input')) return; fly(el.getAttribute('data-ev')); }); });   // §D36 a row = fly to its evidence
+  }
+  // ---- §D36 FLY TO THE EVIDENCE: a click on a suggestion row hands it to the import UI (the camera eases to its evidence on the sheet as it stands); the same row
+  // again restores; the row stays in view and offers Accept (its tick) and Type over (its field, filled with the value: yours once changed or confirmed) ----
+  function fly(id) {
+    var r = S.evRows[id], U = window.DxfImportUI; if (!r || !U || !U.evidence) return;
+    if (S.ev === id) { U.evidenceClear('the row again'); return; }
+    S.ev = id; S.evNote = null; render();
+    return U.evidence({ sheet: S.sheets[r.si].name, si: r.si, rule: r.rule, key: r.key, value: r.value, x: r.x, y: r.y, why: r.why }).then(function (info) {
+      if (S.ev !== id) return info; S.evNote = info ? (info.notes.length ? info.notes.join('. ') : '') : 'nothing to show for this row'; S.evNote = S.evNote || null; render(); return info; });
+  }
+  function evOff() { if (S.ev === null) return; S.ev = null; S.evNote = null; render(); }   // the import UI restored the view (Esc, a click on the canvas, the values changed)
+  function typeOver(id) {
+    var r = S.evRows[id]; if (!r) return; var si = r.si, k = r.key, multi = SINGLE_POS[k] !== undefined && k !== 'TAG', g = k === 'GRIDX' || k === 'GRIDY' ? 'GRID' : k;
+    S.sec.sheets = true; S.open[si] = true; if (k === 'UNITS') S.sec.units = true;
+    render();
+    if (multi) [['dm-av-' + si + '-' + g, String(r.value)], ['dm-ap-' + si + '-' + g, String(SINGLE_POS[k] === 'y' ? r.y : r.x)]].forEach(function (q) { var e = document.getElementById(q[0]); if (e) e.value = q[1]; });   // the Add row: the value + its position (a render keeps them as drafts)
+    if (multi && g === 'GRID') { var ks = S.panel.querySelector('[data-add-key="' + si + '-GRID"]'); if (ks) ks.value = k; }
+    var el = multi ? document.getElementById('dm-av-' + si + '-' + g) : document.getElementById('dm-f-' + si + '-' + k);
+    if (!el) { el = document.getElementById('dm-f-' + si + '-VIEW'); console.log(TAGE + ' type-over sheet=' + S.sheets[si].name + ' key=' + k + ': no field yet (its role is not yours yet), the Role field'); }
+    if (!el) return;
+    if (!multi && el.tagName === 'INPUT') el.value = String(r.value);
+    el.scrollIntoView({ block: 'nearest' }); el.focus(); if (el.select) el.select();
+    console.log(TAGE + ' type-over sheet=' + S.sheets[si].name + ' key=' + k + ' field=' + el.id + (multi ? ' (Add row filled: value + position)' : ''));
   }
   // ---- §D34 ARRANGE (prompts/DXF2BIM_ARRANGE.md): the effective markings of every sheet = its markings + the yellow suggestions, the later rounds computed
   // as if the earlier yellow values were in place (a second Dxf2Suggest over shadow copies; nothing is accepted, saved or added to S.sheets) ----
@@ -950,8 +1009,8 @@
     h += '<div class="dm-sub">' + IC.bulb + 'Defaults placing this sheet (yellow: not yours yet)</div>';
     rows.forEach(function (y) {
       var ps = SINGLE_POS[y.key], fresh = S.pv.fresh && S.pv.fresh.si === si && S.pv.fresh.key === y.key;
-      h += '<div class="dm-pr dm-pv' + (fresh ? ' dm-new' : '') + '" data-pv-key="' + esc(y.key) + '" data-pv="' + esc(y.key + '=' + y.value) + '"><span class="t"><b>@' + y.key + '=' + esc(y.value) + (ps === 'x' ? ' x ' + num(y.x) : ps === 'y' ? ' y ' + num(y.y) : '') + '</b><span class="w">' + esc(y.rule + ': ' + y.why) + '</span></span>' +
-        (y.pi >= 0 ? '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + y.pi + '">' + IC.check + '</button>' : '<span class="dm-later" title="suggested once the values above are yours">after the above</span>') + '</div>';
+      h += prOpen(si, y, ' dm-pv' + (fresh ? ' dm-new' : '')).replace('<div class="dm-pr', '<div data-pv-key="' + esc(y.key) + '" data-pv="' + esc(y.key + '=' + y.value) + '" class="dm-pr') + '<span class="t"><b>@' + y.key + '=' + esc(y.value) + (ps === 'x' ? ' x ' + num(y.x) : ps === 'y' ? ' y ' + num(y.y) : '') + '</b><span class="w">' + esc(y.rule + ': ' + y.why) + '</span></span>' + prTail(si, y) +
+        (y.pi >= 0 ? '<button class="dm-ib" title="Confirm this suggestion" data-act="confirm" data-sheet="' + si + '" data-pi="' + y.pi + '">' + IC.check + '</button>' : '<span class="dm-later" title="suggested once the values above are yours">after the above</span>') + '</div>' + prNote(si, y);
     });
     return h;
   }
@@ -997,7 +1056,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null;
+    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null; S.evRows = {}; S.ev = null; S.evNote = null; S.tierSig = null; S.pvTierSig = null;
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
@@ -1012,7 +1071,7 @@
   function show() { if (!S.panel) return; S.panel.style.display = 'flex'; render(); attention(); }
 
   window.DxfMetaEditor = { defaultChoices: function () { return S.defaultChoices || {}; }, attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
-    effText: effText, highlight: highlight, preview: preview, pvSet: pvSet, focusField: focusField, focusEnd: focusEnd, focusTargets: function () { return S.focus ? focusTargets(S.focus) : []; }, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
+    effText: effText, highlight: highlight, preview: preview, TIER: TIER, tierOf: tierOf, evOff: evOff, fly: fly, pvSet: pvSet, focusField: focusField, focusEnd: focusEnd, focusTargets: function () { return S.focus ? focusTargets(S.focus) : []; }, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
 })();
