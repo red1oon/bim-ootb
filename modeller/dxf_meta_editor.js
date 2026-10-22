@@ -482,7 +482,7 @@
       '.dm-in{flex:1}.dm-in:focus,.dm-sel:focus{border-color:#3a6ea5}.dm-in.need,.dm-sel.need{border-color:#a04848;background:#211517}',
       '.dm-in.n{width:62px;flex:0 0 auto}.dm-in.lab{width:38px;flex:0 0 auto}',
       '.dm-src{font-size:9px;color:#5b6473;white-space:nowrap;width:52px;text-align:right;flex:0 0 auto}.dm-src.user{color:#8ec5ff}.dm-src.model{color:#c9b0ff}.dm-src.default{background:#f5d90a;color:#1a1a1a;border-radius:3px;padding:0 4px;width:auto}',
-      '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}',
+      '.dm-sub{font-size:9px;letter-spacing:.1em;color:#5b6473;text-transform:uppercase;margin:9px 0 3px;display:flex;align-items:center;gap:6px}.dm-sub.need{color:#f2a3a3}.dm-ask{font-size:11px;line-height:1.45;color:#f2a3a3;margin:2px 0 5px}',
       '.dm-mk{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-family:ui-monospace,monospace;font-size:10.5px}.dm-mk:hover{background:#20232b}.dm-mk .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
       '.dm-ib{background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex;border-radius:5px}.dm-ib:hover{color:#c7cdd8;background:#2a2e38}.dm-ib .dm-ico{width:13px;height:13px}',
       '.dm-pr{display:flex;align-items:center;gap:6px;padding:3px 4px;border:1px dashed #3a4150;border-radius:6px;margin:3px 0;font-size:10.5px}.dm-pr .t{flex:1;min-width:0}.dm-pr .t b{font-family:ui-monospace,monospace;font-weight:500;color:#d7dce5}.dm-pr .w{display:block;color:#5b6473;font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -525,9 +525,13 @@
         '<button class="dm-ib" title="Remove" data-act="rm" data-sheet="' + si + '" data-idx="' + idx + '">' + IC.trash + '</button></div>';
     });
     var kSel = keys.length > 1 ? '<select class="dm-sel" data-add-key="' + si + '-' + needKey + '">' + keys.map(function (k) { return opt(k, keys[0]); }).join('') + '</select>' : '';
-    var isZ = needKey === 'Z';
-    h += '<div class="dm-row">' + kSel + '<input class="dm-in lab" id="dm-av-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'z m' : 'label') + '" data-add-val="' + si + '-' + needKey + '" spellcheck="false">' +
-      '<input class="dm-in n" id="dm-ap-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'drawing y' : keys.length > 1 ? 'x or y' : 'x') + '" data-add-pos="' + si + '-' + needKey + '" inputmode="decimal">' +
+    var isZ = needKey === 'Z', nd = need && isZ ? ' need' : '';
+    if (need && isZ) {   // §D40 the question, from what the sheet already states
+      var z0 = sh.marks.filter(function (m) { return m.key === 'Z'; })[0];
+      h += '<div class="dm-ask" data-ask="Z">' + (z0 ? 'One height is known: ' + esc(z0.value) + ' m at y ' + num(z0.y) + '. Give a second:' : 'No height is known yet. Give two:') + ' read a level text or a dimension on this sheet, type it in metres, and the y where it is drawn.</div>';
+    }
+    h += '<div class="dm-row">' + kSel + '<input class="dm-in lab' + nd + '" id="dm-av-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'height, m' : 'label') + '" data-add-val="' + si + '-' + needKey + '" spellcheck="false">' +
+      '<input class="dm-in n' + nd + '" id="dm-ap-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'y where drawn' : keys.length > 1 ? 'x or y' : 'x') + '" data-add-pos="' + si + '-' + needKey + '" inputmode="decimal">' +
       '<button class="dm-btn" data-act="add" data-sheet="' + si + '" data-group="' + needKey + '" data-keys="' + keys.join(',') + '">' + IC.plus + '<span>Add</span></button></div>';
     return h;
   }

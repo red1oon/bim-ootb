@@ -41,7 +41,9 @@
     meta: SVG('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>'),
     alert: SVG('<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>'),
     play: SVG('<polygon points="6 3 20 12 6 21 6 3"/>'),
-    stop: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/>')
+    stop: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/>'),
+    foldL: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>'),
+    foldR: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/>')
   };
 
   var state = { sheets: null, gate: null, group: null, panel: null, last: null, linesOn: true, arr: null,
@@ -345,7 +347,7 @@
       if (w > 1e-6) bad.push(it.name + ':' + w); worst = Math.max(worst, w); });
     return { compared: n, worst: worst, bad: bad, equal: !bad.length };
   }
-  function arrClear() {
+  function arrClear() { capClear();
     var R = state.arr, A = window.A; if (state.ev) evClear('the view closes'); if (!R) return; R.stop = true;
     if (R.group && A && A.scene) { A.scene.remove(R.group); R.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
     window.removeEventListener('keydown', R.onKey, true); state.arr = null;
@@ -360,7 +362,54 @@
   }
   function arrNeeded(R) { return R.items.some(function (it) { return it.tintFinal || (it.view && lacksOf(it).length && it.stages.length > 1 && maxDiff(it.stages[it.stages.length - 1], it.stages[0]) > 1e-12 && !(state.canvas && state.canvas[it.name])); }); }
   function handOver(why) { console.log(TAGA + ' hand-over to the canvas (' + why + ')'); arrClear(); if (state.panel) renderPanel(); if (window.A && window.A.requestRender) window.A.requestRender(); }
-  function minimise(on) { var p = document.getElementById('dxf-panel'); if (p) p.classList.toggle('dxf-min', !!on); }
+  function minimise(on) { var p = document.getElementById('dxf-panel'); if (p) p.classList.toggle('dxf-min', !!on); state.playSlim = !!on; applySlim(); }
+  // §D39 the slim bar: folded by the user (state.slim) or while the Arrange play stands; the metadata panel follows through body.dxf-slim
+  function applySlim() {
+    var p = document.getElementById('dxf-panel'), on = !!(p && p.style.display !== 'none' && (state.slim || state.playSlim));
+    document.body.classList.toggle('dxf-slim', on); if (p) p.classList.toggle('dxf-slimmed', on);
+    var f = document.getElementById('dxf-fold'); if (f) { f.innerHTML = state.slim ? ICON.foldR : ICON.foldL; f.title = state.slim ? 'Unfold the panel' : 'Fold the panel away: more canvas'; }
+  }
+  // ---- §D41 build-up order, the camera on the whole assembly, the caption (prompts/DXF2BIM_ARRANGE.md §D41) ----
+  var PHASES = ['Scale', 'Orient', 'Assemble', 'Name'];
+  function phaseOf(k) { return k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4; }
+  var FACE_SAY = { minY: 'front (-Y)', maxY: 'rear (+Y)', minX: 'west end (-X)', maxX: 'east end (+X)' };
+  function sheetSay(it) { var n = it.name.replace(/\.dxf$/i, '').replace(/^\d+[A-Z]?_/, '').replace(/_/g, ' '); return n.charAt(0) + n.slice(1).toLowerCase(); }
+  function roleSay(it) { var v = it.view || (it.desc && it.desc.view); return v === 'PLAN' ? 'plan' : v === 'ELEV' ? 'elevation' : v === 'SECTION' ? 'section' : v === 'ROOF' ? 'roof plan' : 'no role yet'; }
+  function doneSay(it, st) {   // what was done to the sheet, in words: a function of the step's key / value only
+    var v = String(st.value), labs = v.split('|').length;
+    switch (st.key) {
+      case 'UNITS': return 'its units are ' + ({ in: 'inches', ft: 'feet', mm: 'millimetres', cm: 'centimetres', m: 'metres' }[v] || v) + ': scaled to metres';
+      case 'VIEW': return v === 'PLAN' ? 'it is a plan: it lies flat' : v === 'ELEV' ? 'it is an elevation: it stands up' : v === 'SECTION' ? 'it is a section: it stands up' : v === 'ROOF' ? 'it is a roof plan' : 'role ' + v;
+      case 'LEVEL': return 'it sits at level ' + v + ' m' + (Number(v) === 0 ? ' (the ground)' : '');
+      case 'ROOF': return 'its roof top is at ' + v + ' m';
+      case 'Z': return 'its ground line is at height ' + v + ' m: lifted to it';
+      case 'HAXIS': return v === '+X' || v === '+Y' ? 'its horizontal already runs along ' + v + ': it stays' : (it.hax && it.hax.axis === 'Y' ? 'turned' : 'mirrored') + ' so its horizontal runs along ' + v;
+      case 'GRIDX': case 'GRIDY': case 'GRIDH': return 'its ' + labs + ' grid line' + (labs > 1 ? 's' : '') + ' (' + v.split('|')[0] + (labs > 1 ? ' to ' + v.split('|')[labs - 1] : '') + ') ' + (st.moves ? 'moved onto the plan grid' : 'are the reference: the others align to them');
+      case 'FACE': return 'attached to the ' + (FACE_SAY[v] || v) + ' face of the building';
+      case 'CUT': return 'set on its section line ' + v.replace(',', ' = ');
+      case 'NAME': return 'named "' + v + '"';
+      default: return '@' + st.key + ' = ' + v + (st.moves ? '' : ' (' + (st.why || 'no move') + ')');
+    }
+  }
+  function arrCap(i, n, it, st, items) {
+    var c = document.getElementById('dxf-arr-cap');
+    if (!c) { c = document.createElement('div'); c.id = 'dxf-arr-cap'; document.body.appendChild(c); }
+    var pr = 0, cv = window.A.renderer.domElement.getBoundingClientRect(); pr = cv.left;
+    ['dxf-panel', 'dm-panel'].forEach(function (id) { var e = document.getElementById(id); if (e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0) pr = Math.max(pr, e.getBoundingClientRect().right); });
+    c.style.cssText = 'position:fixed;left:' + (pr + 16) + 'px;right:76px;bottom:46px;z-index:30;pointer-events:none;background:rgba(20,22,28,.92);border:1px solid #2c303a;border-radius:10px;padding:10px 14px;color:#e8ecf3;font:15px/1.4 system-ui,sans-serif';
+    var ph = phaseOf(st.key), tier = !st.yellow ? ['STATED', '#7fd48b'] : st.inf ? ['INFERRED', '#ff7a1a'] : ['DEFAULT', '#f5d90a'], k = items.indexOf(it) + 1;
+    var chips = PHASES.map(function (p, q) { var on = q + 1 === ph; return '<span style="padding:1px 8px;border-radius:9px;margin-right:6px;font-size:12px;letter-spacing:.06em;' + (on ? 'background:#f5d90a;color:#14161c;font-weight:700' : q + 1 < ph ? 'background:#3a3512;color:#e0c64a' : 'background:#23262e;color:#6b7385') + '">' + (q + 1) + ' ' + p.toUpperCase() + '</span>'; }).join('');
+    c.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div>' + chips + '</div><div style="color:#9aa3b2;font-size:12px">step ' + i + ' / ' + n + '</div></div>' +
+      '<div style="font-size:17px;font-weight:700">' + esc(sheetSay(it)) + ' <span style="font-weight:400;color:#9aa3b2;font-size:13px">· ' + roleSay(it) + ' · sheet ' + k + ' of ' + items.length + '</span></div>' +
+      '<div style="margin-top:2px">' + esc(doneSay(it, st)) + ' <span style="margin-left:8px;padding:1px 8px;border-radius:9px;border:1px solid ' + tier[1] + ';color:' + tier[1] + ';font-size:11px;letter-spacing:.06em">' + tier[0] + '</span></div>';
+  }
+  function capClear() { var c = document.getElementById('dxf-arr-cap'); if (c) c.remove(); }
+  function followAll(cur) {   // the camera frames the whole assembly in progress: the moving sheet's current box united with every other sheet's last-applied box
+    var A = window.A, R = state.arr, p0 = A.camera.position.clone(), t0 = A.controls.target.clone(), n = 0;
+    var ob = boxOf(R.items.filter(function (o) { return o !== cur; }).map(function (o) { return o.stages[o.applied]; }));
+    return function (e, P) { if (!P) return; if (e < 1 && (n++ % 2)) return; var mb = boxOf([P]), b = mb && ob ? [[Math.min(mb[0][0], ob[0][0]), Math.min(mb[0][1], ob[0][1]), Math.min(mb[0][2], ob[0][2])], [Math.max(mb[1][0], ob[1][0]), Math.max(mb[1][1], ob[1][1]), Math.max(mb[1][2], ob[1][2])]] : (mb || ob); if (!b) return;
+      var to = camFor(b), w = ease(Math.min(1, e / 0.5)); A.camera.up.set(0, 0, 1); A.controls.target.lerpVectors(t0, to.t, w); A.camera.position.lerpVectors(p0, to.p, w); A.controls.update(); if (A.requestRender) A.requestRender(); };
+  }
   function arrange(opts) {
     opts = opts || {};
     if (!state.sheets || !window.DxfMetaEditor || !window.THREE || !window.A) return Promise.resolve(null);
@@ -374,6 +423,7 @@
     window.addEventListener('keydown', R.onKey, true);
     window.A.scene.add(g); if (state.group) state.group.visible = false; g.visible = state.linesOn;
     var all = []; items.forEach(function (it) { it.steps.forEach(function (st) { all.push({ it: it, st: st }); }); });
+    all = all.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) { return phaseOf(a.x.st.key) - phaseOf(b.x.st.key) || a.i - b.i; }).map(function (o) { return o.x; });   // §D41.1 phases across all sheets
     var nY = all.filter(function (x) { return x.st.yellow; }).length;
     console.log(TAGA + ' start sheets=' + items.length + ' steps=' + all.length + ' yellow=' + nY + ' stage0="1 drawing unit = 1 mm, z = 0: a starting point, not a reading"');
     var noRole = items.filter(function (it) { return !it.view; });
@@ -396,7 +446,7 @@
         R.steps.push(info);
         if (opts.onStep) await opts.onStep(info);
         arrStyle(it);
-        var mv = stepMotion(it, st, P0, P1), cam = followCam();
+        var mv = stepMotion(it, st, P0, P1), cam = followAll(it); arrCap(i + 1, all.length, it, st, items);
         var wasT = it.tint || it.dtint, wasI = it.tintInf, cA = colOf(it); if (st.yellow && st.moves) it.tint = true; if (st.inf && st.moves) it.tintInf = true; if (st.dflt) it.dtint = true;
         var cB = colOf(it), recol = (!wasT && (it.tint || it.dtint)) || (!wasI && it.tintInf);
         await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (recol) it.obj.forEach(function (ls) { ls.material.color.copy(cA).lerp(cB, ease(e)); }); });
@@ -404,7 +454,7 @@
       }
       if (R.stop) console.log(TAGA + ' stopped at step ' + R.steps.length + ': every sheet to its last stage');
       items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; it.tintInf = it.tintInfFinal; it.dtint = it.defFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
-      R.playing = false; R.stop = false; arrStyle(null);
+      R.playing = false; R.stop = false; arrStyle(null); capClear();
       ME.focusEnd(); minimise(false);
       var cmp = compareCanvas(R); R.final = {}; items.forEach(function (it) { R.final[it.name] = finalSegOf(it); });
       R.lacks = {}; items.forEach(function (it) { var L = lacksOf(it); R.lacks[it.name] = L;
@@ -652,7 +702,7 @@
       '#dxf-panel .ip-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid #23262e}' +
       '.dxf-btn{display:inline-flex;align-items:center;gap:6px;background:#13151a;border:1px solid #2c303a;border-radius:8px;color:#c7cdd8;padding:6px 10px;cursor:pointer;font:inherit}' +
       '.dxf-btn:hover{background:#1b1f27}.dxf-btn.primary{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dxf-btn:disabled{opacity:.45;cursor:not-allowed}' +
-      '#dxf-status{width:100%;font-size:11px;color:#7f8aa0;line-height:1.4}#dxf-panel.dxf-min #dxf-body{display:none}.dxf-pv{font-size:10px;color:#e0c64a;margin:0 8px 4px 30px}';
+      '#dxf-status{width:100%;font-size:11px;color:#7f8aa0;line-height:1.4}#dxf-panel.dxf-min #dxf-body{display:none}#dxf-panel{transition:width .18s ease}#dxf-panel.dxf-slimmed{width:44px}#dxf-panel.dxf-slimmed .ip-title,#dxf-panel.dxf-slimmed #dxf-close,#dxf-panel.dxf-slimmed .ip-head>svg,#dxf-panel.dxf-slimmed #dxf-body{display:none}#dxf-panel.dxf-slimmed .ip-head{justify-content:center;padding:10px 0}body.dxf-slim #dm-panel{left:308px}body.dxf-slim.ol-collapsed #dm-panel{left:68px}.dxf-pv{font-size:10px;color:#e0c64a;margin:0 8px 4px 30px}';
     document.head.appendChild(st);
   }
   function roleChip(s) {
@@ -666,7 +716,7 @@
   function renderPanel() {
     css();
     var p = state.panel || document.createElement('div'); p.id = 'dxf-panel';
-    var h = '<div class="ip-head">' + ICON.layers + '<span class="ip-title">2D DRAWINGS · ' + state.sheets.length + ' SHEETS</span><button class="dxf-x" id="dxf-close" title="Close">' + ICON.x + '</button></div><div id="dxf-body">';
+    var h = '<div class="ip-head">' + ICON.layers + '<span class="ip-title">2D DRAWINGS · ' + state.sheets.length + ' SHEETS</span><button class="dxf-x" id="dxf-fold" title="Fold the panel away: more canvas">' + (state.slim ? ICON.foldR : ICON.foldL) + '</button><button class="dxf-x" id="dxf-close" title="Close">' + ICON.x + '</button></div><div id="dxf-body">';
     state.sheets.forEach(function (s) {
       h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
@@ -684,7 +734,8 @@
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
     p.style.display = 'block';
-    document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; };
+    document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; applySlim(); };
+    document.getElementById('dxf-fold').onclick = function () { state.slim = !state.slim; applySlim(); };
     document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
     var cb = document.getElementById('dxf-complete');
     var ev = document.getElementById('dxf-evidence'); if (ev) ev.onchange = function () { state.evidence = !!ev.checked; };   // read at Convert
@@ -693,6 +744,7 @@
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
     document.getElementById('dxf-arrange').onclick = function () { arrange().catch(function (e) { console.error(TAGA + ' failed ' + (e && e.stack || e)); }); }; setArrBtn();
     if (state.arr && state.arr.playing) p.classList.add('dxf-min');
+    applySlim();
     if (window.DxfMetaEditor && window.DxfMetaEditor.attention) window.DxfMetaEditor.attention();   // §L7.2 shiver while suggestions are unconfirmed
     setLines(state.linesOn);
   }

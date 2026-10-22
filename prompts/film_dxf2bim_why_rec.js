@@ -71,8 +71,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const idle = async () => { await pg.waitForFunction(() => window.DxfMetaEditor && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict, { timeout: 300000, polling: 100 }); await sleep(400); };
   const clickAt = async (sel, ms) => { const r = await pointAt(sel, ms); await sleep(250); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); return r; };
   const clickEl = async (sel, ms) => { await clickAt(sel, ms); await sleep(300); await idle(); };
-  const typeIn = async (sel, v) => { const r = await pointAt(sel); await sleep(250); await pg.mouse.click(r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, { clickCount: 3 }); await sleep(250);
-    await pg.keyboard.type(String(v), { delay: 110 }); await sleep(350); await pg.keyboard.press('Tab'); await sleep(250); };
+  const typeIn = async (sel, v, fast) => { const r = await pointAt(sel, fast ? 240 : undefined); await sleep(fast ? 70 : 250); await pg.mouse.click(r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, { clickCount: 3 }); await sleep(fast ? 70 : 250);
+    await pg.keyboard.type(String(v), { delay: fast ? 30 : 110 }); await sleep(fast ? 100 : 350); await pg.keyboard.press('Tab'); await sleep(fast ? 80 : 250); };
   const ACC = '#dm-yellows [data-act="acceptall"],#dm-yellows [data-act="acceptsr"],#dm-yellows [data-act="acceptinf"]';
   const acceptY = async () => { for (let g = 0; g < 4 && await pg.$(ACC); g++) { await wheelTo(ACC, { step: 140, pace: 55 }); await clickEl(ACC); } };
   const yrows = () => pg.evaluate(() => { const y = document.getElementById('dm-yellows'); return y ? y.querySelectorAll('.dm-pr').length : 0; });
@@ -131,6 +131,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('play_s', ((now() - t0play)).toFixed(1));
   const doneLog = logHas(/§DXF-ARRANGE done /)[0] || ''; fact('play_ms', ((/ ms=(\d+)/.exec(doneLog)) || [])[1] || 'none'); fact('final_equal', ((/final_equal=(\w+)/.exec(doneLog)) || [])[1] || 'none');
   const lvSteps = await pg.evaluate(() => window.__steps.filter(s => s.key === 'LEVEL')); fact('level_steps', String(lvSteps.length)); fact('level_value', lvSteps.length ? lvSteps[0].value : 'none');
+  { const ks = await pg.evaluate(() => window.__steps.map(x => x.key)), ph = k => k === 'UNITS' ? 1 : /^(VIEW|LEVEL|ROOF|Z|HAXIS)$/.test(k) ? 2 : /^(GRIDX|GRIDY|GRIDH|FACE|CUT)$/.test(k) ? 3 : 4;
+    [1, 2, 3, 4].forEach(q => fact('phase' + q, String(ks.filter(k => ph(k) === q).length))); }
   await sleep(800); const as = await arrState(); fact('tinted', String(as ? as.tinted : 'none')); fact('tinted_inferred', String(as ? as.tintInf : 'none'));
   await camFrame(-62, 24, 1.0, 2800); await beat('w04'); await sleep(2500);
   // ---- chapter 3 ONE HEIGHT MISSING ----
@@ -146,10 +148,14 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const second = {}; dxfs(MARKED).forEach(f => { const m = marks(f).filter(e => /^@Z=/.test(e['1'])); if (m.length >= 2) { const z = m.map(e => ({ z: Number(/^@Z=(\S+)/.exec(e['1'])[1]), y: e['20'] })).sort((a, b) => b.z - a.z)[0]; second[path.basename(f).replace(/_marked\.dxf$/i, '')] = z; } });
   fact('second_heights', second); fact('second_z', String(Object.values(second)[0].z));
   await beat('w06');
-  let typed = 0; for (let si = 0; si < names.length; si++) { const key = names[si].replace(/\.dxf$/i, ''), z = second[key]; if (!z) continue;
-    if (!(await pg.$('#dm-av-' + si + '-Z'))) await clickEl('#dm-panel [data-act="card"][data-sheet="' + si + '"]', 700);
-    await wheelTo('#dm-av-' + si + '-Z', { step: 120, pace: 60 }); await typeIn('#dm-av-' + si + '-Z', z.z); await typeIn('#dm-ap-' + si + '-Z', z.y);
-    await clickEl('#dm-panel [data-act="add"][data-sheet="' + si + '"][data-group="Z"]', 600); typed++; await sleep(400); }
+  await clickAt('#dxf-fold', 600); await sleep(500);   // D39: the 2D Drawings panel folds away, the metadata panel gives the canvas more room
+  await camFrame(-62, 24, 0.9, 2200); orbitZ(70, 60000).catch(() => { });   // the canvas keeps moving while the heights are typed (not awaited; the page is reloaded for chapter 4)
+  let typed = 0; for (let si = 0; si < names.length; si++) { const key = names[si].replace(/\.dxf$/i, ''), z = second[key]; if (!z) continue; const fast = typed > 0;
+    if (!(await pg.$('#dm-av-' + si + '-Z'))) await clickEl('#dm-panel [data-act="card"][data-sheet="' + si + '"]', fast ? 300 : 700);
+    await wheelTo('#dm-av-' + si + '-Z', { step: 120, pace: fast ? 25 : 60 });
+    if (!fast) { fact('height_question', await pg.evaluate(si => { const v = document.getElementById('dm-av-' + si + '-Z'), q = v.closest('.dm-row').previousElementSibling; return q && q.classList.contains('dm-ask') ? q.innerText : 'none'; }, si)); await sleep(2500); }
+    await typeIn('#dm-av-' + si + '-Z', z.z, fast); await typeIn('#dm-ap-' + si + '-Z', z.y, fast);
+    await clickEl('#dm-panel [data-act="add"][data-sheet="' + si + '"][data-group="Z"]', fast ? 250 : 600); typed++; await sleep(fast ? 150 : 400); }
   fact('heights_typed', String(typed)); await wheelTop();
   fact('yellow_rows_after_typing', String(await yrows())); await acceptY(); await sleep(1500);
   const as2 = await arrState(); fact('tinted_after', String(as2 ? as2.tinted : 0)); const v1 = await verdict(); fact('blocking_after_heights', String(v1.blocking)); fact('codes_after_heights', v1.codes);
@@ -160,11 +166,21 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('processed_skip_on_open', String(logHas(/skip-on-open/).length - skip0)); fact('processed_replays', String(logHas(/§DXF-ARRANGE start /).length - start0));
   fact('processed_blocking', String((await verdict()).blocking)); fact('processed_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
   await camFrame(-62, 24, 1.0, 2800); await beat('w08');
+  if (await pg.$('#dxf-complete')) { await clickAt('#dxf-complete', 700); await sleep(600); } fact('complete_ticked', String(await pg.evaluate(() => { const e = document.getElementById('dxf-complete'); return !!(e && e.checked); })));
   await clickAt('#dxf-convert', 800); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 }); await sleep(2500);
   fact('converted', await pg.evaluate(() => ({ n: window.DxfImportUI.state.last.nInserts, counts: window.DxfImportUI.state.last.counts })));
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
+    fact('n_slab', String(sum(/IfcSlab$/))); fact('n_roof', String(sum(/IfcRoof$/))); fact('n_covering', String(sum(/IfcCovering$/)));
     fact('n_columns', String(sum(/IfcColumn$/))); fact('n_beams', String(sum(/IfcBeam$/))); fact('n_footings', String(sum(/IfcFooting$/))); fact('n_walls', String(sum(/IfcWall$/))); fact('n_members', String(sum(/IfcMember$/))); }
-  await camFrame(-62, 24, 1.0, 3000); await orbitZ(60, 8000);
+  // the finished shed: the product's own zoom-to-fit, then slid into the free strip right of the panels, closer, and one slow fly round it
+  await clickAt('#b-fit', 700); await sleep(1800);
+  await pg.evaluate(() => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
+    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.offsetParent).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
+    c.updateMatrixWorld(); const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect;
+    const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), p0 = c.position.clone(), q0 = ctl.target.clone(), t0 = performance.now();
+    (function step() { const k = Math.min(1, (performance.now() - t0) / 2600), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2, tg = q0.clone().addScaledVector(right, s), d = p0.clone().sub(q0).multiplyScalar(1 - 0.28 * s);
+      ctl.target.copy(tg); c.position.copy(tg).add(d); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }));
+  await orbitZ(110, 14000);
   // ---- chapter 5 LIMITS ----
   chapter(5, 'limits'); await beat('l01'); await backdrop(5);
   const LIM = ['The layer types, the body heights and one excluded area of the processed set were stated by the product\'s command line with the owner\'s settings; they are not typed in this take.',
