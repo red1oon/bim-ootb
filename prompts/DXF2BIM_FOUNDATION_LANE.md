@@ -349,3 +349,9 @@ Clinic, LTU (storeys >= 2.7 m apart) byte-identical sets against origin/main.
 plane crosses are drawn on `A-DOOR` / `A-GLAZ` (std2d.js:844): plan 00 holds 238 `A-DOOR` + 304 `A-GLAZ` entities of storey 01's doors and windows with no opening definition. Reader, full model
 markings: 902 blocking, of them on plan 00: `no_host_cut` 189, `no_elevation_for_face` 108, `no_host` 106, `no_elevation_height` 87, `opening_unclassified` 67. Other buildings' storey gaps: Duplex
 3.1, HHS 3.5, Clinic 4.57, LTU 3.0, Hospital 3.0 (Level 7A -> 7) or more: none under 1.2 m.
+**D50 RESULT (2026-10-23): BUILT.** `std2d.js planStoreys` (+ `ofPlan` in planOpenings, door swings, windows, slab coverage). W-STOREY-ABSORB fail=0: JKR 00 Aras Tanah absorbed into 01 Aras Satu (4 plans -> 3);
+its 78 doors / windows: 54 cut openings, 17 drawn above the cut, 7 listed `opening_host_not_cut` (their host walls start at +82.5, above the +82.4 cut: a model finding, the same before), 0 lost; the
+model-marked round trip 902 -> 343 blocking (no_host 120 -> 14, opening_unclassified 68 -> 1, no_elevation_for_face 206 -> 98, no_host_cut 338 -> 149, no_elevation_height 100 -> 13), no code rises;
+Duplex / HHS / Clinic / LTU sheets byte-identical to origin/main. `run_all_witnesses` (with the raw shed) = origin/main + the new witness. JKR yellow stage (plain set, Accept all): every role,
+level, roof, cut, grid (225) and datum (30) = the model's (D46 / D48 hold on the Malay storey names). Left on JKR: the 98 `no_elevation_for_face` are window PART sections (50x50 / 50x100 mullions,
+1290x20 panes) read as glazing openings (the Hospital's D13 finding): next, a window-parts rule like D3's door parts. Modeller sw v128.
