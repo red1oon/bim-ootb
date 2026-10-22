@@ -251,6 +251,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- DXF2BIM lane L3 (prompts/DXF2BIM_MODELLER_LANE.md §L3): Open ▸ 2D drawings (.dxf) → canvas → Convert. Loads its pipeline lazily. -->
 <script src="dxf_export_ui.js?v=1" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
+<script src="viewer_db_export.js?v=1" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
 <script src="dxf_import_ui.js?v=6" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
@@ -3339,6 +3340,15 @@ if (dimScale) dimScale.addEventListener('keydown', (e) => {
 // ONE Export pill (#b-export) replaces the two flat #b-ifc/#b-bcf pills; a small chooser (the exact
 // #m-open-panel idiom from initOpenChooser) offers Native .db / IFC / BCF. IFC + BCF handler bodies
 // are UNCHANGED (pure UI move); Native .db is the NEW symmetric save of what #b-open loads.
+async function doViewerDbExport() {   // §D43: the Viewer's own database from the model (IFC4 -> the shared extractor core), not the signed op-log
+  if (window.Bonsai.oplog.length === 0) { setStat('author or convert something first'); return; }
+  setStat('Viewer database: building the IFC, then extracting it…');
+  try {
+    const r = await window.Bonsai.exportViewerDb();
+    if (r) { setStat('Viewer database exported  elements=' + r.elements + '  ' + r.bytes.length + ' bytes (downloaded) — open it in the Viewer'); audioCue('export'); }
+    else setStat('Viewer database: nothing exported (see the log)');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§VIEWERDB fail ' + err); }
+}
 async function doIfcExport() {
   if (window.Bonsai.oplog.length === 0) { setStat('author something first'); return; }
   setStat('exporting IFC…');
@@ -3404,6 +3414,7 @@ async function doDbExport() {
   if (!bExport) return;
   const ITEMS = [
     { key: 'native', icon: '⛁', label: 'Native .db', sub: 'full fidelity — the signed op-log', run: doDbExport },
+    { key: 'vdb', icon: '▦', label: 'Viewer database (.db)', sub: 'opens in the Viewer: elements, materials, positions', run: doViewerDbExport },
     { key: 'ifc', icon: '⬇', label: 'IFC (IFC4)', sub: 'geometry translation via web-ifc', run: doIfcExport },
     { key: 'bcf', icon: '⚑', label: 'BCF issue (.bcfzip)', sub: 'current view + selection', run: doBcfExport },
     { key: 'dxf', icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>', label: '2D drawings (DXF)', sub: 'plans, elevations, roof, section + markings', run: doDxfExport }
