@@ -44,7 +44,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const card = async (html) => { await pg.evaluate((h) => { let c = document.getElementById('film-card'); if (!c) { c = document.createElement('div'); c.id = 'film-card'; c.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#14161c;color:#F3EEE8;display:flex;flex-direction:column;align-items:center;justify-content:center;font:28px/1.5 DejaVu Sans,sans-serif;text-align:center;padding:30px'; document.body.appendChild(c); } c.innerHTML = h; c.style.display = 'flex'; }, html); };
   const uncard = () => pg.evaluate(() => { const c = document.getElementById('film-card'); if (c) c.style.display = 'none'; });
   const idle = async () => { await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 180000 }); await sleep(900); };
-  const acceptAll = async () => { await pg.click('#dm-yellows [data-act="acceptall"]'); await idle(); };
+  const acceptAll = async () => { for (let g = 0; g < 3; g++) { const b = await pg.$('#dm-yellows [data-act="acceptall"],#dm-yellows [data-act^="accept"]'); if (!b) break; await b.click(); await idle(); } /* D36: Accept all, or the split pair (stated + read, inferred) */ };
   const typeIn = async (sel, v) => { await pg.click(sel, { clickCount: 3 }); await pg.type(sel, String(v), { delay: 70 }); await pg.keyboard.press('Tab'); await sleep(500); };
 
   // ---- c1 title ----

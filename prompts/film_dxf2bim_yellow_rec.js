@@ -78,6 +78,9 @@ const num = s => String(Number(s));
   const idle = async () => { await pg.waitForFunction(() => window.DxfMetaEditor && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict, { timeout: 300000, polling: 100 }); await sleep(400); };
   const clickAt = async (sel, ms) => { const r = await pointAt(sel, ms); await sleep(250); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); return r; };
   const clickEl = async (sel, ms) => { await clickAt(sel, ms); await sleep(300); await idle(); };
+  // D36: Accept all, or (both tiers listed) the split pair; each button brought into view with the wheel, then clicked
+  const ACC = '#dm-yellows [data-act="acceptall"],#dm-yellows [data-act="acceptsr"],#dm-yellows [data-act="acceptinf"]';
+  const acceptY = async (o) => { for (let g = 0; g < 3 && await pg.$(ACC); g++) { if (o) await wheelTo(ACC, o); await clickEl(ACC); } };
   const typeIn = async (sel, v) => { const r = await pointAt(sel); await sleep(250); await pg.mouse.click(r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, { clickCount: 3 }); await sleep(250);
     await pg.keyboard.type(String(v), { delay: 110 }); await sleep(350); await pg.keyboard.press('Tab'); await idle(); };
   const pick = async (sel, v) => { await pointAt(sel); await sleep(300); await pg.select(sel, v); await sleep(200); await idle(); };
@@ -168,7 +171,7 @@ const num = s => String(Number(s));
   await beat('y02');
   fact('one_row', r1.rows[0]); await clickEl('#dm-yellows [data-act="confirm"]'); const r1b = await yrows(); fact('one_left', String(r1b.n));
   fact('one_src', await pg.evaluate(() => { const s = document.querySelector('#dm-panel select[data-key="UNITS"]'); const l = s && s.parentElement.querySelector('.dm-src'); return l ? l.innerText.trim() : ''; }));
-  await sleep(1500); await clickEl('#dm-yellows [data-act="acceptall"]'); fact('r1_after_yellow', String((await yrows()).n)); fact('r1_after_verdict', await verdict());
+  await sleep(1500); await acceptY(); fact('r1_after_yellow', String((await yrows()).n)); fact('r1_after_verdict', await verdict());
   // y03: each sheet's role from its dropdown (titles end in a scale, so no role is read)
   await beat('y03');
   const names = await sheetIdx(), ROLE = n => /_FLOOR_LEVEL_/.test(n) ? 'PLAN' : /_(FRONT|LEFT|REAR|RIGHT)_/.test(n) ? 'ELEV' : /_ROOF_/.test(n) ? 'ROOF' : /_SECTION_/.test(n) ? 'SECTION' : '';
@@ -191,20 +194,20 @@ const num = s => String(Number(s));
   fact('cut_typed', cutTyped); fact('r2_after_cut', String((await yrows()).n)); fact('cut_src', await fieldSrc(cutSel)); await hover(cutSel, 400); await sleep(1500);
   // y05: Accept all, at the end of the list
   await beat('y05');
-  fact('acceptall_below_px', String(await pg.evaluate(() => { const e = document.getElementById('dm-body'), b = document.querySelector('#dm-yellows [data-act="acceptall"]').getBoundingClientRect(), p = e.getBoundingClientRect(); return Math.round(b.top - p.top + e.scrollTop - e.clientHeight); })));
-  await wheelTop(); await wheelTo('#dm-yellows [data-act="acceptall"]', { step: 140, pace: 55 }); await sleep(600); await clickEl('#dm-yellows [data-act="acceptall"]');
+  fact('acceptall_below_px', String(await pg.evaluate(() => { const e = document.getElementById('dm-body'), b = document.querySelector('#dm-yellows [data-act="acceptall"],#dm-yellows [data-act="acceptsr"]').getBoundingClientRect(), p = e.getBoundingClientRect(); return Math.round(b.top - p.top + e.scrollTop - e.clientHeight); })));
+  await wheelTop(); await acceptY({ step: 140, pace: 55 });
   fact('r2_after', String((await yrows()).n)); fact('r2_after_verdict', await verdict());
   // ---- chapter 3 THE DATUMS ----
   chapter(3, 'datums'); await beat('d01'); await backdrop(3); await sleep(3000);
   const setName = (path.basename(dxfs(PLAIN)[0]).match(/^([A-Z0-9]+)_/) || [])[1];   // the files' own prefix
   await typeIn('#dm-f-0-SET', setName); const r3 = await yrows(); fact('set_typed', setName); fact('r3_rows', String(r3.n)); fact('r3_rules', r3.rules);
-  await sleep(1200); await wheelTo('#dm-yellows [data-act="acceptall"]', { step: 140, pace: 55 }); await clickEl('#dm-yellows [data-act="acceptall"]');
+  await sleep(1200); await acceptY({ step: 140, pace: 55 });
   await beat('d02');
   const PL1 = names.findIndex(n => /_FLOOR_LEVEL_1_/.test(n)), PL2 = names.findIndex(n => /_FLOOR_LEVEL_2_/.test(n));
   const t1 = titleOf(dxfs(PLAIN).find(f => /_FLOOR_LEVEL_1_/.test(f)), /PLAN \(FFL/), t2 = titleOf(dxfs(PLAIN).find(f => /_FLOOR_LEVEL_2_/.test(f)), /PLAN \(FFL/);
   const lv1 = num(/FFL ([-+\d.]+)/.exec(t1)[1]), lv2 = num(/FFL ([-+\d.]+)/.exec(t2)[1]); fact('level_title', t2); fact('level_1', lv1); fact('level_2', lv2);
   await typeIn('#dm-f-' + PL1 + '-LEVEL', lv1); await typeIn('#dm-f-' + PL2 + '-LEVEL', lv2); const r4 = await yrows(); fact('r4_rows', String(r4.n)); fact('r4_rules', r4.rules);
-  await sleep(1000); await wheelTo('#dm-yellows [data-act="acceptall"]', { step: 140, pace: 55 }); await clickEl('#dm-yellows [data-act="acceptall"]');
+  await sleep(1000); await acceptY({ step: 140, pace: 55 });
   await beat('d03');
   const RF = names.findIndex(n => /_ROOF_/.test(n)), rt = titleOf(dxfs(PLAIN).find(f => /_ROOF_/.test(f)), /^ROOF PLAN .*\(([-+\d.]+)\)/), roofLv = num(/\(([-+\d.]+)\)/.exec(rt)[1]);
   const tt = titleOf(dxfs(PLAIN).find(f => /_SECTION_/.test(f)), /^T\/ROOF [-+\d.]+/), roofTop = num(/([-+\d.]+)$/.exec(tt)[1]);
@@ -213,7 +216,7 @@ const num = s => String(Number(s));
   const roofIds = await pg.evaluate(() => [...document.querySelectorAll('#dm-panel input[id$="-ROOF"]')].filter(e => !e.value).map(e => e.id)); fact('roof_fields', roofIds);
   for (const id of roofIds) await typeIn('#' + id, roofTop);
   fact('roof_typed', String(roofIds.length)); const vr = await verdict(); fact('after_roof_blocking', String(vr.blocking)); fact('after_roof_yellow', String((await yrows()).n));
-  if ((await yrows()).n) { await wheelTo('#dm-yellows [data-act="acceptall"]', { step: 140, pace: 55 }); await clickEl('#dm-yellows [data-act="acceptall"]'); }
+  if ((await yrows()).n) await acceptY({ step: 140, pace: 55 });
   // d04: the FRONT sheet's card, then the sheets standing in 3D
   await beat('d04');
   const FI = names.findIndex(n => /_FRONT_/.test(n)), fsel = '#dm-panel .dm-ch[data-sheet="' + FI + '"]';

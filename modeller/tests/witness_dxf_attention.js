@@ -74,7 +74,7 @@ runE2E('W-DXF-ATTN', async (t) => {
   await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="defkeep"]').click()); await t.sleep(400);
   const y1b = await pg.evaluate(() => ({ rows: document.querySelectorAll('#dm-yellows .dm-pr').length, tol: window.DxfImportUI.state.prep['lines.dxf'].tol, kind: window.DxfImportUI.state.defaults[0].kind }));
   t.assert('Y1b one tick in "All defaults" keeps that value (tolerance stays 0.01) as the user\'s and removes just that row', y1b.rows === y1.rows - 1 && y1b.tol === 0.01 && y1b.kind === 'chosen', JSON.stringify(y1b));
-  await pg.evaluate(() => document.querySelector('#dm-yellows [data-act="acceptall"]').click()); await t.sleep(900);
+  await pg.evaluate(() => { for (let r = 0; r < 4; r++) { const b = ['acceptall', 'acceptsr', 'acceptinf'].map(k => document.querySelector('#dm-yellows [data-act="' + k + '"]')).filter(Boolean)[0]; if (!b) break; b.click(); } }); await t.sleep(900);   // §D36: Accept all, or the split pair when both kinds are listed
   const y2 = await pg.evaluate(() => ({ attn: window.DxfMetaEditor.state.attn, rows: document.querySelectorAll('#dm-yellows .dm-pr').length, marks: window.DxfMetaEditor.state.sheets[0].marks.map(m => m.key + ':' + m.source) }));
   t.assert('Y2 Accept all: nothing yellow left, suggestions written as `user` markings', y2.attn === 0 && y2.rows === 0 && y2.marks.filter(x => /:user$/.test(x)).length >= 1 && y2.marks.filter(x => !/:file$/.test(x)).every(x => /:user$/.test(x)), JSON.stringify(y2));
   await open(path.join(dir, 'raw.dxf'));

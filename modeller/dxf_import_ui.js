@@ -113,6 +113,7 @@
   function buildCanvas(sheets, noFrame) {
     var THREE = window.THREE, A = window.A;
     if (!THREE || !A || !A.scene) { console.warn(TAG + ' canvas: no scene'); return null; }
+    if (state.ev) evClear('the canvas is rebuilt');
     if (state.group) { A.scene.remove(state.group); state.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
     var MK = window.Dxf2Marks, Bm = window.Dxf2Bim, Cf = setCfg();
     var g = new THREE.Group(); g.name = 'dxf-sheets'; g.userData.dxfSheets = true;
@@ -172,7 +173,7 @@
   // marking / one yellow band at a time by its EFFECTIVE markings (its markings + the editor's yellow suggestions, the later rounds computed as if the earlier yellow
   // values were in place: DxfMetaEditor.preview). A VIEW: nothing is marked, accepted or saved; verdict / gate / Convert read the accepted markings only. A stage is
   // computed only from the values applied so far; the last stage of a sheet the canvas places IS placeOf's w (buildCanvas). Log §DXF-ARRANGE. ----
-  var TAGA = '§DXF-ARRANGE', K0 = 0.001, YEL = 0xf5d90a;
+  var TAGA = '§DXF-ARRANGE', K0 = 0.001, YEL = 0xf5d90a, ORG = 0xff7a1a;   // §D36 ORG: the inferred tier (the panel's .dm-pr.inf)
   var KEY_ORDER = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'FACE', 'CUT'];   // the placing keys, in the order a sheet is placed
   var NEED = { PLAN: ['UNITS', 'VIEW', 'LEVEL', 'GRIDX', 'GRIDY'], ROOF: ['UNITS', 'VIEW', 'ROOF'], ELEV: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], SECTION: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] };
   var VIEW_ROLE = { PLAN: 'plan', ROOF: 'roof', ELEV: 'elev', SECTION: 'section' }, RANK = { PLAN: 0, ROOF: 1, ELEV: 2, SECTION: 3 };
@@ -272,13 +273,15 @@
   }
   function posOfRaw(raw, f) { var out = new Float64Array(raw.length / 2 * 3); for (var i = 0, j = 0; i < raw.length; i += 2, j += 3) { var p = f(raw[i], raw[i + 1]); out[j] = p[0]; out[j + 1] = p[1]; out[j + 2] = p[2]; } return out; }
   function maxDiff(a, b) { var m = 0; for (var i = 0; i < a.length; i++) { var x = Math.abs(a[i] - b[i]); if (x > m) m = x; } return m; }
-  function colOf(it) { var c = new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none); return it.tint || it.dtint ? c.lerp(new window.THREE.Color(YEL), 0.75) : c; }
+  function colOf(it) { var c = new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none); return it.tint || it.dtint ? c.lerp(new window.THREE.Color(it.tintInf ? ORG : YEL), 0.75) : c; }
+  function tierOfRule(r) { var M = window.DxfMetaEditor; return M && M.tierOf ? M.tierOf(r) : null; }   // §D36 the tier table lives with the list (dxf_meta_editor.js)
   function chain(it) {   // the stages of the sheet (stage 0 .. one per step) as world positions, + which steps move it
     var A = {}, raw = it.raw.b.concat(it.raw.d), hs = []; for (var i = 0; i < raw.length; i += 2) hs.push(raw[i]); hs.sort(function (a, b) { return a - b; });
     it.hc = hs.length ? (hs[Math.floor(hs.length * 0.01)] + hs[Math.ceil(hs.length * 0.99) - 1]) / 2 : 0;   // the sheet's own horizontal centre (drawing units, 1st..99th percentile)
     var st = [posOfRaw(raw, stageFn(it, A))];
     it.steps.forEach(function (s) { A[s.key] = true; var p = posOfRaw(raw, stageFn(it, A)); s.moves = maxDiff(p, st[st.length - 1]) > 1e-12; if (!s.moves) s.why = whyStill(it, s.key, A); st.push(p); });
-    it.stages = st; it.tintFinal = it.steps.some(function (s) { return s.yellow && s.moves; });
+    it.stages = st; it.wNow = stageFn(it, A); it.tintFinal = it.steps.some(function (s) { return s.yellow && s.moves; });
+    it.steps.forEach(function (s) { s.inf = s.yellow && s.rows.some(function (r) { return tierOfRule(r.rule) === 'inferred'; }); }); it.tintInfFinal = it.steps.some(function (s) { return s.inf && s.moves; });   // §D36 placed by an inferred value: orange
     it.steps.forEach(function (s) { s.dflt = s.key === 'FACE' && s.moves && it.fcDefault; }); it.defFinal = it.steps.some(function (s) { return s.dflt; });   // the panel.plane default places it
   }
   function arrObjects(it, g) {
@@ -298,12 +301,12 @@
     var q = ax.map(function (v) { v.sort(function (x, y) { return x - y; }); return [v[Math.floor(v.length * 0.01)], v[Math.min(v.length - 1, Math.ceil(v.length * 0.99) - 1)]]; });
     return [[q[0][0], q[1][0], q[2][0]], [q[0][1], q[1][1], q[2][1]]];
   }
-  function camFor(b) {   // frameObject's view of a box, fitted into the canvas strip the panels leave free (right of the open panels, as the editor's zoom)
+  function camFor(b, dir) {   // frameObject's view of a box (dir: §D36 the fly's view direction, default the iso one), fitted into the canvas strip the panels leave free (right of the open panels, as the editor's zoom)
     var THREE = window.THREE, A = window.A, c = new THREE.Vector3((b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, (b[0][2] + b[1][2]) / 2), r = Math.max(b[1][0] - b[0][0], b[1][1] - b[0][1], b[1][2] - b[0][2], 0.5) * 0.5;
     var cv = A.renderer.domElement.getBoundingClientRect(), pr = cv.left;
     ['dxf-panel', 'dm-panel'].forEach(function (id) { var e = document.getElementById(id); if (e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0) pr = Math.max(pr, e.getBoundingClientRect().right); });
     var W = Math.max(cv.right - pr - 24, cv.width * 0.3), th = Math.tan((A.camera.fov * Math.PI / 180) / 2);
-    var dist = Math.max(r / th, r / (th * W / cv.height)) * 1.3 + r, d = new THREE.Vector3(1, -1, 1.3).normalize(), p = c.clone().addScaledVector(d, dist), t = c.clone();
+    var dist = Math.max(r / th, r / (th * W / cv.height)) * 1.3 + r, d = (dir ? dir.clone() : new THREE.Vector3(1, -1, 1.3)).normalize(), p = c.clone().addScaledVector(d, dist), t = c.clone();
     var dxPx = (pr + (cv.right - pr) / 2) - (cv.left + cv.width / 2);
     if (dxPx > 0) { var m = new THREE.Matrix4().lookAt(p, t, new THREE.Vector3(0, 0, 1)), right = new THREE.Vector3().setFromMatrixColumn(m, 0), wpp = 2 * dist * th / cv.height; right.multiplyScalar(-dxPx * wpp); p.add(right); t.add(right); }
     return { t: t, p: p };
@@ -333,7 +336,7 @@
       return out;
     };
   }
-  function finalSegOf(it) { var o = {}, P = it.stages[it.stages.length - 1], H = it.raw.hb.concat(it.raw.hd); for (var s = 0; s < H.length; s++) { var a = o[H[s]] = o[H[s]] || []; for (var j = 0; j < 6; j++) a.push(P[s * 6 + j]); } return o; }
+  function finalSegOf(it, P0) { var o = {}, P = P0 || it.stages[it.stages.length - 1], H = it.raw.hb.concat(it.raw.hd); for (var s = 0; s < H.length; s++) { var a = o[H[s]] = o[H[s]] || []; for (var j = 0; j < 6; j++) a.push(P[s * 6 + j]); } return o; }
   function compareCanvas(R) {   // A1: the arrangement's last stage against buildCanvas, per handle (1e-6 m)
     var n = 0, worst = 0, bad = [];
     R.items.forEach(function (it) { var c = state.canvas && state.canvas[it.name]; if (!c) return; n++; var F = finalSegOf(it), hs = Object.keys(c.segOf), w = 0;
@@ -343,7 +346,7 @@
     return { compared: n, worst: worst, bad: bad, equal: !bad.length };
   }
   function arrClear() {
-    var R = state.arr, A = window.A; if (!R) return; R.stop = true;
+    var R = state.arr, A = window.A; if (state.ev) evClear('the view closes'); if (!R) return; R.stop = true;
     if (R.group && A && A.scene) { A.scene.remove(R.group); R.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
     window.removeEventListener('keydown', R.onKey, true); state.arr = null;
     if (state.group) state.group.visible = state.linesOn;
@@ -359,9 +362,9 @@
     arrClear();
     var stepMs = opts.stepMs === undefined ? 900 : opts.stepMs, holdMs = opts.holdMs === undefined ? 1400 : opts.holdMs, t0 = performance.now(), ME = window.DxfMetaEditor;
     var items = arrPlan(), g = new window.THREE.Group(); g.name = 'dxf-arrange';
-    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = false; it.applied = 0; arrObjects(it, g); arrWrite(it, it.stages[0]); });
+    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = false; it.tintInf = false; it.applied = 0; arrObjects(it, g); arrWrite(it, it.stages[0]); });
     var R = state.arr = { items: items, group: g, live: true, playing: true, stop: false, steps: [], log: [] };
-    R.onKey = function (e) { if (e.key !== 'Escape') return; if (R.playing) arrangeStop(); else if (state.arr === R) handOver('Esc'); };
+    R.onKey = function (e) { if (e.key !== 'Escape') return; if (state.ev) { evClear('Esc'); return; } if (R.playing) arrangeStop(); else if (state.arr === R) handOver('Esc'); };   // §D36 Esc first restores a fly
     window.addEventListener('keydown', R.onKey, true);
     window.A.scene.add(g); if (state.group) state.group.visible = false; g.visible = state.linesOn;
     var all = []; items.forEach(function (it) { it.steps.forEach(function (st) { all.push({ it: it, st: st }); }); });
@@ -388,12 +391,13 @@
         if (opts.onStep) await opts.onStep(info);
         arrStyle(it);
         var mv = stepMotion(it, st, P0, P1), cam = followCam();
-        var wasT = it.tint || it.dtint; if (st.yellow && st.moves) it.tint = true; if (st.dflt) it.dtint = true;
-        await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (!wasT && (it.tint || it.dtint)) it.obj.forEach(function (ls) { ls.material.color.copy(new window.THREE.Color(COL[VIEW_ROLE[it.view]] || COL.none).lerp(new window.THREE.Color(YEL), 0.75 * ease(e))); }); });
+        var wasT = it.tint || it.dtint, wasI = it.tintInf, cA = colOf(it); if (st.yellow && st.moves) it.tint = true; if (st.inf && st.moves) it.tintInf = true; if (st.dflt) it.dtint = true;
+        var cB = colOf(it), recol = (!wasT && (it.tint || it.dtint)) || (!wasI && it.tintInf);
+        await tween(st.moves ? stepMs : stepMs * 0.4, function (e) { var P = mv(e); arrWrite(it, P); cam(e, P); if (recol) it.obj.forEach(function (ls) { ls.material.color.copy(cA).lerp(cB, ease(e)); }); });
         it.applied = j; arrWrite(it, P1);
       }
       if (R.stop) console.log(TAGA + ' stopped at step ' + R.steps.length + ': every sheet to its last stage');
-      items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; it.dtint = it.defFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
+      items.forEach(function (it) { it.applied = it.steps.length; it.tint = it.tintFinal; it.tintInf = it.tintInfFinal; it.dtint = it.defFinal; arrWrite(it, it.stages[it.stages.length - 1]); });
       R.playing = false; R.stop = false; arrStyle(null);
       ME.focusEnd(); minimise(false);
       var cmp = compareCanvas(R); R.final = {}; items.forEach(function (it) { R.final[it.name] = finalSegOf(it); });
@@ -416,7 +420,8 @@
   function arrSync() {
     var R = state.arr; if (!R) return; if (R.playing) { if (R.syncing) R.again = true; else R.dirty = true; return; }   // a value typed during play: re-synced when the play ends
     var items = arrPlan(), moved = [], old = {}; R.items.forEach(function (it) { old[it.name] = it; });
-    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = it.tintFinal; it.dtint = it.defFinal; it.applied = it.steps.length; var o = old[it.name];
+    if (state.ev) evClear('the values changed');
+    items.forEach(function (it) { it.raw = rawOf(it); chain(it); it.tint = it.tintFinal; it.tintInf = it.tintInfFinal; it.dtint = it.defFinal; it.applied = it.steps.length; var o = old[it.name];
       var F = it.stages[it.stages.length - 1];
       if (o && o.cur && o.cur.length === F.length) { it.obj = o.obj; if (maxDiff(o.cur, F) > 1e-9) moved.push({ it: it, P0: o.cur, P1: F }); else arrWrite(it, F); }
       else { (o ? o.obj : []).forEach(function (ls) { R.group.remove(ls); ls.geometry.dispose(); }); arrObjects(it, R.group); arrWrite(it, F); } });
@@ -430,6 +435,203 @@
     tween(700, function (e) { moved.forEach(function (m) { var q = ease(e), P = new Float64Array(m.P1.length); for (var i = 0; i < P.length; i++) P[i] = m.P0[i] + (m.P1[i] - m.P0[i]) * q; arrWrite(m.it, e >= 1 ? m.P1 : P); }); }).then(function () { R.playing = false; R.syncing = false; if (R.again) { R.again = false; arrSync(); return; } fin(); });
   }
   function setArrBtn() { var b = document.getElementById('dxf-arrange'), R = state.arr; if (b) b.innerHTML = R && R.playing ? ICON.stop + '<span>Stop</span>' : ICON.play + '<span>Arrange</span>'; }
+
+  // ---- §D36 FLY TO THE EVIDENCE (prompts/DXF2BIM_EVIDENCE_TIERS.md): a click on a yellow row eases the camera to what its rule read, on the sheet WHERE IT
+  // STANDS NOW (the Arrange view's preview placement while the view stands, else the canvas; a sheet neither draws is shown at its preview placement, or as
+  // drawn when no value places it), framed in the canvas right of the panels; the evidence highlighted (thick), every other sheet dimmed; Esc, a click on the
+  // canvas or the row again restores. A VIEW: nothing is marked, accepted, judged or saved. Log §DXF-EVIDENCE. ----
+  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-VIEW': 1, 'PR-NAME': 1 };   // HLC: the verdict zoom's highlight
+  function allOf(segOf) { var P = []; Object.keys(segOf).forEach(function (h) { var a = segOf[h]; for (var i = 0; i < a.length; i++) P.push(a[i]); }); return P; }
+  function wbox(P) { if (!P.length) return null; var b = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]; for (var i = 0; i < P.length; i += 3) for (var a = 0; a < 3; a++) { if (P[i + a] < b[0][a]) b[0][a] = P[i + a]; if (P[i + a] > b[1][a]) b[1][a] = P[i + a]; } return b; }
+  function evSheet(name, X) {   // where the sheet stands now: { mode canvas | preview | as drawn, w (drawing units -> world m), segOf, drawn (already on screen), d (its desc), dxf }
+    if (X.c[name] !== undefined) return X.c[name];
+    var R = state.arr, c = state.canvas && state.canvas[name], s = (state.sheets || []).filter(function (q) { return q.name === name; })[0], it = null, o = null;
+    if (R && R.live && !R.playing) it = R.items.filter(function (q) { return q.name === name; })[0] || null;
+    var modeOf = function (it, P) { var L = lacksOf(it); return !L.length ? 'preview' : maxDiff(P, it.stages[0]) > 1e-12 ? 'partial' : 'as drawn'; };   // its values place it fully / part of the way / not at all
+    if (it && it.cur) o = { mode: c && !it.tintFinal && !it.dtint ? 'canvas' : modeOf(it, it.cur), lacks: lacksOf(it), w: it.wNow, segOf: finalSegOf(it, it.cur), drawn: true, d: it.d, dxf: it.s.dxf, role: VIEW_ROLE[it.view] || null };
+    else if (c && s) o = { mode: 'canvas', w: c.toWorld, segOf: c.segOf, drawn: true, d: s.desc, dxf: s.dxf, role: c.role };
+    else {   // drawn by neither: the D34 preview of its effective values (where the yellow values put it), else as drawn (1 unit = 1 mm, z = 0)
+      it = (X.items || (X.items = arrPlan())).filter(function (q) { return q.name === name; })[0] || null;
+      if (it) { it.raw = rawOf(it); chain(it); it.tint = it.tintFinal; it.tintInf = it.tintInfFinal; var F = it.stages[it.stages.length - 1];
+        o = { mode: modeOf(it, F), lacks: lacksOf(it), w: it.wNow, segOf: finalSegOf(it, F), drawn: false, d: it.d, dxf: it.s.dxf, role: VIEW_ROLE[it.view] || null, col: colOf(it) }; }
+    }
+    if (o) o.name = name; X.c[name] = o; return o;
+  }
+  function evRef(X) {   // the reference plan the placement aligns to (+ its wall envelope): the Arrange view's while it stands, else the canvas's lowest plan, else the preview's
+    var R = state.arr, it0 = R && R.live && !R.playing ? R.items.filter(function (q) { return q.ref; })[0] : null;
+    if (it0) return { name: it0.ref.name, env: it0.env, d: it0.ref.d, k: it0.ref.k };
+    var pl = (state.sheets || []).filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; })[0];
+    if (pl) return { name: pl.name, env: state.envelope, d: pl.desc, k: pl.factor || 1 };
+    it0 = (X.items || (X.items = arrPlan())).filter(function (q) { return q.ref; })[0];
+    return it0 ? { name: it0.ref.name, env: it0.env, d: it0.ref.d, k: it0.ref.k } : null;
+  }
+  function dbox(dxf) {   // a sheet's extent in drawing units, 1st..99th percentile per axis (a stray entity does not set it)
+    var xs = [], ys = [], q = function (v) { v.sort(function (a, b) { return a - b; }); return [v[Math.floor(v.length * 0.01)], v[Math.min(v.length - 1, Math.ceil(v.length * 0.99) - 1)]]; };
+    dxf.entities.forEach(function (e) { if (e.layer === 'DXF2BIM-MARK') return; var s = segs2d([e]).s; for (var i = 0; i < s.length; i += 2) { xs.push(s[i]); ys.push(s[i + 1]); } });
+    if (!xs.length) return null; var a = q(xs), b = q(ys); return [a[0], b[0], a[1], b[1]];
+  }
+  function textRect(e) {   // a text's box in drawing units (insertion point, height x 0.7 per character, its alignment and rotation as written): 4 corners
+    var t = String(e.text || '').replace(/\\P/g, ' ').replace(/\\[A-Za-z][^;\\]*;|[{}]/g, ''), h = e.textHeight || e.height || 1, w = Math.max(1, t.trim().length) * h * 0.7;
+    var p = e.startPoint || e.position || { x: 0, y: 0 }, ox = 0, oy = 0;
+    if (e.type === 'TEXT' && (e.halign || e.valign) && e.endPoint) { p = e.endPoint; ox = e.halign === 2 ? -w : e.halign === 1 || e.halign === 4 ? -w / 2 : 0; oy = e.valign === 3 ? -h : e.valign === 2 || e.halign === 4 ? -h / 2 : 0; }
+    if (e.type === 'MTEXT') { var ap = e.attachmentPoint || 1, c = (ap - 1) % 3, r = Math.floor((ap - 1) / 3); ox = -c * w / 2; oy = r === 0 ? -h : r === 1 ? -h / 2 : 0; }
+    var pd = h * 0.35, rot = (e.rotation || 0) * Math.PI / 180, cs = Math.cos(rot), sn = Math.sin(rot);
+    return [[ox - pd, oy - pd], [ox + w + pd, oy - pd], [ox + w + pd, oy + h + pd], [ox - pd, oy + h + pd]].map(function (k) { return [p.x + k[0] * cs - k[1] * sn, p.y + k[0] * sn + k[1] * cs]; });
+  }
+  function nearOn(p, a, b) { var d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = d[0] * d[0] + d[1] * d[1] + d[2] * d[2], t = L ? ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / L : 0; t = Math.max(0, Math.min(1, t)); return [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]]; }
+  function r3(v) { return Math.round(v * 1000) / 1000; }
+  function evBuild(row, X) {   // the evidence of one suggestion, per rule: hl (the entity read, thick), hl2 (what it is held against), tri (a plane), the sheets shown undimmed
+    var S = evSheet(row.sheet, X); if (!S) return null;
+    var E = { rule: row.rule, S: S, hl: [], hl2: [], tri: [], sheets: {}, handles: [], notes: [] }; E.sheets[S.name] = 1;
+    var ents = {}; S.dxf.entities.forEach(function (e) { ents[e.handle] = e; });
+    var seg = function (Sh, h, into) { var a = Sh.segOf[h]; if (!a) return false; for (var i = 0; i < a.length; i++) into.push(a[i]); return true; };
+    var put = function (into, a, b) { into.push(a[0], a[1], a[2], b[0], b[1], b[2]); };
+    var box = function (Sh, e, into) { var c = textRect(e); for (var i = 0; i < 4; i++) put(into, Sh.w(c[i][0], c[i][1]), Sh.w(c[(i + 1) % 4][0], c[(i + 1) % 4][1])); };
+    var isT = function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== 'DXF2BIM-MARK'; };
+    var named = []; String(row.why || '').replace(/\b(?:tick|line|text|door) ([0-9A-F]+)\b/g, function (m, h) { if (ents[h] && named.indexOf(h) < 0) named.push(h); return m; });   // the entities the rule names (drawn ones first)
+    named.sort(function (a, b) { return (isT(ents[a]) ? 1 : 0) - (isT(ents[b]) ? 1 : 0); });
+    named.forEach(function (h) { var e = ents[h]; if (isT(e)) box(S, e, E.hl); else seg(S, h, E.hl); E.handles.push(h); });
+    var r = row.rule;
+    if ((r === 'PR-GRID-TICK' || r === 'PR-GRID') && named.length) {   // + its label text: the nearest text that IS the label
+      var v0 = ents[named[0]].vertices || [], m0 = v0.length ? [(v0[0].x + v0[v0.length - 1].x) / 2, (v0[0].y + v0[v0.length - 1].y) / 2] : [0, 0], L = null, bd = Infinity;
+      S.dxf.entities.forEach(function (e) { if (!isT(e) || String(e.text || '').trim() !== String(row.value)) return; var p = e.startPoint || e.position || {}, dd = Math.hypot(p.x - m0[0], p.y - m0[1]); if (dd < bd) { bd = dd; L = e; } });
+      if (L) { box(S, L, E.hl); E.handles.push(L.handle); }
+    }
+    if (r === 'PR-Z-GROUND') S.dxf.entities.forEach(function (e) {   // the ground line along its length: every segment of the group at that height
+      if (e.type === 'LINE' && e.layer !== 'DXF2BIM-MARK' && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= 1e-9 && Math.abs(e.vertices[0].y - Number(row.y)) <= 6e-4 && named.indexOf(e.handle) < 0 && seg(S, e.handle, E.hl)) E.handles.push(e.handle); });
+    if (WHOLE[r]) { E.hl = allOf(S.segOf); E.whole = true; }   // the sheet as a whole: no single entity
+    if (r === 'PR-FACE' || r === 'PR-HAXIS') {
+      var Rf = evRef(X), P = Rf ? evSheet(Rf.name, X) : null;
+      if (!Rf || !P) E.notes.push('no plan with @LEVEL: nothing to hold it against');
+      else E.sheets[P.name] = 1;
+    }
+    if (r === 'PR-FACE' && P) {   // the elevation on its face plane beside the plan's outer wall: the envelope edge (or the end grid line, structure sets) + the plane
+      var face = String(row.value), fp = faceOf(face, [{ desc: Rf.d, factor: Rf.k }], Rf.env), ay = face === 'minY' || face === 'maxY', span = null;
+      if (!fp) E.notes.push('no face plane: no wall envelope and no grid on that side of ' + Rf.name);
+      else {
+        if (Rf.env) span = ay ? [Rf.env[0], Rf.env[2]] : [Rf.env[1], Rf.env[3]];
+        else { var gb = ay ? Rf.d.gridsX : Rf.d.gridsY, gv = Object.keys(gb || {}).map(function (l) { return gb[l] * Rf.k; }); if (gv.length) span = [Math.min.apply(null, gv), Math.max.apply(null, gv)]; }
+        var zl = typeof Rf.d.level === 'number' ? Rf.d.level : 0, eb = wbox(allOf(S.segOf)), z1 = eb ? Math.max(eb[1][2], zl + 1) : zl + 3;
+        if (span) { var fa = ay ? [span[0], fp.v, zl] : [fp.v, span[0], zl], fb = ay ? [span[1], fp.v, zl] : [fp.v, span[1], zl], fc = [fb[0], fb[1], z1], fd = [fa[0], fa[1], z1];
+          put(E.hl, fa, fb); put(E.hl2, fa, fd); put(E.hl2, fb, fc); put(E.hl2, fd, fc); E.tri.push.apply(E.tri, fa.concat(fb, fc, fa, fc, fd)); }
+        var on = eb && Math.abs((ay ? eb[0][1] : eb[0][0]) - fp.v) < 0.01 && Math.abs((ay ? eb[1][1] : eb[1][0]) - fp.v) < 0.01;
+        E.notes.push((fp.dflt ? 'the end grid line ' : 'the wall envelope edge ') + face + ' = ' + r3(fp.v) + ' m of ' + Rf.name + (fp.dflt ? ' (panel.plane default: no wall envelope)' : '') + (on ? '' : '; the elevation does not stand on it yet'));
+      }
+    }
+    if (r === 'PR-HAXIS' && P) {   // the elevation's grid lines carried down onto the plan's grid lines of the same label (a wrong axis / sign shows as crossing lines)
+      var ax = String(row.value).slice(1), gh = S.d.gridsH || {}, bag = (ax === 'X' ? Rf.d.gridsX : Rf.d.gridsY) || {}, ls = Object.keys(gh).filter(function (l) { return l in bag; }), eb2 = dbox(S.dxf), pb = dbox(P.dxf);
+      if (eb2 && pb) ls.forEach(function (l) {
+        var h = gh[l], top = S.w(h, eb2[3]), bot = S.w(h, eb2[1]), g = bag[l], p0 = ax === 'X' ? P.w(g, pb[1]) : P.w(pb[0], g), p1 = ax === 'X' ? P.w(g, pb[3]) : P.w(pb[2], g);
+        var f = nearOn(bot, p0, p1); put(E.hl, top, bot); put(E.hl2, p0, p1); if (Math.hypot(f[0] - bot[0], f[1] - bot[1], f[2] - bot[2]) > 0.01) put(E.hl2, bot, f); });   // magenta: the elevation's, white: the plan's (+ the drop when they do not meet)
+      E.notes.push(ls.length + ' grid labels shared with ' + Rf.name + ' on its ' + ax + ' axis' + (String(row.value)[0] === '-' ? ' (mirrored)' : '') + ': each elevation grid line (magenta) meets the plan grid line of its label (white) = the fit; lines that cross or miss = a wrong axis or sign');
+    }
+    if (r === 'PR-CUT') {   // the two section labels on the plan (the section line they mark) + the section standing at the cut + its title
+      var pn = (/ on (.+)$/.exec(String(row.why || '')) || [])[1], Pc = pn ? evSheet(pn, X) : null, cax = String(row.value).split(',')[0], tt = null, sec = null;
+      S.dxf.entities.forEach(function (e) { var m = isT(e) && !tt && /^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(String(e.text || '').trim()); if (m) { tt = e; sec = m[1].toUpperCase(); } });
+      if (tt) { box(S, tt, E.hl); E.handles.push(tt.handle); }
+      if (!Pc || !sec) E.notes.push(!Pc ? 'the plan of the section line is not open' : 'no "Section X-X" title');
+      else {
+        E.sheets[Pc.name] = 1;
+        var at = Pc.dxf.entities.filter(function (e) { return isT(e) && String(e.text || '').trim().toUpperCase() === sec; }), pr = null;
+        for (var i = 0; i < at.length && !pr; i++) for (var j = i + 1; j < at.length && !pr; j++) { var a = at[i].startPoint || at[i].position, b = at[j].startPoint || at[j].position, c0 = cax === 'X' ? 0 : 1, k0 = ['x', 'y'][c0];
+          if (Math.abs(a[k0] - b[k0]) <= 1e-3 * Math.max(1, Math.abs(a[k0])) && Math.abs(a[['y', 'x'][c0]] - b[['y', 'x'][c0]]) > 0) pr = [at[i], at[j]]; }
+        if (!pr) E.notes.push('the two labels are not found on ' + Pc.name);
+        else {
+          pr.forEach(function (e) { box(Pc, e, E.hl); E.handles.push(e.handle); });
+          var cc = (pr[0].startPoint || pr[0].position)[cax === 'X' ? 'x' : 'y'], GL = (setCfg().QUALIFY || { layers: { grid: [] } }).layers.grid, onIt = Pc.dxf.entities.filter(function (e) { var v = e.vertices;   // the drawn line the two labels mark
+            return e.type === 'LINE' && e.layer !== 'DXF2BIM-MARK' && v && v.length >= 2 && Math.abs(v[0][cax === 'X' ? 'x' : 'y'] - cc) <= 1e-3 * Math.max(1, Math.abs(cc)) && Math.abs(v[1][cax === 'X' ? 'x' : 'y'] - cc) <= 1e-3 * Math.max(1, Math.abs(cc)); });
+          onIt.forEach(function (e) { if (seg(Pc, e.handle, E.hl)) E.handles.push(e.handle); });
+          var pa = pr[0].startPoint || pr[0].position, pq = pr[1].startPoint || pr[1].position, wa = Pc.w(pa.x, pa.y), wq = Pc.w(pq.x, pq.y), sb = wbox(allOf(S.segOf)), zt = sb ? Math.max(sb[1][2], wa[2] + 1) : wa[2] + 3, along = S.d.haxis && S.d.haxis.slice(1) === cax;
+          E.notes.push('the cut line (white) = the two section labels on ' + Pc.name + ' (' + cax + ' = ' + r3(cax === 'X' ? wa[0] : wa[1]) + ' m)');
+          if (onIt.length) E.notes.push('the labels mark ' + onIt.length + ' drawn line(s)' + (onIt.some(function (e) { return GL.indexOf(e.layer) >= 0; }) ? ', on a grid layer: a grid line, not a section line' : ''));
+          put(E.hl2, wa, wq); put(E.hl2, wa, [wa[0], wa[1], zt]); put(E.hl2, wq, [wq[0], wq[1], zt]); E.tri.push.apply(E.tri, wa.concat(wq, [wq[0], wq[1], zt], wa, [wq[0], wq[1], zt], [wa[0], wa[1], zt]));
+          if (along) E.notes.push('the cut (' + cax + ') runs along the section\'s own horizontal axis (@HAXIS ' + S.d.haxis + '): a cut must cross it, so the section cannot stand at this cut as drawn');
+          else E.notes.push('the section (its title boxed) stands ' + (sb && sb[1][cax === 'X' ? 0 : 1] - sb[0][cax === 'X' ? 0 : 1] < 0.01 ? 'on it' : 'away from it: not placed at this cut yet'));
+        }
+      }
+    }
+    if ((r === 'PR-FACE' || r === 'PR-HAXIS') && !E.hl.length) { E.hl = allOf(S.segOf); E.whole = true; }   // nothing to hold it against yet: the sheet that carries the value, as a whole
+    if (S.mode !== 'canvas') E.notes.unshift(S.mode === 'as drawn' ? 'not placed: the sheet is shown as drawn (1 drawing unit = 1 mm, z = 0); it lacks ' + S.lacks.join('; ') : S.mode === 'partial' ? 'placed part of the way by its yellow values (preview, not yours yet); it lacks ' + S.lacks.join('; ') : 'placed by its yellow values (preview, not yours yet)');
+    return E;
+  }
+  function evDir(E, X) {   // a standing sheet: from its outer side, raised; a sheet lying flat (a plan, or as drawn): from above, tilted
+    var THREE = window.THREE, b = wbox(allOf(E.S.segOf)); if (!b) return null;
+    var ex = b[1][0] - b[0][0], ey = b[1][1] - b[0][1], ez = b[1][2] - b[0][2], up = E.rule === 'PR-HAXIS' || E.rule === 'PR-FACE' || E.rule === 'PR-CUT' ? 0.9 : 0.5;
+    if (ez > 0.2 * Math.max(ex, ey) && Math.min(ex, ey) < 0.05 * Math.max(ex, ey, ez)) {
+      var Rf = evRef(X), P = Rf ? evSheet(Rf.name, X) : null, pb = P ? wbox(allOf(P.segOf)) : null;
+      if (ex < ey) return new THREE.Vector3(pb && (b[0][0] + b[1][0]) / 2 > (pb[0][0] + pb[1][0]) / 2 ? 1 : -1, -0.3, up);
+      return new THREE.Vector3(0.3, pb && (b[0][1] + b[1][1]) / 2 > (pb[0][1] + pb[1][1]) / 2 ? 1 : -1, up);
+    }
+    return new THREE.Vector3(0.35, -0.6, 1.5);
+  }
+  function evObjects(E, X) {
+    var THREE = window.THREE, g = new THREE.Group(); g.name = 'dxf-evidence'; g.renderOrder = 6;
+    var lines = function (P, col, op, ro) { var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); var ls = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op, depthTest: false, depthWrite: false })); ls.renderOrder = ro; ls.frustumCulled = false; g.add(ls); };
+    Object.keys(E.sheets).forEach(function (n) { var Sh = evSheet(n, X); if (!Sh || Sh.drawn) return; var P = allOf(Sh.segOf); if (P.length) lines(P, Sh.col || COL[Sh.role] || COL.none, 0.6, 5); });   // a sheet no view draws: shown where it stands
+    if (E.tri.length) { var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(E.tri, 3));
+      var me = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: HLC, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false, depthTest: false })); me.renderOrder = 5; me.frustumCulled = false; g.add(me); }
+    if (E.hl2.length) lines(E.hl2, HL2, 0.95, 6);
+    if (E.hl.length) lines(E.hl, HLC, 1, 6);
+    return g;
+  }
+  function evRibbons(E, g) {   // thick lines: one camera-facing quad per segment, 4 px (hl) / 2.5 px (hl2) wide at the camera's settled pose
+    var THREE = window.THREE, A = window.A, H = A.renderer.domElement.getBoundingClientRect().height, th = Math.tan(A.camera.fov * Math.PI / 360), cp = A.camera.position;
+    [[E.hl, HLC, 4], [E.hl2, HL2, 2.5]].forEach(function (q) {
+      var P = q[0], n = P.length / 6; if (!n || n > 20000) return;
+      var V = new Float32Array(n * 18), a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(), v = new THREE.Vector3(), sd = new THREE.Vector3(), o = 0;
+      for (var i = 0; i < n; i++) {
+        a.fromArray(P, i * 6); b.fromArray(P, i * 6 + 3); d.subVectors(b, a); v.addVectors(a, b).multiplyScalar(0.5).sub(cp);
+        sd.crossVectors(d, v); if (sd.lengthSq() < 1e-24) sd.set(0, 0, 1).cross(v); sd.normalize().multiplyScalar(q[2] / 2 * 2 * v.length() * th / H);
+        [[a, -1], [a, 1], [b, 1], [a, -1], [b, 1], [b, -1]].forEach(function (k) { V[o++] = k[0].x + k[1] * sd.x; V[o++] = k[0].y + k[1] * sd.y; V[o++] = k[0].z + k[1] * sd.z; });
+      }
+      var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(V, 3));
+      var me = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: q[1], transparent: true, opacity: q[1] === HLC ? 1 : 0.9, side: THREE.DoubleSide, depthTest: false, depthWrite: false })); me.renderOrder = 7; me.frustumCulled = false; me.name = 'dxf-evidence-thick'; g.add(me);
+    });
+  }
+  function evDim(keep) {   // every other sheet's lines at a fifth of their opacity (keep = null: restored exactly)
+    [state.group, state.arr && state.arr.group].forEach(function (G) { if (!G) return; G.children.forEach(function (ls) { var n = ls.userData.dxfSheet || ls.userData.arrSheet; if (!ls.material || n === undefined) return;
+      if (keep) { if (ls.userData.evOp === undefined) ls.userData.evOp = ls.material.opacity; ls.material.opacity = keep[n] ? ls.userData.evOp : ls.userData.evOp * 0.2; }
+      else if (ls.userData.evOp !== undefined) { ls.material.opacity = ls.userData.evOp; delete ls.userData.evOp; } }); });
+  }
+  function evBind() {   // restore on a click on the canvas (not a drag) and on Esc (with the Arrange view standing, its own Esc handler restores first)
+    var el = window.A.renderer.domElement, dn = null; if (el._evBound) return; el._evBound = true;
+    el.addEventListener('pointerdown', function (e) { dn = state.ev ? [e.clientX, e.clientY, performance.now()] : null; }, true);
+    el.addEventListener('pointerup', function (e) { if (dn && state.ev && Math.hypot(e.clientX - dn[0], e.clientY - dn[1]) < 5 && performance.now() - dn[2] < 600) evClear('a click on the canvas'); dn = null; }, true);
+    window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && state.ev && !state.arr) evClear('Esc'); }, true);
+  }
+  function camStr(v) { return v.map(function (q) { return q.toFixed(2); }).join(','); }
+  function evidence(row) {   // row: { sheet, rule, key, value, x, y, why } -> Promise({ sheet, rule, handle, handles, placed, notes, box, frame, segs, cam })
+    var THREE = window.THREE, A = window.A; if (!THREE || !A || !A.scene || !state.sheets) return Promise.resolve(null);
+    if (state.arr && state.arr.playing) { console.log(TAGE + ' fly refused: Arrange is playing (stop it first)'); return Promise.resolve(null); }
+    if (state.ev) evClear('another row', true);
+    var X = { c: {} }, E = evBuild(row, X); if (!E) { console.log(TAGE + ' fly sheet=' + row.sheet + ' rule=' + row.rule + ' refused: the sheet is not open'); return Promise.resolve(null); }
+    var pts = E.hl.concat(E.hl2, E.tri), hb = E.whole ? boxOf([E.hl]) : wbox(pts); if (!hb) hb = boxOf([allOf(E.S.segOf)]);
+    if (!hb) { console.log(TAGE + ' fly sheet=' + row.sheet + ' rule=' + row.rule + ' refused: nothing drawn'); return Promise.resolve(null); }
+    var c = [0, 1, 2].map(function (a) { return (hb[0][a] + hb[1][a]) / 2; }), R0 = Math.max(Math.hypot(hb[1][0] - hb[0][0], hb[1][1] - hb[0][1], hb[1][2] - hb[0][2]) / 2, 4), fb = [c.map(function (v) { return v - R0; }), c.map(function (v) { return v + R0; })];   // the frame: the box's sphere, at least 8 m across (the evidence in its context)
+    var to = camFor(fb, evDir(E, X)), g = evObjects(E, X), before = A.camera.position.toArray(), st = document.getElementById('dxf-status');
+    A.scene.add(g); evDim(E.sheets); evBind();
+    var ev = state.ev = { row: row, E: E, g: g, st0: st ? st.textContent : null }, tw = camTween(to), t0 = performance.now();
+    status('Evidence: ' + row.rule + ' on ' + row.sheet.replace(/\.dxf$/i, '') + ' (' + E.S.mode + ')' + (E.notes.length ? '. ' + E.notes.join('. ') : '') + '. Esc or a click on the canvas restores.');
+    return new Promise(function (res) {
+      (function f() {
+        if (state.ev !== ev) { res(null); return; }
+        var e = Math.min(1, (performance.now() - t0) / 700); tw(e);
+        if (e < 1) { requestAnimationFrame(f); return; }
+        evRibbons(E, g); if (A.requestRender) A.requestRender();
+        var h0 = E.handles[0] || null, info = { sheet: row.sheet, rule: row.rule, handle: h0, hseg: h0 && E.S.segOf[h0] ? E.S.segOf[h0].slice() : null, handles: E.handles.slice(), placed: E.S.mode, notes: E.notes.slice(), box: hb, frame: fb, segs: E.hl.length / 6, segs2: E.hl2.length / 6, sheets: Object.keys(E.sheets), cam: [before, A.camera.position.toArray()], whole: !!E.whole };
+        ev.info = state.evLast = info;
+        console.log(TAGE + ' fly sheet=' + row.sheet + ' rule=' + row.rule + ' handle=' + (info.handle || 'none') + ' cam=' + camStr(before) + '->' + camStr(info.cam[1]) + ' placed=' + E.S.mode + ' highlighted=' + info.segs + '+' + info.segs2 + ' segments' + (E.whole ? ' (the sheet as a whole)' : '') + ' undimmed=' + info.sheets.length + (E.notes.length ? ' note=' + E.notes.join('; ') : ''));
+        res(info);
+      })();
+    });
+  }
+  function evClear(why, quiet) {
+    var ev = state.ev, A = window.A; if (!ev) return; state.ev = null;
+    if (ev.g && A && A.scene) { A.scene.remove(ev.g); ev.g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
+    evDim(null); if (ev.st0 !== null) status(ev.st0); if (A && A.requestRender) A.requestRender();
+    console.log(TAGE + ' restore (' + why + ')');
+    if (!quiet && window.DxfMetaEditor && window.DxfMetaEditor.evOff) window.DxfMetaEditor.evOff();
+  }
 
   // ---- panel (#ins-panel pattern) ----
   function css() {
@@ -676,6 +878,6 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { arrange: arrange, arrangeStop: arrangeStop, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();
