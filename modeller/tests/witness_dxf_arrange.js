@@ -195,6 +195,13 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     await acceptAll();
     const sync1 = alog.filter(l => / sync /.test(l)), moved1 = sync1.map(l => Number((/moved=(\d+)/.exec(l) || [])[1] || 0));
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.name));
+    // A13 (§D42): the build stays in frame. Proves/disproves: after the play hands over to the canvas (and after typed values) the camera must still show the sheets: the share of the role sheets' points inside the free canvas strip
+    const share = () => pg.evaluate(() => { const A = window.A, T = window.THREE, U = window.DxfImportUI.state, g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible);
+      if (!g) return { g: null, share: 0, n: 0 }; const role = new Set(U.arr ? U.arr.items.filter(it => it.view).map(it => it.name) : Object.keys(U.canvas || {})); const cam = A.camera; cam.updateMatrixWorld();
+      const cv = A.renderer.domElement.getBoundingClientRect(), pr = Math.max(cv.left, ...['dxf-panel', 'dm-panel'].map(id => { const e = document.getElementById(id); return e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0 ? e.getBoundingClientRect().right : 0; })); const v = new T.Vector3(); let n = 0, inn = 0;
+      g.traverse(o => { const nm = o.userData && (o.userData.arrSheet || o.userData.dxfSheet); if (!o.geometry || !o.geometry.attributes.position || !nm || !role.has(nm)) return; const a = o.geometry.attributes.position.array; for (let i = 0; i < a.length; i += 30) { v.set(a[i], a[i + 1], a[i + 2]).project(cam); n++; const px = cv.left + (v.x + 1) / 2 * cv.width, py = cv.top + (1 - v.y) / 2 * cv.height; if (v.z < 1 && px >= pr && px <= cv.right - 60 && py >= cv.top && py <= cv.bottom - 40) inn++; } });
+      return { g: g.name, share: n ? inn / n : 0, n }; });
+    const sh13a = await share();
     // A10 (§D39): the slim panel. Proves/disproves: folding the 2D Drawings panel gives its width to the canvas and the metadata panel follows; the play folds and restores it
     const geo = () => pg.evaluate(() => { const r = id => { const e = document.getElementById(id); if (!e || e.style.display === 'none') return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right }; }; return { dxf: r('dxf-panel'), dm: r('dm-panel'), slim: document.body.classList.contains('dxf-slim') }; });
     const g0 = await geo(); await pg.click('#dxf-fold'); await sleep(600); const g1 = await geo(); await pg.click('#dxf-fold'); await sleep(600); const g2 = await geo();
@@ -225,6 +232,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     { const left = []; for (const si of eIdx) { const a = await pg.evaluate(si => { const v = document.getElementById('dm-av-' + si + '-Z'); const q = v && v.closest('.dm-row').previousElementSibling; return v ? { ask: !!(q && q.classList.contains('dm-ask')), need: v.classList.contains('need') } : null; }, si); if (a && (a.ask || a.need)) left.push(si); }
       ok('A11b[shed raw] once the second height is added the question and the red outline are gone on all 5 cards', left.length === 0, 'cards still asking=' + left.join(',')); }
     await idle(); await sleep(1500); await acceptAll(); await idle(); await sleep(2500);
+    const sh13b = await share();
+    ok('A13[shed raw] the build stays in frame after the hand-over (Accept all) and after the second heights are in: >= 70 % of the role sheets\' points lie inside the free canvas strip', sh13a.n > 100 && sh13a.share >= 0.7 && sh13b.n > 100 && sh13b.share >= 0.7, 'after Accept all: ' + JSON.stringify(sh13a) + ' | after heights + Accept all: ' + JSON.stringify(sh13b));
     const L1 = await pg.evaluate(() => { const U = window.DxfImportUI.state; return { live: !!U.arr, tinted: (U.arrLast && U.arrLast.tinted) || null, canvas: Object.keys(U.canvas || {}), roles: U.sheets.map(s => s.role), yellowPlacing: window.DxfMetaEditor.preview().reduce((n, p) => n + p.yellow.filter(y => ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDH', 'FACE', 'CUT'].indexOf(y.key) >= 0).length, 0) }; });
     const a1 = await A1();
     if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_typed.png') });
