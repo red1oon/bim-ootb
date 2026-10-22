@@ -3,6 +3,8 @@
 # VERBATIM from one commit (git show, never the working tree) and rewrites SOURCE.md with the commit + sha256 of each file.
 # Usage: modeller/dxf2bim/sync.sh <BIMCompiler repo dir> <commit>. Read SOURCE.md after the run.
 set -euo pipefail
+# RETIRED 2026-10-23 (owner): bim-ootb is the source of these modules (SOURCE.md). This script copies BIMCompiler -> here and would overwrite newer code.
+if [ "${FORCE_OLD_SYNC:-}" != "1" ]; then echo "sync.sh REFUSED: bim-ootb is the source of dxf2bim/ (SOURCE.md); set FORCE_OLD_SYNC=1 only to restore an old copy on purpose" >&2; exit 2; fi
 BC="$1"; REV="$2"; HERE="$(cd "$(dirname "$0")" && pwd)"; MOD="$(dirname "$HERE")"
 FULL="$(git -C "$BC" rev-parse --short=9 "$REV")"; SUBJ="$(git -C "$BC" log -1 --format=%s "$REV" | cut -c1-90)"
 FILES="dxf2bim dxf2elev dxf2marks dxf2mesh dxf2types dxf2shell dxf2shell_config dxf2qualify std2d std2d_geom std2d_dxf std2d_marks std2d_scopes polygon-clipping"

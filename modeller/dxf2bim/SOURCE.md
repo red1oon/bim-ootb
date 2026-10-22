@@ -1,6 +1,8 @@
-# dxf2bim/ — verbatim copies of the BIMCompiler DXF2BIM reader modules
+# dxf2bim/ — the DXF2BIM reader modules (SOURCE: this repo, bim-ootb)
 
-Copied, never forked (prompts/DXF2BIM_MODELLER_LANE.md §L3, §L3.3). Do not edit here: change BIMCompiler, then run `modeller/dxf2bim/sync.sh <BIMCompiler> <commit>`.
+**Owner decision 2026-10-23: bim-ootb is the source of these modules; edit them HERE** (architect review F13: since F8 #2271 / #2276 / #2280 and D44-D48 they were already edited here and
+BIMCompiler `deploy/dev/` fell behind). BIMCompiler is no longer the origin; if it needs them, it copies FROM here. `sync.sh` is retired: it copies the OTHER way and would overwrite newer code
+with older (it now refuses unless `FORCE_OLD_SYNC=1`). The table below is the HISTORICAL record of the last copy taken from BIMCompiler, kept for provenance; the files have moved on since.
 
 Commit: `32e6219bd` — Merge pull request #227 from red1oon/feat/dxf2bim-evidence-pset
 
