@@ -230,16 +230,21 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   if (!(await pg.$('#dm-panel [data-act="exsheet"]'))) await clickEl('#dm-panel [data-sec="excludes"]', 700);
   await wheelTo('#dm-panel [data-act="exsheet"]', { step: 120, pace: 40 }); await pick('#dm-panel [data-act="exsheet"]', '3_BEAM_LAYOUT.dxf'); await clickAt('#dm-panel [data-act="tool"][data-tool="exclude"]', 650); await sleep(300);
   const kz = await pg.evaluate(() => { const c = window.DxfImportUI.state.canvas['3_BEAM_LAYOUT.dxf']; return { k: c.k, z: c.z }; });
-  await pg.evaluate((ex, k, z) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, cx = (ex[0] + ex[2]) / 2 * k, cy = (ex[1] + ex[3]) / 2 * k;
-    const r = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...r), x1 = innerWidth - 70;
-    const p0 = c.position.clone(), q0 = ctl.target.clone(), q1 = new T.Vector3(cx, cy, z), p1 = new T.Vector3(cx, cy - 4, z + 30); c.up.set(0, 0, 1);
-    const save = { p: c.position.clone(), q: ctl.target.clone() }; c.position.copy(p1); ctl.target.copy(q1); ctl.update(); c.updateMatrixWorld();
-    const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, dist = c.position.distanceTo(ctl.target), hw = dist * Math.tan(c.fov * Math.PI / 360) * c.aspect, sh = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw);
-    const P1 = p1.clone().add(sh), Q1 = q1.clone().add(sh); c.position.copy(p0); ctl.target.copy(q0); ctl.update(); const t0 = performance.now();
-    (function step() { const kk = Math.min(1, (performance.now() - t0) / 2200), s = kk < .5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (kk < 1) requestAnimationFrame(step); else res(); })(); }), ex, kz.k, kz.z);
+  // the excluded strip stands ~130 m from the build in empty space: frame the build AND the strip together (the canvas never goes empty), then drag with a 2 px margin
+  await pg.evaluate(([ex, k, z]) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, box = new T.Box3(), g = A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible); if (g) box.setFromObject(g);
+    box.expandByPoint(new T.Vector3(ex[0] * k, ex[1] * k, z)); box.expandByPoint(new T.Vector3(ex[2] * k, ex[3] * k, z));
+    const ctr = box.getCenter(new T.Vector3()), size = box.getSize(new T.Vector3()), r = Math.max(size.x, size.y, 0.5) * 0.5;
+    const pr = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...pr), x1 = innerWidth - 70;
+    const th = Math.tan(c.fov * Math.PI / 360), W = x1 - x0, dist = Math.max(r / th, r / (th * (W / innerHeight))) * 1.1 + r * 0.1, dir = new T.Vector3(0, -0.35, 1).normalize();
+    const p0 = c.position.clone(), q0 = ctl.target.clone(); c.up.set(0, 0, 1); c.position.copy(ctr).addScaledVector(dir, dist); ctl.target.copy(ctr); ctl.update(); c.updateMatrixWorld();
+    const ndcX = ((x0 + x1) / 2) / innerWidth * 2 - 1, hw = dist * th * c.aspect, sh = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0).multiplyScalar(-ndcX * hw), P1 = c.position.clone().add(sh), Q1 = ctl.target.clone().add(sh);
+    c.position.copy(p0); ctl.target.copy(q0); ctl.update(); const t0 = performance.now();
+    (function step() { const kk = Math.min(1, (performance.now() - t0) / 2200), s = kk < .5 ? 2 * kk * kk : 1 - Math.pow(-2 * kk + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (kk < 1) requestAnimationFrame(step); else res(); })(); }), [ex, kz.k, kz.z]);
   await sleep(500);
   const px = await pg.evaluate((ex, k, z) => { const A = window.A, T = window.THREE, cv = A.renderer.domElement.getBoundingClientRect(), f = (x, y) => { const v = new T.Vector3(x * k, y * k, z).project(A.camera); return [cv.left + (v.x + 1) / 2 * cv.width, cv.top + (1 - v.y) / 2 * cv.height]; }; return { a: f(ex[0], ex[1]), b: f(ex[2], ex[3]) }; }, ex, kz.k, kz.z);
-  await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); fitCentre(0.9, 1600).catch(() => { }); await sleep(300); await idle();   // straight back to the whole build: the zoomed view of the excluded strip is empty by definition
+  fact('exclude_px', { w: +Math.abs(px.b[0] - px.a[0]).toFixed(1), h: +Math.abs(px.b[1] - px.a[1]).toFixed(1) });
+  const mg = 2; px.a[0] -= mg; px.a[1] += mg; px.b[0] += mg; px.b[1] -= mg;
+  await moveTo(px.a[0], px.a[1], 700); await pg.mouse.down(); await sleep(150); await moveTo(px.b[0], px.b[1], 900); await sleep(150); await pg.mouse.up(); await sleep(300); fitCentre(0.9, 1600).catch(() => { }); await idle();   // back to the build alone while the facts are read
   fact('exclude_drawn', await pg.evaluate(() => window.DxfMetaEditor.state.sheets.flatMap(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => m.value)).join(' ')));
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
   const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await sleep(2200);
