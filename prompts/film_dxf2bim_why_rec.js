@@ -249,7 +249,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   chapter(5, 'placed'); await beat('c5'); await backdrop(5);
   const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
   await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(saved.map(f => path.join(SAVED, f))); await sleep(2500);
-  await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
+  await fitCentre(0.08); await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
   { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
   await sleep(1500);
   // ---- closing card ----
