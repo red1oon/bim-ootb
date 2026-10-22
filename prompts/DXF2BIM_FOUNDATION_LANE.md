@@ -324,3 +324,16 @@ and one check: `S.batch`). W-TAG-WIDTH fail=0: W1 Duplex 14 / 14 proposed = the 
 Clinic 16 proposed, 10 judged, 0 wrong, **234 refused: Clinic door types share a leaf width (865 mm at 1500 and 2134 high), so width alone does not decide them: listed, never guessed**; W2 HHS 30 left
 (933.9 / 808.9 mm = the off-hinge doors); W3 a same-width twin row refuses every door of that width (Duplex 6, HHS 59, Clinic 8); W4 the rule's tags read to the model's verdict code for code
 (36 / 166 / 359); W5 the page (Duplex, headless software GL): 4 rows, 4 clicks, 14 tags, 0 page errors (was 14 door picks + misses). Modeller sw v126.
+
+## §D48 GRID LABELS: TWO-CHARACTER LABELS, AND THE LABEL ON THE LINE WINS (architect review 2026-10-23 F10)
+**Witness claim first (W-GRID-LABEL, `modeller/tests/witness_dxf_grid_label.js`).** G1 the PLAIN standard set through Accept all: every `@GRIDX` / `@GRIDY` / `@GRIDH` of the model's markings is
+accepted with the same label at the same position (HHS 160 / 160; were 123: 37 missing), 0 wrong. G2 Duplex and the raw shed (when `SHED_RAW_DIR` and `BASE` are set): the accepted grid markings
+equal BASE's (nothing that read before reads differently). G3 falsifiers: a grid line with two labels at the SAME distance from its axis is refused (both named); a 4-character label is not a grid label.
+**Measured first (HHS plain, `PR-GRID` refusals per plan):** 5 lines "0 candidate labels" = the labels `10`..`14` (the label filter is `^[A-Z0-9]$`, one character; `PR-GRID-TICK` beside it already takes
+`^([A-Z]|\d{1,3})$`); 2 lines "2 candidate labels" = grid pairs 40 mm (`A`/`B`) and 49 mm (`P`/`Q`) apart whose staggered bubbles (the writer's §L1.10 tiers, a common drafting practice) put the
+neighbour's label within the 60 mm `along` tolerance of the line end; each label's own text sits exactly on its axis (0 mm). The same two causes on the elevations and the section (`GRIDH`).
+**Rule (`dxf2suggest.js propGrid`).** Labels `^([A-Z]{1,2}|\d{1,3})$`. When several label texts qualify for one line, the one whose insertion point lies nearest the line's axis is taken if it is
+strictly nearer than every other (the others named in the reason); a tie is refused as today. Each label still belongs to one line only (`label X on two lines` stays a refusal).
+**D48 RESULT (2026-10-23): BUILT.** `dxf2suggest.js propGrid`: labels `^([A-Z]{1,2}|\d{1,3})$`; several qualifying labels -> the one strictly nearest the axis. W-GRID-LABEL fail=0: G1 every grid marking
+of the model read from the plain set, 0 wrong: Duplex 32 / 32, HHS 160 / 160 (were 123), Clinic 290 / 290; G2 the raw shed's 91 grid markings = origin/main's; G3 a tie on the axis refused, a
+4-character text ignored (Duplex, HHS, Clinic). Modeller sw v127.

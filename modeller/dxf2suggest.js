@@ -55,15 +55,19 @@
     function propGrid(sh, vertical, out, refused, key) {     // mark_dx_set.js gridLines: grid-layer LINEs + exactly one 1-char label near an end
       var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-GRID', why: 'units unknown (no @UNITS, no $INSUNITS)' }); return; }
       var tolAx = 0.001 / k, along = 0.060 / k, perp = 0.700 / k, GL = ctx.gridLayers(sh);
-      var T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && /^[A-Z0-9]$/.test(String(e.text || '').trim()); });
+      var T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && /^([A-Z]{1,2}|\d{1,3})$/.test(String(e.text || '').trim()); });   // §D48 two-character labels (10..99, AA)
       var res = {};
       sh.dxf.entities.filter(function (e) { return GL.indexOf(e.layer) >= 0 && e.type === 'LINE' && e.vertices && e.vertices.length >= 2; }).forEach(function (l) {
         var a = l.vertices[0], b = l.vertices[1], isV = Math.abs(a.x - b.x) <= tolAx, isH = Math.abs(a.y - b.y) <= tolAx;
         if (vertical ? !isV : !isH) return;
         var c = vertical ? a.x : a.y;
-        var labs = {}; T.forEach(function (t) { var p = txtPos(t), al = vertical ? p[0] : p[1], pp = vertical ? p[1] : p[0];
-          if (Math.abs(al - c) <= along && [a, b].some(function (en) { return Math.abs(pp - (vertical ? en.y : en.x)) <= perp; })) labs[String(t.text).trim()] = 1; });
+        var labs = {}; T.forEach(function (t) { var p = txtPos(t), al = vertical ? p[0] : p[1], pp = vertical ? p[1] : p[0], d = Math.abs(al - c), lb = String(t.text).trim();
+          if (d <= along && [a, b].some(function (en) { return Math.abs(pp - (vertical ? en.y : en.x)) <= perp; })) labs[lb] = Math.min(labs[lb] === undefined ? Infinity : labs[lb], d); });
         var L = Object.keys(labs);
+        if (L.length > 1) {   // §D48 the label on the line wins: the one strictly nearest the axis (staggered bubbles of grids 40 mm apart put the neighbour's label within the tolerance)
+          var dm = Math.min.apply(null, L.map(function (x) { return labs[x]; })), near = L.filter(function (x) { return labs[x] - dm <= tolAx; });
+          if (near.length === 1) L = near;
+        }
         if (L.length !== 1) { refused.push({ rule: 'PR-GRID', why: 'grid line ' + l.handle + ' has ' + L.length + ' candidate labels' + (L.length ? ' [' + L.join(',') + ']' : '') }); return; }
         if (res[L[0]] !== undefined && Math.abs(res[L[0]].c - c) > 1e-9) { refused.push({ rule: 'PR-GRID', why: 'label ' + L[0] + ' on two lines' }); res[L[0]].bad = true; return; }
         res[L[0]] = { c: Number(c.toFixed(3)), h: l.handle };

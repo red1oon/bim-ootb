@@ -6,6 +6,7 @@
   "witness_dxf_door_swings:ENV",
   "witness_dxf_door_tag:ENV",
   "witness_dxf_export_roundtrip:ENV",
+  "witness_dxf_grid_label:ENV",
   "witness_dxf_import_node:ENV",
   "witness_dxf_level_datum:ENV",
   "witness_dxf_lib_oci_node:ENV",
