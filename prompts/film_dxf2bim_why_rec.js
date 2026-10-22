@@ -249,7 +249,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const exStatus1 = await pg.$eval('#dxf-status', e => e.innerText.trim()); fact('bodies_before_exclude', ((/(\d+) bodies will be built/.exec(exStatus0)) || [])[1] || 'none'); fact('bodies_after_exclude', ((/(\d+) bodies will be built/.exec(exStatus1)) || [])[1] || 'none');
   const v6 = await verdict(); fact('after_exclude_blocking', String(v6.blocking)); await sleep(1200); await sleep(2200);
   // ---- chapter 4 ONE SHED: Complete the building, Convert, the panels away, the finish ----
-  chapter(4, 'shed'); await beat('w10'); await backdrop(4);
+  await beat('w10');   // still chapter 3: the earlier film's chapter 4 (the model in a database) and 5 (the viewer) are spliced after this take
   await clickAt('#dxf-fold', 500); await sleep(400);   // unfold: the option boxes are in this panel
   if (await pg.$('#dxf-complete')) { await clickAt('#dxf-complete', 700); await sleep(600); } fact('complete_ticked', String(await pg.evaluate(() => { const e = document.getElementById('dxf-complete'); return !!(e && e.checked); })));
   await clickAt('#dxf-convert', 800); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 }); await sleep(2500);
@@ -257,29 +257,10 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   { const c = await pg.evaluate(() => window.DxfImportUI.state.last.counts), sum = re => Object.keys(c).filter(k => re.test(k)).reduce((a, k) => a + c[k], 0);
     ['Column', 'Beam', 'Footing', 'Wall', 'Slab', 'Roof', 'Member'].forEach(k => fact('n_' + k.toLowerCase() + 's', String(sum(new RegExp('Ifc' + k + '$'))))); }
   await fitCentre(1.5); orbitZ(30, 12000).catch(() => { });   // the shed in the strip the panels leave, turning slowly while it is told
-  // save the marked copies of THIS take (chapter 5 reopens them), then the panels away and the finish
-  const before = fs.readdirSync(SAVED); await clickAt('#dm-save', 800);
-  let saved = []; for (let i = 0; i < 80; i++) { await sleep(250); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f) && !before.includes(f)); if (saved.length >= names.length) break; }
-  await sleep(1200); saved = fs.readdirSync(SAVED).filter(f => /\.dxf$/i.test(f)).sort(); fact('saved_n', String(saved.length));
   await clickAt('#dm-close', 600); await sleep(400); await clickAt('#dxf-fold', 500); await sleep(500);   // what is not needed any more is folded away: the canvas is all the shed
   await fitCentre(1.15);
   await orbitZ(110, 14000);
-  // ---- chapter 5 OPENS PLACED NEXT TIME ----
-  chapter(5, 'placed'); await beat('c5'); await backdrop(5);
-  const skip0 = logHas(/skip-on-open/).length, start0 = logHas(/§DXF-ARRANGE start /).length;
-  await fresh(); await arm(STEP_MS, HOLD_MS); await openSet(saved.map(f => path.join(SAVED, f))); await sleep(2500);
-  await fitCentre(0.9); await beat('w11'); fact('reopen_skip', String(logHas(/skip-on-open/).length - skip0)); fact('reopen_replays', String(logHas(/§DXF-ARRANGE start /).length - start0)); fact('reopen_arrangement', String(await pg.evaluate(() => !!window.DxfImportUI.state.arr)));
-  { const vr = await verdict(); fact('reopen_blocking', String(vr.blocking)); fact('reopen_status', await pg.$eval('#dxf-status', e => e.innerText.trim())); }
-  await sleep(1500);
-  // ---- closing card ----
-  await beat('l01');
-  const LIM = ['Not shown: doors and windows as schedules (rows and tags), and the rules that read the roof beyond the default.',
-    'The values typed here are the ones this drawing set states in its own saved markings; a different set asks for its own.'];
-  fact('limits', LIM);
-  await card('<div style="font-size:19px;color:#9aa3b2;letter-spacing:3px;margin-bottom:20px">WHAT THIS FILM DOES NOT SHOW</div><div style="text-align:left;font-size:21px;line-height:1.75;max-width:1200px">' + LIM.map(x => '· ' + esc(x)).join('<br>') + '</div>');
-  await beat('end');
-  await card('<div style="font-size:20px;color:#9aa3b2;line-height:1.8">A common BricsCAD 2D set: nine drawings, one shed<br>Modeller: red1oon.github.io/bim-ootb/modeller · every number from this take</div>');
-  await hold(); await sleep(1200);
+  await beat('end'); await hold(); await sleep(600);   // a short silent hold of the finished shed: the splice follows
   sampling = false; clearInterval(sampler);
   { const inCh = shares.filter(([t, v]) => t > 8); const mn = inCh.length ? Math.min(...inCh.map(x => x[1])) : null; console.log('§FILM_SHARE_SUMMARY samples=' + shares.length + ' min=' + (mn === null ? 'n/a' : mn.toFixed(2)) + ' below0.6=' + inCh.filter(x => x[1] < 0.6).map(x => x[0].toFixed(0) + 's').join(',')); }
   await cdp.send('Page.stopScreencast'); await br.close();
