@@ -79,7 +79,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           if (!sp) { sp = f.p.clone(); st = c.position.clone(); }
           const k = 1 - Math.exp(-dt / 0.7); sp.lerp(f.p, k);
           if (!sgn && moves > 3) sgn = Math.sign(f.p.getComponent(ax) - sp.getComponent(ax)) || 1;
-          const want = new T.Vector3(); want.setComponent(ax, Math.max(lo, Math.min(hi, sp.getComponent(ax) - (sgn || 1) * trail))); want.setComponent(lat, midLat + (sp.getComponent(lat) - midLat) * 0.35); want.z = eye;
+          const want = new T.Vector3(); want.setComponent(ax, Math.max(lo, Math.min(hi, sp.getComponent(ax) - (sgn || 1) * trail))); want.setComponent(lat, midLat + (sp.getComponent(lat) - midLat) * (kind === 'chain' ? 0.6 : 0.35)); want.z = eye;
           st.lerp(want, 1 - Math.exp(-dt / 0.9)); c.position.copy(st); ctl.target.lerp(sp, 1 - Math.exp(-dt / 0.35)); ctl.update();
           if (f.done && !doneAt) doneAt = t; }
         if ((doneAt && t - doneAt > tail) || t - t0 > 60000) { res({ moves, ms: Math.round(t - t0), drawn: lastI }); return; }
@@ -144,14 +144,27 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   { const a = now(); await pg.waitForFunction(() => { let c = 0; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') c = o.count; }); return c > 0; }, { timeout: 300000, polling: 50 });
     const b = now() - 0.15; if (b - a > 0.5) { cuts.push([a, b]); console.log('§FILM_CUT disc=FP-pipe sec=' + (b - a).toFixed(1)); } }
   await beat('s07');
-  { const f = await follow('FP', 'chain', 5, 1200); console.log('§FILM_FOLLOW disc=FP-pipe moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_pipe_moves', String(f.moves)); }
-  { const P = await pg.evaluate(() => { const S = window.__dwChains.FP || [], by = {}; S.forEach(s => { by[s.role] = (by[s.role] || 0) + 1; }); return { n: S.length, by }; }); fact('pipe_segs', String(P.n)); fact('pipe_roles', P.by); }
+  { const f = await follow('FP', 'chain', 3.5, 1200); console.log('§FILM_FOLLOW disc=FP-pipe moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_pipe_moves', String(f.moves)); }
+  // the pipes DRAWN (§D66: a drop edge is drawn as the head's joint parts, not as a pipe): the dwChain mesh's instances; the network's roles beside it
+  { const P = await pg.evaluate(() => { const S = window.__dwChains.FP || [], by = {}; S.forEach(s => { by[s.role] = (by[s.role] || 0) + 1; }); let n = 0; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') n = o.instanceMatrix.count; }); return { n, by }; }); fact('pipe_segs', String(P.n)); fact('pipe_roles', P.by); }
   await beat('s08');
   const head = await closeUp({ disc: 'FP' }, 0.14, 3800, 5); fact('sprinkler_closeup', head); await sleep(2000);
   // §D66 the head's joint mini-BOM (drop, transition, tee: the library's T_CONNECTOR_ASSEMBLY, stacked on the head): the camera eases back to frame the whole stack, head to tee
   { const J = await pg.evaluate(() => { const P = window.__dwAssembly && window.__dwAssembly.FP || [], by = {}; P.forEach(p => { const k = p.role || p.ifc_class || '?'; by[k] = (by[k] || 0) + 1; }); return { n: P.length, by }; });
     fact('joint_parts', String(J.n)); fact('joint_roles', J.by);
-    if (head && J.n) fact('joint_closeup', await closeUp({ point: [head.x, head.y, head.z + 0.07], size: 0.32 }, 0.5, 3200, 0)); await sleep(2600); }
+    // the stack runs up from the head toward its branch, beside a purlin: the first side approach (4 horizontal sides x 3 heights) from which neither the stack's middle nor its tee is hidden by a body
+    // (a raycast against the editable group, nothing rendered); none = said, no close-up
+    const V = head && J.n ? await pg.evaluate(h => { const T = window.THREE, G = window.Bonsai.group(), meshes = G.children.filter(x => x.isMesh && x.visible && !x.isInstancedMesh), rc = new T.Raycaster(), D = 0.45;
+        const tgt = [new T.Vector3(h.x, h.y, h.z + 0.06), new T.Vector3(h.x, h.y, h.z + 0.118)];
+        for (const dz of [0.02, -0.08, -0.2]) for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const P = new T.Vector3(h.x + d[0] * D, h.y + d[1] * D, h.z + 0.06 + dz);
+          if (tgt.every(t => { const dir = t.clone().sub(P), L = dir.length(); rc.set(P, dir.normalize()); rc.far = L - 0.03; return !rc.intersectObjects(meshes, false).length; })) return { P: P.toArray(), T: tgt[0].toArray() }; }
+        return null; }, head) : null;
+    fact('joint_visible', V ? 'yes' : 'no');
+    if (V) { await pg.evaluate(v => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, toP = new T.Vector3().fromArray(v.P), tg = new T.Vector3().fromArray(v.T), fromP = c.position.clone(), fromT = ctl.target.clone(), t0 = performance.now();
+        c.near = 0.02; c.updateProjectionMatrix(); ctl.minDistance = Math.min(ctl.minDistance, 0.2);
+        (function step() { const k = Math.min(1, (performance.now() - t0) / 3200), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; c.position.lerpVectors(fromP, toP, e); ctl.target.lerpVectors(fromT, tg, e); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), V);
+      fact('joint_closeup', { from: V.P.map(x => +x.toFixed(2)), at: V.T.map(x => +x.toFixed(3)) }); }
+    await sleep(2600); }
   await beat('s09'); await pg.evaluate(() => { const c = window.A.camera; c.near = 0.1; c.updateProjectionMatrix(); if (window.__filmMinD !== undefined) window.A.controls.minDistance = window.__filmMinD; }); await fitBuilt(1.0, 2600); await orbitZ(50, 5200);
   await beat('end'); await hold(); await sleep(600);
   await cdp.send('Page.stopScreencast'); await br.close();
