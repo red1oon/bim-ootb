@@ -30,7 +30,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
 function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d).forEach(function (n) { var p = path.join(d, n), r = rel ? rel + '/' + n : n;
   if (fs.statSync(p).isDirectory()) walk(p, r, out); else out.push(r); }); return out; }
 function sha1(b) { return crypto.createHash('sha1').update(b).digest('hex'); }
-function kidOfName(n) { var p = n.split('/'); return (p[0] === 'o' || p[0] === 'h' || p[0] === 'r') ? p[1] : null; }
+function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 's' && /^[0-9a-f]{64}$/.test(p[1]) && (p[2] === 'o' || p[2] === 'h' || p[2] === 'r')) ? p[3] : null; }   // §13.6 space-scoped names
 
 (async function () {
   console.log('═══ W-TEAM-SO — the real Sales Order window in team mode, two real browsers (TEAMWORK_FRAMEWORK §13.1) ═══\n');

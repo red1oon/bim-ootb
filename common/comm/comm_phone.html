@@ -157,10 +157,10 @@
   $('b-join').onclick = function () { act(async function () {
     var inv = ($('invite').value || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('an invite is 64 characters 0-9 a-f');
     cfg.space = inv; cfg.founder = false; await openStore();
-    await pipe.putMany([{ name: 'r/' + dev.kid, bytes: new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) })) }]);
+    await pipe.putMany([{ name: 's/' + cfg.space + '/r/' + dev.kid, bytes: new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) })) }]);
     log('§PHONE join request posted, code ' + codeOf(dev.kid)); }); };
   $('b-requests').onclick = function () { act(async function () {
-    var L = await S.order(), names = await pipe.list('r/'), html = '';
+    var L = await S.order(), names = await pipe.list('s/' + cfg.space + '/r/'), html = '';
     for (var n of names) { var b = await pipe.get(n); if (!b) continue; var rq = JSON.parse(new TextDecoder().decode(b));
       if (rq.space !== cfg.space || L.roster.devices[rq.kid] || rq.kid !== await CommStore.kidOf(rq.jwk)) continue;   // only requests for THIS space
       html += '<div class="row request" data-req=\'' + JSON.stringify(rq).replace(/'/g, '&#39;') + '\'><span class="code">' + codeOf(rq.kid) + '</span><span>as</span><select class="req-role">' + roleOptions() + '</select><button class="b-approve">Approve</button></div>'; }

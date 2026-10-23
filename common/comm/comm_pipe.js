@@ -57,14 +57,16 @@
 
   // ── GitHub repo pipe (TEAMWORK_FRAMEWORK §11.16 / §12.11 — Witness: W-GH-PIPE-2DEV) ─────────────────────────────
   // opts = { owner, repo, token, self (my kid), minGapMs?, fetch?, api? }. Each device writes ONLY its own branch dev/<kid>
-  // and only names under its own prefix (o/<kid>/…, h/<kid>) — the one-writer rule, enforced here. putMany = ONE commit
+  // and only names under its own prefix (s/<space>/o/<kid>/…, s/<space>/h/<kid>, s/<space>/r/<kid>) — the one-writer rule, enforced here. putMany = ONE commit
   // (blobs → tree on the previous tree → commit → forward-only ref update). Reads: one matching-refs call (ETag) +
   // one recursive tree per CHANGED branch (cached by commit sha) + one blob per new object (cached forever).
   function _b64(bytes) { if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
     var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
   function _unb64(t) { t = String(t).replace(/\s/g, ''); if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(t, 'base64'));
     var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
-  function _kidOfName(name) { var p = String(name).split('/'); return (p[0] === 'o' || p[0] === 'h' || p[0] === 'r') ? p[1] : null; }   // r/<kid> = a join request (phone pairing)
+  // §13.6: names are s/<space>/<o|h|r>/<kid>[/…] — o = bundles, h = signed head, r = a join request (phone pairing). Anything else → null (refused).
+  function _kidOfName(name) { var p = String(name).split('/');
+    return (p.length >= 4 && p[0] === 's' && /^[0-9a-f]{64}$/.test(p[1]) && (p[2] === 'o' || p[2] === 'h' || p[2] === 'r') && p[3]) ? p[3] : null; }
 
   function ghPipe(opts) {
     var f = opts.fetch || fetch, base = (opts.api || 'https://api.github.com') + '/repos/' + opts.owner + '/' + opts.repo;
