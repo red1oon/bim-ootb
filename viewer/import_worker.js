@@ -453,6 +453,22 @@ self.onmessage = async function(e) {
       }
     }
     console.log('[S267] §BOM_TREE_RESOLVED raw=' + bomTreeRels.length + ' resolved=' + bomTree.length);
+    // §D69 (DXF2BIM_FOUNDATION_LANE.md, SEAM-8): rel_fills_host = VOIDS (host -> opening) joined with FILLS (opening -> filling) on the opening, exactly as the
+    // shared extractor core (modeller/dxf2bim/ifc_extract_core.js) builds it. The opening is not a kept element, so its guid comes from its own line.
+    var relFills = [];
+    try {
+      var _elById = {}; for (var ek = 0; ek < elements.length; ek++) _elById[elements[ek].expressID] = elements[ek];
+      var _hostOf = new Map(), _fillOf = new Map();
+      bomTreeRels.forEach(function (r) { if (r.relType === 'VOIDS') _hostOf.set(r.childId, r.parentId); else if (r.relType === 'FILLS') _fillOf.set(r.parentId, r.childId); });
+      _hostOf.forEach(function (hostId, opId) {
+        var h = _elById[hostId], og = null;
+        try { var ol = ifcApi.GetLine(modelID, opId); og = ol && ol.GlobalId ? ol.GlobalId.value : null; } catch (eO) { og = null; }
+        if (!h || !og) return;
+        var f = _fillOf.has(opId) ? _elById[_fillOf.get(opId)] : null;
+        relFills.push({ opening: og, host: h.guid, filling: f ? f.guid : null, hostClass: h.ifcClass, fillingClass: f ? f.ifcClass : null });
+      });
+    } catch (eRF) { console.warn('§REL_FILLS_HOST_FAIL ' + eRF.message); }
+    console.log('§REL_FILLS_HOST rows=' + relFills.length + ' filled=' + relFills.filter(function (r) { return r.filling; }).length + ' void_only=' + relFills.filter(function (r) { return !r.filling; }).length + ' (D69)');
 
     console.log('[S220] §ELEMENTS_FOUND count=' + elements.length + ' storeys=' + Object.keys(storeyMap).length);
     console.log('[S252] §ELEM_COLORS icm_mapped=' + Object.keys(_colorMap).length + '/' + elements.length);
@@ -1163,6 +1179,7 @@ self.onmessage = async function(e) {
       elements: renderableElements,
       geometries: geometries,
       bomTree: bomTree,  // §S267: parent→child IFC relationships for bom_tree table
+      relFills: relFills,  // §D69: rel_fills_host rows (the extractor core's join)
       transforms: transforms,
       // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB)
       schedules: schedules,

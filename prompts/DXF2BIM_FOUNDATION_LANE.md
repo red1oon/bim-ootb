@@ -752,3 +752,9 @@ relations on the opening (`hostOf` x `fillOf`).
 **Rule.** `import_worker.js` joins VOIDS and FILLS on the opening's expressID as the core does (opening guid from its own line), ships `relFills` with the parse; `import_db_builder.js` writes
 `rel_fills_host` (the core's DDL, provenance `ifc:recovered`) when the parse carries it; `_filterArc` keeps the rows whose host is kept (a filling not kept -> NULL). Cache keys: the Modeller's
 `import_worker.js?v=` / `import_db_builder.js?v=` bumped, Viewer + Modeller sw bumped.
+**D69 RESULT (2026-10-23, session 3): BUILT.** `import_worker.js` joins VOIDS x FILLS on the opening (`§REL_FILLS_HOST rows=.. filled=.. void_only=..`), `import_db_builder.js` writes `rel_fills_host` in the core's DDL
+(`§REL_FILLS_HOST_TABLE`), `_filterArc` keeps the rows of kept hosts. W-IFC-OPEN-FILLS fail=0 (the Viewer's worker run in a Node vm with the Node build of its web-ifc 0.0.77, no browser): I1 the import db =
+the extractor core's rows exactly, schema equal: Duplex ARC 50 (38 filled), SampleHouse 7 (7), Clinic ARC 403 (302) (were: no table); I2 after the ARC filter Duplex 48 rows (36 filled), SampleHouse 7, Clinic 403,
+every host in the db; I3 fills removed -> void-only rows only (50 / 7 / 403, filled 0), voids removed too -> 0; I4 every other table has BASE's rows, the one table added. Measured, not judged: the page-level
+ride on a reopened IFC (the §D59 L4 move) is not re-run here (browser runs paused for a film take); the cross-edge reader (`cross_edges.js:347`) reads exactly this table. Cache keys `import_db_builder.js?v=9`,
+`import_worker.js?v=16`.
