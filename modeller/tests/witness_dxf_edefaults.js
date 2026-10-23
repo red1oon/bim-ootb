@@ -2,7 +2,7 @@
 /**
  * # ⚠ DO NOT REMOVE — W-DXF-EDEFAULTS: prompts/DXF2BIM_MODELLER_LANE.md §L18. Read the log after every run; exit code is not evidence.
  * Issue proved: every setting a 2D layout may not carry is visible BEFORE conversion, tagged standard or guess, and a person can state a value that the drawing set keeps; otherwise the default is used.
- *   E1 the "Element defaults" section lists all 46 settings (door.operation_standard added 2026-10-22, F7 D18; slab.outline_when_not_rect 2026-10-23, D51; wall.top_when_unseen, D54) grouped by element, door.height highlighted (used) at 2.1 m, guess   E2 type 2.4 + Set: the door body is 2.4 m high, the row says stated, the marking
+ *   E1 the "Element defaults" section lists all 47 settings (door.operation_standard added 2026-10-22, F7 D18; slab.outline_when_not_rect 2026-10-23, D51; wall.top_when_unseen, D54) grouped by element, door.height highlighted (used) at 2.1 m, guess   E2 type 2.4 + Set: the door body is 2.4 m high, the row says stated, the marking
  *   @DEFAULT=door.height,2.4 is in the saved sheet text   E3 re-open the saved sheets: still 2.4 (the setting travels with the drawing set)   E4 remove: back to 2.1   E5 CONTROL bad input (text, negative): no marking
  */
 const fs = require('fs'), os = require('os'), path = require('path');
@@ -32,7 +32,7 @@ runE2E('W-DXF-EDEFAULTS', async (t) => {
     return { structure: !!(g && g.structure), nrows: rows.length, doorH: door ? +(door.z1 - door.z0).toFixed(4) : null, src: door && door.size.d.source, hl: !!(dh && dh.classList.contains('dm-defrow')), label: dh ? dh.querySelector('label').textContent : null, marks: [...document.querySelectorAll('#dm-panel [data-act="edefdel"]')].map(b => b.getAttribute('data-key')), idx: rows.findIndex(r => r.getAttribute('data-edef') === 'door.height') }; });
   await open([f('plan.dxf', doc(planBody, PLAN)), f('south.dxf', doc(lbox('Col', 850, 0, 1150, 3000) + lbox('Col', 6850, 0, 7150, 3000), SOUTH))]); await secOpen();
   let s = await st(); console.log('state E1', JSON.stringify(s));
-  t.assert('E1 the Element defaults section lists all 46 settings (door.operation_standard added 2026-10-22, F7 D18; slab.outline_when_not_rect 2026-10-23, D51; wall.top_when_unseen, D54) grouped by element; door.height is highlighted (used in this model), tagged guess, the door is 2.1 m high', s.structure && s.nrows === 46 && s.hl && /guess/.test(s.label) && s.doorH === 2.1 && s.src === 'default', JSON.stringify(s));
+  t.assert('E1 the Element defaults section lists all 47 settings (door.operation_standard added 2026-10-22, F7 D18; slab.outline_when_not_rect 2026-10-23, D51; wall.top_when_unseen, D54; slab.underside_when_stepped, D57) grouped by element; door.height is highlighted (used in this model), tagged guess, the door is 2.1 m high', s.structure && s.nrows === 47 && s.hl && /guess/.test(s.label) && s.doorH === 2.1 && s.src === 'default', JSON.stringify(s));
   const ord = s.idx;
   await pg.evaluate((i) => { document.querySelector('#dm-ed-' + i).value = '2.4'; }, ord);
   await pg.click('#dm-panel [data-act="edefset"][data-key="door.height"]'); await idle(); await secOpen();
