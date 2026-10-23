@@ -2,7 +2,31 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
-## ▶▶▶ RESUME HERE (session 4 entry; written 2026-10-23 at the end of session 3, the items 3 + 4 agent; the session-3 block below stays for items 1-2, which another agent worked as §D66)
+## ▶▶▶ RESUME HERE (session 5 entry; written 2026-10-23 at the end of session 3 + round 2; supersedes the session-4 block below as the entry point, which stays as its record)
+**State:** bim-ootb main b079b31f, Modeller sw v151. Merged this session: #2329 §D64.1 · #2330/#2331 §D66 · #2332 §D66.1 · #2338 §D66.1 culling fix · #2327/#2340 §D67 spec + sources · #2334 §D68 ·
+#2335 §D69 · #2336 §D71 · #2337 §D70 stop · #2342 §D70.1 · #2345 §D72 · BIMCompiler #244 (FILM_SET=shedlast2) #245 (joint bake) #246 (avoidance bake). Film: owner "good enough" on
+`~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2c_short.mp4` (95.5 s, local only; before it leaves the machine: the frame check for names, `FILM_DXF2BIM_WHY_MARKINGS.md §LAST PART v2c`).
+**Fixes to work next (in order; each spec'd first, witness claim first, falsifier run on main; owner gates marked):**
+1. **Duplex 819 x 759 windows** (the Duplex TEST set's own 4 stacked windows, excluded in §D58; not the shed): the library type at that size is ambiguous. Proposal told to the owner: an amber stated default
+   (the first library type at that size, one `element_defaults.json` value, `@DEFAULT` to turn off) per the best-effort-defaults rule; confirm the measured candidates first, then build.
+2. **Doors in recessed faces** (the §D68 writer + reader rule is windows only; `applyDoorHeights` still pairs by the envelope): the same rule for doors, measured on Clinic / LTU / JKR.
+3. **§D70.1 open:** `A-FLOR-LEVL` level-change lines (each slab piece's own top level / thickness), arcs (`GAP:slab_edge_bulge`).
+4. **§D72 limits:** a walk's yield is not undone with the op-log (the walk markers are page state: `__dwWalks`); the re-route verb does not re-tack the §D66 joint parts; the main / riser junctions keep
+   generic fittings (no library mini-BOM); the Java 9.7 mm tee-below-main offset has no library row (not applied). Each: measure, then fix or state it as a limit.
+5. **§D69:** the page-level ride (a door riding its wall, §D59 L4) on a reopened `.ifc` was not re-run.
+6. **Witness housekeeping:** `witness_status_baseline.json` lists 7 db-argument witnesses as missing (stale since D54); W-MEP-OPENPATH M7 Terminal (PLB 2759 vs 2915) fails before and after this
+   session's rules (load-sensitive? measure on a quiet machine, then fix or record).
+7. **Owner gates (do not build without the go):** §D67 LOD400 bodies (recommended: parametric `AngleProfileMesh` from the drawing's label + `AxialFanMesh` from the drawn ring, plates stay boxes);
+   the lighting-type picker on the DISC row (future phase, §D72 note); Parts A / B of this brief.
+**Regression recipe:** `SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` = PASS 42 / ENV 39 / FAIL 4 (the known 4: struct,
+ticks, guardrails G3 209, ifc_valid). The walk set: `witness_{walk_buildup,fp_bom_tree,fp_joint_bom,fp_elec_clear,seed_outward_reveal,e2e_walk,farm_rules,walk_rules_mesh,mep_openpath,mep_reroute}.js`
+(`SHED_DB=<the shed's Viewer database>` for fp_elec_clear: v1's recorder chapter 1 writes `<take>/saved/SHED_extracted.db`). Bake: `bake_farm_rules.py` recipe in the session-3 block; content sha now 3e9badeea1d2.
+**Lessons (session 3):** (a) a reveal that lowers `InstancedMesh.count` must compute the culling sphere over ALL instances first: three keeps it lazily, computed at count 0 the mesh is culled for good
+(#2332 shipped invisible pipes; witnesses that only read `.count` cannot see it: W-WALK-BUILDUP B7 now checks the sphere). (b) Puppeteer pages of one browser context share the op-log storage: use
+`browser.createBrowserContext()` per run. (c) A film take needs a quiet machine: ask agents to pause browser runs (SendMessage), never SIGSTOP; `pkill -f <pattern>` can kill your own shell.
+(d) Rules that act on every rule_avoidance pair change the measured references (Duplex PLB 18 -> 22): scope a new behaviour to what the walk built. (e) A plan box must exclude the walks' own inserts.
+
+## (superseded by session 5 entry) RESUME HERE (session 4 entry; written 2026-10-23 at the end of session 3, the items 3 + 4 agent; the session-3 block below stays for items 1-2, which another agent worked as §D66)
 **Merged this session (bim-ootb):** #2327 §D67 spec (LOD400 library meshes by stated profile: SPEC, awaiting owner go) · #2334 §D68 F16 windows in recessed faces drawn + read (Clinic 40 -> 58 windows read off
 elevations, LTU 0 -> 183, 0 wrong; sw v146) · #2335 §D69 SEAM-8 an .ifc open keeps `rel_fills_host` (= the extractor core's rows; Viewer sw v1655, Modeller v147) · #2336 §D71 the 2D panel loads a firm
 catalogue (sw v148) · this doc PR: §D70 F15 slab edge, measured and stopped (⛔) for the owner's slab-edge convention.
