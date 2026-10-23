@@ -4868,7 +4868,8 @@ function _renderDiscChains(disc, segs, opts) {
     dir.subVectors(b, a); var len = dir.length() || 1e-6;
     mid.addVectors(a, b).multiplyScalar(0.5);
     q.setFromUnitVectors(up, dir.clone().normalize());
-    sc.set(1, len, 1);
+    var rs = s.dia_mm > 0 ? (s.dia_mm / 2000) / r : 1;         // §D65 a segment that carries its own diameter (the BOM tree: main 65 / branch 25 mm) is drawn at it; else the disc's tube radius
+    sc.set(rs, len, rs);
     inst.setMatrixAt(i, m.compose(mid, q, sc));               // unit-cylinder ±Y/2 → from/to (exact)
   }
   inst.instanceMatrix.needsUpdate = true;

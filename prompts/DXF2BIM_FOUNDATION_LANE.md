@@ -603,3 +603,23 @@ a fresh walk's fixtures build up over min(7 s, 0.12 s x n). **Also fixed:** `far
 404 for it; now force-added. W-WALK-BUILDUP fail=0: B1 69 pendant lamps (lod400), the sprinkler still the Terminal's; B2 57 samples, 55 distinct partial counts, monotonic, the front moved 55 times, end 69 / 69;
 B3 after the FP walk ELEC still 69 / 69; B4 69 / 30, 69 ops. W-E2E-WALK 8 / 0 after it waits for the reveal (it judged the first frame); W-FARM-RULES 5 / 0, W-WALK-RULES-MESH 5 / 0, W-WALK-LOD400-ONLY 7 / 0;
 regression the known 4. Modeller sw v140.
+## §D65 SPRINKLER PIPEWORK FROM THE BOM TEMPLATE (owner 2026-10-23: "the sprinklers, can they not get their ducting layout too?"; "originally we worked out the elaborate conduit piping in the Java version ... a BOM-like minimal abstract template, with shim-anchor, where each joint is a series of mini BOM")
+**Witness claim first (W-FP-BOM-TREE, `modeller/tests/witness_fp_bom_tree.js`).** P1 the shed's FP walk (farm reference) lays the `FP_PIPE_ASSEMBLY` tree over its 30 heads: one DROP per head (the
+`SPRINKLER_PENDANT_ASSEMBLY` height, 177 mm, head -> tee), one BRANCH run per row of heads (tee to tee along the shed), one MAIN across the row ends, one RISER from the floor to the main; every segment axis-aligned,
+every tee on its head's vertical, every branch end on the main. P2 nothing invented: the roles, diameters (MAIN_HOOKUP 65 mm, BRANCH_OUT 25 mm) and the assembly height are READ from the library's BOM rows
+(`ad_bom_child`, `ad_assembly_connector`, `ad_bom.description`), the heads are the walk's own placements; the main side and the riser at the main's middle are stated conventions in the rule's params.
+P3 every segment passes the walker's own envelope clash check (ARC + STR boxes) or is dropped and counted (none expected on the shed: the heads sit 12 in below the ceiling, the deepest NFPA 13 allows,
+so the 177 mm assembly and the branch fit under the truss). P4 the network reveals outward from the riser (the M4 reveal, seed = the riser foot), commits as GEOM_SWEEP ops, and `assemble()` places the
+catalog joint parts at its nodes. P5 unchanged: a building whose rules carry no `bom-tree` row, or whose pattern router already routes, is byte-identical (Terminal / Clinic FP still routed by their patterns).
+**Measured first (2026-10-23):** the shed's FP walk: `§WALK-PATTERN EMPTY placements=30 [pattern:FP:0/2@201]` (the Terminal-derived router pattern), `§DW-ASSEMBLE FP connectors=0/30 parts=0 (no routed
+network)`. The library holds the Java compiler's FP template: `FP_PIPE_ASSEMBLY` (HEAD BELOW_SLAB, MAIN, BRANCH, RISER BETWEEN_FLOORS, FITTING, DROP) and `SPRINKLER_PENDANT_ASSEMBLY` (head + `T_CONNECTOR_ASSEMBLY`:
+tee + transition + drop, 177 mm; connectors TOP MAIN_HOOKUP 65 mm -> FP_MAIN, BOTTOM BRANCH_OUT 25 mm). Prior art: SRS §6.12 tack model (parent tack + dx/dy/dz = child tack), WalkerDoctrine.
+**Rule.** `rule_routing(disc='FP', pattern='bom-tree', params_json={bom, assembly, assembly_height_m, main_dia_mm, branch_dia_mm, main_side, riser})` baked from the library; `DiscWalker` builds the tree
+when the measured-band walk has no routed network (`_bomTree`), feeding the existing chain render / reveal / commit / assemble path.
+**D65 RESULT (2026-10-23, session 2): BUILT.** `DiscWalker._bomTree` + the farm reference's `rule_routing` bom-tree row (from the library's `FP_PIPE_ASSEMBLY` / `SPRINKLER_PENDANT_ASSEMBLY`: assembly 177 mm, main 65 mm,
+branch 25 mm). Two stated searches inside what is cited: the head level (the shallowest 0.5 in step of the 1-12 in band where every drop / branch clears: 2.905 m, 11 in) and the main position (from the main side
+inward by half a head spacing: one step in). The clash envelope = the TRUE world bounds when the db has them (the transform-derived box of one shed wall sat 8 cm high: a false clash); the riser stands on the
+floor; a segment carries its diameter and is drawn at it. W-FP-BOM-TREE fail=0: P1 66 segments (30 drops, 30 branch, 5 main, 1 riser), axis-aligned, one network reaching all 30 heads; P2 = the library rows;
+P3 0 clashes; P4 revealed outward from the riser, 103 ops, two radii; P5 Clinic (Terminal rules) still routes by its pattern (410 chains, no BOM tree). W-FARM-RULES 5 / 0, W-WALK-BUILDUP 4 / 0,
+W-WALK-RULES-MESH 5 / 0, W-WALK-LOD400-ONLY 7 / 0, W-E2E-WALK 8 / 0. `assemble()` (catalog joint parts at nodes) still reads only `routeChains`: the T mini-BOM parts at the BOM-tree nodes are NOT placed yet (next).
+Modeller sw v141.
