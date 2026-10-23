@@ -902,3 +902,31 @@ filled; was the §D51 estimate 1,049.5 / 1,325.4 / 1,214.5); JKR 1,176.95 / 463.
 exactly; non-slab elements identical with and without the layer. LTU timing: the slab edge adds 0.09 / 0.25 / 0.34 / 0.25 s per plan (writeStdSet 7.9 s vs main 7.2 s). Regression
 (`run_all_witnesses.js`): PASS 42 / ENV 39 / FAIL 4 (the known struct, ticks, guardrails G3 209, ifc_valid; +1 PASS = this witness; the ENV-set line is the stale baseline the RESUME block names).
 Open: `A-FLOR-LEVL` level-change lines (not drawn; the reader keeps one slab level per storey); the Clinic has no slab at its levels.
+
+**D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built.
+
+## §D72 THE LIGHTS GIVE WAY TO THE SPRINKLER PIPEWORK (owner 2026-10-23 on film v2: "the sprinkler ducting clash overlap the lighting ones")
+**Witness claim first (W-FP-ELEC-CLEAR, `modeller/tests/witness_fp_elec_clear.js`).** C1 RULE: `farm_rules.db rule_avoidance` carries the ELEC / FP row projected from `terminal_rules.db` (min clear 0.155 m,
+yields ELEC, measured on the Terminal: p05 of 1,822 pairs); no row = NO-OP. C2 CLEAR: on the shed, ELEC walked then FP: every lamp's drawn box keeps >= 0.155 m from every drawn FP piece (pipe, head,
+joint part); still 69 lamps and 30 heads; the heads, pipes and parts are where they were without the rule (the pipework does not move: the lamps give way). C3 LEAST MOVE: each moved lamp moved only
+sideways (dz = 0), by no more than its footprint + 0.155 + 0.05 m, and never further outside the building's plan box (its own bodies, not the walks' inserts) than it was; the unmoved lamps are byte-equal. C4 SIGNED: the moves
+are ONE signed group of `GEOM_MOVE` ops (one per moved lamp, `parent` = that lamp's own insert op), equal to the shift drawn (undo of a walk's yield is not claimed: the walk markers are page state). C5 EITHER ORDER: FP walked first, then ELEC: the same clearance holds (the lamps are placed clear before
+they are committed: no move ops). Falsifier: main today (measured: 12 / 30 branches, 18 / 90 joint parts and 6 / 30 heads intersect a lamp's box, min gap 0).
+**Measured first (2026-10-23, the reopened shed):** lamp box z 2.558-3.233 m (the pendant and its rod to the purlin), 0.505 m wide; branches and main at 3.074 m; lamp rows every 10 ft, head rows every 15 ft:
+every third head row lies on a lamp row, so its branch runs through that row's lamps. The heads cannot shift instead: their grid starts half a spacing from the envelope edge (NFPA 13's maximum wall
+distance), so a phase shift would breach it on one side; the lamps' 10 ft is a lighting guide (TNAU), not a code maximum, and the Terminal's measured rule says ELEC yields.
+**Rule.** After a walk (either disc), for each pair in `rule_avoidance` whose yielding disc is walked: every yielding fixture whose drawn box, grown by `min_clear_m`, meets a drawn piece of the other disc
+moves sideways by the least distance that clears all of them (candidates: +-x, +-y, each the exact distance to clear the meeting pieces; the smallest that clears everything and sits no further outside the building's plan box than before
+wins (measured: the lamp grid's edge lamps already overhang the shed's plan by 0.21 m); none = left in place, FLAGGED `clash`, counted). A fixture of the walk being committed is moved before its commit; an already committed one is moved by a signed `GEOM_MOVE` group.
+`§DW-YIELD disc= to= moved= flagged= max_shift=`. **Scope (measured):** only against a network the walk BUILT from the BOM template (§D65, `mode = bom-tree`); applied to every rule_avoidance pair it
+moved the Duplex's plumbing fixtures and its routed runs (W-MEP-OPENPATH M7 Duplex PLB 18 -> 22): the measured references keep their measured gate unchanged.
+**D72 RESULT (2026-10-23): BUILT.** BIMCompiler #246 bakes the row (farm_rules.db content sha 7cff452e163c -> 3e9badeea1d2; the old bake reproduced 7cff452e163c first). W-FP-ELEC-CLEAR fail=0 / 5: C1 the
+row (0.155, yields ELEC, n 1,822); C2 ELEC then FP: 0 pipes / heads / parts under 0.155 m (min gaps 0.156 / 0.163 / 0.156), 69 lamps, 30 heads, the FP heads and network equal an FP-only walk; C3 24 of 69
+lamps moved, max 0.430 m, sideways only, none further outside the plan box, the 45 others unmoved; C4 24 GEOM_MOVE in one signed group, each on its lamp's insert; C5 FP then ELEC: clear, 24 placed aside
+before their commit, 0 moves. **Falsifier run** (the same witness on main): 5 FAIL (no row: NO-OP; 30 pipes, 6 heads, 18 parts under clearance). Regression: W-FP-BOM-TREE 5 / 0, W-FP-JOINT-BOM 6 / 0,
+W-WALK-BUILDUP 7 / 0, W-E2E-WALK 8 / 0, W-FARM-RULES 5 / 0, W-WALK-RULES-MESH 5 / 0, W-SEED-OUTWARD-REVEAL 9 / 0, W-MEP-REROUTE 9 / 0, W-FIRST-STEPS-MEP 8 / 0, W-WALK-GESTURE 4 / 0, W-DW-DEDUP-RENDER 4 / 0,
+W-UNDO-RESURRECT 5 / 0, W-WALK-AFTER-SEED 4 / 0; W-MEP-OPENPATH 28 / 1 (M7 Terminal, as before this rule; M7 Duplex held at 18 after the scope above). Modeller sw v151.
+**Owner question, same day: "Can the user choose what type of lighting to use?" Answer: NOT today; noted for a future phase.** `farm_rules.db rule_mesh_binding` binds ONE mesh per (disc, class): ELEC =
+the library pendant `3258c4c591af8a44`. The DISC row walks with it; nothing in the page picks another. The component library already holds other light products (the Terminal's LED battens and troffers,
+the Duplex pendant), so the future rule is a fixture picker on the DISC row that lists the library's light products with a served LOD400 mesh, rebinds the walk's mesh and its measured footprint, and
+re-runs the §D72 clearance (a longer batten clears the pipework differently). Not built; no spec beyond this note until the owner's go.
