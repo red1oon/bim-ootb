@@ -7,6 +7,7 @@
  *   B2 BUILD-UP  — during a fresh walk the drawn instances rise from below n to n in steps (sampled), the reveal front (__dwReveal) moves, and the end draws all n.
  *   B3 INSTANT   — a redraw after the reveal (the next walk re-renders every walked disc) keeps all n drawn at once.
  *   B4 SAME      — placements and committed ops are those of the walk without a reveal (69 lights / 30 sprinklers, ops > 0).
+ *   B5 AFTER HEADS (§D64.1) — the FP pipework draws no segment while its heads build up, then rises in steps to N over clamp(60 ms x N, 2 s, 7 s) (it used to outrun the heads in a fixed 2 s).
  * Input: the CLI-marked shed set (SHED_MARKED_DIR, local; absent -> INCONCLUSIVE). Software GL, headless.
  * Usage: NODE_PATH=<dir with better-sqlite3> node modeller/tests/witness_walk_buildup.js
  */
@@ -50,9 +51,13 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
       while (window.__dwLastDoneDisc !== 'ELEC' && Date.now() - t0 < 300000) { const d = drawn('ELEC'); if (d[1]) samples.push(d[0] + '/' + d[1]); const f = window.__dwReveal.ELEC; if (f) fronts.add(f.i); await new Promise(r => setTimeout(r, 120)); }
       for (let g = 0; g < 80 && !(window.__dwReveal.ELEC && window.__dwReveal.ELEC.done); g++) { const d = drawn('ELEC'); samples.push(d[0] + '/' + d[1]); const f = window.__dwReveal.ELEC; if (f) fronts.add(f.i); await new Promise(r => setTimeout(r, 120)); }
       const end = drawn('ELEC'), opsE = window.Bonsai.oplog.length - n0;
-      window.__dwLastDoneDisc = null; window.discWalk('FP'); const t1 = Date.now(); while (window.__dwLastDoneDisc !== 'FP' && Date.now() - t1 < 300000) await new Promise(r => setTimeout(r, 200));
+      const chainN = () => { let c = -1, n = -1; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') { c = o.count; n = o.instanceMatrix.count; } }); return [c, n]; }, fpS = [];
+      window.__dwLastDoneDisc = null; window.discWalk('FP'); const t1 = Date.now();
+      while (Date.now() - t1 < 300000 && !(window.__dwLastDoneDisc === 'FP' && window.__dwReveal.FP && window.__dwReveal.FP.done && !window.__dwChainAnimating.FP && chainN()[1] > 0)) {
+        const f = window.__dwReveal.FP; fpS.push([f ? f.i : 0, f ? f.n : 0, f ? !!f.done : false].concat(chainN(), [Date.now() - t1])); await new Promise(r => setTimeout(r, 80)); }
+      fpS.push([0, 0, true].concat(chainN(), [Date.now() - t1]));
       await new Promise(r => setTimeout(r, 300)); const afterFP = drawn('ELEC');
-      return { samples: samples.slice(0, 400), fronts: fronts.size, end, opsE, afterFP, lights: (window.__dwWalks.ELEC || []).length, sprinklers: (window.__dwWalks.FP || []).length,
+      return { fpS, samples: samples.slice(0, 400), fronts: fronts.size, end, opsE, afterFP, lights: (window.__dwWalks.ELEC || []).length, sprinklers: (window.__dwWalks.FP || []).length,
         lightHash: Array.from(new Set((window.__dwWalks.ELEC || []).map(p => p.geometry_hash))), fpHash: Array.from(new Set((window.__dwWalks.FP || []).map(p => p.geometry_hash))) }; });
     const lod = logs.filter(t => /§DW-PRIM-LOD disc=ELEC /.test(t)).pop() || '', mesh = logs.filter(t => /§DW-RULES-MESH/.test(t)).map(t => t.slice(0, 160));
     check('B1', 'the shed\'s ELEC walk places the library pendant lamp (mesh 3258c4c591af8a44, from a named source), lod400 only; the sprinkler still the Terminal\'s', S.lights === 69 && /lod400=69 lod300=0 lod200=0/.test(lod) && S.lightHash.join() === '3258c4c591af8a44' && S.fpHash.join() === '0d509e532be0f5f2' && mesh.some(t => /resolved=1\/1/.test(t)),
@@ -62,6 +67,10 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     check('B2', 'a fresh walk builds up: drawn instances rise in steps (partial frames seen, monotonic, the front moves), ending with all n', partial >= 5 && distinct >= 5 && mono && S.fronts >= 5 && S.end[0] === S.end[1] && S.end[1] > 0,
       `samples=${parts.length} partial=${partial} distinct_partial_counts=${distinct} monotonic=${mono} fronts=${S.fronts} end=${S.end.join('/')}`);
     check('B3', 'a redraw after the reveal (the FP walk re-renders ELEC) keeps all n drawn at once', S.afterFP[0] === S.afterFP[1] && S.afterFP[1] === S.end[1], `ELEC after FP ${S.afterFP.join('/')}`);
+    { const early = S.fpS.filter(([i, n, d, c]) => !d && c > 0), part = S.fpS.filter(([, , d, c, N]) => d && c > 0 && c < N), dist = new Set(part.map(x => x[3])).size, last = S.fpS[S.fpS.length - 1];
+      const mono = S.fpS.every((x, k) => !k || x[3] >= S.fpS[k - 1][3]), anim = logs.filter(t => /§DW-CHAIN-ANIM FP mode=animated/.test(t)).pop() || '', ms = +((/ms=(\d+)/.exec(anim) || [])[1] || 0), N = last[4], want = Math.max(2000, Math.min(7000, 60 * N));
+      check('B5', 'the pipework draws no segment while its heads build up, then rises in steps to N over clamp(60 ms x N, 2 s, 7 s) (it outran the heads in a fixed 2 s)', N > 0 && !early.length && dist >= 5 && mono && last[3] === N && Math.abs(ms - want) < 600 && /EXACT==net/.test(anim),
+        `samples=${S.fpS.length} segs_while_heads_building=${early.length} partial_after=${part.length} distinct=${dist} monotonic=${mono} end=${last[3]}/${N} anim_ms=${ms} want=${want}`); }
     check('B4', 'the walk itself is unchanged: 69 lights, 30 sprinklers, ops committed', S.lights === 69 && S.sprinklers === 30 && S.opsE > 0 && !p2.errs.length, `lights=${S.lights} sprinklers=${S.sprinklers} ELEC ops=${S.opsE} page_errors=${p2.errs.length}`);
   } finally { await br2.close(); srv.close(); }
   say('SUMMARY fail=' + fail + ' judged=' + judged); process.exit(fail ? 1 : 0);

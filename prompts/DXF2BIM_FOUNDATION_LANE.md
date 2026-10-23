@@ -603,6 +603,19 @@ a fresh walk's fixtures build up over min(7 s, 0.12 s x n). **Also fixed:** `far
 404 for it; now force-added. W-WALK-BUILDUP fail=0: B1 69 pendant lamps (lod400), the sprinkler still the Terminal's; B2 57 samples, 55 distinct partial counts, monotonic, the front moved 55 times, end 69 / 69;
 B3 after the FP walk ELEC still 69 / 69; B4 69 / 30, 69 ops. W-E2E-WALK 8 / 0 after it waits for the reveal (it judged the first frame); W-FARM-RULES 5 / 0, W-WALK-RULES-MESH 5 / 0, W-WALK-LOD400-ONLY 7 / 0;
 regression the known 4. Modeller sw v140.
+## §D64.1 THE PIPEWORK REVEALS AFTER ITS HEADS, AT A PACE THE CAMERA CAN FOLLOW (owner 2026-10-23, film v2: "cam view should earnestly follow as parts are laid"; the film script: "heads build up, then the pipe network reveals outward from the riser")
+**Witness claim first (W-WALK-BUILDUP B5, `modeller/tests/witness_walk_buildup.js`).** On the shed's FP walk the routed pipe network (the seed-outward M4 reveal) draws NO segment while the walk's own
+heads are still building up (`__dwReveal.FP.done` false); once they are all drawn, the segments rise from 0 to N in steps (>= 5 distinct partial counts, monotonic) and end on N; the reveal lasts
+clamp(0.06 s x N, 2 s, 7 s) (66 segments: 3.96 s). Falsifier: a sampled frame with a segment count > 0 while the head front is below n, or the end count != N.
+**Measured first (2026-10-23, headless, the reopened shed):** ELEC computes for 9.8 s, then its 69 lamps build up over 7.0 s; FP computes in 0.1 s, its 30 heads build up over 3.6 s while its 66 segments
+reveal over a fixed 2.0 s (easeOutCubic: 43 / 66 drawn at 0.97 s when 7 / 30 heads were): the pipes outran the heads they feed, too fast for a camera to follow.
+**Rule.** `_renderDiscChains`: when the disc has a fixture build-up in flight (`__dwRevealMeta[disc]`), the chain's timeline starts at that build-up's end; its duration = clamp(60 ms x N, 2 s, 7 s);
+a redraw resumes the same timeline (the stored start, as M4). Drawing only: the network, its ops and the `§DW-CHAIN-ANIM ... EXACT==net` line are unchanged.
+**D64.1 RESULT (2026-10-23, session 3): BUILT.** W-WALK-BUILDUP fail=0 / 5: B5 91 samples, 0 segments while the heads built up, 40 partial frames after (31 distinct counts), monotonic, end 66 / 66,
+`§DW-CHAIN-ANIM FP mode=animated ms=3984` (want 3960). **Falsifier run:** the same witness on unchanged main: B5 FAIL (38 frames with segments while the heads built up, anim 2026 ms). Regression:
+W-FP-BOM-TREE 5 / 0 (P4 now waits for the reveal, not a fixed 3 s), W-SEED-OUTWARD-REVEAL 9 / 0, W-E2E-WALK, W-MEP-REROUTE 9 / 0, W-FIRST-STEPS-MEP 8 / 0, W-WALK-GESTURE 4 / 0, W-DW-DEDUP-RENDER 4 / 0,
+W-UNDO-RESURRECT 5 / 0, W-WALK-AFTER-SEED 4 / 0; W-MEP-OPENPATH 28 / 1 (M7 PLB-HELD Terminal: PLB segs 2759 vs baseline 2915; the same witness on unchanged main under the same machine load: 19 / 10, M7 Terminal segs 0: load-sensitive, not this rule, which draws only). Modeller sw v143.
+
 ## §D65 SPRINKLER PIPEWORK FROM THE BOM TEMPLATE (owner 2026-10-23: "the sprinklers, can they not get their ducting layout too?"; "originally we worked out the elaborate conduit piping in the Java version ... a BOM-like minimal abstract template, with shim-anchor, where each joint is a series of mini BOM")
 **Witness claim first (W-FP-BOM-TREE, `modeller/tests/witness_fp_bom_tree.js`).** P1 the shed's FP walk (farm reference) lays the `FP_PIPE_ASSEMBLY` tree over its 30 heads: one DROP per head (the
 `SPRINKLER_PENDANT_ASSEMBLY` height, 177 mm, head -> tee), one BRANCH run per row of heads (tee to tee along the shed), one MAIN across the row ends, one RISER from the floor to the main; every segment axis-aligned,
