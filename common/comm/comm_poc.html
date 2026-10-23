@@ -42,7 +42,8 @@
     var r = roles[roleId]; if (r === undefined) { try { r = AdAccess.buildRole(shim(adDb), roleId); } catch (e) { r = null; } roles[roleId] = r; }
     return r ? r.canUpdate(client, org, Number(t.id), t.lvl) : { allowed: false, reason: 'no-role' };
   }
-  function openStore(space) { S = CommStore.open(new SQL.Database(), { SQL: SQL, space: space, self: dev, access: access, log: log }); }
+    function tableId(n) { var t = shim(adDb).prepare('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?').get(String(n).toLowerCase()); return t ? Number(t.id) : null; }
+  function openStore(space) { S = CommStore.open(new SQL.Database(), { SQL: SQL, space: space, self: dev, access: access, tableId: tableId, log: log }); }
   window.CommPOC = {
     init: async function (pipeBase) {
       SQL = await initSqlJs({ locateFile: function (f) { return '../../erp/sqljs/' + f; } });
@@ -77,7 +78,7 @@
       var meta = new SQL.Database();
       meta.run('CREATE TABLE c_order (c_order_id INTEGER, c_order_uu TEXT, documentno TEXT, grandtotal NUMERIC, created TEXT, updated TEXT, createdby INTEGER, updatedby INTEGER, ad_client_id INTEGER, ad_org_id INTEGER, isactive TEXT, processed TEXT, processing TEXT, posted TEXT)');
       globalThis.__idmpDb = meta;
-      var K = window.KernelOps, kdb = new SQL.Database(), placed = await S.placedEnvelopes();
+      var K = window.KernelOps, kdb = new SQL.Database(), placed = await S.foldable();   // contested writes held back (§12.9)
       placed.forEach(function (p) {
         var e = p.env, opUuid = e.body.op_type === 'CRUD_CREATE' ? e.target.uu : uuidFromHash(p.hash);
         K.commitOp(kdb, e.body.op_type, CommEnvelope.toKernelParams(e), null, null, opUuid, e.ts);
@@ -88,6 +89,8 @@
       log('§COMM_FOLD placed=' + placed.length + ' rows=' + rows.length + ' ' + rows.map(function (r) { return r.documentno + '=' + r.grandtotal; }).join(' '));
       return rows;
     },
+    conflicts: async function () { return (await S.conflicts()).map(function (c) { return { uu: c.uu, col: c.col, before: c.before, values: c.candidates.map(function (k) { return k.value; }).sort() }; }); },
+    notices: async function () { return S.notices(dev.person_uu); },
     state: async function () {
       var L = await S.order(), v = S.verdicts(), cnt = function (x) { return v.filter(function (r) { return r.verdict === x; }).length; };
       return { kid: S.kid, ops: S.query('SELECT COUNT(*) AS n FROM cl_op')[0].n, placed: L.order.length, parked: L.parked.length, refused: cnt('REFUSED'),

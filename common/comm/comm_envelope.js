@@ -70,7 +70,10 @@
       if (t.uu && !Object.prototype.hasOwnProperty.call(rd, String(t.uu).toLowerCase())) e.push('V9 reads lacks target');
       var want = [];
       Object.keys(rd).forEach(function (k) { if (!UUID.test(k) || k !== k.toLowerCase()) e.push('V9 reads key ' + k);
-        var v = rd[k]; if (v !== null && !HEX64.test(String(v))) e.push('V9 reads value ' + k); else if (v && want.indexOf(v) < 0) want.push(v); });
+        var v = rd[k], arr = Array.isArray(v) ? v : (v === null ? [] : [v]);
+        // a value is null, one version, or the sorted unique list of ≥2 heads the author saw (a merge, §12.9)
+        if (Array.isArray(v) && (v.length < 2 || v.some(function (x, i) { return i > 0 && v[i - 1] >= x; }))) e.push('V9 reads heads ' + k);
+        arr.forEach(function (x) { if (!HEX64.test(String(x))) e.push('V9 reads value ' + k); else if (want.indexOf(x) < 0) want.push(x); }); });
       if (Array.isArray(d) && JSON.stringify(want.sort()) !== JSON.stringify(d)) e.push('V9 deps != versions in reads');
     }
     var p = (env.body && env.body.params) || {};

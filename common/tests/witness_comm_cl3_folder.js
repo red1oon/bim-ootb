@@ -19,6 +19,9 @@
  *   §2CTX-ROSTER   — trust is the CL4 roster: A founds the space (genesis = the invite), enrols B (role 103) from B's code;
  *                    writes are judged by the real MRole.canUpdate port on the browser's ad_seed.db — B's org-12 order is
  *                    REFUSED in BOTH browsers (role 103 has no org-12 access), never folded.
+ *   §2CTX-CONFLICT — CL5: A and B both change A-1's grandtotal without seeing each other → in BOTH browsers the row keeps
+ *                    the last agreed value (111), one conflict lists both values, each person gets a CurrentRecordModified
+ *                    Notice; disproves silent last-writer-wins across real browsers.
  *
  * Run: node common/tests/witness_comm_cl3_folder.js 2>&1 | tee /tmp/witness_comm_cl3_folder.log
  */
@@ -107,6 +110,21 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     console.log('   §2CTX B seq3 (org 12) delivery=' + b3.state + ' verdict=' + b3.verdict + ' reason=' + b3.reason);
     verdict(b3.state === 'SEEN' && b3.verdict === 'REFUSED' && /^access:/.test(b3.reason || ''), "B is told its org-12 order was delivered AND refused, with the AD reason");
     verdict(sB.delivery.every(function (x) { return x.state === 'SEEN' && x.seenBy.indexOf(kidA) >= 0; }), "B's ops SEEN by A (A's signed head)");
+
+    console.log('\n§2CTX-CONFLICT');
+    await A.evaluate(function (u) { return CommPOC.editOrder(u, 111, 120); }, uuA);
+    await Bp.evaluate(function (u) { return CommPOC.editOrder(u, 111, 130); }, uuA);   // B has not seen A's 120
+    for (var r2 = 0; r2 < 2; r2++) { await A.evaluate(function () { return CommPOC.visit(); }); await Bp.evaluate(function () { return CommPOC.visit(); }); }
+    var cfA = await A.evaluate(function () { return CommPOC.conflicts(); }), cfB = await Bp.evaluate(function () { return CommPOC.conflicts(); });
+    var gA = await A.evaluate(function () { return CommPOC.fold(); }), gB = await Bp.evaluate(function () { return CommPOC.fold(); });
+    var ntA = await A.evaluate(function () { return CommPOC.notices(); }), ntB = await Bp.evaluate(function () { return CommPOC.notices(); });
+    var rowA = gA.filter(function (x) { return x.documentno === 'A-1'; })[0] || {}, rowB = gB.filter(function (x) { return x.documentno === 'A-1'; })[0] || {};
+    console.log('   §2CTX conflicts A=' + JSON.stringify(cfA) + ' B=' + JSON.stringify(cfB));
+    console.log('   §2CTX A-1 row A=' + rowA.grandtotal + ' B=' + rowB.grandtotal + '   notice A=' + JSON.stringify(ntA[0] || null));
+    if (!cfA.length && !cfB.length) inconclusive.push('no conflict surfaced — crossed save not judged');
+    verdict(cfA.length === 1 && JSON.stringify(cfA) === JSON.stringify(cfB) && cfA[0].before === 111 && cfA[0].values.join('/') === '120/130', 'both browsers list one conflict: before 111, values 120/130');
+    verdict(rowA.grandtotal === 111 && rowB.grandtotal === 111, 'both browsers fold A-1 to the last agreed value (111), not a silent winner');
+    verdict(ntA.length === 1 && ntB.length === 1 && ntA[0].ad_message === 'CurrentRecordModified' && ntA[0].ad_table_id === 259, 'each person gets one CurrentRecordModified Notice (AD_Table 259)');
 
     console.log('\n§2CTX-PIPE');
     var names = walk(FOLDER, '', []), stray = names.filter(function (n) { return !/^(o|h)\//.test(n); });
