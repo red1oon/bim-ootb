@@ -477,3 +477,20 @@ finishes: stated); K4 `none` = BASE on both; K5 the share decides (2.80 either o
 removed, Level 1 `no_elevation_height` 272 -> 7 (265 walls default to 84.33, amber); JKR blocking 472 -> 162. Against the model (bbox tops, a measurement): Level 1 walls stop at 83.85 (26), 84.33 (18),
 83.18 (10), ...: the default is exact for the walls that run to the planks, the others stop at ceilings the drawings do not show. Data: `extractIFC2DB.js --also-classes IfcColumn,IfcSlab,IfcBeam`
 (bim-compiler #239; default unchanged) = `/tmp/db2/JKR3.db`, 544 merged. Modeller sw v133.
+
+## §D58 THE USER'S EXCLUDE AREA LEAVES THE ENTITIES OUT ON THE STANDARD PATH TOO (architect review session 2, F20, found while unblocking SEAM-5)
+**Witness claim first (W-EXCLUDE-STD, `modeller/tests/witness_dxf_exclude_std.js`).** X1 a plan's `@EXCLUDE` rectangle (the editor's "Exclude area", the CLI's `--exclude`) leaves out every entity wholly inside it
+on the STANDARD path (convert, the editor's door / window list, the elevation tag pick, the gate's plan runs), as `dxf2bodies.js:190` already does on the structure path; ONE advisory `GAP:excluded_by_user`
+per plan names the count (left out and listed, never silent). X2 a set with no `@EXCLUDE` is byte-identical to BASE (run_id included). X3 an entity only partly inside stays and is counted as straddling.
+X4 the Duplex marked set with a box around each of the 4 Level 2 window clusters that the elevations split into 3 same-size types (B6, D5, F1, F8): `fill_unbound` 12 -> 0 and those 4 windows' cuts are
+gone (the user chose to leave them out).
+**Measured first (2026-10-23 session 2):** `B.run` has taken `deps.exclude` since §34 (`dxf2bim/dxf2bim.js:182-199`), but none of the four plan runs in `dxf2bim_import.js` (gate 261, `planDoors` 270, `elevPick` 310,
+convert 366) passes it: the marking is read (`dxf2marks.js:159`) and honoured only by the qualify listing (`dxf2qualify.js:166`) and the structure path. The Duplex boxes above change nothing today
+(`fill_unbound` 12 -> 12). Why the 12 exist (SEAM-5): 4 plan windows the elevations show as 3 stacked windows each (sills 100 / 925.5 / 1751 mm), all 819 x 759 mm, and the library holds three
+819 x 759 families (`DUPLEX_CASEMENT`, `DUPLEX_SMALL_FIXED`, `US_CASEMENT_819`): binding by size is rightly refused; which is which is a stated fact (a binding), not a guess.
+**Rule.** One helper gives each plan run `exclude: desc.excludes` when the sheet states any (absent otherwise, so no run_id changes); the convert lists `GAP:excluded_by_user` (advisory) from the run's own
+`report.exclude`.
+**D58 RESULT (2026-10-23, session 2): BUILT.** `exOf(desc)` passes the sheet's `@EXCLUDE` rectangles to the four plan runs of `dxf2bim_import.js`; the convert lists `GAP:excluded_by_user` (advisory)
+from the run's report. W-EXCLUDE-STD fail=0: X1 the 4 boxed Duplex window clusters are gone from the convert and from `planDoors` (44 entities left out, 1 advisory); X2 the set without boxes = BASE
+(run ids and verdict); X3 22 straddling entities kept and counted = the reader's report; X4 with the OCI library `fill_unbound` 12 -> 0, **the Duplex standard set qualifies** (SEAM-5 unblocked by a
+user's stated exclusion; binding the three 819 x 759 families stays a stated fact). Modeller sw v134.

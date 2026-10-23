@@ -4,7 +4,7 @@ review first, specs second, code only if the owner says so. **Read the log after
 
 ## ▶▶▶ RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
 **Done:** §D56 window tags by width (#2309, sw v132); JKR slab diagnosis F16-F18; the seam study SEAM-1..5 + proposals P-S1..P-S5 (RESULT "session 2" at the bottom).
-**§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **NEXT (in order, each spec'd first):** (2) The seam fixes P-S2 + P-S3 (door rides its wall; the export keeps the edge), then P-S1 (walk after Convert). (3) F16 the writer draws
+**§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **§D58 DONE** (the user's `@EXCLUDE` honoured on the standard path; the Duplex standard set now converts in the page with 4 exclusions: SEAM-5 unblocked; Duplex seams measured, RESULT S3, SEAM-2b / SEAM-6). **NEXT (in order, each spec'd first):** (2) The seam fixes P-S2 + P-S3 + P-S6 (door rides its wall; the export keeps the edge; one wall line = one editable wall), witnessed on the Duplex set with the 4 exclusions (`witness_dxf_exclude_std.js` builds it), then P-S7 (stale op-log) and P-S1 (walk after Convert). (3) F16 the writer draws
 every opening the face sees. (4) The old items 4-6 below (F15 slab edge, Load catalogue row, Parts A / B). P-S4 (fixture meshes from one store) belongs with FOUNDATION §5 F5; P-S5 is the owner's call.
 **Data:** `/tmp/db2/JKR3.db` = `extractIFC2DB.js --ifc <jkrAR25> --also <jkrST25> --also-classes IfcColumn,IfcSlab,IfcBeam -o ...`; seam harness in the session scratchpad.
 
@@ -279,3 +279,16 @@ Measured headless (software GL) on the marked shed, the one set that converts in
   refusal should say where it looked ("fixtures are Terminal's meshes; this building has none") and stop after the first discipline proves it (241 s to refuse 4).
 - P-S5 *Type / thickness / height edits go through the drawing.* A property edit on a converted wall writes the marking (`@SIZE` / `@WALLTOP` / a schedule row) and re-converts, so the
   marked DXF stays the one source; an in-3D-only edit would drift from the sheets.
+
+### S3. Seams on a standard set (session 2, after §D58 unblocked SEAM-5)
+The Duplex marked set with 4 `@EXCLUDE` boxes (the 4 stacked 819 x 759 clusters whose library type is ambiguous) + the OCI library: gate qualifies, Convert commits 143 ops (119 inserts, 24 cuts).
+- **SEAM-2b (P1) a drawn wall is several bodies.** The model's 57 walls become 92 wall bodies: the pieces between openings and one band body per opening that carries the cut (as wide as its hole).
+  A 0.5 m move of the band over a door moves that band only; the door stays (bbox unchanged), the pieces stay. No body groups the pieces of one wall line, so "move the wall" tears it.
+- **SEAM-3 confirmed:** the exported DB has 24 `IfcOpeningElement` and 0 `rel_fills_host` rows.
+- **SEAM-4 with the right rules:** reopened, 9 rooms (none suspect), `duplex_rules.db` chosen; placements 4 / 36 / 12 / 19, all refused "no LOD400 mesh" (240 s): the fixture meshes live with
+  the Duplex resident's own geometry, not with a building made from its drawings.
+- **SEAM-6 (P1, new) a stale op-log in the same browser.** Reopening the exported DB in a second tab of the SAME browser profile and walking throws `GEOM_CUT parent 72 not found`
+  (`bonsai_kernel_worker.js:416`); in a fresh profile the same steps do not throw. The convert session's stored ops reach the reopened model's kernel fold (cause per op not traced).
+**Proposals added (spec only):** P-S6 one wall line = one editable wall: the pieces and opening bands of a drawn wall line share a group the move / delete tools act on (or are merged into one body
+with its cuts), so "move the wall" moves its doors and windows with it (needs P-S2). P-S7 the reopened model's op-log is keyed to its own model (`setModelKey`) before any walk folds the kernel;
+witness: the same-profile reopen + walk does not throw and folds only the reopened model's ops.
