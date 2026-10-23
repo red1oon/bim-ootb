@@ -18,6 +18,7 @@
 </style></head><body>
 <h1>Team POC</h1>
 <div class="mut" id="status">loading…</div>
+<div class="mut" id="boot">Getting ready — downloading the AD dictionary (27 MB, once)… <span id="boot-pct">0%</span></div>
 
 <section id="s-token"><h2>1 · GitHub token</h2>
   <div class="mut">Fine-grained token, repository <b>bim-teams-pipe</b> only, Contents read &amp; write. Kept in this browser only.</div>
@@ -115,7 +116,18 @@
       log('§PHONE edit ' + uu.slice(0, 8) + ' ' + from + '→' + to); }); }; });
     document.body.setAttribute('data-ready', '1');
   }
-  async function act(fn) { document.body.setAttribute('data-ready', '0'); try { await fn(); await persist(); } catch (e) { log('🔴 ' + (e && e.message || e)); } await render(); }
+  // a press before the page is ready WAITS for it (it used to throw on an undefined device and do nothing — user, 2026-10-23)
+  var bootDone = null, booted = new Promise(function (r) { bootDone = r; });
+  async function act(fn) { document.body.setAttribute('data-ready', '0'); await booted;
+    try { await fn(); await persist(); } catch (e) { log('🔴 ' + (e && e.message || e)); } await render(); }
+  function buttons(on) { document.querySelectorAll('button').forEach(function (b) { b.disabled = !on; b.style.opacity = on ? '' : '0.5'; }); }
+  async function fetchWithProgress(url) {
+    var r = await fetch(url, { cache: 'force-cache' }), total = Number(r.headers.get('content-length')) || 27193344;
+    if (!r.body || !r.body.getReader) return new Uint8Array(await r.arrayBuffer());
+    var rd = r.body.getReader(), chunks = [], got = 0;
+    for (;;) { var x = await rd.read(); if (x.done) break; chunks.push(x.value); got += x.value.length; $('boot-pct').textContent = Math.min(100, Math.round(100 * got / total)) + '%'; }
+    var out = new Uint8Array(got), o = 0; chunks.forEach(function (c) { out.set(c, o); o += c.length; }); return out;
+  }
 
   $('b-token').onclick = function () { act(async function () {
     cfg.token = $('token').value.trim(); cfg.pbUrl = $('pb-url').value.trim(); cfg.pbSecret = $('pb-secret').value.trim();
@@ -154,16 +166,18 @@
   $('b-visit').onclick = function () { act(async function () { await visit(); }); };
 
   (async function boot() {
+    buttons(false);
     SQL = await initSqlJs({ locateFile: function (f) { return '../../erp/sqljs/' + f; } });
-    adDb = new SQL.Database(new Uint8Array(await (await fetch('../../erp/ad_seed.db', { cache: 'force-cache' })).arrayBuffer()));
+    adDb = new SQL.Database(await fetchWithProgress('../../erp/ad_seed.db'));
     dev = await kvGet('device');
     if (!dev) { dev = await CommStore.newDevice(); dev.person_uu = crypto.randomUUID(); await kvPut('device', dev); }   // CryptoKey stored as-is (non-extractable)
     cfg = (await kvGet('cfg')) || {};
     var m = /#join=([0-9a-f]{64})/.exec(location.hash); if (m) $('invite').value = m[1];
     if (cfg.space) await openStore(await kvGet('db'));
+    if (cfg.token) $('token').value = cfg.token; if (cfg.pbUrl) $('pb-url').value = cfg.pbUrl; if (cfg.pbSecret) $('pb-secret').value = cfg.pbSecret;
     log('§PHONE_BOOT device=' + dev.kid + ' space=' + (cfg.space || 'none').slice(0, 12) + ' resumed=' + !!cfg.space);
-    await render();
-  })().catch(function (e) { log('🔴 boot ' + (e && e.stack || e)); });
+    show('boot', false); buttons(true); bootDone(); await render();
+  })().catch(function (e) { log('🔴 boot ' + (e && e.stack || e)); $('boot').textContent = 'Could not get ready: ' + (e && e.message || e) + ' — reload the page.'; });
 })();
 </script>
 </body></html>

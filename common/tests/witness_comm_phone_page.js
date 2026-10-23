@@ -10,6 +10,7 @@
  *   §PHONE-SYNC     — an order made on the phone appears on the laptop after visits; an edit on the laptop reaches the phone.
  *   §PHONE-CONFLICT — both edit the same order without visiting in between → both screens show the conflict, total kept.
  *   §PHONE-RESUME   — reloading the phone keeps its device code, team and orders (IndexedDB), no re-pairing.
+ *   §PHONE-EARLY    — while loading, buttons are disabled and progress shows; once ready Save works (the user hit "doesn't react").
  *   §PHONE-NOERR    — zero page errors.
  * Cleans up its GitHub branches. Run: node common/tests/witness_comm_phone_page.js 2>&1 | tee /tmp/witness_comm_phone_page.log
  */
@@ -42,6 +43,18 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
 
     async function kidOf(p) { return p.evaluate(function () { return new Promise(function (res) { var r = indexedDB.open('comm_phone', 1);
       r.onsuccess = function () { var q = r.result.transaction('kv').objectStore('kv').get('device'); q.onsuccess = function () { res(q.result && q.result.kid); }; }; }); }); }
+    console.log('\n§PHONE-EARLY');
+    var early = await (await browser.newContext()).newPage(); early.on('pageerror', function (e) { errors++; console.log('     [early] 🔴 pageerror ' + e.message); });
+    await early.goto(url, { waitUntil: 'domcontentloaded' });
+    var dis = await early.$eval('#b-token', function (b) { return b.disabled; }), prog = await early.isVisible('#boot');
+    await ready(early);
+    var en = await early.$eval('#b-token', function (b) { return !b.disabled; }), progGone = !(await early.isVisible('#boot'));
+    await early.fill('#token', 'github_pat_EARLY'); await press(early, '#b-token');
+    var saved = await early.isVisible('#s-space');
+    verdict(dis && prog && en && progGone && saved, 'while loading: Save disabled + progress shown; when ready: enabled, progress gone, Save works',
+      'disabled=' + dis + ' progress=' + prog + ' enabled-after=' + en + ' progress-gone=' + progGone + ' saved=' + saved);
+    await early.context().close();
+
     await lap.goto(url); await token(lap); kids.push(await kidOf(lap)); await press(lap, '#b-found');
     var invite = await lap.inputValue('#invite-link'), kidL = await lap.evaluate(function () { return document.getElementById('status').textContent; });
     console.log('   §PHONE laptop founded; invite link = …' + invite.slice(-20));
