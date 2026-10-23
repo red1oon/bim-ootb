@@ -61,18 +61,37 @@
                   minY: function (b) { return env && b[1] <= env.minY + tol; }, maxY: function (b) { return env && b[3] >= env.maxY - tol; } };
     var AXIS = { minX: 'Y', maxX: 'Y', minY: 'X', maxY: 'X' };
     function gapOp(w, code, extra) { return { op_type: 'DXF_GAP', params: Object.assign({ run_id: w.params.run_id, handle: w.params.handle, layer: w.params.layer, code: code }, extra || {}), input_guids: [], output_guid: null }; }
+    // §D68 (F16): a window off the envelope is seen by a face when, along the face, no wall piece of this plan lies nearer that face covering the window's interval
+    var recessedOn = !(typeof process === 'object' && process.env && process.env.DXF_RECESSED_WIN === '0');
+    var WR = recessedOn ? ops.filter(function (w) { return w.op_type === 'DXF_WALL'; }).map(function (w) { return wallRect(w.params); }) : [];
+    var NEAR = { minX: function (b) { return [b[0], b[2]]; }, maxX: function (b) { return [-b[2], -b[0]]; }, minY: function (b) { return [b[1], b[3]]; }, maxY: function (b) { return [-b[3], -b[1]]; } };
+    function planSees(f, bb) {
+      var n0 = NEAR[f](bb)[0], ax = AXIS[f] === 'X', a0 = ax ? bb[0] : bb[1], a1 = ax ? bb[2] : bb[3];
+      return !WR.some(function (r) { return NEAR[f](r)[1] <= n0 + tol && (ax ? r[0] <= a0 + 1e-6 && r[2] >= a1 - 1e-6 : r[1] <= a0 + 1e-6 && r[3] >= a1 - 1e-6); });
+    }
+    function schedOf(o) {   // §F8 D24: a window no elevation shows takes sill + height from its schedule entry (via its plan tag), when the entry states a sill
+      var se = opts.schedule && o.params.label !== undefined ? opts.schedule[o.params.label] : null;
+      if (!(se && se.class === 'window' && typeof se.sill === 'number' && typeof se.height === 'number')) return null;
+      return { op_type: 'DXF_OPENING', params: Object.assign({}, o.params, { sill: se.sill, height: se.height, pending_elevation: false, height_source: 'schedule', schedule_label: o.params.label }), input_guids: [], output_guid: opts.hashHex(o.output_guid + '|sched').slice(0, 32) };
+    }
     ops.forEach(function (o) {
       if (!(o.op_type === 'DXF_OPENING' && o.params.kind === 'window' && o.params.pending_elevation)) { out.push(o); return; }
       var bb = o.params.bbox, faces = Object.keys(FACES).filter(function (f) { return FACES[f](bb); });
       var have = faces.filter(function (f) { return elevs.some(function (e) { return e.face === f; }); });
-      if (!have.length) {   // §F8 D24: a window no elevation shows takes sill + height from its schedule entry (via its plan tag), when the entry states a sill
-        var se = opts.schedule && o.params.label !== undefined ? opts.schedule[o.params.label] : null;
-        if (se && se.class === 'window' && typeof se.sill === 'number' && typeof se.height === 'number') {
-          out.push({ op_type: 'DXF_OPENING', params: Object.assign({}, o.params, { sill: se.sill, height: se.height, pending_elevation: false, height_source: 'schedule', schedule_label: o.params.label }), input_guids: [], output_guid: opts.hashHex(o.output_guid + '|sched').slice(0, 32) });
-          return;
-        }
+      var rec = [];
+      if (recessedOn && !have.length) {
+        var runsX = (bb[2] - bb[0]) >= (bb[3] - bb[1]);
+        var a0r = runsX ? bb[0] : bb[1], a1r = runsX ? bb[2] : bb[3];
+        var twin = ops.some(function (p) { var pb = p.params && p.params.bbox; return p !== o && p.op_type === 'DXF_OPENING' && p.params.kind === 'window' && pb && ((pb[2] - pb[0]) >= (pb[3] - pb[1])) === runsX &&
+          Math.abs((runsX ? pb[0] : pb[1]) - a0r) <= 2 * tol && Math.abs((runsX ? pb[2] : pb[3]) - a1r) <= 2 * tol &&
+          (runsX ? pb[1] > bb[3] || pb[3] < bb[1] : pb[0] > bb[2] || pb[2] < bb[0]); });   // another window of this plan on the same run in another wall (apart in depth): a cluster could be either's
+        if (!twin) rec = Object.keys(FACES).filter(function (f) { return have.indexOf(f) < 0 && (AXIS[f] === 'X') === runsX && elevs.some(function (e) { return e.face === f; }) && planSees(f, bb); });
+      }
+      if (!have.length && !rec.length) {
+        var so = schedOf(o); if (so) { out.push(so); return; }
         out.push(gapOp(o, 'GAP:no_elevation_for_face', { faces: faces })); return;
       }
+      var onlyRec = !have.length; have = have.concat(rec);
       var found = [], seen = {};
       have.forEach(function (f) {
         var a0 = AXIS[f] === 'X' ? bb[0] : bb[1], a1 = AXIS[f] === 'X' ? bb[2] : bb[3];
@@ -87,10 +106,16 @@
         });
       });
       found.sort(function (a, b) { return a.c.z0 - b.c.z0 || a.c.z1 - b.c.z1; });
+      if (!found.length && onlyRec) {   // §D68: seen in plan, not shown by the elevation (hidden in 3D): as a window with no face
+        var so2 = schedOf(o); if (so2) { out.push(so2); return; }
+        out.push(gapOp(o, 'GAP:no_elevation_for_face', { faces: faces })); return;
+      }
       if (!found.length) { out.push(gapOp(o, 'GAP:no_elevation_match', { faces: have })); return; }
       found.forEach(function (x, i) {
         used[x.id] = true;
-        out.push({ op_type: 'DXF_OPENING', params: Object.assign({}, o.params, { sill: r6(x.c.z0 - level), height: r6(x.c.z1 - x.c.z0), pending_elevation: false, from_elevation: true, face: x.f, elev_members: x.c.handles.slice() }),
+        var xp = { sill: r6(x.c.z0 - level), height: r6(x.c.z1 - x.c.z0), pending_elevation: false, from_elevation: true, face: x.f, elev_members: x.c.handles.slice() };
+        if (rec.indexOf(x.f) >= 0) xp.face_recessed = true;
+        out.push({ op_type: 'DXF_OPENING', params: Object.assign({}, o.params, xp),
           input_guids: [], output_guid: opts.hashHex(o.output_guid + '|elev|' + i).slice(0, 32) });
       });
     });
