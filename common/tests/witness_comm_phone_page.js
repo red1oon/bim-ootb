@@ -80,6 +80,13 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
     var phTot = (await ph.textContent('#orders .row .tot')).trim();
     verdict(phTot === '150', 'the laptop\'s edit (150) reaches the phone', 'phone shows ' + phTot);
 
+    var opsBefore = await lap.evaluate(function () { return document.getElementById('delivery').textContent; });
+    await press(lap, '#orders .row .b-save');                                    // Save without changing the number
+    var opsAfter = await lap.evaluate(function () { return document.getElementById('delivery').textContent; });
+    var cur = await lap.$eval('#orders .row', function (r) { return getComputedStyle(r.querySelector('button')).cursor; });
+    verdict(/my ops (\d+)/.exec(opsBefore)[1] === /my ops (\d+)/.exec(opsAfter)[1], 'a Save that changes nothing writes no op', opsBefore.match(/my ops \d+/) + ' → ' + opsAfter.match(/my ops \d+/));
+    verdict(cur === 'pointer', 'buttons show the hand pointer', 'cursor=' + cur);
+
     console.log('\n§PHONE-CONFLICT');
     await lap.fill('#orders .row input', '200'); await press(lap, '#orders .row .b-save');
     await ph.fill('#orders .row input', '300'); await press(ph, '#orders .row .b-save');

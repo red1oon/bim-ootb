@@ -15,6 +15,7 @@
   .code { font:600 22px/1 ui-monospace,monospace; letter-spacing:2px; } .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 0; border-top:1px solid var(--line); }
   .row:first-child { border-top:0; } .row input { width:90px; } .ok { color:var(--ok); } .bad { color:var(--bad); } pre { white-space:pre-wrap; font-size:12px; color:var(--mut); max-height:200px; overflow:auto; }
   .hide { display:none; }
+  button { cursor:pointer; } button:disabled { cursor:not-allowed; }   /* user: the pointer should show it is clickable */
 </style></head><body>
 <h1>Team POC</h1>
 <div class="mut" id="status">loading…</div>
@@ -112,6 +113,7 @@
     $('status').textContent = 'device ' + codeOf(dev.kid) + ' · space ' + cfg.space.slice(0, 8) + ' · team devices ' + Object.keys(L.roster.devices).length + (founder ? ' · founder' : '');
     document.querySelectorAll('.b-save').forEach(function (b) { b.onclick = function () { act(async function () {
       var row = b.closest('.row'), uu = row.getAttribute('data-uu'), from = Number(row.querySelector('.tot').textContent), to = Number(row.querySelector('input').value);
+      if (to === from) { log('§PHONE edit skipped — value unchanged (' + from + ')'); return; }   // no op for a Save that changes nothing
       await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_UPDATE', params: { changes: { grandtotal: { old: from, new: to } } } } });
       log('§PHONE edit ' + uu.slice(0, 8) + ' ' + from + '→' + to); }); }; });
     document.body.setAttribute('data-ready', '1');
