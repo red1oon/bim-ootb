@@ -225,6 +225,27 @@
       } else if (part) e.ifc = Object.assign({ ifc_class: e.class }, e.ifc, { material: part.material, material_source: 'reference (synthetic_ref.json ' + e.class + ')', thickness_mm: t });
     });
   }
+  // §D71 the 2D panel's "Load catalogue": a firm catalogue (tools/catalogue_from_ifc.js) is taken whole or refused with the reason, never half-loaded
+  function catalogueCheck(j) {
+    if (!j || typeof j !== 'object' || Array.isArray(j)) return { ok: false, reason: 'not a JSON object' };
+    if (j.version !== 1) return { ok: false, reason: 'version ' + JSON.stringify(j.version) + ' (this reader takes version 1, as tools/catalogue_from_ifc.js writes)' };
+    var counts = {}, rows = 0, bad = null;
+    ['walls', 'slabs', 'doors'].forEach(function (tab) {
+      var T = j[tab]; if (bad) return;
+      if (T === undefined) { counts[tab] = 0; return; }
+      if (!T || typeof T !== 'object' || Array.isArray(T)) { bad = tab + ' is not an object keyed by mm'; return; }
+      var keys = Object.keys(T); counts[tab] = keys.length;
+      keys.forEach(function (k) {
+        if (bad) return;
+        if (!/^\d+$/.test(k)) { bad = tab + ' key ' + JSON.stringify(k) + ' is not a whole number of mm'; return; }
+        if (!Array.isArray(T[k]) || !T[k].length) { bad = tab + '[' + k + '] is not a list of rows'; return; }
+        T[k].forEach(function (r) { if (bad) return; if (!r || typeof r.n !== 'number' || !(r.n > 0)) bad = tab + '[' + k + '] has a row with no count n'; else rows++; });
+      });
+    });
+    if (bad) return { ok: false, reason: bad };
+    if (!rows) return { ok: false, reason: 'no rows in walls / slabs / doors' };
+    return { ok: true, name: typeof j.name === 'string' && j.name ? j.name : 'catalogue', counts: counts, rows: rows };
+  }
   // §D51 the best-effort slab setting: a plan's @DEFAULT > the registry the caller passes (opts.defaultsRef, the page's element_defaults.json) > the registry shipped with this module > walls_bounded
   var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen', UNDERSIDE_KEY = 'slab.underside_when_stepped';
   function settingOf(sheets, opts, key, fallback) {   // a plan's @DEFAULT > opts.defaultsRef (the page's element_defaults.json) > the shipped registry > the fallback
@@ -760,5 +781,5 @@
     return by;
   }
 
-  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, frameOfSheets: frameOfSheets, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
+  return { TAG: TAG, sha256Hex: sha256Hex, mergeScopes: mergeScopes, frameOfSheets: frameOfSheets, chunkDxf: chunkDxf, readSheets: readSheets, readSheet: readSheet, librarySubset: librarySubset, familyShards: familyShards, libraryFromShards: libraryFromShards, loadOci: loadOci, catalogueCheck: catalogueCheck, SETS: SETS, setOf: setOf, setWith: setWith, qualifyNotRun: qualifyNotRun, planDoors: planDoors, elevPick: elevPick, gate: gate, convert: convert, toOps: toOps, counts: counts, parse: parse, FACE_ORDER: FACE_ORDER };
 });

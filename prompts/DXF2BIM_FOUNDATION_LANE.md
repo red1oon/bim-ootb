@@ -761,7 +761,7 @@ ride on a reopened IFC (the §D59 L4 move) is not re-run in this session (a page
 ## §D71 THE 2D PANEL LOADS A FIRM CATALOGUE (architect review session 1 NEXT (5): "`state.catalogue` is read by Convert, nothing sets it"; session 3, RESUME item 4)
 **Witness claim first (W-CATALOGUE-ROW, `modeller/tests/witness_dxf_catalogue_row.js`).** C1 (Node) `Dxf2BimImport.catalogueCheck(json)` accepts the catalogue `tools/catalogue_from_ifc.js` writes (version 1;
 `walls` / `slabs` / `doors` keyed by mm, rows `{n, material | type, ...}`) and states its name and counts (thicknesses / widths, rows); it REFUSES, with the reason, a non-object, another version, a table
-that is not an object of row arrays, a row with no count: the catalogue never half-loads. C2 (Node) Convert with the checked catalogue gives the §D53 materials (a wall whose thickness has a row takes its
+that is not an object of row arrays, a row with no count (a row may carry a null material: the tool counts what the model holds): the catalogue never half-loads. C2 (Node) Convert with the checked catalogue gives the §D53 materials (a wall whose thickness has a row takes its
 most frequent material, `material_source` = `<catalogue name>: n of m walls of t mm`), without it the reference: the row only sets what Convert already reads. C3 (page, software GL) on a standard set
 the 2D panel shows a row "Firm catalogue: none (materials from the reference)" with Load / Clear; Load of the tool's JSON sets `state.catalogue` (`§DXF-CATALOGUE loaded name=.. walls=.. slabs=.. doors=..`),
 the row names it and its counts, and the next Convert's walls carry its `material_source`; a malformed file is refused on the row and in the log (`§DXF-CATALOGUE refused reason=..`), `state.catalogue`

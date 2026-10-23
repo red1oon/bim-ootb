@@ -40,6 +40,7 @@
     x: SVG('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
     meta: SVG('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>'),
     alert: SVG('<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>'),
+    book: SVG('<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'),
     play: SVG('<polygon points="6 3 20 12 6 21 6 3"/>'),
     stop: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/>'),
     foldL: SVG('<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>'),
@@ -712,7 +713,8 @@
   function css() {
     if (document.getElementById('dxf-css')) return;
     var st = document.createElement('style'); st.id = 'dxf-css';
-    st.textContent = '.dxf-complete{display:flex;gap:6px;align-items:center;margin:8px 10px 2px;font-size:11px;color:#ffb347;cursor:pointer}.dxf-complete input{accent-color:#ffb347}#dxf-panel{position:fixed;left:252px;top:60px;width:264px;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;z-index:31;color:#c7cdd8;font:12px system-ui,sans-serif;overflow:hidden;transition:left .18s ease}' +
+    st.textContent = '.dxf-cat{display:flex;gap:6px;align-items:center;margin:6px 10px 2px;font-size:11px;color:#9fb4c8}.dxf-cat .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dxf-cat button{background:#23262e;border:1px solid #2c303a;color:#cfd8e3;border-radius:4px;font-size:11px;padding:2px 7px;cursor:pointer}.dxf-cat svg{width:13px;height:13px;flex:none}' +
+      '.dxf-complete{display:flex;gap:6px;align-items:center;margin:8px 10px 2px;font-size:11px;color:#ffb347;cursor:pointer}.dxf-complete input{accent-color:#ffb347}#dxf-panel{position:fixed;left:252px;top:60px;width:264px;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;z-index:31;color:#c7cdd8;font:12px system-ui,sans-serif;overflow:hidden;transition:left .18s ease}' +
       'body.ol-collapsed #dxf-panel{left:12px}#dxf-panel .ip-head{display:flex;align-items:center;gap:8px;padding:10px 10px 9px;border-bottom:1px solid #23262e}' +
       '#dxf-panel .ip-title{font-size:10px;letter-spacing:.14em;color:#5b6473}#dxf-panel .dxf-x{margin-left:auto;background:transparent;border:0;color:#7f8aa0;cursor:pointer;padding:2px;display:inline-flex}' +
       '#dxf-body{max-height:300px;overflow:auto;padding:6px 8px 8px}.dxf-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}.dxf-row:hover{background:#23262e}' +
@@ -739,6 +741,12 @@
     // §D40b the two option boxes sit above the sheet list: below it they scrolled out of sight under the footer for a long set (9 sheets)
     if (state.gate.structure) h += '<label class="dxf-complete" title="Add the floor slab and the gabled roof the drawings imply. They are computed from drawn evidence plus stated conventions, shown amber, and listed as yellow defaults."><input type="checkbox" id="dxf-complete"' + (state.complete ? ' checked' : '') + '> Complete the building (floor slab, roof): amber, estimated</label>';
     if (state.gate.structure) h += '<label class="dxf-complete" style="color:#9fb4c8" title="Show how each body is evidenced instead of its material: derived = amber, assumed = red. Off: each material in its standard colour."><input type="checkbox" id="dxf-evidence"' + (state.evidence ? ' checked' : '') + '> Evidence colours (drawn / derived / assumed)</label>';
+    if (!state.gate.structure) {   // §D71 the firm catalogue Convert reads (§D53): none = the reference's materials by class
+      var cc = state.catalogue && state.catalogueInfo;
+      h += '<div class="dxf-cat" id="dxf-cat-row" title="A firm catalogue (modeller/tools/catalogue_from_ifc.js): wall / slab thickness -> material, door width -> type. Convert takes its most frequent entry, the count stated.">' + ICON.book +
+        '<span class="nm" id="dxf-cat-name">' + (cc ? esc('Firm catalogue: ' + cc.name + ' (walls ' + cc.counts.walls + ' · slabs ' + cc.counts.slabs + ' · doors ' + cc.counts.doors + ')') : 'Firm catalogue: none (materials from the reference)') + '</span>' +
+        '<button id="dxf-cat-load">Load</button>' + (cc ? '<button id="dxf-cat-clear">Clear</button>' : '') + '</div>';
+    }
     state.sheets.forEach(function (s) {
       h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
       if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
@@ -760,6 +768,8 @@
     var cb = document.getElementById('dxf-complete');
     var ev = document.getElementById('dxf-evidence'); if (ev) ev.onchange = function () { state.evidence = !!ev.checked; };   // read at Convert
     if (cb) cb.onchange = function () { state.complete = !!cb.checked; state.defaults = (state.defaults || []).filter(function (d) { return !/^synth\./.test(d.key); }); structureGate(); };
+    var cl = document.getElementById('dxf-cat-load'); if (cl) cl.onclick = pickCatalogue;
+    var cx = document.getElementById('dxf-cat-clear'); if (cx) cx.onclick = clearCatalogue;
     document.getElementById('dxf-lines').onclick = function () { setLines(!state.linesOn); };
     document.getElementById('dxf-meta').onclick = function () { if (window.DxfMetaEditor) window.DxfMetaEditor.show(); };
     document.getElementById('dxf-arrange').onclick = function () { arrange().catch(function (e) { console.error(TAGA + ' failed ' + (e && e.stack || e)); }); }; setArrBtn();
@@ -931,6 +941,28 @@
     } catch (e) { console.error('§DXF-LIB source=none reason=' + (e && e.message) + ' → GAP:lod400_library_unreachable, no fill placed, never a box'); return null; }
   }
 
+  // ---- §D71 the catalogue row: the tool's JSON, taken whole (Dxf2BimImport.catalogueCheck) or refused with the reason; state.catalogue unchanged on refusal ----
+  function loadCatalogue(text) {
+    var j = null, chk;
+    try { j = typeof text === 'string' ? JSON.parse(text) : text; chk = window.Dxf2BimImport.catalogueCheck(j); } catch (e) { chk = { ok: false, reason: 'not JSON (' + (e && e.message) + ')' }; }
+    if (!chk.ok) { console.log('§DXF-CATALOGUE refused reason=' + chk.reason); status('Catalogue refused: ' + chk.reason); return chk; }
+    state.catalogue = j; state.catalogueInfo = chk;
+    console.log('§DXF-CATALOGUE loaded name=' + chk.name + ' walls=' + chk.counts.walls + ' slabs=' + chk.counts.slabs + ' doors=' + chk.counts.doors + ' rows=' + chk.rows + ' (D71)');
+    if (state.panel && state.gate) renderPanel();
+    status('Catalogue ' + chk.name + ' loaded: Convert takes its materials by thickness.');
+    return chk;
+  }
+  function clearCatalogue() { state.catalogue = null; state.catalogueInfo = null; console.log('§DXF-CATALOGUE cleared (materials from the reference)'); if (state.panel && state.gate) renderPanel(); }
+  var catInp = null;
+  function pickCatalogue() {
+    if (!catInp) {
+      catInp = document.createElement('input'); catInp.type = 'file'; catInp.accept = '.json,application/json'; catInp.id = 'm-open-catalogue'; catInp.style.display = 'none';
+      catInp.onchange = function () { var f = catInp.files && catInp.files[0]; if (f) f.text().then(loadCatalogue); catInp.value = ''; };
+      document.body.appendChild(catInp);
+    }
+    catInp.click();
+  }
+
   // ---- the chooser row's input (multiple .dxf) ----
   var inp = null;
   function pick() {
@@ -965,6 +997,6 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();
