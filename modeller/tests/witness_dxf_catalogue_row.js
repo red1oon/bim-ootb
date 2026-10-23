@@ -6,8 +6,9 @@
  *   C1 CHECK     — catalogueCheck takes the tool's catalogue (name + counts stated) and refuses, with a reason, a non-object / another version / a table not keyed by mm / a row with no count.
  *   C2 CONVERT   — Convert with the checked catalogue: walls of a thickness with a row carry '<name>: n of m walls of t mm'; without it the reference; geometry identical.
  *   C3 PAGE      — (with --page <modeller url>, software GL) the 2D panel on a standard set shows the row (none), Load sets it (§DXF-CATALOGUE loaded), the row names it, a malformed file is refused
- *                  (state unchanged), Clear returns to none; the next Convert's IFC carries the catalogue's material. INCONCLUSIVE without --page.
- * Usage: NODE_PATH=<dir with better-sqlite3, web-ifc> node modeller/tests/witness_dxf_catalogue_row.js <Node model .db> <its architecture .ifc> [--page <url> --sheets <dir of the set's .dxf>]
+ *                  (state unchanged), Clear returns to none. INCONCLUSIVE without --page. (Convert's use of state.catalogue is C2: the page passes it to the same I.convert.)
+ *   C4 STRUCTURE — (with --structure <dir of the marked shed>) no row on a structure set; it gates as before.
+ * Usage: NODE_PATH=<dir with better-sqlite3, web-ifc> node modeller/tests/witness_dxf_catalogue_row.js <Node model .db> <its architecture .ifc> [--page <url> [--sheets <dir>] [--structure <dir of the marked shed>]]
  */
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto'), M = path.join(__dirname, '..'), D = path.join(M, 'dxf2bim') + '/';
@@ -50,6 +51,11 @@ const [db, ifc] = pos; if (!db || !ifc) { say('MISSING input: <model .db> <its a
     const row3 = await pg.evaluate(() => document.getElementById('dxf-cat-name').textContent);
     check('C3', 'the row: none -> a malformed file refused (unchanged) -> the tool\'s catalogue loaded and named -> Clear back to none; logged', row0 && /none/.test(row0) && !bad.ok && /none/.test(row1) && good.ok && /own-firm/.test(row2) && /none/.test(row3) &&
       logs.some(l => /§DXF-CATALOGUE refused reason=/.test(l)) && logs.some(l => /§DXF-CATALOGUE loaded name=own-firm/.test(l)), `rows: "${row0}" | "${row1}" | "${row2}" | "${row3}"`);
+    const shed = opt('--structure');   // C4: a structure set (the marked shed) shows no catalogue row
+    if (shed) { const sf = fs.readdirSync(shed).filter(f => /\.dxf$/i.test(f)).map(f => ({ name: f, text: fs.readFileSync(path.join(shed, f), 'utf8') }));
+      const r4 = await pg.evaluate(async fs => { await window.DxfImportUI.openFiles(fs); return { row: !!document.getElementById('dxf-cat-row'), status: (document.getElementById('dxf-status') || {}).textContent || '' }; }, sf);
+      check('C4', 'a structure set (the shed) shows no catalogue row and gates as before', !r4.row && /Structure set/.test(r4.status), `row=${r4.row} status="${r4.status.slice(0, 90)}"`); }
+    else say('INCONCLUSIVE C4 no --structure <dir>');
   } finally { await br.close(); }
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
 })().catch(e => { say('FAIL harness ' + (e && e.stack)); process.exit(1); });
