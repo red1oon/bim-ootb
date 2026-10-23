@@ -50,7 +50,8 @@ const J = (id, name, cond, d) => { judged++; if (!cond) fails++; console.log('  
     await pick('c_doctype_id', /in transit/i); await pick('ad_org_id', /^HQ/); await pick('m_warehouse_id', /HQ Warehouse/); await pick('m_warehouseto_id', /Store Central/);
     await click('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(1800);
     await click('#idmp-tabstrip .idmp-adtab[title="TabLevel 1 · M_MovementLine"]'); await pg.waitForTimeout(1000); await click('#idmp-toolbar [data-tb="new"]'); await pg.waitForTimeout(1000);
-    await pick('m_product_id', /Elm Tree/); await pg.fill(F('m_locator_id'), String(SRC)); await pg.fill(F('m_locatorto_id'), String(TGT)); await pg.fill(F('qtyentered'), String(OUTQ)); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(500);
+    // the locators are CHOSEN from the Locator lookups (W-LOCATOR-LOOKUP), not typed
+    await pick('m_product_id', /Elm Tree/); await pg.selectOption(F('m_locator_id', 'select'), String(SRC)); await pg.selectOption(F('m_locatorto_id', 'select'), String(TGT)); await pg.fill(F('qtyentered'), String(OUTQ)); await pg.locator(F('qtyentered')).first().blur().catch(() => {}); await pg.waitForTimeout(500);
     await click('#idmp-toolbar [data-tb="save"]'); await pg.waitForTimeout(2000);
     await click('#idmp-tabstrip .idmp-adtab[title="TabLevel 0 · M_Movement"]'); await pg.waitForSelector('[data-doc-action="CO"]'); await click('[data-doc-action="CO"]'); await pg.waitForTimeout(3500);
     const mv = (await tip('SELECT m_movement_id AS i, docstatus AS s FROM m_movement WHERE m_movement_id<0 ORDER BY m_movement_id LIMIT 1'))[0];
