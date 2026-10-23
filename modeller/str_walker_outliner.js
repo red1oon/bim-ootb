@@ -240,8 +240,23 @@
   // Open a local extracted.db / meta.db file (the 🏗 STR path).
   function openStrDb(file) {
     var fr = new FileReader();
-    fr.onload = function () { _openBuffer(fr.result, file.name || 'db'); };
+    fr.onload = function () {
+      var name = file.name || 'db', before = window.__dwBuf, ok = _openBuffer(fr.result, name);
+      // §LOCAL-OPEN-EDITABLE (DXF2BIM architect review SEAM-6 / SEAM-7): a building .db opened from disk (not a native op-log .db: that one returns before __dwBuf is set) gets its OWN
+      // editable instance, as a resident does (_forkEditable) and an .ifc open does (§IFC-OPEN-KEY-FIX / §IFC-OPEN-SEED-FIX). Before, it stayed read-only and its walks committed into whatever
+      // key was active, e.g. a DXF convert session's ops ("GEOM_CUT parent 72 not found" on the kernel fold).
+      if (ok && window.__dwBuf && window.__dwBuf !== before) _forkLocal(name.replace(/\.(db|sqlite)$/i, ''));
+    };
     fr.readAsArrayBuffer(file);
+  }
+  function _forkLocal(key) {
+    var O = window.Bonsai && window.Bonsai.oplog;
+    _seedPending(key);
+    if (!(O && O.setModelKey)) { window.__arcSeedDone('no-oplog'); return; }
+    O.setModelKey('mo_local_' + key).then(function (n) {   // 'mo_local_' never collides with a resident's 'mo_' or an .ifc open's 'mo_ifc_' instance of the same name
+      console.log(TAG + ' §LOCAL-OPEN-EDITABLE instance mo_local_' + key + ' active ops=' + n);
+      _replayEdits(); _seedArcEditable(O, key, null);
+    });
   }
 
   // ── Open a raw .ifc file directly (2026-07-04 — the Modeller becomes its own IFC ingestion

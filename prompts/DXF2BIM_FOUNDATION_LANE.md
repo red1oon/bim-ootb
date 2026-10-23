@@ -517,3 +517,19 @@ feature: a cut voids its parent product and fills it with its `fillingFid` produ
 body; L3 24 distinct fills named; L4 the page: a 0.5 m move of a wall hosting a door moves the door 0.5 m and the hole (3 inner edges), 3 ops in one gesture, one undo restores both; L5 the IFC holds 24
 `IfcRelVoidsElement` + 24 `IfcRelFillsElement`, the Viewer DB 24 `rel_fills_host` (host and filling set; were 0 and 0); L6 the shed gates as BASE. Measured, not judged: the exported IFC reopened for
 editing has 0 fills edges (SEAM-8). Regression PASS 41 / FAIL 4 (the known 4; G3 unchanged at 209). Modeller sw v135.
+
+## §D60 A BUILDING .DB OPENED FROM DISK IS EDITABLE IN ITS OWN INSTANCE (architect review session 2: SEAM-6 + SEAM-7, P-S7 + P-S9; the Modeller open path)
+**Witness claim first (W-WALL-LINE L7 / L8, `modeller/tests/witness_dxf_wall_line.js`).** L7 the Viewer DB exported after a DXF2BIM convert, opened with Open ▸ local .db in a FRESH profile, is
+seeded editable (op-log > 0 in instance `mo_local_<name>`, the §ARC-1 bridge built, `swXEdges.fills` = its `rel_fills_host` rows), and the L4 move there moves the door with its wall. L8 the same DB opened
+in a SECOND tab of the SAME profile (after the convert tab): the active instance is `mo_local_<name>` and holds no op of the convert session (every GEOM_CUT's parent is an op of this instance), and a
+one-discipline walk does not throw. L9 unchanged: a NATIVE op-log .db (Export ▸ Native .db) still opens through `importBytes` (W-E2E-EXPORT-DB, W-E2E-ANCHOR-SAVE-ROUNDTRIP stay green).
+**Measured first (2026-10-23 session 2):** `openStrDb` only calls `_openBuffer` (`str_walker_outliner.js:241-245`): the Duplex Viewer DB reopened has op-log 0 (read-only: SEAM-7), and in the
+same profile the walk throws `GEOM_CUT parent 72 not found` (SEAM-6), the convert session's cuts folded with the reopened model; a resident forks `mo_<key>` (`_forkEditable`) and an .ifc open
+`mo_ifc_<name>` (§IFC-OPEN-KEY-FIX, the same class of bug, fixed there 2026-07-04).
+**Rule.** `openStrDb` -> `_forkLocal(name)` after `_openBuffer` when the file was a building db (a native op-log db returns before `__dwBuf` is set): `setModelKey('mo_local_<name>')`, `_replayEdits`,
+`_seedArcEditable`, as `_forkEditable` does.
+**D60 RESULT (2026-10-23, session 2): BUILT.** `openStrDb` -> `_forkLocal` (`mo_local_<name>`, replay, seed). W-WALL-LINE L7 / L8 pass (8 / 8): the Duplex Viewer DB reopened in a fresh profile =
+75 ops, bridge, 24 fills edges, a 0.5 m wall move moves its door 0.5 m (was op-log 0, read-only); in a second tab of the convert's profile: 75 ops, 0 cuts without a parent, 0 convert-session ops, the PLB
+walk does not throw (was `GEOM_CUT parent 72 not found`). Native op-log .db open unchanged: W-E2E-ANCHOR-SAVE-ROUNDTRIP 6 / 0; W-E2E-EXPORT-DB 5 / 1 with E1 failing identically on BASE (its menu
+expectation of 3 rows predates the vdb / dxf rows: stale, not this change); W-UX-PILL does not load in this environment on BASE either (MODULE_NOT_FOUND). Regression PASS 41 / FAIL 4 (the known 4).
+Modeller sw v136.
