@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- comm_poc.html — CL3 engine-in-browser POC: one device = one page = its own comm.db, talking ONLY through a pipe.
+     Spec: bim-compiler prompts/TEAMWORK_FRAMEWORK.md §12.4 — Witness: common/tests/witness_comm_cl3_folder.js (W-FOLDER-2CTX).
+     Not linked from any app. ?pipe=<base url of a dumb file pipe: PUT|GET <base>/f/<name>, GET <base>/list?prefix=> -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comm POC</title>
+<style>body{font:14px/1.4 system-ui,sans-serif;margin:16px;background:#fff;color:#222}pre{background:#f4f4f4;padding:8px;white-space:pre-wrap}</style>
+</head><body>
+<h1>Comm layer POC (CL3)</h1>
+<p id="who">starting…</p>
+<pre id="out"></pre>
+<script src="../../erp/sqljs/sql-wasm.js"></script>
+<script src="../../erp/kernel_ops.js"></script>
+<script src="../../erp/crud_core.js"></script>
+<script src="comm_envelope.js"></script>
+<script src="comm_order.js"></script>
+<script src="comm_pipe.js"></script>
+<script src="comm_store.js"></script>
+<script>
+(function () {
+  'use strict';
+  var SPACE_SEED = 'comm-poc-space';
+  var out = document.getElementById('out');
+  function log(m) { console.log(m); out.textContent += m + '\n'; }
+  async function sha(s) { var b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)); return Array.from(new Uint8Array(b)).map(function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join(''); }
+  // a deterministic uuid-shaped kernel op_uuid from an op hash (the kernel wants one; the envelope hash is the identity)
+  function uuidFromHash(h) { return h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-8' + h.slice(17, 20) + '-' + h.slice(20, 32); }
+
+  var S = null, SQL = null, pipe = null;
+  window.CommPOC = {
+    init: async function (pipeBase) {
+      SQL = await initSqlJs({ locateFile: function (f) { return '../../erp/sqljs/' + f; } });
+      var dev = await CommStore.newDevice();
+      S = CommStore.open(new SQL.Database(), { SQL: SQL, space: await sha(SPACE_SEED), self: dev, log: log });
+      pipe = CommPipe.httpPipe(pipeBase, 'folder-http');
+      document.getElementById('who').textContent = 'device ' + dev.kid;
+      return dev.kid;
+    },
+    createOrder: async function (docno, total) {
+      var uu = crypto.randomUUID();
+      await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_CREATE', params: { fields: { documentno: docno, grandtotal: total } } } });
+      return uu;
+    },
+    editOrder: async function (uu, from, to) {
+      await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_UPDATE', params: { changes: { grandtotal: { old: from, new: to } } } } });
+    },
+    visit: async function () { return S.sync(pipe); },
+    // fold the placed ops, in order, through the REAL kernel + crud_core.listTip (fresh DB each time = pure projection)
+    fold: async function () {
+      var meta = new SQL.Database();
+      meta.run('CREATE TABLE c_order (c_order_id INTEGER, c_order_uu TEXT, documentno TEXT, grandtotal NUMERIC, created TEXT, updated TEXT, createdby INTEGER, updatedby INTEGER, ad_client_id INTEGER, ad_org_id INTEGER, isactive TEXT, processed TEXT, processing TEXT, posted TEXT)');
+      globalThis.__idmpDb = meta;
+      var K = window.KernelOps, kdb = new SQL.Database(), placed = S.placedEnvelopes();
+      placed.forEach(function (p) {
+        var e = p.env, opUuid = e.body.op_type === 'CRUD_CREATE' ? e.target.uu : uuidFromHash(p.hash);
+        K.commitOp(kdb, e.body.op_type, CommEnvelope.toKernelParams(e), null, null, opUuid, e.ts);
+      });
+      var rows = CrudCore.listTip(kdb, 'c_order', 'c_order_id', [], null).rows.map(function (r) {
+        return { documentno: r.documentno, grandtotal: r.grandtotal, c_order_uu: r.c_order_uu };
+      }).sort(function (a, b) { return a.c_order_uu < b.c_order_uu ? -1 : 1; });
+      log('§COMM_FOLD placed=' + placed.length + ' rows=' + rows.length + ' ' + rows.map(function (r) { return r.documentno + '=' + r.grandtotal; }).join(' '));
+      return rows;
+    },
+    state: async function () {
+      var L = S.order();
+      return { kid: S.kid, ops: S.query('SELECT COUNT(*) AS n FROM cl_op')[0].n, placed: L.order.length, parked: L.parked.length,
+               orderHash: (await sha(L.order.join(','))).slice(0, 16), delivery: S.delivery(),
+               storage: { cl_tables: S.query("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'cl_%' ORDER BY name").map(function (r) { return r.name; }) } };
+    }
+  };
+  log('§COMM_POC_LOADED envelope=' + !!window.CommEnvelope + ' order=' + !!window.CommOrder + ' pipe=' + !!window.CommPipe + ' store=' + !!window.CommStore +
+      ' kernel=' + !!window.KernelOps + ' crud_core=' + !!window.CrudCore);
+})();
+</script>
+</body></html>
