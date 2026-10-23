@@ -2,7 +2,28 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
-## ▶▶▶ RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
+## ▶▶▶ RESUME HERE (session 3 entry; written 2026-10-23 at the end of session 2; supersedes the session-2 block below)
+**Merged in session 2 (bim-ootb):** #2309 D56 window tags by width · #2310 seam study · #2311 D57 section stack · #2312 D58 @EXCLUDE on the standard path · #2313 D59 one wall line = one editable wall, doors ride,
+IFC/DB keep voids + fills · #2314 D60 a .db opened from disk is editable · #2316 D61 walk meshes from the rules' source · #2318 D62 Farming Shed reference · #2322 D63 STR girders on the building's beam level ·
+#2324 film last part v1 · #2325 D64 pendant lamps + walk build-up + farm_rules.db committed (it was 404) · **D65 FP pipework from the BOM template: PR on branch `feat/fp-bom-tree` (check it merged)**.
+BIMCompiler: #239 extractIFC2DB --also-classes · #240 bake_farm_rules.py · #241 FILM_SET=shedlast cards · #242 pendant lamp · D65 bake PR on `feat/farm-fp-bom` (check). Modeller sw v141.
+**Owner asks still open (in order):**
+1. **Film v2, SHORT (~90 s), owner: "cut out half to focus on the opening as an ARC and walk the MEP right away, faster pace; cam view should earnestly follow as parts are laid".** Start at Open ▸ local .db of the
+   saved shed (SHED_extracted.db, made by a convert in `film_dxf2bim_shed_last_rec.js` chapter 1, or reuse `take_sl4/saved`), editable ARC, then DISC ELEC (pendant lamps BUILD UP: follow `window.__dwReveal.ELEC`
+   with the camera), DISC FP (heads build up, then the pipe network reveals outward from the riser: follow the chain reveal), close-ups (lamp, sprinkler head, a tee). Reuse the recorder's helpers (closeUp
+   aims at the DRAWN instance; lower `controls.minDistance` for macros; `inside()` eye-height dolly; floor from the db). Walks take 10-20 s in software GL: start lines when the parts land.
+2. **The joint mini-BOMs (owner: "each joint is a series of mini BOM ... shim-anchor"):** `assemble()` only reads `routeChains`; feed it the BOM-tree network so the T_CONNECTOR_ASSEMBLY parts (tee + transition +
+   drop) land at each head node (rule_joint_piece for FP in farm_rules.db is empty: project it from the library's `ad_bom_child` T_CONNECTOR_ASSEMBLY rows). Prior art: SRS §6.12 tack model, WalkerDoctrine §8,
+   bim-compiler `prompts/Modeller/DISC_Walker/RESUME_TERMINAL_RULE_MINING.md §PRIOR-ART`.
+3. **LOD400 library meshes for the barn's own bodies (owner asked):** DXF2BIM bodies are drawn prisms; the library has steel members (no IfcFan). A catalogue-binding rule by measured section: spec first, owner's go.
+4. Open from the review: F16 (writer + reader on recessed faces: JKR 51 / Clinic 34 / LTU 343 windows), SEAM-8 (.ifc open writes no rel_fills_host: `viewer/import_db_builder.js`, the Viewer import lane),
+   the 819 x 759 Duplex window binding (owner fact), F15 slab edge in the writer, the "Load catalogue" row, Parts A / B of this brief.
+**Data / tools:** `/tmp/db2/*.db` (regenerate: `extractIFC2DB.js --ifc <ARC> --also <STR> [--also-classes IfcColumn,IfcSlab,IfcBeam] -o`); the marked shed set `~/Videos/dxf2bim_film_work/why/cli/marked/`;
+`farm_rules.db` = `bake_farm_rules.py --ref <ShedFilm3_extracted.db> --terminal modeller/terminal_rules.db --library ~/bim-compiler/library/component_library.db --source-geo Duplex=<Duplex_geo.db from OCI> --out`.
+**Lessons (this session):** never `git stash` in this repo (the stash list is shared across worktrees: a pop applied another session's entry); `*.db` is gitignored: force-add rules dbs; a local
+`python3 -m http.server` of the worktree serves the Modeller for recorder takes; transform-derived bboxes can sit off the element (use element_world_bbox for clash).
+
+## (superseded by session 3 entry) RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
 **Done:** §D56 window tags by width (#2309, sw v132); JKR slab diagnosis F16-F18; the seam study SEAM-1..5 + proposals P-S1..P-S5 (RESULT "session 2" at the bottom).
 **§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **§D58 DONE** (the user's `@EXCLUDE` honoured on the standard path; the Duplex standard set now converts in the page with 4 exclusions: SEAM-5 unblocked; Duplex seams measured, RESULT S3, SEAM-2b / SEAM-6). **§D59 DONE** (one wall line = one editable wall, doors ride it, the IFC / DB keep voids + fills; W-WALL-LINE). **§D60 DONE** (a .db opened from disk is editable in its own instance: SEAM-6 + SEAM-7 closed). **NEXT (in order, each spec'd first):** (2) P-S1 (walk services straight after Convert, no file round trip); P-S8 (SEAM-8: the .ifc open's db has no fills: `viewer/import_db_builder.js`, the Viewer import lane's file); the walked fixtures' meshes (SEAM-4 / P-S4, FOUNDATION §5 F5). (3) F16 the writer draws
 every opening the face sees. (4) The old items 4-6 below (F15 slab edge, Load catalogue row, Parts A / B). P-S4 (fixture meshes from one store) belongs with FOUNDATION §5 F5; P-S5 is the owner's call.

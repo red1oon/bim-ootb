@@ -1999,6 +1999,65 @@
   }
 
 
+  // ── §D65 the BOM-template tree (bim-ootb DXF2BIM_FOUNDATION_LANE.md §D65; the Java compiler's FP_PIPE_ASSEMBLY + SPRINKLER_PENDANT_ASSEMBLY, SRS §6.12 tack model) ──
+  // When the rules carry a rule_routing row pattern='bom-tree' for the disc and nothing else routed: over the walk's OWN placed heads, one DROP per head (the assembly height, head -> tee), one
+  // BRANCH run per row of heads (tee to tee along the long axis), one MAIN across the row ends (through the end tees on params.main_side: half a spacing out lands in the gable wall band, measured), one RISER from the floor to the main's
+  // middle. Roles / diameters / height come from the rule's params (baked from the library's BOM rows); every segment goes through the same envelope clash check as the pattern bridge.
+  function _bomTree(disc, bdb, placements) {
+    if (!_db || !placements || placements.length < 2) return null;
+    var row = _rows(_db, "SELECT params_json FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='bom-tree'")[0]; if (!row) return null;
+    var P; try { P = JSON.parse(row.params_json); } catch (e) { return null; }
+    var H = +P.assembly_height_m, tol = 0.05; if (!(H > 0)) return null;
+    var xs = placements.map(function (p) { return p.x; }), ys = placements.map(function (p) { return p.y; });
+    var ax = (Math.max.apply(null, xs) - Math.min.apply(null, xs)) >= (Math.max.apply(null, ys) - Math.min.apply(null, ys)) ? 'x' : 'y', cr = ax === 'x' ? 'y' : 'x';
+    var rows = []; placements.slice().sort(function (a, b) { return a[cr] - b[cr] || a[ax] - b[ax]; }).forEach(function (p) {
+      var r = rows.length ? rows[rows.length - 1] : null; if (r && Math.abs(p[cr] - r.c) <= tol) r.heads.push(p); else rows.push({ c: p[cr], heads: [p] }); });
+    rows.forEach(function (r) { r.heads.sort(function (a, b) { return a[ax] - b[ax]; }); });
+    var sp = []; rows.forEach(function (r) { for (var i = 1; i < r.heads.length; i++) sp.push(r.heads[i][ax] - r.heads[i - 1][ax]); }); sp.sort(function (a, b) { return a - b; });
+    var half = sp.length ? sp[Math.floor(sp.length / 2)] / 2 : 1, lo = Math.min.apply(null, placements.map(function (p) { return p[ax]; })), hi = Math.max.apply(null, placements.map(function (p) { return p[ax]; }));
+    // the clash envelope from the TRUE world bounds when the db has them (element_world_bbox): the transform-derived boxes can sit off the element (the shed: a wall 8 cm high, a false clash); else the walker's usual boxes
+    var wb = _rows(bdb, "SELECT name FROM sqlite_master WHERE type='table' AND name='element_world_bbox'").length ? _rows(bdb, "SELECT b.minX x0, b.maxX x1, b.minY y0, b.maxY y1, b.minZ z0, b.maxZ z1 FROM elements_meta m JOIN element_world_bbox b ON b.guid=m.guid " +
+      "WHERE (m.discipline='ARC' AND m.ifc_class IN ('IfcWall','IfcWallStandardCase','IfcSlab','IfcRoof','IfcCovering')) OR (m.discipline='STR' AND m.ifc_class IN ('IfcColumn','IfcBeam','IfcMember'))") : [];
+    var env = wb.length ? wb.map(function (b) { return { cx: (b.x0 + b.x1) / 2, cy: (b.y0 + b.y1) / 2, cz: (b.z0 + b.z1) / 2, w: b.x1 - b.x0, d: b.y1 - b.y0, h: b.z1 - b.z0 }; }).filter(function (b) { return b.w > 0 && b.d > 0 && b.h > 0; })
+      : (typeof ROOT._rwLoadArcEnvelope === 'function' ? ROOT._rwLoadArcEnvelope(bdb) : []).concat(_strEnvelope(bdb));
+    var pt = function (a, c, z) { var o = [0, 0, z]; o[ax === 'x' ? 0 : 1] = a; o[ax === 'x' ? 1 : 0] = c; return o; };
+    var floor = (_rows(bdb, "SELECT MAX(t.center_z + t.bbox_z/2) z FROM elements_meta m JOIN element_transforms t ON t.guid=m.guid WHERE m.ifc_class='IfcSlab'")[0] || {}).z;
+    // one tree for a head level zH and a main position mainA; returns its segments and the clashes by role
+    function build(zH, mainA) {
+      var segs = [], clashed = { DROP: 0, BRANCH: 0, MAIN: 0, RISER: 0 }, mainPts = [], seed = null;
+      var add = function (role, from, to, fk, tk, fg, tg, dia) {
+        if (_envelopeClash(from, to, env, dia / 2000)) { clashed[role]++; if (ROOT.__bomTreeDebug) { var hit = env.filter(function (e) { return _envelopeClash(from, to, [e], dia / 2000); }).slice(0, 2); (clashed.hits = clashed.hits || []).push(role + ' ' + JSON.stringify(from.map(function (v) { return +v.toFixed(2); })) + '->' + JSON.stringify(to.map(function (v) { return +v.toFixed(2); })) + ' hits ' + JSON.stringify(hit.map(function (e) { return [+e.cx.toFixed(2), +e.cy.toFixed(2), +e.cz.toFixed(2), +e.w.toFixed(2), +e.d.toFixed(2), +e.h.toFixed(2)]; }))); } return; }
+        segs.push({ disc: disc, rule: 'bom-tree:' + P.bom, role: role, from: from, to: to, from_guid: fg, to_guid: tg, from_kind: fk, to_kind: tk, dia_mm: dia,
+          gap: +Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]).toFixed(4), mode: 'bom-tree', prov: 'bom:' + P.bom + '/' + role }); };
+      rows.forEach(function (r, ri) {
+        var tees = r.heads.map(function (h, k) { var t = [h.x, h.y, +(zH + H).toFixed(4)]; add('DROP', [h.x, h.y, zH], t, h.ifc_class, 'IfcPipeFitting', 'FPH:' + ri + ':' + k, 'FPT:' + ri + ':' + k, P.branch_dia_mm); return t; });
+        for (var i = 1; i < tees.length; i++) add('BRANCH', tees[i - 1], tees[i], 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + (i - 1), 'FPT:' + ri + ':' + i, P.branch_dia_mm);
+        var ei = P.main_side === 'max' ? tees.length - 1 : 0, end = tees[ei], m = pt(mainA, r.c, end[2]);
+        if (Math.abs(end[ax === 'x' ? 0 : 1] - mainA) > 1e-6) add('BRANCH', end, m, 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + ei, 'FPM:' + ri, P.branch_dia_mm);
+        mainPts.push(m); });
+      for (var j = 1; j < mainPts.length; j++) add('MAIN', mainPts[j - 1], mainPts[j], 'IfcPipeFitting', 'IfcPipeFitting', 'FPM:' + (j - 1), 'FPM:' + j, P.main_dia_mm);
+      if (P.riser === 'main-mid' && mainPts.length && typeof floor === 'number') { var mid = mainPts[Math.floor(mainPts.length / 2)], foot = [mid[0], mid[1], +(floor + P.main_dia_mm / 2000).toFixed(4)];   // the riser stands ON the floor (its radius above the slab top)
+        add('RISER', foot, mid, 'IfcPipeFitting', 'IfcPipeFitting', 'FPR:0', 'FPM:' + Math.floor(mainPts.length / 2), P.main_dia_mm); seed = { x: foot[0], y: foot[1], z: foot[2] }; }
+      return { segs: segs, clashed: clashed, seed: seed, n: clashed.DROP + clashed.BRANCH + clashed.MAIN + clashed.RISER };
+    }
+    // the head level: the shallowest deflector depth inside the heads' own cited band (0.5 in steps) at which every drop and branch clears; the main: the first position from the main side
+    // inward (half a head spacing a step) at which the main, its stubs and the riser clear. Both searches stay inside what is stated (the band, the side); none found = the least-clashing, logged.
+    var band = placements[0].band || [placements[0].z, placements[0].z], zs = [];
+    for (var zc = band[1]; zc >= band[0] - 1e-9; zc -= 0.0127) zs.push(+zc.toFixed(4)); if (!zs.length) zs.push(placements[0].z);
+    var end0 = P.main_side === 'max' ? hi : lo, step = P.main_side === 'max' ? -half : half, mains = [0, 1, 2, 3, 4, 5, 6].map(function (k) { return +(end0 + k * step).toFixed(4); });
+    var best = null;
+    for (var zi = 0; zi < zs.length && !(best && best.n === 0); zi++) {
+      for (var mi = 0; mi < mains.length; mi++) { var t = build(zs[zi], mains[mi]); t.zH = zs[zi]; t.mainA = mains[mi]; if (!best || t.n < best.n) best = t; if (t.n === 0) break; }
+    }
+    var segs = best.segs, clashed = best.clashed, seed = best.seed, mainA = best.mainA;
+    if (Math.abs(best.zH - placements[0].z) > 1e-6) placements.forEach(function (p) { p.z = best.zH; p.prov = (p.prov || '') + '+bom-tree:depth'; });   // the heads take the level the tree chose (inside their band)
+    console.log(TAG + ' §BOM-TREE-FIT disc=' + disc + ' envelope=' + (wb.length ? 'world-bbox ' : 'transforms ') + env.length + ' head_z=' + best.zH.toFixed(4) + ' (band ' + band[0].toFixed(3) + '..' + band[1].toFixed(3) + ', ' + zs.length + ' levels tried) main=' + mainA.toFixed(2) + ' clashes=' + best.n);
+    var byRole = {}; segs.forEach(function (x) { byRole[x.role] = (byRole[x.role] || 0) + 1; });
+    console.log(TAG + ' §BOM-TREE disc=' + disc + ' bom=' + P.bom + ' heads=' + placements.length + ' rows=' + rows.length + ' axis=' + ax + ' segs=' + segs.length + ' ' + JSON.stringify(byRole) +
+      ' clashed=' + JSON.stringify(clashed) + ' main=' + P.main_side + '@' + mainA.toFixed(2) + ' riser=' + (seed ? 'floor ' + floor.toFixed(3) : 'none'));
+    return { segs: segs, byRule: [{ from: 'bom-tree:' + P.bom, to: disc, mode: 'bom-tree', segs: segs.length, byRole: byRole, clashed: clashed }], seed: seed };
+  }
+
   // ── ROUTE → ASSEMBLE bridge (docs/WalkerDoctrine.md roadmap #3) ──────────────────────────────────
   // routeChains gives the real nn-NETWORK (segments between real extracted element guids). assemble() turns that
   // network into instantiated catalog PARTS: at each routed NODE (a real element endpoint), instantiate the matching
@@ -2396,6 +2455,7 @@
           mPlaced = mOut;
         } else mFloat = mPlaced.length;
         var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
+        if (!mSrc.segs.length) { var mBt = _bomTree(disc, bdb, mPlaced); if (mBt && mBt.segs.length) { mSrc = { segs: mBt.segs, byRule: mBt.byRule }; mBr = { rc: mSrc, patternInfo: { seed: mBt.seed, riser: null } }; } }   // §D65
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
         console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
