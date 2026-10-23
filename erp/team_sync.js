@@ -181,7 +181,7 @@
       } else { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' op-type ' + b.op_type); return; }
       var id = ++base; if (b.op_type === 'CRUD_CREATE') uuToPk[uu] = -id;
       out.push({ id: id, op_uuid: op_uuid, timestamp: e.ts, op_type: b.op_type, parameters: JSON.stringify(kp), input_guids: null, output_guid: null, undone: 0,
-                 prev_hash: null, op_hash: null, sig: null, gid: params.grp || null, branch_id: null, user_tag: 'team' });
+                 prev_hash: null, op_hash: null, sig: null, gid: null, branch_id: null, user_tag: 'team' });   // NOT params.grp: a kept local-only member of the same group would be separated from it and the kernel reports group-torn (found on film footage 2026-10-24)
       byTable[t] = (byTable[t] || 0) + 1;
     });
     // old synthetic pk → new, per table (the open window re-keys its current record)

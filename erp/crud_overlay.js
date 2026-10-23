@@ -1966,6 +1966,11 @@
         _withFreshSide(K, function (db, done) {
           var old = K.allRowsPlain(db);
           Promise.resolve(build(old, K)).then(function (rows) {
+            // ids the projection no longer uses stay in the chain as undone rows (an undone row is still a chain member in readAll); persisting them AFTER the seal
+            // left the stored chain with members the sealed chain skipped → verifyChain=FAIL(prev_hash link / group torn) on the next hydrate (film footage 2026-10-24)
+            var have0 = {}; rows.forEach(function (r) { have0[r.id] = 1; });
+            rows = rows.concat(old.filter(function (r) { return !have0[r.id]; }).map(function (r) { var t = {}; for (var k in r) t[k] = r[k]; t.undone = 1; t.prev_hash = null; t.op_hash = null; t.sig = null; t.gid = null; return t; }))
+                       .sort(function (x, y) { return Number(x.id) - Number(y.id); });
             db.run('DELETE FROM kernel_ops'); K.replayRowsInto(db, rows); db.__tipFoldCache = null;   // tip_fold memo is stamped (maxId,n,undoneN): never trust it across a rebuild
             return Promise.resolve(K.sealChain(db)).then(function () {
               var nu = K.allRowsPlain(db), have = {}; nu.forEach(function (r) { have[r.id] = 1; });
