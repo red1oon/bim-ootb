@@ -19,6 +19,7 @@
   var TAG = '§DXF-IMPORT';
   var DxfParser = L.DxfParser, B = L.B, MK = L.MK, E = L.E, M = L.M, T = L.T, S = L.S, C = L.C, Q = L.Q;
   // F6 D11: a plan states the thinnest wall piece it reads as a wall (@WALLMIN, metres); without it the set config stands
+  function exOf(desc) { return desc && desc.excludes && desc.excludes.length ? desc.excludes : undefined; }   // §D58 the user's @EXCLUDE rectangles reach every plan run (absent when none: run_id unchanged)
   function cfgFor(desc) { var w = desc && desc.wallmin !== undefined ? Number(desc.wallmin) : NaN; return isFinite(w) && w > 0 ? Object.assign({}, C.CFG, { wall: Object.assign({}, C.CFG.wall, { min_thickness: w }) }) : C.CFG; }
 
   // ---- SHA-256 (FIPS 180-4), synchronous, over the UTF-8 bytes of a string: the modules need a sync hashHex (crypto.subtle is async).
@@ -258,7 +259,7 @@
     var mapsOf = function (v) { return !SET ? null : v === 'PLAN' ? [SET.MAP_PLAN] : v === 'ROOF' ? [SET.MAP_ROOF] : v === 'SECTION' ? [SET.MAP_SECT] : v === 'ELEV' ? [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []) : null; };
     sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).forEach(function (sh) {
       var f = { name: sh.name, dxf: sh.dxf }, lm = mapsOf(sh.desc.view); if (lm) f.layer_maps = lm; files.push(f);
-      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, MK.withLayers(SET.MAP_PLAN, sh.desc), cfgFor(sh.desc), { DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
+      if (SET && sh.desc.view === 'PLAN') { try { planOps[sh.name] = B.run(sh.text, MK.withLayers(SET.MAP_PLAN, sh.desc), cfgFor(sh.desc), { exclude: exOf(sh.desc), DxfParser: DxfParser, hashHex: opts.hashHex || sha256Hex, library: [] }).ops; } catch (e) { /* qualify: check_skipped */ } }
     });
     return Q.qualify({ files: files, plan_ops: planOps, gaps: [{ code: 'GAP:pipeline_not_run', reason: opts.why || 'pipeline not run' }], resolved: {} }, SET ? SET.QUALIFY : C.QUALIFY);
   }
@@ -267,7 +268,7 @@
   // the editor's Doors section resolves a canvas click and places a @TAG with the reader's own door geometry. Pure; metres.
   function planDoors(sheet, setName, opts) {
     var SET = setWith(setName); if (!SET || !sheet || sheet.desc.view !== 'PLAN' || !(sheet.desc.units in MK.UNITS)) return null;
-    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), cfgFor(sheet.desc), { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
+    var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), cfgFor(sheet.desc), { exclude: exOf(sheet.desc), DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
     return { factor: MK.UNITS[sheet.desc.units], snap_tol: C.CFG.snap_tol, doors: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge; }).map(function (o) {
       var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }),
       windows: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'window' && o.params.bbox; }).map(function (o) {   // §D56 the window clusters (§D55) of the same run: width = the drawn long side
@@ -307,7 +308,7 @@
     var z = Math.round((cl.z0 + cl.z1) / 2 * 1e4) / 1e4;
     var pl = P.filter(function (s) { return s.desc.level <= z; }).pop();
     if (!pl) return no('z ' + z + ' is below the lowest plan level ' + P[0].desc.level);
-    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), cfgFor(pl.desc), { DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
+    var run = B.run(pl.text, MK.withLayers(SET.MAP_PLAN, pl.desc), cfgFor(pl.desc), { exclude: exOf(pl.desc), DxfParser: DxfParser, hashHex: sha256Hex, library: [] });
     var walls = run.ops.filter(function (o) { return o.op_type === 'DXF_WALL' && o.params.rect; });
     if (!walls.length) return no('plan ' + pl.name + ' has no wall pieces (no envelope)');
     var env = S.envelope(walls), face = elev.desc.face, ax = (face === 'minY' || face === 'maxY') ? 0 : 1, fc = { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face];
@@ -363,7 +364,7 @@
         nxt = Math.min.apply(null, above);
       }
       st.top = nxt;
-      var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), cfgFor(st.sh.desc), deps); st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
+      var run = B.run(st.sh.text, MK.withLayers(SET.MAP_PLAN, st.sh.desc), cfgFor(st.sh.desc), exOf(st.sh.desc) ? Object.assign({ exclude: exOf(st.sh.desc) }, deps) : deps); st.exRep = run.report.exclude; st.before = run.ops; st.planGaps = run.report.gaps; st.run_id = run.run_id;
       // L2.6 C: the plan's tags label the doors (and, §F8 D24, the windows) before their heights; a door or window no elevation shows takes the scheduled height
       var pd = st.sh.desc, sch = T.scheduleFromDesc(pd, MK.UNITS), ops = run.ops;
       if ((pd.tags || []).length) { var tg = T.applyTags(ops, [{ desc: pd }], MK.UNITS, { snap_tol: CFG.snap_tol, level: st.level }); ops = tg.ops; st.tagged = tg.labelled; }
@@ -498,6 +499,7 @@
       var sheet = st.sheet, sz = R.slabZ[st.name];
       st.after.filter(function (o) { return o.op_type === 'DXF_GAP'; }).forEach(function (o) { qg.push(Object.assign({ sheet: sheet }, pick(o.params))); });
       (st.ring.gaps || []).concat(sz.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'slabs' }, pick(x))); });
+      if (st.exRep && (st.exRep.excluded || st.exRep.exclude_straddle)) qg.push({ sheet: sheet, shape: 'walls', code: 'GAP:excluded_by_user', count: st.exRep.excluded, straddle: st.exRep.exclude_straddle, reason: st.exRep.excluded + ' entit(ies) wholly inside the plan\'s @EXCLUDE area(s) left out' + (st.exRep.exclude_straddle ? '; ' + st.exRep.exclude_straddle + ' only partly inside kept' : '') + ' (the user\'s choice; remove the @EXCLUDE to read them)' });   // §D58
       if (st.wallTopRep && st.wallTopRep.defaulted) qg.push({ sheet: sheet, shape: 'walls', code: 'GAP:wall_top_defaulted', count: st.wallTopRep.defaulted, setting: WALLTOP_KEY, reason: st.wallTopRep.defaulted + ' wall(s) no elevation shows run to the slab underside above (a default, amber): state a top with @WALLTOP, or turn it off with @DEFAULT=' + WALLTOP_KEY + ',none / element_defaults.json' });   // §D54
       st.bridge.gaps.concat(st.fills.gaps).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'openings' }, pick(x))); });
       st.meshGaps.forEach(function (x) { qg.push(Object.assign({ sheet: sheet }, pick(x))); });
