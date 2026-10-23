@@ -41,6 +41,7 @@
         '<div style="margin-top:8px"><button id="tp-sys" style="min-height:40px;cursor:pointer">Use system default</button> <button id="tp-own" style="min-height:40px;cursor:pointer">Save as my own</button></div>' +
       '</div>' +
       '<div id="tp-trial" style="margin-bottom:10px;color:#444">' + (v.trial ? 'System default is a <b>trial</b>: it covers one full test cycle (an order, its line and Complete). To keep going, use your own repository and key.' : 'Your own setup: no trial limit.') + '</div>' +
+      '<div id="tp-pairsec" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
       '<div><button id="tp-mode" style="min-height:40px;cursor:pointer">' + (on ? 'Turn off team mode' : 'Turn on team mode') + '</button> ' +
         '<a id="tp-pair" href="../common/comm/comm_phone.html" target="_blank" style="display:inline-block;min-height:40px;line-height:40px;margin:0 8px">Pair this browser</a> ' +
         '<a id="tp-guide" href="team_guide.html" target="_blank" style="line-height:40px">Team guide</a> ' +
@@ -64,6 +65,34 @@
       console.log('§TEAM_PANEL mode=' + (on ? 'off' : 'on') + ' (reloading)');
       var u = new URL(location.href); if (on) u.searchParams.delete('team'); else u.searchParams.set('team', '1'); location.href = u.toString(); };
     console.log('§TEAM_PANEL opened ' + JSON.stringify(v));
+    if (global.TeamSync && global.TeamSync.pairState) { w.querySelector('#tp-pair').style.display = 'none'; renderPair(w); }
   }
+  // §13.9 pairing inside the panel (no phone page): Start a team · invite · Join · requests + role · Approve. Host-neutral: only TeamSync's pairing calls.
+  async function renderPair(w) {
+    var T = global.TeamSync, sec = w.querySelector('#tp-pairsec'); if (!sec) return;
+    var st = await T.pairState(), inv = (/#join=([0-9a-f]{64})/.exec(location.hash) || [])[1] || '', html = '<div style="font-weight:600;margin-bottom:6px">Pairing</div>', msg = '';
+    function B(id, t) { return '<button id="' + id + '" style="min-height:40px;cursor:pointer;margin:4px 6px 0 0">' + t + '</button>'; }
+    if (!st.space) html += '<div>This browser is not in a team yet.</div>' + B('tp-found', 'Start a team') +
+      '<div style="margin-top:8px">or join one:<input id="tp-inv" style="width:100%;min-height:40px" placeholder="invite (64 characters) — or open the invite link" value="' + esc(inv) + '"></div>' + B('tp-join', 'Join');
+    else if (st.enrolled) html += '<div id="tp-paired" style="color:#137a3a">✓ Paired · team devices ' + st.devices + ' · this device ' + esc(st.code) + (st.founder ? ' · founder' : '') + '</div>' +
+      (st.founder ? '<div style="margin-top:6px">Invite link for another user or device:<input id="tp-link" readonly style="width:100%;min-height:40px" value="' + esc(T.inviteLink()) + '"></div>' + B('tp-req', 'Check join requests') + '<div id="tp-reqs"></div>' : '') + B('tp-leave', 'Leave this team');
+    else html += '<div id="tp-wait">Your device code — tell it to the team founder: <b id="tp-code" style="font:600 20px ui-monospace,monospace;letter-spacing:2px">' + esc(st.code) + '</b></div><div>Waiting for approval — then press Visit.</div>' + B('tp-visit', 'Visit') + B('tp-leave', 'Leave');
+    sec.style.display = 'block'; sec.innerHTML = html;
+    function act(id, fn) { var b = sec.querySelector('#' + id); if (b) b.onclick = async function () { b.disabled = true; try { await fn(); } catch (e) { if (e && e.message === '__noerr') { b.disabled = false; return; } console.log('🔴 §TEAM_PANEL ' + (e && e.message || e)); sec.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e;margin-top:6px">' + esc(e && e.message || e) + '</div>'); b.disabled = false; return; } renderPair(w); }; }
+    act('tp-found', function () { return T.found(); });
+    act('tp-join', function () { return T.join(sec.querySelector('#tp-inv').value); });
+    act('tp-visit', function () { return T.visit(); });
+    act('tp-leave', function () { return T.leave(); });
+    act('tp-req', async function () {
+      var list = await T.requests(), box = sec.querySelector('#tp-reqs'), opts = T.roles().map(function (r) { return '<option value="' + r.id + '"' + (r.id === 102 ? ' selected' : '') + '>' + esc(r.name) + ' (' + r.id + ')</option>'; }).join('');
+      box.innerHTML = list.length ? list.map(function (x, i) { return '<div class="tp-request" data-i="' + i + '" style="padding:6px 0;border-top:1px solid #eee"><b class="tp-rcode" style="font:600 18px ui-monospace,monospace">' + esc(x.code) + '</b> as <select class="tp-role" style="min-height:40px">' + opts + '</select> <button class="tp-approve" style="min-height:40px;cursor:pointer">Approve</button></div>'; }).join('') : '<div style="color:#666;margin-top:6px">no pending requests</div>';
+      box.querySelectorAll('.tp-approve').forEach(function (bt) { bt.onclick = async function () { var row = bt.closest('.tp-request'); bt.disabled = true;
+        try { await T.approve(list[Number(row.getAttribute('data-i'))].rq, row.querySelector('.tp-role').value); } catch (e) { box.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">' + esc(e && e.message || e) + '</div>'); bt.disabled = false; return; } renderPair(w); }; });
+      throw new Error('__noerr');   // keep the list on screen (do not re-render the section)
+    });
+  }
+  // arriving by an invite link on a browser that is not in a team yet: open the panel with the invite prefilled
+  global.addEventListener('load', function () { if (!/#join=[0-9a-f]{64}/.test(location.hash) || !modeOn()) return;
+    var n = 0, t = setInterval(function () { if (global.TeamSync && global.TeamSync.pairState) { clearInterval(t); global.TeamSync.pairState().then(function (st) { if (!st.space) open(); }); } else if (++n > 200) clearInterval(t); }, 150); });
   global.TeamPanel = { open: open, describe: describe, modeOn: modeOn };
 })(typeof window !== 'undefined' ? window : globalThis);

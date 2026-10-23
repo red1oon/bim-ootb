@@ -116,7 +116,7 @@
   }
 
   async function onCommit(rows, db) {
-    if (!(await ready)) return;
+    await ready; if (!S) return;                                      // paired later from the Team panel (§13.9) works too: S is set then
     var n = 0, trial = null;
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
       trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
@@ -225,7 +225,8 @@
   }
   async function render() {
     var c = ensureChip(); if (!c) return;
-    if (!S) { $('team-label').textContent = 'Team · not paired (pair this browser on comm_phone.html)'; $('team-visit').disabled = true; c.setAttribute('data-team', 'unpaired'); return; }
+    if (!S) { $('team-label').textContent = 'Team · not paired — open the Team pill to start or join a team'; $('team-visit').disabled = true; c.setAttribute('data-team', 'unpaired'); return; }
+    $('team-visit').disabled = false;                       // it was disabled while unpaired; pairing from the panel happens in this session (§13.9)
     var L = await S.order(), dl = S.delivery(), gaps = S.gaps().length, cf = await S.conflicts();
     var devs = Object.keys(L.roster.devices).length, mine = L.roster.devices[dev.kid];
     var lo = Object.keys(localOnly).length;
@@ -255,18 +256,64 @@
     // CL8 (encryption): an older device object gets its ECDH key from the comm layer's own helper, and the SAME object is written back so the
     // phone page and this page keep ONE identity. Absent helper (pre-CL8 comm layer) = no-op.
     if (dev && global.CommStore.ensureDh && !dev.dhPrivateKey) { try { await global.CommStore.ensureDh(dev); await kvPut('device', dev); log('§TEAM_BOOT dh key ensured for ' + dev.kid); } catch (e) { log('§TEAM_BOOT ensureDh failed ' + (e && e.message)); } }
-    if (!dev || !cfg.space) { log('§TEAM_BOOT not paired — device=' + !!dev + ' space=' + !!cfg.space + ' (pair this browser on common/comm/comm_phone.html first)'); _resolveReady(false); await render(); return; }
+    applySystemDefault();
+    if (!dev) { await newDevice(); log('§TEAM_BOOT new device ' + dev.kid + ' (no phone page needed — pair from the Team panel)'); }
+    if (!cfg.space) { log('§TEAM_BOOT not paired — device=' + !!dev + ' space=false (open the Team pill: Start a team or Join)'); _resolveReady(false); await render(); return; }
     var own = await kvGet('erp_db'), seed = own ? null : await kvGet('db');
-    S = global.CommStore.open(new SQL.Database(own || seed || undefined), { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; } });
+    await openStore(own || seed || undefined);
     sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {};
-    var pu = new URLSearchParams(global.location.search).get('pipe');
-    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
     _resolveReady(true); await render();
   }
 
-  global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, store: function () { return S; }, render: render,
+  // ═══ PAIRING from the Team panel (§13.9) — ported from common/comm/comm_phone.html, same CommStore calls ═══
+  function applySystemDefault() {          // no key of its own yet → the system default (trial) setup, as the phone page does
+    var D = global.TeamDefaults; if (cfg && !cfg.token && D && D.token) { cfg.owner = D.owner; cfg.repo = D.repo; cfg.token = D.token; cfg.trial = true; log('§TEAM_BOOT system-default setup applied repo=' + cfg.owner + '/' + cfg.repo + ' trial=true'); }
+  }
+  async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
+  async function openStore(bytes) {
+    S = global.CommStore.open(new SQL.Database(bytes), { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; } });
+    var pu = new URLSearchParams(global.location.search).get('pipe');
+    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
+  }
+  function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !cfg.token) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
+  async function fresh() { sent = {}; localOnly = {}; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); }
+  async function found() {
+    await ready; needKey(); await fresh();
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102);
+    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); await openStore(undefined); await S.genesis(sp.params);
+    log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12)); await visit(); await persist(); await render(); return sp.space;
+  }
+  async function join(inv) {
+    await ready; needKey(); inv = String(inv || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('An invite is 64 characters 0-9 a-f');
+    await fresh(); cfg.space = inv; cfg.founder = false; await kvPut('cfg', cfg); await openStore(undefined);
+    var rqName = 's/' + cfg.space + '/r/' + dev.kid, rqBytes = new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) }));
+    if (pipe.putMany) await pipe.putMany([{ name: rqName, bytes: rqBytes }]); else await pipe.put(rqName, rqBytes);   // folder pipe has put only; the GitHub pipe batches
+    log('§TEAM_PAIR join request posted, code ' + codeOf(dev.kid)); await persist(); await render();
+  }
+  async function leave() {
+    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; lastVisitAt = null;
+    log('§TEAM_PAIR left the team — same device ' + codeOf(dev.kid)); await render();
+  }
+  async function requests() {
+    if (!S) return []; var L = await S.order(), names = await pipe.list('s/' + cfg.space + '/r/'), out = [];
+    for (var n of names) { var b = await pipe.get(n); if (!b) continue; var rq = JSON.parse(new TextDecoder().decode(b));
+      if (rq.space !== cfg.space || L.roster.devices[rq.kid] || rq.kid !== await global.CommStore.kidOf(rq.jwk)) continue; out.push({ rq: rq, code: codeOf(rq.kid) }); }
+    log('§TEAM_PAIR requests listed: ' + names.length + ' pending=' + out.length); return out;
+  }
+  function roleList() { return shim(adDb()).prepare("SELECT ad_role_id AS id, name FROM ad_role WHERE ad_client_id IN (0, 11) ORDER BY ad_role_id").all(); }
+  async function approve(rq, roleId) {
+    await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: Number(roleId), comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);
+    log('§TEAM_PAIR approved ' + codeOf(rq.kid) + ' as role ' + roleId); await visit(); await render();
+  }
+  async function pairState() {
+    await ready; var st = { device: dev ? dev.kid : null, code: dev ? codeOf(dev.kid) : null, space: cfg && cfg.space || null, founder: !!(cfg && cfg.founder), enrolled: false, devices: 0 };
+    if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
+  }
+
+  global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
+                      inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render,
                       stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
