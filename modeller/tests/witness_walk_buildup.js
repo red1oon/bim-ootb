@@ -55,7 +55,7 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
       const asmN = () => { let c = 0, n = 0; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwAsm === 'FP' && o.userData.dwSub) { c += o.count; n += o.userData.dwSub.length; } }); return [c, n]; };   // §D66.1
       const chainN = () => { let c = -1, n = -1; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') { c = o.count; n = o.instanceMatrix.count; } }); return [c, n]; }, fpS = [];
       window.__dwLastDoneDisc = null; window.discWalk('FP'); const t1 = Date.now();
-      while (Date.now() - t1 < 300000 && !(window.__dwLastDoneDisc === 'FP' && window.__dwReveal.FP && window.__dwReveal.FP.done && !window.__dwChainAnimating.FP && !window.__dwAsmRevealMeta.FP && chainN()[1] > 0)) {
+      while (Date.now() - t1 < 300000 && !(window.__dwLastDoneDisc === 'FP' && window.__dwReveal.FP && window.__dwReveal.FP.done && !window.__dwChainAnimating.FP && !(window.__dwAsmRevealMeta || {}).FP && chainN()[1] > 0)) {
         const f = window.__dwReveal.FP; fpS.push([f ? f.i : 0, f ? f.n : 0, f ? !!f.done : false].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]])); await new Promise(r => setTimeout(r, 80)); }
       fpS.push([0, 0, true].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]]));
       await new Promise(r => setTimeout(r, 300)); const afterFP = drawn('ELEC');

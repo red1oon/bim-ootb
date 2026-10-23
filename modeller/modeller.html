@@ -4135,7 +4135,10 @@ async function _dwLod400Only(disc, w) {
   if (!kept.length) { w.refused = true; w.reason = 'no LOD400 mesh for any of ' + nRef + ' placement(s) — refused, never a box (§WALK-LOD400-ONLY)'; }
   return w;
 }
-async function _discWalkOne(disc, ctx, opts) {
+async function _discWalkOne(disc, ctx, opts) {   // §D66.1 every caller: the reveals are armed when the walk ends, refused or not
+  try { return await _discWalkOneBody(disc, ctx, opts); } finally { _dwArmReveals(disc); }
+}
+async function _discWalkOneBody(disc, ctx, opts) {
   opts = opts || {};
   var name = (ctx && ctx.building) || '';
   try {
@@ -4210,7 +4213,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
     window.__dwWalks[disc] = w.placements;
     window.__dwRevealMeta[disc] = { start: performance.now(), dur: Math.max(2000, Math.min(7000, 120 * w.placements.length)) };   // §D64 a fresh walk builds up in front of you (drawing only)
-    window.__dwAsmFresh[disc] = true; delete window.__dwChainShown[disc];   // §D66.1 this walk's joint parts build up when they land; its pipe network reveals once (a later redraw is instant)
+    window.__dwAsmFresh[disc] = true; delete window.__dwChainShown[disc]; window.__dwWalkInFlight[disc] = true;   // §D66.1 this walk's joint parts build up when they land; its pipe network reveals once (a later redraw is instant)
     var gateRes = _discGate();
     _redrawAllDiscWalks();
     if (opts.flash) await _flashSettleDisc(disc);   // §DISCWALK-ALL orange-flash-then-settle (discWalkAll only)
@@ -4298,6 +4301,7 @@ function _clearAllDiscWalks() {
   if (window.__dwChainMeta) window.__dwChainMeta = {};
   if (window.__dwChainAnimating) window.__dwChainAnimating = {};
   if (window.__dwChainShown) window.__dwChainShown = {};   // §D66.1
+  if (window.__dwWalkInFlight) window.__dwWalkInFlight = {};
   if (window.__dwChainRevealMeta) window.__dwChainRevealMeta = {};
   if (window.__dwAssembly) window.__dwAssembly = {};
   if (window.__dwTrunk) window.__dwTrunk = {};
@@ -4358,7 +4362,14 @@ function _dwRevealTick(disc) {
 }
 // §D66.1 a fresh walk's joint parts build up when they land: each bucket (ordered by its head's placement order) in step, so a head's drop, transition and tee appear together, never before
 // their head is drawn (a part's head = the placement under its tee node, plan position 1 mm). Done = all, once the heads' own build-up is done too.
-window.__dwAsmRevealMeta = window.__dwAsmRevealMeta || {}; window.__dwAsmFresh = window.__dwAsmFresh || {}; window.__dwChainShown = window.__dwChainShown || {};
+window.__dwAsmRevealMeta = window.__dwAsmRevealMeta || {}; window.__dwAsmFresh = window.__dwAsmFresh || {}; window.__dwChainShown = window.__dwChainShown || {}; window.__dwWalkInFlight = window.__dwWalkInFlight || {};
+// §D66.1 the walk has ended (fixtures, network, joint assembly and their commits): its pipe reveal and its parts' build-up start now (after the heads' own build-up, if that still runs)
+function _dwArmReveals(disc) {
+  delete window.__dwWalkInFlight[disc]; delete window.__dwAsmFresh[disc];
+  var t = performance.now(), fx = window.__dwRevealMeta[disc], s0 = fx ? Math.max(t, fx.start + fx.dur) : t;
+  [window.__dwChainRevealMeta[disc], window.__dwAsmRevealMeta[disc]].forEach(function (M) { if (M && M.pending) { M.start = s0; M.pending = false; } });
+  if (window.__dwChainRevealMeta[disc] || window.__dwAsmRevealMeta[disc]) console.log('§DW-REVEAL-ARM disc=' + disc + ' pipes=' + !!window.__dwChainRevealMeta[disc] + ' parts=' + !!window.__dwAsmRevealMeta[disc] + ' in_ms=' + Math.round(s0 - t));
+}
 function _dwAsmRevealTick(disc) {
   var R = window.__dwAsmRevealMeta[disc], root = _dwRoot(); if (!R || !root) return;
   var k = Math.min(1, (performance.now() - R.start) / R.dur), fx = !!window.__dwRevealMeta[disc], shown = {}, xy = function (x, y) { return Math.round(x * 1000) + ',' + Math.round(y * 1000); };
@@ -4722,7 +4733,7 @@ function _renderDiscAssembly(disc, parts) {
     var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
     cl.userData.dwAsm = disc; root.add(cl);
   }
-  if (window.__dwAsmFresh[disc] && drawn.length) { delete window.__dwAsmFresh[disc]; window.__dwAsmRevealMeta[disc] = { start: performance.now(), dur: Math.max(1500, Math.min(4000, 40 * drawn.length)) }; }   // §D66.1
+  if (window.__dwAsmFresh[disc] && drawn.length) { delete window.__dwAsmFresh[disc]; var _fl = !!window.__dwWalkInFlight[disc]; window.__dwAsmRevealMeta[disc] = { start: _fl ? Infinity : performance.now(), pending: _fl, dur: Math.max(1500, Math.min(4000, 40 * drawn.length)) }; }   // §D66.1 armed when the walk ends
   if (window.__dwAsmRevealMeta[disc]) { if (window.__dwAsmRevealMeta[disc].raf) cancelAnimationFrame(window.__dwAsmRevealMeta[disc].raf); _dwAsmRevealTick(disc); }   // a redraw resumes the same timeline
   console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' drawn=' + drawn.length + ' refused=' + nRef + ' buckets=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
@@ -4949,17 +4960,18 @@ function _renderDiscChains(disc, segs, opts) {
   var N = ordered.length, DUR = Math.max(2000, Math.min(7000, 60 * N));   // §D64.1 a pace the camera can follow (was a fixed 2 s)
   var nowTs0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   var prevMeta = window.__dwChainRevealMeta[disc];
-  var resuming = !!(prevMeta && (nowTs0 - prevMeta.start) < DUR);
+  var resuming = !!(prevMeta && (prevMeta.pending || (nowTs0 - prevMeta.start) < DUR));
   var fx = window.__dwRevealMeta && window.__dwRevealMeta[disc];   // §D64.1 the heads build up first: the network starts when they are all drawn
-  var startTs = resuming ? prevMeta.start : (fx ? Math.max(nowTs0, fx.start + fx.dur) : nowTs0);
+  var pending = !resuming && !!window.__dwWalkInFlight[disc];   // §D66.1 the walk still works (its joint assembly, its fold): the reveal is armed when the walk ends (_dwArmReveals)
+  var startTs = resuming ? prevMeta.start : pending ? Infinity : (fx ? Math.max(nowTs0, fx.start + fx.dur) : nowTs0);
   var gen = (prevMeta ? prevMeta.gen : 0) + 1;
-  window.__dwChainRevealMeta[disc] = { start: startTs, gen: gen };
+  window.__dwChainRevealMeta[disc] = { start: startTs, gen: gen, pending: resuming ? !!prevMeta.pending : pending };
   window.__dwChainAnimating[disc] = true;
   inst.count = Math.max(0, Math.min(N, Math.round((1 - Math.pow(1 - Math.max(0, Math.min(1, (nowTs0 - startTs) / DUR)), 3)) * N)));   // seed at current progress — no 0-count flash on a mid-reveal rebuild
   var frames = 0;
   (function step(now) {
     if (!window.__dwChainRevealMeta[disc] || window.__dwChainRevealMeta[disc].gen !== gen) return;   // superseded by a newer render call for this disc — stop quietly, don't touch the orphaned mesh
-    frames++;
+    frames++; startTs = window.__dwChainRevealMeta[disc].start;   // §D66.1 live: armed when the walk ends
     var u = Math.max(0, Math.min(1, (now - startTs) / DUR)), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic (0 until the start: §D64.1)
     inst.count = Math.max(0, Math.min(N, Math.round(e * N)));
     if (window.A && A.requestRender) A.requestRender();

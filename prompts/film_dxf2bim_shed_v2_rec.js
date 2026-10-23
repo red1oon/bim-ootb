@@ -140,8 +140,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await walkClick('FP');
   { const f = await follow('FP', 'fix', 6, 300); console.log('§FILM_FOLLOW disc=FP moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_fp_moves', String(f.moves)); }
   fact('sprinklers', String(await pg.evaluate(() => (window.__dwWalks.FP || []).length)));
+  // §D66.1 the pipes and the joint parts start when the walk ends: the wait from the last head to the first pipe is the same stated cut (compute, nothing drawn changes)
+  { const a = now(); await pg.waitForFunction(() => { let c = 0; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') c = o.count; }); return c > 0; }, { timeout: 300000, polling: 50 });
+    const b = now() - 0.15; if (b - a > 0.5) { cuts.push([a, b]); console.log('§FILM_CUT disc=FP-pipe sec=' + (b - a).toFixed(1)); } }
   await beat('s07');
-  { const f = await follow('FP', 'chain', 6, 1200); console.log('§FILM_FOLLOW disc=FP-pipe moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_pipe_moves', String(f.moves)); }
+  { const f = await follow('FP', 'chain', 5, 1200); console.log('§FILM_FOLLOW disc=FP-pipe moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_pipe_moves', String(f.moves)); }
   { const P = await pg.evaluate(() => { const S = window.__dwChains.FP || [], by = {}; S.forEach(s => { by[s.role] = (by[s.role] || 0) + 1; }); return { n: S.length, by }; }); fact('pipe_segs', String(P.n)); fact('pipe_roles', P.by); }
   await beat('s08');
   const head = await closeUp({ disc: 'FP' }, 0.14, 3800, 5); fact('sprinkler_closeup', head); await sleep(2000);
