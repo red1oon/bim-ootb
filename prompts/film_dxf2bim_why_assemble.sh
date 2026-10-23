@@ -15,7 +15,7 @@ CR='Voices: AI (Kokoro, local)  ·  Script: red1'
 for i in 1 2 3; do POLY_CREDIT="$CR" python3 $P/film_narration_poly.py $TSV beats_fit.log fit $VD > fit.log 2>&1; grep -q "lang=en wrong=0 rc=0" fit.log && break; sleep 2; done
 grep -E "POLY_TONE" fit.log; echo "DETAIL=$(grep -c 'pick=DETAIL' fit.log) of $(grep -c POLY_FIT fit.log) SHORT=$(grep -c 'pick=SHORT' fit.log) SKIP=$(grep -c 'pick=SKIP' fit.log)"
 NF=$(grep -c POLY_FIT fit.log); NR=$(grep -c . $TSV); [ "$NF" = "$NR" ] || { echo "§LAST_BEAT FAIL fitted=$NF rows=$NR (a row had no slot)"; exit 1; }
-rm -rf cards; FILM_SET=why python3 $CARDS beats.log $REC/backdrops.txt fit/poly.ass silent_master.mp4 cards | tee cards.log
+rm -rf cards; FILM_SET=${FILM_SET:-why} python3 $CARDS beats.log $REC/backdrops.txt fit/poly.ass silent_master.mp4 cards | tee cards.log
 grep -q "§CARDS FAIL" cards.log && exit 1
 cp cards/carded.ass fit/poly.ass
 sed -i -E '/^Style: (F|M)_/{s/,&H90000000,&H00000000,0,0,0,0,100,100,0,0,1,2\.6,0,2,/,\&H50101418,\&H00000000,0,0,0,0,100,100,0,0,3,10,0,2,/}' fit/poly.ass
