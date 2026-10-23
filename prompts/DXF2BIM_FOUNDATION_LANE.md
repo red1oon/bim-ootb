@@ -788,8 +788,8 @@ catalogue is C2's `I.convert` call, the one the page makes with `catalogue: stat
 | JKR3 | 01 / 02 / 03 | 85 / 157 / 21 | 1,177.2 / 439.9 / 90.0 | 4 / 54 / 2 | 4 / 56 / 2 | 54 / 314 / 32 (all) | 1.000 |
 | Clinic | all three | 0 at its levels (3 IfcSlab, storey `Unknown`, top 2.11 m) | - | - | - | - | - |
 **Why it stops here.** (1) The reader's slab body is rectilinear only (`prismRect` / `prismCells`, `dxf2shell.js`): HHS's outlines carry 604 / 653 / 185 angled edges (3-4 % of the edge length: the
-column notches and the curved facade's facets) and 54 / 54 / 12 holes (mostly column penetrations: 3.3 / 2.9 m2 on Levels 1-2), so reading the exact union needs a general polygon prism with holes (a triangulated top / bottom) that
-does not exist yet. (2) What a plan's slab edge IS is a drafting convention, not a measurement: drawn exactly, HHS Level 1 gets 10 slab bodies with 54 column holes and JKR Level 2 gets 54 separate
+column notches and the curved facade's facets) and 54 / 54 / 12 holes (3.3 / 2.9 / 23.2 m2 in all; on Levels 1-2 about 0.06 m2 each, column-sized), so reading the exact union needs a general polygon prism with holes (a triangulated top / bottom) that
+does not exist yet. (2) What a plan's slab edge IS is a drafting convention, not a measurement: drawn exactly, HHS Level 1 gets 10 slab bodies with 54 small holes and JKR Level 2 gets 54 separate
 precast planks (joints of a few mm); a drafted edge would be the floor's perimeter with its real voids only. Choosing which (exact union, or perimeter + voids above a stated area, or plank joints closed
 below a stated width) is the owner's; the numbers above are what each choice starts from. (3) On the Clinic the round-trip db has no slab at its levels, so E2 has nothing to read there (a data question, F17's kind).
 **D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built.
