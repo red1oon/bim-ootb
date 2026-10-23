@@ -6,6 +6,10 @@ review first, specs second, code only if the owner says so. **Read the log after
 **Merged this session (bim-ootb):** #2327 §D67 spec (LOD400 library meshes by stated profile: SPEC, awaiting owner go) · #2334 §D68 F16 windows in recessed faces drawn + read (Clinic 40 -> 58 windows read off
 elevations, LTU 0 -> 183, 0 wrong; sw v146) · #2335 §D69 SEAM-8 an .ifc open keeps `rel_fills_host` (= the extractor core's rows; Viewer sw v1655, Modeller v147) · #2336 §D71 the 2D panel loads a firm
 catalogue (sw v148) · this doc PR: §D70 F15 slab edge, measured and stopped (⛔) for the owner's slab-edge convention.
+**Items 1-2 (the main session, same day):** #2329 §D64.1 the FP pipework reveals after its heads, clamp(60 ms x N, 2-7 s) (sw v143) · BIMCompiler #245 + #2330 / #2331 §D66 the joint mini-BOMs: the library's
+T_CONNECTOR_ASSEMBLY (drop + transition + tee) at every head, 90 parts on the shed (sw v144) · #2332 §D66.1 the parts build up when they land, the pipes reveal once, armed at the walk's end (sw v145) ·
+#2338 §D66.1 FIX: the pipes and parts were culled (empty InstancedMesh culling sphere after #2332; witness B7 added, FAIL on 586e40bb) (sw v149) · BIMCompiler #244 FILM_SET=shedlast2 cards.
+**Film v2 SHORT done (local only):** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2_short.mp4`, 102.2 s (`FILM_DXF2BIM_WHY_MARKINGS.md §LAST PART v2 RESULT`). Before it leaves the machine: the owner's look.
 **Owner decisions open (one question each):** (1) §D67: the profile source for steel members: a parametric generator from the drawing's own label (`AngleProfileMesh` in the library's
 `ad_parametric_mesh` convention) or an imported steel catalogue (AISC / EN 10056 angles)? (2) §D70: a plan's slab edge = the exact union of the model's slabs (HHS L1: 10 bodies, 54 small holes; JKR L2:
 54 planks) or a drafted perimeter with real voids above a stated area and plank joints closed below a stated width? (3) The Duplex 819 x 759 windows (the 4 stacked clusters excluded in §D58): which library

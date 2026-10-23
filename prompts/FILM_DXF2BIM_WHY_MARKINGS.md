@@ -18,6 +18,14 @@ WALKED: s03 inside, empty, the ELEC row clicked (cut); s04 the lamps build up, t
 reveal outward from the riser, followed; s08 a sprinkler head macro, then its joint mini-BOM (drop, transition, tee: §D66); s09 out and a last turn, end.
 **Every number said is a `§FILM_FACT` of the take.** Not a take: `§PAGEERR`, a missing fact, 0 lights / sprinklers / pipe segments, a follow that never saw the front move (`§FILM_FOLLOW moves=0`).
 
+## ▶▶▶ §LAST PART v2 RESULT (2026-10-23, session 3): RECORDED, LOCAL ONLY
+**Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2_short.mp4`, 102.2 s, 2,554 frames == master, -16.7 LUFS (two-pass loudnorm), 9 / 9 DETAIL, 0 black frames, `§PAGEERR` 0, cards FILM_SET=shedlast2
+(2 chapters). Take `take_v2c` (session scratchpad), SITE = a local server of bim-ootb main + #2338 (D64.1, D66, D66.1 + fix). Input db sha256 e6ff58a7875b (the shed's Viewer database from the v1 take sl3).
+Facts of the take: 512 elements reopened (310 ops), a wall picked, 69 lights (farming-shed reference, the camera followed the front 21 moves), 30 sprinklers, 36 pipes (branches, main, riser), 90 joint parts
+(30 x drop / transition / tee) seen in a side close-up (raycast-checked). **Cuts (stated, logged):** ELEC compute 11.6 s, FP 0.9 s; nothing else. **Found filming it:** the pipes outran their heads (§D64.1),
+the joint parts landed in one frame and the pipe reveal restarted (§D66.1), then the pipes and parts were culled off screen (§D66.1 fix, B7). **Known:** software GL renders ~5 frames/s inside the lit shed,
+so the build-ups step rather than glide; the last ~12 s are below -40 dB (the mux's end fade, as v1: 11.6 s). Before it leaves the machine: the owner's look.
+
 ## ▶▶▶ §LAST PART (spec 2026-10-23, owner: "film showing quickly the last part where the 2Ds wireframes assembled, saved, reopen as ARC and some assets such as those fan blowers and where there are no lighting / FP, use the standard DISC feature on the left. Do not reinvent further than what has been laid out well prior")
 **Film:** "Drawings to a building you can edit and service", ~2-3 min, EN, same tooling as this film (recorder pattern of `film_dxf2bim_why_rec.js`, `film_narration_fill.js`, `film_narration_poly.py` measure -> beat_min,
 `film_dxf2bim_why_assemble.sh` with `FILM_SET=shedlast` cards). Recorder `prompts/film_dxf2bim_shed_last_rec.js`, narration `prompts/film_narration_dxf2bim_shed_last_en.tsv`. Neutral naming (the shed is "a common
