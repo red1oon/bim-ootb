@@ -384,3 +384,12 @@ every element identical to the run without materials.
 stated as `<name>: n of m <class> of t mm` (two or more materials for one thickness: the most frequent, the others named in `material_alt`); no row = the reference. The IFC writers already write
 `e.ifc.material` (IfcMaterial + IfcRelAssociatesMaterial); the Viewer db then carries `material_name` for the BOM and the material lens. The catalogue is a file the user keeps or edits;
 `catalogue_from_ifc.js` writes it from the firm's own IFC (counts only, nothing invented).
+**D51 + D52 + D53 RESULT (2026-10-23): BUILT.** W-SLAB-ESTIMATE fail=0: HHS 0 -> 3 amber slabs (1,049 / 1,325 / 1,215 m2; the model's floor slabs 3,975 m2 in all, the rectangle was 10,473), LTU 0 -> 1
+(6,226 m2 of a 10,064 m2 rectangle), Clinic stays left out (its section gives no slab thickness: stated), Duplex identical; `@DEFAULT=slab.outline_when_not_rect,none` restores D44.
+W-BRIDGE-LONG fail=0: no bridge over 5 m on any set; Clinic's 6 (7.1-31.5 m) and **LTU's 20 (5.9-101.85 m)** invented lintels are gone, their openings listed `opening_gap_unbounded`; the Duplex
+FB control refused. W-MATERIAL fail=0 on HHS, JKR, LTU: with no catalogue every wall / curtain wall / slab / roof carries the reference material; with the firm's own catalogue the one-material
+thicknesses give the model's material for HHS 84 / 84, JKR 53 / 53, LTU 2,470 / 2,471 pieces, the ambiguous ones (HHS 115 mm Ziegel / Lamellen) take the most frequent and name the model's
+among the alternatives (>= 99%); held out on the first two storeys the same (JKR: 4 pieces use a material the training storeys never used: counted); a foreign firm's catalogue is applied where a
+thickness matches and is wrong there (HHS <- JKR 0 / 64, JKR <- HHS 0 / 4, LTU <- HHS 0 / 77). Found while building: `Math.max.apply` over an estimated slab's vertices overflowed the stack on
+LTU (fixed: a loop). Registry tests (W-CLI C36, W-EDEFAULTS E1) now count 45 settings. Regression: `run_all_witnesses` (raw shed) = origin/main + the 3 new witnesses; guardrails G3 206 = main.
+Modeller sw v129.

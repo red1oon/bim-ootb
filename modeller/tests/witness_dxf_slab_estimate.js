@@ -7,9 +7,9 @@
  *   E1 ESTIMATE  — each storey D44 leaves without a slab (and whose section gives the slab's thickness) gets ONE amber slab (prov derived) whose top area = the area the walls bound on both axes,
  *                  and ONE advisory GAP:slab_outline_estimated naming that area, the rectangle's area and the setting.
  *   E2 YOUR WORD — @DEFAULT=slab.outline_when_not_rect,none on a plan: no slab on those storeys, GAP:slab_outline_not_rectangular as in D44.
- *   E3 RECTANGLE — a set whose walls draw a rectangle (Duplex) is byte-identical to BASE (guid, class, vertices of every element).
- *   E4 ONLY SLABS — every non-slab element identical to BASE by guid + vertices.
- * Usage: NODE_PATH=<dir with better-sqlite3> BASE=<old modeller dir> node modeller/tests/witness_dxf_slab_estimate.js <Node model .db> [<more .db>]
+ *   E3 RECTANGLE — a set whose walls draw a rectangle (Duplex): identical with the setting on or off (guid, class, vertices of every element).
+ *   E4 ONLY SLABS — every non-slab element identical with the setting on or off (the same code: the rule isolated from every other change).
+ * Usage: NODE_PATH=<dir with better-sqlite3> node modeller/tests/witness_dxf_slab_estimate.js <Node model .db> [<more .db>]
  */
 'use strict';
 const path = require('path'), crypto = require('crypto'), M = path.join(__dirname, '..'), D = path.join(M, 'dxf2bim') + '/';
@@ -36,10 +36,10 @@ dbs.forEach(db => {
     const o2 = I.convert(I.readSheets(f2), {}), est2 = o2.verdict.advisory.filter(a => a.code === 'GAP:slab_outline_estimated').length, left2 = o2.verdict.advisory.filter(a => a.code === 'GAP:slab_outline_not_rectangular').length;
     check('E2[' + name + ']', '@DEFAULT ...,none: no estimated slab, the storeys listed as D44', est2 === 0 && left2 === est.length + left.length && !o2.els.some(e => e.class === 'IfcSlab' && e.prov === 'derived'), `estimated=${est2} left_out=${left2}`);
   }
-  if (BASE) { const b = BASE.convert(BASE.readSheets(files), {}), key = e => e.guid + '|' + JSON.stringify(e.vertices);
-    if (!est.length && !left.length) check('E3[' + name + ']', 'walls that draw a rectangle: byte-identical to BASE', JSON.stringify(o.els.map(e => [e.guid, e.class, e.vertices])) === JSON.stringify(b.els.map(e => [e.guid, e.class, e.vertices])), `els=${o.els.length}`);
+  { // E3 / E4 against the SAME code with the setting off (D44's outcome): isolates this rule from every other change
+    const b = I.convert(I.readSheets(files), { defaultsRef: { defaults: { 'slab.outline_when_not_rect': { value: 'none' } } } }), key = e => e.guid + '|' + JSON.stringify(e.vertices);
+    if (!est.length && !left.length) check('E3[' + name + ']', 'walls that draw a rectangle: identical with the setting on or off', JSON.stringify(o.els.map(e => [e.guid, e.class, e.vertices])) === JSON.stringify(b.els.map(e => [e.guid, e.class, e.vertices])), `els=${o.els.length}`);
     const A = new Set(o.els.filter(e => e.class !== 'IfcSlab').map(key)), Bs = new Set(b.els.filter(e => e.class !== 'IfcSlab').map(key)), diff = [...A].filter(k => !Bs.has(k)).length + [...Bs].filter(k => !A.has(k)).length;
-    check('E4[' + name + ']', 'nothing but slabs changes against BASE', diff === 0, `non_slab=${A.size} differ=${diff} slabs ${b.els.filter(e => e.class === 'IfcSlab').length}->${o.els.filter(e => e.class === 'IfcSlab').length}`); }
-  else say('INCONCLUSIVE E3/E4[' + name + '] | no BASE given');
+    check('E4[' + name + ']', 'nothing but slabs changes against the setting off', diff === 0, `non_slab=${A.size} differ=${diff} slabs ${b.els.filter(e => e.class === 'IfcSlab').length}->${o.els.filter(e => e.class === 'IfcSlab').length}`); }
 });
 say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);

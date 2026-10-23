@@ -205,8 +205,9 @@
   // A wall / slab whose drawn thickness has a catalogue row takes its most frequent material (the count stated); otherwise the reference's material for its class. Geometry is never touched.
   var MAT_TAB = { IfcWall: 'walls', IfcSlab: 'slabs' };
   function thicknessMm(e) {
-    var xs = e.vertices.map(function (v) { return v[0]; }), ys = e.vertices.map(function (v) { return v[1]; }), zs = e.vertices.map(function (v) { return v[2]; });
-    var dx = Math.max.apply(null, xs) - Math.min.apply(null, xs), dy = Math.max.apply(null, ys) - Math.min.apply(null, ys), dz = Math.max.apply(null, zs) - Math.min.apply(null, zs);
+    var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];   // a loop, not Math.max.apply: an estimated slab (D51) has more vertices than the call stack takes (LTU)
+    e.vertices.forEach(function (v) { v.forEach(function (c, k) { if (c < lo[k]) lo[k] = c; if (c > hi[k]) hi[k] = c; }); });
+    var dx = hi[0] - lo[0], dy = hi[1] - lo[1], dz = hi[2] - lo[2];
     return Math.round((e.class === 'IfcSlab' || e.class === 'IfcRoof' ? dz : Math.min(dx, dy)) * 1000);
   }
   function applyMaterials(els, opts) {
