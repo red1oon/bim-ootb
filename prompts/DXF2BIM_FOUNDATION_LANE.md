@@ -570,3 +570,17 @@ shed / farm / barn / poultry / livestock names; its meshes resolve from the Term
 own FP rule (`DiscWalker.hasRules`). W-FARM-RULES fail=0: F1 the shed (Viewer DB from disk) walks with farm_rules.db, stated; F2 69 lights (ratio 68.5), lod400 only, all at z 2.896 inside 2.743-3.048;
 F3 30 sprinklers (ratio 30.45), lod400 only, z 3.020 inside 2.880-3.159, no borrow; F4 zOff 0.000 from 7 classes; F5 Duplex still borrows FP. W-WALK-RULES-MESH 5 / 0 (M2 now names any stated rules
 file), W-WALK-LOD400-ONLY 7 / 0, W-E2E-WALK 8 / 0; regression the known 4. Modeller sw v138.
+
+## §D63 THE STR WALK'S DERIVED GIRDERS SIT ON THE BUILDING'S OWN BEAM LEVEL (owner 2026-10-23: "what are those grid like big conduits lower part?" -> "fix the STR walker")
+**Witness claim first (W-STR-GIRDER-Z, `modeller/tests/witness_str_girder_z.js`).** G1 the reopened shed (its Viewer DB from disk): the 46 derived girders' underside = the shed's own beams' underside (3.099 m, the
+column tops), not 1.00 m. G2 a building whose rule height is already near a beam level (HospitalGarage) moves to its nearest beam underside only (< 0.1 m). G3 a building with no
+source beams keeps the rule (Hospital: 349 STR columns, 0 beams; unchanged, its log says so). G4 the derived girders stay `derived:str-walk` (the walk's own provenance), their count and section unchanged.
+**Measured first (2026-10-23):** `str_walker_bridge.js:259-261` puts the girders at mean column centre + half the median column height (one-level skeleton). The shed has two column populations (piers from
+-1.14 m and posts to 3.10 m): the rule gives 1.00 m, a lattice through the middle of the shed (the film's inside view); its 35 source beams sit at 3.099-3.404 m and already give the girder SECTION
+(`_readBeamSection`, 0.254 x 0.305 m) but not the height. Residents with STR beams: HospitalGarage (195 beams, 168-185 m, rule 184.729 -> nearest beam underside 184.812, +0.083 m), Duplex (8 beams, no STR
+columns: not this branch); every other resident has none.
+**Rule.** `_readBeamSection` also returns the beams' undersides; the girder underside = the rule's height snapped to the nearest measured beam underside (an existing level of the building, never a new one).
+**D63 RESULT (2026-10-23, session 2): BUILT.** `_readBeamSection` returns the source beams' undersides; the girder underside snaps to the nearest one. W-STR-GIRDER-Z fail=0: G1 the reopened shed's 46 girders
+at 3.099 m (were 1.00 m, the "conduits" lattice the owner asked about); G2 HospitalGarage 184.99 -> 185.07 (one of its beam levels, +0.08 m); G3 Hospital (no beams) the rule, 177.81; G4 46 girders,
+0.254 x 0.305, derived:str-walk. STR witnesses as on BASE (W-E2E-STR-REWALK-COMMIT 9 / 0; W-ROW7-HGARAGE-GRID 7 / 1 the same anchor leg as BASE; smoke / row7 baseline / true centre / into-arc / canopy
+fail to load or are INCONCLUSIVE identically on BASE: a gitignored fixture and a missing module). Regression the known 4. Modeller sw v139.

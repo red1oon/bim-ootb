@@ -94,14 +94,15 @@
   // size, never invent it). A beam's bbox = (length, width, depth); length VARIES per beam (we use the derived span),
   // so the cross-section = the TWO SMALLER medians (Terminal: 0.500 × 0.750). null when the building carries no beams.
   function _readBeamSection(db) {
-    var res = db.exec("SELECT t.bbox_x,t.bbox_y,t.bbox_z FROM elements_meta m " +
+    var res = db.exec("SELECT t.bbox_x,t.bbox_y,t.bbox_z,t.center_z FROM elements_meta m " +
       "JOIN element_transforms t ON t.guid=m.guid WHERE m.discipline='STR' AND m.ifc_class='IfcBeam'");
     if (!res.length || !res[0].values.length) return null;
+    var under = res[0].values.map(function (r) { return r[3] - r[2] / 2; });   // §D63 each source beam's underside (its measured level)
     var mx = _median(res[0].values.map(function (r) { return r[0]; }));
     var my = _median(res[0].values.map(function (r) { return r[1]; }));
     var mz = _median(res[0].values.map(function (r) { return r[2]; }));
     var dims = [mx, my, mz].sort(function (a, b) { return a - b; });   // drop the largest (= length)
-    return { width: dims[0], depth: dims[1], n: res[0].values.length };
+    return { width: dims[0], depth: dims[1], n: res[0].values.length, undersides: under };
   }
 
   // ARC walls = the dropped substrate for a wall-bearing (ARC-only) building. cx/cy + bbox extents
@@ -258,7 +259,11 @@
     });
     // girder elevation = mean walked-column z + half the median column height (top-of-column, single-level skeleton)
     var meanZ = w.length ? w.reduce(function (s, c) { return s + c.z; }, 0) / w.length : 0;
-    var gz = meanZ + (_state.colDz || 0) / 2;
+    var gz = meanZ + (_state.colDz || 0) / 2, gzRule = gz;
+    // §D63 (DXF2BIM_FOUNDATION_LANE.md): a building with its own beams has measured beam levels: the girder underside snaps to the nearest one (never a new level). The shed: two column
+    // populations (piers + posts) put the rule at 1.00 m, its beams sit at 3.099; HospitalGarage: 184.729 -> 184.812.
+    var und = _state.section && _state.section.undersides;
+    if (und && und.length) gz = und.reduce(function (best, z) { return Math.abs(z - gzRule) < Math.abs(best - gzRule) ? z : best; }, und[0]);
     // measured cross-section, or a thin line-proxy + honest log when the building carries no source beams
     var sec = _state.section, proxied = false;
     if (!sec) { sec = { width: 0.05, depth: 0.05 }; proxied = true;
@@ -281,7 +286,7 @@
     });
     console.log('§STRWALK-RENDER columns=' + colN + ' girders=' + girN +
       ' section=' + sec.width.toFixed(3) + '×' + sec.depth.toFixed(3) + 'm' + (proxied ? ' (proxy)' : ' (measured)') +
-      ' girderZ=' + gz.toFixed(2) + (rotDeg ? ' rot=' + rotDeg.toFixed(3) + '°' : ''));
+      ' girderZ=' + gz.toFixed(2) + (gz !== gzRule ? ' (snapped to the building\'s own beam underside; rule ' + gzRule.toFixed(2) + ', §D63)' : ' (rule: no source beams)') + (rotDeg ? ' rot=' + rotDeg.toFixed(3) + '°' : ''));
     return { ops: ops, columnN: colN, girderN: girN, section: sec, proxied: proxied, girderZ: gz };
   }
 
