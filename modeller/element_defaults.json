@@ -49,6 +49,18 @@
    ],
    "used_by": "dxf2synth (--complete)"
   },
+  "wall.top_when_unseen": {
+   "element": "IfcWall",
+   "value": "slab_above",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a wall no elevation shows runs from its floor to the slab underside above (the section states it); HHS Level 2 / 3 = the model, Level 1 0.3 m above the model's (its walls stop at a ceiling the drawings do not show); 'none' leaves such walls as asks",
+   "options": [
+    "slab_above",
+    "none"
+   ],
+   "used_by": "dxf2bim_import convert (§D54)"
+  },
   "slab.outline_when_not_rect": {
    "element": "IfcSlab",
    "value": "walls_bounded",

@@ -9,6 +9,9 @@
   else root.Dxf2Bim = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+  // §D55 (JKR tuning, 2026-10-23): glazing pieces within this distance (m) are parts of ONE window. Measured: JKR panes 2.4 mm / 50 mm off their frames and posts, nothing at 50-300 mm; Duplex,
+  // Clinic, LTU, the shed: every piece touches (<= 1 mm). A module constant, not CFG, so no set's run_id changes.
+  var WINDOW_PART_GAP = typeof process !== 'undefined' && process.env && process.env.DXF_WINDOW_PART_GAP ? Number(process.env.DXF_WINDOW_PART_GAP) : 0.05;   // env: the witness's falsifier hook
 
   function r6(x) { return Math.round(x * 1e6) / 1e6 + 0; }          // N5; +0 turns -0 into 0
   function canon(v) {                                                // N1 canonical JSON, keys sorted
@@ -635,9 +638,10 @@
       });
       var par = items.map(function (_, i) { return i; });
       var find = function (i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+      var TP = Math.max(T, WINDOW_PART_GAP);   // §D55 the parts of one window (frames, mullions, panes) may be drawn a few mm to 50 mm apart: one cluster
       for (var i = 0; i < items.length; i++) for (var j = i + 1; j < items.length; j++) {
         var a = items[i].b, b = items[j].b;
-        if (a[0] <= b[2] + T && b[0] <= a[2] + T && a[1] <= b[3] + T && b[1] <= a[3] + T) par[find(i)] = find(j);
+        if (a[0] <= b[2] + TP && b[0] <= a[2] + TP && a[1] <= b[3] + TP && b[1] <= a[3] + TP) par[find(i)] = find(j);
       }
       var groups = {};
       items.forEach(function (it, i) { (groups[find(i)] = groups[find(i)] || []).push(it); });

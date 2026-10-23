@@ -393,3 +393,32 @@ among the alternatives (>= 99%); held out on the first two storeys the same (JKR
 thickness matches and is wrong there (HHS <- JKR 0 / 64, JKR <- HHS 0 / 4, LTU <- HHS 0 / 77). Found while building: `Math.max.apply` over an estimated slab's vertices overflowed the stack on
 LTU (fixed: a loop). Registry tests (W-CLI C36, W-EDEFAULTS E1) now count 45 settings. Regression: `run_all_witnesses` (raw shed) = origin/main + the 3 new witnesses; guardrails G3 206 = main.
 Modeller sw v129.
+
+## §D55 A WINDOW DRAWN AS SEPARATE PARTS IS ONE WINDOW (JKR tuning)
+**Witness claim first (W-WINDOW-PARTS, `modeller/tests/witness_dxf_window_parts.js`).** P1 glazing pieces of one plan within `WINDOW_PART_GAP` (0.05 m, a module constant of `dxf2bim.js`, so no run_id
+changes) of each other are ONE window cluster: on JKR every window the plan cuts is one window opening (48 tagged windows -> 48 window openings with their schedule label), none split. P2 the JKR
+round trip's `no_elevation_for_face` falls (98 measured) and no code rises. P3 sets whose glazing pieces all touch (Duplex, Clinic, LTU: every piece's nearest neighbour <= 1 mm) are byte-identical to
+BASE. P4 falsifier: two windows of a plan moved 0.2 m apart stay two windows.
+**Measured first (JKR plain + marked sets, A-GLAZ pieces, nearest-neighbour gap):** 342 <= 1 mm, 8 at 1-3 mm (500 x 6 panes 2.4 mm off their 25 x 50 frames), 38 at 10-50 mm (1290 x 20 panes 50 mm off
+their 50 x 50 posts, deeper in the wall), none at 3-10 mm or 50-300 mm. Window W5a = 3 mullions + 4 frames + 2 panes = 5 clusters at the 1 mm join, only the one holding the tag labelled, none spanning
+its wall gap: Level 1 read 0 window openings of 24 (54 `no_elevation_for_face`), Level 2 6 of 24. Duplex 102 / Clinic 406 / LTU 5,159 pieces: all <= 1 mm.
+
+## §D54 WALLS NO ELEVATION SHOWS RUN TO THE SLAB ABOVE, BY DEFAULT (owner 2026-10-23 "fast best effort default to reduce grunt work ... edit in the JSON later"; supersedes L2.3 D3 "never a default")
+**Witness claim first (W-WALLTOP-DEFAULT, `modeller/tests/witness_dxf_walltop_default.js`).** T1 a plan's wall whose only gap is `GAP:no_elevation_height`, with the slab underside above known from the section, gets
+the storey convention as a DEFAULT: base 0, top = that underside, `height_source: slab_above_default`; ONE advisory `GAP:wall_top_defaulted` per plan names the count and the setting. T2 against the
+model's own wall tops (the marked set's `@WALLTOP`), the defaulted walls' agreement is stated per storey (a measurement, not a pass bar: the model's walls may stop at a ceiling the drawings do
+not show). T3 the setting `wall.top_when_unseen` = `none` (`element_defaults.json`, or `@DEFAULT` on a plan) gives the old verdict, code for code. T4 a stated `@WALLTOP` (per wall or the storey
+rule) always wins: the full model-marked set reads identical to BASE.
+**Measured first (the review session, HHS with the key's `@WALLTOP` removed):** 251 `no_elevation_height` on the plans; the key states 268 wall tops, 220 of them = next level - 0.300 (Level 2 / 3 = the
+slab underside above; Level 1 the model's walls stop 0.3 m under the 3.8 slab). The editor's per-storey tick existed but was never offered; the owner's direction makes it the default, amber, one
+JSON value to turn off.
+**D54 RESULT (2026-10-23): BUILT.** `dxf2elev.js applyWallTops(..., {defaultSlabAbove})` + the registry setting `wall.top_when_unseen` (`slab_above` | `none`) + one advisory `GAP:wall_top_defaulted` per
+plan. W-WALLTOP-DEFAULT fail=0. With the marked sets' `@WALLTOP` removed: HHS 250 walls defaulted (`no_elevation_height` 251 -> 1), Duplex 44 (44 -> 0), JKR 229 (510 -> 281: the Level 1 slab
+underside above is unknown there, `slab_no_underside`, so its walls stay asks). Against the model's own tops (a measurement): HHS Level 2 74 / 90 equal, Level 3 60 / 70, Level 1 0 / 90 (79 are
+0.300 m above the model: its walls stop at a ceiling the drawings do not show); JKR Level 2 0 / 189 equal (75 at -0.050, 43 at -0.150, 24 at +1.175, ...); Duplex 7 / 10. As a default it is
+amber and stated; most errors are 0.05-0.30 m on 3.3-3.5 m walls. `none` reads as before code for code; a stated `@WALLTOP` always wins (the full marked sets identical to BASE).
+**D55 + D55b RESULT (2026-10-23): BUILT.** `dxf2bim.js` `WINDOW_PART_GAP` 0.05 m (glazing pieces within it = one window) and `dxf2shell.js` `WINDOW_EMBED` 0.05 m (a window whose ends reach into the
+two pieces of one strip is bounded by them, in the wall's band; JKR W1 1.29 m drawn over a 1.25 m gap). W-WINDOW-PARTS fail=0: JKR 48 / 48 cut windows read as 48 windows, none split (were 6);
+JKR round trip 343 -> 191 blocking (`no_elevation_for_face` 98 -> 6, `opening_gap_unbounded` 39 -> 1 after D55b, `no_host_cut` 149 -> 59; `lod400_library_unreachable` 19 -> 59 = windows now reaching
+the library step, library-bound in Node); with both rules off 6 windows (the falsifier); Duplex, Clinic, LTU, HHS (glazing pieces all touch) identical to BASE. **JKR overall today: 902 -> 191
+blocking; without the library-bound codes 545 -> 73.** Modeller sw v130.
