@@ -662,7 +662,60 @@ model (`IfcFan` = 0 rows in every other extracted building db on this machine: C
 **Rule (when the owner says go).** `Dxf2Bind.bindProfiles(bodies, library)`: per body, parse the profile from `ifc.type_name` (`<b>"x<d>"x<t>" [Angle]`, `2 - ...` = a back-to-back pair, metric `L<b>x<d>x<t>`),
 refuse a default size, look up the library's prisms by family + dims (1 mm) + fill (0.03), stretch along the axis, state `lod400:<hash>`; list the rest. Placed after Convert, before the export, so the Viewer DB
 and the IFC carry the bound mesh (`IfcMappedItem` of the library mesh is a later step; the first step writes the stretched mesh as the body's own triangulated geometry).
-**D67 STATE: SPEC — awaiting owner go** (and the owner's choice of profile source, (a) or (b)). Nothing built.
+### §D67 TRACE + SOURCES (2026-10-23; owner: "Not traced from Hospital or Terminal? Then research if there is any online?")
+**What the shed needs (from `~/Videos/dxf2bim_film_work/why/cli/bodies.json`, 512 bodies):** single angle L 38.1 x 38.1 x 6.35 (`1.5"x1.5"x1/4" Angle` 26 + `1.5"x1.5"x1/4"` 13),
+back-to-back pair 2L 50.8 x 50.8 x 6.35 (`2 - 2"x2"x1/4"` 26), plate 6.35 mm (`1/4" Thickness Plate` 117), fan `Axial fan` PROPELLORAXIAL 13 (`size.d` 1.397 m drawn, `depth` 0.3 m default).
+**Method (scratch, not committed; sqlite + python / ifcopenshell only, no browser).** (1) 173 unique IFC files > 100 kB on the machine (deduplicated by size + name; worktrees, caches and test fixtures
+left out), from `~/bim-compiler/internal/UNMERGED/`, `~/bim-compiler/internal/sources/`, `~/bim-compiler/reference/`, `~/Downloads/` (incl. `OPEN SOURCE BIM/`, `Hospital 2.0.ifc`, `TerminalMerged.ifc`),
+`~/Projects/bim-compiler/DAGCompiler/lib/input/IFC/` (the Terminal = `SJTII-*-TER1-*.ifc`), `~/bim-ootb/IFC/`, `~/Projects/SYSNOVA/DXF2BIM/`, `~/Videos/dxf2bim_film_work/`: entity counts by grep, then
+member / beam / column / plate names by grep, then the matched elements' representation by ifcopenshell. (2) The local copies of the served dbs in `~/bim-ootb/buildings/` (Clinic, Duplex, HHS, Hospital, JKR,
+LTU meta + geo, Terminal meta + geo): plate thickness = the smallest principal extent (SVD) of each element's own mesh, fans by `IfcFlowMovingDevice` / `IfcFan` with their mesh vertex counts.
+**Traced hits.**
+- **`IfcLShapeProfileDef` = 0 in all 173 IFCs** (the Hospital, the Terminal, JKR, Clinic, HHS, Duplex, LTU included). Angles exist only as named `IfcArbitraryClosedProfileDef` extrusions:
+  - **LTU** `~/bim-compiler/internal/UNMERGED/LTU_AHouse_STR.ifc`, family `Beam L` (IfcBeam, Body = `IfcExtrudedAreaSolid`/`IfcArbitraryClosedProfileDef(<name>)`; L150x90x10 = `IfcBooleanClippingResult`):
+    L100x100x10 68, L150x90x10 12, L90x90x9 4, L150x150x14 3, L180x90x12 2, L200x200x18 1 (90 instances). **Meshes exist** in `~/bim-ootb/buildings/LTU_AHouse_geo.db` `base_geometries`
+    (50 vertices for most: the rounded root; L100x100x10 has 43 hashes, 12-50 vertices; L150x90x10 59). Plus `Column T:TL100x100` 4 (`IfcFacetedBrep`, 333-450 vertices). **Smallest = L90x90x9: none at 38.1 or 50.8.**
+  - **Revit sample** `~/bim-compiler/internal/UNMERGED/Ifc4_Revit_ARC.ifc` (= `ifc4rac_basic_sample_project.ifc`): `M_L-Anglel-Column:L127X127X9.5`, 2 columns, mapped arbitrary-profile extrusion (profile only in the IFC).
+  - **Schultz Residence** `~/Projects/bim-compiler/DAGCompiler/lib/input/IFC/opensourceBIM_Schultz_Residence.ifc`: `L-Angle:L6X4X3/8`, 2 beams, arbitrary-profile extrusion (profile only).
+  - **Hospital**: no angle. `Hospital_IFC4_STR.ifc` has 1,857 `IfcIShapeProfileDef`, all UB / UC (406x178x60UB 658, 305x165x40UB 438, 533x210x92UB 288, 356x171x51UB 219, ... 356x368x177UC 11).
+  - **Terminal**: no angle. `SJTII-STR-S-TER1-00-R0-Clean.ifc` member / beam types: RC rectangles, `RHS 150x100x5` 74, `RHS150x100x4` 18, `SHS 60x60x3` / `100x100x5` 3 each, `SHS 50x50x3` / `120x120x5` 2 each, `C 60x30x1.44` 1.
+- **Plates: no steel plate thinner than 10 mm anywhere; none at 6.35.** By mesh: LTU (`LTU_AHouse_STR.ifc`, `IfcBuildingElementProxy`) `Steel Plate:<t>x<w>x<l>` 249 at 10 / 12 / 15 mm (e.g. 10x200x250 68,
+  15x300x300 21), `Stiffener` 410 (392 at 10 mm, 18 at 15), `Plate` 110 at 15 mm, `Plate (face based)` 2 at 10 mm: **all 8-vertex boxes (Stiffener 12)**, i.e. a real STR model's plate is the same box as
+  the drawn prism. The `IfcPlate` rows elsewhere are not steel plates: Terminal `Metal Deck` 33,324 at 38.0 mm, Hospital `System Panel:Glazed*` 2,211 at 25-26.6 mm, HHS `Metallpanel` / `Verglasung` 629 at
+  30-31.7 mm, Clinic `Glazed` 167 at 15-26.4 mm + `Chain Link Fence Panel` 5 at 8.44 mm, JKR `Rectangle_Vent_Block_350mm` 120 at 224-226 mm, Duplex 0.
+- **Fans: meshes exist, but no axial propeller wall fan and none near 1.397 m.** `IfcFanType` (IFC2x3: instances are `IfcFlowMovingDevice`) in Clinic HVAC / Electrical / Plumbing, Duplex Mechanical / MEP,
+  LTU AIR / PLB, WBDG MEP. With a mesh in a served db: Clinic (`Clinic_extracted.db`) `M_Centrifugal Fan - Rooftop - Upblast:991-1905 LPS` 3 (2,312 vertices, 635 x 757 x 757 mm) and
+  `M_Exhaust Unit with Cabinet - Round Connection - Ceiling Mounted` 6 (158 vertices, 325 x 356 x 356 mm); LTU (`LTU_AHouse_meta.db` + geo) 14 circular duct / centrifugal fans (`K 100 EC` ... `K 315 L`,
+  `EX 140-2`, `KBR/F 315DV`, `FLKT-400`; 34-121 vertices). Duplex Mechanical's 2 upblast fans are IFC only (`Duplex_extracted.db` is the ARC). Hospital and Terminal: no fan (exhaust grilles /
+  air terminals only). The library: no fan definition (`component_definitions` names matching fan / exhaust = the Terminal's exhaust diffusers and grilles, 8-16 vertices).
+**Online / open sources (checked 2026-10-23).**
+
+| Source | Licence | Format | Coverage relevant here | Shed fit | URL |
+|---|---|---|---|---|---|
+| Bonsai `IFC4 US Steel.ifc` (local: `~/IfcOpenShell/src/bonsai/bonsai/bim/data/libraries/`, checkout f3afe8276) | GPL-3.0-or-later (Bonsai repo `src/bonsai/COPYING`); generated by `src/bonsai/scripts/generate_steel_profiles_library.py` from `boltspy` | IFC4 project library: `IfcLShapeProfileDef` 776 (137 distinct L names), composite 2L 639, W / HSS / T / C | AISC-named imperial; **smallest L = L2X2** (`L2X2X1_4` = 50.8, 50.8, 6.35, r1 6.35, r2 4.2672); `2L2X2X1_4` composite (two derived L at x = ±25.4, no gap) | 2L 50.8 x 6.35 YES; L 38.1 x 6.35 NO | https://github.com/IfcOpenShell/IfcOpenShell/tree/v0.8.0/src/bonsai/bonsai/bim/data/libraries |
+| Bonsai `IFC4 EU Steel.ifc` / `IFC4 AU Steel.ifc` (same folder) | GPL-3.0-or-later (as above) | IFC4 library; EU: L 39 (LNP20x3 ... LNP200x24, 2 unequal); AU: L 65 (`40x6 EA`, `45x6 EA`, `50x6 EA` ...) | EN 10056-1 LNP (EU), BlueScope EA (AU), with root / toe radii | no 38.1 / 50.8 (nearest 40, 50: > 1 mm off) | same |
+| BOLTS `data/profile_l.blt` + `profile_l/*.yaml` | **LGPL-2.1+** (stated in the .blt); repo GPL-3.0 | YAML tables | `lbeam_lnp_equal` / `_unequal` = DIN EN 10056-1 (source bauforumstahl.de), `lbeam_bluescope_*` (OneSteel 7th ed.); columns a, t, r1, r2 | metric only: no 38.1 / 50.8 | https://github.com/boltsparts/boltsparts/tree/master/data |
+| FreeCAD BIM `Presets/profiles.csv` | LGPL-2.1 (FreeCAD repo; the file has no header) | CSV, mm | L rows 72, all `IS Angle` ISA20x20x3 ... (Indian Standard; b, h, t only, no radii) | no 38.1 / 50.8 | https://github.com/FreeCAD/FreeCAD/blob/main/src/Mod/BIM/Presets/profiles.csv |
+| AISC Shapes Database v16.0 | free download; no open licence found (AISC copyright page: permission case by case) | Excel, US + SI | "the dimensions and properties of all shapes in Part 1 of the Manual" (AISC); small "bar size" angles below L2x2 dropped from the Manual (forum report, unverified against the file) | as Bonsai US (which matches it at L2X2) | https://www.aisc.org/publications/steel-construction-manual-resources/16th-ed-steel-construction-manual/aisc-shapes-database-v16.0/ · https://www.aisc.org/publications/copyright-permissions/ · https://eng-tips.com/threads/angle-l-1-1-2x1-1-2.467983 |
+| beamdimensions.com `L1-1/2x1-1/2x1/4` | site terms, not open | web table | lists the 38.1 angle (0.25 in leg, area 0.69 in²) | dims only, not redistributable | https://beamdimensions.com/database/American/AISC/Equal_angles/L1-1/2x1-1/2x1/4 |
+| NBS National BIM Library | NBS ID Licence: non-exclusive, non-transferable use | IFC / RFA objects | manufacturer + generic objects | not redistributable in an MIT repo | https://www.thenbs.com/legal/nbs-id-licence-agreement |
+| BIMobject | EULA (27 Sep 2024): personal use, not commercial; manufacturer terms on top | IFC / RFA | manufacturer fans exist | not redistributable | https://business.bimobject.com/terms-of-service-eula |
+| OSArch open IFC component threads | n/a (discussion) | n/a | no CC0 / CC-BY IFC fan library found; "most repositories require registration and limit sharing" | none | https://community.osarch.org/discussion/685 |
+| Sketchfab / CadCrowd CC-BY fans | CC-BY (per listing) | glTF / STEP / OBJ | generic wall / exhaust / PC fans, no barn axial fan, sizes unstated | wrong product | https://sketchfab.com/3d-models/exhaust-fan-freepolyorg-13f77dadac4e44fa93978869bebafa0f |
+
+**Recommended source per kind (for the owner's go; nothing built).**
+- **Angles: the drawing's own label through a parametric `AngleProfileMesh` (option (a)).** Reason: no traced model and no open catalogue holds L 38.1 x 38.1 x 6.35 (the 39 bars); the only exact catalogue
+  hit is the 2L 50.8 pair in Bonsai US Steel, which is GPL-3.0 (copying it, or a mesh derived from it, into an MIT repo is a licence mismatch). Licence fit: MIT-native, nothing copied. The root / toe radii are
+  not in the label: state them as an amber default (`r = 0`, sharp, editable in `element_defaults.json`) rather than take them from a catalogue. Bonsai's `L2X2X1_4` row (50.8, 50.8, 6.35, r1 6.35,
+  r2 4.2672) may be cited as a cross-check in a witness, not imported. If a metric catalogue is wanted later (EN 10056-1 for the JKR / LTU-style sets): BOLTS `lbeam_lnp_*` (LGPL-2.1+), kept as a separate
+  attributed data shard, owner's call.
+- **Plates: the drawing's own label (`1/4" Thickness Plate` = 6.35 mm) as the box it already is; no catalogue.** Reason: every traced steel plate in a real STR model (LTU, 249 + 410 + 112) is an 8-vertex
+  box (stiffener 12): a catalogue adds no geometry over the drawn prism; the LOD400 gain for plates is holes / bolts / cut corners, which need a joint detail, not a plate table. Licence fit: MIT-native.
+- **Fans: no redistributable source found; a parametric `AxialFanMesh` from the drawn ring (d 1.397 m from the elevation; depth stays the stated 0.3 m default) is the only MIT-clean path.** Reason: the traced
+  fan meshes (Clinic rooftop upblast 757 mm, LTU duct fans <= 315 mm class) are the wrong product and size; NBS / BIMobject / manufacturer objects are licence-bound (non-transferable / personal use); the
+  CC-BY finds are generic fans. A manufacturer's real model, if the owner supplies one, stays PRIVATE (OCI `bim-ootb-backup/private/dxf2bim/`), not in the library.
+**D67 STATE: SPEC — awaiting owner go** (and the owner's choice of profile source, (a) or (b)). Nothing built. The trace above answers (b) for the shed: no catalogue on the machine or online covers the
+39 single angles, so (b) alone would bind only the 26 back-to-back pairs (from a GPL file); (a) covers all 65 angle bars.
 ## §D66 THE JOINT MINI-BOMS: THE T-CONNECTOR PARTS LAND AT EVERY SPRINKLER HEAD (owner 2026-10-23: "each joint is a series of mini BOM ... shim-anchor"; session-3 RESUME item 2)
 **Witness claim first (W-FP-JOINT-BOM, `modeller/tests/witness_fp_joint_bom.js`; it says NO-OP when no part lands, WRONG when a part, offset, mesh or row is off the library).** J1 PROJECTED: `farm_rules.db`
 `rule_joint_piece` carries the FP `T_CONNECTOR_ASSEMBLY` rows projected from the library (`ad_bom_child` bom_id T_CONNECTOR_ASSEMBLY, nested in `SPRINKLER_PENDANT_ASSEMBLY` as T_ASSEMBLY, z_rule ABOVE_CHILD_1 =
