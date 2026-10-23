@@ -73,6 +73,11 @@
     this.proc          = o.proc || new Map();    // AD_Process_ID -> isReadWrite(bool)
     this.form          = o.form || new Map();    // AD_Form_ID    -> isReadWrite(bool)
     this.entityTypes   = toSet(o.entityTypes);   // entitytype values the role's dictionary scope allows
+    // canUpdate inputs (MRole.java:825-950 loadOrgAccess, :1369 loadTableAccess) — additive, absent = empty
+    this.clientId      = o.clientId != null ? o.clientId : null;                 // MRole.getAD_Client_ID
+    this.orgAccess     = o.orgAccess || [];      // [{client, org, readOnly}] AD_Role_OrgAccess IsActive='Y'
+    this.tableAccess   = o.tableAccess || [];    // [{table, rule, exclude, readOnly}] AD_Table_Access IsActive='Y'
+    this.useUserOrgAccess = !!o.useUserOrgAccess;
   }
   function toSet(a) {
     if (a instanceof Set) return a;
@@ -104,6 +109,69 @@
     if (!this.isAccessAllOrgs && org != null && org !== 0 && this.orgs.size && !this.orgs.has(org))
       return { allowed: false, reason: 'wrong-org' };
     return { allowed: true, reason: 'ok' };
+  };
+
+  // ── canUpdate — the DATA-level write check iDempiere runs on save (not window access).
+  // Implementing prompts/TEAMWORK_FRAMEWORK.md §12.7 (CL4) — Witness: W-ADMIT-FOLD.
+  // Ported from org.compiere.model.MRole: canUpdate :2335-2390, isClientAccess :1161-1185, isOrgAccess :1246-1267,
+  // isTableAccess :1369-1418, isTableAccessLevel :1426-1463. NOT ported (named): isRecordAccess (AD_Record_Access —
+  // 0 rows in the seed), summary-org tree expansion in loadOrgAccess, and AD_User_OrgAccess (a role with
+  // IsUseUserOrgAccess='Y' is refused fail-closed rather than judged on half the rules).
+  RoleContext.prototype.isClientAccess = function (client, rw) {
+    if (client === 0 && !rw) return true;                                  // :1163 can always read System
+    if (this.isAccessAllOrgs) return this.clientId === client;             // :1167
+    for (var i = 0; i < this.orgAccess.length; i++) {
+      var a = this.orgAccess[i];
+      if (a.client === client) { if (!rw) return true; if (!a.readOnly) return true; }
+    }
+    return false;
+  };
+  RoleContext.prototype.isOrgAccess = function (org, rw) {
+    if (this.isAccessAllOrgs) return true;                                 // :1248
+    if (org === 0 && !rw) return true;                                     // :1250 can always read common org
+    for (var i = 0; i < this.orgAccess.length; i++) {
+      var a = this.orgAccess[i];
+      if (a.org === org) { if (!rw) return true; return !a.readOnly; }
+    }
+    return false;
+  };
+  RoleContext.prototype.isTableAccessLevel = function (level, ro) {
+    if (ro) return true;                                                   // :1428 role can always read
+    if (level == null) return false;
+    level = String(level); var ul = this.userLevel;
+    if (level === '7') return true;
+    if (ul.charAt(0) === 'S' && (level === '4' || level === '6')) return true;
+    if (ul.charAt(1) === 'C' && (level === '2' || level === '6')) return true;
+    if (ul.charAt(2) === 'O' && (level === '1' || level === '3')) return true;
+    return false;
+  };
+  RoleContext.prototype.isTableAccess = function (tableId, level, ro) {
+    if (!this.isTableAccessLevel(level, ro)) return false;
+    var has = true;                                                        // :1376 negative list by default
+    for (var i = 0; i < this.tableAccess.length; i++) {
+      var t = this.tableAccess[i];
+      if (t.rule !== 'A') continue;                                        // ACCESSTYPERULE_Accessing only
+      if (t.exclude) { if (t.table === tableId) return ro ? t.readOnly : false; }
+      else {                                                               // include list: tables outside it get no rw
+        has = false;                                                       // (ro default MSysConfig …=false)
+        if (t.table === tableId) return ro ? true : !t.readOnly;
+      }
+    }
+    return has;
+  };
+  RoleContext.prototype.canUpdate = function (client, org, tableId, tableAccessLevel) {
+    if (this.useUserOrgAccess) return { allowed: false, reason: 'user-org-access-not-ported' };
+    var ul = this.userLevel;
+    if (ul.indexOf('S') !== -1) return { allowed: true, reason: 'system' };             // :2340
+    var ok = true, miss = '';
+    if (client === 0 && org === 0 && ul.charAt(0) !== 'S') { ok = false; miss += 'S'; }
+    else if (client !== 0 && org === 0 && ul.charAt(1) !== 'C') {
+      if (!(ul.charAt(2) === 'O' && this.isOrgAccess(org, true))) { ok = false; miss += 'C'; }
+    } else if (client !== 0 && org !== 0 && ul.charAt(2) !== 'O') { ok = false; miss += 'O'; }
+    if (ok) { ok = this.isClientAccess(client, true); miss += 'C'; }                    // :2373
+    if (ok) { ok = this.isOrgAccess(org, true); miss = 'W'; }                           // :2379
+    if (ok) { ok = this.isTableAccess(tableId, tableAccessLevel, false); if (!ok) miss = 'T'; }
+    return { allowed: ok, reason: ok ? 'ok' : 'missing=' + miss };
   };
 
   // entityTypeAllowed — AD_EntityType dictionary/customization scope (a dictionary object whose
@@ -145,10 +213,18 @@
       try { entityTypes = db.prepare("SELECT entitytype AS et FROM ad_entitytype WHERE isactive='Y'").all().map(function (r) { return r.et; }); }
       catch (e) { entityTypes = []; }
     }
+    // canUpdate inputs — read-write org access rows and table access rules (MRole.loadOrgAccessRole / loadTableAccess)
+    var orgAccess = [], tableAccess = [], useUser = false;
+    if (hasOrgAccess) db.prepare("SELECT ad_client_id AS c, ad_org_id AS o, isreadonly AS ro FROM ad_role_orgaccess WHERE ad_role_id=? AND isactive='Y'").all(roleId)
+      .forEach(function (r) { orgAccess.push({ client: Number(r.c), org: Number(r.o), readOnly: r.ro === 'Y' }); });
+    try { db.prepare("SELECT ad_table_id AS t, accesstyperule AS rule, isexclude AS ex, isreadonly AS ro FROM ad_table_access WHERE ad_role_id=? AND isactive='Y'").all(roleId)
+      .forEach(function (r) { tableAccess.push({ table: Number(r.t), rule: r.rule, exclude: r.ex === 'Y', readOnly: r.ro === 'Y' }); }); } catch (eT) { tableAccess = []; }
+    try { var uu = db.prepare('SELECT isuseuserorgaccess AS u FROM ad_role WHERE ad_role_id=?').get(roleId); useUser = !!(uu && uu.u === 'Y'); } catch (eU) { useUser = false; }
     return new RoleContext({
       AD_Role_ID: role.ad_role_id, name: role.name, userLevel: role.userlevel,
       isAccessAllOrgs: role.isaccessallorgs === 'Y',
-      orgs: orgs, clients: [role.ad_client_id], win: win, proc: proc, form: form, entityTypes: entityTypes
+      orgs: orgs, clients: [role.ad_client_id], win: win, proc: proc, form: form, entityTypes: entityTypes,
+      clientId: Number(role.ad_client_id), orgAccess: orgAccess, tableAccess: tableAccess, useUserOrgAccess: useUser
     });
   }
 

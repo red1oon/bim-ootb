@@ -15,7 +15,10 @@
  *   §2CTX-FOLD     — the REAL erp/kernel_ops.js + erp/crud_core.js listTip fold both to identical c_order rows,
  *                    each order carrying its OWN edit (the CL1 defect scenario, across two real browsers).
  *   §2CTX-RECEIPT  — each context's ops are SEEN by the other (proven by the other's signed head).
- *   §2CTX-PIPE     — the folder holds only d/ o/ h/ objects (the pipe stored bytes and nothing else).
+ *   §2CTX-PIPE     — the folder holds only o/ h/ objects (the pipe stored bytes and nothing else; keys ride in ENROLL ops).
+ *   §2CTX-ROSTER   — trust is the CL4 roster: A founds the space (genesis = the invite), enrols B (role 103) from B's code;
+ *                    writes are judged by the real MRole.canUpdate port on the browser's ad_seed.db — B's org-12 order is
+ *                    REFUSED in BOTH browsers (role 103 has no org-12 access), never folded.
  *
  * Run: node common/tests/witness_comm_cl3_folder.js 2>&1 | tee /tmp/witness_comm_cl3_folder.log
  */
@@ -60,16 +63,20 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     [['A', A], ['B', Bp]].forEach(function (x) { x[1].on('console', function (m) { if (/§/.test(m.text())) console.log('     [' + x[0] + '] ' + m.text()); });
       x[1].on('pageerror', function (e) { console.log('     [' + x[0] + '] 🔴 pageerror ' + e.message); fails++; }); });
     for (var pg of [A, Bp]) { await pg.goto(base + '/common/comm/comm_poc.html', { waitUntil: 'load' }); }
-    var kidA = await A.evaluate(function (b) { return CommPOC.init(b); }, base + '/pipe');
-    var kidB = await Bp.evaluate(function (b) { return CommPOC.init(b); }, base + '/pipe');
-    console.log('   §2CTX devices A=' + kidA + ' B=' + kidB + ' folder=' + FOLDER);
+    var idA = await A.evaluate(function (b) { return CommPOC.init(b); }, base + '/pipe');
+    var idB = await Bp.evaluate(function (b) { return CommPOC.init(b); }, base + '/pipe');
+    var kidA = idA.kid, kidB = idB.kid;
+    var space = await A.evaluate(function () { return CommPOC.found('cl3-2ctx', 102); });
+    await Bp.evaluate(function (s) { return CommPOC.join(s); }, space);
+    await A.evaluate(function (peer) { return CommPOC.enrollPeer(peer, 'B', 103); }, idB);
+    console.log('   §2CTX devices A=' + kidA + ' B=' + kidB + ' space=' + space.slice(0, 12) + ' folder=' + FOLDER);
 
     var uuA = await A.evaluate(async function () { var u = await CommPOC.createOrder('A-1', 100); await CommPOC.editOrder(u, 100, 111); return u; });
     var uuB = await Bp.evaluate(async function () { var u = await CommPOC.createOrder('B-1', 200); await CommPOC.editOrder(u, 200, 222); return u; });
-
+    await Bp.evaluate(function () { return CommPOC.createOrder('B-12', 300, 12); });   // role 103 has no org-12 access
     console.log('\n§2CTX-ISOLATED');
     var sA0 = await A.evaluate(function () { return CommPOC.state(); }), sB0 = await Bp.evaluate(function () { return CommPOC.state(); });
-    verdict(sA0.ops === 2 && sB0.ops === 2, 'each context holds only its own 2 ops before any visit', 'A=' + sA0.ops + ' B=' + sB0.ops);
+    verdict(sA0.ops === 5 && sB0.ops === 3, 'each context holds only its own ops before any visit (A: genesis+person+enrol+2, B: 3)', 'A=' + sA0.ops + ' B=' + sB0.ops);
 
     console.log('\n§2CTX visits A, B, A, B');
     for (var round = 0; round < 2; round++) { await A.evaluate(function () { return CommPOC.visit(); }); await Bp.evaluate(function () { return CommPOC.visit(); }); }
@@ -77,7 +84,10 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     console.log('\n§2CTX-CONVERGE');
     var sA = await A.evaluate(function () { return CommPOC.state(); }), sB = await Bp.evaluate(function () { return CommPOC.state(); });
     console.log('   §2CTX state A ops=' + sA.ops + ' placed=' + sA.placed + ' order=' + sA.orderHash + '   B ops=' + sB.ops + ' placed=' + sB.placed + ' order=' + sB.orderHash);
-    verdict(sA.placed === 4 && sB.placed === 4 && sA.parked === 0 && sB.parked === 0, 'all 4 ops placed in both', sA.placed + '/' + sB.placed);
+    verdict(sA.business === 4 && sB.business === 4 && sA.parked === 0 && sB.parked === 0, 'the 4 allowed business ops placed in both', sA.business + '/' + sB.business);
+    console.log('\n§2CTX-ROSTER');
+    verdict(sA.rosterOk && sB.rosterOk && sA.devices === 2 && sB.devices === 2, 'both browsers fold the same roster (2 devices, trusted genesis)');
+    verdict(sA.refused === 1 && sB.refused === 1, "B's org-12 order is REFUSED in both browsers (real canUpdate, role 103)", 'refused A/B=' + sA.refused + '/' + sB.refused);
     verdict(sA.orderHash === sB.orderHash, 'same order in both contexts');
 
     console.log('\n§2CTX-FOLD (real kernel_ops + crud_core.listTip)');
@@ -92,13 +102,17 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     function show(d) { return d.map(function (x) { return x.seq + ':' + x.state; }).join(' '); }
     console.log('   §2CTX delivery A: ' + show(sA.delivery) + '   B: ' + show(sB.delivery));
     verdict(sA.delivery.every(function (x) { return x.state === 'SEEN' && x.seenBy.indexOf(kidB) >= 0; }), "A's ops SEEN by B (B's signed head)");
+    if (!sA.delivery.length || !sB.delivery.length) inconclusive.push('no delivery rows to judge');
+    var b3 = sB.delivery.filter(function (x) { return x.seq === 3; })[0] || {};
+    console.log('   §2CTX B seq3 (org 12) delivery=' + b3.state + ' verdict=' + b3.verdict + ' reason=' + b3.reason);
+    verdict(b3.state === 'SEEN' && b3.verdict === 'REFUSED' && /^access:/.test(b3.reason || ''), "B is told its org-12 order was delivered AND refused, with the AD reason");
     verdict(sB.delivery.every(function (x) { return x.state === 'SEEN' && x.seenBy.indexOf(kidA) >= 0; }), "B's ops SEEN by A (A's signed head)");
 
     console.log('\n§2CTX-PIPE');
-    var names = walk(FOLDER, '', []), stray = names.filter(function (n) { return !/^(d|o|h)\//.test(n); });
+    var names = walk(FOLDER, '', []), stray = names.filter(function (n) { return !/^(o|h)\//.test(n); });
     console.log('   §2CTX folder objects=' + names.length + ': ' + names.map(function (n) { return n.replace(/\.[0-9a-f]{12}\.bimpack$/, '.…bimpack'); }).join(' '));
-    verdict(names.length > 0 && !stray.length, 'the folder holds only d/ o/ h/ objects');
-    verdict(sA.storage.cl_tables.length >= 8, 'comm.db tables present in the browser', sA.storage.cl_tables.join(','));
+    verdict(names.length > 0 && !stray.length, 'the folder holds only o/ h/ objects');
+    verdict(sA.storage.cl_tables.length >= 7, 'comm.db tables present in the browser', sA.storage.cl_tables.join(','));
   } finally { await browser.close(); server.close(); }
 
   console.log('\n──────────────────────────────────────────────');
