@@ -8,6 +8,7 @@
  *   S2 LEFT OUT    — a storey with a face below 0.9 has NO slab element and ONE advisory GAP:slab_outline_not_rectangular naming the faces, their cover and the rectangle area.
  *   S3 FALSIFIER   — the first storey with its wall pieces and openings on the middle half of the minX face taken away (a notch): the rule refuses that storey.
  *   S4 ONLY SLABS  — with BASE=<an older checkout's modeller dir>: every non-slab element is identical (guid + vertices) to BASE's on the same set; S1 sets are byte-identical in full.
+ * Since §D51 a storey with an undrawn rectangle gets a best-effort slab by default (W-SLAB-ESTIMATE); this witness proves D44's own rule with that default set to 'none'.
  * Usage: NODE_PATH=<dir with better-sqlite3> [BASE=<old modeller dir>] node modeller/tests/witness_dxf_slab_outline.js <Node model .db> [<more .db>]
  */
 'use strict';
@@ -22,7 +23,7 @@ const dbs = process.argv.slice(2); if (!dbs.length) { say('MISSING input: a Node
 dbs.forEach(db => {
   const name = path.basename(db, '.db'), con = new Database(db, { readonly: true }), q = s => con.prepare(s).all();
   const R = S.writeStdSet(q, 'X', {}), Dm = Mk.deriveMarks(R, { B, DxfParser, hashHex, MK, SHC, SCOPES: SC }, { set: 'X' });
-  const files = Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] })), conv = Imp => Imp.convert(Imp.readSheets(files), {});
+  const files = Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] })), conv = Imp => Imp.convert(Imp.readSheets(files), { defaultsRef: { defaults: { 'slab.outline_when_not_rect': { value: 'none' } } } });   // §D51: D44's rule itself (the best-effort default off)
   const o = conv(I); if (!o.ST) { check('S0[' + name + ']', 'the marked set converts to a verdict', false, JSON.stringify(o.refused).slice(0, 200)); return; }
   const slabOf = st => o.els.filter(e => e.class === 'IfcSlab' && e.storey === st.name), adv = o.verdict.advisory.filter(a => a.code === 'GAP:slab_outline_not_rectangular');
   let kept = 0, out = 0; const bad = [];

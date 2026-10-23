@@ -1,6 +1,7 @@
 {
  "note": "witnesses that cannot run on the build machine and why; a change here fails the runner until a person reads it",
  "env_or_skip": [
+  "witness_dxf_bridge_long:ENV",
   "witness_dxf_convert:ENV",
   "witness_dxf_curtain:ENV",
   "witness_dxf_door_swings:ENV",
@@ -11,6 +12,7 @@
   "witness_dxf_level_datum:ENV",
   "witness_dxf_lib_oci_node:ENV",
   "witness_dxf_libtypes:ENV",
+  "witness_dxf_material:ENV",
   "witness_dxf_meta_editor:ENV",
   "witness_dxf_north:ENV",
   "witness_dxf_quality:ENV",
@@ -18,6 +20,7 @@
   "witness_dxf_scopes_merge:ENV",
   "witness_dxf_sheet_view:ENV",
   "witness_dxf_sidecar:ENV",
+  "witness_dxf_slab_estimate:ENV",
   "witness_dxf_slab_outline:ENV",
   "witness_dxf_stairs:ENV",
   "witness_dxf_storey_absorb:ENV",

@@ -49,6 +49,18 @@
    ],
    "used_by": "dxf2synth (--complete)"
   },
+  "slab.outline_when_not_rect": {
+   "element": "IfcSlab",
+   "value": "walls_bounded",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "when the walls do not draw a rectangle, the slab is the area they bound on both axes (best effort, amber; HHS -10% against the model's floor slabs, a rectangle +163%); 'none' leaves the slab out and lists it",
+   "options": [
+    "walls_bounded",
+    "none"
+   ],
+   "used_by": "dxf2bim_import convert (§D51)"
+  },
   "synth.slab.footprint": {
    "element": "IfcSlab",
    "value": "outermost grid lines",
