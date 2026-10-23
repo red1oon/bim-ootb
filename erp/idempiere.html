@@ -752,7 +752,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=8"></script>
-<script src="crud_overlay.js?v=34"></script>
+<script src="crud_overlay.js?v=35"></script>
+<!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
+     (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
+<script>if (/[?&]team=1(&|$)/.test(location.search)) { ['../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', 'team_sync.js?v=1'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -5199,6 +5203,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   window.addEventListener('overlay:committed', function (e) {
     var d = e.detail || {};
     var t = d.table ? String(d.table) : '';
+    // §13.1 W1 (W-TEAM-SO) — a Visit rebuilt the sidecar from the comm log: synthetic pks (-kernelRowId) may have been renumbered. Re-key the
+    //   window's current records (d.remap[table][oldPk] = newPk) and re-query the open tab — generic, no table named here.
+    if (d.op_type === 'TEAM_VISIT') {
+      try {
+        var rm = d.remap || {}, tw = _curWin(), moved = 0;
+        var rekey = function (tab, key) { var m = tab && tab.tableName && rm[String(tab.tableName).toLowerCase()]; return (m && key != null && m[key] != null) ? m[key] : key; };
+        if (tw && tw.tabs) {
+          Object.keys(_curKeyByTab).forEach(function (i) { var nk = rekey(tw.tabs[i], _curKeyByTab[i]); if (nk !== _curKeyByTab[i]) { _curKeyByTab[i] = nk; moved++; } });
+          Object.keys(_selByLevel).forEach(function (L) { var tb = tw.tabs.filter(function (x) { return (x.tabLevel || 0) === Number(L); })[0];
+            var nk = rekey(tb, _selByLevel[L]); if (nk !== _selByLevel[L]) { _selByLevel[L] = nk; moved++; }
+            var rec = _recByLevel[L]; if (rec && tb) { var kc = String(_keyCol(tb)).toLowerCase(); Object.keys(rec).forEach(function (k) { if (k.toLowerCase() === kc) rec[k] = rekey(tb, rec[k]); }); } });
+        }
+        console.log('§TEAM-REFRESH rekeyed=' + moved + ' tables=' + Object.keys(rm).join(',') + ' view=' + _viewMode);
+        renderActiveTab();
+      } catch (er) { console.log('§TEAM-REFRESH error ' + er); }
+      return;
+    }
     // S1/J5 — a signed DOCUMENT action (Complete/Void/Close/ReActivate/…) committed. Re-read the now-signed
     //   DocStatus onto the loaded records via the readTip overlay + repaint the CURRENT view (no view reset):
     //   the persisted status shows immediately and survives reload (the bundle is immutable; the op-log is truth).
