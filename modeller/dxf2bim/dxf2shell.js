@@ -96,15 +96,27 @@
   }
   // §D70.1 the plan's slab edge (layer type 'slabedge', A-FLOR-OTLN in the STD map): closed straight polylines, nested by containment (inside an odd number of rings = a hole).
   // Returns { pieces: [{ outer, holes, handles, rectilinear, area }], gaps }; an open polyline or one with a bulge is not read (advisory), never guessed closed or straightened.
-  function slabEdges(entities, layerMap, K) {
-    var rings = [], gaps = [];
+  // §D75 a closed polyline's bulged edges as straight facets: the arc of a segment with bulge b = tan(theta/4) is cut so no chord lies further than `sag` from it (metres). Straight edges stay as they are.
+  function facetBulges(vs, sag) {
+    var out = [], n = vs.length;
+    for (var i = 0; i < n; i++) {
+      var a = vs[i], b = vs[(i + 1) % n]; out.push([r6(a.x), r6(a.y)]);
+      if (!a.bulge) continue;
+      var th = 4 * Math.atan(a.bulge), dx = b.x - a.x, dy = b.y - a.y, c = Math.sqrt(dx * dx + dy * dy); if (c < EPS) continue;
+      var R = c / (2 * Math.sin(Math.abs(th) / 2)), cx = (a.x + b.x) / 2 - (a.bulge > 0 ? 1 : -1) * dy / c * R * Math.cos(th / 2), cy = (a.y + b.y) / 2 + (a.bulge > 0 ? 1 : -1) * dx / c * R * Math.cos(th / 2);
+      var a0 = Math.atan2(a.y - cy, a.x - cx), nseg = Math.max(2, Math.ceil(Math.abs(th) / (2 * Math.acos(Math.max(0, 1 - sag / Math.abs(R))))));
+      for (var k = 1; k < nseg; k++) { var ang = a0 + th * k / nseg; out.push([r6(cx + Math.abs(R) * Math.cos(ang)), r6(cy + Math.abs(R) * Math.sin(ang))]); }
+    }
+    return out;
+  }
+  function slabEdges(entities, layerMap, K, opts) {
+    var rings = [], gaps = [], sagitta = opts && typeof opts.sagitta === 'number' ? opts.sagitta : 0.005;
     (entities || []).forEach(function (e) {
       var rule = Dxf2Bim.matchRule(e.layer, layerMap.rules); if (!rule || rule.type !== 'slabedge') return;
       if (!(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape) { gaps.push({ code: 'GAP:slab_edge_open', handle: e.handle, reason: 'a slab edge must be a closed polyline: not read' }); return; }
-      if (e.vertices.some(function (q) { return q.bulge; })) { gaps.push({ code: 'GAP:slab_edge_bulge', handle: e.handle, reason: 'an arc in a slab edge is not read (draw it as straight facets)' }); return; }
-      var p = e.vertices.map(function (q) { return [r6(q.x * K), r6(q.y * K)]; });
+      var p = facetBulges(e.vertices.map(function (q) { return { x: q.x * K, y: q.y * K, bulge: q.bulge || 0 }; }), sagitta);   // §D75 an arc is read as straight facets within the stated chord sagitta
       if (p.length < 3 || Math.abs(ringSA(p)) < EPS) return;
-      rings.push({ handle: e.handle, p: p, a: Math.abs(ringSA(p)) });
+      rings.push({ handle: e.handle, p: p, a: Math.abs(ringSA(p)), top: typeof e.elevation === 'number' ? r6(e.elevation * K) : null, thickness: typeof e.depth === 'number' && e.depth > 0 ? r6(e.depth * K) : null });
     });
     rings.sort(function (a, b) { return b.a - a.a || hnum(a.handle) - hnum(b.handle); });
     var onV = function (q, o) { return o.p.some(function (v) { return v[0] === q[0] && v[1] === q[1]; }); };   // rings may touch at a vertex (the writer's union output), never cross
@@ -112,7 +124,7 @@
     rings.forEach(function (r, i) { r.depth = 0; r.parent = null; for (var j = 0; j < i; j++) if (rings[j].a > r.a && inside(r, rings[j])) { r.depth++; if (!r.parent || rings[j].a < r.parent.a) r.parent = rings[j]; } });
     var pieces = rings.filter(function (r) { return r.depth % 2 === 0; }).map(function (r) {
       var hs = rings.filter(function (h) { return h.parent === r && h.depth % 2 === 1; });
-      return { outer: r.p, holes: hs.map(function (h) { return h.p; }), handles: [r.handle].concat(hs.map(function (h) { return h.handle; })), rectilinear: [r.p].concat(hs.map(function (h) { return h.p; })).every(rectilinear), area: r6(r.a - hs.reduce(function (t, h) { return t + h.a; }, 0)) };
+      return { outer: r.p, holes: hs.map(function (h) { return h.p; }), handles: [r.handle].concat(hs.map(function (h) { return h.handle; })), rectilinear: [r.p].concat(hs.map(function (h) { return h.p; })).every(rectilinear), top: r.top, thickness: r.thickness, area: r6(r.a - hs.reduce(function (t, h) { return t + h.a; }, 0)) };
     });
     return { pieces: pieces, gaps: gaps };
   }

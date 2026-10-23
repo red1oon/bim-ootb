@@ -585,6 +585,33 @@
     "none"
    ],
    "used_by": "dxf2types bindTypes (§D73)"
+  },
+  "slab.level_step_min": {
+   "element": "IfcSlab",
+   "value": 0.1,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "slab tops closer than this are one level (the measured finishes are 25-50 mm); a step of this size or more is drawn as its own piece with its own top and thickness (A-FLOR-OTLN elevation / thickness, A-FLOR-LEVL line); 1 or more = one level per storey",
+   "options": [
+    0.05,
+    0.1,
+    0.2,
+    1.0
+   ],
+   "used_by": "std2d writePlan slab edge (§D75), opts.slabEdge.level_step_min"
+  },
+  "slab.edge_arc_sagitta": {
+   "element": "IfcSlab",
+   "value": 0.005,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "an arc in a slab edge is read as straight facets no further than this from the arc (5 mm: under the reader's thinnest wall and the plank keyway)",
+   "options": [
+    0.002,
+    0.005,
+    0.01
+   ],
+   "used_by": "dxf2shell slabEdges (§D75)"
   }
  },
  "building_types": {

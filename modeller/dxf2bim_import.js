@@ -426,7 +426,7 @@
     ST.forEach(function (st) { st.ringBridges = S.bridgeOpenings(st.after, CFG, { level: st.level, hashHex: hashHex }).infill; st.ring = S.innerRing(st.after, CFG, { bridges: st.ringBridges }); });   // §D44 the bridges count as face cover
     // §D70.1 the plan's drawn slab edge (A-FLOR-OTLN) is READ: it supersedes the §D44 rectangle and the §D51 estimate on that storey; a plan without it behaves as before
     ST.forEach(function (st) {
-      st.edge = S.slabEdges(st.sh.dxf && st.sh.dxf.entities, MK.withLayers(SET.MAP_PLAN, st.sh.desc), st.sh.factor);
+      st.edge = S.slabEdges(st.sh.dxf && st.sh.dxf.entities, MK.withLayers(SET.MAP_PLAN, st.sh.desc), st.sh.factor, { sagitta: Number(settingOf(sheets, opts, 'slab.edge_arc_sagitta', 0.005)) });
       if (st.edge.pieces.length) st.ring = Object.assign({}, st.ring, { gaps: (st.ring.gaps || []).filter(function (x) { return !/^GAP:slab_outline_/.test(x.code); }) });
     });
     R.roofPlan = S.roofPlan(roofSh.dxf.entities, MK.withLayers(SET.MAP_ROOF, roofSh.desc), roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
@@ -491,9 +491,11 @@
       st.meshGaps = m.gaps;
       m.elements.forEach(function (e) { if (e.class === 'IfcWall' && curtainLayer(SET, e.layer)) e.class = 'IfcCurtainWall'; els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });   // §D45
       var sz = R.slabZ[st.name];
-      if (st.edge.pieces.length && typeof sz.thickness === 'number') {   // §D70.1 one slab per drawn piece, at the storey's slab level (one per storey: level changes are not drawn)
+      if (st.edge.pieces.length && (typeof sz.thickness === 'number' || st.edge.pieces.some(function (pc) { return typeof pc.top === 'number' && typeof pc.thickness === 'number'; }))) {   // §D70.1 one slab per drawn piece; §D75 at its own top and thickness when the ring states both (DXF elevation / thickness), else at the storey's slab level
         st.edge.pieces.forEach(function (pc, k) {
-          var pm = pc.rectilinear ? S.prismRect(pc.outer, pc.holes, sz.bottom, sz.top) : S.prismPoly(pc.outer, pc.holes, sz.bottom, sz.top);
+          var own = typeof pc.top === 'number' && typeof pc.thickness === 'number', zt = own ? pc.top : sz.top, zb = own ? r6(pc.top - pc.thickness) : sz.bottom;
+          if (typeof zt !== 'number' || typeof zb !== 'number') { st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge states no top and thickness and the storey has none' }); return; }
+          var pm = pc.rectilinear ? S.prismRect(pc.outer, pc.holes, zb, zt) : S.prismPoly(pc.outer, pc.holes, zb, zt);
           if (pm) els.push({ guid: hashHex('slab-edge|' + st.name + '|' + J(pc.outer)).slice(0, 32), class: 'IfcSlab', handle: pc.handles.join(','), layer: 'A-FLOR-OTLN', piece: k, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet });
           else st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge makes no body (degenerate ring or no slab thickness)' });
         });
