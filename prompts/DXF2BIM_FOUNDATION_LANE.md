@@ -713,6 +713,10 @@ Drawing only: parts, segments, ops and the `§JOINT-BOM` line unchanged.
 seq 0, 16, 29, 0, 30, 0, 27, ..., needs the machine loaded: it is a race with the blocked thread, which (b) and (c) close). Regression: W-FP-JOINT-BOM 6 / 0, W-FP-BOM-TREE 5 / 0, W-SEED-OUTWARD-REVEAL 9 / 0
 (R3 now starts from a fresh walk's state: a re-render of a revealed network is a redraw by (b)), W-E2E-WALK 8 / 0, W-MEP-REROUTE 9 / 0, W-FIRST-STEPS-MEP 8 / 0, W-WALK-GESTURE 4 / 0, W-DW-DEDUP-RENDER 4 / 0,
 W-UNDO-RESURRECT 5 / 0, W-WALK-AFTER-SEED 4 / 0. Modeller sw v145.
+**D66.1 FIX (same day, found filming the take): the pipes and the joint parts were INVISIBLE on screen after #2332** although their counts read 36 / 90: three keeps an InstancedMesh's culling sphere
+computed lazily over the instances drawn at that moment; the reveal set `.count` to 0 before the first frame, so the sphere was empty (radius -1) and the mesh was culled for good. The counting
+witnesses could not see it. **Fix:** each walk mesh (heads, pipes, parts) computes its sphere over all instances when built. **Witness B7** (claim: every walked FP mesh's culling sphere covers its
+first and last instance): PASS on the fix (heads r 24.51, pipes 22.89, parts 24.5 x 3); **FAIL on main 586e40bb** (pipes and parts r -1). W-WALK-BUILDUP 7 / 0. Modeller sw v149.
 
 ## §D68 A WINDOW IN A RECESSED FACE IS DRAWN ON THE ELEVATION THAT SEES IT, AND READ FROM IT (architect review F16; session 3, RESUME item 4)
 **Witness claim first (W-RECESSED-WIN, `modeller/tests/witness_dxf_recessed.js <db...>`, `BASE=<modeller dir at origin/main>`).** R1 (writer) every model window that an elevation face SEES is drawn on that face:
