@@ -4226,6 +4226,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
       : (w.mode === 'measured-band' ? (w.measured.zones + ' measured zones') : (w.storeys + ' storeys'));
     setStat(disc + ' — ' + w.placed + ' placed across ' + scopeTxt + (gatedN ? ' · ' + gatedN + ' gated' : '') + (clashN ? ' · ' + clashN + ' CLASH (red)' : '') + (nSeg ? ' · ' + nSeg + ' nn-chains' : (w.chains ? ' · ' + w.chains.length + ' routed' : '')));
     console.log('§DISC-WALK ' + disc + ' placed=' + w.placed + ' storeys=' + w.storeys + ' chains=' + (w.chains ? w.chains.length : 0) + ' chainSegs=' + nSeg + ' gated=' + gatedN + ' clash=' + clashN + ' (DiscWalker/' + ((window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'rules') + ')');
+    try { await _dwYieldPass(disc, 'before'); } catch (e) { console.warn('§DW-YIELD ' + (e && e.message)); }   // §D72 this walk's fixtures clear what other discs already drew
     // Tack placements into the signed op-log as GEOM_INSERT — undoable + enterprise-foldable (W-DW-OPLOG)
     await _commitDiscWalk(disc, w.placements);
     // ROUTER LIVE (§ROUTER-NNCHAIN): real nn-chain network → render ALL as 3D lines, fold a bounded sample to op-log
@@ -4266,6 +4267,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
           ' joints=' + ((asm && asm.joints) ? asm.joints.length : 0)));
       }
     } catch (e) { console.warn('§DW-ASSEMBLE ' + disc + ' failed ' + (e && e.message)); }
+    try { await _dwYieldPass(disc, 'after'); } catch (e) { console.warn('§DW-YIELD ' + (e && e.message)); }   // §D72 fixtures walked earlier give way to this walk's drawn pieces (network and parts included)
     return { refused: false, placed: w.placed, storeys: w.storeys, gated: gatedN, clash: clashN };
   } catch (e) { console.warn('§DISC-WALK ' + disc + ' failed ' + (e && e.message)); return { refused: true, reason: 'error: ' + (e && e.message), placed: 0 }; }
 }
@@ -4381,6 +4383,48 @@ function _dwAsmRevealTick(disc) {
   if (window.A && window.A.requestRender) window.A.requestRender();
   if (k < 1 || fx) { R.raf = requestAnimationFrame(function () { _dwAsmRevealTick(disc); }); }
   else { delete window.__dwAsmRevealMeta[disc]; console.log('§DW-ASM-REVEAL disc=' + disc + ' done n=' + nAll + ' ms=' + Math.round(performance.now() - R.start)); }
+}
+// §D72 a fixture of a yielding disc (rule_avoidance.yields) gives way to the other disc's DRAWN pieces (fixtures, pipes, joint parts): the least sideways shift that keeps min_clear_m from all of
+// them and stays inside the building's plan box; none = flagged. `before` = the yielding disc is the walk being committed (move the placement only); else its committed inserts move by GEOM_MOVE.
+async function _dwYieldPass(walked, phase) {   // phase 'before' (the walk being committed yields) | 'after' (its drawn pieces are what others yield to)
+  var rdb = window.DiscWalker && window.DiscWalker.rulesDb && window.DiscWalker.rulesDb(), rows = [];
+  try { var r = rdb && rdb.exec("SELECT disc_a, disc_b, min_clear_m, yields FROM rule_avoidance"); rows = r && r.length ? r[0].values : []; } catch (e) { rows = []; }
+  var root = _dwRoot(); if (!root || !rows.length) return;
+  var T = THREE, M = new T.Matrix4(), W = new T.Matrix4();
+  var drawnBoxes = function (pred) { var out = []; root.children.forEach(function (o) { if (!(o.isInstancedMesh && o.userData && pred(o.userData))) return; o.updateMatrixWorld(); if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    for (var i = 0; i < o.instanceMatrix.count; i++) { o.getMatrixAt(i, M); W.multiplyMatrices(o.matrixWorld, M); out.push({ box: o.geometry.boundingBox.clone().applyMatrix4(W), rec: o.userData.dwSub ? o.userData.dwSub[i] : null }); } }); return out; };
+  var dwIds = {}; window.Bonsai.oplog._geomOps().forEach(function (o) { if (o.parameters && o.parameters._dw) dwIds[o.id] = 1; });   // the building's plan box: its own bodies, never the walks' inserts
+  var plan = new T.Box3(); window.Bonsai.group().children.forEach(function (m) { if (m.isMesh && m.visible && !m.isInstancedMesh && !(m.userData && dwIds[m.userData.featureId])) plan.union(new T.Box3().setFromObject(m)); });
+  var over = function (bx) { return Math.max(0, plan.min.x - bx.min.x, bx.max.x - plan.max.x, plan.min.y - bx.min.y, bx.max.y - plan.max.y); };   // how far a box sits outside the plan box
+  for (var k = 0; k < rows.length; k++) {
+    var a = rows[k][0], b = rows[k][1], mc = +rows[k][2], Y = rows[k][3], O = Y === a ? b : a;
+    if (!(Y === a || Y === b) || (phase === 'before' ? Y !== walked : O !== walked) || !(window.__dwWalks[Y] || []).length || !(window.__dwWalks[O] || window.__dwChains[O] || window.__dwAssembly[O])) continue;
+    if (!((window.__dwChains[O] || [])[0] && window.__dwChains[O][0].mode === 'bom-tree')) continue;   // only pipework the walk BUILT from the BOM template (§D65); measured references keep their measured gate (W-MEP-OPENPATH M7)
+    var other = drawnBoxes(function (u) { return u.dwDisc === O || u.dwAsm === O; }).map(function (x) { return x.box; });
+    var partsDrawn = (window.__dwAssembly[O] || []).length;   // pipes at their real outside diameter (the network's data, not the 6-sided drawn tube); a drop drawn as joint parts is those parts
+    (window.__dwChains[O] || []).forEach(function (sg) { if (sg.role === 'DROP' && partsDrawn) return; var rr = (sg.dia_mm > 0 ? sg.dia_mm : (DW_TUBE_R[O] || 0.05) * 2000) / 2000;
+      other.push(new T.Box3(new T.Vector3(Math.min(sg.from[0], sg.to[0]) - rr, Math.min(sg.from[1], sg.to[1]) - rr, Math.min(sg.from[2], sg.to[2]) - rr), new T.Vector3(Math.max(sg.from[0], sg.to[0]) + rr, Math.max(sg.from[1], sg.to[1]) + rr, Math.max(sg.from[2], sg.to[2]) + rr))); });
+    var mine = drawnBoxes(function (u) { return u.dwDisc === Y && u.dwSub; }); if (!other.length || !mine.length) continue;
+    var hits = function (bx) { var g = bx.clone().expandByScalar(mc); return other.filter(function (o) { return o.intersectsBox(g); }); };
+    var moved = [], flagged = 0, maxS = 0;
+    mine.forEach(function (f) { var c = hits(f.box); if (!c.length || !f.rec) return; var best = null;
+      [[0, 1], [0, -1], [1, 1], [1, -1]].forEach(function (cand) { var ax = cand[0], sg = cand[1], hitSet = c.slice(), d = 0;
+        for (var it = 0; it < 6; it++) { d = 0; hitSet.forEach(function (o) { var need = sg > 0 ? (o.max.getComponent(ax) + mc) - f.box.min.getComponent(ax) : f.box.max.getComponent(ax) - (o.min.getComponent(ax) - mc); if (need > d) d = need; });
+          var sh = new T.Vector3(); sh.setComponent(ax, sg * (d + 1e-3)); var nb = f.box.clone().translate(sh), more = hits(nb).filter(function (o) { return hitSet.indexOf(o) < 0; });
+          if (!more.length) { var inPlan = over(nb) <= over(f.box) + 1e-6 && !hits(nb).length;   // never further outside the building than it was
+            if (inPlan && (!best || Math.abs(d) < best.d)) best = { d: Math.abs(d) + 1e-3, dx: ax === 0 ? sg * (d + 1e-3) : 0, dy: ax === 1 ? sg * (d + 1e-3) : 0 }; return; }
+          hitSet = hitSet.concat(more); } });
+      if (!best) { f.rec.clash = true; flagged++; return; }
+      f.rec.x = +(f.rec.x + best.dx).toFixed(5); f.rec.y = +(f.rec.y + best.dy).toFixed(5); f.rec.yieldTo = { disc: O, dx: +best.dx.toFixed(4), dy: +best.dy.toFixed(4), clear: mc, rule: 'rule_avoidance ' + a + '/' + b };
+      maxS = Math.max(maxS, best.d); moved.push(f.rec); });
+    var sig = 0;
+    if (moved.length && Y !== walked) {   // committed earlier: ONE signed group of GEOM_MOVE, each on that lamp's own insert
+      var ops = moved.filter(function (p) { return p._fid != null; }).map(function (p) { return { op_type: 'GEOM_MOVE', params: { parent: p._fid, dx: p.yieldTo.dx, dy: p.yieldTo.dy, dz: 0, induced: 'dw-yield ' + Y + '->' + O } }; });
+      if (ops.length) { try { var res = await window.Bonsai.oplog.commitSeedGroup(ops, 'dwyield-' + Y + '-' + window.Bonsai.oplog.length); sig = (res.ids || []).length; } catch (e) { console.warn('§DW-YIELD commit ' + (e && e.message)); } }
+    }
+    if (moved.length || flagged) _redrawAllDiscWalks();
+    console.log('§DW-YIELD disc=' + Y + ' to=' + O + ' clear=' + mc + ' moved=' + moved.length + ' flagged=' + flagged + ' max_shift=' + maxS.toFixed(3) + ' signed_moves=' + sig + (Y === walked ? ' (before its commit)' : ''));
+  }
 }
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
@@ -4824,7 +4868,9 @@ async function _commitDiscWalk(disc, placements) {
   }
   var committed = 0;
   if (ops.length) {
-    try { var res = await O.commitSeedGroup(ops, 'dwwalk-' + disc + '-' + O.length); committed = (res.ids || []).length; }
+    try { var res = await O.commitSeedGroup(ops, 'dwwalk-' + disc + '-' + O.length); committed = (res.ids || []).length;
+      if (ops.length === placements.length && res.ids && res.ids.length === ops.length) placements.forEach(function (p, i) { p._fid = res.ids[i]; });   // §D72 a later yield moves THIS insert (GEOM_MOVE parent)
+    }
     catch (e) { console.warn('§DISC-WALK-COMMIT batch fail ' + (e && e.message)); }
   }
   if (committed) {
