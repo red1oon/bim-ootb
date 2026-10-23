@@ -11,7 +11,10 @@
  * Identity/space/token are read from the same-origin IndexedDB 'comm_phone' written by common/comm/comm_phone.html; this
  * page keeps its OWN comm store bytes under a separate key ('erp_db'), seeded once from the phone page's store.
  *
- * Named limits of W1 (see TEAMWORK_FRAMEWORK §13.3): DocActions are local-only (W2); an UPDATE/DELETE of a seeded record
+ * W2 (TEAMWORK_FRAMEWORK §13.7): the document's SET_STATUS is shared as an envelope (intent K4) and every op of a doc-action group carries `grp`
+ * (the kernel gid); a group with a docstatus conflict is left out of the projection WHOLE (all-or-none).
+ *
+ * Named limits (see TEAMWORK_FRAMEWORK §13.3, §13.7): an UPDATE/DELETE of a seeded record
  * (positive pk) is local-only because the comm layer admits an op only against the scope of the record's CREATE;
  * station-owned bookkeeping tables (STATION_LOCAL) are never shared; a Visit renumbers synthetic pks (-kernelRowId).
  */
@@ -95,10 +98,15 @@
   async function translate(r, db) {
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
-    if (!/^CRUD_(CREATE|UPDATE|DELETE)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type + ' (DocActions are W2)', table: table };
+    if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
     if (STATION_LOCAL[table]) return { quiet: 'station-owned ' + table };
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
+    if (r.gid) clean.grp = r.gid;                                      // §13.7: the doc-action group this op belongs to (all-or-none on a docstatus conflict)
+    if (r.op_type === 'SET_STATUS') {                                  // the status mirrors as a docstatus column write so the comm layer's per-column conflict judges it
+      if (clean.from == null || clean.to == null) return { local: 'set-status-without-from/to', table: table };
+      clean.changes = { docstatus: { old: clean.from, new: clean.to } };
+    }
     if (clean.fields) { rw = rewriteMap(db, clean.fields, refs, false); if (rw.err) return { local: rw.err, table: table }; clean.fields = rw.map; }
     if (clean.changes) { rw = rewriteMap(db, clean.changes, refs, true); if (rw.err) return { local: rw.err, table: table }; clean.changes = rw.map; }
     var w = CommEnvelope.wrapKernelOp({ op_type: r.op_type, op_uuid: r.op_uuid, parameters: clean }, uuOf(db));
@@ -116,7 +124,7 @@
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
-        var a = await S.author({ target: t.target, body: t.body, refs: t.refs, intent: 'K2', ts: r.timestamp });
+        var a = await S.author({ target: t.target, body: t.body, refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp });
         sent[r.op_uuid] = a.hash; n++;
         log('§TEAM_OUT op=' + r.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' refs=' + t.refs.length + ' hash=' + a.hash.slice(0, 12));
       } catch (e) { localOnly[r.op_uuid] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + t.table + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
@@ -142,9 +150,13 @@
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
       return c; });
+    // §13.7 all-or-none: a doc-action group with ANY write held back on docstatus is left out whole (the document keeps its last agreed status AND no consequences)
+    var heldGrp = {}; fold.forEach(function (p) { var g = p.env.body.params && p.env.body.params.grp; if (g && p.held && p.held.indexOf('docstatus') >= 0) heldGrp[g] = 1; });
+    var groupHeld = 0;
     var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {};
     fold.forEach(function (p) {
       var e = p.env, b = e.body, t = e.target.table, uu = e.target.uu, params = b.params || {}, kp, op_uuid;
+      if (params.grp && heldGrp[params.grp]) { groupHeld++; log('§TEAM_GROUP_HELD grp=' + String(params.grp).slice(0, 8) + ' ' + b.op_type + ' ' + t + ' ' + uu.slice(0, 8) + ' (docstatus conflict — whole group left out)'); return; }
       if (b.op_type === 'CRUD_CREATE') {
         var rw = rewriteIn(params.fields, uuToPk, false);
         if (rw.miss) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' fk-uu-unknown ' + rw.miss.slice(0, 8)); return; }
@@ -158,10 +170,13 @@
           kp = { table: t, id: pk, changes: rc.map }; if (params.actor != null) kp.actor = params.actor;
         } else kp = { table: t, id: pk, tombstone: true, reversible: true };
         op_uuid = uuidFromHash(p.hash);
+      } else if (b.op_type === 'SET_STATUS') {
+        var pk2 = uuToPk[uu]; if (pk2 == null) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown (SET_STATUS)'); return; }
+        kp = { table: t, id: pk2, action: params.action, from: params.from, to: params.to, oracle: params.oracle || null }; op_uuid = uuidFromHash(p.hash);
       } else { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' op-type ' + b.op_type); return; }
       var id = ++base; if (b.op_type === 'CRUD_CREATE') uuToPk[uu] = -id;
       out.push({ id: id, op_uuid: op_uuid, timestamp: e.ts, op_type: b.op_type, parameters: JSON.stringify(kp), input_guids: null, output_guid: null, undone: 0,
-                 prev_hash: null, op_hash: null, sig: null, gid: null, branch_id: null, user_tag: 'team' });
+                 prev_hash: null, op_hash: null, sig: null, gid: params.grp || null, branch_id: null, user_tag: 'team' });
       byTable[t] = (byTable[t] || 0) + 1;
     });
     // old synthetic pk → new, per table (the open window re-keys its current record)
@@ -169,7 +184,7 @@
     oldRows.forEach(function (r) { if (r.op_type !== 'CRUD_CREATE' || !r.op_uuid) return; var np = uuToPk[String(r.op_uuid).toLowerCase()];
       if (np == null || np === -Number(r.id)) return; var t; try { t = String(JSON.parse(r.parameters).table).toLowerCase(); } catch (e) { return; }
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
-    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, byTable: byTable, remap: remap };
+    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap };
     return out;
   }
 
@@ -181,7 +196,7 @@
       var res = await global.__crud.teamRebuild(project), pj = project.last || {};
       var dirty = false; try { dirty = !!(global.__crud.inlineDirty && global.__crud.inlineDirty()); } catch (e) {}
       log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused +
-          ' gaps=' + rep.gaps + ' | projection kept=' + pj.kept + ' projected=' + pj.projected + ' skipped=' + pj.skipped + ' rebuild=' + (res && res.ok ? 'ok verifyChain=' + (res.verify && res.verify.ok ? 'ok' : 'FAIL') : 'FAILED ' + (res && res.reason)) +
+          ' gaps=' + rep.gaps + ' | projection kept=' + pj.kept + ' projected=' + pj.projected + ' skipped=' + pj.skipped + ' groupHeld=' + pj.groupHeld + ' rebuild=' + (res && res.ok ? 'ok verifyChain=' + (res.verify && res.verify.ok ? 'ok' : 'FAIL') : 'FAILED ' + (res && res.reason)) +
           ' refresh=' + (dirty ? 'DEFERRED(form has unsaved edits)' : 'sent'));
       await persist();
       if (res && res.ok && !dirty) global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'TEAM_VISIT', id: null, remap: pj.remap || {} } }));
