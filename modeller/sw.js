@@ -11,6 +11,7 @@
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
 const CACHE_VERSION = 'v146';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v145';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
