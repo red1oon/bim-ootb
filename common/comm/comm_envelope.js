@@ -5,6 +5,7 @@
  *
  * An envelope is self-identifying (hash of its canonical form), self-ordering (author seq + prev + deps,
  * ordered by comm_order.js) and self-authorising (ECDSA P-256 signature, same curve as erp/erp_signer.js).
+ * Its deps are the versions in `reads` (every record it read or writes), so order follows data (§12.6).
  * It references records by <table>_uu ONLY (D2, user 2026-10-23) — never a device-local integer id, because
  * crud_core.listTip's synthetic pk is -opId (a LOCAL row id) and rebase() re-numbers every row.
  *
@@ -61,6 +62,17 @@
     var t = env.target || {};
     if (typeof t.table !== 'string' || t.table !== t.table.toLowerCase() || !t.table) e.push('V7 target.table');
     if (!UUID.test(String(t.uu || ''))) e.push('V7 target.uu');
+    // V9 — reads = the version (op hash) of every record this op read or writes, null = it did not exist yet.
+    // deps IS the set of those versions: order follows data, not who-had-seen-whom (TEAMWORK_FRAMEWORK §12.6).
+    var rd = env.reads;
+    if (!rd || typeof rd !== 'object' || Array.isArray(rd)) e.push('V9 reads');
+    else {
+      if (t.uu && !Object.prototype.hasOwnProperty.call(rd, String(t.uu).toLowerCase())) e.push('V9 reads lacks target');
+      var want = [];
+      Object.keys(rd).forEach(function (k) { if (!UUID.test(k) || k !== k.toLowerCase()) e.push('V9 reads key ' + k);
+        var v = rd[k]; if (v !== null && !HEX64.test(String(v))) e.push('V9 reads value ' + k); else if (v && want.indexOf(v) < 0) want.push(v); });
+      if (Array.isArray(d) && JSON.stringify(want.sort()) !== JSON.stringify(d)) e.push('V9 deps != versions in reads');
+    }
     var p = (env.body && env.body.params) || {};
     if (!env.body || typeof env.body.op_type !== 'string') e.push('V8 body.op_type');
     if (Object.prototype.hasOwnProperty.call(p, 'id')) e.push('V8 local-pk-ref params.id');
