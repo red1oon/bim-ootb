@@ -849,7 +849,7 @@ column notches and the curved facade's facets) and 54 / 54 / 12 holes (3.3 / 2.9
 does not exist yet. (2) What a plan's slab edge IS is a drafting convention, not a measurement: drawn exactly, HHS Level 1 gets 10 slab bodies with 54 small holes and JKR Level 2 gets 54 separate
 precast planks (joints of a few mm); a drafted edge would be the floor's perimeter with its real voids only. Choosing which (exact union, or perimeter + voids above a stated area, or plank joints closed
 below a stated width) is the owner's; the numbers above are what each choice starts from. (3) On the Clinic the round-trip db has no slab at its levels, so E2 has nothing to read there (a data question, F17's kind).
-**D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built.
+**D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built. -> answered and built as §D70.1 (owner: "If it is practical and in practice").
 
 ## §D70.1 THE PLAN'S SLAB EDGE AS PLANS ARE DRAFTED: THE FLOOR OUTLINE, ITS REAL OPENINGS, NO PLANK JOINTS (owner 2026-10-23 on §D70's question: "If it is practical and in practice")
 **The convention and its sources (looked up 2026-10-23; quoted, not paraphrased where a number is used).**
@@ -895,3 +895,10 @@ difference = the filled holes + the closed joints (stated per storey). E2 the re
 on that storey. E3 editable: `slab.edge_void_min_area` = 0 keeps every hole not covered by a drawn element (HHS L1 holes drawn > default). E4 falsifier: the layer stripped from the plans gives the
 §D51 / §D44 outcome back (estimated or rectangle slab, the same as before this rule); and the witness run against origin/main's modeller (`M=`) FAILS E1. E5 only slabs: every non-slab element equal
 (class + vertices) with and without the layer. E6 the registry values = the writer's defaults. Timed on LTU before merge (the closing and the hole cover are per edge / per hole with bbox filters).
+**RESULT (2026-10-23, branch feat/d70-slab-edge).** W-SLAB-EDGE PASS on DXARC / HHSM2 / JKR3 (default run, 16 PASS) and LTU2; against origin/main (`M=`) 10 FAIL (E1 "no_A-FLOR-OTLN" on every plan, E2 / E3 / E6), E4 / E5 PASS there too.
+Drawn = read per storey (m2): Duplex 180.53 / 118.56 (4 + 2 pieces; was the 135.2 inner-face rectangle each); HHS 1,845.63 / 1,600.63 / 591.37 (4 / 31 / 11 pieces, 4 / 8 / 5 openings kept, 43 / 39 / 9 column / wall holes
+filled; was the §D51 estimate 1,049.5 / 1,325.4 / 1,214.5); JKR 1,176.95 / 463.22 / 90.61 (3 / 29 / 1 pieces: 55 -> 29 on Level 2 after closing the 0-24.9 mm joints; was one 83.7 estimate); LTU 5,506.06 /
+4,578.69 / 4,549.48 (Level 4: 2,359.10 drawn, no slab thickness from the set, so no body, as before). Every read body watertight, none amber. The falsifier (layer stripped) gives the §D44 / §D51 slabs back
+exactly; non-slab elements identical with and without the layer. LTU timing: the slab edge adds 0.09 / 0.25 / 0.34 / 0.25 s per plan (writeStdSet 7.9 s vs main 7.2 s). Regression
+(`run_all_witnesses.js`): PASS 42 / ENV 39 / FAIL 4 (the known struct, ticks, guardrails G3 209, ifc_valid; +1 PASS = this witness; the ENV-set line is the stale baseline the RESUME block names).
+Open: `A-FLOR-LEVL` level-change lines (not drawn; the reader keeps one slab level per storey); the Clinic has no slab at its levels.
