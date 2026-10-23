@@ -533,3 +533,24 @@ same profile the walk throws `GEOM_CUT parent 72 not found` (SEAM-6), the conver
 walk does not throw (was `GEOM_CUT parent 72 not found`). Native op-log .db open unchanged: W-E2E-ANCHOR-SAVE-ROUNDTRIP 6 / 0; W-E2E-EXPORT-DB 5 / 1 with E1 failing identically on BASE (its menu
 expectation of 3 rows predates the vdb / dxf rows: stale, not this change); W-UX-PILL does not load in this environment on BASE either (MODULE_NOT_FOUND). Regression PASS 41 / FAIL 4 (the known 4).
 Modeller sw v136.
+
+## §D61 A WALK ON AN OPENED BUILDING WITH NO MESHES OF ITS OWN TAKES THE RULES' SOURCE MESHES (owner 2026-10-23: "MEP walking able ARC verification ... treated as any opened ARC IFC or DB ... wire first, Terminal as stated")
+**Witness claim first (W-WALK-RULES-MESH, `modeller/tests/witness_walk_rules_mesh.js`).** M1 the shed's Viewer DB (a DXF2BIM convert, Export ▸ Viewer database) opened with Open ▸ local .db, then the left
+DISC rows ELEC and FP walked (`window.discWalk`, the DISC feature's own path): placements are KEPT with real LOD400 meshes (resolved from the rules' source building's geometry, the Terminal's, because
+the shed has none), `§DW-PRIM-LOD lod300=0 lod200=0`, committed as ops. M2 the reference is STATED: one `§DW-RULES-REF` line and the status bar name the rules file, its `standard` and `built_from`
+(rules_meta) and say it was not measured on this building. M3 no 60 s wait for a geometry file a local open never has (the walk returns in < 60 s per discipline). M4 falsifier: with the rules' source
+geometry unreachable the walk refuses as before (0 kept, never a box). M5 a resident (Duplex) walks as before: its own geometry first, the rules' source never fetched for hashes it holds.
+**Measured first (2026-10-23 session 2, the seam study):** the reopened shed planned ACMV 50 / ELEC 89 / FP 47 / PLB 2 placements and refused all ("no LOD400 mesh"), 241 s for four disciplines
+(60 s wait each); `_dwLod400Only` and the renderer resolve hashes only against `__dwGeoBuf`, the opened building's own `_geo.db`, which residents fetch from OCI and a local open never has. The rules
+are chosen by name (`_dwRules`: duplex-like names -> `duplex_rules.db`, else `terminal_rules.db`), so the shed walks with `terminal_rules.db` (standard `large-complex`, built from `Terminal_extracted.db`).
+The Terminal's meshes are in `Terminal_geo.db` (OCI, 55 MB, fetched and IDB-cached by the existing resident path). No farm reference exists on this machine (the shed set has no electrical or fire
+sheets; its model has 13 fans): the Terminal reference is used as stated, amber, until the owner names a farm source.
+**Rule.** `_dwResolveMeshes(hashes)`: the opened building's geometry first, then the rules' source resident's geometry (`terminal_rules.db` -> Terminal, `duplex_rules.db` -> Duplex, per their
+rules_meta `built_from`) for the hashes still missing; both the gate and the renderer call it. A local open marks that it has no geometry file (no wait).
+**D61 RESULT (2026-10-23, session 2): BUILT.** `_dwResolveMeshes` (the building's own geometry, then the rules' source resident's `_geo.db` for the missing hashes) feeds the gate and the renderer;
+a local open sets `__dwGeoNone` (no wait); `§DW-RULES-REF` + the status bar state a reference not measured on the building; `discWalk` sets `__dwLastDoneDisc` on refusal too. W-WALK-RULES-MESH
+fail=0: M1 Clinic_ARC.db opened from disk (no `_geo.db`): ELEC 406 lights + FP 751 sprinklers kept, lod400 only, meshes from `Terminal_geo.db` (`§DW-RULES-MESH resolved=2/2`; before: 60 s wait, 0 kept);
+M2 stated; M3 1.6 s per walk on the shed (was 60 s each); M4 the same Clinic with the source off: 406 refused, 0 kept; M5 Duplex resident: its own 102 lights, no source fetch.
+**The shed (measured, not judged): no existing reference places on it.** Terminal rules: the bands are the Terminal's storey heights; the shed shares 1 frame class (IfcWall) of the >= 3 the datum
+needs (`§DW-DATUM-FALLBACK`, offset 14.593 -> bands 17-40 m above a 4.5 m shed, then the legacy walk's hashless placements, refused). Duplex rules (a scratch run): the space schedule yields 0 (one
+approximate room), ACMV has no mesh binding, FP (borrowed from the Terminal) the same 17-40 m bands. A farm reference is needed (owner decision: its source). Modeller sw v137.

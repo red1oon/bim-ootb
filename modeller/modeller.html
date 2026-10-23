@@ -4077,7 +4077,9 @@ function _discWalkNow(disc, ctx) {
   // §WALK-GESTURE: the whole walk (fixtures + routed runs + bend fittings) is ONE history node → one Ctrl+Z.
   var MH = window.ModellerHistory;
   if (MH && MH.beginWalk) MH.beginWalk(disc);
-  _discWalkOne(disc, ctx, {}).finally(function () { if (MH && MH.endWalk) { MH.endWalk(); syncHistory(); } if (window.__dwChains[disc] && window.__dwChains[disc].length) _dwStampRouteSig(disc); });
+  window.__dwLastDoneDisc = null;
+  _discWalkOne(disc, ctx, {}).finally(function () { window.__dwLastDoneDisc = disc;   // sentinel for witnesses (set on refusal too)
+    if (MH && MH.endWalk) { MH.endWalk(); syncHistory(); } if (window.__dwChains[disc] && window.__dwChains[disc].length) _dwStampRouteSig(disc); });
 };
 // §DISCWALK-ALL refactor: the single-discipline walk steps used to live inline as an anonymous async IIFE
 // inside window.discWalk. Extracted unchanged (same order, same § log lines, same honest-refuse returns) into
@@ -4091,15 +4093,30 @@ function _discWalkNow(disc, ctx) {
 // buffer; everything else is REFUSED — never registered, rendered or committed. Measured before this gate: SampleCastle rendered
 // 366 LOD200 boxes (legacy walk placements with no device/hash — binding one would be inventing), and Duplex drew boxes when a walk
 // beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
+// §D61 (DXF2BIM_FOUNDATION_LANE.md): the meshes of a walk: the opened building's own geometry first, then the RULES' SOURCE building's geometry for the hashes still missing (a building
+// opened from disk, e.g. a DXF2BIM convert, has no _geo.db of its own). The source is named by the rules file (rules_meta built_from): terminal_rules.db = Terminal, duplex_rules.db = Duplex.
+var _DW_RULES_SOURCE = { 'terminal_rules.db': 'Terminal', 'duplex_rules.db': 'Duplex' }, _dwSrcGeo = {}, _dwSrcMesh = {};
+async function _dwResolveMeshes(hashes, tag) {
+  var real = {}, want = Object.keys(hashes || {});
+  if (!want.length || !window.RealGeometry || !window.SQL) return real;
+  if (window.__dwGeoBuf) { try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, want); g.close(); } catch (e) { console.warn(tag + ' geo resolve failed ' + (e && e.message)); real = {}; } }
+  var miss = want.filter(function (h) { return !real[h]; }), rules = window._dwRules(window.__dwName), key = _DW_RULES_SOURCE[rules], SW = window.STRWalkerOutliner;
+  if (!miss.length || !key || !SW || !SW._fetchGeoDb || key === window.__dwName || window.__dwRulesMeshOff) return real;
+  var res = (SW._residents || []).filter(function (r) { return r.key === key; })[0]; if (!res) return real;
+  try {
+    var buf = _dwSrcGeo[key] || (_dwSrcGeo[key] = await SW._fetchGeoDb(res));
+    if (!buf) return real;
+    var sg = new window.SQL.Database(new Uint8Array(buf)), more = window.RealGeometry.resolveHashes(sg, miss); sg.close();
+    Object.keys(more).forEach(function (h) { real[h] = more[h]; _dwSrcMesh[h] = more[h]; });
+    console.log('§DW-RULES-MESH building=' + (window.__dwName || '?') + ' rules=' + rules + ' source=' + res.geoDb + ' resolved=' + Object.keys(more).length + '/' + miss.length + ' (the building has no mesh of its own for them)');
+  } catch (e) { console.warn('§DW-RULES-MESH ' + key + ' geometry unreachable: ' + (e && e.message) + ' (refused, never a box)'); }
+  return real;
+}
 async function _dwLod400Only(disc, w) {
   var t0 = Date.now();
-  while (!window.__dwGeoBuf && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 200); });
+  while (!window.__dwGeoBuf && !window.__dwGeoNone && Date.now() - t0 < 60000) await new Promise(function (r) { setTimeout(r, 200); });   // §D61 a local open has no geometry file: no wait
   var hashes = {}; w.placements.forEach(function (p) { if (p.geometry_hash) hashes[p.geometry_hash] = 1; });
-  var real = {};
-  if (window.__dwGeoBuf && window.RealGeometry && Object.keys(hashes).length) {
-    try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, Object.keys(hashes)); g.close(); }
-    catch (e) { console.warn('§DW-LOD400-REFUSE ' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
-  }
+  var real = await _dwResolveMeshes(hashes, '§DW-LOD400-REFUSE ' + disc);
   var kept = [], refused = {}, nRef = 0;
   w.placements.forEach(function (p) {
     if (p.geometry_hash && real[p.geometry_hash]) { kept.push(p); return; }
@@ -4124,6 +4141,10 @@ async function _discWalkOne(disc, ctx, opts) {
     await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
     try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
     catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return { refused: true, reason: 'rules not available', placed: 0 }; }
+    { var _rf = window._dwRules(name || window.__dwName), _rm = (window.DiscWalker.rulesMeta && window.DiscWalker.rulesMeta()) || {};   // §D61 the reference is STATED when it was not measured on this building
+      if (_DW_RULES_SOURCE[_rf] && _DW_RULES_SOURCE[_rf] !== (name || window.__dwName)) {
+        console.log('§DW-RULES-REF building=' + (name || window.__dwName) + ' rules=' + _rf + ' standard=' + _rm.standard + ' built_from=' + _rm.built_from + ' (not measured on this building: a stated reference)');
+        setStat(disc + ' — walking with the ' + (_rm.standard || '?') + ' reference (' + _DW_RULES_SOURCE[_rf] + '), not measured on this building'); } }
     await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
     // §CAMPAIGN M1: lazy-load mep_rw.db's ad_mep_pattern table (SAME _rwReadyOnce the BOM-drop flow already
     // uses) so DiscWalker.dwWalk's routeChains-0 → routePattern bridge (disc_walker.js) can pair ARC-derived
@@ -4337,11 +4358,10 @@ function _renderDiscWalk(disc, placements) {
   var _lodHashes = {};
   placements.forEach(function (p) { if (p.geometry_hash) _lodHashes[p.geometry_hash] = 1; });
   var _lod400 = {};
-  if (Object.keys(_lodHashes).length && window.__dwGeoBuf && window.RealGeometry && window.SQL) {
+  if (Object.keys(_lodHashes).length && (window.__dwGeoBuf || Object.keys(_dwSrcMesh).length) && window.RealGeometry && window.SQL) {
     try {
-      var _gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf));
-      _lod400 = window.RealGeometry.resolveHashes(_gdb, Object.keys(_lodHashes));
-      _gdb.close();
+      if (window.__dwGeoBuf) { var _gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); _lod400 = window.RealGeometry.resolveHashes(_gdb, Object.keys(_lodHashes)); _gdb.close(); }
+      Object.keys(_lodHashes).forEach(function (h) { if (!_lod400[h] && _dwSrcMesh[h]) _lod400[h] = _dwSrcMesh[h]; });   // §D61 the rules' source meshes the gate resolved
       // §LIVEWIRE register the resolved device meshes into the library's real-geometry registry (the
       // §REAL-GEOM seam bonsai_library.foldInsert already honours via P.realGeomHash) so the op-log fold
       // of _commitDiscWalk's rows renders the SAME real mesh, not a proxy. anchorOffset [0,0,0] on

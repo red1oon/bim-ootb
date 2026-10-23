@@ -253,6 +253,7 @@
     var O = window.Bonsai && window.Bonsai.oplog;
     _seedPending(key);
     if (!(O && O.setModelKey)) { window.__arcSeedDone('no-oplog'); return; }
+    window.__dwGeoBuf = null; window.__dwGeoNone = true;   // §D61 a db opened from disk has no _geo.db: the walk does not wait for one (its meshes come from the rules' source)
     O.setModelKey('mo_local_' + key).then(function (n) {   // 'mo_local_' never collides with a resident's 'mo_' or an .ifc open's 'mo_ifc_' instance of the same name
       console.log(TAG + ' §LOCAL-OPEN-EDITABLE instance mo_local_' + key + ' active ops=' + n);
       _replayEdits(); _seedArcEditable(O, key, null);
@@ -1198,7 +1199,7 @@
     },
     onClear: onClear,
     _openStrDb: openStrDb, _openIfcFile: openIfcFile, _category: category,
-    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase,
+    _openResident: openResident, _openBuffer: _openBuffer, _residents: RESIDENTS, _modellerBase: _modellerBase, _fetchGeoDb: _fetchGeoDb,
     _reinitStrWalkWithGeo: _reinitStrWalkWithGeo,   // §ROW7-TRUE-CENTRE — witness hook (W-ROW7-TRUE-CENTRE browser leg)
     _composeGhosts: composeGhostsFromAggregates     // W-E2E-VOID-ANCHOR G6 same-run control (read-only use on a copy)
   };
