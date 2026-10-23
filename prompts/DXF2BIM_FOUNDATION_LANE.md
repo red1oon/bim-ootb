@@ -770,3 +770,9 @@ unchanged; Clear returns to the reference. C4 unchanged: the structure path (the
 `cat.walls[t]` / `cat.slabs[t]` rows (most frequent first) and `cat.name`; the catalogue is made only in Node (`tools/catalogue_from_ifc.js`, web-ifc), so the page loads its JSON.
 **Rule.** A pure `catalogueCheck` in `dxf2bim_import.js`; a row in the 2D panel (standard path only) with a `.json` file input; `DxfImportUI.loadCatalogue(text)` / `clearCatalogue()` are the same
 handlers the buttons call (for tests).
+**D71 RESULT (2026-10-23, session 3): BUILT.** `Dxf2BimImport.catalogueCheck` + the 2D panel row (Load / Clear, `DxfImportUI.loadCatalogue` / `clearCatalogue`). W-CATALOGUE-ROW fail=0: C1 the HHS catalogue
+(`catalogue_from_ifc.js` on its architect IFC: walls 4, slabs 2, doors 10 thicknesses / widths, 25 rows) is taken; a list, version 2, a table given as a list, a key not in mm, a row with no count and an empty
+catalogue are each refused with the reason; C2 Convert with it: 288 of 292 HHS walls take its material (`own-firm: n of m walls of t mm`), without it all 292 the reference, geometry identical; C3 the page
+(software GL, the HHS standard set): the row reads none, a version-2 file is refused (row unchanged, `§DXF-CATALOGUE refused`), the catalogue loads and is named with its counts (`§DXF-CATALOGUE loaded`), Clear
+returns to none; C4 the marked shed (structure path) shows no row and gates as before (445 bodies). Not judged in the page: a Convert there (the HHS set's gate needs the OCI library); Convert's use of the
+catalogue is C2's `I.convert` call, the one the page makes with `catalogue: state.catalogue`. Modeller sw v148.
