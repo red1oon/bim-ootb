@@ -757,4 +757,4 @@ relations on the opening (`hostOf` x `fillOf`).
 the extractor core's rows exactly, schema equal: Duplex ARC 50 (38 filled), SampleHouse 7 (7), Clinic ARC 403 (302) (were: no table); I2 after the ARC filter Duplex 48 rows (36 filled), SampleHouse 7, Clinic 403,
 every host in the db; I3 fills removed -> void-only rows only (50 / 7 / 403, filled 0), voids removed too -> 0; I4 every other table has BASE's rows, the one table added. Measured, not judged: the page-level
 ride on a reopened IFC (the §D59 L4 move) is not re-run here (browser runs paused for a film take); the cross-edge reader (`cross_edges.js:347`) reads exactly this table. Cache keys `import_db_builder.js?v=9`,
-`import_worker.js?v=16`. Modeller sw v145, Viewer sw v1655.
+`import_worker.js?v=16`. Modeller sw v147, Viewer sw v1655.
