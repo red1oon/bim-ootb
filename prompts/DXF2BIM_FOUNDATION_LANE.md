@@ -623,3 +623,30 @@ floor; a segment carries its diameter and is drawn at it. W-FP-BOM-TREE fail=0: 
 P3 0 clashes; P4 revealed outward from the riser, 103 ops, two radii; P5 Clinic (Terminal rules) still routes by its pattern (410 chains, no BOM tree). W-FARM-RULES 5 / 0, W-WALK-BUILDUP 4 / 0,
 W-WALK-RULES-MESH 5 / 0, W-WALK-LOD400-ONLY 7 / 0, W-E2E-WALK 8 / 0. `assemble()` (catalog joint parts at nodes) still reads only `routeChains`: the T mini-BOM parts at the BOM-tree nodes are NOT placed yet (next).
 Modeller sw v141.
+
+## §D67 LOD400 LIBRARY MESHES FOR A CONVERTED BUILDING'S OWN BODIES: A CATALOGUE BINDING BY STATED PROFILE (architect review session 3, RESUME item 3; owner asked) — SPEC, awaiting owner go
+**Witness claim first (W-LIB-BIND, `modeller/tests/witness_dxf_lib_bind.js`, not written yet).** K1 a converted body binds to a library mesh only when its STATED profile (family + dims, read from its type label:
+`1.5"x1.5"x1/4" Angle` = L 38.1 x 38.1 x 6.35) equals a library straight prism's profile: family equal, each section dim within 1 mm, and the mesh's fill (volume / envelope x length) within 0.03 of the
+stated profile's (an L 38.1 x 6.35 fills 0.306, a solid box 1.000, an SHS 60 x 4 0.19); the bound mesh is stretched along the member's axis only (the library mesh has exactly 2 stations along it) and its
+volume = the profile area x the body's length to 1 %; the body keeps its guid, placement, class, storey and op (only `realGeomHash` / the mesh changes; LOD stated `lod400:<library hash>`). K2 falsifier: an
+envelope-only match is REFUSED (the library's stair `Stringer` 50 x 50, 10 vertices, fill 0.267, sits within 1 mm of the shed's 26 `2 - 2"x2"x1/4"` double angles); a body whose profile is a default
+(`SizeBasis w:default`, the 91 `Section member` bars) never binds. K3 every body that does not bind stays the drawn prism and is LISTED with the reason (`no catalogue profile L38.1x38.1x6.35 (n=39)`), never
+a box from another family. K4 unchanged when the rule is off (`element_defaults.json` `library.bind_profiles=false`, the default until the owner's go): bodies, ops and the IFC byte-identical. K5 control:
+a scratch copy of the library with one generated L 38.1 x 38.1 x 6.35 prism binds the 39 angle bars and only them.
+**Measured first (2026-10-23, session 3; `dxf2bim_cli.js --sheets <the marked shed set, 9 sheets>`: 445 bodies, the session scratchpad `tools/libsec.py` / `libfill.py` / `d67_match.py`, not committed).**
+The shed's bodies by class: IfcMember 168 (steel: `2 - 2"x2"x1/4"` 26, `1.5"x1.5"x1/4" Angle` 26 + `1.5"x1.5"x1/4"` 13, `Section member` 91 at the default width 38.1, `Section run` 12 at 72 x 103 drawn, 36.6 m),
+IfcPlate 117 (6.35 mm, `1/4" Thickness Plate`), IfcBeam 35 (RC, 254 x 305 / 305 x 305), IfcColumn 32 (RC 305 x 305), IfcFooting 32, IfcWall 41, IfcFan 13, IfcCovering 3, IfcDoor 4. The library
+(`component_library.db`, 933 IfcBeam / IfcMember / IfcColumn definitions, 557 straight prisms by the 2-station test) holds these steel profiles only: RHS / Rectangular Hollow 100 x 150 (122), SHS 60 x 60 (7) and
+120 x 120 (2), one C-Channel 38.1 x 63.6 (fill 0.195), the Duplex I-beams 178 x 407 / 203 x 303 (80 vertices, fill 0.107 / 0.126); the rest are concrete boxes (8-16 vertices: the drawn prism's LOD), timber
+30 x 30 solid boxes (SampleHouse, 8 vertices) and stair stringers. **No angle (L) section, no 72 x 103 profile, no plate under 25 mm (the 8,022 IfcPlate are 25-107 mm), no IfcFan.** Matches by section envelope
+alone: `§D67-MATCH-SUM tol=1mm members=235 matched=26` (all 26 = the stair Stringer: wrong family), `tol=10mm matched=156` (solid 30 x 30 timber boxes and a hollow SHS for open angles: wrong shape);
+with the family + fill check: **0 of 235 members, 0 of 117 plates, 0 of 13 fans bind** (`§D67-MATCH` per type in the scratch log). The RC beams / columns have no section match at any tolerance up to 10 mm,
+and the library's concrete members are boxes (no LOD gain over the drawn prism).
+**So the rule binds nothing today: the value is in the profiles the library lacks.** Two sources, an owner decision: (a) a parametric profile generator in the library's own `ad_parametric_mesh` convention
+(as `GableRoofMesh`): `AngleProfileMesh` (L b x d x t, root radius stated or 0) and a `RectProfileMesh`, the dims read from the body's own label (the drawing states them: nothing invented), provenance
+`DRAWN_LABEL`; (b) import a firm / standard steel catalogue's meshes (AISC / BS EN 10056 angles) into the library as extracted profiles, then bind by K1. Fans: no library fan; a fan mesh needs a source
+model (`IfcFan` = 0 rows in every other extracted building db on this machine: Clinic, Duplex, HHS, Hospital, JKR, LTU, Terminal).
+**Rule (when the owner says go).** `Dxf2Bind.bindProfiles(bodies, library)`: per body, parse the profile from `ifc.type_name` (`<b>"x<d>"x<t>" [Angle]`, `2 - ...` = a back-to-back pair, metric `L<b>x<d>x<t>`),
+refuse a default size, look up the library's prisms by family + dims (1 mm) + fill (0.03), stretch along the axis, state `lod400:<hash>`; list the rest. Placed after Convert, before the export, so the Viewer DB
+and the IFC carry the bound mesh (`IfcMappedItem` of the library mesh is a later step; the first step writes the stretched mesh as the body's own triangulated geometry).
+**D67 STATE: SPEC — awaiting owner go** (and the owner's choice of profile source, (a) or (b)). Nothing built.
