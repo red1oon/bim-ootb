@@ -1073,7 +1073,7 @@
     const fwg = new Set(fw.map(w => w.guid).concat(fcw.map(w => w.guid))); let nOp = 0, nRec = 0;
     // §D68 (F16): a window whose host is not a flush face wall is drawn when the face SEES it: no wall or curtain wall (any storey, its host excluded) lies between it and the face covering its h x z rect
     const nearOf = { x0: e => [e.x0, e.x1], x1: e => [-e.x1, -e.x0], y0: e => [e.y0, e.y1], y1: e => [-e.y1, -e.y0] }[side], alongX = side === 'y0' || side === 'y1';
-    const covers = model.walls.concat(model.curtains), recessedOn = !(typeof process === 'object' && process.env && process.env.DXF_RECESSED_WIN === '0');
+    const covers = model.walls.concat(model.curtains), recessedOn = !(typeof process === 'object' && process.env && process.env.DXF_RECESSED_WIN === '0'), recessedDoorOn = !(typeof process === 'object' && process.env && process.env.DXF_RECESSED_DOOR === '0');
     const envS = { x0: env[0], x1: env[1], y0: env[2], y1: env[3] }, stE = {}; if (model.rules.l118) model.storeys.forEach(s => { const sw = model.walls.filter(w => w.storey === s.name); if (sw.length) { const v = envelope(sw); stE[s.name] = { x0: v[0], x1: v[1], y0: v[2], y1: v[3] }; } });
     const flushAny = h => !!h && (alongX ? ['y0', 'y1'] : ['x0', 'x1']).some(s => Math.abs(h[s] - envS[s]) <= EXT_FACE_TOL || (h.storey in stE && Math.abs(h[s] - stE[h.storey][s]) <= EXT_FACE_TOL));   // a window in the face wall of the opposite elevation: as before
     const seen = e => { const n0 = nearOf(e)[0], a0 = alongX ? e.x0 : e.y0, a1 = alongX ? e.x1 : e.y1, hg = model.host_all[e.guid];
@@ -1083,13 +1083,13 @@
       if (((e.x1 - e.x0) >= (e.y1 - e.y0)) !== (side === 'y0' || side === 'y1')) continue;
       if (!fwg.has(model.host_all[e.guid])) {
         const hw = model.by_guid[model.host_all[e.guid]];
-        if (!recessedOn || e.cls !== 'IfcWindow' || !hw || WALLS.indexOf(hw.cls) < 0 || flushAny(hw) || !seen(e)) continue;   // a window in a wall (a roof light is not on an elevation)
-        const a0 = alongX ? e.x0 : e.y0, a1 = alongX ? e.x1 : e.y1, twin = model.els.find(o => o !== e && o.cls === 'IfcWindow' && model.host_all[o.guid] !== model.host_all[e.guid] && (o.storey === e.storey || (o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002)) && ((o.x1 - o.x0) >= (o.y1 - o.y0)) === alongX &&
+        if (!(e.cls === 'IfcWindow' ? recessedOn : e.cls === 'IfcDoor' && recessedDoorOn) || !hw || WALLS.indexOf(hw.cls) < 0 || flushAny(hw) || !seen(e)) continue;   // a window (D68) or a door (D74) in a wall (a roof light is not on an elevation)
+        const a0 = alongX ? e.x0 : e.y0, a1 = alongX ? e.x1 : e.y1, twin = model.els.find(o => o !== e && o.cls === e.cls && model.host_all[o.guid] !== model.host_all[e.guid] && (o.storey === e.storey || (o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002)) && ((o.x1 - o.x0) >= (o.y1 - o.y0)) === alongX &&
           Math.abs((alongX ? o.x0 : o.y0) - a0) <= 0.002 && Math.abs((alongX ? o.x1 : o.y1) - a1) <= 0.002);
-        const n0e = nearOf(e)[0], front = model.els.find(o => o !== e && o.cls === 'IfcWindow' && nearOf(o)[0] < n0e - EXT_FACE_TOL && (alongX ? o.x0 : o.y0) <= a1 + 0.002 && (alongX ? o.x1 : o.y1) >= a0 - 0.002 && o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002);
-        if (front) { log.add(`§ELEV_WIN_RECESSED_SKIP ${face} guid=${e.guid} behind window ${front.guid} (its glazing would join the nearer one's on the sheet) (D68)`); continue; }
-        if (twin) { log.add(`§ELEV_WIN_RECESSED_SKIP ${face} guid=${e.guid} same run as ${twin.guid} (another wall, its storey or touching): the elevation could not tell them apart (D68)`); continue; }
-        nRec++; log.add(`§ELEV_WIN_RECESSED ${face} guid=${e.guid} set_back=${fx(nearOf(e)[0] - (side[1] === '0' ? fv : -fv), 3)} (D68)`);
+        const n0e = nearOf(e)[0], front = model.els.find(o => o !== e && o.cls === e.cls && nearOf(o)[0] < n0e - EXT_FACE_TOL && (alongX ? o.x0 : o.y0) <= a1 + 0.002 && (alongX ? o.x1 : o.y1) >= a0 - 0.002 && o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002);
+        if (front) { log.add(`§ELEV_${e.cls === 'IfcDoor' ? 'DOOR' : 'WIN'}_RECESSED_SKIP ${face} guid=${e.guid} behind ${e.cls === 'IfcDoor' ? 'door' : 'window'} ${front.guid} (its glazing would join the nearer one's on the sheet) (D68)`); continue; }
+        if (twin) { log.add(`§ELEV_${e.cls === 'IfcDoor' ? 'DOOR' : 'WIN'}_RECESSED_SKIP ${face} guid=${e.guid} same run as ${twin.guid} (another wall, its storey or touching): the elevation could not tell them apart (D68)`); continue; }
+        nRec++; log.add(`§ELEV_${e.cls === 'IfcDoor' ? 'DOOR' : 'WIN'}_RECESSED ${face} guid=${e.guid} set_back=${fx(nearOf(e)[0] - (side[1] === '0' ? fv : -fv), 3)} (${e.cls === 'IfcDoor' ? 'D74' : 'D68'})`);
       }
       const [h0, h1] = hr(e);
       doc.lwpoly(e.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', rect(h0, h1, e.z0, e.z1), true, tag(e.guid));
