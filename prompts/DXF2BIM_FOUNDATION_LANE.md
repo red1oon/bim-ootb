@@ -694,3 +694,22 @@ J1 the 3 rows = the library's (FP_Drop_Pipe +0.046 21.3x21.3x69.4 mm, FP_Transit
 sweeps committed), 90 GEOM_INSERT in the walk's undo gesture (`dwasm-`), 90 still drawn after the ELEC walk's redraw; J6 Clinic unchanged (410 chains, `assemble REFUSE: no routed network`). The falsifier: the same witness on
 the pre-D66 code with the new rules = J2-J5 FAIL `NO-OP: 0 parts landed`. The tree moved: the tee level is head + 0.118 (was + 0.177), so the head level search now lands at 2.956 m (8.9 in below the ceiling, inside the band; was 2.905).
 Regression: W-FP-BOM-TREE 5 / 0 (P1 reads the drop height from the rules: 0.118), W-WALK-BUILDUP 5 / 0 (with D64.1's B5). Modeller sw v144.
+
+## §D66.1 A HEAD'S JOINT PARTS BUILD UP WHEN THEY LAND, AND THE PIPES REVEAL ONCE (session 3, the D66 hand-back: "the parts appear when the walk ends; they do not follow the reveal"; owner: "cam view should earnestly follow as parts are laid")
+**Witness claim first (W-WALK-BUILDUP B6 + B5, `modeller/tests/witness_walk_buildup.js`).** B6: on the shed's FP walk the 90 joint parts (the §D66 drop / transition / tee, `dwAsm` meshes) build up: >= 3 distinct
+partial counts, monotonic, never more parts drawn than 3 x the heads drawn, all N at the end. B5 (§D64.1) must hold again with D66 on: the pipe count is monotonic (a redraw after the reveal does not restart it).
+Falsifier: the same checks on main with D66 (measured: the parts land in one frame at 7.9 s; the pipes reach 34 / 36, a redraw at 7.7 s restarts them from 0: B5 `monotonic=false`, anim 2835 ms).
+**Measured first (2026-10-23, headless, the reopened shed, main 3505d9ab):** FP walk 1.1 s, heads build up to 4.7 s, pipes reveal 4.7-6.9 s, then the joint assembly (mesh resolve + render + commit) lands the 90
+parts at 7.9 s and its fold redraws the network (`§DW-TUBE` at 7.7 / 9.4 s): the reveal had finished, so the redraw started a new one from 0.
+**Rule.** (a) A fresh walk marks its disc; the first `_renderDiscAssembly` after it starts a part timeline (clamp(40 ms x n, 1.5 s, 4 s)); each part bucket is ordered by its head's placement order (the part's
+tee node x, y = its head's: the BOM tree's head guids are its own, so the match is by plan position, 1 mm), so a head's drop, transition and tee appear together; while the heads still build up, a part
+waits for its head; a redraw resumes the timeline. (b) `_renderDiscChains`: a network already revealed since its disc's walk (same segment count), or whose reveal timeline is over (a blocked thread never drew its last frame: measured, the redraw
+came 2,203 ms into a 2,160 ms reveal), is drawn at once on a redraw (`§DW-CHAIN-ANIM mode=redraw`). (c) Measured next: the joint assembly blocks the page for ~4 s in software GL, the pipe reveal then plays in
+jumps (0, 14, 27, 33, 36): the pipe reveal and the parts' build-up are ARMED when the walk ends (`_discWalkOne` wraps its body; `§DW-REVEAL-ARM`), not when first drawn; until then they draw 0.
+Drawing only: parts, segments, ops and the `§JOINT-BOM` line unchanged.
+**D66.1 RESULT (2026-10-23, session 3): BUILT.** W-WALK-BUILDUP fail=0 / 6: B6 80 samples, 71 with parts, 28 distinct partial counts, monotonic, 0 frames ahead of the heads, end 90 / 90
+(`§DW-ASM-REVEAL disc=FP done n=90 ms=3613`); B5 pipes 0 -> 36 in 17 steps, monotonic, `§DW-CHAIN-ANIM FP mode=animated ms=2240` (want 2160), `§DW-REVEAL-ARM disc=FP pipes=true parts=true`.
+**Falsifier run** (the same witness on main 3505d9ab): B6 FAIL (18 frames with parts ahead of their heads, 0 partial counts: one frame); B5 passed there in that quieter run (the restart measured above,
+seq 0, 16, 29, 0, 30, 0, 27, ..., needs the machine loaded: it is a race with the blocked thread, which (b) and (c) close). Regression: W-FP-JOINT-BOM 6 / 0, W-FP-BOM-TREE 5 / 0, W-SEED-OUTWARD-REVEAL 9 / 0
+(R3 now starts from a fresh walk's state: a re-render of a revealed network is a redraw by (b)), W-E2E-WALK 8 / 0, W-MEP-REROUTE 9 / 0, W-FIRST-STEPS-MEP 8 / 0, W-WALK-GESTURE 4 / 0, W-DW-DEDUP-RENDER 4 / 0,
+W-UNDO-RESURRECT 5 / 0, W-WALK-AFTER-SEED 4 / 0. Modeller sw v145.

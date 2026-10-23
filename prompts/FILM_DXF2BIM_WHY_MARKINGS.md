@@ -9,12 +9,13 @@ Status: RECORDED 2026-10-22; CURRENT FILM = v3 (see the v3 block): `~/Videos/DXF
 `<take>/saved/SHED_extracted.db`); its sha256 is a `§FILM_FACT`. Software GL. Neutral naming as v1 (the canvas draws no TEXT).
 **What v1 had that v2 drops:** the 2D sheets, Convert, the fans, the Export (v1 shows them). **What v2 adds:** the camera FOLLOWS the build-up: it reads the reveal front (`window.__dwReveal[disc]` for
 the fixtures, the drawn count of the `dwChain` mesh for the pipes; §D64, §D64.1) every frame and eases toward it (time-constant smoothing), from inside at eye height; the pipework reveals after its heads
-(§D64.1, built first: it used to outrun them in a fixed 2 s); close-ups on a lamp, a sprinkler head and a tee (the node where a branch meets the main, read from `__dwChains.FP` roles).
+(§D64.1, built first: it used to outrun them in a fixed 2 s); close-ups on a lamp, a sprinkler head and its joint (the §D66 parts stacked on it: drop, transition, tee).
 **Stated edit (one kind, logged):** the walk's compute wait (ELEC ~10 s in software GL, from the click to the first fixture) is CUT from the film: the recorder drops the frames between the click's
-settle and the first drawn fixture and logs `§FILM_CUT disc= sec=`; nothing else is cut, the build-up itself plays in real time.
+settle and the first drawn fixture and logs `§FILM_CUT disc= sec=`; the same kind of wait from the last sprinkler head to the first pipe (the walk's joint assembly, §D66.1) is cut too
+(`§FILM_CUT disc=FP-pipe`); nothing else is cut, every build-up plays in real time.
 **Chapters (2) and beats:** 1 REOPENED AS ARC: s01 a fresh Modeller, Open ▸ local .db, the shed comes back (`§BOMTREE seeded elements=`), a turn; s02 a wall clicked: selected, editable. 2 SERVICES
 WALKED: s03 inside, empty, the ELEC row clicked (cut); s04 the lamps build up, the camera follows the front; s05 a lamp close-up; s06 the FP row (cut if any), the heads build up, followed; s07 the pipes
-reveal outward from the riser, followed; s08 a sprinkler head macro, then a tee; s09 out and a last turn, end.
+reveal outward from the riser, followed; s08 a sprinkler head macro, then its joint mini-BOM (drop, transition, tee: §D66); s09 out and a last turn, end.
 **Every number said is a `§FILM_FACT` of the take.** Not a take: `§PAGEERR`, a missing fact, 0 lights / sprinklers / pipe segments, a follow that never saw the front move (`§FILM_FOLLOW moves=0`).
 
 ## ▶▶▶ §LAST PART (spec 2026-10-23, owner: "film showing quickly the last part where the 2Ds wireframes assembled, saved, reopen as ARC and some assets such as those fan blowers and where there are no lighting / FP, use the standard DISC feature on the left. Do not reinvent further than what has been laid out well prior")

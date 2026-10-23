@@ -7,6 +7,7 @@
  *   B2 BUILD-UP  — during a fresh walk the drawn instances rise from below n to n in steps (sampled), the reveal front (__dwReveal) moves, and the end draws all n.
  *   B3 INSTANT   — a redraw after the reveal (the next walk re-renders every walked disc) keeps all n drawn at once.
  *   B4 SAME      — placements and committed ops are those of the walk without a reveal (69 lights / 30 sprinklers, ops > 0).
+ *   B6 JOINTS BUILD UP (§D66.1) — the joint parts (drop / transition / tee) build up when they land (partial counts, monotonic), never ahead of their heads, all N at the end.
  *   B5 AFTER HEADS (§D64.1) — the FP pipework draws no segment while its heads build up, then rises in steps to N over clamp(60 ms x N, 2 s, 7 s) (it used to outrun the heads in a fixed 2 s).
  * Input: the CLI-marked shed set (SHED_MARKED_DIR, local; absent -> INCONCLUSIVE). Software GL, headless.
  * Usage: NODE_PATH=<dir with better-sqlite3> node modeller/tests/witness_walk_buildup.js
@@ -51,11 +52,12 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
       while (window.__dwLastDoneDisc !== 'ELEC' && Date.now() - t0 < 300000) { const d = drawn('ELEC'); if (d[1]) samples.push(d[0] + '/' + d[1]); const f = window.__dwReveal.ELEC; if (f) fronts.add(f.i); await new Promise(r => setTimeout(r, 120)); }
       for (let g = 0; g < 80 && !(window.__dwReveal.ELEC && window.__dwReveal.ELEC.done); g++) { const d = drawn('ELEC'); samples.push(d[0] + '/' + d[1]); const f = window.__dwReveal.ELEC; if (f) fronts.add(f.i); await new Promise(r => setTimeout(r, 120)); }
       const end = drawn('ELEC'), opsE = window.Bonsai.oplog.length - n0;
+      const asmN = () => { let c = 0, n = 0; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwAsm === 'FP' && o.userData.dwSub) { c += o.count; n += o.userData.dwSub.length; } }); return [c, n]; };   // §D66.1
       const chainN = () => { let c = -1, n = -1; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') { c = o.count; n = o.instanceMatrix.count; } }); return [c, n]; }, fpS = [];
       window.__dwLastDoneDisc = null; window.discWalk('FP'); const t1 = Date.now();
-      while (Date.now() - t1 < 300000 && !(window.__dwLastDoneDisc === 'FP' && window.__dwReveal.FP && window.__dwReveal.FP.done && !window.__dwChainAnimating.FP && chainN()[1] > 0)) {
-        const f = window.__dwReveal.FP; fpS.push([f ? f.i : 0, f ? f.n : 0, f ? !!f.done : false].concat(chainN(), [Date.now() - t1])); await new Promise(r => setTimeout(r, 80)); }
-      fpS.push([0, 0, true].concat(chainN(), [Date.now() - t1]));
+      while (Date.now() - t1 < 300000 && !(window.__dwLastDoneDisc === 'FP' && window.__dwReveal.FP && window.__dwReveal.FP.done && !window.__dwChainAnimating.FP && !(window.__dwAsmRevealMeta || {}).FP && chainN()[1] > 0)) {
+        const f = window.__dwReveal.FP; fpS.push([f ? f.i : 0, f ? f.n : 0, f ? !!f.done : false].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]])); await new Promise(r => setTimeout(r, 80)); }
+      fpS.push([0, 0, true].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]]));
       await new Promise(r => setTimeout(r, 300)); const afterFP = drawn('ELEC');
       return { fpS, samples: samples.slice(0, 400), fronts: fronts.size, end, opsE, afterFP, lights: (window.__dwWalks.ELEC || []).length, sprinklers: (window.__dwWalks.FP || []).length,
         lightHash: Array.from(new Set((window.__dwWalks.ELEC || []).map(p => p.geometry_hash))), fpHash: Array.from(new Set((window.__dwWalks.FP || []).map(p => p.geometry_hash))) }; });
@@ -70,7 +72,10 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     { const early = S.fpS.filter(([i, n, d, c]) => !d && c > 0), part = S.fpS.filter(([, , d, c, N]) => d && c > 0 && c < N), dist = new Set(part.map(x => x[3])).size, last = S.fpS[S.fpS.length - 1];
       const mono = S.fpS.every((x, k) => !k || x[3] >= S.fpS[k - 1][3]), anim = logs.filter(t => /§DW-CHAIN-ANIM FP mode=animated/.test(t)).pop() || '', ms = +((/ms=(\d+)/.exec(anim) || [])[1] || 0), N = last[4], want = Math.max(2000, Math.min(7000, 60 * N));
       check('B5', 'the pipework draws no segment while its heads build up, then rises in steps to N over clamp(60 ms x N, 2 s, 7 s) (it outran the heads in a fixed 2 s)', N > 0 && !early.length && dist >= 5 && mono && last[3] === N && Math.abs(ms - want) < 600 && /EXACT==net/.test(anim),
-        `samples=${S.fpS.length} segs_while_heads_building=${early.length} partial_after=${part.length} distinct=${dist} monotonic=${mono} end=${last[3]}/${N} anim_ms=${ms} want=${want}`); }
+        `samples=${S.fpS.length} segs_while_heads_building=${early.length} partial_after=${part.length} distinct=${dist} monotonic=${mono} end=${last[3]}/${N} anim_ms=${ms} want=${want} seq=${S.fpS.map(x => x[3]).filter((v, k, a) => !k || v !== a[k - 1]).join(',')}`); }
+    { const sm = S.fpS.filter(x => x[7] > 0), amono = S.fpS.every((x, k) => !k || x[6] >= S.fpS[k - 1][6]), ahead = S.fpS.filter(x => x[6] > 3 * x[8]), part = new Set(S.fpS.filter(x => x[6] > 0 && x[6] < x[7]).map(x => x[6])).size, last = S.fpS[S.fpS.length - 1];
+      check('B6', 'the joint parts build up when they land (partial counts, monotonic), never ahead of their heads (parts <= 3 x heads drawn), all N at the end (they landed in one frame)', sm.length > 0 && last[7] > 0 && !ahead.length && part >= 3 && amono && last[6] === last[7],
+        `samples=${S.fpS.length} with_parts=${sm.length} monotonic=${amono} frames_parts_ahead_of_heads=${ahead.length} distinct_partial=${part} end=${last[6]}/${last[7]} heads_end=${last[8]}`); }
     check('B4', 'the walk itself is unchanged: 69 lights, 30 sprinklers, ops committed', S.lights === 69 && S.sprinklers === 30 && S.opsE > 0 && !p2.errs.length, `lights=${S.lights} sprinklers=${S.sprinklers} ELEC ops=${S.opsE} page_errors=${p2.errs.length}`);
   } finally { await br2.close(); srv.close(); }
   say('SUMMARY fail=' + fail + ' judged=' + judged); process.exit(fail ? 1 : 0);

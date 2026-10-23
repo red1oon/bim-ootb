@@ -105,7 +105,9 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   // R3/R4/R5/R6 — re-drive _renderDiscChains DETERMINISTICALLY via the exposed witness seam, isolating each mode.
   logs.length = 0;
   await pg.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
-  await pg.evaluate(() => { window.__dwChainRender('PLB', window.__dwChains.PLB, { patternBridge: window.__dwChainMeta.PLB }); });
+  // §D66.1 a render of a network already revealed since its walk is a redraw (drawn at once): start from the state a fresh walk leaves (its reveal over, the network not yet shown)
+  await pg.waitForFunction(() => !(window.__dwChainAnimating || {}).PLB, { timeout: 30000, polling: 100 }).catch(() => {});
+  await pg.evaluate(() => { if (window.__dwChainShown) delete window.__dwChainShown.PLB; window.__dwChainRender('PLB', window.__dwChains.PLB, { patternBridge: window.__dwChainMeta.PLB }); });
   await sleep(250);
   const midCount = await pg.evaluate(() => {
     const g = window.Bonsai.group(); const root = g.children.find(o => o.userData && o.userData.dwRoot);
