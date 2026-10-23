@@ -88,6 +88,7 @@
 
   function open(db, opts) {
     var SQL = opts.SQL, self = opts.self, space = opts.space, access = opts.access, log = opts.log || function (m) { console.log(m); };
+    var SP = 's/' + space + '/';             // §13.6: every pipe name I write or list lives under my space — two spaces on one pipe never meet
     SCHEMA.forEach(function (s) { db.run(s); });
     db.run('INSERT OR IGNORE INTO cl_self (kid, space, person_uu, next_seq, head_hash, bundled_to) VALUES (?,?,?,1,NULL,0)', [self.kid, space, self.person_uu || null]);
     var last = null, sigCache = {};
@@ -324,7 +325,7 @@
       take.forEach(function (r) { b.run('INSERT INTO ops VALUES (?,?)', [r.op_hash, enc[r.op_hash] || r.envelope]); });
       var bytes = b.export(); b.close();
       var from = take[0].author_seq, to = take[take.length - 1].author_seq, h12 = (await _sha(take.map(function (r) { return r.op_hash; }).join(','))).slice(0, 12);
-      return { name: 'o/' + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: take.map(function (r) { return r.op_hash; }), sealed: Object.keys(enc).length };
+      return { name: SP + 'o/' + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: take.map(function (r) { return r.op_hash; }), sealed: Object.keys(enc).length };
     }
     function _rows(bytes) { var b = new SQL.Database(bytes), out = _q(b, 'SELECT op_hash, envelope FROM ops').map(function (r) { return { hash: r.op_hash, text: r.envelope }; }); b.close(); return out; }
     // readBundle → [{hash, env}]; a sealed row I can open now is opened, one I cannot is {hash, env:null, enc:<epoch>}
@@ -392,8 +393,8 @@
     async function sync(pipe) {
       var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0, sealed: 0, opened: 0, tampered: 0, granted: 0 };
       // 1. collect: plaintext ops are ingested; sealed ones wait in cl_sealed until a key opens them
-      for (var on of await pipe.list('o/')) {
-        if (on.indexOf('o/' + self.kid + '/') === 0) continue;
+      for (var on of await pipe.list(SP + 'o/')) {
+        if (on.indexOf(SP + 'o/' + self.kid + '/') === 0) continue;
         if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
         var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
         rep.fetched++;
@@ -422,10 +423,10 @@
       var batched = typeof pipe.putMany === 'function';
       if (nb && !batched) { await pipe.put(nb.name, nb.bytes); await readBack(); }
       var L = await order();
-      if (batched) { var batch = [{ name: 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) batch.unshift({ name: nb.name, bytes: nb.bytes });
+      if (batched) { var batch = [{ name: SP + 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) batch.unshift({ name: nb.name, bytes: nb.bytes });
         await pipe.putMany(batch); if (nb) await readBack(); }
-      else await pipe.put('h/' + self.kid, _json(await signedHead()));
-      for (var hn of await pipe.list('h/')) {
+      else await pipe.put(SP + 'h/' + self.kid, _json(await signedHead()));
+      for (var hn of await pipe.list(SP + 'h/')) {
         var hb = await pipe.get(hn); if (!hb) continue; var hd = _unjson(hb), dv = L.roster.devices[hd.author];
         if (!dv || !(await ENV.verify(hd, dv.jwk))) continue;            // a head counts only from an enrolled device
         db.run('INSERT OR REPLACE INTO cl_head_seen VALUES (?,?,?,?,?,?)', [hd.author, pipe.id, hd.seq, hd.hash, JSON.stringify(hd.frontier || {}), hd.sig]);

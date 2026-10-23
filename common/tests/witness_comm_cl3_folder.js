@@ -15,7 +15,7 @@
  *   §2CTX-FOLD     — the REAL erp/kernel_ops.js + erp/crud_core.js listTip fold both to identical c_order rows,
  *                    each order carrying its OWN edit (the CL1 defect scenario, across two real browsers).
  *   §2CTX-RECEIPT  — each context's ops are SEEN by the other (proven by the other's signed head).
- *   §2CTX-PIPE     — the folder holds only o/ h/ objects (the pipe stored bytes and nothing else; keys ride in ENROLL ops).
+ *   §2CTX-PIPE     — the folder holds only s/<space>/o|h/ objects (the pipe stored bytes and nothing else; keys ride in ENROLL ops).
  *   §2CTX-ROSTER   — trust is the CL4 roster: A founds the space (genesis = the invite), enrols B (role 103) from B's code;
  *                    writes are judged by the real MRole.canUpdate port on the browser's ad_seed.db — B's org-12 order is
  *                    REFUSED in BOTH browsers (role 103 has no org-12 access), never folded.
@@ -127,9 +127,9 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     verdict(ntA.length === 1 && ntB.length === 1 && ntA[0].ad_message === 'CurrentRecordModified' && ntA[0].ad_table_id === 259, 'each person gets one CurrentRecordModified Notice (AD_Table 259)');
 
     console.log('\n§2CTX-PIPE');
-    var names = walk(FOLDER, '', []), stray = names.filter(function (n) { return !/^(o|h)\//.test(n); });
+    var names = walk(FOLDER, '', []), stray = names.filter(function (n) { return !/^s\/[0-9a-f]{64}\/(o|h)\//.test(n); });
     console.log('   §2CTX folder objects=' + names.length + ': ' + names.map(function (n) { return n.replace(/\.[0-9a-f]{12}\.bimpack$/, '.…bimpack'); }).join(' '));
-    verdict(names.length > 0 && !stray.length, 'the folder holds only o/ h/ objects');
+    verdict(names.length > 0 && !stray.length, 'the folder holds only s/<space>/{o,h}/ objects');
     verdict(sA.storage.cl_tables.length >= 7, 'comm.db tables present in the browser', sA.storage.cl_tables.join(','));
   } finally { await browser.close(); server.close(); }
 
