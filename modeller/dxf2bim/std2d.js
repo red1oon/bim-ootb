@@ -25,8 +25,12 @@
     'A-DOOR': [3, 25, 'Continuous'], 'A-GLAZ': [4, 18, 'Continuous'], 'A-GLAZ-SILL': [4, 25, 'Continuous'], 'A-GRID': [1, 18, 'CENTER'],
     'A-ANNO-DIMS': [7, 18, 'Continuous'], 'A-ANNO-LEVL': [6, 18, 'Continuous'], 'A-ANNO-NOTE': [1, 18, 'Continuous'], 'A-ANNO-TTLB': [7, 25, 'Continuous'],
     'A-ROOF': [5, 35, 'Continuous'], 'A-SECT': [7, 50, 'Continuous'], 'S-SLAB': [2, 50, 'Continuous'], 'S-COLS': [2, 50, 'Continuous'], 'A-COLS': [7, 50, 'Continuous'],
-    'A-GLAZ-OVHD': [4, 18, 'DASHED'], 'A-DOOR-OVHD': [3, 18, 'DASHED'], 'A-FLOR-STRS': [7, 18, 'Continuous']
+    'A-GLAZ-OVHD': [4, 18, 'DASHED'], 'A-DOOR-OVHD': [3, 18, 'DASHED'], 'A-FLOR-STRS': [7, 18, 'Continuous'],
+    'A-FLOR-OTLN': [7, 25, 'Continuous']   // §D70.1 the floor (slab) outline, NCS / AIA "Floor or building outline": a visible edge below the cut, lighter than the cut walls
   };
+  // §D70.1 the drafted slab edge. Window as §D70 measured (slabs >= 50 mm whose top is within -0.5 / +0.3 m of the storey); the two values are best-effort defaults (amber) that equal
+  // element_defaults.json slab.edge_joint_close / slab.edge_void_min_area (witnessed); opts.slabEdge overrides them. EDGE_COVER = the §D44 coverage margin.
+  const SLAB_EDGE = { joint_close: 0.05, void_min_area: 0.0645 }, SLAB_TOP_BELOW = 0.5, SLAB_TOP_ABOVE = 0.3, SLAB_MIN_THICK = 0.05, EDGE_COVER = 0.9;
   const ELEV_FACES = { FRONT: ['y0', (x, y) => x], REAR: ['y1', (x, y) => -x], LEFT: ['x0', (x, y) => -y], RIGHT: ['x1', (x, y) => y] };
 
   // ── numeric helpers matching numpy / python formatting ──
@@ -788,6 +792,64 @@
     log.add(`§ROOMS_PLAN storey='${storey.name}' drawn=${mine.length} compiled=${nc} (D22)`);
     return mine.length;
   }
+  // ───────────────────────── §D70.1 the slab edge as plans are drafted ─────────────────────────
+  // rings are closed ([..., first]) in metres; P = polygon-clipping MultiPolygon
+  const ringArea = r => { let a = 0; for (let i = 0; i + 1 < r.length; i++) a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1]; return a / 2; };
+  const mpArea = P => P.reduce((s, p) => s + Math.abs(ringArea(p[0])) - p.slice(1).reduce((t, h) => t + Math.abs(ringArea(h)), 0), 0);
+  const ringBox = r => r.reduce((b, q) => [Math.min(b[0], q[0]), Math.min(b[1], q[1]), Math.max(b[2], q[0]), Math.max(b[3], q[1])], [Infinity, Infinity, -Infinity, -Infinity]);
+  const closeRing = pts => { const r = pts.map(q => [Number(q[0].toFixed(6)), Number(q[1].toFixed(6))]); r.push(r[0].slice()); return r; };
+  function convexHull(pts) {   // monotone chain, closed ring (CCW)
+    pts = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+    for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    const h = lo.slice(0, -1).concat(up.slice(0, -1)); h.push(h[0].slice()); return h;
+  }
+  function edgeSweeps(P, h) {   // the boundary of P swept by a square of half-side h: one convex hull per edge (Minkowski sum of a segment and an axis-aligned square)
+    const out = [], sq = c => [[c[0] - h, c[1] - h], [c[0] + h, c[1] - h], [c[0] + h, c[1] + h], [c[0] - h, c[1] + h]];
+    P.forEach(p => p.forEach(r => { for (let i = 0; i + 1 < r.length; i++) out.push([convexHull(sq(r[i]).concat(sq(r[i + 1])))]); }));
+    return out;
+  }
+  function closing(P, w) {   // morphological closing by a square of side w: dilate (P plus its swept boundary), then erode (minus the swept boundary of the dilation). Rectilinear corners stay exact.
+    if (!(w > 0) || !P.length) return P;
+    const D = PC.union(P, ...edgeSweeps(P, w / 2));
+    return PC.difference(D, ...edgeSweeps(D, w / 2)).map(p => p.map(r => closeRing(r.slice(0, -1))));
+  }
+  function slabsAt(model, storey) {   // §D70 window
+    const roofG = new Set(model.roofs.map(r => r.guid));
+    return model.els.filter(e => e.cls === 'IfcSlab' && !roofG.has(e.guid) && e.v.length && e.f.length && e.z1 >= storey.elev - SLAB_TOP_BELOW && e.z1 <= storey.elev + SLAB_TOP_ABOVE && e.z1 - e.z0 >= SLAB_MIN_THICK)
+      .sort((a, b) => (a.guid < b.guid ? -1 : 1));
+  }
+  // model: the loaded model; drawn: [ring m] the contours of the columns and walls this plan draws. Returns { pieces: [[outer, ...holes]] (closed rings, m), report } or null (no slab in the window)
+  function slabEdge(model, storey, drawn, log) {
+    const t0 = Date.now(), sl = slabsAt(model, storey); if (!sl.length) return null;
+    const o = Object.assign({}, SLAB_EDGE, model.slabEdge || {});
+    let U = [], bad = 0;
+    sl.forEach(e => {   // even-odd per element: the slicer's ring orientation is arbitrary (§D70.1 correction), its parity is not
+      const cs = G.elementContours(e.v, e.f, e.c, (e.z0 + e.z1) / 2); if (!cs.length) { bad++; return; }
+      try { const P = PC.xor(...cs.map(c => [[closeRing(c.points)]])); U = U.length ? PC.union(U, P) : P; } catch (x) { bad++; }
+    });
+    const unionA = mpArea(U); let C = U;
+    try { C = closing(U, o.joint_close); } catch (x) { log.add(`§SLAB_EDGE_CLOSING_FAIL storey='${storey.name}' ${String(x.message).slice(0, 80)} (the union drawn unclosed)`); }
+    const closedA = mpArea(C), D = drawn.map(r => ({ r, b: ringBox(r) }));
+    const rep = { slabs: sl.length, no_contour: bad, union_m2: unionA, closed_m2: closedA, holes_kept: 0, holes_filled_drawn: 0, holes_filled_small: 0, filled_m2: 0, pieces_dropped: 0, dropped_m2: 0, joint: o.joint_close, void_min: o.void_min_area };
+    const pieces = [];
+    C.forEach(p => {
+      const holes = [];
+      p.slice(1).forEach(h => {
+        const a = Math.abs(ringArea(h)), hb = ringBox(h); let cov = 0;
+        D.filter(d => d.b[0] < hb[2] && d.b[2] > hb[0] && d.b[1] < hb[3] && d.b[3] > hb[1]).forEach(d => { try { cov += mpArea(PC.intersection([[h]], [[d.r]])) / a; } catch (x) { /* an unclippable pair covers nothing */ } });
+        if (cov >= EDGE_COVER) { rep.holes_filled_drawn++; rep.filled_m2 += a; } else if (a < o.void_min_area) { rep.holes_filled_small++; rep.filled_m2 += a; } else { rep.holes_kept++; holes.push(h); }
+      });
+      const pa = Math.abs(ringArea(p[0])) - holes.reduce((t, h) => t + Math.abs(ringArea(h)), 0);
+      if (pa < o.void_min_area) { rep.pieces_dropped++; rep.dropped_m2 += pa; return; }
+      pieces.push([p[0]].concat(holes));
+    });
+    rep.drawn_m2 = mpArea(pieces); rep.pieces = pieces.length; rep.ms = Date.now() - t0;
+    log.add(`§SLAB_EDGE storey='${storey.name}' slabs=${rep.slabs} no_contour=${bad} union_m2=${fx(unionA, 2)} closed_m2=${fx(closedA, 2)} pieces=${rep.pieces} drawn_m2=${fx(rep.drawn_m2, 2)} holes_kept=${rep.holes_kept} holes_filled_drawn=${rep.holes_filled_drawn} holes_filled_small=${rep.holes_filled_small} filled_m2=${fx(rep.filled_m2, 2)} pieces_dropped=${rep.pieces_dropped} dropped_m2=${fx(rep.dropped_m2, 3)} joint=${o.joint_close} void_min=${o.void_min_area} ms=${rep.ms} (§D70.1)`);
+    return { pieces, report: rep };
+  }
+
   function writePlan(model, grid, storey, view, log) {
     log.add(`§VIEW ${view} storey='${storey.name}' elev=${fx(storey.elev, 4)}`);
     const doc = newDoc(), cutZ = storey.elev + CUT_OFFSET;
@@ -852,6 +914,9 @@
       else doc.lwpoly(c.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', pts, true, tag(c.guid));
     }
     if (model.stairSymbol !== false) cut.filter(c => c.cls === 'IfcStair' || c.cls === 'IfcStairFlight').forEach(c => stairMark(doc, c, storey.elev, cutZ, log));   // §F7: treads + up arrow from the mesh
+    // §D70.1 the slab edge: the floor outline with its real openings (no plank joints), from the slabs at this level; the columns and walls this plan draws fill the holes they stand in
+    const se = slabEdge(model, storey, [].concat(...cut.filter(c => WALLS.indexOf(c.cls) >= 0 || c.cls === 'IfcColumn').map(c => (polys[c.guid] || []).map(pl => closeRing(pl.map(q => [q[0] / 1000, q[1] / 1000]))))), log);
+    if (se) se.pieces.forEach(p => p.forEach(r => doc.lwpoly('A-FLOR-OTLN', r.slice(0, -1).map(q => [mm(q[0]), mm(q[1])]), true)));
     log.add(`§PLAN wall contours=${nW} column contours=${nC} cut_z=${fx(cutZ, 3)}`);
     let nCw = 0;
     Object.keys(curt).sort().forEach(g => (polys[g] || []).forEach(pts => {   // C1: layer A-WALL-CURT, tagged with the curtain wall GUID, no hatch (glazing)
@@ -935,6 +1000,8 @@
     doc.text('A-ANNO-TTLB', `${storey.name.toUpperCase()} PLAN (FFL ${fs(storey.elev, 3)})  1:${SCALE}`, [(E[0] + E[1]) / 2, E[2] - (BUBBLE_C + 14) * SCALE], TXT_TITLE * SCALE, { align: 'MIDDLE_CENTER' });
     northMark(doc, model.north, E, log); if (model.scaleBar === true) scaleBarMark(doc, E);
     planRooms(doc, model, storey, E, log);   // §F7 D22
+    if (se && se.pieces.length) { const o = Object.assign({}, SLAB_EDGE, model.slabEdge || {});   // §D70.1 the drafted edge states its two values on the sheet (a general note), as the yellow doors do
+      doc.text('A-ANNO-NOTE', `SLAB EDGE (A-FLOR-OTLN): JOINTS UNDER ${fx(o.joint_close * 1000, 0)} MM CLOSED, OPENINGS UNDER ${fx(o.void_min_area, 4)} M2 AND HOLES A COLUMN OR WALL FILLS NOT SHOWN (DEFAULTS, element_defaults.json)`, [E[0], E[2] - (BUBBLE_C + 32) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' }); }
     if (dflt.length) {   // §F7 D18: the yellow band states itself on the sheet (the basis), and the set carries @DEFAULT=door.operation_standard (marks)
       const sd = doorStandard(model); model.doorDefaults = (model.doorDefaults || []).concat(dflt);
       doc.text('A-ANNO-NOTE', `YELLOW = DEFAULT: ${dflt.length} DOOR(S) THE MODEL GIVES NO OPERATION FOR, DRAWN FROM THIS BUILDING'S STANDARD (${sd.left} LEFT / ${sd.right} RIGHT OF ${sd.n} STATED; SINGLE LEAVES ${fx(sd.minW * 1000, 0)}-${fx(sd.maxW * 1000, 0)} MM)`, [E[0], E[2] - (BUBBLE_C + 20) * SCALE], TXT_NOTE * SCALE, { align: 'BOTTOM_LEFT' });
@@ -1199,7 +1266,7 @@
     let wing = null;
     if (opts.wing) wing = frameWing(model, opts.wing, log, !!opts.extent);   // §L1.16: this set is ONE wing, drawn in its own frame (§F7 with a box: every angle, the box decides)
     loadRooms(model, opts.rooms, opts.roomsSource, wing, log);   // §F7 D22
-    model.stairSymbol = opts.stairSymbol; model.curtainSetBack = opts.curtainSetBack; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
+    model.slabEdge = opts.slabEdge; model.stairSymbol = opts.stairSymbol; model.curtainSetBack = opts.curtainSetBack; model.sectionCurtain = opts.sectionCurtain; model.scaleBar = opts.scaleBar; model.north = northOf(opts.north); if (wing) model.north = turnNorth(model.north, wing.angle);   // §F7: the north arrow turns with the sheet
     let grid;
     if (opts.extent && wing) {   // §F7 W-WAND-BOX: the grid of the family wing (same labels as the whole wing set; its host / grid lines are not this set's), then the box at any angle, hosts resolved on the box
       const L0 = new Log(); resolveHosts(model, L0); const g0 = deriveGrid(model, L0), bx = boxWing(model, wing, opts.extent, opts.depth, log);
@@ -1417,5 +1484,5 @@
     log.add(`§SUMMARY wing=${name} views=${Object.keys(files).length} grid_x=${pyList(grid.x.map(g => g[0]))} grid_y=${pyList(grid.y.map(g => g[0]))} gaps=${log.gaps.length}`);
     return { files, log: log.lines, gaps: log.gaps, grid, model, wing: { name, angle, ox, oy, framed: wl.length, unframed: fr.unframed, total: fr.total } };
   }
-  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, wingAngles, dropCollinear, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES };
+  return { primaryClusters, drawableReport, ELEV_FACES, ELEV_HP: ELEV_FACES, columnAxis, writeStdSet, writeWingSet, wingAngles, dropCollinear, elementAngle, rotateModel, frameModel, wingDominant, loadModel, deriveGrid, resolveHosts, planStoreys, LAYERS, PLAN_CUT_CLASSES, SLAB_EDGE, slabEdge, slabsAt };
 });

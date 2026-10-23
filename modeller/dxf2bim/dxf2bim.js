@@ -32,7 +32,7 @@
     return null;
   }
 
-  var TYPES = { wall: 1, wallline: 1, slab: 1, component: 1, opening: 1, glazing: 1, ignore: 1 };
+  var TYPES = { wall: 1, wallline: 1, slab: 1, component: 1, opening: 1, glazing: 1, ignore: 1, slabedge: 1 };   // §D70.1 slabedge: the plan's A-FLOR-OTLN, read by Dxf2Shell.slabEdges
   function validateMap(map) {
     if (!map || !Array.isArray(map.rules)) throw new Error('layer_map: rules[] missing');
     map.rules.forEach(function (r, i) {
@@ -222,7 +222,7 @@
       if (e.layer === 'DXF2BIM-MARK') { ignored.push({ handle: e.handle, layer: e.layer, entity: e.type }); return; }      // reserved marker layer (§26 E7)
       var rule = matchRule(e.layer, layerMap.rules);                                                      // S3
       if (!rule) { gap('GAP:unmapped_layer', e); return; }
-      if (rule.type === 'ignore') { ignored.push({ handle: e.handle, layer: e.layer, entity: e.type }); return; }
+      if (rule.type === 'ignore' || rule.type === 'slabedge') { ignored.push({ handle: e.handle, layer: e.layer, entity: e.type }); return; }   // §D70.1 slabedge: read by Dxf2Shell.slabEdges, not here
       if (rule.type === 'opening') { openingEnts.push(e); return; }
       if (rule.type === 'glazing') { glazEnts.push(e); return; }
       if (rule.type === 'wallline') { wlEnts.push(e); return; }

@@ -850,3 +850,48 @@ does not exist yet. (2) What a plan's slab edge IS is a drafting convention, not
 precast planks (joints of a few mm); a drafted edge would be the floor's perimeter with its real voids only. Choosing which (exact union, or perimeter + voids above a stated area, or plank joints closed
 below a stated width) is the owner's; the numbers above are what each choice starts from. (3) On the Clinic the round-trip db has no slab at its levels, so E2 has nothing to read there (a data question, F17's kind).
 **D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built.
+
+## §D70.1 THE PLAN'S SLAB EDGE AS PLANS ARE DRAFTED: THE FLOOR OUTLINE, ITS REAL OPENINGS, NO PLANK JOINTS (owner 2026-10-23 on §D70's question: "If it is practical and in practice")
+**The convention and its sources (looked up 2026-10-23; quoted, not paraphrased where a number is used).**
+(a) The floor outline is its own plan layer: NCS / AIA layer `A-FLOR-OTLN` "Floor or building outline" (AIA *CAD Layer Guidelines*, excerpt at pages.uoregon.edu/arch/landcad/Layer_Standards.htm; the same entry in
+the UCSC campus CAD layering guideline and the LAWA / Columbia layer tables). (b) A plan's floor information includes "holes in floors, edges of slabs, guardrails around floor openings, or curbs" (AIA *CAD Layer
+Guidelines* 2nd ed., layer `A-FLOR`, as copied at academics.triton.edu/faculty/fheitzman/layname.html), so a plan shows the slab edge AND its openings / shafts. (c) Level changes are their own layer:
+`A-FLOR-LEVL` "Floor Level Indicators" on the "Base Floor Plan" (University of Washington Facilities, *UW Architectural CAD Standard Layers*, 2026, read); search listings give the NCS wording "level changes,
+ramps, pits, depressions" (UCSC, Texas Tech, New Brunswick DTI; not opened: 403 / 404). (d) Plank joints are NOT a floor-plan line: hollow-core "plank to plank joints
+are first leveled and then grouted, allowing for a monolithic floor system"; the open keyway at the top is "approximately 3/4 in" (19 mm); the plank layout is on the producer's "erection drawing showing
+your plank layout", submitted for approval, not on the architect's plan (Oldcastle Infrastructure, *Hollowcore Plank Pocket Guide* 2019, sections Ordering / Installation / Grout; read as text). (e) Small openings are not drawn on the plan: the
+producer "will show openings larger than 10" square on shop drawings"; smaller ones are core-drilled in the field (same guide, section Openings); public structural general notes leave out penetrations under
+12 in (a practice note found on several bid sets, not a standard: not used for the number). No source gives a joint width to close or a minimum void area for an architect's plan, so both are best-effort
+defaults (amber, stated, editable), per feedback_best_effort_defaults.
+**Measured first (2026-10-23, scratchpad `d70/m1.js` / `m3.js` / `m4.js`, the same slab window as §D70: slabs >= 50 mm thick whose top lies within -0.5 / +0.3 m of the storey, roof slabs excluded).**
+CORRECTION to §D70's table: the slicer's ring orientation is arbitrary (`elementContours` isOuter = the chain's direction), so §D70's outer/inner union undercounted; even-odd per element agrees with the
+meshes' own upward faces (HHS L1 / L2 / L3 1,839.7 / 1,639.9 / 590.8 m2 both ways; isOuter gave 1,839.7 / 1,708.4 / 635.6; LTU VANING 1 isOuter 0 vs 5,506.1). The rule uses even-odd.
+Gaps between separate slab pieces (mm, smallest first): Duplex 417 / 417 / 492 (L1), 550 (L2); HHS L1 0 x6, 115 x5, 152, 175, 202; HHS L2 60, 115 x32, 175 ..; JKR L1 1.3, 338; JKR L2 0 x26, 24.9 x3, 85, 90 ..;
+LTU 0 / 250 / 378. So every piece gap is either under 25 mm (joints, modelling tolerance) or 60 mm and more (a wall or beam stands there: 115 / 175 / 200 = the wall thicknesses). Holes: HHS L1 54 =
+11 tessellation slivers (0.0001 m2), 42 x 0.0669 m2 (294 x 297 mm) where a round column "STB d=30" stands (`IfcColumn` + an `IfcOpeningElement` in the slab), 1 x 0.53 m2 (115 x 4,647 mm, a wall
+slot); HHS L3 23 m2 = one 2.8 x 8.0 m void (stair / atrium).
+**Rule (writer, `std2d.js` `slabEdge`, drawn by `writePlan` on `A-FLOR-OTLN`).** For each plan: (1) the slabs in the window above, each sliced at mid-thickness and taken even-odd, then unioned. (2) JOINTS:
+a morphological closing with a square of side `slab.edge_joint_close` closes every gap and notch narrower than it (rectilinear corners stay exact). Default **0.05 m** (amber): the reader's thinnest
+wall `CFG.wall.min_thickness` = 0.05 m, so a narrower gap holds no wall the plan draws; the grouted plank keyway (19 mm, source (d)) and the measured joints (<= 24.9 mm) lie under it, the first wall gap
+(60 mm) above it. (3) OPENINGS: a hole is drawn only when (i) no column or wall the same plan draws covers >= 0.9 of it (the §D44 coverage margin): such a hole is that element, drawn on its own layer,
+not a floor opening; and (ii) its area is >= `slab.edge_void_min_area`, default **0.0645 m2** (amber) = a 254 mm (10 in) square, source (e). A hole failing either is filled. (4) A separate piece
+smaller than the same area is below the plan's resolution and is not drawn (logged). (5) Each kept piece: its outer ring and its kept holes as closed LWPOLYLINEs on `A-FLOR-OTLN` (7 / 0.25 mm,
+continuous: a visible edge below the cut, lighter than the cut walls' 0.50 / 0.35), plus one `A-ANNO-NOTE` stating the two values used. Log: `§SLAB_EDGE storey= slabs= union_m2= pieces= drawn_m2=
+holes_kept= holes_filled_drawn= holes_filled_small= pieces_dropped= joint= void_min= ms=`. Plank joints are never drawn (source (d)). Level changes (source (c)) are NOT drawn in this round:
+measured, the slab tops per storey differ in 1-2 (HHS) to 9-15 (JKR / LTU) values, mostly 25-50 mm finishes; drawing `A-FLOR-LEVL` step lines is open (stated, not silent).
+The two values: `opts.slabEdge = { joint_close, void_min_area }` (the Node callers; the page passes `element_defaults.json`), registered in `element_defaults.json` as `slab.edge_joint_close` and
+`slab.edge_void_min_area` (kind guess, with the basis above); the writer's built-in defaults equal the registry values (witnessed).
+**Rule (reader).** `STD.MAP_PLAN` maps `A-FLOR-OTLN` to type `slabedge` (`dxf2bim.js` skips it as ignored; the run_id of STD sets changes once, stated). `Dxf2Shell.slabEdges(entities, layerMap, K)`
+reads the closed polylines, nests them (a ring inside an odd number of rings is a hole) and returns pieces `{ outer, holes, handles }`; an open polyline or one with a bulge is not read
+(`GAP:slab_edge_open` / `GAP:slab_edge_bulge`, advisory). A storey with pieces makes ONE `IfcSlab` per piece at the storey's slab level and thickness (`slabZ`, unchanged), READ (no `prov`), layer
+`A-FLOR-OTLN`: a rectilinear piece by `prismRect` (unchanged), any other by the new `prismPoly` (a trapezoid decomposition: closed and outward, the same edge rule as `watertight`). It supersedes
+the §D44 rectangle and the §D51 estimate on that storey (no `GAP:slab_outline_*`). A set with no slab-edge layer behaves exactly as before.
+**What the reader can and cannot take back.** CAN: any straight-edged outline with holes (curves arrive as the writer's facets), every piece separately, at the storey's one slab level. CANNOT: a
+piece's own top level or thickness (one per storey from the section / elevations: the level changes above are not drawn); the sub-threshold holes and joints (by design); arcs (bulges); slabs a model
+does not have at its levels (the Clinic round-trip db: 0 slabs at its three levels, §D70 (3)).
+**Witness claim first (W-SLAB-EDGE, `modeller/tests/witness_dxf_slab_edge.js <db...>`, default `/tmp/db2/{DXARC,HHSM2,JKR3}.db`; `M=<modeller dir>` runs it against other code).** E1 the writer
+draws `A-FLOR-OTLN` on every plan with slabs in the window: no drawn hole below the minimum or covered by a drawn element, no two pieces nearer than the joint width, drawn area >= the union and the
+difference = the filled holes + the closed joints (stated per storey). E2 the reader: per storey the slab bodies' top area = the drawn area to 0.5 %, every body watertight, no `GAP:slab_outline_*`
+on that storey. E3 editable: `slab.edge_void_min_area` = 0 keeps every hole not covered by a drawn element (HHS L1 holes drawn > default). E4 falsifier: the layer stripped from the plans gives the
+§D51 / §D44 outcome back (estimated or rectangle slab, the same as before this rule); and the witness run against origin/main's modeller (`M=`) FAILS E1. E5 only slabs: every non-slab element equal
+(class + vertices) with and without the layer. E6 the registry values = the writer's defaults. Timed on LTU before merge (the closing and the hole cover are per edge / per hole with bbox filters).
