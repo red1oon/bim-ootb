@@ -4095,21 +4095,24 @@ function _discWalkNow(disc, ctx) {
 // beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
 // §D61 (DXF2BIM_FOUNDATION_LANE.md): the meshes of a walk: the opened building's own geometry first, then the RULES' SOURCE building's geometry for the hashes still missing (a building
 // opened from disk, e.g. a DXF2BIM convert, has no _geo.db of its own). The source is named by the rules file (rules_meta built_from): terminal_rules.db = Terminal, duplex_rules.db = Duplex.
-var _DW_RULES_SOURCE = { 'terminal_rules.db': 'Terminal', 'duplex_rules.db': 'Duplex', 'farm_rules.db': 'Terminal' }, _dwSrcGeo = {}, _dwSrcMesh = {};   // farm: its meshes are the Terminal's (rule_mesh_binding)
+var _DW_RULES_SOURCE = { 'terminal_rules.db': 'Terminal', 'duplex_rules.db': 'Duplex', 'farm_rules.db': ['Terminal', 'Duplex'] }, _dwSrcGeo = {}, _dwSrcMesh = {};   // farm: the Terminal's sprinkler, the library's (Duplex-served) pendant lamp (§D64)
 async function _dwResolveMeshes(hashes, tag) {
   var real = {}, want = Object.keys(hashes || {});
   if (!want.length || !window.RealGeometry || !window.SQL) return real;
   if (window.__dwGeoBuf) { try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, want); g.close(); } catch (e) { console.warn(tag + ' geo resolve failed ' + (e && e.message)); real = {}; } }
-  var miss = want.filter(function (h) { return !real[h]; }), rules = window._dwRules(window.__dwName), key = _DW_RULES_SOURCE[rules], SW = window.STRWalkerOutliner;
-  if (!miss.length || !key || !SW || !SW._fetchGeoDb || key === window.__dwName || window.__dwRulesMeshOff) return real;
-  var res = (SW._residents || []).filter(function (r) { return r.key === key; })[0]; if (!res) return real;
-  try {
-    var buf = _dwSrcGeo[key] || (_dwSrcGeo[key] = await SW._fetchGeoDb(res));
-    if (!buf) return real;
-    var sg = new window.SQL.Database(new Uint8Array(buf)), more = window.RealGeometry.resolveHashes(sg, miss); sg.close();
-    Object.keys(more).forEach(function (h) { real[h] = more[h]; _dwSrcMesh[h] = more[h]; });
-    console.log('§DW-RULES-MESH building=' + (window.__dwName || '?') + ' rules=' + rules + ' source=' + res.geoDb + ' resolved=' + Object.keys(more).length + '/' + miss.length + ' (the building has no mesh of its own for them)');
-  } catch (e) { console.warn('§DW-RULES-MESH ' + key + ' geometry unreachable: ' + (e && e.message) + ' (refused, never a box)'); }
+  var rules = window._dwRules(window.__dwName), keys = [].concat(_DW_RULES_SOURCE[rules] || []), SW = window.STRWalkerOutliner;
+  if (!keys.length || !SW || !SW._fetchGeoDb || window.__dwRulesMeshOff) return real;
+  for (var ki = 0; ki < keys.length; ki++) {   // §D64 each named source in turn, only for the hashes still missing
+    var key = keys[ki], miss = want.filter(function (h) { return !real[h]; }); if (!miss.length) break; if (key === window.__dwName) continue;
+    var res = (SW._residents || []).filter(function (r) { return r.key === key; })[0]; if (!res) continue;
+    try {
+      var buf = _dwSrcGeo[key] || (_dwSrcGeo[key] = await SW._fetchGeoDb(res));
+      if (!buf) continue;
+      var sg = new window.SQL.Database(new Uint8Array(buf)), more = window.RealGeometry.resolveHashes(sg, miss); sg.close();
+      Object.keys(more).forEach(function (h) { real[h] = more[h]; _dwSrcMesh[h] = more[h]; });
+      console.log('§DW-RULES-MESH building=' + (window.__dwName || '?') + ' rules=' + rules + ' source=' + res.geoDb + ' resolved=' + Object.keys(more).length + '/' + miss.length + ' (the building has no mesh of its own for them)');
+    } catch (e) { console.warn('§DW-RULES-MESH ' + key + ' geometry unreachable: ' + (e && e.message) + ' (refused, never a box)'); }
+  }
   return real;
 }
 async function _dwLod400Only(disc, w) {
@@ -4142,9 +4145,9 @@ async function _discWalkOne(disc, ctx, opts) {
     try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
     catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return { refused: true, reason: 'rules not available', placed: 0 }; }
     { var _rf = window._dwRules(name || window.__dwName), _rm = (window.DiscWalker.rulesMeta && window.DiscWalker.rulesMeta()) || {};   // §D61 the reference is STATED when it was not measured on this building
-      if (_DW_RULES_SOURCE[_rf] && _DW_RULES_SOURCE[_rf] !== (name || window.__dwName)) {
+      if (_DW_RULES_SOURCE[_rf] && [].concat(_DW_RULES_SOURCE[_rf]).indexOf(name || window.__dwName) < 0) {
         console.log('§DW-RULES-REF building=' + (name || window.__dwName) + ' rules=' + _rf + ' standard=' + _rm.standard + ' built_from=' + _rm.built_from + ' (not measured on this building: a stated reference)');
-        setStat(disc + ' — walking with the ' + (_rm.standard || '?') + ' reference (' + _DW_RULES_SOURCE[_rf] + '), not measured on this building'); } }
+        setStat(disc + ' — walking with the ' + (_rm.standard || '?') + ' reference, not measured on this building'); } }
     await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
     // §CAMPAIGN M1: lazy-load mep_rw.db's ad_mep_pattern table (SAME _rwReadyOnce the BOM-drop flow already
     // uses) so DiscWalker.dwWalk's routeChains-0 → routePattern bridge (disc_walker.js) can pair ARC-derived
@@ -4203,6 +4206,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // set through the measured clearances (current disc yields against the ones already present,
     // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
     window.__dwWalks[disc] = w.placements;
+    window.__dwRevealMeta[disc] = { start: performance.now(), dur: Math.max(2000, Math.min(7000, 120 * w.placements.length)) };   // §D64 a fresh walk builds up in front of you (drawing only)
     var gateRes = _discGate();
     _redrawAllDiscWalks();
     if (opts.flash) await _flashSettleDisc(disc);   // §DISCWALK-ALL orange-flash-then-settle (discWalkAll only)
@@ -4332,6 +4336,18 @@ window._dwPrimGeo = window._dwPrimGeo || function (prim, bx, by, bz, ifcClass) {
   bg.userData.lod300 = false;
   return bg;
 };
+// §D64 the build-up of a fresh walk: its instances are drawn in placement order on a wall-clock timeline (a redraw resumes it; done = all, at once). window.__dwReveal[disc] = the front.
+window.__dwRevealMeta = window.__dwRevealMeta || {}; window.__dwReveal = window.__dwReveal || {};
+function _dwRevealTick(disc) {
+  var R = window.__dwRevealMeta[disc]; if (!R) return;
+  var root = _dwRoot(), ims = []; if (root) root.children.forEach(function (o) { if (o.isInstancedMesh && o.userData && o.userData.dwDisc === disc && o.userData.dwSub) ims.push(o); });
+  var k = Math.min(1, (performance.now() - R.start) / R.dur);
+  ims.forEach(function (im) { var n = im.userData.dwSub.length, c = Math.max(k >= 1 ? n : 0, Math.floor(n * k)); im.count = c;
+    if (im === ims[0] && c > 0) { var p = im.userData.dwSub[c - 1]; window.__dwReveal[disc] = { i: c, n: n, x: p.x, y: p.y, z: p.z, done: k >= 1 }; } });
+  if (window.A && window.A.requestRender) window.A.requestRender();
+  if (k < 1) { R.raf = requestAnimationFrame(function () { _dwRevealTick(disc); }); }
+  else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.dur)); }
+}
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
   _clearDiscWalk(disc);
@@ -4445,6 +4461,7 @@ function _renderDiscWalk(disc, placements) {
     ' (lod400=rule-mined REAL mesh from the per-building _geo.db — the per-building split of the old shared mesh.db, §GEO-SERVED [§LIVEWIRE], lod300=matched real catalog mesh, lod200=measured POC box; honest tally, never silently "fixed")');
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   try { _applyShadowFlags(); } catch (e) { }   // §POLISH3 §V6: new buckets get cast/receive flags (or trip the perf guard)
+  if (window.__dwRevealMeta[disc]) { if (window.__dwRevealMeta[disc].raf) cancelAnimationFrame(window.__dwRevealMeta[disc].raf); _dwRevealTick(disc); }   // §D64 resume the build-up on the new buckets
   // §DW-DEDUP-RENDER (DW_FIXTURE_DOUBLE_RENDER_FINDING.md G1-G3, visual z-fighting confirmed 2026-07-17
   // chasing a guide screenshot): the standard commit path ALSO folds every disc-walked placement as an
   // individual op-log mesh (same mechanism every ARC element uses, for signed provenance/undo) — that mesh

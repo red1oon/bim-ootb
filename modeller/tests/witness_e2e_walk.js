@@ -67,6 +67,8 @@ const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.sp
   const t0 = Date.now();
   await pg.evaluate(() => window.discWalk('ELEC', { building: 'Duplex' }));
   const completed = await pg.waitForFunction(() => window.__dwLastCommitDisc === 'ELEC', { timeout: 25000, polling: 250 }).then(() => true).catch(() => false);
+  // §D64 (DXF2BIM_FOUNDATION_LANE.md): a fresh walk BUILDS UP in placement order (<= 7 s); W2 / W7 judge the drawn state once the reveal is done
+  await pg.waitForFunction(() => !window.__dwRevealMeta || !window.__dwRevealMeta.ELEC, { timeout: 15000, polling: 250 }).catch(() => {});
   const walkMs = Date.now() - t0;
   await sleep(300);
 

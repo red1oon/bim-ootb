@@ -584,3 +584,22 @@ columns: not this branch); every other resident has none.
 at 3.099 m (were 1.00 m, the "conduits" lattice the owner asked about); G2 HospitalGarage 184.99 -> 185.07 (one of its beam levels, +0.08 m); G3 Hospital (no beams) the rule, 177.81; G4 46 girders,
 0.254 x 0.305, derived:str-walk. STR witnesses as on BASE (W-E2E-STR-REWALK-COMMIT 9 / 0; W-ROW7-HGARAGE-GRID 7 / 1 the same anchor leg as BASE; smoke / row7 baseline / true centre / into-arc / canopy
 fail to load or are INCONCLUSIVE identically on BASE: a gitignored fixture and a missing module). Regression the known 4. Modeller sw v139.
+
+## §D64 FARM LIGHTS ARE PENDANT LAMPS, AND A WALK BUILDS UP IN FRONT OF YOU (owner 2026-10-23: "the first part looks like ACMV ... what about lighting?"; "should not one shot, but some build up sequence"; "cam view should follow as parts are laid"; "LOD400 quality mesh from library")
+**Witness claim first (W-WALK-BUILDUP, `modeller/tests/witness_walk_buildup.js`).** B1 the farm reference's lights are the library's pendant lamp (`M_Pendant Light - Hemisphere:150W`, LOD400, 711 vertices,
+0.51 x 0.51 x 0.68 m): the shed's ELEC walk places 69 of them, lod400 only, the mesh resolved from a named source (the reference names Terminal, Duplex; both serve this mesh: the Terminal
+first). B2 a fresh DISC walk REVEALS its fixtures in placement order over a few seconds (drawn instances rise from 0 to n; `window.__dwReveal[disc]` exposes the front: index and position)
+instead of all in one frame; a redraw during the reveal resumes it (wall-clock timeline, as the pipe network's M4 reveal); at the end every placement is drawn (count = n). B3 a redraw after the reveal
+is instant (count = n at once). B4 unchanged: the placement counts, positions and op-log commits of a walk (the reveal is drawing only).
+**Measured first (2026-10-23):** the light the farm reference used (`ce62bd1c2330505a`, the Terminal's) is a 1.40 m recessed troffer: inside the shed it reads as an air-conditioning panel (owner). The
+component library's light products: Terminal LED battens / troffers, Duplex `M_Pendant Light - Hemisphere:150W` (7 instances, one mesh `3258c4c591af8a44` in `Duplex_geo.db`). TNAU's
+incandescent rule (every 10 ft, hung from the ceiling) matches the pendant. A single DISC walk shows all fixtures in one frame; Walk ALL flashes them; only the routed pipe network (M4) reveals in order.
+**Not in this rule (owner decisions, listed):** sprinkler pipework on the shed (the router's FP pattern found 2 candidate runs of 201 anchors, both refused by its own envelope clash check: a routing
+investigation in the MEP walker); LOD400 library meshes for the barn's own drawn bodies (steel, fans): a new catalogue-binding rule (the component library has steel members; it has no IfcFan).
+**Rule.** `bake_farm_rules.py` binds ELEC to the pendant (its mesh hash and dims from the library; `rules_meta.mesh_sources = Terminal,Duplex`); `_dwResolveMeshes` tries each named source; `_renderDiscWalk`
+draws a fresh walk's instances on a reveal timeline (`__dwRevealMeta[disc] = {start, dur}`, dur = clamp(0.12 s x n, 2 s, 7 s)).
+**D64 RESULT (2026-10-23, session 2): BUILT.** `farm_rules.db` rebaked (content sha 41d6a3bbf069): ELEC = the library pendant lamp `3258c4c591af8a44`, `mesh_sources = Terminal,Duplex`; the Modeller tries each source;
+a fresh walk's fixtures build up over min(7 s, 0.12 s x n). **Also fixed:** `farm_rules.db` was never committed in #2318 (`*.db` is gitignored; the other rules dbs are force-tracked): the live site returned
+404 for it; now force-added. W-WALK-BUILDUP fail=0: B1 69 pendant lamps (lod400), the sprinkler still the Terminal's; B2 57 samples, 55 distinct partial counts, monotonic, the front moved 55 times, end 69 / 69;
+B3 after the FP walk ELEC still 69 / 69; B4 69 / 30, 69 ops. W-E2E-WALK 8 / 0 after it waits for the reveal (it judged the first frame); W-FARM-RULES 5 / 0, W-WALK-RULES-MESH 5 / 0, W-WALK-LOD400-ONLY 7 / 0;
+regression the known 4. Modeller sw v140.
