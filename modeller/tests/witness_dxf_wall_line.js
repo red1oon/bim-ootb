@@ -10,6 +10,8 @@
  *   L4 RIDES     — (the page, BROWSER=1) after Convert, a 0.5 m move of a wall hosting a door moves the door 0.5 m and the hole with it; one undo restores both.
  *   L5 KEPT      — the export: IfcRelFillsElement = IfcRelVoidsElement = the cuts (naming a fill) in the IFC; Viewer DB rel_fills_host = them. The reopen-for-editing is MEASURED (INFO): it is the Modeller open path's (SEAM-7 / SEAM-8).
  *   L6 UNCHANGED — (BASE) the shed (structure path) and the set's cuts / fills: counts equal to BASE.
+ *   L7 REOPEN    — (§D60) the Viewer DB opened from disk in a fresh profile is editable in its own instance; the L4 move moves the door there too.
+ *   L8 NO STALE  — (§D60) the same DB in a second tab of the convert's profile holds no op of the convert session; a one-discipline walk does not throw (was: GEOM_CUT parent 72 not found).
  * Input: the Duplex marked set with the 4 §D58 exclusions (built here from the Duplex Node model db, as W-EXCLUDE-STD does) + the OCI library (unreachable -> INCONCLUSIVE).
  * Usage: NODE_PATH=<dir with better-sqlite3> [BASE=<a modeller dir before D59>] [BROWSER=1] node modeller/tests/witness_dxf_wall_line.js /tmp/db2/DXARC.db
  */
@@ -105,8 +107,25 @@ const vol = b => (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
         const ifcTxt = fs.readFileSync(vifc, 'latin1'), nFillsIfc = (ifcTxt.match(/=\s*IFCRELFILLSELEMENT\(/g) || []).length, nVoidsIfc = (ifcTxt.match(/=\s*IFCRELVOIDSELEMENT\(/g) || []).length;
         check('L5', 'the export keeps the relations: IFC IfcRelFillsElement = IfcRelVoidsElement = the cuts naming a fill, and the Viewer DB rel_fills_host = them, host and filling set', nf === named.length && nfh === nf && nFillsIfc === named.length && nVoidsIfc === T.cuts.length,
           `ifc fills=${nFillsIfc} voids=${nVoidsIfc} cuts=${T.cuts.length} db rel_fills_host=${nf} (host+filling ${nfh}) named=${named.length}`);
-        say('INFO L5-reopen (measured, not judged: the Modeller open path, SEAM-7 / SEAM-8) the exported IFC reopened for editing: ' + JSON.stringify(B2));
+        say('INFO L5-reopen (measured, not judged: the .ifc open builds its db without fills, SEAM-8) the exported IFC reopened for editing: ' + JSON.stringify(B2));
+        // L7 (§D60) the Viewer DB reopened from disk in a fresh profile is editable and the move moves the door
+        const p3 = await open(br2); await p3.click('#b-open'); await p3.waitForSelector('#m-open-panel .mo-row[data-key="__local"]', { visible: true });
+        const [c3] = await Promise.all([p3.waitForFileChooser(), p3.click('#m-open-panel .mo-row[data-key="__local"]')]); await c3.accept([vdb]);
+        await p3.waitForFunction('!!window.__dwBuf && !!window.__arcSeedReady', { timeout: 240000 }).catch(() => {}); await p3.evaluate(async () => { await window.__arcSeedReady; }); await new Promise(r => setTimeout(r, 3000));
+        const st3 = await p3.evaluate(() => ({ key: window.Bonsai.oplog.modelKey || window.Bonsai.oplog._modelKey || null, ops: window.Bonsai.oplog.length, bridge: !!window.__arcFidByGuid, fills: window.swXEdges && window.swXEdges.fills ? window.swXEdges.fills.length : 0 }));
+        const B3 = await probe(p3, false);
+        check('L7', 'the Viewer DB reopened from disk (fresh profile) is editable in its own instance: op-log > 0, bridge, fills = rel_fills_host, and the move moves the door with its wall', st3.ops > 0 && st3.bridge && st3.fills === nf && !B3.err && B3.wallDx === 0.5 && B3.doorDx === 0.5 && !p3.errs.length,
+          `instance=${JSON.stringify(st3)} move=${JSON.stringify(B3)}`);
       } finally { await br2.close(); }
+      // L8 (§D60) the same DB in a SECOND tab of the convert's profile: its own instance, no op of the convert session, a one-discipline walk does not throw
+      const p4 = await open(br); await p4.click('#b-open'); await p4.waitForSelector('#m-open-panel .mo-row[data-key="__local"]', { visible: true });
+      const [c4] = await Promise.all([p4.waitForFileChooser(), p4.click('#m-open-panel .mo-row[data-key="__local"]')]); await c4.accept([vdb]);
+      await p4.waitForFunction('!!window.__dwBuf && !!window.__arcSeedReady', { timeout: 240000 }).catch(() => {}); await p4.evaluate(async () => { await window.__arcSeedReady; }); await new Promise(r => setTimeout(r, 3000));
+      const st4 = await p4.evaluate(async () => { const O = window.Bonsai.oplog, rows = O._geomOps(), ids = new Set(rows.map(r => r.id)), P = r => r.params || (typeof r.parameters === 'string' ? JSON.parse(r.parameters) : r.parameters) || {};
+        const orphanCuts = rows.filter(r => r.op_type === 'GEOM_CUT' && !ids.has(P(r).parent)).length, dxfOps = rows.filter(r => /^dxf-/.test(r.output_guid || r.outputGuid || '')).length;
+        let walkErr = null; try { if (typeof window.discWalk === 'function') await window.discWalk('PLB'); else walkErr = 'no window.discWalk'; } catch (e) { walkErr = String(e && e.message || e).slice(0, 160); }
+        return { ops: O.length, orphanCuts, dxfOps, walkErr }; });
+      check('L8', 'a second tab of the same profile: its own instance, no op of the convert session (no cut without its parent), a walk does not throw', st4.ops > 0 && st4.orphanCuts === 0 && st4.dxfOps === 0 && !st4.walkErr && !p4.errs.length, JSON.stringify(st4) + ' page_errors=' + p4.errs.length);
     }
   } finally { await br.close(); srv.close(); }
   say('SUMMARY fail=' + fail + ' judged=' + judged); process.exit(fail ? 1 : 0);
