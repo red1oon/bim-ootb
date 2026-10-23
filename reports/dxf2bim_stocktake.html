@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DXF2BIM Stock-take and HHS Round Trip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a drawing sheet. Title block at the top, then numbered sheets (the report's own R-sections), tier colours = the product's own evidence tiers. */
+:root {
+  --paper: #f3f5f6;
+  --sheet: #ffffff;
+  --ink: #18222b;
+  --muted: #56636e;
+  --rule: #d3dadf;
+  --line: #2b5d86;          /* drafting blue: headings, links */
+  --read: #2e7d4f;          /* READ tier */
+  --yellow: #c99a00;        /* DEFAULT tier (yellow) */
+  --yellow-bg: #fff5cc;
+  --orange: #c4600f;        /* INFERRED tier */
+  --orange-bg: #fde8d6;
+  --red: #b3261e;           /* ASK / defect */
+  --red-bg: #fbe3e1;
+  --chip-ink: #18222b;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f151a; --sheet: #161f26; --ink: #e3e9ed; --muted: #9aa8b3; --rule: #2a3742; --line: #7fb3dd;
+    --read: #6cc58f; --yellow: #f0c63a; --yellow-bg: #3a3214; --orange: #f39a55; --orange-bg: #3b2616; --red: #f08a82; --red-bg: #3d1c1a; --chip-ink: #e3e9ed;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f151a; --sheet: #161f26; --ink: #e3e9ed; --muted: #9aa8b3; --rule: #2a3742; --line: #7fb3dd;
+  --read: #6cc58f; --yellow: #f0c63a; --yellow-bg: #3a3214; --orange: #f39a55; --orange-bg: #3b2616; --red: #f08a82; --red-bg: #3d1c1a; --chip-ink: #e3e9ed;
+  color-scheme: dark;
+}
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+.wrap { max-width: 1060px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+a { color: var(--line); }
+a:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.1; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 700; letter-spacing: .01em; }
+h2 { font-size: 1.7rem; font-weight: 600; color: var(--line); }
+h3 { font-size: 1.25rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.mono, code { font-family: var(--mono); font-size: .86em; }
+code { background: color-mix(in srgb, var(--rule) 45%, transparent); padding: 0 .3em; border-radius: 3px; }
+
+/* title block */
+.titleblock { background: var(--sheet); border: 2px solid var(--ink); display: grid; grid-template-columns: 1fr auto; }
+.titleblock .main { padding: 20px 22px; display: grid; gap: 10px; min-width: 0; }
+.titleblock .lede { color: var(--muted); font-size: 1.05rem; }
+.titleblock dl { margin: 0; border-left: 2px solid var(--ink); display: grid; grid-template-columns: auto auto; align-content: start; }
+.titleblock dt, .titleblock dd { margin: 0; padding: 7px 12px; border-bottom: 1px solid var(--rule); font-size: .82rem; }
+.titleblock dt { font-family: var(--display); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.titleblock dd { font-family: var(--mono); }
+@media (max-width: 700px) { .titleblock { grid-template-columns: 1fr; } .titleblock dl { border-left: 0; border-top: 2px solid var(--ink); } }
+
+.sheet { background: var(--sheet); border: 1px solid var(--rule); padding: 22px; display: grid; gap: 16px; min-width: 0; }
+.sheet > header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--rule); padding-bottom: 10px; }
+.sheetno { font-family: var(--mono); font-size: .8rem; color: var(--muted); border: 1px solid var(--rule); padding: 1px 7px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.cols > * { min-width: 0; display: grid; gap: 8px; align-content: start; }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; max-width: 70ch; }
+
+.verdict { border-left: 4px solid var(--line); padding: 6px 0 6px 14px; font-size: 1.08rem; }
+.verdict strong { font-family: var(--display); font-size: 1.15rem; letter-spacing: .02em; }
+
+.tbl { overflow-x: auto; border: 1px solid var(--rule); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .07em; font-size: .8rem; color: var(--muted); background: color-mix(in srgb, var(--rule) 30%, var(--sheet)); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+
+.chip { display: inline-block; font-family: var(--mono); font-size: .74rem; padding: 1px 7px; border-radius: 3px; white-space: nowrap; color: var(--chip-ink); border: 1px solid; }
+.p0 { background: var(--red-bg); border-color: var(--red); }
+.p1 { background: var(--orange-bg); border-color: var(--orange); }
+.p2 { background: var(--yellow-bg); border-color: var(--yellow); }
+.p3 { background: transparent; border-color: var(--rule); color: var(--muted); }
+.t-read { border-color: var(--read); color: var(--read); }
+.t-yellow { background: var(--yellow-bg); border-color: var(--yellow); }
+.t-orange { background: var(--orange-bg); border-color: var(--orange); }
+.t-red { background: var(--red-bg); border-color: var(--red); }
+
+.ladder { display: grid; gap: 10px; }
+.rung { display: grid; grid-template-columns: 7.5rem 1fr; gap: 12px; align-items: start; }
+.rung .lbl { font-family: var(--display); font-size: 1.05rem; font-weight: 600; }
+.rung .lbl span { display: block; font-family: var(--mono); font-size: .72rem; color: var(--muted); font-weight: 400; }
+.rung p { font-size: .95rem; }
+@media (max-width: 520px) { .rung { grid-template-columns: 1fr; gap: 2px; } }
+
+.effect { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.effect div { border: 1px solid var(--rule); padding: 12px 14px; display: grid; gap: 2px; }
+.effect b { font-family: var(--mono); font-size: 1.5rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.effect span { color: var(--muted); font-size: .85rem; }
+
+.note { color: var(--muted); font-size: .88rem; }
+.sources { columns: 2 300px; column-gap: 28px; font-size: .86rem; }
+.sources li { break-inside: avoid; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<section class="titleblock" aria-label="Title block">
+  <div class="main">
+    <h1>DXF2BIM: where it stands, and what the HHS round trip taught</h1>
+    <p class="lede">A step back on market fit and on our 2D&nbsp;→&nbsp;3D format, then a measured round trip on the HHS office: model → clean 2D standard set → plain sheets back through the yellow stage. It covers which asks the machine settles, which it gets wrong, and what that does to 4D/5D.</p>
+  </div>
+  <dl>
+    <dt>Date</dt><dd>2026-10-23</dd>
+    <dt>Sets</dt><dd>HHS (3 storeys), Duplex</dd>
+    <dt>Code at</dt><dd>bim-ootb main</dd>
+    <dt>Spec</dt><dd>DXF2BIM_ARCHITECT_REVIEW.md</dd>
+    <dt>Status</dt><dd>merged #2302–#PRNUM</dd>
+  </dl>
+</section>
+
+<section class="sheet" aria-labelledby="sj">
+  <header><span class="sheetno">R6</span><h2 id="sj">Tuned on JKR, with best-effort defaults</h2></header>
+  <p>JKR is the original IFC4 model of a Malaysian government project. It tested things HHS didn't: Malay storey names, survey coordinates (about 271 km east), two storeys 0.2 m apart, and windows drawn as separate parts. Each default below is amber, states its basis, and can be turned off with one value in <code>element_defaults.json</code> or one marking.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Rule</th><th>What it does</th><th>Measured effect</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">D50</td><td>A storey with no floor of its own gets no plan; the next plan takes it</td><td>JKR 902 → 343 blocking; other buildings byte-identical</td><td><span class="chip t-read">merged #2304</span></td></tr>
+      <tr><td class="mono">D51</td><td>Best-effort slab over the area the walls bound</td><td>HHS no slab → 3,590 m² (model 3,975 m²); LTU gets one too</td><td><span class="chip t-read">merged #2305</span></td></tr>
+      <tr><td class="mono">D52</td><td>No wall is bridged over a gap longer than an opening</td><td>Clinic's 6 and LTU's 20 invented lintels (up to 101.85 m) removed and listed</td><td><span class="chip t-read">merged #2305</span></td></tr>
+      <tr><td class="mono">D53</td><td>Materials: the reference by class, or the firm's own catalogue by thickness</td><td>Single-material thicknesses match the model 100% (HHS, JKR, LTU); another firm's catalogue is 0% right</td><td><span class="chip t-read">merged #2305</span></td></tr>
+      <tr><td class="mono">D54</td><td>Walls no elevation shows run to the slab above, by default</td><td>HHS 251 asks → 1; Duplex 44 → 0; tops 0.05–0.30 m off where the model stops at a ceiling</td><td><span class="chip t-read">merged #PRNUM</span></td></tr>
+      <tr><td class="mono">D55</td><td>A window drawn as parts is one window, bounded by its jambs</td><td>JKR windows read 6 → 48 of 48; 343 → 191 blocking</td><td><span class="chip t-read">merged #PRNUM</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">JKR overall: the model's full markings read to 902 blocking items before and 191 after. 118 of those need the component library, which Node doesn't load; the engine gaps fell from 545 to 73. Next: tag windows by width (as doors already are), and the Level 1 wall tops, where the section doesn't state the slab underside.</p>
+</section>
+
+<section class="sheet" aria-labelledby="sb">
+  <header><span class="sheetno">R5</span><h2 id="sb">Built this session</h2></header>
+  <p>Each rule was specified first, with a witness that can fail, and measured on Duplex, HHS and Clinic (and LTU or the raw shed where they apply). Witnesses on drawings that don't use the changed conventions match <code>main</code>.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Finding</th><th>Rule</th><th>Measured effect</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">F1</td><td>No rectangle slab the walls don't draw (left out and listed)</td><td>HHS 10,473 m² of slab that isn't there → 0, plus 3 listed; Clinic 2, LTU 1; Duplex unchanged</td><td><span class="chip t-read">merged #2302</span></td></tr>
+      <tr><td class="mono">F2</td><td>Curtain band is an IfcCurtainWall, billed per m²</td><td>HHS 68 pieces (721 m³ priced as masonry) → curtain wall at the pack's 750/m²</td><td><span class="chip t-read">merged #2302</span></td></tr>
+      <tr><td class="mono">F3–F5, F9, F12</td><td>Read the titles and level texts</td><td>Roles HHS 1 → 9 of 9, Duplex 1 → 8 of 8; every level, roof and cut equals the model, 0 wrong</td><td><span class="chip t-read">merged #2303</span></td></tr>
+      <tr><td class="mono">F8</td><td>Tag doors by width, one row per schedule mark</td><td>Duplex: 14 doors in 4 clicks in the page; HHS 0 wrong; Clinic types share a width, so 234 doors are listed, not guessed</td><td><span class="chip t-read">merged #2303</span></td></tr>
+      <tr><td class="mono">F10</td><td>Two-character grid labels; the label on the line wins</td><td>HHS grids 123 → 160 of 160, Clinic 290 of 290, 0 wrong</td><td><span class="chip t-read">merged #2303</span></td></tr>
+      <tr><td class="mono">F7</td><td>Self-calibrated wall tops</td><td>Not built: measurement refutes it. Measured walls are exterior and reach the level; HHS interior walls stop 0.3 m lower. The editor already has a per-storey tick, which is just not offered.</td><td><span class="chip p3">refuted</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">HHS statements to the full answer key: 506 → 438. The 133 per-door tags become one click per schedule row. Still open: a door catalogue per firm (F6), slab edges drawn on the plans (F15), bridges longer than an opening (F14), and which repo holds the reader source (F13).</p>
+</section>
+
+<section class="sheet" aria-labelledby="s0">
+  <header><span class="sheetno">R0</span><h2 id="s0">Stock-take</h2></header>
+  <p class="verdict"><strong>Keep the format, prove it works on sets we didn't make.</strong> Small firms need it. The format is sound and differs from the AI plan readers. What is not yet shown is that it works on drawings we didn't write, and the effort is still too high.</p>
+  <div class="cols">
+    <div>
+      <h3>Will small firms look at it?</h3>
+      <p>The need is real. Small firms are still mostly in 2D: a 2025 survey of 77 Nigerian firms, and a UK survey where more than half of practices under £1M turnover had not used BIM Level 2. Bricsys (a vendor) says 2D arrives on 40–50% of its users' projects. Small firms buy a deliverable, not "BIM": quantities, an IFC for a submission, or a 3D model for a client.</p>
+      <p>What would stop them today: 47 actions on the shed, 151 on the Duplex (82% of them doors and windows), datums typed as CAD coordinates, and our own vocabulary (<code>@CUT</code>, <code>@HAXIS</code>).</p>
+    </div>
+    <div>
+      <h3>Is the 2D → 3D format a good baseline?</h3>
+      <ul>
+        <li>It reads several sheets together, so heights come from the elevations and sections. The AI readers ask for heights by hand.</li>
+        <li>Every value carries its tier: <span class="chip t-read">read</span> <span class="chip t-yellow">default</span> <span class="chip t-orange">inferred</span> <span class="chip t-red">ask</span>. A QS or a submission can see which numbers are guesses.</li>
+        <li>The tiers don't care where a suggestion comes from, so ML suggestions can be added later as yellow or orange without breaking the "never silent" rule.</li>
+        <li>The markings are saved inside the DXF, the result exports to IFC4, and the Viewer round trip is verified (512&nbsp;=&nbsp;512).</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Close contenders</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Tool</th><th>Approach</th><th>Known limits (as sourced)</th></tr></thead>
+    <tbody>
+      <tr><td>WiseBIM / Plans2BIM (ACCA)</td><td>AI on raster plans; €49/month</td><td>"AI does make mistakes"; needs cleaned plans at ~100 px/m; title blocks read as walls; heights by hand</td></tr>
+      <tr><td>BIMify</td><td>AI plus a human service, outputs Revit or IFC</td><td>Claims 100% (unverified); stairs, roofs and railings by hand, then QA</td></tr>
+      <tr><td>BricsCAD BIM V24</td><td>Tracing walls, slabs and columns</td><td>Semi-manual, desktop licence; closest to our shed users</td></tr>
+      <tr><td>CYPE "Automatic entry"</td><td>Walls and slabs from DXF/DWG</td><td>Paid module</td></tr>
+      <tr><td>BIMxAI, Empoli, Swapp, Higharc</td><td>AI plan-to-model</td><td>Self-reported 80% accuracy (BIMxAI)</td></tr>
+      <tr><td>Togal.AI, Glodon QuantifAI</td><td>AI quantity takeoff</td><td>The paid end of 2D → quantities; Togal about $1,999 per user per year</td></tr>
+      <tr><td>OSArch / Bonsai / FreeCAD</td><td>No documented DXF → IFC path found</td><td>An open gap in a community that values deterministic, open tools</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">I found almost no independent reviews and no Reddit threads. The accuracy figures are self-reported. The common view is that a human always checks and cleans up, which is what our tiers make visible.</p>
+</section>
+
+<section class="sheet" aria-labelledby="s1">
+  <header><span class="sheetno">R1–R2</span><h2 id="s1">The HHS round trip, step by step</h2></header>
+  <p>The HHS model (architecture plus structure columns, 133 doors, 112 walls, 33 curtain walls) is written as our standard 2D set with the Find-panel Room Injection rooms: 9 sheets, 673 markings and 73 room labels. The markings are then stripped and the plain sheets go back in. At each step we add only what a user would have to state, taking every value from the model's own markings (never invented), and measure what is left.</p>
+  <div class="ladder">
+    <div class="rung"><div class="lbl">Step 0<span>Accept all only</span></div><p>29 accepted. <b>8 of 9 sheets get no role</b>: our own titles end in <code>&nbsp;1:100</code> and the title rule wants them to end in PLAN, ELEVATION or SECTION. Duplex: 7 of 8.</p></div>
+    <div class="rung"><div class="lbl">Step 1<span>+ 8 roles, set name</span></div><p>172 accepted, 167 match the model: units, faces, axes, all 25 level datums, 123 of 160 grid lines. <b>5 wrong</b>: <code>@LEVEL=0</code> on all three plans (the model says 0.094 / 3.8 / 7.3), the section cut taken from grid bubble A, the name including the scale. The gate catches the duplicate level, so the wrong values are caught, not silent.</p></div>
+    <div class="rung"><div class="lbl">Step 2<span>+ 52 sheet facts</span></div><p>487 blocking, mostly walls no elevation shows (366). Two kinds of fact turn out unnecessary (names, defaults: same verdict without them); layer kinds and the minimum wall thickness are needed.</p></div>
+    <div class="rung"><div class="lbl">Step 3<span>+ the whole key, 506</span></div><p>166 blocking. All of them are known engine or library items (71 need the library in the browser, 45 are library-bound host cuts, 30 are doors hinged 43 mm off their partition). Duplex reaches 36, all library. <b>401 of the 506 statements are per-wall tops (268) and per-door tags (133).</b></p></div>
+  </div>
+</section>
+
+<section class="sheet" aria-labelledby="s2">
+  <header><span class="sheetno">R3</span><h2 id="s2">What the round trip teaches</h2></header>
+  <div class="cols">
+    <div>
+      <h3>The drawing teaches its own convention</h3>
+      <p>220 of the 268 HHS wall tops (82%) sit exactly at the next level minus 0.300 m, the slab the section shows. One relation, learned from the walls the drawing does measure, answers the walls it doesn't, as an <span class="chip t-orange">inferred</span> value with "k of n walls agree" as its evidence. On the Duplex the walls agree only 50%, so the rule must abstain there. That is the falsifier, and it fires.</p>
+    </div>
+    <div>
+      <h3>Decide per group, not per element</h3>
+      <p>Door leaf width predicts the door type perfectly on both sets (HHS: 10 widths, 10 types; Duplex: 4 and 4). Tagging by width turns 133 per-door tags into 10 schedule rows, entered once for the set rather than per sheet.</p>
+    </div>
+    <div>
+      <h3>Read what the sheets already say</h3>
+      <p>The plain sheets already carry <code>(FFL +3.800)</code>, <code>ROOF LEVEL (+10.900)</code>, <code>T/ROOF +10.695</code> and <code>AT X=-8682.15</code>. Read as <span class="chip t-read">read</span> values, they give every role, level, roof and cut: 19 asks on HHS go to 0, and the 4 wrong values disappear (Duplex: 17 asks, 2 wrong values).</p>
+    </div>
+    <div>
+      <h3>Room Injection and doors</h3>
+      <p>Measured: rooms do not settle door <i>types</i> (room pair alone 76%, no gain over width), and only 25 of 133 doors have a room on both sides. Rooms help elsewhere: from/to columns in a door schedule, floor finishes per room, and a sanity check on the slab.</p>
+    </div>
+  </div>
+  <h3>Effect on HHS user statements</h3>
+  <div class="effect">
+    <div><b>506</b><span>today, the whole answer key</span></div>
+    <div><b>≈ 102</b><span>with the three rules above (−80%)</span></div>
+    <div><b>≈ 55</b><span>with the grid gap (37 lines) fixed and door tags drawn on the sheets</span></div>
+  </div>
+  <p class="note">Statements, not timed actions. The page's pooled layer choice and set-wide set name are counted once. Left over: 48 wall tops, 10 schedule rows, 37 grid lines, 3 layer kinds, 3 minimum thicknesses, 1 set name.</p>
+</section>
+
+<section class="sheet" aria-labelledby="s3">
+  <header><span class="sheetno">R3</span><h2 id="s3">Materials, dimensions, and what 5D sees</h2></header>
+  <p>The source IFC carries its own layer sets and quantity sets, so it serves as the reference.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Item</th><th>Model (IFC)</th><th>Round trip</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Wall thickness</td><td>50 / 115 / 175 / 300 mm</td><td>exactly the same set</td><td><span class="chip t-read">correct</span></td></tr>
+      <tr><td>Wall material</td><td>112 of 112 walls have a layer set; thickness → material 93.8%</td><td>none on the standard path; the library's material is dropped at export</td><td><span class="chip p1">absent</span></td></tr>
+      <tr><td>Curtain walls</td><td>33 IfcCurtainWall</td><td>68 solid IfcWall pieces, 721.2 m³ (more than the 303.7 m³ of real walls)</td><td><span class="chip p0">wrong class</span></td></tr>
+      <tr><td>Floor slabs</td><td>3,975 m², 596 m³ (150 mm)</td><td>3 rectangles of 65.5 × 53.3 m: 10,473 m², 2,094 m³, no gap raised</td><td><span class="chip p0">2.6× area, silent</span></td></tr>
+      <tr><td>Rooms (Room Injection)</td><td>-</td><td>2,852 m² (72% of the slabs; corridors and walls not in rooms)</td><td><span class="chip p3">check only</span></td></tr>
+      <tr><td>Cost in the Viewer</td><td colspan="2">class rate × bounding-box volume (IfcWall 250/m³, IfcSlab 200/m³); the CLI's rate-pack bill never reaches the database; no 4D tasks</td><td><span class="chip p1">rests on the two errors above</span></td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Your last job is your library.</b> A type library learned on one building answers nothing on the other: no door width is shared within 1 mm, and the door heights are 2260 vs 2032 mm. What transfers is the rules. The common library is of conventions, and the type and material catalogue is per firm, learned by round-tripping that firm's own past models.</p>
+</section>
+
+<section class="sheet" aria-labelledby="s4">
+  <header><span class="sheetno">R3</span><h2 id="s4">Findings</h2></header>
+  <div class="tbl"><table>
+    <thead><tr><th>ID</th><th>Severity</th><th>Finding</th><th>Proposed fix</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">F1</td><td><span class="chip p0">P0</span></td><td>Slab is the rectangle inside the outermost walls, even on a non-rectangular plan</td><td>Slab from the enclosed polygon; meanwhile a gap when the rectangle exceeds the enclosure</td></tr>
+      <tr><td class="mono">F2</td><td><span class="chip p0">P0</span></td><td>Curtain-wall layer read as a solid IfcWall</td><td>Curtain layer → IfcCurtainWall, quantified by area</td></tr>
+      <tr><td class="mono">F3</td><td><span class="chip p1">P1</span></td><td>Our own standard titles get no role (trailing scale)</td><td>Strip <code>1:n</code> before the title rule</td></tr>
+      <tr><td class="mono">F4</td><td><span class="chip p1">P1</span></td><td>Level 0 written on every plan when the titles go unread</td><td>Read <code>(FFL n)</code> as a yellow level</td></tr>
+      <tr><td class="mono">F5</td><td><span class="chip p1">P1</span></td><td>Section cut taken from a grid bubble (2 of 2 sets)</td><td>Read <code>AT X=n</code> from the title first</td></tr>
+      <tr><td class="mono">F6</td><td><span class="chip p1">P1</span></td><td>No material on walls, slabs and roofs</td><td>Material by thickness from the firm's catalogue, yellow, with counts</td></tr>
+      <tr><td class="mono">F7</td><td><span class="chip p2">P2</span></td><td>268 per-wall top statements</td><td>Self-calibrated wall top that abstains below 80% agreement</td></tr>
+      <tr><td class="mono">F8</td><td><span class="chip p2">P2</span></td><td>133 per-door tags; one schedule per sheet</td><td>Tag by width; one schedule per set</td></tr>
+      <tr><td class="mono">F9</td><td><span class="chip p2">P2</span></td><td>Roof height typed 6 times although every sheet states it</td><td>Read <code>T/ROOF</code> and <code>ROOF LEVEL (+n)</code></td></tr>
+      <tr><td class="mono">F10</td><td><span class="chip p2">P2</span></td><td>37 grid lines not offered</td><td>Not investigated yet</td></tr>
+      <tr><td class="mono">F11</td><td><span class="chip p2">P2</span></td><td>The plain standard set draws no door tags and no schedule table, so the reading of them is never tested</td><td>Writer draws them as ordinary text; the reader reads them</td></tr>
+      <tr><td class="mono">F12</td><td><span class="chip p3">P3</span></td><td>Sheet name taken with its scale</td><td>Same fix as F3</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Proposed order:</b> F1 and F2 (silent 5D errors), then one title and level-text reader (F3, F4, F5, F9), then doors by width, then the self-calibrated wall tops, then F10, then the per-firm catalogue. Every proposal keeps the three outcomes: a correct value, a red ask naming the field, or left out and listed.</p>
+  <p class="note">Not done in this session: parts A.1–A.3 (drift, hard-code hunt, mutation matrix) and part B (walking the guide) of the architect review. The numbers come from Node runs of the product's own reader and CLI, not from the browser page.</p>
+</section>
+
+<section class="sheet" aria-labelledby="s5">
+  <header><span class="sheetno">Refs</span><h2 id="s5">Sources</h2></header>
+  <ul class="sources">
+    <li><a href="https://aecmag.com/bim/from-2d-to-3d-and-back/">AEC Magazine: From 2D to 3D and back</a></li>
+    <li><a href="https://www.graphisoft.com/en-us/partner-solutions/plans2bim/">Graphisoft: Plans2BIM</a> · <a href="https://plans2bim.com/">plans2bim.com</a></li>
+    <li><a href="https://bricsys.com/blog/bricscad-bim-v24-quickest-path-to-3d-from-2d">Bricsys: BricsCAD BIM V24, quickest path to 3D from 2D</a></li>
+    <li><a href="https://info.cype.com/en/new-feature/automatic-generation-of-3d-bim-models-from-dxf-dwg-drawings/">CYPE: automatic BIM models from DXF/DWG</a></li>
+    <li><a href="https://www.bimxai.io/">BIMxAI</a> · <a href="https://empoli.ai/">Empoli</a> · <a href="https://swapp.ai/products/modeling/">Swapp</a> · <a href="https://aecmag.com/bim/higharc-ai-3d-bim-model-from-2d-sketch/">Higharc</a></li>
+    <li><a href="https://community.osarch.org/discussion/1364/">OSArch: Geo2ifc</a> · <a href="https://community.safe.com/data-7/converting-dfx-to-ifc-38073">FME: DXF to IFC</a></li>
+    <li><a href="https://www.togal.ai/blog/construction-takeoffs-ai-speed-accuracy">Togal.AI</a> · <a href="https://us.fitgap.com/products/021642/togal-ai">Togal pricing listing</a></li>
+    <li><a href="https://www.thailand-business-news.com/pr-news/glodon-showcases-ai-powered-quantity-takeoff-at-paqs-congress-2026">Glodon QuantifAI at PAQS 2026</a></li>
+    <li><a href="https://www.open-access.bcu.ac.uk/16782/">BIM adoption in Nigerian firms (2025)</a></li>
+    <li><a href="https://www.bdonline.co.uk/skills-shortage-hits-bim-uptake-survey-finds/5090532.article">Building Design: BIM uptake survey</a></li>
+    <li><a href="https://odr.chalmers.se/handle/20.500.12380/256160">Chalmers: Small big BIM</a></li>
+  </ul>
+</section>
+
+</div>
+
+</body>
+</html>
