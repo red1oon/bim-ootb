@@ -427,3 +427,32 @@ blocking; without the library-bound codes 545 -> 73.** Modeller sw v130.
 checks the mesh's top area = the estimated area: fail=0 on HHS / LTU / Duplex). Scaling measured on main (Node = Chrome's V8; standard sets written from the model dbs): Duplex 1.0k entities / 0.2 MB:
 parse 47 ms, convert 47 ms; HHS 3.2k / 1.1 MB: 0.1 s / 0.4 s; JKR 4.4k / 1.3 MB: 0.1 / 0.2 s; Clinic 8.1k / 2.6 MB: 0.3 / 0.5 s; Hospital whole 18.8k / 7.3 MB (14 sheets): 0.7 / 0.9 s; LTU 26.7k /
 9.0 MB: 1.0 / 4.1 s (was 40 s). Not measured: the page's render of the converted model, a real phone. Modeller sw v131.
+
+## §D56 TAG WINDOWS BY WIDTH, ONE DECISION PER SCHEDULE ROW (architect review session 2, RESUME item 1; = §D47 for windows)
+**Witness claim first (W-WIN-TAG-WIDTH, `modeller/tests/witness_dxf_win_tag_width.js`).** V1 given the set's window schedule rows (`@SCHEDULE=<mark>,window,w,h[,sill]`, the model's, typed once), every
+untagged plan window whose DRAWN width (the long side of the reader's own window cluster, §D55) equals exactly ONE row's width (to `snap_tol`) is proposed that row's mark; judged against the model's
+own tag wherever the model's row width equals the drawn width (where it does not, the drawing does not show the model's window: counted, not judged): 0 wrong. V2 a window whose drawn width matches no
+row is listed with its width, never tagged. V3 falsifier: a second row with the width of the most used row refuses every window of that width, naming both rows. V4 the marked set with the model's
+window tags on the matched windows REPLACED by the rule's (at the window cluster's centre, as the editor writes them) raises no blocking code except `lod400_library_unreachable` (a window
+reaching the fill step) and no blocking total (first written "code for code"; LTU refuted that in the better direction, see the RESULT). V5 the page (BROWSER=1): the Modeller
+opened on the marked set with its window `@TAG` markings removed holds one window PR-TAG-WIDTH row per proposed mark; one click per row tags its windows; 0 page errors. V6 the door rule (§D47) is
+unchanged: `witness_dxf_tag_width.js` reads as before.
+**Measured first (2026-10-23 session 2, the marked standard sets with their window `@TAG` removed, drawn width vs the key's rows, `snap_tol`):** Clinic 1 row, 58 / 58 windows = the model's; Duplex 5 rows,
+10 = the model's, 4 refused (two 819 mm rows differ only by sill); LTU 82 rows, 72 proposed (55 judged right, 16 the model leaves untagged, 1 drawn 1960 mm inside the model's 4220 mm window: the
+drawing does not show it), 634 refused (rows share widths), 83 left; JKR 5 rows, 8 proposed (4 judged right), 8 refused (W5a and W5 both 1250 mm, they differ by height), 38 left (W1 is drawn 1290 mm, its frame
+posts set 20 mm into each jamb, over a 1250 mm row). **Narrowing a shared width by the elevation's height / sill was measured and changes nothing on any set** (JKR's elevations draw 2 window
+outlines for 54 plan windows: the writer draws an opening on an elevation only when its host is a flush face wall, finding F16; Duplex's two 819 mm rows sit on windows the elevations show stacked
+three high), so it is not built. The gap width (§D55b) is known only for windows that already have a height, so the drawn width is the one measure every plan window has.
+**Rule.** `Dxf2Suggest.tagByWidth` unchanged (items `{handle, width, tagged}`). `Dxf2BimImport.planDoors` also returns the plan's windows `{handle, bbox, width}` from the same plan run (one run, no
+second cache). The editor: a **window schedule** under the door schedule (mark, width, height, sill; typed rows are written as `@SCHEDULE=<mark>,window,w,h[,sill]` on every plan whose window tag
+names them, else on every plan, as the door rows); window PR-TAG-WIDTH rows sit with the door rows ("@TAG=window,<mark> on N windows"), tier inferred, one click tags the group (each window written at
+its cluster centre, refused when that centre lies in two window boxes), Accept all takes them like any other row.
+**Effect (measured above):** Clinic 58 window tags -> 1 row + 1 click; Duplex 10 -> 3 clicks; JKR 48 -> 4 by the rule, 44 still per window (the rows share a width or the drawn width is the frame's):
+the JKR ask is NOT settled by width; it needs either window heights on the elevations (F16) or a firm catalogue entry for the frame width.
+**D56 RESULT (2026-10-23, session 2): BUILT.** `Dxf2BimImport.planDoors` returns the window clusters too; the editor's "Doors and windows" section has a window schedule (mark, width, height,
+sill; typed rows written as `@SCHEDULE=<mark>,window,w,h[,sill]`) and window PR-TAG-WIDTH rows (one click per row, `writeWinTag` at the cluster centre). W-WIN-TAG-WIDTH fail=0: V1 Clinic 58 / 58
+judged right, Duplex 10 / 10, JKR 4 / 4 (8 proposed, 4 the model leaves untagged), LTU 55 / 55 (72 proposed; 16 untagged in the model; 1 drawn 1960 mm inside the model's 4220 mm window, not judged),
+HHS INCONCLUSIVE (no windows); V2 JKR 38 left at 1290 mm, LTU 83; V3 the twin row refuses every window of its width on all four; V4 Duplex / Clinic / JKR code for code; LTU 2382 -> 2380
+blocking (`label_conflict` 14 -> 13, `no_elevation_for_face` 27 -> 26, `opening_gap_unbounded` 544 -> 543, `no_host_cut` 713 -> 711, `lod400_library_unreachable` 677 -> 679: two more windows reach
+the fill step; cause per window not traced); V5 the page (Duplex, software GL): 3 rows, 3 clicks, 10 window tags = the Node rule's 10, 0 page errors; V6 the door witness unchanged (14 / 86 / 16
+proposed, 36 / 166 / 363 blocking). **JKR's 48 window tags: 4 settled, 44 remain** (the measured limit above). Modeller sw v132.

@@ -62,7 +62,7 @@
   var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
   var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
-    vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], dpick: null, dcache: {}, dmsg: null };
+    vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], wsched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
   function parseRaw(raw) {
@@ -346,6 +346,24 @@
   }
   function tagText(m) { var p = m.value.split(','); return p[0] === 'door' && !/^z=/.test(p[1] || '') ? p.slice(1).join(',') : null; }
   function doorTags(sh, D, d) { return sh.marks.filter(function (m) { return m.key === 'TAG' && tagText(m) !== null && inDoor(d, m.x * D.factor, m.y * D.factor, D.snap_tol); }); }
+  // §D56 windows: the plan run's window clusters (bbox, metres); a window tag binds by the cluster box (= Dxf2Types hits footprint)
+  function wtagText(m) { var p = m.value.split(','); return p[0] === 'window' && !/^z=/.test(p[1] || '') ? p.slice(1).join(',') : null; }
+  function inWin(w, x, y, tol) { var b = w.bbox; return x >= b[0] - tol && x <= b[2] + tol && y >= b[1] - tol && y <= b[3] + tol; }
+  function winTags(sh, D, w) { return sh.marks.filter(function (m) { return m.key === 'TAG' && wtagText(m) !== null && inWin(w, m.x * D.factor, m.y * D.factor, D.snap_tol); }); }
+  function wschedRows() {   // the window table: the user's rows, the plans' file rows, and marks window tags name with no size (red)
+    var rows = [], by = {}, U = planUnits();
+    S.wsched.forEach(function (r) { by[r.mark] = { mark: r.mark, w: r.w, h: r.h, sill: r.sill, src: 'user', n: 0, conflict: false }; rows.push(by[r.mark]); });
+    plans().forEach(function (sh) { sh.marks.forEach(function (m) {
+      if (m.key !== 'SCHEDULE' || m.source === 'user') return; var p = m.value.split(','); if (p[1] !== 'window' || (p.length !== 4 && p.length !== 5)) return;
+      var r = by[p[0]], sill = p.length === 5 ? p[4] : '';
+      if (!r) { r = by[p[0]] = { mark: p[0], w: p[2], h: p[3], sill: sill, src: m.by === 'model' ? 'model' : m.by === 'user' ? 'user' : 'file', fileBy: m.by, n: 0, conflict: false, file: true }; rows.push(r); }
+      else if (r.file && (String(r.w) !== p[2] || String(r.h) !== p[3] || String(r.sill) !== sill)) r.conflict = true;
+    }); });
+    plans().forEach(function (sh) { sh.marks.forEach(function (m) { var t = m.key === 'TAG' ? wtagText(m) : null; if (t === null) return;
+      if (!by[t]) { by[t] = { mark: t, w: '', h: '', sill: '', src: null, n: 0, missing: true }; rows.push(by[t]); } by[t].n++; }); });
+    rows.forEach(function (r) { r.units = U.units || ''; });
+    return rows.sort(function (a, b) { return a.mark < b.mark ? -1 : a.mark > b.mark ? 1 : 0; });
+  }
   function schedRows() {   // the table: the user's rows, the plans' file rows, and marks tags name with no size (red)
     var rows = [], by = {}, U = planUnits();
     S.sched.forEach(function (r) { by[r.mark] = { mark: r.mark, w: r.w, h: r.h, src: 'user', n: 0, conflict: false }; rows.push(by[r.mark]); });
@@ -362,10 +380,14 @@
   }
   function syncSchedule() {   // a user row is written on every plan whose @TAG names it; a row no tag names yet on every plan (nothing typed is lost)
     var P = plans(); if (!P.length) return;
-    P.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.source === 'user' && m.door); }); });
+    P.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.source === 'user' && (m.door || m.win)); }); });
     S.sched.forEach(function (r) {
       var on = P.filter(function (sh) { return sh.marks.some(function (m) { return m.key === 'TAG' && tagText(m) === r.mark; }); });
       (on.length ? on : P).forEach(function (sh) { sh.marks.push({ key: 'SCHEDULE', value: r.mark + ',door,' + r.w + ',' + r.h, x: 0, y: 0, source: 'user', door: true }); });
+    });
+    S.wsched.forEach(function (r) {   // §D56 the window rows, the same way
+      var on = P.filter(function (sh) { return sh.marks.some(function (m) { return m.key === 'TAG' && wtagText(m) === r.mark; }); });
+      (on.length ? on : P).forEach(function (sh) { sh.marks.push({ key: 'SCHEDULE', value: r.mark + ',window,' + r.w + ',' + r.h + (String(r.sill) !== '' ? ',' + r.sill : ''), x: 0, y: 0, source: 'user', win: true }); });
     });
   }
   function markOk(t) { return t !== '' && t.indexOf(',') < 0 && !/^z=/.test(t); }
@@ -383,6 +405,34 @@
     S.sched = S.sched.filter(function (q) { return q.mark !== mark; });
     S.sheets.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.value.split(',')[0] === mark && m.value.split(',')[1] === 'door'); }); });
     console.log(TAG + ' schedule row ' + mark + ' removed'); changed();
+  }
+  function setWRow(mark, w, h, sill, rule) {   // §D56 a window schedule row (sill optional: the reader's 5th value)
+    mark = String(mark).trim(); w = String(w).trim(); h = String(h).trim(); sill = String(sill === undefined || sill === null ? '' : sill).trim();
+    if (!markOk(mark)) { S.dmsg = 'A mark needs text, no comma.'; console.log(TAG + ' window schedule refused: mark "' + mark + '"'); render(); return false; }
+    if (!(Number(w) > 0) || !(Number(h) > 0) || (sill !== '' && !isFinite(Number(sill)))) { S.dmsg = 'Width and height are positive numbers (sill a number or empty) in the plans\' units.'; console.log(TAG + ' window schedule refused: ' + mark + ' w=' + w + ' h=' + h + ' sill=' + sill); render(); return false; }
+    S.dmsg = null;
+    S.sheets.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.source !== 'user' && m.value.split(',')[0] === mark && m.value.split(',')[1] === 'window'); }); });
+    var r = S.wsched.filter(function (q) { return q.mark === mark; })[0]; if (r) { r.w = w; r.h = h; r.sill = sill; } else S.wsched.push({ mark: mark, w: w, h: h, sill: sill });
+    console.log(TAG + ' schedule row ' + mark + ' window ' + w + ' x ' + h + (sill !== '' ? ' sill ' + sill : '') + (rule ? ' (confirmed proposal ' + rule + ')' : ''));
+    changed(); return true;
+  }
+  function removeWRow(mark) {
+    S.wsched = S.wsched.filter(function (q) { return q.mark !== mark; });
+    S.sheets.forEach(function (sh) { sh.marks = sh.marks.filter(function (m) { return !(m.key === 'SCHEDULE' && m.value.split(',')[0] === mark && m.value.split(',')[1] === 'window'); }); });
+    console.log(TAG + ' window schedule row ' + mark + ' removed'); changed();
+  }
+  function writeWinTag(sheetName, handle, mark, rule) {   // §D56 at the window cluster's centre; refused when that centre lies in two window boxes (the reader: label_ambiguous)
+    var sh = S.sheets.filter(function (q) { return q.name === sheetName; })[0], D = sh && doorsOf(sh), w = D && (D.windows || []).filter(function (q) { return q.handle === handle; })[0];
+    mark = String(mark || '').trim();
+    if (!w) { S.dmsg = 'That window is no longer on the plan.'; render(); return false; }
+    if (!markOk(mark)) { S.dmsg = 'A mark needs text, no comma.'; render(); return false; }
+    var c = [(w.bbox[0] + w.bbox[2]) / 2, (w.bbox[1] + w.bbox[3]) / 2], n = D.windows.filter(function (q) { return inWin(q, c[0], c[1], D.snap_tol); });
+    if (n.length !== 1) { S.dmsg = 'Not tagged: the window centre lies in ' + n.length + ' windows\' boxes.'; console.log(TAG + ' window tag refused window ' + handle + ' centre in ' + n.length + ' boxes'); render(); return false; }
+    var old = winTags(sh, D, w); sh.marks = sh.marks.filter(function (m) { return old.indexOf(m) < 0; });
+    var x = Number((c[0] / D.factor).toFixed(3)), y = Number((c[1] / D.factor).toFixed(3));
+    console.log(TAG + ' window tag sheet=' + sheetName + ' window=' + handle + ' mark=' + mark + ' at ' + x + ',' + y + (old.length ? ' (replaces ' + old.map(markText).join(' | ') + ')' : '') + (rule ? ' (confirmed proposal ' + rule + ')' : ''));
+    addMulti(sh, 'TAG', 'window,' + mark, x, y, rule);
+    return true;
   }
   function writeTag(sheetName, handle, mark, rule) {
     var sh = S.sheets.filter(function (q) { return q.name === sheetName; })[0], D = sh && doorsOf(sh), d = D && D.doors.filter(function (q) { return q.handle === handle; })[0];
@@ -412,7 +462,8 @@
   var ROW_RE = /^\s*([A-Za-z0-9][A-Za-z0-9._\/-]*)\s*(?:\^I|\t|\s)\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*("|mm)?\s*(.*)$/;
   function cleanText(t) { return String(t || '').replace(/\{\\[^;]*;/g, '').replace(/[{}]/g, '').replace(/\\[A-Za-z]\d*;?/g, function (m) { return m === '\\P' ? m : ''; }); }
   function doorProposals() {   // §L4.3 PR-SCHEDULE / PR-TAG: evidence only (the drawing's own text), never a marking until ticked
-    var out = [], refused = [], have = {}, wgrp = {}, wleft = 0; schedRows().forEach(function (r) { if (!r.missing) have[r.mark] = r; });
+    var out = [], refused = [], have = {}, wgrp = {}, wleft = 0, whave = {}, wwgrp = {}, wwleft = 0; schedRows().forEach(function (r) { if (!r.missing) have[r.mark] = r; });
+    wschedRows().forEach(function (r) { if (!r.missing) whave[r.mark] = r; });
     plans().forEach(function (sh) {
       var u = get1(sh, 'UNITS'), T = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; });
       var lines = []; T.forEach(function (e) { cleanText(e.text).split('\\P').forEach(function (l) { lines.push({ t: l, h: e.handle }); }); });
@@ -429,7 +480,16 @@
           out.push({ rule: 'PR-SCHEDULE', mark: m[1], w: m[2], h: m[4], sheet: sh.name, why: 'schedule text ' + l.h + ' on ' + sh.name.replace(/\.dxf$/i, '') });
         });
       }
-      var D = doorsOf(sh); if (!D || !D.doors.length) return;
+      var D = doorsOf(sh); if (!D) return;
+      // §D56 PR-TAG-WIDTH for windows: the untagged window clusters whose drawn width equals one window row's width
+      var wrowsW = Object.keys(whave).map(function (k) { return { mark: k, w: whave[k].w }; }).filter(function (r) { return Number(r.w) > 0; });
+      if (wrowsW.length && (D.windows || []).length) {
+        var wb = window.Dxf2Suggest.tagByWidth(D.windows.map(function (w) { return { handle: w.handle, width: w.width, tagged: winTags(sh, D, w).length > 0 }; }), wrowsW, { factor: D.factor, tol: D.snap_tol });
+        wb.groups.forEach(function (g) { var G = wwgrp[g.mark] = wwgrp[g.mark] || { mark: g.mark, w: g.w, wins: [] }; g.doors.forEach(function (h) { G.wins.push({ sheet: sh.name, handle: h }); }); });
+        wb.refused.forEach(function (r) { refused.push({ rule: 'PR-TAG-WIDTH', why: 'window ' + r.handle + ' on ' + sh.name.replace(/\.dxf$/i, '') + ': drawn ' + r.width + ' matches ' + r.marks.length + ' window rows (' + r.marks.join(', ') + ')' }); });
+        wwleft += wb.left.length;
+      }
+      if (!D.doors.length) return;
       var byText = {};
       sh.dxf.entities.filter(function (e) { return e.type === 'TEXT' && e.layer !== LAYER && have[String(e.text || '').trim()]; }).forEach(function (e) {
         var mk = String(e.text).trim(), p = txtPos(e), x = p[0] * D.factor, y = p[1] * D.factor, hit = D.doors.filter(function (d) { return inDoor(d, x, y, D.snap_tol); });
@@ -449,6 +509,9 @@
     Object.keys(wgrp).sort().forEach(function (k) { var G = wgrp[k];
       out.push({ rule: 'PR-TAG-WIDTH', mark: G.mark, doors: G.doors, w: G.w, sheet: G.doors[0].sheet, why: G.doors.length + ' untagged door(s) with leaf width ' + G.w + ' = schedule row ' + G.mark + ' (' + Array.from(new Set(G.doors.map(function (d) { return d.sheet.replace(/\.dxf$/i, ''); }))).join(', ') + ')' }); });
     if (wleft) refused.push({ rule: 'PR-TAG-WIDTH', why: wleft + ' untagged door(s) match no schedule row by width: tag them by hand' });
+    Object.keys(wwgrp).sort().forEach(function (k) { var G = wwgrp[k];
+      out.push({ rule: 'PR-TAG-WIDTH', cls: 'window', mark: G.mark, wins: G.wins, w: G.w, sheet: G.wins[0].sheet, why: G.wins.length + ' untagged window(s) drawn ' + G.w + ' wide = window row ' + G.mark + ' (' + Array.from(new Set(G.wins.map(function (d) { return d.sheet.replace(/\.dxf$/i, ''); }))).join(', ') + ')' }); });
+    if (wwleft) refused.push({ rule: 'PR-TAG-WIDTH', why: wwleft + ' untagged window(s) match no window row by drawn width: tag them by hand' });
     return { list: out, refused: refused };
   }
 
@@ -507,7 +570,7 @@
       '.dm-tt{font-size:9.5px;border:1px solid #2c303a;border-radius:6px;padding:1px 6px;color:#9aa3b2}',
       '.dm-shape{display:grid;grid-template-columns:1fr 46px 46px;gap:2px 6px;font-size:11px;margin:2px 0 6px}.dm-shape .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-shape .b{color:#f2a3a3;text-align:right;font-family:ui-monospace,monospace}.dm-shape .a{color:#f0c674;text-align:right;font-family:ui-monospace,monospace}.dm-shape .z{color:#5b6473}',
       '.dm-tabs{display:flex;gap:5px;margin:4px 0}',
-      '.dm-sched{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px 30px 44px 22px;gap:3px 5px;align-items:center;font-size:10.5px;margin:2px 0 6px}.dm-sched .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-sched .mk{font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-sched .mk.bad{color:#f2a3a3}.dm-sched .n{color:#9aa3b2;text-align:right;font-family:ui-monospace,monospace}.dm-sched .dm-in.n{width:auto}.dm-sched .dm-src{width:auto}',
+      '.dm-sched{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px 30px 44px 22px;gap:3px 5px;align-items:center;font-size:10.5px;margin:2px 0 6px}.dm-sched .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-sched .mk{font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-sched .mk.bad{color:#f2a3a3}.dm-sched .n{color:#9aa3b2;text-align:right;font-family:ui-monospace,monospace}.dm-sched .dm-in.n{width:auto}.dm-sched .dm-src{width:auto}.dm-sched.w7{grid-template-columns:minmax(0,1fr) 50px 50px 50px 30px 44px 22px}',
       '.dm-it{display:flex;gap:7px;align-items:flex-start;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:10.5px;line-height:1.35}.dm-it:hover{background:#20232b}.dm-it.nopos{cursor:default}',
       '.dm-it .c{font-family:ui-monospace,monospace;color:#f2a3a3;flex:0 0 auto;width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dm-it.adv .c{color:#f0c674}.dm-it .m{color:#9aa3b2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}',
       '#dm-panel .ip-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 10px;border-top:1px solid #23262e}#dm-note{width:100%;font-size:10.5px;color:#7f8aa0;line-height:1.4}',
@@ -660,7 +723,7 @@
   function renderDoors() {
     var v = S.verdict, isDoorItem = function (x) { return x.shape === 'openings' && (x.code === 'GAP:no_elevation_height' || x.code === 'GAP:no_host_cut') && x.sheet && x.handles; };
     var nB = v ? v.blocking.filter(isDoorItem).length : 0, rows = schedRows();
-    var head = secHead('doors', IC.door, 'Doors', nB ? nB + ' blocking' : rows.length ? rows.length + ' marks' : '', nB);
+    var head = secHead('doors', IC.door, 'Doors and windows', nB ? nB + ' blocking' : rows.length ? rows.length + ' marks' : '', nB);
     if (!S.sec.doors) return head;
     var U = planUnits(), h = '', DP = doorProposals();
     var blk = {}; if (v) v.blocking.filter(isDoorItem).forEach(function (x) { x.handles.forEach(function (hd) { blk[x.sheet + '|' + hd] = (blk[x.sheet + '|' + hd] || []).concat([x.code.replace(/^GAP:/, '')]); }); });
@@ -677,9 +740,20 @@
     });
     h += '<input class="dm-in" id="dm-ds-mark" placeholder="mark" spellcheck="false"' + (U.units ? '' : ' disabled') + '><input class="dm-in n" id="dm-ds-w" placeholder="width" inputmode="decimal"' + (U.units ? '' : ' disabled') + '><input class="dm-in n" id="dm-ds-h" placeholder="height" inputmode="decimal"' + (U.units ? '' : ' disabled') + '>' +
       '<span></span><span></span><button class="dm-ib" title="Add the row" data-act="dsadd"' + (U.units ? '' : ' disabled') + '>' + IC.plus + '</button></div>';
+    var WR = wschedRows(), dis = U.units ? '' : ' disabled';   // §D56 the window schedule (mark, width, height, sill): typed once, the windows are tagged by width below
+    h += '<div class="dm-sub">Window schedule' + (U.units ? ' · sizes in ' + esc(U.units) : '') + '</div><div class="dm-sched w7"><span class="h">mark</span><span class="h">width</span><span class="h">height</span><span class="h">sill</span><span class="h">win</span><span class="h"></span><span class="h"></span>';
+    WR.forEach(function (r) {
+      var bad = r.missing || r.conflict;
+      h += '<span class="mk' + (bad ? ' bad' : '') + '" title="' + esc(r.missing ? 'a window tag names this mark: enter its width and height' : r.conflict ? 'two sizes on the plans' : r.mark) + '">' + esc(r.mark) + '</span>' +
+        ['w', 'h', 's'].map(function (d) { var v = d === 's' ? r.sill : r[d]; return '<input class="dm-in n' + (r.missing && d !== 's' && !v ? ' need' : '') + '" data-act="wsz" data-mark="' + esc(r.mark) + '" data-dim="' + d + '" value="' + esc(v) + '" inputmode="decimal"' + dis + '>'; }).join('') +
+        '<span class="n">' + r.n + '</span>' + (r.src ? srcLabel({ source: r.src === 'user' ? 'user' : 'file', by: r.fileBy }) : '<span class="dm-src" style="color:#f2a3a3">no size</span>') +
+        '<button class="dm-ib" title="Remove this row (its @SCHEDULE markings)" data-act="wrm" data-mark="' + esc(r.mark) + '">' + IC.trash + '</button>';
+    });
+    h += '<input class="dm-in" id="dm-ws-mark" placeholder="mark" spellcheck="false"' + dis + '>' + ['w|width', 'h|height', 's|sill'].map(function (q) { q = q.split('|'); return '<input class="dm-in n" id="dm-ws-' + q[0] + '" placeholder="' + q[1] + '" inputmode="decimal"' + dis + '>'; }).join('') +
+      '<span></span><span></span><button class="dm-ib" title="Add the window row" data-act="wsadd"' + dis + '>' + IC.plus + '</button></div>';
     if (DP.list.length) {
       h += '<div class="dm-sub">' + IC.bulb + 'Suggestions from the drawing text (not markings until ticked)</div>';
-      DP.list.forEach(function (p, i) { h += '<div class="dm-pr" data-dprop="' + esc(p.rule + ':' + p.mark + (p.handle ? '@' + p.handle : '')) + '"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=door,' + p.mark + '  on ' + p.doors.length + ' doors' : '@TAG=door,' + p.mark + '  door ' + p.handle) + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
+      DP.list.forEach(function (p, i) { h += '<div class="dm-pr" data-dprop="' + esc(p.rule + ':' + p.mark + (p.handle ? '@' + p.handle : '')) + '"><span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? (p.cls === 'window' ? '@TAG=window,' + p.mark + '  on ' + p.wins.length + ' windows' : '@TAG=door,' + p.mark + '  on ' + p.doors.length + ' doors') : '@TAG=door,' + p.mark + '  door ' + p.handle) + '</b><span class="w">' + esc(p.rule + ': ' + p.why) + '</span></span>' +
         '<button class="dm-ib" title="Confirm this suggestion" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>'; });
     }
     DP.refused.slice(0, 8).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
@@ -736,8 +810,8 @@
       items.push(prOpen(si, p) + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
         '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p)); }); });
     DP.list.forEach(function (p, i) { var t = tierOf(p.rule) || 'inferred', si = S.sheets.map(function (q) { return q.name; }).indexOf(p.sheet); n[t]++; src.door++;   // §L4.3 the door rules: the drawing's text
-      var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : p.doors ? '@' + p.doors.length + 'doors' : ''), x: 0, y: 0, why: p.why };
-      items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=' + p.mark + ' on ' + p.doors.length + ' doors' : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
+      var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : p.doors ? '@' + p.doors.length + 'doors' : p.wins ? '@' + p.wins.length + 'windows' : ''), x: 0, y: 0, why: p.why };
+      items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=' + p.mark + ' on ' + (p.cls === 'window' ? p.wins.length + ' windows' : p.doors.length + ' doors') : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
       '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>' + (si >= 0 ? prNote(si, row) : '')); });
     defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { var t = TIER['default']; n[t]++; src.def++;   // an applied default: a convention (no sheet entity to fly to)
       items.push('<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="default"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' + tierMark(t) +
@@ -861,7 +935,7 @@
     var body = document.getElementById('dm-body'), top = body ? body.scrollTop : 0, ae = document.activeElement, fid = ae && ae.id;
     // keep what the user is typing: unsent "Add" rows and the focused field survive a re-render (a verdict landing mid-typing)
     if (S.panel) S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); S.draft[k] = el.value; });
-    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el) S.draft[id] = el.value; });
+    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h', 'dm-ws-mark', 'dm-ws-w', 'dm-ws-h', 'dm-ws-s'].forEach(function (id) { var el = document.getElementById(id); if (el) S.draft[id] = el.value; });
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); }); S.evRows = {};   // §D36 the rows register themselves as they are drawn
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
@@ -875,7 +949,7 @@
     else S.pvTierSig = null;
     var nb = document.getElementById('dm-body'); nb.scrollTop = top;
     S.panel.querySelectorAll('[data-add-val],[data-add-pos],[data-add-key]').forEach(function (el) { var k = el.getAttribute('data-add-val') ? 'v' + el.getAttribute('data-add-val') : el.getAttribute('data-add-pos') ? 'p' + el.getAttribute('data-add-pos') : 'k' + el.getAttribute('data-add-key'); if (S.draft[k] !== undefined) el.value = S.draft[k]; });
-    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h'].forEach(function (id) { var el = document.getElementById(id); if (el && S.draft[id] !== undefined) el.value = S.draft[id]; });
+    ['dm-ds-mark', 'dm-ds-w', 'dm-ds-h', 'dm-ws-mark', 'dm-ws-w', 'dm-ws-h', 'dm-ws-s'].forEach(function (id) { var el = document.getElementById(id); if (el && S.draft[id] !== undefined) el.value = S.draft[id]; });
     if (fid) { var f = document.getElementById(fid); if (f) { f.focus(); if (focusVal && focusVal.sel === '#' + fid && f.value !== focusVal.v) { f.value = focusVal.v; try { f.setSelectionRange(focusVal.s, focusVal.s); } catch (e) { /* select */ } } } }
     if (S.focus) focusTargets(S.focus).forEach(function (el) { el.classList.add('dm-focus'); });
     wire();
@@ -954,8 +1028,16 @@
       else if (a === 'dsz') { el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; el.onchange = function () { var mk = el.getAttribute('data-mark'), r = schedRows().filter(function (q) { return q.mark === mk; })[0] || {};
         var w = el.getAttribute('data-dim') === 'w' ? el.value : r.w, hh = el.getAttribute('data-dim') === 'h' ? el.value : r.h; if (String(w).trim() !== '' && String(hh).trim() !== '') setRow(mk, w, hh); }; }
       else if (a === 'drm') el.onclick = function () { removeRow(el.getAttribute('data-mark')); };
+      else if (a === 'wsadd') el.onclick = function () { var ids = ['dm-ws-mark', 'dm-ws-w', 'dm-ws-h', 'dm-ws-s'], v = ids.map(function (id) { return document.getElementById(id).value; });   // §D56
+        ids.forEach(function (id) { document.getElementById(id).value = ''; delete S.draft[id]; });
+        if (!setWRow(v[0], v[1], v[2], v[3])) ids.forEach(function (id, i) { var e = document.getElementById(id); if (e) e.value = v[i]; }); };
+      else if (a === 'wsz') { el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; el.onchange = function () { var mk = el.getAttribute('data-mark'), d = el.getAttribute('data-dim'), r = wschedRows().filter(function (q) { return q.mark === mk; })[0] || {};
+        var w = d === 'w' ? el.value : r.w, hh = d === 'h' ? el.value : r.h, sl = d === 's' ? el.value : r.sill; if (String(w).trim() !== '' && String(hh).trim() !== '') setWRow(mk, w, hh, sl); }; }
+      else if (a === 'wrm') el.onclick = function () { removeWRow(el.getAttribute('data-mark')); };
       else if (a === 'dconfirm') el.onclick = function () { var p = S.dprops[Number(el.getAttribute('data-i'))]; if (!p) return;
         if (p.rule === 'PR-SCHEDULE') setRow(p.mark, p.w, p.h, p.rule);
+        else if (p.rule === 'PR-TAG-WIDTH' && p.cls === 'window') { var wk = 0; S.batch = true; try { p.wins.forEach(function (d) { if (writeWinTag(d.sheet, d.handle, p.mark, p.rule)) wk++; }); } finally { S.batch = false; }   // §D56
+          console.log(TAG + ' tag by width (windows) mark=' + p.mark + ' windows=' + p.wins.length + ' tagged=' + wk + ' refused=' + (p.wins.length - wk)); changed(); }
         else if (p.rule === 'PR-TAG-WIDTH') { var ok = 0; S.batch = true; try { p.doors.forEach(function (d) { if (writeTag(d.sheet, d.handle, p.mark, p.rule)) ok++; }); } finally { S.batch = false; }   // §D47 one click per group
           console.log(TAG + ' tag by width mark=' + p.mark + ' doors=' + p.doors.length + ' tagged=' + ok + ' refused=' + (p.doors.length - ok)); changed(); }
         else writeTag(p.sheet, p.handle, p.mark, p.rule); };
@@ -1095,7 +1177,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null; S.evRows = {}; S.ev = null; S.evNote = null; S.tierSig = null; S.pvTierSig = null;
+    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.wsched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null; S.evRows = {}; S.ev = null; S.evNote = null; S.tierSig = null; S.pvTierSig = null;
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
