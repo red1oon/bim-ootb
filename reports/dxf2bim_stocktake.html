@@ -120,7 +120,7 @@ tr:last-child td { border-bottom: 0; }
     <dt>Sets</dt><dd>HHS (3 storeys), Duplex</dd>
     <dt>Code at</dt><dd>bim-ootb main</dd>
     <dt>Spec</dt><dd>DXF2BIM_ARCHITECT_REVIEW.md</dd>
-    <dt>Status</dt><dd>merged #2302–#PRNUM</dd>
+    <dt>Status</dt><dd>merged #2302–#2306</dd>
   </dl>
 </section>
 
@@ -134,8 +134,8 @@ tr:last-child td { border-bottom: 0; }
       <tr><td class="mono">D51</td><td>Best-effort slab over the area the walls bound</td><td>HHS no slab → 3,590 m² (model 3,975 m²); LTU gets one too</td><td><span class="chip t-read">merged #2305</span></td></tr>
       <tr><td class="mono">D52</td><td>No wall is bridged over a gap longer than an opening</td><td>Clinic's 6 and LTU's 20 invented lintels (up to 101.85 m) removed and listed</td><td><span class="chip t-read">merged #2305</span></td></tr>
       <tr><td class="mono">D53</td><td>Materials: the reference by class, or the firm's own catalogue by thickness</td><td>Single-material thicknesses match the model 100% (HHS, JKR, LTU); another firm's catalogue is 0% right</td><td><span class="chip t-read">merged #2305</span></td></tr>
-      <tr><td class="mono">D54</td><td>Walls no elevation shows run to the slab above, by default</td><td>HHS 251 asks → 1; Duplex 44 → 0; tops 0.05–0.30 m off where the model stops at a ceiling</td><td><span class="chip t-read">merged #PRNUM</span></td></tr>
-      <tr><td class="mono">D55</td><td>A window drawn as parts is one window, bounded by its jambs</td><td>JKR windows read 6 → 48 of 48; 343 → 191 blocking</td><td><span class="chip t-read">merged #PRNUM</span></td></tr>
+      <tr><td class="mono">D54</td><td>Walls no elevation shows run to the slab above, by default</td><td>HHS 251 asks → 1; Duplex 44 → 0; tops 0.05–0.30 m off where the model stops at a ceiling</td><td><span class="chip t-read">merged #2306</span></td></tr>
+      <tr><td class="mono">D55</td><td>A window drawn as parts is one window, bounded by its jambs</td><td>JKR windows read 6 → 48 of 48; 343 → 191 blocking</td><td><span class="chip t-read">merged #2306</span></td></tr>
     </tbody>
   </table></div>
   <p class="note">JKR overall: the model's full markings read to 902 blocking items before and 191 after. 118 of those need the component library, which Node doesn't load; the engine gaps fell from 545 to 73. Next: tag windows by width (as doors already are), and the Level 1 wall tops, where the section doesn't state the slab underside.</p>
