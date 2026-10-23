@@ -738,3 +738,23 @@ takes them); Clinic 18 / 58 (18) / 0 (was 40 from elevations + 18 from the sched
 gives BASE's ops by source on all five. R6 LTU writer + convert 28.1 s BASE -> 28.7 s. Regression (`run_all_witnesses.js`, with D69 + D71 merged in): PASS 41 / ENV 39 / FAIL 4 (the known 4: struct, ticks,
 guardrails G3 209, ifc_valid); the runner's ENV-set line also lists 7 older db-argument witnesses missing from `witness_status_baseline.json` (stale since D54, not this change). Doors still use the flush rule (open).
 Modeller sw v146.
+## §D69 AN .IFC OPENED IN THE MODELLER (OR IMPORTED IN THE VIEWER) KEEPS ITS FILL RELATIONS (architect review SEAM-8, proposal P-S8; session 3, RESUME item 4)
+**Witness claim first (W-IFC-OPEN-FILLS, `modeller/tests/witness_ifc_open_fills.js <ifc...>`, Node: the Viewer's own `import_worker.js` run in a vm with web-ifc, then `buildImportDBs`).** I1 the db an .ifc open
+builds has a `rel_fills_host` table in the extractor core's schema (`opening_guid` PK, `host_guid`, `filling_guid`, `host_class`, `filling_class`, `provenance`) and its rows = the shared extractor core's
+(`ifc_extract_core.js`, the Viewer-DB export path) on the same file: the same (opening, host, filling) triples, 0 missing, 0 extra (Duplex ARC: 38 `IfcRelFillsElement` in the file). I2 after the Modeller's
+ARC filter (`_filterArc`) every row's host is an ARC element of the db (a row whose host was dropped is dropped, a filling outside ARC is kept as NULL the way a void-only opening is). I3 falsifier: the
+same IFC with its `IFCRELFILLSELEMENT` lines removed gives rows with `filling_guid` NULL only (void-only, as the core gives), and with `IFCRELVOIDSELEMENT` removed too, 0 rows. I4 unchanged: every other
+table of the import db byte-identical to BASE (same rows), the Viewer import gains one table only.
+**Measured first (2026-10-23 session 3):** `import_worker.js` already reads `IfcRelVoidsElement` (host -> opening) and `IfcRelFillsElement` (opening -> filling) into `bomTree`, then resolves both ends
+through the elements it keeps; `IfcOpeningElement` is not a kept element, so the VOIDS / FILLS pairs resolve to nothing, and `import_db_builder.js` writes no `rel_fills_host` (SEAM-8: the reopened IFC has
+0 fills edges, so no door rides its wall, for ANY opened IFC). The resident dbs (bim-compiler extractor) and the Modeller's Viewer-DB export (`ifc_extract_core.js`) build the table by joining the two
+relations on the opening (`hostOf` x `fillOf`).
+**Rule.** `import_worker.js` joins VOIDS and FILLS on the opening's expressID as the core does (opening guid from its own line), ships `relFills` with the parse; `import_db_builder.js` writes
+`rel_fills_host` (the core's DDL, provenance `ifc:recovered`) when the parse carries it; `_filterArc` keeps the rows whose host is kept (a filling not kept -> NULL). Cache keys: the Modeller's
+`import_worker.js?v=` / `import_db_builder.js?v=` bumped, Viewer + Modeller sw bumped.
+**D69 RESULT (2026-10-23, session 3): BUILT.** `import_worker.js` joins VOIDS x FILLS on the opening (`§REL_FILLS_HOST rows=.. filled=.. void_only=..`), `import_db_builder.js` writes `rel_fills_host` in the core's DDL
+(`§REL_FILLS_HOST_TABLE`), `_filterArc` keeps the rows of kept hosts. W-IFC-OPEN-FILLS fail=0 (the Viewer's worker run in a Node vm with the Node build of its web-ifc 0.0.77, no browser): I1 the import db =
+the extractor core's rows exactly, schema equal: Duplex ARC 50 (38 filled), SampleHouse 7 (7), Clinic ARC 403 (302) (were: no table); I2 after the ARC filter Duplex 48 rows (36 filled), SampleHouse 7, Clinic 403,
+every host in the db; I3 fills removed -> void-only rows only (50 / 7 / 403, filled 0), voids removed too -> 0; I4 every other table has BASE's rows, the one table added. Regression (`run_all_witnesses.js` with D68 + D71): PASS 41 / FAIL 4 (the known 4). Measured, not judged: the page-level
+ride on a reopened IFC (the §D59 L4 move) is not re-run in this session (a page run; the machine was kept quiet for a film take); the cross-edge reader (`cross_edges.js:347`) reads exactly this table. Cache keys `import_db_builder.js?v=9`,
+`import_worker.js?v=16`. Modeller sw v147, Viewer sw v1655.

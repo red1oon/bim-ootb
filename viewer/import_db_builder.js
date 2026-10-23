@@ -133,6 +133,15 @@ function buildImportDBs(SQL, data) {
     console.log('[S267] §BOM_TREE_TABLE rows=' + data.bomTree.length);
   }
 
+  // §D69 (SEAM-8): rel_fills_host in the shared extractor core's schema (ifc_extract_core.js), so an opened IFC's doors and windows ride their walls
+  if (data.relFills) {
+    db.run("CREATE TABLE IF NOT EXISTS rel_fills_host (opening_guid TEXT PRIMARY KEY, host_guid TEXT, filling_guid TEXT, host_class TEXT, filling_class TEXT, provenance TEXT DEFAULT 'ifc:recovered')");
+    var stmtRF = db.prepare("INSERT OR IGNORE INTO rel_fills_host VALUES (?,?,?,?,?,'ifc:recovered')");
+    for (var rfi = 0; rfi < data.relFills.length; rfi++) { var rf = data.relFills[rfi]; stmtRF.run([rf.opening, rf.host, rf.filling, rf.hostClass, rf.fillingClass]); }
+    stmtRF.free();
+    console.log('§REL_FILLS_HOST_TABLE rows=' + data.relFills.length + ' (D69)');
+  }
+
   // 4D_CAPTURE_AND_FALLBACK.md T1/T1b — native IFC 4D schedule (W-CAPTURE / W-VOCAB).
   // Widened DDL (§5.2): CPM dates, float, is_critical, WBS (wbs_parent+is_summary),
   // predefined_type, nullable resource (OUR template concept, captured=null), + a thin

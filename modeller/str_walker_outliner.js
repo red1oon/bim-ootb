@@ -274,7 +274,7 @@
     if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
-      s.src = '../viewer/import_db_builder.js?v=7';
+      s.src = '../viewer/import_db_builder.js?v=9';
       s.onload = function () { _ifcEngineLoaded = true; resolve(); };
       s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
       document.head.appendChild(s);
@@ -297,16 +297,18 @@
     var transforms = parsed.transforms.filter(function (t) { return kept[t.guid]; });
     var geometries = parsed.geometries.filter(function (g) { return kept[g.guid]; });
     var bomTree = (parsed.bomTree || []).filter(function (bt) { return kept[bt.parentGuid] && kept[bt.childGuid]; });
+    // §D69: a fills row lives with its host (an ARC wall); a filling outside ARC is kept as NULL, the way a void-only opening is
+    var relFills = parsed.relFills ? parsed.relFills.filter(function (r) { return kept[r.host]; }).map(function (r) { return kept[r.filling] ? r : { opening: r.opening, host: r.host, filling: null, hostClass: r.hostClass, fillingClass: null }; }) : undefined;
     console.log(TAG + ' §IFC-OPEN-ARC-FILTER discs=' + JSON.stringify(parsed.meta && parsed.meta.disciplines || {}) +
       ' total=' + parsed.elements.length + ' kept-arc=' + elements.length);
-    return { meta: parsed.meta, elements: elements, transforms: transforms, geometries: geometries, bomTree: bomTree };
+    return { meta: parsed.meta, elements: elements, transforms: transforms, geometries: geometries, bomTree: bomTree, relFills: relFills };
   }
   function openIfcFile(file) {
     window.__lastIfcFile = file;   // §L5: Export ▸ 2D drawings (DXF) re-reads the user's own IFC with the shared extractor core
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
     Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
       var arrayBuffer = r[0], wasmBytes = r[1];
-      var worker = new Worker(new URL('../viewer/import_worker.js?v=15', location.href).href);
+      var worker = new Worker(new URL('../viewer/import_worker.js?v=16', location.href).href);
       worker.onmessage = function (e) {
         var msg = e.data;
         if (msg.type === 'progress') { console.log(TAG + ' §IFC-OPEN-PROGRESS ' + msg.phase); return; }
