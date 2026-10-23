@@ -7,6 +7,7 @@
   else root.Dxf2Shell = factory(root.Dxf2Bim);
 })(typeof self !== 'undefined' ? self : this, function (Dxf2Bim) {
   'use strict';
+  var WINDOW_EMBED = typeof process !== 'undefined' && process.env && process.env.DXF_WINDOW_EMBED ? Number(process.env.DXF_WINDOW_EMBED) : 0.05;   // §D55b (m) how far a window's drawn ends may reach into the jamb pieces (frame posts embedded; JKR 20 mm). A module constant, not CFG (no run_id changes).
   var r6 = Dxf2Bim.r6, EPS = 1e-9;
   function hnum(h) { return parseInt(h, 16); }
   function walls(ops) { return ops.filter(function (o) { return o.op_type === 'DXF_WALL'; }); }
@@ -354,6 +355,16 @@
         if (a && b && Math.abs(a.params.rect[ai + 2] - e0) <= tol && Math.abs(b.params.rect[ai] - e1) <= tol && !cont.some(function (w) { var r = w.params.rect; return r[ai] < c - tol && r[ai + 2] > c + tol; })) {
           var ra = a.params.rect, rb = b.params.rect; A = a; B = b; cr = [Math.max(ra[ci], rb[ci]), Math.min(ra[ci + 2], rb[ci + 2])]; o.params.in_wall_band = cr.map(r6);
         }
+      }
+      if ((!A || !B) && q.kind === 'window') {   // §D55b a window drawn wider than its gap: its frame posts embedded in the jambs and / or its pane proud of the wall face (JKR W1: 1.29 m drawn
+        // over a 1.25 m gap, 20 mm into each piece). Bounded by the two pieces of ONE strip whose ends lie inside the window's ends by at most WINDOW_EMBED; the void takes the wall's band.
+        var w0 = q.bbox[ai], w1 = q.bbox[ai + 2], over = ws.filter(function (w) { var r = w.params.rect; return r[ci] < cr[1] - tol && r[ci + 2] > cr[0] + tol; });
+        var ea = over.filter(function (w) { var r = w.params.rect; return r[ai] < w0 - tol && r[ai + 2] > w0 + tol && r[ai + 2] <= w0 + WINDOW_EMBED + tol; });
+        var eb = over.filter(function (w) { var r = w.params.rect; return r[ai + 2] > w1 + tol && r[ai] < w1 - tol && r[ai] >= w1 - WINDOW_EMBED - tol; });
+        if (ea.length === 1 && eb.length === 1) { var pa = ea[0].params.rect, pb = eb[0].params.rect;
+          if (Math.abs(pa[ci] - pb[ci]) <= tol && Math.abs(pa[ci + 2] - pb[ci + 2]) <= tol && !over.some(function (w) { var r = w.params.rect; return w !== ea[0] && w !== eb[0] && r[ai] < pb[ai] - tol && r[ai + 2] > pa[ai + 2] + tol && r[ci] <= pa[ci] + tol && r[ci + 2] >= pa[ci + 2] - tol; })) {
+            A = ea[0]; B = eb[0]; cr = [pa[ci], pa[ci + 2]]; o.params.in_wall_band = cr.map(r6); o.params.embedded = [r6(pa[ai + 2] - w0), r6(w1 - pb[ai])]; c = (pa[ai + 2] + pb[ai]) / 2;
+          } }
       }
       if (!A || !B) { note('GAP:opening_gap_unbounded', o, { c: r6(c), before: A && A.params.handle, after: B && B.params.handle }); return; }
       var key = A.output_guid + '|' + B.output_guid;

@@ -225,13 +225,14 @@
     });
   }
   // §D51 the best-effort slab setting: a plan's @DEFAULT > the registry the caller passes (opts.defaultsRef, the page's element_defaults.json) > the registry shipped with this module > walls_bounded
-  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect';
-  function slabOutlineSetting(sheets, opts) {
-    var st = null; (sheets || []).forEach(function (sh) { ((sh.desc && sh.desc.defaults) || []).forEach(function (q) { if (q.key === SLAB_OUTLINE_KEY && st === null) st = q.value; }); });
+  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen';
+  function settingOf(sheets, opts, key, fallback) {   // a plan's @DEFAULT > opts.defaultsRef (the page's element_defaults.json) > the shipped registry > the fallback
+    var st = null; (sheets || []).forEach(function (sh) { ((sh.desc && sh.desc.defaults) || []).forEach(function (q) { if (q.key === key && st === null) st = q.value; }); });
     if (st !== null) return st;
-    var ref = (opts && opts.defaultsRef) || L.REF, e = ref && ref.defaults && ref.defaults[SLAB_OUTLINE_KEY];
-    return e && e.value ? e.value : 'walls_bounded';
+    var ref = (opts && opts.defaultsRef) || L.REF, e = ref && ref.defaults && ref.defaults[key];
+    return e && e.value ? e.value : fallback;
   }
+  function slabOutlineSetting(sheets, opts) { return settingOf(sheets, opts, SLAB_OUTLINE_KEY, 'walls_bounded'); }
   function curtainLayer(set, layer) { return !!(set && set.CURTAIN && set.CURTAIN.indexOf(layer) >= 0); }   // §D45
   function gate(sheets, opts) {   // opts.set: the set the USER states (editor); otherwise from the elevation-wall layer evidence
     var userSet = opts && opts.set && SETS[opts.set] ? opts.set : null;
@@ -386,9 +387,10 @@
     R.roofZ = S.roofZ({ level: TOP.level, ops: TOP.after }, elevs, CFG);
     // L2.6 A: wall tops the plan's @WALLTOP markings state; U = underside of the slab above (the top storey: the roof bottom)
     ST.forEach(function (st, i) {
-      var d = st.sh.desc; if (!(d.walltop || []).length && !(d.walltop_walls || []).length) return;
+      var d = st.sh.desc, dflt = settingOf(sheets, opts, WALLTOP_KEY, 'slab_above') === 'slab_above';   // §D54 the default runs on a plan with no wall-top marking too
+      if (!(d.walltop || []).length && !(d.walltop_walls || []).length && !dflt) return;
       var U = ST[i + 1] ? R.slabZ[ST[i + 1].name].bottom : R.roofZ.bottom;
-      var a = E.applyWallTops(st.after, st.before, d, st.level, U); st.after = a.ops; st.wallTopRep = a.report;
+      var a = E.applyWallTops(st.after, st.before, d, st.level, U, { defaultSlabAbove: dflt }); st.after = a.ops; st.wallTopRep = a.report;
     });
     // lane spec L2.8 (1): wall base from the lowest stated source (section > elevation > plan level + advisory)
     ST.forEach(function (st, i) {
@@ -494,6 +496,7 @@
       var sheet = st.sheet, sz = R.slabZ[st.name];
       st.after.filter(function (o) { return o.op_type === 'DXF_GAP'; }).forEach(function (o) { qg.push(Object.assign({ sheet: sheet }, pick(o.params))); });
       (st.ring.gaps || []).concat(sz.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'slabs' }, pick(x))); });
+      if (st.wallTopRep && st.wallTopRep.defaulted) qg.push({ sheet: sheet, shape: 'walls', code: 'GAP:wall_top_defaulted', count: st.wallTopRep.defaulted, setting: WALLTOP_KEY, reason: st.wallTopRep.defaulted + ' wall(s) no elevation shows run to the slab underside above (a default, amber): state a top with @WALLTOP, or turn it off with @DEFAULT=' + WALLTOP_KEY + ',none / element_defaults.json' });   // §D54
       st.bridge.gaps.concat(st.fills.gaps).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'openings' }, pick(x))); });
       st.meshGaps.forEach(function (x) { qg.push(Object.assign({ sheet: sheet }, pick(x))); });
       (st.baseAdv || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'walls' }, pick(x))); });

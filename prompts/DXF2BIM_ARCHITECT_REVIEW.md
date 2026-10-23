@@ -2,6 +2,24 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶ RESUME HERE (written 2026-10-23 at the end of session 1; read this block, then RESULT parts 1-3 at the bottom)
+**State:** all merged to bim-ootb main: #2301 (stock-take + HHS round trip), #2302 D44/D45, #2303 D46-D48, #2304 D50 + F13, #2305 D51-D53, #2306 D54/D55 + the report page
+`reports/dxf2bim_stocktake.html` (https://red1oon.github.io/bim-ootb/reports/dxf2bim_stocktake.html; the owner wants reports on github.io, not as Claude artifacts). Modeller sw v130. Specs + RESULT
+lines for every rule are in `prompts/DXF2BIM_FOUNDATION_LANE.md` §D44-§D55. **Owner decisions this session (do not re-ask):** `modeller/dxf2bim/` is edited in bim-ootb (F13; `sync.sh`
+refuses); best-effort defaults are wanted (amber, stated, one `element_defaults.json` value or `@DEFAULT` to turn off) and supersede L2.3 D3 "never a default"; keep tuning on the machine's
+other buildings (JKR first; the Hospital belongs to the wing lane).
+**Data (scratch, regenerate):** `/tmp/db2/{DXARC,HHSM2,CLINIC2,LTU2,HOSP2,JKR2}.db` = `node ~/bim-compiler/scripts/extractIFC2DB.js --ifc <ARC> --also <STR> -o <db>`; JKR IFCs in
+`~/Downloads/OPEN SOURCE BIM/IFC 4/` (jkrAR25_* + jkrST25-*), HHS / Clinic / LTU / Hospital in `~/bim-compiler/internal/UNMERGED/`, Duplex `~/bim-compiler/reference/residential/`. JKR Viewer db (Room
+Injection source) `~/bim-ootb/buildings/JKR_extracted.db` (untracked). The round-trip harness (`rt_sets.js` / `rt_ladder.js`) lived in the session scratchpad: the witnesses carry the claims now.
+**Regression recipe:** `SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` = PASS 40 / ENV 34 / FAIL 4 (the 4 pre-existing:
+`struct`, `ticks`, `guardrails` G3 206, `ifc_valid`); the new witnesses need db args: `witness_dxf_{slab_outline,curtain,title,tag_width,grid_label,storey_absorb,slab_estimate,bridge_long,walltop_default,window_parts}.js <db...>`
+(`BASE=<older modeller dir>` where they compare), `witness_dxf_material.js <db> <its ARC ifc> [<another firm's ifc>]`.
+**NEXT (in order, each spec'd first):** (1) PR-TAG-WIDTH for WINDOWS (JKR: 48 window tags are the main per-element ask; reuse `Dxf2Suggest.tagByWidth` with the window schedule). (2) JKR Level 1 wall
+tops: the section states no slab underside above Level 1 (`slab_no_underside`), so D54 cannot default them (281 asks). (3) JKR `opening_outside_wall` 31 and the section-slab conflicts (two slab tops
+10 mm apart at 81.18 / 81.19 and 84.48 / 84.49). (4) F15 the writer draws no slab edge on the plans (the real outline D51 estimates). (5) The page has no way to LOAD a firm catalogue yet
+(`state.catalogue` is read by Convert, nothing sets it): a "Load catalogue" row in the 2D panel. (6) This brief's Parts A.1-A.3 (drift, hard-code hunt, mutation matrix) and B (walk the guide on the
+canvas) are still open. Then the Hospital only with the wing lane's say.
+
 **Who you are this session:** an expert software architect and specification writer (Opus, high effort). Owner's words: *"review of the code and functional steps to be
 well designed, checking for any drift, hard-code bypass where it will fail another similar 2D DXF set. Go through the docs/DXF2BIMGuide to ensure it is working,
 practical on the canvas, note what has issues or can be improved further, simplified all for a smooth user experience doing such 3D construction from 2D raw DXFs."*
@@ -201,3 +219,19 @@ now D44-D48 they are edited here and bim-compiler master is behind (`dxf2shell.j
 F14 `bridgeOpenings` bridges the whole gap between two wall pieces when an opening sits in it (Duplex control: a missing wall next to a door became an 11.6 m bridge); a bridge longer than
 `gap_max` should be a gap. F15 the slab outline is a fact the plans must state: the writer draws no slab edge on the plans, so a non-rectangular building has no slab after D44 until the writer
 draws one (a slab-edge layer) and the reader reads it.
+
+## RESULT 2026-10-23 (session 1, part 3: owner "edit in bim-ootb; proceed with the proposals; best-effort defaults editable in JSON; tune on other buildings, the original JKR model")
+F13 decided: `modeller/dxf2bim/` is edited in bim-ootb (`SOURCE.md`; `sync.sh` refuses the old direction). New building: JKR (IFC4 ARC + STR, Malay storey names, survey coordinates ~271 / 721 km, two
+storeys 0.2 m apart, windows drawn as separate parts). Built, each spec'd first in `DXF2BIM_FOUNDATION_LANE.md`:
+| Rule | What | Measured |
+|---|---|---|
+| §D50 | a storey with no floor of its own has no plan (absorbed by the next) | JKR 902 -> 343; other buildings byte-identical (#2304) |
+| §D51 | best-effort slab over the area the walls bound (amber; `slab.outline_when_not_rect`) | HHS 0 -> 3 slabs, 3,590 m2 vs the model's 3,975; LTU 0 -> 1 (#2305) |
+| §D52 | no bridge longer than an opening gap | Clinic 6 and LTU 20 invented lintels (up to 101.85 m) gone, listed (#2305) |
+| §D53 | best-effort materials (reference by class) + a firm catalogue by thickness (`tools/catalogue_from_ifc.js`) | one-material thicknesses = the model's 100% (HHS, JKR, LTU); a foreign firm's catalogue 0% right (#2305) |
+| §D54 | walls no elevation shows run to the slab above, by default (`wall.top_when_unseen`) | HHS asks 251 -> 1, Duplex 44 -> 0, JKR 510 -> 281; exact on HHS L2 / L3, 0.05-0.30 m off elsewhere |
+| §D55 / D55b | a window drawn as parts is one window; a window reaching into its jambs is bounded by them | JKR windows read 6 -> 48 of 48; JKR 343 -> 191 |
+**JKR now:** plain set, Accept all alone: roles 9 / 9, every level / roof / cut / grid / datum = the model's; the full model key reads to 191 blocking (902 before D50), of them 118 library-bound
+(no library in Node) and 73 engine items (545 before). Still per-element on JKR: window tags (48; a PR-TAG-WIDTH for windows is the next rule, as D47 for doors) and the Level 1 wall tops (the
+slab underside above Level 1 is not stated by the section: `slab_no_underside`). Open: the JKR `opening_outside_wall` 31 (doors / windows taller than their wall's band), the section-slab
+conflicts at 81.18 / 81.19 and 84.48 / 84.49 (two slab tops 10 mm apart on one level).

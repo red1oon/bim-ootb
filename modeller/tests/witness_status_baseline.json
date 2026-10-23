@@ -26,8 +26,10 @@
   "witness_dxf_storey_absorb:ENV",
   "witness_dxf_tag_width:ENV",
   "witness_dxf_title:ENV",
+  "witness_dxf_walltop_default:ENV",
   "witness_dxf_wand:ENV",
   "witness_dxf_window_angled:ENV",
+  "witness_dxf_window_parts:ENV",
   "witness_dxf_window_schedule:ENV",
   "witness_dxf_wing_back:ENV",
   "witness_dxf_wing_vs_straight:ENV"
