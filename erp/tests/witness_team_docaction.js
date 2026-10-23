@@ -243,6 +243,23 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
       else verdict(xa.tax === 0 && xb.tax === 0 && xa.linesProcessed === 0 && xb.linesProcessed === 0, 'all-or-none: NONE of the Complete\'s consequences show on either device (tax rows, processed lines)', 'A tax=' + xa.tax + ' processed=' + xa.linesProcessed + ' | B tax=' + xb.tax + ' processed=' + xb.linesProcessed);
     }
 
+    // ═══ §DA-TRIAL (§13.8 T4) — the system-default trial ends after ONE Complete; an own setup is not limited ═══
+    console.log('\n§DA-TRIAL');
+    async function setTrial(w, on) { await pg[w].evaluate(function (v) { return new Promise(function (res) { var r = indexedDB.open('comm_phone', 1);
+      r.onsuccess = function () { var t = r.result.transaction('kv', 'readwrite'), st = t.objectStore('kv'), q = st.get('cfg'); q.onsuccess = function () { var c = q.result || {}; c.trial = v; st.put(c, 'cfg'); }; t.oncomplete = function () { res(); }; }; }); }, on); }
+    await setTrial('A', true); await openErp('A'); await toHeaderGrid('A');
+    var tA = await chip('A'), nT = L.A.length;
+    var tChip = await pg.A.evaluate(function () { return document.getElementById('team-chip').getAttribute('data-trial'); });
+    verdict(tChip === 'finished', 'with the trial on, the chip knows the cycle is already done (A completed an order earlier)', 'data-trial=' + tChip);
+    await newOrder('A', 'DA-trial');
+    var lo = lines('A', /§TEAM_LOCALONLY .*reason=trial-finished/, nT), outs = lines('A', /§TEAM_OUT op=CRUD_CREATE table=c_order uu/, nT), warn = await pg.A.$eval('#team-warn', function (e) { return e.textContent; });
+    verdict(lo.length >= 1 && outs.length === 0, 'a new order after the cycle stays on this device (local-only, trial-finished), nothing is sent', 'localonly=' + lo.length + ' sent=' + outs.length);
+    verdict(/Trial cycle finished/.test(warn), 'the chip tells the user in words', warn.slice(0, 120));
+    await setTrial('A', false); await openErp('A'); await toHeaderGrid('A'); var nT2 = L.A.length;
+    await newOrder('A', 'DA-own');
+    var outs2 = lines('A', /§TEAM_OUT op=CRUD_CREATE table=c_order uu/, nT2), lo2 = lines('A', /reason=trial-/, nT2);
+    verdict(outs2.length >= 1 && lo2.length === 0, 'control: with trial off (own setup) the same action IS sent', 'sent=' + outs2.length + ' trial-blocked=' + lo2.length);
+
     console.log('\n§DA-NOERR'); verdict(errors === 0, 'zero page errors on both devices', 'errors=' + errors);
   } finally { await browser.close(); server.close(); try { fs.rmSync(FOLDER, { recursive: true, force: true }); } catch (e) {} }
   console.log('\n──────────────────────────────────────────────');

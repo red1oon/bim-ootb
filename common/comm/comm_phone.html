@@ -49,7 +49,7 @@
 <script src="../../erp/kernel_ops.js"></script>
 <script src="../../erp/crud_core.js"></script>
 <script src="../../erp/ad_access.js"></script>
-<script src="comm_envelope.js"></script><script src="comm_order.js"></script><script src="comm_roster.js"></script>
+<script src="team_defaults.js"></script><script src="comm_envelope.js"></script><script src="comm_order.js"></script><script src="comm_roster.js"></script>
 <script src="comm_admit.js"></script><script src="comm_pipe.js"></script><script src="comm_store.js"></script><script src="comm_visitlog.js"></script>
 <script>
 (function () {
@@ -83,7 +83,7 @@
 
   async function openStore(bytes) {
     S = CommStore.open(bytes ? new SQL.Database(bytes) : new SQL.Database(), { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log });
-    pipe = CommPipe.ghPipe({ owner: OWNER, repo: REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(location.search).get('gap') || 10000) });
+    pipe = CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(location.search).get('gap') || 10000) });
   }
 
   // ── fold the placed ops through the REAL kernel + crud_core.listTip (conflicted writes held back) ──
@@ -141,12 +141,13 @@
   }
 
   $('b-token').onclick = function () { act(async function () {
-    cfg.token = $('token').value.trim(); cfg.pbUrl = $('pb-url').value.trim(); cfg.pbSecret = $('pb-secret').value.trim();
+    cfg.token = $('token').value.trim(); cfg.trial = false;   // a key typed here is the user's own: no trial limit (§13.8)
+     cfg.pbUrl = $('pb-url').value.trim(); cfg.pbSecret = $('pb-secret').value.trim();
     log('§PHONE token saved (' + cfg.token.length + ' chars)' + (cfg.pbUrl ? ' + visit log' : '')); }); };
   // every visit: the pipe delivers; then (if configured) a note in the Gmail visit log, confirmed by id — never blocks
   async function visit() {
     var rep = await S.sync(pipe); cfg.lastVisit = Date.now();
-    if (cfg.pbUrl && cfg.pbSecret) { var n = await CommVisitLog.noteVisit(S, rep, { url: cfg.pbUrl, secret: cfg.pbSecret, owner: OWNER, repo: REPO });
+    if (cfg.pbUrl && cfg.pbSecret) { var n = await CommVisitLog.noteVisit(S, rep, { url: cfg.pbUrl, secret: cfg.pbSecret, owner: cfg.owner || OWNER, repo: cfg.repo || REPO });
       cfg.lastNote = n.ok ? n.subject : null; log('§PHONE_NOTE ' + (n.ok ? 'ok ' + n.subject + (n.confirmedBy ? ' (confirmed by ' + n.confirmedBy + ')' : '') : 'failed ' + n.error)); }
     return rep;
   }
@@ -194,6 +195,8 @@
     if (!dev) { dev = await CommStore.newDevice(); dev.person_uu = crypto.randomUUID(); await kvPut('device', dev); }   // CryptoKey stored as-is (non-extractable)
     else if (!dev.dhPrivateKey) { await CommStore.ensureDh(dev); await kvPut('device', dev); }                          // a device saved before CL8 gets its key-exchange key (useful only if not yet enrolled)
     cfg = (await kvGet('cfg')) || {};
+    if (!cfg.token && window.TeamDefaults && TeamDefaults.token) { cfg.owner = TeamDefaults.owner; cfg.repo = TeamDefaults.repo; cfg.token = TeamDefaults.token; cfg.trial = true; await kvPut('cfg', cfg);   // §13.8: the system default setup
+      log('§PHONE system-default setup applied repo=' + cfg.owner + '/' + cfg.repo + ' trial=true'); }
     var m = /#join=([0-9a-f]{64})/.exec(location.hash); if (m) $('invite').value = m[1];
     if (cfg.space) await openStore(await kvGet('db'));
     if (cfg.token) $('token').value = cfg.token; if (cfg.pbUrl) $('pb-url').value = cfg.pbUrl; if (cfg.pbSecret) $('pb-secret').value = cfg.pbSecret;

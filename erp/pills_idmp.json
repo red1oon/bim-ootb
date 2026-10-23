@@ -23,6 +23,15 @@
       "note": "RED PILL — abstract cross-surface ZOOM ACROSS (record → related SURFACE; generalises iDempiere's native record→window zoom). Surfaces register destinations via window.ZoomAcross.register({id,label,available,launch}); first = BIM Viewer (C_Project BIM band PK>=990000 → open the building scene, ../viewer/viewer.html?db=../buildings/<Value>_extracted.db&bld=<Value>). §AD-GATE showWhen:zoom-across — surfaces when ANY destination is available (IdmpPillZoomGate); off otherwise so the iDempiere chrome stays pure. Keyboard ',' (revived from the retired red-pill shortcut). Modeller etc. later = one more register() call, no pill change. img=redpill.png; hover 'Zoom Across'."
     },
     {
+      "id": "team",
+      "name": "Team",
+      "title": "Team",
+      "key": "",
+      "icon": "users",
+      "order": 3.1,
+      "note": "TEAMWORK_FRAMEWORK §13.8 — Team setup: mode on/off, system-default or own repo+key, pairing link, trial status. Always on the bar so users can find it; opening it changes nothing until 'Turn on team mode'."
+    },
+    {
       "id": "dashboard",
       "name": "Dashboard",
       "key": "",
