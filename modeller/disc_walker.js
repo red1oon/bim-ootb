@@ -102,11 +102,12 @@
   // Node/witness: dwOpen(db) sets an already-opened sql.js instance directly.
   function dwOpen(db) { _db = db; _ready = !!db; return _ready; }
   // Print the rules_meta provenance (standard/version/built_from) if the DB carries it.
+  var _rulesMeta = null;
   function _logProvenance(file) {
     try {
       var r = _db.exec("SELECT key,value FROM rules_meta");
       if (!r.length) { console.log(TAG + ' §DW-PROV ' + file + ' NO rules_meta (unstamped — staleness undetectable)'); return; }
-      var m = {}; r[0].values.forEach(function (kv) { m[kv[0]] = kv[1]; });
+      var m = {}; r[0].values.forEach(function (kv) { m[kv[0]] = kv[1]; }); _rulesMeta = Object.assign({ file: file }, m);   // §D61 read back by the walk's stated-reference line
       console.log(TAG + ' §DW-PROV ' + file + ' standard=' + m.standard + ' version=' + m.version +
         ' built_from=' + m.built_from + ' built_at=' + m.built_at + ' avoidance=' + m.n_avoidance +
         ' [' + (m.clearance_summary || '') + ']');
@@ -2556,7 +2557,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { rulesMeta: function () { return _rulesMeta; }, dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },

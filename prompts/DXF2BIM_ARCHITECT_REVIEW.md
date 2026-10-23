@@ -302,3 +302,8 @@ After §D59 a converted Duplex wall moves with its doors and its holes (W-WALL-L
 **Proposals:** P-S8 the .ifc open builds its db with the same extractor core as the Viewer-DB export (`IfcExtractCore`, already loaded in the Modeller), or `import_db_builder.js` reads
 `IfcRelFillsElement` + `IfcRelVoidsElement` into `rel_fills_host`; witness: the exported Duplex IFC reopened has 24 fills edges and the L4 move moves the door. P-S9 Open ▸ local .db offers
 "open for editing" (fork an `mo_local_<name>` instance as residents do). Both are the Modeller open-path lane's, not DXF2BIM's.
+
+### S5. Walking services on an opened ARC building (owner: "MEP walking able ARC verification ... treated as any opened ARC IFC or DB"; chose "wire first, Terminal as stated")
+§D61 built: an ARC db opened from disk walks with the rules' source meshes (Clinic from disk: 406 lights, 751 sprinklers, real meshes), the reference is stated, no 60 s wait. **The shed places nothing
+with either existing reference** (Terminal: 1 shared frame class of 3, bands land 17-40 m up; Duplex: no usable room, no ACMV mesh binding): the shed's own model holds its 13 fans (from the drawings);
+lights and sprinklers need a FARM reference: measured from a farm MEP set the owner supplies, or baked from cited guidance (the `building_types."Farming Shed"` entry already cites TNAU / SAU).
