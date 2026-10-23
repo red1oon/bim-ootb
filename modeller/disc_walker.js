@@ -2037,7 +2037,7 @@
         var tees = r.heads.map(function (h, k) { var t = [h.x, h.y, +(zH + H).toFixed(4)]; add('DROP', [h.x, h.y, zH], t, h.ifc_class, 'IfcPipeFitting', 'FPH:' + ri + ':' + k, 'FPT:' + ri + ':' + k, P.branch_dia_mm); if (fill && segs.length && segs[segs.length - 1].role === 'DROP' && segs[segs.length - 1].to === t) segs[segs.length - 1].fill = fill; return t; });   // §D66 the T assembly's parts fill this edge
         for (var i = 1; i < tees.length; i++) add('BRANCH', tees[i - 1], tees[i], 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + (i - 1), 'FPT:' + ri + ':' + i, P.branch_dia_mm);
         var ei = P.main_side === 'max' ? tees.length - 1 : 0, end = tees[ei], m = pt(mainA, r.c, end[2]);
-        if (Math.abs(end[ax === 'x' ? 0 : 1] - mainA) > 1e-6) add('BRANCH', end, m, 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + ei, 'FPM:' + ri, P.branch_dia_mm);
+        if (Math.abs(end[ax === 'x' ? 0 : 1] - mainA) > 1e-3) add('BRANCH', end, m, 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + ei, 'FPM:' + ri, P.branch_dia_mm);
         mainPts.push(m); });
       for (var j = 1; j < mainPts.length; j++) add('MAIN', mainPts[j - 1], mainPts[j], 'IfcPipeFitting', 'IfcPipeFitting', 'FPM:' + (j - 1), 'FPM:' + j, P.main_dia_mm);
       if (P.riser === 'main-mid' && mainPts.length && typeof floor === 'number') { var mid = mainPts[Math.floor(mainPts.length / 2)], foot = [mid[0], mid[1], +(floor + P.main_dia_mm / 2000).toFixed(4)];   // the riser stands ON the floor (its radius above the slab top)
@@ -2345,13 +2345,14 @@
   function _assembleJointBom(disc, segs) {
     var rows = _loadJointBom(disc);
     if (!rows.length) return { disc: disc, refused: true, reason: 'no joint mini-BOM rows (rule_joint_piece with an assembly_id)', parts: [], joints: [] };
-    var key = function (p) { return p.map(function (v) { return (+v).toFixed(4); }).join(','); }, runs = {};
+    var key = function (p) { return p.map(function (v) { return (+v).toFixed(4); }).join(','); }, runs = {}, runsB = {};
     segs.forEach(function (s) { if (s.role === 'DROP') return; [[s.from, s.to], [s.to, s.from]].forEach(function (e) {
-      var d = [e[1][0] - e[0][0], e[1][1] - e[0][1], e[1][2] - e[0][2]]; if (Math.abs(d[2]) > 1e-6) return; (runs[key(e[0])] = runs[key(e[0])] || []).push(d); }); });
+      var d = [e[1][0] - e[0][0], e[1][1] - e[0][1], e[1][2] - e[0][2]]; if (Math.abs(d[2]) > 1e-6) return; (runs[key(e[0])] = runs[key(e[0])] || []).push(d);
+      if (s.role === 'BRANCH') (runsB[key(e[0])] = runsB[key(e[0])] || []).push(d); }); });   // §D76 a tee's long arm follows its BRANCH run: a tee standing ON the main (the row's first head exactly at the main) has main runs through its node that must not outvote it
     var parts = [], joints = [], refused = 0;
     segs.forEach(function (s) {
       if (s.role !== 'DROP') return;
-      var h = s.from, rd = runs[key(s.to)] || [], ax = 0, ay = 0;
+      var h = s.from, rd = (runsB[key(s.to)] && runsB[key(s.to)].length ? runsB[key(s.to)] : runs[key(s.to)]) || [], ax = 0, ay = 0;
       rd.forEach(function (d) { var L = Math.hypot(d[0], d[1]) || 1, ux = Math.abs(d[0] / L), uy = Math.abs(d[1] / L); ax += ux; ay += uy; });   // an axis, not a direction: a tee is symmetric along its run
       var yaw = (ay > ax) ? Math.PI / 2 : 0;
       joints.push({ head_guid: s.from_guid, tee_guid: s.to_guid, node: s.to.slice(), runs: rd.length, yaw: yaw });
@@ -2665,7 +2666,10 @@
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
     // §MEP-REROUTE: the walk's own bridge, callable on op-log placements (modeller.html _reRouteMovedWalks)
-    bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {}); return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
+    bridgeRoute: function (disc, bdb, buildingName, placements) { var b = _bridgeIfEmpty(disc, bdb, buildingName, placements, { segs: [], byRule: [] }, {});
+      if (!b.rc.segs.length) { var bt = _bomTree(disc, bdb, (placements || []).map(function (p) { return Object.assign({}, p); }));   // §D76 the walk's own fallback (as _bomTree in the measured-band walk): a disc whose rules carry a bom-tree row
+        if (bt && bt.segs.length) return { segs: bt.segs, patternBridge: { seed: bt.seed, riser: null }, mode: 'bom-tree' }; }
+      return { segs: b.rc.segs, patternBridge: b.patternInfo }; },
     gate: gate, storeyFloors: storeyFloors, repRules: repRules, order: order, clearance: clearance,
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
