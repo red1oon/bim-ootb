@@ -1,6 +1,6 @@
 {
  "version": 2,
- "about": "Element defaults (prompts/DXF2BIM_MODELLER_LANE.md \u00a7L18). One entry per setting a 2D layout may not carry. kind 'std' = a value with a named source in this repo or the rate pack; 'guess' = typical practice, to be confirmed. A person states a value with @DEFAULT=<key>,<value> in the drawing (or in the editor / CLI); otherwise the default is used to determine measurements and the row is yellow. A 2D layout carries these only when it comes fully formed from an IFC model.",
+ "about": "Element defaults (prompts/DXF2BIM_MODELLER_LANE.md §L18). One entry per setting a 2D layout may not carry. kind 'std' = a value with a named source in this repo or the rate pack; 'guess' = typical practice, to be confirmed. A person states a value with @DEFAULT=<key>,<value> in the drawing (or in the editor / CLI); otherwise the default is used to determine measurements and the row is yellow. A 2D layout carries these only when it comes fully formed from an IFC model.",
  "defaults": {
   "wall.thickness": {
    "element": "IfcWall",
@@ -175,7 +175,18 @@
    ],
    "used_by": "dxf2doors"
   },
-  "door.operation_standard": { "element": "IfcDoor", "value": "SINGLE_SWING_LEFT", "unit": "text", "kind": "guess", "basis": "the running standard of a 2D set's doors whose operation the model does not state (F7 D18): the majority side of the building's stated single-swing doors; drawn yellow on A-DOOR-DFLT", "options": ["SINGLE_SWING_LEFT", "SINGLE_SWING_RIGHT"], "used_by": "std2d (writer), dxf2bim_import (report)" },
+  "door.operation_standard": {
+   "element": "IfcDoor",
+   "value": "SINGLE_SWING_LEFT",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "the running standard of a 2D set's doors whose operation the model does not state (F7 D18): the majority side of the building's stated single-swing doors; drawn yellow on A-DOOR-DFLT",
+   "options": [
+    "SINGLE_SWING_LEFT",
+    "SINGLE_SWING_RIGHT"
+   ],
+   "used_by": "std2d (writer), dxf2bim_import (report)"
+  },
   "door.width": {
    "element": "IfcDoor",
    "value": 0.9,
@@ -562,6 +573,18 @@
    "kind": "guess",
    "basis": "grade to the column base (plinth): 2 ft, the datum read from a column detail",
    "used_by": "dxf2synth (--complete)"
+  },
+  "type.size_tie": {
+   "element": "IfcWindow",
+   "value": "library_first",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a size the library answers with several types (Duplex 819 x 759: SMALL_FIXED, CASEMENT) binds the library's first row (8 of the Duplex IFC's 12 are that type); an explicit binding or label always wins; 'none' leaves such fills as asks",
+   "options": [
+    "library_first",
+    "none"
+   ],
+   "used_by": "dxf2types bindTypes (§D73)"
   }
  },
  "building_types": {

@@ -247,7 +247,7 @@
     return { ok: true, name: typeof j.name === 'string' && j.name ? j.name : 'catalogue', counts: counts, rows: rows };
   }
   // §D51 the best-effort slab setting: a plan's @DEFAULT > the registry the caller passes (opts.defaultsRef, the page's element_defaults.json) > the registry shipped with this module > walls_bounded
-  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen', UNDERSIDE_KEY = 'slab.underside_when_stepped';
+  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen', UNDERSIDE_KEY = 'slab.underside_when_stepped', TIE_KEY = 'type.size_tie';
   function settingOf(sheets, opts, key, fallback) {   // a plan's @DEFAULT > opts.defaultsRef (the page's element_defaults.json) > the shipped registry > the fallback
     var st = null; (sheets || []).forEach(function (sh) { ((sh.desc && sh.desc.defaults) || []).forEach(function (q) { if (q.key === key && st === null) st = q.value; }); });
     if (st !== null) return st;
@@ -440,7 +440,7 @@
       ST.forEach(function (st) {
         var lr = T.applyLabels(st.after, { units: 'm', labels: (library.labels && library.labels[st.name]) || [] }, { m: 1 }, { snap_tol: CFG.snap_tol, level: st.level });
         st.labelGaps = lr.gaps.length;
-        st.after = T.bindTypes(lr.ops, LIB, { bind: { size_tol: C.TYPES.size_tol, prefer: C.TYPES.prefer } }, {}).ops;
+        st.after = T.bindTypes(lr.ops, LIB, { bind: { size_tol: C.TYPES.size_tol, prefer: C.TYPES.prefer, tie: settingOf(sheets, opts, TIE_KEY, 'none') === 'library_first' ? 'library_first' : undefined } }, {}).ops;
       });
     }
     ST.forEach(function (st) {

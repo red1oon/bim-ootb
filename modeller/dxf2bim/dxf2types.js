@@ -66,6 +66,11 @@
           }
           if (narrowed && narrowed.length === 1) { pref = cand.filter(function (e) { return e !== narrowed[0]; }).map(function (e) { return e.id; }).sort(); hit = narrowed[0]; src = 'size_prefer'; }
         }
+        if (!hit && cand.length > 1 && cfg.bind.tie === 'library_first' && req.class !== 'wall') {   // fills only: a wall's thickness/layers are not a pick-one   // §D73 stated amber default: the first of the remaining candidates, in the order the loaded library lists them
+          var pool = narrowed && narrowed.length ? narrowed : cand;
+          hit = pool[0]; src = 'size_default'; pref = cand.filter(function (e) { return e !== hit; }).map(function (e) { return e.id; });
+          gap('GAP:type_defaulted', op, { type_id: hit.id, candidates: cand.map(function (e) { return e.id; }) });
+        }
         if (!hit) {
           if (cand.length === 1) { hit = cand[0]; src = 'size'; }
           else { var ex = { class: req.class, measured: req.measured, candidates: cand.map(function (e) { return e.id; }).sort() }; if (narrowed) ex.prefer_narrowed = narrowed.map(function (e) { return e.id; }).sort(); gap('GAP:type_unbound', op, ex); stats.unbound++; return; }
@@ -76,7 +81,7 @@
         if (ls !== null && Math.abs(ls - req.measured.thickness) > tol + 1e-9) { gap('GAP:layers_sum_mismatch', op, { type_id: hit.id, layers_sum: ls, measured: req.measured.thickness }); stats.unbound++; return; }
       }
       var d = deltas(req, hit);
-      op.params.type = { type_id: hit.id, bind_source: src, delta: d }; if (src === 'size_prefer') { op.params.type.set = hit.set; op.params.type.preferred_over = pref; } stats.bound++;
+      op.params.type = { type_id: hit.id, bind_source: src, delta: d }; if (src === 'size_prefer' || src === 'size_default') { op.params.type.set = hit.set; op.params.type.preferred_over = pref; } stats.bound++;
       if (!within(d, tol)) gap('GAP:type_size_mismatch', op, { type_id: hit.id, bind_source: src, delta: d });
     });
     // B5 schedule vs measured

@@ -39,7 +39,7 @@ const codes = v => { const m = {}; (v ? v.blocking.concat(v.advisory) : []).forE
   else say('INFO X2 | needs BASE=<a modeller dir before D58>');
   let lib = null; try { lib = (await N.I.loadOci(SX, { fetchJson: async u => (await fetch(u)).json(), base: 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/dxf2bim/library/' })).library; } catch (e) { say('INFO X4 | library fetch failed: ' + e.message); }
   if (!lib) say('INCONCLUSIVE X4 | no library reachable: nothing judged');
-  else { const a = N.I.convert(sheets, { library: lib }).verdict, b = N.I.convert(SX, { library: lib }).verdict, fu = v => v.blocking.filter(x => x.code === 'GAP:fill_unbound').length;
+  else { const NOTIE = { defaultsRef: { defaults: { 'type.size_tie': { value: 'none' } } } }, a = N.I.convert(sheets, { library: lib, ...NOTIE }).verdict, b = N.I.convert(SX, { library: lib, ...NOTIE }).verdict, fu = v => v.blocking.filter(x => x.code === 'GAP:fill_unbound').length;
     check('X4', 'with the library: fill_unbound 12 -> 0 and the set qualifies (the user chose to leave the 4 stacked same-size windows out)', fu(a) === 12 && fu(b) === 0 && b.verdict === 'qualifies', `fill_unbound ${fu(a)} -> ${fu(b)} blocking ${a.blocking.length} -> ${b.blocking.length} verdict=${b.verdict}`); }
   say('SUMMARY fail=' + fail + ' judged=' + judged); process.exit(fail ? 1 : 0);
 })().catch(e => { say('FATAL ' + e.stack); process.exit(1); });
