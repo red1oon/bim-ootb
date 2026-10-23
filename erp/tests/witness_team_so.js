@@ -110,6 +110,7 @@ function kidOfName(n) { var p = n.split('/'); return (p[0] === 'o' || p[0] === '
     await press(pg.B, '#b-join'); var code = (await pg.B.textContent('#mycode')).trim();
     await press(pg.A, '#b-requests');
     var codes = await pg.A.$$eval('#requests .request .code', function (els) { return els.map(function (e) { return e.textContent.trim(); }); });
+    await pg.A.selectOption('#requests .request:has-text("' + code + '") .req-role', '102').catch(function () {});   // the role picked on Approve: GardenWorld Admin (GardenAdmin's own role)
     await pg.A.click('#requests .request:has-text("' + code + '") .b-approve'); await ready(pg.A);
     await press(pg.B, '#b-visit');
     var st = await pg.B.textContent('#pair-state');
