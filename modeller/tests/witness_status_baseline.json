@@ -16,6 +16,7 @@
   "witness_dxf_meta_editor:ENV",
   "witness_dxf_north:ENV",
   "witness_dxf_quality:ENV",
+  "witness_dxf_recessed:ENV",
   "witness_dxf_rooms:ENV",
   "witness_dxf_scopes_merge:ENV",
   "witness_dxf_sheet_view:ENV",

@@ -1003,17 +1003,34 @@
       doc.lwpoly('A-WALL-CURT', rect(h0, h1, zb, zt), true, tag(w.guid)); nSet++;
       log.add(`§ELEV_CURTAIN_SET ${face} guid=${w.guid} storey='${ps.name}' set_back=${fx(d * 1000, 1)}mm depth=${fx(depth * 1000, 1)}mm z=${fx(zb, 3)}..${fx(zt, 3)} (D31)`);
     }); });
-    const fwg = new Set(fw.map(w => w.guid).concat(fcw.map(w => w.guid))); let nOp = 0;
+    const fwg = new Set(fw.map(w => w.guid).concat(fcw.map(w => w.guid))); let nOp = 0, nRec = 0;
+    // §D68 (F16): a window whose host is not a flush face wall is drawn when the face SEES it: no wall or curtain wall (any storey, its host excluded) lies between it and the face covering its h x z rect
+    const nearOf = { x0: e => [e.x0, e.x1], x1: e => [-e.x1, -e.x0], y0: e => [e.y0, e.y1], y1: e => [-e.y1, -e.y0] }[side], alongX = side === 'y0' || side === 'y1';
+    const covers = model.walls.concat(model.curtains), recessedOn = !(typeof process === 'object' && process.env && process.env.DXF_RECESSED_WIN === '0');
+    const envS = { x0: env[0], x1: env[1], y0: env[2], y1: env[3] }, stE = {}; if (model.rules.l118) model.storeys.forEach(s => { const sw = model.walls.filter(w => w.storey === s.name); if (sw.length) { const v = envelope(sw); stE[s.name] = { x0: v[0], x1: v[1], y0: v[2], y1: v[3] }; } });
+    const flushAny = h => !!h && (alongX ? ['y0', 'y1'] : ['x0', 'x1']).some(s => Math.abs(h[s] - envS[s]) <= EXT_FACE_TOL || (h.storey in stE && Math.abs(h[s] - stE[h.storey][s]) <= EXT_FACE_TOL));   // a window in the face wall of the opposite elevation: as before
+    const seen = e => { const n0 = nearOf(e)[0], a0 = alongX ? e.x0 : e.y0, a1 = alongX ? e.x1 : e.y1, hg = model.host_all[e.guid];
+      return !covers.some(o => o.guid !== hg && nearOf(o)[1] <= n0 + EXT_FACE_TOL && (alongX ? o.x0 <= a0 + 1e-6 && o.x1 >= a1 - 1e-6 : o.y0 <= a0 + 1e-6 && o.y1 >= a1 - 1e-6) && o.z0 <= e.z0 + 1e-6 && o.z1 >= e.z1 - 1e-6); };
     for (const e of model.els) {
-      if (OPENINGS.indexOf(e.cls) < 0 || !fwg.has(model.host_all[e.guid])) continue;
+      if (OPENINGS.indexOf(e.cls) < 0) continue;
       if (((e.x1 - e.x0) >= (e.y1 - e.y0)) !== (side === 'y0' || side === 'y1')) continue;
+      if (!fwg.has(model.host_all[e.guid])) {
+        const hw = model.by_guid[model.host_all[e.guid]];
+        if (!recessedOn || e.cls !== 'IfcWindow' || !hw || WALLS.indexOf(hw.cls) < 0 || flushAny(hw) || !seen(e)) continue;   // a window in a wall (a roof light is not on an elevation)
+        const a0 = alongX ? e.x0 : e.y0, a1 = alongX ? e.x1 : e.y1, twin = model.els.find(o => o !== e && o.cls === 'IfcWindow' && model.host_all[o.guid] !== model.host_all[e.guid] && (o.storey === e.storey || (o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002)) && ((o.x1 - o.x0) >= (o.y1 - o.y0)) === alongX &&
+          Math.abs((alongX ? o.x0 : o.y0) - a0) <= 0.002 && Math.abs((alongX ? o.x1 : o.y1) - a1) <= 0.002);
+        const n0e = nearOf(e)[0], front = model.els.find(o => o !== e && o.cls === 'IfcWindow' && nearOf(o)[0] < n0e - EXT_FACE_TOL && (alongX ? o.x0 : o.y0) <= a1 + 0.002 && (alongX ? o.x1 : o.y1) >= a0 - 0.002 && o.z0 <= e.z1 + 0.002 && o.z1 >= e.z0 - 0.002);
+        if (front) { log.add(`§ELEV_WIN_RECESSED_SKIP ${face} guid=${e.guid} behind window ${front.guid} (its glazing would join the nearer one's on the sheet) (D68)`); continue; }
+        if (twin) { log.add(`§ELEV_WIN_RECESSED_SKIP ${face} guid=${e.guid} same run as ${twin.guid} (another wall, its storey or touching): the elevation could not tell them apart (D68)`); continue; }
+        nRec++; log.add(`§ELEV_WIN_RECESSED ${face} guid=${e.guid} set_back=${fx(nearOf(e)[0] - (side[1] === '0' ? fv : -fv), 3)} (D68)`);
+      }
       const [h0, h1] = hr(e);
       doc.lwpoly(e.cls === 'IfcDoor' ? 'A-DOOR' : 'A-GLAZ', rect(h0, h1, e.z0, e.z1), true, tag(e.guid));
       if (e.cls === 'IfcWindow') doc.line('A-GLAZ-SILL', [h0, mm(e.z0)], [h1, mm(e.z0)], tag(e.guid));
       nOp++;
     }
     model.roofs.forEach(r => { const [h0, h1] = hr(r); doc.lwpoly('A-ROOF', rect(h0, h1, r.z0, r.z1), true, tag(r.guid)); });
-    log.add(`§ELEV ${face} walls=${fw.length} openings=${nOp} roofs=${model.roofs.length}${nSet ? ' curtain_set_back=' + nSet : ''}`);
+    log.add(`§ELEV ${face} walls=${fw.length} openings=${nOp} roofs=${model.roofs.length}${nSet ? ' curtain_set_back=' + nSet : ''}${nRec ? ' windows_recessed=' + nRec : ''}`);
     const xs = [hp(env[0], env[2]), hp(env[1], env[3])], H0 = mm(Math.min(...xs)), H1 = mm(Math.max(...xs));
     const levels = levelsStated(model, log, face);   // D26
     levelsDrawn(doc, log, face, levels, H0 - LEVEL_EXT * SCALE, H1 + LEVEL_EXT * SCALE);
