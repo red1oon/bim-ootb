@@ -812,7 +812,9 @@
     var db = await O._ensureDb();
     var mr = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'), nextId = (mr.length ? Number(mr[0].values[0][0]) : 0) + 1;
     var ops = T.inserts.map(function (o) { return { op_type: o.op_type, params: o.params, outputGuid: o.outputGuid }; })
-      .concat(T.cuts.map(function (c) { return { op_type: c.op_type, params: Object.assign({}, c.params, { parent: nextId + c.params.parent }), outputGuid: c.outputGuid }; }));
+      .concat(T.cuts.map(function (c) { var sl = c.params.slide, P = Object.assign({}, c.params, { parent: nextId + c.params.parent });
+        if (sl && typeof sl.fillingIdx === 'number') { P.slide = Object.assign({}, sl, { fillingFid: nextId + sl.fillingIdx }); delete P.slide.fillingIdx; }   // §D59 (b) the cut names its fill's feature id
+        return { op_type: c.op_type, params: P, outputGuid: c.outputGuid }; }));
     console.log(TAGC + ' commit nextId=' + nextId + ' ops=' + ops.length + ' (inserts ' + T.inserts.length + ', cuts ' + T.cuts.length + ') oplog=' + O.length);
     var res = await O.commitGesture(ops);
     var okIds = res.ids.length === ops.length && res.ids.every(function (id, i) { return id === nextId + i; });
@@ -825,6 +827,13 @@
     var fillNeed = R.ST.reduce(function (n, st) { return n + st.fills.gaps.filter(function (g) { return g.code === 'GAP:lod400_library_unreachable'; }).length; }, 0);
     var fillGaps = (R.fillGaps || []), nFills = (T.fills || []).length;
     var fid = {}; T.inserts.forEach(function (o, i) { fid[o.outputGuid] = res.ids[i]; });
+    // §D59 (c) the converted model carries the §ARC-1 bridge and its fills edges (the readFillsHost shape), so the Modeller's own move / slide / stretch riders act on it as on an opened IFC
+    var gbf = {}; Object.keys(fid).forEach(function (g) { gbf[fid[g]] = g; });
+    var fe = T.cuts.filter(function (c) { return c.params.slide && c.params.slide.filling; }).map(function (c) { var h = T.inserts[c.params.parent], f = T.inserts[c.params.slide.fillingIdx];
+      return { a: f.outputGuid, b: h.outputGuid, opening_guid: c.outputGuid, host_guid: h.outputGuid, filling_guid: f.outputGuid, host_class: h.params.ifc_class, filling_class: f.params.ifc_class, kind: 'fills', provenance: 'dxf2bim:convert' }; });
+    window.__arcFidByGuid = Object.assign({}, window.__arcFidByGuid || {}, fid); window.__arcGuidByFid = Object.assign({}, window.__arcGuidByFid || {}, gbf);   // added to an open building's bridge, never replacing it
+    var X0 = window.swXEdges || {}; window.swXEdges = Object.assign({ abuts: [], anchored: [], datums: [], spans: [], aggregates: [] }, X0, { fills: (X0.fills || []).concat(fe) });
+    console.log(TAGC + ' bridge published guids=' + Object.keys(fid).length + ' fills_edges=' + fe.length + (T.lines ? ' wall_lines=' + T.lines.bodies_before + '->' + T.lines.bodies_after : ''));
     state.last = { run_id: R.run_id, ids: res.ids, gid: res.gid, nInserts: T.inserts.length, nCuts: T.cuts.length, fidByGuid: fid,
       groups: T.groups.map(function (g) { return Object.assign({}, g, { fid: res.ids[g.body] }); }), counts: byCS, fillsNeeded: fillNeed,
       fills: (T.fills || []).map(function (i) { return { fid: res.ids[i], guid: T.inserts[i].outputGuid }; }), fillGaps: fillGaps, library: lib ? lib.header : null, ms: Math.round(performance.now() - t0) };

@@ -4,7 +4,7 @@ review first, specs second, code only if the owner says so. **Read the log after
 
 ## ▶▶▶ RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
 **Done:** §D56 window tags by width (#2309, sw v132); JKR slab diagnosis F16-F18; the seam study SEAM-1..5 + proposals P-S1..P-S5 (RESULT "session 2" at the bottom).
-**§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **§D58 DONE** (the user's `@EXCLUDE` honoured on the standard path; the Duplex standard set now converts in the page with 4 exclusions: SEAM-5 unblocked; Duplex seams measured, RESULT S3, SEAM-2b / SEAM-6). **NEXT (in order, each spec'd first):** (2) The seam fixes P-S2 + P-S3 + P-S6 (door rides its wall; the export keeps the edge; one wall line = one editable wall), witnessed on the Duplex set with the 4 exclusions (`witness_dxf_exclude_std.js` builds it), then P-S7 (stale op-log) and P-S1 (walk after Convert). (3) F16 the writer draws
+**§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **§D58 DONE** (the user's `@EXCLUDE` honoured on the standard path; the Duplex standard set now converts in the page with 4 exclusions: SEAM-5 unblocked; Duplex seams measured, RESULT S3, SEAM-2b / SEAM-6). **§D59 DONE** (one wall line = one editable wall, doors ride it, the IFC / DB keep voids + fills; W-WALL-LINE). **NEXT (in order, each spec'd first):** (2) P-S7 (stale op-log, SEAM-6) and P-S1 (walk after Convert); P-S8 / P-S9 (SEAM-7 / SEAM-8, the Modeller open path: hand to that lane or do with its say). (3) F16 the writer draws
 every opening the face sees. (4) The old items 4-6 below (F15 slab edge, Load catalogue row, Parts A / B). P-S4 (fixture meshes from one store) belongs with FOUNDATION §5 F5; P-S5 is the owner's call.
 **Data:** `/tmp/db2/JKR3.db` = `extractIFC2DB.js --ifc <jkrAR25> --also <jkrST25> --also-classes IfcColumn,IfcSlab,IfcBeam -o ...`; seam harness in the session scratchpad.
 
@@ -292,3 +292,13 @@ The Duplex marked set with 4 `@EXCLUDE` boxes (the 4 stacked 819 x 759 clusters 
 **Proposals added (spec only):** P-S6 one wall line = one editable wall: the pieces and opening bands of a drawn wall line share a group the move / delete tools act on (or are merged into one body
 with its cuts), so "move the wall" moves its doors and windows with it (needs P-S2). P-S7 the reopened model's op-log is keyed to its own model (`setModelKey`) before any walk folds the kernel;
 witness: the same-profile reopen + walk does not throw and folds only the reopened model's ops.
+
+### S4. §D59 built; the two seams left are the Modeller's open path (session 2)
+After §D59 a converted Duplex wall moves with its doors and its holes (W-WALL-LINE L4), and both exports keep the relations (24 voids + 24 fills in the IFC, 24 `rel_fills_host` in the DB).
+- **SEAM-7 (P2) a local .db opens read-only.** `pickLocal` -> `_openStrDb` shows the model in the outliner and walks it, but only `openResident` forks an editable instance
+  (`str_walker_outliner.js:1070-1078` -> `_forkEditable`), so a saved DXF2BIM DB cannot be edited after reopening (measured: op-log 0 after the open).
+- **SEAM-8 (P1) an .ifc open loses the fills.** The .ifc open does seed an editable model (`str_walker_outliner.js:300-330`, `mo_ifc_` key), but its db is built by `viewer/import_db_builder.js`,
+  which writes no `rel_fills_host`: the reopened IFC has 0 fills edges, so no door rides its wall, for ANY opened IFC (not only DXF2BIM's). The resident .db files (bim-compiler extractor) have them.
+**Proposals:** P-S8 the .ifc open builds its db with the same extractor core as the Viewer-DB export (`IfcExtractCore`, already loaded in the Modeller), or `import_db_builder.js` reads
+`IfcRelFillsElement` + `IfcRelVoidsElement` into `rel_fills_host`; witness: the exported Duplex IFC reopened has 24 fills edges and the L4 move moves the door. P-S9 Open ▸ local .db offers
+"open for editing" (fork an `mo_local_<name>` instance as residents do). Both are the Modeller open-path lane's, not DXF2BIM's.

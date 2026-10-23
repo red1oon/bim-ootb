@@ -540,7 +540,7 @@
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, colorFor = opts.colorFor || function () { return undefined; };
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
-    var assets = [], inserts = [], cuts = [], groups = [], skipped = [];
+    var assets = [], inserts = [], cuts = [], groups = [], skipped = [], lineReport = null;
     // §L1.16: a wing set was drawn rotated by -angle about (ox,oy); the model is turned back by +angle. Bodies are rotated as world vertices (so the baked mesh is already in
     // place, placement.rot 0); a library fill keeps its mesh and gets the rotated centre + placement.rot. Openings of a framed wall are BAKED (no GEOM_CUT: the worker only cuts
     // axis-aligned boxes and a GEOM_ROTATE on an insert is a no-op there, L1.16 slice 2).
@@ -606,6 +606,47 @@
         });
       });
     });
+    // 2b. §D59 (a) a drawn wall line = ONE wall body: the bodies of one storey that share class, layer, z-range, cross band and evidence kind and touch end to end along their axis become the union
+    // prism; their cuts are re-parented to it. Not for a turned (framed) set: its openings are baked into the bodies.
+    if (!fr) (function () {
+      var WC = { IfcWall: 1, IfcCurtainWall: 1 }, tol = C.CFG.snap_tol, n = inserts.length, par = [], cutOf = {};
+      cuts.forEach(function (c) { cutOf[c.params.parent] = true; });
+      var box = inserts.map(function (o) { var P = o.params; if (!WC[P.ifc_class] || P.anchorOnly) return null; var b = P.bbox, c = P.placement, h = (b[5] - b[4]) / 2;
+        return [c.x + b[0], c.y + b[2], c.z + h + b[4], c.x + b[1], c.y + b[3], c.z + h + b[5]]; });
+      var kind = function (P) { return (P.provenance && P.provenance.prov_kind) || 'drawn'; }, typ = function (P) { var t = P.provenance && P.provenance.ifc; return t ? JSON.stringify([t.type_name, t.material, t.PredefinedType]) : null; };
+      var near = function (a, b) { return Math.abs(a - b) <= tol; };
+      for (var i = 0; i < n; i++) par[i] = i;
+      var find = function (i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+      for (var a = 0; a < n; a++) { if (!box[a]) continue; for (var b = a + 1; b < n; b++) { if (!box[b]) continue;
+        var A = box[a], B = box[b], Pa = inserts[a].params, Pb = inserts[b].params;
+        if (Pa.storey !== Pb.storey || Pa.ifc_class !== Pb.ifc_class || (Pa.provenance && Pa.provenance.layer) !== (Pb.provenance && Pb.provenance.layer) || kind(Pa) !== kind(Pb)) continue;
+        if (typ(Pa) && typ(Pb) && typ(Pa) !== typ(Pb)) continue;
+        if (!near(A[2], B[2]) || !near(A[5], B[5])) continue;
+        var xLine = near(A[1], B[1]) && near(A[4], B[4]) && (near(A[3], B[0]) || near(B[3], A[0])), yLine = near(A[0], B[0]) && near(A[3], B[3]) && (near(A[4], B[1]) || near(B[4], A[1]));
+        if (xLine || yLine) par[find(a)] = find(b); } }
+      var lines = {}; for (var k = 0; k < n; k++) if (box[k]) (lines[find(k)] = lines[find(k)] || []).push(k);
+      var keep = [], remap = {}, newIns = [], newAs = [], merged = 0;
+      for (var q = 0; q < n; q++) {
+        var L = box[q] ? lines[find(q)] : null;
+        if (!L || L.length === 1) { remap[q] = newIns.length; newIns.push(inserts[q]); newAs.push(assets[q]); continue; }
+        if (L[0] !== q) { remap[q] = remap[L[0]]; continue; }   // a later member: folded into its line's body (placed at the line's first member)
+        var bx = L.map(function (m) { return box[m]; }), x0 = Math.min.apply(null, bx.map(function (r) { return r[0]; })), y0 = Math.min.apply(null, bx.map(function (r) { return r[1]; })),
+          x1 = Math.max.apply(null, bx.map(function (r) { return r[3]; })), y1 = Math.max.apply(null, bx.map(function (r) { return r[4]; })), z0 = bx[0][2], z1 = bx[0][5];
+        var pm = S.prismRect([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], [], r6(z0), r6(z1)), P0 = inserts[q].params;
+        var typed = L.map(function (m) { return inserts[m].params; }).filter(function (P) { return P.provenance && P.provenance.ifc; })[0] || P0;
+        var prov = Object.assign({}, P0.provenance, { dxf_handle: L.map(function (m) { return inserts[m].params.provenance.dxf_handle; }).join('+'), members: L.map(function (m) { return inserts[m].outputGuid; }) });
+        if (typed.provenance && typed.provenance.ifc) prov.ifc = typed.provenance.ifc;
+        var gid = hashHex(L.map(function (m) { return inserts[m].outputGuid; }).join('|') + '|line').slice(0, 32), ncut = L.some(function (m) { return cutOf[m]; });
+        var as = asset(gid, pm.vertices, pm.faces, ncut), Pm = { realGeomHash: as.hash, bbox: as.bbox, placement: { x: r6(as.centre[0]), y: r6(as.centre[1]), z: r6(as.centre[2] - as.halfZ), rot: 0 }, ifc_class: P0.ifc_class, storey: P0.storey, provenance: prov };
+        if (typeof P0.storey_elev === 'number') Pm.storey_elev = P0.storey_elev;
+        if (typed.color != null) Pm.color = typed.color; else if (P0.color != null) Pm.color = P0.color;
+        remap[q] = newIns.length; newIns.push({ op_type: 'GEOM_INSERT', params: Pm, outputGuid: 'dxf-' + gid }); newAs.push(as); merged += L.length;
+      }
+      cuts.forEach(function (c) { c.params.parent = remap[c.params.parent]; });
+      groups.forEach(function (g) { g.body = remap[g.body]; g.guid = newIns[g.body].outputGuid; });
+      inserts.length = 0; Array.prototype.push.apply(inserts, newIns); assets.length = 0; Array.prototype.push.apply(assets, newAs);
+      lineReport = { bodies_before: n, bodies_after: newIns.length, merged_members: merged };
+    })();
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
     R.els.forEach(function (e) {
@@ -620,7 +661,15 @@
       var col = colorFor(e.class); if (col != null) P.color = col;
       inserts.push({ op_type: 'GEOM_INSERT', params: P, outputGuid: 'dxf-' + e.guid }); fills.push(inserts.length - 1);
     });
-    return { assets: assets, inserts: inserts, cuts: cuts, groups: groups, skipped: skipped, fills: fills };
+    // §D59 (b) a cut names its fill: the one fill of the same storey whose handle is one of the cut's openings and whose centre lies in the cut's void
+    cuts.forEach(function (c) {
+      var hs = String(c.params.slide.opening).split('+'), st = inserts[c.params.parent] && inserts[c.params.parent].params.storey, V = c.params.void, t = 0.01;
+      var lo = [0, 1, 2].map(function (k) { return Math.min(V.c1[k], V.c2[k]) - t; }), hi = [0, 1, 2].map(function (k) { return Math.max(V.c1[k], V.c2[k]) + t; });
+      var hit = fills.filter(function (fi) { var P = inserts[fi].params, b = P.bbox, ctr = [P.placement.x, P.placement.y, P.placement.z + (b[5] - b[4]) / 2];
+        return P.storey === st && hs.indexOf(String(P.provenance.dxf_handle)) >= 0 && ctr.every(function (v, k) { return v >= lo[k] && v <= hi[k]; }); });
+      if (hit.length === 1) { c.params.slide.filling = inserts[hit[0]].outputGuid; c.params.slide.fillingIdx = hit[0]; }
+    });
+    return { assets: assets, inserts: inserts, cuts: cuts, groups: groups, skipped: skipped, fills: fills, lines: lineReport };
   }
 
   // §L3.2: the locally generated library subset (BIMCompiler scripts/export_library_subset.js) → the `library` convert takes.

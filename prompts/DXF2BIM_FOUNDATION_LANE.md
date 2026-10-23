@@ -494,3 +494,26 @@ convert 366) passes it: the marking is read (`dxf2marks.js:159`) and honoured on
 from the run's report. W-EXCLUDE-STD fail=0: X1 the 4 boxed Duplex window clusters are gone from the convert and from `planDoors` (44 entities left out, 1 advisory); X2 the set without boxes = BASE
 (run ids and verdict); X3 22 straddling entities kept and counted = the reader's report; X4 with the OCI library `fill_unbound` 12 -> 0, **the Duplex standard set qualifies** (SEAM-5 unblocked by a
 user's stated exclusion; binding the three 819 x 759 families stays a stated fact). Modeller sw v134.
+
+## §D59 A DRAWN WALL LINE IS ONE EDITABLE WALL, ITS DOORS AND WINDOWS RIDE IT, AND THE EXPORT KEEPS BOTH RELATIONS (architect review session 2: P-S6 + P-S2 + P-S3; owner "allow ARC modification ... save as DB")
+**Witness claim first (W-WALL-LINE, `modeller/tests/witness_dxf_wall_line.js`).** L1 (Node, `toOps`) the wall bodies of one storey that share their class, z-range, cross band (to `snap_tol`), typing and colour and
+touch end to end along their axis become ONE wall body (the union prism) and every GEOM_CUT of a member is re-parented to it; the void of every cut lies inside its parent; the volume of each line =
+the sum of its members' (to 1e-6 m3); fills and cuts are not changed in number. Duplex (the §D58 set): 92 wall bodies -> 47 (the geometric lines measured first). L2 falsifier: a member made 0.1 m taller
+keeps its line apart (merge refused, never a stretched body). L3 every cut whose void holds exactly one fill names it (`slide.filling` = the fill's guid; the page turns it into `fillingFid`). L4 (the page,
+software GL, the Duplex set) after Convert a 0.5 m move of a wall that hosts a door moves the door 0.5 m in the same gesture (the Modeller's own rider cascade, fed by the bridge Convert publishes), and its
+hole with it; undo restores both. L5 the export keeps both relations: in the IFC, `IfcRelVoidsElement` = the cuts and `IfcRelFillsElement` = the cuts naming a fill; in the Viewer DB `rel_fills_host` = them (host and filling set).
+(Reopening for editing is the Modeller open path's, measured not judged: a local .db opens read-only, an .ifc open builds its db without fill relations: SEAM-7 / SEAM-8.) L6 unchanged: framed wing sets (`@FRAME`, baked openings) and the structure path (the shed) are byte-identical
+(no merge when a frame turns the set; the structure path does not go through `toOps`' wall groups).
+**Measured first (2026-10-23 session 2, the Duplex standard set with the 4 §D58 exclusions + the OCI library):** Convert = 143 ops (119 inserts, 24 cuts); 92 wall bodies = the drawn pieces between
+openings + one band body per opening (as wide as its hole); grouped by storey, z-range, cross band and end-to-end contact: 47 lines (21 of several bodies, 20 of them holding a band; no band differs in
+height from its line). The model has 57 walls. Today a 0.5 m move of the band over a door moves the band only, the door stays (bbox unchanged) and the jambs stay; the Viewer DB holds 24
+`IfcOpeningElement` with no `IfcRelVoidsElement` (`bonsai_ifc.js` puts only `GEOM_EXTRUDE_POLY` walls in `wallByFeature`, so a cut of an inserted body exports an orphan opening) and 0 `rel_fills_host`.
+**Rule.** (a) `toOps` merges each line after the void groups (before the fills); (b) a cut names its fill by handle, storey and void containment; (c) the page's Convert publishes the §ARC-1 bridge
+(`__arcFidByGuid` / `__arcGuidByFid`) and `swXEdges` (fills edges in the `readFillsHost` shape, the other families empty) for the converted model; (d) `bonsai_ifc.js` keeps a product per inserted
+feature: a cut voids its parent product and fills it with its `fillingFid` product (`IfcRelVoidsElement` / `IfcRelFillsElement`).
+**D59 RESULT (2026-10-23, session 2): BUILT.** (a) `toOps` merges each wall line (Duplex: 95 wall-class bodies -> 51, 64 members in lines; IfcWall 92 -> 48); (b) every cut names its fill (24 / 24);
+(c) Convert publishes the bridge + 24 fills edges (`§DXF-CONVERT bridge published`); (d) `bonsai_ifc.js` writes `IfcRelVoidsElement` for a cut of an inserted body and `IfcRelFillsElement` for its
+`fillingFid` (`§IFC-FILLS`). W-WALL-LINE fail=0: L1 voids 24 / 24 inside their parent, every line's volume = its members' (BASE toOps), cuts and fills unchanged; L2 a member raised 0.1 m stays its own
+body; L3 24 distinct fills named; L4 the page: a 0.5 m move of a wall hosting a door moves the door 0.5 m and the hole (3 inner edges), 3 ops in one gesture, one undo restores both; L5 the IFC holds 24
+`IfcRelVoidsElement` + 24 `IfcRelFillsElement`, the Viewer DB 24 `rel_fills_host` (host and filling set; were 0 and 0); L6 the shed gates as BASE. Measured, not judged: the exported IFC reopened for
+editing has 0 fills edges (SEAM-8). Regression PASS 41 / FAIL 4 (the known 4; G3 unchanged at 209). Modeller sw v135.
