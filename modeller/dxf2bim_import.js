@@ -391,7 +391,7 @@
       if ((pd.tags || []).length) { var tg = T.applyTags(ops, [{ desc: pd }], MK.UNITS, { snap_tol: CFG.snap_tol, level: st.level }); ops = tg.ops; st.tagged = tg.labelled; }
       ops = E.applyElevations(ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex, schedule: Object.keys(sch).length ? sch : null }).ops;
       ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
-      var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: C.CASING });
+      var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, walls0: st.before, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: C.CASING });
       ops = dh.ops; st.doorRep = dh.report;
       st.after = ops;
     }
