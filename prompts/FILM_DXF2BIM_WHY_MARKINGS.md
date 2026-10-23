@@ -18,6 +18,11 @@ WALKED: s03 inside, empty, the ELEC row clicked (cut); s04 the lamps build up, t
 reveal outward from the riser, followed; s08 a sprinkler head macro, then its joint mini-BOM (drop, transition, tee: §D66); s09 out and a last turn, end.
 **Every number said is a `§FILM_FACT` of the take.** Not a take: `§PAGEERR`, a missing fact, 0 lights / sprinklers / pipe segments, a follow that never saw the front move (`§FILM_FOLLOW moves=0`).
 
+## ▶▶▶ §LAST PART v2b RESULT (2026-10-23, after the owner's look: "sprinkler ducting clash overlap the lighting ones"): RECORDED, LOCAL ONLY, SUPERSEDES v2
+**Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2b_short.mp4`, 104.1 s, 2,601 frames == master, -16.7 LUFS, 9 / 9 DETAIL, 0 black frames, `§PAGEERR` 0. Take `take_v2d`, main + §D70.1 + §D72.
+Facts: 512 elements, 69 lights, 30 sprinklers, 24 lamps stepped aside (§D72), 36 pipes, 90 joint parts, joint close-up visible. Cuts: ELEC compute 44.7 s (another session loaded the machine), FP 0.8 s;
+the FP-pipe cut was under 0.5 s, so none: the lamps' step is in frame. s07 now says "{lamps_moved} lamps in its way step aside".
+
 ## ▶▶▶ §LAST PART v2 RESULT (2026-10-23, session 3): RECORDED, LOCAL ONLY
 **Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2_short.mp4`, 102.2 s, 2,554 frames == master, -16.7 LUFS (two-pass loudnorm), 9 / 9 DETAIL, 0 black frames, `§PAGEERR` 0, cards FILM_SET=shedlast2
 (2 chapters). Take `take_v2c` (session scratchpad), SITE = a local server of bim-ootb main + #2338 (D64.1, D66, D66.1 + fix). Input db sha256 e6ff58a7875b (the shed's Viewer database from the v1 take sl3).
