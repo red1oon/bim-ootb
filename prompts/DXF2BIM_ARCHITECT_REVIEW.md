@@ -2,7 +2,20 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
-## ▶▶▶ RESUME HERE (session 3 entry; written 2026-10-23 at the end of session 2; supersedes the session-2 block below)
+## ▶▶▶ RESUME HERE (session 4 entry; written 2026-10-23 at the end of session 3, the items 3 + 4 agent; the session-3 block below stays for items 1-2, which another agent worked as §D66)
+**Merged this session (bim-ootb):** #2327 §D67 spec (LOD400 library meshes by stated profile: SPEC, awaiting owner go) · #2334 §D68 F16 windows in recessed faces drawn + read (Clinic 40 -> 58 windows read off
+elevations, LTU 0 -> 183, 0 wrong; sw v146) · #2335 §D69 SEAM-8 an .ifc open keeps `rel_fills_host` (= the extractor core's rows; Viewer sw v1655, Modeller v147) · #2336 §D71 the 2D panel loads a firm
+catalogue (sw v148) · this doc PR: §D70 F15 slab edge, measured and stopped (⛔) for the owner's slab-edge convention.
+**Owner decisions open (one question each):** (1) §D67: the profile source for steel members: a parametric generator from the drawing's own label (`AngleProfileMesh` in the library's
+`ad_parametric_mesh` convention) or an imported steel catalogue (AISC / EN 10056 angles)? (2) §D70: a plan's slab edge = the exact union of the model's slabs (HHS L1: 10 bodies, 54 small holes; JKR L2:
+54 planks) or a drafted perimeter with real voids above a stated area and plank joints closed below a stated width? (3) The Duplex 819 x 759 windows (the 4 stacked clusters excluded in §D58): which library
+type do they bind to (owner fact: session 2 S3 measured the library type at that size as ambiguous)?
+**Still open (no owner gate):** doors in recessed faces (the §D68 writer rule is windows only; `applyDoorHeights` pairs by the envelope); `witness_status_baseline.json` lists 7 older db-argument witnesses as
+missing (stale since D54; the runner's ENV-set line says so); the page-level ride on a reopened IFC after §D69 (the §D59 L4 move on an .ifc open) was not re-run; Parts A / B of this brief.
+**Regression at close (`run_all_witnesses.js`, the three code PRs merged together):** PASS 41 / ENV 39 / FAIL 4 (the known 4: struct, ticks, guardrails G3 209, ifc_valid). New witnesses (db args):
+`witness_dxf_recessed.js <db...>` (BASE=), `witness_ifc_open_fills.js <ifc...>` (BASE=<repo root>), `witness_dxf_catalogue_row.js <db> <its ifc> [--page <url> --structure <marked shed dir>]`.
+
+## (superseded by session 4 entry for items 3-4) RESUME HERE (session 3 entry; written 2026-10-23 at the end of session 2; supersedes the session-2 block below)
 **Merged in session 2 (bim-ootb):** #2309 D56 window tags by width · #2310 seam study · #2311 D57 section stack · #2312 D58 @EXCLUDE on the standard path · #2313 D59 one wall line = one editable wall, doors ride,
 IFC/DB keep voids + fills · #2314 D60 a .db opened from disk is editable · #2316 D61 walk meshes from the rules' source · #2318 D62 Farming Shed reference · #2322 D63 STR girders on the building's beam level ·
 #2324 film last part v1 · #2325 D64 pendant lamps + walk build-up + farm_rules.db committed (it was 404) · **D65 FP pipework from the BOM template: PR on branch `feat/fp-bom-tree` (check it merged)**.
