@@ -11,6 +11,10 @@
  *   §PHONE-CONFLICT — both edit the same order without visiting in between → both screens show the conflict, total kept.
  *   §PHONE-RESUME   — reloading the phone keeps its device code, team and orders (IndexedDB), no re-pairing.
  *   §PHONE-EARLY    — while loading, buttons are disabled and progress shows; once ready Save works (the user hit "doesn't react").
+ *   §PHONE-SLIM     — the page never downloads the 27 MB erp/ad_seed.db; it loads the 154 KB access_seed.sql (§SEED-EQ).
+ *   §PHONE-ROLE     — the phone is approved as role 103 (GardenWorld User): its order for Store Central (org 12) is REFUSED on
+ *                     both devices with canUpdate's reason, the author sees why, and the order is not on the laptop.
+ *   §PHONE-STARTOVER— Start over (tapped twice) leaves the space and keeps the device code, for a clean film take.
  *   §PHONE-NOERR    — zero page errors.
  * Cleans up its GitHub branches. Run: node common/tests/witness_comm_phone_page.js 2>&1 | tee /tmp/witness_comm_phone_page.log
  */
@@ -34,6 +38,8 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
   var pw = reqPw(), browser = await pw.chromium.launch({ args: ['--disable-gpu'] }), kids = [];
   try {
     var lap = await (await browser.newContext()).newPage(), ph = await (await browser.newContext(pw.devices['Pixel 7'])).newPage();
+    var seedReqs = { big: 0, slim: 0 };
+    [lap, ph].forEach(function (p) { p.on('request', function (r) { if (/ad_seed\.db/.test(r.url())) seedReqs.big++; if (/access_seed\.sql/.test(r.url())) seedReqs.slim++; }); });
     [['laptop', lap], ['phone', ph]].forEach(function (x) { x[1].on('console', function (m) { if (/§PHONE|§COMM_SYNC|🔴/.test(m.text())) console.log('     [' + x[0] + '] ' + m.text()); });
       x[1].on('pageerror', function (e) { errors++; console.log('     [' + x[0] + '] 🔴 pageerror ' + e.message); }); });
     async function ready(p) { await p.waitForSelector('body[data-ready="1"]', { timeout: 90000 }); }
@@ -45,6 +51,8 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
       r.onsuccess = function () { var q = r.result.transaction('kv').objectStore('kv').get('device'); q.onsuccess = function () { res(q.result && q.result.kid); }; }; }); }); }
     console.log('\n§PHONE-EARLY');
     var early = await (await browser.newContext()).newPage(); early.on('pageerror', function (e) { errors++; console.log('     [early] 🔴 pageerror ' + e.message); });
+    // the slim seed loads in milliseconds, so the loading state is held open for 2 s here to judge it (only in this context)
+    await early.route('**/access_seed.sql', async function (route) { await new Promise(function (r) { setTimeout(r, 2000); }); await route.continue(); });
     await early.goto(url, { waitUntil: 'domcontentloaded' });
     var dis = await early.$eval('#b-token', function (b) { return b.disabled; }), prog = await early.isVisible('#boot');
     await ready(early);
@@ -67,6 +75,7 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
     await press(lap, '#b-requests');
     var codes = await lap.$$eval('#requests .request .code', function (els) { return els.map(function (e) { return e.textContent.trim(); }); });
     verdict(codes.length === 1 && codes[0] === code, 'the laptop lists exactly the phone\'s code ' + code + ' (requests from other spaces ignored)', codes.join(','));
+    await lap.selectOption('#requests .request:has-text("' + code + '") .req-role', '103');          // approve the phone as GardenWorld User
     await lap.click('#requests .request:has-text("' + code + '") .b-approve'); await ready(lap);
     await press(ph, '#b-visit');
     var st = await ph.textContent('#pair-state');
@@ -97,6 +106,16 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
     verdict(cL.length === 1 && cP.length === 1 && /200/.test(cL[0]) && /300/.test(cL[0]), 'both screens show one conflict naming 200 and 300');
     verdict(tL === '150' && tP === '150', 'both keep the last agreed total (150)', tL + '/' + tP);
 
+    console.log('\n§PHONE-ROLE');
+    await ph.selectOption('#new-org', '12'); await press(ph, '#b-new'); await press(ph, '#b-visit'); await press(lap, '#b-visit'); await press(ph, '#b-visit');
+    var refusedPh = await ph.$$eval('.refused', function (e) { return e.map(function (x) { return x.textContent; }); });
+    var lapNames = await lap.$$eval('#orders .row b', function (e) { return e.map(function (x) { return x.textContent; }); });
+    console.log('   §PHONE refused on phone: ' + JSON.stringify(refusedPh) + '   laptop orders: ' + lapNames.join(','));
+    verdict(refusedPh.length === 1 && /Store Central/.test(refusedPh[0]) && /access:missing=W/.test(refusedPh[0]), 'the phone (role 103) is told its Store Central order was refused, and why');
+    verdict(lapNames.length === 1, 'the refused order is not on the laptop (only the allowed one is)', lapNames.join(','));
+    var phOrg = await ph.$eval('#orders .row .mut', function (e) { return e.textContent; });
+    verdict(/HQ/.test(phOrg), 'the allowed order shows its organisation (HQ)', phOrg);
+
     console.log('\n§PHONE-RESUME');
     var codeBefore = code; await ph.reload(); await ready(ph);
     var codeAfter = (await ph.textContent('#mycode')).trim(), ordersAfter = await ph.$$eval('#orders .row', function (e) { return e.length; });
@@ -112,6 +131,16 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
       verdict(okN.length >= 8 && !bad.length, 'every visit from BOTH browsers left a note in the Gmail log', 'ok=' + okN.length + ' failed=' + bad.length);
       verdict(mine.every(function (m) { return subs.indexOf(m) >= 0; }), 'each note the page reported is really in the log (read back by subject + note id)');
     }
+
+    console.log('\n§PHONE-SLIM');
+    console.log('   §PHONE seed requests: ad_seed.db=' + seedReqs.big + ' access_seed.sql=' + seedReqs.slim);
+    verdict(seedReqs.big === 0 && seedReqs.slim >= 2, 'no device downloaded the 27 MB seed; both loaded the slim one', JSON.stringify(seedReqs));
+
+    console.log('\n§PHONE-STARTOVER');
+    var codeL = (await lap.textContent('#status')).match(/device (\S+)/)[1];
+    await lap.click('#b-reset'); var armedTxt = await lap.textContent('#b-reset'); await press(lap, '#b-reset');
+    var spaceShown = await lap.isVisible('#s-space'), pairHidden = !(await lap.isVisible('#s-pair')), codeL2 = (await lap.textContent('#status')).match(/device (\S+)/)[1];
+    verdict(/Tap again/.test(armedTxt) && spaceShown && pairHidden && codeL2 === codeL, 'Start over needs two taps, returns to step 2, keeps the device code', armedTxt + ' · ' + codeL + '→' + codeL2);
 
     console.log('\n§PHONE-NOERR'); verdict(errors === 0, 'zero page errors on both devices', 'errors=' + errors);
   } finally {
