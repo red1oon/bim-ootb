@@ -4419,7 +4419,7 @@ async function _dwYieldPass(walked, phase) {   // phase 'before' (the walk being
             if (inPlan && (!best || Math.abs(d) < best.d)) best = { d: Math.abs(d) + 1e-3, dx: ax === 0 ? sg * (d + 1e-3) : 0, dy: ax === 1 ? sg * (d + 1e-3) : 0 }; return; }
           hitSet = hitSet.concat(more); } });
       if (!best) { f.rec.clash = true; flagged++; return; }
-      f.rec.x = +(f.rec.x + best.dx).toFixed(5); f.rec.y = +(f.rec.y + best.dy).toFixed(5); f.rec.yieldTo = { disc: O, dx: +best.dx.toFixed(4), dy: +best.dy.toFixed(4), clear: mc, rule: 'rule_avoidance ' + a + '/' + b };
+      f.rec.x = +(f.rec.x + best.dx).toFixed(5); f.rec.y = +(f.rec.y + best.dy).toFixed(5); f.rec.yieldTo = { disc: O, dx: +best.dx.toFixed(4), dy: +best.dy.toFixed(4), clear: mc, rule: 'rule_avoidance ' + a + '/' + b }; f.rec._yielded = true;   // §D76 stays set after an undo clears yieldTo, so a redo finds the marker again
       maxS = Math.max(maxS, best.d); moved.push(f.rec); });
     var sig = 0;
     if (moved.length && Y !== walked) {   // committed earlier: ONE signed group of GEOM_MOVE, each on that lamp's own insert
@@ -5101,13 +5101,16 @@ async function _commitDiscChains(disc, segs) {
 }
 // §D66 the landed joint mini-BOM parts -> one signed group of GEOM_INSERT, the same real-mesh shape _commitDiscWalk uses for a hashed fixture (centre -> seat z, yaw -> degrees; the mesh registered by
 // _renderDiscAssembly). The bbox is the part's own mesh extents from its rule row.
-async function _commitDiscAssembly(disc, parts) {
-  var O = window.Bonsai && window.Bonsai.oplog; if (!O || !parts || !parts.length) return 0;
-  var ops = parts.filter(function (p) { return p.geometry_hash && p.bx > 0 && p.by > 0 && p.bz > 0; }).map(function (p) {
+function _dwAsmOps(disc, parts) {   // the joint parts as signed GEOM_INSERT ops (shared by the walk's commit and the §D76 re-tack)
+  return (parts || []).filter(function (p) { return p.geometry_hash && p.bx > 0 && p.by > 0 && p.bz > 0; }).map(function (p) {
     return { op_type: 'GEOM_INSERT', params: { bbox: [-p.bx / 2, p.bx / 2, -p.by / 2, p.by / 2, -p.bz / 2, p.bz / 2], realGeomHash: p.geometry_hash,
       placement: { x: +p.pos[0].toFixed(4), y: +p.pos[1].toFixed(4), z: +(p.pos[2] - p.bz / 2).toFixed(4), rot: +((p.yaw || 0) * 180 / Math.PI).toFixed(4) }, lod: '200', color: DW_COLOR[disc] || 0xc0c0c0,
       _dw: { disc: disc, asm: p.assembly_id, role: p.role, product: p.product, ifc: p.ifc_class, head: p.head_guid, prov: p.prov, cz: +p.pos[2].toFixed(4) } } };
   });
+}
+async function _commitDiscAssembly(disc, parts) {
+  var O = window.Bonsai && window.Bonsai.oplog; if (!O || !parts || !parts.length) return 0;
+  var ops = _dwAsmOps(disc, parts);
   var committed = 0;
   if (ops.length) { try { var res = await O.commitSeedGroup(ops, 'dwasm-' + disc + '-' + O.length); committed = (res.ids || []).length; } catch (e) { console.warn('§DW-ASM-COMMIT batch fail ' + (e && e.message)); } }
   if (committed) { _redrawAllDiscWalks(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); syncHistory(); }
@@ -5225,6 +5228,7 @@ function _dwOplogPlacements(disc) {
   return out;
 }
 function _dwSig(pl) { return pl ? pl.map(function (p) { return p.x.toFixed(3) + ',' + p.y.toFixed(3) + ',' + p.z.toFixed(3); }).join(';') : ''; }
+window.__dwAsmRowIds = window.__dwAsmRowIds || {};   // §D76 disc -> {id:1} every joint-part row ever signed for this disc (the walk's + re-tacks); the active ones are read from the op-log
 window.__dwRouteRowIds = window.__dwRouteRowIds || {};   // disc -> {id:1} every chain/fit row of this disc's route (walk + re-routes)
 function _dwStampRouteSig(disc) {
   var pl = _dwOplogPlacements(disc); if (!pl) return;
@@ -5232,6 +5236,7 @@ function _dwStampRouteSig(disc) {
   var rows = (window.__dwRowsByDisc || {})[disc] || {}, ids = {};
   (rows.chain || []).concat(rows.fit || []).forEach(function (id) { ids[id] = 1; });
   window.__dwRouteRowIds[disc] = ids;                    // a (re-)walk starts a fresh route row set
+  var aids = {}; (rows.asm || []).forEach(function (id) { aids[id] = 1; }); window.__dwAsmRowIds[disc] = aids;   // §D76
 }
 // Active route rows of a disc, read from the signed op-log: sweeps {id, a, b} and fittings {id, hash, pl}.
 function _dwActiveRoute(disc) {
@@ -5271,9 +5276,9 @@ function _dwCells(x, y, z) {
   for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) out.push((cx + i) + ',' + (cy + j) + ',' + (cz + k));
   return out;
 }
-async function _dwResignRoute(d, segs) {
+async function _dwResignRoute(d, segs, asmParts) {
   var O = window.Bonsai.oplog, cap = Math.min(segs.length, window.DW_CHAIN_COMMIT_CAP || 120);
-  var target = segs.slice(0, cap);                      // the same run set the walk signs
+  var target = segs.slice(0, cap).filter(function (x) { return !x.fill; });   // the same run set the walk signs (§D76 a filled drop is its parts, not a sweep)
   var fits = [];
   if (window.DiscWalker.bendFittings) { try { fits = window.DiscWalker.bendFittings(d, segs, {}); } catch (e) { console.warn('§DW-FIT ' + d + ' failed ' + (e && e.message)); } }
   window.__dwFittings[d] = fits;
@@ -5288,7 +5293,15 @@ async function _dwResignRoute(d, segs) {
   var ops = [], refused = 0, nSweep = 0;
   ds.add.forEach(function (s) { var c = _dwChainOp(s); if (c.refused) refused++; else { ops.push(c.op); nSweep++; } });
   df.add.forEach(function (f) { ops.push(_dwFitOp(d, f)); });
-  var off = ds.off.concat(df.off), on = [];
+  var off = ds.off.concat(df.off), on = [], nFit0 = ops.length;
+  var asmOps = asmParts ? _dwAsmOps(d, asmParts) : [], asmOff = [];
+  if (asmParts) {   // §D76 the joint parts follow the network: the active asm rows of this disc are superseded, the re-tacked ones signed in the SAME group
+    var wantA = window.__dwAsmRowIds[d] || {}; O._geomOps().forEach(function (op) { if (wantA[op.id]) asmOff.push(op.id); });
+    var same = asmOff.length === asmOps.length && (function () { var cur = {}; O._geomOps().forEach(function (op) { if (wantA[op.id] && op.parameters && op.parameters.placement) { var q = op.parameters.placement; cur[q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + '|' + op.parameters.realGeomHash] = (cur[q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + '|' + op.parameters.realGeomHash] || 0) + 1; } });
+      return asmOps.every(function (a) { var q = a.params.placement, k = q.x.toFixed(3) + ',' + q.y.toFixed(3) + ',' + q.z.toFixed(3) + '|' + a.params.realGeomHash; if (!cur[k]) return false; cur[k]--; return true; }); })();
+    if (same) { asmOps = []; asmOff = []; }   // the parts did not move: nothing to re-sign
+  }
+  off = off.concat(asmOff); ops = ops.concat(asmOps);
   if (!ops.length && !off.length) return { changed: false, keep: ds.keep.length + df.keep.length };
   O._treeOwned = O._treeOwned || new Set();
   O._setUndone(off, 1);                                 // supersede first → commitSeedGroup's single fold shows the new route only
@@ -5297,10 +5310,11 @@ async function _dwResignRoute(d, segs) {
     try { on = (await O.commitSeedGroup(ops, 'dwrr-' + d + '-' + n)).ids || []; }
     catch (e) { O._setUndone(off, 0); console.warn('§MEP-REROUTE-SIGN commit failed, old route restored — ' + (e && e.message)); await O.scrubTo(O.length); return { changed: false, failed: true }; }
   } else { await O.scrubTo(O.length); O._emit(); }
-  on.forEach(function (id) { window.__dwRouteRowIds[d][id] = 1; O._treeOwned.add(id); });
+  on.forEach(function (id, i) { if (i < nFit0) window.__dwRouteRowIds[d][id] = 1; O._treeOwned.add(id); });   // §D76 the route set is the sweeps + fittings only; the parts ride __dwAsmRowIds
   off.forEach(function (id) { O._treeOwned.add(id); });
+  if (asmParts) { var nAsmNew = asmOps.length, aIds = on.slice(on.length - nAsmNew); window.__dwAsmRowIds[d] = window.__dwAsmRowIds[d] || {}; aIds.forEach(function (id) { window.__dwAsmRowIds[d][id] = 1; }); }
   var MH = window.ModellerHistory, att = (MH && MH.attachDerived) ? MH.attachDerived(on, off, d) : { attached: null };
-  var fitIds = on.slice(nSweep);
+  var fitIds = on.slice(nSweep, nFit0);
   _dwUpgradeFitMeshes(d, fitIds.map(function (id, i) { return { id: id, hash: df.add[i].hash }; }));
   console.log('§MEP-REROUTE-SIGN disc=' + d + ' runs keep=' + ds.keep.length + ' new=' + nSweep + ' superseded=' + ds.off.length +
     (refused ? ' refused=' + refused : '') + ' · fittings keep=' + df.keep.length + ' new=' + df.add.length + ' superseded=' + df.off.length +
@@ -5318,20 +5332,51 @@ async function _reRouteMovedWalks() {
     var sig = _dwSig(pl); if (sig === window.__dwRouteSig[d]) continue;
     var bdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
     try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND, as the walk
-    var r; try { r = window.DiscWalker.bridgeRoute(d, bdb, window.__dwName || '', pl); } finally { bdb.close(); }
+    var r, asm = null, bomNet = false;
+    try {
+      r = window.DiscWalker.bridgeRoute(d, bdb, window.__dwName || '', pl);
+      bomNet = !!(r.segs.length && r.segs[0].mode === 'bom-tree');
+      if (bomNet && window.DiscWalker.assemble) { try { asm = window.DiscWalker.assemble(d, bdb, { network: r.segs }); } catch (e) { console.warn('§MEP-REROUTE assemble ' + (e && e.message)); } }   // §D76 the joint parts follow the network
+    } finally { bdb.close(); }
     var before = (window.__dwChains[d] || []).length;
+    if (!r.segs.length && before) {   // §D76 a re-route that routes nothing never wipes a network that exists: keep it, say so, do not retry on the same positions
+      window.__dwRouteSig[d] = sig;
+      console.log('§MEP-REROUTE-KEEP disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + ' kept (the re-route found no route)');
+      continue;
+    }
     window.__dwChains[d] = r.segs;
     window.__dwRouteSig[d] = sig;
     _renderDiscChains(d, r.segs, { instant: true });
-    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + ' (from the signed op-log positions)');
-    await _dwResignRoute(d, r.segs);
+    var parts = null;
+    if (bomNet && asm && !asm.refused && asm.parts && asm.parts.length) {
+      window.DiscWalker.connectorEnrich(asm.parts);
+      if (asm.mode === 'joint-bom') { var _ph = {}; asm.parts.forEach(function (p) { if (p.geometry_hash) _ph[p.geometry_hash] = 1; }); await _dwResolveMeshes(_ph, '§DW-LOD400-REFUSE asm ' + d); }
+      _renderDiscAssembly(d, asm.parts); parts = window.__dwAssembly[d] || [];
+    }
+    console.log('§MEP-REROUTE disc=' + d + ' fixtures=' + pl.length + ' segs ' + before + '→' + r.segs.length + (bomNet ? ' (BOM tree, ' + (parts ? parts.length : 0) + ' joint parts re-tacked)' : '') + ' (from the signed op-log positions)');
+    await _dwResignRoute(d, r.segs, parts);
   }
+}
+// §D76 a marker the §D72 yield moved is page state: when the signed GEOM_MOVE is undone / redone it is re-read from the op-log (insert placement + moveDeltaFor), and it carries no yieldTo once it is back where it was walked.
+function _dwSyncMarkers() {
+  var O = window.Bonsai && window.Bonsai.oplog, W = window.__dwWalks; if (!O || !O._geomOps || !W) return false;
+  var MH = window.ModellerHistory; if (MH && MH.inWalk && MH.inWalk()) return false;
+  var moved = {}, any = false; Object.keys(W).forEach(function (d) { (W[d] || []).forEach(function (p) { if ((p.yieldTo || p._yielded) && p._fid != null) { moved[p._fid] = p; any = true; } }); });
+  if (!any) return false;
+  var changed = false; O._geomOps().forEach(function (op) { var p = moved[op.id]; if (!p || op.op_type !== 'GEOM_INSERT' || !op.parameters || !op.parameters.placement) return;
+    var pp = op.parameters.placement, mv = O.moveDeltaFor(op.id), nx = +(pp.x + (mv.dx || 0)).toFixed(5), ny = +(pp.y + (mv.dy || 0)).toFixed(5);
+    if (Math.abs(nx - p.x) > 5e-4 || Math.abs(ny - p.y) > 5e-4) { p.x = nx; p.y = ny; changed = true; }
+    if (Math.abs(mv.dx || 0) < 1e-6 && Math.abs(mv.dy || 0) < 1e-6) { delete p.yieldTo; changed = true; } });
+  var inOplog = {}; O._geomOps().forEach(function (op) { inOplog[op.id] = 1; });   // a lamp whose insert row is itself undone is hidden with its walk; nothing to sync
+  if (changed) { _redrawAllDiscWalks(); console.log('§DW-YIELD-SYNC markers re-read from the op-log after an undo / redo'); }
+  return changed;
 }
 // Any signed change (grid drag, item drag, undo/redo) fires 'bonsai:oplog'. Debounced to one check per burst; the
 // signature test makes the common case (nothing generated moved) a no-op. Re-route → redraw the walk layer. Serialized:
 // the re-sign commits (async), and an event that lands meanwhile re-runs the check once it is done.
 var _mepRerouteTimer = null;
 window.addEventListener('bonsai:oplog', function () {
+  try { _dwSyncMarkers(); } catch (e) { console.warn('§DW-YIELD-SYNC ' + (e && e.message)); }
   if (!Object.keys(window.__dwRouteSig).length) return;
   if (_mepRerouteBusy) { _mepRerouteAgain = true; return; }
   clearTimeout(_mepRerouteTimer);
