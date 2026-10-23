@@ -21,7 +21,10 @@
 
 <section id="s-token"><h2>1 · GitHub token</h2>
   <div class="mut">Fine-grained token, repository <b>bim-teams-pipe</b> only, Contents read &amp; write. Kept in this browser only.</div>
-  <input id="token" type="password" autocomplete="off" placeholder="github_pat_…"><button id="b-token">Save token</button></section>
+  <input id="token" type="password" autocomplete="off" placeholder="github_pat_…">
+  <div class="mut" style="margin-top:8px">Optional — the Gmail visit log (post box web-app address + secret):</div>
+  <input id="pb-url" placeholder="https://script.google.com/macros/s/…/exec" style="margin-top:4px"><input id="pb-secret" type="password" autocomplete="off" placeholder="post box secret" style="margin-top:4px">
+  <button id="b-token">Save</button></section>
 
 <section id="s-space" class="hide"><h2>2 · Team space</h2>
   <button id="b-found">Start a new space</button>
@@ -43,7 +46,7 @@
 <script src="../../erp/crud_core.js"></script>
 <script src="../../erp/ad_access.js"></script>
 <script src="comm_envelope.js"></script><script src="comm_order.js"></script><script src="comm_roster.js"></script>
-<script src="comm_admit.js"></script><script src="comm_pipe.js"></script><script src="comm_store.js"></script>
+<script src="comm_admit.js"></script><script src="comm_pipe.js"></script><script src="comm_store.js"></script><script src="comm_visitlog.js"></script>
 <script>
 (function () {
   'use strict';
@@ -104,7 +107,7 @@
     var dl = S.delivery(), gaps = S.gaps().length;
     $('delivery').innerHTML = 'last visit ' + (cfg.lastVisit ? new Date(cfg.lastVisit).toLocaleTimeString() : 'never') + ' · my ops ' + dl.length +
       ' · seen by others ' + dl.filter(function (x) { return x.state === 'SEEN'; }).length + ' · refused ' + dl.filter(function (x) { return x.verdict === 'REFUSED'; }).length +
-      ' · waiting on ' + gaps + (pipe ? ' · GitHub writes ' + pipe.stats.writes : '');
+      ' · waiting on ' + gaps + (pipe ? ' · GitHub writes ' + pipe.stats.writes : '') + (cfg.pbUrl ? ' · visit log ' + (cfg.lastNote ? '✓' : '—') : '');
     $('status').textContent = 'device ' + codeOf(dev.kid) + ' · space ' + cfg.space.slice(0, 8) + ' · team devices ' + Object.keys(L.roster.devices).length + (founder ? ' · founder' : '');
     document.querySelectorAll('.b-save').forEach(function (b) { b.onclick = function () { act(async function () {
       var row = b.closest('.row'), uu = row.getAttribute('data-uu'), from = Number(row.querySelector('.tot').textContent), to = Number(row.querySelector('input').value);
@@ -114,11 +117,20 @@
   }
   async function act(fn) { document.body.setAttribute('data-ready', '0'); try { await fn(); await persist(); } catch (e) { log('🔴 ' + (e && e.message || e)); } await render(); }
 
-  $('b-token').onclick = function () { act(async function () { cfg.token = $('token').value.trim(); log('§PHONE token saved (' + cfg.token.length + ' chars)'); }); };
+  $('b-token').onclick = function () { act(async function () {
+    cfg.token = $('token').value.trim(); cfg.pbUrl = $('pb-url').value.trim(); cfg.pbSecret = $('pb-secret').value.trim();
+    log('§PHONE token saved (' + cfg.token.length + ' chars)' + (cfg.pbUrl ? ' + visit log' : '')); }); };
+  // every visit: the pipe delivers; then (if configured) a note in the Gmail visit log, confirmed by id — never blocks
+  async function visit() {
+    var rep = await S.sync(pipe); cfg.lastVisit = Date.now();
+    if (cfg.pbUrl && cfg.pbSecret) { var n = await CommVisitLog.noteVisit(S, rep, { url: cfg.pbUrl, secret: cfg.pbSecret, owner: OWNER, repo: REPO });
+      cfg.lastNote = n.ok ? n.subject : null; log('§PHONE_NOTE ' + (n.ok ? 'ok ' + n.subject + (n.confirmedBy ? ' (confirmed by ' + n.confirmedBy + ')' : '') : 'failed ' + n.error)); }
+    return rep;
+  }
   $('b-found').onclick = function () { act(async function () {
     var sp = await CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102);
     cfg.space = sp.space; cfg.founder = true; await openStore(); await S.genesis(sp.params);
-    await S.sync(pipe); cfg.lastVisit = Date.now(); log('§PHONE founded space ' + sp.space.slice(0, 12)); }); };
+    await visit(); log('§PHONE founded space ' + sp.space.slice(0, 12)); }); };
   $('b-join').onclick = function () { act(async function () {
     var inv = ($('invite').value || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('an invite is 64 characters 0-9 a-f');
     cfg.space = inv; cfg.founder = false; await openStore();
@@ -133,13 +145,13 @@
     document.querySelectorAll('.b-approve').forEach(function (b) { b.onclick = function () { act(async function () {
       var rq = JSON.parse(b.closest('.row').getAttribute('data-req'));
       await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: 102, comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu);
-      await S.sync(pipe); cfg.lastVisit = Date.now(); log('§PHONE approved ' + codeOf(rq.kid)); }); }; });
+      await visit(); log('§PHONE approved ' + codeOf(rq.kid)); }); }; });
     log('§PHONE requests listed: ' + names.length); }); };
   $('b-new').onclick = function () { act(async function () {
     var uu = crypto.randomUUID(), n = 'O-' + codeOf(dev.kid).slice(0, 4) + '-' + (S.query("SELECT COUNT(*) AS n FROM cl_op WHERE op_type='CRUD_CREATE' AND author_kid=?", [dev.kid])[0].n + 1);
     await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_CREATE', params: { fields: { documentno: n, grandtotal: 100, ad_client_id: 11, ad_org_id: 11 } } } });
     log('§PHONE new order ' + n); }); };
-  $('b-visit').onclick = function () { act(async function () { await S.sync(pipe); cfg.lastVisit = Date.now(); }); };
+  $('b-visit').onclick = function () { act(async function () { await visit(); }); };
 
   (async function boot() {
     SQL = await initSqlJs({ locateFile: function (f) { return '../../erp/sqljs/' + f; } });

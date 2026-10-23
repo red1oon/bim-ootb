@@ -18,6 +18,7 @@ var path = require('path'), http = require('http'), fs = require('fs'), cp = req
 var ROOT = path.join(__dirname, '..', '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.db': 'application/octet-stream' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
 var TOKEN = cp.execSync('gh auth token', { encoding: 'utf8' }).trim();
+var PB = null; try { PB = JSON.parse(fs.readFileSync(require('os').homedir() + '/.config/bim-teams/postbox.json', 'utf8')); } catch (e) {}   // optional: the Gmail visit log
 var fails = 0, judged = 0, errors = 0;
 function verdict(ok, label, detail) { judged++; if (!ok) fails++; console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + label + (detail ? ' — ' + detail : '')); }
 async function gh(method, p) { var r = await fetch('https://api.github.com/repos/red1oon/bim-teams-pipe' + p, { method: method, headers: { 'Authorization': 'Bearer ' + TOKEN, 'Accept': 'application/vnd.github+json' } }); return r.status; }
@@ -36,7 +37,8 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
       x[1].on('pageerror', function (e) { errors++; console.log('     [' + x[0] + '] 🔴 pageerror ' + e.message); }); });
     async function ready(p) { await p.waitForSelector('body[data-ready="1"]', { timeout: 90000 }); }
     async function press(p, sel) { await p.click(sel); await ready(p); }
-    async function token(p) { await ready(p); await p.fill('#token', TOKEN); await press(p, '#b-token'); }
+    async function token(p) { await ready(p); await p.fill('#token', TOKEN); if (PB) { await p.fill('#pb-url', PB.url); await p.fill('#pb-secret', PB.secret); } await press(p, '#b-token'); }
+    var notes = []; [lap, ph].forEach(function (p) { p.on('console', function (m) { var t = m.text(); if (/§PHONE_NOTE/.test(t)) notes.push(t); }); });
 
     async function kidOf(p) { return p.evaluate(function () { return new Promise(function (res) { var r = indexedDB.open('comm_phone', 1);
       r.onsuccess = function () { var q = r.result.transaction('kv').objectStore('kv').get('device'); q.onsuccess = function () { res(q.result && q.result.kid); }; }; }); }); }
@@ -80,6 +82,17 @@ async function gh(method, p) { var r = await fetch('https://api.github.com/repos
     var codeAfter = (await ph.textContent('#mycode')).trim(), ordersAfter = await ph.$$eval('#orders .row', function (e) { return e.length; });
     verdict(codeAfter === codeBefore && ordersAfter === 1 && await ph.isVisible('#s-work'), 'after a reload the phone keeps its code, team and order', codeAfter + ' orders=' + ordersAfter);
     var dl = (await lap.textContent('#delivery')).trim(); console.log('   §PHONE laptop delivery: ' + dl);
+    console.log('\n§PHONE-VISITLOG');
+    if (!PB) console.log('   ⚪ INCONCLUSIVE — no ~/.config/bim-teams/postbox.json, visit log not judged');
+    else {
+      var okN = notes.filter(function (t) { return /§PHONE_NOTE ok /.test(t); }), bad = notes.filter(function (t) { return /failed/.test(t); });
+      var lg = await (await fetch(PB.url + '?secret=' + encodeURIComponent(PB.secret) + '&max=40', { redirect: 'follow' })).json();
+      var subs = (lg.entries || []).map(function (e) { return e.subject; }), mine = okN.map(function (t) { return t.replace(/^.*§PHONE_NOTE ok /, '').replace(/ \(confirmed.*$/, ''); });
+      console.log('   §PHONE visit notes ok=' + okN.length + ' failed=' + bad.length + (bad[0] ? ' first failure: ' + bad[0].slice(0, 120) : ''));
+      verdict(okN.length >= 8 && !bad.length, 'every visit from BOTH browsers left a note in the Gmail log', 'ok=' + okN.length + ' failed=' + bad.length);
+      verdict(mine.every(function (m) { return subs.indexOf(m) >= 0; }), 'each note the page reported is really in the log (read back by subject + note id)');
+    }
+
     console.log('\n§PHONE-NOERR'); verdict(errors === 0, 'zero page errors on both devices', 'errors=' + errors);
   } finally {
     await browser.close(); server.close();
