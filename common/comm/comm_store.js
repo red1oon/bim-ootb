@@ -252,13 +252,15 @@
     async function sync(pipe) {
       var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0 };
       var nb = await bundleNew();
-      if (nb) {
-        await pipe.put(nb.name, nb.bytes);
+      async function readBack() {
         var back = await pipe.get(nb.name), ok = false;
         if (back) { var got = (await readBundle(back)).map(function (x) { return x.hash; }); ok = got.length === nb.hashes.length && got.every(function (h, i) { return h === nb.hashes[i]; }); }
         db.run('INSERT OR REPLACE INTO cl_outbox VALUES (?,?,?,?)', [nb.name, nb.from, nb.to, ok ? 'SENT' : 'PUT-UNVERIFIED']);
         if (ok) { db.run('UPDATE cl_self SET bundled_to=? WHERE kid=?', [nb.to, self.kid]); rep.sent = nb.hashes.length; } else rep.readBackFail++;
       }
+      // a pipe that can batch (GitHub: 6 pushes/min/repo) gets bundle + head in ONE putMany at the end of the visit
+      var batched = typeof pipe.putMany === 'function';
+      if (nb && !batched) { await pipe.put(nb.name, nb.bytes); await readBack(); }
       for (var on of await pipe.list('o/')) {
         if (on.indexOf('o/' + self.kid + '/') === 0) continue;
         if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
@@ -269,7 +271,9 @@
         db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
       }
       var L = await order();
-      await pipe.put('h/' + self.kid, _json(await signedHead()));
+      if (batched) { var batch = [{ name: 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) batch.unshift({ name: nb.name, bytes: nb.bytes });
+        await pipe.putMany(batch); if (nb) await readBack(); }
+      else await pipe.put('h/' + self.kid, _json(await signedHead()));
       for (var hn of await pipe.list('h/')) {
         var hb = await pipe.get(hn); if (!hb) continue; var hd = _unjson(hb), dv = L.roster.devices[hd.author];
         if (!dv || !(await ENV.verify(hd, dv.jwk))) continue;            // a head counts only from an enrolled device
