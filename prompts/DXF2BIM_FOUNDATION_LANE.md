@@ -758,3 +758,15 @@ the extractor core's rows exactly, schema equal: Duplex ARC 50 (38 filled), Samp
 every host in the db; I3 fills removed -> void-only rows only (50 / 7 / 403, filled 0), voids removed too -> 0; I4 every other table has BASE's rows, the one table added. Regression (`run_all_witnesses.js` with D68 + D71): PASS 41 / FAIL 4 (the known 4). Measured, not judged: the page-level
 ride on a reopened IFC (the §D59 L4 move) is not re-run in this session (a page run; the machine was kept quiet for a film take); the cross-edge reader (`cross_edges.js:347`) reads exactly this table. Cache keys `import_db_builder.js?v=9`,
 `import_worker.js?v=16`. Modeller sw v147, Viewer sw v1655.
+## §D71 THE 2D PANEL LOADS A FIRM CATALOGUE (architect review session 1 NEXT (5): "`state.catalogue` is read by Convert, nothing sets it"; session 3, RESUME item 4)
+**Witness claim first (W-CATALOGUE-ROW, `modeller/tests/witness_dxf_catalogue_row.js`).** C1 (Node) `Dxf2BimImport.catalogueCheck(json)` accepts the catalogue `tools/catalogue_from_ifc.js` writes (version 1;
+`walls` / `slabs` / `doors` keyed by mm, rows `{n, material | type, ...}`) and states its name and counts (thicknesses / widths, rows); it REFUSES, with the reason, a non-object, another version, a table
+that is not an object of row arrays, a row with no count: the catalogue never half-loads. C2 (Node) Convert with the checked catalogue gives the §D53 materials (a wall whose thickness has a row takes its
+most frequent material, `material_source` = `<catalogue name>: n of m walls of t mm`), without it the reference: the row only sets what Convert already reads. C3 (page, software GL) on a standard set
+the 2D panel shows a row "Firm catalogue: none (materials from the reference)" with Load / Clear; Load of the tool's JSON sets `state.catalogue` (`§DXF-CATALOGUE loaded name=.. walls=.. slabs=.. doors=..`),
+the row names it and its counts, and the next Convert's walls carry its `material_source`; a malformed file is refused on the row and in the log (`§DXF-CATALOGUE refused reason=..`), `state.catalogue`
+unchanged; Clear returns to the reference. C4 unchanged: the structure path (the shed) shows no row (its materials are not catalogue-bound) and converts as before.
+**Measured first (2026-10-23 session 3):** `dxf_import_ui.js` passes `catalogue: state.catalogue || undefined` to `convert` and no code sets `state.catalogue`; `applyMaterials` (`dxf2bim_import.js`) reads
+`cat.walls[t]` / `cat.slabs[t]` rows (most frequent first) and `cat.name`; the catalogue is made only in Node (`tools/catalogue_from_ifc.js`, web-ifc), so the page loads its JSON.
+**Rule.** A pure `catalogueCheck` in `dxf2bim_import.js`; a row in the 2D panel (standard path only) with a `.json` file input; `DxfImportUI.loadCatalogue(text)` / `clearCatalogue()` are the same
+handlers the buttons call (for tests).
