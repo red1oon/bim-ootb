@@ -4298,7 +4298,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var rw = ruleCode ? _procRuleWhere(ruleCode, getVals ? getVals() : {}) : '';
       var keep = sel.value; while (sel.options.length > 1) sel.remove(1);
       var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + (rw ? ' AND (' + rw + ')' : '') + ' ORDER BY ' + (orderBy || '2'));   // a rule that reads a context variable we cannot resolve here (rw === null) filters nothing and says so in the log line
-      rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if ((keep || (dflt != null ? String(dflt) : '')) === String(r.k)) o.selected = true; sel.appendChild(o); });
+      var want = keep || (dflt != null ? String(dflt) : ''), seen = false;
+      rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (want === String(r.k)) { o.selected = true; seen = true; } sel.appendChild(o); });
+      // a value the window context hands us can name a record made THIS session (the order a toolbar process was launched from carries a synthetic negative id the BASE list cannot hold): it is kept - and labelled like its
+      //   siblings - ONLY if that row exists in this session's own writes (the tip). A default that names nothing, in the base or in the tip, stays dropped, as before (a blank filter is not a silent filter on a stranger).
+      if (want !== '' && !seen) {
+        var tipRow = null;
+        try { if (window.__crud && window.__crud.withModelTrx) tipRow = window.__crud.withModelTrx(function (q) { var r = q('SELECT ' + disp + ' AS d FROM ' + tbl + ' WHERE ' + key + '=' + Number(want)); return r && r.length ? r[0] : null; }); } catch (e) { tipRow = null; }
+        if (tipRow) { var ox = el('option', null, tipRow.d + ' (' + want + ')'); ox.value = want; ox.selected = true; sel.appendChild(ox); console.log('§PROC-PARAM-PICKER col=' + key + ' kept session record ' + want + ' (not in the base list, found in the tip)'); }
+        else console.log('§PROC-PARAM-PICKER col=' + key + ' default ' + want + ' names no record (base or tip) - not selected');
+      }
       console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"' + (ruleCode ? ' valrule=' + (rw === null ? 'UNRESOLVED' : rw) : ''));
     };
     fill(); if (ruleCode) sel._refilter = fill;

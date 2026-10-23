@@ -749,17 +749,18 @@
       case 11: case 12: case 22: case 29: case 37: return 'number';
       case 15: case 16: case 24: return 'date';
       case 18: case 19: case 30: return 'fk';
+      case 31: return 'fk';   // Locator = WLocatorEditor over MLocatorLookup (M_Locator): a lookup, not free text - ref/refkey fixed in the fold below. 47 dictionary columns carry it (ERP_FRIENDLY_OPS_LENS.md §71)
       case 13: return 'id'; case 28: return 'button';
       case 17: return 'list'; case 20: return 'yesno';
       // string-rendered ids — MUST be enumerated so a known id never falls through to the coarse referenceType
-      // fallback: 10 String · 14 Text · 23 Binary · 25 Account · 31 Locator · 32 Image · 33 Assignment
+      // fallback: 10 String · 14 Text · 23 Binary · 25 Account · 32 Image · 33 Assignment
       // · 34 Memo · 38 PrinterName.   (35 PAttribute has its own editor, below)
       // FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b): 21 Location is its own
       // editor (WLocationEditor) — an address dialog that saves an MLocation and sets the id — not free text.
       case 21: return 'location';
       // AS-1 (prompts/ERP_PRODUCT_ATTRIBUTE_ASI.md): 35 PAttribute is its own editor (WPAttributeEditor -> WPAttributeDialog): an Attribute Set Instance picker/creator, not free text
       case 35: return 'pattribute';
-      case 10: case 14: case 23: case 25: case 31: case 32: case 33: case 34: case 38: return 'string';
+      case 10: case 14: case 23: case 25: case 32: case 33: case 34: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }
   }
@@ -900,6 +901,7 @@
         // PURE — the host injects opts.refTable(refValueId), exactly as §P2.7 injects opts.refList.
         // No AD_Ref_Table row (or no resolver) → keep the convention verbatim, unchanged behaviour.
         spec.ref = String(f.columnName).toLowerCase().replace(/_id$/, '');
+        if (Number(f.referenceId) === 31) { spec.ref = 'm_locator'; spec.refkey = 'm_locator_id'; spec.refsource = 'DisplayType:31 Locator (MLocatorLookup -> M_Locator)'; refTblLog.push(spec.col + '→m_locator(Locator)'); }   // M_LocatorTo_ID, PP's, A_Asset's ...: the TARGET is M_Locator whatever the column is called
         var rt = (typeof opts.refTable === 'function' && f.referenceValueId != null) ? opts.refTable(f.referenceValueId) : null;
         if (rt && rt.tableName) {
           spec.ref = String(rt.tableName).toLowerCase();
