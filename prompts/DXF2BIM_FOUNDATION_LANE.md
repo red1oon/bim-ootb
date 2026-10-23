@@ -776,3 +776,20 @@ catalogue are each refused with the reason; C2 Convert with it: 288 of 292 HHS w
 (software GL, the HHS standard set): the row reads none, a version-2 file is refused (row unchanged, `§DXF-CATALOGUE refused`), the catalogue loads and is named with its counts (`§DXF-CATALOGUE loaded`), Clear
 returns to none; C4 the marked shed (structure path) shows no row and gates as before (445 bodies). Not judged in the page: a Convert there (the HHS set's gate needs the OCI library); Convert's use of the
 catalogue is C2's `I.convert` call, the one the page makes with `catalogue: state.catalogue`. Modeller sw v148.
+## §D70 THE WRITER DRAWS THE SLAB EDGE, THE READER READS IT (architect review F15; session 3, RESUME item 4) — ⛔ measured, an owner decision first
+**Witness claim (written first, not built).** W-SLAB-EDGE: E1 the writer draws each plan's floor-slab outline (the union of the mid-thickness contours of the model's slabs whose top lies at the storey, as
+`elementContours` cuts them) as closed polylines on `A-FLOR-OTLN`; E2 the reader reads them as the slab outline (READ, black), superseding the §D51 estimate and the §D44 gap; the read slab area per storey
+= the model's union to 0.5 %; E3 Duplex (a rectangle) byte-identical; E4 falsifier: the layer removed gives §D51 back.
+**Measured first (2026-10-23 session 3, scratchpad `tools/f15_measure.js`; slabs >= 50 mm whose top is within -0.5 / +0.3 m of the storey):**
+| set | storey | slabs | union m2 | separate polygons | rings (holes) | edges (rectilinear) | rectilinear share of edge length |
+|---|---|---|---|---|---|---|---|
+| Duplex | Level 1 / 2 | 4 / 2 | 180.5 / 118.6 | 4 / 2 | 4 / 2 | 20 (20) / 16 (16) | 1.000 / 1.000 |
+| HHS | Level 1 / 2 / 3 | 24 / 34 / 11 | 1,839.7 / 1,666.5 / 635.6 | 10 / 31 / 11 | 64 / 85 / 23 (holes 3.3 / 2.9 / 23.2 m2) | 951 (347) / 969 (316) / 310 (125) | 0.964 / 0.972 / 0.987 |
+| JKR3 | 01 / 02 / 03 | 85 / 157 / 21 | 1,177.2 / 439.9 / 90.0 | 4 / 54 / 2 | 4 / 56 / 2 | 54 / 314 / 32 (all) | 1.000 |
+| Clinic | all three | 0 at its levels (3 IfcSlab, storey `Unknown`, top 2.11 m) | - | - | - | - | - |
+**Why it stops here.** (1) The reader's slab body is rectilinear only (`prismRect` / `prismCells`, `dxf2shell.js`): HHS's outlines carry 604 / 653 / 185 angled edges (3-4 % of the edge length: the
+column notches and the curved facade's facets) and 54 / 83 / 21 holes that are column penetrations, so reading the exact union needs a general polygon prism with holes (a triangulated top / bottom) that
+does not exist yet. (2) What a plan's slab edge IS is a drafting convention, not a measurement: drawn exactly, HHS Level 1 gets 10 slab bodies with 54 column holes and JKR Level 2 gets 54 separate
+precast planks (joints of a few mm); a drafted edge would be the floor's perimeter with its real voids only. Choosing which (exact union, or perimeter + voids above a stated area, or plank joints closed
+below a stated width) is the owner's; the numbers above are what each choice starts from. (3) On the Clinic the round-trip db has no slab at its levels, so E2 has nothing to read there (a data question, F17's kind).
+**D70 STATE: ⛔ (measured; awaiting the owner's slab-edge convention).** Nothing built.
