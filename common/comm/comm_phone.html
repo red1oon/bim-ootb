@@ -148,7 +148,7 @@
   $('b-join').onclick = function () { act(async function () {
     var inv = ($('invite').value || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('an invite is 64 characters 0-9 a-f');
     cfg.space = inv; cfg.founder = false; await openStore();
-    await pipe.putMany([{ name: 'r/' + dev.kid, bytes: new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) })) }]);
+    await pipe.putMany([{ name: 'r/' + dev.kid, bytes: new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) })) }]);
     log('§PHONE join request posted, code ' + codeOf(dev.kid)); }); };
   $('b-requests').onclick = function () { act(async function () {
     var L = await S.order(), names = await pipe.list('r/'), html = '';
@@ -158,7 +158,7 @@
     $('requests').innerHTML = html || '<div class="mut">no pending requests</div>';
     document.querySelectorAll('.b-approve').forEach(function (b) { b.onclick = function () { act(async function () {
       var rq = JSON.parse(b.closest('.row').getAttribute('data-req'));
-      await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: 102, comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu);
+      await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: 102, comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);   // CL8: the dh_jwk makes the enroller grant the space key in this same visit
       await visit(); log('§PHONE approved ' + codeOf(rq.kid)); }); }; });
     log('§PHONE requests listed: ' + names.length); }); };
   $('b-new').onclick = function () { act(async function () {
@@ -173,6 +173,7 @@
     adDb = new SQL.Database(await fetchWithProgress('../../erp/ad_seed.db'));
     dev = await kvGet('device');
     if (!dev) { dev = await CommStore.newDevice(); dev.person_uu = crypto.randomUUID(); await kvPut('device', dev); }   // CryptoKey stored as-is (non-extractable)
+    else if (!dev.dhPrivateKey) { await CommStore.ensureDh(dev); await kvPut('device', dev); }                          // a device saved before CL8 gets its key-exchange key (useful only if not yet enrolled)
     cfg = (await kvGet('cfg')) || {};
     var m = /#join=([0-9a-f]{64})/.exec(location.hash); if (m) $('invite').value = m[1];
     if (cfg.space) await openStore(await kvGet('db'));

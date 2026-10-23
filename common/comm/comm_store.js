@@ -1,8 +1,8 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 /* comm_store.js — the device's local comm store (comm.db) and the post-office visit (sync).
- * Implementing prompts/TEAMWORK_FRAMEWORK.md §11.11 + §11.15 + §11.17 + §12.4 (CL3) + §12.6 + §12.7 (CL4)
- * — Witnesses: W-STORE-NODE, W-FOLDER-2CTX, W-ADMIT-FOLD.
+ * Implementing prompts/TEAMWORK_FRAMEWORK.md §11.11 + §11.15 + §11.17 + §12.4 (CL3) + §12.6 + §12.7 (CL4) + §13.2 (CL8)
+ * — Witnesses: W-STORE-NODE, W-FOLDER-2CTX, W-ADMIT-FOLD, W-PIPE-OPAQUE.
  *
  * Holds ALL sync state on the device so the pipe holds only bytes. Sits OUTSIDE the business DB: the kernel only
  * ever sees ops that came out of order() as MERGED.
@@ -12,6 +12,11 @@
  *             3) order the admitted ops by the versions they read (comm_order.js, §12.6)
  *             4) an op that read a REFUSED version is REFUSED too (the version it saw never happened).
  * Depends on CommEnvelope, CommOrder, CommRoster, CommAdmit; sql.js injected (opts.SQL); opts.access injected.
+ *
+ * CL8 encryption (§13.2): the pipe sees only ciphertext. A space with a founder dh_jwk has an AES-GCM-256 space key per
+ * EPOCH. Bundles carry business envelopes as `enc:<epoch>:<b64(iv‖ct)>` (op_hash stays plaintext; identity ops and heads
+ * stay plaintext). A device derives its epoch keys at fold time from the KEYGRANTs addressed to it (ECDH(its private key,
+ * granter public key) → HKDF-SHA256 → AES-KW) — no symmetric key is ever stored. Ops it cannot open yet wait in cl_sealed.
  */
 (function (global) {
   'use strict';
@@ -26,6 +31,7 @@
     'CREATE TABLE IF NOT EXISTS cl_contender (op_hash TEXT PRIMARY KEY, author_kid TEXT, author_seq INTEGER, envelope TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_verdict (op_hash TEXT PRIMARY KEY, fold_pos INTEGER, verdict TEXT, reason TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_fetched (name TEXT, pipe_id TEXT, PRIMARY KEY(name, pipe_id))',
+    'CREATE TABLE IF NOT EXISTS cl_sealed (op_hash TEXT PRIMARY KEY, epoch INTEGER, ct TEXT NOT NULL, bundle TEXT, pipe_id TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_outbox (bundle_name TEXT PRIMARY KEY, from_seq INTEGER, to_seq INTEGER, state TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_head_seen (author_kid TEXT, pipe_id TEXT, seq INTEGER, head_hash TEXT, frontier_json TEXT, sig TEXT, PRIMARY KEY(author_kid, pipe_id))'
   ];
@@ -36,6 +42,41 @@
   function _json(o) { return new TextEncoder().encode(JSON.stringify(o)); }
   function _unjson(b) { return JSON.parse(new TextDecoder().decode(b)); }
   function _num(v) { return v == null || v === '' ? null : Number(v); }
+
+  // ── CL8 crypto helpers (WebCrypto only; the epoch key lives in memory, never in comm.db) ──
+  function _sub() { return globalThis.crypto.subtle; }
+  function _b64(b) { b = new Uint8Array(b); if (typeof Buffer !== 'undefined') return Buffer.from(b).toString('base64'); var t = ''; for (var i = 0; i < b.length; i++) t += String.fromCharCode(b[i]); return btoa(t); }
+  function _unb64(t) { if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(String(t), 'base64')); var s = atob(String(t)), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+  var _aad = function (space, epoch) { return new TextEncoder().encode('bim-comm-op|' + space + '|' + epoch); };
+  // the KEK for one grant: ECDH(my private, their public) → HKDF-SHA256 (bound to space, epoch, from, to) → AES-KW-256
+  async function _kek(priv, pubJwk, space, epoch, from, to) {
+    var pub = await _sub().importKey('jwk', ROS.dhOf(pubJwk), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+    var bits = await _sub().deriveBits({ name: 'ECDH', public: pub }, priv, 256);
+    var hk = await _sub().importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+    return _sub().deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new TextEncoder().encode('bim-comm-keygrant'),
+      info: new TextEncoder().encode(space + '|' + epoch + '|' + from + '|' + to) }, hk, { name: 'AES-KW', length: 256 }, false, ['wrapKey', 'unwrapKey']);
+  }
+  async function _newSpaceKey() { return _sub().generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']); }
+  async function _wrap(key, priv, pubJwk, space, epoch, from, to) { return _b64(await _sub().wrapKey('raw', key, await _kek(priv, pubJwk, space, epoch, from, to), 'AES-KW')); }
+  async function _unwrap(wrapped, priv, pubJwk, space, epoch, from, to) {
+    return _sub().unwrapKey('raw', _unb64(wrapped), await _kek(priv, pubJwk, space, epoch, from, to), 'AES-KW', { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  }
+  async function _seal(env, key, epoch, space) {
+    var iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+    var ct = new Uint8Array(await _sub().encrypt({ name: 'AES-GCM', iv: iv, additionalData: _aad(space, epoch) }, key, new TextEncoder().encode(ENV.canonical(env))));
+    var out = new Uint8Array(12 + ct.length); out.set(iv, 0); out.set(ct, 12); return 'enc:' + epoch + ':' + _b64(out);
+  }
+  // → {state:'ok', env, epoch} | {state:'sealed', epoch} (no key for that epoch yet) | {state:'tampered'} (key held, GCM refused it)
+  async function _openText(text, ring, space) {
+    var m = /^enc:(\d+):([A-Za-z0-9+\/=]+)$/.exec(String(text)); if (!m) return { state: 'tampered' };
+    var epoch = Number(m[1]), b = _unb64(m[2]); if (b.length < 28) return { state: 'tampered' };
+    var ks = ring[epoch]; if (!ks || !ks.length) return { state: 'sealed', epoch: epoch };
+    for (var i = 0; i < ks.length; i++) {
+      try { var pt = await _sub().decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: _aad(space, epoch) }, ks[i], b.slice(12));
+        return { state: 'ok', env: JSON.parse(new TextDecoder().decode(pt)), epoch: epoch }; } catch (e) { /* try the next candidate key of this epoch */ }
+    }
+    return { state: 'tampered' };
+  }
 
   // record scope for canUpdate: a CREATE carries it (fields or the stdDefaults buildOp stamps); later ops inherit
   // it from their record's CREATE. Unknown → null → admission refuses (fail-closed).
@@ -101,6 +142,21 @@
       return last;
     }
     async function cur() { return last || order(); }
+
+    // my epoch keys, derived from the KEYGRANTs addressed to me that the roster accepted: {epoch: [CryptoKey]} (§13.2).
+    // Memoised on the fold result, so any new op (a new grant, a revoke) re-derives; nothing is persisted.
+    var ringFor = null, ringVal = {};
+    async function keyring() {
+      var L = await cur(); if (ringFor === L) return ringVal;
+      var ring = {}, R = L.roster;
+      if (self.dhPrivateKey && R.ok) for (var g of R.grants) {
+        if (g.kid !== self.kid) continue;
+        var from = R.devices[g.from_kid]; if (!from || !from.dh) continue;
+        try { var k = await _unwrap(g.wrapped, self.dhPrivateKey, from.dh, space, g.epoch, g.from_kid, self.kid); (ring[g.epoch] = ring[g.epoch] || []).push(k); } catch (e) { /* a grant that does not open is not a key */ }
+      }
+      ringFor = L; ringVal = ring; return ring;
+    }
+    function _newest(ring) { var e = Object.keys(ring).map(Number).sort(function (a, b) { return b - a; })[0]; return e == null ? null : e; }
 
     // the version of each record THIS author sees: the record's HEADS (ops on it with no descendant on it), over the
     // placed order with my own not-yet-placed ops on top — what my screen shows. One head = a hash; several = the
@@ -212,9 +268,30 @@
     }
 
     // identity helpers (the ops §11.5 names)
-    async function genesis(params) { return author({ target: { table: 'comm_space', uu: await ROS.spaceUU(space) }, body: { op_type: 'GENESIS', params: params } }); }
+    async function grantKey(kid, dhJwk, epoch, key) {     // one KEYGRANT: the epoch key wrapped for device `kid` (§13.2)
+      var wrapped = await _wrap(key, self.dhPrivateKey, dhJwk, space, epoch, self.kid, kid);
+      return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [await ROS.epochUU(space, epoch)],
+                      body: { op_type: 'KEYGRANT', params: { kid: kid, epoch: epoch, from_kid: self.kid, wrapped: wrapped } } });
+    }
+    async function genesis(params) {
+      var g = await author({ target: { table: 'comm_space', uu: await ROS.spaceUU(space) }, body: { op_type: 'GENESIS', params: params } });
+      var f = params.founder || {};
+      if (ROS.dhOf(f.dh_jwk) && f.kid === self.kid && self.dhPrivateKey) {      // the founder creates epoch 1 and grants it to itself
+        await grantKey(self.kid, f.dh_jwk, 1, await _newSpaceKey()); log('§COMM_KEY kid=' + self.kid + ' epoch=1 founder-grant space=' + space.slice(0, 12));
+      }
+      return g;
+    }
     async function addPerson(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'PERSON', params: p } }); }
-    async function enroll(kid, jwk, personUu) { return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [String(personUu).toLowerCase()], body: { op_type: 'ENROLL', params: { kid: kid, jwk: jwk, person_uu: String(personUu).toLowerCase() } } }); }
+    // dhJwk is OPTIONAL: with it the enroller also grants every epoch key it holds, in the same visit (§13.2); without it the
+    // device is enrolled but holds no key, so it cannot read business ops.
+    async function enroll(kid, jwk, personUu, dhJwk) {
+      var params = { kid: kid, jwk: jwk, person_uu: String(personUu).toLowerCase() }; if (dhJwk) params.dh_jwk = dhJwk;
+      var r = await author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [String(personUu).toLowerCase()], body: { op_type: 'ENROLL', params: params } });
+      if (dhJwk && self.dhPrivateKey) { var ring = await keyring(), n = 0;
+        for (var ep of Object.keys(ring).map(Number).sort()) { await grantKey(kid, dhJwk, ep, ring[ep][0]); n++; }
+        log('§COMM_KEY kid=' + self.kid + ' enroll=' + kid + ' granted_epochs=' + n); }
+      return r;
+    }
     async function setRole(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'ROLE', params: p } }); }
     async function revoke(kid, lastGood) { return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, body: { op_type: 'REVOKE', params: { kid: kid, last_good_seq: lastGood } } }); }
 
@@ -229,47 +306,121 @@
       last = null; return 'RECEIVED';
     }
 
-    // bundle = a tiny SQLite file, one table ops(op_hash, envelope); name hash = sha256 over the op hashes (row stream)
+    // bundle = a tiny SQLite file, one table ops(op_hash, envelope); name hash = sha256 over the op hashes (row stream).
+    // CL8: a business envelope is stored as enc:<epoch>:<b64> under my newest epoch key; identity ops stay plaintext. In an
+    // encrypted space a business op I cannot yet encrypt is NOT sent (never plaintext) — the bundle stops before it (§13.2).
     async function bundleNew() {
-      var me = selfRow(), rows = _q(db, "SELECT op_hash, author_seq, envelope FROM cl_op WHERE author_kid=? AND state='OWN' AND author_seq>? ORDER BY author_seq", [self.kid, me.bundled_to]);
-      if (!rows.length) return null;
+      var me = selfRow(), rows = _q(db, "SELECT op_hash, author_seq, op_type, envelope FROM cl_op WHERE author_kid=? AND state='OWN' AND author_seq>? ORDER BY author_seq", [self.kid, me.bundled_to]);
+      var R = (await cur()).roster, ring = await keyring(), ep = _newest(ring), take = [], enc = {};
+      for (var r of rows) {
+        if (!ROS.IDENTITY[r.op_type]) {
+          if (!R.ok || R.encrypted) { if (ep == null) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-key-yet'); break; }
+            enc[r.op_hash] = await _seal(JSON.parse(r.envelope), ring[ep][0], ep, space); }
+        }
+        take.push(r);
+      }
+      if (!take.length) return null;
       var b = new SQL.Database(); b.run('CREATE TABLE ops (op_hash TEXT PRIMARY KEY, envelope TEXT NOT NULL)');
-      rows.forEach(function (r) { b.run('INSERT INTO ops VALUES (?,?)', [r.op_hash, r.envelope]); });
+      take.forEach(function (r) { b.run('INSERT INTO ops VALUES (?,?)', [r.op_hash, enc[r.op_hash] || r.envelope]); });
       var bytes = b.export(); b.close();
-      var from = rows[0].author_seq, to = rows[rows.length - 1].author_seq, h12 = (await _sha(rows.map(function (r) { return r.op_hash; }).join(','))).slice(0, 12);
-      return { name: 'o/' + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: rows.map(function (r) { return r.op_hash; }) };
+      var from = take[0].author_seq, to = take[take.length - 1].author_seq, h12 = (await _sha(take.map(function (r) { return r.op_hash; }).join(','))).slice(0, 12);
+      return { name: 'o/' + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: take.map(function (r) { return r.op_hash; }), sealed: Object.keys(enc).length };
     }
+    function _rows(bytes) { var b = new SQL.Database(bytes), out = _q(b, 'SELECT op_hash, envelope FROM ops').map(function (r) { return { hash: r.op_hash, text: r.envelope }; }); b.close(); return out; }
+    // readBundle → [{hash, env}]; a sealed row I can open now is opened, one I cannot is {hash, env:null, enc:<epoch>}
     async function readBundle(bytes) {
-      var b = new SQL.Database(bytes), out = _q(b, 'SELECT op_hash, envelope FROM ops').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; });
-      b.close(); return out;
+      var ring = await keyring(), out = [];
+      for (var r of _rows(bytes)) {
+        if (r.text.indexOf('enc:') !== 0) { out.push({ hash: r.hash, env: JSON.parse(r.text) }); continue; }
+        var o = await _openText(r.text, ring, space);
+        out.push(o.state === 'ok' && (await ENV.hashHex(o.env)) === r.hash ? { hash: r.hash, env: o.env } : { hash: r.hash, env: null, enc: o.epoch != null ? o.epoch : 'tampered' });
+      }
+      return out;
     }
     async function signedHead() {
       var me = selfRow(), head = { v: 1, space: space, author: self.kid, seq: me.next_seq - 1, hash: me.head_hash || null, frontier: await frontier(), ts: Date.now() };
       return ENV.sign(head, self);
     }
 
+    // sealed ops whose epoch key I now hold are opened and ingested; a held key that refuses one = tampered (§13.2)
+    async function openSealed(rep) {
+      for (var round = 0; round < 5; round++) {
+        var rows = _q(db, 'SELECT * FROM cl_sealed'); if (!rows.length) return;
+        var ring = await keyring(), progressed = 0;
+        for (var r of rows) {
+          var o = await _openText(r.ct, ring, space);
+          if (o.state === 'sealed') continue;
+          db.run('DELETE FROM cl_sealed WHERE op_hash=?', [r.op_hash]); progressed++;
+          if (o.state === 'ok' && (await ENV.hashHex(o.env)) === r.op_hash) {
+            var st = await ingest(o.env, r.pipe_id); rep.opened++; if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
+          } else {                                     // GCM tag (or the op_hash) refused it: drop it, and forget the bundle so an honest copy can heal it
+            rep.tampered++; rep.rejected++; db.run('DELETE FROM cl_fetched WHERE name=? AND pipe_id=?', [r.bundle, r.pipe_id]);
+            log('§COMM_SEAL kid=' + self.kid + ' TAMPERED op=' + r.op_hash.slice(0, 12) + ' epoch=' + r.epoch + ' bundle=' + r.bundle + ' refused (GCM)');
+          }
+        }
+        if (!progressed) return;
+      }
+    }
+
+    // admin/same-person housekeeping at the start of a visit (§13.2): (1) a revoked device that held a key → REKEY epoch n+1 and
+    // grant it to every non-revoked device; (2) any epoch key I hold that an eligible device still lacks → grant it.
+    async function autoKeys(rep) {
+      if (!self.dhPrivateKey) return;
+      var L = await cur(), R = L.roster; if (!R.ok || !R.encrypted || !R.devices[self.kid] || R.revokes[self.kid] != null) return;
+      var me = R.devices[self.kid], role = R.roleAt(self.kid, selfRow().next_seq), ring = await keyring();
+      var mine = allOps().filter(function (o) { return o.env.author === self.kid && (o.env.body.op_type === 'KEYGRANT' || o.env.body.op_type === 'REKEY'); });
+      var rekeyed = {}; R.rekeys.forEach(function (k) { k.excludes.forEach(function (x) { rekeyed[x] = 1; }); });
+      mine.forEach(function (o) { if (o.env.body.op_type === 'REKEY') (o.env.body.params.excludes || []).forEach(function (x) { rekeyed[x] = 1; }); });   // my own, even if still unplaced
+      var need = Object.keys(R.revokes).filter(function (k) { return R.holdersAll[k] && !rekeyed[k]; }).sort();
+      if (role.comm_admin && need.length) {
+        var epoch = R.epoch + 1, key = await _newSpaceKey();
+        await author({ target: { table: 'comm_epoch', uu: await ROS.epochUU(space, epoch) }, body: { op_type: 'REKEY', params: { epoch: epoch, excludes: need } } });
+        var n = 0, kids = Object.keys(R.devices).sort();
+        for (var k of kids) { if (R.revokes[k] != null || !R.devices[k].dh) continue; await grantKey(k, R.devices[k].dh, epoch, key); n++; }
+        rep.granted += n; log('§COMM_REKEY kid=' + self.kid + ' epoch=' + epoch + ' excludes=' + need.join(',') + ' grants=' + n);
+        L = await cur(); R = L.roster; ring = await keyring();
+      }
+      var have = {}; R.grants.forEach(function (g) { have[g.kid + '#' + g.epoch] = 1; });
+      allOps().forEach(function (o) { if (o.env.author === self.kid && o.env.body.op_type === 'KEYGRANT') have[o.env.body.params.kid + '#' + o.env.body.params.epoch] = 1; });   // mine, accepted or not: never re-issue
+      for (var kid of Object.keys(R.devices).sort()) { var d = R.devices[kid];
+        if (kid === self.kid || R.revokes[kid] != null || !d.dh || !(role.comm_admin || d.person === me.person)) continue;
+        for (var ep of Object.keys(ring).map(Number).sort()) { if (have[kid + '#' + ep]) continue;
+          await grantKey(kid, d.dh, ep, ring[ep][0]); rep.granted++; log('§COMM_KEY kid=' + self.kid + ' repair-grant to=' + kid + ' epoch=' + ep); } }
+    }
+
     // the post-office visit (§11.17): note my visit, collect my mail
     async function sync(pipe) {
-      var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0 };
+      var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0, sealed: 0, opened: 0, tampered: 0, granted: 0 };
+      // 1. collect: plaintext ops are ingested; sealed ones wait in cl_sealed until a key opens them
+      for (var on of await pipe.list('o/')) {
+        if (on.indexOf('o/' + self.kid + '/') === 0) continue;
+        if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
+        var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
+        rep.fetched++;
+        for (var it of _rows(ob)) {
+          if (it.text.indexOf('enc:') === 0) {
+            var ex = _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=? UNION SELECT 1 FROM cl_contender WHERE op_hash=? UNION SELECT 1 FROM cl_sealed WHERE op_hash=?', [it.hash, it.hash, it.hash]);
+            if (!ex.length) { var m = /^enc:(\d+):/.exec(it.text); db.run('INSERT INTO cl_sealed VALUES (?,?,?,?,?)', [it.hash, m ? Number(m[1]) : null, it.text, on, pipe.id]); }
+            continue;
+          }
+          var st = await ingest(JSON.parse(it.text), pipe.id);
+          if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
+        }
+        db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
+      }
+      await openSealed(rep);
+      await autoKeys(rep);
+      // 2. send my news
       var nb = await bundleNew();
       async function readBack() {
         var back = await pipe.get(nb.name), ok = false;
-        if (back) { var got = (await readBundle(back)).map(function (x) { return x.hash; }); ok = got.length === nb.hashes.length && got.every(function (h, i) { return h === nb.hashes[i]; }); }
+        if (back) { var got = _rows(back).map(function (x) { return x.hash; }); ok = got.length === nb.hashes.length && got.every(function (h, i) { return h === nb.hashes[i]; }); }
         db.run('INSERT OR REPLACE INTO cl_outbox VALUES (?,?,?,?)', [nb.name, nb.from, nb.to, ok ? 'SENT' : 'PUT-UNVERIFIED']);
         if (ok) { db.run('UPDATE cl_self SET bundled_to=? WHERE kid=?', [nb.to, self.kid]); rep.sent = nb.hashes.length; } else rep.readBackFail++;
       }
       // a pipe that can batch (GitHub: 6 pushes/min/repo) gets bundle + head in ONE putMany at the end of the visit
       var batched = typeof pipe.putMany === 'function';
       if (nb && !batched) { await pipe.put(nb.name, nb.bytes); await readBack(); }
-      for (var on of await pipe.list('o/')) {
-        if (on.indexOf('o/' + self.kid + '/') === 0) continue;
-        if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
-        var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
-        rep.fetched++;
-        for (var it of await readBundle(ob)) { var st = await ingest(it.env, pipe.id);
-          if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++; }
-        db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
-      }
       var L = await order();
       if (batched) { var batch = [{ name: 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) batch.unshift({ name: nb.name, bytes: nb.bytes });
         await pipe.putMany(batch); if (nb) await readBack(); }
@@ -281,10 +432,13 @@
       }
       var cnt = function (v) { return Object.keys(L.verdict).filter(function (h) { return L.verdict[h].verdict === v; }).length; };
       rep.placed = L.order.length; rep.parked = cnt('PARKED'); rep.refused = cnt('REFUSED'); rep.gaps = gaps().length; rep.equivocations = L.equivocations.length;
+      rep.sealed = _q(db, 'SELECT COUNT(*) AS n FROM cl_sealed')[0].n;
+      var ringNow = await keyring(), held = Object.keys(ringNow).map(Number).sort();
       log('§COMM_TRUST mode=roster genesis=' + (L.roster.ok ? String(L.roster.genesis).slice(0, 12) : 'NONE(' + L.roster.reason + ')') +
           ' space=' + space.slice(0, 12) + ' devices=' + Object.keys(L.roster.devices).length + ' revoked=' + Object.keys(L.roster.revokes).length);
       log('§COMM_SYNC kid=' + self.kid + ' pipe=' + pipe.id + ' sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received +
           ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused + ' gaps=' + rep.gaps + ' equivocations=' + rep.equivocations);
+      if (L.roster.encrypted || rep.sealed || rep.tampered) log('§COMM_CRYPT kid=' + self.kid + ' epochs=' + (held.join(',') || 'none') + ' sealed=' + rep.sealed + ' opened=' + rep.opened + ' tampered=' + rep.tampered + ' granted=' + rep.granted);
       return rep;
     }
 
@@ -307,6 +461,7 @@
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
              genesis: genesis, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke,
+             keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
              conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
              verdicts: verdicts, query: function (sql, args) { return _q(db, sql, args); } };
@@ -317,16 +472,25 @@
     var kp = await globalThis.crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
     var jwk = await globalThis.crypto.subtle.exportKey('jwk', kp.publicKey);
     var pub = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
-    return { kid: await ROS.kidOf(pub), privateKey: kp.privateKey, pubJwk: pub };
+    return ensureDh({ kid: await ROS.kidOf(pub), privateKey: kp.privateKey, pubJwk: pub });
+  }
+  // CL8: the second key pair, for key exchange (P-256 signing keys cannot do ECDH). Private part non-extractable.
+  // Also upgrades a device object saved before CL8 (no dh keys yet) — it is only useful if done BEFORE the device is enrolled.
+  async function ensureDh(dev) {
+    if (dev.dhPrivateKey && dev.dhPubJwk) return dev;
+    var dk = await globalThis.crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']);
+    var dj = await globalThis.crypto.subtle.exportKey('jwk', dk.publicKey);
+    dev.dhPrivateKey = dk.privateKey; dev.dhPubJwk = { kty: dj.kty, crv: dj.crv, x: dj.x, y: dj.y }; return dev;
   }
   // a new space: the founder's genesis params and the space id they hash to (the invite)
   async function newSpace(name, founder, personUu, personName, adRoleId) {
     var nonce = _hex(globalThis.crypto.getRandomValues(new Uint8Array(16)));
     var params = { name: name, nonce: nonce, founder: { kid: founder.kid, jwk: founder.pubJwk, person_uu: String(personUu).toLowerCase(), name: personName, ad_role_id: adRoleId } };
+    if (founder.dhPubJwk) params.founder.dh_jwk = founder.dhPubJwk;       // CL8: the founder's key-exchange key makes this an encrypted space
     return { params: params, space: await ROS.spaceOf(params) };
   }
 
-  var API = { open: open, newDevice: newDevice, newSpace: newSpace, kidOf: function (j) { return ROS.kidOf(j); } };
+  var API = { open: open, newDevice: newDevice, ensureDh: ensureDh, newSpace: newSpace, kidOf: function (j) { return ROS.kidOf(j); } };
   global.CommStore = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

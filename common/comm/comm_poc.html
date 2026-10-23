@@ -51,7 +51,7 @@
       dev = await CommStore.newDevice(); dev.person_uu = crypto.randomUUID();
       pipe = CommPipe.httpPipe(pipeBase, 'folder-http');
       document.getElementById('who').textContent = 'device ' + dev.kid;
-      return { kid: dev.kid, jwk: dev.pubJwk, person_uu: dev.person_uu };
+      return { kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu };
     },
     // founder: a new space (its id is the invite) + genesis
     found: async function (name, adRoleId) {
@@ -62,7 +62,7 @@
     // the founder enrols a peer from the code the peer showed (kid + public key) — §11.5
     enrollPeer: async function (peer, name, adRoleId) {
       await S.addPerson({ person_uu: peer.person_uu, name: name, ad_role_id: adRoleId, comm_admin: false });
-      await S.enroll(peer.kid, peer.jwk, peer.person_uu);
+      await S.enroll(peer.kid, peer.jwk, peer.person_uu, peer.dh_jwk);   // CL8: dh_jwk → the enroller grants the space key
     },
     createOrder: async function (docno, total, org) {
       var uu = crypto.randomUUID();

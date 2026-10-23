@@ -79,7 +79,7 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     await Bp.evaluate(function () { return CommPOC.createOrder('B-12', 300, 12); });   // role 103 has no org-12 access
     console.log('\n§2CTX-ISOLATED');
     var sA0 = await A.evaluate(function () { return CommPOC.state(); }), sB0 = await Bp.evaluate(function () { return CommPOC.state(); });
-    verdict(sA0.ops === 5 && sB0.ops === 3, 'each context holds only its own ops before any visit (A: genesis+person+enrol+2, B: 3)', 'A=' + sA0.ops + ' B=' + sB0.ops);
+    verdict(sA0.ops === 7 && sB0.ops === 3, 'each context holds only its own ops before any visit (A: genesis+person+enrol+2 + the 2 CL8 KEYGRANTs = 7, B: 3)', 'A=' + sA0.ops + ' B=' + sB0.ops);
 
     console.log('\n§2CTX visits A, B, A, B');
     for (var round = 0; round < 2; round++) { await A.evaluate(function () { return CommPOC.visit(); }); await Bp.evaluate(function () { return CommPOC.visit(); }); }
