@@ -20,7 +20,8 @@
  */
 (function (global) {
   'use strict';
-  if (!/[?&]team=1(&|$)/.test(String(global.location && global.location.search))) return;   // without ?team=1 nothing changes
+  var _on = /[?&]team=1(&|$)/.test(String(global.location && global.location.search)); try { _on = _on || global.localStorage.getItem('teamMode') === '1'; } catch (e) {}
+  if (!_on) return;   // without ?team=1 (or the Team panel's switch) nothing changes
 
   var OWNER = 'red1oon', REPO = 'bim-teams-pipe';
   var MSG_CRM = 'Current record was changed by another user, please ReQuery';   // AD_Message CurrentRecordModified (ad_full.db; the browser seed has no ad_message table)
@@ -116,11 +117,15 @@
 
   async function onCommit(rows, db) {
     if (!(await ready)) return;
-    var n = 0;
+    var n = 0, trial = null;
+    if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
+      trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
+      if (trial.finished) log('§TEAM_TRIAL ' + trial.reason + ' cycles=' + trial.cycles + ' businessOps=' + trial.businessOps + ' (new business ops stay on this device)'); }
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (r.undone || !r.op_uuid || sent[r.op_uuid] || localOnly[r.op_uuid] || r.user_tag === 'team') continue;   // undo/redo snapshots, replays, projected rows
       var t = await translate(r, db);
+      if (!t.quiet && trial && trial.finished) { localOnly[r.op_uuid] = trial.reason; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + trial.reason + ' (NOT SENT)'); continue; }
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
@@ -227,7 +232,9 @@
     $('team-label').textContent = 'Team · ' + codeOf(dev.kid) + ' · team devices ' + devs + (mine ? '' : ' · waiting for approval — press Visit');
     $('team-delivery').textContent = 'my ops ' + dl.length + ' · seen ' + dl.filter(function (x) { return x.state === 'SEEN'; }).length + ' · refused ' + dl.filter(function (x) { return x.verdict === 'REFUSED'; }).length +
       ' · waiting on ' + gaps + ' · last visit ' + (lastVisitAt ? new Date(lastVisitAt).toLocaleTimeString() : 'never');
-    $('team-warn').textContent = lo ? '⚠ ' + lo + ' local-only (not shared)' : '';
+    var tr = (cfg && cfg.trial && global.TeamTrial) ? global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: (global.TeamDefaults || {}).trialCycles, cap: (global.TeamDefaults || {}).trialOpCap }) : null;
+    c.setAttribute('data-trial', tr ? (tr.finished ? 'finished' : 'open') : 'none');
+    $('team-warn').textContent = (tr && tr.finished ? 'Trial cycle finished — use your own repo and key to continue. ' : '') + (lo ? '⚠ ' + lo + ' local-only (not shared)' : '');
     $('team-warn').title = Object.keys(localOnly).map(function (u) { return u.slice(0, 8) + ': ' + localOnly[u]; }).join('\n');
     var box = $('team-conflicts'), byUu = {};
     // name the record: its documentno when the projection carries it (the log's CREATE), else its uu
@@ -253,7 +260,7 @@
     S = global.CommStore.open(new SQL.Database(own || seed || undefined), { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; } });
     sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {};
     var pu = new URLSearchParams(global.location.search).get('pipe');
-    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: OWNER, repo: REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
+    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
     _resolveReady(true); await render();

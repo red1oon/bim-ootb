@@ -16,6 +16,8 @@
   "use strict";
   var ICONS = {
     clock: { svg: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>' },
+    // TEAMWORK_FRAMEWORK §13.8 — Lucide users (two heads), verbatim: the Team pill.
+    users: { svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
     search: { svg: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>' },
     share: { svg: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>' },
     lifeBuoy: { svg: '<circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/>' },
