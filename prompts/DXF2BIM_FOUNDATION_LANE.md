@@ -688,3 +688,9 @@ on a bom-tree network tacks the rows off each DROP's head; `modeller.html` passe
 keeps them across redraws, and leaves filled edges out of the sweep and its commit.
 **Not in this rule:** the parts appear when the walk ends (they do not follow the network's 2 s reveal: a film polish); the Java's TEE_BELOW_MAIN (9.7 mm, a code constant, no library row) is not applied; joints of
 the MAIN / RISER (the M5 generic fittings) are not mini-BOMs in the library.
+**D66 RESULT (2026-10-23, session 3): BUILT.** BIMCompiler #245: `bake_farm_rules.py` projects the T rows; `farm_rules.db` rebaked (content sha 7cff452e163c; the old bake reproduced 79cad89c762c first). W-FP-JOINT-BOM fail=0 / 6:
+J1 the 3 rows = the library's (FP_Drop_Pipe +0.046 21.3x21.3x69.4 mm, FP_Transition_Fitting +0.084 28.6x28.6x7.1 mm, FP_Tee_Threaded +0.118 79.4x40.5x59.9 mm, meshes byte-equal); J2 `§JOINT-BOM heads=30 parts=90 refused=0`,
+90 drawn, LOD400 (`§DW-RULES-MESH source=the rules db resolved=3/3`); J3 30 tees on their nodes, stack head bottom -> tee top 176.9 mm (library 177); J4 30 / 30 tees along their branch; J5 30 drops filled (tubes 36 / 36, 0 drop
+sweeps committed), 90 GEOM_INSERT in the walk's undo gesture (`dwasm-`), 90 still drawn after the ELEC walk's redraw; J6 Clinic unchanged (410 chains, `assemble REFUSE: no routed network`). The falsifier: the same witness on
+the pre-D66 code with the new rules = J2-J5 FAIL `NO-OP: 0 parts landed`. The tree moved: the tee level is head + 0.118 (was + 0.177), so the head level search now lands at 2.956 m (8.9 in below the ceiling, inside the band; was 2.905).
+Regression: W-FP-BOM-TREE 5 / 0 (P1 reads the drop height from the rules: 0.118), W-WALK-BUILDUP 5 / 0 (with D64.1's B5). Modeller sw v144.
