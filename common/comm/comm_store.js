@@ -18,7 +18,7 @@
 
   var SCHEMA = [
     'CREATE TABLE IF NOT EXISTS cl_device (kid TEXT PRIMARY KEY, pub_jwk TEXT NOT NULL, source TEXT)',
-    'CREATE TABLE IF NOT EXISTS cl_self (kid TEXT PRIMARY KEY, space TEXT, next_seq INTEGER, head_hash TEXT, seen_json TEXT, bundled_to INTEGER)',
+    'CREATE TABLE IF NOT EXISTS cl_self (kid TEXT PRIMARY KEY, space TEXT, next_seq INTEGER, head_hash TEXT, bundled_to INTEGER)',
     'CREATE TABLE IF NOT EXISTS cl_op (op_hash TEXT PRIMARY KEY, author_kid TEXT NOT NULL, author_seq INTEGER NOT NULL, prev_hash TEXT, deps_json TEXT,' +
       ' target_table TEXT, target_uu TEXT, envelope TEXT NOT NULL, first_pipe TEXT, state TEXT NOT NULL, UNIQUE(author_kid, author_seq))',
     'CREATE TABLE IF NOT EXISTS cl_equivocation (author_kid TEXT, author_seq INTEGER, hash_a TEXT, hash_b TEXT, envelope_b TEXT, PRIMARY KEY(author_kid, author_seq))',
@@ -41,7 +41,7 @@
   function open(db, opts) {
     var SQL = opts.SQL, self = opts.self, space = opts.space, log = opts.log || function (m) { console.log(m); };
     SCHEMA.forEach(function (s) { db.run(s); });
-    db.run('INSERT OR IGNORE INTO cl_self (kid, space, next_seq, head_hash, seen_json, bundled_to) VALUES (?,?,1,NULL,?,0)', [self.kid, space, '{}']);
+    db.run('INSERT OR IGNORE INTO cl_self (kid, space, next_seq, head_hash, bundled_to) VALUES (?,?,1,NULL,0)', [self.kid, space]);
     db.run('INSERT OR IGNORE INTO cl_device (kid, pub_jwk, source) VALUES (?,?,?)', [self.kid, JSON.stringify(self.pubJwk), 'self']);
     var lastOrder = null;
 
@@ -51,7 +51,7 @@
 
     function order() {
       var ops = _q(db, "SELECT op_hash AS hash, author_kid AS author, author_seq AS seq, prev_hash AS prev, deps_json FROM cl_op WHERE state IN ('OWN','VERIFIED')")
-        .map(function (r) { return { hash: r.hash, author: r.author, seq: r.seq, prev: r.prev || null, deps: JSON.parse(r.deps_json || '[]') }; });
+        .map(function (r) { return { hash: r.hash, author: r.author, seq: r.seq, prev: null, deps: JSON.parse(r.deps_json || '[]') }; });   // prev = chain check (gaps), not an ordering edge (§12.6)
       // an equivocated slot: feed the second op too, so linearize marks BOTH and places neither (comm_order.js)
       _q(db, 'SELECT * FROM cl_equivocation').forEach(function (e) { ops.push({ hash: e.hash_b, author: e.author_kid, seq: e.author_seq, prev: null, deps: [] }); });
       var L = ORD.linearize(ops);
@@ -62,6 +62,16 @@
       lastOrder = L; return L;
     }
 
+    // chain gaps per author: seqs below its highest known seq that I don't hold — the Team Panel's "waiting on" list
+    function gaps() {
+      var have = {}, out = [];
+      _q(db, "SELECT author_kid, author_seq FROM cl_op").forEach(function (r) { (have[r.author_kid] = have[r.author_kid] || {})[r.author_seq] = 1; });
+      _q(db, 'SELECT author_kid, MAX(seq) AS s FROM cl_head_seen GROUP BY author_kid').forEach(function (r) { have[r.author_kid] = have[r.author_kid] || {}; have[r.author_kid].__max = r.s; });
+      Object.keys(have).forEach(function (a) { var m = have[a], top = Math.max(m.__max || 0, Math.max.apply(null, Object.keys(m).filter(function (k) { return k !== '__max'; }).map(Number).concat([0])));
+        for (var q = 1; q <= top; q++) if (!m[q]) out.push({ author: a, seq: q }); });
+      return out;
+    }
+
     // per author: how many of its ops are placed (placement needs prev, so placed ops are always 1..n)
     function frontier() {
       var L = lastOrder || order(), byHash = {}, f = {};
@@ -69,25 +79,28 @@
       L.order.forEach(function (h) { var r = byHash[h]; if (r) f[r.author_kid] = Math.max(f[r.author_kid] || 0, r.author_seq); });
       return f;
     }
-    function headsPlaced() {
-      var L = lastOrder || order(), byHash = {}, heads = {};
-      _q(db, 'SELECT op_hash, author_kid, author_seq FROM cl_op').forEach(function (r) { byHash[r.op_hash] = r; });
-      L.order.forEach(function (h) { var r = byHash[h]; if (r && (!heads[r.author_kid] || heads[r.author_kid].seq < r.author_seq)) heads[r.author_kid] = { seq: r.author_seq, hash: h }; });
-      return heads;
+    // latest placed op on each record = the version an author reads (§12.6: order follows data)
+    function versions() {
+      var L = lastOrder || order(), v = {}, byHash = {};
+      _q(db, 'SELECT op_hash, target_uu FROM cl_op').forEach(function (r) { byHash[r.op_hash] = r.target_uu; });
+      L.order.forEach(function (h) { if (byHash[h]) v[byHash[h]] = h; });
+      return v;
     }
 
     async function author(spec) {
-      var me = selfRow(), seen = JSON.parse(me.seen_json || '{}'), heads = headsPlaced(), deps = [];
-      Object.keys(heads).forEach(function (k) { if (k !== self.kid && seen[k] !== heads[k].hash) { deps.push(heads[k].hash); seen[k] = heads[k].hash; } });
-      var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps.sort(),
+      var me = selfRow(), ver = versions(), reads = {};
+      var uus = [String(spec.target.uu).toLowerCase()].concat((spec.refs || []).map(function (u) { return String(u).toLowerCase(); }));
+      uus.forEach(function (u) { reads[u] = ver[u] || null; });
+      var deps = Object.keys(reads).map(function (k) { return reads[k]; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
+      var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps, reads: reads,
                   manifest: spec.manifest || 'm0', policy: spec.policy || 'p0', intent: spec.intent || 'K1',
-                  target: spec.target, base: spec.base || null, ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
+                  target: spec.target, base: reads[uus[0]], ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
       if (spec.attrib) env.attrib = spec.attrib;
       var vr = ENV.validate(env); if (!vr.ok) throw new Error('author: invalid envelope — ' + vr.errors.join('; '));
       env = await ENV.sign(env, self);
       var h = await ENV.hashHex(env);
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?)', [h, self.kid, env.seq, env.prev, JSON.stringify(env.deps), env.target.table, env.target.uu, JSON.stringify(env), 'local', 'OWN']);
-      db.run('UPDATE cl_self SET next_seq=?, head_hash=?, seen_json=? WHERE kid=?', [env.seq + 1, h, JSON.stringify(seen), self.kid]);
+      db.run('UPDATE cl_self SET next_seq=?, head_hash=? WHERE kid=?', [env.seq + 1, h, self.kid]);
       lastOrder = null; return { env: env, hash: h };
     }
 
@@ -157,10 +170,10 @@
         if (!jwk || !(await ENV.verify(hd, jwk))) continue;
         db.run('INSERT OR REPLACE INTO cl_head_seen VALUES (?,?,?,?,?,?)', [hd.author, pipe.id, hd.seq, hd.hash, JSON.stringify(hd.frontier || {}), hd.sig]);
       }
-      rep.placed = L.order.length; rep.parked = L.parked.length; rep.equivocationsKnown = _q(db, 'SELECT COUNT(*) AS n FROM cl_equivocation')[0].n;
+      rep.placed = L.order.length; rep.parked = L.parked.length; rep.gaps = gaps().length; rep.equivocationsKnown = _q(db, 'SELECT COUNT(*) AS n FROM cl_equivocation')[0].n;
       log('§COMM_TRUST mode=CL3-temporary devices=' + _q(db, 'SELECT COUNT(*) AS n FROM cl_device')[0].n);
       log('§COMM_SYNC kid=' + self.kid + ' pipe=' + pipe.id + ' sent=' + rep.sent + ' fetched=' + rep.fetched + ' ingested=' + rep.ingested +
-          ' refused=' + rep.refused + ' placed=' + rep.placed + ' parked=' + rep.parked + ' equivocations=' + rep.equivocationsKnown);
+          ' refused=' + rep.refused + ' placed=' + rep.placed + ' parked=' + rep.parked + ' gaps=' + rep.gaps + ' equivocations=' + rep.equivocationsKnown);
       return rep;
     }
 
@@ -181,7 +194,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, enrol: enrol, author: author, ingest: ingest, order: order, frontier: frontier,
-             bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
+             bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, gaps: gaps, versions: versions, delivery: delivery, placedEnvelopes: placedEnvelopes,
              query: function (sql, args) { return _q(db, sql, args); } };
   }
 
