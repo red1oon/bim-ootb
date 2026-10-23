@@ -422,3 +422,8 @@ two pieces of one strip is bounded by them, in the wall's band; JKR W1 1.29 m dr
 JKR round trip 343 -> 191 blocking (`no_elevation_for_face` 98 -> 6, `opening_gap_unbounded` 39 -> 1 after D55b, `no_host_cut` 149 -> 59; `lod400_library_unreachable` 19 -> 59 = windows now reaching
 the library step, library-bound in Node); with both rules off 6 windows (the falsifier); Duplex, Clinic, LTU, HHS (glazing pieces all touch) identical to BASE. **JKR overall today: 902 -> 191
 blocking; without the library-bound codes 545 -> 73.** Modeller sw v130.
+**D51 PERF (2026-10-23, found by a scaling measurement).** The estimated slab was meshed on the raw wall-edge grid (LTU: 821 x 547 = 449,087 cells, a ~1.8 M-triangle slab): LTU convert 40 s, heap 984 MB
+(with the estimate off: 2.4 s). `boundedCells` now keeps only the grid lines where the cell pattern changes (LTU 257 x 198): convert 4.1 s, heap 279 MB, the same cells and area (W-SLAB-ESTIMATE E1
+checks the mesh's top area = the estimated area: fail=0 on HHS / LTU / Duplex). Scaling measured on main (Node = Chrome's V8; standard sets written from the model dbs): Duplex 1.0k entities / 0.2 MB:
+parse 47 ms, convert 47 ms; HHS 3.2k / 1.1 MB: 0.1 s / 0.4 s; JKR 4.4k / 1.3 MB: 0.1 / 0.2 s; Clinic 8.1k / 2.6 MB: 0.3 / 0.5 s; Hospital whole 18.8k / 7.3 MB (14 sheets): 0.7 / 0.9 s; LTU 26.7k /
+9.0 MB: 1.0 / 4.1 s (was 40 s). Not measured: the page's render of the converted model, a real phone. Modeller sw v131.
