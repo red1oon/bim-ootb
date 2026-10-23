@@ -713,3 +713,21 @@ Drawing only: parts, segments, ops and the `§JOINT-BOM` line unchanged.
 seq 0, 16, 29, 0, 30, 0, 27, ..., needs the machine loaded: it is a race with the blocked thread, which (b) and (c) close). Regression: W-FP-JOINT-BOM 6 / 0, W-FP-BOM-TREE 5 / 0, W-SEED-OUTWARD-REVEAL 9 / 0
 (R3 now starts from a fresh walk's state: a re-render of a revealed network is a redraw by (b)), W-E2E-WALK 8 / 0, W-MEP-REROUTE 9 / 0, W-FIRST-STEPS-MEP 8 / 0, W-WALK-GESTURE 4 / 0, W-DW-DEDUP-RENDER 4 / 0,
 W-UNDO-RESURRECT 5 / 0, W-WALK-AFTER-SEED 4 / 0. Modeller sw v145.
+
+## §D68 A WINDOW IN A RECESSED FACE IS DRAWN ON THE ELEVATION THAT SEES IT, AND READ FROM IT (architect review F16; session 3, RESUME item 4)
+**Witness claim first (W-RECESSED-WIN, `modeller/tests/witness_dxf_recessed.js <db...>`, `BASE=<modeller dir at origin/main>`).** R1 (writer) every model window that an elevation face SEES is drawn on that face:
+the window runs along the face and no wall or curtain wall of the model (any storey; the window's own host excluded) lies between it and the face covering its whole h x z rectangle; a flush-hosted window is
+drawn as before; each recessed one is logged `§ELEV_WIN_RECESSED <face> guid=.. set_back=<m>`. Drawn count = the measured "seen" count below. R2 (reader) a plan window takes a face when the face's
+envelope touches it (as before) OR, along the face, no wall piece of the same plan lies nearer that face covering the window's interval (the plan's own visibility test); it then pairs with that face's
+glazing clusters exactly as a flush window does (`face_recessed: true` on the op). Every window read from an elevation has sill + height = its model window's (matched by plan footprint, same storey) to
+3 mm: 0 wrong. R3 a recessed window the plan sees but the elevation does not show (hidden in 3D) falls back to its schedule entry as a window with no face does; `GAP:no_elevation_for_face` and
+`GAP:no_elevation_match` do not rise against BASE, the blocking total does not rise. R4 falsifier: `DXF_RECESSED_WIN=0` (writer and reader) gives BASE's window ops back (the rule is what reads them).
+R5 unchanged: HHS (no IfcWindow) byte-identical to BASE; the shed (structure path) not touched. R6 timed on LTU (writer + convert) against BASE: the added tests are windows x walls per plan / per face, stated.
+**Measured first (2026-10-23 session 3, the session scratchpad `tools/f16_measure.js`; full-3D visibility as R1):** windows / seen by a face / flush-hosted / recessed: Duplex 24 / 24 / 22 / 2, HHS 0, JKR3 83 parts /
+10 / 0 / 10, Clinic 58 / 58 / 24 / 34, LTU 976 / 335 / 0 / 335 (the brief's JKR 51 / LTU 343 counted hosts off the envelope without the visibility test). Today `writeElevation` draws an opening only when
+its host is a flush face wall (`std2d.js` `fwg.has(model.host_all[e.guid])`) and `applyElevations` gives a window a face only when its bbox touches the plan envelope (`dxf2elev.js` FACES): reader window
+heights from elevations: Duplex 22, Clinic 40 (18 from the schedule), JKR 0 (48 schedule), LTU 0 (762 schedule, 27 `no_elevation_for_face`). So on JKR and LTU the round trip never reads a window
+height off an elevation: the schedule masks the gap.
+**Rule.** Writer: `writeElevation` draws a window whose host is not a flush face wall when the face sees it (R1), windows only (doors keep the flush rule: `applyDoorHeights` pairs by the envelope; listed).
+Reader: `applyElevations` adds the plan-visible faces along the window's run to the envelope faces; a window whose only faces are such recessed faces and that no cluster matches takes the schedule
+(else the old `GAP:no_elevation_for_face`). Test hook `DXF_RECESSED_WIN=0` turns both off.
