@@ -9,7 +9,7 @@ catalogue (sw v148) · this doc PR: §D70 F15 slab edge, measured and stopped (�
 **Owner decisions open (one question each):** (1) §D67: the profile source for steel members: a parametric generator from the drawing's own label (`AngleProfileMesh` in the library's
 `ad_parametric_mesh` convention) or an imported steel catalogue (AISC / EN 10056 angles)? (2) §D70: a plan's slab edge = the exact union of the model's slabs (HHS L1: 10 bodies, 54 small holes; JKR L2:
 54 planks) or a drafted perimeter with real voids above a stated area and plank joints closed below a stated width? (3) The Duplex 819 x 759 windows (the 4 stacked clusters excluded in §D58): which library
-type do they bind to (owner fact, not derivable: the library holds more than one type at that size)?
+type do they bind to (owner fact: session 2 S3 measured the library type at that size as ambiguous)?
 **Still open (no owner gate):** doors in recessed faces (the §D68 writer rule is windows only; `applyDoorHeights` pairs by the envelope); `witness_status_baseline.json` lists 7 older db-argument witnesses as
 missing (stale since D54; the runner's ENV-set line says so); the page-level ride on a reopened IFC after §D69 (the §D59 L4 move on an .ifc open) was not re-run; Parts A / B of this brief.
 **Regression at close (`run_all_witnesses.js`, the three code PRs merged together):** PASS 41 / ENV 39 / FAIL 4 (the known 4: struct, ticks, guardrails G3 209, ifc_valid). New witnesses (db args):
