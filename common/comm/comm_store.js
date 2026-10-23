@@ -102,15 +102,80 @@
     }
     async function cur() { return last || order(); }
 
-    // the version of each record THIS author sees: the placed order, with my own not-yet-placed ops on top (in seq
-    // order) — what my screen shows. Without them an edit written before the roster arrived would not read its own create.
+    // the version of each record THIS author sees: the record's HEADS (ops on it with no descendant on it), over the
+    // placed order with my own not-yet-placed ops on top — what my screen shows. One head = a hash; several = the
+    // sorted list (concurrent edits I can see; an edit now descends from all of them — §12.9).
+    function _parents(env, uu) { var r = (env.reads || {})[uu]; return r == null ? [] : (Array.isArray(r) ? r : [r]); }
     async function versions() {
-      var L = await cur(), v = {}, byHash = {}, placed = {}; allOps().forEach(function (o) { byHash[o.hash] = o.env; });
-      for (var h of L.order) { placed[h] = 1; for (var u of await ROS.touched(byHash[h])) v[u] = h; }
+      var L = await cur(), heads = {}, byHash = {}, placed = {}; allOps().forEach(function (o) { byHash[o.hash] = o.env; });
+      async function step(h) { for (var u of await ROS.touched(byHash[h])) { var ps = _parents(byHash[h], u);
+        heads[u] = (heads[u] || []).filter(function (x) { return ps.indexOf(x) < 0; }).concat([h]); } }
+      for (var h of L.order) { placed[h] = 1; await step(h); }
       for (var r of _q(db, "SELECT op_hash FROM cl_op WHERE author_kid=? AND state='OWN' ORDER BY author_seq", [self.kid]))
-        if (!placed[r.op_hash] && !(L.verdict[r.op_hash] && L.verdict[r.op_hash].verdict === 'REFUSED')) for (var u2 of await ROS.touched(byHash[r.op_hash])) v[u2] = r.op_hash;
+        if (!placed[r.op_hash] && !(L.verdict[r.op_hash] && L.verdict[r.op_hash].verdict === 'REFUSED')) await step(r.op_hash);
+      var v = {}; Object.keys(heads).forEach(function (u) { var hs = heads[u].slice().sort(); v[u] = hs.length === 1 ? hs[0] : hs; });
       return v;
     }
+
+    // crossed saves, the Git way (§11.15 / §12.9): per record and column, the writers with no descendant on that record
+    // that also writes the column. One = it applies. Several = conflicted: the record keeps the value from before.
+    function _cols(env) { var p = env.body.params || {}; return Object.keys(env.body.op_type === 'CRUD_CREATE' ? (p.fields || {}) : (p.changes || {})); }
+    function _val(env, c) { var p = env.body.params || {}; if (env.body.op_type === 'CRUD_CREATE') return (p.fields || {})[c];
+      var ch = (p.changes || {})[c]; return ch && Object.prototype.hasOwnProperty.call(ch, 'new') ? ch.new : ch; }
+    async function conflicts() {
+      var L = await cur(), byHash = {}, pos = {}, rec = {}; allOps().forEach(function (o) { byHash[o.hash] = o.env; });
+      L.order.forEach(function (h, i) { pos[h] = i; var e = byHash[h]; if (ROS.IDENTITY[e.body.op_type]) return; (rec[e.target.uu] = rec[e.target.uu] || []).push(h); });
+      var out = [], devs = L.roster.devices;
+      Object.keys(rec).forEach(function (uu) {
+        var hs = rec[uu], anc = {};
+        function ancestors(h) { if (anc[h]) return anc[h]; var a = {}; _parents(byHash[h], uu).forEach(function (p) { if (byHash[p]) { a[p] = 1; Object.keys(ancestors(p)).forEach(function (x) { a[x] = 1; }); } }); return (anc[h] = a); }
+        var cols = {}; hs.forEach(function (h) { _cols(byHash[h]).forEach(function (c) { (cols[c] = cols[c] || []).push(h); }); });
+        Object.keys(cols).sort().forEach(function (c) {
+          var w = cols[c], cand = w.filter(function (h) { return !w.some(function (h2) { return h2 !== h && ancestors(h2)[h]; }); });
+          if (cand.length < 2) return;
+          // before = the last AGREED write of c: walk back through common ancestors until one writer dominates the rest
+          // (an earlier, still-open clash is not a value anyone agreed on — §12.10)
+          var set = cand, agreed = null;
+          for (var guard = 0; guard < 64 && !agreed; guard++) {
+            var common = w.filter(function (h) { return set.every(function (k) { return ancestors(k)[h]; }); });
+            if (!common.length) break;
+            var tops = common.filter(function (h) { return !common.some(function (h2) { return h2 !== h && ancestors(h2)[h]; }); });
+            if (tops.length === 1) agreed = tops[0]; else set = tops;
+          }
+          var contested = w.filter(function (h) { return agreed ? ancestors(h)[agreed] : true; });   // every write of c after the agreed one
+          out.push({ uu: uu, table: byHash[hs[0]].target.table, col: c, before: agreed ? _val(byHash[agreed], c) : null, agreed: agreed, contested: contested.sort(),
+                     candidates: cand.sort().map(function (h) { var e = byHash[h]; return { hash: h, author: e.author, person_uu: devs[e.author] ? devs[e.author].person : null, value: _val(e, c) }; }) });
+        });
+      });
+      return out;
+    }
+    // the ops handed to the REAL fold (kernel_ops + crud_core.listTip): placed business ops in order, with every
+    // contested write of a conflicted column held back, so the row keeps its last agreed value until resolved.
+    async function foldable() {
+      var hold = {}; (await conflicts()).forEach(function (cf) { cf.contested.forEach(function (h) { (hold[h] = hold[h] || {})[cf.col] = 1; }); });
+      return (await placedEnvelopes()).map(function (p) {
+        if (!hold[p.hash]) return p;
+        var e = JSON.parse(JSON.stringify(p.env)), ch = e.body.params.changes || {};
+        Object.keys(hold[p.hash]).forEach(function (c) { delete ch[c]; });
+        return { hash: p.hash, env: e, held: Object.keys(hold[p.hash]) };
+      });
+    }
+    // notices for one person: every conflict where one of their devices is a candidate (derived, never an op)
+    async function notices(personUu) {
+      var pu = String(personUu).toLowerCase(), msg = opts.messageText ? opts.messageText('CurrentRecordModified') : null;
+      return (await conflicts()).filter(function (cf) { return cf.candidates.some(function (k) { return k.person_uu === pu; }); }).map(function (cf) {
+        var mine = cf.candidates.filter(function (k) { return k.person_uu === pu; })[0], theirs = cf.candidates.filter(function (k) { return k.person_uu !== pu; });
+        return { ad_message: 'CurrentRecordModified', message: msg, ad_table_id: opts.tableId ? opts.tableId(cf.table) : null, table: cf.table, record_uu: cf.uu, col: cf.col,
+                 textmsg: cf.col + ': mine=' + JSON.stringify(mine.value) + ' theirs=' + JSON.stringify(theirs.map(function (t) { return t.value; })) + ' before=' + JSON.stringify(cf.before) };
+      });
+    }
+    // online save check = iDempiere's record-wide rule (GridTable.hasChanged :3482): has the record moved since I loaded it?
+    async function saveCheck(uu, loaded) {
+      var curV = (await versions())[String(uu).toLowerCase()] || null, stale = JSON.stringify(curV) !== JSON.stringify(loaded == null ? null : loaded);
+      return stale ? { stale: true, ad_message: 'CurrentRecordModified', message: opts.messageText ? opts.messageText('CurrentRecordModified') : null, current: curV }
+                   : { stale: false, current: curV };
+    }
+
     // receipts: per author, the highest seq I hold with nothing missing below it. SEEN means RECEIVED — whether an op
     // was accepted is its verdict, a separate fact (a refused op is still delivered).
     async function frontier() {
@@ -133,7 +198,7 @@
       var uus = [String(spec.target.uu).toLowerCase()].concat((spec.refs || []).map(function (u) { return String(u).toLowerCase(); }));
       if (ident && spec.body.op_type !== 'GENESIS') uus = uus.concat([await ROS.spaceUU(space), await ROS.devUU(self.kid), String(me.person_uu || '').toLowerCase()].filter(Boolean));
       uus.forEach(function (u) { reads[u] = ver[u] || null; });
-      var deps = Object.keys(reads).map(function (k) { return reads[k]; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; }).sort();
+      var deps = [].concat.apply([], Object.keys(reads).map(function (k) { var r = reads[k]; return r == null ? [] : (Array.isArray(r) ? r : [r]); })).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
       var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps, reads: reads,
                   manifest: spec.manifest || 'm0', policy: spec.policy || 'p0', intent: spec.intent || (ident ? 'K-ID' : 'K1'),
                   target: spec.target, base: reads[uus[0]], ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
@@ -239,6 +304,7 @@
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
              genesis: genesis, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke,
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
+             conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
              verdicts: verdicts, query: function (sql, args) { return _q(db, sql, args); } };
   }
 
