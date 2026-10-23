@@ -64,7 +64,7 @@
     var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
   function _unb64(t) { t = String(t).replace(/\s/g, ''); if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(t, 'base64'));
     var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
-  function _kidOfName(name) { var p = String(name).split('/'); return (p[0] === 'o' || p[0] === 'h') ? p[1] : null; }
+  function _kidOfName(name) { var p = String(name).split('/'); return (p[0] === 'o' || p[0] === 'h' || p[0] === 'r') ? p[1] : null; }   // r/<kid> = a join request (phone pairing)
 
   function ghPipe(opts) {
     var f = opts.fetch || fetch, base = (opts.api || 'https://api.github.com') + '/repos/' + opts.owner + '/' + opts.repo;
@@ -74,7 +74,9 @@
       var h = { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + opts.token, 'X-GitHub-Api-Version': '2022-11-28' };
       if (method === 'GET' && etags[path]) h['If-None-Match'] = etags[path];
       if (body) h['Content-Type'] = 'application/json';
-      var r = await f(base + path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined });
+      // cache:'no-store' — a browser's HTTP cache otherwise serves a stale branch pointer (GitHub sends max-age=60), and
+      // every commit after the first looks like it goes backwards (W-PHONE-PAGE found it). Our own ETag keeps unchanged reads free.
+      var r = await f(base + path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
       s.reqs++; if (method !== 'GET') s.writes++;
       var rem = r.headers.get('x-ratelimit-remaining'); if (rem != null) s.rateRemaining = Number(rem);
       if (r.status === 304) { s.notModified++; return { status: 304, json: cacheBody[path] }; }
