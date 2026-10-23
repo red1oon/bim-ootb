@@ -3,6 +3,43 @@ SCOPE: spec + storyboard of the film "Why the markings: nine drawings, one shed"
 NEUTRAL NAMING (owner rule, `FILM_DXF2BIM_BRICSCAD.md`): the shed is "a common BricsCAD drawing set"; its title block carries a client name: the Modeller canvas does not draw TEXT entities, and every frame is checked for the title block, client or sponsor names before assembly; panel rows that quote sheet text (`@NAME` suggestions, notes) are checked the same way. The sheets stay local (`$SHED_RAW_DIR`, private OCI backup); the repo gets this spec, the recorder, the TSV; media in `~/Videos/dxf2bim_film_work/why/`.
 Status: RECORDED 2026-10-22; CURRENT FILM = v3 (see the v3 block): `~/Videos/DXF2BIM_Why_Markings_Shed_1920x1080_2026-10-22_v3.mp4`, 289.3 s, 7,231 frames == master, -16.7 LUFS, 13 / 13 DETAIL, 0 black frames, `§PAGEERR` 0, `§FILM_SHARE` build in frame on 136 of 138 samples (the 2 below 0.6 are the page reloads). (v1 line follows.) Earlier: Film `~/Videos/DXF2BIM_Why_Markings_Shed_1920x1080_2026-10-22.mp4`, 202.3 s, 1920 x 1080, 5,056 frames == master, -16.7 LUFS, 0 black frames, one silence (-40 dB, >= 2 s) = the end card's tail, `§POLY_TONE wrong=0`, 10 / 10 lines DETAIL, 0 SHORT, 0 SKIP, `§PAGEERR` 0, `film_narration_fill.js` 23 placeholders 0 missing. LOCAL ONLY: the sheets are a client's private drawings; not published, not uploaded.
 
+## ▶▶▶ §LAST PART (spec 2026-10-23, owner: "film showing quickly the last part where the 2Ds wireframes assembled, saved, reopen as ARC and some assets such as those fan blowers and where there are no lighting / FP, use the standard DISC feature on the left. Do not reinvent further than what has been laid out well prior")
+**Film:** "Drawings to a building you can edit and service", ~2-3 min, EN, same tooling as this film (recorder pattern of `film_dxf2bim_why_rec.js`, `film_narration_fill.js`, `film_narration_poly.py` measure -> beat_min,
+`film_dxf2bim_why_assemble.sh` with `FILM_SET=shedlast` cards). Recorder `prompts/film_dxf2bim_shed_last_rec.js`, narration `prompts/film_narration_dxf2bim_shed_last_en.tsv`. Neutral naming (the shed is "a common
+BricsCAD set"; the canvas draws no TEXT; the title block never in frame). Software GL (`--use-angle=swiftshader`). SITE = a local server of bim-ootb main (D59-D62 in it).
+**Chapters (3) and beats (8):** 1 ASSEMBLED: s01 the 9 marked sheets open placed (2D wireframes, no replay); s02 Convert (floor slab and roof ticked) -> the bodies, the 13 gable-end fans among them, a turn round the shed.
+2 SAVED, REOPENED AS ARC: s03 Export ▸ Viewer database (the menu, a real click; the file lands on disk); s04 a fresh Modeller opens that file (Open ▸ local .db): it comes back EDITABLE (its own instance, §D60),
+the outliner on the left; s05 the fans: the ACMV row on the left selects them. 3 SERVICES FROM THE DISC ROWS: s06 the ELEC row walks lights (the Farming Shed reference, cited, §D62; the status line says so);
+s07 the FP row walks sprinklers (an option: farm sheds are usually exempt); s08 a last turn round the serviced shed, end.
+**Every number said is a `§FILM_FACT` of the take** (sheets, bodies, fans, ops after reopen, lights, sprinklers, the reference standard, spacing). Not a take: `§PAGEERR`, a missing fact, lights or sprinklers 0.
+
+## ▶▶▶ §LAST PART RESULT (2026-10-23): RECORDED, LOCAL ONLY
+**Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v1.mp4`, 182.4 s, 4,559 frames == master, -16.7 LUFS (two-pass loudnorm), 9 / 9 DETAIL, 0 black frames, `§PAGEERR` 0. Take `take_sl4`
+(session scratchpad), SITE = a local server of bim-ootb main with D59-D63. Facts of the take: 9 sheets, 512 bodies (96 columns), 13 fans (one clicked), Viewer DB 1.1 MB, reopened 512 elements (a wall clicked),
+69 lights and 30 sprinklers (farming-shed reference), a light close-up at 2.25 m and a sprinkler macro at 0.12 m. Run: `SITE=<local> node prompts/film_dxf2bim_shed_last_rec.js <take> beat_min.json`
+(beat_min = `film_narration_poly.py measure` + 1 s), `film_narration_fill.js`, `FILM_SET=shedlast FILM_CARDS_PY=<compiler film_title_cards.py> BEAT_MIN_JSON=... film_dxf2bim_why_assemble.sh`, then loudnorm -16.5.
+**Found on the way and fixed first:** the reopened shed's STR walk drew 46 derived girders at 1.00 m (the "conduits" the owner asked about): §D63 (#2322). **Known, said in the film:** the reopened model
+draws the architecture and the STR walk; the 13 fans stay listed under ACMV (the Modeller seeds ARC for editing). **Timing:** each walk takes 15-20 s in software GL; the lines start when the fixtures
+land (lights) or over the macro (sprinklers), the waits carry the music bed and a moving camera. **Before it leaves the machine:** the owner's frame check (no client name; the canvas draws no TEXT).
+
+## ▶▶▶ §LAST PART SCRIPT v1 (2026-10-23, owner: "plan a film script well to show that closeup been walked that can be dramatic")
+**Measured on the dry takes first:** from outside the roof hides every walked fixture; from inside at eye height the 69 lights read as rows under the truss (the dramatic shot); a sprinkler head is ~30 mm, so
+only a macro close-up (camera ~0.3 m off the head) shows it. The fans read best from outside their gable end (a raycast picks the first fan visible from there). The reopened model draws the architecture
+(310 bodies: walls, plates, roof, doors, columns, beams); the 13 fans stay listed under ACMV (the Modeller seeds ARC for editing; services are walked, not drawn from the file): said, not hidden.
+**Shots (≈ 2 min 40 s; every number a `§FILM_FACT`; every move eased; the pointer dot on every click):**
+| # | beat | shot | what is real | narration (EN, M = narrator) |
+|---|---|---|---|---|
+| 1 | s01 | the 9 marked sheets open; both panels folded away; a slow push-in over the 2D wireframes (top-down, then tilting) | Open ▸ 2D drawings, the marked set placed (§D38) | M: {sheets} drawings, already marked. Just lines. |
+| 2 | s02 | unfold, tick "Complete the building", click Convert: the shed rises; the camera cranes from plan view to a three-quarter view and turns | Convert (`§DXF-CONVERT`) | M: One click: {bodies} parts, {n_columns} columns, the roof and the floor. |
+| 3 | s02b | a dolly to a gable end, the row of fans fills the frame; the pointer clicks one: it lights up | the canvas pick (`selected feature #`) | M: And the {n_fans} fans the drawings show, each a real part you can pick. |
+| 4 | s03 | Export ▸ Viewer database, a real menu click; a caption names the file and its size | `§VIEWERDB`, the download on disk | M: Saved as a building database: {saved_file}, {saved_mb} megabytes. |
+| 5 | s04 | a fresh Modeller opens that file; the outliner fills on the left ({reopened_elements}); a wall is clicked: selected, editable | Open ▸ local .db (§D60), the canvas pick | M: Opened again: {reopened_elements} elements, the architecture editable. |
+| 6 | s05 | the pointer rests on ACMV (13) on the left; then the camera slips INSIDE the shed: eye height, empty, dim, a slow dolly down the nave | the outliner row | M: The {acmv_listed} fans are listed. But inside: no light, no sprinklers. |
+| 7 | s06 | the pointer clicks the ELEC row on the left; the lights appear in rows overhead; the dolly continues, then cranes up to ONE fixture under the truss until it fills the frame | DISC ELEC (`§DW-PRIM-LOD lod400`), the Farming Shed reference stated | M: One click on Lights: {lights} fittings, ten feet apart, seven to eight feet up, from the farm reference. |
+| 8 | s07 | back down the nave; the FP row is clicked; then a MACRO close-up on one sprinkler head under the truss (it fills a third of the frame) | DISC FP | M: Sprinklers: {sprinklers} heads, fifteen feet apart, just under the roof. Farm sheds are often exempt: this is the option. |
+| 9 | s08 | out through the open side, a crane up and a last turn round the serviced shed; end | the camera | M: From nine flat drawings to a building you can edit and service. |
+**Not in the film:** the cited spacings are named as a farm reference, never as a measurement of this shed; no client name (the canvas draws no TEXT).
+
 ## ▶▶▶ NEXT SESSION: DXF2BIM tuning continues. Read the `▶▶▶ RESUME HERE` block at the top of `prompts/DXF2BIM_ARCHITECT_REVIEW.md` FIRST (session 1 of the review done 2026-10-23: D44-D55 merged; next = window tags by width, JKR Level 1 wall tops, ...). The film items below are the older film lane.
 
 ## ▶▶▶ RESUME HERE (written 2026-10-22, session wrap; supersedes the earlier RESUME / DONE blocks as the entry point)
