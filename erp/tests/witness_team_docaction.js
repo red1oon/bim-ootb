@@ -75,7 +75,7 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     for (var who of HDR) {
       await ctx[who].route('https://api.github.com/**', fakeGh);
       pg[who] = await ctx[who].newPage();
-      (function (w) { pg[w].on('console', function (m) { var t = m.text(); L[w].push(t); if (/§TEAM_|§TEAM-REFRESH|§TEAM-REBUILD|§COMM_SYNC|🔴/.test(t)) console.log('     [' + w + '] ' + t.slice(0, 330)); });
+      (function (w) { pg[w].on('console', function (m) { var t = m.text(); L[w].push(t); if (/§TEAM_|§TEAM-REFRESH|§TEAM-REBUILD|§COMM_SYNC|group-torn|verifyChain=FAIL|🔴/.test(t)) console.log('     [' + w + '] ' + t.slice(0, 330)); });
         pg[w].on('pageerror', function (e) { errors++; L[w].push('PAGEERR ' + e.message); console.log('     [' + w + '] 🔴 pageerror ' + e.message); });
         pg[w].on('dialog', function (d) { d.accept().catch(function () {}); }); })(who);
     }
@@ -187,7 +187,10 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
       return { pk: pk, tip: window.__crud.readTip('c_order', pk), col: row.docstatus || null, tax: tax, lines: lines.length, linesProcessed: proc }; }, desc); }
     async function complete(w, desc) { var pr = await probe(w, desc), n0 = L[w].length;
       await pg[w].evaluate(function (id) { window.__crud.process('c_order', id, 'CO', { from: 'DR', to: 'CO', outcome: 'success' }); }, pr.pk);
-      await waitLog(w, /§CRUD process committed key=c_order/, n0, 20000); await sleep(1500); }
+      var cl = await waitLog(w, /§CRUD process committed key=c_order/, n0, 20000); await sleep(1500);
+      var torn = L[w].slice(n0).filter(function (t) { return /group-torn|verifyChain=FAIL/.test(t); });
+      console.log('   §DA-COMMIT-CHAIN ' + w + ' ' + (cl || 'NO COMMIT LINE').slice(0, 160) + (torn.length ? '  TORN: ' + torn[0].slice(0, 160) : ''));
+      verdict(!!cl && /verifyChain=ok/.test(cl) && !torn.length, 'the Complete commit on ' + w + ' leaves the op-log chain valid (verifyChain=ok, no group-torn)', cl ? (/verifyChain=\w+/.exec(cl) || ['?'])[0] + (torn.length ? ' torn=' + torn.length : '') : 'no commit line'); }
     async function cfs(w) { return pg[w].$$eval('#team-conflicts .team-conflict', function (e) { return e.map(function (x) { return x.textContent; }); }); }
     function lines(w, re, from) { return L[w].slice(from || 0).filter(function (t) { return re.test(t); }); }
 
