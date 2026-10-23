@@ -327,12 +327,13 @@
     O.commitSeedGroup = async function (ops, gid) {
       var r = await origSeed.call(this, ops, gid);
       try {
-        var m = typeof gid === 'string' && /^dw(walk|chain|fit)-(.+)-\d+$/.exec(gid);
+        var m = typeof gid === 'string' && /^dw(walk|chain|fit|asm)-(.+)-\d+$/.exec(gid);   // §D66 'dwasm-': the joint mini-BOM parts ride the same walk gesture
         var ids = (r && r.ids) || [];
         if (m && ids.length) {
           var kind = m[1], disc = m[2];
-          if (kind === 'walk') window.__dwRowsByDisc[disc] = { walk: [], chain: [], fit: [] };   // a new walk of this disc
-          var slot = window.__dwRowsByDisc[disc] = window.__dwRowsByDisc[disc] || { walk: [], chain: [], fit: [] };
+          if (kind === 'walk') window.__dwRowsByDisc[disc] = { walk: [], chain: [], fit: [], asm: [] };   // a new walk of this disc
+          var slot = window.__dwRowsByDisc[disc] = window.__dwRowsByDisc[disc] || { walk: [], chain: [], fit: [], asm: [] };
+          slot[kind] = slot[kind] || [];
           slot[kind] = slot[kind].concat(ids);
           if (_walkGesture) _walkGesture.rows = _walkGesture.rows.concat(ids);
           else _push('DISC_WALK', { label: disc, n: ids.length }, { rows: ids.slice(), gid: gid });

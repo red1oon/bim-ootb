@@ -4,7 +4,8 @@
  *
  * THE ISSUE THIS PROVES OR DISPROVES: the shed's sprinklers had no pipework (the router's pattern: 0 / 2 kept, "no routed network"); the Java compiler's BOM template (FP_PIPE_ASSEMBLY,
  * SPRINKLER_PENDANT_ASSEMBLY) was not used.
- *   P1 TREE      — one DROP per head (assembly height, vertical), BRANCH runs along each row, MAIN across the row ends, one RISER; axis-aligned; ONE connected network reaching every head.
+ *   P1 TREE      — one DROP per head (vertical, head -> tee node), BRANCH runs along each row, MAIN across the row ends, one RISER; axis-aligned; ONE connected network reaching every head.
+ *                  The drop's height = the TOP part of the joint mini-BOM (rule_joint_piece rows with an assembly_id, §D66: the tee at head + 0.118 m) when the rules carry it, else assembly_height_m (D65).
  *   P2 READ      — the rule's roles / diameters / height = the library's BOM rows (ad_bom_child, ad_assembly_connector, ad_bom.description).
  *   P3 CLEAR     — 0 clashes against the true world bounds; the heads' level inside their cited band (1-12 in below the ceiling).
  *   P4 REVEAL    — the network reveals outward from the riser (animated, seed-outward), is committed, and is drawn at its own diameters (main 65 / branch 25 mm).
@@ -43,8 +44,10 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     vdb = path.join(dir, 'shed_viewer.db'); fs.writeFileSync(vdb, Buffer.from(D, 'latin1')); say('INFO shed Viewer DB ' + fs.statSync(vdb).size + ' bytes');
   } finally { await br.close(); }
   // P2 in Node: the rule row against the library's BOM rows
+  let dropH = null;
   { const Database = require(path.join(process.env.HOME, 'bim-compiler/node_modules/better-sqlite3')), F = new Database(path.join(ROOT, 'modeller', 'farm_rules.db'), { readonly: true }), L = path.join(process.env.HOME, 'bim-compiler/library/component_library.db');
-    const row = F.prepare("SELECT params_json FROM rule_routing WHERE disc='FP' AND pattern='bom-tree'").get(); F.close(); const P = row ? JSON.parse(row.params_json) : null;
+    const row = F.prepare("SELECT params_json FROM rule_routing WHERE disc='FP' AND pattern='bom-tree'").get(); let jt = null; try { jt = F.prepare("SELECT MAX(dz_m) h FROM rule_joint_piece WHERE disc='FP' AND assembly_id IS NOT NULL").get(); } catch (e) { jt = null; }
+    F.close(); const P = row ? JSON.parse(row.params_json) : null; dropH = jt && jt.h > 0 ? jt.h : (P ? P.assembly_height_m : null); say('INFO the drop height expected ' + dropH + ' m (' + (jt && jt.h > 0 ? 'the joint mini-BOM top part, §D66' : 'assembly_height_m, D65') + ')');
     if (!fs.existsSync(L) || !P) say('INCONCLUSIVE P2 | ' + (!P ? 'no bom-tree row' : 'the component library is absent'));
     else { const lib = new Database(L, { readonly: true }), roles = lib.prepare("SELECT role FROM ad_bom_child WHERE bom_id='FP_PIPE_ASSEMBLY' ORDER BY sequence").all().map(r => r.role),
         conn = Object.fromEntries(lib.prepare("SELECT connector_type, diameter_mm FROM ad_assembly_connector WHERE assembly_id='SPRINKLER_PENDANT_ASSEMBLY'").all().map(r => [r.connector_type, r.diameter_mm])),
@@ -65,8 +68,8 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     const k = p => p.map(v => v.toFixed(3)).join(','), par = {}, find = x => { while (par[x] !== x) x = par[x] = par[par[x]]; return x; }, uni = (a, b) => { [a, b].forEach(x => { if (!(x in par)) par[x] = x; }); par[find(a)] = find(b); };
     S.segs.forEach(s => uni(k(s.from), k(s.to))); const comps = new Set(Object.keys(par).map(find)), headsIn = S.heads.every(h => k(h) in par);
     const axisAligned = S.segs.every(s => [0, 1, 2].filter(i => Math.abs(s.from[i] - s.to[i]) > 1e-6).length === 1);
-    const dropsVertical = S.segs.filter(s => s.role === 'DROP').every(s => Math.abs(s.from[0] - s.to[0]) < 1e-6 && Math.abs(s.from[1] - s.to[1]) < 1e-6 && Math.abs(s.to[2] - s.from[2] - 0.177) < 1e-3);
-    check('P1', 'one drop per head (vertical, the assembly height), branches, a main and a riser; axis-aligned; one connected network reaching every head', roles.DROP === S.heads.length && roles.BRANCH > 0 && roles.MAIN > 0 && roles.RISER === 1 && axisAligned && dropsVertical && comps.size === 1 && headsIn,
+    const dropsVertical = S.segs.filter(s => s.role === 'DROP').every(s => Math.abs(s.from[0] - s.to[0]) < 1e-6 && Math.abs(s.from[1] - s.to[1]) < 1e-6 && dropH > 0 && Math.abs(s.to[2] - s.from[2] - dropH) < 1e-3);
+    check('P1', 'one drop per head (vertical, head -> tee node), branches, a main and a riser; axis-aligned; one connected network reaching every head', roles.DROP === S.heads.length && roles.BRANCH > 0 && roles.MAIN > 0 && roles.RISER === 1 && axisAligned && dropsVertical && comps.size === 1 && headsIn,
       `roles=${JSON.stringify(roles)} heads=${S.heads.length} axis_aligned=${axisAligned} drops_vertical=${dropsVertical} components=${comps.size} every_head_on_it=${headsIn}`);
     const fit = logs.filter(t => /§BOM-TREE-FIT/.test(t)).pop() || '', hz = +(/head_z=([\d.]+)/.exec(fit) || [])[1], cl = +(/clashes=(\d+)/.exec(fit) || [])[1];
     check('P3', 'no clash against the true world bounds; the heads inside their cited band (2.880..3.159)', cl === 0 && /envelope=world-bbox/.test(fit) && hz >= 2.880 - 1e-6 && hz <= 3.159 + 1e-6 && S.heads.every(h => Math.abs(h[2] - hz) < 1e-6), fit.slice(0, 200));
