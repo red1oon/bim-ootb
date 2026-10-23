@@ -5,5 +5,5 @@ s04	en	§FILM_FACT lights / reference · the lamps build up, the camera follows	
 s05	en	§FILM_FACT light_closeup · a lamp close-up	M: Each one a library lamp, hung under the truss.	M: Close up, each one is a library lamp, hung under the truss.
 s06	en	§FILM_FACT sprinklers · the FP row, the heads build up, followed	M: Then sprinklers: {sprinklers} heads, just under the roof.	M: Then sprinklers: {sprinklers} heads, just under the roof. Farm sheds are often exempt, so this one is an option.
 s07	en	§FILM_FACT pipe_segs · the pipes reveal from the riser, followed	M: The pipework grows out from the riser: {pipe_segs} pieces.	M: And the pipework grows out from the riser, {pipe_segs} pieces: drops, branches and a main, from the pipe assembly template.
-s08	en	§FILM_FACT sprinkler_closeup / tee_closeup · a head macro, then a tee	M: A head on its drop, and a tee where a branch meets the main.	M: A head on its drop. And a tee, where a branch meets the main.
+s08	en	§FILM_FACT sprinkler_closeup / joint_parts · a head macro, then its joint stack	M: Each head carries its joint: a drop, a transition, a tee.	M: Close up, each head carries its joint from the library: a drop, a transition and a tee, {joint_parts} parts in all.
 s09	en	· out, a last turn	M: A saved building, opened, lit and serviced.	M: A saved building, opened again, lit and serviced, in a few clicks.

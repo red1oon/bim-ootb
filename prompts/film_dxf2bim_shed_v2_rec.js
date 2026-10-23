@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — Scope: prompts/FILM_DXF2BIM_WHY_MARKINGS.md §LAST PART v2 SHORT ("A saved building, serviced"): a fresh Modeller opens the shed's saved Viewer database as editable ARC, then the left
-// DISC rows walk lights and sprinklers and the camera FOLLOWS the build-up (the reveal fronts of §D64 / §D64.1), close-ups on a lamp, a sprinkler head and a tee. LIVE recorder (the v1 recorder's helpers):
+// DISC rows walk lights and sprinklers and the camera FOLLOWS the build-up (the reveal fronts of §D64 / §D64.1), close-ups on a lamp, a sprinkler head and its joint (§D66). LIVE recorder (the v1 recorder's helpers):
 // real pointer and clicks; the page's state is READ for facts and for the camera's follow target only. One stated edit: the walk's compute wait is cut (§FILM_CUT). Software GL.
 // Read take.log after every run: §PAGEERR, a missing fact, 0 lights / sprinklers / pipe segments, or §FILM_FOLLOW moves=0 = not a take.
 // usage: SITE=<modeller.html of bim-ootb main> SHED_DB=<the shed's Viewer database> node prompts/film_dxf2bim_shed_v2_rec.js <take dir> [beat_min.json]
@@ -144,23 +144,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   { const f = await follow('FP', 'chain', 6, 1200); console.log('§FILM_FOLLOW disc=FP-pipe moves=' + f.moves + ' ms=' + f.ms + ' drawn=' + f.drawn); fact('follow_pipe_moves', String(f.moves)); }
   { const P = await pg.evaluate(() => { const S = window.__dwChains.FP || [], by = {}; S.forEach(s => { by[s.role] = (by[s.role] || 0) + 1; }); return { n: S.length, by }; }); fact('pipe_segs', String(P.n)); fact('pipe_roles', P.by); }
   await beat('s08');
-  fact('sprinkler_closeup', await closeUp({ disc: 'FP' }, 0.14, 3800, 5)); await sleep(2200);
-  // a tee: a node where a branch meets the main (read from the network's own roles); the first tee and approach (4 horizontal sides, level or slightly below) whose sight line no body blocks
-  // (a raycast against the editable group, nothing rendered): the camera eases there and looks at it
-  { const tee = await pg.evaluate(() => { const A = window.A, T = window.THREE, S = window.__dwChains.FP || [], k = p => p.map(v => v.toFixed(3)).join(','), main = new Set(), br = new Map(); S.forEach(s => { if (s.role === 'MAIN') { main.add(k(s.from)); main.add(k(s.to)); } });
-      S.forEach(s => { if (s.role === 'BRANCH') [s.from, s.to].forEach(p => { if (main.has(k(p))) br.set(k(p), p); }); });
-      const G = window.Bonsai.group(), meshes = G.children.filter(x => x.isMesh && x.visible && !x.isInstancedMesh), rc = new T.Raycaster(), c = A.camera.position, D = 0.9;
-      const cand = Array.from(br.values()).sort((a, b) => Math.hypot(a[0] - c.x, a[1] - c.y) - Math.hypot(b[0] - c.x, b[1] - c.y));
-      for (const p of cand) { const tp = new T.Vector3().fromArray(p);
-        for (const dz of [-0.25, 0, -0.5]) for (const d of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const P = tp.clone().add(new T.Vector3(d[0] * D, d[1] * D, dz)), dir = tp.clone().sub(P), L = dir.length(); rc.set(P, dir.normalize()); rc.far = L - 0.05;
-          if (!rc.intersectObjects(meshes, false).length) return { n: br.size, point: p, P: P.toArray() }; } }
-      return { n: br.size, point: null }; });
-    fact('tees', String(tee.n)); fact('tee_visible', tee.point ? 'yes' : 'no');
-    if (tee.point) { await pg.evaluate(t => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls, toP = new T.Vector3().fromArray(t.P), tg = new T.Vector3().fromArray(t.point), fromP = c.position.clone(), fromT = ctl.target.clone(), t0 = performance.now();
-        c.near = 0.02; c.updateProjectionMatrix(); ctl.minDistance = Math.min(ctl.minDistance, 0.3);
-        (function step() { const k = Math.min(1, (performance.now() - t0) / 3600), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; c.position.lerpVectors(fromP, toP, e); ctl.target.lerpVectors(fromT, tg, e); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), tee);
-      fact('tee_closeup', { x: +tee.point[0].toFixed(2), y: +tee.point[1].toFixed(2), z: +tee.point[2].toFixed(3) }); }
-    await sleep(2400); }
+  const head = await closeUp({ disc: 'FP' }, 0.14, 3800, 5); fact('sprinkler_closeup', head); await sleep(2000);
+  // §D66 the head's joint mini-BOM (drop, transition, tee: the library's T_CONNECTOR_ASSEMBLY, stacked on the head): the camera eases back to frame the whole stack, head to tee
+  { const J = await pg.evaluate(() => { const P = window.__dwAssembly && window.__dwAssembly.FP || [], by = {}; P.forEach(p => { const k = p.role || p.ifc_class || '?'; by[k] = (by[k] || 0) + 1; }); return { n: P.length, by }; });
+    fact('joint_parts', String(J.n)); fact('joint_roles', J.by);
+    if (head && J.n) fact('joint_closeup', await closeUp({ point: [head.x, head.y, head.z + 0.07], size: 0.32 }, 0.5, 3200, 0)); await sleep(2600); }
   await beat('s09'); await pg.evaluate(() => { const c = window.A.camera; c.near = 0.1; c.updateProjectionMatrix(); if (window.__filmMinD !== undefined) window.A.controls.minDistance = window.__filmMinD; }); await fitBuilt(1.0, 2600); await orbitZ(50, 5200);
   await beat('end'); await hold(); await sleep(600);
   await cdp.send('Page.stopScreencast'); await br.close();

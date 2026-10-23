@@ -4210,6 +4210,7 @@ async function _discWalkOne(disc, ctx, opts) {
     // not only the next walk). Re-render every walked disc so fresh gated/clash flags show.
     window.__dwWalks[disc] = w.placements;
     window.__dwRevealMeta[disc] = { start: performance.now(), dur: Math.max(2000, Math.min(7000, 120 * w.placements.length)) };   // §D64 a fresh walk builds up in front of you (drawing only)
+    window.__dwAsmFresh[disc] = true; delete window.__dwChainShown[disc];   // §D66.1 this walk's joint parts build up when they land; its pipe network reveals once (a later redraw is instant)
     var gateRes = _discGate();
     _redrawAllDiscWalks();
     if (opts.flash) await _flashSettleDisc(disc);   // §DISCWALK-ALL orange-flash-then-settle (discWalkAll only)
@@ -4296,6 +4297,7 @@ function _clearAllDiscWalks() {
   if (window.__dwChains) window.__dwChains = {};
   if (window.__dwChainMeta) window.__dwChainMeta = {};
   if (window.__dwChainAnimating) window.__dwChainAnimating = {};
+  if (window.__dwChainShown) window.__dwChainShown = {};   // §D66.1
   if (window.__dwChainRevealMeta) window.__dwChainRevealMeta = {};
   if (window.__dwAssembly) window.__dwAssembly = {};
   if (window.__dwTrunk) window.__dwTrunk = {};
@@ -4353,6 +4355,21 @@ function _dwRevealTick(disc) {
   if (window.A && window.A.requestRender) window.A.requestRender();
   if (k < 1) { R.raf = requestAnimationFrame(function () { _dwRevealTick(disc); }); }
   else { window.__dwReveal[disc] = Object.assign({}, window.__dwReveal[disc] || {}, { done: true }); delete window.__dwRevealMeta[disc]; console.log('§DW-REVEAL disc=' + disc + ' done n=' + (ims[0] ? ims[0].userData.dwSub.length : 0) + ' ms=' + Math.round(R.dur)); }
+}
+// §D66.1 a fresh walk's joint parts build up when they land: each bucket (ordered by its head's placement order) in step, so a head's drop, transition and tee appear together, never before
+// their head is drawn (a part's head = the placement under its tee node, plan position 1 mm). Done = all, once the heads' own build-up is done too.
+window.__dwAsmRevealMeta = window.__dwAsmRevealMeta || {}; window.__dwAsmFresh = window.__dwAsmFresh || {}; window.__dwChainShown = window.__dwChainShown || {};
+function _dwAsmRevealTick(disc) {
+  var R = window.__dwAsmRevealMeta[disc], root = _dwRoot(); if (!R || !root) return;
+  var k = Math.min(1, (performance.now() - R.start) / R.dur), fx = !!window.__dwRevealMeta[disc], shown = {}, xy = function (x, y) { return Math.round(x * 1000) + ',' + Math.round(y * 1000); };
+  root.children.forEach(function (o) { if (o.isInstancedMesh && o.userData && o.userData.dwDisc === disc && o.userData.dwSub) for (var i = 0; i < o.count; i++) shown[xy(o.userData.dwSub[i].x, o.userData.dwSub[i].y)] = 1; });
+  var nAll = 0;
+  root.children.forEach(function (o) { if (!(o.isInstancedMesh && o.userData && o.userData.dwAsm === disc && o.userData.dwSub)) return; var L = o.userData.dwSub, c = 0, lim = k >= 1 ? L.length : Math.floor(L.length * k);
+    while (c < lim && (!fx || (L[c].node && shown[xy(L[c].node[0], L[c].node[1])]))) c++;
+    o.count = c; nAll += L.length; });
+  if (window.A && window.A.requestRender) window.A.requestRender();
+  if (k < 1 || fx) { R.raf = requestAnimationFrame(function () { _dwAsmRevealTick(disc); }); }
+  else { delete window.__dwAsmRevealMeta[disc]; console.log('§DW-ASM-REVEAL disc=' + disc + ' done n=' + nAll + ' ms=' + Math.round(performance.now() - R.start)); }
 }
 function _renderDiscWalk(disc, placements) {
   var root = _dwRoot(); if (!root) return;
@@ -4676,9 +4693,11 @@ function _renderDiscAssembly(disc, parts) {
   window.__dwAssembly[disc] = drawn;   // Outliner rows / redraw carry only what is actually on screen
   if (nRef) console.log('§DW-LOD400-REFUSE asm disc=' + disc + ' refused=' + nRef + ' drawn=' + drawn.length + ' [' +
     Object.keys(refused).map(function (k) { return k + '×' + refused[k]; }).join(' ') + '] (no box — fail hard)');
-  var verts = [];
+  var verts = [], _hix = {}, _xy = function (x, y) { return Math.round(x * 1000) + ',' + Math.round(y * 1000); };   // §D66.1 a part's head = the placement under its tee node (plan position, 1 mm)
+  (window.__dwWalks[disc] || []).forEach(function (pl, i) { var k = _xy(pl.x, pl.y); if (!(k in _hix)) _hix[k] = i; });
+  var _ho = function (p) { var k = p.node ? _xy(p.node[0], p.node[1]) : null; return k in _hix ? _hix[k] : 1e9; };
   Object.keys(byKey).forEach(function (key) {
-    var list = byKey[key], d400 = real[list[0].geometry_hash];
+    var list = byKey[key].slice().sort(function (a, b) { return _ho(a) - _ho(b); }), d400 = real[list[0].geometry_hash];
     var geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(d400.positions, 3));
     geo.setIndex(new THREE.BufferAttribute(d400.faces, 1));
@@ -4703,6 +4722,8 @@ function _renderDiscAssembly(disc, parts) {
     var cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0x9be7ff }));
     cl.userData.dwAsm = disc; root.add(cl);
   }
+  if (window.__dwAsmFresh[disc] && drawn.length) { delete window.__dwAsmFresh[disc]; window.__dwAsmRevealMeta[disc] = { start: performance.now(), dur: Math.max(1500, Math.min(4000, 40 * drawn.length)) }; }   // §D66.1
+  if (window.__dwAsmRevealMeta[disc]) { if (window.__dwAsmRevealMeta[disc].raf) cancelAnimationFrame(window.__dwAsmRevealMeta[disc].raf); _dwAsmRevealTick(disc); }   // a redraw resumes the same timeline
   console.log('§DW-ASM-RENDER disc=' + disc + ' parts=' + parts.length + ' drawn=' + drawn.length + ' refused=' + nRef + ' buckets=' + Object.keys(byCls).length +
     ' connectorEdges=' + (verts.length / 6));
   if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();   // §I5d: assembly parts get Walked-Fixtures rows too
@@ -4904,6 +4925,12 @@ function _renderDiscChains(disc, segs, opts) {
   // gate-asserted log line). RENDER-only; ordered[] is unchanged geometry, just revealed progressively.
   var reduced = false; try { reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
   if (!reveal) { inst.count = ordered.length; window.__dwChainAnimating[disc] = false; delete window.__dwChainRevealMeta[disc]; if (window.A && A.requestRender) A.requestRender(); return; }
+  var _pm = window.__dwChainRevealMeta[disc], _nw = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  if (!opts.instant && !reduced && ((window.__dwChainShown[disc] === ordered.length && !_pm) || (_pm && _nw - _pm.start >= Math.max(2000, Math.min(7000, 60 * ordered.length))))) {   // §D66.1 revealed since this disc's walk (or its timeline is over though a blocked thread never drew its last frame): a redraw (e.g. the joint parts' fold) draws it at once
+    inst.count = ordered.length; window.__dwChainAnimating[disc] = false; delete window.__dwChainRevealMeta[disc]; window.__dwChainShown[disc] = ordered.length;
+    console.log('§DW-CHAIN-ANIM ' + disc + ' mode=redraw frames=0 ms=0 finalSegs=' + ordered.length + ' (revealed earlier; full geometry)');
+    if (window.A && A.requestRender) A.requestRender(); return;
+  }
   if (opts.instant || reduced) {
     inst.count = ordered.length;
     window.__dwChainAnimating[disc] = false; delete window.__dwChainRevealMeta[disc];
@@ -4941,6 +4968,7 @@ function _renderDiscChains(disc, segs, opts) {
       inst.count = N;
       window.__dwChainAnimating[disc] = false;
       delete window.__dwChainRevealMeta[disc];
+      window.__dwChainShown[disc] = N;   // §D66.1
       console.log('§DW-CHAIN-ANIM ' + disc + ' mode=animated frames=' + frames + ' ms=' + Math.round(now - startTs) +
         ' finalSegs=' + inst.count + ' (' + (inst.count === N ? 'EXACT==net' : 'MISMATCH net=' + N) + '; seed-outward reveal)');
       if (window.A && A.requestRender) A.requestRender();
