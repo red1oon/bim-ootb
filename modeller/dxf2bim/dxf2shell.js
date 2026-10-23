@@ -74,7 +74,14 @@
     for (j = 0; j < ny; j++) { solid.push([]); for (i = 0; i < nx; i++) {
       var on = !!(row[j] && col[i] && i >= row[j][0] && i <= row[j][1] && j >= col[i][0] && j <= col[i][1]); solid[j].push(on);
       if (on) { area += (X[i + 1] - X[i]) * (Y[j + 1] - Y[j]); cells++; } } }
-    return cells ? { X: X, Y: Y, solid: solid, area: r6(area), cells: cells } : null;
+    if (!cells) return null;
+    // §D51 perf: keep only the grid lines where the cell pattern changes (LTU: 821 x 547 wall-edge lines -> a few dozen); same cells, same area, a mesh of the outline, not of every wall edge
+    var keepX = [0], keepY = [0];
+    for (i = 1; i < nx; i++) { var sameC = true; for (j = 0; j < ny && sameC; j++) if (solid[j][i] !== solid[j][i - 1]) sameC = false; if (!sameC) keepX.push(i); }
+    for (j = 1; j < ny; j++) { var sameR = true; for (i = 0; i < nx && sameR; i++) if (solid[j][i] !== solid[j - 1][i]) sameR = false; if (!sameR) keepY.push(j); }
+    var X2 = keepX.map(function (k) { return X[k]; }).concat([X[nx]]), Y2 = keepY.map(function (k) { return Y[k]; }).concat([Y[ny]]);
+    var solid2 = keepY.map(function (jj) { return keepX.map(function (ii) { return solid[jj][ii]; }); });
+    return { X: X2, Y: Y2, solid: solid2, area: r6(area), cells: cells, grid: [nx, ny], kept: [keepX.length, keepY.length] };
   }
 
   // ---- §4.1 S-O inner ring of the exterior walls (rectangular envelope only) ----
