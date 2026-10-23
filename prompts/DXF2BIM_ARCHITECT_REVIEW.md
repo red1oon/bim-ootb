@@ -10,6 +10,12 @@ catalogue (sw v148) · this doc PR: §D70 F15 slab edge, measured and stopped (�
 T_CONNECTOR_ASSEMBLY (drop + transition + tee) at every head, 90 parts on the shed (sw v144) · #2332 §D66.1 the parts build up when they land, the pipes reveal once, armed at the walk's end (sw v145) ·
 #2338 §D66.1 FIX: the pipes and parts were culled (empty InstancedMesh culling sphere after #2332; witness B7 added, FAIL on 586e40bb) (sw v149) · BIMCompiler #244 FILM_SET=shedlast2 cards.
 **Film v2 SHORT done (local only):** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2_short.mp4`, 102.2 s (`FILM_DXF2BIM_WHY_MARKINGS.md §LAST PART v2 RESULT`). Before it leaves the machine: the owner's look.
+**Owner answers, same day (round 2):** (1) §D67 "not traced from Hospital or Terminal? then research online": traced 173 IFCs + the served dbs: no L angle, no plate under 10 mm, no axial fan of the
+shed's kind anywhere; online only GPL / no-licence catalogues: recommended a parametric `AngleProfileMesh` from the drawing's label + `AxialFanMesh` from the drawn ring, plates stay boxes (#2340, still
+"awaiting owner go" to BUILD). (2) §D70 "if it is practical and in practice": BUILT as §D70.1 (#2342, sw v150): AIA `A-FLOR-OTLN` outline + real openings, plank joints closed; reader takes it back.
+(3) Duplex 819 x 759: the owner asked whether it means borrowing Duplex windows for the shed: NO, it is the Duplex test set's own 4 stacked windows (still open, see below). Film v2: "the sprinkler
+ducting clash overlap the lighting ones": §D72 BUILT (#2345 + BIMCompiler #246, sw v151): the lamps give way (Terminal-measured 0.155 m, ELEC yields), 24 of 69 move <= 0.43 m. "Can the user
+choose what type of lighting?": NOT today, future phase noted in §D72. **Film v2b** (lamps clear): `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2b_short.mp4`, 104.1 s, -16.7 LUFS, local only.
 **Owner decisions open (one question each):** (1) §D67: the profile source for steel members: a parametric generator from the drawing's own label (`AngleProfileMesh` in the library's
 `ad_parametric_mesh` convention) or an imported steel catalogue (AISC / EN 10056 angles)? (2) §D70: a plan's slab edge = the exact union of the model's slabs (HHS L1: 10 bodies, 54 small holes; JKR L2:
 54 planks) or a drafted perimeter with real voids above a stated area and plank joints closed below a stated width? (3) The Duplex 819 x 759 windows (the 4 stacked clusters excluded in §D58): which library
