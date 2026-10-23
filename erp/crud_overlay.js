@@ -1934,7 +1934,7 @@
       var rows = K.rowsByIds(db, ids);
       return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
         rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
-        return _relayPush(rows);
+        return _relayPush(rows).then(function () { return _teamPush(rows, db); });
       }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
     } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
   }
@@ -1947,6 +1947,40 @@
     var S = (typeof global.ErpSyncRelay !== 'undefined') ? global.ErpSyncRelay : null;
     if (!S || !S.isEnabled || !S.isEnabled()) return Promise.resolve();
     return S.pushRows(rows).catch(function (e) { console.warn('§SYNC_RELAY push error', e && e.message); });
+  }
+  // _teamPush / rebuildSide — Implementing prompts/TEAMWORK_FRAMEWORK.md §13.1 (W1) — Witness: W-TEAM-SO. GENERIC, table-agnostic seams for the
+  // local comm layer (erp/team_sync.js, loaded only with ?team=1). Without window.TeamSync both are inert (one extra microtask).
+  //   _teamPush(rows, db)  — a commit observer: the rows this commit just appended (the same ones _relayPush sees), plus the live sidecar for FK lookups.
+  //   rebuildSide(build)   — the sidecar as a PROJECTION of the comm log: build(oldRows, K) → the full new row list; written through the SAME append-only
+  //                          `ops` store (new snapshots of every row, plus an `undone` tombstone for each id no longer present), under the SAME cross-tab lock.
+  function _teamPush(rows, db) {
+    var T = (typeof global.TeamSync !== 'undefined') ? global.TeamSync : null;
+    if (!T || typeof T.onCommit !== 'function') return Promise.resolve();
+    return Promise.resolve(T.onCommit(rows, db)).catch(function (e) { console.warn('§TEAM push error', e && e.message); });
+  }
+  function rebuildSide(build) {
+    var K = kernel();
+    return new Promise(function (resolve) {
+      withSidecar(function (db0) {
+        if (!db0 || !K || !_IDB) { resolve({ ok: false, reason: 'sidecar/kernel/idb absent' }); return; }
+        _withFreshSide(K, function (db, done) {
+          var old = K.allRowsPlain(db);
+          Promise.resolve(build(old, K)).then(function (rows) {
+            db.run('DELETE FROM kernel_ops'); K.replayRowsInto(db, rows); db.__tipFoldCache = null;   // tip_fold memo is stamped (maxId,n,undoneN): never trust it across a rebuild
+            return Promise.resolve(K.sealChain(db)).then(function () {
+              var nu = K.allRowsPlain(db), have = {}; nu.forEach(function (r) { have[r.id] = 1; });
+              var tomb = old.filter(function (r) { return !have[r.id]; }).map(function (r) { var t = {}; for (var k in r) t[k] = r[k]; t.undone = 1; return t; });
+              return K.appendOpsRecords(_IDB, OPS_STORE, nu.concat(tomb)).then(function () {
+                return Promise.resolve(K.verifyChain(db)).then(function (v) {
+                  console.log('§TEAM-REBUILD rows=' + nu.length + ' was=' + old.length + ' tombstoned=' + tomb.length + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL(' + (v && v.why) + ')'));
+                  done(); resolve({ ok: true, rows: nu.length, tombstoned: tomb.length, verify: v });
+                });
+              });
+            });
+          }).catch(function (e) { console.warn('§TEAM-REBUILD error', e && e.message); done(); resolve({ ok: false, reason: e && e.message }); });
+        });
+      });
+    });
   }
   // syncNow — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 2 — Witness: W-N-CONVERGE.
   // The manual Sync trigger's ACTUAL orchestration (crud_overlay.js is the caller, per the spec's
@@ -3126,6 +3160,7 @@
                     fmtTs: CORE.fmtKernelTs,
                     editModeOn: function () { return on; },
                     toggleEditMode: function () { ck.checked = !ck.checked; ck.dispatchEvent(new Event('change')); },
+                    teamRebuild: rebuildSide,   // §13.1 W1 (W-TEAM-SO): rebuild the sidecar as a projection of the comm log (erp/team_sync.js)
                     syncNow: syncNow };   // §Relay Wiring (W-N-CONVERGE): manual push+pull+rebase against a configured relay
   console.log('§CRUD layer mounted (Edit-mode ready)');
 })(typeof window !== 'undefined' ? window : this);
