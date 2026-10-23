@@ -2008,6 +2008,10 @@
     var row = _rows(_db, "SELECT params_json FROM rule_routing WHERE disc='" + _esc(disc) + "' AND pattern='bom-tree'")[0]; if (!row) return null;
     var P; try { P = JSON.parse(row.params_json); } catch (e) { return null; }
     var H = +P.assembly_height_m, tol = 0.05; if (!(H > 0)) return null;
+    // §D66 the joint mini-BOM (rule_joint_piece rows with an assembly_id, from the library's T_CONNECTOR_ASSEMBLY): the tee node sits at the TOP part of that stack (the face that hooks to the main), head + its dz.
+    // The 177 mm of assembly_height_m is the library's WHOLE-assembly height (head bottom to tee top), which the parts reproduce; no rows -> the D65 height, unchanged.
+    var jb = _loadJointBom(disc), jTop = jb.length ? jb.reduce(function (a, r) { return +r.dz_m > +a.dz_m ? r : a; }) : null, fill = null;
+    if (jTop && +jTop.dz_m > 0) { H = +jTop.dz_m; fill = jTop.assembly_id; }
     var xs = placements.map(function (p) { return p.x; }), ys = placements.map(function (p) { return p.y; });
     var ax = (Math.max.apply(null, xs) - Math.min.apply(null, xs)) >= (Math.max.apply(null, ys) - Math.min.apply(null, ys)) ? 'x' : 'y', cr = ax === 'x' ? 'y' : 'x';
     var rows = []; placements.slice().sort(function (a, b) { return a[cr] - b[cr] || a[ax] - b[ax]; }).forEach(function (p) {
@@ -2030,7 +2034,7 @@
         segs.push({ disc: disc, rule: 'bom-tree:' + P.bom, role: role, from: from, to: to, from_guid: fg, to_guid: tg, from_kind: fk, to_kind: tk, dia_mm: dia,
           gap: +Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]).toFixed(4), mode: 'bom-tree', prov: 'bom:' + P.bom + '/' + role }); };
       rows.forEach(function (r, ri) {
-        var tees = r.heads.map(function (h, k) { var t = [h.x, h.y, +(zH + H).toFixed(4)]; add('DROP', [h.x, h.y, zH], t, h.ifc_class, 'IfcPipeFitting', 'FPH:' + ri + ':' + k, 'FPT:' + ri + ':' + k, P.branch_dia_mm); return t; });
+        var tees = r.heads.map(function (h, k) { var t = [h.x, h.y, +(zH + H).toFixed(4)]; add('DROP', [h.x, h.y, zH], t, h.ifc_class, 'IfcPipeFitting', 'FPH:' + ri + ':' + k, 'FPT:' + ri + ':' + k, P.branch_dia_mm); if (fill && segs.length && segs[segs.length - 1].role === 'DROP' && segs[segs.length - 1].to === t) segs[segs.length - 1].fill = fill; return t; });   // §D66 the T assembly's parts fill this edge
         for (var i = 1; i < tees.length; i++) add('BRANCH', tees[i - 1], tees[i], 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + (i - 1), 'FPT:' + ri + ':' + i, P.branch_dia_mm);
         var ei = P.main_side === 'max' ? tees.length - 1 : 0, end = tees[ei], m = pt(mainA, r.c, end[2]);
         if (Math.abs(end[ax === 'x' ? 0 : 1] - mainA) > 1e-6) add('BRANCH', end, m, 'IfcPipeFitting', 'IfcPipeFitting', 'FPT:' + ri + ':' + ei, 'FPM:' + ri, P.branch_dia_mm);
@@ -2054,7 +2058,8 @@
     console.log(TAG + ' §BOM-TREE-FIT disc=' + disc + ' envelope=' + (wb.length ? 'world-bbox ' : 'transforms ') + env.length + ' head_z=' + best.zH.toFixed(4) + ' (band ' + band[0].toFixed(3) + '..' + band[1].toFixed(3) + ', ' + zs.length + ' levels tried) main=' + mainA.toFixed(2) + ' clashes=' + best.n);
     var byRole = {}; segs.forEach(function (x) { byRole[x.role] = (byRole[x.role] || 0) + 1; });
     console.log(TAG + ' §BOM-TREE disc=' + disc + ' bom=' + P.bom + ' heads=' + placements.length + ' rows=' + rows.length + ' axis=' + ax + ' segs=' + segs.length + ' ' + JSON.stringify(byRole) +
-      ' clashed=' + JSON.stringify(clashed) + ' main=' + P.main_side + '@' + mainA.toFixed(2) + ' riser=' + (seed ? 'floor ' + floor.toFixed(3) : 'none'));
+      ' clashed=' + JSON.stringify(clashed) + ' main=' + P.main_side + '@' + mainA.toFixed(2) + ' riser=' + (seed ? 'floor ' + floor.toFixed(3) : 'none') +
+      ' tee_dz=' + H.toFixed(4) + (fill ? ' (' + fill + ' top part ' + jTop.product + '; drops filled=' + segs.filter(function (x) { return x.fill; }).length + ')' : ' (assembly_height_m)'));
     return { segs: segs, byRule: [{ from: 'bom-tree:' + P.bom, to: disc, mode: 'bom-tree', segs: segs.length, byRole: byRole, clashed: clashed }], seed: seed };
   }
 
@@ -2070,6 +2075,7 @@
   // opts.toFace forwards to routeChains. Returns {parts, joints, segs, nodes} or {refused, reason}.
   function assemble(disc, bdb, opts) {
     opts = opts || {};
+    if (opts.network && opts.network.length && opts.network[0].mode === 'bom-tree') return _assembleJointBom(disc, opts.network);   // §D66
     var rc = routeChains(disc, bdb, opts);
     if (!rc.segs.length) return { disc: disc, refused: true, reason: 'no routed network', parts: [], joints: [] };
     // CATALOG source: caller-passed opts.catalog (raw _import_joint_piece_types rows) ELSE the first-class
@@ -2322,8 +2328,45 @@
   // projected from disc_patterns._import_joint_piece_types by build/project_rule_joint_piece.py. Borrow-aware
   // (_dbFor) and table-absent-safe → []. Shape matches a caller's opts.catalog row, so assemble's _part() is uniform.
   function _loadJointPieces(disc) {
-    try { return _rows(_dbFor(disc), "SELECT ifc_class, piece_type, diameter_mm, length_mm FROM rule_joint_piece WHERE disc='" + _esc(disc) + "'"); }
+    // §D66: a row carrying an assembly_id is a joint mini-BOM part (_loadJointBom), not a per-class measured piece: left out here (the rules without that column read exactly as before)
+    try { return _rows(_dbFor(disc), "SELECT * FROM rule_joint_piece WHERE disc='" + _esc(disc) + "'").filter(function (r) { return !r.assembly_id; })
+      .map(function (r) { return { ifc_class: r.ifc_class, piece_type: r.piece_type, diameter_mm: r.diameter_mm, length_mm: r.length_mm }; }); }
     catch (e) { return []; }
+  }
+  // §D66 the joint mini-BOM rows (rule_joint_piece with an assembly_id: the library's T_CONNECTOR_ASSEMBLY children, baked by bake_farm_rules.py), in sequence order. Read from the db that carries the
+  // bom-tree routing row (_db, as _bomTree), so the tree and its joints come from one source. Table / column absent -> [].
+  function _loadJointBom(disc) {
+    try { return _rows(_db, "SELECT * FROM rule_joint_piece WHERE disc='" + _esc(disc) + "'").filter(function (r) { return r.assembly_id && r.geometry_hash; }).sort(function (a, b) { return a.sequence - b.sequence; }); }
+    catch (e) { return []; }
+  }
+  // §D66 the T mini-BOM at each head of a bom-tree network (SRS §6.12 tack model, PlacementCollectorVisitor: child = parent tack + rotated(dx, dy, dz)). Parent tack = the DROP edge's head end; the
+  // assembly frame's yaw = the incident run direction at the tee node (the branch; assemble()'s mean-run-vector convention, axis-aligned here), plus the child's numeric rotation_rule (degrees; '0' in the library).
+  // Every part carries its product's geometry_hash and mesh extents from the row: nothing sized here. A non-numeric rotation_rule refuses that part (counted).
+  function _assembleJointBom(disc, segs) {
+    var rows = _loadJointBom(disc);
+    if (!rows.length) return { disc: disc, refused: true, reason: 'no joint mini-BOM rows (rule_joint_piece with an assembly_id)', parts: [], joints: [] };
+    var key = function (p) { return p.map(function (v) { return (+v).toFixed(4); }).join(','); }, runs = {};
+    segs.forEach(function (s) { if (s.role === 'DROP') return; [[s.from, s.to], [s.to, s.from]].forEach(function (e) {
+      var d = [e[1][0] - e[0][0], e[1][1] - e[0][1], e[1][2] - e[0][2]]; if (Math.abs(d[2]) > 1e-6) return; (runs[key(e[0])] = runs[key(e[0])] || []).push(d); }); });
+    var parts = [], joints = [], refused = 0;
+    segs.forEach(function (s) {
+      if (s.role !== 'DROP') return;
+      var h = s.from, rd = runs[key(s.to)] || [], ax = 0, ay = 0;
+      rd.forEach(function (d) { var L = Math.hypot(d[0], d[1]) || 1, ux = Math.abs(d[0] / L), uy = Math.abs(d[1] / L); ax += ux; ay += uy; });   // an axis, not a direction: a tee is symmetric along its run
+      var yaw = (ay > ax) ? Math.PI / 2 : 0;
+      joints.push({ head_guid: s.from_guid, tee_guid: s.to_guid, node: s.to.slice(), runs: rd.length, yaw: yaw });
+      rows.forEach(function (r) {
+        var rr = +r.rotation_rule; if (r.rotation_rule != null && r.rotation_rule !== '' && !isFinite(rr)) { refused++; return; }
+        var y = yaw + (isFinite(rr) ? rr * Math.PI / 180 : 0), c = Math.cos(y), sn = Math.sin(y), dx = +r.dx_m || 0, dy = +r.dy_m || 0;
+        parts.push({ disc: disc, guid: s.from_guid + '/' + r.role, ifc_class: r.ifc_class, piece_type: r.piece_type, role: r.role, product: r.product, assembly_id: r.assembly_id, sequence: r.sequence,
+          geometry_hash: r.geometry_hash, diameter_mm: r.diameter_mm, length_mm: r.length_mm, bx: r.bbox_x_m, by: r.bbox_y_m, bz: r.bbox_z_m,
+          pos: [+(h[0] + dx * c - dy * sn).toFixed(5), +(h[1] + dx * sn + dy * c).toFixed(5), +(h[2] + (+r.dz_m)).toFixed(5)], yaw: y, dir: [0, 0, 1], head_guid: s.from_guid, node: s.to.slice(),
+          prov: 'assembled:joint-bom ' + r.assembly_id + '/' + r.role + ' tack head+' + (+r.dz_m).toFixed(3) + 'm (' + r.provenance + ')' });
+      });
+    });
+    console.log(TAG + ' §JOINT-BOM disc=' + disc + ' assembly=' + rows[0].assembly_id + ' heads=' + joints.length + ' parts=' + parts.length + ' refused=' + refused +
+      ' [' + rows.map(function (r) { return r.sequence + ':' + r.role + '@+' + (+r.dz_m).toFixed(3); }).join(' ') + '] yaw_x=' + joints.filter(function (j) { return j.yaw === 0; }).length + ' yaw_y=' + joints.filter(function (j) { return j.yaw !== 0; }).length);
+    return { disc: disc, refused: !parts.length, reason: parts.length ? undefined : 'no DROP edge in the network', parts: parts, joints: joints, segs: segs.length, nodes: joints.length, skipped: refused, mode: 'joint-bom' };
   }
   // The first-class PROJECTED connector hookup (§3c): per-(disc,ifc_class) fixture→service connector
   // (face/Ø/connects_to + standoff), projected from disc_patterns.ad_assembly_connector/manifest by
@@ -2631,7 +2674,8 @@
     _trueMidpoint: _trueMidpoint,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
     lookupRealFitting: lookupRealFitting, MEP_REAL_FITTINGS: MEP_REAL_FITTINGS,
-    disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; } };
+    disciplines: disciplines, loadedFile: loadedFile, _ready: function () { return _ready; },
+    rulesDb: function () { return _db; } };   // §D66 the rules db (it can carry the meshes of its library parts: component_geometries)
   ROOT.DiscWalker = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   console.log(TAG + ' module loaded');

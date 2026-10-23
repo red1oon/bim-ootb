@@ -4100,6 +4100,9 @@ async function _dwResolveMeshes(hashes, tag) {
   var real = {}, want = Object.keys(hashes || {});
   if (!want.length || !window.RealGeometry || !window.SQL) return real;
   if (window.__dwGeoBuf) { try { var g = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(g, want); g.close(); } catch (e) { console.warn(tag + ' geo resolve failed ' + (e && e.message)); real = {}; } }
+  var _rdb = window.DiscWalker && window.DiscWalker.rulesDb && window.DiscWalker.rulesDb(), _rmiss = want.filter(function (h) { return !real[h]; });   // §D66 the rules db can carry its library parts' meshes
+  if (_rdb && _rmiss.length) { try { var _rm = window.RealGeometry.resolveHashes(_rdb, _rmiss); Object.keys(_rm).forEach(function (h) { real[h] = _rm[h]; _dwSrcMesh[h] = _rm[h]; });
+    if (Object.keys(_rm).length) console.log('§DW-RULES-MESH building=' + (window.__dwName || '?') + ' source=the rules db resolved=' + Object.keys(_rm).length + '/' + _rmiss.length); } catch (e) { } }
   var rules = window._dwRules(window.__dwName), keys = [].concat(_DW_RULES_SOURCE[rules] || []), SW = window.STRWalkerOutliner;
   if (!keys.length || !SW || !SW._fetchGeoDb || window.__dwRulesMeshOff) return real;
   for (var ki = 0; ki < keys.length; ki++) {   // §D64 each named source in turn, only for the hashes still missing
@@ -4244,12 +4247,15 @@ async function _discWalkOne(disc, ctx, opts) {
       if (window.DiscWalker.assemble) {
         var abdb = new window.SQL.Database(new Uint8Array(window.__dwBuf));
         try { abdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { }   // §ANCHOR-BLIND — see disc-walk note
-        var asm = window.DiscWalker.assemble(disc, abdb);
+        var _bomNet = nSeg && w.chainSegs[0] && w.chainSegs[0].mode === 'bom-tree';   // §D66 the walk's own BOM-tree network carries the joint mini-BOMs; any other network: assemble reads routeChains, as before
+        var asm = _bomNet ? window.DiscWalker.assemble(disc, abdb, { network: w.chainSegs }) : window.DiscWalker.assemble(disc, abdb);
         abdb.close();
         if (asm && !asm.refused && asm.parts && asm.parts.length) {
           window.DiscWalker.connectorEnrich(asm.parts);
+          if (asm.mode === 'joint-bom') { var _ph = {}; asm.parts.forEach(function (p) { if (p.geometry_hash) _ph[p.geometry_hash] = 1; }); await _dwResolveMeshes(_ph, '§DW-LOD400-REFUSE asm ' + disc); }   // §D66 cache the parts' meshes (the building, the rules db, the named sources)
           _renderDiscAssembly(disc, asm.parts);
           asmN = (window.__dwAssembly[disc] || []).length;   // drawn parts only — refused ones are logged by the renderer
+          if (asm.mode === 'joint-bom' && asmN) await _commitDiscAssembly(disc, window.__dwAssembly[disc]);   // §D66 the landed parts are signed like the walk's fixtures
         }
         console.log('§DW-ASSEMBLE ' + disc + ' connectors=' + connN + '/' + w.placements.length +
           ' parts=' + asmN + (asm && asm.refused ? ' (assemble REFUSE: ' + asm.reason + ')' :
@@ -4658,6 +4664,9 @@ function _renderDiscAssembly(disc, parts) {
     try { var gdb = new window.SQL.Database(new Uint8Array(window.__dwGeoBuf)); real = window.RealGeometry.resolveHashes(gdb, Object.keys(hashes)); gdb.close(); }
     catch (e) { console.warn('§DW-LOD400-REFUSE asm disc=' + disc + ' geo resolve failed ' + (e && e.message)); real = {}; }
   }
+  Object.keys(hashes).forEach(function (h) { if (!real[h] && _dwSrcMesh[h]) real[h] = _dwSrcMesh[h]; });   // §D66 the meshes _dwResolveMeshes cached (the rules db, the named sources)
+  if (window.Bonsai && window.Bonsai.library && window.Bonsai.library.registerRealGeometry && Object.keys(real).length)   // the fold of _commitDiscAssembly's rows renders the same mesh
+    window.Bonsai.library.registerRealGeometry(Object.keys(real).map(function (h) { return { hash: h, v: real[h].positions, f: real[h].faces, bbox: real[h].bbox, anchorOffset: [0, 0, 0] }; }));
   var byKey = {}, refused = {}, nRef = 0, drawn = [];
   parts.forEach(function (p) {
     if (p.geometry_hash && real[p.geometry_hash]) { var k = p.ifc_class + '|' + p.geometry_hash; (byKey[k] = byKey[k] || []).push(p); drawn.push(p); return; }
@@ -4853,6 +4862,7 @@ function _renderDiscChains(disc, segs, opts) {
   if (!segs.length) { if (window.A && A.requestRender) A.requestRender(); return; }
   var meta = opts.patternBridge !== undefined ? opts.patternBridge : window.__dwChainMeta[disc];
   var reveal = !!(meta && meta.seed);                           // only routePattern-bridged (M1) networks carry a real seed anchor to reveal outward from
+  var _filled = segs.filter(function (s) { return s.fill; }).length; if (_filled) segs = segs.filter(function (s) { return !s.fill; });   // §D66 an edge a joint mini-BOM fills is drawn by its parts, not swept (the network data keeps it)
   var orderInfo = reveal ? _seedOutwardChainOrder(segs, meta) : { ordered: segs, unreached: 0 };
   var ordered = orderInfo.ordered;
   var base = DW_COLOR[disc] || 0xc0c0c0;
@@ -4886,7 +4896,7 @@ function _renderDiscChains(disc, segs, opts) {
     drift = Math.max(drift, Math.min(t.distanceTo(b) + bo.distanceTo(a), t.distanceTo(a) + bo.distanceTo(b)));
   }
   console.log('§DW-TUBE ' + disc + ' tubes=' + ordered.length + ' r=' + r.toFixed(3) +
-    ' endpointDrift(' + k + ')=' + drift.toExponential(1) + 'm (LANDED LOD mesh @ real endpoints)' +
+    ' endpointDrift(' + k + ')=' + drift.toExponential(1) + 'm (LANDED LOD mesh @ real endpoints)' + (_filled ? ' filledByParts=' + _filled : '') +
     (reveal ? ' seedOutward=1 unreached=' + orderInfo.unreached : ''));
   // §CAMPAIGN M4 — CONSTRUCTION ANIMATION for a routePattern-bridged network: reveal seed-outward via
   // InstancedMesh.count (the instancing analogue of _renderSeedTrunk's BufferGeometry.drawRange — same
@@ -4966,8 +4976,9 @@ async function _commitDiscChains(disc, segs) {
   // sub-discipline (CW/SP) in from_kind ('RW_CW'/'RW_SP'), not in s.disc (the DiscWalker umbrella, e.g.
   // 'PLB') — resolve that real sub-discipline before the lookup so a future CW-only or SP-only real product
   // narrows correctly; routeChains()' own nn-network segs carry the real discipline directly in s.disc.
-  var ops = [], refusedChain = [];
+  var ops = [], refusedChain = [], filledN = 0;
   for (var i = 0; i < cap; i++) {
+    if (segs[i].fill) { filledN++; continue; }   // §D66 its parts are committed instead (_commitDiscAssembly)
     var c = _dwChainOp(segs[i]);
     if (c.refused) { refusedChain.push(c.refused); continue; }
     ops.push(c.op);
@@ -4989,10 +5000,25 @@ async function _commitDiscChains(disc, segs) {
     if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     syncHistory(); audioCue('rollout');
   }
-  console.log('§ROUTER-CHAIN-COMMIT disc=' + disc + ' folded=' + committed + '/' + segs.length +
+  console.log('§ROUTER-CHAIN-COMMIT disc=' + disc + ' folded=' + committed + '/' + segs.length + (filledN ? ' filledByParts=' + filledN : '') +
     (segs.length > cap ? ' (cap=' + capMax + ', occt-bounded; full ' + segs.length + ' rendered live)' : '') +
     ' (1 signed group)');
   window.__dwLastChainDisc = disc;                    // sentinel for witnesses
+  return committed;
+}
+// §D66 the landed joint mini-BOM parts -> one signed group of GEOM_INSERT, the same real-mesh shape _commitDiscWalk uses for a hashed fixture (centre -> seat z, yaw -> degrees; the mesh registered by
+// _renderDiscAssembly). The bbox is the part's own mesh extents from its rule row.
+async function _commitDiscAssembly(disc, parts) {
+  var O = window.Bonsai && window.Bonsai.oplog; if (!O || !parts || !parts.length) return 0;
+  var ops = parts.filter(function (p) { return p.geometry_hash && p.bx > 0 && p.by > 0 && p.bz > 0; }).map(function (p) {
+    return { op_type: 'GEOM_INSERT', params: { bbox: [-p.bx / 2, p.bx / 2, -p.by / 2, p.by / 2, -p.bz / 2, p.bz / 2], realGeomHash: p.geometry_hash,
+      placement: { x: +p.pos[0].toFixed(4), y: +p.pos[1].toFixed(4), z: +(p.pos[2] - p.bz / 2).toFixed(4), rot: +((p.yaw || 0) * 180 / Math.PI).toFixed(4) }, lod: '200', color: DW_COLOR[disc] || 0xc0c0c0,
+      _dw: { disc: disc, asm: p.assembly_id, role: p.role, product: p.product, ifc: p.ifc_class, head: p.head_guid, prov: p.prov, cz: +p.pos[2].toFixed(4) } } };
+  });
+  var committed = 0;
+  if (ops.length) { try { var res = await O.commitSeedGroup(ops, 'dwasm-' + disc + '-' + O.length); committed = (res.ids || []).length; } catch (e) { console.warn('§DW-ASM-COMMIT batch fail ' + (e && e.message)); } }
+  if (committed) { _redrawAllDiscWalks(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh(); syncHistory(); }
+  console.log('§DW-ASM-COMMIT disc=' + disc + ' parts=' + parts.length + ' committed=' + committed + ' (1 signed group)');
   return committed;
 }
 // ── §CAMPAIGN M5 — bend/tee FITTING commit (disc_walker.js bendFittings) ────────────────────────────────
@@ -5054,7 +5080,9 @@ async function _commitDiscFittings(disc, fittings) {
 // foldChainToScene clears the editable group on every scrub — re-render every walked disc's placement markers
 // AND chain lines so a co-resident walk (FP+ELEC, or PLB placements+chains) survives a later commit's re-fold.
 function _redrawAllDiscWalks() {
+  var _asmKeep = Object.assign({}, window.__dwAssembly || {});   // §D66 _renderDiscWalk -> _clearDiscWalk deletes __dwAssembly[disc]: keep it for the assembly loop below
   Object.keys(window.__dwWalks).forEach(function (d) { if (window.__dwWalks[d]) _renderDiscWalk(d, window.__dwWalks[d]); });
+  if (window.__dwAssembly) Object.keys(_asmKeep).forEach(function (d) { if (_asmKeep[d] && !window.__dwAssembly[d]) window.__dwAssembly[d] = _asmKeep[d]; });
   // redraw-after-scrub: rebuilds fresh InstancedMeshes into the (possibly just-folded/replaced) editable group.
   // A disc whose M4 reveal is still mid-flight (its own walk's _commitDiscChains triggers this SAME redraw a few
   // ms after the reveal starts) must NOT be forced instant — that would either skip re-adding it (leaving nothing

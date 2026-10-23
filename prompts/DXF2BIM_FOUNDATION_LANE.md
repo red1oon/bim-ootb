@@ -663,3 +663,28 @@ model (`IfcFan` = 0 rows in every other extracted building db on this machine: C
 refuse a default size, look up the library's prisms by family + dims (1 mm) + fill (0.03), stretch along the axis, state `lod400:<hash>`; list the rest. Placed after Convert, before the export, so the Viewer DB
 and the IFC carry the bound mesh (`IfcMappedItem` of the library mesh is a later step; the first step writes the stretched mesh as the body's own triangulated geometry).
 **D67 STATE: SPEC — awaiting owner go** (and the owner's choice of profile source, (a) or (b)). Nothing built.
+## §D66 THE JOINT MINI-BOMS: THE T-CONNECTOR PARTS LAND AT EVERY SPRINKLER HEAD (owner 2026-10-23: "each joint is a series of mini BOM ... shim-anchor"; session-3 RESUME item 2)
+**Witness claim first (W-FP-JOINT-BOM, `modeller/tests/witness_fp_joint_bom.js`; it says NO-OP when no part lands, WRONG when a part, offset, mesh or row is off the library).** J1 PROJECTED: `farm_rules.db`
+`rule_joint_piece` carries the FP `T_CONNECTOR_ASSEMBLY` rows projected from the library (`ad_bom_child` bom_id T_CONNECTOR_ASSEMBLY, nested in `SPRINKLER_PENDANT_ASSEMBLY` as T_ASSEMBLY, z_rule ABOVE_CHILD_1 =
+the head): DROP_PIPE `FP_Drop_Pipe` OFFSET_0.046, TRANSITION `FP_Transition_Fitting` OFFSET_0.084, TEE `FP_Tee_Threaded` OFFSET_0.118, each with its product's `geometry_hash` (`component_definitions`, 71920670a9550df0 /
+c5770f23d56d6974 / 2ddc13d0ef6b1038) and its mesh extents; the three meshes ship inside the rules db (`component_geometries`, byte-equal to the library's: the walk's mesh sources, the Terminal and Duplex geo dbs,
+do not serve them). Every value equal to its library row, or WRONG; no rows = NO-OP. J2 PLACED: the shed's FP walk lands 3 parts per head (30 heads -> 90 parts) by the tack model (SRS §6.12, PlacementCollectorVisitor:
+child = parent tack + rotated(dx, dy, dz); parent tack = the head), each drawn from its real mesh (LOD400, 0 refused). J3 ON THE NETWORK: every tee centre is the BOM tree's tee node: the tree's tee level is now
+the TOP of the T stack (the part whose TOP face hooks to the main, `ad_assembly_connector` MAIN_HOOKUP), head + 0.118 m, not head + 0.177 m: 177 mm is the library's WHOLE-assembly height (head bottom to tee top), which
+the landed parts reproduce (J3b: head bottom -> tee top span = 177 +- 1 mm, measured from the meshes). The D65 tree put the branch 59 mm above the tee the BOM describes. J4 ORIENTED: each tee's long arm (the mesh's
+local X, 79 mm) lies along its branch run (the assembly frame's yaw = the incident run direction at the tee node, assemble()'s convention; the child `rotation_rule` '0' adds nothing). J5 NO DOUBLE: the DROP edges the
+T assembly fills stay in the network (connectivity, reveal order) but are neither swept nor committed as GEOM_SWEEP (a 25 mm sweep would hide the 21 mm drop pipe); the parts are committed (one signed group, GEOM_INSERT
+with their real mesh hash) and survive a redraw (`_redrawAllDiscWalks` re-rendered the walk first, whose `_clearDiscWalk` deleted `__dwAssembly[disc]` before the assembly loop read it: a latent bug, unseen while every
+assembled part refused). J6 UNCHANGED: Clinic (Terminal rules, FP routed by its pattern) places no T parts and logs the same `§DW-ASSEMBLE` refusal as before; `assemble()`'s per-class catalog path ignores rows that
+carry an `assembly_id`, so the Terminal / Duplex rows read the same.
+**Measured first (2026-10-23):** `§DW-ASSEMBLE FP connectors=0/30 parts=0 (assemble REFUSE: no routed network)` (W-FP-BOM-TREE baseline 5 / 0). `rule_joint_piece` has 0 FP rows in `farm_rules.db`. The library rows:
+`ad_bom_child` 34-36 (above) with dx = dy = dz = 0 and rotation_rule '0'; the product meshes: drop pipe 21.3 x 21.3 x 69.4 mm, transition 28.6 x 28.6 x 7.1 mm, tee 79.4 x 40.5 x 59.9 mm; the shed's head (the Terminal
+mesh 0d509e532be0f5f2) is 57.8 mm tall, as the library's pendent (57.8 mm). The offsets are the part centres above the head centre: the Java compiler's FireSuppressionPlacer states the same stack as constants
+(DROP_BELOW_TEE 0.071825 = 0.118 - 0.046, TRANSITION_BELOW_TEE 0.033544 = 0.118 - 0.084, HEAD_TOP_BELOW_TEE 0.088910 = 0.118 - 0.0289): the rows, not the constants, are read. The M5 bend fittings (7 at the main
+junctions) are untouched: `bendFinder` groups segments by `from_kind`, so a DROP (from the head) never meets the branch there.
+**Rule.** `bake_farm_rules.py` (BIMCompiler) projects the FP T rows into `rule_joint_piece` (+ columns assembly_id, parent_assembly, anchor, sequence, role, product, geometry_hash, dx_m, dy_m, dz_m, rotation_rule,
+bbox_x/y/z_m) and copies their meshes into `component_geometries`. `DiscWalker._bomTree` reads the tee level from the top row and tags the DROP edges `fill = T_CONNECTOR_ASSEMBLY`; `assemble(disc, bdb, {network})`
+on a bom-tree network tacks the rows off each DROP's head; `modeller.html` passes the walk's bom-tree network, resolves the parts' meshes (the building, then the rules db, then the named sources), draws, commits,
+keeps them across redraws, and leaves filled edges out of the sweep and its commit.
+**Not in this rule:** the parts appear when the walk ends (they do not follow the network's 2 s reveal: a film polish); the Java's TEE_BELOW_MAIN (9.7 mm, a code constant, no library row) is not applied; joints of
+the MAIN / RISER (the M5 generic fittings) are not mini-BOMs in the library.
