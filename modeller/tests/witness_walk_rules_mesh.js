@@ -51,7 +51,7 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     const res = {}; for (const d of ['ELEC', 'FP']) res[d] = await walk(p2, d);
     say('INFO shed (measured, not judged): ELEC ' + JSON.stringify(res.ELEC) + ' FP ' + JSON.stringify(res.FP) + ' | ' + (logs.filter(t => /DATUM/.test(t)).pop() || '').slice(0, 160));
     const ref = logs.filter(t => /§DW-RULES-REF/.test(t));
-    check('M2', 'the reference is stated: rules file, standard, built_from, not measured on this building', ref.length > 0 && /rules=terminal_rules\.db/.test(ref[0]) && /standard=large-complex/.test(ref[0]) && /built_from=\S/.test(ref[0]) && /not measured on this building/.test(ref[0]), (ref[0] || '(none)').slice(0, 220));
+    check('M2', 'the reference is stated: rules file, standard, built_from, not measured on this building', ref.length > 0 && /rules=\w+_rules\.db/.test(ref[0]) && /standard=[\w-]+/.test(ref[0]) && /built_from=\S/.test(ref[0]) && /not measured on this building/.test(ref[0]), (ref[0] || '(none)').slice(0, 220));
     check('M3', 'each walk returns in < 60 s (no wait for a geometry file a local open never has)', res.ELEC.ms < 60000 && res.FP.ms < 60000, `ELEC ${res.ELEC.ms} ms, FP ${res.FP.ms} ms`);
   } finally { await br2.close(); }
   // 2b. M1: an ARC building db opened from disk whose bands reconcile (Clinic_ARC.db: 7 shared frame classes) and that has no _geo.db of its own

@@ -4095,7 +4095,7 @@ function _discWalkNow(disc, ctx) {
 // beat the geo fetch. Waits for the geo buffer first (cap 60 s) so a resident's own meshes never refuse from a race.
 // §D61 (DXF2BIM_FOUNDATION_LANE.md): the meshes of a walk: the opened building's own geometry first, then the RULES' SOURCE building's geometry for the hashes still missing (a building
 // opened from disk, e.g. a DXF2BIM convert, has no _geo.db of its own). The source is named by the rules file (rules_meta built_from): terminal_rules.db = Terminal, duplex_rules.db = Duplex.
-var _DW_RULES_SOURCE = { 'terminal_rules.db': 'Terminal', 'duplex_rules.db': 'Duplex' }, _dwSrcGeo = {}, _dwSrcMesh = {};
+var _DW_RULES_SOURCE = { 'terminal_rules.db': 'Terminal', 'duplex_rules.db': 'Duplex', 'farm_rules.db': 'Terminal' }, _dwSrcGeo = {}, _dwSrcMesh = {};   // farm: its meshes are the Terminal's (rule_mesh_binding)
 async function _dwResolveMeshes(hashes, tag) {
   var real = {}, want = Object.keys(hashes || {});
   if (!want.length || !window.RealGeometry || !window.SQL) return real;
@@ -5523,6 +5523,7 @@ function _registerDiscRoster() {
 // standard (terminal_rules.db, mined off Terminal) covers everything else. §DATA-LOCALITY: both
 // are bim-compiler-built modeller/ copies carrying a stamped rules_meta provenance row.
 window._dwRules = function (nm) {
+  if (/shed|farm|barn|poultry|livestock|broiler/i.test(nm || '')) return 'farm_rules.db';   // §D62 the Farming Shed reference (cited values, bake_farm_rules.py)
   return /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i.test(nm || '')
     ? 'duplex_rules.db' : 'terminal_rules.db';
 };
@@ -5562,7 +5563,7 @@ window._dwBustStaleRulesCache = async function () {
 window._dwEnsureBorrow = async function () {
   if (!window.DiscWalker || !window.DiscWalker.dwBorrowFile) return;
   var primary = (window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || '';
-  if (primary === 'terminal_rules.db') { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }
+  if (primary === 'terminal_rules.db' || (window.DiscWalker.hasRules && window.DiscWalker.hasRules('FP'))) { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }   // §D62 a reference with its own FP rule does not borrow
   try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, './', 'terminal_rules.db'); }
   catch (e) { console.warn('§DISC-WALK borrow FP←terminal failed ' + (e && e.message)); }
 };

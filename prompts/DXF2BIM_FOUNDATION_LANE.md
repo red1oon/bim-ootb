@@ -554,3 +554,19 @@ M2 stated; M3 1.6 s per walk on the shed (was 60 s each); M4 the same Clinic wit
 **The shed (measured, not judged): no existing reference places on it.** Terminal rules: the bands are the Terminal's storey heights; the shed shares 1 frame class (IfcWall) of the >= 3 the datum
 needs (`§DW-DATUM-FALLBACK`, offset 14.593 -> bands 17-40 m above a 4.5 m shed, then the legacy walk's hashless placements, refused). Duplex rules (a scratch run): the space schedule yields 0 (one
 approximate room), ACMV has no mesh binding, FP (borrowed from the Terminal) the same 17-40 m bands. A farm reference is needed (owner decision: its source). Modeller sw v137.
+
+## §D62 A FARMING SHED WALKER REFERENCE (owner 2026-10-23: "farm reference first", then film the shed walking lights / sprinklers with the left DISC feature)
+**Witness claim first (W-FARM-RULES, `modeller/tests/witness_farm_rules.js`).** F1 the shed's Viewer DB (a DXF2BIM convert) opened from disk walks with `farm_rules.db` (chosen by the building name
+as the other references are) and the reference is stated (`§DW-RULES-REF standard=farming-shed`). F2 DISC ELEC places real-mesh lights (lod400 only) in the cited band (7-8 ft above the reference
+floor) at the cited cadence: count = round(band footprint / (10 ft)^2) within the walker's own rounding, every light z inside the band. F3 DISC FP places real-mesh sprinklers 1-12 in below the
+reference ceiling, count = round(footprint / 225 ft2); the FP rows are the farm reference's own (no borrow from the Terminal). F4 the datum reconciles (`§DW-DATUM ... measured`, >= 3 classes, |zOff|
+< 0.05 m on the shed itself). F5 unchanged: Duplex still borrows FP from the Terminal (it has no FP rule of its own); Terminal / Clinic choices unchanged.
+**Measured first (2026-10-23):** no farm MEP model or sheet exists on this machine; the Terminal and Duplex references place nothing on the shed (§D61 RESULT). The cited values: TNAU (lights hung from
+the ceiling 7-8 ft above ground, incandescent every 10 ft), NFPA 13 light hazard (15 ft max, 225 ft2 per sprinkler, deflector 1-12 in below the ceiling; farm sheds are usually exempt, IBC Group U:
+an option). The reference shed model (the 2026-10-19 film's extracted db): slab top 0.610 m, lowest roof member 3.185 m, 7 frame classes with >= 5 elements.
+**Rule.** bim-compiler `build/bake_farm_rules.py` writes `farm_rules.db` in the terminal_rules schema (cited rows + Terminal mesh bindings + the measured frame + rules_meta); `_dwRules` picks it for
+shed / farm / barn / poultry / livestock names; its meshes resolve from the Terminal (§D61); `_dwEnsureBorrow` borrows FP only when the primary rules have no FP row of their own.
+**D62 RESULT (2026-10-23, session 2): BUILT.** `farm_rules.db` (bim-compiler `build/bake_farm_rules.py`, content sha 8e494b413944) + `_dwRules` farm names + mesh source Terminal + borrow only without an
+own FP rule (`DiscWalker.hasRules`). W-FARM-RULES fail=0: F1 the shed (Viewer DB from disk) walks with farm_rules.db, stated; F2 69 lights (ratio 68.5), lod400 only, all at z 2.896 inside 2.743-3.048;
+F3 30 sprinklers (ratio 30.45), lod400 only, z 3.020 inside 2.880-3.159, no borrow; F4 zOff 0.000 from 7 classes; F5 Duplex still borrows FP. W-WALK-RULES-MESH 5 / 0 (M2 now names any stated rules
+file), W-WALK-LOD400-ONLY 7 / 0, W-E2E-WALK 8 / 0; regression the known 4. Modeller sw v138.
