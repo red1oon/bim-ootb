@@ -8,6 +8,7 @@
  *   B3 INSTANT   — a redraw after the reveal (the next walk re-renders every walked disc) keeps all n drawn at once.
  *   B4 SAME      — placements and committed ops are those of the walk without a reveal (69 lights / 30 sprinklers, ops > 0).
  *   B6 JOINTS BUILD UP (§D66.1) — the joint parts (drop / transition / tee) build up when they land (partial counts, monotonic), never ahead of their heads, all N at the end.
+ *   B7 CAN BE SEEN (§D66.1) — every walked FP mesh's culling sphere covers its instances (a reveal that lowers .count before the first frame left it empty: culled, invisible, count = N).
  *   B5 AFTER HEADS (§D64.1) — the FP pipework draws no segment while its heads build up, then rises in steps to N over clamp(60 ms x N, 2 s, 7 s) (it used to outrun the heads in a fixed 2 s).
  * Input: the CLI-marked shed set (SHED_MARKED_DIR, local; absent -> INCONCLUSIVE). Software GL, headless.
  * Usage: NODE_PATH=<dir with better-sqlite3> node modeller/tests/witness_walk_buildup.js
@@ -59,7 +60,13 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
         const f = window.__dwReveal.FP; fpS.push([f ? f.i : 0, f ? f.n : 0, f ? !!f.done : false].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]])); await new Promise(r => setTimeout(r, 80)); }
       fpS.push([0, 0, true].concat(chainN(), [Date.now() - t1], asmN(), [drawn('FP')[0]]));
       await new Promise(r => setTimeout(r, 300)); const afterFP = drawn('ELEC');
-      return { fpS, samples: samples.slice(0, 400), fronts: fronts.size, end, opsE, afterFP, lights: (window.__dwWalks.ELEC || []).length, sprinklers: (window.__dwWalks.FP || []).length,
+      // §D66.1 B7: what is drawn must be able to reach the screen: each walked FP mesh's culling sphere (the one three keeps for frustum culling) covers its first and last instance
+      const T = window.THREE, M4 = new T.Matrix4(), P3 = new T.Vector3(), cull = [];
+      window.A.scene.traverse(o => { if (!(o.isInstancedMesh && o.userData && (o.userData.dwDisc === 'FP' || o.userData.dwChain === 'FP' || o.userData.dwAsm === 'FP'))) return; o.updateMatrixWorld();
+        const sp = o.boundingSphere ? o.boundingSphere.clone().applyMatrix4(o.matrixWorld) : null, n = o.instanceMatrix.count;
+        const inside = i => { o.getMatrixAt(i, M4); P3.setFromMatrixPosition(M4).applyMatrix4(o.matrixWorld); return !!sp && sp.radius > 0 && sp.containsPoint(P3); };
+        cull.push({ k: o.userData.dwChain ? 'pipes' : o.userData.dwAsm ? 'parts' : 'heads', n, r: sp ? +sp.radius.toFixed(2) : null, ok: n > 0 && inside(0) && inside(n - 1) }); });
+      return { cull, fpS, samples: samples.slice(0, 400), fronts: fronts.size, end, opsE, afterFP, lights: (window.__dwWalks.ELEC || []).length, sprinklers: (window.__dwWalks.FP || []).length,
         lightHash: Array.from(new Set((window.__dwWalks.ELEC || []).map(p => p.geometry_hash))), fpHash: Array.from(new Set((window.__dwWalks.FP || []).map(p => p.geometry_hash))) }; });
     const lod = logs.filter(t => /§DW-PRIM-LOD disc=ELEC /.test(t)).pop() || '', mesh = logs.filter(t => /§DW-RULES-MESH/.test(t)).map(t => t.slice(0, 160));
     check('B1', 'the shed\'s ELEC walk places the library pendant lamp (mesh 3258c4c591af8a44, from a named source), lod400 only; the sprinkler still the Terminal\'s', S.lights === 69 && /lod400=69 lod300=0 lod200=0/.test(lod) && S.lightHash.join() === '3258c4c591af8a44' && S.fpHash.join() === '0d509e532be0f5f2' && mesh.some(t => /resolved=1\/1/.test(t)),
@@ -76,6 +83,8 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     { const sm = S.fpS.filter(x => x[7] > 0), amono = S.fpS.every((x, k) => !k || x[6] >= S.fpS[k - 1][6]), ahead = S.fpS.filter(x => x[6] > 3 * x[8]), part = new Set(S.fpS.filter(x => x[6] > 0 && x[6] < x[7]).map(x => x[6])).size, last = S.fpS[S.fpS.length - 1];
       check('B6', 'the joint parts build up when they land (partial counts, monotonic), never ahead of their heads (parts <= 3 x heads drawn), all N at the end (they landed in one frame)', sm.length > 0 && last[7] > 0 && !ahead.length && part >= 3 && amono && last[6] === last[7],
         `samples=${S.fpS.length} with_parts=${sm.length} monotonic=${amono} frames_parts_ahead_of_heads=${ahead.length} distinct_partial=${part} end=${last[6]}/${last[7]} heads_end=${last[8]}`); }
+    check('B7', 'every walked FP mesh (heads, pipes, joint parts) can reach the screen: its culling sphere covers its instances (an empty sphere culls it though its count reads N)', S.cull.length >= 3 && ['heads', 'pipes', 'parts'].every(k => S.cull.some(c => c.k === k)) && S.cull.every(c => c.ok),
+      'meshes=' + JSON.stringify(S.cull));
     check('B4', 'the walk itself is unchanged: 69 lights, 30 sprinklers, ops committed', S.lights === 69 && S.sprinklers === 30 && S.opsE > 0 && !p2.errs.length, `lights=${S.lights} sprinklers=${S.sprinklers} ELEC ops=${S.opsE} page_errors=${p2.errs.length}`);
   } finally { await br2.close(); srv.close(); }
   say('SUMMARY fail=' + fail + ' judged=' + judged); process.exit(fail ? 1 : 0);

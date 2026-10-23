@@ -4460,6 +4460,7 @@ function _renderDiscWalk(disc, placements) {
       // (no host) → `|| 0` reproduces today's axis-aligned render exactly for every non-host-bound placement.
       sub.forEach(function (p, i) { m.makeRotationZ(p.yaw || 0); m.setPosition(p.x, p.y, p.z); im.setMatrixAt(i, m); });
       im.instanceMatrix.needsUpdate = true; im.userData.dwDisc = disc;
+      if (im.computeBoundingSphere) im.computeBoundingSphere();   // §D66.1 the culling sphere over ALL instances, before the §D64 build-up lowers .count
       im.userData.dwSub = sub;   // §Q2 (W-E2E-INSTPICK): instanceId i ↔ sub[i] — array REFERENCE, no per-instance objects
       root.add(im);
     }
@@ -4724,6 +4725,7 @@ function _renderDiscAssembly(disc, parts) {
       }
     });
     im.instanceMatrix.needsUpdate = true; im.userData.dwAsm = disc;
+    if (im.computeBoundingSphere) im.computeBoundingSphere();   // §D66.1 the culling sphere over ALL instances, before the build-up lowers .count
     im.userData.dwSub = list;   // §Q2: assembled parts carry real node guids — same instanceId↔record contract
     root.add(im);
   });
@@ -4915,6 +4917,7 @@ function _renderDiscChains(disc, segs, opts) {
     inst.setMatrixAt(i, m.compose(mid, q, sc));               // unit-cylinder ±Y/2 → from/to (exact)
   }
   inst.instanceMatrix.needsUpdate = true;
+  if (inst.computeBoundingSphere) inst.computeBoundingSphere();   // §D66.1 the culling sphere over ALL instances, before a reveal lowers .count (three computes it lazily over the drawn count once: at 0 the mesh is culled for good)
   inst.userData.dwChain = disc;
   root.add(inst);
   // §-WHITEBOX: the LOD mesh must sit AT the real endpoints — reconstruct each tube's ±Y/2 ends from its
