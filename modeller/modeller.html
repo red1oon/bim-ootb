@@ -336,6 +336,10 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      on the Outliner rows + a presence pane. Additive, reversible. Witness: modeller/tests/wire_teams_embed_modeller.js. -->
 <script src="teams_embed.js?v=1" onerror="console.warn('§TEAMS-EMBED teams_embed.js absent — modeller runs without the Teams overlay')"></script>
 <script>if (window.TeamsEmbedBim && window.TeamsEmbedBim.init) window.TeamsEmbedBim.init();</script>
+<!-- TEAMWORK_FRAMEWORK.md §15 (Modeller case, W-TEAM-MODELLER): the local comm layer + modeller/team_sync.js — written ONLY when the page is opened with ?team=1 or
+     localStorage.teamMode==='1' (the ERP's switch). Otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was. Parser-blocking so TeamSyncModeller exists before the first commit. -->
+<script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/team_defaults.js', '../common/comm/team_trial.js', '../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', 'team_sync.js?v=1'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- §b-teams (2026-07-04): the pill-rail icon is now ALWAYS visible — supersedes the "no pill unless
      opted in" half of the OFF=pixel-identical rule above (user decision: it must show up in the rail;
      "stubby is fine, not priority"). The DEEPER mount (module fetch, dots, presence pane) still only

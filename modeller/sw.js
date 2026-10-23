@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v154';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v155';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -61,6 +61,7 @@ const PRECACHE_ASSETS = [
   'disc_walker.js',
   'dw_instances_outliner.js',   // §I5 Walked Fixtures per-instance rows (W-E2E-INSTHIDE)
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
+  'team_sync.js',     // TEAMWORK_FRAMEWORK §15 — the Modeller's team-mode adapter (written into modeller.html only with ?team=1 / teamMode; inert otherwise)
   'seed_trunk.js',
   'str_walker.js',
   'str_walker_bridge.js',
@@ -164,6 +165,9 @@ function isNetworkFirst(url) {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
   if (event.request.method !== 'GET') return;
+  // TEAMWORK_FRAMEWORK §15 (found by W-TEAM-MODELLER; same fix as erp/sw.js §13.1): a request that says cache:'no-store'/'reload' (the comm layer's pipe reads, and GitHub's
+  // api reads) must never be answered from a cache — cacheFirst keys on the URL WITHOUT its query, so every list?prefix=… read got the FIRST list's answer.
+  if (event.request.cache === 'no-store' || event.request.cache === 'reload') return;
   if (url.split('?')[0].endsWith('.db')) return;       // DBs → IndexedDB, skip SW
   if (event.request.mode === 'navigate') { event.respondWith(networkFirst(event.request)); return; }
   if (isNetworkFirst(url)) { event.respondWith(networkFirst(event.request)); return; }
