@@ -4,10 +4,9 @@ review first, specs second, code only if the owner says so. **Read the log after
 
 ## ▶▶▶ RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
 **Done:** §D56 window tags by width (#2309, sw v132); JKR slab diagnosis F16-F18; the seam study SEAM-1..5 + proposals P-S1..P-S5 (RESULT "session 2" at the bottom).
-**NEXT (in order, each spec'd first):** (1) §D57 stack-aware section underside (F18) + an `--also-classes` option on `bim-compiler scripts/extractIFC2DB.js` (default `IfcColumn`, F17), measured on JKR
-with STR slabs / beams; then JKR Level 1 wall tops re-measured. (2) The seam fixes P-S2 + P-S3 (door rides its wall; the export keeps the edge), then P-S1 (walk after Convert). (3) F16 the writer draws
+**§D57 DONE** (stack-aware section underside; JKR Level 1 wall asks 272 -> 7; `extractIFC2DB --also-classes`, bim-compiler #239). **NEXT (in order, each spec'd first):** (2) The seam fixes P-S2 + P-S3 (door rides its wall; the export keeps the edge), then P-S1 (walk after Convert). (3) F16 the writer draws
 every opening the face sees. (4) The old items 4-6 below (F15 slab edge, Load catalogue row, Parts A / B). P-S4 (fixture meshes from one store) belongs with FOUNDATION §5 F5; P-S5 is the owner's call.
-**Data:** `/tmp/db2/JKR3.db` = JKR with STR `IfcColumn,IfcSlab,IfcBeam` merged (scratch extractor with `ALSO_CLASSES`; recipe in RESULT S1); seam harness in the session scratchpad.
+**Data:** `/tmp/db2/JKR3.db` = `extractIFC2DB.js --ifc <jkrAR25> --also <jkrST25> --also-classes IfcColumn,IfcSlab,IfcBeam -o ...`; seam harness in the session scratchpad.
 
 ## (superseded by session 2) RESUME HERE (written 2026-10-23 at the end of session 1; read this block, then RESULT parts 1-3 at the bottom)
 **State:** all merged to bim-ootb main: #2301 (stock-take + HHS round trip), #2302 D44/D45, #2303 D46-D48, #2304 D50 + F13, #2305 D51-D53, #2306 D54/D55 + the report page

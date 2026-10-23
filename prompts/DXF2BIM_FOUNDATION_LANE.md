@@ -456,3 +456,24 @@ HHS INCONCLUSIVE (no windows); V2 JKR 38 left at 1290 mm, LTU 83; V3 the twin ro
 blocking (`label_conflict` 14 -> 13, `no_elevation_for_face` 27 -> 26, `opening_gap_unbounded` 544 -> 543, `no_host_cut` 713 -> 711, `lod400_library_unreachable` 677 -> 679: two more windows reach
 the fill step; cause per window not traced); V5 the page (Duplex, software GL): 3 rows, 3 clicks, 10 window tags = the Node rule's 10, 0 page errors; V6 the door witness unchanged (14 / 86 / 16
 proposed, 36 / 166 / 363 blocking). **JKR's 48 window tags: 4 settled, 44 remain** (the measured limit above). Modeller sw v132.
+
+## §D57 THE SECTION'S SLAB IS THE WHOLE STACK UNDER THE LEVEL (architect review session 2, F18; RESUME item 1)
+**Witness claim first (W-SECTION-STACK, `modeller/tests/witness_dxf_section_stack.js`).** K1 a set whose section levels all read today without a conflict is unchanged, verdict code for code and every `slabZ` equal (Duplex, HHS,
+Clinic; the stack is read at every level rects touch, and on these sets each stack's bottom = today's reading). K2 a level whose rects touching it disagree on their bottom is read
+as STACKS: per cut span, the rects connected downward from the level (each touching or overlapping the one above in plan and z); every stack bottom equal (to `elev_tol`) = the underside, READ, no advisory
+(K2a, a synthetic finish-on-slab section). K3 stacks that step (different bottoms) = a best-effort underside, amber: the stack bottom under the LONGEST cut length, with ONE advisory
+`GAP:section_underside_defaulted` per level naming the bottom, its share of the cut and the spread; the setting `slab.underside_when_stepped` (`longest_cut` | `none`, `element_defaults.json` or `@DEFAULT`).
+JKR with STR slabs: 84.5 -> 84.33 (77 % of the cut), 81.2 -> 81.05 (65 %); `section_slab_conflict` 2 -> 0; `slab_no_underside` 1 -> 0. K4 `none` gives today's verdict code for code, except a level whose stacks all agree (that is a reading, not a default). K5 falsifier (synthetic, one finish layer over the whole cut, two
+slabs under it 6 m at 2.80 and 2 m at 2.70): 2.80 in either rect order, mirrored lengths -> 2.70: the share decides, not the order (today's reader takes this level's 20 mm finish as the slab).
+**Measured first (2026-10-23 session 2, the marked standard sets; stack bottoms by cut length):** Duplex 0 -> -0.127 (100 %), 3.1 -> 2.795 (100 %); LTU 2.7 / 6 / 9.3 -> 2.4 / 5.7 / 8.725 (100 % each);
+JKR 87.8 -> 87.65 (100 %): every level read today gives the same value as a stack. Conflicts today: only JKR. JKR without STR (`/tmp/db2/JKR2.db`): 84.5 -> 84.48 (85 %) and 81.2 -> 81.18: the
+section draws only 10-20 mm finishes there (F17), so the best effort is a 20 mm "slab": amber and stated, the honest fix is the data (F17, `--also-classes`). JKR with STR (`JKR3.db`): 84.5 = 84.33
+(13.4 m, planks 85 + 85 mm) / 84.35 (3.4 m, cast 150 mm) / 84.48 (0.55 m) / 84.49 (0.10 m); 81.2 = 81.05 (10.8 m) / 80.95 (5.3 m) / 81.00 (0.6 m).
+**Rule.** `Dxf2Shell.sectionSlabs(..., opts)` with `opts.stepped`; `slabZ` passes the section's `defaulted` / `stacked` flags through (`source` stays `section`). The convert reads the setting as §D51 / §D54 do.
+**D57 RESULT (2026-10-23, session 2): BUILT.** `Dxf2Shell.stackAt` (pure) + `sectionSlabs(..., {stepped})` + the registry setting `slab.underside_when_stepped` (`longest_cut` | `none`) + the advisory
+`GAP:section_underside_defaulted`. W-SECTION-STACK fail=0: K1 Duplex / HHS / Clinic / LTU = BASE code for code, every `slabZ` equal; K2 the synthetic agreeing stack READ (2.80, stacked, no advisory);
+K3 JKR with STR: 81.2 -> 81.05 (65 %), 84.5 -> 84.33 (77 %), `section_slab_conflict` 2 -> 0, `slab_no_top` and `slab_no_underside` 1 -> 0 (191 -> 187 blocking); JKR without STR: 81.18 / 84.48 (85 %, the 20 mm
+finishes: stated); K4 `none` = BASE on both; K5 the share decides (2.80 either order, mirrored 2.70; `none` keeps today's 20 mm reading). **RESUME item 2 (JKR Level 1 wall tops):** with the key's `@WALLTOP`
+removed, Level 1 `no_elevation_height` 272 -> 7 (265 walls default to 84.33, amber); JKR blocking 472 -> 162. Against the model (bbox tops, a measurement): Level 1 walls stop at 83.85 (26), 84.33 (18),
+83.18 (10), ...: the default is exact for the walls that run to the planks, the others stop at ceilings the drawings do not show. Data: `extractIFC2DB.js --also-classes IfcColumn,IfcSlab,IfcBeam`
+(bim-compiler #239; default unchanged) = `/tmp/db2/JKR3.db`, 544 merged. Modeller sw v133.

@@ -12,7 +12,7 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };                 // DXF $INSUNITS codes (reader table, SPEC N9)
   var FACES = ['minX', 'maxX', 'minY', 'maxY'];
   var SHAPES = ['walls', 'slabs', 'roof', 'openings'];
-  var ADVISORY_GAP = /^GAP:(type_unbound|schedule_conflict|label_|wall_base_from_plan_level$|slab_outline_not_rectangular$|slab_outline_estimated$|wall_top_defaulted$)/;   // §D44: a slab the walls do not outline is left out and listed   // wall_base_from_plan_level: lane spec L2.8 (1)
+  var ADVISORY_GAP = /^GAP:(type_unbound|schedule_conflict|label_|wall_base_from_plan_level$|slab_outline_not_rectangular$|slab_outline_estimated$|wall_top_defaulted$|section_underside_defaulted$)/;   // §D44: a slab the walls do not outline is left out and listed   // wall_base_from_plan_level: lane spec L2.8 (1)
   var SHAPE_TABLE = [                                                                 // §L2.1 stated table for gaps without shape/kind
     [/^GAP:slab_/, 'slabs'], [/^GAP:roof_/, 'roof'],
     [/^GAP:(wall_|no_elevation_height$|elevation_height_conflict$|no_elevation_for_face$|no_height$|duplicate_footprint$|zero_length$|bad_outline$|layers_sum_mismatch$)/, 'walls'],

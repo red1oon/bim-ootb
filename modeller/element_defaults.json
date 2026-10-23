@@ -73,6 +73,18 @@
    ],
    "used_by": "dxf2bim_import convert (§D51)"
   },
+  "slab.underside_when_stepped": {
+   "element": "IfcSlab",
+   "value": "longest_cut",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "when the section's slab under a level steps (finish on planks, a dropped wet area), the underside is the stack bottom under the longest cut (best effort, amber; JKR with STR: 84.33 under 77% of the cut); 'none' leaves it a conflict",
+   "options": [
+    "longest_cut",
+    "none"
+   ],
+   "used_by": "dxf2shell sectionSlabs (§D57)"
+  },
   "synth.slab.footprint": {
    "element": "IfcSlab",
    "value": "outermost grid lines",

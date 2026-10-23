@@ -225,7 +225,7 @@
     });
   }
   // §D51 the best-effort slab setting: a plan's @DEFAULT > the registry the caller passes (opts.defaultsRef, the page's element_defaults.json) > the registry shipped with this module > walls_bounded
-  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen';
+  var SLAB_OUTLINE_KEY = 'slab.outline_when_not_rect', WALLTOP_KEY = 'wall.top_when_unseen', UNDERSIDE_KEY = 'slab.underside_when_stepped';
   function settingOf(sheets, opts, key, fallback) {   // a plan's @DEFAULT > opts.defaultsRef (the page's element_defaults.json) > the shipped registry > the fallback
     var st = null; (sheets || []).forEach(function (sh) { ((sh.desc && sh.desc.defaults) || []).forEach(function (q) { if (q.key === key && st === null) st = q.value; }); });
     if (st !== null) return st;
@@ -378,7 +378,7 @@
     var sopt = null;
     if (sectSh) {
       var sal = MK.align(base, sectSh.desc, C.MARK_ALIGN_TOL);
-      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, MK.withLayers(SET.MAP_SECT, sectSh.desc), sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof)
+      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, MK.withLayers(SET.MAP_SECT, sectSh.desc), sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof, { stepped: settingOf(sheets, opts, UNDERSIDE_KEY, 'longest_cut') })
         : { slabs: {}, roof: null, gaps: [{ code: 'GAP:section_align_fail', errors: sal.errors.map(function (e) { return e.code; }) }] };
       R.sectionSheet = sectSh.name; sopt = { section: R.section };
       if (sectSh.desc.cut && sal.map) { var cp = sectSh.desc.cut.split(','); R.sectionCut = { axis: cp[0], at: Number(cp[1]) * MK.UNITS[sectSh.desc.units] }; }

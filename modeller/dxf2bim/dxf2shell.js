@@ -152,7 +152,7 @@
     var sx = opts && opts.section && opts.section.slabs && opts.section.slabs[String(upper.level)];
     if (sx) {                                                                                  // L1.4 F5: the section states top and underside
       if (tops.length) { var T0 = agree(tops, tol); if (!T0.ok || Math.abs(T0.z - sx.top) > tol) gaps.push({ code: 'GAP:slab_top_conflict', values: T0.values, section: sx.top }); }
-      return { top: sx.top, bottom: sx.bottom, thickness: sx.thickness, gaps: gaps, source: 'section', section_from: sx.from };
+      return Object.assign({ top: sx.top, bottom: sx.bottom, thickness: sx.thickness, gaps: gaps, source: 'section', section_from: sx.from }, sx.defaulted ? { defaulted: true, share: sx.share } : {}, sx.stacked ? { stacked: true } : {});   // §D57
     }
     if (!tops.length) return { top: null, bottom: null, thickness: null, gaps: [{ code: 'GAP:slab_no_top' }] };
     var T = agree(tops, tol);
@@ -174,7 +174,23 @@
   // ---- lane spec L1.4 F5: slab top / underside from a marked SECTION sheet ----
   // entities: the section sheet; layerMap types 'sectslab' (S-SLAB) and 'roof' (A-ROOF); map: MK.align(plan, sectionDesc).map;
   // levels: stated plan levels (m); roofMark: the section's @ROOF (optional). Every closed polyline is read as a rectangle in (plan h, z).
-  function sectionSlabs(entities, layerMap, map, levels, cfg, roofMark) {
+  // §D57 the stack under a level (pure): the rects touching the level and every rect connected below them (touching or overlapping the one above in plan and z); per cut span (where a rect touches
+  // the level) the stack's bottom; returns {spans:[{h0,h1,bottom}], byBottom:[{z,len}] longest first} or null
+  function stackAt(slabs, L, tol) {
+    var S0 = slabs.filter(function (s) { return Math.abs(s.top - L) <= tol; }); if (!S0.length) return null;
+    var ov = function (a, b) { return Math.min(a.h[1], b.h[1]) - Math.max(a.h[0], b.h[0]) > tol; }, C = S0.slice(), grew = true;
+    while (grew) { grew = false; slabs.forEach(function (r) { if (C.indexOf(r) >= 0 || r.top > L + tol) return; if (C.some(function (c) { return ov(r, c) && r.top >= c.bottom - tol && r.top <= c.top + tol; })) { C.push(r); grew = true; } }); }
+    var xs = uniq([].concat.apply([], C.map(function (r) { return r.h; }))), spans = [], by = {};
+    for (var i = 0; i + 1 < xs.length; i++) {
+      var a = xs[i], b = xs[i + 1], m = (a + b) / 2; if (b - a <= tol) continue;
+      if (!S0.some(function (r) { return r.h[0] <= m && r.h[1] >= m; })) continue;
+      var bot = Math.min.apply(null, C.filter(function (r) { return r.h[0] <= m && r.h[1] >= m; }).map(function (r) { return r.bottom; }));
+      spans.push({ h0: a, h1: b, bottom: r6(bot) }); by[r6(bot)] = (by[r6(bot)] || 0) + (b - a);
+    }
+    var byBottom = Object.keys(by).map(function (k) { return { z: Number(k), len: r6(by[k]) }; }).sort(function (p, q) { return q.len - p.len || p.z - q.z; });   // longest first; a tie takes the lower bottom
+    return spans.length ? { spans: spans, byBottom: byBottom } : null;
+  }
+  function sectionSlabs(entities, layerMap, map, levels, cfg, roofMark, opts) {
     var tol = typeof cfg.elev_tol === 'number' ? cfg.elev_tol : cfg.snap_tol, gaps = [], slabs = [], roofs = [], swalls = [];
     (entities || []).forEach(function (e) {
       var rule = Dxf2Bim.matchRule(e.layer, layerMap.rules); if (!rule || (rule.type !== 'sectslab' && rule.type !== 'roof' && rule.type !== 'sectwall')) return;   // sectwall: lane spec L2.8
@@ -199,11 +215,23 @@
         out[String(L)] = { level: L, top: r6(T.z), bottom: r6(L), thickness: r6(T.z - L), source: 'section', on_level: true, from: at.map(function (s) { return s.handle; }) };
         return;
       }
-      var B = agree(at.map(function (s) { return { z: s.bottom }; }), tol);
+      var B = agree(at.map(function (s) { return { z: s.bottom }; }), tol), how = null;
+      // §D57 the slab under a level is the whole stack (finish on structure): read the stack's bottom when every stack agrees; stepped stacks = a best-effort underside (amber) when the setting allows
+      var K = stackAt(slabs, L, tol), all = K ? K.byBottom.map(function (x) { return x.z; }) : [], lo = all.length ? Math.min.apply(null, all) : null, hi = all.length ? Math.max.apply(null, all) : null;
+      if (K && hi - lo <= tol) { if (!B.ok || Math.abs(lo - B.z) > tol) how = { stacked: true }; B = { ok: true, z: B.ok && Math.abs(lo - B.z) <= tol ? B.z : lo }; }
+      else if (K) {
+        if (opts && opts.stepped === 'longest_cut') {
+          var tot = K.byBottom.reduce(function (n, x) { return n + x.len; }, 0), pick = K.byBottom[0];
+          B = { ok: true, z: pick.z }; how = { stacked: true, defaulted: true, share: r6(pick.len / tot), spread: [lo, hi] };
+          gaps.push({ code: 'GAP:section_underside_defaulted', level: L, bottom: pick.z, share: how.share, values: K.byBottom.map(function (x) { return x.z + ':' + x.len; }), setting: 'slab.underside_when_stepped',
+            reason: 'the slab under ' + L + ' steps (' + K.byBottom.length + ' undersides); took ' + pick.z + ' under ' + Math.round(how.share * 100) + '% of the cut (a default, amber): state @Z / turn it off with slab.underside_when_stepped=none' });
+        }
+        // setting none: today's reading (the rects touching the level), a conflict when they disagree
+      }
       if (!B.ok) { gaps.push({ code: 'GAP:section_slab_conflict', level: L, values: B.values }); return; }
       var bottom = r6(B.z), top = r6(L);
       if (!(top - bottom > tol)) { gaps.push({ code: 'GAP:section_bad_thickness', level: L, top: top, bottom: bottom }); return; }
-      out[String(L)] = { level: L, top: top, bottom: bottom, thickness: r6(top - bottom), source: 'section', from: at.map(function (s) { return s.handle; }) };
+      out[String(L)] = Object.assign({ level: L, top: top, bottom: bottom, thickness: r6(top - bottom), source: 'section', from: at.map(function (s) { return s.handle; }) }, how || {});
     });
     var roof = null;
     if (roofs.length) {
@@ -542,6 +570,6 @@
     return { storeys: storeys, merged: merged };
   }
 
-  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
+  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, stackAt: stackAt, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
     applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, boundedCells: boundedCells, prismCells: prismCells, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });
