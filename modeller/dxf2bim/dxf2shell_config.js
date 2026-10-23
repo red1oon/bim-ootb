@@ -41,7 +41,8 @@
     // elevation, so reading them again would double count). A-FLOR-STRS (stair cut outline) and S-COLS / A-COLS (columns): the reader has no
     // stair or column shape yet, so they are excluded, stated here, not read as walls.
     // lane spec §L1.14: A-WALL-CURT = a curtain-wall band (parts' section union) is a wall of the std plan: it hosts doors and converts to a wall element (glazing material: later). A-ANNO-MATCH: scoped-sheet match lines (display).
-    MAP_PLAN: { version: 1, rules: MAP_PLAN.rules.concat([{ match: 'exact', pattern: 'A-WALL-CURT', type: 'wall' }], ['A-GLAZ-SILL', 'A-ANNO-NOTE', 'A-ANNO-TTLB', 'A-GLAZ-OVHD', 'A-DOOR-OVHD', 'A-FLOR-STRS', 'S-COLS', 'A-COLS', 'A-ANNO-MATCH'].map(ign)) },
+    // §D70.1: A-FLOR-OTLN = the floor (slab) outline the writer drafts; read by Dxf2Shell.slabEdges (dxf2bim.js skips it). Added 2026-10-23: the STD run_id changes once.
+    MAP_PLAN: { version: 1, rules: MAP_PLAN.rules.concat([{ match: 'exact', pattern: 'A-WALL-CURT', type: 'wall' }, { match: 'exact', pattern: 'A-FLOR-OTLN', type: 'slabedge' }], ['A-GLAZ-SILL', 'A-ANNO-NOTE', 'A-ANNO-TTLB', 'A-GLAZ-OVHD', 'A-DOOR-OVHD', 'A-FLOR-STRS', 'S-COLS', 'A-COLS', 'A-ANNO-MATCH'].map(ign)) },
     MAP_ELEV: { version: 1, rules: [{ match: 'exact', pattern: 'A-GLAZ', type: 'glazing' }, { match: 'exact', pattern: 'A-WALL', type: 'elevwall' }, { match: 'exact', pattern: 'A-DOOR', type: 'elevdoor' }] },
     MAP_LEVL: MAP_LEVL,
     // lane spec L1.4 F4/F5: the std ROOF plan (DX roof map + the R12 annotation layers ignored) and the SECTION sheet

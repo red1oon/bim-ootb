@@ -73,6 +73,22 @@
    ],
    "used_by": "dxf2bim_import convert (§D51)"
   },
+  "slab.edge_joint_close": {
+   "element": "IfcSlab",
+   "value": 0.05,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "§D70.1 the plan's slab edge closes gaps and notches narrower than this (plank / modelling joints are not drawn: hollow-core joints are grouted monolithic, the open keyway about 3/4 in, Oldcastle Hollowcore Plank Pocket Guide 2019); 0.05 m = the reader's thinnest wall (CFG wall.min_thickness), measured joints <= 24.9 mm (JKR), the first wall gap 60 mm (HHS)",
+   "used_by": "std2d writePlan slab edge (§D70.1), opts.slabEdge.joint_close"
+  },
+  "slab.edge_void_min_area": {
+   "element": "IfcSlab",
+   "value": 0.0645,
+   "unit": "m2",
+   "kind": "guess",
+   "basis": "§D70.1 a hole in the slab is drawn as an opening when at least a 254 mm (10 in) square: the producer shows openings larger than 10 in square on shop drawings, smaller ones are core-drilled in the field (Oldcastle Hollowcore Plank Pocket Guide 2019); a hole a column or wall drawn on the same plan fills (>= 0.9) is that element, never an opening",
+   "used_by": "std2d writePlan slab edge (§D70.1), opts.slabEdge.void_min_area"
+  },
   "slab.underside_when_stepped": {
    "element": "IfcSlab",
    "value": "longest_cut",

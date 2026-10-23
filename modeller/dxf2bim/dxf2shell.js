@@ -56,6 +56,66 @@
     if (!F.length) return null;
     return { vertices: V, faces: F };
   }
+  // §D70.1 a straight-edged prism with holes, any angles: a trapezoid decomposition at every vertex x (each cell's vertical sides split at every point any ring has on that line, each
+  // ring edge split at every strip line), so the top / bottom / sides share every edge exactly twice (the `watertight` rule). Rings open, metres; returns { vertices, faces } or null.
+  function ringSA(r) { var a = 0; for (var i = 0; i < r.length; i++) { var q = r[(i + 1) % r.length]; a += r[i][0] * q[1] - q[0] * r[i][1]; } return a / 2; }
+  function prismPoly(outer, holes, z0, z1) {
+    var clean = function (r, sgn) { var o = []; r.forEach(function (q) { var p = [r6(q[0]), r6(q[1])]; if (!o.length || o[o.length - 1][0] !== p[0] || o[o.length - 1][1] !== p[1]) o.push(p); });
+      if (o.length > 1 && o[0][0] === o[o.length - 1][0] && o[0][1] === o[o.length - 1][1]) o.pop(); if (ringSA(o) * sgn < 0) o.reverse(); return o; };
+    var rings = [clean(outer, 1)].concat((holes || []).map(function (h) { return clean(h, -1); }));
+    if (rings.some(function (r) { return r.length < 3 || Math.abs(ringSA(r)) < EPS; }) || !(z1 > z0)) return null;
+    var E = []; rings.forEach(function (r) { r.forEach(function (a, i) { E.push([a, r[(i + 1) % r.length]]); }); });
+    var X = uniq([].concat.apply([], rings.map(function (r) { return r.map(function (q) { return q[0]; }); })));
+    function yAt(e, x) { var a = e[0], b = e[1]; if (x === a[0]) return a[1]; if (x === b[0]) return b[1]; return r6(a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0])); }
+    var Pon = {};   // x -> sorted y of every ring point on that line (vertices and crossings)
+    X.forEach(function (x) { var ys = []; E.forEach(function (e) { var lo = Math.min(e[0][0], e[1][0]), hi = Math.max(e[0][0], e[1][0]); if (x < lo || x > hi) return; if (e[0][0] === e[1][0]) ys.push(e[0][1], e[1][1]); else ys.push(yAt(e, x)); }); Pon[x] = uniq(ys); });
+    var between = function (x, y0, y1) { var lo = Math.min(y0, y1), hi = Math.max(y0, y1), v = Pon[x].filter(function (y) { return y > lo && y < hi; }); return y1 >= y0 ? v : v.reverse(); };
+    var V = [], F = [], idx = {};
+    function vid(x, y, top) { var k = x + ',' + y + ',' + (top ? 1 : 0); if (!(k in idx)) { idx[k] = V.length; V.push([x, y, top ? r6(z1) : r6(z0)]); } return idx[k]; }
+    E.forEach(function (e) {   // sides: the ring's interior on the left (outer CCW, holes CW), outward to the right
+      var a = e[0], b = e[1], pts;
+      if (a[0] === b[0]) pts = [a].concat(between(a[0], a[1], b[1]).map(function (y) { return [a[0], y]; }), [b]);
+      else { var xs = X.filter(function (x) { return x >= Math.min(a[0], b[0]) && x <= Math.max(a[0], b[0]); }); if (b[0] < a[0]) xs.reverse(); pts = xs.map(function (x) { return [x, yAt(e, x)]; }); }
+      for (var i = 0; i + 1 < pts.length; i++) { var p = pts[i], q = pts[i + 1]; F.push([vid(p[0], p[1], 0), vid(q[0], q[1], 0), vid(q[0], q[1], 1)], [vid(p[0], p[1], 0), vid(q[0], q[1], 1), vid(p[0], p[1], 1)]); }
+    });
+    for (var i = 0; i + 1 < X.length; i++) {   // top / bottom: one cell per pair of edges crossing the strip, fanned from its centre
+      var xa = X[i], xb = X[i + 1], xm = (xa + xb) / 2;
+      var act = E.filter(function (e) { return e[0][0] !== e[1][0] && Math.min(e[0][0], e[1][0]) <= xa && Math.max(e[0][0], e[1][0]) >= xb; })
+        .map(function (e) { return { e: e, ym: e[0][1] + (xm - e[0][0]) * (e[1][1] - e[0][1]) / (e[1][0] - e[0][0]) }; }).sort(function (p, q) { return p.ym - q.ym; });
+      for (var k = 0; k + 1 < act.length; k += 2) {
+        var lo = act[k].e, hi = act[k + 1].e, la = yAt(lo, xa), lb = yAt(lo, xb), ha = yAt(hi, xa), hb = yAt(hi, xb), B = [[xa, la], [xb, lb]];
+        between(xb, lb, hb).forEach(function (y) { B.push([xb, y]); }); B.push([xb, hb], [xa, ha]); between(xa, ha, la).forEach(function (y) { B.push([xa, y]); });
+        B = B.filter(function (p, j) { var n = B[(j + 1) % B.length]; return p[0] !== n[0] || p[1] !== n[1]; });
+        if (B.length < 3) continue;
+        var cx = 0, cy = 0; B.forEach(function (p) { cx += p[0]; cy += p[1]; }); cx /= B.length; cy /= B.length;
+        var ct = V.length; V.push([cx, cy, r6(z1)]); var cb = V.length; V.push([cx, cy, r6(z0)]);
+        for (var j = 0; j < B.length; j++) { var p = B[j], q = B[(j + 1) % B.length]; F.push([ct, vid(p[0], p[1], 1), vid(q[0], q[1], 1)], [cb, vid(q[0], q[1], 0), vid(p[0], p[1], 0)]); }
+      }
+    }
+    return F.length ? { vertices: V, faces: F } : null;
+  }
+  // §D70.1 the plan's slab edge (layer type 'slabedge', A-FLOR-OTLN in the STD map): closed straight polylines, nested by containment (inside an odd number of rings = a hole).
+  // Returns { pieces: [{ outer, holes, handles, rectilinear, area }], gaps }; an open polyline or one with a bulge is not read (advisory), never guessed closed or straightened.
+  function slabEdges(entities, layerMap, K) {
+    var rings = [], gaps = [];
+    (entities || []).forEach(function (e) {
+      var rule = Dxf2Bim.matchRule(e.layer, layerMap.rules); if (!rule || rule.type !== 'slabedge') return;
+      if (!(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape) { gaps.push({ code: 'GAP:slab_edge_open', handle: e.handle, reason: 'a slab edge must be a closed polyline: not read' }); return; }
+      if (e.vertices.some(function (q) { return q.bulge; })) { gaps.push({ code: 'GAP:slab_edge_bulge', handle: e.handle, reason: 'an arc in a slab edge is not read (draw it as straight facets)' }); return; }
+      var p = e.vertices.map(function (q) { return [r6(q.x * K), r6(q.y * K)]; });
+      if (p.length < 3 || Math.abs(ringSA(p)) < EPS) return;
+      rings.push({ handle: e.handle, p: p, a: Math.abs(ringSA(p)) });
+    });
+    rings.sort(function (a, b) { return b.a - a.a || hnum(a.handle) - hnum(b.handle); });
+    var onV = function (q, o) { return o.p.some(function (v) { return v[0] === q[0] && v[1] === q[1]; }); };   // rings may touch at a vertex (the writer's union output), never cross
+    var inside = function (r, o) { var strict = 0; for (var k = 0; k < r.p.length; k++) { if (onV(r.p[k], o)) continue; if (!inPoly(r.p[k], o.p)) return false; strict++; } return strict > 0; };
+    rings.forEach(function (r, i) { r.depth = 0; r.parent = null; for (var j = 0; j < i; j++) if (rings[j].a > r.a && inside(r, rings[j])) { r.depth++; if (!r.parent || rings[j].a < r.parent.a) r.parent = rings[j]; } });
+    var pieces = rings.filter(function (r) { return r.depth % 2 === 0; }).map(function (r) {
+      var hs = rings.filter(function (h) { return h.parent === r && h.depth % 2 === 1; });
+      return { outer: r.p, holes: hs.map(function (h) { return h.p; }), handles: [r.handle].concat(hs.map(function (h) { return h.handle; })), rectilinear: [r.p].concat(hs.map(function (h) { return h.p; })).every(rectilinear), area: r6(r.a - hs.reduce(function (t, h) { return t + h.a; }, 0)) };
+    });
+    return { pieces: pieces, gaps: gaps };
+  }
   // §D51 best effort: the cells the walls bound on BOTH axes (row and column inside the first wall run from each side). Pieces as D44's cover (wall rects, bridges <= gap_max, opening boxes).
   // Interior walls lie inside, exterior walls outside. Returns { X, Y, solid, area, cells } or null; the caller makes the mesh (prismCells) and states it as a default (amber), never a reading.
   function boundedCells(ops, cfg, extra) {
@@ -571,5 +631,5 @@
   }
 
   return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, stackAt: stackAt, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
-    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, boundedCells: boundedCells, prismCells: prismCells, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
+    applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, boundedCells: boundedCells, prismCells: prismCells, prismPoly: prismPoly, slabEdges: slabEdges, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });
