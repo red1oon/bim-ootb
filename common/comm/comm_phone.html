@@ -15,11 +15,12 @@
   .code { font:600 22px/1 ui-monospace,monospace; letter-spacing:2px; } .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 0; border-top:1px solid var(--line); }
   .row:first-child { border-top:0; } .row input { width:90px; } .ok { color:var(--ok); } .bad { color:var(--bad); } pre { white-space:pre-wrap; font-size:12px; color:var(--mut); max-height:200px; overflow:auto; }
   .hide { display:none; }
+  select { font:inherit; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); }
   button { cursor:pointer; } button:disabled { cursor:not-allowed; }   /* user: the pointer should show it is clickable */
 </style></head><body>
 <h1>Team POC</h1>
 <div class="mut" id="status">loading…</div>
-<div class="mut" id="boot">Getting ready — downloading the AD dictionary (27 MB, once)… <span id="boot-pct">0%</span></div>
+<div class="mut" id="boot">Getting ready — loading the access rules (150 KB)… <span id="boot-pct">0%</span></div>
 
 <section id="s-token"><h2>1 · GitHub token</h2>
   <div class="mut">Fine-grained token, repository <b>bim-teams-pipe</b> only, Contents read &amp; write. Kept in this browser only.</div>
@@ -38,10 +39,11 @@
     <button class="sec" id="b-requests">Check join requests</button><div id="requests"></div></div></section>
 
 <section id="s-work" class="hide"><h2>4 · Work</h2>
-  <button id="b-new">New order</button>
+  <div class="row" style="border-top:0"><span>Organisation</span><select id="new-org"></select><button id="b-new">New order</button></div>
+  <div id="refused"></div>
   <div id="orders"></div><div id="conflicts"></div></section>
 
-<section id="s-log" class="hide"><h2>Post office</h2><button id="b-visit">Visit the post office</button><div id="delivery" class="mut"></div><pre id="log"></pre></section>
+<section id="s-log" class="hide"><h2>Post office</h2><button id="b-visit">Visit the post office</button><button class="sec" id="b-reset">Start over</button><div id="delivery" class="mut"></div><pre id="log"></pre></section>
 
 <script src="../../erp/sqljs/sql-wasm.js"></script>
 <script src="../../erp/kernel_ops.js"></script>
@@ -74,6 +76,9 @@
     return r ? r.canUpdate(client, org, Number(t.id), t.lvl) : { allowed: false, reason: 'no-role' };
   }
   function tableId(n) { var t = shim(adDb).prepare('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?').get(String(n).toLowerCase()); return t ? Number(t.id) : null; }
+  function roleOptions() { return shim(adDb).prepare("SELECT ad_role_id AS id, name FROM ad_role WHERE ad_client_id IN (0, 11) ORDER BY ad_role_id").all()
+    .map(function (r) { return '<option value="' + r.id + '"' + (r.id === 102 ? ' selected' : '') + '>' + r.name + ' (' + r.id + ')</option>'; }).join(''); }
+  function orgName(id) { var o = shim(adDb).prepare('SELECT name FROM ad_org WHERE ad_org_id=?').get(Number(id)); return o ? o.name : 'org ' + id; }
   function codeOf(kid) { return kid.slice(0, 4).toUpperCase() + '-' + kid.slice(4, 8).toUpperCase(); }
 
   async function openStore(bytes) {
@@ -93,7 +98,8 @@
 
   async function render() {
     show('s-token', !cfg.token); show('s-space', !!cfg.token && !cfg.space);
-    if (!S) { $('status').textContent = 'device ' + codeOf(dev.kid) + (cfg.token ? ' · token saved' : ''); document.body.setAttribute('data-ready', '1'); return; }
+    if (!S) { $('status').textContent = 'device ' + codeOf(dev.kid) + (cfg.token ? ' · token saved' : ''); show('s-pair', false); show('s-work', false); show('s-log', false);
+      document.body.setAttribute('data-ready', '1'); return; }
     var L = await S.order(), me = L.roster.devices[dev.kid], founder = cfg.founder;
     show('s-pair', true); show('pair-founder', !!founder); show('pair-joiner', !founder);
     $('mycode').textContent = codeOf(dev.kid);
@@ -102,11 +108,14 @@
     show('s-work', !!me); show('s-log', true);
     var rows = me ? await orders() : [], cf = me ? await S.conflicts() : [];
     $('orders').innerHTML = rows.map(function (r) {
-      return '<div class="row" data-uu="' + r.c_order_uu + '"><b>' + r.documentno + '</b> total <span class="tot">' + r.grandtotal + '</span>' +
+      return '<div class="row" data-uu="' + r.c_order_uu + '"><b>' + r.documentno + '</b><span class="mut">' + orgName(r.ad_org_id) + '</span> total <span class="tot">' + r.grandtotal + '</span>' +
              '<input type="number" value="' + r.grandtotal + '"><button class="sec b-save">Save</button></div>'; }).join('') || '<div class="mut">no orders yet</div>';
     $('conflicts').innerHTML = cf.map(function (c) { return '<div class="bad conflict">⚠ ' + c.col + ' conflict on an order: before ' + c.before + ', values ' +
       c.candidates.map(function (k) { return k.value; }).join(' / ') + ' — Current record was changed by another user</div>'; }).join('');
     var dl = S.delivery(), gaps = S.gaps().length;
+    $('refused').innerHTML = dl.filter(function (x) { return x.verdict === 'REFUSED'; }).map(function (x) {
+      var e = S.query('SELECT envelope FROM cl_op WHERE op_hash=?', [x.hash])[0], env = e ? JSON.parse(e.envelope) : null, f = env && env.body.params.fields;
+      return '<div class="bad refused">⛔ ' + (f && f.documentno ? f.documentno + ' (' + orgName(f.ad_org_id) + ')' : 'op ' + x.seq) + ' refused — ' + x.reason + '</div>'; }).join('');
     $('delivery').innerHTML = 'last visit ' + (cfg.lastVisit ? new Date(cfg.lastVisit).toLocaleTimeString() : 'never') + ' · my ops ' + dl.length +
       ' · seen by others ' + dl.filter(function (x) { return x.state === 'SEEN'; }).length + ' · refused ' + dl.filter(function (x) { return x.verdict === 'REFUSED'; }).length +
       ' · waiting on ' + gaps + (pipe ? ' · GitHub writes ' + pipe.stats.writes : '') + (cfg.pbUrl ? ' · visit log ' + (cfg.lastNote ? '✓' : '—') : '');
@@ -124,7 +133,7 @@
     try { await fn(); await persist(); } catch (e) { log('🔴 ' + (e && e.message || e)); } await render(); }
   function buttons(on) { document.querySelectorAll('button').forEach(function (b) { b.disabled = !on; b.style.opacity = on ? '' : '0.5'; }); }
   async function fetchWithProgress(url) {
-    var r = await fetch(url, { cache: 'force-cache' }), total = Number(r.headers.get('content-length')) || 27193344;
+    var r = await fetch(url, { cache: 'force-cache' }), total = Number(r.headers.get('content-length')) || 154274;
     if (!r.body || !r.body.getReader) return new Uint8Array(await r.arrayBuffer());
     var rd = r.body.getReader(), chunks = [], got = 0;
     for (;;) { var x = await rd.read(); if (x.done) break; chunks.push(x.value); got += x.value.length; $('boot-pct').textContent = Math.min(100, Math.round(100 * got / total)) + '%'; }
@@ -154,23 +163,33 @@
     var L = await S.order(), names = await pipe.list('r/'), html = '';
     for (var n of names) { var b = await pipe.get(n); if (!b) continue; var rq = JSON.parse(new TextDecoder().decode(b));
       if (rq.space !== cfg.space || L.roster.devices[rq.kid] || rq.kid !== await CommStore.kidOf(rq.jwk)) continue;   // only requests for THIS space
-      html += '<div class="row request" data-req=\'' + JSON.stringify(rq).replace(/'/g, '&#39;') + '\'><span class="code">' + codeOf(rq.kid) + '</span><button class="b-approve">Approve</button></div>'; }
+      html += '<div class="row request" data-req=\'' + JSON.stringify(rq).replace(/'/g, '&#39;') + '\'><span class="code">' + codeOf(rq.kid) + '</span><span>as</span><select class="req-role">' + roleOptions() + '</select><button class="b-approve">Approve</button></div>'; }
     $('requests').innerHTML = html || '<div class="mut">no pending requests</div>';
     document.querySelectorAll('.b-approve').forEach(function (b) { b.onclick = function () { act(async function () {
-      var rq = JSON.parse(b.closest('.row').getAttribute('data-req'));
-      await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: 102, comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);   // CL8: the dh_jwk makes the enroller grant the space key in this same visit
-      await visit(); log('§PHONE approved ' + codeOf(rq.kid)); }); }; });
+      var rq = JSON.parse(b.closest('.row').getAttribute('data-req')), role = Number(b.closest('.row').querySelector('.req-role').value);
+      // the role picked on Approve (an AD_Role id; canUpdate judges every later write by it)
+      await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: role, comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);   // CL8: the dh_jwk makes the enroller grant the space key in this same visit
+      await visit(); log('§PHONE approved ' + codeOf(rq.kid) + ' as role ' + role); }); }; });
     log('§PHONE requests listed: ' + names.length); }); };
   $('b-new').onclick = function () { act(async function () {
     var uu = crypto.randomUUID(), n = 'O-' + codeOf(dev.kid).slice(0, 4) + '-' + (S.query("SELECT COUNT(*) AS n FROM cl_op WHERE op_type='CRUD_CREATE' AND author_kid=?", [dev.kid])[0].n + 1);
-    await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_CREATE', params: { fields: { documentno: n, grandtotal: 100, ad_client_id: 11, ad_org_id: 11 } } } });
-    log('§PHONE new order ' + n); }); };
+    await S.author({ target: { table: 'c_order', uu: uu }, intent: 'K2', body: { op_type: 'CRUD_CREATE', params: { fields: { documentno: n, grandtotal: 100, ad_client_id: 11, ad_org_id: Number($('new-org').value) } } } });
+    log('§PHONE new order ' + n + ' org ' + $('new-org').value); }); };
+  // Start over: a new space for a clean take — keeps this device's key, the token and the post box; tap twice
+  var resetArmed = 0;
+  $('b-reset').onclick = function () {
+    if (Date.now() - resetArmed > 5000) { resetArmed = Date.now(); $('b-reset').textContent = 'Tap again to start over'; return; }
+    act(async function () { resetArmed = 0; $('b-reset').textContent = 'Start over';
+      ['space', 'founder', 'lastVisit', 'lastNote'].forEach(function (k) { delete cfg[k]; }); S = null; pipe = null; await kvPut('db', null);
+      log('§PHONE started over — same device ' + codeOf(dev.kid) + ', no space'); }); };
   $('b-visit').onclick = function () { act(async function () { await visit(); }); };
 
   (async function boot() {
     buttons(false);
     SQL = await initSqlJs({ locateFile: function (f) { return '../../erp/sqljs/' + f; } });
-    adDb = new SQL.Database(await fetchWithProgress('../../erp/ad_seed.db'));
+    adDb = new SQL.Database(); adDb.exec(new TextDecoder().decode(await fetchWithProgress('access_seed.sql')));   // 154 KB of the rows canUpdate reads (§SEED-EQ: same verdicts as ad_seed.db)
+    $('new-org').innerHTML = shim(adDb).prepare('SELECT ad_org_id AS id, name FROM ad_org WHERE ad_client_id=11 ORDER BY ad_org_id').all()
+      .map(function (o) { return '<option value="' + o.id + '">' + o.name + ' (' + o.id + ')</option>'; }).join('');
     dev = await kvGet('device');
     if (!dev) { dev = await CommStore.newDevice(); dev.person_uu = crypto.randomUUID(); await kvPut('device', dev); }   // CryptoKey stored as-is (non-extractable)
     else if (!dev.dhPrivateKey) { await CommStore.ensureDh(dev); await kvPut('device', dev); }                          // a device saved before CL8 gets its key-exchange key (useful only if not yet enrolled)
