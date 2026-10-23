@@ -2557,7 +2557,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { rulesMeta: function () { return _rulesMeta; }, dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },
