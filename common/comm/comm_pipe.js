@@ -8,6 +8,7 @@
  *   memPipe()        — in memory (tests, same-process).
  *   httpPipe(base)   — PUT|GET <base>/f/<name>, GET <base>/list?prefix=… — any writable static host / dumb folder server.
  *   folderPipe(dir)  — node fs directory (node only).
+ *   ghPipe(opts)     — a GitHub repo: one branch per device (dev/<kid>), one commit per visit (putMany), no LFS (§12.11).
  * Every pipe counts its calls (stats) so a witness can log the noise a visit makes.
  */
 (function (global) {
@@ -54,7 +55,82 @@
     };
   }
 
-  var API = { memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe };
+  // ── GitHub repo pipe (TEAMWORK_FRAMEWORK §11.16 / §12.11 — Witness: W-GH-PIPE-2DEV) ─────────────────────────────
+  // opts = { owner, repo, token, self (my kid), minGapMs?, fetch?, api? }. Each device writes ONLY its own branch dev/<kid>
+  // and only names under its own prefix (o/<kid>/…, h/<kid>) — the one-writer rule, enforced here. putMany = ONE commit
+  // (blobs → tree on the previous tree → commit → forward-only ref update). Reads: one matching-refs call (ETag) +
+  // one recursive tree per CHANGED branch (cached by commit sha) + one blob per new object (cached forever).
+  function _b64(bytes) { if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
+    var s = ''; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return btoa(s); }
+  function _unb64(t) { t = String(t).replace(/\s/g, ''); if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(t, 'base64'));
+    var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+  function _kidOfName(name) { var p = String(name).split('/'); return (p[0] === 'o' || p[0] === 'h') ? p[1] : null; }
+
+  function ghPipe(opts) {
+    var f = opts.fetch || fetch, base = (opts.api || 'https://api.github.com') + '/repos/' + opts.owner + '/' + opts.repo;
+    var s = _stats(); s.reqs = 0; s.writes = 0; s.notModified = 0; s.commits = 0; s.rateRemaining = null;
+    var etags = {}, cacheBody = {}, trees = {}, blobs = {}, where = {}, lastPut = 0, branchOf = function (kid) { return 'dev/' + kid; };
+    async function api(method, path, body) {
+      var h = { 'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + opts.token, 'X-GitHub-Api-Version': '2022-11-28' };
+      if (method === 'GET' && etags[path]) h['If-None-Match'] = etags[path];
+      if (body) h['Content-Type'] = 'application/json';
+      var r = await f(base + path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined });
+      s.reqs++; if (method !== 'GET') s.writes++;
+      var rem = r.headers.get('x-ratelimit-remaining'); if (rem != null) s.rateRemaining = Number(rem);
+      if (r.status === 304) { s.notModified++; return { status: 304, json: cacheBody[path] }; }
+      var j = null; try { j = await r.json(); } catch (e) {}
+      if (method === 'GET' && r.ok && r.headers.get('etag')) { etags[path] = r.headers.get('etag'); cacheBody[path] = j; }
+      return { status: r.status, json: j };
+    }
+    async function refs() {
+      var r = await api('GET', '/git/matching-refs/heads/dev/');
+      return (r.status === 200 || r.status === 304) && Array.isArray(r.json) ? r.json.map(function (x) { return { branch: x.ref.replace('refs/heads/', ''), sha: x.object.sha }; }) : [];
+    }
+    async function treeOf(commitSha) {
+      if (trees[commitSha]) return trees[commitSha];
+      var r = await api('GET', '/git/trees/' + commitSha + '?recursive=1'), m = {};
+      ((r.json && r.json.tree) || []).forEach(function (e) { if (e.type === 'blob') m[e.path] = { sha: e.sha, size: e.size }; });
+      return (trees[commitSha] = m);
+    }
+    async function list(prefix) {
+      s.list++; var out = [];
+      for (var b of await refs()) { var t = await treeOf(b.sha);
+        Object.keys(t).forEach(function (n) { where[n] = t[n]; if (n.indexOf(prefix) === 0) out.push(n); }); }
+      return out.sort();
+    }
+    async function get(name) {
+      s.get++; if (!where[name]) await list(name);
+      var w = where[name]; if (!w) return null;
+      if (!blobs[w.sha]) { var r = await api('GET', '/git/blobs/' + w.sha); if (r.status !== 200 || !r.json) return null; blobs[w.sha] = _unb64(r.json.content); }
+      s.bytesGet += blobs[w.sha].length; return new Uint8Array(blobs[w.sha]);
+    }
+    async function putMany(entries) {
+      entries.forEach(function (e) { if (_kidOfName(e.name) !== opts.self) throw new Error('ghPipe: ' + e.name + ' is not under my prefix (' + opts.self + ')'); });
+      var wait = (opts.minGapMs || 0) - (Date.now() - lastPut); if (wait > 0) await new Promise(function (r) { setTimeout(r, wait); });
+      for (var attempt = 0; attempt < 2; attempt++) {
+        var ref = await api('GET', '/git/ref/heads/' + branchOf(opts.self)), parent = ref.status === 200 || ref.status === 304 ? ref.json.object.sha : null, baseTree = null;
+        if (parent) { var pc = await api('GET', '/git/commits/' + parent); baseTree = pc.json && pc.json.tree ? pc.json.tree.sha : null; }
+        var tree = [];
+        for (var e of entries) { var b = await api('POST', '/git/blobs', { content: _b64(e.bytes), encoding: 'base64' }); if (b.status !== 201) throw new Error('ghPipe blob ' + b.status);
+          tree.push({ path: e.name, mode: '100644', type: 'blob', sha: b.json.sha }); s.put++; s.bytesPut += e.bytes.length; }
+        var tr = await api('POST', '/git/trees', baseTree ? { base_tree: baseTree, tree: tree } : { tree: tree }); if (tr.status !== 201) throw new Error('ghPipe tree ' + tr.status);
+        var cm = await api('POST', '/git/commits', { message: 'visit ' + opts.self + ' ' + entries.map(function (x) { return x.name; }).join(' '), tree: tr.json.sha, parents: parent ? [parent] : [] });
+        if (cm.status !== 201) throw new Error('ghPipe commit ' + cm.status);
+        var up = parent ? await api('PATCH', '/git/refs/heads/' + branchOf(opts.self), { sha: cm.json.sha, force: false })
+                        : await api('POST', '/git/refs', { ref: 'refs/heads/' + branchOf(opts.self), sha: cm.json.sha });
+        if (up.status === 200 || up.status === 201) { s.commits++; lastPut = Date.now(); delete etags['/git/ref/heads/' + branchOf(opts.self)];
+          entries.forEach(function (x, i) { where[x.name] = { sha: tree[i].sha, size: x.bytes.length }; });   // NOT cached locally: a read-back must come from GitHub
+          return true; }
+        delete etags['/git/ref/heads/' + branchOf(opts.self)];       // someone moved my branch (my other tab): re-read, retry once
+      }
+      throw new Error('ghPipe: ref update refused twice');
+    }
+    return { id: 'gh:' + opts.owner + '/' + opts.repo, stats: s, list: list, get: get, putMany: putMany,
+             put: function (name, bytes) { return putMany([{ name: name, bytes: bytes }]); },
+             _api: api, _refs: refs, branchOf: branchOf };
+  }
+
+  var API = { memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe, ghPipe: ghPipe };
   global.CommPipe = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);
