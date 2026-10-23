@@ -57,7 +57,8 @@ const ARGS = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--en
     const [c2] = await Promise.all([p2.waitForFileChooser(), p2.click('#m-open-panel .mo-row[data-key="__local"]')]); await c2.accept([vdb]);
     await p2.waitForFunction('!!window.__dwBuf && !!window.__arcSeedReady', { timeout: 240000 }); await p2.evaluate(async () => { await window.__arcSeedReady; }); await new Promise(r => setTimeout(r, 2000));
     const S = await p2.evaluate(async () => { const n0 = window.Bonsai.oplog.length; window.__dwLastDoneDisc = null; window.discWalk('FP'); const t0 = Date.now(); while (window.__dwLastDoneDisc !== 'FP' && Date.now() - t0 < 300000) await new Promise(r => setTimeout(r, 200));
-      await new Promise(r => setTimeout(r, 3000)); const segs = (window.__dwChains.FP || []).map(s => ({ role: s.role, from: s.from, to: s.to, dia: s.dia_mm })), heads = (window.__dwWalks.FP || []).map(p => [p.x, p.y, p.z]);
+      await new Promise(r => setTimeout(r, 500)); for (let g = 0; g < 100 && window.__dwChainAnimating.FP; g++) await new Promise(r => setTimeout(r, 200));   // §D64.1 the reveal runs after the heads' build-up
+      await new Promise(r => setTimeout(r, 500)); const segs = (window.__dwChains.FP || []).map(s => ({ role: s.role, from: s.from, to: s.to, dia: s.dia_mm })), heads = (window.__dwWalks.FP || []).map(p => [p.x, p.y, p.z]);
       const scales = []; window.A.scene.traverse(o => { if (o.isInstancedMesh && o.userData && o.userData.dwChain === 'FP') { const M = new window.THREE.Matrix4(), q = new window.THREE.Quaternion(), p = new window.THREE.Vector3(), sc = new window.THREE.Vector3(); for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, M); M.decompose(p, q, sc); scales.push(+sc.x.toFixed(4)); } } });
       return { segs, heads, scales: Array.from(new Set(scales)), ops: window.Bonsai.oplog.length - n0 }; });
     const roles = {}; S.segs.forEach(s => { roles[s.role] = (roles[s.role] || 0) + 1; });

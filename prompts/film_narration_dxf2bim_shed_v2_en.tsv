@@ -1,0 +1,9 @@
+s01	en	§FILM_FACT reopened_elements · a fresh Modeller, Open ▸ local .db, the shed comes back, a turn	M: The shed, saved as a building database, opened again: {reopened_elements} elements.	M: The shed from the drawings, saved as a building database, opened again in a fresh Modeller: all {reopened_elements} elements.
+s02	en	§FILM_FACT wall_picked · a wall clicked	M: It comes back editable: a wall, picked.	M: It comes back editable: pick a wall, and it is yours to change.
+s03	en	· inside, empty, the ELEC row clicked	M: Inside: no lights, no sprinklers. One click on Lights.	M: Step inside: no lights, no sprinklers. One click on Lights, on the left.
+s04	en	§FILM_FACT lights / reference · the lamps build up, the camera follows	M: {lights} pendant lamps, laid in order, from the farm reference.	M: {lights} pendant lamps, laid one after another, ten feet apart, from the farm reference.
+s05	en	§FILM_FACT light_closeup · a lamp close-up	M: Each one a library lamp, hung under the truss.	M: Close up, each one is a library lamp, hung under the truss.
+s06	en	§FILM_FACT sprinklers · the FP row, the heads build up, followed	M: Then sprinklers: {sprinklers} heads, just under the roof.	M: Then sprinklers: {sprinklers} heads, just under the roof. Farm sheds are often exempt, so this one is an option.
+s07	en	§FILM_FACT pipe_segs · the pipes reveal from the riser, followed	M: The pipework grows out from the riser: {pipe_segs} pieces.	M: And the pipework grows out from the riser, {pipe_segs} pieces: drops, branches and a main, from the pipe assembly template.
+s08	en	§FILM_FACT sprinkler_closeup / tee_closeup · a head macro, then a tee	M: A head on its drop, and a tee where a branch meets the main.	M: A head on its drop. And a tee, where a branch meets the main.
+s09	en	· out, a last turn	M: A saved building, opened, lit and serviced.	M: A saved building, opened again, lit and serviced, in a few clicks.

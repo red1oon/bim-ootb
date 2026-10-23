@@ -4909,20 +4909,21 @@ function _renderDiscChains(disc, segs, opts) {
   // t0 — a redraw mid-reveal RESUMES the SAME timeline on the freshly-rebuilt InstancedMesh (seeded at the correct
   // progress immediately, no restart-to-0 flash) instead of restarting or freezing. A generation token lets any
   // still-running rAF loop on a now-superseded (orphaned) InstancedMesh detect it's stale and quietly stop.
-  var DUR = 2000, N = ordered.length;
+  var N = ordered.length, DUR = Math.max(2000, Math.min(7000, 60 * N));   // §D64.1 a pace the camera can follow (was a fixed 2 s)
   var nowTs0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   var prevMeta = window.__dwChainRevealMeta[disc];
   var resuming = !!(prevMeta && (nowTs0 - prevMeta.start) < DUR);
-  var startTs = resuming ? prevMeta.start : nowTs0;
+  var fx = window.__dwRevealMeta && window.__dwRevealMeta[disc];   // §D64.1 the heads build up first: the network starts when they are all drawn
+  var startTs = resuming ? prevMeta.start : (fx ? Math.max(nowTs0, fx.start + fx.dur) : nowTs0);
   var gen = (prevMeta ? prevMeta.gen : 0) + 1;
   window.__dwChainRevealMeta[disc] = { start: startTs, gen: gen };
   window.__dwChainAnimating[disc] = true;
-  inst.count = Math.max(0, Math.min(N, Math.round((1 - Math.pow(1 - Math.min(1, (nowTs0 - startTs) / DUR), 3)) * N)));   // seed at current progress — no 0-count flash on a mid-reveal rebuild
+  inst.count = Math.max(0, Math.min(N, Math.round((1 - Math.pow(1 - Math.max(0, Math.min(1, (nowTs0 - startTs) / DUR)), 3)) * N)));   // seed at current progress — no 0-count flash on a mid-reveal rebuild
   var frames = 0;
   (function step(now) {
     if (!window.__dwChainRevealMeta[disc] || window.__dwChainRevealMeta[disc].gen !== gen) return;   // superseded by a newer render call for this disc — stop quietly, don't touch the orphaned mesh
     frames++;
-    var u = Math.min(1, (now - startTs) / DUR), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic
+    var u = Math.max(0, Math.min(1, (now - startTs) / DUR)), e = 1 - Math.pow(1 - u, 3);   // easeOutCubic (0 until the start: §D64.1)
     inst.count = Math.max(0, Math.min(N, Math.round(e * N)));
     if (window.A && A.requestRender) A.requestRender();
     if (u < 1) { requestAnimationFrame(step); }
