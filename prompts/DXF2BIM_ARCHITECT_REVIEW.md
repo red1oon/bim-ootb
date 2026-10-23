@@ -2,6 +2,24 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶ RESUME HERE (written 2026-10-23 at the end of session 1; read this block, then RESULT parts 1-3 at the bottom)
+**State:** all merged to bim-ootb main: #2301 (stock-take + HHS round trip), #2302 D44/D45, #2303 D46-D48, #2304 D50 + F13, #2305 D51-D53, #2306 D54/D55 + the report page
+`reports/dxf2bim_stocktake.html` (https://red1oon.github.io/bim-ootb/reports/dxf2bim_stocktake.html; the owner wants reports on github.io, not as Claude artifacts). Modeller sw v130. Specs + RESULT
+lines for every rule are in `prompts/DXF2BIM_FOUNDATION_LANE.md` §D44-§D55. **Owner decisions this session (do not re-ask):** `modeller/dxf2bim/` is edited in bim-ootb (F13; `sync.sh`
+refuses); best-effort defaults are wanted (amber, stated, one `element_defaults.json` value or `@DEFAULT` to turn off) and supersede L2.3 D3 "never a default"; keep tuning on the machine's
+other buildings (JKR first; the Hospital belongs to the wing lane).
+**Data (scratch, regenerate):** `/tmp/db2/{DXARC,HHSM2,CLINIC2,LTU2,HOSP2,JKR2}.db` = `node ~/bim-compiler/scripts/extractIFC2DB.js --ifc <ARC> --also <STR> -o <db>`; JKR IFCs in
+`~/Downloads/OPEN SOURCE BIM/IFC 4/` (jkrAR25_* + jkrST25-*), HHS / Clinic / LTU / Hospital in `~/bim-compiler/internal/UNMERGED/`, Duplex `~/bim-compiler/reference/residential/`. JKR Viewer db (Room
+Injection source) `~/bim-ootb/buildings/JKR_extracted.db` (untracked). The round-trip harness (`rt_sets.js` / `rt_ladder.js`) lived in the session scratchpad: the witnesses carry the claims now.
+**Regression recipe:** `SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` = PASS 40 / ENV 34 / FAIL 4 (the 4 pre-existing:
+`struct`, `ticks`, `guardrails` G3 206, `ifc_valid`); the new witnesses need db args: `witness_dxf_{slab_outline,curtain,title,tag_width,grid_label,storey_absorb,slab_estimate,bridge_long,walltop_default,window_parts}.js <db...>`
+(`BASE=<older modeller dir>` where they compare), `witness_dxf_material.js <db> <its ARC ifc> [<another firm's ifc>]`.
+**NEXT (in order, each spec'd first):** (1) PR-TAG-WIDTH for WINDOWS (JKR: 48 window tags are the main per-element ask; reuse `Dxf2Suggest.tagByWidth` with the window schedule). (2) JKR Level 1 wall
+tops: the section states no slab underside above Level 1 (`slab_no_underside`), so D54 cannot default them (281 asks). (3) JKR `opening_outside_wall` 31 and the section-slab conflicts (two slab tops
+10 mm apart at 81.18 / 81.19 and 84.48 / 84.49). (4) F15 the writer draws no slab edge on the plans (the real outline D51 estimates). (5) The page has no way to LOAD a firm catalogue yet
+(`state.catalogue` is read by Convert, nothing sets it): a "Load catalogue" row in the 2D panel. (6) This brief's Parts A.1-A.3 (drift, hard-code hunt, mutation matrix) and B (walk the guide on the
+canvas) are still open. Then the Hospital only with the wing lane's say.
+
 **Who you are this session:** an expert software architect and specification writer (Opus, high effort). Owner's words: *"review of the code and functional steps to be
 well designed, checking for any drift, hard-code bypass where it will fail another similar 2D DXF set. Go through the docs/DXF2BIMGuide to ensure it is working,
 practical on the canvas, note what has issues or can be improved further, simplified all for a smooth user experience doing such 3D construction from 2D raw DXFs."*
