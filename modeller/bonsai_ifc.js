@@ -142,8 +142,8 @@
         return productFromRep(rep, type, name, gn, extra);
       };
 
-      const wallByFeature = new Map();
-      let walls = 0, openings = 0, rels = 0, gn = 0, arrays = 0, arrayMembers = 0;
+      const wallByFeature = new Map(), productByFeature = new Map(), pendingFills = [];   // §D59 (d) an inserted body is a product a cut can void and fill
+      let walls = 0, openings = 0, rels = 0, gn = 0, arrays = 0, arrayMembers = 0, fillsRels = 0, voidsOfInserts = 0;
       let firstWall = null, firstArray = null;
 
       // ── §IFC-EXPORT-SEED (MODELLER_MASTER.md row 36 / §IFC-EXPORT-SEED) ───────────────────────────
@@ -239,6 +239,7 @@
           }
           const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
+          productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
           if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
           seeded++;
@@ -268,12 +269,14 @@
           const voidSolid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, rect, place3([cx, cy, z0]), z3(), plm(dz || 1e-3));
           const opening = product(voidSolid, T.IFCOPENINGELEMENT, 'Opening ' + op.id, gn++, [null, null]);
           openings++;
-          const wall = wallByFeature.get(op.parent);
+          const wall = wallByFeature.get(op.parent) || productByFeature.get(op.parent);
           if (wall) {
             const rel = api.CreateIfcEntity(mID, T.IFCRELVOIDSELEMENT, api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++)),
               null, null, null, new T.Handle(wall.expressID), new T.Handle(opening.expressID));
-            api.WriteLine(mID, rel); rels++;
+            api.WriteLine(mID, rel); rels++; if (!wallByFeature.get(op.parent)) voidsOfInserts++;
           }
+          const ffid = op.parameters.slide && op.parameters.slide.fillingFid;   // §D59 (d) the opening's filling (door / window), written once every product exists
+          if (ffid != null) pendingFills.push([opening, ffid]);
         } else if (op.op_type === 'GEOM_ARRAY') {
           const parentOp = ops.find(o => o.id === op.parent);
           if (!parentOp || parentOp.op_type !== 'GEOM_EXTRUDE_POLY') continue;   // HONEST SCOPE: only the demoed leaf types export
@@ -337,6 +340,9 @@
       // §IFC-SPATIAL: aggregation + containment, then one log line with the counts (read it).
       const rel = (type, a, b) => api.WriteLine(mID, api.CreateIfcEntity(mID, type, spatialGid(500000 + (gn++)), null, null, null, a, b));
       rel(T.IFCRELAGGREGATES, project, [site]);
+      pendingFills.forEach(([opening, ffid]) => { const f = productByFeature.get(ffid); if (!f) return;
+        api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELFILLSELEMENT, api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++)), null, null, null, new T.Handle(opening.expressID), new T.Handle(f.expressID))); fillsRels++; });
+      if (pendingFills.length) console.log(TAG + ' §IFC-FILLS cuts_naming_a_fill=' + pendingFills.length + ' fills_written=' + fillsRels + ' voids_of_inserted_bodies=' + voidsOfInserts);
       rel(T.IFCRELAGGREGATES, site, [building]);
       const stList = [...storeys.values()].sort((a, b) => a.elev - b.elev);
       if (stList.length) rel(T.IFCRELAGGREGATES, building, stList.map(s => s.e));
