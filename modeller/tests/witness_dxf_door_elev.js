@@ -25,7 +25,7 @@ function roundTrip(L, q) { const t0 = Date.now(), R = L.S.writeStdSet(q, 'X', {}
   const o = L.I.convert(L.I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))), {}); return { R, o, ms: Date.now() - t0 }; }
 
 const doorOps = o => [].concat(...(o.ST || []).map(st => st.after.filter(x => x.op_type === 'DXF_OPENING' && (x.params.kind === 'door' || x.params.category === 'door')).map(x => ({ x, level: st.level }))));
-const winJson = o => JSON.stringify([].concat(...(o.ST || []).map(st => st.after.filter(x => x.op_type === 'DXF_OPENING' && x.params.kind === 'window').map(x => Object.assign({}, x, { params: Object.assign({}, x.params, { elev_members: undefined }) })))));   // the new door entities on a sheet shift the later entities' handle numbers: elev_members names those handles, nothing else about a window moves
+const winJson = o => JSON.stringify([].concat(...(o.ST || []).map(st => st.after.filter(x => x.op_type === 'DXF_OPENING' && x.params.kind === 'window').map(x => Object.assign({}, x, { params: Object.assign({}, x.params, { elev_members: undefined, run_id: undefined, host_wall: undefined, host_handle: undefined, handle: undefined }), output_guid: undefined, input_guids: undefined })))));   // the sheets' entity handles and the run id (hence the guids) move whenever an earlier rule adds an entity or a layer to the map; nothing else about a window does
 const srcOf = o => { const c = { elevation: 0, recessed: 0, schedule: 0, other: 0 }; doorOps(o).forEach(({ x }) => { if (x.params.height_source === 'elevation') { c.elevation++; if (x.params.face_recessed) c.recessed++; } else if (x.params.height_source === 'schedule') c.schedule++; else c.other++; }); return c; };
 const gapN = (v, re) => v ? v.blocking.concat(v.advisory).filter(b => re.test(b.code)).length : 0;
 if (process.argv.includes('--count')) { const con = new Database(dbs[0], { readonly: true }), r = roundTrip(load(M), s => con.prepare(s).all()); say('§COUNT ' + JSON.stringify(srcOf(r.o))); process.exit(0); }
@@ -61,7 +61,7 @@ dbs.forEach(db => {
   if (BASEL) { const b = roundTrip(BASEL, q), c1 = srcOf(o), c0 = srcOf(b.o), nb = doorOps(b.o).length, nn = doorOps(o).length, G = /^GAP:(no_elevation_height|elevation_height_conflict)$/;
     check('D5[' + name + ']', 'no loss against BASE: doors read not fewer, elevation-read not fewer, blocking and height gaps do not rise', nn >= nb && c1.elevation >= c0.elevation && o.verdict.blocking.length <= b.o.verdict.blocking.length && gapN(o.verdict, G) <= gapN(b.o.verdict, G),
       `doors ${nb}->${nn} elevation ${c0.elevation}->${c1.elevation} blocking ${b.o.verdict.blocking.length}->${o.verdict.blocking.length} height_gaps ${gapN(b.o.verdict, G)}->${gapN(o.verdict, G)}`);
-    check('D7[' + name + ']', 'the windows are untouched: window ops identical to BASE but for the elevation entity handles (elev_members)', winJson(o) === winJson(b.o), `equal=${winJson(o) === winJson(b.o)}`);
+    check('D7[' + name + ']', 'the windows are untouched: window ops identical to BASE but for entity handles and the run-id guids', winJson(o) === winJson(b.o), `equal=${winJson(o) === winJson(b.o)}`);
     say(`§D74-TIME ${name} base_ms=${b.ms} new_ms=${ms}`);
     const run = env => { const r = cp.spawnSync('node', [__filename, db, '--count'], { encoding: 'utf8', env: Object.assign({}, process.env, env) }); return JSON.parse((/§COUNT (.*)/.exec(r.stdout || '') || [0, 'null'])[1]); };
     const offR = run({ DXF_RECESSED_DOOR: '0' }), offB = run({ DXF_RECESSED_DOOR: '0', DXF_DOORBOX: '0' });

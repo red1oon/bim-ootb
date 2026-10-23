@@ -30,7 +30,7 @@
   };
   // §D70.1 the drafted slab edge. Window as §D70 measured (slabs >= 50 mm whose top is within -0.5 / +0.3 m of the storey); the two values are best-effort defaults (amber) that equal
   // element_defaults.json slab.edge_joint_close / slab.edge_void_min_area (witnessed); opts.slabEdge overrides them. EDGE_COVER = the §D44 coverage margin.
-  const SLAB_EDGE = { joint_close: 0.05, void_min_area: 0.0645 }, SLAB_TOP_BELOW = 0.5, SLAB_TOP_ABOVE = 0.3, SLAB_MIN_THICK = 0.05, EDGE_COVER = 0.9;
+  const SLAB_EDGE = { joint_close: 0.05, void_min_area: 0.0645, level_step_min: 0.1 }, SLAB_TOP_BELOW = 0.5, SLAB_TOP_ABOVE = 0.3, SLAB_MIN_THICK = 0.05, EDGE_COVER = 0.9;
   const ELEV_FACES = { FRONT: ['y0', (x, y) => x], REAR: ['y1', (x, y) => -x], LEFT: ['x0', (x, y) => -y], RIGHT: ['x1', (x, y) => y] };
 
   // ── numeric helpers matching numpy / python formatting ──
@@ -824,30 +824,47 @@
   function slabEdge(model, storey, drawn, log) {
     const t0 = Date.now(), sl = slabsAt(model, storey); if (!sl.length) return null;
     const o = Object.assign({}, SLAB_EDGE, model.slabEdge || {});
-    let U = [], bad = 0;
-    sl.forEach(e => {   // even-odd per element: the slicer's ring orientation is arbitrary (§D70.1 correction), its parity is not
-      const cs = G.elementContours(e.v, e.f, e.c, (e.z0 + e.z1) / 2); if (!cs.length) { bad++; return; }
-      try { const P = PC.xor(...cs.map(c => [[closeRing(c.points)]])); U = U.length ? PC.union(U, P) : P; } catch (x) { bad++; }
-    });
-    const unionA = mpArea(U); let C = U;
-    try { C = closing(U, o.joint_close); } catch (x) { log.add(`§SLAB_EDGE_CLOSING_FAIL storey='${storey.name}' ${String(x.message).slice(0, 80)} (the union drawn unclosed)`); }
-    const closedA = mpArea(C), D = drawn.map(r => ({ r, b: ringBox(r) }));
-    const rep = { slabs: sl.length, no_contour: bad, union_m2: unionA, closed_m2: closedA, holes_kept: 0, holes_filled_drawn: 0, holes_filled_small: 0, filled_m2: 0, pieces_dropped: 0, dropped_m2: 0, joint: o.joint_close, void_min: o.void_min_area };
-    const pieces = [];
-    C.forEach(p => {
-      const holes = [];
-      p.slice(1).forEach(h => {
-        const a = Math.abs(ringArea(h)), hb = ringBox(h); let cov = 0;
-        D.filter(d => d.b[0] < hb[2] && d.b[2] > hb[0] && d.b[1] < hb[3] && d.b[3] > hb[1]).forEach(d => { try { cov += mpArea(PC.intersection([[h]], [[d.r]])) / a; } catch (x) { /* an unclippable pair covers nothing */ } });
-        if (cov >= EDGE_COVER) { rep.holes_filled_drawn++; rep.filled_m2 += a; } else if (a < o.void_min_area) { rep.holes_filled_small++; rep.filled_m2 += a; } else { rep.holes_kept++; holes.push(h); }
+    // §D75 level groups: slabs whose tops lie closer than level_step_min are one group (finishes); each group is drawn as its own pieces carrying its top and thickness
+    const byTop = sl.slice().sort((a, b) => a.z1 - b.z1 || (a.guid < b.guid ? -1 : 1)), groups = [];
+    byTop.forEach(e => { const g = groups[groups.length - 1]; if (g && e.z1 - g.last < o.level_step_min - 1e-9) { g.els.push(e); g.last = e.z1; } else groups.push({ els: [e], last: e.z1 }); });
+    let bad = 0;
+    groups.forEach(g => {
+      g.U = [];
+      g.els.forEach(e => {   // even-odd per element: the slicer's ring orientation is arbitrary (§D70.1 correction), its parity is not
+        const cs = G.elementContours(e.v, e.f, e.c, (e.z0 + e.z1) / 2); if (!cs.length) { bad++; return; }
+        try { const P = PC.xor(...cs.map(c => [[closeRing(c.points)]])); g.U = g.U.length ? PC.union(g.U, P) : P; } catch (x) { bad++; }
       });
-      const pa = Math.abs(ringArea(p[0])) - holes.reduce((t, h) => t + Math.abs(ringArea(h)), 0);
-      if (pa < o.void_min_area) { rep.pieces_dropped++; rep.dropped_m2 += pa; return; }
-      pieces.push([p[0]].concat(holes));
+      g.area = mpArea(g.U);
+      const rep0 = g.els.slice().sort((a, b) => ((b.x1 - b.x0) * (b.y1 - b.y0)) - ((a.x1 - a.x0) * (a.y1 - a.y0)) || (a.guid < b.guid ? -1 : 1))[0];   // the group's largest slab states its level
+      g.top = rep0.z1; g.thick = rep0.z1 - rep0.z0;
+    });
+    groups.sort((a, b) => b.area - a.area || a.top - b.top);
+    const D = drawn.map(r => ({ r, b: ringBox(r) }));
+    const rep = { slabs: sl.length, no_contour: bad, union_m2: 0, closed_m2: 0, holes_kept: 0, holes_filled_drawn: 0, holes_filled_small: 0, filled_m2: 0, pieces_dropped: 0, dropped_m2: 0, joint: o.joint_close, void_min: o.void_min_area, groups: groups.length, overlap_m2: 0, step: o.level_step_min };
+    const pieces = [], levels = []; let prev = null;
+    groups.forEach(g => {
+      let U = g.U; if (prev && U.length) { try { const c = PC.difference(U, prev); rep.overlap_m2 += g.area - mpArea(c); U = c; } catch (x) { /* an unclippable pair keeps the group whole */ } }
+      rep.union_m2 += mpArea(U); let C = U;
+      try { C = closing(U, o.joint_close); } catch (x) { log.add(`§SLAB_EDGE_CLOSING_FAIL storey='${storey.name}' ${String(x.message).slice(0, 80)} (the union drawn unclosed)`); }
+      if (prev && C.length) { try { C = PC.difference(C, prev).map(p => p.map(r => closeRing(r.slice(0, -1)))); } catch (x) { /* kept */ } }
+      rep.closed_m2 += mpArea(C);
+      C.forEach(p => {
+        const holes = [];
+        p.slice(1).forEach(h => {
+          const a = Math.abs(ringArea(h)), hb = ringBox(h); let cov = 0;
+          D.filter(d => d.b[0] < hb[2] && d.b[2] > hb[0] && d.b[1] < hb[3] && d.b[3] > hb[1]).forEach(d => { try { cov += mpArea(PC.intersection([[h]], [[d.r]])) / a; } catch (x) { /* an unclippable pair covers nothing */ } });
+          if (cov >= EDGE_COVER) { rep.holes_filled_drawn++; rep.filled_m2 += a; } else if (a < o.void_min_area) { rep.holes_filled_small++; rep.filled_m2 += a; } else { rep.holes_kept++; holes.push(h); }
+        });
+        const pa = Math.abs(ringArea(p[0])) - holes.reduce((t, h) => t + Math.abs(ringArea(h)), 0);
+        if (pa < o.void_min_area) { rep.pieces_dropped++; rep.dropped_m2 += pa; return; }
+        pieces.push([p[0]].concat(holes)); levels.push({ top: g.top, thick: g.thick, group: groups.indexOf(g) });
+      });
+      prev = prev ? PC.union(prev, C) : C;
     });
     rep.drawn_m2 = mpArea(pieces); rep.pieces = pieces.length; rep.ms = Date.now() - t0;
-    log.add(`§SLAB_EDGE storey='${storey.name}' slabs=${rep.slabs} no_contour=${bad} union_m2=${fx(unionA, 2)} closed_m2=${fx(closedA, 2)} pieces=${rep.pieces} drawn_m2=${fx(rep.drawn_m2, 2)} holes_kept=${rep.holes_kept} holes_filled_drawn=${rep.holes_filled_drawn} holes_filled_small=${rep.holes_filled_small} filled_m2=${fx(rep.filled_m2, 2)} pieces_dropped=${rep.pieces_dropped} dropped_m2=${fx(rep.dropped_m2, 3)} joint=${o.joint_close} void_min=${o.void_min_area} ms=${rep.ms} (§D70.1)`);
-    return { pieces, report: rep };
+    log.add(`§SLAB_EDGE storey='${storey.name}' slabs=${rep.slabs} no_contour=${bad} union_m2=${fx(rep.union_m2, 2)} closed_m2=${fx(rep.closed_m2, 2)} pieces=${rep.pieces} drawn_m2=${fx(rep.drawn_m2, 2)} holes_kept=${rep.holes_kept} holes_filled_drawn=${rep.holes_filled_drawn} holes_filled_small=${rep.holes_filled_small} filled_m2=${fx(rep.filled_m2, 2)} pieces_dropped=${rep.pieces_dropped} dropped_m2=${fx(rep.dropped_m2, 3)} joint=${o.joint_close} void_min=${o.void_min_area} ms=${rep.ms} (§D70.1)`);
+    log.add(`§SLAB_LEVELS storey='${storey.name}' groups=${groups.length} step=${o.level_step_min} main_top=${fx(groups[0].top, 3)} overlap_m2=${fx(rep.overlap_m2, 4)} tops=${groups.map(g => fx(g.top, 3) + '/' + fx(g.thick, 3)).join(' ')} (§D75)`);
+    return { pieces, levels, mainTop: groups[0].top, report: rep };
   }
 
   function writePlan(model, grid, storey, view, log) {
@@ -916,7 +933,9 @@
     if (model.stairSymbol !== false) cut.filter(c => c.cls === 'IfcStair' || c.cls === 'IfcStairFlight').forEach(c => stairMark(doc, c, storey.elev, cutZ, log));   // §F7: treads + up arrow from the mesh
     // §D70.1 the slab edge: the floor outline with its real openings (no plank joints), from the slabs at this level; the columns and walls this plan draws fill the holes they stand in
     const se = slabEdge(model, storey, [].concat(...cut.filter(c => WALLS.indexOf(c.cls) >= 0 || c.cls === 'IfcColumn').map(c => (polys[c.guid] || []).map(pl => closeRing(pl.map(q => [q[0] / 1000, q[1] / 1000]))))), log);
-    if (se) se.pieces.forEach(p => p.forEach(r => doc.lwpoly('A-FLOR-OTLN', r.slice(0, -1).map(q => [mm(q[0]), mm(q[1])]), true)));
+    if (se) se.pieces.forEach((p, i) => { const L = se.levels[i], lv = { elevation: mm(L.top), thickness: mm(L.thick) };   // §D75 the piece's own top level and thickness (DXF groups 38 / 39)
+      p.forEach(r => doc.lwpoly('A-FLOR-OTLN', r.slice(0, -1).map(q => [mm(q[0]), mm(q[1])]), true, lv));
+      if (Math.abs(L.top - se.mainTop) > 1e-6) doc.lwpoly('A-FLOR-LEVL', p[0].slice(0, -1).map(q => [mm(q[0]), mm(q[1])]), true, lv); });   // a level change from the storey's main level: its own layer (level-change line)
     log.add(`§PLAN wall contours=${nW} column contours=${nC} cut_z=${fx(cutZ, 3)}`);
     let nCw = 0;
     Object.keys(curt).sort().forEach(g => (polys[g] || []).forEach(pts => {   // C1: layer A-WALL-CURT, tagged with the curtain wall GUID, no hatch (glazing)

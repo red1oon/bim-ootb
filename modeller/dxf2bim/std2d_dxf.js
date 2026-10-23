@@ -24,7 +24,7 @@
     circle(layer, c, r, o) { o = o || {}; this._e('CIRCLE', layer, ['10', num(c[0]), '20', num(c[1]), '30', '0.0', '40', num(r)], ['100', 'AcDbCircle'], null, o.guid, o.linetype, o.grid); }
     arc(layer, c, r, a0, a1, o) { o = o || {}; this._e('ARC', layer, ['10', num(c[0]), '20', num(c[1]), '30', '0.0', '40', num(r), '100', 'AcDbArc', '50', num(a0), '51', num(a1)], ['100', 'AcDbCircle'], null, o.guid, o.linetype); }
     lwpoly(layer, pts, closed, o) {
-      o = o || {}; const b = ['90', String(pts.length), '70', closed ? '1' : '0']; pts.forEach(p => b.push('10', num(p[0]), '20', num(p[1])));
+      o = o || {}; const b = ['90', String(pts.length), '70', closed ? '1' : '0']; if (typeof o.elevation === 'number') b.push('38', num(o.elevation)); if (typeof o.thickness === 'number') b.push('39', num(o.thickness)); pts.forEach(p => b.push('10', num(p[0]), '20', num(p[1])));
       this._e('LWPOLYLINE', layer, b, ['100', 'AcDbPolyline'], null, o.guid, o.linetype);
     }
     hatch(layer, color, pts, o) {   // SOLID, one polyline boundary path
