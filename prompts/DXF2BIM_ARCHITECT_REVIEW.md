@@ -2,7 +2,14 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
-## ▶▶▶ RESUME HERE (written 2026-10-23 at the end of session 1; read this block, then RESULT parts 1-3 at the bottom)
+## ▶▶▶ RESUME HERE (session 2, 2026-10-23; supersedes the block below, which stays as the session-1 record)
+**Done:** §D56 window tags by width (#2309, sw v132); JKR slab diagnosis F16-F18; the seam study SEAM-1..5 + proposals P-S1..P-S5 (RESULT "session 2" at the bottom).
+**NEXT (in order, each spec'd first):** (1) §D57 stack-aware section underside (F18) + an `--also-classes` option on `bim-compiler scripts/extractIFC2DB.js` (default `IfcColumn`, F17), measured on JKR
+with STR slabs / beams; then JKR Level 1 wall tops re-measured. (2) The seam fixes P-S2 + P-S3 (door rides its wall; the export keeps the edge), then P-S1 (walk after Convert). (3) F16 the writer draws
+every opening the face sees. (4) The old items 4-6 below (F15 slab edge, Load catalogue row, Parts A / B). P-S4 (fixture meshes from one store) belongs with FOUNDATION §5 F5; P-S5 is the owner's call.
+**Data:** `/tmp/db2/JKR3.db` = JKR with STR `IfcColumn,IfcSlab,IfcBeam` merged (scratch extractor with `ALSO_CLASSES`; recipe in RESULT S1); seam harness in the session scratchpad.
+
+## (superseded by session 2) RESUME HERE (written 2026-10-23 at the end of session 1; read this block, then RESULT parts 1-3 at the bottom)
 **State:** all merged to bim-ootb main: #2301 (stock-take + HHS round trip), #2302 D44/D45, #2303 D46-D48, #2304 D50 + F13, #2305 D51-D53, #2306 D54/D55 + the report page
 `reports/dxf2bim_stocktake.html` (https://red1oon.github.io/bim-ootb/reports/dxf2bim_stocktake.html; the owner wants reports on github.io, not as Claude artifacts). Modeller sw v130. Specs + RESULT
 lines for every rule are in `prompts/DXF2BIM_FOUNDATION_LANE.md` §D44-§D55. **Owner decisions this session (do not re-ask):** `modeller/dxf2bim/` is edited in bim-ootb (F13; `sync.sh`
@@ -236,3 +243,40 @@ storeys 0.2 m apart, windows drawn as separate parts). Built, each spec'd first 
 (no library in Node) and 73 engine items (545 before). Still per-element on JKR: window tags (48; a PR-TAG-WIDTH for windows is the next rule, as D47 for doors) and the Level 1 wall tops (the
 slab underside above Level 1 is not stated by the section: `slab_no_underside`). Open: the JKR `opening_outside_wall` 31 (doors / windows taller than their wall's band), the section-slab
 conflicts at 81.18 / 81.19 and 84.48 / 84.49 (two slab tops 10 mm apart on one level).
+
+## RESULT 2026-10-23 (session 2: §D56 window tags, the JKR slab diagnosis, and the seams after Convert)
+**§D56 built (#2309, sw v132):** window tags by drawn width + a window schedule in the editor (W-WIN-TAG-WIDTH fail=0; numbers in `DXF2BIM_FOUNDATION_LANE.md §D56`). JKR: 4 of 48 settled; the
+other 44 share a width with another row (W5a / W5 1250 mm, differ by height) or are drawn by their frame (W1 1290 over a 1250 row). Height narrowing measured: changes nothing on any set.
+
+### S1. Why JKR Level 1 has no wall top (RESUME items 2 + 3: one cause, measured)
+- **F16 (P1, writer)** the writer draws an opening on an elevation only when its host is a flush face wall (`dxf2bim/std2d.js:1005-1013`, `fwg.has(model.host_all[e.guid])`): JKR's four elevations carry
+  2 window outlines for 54 plan windows, so the round trip never tests reading window heights there. Fix: draw every opening the face sees (not hidden behind a nearer wall rect).
+- **F17 (P1, round-trip data)** `extractIFC2DB.js --also` merges only `IfcColumn` (§L5.8, grid evidence). JKR's STR file holds 228 slabs and 189 beams; the ARC file models floor FINISHES as IfcSlab
+  (20 mm tiles, 10 / 30 mm screed). So the JKR db has no structural floor: at 84.5 the section cuts only finishes (bottoms 84.48 / 84.49 = the "conflict", a correct reading). With STR
+  `IfcColumn,IfcSlab,IfcBeam` merged (scratch `/tmp/db2/JKR3.db`, 544 merged) the section at 84.5 cuts precast planks (85 + 85 mm, underside 84.33), a cast slab (150 mm, 84.35), a dropped
+  wet area (84.28 / 84.30, top 84.45), each with 10-30 mm of finish on top.
+- **F18 (P1, reader)** `sectionSlabs` (`dxf2bim/dxf2shell.js:170-205`) asks every rect whose top is the level to share ONE bottom, so finish-on-structure reads as a conflict. Measured per cut
+  span (JKR3, 84.5): the stack under the level bottoms at 84.33 over 13.4 m of cut, 84.35 over 3.4 m, finish alone 1.2 m. Proposal **§D57 (spec next)**: read the stack (READ when every stack
+  agrees; when they step, a best-effort amber underside = the stack under the longest cut, stated with the spread, one `element_defaults.json` setting to turn it off). Effect on the asks: Level 1
+  walls default to 84.33; against the model (a measurement, not a bar) 18 of the ~75 Level 1 walls stop at 84.33, 26 at 83.85 and 10 at 83.18 (ceilings the drawings do not show).
+
+### S2. The seams after Convert (owner: "they ended up as IFC thus already a Modeller subject: ARC modification, save as DB, even MEP walking: study such seams")
+Measured headless (software GL) on the marked shed, the one set that converts in the page today. Harness: session scratchpad `seams.js`, not committed.
+| # | Seam | Measured | Where it breaks |
+|---|---|---|---|
+| SEAM-1 | Walk services straight after Convert | `discWalkAll` -> "roster empty", nothing walked | the walker reads `window.__dwBuf`, set only when a .db is opened (`str_walker_outliner.js:194`; refusals `modeller.html:4139, 4547`): Convert never sets it |
+| SEAM-2 | Edit the converted ARC in 3D | move / rotate / scale / delete act on the DXF bodies (no guard); a 0.5 m wall move = 1 op | no tool changes a wall's type, thickness or height, or swaps a door type. Doors and windows do not ride their wall: the riders need `__arcGuidByFid` + `swXEdges.fills` (set only by the ARC seed, `arc_editable.js:450`, `str_walker_outliner.js:595`), and DXF cuts carry `slide.fillingFid: null` (`dxf2bim_import.js:602`). The shed has 0 cuts (structure path: its 4 doors are free bodies) |
+| SEAM-3 | Save as Viewer DB | 512 elements = the Convert; the moved wall's new bbox is in the DB (1 row), the old one is not (0) | the export is op-log based (good: edits reach it), but `bonsai_ifc.js` writes `IfcRelVoidsElement` per cut (273) and no `IfcRelFillsElement`, so `rel_fills_host` = 0 rows; IfcSpace 0. After the IFC / DB round trip the ARC seed still has no door-wall edges |
+| SEAM-4 | Reopen the DB, walk MEP | rooms injected: 1, approximate (`suspect=1`); roster ACMV / ELEC / FP / PLB; placements planned 50 / 89 / 47 / 2, **all refused "no LOD400 mesh", 0 placed, 241 s** | the rules come from `terminal_rules.db` by a name regex (`modeller.html:5506`); a placement's `geometry_hash` resolves only against the OPENED building's own geometry (`__dwGeoBuf`, `str_walker_outliner.js:701`; `modeller.html:4100-4112`), which has no fixture meshes. So MEP walking places nothing on any DXF2BIM building (never a box: by design) |
+| SEAM-5 | Reach Convert on a standard set | Duplex marked set + the OCI library: gate shut, 12 `GAP:fill_unbound`; the CLI on the same set: 0 bodies | a standard set converts only when every opening has a library fill (§L3 "never a box"), so SEAM-1..4 are reachable today on the shed only |
+
+**Proposals (spec only, the owner decides; each witness claim written first when built):**
+- P-S1 *Convert hands the model to the walker without a file round trip.* Build the Viewer DB in memory (`exportViewerDb({download:false})`) and open it through the same open path, keeping the
+  op-log. Witness: `discWalkAll` straight after Convert reaches the roster, and its rooms are the ones the round trip gives (1 on the shed). Actions: Export + save + Open + pick (4) -> 0.
+- P-S2 *Convert writes the host edges.* Set `slide.fillingFid` to the fill's fid (fills commit in the same gesture) and publish the guid bridge + fills edges from `groups`. Witness: moving a host wall
+  0.5 m moves its door 0.5 m; falsifier: a door in another wall stays put.
+- P-S3 *The export keeps them.* `bonsai_ifc.js` writes `IfcRelFillsElement` for a cut with a `fillingFid`. Witness: `rel_fills_host` rows = the filled openings; the reopened ARC seed's riders work.
+- P-S4 *Walked fixtures from one mesh store* (= FOUNDATION §5 F5): resolve fixture hashes from the rules' source geometry or the OCI library, not the opened building only. Until then the
+  refusal should say where it looked ("fixtures are Terminal's meshes; this building has none") and stop after the first discipline proves it (241 s to refuse 4).
+- P-S5 *Type / thickness / height edits go through the drawing.* A property edit on a converted wall writes the marking (`@SIZE` / `@WALLTOP` / a schedule row) and re-converts, so the
+  marked DXF stays the one source; an in-3D-only edit would drift from the sheets.
