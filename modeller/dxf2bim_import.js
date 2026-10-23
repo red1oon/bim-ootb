@@ -269,7 +269,9 @@
     var SET = setWith(setName); if (!SET || !sheet || sheet.desc.view !== 'PLAN' || !(sheet.desc.units in MK.UNITS)) return null;
     var run = B.run(sheet.text, MK.withLayers(SET.MAP_PLAN, sheet.desc), cfgFor(sheet.desc), { DxfParser: DxfParser, hashHex: (opts && opts.hashHex) || sha256Hex, library: [] });
     return { factor: MK.UNITS[sheet.desc.units], snap_tol: C.CFG.snap_tol, doors: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'door' && o.params.hinge; }).map(function (o) {
-      var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }) };
+      var P = o.params; return { handle: P.handle, hinge: P.hinge, width: P.width, swing_start_deg: P.swing_start_deg, swing_end_deg: P.swing_end_deg, opening_box: P.opening_box || null }; }),
+      windows: run.ops.filter(function (o) { return o.op_type === 'DXF_OPENING' && o.params.kind === 'window' && o.params.bbox; }).map(function (o) {   // §D56 the window clusters (§D55) of the same run: width = the drawn long side
+        var b = o.params.bbox; return { handle: o.params.handle, bbox: b.slice(), width: Math.max(b[2] - b[0], b[3] - b[1]) }; }) };
   }
 
   // ---- §L4.4 a Tag-tool click on an ELEVATION opening → the plan position + z the reader binds (pure; the reader's own functions) ----
