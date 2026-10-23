@@ -18,6 +18,12 @@ WALKED: s03 inside, empty, the ELEC row clicked (cut); s04 the lamps build up, t
 reveal outward from the riser, followed; s08 a sprinkler head macro, then its joint mini-BOM (drop, transition, tee: §D66); s09 out and a last turn, end.
 **Every number said is a `§FILM_FACT` of the take.** Not a take: `§PAGEERR`, a missing fact, 0 lights / sprinklers / pipe segments, a follow that never saw the front move (`§FILM_FOLLOW moves=0`).
 
+## ▶▶▶ §LAST PART v2c (2026-10-23, owner: "Cut out seconds 57 - minute 1.04, and the last 2 secs. Last card, say how the trilogy is unified under a single kernel and data model"): LOCAL ONLY, SUPERSEDES v2b
+**Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2c_short.mp4`, 95.5 s, -16.6 LUFS. An edit of v2b, no new take: cut 57.4-64.0 s (the owner's 57.0 moved 0.4 s so the s06 line, spoken
+to 57.3 s, ends whole; s07 starts at 65.6 s, untouched; 0.15 s audio fades at the join) and the last 2.0 s; an end card over the last 6.5 s in the chapter cards' style (dimmed frame, coral kicker
+"BIM OOTB TRILOGY", title "ONE KERNEL, ONE DATA MODEL", line "Viewer, Modeller and ERP share one kernel and one data model, so in principle each works with the others without further integration."):
+the owner's statement, worded plainly with their "in principle"; no number on the card.
+
 ## ▶▶▶ §LAST PART v2b RESULT (2026-10-23, after the owner's look: "sprinkler ducting clash overlap the lighting ones"): RECORDED, LOCAL ONLY, SUPERSEDES v2
 **Film:** `~/Videos/DXF2BIM_Shed_LastPart_1920x1080_2026-10-23_v2b_short.mp4`, 104.1 s, 2,601 frames == master, -16.7 LUFS, 9 / 9 DETAIL, 0 black frames, `§PAGEERR` 0. Take `take_v2d`, main + §D70.1 + §D72.
 Facts: 512 elements, 69 lights, 30 sprinklers, 24 lamps stepped aside (§D72), 36 pipes, 90 joint parts, joint close-up visible. Cuts: ELEC compute 44.7 s (another session loaded the machine), FP 0.8 s;
