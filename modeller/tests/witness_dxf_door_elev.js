@@ -8,6 +8,7 @@
  *   D4 READ     — every door read off an elevation has height = its model door's z-range to 3 mm: 0 wrong.
  *   D5 NO LOSS  — against BASE: doors, elevation-read doors, blocking and height gaps do not get worse.
  *   D6 FALSIFIER — DXF_RECESSED_DOOR=0 gives no recessed read; DXF_DOORBOX=0 as well gives fewer elevation reads.
+ *   D8 FILLS    — with the library (OCI; unreachable -> INCONCLUSIVE) the Duplex fills/types do not get worse: an elevation-read door binds by its leaf height.
  *   D7 SAME     — window ops byte-identical to BASE.
  * Usage: NODE_PATH=<dir with better-sqlite3> BASE=<modeller dir at origin/main> node modeller/tests/witness_dxf_door_elev.js <Node model .db> [<more .db>]
  */
@@ -67,4 +68,16 @@ dbs.forEach(db => {
     check('D6[' + name + ']', 'FALSIFIER: DXF_RECESSED_DOOR=0 loses the recessed reads; with DXF_DOORBOX=0 too, fewer still (never more)', offR && offB && offR.recessed === 0 && offB.recessed === 0 && offB.elevation <= offR.elevation && offR.elevation <= c1.elevation, `recessed_off=${JSON.stringify(offR)} both_off=${JSON.stringify(offB)} base=${JSON.stringify(c0)} new=${JSON.stringify(c1)}`);
   } else say('INCONCLUSIVE D5/D6/D7[' + name + '] no BASE');
 });
-say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
+(async () => {   // D8: with the library, an elevation-read door binds by its LEAF height (the schedule path's rule): the fills that bind do not fall, none go unbound that BASE bound
+  const dx = dbs.find(d => /DXARC/.test(d));
+  if (!dx || !BASEL) { say('INCONCLUSIVE D8 | needs the Duplex db (DXARC) and BASE'); }
+  else {
+    const con = new Database(dx, { readonly: true }), q = s => con.prepare(s).all(), one = L => { const R = L.S.writeStdSet(q, 'X', {}), Dm = L.Mk.deriveMarks(R, { B: L.B, DxfParser: L.DxfParser, hashHex, MK: L.MK, SHC: L.SHC, SCOPES: L.SC }, { set: 'X' }); return L.I.readSheets(Object.keys(Dm.files).map(n => ({ name: n, text: Dm.files[n] }))); };
+    let lib = null; try { lib = (await NEW.I.loadOci(one(NEW), { fetchJson: async u => (await fetch(u)).json(), base: 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/dxf2bim/library/' })).library; } catch (e) { say('  (library: ' + e.message + ')'); }
+    if (!lib) say('INCONCLUSIVE D8 | no library reachable: nothing judged');
+    else { const cnt = (L, c) => { const v = L.I.convert(one(L), { library: lib, defaultsRef: { defaults: { 'type.size_tie': { value: 'none' } } } }).verdict; return v.blocking.concat(v.advisory).filter(b => b.code === c).length; };
+      const a = [cnt(BASEL, 'GAP:fill_unbound'), cnt(BASEL, 'GAP:type_unbound')], n = [cnt(NEW, 'GAP:fill_unbound'), cnt(NEW, 'GAP:type_unbound')];
+      check('D8[DXARC]', 'with the library the fills do not get worse: fill_unbound and type_unbound not above BASE (elevation-read doors bind by leaf height)', n[0] <= a[0] && n[1] <= a[1], `fill_unbound ${a[0]}->${n[0]} type_unbound ${a[1]}->${n[1]}`); }
+  }
+  say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);
+})();
