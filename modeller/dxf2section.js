@@ -78,7 +78,7 @@
         if (!profOff) {
           if (src !== 'label' || c.label == null) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'no profile stated (' + (src === 'default' ? 'the default width' : 'a size stated by the user') + '): the drawn prism stays' });
           else if (!pa.ok) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: pa.reason + ' (' + c.label + '): the drawn prism stays' });
-          else if (Math.abs(pa.b - s) > 1e-6) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'the size was overridden (' + r6(s) + ' m against the label\'s ' + pa.b + ' m): the drawn prism stays' });
+          else if (Math.abs(pa.b - s) > PF.EPS) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'the size was overridden (' + r6(s) + ' m against the label\'s ' + pa.b + ' m): the drawn prism stays' });
           else if (DF.use('profile.angle_mesh') === 'label') lPoly = PF.lPolygon(pa.b, pa.t, DF.use('profile.angle_heel'));
         }
         stations.forEach(function (n, ni) {

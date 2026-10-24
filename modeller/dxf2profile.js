@@ -8,7 +8,7 @@
   else root.Dxf2Profile = factory(root.Dxf2Prep);
 })(typeof self !== 'undefined' ? self : this, function (P) {
   'use strict';
-  var IN = 0.0254, S = P.Solid, r6 = function (v) { return Number(Number(v).toFixed(6)); };
+  var IN = 0.0254, EPS = 1e-6, S = P.Solid, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var frac = function (s) { var m = /^(\d+)\/(\d+)$/.exec(s); return m ? Number(m[1]) / Number(m[2]) : Number(s); };
   var INCH = /^(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+\/\d+|\d+(?:\.\d+)?)\s*"\s*(angle)?$/i, METRIC = /^L\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)(?:\s*mm)?$/i;
   // one equal-leg angle: { ok:true, b, t } in metres, or { ok:false, reason }
@@ -19,7 +19,7 @@
     if ((m = INCH.exec(t))) { if (!m[4]) return { ok: false, reason: 'the family is not stated (no "Angle"): a flat bar and a tube carry the same three numbers' }; b = frac(m[1]) * IN; d = frac(m[2]) * IN; th = frac(m[3]) * IN; }
     else if ((m = METRIC.exec(t))) { b = Number(m[1]) / 1000; d = Number(m[2]) / 1000; th = Number(m[3]) / 1000; }
     else return { ok: false, reason: 'no angle profile in the label' };
-    if (Math.abs(b - d) > 1e-6) return { ok: false, reason: 'unequal legs: the drawn square would change' };
+    if (Math.abs(b - d) > EPS) return { ok: false, reason: 'unequal legs: the drawn square would change' };
     if (!(th > 0 && th < b)) return { ok: false, reason: 'the thickness is not under the leg' };
     return { ok: true, b: r6(b), t: r6(th) };
   }
@@ -68,5 +68,5 @@
     var e = {}, ok = true; m.faces.forEach(function (f) { for (var i = 0; i < 3; i++) { var a = f[i], b = f[(i + 1) % 3], k = a < b ? a + '_' + b : b + '_' + a; (e[k] = e[k] || []).push(a < b ? 1 : -1); } });
     Object.keys(e).forEach(function (k) { if (e[k].length !== 2 || e[k][0] + e[k][1] !== 0) ok = false; }); return ok;
   }
-  return { angleOf: angleOf, lPolygon: lPolygon, prismBetween: prismBetween, axialFan: axialFan, watertight: watertight, areaL: function (b, t) { return t * (2 * b - t); } };
+  return { EPS: EPS, angleOf: angleOf, lPolygon: lPolygon, prismBetween: prismBetween, axialFan: axialFan, watertight: watertight, areaL: function (b, t) { return t * (2 * b - t); } };
 });
