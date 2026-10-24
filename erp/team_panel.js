@@ -42,6 +42,7 @@
       '</div>' +
       '<div id="tp-trial" style="margin-bottom:10px;color:#444">' + (v.trial ? 'System default is a <b>trial</b>: it covers one full test cycle (an order, its line and Complete). To keep going, use your own repository and key.' : 'Your own setup: no trial limit.') + '</div>' +
       '<div id="tp-pairsec" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
+      '<div id="tp-people" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
       '<div><button id="tp-mode" style="min-height:40px;cursor:pointer">' + (on ? 'Turn off team mode' : 'Turn on team mode') + '</button> ' +
         '<a id="tp-pair" href="../common/comm/comm_phone.html" target="_blank" style="display:inline-block;min-height:40px;line-height:40px;margin:0 8px">Pair this browser</a> ' +
         '<a id="tp-guide" href="team_guide.html" target="_blank" style="line-height:40px">Team guide</a> ' +
@@ -66,6 +67,14 @@
       var u = new URL(location.href); if (on) u.searchParams.delete('team'); else u.searchParams.set('team', '1'); location.href = u.toString(); };
     console.log('§TEAM_PANEL opened ' + JSON.stringify(v));
     if (global.TeamSync && global.TeamSync.pairState) { w.querySelector('#tp-pair').style.display = 'none'; renderPair(w); }
+    if (global.TeamSync && global.TeamSync.peopleView) { renderPeople(w); var onP = function () { if (document.body.contains(w)) renderPeople(w, true); else global.removeEventListener('team:people', onP); }; global.addEventListener('team:people', onP); }
+  }
+  // §13.12.G.1 / §13.12.H: the people strip — one renderer shared with the Modeller (common/comm/team_people_ui.js); this panel only decides WHEN to show it.
+  async function renderPeople(w, noRefresh) {
+    var T = global.TeamSync, UI = global.TeamPeopleUI, box = w.querySelector('#tp-people'); if (!box || !T || !UI) return;
+    var st = await T.pairState(); if (!st.enrolled) { box.style.display = 'none'; return; }
+    if (!noRefresh) { try { await T.refreshPeople(); } catch (e) {} }
+    UI.render(box, T);
   }
   // §13.9 pairing inside the panel (no phone page): Start a team · invite · Join · requests + role · Approve. Host-neutral: only TeamSync's pairing calls.
   async function renderPair(w) {
@@ -94,5 +103,5 @@
   // arriving by an invite link on a browser that is not in a team yet: open the panel with the invite prefilled
   global.addEventListener('load', function () { if (!/#join=[0-9a-f]{64}/.test(location.hash) || !modeOn()) return;
     var n = 0, t = setInterval(function () { if (global.TeamSync && global.TeamSync.pairState) { clearInterval(t); global.TeamSync.pairState().then(function (st) { if (!st.space) open(); }); } else if (++n > 200) clearInterval(t); }, 150); });
-  global.TeamPanel = { open: open, describe: describe, modeOn: modeOn };
+  global.TeamPanel = { open: open, describe: describe, modeOn: modeOn, renderPeople: renderPeople };
 })(typeof window !== 'undefined' ? window : globalThis);

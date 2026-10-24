@@ -7,5 +7,5 @@
  * repository bim-teams-trial only, Contents read/write, with an expiry) and pastes it below. */
 (function (g) {
   'use strict';
-  g.TeamDefaults = { owner: 'red1oon', repo: 'bim-teams-trial', token: '', postbox: { url: '', secret: '' }, trialCycles: 1, trialOpCap: 60 };
+  g.TeamDefaults = { owner: 'red1oon', repo: 'bim-teams-trial', token: '', postbox: { url: '', secret: '' }, trialCycles: 1, trialOpCap: 60, focusTtlMs: 1800000 };
 })(typeof window !== 'undefined' ? window : globalThis);

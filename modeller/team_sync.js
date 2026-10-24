@@ -110,7 +110,7 @@
         else if (trial && trial.finished) { localOnly[row.uu] = trial.reason; log('§TEAM_LOCALONLY op=' + row.type + ' row=' + row.id + ' reason=' + trial.reason + ' (NOT SENT)'); }
         else {
           try {
-            var a = await S.author({ target: t.target, body: t.body, refs: [], intent: t.intent, ts: row.ts });
+            var a = await S.author({ target: t.target, body: t.body, refs: [], intent: t.intent, ts: Date.now() });   // wall clock: the kernel rows carry deterministic synthetic timestamps (2023-11 + n s), useless for "active N min ago" (§13.12.G.1); ts is display-only, never ordering (§15.3)
             sent[row.uu] = a.hash; n++; rec.shared = CLASS[row.type] === 'create';
             log('§TEAM_OUT op=' + row.type + ' as=' + t.body.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' cols=' + Object.keys(t.body.params.fields || t.body.params.changes).join(',') + ' hash=' + a.hash.slice(0, 12));
           } catch (e) { localOnly[row.uu] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + row.type + ' row=' + row.id + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
@@ -208,8 +208,10 @@
     try {
       return await exclusive(async function () {
         await scanInner();                                                           // anything committed but not yet authored goes out in THIS visit
+        updateFocus();                                                               // what is selected NOW is what the Visit advertises (a rebuild may renumber rows and drop the selection)
         var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
         var pj = await rebuildInner();
+        await peopleRound();                                                         // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused + ' gaps=' + rep.gaps +
             ' | projection kept=' + pj.kept + ' (after=' + pj.afterProjection + ') projected=' + pj.projected + ' skipped=' + pj.skipped + ' heldCols=' + pj.held + ' remapped=' + pj.remapped + ' remapMiss=' + pj.missed + ' rebuild=ok verifyChain=' + (pj.verify ? 'ok' : 'FAIL'));
         await persist(); await render();
@@ -248,7 +250,75 @@
       return '<div class="team-conflict" data-uu="' + k.uu + '" data-table="' + k.table + '" data-col="' + k.col + '">⚠ ' + k.table + ' ' + (byUu[k.uu] ? '<b>' + byUu[k.uu] + '</b> ' : '') + '(' + k.uu.slice(0, 8) + ') · ' + k.col + ': values ' +
         k.candidates.map(function (x) { return JSON.stringify(decV(x.value)); }).join(' / ') + ', kept ' + JSON.stringify(decV(k.before)) + ' — ' + MSG_CRM + '</div>'; }).join('');
     c.setAttribute('data-team', 'ready'); c.setAttribute('data-conflicts', String(cf.length)); c.setAttribute('data-localonly', String(lo));
+    ensurePeopleUi();
   }
+
+  // ═══ PEOPLE STRIP (TEAMWORK_FRAMEWORK §13.12.G.1) — Witness: W-PEOPLE-MODELLER (modeller/tests/witness_people_modeller.js) ═══
+  // Seam: the Modeller's own `dagevu:select` event (setSelectionIds fires it on every selection change) + Bonsai._selSet. Focus = the SHARED team elements currently selected (max 5).
+  // NAMED LIMITS: L2 no badge on the 3D mesh / outliner row (no overlay hook) — the heads-up is the label #team-headsup, the list is #team-people; no role scope here (no AD dictionary).
+  var TP = global.TeamPeople, TFo = global.TeamFocus, tfBoard = null, tfPipe = null, focusOwn = [], focusSince = null, focusObjs = [], headsArr = [], peopleList = [], pview = null,
+      clock = function () { return Date.now(); }, lastHuKey = '', peopleBox = null;
+  function board() { if (!TFo || !S || !pipe) return null; if (!tfBoard || tfPipe !== pipe) { tfPipe = pipe; tfBoard = TFo.create({ pipe: pipe, self: dev, space: cfg.space, person: dev.person_uu, log: log }); } return tfBoard; }
+  function selectedShared() {
+    var O = global.Bonsai && global.Bonsai.oplog; if (!O || !O.db || !global.Bonsai._selSet) return [];
+    var ids = Array.from(global.Bonsai._selSet).map(Number).filter(function (n) { return isFinite(n); }); if (!ids.length) return [];
+    return readRows(O.db, 'id IN (' + ids.join(',') + ')').filter(function (r) { return CLASS[r.type] === 'create' && (r.tag === 'team' || !!sent[r.uu]); })
+      .map(function (r) { return { table: TABLE, uu: r.uu, label: String(r.type).replace(/^GEOM_/, '').toLowerCase() + ' ' + r.uu.slice(0, 8) }; });
+  }
+  function updateFocus() {
+    var now = Date.now(), keep = {}; focusOwn.forEach(function (e) { keep[e.uu] = e; });
+    var nxt = selectedShared().slice(0, 5).map(function (e) { return { table: e.table, uu: e.uu, label: e.label, since: keep[e.uu] ? keep[e.uu].since : now }; });
+    if (nxt.map(function (e) { return e.uu; }).join() !== focusOwn.map(function (e) { return e.uu; }).join()) { focusSince = now; log('§PEOPLE_FOCUS_OWN ' + (nxt.length ? 'selected ' + nxt.map(function (e) { return e.label; }).join(', ') : 'none selected')); }
+    focusOwn = nxt; paintHeadsUp();
+  }
+  function allEnvs() { return S.query('SELECT envelope FROM cl_op').map(function (r) { return JSON.parse(r.envelope); }); }
+  async function refreshPeople() {
+    if (!S || !TP || !dev) return null;
+    var L = await S.order(), dirc = TP.directoryFrom(L.roster, null), me = dirc.filter(function (p) { return p.kids.indexOf(dev.kid) >= 0; })[0] || null, D = global.TeamDefaults || {};
+    peopleList = TP.rank(allEnvs(), headsArr, focusObjs, clock(), { directory: dirc, ttlMs: D.focusTtlMs, mode: 'all', selfPerson: me && me.person });
+    var col = TP.collapse(peopleList, 'all');
+    pview = { me: me, mode: 'all', effectiveMode: 'all', hide: !!(cfg && cfg.hideFocus), people: peopleList, shown: col.shown, others: [], inbox: [], scope: null, scopeAvailable: false, directory: dirc, unsupported: board() && board().unsupported() };
+    log('§PEOPLE_VIEW mode=all people=' + peopleList.length + ' focusObjs=' + focusObjs.length + ' heads=' + headsArr.length + ' order=[' + peopleList.map(function (p) { return p.name + (p.self ? '*' : '') + ':' + (p.ageMs == null ? '-' : Math.round(p.ageMs / 1000) + 's') + ':' + p.focus.length; }).join(', ') + ']');
+    var lab = $('team-label'); if (lab) lab.title = peopleList.map(function (p) { return p.name + ' — ' + (p.lastActive == null ? 'no activity yet' : 'active ' + TP.ageText(p.ageMs)) + (p.focus.length ? ' — on ' + p.focus.map(function (f) { return f.label; }).join(', ') : ''); }).join('\n');
+    paintHeadsUp(); renderPeoplePanel(); try { global.dispatchEvent(new CustomEvent('team:people')); } catch (e) {}
+    return pview;
+  }
+  async function peopleRound() {
+    try {
+      var L = await S.order(), R = L.roster; if (!R.devices[dev.kid]) return;
+      var b = board(); if (!b) return;
+      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince });
+      var col = await b.collect(R); focusObjs = col.focus; headsArr = col.heads;
+      await refreshPeople();
+    } catch (e) { log('🔴 §PEOPLE_ROUND ' + (e && e.stack || e)); }
+  }
+  function paintHeadsUp() {
+    var old = $('team-headsup'); if (old) old.remove();
+    var me = pview && pview.me; if (!me || !focusOwn.length || !document.body) { lastHuKey = ''; return; }
+    var lines = []; focusOwn.forEach(function (f) { TP.headsUpFor(f.uu, me.person, peopleList).forEach(function (h) { lines.push({ person: h.person, name: h.name, uu: f.uu, ageMs: h.ageMs }); }); });
+    if (!lines.length) { if (lastHuKey) log('§PEOPLE_HEADSUP none'); lastHuKey = ''; return; }
+    var div = document.createElement('div'); div.id = 'team-headsup'; div.setAttribute('role', 'status');
+    div.style.cssText = 'position:fixed;left:8px;bottom:84px;z-index:42;max-width:70vw;min-height:44px;box-sizing:border-box;padding:8px 12px;border:1px solid #b36b00;border-radius:8px;background:#fff4e0;color:#5a3600;font:14px/1.4 system-ui,sans-serif';
+    div.innerHTML = lines.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '" data-uu="' + h.uu + '"><b>' + global.TeamPeopleUI.esc(h.name) + '</b> is editing this element (' + TP.ageText(h.ageMs) + ')</div>'; }).join('');
+    document.body.appendChild(div);
+    var key = lines.map(function (h) { return h.uu + ':' + h.person; }).join(','); if (key !== lastHuKey) log('§PEOPLE_HEADSUP by=[' + lines.map(function (h) { return h.name + ' on ' + h.uu.slice(0, 8) + ':' + TP.ageText(h.ageMs); }).join(', ') + ']'); lastHuKey = key;
+  }
+  async function cfgSet(k, v) { var c = (await kvGet('cfg')) || {}; c[k] = v; await kvPut('cfg', c); if (cfg) cfg[k] = v; }
+  async function setHide(on) { await cfgSet('hideFocus', !!on); log('§PEOPLE_SWITCH hideFocus=' + !!on + ' (applies from the next Visit)'); }
+  function elLabel(o) { var f = (o.body.params && o.body.params.fields) || {}; return f.geom_op ? String(f.geom_op).replace(/^GEOM_/, '').toLowerCase() + ' ' + o.target.uu.slice(0, 8) : null; }
+  function history(person, n) { return pview ? TP.historyOf(person, allEnvs(), n == null ? 10 : n, { directory: pview.directory, labelOf: elLabel }) : []; }
+  var PEOPLE_API = { peopleView: function () { return pview; }, history: history, setHide: setHide, setMode: function () {}, refreshPeople: refreshPeople };
+  function renderPeoplePanel() { if (peopleBox && peopleBox.style.display !== 'none' && global.TeamPeopleUI) global.TeamPeopleUI.render(peopleBox, PEOPLE_API); }
+  function ensurePeopleUi() {
+    if ($('team-people-toggle') || !document.body) return;
+    var t = document.createElement('button'); t.id = 'team-people-toggle'; t.type = 'button'; t.setAttribute('aria-label', 'People'); t.title = 'People — who is on what';
+    t.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:42;width:44px;height:44px;border-radius:22px;border:1px solid #1f5fd6;background:#1f5fd6;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+    t.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';   // Lucide users, verbatim (as erp/icons.js)
+    var b = document.createElement('div'); b.id = 'team-people'; b.style.cssText = 'position:fixed;right:8px;bottom:60px;z-index:42;width:min(360px,92vw);max-height:60vh;overflow:auto;box-sizing:border-box;padding:12px;border-radius:12px;background:#fff;color:#1d1d1f;font:14px/1.45 system-ui,sans-serif;display:none';
+    peopleBox = b; document.body.appendChild(b); document.body.appendChild(t);
+    t.addEventListener('click', async function () { if (b.style.display === 'none') { b.style.display = 'block'; try { await refreshPeople(); } catch (e) {} if (!pview) b.innerHTML = '<div style="color:#666">Press Visit first — people appear after your first Visit.</div>'; } else b.style.display = 'none'; });
+  }
+  global.addEventListener('dagevu:select', function () { if (S) updateFocus(); });
 
   // ═══ boot ═══════════════════════════════════════════════════════════════════════════════════════════════════════
   async function boot() {
@@ -272,7 +342,9 @@
   }
 
   global.TeamSyncModeller = { scan: scan, visit: visit, ready: ready, settle: function () { return chain; }, store: function () { return S; }, render: render,
-                              classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV };
+                              classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV,
+                              peopleView: PEOPLE_API.peopleView, refreshPeople: refreshPeople, history: history, setHide: setHide, focusOwn: function () { return focusOwn.slice(); }, updateFocus: updateFocus,
+                              _setClock: function (f) { clock = f || function () { return Date.now(); }; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);

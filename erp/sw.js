@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v903';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v904';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -285,6 +285,9 @@ const PRECACHE_ASSETS = [
   'team_panel.js',     // TEAMWORK_FRAMEWORK §13.8 — the Team pill's panel (loaded on every idempiere.html page, inert until opened)
   'team_guide.html',   // §13.8 T6 — the team user guide the panel links to
   'team_sync.js',      // TEAMWORK_FRAMEWORK §13.1 W1 — the team-mode adapter (written into idempiere.html only with ?team=1; inert otherwise)
+  '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths (rank / history / heads-up / role scope / inbox)
+  '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe (s/<space>/f/<kid>)
+  '../common/comm/team_people_ui.js', // §13.12.G.1 — the people strip DOM shared with the Modeller
   'crud_overlay.js',   // SO_FULL_CRUD_GAP.md T1-T4 — CRUD ring-of-fire + DocAction overlay (window.__crud); glassbowl + idempiere both mount it
   'erp_relay_client.js', // ERP_MULTIUSER_CONCURRENCY_POC.md — relay transport client (idempiere.html loads it; precache so cross-device sync works offline-installed)
   'erp_sync_fsm.js',   // ERP_MULTIUSER_CONCURRENCY_POC.md — engine-proven rebase loop (W-N-CONVERGE); idempiere.html loads it

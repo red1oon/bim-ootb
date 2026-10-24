@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v155';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v156';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -62,6 +62,9 @@ const PRECACHE_ASSETS = [
   'dw_instances_outliner.js',   // §I5 Walked Fixtures per-instance rows (W-E2E-INSTHIDE)
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
   'team_sync.js',     // TEAMWORK_FRAMEWORK §15 — the Modeller's team-mode adapter (written into modeller.html only with ?team=1 / teamMode; inert otherwise)
+  '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths
+  '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe
+  '../common/comm/team_people_ui.js', // §13.12.G.1 — the people strip DOM shared with the ERP Team panel
   'seed_trunk.js',
   'str_walker.js',
   'str_walker_bridge.js',
