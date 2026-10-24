@@ -38,7 +38,7 @@ const stale = ALLOW.filter(a => !all.some(h => h.file === a.file && h.lit.includ
 const ctl = scan('control.js', "var a = 'Rod'; var b = '0_FLOOR_PLAN.dxf'; var c = 'the farm shed'; // 'Win' only in a comment\n"), kinds = ctl.map(h => h.kind).sort().join(',');
 ok('G1c control: a layer literal, a sheet name and a building word ARE caught (a comment is not)', kinds === 'layer,sheet,word', kinds);
 // G3 ratchet
-const THR = /(?:<=?|>=?|===?|Math\.abs\([^)]*\)\s*<)\s*(-?\d*\.?\d+(?:e-?\d+)?)\b/g, count = src => { let n = 0, m; const code = strip(src); while ((m = THR.exec(code))) { const v = Math.abs(Number(m[1])); if (v !== 0 && v !== 1) n++; } THR.lastIndex = 0; return n; };
+const THR = /(?:<=?|>=?|===?|Math\.abs\([^)]*\)\s*<)\s*(-?\d*\.?\d+(?:e-?\d+)?)\b/g, count = src => { let n = 0, m; const code = strip(src); while ((m = THR.exec(code))) { const v = Math.abs(Number(m[1])); if (v !== 0 && v !== 1 && (!Number.isInteger(v) || v >= 10)) n++; } /* 2026-10-24: a tolerance or a cap (a fractional number, or an integer from 10 up); a small integer (an array length, an enum code, `=== 2`) is not a threshold */ THR.lastIndex = 0; return n; };
 const now = {}; ENGINE.forEach(f => { now[f] = count(fs.readFileSync(path.join(M, f), 'utf8')); });
 const BASE = path.join(__dirname, 'tolerance_baseline.json');
 if (process.argv.includes('--update')) { fs.writeFileSync(BASE, JSON.stringify(now, null, 1) + '\n'); console.log('§NOTE baseline written (only do this when the numbers went DOWN)'); }

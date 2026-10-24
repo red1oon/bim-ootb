@@ -8,9 +8,15 @@ const T = __dirname, V = path.join(T, '..', '..', 'viewer', 'tests'), BASE = pat
 const upd = process.argv.includes('--update'), only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const files = fs.readdirSync(T).filter(f => /^witness_(dxf_.*|ifc_valid|format|standards_pack|ids)\.js$/.test(f)).sort().map(f => path.join(T, f)).concat([path.join(V, 'witness_info_dxf2bim.js')]).filter(f => !only || f.includes(only));
 const ENVSIG = /ENOENT|MISSING input|Cannot find module '\/home\/[^']*\/(Projects\/)?bim-compiler|cannot be readonly|Received undefined|file is not a database|no such file or directory/;
+// Inputs the db-argument witnesses take (Node model dbs from scripts/extractIFC2DB.js, regenerate them: see the RESUME block of prompts/DXF2BIM_ARCHITECT_REVIEW.md). A witness whose files all exist RUNS with them and is PASS or FAIL;
+// one whose files are missing is ENV as before ("green means everything ran"). DXF_DB_DIR overrides /tmp/db2. SCASTLE = Ifc2x3_SampleCastle.ifc through the same script.
+const DBDIR = process.env.DXF_DB_DIR || '/tmp/db2', INPUTS = { bridge_long: ['CLINIC2'], curtain: ['HHSM2'], curtain_elev: ['HHSM2'], door_elev: ['CLINIC2'], door_swings: ['DXARC'], door_tag: ['DXARC'], exclude_std: ['DXARC'], level_datum: ['SCASTLE', 'DXARC'],
+  north: ['DXARC'], quality: ['HHSM2'], recessed: ['CLINIC2'], section_cut: ['DXARC'], section_onlevel: ['DXARC'], sheet_view: ['DXARC'], sidecar: ['DXARC'], slab_estimate: ['HHSM2'], slab_level: ['JKR3'], slab_outline: ['HHSM2'], stairs: ['DXARC'],
+  storey_absorb: ['JKR2'], tag_width: ['HHSM2'], valid: ['DXARC'], wall_line: ['DXARC'], walltop_default: ['HHSM2'], wand: ['DXARC'], win_tag_width: ['HHSM2'], window_angled: ['DXARC'], window_parts: ['JKR2'], window_schedule: ['DXARC'], wing_back: ['DXARC'], wing_vs_straight: ['DXARC'] };
+const argsOf = name => { const k = INPUTS[name.replace(/^witness_dxf_/, '')]; if (!k) return []; const a = k.map(n => path.join(DBDIR, n + '.db')); return a.every(x => fs.existsSync(x)) ? a : []; };
 const res = {};
 files.forEach(f => {
-  const name = path.basename(f, '.js'), t0 = Date.now(), r = cp.spawnSync('node', [f], { encoding: 'utf8', timeout: 590000, env: process.env }), out = (r.stdout || '') + (r.stderr || '');
+  const name = path.basename(f, '.js'), t0 = Date.now(), r = cp.spawnSync('node', [f].concat(argsOf(name)), { encoding: 'utf8', timeout: 590000, env: process.env }), out = (r.stdout || '') + (r.stderr || '');
   const hasFail = /§FAIL|^FAIL|^\s*(❌|✗)| FAIL [1-9]/m.test(out) || /§W-[A-Z-]+ FAIL/.test(out), skip = /§SKIP/.test(out);
   let st; if (r.status === 0 && !hasFail) st = skip ? 'SKIP' : 'PASS'; else if (ENVSIG.test(out) && !hasFail) st = 'ENV'; else st = 'FAIL';
   res[name] = st; console.log((st + '    ').slice(0, 5) + ' ' + name + '  (' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (st !== 'PASS' ? ', ' + (out.split('\n').filter(l => /§SKIP|MISSING|Error|ENOENT|FAIL/.test(l))[0] || '').replace(/\s+/g, ' ').slice(0, 110) : '') + ')');

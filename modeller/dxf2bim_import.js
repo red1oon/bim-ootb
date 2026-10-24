@@ -643,7 +643,7 @@
     });
     // 2b. §D59 (a) a drawn wall line = ONE wall body: the bodies of one storey that share class, layer, z-range, cross band and evidence kind and touch end to end along their axis become the union
     // prism; their cuts are re-parented to it. Not for a turned (framed) set: its openings are baked into the bodies.
-    if (!fr) (function () {
+    if (!fr && !(typeof process === 'object' && process.env && process.env.DXF_WALL_LINE === '0')) (function () {   // DXF_WALL_LINE=0: the falsifier / the witness's own before-merge run (same code, same guids)
       var WC = { IfcWall: 1, IfcCurtainWall: 1 }, tol = C.CFG.snap_tol, n = inserts.length, par = [], cutOf = {};
       cuts.forEach(function (c) { cutOf[c.params.parent] = true; });
       var box = inserts.map(function (o) { var P = o.params; if (!WC[P.ifc_class] || P.anchorOnly) return null; var b = P.bbox, c = P.placement, h = (b[5] - b[4]) / 2;

@@ -40,10 +40,11 @@ const vol = b => (b[3] - b[0]) * (b[4] - b[1]) * (b[5] - b[2]);
   const inside = c => { const b = wbox(T.inserts[c.params.parent].params), V = c.params.void, t = 1e-6; return [0, 1, 2].every(k => Math.min(V.c1[k], V.c2[k]) >= b[k] - t && Math.max(V.c1[k], V.c2[k]) <= b[k + 3] + t); };
   // the members' volume: the bodies BEFORE the merge, by member guid (a run of toOps with the merge off is not available; members are listed in provenance.members and the BASE toOps holds them)
   let volOk = 'no BASE', cutsSame = 'no BASE';
-  if (BASE) { const R1 = BASE.I.convert(BASE.I.readSheets(ex), { library: lib }), T0 = BASE.I.toOps(R1, {}), byG = {}; T0.inserts.forEach(o => { byG[o.outputGuid] = o; });
+  { const SELF = !BASE, LB = BASE || N; let T0;   // no BASE: this code's own run with the merge off (DXF_WALL_LINE=0): same code, same guids, so the members compare by guid (an older tree has other run ids and other member guids)
+    const R1 = LB.I.convert(LB.I.readSheets(ex), { library: lib }), byG = {}; if (SELF) process.env.DXF_WALL_LINE = '0'; try { T0 = LB.I.toOps(R1, {}); } finally { if (SELF) delete process.env.DXF_WALL_LINE; } T0.inserts.forEach(o => { byG[o.outputGuid] = o; });
     const bad = walls.filter(o => o.params.provenance.members).filter(o => Math.abs(vol(wbox(o.params)) - o.params.provenance.members.reduce((n, g) => n + vol(wbox(byG[g].params)), 0)) > 1e-6);
     volOk = bad.length === 0; cutsSame = T0.cuts.length === T.cuts.length && T0.fills.length === T.fills.length;
-    say('INFO before: wall bodies ' + T0.inserts.filter(o => WC[o.params.ifc_class]).length + ', cuts ' + T0.cuts.length + ', fills ' + T0.fills.length); }
+    say('INFO before (' + (SELF ? 'the merge off, DXF_WALL_LINE=0' : 'BASE') + '): wall bodies ' + T0.inserts.filter(o => WC[o.params.ifc_class]).length + ', cuts ' + T0.cuts.length + ', fills ' + T0.fills.length); }
   check('L1', 'a drawn line is ONE wall body; every void inside its parent; volume conserved; cuts and fills unchanged', T.lines && T.lines.bodies_after < T.lines.bodies_before && T.cuts.every(inside) && volOk === true && cutsSame === true,
     `lines=${JSON.stringify(T.lines)} walls=${walls.length} voids_inside=${T.cuts.filter(inside).length}/${T.cuts.length} volume_conserved=${volOk} cuts_fills_same=${cutsSame}`);
   { const R2 = N.I.convert(N.I.readSheets(ex), { library: lib }), drawn = new Set(R2.els.map(e => 'dxf-' + e.guid));

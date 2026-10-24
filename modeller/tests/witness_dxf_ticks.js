@@ -32,14 +32,14 @@ runE2E('W-DXF-TICKS', async (t) => {
     await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 120000 }); await t.sleep(700); };
   const props = (name) => pg.evaluate((n) => { const sh = window.DxfMetaEditor.state.sheets.find(s => s.name === n); const P = sh.prop || { list: [], refused: [] };
     return { list: P.list.map(p => [p.rule, p.key, p.value, p.x, p.y, p.why]), refused: P.refused.map(r => r.rule + ': ' + r.why) }; }, name);
-  const YEL = /245,\s*217,\s*10/;
+  const YEL = /245,\s*217,\s*10/, ORG = /255,\s*122,\s*26/;   // §D36: a tick / ground suggestion is INFERRED (geometry): the orange tier, not the yellow one
   await open([f('plan.dxf', planDxf), f('elev.dxf', elevDxf)]);
   let P = await props('elev.dxf'); console.log('props elev', JSON.stringify(P));
   const gh = P.list.filter(p => p[0] === 'PR-GRID-TICK'), gz = P.list.filter(p => p[0] === 'PR-Z-GROUND');
   t.assert('T1 suggestions sit at the TICK positions (A=1000, B=4000), not at the label text (990 / 3990), and the ground line gives @Z=0 at y 0', gh.length === 2 && gh.every(p => p[1] === 'GRIDH') && gh.find(p => p[2] === 'A')[3] === 1000 && gh.find(p => p[2] === 'B')[3] === 4000 && gz.length === 1 && gz[0][2] === '0' && gz[0][4] === 0, JSON.stringify({ gh, gz }));
   t.assert('T3 CONTROL label C has no tick near: not proposed', !P.list.some(p => p[2] === 'C'), JSON.stringify(P.list.map(p => p[2])));
   const yel = await pg.evaluate(() => { const r = [...document.querySelectorAll('#dm-panel .dm-pr')].filter(e => /PR-GRID-TICK|PR-Z-GROUND/.test(e.getAttribute('data-prop') || '')); return { n: r.length, bg: r.length ? getComputedStyle(r[0]).backgroundColor : null }; });
-  t.assert('T1b the tick / ground suggestions are drawn yellow', yel.n >= 3 && YEL.test(yel.bg || ''), JSON.stringify(yel));
+  t.assert('T1b the tick / ground suggestions are drawn in the INFERRED (orange) tier, not the default yellow (§D36, EVIDENCE_TIERS)', yel.n >= 3 && ORG.test(yel.bg || '') && !YEL.test(yel.bg || ''), JSON.stringify(yel));
   // tick the three suggestions with real clicks (the sheet-level rows)
   for (let i = 0; i < 12; i++) { const n = await pg.evaluate(() => { const b = [...document.querySelectorAll('#dm-panel .dm-pr')].filter(e => /PR-GRID-TICK|PR-Z-GROUND/.test(e.getAttribute('data-prop') || '')).map(e => e.querySelector('[data-act="confirm"]')).filter(Boolean)[0]; if (b) { b.click(); return 1; } return 0; }); if (!n) break; await t.sleep(600); }
   await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 120000 }); await t.sleep(600);

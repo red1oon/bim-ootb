@@ -55,13 +55,14 @@ runE2E('W-DXF-STRUCT', async (t) => {
   const CLIm = require('../dxf2bim_cli.js'), dd = fs.mkdtempSync(path.join(os.tmpdir(), 'par-')), paths = brow.eff.map(x => { const q = path.join(dd, x.name); fs.writeFileSync(q, x.text); return q; });
   const cres = CLIm.run({ sheets: paths, layer: [], datum: [], haxis: [], bodyz: [], choice: [], accept: false, set: null, level: null, ifc: false }, () => {});
   const node = await CLIm.writeIfc(cres, dd), nodeText = fs.readFileSync(path.join(dd, 'model.ifc'), 'utf8');
-  const prods = tx => (tx.match(/#\d+=IFC(COLUMN|BEAM|FOOTING|MEMBER|PLATE|WALL|ROOF)\('[^']*',\$,'[^']*',\$,[^,]*,\$,#\d+,\$,[^)]*\)/g) || []).map(l => l.replace(/#\d+=/, '').replace(/\('[^']*'/, "('G'").replace(/#\d+/g, '#')).sort();
+  // IfcProduct: GlobalId, OwnerHistory, Name, Description, ObjectType, ObjectPlacement, Representation, Tag, PredefinedType (the placement is written since the WR1 fix)
+  const prods = tx => (tx.match(/#\d+=IFC(COLUMN|BEAM|FOOTING|MEMBER|PLATE|WALL|ROOF)\('[^']*',\$,'[^']*',\$,[^,]*,#\d+,#\d+,[^,]*,[^)]*\)/g) || []).map(l => l.replace(/#\d+=/, '').replace(/\('[^']*'/, "('G'").replace(/#\d+/g, '#')).sort();
   const pts = tx => { const out = []; (tx.match(/IFCCARTESIANPOINTLIST3D\(\(([^;]*)\)\)\);/g) || []).forEach(l => { const nums = (l.match(/-?\d+\.?\d*(?:E[-+]?\d+)?/gi) || []).map(Number); out.push(nums); }); return out; };
   const bp = prods(brow.text), np = prods(nodeText);
   const bv = pts(brow.text).map(a => a.slice(0).sort((x, y) => x - y)), nv = pts(nodeText).map(a => a.slice(0).sort((x, y) => x - y));
   const norm = L => L.map(a => a.map(v => (Math.round(v * 1000) / 1000 + 0).toFixed(3)).join(',')).sort();
   const storeyOf = tx => (tx.match(/IFCBUILDINGSTOREY\('[^']*',\$,'([^']*)'/) || [])[1];
-  t.assert('S10 PARITY page IFC == headless IFC: 3 IfcColumn products with the same Name/ObjectType/PredefinedType, the same storey, and the same vertices (3 mm)', bp.length === 3 && JSON.stringify(bp) === JSON.stringify(np) && storeyOf(brow.text) === storeyOf(nodeText) && JSON.stringify(norm(bv)) === JSON.stringify(norm(nv)), JSON.stringify({ prodEq: JSON.stringify(bp) === JSON.stringify(np), bs: storeyOf(brow.text), ns: storeyOf(nodeText), nb: bv.length, nn: nv.length, b0: norm(bv).slice(0, 1), n0: norm(nv).slice(0, 1) }));
+  t.assert('S10 PARITY page IFC == headless IFC: 3 IfcColumn products with the same Name/ObjectType/PredefinedType, the same storey, and the same vertices (3 mm)', bp.length === 3 && JSON.stringify(bp) === JSON.stringify(np) && storeyOf(brow.text) === storeyOf(nodeText) && JSON.stringify(norm(bv)) === JSON.stringify(norm(nv)), JSON.stringify({ nprods: bp.length, prodEq: JSON.stringify(bp) === JSON.stringify(np), bs: storeyOf(brow.text), ns: storeyOf(nodeText), nb: bv.length, nn: nv.length, b0: norm(bv).slice(0, 1), n0: norm(nv).slice(0, 1) }));
 
   // S7 round trip: the effective sheets (the markings the user's choices wrote) re-opened
   const eff = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => ({ name: sh.name, text: window.DxfMetaEditor.effText(sh) })));

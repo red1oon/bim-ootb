@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — W-IFC-VALID (prompts/DXF2BIM_FOUNDATION_LANE.md §1). Issue it proves or disproves: the IFC the product writes is VALID IFC4 (schema level, independent validator), not merely "opens in our Viewer". READ THE LOG; a SKIP is printed loudly and proves nothing.
 // V1 headless writer (CLI): the real shed -> 0 validation statements, header fine, evidence set named Dxf2Bim_Evidence (no reserved Pset_ name); V2 the PAGE writer on the same marked sheets: the same; V3 the doors carry their drawn size (OverallHeight 2.3876 m = 94 in on the real shed, not `*`); V4 CONTROL: the same file with the old defect put back (`*` attributes on a door, `($)` header) must FAIL the validator (so a green V1 means something); V5 the database extracted from it still carries every evidence row (the extractor reads the new name; and the old name, checked on a renamed copy).
-// usage: NODE_PATH=~/bim-compiler/node_modules EXTRACTOR=<bim-compiler>/scripts/extractIFC2DB.js node modeller/tests/witness_ifc_valid.js     (SKIP without the real sheets or without ifcopenshell)
+// usage: NODE_PATH=~/bim-compiler/node_modules [EXTRACTOR=<an extractor CLI>] node modeller/tests/witness_ifc_valid.js     (SKIP without the real sheets or without ifcopenshell)
 'use strict';
 const PY = require('./pyenv.js'), fs = require('fs'), path = require('path'), cp = require('child_process'), os = require('os'), http = require('http');
 const ROOT = path.join(__dirname, '..', '..'), SHD = path.join(process.env.HOME, 'Projects/SYSNOVA/DXF2BIM/ShedDrawing/sheets') + '/', CLI = path.join(ROOT, 'modeller', 'dxf2bim_cli.js');
-const EXTRACTOR = process.env.EXTRACTOR || path.join(process.env.HOME, 'bim-compiler', 'scripts', 'extractIFC2DB.js');
+const EXTRACTOR = process.env.EXTRACTOR || path.join(ROOT, 'modeller', 'tools', 'extract_ifc2db.js');   // this repo's core (element_dxf2bim exists there; bim-compiler's older core lacks it)
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + ' ' + (m || '')); if (!c) fails++; };
 if (!fs.existsSync(SHD + '5_DETAILS.dxf')) { console.log('§SKIP W-IFC-VALID no real sheets at ' + SHD); process.exit(0); }
 const py = f => { const r = cp.spawnSync(PY, [path.join(__dirname, 'ifc_validate.py'), f], { encoding: 'utf8' }); try { return JSON.parse(r.stdout.trim().split('\n').pop()); } catch (e) { return { error: 'no output: ' + (r.stderr || '').slice(0, 200) }; } };
