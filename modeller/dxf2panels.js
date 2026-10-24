@@ -9,11 +9,11 @@
 //   holes      a loop inside another loop of its hatch would be a hole: not supported yet -> GAP:panel_hole_unsupported (no body invented)
 // The mesh is the existing ear-clipped prism (dxf2mesh), axes permuted onto the face; winding is checked by volume.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
-  else root.Dxf2Panels = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js'), PF: require('./dxf2profile.js') });
+  else root.Dxf2Panels = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep, PF: root.Dxf2Profile });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
+  var DFM = D.DF, PF = D.PF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
   var NET_RE = /zigzag|mesh|net\b|wire/i;
@@ -48,7 +48,7 @@
     var elevs = sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'panel' || l.type === 'fan' || l.type === 'net'; }); });
     if (!elevs.length) return { els: els, gaps: gaps, defaults: [], report: report };
     if (!plans.length) { gaps.push({ code: 'GAP:panel_no_plan', detail: 'a plan is needed for the grid' }); return { els: els, gaps: gaps, defaults: [], report: report }; }
-    var planUsed = false, tUsed = false, inherited = [], fansUsed = false, netsUsed = false;
+    var planUsed = false, tUsed = false, inherited = [], fansUsed = false, netsUsed = false, fanDetailListed = false;
     elevs.forEach(function (es, ei) {
       var rep = report.sheets[es.name] = { hatches: 0, loops: 0, panels: 0, left_out: 0 };
       var F = FACE[es.face]; if (!F) { gaps.push({ code: 'GAP:panel_face', sheet: es.name, detail: 'elevation face ' + es.face + ' is not minX/maxX/minY/maxY' }); return; }
@@ -155,18 +155,25 @@
         es.dxf.entities.forEach(function (c) {
           if (c.type !== 'CIRCLE' || fanL.indexOf(c.layer) < 0 || !c.center || !(c.radius > 0)) return;
           var g = groups.filter(function (q) { return Math.hypot(q.cx - c.center.x, q.cy - c.center.y) <= 0.001 / k; })[0];
-          if (!g) groups.push({ cx: c.center.x, cy: c.center.y, r: c.radius, h: c.handle, n: 1 }); else { g.n++; if (c.radius > g.r) { g.r = c.radius; g.h = c.handle; } }
+          if (!g) groups.push({ cx: c.center.x, cy: c.center.y, r: c.radius, rIn: c.radius, h: c.handle, n: 1 }); else { g.n++; if (c.radius > g.r) { g.r = c.radius; g.h = c.handle; } if (c.radius < g.rIn) g.rIn = c.radius; }
         });
         groups.forEach(function (g) {
           var id = 'body-fan-' + ei + '-' + g.h, u = userN(id), depth = u.w > 0 ? Number(u.w) : DF.use('fan.depth'), R = g.r * k, cu = map.toPlan(g.cx), cv = map.zOf(g.cy), poly = [];
           for (var q = 0; q < 24; q++) poly.push([cu + R * Math.cos(2 * Math.PI * q / 24), cv + R * Math.sin(2 * Math.PI * q / 24)]);
-          var m = M.prism(poly, plane + depth / 2, depth); if (!m) { gaps.push({ code: 'GAP:fan_degenerate', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the circle could not be extruded' }); return; }
+          // §D67.1 two drawn rings (housing, hub) build the propeller fan: tube + hub disc + paddles; one ring stays the drawn disc and is listed
+          var profOff = typeof process === 'object' && process.env && process.env.DXF_PROFILES === '0', fanM = null;
+          if (!profOff) {
+            if (g.n >= 2 && g.rIn < g.r) { fanM = PF.axialFan(R, g.rIn * k, depth, DF.use('fan.blades'), DF.use('fan.housing_wall')); if (!fanM) gaps.push({ code: 'GAP:profile_not_bound', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the hub ring does not fit inside the housing wall: the drawn disc stays' }); }
+            else gaps.push({ code: 'GAP:profile_not_bound', sheet: es.name, kind: 'fan', handle: g.h, detail: 'one drawn ring: no hub radius is drawn, the drawn disc stays' });
+          }
+          var m = fanM ? { vertices: fanM.vertices.map(function (q3) { return [cu + q3[0], cv + q3[1], plane - depth / 2 + q3[2]]; }), faces: fanM.faces } : M.prism(poly, plane + depth / 2, depth); if (!m) { gaps.push({ code: 'GAP:fan_degenerate', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the circle could not be extruded' }); return; }
           var V2, F2;
           if (F.coord === 'X') { V2 = m.vertices.map(function (q2) { return [r6(q2[2]), r6(q2[0]), r6(q2[1])]; }); F2 = m.faces; }
           else { V2 = m.vertices.map(function (q2) { return [r6(q2[0]), r6(q2[2]), r6(q2[1])]; }); F2 = m.faces.map(function (f) { return [f[0], f[2], f[1]]; }); }
           var fm = { vertices: V2, faces: F2 }; if (volume(fm) < 0) fm.faces = fm.faces.map(function (f) { return [f[0], f[2], f[1]]; });
           els.push({ guid: id, class: P.ifcType('fan').ifc_class, storey: 'Level 1', vertices: fm.vertices, faces: fm.faces, handle: g.h, layer: es.desc.layers.filter(function (l) { return l.type === 'fan'; })[0].layer, sheet: es.name, kind: 'fan', prov: 'derived',
             ifc: P.ifcType('fan', 'Axial fan', null), mark: null, z0: r6(cv - R), z1: r6(cv + R), height_source: 'elevation', size: { d: { number: r6(2 * R), source: 'drawn' }, depth: { number: r6(depth), source: u.w > 0 ? 'user' : DF.source('fan.depth') }, plane: r6(plane), rings: g.n }, members: [g.h] });
+          if (fanM) { els[els.length - 1].size.profile = { family: 'axial', housing_r: r6(R), hub_r: r6(g.rIn * k), blades: DF.use('fan.blades'), wall: DF.use('fan.housing_wall') }; if (!fanDetailListed) { fanDetailListed = true; gaps.push({ code: 'GAP:fan_detail_defaulted', sheet: es.name, kind: 'fan', handle: g.h, detail: 'the blade count (' + DF.use('fan.blades') + ') and the housing wall (' + DF.use('fan.housing_wall') + ' m) are stated defaults: the rings give only the radii' }); } }
           report.fans = (report.fans || 0) + 1; fansUsed = true;
         });
       }

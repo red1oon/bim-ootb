@@ -612,6 +612,57 @@
     0.01
    ],
    "used_by": "dxf2shell slabEdges (§D75)"
+  },
+  "profile.angle_mesh": {
+   "element": "IfcMember",
+   "value": "label",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a section bar whose label states one equal-leg angle (1.5\"x1.5\"x1/4\" Angle) is built as that L section (t(2b-t) x length) instead of its b x b box; 'box' keeps the drawn prism",
+   "options": [
+    "label",
+    "box"
+   ],
+   "used_by": "dxf2section bars (§D67.1)"
+  },
+  "profile.angle_heel": {
+   "element": "IfcMember",
+   "value": "lower",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "which way an angle opens is not stated by a section label; the heel corner sits at the low side of the bar's normal (the b x b envelope is kept either way)",
+   "options": [
+    "lower",
+    "upper"
+   ],
+   "used_by": "dxf2section bars (§D67.1)"
+  },
+  "fan.blades": {
+   "element": "IfcFan",
+   "value": 4,
+   "unit": "count",
+   "kind": "guess",
+   "basis": "the drawing's rings give the housing and hub radii, not the blades; a propeller fan is drawn with this many radial paddles",
+   "options": [
+    3,
+    4,
+    5,
+    6
+   ],
+   "used_by": "dxf2panels fan (§D67.1)"
+  },
+  "fan.housing_wall": {
+   "element": "IfcFan",
+   "value": 0.02,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "the housing is a tube of the drawn outer radius; its wall is not drawn",
+   "options": [
+    0.01,
+    0.02,
+    0.03
+   ],
+   "used_by": "dxf2panels fan (§D67.1)"
   }
  },
  "building_types": {
