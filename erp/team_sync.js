@@ -199,6 +199,7 @@
     try {
       var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
       var res = await global.__crud.teamRebuild(project), pj = project.last || {};
+      await peopleRound();                                          // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
       var dirty = false; try { dirty = !!(global.__crud.inlineDirty && global.__crud.inlineDirty()); } catch (e) {}
       log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused +
           ' gaps=' + rep.gaps + ' | projection kept=' + pj.kept + ' projected=' + pj.projected + ' skipped=' + pj.skipped + ' groupHeld=' + pj.groupHeld + ' rebuild=' + (res && res.ok ? 'ok verifyChain=' + (res.verify && res.verify.ok ? 'ok' : 'FAIL') : 'FAILED ' + (res && res.reason)) +
@@ -247,6 +248,71 @@
     lastRefused = dl.filter(function (x) { return x.verdict === 'REFUSED'; }).length;
   }
 
+  // ═══ PEOPLE STRIP (TEAMWORK_FRAMEWORK §13.12.G.1 + §13.12.H uses 1,2) — Witnesses: W-PEOPLE-STRIP, W-SCOPE-STRIP, W-SCOPE-INBOX (erp/tests/witness_people_strip.js) ═══
+  // GENERIC: nothing here names a window or a table. Seams: the page's `idmp:record` event (idempiere.html refreshForm) IN, the Visit OUT (focus board over the pipe).
+  var TP = global.TeamPeople, TFo = global.TeamFocus, tfBoard = null, tfPipe = null, focusOwn = [], focusSince = null, savedAt = {}, lastSeam = null,
+      focusObjs = [], headsArr = [], peopleList = [], inboxList = [], pview = null, dictC = null, clock = function () { return Date.now(); }, lastHuKey = '';
+  function peopleDict() { if (dictC) return dictC; try { if (adDb() && global.AdAccess && TP) dictC = TP.dictFromDb(shim(adDb()), global.AdAccess); } catch (e) { log('🔴 §PEOPLE_DICT ' + (e && e.message)); } return dictC; }
+  function board() { if (!TFo || !S || !pipe) return null; if (!tfBoard || tfPipe !== pipe) { tfPipe = pipe; tfBoard = TFo.create({ pipe: pipe, self: dev, space: cfg.space, person: dev.person_uu, log: log }); } return tfBoard; }
+  function onSeam(d) {
+    lastSeam = d || {}; var now = Date.now(), cur = focusOwn.length ? focusOwn[0] : null;
+    if (d && d.view === 'form' && d.uu) {
+      if (savedAt[d.table] && now - savedAt[d.table] < 2000) { if (focusOwn.length) { focusOwn = []; focusSince = now; } }                 // just saved on this table: the form re-mounts (or shows the new record) by itself; "clear on save"
+      else if (!cur || cur.uu !== d.uu) { focusOwn = [{ table: d.table, uu: d.uu, label: d.label, since: now }]; focusSince = now; log('§PEOPLE_FOCUS_OWN open table=' + d.table + ' uu=' + d.uu.slice(0, 8) + ' label=' + d.label); }
+      else cur.label = d.label || cur.label;
+    } else if (cur) { focusOwn = []; focusSince = now; log('§PEOPLE_FOCUS_OWN closed (view=' + (d && d.view) + ')'); }
+    paintHeadsUp();
+  }
+  global.addEventListener('idmp:record', function (e) { onSeam(e.detail); });
+  global.addEventListener('overlay:committed', function (e) {                       // "clear on save": a write to a table drops the focus on it, and the form that re-mounts right after (or shows the NEW record) must not re-add it (2 s, named L5)
+    var d = e.detail || {}, t = String(d.table || '').toLowerCase(), cur = focusOwn.length ? focusOwn[0] : null;
+    if (!t || !/^(CRUD_(CREATE|UPDATE|DELETE)|DOC_ACTION)$/.test(String(d.op_type)) || /^ad_/.test(t)) return;
+    savedAt[t] = Date.now();
+    if (cur && cur.table === t) { log('§PEOPLE_FOCUS_OWN saved table=' + t + ' uu=' + cur.uu.slice(0, 8) + ' (focus cleared on save)'); focusOwn = []; focusSince = Date.now(); }
+  });
+  function allEnvs() { return S.query('SELECT envelope FROM cl_op').map(function (r) { return JSON.parse(r.envelope); }); }
+  async function refreshPeople() {
+    if (!S || !TP || !dev) return null;
+    var L = await S.order(), R = L.roster, dict = peopleDict(), dirc = TP.directoryFrom(R, dict ? dict.roleName : null), me = dirc.filter(function (p) { return p.kids.indexOf(dev.kid) >= 0; })[0] || null;
+    var memo = {}, scopeOf = function (rid) { if (rid == null || !dict) return null; return memo[rid] || (memo[rid] = TP.roleScope(rid, dict)); };
+    var myScope = me ? scopeOf(me.role) : null, pref = (cfg && cfg.peopleMode) || 'scope', mode = myScope && pref === 'scope' ? 'scope' : 'all';
+    var envs = allEnvs(), D = global.TeamDefaults || {};
+    peopleList = TP.rank(envs, headsArr, focusObjs, clock(), { directory: dirc, ttlMs: D.focusTtlMs, mode: mode, scope: myScope, scopeOf: scopeOf, selfPerson: me && me.person });
+    var kidP = {}, kidR = {}; dirc.forEach(function (p) { p.kids.forEach(function (k) { kidP[k] = p; }); });
+    var placed = (await S.placedEnvelopes()).map(function (x) { return x.env; });
+    inboxList = TP.inboxFor(myScope, placed, { selfPerson: me && me.person, roleOfKid: function (k) { return kidP[k] ? kidP[k].role : null; }, personOfKid: function (k) { return kidP[k] ? kidP[k].person : null; }, nameOfKid: function (k) { return kidP[k] ? kidP[k].name : k.slice(0, 8); } });
+    var col = TP.collapse(peopleList, mode);
+    pview = { me: me, mode: pref, effectiveMode: mode, hide: !!(cfg && cfg.hideFocus), people: peopleList, shown: col.shown, others: col.others, inbox: inboxList, scope: myScope, scopeAvailable: !!myScope, directory: dirc, unsupported: board() && board().unsupported() };
+    log('§PEOPLE_VIEW mode=' + mode + ' people=' + peopleList.length + ' shown=' + col.shown.length + ' others=' + col.others.length + ' focusObjs=' + focusObjs.length + ' heads=' + headsArr.length + ' inbox=' + inboxList.length +
+        ' order=[' + peopleList.map(function (p) { return p.name + (p.self ? '*' : '') + ':' + (p.ageMs == null ? '-' : Math.round(p.ageMs / 1000) + 's') + ':' + p.focus.length; }).join(', ') + ']');
+    paintHeadsUp(); try { global.dispatchEvent(new CustomEvent('team:people')); } catch (e) {}
+    return pview;
+  }
+  async function peopleRound() {
+    try {
+      var L = await S.order(), R = L.roster; if (!R.devices[dev.kid]) return;                // an un-approved device has nothing to publish or verify against
+      var b = board(); if (!b) return;
+      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince });
+      var col = await b.collect(R); focusObjs = col.focus; headsArr = col.heads;
+      await refreshPeople();
+    } catch (e) { log('🔴 §PEOPLE_ROUND ' + (e && e.stack || e)); }
+  }
+  function paintHeadsUp() {
+    var host = $('idmp-content'), old = $('team-headsup'); if (old) old.remove();
+    var me = pview && pview.me; if (!host || !me || !lastSeam || lastSeam.view !== 'form' || !lastSeam.uu) { lastHuKey = ''; return; }
+    var hu = TP.headsUpFor(lastSeam.uu, me.person, peopleList); if (!hu.length) { if (lastHuKey) log('§PEOPLE_HEADSUP uu=' + lastSeam.uu.slice(0, 8) + ' none'); lastHuKey = ''; return; }
+    var div = document.createElement('div'); div.id = 'team-headsup'; div.setAttribute('role', 'status'); div.setAttribute('data-uu', lastSeam.uu);
+    div.style.cssText = 'margin:0 0 8px;padding:8px 12px;min-height:44px;box-sizing:border-box;border:1px solid #b36b00;border-radius:8px;background:#fff4e0;color:#5a3600;font:14px/1.4 system-ui,sans-serif';
+    div.innerHTML = hu.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '"><b>' + esc(h.name) + '</b> is editing this (' + TP.ageText(h.ageMs) + ')</div>'; }).join('');
+    host.insertBefore(div, host.firstChild);
+    var key = lastSeam.uu + '|' + hu.map(function (h) { return h.person; }).join(','); if (key !== lastHuKey) log('§PEOPLE_HEADSUP uu=' + lastSeam.uu.slice(0, 8) + ' by=[' + hu.map(function (h) { return h.name + ':' + TP.ageText(h.ageMs); }).join(', ') + ']'); lastHuKey = key;
+  }
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  async function cfgSet(k, v) { var c = (await kvGet('cfg')) || {}; c[k] = v; await kvPut('cfg', c); if (cfg) cfg[k] = v; }
+  async function setHide(on) { await cfgSet('hideFocus', !!on); log('§PEOPLE_SWITCH hideFocus=' + !!on + ' (applies from the next Visit)'); }
+  async function setMode(m) { await cfgSet('peopleMode', m === 'all' ? 'all' : 'scope'); log('§PEOPLE_SWITCH peopleMode=' + (m === 'all' ? 'all' : 'scope')); await refreshPeople(); }
+  function history(person, n) { return pview ? TP.historyOf(person, allEnvs(), n == null ? 10 : n, { directory: pview.directory }) : []; }
+
   // ═══ boot ═══════════════════════════════════════════════════════════════════════════════════════════════════════
   async function boot() {
     for (var i = 0; i < 600 && !(global.__crud && global.__idmpDb && global.KernelOps && global.CrudCore && global.initSqlJs && global.AdAccess && global.CommStore && document.getElementById('idmp-status')); i++) await new Promise(function (r) { setTimeout(r, 100); });
@@ -293,7 +359,7 @@
     log('§TEAM_PAIR join request posted, code ' + codeOf(dev.kid)); await persist(); await render();
   }
   async function leave() {
-    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; lastVisitAt = null;
+    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; lastVisitAt = null; tfBoard = null; tfPipe = null; focusObjs = []; headsArr = []; peopleList = []; inboxList = []; pview = null;
     log('§TEAM_PAIR left the team — same device ' + codeOf(dev.kid)); await render();
   }
   async function requests() {
@@ -314,7 +380,9 @@
 
   global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render,
-                      stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; } };
+                      stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; },
+                      peopleView: function () { return pview; }, refreshPeople: refreshPeople, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
