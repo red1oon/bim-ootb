@@ -33,7 +33,10 @@
     'CREATE TABLE IF NOT EXISTS cl_fetched (name TEXT, pipe_id TEXT, PRIMARY KEY(name, pipe_id))',
     'CREATE TABLE IF NOT EXISTS cl_sealed (op_hash TEXT PRIMARY KEY, epoch INTEGER, ct TEXT NOT NULL, bundle TEXT, pipe_id TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_outbox (bundle_name TEXT PRIMARY KEY, from_seq INTEGER, to_seq INTEGER, state TEXT)',
-    'CREATE TABLE IF NOT EXISTS cl_head_seen (author_kid TEXT, pipe_id TEXT, seq INTEGER, head_hash TEXT, frontier_json TEXT, sig TEXT, PRIMARY KEY(author_kid, pipe_id))'
+    'CREATE TABLE IF NOT EXISTS cl_head_seen (author_kid TEXT, pipe_id TEXT, seq INTEGER, head_hash TEXT, frontier_json TEXT, sig TEXT, PRIMARY KEY(author_kid, pipe_id))',
+    'CREATE INDEX IF NOT EXISTS cl_op_type ON cl_op(op_type)',
+    'CREATE TABLE IF NOT EXISTS cl_ckpt (state_hash TEXT PRIMARY KEY, status TEXT NOT NULL, state_json TEXT)',
+    'CREATE TABLE IF NOT EXISTS cl_snapmeta (state_hash TEXT PRIMARY KEY, name TEXT, state_json TEXT NOT NULL)'
   ];
 
   function _q(db, sql, args) { var st = db.prepare(sql); if (args) st.bind(args); var out = []; while (st.step()) out.push(st.getAsObject()); st.free(); return out; }
@@ -88,6 +91,9 @@
 
   function open(db, opts) {
     var SQL = opts.SQL, self = opts.self, space = opts.space, access = opts.access, log = opts.log || function (m) { console.log(m); };
+    var CLAIM = { KEYCLAIM: 1, BOOKING: 1 }, KH = {}, seqByUU = null, seqByTable = {};
+    if (opts.sequences && opts.sequences.length) { seqByUU = {}; opts.sequences.forEach(function (c) { seqByUU[c.uu] = c; (c.tables || []).forEach(function (t) { seqByTable[t] = c; }); }); }
+    async function keyhFor(key) { if (!KH[key]) KH[key] = await _sha('claim:' + space + ':' + key); return KH[key]; }
     var SP = 's/' + space + '/';             // §13.6: every pipe name I write or list lives under my space — two spaces on one pipe never meet
     SCHEMA.forEach(function (s) { db.run(s); });
     db.run('INSERT OR IGNORE INTO cl_self (kid, space, person_uu, next_seq, head_hash, bundled_to) VALUES (?,?,?,1,NULL,0)', [self.kid, space, self.person_uu || null]);
@@ -97,14 +103,18 @@
     function allOps() { return _q(db, 'SELECT op_hash, envelope FROM cl_op').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; }); }
     async function sigOk(hash, env, jwk) { var k = hash + '|' + (jwk ? jwk.x : ''); if (sigCache[k] == null) sigCache[k] = !!jwk && (await ENV.verify(env, jwk)); return sigCache[k]; }
 
-    async function order() {
-      var raw = allOps(), byHash = {};
-      var contenders = _q(db, 'SELECT op_hash, envelope FROM cl_contender').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; });
+    // ── the fold ─────────────────────────────────────────────────────────────────────────────────────────────────
+    // core(bs, raw, contenders, idS) is the body of order(): bs = a base (the in-force checkpoint's frozen fold of a closed prefix S) or null;
+    // raw = the ops to judge (ALL ops when bs is null, else only those beyond S's frontier); idS = the identity ops of S (roster input only).
+    // With bs === null every line below is the fold as it was before checkpoints existed.
+    async function core(bs, raw, contenders, idS) {
+      var byHash = {};
       raw.concat(contenders).forEach(function (o) { byHash[o.hash] = o.env; });
+      var known = function (h) { return !!byHash[h] || !!(bs && bs.verdict[h]); };
       // every op claiming a slot is judged the same way whichever arrived first: keep the ONE validly signed claimant;
       // two valid = equivocation; none valid = forged. Identity ops' keys come from the roster itself (fold below).
       var slots = {}; raw.concat(contenders).forEach(function (o) { var k = o.env.author + '#' + o.env.seq; (slots[k] = slots[k] || []).push(o); });
-      var roster0 = await ROS.fold(raw.concat(contenders), space), verdict = {}, bad = {}, equiv = [], ops = [];
+      var roster0 = await ROS.fold(idS.concat(raw, contenders), space), verdict = bs ? Object.create(bs.verdict) : {}, bad = {}, equiv = [], ops = [];
       for (var sk of Object.keys(slots)) {
         var cands = slots[sk];
         if (cands.length === 1) { ops.push(cands[0]); continue; }
@@ -116,32 +126,241 @@
         else if (valid.length > 1) { equiv.push({ author: valid[0].env.author, seq: valid[0].env.seq, hashes: valid.map(function (v) { return v.hash; }).sort() });
           valid.forEach(function (v) { verdict[v.hash] = { verdict: 'EQUIVOCATED', reason: valid.length + ' signed ops at seq ' + v.env.seq }; bad[v.hash] = 1; }); }
       }
-      var roster = await ROS.fold(ops, space);
-      Object.keys(roster.verdicts).forEach(function (h) { if (!bad[h]) verdict[h] = roster.verdicts[h]; });
+      var roster = await ROS.fold(idS.concat(ops), space);
+      Object.keys(roster.verdicts).forEach(function (h) { if (!bad[h] && !(bs && bs.verdict[h])) verdict[h] = roster.verdicts[h]; });
       // admit business ops
       var createOf = {}; ops.forEach(function (o) { if (o.env.body.op_type === 'CRUD_CREATE') createOf[o.env.target.uu] = o.env; });
       for (var o of ops) {
         if (ROS.IDENTITY[o.env.body.op_type]) continue;
-        if ((o.env.deps || []).some(function (x) { return !byHash[x]; })) { verdict[o.hash] = { verdict: 'PARKED', reason: 'deps' }; continue; }   // what it read hasn't arrived yet
-        var dv = roster.devices[o.env.author], cr = o.env.body.op_type === 'CRUD_CREATE' ? o.env : createOf[o.env.target.uu];
+        if ((o.env.deps || []).some(function (x) { return !known(x); })) { verdict[o.hash] = { verdict: 'PARKED', reason: 'deps' }; continue; }   // what it read hasn't arrived yet
+        var dv = roster.devices[o.env.author];
+        if (CLAIM[o.env.body.op_type]) { verdict[o.hash] = ADM.admitClaim(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false }); continue; }
+        var cr = o.env.body.op_type === 'CRUD_CREATE' ? o.env : createOf[o.env.target.uu];
+        var sc = cr ? _scopeOfCreate(cr) : (bs && bs.scopes[o.env.target.uu] ? { client: bs.scopes[o.env.target.uu][0], org: bs.scopes[o.env.target.uu][1] } : null);
         verdict[o.hash] = ADM.admit(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false,
-          scope: cr ? _scopeOfCreate(cr) : null, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
+          scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
       }
       // order the MERGED ones by what they read; cascade refusals onto ops that read a refused version
       var ok = ops.filter(function (o) { return verdict[o.hash] && verdict[o.hash].verdict === 'MERGED'; });
-      var L = ORD.linearize(ok.map(function (o) { return { hash: o.hash, author: o.env.author, seq: o.env.seq, prev: null, deps: o.env.deps || [] }; }));
-      var refused = {}; Object.keys(verdict).forEach(function (h) { if (verdict[h].verdict !== 'MERGED' && verdict[h].verdict !== 'PARKED') refused[h] = 1; });
-      var parkedSet = {}; L.parked.forEach(function (h) { parkedSet[h] = 1; });
-      var changed = true;
-      while (changed) { changed = false; Object.keys(parkedSet).forEach(function (h) {
-        if ((byHash[h].deps || []).some(function (x) { return refused[x]; })) { verdict[h] = { verdict: 'REFUSED', reason: 'dep-refused' }; refused[h] = 1; delete parkedSet[h]; changed = true; } }); }
-      Object.keys(parkedSet).forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
+      var okSet = {}; ok.forEach(function (o) { okSet[o.hash] = 1; });
+      var cOp = bs && bs.c && okSet[bs.c] ? bs.c : null;            // every op beyond the barrier is placed after the CHECKPOINT op (§13.12.3)
+      // claim keys are hashed once per key (the key itself never leaves the device in a snapshot)
+      for (var ko of ok) { var kt = ko.env.body.op_type;
+        if (CLAIM[kt]) { var ksp = ADM.claimSpec(ko.env); if (!ksp.problem) await keyhFor(ksp.key); }
+        else if (seqByUU) { var kref = (ko.env.body.params || {}).docno_ref, kcfg = kref && seqByUU[kref.seq];
+          if (kcfg && kcfg.mode === 'B') await keyhFor('BOOKING:' + kref.seq + ':' + kref.n); else if (kcfg && kcfg.mode === 'K') await keyhFor('BLOCK:' + kref.seq + ':' + ADM.blockOf(kcfg, kref.n)); } }
+      var excluded = {}, L, claims = null, used = null, isRefused = function (x) { var v = verdict[x]; return !!v && v.verdict !== 'MERGED' && v.verdict !== 'PARKED'; };
+      for (var pass = 0; pass < 50; pass++) {
+        var okNow = ok.filter(function (o) { return !excluded[o.hash]; });
+        L = ORD.linearize(okNow.map(function (o) {
+          var deps = o.env.deps || [];
+          if (bs) { deps = deps.filter(function (d) { return !(bs.verdict[d] && bs.verdict[d].verdict === 'MERGED'); }); if (cOp && o.hash !== cOp) deps = deps.concat([cOp]); }
+          return { hash: o.hash, author: o.env.author, seq: o.env.seq, prev: null, deps: deps }; }));
+        // order the MERGED ones by what they read; cascade refusals onto ops that read a refused version
+        var parkedSet = {}; L.parked.forEach(function (h) { parkedSet[h] = 1; });
+        var changed = true;
+        while (changed) { changed = false; Object.keys(parkedSet).forEach(function (h) {
+          if ((byHash[h].deps || []).some(function (x) { return isRefused(x); })) { verdict[h] = { verdict: 'REFUSED', reason: 'dep-refused' }; delete parkedSet[h]; changed = true; } }); }
+        Object.keys(parkedSet).forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
+        // claims and numbered documents: first in fold order wins (§13.12.2, §13.12.F.1); a loser leaves the order, the pass repeats
+        var cp = claimsPass(L.order, byHash, bs); claims = cp.claims; used = cp.used;
+        if (!cp.losers.length) break;
+        cp.losers.forEach(function (l) { verdict[l.h] = { verdict: 'REFUSED', reason: l.reason }; excluded[l.h] = 1; });
+      }
+      return { order: L.order, verdict: verdict, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, createOf: createOf, ops: ops, claims: claims, used: used };
+    }
+
+    function claimsPass(order, byHash, bs) {
+      var claims = Object.create(bs ? bs.claims : {}), used = Object.create(bs ? bs.used : {}), losers = [], cand = {};
+      function lose(h, why) { losers.push({ h: h, reason: why }); }
+      order.forEach(function (h) {
+        var env = byHash[h], t = env.body.op_type;
+        if (CLAIM[t]) {
+          var sp = ADM.claimSpec(env), kh = KH[sp.key], cur = claims[kh];
+          if (!cur) { claims[kh] = { h: h, a: env.author, u: sp.until, p: sp.payload }; return; }
+          if (sp.takes) { if (sp.takes !== cur.h) return lose(h, 'bad-takeover');
+            if (cur.u == null || !(env.ts >= cur.u)) return lose(h, 'lease-live');
+            claims[kh] = { h: h, a: env.author, u: sp.until, p: sp.payload }; return; }
+          return lose(h, 'key-claimed');
+        }
+        if (!seqByUU) return;
+        var why = numberingProblem(env, claims, cand, h); if (why) lose(h, why);
+      });
+      // modes S and K: one (sequence, device, n) belongs to ONE document — the one the device authored FIRST (lowest seq), not the one that happens to sort first;
+      // a number already held inside a checkpoint (bs.used) stays with its holder
+      Object.keys(cand).forEach(function (uk) {
+        var list = cand[uk], holder = bs && bs.used[uk] ? bs.used[uk] : list.slice().sort(function (a, b) { return a.seq - b.seq || (a.doc < b.doc ? -1 : 1); })[0].doc;
+        used[uk] = holder; list.forEach(function (c) { if (c.doc !== holder) lose(c.h, 'docno-duplicate'); });
+      });
+      return { claims: claims, used: used, losers: losers };
+    }
+    // §13.12.F.1 — the admission rule for a numbered document, driven only by the sequence config (no table is named here)
+    function numberingProblem(env, claims, cand, h) {
+      var p = env.body.params || {}, ref = p.docno_ref, docno = ADM.docNoOf(env), tbl = env.target.table;
+      if (!ref) return docno && seqByTable[tbl] ? 'docno-unnumbered' : null;
+      var cfg = seqByUU[ref.seq]; if (!cfg) return 'docno-unknown-seq';
+      if (cfg.tables.indexOf(tbl) < 0) return 'docno-wrong-table';
+      if (!Number.isInteger(ref.n) || ref.n < 1 || docno !== ADM.formatDocNo(cfg, ref.n, env.author)) return 'docno-mismatch';
+      if (cfg.mode === 'B') { var e = claims[KH['BOOKING:' + ref.seq + ':' + ref.n]];
+        if (!e || !e.p || e.p.n !== ref.n) return 'docno-unbooked'; if (e.a !== env.author) return 'docno-booker-mismatch'; if (e.p.doc !== String(env.target.uu).toLowerCase()) return 'docno-booking-names-other-doc'; return null; }
+      if (cfg.mode === 'K') { var j = ADM.blockOf(cfg, ref.n), b = claims[KH['BLOCK:' + ref.seq + ':' + j]];
+        if (!b || !b.p || b.p.block !== j || b.a !== env.author || ref.n < b.p.from || ref.n > b.p.to || (ref.n - b.p.from) % (cfg.increment_no || 1) !== 0) return 'docno-outside-block'; }
+      var uk = ref.seq + '|' + env.author + '|' + ref.n, doc = String(env.target.uu).toLowerCase();
+      (cand[uk] = cand[uk] || []).push({ h: h, doc: doc, seq: env.seq }); return null;
+    }
+
+    // ── checkpoints (§13.12.3) ───────────────────────────────────────────────────────────────────────────────────
+    var IDTYPES = Object.keys(ROS.IDENTITY), base = null, verified = {}, badCk = {}, rosterCache = {}, baseCache = {}, trusted = {}, authors = null, hasCk = null, ckLoaded = false, prevRest = [], logged = {};
+    var HEX = /^[0-9a-f]{64}$/;
+    function _once(key, msg) { if (!logged[key]) { logged[key] = 1; log(msg); } }
+    function authorList() { if (!authors) { authors = {}; _q(db, 'SELECT DISTINCT author_kid FROM cl_op').forEach(function (r) { authors[r.author_kid] = 1; }); } return Object.keys(authors); }
+    function anyCkpt() { if (hasCk === null) hasCk = _q(db, "SELECT 1 FROM cl_op WHERE op_type='CHECKPOINT' LIMIT 1").length > 0; return hasCk; }
+    function rowsOf(sql, args) { return _q(db, sql, args).map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; }); }
+    function identityRows() { return rowsOf('SELECT op_hash, envelope FROM cl_op WHERE op_type IN (' + IDTYPES.map(function () { return '?'; }).join(',') + ')', IDTYPES); }
+    function contenderRows() { return rowsOf('SELECT op_hash, envelope FROM cl_contender'); }
+    // the ops of author a with lo < seq <= hi (index range, O(new))
+    function rangeRows(lo, hi) { var out = [];
+      authorList().forEach(function (a) { var l = lo ? (lo[a] || 0) : 0, h = hi ? hi[a] : null;
+        if (hi && !h) return; if (h != null && h <= l) return;
+        out = out.concat(rowsOf(h != null ? 'SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND author_seq>? AND author_seq<=?' : 'SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND author_seq>?', h != null ? [a, l, h] : [a, l])); });
+      return out; }
+    function idUpTo(rows, f) { return rows.filter(function (o) { return o.env.seq <= (f[o.env.author] || 0); }); }
+    function present(f) { return Object.keys(f).every(function (k) { return _q(db, 'SELECT COUNT(*) AS n FROM cl_op WHERE author_kid=? AND author_seq<=?', [k, f[k]])[0].n === f[k]; }); }
+    function persistCk(sh, status, st) { db.run('INSERT OR REPLACE INTO cl_ckpt VALUES (?,?,?)', [sh, status, st ? JSON.stringify(st) : null]); }
+    async function loadCk() {
+      if (ckLoaded) return; ckLoaded = true;
+      for (var r of _q(db, 'SELECT * FROM cl_ckpt')) {
+        if (r.status === 'ACTIVE') continue;
+        if (r.status === 'BAD') { badCk[r.state_hash] = 1; continue; }
+        try { var st = JSON.parse(r.state_json); if (st.hash === r.state_hash && Array.isArray(st.order)) verified[r.state_hash] = st; } catch (e) { /* a damaged row is simply not used */ }       // my own saved fold: no need to hash it again
+      }
+    }
+    // state of S = (prev base ++ the ops in (prev frontier, frontier]), judged by the roster of S alone; prevC = the CHECKPOINT op of prev (placed first)
+    async function foldS(prevSt, frontier, prevC) {
+      var pf = prevSt ? prevSt.frontier : {}, ids = identityRows(), idS = prevSt ? idUpTo(ids, pf) : [];
+      var bs = prevSt ? { verdict: prevSt.verdict, scopes: prevSt.scopes, claims: prevSt.claims || {}, used: prevSt.used || {}, c: prevC } : null;
+      var raw = rangeRows(pf, frontier), res = await core(bs, raw, [], idS);
+      if (res.parked.length) return { problem: 'parked-in-S' };
+      if (res.equivocations.length) return { problem: 'equivocation-in-S' };
+      var verdict = Object.assign({}, prevSt ? prevSt.verdict : {}, res.verdict), scopes = Object.assign({}, prevSt ? prevSt.scopes : {});
+      Object.keys(res.createOf).forEach(function (u) { var sc = _scopeOfCreate(res.createOf[u]); if (sc) scopes[u] = [sc.client, sc.org]; });
+      var st = { v: 1, space: space, frontier: frontier, prev: prevSt ? prevSt.hash : null, order: (prevSt ? prevSt.order : []).concat(res.order), verdict: verdict, scopes: scopes,
+                 claims: Object.assign({}, prevSt ? prevSt.claims : {}, res.claims), used: Object.assign({}, prevSt ? prevSt.used : {}, res.used) };
+      return { state: st };
+    }
+    async function stateHashOf(st) { var body = Object.assign({}, st); delete body.hash; return _sha(ENV.canonical(body)); }
+
+    // find the checkpoint to use: highest pos that is accepted, established (verified here, or trusted) and stable
+    async function resolveBase(rosterAll, ids, contenders) {
+      await loadCk();
+      var cands = Object.keys(rosterAll.checkpoints).map(function (sh) { var c = rosterAll.checkpoints[sh]; return { sh: sh, c: c, pos: c.params.pos }; }).sort(function (a, b) { return b.pos - a.pos || (a.sh < b.sh ? -1 : 1); });
+      var N = (rosterAll.policy && rosterAll.policy.params.checkpoint && rosterAll.policy.params.checkpoint.cosigs) || 2;
+      for (var cd of cands) {
+        if (badCk[cd.sh]) continue;
+        var st = verified[cd.sh] || await establish(cd, rosterAll, ids, N);
+        if (!st) continue;
+        var ck = await baseFrom(st, cd, rosterAll, ids, contenders);
+        if (ck.problem) { _once('stale:' + cd.sh + ':' + ck.problem, '§CKPT_STALE kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' pos=' + cd.pos + ' reason=' + ck.problem + ' — falling back to the full fold'); continue; }
+        return ck.base;
+      }
+      return null;
+    }
+    async function establish(cd, rosterAll, ids, N) {
+      var f = cd.c.params.frontier;
+      if (!present(f)) { _once('pend:' + cd.sh, '§CKPT_PENDING kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' pos=' + cd.pos + ' — not all of its ops are held yet'); return null; }
+      // light client: >= N co-signing persons and a snapshot whose state hashes to state_hash — nothing is folded
+      if (opts.trustCheckpoints && Object.keys(cd.c.persons).length >= N) {
+        var sealedMeta = false;
+        for (var mr of _q(db, 'SELECT state_json FROM cl_snapmeta WHERE state_hash=?', [cd.sh])) {
+          if (String(mr.state_json).indexOf('enc:') === 0) { sealedMeta = true; continue; }       // not opened yet (openSnapMeta runs after the keys): wait, do not fold
+          var st = null, okh = false;
+          try { st = JSON.parse(mr.state_json); okh = (await stateHashOf(st)) === cd.sh && ENV.canonical(st.frontier) === ENV.canonical(f) && st.prev === cd.c.params.prev && st.space === space;
+            if (okh) { var held = {}; Object.keys(f).forEach(function (k) { _q(db, 'SELECT op_hash FROM cl_op WHERE author_kid=? AND author_seq<=?', [k, f[k]]).forEach(function (r) { held[r.op_hash] = 1; }); });
+              var listed = Object.keys(st.verdict); okh = listed.length === Object.keys(held).length && listed.every(function (h) { return held[h]; }); }
+          } catch (e) { okh = false; }
+          if (okh) { st.hash = cd.sh; verified[cd.sh] = st; trusted[cd.sh] = 1; persistCk(cd.sh, 'OK', st);
+            log('§CKPT_TRUST kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' pos=' + cd.pos + ' cosigners=' + Object.keys(cd.c.persons).length + ' adopted without folding S'); return st; }
+          log('§CKPT_REFUSED kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' reason=snapshot-state-does-not-hash-to-state_hash-or-lists-other-ops — falling back to my own fold');
+        }
+        if (sealedMeta && !_q(db, "SELECT 1 FROM cl_snapmeta WHERE state_hash=? AND state_json NOT LIKE 'enc:%'", [cd.sh]).length) { _once('sealedmeta:' + cd.sh, '§CKPT_PENDING kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' — its snapshot state is sealed and my key has not opened it yet'); return null; }
+      }
+      // verify by my own fold of S (under the barrier of prev)
+      var prevSt = null, prevC = null;
+      if (cd.c.params.prev) { var pc = rosterAll.checkpoints[cd.c.params.prev]; prevSt = verified[cd.c.params.prev];
+        if (!prevSt && pc && !badCk[cd.c.params.prev]) prevSt = await establish({ sh: cd.c.params.prev, c: pc, pos: pc.params.pos }, rosterAll, ids, N);
+        if (!prevSt || !pc) { _once('prev:' + cd.sh, '§CKPT_PENDING kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' — its previous checkpoint is not established here'); return null; }
+        prevC = pc.ops[0].hash; }
+      var r = await foldS(prevSt, f, prevC);
+      if (r.problem) { badCk[cd.sh] = 1; persistCk(cd.sh, 'BAD', null); log('§CKPT_REFUSED kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' reason=' + r.problem); return null; }
+      var body = r.state, sh = await stateHashOf(body);
+      if (sh !== cd.sh) { badCk[cd.sh] = 1; persistCk(cd.sh, 'BAD', null);
+        log('§CKPT_REFUSED kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' reason=state_hash-differs-from-my-fold mine=' + sh.slice(0, 12)); return null; }
+      body.hash = sh; verified[sh] = body; persistCk(sh, 'OK', body);
+      log('§CKPT_VERIFY kid=' + self.kid + ' state=' + sh.slice(0, 12) + ' pos=' + cd.pos + ' = my own fold of S (' + body.order.length + ' placed, ' + Object.keys(body.verdict).length + ' judged)');
+      return body;
+    }
+    // the static part of a base is built once per checkpoint; the stability check runs at every fold
+    async function baseFrom(st, cd, rosterAll, ids, contenders) {
+      var f = st.frontier, bc = baseCache[cd.sh];
+      if (!bc) {
+        var rs = await ROS.fold(idUpTo(ids, f), space);
+        if (!rs.ok) return { problem: 'roster-of-S-not-ok' };
+        var nRef = 0; Object.keys(st.verdict).forEach(function (h) { if (st.verdict[h].verdict === 'REFUSED') nRef++; });
+        bc = baseCache[cd.sh] = { rs: rs, idHashes: idUpTo(ids, f).map(function (o) { return o.hash; }), nRefused: nRef };
+      }
+      var why = ROS.stableAgainst(bc.rs, rosterAll, f, bc.idHashes);
+      if (!why) contenders.forEach(function (o) { if (!why && o.env.seq <= (f[o.env.author] || 0)) why = 'slot-contested'; });
+      var first = cd.c.ops[0], cEnv = null; ids.forEach(function (o) { if (o.hash === first.hash) cEnv = o.env; });
+      if (!why && (!cEnv || (cEnv.deps || []).some(function (d) { return !st.verdict[d]; }))) why = 'checkpoint-reads-outside-S';
+      if (!why && st.verdict[first.hash]) why = 'checkpoint-inside-its-own-S';
+      if (why) return { problem: why };
+      return { base: { stateHash: cd.sh, state: st, frontier: f, order: st.order, verdict: st.verdict, scopes: st.scopes, claims: st.claims || {}, used: st.used || {}, c: first.hash, rosterS: bc.rs, idHashes: bc.idHashes, nRefused: bc.nRefused, pos: st.order.length } };
+    }
+
+    async function plainOrder() {
+      if (base) { base = null; prevRest = []; }
+      if (hasCk !== false) db.run("DELETE FROM cl_ckpt WHERE status='ACTIVE'");
+      var raw = allOps(), contenders = contenderRows();
+      var res = await core(null, raw, contenders, []);
       db.run('DELETE FROM cl_verdict');
-      var pos = {}; L.order.forEach(function (h, i) { pos[h] = i; });
-      Object.keys(verdict).forEach(function (h) { db.run('INSERT INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, verdict[h].verdict, verdict[h].reason || null]); });
-      last = { order: L.order, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, verdict: verdict };
+      var pos = {}; res.order.forEach(function (h, i) { pos[h] = i; });
+      Object.keys(res.verdict).forEach(function (h) { db.run('INSERT INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, res.verdict[h].verdict, res.verdict[h].reason || null]); });
+      last = { order: res.order, parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, claims: res.claims, used: res.used };
       return last;
     }
+    async function orderWithCkpt() {
+      var ids = identityRows(), contenders = contenderRows();
+      var rosterAll = await ROS.fold(ids, space);
+      if (!rosterAll.ok) return null;
+      var b = await resolveBase(rosterAll, ids, contenders);
+      if (!b) return null;
+      var raw = rangeRows(b.frontier, null), res = await core(b, raw, contenders, idUpTo(ids, b.frontier));
+      var why = ROS.stableAgainst(b.rosterS, res.roster, b.frontier, b.idHashes);         // the authoritative check, with the roster the fold actually used
+      if (why) { _once('stale2:' + b.stateHash + why, '§CKPT_STALE kid=' + self.kid + ' state=' + b.stateHash.slice(0, 12) + ' reason=' + why + ' — falling back to the full fold'); return null; }
+      if (!base || base.stateHash !== b.stateHash) {                   // activation: the frozen rows go into cl_verdict once (a saved comm.db already has them)
+        base = b; prevRest = [];
+        if (!_q(db, "SELECT 1 FROM cl_ckpt WHERE state_hash=? AND status='ACTIVE'", ['A:' + b.stateHash]).length) {
+          db.run("DELETE FROM cl_ckpt WHERE status='ACTIVE'"); db.run('DELETE FROM cl_verdict');
+          var sp = {}; b.order.forEach(function (h, i) { sp[h] = i; });
+          Object.keys(b.verdict).forEach(function (h) { db.run('INSERT INTO cl_verdict VALUES (?,?,?,?)', [h, sp[h] != null ? sp[h] : null, b.verdict[h].verdict, b.verdict[h].reason || null]); });
+          db.run("INSERT INTO cl_ckpt VALUES (?,?,NULL)", ['A:' + b.stateHash, 'ACTIVE']); }
+        log('§CKPT_ADOPT kid=' + self.kid + ' state=' + b.stateHash.slice(0, 12) + ' pos=' + b.pos + ' judged=' + Object.keys(b.verdict).length + ' refused=' + b.nRefused + ' rest=' + raw.length);
+      }
+      if (Object.keys(verified).length > 1) {                           // older folded states are not needed again: keep only the one in force (memory and comm.db)
+        Object.keys(verified).forEach(function (h) { if (h !== b.stateHash && verified[h].order.length <= b.pos) { delete verified[h]; delete trusted[h]; delete baseCache[h]; } });
+        db.run("DELETE FROM cl_ckpt WHERE status='OK' AND state_hash<>?", [b.stateHash]); }
+      prevRest.forEach(function (h) { db.run('DELETE FROM cl_verdict WHERE op_hash=?', [h]); });
+      var pos = {}; res.order.forEach(function (h, i) { pos[h] = b.pos + i; });
+      var own = Object.keys(res.verdict); prevRest = own;
+      own.forEach(function (h) { db.run('INSERT OR REPLACE INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, res.verdict[h].verdict, res.verdict[h].reason || null]); });
+      last = { order: b.order.concat(res.order), parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, base: b, claims: res.claims, used: res.used };
+      return last;
+    }
+    async function order() {
+      if (!opts.noCheckpoint && anyCkpt()) { var r = await orderWithCkpt(); if (r) return r; }
+      return plainOrder();
+    }
+
     async function cur() { return last || order(); }
 
     // my epoch keys, derived from the KEYGRANTs addressed to me that the roster accepted: {epoch: [CryptoKey]} (§13.2).
@@ -181,7 +400,7 @@
       var ch = (p.changes || {})[c]; return ch && Object.prototype.hasOwnProperty.call(ch, 'new') ? ch.new : ch; }
     async function conflicts() {
       var L = await cur(), byHash = {}, pos = {}, rec = {}; allOps().forEach(function (o) { byHash[o.hash] = o.env; });
-      L.order.forEach(function (h, i) { pos[h] = i; var e = byHash[h]; if (ROS.IDENTITY[e.body.op_type]) return; (rec[e.target.uu] = rec[e.target.uu] || []).push(h); });
+      L.order.forEach(function (h, i) { pos[h] = i; var e = byHash[h]; if (ROS.IDENTITY[e.body.op_type] || CLAIM[e.body.op_type]) return; (rec[e.target.uu] = rec[e.target.uu] || []).push(h); });
       var out = [], devs = L.roster.devices;
       Object.keys(rec).forEach(function (uu) {
         var hs = rec[uu], anc = {};
@@ -236,16 +455,21 @@
     // receipts: per author, the highest seq I hold with nothing missing below it. SEEN means RECEIVED — whether an op
     // was accepted is its verdict, a separate fact (a refused op is still delivered).
     async function frontier() {
-      var have = {}, f = {};
-      _q(db, 'SELECT author_kid, author_seq FROM cl_op').forEach(function (r) { (have[r.author_kid] = have[r.author_kid] || {})[r.author_seq] = 1; });
-      Object.keys(have).forEach(function (a) { var n = 0; while (have[a][n + 1]) n++; f[a] = n; });
+      var f = {};
+      _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m, COUNT(*) AS c FROM cl_op GROUP BY author_kid').forEach(function (r) {
+        if (r.m === r.c) { f[r.a] = r.m; return; }                           // seqs are unique and >= 1, so count == max means 1..max are all held
+        var have = {}; _q(db, 'SELECT author_seq FROM cl_op WHERE author_kid=?', [r.a]).forEach(function (q) { have[q.author_seq] = 1; });
+        var n = 0; while (have[n + 1]) n++; f[r.a] = n; });
       return f;
     }
     function gaps() {
-      var have = {}, top = {}, out = [];
-      _q(db, 'SELECT author_kid, author_seq FROM cl_op').forEach(function (r) { (have[r.author_kid] = have[r.author_kid] || {})[r.author_seq] = 1; top[r.author_kid] = Math.max(top[r.author_kid] || 0, r.author_seq); });
-      _q(db, 'SELECT author_kid, MAX(seq) AS s FROM cl_head_seen GROUP BY author_kid').forEach(function (r) { top[r.author_kid] = Math.max(top[r.author_kid] || 0, r.s); have[r.author_kid] = have[r.author_kid] || {}; });
-      Object.keys(top).forEach(function (a) { for (var q = 1; q <= top[a]; q++) if (!have[a][q]) out.push({ author: a, seq: q }); });
+      var out = [], ops = {}, top = {}, order = [];
+      _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m, COUNT(*) AS c FROM cl_op GROUP BY author_kid').forEach(function (r) { ops[r.a] = r; top[r.a] = r.m; order.push(r.a); });
+      _q(db, 'SELECT author_kid AS a, MAX(seq) AS s FROM cl_head_seen GROUP BY author_kid').forEach(function (r) { if (!(r.a in top)) order.push(r.a); top[r.a] = Math.max(top[r.a] || 0, r.s); });
+      order.forEach(function (a) {
+        if (ops[a] && ops[a].c === top[a]) return;                           // nothing missing below the top
+        var have = {}; _q(db, 'SELECT author_seq FROM cl_op WHERE author_kid=?', [a]).forEach(function (q) { have[q.author_seq] = 1; });
+        for (var q = 1; q <= top[a]; q++) if (!have[q]) out.push({ author: a, seq: q }); });
       return out;
     }
 
@@ -265,6 +489,7 @@
       var h = await ENV.hashHex(env);
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?,?)', [h, self.kid, env.seq, env.prev, JSON.stringify(env.deps), env.body.op_type, env.target.table, env.target.uu, JSON.stringify(env), 'local', 'OWN']);
       db.run('UPDATE cl_self SET next_seq=?, head_hash=? WHERE kid=?', [env.seq + 1, h, self.kid]);
+      if (authors) authors[self.kid] = 1; if (env.body.op_type === 'CHECKPOINT') hasCk = true;
       last = null; return { env: env, hash: h };
     }
 
@@ -294,6 +519,14 @@
       return r;
     }
     async function setRole(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'ROLE', params: p } }); }
+    // §13.12.1: the admin's config op. params = { epoch, visit_ms?, bundle_max_ops?, gate?, checkpoint?, lease_ttl_ms?, pipes?, manifest?, number_prefix? }.
+    // A new POLICY reads the previous one (same record), so concurrent policies show up as heads and the fold keeps one epoch.
+    async function setPolicy(params) { return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
+    // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
+    async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
+      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null }; }
+    // my offset inside the visit period V (ms); null until a policy fixes V
+    async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
     async function revoke(kid, lastGood) { return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, body: { op_type: 'REVOKE', params: { kid: kid, last_good_seq: lastGood } } }); }
 
     async function ingest(env, pipeId) {
@@ -304,6 +537,7 @@
       var slot = _q(db, 'SELECT op_hash FROM cl_op WHERE author_kid=? AND author_seq=?', [env.author, env.seq])[0];
       if (slot) { db.run('INSERT OR IGNORE INTO cl_contender VALUES (?,?,?,?)', [h, env.author, env.seq, JSON.stringify(env)]); last = null; return 'CONTENDER'; }
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?,?)', [h, env.author, env.seq, env.prev, JSON.stringify(env.deps), env.body.op_type, env.target.table, env.target.uu, JSON.stringify(env), pipeId, 'RECEIVED']);
+      if (authors) authors[env.author] = 1; if (env.body.op_type === 'CHECKPOINT') hasCk = true;
       last = null; return 'RECEIVED';
     }
 
@@ -313,7 +547,9 @@
     async function bundleNew() {
       var me = selfRow(), rows = _q(db, "SELECT op_hash, author_seq, op_type, envelope FROM cl_op WHERE author_kid=? AND state='OWN' AND author_seq>? ORDER BY author_seq", [self.kid, me.bundled_to]);
       var R = (await cur()).roster, ring = await keyring(), ep = _newest(ring), take = [], enc = {};
+      var cap = R.policy && R.policy.params.bundle_max_ops ? R.policy.params.bundle_max_ops : Infinity;     // §13.12.1: the rest goes out at the next visit
       for (var r of rows) {
+        if (take.length >= cap) break;
         if (!ROS.IDENTITY[r.op_type]) {
           if (!R.ok || R.encrypted) { if (ep == null) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-key-yet'); break; }
             enc[r.op_hash] = await _seal(JSON.parse(r.envelope), ring[ep][0], ep, space); }
@@ -369,7 +605,7 @@
       if (!self.dhPrivateKey) return;
       var L = await cur(), R = L.roster; if (!R.ok || !R.encrypted || !R.devices[self.kid] || R.revokes[self.kid] != null) return;
       var me = R.devices[self.kid], role = R.roleAt(self.kid, selfRow().next_seq), ring = await keyring();
-      var mine = allOps().filter(function (o) { return o.env.author === self.kid && (o.env.body.op_type === 'KEYGRANT' || o.env.body.op_type === 'REKEY'); });
+      var mine = rowsOf("SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND op_type IN ('KEYGRANT','REKEY')", [self.kid]);
       var rekeyed = {}; R.rekeys.forEach(function (k) { k.excludes.forEach(function (x) { rekeyed[x] = 1; }); });
       mine.forEach(function (o) { if (o.env.body.op_type === 'REKEY') (o.env.body.params.excludes || []).forEach(function (x) { rekeyed[x] = 1; }); });   // my own, even if still unplaced
       var need = Object.keys(R.revokes).filter(function (k) { return R.holdersAll[k] && !rekeyed[k]; }).sort();
@@ -382,7 +618,7 @@
         L = await cur(); R = L.roster; ring = await keyring();
       }
       var have = {}; R.grants.forEach(function (g) { have[g.kid + '#' + g.epoch] = 1; });
-      allOps().forEach(function (o) { if (o.env.author === self.kid && o.env.body.op_type === 'KEYGRANT') have[o.env.body.params.kid + '#' + o.env.body.params.epoch] = 1; });   // mine, accepted or not: never re-issue
+      rowsOf("SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND op_type='KEYGRANT'", [self.kid]).forEach(function (o) { have[o.env.body.params.kid + '#' + o.env.body.params.epoch] = 1; });   // mine, accepted or not: never re-issue
       for (var kid of Object.keys(R.devices).sort()) { var d = R.devices[kid];
         if (kid === self.kid || R.revokes[kid] != null || !d.dh || !(role.comm_admin || d.person === me.person)) continue;
         for (var ep of Object.keys(ring).map(Number).sort()) { if (have[kid + '#' + ep]) continue;
@@ -390,6 +626,46 @@
     }
 
     // the post-office visit (§11.17): note my visit, collect my mail
+    // take one fetched object (a bundle or a checkpoint snapshot, which is a bundle with a meta table) into the store
+    async function takeBundle(on, ob, pipe, rep) {
+      var isSnap = /\.bimsnap$/.test(on), meta = null;
+      rep.fetched++;
+      if (isSnap) { try { var sb = new SQL.Database(ob), mt = {}; _q(sb, 'SELECT k, v FROM meta').forEach(function (r) { mt[r.k] = r.v; }); sb.close();
+        if (HEX.test(String(mt.state_hash || '')) && mt.state) { meta = mt; db.run('INSERT OR REPLACE INTO cl_snapmeta VALUES (?,?,?)', [mt.state_hash, on, mt.state]); } } catch (e) { /* not a snapshot after all: read it as a bundle */ } }
+      // a snapshot repeats what a full-log device already holds: when every op under its frontier is held, its rows are not even read
+      var skipRows = false; if (meta && meta.frontier) { try { skipRows = present(JSON.parse(meta.frontier)); } catch (e) { skipRows = false; } }
+      if (!skipRows) for (var it of _rows(ob)) {
+        if (isSnap && _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=?', [it.hash]).length) continue;
+        if (it.text.indexOf('enc:') === 0) {
+          var ex = _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=? UNION SELECT 1 FROM cl_contender WHERE op_hash=? UNION SELECT 1 FROM cl_sealed WHERE op_hash=?', [it.hash, it.hash, it.hash]);
+          if (!ex.length) { var m = /^enc:(\d+):/.exec(it.text); db.run('INSERT INTO cl_sealed VALUES (?,?,?,?,?)', [it.hash, m ? Number(m[1]) : null, it.text, on, pipe.id]); }
+          continue;
+        }
+        var st = await ingest(JSON.parse(it.text), pipe.id);
+        if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
+      }
+      db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
+    }
+    // a snapshot's state travels sealed (enc:…) in an encrypted space; once I hold the epoch key I keep it opened in MY comm.db (like opened ops)
+    async function openSnapMeta() {
+      var rows = _q(db, "SELECT state_hash, state_json FROM cl_snapmeta WHERE state_json LIKE 'enc:%'"); if (!rows.length) return;
+      var ring = await keyring();
+      for (var r of rows) { var o = await _openText(r.state_json, ring, space);
+        if (o.state === 'ok') db.run('UPDATE cl_snapmeta SET state_json=? WHERE state_hash=?', [JSON.stringify(o.env), r.state_hash]);
+        else if (o.state === 'tampered') db.run("UPDATE cl_snapmeta SET state_json='tampered' WHERE state_hash=?", [r.state_hash]); }       // a held key that refuses it: not a state
+    }
+    // a light client (opts.trustCheckpoints) that sees a co-signed checkpoint it has no snapshot for fetches the object bytes_ref names
+    async function fetchSnapshots(pipe, rep) {
+      if (!opts.trustCheckpoints || !anyCkpt()) return;
+      var R = (await cur()).roster; if (!R.ok) return;
+      var N = (R.policy && R.policy.params.checkpoint && R.policy.params.checkpoint.cosigs) || 2;
+      for (var sh of Object.keys(R.checkpoints)) { var c = R.checkpoints[sh];
+        if (verified[sh] || badCk[sh] || Object.keys(c.persons).length < N || _q(db, 'SELECT 1 FROM cl_snapmeta WHERE state_hash=?', [sh]).length) continue;
+        for (var o of c.ops) { if (!o.bytes_ref || o.bytes_ref.indexOf(SP) !== 0) continue;
+          if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [o.bytes_ref, pipe.id]).length) continue;
+          var ob = await pipe.get(o.bytes_ref); if (ob) { await takeBundle(o.bytes_ref, ob, pipe, rep); break; } } }
+    }
+
     async function sync(pipe) {
       var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0, sealed: 0, opened: 0, tampered: 0, granted: 0 };
       // 1. collect: plaintext ops are ingested; sealed ones wait in cl_sealed until a key opens them
@@ -397,19 +673,13 @@
         if (on.indexOf(SP + 'o/' + self.kid + '/') === 0) continue;
         if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
         var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
-        rep.fetched++;
-        for (var it of _rows(ob)) {
-          if (it.text.indexOf('enc:') === 0) {
-            var ex = _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=? UNION SELECT 1 FROM cl_contender WHERE op_hash=? UNION SELECT 1 FROM cl_sealed WHERE op_hash=?', [it.hash, it.hash, it.hash]);
-            if (!ex.length) { var m = /^enc:(\d+):/.exec(it.text); db.run('INSERT INTO cl_sealed VALUES (?,?,?,?,?)', [it.hash, m ? Number(m[1]) : null, it.text, on, pipe.id]); }
-            continue;
-          }
-          var st = await ingest(JSON.parse(it.text), pipe.id);
-          if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
-        }
-        db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
+        await takeBundle(on, ob, pipe, rep);
       }
+      await openSnapMeta();                                    // before the sealed ops open: a light client must know the state before it sees the ops it would otherwise fold
       await openSealed(rep);
+      await fetchSnapshots(pipe, rep);
+      await openSealed(rep);
+      await openSnapMeta();
       await autoKeys(rep);
       // 2. send my news
       var nb = await bundleNew();
@@ -432,7 +702,7 @@
         db.run('INSERT OR REPLACE INTO cl_head_seen VALUES (?,?,?,?,?,?)', [hd.author, pipe.id, hd.seq, hd.hash, JSON.stringify(hd.frontier || {}), hd.sig]);
       }
       var cnt = function (v) { return Object.keys(L.verdict).filter(function (h) { return L.verdict[h].verdict === v; }).length; };
-      rep.placed = L.order.length; rep.parked = cnt('PARKED'); rep.refused = cnt('REFUSED'); rep.gaps = gaps().length; rep.equivocations = L.equivocations.length;
+      rep.placed = L.order.length; rep.parked = cnt('PARKED'); rep.refused = cnt('REFUSED') + (L.base ? L.base.nRefused : 0); rep.gaps = gaps().length; rep.equivocations = L.equivocations.length;
       rep.sealed = _q(db, 'SELECT COUNT(*) AS n FROM cl_sealed')[0].n;
       var ringNow = await keyring(), held = Object.keys(ringNow).map(Number).sort();
       log('§COMM_TRUST mode=roster genesis=' + (L.roster.ok ? String(L.roster.genesis).slice(0, 12) : 'NONE(' + L.roster.reason + ')') +
@@ -456,12 +726,160 @@
     }
     async function placedEnvelopes() {
       var L = await cur(), env = {}; allOps().forEach(function (o) { env[o.hash] = o.env; });
-      return L.order.map(function (h) { return { hash: h, env: env[h] }; }).filter(function (p) { return !ROS.IDENTITY[p.env.body.op_type]; });
+      return L.order.map(function (h) { return { hash: h, env: env[h] }; }).filter(function (p) { return !ROS.IDENTITY[p.env.body.op_type] && !CLAIM[p.env.body.op_type]; });
     }
     function verdicts() { return _q(db, 'SELECT * FROM cl_verdict'); }
 
+
+
+    // ── claims and document numbers (§13.12.2, §13.12.F.1) ──────────────────────────────────────────────────────
+    async function claim(key, o) {
+      o = o || {}; var params = { key: String(key) }; if (o.until != null) params.until = o.until; if (o.takes) params.takes = o.takes;
+      return author({ target: { table: 'comm_claim', uu: await ROS.claimUU(space, key) }, body: { op_type: 'KEYCLAIM', params: params }, ts: o.ts, intent: 'K1' });
+    }
+    async function claimOf(key) {
+      var L = await cur(); if (!L.claims) return null; var e = L.claims[await keyhFor(key)]; if (!e) return null;
+      var d = L.roster.devices[e.a]; return { hash: e.h, author: e.a, person: d ? d.person : null, until: e.u };
+    }
+    // every claim op I hold with its verdict (and the winner of its key)
+    async function claims() {
+      var L = await cur(), out = [];
+      for (var o of rowsOf("SELECT op_hash, envelope FROM cl_op WHERE op_type IN ('KEYCLAIM','BOOKING')")) {
+        var sp = ADM.claimSpec(o.env), v = L.verdict[o.hash] || null, w = !sp.problem && L.claims ? L.claims[await keyhFor(sp.key)] : null, d = L.roster.devices[o.env.author];
+        out.push({ hash: o.hash, key: sp.key || null, type: o.env.body.op_type, author: o.env.author, person: d ? d.person : null, verdict: v ? v.verdict : null, reason: v ? v.reason : null, winner: w ? w.h : null });
+      }
+      return out;
+    }
+    // the Notice a loser sees: derived from the fold, like conflicts
+    async function claimNotices(personUu) {
+      var pu = String(personUu).toLowerCase(), L = await cur();
+      return (await claims()).filter(function (c) { return c.person === pu && c.verdict === 'REFUSED' && /^(key-claimed|lease-live|bad-takeover)$/.test(c.reason); })
+        .map(function (c) { var wd = c.winner ? (L.roster.devices[(L.claims[Object.keys(L.claims).filter(function (k) { return L.claims[k].h === c.winner; })[0]] || {}).a] || {}) : {};
+          return { key: c.key, reason: c.reason, op: c.hash, winner: c.winner, winner_person: wd.person || null, textmsg: 'KeyClaimed ' + c.key + ': held by ' + (wd.person || 'someone else') + ' (' + c.reason + ')' }; });
+    }
+    function seqCfg(seqUU) { var c = seqByUU && seqByUU[seqUU]; if (!c) throw new Error('numberDocument: unknown sequence ' + seqUU); return c; }
+    async function bookingRef(seqUU, n) { return ROS.claimUU(space, 'BOOKING:' + seqUU + ':' + n); }
+    // mode B: take the next free number of the sequence at the post office, then sign the booking. { n, docno, ref, refs, tries } | { offline:true, error }
+    async function bookDocNo(pipe, seqUU, docUU, o) {
+      o = o || {}; var cfg = seqCfg(seqUU), inc = cfg.increment_no || 1, tries = 0, n = null;
+      if (typeof pipe.putIfAbsent !== 'function' || pipe.ifAbsent === false) return { offline: true, error: 'pipe has no putIfAbsent' };
+      try {
+        var taken = (await pipe.list(SP + 'seq/' + seqUU + '/')).map(function (x) { return Number(x.split('/').pop()); }).filter(function (x) { return Number.isInteger(x); });
+        n = taken.length ? Math.max.apply(null, taken) + inc : (cfg.start_no || 1);
+        if (o.afterList) await o.afterList();
+        for (; tries < 200; ) { tries++;
+          var ok = await pipe.putIfAbsent(SP + 'seq/' + seqUU + '/' + n, _json({ seq: seqUU, n: n, device: self.kid, doc: String(docUU).toLowerCase() }));
+          if (ok) break; n += inc; }
+      } catch (e) { return { offline: true, error: String(e && e.message || e) }; }
+      var op = await author({ target: { table: 'comm_booking', uu: await bookingRef(seqUU, n) }, body: { op_type: 'BOOKING', params: { seq: seqUU, n: n, doc: String(docUU).toLowerCase() } }, intent: 'K1' });
+      return { mode: 'B', n: n, docno: ADM.formatDocNo(cfg, n, self.kid), ref: { seq: seqUU, n: n }, refs: [await bookingRef(seqUU, n)], tries: tries, booking: op.hash };
+    }
+    // mode K: book the next free block (a range of numbers) once; allocate from it offline
+    async function bookBlock(pipe, seqUU, o) {
+      o = o || {}; var cfg = seqCfg(seqUU), inc = cfg.increment_no || 1, size = cfg.block_size || 50, j = 0, tries = 0;
+      if (typeof pipe.putIfAbsent !== 'function' || pipe.ifAbsent === false) return { offline: true, error: 'pipe has no putIfAbsent' };
+      try {
+        var have = (await pipe.list(SP + 'seq/' + seqUU + '/blk')).map(function (x) { return Number(x.split('/blk').pop()); }).filter(function (x) { return Number.isInteger(x); });
+        j = have.length ? Math.max.apply(null, have) + 1 : 0;
+        if (o.afterList) await o.afterList();
+        for (var t = 0; t < 200; t++) { tries++; if (await pipe.putIfAbsent(SP + 'seq/' + seqUU + '/blk' + j, _json({ seq: seqUU, block: j, device: self.kid }))) break; j++; }
+      } catch (e) { return { offline: true, error: String(e && e.message || e) }; }
+      var from = (cfg.start_no || 1) + j * size * inc, to = from + (size - 1) * inc;
+      var op = await author({ target: { table: 'comm_booking', uu: await ROS.claimUU(space, 'BLOCK:' + seqUU + ':' + j) }, body: { op_type: 'BOOKING', params: { seq: seqUU, block: j, from: from, to: to } }, intent: 'K1' });
+      return { block: j, from: from, to: to, tries: tries, booking: op.hash };
+    }
+    // the numbers this device has used / may use, from the fold (own unsent ops are in it too)
+    async function usedBy(seqUU) { var L = await cur(), out = {}; if (!L.used) return out; var pre = seqUU + '|' + self.kid + '|';
+      for (var k in L.used) if (k.indexOf(pre) === 0) out[Number(k.slice(pre.length))] = L.used[k]; return out; }
+    async function nextFromBlock(seqUU) {
+      var cfg = seqCfg(seqUU), inc = cfg.increment_no || 1, L = await cur(), used = await usedBy(seqUU), best = null;
+      if (!L.claims) return null;
+      for (var kh in L.claims) { var e = L.claims[kh]; if (!e.p || e.p.seq !== seqUU || e.p.block == null || e.a !== self.kid) continue;
+        for (var n = e.p.from; n <= e.p.to; n += inc) if (!used[n]) { if (best == null || n < best) best = n; break; } }
+      return best;
+    }
+    // the one entry point: pick the number for a document by the sequence's mode. { mode, n, docno, ref, refs } | { offline:true }
+    async function numberDocument(pipe, seqUU, docUU, o) {
+      var cfg = seqCfg(seqUU), inc = cfg.increment_no || 1;
+      if (cfg.mode === 'B') return bookDocNo(pipe, seqUU, docUU, o);
+      if (cfg.mode === 'K') {
+        var n = await nextFromBlock(seqUU);
+        if (n == null) { var bb = await bookBlock(pipe, seqUU, o); if (bb.offline) return bb; n = await nextFromBlock(seqUU); }
+        if (n == null) return { offline: true, error: 'no number left in any block' };
+        return { mode: 'K', n: n, docno: ADM.formatDocNo(cfg, n, self.kid), ref: { seq: seqUU, n: n }, refs: [await ROS.claimUU(space, 'BLOCK:' + seqUU + ':' + ADM.blockOf(cfg, n))] };
+      }
+      var u = await usedBy(seqUU), mx = Object.keys(u).map(Number).reduce(function (a, b) { return Math.max(a, b); }, (cfg.start_no || 1) - inc), n2 = mx + inc;
+      return { mode: 'S', n: n2, docno: ADM.formatDocNo(cfg, n2, self.kid), ref: { seq: seqUU, n: n2 }, refs: [] };
+    }
+
+    // ── publishing / co-signing a checkpoint (§13.12.3) ─────────────────────────────────────────────────────────
+    // checkpoint(pipe, {keepTail}) → {name, state_hash, pos, hash} | {skipped: reason}. The snapshot object goes to the pipe first, then the op.
+    async function checkpoint(pipe, o) {
+      o = o || {}; var L = await cur(); if (!L.roster.ok) return { skipped: 'no-roster' };
+      var bs = base, f0 = bs ? bs.frontier : {}, rows = rangeRows(f0, null), byHash = {}, byAuth = {};
+      rows.forEach(function (r) { byHash[r.hash] = r; (byAuth[r.env.author] = byAuth[r.env.author] || {})[r.env.seq] = r; });
+      var decided = function (h) { var v = L.verdict[h]; return !!v && (v.verdict === 'MERGED' || v.verdict === 'REFUSED'); };
+      var f = {};
+      authorList().forEach(function (a) { var n = f0[a] || 0, m = byAuth[a] || {}; while (m[n + 1] && decided(m[n + 1].hash)) n++;
+        n = Math.max(f0[a] || 0, n - (o.keepTail || 0)); if (n >= 1) f[a] = n; });
+      contenderRows().forEach(function (c) { if (f[c.env.author] != null && c.env.seq <= f[c.env.author]) f[c.env.author] = c.env.seq - 1; });
+      var changed = true;
+      while (changed) { changed = false;
+        rows.forEach(function (r) { if (changed || r.env.seq > (f[r.env.author] || 0)) return;
+          for (var d of (r.env.deps || [])) { var dr = byHash[d];
+            if (!(bs && bs.verdict[d]) && !(dr && dr.env.seq <= (f[dr.env.author] || 0))) { f[r.env.author] = r.env.seq - 1; changed = true; return; } } }); }
+      Object.keys(f).forEach(function (a) { if (f[a] < 1) delete f[a]; });
+      if (!Object.keys(f).some(function (a) { return f[a] > (f0[a] || 0); })) return { skipped: 'nothing-new' };
+      var r = await foldS(bs ? bs.state : null, f, bs ? bs.c : null); if (r.problem) return { skipped: r.problem };
+      var body = r.state, sh = await stateHashOf(body); body.hash = sh;
+      var ids = identityRows(), rs = await ROS.fold(idUpTo(ids, f), space);
+      var why = rs.ok ? ROS.stableAgainst(rs, L.roster, f, idUpTo(ids, f).map(function (x) { return x.hash; })) : 'roster-of-S-not-ok';
+      if (why) return { skipped: 'unstable:' + why };
+      var ver = await versions(), uuC = await ROS.ckptUU(space, sh), reads = [uuC, await ROS.spaceUU(space), await ROS.devUU(self.kid), String(selfRow().person_uu || '').toLowerCase()];
+      for (var u of reads) { var hh = ver[u], arr = hh == null ? [] : (Array.isArray(hh) ? hh : [hh]); if (arr.some(function (x) { return !body.verdict[x]; })) return { skipped: 'reads-outside-frontier' }; }
+      // the snapshot object: a bundle of S's ops (business sealed like any bundle) + the state
+      var R = L.roster, ring = await keyring(), ep = _newest(ring), sealedSpace = !R.ok || R.encrypted;
+      if (sealedSpace && ep == null) return { skipped: 'no-key-yet' };
+      var pk = new SQL.Database(); pk.run('CREATE TABLE ops (op_hash TEXT PRIMARY KEY, envelope TEXT NOT NULL)'); pk.run('CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+      for (var a of Object.keys(f)) for (var q of _q(db, 'SELECT op_hash, op_type, envelope FROM cl_op WHERE author_kid=? AND author_seq<=? ORDER BY author_seq', [a, f[a]])) {
+        var txt = q.envelope; if (!ROS.IDENTITY[q.op_type] && sealedSpace) txt = await _seal(JSON.parse(q.envelope), ring[ep][0], ep, space);
+        pk.run('INSERT INTO ops VALUES (?,?)', [q.op_hash, txt]); }
+      var bodyOnly = Object.assign({}, body); delete bodyOnly.hash;
+      var stText = sealedSpace ? await _seal(bodyOnly, ring[ep][0], ep, space) : JSON.stringify(bodyOnly);        // the state is sealed like any business op: it holds record uuids, scopes, claim keys (hashed)
+      pk.run('INSERT INTO meta VALUES (?,?)', ['state', stText]); pk.run('INSERT INTO meta VALUES (?,?)', ['state_hash', sh]); pk.run('INSERT INTO meta VALUES (?,?)', ['frontier', JSON.stringify(f)]);
+      var bytes = pk.export(); pk.close();
+      var name = SP + 'o/' + self.kid + '/ck.' + body.order.length + '.' + sh.slice(0, 12) + '.bimsnap';
+      if ((await pipe.put(name, bytes)) === false) return { skipped: 'put-refused' };
+      var op = await author({ target: { table: 'comm_checkpoint', uu: uuC }, body: { op_type: 'CHECKPOINT', params: { pos: body.order.length, state_hash: sh, frontier: f, prev: body.prev, bytes_ref: name } } });
+      verified[sh] = body; persistCk(sh, 'OK', body);
+      log('§CKPT_PUBLISH kid=' + self.kid + ' state=' + sh.slice(0, 12) + ' pos=' + body.order.length + ' judged=' + Object.keys(body.verdict).length + ' snapshot=' + bytes.length + ' B prev=' + (body.prev ? body.prev.slice(0, 12) : 'none'));
+      return { name: name, state_hash: sh, pos: body.order.length, hash: op.hash, bytes: bytes.length };
+    }
+    // co-sign every checkpoint I have verified by my own fold and have not signed yet (a light client that only trusted one does not co-sign)
+    async function cosign() {
+      var R = (await order()).roster, me = R.devices[self.kid], out = [];
+      if (!me) return out;
+      for (var sh of Object.keys(R.checkpoints)) { var c = R.checkpoints[sh];
+        if (!verified[sh] || trusted[sh] || c.persons[me.person]) continue;
+        var pr = c.params, op = await author({ target: { table: 'comm_checkpoint', uu: await ROS.ckptUU(space, sh) }, body: { op_type: 'CHECKPOINT', params: { pos: pr.pos, state_hash: sh, frontier: pr.frontier, prev: pr.prev, bytes_ref: c.ops[0].bytes_ref } } });
+        log('§CKPT_COSIGN kid=' + self.kid + ' state=' + sh.slice(0, 12) + ' pos=' + pr.pos); out.push({ state_hash: sh, hash: op.hash }); }
+      return out;
+    }
+    async function checkpointInfo() {
+      var L = await cur(), R = L.roster; await loadCk();
+      return { inForce: L.base ? { state_hash: L.base.stateHash, pos: L.base.pos, frontier: L.base.frontier } : null,
+        candidates: Object.keys(R.checkpoints || {}).map(function (sh) { var c = R.checkpoints[sh];
+          return { state_hash: sh, pos: c.params.pos, cosigners: Object.keys(c.persons).length, status: badCk[sh] ? 'BAD' : (L.base && L.base.stateHash === sh ? 'IN-FORCE' : (verified[sh] ? (trusted[sh] ? 'TRUSTED' : 'VERIFIED') : 'PENDING')) }; }) };
+    }
+    // policy.checkpoint.every_ops: how many ops are folded beyond the in-force checkpoint (or all, if none)
+    async function checkpointDue() {
+      var L = await cur(), every = L.roster.policy && L.roster.policy.params.checkpoint && L.roster.policy.params.checkpoint.every_ops;
+      return !!every && (L.order.length - (L.base ? L.base.pos : 0)) >= every;
+    }
+
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke,
+             genesis: genesis, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset,
+             checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
              conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
