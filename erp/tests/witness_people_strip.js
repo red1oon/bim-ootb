@@ -104,7 +104,7 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     async function openPanelPeople(w) { await pillClick(w); await pg[w].waitForSelector('#tp-people .tp-person', { timeout: 15000 }); await sleep(400); }
     async function strip(w) { return pg[w].evaluate(function () { return { mode: { scope: document.getElementById('tp-m-scope').getAttribute('aria-pressed'), all: document.getElementById('tp-m-all').getAttribute('aria-pressed') },
       rows: Array.prototype.map.call(document.querySelectorAll('#tp-people .tp-person'), function (r) { var vis = getComputedStyle(r).display !== 'none'; return { person: r.getAttribute('data-person'), self: r.getAttribute('data-self') === '1', inscope: r.getAttribute('data-inscope') === '1', off: r.getAttribute('data-off') === '1', visible: vis,
-        name: r.querySelector('.tp-name').textContent.trim(), active: r.querySelector('.tp-active').textContent.trim(), initials: r.querySelector('.tp-avatar').textContent.trim(), h: r.getBoundingClientRect().height,
+        name: r.querySelector('.tp-name').textContent.trim(), active: r.querySelector('.tp-active').textContent.trim(), initials: r.querySelector('.tp-avatar').getAttribute('title') || r.querySelector('.tp-avatar').textContent.trim(), avatar: r.querySelector('.tp-avatar').getAttribute('data-avatar'), svg: !!r.querySelector('.tp-avatar svg'), h: r.getBoundingClientRect().height,
         badges: Array.prototype.map.call(r.querySelectorAll('.tp-badge'), function (b) { return { uu: b.getAttribute('data-uu'), text: b.textContent.trim() }; }) }; }),
       others: (document.getElementById('tp-others') || {}).textContent || null, inbox: Array.prototype.map.call(document.querySelectorAll('#tp-inbox .tp-inbox-item'), function (i) { return i.getAttribute('data-uu'); }), inboxText: document.getElementById('tp-inbox').textContent.trim() }; }); }
 
@@ -202,7 +202,7 @@ function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d
     else verdict(got.join() === expect.join() && sB.mode.all === 'true', 'Everyone mode: the strip order [' + sB.rows.map(function (r) { return r.name; }).join(', ') + '] equals the newest op/head order recomputed from the raw cl_op rows and the raw head files [' + expect.map(function (p) { return nm[p]; }).join(', ') + ']', 'ages(s)=' + expect.map(function (p) { return Math.round((Date.now() - last[p]) / 1000); }).join(','));
     var ctlMix = expect.slice().reverse().join() !== got.join();
     verdict(ctlMix && sB.rows[0].self === true, 'CONTROL: the reversed order differs from what is shown, and B (who just Visited) is first — the order is not alphabetical/ID order', 'first=' + sB.rows[0].name);
-    verdict(sB.rows.every(function (r) { return r.h >= 44 && r.initials.length >= 1 && /^active /.test(r.active); }) , 'every row is >= 44 px high, has an initials avatar and an "active …" text', JSON.stringify(sB.rows.map(function (r) { return r.initials + ':' + r.active + ':' + Math.round(r.h); })));
+    verdict(sB.rows.every(function (r) { return r.h >= 44 && r.initials.length >= 1 && /^a\d\d$/.test(r.avatar || '') && r.svg && /^active /.test(r.active); }) , 'every row is >= 44 px high, has a built-in avatar head (data-avatar a01..a24, drawn as SVG; the initials are its title, §15.15.2) and an "active …" text', JSON.stringify(sB.rows.map(function (r) { return r.initials + ':' + r.active + ':' + Math.round(r.h); })));
     await closePanel('B');
 
     // ═══ §PS-HIST (6) ═══

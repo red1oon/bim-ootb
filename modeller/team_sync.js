@@ -10,8 +10,8 @@
  *   OUT  scan(): every kernel_ops GEOM row not yet shared -> v3 envelope (table 'bim_element', target uu = the row's op_uuid; a move = per-axis
  *        absolute offset change pos_x|pos_y|pos_z {old,new}, so the comm layer's per-column conflict rule judges it, §15.3-15.4).
  *   IN   visit(): store.sync(pipe) -> store.foldable() -> rebuild the kernel_ops table = kept local rows + the projection of the comm log -> importBytes.
- * Inert unless the page is opened with ?team=1 or localStorage.teamMode==='1' (the ERP's switch). Identity/space/token are read from the
- * same-origin IndexedDB 'comm_phone' written by common/comm/comm_phone.html; this page keeps its OWN comm store bytes under 'modeller_db'.
+ * Inert unless the page is opened with ?team=1 or localStorage.teamMode==='1' (the ERP's switch; the ONE Team icon's panel turns it on, §15.15.1). Identity/space/token are read from the
+ * same-origin IndexedDB 'comm_phone' (written by the pairing page OR by this adapter's own in-panel pairing); this page keeps its OWN comm store bytes under 'modeller_db'.
  */
 (function (global) {
   'use strict';
@@ -25,7 +25,7 @@
   var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' };
   var AX = ['x', 'y', 'z'];
 
-  var SQLm = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastVisitAt = null, lastSyncRep = null, catchup = null;
+  var SQLm = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastVisitAt = null, lastSyncRep = null, catchup = null, enrolled = false, attached = false;
   var _resolveReady, ready = new Promise(function (r) { _resolveReady = r; });
   var chain = Promise.resolve();                                                   // scan / visit are serialised (one writer of the model at a time)
   var $ = function (id) { return document.getElementById(id); };
@@ -92,7 +92,7 @@
   }
 
   async function scanInner() {
-    if (!(await ready)) return 0;
+    await ready; if (!S) return 0;   // ready resolves once, at boot (false when unpaired); founding or joining later from the panel opens the store, so "is there a store" is the live test
     var O = global.Bonsai && global.Bonsai.oplog; if (!O || !O.db) return 0;
     var rows = readRows(O.db, "op_type LIKE 'GEOM%'"), byId = {}, n = 0, trial = null, fresh = 0;
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};   // §13.8 T4 cap, judged once per scan
@@ -234,9 +234,17 @@
     document.body.appendChild(box);
     return c;
   }
+  // §15.15.1 the ONE Team icon (#b-teams in the top pill): its state is read from the live adapter, never remembered — off | pending | on
+  function paintIcon(state) {
+    var b = $('b-teams'); if (!b) return; b.disabled = false;
+    b.setAttribute('data-team-state', state); b.setAttribute('aria-pressed', state === 'on' ? 'true' : 'false'); b.classList.toggle('on', state === 'on'); b.classList.toggle('pending', state === 'pending');
+    b.style.outline = state === 'pending' ? '2px solid #e0a000' : '';
+    b.title = state === 'on' ? 'Team — who is on what (click to open the People list)' : state === 'pending' ? 'Team — waiting for approval: press Visit, then click again' : 'Team — click to start or join a team';
+  }
   async function render() {
     var c = ensureChip(); if (!c) return;
-    if (!S) { $('team-label').textContent = 'Team · not paired (pair this browser on comm_phone.html)'; $('team-visit').disabled = true; c.setAttribute('data-team', 'unpaired'); return; }
+    if (!S) { $('team-label').textContent = 'Team · not in a team yet — click the Team icon'; $('team-visit').disabled = true; c.setAttribute('data-team', 'unpaired'); enrolled = false; paintIcon('off'); return; }
+    $('team-visit').disabled = false;                                               // (it is disabled while unpaired; joining or founding from the panel makes it live)
     var L = await S.order(), dl = S.delivery(), gaps = S.gaps().length, cf = await S.conflicts();
     var devs = Object.keys(L.roster.devices).length, mine = L.roster.devices[dev.kid], lo = Object.keys(localOnly).length;
     $('team-label').textContent = 'Team · ' + codeOf(dev.kid) + ' · team devices ' + devs + (mine ? '' : ' · waiting for approval — press Visit');
@@ -250,6 +258,7 @@
       return '<div class="team-conflict" data-uu="' + k.uu + '" data-table="' + k.table + '" data-col="' + k.col + '">⚠ ' + k.table + ' ' + (byUu[k.uu] ? '<b>' + byUu[k.uu] + '</b> ' : '') + '(' + k.uu.slice(0, 8) + ') · ' + k.col + ': values ' +
         k.candidates.map(function (x) { return JSON.stringify(decV(x.value)); }).join(' / ') + ', kept ' + JSON.stringify(decV(k.before)) + ' — ' + MSG_CRM + '</div>'; }).join('');
     c.setAttribute('data-team', 'ready'); c.setAttribute('data-conflicts', String(cf.length)); c.setAttribute('data-localonly', String(lo));
+    enrolled = !!mine; paintIcon(mine ? 'on' : 'pending');
     ensurePeopleUi();
   }
 
@@ -276,6 +285,7 @@
     if (!S || !TP || !dev) return null;
     var L = await S.order(), dirc = TP.directoryFrom(L.roster, null), me = dirc.filter(function (p) { return p.kids.indexOf(dev.kid) >= 0; })[0] || null, D = global.TeamDefaults || {};
     peopleList = TP.rank(allEnvs(), headsArr, focusObjs, clock(), { directory: dirc, ttlMs: D.focusTtlMs, mode: 'all', selfPerson: me && me.person });
+    if (cfg && cfg.avatar) peopleList.forEach(function (p) { if (p.self) p.avatar = cfg.avatar; });   // my own choice shows at once; the others get it at my next Visit (§15.15.2)
     var col = TP.collapse(peopleList, 'all');
     pview = { me: me, mode: 'all', effectiveMode: 'all', hide: !!(cfg && cfg.hideFocus), people: peopleList, shown: col.shown, others: [], inbox: [], scope: null, scopeAvailable: false, directory: dirc, unsupported: board() && board().unsupported() };
     log('§PEOPLE_VIEW mode=all people=' + peopleList.length + ' focusObjs=' + focusObjs.length + ' heads=' + headsArr.length + ' order=[' + peopleList.map(function (p) { return p.name + (p.self ? '*' : '') + ':' + (p.ageMs == null ? '-' : Math.round(p.ageMs / 1000) + 's') + ':' + p.focus.length; }).join(', ') + ']');
@@ -287,7 +297,7 @@
     try {
       var L = await S.order(), R = L.roster; if (!R.devices[dev.kid]) return;
       var b = board(); if (!b) return;
-      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince });
+      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince, avatar: cfg.avatar });
       var col = await b.collect(R); focusObjs = col.focus; headsArr = col.heads;
       await refreshPeople();
     } catch (e) { log('🔴 §PEOPLE_ROUND ' + (e && e.stack || e)); }
@@ -299,28 +309,49 @@
     if (!lines.length) { if (lastHuKey) log('§PEOPLE_HEADSUP none'); lastHuKey = ''; return; }
     var div = document.createElement('div'); div.id = 'team-headsup'; div.setAttribute('role', 'status');
     div.style.cssText = 'position:fixed;left:8px;bottom:84px;z-index:42;max-width:70vw;min-height:44px;box-sizing:border-box;padding:8px 12px;border:1px solid #b36b00;border-radius:8px;background:#fff4e0;color:#5a3600;font:14px/1.4 system-ui,sans-serif';
-    div.innerHTML = lines.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '" data-uu="' + h.uu + '"><b>' + global.TeamPeopleUI.esc(h.name) + '</b> is editing this element (' + TP.ageText(h.ageMs) + ')</div>'; }).join('');
+    div.innerHTML = lines.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '" data-uu="' + h.uu + '" style="display:flex;align-items:center;gap:8px">' + avatarOfPerson(h.person, 30) + '<span><b>' + global.TeamPeopleUI.esc(h.name) + '</b> is editing this element (' + TP.ageText(h.ageMs) + ')</span></div>'; }).join('');
     document.body.appendChild(div);
     var key = lines.map(function (h) { return h.uu + ':' + h.person; }).join(','); if (key !== lastHuKey) log('§PEOPLE_HEADSUP by=[' + lines.map(function (h) { return h.name + ' on ' + h.uu.slice(0, 8) + ':' + TP.ageText(h.ageMs); }).join(', ') + ']'); lastHuKey = key;
   }
+  function avatarOfPerson(person, px) { var AV = global.TeamAvatars; if (!AV) return ''; var row = peopleList.filter(function (p) { return p.person === person; })[0], id = AV.resolve(row && row.avatar, person); return '<span class="tp-avatar" data-avatar="' + id + '" style="flex:0 0 ' + px + 'px;width:' + px + 'px;height:' + px + 'px;border-radius:50%;overflow:hidden;display:block">' + AV.svg(id, px) + '</span>'; }
   async function cfgSet(k, v) { var c = (await kvGet('cfg')) || {}; c[k] = v; await kvPut('cfg', c); if (cfg) cfg[k] = v; }
+  async function setAvatar(id) { if (!(global.TeamAvatars && global.TeamAvatars.valid(id))) throw new Error('unknown avatar ' + id); await cfgSet('avatar', id); log('§PEOPLE_AVATAR chosen=' + id + ' (the others see it after my next Visit)'); await refreshPeople(); }
   async function setHide(on) { await cfgSet('hideFocus', !!on); log('§PEOPLE_SWITCH hideFocus=' + !!on + ' (applies from the next Visit)'); }
   function elLabel(o) { var f = (o.body.params && o.body.params.fields) || {}; return f.geom_op ? String(f.geom_op).replace(/^GEOM_/, '').toLowerCase() + ' ' + o.target.uu.slice(0, 8) : null; }
   function history(person, n) { return pview ? TP.historyOf(person, allEnvs(), n == null ? 10 : n, { directory: pview.directory, labelOf: elLabel }) : []; }
   var PEOPLE_API = { peopleView: function () { return pview; }, history: history, setHide: setHide, setMode: function () {}, refreshPeople: refreshPeople };
-  function renderPeoplePanel() { if (peopleBox && peopleBox.style.display !== 'none' && global.TeamPeopleUI) global.TeamPeopleUI.render(peopleBox, PEOPLE_API); }
+  function renderPeoplePanel() { if (peopleBox && peopleBox.style.display !== 'none' && global.TeamPeopleUI) { global.TeamPeopleUI.render(peopleBox, PEOPLE_API); peopleBox.insertAdjacentHTML('beforeend', '<div style="margin-top:8px"><a id="tp-settings" href="#" style="line-height:44px">Team settings (avatar, setup)</a></div>'); var a = peopleBox.querySelector('#tp-settings'); if (a) a.onclick = function (e) { e.preventDefault(); peopleBox.style.display = 'none'; if (global.TeamPanel) global.TeamPanel.open(); }; } }
   function ensurePeopleUi() {
-    if ($('team-people-toggle') || !document.body) return;
-    var t = document.createElement('button'); t.id = 'team-people-toggle'; t.type = 'button'; t.setAttribute('aria-label', 'People'); t.title = 'People — who is on what';
-    t.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:42;width:44px;height:44px;border-radius:22px;border:1px solid #1f5fd6;background:#1f5fd6;color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
-    t.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';   // Lucide users, verbatim (as erp/icons.js)
-    var b = document.createElement('div'); b.id = 'team-people'; b.style.cssText = 'position:fixed;right:8px;bottom:60px;z-index:42;width:min(360px,92vw);max-height:60vh;overflow:auto;box-sizing:border-box;padding:12px;border-radius:12px;background:#fff;color:#1d1d1f;font:14px/1.45 system-ui,sans-serif;display:none';
-    peopleBox = b; document.body.appendChild(b); document.body.appendChild(t);
-    t.addEventListener('click', async function () { if (b.style.display === 'none') { b.style.display = 'block'; try { await refreshPeople(); } catch (e) {} if (!pview) b.innerHTML = '<div style="color:#666">Press Visit first — people appear after your first Visit.</div>'; } else b.style.display = 'none'; });
+    if ($('team-people') || !document.body) return;
+    var b = document.createElement('div'); b.id = 'team-people'; b.style.cssText = 'position:fixed;top:64px;left:8px;z-index:42;width:min(360px,92vw);max-height:60vh;overflow:auto;box-sizing:border-box;padding:12px;border-radius:12px;background:#fff;color:#1d1d1f;font:14px/1.45 system-ui,sans-serif;display:none';
+    peopleBox = b; document.body.appendChild(b);
+  }
+  // the People popover hangs under the Team icon (§15.15.1); a "Team settings" link reaches the panel (start / join / avatar / setup)
+  async function togglePeople() {
+    ensurePeopleUi(); var b = peopleBox; if (!b) return;
+    if (b.style.display !== 'none') { b.style.display = 'none'; return; }
+    var ic = $('b-teams'), r = ic ? ic.getBoundingClientRect() : { left: 8, bottom: 56, width: 0 }, w = Math.min(360, global.innerWidth * 0.92);
+    b.style.top = Math.round(r.bottom + 8) + 'px'; b.style.left = Math.max(8, Math.min(global.innerWidth - w - 8, Math.round(r.left + r.width / 2 - w / 2))) + 'px'; b.style.display = 'block';
+    try { await refreshPeople(); } catch (e) {} if (!pview) b.innerHTML = '<div style="color:#666">Press Visit first — people appear after your first Visit.</div>';
+    if (!b.querySelector('#tp-settings')) b.insertAdjacentHTML('beforeend', '<div style="margin-top:8px"><a id="tp-settings" href="#" style="line-height:44px">Team settings (avatar, setup)</a></div>');
+    var a = b.querySelector('#tp-settings'); if (a) a.onclick = function (e) { e.preventDefault(); b.style.display = 'none'; if (global.TeamPanel) global.TeamPanel.open(); };
   }
   global.addEventListener('dagevu:select', function () { if (S) updateFocus(); });
 
   // ═══ boot ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+  function applySystemDefault() {          // no key of its own yet -> the system default (trial) setup, as the phone page and the ERP do
+    var D = global.TeamDefaults; if (cfg && !cfg.token && D && D.token) { cfg.owner = D.owner; cfg.repo = D.repo; cfg.token = D.token; cfg.trial = true; log('§TEAM_BOOT system-default setup applied repo=' + cfg.owner + '/' + cfg.repo + ' trial=true'); }
+  }
+  async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
+  function openStore(bytes) {
+    S = global.CommStore.open(new SQLm.Database(bytes), { SQL: SQLm, space: cfg.space, self: dev, access: access, tableId: function () { return null; }, log: log, messageText: function () { return MSG_CRM; } });
+    var qp = new URLSearchParams(global.location.search), pu = qp.get('pipe');
+    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(qp.get('gap') || 10000) });
+  }
+  function attach() {      // listen to the OpLog's commit funnel once, as soon as there is a store to author into
+    if (attached) return; attached = true;
+    global.addEventListener('bonsai:oplog', function () { scan().catch(function (e) { log('🔴 §TEAM_SCAN ' + (e && e.stack || e)); }); });   // OpLog._emit(): every mutation and every load
+  }
   async function boot() {
     for (var i = 0; i < 600 && !(global.Bonsai && global.Bonsai.oplog && global.KernelOps && global.initSqlJs && global.CommStore && global.CommPipe && document.body); i++) await new Promise(function (r) { setTimeout(r, 100); });
     if (!(global.Bonsai && global.Bonsai.oplog && global.CommStore)) { log('🔴 §TEAM_BOOT prerequisites missing'); _resolveReady(false); return; }
@@ -328,22 +359,61 @@
     SQLm = await global.initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
     dev = await kvGet('device'); cfg = (await kvGet('cfg')) || {};
     if (dev && global.CommStore.ensureDh && !dev.dhPrivateKey) { try { await global.CommStore.ensureDh(dev); await kvPut('device', dev); log('§TEAM_BOOT dh key ensured for ' + dev.kid); } catch (e) { log('§TEAM_BOOT ensureDh failed ' + (e && e.message)); } }
-    if (!dev || !cfg.space) { log('§TEAM_BOOT not paired — device=' + !!dev + ' space=' + !!cfg.space + ' (pair this browser on common/comm/comm_phone.html first)'); _resolveReady(false); await render(); return; }
+    applySystemDefault();
+    if (!dev) { await newDevice(); log('§TEAM_BOOT new device ' + dev.kid + ' (no phone page needed — pair from the Team icon)'); }
+    if (!cfg.space) { log('§TEAM_BOOT not paired — device=' + !!dev + ' space=false (click the Team icon: Start a team or Join)'); _resolveReady(false); await render(); return; }
     var own = await kvGet('modeller_db'), seed = own ? null : await kvGet('db');
-    S = global.CommStore.open(new SQLm.Database(own || seed || undefined), { SQL: SQLm, space: cfg.space, self: dev, access: access, tableId: function () { return null; }, log: log, messageText: function () { return MSG_CRM; } });
+    openStore(own || seed || undefined);
     sent = (await kvGet('modeller_sent')) || {}; localOnly = (await kvGet('modeller_localonly')) || {};
-    var qp = new URLSearchParams(global.location.search), pu = qp.get('pipe');
-    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(qp.get('gap') || 10000) });
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(modeller_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
-    _resolveReady(true); await render();
-    global.addEventListener('bonsai:oplog', function () { scan().catch(function (e) { log('🔴 §TEAM_SCAN ' + (e && e.stack || e)); }); });   // OpLog._emit(): every mutation and every load
+    _resolveReady(true); await render(); attach();
     scan().catch(function (e) { log('🔴 §TEAM_SCAN ' + (e && e.stack || e)); });
+  }
+
+  // ═══ PAIRING from the Team panel (§15.15.1) — the same CommStore calls as erp/team_sync.js (§13.9) and common/comm/comm_phone.html; no engine file is edited ═══
+  function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !(cfg && cfg.token)) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
+  async function fresh() { sent = {}; localOnly = {}; catchup = null; await kvPut('modeller_db', null); await kvPut('modeller_sent', {}); await kvPut('modeller_localonly', {}); }
+  async function found() {
+    await ready; needKey(); await fresh();
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102);
+    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); openStore(undefined); attach(); await S.genesis(sp.params);
+    log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12) + ' (no base: the Modeller\'s spaces have none, §15.8)'); _resolveReady(true);
+    await visit(); await persist(); await render(); return sp.space;
+  }
+  async function join(inv) {
+    await ready; needKey(); inv = String(inv || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('An invite is 64 characters 0-9 a-f');
+    await fresh(); cfg.space = inv; cfg.founder = false; await kvPut('cfg', cfg); openStore(undefined); attach();
+    var rqName = 's/' + cfg.space + '/r/' + dev.kid, rqBytes = new TextEncoder().encode(JSON.stringify({ space: cfg.space, kid: dev.kid, jwk: dev.pubJwk, dh_jwk: dev.dhPubJwk, person_uu: dev.person_uu, name: 'device ' + codeOf(dev.kid) }));
+    if (pipe.putMany) await pipe.putMany([{ name: rqName, bytes: rqBytes }]); else await pipe.put(rqName, rqBytes);   // the folder pipe has put only; the GitHub pipe batches
+    log('§TEAM_PAIR join request posted, code ' + codeOf(dev.kid)); _resolveReady(true); await persist(); await render();
+  }
+  async function leave() {
+    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; lastVisitAt = null; tfBoard = null; tfPipe = null; focusObjs = []; headsArr = []; peopleList = []; pview = null; enrolled = false;
+    log('§TEAM_PAIR left the team — same device ' + codeOf(dev.kid)); await render();
+  }
+  async function requests() {
+    if (!S) return []; var L = await S.order(), names = await pipe.list('s/' + cfg.space + '/r/'), out = [];
+    for (var n of names) { var b = await pipe.get(n); if (!b) continue; var rq = JSON.parse(new TextDecoder().decode(b));
+      if (rq.space !== cfg.space || L.roster.devices[rq.kid] || rq.kid !== await global.CommStore.kidOf(rq.jwk)) continue; out.push({ rq: rq, code: codeOf(rq.kid) }); }
+    log('§TEAM_PAIR requests listed: ' + names.length + ' pending=' + out.length); return out;
+  }
+  function roleList() { return [{ id: 102, name: 'Team member' }]; }   // the Modeller has no AD dictionary and access() is open (§15.5): one role, the same id the ERP film used
+  async function approve(rq, roleId) {
+    await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: Number(roleId), comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);
+    log('§TEAM_PAIR approved ' + codeOf(rq.kid) + ' as role ' + roleId); await visit(); await render();
+  }
+  async function pairState() {
+    await ready; var st = { device: dev ? dev.kid : null, code: dev ? codeOf(dev.kid) : null, space: cfg && cfg.space || null, founder: !!(cfg && cfg.founder), enrolled: false, devices: 0 };
+    if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
   }
 
   global.TeamSyncModeller = { scan: scan, visit: visit, ready: ready, settle: function () { return chain; }, store: function () { return S; }, render: render,
                               classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV,
                               peopleView: PEOPLE_API.peopleView, refreshPeople: refreshPeople, history: history, setHide: setHide, focusOwn: function () { return focusOwn.slice(); }, updateFocus: updateFocus,
+                              found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
+                              inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); },
+                              setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, togglePeople: togglePeople, isEnrolled: function () { return enrolled; },
                               _setClock: function (f) { clock = f || function () { return Date.now(); }; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });

@@ -381,6 +381,7 @@
     var myScope = me ? scopeOf(me.role) : null, pref = (cfg && cfg.peopleMode) || 'scope', mode = myScope && pref === 'scope' ? 'scope' : 'all';
     var envs = allEnvs(), D = global.TeamDefaults || {};
     peopleList = TP.rank(envs, headsArr, focusObjs, clock(), { directory: dirc, ttlMs: D.focusTtlMs, mode: mode, scope: myScope, scopeOf: scopeOf, selfPerson: me && me.person });
+    if (cfg && cfg.avatar) peopleList.forEach(function (p) { if (p.self) p.avatar = cfg.avatar; });   // my own choice shows at once; the others get it at my next Visit (§15.15.2)
     var kidP = {}, kidR = {}; dirc.forEach(function (p) { p.kids.forEach(function (k) { kidP[k] = p; }); });
     var placed = (await S.placedEnvelopes()).map(function (x) { return x.env; });
     inboxList = TP.inboxFor(myScope, placed, { selfPerson: me && me.person, roleOfKid: function (k) { return kidP[k] ? kidP[k].role : null; }, personOfKid: function (k) { return kidP[k] ? kidP[k].person : null; }, nameOfKid: function (k) { return kidP[k] ? kidP[k].name : k.slice(0, 8); } });
@@ -395,7 +396,7 @@
     try {
       var L = await S.order(), R = L.roster; if (!R.devices[dev.kid]) return;                // an un-approved device has nothing to publish or verify against
       var b = board(); if (!b) return;
-      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince });
+      await b.publish(focusOwn, { off: !!cfg.hideFocus, since: focusSince, avatar: cfg.avatar });
       var col = await b.collect(R); focusObjs = col.focus; headsArr = col.heads;
       await refreshPeople();
     } catch (e) { log('🔴 §PEOPLE_ROUND ' + (e && e.stack || e)); }
@@ -406,12 +407,14 @@
     var hu = TP.headsUpFor(lastSeam.uu, me.person, peopleList); if (!hu.length) { if (lastHuKey) log('§PEOPLE_HEADSUP uu=' + lastSeam.uu.slice(0, 8) + ' none'); lastHuKey = ''; return; }
     var div = document.createElement('div'); div.id = 'team-headsup'; div.setAttribute('role', 'status'); div.setAttribute('data-uu', lastSeam.uu);
     div.style.cssText = 'margin:0 0 8px;padding:8px 12px;min-height:44px;box-sizing:border-box;border:1px solid #b36b00;border-radius:8px;background:#fff4e0;color:#5a3600;font:14px/1.4 system-ui,sans-serif';
-    div.innerHTML = hu.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '"><b>' + esc(h.name) + '</b> is editing this (' + TP.ageText(h.ageMs) + ')</div>'; }).join('');
+    div.innerHTML = hu.map(function (h) { return '<div class="team-headsup-line" data-person="' + h.person + '" style="display:flex;align-items:center;gap:8px">' + avatarOfPerson(h.person, 28) + '<span><b>' + esc(h.name) + '</b> is editing this (' + TP.ageText(h.ageMs) + ')</span></div>'; }).join('');
     host.insertBefore(div, host.firstChild);
     var key = lastSeam.uu + '|' + hu.map(function (h) { return h.person; }).join(','); if (key !== lastHuKey) log('§PEOPLE_HEADSUP uu=' + lastSeam.uu.slice(0, 8) + ' by=[' + hu.map(function (h) { return h.name + ':' + TP.ageText(h.ageMs); }).join(', ') + ']'); lastHuKey = key;
   }
+  function avatarOfPerson(person, px) { var AV = global.TeamAvatars; if (!AV) return ''; var row = peopleList.filter(function (p) { return p.person === person; })[0]; return '<span class="tp-avatar" data-avatar="' + AV.resolve(row && row.avatar, person) + '" style="flex:0 0 ' + px + 'px;width:' + px + 'px;height:' + px + 'px;border-radius:50%;overflow:hidden;display:block">' + AV.svg(AV.resolve(row && row.avatar, person), px) + '</span>'; }
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   async function cfgSet(k, v) { var c = (await kvGet('cfg')) || {}; c[k] = v; await kvPut('cfg', c); if (cfg) cfg[k] = v; }
+  async function setAvatar(id) { if (!(global.TeamAvatars && global.TeamAvatars.valid(id))) throw new Error('unknown avatar ' + id); await cfgSet('avatar', id); log('§PEOPLE_AVATAR chosen=' + id + ' (the others see it after my next Visit)'); await refreshPeople(); }
   async function setHide(on) { await cfgSet('hideFocus', !!on); log('§PEOPLE_SWITCH hideFocus=' + !!on + ' (applies from the next Visit)'); }
   async function setMode(m) { await cfgSet('peopleMode', m === 'all' ? 'all' : 'scope'); log('§PEOPLE_SWITCH peopleMode=' + (m === 'all' ? 'all' : 'scope')); await refreshPeople(); }
   function history(person, n) { return pview ? TP.historyOf(person, allEnvs(), n == null ? 10 : n, { directory: pview.directory }) : []; }
@@ -488,7 +491,7 @@
   global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; },
-                      peopleView: function () { return pview; }, refreshPeople: refreshPeople, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
+                      peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });

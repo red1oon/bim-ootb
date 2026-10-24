@@ -97,12 +97,13 @@
     (ops || []).forEach(function (o) { var p = byKid[o.author]; if (p) bump(acc[p.person], o.ts, 'op'); });
     (heads || []).forEach(function (h) { var p = byKid[h.author]; if (p) bump(acc[p.person], h.ts, 'head'); });
     (focusObjs || []).forEach(function (f) { var p = byKid[f.kid]; if (!p) return; var a = acc[p.person];
+      if (typeof f.avatar === 'string' && (a.avTs == null || f.ts > a.avTs)) { a.avatar = f.avatar; a.avTs = f.ts; }   // §15.15.2: the freshest verified avatar id of this person's devices (raw; the renderer validates it)
       if (f.off) { a.off = true; return; }
       (f.focus || []).forEach(function (e) { var age = now - e.since; if (age > ttl) return;      // TTL basis: the entry's own `since`
         var k = e.uu; if (!a.foc[k] || e.since > a.foc[k].since) a.foc[k] = { table: e.table, uu: e.uu, label: e.label, since: e.since, ageMs: Math.max(0, age) }; }); });
     var list = dir.map(function (p) { var a = acc[p.person], sc = opts.scopeOf ? opts.scopeOf(p.role) : null;
       var foc = a.off ? [] : Object.keys(a.foc).map(function (k) { return a.foc[k]; }).sort(function (x, y) { return y.since - x.since || (x.uu < y.uu ? -1 : 1); });
-      return { person: p.person, name: p.name, role: p.role, roleName: p.roleName, kids: p.kids, self: p.person === opts.selfPerson, lastActive: a.last, lastSource: a.src, ageMs: a.last == null ? null : Math.max(0, now - a.last),
+      return { person: p.person, name: p.name, avatar: a.avatar || null, role: p.role, roleName: p.roleName, kids: p.kids, self: p.person === opts.selfPerson, lastActive: a.last, lastSource: a.src, ageMs: a.last == null ? null : Math.max(0, now - a.last),
                focus: foc, off: a.off, writes: sc ? sc.writes : null, inScope: opts.mode === 'scope' && opts.scope ? (p.person === opts.selfPerson || inScope(opts.scope, p.role, sc)) : true }; });
     list.sort(function (x, y) {
       if (opts.mode === 'scope' && opts.scope && x.inScope !== y.inScope) return x.inScope ? -1 : 1;

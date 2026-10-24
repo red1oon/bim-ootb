@@ -4,7 +4,7 @@
  * render(box, T) paints, into `box`: the scope toggle (My role scope / Everyone — only when the host has a dictionary), the "Don't show what I'm on" switch, the Inbox line,
  * and one row per person (initials avatar, name, role, "active N min ago", focus badges, click → "last tasks" from the log, "+N others" for people outside my scope).
  * T = the host API: peopleView() → TeamSync's view (null = nothing to show yet), history(person, n), setHide(bool), setMode(m)?, refreshPeople().
- * Nothing here names a window, a table or an element type. Depends on TeamPeople (initials / ageText). Touch targets are >= 44 px. */
+ * Nothing here names a window, a table or an element type. Depends on TeamPeople (initials / ageText); TeamAvatars (§15.15.2) when loaded. Touch targets are >= 44 px. */
 (function (global) {
   'use strict';
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -13,11 +13,17 @@
   function render(box, T, opts) {
     opts = opts || {}; var TP = global.TeamPeople; if (!box || !T || !TP) return null;
     var v = T.peopleView(); if (!v) { box.style.display = 'none'; return null; }
+    var AV = global.TeamAvatars;   // §15.15.2: the person's built-in avatar (their own choice, else the deterministic default); the initials stay as the accessible name
+    function avatarHtml(p) {
+      if (!AV) return '<span class="tp-avatar" aria-hidden="true" style="flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:#1f5fd6;color:#fff;display:flex;align-items:center;justify-content:center;font:600 14px system-ui">' + esc(TP.initials(p.name)) + '</span>';
+      var id = AV.resolve(p.avatar, p.person);
+      return '<span class="tp-avatar" data-avatar="' + id + '" title="' + esc(TP.initials(p.name)) + '" style="flex:0 0 40px;width:40px;height:40px;border-radius:50%;overflow:hidden;display:block">' + AV.svg(id, 40) + '</span>';
+    }
     function row(p, other) {
       var act = p.lastActive == null ? 'no activity yet' : 'active ' + TP.ageText(p.ageMs);
       var badges = (p.focus || []).map(function (f) { return '<span class="tp-badge" data-uu="' + esc(f.uu) + '" style="display:inline-block;margin:2px 4px 0 0;padding:2px 8px;border-radius:10px;background:#e8f0fe;color:#1a3d7c;font-size:12px">' + esc(f.label || f.table) + ' · ' + esc(TP.ageText(f.ageMs)) + '</span>'; }).join('');
       return '<div class="tp-person' + (other ? ' tp-other' : '') + '" data-person="' + esc(p.person) + '" data-self="' + (p.self ? 1 : 0) + '" data-inscope="' + (p.inScope ? 1 : 0) + '" data-off="' + (p.off ? 1 : 0) + '" role="button" tabindex="0" style="display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:8px 0;border-top:1px solid #eee;cursor:pointer' + (other ? ';display:none' : '') + '">' +
-        '<span class="tp-avatar" aria-hidden="true" style="flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:#1f5fd6;color:#fff;display:flex;align-items:center;justify-content:center;font:600 14px system-ui">' + esc(TP.initials(p.name)) + '</span>' +
+        avatarHtml(p) +
         '<span style="flex:1;min-width:0"><span class="tp-name" style="font-weight:600">' + esc(p.name) + (p.self ? ' (you)' : '') + '</span> <span class="tp-role" style="color:#666">' + esc(p.roleName || '') + '</span><br><span class="tp-active" style="color:#444">' + esc(act) + '</span><br>' + badges + '<div class="tp-history" style="display:none"></div></span></div>';
     }
     function B(id, t, on) { return '<button id="' + id + '" aria-pressed="' + (on ? 'true' : 'false') + '" style="min-height:44px;cursor:pointer;margin:4px 6px 0 0;padding:0 12px;border:1px solid #1f5fd6;border-radius:8px;' + (on ? 'background:#1f5fd6;color:#fff' : 'background:#fff;color:#1f5fd6') + '">' + t + '</button>'; }

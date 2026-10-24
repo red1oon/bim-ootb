@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v158';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v159';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -65,6 +65,9 @@ const PRECACHE_ASSETS = [
   '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths
   '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe
   '../common/comm/team_people_ui.js', // §13.12.G.1 — the people strip DOM shared with the ERP Team panel
+  '../common/comm/team_avatars.js',   // §15.15.2 — the built-in avatar set
+  '../common/comm/team_panel.js',     // §15.15.1 — the Team panel (shared with the ERP pill), opened by the ONE Team icon
+  '../common/comm/team_defaults.js',  // the system-default setup the panel offers
   'seed_trunk.js',
   'str_walker.js',
   'str_walker_bridge.js',

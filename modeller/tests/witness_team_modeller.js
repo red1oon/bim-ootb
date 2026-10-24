@@ -95,10 +95,10 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     var off = await pg.C.evaluate(async function () {
       var O = window.Bonsai.oplog, c = await O.commit({ op_type: 'GEOM_EXTRUDE', parameters: { profile: { w: 1, h: 1 }, dir: [0, 0, 2] } });
       return { rowId: c && c.id, len: O.length, chip: !!document.getElementById('team-chip'), box: !!document.getElementById('team-conflicts'), ts: typeof window.TeamSyncModeller, cs: typeof window.CommStore,
-        scripts: Array.prototype.filter.call(document.scripts, function (s) { return /comm_|team_sync|team_defaults|team_trial/.test(s.src); }).length };
+        scripts: Array.prototype.filter.call(document.scripts, function (s) { return /comm_|team_sync|team_trial|team_people|team_focus/.test(s.src); }).length, panelScripts: Array.prototype.filter.call(document.scripts, function (s) { return /team_defaults|team_avatars|team_panel/.test(s.src); }).length, panelOpen: !!document.getElementById('team-panel') };
     });
     if (!off.len) incon('§TM-OFF', 'the control commit produced no row — nothing to prove "ordinary session untouched" with');
-    else verdict(off.len === 1 && !off.chip && !off.box && off.ts === 'undefined' && off.cs === 'undefined' && off.scripts === 0, 'without the switch: no chip, no conflict box, no TeamSyncModeller/CommStore global, no comm/team script tag — and the Modeller still commits a feature', JSON.stringify(off));
+    else verdict(off.len === 1 && !off.chip && !off.box && off.ts === 'undefined' && off.cs === 'undefined' && off.scripts === 0 && off.panelScripts === 3 && !off.panelOpen, 'without the switch: no chip, no conflict box, no TeamSyncModeller/CommStore global, no comm-layer script (comm_*, team_sync/trial/people/focus); the Team icon\'s three small panel scripts (§15.15.1) are there but draw nothing — and the Modeller still commits a feature', JSON.stringify(off));
     var offTeam = L.C.filter(function (t) { return /§TEAM_/.test(t); });
     verdict(offTeam.length === 0, 'without the switch the page emits no §TEAM line', 'lines=' + offTeam.length);
     await ctx.C.close();

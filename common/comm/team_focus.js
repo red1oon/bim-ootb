@@ -23,6 +23,7 @@
       opts = opts || {}; var off = !!opts.off, list = off ? [] : (entries || []).slice(0, MAX_ENTRIES).map(function (e) { return { table: String(e.table), uu: String(e.uu), label: e.label == null ? null : String(e.label), since: Number(e.since) }; });
       if (unsupported) return { ok: false, reason: 'unsupported', detail: unsupported };
       var obj = { v: 1, kind: 'focus', space: o.space, kid: o.self.kid, author: o.self.kid, person: String(o.person || ''), ts: now(), since: opts.since == null ? null : Number(opts.since), focus: list, off: off };
+      if (typeof opts.avatar === 'string' && /^[a-z0-9]{1,8}$/.test(opts.avatar)) obj.avatar = opts.avatar;   // §15.15.2: only the ID of a built-in avatar travels (also when off: an avatar is not 'what I am on'); the signature covers it
       var signed = await ENV.sign(obj, o.self), name = SP + 'f/' + o.self.kid;
       try { await o.pipe.put(name, _json(signed)); }
       catch (e) {
@@ -30,7 +31,7 @@
         if (/not under my prefix/.test(msg)) { unsupported = o.pipe.id + ' (' + msg + ')'; log('§PEOPLE_FOCUS_PUBLISH unsupported pipe=' + o.pipe.id + ' (this pipe accepts name classes o/h/r only — DEP-GHPIPE-F; the strip shows activity without focus badges)'); return { ok: false, reason: 'unsupported', detail: unsupported }; }
         log('§PEOPLE_FOCUS_PUBLISH FAILED pipe=' + o.pipe.id + ' ' + msg); return { ok: false, reason: 'error', detail: msg };
       }
-      log('§PEOPLE_FOCUS_PUBLISH kid=' + o.self.kid + ' entries=' + list.length + ' off=' + off + (list.length ? ' [' + list.map(function (e) { return e.table + ':' + String(e.uu).slice(0, 8) + ':' + (e.label || '-'); }).join(', ') + ']' : '') + ' sealed=false (L1)');
+      log('§PEOPLE_FOCUS_PUBLISH kid=' + o.self.kid + ' entries=' + list.length + ' off=' + off + (obj.avatar ? ' avatar=' + obj.avatar : '') + (list.length ? ' [' + list.map(function (e) { return e.table + ':' + String(e.uu).slice(0, 8) + ':' + (e.label || '-'); }).join(', ') + ']' : '') + ' sealed=false (L1)');
       return { ok: true, obj: signed };
     }
 
