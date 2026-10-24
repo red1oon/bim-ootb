@@ -5,11 +5,11 @@
 // `plate` (each closed outline is a plate in the section plane), `member` (each outline is a run along the building, e.g. a purlin). The cut (`@CUT`) says where the drawn
 // section sits; copies repeat at a spacing (default: the column pitch, a yellow default) over the grid extent. The copy AT the cut is `derived`, the others `assumed` (red).
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js') });
-  else root.Dxf2Section = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ DF: require('./dxf2defaults.js'), MK: require('./dxf2bim/dxf2marks.js'), PR: require('./dxf2pair.js'), H: require('./dxf2hatch.js'), M: require('./dxf2bim/dxf2mesh.js'), P: require('./dxf2prep.js'), PF: require('./dxf2profile.js') });
+  else root.Dxf2Section = factory({ DF: root.Dxf2Defaults, MK: root.Dxf2Marks, PR: root.Dxf2Pair, H: root.Dxf2Hatch, M: root.Dxf2Mesh, P: root.Dxf2Prep, PF: root.Dxf2Profile });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
+  var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P, PF = D.PF, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var NOT_SECTION = /\b(beam|column|wall|footing|slab|grade|roof|sheet)\b/i;   // a label that names another element ("Beam-1 (12\"x10\")", "12\"x12\" Column") is not a member size
   var SIZE_RE = /(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"/i, PLATE_RE = /(\d+\/\d+|\d+(?:\.\d+)?)\s*(")?\s*thick(?:ness)?\s*plate/i;
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -73,12 +73,21 @@
         var s = c.s, src = c.src;
         if (s == null) { if (modal !== undefined) { s = Number(modal); src = 'default'; sizeDefaulted++; } else { gaps.push({ code: 'GAP:bar_no_size', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'no label points at this bar and none is stated (@SIZE=' + c.id + ',w,<m>)' }); rep.left_out++; return; } }
         var A = [map.toPlan(c.a[0]), map.zOf(c.a[1])], B = [map.toPlan(c.b[0]), map.zOf(c.b[1])], L = Math.hypot(B[0] - A[0], B[1] - A[1]), qu = -(B[1] - A[1]) / L, qv = (B[0] - A[0]) / L, h = s / 2;
+        // §D67.1 a label that states ONE equal-leg angle builds the L section instead of the b x b box; every other bar keeps its drawn prism and is listed with the reason
+        var pa = PF.angleOf(c.label), lPoly = null, profOff = typeof process === 'object' && process.env && process.env.DXF_PROFILES === '0';
+        if (!profOff) {
+          if (src !== 'label' || c.label == null) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'no profile stated (' + (src === 'default' ? 'the default width' : 'a size stated by the user') + '): the drawn prism stays' });
+          else if (!pa.ok) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: pa.reason + ' (' + c.label + '): the drawn prism stays' });
+          else if (Math.abs(pa.b - s) > 1e-6) gaps.push({ code: 'GAP:profile_not_bound', sheet: ss.name, kind: 'bar', handle: c.e.handle, detail: 'the size was overridden (' + r6(s) + ' m against the label\'s ' + pa.b + ' m): the drawn prism stays' });
+          else if (DF.use('profile.angle_mesh') === 'label') lPoly = PF.lPolygon(pa.b, pa.t, DF.use('profile.angle_heel'));
+        }
         stations.forEach(function (n, ni) {
           var V = []; [A, B].forEach(function (p) { [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (c) { V.push(W(p[0] + qu * h * c[0], p[1] + qv * h * c[0], n + h * c[1])); }); });
           var m = outward({ vertices: V.map(function (q) { return [r6(q[0]), r6(q[1]), r6(q[2])]; }), faces: BOX });
+          if (lPoly) m = PF.prismBetween(lPoly.map(function (q) { return W(A[0] + qu * q[0], A[1] + qv * q[0], n + q[1]); }), lPoly.map(function (q) { return W(B[0] + qu * q[0], B[1] + qv * q[0], n + q[1]); }));
           var prov = atCut(n) ? 'derived' : 'assumed';
           els.push({ guid: c.id + '-S' + ni, class: P.ifcType('bar').ifc_class, storey: 'Level 1', vertices: m.vertices, faces: m.faces, handle: c.e.handle + '-S' + ni, layer: c.e.layer, sheet: ss.name, kind: 'bar', prov: prov,
-            ifc: P.ifcType('bar', c.label || 'Section member', null), mark: null, z0: r6(Math.min(A[1], B[1]) - h), z1: r6(Math.max(A[1], B[1]) + h), height_source: 'section', size: { w: { number: r6(s), source: src }, station: n }, members: [c.e.handle] }); rep.bars++;
+            ifc: P.ifcType('bar', c.label || 'Section member', null), mark: null, z0: r6(Math.min(A[1], B[1]) - h), z1: r6(Math.max(A[1], B[1]) + h), height_source: 'section', size: { w: { number: r6(s), source: src }, station: n }, members: [c.e.handle] }); if (lPoly) els[els.length - 1].size.profile = { family: 'L', b: pa.b, t: pa.t, heel: DF.use('profile.angle_heel') }; rep.bars++;
         });
       });
       // plates: closed outlines in the section plane, thickness from the sheet's one "Thickness Plate" label (a yellow default: the label does not point into the plate) or the user

@@ -74,14 +74,15 @@
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
       blocking.push({ code: 'QF:no_bodies', sheet: '(set)', handles: [], message: 'no body could be built: type the body layers on a plan AND an elevation' });
     advisory.filter(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }).forEach(function (a) { blocking.push(a); });
-    var counts = { bodies: res.els.length, left_out: res.gaps.length }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
+    var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
+    var counts = { bodies: res.els.length, left_out: leftOut }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
     var verdict = { verdict: blocking.length || refused.length ? 'blocked' : 'qualifies', blocking: blocking, advisory: advisory, counts: counts, by_shape: { walls: { blocking: 0, advisory: 0 }, slabs: { blocking: 0, advisory: 0 }, roof: { blocking: 0, advisory: 0 }, openings: { blocking: 0, advisory: 0 } } };   // by_shape: the editor's wall/slab/roof/opening table (a structure set reads none of them)
     var runId = I.sha256Hex(JSON.stringify({ structure: 1, sheets: sheets.map(function (s) { return s.sha; }), snap: res.report && res.report.snap_tol }));
     var R = { els: res.els, ST: plans.map(function (p) { return p.level; }).filter(function (l, i, arr) { return arr.indexOf(l) === i; }).sort(function (x, y) { return x - y; }).map(function (l, i) { return { name: 'Level ' + (i + 1), sheet: plans.filter(function (p) { return p.level === l; })[0].name, level: l, bridge: { voids: [] }, infill: [], fills: { gaps: [] } }; }),
       infillGuid: {}, libGeom: {}, run_id: runId, set: 'STRUCT', gaps: res.gaps, refused: null, fillGaps: [], bodies: res, defaults_table: res.defaults_table || null, defaults_invalid: res.defaults_invalid || [] };
     var g = { ok: !refused.length && !blocking.length, set: null, setFrom: 'structure', roles: { ok: !refused.length, set: null, evidence: 'structure', refused: refused }, refused: refused,
-      verdict: verdict, R: R, lib: null, structure: { bodies: res.els.length, left_out: res.gaps.length } };
-    return { gate: g, defaults: res.defaults || [], ledger: res.ledger || null, log: 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + res.gaps.length + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
+      verdict: verdict, R: R, lib: null, structure: { bodies: res.els.length, left_out: leftOut } };
+    return { gate: g, defaults: res.defaults || [], ledger: res.ledger || null, log: 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + leftOut + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
   }
 
   return { isStructure: isStructure, judge: judge, BODY_KINDS: BODY_KINDS, WALLISH: WALLISH };
