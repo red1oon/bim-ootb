@@ -17,6 +17,7 @@ const fs = require('fs');
 const path = require('path');
 const WebIFC = require('web-ifc');
 const Database = require('better-sqlite3');
+const { Buffer } = require('buffer');
 const Core = require('../dxf2bim/ifc_extract_core.js');
 
 const args = process.argv.slice(2);
