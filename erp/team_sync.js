@@ -14,9 +14,13 @@
  * W2 (TEAMWORK_FRAMEWORK §13.7): the document's SET_STATUS is shared as an envelope (intent K4) and every op of a doc-action group carries `grp`
  * (the kernel gid); a group with a docstatus conflict is left out of the projection WHOLE (all-or-none).
  *
- * Named limits (see TEAMWORK_FRAMEWORK §13.3, §13.7): an UPDATE/DELETE of a seeded record
- * (positive pk) is local-only because the comm layer admits an op only against the scope of the record's CREATE;
- * station-owned bookkeeping tables (STATION_LOCAL) are never shared; a Visit renumbers synthetic pks (-kernelRowId).
+ * BASE (§13.12.I.1/.2, Witness: W-BASE-EDIT erp/tests/witness_team_base.js): a space founded here pins the SHIPPED seed file (erp/ad_seed.db) by sha256 in its genesis.
+ * A device whose file hashes differently never folds (plain message on the chip). In such a space an UPDATE/DELETE/SET_STATUS of a seeded record (positive pk) is shared
+ * when the record has a <table>_uu: the engine judges it by the scope of the BASE ROW, read from a pristine copy of the verified file (never the live, patched dictionary).
+ *
+ * Named limits (see TEAMWORK_FRAMEWORK §13.3, §13.7): in a space WITHOUT a base (founded before this, or from the phone page) an UPDATE/DELETE of a seeded record
+ * (positive pk) stays local-only because the comm layer admits an op only against the scope of the record's CREATE; a seeded row with no <table>_uu cannot be
+ * addressed either way; station-owned bookkeeping tables (STATION_LOCAL) are never shared; a Visit renumbers synthetic pks (-kernelRowId).
  */
 (function (global) {
   'use strict';
@@ -33,6 +37,7 @@
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null;
+  var baseSt = { state: 'unknown' }, loadedP = null, pristineP = null, storeOpts = null, bmemo = {}, bcols = {};
   var _resolveReady, ready = new Promise(function (r) { _resolveReady = r; });
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { console.log(m); }
@@ -56,6 +61,85 @@
     return r ? r.canUpdate(client, org, Number(t.id), t.lvl) : { allowed: false, reason: 'no-role' };
   }
   function tableId(n) { var t = shim(adDb()).prepare('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?').get(String(n).toLowerCase()); return t ? Number(t.id) : null; }
+  // ═══ BASE (TEAMWORK_FRAMEWORK §13.12.I.1 + §13.12.I.2) ═══════════════════════════════════════════════════════════════════════════
+  // The base of an ERP team space is what the shipped build loads: the seed file (erp/ad_seed.db, or ?seed=) PLUS the self-heal patch texts idempiere.html applies on
+  // every load (patches/<seed>.sql, patches/mfg.sql). MEASURED (W-BASE-EDIT first run): the reservation row a Complete updates lives in patches/ad_seed.db.sql, not in
+  // the file - hashing the file alone would have left it "in neither the log nor the base". The live __idmpDb is that PLUS device-local overlays (BIM project orders,
+  // system tenant, installed shards, plugins) which differ between devices; two devices judging one op against different rows would fold differently. So base rows are
+  // read from a PRISTINE second database = the file with the same patches applied, nothing else - opened lazily from bytes that hash EXACTLY as the team's did
+  // (a device that never edits a seeded record never pays the extra ~file-size heap).
+  // state: unknown (no store) · pending (genesis not seen yet) · none (space without base) · ok · mismatch (never folds) · error (could not read own copy)
+  function seedFile() { var q = new URLSearchParams(global.location.search).get('seed'); return (q && /^[\w.-]+\.db$/.test(q)) ? q : 'ad_seed.db'; }
+  async function fetchBase() {           // the same files, in the same order, that idempiere.html loads
+    var r = await fetch(seedFile()); if (!r.ok) throw new Error('seed fetch HTTP ' + r.status);
+    var bytes = new Uint8Array(await r.arrayBuffer()), patches = [];
+    for (var pf of [seedFile() + '.sql', 'mfg.sql']) { var text = null; try { var pr = await fetch('patches/' + pf, { cache: 'no-cache' }); if (pr.ok) text = await pr.text(); } catch (e) { /* offline and not cached: MISSING, which hashes differently */ } patches.push({ name: pf, text: text }); }
+    return { bytes: bytes, patches: patches };
+  }
+  async function hashBase(fb) {          // sha256 over: the seed file's sha256 and size, then each patch (position + text, or MISSING). Reproducible by any tool: see witness_team_base.js
+    var f = await global.CommStore.baseFromBytes('seed', fb.bytes), man = 'seed ' + f.sha256 + ' ' + f.bytes + '\n', n = f.bytes;
+    fb.patches.forEach(function (p, i) { man += '--patch ' + i + (p.text == null ? ' MISSING' : '\n' + p.text) + '\n'; if (p.text != null) n += new TextEncoder().encode(p.text).length; });      // by POSITION, not file name: a ?seed= copy keeps the same patches
+    var h = await global.CommStore.baseFromBytes(seedFile() + '+patches', new TextEncoder().encode(man), global.__adSeedFingerprint); h.bytes = n; return h;
+  }
+  function loadedBase() {                // {name, sha256, bytes, version} of what this page loaded; once per page (the bytes are dropped; the pristine copy re-reads them)
+    if (!loadedP) loadedP = (async function () { return hashBase(await fetchBase()); })().catch(function (e) { loadedP = null; throw e; });
+    return loadedP;
+  }
+  function pristine() {                  // the second database, from files that hash EXACTLY as loadedBase() did (else they changed under the page: throw, never guess)
+    if (!pristineP) pristineP = (async function () {
+      var t0 = Date.now(), lb = await loadedBase(), fb = await fetchBase(), again = await hashBase(fb);
+      if (again.sha256 !== lb.sha256) throw new Error('the seed or its patches changed while the page was open (' + lb.sha256.slice(0, 8) + ' -> ' + again.sha256.slice(0, 8) + ') - reload');
+      var d = new SQL.Database(fb.bytes), ok = 0, bad = 0;
+      fb.patches.forEach(function (p) { if (p.text == null) return;      // = idempiere.html §FS-15: statements one by one, comments stripped, a failing statement never blocks
+        p.text.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { d.run(st); ok++; } catch (e) { bad++; } }); });
+      log('§TEAM_BASE pristine opened ' + lb.name + ' bytes=' + lb.bytes + ' sha=' + lb.sha256.slice(0, 12) + ' patch statements ok=' + ok + ' failed=' + bad + ' ms=' + (Date.now() - t0) + ' (+~' + Math.round(fb.bytes.length / 1048576) + ' MB wasm heap; base rows are read from this copy, not from the live dictionary)'); return d;
+    })().catch(function (e) { pristineP = null; throw e; });
+    return pristineP;
+  }
+  function bq(db, sql, args) { var st = db.prepare(sql); st.bind(args || []); var o = []; while (st.step()) o.push(st.getAsObject()); st.free(); return o; }
+  async function baseCols(table) {     // lower-cased column name -> real name; {} if the table is not in the base
+    var t = String(table).toLowerCase(); if (!/^[a-z][a-z0-9_]*$/.test(t)) return {};
+    if (bcols[t]) return bcols[t];
+    var set = {}; bq(await pristine(), 'PRAGMA table_info("' + t + '")').forEach(function (r) { set[String(r.name).toLowerCase()] = String(r.name); }); return (bcols[t] = set);
+  }
+  // opts.baseRow for the engine: {client, org} of the base row with that <table>_uu, or null (the base has no such row). A base that cannot be opened THROWS: a failed
+  // lookup must fail the fold loudly, never turn into a silent refusal. A mismatching device never folds, so it does not open a second copy of a wrong file.
+  async function hostBaseRow(table, uu) {
+    if (baseSt.state === 'mismatch') return null;
+    var t = String(table).toLowerCase(), cols = await baseCols(t), uc = cols[t + '_uu']; if (!uc) return null;
+    var k = t + '|' + uu; if (bmemo[k] !== undefined) return bmemo[k];
+    var rows = bq(await pristine(), 'SELECT ' + (cols.ad_client_id ? '"' + cols.ad_client_id + '"' : 'NULL') + ' AS c, ' + (cols.ad_org_id ? '"' + cols.ad_org_id + '"' : 'NULL') + ' AS o FROM "' + t + '" WHERE lower("' + uc + '")=?', [String(uu).toLowerCase()]);
+    return (bmemo[k] = rows.length ? { client: rows[0].c, org: rows[0].o } : null);
+  }
+  // how a base record is addressed on THIS device's kernel: {pk} when the table has <table>_id, {pk:null} when only <table>_uu (composite-key tables: idCol addressing, as the model layer does), null = not in the base
+  async function baseKeyOf(table, uu) {
+    var t = String(table).toLowerCase(), cols = await baseCols(t), uc = cols[t + '_uu']; if (!uc) return null;
+    var idc = cols[t + '_id'], rows = bq(await pristine(), 'SELECT ' + (idc ? '"' + idc + '"' : '1') + ' AS k FROM "' + t + '" WHERE lower("' + uc + '")=?', [String(uu).toLowerCase()]);
+    return rows.length ? { pk: idc ? Number(rows[0].k) : null } : null;
+  }
+  async function baseUuOf(table, id) {   // a seeded record's <table>_uu from its integer key (OUT side), or null
+    var t = String(table).toLowerCase(), cols = await baseCols(t), uc = cols[t + '_uu'], idc = cols[t + '_id']; if (!uc || !idc) return null;
+    var rows = bq(await pristine(), 'SELECT "' + uc + '" AS u FROM "' + t + '" WHERE "' + idc + '"=?', [Number(id)]);
+    return rows.length && rows[0].u ? String(rows[0].u).toLowerCase() : null;
+  }
+  function baseOn() { return baseSt.state === 'ok'; }
+  function baseBlocked() { return baseSt.state === 'mismatch' || baseSt.state === 'error'; }
+  async function verifyBase() {          // verify-then-fold (§13.12.I rule 3): called after every sync and at boot, BEFORE anything is projected
+    var prev = baseSt.state;
+    if (!S) { baseSt = { state: 'unknown' }; return baseSt; }
+    if (!(await S.order()).roster.ok) { baseSt = { state: 'pending' }; return baseSt; }
+    var info = await S.baseInfo();
+    if (!info) { baseSt = { state: 'none' }; if (prev !== 'none') log('§TEAM_BASE state=none (this space has no base: unchanged behaviour, seeded edits stay local-only)'); return baseSt; }
+    var loaded; try { loaded = await loadedBase(); } catch (e) {
+      baseSt = { state: 'error', info: info, message: 'Cannot read this device\'s copy of ' + info.name + ' to check it against the team\'s base (' + (e && e.message) + ').' };
+      if (prev !== 'error') log('🔴 §TEAM_BASE state=error ' + baseSt.message); return baseSt; }
+    if (storeOpts) storeOpts.baseSha256 = loaded.sha256;           // ops authored here carry the hash of the DB this device REALLY has
+    var ck = global.CommStore.checkBase(info, loaded);
+    baseSt = ck.ok ? { state: 'ok', info: info, loaded: loaded } : { state: 'mismatch', info: info, loaded: loaded, message: ck.message, have: ck.have, want: ck.want };
+    if (prev !== baseSt.state) log('§TEAM_BASE state=' + baseSt.state + ' name=' + info.name + ' want=' + info.sha256.slice(0, 12) + ' have=' + loaded.sha256.slice(0, 12) + ' bytes=' + loaded.bytes +
+      (ck.ok ? ' (verified: seeded-record edits are shared, judged by the base row)' : ' - ' + ck.message + ' (NOT folded)'));
+    return baseSt;
+  }
   function codeOf(kid) { return kid.slice(0, 4).toUpperCase() + '-' + kid.slice(4, 8).toUpperCase(); }
   function uuidFromHash(h) { return h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-8' + h.slice(17, 20) + '-' + h.slice(20, 32); }
   function isNeg(v) { return (typeof v === 'number' && Number.isInteger(v) && v < 0) || (typeof v === 'string' && /^-\d+$/.test(v)); }
@@ -110,8 +194,11 @@
     }
     if (clean.fields) { rw = rewriteMap(db, clean.fields, refs, false); if (rw.err) return { local: rw.err, table: table }; clean.fields = rw.map; }
     if (clean.changes) { rw = rewriteMap(db, clean.changes, refs, true); if (rw.err) return { local: rw.err, table: table }; clean.changes = rw.map; }
-    var w = CommEnvelope.wrapKernelOp({ op_type: r.op_type, op_uuid: r.op_uuid, parameters: clean }, uuOf(db));
-    if (!w.ok) return { local: /uu-unresolved/.test(w.reason) ? 'target-not-a-team-record (' + w.reason + ') — the comm layer admits an op only against its record\'s CREATE scope' : w.reason, table: table };
+    // BASE (§13.12.I.2): a seeded record (positive pk) is addressable by the <table>_uu its row carries in the verified base
+    var bu = null, seeded = r.op_type !== 'CRUD_CREATE' && p.id != null && !isNeg(p.id) && !p.idCol;
+    if (baseOn() && seeded && table) { try { bu = await baseUuOf(table, p.id); } catch (e) { return { local: 'base-unavailable (' + (e && e.message) + ')', table: table }; } }
+    var w = CommEnvelope.wrapKernelOp({ op_type: r.op_type, op_uuid: r.op_uuid, parameters: clean }, function (t, id) { return bu && !isNeg(id) ? bu : uuOf(db)(t, id); });
+    if (!w.ok) return { local: /uu-unresolved/.test(w.reason) ? (baseOn() && seeded ? 'seeded-row-has-no-uu (' + w.reason + ') — the base row cannot be addressed' : 'target-not-a-team-record (' + w.reason + ') — the comm layer admits an op only against its record\'s CREATE scope') : w.reason, table: table };
     return { target: w.target, body: w.body, refs: refs, table: table };
   }
 
@@ -127,6 +214,7 @@
       var t = await translate(r, db);
       if (!t.quiet && trial && trial.finished) { localOnly[r.op_uuid] = trial.reason; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + trial.reason + ' (NOT SENT)'); continue; }
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
+      if (baseBlocked()) { localOnly[r.op_uuid] = 'base-mismatch'; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=base-mismatch (NOT SENT — this copy is not the team\'s base)'); continue; }
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
         var a = await S.author({ target: t.target, body: t.body, refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp });
@@ -150,7 +238,12 @@
   // project(oldRows) → the full kernel_ops row list of the rebuilt sidecar. Rows this device never shared (local-only,
   // station-owned, pre-team) are kept verbatim at their ids; everything the comm log placed is regenerated after them.
   async function project(oldRows) {
-    var fold = await S.foldable();
+    var fold = await S.foldable(), baseKeys = {};
+    if (baseOn()) {                                                 // §13.12.I.2: targets that live in the base (no CREATE in the log) -> how THIS device addresses them
+      var made = {}; fold.forEach(function (q) { if (q.env.body.op_type === 'CRUD_CREATE') made[q.env.target.uu] = 1; });
+      for (var q of fold) { var qe = q.env; if (qe.body.op_type === 'CRUD_CREATE' || made[qe.target.uu]) continue;
+        var kk = qe.target.table + '|' + qe.target.uu; if (!(kk in baseKeys)) baseKeys[kk] = await baseKeyOf(qe.target.table, qe.target.uu); }
+    }
     var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && !sent[r.op_uuid]; }).map(function (r) {
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
@@ -167,16 +260,19 @@
         if (rw.miss) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' fk-uu-unknown ' + rw.miss.slice(0, 8)); return; }
         kp = { table: t, id: null, fields: rw.map, cas: params.cas || null }; if (params.stdDefaults) kp.stdDefaults = params.stdDefaults; op_uuid = uu;
       } else if (b.op_type === 'CRUD_UPDATE' || b.op_type === 'CRUD_DELETE') {
-        var pk = uuToPk[uu]; if (pk == null) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown'); return; }
+        var pk = uuToPk[uu], bk = pk == null ? baseKeys[t + '|' + uu] : null, byUu = !!bk && bk.pk == null;     // a base record: its integer key, or <table>_uu addressing for a composite-key table
+        if (pk == null && !bk) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown'); return; }
+        if (pk == null && bk) pk = bk.pk;
         if (b.op_type === 'CRUD_UPDATE') {
           var rc = rewriteIn(params.changes, uuToPk, true);
           if (rc.miss) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' fk-uu-unknown ' + rc.miss.slice(0, 8)); return; }
           if (!Object.keys(rc.map).length) return;                     // every column of this write was held back by a conflict
-          kp = { table: t, id: pk, changes: rc.map }; if (params.actor != null) kp.actor = params.actor;
-        } else kp = { table: t, id: pk, tombstone: true, reversible: true };
+          kp = byUu ? { table: t, id: uu, idCol: t + '_uu', changes: rc.map } : { table: t, id: pk, changes: rc.map }; if (params.actor != null) kp.actor = params.actor;
+        } else kp = byUu ? { table: t, id: uu, idCol: t + '_uu', tombstone: true, reversible: true } : { table: t, id: pk, tombstone: true, reversible: true };
         op_uuid = uuidFromHash(p.hash);
       } else if (b.op_type === 'SET_STATUS') {
-        var pk2 = uuToPk[uu]; if (pk2 == null) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown (SET_STATUS)'); return; }
+        var pk2 = uuToPk[uu], bk2 = pk2 == null ? baseKeys[t + '|' + uu] : null; if (pk2 == null && bk2 && bk2.pk != null) pk2 = bk2.pk;
+        if (pk2 == null) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown (SET_STATUS)'); return; }
         kp = { table: t, id: pk2, action: params.action, from: params.from, to: params.to, oracle: params.oracle || null }; op_uuid = uuidFromHash(p.hash);
       } else { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' op-type ' + b.op_type); return; }
       var id = ++base; if (b.op_type === 'CRUD_CREATE') uuToPk[uu] = -id;
@@ -198,6 +294,11 @@
     if (!S || visiting) return null; visiting = true;
     try {
       var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
+      await verifyBase();                                           // verify-then-fold: a copy that is not the team's base never projects anything
+      if (baseBlocked()) {
+        log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' | BASE ' + baseSt.state + ' — NOTHING FOLDED: ' + baseSt.message);
+        await persist(); await render(); return { rep: rep, res: { ok: false, reason: 'base-' + baseSt.state }, pj: {} };
+      }
       var res = await global.__crud.teamRebuild(project), pj = project.last || {};
       await peopleRound();                                          // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
       var dirty = false; try { dirty = !!(global.__crud.inlineDirty && global.__crud.inlineDirty()); } catch (e) {}
@@ -236,7 +337,9 @@
       ' · waiting on ' + gaps + ' · last visit ' + (lastVisitAt ? new Date(lastVisitAt).toLocaleTimeString() : 'never');
     var tr = (cfg && cfg.trial && global.TeamTrial) ? global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: (global.TeamDefaults || {}).trialCycles, cap: (global.TeamDefaults || {}).trialOpCap }) : null;
     c.setAttribute('data-trial', tr ? (tr.finished ? 'finished' : 'open') : 'none');
-    $('team-warn').textContent = (tr && tr.finished ? 'Trial cycle finished — use your own repo and key to continue. ' : '') + (lo ? '⚠ ' + lo + ' local-only (not shared)' : '');
+    var bmsg = baseBlocked() ? baseSt.message : '';
+    c.setAttribute('data-base', baseSt.state);
+    $('team-warn').textContent = (bmsg ? '⚠ ' + bmsg + ' ' : '') + (tr && tr.finished ? 'Trial cycle finished — use your own repo and key to continue. ' : '') + (lo ? '⚠ ' + lo + ' local-only (not shared)' : '');
     $('team-warn').title = Object.keys(localOnly).map(function (u) { return u.slice(0, 8) + ': ' + localOnly[u]; }).join('\n');
     var box = $('team-conflicts'), byUu = {};
     // name the record: its documentno when the projection carries it (the log's CREATE), else its uu
@@ -330,6 +433,7 @@
     sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {};
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
+    try { await verifyBase(); } catch (e) { log('🔴 §TEAM_BASE verify failed at boot ' + (e && e.stack || e)); }
     _resolveReady(true); await render();
   }
 
@@ -339,7 +443,9 @@
   }
   async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
   async function openStore(bytes) {
-    S = global.CommStore.open(new SQL.Database(bytes), { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; } });
+    baseSt = { state: 'unknown' }; bmemo = {};
+    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; }, baseRow: hostBaseRow };    // baseRow: asked only in a space that has a base
+    S = global.CommStore.open(new SQL.Database(bytes), storeOpts);
     var pu = new URLSearchParams(global.location.search).get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
   }
@@ -347,9 +453,10 @@
   async function fresh() { sent = {}; localOnly = {}; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); }
   async function found() {
     await ready; needKey(); await fresh();
-    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102);
+    var bi = null; try { bi = await loadedBase(); } catch (e) { log('§TEAM_BASE none reason=' + (e && e.message) + ' (space founded WITHOUT a base)'); }
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, bi ? { base: bi } : undefined);
     cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); await openStore(undefined); await S.genesis(sp.params);
-    log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12)); await visit(); await persist(); await render(); return sp.space;
+    log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12) + (bi ? ' base=' + bi.name + ' sha=' + bi.sha256.slice(0, 12) + ' bytes=' + bi.bytes : ' (no base)')); await verifyBase(); await visit(); await persist(); await render(); return sp.space;
   }
   async function join(inv) {
     await ready; needKey(); inv = String(inv || '').trim().toLowerCase(); if (!/^[0-9a-f]{64}$/.test(inv)) throw new Error('An invite is 64 characters 0-9 a-f');
@@ -359,7 +466,7 @@
     log('§TEAM_PAIR join request posted, code ' + codeOf(dev.kid)); await persist(); await render();
   }
   async function leave() {
-    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; lastVisitAt = null; tfBoard = null; tfPipe = null; focusObjs = []; headsArr = []; peopleList = []; inboxList = []; pview = null;
+    await ready; delete cfg.space; delete cfg.founder; await kvPut('cfg', cfg); await fresh(); S = null; pipe = null; baseSt = { state: 'unknown' }; bmemo = {}; lastVisitAt = null; tfBoard = null; tfPipe = null; focusObjs = []; headsArr = []; peopleList = []; inboxList = []; pview = null;
     log('§TEAM_PAIR left the team — same device ' + codeOf(dev.kid)); await render();
   }
   async function requests() {
@@ -379,7 +486,7 @@
   }
 
   global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
-                      inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render,
+                      inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _resetDict: function () { dictC = null; } };

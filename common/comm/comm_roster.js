@@ -104,6 +104,18 @@
     return null;
   }
 
+  // §13.12.I.1 — the BASE a space sits on: {name, sha256 (64 hex), bytes?, version?}. Returns null when valid, else the offending field.
+  // It rides in the GENESIS params, so the space id (a hash of them) pins it. Unknown extra keys are dropped by baseOf (never folded into a verdict).
+  function baseProblem(b) {
+    if (!b || typeof b !== 'object' || Array.isArray(b)) return 'params';
+    if (typeof b.name !== 'string' || !b.name.length || b.name.length > 200) return 'name';
+    if (!HEX64.test(String(b.sha256 || ''))) return 'sha256';
+    if (b.bytes !== undefined && !(Number.isInteger(b.bytes) && b.bytes >= 0)) return 'bytes';
+    if (b.version !== undefined && typeof b.version !== 'string') return 'version';
+    return null;
+  }
+  function baseOf(b) { if (baseProblem(b)) return null; var o = { name: b.name, sha256: b.sha256 }; if (b.bytes !== undefined) o.bytes = b.bytes; if (b.version !== undefined) o.version = b.version; return o; }
+
   // the records an op creates or changes (GENESIS makes three: the space, the founder's device and person)
   async function touched(env) {
     if (env.body && env.body.op_type === 'GENESIS') { var f = env.body.params.founder, r = [env.target.uu, await devUU(f.kid), String(f.person_uu).toLowerCase()];
@@ -133,7 +145,7 @@
                g.author === f.kid && (await ENV.verify(g, f.jwk));
       if (ok && !gen) gen = ident[i]; else verdict[ident[i].hash] = { verdict: 'REFUSED', reason: ok ? 'second-genesis' : 'untrusted-genesis' };
     }
-    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
+    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, base: null, roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
 
     // the only key a kid can have is the one that hashes to it — collect them, then verify every op once
     var jwkOf = {}, keyOk = {}; jwkOf[gen.env.body.params.founder.kid] = gen.env.body.params.founder.jwk;
@@ -219,12 +231,12 @@
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
   var API = { IDENTITY: IDENTITY, fold: fold, kidOf: kidOf, devUU: devUU, spaceUU: spaceUU, epochUU: epochUU, policyUU: policyUU, spaceOf: spaceOf, touched: touched, dhOf: dhOf,
-              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst };
+              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem };
   global.CommRoster = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

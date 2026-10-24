@@ -13,6 +13,9 @@
  *             4) an op that read a REFUSED version is REFUSED too (the version it saw never happened).
  * Depends on CommEnvelope, CommOrder, CommRoster, CommAdmit; sql.js injected (opts.SQL); opts.access injected.
  *
+ * §13.12.I.1 (Witness: W-BASE-HASH, W-BASE-EDIT) the BASE: newSpace(..., {base}) pins a shared loaded DB in the genesis; baseInfo()/checkBase() let a host verify its copy before folding;
+ * ops carry manifest 'b:<sha12>' and an op from another base is REFUSED base-skew; opts.baseRow(table, uu) gives the scope of a record that lives in the base (else base-row-missing).
+ *
  * CL8 encryption (§13.2): the pipe sees only ciphertext. A space with a founder dh_jwk has an AES-GCM-256 space key per
  * EPOCH. Bundles carry business envelopes as `enc:<epoch>:<b64(iv‖ct)>` (op_hash stays plaintext; identity ops and heads
  * stay plaintext). A device derives its epoch keys at fold time from the KEYGRANTs addressed to it (ECDH(its private key,
@@ -103,6 +106,16 @@
     function allOps() { return _q(db, 'SELECT op_hash, envelope FROM cl_op').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; }); }
     async function sigOk(hash, env, jwk) { var k = hash + '|' + (jwk ? jwk.x : ''); if (sigCache[k] == null) sigCache[k] = !!jwk && (await ENV.verify(env, jwk)); return sigCache[k]; }
 
+    // §13.12.I.1 — the scope of a record that lives in the BASE: opts.baseRow(table, uu) -> {client, org} | null (sync or async). The base is immutable
+    // (its hash is pinned in the genesis), so an answer is remembered for the life of the store. null = the base has no such row; a host that cannot
+    // ANSWER (e.g. the base is not available right now) must throw, not return null — a thrown lookup fails the fold loudly instead of refusing ops.
+    var baseMemo = {};
+    async function baseLookup(table, uu) {                          // → { found, sc }: found = the base has that row; sc = its {client, org} (null if the row carries none)
+      var k = String(table) + '|' + String(uu).toLowerCase(); if (baseMemo[k]) return baseMemo[k];
+      var r = await opts.baseRow(String(table), String(uu).toLowerCase()), c = r ? _num(r.client) : null, o = r ? _num(r.org) : null;
+      return (baseMemo[k] = { found: !!r, sc: c == null || o == null ? null : { client: c, org: o } });
+    }
+
     // ── the fold ─────────────────────────────────────────────────────────────────────────────────────────────────
     // core(bs, raw, contenders, idS) is the body of order(): bs = a base (the in-force checkpoint's frozen fold of a closed prefix S) or null;
     // raw = the ops to judge (ALL ops when bs is null, else only those beyond S's frontier); idS = the identity ops of S (roster input only).
@@ -136,8 +149,10 @@
         var dv = roster.devices[o.env.author];
         if (CLAIM[o.env.body.op_type]) { verdict[o.hash] = ADM.admitClaim(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false }); continue; }
         var cr = o.env.body.op_type === 'CRUD_CREATE' ? o.env : createOf[o.env.target.uu];
-        var sc = cr ? _scopeOfCreate(cr) : (bs && bs.scopes[o.env.target.uu] ? { client: bs.scopes[o.env.target.uu][0], org: bs.scopes[o.env.target.uu][1] } : null);
-        verdict[o.hash] = ADM.admit(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false,
+        var sc = cr ? _scopeOfCreate(cr) : (bs && bs.scopes[o.env.target.uu] ? { client: bs.scopes[o.env.target.uu][0], org: bs.scopes[o.env.target.uu][1] } : null), bmiss = false;
+        // §13.12.I.1: no CREATE in the log and none frozen in a checkpoint -> the scope of the BASE ROW (the host's lookup over the hash-verified base); only a space that HAS a base asks (a host may supply baseRow unconditionally)
+        if (!sc && !cr && !(bs && bs.scopes[o.env.target.uu]) && opts.baseRow && roster.base) { var bl = await baseLookup(o.env.target.table, o.env.target.uu); sc = bl.sc; bmiss = !bl.found; }
+        verdict[o.hash] = ADM.admit(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false, base: ADM.baseStamp(roster.base), baseMissing: bmiss,
           scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
       }
       // order the MERGED ones by what they read; cascade refusals onto ops that read a refused version
@@ -480,8 +495,11 @@
       if (ident && spec.body.op_type !== 'GENESIS') uus = uus.concat([await ROS.spaceUU(space), await ROS.devUU(self.kid), String(me.person_uu || '').toLowerCase()].filter(Boolean));
       uus.forEach(function (u) { reads[u] = ver[u] || null; });
       var deps = [].concat.apply([], Object.keys(reads).map(function (k) { var r = reads[k]; return r == null ? [] : (Array.isArray(r) ? r : [r]); })).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
+      // §13.12.I.1: in a space with a base every business op carries the short hash of the base it was authored on (the DB the host actually
+      // loaded, opts.baseSha256, else the team's own); identity ops stay m0. A caller-supplied manifest wins.
+      var rb = ident ? null : (await cur()).roster.base, stamp = rb ? ADM.baseStamp({ sha256: opts.baseSha256 || rb.sha256 }) : null;
       var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps, reads: reads,
-                  manifest: spec.manifest || 'm0', policy: spec.policy || 'p0', intent: spec.intent || (ident ? 'K-ID' : 'K1'),
+                  manifest: spec.manifest || stamp || 'm0', policy: spec.policy || 'p0', intent: spec.intent || (ident ? 'K-ID' : 'K1'),
                   target: spec.target, base: reads[uus[0]], ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
       if (spec.attrib) env.attrib = spec.attrib;
       var vr = ENV.validate(env); if (!vr.ok) throw new Error('author: invalid envelope — ' + vr.errors.join('; '));
@@ -525,6 +543,9 @@
     // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
     async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
       var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null }; }
+    // §13.12.I.1: the base this space sits on, as folded from the trusted genesis: {name, sha256, bytes?, version?} | null (no genesis seen yet, or a space without base —
+    // tell them apart with (await order()).roster.ok)
+    async function baseInfo() { var R = (await cur()).roster; return R.ok && R.base ? R.base : null; }
     // my offset inside the visit period V (ms); null until a policy fixes V
     async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
     async function revoke(kid, lastGood) { return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, body: { op_type: 'REVOKE', params: { kid: kid, last_good_seq: lastGood } } }); }
@@ -878,7 +899,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset,
+             genesis: genesis, baseInfo: baseInfo, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
@@ -902,14 +923,34 @@
     dev.dhPrivateKey = dk.privateKey; dev.dhPubJwk = { kty: dj.kty, crv: dj.crv, x: dj.x, y: dj.y }; return dev;
   }
   // a new space: the founder's genesis params and the space id they hash to (the invite)
-  async function newSpace(name, founder, personUu, personName, adRoleId) {
+  async function newSpace(name, founder, personUu, personName, adRoleId, nsOpts) {
     var nonce = _hex(globalThis.crypto.getRandomValues(new Uint8Array(16)));
     var params = { name: name, nonce: nonce, founder: { kid: founder.kid, jwk: founder.pubJwk, person_uu: String(personUu).toLowerCase(), name: personName, ad_role_id: adRoleId } };
     if (founder.dhPubJwk) params.founder.dh_jwk = founder.dhPubJwk;       // CL8: the founder's key-exchange key makes this an encrypted space
+    if (nsOpts && nsOpts.base !== undefined && nsOpts.base !== null) {      // §13.12.I.1: the shared loaded DB this space sits on; the space id hashes it (a different base = a different space)
+      var bp = ROS.baseProblem(nsOpts.base); if (bp) throw new Error('newSpace: invalid base (' + bp + ')');
+      params.base = { name: nsOpts.base.name, sha256: nsOpts.base.sha256 };
+      if (nsOpts.base.bytes !== undefined) params.base.bytes = nsOpts.base.bytes; if (nsOpts.base.version !== undefined) params.base.version = nsOpts.base.version;
+    }
     return { params: params, space: await ROS.spaceOf(params) };
   }
 
-  var API = { open: open, newDevice: newDevice, ensureDh: ensureDh, newSpace: newSpace, kidOf: function (j) { return ROS.kidOf(j); } };
+  // §13.12.I.1 — the identity of a loaded DB: sha256 of its bytes (the HOST reads the file; the engine never opens a DB). → {name, sha256, bytes, version?}
+  async function baseFromBytes(name, bytes, version) {
+    var u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), b = { name: String(name), sha256: _hex(await globalThis.crypto.subtle.digest('SHA-256', u8)), bytes: u8.length };
+    if (version !== undefined && version !== null) b.version = String(version); return b;
+  }
+  // §13.12.I.1 — PURE. baseInfo = store.baseInfo(); loaded = {sha256, bytes?} of the DB the host actually has. A mismatch is never folded onto.
+  function checkBase(info, loaded) {
+    if (!info) return { ok: true, base: false };                       // a space without base: whatever DB the host has (additive)
+    var have = loaded && typeof loaded.sha256 === 'string' ? loaded.sha256.toLowerCase() : null, want = info.sha256;
+    var bytesOk = !(loaded && loaded.bytes != null && info.bytes != null) || Number(loaded.bytes) === Number(info.bytes);
+    if (have === want && bytesOk) return { ok: true, base: true };
+    return { ok: false, reason: 'base-mismatch', have: have, want: want, haveBytes: loaded && loaded.bytes != null ? Number(loaded.bytes) : null, wantBytes: info.bytes != null ? info.bytes : null,
+             message: 'Your copy of ' + info.name + ' is not the team\'s (yours ' + (have ? have.slice(0, 12) : 'unknown') + ', the team\'s ' + want.slice(0, 12) + (info.version ? ', version ' + info.version : '') + '). Update it, then try again.' };
+  }
+
+  var API = { open: open, newDevice: newDevice, ensureDh: ensureDh, newSpace: newSpace, baseFromBytes: baseFromBytes, checkBase: checkBase, kidOf: function (j) { return ROS.kidOf(j); } };
   global.CommStore = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);
