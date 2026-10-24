@@ -21,6 +21,8 @@
     return {
       id: id || 'mem', stats: s,
       put: async function (name, bytes) { s.put++; s.bytesPut += bytes.length; m.set(name, new Uint8Array(bytes)); return true; },
+      // §13.12.F.1: create only if the name is free; the check and the write have no await between them, so it is atomic
+      ifAbsent: true, putIfAbsent: async function (name, bytes) { s.put++; if (m.has(name)) return false; s.bytesPut += bytes.length; m.set(name, new Uint8Array(bytes)); return true; },
       get: async function (name) { s.get++; if (drop[name] || !m.has(name)) return null; var b = m.get(name); s.bytesGet += b.length; return new Uint8Array(b); },
       list: async function (prefix) { s.list++; var out = []; m.forEach(function (_, k) { if (k.indexOf(prefix) === 0 && !drop[k]) out.push(k); }); return out.sort(); },
       // test seams — a pipe that withholds / restores an object (its only real power, §11.9)
@@ -35,6 +37,9 @@
       id: id || base, stats: s,
       put: async function (name, bytes) { s.put++; s.bytesPut += bytes.length;
         var r = await fetch(base + '/f/' + name, { method: 'PUT', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } }); return r.ok; },
+      ifAbsent: true, putIfAbsent: async function (name, bytes) { s.put++; s.bytesPut += bytes.length;      // 201 created · 412 the name exists · anything else is an error, not "taken"
+        var r = await fetch(base + '/f/' + name + '?absent=1', { method: 'PUT', body: bytes, headers: { 'Content-Type': 'application/octet-stream' } });
+        if (r.status === 201 || r.status === 200) return true; if (r.status === 412) return false; throw new Error('httpPipe.putIfAbsent: ' + r.status); },
       get: async function (name) { s.get++; var r = await fetch(base + '/f/' + name, { cache: 'no-store' }); if (!r.ok) return null;
         var b = new Uint8Array(await r.arrayBuffer()); s.bytesGet += b.length; return b; },
       list: async function (prefix) { s.list++; var r = await fetch(base + '/list?prefix=' + encodeURIComponent(prefix), { cache: 'no-store' });
@@ -50,6 +55,8 @@
     return {
       id: id || 'folder', stats: s,
       put: async function (name, bytes) { s.put++; s.bytesPut += bytes.length; var p = fp(name); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, Buffer.from(bytes)); return true; },
+      ifAbsent: true, putIfAbsent: async function (name, bytes) { s.put++; var p = fp(name); fs.mkdirSync(path.dirname(p), { recursive: true });
+        try { fs.writeFileSync(p, Buffer.from(bytes), { flag: 'wx' }); s.bytesPut += bytes.length; return true; } catch (e) { if (e && e.code === 'EEXIST') return false; throw e; } },
       get: async function (name) { s.get++; var p = fp(name); if (!fs.existsSync(p)) return null; var b = new Uint8Array(fs.readFileSync(p)); s.bytesGet += b.length; return b; },
       list: async function (prefix) { s.list++; return walk(path.resolve(dir), '', []).filter(function (n) { return n.indexOf(prefix) === 0; }).sort(); }
     };
@@ -129,12 +136,53 @@
       }
       throw new Error('ghPipe: ref update refused twice');
     }
-    return { id: 'gh:' + opts.owner + '/' + opts.repo, stats: s, list: list, get: get, putMany: putMany,
+    // §13.12.F.1: GitHub could do it with a non-forced ref update (a compare-and-swap) — a later step; until then it says so
+    var noIfAbsent = async function () { throw new Error('ghPipe.putIfAbsent: unsupported (document-number booking needs a pipe with ifAbsent === true)'); };
+    return { id: 'gh:' + opts.owner + '/' + opts.repo, stats: s, list: list, get: get, putMany: putMany, ifAbsent: false, putIfAbsent: noIfAbsent,
              put: function (name, bytes) { return putMany([{ name: name, bytes: bytes }]); },
              _api: api, _refs: refs, branchOf: branchOf };
   }
 
-  var API = { memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe, ghPipe: ghPipe };
+  // ── the reference write gate (TEAMWORK_FRAMEWORK §13.12 A.2 — Witness: W-POLICY-FOLD) ──────────────────────────────
+  // What a post office does so that "who may write junk" is answered WITHOUT knowing what is true: a per-space write token (rotated with
+  // each key epoch, so a revoked device's old token stops working), a max object size and a max puts per device per hour. It wraps ANY pipe
+  // (mem/folder/http), the real GitHub pipe is not touched. gateJson = { token, max_object_bytes?, max_puts_per_hour? }; opts.now() = a clock.
+  // A refused write returns false (like httpPipe on a 4xx) and is listed in gate.refusals — reasons: stale-token, bad-name, oversize, rate.
+  // One put/putMany call = one put (a putMany is one commit). Reads are not gated.
+  function gatedPipe(pipe, gateJson, opts) {
+    var now = (opts && opts.now) || Date.now, cfg = JSON.parse(JSON.stringify(gateJson)), hits = {}, refusals = [], accepted = 0;
+    // a booking name (s/<space>/seq/…) has no device in it; the gate reads it from the object (a real post office would take it from the token)
+    function kidOfEntry(e) { if (/^s\/[0-9a-f]{64}\/seq\//.test(e.name)) { try { return JSON.parse(new TextDecoder().decode(e.bytes)).device || null; } catch (x) { return null; } } return _kidOfName(e.name); }
+    function check(token, entries) {
+      if (token !== cfg.token) return 'stale-token';
+      var kid = null;
+      for (var e of entries) { var k = kidOfEntry(e); if (!k || (kid && k !== kid)) return 'bad-name'; kid = k; }
+      if (cfg.max_object_bytes != null) for (var e2 of entries) if (e2.bytes.length > cfg.max_object_bytes) return 'oversize';
+      if (cfg.max_puts_per_hour != null) { var t = now(), w = (hits[kid] = (hits[kid] || []).filter(function (x) { return t - x < 3600000; }));
+        if (w.length >= cfg.max_puts_per_hour) return 'rate'; w.push(t); }
+      return null;
+    }
+    function refuse(why, entries, token) { refusals.push({ reason: why, names: entries.map(function (e) { return e.name; }), token: token }); return false; }
+    return {
+      refusals: refusals,
+      get accepted() { return accepted; },
+      rotate: function (newJson) { cfg = JSON.parse(JSON.stringify(newJson)); },              // a new token (and/or new limits); old tokens are stale at once
+      config: function () { return JSON.parse(JSON.stringify(cfg)); },
+      // the pipe a device sees once it holds a token: same four verbs, writes checked
+      writer: function (token) {
+        var v = { id: pipe.id + '+gate', stats: pipe.stats, list: function (p) { return pipe.list(p); }, get: function (n) { return pipe.get(n); },
+          put: async function (name, bytes) { var en = [{ name: name, bytes: bytes }], why = check(token, en); if (why) return refuse(why, en, token); accepted++; return pipe.put(name, bytes); } };
+        if (typeof pipe.putIfAbsent === 'function') { v.ifAbsent = pipe.ifAbsent !== false;
+          v.putIfAbsent = async function (name, bytes) { var en = [{ name: name, bytes: bytes }], why = check(token, en); if (why) { refuse(why, en, token); throw new Error('gate-refused:' + why); } accepted++; return pipe.putIfAbsent(name, bytes); }; }
+        if (typeof pipe.putMany === 'function') v.putMany = async function (entries) { var why = check(token, entries); if (why) return refuse(why, entries, token); accepted++; return pipe.putMany(entries); };
+        return v;
+      }
+    };
+  }
+  // the gate parameters a POLICY carries (policy.params.gate) + the current token → the gateJson a post office loads
+  function gateFromPolicy(policyParams, token) { var g = (policyParams && policyParams.gate) || {}; return { token: token, max_object_bytes: g.max_object_bytes, max_puts_per_hour: g.max_puts_per_hour }; }
+
+  var API = { memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe, ghPipe: ghPipe, gatedPipe: gatedPipe, gateFromPolicy: gateFromPolicy };
   global.CommPipe = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);
