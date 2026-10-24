@@ -7,6 +7,7 @@
  * yet is PARKED (its ENROLL may still arrive). The access rule itself is the AD layer's MRole.canUpdate port
  * (erp/ad_access.js RoleContext.canUpdate), reached through ctx.access — no rule lives here.
  *   ctx = { sigOk: bool, access(roleId, client, org, table) → {allowed, reason}, scope: {client, org} | null, base?: 'b:<sha12>' | null, baseMissing?: bool }
+ *   §13.12.J.3: admitEscrow/escrowSpec/deskOwner — the device-level admission and the structural check of the three escrow ops (the semantic rules live in comm_store.js escrowPass).
  *   §13.12.I.1: base = the stamp every op of a space-with-a-base must carry in `manifest` (else base-skew); baseMissing = the host's base-row lookup answered "no such row".
  */
 (function (global) {
@@ -57,6 +58,48 @@
     var sp = claimSpec(env); if (sp.problem) return { verdict: 'REFUSED', reason: 'bad-claim:' + sp.problem };
     return { verdict: 'MERGED', reason: 'claim' };
   }
+  // ── escrow (§13.12.J.3): ESCROW_OPEN / ESCROW_USE / ESCROW_TRANSFER — the claim family: device-level admission, no table access check ──
+  var DESKRE = /^[A-Za-z0-9_.:@\/-]{1,64}$/, QMAX = 1e12;
+  var DESK = { test: function (x) { return DESKRE.test(x) && x !== '__proto__'; } };
+  // → { kind:'open', resource, slices } | { kind:'use', resource, desk, qty, doc } | { kind:'transfer', resource, from, to, qty } | { problem }
+  function escrowSpec(env) {
+    var t = env.body.op_type, p = env.body.params || {};
+    if (typeof p.resource !== 'string' || !p.resource.length || p.resource.length > 200) return { problem: 'resource' };
+    if (t === 'ESCROW_OPEN') {
+      if (!p.slices || typeof p.slices !== 'object' || Array.isArray(p.slices)) return { problem: 'slices' };
+      var ks = Object.keys(p.slices); if (!ks.length) return { problem: 'slices' };
+      for (var i = 0; i < ks.length; i++) if (!DESK.test(ks[i]) || !pint(p.slices[ks[i]], 0) || p.slices[ks[i]] > QMAX) return { problem: 'slices' };
+      return { kind: 'open', resource: p.resource, slices: p.slices };
+    }
+    if (t === 'ESCROW_USE') {
+      if (typeof p.desk !== 'string' || !DESK.test(p.desk)) return { problem: 'desk' };
+      if (!pint(p.qty, 1) || p.qty > QMAX) return { problem: 'qty' };
+      if (typeof p.doc !== 'string' || !p.doc.length || p.doc.length > 200) return { problem: 'doc' };
+      return { kind: 'use', resource: p.resource, desk: p.desk, qty: p.qty, doc: p.doc };
+    }
+    if (t === 'ESCROW_TRANSFER') {
+      if (typeof p.from !== 'string' || !DESK.test(p.from)) return { problem: 'from' };
+      if (typeof p.to !== 'string' || !DESK.test(p.to) || p.to === p.from) return { problem: 'to' };
+      if (!pint(p.qty, 1) || p.qty > QMAX) return { problem: 'qty' };
+      return { kind: 'transfer', resource: p.resource, from: p.from, to: p.to, qty: p.qty };
+    }
+    return { problem: 'op_type' };
+  }
+  function admitEscrow(env, roster, ctx) {
+    var d = roster.devices[env.author];
+    if (!d) return { verdict: 'PARKED', reason: 'unknown-device' };
+    if (!ctx.sigOk) return { verdict: 'REFUSED', reason: 'signature' };
+    var cut = roster.revokes[env.author];
+    if (cut != null && env.seq > cut) return { verdict: 'REFUSED', reason: 'revoked' };
+    if (roster.roleAt(env.author, env.seq).ad_role_id == null) return { verdict: 'REFUSED', reason: 'no-role' };
+    var sp = escrowSpec(env); if (sp.problem) return { verdict: 'REFUSED', reason: 'bad-escrow:' + sp.problem };
+    return { verdict: 'MERGED', reason: 'escrow' };
+  }
+  // does the device `kid` serve `desk`? the policy's desks map names a kid or a person uuid (§13.12.J.3 rule 4)
+  function deskOwner(roster, kid, desk) {
+    var m = roster.policy && roster.policy.params.desks, o = m && Object.prototype.hasOwnProperty.call(m, desk) ? m[desk] : null, d = roster.devices[kid];
+    return !!o && !!d && (o === kid || o.toLowerCase() === String(d.person).toLowerCase());
+  }
   // ── document numbers (§13.12.F.1): cfg = an AD_Sequence-like object { uu, tables, mode, prefix, suffix, pad, start_no, increment_no, block_size, station(kid) }
   function stationCode(cfg, kid) { return typeof cfg.station === 'function' ? cfg.station(kid) : String(kid).slice(0, 4); }
   function formatDocNo(cfg, n, kid) {
@@ -75,7 +118,7 @@
   // §13.12.I.1 — the short form of a base's hash an op carries in its `manifest`
   function baseStamp(b) { return b && b.sha256 ? 'b:' + String(b.sha256).slice(0, 12) : null; }
 
-  var API = { baseStamp: baseStamp, admit: admit, admitClaim: admitClaim, claimSpec: claimSpec, formatDocNo: formatDocNo, docNoOf: docNoOf, blockOf: blockOf, stationCode: stationCode };
+  var API = { baseStamp: baseStamp, admit: admit, admitClaim: admitClaim, claimSpec: claimSpec, admitEscrow: admitEscrow, escrowSpec: escrowSpec, deskOwner: deskOwner, formatDocNo: formatDocNo, docNoOf: docNoOf, blockOf: blockOf, stationCode: stationCode };
   global.CommAdmit = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

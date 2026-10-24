@@ -9,6 +9,7 @@
  *   §13.12 (Witness: W-POLICY-FOLD): POLICY is the admin-signed config controller — visit period, stagger rule, bundle cap, gate parameters,
  *   checkpoint cadence, lease TTL and informational entries. Folded like REKEY: every device applies the same policy at the same log position;
  *   a higher `epoch` supersedes, an equal or lower one is REFUSED; a non-admin POLICY is REFUSED.
+ *   §13.12.J.3: POLICY may carry `desks: {desk: kid|person_uu}` — who serves which ESCROW desk; escrowUU names the one record all ops of a resource write.
  *   CL8 (§13.2, Witness: W-PIPE-OPAQUE): KEYGRANT wraps a space-key epoch for one device, REKEY opens epoch n+1 after a REVOKE.
  *   Both stay plaintext in bundles (a new device must read its own grant before it has a key); they hold only public keys and wrapped keys.
  *   - The space id IS sha256(canonical(GENESIS params)), so an invite (the space id) pins the founder key.
@@ -43,6 +44,7 @@
     return h % V;
   }
   async function claimUU(space, key) { return _uuid(await _sha('claimrec:' + space + ':' + key)); }       // the record every claim on one key writes
+  async function escrowUU(space, resource) { return _uuid(await _sha('escrowrec:' + space + ':' + resource)); }    // §13.12.J.3: the one record every escrow op of one resource writes (so they read each other)
   async function ckptUU(space, stateHash) { return _uuid(await _sha('ckpt:' + space + ':' + stateHash)); }
   var HEX64 = /^[0-9a-f]{64}$/;
   function ckptProblem(p) {
@@ -99,6 +101,8 @@
     if (p.lease_ttl_ms !== undefined && !pint(p.lease_ttl_ms, 1)) return 'lease_ttl_ms';
     if (p.pipes !== undefined) { if (!p.pipes || typeof p.pipes !== 'object' || (p.pipes.primary !== undefined && typeof p.pipes.primary !== 'string') ||
         (p.pipes.fallback !== undefined && (!Array.isArray(p.pipes.fallback) || p.pipes.fallback.some(function (x) { return typeof x !== 'string'; })))) return 'pipes'; }
+    if (p.desks !== undefined) { if (!p.desks || typeof p.desks !== 'object' || Array.isArray(p.desks) ||        // §13.12.J.3: desk -> owner (a device kid or a person uuid) for ESCROW ops
+        Object.keys(p.desks).some(function (d) { return d === '__proto__' || !/^[A-Za-z0-9_.:@\/-]{1,64}$/.test(d) || typeof p.desks[d] !== 'string' || !p.desks[d].length || p.desks[d].length > 64; })) return 'desks'; }
     if (p.manifest !== undefined && typeof p.manifest !== 'string') return 'manifest';
     if (p.number_prefix !== undefined && typeof p.number_prefix !== 'string') return 'number_prefix';
     return null;
@@ -235,7 +239,7 @@
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
-  var API = { IDENTITY: IDENTITY, fold: fold, kidOf: kidOf, devUU: devUU, spaceUU: spaceUU, epochUU: epochUU, policyUU: policyUU, spaceOf: spaceOf, touched: touched, dhOf: dhOf,
+  var API = { IDENTITY: IDENTITY, fold: fold, kidOf: kidOf, devUU: devUU, spaceUU: spaceUU, epochUU: epochUU, policyUU: policyUU, escrowUU: escrowUU, spaceOf: spaceOf, touched: touched, dhOf: dhOf,
               staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem };
   global.CommRoster = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

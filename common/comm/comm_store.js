@@ -16,6 +16,9 @@
  * §13.12.I.1 (Witness: W-BASE-HASH, W-BASE-EDIT) the BASE: newSpace(..., {base}) pins a shared loaded DB in the genesis; baseInfo()/checkBase() let a host verify its copy before folding;
  * ops carry manifest 'b:<sha12>' and an op from another base is REFUSED base-skew; opts.baseRow(table, uu) gives the scope of a record that lives in the base (else base-row-missing).
  *
+ * §13.12.J.3 (Witness: W-ESCROW, W-INVARIANTS-CHAOS) ESCROW: ESCROW_OPEN / ESCROW_USE / ESCROW_TRANSFER split a guarded quantity into slices owned by desks (POLICY `desks`); the claim family — no table access
+ * check, never handed to the kernel; escrowPass() runs in the same fixed point as claimsPass (admitted only if within the author's causal view AND the running balance); escrowState() reads it.
+ *
  * CL8 encryption (§13.2): the pipe sees only ciphertext. A space with a founder dh_jwk has an AES-GCM-256 space key per
  * EPOCH. Bundles carry business envelopes as `enc:<epoch>:<b64(iv‖ct)>` (op_hash stays plaintext; identity ops and heads
  * stay plaintext). A device derives its epoch keys at fold time from the KEYGRANTs addressed to it (ECDH(its private key,
@@ -94,7 +97,7 @@
 
   function open(db, opts) {
     var SQL = opts.SQL, self = opts.self, space = opts.space, access = opts.access, log = opts.log || function (m) { console.log(m); };
-    var CLAIM = { KEYCLAIM: 1, BOOKING: 1 }, KH = {}, seqByUU = null, seqByTable = {};
+    var CLAIM = { KEYCLAIM: 1, BOOKING: 1 }, ESC = { ESCROW_OPEN: 1, ESCROW_USE: 1, ESCROW_TRANSFER: 1 }, KH = {}, seqByUU = null, seqByTable = {};
     if (opts.sequences && opts.sequences.length) { seqByUU = {}; opts.sequences.forEach(function (c) { seqByUU[c.uu] = c; (c.tables || []).forEach(function (t) { seqByTable[t] = c; }); }); }
     async function keyhFor(key) { if (!KH[key]) KH[key] = await _sha('claim:' + space + ':' + key); return KH[key]; }
     var SP = 's/' + space + '/';             // §13.6: every pipe name I write or list lives under my space — two spaces on one pipe never meet
@@ -148,6 +151,7 @@
         if ((o.env.deps || []).some(function (x) { return !known(x); })) { verdict[o.hash] = { verdict: 'PARKED', reason: 'deps' }; continue; }   // what it read hasn't arrived yet
         var dv = roster.devices[o.env.author];
         if (CLAIM[o.env.body.op_type]) { verdict[o.hash] = ADM.admitClaim(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false }); continue; }
+        if (ESC[o.env.body.op_type]) { verdict[o.hash] = ADM.admitEscrow(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false }); continue; }       // §13.12.J.3: the claim family, no table access check
         var cr = o.env.body.op_type === 'CRUD_CREATE' ? o.env : createOf[o.env.target.uu];
         var sc = cr ? _scopeOfCreate(cr) : (bs && bs.scopes[o.env.target.uu] ? { client: bs.scopes[o.env.target.uu][0], org: bs.scopes[o.env.target.uu][1] } : null), bmiss = false;
         // §13.12.I.1: no CREATE in the log and none frozen in a checkpoint -> the scope of the BASE ROW (the host's lookup over the hash-verified base); only a space that HAS a base asks (a host may supply baseRow unconditionally)
@@ -161,10 +165,11 @@
       var cOp = bs && bs.c && okSet[bs.c] ? bs.c : null;            // every op beyond the barrier is placed after the CHECKPOINT op (§13.12.3)
       // claim keys are hashed once per key (the key itself never leaves the device in a snapshot)
       for (var ko of ok) { var kt = ko.env.body.op_type;
-        if (CLAIM[kt]) { var ksp = ADM.claimSpec(ko.env); if (!ksp.problem) await keyhFor(ksp.key); }
+        if (ESC[kt]) { var esp = ADM.escrowSpec(ko.env); if (!esp.problem) { var erh = await escHash(esp.resource); if (esp.kind === 'use') await escDocHash(erh, esp.doc); } }
+        else if (CLAIM[kt]) { var ksp = ADM.claimSpec(ko.env); if (!ksp.problem) await keyhFor(ksp.key); }
         else if (seqByUU) { var kref = (ko.env.body.params || {}).docno_ref, kcfg = kref && seqByUU[kref.seq];
           if (kcfg && kcfg.mode === 'B') await keyhFor('BOOKING:' + kref.seq + ':' + kref.n); else if (kcfg && kcfg.mode === 'K') await keyhFor('BLOCK:' + kref.seq + ':' + ADM.blockOf(kcfg, kref.n)); } }
-      var excluded = {}, L, claims = null, used = null, isRefused = function (x) { var v = verdict[x]; return !!v && v.verdict !== 'MERGED' && v.verdict !== 'PARKED'; };
+      var excluded = {}, L, claims = null, used = null, escrow = null, isRefused = function (x) { var v = verdict[x]; return !!v && v.verdict !== 'MERGED' && v.verdict !== 'PARKED'; };
       for (var pass = 0; pass < 50; pass++) {
         var okNow = ok.filter(function (o) { return !excluded[o.hash]; });
         L = ORD.linearize(okNow.map(function (o) {
@@ -179,10 +184,53 @@
         Object.keys(parkedSet).forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
         // claims and numbered documents: first in fold order wins (§13.12.2, §13.12.F.1); a loser leaves the order, the pass repeats
         var cp = claimsPass(L.order, byHash, bs); claims = cp.claims; used = cp.used;
-        if (!cp.losers.length) break;
-        cp.losers.forEach(function (l) { verdict[l.h] = { verdict: 'REFUSED', reason: l.reason }; excluded[l.h] = 1; });
+        var ep = escrowPass(L.order, byHash, bs, roster); escrow = ep.escrow;               // §13.12.J.3: same fixed point as the claims
+        var losers = cp.losers.concat(ep.losers);
+        if (!losers.length) break;
+        losers.forEach(function (l) { verdict[l.h] = { verdict: 'REFUSED', reason: l.reason }; excluded[l.h] = 1; });
       }
-      return { order: L.order, verdict: verdict, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, createOf: createOf, ops: ops, claims: claims, used: used };
+      return { order: L.order, verdict: verdict, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, createOf: createOf, ops: ops, claims: claims, used: used, escrow: escrow || {} };
+    }
+
+    // ── escrow (§13.12.J.3, Witness: W-ESCROW / W-INVARIANTS-CHAOS) ────────────────────────────────────────────
+    // Names are hashed before they go into a snapshot; a desk's numbers sit in the (sealed) state. state[resh] = { oh: OPEN op hash, s: {desk: slice}, d: {desk: {u,i,o}}, k: {docHash: 1} }.
+    var EH = {};
+    async function escHash(resource) { var k = 'r|' + resource; if (!EH[k]) EH[k] = await _sha('escrow:' + space + ':' + resource); return EH[k]; }
+    async function escDocHash(resh, doc) { var k = 'd|' + resh + '|' + doc; if (!EH[k]) EH[k] = await _sha('escrowdoc:' + resh + ':' + doc); return EH[k]; }
+    function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+    function escrowPass(order, byHash, bs, roster) {
+      var st = JSON.parse(JSON.stringify(bs && bs.escrow ? bs.escrow : {})), baseE = bs && bs.escrow ? bs.escrow : {}, losers = [], has = Object.keys(st).length > 0;
+      if (!has) for (var q = 0; q < order.length; q++) if (ESC[byHash[order[q]].body.op_type]) { has = true; break; }
+      if (!has) return { escrow: st, losers: losers };          // a space that never used escrow pays nothing and writes nothing
+      var anc = Object.create(null), eff = Object.create(null), NONE = Object.create(null);     // anc[h] = the admitted escrow ops in h's causal past (beyond S); eff[h] = what an admitted escrow op did
+      function lose(h, why) { losers.push({ h: h, reason: why }); }
+      order.forEach(function (h) {
+        var env = byHash[h], t = env.body.op_type, deps = env.deps || [], a = NONE, i, k;
+        for (i = 0; i < deps.length; i++) { var d = deps[i], ad = anc[d];
+          if (eff[d] || (ad && ad !== NONE)) { if (a === NONE) a = Object.create(null); if (eff[d]) a[d] = 1; if (ad) for (k in ad) a[k] = 1; } }
+        anc[h] = a;
+        if (!ESC[t]) return;
+        var sp = ADM.escrowSpec(env); if (sp.problem) return lose(h, 'bad-escrow:' + sp.problem);
+        var resh = EH['r|' + sp.resource], r = st[resh];
+        if (sp.kind === 'open') {
+          if (r) return lose(h, 'escrow-exists');
+          if (!roster.roleAt(env.author, env.seq).comm_admin) return lose(h, 'escrow-not-admin');
+          var dd = {}; Object.keys(sp.slices).forEach(function (x) { dd[x] = { u: 0, i: 0, o: 0 }; });
+          st[resh] = { oh: h, s: Object.assign({}, sp.slices), d: dd, k: {} }; eff[h] = []; return;
+        }
+        if (!r || !(a[r.oh] || (baseE[resh] && baseE[resh].oh === r.oh))) return lose(h, 'escrow-unknown');       // the OPEN must be in what this op had seen
+        var desk = sp.kind === 'use' ? sp.desk : sp.from;
+        if (!hasOwn(r.s, desk) || (sp.kind === 'transfer' && !hasOwn(r.s, sp.to))) return lose(h, 'escrow-unknown-desk');
+        if (!ADM.deskOwner(roster, env.author, desk)) return lose(h, 'escrow-not-owner');
+        var dk = null; if (sp.kind === 'use') { dk = EH['d|' + resh + '|' + sp.doc]; if (r.k[dk]) return lose(h, 'escrow-duplicate-doc'); }
+        var ag = r.d[desk], run = r.s[desk] - ag.u - ag.o + ag.i;                                         // the running view: every admitted op so far in fold order
+        var be = baseE[resh] ? baseE[resh].d[desk] : null, cv = r.s[desk] - (be ? be.u + be.o - be.i : 0);   // the causal view: S as a whole ...
+        for (k in a) { var ef = eff[k]; if (!ef) continue; for (i = 0; i < ef.length; i++) if (ef[i].res === resh && ef[i].desk === desk) cv += ef[i].k === 'i' ? ef[i].qty : -ef[i].qty; }   // ... plus the admitted ops it had seen
+        if (sp.qty > cv || sp.qty > run) return lose(h, 'escrow-exceeded');
+        if (sp.kind === 'use') { ag.u += sp.qty; r.k[dk] = 1; eff[h] = [{ res: resh, desk: desk, k: 'u', qty: sp.qty }]; }
+        else { ag.o += sp.qty; r.d[sp.to].i += sp.qty; eff[h] = [{ res: resh, desk: sp.from, k: 'o', qty: sp.qty }, { res: resh, desk: sp.to, k: 'i', qty: sp.qty }]; }
+      });
+      return { escrow: st, losers: losers };
     }
 
     function claimsPass(order, byHash, bs) {
@@ -253,7 +301,7 @@
     // state of S = (prev base ++ the ops in (prev frontier, frontier]), judged by the roster of S alone; prevC = the CHECKPOINT op of prev (placed first)
     async function foldS(prevSt, frontier, prevC) {
       var pf = prevSt ? prevSt.frontier : {}, ids = identityRows(), idS = prevSt ? idUpTo(ids, pf) : [];
-      var bs = prevSt ? { verdict: prevSt.verdict, scopes: prevSt.scopes, claims: prevSt.claims || {}, used: prevSt.used || {}, c: prevC } : null;
+      var bs = prevSt ? { verdict: prevSt.verdict, scopes: prevSt.scopes, claims: prevSt.claims || {}, used: prevSt.used || {}, escrow: prevSt.escrow || {}, c: prevC } : null;
       var raw = rangeRows(pf, frontier), res = await core(bs, raw, [], idS);
       if (res.parked.length) return { problem: 'parked-in-S' };
       if (res.equivocations.length) return { problem: 'equivocation-in-S' };
@@ -261,6 +309,7 @@
       Object.keys(res.createOf).forEach(function (u) { var sc = _scopeOfCreate(res.createOf[u]); if (sc) scopes[u] = [sc.client, sc.org]; });
       var st = { v: 1, space: space, frontier: frontier, prev: prevSt ? prevSt.hash : null, order: (prevSt ? prevSt.order : []).concat(res.order), verdict: verdict, scopes: scopes,
                  claims: Object.assign({}, prevSt ? prevSt.claims : {}, res.claims), used: Object.assign({}, prevSt ? prevSt.used : {}, res.used) };
+      if (res.escrow && Object.keys(res.escrow).length) st.escrow = res.escrow;                 // §13.12.J.3: written only when used, so the state hash of a space without escrow is unchanged
       return { state: st };
     }
     async function stateHashOf(st) { var body = Object.assign({}, st); delete body.hash; return _sha(ENV.canonical(body)); }
@@ -329,7 +378,7 @@
       if (!why && (!cEnv || (cEnv.deps || []).some(function (d) { return !st.verdict[d]; }))) why = 'checkpoint-reads-outside-S';
       if (!why && st.verdict[first.hash]) why = 'checkpoint-inside-its-own-S';
       if (why) return { problem: why };
-      return { base: { stateHash: cd.sh, state: st, frontier: f, order: st.order, verdict: st.verdict, scopes: st.scopes, claims: st.claims || {}, used: st.used || {}, c: first.hash, rosterS: bc.rs, idHashes: bc.idHashes, nRefused: bc.nRefused, pos: st.order.length } };
+      return { base: { stateHash: cd.sh, state: st, frontier: f, order: st.order, verdict: st.verdict, scopes: st.scopes, claims: st.claims || {}, used: st.used || {}, escrow: st.escrow || {}, c: first.hash, rosterS: bc.rs, idHashes: bc.idHashes, nRefused: bc.nRefused, pos: st.order.length } };
     }
 
     async function plainOrder() {
@@ -340,7 +389,7 @@
       db.run('DELETE FROM cl_verdict');
       var pos = {}; res.order.forEach(function (h, i) { pos[h] = i; });
       Object.keys(res.verdict).forEach(function (h) { db.run('INSERT INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, res.verdict[h].verdict, res.verdict[h].reason || null]); });
-      last = { order: res.order, parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, claims: res.claims, used: res.used };
+      last = { order: res.order, parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, claims: res.claims, used: res.used, escrow: res.escrow };
       return last;
     }
     async function orderWithCkpt() {
@@ -368,7 +417,7 @@
       var pos = {}; res.order.forEach(function (h, i) { pos[h] = b.pos + i; });
       var own = Object.keys(res.verdict); prevRest = own;
       own.forEach(function (h) { db.run('INSERT OR REPLACE INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, res.verdict[h].verdict, res.verdict[h].reason || null]); });
-      last = { order: b.order.concat(res.order), parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, base: b, claims: res.claims, used: res.used };
+      last = { order: b.order.concat(res.order), parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, base: b, claims: res.claims, used: res.used, escrow: res.escrow };
       return last;
     }
     async function order() {
@@ -415,7 +464,7 @@
       var ch = (p.changes || {})[c]; return ch && Object.prototype.hasOwnProperty.call(ch, 'new') ? ch.new : ch; }
     async function conflicts() {
       var L = await cur(), byHash = {}, pos = {}, rec = {}; allOps().forEach(function (o) { byHash[o.hash] = o.env; });
-      L.order.forEach(function (h, i) { pos[h] = i; var e = byHash[h]; if (ROS.IDENTITY[e.body.op_type] || CLAIM[e.body.op_type]) return; (rec[e.target.uu] = rec[e.target.uu] || []).push(h); });
+      L.order.forEach(function (h, i) { pos[h] = i; var e = byHash[h]; if (ROS.IDENTITY[e.body.op_type] || CLAIM[e.body.op_type] || ESC[e.body.op_type]) return; (rec[e.target.uu] = rec[e.target.uu] || []).push(h); });
       var out = [], devs = L.roster.devices;
       Object.keys(rec).forEach(function (uu) {
         var hs = rec[uu], anc = {};
@@ -747,7 +796,7 @@
     }
     async function placedEnvelopes() {
       var L = await cur(), env = {}; allOps().forEach(function (o) { env[o.hash] = o.env; });
-      return L.order.map(function (h) { return { hash: h, env: env[h] }; }).filter(function (p) { return !ROS.IDENTITY[p.env.body.op_type] && !CLAIM[p.env.body.op_type]; });
+      return L.order.map(function (h) { return { hash: h, env: env[h] }; }).filter(function (p) { return !ROS.IDENTITY[p.env.body.op_type] && !CLAIM[p.env.body.op_type] && !ESC[p.env.body.op_type]; });
     }
     function verdicts() { return _q(db, 'SELECT * FROM cl_verdict'); }
 
@@ -777,6 +826,33 @@
       return (await claims()).filter(function (c) { return c.person === pu && c.verdict === 'REFUSED' && /^(key-claimed|lease-live|bad-takeover)$/.test(c.reason); })
         .map(function (c) { var wd = c.winner ? (L.roster.devices[(L.claims[Object.keys(L.claims).filter(function (k) { return L.claims[k].h === c.winner; })[0]] || {}).a] || {}) : {};
           return { key: c.key, reason: c.reason, op: c.hash, winner: c.winner, winner_person: wd.person || null, textmsg: 'KeyClaimed ' + c.key + ': held by ' + (wd.person || 'someone else') + ' (' + c.reason + ')' }; });
+    }
+    // ── escrow (§13.12.J.3): a guarded quantity split into slices owned by desks ───────────────────────────────
+    // The authoring methods sign whatever they are given — the FOLD judges (escrow-exceeded, escrow-not-owner, ...). A host pre-checks with escrowAvailable().
+    async function escrowOp(type, resource, params, o) {
+      o = o || {}; return author({ target: { table: 'comm_escrow', uu: await ROS.escrowUU(space, resource) }, refs: o.refs, ts: o.ts, intent: 'K1', body: { op_type: type, params: params } });
+    }
+    function escrowOpen(resource, slices, o) { return escrowOp('ESCROW_OPEN', resource, { resource: String(resource), slices: slices }, o); }
+    function escrowUse(resource, desk, qty, doc, o) { return escrowOp('ESCROW_USE', resource, { resource: String(resource), desk: desk, qty: qty, doc: String(doc) }, o); }
+    function escrowTransfer(resource, from, to, qty, o) { return escrowOp('ESCROW_TRANSFER', resource, { resource: String(resource), from: from, to: to, qty: qty }, o); }
+    // the folded state of one resource, or null if no OPEN was admitted. conserved = (sum available + sum used === total), computed from the stored numbers
+    async function escrowState(resource) {
+      var L = await cur(), r = L.escrow && L.escrow[await escHash(String(resource))]; if (!r) return null;
+      var desks = {}, total = 0, sa = 0, su = 0;
+      Object.keys(r.s).sort().forEach(function (d) { var a = r.d[d], av = r.s[d] - a.u - a.o + a.i; desks[d] = { slice: r.s[d], used: a.u, in: a.i, out: a.o, available: av }; total += r.s[d]; sa += av; su += a.u; });
+      return { resource: String(resource), open: true, desks: desks, total: total, conserved: sa + su === total };
+    }
+    // what a new op authored now would be judged against (its causal past = every escrow op I hold on that record)
+    async function escrowAvailable(resource, desk) { var s = await escrowState(resource); return s && s.desks[desk] ? s.desks[desk].available : null; }
+    // every escrow op I hold with its verdict
+    async function escrowOps() {
+      var L = await cur(), out = [];
+      for (var o of rowsOf("SELECT op_hash, envelope FROM cl_op WHERE op_type IN ('ESCROW_OPEN','ESCROW_USE','ESCROW_TRANSFER')")) {
+        var p = o.env.body.params || {}, v = L.verdict[o.hash] || null;
+        out.push({ hash: o.hash, type: o.env.body.op_type, author: o.env.author, seq: o.env.seq, resource: p.resource, desk: p.desk || p.from || null, to: p.to || null, qty: p.qty == null ? null : p.qty, doc: p.doc || null,
+                   verdict: v ? v.verdict : null, reason: v ? v.reason : null });
+      }
+      return out;
     }
     function seqCfg(seqUU) { var c = seqByUU && seqByUU[seqUU]; if (!c) throw new Error('numberDocument: unknown sequence ' + seqUU); return c; }
     async function bookingRef(seqUU, n) { return ROS.claimUU(space, 'BOOKING:' + seqUU + ':' + n); }
@@ -900,7 +976,7 @@
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
              genesis: genesis, baseInfo: baseInfo, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset,
-             checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
+             checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, escrowOpen: escrowOpen, escrowUse: escrowUse, escrowTransfer: escrowTransfer, escrowState: escrowState, escrowAvailable: escrowAvailable, escrowOps: escrowOps, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
              conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
