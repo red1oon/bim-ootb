@@ -34,5 +34,28 @@
     for (var i = 0; i < offered.length; i++) await load(offered[i]);
     console.log('§TEAM_VERSIONS appV=' + OPS.map(function (o) { return o + ':' + appV(o); }).join(',') + ' sets=' + loaded + '/' + offered.length);
   })().catch(function (e) { console.log('🔴 §TEAM_VERSIONS ' + (e && e.message)); });
-  global.TeamVersions = { registry: reg, ready: ready, appV: appV, load: load, loaded: function () { return loaded; } };
+  // §16.34 the ONE place the words live. verdictMap = the verdicts a host's render() already holds (S.order().verdict): { <hash>: {verdict, reason} }.
+  function describe(verdictMap) {
+    var by = {}, rby = {}, parked = 0, refused = 0;
+    Object.keys(verdictMap || {}).forEach(function (h) { var v = verdictMap[h];
+      if (v.verdict === 'PARKED') { parked++; by[v.reason] = (by[v.reason] || 0) + 1; }
+      else if (v.verdict === 'REFUSED' && (v.reason === 'retired-version' || v.reason === 'bogus-version')) { refused++; rby[v.reason] = (rby[v.reason] || 0) + 1; } });
+    var up = by['needs-upgrade'] || 0, mp = by['needs-mapping'] || 0, dp = by.deps || 0, ret = rby['retired-version'] || 0, bog = rby['bogus-version'] || 0, parts = [];
+    var pl = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+    if (up) parts.push(pl(up, 'change from a newer app waits', 'changes from a newer app wait') + ' — update this app');
+    if (mp) parts.push(pl(mp, 'change waits', 'changes wait') + ' for a translation rule from the team admin');
+    if ((up || mp) && dp) parts.push(pl(dp, 'more waits', 'more wait') + ' on those');
+    if (ret) parts.push(pl(ret, 'change from a retired version was ignored', 'changes from a retired version were ignored'));
+    if (bog) parts.push(pl(bog, 'change with an unreadable version was ignored', 'changes with an unreadable version were ignored'));
+    var vParked = up + mp > 0, lines = Object.keys(by).sort().map(function (k) { return k + ': ' + by[k]; }).concat(Object.keys(rby).sort().map(function (k) { return k + ': ' + rby[k]; }));
+    return { level: vParked ? 'provisional' : (refused ? 'refused' : 'ok'), parked: parked, refused: refused, by_reason: by, text: parts.length ? '⚠ ' + parts.join(' · ') : '', title: lines.join('\n') };
+  }
+  // paint the result on the host's Team chip (#team-chip) and append it to its warning line (#team-warn); the local-only warning is untouched
+  function paint(chip, warn, verdictMap) {
+    var d = describe(verdictMap);
+    if (chip) { chip.setAttribute('data-versions', d.level); chip.setAttribute('data-parked', String(d.parked)); chip.setAttribute('data-version-refused', String(d.refused)); }
+    if (warn && d.text) { warn.textContent = (warn.textContent ? warn.textContent + ' ' : '') + d.text; warn.title = (warn.title ? warn.title + '\n' : '') + d.title; }
+    return d;
+  }
+  global.TeamVersions = { registry: reg, ready: ready, appV: appV, load: load, loaded: function () { return loaded; }, describe: describe, paint: paint };
 })(typeof window !== 'undefined' ? window : globalThis);

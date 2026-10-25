@@ -76,6 +76,9 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
       var L = await S.order(), fold = (await S.foldable()).filter(function (p) { return p.hash === r.hash; })[0], st = await S.db.exec('SELECT envelope FROM cl_op WHERE op_hash=?', [r.hash]);
       return { hash: r.hash, verdict: L.verdict[r.hash], folded: fold ? fold.env.body : null, stored: st[0].values[0][0] }; }, { sv: sv, tpl: tpl }); },
     rows: function (pg) { return pg.evaluate(function () { var r = window.Bonsai.oplog.db.exec("SELECT count(*) FROM kernel_ops WHERE op_type LIKE 'GEOM%'"); return r[0].values[0][0]; }); },
+    chip: function (pg) { return pg.evaluate(async function () { var T = window.TeamSyncModeller; await T.render(); var c = document.getElementById('team-chip'), w = document.getElementById('team-warn'), S = T.store();
+      var vs = await T.versionState(), d = window.TeamVersions.describe((await S.order()).verdict);
+      return { versions: c.getAttribute('data-versions'), parked: c.getAttribute('data-parked'), refused: c.getAttribute('data-version-refused'), warn: w.textContent, title: w.title, vs: vs, d: { parked: d.parked, by: d.by_reason } }; }); },
     visit: function (pg) { return pg.evaluate(async function () { await window.TeamSyncModeller.visit(); await window.TeamSyncModeller.settle(); }); },
     state: function (pg) { return pg.evaluate(function () { return window.TeamSyncModeller.versionState(); }); },
     storedBody: function (pg, hash) { return pg.evaluate(function (h) { var S = window.TeamSyncModeller.store(), r = S.db.exec('SELECT envelope FROM cl_op WHERE op_hash=?', [h]); return JSON.parse(r[0].values[0][0]).body; }, hash); },
@@ -87,7 +90,9 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
   if (!QUIET) console.log('§M1 default configuration');
   var m1 = await scenario({ noCfg: true }, async function (pg, logs) {
     var real = await P.realOp(pg), st = await P.state(pg), cl = await pg.evaluate(function () { return window.TeamSyncModeller.classes(); });
-    return { real: real, st: st, cl: cl, tv: await pg.evaluate(function () { return window.TeamVersions && { appV: window.TeamVersions.appV('CRUD_CREATE'), loaded: window.TeamVersions.loaded() }; }) };
+    return { real: real, st: st, cl: cl, chip: await P.chip(pg), pure: await pg.evaluate(function () { var T = window.TeamVersions, V = function (verdict, reason) { return { verdict: verdict, reason: reason }; };
+      var ret = T.describe({ a: V('REFUSED', 'retired-version'), b: V('REFUSED', 'retired-version'), c: V('REFUSED', 'bogus-version') }), up = T.describe({ a: V('PARKED', 'needs-upgrade'), b: V('PARKED', 'needs-upgrade'), c: V('PARKED', 'deps'), d: V('PARKED', 'deps'), e: V('PARKED', 'deps') }), none = T.describe({ a: V('MERGED', 'ok') }), dep = T.describe({ a: V('PARKED', 'deps') });
+      return { ret: ret.text, up: up.text, none: none.text, depsOnly: dep.text, lvlRefused: ret.level, lvlProv: up.level }; }), tv: await pg.evaluate(function () { return window.TeamVersions && { appV: window.TeamVersions.appV('CRUD_CREATE'), loaded: window.TeamVersions.loaded() }; }) };
   });
   verdict('M1', !!m1.tv && m1.tv.appV === 1 && m1.tv.loaded === 0 && line(m1.logs, /§TEAM_VERSIONS appV=CRUD_CREATE:1,CRUD_UPDATE:1,CRUD_DELETE:1,SET_STATUS:1 sets=0\/0/).length === 1, 'no configuration: shape 1 for all four op types, 0 sets, one §TEAM_VERSIONS line', JSON.stringify(m1.tv));
   verdict('M1', !!m1.real && !('sv' in m1.real.body) && m1.real.verdict && m1.real.verdict.verdict === 'MERGED', 'an op authored through the real command API carries NO `sv` (byte-identical to before) and is MERGED', m1.real ? JSON.stringify(Object.keys(m1.real.body)) + ' ' + m1.real.verdict.verdict : 'no CRUD_CREATE authored');
@@ -99,7 +104,7 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
     var real = await P.realOp(pg), tpl = real.body.params.fields, before = await P.rows(pg);
     var newer = await P.peerOp(pg, 2, tpl), same = await P.peerOp(pg, 0, tpl);
     await P.visit(pg); var after = await P.rows(pg), st = await P.state(pg);
-    return { newer: newer, same: same, before: before, after: after, st: st, foldHas: await P.foldHas(pg, newer.hash) };
+    return { real: real, newer: newer, same: same, before: before, after: after, st: st, chip: await P.chip(pg), foldHas: await P.foldHas(pg, newer.hash) };
   });
   verdict('M2', m2.newer.verdict.verdict === 'PARKED' && m2.newer.verdict.reason === 'needs-upgrade' && m2.foldHas === false && m2.newer.folded === null, 'the sv:2 op is PARKED needs-upgrade and absent from foldable()', JSON.stringify(m2.newer.verdict));
   verdict('M2', m2.st.provisional === true && m2.st.parked_by_reason['needs-upgrade'] === 1, 'versionState: provisional, 1 op needs-upgrade', JSON.stringify(m2.st));
@@ -113,7 +118,7 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
     var real = await P.realOp(pg), tpl = real.body.params.fields, before = await P.rows(pg), tsState = await pg.evaluate(function () { return window.TeamScope.state(); });
     var legacy = await P.peerOp(pg, 0, tpl), native = await P.peerOp(pg, 2, tpl); await P.visit(pg);
     var stored2 = await P.storedBody(pg, legacy.hash), storedAgain = await pg.evaluate(function (h) { var r = window.TeamSyncModeller.store().db.exec('SELECT envelope FROM cl_op WHERE op_hash=?', [h]); return r[0].values[0][0]; }, legacy.hash);
-    return { real: real, legacy: legacy, native: native, before: before, after: await P.rows(pg), st: await P.state(pg), tsState: tsState, storedAgain: storedAgain, storedBody: stored2 };
+    return { real: real, legacy: legacy, native: native, before: before, after: await P.rows(pg), st: await P.state(pg), chip: await P.chip(pg), tsState: tsState, storedAgain: storedAgain, storedBody: stored2 };
   });
   verdict('M3', line(m3.logs, /§TEAM_VERSIONS_SET op=CRUD_CREATE ok/).length === 1 && line(m3.logs, /§TEAM_VERSIONS appV=CRUD_CREATE:2,CRUD_UPDATE:1,CRUD_DELETE:1,SET_STATUS:1 sets=1\/1/).length === 1 && m3.tsState === 'ok', 'the signed set loads (sets=1/1) and the signed plan verifies with the same key', 'plan=' + m3.tsState);
   verdict('M3', m3.legacy.verdict.verdict === 'MERGED' && !!m3.legacy.folded && m3.legacy.folded.params.fields.total === 10 && m3.legacy.folded.params.fields.grandtotal === undefined && m3.legacy.folded.params._sv === 2, 'an older peer\'s op (no sv) is folded in the v2 shape: fields.grandtotal -> fields.total, marked _sv 2', m3.legacy.folded ? JSON.stringify(m3.legacy.folded.params.fields).slice(0, 80) : 'null');
@@ -130,7 +135,7 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
   for (var kind of [['unsigned', unsigned, 'unsigned'], ['untrusted', untrusted, 'untrusted-signer'], ['tampered', tampered, 'bad-signature']]) {
     m4[kind[0]] = await scenario({ shape: { CRUD_CREATE: 2 }, sets: [kind[1]], trust: [admin.pub], signedPlan: true }, async function (pg) {
       var real = await P.realOp(pg), tpl = real.body.params.fields, before = await P.rows(pg), legacy = await P.peerOp(pg, 0, tpl); await P.visit(pg);
-      return { legacy: legacy, before: before, after: await P.rows(pg), foldHas: await P.foldHas(pg, legacy.hash), st: await P.state(pg) };
+      return { legacy: legacy, before: before, after: await P.rows(pg), foldHas: await P.foldHas(pg, legacy.hash), st: await P.state(pg), chip: await P.chip(pg) };
     });
     var r = m4[kind[0]];
     verdict('M4', line(r.logs, new RegExp('§TEAM_VERSIONS_SET op=CRUD_CREATE refused:' + kind[2] + '$')).length === 1 && line(r.logs, /sets=0\/1/).length === 1, kind[0] + ' set -> refused:' + kind[2] + ', sets=0/1');
@@ -146,6 +151,16 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
   verdict('M5', line(m5.logs, /§TEAM_VERSIONS_SET op=CRUD_CREATE refused:untrusted-signer$/).length === 1 && m5.legacy.verdict.reason === 'needs-mapping', 'a correctly signed set is REFUSED untrusted-signer when the trust list is empty; the older op parks needs-mapping', JSON.stringify(m5.legacy.verdict));
   verdict('M5', m5.tsState === 'unsigned' && Object.keys(m5.cl).length === 7, 'CONTROL: the (unsigned) plan still works exactly as before with an empty trust list', 'plan=' + m5.tsState + ' classes=' + Object.keys(m5.cl).length);
 
+  // ───────────── I1-I6: the indicator in the Team chip (TEAMWORK_FRAMEWORK §16.34) — values read from the DOM, no screenshot ─────────────
+  if (!QUIET) console.log('§I indicator');
+  var NEWER = '⚠ 1 change from a newer app waits — update this app', MAPW = '⚠ 1 change waits for a translation rule from the team admin';
+  verdict('I1', m1.chip.versions === 'ok' && m1.chip.parked === '0' && m1.chip.refused === '0' && !/newer app|translation rule|retired|unreadable/.test(m1.chip.warn), 'default configuration: data-versions=ok, nothing parked, no versioning text in the warning line', JSON.stringify({ v: m1.chip.versions, p: m1.chip.parked, w: m1.chip.warn }));
+  verdict('I2', m2.real && m2.chip.versions === 'provisional' && m2.chip.parked === '1' && m2.chip.warn.indexOf(NEWER) !== -1 && /needs-upgrade: 1/.test(m2.chip.title), 'a newer peer\'s op: data-versions=provisional, data-parked=1, the warning line says exactly "' + NEWER + '", the title carries needs-upgrade: 1', JSON.stringify({ v: m2.chip.versions, p: m2.chip.parked, w: m2.chip.warn, t: m2.chip.title }));
+  verdict('I3', m4.unsigned.chip.versions === 'provisional' && m4.unsigned.chip.warn.indexOf(MAPW) !== -1 && !/newer app/.test(m4.unsigned.chip.warn), 'a refused set with an older peer\'s op: the line says "' + MAPW + '" and never "newer app"', JSON.stringify({ v: m4.unsigned.chip.versions, w: m4.unsigned.chip.warn }));
+  verdict('I4', m3.chip.versions === 'ok' && m3.chip.parked === '0' && !/newer app|translation rule/.test(m3.chip.warn), 'shape 2 + the signed set: the indicator is clear by itself (data-versions=ok, no versioning text)', JSON.stringify({ v: m3.chip.versions, w: m3.chip.warn }));
+  verdict('I5', m2.chip.vs.parked_count === m2.chip.d.parked && m2.chip.vs.parked_by_reason['needs-upgrade'] === m2.chip.d.by['needs-upgrade'] && m4.unsigned.chip.vs.parked_by_reason['needs-mapping'] === m4.unsigned.chip.d.by['needs-mapping'] && m4.unsigned.chip.d.by['needs-mapping'] === 1, 'parity: describe() counts equal the store\'s versionState() counts (needs-upgrade 1 in M2, needs-mapping 1 in M4)', JSON.stringify({ m2: m2.chip.d, m4: m4.unsigned.chip.d }));
+  verdict('I6', m1.pure.ret === '⚠ 2 changes from a retired version were ignored · 1 change with an unreadable version was ignored' && m1.pure.up === '⚠ 2 changes from a newer app wait — update this app · 3 more wait on those' && m1.pure.none === '' && m1.pure.depsOnly === '' && m1.pure.lvlRefused === 'refused' && m1.pure.lvlProv === 'provisional', 'the wording for retired / unreadable / plural / dependents, exactly (pure function fed synthetic verdicts)', JSON.stringify(m1.pure));
+
   // ───────────── M6 ─────────────
   var all = [m1, m2, m3, m4.unsigned, m4.untrusted, m4.tampered, m5]; var errN = all.reduce(function (n, r) { return n + r.errs.length; }, 0);
   verdict('M6', errN === 0, '0 page errors across all ' + all.length + ' loads', errN ? all.map(function (r) { return r.errs.join('|'); }).join(' ; ').slice(0, 200) : 'errors=0');
@@ -160,7 +175,11 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
     ['versions not passed to the store', 'adapter', ", versions: global.TeamVersions && global.TeamVersions.registry", '', ['M2', 'M4']],
     ['verifySet accepts everything', 'glue', 'async function verifySet(set) {', 'async function verifySet(set) { return null;', ['M4', 'M5']],
     ['an empty trust list accepts a set', 'glue', 'if (!t || !t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', 'if (t && !t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', ['M5']],
-    ['stamp ignores the shape', 'adapter', 'if (!(v > 1)) return body;', 'if (false) return body;', ['M1']]];
+    ['stamp ignores the shape', 'adapter', 'if (!(v > 1)) return body;', 'if (false) return body;', ['M1']],
+    ['indicator text blanked', 'glue', "text: parts.length ? '⚠ ' + parts.join(' · ') : ''", "text: ''", ['I2', 'I3']],
+    ['mapping wording swapped', 'glue', "' for a translation rule from the team admin'", "' — update this app'", ['I3']],
+    ['host never paints the chip', 'adapter', 'if (global.TeamVersions && global.TeamVersions.paint) global.TeamVersions.paint(', 'if (false) global.TeamVersions.paint(', ['I2']],
+    ['level never clears', 'glue', "level: vParked ? 'provisional' : (refused ? 'refused' : 'ok')", "level: 'provisional'", ['I1', 'I4']]];
   var cp = require('child_process'), muts = [];
   for (var m of M) {
     var src = m[1] === 'adapter' ? ADAPTER : GLUE;

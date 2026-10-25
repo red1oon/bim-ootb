@@ -284,6 +284,7 @@
       ' · waiting on ' + gaps + ' · last visit ' + (lastVisitAt ? new Date(lastVisitAt).toLocaleTimeString() : 'never');
     $('team-warn').textContent = lo ? '⚠ ' + lo + ' local-only (not shared)' : '';
     $('team-warn').title = Object.keys(localOnly).map(function (u) { return u.slice(0, 8) + ': ' + localOnly[u]; }).join('\n');
+    if (global.TeamVersions && global.TeamVersions.paint) global.TeamVersions.paint(c, $('team-warn'), L.verdict);          // §16.34: "N changes wait — update this app" (the words live in team_versions.js)
     var box = $('team-conflicts'), byUu = {};
     (await S.placedEnvelopes()).forEach(function (p) { if (p.env.body.op_type === 'CRUD_CREATE') byUu[p.env.target.uu] = (p.env.body.params.fields || {}).geom_op || null; });
     if (box) box.innerHTML = cf.map(function (k) {
