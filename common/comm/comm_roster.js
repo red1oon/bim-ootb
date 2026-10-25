@@ -115,6 +115,21 @@
     if (b.version !== undefined && typeof b.version !== 'string') return 'version';
     return null;
   }
+  // §33 (Phase B of §32, W-PLANTRUST-GENESIS): the PLAN TRUST list - 1..3 public ECDSA P-256 keys whose signature a compiled team plan must carry. A TOP-LEVEL genesis param (a space without a
+  // base, the Modeller's, needs it too), so the space id pins it. Public keys only: any other field (a private `d`, a `kid`) makes the whole genesis untrusted - never silently dropped.
+  var B64U = /^[A-Za-z0-9_-]{43}$/;
+  function planTrustProblem(t) {
+    if (!Array.isArray(t) || t.length < 1 || t.length > 3) return 'count';
+    var seen = {};
+    for (var i = 0; i < t.length; i++) { var k = t[i];
+      if (!k || typeof k !== 'object' || Array.isArray(k)) return 'key';
+      if (Object.keys(k).some(function (x) { return x !== 'kty' && x !== 'crv' && x !== 'x' && x !== 'y'; })) return 'extra field (private material is never pinned)';
+      if (k.kty !== 'EC' || k.crv !== 'P-256') return 'algorithm';
+      if (!B64U.test(String(k.x || '')) || !B64U.test(String(k.y || ''))) return 'x/y';
+      var id = k.x + '.' + k.y; if (seen[id]) return 'duplicate'; seen[id] = 1; }
+    return null;
+  }
+  function planTrustOf(t) { return planTrustProblem(t) ? null : t.map(function (k) { return { kty: k.kty, crv: k.crv, x: k.x, y: k.y }; }); }
   function baseOf(b) { if (baseProblem(b)) return null; var o = { name: b.name, sha256: b.sha256 }; if (b.bytes !== undefined) o.bytes = b.bytes; if (b.version !== undefined) o.version = b.version; return o; }
 
   // the records an op creates or changes (GENESIS makes three: the space, the founder's device and person)
@@ -143,10 +158,10 @@
       if (g.body.op_type !== 'GENESIS') continue;
       var p = g.body.params || {}, f = p.founder || {};
       var ok = g.space === pinned && g.seq === 1 && (await spaceOf(p)) === pinned && f.jwk && (await kidOf(f.jwk)) === f.kid &&
-               g.author === f.kid && (await ENV.verify(g, f.jwk));
+               g.author === f.kid && (await ENV.verify(g, f.jwk)) && (p.planTrust === undefined || !planTrustProblem(p.planTrust));
       if (ok && !gen) gen = ident[i]; else verdict[ident[i].hash] = { verdict: 'REFUSED', reason: ok ? 'second-genesis' : 'untrusted-genesis' };
     }
-    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, base: null, roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
+    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, base: null, planTrust: null, roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
 
     // the only key a kid can have is the one that hashes to it — collect them, then verify every op once
     var jwkOf = {}, keyOk = {}; jwkOf[gen.env.body.params.founder.kid] = gen.env.body.params.founder.jwk;
@@ -233,12 +248,12 @@
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), planTrust: planTrustOf(gen.env.body.params.planTrust), grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
   var API = { IDENTITY: IDENTITY, fold: fold, kidOf: kidOf, devUU: devUU, spaceUU: spaceUU, epochUU: epochUU, policyUU: policyUU, spaceOf: spaceOf, touched: touched, dhOf: dhOf,
-              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem };
+              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem, planTrustProblem: planTrustProblem, planTrustOf: planTrustOf };
   global.CommRoster = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -559,6 +559,7 @@
       var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null }; }
     // §13.12.I.1: the base this space sits on, as folded from the trusted genesis: {name, sha256, bytes?, version?} | null (no genesis seen yet, or a space without base —
     // tell them apart with (await order()).roster.ok)
+    async function planTrust() { var R = (await cur()).roster; return R.ok && R.planTrust ? R.planTrust : null; }   // §33: the pinned plan trust list, or null
     async function baseInfo() { var R = (await cur()).roster; return R.ok && R.base ? R.base : null; }
     // my offset inside the visit period V (ms); null until a policy fixes V
     async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
@@ -913,7 +914,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, baseInfo: baseInfo, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
+             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
@@ -945,6 +946,10 @@
       var bp = ROS.baseProblem(nsOpts.base); if (bp) throw new Error('newSpace: invalid base (' + bp + ')');
       params.base = { name: nsOpts.base.name, sha256: nsOpts.base.sha256 };
       if (nsOpts.base.bytes !== undefined) params.base.bytes = nsOpts.base.bytes; if (nsOpts.base.version !== undefined) params.base.version = nsOpts.base.version;
+    }
+    if (nsOpts && nsOpts.planTrust !== undefined && nsOpts.planTrust !== null) {      // §33: the plan trust list (public keys only) is pinned in the genesis; the space id hashes it
+      var tp = ROS.planTrustProblem(nsOpts.planTrust); if (tp) throw new Error('newSpace: invalid planTrust (' + tp + ')');
+      params.planTrust = ROS.planTrustOf(nsOpts.planTrust);
     }
     return { params: params, space: await ROS.spaceOf(params) };
   }
