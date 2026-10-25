@@ -33,11 +33,23 @@
   // read through the one shared reader TeamScope (common/comm/team_scope.js): 'share' (a FACT/BOTH/space row), 'station-local' (a declared LOCAL row: per-station numbering, the user's recent items,
   // session/audit rows - sharing them would make every document save a spurious crossed edit) or 'unplanned' (no row => local-only, never shared by default). No plan => nothing is shared.
   // §32: verified (a no-op without a trust list) BEFORE `ready` resolves, so no commit is judged against an unverified plan.
-  var planVerified = (async function () {
+  async function verifyPlan(why) {                                     // -> the verdict; prints the plan line and the verdict (the app's own evidence)
     var T = global.TeamScope, st = T ? await T.verify(global.crypto && global.crypto.subtle) : 'missing', PLAN_SUM = T && T.summary();
     console.log(PLAN_SUM ? '§TEAM_PLAN hash=' + PLAN_SUM.hash.slice(0, 12) + ' tables=' + PLAN_SUM.tables + ' local=' + PLAN_SUM.local : '§TEAM_PLAN missing — nothing is shared');
-    console.log('§TEAM_PLAN_SIG state=' + st);
-  })().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
+    console.log('§TEAM_PLAN_SIG state=' + st + (why ? ' ' + why : ''));
+    return st;
+  }
+  var planVerified = verifyPlan().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
+  // §33.2: the trust list a space pinned in its GENESIS replaces the deployment's window.TEAM_PLAN_TRUST (the space decides); the plan is re-verified under it. No genesis list => the deployment list stays.
+  async function pinTrust(st) {
+    st = st || S; if (!st || !st.planTrust) return;
+    var gt = await st.planTrust(); if (!gt) return;
+    if (JSON.stringify(gt) === JSON.stringify(global.TEAM_PLAN_TRUST || [])) return;
+    global.TEAM_PLAN_TRUST = gt; await verifyPlan('trust=genesis(' + gt.length + ')');
+  }
+  function spaceOpts(bi) {                                             // what a founder pins in the genesis: the shared base and the deployment's plan trust list (public keys)
+    var o = {}, t = global.TEAM_PLAN_TRUST; if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t; return Object.keys(o).length ? o : undefined;
+  }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null;
@@ -301,6 +313,7 @@
     try {
       var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
       await verifyBase();                                           // verify-then-fold: a copy that is not the team's base never projects anything
+      await pinTrust();                                             // a joiner learns the pinned plan trust list when the genesis arrives
       if (baseBlocked()) {
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' | BASE ' + baseSt.state + ' — NOTHING FOLDED: ' + baseSt.message);
         await persist(); await render(); return { rep: rep, res: { ok: false, reason: 'base-' + baseSt.state }, pj: {} };
@@ -443,6 +456,7 @@
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
     try { await verifyBase(); } catch (e) { log('🔴 §TEAM_BASE verify failed at boot ' + (e && e.stack || e)); }
+    try { await pinTrust(); } catch (e) { log('🔴 §TEAM_PLAN_SIG pin failed at boot ' + (e && e.stack || e)); }   // before ready: no commit is judged under a trust list the space did not pin
     _resolveReady(true); await render();
   }
 
@@ -463,8 +477,8 @@
   async function found() {
     await ready; needKey(); await fresh();
     var bi = null; try { bi = await loadedBase(); } catch (e) { log('§TEAM_BASE none reason=' + (e && e.message) + ' (space founded WITHOUT a base)'); }
-    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, bi ? { base: bi } : undefined);
-    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); await openStore(undefined); await S.genesis(sp.params);
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, spaceOpts(bi));
+    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); await openStore(undefined); await S.genesis(sp.params); await pinTrust();
     log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12) + (bi ? ' base=' + bi.name + ' sha=' + bi.sha256.slice(0, 12) + ' bytes=' + bi.bytes : ' (no base)')); await verifyBase(); await visit(); await persist(); await render(); return sp.space;
   }
   async function join(inv) {
@@ -498,7 +512,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
