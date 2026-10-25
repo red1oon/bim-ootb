@@ -1,31 +1,58 @@
 <!doctype html>
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
-<!-- Team guide — TEAMWORK_FRAMEWORK §13.8 T6. Plain words; every statement here matches what the code does. -->
+<!-- Team guide — TEAMWORK_FRAMEWORK §13.8 T6 (updated §16.35.2 / §35 / §36, 2026-10-26). Plain words; every statement here matches what the code does. -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Team guide</title>
 <style>:root{--bg:#fff;--fg:#1d1d1f;--mut:#555;--line:#ddd}@media(prefers-color-scheme:dark){:root{--bg:#151517;--fg:#ececee;--mut:#a0a0a6;--line:#333}}
 body{margin:0 auto;padding:16px;max-width:640px;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}h1{font-size:22px}h2{font-size:17px;margin-top:22px}
-.box{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:12px 0}code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:4px}</style></head><body>
+.box{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:12px 0}code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:15px}td{border-top:1px solid var(--line);padding:6px 4px;vertical-align:top}td:first-child{width:46%}.mut{color:var(--mut)}</style></head><body>
 <h1>Team — working together without a server</h1>
-<p>Several people (or several of your own devices) can work on the same orders. There is no database server and no application server: the devices pass small encrypted bundles through a shared place on GitHub, and each device keeps its own copy of the books.</p>
+<p>Several people (or several of your own devices) can work on the same records — orders in the ERP, the building in the Modeller. There is no database server and no application server: the devices pass small encrypted bundles through a shared place on GitHub, and each device keeps its own copy.</p>
 
-<h2>Set up in three steps</h2>
+<h2>Set up</h2>
 <ol>
-<li>Press the <b>Team</b> pill (the two heads). Press <b>Turn on team mode</b>. The page reloads with a Team chip in the status bar.</li>
-<li>Press <b>Pair this browser</b>. On the first device choose <i>Start a new space</i> and share the invite link. On the other device open that link and press <i>Join</i>; the first device approves it and chooses the role.</li>
-<li>Work as usual. Press <b>Visit</b> on the chip to send your changes and fetch everyone else's.</li>
+<li>Press the <b>Team</b> pill (the two heads) — in the Modeller, the <b>Team</b> icon. Press <b>Turn on team mode</b>. The page reloads; in the ERP a Team chip appears in the status bar.</li>
+<li>On the first device, open the Team panel and press <b>Start a team</b>. Copy the <b>invite link</b> it shows.</li>
+<li>On the other device, open that link (or paste the invite into the panel) and press <b>Join</b>. It shows a <b>device code</b> and <i>Waiting for approval</i>.</li>
+<li>Back on the first device, press <b>Check join requests</b>, match the device code, choose the role and press <b>Approve</b>.</li>
+<li>On the joining device press <b>Visit</b>. From now on, work as usual and press <b>Visit</b> to send your changes and fetch everyone else's.</li>
 </ol>
+<p class="mut">You can also pick <b>Your avatar</b> in the panel; the others see it after your next Visit.</p>
 
 <h2>The system default, and your own</h2>
 <div class="box">The Team panel shows <b>System default</b>: a ready-made shared place (a trial repository on our GitHub) so you can try it without setting anything up. You can replace it at any time with <b>your own</b> repository and key (<i>Save as my own</i>); the panel then says <b>Your own</b>.</div>
 <p><b>The trial covers one full test cycle</b>: an order, its line, and Complete. After the first Complete, further new changes stay on your device and the chip says <i>Trial cycle finished</i>. Use your own repository and key to keep going — there is no limit on your own setup.</p>
 
+<h2>Who is on what</h2>
+<p>The Team panel has a <b>People</b> list: who is active, what each person is on, and their last tasks. In the ERP, <b>My role scope</b> shows the people whose role is close to yours and <b>Everyone</b> shows all (the Modeller always shows everyone). Tick <b>Don't show what I'm on</b> if you prefer not to share it. In the ERP, when you open a record someone else is editing, a note at the top of the form says <i>&lt;name&gt; is editing this</i> and for how long.</p>
+
+<h2>What the chip tells you</h2>
+<table>
+<tr><td><code>Team · 1A2B-3C4D · team devices 2</code></td><td>Your device code and how many devices the team has.</td></tr>
+<tr><td><i>waiting for approval — press Visit</i></td><td>The founder has not approved this device yet (or you have not visited since).</td></tr>
+<tr><td><i>my ops · seen · refused · waiting on · last visit</i></td><td>What you sent, how much of it the others have seen, how much was refused, and when you last visited.</td></tr>
+<tr><td><i>Your copy of … is not the team's … Update it, then try again.</i></td><td>Every device in a team must start from the same copy of the shipped demo data. Until yours matches, nothing is taken in and your own new changes stay on this device.</td></tr>
+<tr><td><i>N changes from a newer app wait — update this app</i></td><td>Someone works with a newer version of the app. Their changes are kept, not lost; they are taken in as soon as you update.</td></tr>
+<tr><td><i>N changes wait for a translation rule from the team admin</i></td><td>Someone works with an older version. The team admin publishes a rule that translates their changes; your device picks it up on its next Visit and takes the changes in.</td></tr>
+<tr><td><i>changes from a retired version were ignored</i></td><td>The team admin has retired that old version; changes still made with it are not taken in.</td></tr>
+<tr><td><i>N local-only (not shared)</i></td><td>Changes that stayed on this device (for example after the trial cycle). Hover to see why.</td></tr>
+</table>
+
 <h2>What happens when two people change the same thing</h2>
 <p>If two devices change the same field (or both Complete the same document) before they have visited, nobody's work is silently dropped: both devices show the same message as the classic client, <i>Current record was changed by another user, please ReQuery</i>, and keep the last agreed value. A Complete is all-or-nothing: until the clash is settled the document stays as it was, with none of its consequences.</p>
+
+<h2>For the team admin</h2>
+<ul>
+<li><b>Translation rules.</b> A rule that lets older devices' changes be taken in must be signed with the team owner's key; the admin publishes it, and every device checks the signature before using it. A rule that is unsigned, edited after signing, or signed by a key the team does not trust is refused. A published rule cannot be withdrawn.</li>
+<li><b>Trusted keys.</b> When the app is set up with signing keys, a team started on it writes those keys into the team itself (for example a primary and a backup). They can be changed later — add a key, or let the backup replace a lost primary — only by a change signed with a key the team already trusts. An admin device on its own cannot change them.</li>
+<li>There are no buttons for these yet: they are done through the app's admin functions.</li>
+</ul>
 
 <h2>What we can and cannot see about trial use</h2>
 <p>On the trial repository we can see how many devices and spaces appeared, how many bundles and rows were sent, and when. The business content is encrypted, so we cannot read your orders. We do <b>not</b> receive your network address: neither GitHub nor the visit log passes it on.</p>
 
 <h2>Good to know</h2>
 <ul><li>Switching team mode off (<i>Turn off team mode</i> in the panel) leaves the page exactly as it was before.</li>
-<li>Edits to records that came with the demo data, stock reservations and document numbers are not yet shared between devices.</li></ul>
+<li>Edits to records that came with the demo data, and stock reservations, are shared like any other change.</li>
+<li>Document numbers are counted on each device, so two devices can give out the same number. Agreeing numbers across the team is not switched on yet.</li></ul>
 </body></html>
