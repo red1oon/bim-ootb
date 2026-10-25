@@ -11,7 +11,7 @@
   'use strict';
   var OV = global.ERP && global.ERP.OpVersions;
   if (!OV) { console.log('🔴 §TEAM_VERSIONS op_versions.js not loaded'); return; }
-  var OPS = ['CRUD_CREATE', 'CRUD_UPDATE'];                       // the only op types the team adapters author
+  var OPS = ['CRUD_CREATE', 'CRUD_UPDATE', 'CRUD_DELETE', 'SET_STATUS'];   // every op type the team adapters author (the Modeller authors the first two, the ERP all four)
   function trust() { var t = global.TEAM_PLAN_TRUST; return Array.isArray(t) && t.length ? t : null; }
   function same(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y && a.crv === b.crv; }
   function bytes(h) { var u = new Uint8Array(h.length / 2); for (var i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16); return u; }
