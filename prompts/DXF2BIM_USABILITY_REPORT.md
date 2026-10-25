@@ -106,3 +106,25 @@ Order to build, if approved: P3 and P8 first (correctness, small), then P1 and P
 
 ## 7. Not measured / limits
 Human seconds are a model, not a person: no user was timed. One machine, one walk per set; the HHS doors (T4) are extrapolated from the Duplex rate, not walked. The shed exclude box was not drawn in the walk (stated from the CLI's `--exclude`). Door heights and window families on the Duplex came from the model (the plain drawings do not carry them): a real user brings them from a schedule.
+
+## 2026-10-26 — the yellow list, measured again after §D46-§D56 (owner: "I see they are a bit long listed. Are there more general settings to reduce such?")
+**Method (Node, the page's own suggestion engine):** `modeller/dxf2bim_cli.js --accept-suggestions` over the plain Duplex and plain HHS sets (`prompts/film_dxf2bim_yellow_sets.js` from `~/.cache/dxf2bim/db/{DXARC,HHSM2}.db`) and the 9 raw shed sheets; every `§CLI mark` line tallied by rule. The CLI types `@SET` on every sheet; the page asks once and offers it yellow on the others (`PR-SET`), so add 7 / 8 / 8 rows. Applied defaults and door/window rows come on top (not counted here).
+| rule (tier) | Duplex plain (8 sheets) | HHS plain (9) | raw shed (9) |
+|---|---|---|---|
+| grid lines `PR-GRID` read / `PR-GRID-TICK` inferred | 32 | 160 | 91 (ticks) |
+| level datums `PR-Z` read / `PR-Z-GROUND` inferred | 20 | 25 | 5 |
+| units `PR-UNITS` | 8 | 9 | 9 |
+| role `PR-VIEW` + name `PR-NAME` | 16 | 18 | 16 |
+| set name `PR-SET` (page) | 7 | 8 | 8 |
+| roof top `PR-ROOF` | 6 | 6 | 0 |
+| plan level `PR-LEVEL-TITLE` / `PR-LEVEL` | 3 | 4 | 3 |
+| face `PR-FACE` + horizontal axis `PR-HAXIS` + cut | 10 | 10 | 10 |
+| **rows to read** | **102** | **240** | **142** |
+| distinct rules (one decision each) | 10 | 10 | 10 |
+**What the user sees (code, `dxf_meta_editor.js` renderYellows):** one row per proposal, flat; the accept buttons (`Accept all`, or `Accept stated + read` / `Accept inferred` when both tiers are present, §D36) come AFTER the last row; every row is also shown in its sheet card ("Everything below is yellow elsewhere in this panel"). So the list is long for one reason: it is written per ENTITY and per SHEET, while the user decides per RULE and per SET. Grid lines alone are 31 % / 67 % / 64 % of the rows; the per-sheet bookkeeping (units, role, name, set, roof, level, face, axis, cut) is about 50 rows on every set whatever its size.
+**General settings that cut the list (proposals; each keeps every row reachable and every value traced):**
+- **Y1 One row per rule, expandable (= P2).** "Grid: 160 lines read from labelled grid lines on 8 sheets (worst alignment 0.4 mm)" with its own tick; expand to see and untick single lines. 102 / 240 / 142 rows -> about 10 on each set. Presentation only: the markings written are byte-identical. Falsifier: a set where one rule's rows disagree (two grid labels on one line) must show that row OUTSIDE its group, red, not hidden in the count.
+- **Y2 Set-wide facts are one row, not one per sheet.** Units (when every sheet's `$INSUNITS` agrees), the set name, the roof top (one `T/ROOF` value read on several sheets): one row "all 9 sheets". Duplex 8 + 7 + 6 -> 3, HHS 9 + 8 + 6 -> 3, shed 9 + 8 -> 2. A sheet that disagrees stays its own row, red. Falsifier: mixed units in one set.
+- **Y3 Accept buttons and a count at the TOP** ("102 yellow · 0 yours · Convert needs: 3"), the list under them; the per-sheet cards keep only what is NOT in the list (their own red asks). Removes the 1,200-4,500 px scroll (P2) and the double display.
+- **Y4 (policy, owner's call) "Take what the drawing states and reads".** A setting, off by default, that accepts the STATED and READ tiers on open (the file header, the title texts, labelled grid lines, level texts) and leaves only the INFERRED rows yellow. Duplex: 102 -> 9 rows (face 4, axis 5); HHS: 240 -> 9; shed: the tick grid is inferred, so 142 -> 109 (-> 6 groups with Y1). It changes the standing rule "nothing becomes yours until you tick it" for those tiers, so it needs the owner's words before it is built.
+**Order proposed:** Y1 + Y3 together (presentation, no marking changes, biggest cut), then Y2, then Y4 only on the owner's go. Witness claim for Y1-Y3 first: W-YELLOW-GROUP — the rows per group = the per-entity rows of today (counts equal on the three sets), the markings after Accept are byte-identical to today's, a disagreeing row is shown outside its group.
