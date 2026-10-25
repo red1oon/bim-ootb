@@ -196,6 +196,9 @@
     if (!isNeg(id)) return null;
     var row = createRowOf(db, id); return row && row.table === table && isShared(row) ? row.uu : null; }; }
 
+  // §16.33: an op authored by an app whose shape version is above 1 says so (`sv`); at shape 1 the body is byte-identical to what it always was.
+  function stamped(body) { var TV = global.TeamVersions, v = TV ? TV.appV(body.op_type) : 1; if (!(v > 1)) return body; var o = {}; Object.keys(body).forEach(function (k) { o[k] = body[k]; }); o.sv = v; return o; }
+
   async function translate(r, db) {
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
@@ -235,7 +238,7 @@
       if (baseBlocked()) { localOnly[r.op_uuid] = 'base-mismatch'; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=base-mismatch (NOT SENT — this copy is not the team\'s base)'); continue; }
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
-        var a = await S.author({ target: t.target, body: t.body, refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp });
+        var a = await S.author({ target: t.target, body: stamped(t.body), refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp });
         sent[r.op_uuid] = a.hash; n++;
         log('§TEAM_OUT op=' + r.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' refs=' + t.refs.length + ' hash=' + a.hash.slice(0, 12));
       } catch (e) { localOnly[r.op_uuid] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + t.table + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
@@ -442,6 +445,7 @@
   async function boot() {
     for (var i = 0; i < 600 && !(global.__crud && global.__idmpDb && global.KernelOps && global.CrudCore && global.initSqlJs && global.AdAccess && global.CommStore && document.getElementById('idmp-status')); i++) await new Promise(function (r) { setTimeout(r, 100); });
     if (!(global.__crud && global.CommStore && global.__idmpDb)) { log('🔴 §TEAM_BOOT prerequisites missing'); _resolveReady(false); return; }
+    if (global.TeamVersions) await global.TeamVersions.ready;      // §16.33: signed upcaster sets are verified and loaded BEFORE the first fold
     SQL = await global.initSqlJs({ locateFile: function (f) { return 'sqljs/' + f; } });
     dev = await kvGet('device'); cfg = (await kvGet('cfg')) || {};
     // CL8 (encryption): an older device object gets its ECDH key from the comm layer's own helper, and the SAME object is written back so the
@@ -467,7 +471,7 @@
   async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
   async function openStore(bytes) {
     baseSt = { state: 'unknown' }; bmemo = {};
-    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; }, baseRow: hostBaseRow };    // baseRow: asked only in a space that has a base
+    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; }, baseRow: hostBaseRow, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
     S = global.CommStore.open(new SQL.Database(bytes), storeOpts);
     var pu = new URLSearchParams(global.location.search).get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
@@ -509,7 +513,7 @@
   }
 
   global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
-                      inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
+                      inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _resetDict: function () { dictC = null; } };
