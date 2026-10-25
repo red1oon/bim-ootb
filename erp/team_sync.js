@@ -363,6 +363,7 @@
     c.setAttribute('data-base', baseSt.state);
     $('team-warn').textContent = (bmsg ? '⚠ ' + bmsg + ' ' : '') + (tr && tr.finished ? 'Trial cycle finished — use your own repo and key to continue. ' : '') + (lo ? '⚠ ' + lo + ' local-only (not shared)' : '');
     $('team-warn').title = Object.keys(localOnly).map(function (u) { return u.slice(0, 8) + ': ' + localOnly[u]; }).join('\n');
+    if (global.TeamVersions && global.TeamVersions.paint) global.TeamVersions.paint(c, $('team-warn'), L.verdict);          // §16.34: "N changes wait — update this app" (the words live in team_versions.js)
     var box = $('team-conflicts'), byUu = {};
     // name the record: its documentno when the projection carries it (the log's CREATE), else its uu
     (await S.placedEnvelopes()).forEach(function (p) { if (p.env.body.op_type === 'CRUD_CREATE') byUu[p.env.target.uu] = (p.env.body.params.fields || {}).documentno || null; });
