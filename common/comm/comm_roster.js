@@ -101,6 +101,7 @@
         (p.pipes.fallback !== undefined && (!Array.isArray(p.pipes.fallback) || p.pipes.fallback.some(function (x) { return typeof x !== 'string'; })))) return 'pipes'; }
     if (p.manifest !== undefined && typeof p.manifest !== 'string') return 'manifest';
     if (p.number_prefix !== undefined && typeof p.number_prefix !== 'string') return 'number_prefix';
+    if (p.min_v !== undefined) { if (!p.min_v || typeof p.min_v !== 'object' || Array.isArray(p.min_v) || Object.keys(p.min_v).some(function (k) { return !pint(p.min_v[k], 1); })) return 'min_v'; }       // §16.31: the lowest shape version still accepted, per op type
     return null;
   }
 
@@ -213,6 +214,7 @@
           if (!admin) return no('not-admin');
           var pb = policyProblem(p); if (pb) return no('bad-policy:' + pb);
           if (policy && p.epoch <= policy.epoch) return no(p.epoch === policy.epoch ? 'epoch-exists' : 'epoch-stale');
+          if (policy && policy.params.min_v && Object.keys(policy.params.min_v).some(function (k) { return !p.min_v || !(p.min_v[k] >= policy.params.min_v[k]); })) return no('min_v-lowered');      // §16.31: a retirement never un-retires (checkpoints freeze verdicts)
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
         } else if (t === 'CHECKPOINT') {     // §13.12.3: any enrolled device may publish; a second op for the same state is a co-signature
           var cb = ckptProblem(p); if (cb) return no('bad-checkpoint:' + cb);

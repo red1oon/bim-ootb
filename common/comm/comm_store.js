@@ -154,6 +154,8 @@
         if (!sc && !cr && !(bs && bs.scopes[o.env.target.uu]) && opts.baseRow && roster.base) { var bl = await baseLookup(o.env.target.table, o.env.target.uu); sc = bl.sc; bmiss = !bl.found; }
         verdict[o.hash] = ADM.admit(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false, base: ADM.baseStamp(roster.base), baseMissing: bmiss,
           scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
+        // §16.31: the shape-version judgement only ever DOWNGRADES an op that was admitted (a refusal or park for signature, role, access, scope or deps stays as it is)
+        if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.policy ? roster.policy.params : null); if (vj) verdict[o.hash] = vj; }
       }
       // order the MERGED ones by what they read; cascade refusals onto ops that read a refused version
       var ok = ops.filter(function (o) { return verdict[o.hash] && verdict[o.hash].verdict === 'MERGED'; });
@@ -225,7 +227,7 @@
     }
 
     // ── checkpoints (§13.12.3) ───────────────────────────────────────────────────────────────────────────────────
-    var IDTYPES = Object.keys(ROS.IDENTITY), base = null, verified = {}, badCk = {}, rosterCache = {}, baseCache = {}, trusted = {}, authors = null, hasCk = null, ckLoaded = false, prevRest = [], logged = {};
+    var IDTYPES = Object.keys(ROS.IDENTITY), base = null, verified = {}, badCk = {}, waitCk = {}, rosterCache = {}, baseCache = {}, trusted = {}, authors = null, hasCk = null, ckLoaded = false, prevRest = [], logged = {};
     var HEX = /^[0-9a-f]{64}$/;
     function _once(key, msg) { if (!logged[key]) { logged[key] = 1; log(msg); } }
     function authorList() { if (!authors) { authors = {}; _q(db, 'SELECT DISTINCT author_kid FROM cl_op').forEach(function (r) { authors[r.author_kid] = 1; }); } return Object.keys(authors); }
@@ -255,7 +257,7 @@
       var pf = prevSt ? prevSt.frontier : {}, ids = identityRows(), idS = prevSt ? idUpTo(ids, pf) : [];
       var bs = prevSt ? { verdict: prevSt.verdict, scopes: prevSt.scopes, claims: prevSt.claims || {}, used: prevSt.used || {}, c: prevC } : null;
       var raw = rangeRows(pf, frontier), res = await core(bs, raw, [], idS);
-      if (res.parked.length) return { problem: 'parked-in-S' };
+      if (res.parked.length) return { problem: 'parked-in-S', versioned: res.parked.some(function (h) { var r = res.verdict[h] && res.verdict[h].reason; return r === 'needs-upgrade' || r === 'needs-mapping'; }) };
       if (res.equivocations.length) return { problem: 'equivocation-in-S' };
       var verdict = Object.assign({}, prevSt ? prevSt.verdict : {}, res.verdict), scopes = Object.assign({}, prevSt ? prevSt.scopes : {});
       Object.keys(res.createOf).forEach(function (u) { var sc = _scopeOfCreate(res.createOf[u]); if (sc) scopes[u] = [sc.client, sc.org]; });
@@ -271,7 +273,7 @@
       var cands = Object.keys(rosterAll.checkpoints).map(function (sh) { var c = rosterAll.checkpoints[sh]; return { sh: sh, c: c, pos: c.params.pos }; }).sort(function (a, b) { return b.pos - a.pos || (a.sh < b.sh ? -1 : 1); });
       var N = (rosterAll.policy && rosterAll.policy.params.checkpoint && rosterAll.policy.params.checkpoint.cosigs) || 2;
       for (var cd of cands) {
-        if (badCk[cd.sh]) continue;
+        if (badCk[cd.sh] || waitCk[cd.sh]) continue;
         var st = verified[cd.sh] || await establish(cd, rosterAll, ids, N);
         if (!st) continue;
         var ck = await baseFrom(st, cd, rosterAll, ids, contenders);
@@ -306,6 +308,8 @@
         if (!prevSt || !pc) { _once('prev:' + cd.sh, '§CKPT_PENDING kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' — its previous checkpoint is not established here'); return null; }
         prevC = pc.ops[0].hash; }
       var r = await foldS(prevSt, f, prevC);
+      // §16.31: a prefix this app cannot READ yet (version-parked ops) is not a lie by the co-signers: wait, do not condemn (BAD is persisted forever). refold() lets the next fold look again.
+      if (r.problem === 'parked-in-S' && r.versioned) { waitCk[cd.sh] = 1; log('§CKPT_VERSION_WAIT kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' — S holds ops this app cannot read yet; not adopted, not condemned'); return null; }
       if (r.problem) { badCk[cd.sh] = 1; persistCk(cd.sh, 'BAD', null); log('§CKPT_REFUSED kid=' + self.kid + ' state=' + cd.sh.slice(0, 12) + ' reason=' + r.problem); return null; }
       var body = r.state, sh = await stateHashOf(body);
       if (sh !== cd.sh) { badCk[cd.sh] = 1; persistCk(cd.sh, 'BAD', null);
@@ -445,12 +449,22 @@
     async function foldable() {
       var hold = {}; (await conflicts()).forEach(function (cf) { cf.contested.forEach(function (h) { (hold[h] = hold[h] || {})[cf.col] = 1; }); });
       return (await placedEnvelopes()).map(function (p) {
+        if (opts.versions) p = { hash: p.hash, env: Object.assign({}, p.env, { body: opts.versions.upcast(p.env.body) }) };      // §16.31: a COPY in the app's current shape; the stored envelope is never touched
         if (!hold[p.hash]) return p;
         var e = JSON.parse(JSON.stringify(p.env)), ch = e.body.params.changes || {};
         Object.keys(hold[p.hash]).forEach(function (c) { delete ch[c]; });
         return { hash: p.hash, env: e, held: Object.keys(hold[p.hash]) };
       });
     }
+    // §16.31: what a UI says instead of a spinner. Provisional while any op is parked for a version reason; re-judged by every fold (call refold() after loading a set or changing appV).
+    async function versionState() {
+      var L = await order(), parked = {}, refused = {}, prov = false, nP = 0, nR = 0;
+      Object.keys(L.verdict).forEach(function (h) { var v = L.verdict[h];
+        if (v.verdict === 'PARKED') { nP++; parked[v.reason] = (parked[v.reason] || 0) + 1; if (v.reason === 'needs-upgrade' || v.reason === 'needs-mapping') prov = true; }
+        else if (v.verdict === 'REFUSED' && /^(bogus-version|retired-version)$/.test(v.reason)) { nR++; refused[v.reason] = (refused[v.reason] || 0) + 1; } });
+      return { parked_count: nP, provisional: prov, parked_by_reason: parked, refused_count: nR, refused_by_reason: refused };
+    }
+    function refold() { last = null; waitCk = {}; }
     // notices for one person: every conflict where one of their devices is a candidate (derived, never an op)
     async function notices(personUu) {
       var pu = String(personUu).toLowerCase(), msg = opts.messageText ? opts.messageText('CurrentRecordModified') : null;
@@ -890,7 +904,7 @@
       var L = await cur(), R = L.roster; await loadCk();
       return { inForce: L.base ? { state_hash: L.base.stateHash, pos: L.base.pos, frontier: L.base.frontier } : null,
         candidates: Object.keys(R.checkpoints || {}).map(function (sh) { var c = R.checkpoints[sh];
-          return { state_hash: sh, pos: c.params.pos, cosigners: Object.keys(c.persons).length, status: badCk[sh] ? 'BAD' : (L.base && L.base.stateHash === sh ? 'IN-FORCE' : (verified[sh] ? (trusted[sh] ? 'TRUSTED' : 'VERIFIED') : 'PENDING')) }; }) };
+          return { state_hash: sh, pos: c.params.pos, cosigners: Object.keys(c.persons).length, status: badCk[sh] ? 'BAD' : (waitCk[sh] ? 'WAITING-VERSION' : (L.base && L.base.stateHash === sh ? 'IN-FORCE' : (verified[sh] ? (trusted[sh] ? 'TRUSTED' : 'VERIFIED') : 'PENDING'))) }; }) };
     }
     // policy.checkpoint.every_ops: how many ops are folded beyond the in-force checkpoint (or all, if none)
     async function checkpointDue() {
@@ -899,7 +913,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, baseInfo: baseInfo, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset,
+             genesis: genesis, baseInfo: baseInfo, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
