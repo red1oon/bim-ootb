@@ -20,7 +20,7 @@
  *
  * Named limits (see TEAMWORK_FRAMEWORK §13.3, §13.7): in a space WITHOUT a base (founded before this, or from the phone page) an UPDATE/DELETE of a seeded record
  * (positive pk) stays local-only because the comm layer admits an op only against the scope of the record's CREATE; a seeded row with no <table>_uu cannot be
- * addressed either way; station-owned bookkeeping tables (STATION_LOCAL) are never shared; a Visit renumbers synthetic pks (-kernelRowId).
+ * addressed either way; station-owned bookkeeping tables (declared LOCAL in the plan) are never shared; a Visit renumbers synthetic pks (-kernelRowId).
  */
 (function (global) {
   'use strict';
@@ -29,11 +29,11 @@
 
   var OWNER = 'red1oon', REPO = 'bim-teams-pipe';
   var MSG_CRM = 'Current record was changed by another user, please ReQuery';   // AD_Message CurrentRecordModified (ad_full.db; the browser seed has no ad_message table)
-  // Station/user-owned bookkeeping: per-station numbering (TEAMWORK_FRAMEWORK §11.1 "DocumentNo = an ownership fact"), the
-  // user's own recent-items list and session/audit rows. Sharing them would make every document save a spurious crossed edit.
-  // No AD column marks this (AD_Table.ReplicationType = 'L' on all 1003 tables), so it is a named list — the ONE table list in
-  // this file, not window behaviour.
-  var STATION_LOCAL = { ad_sequence: 1, ad_sequence_no: 1, ad_recentitem: 1, ad_session: 1, ad_changelog: 1 };
+  // The table scope is DATA, not a list in this file: the compiled plan (erp/team_plan.js, GENERATED from flow rows by bim-compiler build/scriptor/emit_erp_plan.js, TEAMWORK_FRAMEWORK §25),
+  // read through the one shared reader TeamScope (common/comm/team_scope.js): 'share' (a FACT/BOTH/space row), 'station-local' (a declared LOCAL row: per-station numbering, the user's recent items,
+  // session/audit rows - sharing them would make every document save a spurious crossed edit) or 'unplanned' (no row => local-only, never shared by default). No plan => nothing is shared.
+  var PLAN_SUM = global.TeamScope && global.TeamScope.summary();
+  console.log(PLAN_SUM ? '§TEAM_PLAN hash=' + PLAN_SUM.hash.slice(0, 12) + ' tables=' + PLAN_SUM.tables + ' local=' + PLAN_SUM.local : '§TEAM_PLAN missing — nothing is shared');
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null;
@@ -184,7 +184,9 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
-    if (STATION_LOCAL[table]) return { quiet: 'station-owned ' + table };
+    var scope = global.TeamScope.scopeOf(table);
+    if (scope === 'station-local') return { quiet: 'station-owned ' + table };
+    if (scope !== 'share') return { local: 'table-not-in-plan ' + table, table: table };
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
     if (r.gid) clean.grp = r.gid;                                      // §13.7: the doc-action group this op belongs to (all-or-none on a docstatus conflict)
@@ -490,7 +492,7 @@
 
   global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
-                      stationLocal: function () { return Object.keys(STATION_LOCAL); }, sent: function () { return sent; }, localOnly: function () { return localOnly; },
+                      stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
