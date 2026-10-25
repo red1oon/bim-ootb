@@ -29,7 +29,12 @@
   var reg = OV.create({ verifySet: verifySet });
   OPS.forEach(function (op) { reg.setApp(op, appV(op)); });
   var offered = Array.isArray(global.TEAM_UPCASTERS) ? global.TEAM_UPCASTERS : [], loaded = 0;
-  async function load(set) { var r = await reg.loadSet(set); console.log('§TEAM_VERSIONS_SET op=' + (set && set.op) + ' ' + (r.ok ? 'ok' : 'refused:' + r.reason)); if (r.ok) loaded++; return r; }
+  var okSets = {};                                                // canonical JSON of every set already loaded: the same set arriving twice (config AND policy) counts once
+  async function load(set) {
+    var key = set && typeof set === 'object' ? OV.canonical(set) : null;
+    if (key && okSets[key]) return { ok: true, dup: true };
+    var r = await reg.loadSet(set); console.log('§TEAM_VERSIONS_SET op=' + (set && set.op) + ' ' + (r.ok ? 'ok' : 'refused:' + r.reason)); if (r.ok) { loaded++; if (key) okSets[key] = 1; } return r;
+  }
   var ready = (async function () {
     for (var i = 0; i < offered.length; i++) await load(offered[i]);
     console.log('§TEAM_VERSIONS appV=' + OPS.map(function (o) { return o + ':' + appV(o); }).join(',') + ' sets=' + loaded + '/' + offered.length);
@@ -57,5 +62,25 @@
     if (warn && d.text) { warn.textContent = (warn.textContent ? warn.textContent + ' ' : '') + d.text; warn.title = (warn.title ? warn.title + '\n' : '') + d.title; }
     return d;
   }
-  global.TeamVersions = { registry: reg, ready: ready, appV: appV, load: load, loaded: function () { return loaded; }, describe: describe, paint: paint };
+  // §16.35 — sets an admin published inside the POLICY op. adopt(store): load every set of the policy in force that this device has not judged yet (same verifier as config sets);
+  // if any was newly loaded, refold so the parked ops are judged again. A refused set is remembered and not retried every visit, unless the trust list changed (then it is judged afresh).
+  var tried = {}, trustKey = null;
+  async function adopt(store) {
+    if (!store || typeof store.policy !== 'function') return 0;
+    var pol = await store.policy(), sets = pol && pol.params && pol.params.upcasters; if (!Array.isArray(sets) || !sets.length) return 0;
+    var tk = JSON.stringify(trust() || []); if (tk !== trustKey) { tried = {}; trustKey = tk; }
+    var n = 0;
+    for (var i = 0; i < sets.length; i++) { var k = OV.canonical(sets[i]); if (tried[k] !== undefined) continue; var r = await load(sets[i]); tried[k] = r.ok ? 'ok' : r.reason; if (r.ok && !r.dup) n++; }
+    if (n && typeof store.refold === 'function') store.refold();
+    if (n) console.log('§TEAM_VERSIONS_ADOPT newly loaded=' + n + ' (from the POLICY in force, epoch ' + pol.epoch + ')');
+    return n;
+  }
+  // publish(store, sets): admin only (the engine refuses a non-admin POLICY). The next POLICY = the previous params + epoch+1 + upcasters = previous ∪ sets (deduplicated): a published set is never dropped (the engine enforces it).
+  async function publish(store, sets) {
+    var pol = await store.policy(), base = pol ? JSON.parse(JSON.stringify(pol.params)) : {}, have = {}, merged = [];
+    (Array.isArray(base.upcasters) ? base.upcasters : []).concat(sets || []).forEach(function (u) { var k = OV.canonical(u); if (!have[k]) { have[k] = 1; merged.push(u); } });
+    base.epoch = (pol ? pol.epoch : 0) + 1; base.upcasters = merged;
+    return store.setPolicy(base);
+  }
+  global.TeamVersions = { registry: reg, ready: ready, appV: appV, load: load, loaded: function () { return loaded; }, describe: describe, paint: paint, adopt: adopt, publish: publish };
 })(typeof window !== 'undefined' ? window : globalThis);
