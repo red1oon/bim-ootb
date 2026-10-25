@@ -101,6 +101,7 @@
         (p.pipes.fallback !== undefined && (!Array.isArray(p.pipes.fallback) || p.pipes.fallback.some(function (x) { return typeof x !== 'string'; })))) return 'pipes'; }
     if (p.manifest !== undefined && typeof p.manifest !== 'string') return 'manifest';
     if (p.number_prefix !== undefined && typeof p.number_prefix !== 'string') return 'number_prefix';
+    if (p.upcasters !== undefined) { if (!Array.isArray(p.upcasters) || p.upcasters.length > 16 || p.upcasters.some(function (u) { return !u || typeof u !== 'object' || u.kind !== 'upcasters' || typeof u.op !== 'string' || !Array.isArray(u.steps) || !u.steps.length || u.steps.length > 32 || !u.signer || typeof u.signer !== 'object' || typeof u.sig !== 'string'; })) return 'upcasters'; }   // §16.35: signed mapping sets an admin publishes; the engine checks the SHAPE only — signature and vocabulary are the host registry's (OpVersions.loadSet)
     if (p.min_v !== undefined) { if (!p.min_v || typeof p.min_v !== 'object' || Array.isArray(p.min_v) || Object.keys(p.min_v).some(function (k) { return !pint(p.min_v[k], 1); })) return 'min_v'; }       // §16.31: the lowest shape version still accepted, per op type
     return null;
   }
@@ -229,6 +230,7 @@
           if (!admin) return no('not-admin');
           var pb = policyProblem(p); if (pb) return no('bad-policy:' + pb);
           if (policy && p.epoch <= policy.epoch) return no(p.epoch === policy.epoch ? 'epoch-exists' : 'epoch-stale');
+          if (policy && Array.isArray(policy.params.upcasters) && policy.params.upcasters.length) { var haveU = (p.upcasters || []).map(function (u) { return ENV.canonical(u); }); if (policy.params.upcasters.some(function (u) { return haveU.indexOf(ENV.canonical(u)) < 0; })) return no('upcasters-dropped'); }      // §16.35: a published set is never dropped or edited (a device that loaded it keeps it; a fresh one would not)
           if (policy && policy.params.min_v && Object.keys(policy.params.min_v).some(function (k) { return !p.min_v || !(p.min_v[k] >= policy.params.min_v[k]); })) return no('min_v-lowered');      // §16.31: a retirement never un-retires (checkpoints freeze verdicts)
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
         } else if (t === 'CHECKPOINT') {     // §13.12.3: any enrolled device may publish; a second op for the same state is a co-signature

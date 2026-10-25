@@ -41,6 +41,8 @@
   }
   var planVerified = verifyPlan().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
   // §33.2: the trust list a space pinned in its GENESIS replaces the deployment's window.TEAM_PLAN_TRUST (the space decides); the plan is re-verified under it. No genesis list => the deployment list stays.
+  // §16.35: adopt the upcaster sets the POLICY in force carries (verified like config sets); a refold follows when any was newly loaded
+  async function adoptSets() { if (global.TeamVersions && global.TeamVersions.adopt && S) { try { await global.TeamVersions.adopt(S); } catch (e) { log('🔴 §TEAM_VERSIONS adopt ' + (e && e.message)); } } }
   async function pinTrust(st) {
     st = st || S; if (!st || !st.planTrust) return;
     var gt = await st.planTrust(); if (!gt) return;
@@ -317,6 +319,7 @@
       var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
       await verifyBase();                                           // verify-then-fold: a copy that is not the team's base never projects anything
       await pinTrust();                                             // a joiner learns the pinned plan trust list when the genesis arrives
+      await adoptSets();
       if (baseBlocked()) {
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' | BASE ' + baseSt.state + ' — NOTHING FOLDED: ' + baseSt.message);
         await persist(); await render(); return { rep: rep, res: { ok: false, reason: 'base-' + baseSt.state }, pj: {} };
@@ -462,6 +465,7 @@
     if (!own) await persist();
     try { await verifyBase(); } catch (e) { log('🔴 §TEAM_BASE verify failed at boot ' + (e && e.stack || e)); }
     try { await pinTrust(); } catch (e) { log('🔴 §TEAM_PLAN_SIG pin failed at boot ' + (e && e.stack || e)); }   // before ready: no commit is judged under a trust list the space did not pin
+    await adoptSets();                                            // §16.35: sets an admin published in the POLICY are adopted before the first fold
     _resolveReady(true); await render();
   }
 
@@ -513,7 +517,7 @@
     if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
   }
 
-  global.TeamSync = { onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
+  global.TeamSync = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },

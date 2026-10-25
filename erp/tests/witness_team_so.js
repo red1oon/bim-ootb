@@ -260,10 +260,15 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     await toHeaderGrid('A'); await toHeaderGrid('B');
     var dmA = await descMap('A'), dmB = await descMap('B');
     console.log('   §TEAM-CONFLICT descriptions A=' + JSON.stringify(dmA) + ' B=' + JSON.stringify(dmB));
-    // the §12.1 defect precondition, observed on the real devices: the same local pk number names DIFFERENT records on A and on B
+    // the §12.1 defect precondition, observed on the real devices: pk numbers are not portable — either the same local pk number names DIFFERENT records on A and on B (collision),
+    // or the same record carries DIFFERENT pk numbers on A and on B (moved). Which form shows depends on where each device's records land in its fold order (timing), so either counts.
     var clash = Object.keys(dmA).filter(function (k) { return dmB[k] !== undefined && dmB[k] !== dmA[k]; });
+    var pkB = {}; Object.keys(dmB).forEach(function (k) { pkB[dmB[k]] = k; });
+    var moved = Object.keys(dmA).filter(function (k) { return pkB[dmA[k]] !== undefined && pkB[dmA[k]] !== k; });
+    console.log('   §TEAM-CL1 pk portability: collision=' + clash.length + ' moved=' + moved.length);
     if (clash.length) verdict(true, 'pk numbers are NOT portable between the devices (the §12.1 defect precondition is real): pk ' + clash[0] + ' is "' + dmA[clash[0]] + '" on A but "' + dmB[clash[0]] + '" on B — and every edit above still landed on its own record', clash.length + ' clashing pk(s)');
-    else incon('§TEAM-CL1 defect precondition', 'no local pk named different records on A and B in this run — W-UU-NO-COLLIDE covers the collision itself');
+    else if (moved.length) verdict(true, 'pk numbers are NOT portable between the devices (the §12.1 defect precondition is real): "' + dmA[moved[0]] + '" is pk ' + moved[0] + ' on A but pk ' + pkB[dmA[moved[0]]] + ' on B — and every edit above still landed on its own record', moved.length + ' moved record(s), 0 collisions this run');
+    else incon('§TEAM-CL1 defect precondition', 'every record has the same local pk on A and B in this run — W-UU-NO-COLLIDE covers the collision itself');
     await toHeaderGrid('A'); await toHeaderGrid('B');
     var kA = await pkOfDesc('A', 'CL1-A edited'), kB = await pkOfDesc('B', 'CL1-A edited');
     verdict(kA != null && kB != null, 'both devices keep the last agreed value on the record (Description = "CL1-A edited")', 'A pk=' + kA + ' B pk=' + kB);
