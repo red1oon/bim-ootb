@@ -4,16 +4,23 @@
 // Hosts (Modeller, ERP) ask this registry-style reader what is shared; none parses the plan itself. Only audience:'space' flows count. No plan => everything is empty / 'unplanned' (fail closed).
 (function (global) {
   'use strict';
-  var memo = { plan: null, idx: null };
+  var memo = { plan: null, idx: null, v: { plan: null, s: 'pending' } };
   function lc(x) { return String(x).toLowerCase(); }
+  // SIGNING (TEAMWORK_FRAMEWORK §28): if the host configures window.TEAM_PLAN_TRUST (public JWKs), every answer stays CLOSED until verify() has said 'ok'; with no trust list nothing changes.
+  function canon(o) { if (o === null || typeof o !== 'object') return JSON.stringify(o); if (Array.isArray(o)) return '[' + o.map(canon).join(',') + ']';
+    return '{' + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(o[k]); }).join(',') + '}'; }
+  function trust() { var t = global.TEAM_PLAN_TRUST; return Array.isArray(t) && t.length ? t : null; }
+  function same(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y && a.crv === b.crv; }
+  function open(P) { return !trust() || (memo.v.plan === P && memo.v.s === 'ok'); }
+  function bytes(h) { var u = new Uint8Array(h.length / 2); for (var i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16); return u; }
   function idx() {
     var P = global.TEAM_PLAN;
-    if (!P || !Array.isArray(P.flows)) return null;
+    if (!P || !Array.isArray(P.flows) || !open(P)) return null;
     if (memo.plan === P) return memo.idx;
     var I = { flows: {}, local: {} };
     P.flows.forEach(function (f) { if (f.audience === 'space' && !I.flows[lc(f.table)]) I.flows[lc(f.table)] = f; });
     (P.local || []).forEach(function (t) { I.local[lc(t)] = 1; });
-    memo = { plan: P, idx: I }; return I;
+    memo.plan = P; memo.idx = I; return I;
   }
   function col(table, name) { var f = global.TeamScope.flow(table); return f && (f.payload || []).filter(function (p) { return lc(p.col) === lc(name); })[0] || null; }
   global.TeamScope = {
@@ -22,6 +29,18 @@
     carries: function (table, name) { return !!col(table, name); },
     scopeOf: function (table) { var I = idx(); return !I ? 'unplanned' : I.local[lc(table)] ? 'station-local' : I.flows[lc(table)] ? 'share' : 'unplanned'; },
     locals: function () { var I = idx(); return I ? Object.keys(I.local) : []; },
+    state: function () { var P = global.TEAM_PLAN; return !P ? 'missing' : !trust() ? 'unsigned' : memo.v.plan === P ? memo.v.s : 'pending'; },
+    verify: async function (subtle) {                                   // -> 'unsigned' | 'ok' | 'invalid' | 'untrusted' | 'missing'
+      var P = global.TEAM_PLAN, t = trust(); function set(s) { memo.v = { plan: P, s: s }; return s; }
+      if (!P) return 'missing';
+      if (!t) return set('unsigned');
+      if (!P.sig || !P.signer) return set('invalid');
+      if (!t.some(function (k) { return same(P.signer, k); })) return set('untrusted');
+      try { var body = JSON.parse(JSON.stringify(P)); delete body.sig; delete body.signer;
+        var key = await subtle.importKey('jwk', { kty: P.signer.kty, crv: P.signer.crv, x: P.signer.x, y: P.signer.y }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+        return set(await subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, bytes(P.sig), new TextEncoder().encode(canon(body))) ? 'ok' : 'invalid');
+      } catch (e) { return set('invalid'); }
+    },
     summary: function () { var I = idx(), P = global.TEAM_PLAN; return I ? { hash: P.hash, tables: Object.keys(I.flows).length, local: Object.keys(I.local).length } : null; }
   };
 })(typeof window !== 'undefined' ? window : globalThis);
