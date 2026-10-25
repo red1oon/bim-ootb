@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v162';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v163';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -63,6 +63,8 @@ const PRECACHE_ASSETS = [
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
   '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)
   '../common/comm/team_scope.js',    // TEAMWORK_FRAMEWORK §25.1 — the one reader of the compiled plan (both hosts)
+  '../common/comm/op_versions.js',   // TEAMWORK_FRAMEWORK §16.30 — the shape-version registry (signed declarative upcasters, parking)
+  '../common/comm/team_versions.js', // TEAMWORK_FRAMEWORK §16.32 — host glue for it (TEAM_SHAPE_V, TEAM_UPCASTERS, trust = TEAM_PLAN_TRUST)
   'team_plan.js',     // TEAMWORK_FRAMEWORK §24 — the scriptor's compiled plan (GENERATED); team_sync.js derives its shared-op list from it
   'team_sync.js',     // TEAMWORK_FRAMEWORK §15 — the Modeller's team-mode adapter (written into modeller.html only with ?team=1 / teamMode; inert otherwise)
   '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths
