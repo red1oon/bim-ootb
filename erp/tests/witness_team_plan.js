@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — Scope: W-PLAN-ERP, bim-compiler prompts/TEAMWORK_FRAMEWORK.md §25 (step 5b: the ERP adapter's table scope is read from the compiled plan, BEHAVIOUR-PRESERVING).
 //   READ THE LOG after every run — the exit code is not evidence. The REAL erp/idempiere.html in headless Chromium (--disable-gpu), opened with ?team=1; every number is read from the live
 //   page (TeamSync.scopeOf over the live ad_table + sqlite_master, the §TEAM_PLAN console line). Every arm names the issue it proves or disproves.
-//   §E1 equivalence  — over EVERY table of the live dictionary (N) and EVERY AD window (X of N) the new decision equals the old rule `!STATION_LOCAL[t]` ("a table changed sides").
+//   §E1 equivalence  — over EVERY table of the live dictionary (N) the plan differs from the old rule `!STATION_LOCAL[t]` on exactly the unreached dictionary VIEWS (absent from the database), and no AD window (X of N) loses a table (§31).
 //   §E2 non-AD names — what the old rule shared by default and the new one does not: LISTED, not hidden ("the default-share universe was larger than the dictionary").
 //   §E3 fail closed  — no plan => nothing shared + a visible line.   §E4 plan decides — +table, table->local, hub-audience flow ignored, adapter byte-identical.
 //   §E5 provenance   — the §TEAM_PLAN line carries the header hash.   §E6 0 page errors.   §MUTANTS — the adapter is served with one rule broken; each must turn >= 1 arm red.
@@ -64,10 +64,12 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
       var ad = q("SELECT lower(tablename) FROM ad_table WHERE isactive='Y'").map(function (r) { return r[0]; }), adSet = {}; ad.forEach(function (t) { adSet[t] = 1; });
       var sm = q("SELECT lower(name) FROM sqlite_master WHERE type='table'").map(function (r) { return r[0]; }), nonAd = sm.filter(function (t) { return !adSet[t]; });
       var dec = {}; ad.forEach(function (t) { dec[t] = window.TeamSync.scopeOf(t); });
+      var meta = {}; ad.forEach(function (t) { if (dec[t] === 'unplanned') { var r = q("SELECT isview FROM ad_table WHERE lower(tablename)='" + t + "'"); meta[t] = { isview: r.length ? r[0][0] : null, exists: q("SELECT 1 FROM sqlite_master WHERE lower(name)='" + t + "'").length > 0, type: (q("SELECT type FROM sqlite_master WHERE lower(name)='" + t + "'")[0] || [null])[0] }; } });
+      var triggers = q("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'")[0][0];
       var nd = {}; nonAd.forEach(function (t) { var r = q("SELECT ad_table_id, isactive FROM ad_table WHERE lower(tablename)='" + t + "'"); nd[t] = { scope: window.TeamSync.scopeOf(t), inAd: r.length ? r[0][1] : null, tabs: r.length ? q("SELECT count(*) FROM ad_tab WHERE ad_table_id=" + r[0][0] + " AND isactive='Y'")[0][0] : null }; });
       var wins = q("SELECT ad_window_id FROM ad_window WHERE isactive='Y'").map(function (r) { return Number(r[0]); }), wdec = {};
       wins.forEach(function (w) { wdec[w] = q("SELECT DISTINCT lower(t.tablename) FROM ad_tab tb JOIN ad_table t ON t.ad_table_id=tb.ad_table_id WHERE tb.ad_window_id=" + w + " AND tb.isactive='Y'").map(function (r) { return r[0]; }); });
-      return { ad: ad.length, dec: dec, nd: nd, wdec: wdec, extra: window.TeamSync.scopeOf('x_widget') };
+      return { ad: ad.length, dec: dec, meta: meta, triggers: triggers, nd: nd, wdec: wdec, extra: window.TeamSync.scopeOf('x_widget') };
     });
     await ctx.close(); return { out: out, logs: logs.filter(function (l) { return /§TEAM_PLAN/.test(l); }), errs: errs, served: served };
   }
@@ -78,9 +80,12 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
     var c = R.committed.out, oldShared = function (t) { return OLD_LOCAL.indexOf(t) < 0; }, newShared = function (t) { return c.dec[t] === 'share'; };
     if (!quiet) console.log('§E1 equivalence');
     var tabs = Object.keys(c.dec), diff = tabs.filter(function (t) { return oldShared(t) !== newShared(t); });
-    A('E1', tabs.length > 900 && diff.length === 0, 'every live dictionary table gets the same decision under the old rule and the plan (N=' + tabs.length + ', shared ' + tabs.filter(newShared).length + ' = ' + tabs.filter(oldShared).length + ')', diff.length ? 'DIFFER: ' + diff.slice(0, 12).join(',') + ' (' + diff.length + ')' : '0 differ');
+    var notView = diff.filter(function (t) { return !c.meta[t] || c.meta[t].isview !== 'Y'; }), present = diff.filter(function (t) { return c.meta[t] && c.meta[t].exists; });
+    A('E1', tabs.length > 900 && diff.length > 0 && notView.length === 0, 'over all N=' + tabs.length + ' live dictionary tables the plan differs from the old rule on EXACTLY ' + diff.length + ' tables, and every one is a dictionary VIEW (IsView=Y)', notView.length ? 'NOT VIEWS: ' + notView.slice(0, 10).join(',') : diff.length + ' differ, all views; shared ' + tabs.filter(newShared).length + ' (old rule ' + tabs.filter(oldShared).length + ')');
+    var asTable = diff.filter(function (t) { return c.meta[t] && c.meta[t].type === 'table'; }), asView = diff.filter(function (t) { return c.meta[t] && c.meta[t].type === 'view'; });
+    A('E1', diff.length > 0 && asTable.length === 0 && c.triggers === 0, 'in the LIVE database (shipped seed + self-heal patches) none of those ' + diff.length + ' views is a TABLE (nothing can store a record in it) and there are ' + c.triggers + ' triggers (no INSTEAD OF write path): ' + asView.length + ' exist as read-only SQL views, ' + (diff.length - asView.length) + ' do not exist at all', asTable.length ? 'ARE TABLES: ' + asTable.slice(0, 10).join(',') : 'views=' + asView.length + ' absent=' + (diff.length - asView.length) + ' tables=0');
     var wins = Object.keys(c.wdec), wdiff = wins.filter(function (w) { var ts = c.wdec[w]; return ts.filter(oldShared).length !== ts.filter(newShared).length; });
-    A('E1', wins.length > 100 && wdiff.length === 0, 'X of N AD windows: every window has the same number of shared tabs-tables under both rules (N=' + wins.length + ')', wdiff.length ? 'DIFFER windows: ' + wdiff.slice(0, 8).join(',') : '0 differ');
+    A('E1', wins.length > 100 && wdiff.length === 0, 'X of N AD windows: every window has the same number of shared tab-tables under both rules (N=' + wins.length + ') — no window loses a table', wdiff.length ? 'DIFFER windows: ' + wdiff.slice(0, 8).join(',') : '0 differ');
     A('E1', c.dec.ad_sequence === 'station-local' && c.dec.ad_recentitem === 'station-local' && Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).length === 5, 'the 5 station-owned tables are station-local, nothing else is', Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).join(','));
     if (!quiet) console.log('§E2 names that are not active AD tables');
     var nd = Object.keys(c.nd), inDict = nd.filter(function (t) { return c.nd[t].inAd !== null; });
@@ -96,7 +101,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
     A('E4', Object.keys(R.hubonly.out.dec).filter(function (t) { return R.hubonly.out.dec[t] === 'share'; }).length === 0, 'hub-audience flows share nothing in the team ERP (only audience space)', 'shared=' + Object.keys(R.hubonly.out.dec).filter(function (t) { return R.hubonly.out.dec[t] === 'share'; }).length);
     A('E4', !!R.plus.served && R.plus.served === R.committed.served, 'team_sync.js served byte-identical in both runs (no adapter change)', R.committed.served + ' = ' + R.plus.served);
     if (!quiet) console.log('§E5 provenance');
-    A('E5', R.committed.logs.some(function (l) { return l.indexOf('hash=' + HDR_HASH.slice(0, 12)) !== -1 && /tables=998 local=5/.test(l); }), 'the §TEAM_PLAN line states the header hash, 998 tables, 5 local', JSON.stringify(R.committed.logs) + ' header=' + HDR_HASH.slice(0, 12));
+    A('E5', R.committed.logs.some(function (l) { return l.indexOf('hash=' + HDR_HASH.slice(0, 12)) !== -1 && /tables=857 local=5/.test(l); }), 'the §TEAM_PLAN line states the header hash, 857 tables, 5 local', JSON.stringify(R.committed.logs) + ' header=' + HDR_HASH.slice(0, 12));
     var errN = Object.keys(R).reduce(function (n, k) { return n + R[k].errs.length; }, 0);
     if (!quiet) console.log('§E6 page errors');
     A('E6', errN === 0, 'zero page errors across all ' + Object.keys(R).length + ' loads', 'errors=' + errN);
