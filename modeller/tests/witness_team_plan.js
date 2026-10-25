@@ -40,7 +40,7 @@ var READER = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_scope.js'),
 var MUTANTS = [   // [label, adapter source, reader source] — one broken rule each (the derivation now lives in the shared reader TeamScope, §25.1)
   ['literal list reinstated (plan ignored)', ADAPTER.replace('function classFromPlan() {', 'function classFromPlan() { return ' + JSON.stringify(OLD) + '; }\n  function classFromPlanOrig() {'), READER],
   ['audience ignored (reader)', ADAPTER, READER.replace("f.audience === 'space' && ", '')],
-  ['plan hash not logged', ADAPTER.replace("'§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates='", "'§TEAM_PLAN creates='"), READER],
+  ['plan hash not logged', ADAPTER.replace("'§TEAM_PLAN hash=' + sm.hash.slice(0, 12) + ' creates='", "'§TEAM_PLAN creates='"), READER],
   ['move derived without checking pos_* (reader says every column is carried)', ADAPTER, READER.replace("carries: function (table, name) { return !!col(table, name); }", "carries: function () { return true; }")]];
 
 (async function () {
@@ -94,7 +94,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
   try {
     await arms(null, false);
     console.log('§MUTANTS (the adapter is served with one rule broken; each must turn at least one arm red)');
-    for (var m of MUTANTS) { var red = await arms(m[1], true, m[2]); verdict(red.length > 0, m[0] + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
+    for (var m of MUTANTS) { var red = await arms(m[1], true, m[2]); var applied = m[1] !== ADAPTER || m[2] !== READER; verdict(applied && red.length > 0, m[0] + (applied ? '' : ' (MUTATION DID NOT APPLY: stale anchor)') + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
   } finally { await browser.close(); server.close(); }
   console.log('\n§W-PLAN-MODELLER ' + (fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE') + ' judged=' + judged + ' fails=' + fails + ' pageerrors=' + errors + '  (plan unsigned: §16.13 Q1)');
   process.exit(fails ? 1 : 0);

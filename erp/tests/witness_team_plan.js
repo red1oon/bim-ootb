@@ -110,7 +110,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
   try {
     await arms(null, false);
     console.log('§MUTANTS (the adapter is served with one rule broken; each must turn at least one arm red)');
-    for (var m of MUTANTS) { var red = await arms(m[1], true, m[2]); verdict(red.length > 0, m[0] + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
+    for (var m of MUTANTS) { var red = await arms(m[1], true, m[2]); var applied = m[1] !== ADAPTER || m[2] !== READER; verdict(applied && red.length > 0, m[0] + (applied ? '' : ' (MUTATION DID NOT APPLY: stale anchor)') + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
   } finally { await browser.close(); server.close(); }
   open.forEach(function (o) { console.log('   🟡 OPEN — ' + o); });
   console.log('\n§W-PLAN-ERP ' + (fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE') + ' judged=' + judged + ' fails=' + fails + ' open=' + open.length + ' pageerrors=' + errors + '  (plan unsigned: §16.13 Q1)');
