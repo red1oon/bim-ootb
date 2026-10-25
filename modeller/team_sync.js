@@ -108,6 +108,9 @@
     return { target: { table: TABLE, uu: par.uu }, body: { op_type: 'CRUD_UPDATE', params: p }, intent: 'K6' };
   }
 
+  // §16.32: an op authored by an app whose shape version is above 1 says so (`sv`); at shape 1 the body is byte-identical to what it always was.
+  function stamped(body) { var TV = global.TeamVersions, v = TV ? TV.appV(body.op_type) : 1; if (!(v > 1)) return body; var o = {}; Object.keys(body).forEach(function (k) { o[k] = body[k]; }); o.sv = v; return o; }
+
   async function scanInner() {
     await ready; if (!S) return 0;   // ready resolves once, at boot (false when unpaired); founding or joining later from the panel opens the store, so "is there a store" is the live test
     var O = global.Bonsai && global.Bonsai.oplog; if (!O || !O.db) return 0;
@@ -127,7 +130,7 @@
         else if (trial && trial.finished) { localOnly[row.uu] = trial.reason; log('§TEAM_LOCALONLY op=' + row.type + ' row=' + row.id + ' reason=' + trial.reason + ' (NOT SENT)'); }
         else {
           try {
-            var a = await S.author({ target: t.target, body: t.body, refs: [], intent: t.intent, ts: Date.now() });   // wall clock: the kernel rows carry deterministic synthetic timestamps (2023-11 + n s), useless for "active N min ago" (§13.12.G.1); ts is display-only, never ordering (§15.3)
+            var a = await S.author({ target: t.target, body: stamped(t.body), refs: [], intent: t.intent, ts: Date.now() });   // wall clock: the kernel rows carry deterministic synthetic timestamps (2023-11 + n s), useless for "active N min ago" (§13.12.G.1); ts is display-only, never ordering (§15.3)
             sent[row.uu] = a.hash; n++; rec.shared = CLASS[row.type] === 'create';
             log('§TEAM_OUT op=' + row.type + ' as=' + t.body.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' cols=' + Object.keys(t.body.params.fields || t.body.params.changes).join(',') + ' hash=' + a.hash.slice(0, 12));
           } catch (e) { localOnly[row.uu] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + row.type + ' row=' + row.id + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
@@ -361,7 +364,7 @@
   }
   async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
   function openStore(bytes) {
-    S = global.CommStore.open(new SQLm.Database(bytes), { SQL: SQLm, space: cfg.space, self: dev, access: access, tableId: function () { return null; }, log: log, messageText: function () { return MSG_CRM; } });
+    S = global.CommStore.open(new SQLm.Database(bytes), { SQL: SQLm, space: cfg.space, self: dev, access: access, tableId: function () { return null; }, log: log, messageText: function () { return MSG_CRM; }, versions: global.TeamVersions && global.TeamVersions.registry });   // §16.32: shape-version judgement (a shape-1 app with no sets judges nothing differently)
     var qp = new URLSearchParams(global.location.search), pu = qp.get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(qp.get('gap') || 10000) });
   }
@@ -373,6 +376,7 @@
     for (var i = 0; i < 600 && !(global.Bonsai && global.Bonsai.oplog && global.KernelOps && global.initSqlJs && global.CommStore && global.CommPipe && document.body); i++) await new Promise(function (r) { setTimeout(r, 100); });
     if (!(global.Bonsai && global.Bonsai.oplog && global.CommStore)) { log('🔴 §TEAM_BOOT prerequisites missing'); _resolveReady(false); return; }
     await global.Bonsai.oplog._ensureDb();
+    if (global.TeamVersions) await global.TeamVersions.ready;      // §16.32: the signed upcaster sets are verified and loaded BEFORE the first fold, so no op is judged against a half-loaded registry
     SQLm = await global.initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
     dev = await kvGet('device'); cfg = (await kvGet('cfg')) || {};
     if (dev && global.CommStore.ensureDh && !dev.dhPrivateKey) { try { await global.CommStore.ensureDh(dev); await kvPut('device', dev); log('§TEAM_BOOT dh key ensured for ' + dev.kid); } catch (e) { log('§TEAM_BOOT ensureDh failed ' + (e && e.message)); } }
@@ -426,7 +430,7 @@
   }
 
   global.TeamSyncModeller = { scan: scan, visit: visit, ready: ready, settle: function () { return chain; }, store: function () { return S; }, render: render,
-                              classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV,
+                              classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV,
                               peopleView: PEOPLE_API.peopleView, refreshPeople: refreshPeople, history: history, setHide: setHide, focusOwn: function () { return focusOwn.slice(); }, updateFocus: updateFocus,
                               found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                               inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); },
