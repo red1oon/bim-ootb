@@ -33,14 +33,25 @@
   }
   var CLASS = classFromPlan();
   // §32: the plan is verified (a no-op without a trust list) BEFORE `ready` resolves, so no scan can judge an op against an unverified plan and mark it local-only for good.
-  var planVerified = (async function () {
+  async function verifyPlan(why) {                                     // -> the verdict; recomputes the op list and prints the plan line and the verdict (the app's own evidence)
     var T = global.TeamScope, st = T ? await T.verify(global.crypto && global.crypto.subtle) : 'missing';
     CLASS = classFromPlan();
     var n = Object.keys(CLASS).filter(function (k) { return CLASS[k] === 'create'; }).length;
-    if (!n) console.log('§TEAM_PLAN missing — nothing is shared');
-    else console.log('§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates=' + n + ' move=' + (CLASS.GEOM_MOVE ? AX.map(function (a) { return 'pos_' + a; }).join('|') : 'none'));
-    console.log('§TEAM_PLAN_SIG state=' + st);
-  })().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
+    var sm = T && T.summary();
+    if (!n || !sm) console.log('§TEAM_PLAN missing — nothing is shared');
+    else console.log('§TEAM_PLAN hash=' + sm.hash.slice(0, 12) + ' creates=' + n + ' move=' + (CLASS.GEOM_MOVE ? AX.map(function (a) { return 'pos_' + a; }).join('|') : 'none'));
+    console.log('§TEAM_PLAN_SIG state=' + st + (why ? ' ' + why : ''));
+    return st;
+  }
+  var planVerified = verifyPlan().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
+  // §33.2: the trust list a space pinned in its GENESIS replaces the deployment's window.TEAM_PLAN_TRUST (the space decides); the plan is re-verified under it. No genesis list => the deployment list stays.
+  async function pinTrust(st) {
+    st = st || S; if (!st || !st.planTrust) return;
+    var gt = await st.planTrust(); if (!gt) return;
+    if (JSON.stringify(gt) === JSON.stringify(global.TEAM_PLAN_TRUST || [])) return;
+    global.TEAM_PLAN_TRUST = gt; await verifyPlan('trust=genesis(' + gt.length + ')');
+  }
+  function spaceOpts() { var t = global.TEAM_PLAN_TRUST; return Array.isArray(t) && t.length ? { planTrust: t } : undefined; }   // what a founder pins in the genesis: the deployment's plan trust list (public keys)
 
   var SQLm = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastVisitAt = null, lastSyncRep = null, catchup = null, enrolled = false, attached = false;
   var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
@@ -230,6 +241,7 @@
         await scanInner();                                                           // anything committed but not yet authored goes out in THIS visit
         updateFocus();                                                               // what is selected NOW is what the Visit advertises (a rebuild may renumber rows and drop the selection)
         var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
+        await pinTrust();                                                            // a joiner learns the pinned plan trust list when the genesis arrives
         var pj = await rebuildInner();
         await peopleRound();                                                         // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused + ' gaps=' + rep.gaps +
@@ -388,6 +400,7 @@
     sent = (await kvGet('modeller_sent')) || {}; localOnly = (await kvGet('modeller_localonly')) || {};
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(modeller_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
+    try { await pinTrust(); } catch (e) { log('🔴 §TEAM_PLAN_SIG pin failed at boot ' + (e && e.stack || e)); }   // before ready: no scan is judged under a trust list the space did not pin
     _resolveReady(true); await render(); attach();
     scan().catch(function (e) { log('🔴 §TEAM_SCAN ' + (e && e.stack || e)); });
   }
@@ -397,8 +410,8 @@
   async function fresh() { sent = {}; localOnly = {}; catchup = null; await kvPut('modeller_db', null); await kvPut('modeller_sent', {}); await kvPut('modeller_localonly', {}); }
   async function found() {
     await ready; needKey(); await fresh();
-    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102);
-    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); openStore(undefined); attach(); await S.genesis(sp.params);
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, spaceOpts());
+    cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); openStore(undefined); attach(); await S.genesis(sp.params); await pinTrust();
     log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12) + ' (no base: the Modeller\'s spaces have none, §15.8)'); _resolveReady(true);
     await visit(); await persist(); await render(); return sp.space;
   }
@@ -435,7 +448,7 @@
                               found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                               inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); },
                               setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, togglePeople: togglePeople, isEnrolled: function () { return enrolled; },
-                              _setClock: function (f) { clock = f || function () { return Date.now(); }; } };
+                              _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
