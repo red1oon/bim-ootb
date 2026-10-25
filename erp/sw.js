@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v907';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v908';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -285,6 +285,7 @@ const PRECACHE_ASSETS = [
   '../common/comm/team_panel.js',     // TEAMWORK_FRAMEWORK §13.8 / §15.15 — the Team panel, shared with the Modeller (loaded on every idempiere.html page, inert until opened)
   '../common/comm/team_avatars.js',   // §15.15.2 — the built-in avatar set
   'team_guide.html',   // §13.8 T6 — the team user guide the panel links to
+  '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)
   '../common/comm/team_scope.js',    // TEAMWORK_FRAMEWORK §25.1 — the one reader of the compiled plan (both hosts)
   'team_plan.js',      // §25 — the compiled team scope (GENERATED); read through TeamScope
   'team_sync.js',      // TEAMWORK_FRAMEWORK §13.1 W1 — the team-mode adapter (written into idempiere.html only with ?team=1; inert otherwise)

@@ -38,7 +38,7 @@ var VARIANTS = {
 var LITERAL = "var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' }; (function () {";
 var READER = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_scope.js'), 'utf8');
 var MUTANTS = [   // [label, adapter source, reader source] — one broken rule each (the derivation now lives in the shared reader TeamScope, §25.1)
-  ['literal list reinstated (plan ignored)', ADAPTER.replace('var CLASS = (function () {', LITERAL).replace("return c;\n  })();", "return c;\n  })(); void 0;").replace(/var CLASS = \{ GEOM_INSERT[^\n]*\(function \(\) \{/, "var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' }; var _unused = (function () {"), READER],
+  ['literal list reinstated (plan ignored)', ADAPTER.replace('function classFromPlan() {', 'function classFromPlan() { return ' + JSON.stringify(OLD) + '; }\n  function classFromPlanOrig() {'), READER],
   ['audience ignored (reader)', ADAPTER, READER.replace("f.audience === 'space' && ", '')],
   ['plan hash not logged', ADAPTER.replace("'§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates='", "'§TEAM_PLAN creates='"), READER],
   ['move derived without checking pos_* (reader says every column is carried)', ADAPTER, READER.replace("carries: function (table, name) { return !!col(table, name); }", "carries: function () { return true; }")]];

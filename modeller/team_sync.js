@@ -22,19 +22,28 @@
   var MSG_CRM = 'Current record was changed by another user, please ReQuery';      // AD_Message CurrentRecordModified (same text as the ERP twin)
   var TABLE = 'bim_element';                                                       // the pseudo-table every element lives in (§15.2)
   var AX = ['x', 'y', 'z'];
-  // THE one op-class list, DERIVED from the scriptor's compiled plan (team_plan.js) through the shared reader TeamScope (TEAMWORK_FRAMEWORK §24, §25.1) — never a literal. Every value of the plan's
-  // geom_op column is a CREATE; GEOM_MOVE is a MOVE iff the plan carries pos_x|y|z. No plan / no matching flow => {} : nothing is shared (fail closed).
-  var CLASS = (function () {
+  // THE one op-class list, DERIVED from the scriptor's compiled plan through the shared reader TeamScope (TEAMWORK_FRAMEWORK §24, §25.1) — never a literal. Every value of the plan's
+  // geom_op column is a CREATE; GEOM_MOVE is a MOVE iff the plan carries pos_x|y|z. No plan / no matching flow / a plan whose signature a configured trust list rejects => {} : nothing is shared.
+  function classFromPlan() {
     var c = {}, T = global.TeamScope, vals = T && T.values(TABLE, 'geom_op');
-    if (!vals) { console.log('§TEAM_PLAN missing — nothing is shared'); return c; }
+    if (!vals) return c;
     vals.forEach(function (v) { c[v] = 'create'; });
     if (AX.every(function (a) { return T.carries(TABLE, 'pos_' + a); })) c.GEOM_MOVE = 'move';
-    console.log('§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates=' + vals.length + ' move=' + (c.GEOM_MOVE ? AX.map(function (a) { return 'pos_' + a; }).join('|') : 'none'));
     return c;
-  })();
+  }
+  var CLASS = classFromPlan();
+  // §32: the plan is verified (a no-op without a trust list) BEFORE `ready` resolves, so no scan can judge an op against an unverified plan and mark it local-only for good.
+  var planVerified = (async function () {
+    var T = global.TeamScope, st = T ? await T.verify(global.crypto && global.crypto.subtle) : 'missing';
+    CLASS = classFromPlan();
+    var n = Object.keys(CLASS).filter(function (k) { return CLASS[k] === 'create'; }).length;
+    if (!n) console.log('§TEAM_PLAN missing — nothing is shared');
+    else console.log('§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates=' + n + ' move=' + (CLASS.GEOM_MOVE ? AX.map(function (a) { return 'pos_' + a; }).join('|') : 'none'));
+    console.log('§TEAM_PLAN_SIG state=' + st);
+  })().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
 
   var SQLm = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastVisitAt = null, lastSyncRep = null, catchup = null, enrolled = false, attached = false;
-  var _resolveReady, ready = new Promise(function (r) { _resolveReady = r; });
+  var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
   var chain = Promise.resolve();                                                   // scan / visit are serialised (one writer of the model at a time)
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { console.log(m); }
