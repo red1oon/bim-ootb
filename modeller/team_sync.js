@@ -21,9 +21,17 @@
   var OWNER = 'red1oon', REPO = 'bim-teams-pipe';
   var MSG_CRM = 'Current record was changed by another user, please ReQuery';      // AD_Message CurrentRecordModified (same text as the ERP twin)
   var TABLE = 'bim_element';                                                       // the pseudo-table every element lives in (§15.2)
-  // THE one op-class list (§15.2). No AD dictionary exists for the Modeller to read it from; it equals the LEAF fold class of bonsai_oplog.js commit() + GEOM_INSERT.
-  var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' };
   var AX = ['x', 'y', 'z'];
+  // THE one op-class list, DERIVED from the scriptor's compiled plan (team_plan.js, TEAMWORK_FRAMEWORK §24) — never a literal. Every value of the plan's geom_op column is a CREATE;
+  // GEOM_MOVE is a MOVE iff the plan carries pos_x|y|z. No plan / no matching flow => {} : nothing is shared (fail closed).
+  var CLASS = (function () {
+    var c = {}, P = global.TEAM_PLAN, f = P && P.flows.filter(function (x) { return x.table === TABLE && x.audience === 'space'; })[0], has = function (n) { return f && f.payload.some(function (p) { return p.col === n; }); };
+    if (!f) { console.log('§TEAM_PLAN missing — nothing is shared'); return c; }
+    f.payload.forEach(function (p) { if (p.col === 'geom_op') (p.values || []).forEach(function (v) { c[v] = 'create'; }); });
+    if (AX.every(function (a) { return has('pos_' + a); })) c.GEOM_MOVE = 'move';
+    console.log('§TEAM_PLAN hash=' + P.hash.slice(0, 12) + ' creates=' + Object.keys(c).filter(function (k) { return c[k] === 'create'; }).length + ' move=' + (c.GEOM_MOVE ? AX.map(function (a) { return 'pos_' + a; }).join('|') : 'none'));
+    return c;
+  })();
 
   var SQLm = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastVisitAt = null, lastSyncRep = null, catchup = null, enrolled = false, attached = false;
   var _resolveReady, ready = new Promise(function (r) { _resolveReady = r; });
