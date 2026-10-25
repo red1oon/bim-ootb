@@ -36,16 +36,20 @@ var VARIANTS = {
 };
 // adapter mutants: one broken rule each (served in place of team_sync.js)
 var LITERAL = "var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' }; (function () {";
-var MUTANTS = [['literal list reinstated (plan ignored)', ADAPTER.replace('var CLASS = (function () {', LITERAL).replace("return c;\n  })();", "return c;\n  })(); void 0;").replace(/var CLASS = \{ GEOM_INSERT[^\n]*\(function \(\) \{/, "var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' }; var _unused = (function () {")],
-  ['audience ignored', ADAPTER.replace(" && x.audience === 'space'", '')],
-  ['plan hash not logged', ADAPTER.replace("'§TEAM_PLAN hash=' + P.hash.slice(0, 12) + ' creates='", "'§TEAM_PLAN creates='")]];
+var READER = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_scope.js'), 'utf8');
+var MUTANTS = [   // [label, adapter source, reader source] — one broken rule each (the derivation now lives in the shared reader TeamScope, §25.1)
+  ['literal list reinstated (plan ignored)', ADAPTER.replace('var CLASS = (function () {', LITERAL).replace("return c;\n  })();", "return c;\n  })(); void 0;").replace(/var CLASS = \{ GEOM_INSERT[^\n]*\(function \(\) \{/, "var CLASS = { GEOM_INSERT: 'create', GEOM_EXTRUDE: 'create', GEOM_EXTRUDE_POLY: 'create', GEOM_SWEEP: 'create', GEOM_LOFT: 'create', GEOM_REVOLVE: 'create', GEOM_MOVE: 'move' }; var _unused = (function () {"), READER],
+  ['audience ignored (reader)', ADAPTER, READER.replace("f.audience === 'space' && ", '')],
+  ['plan hash not logged', ADAPTER.replace("'§TEAM_PLAN hash=' + T.summary().hash.slice(0, 12) + ' creates='", "'§TEAM_PLAN creates='"), READER],
+  ['move derived without checking pos_* (reader says every column is carried)', ADAPTER, READER.replace("carries: function (table, name) { return !!col(table, name); }", "carries: function () { return true; }")]];
 
 (async function () {
   console.log('═══ W-PLAN-MODELLER — the Modeller adapter derives its shared-op list from the compiled plan (TEAMWORK_FRAMEWORK §24) ═══\n');
-  var cur = { plan: null, adapter: null };
+  var cur = { plan: null, adapter: null, reader: null };
   var server = http.createServer(function (req, res) {
     var p = decodeURIComponent(new URL(req.url, 'http://x').pathname), f = path.join(ROOT, p === '/' ? '/modeller/modeller.html' : p);
     if (p === '/modeller/team_plan.js' && cur.plan !== null) { if (cur.plan === 404) { res.writeHead(404); res.end('nf'); return; } res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(cur.plan); return; }
+    if (p === '/common/comm/team_scope.js' && cur.reader) { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(cur.reader); return; }
     if (p === '/modeller/team_sync.js' && cur.adapter) { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(cur.adapter); return; }
     if (f.indexOf(ROOT) !== 0 || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end('nf'); return; }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(res);
@@ -53,8 +57,8 @@ var MUTANTS = [['literal list reinstated (plan ignored)', ADAPTER.replace('var C
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port;
   var browser = await reqPw().chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu'] });
-  async function load(planKey, adapterSrc) {                                    // -> { classes, logs, errs, served }
-    cur.plan = VARIANTS[planKey]; cur.adapter = adapterSrc || null;
+  async function load(planKey, adapterSrc, readerSrc) {                                    // -> { classes, logs, errs, served }
+    cur.plan = VARIANTS[planKey]; cur.adapter = adapterSrc || null; cur.reader = readerSrc || null;
     var ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } }), pg = await ctx.newPage(), logs = [], errs = [], served = null;
     pg.on('console', function (m) { logs.push(m.text()); }); pg.on('pageerror', function (e) { errs.push(e.message); errors++; });
     pg.on('response', function (r) { if (/\/modeller\/team_sync\.js/.test(r.url())) r.body().then(function (b) { served = sha(b); }).catch(function () {}); });
@@ -65,10 +69,10 @@ var MUTANTS = [['literal list reinstated (plan ignored)', ADAPTER.replace('var C
     await ctx.close(); return { classes: classes, logs: logs.filter(function (l) { return /§TEAM_PLAN/.test(l); }), errs: errs, served: served };
   }
   // arms as a function so the mutants can re-run them against a broken adapter; returns names of red arms
-  async function arms(adapterSrc, quiet) {
+  async function arms(adapterSrc, quiet, readerSrc) {
     var red = [], R = {};
     function A(name, ok, label, detail) { if (!ok) red.push(name); if (!quiet) verdict(ok, label, detail); return ok; }
-    for (var k of Object.keys(VARIANTS)) R[k] = await load(k, adapterSrc);
+    for (var k of Object.keys(VARIANTS)) R[k] = await load(k, adapterSrc, readerSrc);
     var c = R.committed;
     if (!quiet) console.log('§P1 equivalence');
     A('P1', same(c.classes, OLD), 'the committed plan yields exactly the old literal list (6 creates + GEOM_MOVE)', Object.keys(c.classes).length + ' keys; ' + (same(c.classes, OLD) ? 'equal' : 'DIFF ' + JSON.stringify(c.classes)));
@@ -90,7 +94,7 @@ var MUTANTS = [['literal list reinstated (plan ignored)', ADAPTER.replace('var C
   try {
     await arms(null, false);
     console.log('§MUTANTS (the adapter is served with one rule broken; each must turn at least one arm red)');
-    for (var m of MUTANTS) { var red = await arms(m[1], true); verdict(red.length > 0, m[0] + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
+    for (var m of MUTANTS) { var red = await arms(m[1], true, m[2]); verdict(red.length > 0, m[0] + ' -> red arms: ' + (red.length ? Array.from(new Set(red)).join(', ') : 'NONE (survivor = hole)')); }
   } finally { await browser.close(); server.close(); }
   console.log('\n§W-PLAN-MODELLER ' + (fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE') + ' judged=' + judged + ' fails=' + fails + ' pageerrors=' + errors + '  (plan unsigned: §16.13 Q1)');
   process.exit(fails ? 1 : 0);
