@@ -32,13 +32,17 @@
   // The table scope is DATA, not a list in this file: the compiled plan (erp/team_plan.js, GENERATED from flow rows by bim-compiler build/scriptor/emit_erp_plan.js, TEAMWORK_FRAMEWORK §25),
   // read through the one shared reader TeamScope (common/comm/team_scope.js): 'share' (a FACT/BOTH/space row), 'station-local' (a declared LOCAL row: per-station numbering, the user's recent items,
   // session/audit rows - sharing them would make every document save a spurious crossed edit) or 'unplanned' (no row => local-only, never shared by default). No plan => nothing is shared.
-  var PLAN_SUM = global.TeamScope && global.TeamScope.summary();
-  console.log(PLAN_SUM ? '§TEAM_PLAN hash=' + PLAN_SUM.hash.slice(0, 12) + ' tables=' + PLAN_SUM.tables + ' local=' + PLAN_SUM.local : '§TEAM_PLAN missing — nothing is shared');
+  // §32: verified (a no-op without a trust list) BEFORE `ready` resolves, so no commit is judged against an unverified plan.
+  var planVerified = (async function () {
+    var T = global.TeamScope, st = T ? await T.verify(global.crypto && global.crypto.subtle) : 'missing', PLAN_SUM = T && T.summary();
+    console.log(PLAN_SUM ? '§TEAM_PLAN hash=' + PLAN_SUM.hash.slice(0, 12) + ' tables=' + PLAN_SUM.tables + ' local=' + PLAN_SUM.local : '§TEAM_PLAN missing — nothing is shared');
+    console.log('§TEAM_PLAN_SIG state=' + st);
+  })().catch(function (e) { console.log('🔴 §TEAM_PLAN_SIG ' + (e && e.message)); });
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null;
   var baseSt = { state: 'unknown' }, loadedP = null, pristineP = null, storeOpts = null, bmemo = {}, bcols = {};
-  var _resolveReady, ready = new Promise(function (r) { _resolveReady = r; });
+  var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
   var $ = function (id) { return document.getElementById(id); };
   function log(m) { console.log(m); }
 
