@@ -12,7 +12,7 @@
   'use strict';
   var TAG = '§SHEET-VIEW', MARK_LAYER = 'DXF2BIM-MARK';
   var COL = { yours: '#f2f2f2', stated: '#ffd21f', read: '#ffd21f', inferred: '#ff8a1f', notstated: '#ffd21f', frame: '#9aa3b2' };
-  var POS_X = { GRIDX: 1, GRIDH: 1 }, POS_Y = { GRIDY: 1, Z: 1 }, POS_PT = { TAG: 1, WALLTOP: 1 };   // GRIDX/GRIDH a vertical line through x, GRIDY/Z a horizontal one through y, TAG/WALLTOP a point; EXCLUDE its box
+  var POS_X = { GRIDX: 1, GRIDH: 1 }, POS_Y = { GRIDY: 1, Z: 1 }, POS_PT = { TAG: 1, WALLTOP: 1 };   // x-only labels are written vertically (a grid bay can be narrower than its label); GRIDX/GRIDH a vertical line through x, GRIDY/Z a horizontal one through y, TAG/WALLTOP a point; EXCLUDE its box
   var PAPERS = [['A4', 297, 210], ['A3', 420, 297], ['A2', 594, 420], ['A1', 841, 594], ['A0', 1189, 841]], SCALES = [100, 200, 500, 50];   // ISO 216 landscape; 1:100 first (the std2d convention)
   var BORDER = 10, BAND = 50, TB = [180, 40], INSUNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };
   var st = { si: null, view: null, marks: true, el: null, last: null };
@@ -34,19 +34,25 @@
   function build(si, opts) {
     opts = opts || {}; var E = ME(), sh = E.state.sheets[si]; if (!sh) return null;
     var dl = V().toDrawList(V().parse(sh.text || '')), drawing = dl.list.filter(function (d) { return d.layer !== MARK_LAYER; }), b = V().bounds(drawing) || { x0: 0, y0: 0, x1: 1, y1: 1 };
-    var W = b.x1 - b.x0, H = b.y1 - b.y0, D = Math.max(W, H), th = D * 0.012, list = drawing.slice(), marks = [], box = [], rings = [];
+    var W = b.x1 - b.x0, H = b.y1 - b.y0, D = Math.max(W, H), th = D * 0.012, list = drawing.slice(), marks = [], box = [], rings = [], top = th * 2;
+    var up = function (t) { top = Math.max(top, t.p[1] - b.y1 + String(t.s).length * 0.6 * t.h + th * 0.5); return t; };   // a vertical label's top end (0.6 x height per character, as the renderer's wrap)
     // the markings: positional at their place, the rest in the box (in the order the sheet holds them)
     (sh.marks || []).forEach(function (m, mi) { var c = tierCol(m.rule), lab = '@' + m.key + '=' + m.value, v;
-      if (POS_X[m.key]) { list.push(line([m.x, b.y0], [m.x, b.y1], c, { dash: true, mk: mi })); list.push(text([m.x, b.y1 + th * 0.6], lab, th, c, { mk: mi })); marks.push({ mi: mi, key: m.key, at: 'x', x: m.x }); }
+      if (POS_X[m.key]) { list.push(line([m.x, b.y0], [m.x, b.y1], c, { dash: true, mk: mi })); list.push(up(text([m.x + th * 0.35, b.y1 + th * 0.6], lab, th, c, { mk: mi, rot: 90 }))); marks.push({ mi: mi, key: m.key, at: 'x', x: m.x }); }
       else if (POS_Y[m.key]) { list.push(line([b.x0, m.y], [b.x1, m.y], c, { dash: true, mk: mi })); list.push(text([b.x1 + th * 0.6, m.y], lab, th, c, { mk: mi })); marks.push({ mi: mi, key: m.key, at: 'y', y: m.y }); }
       else if (m.key === 'EXCLUDE' && (v = String(m.value).split(',').map(Number)).length >= 4 && v.slice(0, 4).every(isFinite)) {
         list.push({ k: 'poly', layer: MARK_LAYER, c: c, pts: [[v[0], v[1]], [v[2], v[1]], [v[2], v[3]], [v[0], v[3]]], closed: true, dash: true, grp: 'marks', w: 2, mk: mi }); list.push(text([v[0], v[3] + th * 0.4], lab, th, c, { mk: mi })); marks.push({ mi: mi, key: m.key, at: 'box', box: v.slice(0, 4) }); }
       else if (POS_PT[m.key] && (m.x || m.y)) { list.push({ k: 'circle', layer: MARK_LAYER, c: c, o: [m.x, m.y], r: th * 0.5, grp: 'marks', w: 2, mk: mi }); list.push(text([m.x + th * 0.7, m.y], lab, th, c, { mk: mi })); marks.push({ mi: mi, key: m.key, at: 'pt', x: m.x, y: m.y }); }
       else box.push({ mi: mi, s: lab, c: c }); });
     // the open rows of the list for this sheet: a ring at the evidence point the rule read; a row with no point (0,0) is listed in the box as open
-    E.openRows(si).forEach(function (r) { var c = COL[r.t] || COL.stated, lab = '@' + r.key + '=' + r.value + ' ?';
-      if (r.x || r.y) { list.push({ k: 'circle', layer: MARK_LAYER, c: c, o: [r.x, r.y], r: th * 0.9, grp: 'marks', w: 2, ev: r.ev }); list.push(text([r.x + th, r.y + th * 0.4], lab, th * 0.8, c, { ev: r.ev })); rings.push(r.ev); }
-      else box.push({ ev: r.ev, s: lab + ' (open: ' + r.g + ')', c: c }); });
+    // a row's point means what its key means (as a marking's): GRIDX / GRIDH only an x (the ring at the drawing's top edge), GRIDY / Z only a y (at its right edge);
+    // a point that still lies off the drawing is not drawn off the sheet: the row is listed in the box (measured 2026-10-26: the shed plan's 18 GRIDX rows carried y = 3,278 in off the sheet)
+    var near = function (q) { var mx = W * 0.05, my = H * 0.05; return q[0] >= b.x0 - mx && q[0] <= b.x1 + mx && q[1] >= b.y0 - my && q[1] <= b.y1 + my; };
+    E.openRows(si).forEach(function (r) { var c = COL[r.t] || COL.stated, lab = '@' + r.key + '=' + r.value + ' ?', q = POS_X[r.key] ? [r.x, b.y1] : POS_Y[r.key] ? [b.x1, r.y] : [r.x, r.y];
+      if ((r.x || r.y) && near(q)) { list.push({ k: 'circle', layer: MARK_LAYER, c: c, o: q, r: th * 0.9, grp: 'marks', w: 2, ev: r.ev });
+        if (POS_X[r.key]) list.push(line([r.x, b.y0], [r.x, b.y1], c, { dash: true, w: 1, ev: r.ev })); else if (POS_Y[r.key]) list.push(line([b.x0, r.y], [b.x1, r.y], c, { dash: true, w: 1, ev: r.ev }));
+        list.push(POS_X[r.key] ? up(text([q[0] + th * 0.3, q[1] + th * 1.1], lab, th * 0.8, c, { ev: r.ev, rot: 90 })) : text([q[0] + th, q[1] + th * 0.4], lab, th * 0.8, c, { ev: r.ev })); rings.push(r.ev); }
+      else box.push({ ev: r.ev, s: lab + ' (open: ' + r.g + (r.x || r.y ? ', its point is off the sheet' : '') + ')', c: c }); });
     // the frame: the sheet's own, else a drawn ISO 5457 border + ISO 7200 title block at the paper and scale that hold the drawing
     var own = ownFrame(drawing, b), u = unitsOf(sh), mmU = u && window.Dxf2Marks && window.Dxf2Marks.UNITS[u] ? window.Dxf2Marks.UNITS[u] * 1000 : null, fr = { own: own, units: u, paper: null, scale: null }, vb = b;
     if (!own && mmU) {
@@ -66,7 +72,7 @@
       }
     }
     if (!fr.paper) { box.forEach(function (q, i) { list.push(text([b.x1 - W * 0.35, b.y0 - th * (1.6 + 1.3 * i)], q.s, th, q.c, { mk: q.mi, ev: q.ev })); });   // own frame (or no units): the box below the drawing, right
-      vb = { x0: Math.min(b.x0, b.x1 - W * 0.35), y0: b.y0 - th * (2 + 1.3 * box.length), x1: b.x1 + th * 8, y1: b.y1 + th * 2 }; }
+      vb = { x0: Math.min(b.x0, b.x1 - W * 0.35), y0: b.y0 - th * (2 + 1.3 * box.length), x1: b.x1 + th * 8, y1: b.y1 + top }; }
     if (opts.marks === false) list = list.filter(function (d) { return d.grp !== 'marks'; });
     var info = { si: si, sheet: sh.name, ents: Object.keys(dl.stats.by_type).reduce(function (a, k) { return a + dl.stats.by_type[k]; }, 0), drawn: Object.keys(dl.stats.drawn_by_type).reduce(function (a, k) { return a + dl.stats.drawn_by_type[k]; }, 0),
       unsupported: dl.stats.unsupported || 0, marks: (sh.marks || []).length, positional: marks.length, boxed: box.filter(function (q) { return q.mi !== undefined; }).length, boxedMarks: box.filter(function (q) { return q.mi !== undefined; }).map(function (q) { return q.mi; }), open: E.openRows(si).length, rings: rings, boxedOpen: box.filter(function (q) { return q.ev !== undefined; }).map(function (q) { return q.ev; }),

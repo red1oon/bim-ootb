@@ -87,7 +87,8 @@ const expectPaper = (W, H, u) => { const w = W * UM[u], h = H * UM[u]; for (cons
       else {
         const listEv = await pd.evaluate(si => Array.from(document.querySelectorAll('#dm-yellows .dm-pr[data-ev]')).map(e => e.getAttribute('data-ev')).filter(e => e.indexOf(si + '|') === 0), si4);
         const viewEv = x4.i.rings.concat(x4.i.boxedOpen).sort(), rows = await pd.evaluate(si => window.DxfMetaEditor.openRows(si), si4), TC = { stated: '#ffd21f', read: '#ffd21f', inferred: '#ff8a1f' };
-        const ringBad = rows.filter(q => q.x || q.y).filter(q => { const c = x4.items.find(d => d.k === 'circle' && d.ev === q.ev); return !c || c.o[0] !== q.x || c.o[1] !== q.y || c.c !== TC[q.t]; }).map(q => q.ev);
+        const B4 = x4.i.bounds, want = q => /^GRID[XH]$/.test(q.key) ? [q.x, B4.y1] : /^(GRIDY|Z)$/.test(q.key) ? [B4.x1, q.y] : [q.x, q.y];   // a row's point means what its key means (§D82 fix)
+        const ringBad = rows.filter(q => x4.i.rings.indexOf(q.ev) >= 0).filter(q => { const c = x4.items.find(d => d.k === 'circle' && d.ev === q.ev), w = want(q); return !c || c.o[0] !== w[0] || c.o[1] !== w[1] || c.c !== TC[q.t]; }).map(q => q.ev);
         ok('SV4[duplex plain] the view\'s open rows = the list\'s rows of the sheet; each ring at its row\'s point in its tier colour', JSON.stringify(viewEv) === JSON.stringify(listEv.slice().sort()) && !ringBad.length,
           x4.sh.name + ' list=' + listEv.length + ' view rings=' + x4.i.rings.length + ' boxed open=' + x4.i.boxedOpen.length + (ringBad.length ? ' RING BAD ' + ringBad.slice(0, 3).join(',') : ''));
         // accept one ringed row in the list (its own tick), with the view open: the ring goes, the sheet gains a marking
@@ -106,6 +107,17 @@ const expectPaper = (W, H, u) => { const w = W * UM[u], h = H * UM[u]; for (cons
       ok('SV6 the SVG is the sheet at its paper size; without Markings it is exactly the SVG minus the markings group', !!g && head && on.svg.replace(g, '') === off.svg && on.svg.length - off.svg.length === g.length,
         on.sh.name + ' paper=' + (mm ? mm.join('x') + 'mm' : 'none') + ' svg ' + on.svg.length + ' / ' + off.svg.length + ' B, marks group ' + g.length + ' B');
     }
+    // SV4c the raw shed (the set that showed it): after round 1, every ring lies inside the printed view, and every open row is either ringed or boxed (none lost)
+    const RAWD = process.env.SHED_RAW_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'raw'), raw = fs.existsSync(RAWD) ? fs.readdirSync(RAWD).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(RAWD, f)) : [];
+    if (raw.length !== 9) ok('SV4c[shed raw]', false, 'MISSING input: the 9 raw shed sheets (SHED_RAW_DIR)');
+    else { const pr = await page(); await openSet(pr, raw);
+      for (let i = 0; i < 12; i++) { const any = await pr.evaluate(() => (window.DxfMetaEditor.state.yMeta || []).some(m => m.si >= 0 && (m.x || m.y))); if (any) break;
+        const k = await pr.evaluate(() => { const b = document.querySelector('#dm-yellows .dm-grp [data-act="grpok"]'); if (!b) return null; b.click(); return b.getAttribute('data-grp'); }); if (!k) break; await idle(pr); await sleep(500); }
+      const nr = await pr.evaluate(() => window.DxfMetaEditor.state.sheets.length), rep = [];
+      for (let si = 0; si < nr; si++) { const x = await info(pr, si), V = x.i.view, off = x.items.filter(d => d.k === 'circle' && d.ev !== undefined && !(d.o[0] >= V.x0 && d.o[0] <= V.x1 && d.o[1] >= V.y0 && d.o[1] <= V.y1)).length;
+        rep.push({ n: x.sh.name.replace(/\.dxf$/, ''), rings: x.i.rings.length, boxed: x.i.boxedOpen.length, open: x.i.open, off }); }
+      ok('SV4c[shed raw] every ring is on the printed sheet and every open row is ringed or boxed', rep.every(q => q.off === 0 && q.rings + q.boxed === q.open) && rep.some(q => q.rings > 0),
+        rep.map(q => q.n + ' ' + q.rings + '+' + q.boxed + '/' + q.open + (q.off ? ' OFF ' + q.off : '')).join(' | ')); }
     ok('SV0 no page errors', errs.length === 0, 'errors=' + errs.length);
   } catch (e) { ok('SV run', false, 'threw ' + String(e && e.stack || e).slice(0, 400)); }
   await br.close(); srv.close(); fs.rmSync(tmp, { recursive: true, force: true });
