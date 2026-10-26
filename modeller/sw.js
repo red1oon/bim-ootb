@@ -115,6 +115,8 @@ const PRECACHE_ASSETS = [
   'dxf2bim/dxf2shell_config.js',
   'dxf2bim/dxf2qualify.js',
   'dxf_meta_editor.js',   // §DXF-META (lane L4): the Drawing metadata editor
+  'dxf_sheet_frame.js',   // §D82 the full-frame marked sheet view
+  '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
   'dxf_export_ui.js',   // §DXF-EXPORT (lane L5): Export ▸ 2D drawings (DXF)
   'viewer_db_export.js',   // §D43: Export ▸ Viewer database (.db)
   'dxf2bim/ifc_extract_core.js',
