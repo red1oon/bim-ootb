@@ -161,6 +161,19 @@
         host.modelval.registerValidator(table, timing, name, fn); scope.label('ModelValidator  ' + table + ' ' + timing + '  ' + name);
         scope.rec(function () { if (host.modelval.unregisterValidator) host.modelval.unregisterValidator(table, timing, name); });
       };
+      // ctx.events - the topic bus (ad_modelval.js subscribe, legacy AbstractEventHandler.registerTableEvent / IEventTopics): owner-scoped, undone on stop (§10.3.2). A topic is a gate topic (before*/after*/doc*,
+      //   synchronous, may veto) or an observe topic (post* or {observe:true}: after the group committed, read-only, cannot veto) - the CLASS is the grant a later phase restricts a bundle to.
+      var events = null;
+      if (host.modelval && typeof host.modelval.subscribe === 'function') {
+        var subscribeScoped = function (topic, table, name, fn, opts) {
+          var o = Object.assign({}, opts || {}, { owner: id }), e = host.modelval.subscribe(topic, table, name, fn, o);
+          scope.label('Event handler  ' + topic + '  ' + (table || '*') + '  ' + name + (e && e.observe ? '  [observe]' : ''));
+          scope.rec(function () { host.modelval.unsubscribe(topic, table, name); });
+          return e;
+        };
+        events = { subscribe: subscribeScoped };
+        if (modelval) modelval.subscribe = subscribeScoped;                     // the facade must not hand out the unscoped subscribe it inherits
+      }
       var callout = facade(host.callout);
       if (callout) {
         callout.registerHandler = function (name, fn) { host.callout.registerHandler(name, fn, own); scope.label('ICallout handler  ' + name); scope.once('callout', function () { if (host.callout.removeOwner) host.callout.removeOwner(id); }); };
@@ -239,6 +252,7 @@
       return {
         manifest:   manifest,
         modelval:   modelval,                  // ad_modelval module (registerValidator/fireHooks)
+        events:     events,                    // the topic bus: subscribe(topic, table, name, fn, {observe}) - owner-scoped, undone on stop
         callout:    callout,                   // ad_callout module  (registerHandler / defineCallout)
         process:    processE,                  // ad_process module  (registerHandler w/ meta.kind / defineProcess)
         postTokens: postTokens,                // post_resolver token map — contribute a token

@@ -2179,7 +2179,7 @@
             ' tables=' + JSON.stringify(r.ops.reduce(function (m, x) { var k = x.table + ':' + String(x.op_type).replace('CRUD_', ''); m[k] = (m[k] || 0) + 1; return m; }, {})) + (r.msg ? ' msg="' + r.msg + '"' : ''));
           if (!r.ok) { cb({ abort: r.msg || ('DocAction ' + op.action + ' → ' + r.status) }); return; }
           op.to = r.status; op.outcome = r.status === 'IP' ? 'in-progress' : 'success';
-          cb({ ops: r.ops, model: true });
+          cb({ ops: r.ops, model: true, observed: r.observed });
         });
         return;
       }
@@ -2405,6 +2405,7 @@
                 console.log('§SO-COMPLETE order=' + op.id + ' ship=' + nShip + ' invoice=' + nInv + ' gl=' + (fanout.docs ? 'post-after-commit' : 'gated') + ' sealed=Y gid=' + res.gid);
               }
               console.log('§CRUD process committed key=' + op.key + ' viaGroup=Y gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' op_uuid=' + (uuid || 'null') + ' to=' + op.to + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              if (fanout && fanout.observed) _deliverObserved(fanout.observed, res, 0, groupOps);   // post* of the saves the DocAction made, after its group committed
               setDocStatus(op.key, op.to, op.outcome, op.unmet);
               docDot(CORE.docLabel(op, fname(op.key)), op);
               toast('PROCESS ' + fname(op.key) + ' → ' + op.to + (op.outcome === 'in-progress' ? ' (In Progress)' : ' (Completed)') + ' — signed' + (v && v.ok ? '' : ' (verify FAIL!)'));
@@ -2691,8 +2692,18 @@
   // _modelAfterSave — PO.afterSave (MOrderLine → order tax + header totals, MInvoiceLine → invoice tax/totals, …) for the
   // row this save writes; its ops join the SAME signed group (prompts/ERP_MODEL_LAYER.md §Seams AFTER save).
   function _modelAfterSave(op, db, cb) {
-    var ML = global.ModelLayer;
-    if (!ML || op.op_type === 'CRUD_DELETE' || !(ML.MODEL[op.table] && ML.MODEL[op.table].afterSave) && !(global.AdModelVal && global.AdModelVal.hooksFor && Object.keys(global.AdModelVal.hooksFor(op.table)).some(function (t) { return /^AFTER_/.test(t); }))) { cb([]); return; }
+    var ML = global.ModelLayer, MVb = global.AdModelVal;
+    var observing = !!(MVb && typeof MVb.hasSubscribers === 'function' && MVb.hasSubscribers(op.table));   // the topic bus (ad_modelval.js): someone listens on this table - the save must run the model path so its events exist
+    op._observed = null;
+    if (ML && op.op_type === 'CRUD_DELETE' && observing && typeof MVb.queueObserve === 'function' && MVb.hasObservers(op.table, MVb.topicOf('POST_DELETE'))) {   // PO.delete :4544 postDelete - the host row is deleted by this op, delivered after its commit
+      withBundle(function (bdb) {
+        var sh = SIDE ? _tipShadowOn(bdb, _sideTables(SIDE)) : [], old = null;
+        try { old = _modelQuery(bdb)('SELECT * FROM ' + op.table + ' WHERE ' + op.table + '_id=?', [op.id])[0] || null; } finally { _tipShadowOff(bdb, sh); }
+        var bag = []; MVb.queueObserve(bag, MVb.topicOf('POST_DELETE'), { table: op.table, record: old, recordOld: null }); op._observed = bag; cb([]);
+      });
+      return;
+    }
+    if (!ML || op.op_type === 'CRUD_DELETE' || !observing && !(ML.MODEL[op.table] && ML.MODEL[op.table].afterSave) && !(global.AdModelVal && global.AdModelVal.hooksFor && Object.keys(global.AdModelVal.hooksFor(op.table)).some(function (t) { return /^AFTER_/.test(t); }))) { cb([]); return; }
     var nextId = 1; try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) {}
     var pk = op.table + '_id', rec, old = null;
     withBundle(function (bdb) {
@@ -2705,6 +2716,7 @@
       modelRun({ table: op.table, timing: 'AFTER_SAVE', record: rec, old: old, isNew: op.op_type === 'CRUD_CREATE' }, function (mr) {
         // PO.save semantics (PO.java saveNew/saveFinish): an afterSave/AFTER_NEW refusal fails the WHOLE save and the trx rolls back - the host row must not be sealed either (twin rule). cb(ops, refusal).
         if (mr && !mr.ok) { var why = mr.error || mr.msg || 'refused'; console.log('§MODEL-AFTER-SAVE table=' + op.table + ' refused: ' + why); cb([], why); return; }
+        op._observed = mr && mr.observed && mr.observed.length ? mr.observed : null;   // delivered by _deliverObserved once THIS op's group commits
         if (!mr || !mr.ops.length) { cb([]); return; }
         // the host op sits at index 0 → every model {__opRef:i} shifts by one
         var shift = function (v) { return (v && typeof v === 'object' && v.__opRef != null) ? { __opRef: v.__opRef + 1 } : v; };
@@ -2714,6 +2726,17 @@
         cb(ops);
       });
     });
+  }
+  // _deliverObserved - the OBSERVE moment (prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §10.3.3): called ONLY after K.commitGroup returned committed:true and the group was persisted, with the events the model
+  //   run queued (post* + {observe:true}); never reached for a refused / not-committed / rolled-back group. res.ids[i] is the kernel op of groupOps[i]; a row created in the group has the synthetic
+  //   pk -id (crud_core listTip), `shift` = the ops ahead of the model's own (the host op = 1). Observers cannot veto; their errors are logged (§BUS_OBSERVE_ERR).
+  function _deliverObserved(bag, res, shift, groupOps) {
+    var ML = global.ModelLayer;
+    if (!bag || !bag.length || !ML || typeof ML.deliverObserved !== 'function') return;
+    try {
+      var d = ML.deliverObserved(bag, {}, function (fi) { var g = groupOps && groupOps[fi + shift], id = res && res.ids ? res.ids[fi + shift] : null; return (g && g.op_type === 'CRUD_CREATE' && id != null) ? -Number(id) : null; });
+      console.log('§BUS-DELIVER committed=Y gid=' + (res && res.gid) + ' events=' + d.events + ' observers=' + d.delivered + ' errors=' + d.errors);
+    } catch (e) { console.log('§BUS-DELIVER-ERR ' + (e && e.message)); }
   }
   function _commitCrudSealed(op, K, db, done) {
     _modelAfterSave(op, db, function (modelOps, refusal) {
@@ -2733,6 +2756,7 @@
             return _sidePersist(K, db, res.ids).then(function () {
               var cols = op.changes ? Object.keys(op.changes).join(',') : (op.fields ? Object.keys(op.fields).join(',') : '-');
               console.log('§CRUD-PERSIST key=' + op.key + ' id=' + (op.id == null ? 'null' : op.id) + ' op=' + op.op_type + ' cols=' + cols + ' source=sidecar gid=' + res.gid + ' ops=' + res.ids.length + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              _deliverObserved(op._observed, res, 1, groupOps); op._observed = null;
               docDot(CORE.docLabel(op, fname(op.key)), op);
               toast(op.verb.toUpperCase() + ' ' + fname(op.key) + ' — saved (signed)' + (v && v.ok ? '' : ' (verify FAIL!)'));
               // W-AD-SELFEDIT-LIVE — announce the committed write so a host can refold on a dictionary edit
@@ -2837,7 +2861,7 @@
     return out;
   }
 
-  function applyOpGroup(ops, cb) {
+  function applyOpGroup(ops, cb, observed) {   // observed (optional) = the post*/observe events of the model run that produced `ops` (ModelLayer.run().observed): delivered after this group commits
     cb = cb || function () {};
     if (!ops || !ops.length) { cb({ committed: false, reason: 'empty-group' }); return; }
     var K = kernel();
@@ -2853,6 +2877,7 @@
           return Promise.resolve((K.verifyChainIncremental || K.verifyChain)(freshDb)).then(function (v) {
             return _sidePersist(K, freshDb, res.ids).then(function () {
               console.log('§CRUD-GROUP-PERSIST ops=' + res.ids.length + ' source=sidecar gid=' + res.gid + ' sealed=' + res.sealed + ' verifyChain=' + (v && v.ok ? 'ok' : 'FAIL'));
+              _deliverObserved(observed, res, 0, groupOps);
               try { global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'CREATE_GROUP', id: null, gid: res.gid } })); } catch (ev) {}
               cb({ committed: true, gid: res.gid, ids: res.ids, sealed: res.sealed, verifyOk: !!(v && v.ok) });
               done();

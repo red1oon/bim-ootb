@@ -24,17 +24,49 @@
   // The FULL iDempiere set (ModelValidator.java TYPE_* + TIMING_*), so model_layer.js (prompts/ERP_MODEL_LAYER.md
   // §DESIGN 1) registers here instead of keeping a second registry. A hook may write through ctx.trx (model_layer
   // Trx) — those writes land in the caller's signed op-group. BEFORE_SAVE/AFTER_SAVE stay as the NEW∪CHANGE alias.
-  var TIMINGS = ['BEFORE_NEW', 'AFTER_NEW', 'BEFORE_CHANGE', 'AFTER_CHANGE', 'BEFORE_SAVE', 'AFTER_SAVE', 'BEFORE_DELETE', 'AFTER_DELETE',
+  var TIMINGS = ['BEFORE_NEW', 'AFTER_NEW', 'AFTER_NEW_REPLICATION', 'BEFORE_CHANGE', 'AFTER_CHANGE', 'AFTER_CHANGE_REPLICATION', 'BEFORE_SAVE', 'AFTER_SAVE', 'BEFORE_DELETE', 'BEFORE_DELETE_REPLICATION', 'AFTER_DELETE',
                  'BEFORE_PREPARE', 'AFTER_PREPARE', 'BEFORE_COMPLETE', 'AFTER_COMPLETE', 'BEFORE_VOID', 'AFTER_VOID',
                  'BEFORE_CLOSE', 'AFTER_CLOSE', 'BEFORE_REACTIVATE', 'AFTER_REACTIVATE', 'BEFORE_REVERSECORRECT',
                  'AFTER_REVERSECORRECT', 'BEFORE_REVERSEACCRUAL', 'AFTER_REVERSEACCRUAL', 'BEFORE_POST', 'AFTER_POST'];
 
-  // REGISTRY[table][timing] = [ {name, fn} ]  — fn(ctx, info) -> null | "error string" (iDempiere semantics).
+  // ══ THE TOPIC BUS (prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §10.3, Phase 1 — Witness: W-EVENT-BUS) ═════════════════════════════════════════════
+  // ONE dispatcher, legacy's. ModelValidationEngine.fireModelChange (ModelValidationEngine.java:387-503) / fireDocValidate (:581-671) run, in this order, stopping at the first error:
+  //   (1) validators registered for the table on every client  (2) validators of THIS client  (3) AD_Table_ScriptValidator rules  (4) the OSGi event, whose handlers' errors are COLLECTED,
+  //   reversed and joined "<br>" (:489-497). Here: (1)(2) = registerValidator (REGISTRY, unchanged shape; an entry with opts.client is stage 2) · (3) = NOT BUILT: the twin has no AD_Rule engine
+  //   (ad_seed.db has no ad_rule / ad_table_scriptvalidator; ad_callout.js:793 reports a JSR223 script UNPORTED) - the slot is kept below, nothing is invented · (4) = subscribe (AbstractEventHandler.registerTableEvent).
+  // Topic strings are IEventTopics.java:24-74 VERBATIM (legacy's constant PO_POST_UPADTE is misspelt, its STRING is ".../postUpdate"). The twin's BEFORE_SAVE/AFTER_SAVE are not legacy timings (a NEW-or-CHANGE alias that
+  //   PO.save here fires after the specific one): they get twin/ topics so no legacy topic is ever mis-named.
+  // TWO CLASSES of topic. GATE = every timing in TOPIC_OF (before*/after*/doc*, the replica timings): synchronous inside the save, may veto or write in the save's own op group.
+  //   OBSERVE = postCreate/postUpdate/postDelete, and ANY subscription made with {observe:true}: delivered once per committed op group AFTER it committed (deliverObserved), read-only (frozen copy),
+  //   a throw or error text cannot veto (logged as §BUS_OBSERVE_ERR). Legacy posts these asynchronously at save success INSIDE the trx (PO.java:2799-2804 postEvent, delete :4544); the twin's delivery
+  //   after the group's commitGroup succeeded is exact and never fires for a rolled-back group - a sharpening of legacy, not a divergence a user can see.
+  var TOPIC_OF = {
+    BEFORE_NEW: 'adempiere/po/beforeNew', AFTER_NEW: 'adempiere/po/afterNew', AFTER_NEW_REPLICATION: 'adempiere/po/afterNewReplication',
+    BEFORE_CHANGE: 'adempiere/po/beforeChange', AFTER_CHANGE: 'adempiere/po/afterChange', AFTER_CHANGE_REPLICATION: 'adempiere/po/afterChangeReplication',
+    BEFORE_DELETE: 'adempiere/po/beforeDelete', AFTER_DELETE: 'adempiere/po/afterDelete', BEFORE_DELETE_REPLICATION: 'adempiere/po/beforeDeleteReplication',
+    POST_CREATE: 'adempiere/po/postCreate', POST_UPDATE: 'adempiere/po/postUpdate', POST_DELETE: 'adempiere/po/postDelete',
+    BEFORE_SAVE: 'twin/po/beforeSave', AFTER_SAVE: 'twin/po/afterSave',
+    BEFORE_PREPARE: 'adempiere/doc/beforePrepare', AFTER_PREPARE: 'adempiere/doc/afterPrepare', BEFORE_COMPLETE: 'adempiere/doc/beforeComplete', AFTER_COMPLETE: 'adempiere/doc/afterComplete',
+    BEFORE_VOID: 'adempiere/doc/beforeVoid', AFTER_VOID: 'adempiere/doc/afterVoid', BEFORE_CLOSE: 'adempiere/doc/beforeClose', AFTER_CLOSE: 'adempiere/doc/afterClose',
+    BEFORE_REACTIVATE: 'adempiere/doc/beforeReactivate', AFTER_REACTIVATE: 'adempiere/doc/afterReactivate', BEFORE_REVERSECORRECT: 'adempiere/doc/beforeReverseCorrect',
+    AFTER_REVERSECORRECT: 'adempiere/doc/afterReverseCorrect', BEFORE_REVERSEACCRUAL: 'adempiere/doc/beforeReverseAccrual', AFTER_REVERSEACCRUAL: 'adempiere/doc/afterReverseAccrual',
+    BEFORE_POST: 'adempiere/doc/beforePost', AFTER_POST: 'adempiere/doc/afterPost'
+  };
+  var TIMING_OF = {}; Object.keys(TOPIC_OF).forEach(function (k) { TIMING_OF[TOPIC_OF[k]] = k; });
+  var OBSERVE_TOPICS = {}; ['POST_CREATE', 'POST_UPDATE', 'POST_DELETE'].forEach(function (k) { OBSERVE_TOPICS[TOPIC_OF[k]] = 1; });
+  function topicOf(timing) { return Object.prototype.hasOwnProperty.call(TOPIC_OF, timing) ? TOPIC_OF[timing] : null; }
+  function timingOf(topic) { return Object.prototype.hasOwnProperty.call(TIMING_OF, topic) ? TIMING_OF[topic] : null; }
+  function isObserveTopic(topic) { return !!OBSERVE_TOPICS[topic]; }
+
+  // REGISTRY[table][timing] = [ {name, fn, client?, owner?} ]  — fn(ctx, info) -> null | "error string" (iDempiere semantics). Stage 1 = entries without a client, stage 2 = entries with one.
+  //   The shape is unchanged (witnesses and plugins read it directly); registerValidator is the adapter that maps its timing to a topic.
   var REGISTRY = {};
-  function registerValidator(table, timing, name, fn) {
-    var t = table.toLowerCase();
+  function registerValidator(table, timing, name, fn, opts) {
+    var t = table.toLowerCase(), e = { name: name, fn: fn };
+    if (opts && opts.client != null) e.client = Number(opts.client);
+    if (opts && opts.owner != null) e.owner = opts.owner;
     (REGISTRY[t] = REGISTRY[t] || {});
-    (REGISTRY[t][timing] = REGISTRY[t][timing] || []).push({ name: name, fn: fn });
+    (REGISTRY[t][timing] = REGISTRY[t][timing] || []).push(e);
   }
   // unregisterValidator(table, timing, name) - remove the LAST validator registered under that name in that slot (a bundle's stop). Returns the number removed (0 or 1).
   function unregisterValidator(table, timing, name) {
@@ -44,6 +76,105 @@
   }
   function registeredCount() {
     var n = 0, t, ti; for (t in REGISTRY) for (ti in REGISTRY[t]) n += REGISTRY[t][ti].length; return n;
+  }
+
+  // SUBS[topic] = [ {table:'c_order'|'*', name, fn, observe, owner} ] — stage 4 handlers (gate) and observers, in registration order (OSGi Event Admin delivers in registration order here).
+  var SUBS = {}, _groupSeq = 0;
+  function subscribe(topic, table, name, fn, opts) {
+    if (typeof topic !== 'string' || !topic) throw new Error('subscribe: a topic string is required');
+    if (typeof fn !== 'function') throw new Error('subscribe: ' + name + ' needs a function');
+    var e = { table: (table == null || table === '' ? '*' : String(table).toLowerCase()), name: name, fn: fn, observe: isObserveTopic(topic) || !!(opts && opts.observe) };
+    if (opts && opts.owner != null) e.owner = opts.owner;
+    (SUBS[topic] = SUBS[topic] || []).push(e);
+    return e;
+  }
+  // unsubscribe(topic, table, name) - remove the LAST subscription of that name on that topic+table. Returns the number removed (0 or 1).
+  function unsubscribe(topic, table, name) {
+    var a = SUBS[topic], t = (table == null || table === '' ? '*' : String(table).toLowerCase()); if (!a) return 0;
+    for (var i = a.length - 1; i >= 0; i--) if (a[i].name === name && a[i].table === t) { a.splice(i, 1); if (!a.length) delete SUBS[topic]; return 1; }
+    return 0;
+  }
+  function unsubscribeOwner(owner) {
+    var n = 0; Object.keys(SUBS).forEach(function (tp) { var a = SUBS[tp]; for (var i = a.length - 1; i >= 0; i--) if (a[i].owner === owner) { a.splice(i, 1); n++; } if (!a.length) delete SUBS[tp]; });
+    return n;
+  }
+  function subscriptions() { var out = []; Object.keys(SUBS).forEach(function (tp) { SUBS[tp].forEach(function (e) { out.push({ topic: tp, table: e.table, name: e.name, observe: e.observe, owner: e.owner }); }); }); return out; }
+  function _subsFor(topic, t, observe) { return (SUBS[topic] || []).filter(function (e) { return e.observe === observe && (e.table === '*' || e.table === t); }); }
+  // hasSubscribers(table[, topic]) - is anything on the bus for this table (any topic, or one)? Hosts use it to skip work no one will see.
+  function hasSubscribers(table, topic) {
+    var t = (table || '').toLowerCase();
+    return Object.keys(SUBS).some(function (tp) { return (!topic || tp === topic) && SUBS[tp].some(function (e) { return e.table === '*' || e.table === t; }); });
+  }
+  function hasObservers(table, topic) { var t = (table || '').toLowerCase(); return (SUBS[topic] || []).some(function (e) { return e.observe && (e.table === '*' || e.table === t); }); }
+
+  // the po's client (legacy po.getAD_Client_ID()): the record's column, else the session's
+  function _clientOf(info, ctx) {
+    var r = info.record || {}, v = r.ad_client_id != null ? r.ad_client_id : (info.recordOld && info.recordOld.ad_client_id != null ? info.recordOld.ad_client_id : (ctx && ctx.client != null ? ctx.client : (ctx && ctx.trx && ctx.trx.env ? ctx.trx.env.client : null)));
+    return v == null ? null : Number(v);
+  }
+  function _run(timing, topic, info, ctx, withTopic) {
+    ctx = ctx || {};
+    var t = (info.table || '').toLowerCase(), all = (REGISTRY[t] && REGISTRY[t][timing]) || [], fired = 0, i, err, h;
+    function res(o) { var r = { timing: timing, table: info.table, fired: o.fired, ok: o.ok }; if (!o.ok) { r.blocked = o.blocked; r.error = o.error; if (o.errors) r.errors = o.errors; } if (withTopic) r.topic = topic; return r; }
+    function exec(e) { try { return e.fn(ctx, info); } catch (x) { return 'hook threw: ' + (x && x.message); } }
+    // (1) validators of every client - registration order, the first error aborts (:395-405 / fireModelChange(po,type,list) :506-540)
+    for (i = 0; i < all.length; i++) { h = all[i]; if (h.client != null) continue; fired++; err = exec(h); if (err) return res({ ok: false, fired: fired, blocked: h.name, error: err }); }
+    // (2) validators of THIS client only (m_modelChangeListeners.get(table + AD_Client_ID), :407-415)
+    var cl = null;
+    for (i = 0; i < all.length; i++) { h = all[i]; if (h.client == null) continue; if (cl === null) cl = _clientOf(info, ctx); if (h.client !== cl) continue; fired++; err = exec(h); if (err) return res({ ok: false, fired: fired, blocked: h.name, error: err }); }
+    // (3) AD_Table_ScriptValidator rules (:417-466): NOT BUILT - no AD_Rule engine in the twin (finding in prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §10.5); nothing is run or invented here.
+    // (4) event handlers of the topic: ALL run, every error collected, reversed, joined with "<br>" (:469-497)
+    var hs = topic ? _subsFor(topic, t, false) : [];
+    if (hs.length) {
+      var errs = [], names = [];
+      hs.forEach(function (e) { fired++; var x = exec(e); if (x) { errs.push(String(x)); names.push(e.name); } });
+      if (errs.length) return res({ ok: false, fired: fired, blocked: names.join(','), error: errs.slice().reverse().map(function (x) { return x + '<br>'; }).join(''), errors: errs });
+    }
+    // observers of this gate topic (opts.observe): queued on the Trx, delivered after its group commits (deliverObserved)
+    if (topic && ctx.trx && hasObservers(t, topic)) queueObserve(ctx.trx._observed || (ctx.trx._observed = []), topic, info);
+    return res({ ok: true, fired: fired });
+  }
+  // dispatch(topic, info, ctx) - the bus entry by topic string. Returns { timing, table, fired, ok, blocked?, error?, topic }.
+  function dispatch(topic, info, ctx) { return _run(timingOf(topic), topic, info, ctx, true); }
+  // fireHooks(timing, info, ctx) - the original entry by twin timing; the result shape is exactly the pre-bus one.
+  function fireHooks(timing, info, ctx) { return _run(timing, topicOf(timing), info, ctx, false); }
+
+  // ── OBSERVE delivery ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  // queueObserve(bag, topic, info) puts one event on a group's bag (the Trx's _observed). deliverObserved(bag, ctx, resolve) is called by the host AFTER commitGroup succeeded: it takes every
+  //   queued event out of the bag (so a second call delivers nothing: exactly once), and gives each observer a FROZEN copy. resolve(finalOpIndex) -> the committed key of a row that was new in
+  //   the group ('#new:i' placeholder; bag.opMap maps Trx index -> final group index); without it the placeholder stays and info.unresolved is true. Observers never veto: a throw is logged.
+  function _snap(o) { if (o == null || typeof o !== 'object') return o; var c = {}; Object.keys(o).forEach(function (k) { c[k] = o[k]; }); return c; }
+  function queueObserve(bag, topic, info) {
+    if (!bag || !topic) return;
+    bag.push({ topic: topic, info: { table: info.table, record: _snap(info.record), recordOld: _snap(info.recordOld), isReplication: !!info.isReplication, idCol: info.idCol || null } });
+  }
+  function deliverObserved(bag, ctx, resolve) {
+    var out = { delivered: 0, errors: 0, events: 0, group: null };
+    if (!bag || !bag.length) return out;
+    var events = bag.splice(0, bag.length), gid = ++_groupSeq, opMap = bag.opMap;
+    out.events = events.length; out.group = gid;
+    events.forEach(function (ev, idx) {
+      var info = ev.info, t = (info.table || '').toLowerCase(), unresolved = false;
+      function fix(v) {
+        if (typeof v === 'string' && /^#new:\d+$/.test(v)) {
+          var i = Number(v.slice(5)), f = opMap && opMap[i] != null ? opMap[i] : i, k = typeof resolve === 'function' ? resolve(f, t) : null;
+          if (k != null) return k; unresolved = true;
+        }
+        return v;
+      }
+      function copy(o) { if (!o) return o; var c = {}; Object.keys(o).forEach(function (k) { c[k] = fix(o[k]); }); return Object.freeze(c); }
+      var view = Object.freeze({ table: info.table, record: copy(info.record), recordOld: copy(info.recordOld), isReplication: info.isReplication, topic: ev.topic, unresolved: unresolved, group: Object.freeze({ id: gid, n: events.length, i: idx }) });
+      var subs = _subsFor(ev.topic, t, true), errs = 0;
+      subs.forEach(function (e) {
+        var x;
+        try { x = e.fn(Object.freeze({ observe: true, group: view.group }), view); }
+        catch (er) { errs++; try { console.log('§BUS_OBSERVE_ERR topic=' + ev.topic + ' table=' + t + ' subscriber=' + e.name + ' msg=' + (er && er.message) + ' (an observer cannot veto: the save stands)'); } catch (z) {} return; }
+        if (x) { errs++; try { console.log('§BUS_OBSERVE_ERR topic=' + ev.topic + ' table=' + t + ' subscriber=' + e.name + ' returned an error text, ignored (an observer cannot veto): ' + String(x).slice(0, 120)); } catch (z) {} }
+      });
+      out.delivered += subs.length ? 1 : 0; out.errors += errs;
+    });
+    try { console.log('§BUS_OBSERVE group=' + gid + ' events=' + out.events + ' deliveredToObservers=' + out.delivered + ' errors=' + out.errors); } catch (z) {}
+    return out;
   }
 
   // readValidators(db) — the AD source: the registered ModelValidator classes (Java bodies named-deferred).
@@ -780,22 +911,6 @@
     return H.length;
   }
 
-  // fireHooks(timing, info, ctx) — run every validator registered for (info.table, timing) IN ORDER; the
-  // FIRST non-null error aborts (the iDempiere fireModelChange/fireDocValidate semantics). Returns
-  // { timing, table, fired, ok, blocked?, error? }.
-  function fireHooks(timing, info, ctx) {
-    ctx = ctx || {};
-    var t = (info.table || '').toLowerCase();
-    var hooks = (REGISTRY[t] && REGISTRY[t][timing]) || [];
-    for (var i = 0; i < hooks.length; i++) {
-      var err;
-      try { err = hooks[i].fn(ctx, info); }
-      catch (e) { err = 'hook threw: ' + (e && e.message); }
-      if (err) return { timing: timing, table: info.table, fired: i + 1, ok: false, blocked: hooks[i].name, error: err };
-    }
-    return { timing: timing, table: info.table, fired: hooks.length, ok: true };
-  }
-
   // hooksFor(table) — which timings carry a hook (coverage introspection).
   function hooksFor(table) {
     var t = (table || '').toLowerCase(), r = REGISTRY[t] || {}, out = {};
@@ -840,6 +955,8 @@
 
   var API = {
     TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, unregisterValidator: unregisterValidator, registeredCount: registeredCount,
+    TOPIC_OF: TOPIC_OF, topicOf: topicOf, timingOf: timingOf, isObserveTopic: isObserveTopic, subscribe: subscribe, unsubscribe: unsubscribe, unsubscribeOwner: unsubscribeOwner,
+    subscriptions: subscriptions, hasSubscribers: hasSubscribers, hasObservers: hasObservers, dispatch: dispatch, queueObserve: queueObserve, deliverObserved: deliverObserved,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
     installMOrderSaveHooks: installMOrderSaveHooks, fireHooks: fireHooks, hooksFor: hooksFor,
     installMInOutSaveHooks: installMInOutSaveHooks, installMInvoiceSaveHooks: installMInvoiceSaveHooks,

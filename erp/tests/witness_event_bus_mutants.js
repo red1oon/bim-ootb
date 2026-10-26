@@ -1,0 +1,28 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — the mutant table of W-EVENT-BUS (witness_event_bus.js, BUS_MUTANTS=1). Each entry rewrites the SHIPPED source (text must be found exactly `count` times, else NOT-APPLIED = proves nothing),
+//   then the witness re-runs in a child; the named check must print FAIL. A child that crashes without its § verdict line is NOT a kill. READ THE LOG: §BUS-MUTANT lines.
+'use strict';
+var MV = 'ad_modelval.js', ML = 'model_layer.js', PR = 'plugin_registry.js';
+module.exports = [
+  { name: 'M01-client-validators-run-in-stage-1', kills: ['ORDER', 'order'], what: 'validators of another client run (stage 1 ignores the client)', edits: [{ file: MV, from: 'if (h.client != null) continue; fired++;', to: 'fired++;' }] },
+  { name: 'M02-other-client-validator-runs', kills: ['ORDER', 'order'], what: 'stage 2 runs a validator of ANOTHER client', edits: [{ file: MV, from: 'if (h.client !== cl) continue; fired++;', to: 'fired++;' }] },
+  { name: 'M03-handlers-never-run', kills: ['ORDER', 'order'], what: 'stage 4 (event handlers) dropped', edits: [{ file: MV, from: 'var hs = topic ? _subsFor(topic, t, false) : [];', to: 'var hs = [];' }] },
+  { name: 'M04-handler-errors-not-reversed', kills: ['ORDER', 'collect'], what: 'collected handler errors joined in call order instead of reversed (ModelValidationEngine.java:489)', edits: [{ file: MV, from: 'errs.slice().reverse().map(', to: 'errs.slice().map(' }] },
+  { name: 'M05-doc-topic-misnamed', kills: ['ORDER', 'topics'], what: 'a legacy doc topic string is wrong', edits: [{ file: MV, from: "BEFORE_REVERSECORRECT: 'adempiere/doc/beforeReverseCorrect'", to: "BEFORE_REVERSECORRECT: 'adempiere/doc/beforereversecorrect'" }] },
+  { name: 'M06-postUpdate-misnamed', kills: ['ORDER', 'topics'], what: 'postUpdate topic string wrong', edits: [{ file: MV, from: "POST_UPDATE: 'adempiere/po/postUpdate'", to: "POST_UPDATE: 'adempiere/po/postUpdated'" }] },
+  { name: 'M07-replica-fires-afterNew', kills: ['REPLICA', 'replica-new'], what: 'a replica new save fires afterNew instead of afterNewReplication (the FL-8 hole)', edits: [{ file: ML, from: "(repl ? 'AFTER_NEW_REPLICATION' : 'AFTER_NEW')", to: "'AFTER_NEW'" }] },
+  { name: 'M08-replica-fires-alias', kills: ['REPLICA', 'replica-new'], what: 'the AFTER_SAVE alias still fires for a replica', edits: [{ file: ML, from: "|| (repl ? null : fire(trx, 'AFTER_SAVE', table, live, { recordOld: old }));", to: "|| fire(trx, 'AFTER_SAVE', table, live, { recordOld: old });" }] },
+  { name: 'M09-replica-key-renumbered', kills: ['REPLICA', 'key'], what: 'a replica does not keep the received key', edits: [{ file: ML, from: 'repl ? { keepKey: true } : null', to: 'null' }] },
+  { name: 'M10-replica-delete-fires-beforeDelete', kills: ['REPLICA', 'replica-delete'], what: 'replica delete fires beforeDelete', edits: [{ file: ML, from: "repl ? 'BEFORE_DELETE_REPLICATION' : 'BEFORE_DELETE'", to: "'BEFORE_DELETE'" }] },
+  { name: 'M11-observer-throw-escapes', kills: ['OBSERVE', 'cannot-veto'], what: 'an observer throw is rethrown (veto power)', edits: [{ file: MV, from: 'catch (er) { errs++; try {', to: 'catch (er) { throw er; try {' }] },
+  { name: 'M12-delivered-twice', kills: ['OBSERVE', 'moment'], what: 'the bag is not emptied: a second delivery repeats', edits: [{ file: MV, from: 'var events = bag.splice(0, bag.length),', to: 'var events = bag.slice(),' }] },
+  { name: 'M13-refused-group-still-delivers', kills: ['OBSERVE', 'rollback'], what: 'run() hands over the queue of a refused group', edits: [{ file: ML, from: 'var observed = r && r.ok !== false ? (trx._observed || []) : [];', to: 'var observed = (trx._observed || []);' }] },
+  { name: 'M14-savepoint-keeps-observers', kills: ['OBSERVE', 'rollback'], what: 'rollbackTo does not drop the observers queued after the savepoint', edits: [{ file: ML, from: 'if (this._observed) this._observed.length = Math.min(this._observed.length, sp.obs || 0);', to: '' }] },
+  { name: 'M15-failed-save-keeps-queue', kills: ['OBSERVE', 'failed-save-in-ok-group'], what: 'a refused save leaves its queued events behind', edits: [{ file: ML, from: 'if (!r.ok) obsTrunc(trx, mark);\n    return r;\n  }\n  function _save(', to: 'return r;\n  }\n  function _save(' }] },
+  { name: 'M16-observer-gets-live-copy', kills: ['OBSERVE', 'readonly'], what: 'observers receive a writable copy', edits: [{ file: MV, from: 'return Object.freeze(c); }', to: 'return c; }' }] },
+  { name: 'M17-post-topic-not-observe', kills: ['OBSERVE', 'moment'], what: 'post* subscriptions are not observe-class (never queued/delivered)', edits: [{ file: MV, from: 'observe: isObserveTopic(topic) || !!(opts && opts.observe)', to: 'observe: false' }] },
+  { name: 'M18-fired-count-drift', kills: ['COMPAT', 'identical'], what: 'fireHooks result differs from the original loop (fired count)', edits: [{ file: MV, from: 'if (h.client != null) continue; fired++;', to: 'if (h.client != null) continue; fired += 2;' }] },
+  { name: 'M19-adapter-drops-BEFORE_NEW', kills: ['COMPAT', 'inventory'], what: 'registerValidator silently drops BEFORE_NEW registrations', edits: [{ file: MV, from: '(REGISTRY[t][timing] = REGISTRY[t][timing] || []).push(e);', to: "if (timing !== 'BEFORE_NEW') (REGISTRY[t][timing] = REGISTRY[t][timing] || []).push(e);" }] },
+  { name: 'M20-plugin-subscription-not-undone', kills: ['PLUGIN', 'ctx-events'], what: 'ctx.events subscriptions survive stop', edits: [{ file: PR, from: 'scope.rec(function () { host.modelval.unsubscribe(topic, table, name); });', to: '' }] }
+];

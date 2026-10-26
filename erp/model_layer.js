@@ -89,10 +89,10 @@
   // Trx.setSavepoint / rollback(savepoint) (DocManager.postDocument :390-470 posts every schema under one savepoint and rolls it back on an error): a deep copy of the
   // group + the pending overlay (they share row objects, so they are copied TOGETHER); callers re-read their row objects after a rollback.
   Trx.prototype.setSavepoint = function () {
-    var snap = { ops: this.ops, pend: this.pend, n: this._newSeq };
+    var snap = { ops: this.ops, pend: this.pend, n: this._newSeq, obs: (this._observed || []).length };
     try { return structuredClone(snap); } catch (e) { return JSON.parse(JSON.stringify(snap)); }
   };
-  Trx.prototype.rollbackTo = function (sp) { this.ops = sp.ops; this.pend = sp.pend; this._newSeq = sp.n; };
+  Trx.prototype.rollbackTo = function (sp) { this.ops = sp.ops; this.pend = sp.pend; this._newSeq = sp.n; if (this._observed) this._observed.length = Math.min(this._observed.length, sp.obs || 0); };   // observers queued after the savepoint are dropped with its writes
   Trx.prototype.keyCols = function (table) { return keyColsOf(this.q, table); };
   // single-column identity of a row: its key when the key is one column, else its <table>_uu (recorded identity).
   Trx.prototype.idCol = function (table) { var k = this.keyCols(table); return k.length === 1 ? k[0] : table + '_uu'; };
@@ -134,7 +134,7 @@
     return out;
   };
   // insert — PO.saveNew. Returns the live row; its key is '#new:i' until commit resolves {__opRef:i}.
-  Trx.prototype.insert = function (table, fields) {
+  Trx.prototype.insert = function (table, fields, opts) {
     table = table.toLowerCase();
     var idc = this.idCol(table), row = {};
     for (var k in fields) if (Object.prototype.hasOwnProperty.call(fields, k)) row[k.toLowerCase()] = fields[k];
@@ -142,7 +142,9 @@
     // a key that is the dictionary's IsKey column gets the new-row placeholder (PO.saveNew assigns it); a table keyed only by its IsParent
     // column (C_AcctSchema_GL / _Default: key = C_AcctSchema_ID) KEEPS the parent id the caller gave (§MODEL-INSERT-KEEPKEY) unless that identity is taken in this Trx.
     var givenParent = this.keyCols(table).length === 1 && row[idc] != null && !isRealKey(this.q, table, idc) && !this._p(table)[String(row[idc])];
-    if (givenParent) { /* keep row[idc] */ }
+    // PO.saveNew :3530-3535 - a REPLICA keeps the key it was sent (`if (isReplication() && get_ID() > 0) no = get_ID()`): opts.keepKey, a real (non-placeholder) positive key not yet taken in this Trx
+    var keepRecv = !!(opts && opts.keepKey) && this.keyCols(table).length === 1 && row[idc] != null && !isNewId(row[idc]) && Number(row[idc]) > 0 && !this._p(table)[String(row[idc])];
+    if (givenParent || keepRecv) { /* keep row[idc] */ }
     else if (this.keyCols(table).length === 1) row[idc] = id;
     else { if (row[idc] == null) row[idc] = this.env.uuid ? this.env.uuid() : id; }
     // PO.saveNew omits null columns, so the physical column DEFAULT applies (data: ad_ddl_default, extracted from the
@@ -199,6 +201,7 @@
     function fix(v) { if (isNewId(v)) { var i = Number(v.slice(NEW.length)); return { __opRef: map[i] }; }
       if (typeof v === 'string' && v.indexOf(NEW) > 0) return v.replace(/#new:(\d+)/g, function (m, d) { return map[Number(d)] == null ? m : '{{opref:' + map[Number(d)] + '}}'; });
       return v; }
+    this._opMap = map;                       // Trx op index -> final group index: the observers' key resolution after commit (MV.deliverObserved)
     var tail = [];
     var res = out.map(function (o, oi) {
       var c = JSON.parse(JSON.stringify(o));
@@ -263,20 +266,25 @@
 
   // ══ PO — a record handle (Java PO): pending changes over the live row; save() = PO.save through save() below
   // (beforeSave → validators → saveNew/DocumentNo → afterSave), saveEx throws. A new handle starts from newPO (ctor defaults).
-  function PO(trx, table, row, fields) { this.trx = trx; this.table = String(table).toLowerCase(); this.row = row || null; this.ch = fields ? Object.assign({}, fields) : {}; this.p = {}; }
+  function PO(trx, table, row, fields) { this.trx = trx; this.table = String(table).toLowerCase(); this.row = row || null; this.ch = fields ? Object.assign({}, fields) : {}; this.p = {}; this.m_isReplication = false; }
   PO.prototype.get = function (c) { c = c.toLowerCase(); return Object.prototype.hasOwnProperty.call(this.ch, c) ? this.ch[c] : (this.row ? this.row[c] : null); };
   PO.prototype.set = function (c, v) { this.ch[c.toLowerCase()] = v instanceof BigDecimal ? N(v) : v; return this; };
   PO.prototype.id = function () { return this.row ? this.row[this.trx.idCol(this.table)] : null; };
   PO.prototype.is_new = function () { return !this.row; };
   PO.prototype.values = function () { return Object.assign({}, this.row || {}, this.ch); };
+  // PO.setReplication / isReplication / saveReplica (PO.java:2968-2973, :5810-5821): the flag applies to ONE save (reset after it, :2789), saveReplica = setReplication(true) + saveEx()
+  PO.prototype.setReplication = function (b) { this.m_isReplication = !!b; return this; };
+  PO.prototype.isReplication = function () { return this.m_isReplication; };
+  PO.prototype.saveReplica = function (isFromReplication) { this.m_isReplication = isFromReplication == null ? true : !!isFromReplication; return this.saveEx(); };
   PO.prototype.save = function () {
-    var r = save(this.trx, this.table, this.row, this.ch);
+    var repl = this.m_isReplication; this.m_isReplication = false;
+    var r = save(this.trx, this.table, this.row, this.ch, repl ? { isReplication: true } : null);
     if (!r.ok) { this.trx.say('§MODEL-PO save ' + this.table + ' refused: ' + r.error); this.error = r.error; return false; }
     this.row = r.row; this.ch = {}; return true;
   };
   PO.prototype.saveEx = function () { if (!this.save()) throw new Error('SaveError ' + this.table + ': ' + this.error); return this; };
   PO.prototype.load = function () { if (this.row) this.row = this.trx.get(this.table, this.id()) || this.row; return this; };
-  PO.prototype.deleteEx = function () { var r = remove(this.trx, this.table, this.row); if (!r.ok) throw new Error('DeleteError ' + this.table + ': ' + r.error); };
+  PO.prototype.deleteEx = function () { var repl = this.m_isReplication; this.m_isReplication = false; var r = remove(this.trx, this.table, this.row, repl ? { isReplication: true } : null); if (!r.ok) throw new Error('DeleteError ' + this.table + ': ' + r.error); };
   function po(trx, table, rowOrId) { if (rowOrId == null) return null; var r = typeof rowOrId === 'object' ? rowOrId : trx.get(table, rowOrId); return r ? new PO(trx, table, r) : null; }
   function newRecord(trx, table, fields) { return new PO(trx, table, null, newPO(trx, table, fields || {})); }
 
@@ -307,24 +315,47 @@
     var r = MV.fireHooks(timing, Object.assign({ table: table, record: row }, extra || {}), Object.assign({ trx: trx }, trx.env.ctx || {}));
     return r && !r.ok ? (r.error || ('blocked by ' + r.blocked)) : null;
   }
+  // ── observers (the bus's OBSERVE class, ad_modelval.js): post* events and {observe:true} subscriptions are QUEUED on the Trx (trx._observed) and delivered by the host AFTER the group committed
+  //   (deliverObserved below). A save/remove that fails drops what it queued; a savepoint rollback drops its share; a run() that refuses returns none. Nothing is queued when nobody observes.
+  function obsMark(trx) { return (trx._observed || []).length; }
+  function obsTrunc(trx, n) { if (trx._observed && trx._observed.length > n) trx._observed.length = n; }
+  function postEvent(trx, timing, table, row, old, repl) {                   // PO.java:2799-2804 / :4544 postEvent(PO_POST_CREATE | PO_POST_UPADTE | PO_POST_DELETE)
+    var topic = MV.topicOf ? MV.topicOf(timing) : null;
+    if (!topic || !MV.hasObservers || !MV.hasObservers(table, topic)) return;
+    MV.queueObserve(trx._observed || (trx._observed = []), topic, { table: table, record: row, recordOld: old || null, isReplication: !!repl });
+  }
   // save — PO.save (PO.java saveNew/saveUpdate): beforeSave → validators → write → afterSave → validators.
-  function save(trx, table, row, changes) {
+  // opts.isReplication = PO.saveReplica(true): the AFTER timing is the *_REPLICATION one INSTEAD of afterNew/afterChange (PO.java:2783-2789; the twin's AFTER_SAVE alias is a NEW-or-CHANGE alias so it
+  //   does not fire either), the received key is kept (Trx.insert keepKey, :3530-3535). The BEFORE timings and the model class's beforeSave/afterSave are not replica-gated in legacy.
+  function save(trx, table, row, changes, opts) {
+    var mark = obsMark(trx), r = _save(trx, table, row, changes, opts);
+    if (!r.ok) obsTrunc(trx, mark);
+    return r;
+  }
+  function _save(trx, table, row, changes, opts) {
     table = table.toLowerCase();
+    var repl = !!(opts && opts.isReplication), rx = repl ? { isReplication: true } : null;
     var isNew = row == null, M = MODEL[table] || {}, old = isNew ? null : Object.assign({}, row);
     var rec = isNew ? Object.assign({}, changes) : Object.assign({}, row, changes);
     if (!isNew && !Object.keys(changes || {}).some(function (k) { var a = row[k], b = changes[k]; return !same(a, b) || (a == null) !== (b == null); })) return { ok: true, row: row };   // PO.save :2425 — !newRecord && !is_Changed() → true, no hooks
     if (M.beforeSave) { ev(trx, 'M.beforeSave', table); var e0 = M.beforeSave(trx, rec, isNew, old); if (e0) return { ok: false, error: e0 }; }
-    var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, { recordOld: old }) || fire(trx, 'BEFORE_SAVE', table, rec, { recordOld: old });
+    var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, Object.assign({ recordOld: old }, rx)) || fire(trx, 'BEFORE_SAVE', table, rec, Object.assign({ recordOld: old }, rx));
     if (e1) return { ok: false, error: e1 };
     var live;
-    if (isNew) { saveNewNumbers(trx, table, rec); ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec); }
+    if (isNew) { saveNewNumbers(trx, table, rec); ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }
     else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }
     if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
-    var e3 = fire(trx, isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, live, { recordOld: old }) || fire(trx, 'AFTER_SAVE', table, live, { recordOld: old });
+    var e3 = fire(trx, isNew ? (repl ? 'AFTER_NEW_REPLICATION' : 'AFTER_NEW') : (repl ? 'AFTER_CHANGE_REPLICATION' : 'AFTER_CHANGE'), table, live, Object.assign({ recordOld: old }, rx))
+          || (repl ? null : fire(trx, 'AFTER_SAVE', table, live, { recordOld: old }));
     if (e3) return { ok: false, error: e3 };
+    if (repl) trx.say('§BUS_REPLICA table=' + table + ' ' + (isNew ? 'new' : 'change') + ' fired=' + (isNew ? 'afterNewReplication' : 'afterChangeReplication') + ' (not ' + (isNew ? 'afterNew' : 'afterChange') + ') key=' + live[trx.idCol(table)]);
+    postEvent(trx, isNew ? 'POST_CREATE' : 'POST_UPDATE', table, live, old, repl);
     (trx._saved = trx._saved || {})[table + ':' + live[trx.idCol(table)]] = Object.assign({}, live);   // PO.save resets is_ValueChanged: the next save of the SAME PO diffs from here (runWorkflow §DOC-SAVE)
     return { ok: true, row: live };
   }
+  // saveReplica — PO.saveReplica(true) (PO.java:2968-2973): the save of a row RECEIVED from another station - fires the replica timings, keeps its key. Phase 1 seam: nothing in the host calls it yet.
+  function saveReplica(trx, table, row, changes) { return save(trx, table, row, changes, { isReplication: true }); }
+  function saveReplicaEx(trx, table, row, changes) { var r = saveReplica(trx, table, row, changes); if (!r.ok) throw new Error(r.error || 'SaveError'); return r.row; }
   // PO.saveNew :3563-3605 — a new row's DocumentNo ('<…>' = a preview → empty) from C_DocTypeTarget_ID when the table has that
   // column else C_DocType_ID (MSequence by doctype, may return null), else the table's DocumentNo_<Table> sequence; an empty
   // Value likewise from the table sequence (not for M_AttributeInstance / AD_TableAttribute / AD_SysConfig / T_*).
@@ -355,16 +386,26 @@
       if (rec.value == null || String(rec.value).length === 0) rec.value = _alloc.byTable(trx, tn, rec);
     }
   }
-  function remove(trx, table, row) {
+  function remove(trx, table, row, opts) {
+    var mark = obsMark(trx), r = _remove(trx, table, row, opts);
+    if (!r.ok) obsTrunc(trx, mark);
+    return r;
+  }
+  // PO.delete :4300 - a replica delete fires beforeDeleteReplication INSTEAD OF beforeDelete (there is no afterDeleteReplication: TYPE_AFTER_DELETE fires either way)
+  function _remove(trx, table, row, opts) {
     table = table.toLowerCase();
+    var repl = !!(opts && opts.isReplication), rx = repl ? { isReplication: true } : null;
     var M = MODEL[table] || {};
     if (M.beforeDelete) { ev(trx, 'M.beforeDelete', table); var e0 = M.beforeDelete(trx, row); if (e0) return { ok: false, error: e0 }; }   // PO.delete → beforeDelete (model) before the validators
-    var e1 = fire(trx, 'BEFORE_DELETE', table, row); if (e1) return { ok: false, error: e1 };
+    var e1 = fire(trx, repl ? 'BEFORE_DELETE_REPLICATION' : 'BEFORE_DELETE', table, row, rx); if (e1) return { ok: false, error: e1 };
     ev(trx, 'WRITE_DELETE', table); trx.del(table, row);
     if (M.afterDelete) { ev(trx, 'M.afterDelete', table); var e2 = M.afterDelete(trx, row); if (e2) return { ok: false, error: e2 }; }
-    var e3 = fire(trx, 'AFTER_DELETE', table, row); if (e3) return { ok: false, error: e3 };
+    var e3 = fire(trx, 'AFTER_DELETE', table, row, rx); if (e3) return { ok: false, error: e3 };
+    if (repl) trx.say('§BUS_REPLICA table=' + table + ' delete fired=beforeDeleteReplication (not beforeDelete)');
+    postEvent(trx, 'POST_DELETE', table, row, null, repl);                   // PO.java:4544
     return { ok: true };
   }
+  function removeReplica(trx, table, row) { return remove(trx, table, row, { isReplication: true }); }
 
   // ══ DocAction — the extension point ══════════════════════════════════════════════════════════════════════
   // registerDocAction(table, impl): impl is the DocAction class — { prepareIt, completeIt, approveIt, voidIt, closeIt,
@@ -520,7 +561,7 @@
     var trx = new Trx(query, env), table = String(spec.table || '').toLowerCase(), r;
     try {
       if (spec.timing === 'DOCACTION') r = env && env.noWorkflow ? processIt(trx, table, spec.id, spec.action) : runWorkflow(trx, table, spec.id, spec.action);
-      else if (spec.timing === 'SAVE') r = save(trx, table, spec.id != null ? trx.get(table, spec.id) : null, spec.changes || {});
+      else if (spec.timing === 'SAVE') r = save(trx, table, spec.id != null ? trx.get(table, spec.id) : null, spec.changes || {}, spec.isReplication ? { isReplication: true } : null);
       else if (spec.timing === 'AFTER_SAVE') {
         // the host has ALREADY written the record (its own CRUD op in the same group): make it visible to the Trx
         // without re-emitting it, then run PO.afterSave + the AFTER_NEW|CHANGE validators exactly as save() would.
@@ -533,6 +574,7 @@
         var M = MODEL[table] || {}, e = M.afterSave ? M.afterSave(trx, rec, !!spec.isNew, spec.old || null) : null;
         if (!e) e = fire(trx, spec.isNew ? 'AFTER_NEW' : 'AFTER_CHANGE', table, rec, { recordOld: spec.old || null }) || fire(trx, 'AFTER_SAVE', table, rec, { recordOld: spec.old || null });
         r = { ok: !e, error: e };
+        if (!e) postEvent(trx, spec.isNew ? 'POST_CREATE' : 'POST_UPDATE', table, rec, spec.old || null, false);   // the host row IS saved: its post event rides this group (delivered after the host commits it)
       }
       else if (spec.timing === 'PROCESS') { r = spec.fn(trx, spec); }   // a plugin process run in ONE Trx: its op group is all-or-none and traced by §EVENT_SEQ
       else if (spec.timing === 'BEFORE_SAVE') {   // PO.beforeSave derivations for a record the HOST will write: returns the derived columns, no ops
@@ -548,10 +590,15 @@
       else r = { ok: false, msg: 'unknown timing ' + spec.timing };
     } catch (ex) { r = { ok: false, msg: 'model threw: ' + (ex && ex.message) }; trx.say('§MODEL-ERR ' + (ex && ex.stack || ex)); }
     var ops = r && r.ok !== false ? trx.groupOps() : [];
-    return Object.assign({ ok: r.ok !== false, ops: ops, log: trx.log, trx: trx }, r, { ops: ops });
+    var observed = r && r.ok !== false ? (trx._observed || []) : [];         // a refused group queues nothing for delivery (W-BUS-OBSERVE rollback)
+    observed.opMap = r && r.ok !== false ? trx._opMap || null : null;
+    return Object.assign({ ok: r.ok !== false, ops: ops, log: trx.log, trx: trx }, r, { ops: ops, observed: observed });
   }
+  // deliverObserved(runResult | bag, ctx, resolve) - the host calls this AFTER the group's commitGroup succeeded (never before, never for a group that did not commit): the post* events and the
+  //   {observe:true} subscriptions of every save/delete in the group, once. resolve(finalOpIndex, table) -> the committed key of a row created in the group (omit: placeholders stay, info.unresolved).
+  function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });
