@@ -94,8 +94,15 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
   verdict('X0', !a0.err && !b0.err && a0.acts.length > 0 && a0.rec === b0.rec && a0.acts.join() === b0.acts.join(), 'CONTROL before any map: both see the same order and the same Document Action list', 'A ' + a0.rec + ' [' + a0.acts + '] / B ' + b0.rec + ' [' + b0.acts + ']' + (a0.err || b0.err ? ' ' + (a0.err || b0.err) : ''));
 
   if (!QUIET) console.log('§S2 the owner-signed executor map {c_order: 102}, published by the admin device');
-  var stmt = await signObj({ kind: 'executors', map: { c_order: 102 }, prev: sha(canon({})) }, owner);
-  var ph = await T.policy(A, { epoch: 1, executors: stmt }); await T.visit(A); await T.visit(B);
+  // the owner's real path (§38.10, G-8): the statement is built and signed OFFLINE by the compiler's CLI, then published from the admin's app with TeamSync.publishStatement
+  var KD = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-key-')), SIGNJS = process.env.WX_SIGN_PLAN || path.join(os.homedir(), 'bim-compiler', 'build', 'scriptor', 'sign_plan.js');
+  fs.writeFileSync(path.join(KD, 'priv.jwk'), JSON.stringify(await subtle.exportKey('jwk', owner.priv))); fs.writeFileSync(path.join(KD, 'pub.jwk'), JSON.stringify(owner.pub)); fs.writeFileSync(path.join(KD, 'map.json'), JSON.stringify({ c_order: 102 }));
+  var cl = require('child_process').spawnSync(process.execPath, [SIGNJS, 'stmt', 'executors', path.join(KD, 'map.json'), 'none', path.join(KD, 'priv.jwk'), path.join(KD, 'pub.jwk'), path.join(KD, 'exe.json')], { encoding: 'utf8' });
+  var stmt = fs.existsSync(path.join(KD, 'exe.json')) ? JSON.parse(fs.readFileSync(path.join(KD, 'exe.json'), 'utf8')) : null; fs.rmSync(KD, { recursive: true, force: true });
+  if (!QUIET) console.log('   §WX_CLI ' + String(cl.stdout || cl.stderr).trim());
+  var pub = stmt ? await A.pg.evaluate(function (st) { return window.TeamSync.publishStatement(st); }, stmt) : { ok: false, reason: 'cli wrote nothing' };
+  verdict('X1', pub.ok === true, 'the CLI-signed statement published from the admin app (TeamSync.publishStatement) answers ok on the publishing device', JSON.stringify(pub));
+  var ph = pub.hash; await T.visit(A); await T.visit(B);
   var vA = await T.verdict(A, ph), vB = await T.verdict(B, ph);
   verdict('X1', /^MERGED/.test(vA) && /^MERGED/.test(vB), 'the POLICY carrying the map is MERGED on both devices', 'A=' + vA + ' B=' + vB);
   var a1 = await T.offered(A), b1 = await T.offered(B);

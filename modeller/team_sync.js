@@ -447,7 +447,10 @@
     if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
   }
 
-  global.TeamSyncModeller = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; }, scan: scan, visit: visit, ready: ready, settle: function () { return chain; }, store: function () { return S; }, render: render,
+  global.TeamSyncModeller = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
+                      // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
+                      publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
+                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, scan: scan, visit: visit, ready: ready, settle: function () { return chain; }, store: function () { return S; }, render: render,
                               classes: function () { return JSON.parse(JSON.stringify(CLASS)); }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, sent: function () { return sent; }, localOnly: function () { return localOnly; }, encV: encV, decV: decV,
                               peopleView: PEOPLE_API.peopleView, refreshPeople: refreshPeople, history: history, setHide: setHide, focusOwn: function () { return focusOwn.slice(); }, updateFocus: updateFocus,
                               found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
