@@ -68,12 +68,20 @@
 
   // array of primitives -> comma text; remember if it was all-numeric so the
   // round-trip restores numbers (not strings). KNOWN LIMIT: mixed/object arrays.
+  // A value the comma list cannot hold exactly (objects, lists of lists, a text with a comma, mixed kinds) is shown as JSON text and parsed
+  // back on save; text that does not parse keeps the last good value (reported), so an edit never writes "[object Object]" into a file.
+  function jsonField(key, value, overrides, rowId) {
+    return applyOverride({ key: key, type: 'text', value: JSON.stringify(value), _json: true, _orig: value }, overrides, rowId);
+  }
   function listField(key, arr, overrides, rowId) {
+    var simple = arr.every(function(x) { return typeof x === 'number'; }) || arr.every(function(x) { return typeof x === 'string' && x.indexOf(',') < 0 && x.trim() === x && x.length; });
+    if (!simple) return jsonField(key, arr, overrides, rowId);
     return applyOverride({ key: key, type: 'text', value: arr.join(', '),
       _list: true, _listNumeric: arr.every(function(x) { return typeof x === 'number'; }) },
       overrides, rowId);
   }
   function scalarField(key, value, overrides, rowId) {
+    if (value !== null && typeof value === 'object') return jsonField(key, value, overrides, rowId);
     return applyOverride({ key: key, type: inferType(value), value: value }, overrides, rowId);
   }
 
@@ -168,6 +176,10 @@
 
   // ── REBUILD JSON from live schema (current values + current row order) ───────
   function coerce(field) {
+    if (field._json) {
+      try { return JSON.parse(field.value); }
+      catch (e) { console.warn('§PROPSHEET_JSON_BAD key=' + field.key + ' (' + e.message + '): the last good value is kept'); return field._orig; }
+    }
     if (field._list) {
       var parts = String(field.value).split(',').map(function(s) { return s.trim(); })
         .filter(function(s) { return s.length; });

@@ -706,12 +706,24 @@ function calcEquipment(ifcClass, laborDays) {
  * @param {string} templateName - e.g. 'cidb2024_my'
  * @returns {Promise<boolean>} true if loaded, false if fell back to hardcoded
  */
+// A user's own copy of a pack (Settings ▸ Edit Project JSON ▸ 5D Rate Pack, saved per pack under json_rates_<name>) is merged over the
+// shipped pack: objects key by key, a value or a list replaced whole. A copy that cannot be read is reported and the shipped pack kept.
+function _mergeRateOverride(base, over) {
+  if (!over || typeof over !== 'object' || Array.isArray(over) || !base || typeof base !== 'object' || Array.isArray(base)) return over;
+  var out = {}; Object.keys(base).forEach(function(k) { out[k] = base[k]; });
+  Object.keys(over).forEach(function(k) { out[k] = (k in base) ? _mergeRateOverride(base[k], over[k]) : over[k]; });
+  return out;
+}
 function loadRateTemplate(templateName) {
   var url = 'rates/' + templateName + '.json';
   return fetch(url).then(function(resp) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     return resp.json();
   }).then(function(tpl) {
+    try {
+      var ov = localStorage.getItem('json_rates_' + templateName);
+      if (ov) { tpl = _mergeRateOverride(tpl, JSON.parse(ov)); console.log('§RATE_OVERRIDE pack=' + templateName + ' applied=1 keys=' + Object.keys(JSON.parse(ov)).join(',')); }
+    } catch (e) { console.warn('§RATE_OVERRIDE pack=' + templateName + ' applied=0 unreadable (' + e.message + '): the shipped pack is used'); }
     // Apply materials → RATES (merge: JSON wins, keep hardcoded keys not in JSON)
     if (tpl.materials && Object.keys(tpl.materials).length > 0) {
       for (var cls in tpl.materials) {
