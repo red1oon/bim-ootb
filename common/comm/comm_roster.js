@@ -102,7 +102,8 @@
     if (p.manifest !== undefined && typeof p.manifest !== 'string') return 'manifest';
     if (p.number_prefix !== undefined && typeof p.number_prefix !== 'string') return 'number_prefix';
     if (p.upcasters !== undefined) { if (!Array.isArray(p.upcasters) || p.upcasters.length > 16 || p.upcasters.some(function (u) { return !u || typeof u !== 'object' || u.kind !== 'upcasters' || typeof u.op !== 'string' || !Array.isArray(u.steps) || !u.steps.length || u.steps.length > 32 || !u.signer || typeof u.signer !== 'object' || typeof u.sig !== 'string'; })) return 'upcasters'; }   // §16.35: signed mapping sets an admin publishes; the engine checks the SHAPE only — signature and vocabulary are the host registry's (OpVersions.loadSet)
-    if (p.planTrust !== undefined && planTrustStmtProblem(p.planTrust)) return 'planTrust';      // §35: an owner-signed rotation statement; who signed it is judged in the fold
+    if (p.planTrust !== undefined && planTrustStmtProblem(p.planTrust)) return 'planTrust';
+    if (p.executors !== undefined && executorsStmtProblem(p.executors)) return 'executors';      // FL-8 E3: who runs the DocAction per table, owner-signed      // §35: an owner-signed rotation statement; who signed it is judged in the fold
     if (p.min_v !== undefined) { if (!p.min_v || typeof p.min_v !== 'object' || Array.isArray(p.min_v) || Object.keys(p.min_v).some(function (k) { return !pint(p.min_v[k], 1); })) return 'min_v'; }       // §16.31: the lowest shape version still accepted, per op type
     return null;
   }
@@ -144,6 +145,18 @@
     return null;
   }
   async function planTrustHash(list) { return _sha(ENV.canonical(planTrustOf(list))); }
+  // FL-8 E3 (§38.3): {kind:'executors', map:{<table>: <AD_Role_ID> | 'author'}, prev, signer, sig} — the ONE DocAction executor per table, same two-key chained scheme as plan-trust
+  function executorsStmtProblem(st) {
+    if (!st || typeof st !== 'object' || Array.isArray(st) || st.kind !== 'executors') return 'kind';
+    if (Object.keys(st).some(function (x) { return x !== 'kind' && x !== 'map' && x !== 'prev' && x !== 'signer' && x !== 'sig'; })) return 'extra field';
+    var m = st.map; if (!m || typeof m !== 'object' || Array.isArray(m) || Object.keys(m).length > 200) return 'map';
+    if (Object.keys(m).some(function (t) { return !/^[a-z][a-z0-9_]*$/.test(t) || !(m[t] === 'author' || (Number.isInteger(m[t]) && m[t] >= 0)); })) return 'map';
+    if (planTrustProblem([st.signer])) return 'signer';
+    if (!HEX64.test(String(st.prev || ''))) return 'prev';
+    if (typeof st.sig !== 'string' || !/^([0-9a-f]{2})+$/.test(st.sig)) return 'sig';
+    return null;
+  }
+  async function executorsHash(map) { return _sha(ENV.canonical(map || {})); }
   function baseOf(b) { if (baseProblem(b)) return null; var o = { name: b.name, sha256: b.sha256 }; if (b.bytes !== undefined) o.bytes = b.bytes; if (b.version !== undefined) o.version = b.version; return o; }
 
   // the records an op creates or changes (GENESIS makes three: the space, the founder's device and person)
@@ -197,9 +210,14 @@
       var mq = 'pt|' + ident[q].hash; if (SIGMEMO[mq] == null) SIGMEMO[mq] = await ENV.verify({ kind: st.kind, keys: st.keys, prev: st.prev, sig: st.sig }, planTrustOf([st.signer])[0]);
       ptSig[ident[q].hash] = SIGMEMO[mq]; var nl = planTrustOf(st.keys); ptHash[ENV.canonical(nl)] = await planTrustHash(nl); }
     function sameKey(a, b) { return a.kty === b.kty && a.crv === b.crv && a.x === b.x && a.y === b.y; }
+    var exSig = {}, exHash = {}; exHash[ENV.canonical({})] = await executorsHash({});
+    for (var q2 = 0; q2 < ident.length; q2++) { var eq2 = ident[q2].env, st2 = eq2.body.op_type === 'POLICY' && eq2.body.params ? eq2.body.params.executors : undefined;
+      if (st2 === undefined || executorsStmtProblem(st2)) continue;
+      var mq2 = 'ex|' + ident[q2].hash; if (SIGMEMO[mq2] == null) SIGMEMO[mq2] = await ENV.verify({ kind: st2.kind, map: st2.map, prev: st2.prev, sig: st2.sig }, planTrustOf([st2.signer])[0]);
+      exSig[ident[q2].hash] = SIGMEMO[mq2]; exHash[ENV.canonical(st2.map)] = await executorsHash(st2.map); }
 
     function walk(cut) {
-      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0;
+      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0;
       L.order.forEach(function (h) {
         var e = byHash[h], p = e.body.params || {}, t = e.body.op_type;
         if (h === gen.hash) {
@@ -262,7 +280,16 @@
             if (!ptSig[h]) return no('plan-trust-signature');
             rot = planTrustOf(p.planTrust.keys);
           }
-          if (rot) { trust = rot; trustStmt = ENV.canonical(p.planTrust); trustEpoch = p.epoch; }   // applied only now: every other check of this POLICY has passed
+          var rotE = null;
+          if (p.executors !== undefined && ENV.canonical(p.executors) !== exeStmt) {        // FL-8 E3: judged against the trust list in force BEFORE this POLICY
+            if (!trust) return no('executors-unpinned');
+            if (p.executors.prev !== exHash[ENV.canonical(exe || {})]) return no('executors-stale');
+            if (!trust.some(function (k) { return sameKey(k, p.executors.signer); })) return no('executors-untrusted-signer');
+            if (!exSig[h]) return no('executors-signature');
+            rotE = JSON.parse(JSON.stringify(p.executors.map));
+          }
+          if (rot) { trust = rot; trustStmt = ENV.canonical(p.planTrust); trustEpoch = p.epoch; }
+          if (rotE) { exe = rotE; exeStmt = ENV.canonical(p.executors); exeEpoch = p.epoch; }   // applied only now: every other check of this POLICY has passed
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
         } else if (t === 'CHECKPOINT') {     // §13.12.3: any enrolled device may publish; a second op for the same state is a co-signature
           var cb = ckptProblem(p); if (cb) return no('bad-checkpoint:' + cb);
@@ -274,19 +301,19 @@
         } else if (t === 'GENESIS') return no('second-genesis');
         v[h] = { verdict: 'MERGED', reason: t.toLowerCase() };
       });
-      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch };
+      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch };
     }
     var cut = {}, w = null, walks = 0, stable = false;
     while (walks < 5) { walks++; w = walk(cut); if (JSON.stringify(w.rev) === JSON.stringify(cut)) { stable = true; break; } cut = w.rev; }
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), planTrust: w.trust, planTrustEpoch: w.trustEpoch, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
   var API = { IDENTITY: IDENTITY, fold: fold, kidOf: kidOf, devUU: devUU, spaceUU: spaceUU, epochUU: epochUU, policyUU: policyUU, spaceOf: spaceOf, touched: touched, dhOf: dhOf,
-              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem, planTrustProblem: planTrustProblem, planTrustOf: planTrustOf, planTrustStmtProblem: planTrustStmtProblem, planTrustHash: planTrustHash };
+              staggerOffset: staggerOffset, policyProblem: policyProblem, ckptUU: ckptUU, claimUU: claimUU, ckptProblem: ckptProblem, stableAgainst: stableAgainst, baseProblem: baseProblem, planTrustProblem: planTrustProblem, planTrustOf: planTrustOf, planTrustStmtProblem: planTrustStmtProblem, planTrustHash: planTrustHash, executorsStmtProblem: executorsStmtProblem, executorsHash: executorsHash };
   global.CommRoster = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);
