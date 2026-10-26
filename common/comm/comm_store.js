@@ -574,7 +574,7 @@
     }
     // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
     async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
-      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null }; }
+      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null, setTrust: L.roster.setTrust || {} }; }
     // §13.12.I.1: the base this space sits on, as folded from the trusted genesis: {name, sha256, bytes?, version?} | null (no genesis seen yet, or a space without base —
     // tell them apart with (await order()).roster.ok)
     async function planTrust() { var R = (await cur()).roster; return R.ok && R.planTrust ? R.planTrust : null; }   // §33: the pinned plan trust list, or null

@@ -217,7 +217,7 @@
       exSig[ident[q2].hash] = SIGMEMO[mq2]; exHash[ENV.canonical(st2.map)] = await executorsHash(st2.map); }
 
     function walk(cut) {
-      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0;
+      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, setTrust = {};
       L.order.forEach(function (h) {
         var e = byHash[h], p = e.body.params || {}, t = e.body.op_type;
         if (h === gen.hash) {
@@ -288,9 +288,12 @@
             if (!exSig[h]) return no('executors-signature');
             rotE = JSON.parse(JSON.stringify(p.executors.map));
           }
+          var trustAt = trust;                                                          // §38.11 (G-7): the list this POLICY arrived under (before its own rotation)
           if (rot) { trust = rot; trustStmt = ENV.canonical(p.planTrust); trustEpoch = p.epoch; }
           if (rotE) { exe = rotE; exeStmt = ENV.canonical(p.executors); exeEpoch = p.epoch; }   // applied only now: every other check of this POLICY has passed
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
+          // §38.11 (G-7): each upcaster set is judged by the hosts against the list in force when the POLICY that FIRST carried it arrived — never the list of today
+          /*G7:RECORD*/ (Array.isArray(p.upcasters) ? p.upcasters : []).forEach(function (u) { var ck7 = ENV.canonical(u); if (setTrust[ck7] === undefined) setTrust[ck7] = trustAt ? JSON.parse(JSON.stringify(trustAt)) : null; });
         } else if (t === 'CHECKPOINT') {     // §13.12.3: any enrolled device may publish; a second op for the same state is a co-signature
           var cb = ckptProblem(p); if (cb) return no('bad-checkpoint:' + cb);
           var prior = ck[p.state_hash];
@@ -301,14 +304,14 @@
         } else if (t === 'GENESIS') return no('second-genesis');
         v[h] = { verdict: 'MERGED', reason: t.toLowerCase() };
       });
-      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch };
+      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch, setTrust: setTrust };
     }
     var cut = {}, w = null, walks = 0, stable = false;
     while (walks < 5) { walks++; w = walk(cut); if (JSON.stringify(w.rev) === JSON.stringify(cut)) { stable = true; break; } cut = w.rev; }
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, setTrust: w.setTrust, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
