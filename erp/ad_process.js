@@ -858,7 +858,7 @@
       (jr.log || []).forEach(function (l) { if (typeof console !== 'undefined') console.log(l); });
       return { ad_process_id: proc.AD_Process_ID, name: proc.name, classname: classname, kind: 'java', dispatched: true,
         ok: !!jr.ok, reason: jr.ok ? 'ok' : 'process-error', validate: validate, rows: (jr.ops || []).length, message: jr.summary,
-        result: { commitOps: jr.ops || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError } };
+        result: { commitOps: jr.ops || [], observed: jr.observed || [], logs: jr.logs || [], summary: jr.summary, isError: !!jr.isError } };
     }
     // Core.getProcess(className) == null branch (ProcessUtil:166-170): explicit absent-handler, NOT a no-op.
     if (!classname || !hasHandler(classname)) {
@@ -1167,7 +1167,9 @@
     var proc = new C();
     var ok = proc.startProcess(ctx, pi, trx);
     var ops = ok ? trx.groupOps() : [];
-    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, log: trx.log, trx: trx };
+    var observed = (ok && !pi.isError) ? (trx._observed || []) : [];                   // the process's saves' post* events: delivered by the host after the group commits (a refused process delivers none)
+    observed.opMap = (ok && !pi.isError) ? trx._opMap || null : null;
+    return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, observed: observed, log: trx.log, trx: trx };
   }
 
   // ── §UDP-2 SAVED PARAMETERS / LAST RUN — AD_PInstance + AD_PInstance_Para (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2) ──
