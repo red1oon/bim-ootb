@@ -2282,6 +2282,8 @@ function setupPanels(A) {
     // overrides refine auto-inferred field types per file. manifest.json is
     // EXCLUDED (254KB machine-generated AD compile \u2014 not hand-editable).
     // schedule = source:'db' READ-ONLY (Phase 1): projects the captured 4D for viewing.
+    // the pack rates.js loaded (RATE_TEMPLATE_NAME); its built-in fallback has no file, so the default pack is named instead
+    function _activePack() { var n = window.RATE_TEMPLATE_NAME; return n && !/^hardcoded/.test(n) ? n : 'cidb2024_my'; }
     var _jsonRegistry = [
       { id: 'corporate',   label: 'Corporate / Branding', url: 'corporate.json',   storageKey: 'json_corporate' },
       { id: 'grid_rules',  label: 'Grid Rules',           url: 'grid_rules.json',  storageKey: 'json_grid_rules' },
@@ -2291,6 +2293,12 @@ function setupPanels(A) {
       { id: 'initbubble',  label: 'ERP Globe Bubbles',    url: 'initbubble.json',  storageKey: 'json_initbubble',
         overrides: { color: { type: 'color' } } },
       { id: 'sfx',         label: 'Sound Effects',        url: 'sfx.json',         storageKey: 'json_sfx' },
+      // 4D / 5D references a user edits to their own (the loaders read these keys: rates.js loadRateTemplate json_rates_<pack>,
+      // tm_sched_xray.js json_4d_template, rates.js loadSequenceRules json_sequence_rules). The rate pack entry follows the active pack.
+      { get id() { return 'rates_' + _activePack(); }, get label() { return '5D Rate Pack (' + _activePack() + ')'; },
+        get url() { return 'rates/' + _activePack() + '.json'; }, get storageKey() { return 'json_rates_' + _activePack(); } },
+      { id: '4d_template', label: '4D Schedule Template (phases, durations)', url: 'rates/4D_template.json', storageKey: 'json_4d_template' },
+      { id: 'sequence_rules', label: '4D Sequence & Labour Rules', url: 'rates/sequence_rules.json', storageKey: 'json_sequence_rules' },
       { id: 'schedule',    label: '4D Schedule (this building)', source: 'db', storageKey: 'json_schedule',
         readonly: true, project: _projectSchedule,
         // compact read-only view: phase name as row label + one "start · Nwk · elements" line
@@ -2383,7 +2391,7 @@ function setupPanels(A) {
               e.stopPropagation();
               var blob = new Blob([JSON.stringify(editor.getState(), null, 2)], { type: 'application/json' });
               var a = document.createElement('a');
-              a.href = URL.createObjectURL(blob); a.download = entry.url;
+              a.href = URL.createObjectURL(blob); a.download = entry.url.split('/').pop();
               a.click(); URL.revokeObjectURL(a.href);
               console.log('§JSON_DOWNLOAD ' + entry.url);
             });
