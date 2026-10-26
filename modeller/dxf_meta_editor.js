@@ -61,7 +61,7 @@
   function prNote(si, p) { return S.ev === evId(si, p) && S.evNote ? '<div class="dm-evnote">' + esc(S.evNote) + '</div>' : ''; }
   var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { grpOpen: {}, sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], wsched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -566,6 +566,7 @@
       '.dm-btn{display:inline-flex;align-items:center;gap:6px;background:#13151a;border:1px solid #2c303a;border-radius:8px;color:#c7cdd8;padding:5px 9px;cursor:pointer;font:inherit;font-size:11px}',
       '.dm-btn:hover{background:#1b1f27}.dm-btn.on{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn.primary{background:#23364a;border-color:#3a6ea5;color:#cfe3f6}.dm-btn:disabled{opacity:.45;cursor:not-allowed}',
       '.dm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}',
+      '.dm-grp{display:flex;align-items:center;gap:6px;padding:4px 4px;border:1px solid #b89f06;background:rgba(245,217,10,.10);border-radius:6px;margin:4px 0 2px;font-size:10.5px}.dm-grp.inf{border-color:#c2560a;background:rgba(255,122,26,.10)}.dm-grp.bad{border-color:#c24a4a;background:rgba(194,74,74,.14)}.dm-grp .t{flex:1;min-width:0}.dm-grp .t .w{display:block;color:#9aa3b2;font-size:9.5px;font-family:ui-monospace,monospace;overflow-wrap:anywhere}.dm-grpb{padding-left:14px}.dm-ycount{font-size:10px;color:#9aa3b2;margin:2px 0}',
       '.dm-lay{display:flex;align-items:center;gap:6px;padding:3px 4px}.dm-lay-sub{padding-left:22px;background:rgba(255,255,255,.03)}.dm-lay .nm{flex:1;font-family:ui-monospace,monospace;font-size:10.5px;overflow:hidden;text-overflow:ellipsis}.dm-lay .n{color:#5b6473;font-size:9.5px;width:28px;text-align:right}',
       '.dm-tt{font-size:9.5px;border:1px solid #2c303a;border-radius:6px;padding:1px 6px;color:#9aa3b2}',
       '.dm-shape{display:grid;grid-template-columns:1fr 46px 46px;gap:2px 6px;font-size:11px;margin:2px 0 6px}.dm-shape .h{font-size:9px;color:#5b6473;letter-spacing:.08em;text-transform:uppercase}.dm-shape .b{color:#f2a3a3;text-align:right;font-family:ui-monospace,monospace}.dm-shape .a{color:#f0c674;text-align:right;font-family:ui-monospace,monospace}.dm-shape .z{color:#5b6473}',
@@ -805,15 +806,18 @@
   // §L7.2 ONE place that repeats every yellow item (suggestions per sheet, door suggestions, applied defaults); each row has its own tick, "Accept all" takes the lot.
   // Nothing here gates Convert: ignoring it (and the shiver) keeps the defaults and the DB can be saved for a trial.
   function renderYellows() {
-    var items = [], DP = doorProposals(), n = { stated: 0, read: 0, inferred: 0 }, src = { sug: 0, door: 0, def: 0 }; S.dprops = DP.list;
+    var items = [], meta = [], DP = doorProposals(), n = { stated: 0, read: 0, inferred: 0 }, src = { sug: 0, door: 0, def: 0 }; S.dprops = DP.list;
     S.sheets.forEach(function (sh, si) { sh.prop = proposalsFor(sh); sh.prop.list.forEach(function (p, pi) { n[tierOf(p.rule) || 'inferred']++; src.sug++;
+      meta.push({ g: p.rule, t: tierOf(p.rule) || 'inferred', si: si, key: p.key, value: String(p.value), x: p.x || 0, y: p.y || 0, ev: evId(si, p) });
       items.push(prOpen(si, p) + '<span class="t"><b>@' + p.key + '=' + esc(p.value) + '</b><span class="w">' + esc(sh.name.replace(/\.dxf$/i, '') + ' · ' + p.rule + ': ' + p.why) + '</span></span>' + prTail(si, p) +
         '<button class="dm-ib" title="Confirm" data-act="confirm" data-sheet="' + si + '" data-pi="' + pi + '">' + IC.check + '</button></div>' + prNote(si, p)); }); });
     DP.list.forEach(function (p, i) { var t = tierOf(p.rule) || 'inferred', si = S.sheets.map(function (q) { return q.name; }).indexOf(p.sheet); n[t]++; src.door++;   // §L4.3 the door rules: the drawing's text
       var row = { rule: p.rule, key: p.rule === 'PR-SCHEDULE' ? 'SCHEDULE' : 'TAG', value: p.mark + (p.handle ? '@' + p.handle : p.doors ? '@' + p.doors.length + 'doors' : p.wins ? '@' + p.wins.length + 'windows' : ''), x: 0, y: 0, why: p.why };
+      meta.push({ g: p.rule, t: t, si: si, key: row.key, value: row.value, x: 0, y: 0, ev: si >= 0 ? evId(si, row) : null });
       items.push((si >= 0 ? prOpen(si, row) : '<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="' + esc(p.rule) + '">') + '<span class="t"><b>' + esc(p.rule === 'PR-SCHEDULE' ? '@SCHEDULE=' + p.mark + ',door,' + p.w + ',' + p.h : p.rule === 'PR-TAG-WIDTH' ? '@TAG=' + p.mark + ' on ' + (p.cls === 'window' ? p.wins.length + ' windows' : p.doors.length + ' doors') : '@TAG=' + p.mark) + '</b><span class="w">' + esc(p.rule) + '</span></span>' + (si >= 0 ? prTail(si, row) : tierMark(t)) +
       '<button class="dm-ib" title="Confirm" data-act="dconfirm" data-i="' + i + '">' + IC.check + '</button></div>' + (si >= 0 ? prNote(si, row) : '')); });
     defRows().filter(function (r) { return r.kind === 'default'; }).forEach(function (r) { var t = TIER['default']; n[t]++; src.def++;   // an applied default: a convention (no sheet entity to fly to)
+      meta.push({ g: 'default', t: t, si: -1, key: r.key, value: String(r.value), x: 0, y: 0, ev: null });
       items.push('<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="default"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' + tierMark(t) +
       '<button class="dm-ib" title="Keep this value" data-act="defkeep" data-key="' + esc(r.key) + '">' + IC.check + '</button></div>'); });
     var sig = n.stated + '/' + n.read + '/' + n.inferred + '/' + src.sug + '/' + src.door + '/' + src.def;   // §D36 the tier counts of the list, logged when they change
@@ -824,7 +828,53 @@
     var btns = both ? '<div class="dm-row" style="margin-top:6px"><button class="dm-btn primary" data-act="acceptsr" title="Accept every row the file states or a text names (the inferred rows stay)">' + IC.check + '<span>Accept stated + read</span></button>' +
       '<button class="dm-btn inf" data-act="acceptinf" title="Accept every inferred row (geometry or a convention): check them first, a click on a row shows its evidence">' + IC.check + '<span>Accept inferred</span></button></div>'
       : '<button class="dm-btn primary" data-act="acceptall" style="margin-top:6px">' + IC.check + '<span>Accept all</span></button>';
-    return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows"><div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel; orange rows are inferred (geometry or a convention). Click a row to see its evidence on the sheet. Accept them, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>' + items.join('') + btns + '</div>' : '');
+    var ref = '<div class="dm-ref" style="margin:2px 0 6px">Everything below is yellow elsewhere in this panel; orange rows are inferred (geometry or a convention). Click a row to see its evidence on the sheet. Accept them, tick one by one, or ignore: the defaults stay applied and Convert is not held up by them.</div>';
+    if (window.__dmNoGroup) return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows">' + ref + items.join('') + btns + '</div>' : '');   // §D81 YG3 falsifier: the flat list of before
+    items = items.map(function (h, i) { var m = meta[i]; m.yid = m.ev || (m.g + '|' + m.key + '|' + m.value); return '<div class="dm-yr" data-yid="' + esc(m.yid) + '" data-yord="' + i + '" style="display:contents">' + h + '</div>'; });   // §D81 a row's id + its place in the flat list (Accept all keeps that order)
+    var G = yellowGroups(meta, items);   // §D81 Y1 one group per rule, Y2 set-wide values, the grid's measurement in its header
+    var head = '<div class="dm-ycount" data-ycount="' + items.length + '">' + items.length + ' yellow in ' + G.order.length + ' group' + (G.order.length === 1 ? '' : 's') + '</div>' + btns;   // §D81 Y3 the count and the accept buttons above the groups
+    return secHead('yellows', IC.warn, 'All defaults', items.length + ' yellow', items.length) + (S.sec.yellows ? '<div class="dm-sb" id="dm-yellows">' + ref + head + G.order.map(function (k) { return yellowGroupHtml(k, G.rows[k], G.why[k]); }).join('') + '</div>' : '');
+  }
+  // §D81 (prompts/DXF2BIM_FOUNDATION_LANE.md): the rows grouped by the rule that proposed them, in the order they first appear. A set-wide key (UNITS, SET, ROOF) names its one value when all rows agree;
+  // a row with another value than the most common one is its own open group (`<rule>!`, marked disagrees) that the group tick does not take. Rows stay in the page (hidden while closed): every control works on them.
+  var GROUP_NAME = { 'PR-GRID': 'Grid lines', 'PR-GRID-TICK': 'Grid lines from dimension ticks', 'PR-Z': 'Level datums', 'PR-Z-GROUND': 'Ground line (z 0)', 'PR-UNITS': 'Units', 'PR-VIEW': 'Sheet roles', 'PR-NAME': 'Sheet names',
+    'PR-SET': 'Set name', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
+    'PR-CUT-TITLE': 'Section cut from the title', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
+  var SET_WIDE = { UNITS: 1, SET: 1, ROOF: 1 };
+  function firstInOrder(sel) {   // §D81 the button of the row that comes first in the flat list (grouping changes the page order, not the order the markings are written in)
+    var best = null, bo = Infinity; Array.prototype.forEach.call(S.panel.querySelectorAll(sel), function (b) { var r = b.closest('[data-yord]'), o = r ? Number(r.getAttribute('data-yord')) : -1; if (o < bo) { bo = o; best = b; } }); return best; }
+  function yellowGroups(meta, items) {
+    var rows = {}, order = [], why = {};
+    var add = function (k, i) { if (!rows[k]) { rows[k] = []; order.push(k); } rows[k].push({ m: meta[i], html: items[i] }); };
+    var byRule = {}; meta.forEach(function (m, i) { (byRule[m.g] = byRule[m.g] || []).push(i); });
+    Object.keys(byRule).forEach(function (g) { var ix = byRule[g], sw = ix.every(function (i) { return SET_WIDE[meta[i].key]; }), cnt = {}, mode = null;
+      var vs = []; if (sw) { ix.forEach(function (i) { cnt[meta[i].value] = (cnt[meta[i].value] || 0) + 1; }); vs = Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a] || (a < b ? -1 : 1); }); mode = vs[0]; }
+      var tie = vs.length > 1 && cnt[vs[0]] === cnt[vs[1]];   // no majority: every row is its own decision
+      ix.forEach(function (i) { add(sw && (tie || meta[i].value !== mode) ? g + '!' : g, i); });
+      if (sw && !tie) why[g] = '@' + meta[ix[0]].key + '=' + mode + (cnt[mode] === ix.length ? ' on all ' : ' on ') + cnt[mode] + ' sheet' + (cnt[mode] === 1 ? '' : 's');
+      if (sw && rows[g + '!']) why[g + '!'] = tie ? 'values differ between sheets (' + vs.map(function (v) { return v + ' x' + cnt[v]; }).join(', ') + '): tick each row' : 'disagrees with the other sheets (' + mode + '): not taken by the group tick'; });
+    order.sort(function (a, b) { return Math.min.apply(null, rows[a].map(function (r) { return meta.indexOf(r.m); })) - Math.min.apply(null, rows[b].map(function (r) { return meta.indexOf(r.m); })); });
+    order.forEach(function (k) { if (!why[k] && /^GRID[XYH]$/.test(rows[k][0].m.key)) why[k] = gridMeasure(rows[k].map(function (r) { return r.m; })); });
+    return { order: order, rows: rows, why: why };
+  }
+  // §D81 the grid is a measurement: per key the label range (in drawing order) and the distinct bays (sorted coordinate differences per sheet, drawing units, to 0.5), up to 4 values else min-max
+  function gridMeasure(ms) {
+    var keys = {}; ms.forEach(function (m) { var k = keys[m.key] = keys[m.key] || {}; (k[m.si] = k[m.si] || []).push({ c: m.key === 'GRIDY' ? m.y : m.x, l: m.value }); });
+    return Object.keys(keys).sort().map(function (key) { var bays = {}, first = null;
+      Object.keys(keys[key]).forEach(function (si) { var L = keys[key][si].sort(function (a, b) { return a.c - b.c; }); if (!first) first = L;
+        for (var i = 1; i < L.length; i++) bays[Math.round((L[i].c - L[i - 1].c) * 2) / 2] = 1; });
+      var B = Object.keys(bays).map(Number).sort(function (a, b) { return a - b; });
+      return key + ' ' + first[0].l + '–' + first[first.length - 1].l + ' (' + first.length + '): bays ' + (!B.length ? 'none' : B.length <= 4 ? B.join(' / ') : B[0] + '–' + B[B.length - 1] + ' (' + B.length + ' sizes)'); }).join(' · ') + ' (drawing units)';
+  }
+  function yellowGroupHtml(k, rows, why) {
+    var bad = /!$/.test(k), rule = k.replace(/!$/, ''), sheets = {}; rows.forEach(function (r) { if (r.m.si >= 0) sheets[r.m.si] = 1; });
+    if (rows.length === 1 && !bad && !why) return rows[0].html;
+    var open = bad || S.grpOpen[k] || rows.some(function (r) { return r.m.ev && r.m.ev === S.ev; }), ns = Object.keys(sheets).length, t = rows[0].m.t;
+    return '<div class="dm-grp' + (t === 'inferred' ? ' inf' : '') + (bad ? ' bad' : '') + '" data-grp="' + esc(k) + '" data-grp-n="' + rows.length + '" data-grp-ids="' + esc(JSON.stringify(rows.map(function (r) { return r.m.yid; }))) + '">' +
+      '<button class="dm-ib" title="' + (open ? 'Close' : 'Show the rows') + '" data-act="grpopen" data-grp="' + esc(k) + '">' + (open ? '▾' : '▸') + '</button>' +
+      '<span class="t"><b>' + esc(GROUP_NAME[rule] || rule) + '</b> · ' + rows.length + ' row' + (rows.length === 1 ? '' : 's') + (ns ? ' on ' + ns + ' sheet' + (ns === 1 ? '' : 's') : '') + (why ? '<span class="w">' + esc(why) + '</span>' : '') + '</span>' + tierMark(t) +
+      (bad ? '' : '<button class="dm-ib" title="Accept the ' + rows.length + ' rows of this group" data-act="grpok" data-grp="' + esc(k) + '">' + IC.check + '</button>') + '</div>' +
+      '<div class="dm-grpb" data-grp-body="' + esc(k) + '"' + (open ? '' : ' style="display:none"') + '>' + rows.map(function (r) { return r.html; }).join('') + '</div>';
   }
   // §L7.14 "Body heights": kinds typed on a plan that no elevation shows get a z range STATED by the user (@BODYZ=<kind>,<z0>,<z1>, metres); it is the user's own statement, not a default
   function bodyzRows() { var out = []; S.sheets.forEach(function (sh, si) { sh.marks.forEach(function (m, mi) { if (m.key === 'BODYZ') { var p = String(m.value).split(','); out.push({ si: si, mi: mi, kind: p[0], z0: p[1], z1: p[2], mark: m }); } }); }); return out; }
@@ -979,10 +1029,14 @@
       if (a === 'edefdel') el.onclick = function () { var key = el.getAttribute('data-key'); S.sheets.forEach(function (sh) { var n = sh.marks.length; sh.marks = sh.marks.filter(function (q) { return !(q.key === 'DEFAULT' && String(q.value).split(',')[0] === key); }); if (sh.marks.length !== n) console.log(TAG + ' remove sheet=' + sh.name + ' @DEFAULT=' + key); }); changed(); };
       if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
-      if (a === 'acceptall') el.onclick = function () { var n = 0, b; S.tierHold = true; while (n++ < 300 && (b = S.panel.querySelector('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); S.tierHold = false; console.log(TAG + ' accept-all clicks=' + (n - 1)); render(); attention(); };
+      if (a === 'acceptall') el.onclick = function () { var n = 0, b; S.tierHold = true; while (n++ < 300 && (b = firstInOrder('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); S.tierHold = false; console.log(TAG + ' accept-all clicks=' + (n - 1)); render(); attention(); };
+      if (a === 'grpopen') el.onclick = function () { var k = el.getAttribute('data-grp'); S.grpOpen[k] = !S.grpOpen[k]; render(); };
+      if (a === 'grpok') el.onclick = function () { var k = el.getAttribute('data-grp'), h = el.closest('.dm-grp'), ids = JSON.parse(h.getAttribute('data-grp-ids') || '[]'), n = 0;   // §D81 exactly the rows the group showed at the click, wherever a re-render puts them
+        S.tierHold = true; ids.forEach(function (id) { var r = Array.prototype.filter.call(S.panel.querySelectorAll('#dm-yellows [data-yid]'), function (x) { return x.getAttribute('data-yid') === id; })[0], b = r && r.querySelector('[data-act="confirm"],[data-act="dconfirm"],[data-act="defkeep"]'); if (b) { b.click(); n++; } });
+        S.tierHold = false; console.log(TAG + ' accept group=' + k + ' clicks=' + n + ' of ' + ids.length); render(); attention(); };
       if (a === 'acceptsr' || a === 'acceptinf') el.onclick = function () { var ts = a === 'acceptsr' ? ['stated', 'read'] : ['inferred'], sel = [], n = 0, b;   // §D36 each takes only its rows (and the rows of its kind a later round brings)
         ts.forEach(function (t) { ['confirm', 'dconfirm', 'defkeep'].forEach(function (k) { sel.push('#dm-yellows .dm-pr[data-tier="' + t + '"] [data-act="' + k + '"]'); }); });
-        S.tierHold = true; while (n++ < 300 && (b = S.panel.querySelector(sel.join(',')))) b.click(); S.tierHold = false; console.log(TAG + ' accept tier=' + ts.join('+') + ' clicks=' + (n - 1)); render(); attention(); };
+        S.tierHold = true; while (n++ < 300 && (b = firstInOrder(sel.join(',')))) b.click(); S.tierHold = false; console.log(TAG + ' accept tier=' + ts.join('+') + ' clicks=' + (n - 1)); render(); attention(); };
       if (a === 'typeover') el.onclick = function (e) { e.stopPropagation(); typeOver(el.getAttribute('data-ev')); };
       if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);
         defRows().forEach(function (r) { if (r.key === k && (r.kind === 'default' || r.kind === 'chosen')) { r.value = (typeof r.value === 'number' && isFinite(num)) ? num : v; r.kind = 'chosen'; } });

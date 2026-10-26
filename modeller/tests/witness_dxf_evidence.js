@@ -74,6 +74,9 @@ function cliTally(files, level) {
   const cardsOpen = () => pg.evaluate(() => { const S = window.DxfMetaEditor.state; S.sec.sheets = true; S.sheets.forEach((sh, i) => { S.open[i] = true; }); window.DxfMetaEditor.show(); });
   // a real click on a row (its text), the fly awaited; then the checks of E3 in the page
   const flyRow = async (sel) => {
+    // §D81 a row inside a closed group is hidden: open it the user's way (a real click on the group's caret), then click the row
+    const grp = await pg.evaluate(sel => { const e = document.querySelector(sel), b = e && e.closest('[data-grp-body]'); return b && b.style.display === 'none' ? b.getAttribute('data-grp-body') : null; }, sel);
+    if (grp) { const c = await pg.evaluateHandle(k => { const b = Array.from(document.querySelectorAll('[data-act="grpopen"]')).find(x => x.getAttribute('data-grp') === k); if (b) b.scrollIntoView({ block: 'center' }); return b; }, grp); await c.click(); await sleep(250); }
     const h = await pg.evaluateHandle(sel => { const e = document.querySelector(sel); if (!e) return null; e.scrollIntoView({ block: 'center' }); return e.querySelector('.t'); }, sel);
     if (!(await h.evaluate(e => !!e))) return null;
     const why = await h.evaluate(e => (e.querySelector('.w') || {}).textContent || ''), rule = await pg.evaluate(sel => document.querySelector(sel).getAttribute('data-rule'), sel);
