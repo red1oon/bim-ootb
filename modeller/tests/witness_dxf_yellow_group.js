@@ -62,7 +62,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       'groups=' + L.groups.length + ' singles=' + L.singles.length + ' rules=' + L.rules.length + ' ' + L.groups.map(g => g.k + ':' + g.n).join(' '));
     ok('YG7[' + tag + '] the accept buttons sit above the first group', L.btnTop !== null && (!L.groups.length || L.btnTop < L.groups[0].top), 'btn=' + L.btnTop + ' firstGroup=' + (L.groups[0] || {}).top);
     const G = gridCheck(L);
-    if (!G.length) skip('YG5[' + tag + ']', 'no grid group in round 1'); else ok('YG5[' + tag + '] the grid header states each key\'s label range and bays = its rows\' coordinate differences', G.every(x => x.ok), G.map(x => x.key + ' ' + x.want + (x.ok ? '' : ' MISSING in "' + (L.groups.find(g => g.k === x.g) || {}).w + '"')).join(' | '));
+    const yg5 = G.map(x => Object.assign({ r: 1, w: (L.groups.find(g => g.k === x.g) || {}).w }, x));   // §D81 YG5 is judged once per set over its rounds (the plain Duplex reads its grid in round 2 only)
     const pick = L.groups.filter(g => g.tick && !/GRID|UNITS|VIEW|SET/.test(g.k))[0] || L.groups.filter(g => g.tick)[0];
     if (!pick) skip('YG4[' + tag + ']', 'no group with a tick'); else {
       await pg.click('#dm-yellows [data-grp="' + pick.k + '"] [data-act="grpok"]'); await idle(pg); await sleep(500); const A = await list(pg), others = L.ev.filter(e => !pick.ev.includes(e)), left = others.filter(e => !A.ev.includes(e));
@@ -77,7 +77,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       ok('YG1[' + tag + ' round 2] nothing lost', L2.rows === lastRows(), 'list=' + L2.rows + ' log=' + lastRows());
       const k2 = new Set(L2.groups.map(g => g.k.replace(/!$/, '')).concat(L2.singles));
       ok('YG2[' + tag + ' round 2] the groups are the rules', L2.groups.every(g => g.n === g.body && g.rules.length === 1 && g.rules[0] === g.k.replace(/!$/, '')) && k2.size === L2.rules.length, 'rows=' + L2.rows + ' ' + L2.groups.map(g => g.k + ':' + g.n).join(' ') + (L2.singles.length ? ' singles=' + L2.singles.join(',') : ''));
-      const G2 = gridCheck(L2); if (!G2.length) skip('YG5[' + tag + ' round 2]', 'no grid group'); else ok('YG5[' + tag + ' round 2] the grid header states each key\'s label range and bays = its rows\' coordinate differences', G2.every(x => x.ok), G2.map(x => x.key + ' ' + x.want + (x.ok ? '' : ' MISSING in "' + (L2.groups.find(g => g.k === x.g) || {}).w + '"')).join(' | ')); }
+      gridCheck(L2).forEach(x => yg5.push(Object.assign({ r: 2, w: (L2.groups.find(g => g.k === x.g) || {}).w }, x))); }
+    if (!yg5.length) skip('YG5[' + tag + ']', 'no grid group in round 1 or 2'); else ok('YG5[' + tag + '] the grid header states each key\'s label range and bays = its rows\' coordinate differences (rounds ' + Array.from(new Set(yg5.map(x => x.r))).join('+') + ')', yg5.every(x => x.ok), yg5.map(x => 'r' + x.r + ' ' + x.key + ' ' + x.want + (x.ok ? '' : ' MISSING in "' + x.w + '"')).join(' | '));
     await acceptAll(pg); await idle(pg); const mg = await marks(pg); await pg.close();
     const pf = await page(); await openSet(pf, files, true); const F = await list(pf);
     await acceptAll(pf); await idle(pf); const mf = await marks(pf), tf = await texts(pf); await pf.close();
