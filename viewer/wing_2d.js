@@ -55,7 +55,7 @@ function setupWing2D(A) {
   function loadModules() {
     if (_mods) return _mods;
     var t0 = performance.now();
-    _mods = loadScript('../modeller/dxf_export_ui.js?v=1').then(function () { return window.DxfExportUI.loadScripts(); }).then(function () { return window.DxfSheetView || loadScript('dxf_sheet_view.js?v=1'); })
+    _mods = loadScript('../modeller/dxf_export_ui.js?v=1').then(function () { return window.DxfExportUI.loadScripts(); }).then(function () { return window.DxfSheetView || loadScript('dxf_sheet_view.js?v=2'); })
       .then(function () { log('_MODULES ms=' + Math.round(performance.now() - t0)); }).catch(function (e) { _mods = null; throw e; });
     return _mods;
   }

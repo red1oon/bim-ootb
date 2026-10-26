@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 // ⚠ DO NOT REMOVE — the 2D overlay's sheet renderer (prompts/DXF2BIM_FOUNDATION_LANE.md F7, W-OVERLAY-ENTITIES). Read the log after every run.
-// Draws the DXF text the 2D writer produces (what you see is what you save): LINE, ARC, CIRCLE, LWPOLYLINE, solid HATCH, TEXT, and DIMENSION via its *D block.
+// Draws the DXF text the 2D writer produces (what you see is what you save): LINE, ARC, CIRCLE, LWPOLYLINE, solid HATCH, TEXT, and DIMENSION via its *D block;
+// since §D82 also what a CAD office hands over: MTEXT (formatting codes stripped, attachment, rotation, box-width wrap), LEADER (its vertices + arrowhead) and SOLID.
 // No DOM at load; `paintCanvas` / `toSVG` are the two sinks over ONE draw list so the picture can be checked headless. Colours are AutoCAD ACI 1-9 only; a colour
 // outside that table is drawn grey and COUNTED in `stats.unknown_colour`, never guessed. Log tags: §SHEET_PARSE §SHEET_DRAW.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.DxfSheetView = factory(); })(this, function () {
@@ -36,6 +37,15 @@
   }
   const gv = (e, code, i) => { let k = 0; for (const p of e.g) if (p[0] === code) { if (k === (i || 0)) return p[1]; k++; } return undefined; };
   const num = (e, code, d) => { const v = gv(e, code); return v === undefined ? d : N(v); };
+  const all = (e, code) => e.g.filter(p => p[0] === code).map(p => p[1]);
+  // §D82 MTEXT's own markup -> plain lines: \P paragraph, \~ hard space, \S a^b; stacked, {...} groups and every \X...; or \X code dropped (fonts, heights, colours, widths)
+  function mtextPlain(s) {
+    return String(s).replace(/\\\\/g, '\u0000').replace(/\\[Pp]/g, '\n').replace(/\\~/g, ' ').replace(/\\S([^;]*);/g, (m, a) => a.replace(/[#^]/, '/'))
+      .replace(/\\[ACcFfHhQqTtWwp][^;]*;/g, '').replace(/\\[LlOoKkNnX]/g, '').replace(/[{}]/g, '').replace(/\u0000/g, '\\').split('\n');
+  }
+  // §D82 a box width (41) wraps a paragraph at the word before it would pass the width; a character is taken as 0.6 x the text height wide (no font metrics in a DOM-free module)
+  function wrap(lines, h, width) { if (!(width > 0)) return lines; const max = Math.max(1, Math.floor(width / (0.6 * h))), out = [];
+    lines.forEach(l => { let cur = ''; l.split(' ').forEach(w => { if (cur && (cur + ' ' + w).length > max) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w; }); out.push(cur); }); return out; }
   // draw list: [{k:'line'|'poly'|'fill'|'circle'|'arc'|'text', layer, ...}] in sheet units (mm); y UP (flipped by the sinks)
   function toDrawList(P) {
     const list = [], stats = { by_type: {}, drawn_by_type: {}, unknown_colour: 0 };
@@ -51,6 +61,14 @@
       else if (t === 'HATCH') { const hc = num(e, '62', 256); const i93 = e.g.findIndex(p => p[0] === '93'), pts = []; for (let i = i93 + 1; i < e.g.length; i++) { if (e.g[i][0] === '10' && e.g[i + 1] && e.g[i + 1][0] === '20') pts.push([N(e.g[i][1]), N(e.g[i + 1][1])]); if (e.g[i][0] === '97') break; } list.push(ok({ k: 'fill', layer, c: hc === 256 ? c : col(hc), pts })); }
       else if (t === 'TEXT') list.push(ok({ k: 'text', layer, c, p: [num(e, '10'), num(e, '20')], h: num(e, '40'), s: gv(e, '1') || '', rot: num(e, '50', 0), mid: num(e, '72', 0) === 1 }));
       else if (t === 'DIMENSION') { ok(); (P.blocks[gv(e, '2')] || []).forEach(b => draw(b, true)); }
+      else if (t === 'MTEXT') { const h = num(e, '40', 1), dx = gv(e, '11'), rot = dx !== undefined ? Math.atan2(num(e, '21', 0), N(dx)) * 180 / Math.PI : num(e, '50', 0);
+        list.push(ok({ k: 'mtext', layer, c: num(e, '62', 256) === 256 ? c : col(num(e, '62')), p: [num(e, '10'), num(e, '20')], h, rot, ap: num(e, '71', 1), lines: wrap(mtextPlain(all(e, '3').join('') + (gv(e, '1') || '')), h, num(e, '41', 0)) })); }
+      else if (t === 'LEADER') { const xs = all(e, '10'), ys = all(e, '20'), pts = xs.map((x, i) => [N(x), N(ys[i])]);
+        list.push(ok({ k: 'poly', layer, c, pts, closed: false }));
+        if (num(e, '71', 1) === 1 && pts.length > 1) { const [a, b] = pts, L = Math.hypot(b[0] - a[0], b[1] - a[1]), al = L / 8, ux = (b[0] - a[0]) / (L || 1), uy = (b[1] - a[1]) / (L || 1);   // presentation: an arrowhead 1/8 of the first segment, its base half as wide
+          list.push({ k: 'fill', layer, c, solid: true, pts: [a, [a[0] + ux * al - uy * al / 4, a[1] + uy * al + ux * al / 4], [a[0] + ux * al + uy * al / 4, a[1] + uy * al - ux * al / 4]] }); } }
+      else if (t === 'SOLID') { const q = ['10', '11', '12', '13'].map(k => gv(e, k) === undefined ? null : [num(e, k), num(e, String(N(k) + 10))]);   // DXF order 1, 2, 4, 3; no 4th corner = a triangle
+        const pts = q[3] && !(q[3][0] === q[2][0] && q[3][1] === q[2][1]) ? [q[0], q[1], q[3], q[2]] : [q[0], q[1], q[2]]; list.push(ok({ k: 'fill', layer, c: num(e, '62', 256) === 256 ? c : col(num(e, '62')), solid: true, pts })); }
       else stats.unsupported = (stats.unsupported || 0) + 1;
     };
     P.ents.forEach(e => draw(e));
@@ -58,7 +76,7 @@
   }
   function bounds(list) {
     let x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300; const ext = p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); };
-    list.forEach(d => { if (d.k === 'line') { ext(d.a); ext(d.b); } else if (d.k === 'poly' || d.k === 'fill') d.pts.forEach(ext); else if (d.k === 'circle' || d.k === 'arc') { ext([d.o[0] - d.r, d.o[1] - d.r]); ext([d.o[0] + d.r, d.o[1] + d.r]); } else if (d.k === 'text') ext(d.p); });
+    list.forEach(d => { if (d.k === 'line') { ext(d.a); ext(d.b); } else if (d.k === 'poly' || d.k === 'fill') d.pts.forEach(ext); else if (d.k === 'circle' || d.k === 'arc') { ext([d.o[0] - d.r, d.o[1] - d.r]); ext([d.o[0] + d.r, d.o[1] + d.r]); } else if (d.k === 'text' || d.k === 'mtext') ext(d.p); });
     return x0 > x1 ? null : { x0, y0, x1, y1 };
   }
   // view = {cx, cy (sheet point at the canvas centre), s (px per sheet unit)}; sheet y is UP, canvas y is DOWN
@@ -68,27 +86,37 @@
   function paintCanvas(ctx, list, v, w, h) {
     ctx.clearRect(0, 0, w, h); ctx.lineWidth = 1; ctx.lineJoin = 'round';
     list.forEach(d => {
-      ctx.strokeStyle = d.c; ctx.fillStyle = d.c; ctx.beginPath();
+      ctx.strokeStyle = d.c; ctx.fillStyle = d.c; ctx.setLineDash(d.dash ? [6, 4] : []); ctx.lineWidth = d.w || 1; ctx.beginPath();
       if (d.k === 'line') { ctx.moveTo(sx(v, d.a[0], w), sy(v, d.a[1], h)); ctx.lineTo(sx(v, d.b[0], w), sy(v, d.b[1], h)); ctx.stroke(); }
       else if (d.k === 'poly') { d.pts.forEach((p, i) => i ? ctx.lineTo(sx(v, p[0], w), sy(v, p[1], h)) : ctx.moveTo(sx(v, p[0], w), sy(v, p[1], h))); if (d.closed) ctx.closePath(); ctx.stroke(); }
-      else if (d.k === 'fill') { ctx.globalAlpha = 0.35; d.pts.forEach((p, i) => i ? ctx.lineTo(sx(v, p[0], w), sy(v, p[1], h)) : ctx.moveTo(sx(v, p[0], w), sy(v, p[1], h))); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
+      else if (d.k === 'fill') { ctx.globalAlpha = d.solid ? 1 : 0.35; d.pts.forEach((p, i) => i ? ctx.lineTo(sx(v, p[0], w), sy(v, p[1], h)) : ctx.moveTo(sx(v, p[0], w), sy(v, p[1], h))); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
       else if (d.k === 'circle') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), Math.max(0, d.r * v.s), 0, Math.PI * 2); ctx.stroke(); }
       else if (d.k === 'arc') { ctx.arc(sx(v, d.o[0], w), sy(v, d.o[1], h), Math.max(0, d.r * v.s), -d.a0 * Math.PI / 180, -d.a1 * Math.PI / 180, true); ctx.stroke(); }
       else if (d.k === 'text') { const px = Math.max(6, d.h * v.s); ctx.font = px + 'px sans-serif'; ctx.textAlign = d.mid ? 'center' : 'left'; ctx.textBaseline = d.mid ? 'middle' : 'alphabetic'; ctx.save(); ctx.translate(sx(v, d.p[0], w), sy(v, d.p[1], h)); if (d.rot) ctx.rotate(-d.rot * Math.PI / 180); ctx.fillText(d.s, 0, 0); ctx.restore(); }
+      else if (d.k === 'mtext') { const px = Math.max(6, d.h * v.s), col3 = (d.ap - 1) % 3, row = Math.floor((d.ap - 1) / 3), n = d.lines.length, y0 = row === 0 ? 0 : row === 1 ? -(n - 1) * 1.4 * px / 2 : -(n - 1) * 1.4 * px;
+        ctx.font = px + 'px sans-serif'; ctx.textAlign = ['left', 'center', 'right'][col3]; ctx.textBaseline = ['top', 'middle', 'bottom'][row]; ctx.save(); ctx.translate(sx(v, d.p[0], w), sy(v, d.p[1], h)); if (d.rot) ctx.rotate(-d.rot * Math.PI / 180);
+        d.lines.forEach((l, i) => ctx.fillText(l, 0, y0 + i * 1.4 * px)); ctx.restore(); }
     });
   }
-  function toSVG(list, b, bg) {
-    const f = n => Number(n.toFixed(2)), W = b.x1 - b.x0, H = b.y1 - b.y0, Y = y => f(b.y1 - y), X = x => f(x - b.x0), o = [];
-    o.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + f(W) + ' ' + f(H) + '" width="1400" height="' + Math.round(1400 * H / W) + '"><rect width="100%" height="100%" fill="' + (bg || '#14171c') + '"/>');
-    list.forEach(d => {
-      const st = 'stroke="' + d.c + '" fill="none" stroke-width="' + f(W / 1400) + '"';
+  // opts (§D82): { mm: [w, h] } states the paper size (width / height in mm); items with d.grp go into <g id="dxf2bim-<grp>"> after the drawing, so a print without them drops that group whole
+  function toSVG(list, b, bg, opts) {
+    opts = opts || {}; const f = n => Number(n.toFixed(2)), W = b.x1 - b.x0, H = b.y1 - b.y0, Y = y => f(b.y1 - y), X = x => f(x - b.x0), o = [];
+    o.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + f(W) + ' ' + f(H) + '" ' + (opts.mm ? 'width="' + opts.mm[0] + 'mm" height="' + opts.mm[1] + 'mm"' : 'width="1400" height="' + Math.round(1400 * H / W) + '"') + '><rect width="100%" height="100%" fill="' + (bg || '#14171c') + '"/>');
+    const groups = []; list.forEach(d => { if (d.grp && groups.indexOf(d.grp) < 0) groups.push(d.grp); });
+    const one = d => {
+      const st = 'stroke="' + d.c + '" fill="none" stroke-width="' + f(W / 1400 * (d.w || 1)) + '"' + (d.dash ? ' stroke-dasharray="' + f(W / 230) + ' ' + f(W / 350) + '"' : '');
       if (d.k === 'line') o.push('<line x1="' + X(d.a[0]) + '" y1="' + Y(d.a[1]) + '" x2="' + X(d.b[0]) + '" y2="' + Y(d.b[1]) + '" ' + st + '/>');
       else if (d.k === 'poly') o.push('<polyline points="' + d.pts.concat(d.closed ? [d.pts[0]] : []).map(p => X(p[0]) + ',' + Y(p[1])).join(' ') + '" ' + st + '/>');
-      else if (d.k === 'fill') o.push('<polygon points="' + d.pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ') + '" fill="' + d.c + '" fill-opacity="0.35"/>');
+      else if (d.k === 'fill') o.push('<polygon points="' + d.pts.map(p => X(p[0]) + ',' + Y(p[1])).join(' ') + '" fill="' + d.c + '" fill-opacity="' + (d.solid ? 1 : 0.35) + '"/>');
       else if (d.k === 'circle') o.push('<circle cx="' + X(d.o[0]) + '" cy="' + Y(d.o[1]) + '" r="' + f(d.r) + '" ' + st + '/>');
       else if (d.k === 'arc') { const p = a => [X(d.o[0] + d.r * Math.cos(a * Math.PI / 180)), Y(d.o[1] + d.r * Math.sin(a * Math.PI / 180))], a = p(d.a0), z = p(d.a1), sweep = ((d.a1 - d.a0) % 360 + 360) % 360; o.push('<path d="M' + a + ' A' + f(d.r) + ' ' + f(d.r) + ' 0 ' + (sweep > 180 ? 1 : 0) + ' 0 ' + z + '" ' + st + '/>'); }
       else if (d.k === 'text') o.push('<text x="' + X(d.p[0]) + '" y="' + Y(d.p[1]) + '" font-size="' + f(Math.max(d.h, 1)) + '" fill="' + d.c + '"' + (d.mid ? ' text-anchor="middle" dominant-baseline="middle"' : '') + (d.rot ? ' transform="rotate(' + (-d.rot) + ' ' + X(d.p[0]) + ' ' + Y(d.p[1]) + ')"' : '') + '>' + String(d.s).replace(/[<&]/g, '') + '</text>');
-    });
+      else if (d.k === 'mtext') { const c3 = (d.ap - 1) % 3, row = Math.floor((d.ap - 1) / 3), n = d.lines.length, hh = Math.max(d.h, 1), y0 = row === 0 ? hh : row === 1 ? -(n - 1) * 1.4 * hh / 2 + hh / 2 : -(n - 1) * 1.4 * hh;
+        o.push('<text font-size="' + f(hh) + '" fill="' + d.c + '" text-anchor="' + ['start', 'middle', 'end'][c3] + '"' + (d.rot ? ' transform="rotate(' + (-d.rot) + ' ' + X(d.p[0]) + ' ' + Y(d.p[1]) + ')"' : '') + '>' +
+          d.lines.map((l, i) => '<tspan x="' + X(d.p[0]) + '" y="' + f(Y(d.p[1]) + y0 + i * 1.4 * hh) + '">' + String(l).replace(/[<&]/g, '') + '</tspan>').join('') + '</text>'); }
+    };
+    list.forEach(d => { if (!d.grp) one(d); });
+    groups.forEach(g => { o.push('<g id="dxf2bim-' + g + '">'); list.forEach(d => { if (d.grp === g) one(d); }); o.push('</g>'); });
     o.push('</svg>'); return o.join('\n');
   }
   return { parse, toDrawList, bounds, fit, paintCanvas, toSVG, ACI };
