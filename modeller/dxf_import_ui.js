@@ -890,8 +890,9 @@
     var I = window.Dxf2BimImport, roles = I.gate(state.sheets, { set: state.setOverride });   // §L4.1: + the set the editor states (layer rules are @LAYER markings, §L4.2)
     var g = { ok: false, set: roles.set, setFrom: roles.setFrom, roles: roles, refused: roles.refused.slice(), verdict: null, R: null, lib: null };
     if (roles.ok) {
-      g.lib = await loadLibrary(state.sheets);
-      var R = I.convert(state.sheets, { library: g.lib || undefined, set: state.setOverride, defaultsRef: state.defaultsRef || undefined, ref: state.ref || undefined, catalogue: state.catalogue || undefined }); g.R = R;   // §D51 the page's registry (element_defaults.json) for the best-effort settings
+      var copts = { set: state.setOverride, defaultsRef: state.defaultsRef || undefined, ref: state.ref || undefined, catalogue: state.catalogue || undefined };   // §D85 one set of settings: the loader's trial runs judge as this run does
+      g.lib = await loadLibrary(state.sheets, copts);
+      var R = I.convert(state.sheets, Object.assign({ library: g.lib || undefined }, copts)); g.R = R;   // §D51 the page's registry (element_defaults.json) for the best-effort settings
       if (R.refused) g.refused = R.refused;
       else {
         g.verdict = R.verdict;
@@ -935,7 +936,7 @@
     });
     state.defaults = D.rows();
   }
-  async function loadLibrary(sheets) {
+  async function loadLibrary(sheets, copts) {
     try {
       var r = await fetch(LIB_URL, { cache: 'no-store' });
       if (r.ok && /json/.test(r.headers.get('content-type') || '')) {   // (an offline SW answers HTML: not a subset)
@@ -947,8 +948,8 @@
     } catch (e) { console.error('§DXF-LIB source=none reason=local subset unreadable: ' + (e && e.message)); return null; }
     try {
       var t0 = performance.now();
-      var o = await window.Dxf2BimImport.loadOci(sheets, { base: OCI_LIB, fetchJson: fetchJson, memo: _ociMemo, convertOpts: { set: state.setOverride } });
-      console.log('§DXF-LIB source=oci sha=' + o.sha.slice(0, 12) + ' shards=' + o.shards.length + ' families=' + o.families.length + ' passes=' + o.passes + ' ms=' + Math.round(performance.now() - t0));
+      var o = await window.Dxf2BimImport.loadOci(sheets, { base: OCI_LIB, fetchJson: fetchJson, memo: _ociMemo, convertOpts: copts || { set: state.setOverride } });
+      console.log('§DXF-LIB source=oci sha=' + o.sha.slice(0, 12) + ' shards=' + o.shards.length + ' families=' + o.families.length + ' passes=' + o.passes + ' trial_blocking=' + (o.R && o.R.verdict ? o.R.verdict.blocking.length : 'n/a') + ' family_ids=' + o.families.join(',') + ' ms=' + Math.round(performance.now() - t0));
       return o.library;
     } catch (e) { console.error('§DXF-LIB source=none reason=' + (e && e.message) + ' → GAP:lod400_library_unreachable, no fill placed, never a box'); return null; }
   }
