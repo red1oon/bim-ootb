@@ -167,7 +167,7 @@
 
   // ---- the live verdict: the ONE gate (DxfImportUI.convertGate via applySheets) judges the EFFECTIVE sheets; this editor only shows it ----
   var _t = null;
-  function changed() { if (S.batch) return; S.saved = null; syncSchedule(); render(); schedule(); }   // §D47 S.batch: a group confirm writes many tags, one render + one check
+  function changed() { if (S.batch) return; S.saved = null; syncSchedule(); render(); if (window.DxfSheetFrame) window.DxfSheetFrame.refresh(); schedule(); }   // §D82 an open sheet view follows the list   // §D47 S.batch: a group confirm writes many tags, one render + one check
   function schedule(ms) { clearTimeout(_t); S.busy = true; renderHead(); if (window.DxfImportUI.holdGate) window.DxfImportUI.holdGate('Checking the drawings…'); _t = setTimeout(run, ms === undefined ? 250 : ms); }
   async function run() {
     var tok = ++S.token, t0 = performance.now();
@@ -639,6 +639,7 @@
       h += '<div class="dm-card" data-card="' + si + '"><div class="dm-ch" data-act="card" data-sheet="' + si + '">' + (open ? IC.chevD : IC.chevR) + IC.file + '<span class="nm" title="' + esc(sh.name) + '">' + esc(sh.name) + '</span>' + roleChip(sh, mi) + '</div>';
       if (open) {
         h += '<div class="dm-cb">';
+        h += '<div class="dm-row"><button class="dm-btn" data-act="sheetview" data-sheet="' + si + '" title="The whole sheet as given, its markings drawn where they sit, printable">' + IC.file + '<span>Sheet</span></button></div>';   // §D82
         h += field(sh, si, 'VIEW', 'Role', mi.miss.indexOf('VIEW') >= 0 || !v ? ['VIEW'] : [], 'select', ['PLAN', 'ELEV', 'ROOF', 'SECTION']);
         h += field(sh, si, 'SET', 'Set', mi.miss) + field(sh, si, 'NAME', 'Name', mi.miss);
         if (v === 'PLAN') { h += field(sh, si, 'LEVEL', 'Level (m)', mi.miss, 'num'); h += multiBlock(sh, si, ['GRIDX', 'GRIDY'], 'Grid lines', mi.miss, 'GRID'); }
@@ -820,6 +821,7 @@
       meta.push({ g: 'default', t: t, si: -1, key: r.key, value: String(r.value), x: 0, y: 0, ev: null });
       items.push('<div class="dm-pr' + (t === 'inferred' ? ' inf' : '') + '" data-tier="' + t + '" data-rule="default"><span class="t"><b>' + esc(r.key) + ' = ' + esc(r.value) + '</b><span class="w">applied default: ' + esc(r.why || 'not stated in the drawing') + '</span></span>' + tierMark(t) +
       '<button class="dm-ib" title="Keep this value" data-act="defkeep" data-key="' + esc(r.key) + '">' + IC.check + '</button></div>'); });
+    S.yMeta = meta;   // §D82 the list's rows (rule, tier, sheet, key, value, evidence point, row id): the sheet view draws the open ones from here, the same rows the list shows
     var sig = n.stated + '/' + n.read + '/' + n.inferred + '/' + src.sug + '/' + src.door + '/' + src.def;   // §D36 the tier counts of the list, logged when they change
     if (sig !== S.tierSig && !S.tierHold) { S.tierSig = sig; S.tiers = { stated: n.stated, read: n.read, inferred: n.inferred, rows: items.length, sug: src.sug, door: src.door, def: src.def };
       console.log(TAGE + ' tiers stated=' + n.stated + ' read=' + n.read + ' inferred=' + n.inferred + ' rows=' + items.length + ' (the list: sheet suggestions ' + src.sug + ', door ' + src.door + ', applied defaults ' + src.def + ')'); }
@@ -1030,6 +1032,7 @@
       if (a === 'bodyzdel') el.onclick = function () { var sh = S.sheets[Number(el.getAttribute('data-sheet'))]; if (sh) removeMark(sh, Number(el.getAttribute('data-mi'))); };
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
       if (a === 'acceptall') el.onclick = function () { var n = 0, b; S.tierHold = true; while (n++ < 300 && (b = firstInOrder('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); S.tierHold = false; console.log(TAG + ' accept-all clicks=' + (n - 1)); render(); attention(); };
+      if (a === 'sheetview') el.onclick = function () { if (window.DxfSheetFrame) window.DxfSheetFrame.open(Number(el.getAttribute('data-sheet'))); };   // §D82
       if (a === 'grpopen') el.onclick = function () { var k = el.getAttribute('data-grp'); S.grpOpen[k] = !S.grpOpen[k]; render(); };
       if (a === 'grpok') el.onclick = function () { var k = el.getAttribute('data-grp'), h = el.closest('.dm-grp'), ids = JSON.parse(h.getAttribute('data-grp-ids') || '[]'), n = 0;   // §D81 exactly the rows the group showed at the click, wherever a re-render puts them
         S.tierHold = true; ids.forEach(function (id) { var r = Array.prototype.filter.call(S.panel.querySelectorAll('#dm-yellows [data-yid]'), function (x) { return x.getAttribute('data-yid') === id; })[0], b = r && r.querySelector('[data-act="confirm"],[data-act="dconfirm"],[data-act="defkeep"]'); if (b) { b.click(); n++; } });
@@ -1247,6 +1250,7 @@
 
   window.DxfMetaEditor = { defaultChoices: function () { return S.defaultChoices || {}; }, attention: attention, load: load, show: show, close: close, save: save, state: S, strip: strip, canon: canon, parseRaw: parseRaw, saveName: saveName,
     effText: effText, highlight: highlight, preview: preview, TIER: TIER, tierOf: tierOf, evOff: evOff, fly: fly, pvSet: pvSet, focusField: focusField, focusEnd: focusEnd, focusTargets: function () { return S.focus ? focusTargets(S.focus) : []; }, setTool: setTool, ICON: IC, doorsOf: function (n) { var sh = S.sheets.filter(function (q) { return q.name === n; })[0]; return sh ? doorsOf(sh) : null; }, schedRows: function () { return schedRows(); },
+    openRows: function (si) { return (S.yMeta || []).filter(function (m) { return m.si === si; }); },   // §D82
     whenIdle: function () { return new Promise(function (res) { (function w() { if (!S.busy && S.verdict) res(S.verdict); else setTimeout(w, 50); })(); }); } };
   console.log(TAG + ' ui loaded');
 })();
