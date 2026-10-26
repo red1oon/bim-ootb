@@ -764,7 +764,7 @@
     p.style.display = 'block';
     document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; applySlim(); gridFollow(null); };
     document.getElementById('dxf-fold').onclick = function () { state.slim = !state.slim; applySlim(); };
-    document.getElementById('dxf-convert').onclick = function () { convert().catch(function (e) { console.error(TAGC + ' failed ' + (e && e.message)); }); };
+    document.getElementById('dxf-convert').onclick = function () { convertGuarded(); };
     var cb = document.getElementById('dxf-complete');
     var ev = document.getElementById('dxf-evidence'); if (ev) ev.onchange = function () { state.evidence = !!ev.checked; };   // read at Convert
     if (cb) cb.onchange = function () { state.complete = !!cb.checked; state.defaults = (state.defaults || []).filter(function (d) { return !/^synth\./.test(d.key); }); structureGate(); };
@@ -802,6 +802,18 @@
     return { sheets: state.sheets.map(function (s) { return { name: s.name, role: s.role, why: s.why, level: s.level, face: s.face, roofZ: s.roofZ }; }), gate: state.gate };
   }
 
+  // §D83 (prompts/DXF2BIM_FOUNDATION_LANE.md): an exception in Convert is said in the panel, and a gesture it committed is undone (as the ids refusal does)
+  async function convertGuarded() {
+    var O = window.Bonsai && window.Bonsai.oplog, n0 = O ? O.length : 0;
+    try { return await convert(); }
+    catch (e) {
+      var msg = (e && e.message) || String(e), grew = O && O.length > n0;
+      if (grew) { try { await O.undo(); } catch (u) { console.error(TAGC + ' undo after failure failed ' + (u && u.message)); } }
+      console.error(TAGC + ' failed stage=' + (grew ? 'after-commit' : 'before-commit') + ' undone=' + (grew ? 1 : 0) + ' oplog=' + n0 + '->' + (O ? O.length : 0) + ' msg=' + msg);
+      status('Convert failed: ' + msg + (grew ? (O.length === n0 ? ' (undone)' : ' (undo incomplete: Ctrl+Z)') : ' (nothing was built)'));
+      return { failed: msg };
+    }
+  }
   // ---- convert: ONE gesture, ARC-seed form ----
   async function convert() {
     if (!state.sheets) throw new Error('no drawings open');
