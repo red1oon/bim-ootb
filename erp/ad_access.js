@@ -78,6 +78,10 @@
     this.orgAccess     = o.orgAccess || [];      // [{client, org, readOnly}] AD_Role_OrgAccess IsActive='Y'
     this.tableAccess   = o.tableAccess || [];    // [{table, rule, exclude, readOnly}] AD_Table_Access IsActive='Y'
     this.useUserOrgAccess = !!o.useUserOrgAccess;
+    // checkActionAccess inputs (MRole.java:2685-2778): [{roleId, master, rows:[{c, dt, v, act, dbt, sso, sinv}]}] in the order legacy walks them
+    //   (included roles first, the logged role last); null = no ad_document_action_access table in this DB (not judged, options pass through)
+    this.docActRoles   = o.docActRoles || null;
+    this.docTypes      = o.docTypes || null;     // c_doctype_id -> {dbt, sso, sinv}, loaded only when a master role is in the walk
   }
   function toSet(a) {
     if (a instanceof Set) return a;
@@ -181,6 +185,58 @@
     return this.entityTypes.has(et);
   };
 
+  // checkActionAccess — port of MRole.checkActionAccess (MRole.java:2685-2778), called by the DocAction list after getValidActions
+  //   (WDocActionPanel.java:185-205). Starts EMPTY; for each role in the walk, the rows for the offered values — a tenant role by client + doctype, a
+  //   master role on System by the doctype's DocBaseType (+ DocSubTypeSO for SOO, for POO when set, DocSubTypeInv for MMI) — DISTINCT (value, IsActive):
+  //   'Y' adds, 'N' removes. A value with no row is not offered. overlay (optional) = values removed after the walk, exactly as an 'N' row would remove
+  //   them (§38.5 E2b: the team's in-log executor map). The getValidActions order is kept (the legacy SQL result order is an open oracle check, §38.5).
+  RoleContext.prototype.checkActionAccess = function (clientId, docTypeId, options, overlay) {
+    var opt = (options || []).slice(); if (!opt.length) return opt;
+    if (!this.docActRoles) return opt;   /*E2:FILTER*/
+    var offered = {}; opt.forEach(function (v) { offered[v] = 1; });
+    var tdt = this.docTypes ? this.docTypes[Number(docTypeId)] : null;
+    var valid = {};
+    this.docActRoles.forEach(function (R) {
+      var seen = {}, pairs = [];
+      R.rows.forEach(function (r) {
+        if (!offered[r.v]) return;
+        if (R.master) { if (!tdt || r.dbt !== tdt.dbt) return;
+          if (tdt.dbt === 'SOO' && r.sso !== tdt.sso) return;
+          if (tdt.dbt === 'POO' && tdt.sso != null && r.sso !== tdt.sso) return;
+          if (tdt.dbt === 'MMI' && r.sinv !== tdt.sinv) return; }
+        else if (Number(r.c) !== Number(clientId) || Number(r.dt) !== Number(docTypeId)) return;
+        var k = r.v + '|' + r.act; if (seen[k]) return; seen[k] = 1; pairs.push(r);
+      });
+      pairs.sort(function (a, b) { return a.v < b.v ? -1 : a.v > b.v ? 1 : (a.act < b.act ? -1 : a.act > b.act ? 1 : 0); });
+      pairs.forEach(function (r) { var v = r.v, act = r.act; if (act === 'N') delete valid[v]; else valid[v] = 1; });
+    });
+    if (overlay) overlay.forEach(function (v) { delete valid[v]; });
+    return opt.filter(function (v) { return valid[v]; });
+  };
+
+  function hasTable(db, t) { try { return !!db.prepare("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND lower(name)=?").get(t); } catch (e) { return false; } }
+  // the walk MRole.checkActionAccess takes: getIncludedRoles(true) (:2825-2850 — each included role, then ITS included roles; AD_Role_Included active rows
+  //   by SeqNo, Included_Role_ID, the included role itself active, never the parent itself, no duplicate under one parent :2793-2818), then the logged role.
+  //   AD_User_Substitute (loadSubstitutedRoles :2890) is not walked: the table is not in the base.
+  function docActionRoles(db, role) {
+    if (!hasTable(db, 'ad_document_action_access')) return null;
+    var inc = hasTable(db, 'ad_role_included'), master = {}, rolesInfo = {};
+    function info(id) { if (rolesInfo[id] === undefined) { var r = null;
+        try { r = db.prepare('SELECT ad_role_id AS id, ad_client_id AS c, isactive AS act, ismasterrole AS m FROM ad_role WHERE ad_role_id=?').get(id) || null; }
+        catch (e) { r = db.prepare("SELECT ad_role_id AS id, ad_client_id AS c, isactive AS act, 'N' AS m FROM ad_role WHERE ad_role_id=?").get(id) || null; }
+        rolesInfo[id] = r; } return rolesInfo[id]; }
+    function included(id, stack) { var out = []; if (!inc) return out; var mine = {};
+      db.prepare("SELECT included_role_id AS id FROM ad_role_included WHERE ad_role_id=? AND isactive='Y' ORDER BY seqno, included_role_id").all(id).forEach(function (x) {
+        var r = info(x.id); if (!r || r.act !== 'Y' || Number(x.id) === Number(id) || mine[x.id] || stack.indexOf(Number(x.id)) >= 0) return;   // stack: a cycle stops (legacy would recurse forever)
+        mine[x.id] = 1; out.push(Number(x.id)); out = out.concat(included(x.id, stack.concat([Number(x.id)])));
+      }); return out; }
+    var walk = included(role.ad_role_id, [Number(role.ad_role_id)]).concat([Number(role.ad_role_id)]);
+    var q = db.prepare('SELECT a.ad_client_id AS c, a.c_doctype_id AS dt, rl.value AS v, a.isactive AS act, ty.docbasetype AS dbt, ty.docsubtypeso AS sso, ty.docsubtypeinv AS sinv' +
+      ' FROM ad_document_action_access a JOIN ad_ref_list rl ON rl.ad_reference_id=135 AND rl.ad_ref_list_id=a.ad_ref_list_id' +
+      ' LEFT JOIN c_doctype ty ON ty.c_doctype_id=a.c_doctype_id WHERE a.ad_role_id=?');
+    return walk.map(function (id) { var r = info(id) || {}; return { roleId: id, master: Number(r.c) === 0 && r.m === 'Y', rows: q.all(id) }; });
+  }
+
   // ── Loader: build a RoleContext by EXTRACTING the real grant rows from an open better-sqlite3 db ──────
   //   db = better-sqlite3 handle on ad_full.db. roleId = ad_role_id. Reads ad_role + the 3 *_access tables,
   //   the role's org access (ad_role_orgaccess if present, else org 0), and the entity types. No invention.
@@ -220,7 +276,12 @@
     try { db.prepare("SELECT ad_table_id AS t, accesstyperule AS rule, isexclude AS ex, isreadonly AS ro FROM ad_table_access WHERE ad_role_id=? AND isactive='Y'").all(roleId)
       .forEach(function (r) { tableAccess.push({ table: Number(r.t), rule: r.rule, exclude: r.ex === 'Y', readOnly: r.ro === 'Y' }); }); } catch (eT) { tableAccess = []; }
     try { var uu = db.prepare('SELECT isuseuserorgaccess AS u FROM ad_role WHERE ad_role_id=?').get(roleId); useUser = !!(uu && uu.u === 'Y'); } catch (eU) { useUser = false; }
+    var docActRoles = null, docTypes = null;
+    try { docActRoles = docActionRoles(db, role); } catch (eD) { docActRoles = null; }
+    if (docActRoles && docActRoles.some(function (R) { return R.master; })) { docTypes = {};
+      db.prepare('SELECT c_doctype_id AS id, docbasetype AS dbt, docsubtypeso AS sso, docsubtypeinv AS sinv FROM c_doctype').all().forEach(function (d) { docTypes[d.id] = d; }); }
     return new RoleContext({
+      docActRoles: docActRoles, docTypes: docTypes,
       AD_Role_ID: role.ad_role_id, name: role.name, userLevel: role.userlevel,
       isAccessAllOrgs: role.isaccessallorgs === 'Y',
       orgs: orgs, clients: [role.ad_client_id], win: win, proc: proc, form: form, entityTypes: entityTypes,
