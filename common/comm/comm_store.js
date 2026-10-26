@@ -561,6 +561,17 @@
     // §13.12.1: the admin's config op. params = { epoch, visit_ms?, bundle_max_ops?, gate?, checkpoint?, lease_ttl_ms?, pipes?, manifest?, number_prefix? }.
     // A new POLICY reads the previous one (same record), so concurrent policies show up as heads and the fold keeps one epoch.
     async function setPolicy(params) { return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
+    // §38.10 (G-8): publish an owner-signed statement (executors map / plan-trust rotation) as the next POLICY, every other param carried forward; the answer is THIS
+    // device's fold verdict — the same one every device reaches — so a stale, untrusted or non-admin statement is reported at once, before any Visit
+    var STMT_PARAM = { executors: ['executors', 'executorsStmtProblem'], 'plan-trust': ['planTrust', 'planTrustStmtProblem'] };
+    async function publishStatement(stmt) {
+      var k = stmt && STMT_PARAM[stmt.kind]; if (!k) return { ok: false, reason: 'unknown-kind' };
+      var prob = ROS[k[1]](stmt); if (prob) return { ok: false, reason: 'bad-statement:' + prob };
+      var pol = await policy(); var base = pol ? JSON.parse(JSON.stringify(pol.params)) : {};
+      base.epoch = (pol ? pol.epoch : 0) + 1; base[k[0]] = stmt;
+      var op = await setPolicy(base), v = (await cur()).verdict[op.hash];
+      return { ok: !!v && v.verdict === 'MERGED', verdict: v ? v.verdict + (v.reason ? ':' + v.reason : '') : 'none', reason: v && v.verdict !== 'MERGED' ? v.reason : null, hash: op.hash };
+    }
     // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
     async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
       var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null }; }
@@ -921,7 +932,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
+             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, numberDocument: numberDocument, bookDocNo: bookDocNo, bookBlock: bookBlock, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,

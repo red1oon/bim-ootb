@@ -538,7 +538,10 @@
     if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
   }
 
-  global.TeamSync = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
+  global.TeamSync = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
+                      // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
+                      publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
+                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
