@@ -15,9 +15,12 @@
   function trust() { var t = global.TEAM_PLAN_TRUST; return Array.isArray(t) && t.length ? t : null; }
   function same(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y && a.crv === b.crv; }
   function bytes(h) { var u = new Uint8Array(h.length / 2); for (var i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16); return u; }
+  // §38.11 (G-7): a set from the log is judged against the list in force when its POLICY arrived (the engine's setTrust, the same on every device);
+  //   a deployment-shipped set (window.TEAM_UPCASTERS) against the deployment list — `judgeWith` is set by adopt() around each load
+  var judgeWith = null;
   async function verifySet(set) {                                 // -> null | 'unsigned' | 'untrusted-signer' | 'bad-signature'
     if (!set || !set.sig || !set.signer) return 'unsigned';
-    var t = trust();
+    var t = judgeWith || trust();
     if (!t || !t.some(function (k) { return same(set.signer, k); })) return 'untrusted-signer';
     try {
       var body = JSON.parse(JSON.stringify(set)); delete body.sig; delete body.signer;
@@ -70,7 +73,11 @@
     var pol = await store.policy(), sets = pol && pol.params && pol.params.upcasters; if (!Array.isArray(sets) || !sets.length) return 0;
     var tk = JSON.stringify(trust() || []); if (tk !== trustKey) { tried = {}; trustKey = tk; }
     var n = 0;
-    for (var i = 0; i < sets.length; i++) { var k = OV.canonical(sets[i]); if (tried[k] !== undefined) continue; var r = await load(sets[i]); tried[k] = r.ok ? 'ok' : r.reason; if (r.ok && !r.dup) n++; }
+    var st = pol.setTrust || null; if (!st) console.log('§TEAM_VERSIONS_TRUST fallback=current (the engine names no per-set list)');
+    for (var i = 0; i < sets.length; i++) { var k = OV.canonical(sets[i]); if (tried[k] !== undefined) continue;
+      var at = st && Object.prototype.hasOwnProperty.call(st, k) ? (st[k] || []) : null;
+      judgeWith = at; var r; try { r = await load(sets[i]); } finally { judgeWith = null; }
+      tried[k] = r.ok ? 'ok' : r.reason; if (r.ok && !r.dup) n++; }
     if (n && typeof store.refold === 'function') store.refold();
     if (n) console.log('§TEAM_VERSIONS_ADOPT newly loaded=' + n + ' (from the POLICY in force, epoch ' + pol.epoch + ')');
     return n;
