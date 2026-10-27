@@ -133,9 +133,8 @@ function getSMMSection(ifcClass) {
 // probe and every viewer/tests/witness_*.js reads the JSON, they were all measuring a labour table
 // the browser never used — Hospital programme 1889.4d measured vs 1926.4d shipped, and MEP Final
 // occupancy 14.1% vs 21.0%. Re-synced 2026-08-13. EDIT BOTH FILES IN THE SAME COMMIT.
-// (Separate, still true: panels.js's 5D rate-pack picker calls loadRateTemplate(), whose shallow
-// LABOR_RATES[k] = tpl.labor[k] REPLACES a whole trade — and no pack file carries max_crews, so
-// selecting one silently drops every crew cap to schedule_gate.js's MAX_CREWS_DEFAULT.)
+// (Fixed 2026-10-27: loadRateTemplate() used to REPLACE a whole trade (LABOR_RATES[k] = tpl.labor[k]); no pack carries max_crews, so
+// picking a pack dropped every crew cap to schedule_gate.js's MAX_CREWS_DEFAULT. A pack now merges field by field: W-JSON-4D5D J4.)
 var LABOR_RATES = {
   HVAC_TECH: {
     rate_per_day: 185, crew_size: 2, max_crews: 2, trade: 'HVAC Technician (Skilled)',
@@ -732,8 +731,8 @@ function loadRateTemplate(templateName) {
     }
     // Apply labor → LABOR_RATES
     if (tpl.labor && Object.keys(tpl.labor).length > 0) {
-      for (var lk in tpl.labor) {
-        LABOR_RATES[lk] = tpl.labor[lk];
+      for (var lk in tpl.labor) {   // field by field: a pack states wages, not crew limits (measured 2026-10-27: no pack carries max_crews), so what it omits keeps the base
+        LABOR_RATES[lk] = (LABOR_RATES[lk] && typeof LABOR_RATES[lk] === 'object') ? _mergeRateOverride(LABOR_RATES[lk], tpl.labor[lk]) : tpl.labor[lk];
       }
     }
     // Apply equipment → EQUIPMENT_RATES
@@ -749,10 +748,11 @@ function loadRateTemplate(templateName) {
       }
     }
     // Apply sequence → SEQUENCE_RULES (only if non-empty — UK placeholder has empty)
+    // a pack's own `sequence` is a stale copy of the trade order (measured 2026-10-27: 14 classes in 15 packs carry pre-template phase names,
+    // e.g. IfcDoor 'Architecture' seq 6 vs the rules' 'Architecture Closeup' seq 8): rates/sequence_rules.json is the one source, the copy is reported, not applied
     if (tpl.sequence && Object.keys(tpl.sequence).length > 0) {
-      for (var sk in tpl.sequence) {
-        SEQUENCE_RULES[sk] = tpl.sequence[sk];
-      }
+      var _seqDiff = Object.keys(tpl.sequence).filter(function (k) { return JSON.stringify(tpl.sequence[k]) !== JSON.stringify(SEQUENCE_RULES[k]); }).length;
+      console.log('§RATE_PACK_SEQUENCE_IGNORED pack=' + templateName + ' rows=' + Object.keys(tpl.sequence).length + ' differing=' + _seqDiff + ' (rates/sequence_rules.json is the trade order)');
     }
     // Apply work_packages → WORK_PACKAGES (only if non-empty)
     if (tpl.work_packages && tpl.work_packages.length > 0) {
@@ -912,7 +912,12 @@ function loadSequenceRules() {
  * Priority: ?rates= param > locale-based mapping > cidb2024_my fallback
  * @returns {Promise<boolean>}
  */
+var _rateInitP = null;   // one load per page: a second call (two awaiting scripts on one page) gets the same promise
 function initRateTemplate() {
+  if (_rateInitP) return _rateInitP;
+  _rateInitP = _initRateTemplateOnce(); return _rateInitP;
+}
+function _initRateTemplateOnce() {
   var p = new URLSearchParams(window.location.search);
   var name = p.get('rates');
   // BIM→Project TASK A: the Settings "5D Rate Pack" picker overrides locale (but not an explicit ?rates=).
