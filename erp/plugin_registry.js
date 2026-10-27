@@ -79,10 +79,13 @@
   }
 
   // ── Manifest validation — id + version are mandatory; the rest is optional/contributory. ───────────────
+  var GRANTS = ['gate', 'observe'];
   function validateManifest(mf) {
     if (!mf || typeof mf !== 'object') throw new Error('plugin: manifest is not an object');
     if (!mf.id || typeof mf.id !== 'string') throw new Error('plugin: manifest.id missing');
     if (!mf.version) throw new Error('plugin ' + mf.id + ': manifest.version missing');
+    // manifest.events - the bus grant (TEAM_REPLICATION_PLUGIN_STUDY §12.3): 'gate' (default, every bundle before Phase 2) or 'observe' (post-commit, read-only: the comm class)
+    if (mf.events !== undefined && GRANTS.indexOf(mf.events) < 0) throw new Error('plugin ' + mf.id + ": manifest.events must be one of " + GRANTS.join('|') + ' (got ' + JSON.stringify(mf.events) + ')');
     // `signature` is reserved but NOT enforced (no signing gate — see lane §Out of Scope).
     return true;
   }
@@ -155,9 +158,14 @@
     // The BundleContext the lane card specifies — injected into activate/deactivate. Each engine is wrapped by a facade that records for undo.
     function buildCtx(manifest, scope) {
       var id = manifest.id, own = { owner: id, rank: 1 };
+      // the bus GRANT (TEAM_REPLICATION_PLUGIN_STUDY §12.3): 'observe' = only post-commit, read-only subscriptions; every gate surface (gate topics, validators, AD_Rule twin functions:
+      //   all run inside the save and may veto) is refused, so a refused call inside activate() fails the activation atomically. The host enforces it - not the bundle.
+      var grant = manifest.events || 'gate';
+      function refuse(what) { var m = 'plugin ' + id + ": grant 'observe' refuses " + what + ' (a comm bundle observes after commit; it never takes part in a save)'; console.log('§PLUGIN-GRANT refused bundle=' + id + ' ' + what); throw new Error(m); }
       function facade(engine) { return engine ? Object.create(engine) : null; }
       var modelval = facade(host.modelval);
       if (modelval) modelval.registerValidator = function (table, timing, name, fn) {
+        if (grant === 'observe') refuse('registerValidator ' + table + ' ' + timing);
         host.modelval.registerValidator(table, timing, name, fn); scope.label('ModelValidator  ' + table + ' ' + timing + '  ' + name);
         scope.rec(function () { if (host.modelval.unregisterValidator) host.modelval.unregisterValidator(table, timing, name); });
       };
@@ -166,6 +174,8 @@
       var events = null;
       if (host.modelval && typeof host.modelval.subscribe === 'function') {
         var subscribeScoped = function (topic, table, name, fn, opts) {
+          var isObs = !!(host.modelval.isObserveTopic && host.modelval.isObserveTopic(topic)) || !!(opts && opts.observe === true);
+          if (grant === 'observe' && !isObs) refuse('gate topic ' + topic);
           var o = Object.assign({}, opts || {}, { owner: id }), e = host.modelval.subscribe(topic, table, name, fn, o);
           scope.label('Event handler  ' + topic + '  ' + (table || '*') + '  ' + name + (e && e.observe ? '  [observe]' : ''));
           scope.rec(function () { host.modelval.unsubscribe(topic, table, name); });
@@ -178,7 +188,7 @@
       //   An AD_Table_ScriptValidator row (data) then binds it to a table + event with no host code; the bundle never holds a gate topic for it.
       var RULE = host.rule || (typeof window !== 'undefined' && window.AdRule) || (typeof globalThis !== 'undefined' && globalThis.AdRule) || null, rules = null;
       if (RULE && typeof RULE.registerRuleFunction === 'function') {
-        rules = { register: function (name, fn) { RULE.registerRuleFunction(name, fn, { owner: id }); scope.label('AD_Rule twin  twin:' + name); scope.rec(function () { RULE.unregisterRuleFunction(name, id); }); return name; } };
+        rules = { register: function (name, fn) { if (grant === 'observe') refuse('rules.register ' + name); RULE.registerRuleFunction(name, fn, { owner: id }); scope.label('AD_Rule twin  twin:' + name); scope.rec(function () { RULE.unregisterRuleFunction(name, id); }); return name; } };
       }
       var callout = facade(host.callout);
       if (callout) {
@@ -404,6 +414,7 @@
       rec.state = STATES.ACTIVE; store.put(rec); delete pending[id];
       var opId = appendOp(why === 'demand' ? 'PLUGIN_ACTIVATE' : 'PLUGIN_START', { id: id, version: rec.version, why: why });
       console.log('§PLUGIN-' + (why === 'demand' ? 'ACTIVATE' : 'START   ') + ' id=' + id + ' state=' + rec.state + ' contributions=' + scope.size());
+      if (rec.manifest.events) console.log('§PLUGIN-GRANT bundle=' + id + ' events=' + rec.manifest.events);
       return { id: id, state: rec.state, opId: opId };
     }
 

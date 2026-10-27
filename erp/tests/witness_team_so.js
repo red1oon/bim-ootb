@@ -257,6 +257,12 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     console.log('   §TEAM-CONFLICT A=' + JSON.stringify(cfA)); console.log('   §TEAM-CONFLICT B=' + JSON.stringify(cfB));
     var okTxt = function (a) { return a.length === 1 && /CROSS-from-A/.test(a[0]) && /CROSS-from-B/.test(a[0]) && /Current record was changed by another user, please ReQuery/.test(a[0]); };
     verdict(okTxt(cfA) && okTxt(cfB), 'both devices show ONE conflict naming both values, with iDempiere\'s CurrentRecordModified text', 'A=' + cfA.length + ' B=' + cfB.length);
+    // TEAM_REPLICATION_PLUGIN_STUDY §12.4 (A4): the text is the CORE's AD_Message row, not a copy in team_sync.js — each page's own dictionary row ends the line, and the plugin file holds no literal
+    var amsg = async function (w) { return pg[w].evaluate(function () { var r = window.__idmpDb.exec("SELECT msgtext FROM ad_message WHERE value='CurrentRecordModified'"); return r.length ? String(r[0].values[0][0]) : null; }); };
+    var mA = await amsg('A'), mB = await amsg('B'), tsSrc = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
+    console.log('   §TEAM-CONFLICT-MSG ad_message A=' + JSON.stringify(mA) + ' B=' + JSON.stringify(mB) + ' literalInPlugin=' + /please ReQuery/.test(tsSrc));
+    verdict(!!mA && !!mB && cfA.length === 1 && cfB.length === 1 && cfA[0].slice(-mA.length) === mA && cfB[0].slice(-mB.length) === mB && !/please ReQuery/.test(tsSrc),
+      'the conflict line ends with the page\'s OWN AD_Message CurrentRecordModified text and team_sync.js carries no copy of it (the core shows its message, §8.3 A4)', 'A=' + JSON.stringify(mA) + ' B=' + JSON.stringify(mB));
     await toHeaderGrid('A'); await toHeaderGrid('B');
     var dmA = await descMap('A'), dmB = await descMap('B');
     console.log('   §TEAM-CONFLICT descriptions A=' + JSON.stringify(dmA) + ' B=' + JSON.stringify(dmB));
