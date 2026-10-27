@@ -168,7 +168,7 @@ function b3(dbh) {
     var r = MV.fireHooks('BEFORE_COMPLETE', { table: T, record: { ad_client_id: 11 } }, {});
     check('ORDER', 'doc', 'doc timing: validator then handler', J(o) === J(['DV', 'DH']) && r.ok === true, { o: o });
   });
-  say('§BUS-ORDER-STAGE3 script-validator (AD_Table_ScriptValidator) stage = ABSENT by finding: ad_seed.db has no ad_rule / ad_table_scriptvalidator table and the twin runs no AD_Rule script (ad_callout.js:793 UNPORTED); order above is judged without it');
+  say('§BUS-ORDER-STAGE3 script-validator (AD_Table_ScriptValidator) stage = BUILT in erp/ad_rule.js (TEAM_REPLICATION_PLUGIN_STUDY §10.8, witnessed by witness_script_validator.js); this witness has no ad_rule rows, so the order above is judged with that stage empty');
   clean();
 
   // ═══ W-BUS-REPLICA ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════

@@ -500,11 +500,12 @@
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=1"></script>
 <script src="ad_lens.js?v=2"></script>
-<script src="ad_modelval.js?v=5"></script>
+<script src="ad_modelval.js?v=6"></script>
+<script src="ad_rule.js?v=1"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
-<script src="ad_process.js?v=17"></script>
+<script src="ad_process.js?v=18"></script>
 <script src="ad_find.js?v=2"></script>
 <script src="ad_recent.js?v=1"></script>
 <script src="ad_toolbar.js?v=1"></script>
@@ -555,7 +556,7 @@
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=5"></script>
 <script src="ad_infowin.js?v=1"></script>
-<script src="plugin_registry.js?v=3"></script>
+<script src="plugin_registry.js?v=4"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
@@ -1120,6 +1121,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // log-in-able tenant so Initial Tenant Setup is reached the canonical way (System login → menu → wizard) and
     // stays System-only. Idempotent boot overlay (oracle-sourced rows), never touches ad_seed.db. W-GENESIS-SYSADMIN.
     if (window.SystemTenant) { try { SystemTenant.ensure(db); } catch (e) { console.log('§SYSTEM-TENANT-ERR ' + e.message); } }
+    // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — the two physical tables of AD_Rule + AD_Table_ScriptValidator (their dictionary rows are already in the seed). An idempotent boot OVERLAY, deliberately NOT in a patch:
+    //   patches/ad_seed.db.sql + patches/mfg.sql are hashed into the Team BASE (team_sync.js hashBase) and no base-upgrade path exists, so a patch line would turn every existing team 'base-mismatch'. W-BUS-ROW pins the base hash.
+    if (window.AdRule) { try { AdRule.ensure(db); } catch (e) { console.log('§RULE_TABLES_ERR ' + e.message); } }
     // Host work H1 (plugin lifecycle): restore the persisted ACTIVE plugin bundles at BOOT, after the seed + patches are in, so a bundle's hot hooks (model/doc/validator/process/callout/posting class) are live before the first save.
     if (window.PluginEngine && window.PluginEngine.boot) { try { await window.PluginEngine.boot({ db: db }); console.log('§PLUGIN-BOOT restored=' + (window.PluginEngine._reg() ? window.PluginEngine._reg().list().filter(function (b) { return b.state === 'ACTIVE'; }).length : 0)); } catch (e) { console.log('§PLUGIN-BOOT-ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.

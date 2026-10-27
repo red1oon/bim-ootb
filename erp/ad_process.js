@@ -1133,11 +1133,19 @@
   // runJava(query, env, pi) — ProcessUtil.startJavaProcess (ProcessUtil.java:145-205) inside one ModelLayer.Trx.
   //   pi = { AD_Process_ID, className, title, Record_ID, Table_ID, AD_PInstance_ID, params:{name:{v,vTo}|v}, ctx(Ctx) }
   var proc0db = null;
+  //   pi.trx (optional) = run INSIDE the caller's transaction (a rule row fired by a save, ad_rule.js twin:process:): the process reads and writes through THAT Trx, its writes stay in the caller's op group
+  //   (groupOps/observed are the caller's to take, nothing is returned here), and the callout runtime binding the process replaced is put back afterwards.
   function runJava(query, env, pi) {
     var A = _A(), ML = _ML(), C = JAVA[pi.className];
     if (!C) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + pi.className };
-    var trx = new ML.Trx(query, env || {});
+    var shared = !!pi.trx, trx = shared ? pi.trx : new ML.Trx(query, env || {}), RT0 = A.RUNTIME, kept = shared ? { DB: RT0.DB, PO: RT0.PO, now: RT0.now, log: RT0.log, envNow: A.Env.now } : null;
+    env = env || trx.env || {};
     A.bind(function (sql, params) { return trx.q(sql, params); }, { now: env && env.nowMillis ? function () { return env.nowMillis; } : undefined, log: function (l) { trx.say(l); } });
+    try {
+      return _runJavaIn(A, C, trx, env, query, pi, shared);
+    } finally { if (kept) { RT0.DB = kept.DB; RT0.PO = kept.PO; RT0.now = kept.now; RT0.log = kept.log; A.Env.now = kept.envNow; } }
+  }
+  function _runJavaIn(A, C, trx, env, query, pi, shared) {
     var ctx = pi.ctx || A.loginContext({ client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date });
     // ProcessInfoParameter[] from AD_Process_Para (SeqNo order) — the parameter types the UI's AD_PInstance_Para carry
     var paras = [];
@@ -1166,10 +1174,20 @@
     proc0db = processDB(trx); A.RUNTIME.DB = proc0db;
     var proc = new C();
     var ok = proc.startProcess(ctx, pi, trx);
-    var ops = ok ? trx.groupOps() : [];
-    var observed = (ok && !pi.isError) ? (trx._observed || []) : [];                   // the process's saves' post* events: delivered by the host after the group commits (a refused process delivers none)
-    observed.opMap = (ok && !pi.isError) ? trx._opMap || null : null;
+    var ops = ok && !shared ? trx.groupOps() : [];
+    var observed = (ok && !pi.isError && !shared) ? (trx._observed || []) : [];        // the process's saves' post* events: delivered by the host after the group commits (a refused process delivers none)
+    observed.opMap = (ok && !pi.isError && !shared) ? trx._opMap || null : null;
     return { ok: ok && !pi.isError, dispatched: true, summary: pi.summary, isError: !!pi.isError, logs: proc.logs, ops: ops, observed: observed, log: trx.log, trx: trx };
+  }
+  // runInTrx(trx, ref, opts) - run the ported process <ref> (AD_Process_ID or Value) inside the caller's Trx: the AD_Process row names the classname (ProcessUtil.startJavaProcess :145-205).
+  //   opts = { tableId, recordId, params }. Returns the runJava answer ({ok, dispatched, summary, ...}) or { ok:false, dispatched:false, summary } when the process is absent / has no port.
+  function runInTrx(trx, ref, opts) {
+    opts = opts || {};
+    var key = String(ref == null ? '' : ref).trim(), isId = /^\d+$/.test(key);
+    var p = trx.q('SELECT ad_process_id, value, name, classname FROM ad_process WHERE ' + (isId ? 'ad_process_id=?' : 'value=?') + " AND isactive='Y'", [isId ? Number(key) : key])[0];
+    if (!p) return { ok: false, dispatched: false, summary: 'Process not found (active AD_Process ' + (isId ? 'id ' : 'value ') + key + ')' };
+    if (!p.classname || !JAVA[p.classname]) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + (p.classname || '(blank classname)') + ' (AD_Process ' + p.ad_process_id + ' has no port)' };
+    return runJava(trx.q, trx.env, { trx: trx, AD_Process_ID: p.ad_process_id, className: p.classname, title: p.name, Record_ID: opts.recordId || 0, Table_ID: opts.tableId || 0, params: opts.params || {} });
   }
 
   // ── §UDP-2 SAVED PARAMETERS / LAST RUN — AD_PInstance + AD_PInstance_Para (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2) ──
@@ -1288,7 +1306,7 @@
     pickUsedProcesses: pickUsedProcesses,
     refType: refType, typeOk: typeOk, REF_TYPE: REF_TYPE,
     openItems: openItems, agingFold: agingFold, AGING_BUCKETS: AGING_BUCKETS, importBPartner: importBPartner,
-    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, JAVA: JAVA, typedParam: typedParam, processDB: processDB
+    SvrProcess: SvrProcess, ProcessInfoParameter: ProcessInfoParameter, defineProcess: defineProcess, undefineProcess: undefineProcess, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, runJava: runJava, runInTrx: runInTrx, JAVA: JAVA, typedParam: typedParam, processDB: processDB
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness

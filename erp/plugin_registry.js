@@ -174,6 +174,12 @@
         events = { subscribe: subscribeScoped };
         if (modelval) modelval.subscribe = subscribeScoped;                     // the facade must not hand out the unscoped subscribe it inherits
       }
+      // ctx.rules - the 'twin:' engine of AD_Rule (ad_rule.js, §10.8): register(name, fn) makes `AD_Rule.Value = 'twin:<name>'` resolve to fn(bindings) -> null | error text; owner-scoped, undone on stop.
+      //   An AD_Table_ScriptValidator row (data) then binds it to a table + event with no host code; the bundle never holds a gate topic for it.
+      var RULE = host.rule || (typeof window !== 'undefined' && window.AdRule) || (typeof globalThis !== 'undefined' && globalThis.AdRule) || null, rules = null;
+      if (RULE && typeof RULE.registerRuleFunction === 'function') {
+        rules = { register: function (name, fn) { RULE.registerRuleFunction(name, fn, { owner: id }); scope.label('AD_Rule twin  twin:' + name); scope.rec(function () { RULE.unregisterRuleFunction(name, id); }); return name; } };
+      }
       var callout = facade(host.callout);
       if (callout) {
         callout.registerHandler = function (name, fn) { host.callout.registerHandler(name, fn, own); scope.label('ICallout handler  ' + name); scope.once('callout', function () { if (host.callout.removeOwner) host.callout.removeOwner(id); }); };
@@ -253,6 +259,7 @@
         manifest:   manifest,
         modelval:   modelval,                  // ad_modelval module (registerValidator/fireHooks)
         events:     events,                    // the topic bus: subscribe(topic, table, name, fn, {observe}) - owner-scoped, undone on stop
+        rules:      rules,                     // the twin: engine of AD_Rule: register(name, fn) - owner-scoped, undone on stop
         callout:    callout,                   // ad_callout module  (registerHandler / defineCallout)
         process:    processE,                  // ad_process module  (registerHandler w/ meta.kind / defineProcess)
         postTokens: postTokens,                // post_resolver token map — contribute a token
