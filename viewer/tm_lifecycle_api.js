@@ -471,6 +471,7 @@
         // real task_ids, and the auto-generate branch never fires. refoldSchedule() itself is
         // untouched — its external-edit caller (4D_SCHED_EDIT in main.js) still needs the round-trip.
         console.log('§S4_ACTIVATION_TIMING_MID beforeMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
+        if (typeof initRateTemplate === 'function') await initRateTemplate();   // RATES_SOURCE_OF_TRUTH §6.5: the pack's labour before the first schedule
         await TMS._load4DTemplate();   // §TPL_WIRED — before the first materialize, not after
         TMS._materializeNativeSchedule(app);
         console.log('§S4_ACTIVATION_TIMING_MID afterMaterializeNative=' + (performance.now() - _s4ActT0).toFixed(0));
@@ -526,7 +527,7 @@
         ' | thrown type=' + (typeof e) + ' value=' + String(e));
       // Fallback: compute without cache
       TMS._ops = TMS.loadOps(); TMS._ganttDirty = true;
-      if (!TMS._ops.length) { await TMS._load4DTemplate(); TMS._materializeNativeSchedule(TMS.A()); await TMS.injectGantt(); TMS._ops = TMS.loadOps(); TMS._ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
+      if (!TMS._ops.length) { if (typeof initRateTemplate === 'function') await initRateTemplate(); await TMS._load4DTemplate(); TMS._materializeNativeSchedule(TMS.A()); await TMS.injectGantt(); TMS._ops = TMS.loadOps(); TMS._ganttDirty = true; }  // §GANTT_SINGLE_LOAD, same as the main path (await: loadOps must see the chunked writes)
       if (TMS._ops.length) { _finishActivate(app, silent); resolve(true); }
       else resolve(false);
     });

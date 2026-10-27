@@ -312,15 +312,19 @@
       "smm_section": ""
     }
   },
+  "rates_default": {
+    "rate": 420,
+    "unit": "EA"
+  },
   "labor": {
     "HVAC_TECH": {
       "rate_per_day": 165,
       "crew_size": 2,
       "trade": "HVAC Technician (Skilled)",
       "productivity": {
-        "IfcDuct": 18,
-        "IfcDuctSegment": 18,
-        "IfcDuctFitting": 12,
+        "IfcDuct": 17,
+        "IfcDuctSegment": 17,
+        "IfcDuctFitting": 11,
         "IfcFlowMovingDevice": 4,
         "IfcEnergyConversionDevice": 3,
         "IfcFlowTerminal": 12,
@@ -332,9 +336,9 @@
       "crew_size": 2,
       "trade": "Pipefitter (Skilled)",
       "productivity": {
-        "IfcPipe": 25,
-        "IfcPipeSegment": 25,
-        "IfcPipeFitting": 15,
+        "IfcPipe": 24,
+        "IfcPipeSegment": 24,
+        "IfcPipeFitting": 14,
         "IfcFlowSegment": 20,
         "IfcFlowFitting": 15,
         "IfcFlowStorageDevice": 4,
@@ -349,10 +353,10 @@
       "crew_size": 2,
       "trade": "Electrician (Skilled)",
       "productivity": {
-        "IfcCableCarrier": 30,
-        "IfcCableCarrierSegment": 30,
-        "IfcLightFixture": 20,
-        "IfcOutlet": 25,
+        "IfcCableCarrier": 28,
+        "IfcCableCarrierSegment": 28,
+        "IfcLightFixture": 18,
+        "IfcOutlet": 24,
         "IfcElectricAppliance": 15,
         "IfcFlowController": 10,
         "IfcAlarm": 25,
@@ -364,8 +368,8 @@
       "crew_size": 4,
       "trade": "Steel Erector (Skilled)",
       "productivity": {
-        "IfcBeam": 8,
-        "IfcColumn": 6,
+        "IfcBeam": 7,
+        "IfcColumn": 5,
         "IfcPlate": 12,
         "IfcMember": 10
       }
@@ -375,7 +379,7 @@
       "crew_size": 6,
       "trade": "Concrete Gang (Mixed)",
       "productivity": {
-        "IfcSlab": 35,
+        "IfcSlab": 33,
         "IfcFooting": 6,
         "IfcPile": 4,
         "IfcReinforcingBar": 50,
@@ -388,8 +392,8 @@
       "crew_size": 3,
       "trade": "Mason (Skilled) + Laborers",
       "productivity": {
-        "IfcWall": 12,
-        "IfcWallStandardCase": 12,
+        "IfcWall": 11,
+        "IfcWallStandardCase": 11,
         "IfcOpeningElement": 20,
         "IfcBuildingElementPart": 15
       }

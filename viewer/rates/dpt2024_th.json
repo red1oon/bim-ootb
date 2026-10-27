@@ -312,6 +312,10 @@
       "smm_section": ""
     }
   },
+  "rates_default": {
+    "rate": 4100,
+    "unit": "EA"
+  },
   "labor": {
     "HVAC_TECH": {
       "rate_per_day": 1500,

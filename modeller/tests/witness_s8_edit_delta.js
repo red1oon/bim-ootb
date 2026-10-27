@@ -13,6 +13,8 @@
  *   D6 UNDO         Ctrl+Z -> hover -> §S8-DELTA costDelta=0.00 and the label says the edit was undone.
  *   D7 MOVE         a pure GEOM_MOVE on the same wall prints costDelta=0.00 ("a move changes no quantity").
  *   D8 LAZY         nothing of the Viewer's owners is loaded before the first hover of an edited element (Open time unchanged).
+ *   D9 PACK         the Δ's rate is the rate PACK's own number for the class, and the pack is the one the Viewer picks for the language
+ *                   (rates.js initRateTemplate, bim-compiler RATES_SOURCE_OF_TRUTH §6): the two surfaces price from the same pack.
  */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -123,8 +125,11 @@ runE2E('W-S8-EDIT-DELTA', async (t) => {
   const db = new SQL.Database(fs.readFileSync(path.join(ROOT, 'modeller', 'Duplex_extracted.db')));
   const rec = db.exec("SELECT m.ifc_class, t.bbox_x, t.bbox_y, t.bbox_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.guid='" + guid.replace(/'/g, "''") + "'")[0].values[0];
   const r4 = x => Math.round(x * 1e4) / 1e4, dims = [r4(rec[1]), r4(rec[2]), r4(rec[3])], scaled = [dims[0] * factors[0], dims[1] * factors[1], dims[2] * factors[2]];
-  const pr = await pg.evaluate(c => ({ r: (window.RATES[c] || {}), locale: (window._TRL_LOADER && window._TRL_LOADER.detectLocale()) }), rec[0]);   // the ACTIVE rate (rates.js + the user's locale pack, as the Viewer prices) — quantity and arithmetic below stay independent
-  const rate = pr.r.rate, unit = pr.r.unit; console.log('  §S8_RATE_SOURCE locale=' + pr.locale + ' ' + rec[0] + '=' + rate + '/' + unit);
+  const pr = await pg.evaluate(async c => { const locale = window._TRL_LOADER && window._TRL_LOADER.detectLocale(), name = window.RATE_TEMPLATE_NAME;   // the ACTIVE rate (the pack rates.js picked, as the Viewer prices) — quantity and arithmetic below stay independent
+    let packRate = null; try { const P = await (await fetch('../viewer/rates/' + name + '.json')).json(); packRate = P.materials[c] ? P.materials[c].rate : null; } catch (e) {}
+    return { r: (window.RATES[c] || {}), locale, name, want: window.LOCALE_RATE_MAP && window.LOCALE_RATE_MAP[locale], packRate }; }, rec[0]);
+  const rate = pr.r.rate, unit = pr.r.unit; console.log('  §S8_RATE_SOURCE locale=' + pr.locale + ' pack=' + pr.name + ' ' + rec[0] + '=' + rate + '/' + unit + ' (pack file ' + pr.packRate + ')');
+  V('D9 PACK', pr.name && pr.name === (pr.want || 'cidb2024_my') && pr.packRate != null && rate === pr.packRate ? 'PASS' : 'FAIL', 'locale=' + pr.locale + ' pack=' + pr.name + ' (want ' + (pr.want || 'cidb2024_my') + ') ' + rec[0] + ' rate=' + rate + ' pack file=' + pr.packRate);
   const expA = BigDecimal.of(String(rate)).multiply(BigDecimal.of(area(scaled).toFixed(6)));
   const expB = BigDecimal.of(String(rate)).multiply(BigDecimal.of(area(dims).toFixed(6)));
   const exp = expA.setScale(0, BigDecimal.RoundingMode.HALF_UP).subtract(expB.setScale(0, BigDecimal.RoundingMode.HALF_UP)).toString();   // ONE BASIS: round0(rate x qty) per row, as the Project Order line
