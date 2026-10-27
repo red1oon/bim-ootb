@@ -11,6 +11,7 @@
 //      qty = the shipped 5D basis (M longest edge, M2 longest × second, M3 volume, else count), rate = the page's active pack (window.RATES)
 //   B7 the Conformity Gate on the commit is clean: a copy inherits its source's relations (sdg_gate opts.copies); on the same boxes, without the rule the gate reports RED,
 //      and with a wrong shift (no true counterpart) it reports RED again — the rule removes inherited contacts only
+//   B3r the moves went through the spine's cascade: the page handed the planner SdgCascade.ridersFor + the convert's fills edges (§D89 step 3; the ride itself: W-BAY-RIDE)
 //   B5 one Ctrl+Z restores every element and the grid; Ctrl+Y brings the bay back      B6 0 page errors
 // Input: the 9 CLI-marked shed sheets (SHED_MARKED_DIR, default ~/Videos/dxf2bim_film_work/why/cli/marked). Missing input -> MISSING, exit 2.
 // usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_add_bay.js
@@ -73,7 +74,7 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     const gboxes = 'window.__gbx = () => { const out = {}; window.Bonsai.group().children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } }); return out; }; window.__gb0 = window.__gbx(); 1';
     await pg.evaluate(gboxes);
     await pg.click('#dxf-bay-max'); await sleep(4000);
-    const R = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay; return L ? { plan: { ok: L.plan.ok, why: L.plan.why, pitch: L.plan.pitch, axis: L.plan.axis, hinge: L.plan.hingeLabel, moved: L.plan.moved, stretched: L.plan.stretched, copied: L.plan.copied, tag: L.plan.tag }, cost: L.cost, verify: L.res && L.res.verify, gate: L.res && L.res.gate, stat: (document.getElementById('dxf-status') || {}).textContent, rates: window.RATES } : null; });
+    const R = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay; return L ? { cascadeFills: L.cascadeFills, riders: L.plan.riders, plan: { ok: L.plan.ok, why: L.plan.why, pitch: L.plan.pitch, axis: L.plan.axis, hinge: L.plan.hingeLabel, moved: L.plan.moved, stretched: L.plan.stretched, copied: L.plan.copied, tag: L.plan.tag }, cost: L.cost, verify: L.res && L.res.verify, gate: L.res && L.res.gate, stat: (document.getElementById('dxf-status') || {}).textContent, rates: window.RATES } : null; });
     if (!R || !R.plan.ok) { ok('B1 a bay was added', false, JSON.stringify(R && R.plan)); throw new Error('no bay'); }
     const S1 = await snap(pg), K = R.plan.axis === 'x' ? 0 : 1, P = R.plan.pitch;
     const added = Object.keys(S1.els).filter(id => !S0.els[id]).map(id => Object.assign({ id: +id }, S1.els[id]));
@@ -89,6 +90,8 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     const hingeX = R.plan.tag.pos - P * R.plan.tag.dir, nl = S1.xs.length === S0.xs.length + 1 && Math.abs(S1.xs[R.plan.tag.index] - R.plan.tag.pos) <= 1e-6 && S1.xl[R.plan.tag.index] === R.plan.hinge + 'A';
     ok('B3 beyond the hinge moved one pitch, full-length members one pitch longer, nothing else changed, the grid gained the new line', mv.length === 0 && st.length === 0 && still.length === 0 && R.plan.moved.length > 0 && R.plan.stretched.length > 0 && nl,
       'moved ' + R.plan.moved.length + ' (off ' + mv.length + ') stretched ' + R.plan.stretched.length + ' (off ' + st.length + ') others changed ' + still.length + ' | grid ' + S0.xs.length + '->' + S1.xs.length + ' new ' + S1.xl[R.plan.tag.index] + '@' + (S1.xs[R.plan.tag.index] || 0).toFixed(3) + ' hinge ' + R.plan.hinge + '@' + hingeX.toFixed(3));
+    ok('B3r the moves went through the spine\'s cascade (SdgCascade.ridersFor + the convert\'s fills edges)', R.cascadeFills != null && Array.isArray(R.riders),
+      'cascade fills=' + R.cascadeFills + ' riders=' + (R.riders ? R.riders.length : 'none') + ' (the shed holds no hosted filling beyond the hinge; the ride is W-BAY-RIDE)');
     // B4 independent cost recompute (own BigDecimal, own quantity rule, the page's rates)
     const qty = (u, d) => { const s = d.slice().sort((a, b) => b - a); return u === 'M' ? s[0] : u === 'M2' ? s[0] * s[1] : u === 'M3' ? d[0] * d[1] * d[2] : 1; };
     const row = (cls, d) => { const r = R.rates[cls]; if (!r) return BigDecimal.of('0'); return BigDecimal.of(String(r.rate)).multiply(BigDecimal.of(qty(r.unit, d).toFixed(6))).setScale(0, BigDecimal.RoundingMode.HALF_UP); };

@@ -1128,3 +1128,25 @@ gaps of elements that moved together read as tighter (5 ORANGE) — now 2 float3
 W-ORANGE-ACCEPT 5/0, W-E2E-GRID-GREENORANGE 13/0, W-DXF-GRID 4/0, W-SHED-WALL-EDIT 7/0, W-YELLOW-PAGE PASS.
 **Still open (named):** §D90 (2) `applies_to_types` on the compliance files (spec only); §D88 B (a door in a wall gap hosted by that wall); labour of a bay copy is count-based (no building
 db in a DXF convert); the film's shed must state its type (the editor's dropdown, one step in the take).
+
+**§D89 step 3 — the bay's moves go through the spine's cascade (review session 10, item 1; owner 2026-10-28: "isn't our Modeller prior done work handles ... what to drag along") — SPEC.**
+**Defect (read in code, `bay_add.js plan()` step 1, main 1e7b6d40):** every element whose centre lies beyond the hinge gets its own raw `GEOM_MOVE {induced: 'bay-add'}`. A door moves because it
+lies beyond, not because it rides its wall: (a) a door beyond the hinge in a wall that does NOT move (the wall's centre is on the near side) is pulled out of its wall; (b) a hosted door
+beyond is moved as a free element, so the op log does not say it rode its host. The spine already owns "what drags along": `SdgCascade.ridersFor` (`sdg_cascade.js:79`), used by `commitMove`
+(`modeller.html` ~3085) and `_healOps` (~2994).
+**Rule.** `plan(rows, grid, rule, end, cascade?)`, `cascade = { ridersFor, guidByFid, fidByGuid, fills }` (the page passes `window.SdgCascade.ridersFor`, the §ARC-1 bridge and
+`window.swXEdges.fills`, which a DXF convert publishes, §D59 (c)). A row is a FILLING when a fills edge names it as `filling_guid` and its host is one of the rows. Fillings are never moved
+on their own: the direct moves are the hosts + free elements beyond the hinge; then `ridersFor(directMoves)` adds each moved host's fillings as `GEOM_MOVE {induced: 'hosted-by'}` by
+the same delta (exactly `commitMove`'s ops). A filling whose host does not move stays with it. A filling whose host is STRETCHED (a full-length member) refuses the plan with the reason:
+the ride of a GEOM_SCALE is proportional (`stretchRide`), which would not put it one pitch on. Holes need nothing: a TRANSLATE-only host carries its void (cut_move). `out.riders` lists the
+riders; the commit's gate checks them. Without `cascade` (or with no fills edge among the rows) the plan is byte-identical to today's.
+**Witness claims (W-BAY-RIDE, pure planner, node; built set: 5 bays at 3 m, bays 0-2 typical, a hosted door in bay 3, a wall straddling the hinge with a door beyond it):**
+R1 the hosted door beyond the hinge moves as a `hosted-by` rider of its moved wall, same delta, no `bay-add` op of its own; R2 the door whose wall stays gets no op (its offset to its wall
+unchanged); R3 an unhosted element beyond still moves one pitch; R4 a filling of a stretched member refuses with the reason; R5 without `cascade` the ops equal the plan without fills
+(the shed path, 0 fills: W-DXF-ADD-BAY unchanged). Falsifier: main's `bay_add.js` (R1, R2, R4 FAIL).
+**§D89 step 3 ✅ BUILT 2026-10-28 (witness).** `bay_add.js plan(..., cascade)`: fillings are excluded from the direct moves; `SdgCascade.ridersFor(moved)` adds their `hosted-by` moves; a
+filling of a stretched element refuses. `dxf_import_ui.js addBay` passes the spine's cascade (`§DXF-BAY plan ... riders=N cascade=<n>fills`); `commitBay` gates the riders too.
+**W-BAY-RIDE 5 / 0** (`modeller/tests/witness_bay_ride.js`, pure): R1 D3 `GEOM_MOVE(hosted-by dx=3)`, its wall `bay-add dx=3`; R2 D2 and its straddling wall: no op; R3 free D4 `bay-add dx=3`;
+R4 refused "1 filling(s) hosted by a full-length element that the bay stretches (first: #22 in #21)"; R5 no cascade = 9 bay-add moves = the 9 elements beyond. **Falsifier** (main's `bay_add.js`):
+R1, R2, R4 FAIL (D3 `bay-add`, D2 pulled out of its wall, the covering's window planned). **W-DXF-ADD-BAY 9 / 0** on the shed (unchanged numbers: 29 copies, 46 moved, 14 stretched,
+USD +14260, gate clean, undo 445 / redo 474) + new B3r: the page handed the planner the cascade (`cascade=0fills riders=0`: the shed has no hosted filling, as measured in §D87).

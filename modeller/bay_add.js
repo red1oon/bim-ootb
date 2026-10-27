@@ -14,8 +14,9 @@
   function sig(counts) { return Object.keys(counts).sort().map(function (k) { return k + ':' + counts[k]; }).join(','); }
 
   // rows: [{ id, cls, params, box: [x0,y0,z0,x1,y1,z1] world }], grid: { xs, ys, xlabels, ylabels }, rule: edits.bay_repeat, end: 'max' | 'min'
-  function plan(rows, grid, rule, end) {
-    var out = { ok: false, why: null, ops: [], moved: [], copied: [], stretched: [], left: [] };
+  // cascade (optional): { ridersFor, guidByFid, fidByGuid, fills } = SdgCascade.ridersFor + the §ARC-1 bridge + swXEdges.fills (§D89 step 3: a filling rides its host, never moves on its own)
+  function plan(rows, grid, rule, end, cascade) {
+    var out = { ok: false, why: null, ops: [], moved: [], riders: [], copied: [], stretched: [], left: [] };
     if (!rule) { out.why = 'no bay_repeat rule for this building type'; return out; }
     var axis = rule.axis === 'grid-long' ? ((grid.xs || []).length >= (grid.ys || []).length ? 'x' : 'y') : rule.axis, k = axis === 'x' ? 0 : 1;
     var L = (axis === 'x' ? grid.xs : grid.ys).slice(), labs = (axis === 'x' ? grid.xlabels : grid.ylabels) || [];
@@ -45,10 +46,17 @@
     var beyond = function (r) { var c = (r.box[k] + r.box[k + 3]) / 2; return dir > 0 ? c > X + ON_LINE : c < X - ON_LINE; };
     var badSpan = span.filter(function (r) { return strC.indexOf(r.cls) < 0 || Math.abs(((r.params.placement || {}).rot || 0) % 180) > 1e-6; });
     if (badSpan.length) { out.why = badSpan.length + ' full-length element(s) the rule does not stretch or that are yawed (first: #' + badSpan[0].id + ' ' + badSpan[0].cls + ')'; return out; }
+    // fillings (a fills edge names the row as filling_guid, its host is a row): hostOf[filling fid] = host fid
+    var C = cascade && cascade.ridersFor && cascade.guidByFid && cascade.fidByGuid && Array.isArray(cascade.fills) ? cascade : null, hostOf = {}, isRow = {};
+    rows.forEach(function (r) { isRow[r.id] = 1; });
+    if (C) C.fills.forEach(function (e) { var f = C.fidByGuid[e.filling_guid], h = C.fidByGuid[e.host_guid]; if (f != null && h != null && isRow[f] && isRow[h] && hostOf[f] == null) hostOf[f] = h; });
+    var onSpan = Object.keys(hostOf).filter(function (f) { return span.some(function (r) { return r.id === hostOf[f]; }); });
+    if (onSpan.length) { out.why = onSpan.length + ' filling(s) hosted by a full-length element that the bay stretches (first: #' + onSpan[0] + ' in #' + hostOf[onSpan[0]] + '): a stretch rides proportionally, not one pitch on'; return out; }
     var id = 'bay-' + axis + hinge + '-' + Date.now().toString(36), mv = { dx: 0, dy: 0, dz: 0 }; mv['d' + axis] = d;
     var tag = { id: id, axis: axis, index: end === 'min' ? hinge : hinge + 1, pos: X + d, pitch: pitch, dir: dir, from: bk };
-    // 1 move everything beyond the hinge
-    rows.forEach(function (r) { if (span.indexOf(r) >= 0 || !beyond(r)) return; out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) }); out.moved.push(r.id); });
+    // 1 move the hosts + free elements beyond the hinge; their fillings ride as hosted-by (SdgCascade.ridersFor, as commitMove does); a filling never moves on its own
+    rows.forEach(function (r) { if (span.indexOf(r) >= 0 || !beyond(r) || hostOf[r.id] != null) return; out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) }); out.moved.push(r.id); });
+    if (C && out.moved.length) C.ridersFor(out.moved, C.guidByFid, C.fidByGuid, C.fills, new Set(out.moved)).forEach(function (f) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: f, induced: 'hosted-by' }, mv) }); out.riders.push(f); });
     // 2 copies: the typical bay's elements (copy classes) and the hinge line's frame (line_copy classes), one pitch on
     var put = function (r) { var p = clone(r.params); p.placement = Object.assign({}, p.placement); p.placement[axis] = +(((p.placement[axis] || 0) + d).toFixed(6));
       p.provenance = 'derived:user-edit'; p.bayCopy = Object.assign({ src: r.id }, tag); out.ops.push({ op_type: 'GEOM_INSERT', params: p }); out.copied.push({ from: r.id, cls: r.cls }); };
