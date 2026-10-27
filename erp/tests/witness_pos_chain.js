@@ -4,14 +4,17 @@
 // ⚠ DO NOT REMOVE — Scope: W-POS-CHAIN, bim-compiler prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13 (2.4 + 2.6 + the POS rule row, G-1…G-3 of TEAMWORK_FRAMEWORK §38.8). READ THE LOG after every run.
 //   THE ISSUE: a till's ticket must become ONE completed sales order, made ONCE, by the head-office processor only, through legacy Import Orders, with no host code naming a table or process,
 //   and the completed order must come back to the till. Before §13 a received row fired no listener (§9.1 gap 3), so no trigger could run on the processor at all.
-//   The REAL erp/idempiere.html (?team=1, GardenAdmin) in TWO headless Chromium contexts on one dumb folder pipe (no GitHub): A = the processor (founder, role 102), B = the till (role 103).
+//   The REAL erp/idempiere.html (?team=1, GardenAdmin) in TWO headless Chromium contexts on one dumb folder pipe (no GitHub): A = the processor (founder, role 102), B = the till (role 200001 'GardenWorld Admin Not Advanced').
+//   WHY NOT role 103: I_Order is AccessLevel 2 (Client) and 103 is an Organization-level role, so legacy MRole.canUpdate refuses it (missing=T, measured): the comm admission then refuses the
+//   till's rows on every device, as legacy would refuse the save. A till that declares tickets holds a role that may write the import table.
 //   §C0 precondition — B enrolled; I_Order exists on both (the boot overlay); A holds the rule rows, B does not, and the rule rows are NOT shared (the plan declares them LOCAL).
 //   §C1 the ticket   — B enters 3 I_Order rows with ONE ticket key (DocumentNo) through the ERP's own write path (window 281's commit funnel), Visits; B ran no Import Orders.
-//   §C2 processor    — A Visits: §TEAM_REPLICA_IN fired the received rows; Import Orders ran once (§RULE_PROCESS ref=206); exactly ONE C_Order with DocumentNo = the key, DocStatus CO,
+//   §C2 processor    — A Visits: §TEAM_REPLICA_IN fired the received rows; Import Orders invoked per row, imports once (#1/3 then #0/0); exactly ONE C_Order with DocumentNo = the key, DocStatus CO,
 //                      3 lines; the 3 I_Order rows I_IsImported='Y'.
 //   §C3 back         — A Visits (sends), B Visits: B holds that order (same c_order_uu, CO, 3 lines) and its I_Order rows read I_IsImported='Y'; B still ran no Import Orders.
 //   §C4 once         — two more Visits on both: no second order, the rule fired nothing new (§TEAM_REPLICA_IN not repeated for the same rows).
 //   §C5 FL-8         — the till's own I_Order saves fired no TANR (no §RULE_FIRE event=TANR on B at any point).   §C6 0 page errors.
+//   §C7 own ticket   — a ticket the processor saves ITSELF is not imported by the replica rule, not at the save and not after its Visits re-project its own rows (TANR = received rows only).
 //   §MUTANTS         — the adapter served with one rule broken; each must turn >= 1 arm red (a crashed child is NOT a kill).
 // Run: node erp/tests/witness_pos_chain.js 2>&1 | tee /tmp/witness_pos_chain.log
 'use strict';
@@ -79,9 +82,9 @@ var LINES = JSON.parse(process.env.PC_LINES || 'null');   // set below from the 
   };
   if (!LINES) { console.log('§PC_VERDICT INCONCLUSIVE — no ticket lines (PC_LINES) given'); process.exit(2); }
 
-  if (!QUIET) console.log('§S0 two devices: A = processor (founder, role 102), B = till (role 103)');
+  if (!QUIET) console.log('§S0 two devices: A = processor (founder, role 102), B = till (role 200001)');
   var A = await device('A'), B = await device('B'), space = await T.found(A); await T.join(B, space);
-  for (var i = 0; i < 4; i++) { await T.approveAll(A, 103); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
+  for (var i = 0; i < 4; i++) { await T.approveAll(A, 200001); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   var hasIo = async function (d) { return d.pg.evaluate(function () { return window.__idmpDb.exec("SELECT count(*) FROM sqlite_master WHERE name='i_order'")[0].values[0][0]; }); };
   var tidIO = await A.pg.evaluate(function () { return Number(window.__idmpDb.exec("SELECT ad_table_id FROM ad_table WHERE lower(tablename)='i_order'")[0].values[0][0]); });
   // the processor's ONE rule row (device-local configuration), entered through the ERP's own write path
@@ -94,19 +97,23 @@ var LINES = JSON.parse(process.env.PC_LINES || 'null');   // set below from the 
   verdict('C0', rid != null && svid != null && Number(aRules[0].n) === 1 && Number(bRules[0].n) === 0 && localRule === 2, 'the rule rows are on the processor ONLY: sealed on A, not shared (plan LOCAL: 2 §TEAM_STATION_LOCAL lines), absent on B', 'rule=' + rid + ' sv=' + svid + ' A=' + aRules[0].n + ' B=' + bRules[0].n + ' local=' + localRule);
 
   if (!QUIET) console.log('§S1 the till enters the ticket ' + KEY + ' (' + LINES.length + ' lines) and Visits');
-  var made = [];
+  var made = [], mark = B.logs.length;
   for (var li = 0; li < LINES.length; li++) made.push(await T.create(B, 'i_order', Object.assign({ documentno: KEY }, LINES[li])));
   await T.visit(B);
+  if (!QUIET) B.logs.slice(mark).filter(function (l) { return /§(CRUD|OPLOG|MODEL|BUS|TEAM|RULE|SEQ)|rror|refus/i.test(l); }).slice(0, 30).forEach(function (l) { console.log('   B: ' + l.slice(0, 240)); });
   verdict('C1', made.every(function (x) { return x != null; }) && T.count(B, /§RULE_PROCESS ref=206/) === 0, 'the till sealed ' + LINES.length + ' I_Order rows through applyOp and ran no Import Orders', 'created=' + JSON.stringify(made));
 
   if (!QUIET) console.log('§S2 the processor Visits');
   var rin = await T.visit(A);
+  if (!QUIET) A.logs.filter(function (l) { return /§TEAM_VISIT|§TEAM_PROJECT_SKIP|§TEAM_REPLICA/.test(l); }).slice(-4).forEach(function (l) { console.log('   A: ' + l.slice(0, 300)); });
   var ordA = await T.rows(A, "SELECT c_order_id AS id, c_order_uu AS uu, docstatus AS ds, c_bpartner_id AS bp, (SELECT count(*) FROM c_orderline l WHERE l.c_order_id=o.c_order_id) AS nl FROM c_order o WHERE documentno='" + KEY + "'");
   var ioA = await T.rows(A, "SELECT i_isimported AS imp, c_order_id AS oid FROM i_order WHERE documentno='" + KEY + "'");
   console.log('   §PC_A replicaIn=' + JSON.stringify(rin) + ' orders=' + JSON.stringify(ordA) + ' i_order=' + JSON.stringify(ioA));
   A.logs.filter(function (l) { return /§TEAM_REPLICA_(IN|EXCEPTION)|§RULE_(FIRE|PROCESS|VETO)|§BUS_REPLICA/.test(l); }).slice(0, 10).forEach(function (l) { console.log('   A: ' + l.slice(0, 220)); });
   verdict('C2', rin && rin.received >= LINES.length && rin.exceptions === 0 && rin.committed === true, 'the processor fired the received rows (§TEAM_REPLICA_IN) and committed what the rule wrote', JSON.stringify(rin));
-  verdict('C2', T.count(A, /§RULE_PROCESS ref=206 /) >= 1 && ordA.length === 1 && ordA[0].ds === 'CO' && Number(ordA[0].nl) === LINES.length, 'exactly ONE C_Order with DocumentNo = the ticket key, DocStatus CO, ' + LINES.length + ' lines (Import Orders, legacy)', JSON.stringify(ordA));
+  var runs = A.logs.filter(function (l) { return /§RULE_PROCESS ref=206 /.test(l); }), imp = runs.filter(function (l) { return /summary=#1\/3/.test(l); }).length, empty = runs.filter(function (l) { return /summary=#0\/0/.test(l); }).length;
+  verdict('C2', runs.length === LINES.length && imp === 1 && empty === LINES.length - 1, 'Import Orders is invoked once per received row (TANR is per record, as legacy) and imports ONCE: one run #1/' + LINES.length + ', the others #0/0 (I_IsImported, legacy idempotency)', 'runs=' + runs.length + ' imported=' + imp + ' empty=' + empty);
+  verdict('C2', ordA.length === 1 && ordA[0].ds === 'CO' && Number(ordA[0].nl) === LINES.length, 'exactly ONE C_Order with DocumentNo = the ticket key, DocStatus CO, ' + LINES.length + ' lines (Import Orders, legacy)', JSON.stringify(ordA));
   verdict('C2', ioA.length === LINES.length && ioA.every(function (r) { return r.imp === 'Y' && r.oid != null; }), 'the ' + LINES.length + ' I_Order rows read I_IsImported=Y and name the order', JSON.stringify(ioA));
 
   if (!QUIET) console.log('§S3 the processor Visits (sends), the till Visits');
@@ -122,6 +129,12 @@ var LINES = JSON.parse(process.env.PC_LINES || 'null');   // set below from the 
   for (var k = 0; k < 2; k++) { await T.visit(A); await T.visit(B); }
   var ordA2 = await T.rows(A, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY + "'"), ordB2 = await T.rows(B, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY + "'");
   verdict('C4', Number(ordA2[0].n) === 1 && Number(ordB2[0].n) === 1 && T.count(A, /§RULE_PROCESS ref=206 /) === p0, 'no second order and Import Orders did not run again (the fired set holds across Visits and refolds)', 'A=' + ordA2[0].n + ' B=' + ordB2[0].n + ' processRuns ' + p0 + '->' + T.count(A, /§RULE_PROCESS ref=206 /) + ' replicaIn lines ' + r0 + '->' + T.count(A, /§TEAM_REPLICA_IN received=/));
+  // C7: a ticket the PROCESSOR saves itself is an ordinary save (afterNew), not a replica: its TANR row must NOT import it - not at the save, and not after a Visit re-projects the processor's own rows
+  var KEY2 = KEY + '-HQ', p1 = T.count(A, /§RULE_PROCESS ref=206 /);
+  for (var lj = 0; lj < LINES.length; lj++) await T.create(A, 'i_order', Object.assign({ documentno: KEY2 }, LINES[lj]));
+  await T.visit(A); await T.visit(A);
+  var own2 = await T.rows(A, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY2 + "'"), io2 = await T.rows(A, "SELECT i_isimported AS imp FROM i_order WHERE documentno='" + KEY2 + "'");
+  verdict('C7', Number(own2[0].n) === 0 && io2.length === LINES.length && io2.every(function (r) { return r.imp === 'N'; }) && T.count(A, /§RULE_PROCESS ref=206 /) === p1, 'the processor\'s OWN ticket is not imported by the replica rule, even after its Visits (only a row received from another device fires TANR)', 'orders=' + own2[0].n + ' rows=' + JSON.stringify(io2) + ' processRuns ' + p1 + '->' + T.count(A, /§RULE_PROCESS ref=206 /));
   verdict('C5', T.count(B, /§RULE_FIRE .*event=TANR/) === 0, 'the till fired no TANR rule at any point (its own saves are ordinary saves; it holds no rule row)', 'B TANR fires=' + T.count(B, /§RULE_FIRE .*event=TANR/));
   verdict('C6', errors === 0, '0 page errors on both devices', 'errors=' + errors + (errors ? ' ' + A.errs.concat(B.errs).slice(0, 2).join(' | ') : ''));
 
@@ -133,7 +146,7 @@ var LINES = JSON.parse(process.env.PC_LINES || 'null');   // set below from the 
   if (process.env.PC_NO_MUT) { console.log('§PC_VERDICT PASS judged=' + judged + ' fails=0 mutants=skipped pageerrors=' + errors); process.exit(0); }
   var M = [
     ['the fired set is not kept (every Visit fires again)', '    todo.forEach(function (x) { fired[x.hash] = 1; });\n', '\n', ['C4']],
-    ['the till fires its OWN rows too (author filter removed)', "if (e.author !== (dev && dev.kid) && (b.op_type", "if ((b.op_type", ['C1', 'C5', 'C4', 'C2']],
+    ['the till fires its OWN rows too (author filter removed)', "if (e.author !== (dev && dev.kid) && (b.op_type", "if ((b.op_type", ['C7', 'C1', 'C5', 'C4', 'C2']],
     ['no replica firing after the projection', "      var rin = res && res.ok ? await fireReceived(pj) : null;", "      var rin = null;", ['C2']]];
   var cp = require('child_process'), muts = [];
   for (var m of M) {
