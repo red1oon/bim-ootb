@@ -353,10 +353,9 @@ var SEQUENCE_DEFAULT = {phase:'Architecture Envelope',sequence:6,resource:'MASON
 // §4D_FACADE_ORDER: name-based reclass ahead of the class lookup above — ifc_class alone cannot
 // tell curtain-wall glazing/framing (IfcPlate/IfcMember) from genuinely structural plates/members
 // (e.g. Terminal's 33,324 Metal Deck IfcPlate, JKR/LTU_AHouse structural steel/timber, which must
-// stay at their structural seq). This is the IN-FILE SYNC DEFAULT — viewer.html does NOT call
-// initRateTemplate()/loadSequenceRules() (only mep_report.html/boq_charts.html do), so this hardcoded
-// copy, not the JSON, is what actually runs in the main viewer/Time Machine/Author wizard. Keep it in
-// sync with rates/sequence_rules.json's NAME_OVERRIDES (same convention as SEQUENCE_RULES above).
+// stay at their structural seq). This is the IN-FILE SYNC DEFAULT: every page that prices (viewer.html since RATES_SOURCE_OF_TRUTH
+// §6.5, mep_report.html, boq_charts.html, the Modeller's §S8) then loads rates/sequence_rules.json over it, and the Time Machine
+// waits for that. Keep it identical to the JSON's NAME_OVERRIDES (same convention as SEQUENCE_RULES above; witness_sequence_template_lock.js).
 // §CIVIL_PHASE (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §Q) — phase by DISCIPLINE for civil models,
 // consulted before the class rule ONLY when an element's discipline is one of these civil codes (import_worker.js
 // CIVIL_DISCS, from file names). Building disciplines never match → building schedules unchanged (NON-IMPACT rule).
@@ -713,8 +712,42 @@ function _mergeRateOverride(base, over) {
   Object.keys(over).forEach(function(k) { out[k] = (k in base) ? _mergeRateOverride(base[k], over[k]) : over[k]; });
   return out;
 }
+// rates/… is resolved from this script's own URL (the Modeller loads it from ../viewer/); in Node (witnesses) it stays relative
+var _RATES_BASE = (function () { try { var s = document.currentScript && document.currentScript.src; return s ? s.replace(/[^/]*$/, '') + 'rates/' : 'rates/'; } catch (e) { return 'rates/'; } })();
+
+// bim-compiler prompts/RATES_SOURCE_OF_TRUTH.md §6.2: numbers + currency = the pack, words = the display language. The language
+// (locale_loader.js applyRateOverrides) hands its words to setRateWords; a pack load re-applies them. Neither touches the other's
+// fields, so the result does not depend on which loads first. A word the language lacks shows the pack's (else the built-in table's).
+var _LANG_WORDS = null, _PACK_WORDS = null, _PACK_META = null;
+function _tableWords() {
+  var w = { rates: {}, labor: {}, equip: {}, rdef: RATES_DEFAULT ? RATES_DEFAULT.desc : null };
+  Object.keys(RATES).forEach(function (k) { if (RATES[k] && RATES[k].desc != null) w.rates[k] = RATES[k].desc; });
+  Object.keys(LABOR_RATES).forEach(function (k) { if (LABOR_RATES[k] && LABOR_RATES[k].trade != null) w.labor[k] = LABOR_RATES[k].trade; });
+  Object.keys(EQUIPMENT_RATES).forEach(function (k) { if (EQUIPMENT_RATES[k] && EQUIPMENT_RATES[k].desc != null) w.equip[k] = EQUIPMENT_RATES[k].desc; });
+  return w;
+}
+function _applyRateWords() {
+  if (!_PACK_WORDS) _PACK_WORDS = _tableWords();
+  var L = _LANG_WORDS || {}, P = _PACK_WORDS;
+  function put(tbl, lw, pw, field) {
+    Object.keys(tbl).forEach(function (k) { var o = tbl[k]; if (!o || typeof o !== 'object') return; var w = (lw && lw[k] != null) ? lw[k] : pw[k]; if (w != null) o[field] = w; });
+  }
+  put(RATES, L.rates, P.rates, 'desc'); put(LABOR_RATES, L.labor, P.labor, 'trade'); put(EQUIPMENT_RATES, L.equip, P.equip, 'desc');
+  var dw = L.rdef != null ? L.rdef : P.rdef; if (RATES_DEFAULT && dw != null) RATES_DEFAULT.desc = dw;
+  // the currency is the pack's: re-asserted here because the language's own `cur` is merged into _TRL after a pack may have loaded
+  if (_PACK_META && typeof _TRL !== 'undefined') {
+    if (_PACK_META.currency) _TRL.cur = _PACK_META.currency;
+    if (_PACK_META.currency2) _TRL.cur2 = _PACK_META.currency2;
+    if (_PACK_META.exchange_rate) _TRL.cur_rate = _PACK_META.exchange_rate;
+  }
+}
+/** The display language's words for the rate tables: { rates:{cls:desc}, labor:{trade:name}, equip:{key:desc}, rdef:desc }. */
+function setRateWords(words) {
+  if (!_PACK_WORDS) _PACK_WORDS = _tableWords();   // first call: the built-in words, before the language's replace them
+  _LANG_WORDS = words || null; _applyRateWords();
+}
 function loadRateTemplate(templateName) {
-  var url = 'rates/' + templateName + '.json';
+  var url = _RATES_BASE + templateName + '.json';
   return fetch(url).then(function(resp) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     return resp.json();
@@ -723,6 +756,7 @@ function loadRateTemplate(templateName) {
       var ov = localStorage.getItem('json_rates_' + templateName);
       if (ov) { tpl = _mergeRateOverride(tpl, JSON.parse(ov)); console.log('§RATE_OVERRIDE pack=' + templateName + ' applied=1 keys=' + Object.keys(JSON.parse(ov)).join(',')); }
     } catch (e) { console.warn('§RATE_OVERRIDE pack=' + templateName + ' applied=0 unreadable (' + e.message + '): the shipped pack is used'); }
+    if (!_PACK_WORDS) _PACK_WORDS = _tableWords();
     // Apply materials → RATES (merge: JSON wins, keep hardcoded keys not in JSON)
     if (tpl.materials && Object.keys(tpl.materials).length > 0) {
       for (var cls in tpl.materials) {
@@ -766,19 +800,25 @@ function loadRateTemplate(templateName) {
     if (RATE_TEMPLATE_META && tpl.smm_sections) {
       RATE_TEMPLATE_META.smm_sections = tpl.smm_sections;
     }
-    RATE_TEMPLATE_NAME = templateName;
-
-    // Sync _TRL currency from rate template — authoritative source for currency
-    // Covers the case where locale file didn't load but rate JSON did
-    if (typeof _TRL !== 'undefined' && tpl.meta) {
-      if (tpl.meta.currency) _TRL.cur = tpl.meta.currency;
-      if (tpl.meta.currency2) _TRL.cur2 = tpl.meta.currency2;
-      if (tpl.meta.exchange_rate) _TRL.cur_rate = tpl.meta.exchange_rate;
+    // the misc-element price (§6.4b: moved from the locale files into each pack)
+    if (tpl.rates_default && tpl.rates_default.rate != null) {
+      RATES_DEFAULT = { rate: tpl.rates_default.rate, unit: tpl.rates_default.unit || 'EA', desc: tpl.rates_default.desc || RATES_DEFAULT.desc };
+      if (typeof window !== 'undefined') window.RATES_DEFAULT = RATES_DEFAULT;
     }
+    RATE_TEMPLATE_NAME = templateName;
+    // the pack's own words become the fallback words; the language's, when set, stay on top; the pack's currency is set (§6.2)
+    ['materials', 'labor', 'equipment'].forEach(function (sec, i) {
+      var to = [_PACK_WORDS.rates, _PACK_WORDS.labor, _PACK_WORDS.equip][i], f = sec === 'labor' ? 'trade' : 'desc';
+      Object.keys(tpl[sec] || {}).forEach(function (k) { if (tpl[sec][k] && tpl[sec][k][f] != null) to[k] = tpl[sec][k][f]; });
+    });
+    if (tpl.rates_default && tpl.rates_default.desc != null) _PACK_WORDS.rdef = tpl.rates_default.desc;
+    _PACK_META = tpl.meta || null;
+    _applyRateWords();
 
     var classCount = Object.keys(RATES).length;
     console.log('§QTO_RATES_LOADED template=' + templateName + ' classes=' + classCount
       + ' cur=' + (tpl.meta ? tpl.meta.currency : '?')
+      + ' misc=' + RATES_DEFAULT.rate + '/' + RATES_DEFAULT.unit + ' words=' + (_LANG_WORDS ? 'language' : 'pack')
       + ' source=' + (tpl.meta ? tpl.meta.source : 'unknown'));
     return true;
   }).catch(function(err) {
@@ -810,7 +850,7 @@ var IFC_SCHEMA_HIERARCHY = {};
  * @returns {Promise<boolean>} true if loaded, false on fallback.
  */
 function loadIfcSchemaHierarchy() {
-  return fetch('rates/ifc_schema_hierarchy.json').then(function(resp) {
+  return fetch(_RATES_BASE + 'ifc_schema_hierarchy.json').then(function(resp) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     return resp.json();
   }).then(function(json) {
@@ -863,7 +903,7 @@ var LOCALE_RATE_MAP = {
  * @returns {Promise<boolean>} true if the JSON was applied, false on fallback.
  */
 function loadSequenceRules() {
-  return fetch('rates/sequence_rules.json').then(function(resp) {
+  return fetch(_RATES_BASE + 'sequence_rules.json').then(function(resp) {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     return resp.json();
   }).then(function(json) {
@@ -887,7 +927,9 @@ function loadSequenceRules() {
       for (var sk in json.SEQUENCE_RULES) SEQUENCE_RULES[sk] = json.SEQUENCE_RULES[sk];
     }
     if (json.LABOR_RATES && typeof json.LABOR_RATES === 'object') {
+      if (!_PACK_WORDS) _PACK_WORDS = _tableWords();
       for (var lk in json.LABOR_RATES) LABOR_RATES[lk] = json.LABOR_RATES[lk];
+      if (_LANG_WORDS) _applyRateWords();   // a trade replaced whole keeps the language's name
     }
     if (json.SEQUENCE_DEFAULT && typeof json.SEQUENCE_DEFAULT === 'object') {
       SEQUENCE_DEFAULT = json.SEQUENCE_DEFAULT;
@@ -917,34 +959,41 @@ function initRateTemplate() {
   if (_rateInitP) return _rateInitP;
   _rateInitP = _initRateTemplateOnce(); return _rateInitP;
 }
-function _initRateTemplateOnce() {
-  var p = new URLSearchParams(window.location.search);
-  var name = p.get('rates');
-  // BIM→Project TASK A: the Settings "5D Rate Pack" picker overrides locale (but not an explicit ?rates=).
+// §6.3: a pack named by ?rates= or picked in Settings (BIM→Project TASK A) is PINNED: the language does not change it
+function _pinnedRatePack() {
+  var name = null;
+  try { name = new URLSearchParams(window.location.search).get('rates'); } catch (e) {}
   if (!name) { try { name = localStorage.getItem('bim_5d_pack') || null; } catch (e) {} }
-  if (!name) {
-    // Derive from active locale (same detection as locale_loader)
-    var locale = p.get('lang');
-    if (!locale) {
-      try { var cfg = JSON.parse(localStorage.getItem('bim_ootb_config')); if (cfg && cfg.locale) locale = cfg.locale; } catch(e) {}
-    }
-    if (locale && LOCALE_RATE_MAP[locale]) {
-      name = LOCALE_RATE_MAP[locale];
-    } else {
-      name = 'cidb2024_my';
-    }
-  }
-  console.log('§RATE_LOCALE_MAP locale=' + (locale||'default') + ' template=' + name);
-  // Load locale cost pack, the shared sequence/labour rules, AND the schema hierarchy (tier-2
-  // fallback) together so awaiting callers (boq_charts, mep_report) have all three before
-  // computing 4D/5D.
-  return Promise.all([loadRateTemplate(name), loadSequenceRules(), loadIfcSchemaHierarchy()]).then(function(r) { return r[0]; });
+  return name;
+}
+// the page's language, detected ONCE by locale_loader.js when the page has it (?lang= exact or mapped, saved, browser, en_MY)
+function _rateLocale() {
+  if (typeof window !== 'undefined' && window._TRL_LOADER && typeof window._TRL_LOADER.detectLocale === 'function') return window._TRL_LOADER.detectLocale();
+  var locale = null;
+  try { locale = new URLSearchParams(window.location.search).get('lang'); } catch (e) {}
+  if (!locale) { try { var cfg = JSON.parse(localStorage.getItem('bim_ootb_config')); if (cfg && cfg.locale) locale = cfg.locale; } catch (e) {} }
+  return locale;
+}
+function _initRateTemplateOnce() {
+  var name = _pinnedRatePack(), locale = null;
+  if (!name) { locale = _rateLocale(); name = (locale && LOCALE_RATE_MAP[locale]) || 'cidb2024_my'; }
+  console.log('§RATE_LOCALE_MAP locale=' + (locale || 'pinned') + ' template=' + name);
+  // the sequence/labour rules FIRST, then the pack: loadSequenceRules replaces each LABOR_RATES trade whole, so answering second it
+  // erased the pack's labour (§6.1). The schema hierarchy (tier-2 fallback) loads beside them.
+  var hier = loadIfcSchemaHierarchy();
+  return loadSequenceRules().then(function () { return loadRateTemplate(name); }).then(function (r) { return hier.then(function () { return r; }); });
+}
+/** §6.3: the language was switched in place — load its pack unless one is pinned. */
+function ratesFollowLocale(code) {
+  if (_pinnedRatePack()) { _applyRateWords(); return Promise.resolve(false); }
+  var name = LOCALE_RATE_MAP[code] || 'cidb2024_my';
+  if (name === RATE_TEMPLATE_NAME) { _applyRateWords(); return Promise.resolve(false); }
+  console.log('§RATE_LOCALE_MAP locale=' + code + ' template=' + name + ' (language switched)');
+  return loadRateTemplate(name);
 }
 
-// §CLASS_UNMATCHED_INHERITED — eager, fire-and-forget load. viewer.html/time_machine.js's live
-// Time Machine movie does NOT call initRateTemplate() (see loadSequenceRules()'s own header above:
-// "viewer.html does NOT call initRateTemplate()/loadSequenceRules() ... only mep_report.html/
-// boq_charts.html do"). Without this, tier 2 would be permanently dead code on the main viewer path.
+// §CLASS_UNMATCHED_INHERITED — eager, fire-and-forget load, for a page that loads rates.js but never calls initRateTemplate()
+// (the pricing pages do since RATES_SOURCE_OF_TRUTH §6.5, and load it again there).
 // No-op in Node (no `fetch`/`window`) — the require()'d witnesses/tests pass `hierarchy` explicitly
 // instead, so this line has zero effect there.
 if (typeof window !== 'undefined' && typeof fetch !== 'undefined') {

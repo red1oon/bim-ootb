@@ -7,7 +7,7 @@
 // Events come from two additive dispatchEvent lines in modeller.html (setHover -> 'dagevu:hover', setSelectionIds -> 'dagevu:select').
 (function () {
   'use strict';
-  var SRC = ['../viewer/rates.js?v=7', '../viewer/locale_loader.js?v=13', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
+  var SRC = ['../viewer/rates.js?v=12', '../viewer/locale_loader.js?v=14', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=2'];
   var _loading = null, _db = null, _dbBuf = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
 
   function _load(src) {
@@ -21,8 +21,9 @@
       var src = window._TRL_LOADER ? SRC.filter(function (u) { return u.indexOf('locale_loader.js') < 0; }) : SRC;
       if (!window._TRL_LOADER) window.__TRL_NO_AUTORUN = true;   // locale_loader.js: expose the owners WITHOUT the Viewer's UI side effects (toast / DOM translate)
       _loading = src.reduce(function (p, s) { return p.then(function () { return _load(s); }); }, Promise.resolve())
-        // the price the Viewer uses IS the user's locale rate pack (locale_loader overrides RATES/LABOR_RATES) — apply it the same way, by the same owner
-        .then(function () { return new Promise(function (res) { var L = window._TRL_LOADER, code = L.detectLocale(); L.fetchLocale(code, function (err, data) { if (data) { L.applyRateOverrides(data); window.__S8_LOCALE_CUR = data.cur || null; } console.log('§S8-LAZY locale=' + code + ' applied=' + !!data + ' IfcWallStandardCase.rate=' + (window.RATES.IfcWallStandardCase || {}).rate); res(); }); }); })
+        // the price the Viewer uses IS the rate pack rates.js picks for the user's language (bim-compiler prompts/RATES_SOURCE_OF_TRUTH.md §6) — load it by the same owner
+        .then(function () { return window.initRateTemplate(); })
+        .then(function (loaded) { window.__S8_LOCALE_CUR = (window._TRL && window._TRL.cur) || null; console.log('§S8-LAZY locale=' + window._TRL_LOADER.detectLocale() + ' pack=' + window.RATE_TEMPLATE_NAME + ' loaded=' + loaded + ' cur=' + window.__S8_LOCALE_CUR + ' IfcWallStandardCase.rate=' + (window.RATES.IfcWallStandardCase || {}).rate); })
         .then(function () { console.log('§S8-LAZY modeller loaded viewer owners ms=' + (performance.now() - t0).toFixed(0)); return true; })
         .catch(function (e) { console.warn('§S8-LAZY LOAD_FAIL ' + e.message); _loading = null; return false; });
     }

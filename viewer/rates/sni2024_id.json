@@ -312,15 +312,19 @@
       "smm_section": ""
     }
   },
+  "rates_default": {
+    "rate": 1800000,
+    "unit": "EA"
+  },
   "labor": {
     "HVAC_TECH": {
       "rate_per_day": 520000,
       "crew_size": 2,
       "trade": "Teknisi HVAC (Terampil)",
       "productivity": {
-        "IfcDuct": 18,
-        "IfcDuctSegment": 18,
-        "IfcDuctFitting": 12,
+        "IfcDuct": 16,
+        "IfcDuctSegment": 16,
+        "IfcDuctFitting": 10,
         "IfcFlowMovingDevice": 4,
         "IfcEnergyConversionDevice": 3,
         "IfcFlowTerminal": 12,
@@ -332,9 +336,9 @@
       "crew_size": 2,
       "trade": "Tukang Pipa (Terampil)",
       "productivity": {
-        "IfcPipe": 25,
-        "IfcPipeSegment": 25,
-        "IfcPipeFitting": 15,
+        "IfcPipe": 23,
+        "IfcPipeSegment": 23,
+        "IfcPipeFitting": 13,
         "IfcFlowSegment": 20,
         "IfcFlowFitting": 15,
         "IfcFlowStorageDevice": 4,
@@ -349,10 +353,10 @@
       "crew_size": 2,
       "trade": "Teknisi Listrik (Terampil)",
       "productivity": {
-        "IfcCableCarrier": 30,
-        "IfcCableCarrierSegment": 30,
-        "IfcLightFixture": 20,
-        "IfcOutlet": 25,
+        "IfcCableCarrier": 27,
+        "IfcCableCarrierSegment": 27,
+        "IfcLightFixture": 18,
+        "IfcOutlet": 22,
         "IfcElectricAppliance": 15,
         "IfcFlowController": 10,
         "IfcAlarm": 25,
@@ -364,8 +368,8 @@
       "crew_size": 4,
       "trade": "Pemasang Baja (Terampil)",
       "productivity": {
-        "IfcBeam": 8,
-        "IfcColumn": 6,
+        "IfcBeam": 7,
+        "IfcColumn": 5,
         "IfcPlate": 12,
         "IfcMember": 10
       }
@@ -375,7 +379,7 @@
       "crew_size": 6,
       "trade": "Regu Beton (Campuran)",
       "productivity": {
-        "IfcSlab": 35,
+        "IfcSlab": 32,
         "IfcFooting": 6,
         "IfcPile": 4,
         "IfcReinforcingBar": 50,
@@ -388,8 +392,8 @@
       "crew_size": 3,
       "trade": "Tukang Batu (Terampil) + Pekerja",
       "productivity": {
-        "IfcWall": 12,
-        "IfcWallStandardCase": 12,
+        "IfcWall": 11,
+        "IfcWallStandardCase": 11,
         "IfcOpeningElement": 20,
         "IfcBuildingElementPart": 15
       }

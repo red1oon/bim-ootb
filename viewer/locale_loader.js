@@ -233,50 +233,16 @@
     });
   }
 
-  // ── Override global rates from locale ──
+  // ── The language's WORDS for the rate tables (bim-compiler prompts/RATES_SOURCE_OF_TRUTH.md §6) ──
+  // Numbers + currency come from the rate pack (rates.js loadRateTemplate); a locale file's own numbers are no longer read for prices.
+  // Its regional productivity and misc-element price were moved into the pack it maps to (§6.4). Here: descriptions and trade names
+  // only, handed to rates.js, which keeps them on top of whichever pack is loaded, in either load order.
   function applyRateOverrides(localeData) {
-    if (localeData.rates && typeof RATES !== 'undefined') {
-      for (var cls in localeData.rates) {
-        if (localeData.rates.hasOwnProperty(cls)) RATES[cls] = localeData.rates[cls];
-      }
-    }
-    if (localeData.rates_default && typeof RATES_DEFAULT !== 'undefined') {
-      RATES_DEFAULT = localeData.rates_default;
-    }
-    // §LOCALE-PRODUCTIVITY-MERGE: locale files intentionally ship PARTIAL productivity tables
-    // (a locale author only needs to override the trades/classes their region's rates actually
-    // differ on — real construction productivity DOES vary by country, this is legitimate, not
-    // a bug). A whole-object replace here would silently DROP every IFC class the locale file
-    // doesn't happen to list, collapsing them to injectGantt()'s generic 120s/element fallback
-    // (confirmed: en_US.js lists only IfcBeam/IfcColumn for STEEL_ERECTOR, so IfcPlate/IfcMember
-    // fell back to 120s vs their real ~2400-2880s — a 20-24x schedule-duration corruption, root
-    // cause of prompts/HOSPITAL_4D_SUPERSTRUCTURE_DURATION_ANOMALY.md Item 2). Merge instead:
-    // scalar trade fields (rate_per_day/crew_size/trade name) replace wholesale — a locale's
-    // day-rate IS a complete override — but productivity merges class-by-class so classes the
-    // locale doesn't mention keep their canonical (rates.js / sequence_rules.json) value.
-    if (localeData.labor_rates && typeof LABOR_RATES !== 'undefined') {
-      for (var key in localeData.labor_rates) {
-        if (!localeData.labor_rates.hasOwnProperty(key)) continue;
-        var locTrade = localeData.labor_rates[key];
-        if (!LABOR_RATES[key]) { LABOR_RATES[key] = locTrade; continue; }
-        for (var field in locTrade) {
-          if (!locTrade.hasOwnProperty(field)) continue;
-          if (field === 'productivity') {
-            LABOR_RATES[key].productivity = LABOR_RATES[key].productivity || {};
-            for (var cls in locTrade.productivity) {
-              if (locTrade.productivity.hasOwnProperty(cls)) LABOR_RATES[key].productivity[cls] = locTrade.productivity[cls];
-            }
-          } else {
-            LABOR_RATES[key][field] = locTrade[field];
-          }
-        }
-      }
-    }
-    if (localeData.equipment_rates && typeof EQUIPMENT_RATES !== 'undefined') {
-      for (var key in localeData.equipment_rates) {
-        if (localeData.equipment_rates.hasOwnProperty(key)) EQUIPMENT_RATES[key] = localeData.equipment_rates[key];
-      }
-    }
+    var w = { rates: {}, labor: {}, equip: {}, rdef: localeData.rates_default ? localeData.rates_default.desc : null }, k;
+    for (k in localeData.rates || {}) if (localeData.rates.hasOwnProperty(k) && localeData.rates[k] && localeData.rates[k].desc != null) w.rates[k] = localeData.rates[k].desc;
+    for (k in localeData.labor_rates || {}) if (localeData.labor_rates.hasOwnProperty(k) && localeData.labor_rates[k] && localeData.labor_rates[k].trade != null) w.labor[k] = localeData.labor_rates[k].trade;
+    for (k in localeData.equipment_rates || {}) if (localeData.equipment_rates.hasOwnProperty(k) && localeData.equipment_rates[k] && localeData.equipment_rates[k].desc != null) w.equip[k] = localeData.equipment_rates[k].desc;
+    if (typeof window.setRateWords === 'function') window.setRateWords(w);
   }
 
   // ── Show toast notification ──
@@ -446,7 +412,7 @@
   window._applyTrlToDOM = applyTrlToDOM;   // pages that build markup late can re-run it (hub cards, drawers)
 
   // §S8 (prompts/RATES_SOURCE_OF_TRUTH.md §5, 2026-09-30): the Modeller DISPLAYS an edit's cost Δ and must price it with the SAME rates the Viewer
-  // prices with — which are the user's LOCALE rates (this file overrides the global RATES/LABOR_RATES on load: en_US IfcWall 48/M2 vs the CIDB 145).
+  // prices with — the pack rates.js initRateTemplate picks for the user's language (§6).
   // A page that sets window.__TRL_NO_AUTORUN before loading this file gets the owners WITHOUT the side effects (no _TRL merge, no DOM translate,
   // no toast, no event): it calls fetchLocale(detectLocale(), cb) then applyRateOverrides(data) itself. The Viewer never sets the flag.
   if (window.__TRL_NO_AUTORUN) {
@@ -456,8 +422,8 @@
 
   // ── S226 §R2c — in-place switch (Witness: W-VIEWER-LANG-INPLACE) ──
   // Snapshots taken BEFORE the first locale is applied, so a switch starts from the same base the page booted with:
-  // _TRL's own defaults (boq_charts inline _TRL_DEFAULTS) and rates.js's RATES / LABOR_RATES / EQUIPMENT_RATES /
-  // RATES_DEFAULT. Objects are restored IN PLACE — other modules hold references to them.
+  // _TRL's own defaults (boq_charts inline _TRL_DEFAULTS), restored IN PLACE — other modules hold references to it. The rate tables are
+  // not snapshotted: their numbers are the pack's (rates.js ratesFollowLocale), their words are replaced by the new language's.
   function _clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
   function _restore(target, snap) {
     if (!target || !snap) return;
@@ -466,13 +432,7 @@
   }
   var _snap = null;
   function _snapshot() {
-    _snap = {
-      trl: _clone(typeof _TRL !== 'undefined' ? _TRL : {}),
-      rates: typeof RATES !== 'undefined' ? _clone(RATES) : null,
-      labor: typeof LABOR_RATES !== 'undefined' ? _clone(LABOR_RATES) : null,
-      equip: typeof EQUIPMENT_RATES !== 'undefined' ? _clone(EQUIPMENT_RATES) : null,
-      rdef: typeof RATES_DEFAULT !== 'undefined' ? _clone(RATES_DEFAULT) : null
-    };
+    _snap = { trl: _clone(typeof _TRL !== 'undefined' ? _TRL : {}) };
   }
   var _curCode = null, _curLabels = {};
 
@@ -586,11 +546,8 @@
         var oldLabels = _curLabels;
         _restore(_TRL, _snap.trl);
         if (labels) deepMerge(_TRL, labels);
-        if (_snap.rates) _restore(RATES, _snap.rates);
-        if (_snap.labor) _restore(LABOR_RATES, _snap.labor);
-        if (_snap.equip) _restore(EQUIPMENT_RATES, _snap.equip);
-        if (_snap.rdef && typeof RATES_DEFAULT !== 'undefined') RATES_DEFAULT = _clone(_snap.rdef);
         if (cost) { deepMerge(_TRL, cost); applyRateOverrides(cost); }
+        if (typeof window.ratesFollowLocale === 'function') window.ratesFollowLocale(code);   // §6.3: the new language's pack, unless one is pinned
         applyUrlOverrides(_TRL);
         applyLangDir(code);
         var tagged = document.querySelectorAll('[data-trl],[data-trl-title],[data-trl-placeholder],[data-trl-html],[data-trl-tip]').length;
