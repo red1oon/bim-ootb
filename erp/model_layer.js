@@ -450,6 +450,19 @@
   // or boolean. A plugin bundle calls this through PluginRegistry ctx.docAction — no host code per table.
   var DOCS = {}, _poster = null;
   function setPoster(fn) { _poster = fn; }
+  // CLIENT_ACCOUNTING = MClient.isClientAccountingImmediate()/Queue() (MClient.java:1049-1087; MSysConfig.getValue(CLIENT_ACCOUNTING, default 'Q', AD_Client_ID) = the AD_SysConfig row of the client, else of System, org 0).
+  //   'I' = DocumentEngine posts right after a Complete (DocumentEngine.java:349); 'Q' = queued (Posted='N' until the Tenant Accounting Processor, AD_Process 53187, posts it); 'D' = disabled.
+  //   MEASURED for GardenWorld (client 11): AD_SysConfig 50034 CLIENT_ACCOUNTING = 'I' at System level (migration-historic/353a-354a/postgresql/572_FR2857807.sql:3; value 'I' in build/erp/ad_full.db, updated 2020-10-03),
+  //   carried by the twin seed patch (patches/ad_seed.db.sql:41). The Java default 'Q' applies only when NO row exists; AD_Client.IsPostImmediate is only a stored flag (nothing in the Java reads it). So legacy posts on Complete here.
+  //   Source order: trx.env.clientAccounting (a caller / witness override) > the ad_sysconfig row (client, else System; org 0; active) > no row in an existing table = the Java default 'Q' > 'I' for a DB with no ad_sysconfig table at all (= how the twin behaved before this switch existed).
+  function clientAccounting(trx) {
+    if (trx.env.clientAccounting != null && trx.env.clientAccounting !== '') return { mode: String(trx.env.clientAccounting).toUpperCase(), source: 'env.clientAccounting' };
+    var r = null, hasTable = true;
+    try { r = trx.q("SELECT value FROM ad_sysconfig WHERE name='CLIENT_ACCOUNTING' AND ad_client_id IN (0,?) AND COALESCE(ad_org_id,0)=0 AND COALESCE(isactive,'Y')='Y' ORDER BY ad_client_id DESC", [trx.env.client])[0]; } catch (e) { r = null; hasTable = false; }
+    if (r && r.value != null && r.value !== '') return { mode: String(r.value).toUpperCase(), source: 'ad_sysconfig' };
+    if (hasTable) return { mode: 'Q', source: 'ad_sysconfig has no CLIENT_ACCOUNTING row - the Java default Q (MClient.java:1063-1065)' };
+    return { mode: 'I', source: 'no ad_sysconfig table in this DB - twin default I' };
+  }
   var DOCS_L = LR.create();   // layered like MODEL: DOCS[table] = the effective DocAction class (highest layer)
   function _redoc(t) { var top = DOCS_L.top(t); if (top) DOCS[t] = top.value; else delete DOCS[t]; }
   function registerDocAction(table, impl, opts) { var t = table.toLowerCase(); DOCS_L.add(t, impl, opts); _redoc(t); return Object.keys(DOCS).length; }
@@ -513,7 +526,9 @@
         var r = trx.get(d.table, d.id); if (r && trx.env.nowMillis != null) save(trx, d.table, r, { processedon: trx.env.nowMillis + (trx._procSeq = (trx._procSeq || 0) + 1) / 1000 }   /* monotonic within the recorded clock (PO.setProcessedOn :1108-1138) */); });
       // :349-372 MClient.isClientAccountingImmediate → postIt (env.postImmediate overrides; env.noPost = accounting queued), then each
       // queued docafter whose OWN instance says Posted<>'Y' → DocumentEngine.postImmediate(…, force=true) = a repost
-      if (ok && cs === 'CO' && !trx.env.noPost) { var P = typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : _poster;
+      var ca = ok && cs === 'CO' && !trx.env.noPost ? clientAccounting(trx) : null;                          // DocumentEngine.java:349 MClient.isClientAccountingImmediate()
+      if (ca && ca.mode !== 'I') trx.say('§MODEL-POST-QUEUED table=' + table + ' id=' + id + ' CLIENT_ACCOUNTING=' + ca.mode + ' (' + ca.source + ') - Posted stays N until the Tenant Accounting Processor (AD_Process 53187) runs');
+      if (ok && cs === 'CO' && !trx.env.noPost && ca.mode === 'I') { var P = typeof trx.env.postImmediate === 'function' ? trx.env.postImmediate : _poster;
         if (P) { ev(trx, 'DOC:post', table); P(trx, table, trx.get(table, id));
           docsPost.forEach(function (d) { if (d.posted === 'Y') return; var r = trx.get(d.table, d.id); if (r) P(trx, d.table, r, { repost: true }); }); } }
       return { ok: ok, status: cs, msg: trx._msg };
@@ -635,7 +650,7 @@
   //   {observe:true} subscriptions of every save/delete in the group, once. resolve(finalOpIndex, table) -> the committed key of a row created in the group (omit: placeholders stay, info.unresolved).
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
