@@ -145,12 +145,12 @@
     return null;
   }
   async function planTrustHash(list) { return _sha(ENV.canonical(planTrustOf(list))); }
-  // FL-8 E3 (§38.3): {kind:'executors', map:{<table>: <AD_Role_ID> | 'author'}, prev, signer, sig} — the ONE DocAction executor per table, same two-key chained scheme as plan-trust
+  // FL-8 E3 (§38.3): {kind:'executors', map:{<table>: <AD_Role_ID>}, prev, signer, sig} — the ONE DocAction executor per table, a ROLE (as legacy Document Action Access; the per-record 'author' value is retired, study §12.2 2.5), same two-key chained scheme as plan-trust
   function executorsStmtProblem(st) {
     if (!st || typeof st !== 'object' || Array.isArray(st) || st.kind !== 'executors') return 'kind';
     if (Object.keys(st).some(function (x) { return x !== 'kind' && x !== 'map' && x !== 'prev' && x !== 'signer' && x !== 'sig'; })) return 'extra field';
     var m = st.map; if (!m || typeof m !== 'object' || Array.isArray(m) || Object.keys(m).length > 200) return 'map';
-    if (Object.keys(m).some(function (t) { return !/^[a-z][a-z0-9_]*$/.test(t) || !(m[t] === 'author' || (Number.isInteger(m[t]) && m[t] >= 0)); })) return 'map';
+    if (Object.keys(m).some(function (t) { return !/^[a-z][a-z0-9_]*$/.test(t) || !(Number.isInteger(m[t]) && m[t] >= 0); })) return 'map';
     if (planTrustProblem([st.signer])) return 'signer';
     if (!HEX64.test(String(st.prev || ''))) return 'prev';
     if (typeof st.sig !== 'string' || !/^([0-9a-f]{2})+$/.test(st.sig)) return 'sig';

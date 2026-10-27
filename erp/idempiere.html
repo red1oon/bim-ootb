@@ -760,7 +760,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
-  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=5', 'team_plan.js?v=2', 'team_sync.js?v=12'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=5', 'team_plan.js?v=2', 'team_sync.js?v=13'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -3140,20 +3140,19 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   not a walked DocAction table (tid 259 / DOC_FAMILY) or the record carries no DocStatus.
   // _docActionAccess — the step legacy runs right after getValidActions (WDocActionPanel.java:185-205): MRole.checkActionAccess over the login role's
   //   Document Action Access (AdAccess.RoleContext.checkActionAccess, MRole.java:2685), only when the record has a doctype (C_DocTypeTarget_ID first, then
-  //   C_DocType_ID). In a team, the in-log executor map (FL-8 E3) rides the SAME check as data: a device that is not the record's executor gets every value
-  //   removed, exactly as 'N' rows would (TEAMWORK_FRAMEWORK §38.5). The role context is built once per role and dropped on any commit (MRole cache reset).
+  //   C_DocType_ID). Nothing else decides the list (study §12.2 2.5): a plugin that restricts who may run an action states it as Document Action Access ROWS and fires
+  //   `ad:access-changed` (the MRole cache reset); the role context is built once per role and dropped on any commit or on that event.
   var _daRc = null;
   window.addEventListener('overlay:committed', function () { _daRc = null; });
+  window.addEventListener('ad:access-changed', function () { _daRc = null; });
   function _docActionAccess(tab, recId, legal, accDt) {
     if (!legal || !legal.length) return legal;
-    var notExe = !!(window.TeamSync && window.TeamSync.notExecutor && window.TeamSync.notExecutor(tab.tableName, recId)), out = legal;
-    var rid = window.APP && window.APP.roleId != null ? Number(window.APP.roleId) : null;
+    var out = legal, rid = window.APP && window.APP.roleId != null ? Number(window.APP.roleId) : null;
     if (accDt && rid != null && SES && SES.roleContextFor) {        // legacy: no doctype -> no access check (WDocActionPanel.java:197)
       if (!_daRc || _daRc.id !== rid) _daRc = { id: rid, rc: SES.roleContextFor(window.__idmpDb, rid) };
-      if (_daRc.rc && typeof _daRc.rc.checkActionAccess === 'function') out = _daRc.rc.checkActionAccess(Number(window.APP.clientId), accDt, legal, notExe ? legal : null);
-      else if (notExe) out = [];
-    } else if (notExe) out = [];                                     // the team rule does not depend on a doctype: E3 refuses the SET_STATUS whatever it is
-    if (out.length !== legal.length) console.log('§DOCACTION_ACCESS table=' + tab.tableName + ' rec=' + recId + ' role=' + rid + ' doctype=' + accDt + ' offered=[' + legal + '] -> [' + out + ']' + (notExe ? ' (team: not the executor)' : ''));
+      if (_daRc.rc && typeof _daRc.rc.checkActionAccess === 'function') out = _daRc.rc.checkActionAccess(Number(window.APP.clientId), accDt, legal);
+    }
+    if (out.length !== legal.length) console.log('§DOCACTION_ACCESS table=' + tab.tableName + ' rec=' + recId + ' role=' + rid + ' doctype=' + accDt + ' offered=[' + legal + '] -> [' + out + ']');
     return out;
   }
   function _fsmCtx(tab, rec) {

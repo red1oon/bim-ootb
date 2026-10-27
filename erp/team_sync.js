@@ -278,7 +278,7 @@
     // §13.7 all-or-none: a doc-action group with ANY write held back on docstatus is left out whole (the document keeps its last agreed status AND no consequences)
     var heldGrp = {}; fold.forEach(function (p) { var g = p.env.body.params && p.env.body.params.grp; if (g && p.held && p.held.indexOf('docstatus') >= 0) heldGrp[g] = 1; });
     var groupHeld = 0;
-    var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {}, createdBy = {}, received = [];
+    var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {}, received = [];
     fold.forEach(function (p) {
       var e = p.env, b = e.body, t = e.target.table, uu = e.target.uu, params = b.params || {}, kp, op_uuid;
       if (params.grp && heldGrp[params.grp]) { groupHeld++; log('§TEAM_GROUP_HELD grp=' + String(params.grp).slice(0, 8) + ' ' + b.op_type + ' ' + t + ' ' + uu.slice(0, 8) + ' (docstatus conflict — whole group left out)'); return; }
@@ -302,7 +302,7 @@
         if (pk2 == null) { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' ' + uu.slice(0, 8) + ' target-unknown (SET_STATUS)'); return; }
         kp = { table: t, id: pk2, action: params.action, from: params.from, to: params.to, oracle: params.oracle || null }; op_uuid = uuidFromHash(p.hash);
       } else { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' op-type ' + b.op_type); return; }
-      var id = ++base; if (b.op_type === 'CRUD_CREATE') { uuToPk[uu] = -id; createdBy[String(t).toLowerCase() + '|' + (-id)] = e.author; }
+      var id = ++base; if (b.op_type === 'CRUD_CREATE') uuToPk[uu] = -id;
       if (e.author !== (dev && dev.kid) && (b.op_type === 'CRUD_CREATE' || (b.op_type === 'CRUD_UPDATE' && !kp.idCol))) received.push({ hash: p.hash, table: t, pk: b.op_type === 'CRUD_CREATE' ? -id : kp.id, isNew: b.op_type === 'CRUD_CREATE' });   // §13.2 2.6: a row another device authored
       out.push({ id: id, op_uuid: op_uuid, timestamp: e.ts, op_type: b.op_type, parameters: JSON.stringify(kp), input_guids: null, output_guid: null, undone: 0,
                  prev_hash: null, op_hash: null, sig: null, gid: null, branch_id: null, user_tag: 'team' });   // NOT params.grp: a kept local-only member of the same group would be separated from it and the kernel reports group-torn (found on film footage 2026-10-24)
@@ -313,28 +313,47 @@
     oldRows.forEach(function (r) { if (r.op_type !== 'CRUD_CREATE' || !r.op_uuid) return; var np = uuToPk[String(r.op_uuid).toLowerCase()];
       if (np == null || np === -Number(r.id)) return; var t; try { t = String(JSON.parse(r.parameters).table).toLowerCase(); } catch (e) { return; }
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
-    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, createdBy: createdBy, received: received };
+    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
     return out;
   }
 
-  // ═══ FL-8 E2b (TEAMWORK_FRAMEWORK §38.5): the in-log executor map (E3) as the DocAction list sees it — Witness: W-HOSTS G8 (bim-compiler scripts/witness_scriptor_hosts.js) ═══
-  // Refreshed after every fold (render), read synchronously by idempiere.html _fsmCtx. A record of a table with an entry: a device that is not its executor
-  // is offered no DocAction, because every device would refuse its SET_STATUS (not-executor). The map is the one the fold enforces, never a second copy.
-  var exe = { map: null, role: null, kid: null };
+  // ═══ FL-8 E2 (TEAMWORK_FRAMEWORK §38.5; study §12.2 2.5): the in-log executor map (E3) as legacy DATA - Document Action Access rows ═══ Witness: W-UPS-E2-HOST (erp/tests/witness_team_executors.js), W-HOSTS G8
+  // The executor of a table is a ROLE (the map, owner-signed, enforced by every fold: comm_store E3). Here Team states the SAME map the way legacy states "this role may not run this action":
+  // every ACTIVE AD_Document_Action_Access row of a role other than the executor, on the doctypes of that table, is set IsActive='N'. The host's DocAction list is then MRole.checkActionAccess over
+  // the LOGIN role's rows and nothing else (idempiere.html _docActionAccess has no team branch). Owned by Team, in memory (the precedent: plugin_registry ctx.dict): the previous IsActive of each row it flipped
+  // returns when the map changes, is removed, or the device is unpaired - nothing is written to the op log, so the rule vanishes with the policy. The doctypes of a table are read from its records
+  // (C_DocType_ID / C_DocTypeTarget_ID -> every doctype of the same DocBaseType): no table name here. Login role != team role (M4): legacy judges the login role; E3 still refuses at fold.
+  var exe = { map: null, role: null, kid: null }, execRows = {}, mismatchSeen = {};
+  function projectExecutorRows(map) {
+    var db = adDb(); if (!db) return 0;
+    var want = {}, flipped = 0, restored = 0;
+    try {
+      Object.keys(map || {}).forEach(function (t) {
+        if (!/^[a-z][a-z0-9_]*$/.test(t)) return;
+        var cols = bq(db, 'PRAGMA table_info("' + t + '")').map(function (c) { return String(c.name).toLowerCase(); }).filter(function (c) { return c === 'c_doctype_id' || c === 'c_doctypetarget_id'; });
+        if (!cols.length) return;                                    // no doctype on this table: legacy checks nothing (WDocActionPanel.java:197); E3 still refuses at fold
+        var used = cols.map(function (c) { return 'SELECT ' + c + ' FROM "' + t + '"'; }).join(' UNION ');
+        bq(db, 'SELECT ad_role_id AS r, c_doctype_id AS d, ad_ref_list_id AS l, isactive AS a FROM ad_document_action_access WHERE ad_role_id<>? AND c_doctype_id IN ' +
+               '(SELECT c_doctype_id FROM c_doctype WHERE docbasetype IN (SELECT docbasetype FROM c_doctype WHERE c_doctype_id IN (' + used + ')))', [Number(map[t])]).forEach(function (x) { want[x.r + '|' + x.d + '|' + x.l] = x; });
+      });
+      Object.keys(execRows).forEach(function (k) { if (want[k]) return; var p = k.split('|'); db.run('UPDATE ad_document_action_access SET isactive=? WHERE ad_role_id=? AND c_doctype_id=? AND ad_ref_list_id=?', [execRows[k], Number(p[0]), Number(p[1]), Number(p[2])]); delete execRows[k]; restored++; });
+      Object.keys(want).forEach(function (k) { var x = want[k]; if (execRows[k] === undefined) { if (x.a !== 'Y') return; execRows[k] = x.a; }
+        if (x.a !== 'N') { db.run("UPDATE ad_document_action_access SET isactive='N' WHERE ad_role_id=? AND c_doctype_id=? AND ad_ref_list_id=?", [Number(x.r), Number(x.d), Number(x.l)]); flipped++; } });
+    } catch (e) { log('🔴 §TEAM_EXEC_ROWS ' + (e && e.message)); return 0; }
+    if (flipped || restored) { log('§TEAM_EXEC_ROWS map=' + (map && Object.keys(map).length ? JSON.stringify(map) : 'none') + " set IsActive='N' on " + flipped + ' Document Action Access rows, restored ' + restored + ' (owned ' + Object.keys(execRows).length + ')');
+      try { global.dispatchEvent(new CustomEvent('ad:access-changed', { detail: { table: 'ad_document_action_access' } })); } catch (e) {} }          // the host drops its cached role context (MRole cache reset)
+    return flipped + restored;
+  }
   async function refreshExecutors(st, kid) {
     st = st || S; kid = kid || (dev && dev.kid) || null;
     var R = st ? (await st.order()).roster : null, map = R && R.ok && R.executors && Object.keys(R.executors).length ? R.executors : null;
     var nx = { map: map, role: map && kid ? R.roleAt(kid, Infinity).ad_role_id : null, kid: kid }, was = JSON.stringify([exe.map, exe.role]);
     exe = nx; if (JSON.stringify([nx.map, nx.role]) !== was) log('§TEAM_EXECUTORS map=' + (map ? JSON.stringify(map) : 'none') + ' myRole=' + nx.role);
+    projectExecutorRows(map);
+    var login = global.APP && global.APP.roleId != null ? Number(global.APP.roleId) : null;          // M4: the rows are judged on the LOGIN role; say once when it is not the team role
+    if (map && nx.role != null && login != null && login !== Number(nx.role) && !mismatchSeen[login + '|' + nx.role]) { mismatchSeen[login + '|' + nx.role] = 1;
+      log('§TEAM_ROLE_MISMATCH login=' + login + ' team=' + nx.role + ' (the DocAction list follows the login role as in legacy; a DocAction the team role may not run is refused at fold: not-executor)'); }
     return exe;
-  }
-  // -> true when THIS device must be offered no DocAction on that record (pk = the host's key: a team record's synthetic negative pk, a local create's, a base record's)
-  function notExecutor(table, pk) {
-    if (!exe.map) return false; var ex = exe.map[String(table).toLowerCase()]; if (ex === undefined) return false;
-    if (ex !== 'author') return exe.role !== ex;
-    var by = (project.last && project.last.createdBy || {})[String(table).toLowerCase() + '|' + Number(pk)];
-    if (by) return by !== exe.kid;                    // a team record: its CREATE's author
-    return !(Number(pk) < 0);                         // a local create (not shared yet) is mine; a base record has no CREATE in the log -> refused (§38.3)
   }
 
   // ═══ IN, part 2 (bim-compiler prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.2, sub-step 2.6): the CORE fires the replica timing of each newly received row ═══
@@ -388,8 +407,8 @@
           ' gaps=' + rep.gaps + ' | projection kept=' + pj.kept + ' projected=' + pj.projected + ' skipped=' + pj.skipped + ' groupHeld=' + pj.groupHeld + ' rebuild=' + (res && res.ok ? 'ok verifyChain=' + (res.verify && res.verify.ok ? 'ok' : 'FAIL') : 'FAILED ' + (res && res.reason)) +
           ' refresh=' + (dirty ? 'DEFERRED(form has unsaved edits)' : 'sent') + ' replicaIn=' + (rin ? rin.fired + '/' + rin.received : 'none'));
       await persist();
+      await render().catch(function (e) { log('🔴 §TEAM_RENDER ' + (e && e.message)); });   // first: it refreshes the executor map and its Document Action Access rows, so the refold below builds the DocAction bar from them
       if (res && res.ok && !dirty) global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'TEAM_VISIT', id: null, remap: pj.remap || {} } }));
-      await render();
       return { rep: rep, res: res, pj: pj, replicaIn: rin };
     } catch (e) { log('🔴 §TEAM_VISIT error ' + (e && e.stack || e)); await render(); return null; }
     finally { visiting = false; }
@@ -584,7 +603,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, notExecutor: notExecutor, _refreshExecutors: refreshExecutors, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);

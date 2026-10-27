@@ -158,9 +158,9 @@
           scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
         // §16.31: the shape-version judgement only ever DOWNGRADES an op that was admitted (a refusal or park for signature, role, access, scope or deps stays as it is)
         if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.policy ? roster.policy.params : null); if (vj) verdict[o.hash] = vj; }
-        // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from that executor (a role, or the document's author)
+        // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from a device whose signed team role IS that executor (study §12.2 2.5: a role only)
         if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var ex = roster.executors[String(o.env.target.table).toLowerCase()];
-          if (ex !== undefined) { var okExe = ex === 'author' ? !!(cr && cr.author === o.env.author) : roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
+          if (ex !== undefined) { var okExe = roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
             if (!okExe) verdict[o.hash] = { verdict: 'REFUSED', reason: 'not-executor' }; } }
       }
       // all-or-none: every op of a DocAction group whose status op was refused not-executor is refused with it (no ghost consequence is ever placed)
