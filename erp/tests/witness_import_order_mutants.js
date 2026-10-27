@@ -1,0 +1,41 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// ⚠ DO NOT REMOVE — the mutant table of W-IMPORT-ORDER (witness_import_order.js, IMPORT_MUTANTS=1). Each entry rewrites the SHIPPED source in a mirror dir of COPIES (the text must be found exactly `count` times, default 1,
+//   else NOT-APPLIED = proves nothing), then the witness re-runs in a child; one of the named checks ("case.key") must print FAIL. A child that crashes without its § verdict line is NOT a kill. READ THE LOG: §IMPORT-MUTANT lines.
+'use strict';
+module.exports = [
+ { name: 'M01-no-grouping-by-DocumentNo', kills: ['P5.two-orders', 'P5.docno'], what: 'the order break ignores the DocumentNo (:656-659 loses its last term): two tickets of one BP become ONE order',
+   edits: [{ file: 'processes/ImportOrder.js', from: " || oldBillTo !== nz(imp.billto_id) || oldDocNo !== cmpDocNo) {", to: " || oldBillTo !== nz(imp.billto_id)) {" }] },
+ { name: 'M02-every-line-its-own-order', kills: ['P2.one-order', 'P2.run'], what: 'the order break is always true: every I_Order row opens a new order',
+   edits: [{ file: 'processes/ImportOrder.js', from: "if (oldBP !== nz(imp.c_bpartner_id) ||", to: "if (true || oldBP !== nz(imp.c_bpartner_id) ||" }] },
+ { name: 'M03-I_IsImported-not-set', kills: ['P2.rows-imported', 'P3.re-run-empty'], what: 'the imported rows are never marked I_IsImported=Y: a re-run reads them again',
+   edits: [{ file: 'processes/ImportOrder.js', from: "ch.i_isimported = 'Y'; ch.processed = 'Y';", to: "ch.processed = 'Y';" }] },
+ { name: 'M04-unique-index-not-enforced', kills: ['P3.no-second-complete', 'P4.no-second-complete', 'UNIQUE.order-insert'], what: 'ML.uniqueError never refuses (the legacy unique indexes are not enforced on the save path)',
+   edits: [{ file: 'model_layer.js', from: "    if (!ix || !ix.length) return null;\n", to: "    return null;\n" }] },
+ { name: 'M05-unique-index-not-enforced-on-UPDATE', kills: ['P3.no-second-complete', 'UNIQUE.order-update'], what: 'the INSERT is checked but the UPDATE of an indexed column is not (a re-sent ticket is refused only when its DocType is set on prepare)',
+   edits: [{ file: 'model_layer.js', from: "if (eu2) return { ok: false, error: eu2 };", to: "" }] },
+ { name: 'M06-DocumentNo-not-copied', kills: ['P2.docno', 'P5.docno'], what: 'order.setDocumentNo(imp.getDocumentNo()) is dropped: orders get a minted sequence number, not the ticket key',
+   edits: [{ file: 'processes/ImportOrder.js', from: "if (imp.documentno != null) o.set('documentno', imp.documentno);", to: "" }] },
+ { name: 'M07-no-default-cash-BP', kills: ['P2.cash-bp'], what: 'the "Default BP" statement (AD_ClientInfo.C_BPartnerCashTrx_ID) never fires',
+   edits: [{ file: 'processes/ImportOrder.js', from: "return r.c_bpartner_id == null && r.bpartnervalue == null && r.name == null && notY(r) && cc(r); }", to: "return false; }" }] },
+ { name: 'M08-processIt-twice', kills: ['P2.processIt-once'], what: 'DocumentEngine runs twice for one order',
+   edits: [{ file: 'processes/ImportOrder.js', from: "var pr = ML().processIt(trx, 'c_order', id, docAction);", to: "var pr = (ML().processIt(trx, 'c_order', id, docAction), ML().processIt(trx, 'c_order', id, docAction));" }] },
+ { name: 'M09-DocAction-default-dropped', kills: ['DEFAULTS.docaction-default'], what: 'a DocAction that was not sent means "no processing" instead of the AD_Process_Para default PR',
+   edits: [{ file: 'processes/ImportOrder.js', from: "this.m_docAction = d3 != null ? d3 : 'PR';", to: "this.m_docAction = null;" }] },
+ { name: 'M10-no-boot-overlay-in-kernel', kills: ['TABLE.wiring'], what: 'ws_kernel.js never calls AdImportTables.ensure (the table is missing on that host)',
+   edits: [{ file: 'ws_kernel.js', from: "require('./ad_import_tables.js').ensure(db);", to: "" }] },
+ { name: 'M11-silent-unported', kills: ['UNPORTED.new-bpartner'], what: 'the unported branch prints its line but writes no I_ErrorMsg on the row (a silent skip for the row)',
+   edits: [{ file: 'processes/ImportOrder.js', from: "var sv = ML().save(trx, 'i_order', live, { i_errormsg: msg }); if (!sv.ok) throw new Error('SaveError i_order: ' + sv.error);", to: "var sv = { ok: true }; void msg;" }] },
+ { name: 'M12-collision-not-logged', kills: ['P3.collision-logged', 'P4.collision-logged'], what: 'the refusal is not named as a collision in the log',
+   edits: [{ file: 'processes/ImportOrder.js', from: "trx.say('§IMPORT_ORDER_COLLISION index=", to: "trx.say('§IMPORT_ORDER_X index=", count: 2 }] },
+ { name: 'M13-no-savepoint-on-failed-order', kills: ['P3.no-second-complete', 'P4.no-second-complete'], what: 'a failed processIt/saveEx keeps its writes (Complete status of the refused duplicate is committed)',
+   edits: [{ file: 'processes/ImportOrder.js', from: "} finally { if (!ok) trx.rollbackTo(sp); }", to: "} finally { void sp; }" }] },
+ { name: 'M14-NULL-key-column-collides', kills: ['UNIQUE.null-never-collides'], what: 'a NULL key column is compared as a value (NULL = NULL collides)',
+   edits: [{ file: 'model_layer.js', from: "if (v == null) skip = true; vals.push(v);", to: "vals.push(v);" }] },
+ { name: 'M15-same-trx-rows-invisible', kills: ['UNIQUE.same-trx'], what: 'the unique scan ignores rows written earlier in the same transaction',
+   edits: [{ file: 'model_layer.js', from: "var hit = trx.find(table, where).filter(function (r) { return selfId == null || String(r[idc]) !== String(selfId); })[0];", to: "var hit = trx.find(table, where).filter(function (r) { return !isNewId(r[idc]) && (selfId == null || String(r[idc]) !== String(selfId)); })[0];" }] },
+ { name: 'M16-I_Order-DDL-short', kills: ['TABLE.ensure'], what: 'the overlay DDL lacks the I_Order_UU column (physical columns != the 68 dictionary columns)',
+   edits: [{ file: 'ad_import_tables.js', from: ', "i_order_uu" TEXT)', to: ')' }] },
+ { name: 'M17-ws-keeps-private-unique-copy', kills: ['UNIQUE.shared-fn'], what: 'ws_adinterface.js grows its own unique-index reader again (two implementations)',
+   edits: [{ file: 'ws_adinterface.js', from: "    function hasDdlDefault(table, c)", to: "    function uniqueError(table, row, selfId) { return q('SELECT indexname FROM ad_ddl_unique WHERE tablename=?', [table]).length ? null : null; }\n    function hasDdlDefault(table, c)" }] }
+];

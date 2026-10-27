@@ -344,8 +344,8 @@
       err = invokeV(a.type, TIMING.BEFORE_SAVE, row, p.crud.fields); if (err) return std(null, true, err);
       err = fkError(t.t, row); if (err) return std(null, true, 'Cannot save record in ' + tname + ': ' + err);
       var r = K.inTrx(l.session, { ws: 'create_update_data', type: a.type.value, id: rid || undefined }, function (trx, ML) {
-        if (cur) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, rid); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, rid), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va1 = invokeV(a.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va1 ? { ok: false, error: va1, plain: true } : { ok: true, row: sv.row }; }
-        var sv2 = ML.save(trx, t.t, null, row); if (!sv2.ok) return { ok: false, error: sv2.error }; var pre2 = pgNotNull(t.t, sv2.row) || uniqueError(t.t, sv2.row, null); if (pre2) return { ok: false, error: pre2 }; var va2 = invokeV(a.type, TIMING.AFTER_SAVE, sv2.row, p.crud.fields); return va2 ? { ok: false, error: va2, plain: true } : { ok: true, row: sv2.row };
+        if (cur) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var sv = ML.save(trx, t.t, trx.get(t.t, rid), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va1 = invokeV(a.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va1 ? { ok: false, error: va1, plain: true } : { ok: true, row: sv.row }; }
+        var sv2 = ML.save(trx, t.t, null, row); if (!sv2.ok) return { ok: false, error: sv2.error }; var pre2 = pgNotNull(t.t, sv2.row); if (pre2) return { ok: false, error: pre2 }; var va2 = invokeV(a.type, TIMING.AFTER_SAVE, sv2.row, p.crud.fields); return va2 ? { ok: false, error: va2, plain: true } : { ok: true, row: sv2.row };
       });
       if (!r.ok) return std(null, true, r.plain ? r.error : 'Cannot save record in ' + tname + ': ' + (r.error || 'SaveError'));
       var id = rid; if (!id) { var idx = -1; r.ops.forEach(function (o, i2) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i2; }); id = r.ids[idx]; }
@@ -435,17 +435,7 @@
       return null;
     }
     var STDCOL = /^(created|createdby|updated|updatedby|isactive|ad_client_id|ad_org_id)$|_uu$/;   // stamped by the commit (PO.setStandardDefaults), not unset
-    function uniqueError(table, row, selfId) {   // the DB's unique-index refusal ("ERROR: duplicate key value violates unique constraint <index>"; ad_ddl_unique = pg_indexes)
-      var ix = q("SELECT indexname, columns FROM ad_ddl_unique WHERE tablename=?", [table]);
-      for (var i = 0; i < ix.length; i++) {
-        var cs = ix[i].columns.split(','), vals = [], skip = false, where = [];
-        cs.forEach(function (c) { var v = row[c]; if (v == null) skip = true; vals.push(v); where.push(c + '=?'); });
-        if (skip) continue;                                                                                                                                         // NULLs never collide
-        var hit = one('SELECT ' + table + '_id AS id FROM ' + table + ' WHERE ' + where.join(' AND ') + (selfId != null ? ' AND ' + table + '_id<>?' : ''), selfId != null ? vals.concat([selfId]) : vals);
-        if (hit) return 'ERROR: duplicate key value violates unique constraint "' + ix[i].indexname + '"\n  Detail: Key (' + cs.join(', ') + ')=(' + vals.join(', ') + ') already exists.';   // PG's own Detail line
-      }
-      return null;
-    }
+    // the DB's unique-index refusal (the legacy pg_indexes list) is NOT here any more: ModelLayer.save refuses a duplicate INSERT / UPDATE itself (ML.uniqueError, TEAM_REPLICATION_PLUGIN_STUDY §13.2 B0) - ONE implementation for the WebServices, the ported processes and the model classes.
     function hasDdlDefault(table, c) { return !!one("SELECT 1 AS x FROM ad_ddl_default WHERE tablename=? AND lower(columnname)=?", [table, c]); }
     function requireKernel() { return K ? null : 'Web service write side is not enabled on this host'; }
 
@@ -455,7 +445,7 @@
       var row = K.ML.newPO({ q: q, env: K.env(pre.session) }, t.t, {}), err = invokeV(pre.type, TIMING.BEFORE_PARSE, row, p.crud.fields) || scanFields(pre.type, row, p.crud.fields, t.t, false) || invokeV(pre.type, TIMING.AFTER_PARSE, row, p.crud.fields) || invokeV(pre.type, TIMING.BEFORE_SAVE, row, p.crud.fields);
       if (err) return std(viaUpdate ? 0 : null, true, err);
       err = (K.breakMode === 'nofk') ? null : fkError(t.t, row); if (err) return std(viaUpdate ? 0 : null, true, 'Cannot save record in ' + tn + ': ' + err);   // breakMode: W-WS-DIFF-WRITE negative control only                                                         // :823-825
-      var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row) || uniqueError(t.t, sv.row, null); if (pre2) return { ok: false, error: pre2 }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo); AFTER_SAVE refusing = rollbackAndSetError (nothing committed)
+      var r = K.inTrx(pre.session, { ws: viaUpdate ? 'update_data' : 'create_data', type: pre.type.value }, function (trx, ML) { var sv = ML.save(trx, t.t, null, row); if (!sv.ok) return { ok: false, error: sv.error }; var pre2 = pgNotNull(t.t, sv.row); if (pre2) return { ok: false, error: pre2 }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });   // the DB checks see the row AFTER PO.saveNew numbering (DocumentNo); AFTER_SAVE refusing = rollbackAndSetError (nothing committed)
       if (!r.ok) return std(viaUpdate ? 0 : null, true, r.plain ? r.error : 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));                                                                // :828
       var idx = -1; r.ops.forEach(function (o, i) { if (idx < 0 && o.table === t.t && o.op_type === 'CRUD_CREATE') idx = i; });
       var id = r.ids[idx], saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]) || {}; saved.__table = t.t; putPO(t.t, saved);
@@ -469,7 +459,7 @@
       var proc = cur.processed === 'Y', row = Object.assign({}, cur), err = invokeV(pre.type, TIMING.BEFORE_PARSE, row, p.crud.fields) || scanFields(pre.type, row, p.crud.fields, t.t, proc) || invokeV(pre.type, TIMING.AFTER_PARSE, row, p.crud.fields) || invokeV(pre.type, TIMING.BEFORE_SAVE, row, p.crud.fields);
       if (err) return std(id, true, err);
       err = fkError(t.t, row); if (err) return std(id, true, 'Cannot save record in ' + tn + ': ' + err);
-      var r = K.inTrx(pre.session, { ws: 'update_data', type: pre.type.value, id: id }, function (trx, ML) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var u2 = uniqueError(t.t, row, id); if (u2) return { ok: false, error: u2 }; var sv = ML.save(trx, t.t, trx.get(t.t, id), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });
+      var r = K.inTrx(pre.session, { ws: 'update_data', type: pre.type.value, id: id }, function (trx, ML) { var ch = {}; Object.keys(row).forEach(function (k) { if (row[k] !== cur[k]) ch[k] = row[k]; }); var sv = ML.save(trx, t.t, trx.get(t.t, id), ch); if (!sv.ok) return { ok: false, error: sv.error }; var va = invokeV(pre.type, TIMING.AFTER_SAVE, sv.row, p.crud.fields); return va ? { ok: false, error: va, plain: true } : { ok: true, row: sv.row }; });
       if (!r.ok) return std(id, true, r.plain ? r.error : 'Cannot save record in ' + tn + ': ' + (r.error || 'SaveError'));
       var saved = one('SELECT * FROM ' + t.t + ' WHERE ' + t.t + '_id=?', [id]); saved.__table = t.t; putPO(t.t, saved);
       return std(id, false, null, outputFields(pre.type, saved));

@@ -324,6 +324,29 @@
     if (!topic || !MV.hasObservers || !MV.hasObservers(table, topic)) return;
     MV.queueObserve(trx._observed || (trx._observed = []), topic, { table: table, record: row, recordOld: old || null, isReplication: !!repl });
   }
+  // ── the DB's unique-index refusal (B0, prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.2 — Witness: W-IMPORT-ORDER UNIQUE) ────────────────────────────────────────────────────────────────────────────────
+  // Legacy's database refuses a duplicate key at INSERT and at UPDATE: PostgreSQL "ERROR: duplicate key value violates unique constraint <index> / Detail: Key (cols)=(vals) already exists." The list of those indexes
+  // is ad_ddl_unique (= pg_indexes of the reference schema, patches/ad_seed.db.sql); the SQLite file carries no index, so the check is made HERE, once, on the save path every ported process and the WebServices use
+  // (ws_adinterface.js had the only copy; it now calls nothing - ML.save reaches this). NULL columns never collide (a unique index ignores a row with a NULL key column). The scan is the Trx's own view
+  // (find: base rows overlaid with this transaction's pending writes), so a duplicate of a row written earlier in the SAME transaction is refused too, as the DB would. Columns that carry a physical DEFAULT
+  // (ad_ddl_default) count with that value, as Trx.insert will stamp it. changed (UPDATE only): the row's changed column names - PostgreSQL re-checks an index only when its key changes, and a seed that already
+  // holds a duplicate must stay editable; omit it to check every index. Returns the PG text, or null.
+  function uniqueError(trx, table, row, selfId, changed) {
+    table = String(table).toLowerCase();
+    var ix; try { ix = trx.q('SELECT indexname, columns FROM ad_ddl_unique WHERE tablename=?', [table]); } catch (e) { return null; }   // a database without the index list (a scratch db): nothing to enforce
+    if (!ix || !ix.length) return null;
+    var idc = trx.idCol(table), dd = ddlDefaults(trx, table);
+    for (var i = 0; i < ix.length; i++) {
+      var cs = String(ix[i].columns).split(',').map(function (c) { return c.trim().toLowerCase(); }), vals = [], where = {}, skip = false;
+      if (changed && !cs.some(function (c) { return changed.indexOf(c) >= 0; })) continue;
+      cs.forEach(function (c) { var v = row[c]; if (v == null && dd[c] != null) v = dd[c]; if (v == null && c === 'ad_client_id' && trx.env.client != null) v = trx.env.client; if (v == null) skip = true; vals.push(v); where[c] = v; });   // Trx.insert stamps AD_Client_ID from the session when the row has none
+      if (skip) continue;                                                                                                // NULLs never collide
+      if (cs.length === 1 && cs[0] === idc && isNewId(vals[0])) continue;                                                // a key still to be assigned (placeholder) cannot be taken
+      var hit = trx.find(table, where).filter(function (r) { return selfId == null || String(r[idc]) !== String(selfId); })[0];
+      if (hit) return 'ERROR: duplicate key value violates unique constraint "' + ix[i].indexname + '"\n  Detail: Key (' + cs.join(', ') + ')=(' + vals.join(', ') + ') already exists.';   // PG's own Detail line
+    }
+    return null;
+  }
   // save — PO.save (PO.java saveNew/saveUpdate): beforeSave → validators → write → afterSave → validators.
   // opts.isReplication = PO.saveReplica(true): the AFTER timing is the *_REPLICATION one INSTEAD of afterNew/afterChange (PO.java:2783-2789; the twin's AFTER_SAVE alias is a NEW-or-CHANGE alias so it
   //   does not fire either), the received key is kept (Trx.insert keepKey, :3530-3535). The BEFORE timings and the model class's beforeSave/afterSave are not replica-gated in legacy.
@@ -342,8 +365,8 @@
     var e1 = fire(trx, isNew ? 'BEFORE_NEW' : 'BEFORE_CHANGE', table, rec, Object.assign({ recordOld: old }, rx)) || fire(trx, 'BEFORE_SAVE', table, rec, Object.assign({ recordOld: old }, rx));
     if (e1) return { ok: false, error: e1 };
     var live;
-    if (isNew) { saveNewNumbers(trx, table, rec); ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }
-    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }
+    if (isNew) { saveNewNumbers(trx, table, rec); var eu = uniqueError(trx, table, rec, null); if (eu) return { ok: false, error: eu }; ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }   // the DB refuses a duplicate key at the INSERT (B0)
+    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; var eu2 = uniqueError(trx, table, rec, row[trx.idCol(table)], Object.keys(ch)); if (eu2) return { ok: false, error: eu2 }; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }   // ... and at the UPDATE of an indexed column (B0)
     if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? (repl ? 'AFTER_NEW_REPLICATION' : 'AFTER_NEW') : (repl ? 'AFTER_CHANGE_REPLICATION' : 'AFTER_CHANGE'), table, live, Object.assign({ recordOld: old }, rx))
           || (repl ? null : fire(trx, 'AFTER_SAVE', table, live, { recordOld: old }));
@@ -600,5 +623,6 @@
 
   return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
+           uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });
