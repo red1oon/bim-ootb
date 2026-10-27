@@ -1089,13 +1089,42 @@ support wall). Today a one-bay drag of the end line (W-DXF-GRID G2): the end fra
 | cost Δ of the edit | §S8 `edit_delta.js netEdits` (MOVE / SCALE) — GEOM_GRID_MOVE ⛔ blocked on "does a command carry the new span?" | ANSWERED from code: the stored op keeps the full commands (`action`, `axis`, `newScale`, `translateDelta`; `bonsai_gridmove.js:387`), applied by the fold at `bonsai_kernel.js:340` (§STRETCH-1) — `netEdits` reads them the way the fold does; copies are priced as ADDED |
 | the variation (cost variance) | `viewer/variation_order.js` (ADDED = rate × 1.0, REMOVED × 0.3, CHANGED × 1.3) and §S9 Project Order / VO rows from the Modeller | the bay's copies appear as ADDED rows, the stretched long members as CHANGED |
 | the roof follows | the grid move classifies only `_STRUCTURAL_CLASSES` (no IfcMember / IfcPlate) | the full-length members / coverings stretch as explicit GEOM_SCALE rows in the same `extra.ops` — the class list (every building) is NOT widened |
-**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): ONE gesture = the end line's
-GEOM_GRID_MOVE by one pitch (the end frame translates, as today) + `extra.ops`: GEOM_INSERT copies of one typical bay (the identical bay nearest that end) and of its inner line's
-columns + footings, one pitch on, `params.bayCopy`; GEOM_SCALE of each full-length member / covering by (L + pitch) / L anchored at the fixed end. A set with no repeating bay refuses
-with the reason. The §S8 Δ and the VO price it through their existing owners (rows above).
+**Rule (to build; corrected 2026-10-28 after reading the seams).** A grid move of the end line would STRETCH the end bay's side walls (W-DXF-GRID G2: IfcWall SCALE 6), so "add a bay" is
+not one GEOM_GRID_MOVE. It is offered only when the type in force declares it (§D90 `edits.bay_repeat`). Insert after the typical bay k nearest the chosen end (before it, at the low end): ONE
+`commitGesture` (`modeller.html` `Bonsai.commitBay`, the same gate / history path as a move) of: GEOM_MOVE of every element beyond line k+1 by one pitch; GEOM_INSERT copies of bay k's
+elements and of line k+1's columns + footings, one pitch on (`params` = the source op's own, placement shifted, `provenance: 'derived:user-edit'`, `bayCopy {id, axis, index, pos, pitch,
+from}` — the §GRID-SPAN copy rule); GEOM_SCALE of each full-length member / covering by (L + pitch) / L (+ a GEOM_MOVE of −pitch at the low end). The grid folds `bayCopy` like `spanSplit`:
+one line inserted at the new position, the later lines shifted by the pitch. A set with no declared rule, fewer than `min_identical` identical bays, or a yawed full-length member refuses
+with the reason. Cost (§S8 owners): each copy = its own row amount (`deltaFor(copy, no edit).costBefore`, ADDED ×1.0 as `variation_order.js`), each stretched member = `deltaFor(rec,
+netEdits)` (CHANGED); moves change no quantity. Shown in the panel and logged `§DXF-BAY`.
 **Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
 source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
 B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
 **§D89 step 1 ✅ 2026-10-28 (witness): the §S8 Δ prices a grid stretch.** `viewer/edit_delta.js netEdits` reads a GEOM_GRID_MOVE's stored commands as the fold applies them (spec row: BIMCompiler
 `TM_4D5D_VARIANCE_LANE.md` §S8-QTY). W-S8-PURE 9 / 0: P7 a grid SCALE y ×1.5 = 3906 = the same GEOM_SCALE's independent SQL recompute; P7b a 30° yaw named `GEOM_GRID_MOVE(oblique)`, 0; P7c a grid
 TRANSLATE 0. On main: P7 / P7b / P7c FAIL (`unsupported=["GEOM_GRID_MOVE"]`, 0). Next: step 2, the bay copies + long-member stretch in `extra.ops`, priced as ADDED / CHANGED.
+
+## §D90 RULES BY BUILDING TYPE LIVE IN THE ONE TYPE ROW, NOT IN CODE (owner 2026-10-28: "think out if some rules abstraction needed by type or category of building" -> "agree")
+**Measured (2026-10-28):** the abstraction already exists — `modeller/element_defaults.json` `building_types` (`General`, `Farming Shed`) with cited `overrides`, `expect`ed classes and
+`typical` ranges; the type in force is the `building.type` setting (`@DEFAULT=building.type,<type>` or the editor's dropdown; `dxf2defaults.js:18`), read by `dxf2defaults`, `dxf2typology`
+(advisories) and `dxf2library_types` (library order). NOT typed: the compliance files (`viewer/rates/egress_rules.json`, `structural_rules.json`, `SW_SPAN_RULES`, the Conformity Gate) are
+keyed by IFC class / material; the Modeller's edit behaviour is not typed at all. The CLI-marked shed states no `building.type`, so it converts as **General** (the Farming Shed row does not apply).
+**Rule.** (1) A type row may carry `edits` — the edit behaviours that type allows, as data the generic engine reads. First entry, `Farming Shed.edits.bay_repeat`: `axis: "grid-long"` (the
+grid axis with more lines), `copy` (classes copied with a bay), `line_copy` (classes copied with its frame line), `stretch` (full-length classes stretched), `never_copy` (with the reason),
+`min_identical`, `basis`. A type without the row offers nothing. (2) — SPEC, not built: a compliance rule may carry `applies_to_types` (absent = every type), read by its existing owner.
+(3) The film's shed states its type (the editor's dropdown -> `Farming Shed`), so the row applies.
+**Witness:** W-DXF-ADD-BAY (§D89) reads the rule from the row; with the type `General` the action is refused ("the building type General declares no bay_repeat").
+
+**§D89 step 2 + §D90 (1) ✅ BUILT 2026-10-28 (witness).** `modeller/bay_add.js` (the planner), `dxf_import_ui.js` (the "Add a bay (<type>) at <first> / at <last>" row, offered only when the type
+row declares `edits.bay_repeat`), `modeller.html Bonsai.commitBay` (one gesture, the gate, history), `bonsai_grid.js` (folds `bayCopy`), `element_defaults.json` (`Farming Shed.edits.bay_repeat`).
+**W-DXF-ADD-BAY 8 / 0** (the CLI-marked shed, page, software GL; the type stated through the editor: Element defaults ▸ building.type ▸ Farming Shed ▸ Set): B0 General: no offer, refused
+"the building type General declares no bay_repeat"; B1 +29 = IfcBeam 2, IfcWall 2, IfcMember 12, IfcPlate 9, IfcColumn 2, IfcFooting 2 (nothing else); B2 every copy = source + 3.0480 m;
+B3 46 moved one pitch, 14 full-length members one pitch longer, 0 others changed, grid 14 -> 15 lines, new `41A` at −641.301; B4 cost USD +14260 = ADDED 9084 + CHANGED 5176, = the
+witness's own BigDecimal recompute; B7 the commit's gate clean; B5 one Ctrl+Z: 445 elements + 14 lines identical, Ctrl+Y: 474 identical; B6 0 page errors.
+**Two gate defects found and fixed on the way (`sdg_gate.js`, spine owner):** (a) a COPY had no before-state, so every contact it reproduced from its source read as NEW: 54 RED / 38
+ORANGE after one bay. Rule: `opts.copies {fid: {src, shift}}` — a copy's before-pair is its source with the same neighbour or the neighbour's counterpart one shift back (B7 control: a
+copy put into an unrelated element is RED with the rule). (b) "tighter than before" used 1e-9 m on float32 boxes: at ~640 m from the origin one float32 step is 6.1e-5 m, so unchanged
+gaps of elements that moved together read as tighter (5 ORANGE) — now 2 float32 steps of the largest coordinate. Unchanged: W-SDG-GATE 11/0, W-GATE-SCALE 5/0, W-RED-REVERT 4/0,
+W-ORANGE-ACCEPT 5/0, W-E2E-GRID-GREENORANGE 13/0, W-DXF-GRID 4/0, W-SHED-WALL-EDIT 7/0, W-YELLOW-PAGE PASS.
+**Still open (named):** §D90 (2) `applies_to_types` on the compliance files (spec only); §D88 B (a door in a wall gap hosted by that wall); labour of a bay copy is count-based (no building
+db in a DXF convert); the film's shed must state its type (the editor's dropdown, one step in the take).

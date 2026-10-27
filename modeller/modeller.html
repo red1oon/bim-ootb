@@ -2302,7 +2302,19 @@ async function commitGridMove(extra) {
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
 window.__dg = () => _dragGrid;   // test hook (§GRID-SPAN-GATE witness reads the live drag delta)
-window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };   // test hook (§STRETCH-GATE smoke)
+window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };
+// §D89 add a bay (DXF2BIM_FOUNDATION_LANE.md, W-DXF-ADD-BAY): the planner's ops (moves, copies, stretches) as ONE user gesture through the same gate / history path as a move.
+window.Bonsai.commitBay = async (ops, changedIds, label) => {
+  const before = _gateBoxes(); setStat('adding a bay…');
+  const r = await _commitUserGesture(ops);
+  // the copies are new feature ids: the gate checks them too, each inheriting its source's relations (sdg_gate opts.copies)
+  const copies = {}; ops.forEach((o, i) => { const bc = o.params && o.params.bayCopy; if (o.op_type === 'GEOM_INSERT' && bc && r.ids && r.ids[i] != null) { const sh = [0, 0, 0]; sh[bc.axis === 'x' ? 0 : 1] = bc.dir * bc.pitch; copies[r.ids[i]] = { src: bc.src, shift: sh }; } });
+  const gateMsg = _runGate(before, (changedIds || []).concat(r.ids || []), { copies }); window.__lastGate = gateMsg;
+  if (window.Bonsai.grid.foldFromOplog) window.Bonsai.grid.foldFromOplog();
+  setStat((label || 'bay added') + '  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : '')); audioCue('commit'); syncHistory();
+  if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+  return { verify: r.verify, gid: r.gid, ids: r.ids || [], gate: gateMsg };
+};   // test hook (§STRETCH-GATE smoke)
 canvas.addEventListener('pointerup', (e) => { if (gridMoving && _dragGrid) { if (!_gsgPrompt && gsgIntercept(e)) return; if (_gsgPrompt) return; commitGridMove(); } });   // §GRID-SPAN-GATE: a release on RED opens the prompt instead of committing
 
 // ── ROOM MOVE (whole-room drag) ───────────────────────────────────────────────────────────────────
@@ -3025,10 +3037,10 @@ async function revertRed(tok) {
   console.log('§RED-REVERT reverted=true tok=' + tok + ' active=' + O._allGeom().filter(o => !o.undone).length);
   return true;
 }
-function _runGate(before, moved) {
+function _runGate(before, moved, gopts) {
   window.__gateOrange = [];                                   // §ORANGE-ACCEPT: suggestions belong to the edit just made only
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
-  const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), {});
+  const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), gopts || {});
   if (!res.red.length && !res.orange.length) return '';
   if (window.SdgSave) window.__gateOrange = window.SdgSave.planHeal(res.orange).healable;
   console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
