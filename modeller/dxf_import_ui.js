@@ -855,6 +855,10 @@
       return { a: f.outputGuid, b: h.outputGuid, opening_guid: c.outputGuid, host_guid: h.outputGuid, filling_guid: f.outputGuid, host_class: h.params.ifc_class, filling_class: f.params.ifc_class, kind: 'fills', provenance: 'dxf2bim:convert' }; });
     window.__arcFidByGuid = Object.assign({}, window.__arcFidByGuid || {}, fid); window.__arcGuidByFid = Object.assign({}, window.__arcGuidByFid || {}, gbf);   // added to an open building's bridge, never replacing it
     var X0 = window.swXEdges || {}; window.swXEdges = Object.assign({ abuts: [], anchored: [], datums: [], spans: [], aggregates: [] }, X0, { fills: (X0.fills || []).concat(fe) });
+    // §D88 the drawing's own grid becomes the Modeller's authoring grid (grid move, snapping), only while it is the untouched default — a user's grid is never replaced
+    var G = window.Bonsai && window.Bonsai.grid, pg = window.Dxf2Bodies && window.Dxf2Bodies.planGrid ? window.Dxf2Bodies.planGrid(state.sheets) : { ok: false, why: 'Dxf2Bodies not loaded' };
+    if (G && G._isDefault && pg.ok) { G.define({ xs: pg.xs, ys: pg.ys, xlabels: pg.xlabels, ylabels: pg.ylabels }); console.log('§DXF-GRID defined from=' + pg.sheet + ' xs=' + pg.xs.length + ' ys=' + pg.ys.length + ' labels=' + pg.xlabels[0] + '..' + pg.xlabels[pg.xlabels.length - 1] + '/' + pg.ylabels[0] + '..' + pg.ylabels[pg.ylabels.length - 1]); }
+    else console.log('§DXF-GRID none reason=' + (!G ? 'no grid' : !G._isDefault ? 'the grid is the user\'s (kept)' : pg.why));
     console.log(TAGC + ' bridge published guids=' + Object.keys(fid).length + ' fills_edges=' + fe.length + (T.lines ? ' wall_lines=' + T.lines.bodies_before + '->' + T.lines.bodies_after : ''));
     state.last = { run_id: R.run_id, ids: res.ids, gid: res.gid, nInserts: T.inserts.length, nCuts: T.cuts.length, fidByGuid: fid,
       groups: T.groups.map(function (g) { return Object.assign({}, g, { fid: res.ids[g.body] }); }), counts: byCS, fillsNeeded: fillNeed,

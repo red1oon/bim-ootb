@@ -1045,3 +1045,28 @@ along the wall -> nothing; 1 m sideways -> `⚠ 2 ORANGE` (clearance x2, "accept
 So on the shed the film CAN show the red / orange gate (clash, clearance); the door kinds (door off its wall, door-crush) and abuts-realign cannot fire there (0 fills, 0 abuts).
 **Open (owner's call, not built):** doors riding a shed wall would need the structure path to join wall pieces across a door gap into one host with a cut + fill (§D59's rule for the
 structure path) — a new feature, not a fix.
+
+## §D88 A CONVERTED DRAWING HANDS ITS OWN GRID TO THE MODELLER, AND A DOOR IN A WALL GAP IS HOSTED BY THAT WALL (owner 2026-10-27: grid stretch with the orange / green opening indicators "should do it first", before the BricsCAD film)
+**Measured first (the CLI-marked shed, 2026-10-27).** (1) After Convert the Modeller's grid is the DEFAULT (`bonsai_grid.js define()`: xs 0,4,8,12 / ys 0,3,6, at the origin); the only
+code that replaces it is §GRID-SPAN-GATE (`modeller.html:2175`, the STR walker's column lattice on Open). A DXF Convert never sets it, on any set; on the shed (~650 m from the origin) a
+0.1 m drag of each of the 7 default lines gives 0 commands. The drawing states its grid: the base plan `0_FLOOR_PLAN` carries `@GRIDX=01…06,35…42` every 120 in and `@GRIDY=A…D` every
+200 in (`@UNITS=in`); × 0.0254 they land on the model (line 01 at −680.925 m). (2) The shed's 4 doors are hosted by no wall (0 cuts, 0 `swXEdges.fills`): the structure path
+(`Dxf2Structure`) builds walls as bodies from the drawn wall outlines, the drawing breaks a wall at its door, and the doors are leaves from swing symbols (§L16). All 41 walls are on the
+perimeter (N 15 · S 14 · W 6 · E 6).
+**Rule A (grid).** After a Convert that builds, the Modeller grid becomes the BASE plan's stated grid — `Dxf2Bodies.planGrid(sheets)`, next to `planOffset` (the one plan-alignment owner):
+the lowest-level plan's `desc.gridsX` / `desc.gridsY`, × its `factor`, sorted, with their labels — but only while the grid is still the untouched default (a user's grid is never replaced,
+as §GRID-SPAN-GATE). No stated grid on both axes -> nothing is defined and the log says why (`§DXF-GRID none reason=…`).
+**Rule B (door host) — SPEC, built after A is witnessed.** In the structure path, two wall bodies of one line (same z range, cross band to `snap_tol`) separated by a gap that a door
+leaf fills along the line (each side within `snap_tol`) become ONE wall body across the gap, with a GEOM_CUT of the door's box and a fill relation (cut -> door), published like the
+Duplex path's, so the grid move and the Conformity Gate's door checks see it. A gap no door fills stays a gap.
+**Witness (W-DXF-GRID, `modeller/tests/witness_dxf_grid_handoff.js`, page, software GL).** G1 after Convert of the marked shed the Modeller grid = the base plan's markings
+(14 x-lines, labels 01…42, 4 y-lines A…D, values × 0.0254 to 1e-6 m); main: FAIL (the default). G2 a 0.1 m preview drag of a grid line through drawn walls gives > 0 commands (main: 0 on every line).
+G3 a user grid defined before Convert is kept. G4 the Duplex set gets its own plan grid the same way. (Rule B: claims added when it is built.)
+**RESULT A 2026-10-27 (W-DXF-GRID 4 / 0, page).** G1 the grid after Convert = the plan's markings: 14 x-lines `01..06,35..42`, 4 y-lines `D..A`, first line −680.925384 m (want the same);
+`§DXF-GRID defined from=0_FLOOR_PLAN_marked.dxf xs=14 ys=4`. G2 a one-bay (3.048 m) preview drag of the last x-line `gx13`: 18 commands — IfcColumn translate 4, IfcBeam translate 3,
+IfcFooting translate 4, IfcWall translate 1, IfcWall SCALE 6; riders 0, refusals 0. G3 a user grid is kept (`§DXF-GRID none reason=the grid is the user's (kept)`). 0 page errors.
+On main the same drag gives 0 commands (default grid, measured above).
+**What a one-bay stretch does NOT do yet (measured, G2):** the roof — 168 IfcMember (purlins, 36.58 m) + 117 IfcPlate (sheets); the shed has no IfcRoof — is not in the grid move's
+`_STRUCTURAL_CLASSES` (`bonsai_gridmove.js:93`: Wall, WallStandardCase, Slab, Footing, Column, Beam, Railing, StairFlight, Roof), so it neither stretches nor moves; and no frame is added in
+the new bay (§GRID-SPAN "add one more" exists for the STR walker's column lattice only). Owner's call: widen the class list (it applies to EVERY building: an opened IFC's curtain-wall
+plates and members would start following grid drags too) or a shed/DXF-only rule; and whether a new bay gets a frame copied from its neighbour.
