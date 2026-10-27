@@ -2703,7 +2703,21 @@
       });
       return;
     }
-    if (!ML || op.op_type === 'CRUD_DELETE' || !observing && !(ML.MODEL[op.table] && ML.MODEL[op.table].afterSave) && !(global.AdModelVal && global.AdModelVal.hooksFor && Object.keys(global.AdModelVal.hooksFor(op.table)).some(function (t) { return /^AFTER_/.test(t); }))) { cb([]); return; }
+    var listens = !(!ML || op.op_type === 'CRUD_DELETE' || !observing && !(ML.MODEL[op.table] && ML.MODEL[op.table].afterSave) && !(global.AdModelVal && global.AdModelVal.hooksFor && Object.keys(global.AdModelVal.hooksFor(op.table)).some(function (t) { return /^AFTER_/.test(t); })));
+    if (!listens) {
+      // nothing is registered in CODE for this table - but a dictionary row may still listen: AD_Table_ScriptValidator (TAN / TAC) is stage 3 of the same dispatcher (ad_rule.js, §10.8). Same gate, read where the rows are (the tip).
+      var AR = global.AdRule;
+      if (!ML || op.op_type === 'CRUD_DELETE' || !AR || typeof AR.hasRows !== 'function' || typeof withBundle !== 'function') { cb([]); return; }
+      withBundle(function (bdb) {
+        var sh0 = SIDE ? _tipShadowOn(bdb, _sideTables(SIDE)) : [], any = false;
+        try { any = AR.hasRows(_modelQuery(bdb), op.table, op.op_type === 'CRUD_CREATE' ? ['TAN'] : ['TAC']); } catch (e) { any = false; } finally { _tipShadowOff(bdb, sh0); }
+        if (any) _modelAfterSaveGo(op, db, cb); else cb([]);
+      });
+      return;
+    }
+    _modelAfterSaveGo(op, db, cb);
+  }
+  function _modelAfterSaveGo(op, db, cb) {
     var nextId = 1; try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) {}
     var pk = op.table + '_id', rec, old = null;
     withBundle(function (bdb) {

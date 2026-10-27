@@ -12,6 +12,7 @@ async function openDb(extraSql) {
   const run = (txt) => txt.split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { db.run(st); } catch (e) { /* the page's per-statement tolerance */ } });
   const pf = path.join(__dirname, 'patches/ad_seed.db.sql'); if (fs.existsSync(pf)) run(fs.readFileSync(pf, 'utf8'));
   (extraSql || []).forEach(f => run(fs.readFileSync(f, 'utf8')));
+  require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
   const q = (sql, params) => { const st = db.prepare(sql), rows = []; try { if (params && params.length) st.bind(params.map(v => v === undefined ? null : v)); const cols = st.getColumnNames(); while (st.step()) { const v = st.get(), o = {}; cols.forEach((c, i) => { o[String(c).toLowerCase()] = v[i]; }); rows.push(o); } } finally { st.free(); } return rows; };
   return { db, q };
 }

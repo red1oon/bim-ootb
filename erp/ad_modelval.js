@@ -32,8 +32,9 @@
   // ══ THE TOPIC BUS (prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §10.3, Phase 1 — Witness: W-EVENT-BUS) ═════════════════════════════════════════════
   // ONE dispatcher, legacy's. ModelValidationEngine.fireModelChange (ModelValidationEngine.java:387-503) / fireDocValidate (:581-671) run, in this order, stopping at the first error:
   //   (1) validators registered for the table on every client  (2) validators of THIS client  (3) AD_Table_ScriptValidator rules  (4) the OSGi event, whose handlers' errors are COLLECTED,
-  //   reversed and joined "<br>" (:489-497). Here: (1)(2) = registerValidator (REGISTRY, unchanged shape; an entry with opts.client is stage 2) · (3) = NOT BUILT: the twin has no AD_Rule engine
-  //   (ad_seed.db has no ad_rule / ad_table_scriptvalidator; ad_callout.js:793 reports a JSR223 script UNPORTED) - the slot is kept below, nothing is invented · (4) = subscribe (AbstractEventHandler.registerTableEvent).
+  //   reversed and joined "<br>" (:489-497). Here: (1)(2) = registerValidator (REGISTRY, unchanged shape; an entry with opts.client is stage 2) · (3) = setScriptStage: ad_rule.js (AD_Table_ScriptValidator rows ->
+  //   AD_Rule 'twin:<name>' / 'twin:process:<ref>', §10.8) reads its rows through ctx.trx.q / ctx.q and runs them HERE, in legacy's position; groovy:/beanshell:/javascript: rules are named-unported, never run ·
+  //   (4) = subscribe (AbstractEventHandler.registerTableEvent).
   // Topic strings are IEventTopics.java:24-74 VERBATIM (legacy's constant PO_POST_UPADTE is misspelt, its STRING is ".../postUpdate"). The twin's BEFORE_SAVE/AFTER_SAVE are not legacy timings (a NEW-or-CHANGE alias that
   //   PO.save here fires after the specific one): they get twin/ topics so no legacy topic is ever mis-named.
   // TWO CLASSES of topic. GATE = every timing in TOPIC_OF (before*/after*/doc*, the replica timings): synchronous inside the save, may veto or write in the save's own op group.
@@ -80,6 +81,9 @@
 
   // SUBS[topic] = [ {table:'c_order'|'*', name, fn, observe, owner} ] — stage 4 handlers (gate) and observers, in registration order (OSGi Event Admin delivers in registration order here).
   var SUBS = {}, _groupSeq = 0;
+  // stage 3 provider (AD_Table_ScriptValidator): ad_rule.js installs stage3(timing, info, ctx) -> null | { fired, unported[], error, blocked }. None installed = stage 3 is empty (a host without ad_rule.js).
+  var SCRIPT_STAGE = null;
+  function setScriptStage(fn) { var prev = SCRIPT_STAGE; SCRIPT_STAGE = typeof fn === 'function' ? fn : null; return prev; }
   function subscribe(topic, table, name, fn, opts) {
     if (typeof topic !== 'string' || !topic) throw new Error('subscribe: a topic string is required');
     if (typeof fn !== 'function') throw new Error('subscribe: ' + name + ' needs a function');
@@ -114,15 +118,22 @@
   }
   function _run(timing, topic, info, ctx, withTopic) {
     ctx = ctx || {};
-    var t = (info.table || '').toLowerCase(), all = (REGISTRY[t] && REGISTRY[t][timing]) || [], fired = 0, i, err, h;
-    function res(o) { var r = { timing: timing, table: info.table, fired: o.fired, ok: o.ok }; if (!o.ok) { r.blocked = o.blocked; r.error = o.error; if (o.errors) r.errors = o.errors; } if (withTopic) r.topic = topic; return r; }
+    var t = (info.table || '').toLowerCase(), all = (REGISTRY[t] && REGISTRY[t][timing]) || [], fired = 0, i, err, h, unported = null;
+    function res(o) { var r = { timing: timing, table: info.table, fired: o.fired, ok: o.ok }; if (!o.ok) { r.blocked = o.blocked; r.error = o.error; if (o.errors) r.errors = o.errors; } if (unported) r.unported = unported; if (withTopic) r.topic = topic; return r; }
     function exec(e) { try { return e.fn(ctx, info); } catch (x) { return 'hook threw: ' + (x && x.message); } }
     // (1) validators of every client - registration order, the first error aborts (:395-405 / fireModelChange(po,type,list) :506-540)
     for (i = 0; i < all.length; i++) { h = all[i]; if (h.client != null) continue; fired++; err = exec(h); if (err) return res({ ok: false, fired: fired, blocked: h.name, error: err }); }
     // (2) validators of THIS client only (m_modelChangeListeners.get(table + AD_Client_ID), :407-415)
     var cl = null;
     for (i = 0; i < all.length; i++) { h = all[i]; if (h.client == null) continue; if (cl === null) cl = _clientOf(info, ctx); if (h.client !== cl) continue; fired++; err = exec(h); if (err) return res({ ok: false, fired: fired, blocked: h.name, error: err }); }
-    // (3) AD_Table_ScriptValidator rules (:417-466): NOT BUILT - no AD_Rule engine in the twin (finding in prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §10.5); nothing is run or invented here.
+    // (3) AD_Table_ScriptValidator rules (:417-466 / fireDocValidate :605-655), ad_rule.js: rows of this table+event ORDER BY SeqNo; the first error stops here like a validator's (:456-457).
+    if (SCRIPT_STAGE) {
+      var sr = SCRIPT_STAGE(timing, info, ctx);
+      if (sr) {
+        fired += sr.fired || 0; if (sr.unported && sr.unported.length) unported = sr.unported;
+        if (sr.error) return res({ ok: false, fired: fired, blocked: sr.blocked || 'AD_Table_ScriptValidator', error: sr.error });
+      }
+    }
     // (4) event handlers of the topic: ALL run, every error collected, reversed, joined with "<br>" (:469-497)
     var hs = topic ? _subsFor(topic, t, false) : [];
     if (hs.length) {
@@ -955,7 +966,7 @@
 
   var API = {
     TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, unregisterValidator: unregisterValidator, registeredCount: registeredCount,
-    TOPIC_OF: TOPIC_OF, topicOf: topicOf, timingOf: timingOf, isObserveTopic: isObserveTopic, subscribe: subscribe, unsubscribe: unsubscribe, unsubscribeOwner: unsubscribeOwner,
+    setScriptStage: setScriptStage, TOPIC_OF: TOPIC_OF, topicOf: topicOf, timingOf: timingOf, isObserveTopic: isObserveTopic, subscribe: subscribe, unsubscribe: unsubscribe, unsubscribeOwner: unsubscribeOwner,
     subscriptions: subscriptions, hasSubscribers: hasSubscribers, hasObservers: hasObservers, dispatch: dispatch, queueObserve: queueObserve, deliverObserved: deliverObserved,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
     installMOrderSaveHooks: installMOrderSaveHooks, fireHooks: fireHooks, hooksFor: hooksFor,
@@ -969,4 +980,6 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness
   if (typeof window !== 'undefined') window.AdModelVal = API;                   // browser
   else if (global) global.AdModelVal = API;
+  // a node host gets stage 3 without wiring it: ad_rule.js attaches itself to THIS instance (the browser page loads ad_rule.js after this file, which attaches to window.AdModelVal)
+  if (typeof module !== 'undefined' && module.exports && typeof require === 'function') { try { require('./ad_rule.js').attach(API); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') console.log('§RULE_ATTACH_ERR ' + (e && e.message)); } }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
