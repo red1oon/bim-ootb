@@ -1096,3 +1096,6 @@ with the reason. The §S8 Δ and the VO price it through their existing owners (
 **Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
 source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
 B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
+**§D89 step 1 ✅ 2026-10-28 (witness): the §S8 Δ prices a grid stretch.** `viewer/edit_delta.js netEdits` reads a GEOM_GRID_MOVE's stored commands as the fold applies them (spec row: BIMCompiler
+`TM_4D5D_VARIANCE_LANE.md` §S8-QTY). W-S8-PURE 9 / 0: P7 a grid SCALE y ×1.5 = 3906 = the same GEOM_SCALE's independent SQL recompute; P7b a 30° yaw named `GEOM_GRID_MOVE(oblique)`, 0; P7c a grid
+TRANSLATE 0. On main: P7 / P7b / P7c FAIL (`unsupported=["GEOM_GRID_MOVE"]`, 0). Next: step 2, the bay copies + long-member stretch in `extra.ops`, priced as ADDED / CHANGED.
