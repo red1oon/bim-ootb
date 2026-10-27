@@ -189,7 +189,7 @@
   //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
   var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs'];
   // INSTALLED BUT NOT STARTED: legacy ships these bundles in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Web Services = ERP_WS_API.md S6.
-  var INSTALL_ONLY = ['plugins/webservices.mjs'];
+  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it
   function _builtins() {
     if (typeof location === 'undefined') return Promise.resolve();
     return _kvGet('builtins_seen', []).then(function (seen) {
