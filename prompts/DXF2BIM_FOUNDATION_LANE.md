@@ -1079,11 +1079,20 @@ IfcMember 12, IfcPlate 9; each inner line 1-12: IfcColumn 2 + IfcFooting 2; end 
 Door 2; bay 2: + Fan 2; bay 5: Beam 4, Wall 4; bay 12: Wall 3, Door 2. Spanning the whole length: IfcMember 12, IfcCovering 2. No cut openings (the curtain side is open above the
 support wall). Today a one-bay drag of the end line (W-DXF-GRID G2): the end frame translates (18 commands), 6 walls stretch, the roof (Member / Plate) does nothing (not in
 `_STRUCTURAL_CLASSES`), no frame appears in the new bay, and the cost Δ is BLOCKED for a grid move (`viewer/edit_delta.js:31` §S8-QTY) and absent for added elements.
-**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): (1) the end line and everything at or beyond it
-translate by one pitch (the existing grid move); (2) a copy of ONE typical bay (the nearest identical bay to that end) and of its inner line's columns + footings is inserted one pitch on,
-as GEOM_INSERTs of the same geometry (copies, never new shapes); (3) the full-length members / coverings stretch by the pitch about the fixed end; (4) ONE gesture, ONE undo. A set with
-no repeating bay refuses with the reason. (5) Cost variance: the §S8 Δ covers it — copies priced at rate × their own quantity (the same row basis as the Project Order line),
-stretched / moved elements through `netEdits` (GEOM_GRID_MOVE unblocked by reading its commands as SCALE / MOVE), the total shown and written as a variation.
+**Consistency with the Modeller spine (checked 2026-10-28, owner: "are these part of the spine already laid down by Modeller before?") — §D89 builds NOTHING beside these:**
+| need | the spine's existing owner | what §D89 adds |
+|---|---|---|
+| one gesture, one undo | `bonsai_gridmove.js` commit: GEOM_GRID_MOVE + riders + `extra.ops` in one `commitGesture` (`:384`, built for §GRID-SPAN "Add one more") | the bay copies ride `extra.ops` |
+| add frame members on a new line | §GRID-SPAN-GATE "Add one more" (MODELLER_MASTER row 38): GEOM_INSERT copies of the REAL element (`realGeomHash`, measured bbox) tagged `params.spanSplit`, folded into `Bonsai.grid` by `foldFromOplog` | the same copy rule, tag `params.bayCopy {axis, from, pitch}`, folded the same way (one new line per added bay) |
+| red / orange after the edit | §GATE-1 Conformity Gate (`sdg_gate.js`, runs after every commit) | nothing (it runs on the result) |
+| span limit colours during the drag | §GRID-SPAN-GATE — needs the STR walker's column-framed lattice, so it is OFF on a DXF convert | out of scope here (named: a converted set has no walker state) |
+| cost Δ of the edit | §S8 `edit_delta.js netEdits` (MOVE / SCALE) — GEOM_GRID_MOVE ⛔ blocked on "does a command carry the new span?" | ANSWERED from code: the stored op keeps the full commands (`action`, `axis`, `newScale`, `translateDelta`; `bonsai_gridmove.js:387`), applied by the fold at `bonsai_kernel.js:340` (§STRETCH-1) — `netEdits` reads them the way the fold does; copies are priced as ADDED |
+| the variation (cost variance) | `viewer/variation_order.js` (ADDED = rate × 1.0, REMOVED × 0.3, CHANGED × 1.3) and §S9 Project Order / VO rows from the Modeller | the bay's copies appear as ADDED rows, the stretched long members as CHANGED |
+| the roof follows | the grid move classifies only `_STRUCTURAL_CLASSES` (no IfcMember / IfcPlate) | the full-length members / coverings stretch as explicit GEOM_SCALE rows in the same `extra.ops` — the class list (every building) is NOT widened |
+**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): ONE gesture = the end line's
+GEOM_GRID_MOVE by one pitch (the end frame translates, as today) + `extra.ops`: GEOM_INSERT copies of one typical bay (the identical bay nearest that end) and of its inner line's
+columns + footings, one pitch on, `params.bayCopy`; GEOM_SCALE of each full-length member / covering by (L + pitch) / L anchored at the fixed end. A set with no repeating bay refuses
+with the reason. The §S8 Δ and the VO price it through their existing owners (rows above).
 **Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
 source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
 B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
