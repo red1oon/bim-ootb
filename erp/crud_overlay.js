@@ -1165,11 +1165,11 @@
       // after=0 offered=0. PRAGMA table_info gives back the declared types, so affinity is preserved.
       var ti = db.exec('PRAGMA table_info(' + t + ')');
       if (!ti.length || !ti[0].values.length) return t;
-      var decl = ti[0].values.map(function (r) { return r[1] + ' ' + (r[2] || ''); }).join(',');
+      var decl = ti[0].values.map(function (r) { return '"' + r[1] + '" ' + (r[2] || ''); }).join(',');   // §TIPREAD: quoted (keyword-named column)
       db.run('DROP TABLE IF EXISTS ' + FKFOLD_TMP);
       db.run('CREATE TEMP TABLE ' + FKFOLD_TMP + ' (' + decl + ')');
       var ph = cols.map(function () { return '?'; }).join(',');
-      var ins = 'INSERT INTO ' + FKFOLD_TMP + ' (' + cols.join(',') + ') VALUES (' + ph + ')';
+      var ins = 'INSERT INTO ' + FKFOLD_TMP + ' (' + cols.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + ph + ')';
       // CASE-INSENSITIVE COLUMN BIND. `cols` are the BUNDLE's column names, which carry the AD's own
       // CamelCase (C_OrderLine_ID); a listTip-created row's keys are the op's lowercase field names
       // (c_orderline_id). A direct r[c] lookup therefore binds NULL for EVERY column of a folded row —
@@ -1719,8 +1719,8 @@
         var base = baseRes.length ? baseRes[0].values.map(function (v) { var o = {}; baseRes[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }) : [];
         var folded = CORE.listTip(sdb, t, t + '_id', base, null), rows = (folded && folded.rows) || base;
         db.run('DROP TABLE IF EXISTS temp.' + t);
-        db.run('CREATE TEMP TABLE ' + t + ' (' + ti[0].values.map(function (r) { return r[1] + ' ' + (r[2] || ''); }).join(',') + ')');
-        var st = db.prepare('INSERT INTO temp.' + t + ' (' + cols.join(',') + ') VALUES (' + cols.map(function () { return '?'; }).join(',') + ')');
+        db.run('CREATE TEMP TABLE ' + t + ' (' + ti[0].values.map(function (r) { return '"' + r[1] + '" ' + (r[2] || ''); }).join(',') + ')');   // §TIPREAD: identifiers quoted - a column named like an SQL keyword (pp_order_node."limit") failed the whole shadow ('near "limit"') and the read fell back to the raw bundle
+        var st = db.prepare('INSERT INTO temp.' + t + ' (' + cols.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + cols.map(function () { return '?'; }).join(',') + ')');
         rows.forEach(function (r) {
           var lower = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) lower[String(k).toLowerCase()] = r[k];
           try { st.run(cols.map(function (c) { var v = (r[c] !== undefined) ? r[c] : lower[String(c).toLowerCase()]; return v === undefined ? null : v; })); } catch (ei) {}

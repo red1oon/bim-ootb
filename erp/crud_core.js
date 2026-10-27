@@ -425,7 +425,17 @@
   // BLUE FUTURE: `branch` (optional) — official-only by default; pass the active branch for the blue VIEW.
   function listTip(db, table, pkCol, baseRows, branch) {
     var rows = (baseRows || []).map(function (r) { var o = {}; for (var p in r) o[p] = r[p]; return o; });   // shallow copy — never mutate the baseline
-    var byId = {}; rows.forEach(function (r) { byId[String(r[pkCol])] = r; });
+    // §TIPREAD: the pk NAME is matched case-insensitively against the base rows. A bundle SELECT * carries the dictionary's own CamelCase
+    //   (M_Warehouse_ID), the caller passes lowercase (m_warehouse_id) and created rows are keyed lowercase: an exact r[pkCol] lookup keyed every
+    //   mixed-case base row 'undefined', so a CRUD_UPDATE/DELETE of a base row never folded (46 of the bundle's pk tables; W-TIP-UPDATE-READ).
+    var lpk = String(pkCol).toLowerCase(), bkCol = pkCol;
+    var pkOf = function (r) {
+      if (r[pkCol] !== undefined) return r[pkCol];
+      if (r[bkCol] !== undefined) return r[bkCol];
+      for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k) && String(k).toLowerCase() === lpk) { bkCol = k; return r[k]; }
+      return undefined;
+    };
+    var byId = {}; rows.forEach(function (r) { byId[String(pkOf(r))] = r; });
     var created = [], hidden = [], hiddenBy = [], updated = [], want = String(table || '').toLowerCase();
     if (!db) return { rows: rows, created: created, hidden: hidden, updated: updated };
     try {
@@ -512,7 +522,7 @@
     } catch (e) {}
     // apply tombstones last (a delete after a create on the same id still hides it).
     var hideSet = {}; hidden.forEach(function (h) { hideSet[String(h)] = 1; });
-    rows = rows.filter(function (r) { return !hideSet[String(r[pkCol])] && !hiddenBy.some(function (h) { return String(r[h[0]]) === h[1]; }); });
+    rows = rows.filter(function (r) { return !hideSet[String(pkOf(r))] && !hiddenBy.some(function (h) { return String(r[h[0]]) === h[1]; }); });
     created = created.filter(function (c) { return !hideSet[String(c)]; });
     updated = updated.filter(function (u) { return !hideSet[String(u)]; });
     return { rows: rows, created: created, hidden: hidden, updated: updated };
