@@ -22,13 +22,11 @@
 //   §H7 run twice     — the clerk runs Import Orders AGAIN: nothing more imported (still ONE order for the key, no new order of the day).
 //   §H8 stock role    — the SAME device logs out and in as role 103: the menu has Replenish Report and no Import Order; M_Replenish rows for warehouse 104 (+ its source) are operator SAMPLE master data (labelled §HQ_SETUP).
 //   §H9 report        — Replenish Report (menu 53354) for the branch warehouse, Create blank: T_Replenish rows equal the independent expectation (level, on hand), no document made.
-//   §H10 confirm      — Create = Inventory Movement offers exactly the dictionary's Material Movement doctype; Run: ONE M_Movement with the report's lines (quantities = Qty To Order). BLOCKED TODAY (§HQ_BLOCKED, verdict PARTIAL):
-//                       the branch's M_WarehouseSource_ID never reaches the model tip (listTip keys base rows by a lowercase pk; M_Warehouse's seed key is mixed case) and a warehouse created in the sidecar is not offered by
-//                       the process dialog. The arm runs the real UI step, prints the measured 'No Source Warehouse', and judges the movement assertions the moment a movement exists.
+//   §H10 confirm      — Create = Inventory Movement offers exactly the dictionary's Material Movement doctype; Run: ONE M_Movement with the report's lines (quantities = Qty To Order). (Was BLOCKED -> PARTIAL until fix/tip-update-read: crud_core.listTip matched the pk NAME exactly, so a CRUD_UPDATE of a mixed-case bundle table such as M_Warehouse never folded; W-TIP-UPDATE-READ. The §HQ_BLOCKED path stays for any future block.)
 //   §H11 comes back   — A Visits, B Visits: B holds the order (same uu, CO, 3 lines) AND, once H10 produces one, the movement (same uu, lines); B ran neither process (no §AD-PROC-LIVE proc= on B, no §RULE_PROCESS).
 //   §H12 0 page errors on both devices.
 //   §MUTANTS          — the page served with one rule broken; each must turn >= 1 arm red (a crashed child is NOT a kill): process access ignored (H3/H5), window access ignored (H3/H5), Import Orders re-import on a second run (H7),
-//                       Visit drops the order (H11); 'Visit drops the movement' is declared NOT JUDGED while H10 is blocked (a mutant on a path that never ran is not a kill).
+//                       Visit drops the movement (H11), Visit drops the order (H11); the movement mutant is declared NOT JUDGED only if H10 is blocked (a mutant on a path that never ran is not a kill).
 //   VERDICT           — PASS only when nothing is blocked; PARTIAL (exit 3) when an arm is named BLOCKED; INCONCLUSIVE when nothing was judged; FAIL when a base arm is red.
 // Run: node erp/tests/witness_hq_clerk.js 2>&1 | tee /tmp/witness_hq_clerk.log      (HQ_NO_MUT=1 skips the mutants; HQ_ONLY_ARMS=1 is the mutant child mode)
 'use strict';
