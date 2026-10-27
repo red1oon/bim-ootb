@@ -242,7 +242,7 @@
     for (k in localeData.rates || {}) if (localeData.rates.hasOwnProperty(k) && localeData.rates[k] && localeData.rates[k].desc != null) w.rates[k] = localeData.rates[k].desc;
     for (k in localeData.labor_rates || {}) if (localeData.labor_rates.hasOwnProperty(k) && localeData.labor_rates[k] && localeData.labor_rates[k].trade != null) w.labor[k] = localeData.labor_rates[k].trade;
     for (k in localeData.equipment_rates || {}) if (localeData.equipment_rates.hasOwnProperty(k) && localeData.equipment_rates[k] && localeData.equipment_rates[k].desc != null) w.equip[k] = localeData.equipment_rates[k].desc;
-    if (typeof setRateWords === 'function') setRateWords(w);
+    if (typeof window.setRateWords === 'function') window.setRateWords(w);
   }
 
   // ── Show toast notification ──
@@ -547,7 +547,7 @@
         _restore(_TRL, _snap.trl);
         if (labels) deepMerge(_TRL, labels);
         if (cost) { deepMerge(_TRL, cost); applyRateOverrides(cost); }
-        if (typeof ratesFollowLocale === 'function') ratesFollowLocale(code);   // §6.3: the new language's pack, unless one is pinned
+        if (typeof window.ratesFollowLocale === 'function') window.ratesFollowLocale(code);   // §6.3: the new language's pack, unless one is pinned
         applyUrlOverrides(_TRL);
         applyLangDir(code);
         var tagged = document.querySelectorAll('[data-trl],[data-trl-title],[data-trl-placeholder],[data-trl-html],[data-trl-tip]').length;
