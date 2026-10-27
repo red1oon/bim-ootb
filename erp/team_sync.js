@@ -4,7 +4,7 @@
  * Implementing bim-compiler prompts/TEAMWORK_FRAMEWORK.md §13.1 (W1) — Witness: W-TEAM-SO (erp/tests/witness_team_so.js).
  *
  * GENERIC (AD-LAYER LAW): nothing here names a window or a business table. It sits on two seams only:
- *   OUT  crud_overlay._sidePersist → TeamSync.onCommit(rows, db): each committed kernel CRUD row becomes a v3 envelope.
+ *   OUT  an OBSERVER on the bus topic twin/trx/afterCommit (ad_modelval deliverCommitted, delivered by crud_overlay._sidePersist; study §13.2): each committed kernel CRUD row becomes a v3 envelope.
  *   IN   a Visit = store.sync(pipe) → store.foldable() → __crud.teamRebuild(): the sidecar is rebuilt as a PROJECTION of the
  *        comm log (the comm log is the truth). Written through crud_overlay's existing append-only `ops` store.
  * Inert unless the page is opened with ?team=1 (the loader in idempiere.html writes the <script> tags only then).
@@ -26,6 +26,9 @@
   'use strict';
   var _on = /[?&]team=1(&|$)/.test(String(global.location && global.location.search)); try { _on = _on || global.localStorage.getItem('teamMode') === '1'; } catch (e) {}
   if (!_on) return;   // without ?team=1 (or the Team panel's switch) nothing changes
+  // OUT on the bus (TEAM_REPLICATION_PLUGIN_STUDY §13.2, 2.4): subscribed at load, before any commit can run (this file is parser-blocking); OBSERVE class - it can never veto or join a save
+  if (global.AdModelVal && typeof global.AdModelVal.subscribe === 'function') global.AdModelVal.subscribe('twin/trx/afterCommit', '*', 'TeamSync.out', function (c, v) { return onCommit(v.rows, v.db); }, { observe: true });
+  else console.log('🔴 §TEAM_BOOT no model-validation bus (ad_modelval.js) — nothing this device commits is shared');
 
   var OWNER = 'red1oon', REPO = 'bim-teams-pipe';
   // the core's message (TEAM_REPLICATION_PLUGIN_STUDY §8.3 A4, §12.4): Msg.getMsg over AD_Message (ad_callout.js; patches/ad_seed.db.sql ships CurrentRecordModified) - never a copy of its text here
@@ -55,7 +58,7 @@
   }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
-  var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null;
+  var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null, fired = {}, replExc = [];
   var baseSt = { state: 'unknown' }, loadedP = null, pristineP = null, storeOpts = null, bmemo = {}, bcols = {};
   var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
   var $ = function (id) { return document.getElementById(id); };
@@ -65,7 +68,7 @@
   function idb() { return new Promise(function (res, rej) { var r = indexedDB.open('comm_phone', 1); r.onupgradeneeded = function () { r.result.createObjectStore('kv'); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
   async function kvGet(k) { var d = await idb(); return new Promise(function (res) { var q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(undefined); }; }); }
   async function kvPut(k, v) { var d = await idb(); return new Promise(function (res, rej) { var t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = function () { rej(t.error); }; }); }
-  async function persist() { if (S) await kvPut('erp_db', S.db.export()); await kvPut('erp_sent', sent); await kvPut('erp_localonly', localOnly); }
+  async function persist() { if (S) await kvPut('erp_db', S.db.export()); await kvPut('erp_sent', sent); await kvPut('erp_localonly', localOnly); await kvPut('erp_replfired', fired); }
 
   // ── the AD layer's canUpdate over this page's own dictionary (same adapter as comm_phone.html) ──
   function adDb() { return global.__idmpDb; }
@@ -275,7 +278,7 @@
     // §13.7 all-or-none: a doc-action group with ANY write held back on docstatus is left out whole (the document keeps its last agreed status AND no consequences)
     var heldGrp = {}; fold.forEach(function (p) { var g = p.env.body.params && p.env.body.params.grp; if (g && p.held && p.held.indexOf('docstatus') >= 0) heldGrp[g] = 1; });
     var groupHeld = 0;
-    var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {}, createdBy = {};
+    var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {}, createdBy = {}, received = [];
     fold.forEach(function (p) {
       var e = p.env, b = e.body, t = e.target.table, uu = e.target.uu, params = b.params || {}, kp, op_uuid;
       if (params.grp && heldGrp[params.grp]) { groupHeld++; log('§TEAM_GROUP_HELD grp=' + String(params.grp).slice(0, 8) + ' ' + b.op_type + ' ' + t + ' ' + uu.slice(0, 8) + ' (docstatus conflict — whole group left out)'); return; }
@@ -300,6 +303,7 @@
         kp = { table: t, id: pk2, action: params.action, from: params.from, to: params.to, oracle: params.oracle || null }; op_uuid = uuidFromHash(p.hash);
       } else { skipped++; log('§TEAM_PROJECT_SKIP ' + t + ' op-type ' + b.op_type); return; }
       var id = ++base; if (b.op_type === 'CRUD_CREATE') { uuToPk[uu] = -id; createdBy[String(t).toLowerCase() + '|' + (-id)] = e.author; }
+      if (e.author !== (dev && dev.kid) && (b.op_type === 'CRUD_CREATE' || (b.op_type === 'CRUD_UPDATE' && !kp.idCol))) received.push({ hash: p.hash, table: t, pk: b.op_type === 'CRUD_CREATE' ? -id : kp.id, isNew: b.op_type === 'CRUD_CREATE' });   // §13.2 2.6: a row another device authored
       out.push({ id: id, op_uuid: op_uuid, timestamp: e.ts, op_type: b.op_type, parameters: JSON.stringify(kp), input_guids: null, output_guid: null, undone: 0,
                  prev_hash: null, op_hash: null, sig: null, gid: null, branch_id: null, user_tag: 'team' });   // NOT params.grp: a kept local-only member of the same group would be separated from it and the kernel reports group-torn (found on film footage 2026-10-24)
       byTable[t] = (byTable[t] || 0) + 1;
@@ -309,7 +313,7 @@
     oldRows.forEach(function (r) { if (r.op_type !== 'CRUD_CREATE' || !r.op_uuid) return; var np = uuToPk[String(r.op_uuid).toLowerCase()];
       if (np == null || np === -Number(r.id)) return; var t; try { t = String(JSON.parse(r.parameters).table).toLowerCase(); } catch (e) { return; }
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
-    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, createdBy: createdBy };
+    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, createdBy: createdBy, received: received };
     return out;
   }
 
@@ -333,6 +337,37 @@
     return !(Number(pk) < 0);                         // a local create (not shared yet) is mine; a base record has no CREATE in the log -> refused (§38.3)
   }
 
+  // ═══ IN, part 2 (bim-compiler prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.2, sub-step 2.6): the CORE fires the replica timing of each newly received row ═══
+  // After the projection committed, every CREATE/UPDATE another device authored that this device has not fired before runs through ModelLayer.fireReplica in ONE model group (fold order):
+  // validators, client validators, AD_Table_ScriptValidator rows (e.g. the POS chain: I_Order TANR -> twin:process:206) and handlers - the twin of legacy po.saveReplica's afterNewReplication.
+  // What the listeners write commits through the normal funnel and is shared as THIS device's own ops (the processor is the executor, FL-8). A listener error drops only that row's writes
+  // (savepoint) and is recorded (§TEAM_REPLICA_EXCEPTION): the received fact stays (§9.3 item 1). `fired` (envelope hashes) is persisted, so a refold or the next Visit never fires twice.
+  async function fireReceived(pj) {
+    var todo = ((pj && pj.received) || []).filter(function (x) { return !fired[x.hash]; });
+    if (!todo.length) return { received: 0, fired: 0, exceptions: 0, ops: 0 };
+    var C = global.__crud, ML = global.ModelLayer;
+    if (!C || typeof C.modelRun !== 'function' || typeof C.applyOpGroup !== 'function' || !ML || typeof ML.fireReplica !== 'function') { log('🔴 §TEAM_REPLICA_IN the core seam is missing (modelRun / applyOpGroup / fireReplica): ' + todo.length + ' received row(s) fired nothing'); return null; }
+    var exc = [];
+    var r = await new Promise(function (res) { C.modelRun({ table: todo[0].table, timing: 'PROCESS', fn: function (trx) {
+      todo.forEach(function (x) {
+        var row = trx.get(x.table, x.pk); if (!row) { exc.push({ x: x, error: 'the received row is not in the projection' }); return; }
+        var sp = trx.setSavepoint(), f = ML.fireReplica(trx, x.table, row, { isNew: x.isNew });
+        if (!f.ok) { trx.rollbackTo(sp); exc.push({ x: x, error: f.error }); }
+      });
+      return { ok: true };
+    } }, res); });
+    if (!r) { log('🔴 §TEAM_REPLICA_IN the model run failed: ' + todo.length + ' received row(s) left to fire at the next Visit'); return null; }
+    todo.forEach(function (x) { fired[x.hash] = 1; });
+    exc.forEach(function (e) { replExc.push({ table: e.x.table, pk: e.x.pk, hash: e.x.hash, error: String(e.error) });
+      log('§TEAM_REPLICA_EXCEPTION table=' + e.x.table + ' pk=' + e.x.pk + ' op=' + e.x.hash.slice(0, 12) + ' error=' + String(e.error).slice(0, 160) + ' (the received row stays; only this listener\'s writes were dropped)'); });
+    var ops = (r.ok !== false && r.ops) || [], cr = null;
+    if (ops.length) cr = await new Promise(function (res) { C.applyOpGroup(ops, res, r.observed); });
+    log('§TEAM_REPLICA_IN received=' + todo.length + ' new=' + todo.filter(function (x) { return x.isNew; }).length + ' fired=' + (todo.length - exc.length) + ' exceptions=' + exc.length + ' listenerOps=' + ops.length +
+        (ops.length ? ' committed=' + !!(cr && cr.committed) + ' gid=' + (cr && cr.gid) : ''));
+    await persist();
+    return { received: todo.length, fired: todo.length - exc.length, exceptions: exc.length, ops: ops.length, committed: !!(cr && cr.committed) };
+  }
+
   var visiting = false;
   async function visit() {
     if (!S || visiting) return null; visiting = true;
@@ -346,15 +381,16 @@
         await persist(); await render(); return { rep: rep, res: { ok: false, reason: 'base-' + baseSt.state }, pj: {} };
       }
       var res = await global.__crud.teamRebuild(project), pj = project.last || {};
+      var rin = res && res.ok ? await fireReceived(pj) : null;        // §13.2 2.6: only on a committed projection
       await peopleRound();                                          // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
       var dirty = false; try { dirty = !!(global.__crud.inlineDirty && global.__crud.inlineDirty()); } catch (e) {}
       log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' parked=' + rep.parked + ' refused=' + rep.refused +
           ' gaps=' + rep.gaps + ' | projection kept=' + pj.kept + ' projected=' + pj.projected + ' skipped=' + pj.skipped + ' groupHeld=' + pj.groupHeld + ' rebuild=' + (res && res.ok ? 'ok verifyChain=' + (res.verify && res.verify.ok ? 'ok' : 'FAIL') : 'FAILED ' + (res && res.reason)) +
-          ' refresh=' + (dirty ? 'DEFERRED(form has unsaved edits)' : 'sent'));
+          ' refresh=' + (dirty ? 'DEFERRED(form has unsaved edits)' : 'sent') + ' replicaIn=' + (rin ? rin.fired + '/' + rin.received : 'none'));
       await persist();
       if (res && res.ok && !dirty) global.dispatchEvent(new CustomEvent('overlay:committed', { detail: { table: null, op_type: 'TEAM_VISIT', id: null, remap: pj.remap || {} } }));
       await render();
-      return { rep: rep, res: res, pj: pj };
+      return { rep: rep, res: res, pj: pj, replicaIn: rin };
     } catch (e) { log('🔴 §TEAM_VISIT error ' + (e && e.stack || e)); await render(); return null; }
     finally { visiting = false; }
   }
@@ -483,6 +519,8 @@
     var own = await kvGet('erp_db'), seed = own ? null : await kvGet('db');
     await openStore(own || seed || undefined);
     sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {};
+    var fr = await kvGet('erp_replfired');                         // §13.2 2.6: a device upgrading to replica firing takes what it ALREADY holds as fired (never re-runs a trigger on old history)
+    if (fr) fired = fr; else { fired = {}; (await S.placedEnvelopes()).forEach(function (p) { if (p.env.author !== dev.kid) fired[p.hash] = 1; }); log('§TEAM_REPLICA_BASELINE already-received=' + Object.keys(fired).length + ' (taken as fired: replica timings run only for rows received from now on)'); await kvPut('erp_replfired', fired); }
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
     if (!own) await persist();
     try { await verifyBase(); } catch (e) { log('🔴 §TEAM_BASE verify failed at boot ' + (e && e.stack || e)); }
@@ -504,7 +542,7 @@
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
   }
   function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !cfg.token) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
-  async function fresh() { sent = {}; localOnly = {}; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); }
+  async function fresh() { sent = {}; localOnly = {}; fired = {}; replExc = []; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); await kvPut('erp_replfired', {}); }
   async function found() {
     await ready; needKey(); await fresh();
     var bi = null; try { bi = await loadedBase(); } catch (e) { log('§TEAM_BASE none reason=' + (e && e.message) + ' (space founded WITHOUT a base)'); }
@@ -544,7 +582,7 @@
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
                         log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
-                      stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; },
+                      stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, notExecutor: notExecutor, _refreshExecutors: refreshExecutors, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });

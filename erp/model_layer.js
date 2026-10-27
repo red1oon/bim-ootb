@@ -353,6 +353,20 @@
     (trx._saved = trx._saved || {})[table + ':' + live[trx.idCol(table)]] = Object.assign({}, live);   // PO.save resets is_ValueChanged: the next save of the SAME PO diffs from here (runWorkflow §DOC-SAVE)
     return { ok: true, row: live };
   }
+  // fireReplica(trx, table, row, {isNew}) — the REPLICA timing of a row RECEIVED from another device that the Team projection has ALREADY placed (bim-compiler prompts/TEAM_REPLICATION_PLUGIN_STUDY.md
+  //   §13.2, 2.6). Legacy fires TYPE_AFTER_NEW_REPLICATION / TYPE_AFTER_CHANGE_REPLICATION inside po.saveReplica (PO.java:2783-2789); here the row is placed by the projection (the comm log is the
+  //   truth: reorder, refold, all-or-none) and the core then fires the SAME after-timing (stages 1-4: validators, client validators, AD_Table_ScriptValidator rows, handlers) and the post*
+  //   observer with isReplication. Writes the listeners make ride the caller's group. NAMED deviations: no BEFORE timing (the row is already placed, a veto could not take effect - §9.3 item 1);
+  //   recordOld is not known for a received change (null); a received delete fires nothing. Returns {ok, error} - the caller (the host) decides what a listener error does (§13.2: dropped, recorded).
+  function fireReplica(trx, table, row, opts) {
+    table = String(table).toLowerCase(); var isNew = !!(opts && opts.isNew);
+    var timing = isNew ? 'AFTER_NEW_REPLICATION' : 'AFTER_CHANGE_REPLICATION';
+    var e = fire(trx, timing, table, row, { recordOld: null, isReplication: true });
+    if (e) return { ok: false, error: e };   // fireReplica
+    trx.say('§BUS_REPLICA table=' + table + ' received ' + (isNew ? 'new' : 'change') + ' fired=' + (isNew ? 'afterNewReplication' : 'afterChangeReplication') + ' key=' + (row ? row[trx.idCol(table)] : null));
+    postEvent(trx, isNew ? 'POST_CREATE' : 'POST_UPDATE', table, row, null, true);   // received-row observers
+    return { ok: true, row: row };
+  }
   // saveReplica — PO.saveReplica(true) (PO.java:2968-2973): the save of a row RECEIVED from another station - fires the replica timings, keeps its key. Phase 1 seam: nothing in the host calls it yet.
   function saveReplica(trx, table, row, changes) { return save(trx, table, row, changes, { isReplication: true }); }
   function saveReplicaEx(trx, table, row, changes) { var r = saveReplica(trx, table, row, changes); if (!r.ok) throw new Error(r.error || 'SaveError'); return r.row; }
@@ -598,7 +612,7 @@
   //   {observe:true} subscriptions of every save/delete in the group, once. resolve(finalOpIndex, table) -> the committed key of a row created in the group (omit: placeholders stay, info.unresolved).
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
-  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
+  return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
            save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });

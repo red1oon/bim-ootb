@@ -17,6 +17,7 @@
 //   W-BUS-COMPAT   registerValidator(table, timing, name, fn) is an adapter: every existing hook, over every table that has hooks today, yields the identical fireHooks outcome
 //                  (result object AND the info.derived it writes) as the pre-bus loop (reference loop below = the original fireHooks verbatim).
 //   W-BUS-PLUGIN   ctx.events.subscribe through plugin_registry buildCtx is owner-scoped and undone on stop (host registry returns to baseline).
+//   W-BUS-COMMITTED twin/trx/afterCommit (= TrxEventListener.afterCommit): every committed kernel row of a persisted group, once, in order, awaited, frozen; cannot stop the persist (study §13.2).
 //   §BUS-MEASURE-6 (measure only, nothing moved): X of N tables whose model-class beforeSave (model_layer M.beforeSave) AND ad_modelval validators both run on one save.
 // Every check names the issue it proves; INCONCLUSIVE when nothing was judged. Mutants (BUS_MUTANTS=1): each rewrites the shipped source, proves the rewrite APPLIED, and the named check must
 //   go FAIL in a child run that prints its verdict (a crash = "not killed").
@@ -410,6 +411,46 @@ function b3(dbh) {
   } catch (e) { check('PLUGIN', 'ctx-events', 'ctx.events path runs', false, 'threw: ' + (e && e.message)); }
   clean();
 
+  // ═══ W-BUS-COMMITTED (TEAM_REPLICATION_PLUGIN_STUDY §13.2 / §13.3, sub-step 2.4) ═══════════════════════════════════════════════════════
+  // ISSUE: Team's OUT path needs EVERY committed kernel row of a group (raw Trx writes and host ops such as SET_STATUS have no PO event: 0 of 5, §12.2), once, in order, awaited (the order
+  //   guarantee crud_overlay._teamPush gave). Legacy: TrxEventListener.afterCommit (Trx.java:450-452). The twin topic twin/trx/afterCommit carries the committed rows; it is an OBSERVE topic.
+  await (async function () {
+    var TOP = 'twin/trx/afterCommit';
+    if (typeof MV.deliverCommitted !== 'function') { check('COMMITTED', 'api', 'ad_modelval exposes deliverCommitted (the after-commit delivery of a persisted group)', false, { has: typeof MV.deliverCommitted }); return; }
+    function kr(id, table, type) { return { id: id, op_uuid: 'u-' + id, op_type: type || 'CRUD_UPDATE', parameters: JSON.stringify({ table: table, id: id }), gid: 'g1', undone: 0 }; }
+    var rows = [kr(1, 'm_inventory'), kr(2, 'm_inventoryline'), kr(3, 'm_transaction', 'CRUD_CREATE'), kr(4, 'm_inventory', 'SET_STATUS')];
+    var seen = [], filt = [], dbSeen = null;
+    MV.subscribe(TOP, '*', 'W.com.all', function (c, v) { seen.push(v.rows.map(function (r) { return r.id; }).join(',')); dbSeen = v.db; return null; }, { observe: true });
+    MV.subscribe(TOP, 'm_inventory', 'W.com.inv', function (c, v) { filt.push(v.rows.map(function (r) { return r.id; }).join(',')); return null; }, { observe: true });
+    var fakeDb = { tag: 'sidecar' }, d1 = await MV.deliverCommitted(rows, { db: fakeDb });
+    check('COMMITTED', 'all-rows', 'a * subscriber gets every committed row of the group, once, in order (incl. raw-write and SET_STATUS rows), with the sidecar read handle', J(seen) === J(['1,2,3,4']) && dbSeen === fakeDb, { seen: seen, d1: d1 });
+    check('COMMITTED', 'table-filter', 'a table subscriber gets only the rows of its table', J(filt) === J(['1,4']), { filt: filt });
+    clean();
+    var order = [];
+    MV.subscribe(TOP, '*', 'W.com.slow', function () { return new Promise(function (res) { setTimeout(function () { order.push('slow'); res(3); }, 30); }); }, { observe: true });
+    MV.subscribe(TOP, '*', 'W.com.fast', function () { order.push('fast'); return null; }, { observe: true });
+    await MV.deliverCommitted(rows, {}); order.push('after');
+    check('COMMITTED', 'awaited-in-order', 'subscribers run in registration order, each AWAITED; delivery resolves after the last (the order guarantee of the old commit observer)', J(order) === J(['slow', 'fast', 'after']), { order: order });
+    clean();
+    var ran = [], m0 = SEEN.length;
+    MV.subscribe(TOP, '*', 'W.com.throw', function () { throw new Error('boom'); }, { observe: true });
+    MV.subscribe(TOP, '*', 'W.com.reject', function () { return Promise.reject(new Error('nope')); }, { observe: true });
+    MV.subscribe(TOP, '*', 'W.com.after', function () { ran.push('after'); return null; }, { observe: true });
+    var d3 = null, thr = null; try { d3 = await MV.deliverCommitted(rows, {}); } catch (e) { thr = e; }
+    var errLines = SEEN.slice(m0).filter(function (l) { return /§BUS_OBSERVE_ERR topic=twin\/trx\/afterCommit/.test(l); }).length;
+    check('COMMITTED', 'cannot-stop', 'a throwing and a rejecting subscriber are logged and do not stop the next subscriber or the persist (delivery never rejects)', !thr && J(ran) === J(['after']) && errLines === 2 && d3 && d3.errors === 2, { thr: thr && thr.message, ran: ran, errLines: errLines, d3: d3 });
+    clean();
+    var n0 = 0; MV.subscribe(TOP, '*', 'W.com.none', function () { n0++; return null; }, { observe: true }); await MV.deliverCommitted([], {});
+    var mut = [kr(9, 'c_uom')], tried = null; clean();
+    MV.subscribe(TOP, '*', 'W.com.mut', function (c, v) { try { v.rows[0].op_type = 'HACK'; } catch (e) { tried = 'refused'; } return null; }, { observe: true }); await MV.deliverCommitted(mut, {});
+    check('COMMITTED', 'empty-and-frozen', 'an empty group calls nobody; a subscriber cannot change the committed rows (frozen copies)', n0 === 0 && mut[0].op_type === 'CRUD_UPDATE', { n0: n0, op: mut[0].op_type, tried: tried });
+    clean();
+    check('COMMITTED', 'observe-class', 'twin/trx/afterCommit is an OBSERVE topic (an observe-granted bundle may hold it; it can never veto)', MV.isObserveTopic(TOP) === true, { obs: MV.isObserveTopic(TOP) });
+    var co = fs.readFileSync(path.join(ERP, 'crud_overlay.js'), 'utf8');
+    check('COMMITTED', 'host-seam', 'crud_overlay has no Team-named commit observer any more (_teamPush deleted) and _sidePersist delivers through the bus', !/_teamPush/.test(co) && /deliverCommitted\(/.test(co), { teamPush: /_teamPush/.test(co), deliver: /deliverCommitted\(/.test(co) });
+  })();
+  clean();
+
   // ═══ §BUS-MEASURE-6 — measure only ═════════════════════════════════════════════════════════════════════════════════════════════════════
   guard('MEASURE6', 'dual-home', 'which tables carry BOTH a model-class beforeSave (model_layer M.beforeSave) and ad_modelval validators', function () {
     var vtables = Object.keys(MV.REGISTRY).filter(function (t) { return Object.keys(MV.REGISTRY[t]).some(function (ti) { return /^BEFORE_/.test(ti); }); });
@@ -433,7 +474,7 @@ function b3(dbh) {
   });
 
   // ═══ verdicts ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-  var vs = ['ORDER', 'REPLICA', 'OBSERVE', 'COMPAT', 'PLUGIN', 'MEASURE6'].map(verdict);
+  var vs = ['ORDER', 'REPLICA', 'OBSERVE', 'COMPAT', 'PLUGIN', 'COMMITTED', 'MEASURE6'].map(verdict);
   var failedCases = Object.keys(CASES).filter(function (k) { return CASES[k].failed; });
   var all = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
   say('§BUS-RESULT verdict=' + all + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' failedCases=' + J(failedCases) + (MUTANT ? ' mutant=' + MUTANT : ''));

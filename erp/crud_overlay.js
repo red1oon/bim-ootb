@@ -1934,7 +1934,7 @@
       var rows = K.rowsByIds(db, ids);
       return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
         rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
-        return _relayPush(rows).then(function () { return _teamPush(rows, db); });
+        return _relayPush(rows).then(function () { return _deliverCommitted(rows, db); });
       }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
     } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
   }
@@ -1948,16 +1948,16 @@
     if (!S || !S.isEnabled || !S.isEnabled()) return Promise.resolve();
     return S.pushRows(rows).catch(function (e) { console.warn('§SYNC_RELAY push error', e && e.message); });
   }
-  // _teamPush / rebuildSide — Implementing prompts/TEAMWORK_FRAMEWORK.md §13.1 (W1) — Witness: W-TEAM-SO. GENERIC, table-agnostic seams for the
-  // local comm layer (erp/team_sync.js, loaded only with ?team=1). Without window.TeamSync both are inert (one extra microtask).
-  //   _teamPush(rows, db)  — a commit observer: the rows this commit just appended (the same ones _relayPush sees), plus the live sidecar for FK lookups.
-  //   rebuildSide(build)   — the sidecar as a PROJECTION of the comm log: build(oldRows, K) → the full new row list; written through the SAME append-only
-  //                          `ops` store (new snapshots of every row, plus an `undone` tombstone for each id no longer present), under the SAME cross-tab lock.
-  function _teamPush(rows, db) {
-    var T = (typeof global.TeamSync !== 'undefined') ? global.TeamSync : null;
-    if (!T || typeof T.onCommit !== 'function') return Promise.resolve();
-    return Promise.resolve(T.onCommit(rows, db)).catch(function (e) { console.warn('§TEAM push error', e && e.message); });
+  // _deliverCommitted - the transaction's after-commit OBSERVE moment (bim-compiler prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.2, 2.4; legacy TrxEventListener.afterCommit): the rows this commit
+  //   just appended (the same ones _relayPush sees) + the live sidecar to read, to every subscriber of twin/trx/afterCommit on the bus (ad_modelval deliverCommitted), awaited in order. Generic: the
+  //   host names no subscriber (the Team adapter, erp/team_sync.js, is one). Without the bus or a subscriber it is one resolved promise. Never throws into the commit path.
+  function _deliverCommitted(rows, db) {
+    var MV = global.AdModelVal;
+    if (!MV || typeof MV.deliverCommitted !== 'function') return Promise.resolve();
+    return Promise.resolve(MV.deliverCommitted(rows, { db: db })).catch(function (e) { console.warn('§BUS_COMMITTED error', e && e.message); });
   }
+  // rebuildSide — Implementing prompts/TEAMWORK_FRAMEWORK.md §13.1 (W1) — Witness: W-TEAM-SO. GENERIC, table-agnostic: the sidecar as a PROJECTION of the comm log: build(oldRows, K) → the full
+  //   new row list; written through the SAME append-only `ops` store (new snapshots of every row, plus an `undone` tombstone for each id no longer present), under the SAME cross-tab lock.
   function rebuildSide(build) {
     var K = kernel();
     return new Promise(function (resolve) {
@@ -3143,7 +3143,8 @@
     global.__lineageHover = { show: show, hide: hide, resolve: resolve };  // exposed for the live §-log probe
   })();
 
-  global.__crud = { enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
+  global.__crud = { modelRun: modelRun,   // ModelLayer.run over the tip-shadowed bundle (study §13.2: the Team adapter fires a received row's replica timing through it)
+                    enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)

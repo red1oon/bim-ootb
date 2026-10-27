@@ -58,6 +58,10 @@
   function topicOf(timing) { return Object.prototype.hasOwnProperty.call(TOPIC_OF, timing) ? TOPIC_OF[timing] : null; }
   function timingOf(topic) { return Object.prototype.hasOwnProperty.call(TIMING_OF, topic) ? TIMING_OF[topic] : null; }
   function isObserveTopic(topic) { return !!OBSERVE_TOPICS[topic]; }
+  // twin/trx/afterCommit - the TRANSACTION's after-commit observer (TEAM_REPLICATION_PLUGIN_STUDY §13.2, sub-step 2.4): legacy TrxEventListener.afterCommit(trx, success) (Trx.java:450-452;
+  //   PO.java:2843 registers one per saved PO). Legacy has no OSGi topic for it, so it is a twin/ topic (as twin/po/afterSave). OBSERVE class. Delivered by the host once per PERSISTED op group
+  //   (crud_overlay _sidePersist) with every committed kernel row - raw Trx writes and host ops (SET_STATUS, sequence bumps) included, which have no PO event (§12.2: 0 of 5).
+  var TRX_AFTER_COMMIT = 'twin/trx/afterCommit'; OBSERVE_TOPICS[TRX_AFTER_COMMIT] = 1;
 
   // REGISTRY[table][timing] = [ {name, fn, client?, owner?} ]  — fn(ctx, info) -> null | "error string" (iDempiere semantics). Stage 1 = entries without a client, stage 2 = entries with one.
   //   The shape is unchanged (witnesses and plugins read it directly); registerValidator is the adapter that maps its timing to a topic.
@@ -186,6 +190,32 @@
     });
     try { console.log('§BUS_OBSERVE group=' + gid + ' events=' + out.events + ' deliveredToObservers=' + out.delivered + ' errors=' + out.errors); } catch (z) {}
     return out;
+  }
+
+  // deliverCommitted(rows, ctx) -> Promise<{rows, subscribers, errors, group}>: every subscriber of twin/trx/afterCommit, in registration order, each AWAITED (commits are persisted in order and an
+  //   observer that authors from them keeps that order); a table subscriber gets only the rows whose parameters name its table. Each gets frozen copies and ctx.db (the sidecar, to READ). A throw,
+  //   a rejection or an error text is logged §BUS_OBSERVE_ERR and never stops the next subscriber or the persist: this never rejects.
+  function _rowTable(r) { try { return String((JSON.parse(r.parameters) || {}).table || '').toLowerCase(); } catch (e) { return ''; } }
+  function deliverCommitted(rows, ctx) {
+    var subs = (SUBS[TRX_AFTER_COMMIT] || []).slice(), out = { rows: rows ? rows.length : 0, subscribers: 0, errors: 0, group: null };
+    if (!subs.length || !rows || !rows.length) return Promise.resolve(out);
+    var gid = ++_groupSeq, all = Object.freeze(rows.map(function (r) { return Object.freeze(_snap(r)); })), db = ctx && ctx.db || null;
+    out.group = gid;
+    function err(e, msg) { out.errors++; try { console.log('§BUS_OBSERVE_ERR topic=' + TRX_AFTER_COMMIT + ' subscriber=' + e.name + ' ' + msg + ' (an observer cannot stop the persist)'); } catch (z) {} }
+    return subs.reduce(function (p, e) {
+      return p.then(function () {
+        var mine = e.table === '*' ? all : Object.freeze(all.filter(function (r) { return _rowTable(r) === e.table; }));
+        if (!mine.length) return;
+        out.subscribers++;
+        var view = Object.freeze({ topic: TRX_AFTER_COMMIT, rows: mine, db: db, group: Object.freeze({ id: gid, n: all.length }) }), x;
+        try { x = e.fn(Object.freeze({ observe: true, group: view.group }), view); } catch (er) { err(e, 'msg=' + (er && er.message)); return; }
+        return Promise.resolve(x).then(function (v) { if (typeof v === 'string' && v) err(e, 'returned an error text, ignored: ' + v.slice(0, 120)); },
+                                       function (er) { err(e, 'rejected msg=' + (er && er.message)); });
+      });
+    }, Promise.resolve()).then(function () {
+      try { console.log('§BUS_COMMITTED group=' + gid + ' rows=' + all.length + ' subscribers=' + out.subscribers + ' errors=' + out.errors); } catch (z) {}
+      return out;
+    });
   }
 
   // readValidators(db) — the AD source: the registered ModelValidator classes (Java bodies named-deferred).
@@ -967,7 +997,7 @@
   var API = {
     TIMINGS: TIMINGS, REGISTRY: REGISTRY, registerValidator: registerValidator, unregisterValidator: unregisterValidator, registeredCount: registeredCount,
     setScriptStage: setScriptStage, TOPIC_OF: TOPIC_OF, topicOf: topicOf, timingOf: timingOf, isObserveTopic: isObserveTopic, subscribe: subscribe, unsubscribe: unsubscribe, unsubscribeOwner: unsubscribeOwner,
-    subscriptions: subscriptions, hasSubscribers: hasSubscribers, hasObservers: hasObservers, dispatch: dispatch, queueObserve: queueObserve, deliverObserved: deliverObserved,
+    subscriptions: subscriptions, hasSubscribers: hasSubscribers, hasObservers: hasObservers, dispatch: dispatch, queueObserve: queueObserve, deliverObserved: deliverObserved, deliverCommitted: deliverCommitted, TRX_AFTER_COMMIT: TRX_AFTER_COMMIT,
     readValidators: readValidators, installDefaultHooks: installDefaultHooks,
     installMOrderSaveHooks: installMOrderSaveHooks, fireHooks: fireHooks, hooksFor: hooksFor,
     installMInOutSaveHooks: installMInOutSaveHooks, installMInvoiceSaveHooks: installMInvoiceSaveHooks,

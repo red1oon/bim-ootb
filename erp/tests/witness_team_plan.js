@@ -15,6 +15,9 @@ var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css', '.db': 'application/octet-stream', '.sql': 'text/plain' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
 var OLD_LOCAL = ['ad_changelog', 'ad_recentitem', 'ad_sequence', 'ad_sequence_no', 'ad_session'];   // the literal at origin/main 4e95b393 erp/team_sync.js:36 — the old rule shared EVERYTHING ELSE
+// + the two tables made LOCAL ON PURPOSE since (bim-compiler TEAM_REPLICATION_PLUGIN_STUDY §13.2): a script-validator row is the device's own trigger; shared, every till would run the processor's
+//   chain on the others' tickets (a second DocAction executor, FL-8). They are judged as decided-local, NOT as 'equivalent to the old rule' (the equivalence arms below exclude exactly them).
+var DECIDED_LOCAL = ['ad_rule', 'ad_table_scriptvalidator'], ALL_LOCAL = OLD_LOCAL.concat(DECIDED_LOCAL);
 var fails = 0, judged = 0, errors = 0, open = [];
 function verdict(ok, label, detail) { judged++; if (!ok) fails++; console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
 function sha(b) { return crypto.createHash('sha256').update(b).digest('hex').slice(0, 12); }
@@ -77,7 +80,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
     var red = [], R = {};
     function A(name, ok, label, detail) { if (!ok) red.push(name); if (!quiet) verdict(ok, label, detail); return ok; }
     for (var k of Object.keys(VARIANTS)) R[k] = await load(k, adapterSrc, readerSrc);
-    var c = R.committed.out, oldShared = function (t) { return OLD_LOCAL.indexOf(t) < 0; }, newShared = function (t) { return c.dec[t] === 'share'; };
+    var c = R.committed.out, oldShared = function (t) { return ALL_LOCAL.indexOf(t) < 0; }, newShared = function (t) { return c.dec[t] === 'share'; };
     if (!quiet) console.log('§E1 equivalence');
     var tabs = Object.keys(c.dec), diff = tabs.filter(function (t) { return oldShared(t) !== newShared(t); });
     var notView = diff.filter(function (t) { return !c.meta[t] || c.meta[t].isview !== 'Y'; }), present = diff.filter(function (t) { return c.meta[t] && c.meta[t].exists; });
@@ -86,7 +89,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
     A('E1', diff.length > 0 && asTable.length === 0 && c.triggers === 0, 'in the LIVE database (shipped seed + self-heal patches) none of those ' + diff.length + ' views is a TABLE (nothing can store a record in it) and there are ' + c.triggers + ' triggers (no INSTEAD OF write path): ' + asView.length + ' exist as read-only SQL views, ' + (diff.length - asView.length) + ' do not exist at all', asTable.length ? 'ARE TABLES: ' + asTable.slice(0, 10).join(',') : 'views=' + asView.length + ' absent=' + (diff.length - asView.length) + ' tables=0');
     var wins = Object.keys(c.wdec), wdiff = wins.filter(function (w) { var ts = c.wdec[w]; return ts.filter(oldShared).length !== ts.filter(newShared).length; });
     A('E1', wins.length > 100 && wdiff.length === 0, 'X of N AD windows: every window has the same number of shared tab-tables under both rules (N=' + wins.length + ') — no window loses a table', wdiff.length ? 'DIFFER windows: ' + wdiff.slice(0, 8).join(',') : '0 differ');
-    A('E1', c.dec.ad_sequence === 'station-local' && c.dec.ad_recentitem === 'station-local' && Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).length === 5, 'the 5 station-owned tables are station-local, nothing else is', Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).join(','));
+    A('E1', c.dec.ad_sequence === 'station-local' && c.dec.ad_recentitem === 'station-local' && JSON.stringify(Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).sort()) === JSON.stringify(ALL_LOCAL.slice().sort()), 'the 5 station-owned tables + the 2 decided rule tables (study §13.2) are station-local, nothing else is', Object.keys(c.dec).filter(function (t) { return c.dec[t] === 'station-local'; }).join(','));
     if (!quiet) console.log('§E2 names that are not active AD tables');
     var nd = Object.keys(c.nd), inDict = nd.filter(function (t) { return c.nd[t].inAd !== null; });
     A('E2', nd.length > 0 && nd.every(function (t) { return c.nd[t].scope === 'unplanned'; }), 'every sqlite table that is not an active AD table is unplanned under the new rule (old rule: shared) — ' + nd.length + ' names', nd.length + ' names');
@@ -101,7 +104,7 @@ var MUTANTS = [   // [label, adapter source, reader source] — one broken rule 
     A('E4', Object.keys(R.hubonly.out.dec).filter(function (t) { return R.hubonly.out.dec[t] === 'share'; }).length === 0, 'hub-audience flows share nothing in the team ERP (only audience space)', 'shared=' + Object.keys(R.hubonly.out.dec).filter(function (t) { return R.hubonly.out.dec[t] === 'share'; }).length);
     A('E4', !!R.plus.served && R.plus.served === R.committed.served, 'team_sync.js served byte-identical in both runs (no adapter change)', R.committed.served + ' = ' + R.plus.served);
     if (!quiet) console.log('§E5 provenance');
-    A('E5', R.committed.logs.some(function (l) { return l.indexOf('hash=' + HDR_HASH.slice(0, 12)) !== -1 && /tables=857 local=5/.test(l); }), 'the §TEAM_PLAN line states the header hash, 857 tables, 5 local', JSON.stringify(R.committed.logs) + ' header=' + HDR_HASH.slice(0, 12));
+    A('E5', R.committed.logs.some(function (l) { return l.indexOf('hash=' + HDR_HASH.slice(0, 12)) !== -1 && l.indexOf('tables=' + PLAN.flows.length + ' local=' + PLAN.local.length) !== -1 && PLAN.local.length === ALL_LOCAL.length; }), 'the §TEAM_PLAN line states the header hash and the plan\'s own counts (' + PLAN.flows.length + ' tables, ' + PLAN.local.length + ' local)', JSON.stringify(R.committed.logs) + ' header=' + HDR_HASH.slice(0, 12));
     var errN = Object.keys(R).reduce(function (n, k) { return n + R[k].errs.length; }, 0);
     if (!quiet) console.log('§E6 page errors');
     A('E6', errN === 0, 'zero page errors across all ' + Object.keys(R).length + ' loads', 'errors=' + errN);

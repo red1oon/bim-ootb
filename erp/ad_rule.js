@@ -71,15 +71,22 @@
     return i < 0 ? { engine: null, name: v } : { engine: v.slice(0, i), name: v.slice(i + 1) };
   }
 
-  // twin:process:<ref> - a ported AD_Process in THIS transaction. Returns '' on success, else the error text.
+  // twin:process:<ref>[?K=V&L=W] - a ported AD_Process in THIS transaction. Returns '' on success, else the error text. The '?K=V' parameters are a TWIN extension (legacy gives a rule script no
+  //   parameters; TEAM_REPLICATION_PLUGIN_STUDY §13.2): the POS chain names Import Orders' DocAction in its row (twin:process:206?DocAction=CO). Values are strings, as AD_PInstance_Para text.
+  function processRef(ref) {
+    var s = String(ref), i = s.indexOf('?'), params = null;
+    if (i >= 0) { params = {}; s.slice(i + 1).split('&').forEach(function (kv) { if (!kv) return; var j = kv.indexOf('='), k = decodeURIComponent(j < 0 ? kv : kv.slice(0, j)); params[k] = j < 0 ? '' : decodeURIComponent(kv.slice(j + 1)); }); s = s.slice(0, i); }
+    return { ref: s, params: params };
+  }
   function runProcess(ref, b) {
+    var pr = processRef(ref); ref = pr.ref;
     var AP = (typeof window !== 'undefined' && window.AdProcess) || global.AdProcess || (typeof require === 'function' ? (function () { try { return require('./ad_process.js'); } catch (e) { return null; } })() : null);
     if (!AP || typeof AP.runInTrx !== 'function') return 'twin:process:' + ref + ' - the process engine (ad_process.js runInTrx) is not loaded';
     if (!b.trx) return 'twin:process:' + ref + ' - needs a transaction (the rule fired outside a save)';
     var t = b.trx.q('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?', [String(b.table).toLowerCase()])[0];
     var rec = b.po ? b.po[b.trx.idCol(String(b.table).toLowerCase())] : 0;
-    var r = AP.runInTrx(b.trx, ref, { tableId: t ? Number(t.id) : 0, recordId: rec == null ? 0 : rec });
-    log('§RULE_PROCESS ref=' + ref + ' table=' + String(b.table).toLowerCase() + ' record=' + rec + ' ok=' + (r.ok ? 'Y' : 'N') + ' dispatched=' + (r.dispatched ? 'Y' : 'N') + ' summary=' + String(r.summary == null ? '' : r.summary).slice(0, 120));
+    var r = AP.runInTrx(b.trx, ref, pr.params ? { tableId: t ? Number(t.id) : 0, recordId: rec == null ? 0 : rec, params: pr.params } : { tableId: t ? Number(t.id) : 0, recordId: rec == null ? 0 : rec });
+    log('§RULE_PROCESS ref=' + ref + (pr.params ? ' params=' + JSON.stringify(pr.params) : '') + ' table=' + String(b.table).toLowerCase() + ' record=' + rec + ' ok=' + (r.ok ? 'Y' : 'N') + ' dispatched=' + (r.dispatched ? 'Y' : 'N') + ' summary=' + String(r.summary == null ? '' : r.summary).slice(0, 120));
     return r.ok ? '' : String(r.summary || ('process ' + ref + ' failed'));
   }
 
@@ -130,7 +137,7 @@
   // attach(MV) - hook stage 3 into a dispatcher instance. ad_modelval.js calls it on itself in node; in the browser this file calls it for window.AdModelVal.
   function attach(MV) { if (MV && typeof MV.setScriptStage === 'function') MV.setScriptStage(stage3); return !!MV; }
 
-  var API = { DDL: DDL, TABLE_CODE: TABLE_CODE, DOC_CODE: DOC_CODE, codeOf: codeOf, ensure: ensure, stage3: stage3, hasRows: hasRows, parseValue: parseValue, attach: attach,
+  var API = { DDL: DDL, TABLE_CODE: TABLE_CODE, DOC_CODE: DOC_CODE, codeOf: codeOf, ensure: ensure, stage3: stage3, hasRows: hasRows, parseValue: parseValue, processRef: processRef, attach: attach,
               registerRuleFunction: registerRuleFunction, unregisterRuleFunction: unregisterRuleFunction, unregisterRuleOwner: unregisterRuleOwner, ruleFunctions: ruleFunctions };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness
   if (typeof window !== 'undefined') window.AdRule = API;                       // browser
