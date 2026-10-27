@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v924';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v925';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -293,6 +293,7 @@ const PRECACHE_ASSETS = [
   '../common/comm/op_versions.js',   // TEAMWORK_FRAMEWORK §16.30 — the shape-version registry
   '../common/comm/team_versions.js', // TEAMWORK_FRAMEWORK §16.33 — host glue (TEAM_SHAPE_V, TEAM_UPCASTERS, trust = TEAM_PLAN_TRUST)
   'team_plan.js',      // §25 — the compiled team scope (GENERATED); read through TeamScope
+  'team_plan_pos.js',  // §38.15 — the POS (star) plan, beside the office plan; chosen by the genesis plan:'pos' (GENERATED)
   'team_sync.js',      // TEAMWORK_FRAMEWORK §13.1 W1 — the team-mode adapter (written into idempiere.html only with ?team=1; inert otherwise)
   '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths (rank / history / heads-up / role scope / inbox)
   '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe (s/<space>/f/<kid>)

@@ -893,6 +893,10 @@
       var tp = ROS.planTrustProblem(nsOpts.planTrust); if (tp) throw new Error('newSpace: invalid planTrust (' + tp + ')');
       params.planTrust = ROS.planTrustOf(nsOpts.planTrust);
     }
+    if (nsOpts && nsOpts.plan !== undefined && nsOpts.plan !== null) {      // §38.15: the topology - 'office' (the mesh plan, the default) or 'pos' (the star plan); the space id hashes it, so every device reads the same one
+      if (nsOpts.plan !== 'office' && nsOpts.plan !== 'pos') throw new Error('newSpace: invalid plan (' + String(nsOpts.plan) + ')');
+      params.plan = nsOpts.plan;
+    }
     return { params: params, space: await ROS.spaceOf(params) };
   }
 

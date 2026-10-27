@@ -54,7 +54,20 @@
     global.TEAM_PLAN_TRUST = gt; await verifyPlan('trust=genesis(' + gt.length + ')');
   }
   function spaceOpts(bi) {                                             // what a founder pins in the genesis: the shared base and the deployment's plan trust list (public keys)
-    var o = {}, t = global.TEAM_PLAN_TRUST; if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t; return Object.keys(o).length ? o : undefined;
+    var o = {}, t = global.TEAM_PLAN_TRUST, pc = new URLSearchParams(global.location.search).get('teamplan'); if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t;
+    if (pc === 'pos') o.plan = 'pos';                                  // §38.15: the founder chooses the star (POS) plan; absent = the office plan, so every existing space reads as before
+    return Object.keys(o).length ? o : undefined;
+  }
+  // §38.15 (G-6): WHICH plan this space reads (the genesis' `plan`) and WHO this device is in it (its role, its person). 'office' (the default) is the mesh plan as always; 'pos' is the star plan whose hub rows
+  // carry a direction per role. Refreshed before every commit and projection; the roster is the same on every device, so the verdicts are too.
+  var scopeCtx = { kind: 'office', role: null, person: null };
+  async function refreshScope(st) {
+    st = st || S; if (!st) return scopeCtx;
+    var R = (await st.order()).roster, kind = R && R.ok && R.plan === 'pos' ? 'pos' : 'office';
+    if (R && R.ok && kind !== global.TeamScope.kind()) { global.TeamScope.setKind(kind); await verifyPlan('plan=' + kind); }
+    var d = dev && R && R.ok ? R.devices[dev.kid] : null;
+    scopeCtx = { kind: global.TeamScope.kind(), role: d ? R.roleAt(dev.kid, Infinity).ad_role_id : null, person: d ? d.person : null };
+    return scopeCtx;
   }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
@@ -172,7 +185,13 @@
     var k = -Number(negPk), r = db.exec('SELECT op_type, op_uuid, parameters, user_tag FROM kernel_ops WHERE id=' + k);
     if (!r.length || !r[0].values.length) return null;
     var v = r[0].values[0], p; try { p = JSON.parse(v[2]); } catch (e) { return null; }
-    return v[0] === 'CRUD_CREATE' ? { uu: String(v[1] || '').toLowerCase(), table: String((p && p.table) || '').toLowerCase(), team: v[3] === 'team' } : null;
+    return v[0] === 'CRUD_CREATE' ? { uu: String(v[1] || '').toLowerCase(), table: String((p && p.table) || '').toLowerCase(), team: v[3] === 'team', fields: (p && p.fields) || {} } : null;
+  }
+  function normNeg(db, fields, fo, depth) {            // a copy of the fields with every device-local FK (-k) replaced by {uu} of its CREATE; that record's fields are kept in fo (for the entity path)
+    var out = {}; Object.keys(fields || {}).forEach(function (c) { var v = fields[c];
+      if (isNeg(v) && /_id$/i.test(c) && depth < 3) { var row = createRowOf(db, v); if (row) { fo[row.uu] = normNeg(db, row.fields, fo, depth + 1); out[c] = { uu: row.uu }; return; } }
+      out[c] = v; });
+    return out;
   }
   function isShared(row) { return !!row && (row.team || !!sent[row.uu]); }
   // CL1b — a field <x>_id holding a NEGATIVE integer (device-local synthetic pk) becomes {uu:<x>_uu}; positive ids (seeded
@@ -209,15 +228,26 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
-    var scope = global.TeamScope.scopeOf(table);
+    var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null;
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };
-    if (scope !== 'share') return { local: 'table-not-in-plan ' + table, table: table };
+    if (scope === 'up' || scope === 'down') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
+    else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
+    if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
+      var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo);
+      if (!ad || !(await S.order()).roster.persons[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
+    }
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
     if (r.gid) clean.grp = r.gid;                                      // §13.7: the doc-action group this op belongs to (all-or-none on a docstatus conflict)
     if (r.op_type === 'SET_STATUS') {                                  // the status mirrors as a docstatus column write so the comm layer's per-column conflict judges it
       if (clean.from == null || clean.to == null) return { local: 'set-status-without-from/to', table: table };
       clean.changes = { docstatus: { old: clean.from, new: clean.to } };
+    }
+    if (ship) {                                                        // the carries rule, outbound: a column the flow does not declare is dropped BEFORE anything is sealed
+      if (!ship.length) return { local: 'declared-without-columns ' + table, table: table };
+      var only = function (m) { var o = {}; Object.keys(m || {}).forEach(function (k) { if (ship.indexOf(k.toLowerCase()) >= 0) o[k] = m[k]; }); return o; };
+      if (clean.fields) clean.fields = only(clean.fields);
+      if (clean.changes) { clean.changes = only(clean.changes); if (!Object.keys(clean.changes).length) return { local: 'no-declared-column-changed ' + table, table: table }; }
     }
     if (clean.fields) { rw = rewriteMap(db, clean.fields, refs, false); if (rw.err) return { local: rw.err, table: table }; clean.fields = rw.map; }
     if (clean.changes) { rw = rewriteMap(db, clean.changes, refs, true); if (rw.err) return { local: rw.err, table: table }; clean.changes = rw.map; }
@@ -231,7 +261,8 @@
 
   async function onCommit(rows, db) {
     await ready; if (!S) return;                                      // paired later from the Team panel (§13.9) works too: S is set then
-    var n = 0, trial = null;
+    await refreshScope();
+    var n = 0, trial = null, undecl = {}, undeclN = 0;
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
       trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
       if (trial.finished) log('§TEAM_TRIAL ' + trial.reason + ' cycles=' + trial.cycles + ' businessOps=' + trial.businessOps + ' (new business ops stay on this device)'); }
@@ -242,6 +273,7 @@
       if (!t.quiet && trial && trial.finished) { localOnly[r.op_uuid] = trial.reason; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + trial.reason + ' (NOT SENT)'); continue; }
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
       if (baseBlocked()) { localOnly[r.op_uuid] = 'base-mismatch'; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=base-mismatch (NOT SENT — this copy is not the team\'s base)'); continue; }
+      if (t.undeclared) { localOnly[r.op_uuid] = t.local; undecl[t.table] = (undecl[t.table] || 0) + 1; undeclN++; continue; }     // pos plan: counted, one line per batch (below)
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
         var a = await S.author({ target: t.target, body: stamped(t.body), refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp });
@@ -249,6 +281,7 @@
         log('§TEAM_OUT op=' + r.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' refs=' + t.refs.length + ' hash=' + a.hash.slice(0, 12));
       } catch (e) { localOnly[r.op_uuid] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + t.table + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
     }
+    if (undeclN) log('§TEAM_NOT_DECLARED plan=pos role=' + scopeCtx.role + ' ops=' + undeclN + ' tables=' + JSON.stringify(undecl) + ' (stay on this device: the plan declares no flow for them from this role - FL-8 e)');
     await persist(); await render();
     return n;
   }
@@ -264,14 +297,52 @@
   }
   // project(oldRows) → the full kernel_ops row list of the rebuilt sidecar. Rows this device never shared (local-only,
   // station-owned, pre-team) are kept verbatim at their ids; everything the comm log placed is regenerated after them.
+  // §38.15 inbound: who may THIS device take in? admitAll decides every placed op once, in fold order. In the office plan nothing is decided here (returns null: the projection is exactly what it was).
+  function pick(f, c) { var k = Object.keys(f || {}).filter(function (x) { return x.toLowerCase() === c.toLowerCase(); })[0]; return k === undefined ? undefined : f[k]; }
+  async function seedUu(tbl, id) {                                     // the _uu of a SEEDED record (positive id: identical on every device, FL-5) - the pinned base when there is one
+    if (!/^[a-z][a-z0-9_]*$/.test(tbl)) return null;
+    if (baseOn()) { try { return await baseUuOf(tbl, id); } catch (e) { return null; } }
+    try { var r = bq(adDb(), 'SELECT "' + tbl + '_uu" AS u FROM "' + tbl + '" WHERE "' + tbl + '_id"=?', [id]); return r.length && r[0].u ? String(r[0].u).toLowerCase() : null; } catch (e) { return null; }
+  }
+  function seedRow(tbl, id) { try { var r = bq(adDb(), 'SELECT * FROM "' + tbl + '" WHERE "' + tbl + '_id"=?', [id])[0], o = {}; Object.keys(r || {}).forEach(function (k) { o[k.toLowerCase()] = r[k]; }); return r ? o : null; } catch (e) { return null; } }
+  // the entity a record is addressed to: follow the FK path (each hop a <x>_id column; a hop through a team-made record reads its CREATE fields, through a seeded one its dictionary row) and return the _uu of the last one
+  async function entityUu(path, fields, fieldsOf) {
+    var f = fields, tbl = null, v;
+    for (var i = 0; i < path.length; i++) {
+      var m = /^(.+)_id$/i.exec(path[i]); if (!m) return null; tbl = m[1].toLowerCase(); v = f ? pick(f, path[i]) : undefined; if (v === undefined || v === null) return null;
+      if (i === path.length - 1) break;
+      if (v && typeof v === 'object' && typeof v.uu === 'string') f = fieldsOf[v.uu.toLowerCase()] || null;
+      else if (Number(v) > 0 && /^[a-z][a-z0-9_]*$/.test(tbl)) f = seedRow(tbl, Number(v));
+      else return null;
+    }
+    if (v && typeof v === 'object' && typeof v.uu === 'string') return v.uu.toLowerCase();
+    return Number(v) > 0 ? seedUu(tbl, Number(v)) : null;
+  }
+  async function admitAll(fold, sc) {
+    var R = (await S.order()).roster, refuse = {}, st = { placed: fold.length, accepted: 0, refused: 0, bytesAccepted: 0, bytesRefused: 0, byTable: {} }, addrOf = {}, fieldsOf = {};
+    for (var p of fold) {
+      var e = p.env, b = e.body, t = e.target.table, uu = String(e.target.uu).toLowerCase(), by = global.TeamScope.by(t), params = b.params || {}, addr = null;
+      if (b.op_type === 'CRUD_CREATE') { fieldsOf[uu] = params.fields || {}; if (by) addr = addrOf[uu] = await entityUu(by, params.fields, fieldsOf); }
+      else if (by) addr = addrOf[uu] || null;
+      var ad = R.devices[e.author], v = global.TeamScope.admits(t, sc.role, { self: e.author === (dev && dev.kid), authorRole: R.roleAt(e.author, e.seq).ad_role_id, authorPerson: ad && ad.person, myPerson: sc.person, addr: addr }), n = JSON.stringify(e).length;
+      if (v.ok) { st.accepted++; st.bytesAccepted += n; } else { refuse[p.hash] = v.why; st.refused++; st.bytesRefused += n; st.byTable[t] = (st.byTable[t] || 0) + 1; }
+    }
+    st.refuse = refuse; return st;
+  }
+
   async function project(oldRows) {
-    var fold = await S.foldable(), baseKeys = {};
+    var fold = await S.foldable(), sc = await refreshScope(), baseKeys = {}, thin = sc.kind === 'pos' ? await admitAll(fold, sc) : null;
     if (baseOn()) {                                                 // §13.12.I.2: targets that live in the base (no CREATE in the log) -> how THIS device addresses them
       var made = {}; fold.forEach(function (q) { if (q.env.body.op_type === 'CRUD_CREATE') made[q.env.target.uu] = 1; });
       for (var q of fold) { var qe = q.env; if (qe.body.op_type === 'CRUD_CREATE' || made[qe.target.uu]) continue;
         var kk = qe.target.table + '|' + qe.target.uu; if (!(kk in baseKeys)) baseKeys[kk] = await baseKeyOf(qe.target.table, qe.target.uu); }
     }
-    var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && !sent[r.op_uuid]; }).map(function (r) {
+    // POS plan: an op THIS device authored on a flow it declares left with only its carried columns (FL-1); projecting it back would strip the device's OWN record of everything else. Its full local row is kept as it is.
+    var ownFull = {}, ownIds = {};
+    if (thin) { var byHash = {}; oldRows.forEach(function (r) { if (r.user_tag !== 'team' && sent[r.op_uuid]) byHash[sent[r.op_uuid]] = r; });
+      fold.forEach(function (p) { var sc2 = byHash[p.hash] && p.env.author === (dev && dev.kid) ? global.TeamScope.scopeOf(p.env.target.table, sc.role) : null;
+        if (sc2 === 'up' || sc2 === 'down') { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
+    var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && (!sent[r.op_uuid] || ownIds[r.id]); }).map(function (r) {
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
       return c; });
@@ -281,6 +352,8 @@
     var base = keep.reduce(function (m, r) { return Math.max(m, Number(r.id)); }, 0), uuToPk = {}, out = keep.slice(), skipped = 0, byTable = {}, received = [];
     fold.forEach(function (p) {
       var e = p.env, b = e.body, t = e.target.table, uu = e.target.uu, params = b.params || {}, kp, op_uuid;
+      if (thin && thin.refuse[p.hash]) return;                         // §38.15: refused locally (not-addressed) - never projected, never fired
+      if (ownFull[p.hash]) { if (b.op_type === 'CRUD_CREATE') uuToPk[uu] = -Number(ownFull[p.hash].id); return; }       // my own declared op: the full local row stays (above)
       if (params.grp && heldGrp[params.grp]) { groupHeld++; log('§TEAM_GROUP_HELD grp=' + String(params.grp).slice(0, 8) + ' ' + b.op_type + ' ' + t + ' ' + uu.slice(0, 8) + ' (docstatus conflict — whole group left out)'); return; }
       if (b.op_type === 'CRUD_CREATE') {
         var rw = rewriteIn(params.fields, uuToPk, false);
@@ -313,7 +386,9 @@
     oldRows.forEach(function (r) { if (r.op_type !== 'CRUD_CREATE' || !r.op_uuid) return; var np = uuToPk[String(r.op_uuid).toLowerCase()];
       if (np == null || np === -Number(r.id)) return; var t; try { t = String(JSON.parse(r.parameters).table).toLowerCase(); } catch (e) { return; }
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
-    project.last = { kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
+    if (thin) log('§TEAM_THIN plan=pos role=' + sc.role + ' placed=' + thin.placed + ' accepted=' + thin.accepted + ' refused=' + thin.refused + ' bytes_accepted=' + thin.bytesAccepted + ' bytes_refused=' + thin.bytesRefused +
+                  ' refused_tables=' + JSON.stringify(thin.byTable) + ' (REFUSED not-addressed: this role is not the recipient of those flows; they are never projected)');
+    project.last = { thin: thin ? { placed: thin.placed, accepted: thin.accepted, refused: thin.refused, bytesAccepted: thin.bytesAccepted, bytesRefused: thin.bytesRefused, byTable: thin.byTable } : null, kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
     return out;
   }
 
@@ -394,6 +469,7 @@
       var rep = await S.sync(pipe); lastSyncRep = rep; lastVisitAt = Date.now();
       await verifyBase();                                           // verify-then-fold: a copy that is not the team's base never projects anything
       await pinTrust();                                             // a joiner learns the pinned plan trust list when the genesis arrives
+      await refreshScope();                                         // ... and which plan (office | pos) the genesis names
       await adoptSets();
       if (baseBlocked()) {
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' | BASE ' + baseSt.state + ' — NOTHING FOLDED: ' + baseSt.message);
@@ -587,8 +663,12 @@
     log('§TEAM_PAIR requests listed: ' + names.length + ' pending=' + out.length); return out;
   }
   function roleList() { return shim(adDb()).prepare("SELECT ad_role_id AS id, name FROM ad_role WHERE ad_client_id IN (0, 11) ORDER BY ad_role_id").all(); }
-  async function approve(rq, roleId) {
-    await S.addPerson({ person_uu: rq.person_uu, name: rq.name, ad_role_id: Number(roleId), comm_admin: false }); await S.enroll(rq.kid, rq.jwk, rq.person_uu, rq.dh_jwk);
+  // entityUu (optional, §38.15): the device is bound to a RECORD - the person is created with person_uu = that record's _uu (a borrower's C_BPartner_UU, a till's AD_Org_UU), signed by this admin in the roster;
+  // a second device of the same record is enrolled onto the person that already exists. Without it: exactly as before.
+  async function approve(rq, roleId, entityUu) {
+    var pu = entityUu ? String(entityUu).toLowerCase() : rq.person_uu;
+    if (!entityUu || !(await S.order()).roster.persons[pu]) await S.addPerson({ person_uu: pu, name: rq.name, ad_role_id: Number(roleId), comm_admin: false });
+    await S.enroll(rq.kid, rq.jwk, pu, rq.dh_jwk);
     log('§TEAM_PAIR approved ' + codeOf(rq.kid) + ' as role ' + roleId); await visit(); await render();
   }
   async function pairState() {
@@ -603,7 +683,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, _translate: translate, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
