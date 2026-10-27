@@ -500,8 +500,9 @@
 <script src="layered_registry.js?v=1"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=1"></script>
 <script src="ad_lens.js?v=2"></script>
-<script src="ad_modelval.js?v=6"></script>
-<script src="ad_rule.js?v=1"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
+<script src="ad_modelval.js?v=7"></script>
+<script src="ad_rule.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
+<script src="ad_import_tables.js?v=1"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -610,12 +611,12 @@
      (model_layer.js) and the ported trade-cycle classes registered into it. crud_overlay.completeFanout / save seams call
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
 <script src="ad_workflow.js?v=1"></script>
-<script src="model_layer.js?v=4"></script>
+<script src="model_layer.js?v=6"></script>
 <script src="model_trade.js?v=4"></script>
 <script src="model_ctor.js?v=1"></script>
 <script src="model_cost.js?v=1"></script>
 <script src="model_match.js?v=1"></script>
-<script src="model_order.js?v=5"></script>
+<script src="model_order.js?v=6"></script>
 <script src="model_invoice.js?v=4"></script>
 <script src="model_master.js?v=2"></script>
 <script src="model_rma.js?v=2"></script>
@@ -674,6 +675,7 @@
 <script src="processes/InOutCreateInvoice.js?v=1"></script>
 <script src="processes/InvoiceGenerate.js?v=1"></script>
 <script src="processes/InOutGenerate.js?v=2"></script>
+<script src="processes/ImportOrder.js?v=1"></script>
 <script src="processes/InventoryCountCreate.js?v=1"></script>
 <script src="processes/InventoryCountUpdate.js?v=1"></script>
 <script src="processes/InvoiceCreateInOut.js?v=1"></script>
@@ -753,12 +755,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=8"></script>
-<script src="crud_overlay.js?v=36"></script>
+<script src="crud_overlay.js?v=37"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
-  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=5', 'team_plan.js?v=1', 'team_sync.js?v=11'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=5', 'team_plan.js?v=2', 'team_sync.js?v=12'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
@@ -1124,6 +1126,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — the two physical tables of AD_Rule + AD_Table_ScriptValidator (their dictionary rows are already in the seed). An idempotent boot OVERLAY, deliberately NOT in a patch:
     //   patches/ad_seed.db.sql + patches/mfg.sql are hashed into the Team BASE (team_sync.js hashBase) and no base-upgrade path exists, so a patch line would turn every existing team 'base-mismatch'. W-BUS-ROW pins the base hash.
     if (window.AdRule) { try { AdRule.ensure(db); } catch (e) { console.log('§RULE_TABLES_ERR ' + e.message); } }
+    // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the physical I_Order table (dictionary rows are in the seed): the same device-local boot overlay, outside the hashed patches (W-IMPORT-ORDER).
+    if (window.AdImportTables) { try { AdImportTables.ensure(db); } catch (e) { console.log('§IMPORT_TABLES_ERR ' + e.message); } }
     // Host work H1 (plugin lifecycle): restore the persisted ACTIVE plugin bundles at BOOT, after the seed + patches are in, so a bundle's hot hooks (model/doc/validator/process/callout/posting class) are live before the first save.
     if (window.PluginEngine && window.PluginEngine.boot) { try { await window.PluginEngine.boot({ db: db }); console.log('§PLUGIN-BOOT restored=' + (window.PluginEngine._reg() ? window.PluginEngine._reg().list().filter(function (b) { return b.state === 'ACTIVE'; }).length : 0)); } catch (e) { console.log('§PLUGIN-BOOT-ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.

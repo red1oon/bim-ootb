@@ -14,6 +14,7 @@ function load(extraSql) {
     const pf = path.join(__dirname, 'patches/ad_seed.db.sql'); if (fs.existsSync(pf)) run(fs.readFileSync(pf, 'utf8'));
     (extraSql || []).forEach(function (f) { run(fs.readFileSync(f, 'utf8')); });
     require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
+    require('./ad_import_tables.js').ensure(db);   // §13.2 B1: the I_Order physical table (boot overlay, not in the hashed patches)
     return build(db);
   });
 }
