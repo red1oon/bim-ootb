@@ -142,6 +142,18 @@
     return res;
   }
 
+  // §D88 the base plan's stated grid in model metres (the lowest-level plan, planOffset's base; translation 0): what the Modeller's authoring grid becomes after a Convert.
+  // A wing set (@FRAME, §L1.16: the model is turned back about a pivot) or a plan that states fewer than 2 lines on an axis gives { ok: false, why } — nothing is guessed.
+  function planGrid(sheets) {
+    var plans = (sheets || []).filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; }), base = plans[0];
+    if (!base || !base.desc || !base.factor) return { ok: false, why: 'no plan with stated units' };
+    if ((sheets || []).some(function (s) { return s.desc && s.desc.frame; })) return { ok: false, why: 'a wing set (@FRAME): sheet coordinates are not model coordinates' };
+    var axis = function (bag) { return Object.keys(bag || {}).map(function (l) { return { l: l, v: bag[l] * base.factor }; }).sort(function (a, b) { return a.v - b.v; }); };
+    var X = axis(base.desc.gridsX), Y = axis(base.desc.gridsY);
+    if (X.length < 2 || Y.length < 2) return { ok: false, why: 'base plan ' + base.name + ' states ' + X.length + ' GRIDX / ' + Y.length + ' GRIDY (needs 2 or more on each axis)' };
+    return { ok: true, sheet: base.name, xs: X.map(function (q) { return q.v; }), xlabels: X.map(function (q) { return q.l; }), ys: Y.map(function (q) { return q.v; }), ylabels: Y.map(function (q) { return q.l; }) };
+  }
+
   function buildBodies(sheets, opts) {
     opts = opts || {};
     var tolM = opts.tol !== undefined ? opts.tol : 0.003, alignTol = opts.alignTol !== undefined ? opts.alignTol : 0.001;
@@ -324,5 +336,5 @@
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }
 
-  return { buildBodies: buildBodies, planOffset: planOffset, KINDS: KINDS, bandRegions: bandRegions };
+  return { buildBodies: buildBodies, planOffset: planOffset, planGrid: planGrid, KINDS: KINDS, bandRegions: bandRegions };
 });

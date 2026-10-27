@@ -1038,5 +1038,52 @@ element stays, one op-log step; E2 `<axis>1.05` + Enter: length +5 % (±1 mm), t
 E2 state; E5 0 page errors. The status line after each step is logged (`§SHED-EDIT-SHOWN`).
 **RESULT 2026-10-27: 7 / 0.** Wall #138, 5.080 m → moved 0.1000 m (others 0.0000) → 5.3340 m (want 5.3340), thickness 0.1270 kept; undo 0.0000 m over 445; redo 0.0000. Screen says
 `moved #138 Δ(0.00,0.10,0.00)` then `scaled #138 Y ×1.05` (the typed numbers are on screen for the narration). Unchanged: W-E2E-NUMROT 7/0, W-E2E-SKETCH-DIMS 20/0, W-E2E-RSARM 8/0.
+**The Modeller's edit indicators on the shed (measured 2026-10-27, owner asked; probe = this witness's harness, wall #138, typed steps + arrow keys, nothing else changed):**
+grid move (orange / green openings, `bonsai_gridmove.js`) — 0 commands on all 7 grid lines: after Convert the Modeller's grid is a default 4 m x 3 m grid at the origin, not the shed's
+drawn grid (~650 m away); and it follows only recorded door-wall relations (0 on the shed). Conformity Gate (`sdg_gate.js` §GATE-1; inputs abuts 0, fills 0): moves of 0.1 m and 1 m
+along the wall -> nothing; 1 m sideways -> `⚠ 2 ORANGE` (clearance x2, "accept or ignore"); another 1 m -> `⛔ 3 RED` (clash x2 + a Revert button); another 1 m -> `⚠ 3 ORANGE`.
+So on the shed the film CAN show the red / orange gate (clash, clearance); the door kinds (door off its wall, door-crush) and abuts-realign cannot fire there (0 fills, 0 abuts).
 **Open (owner's call, not built):** doors riding a shed wall would need the structure path to join wall pieces across a door gap into one host with a cut + fill (§D59's rule for the
 structure path) — a new feature, not a fix.
+
+## §D88 A CONVERTED DRAWING HANDS ITS OWN GRID TO THE MODELLER, AND A DOOR IN A WALL GAP IS HOSTED BY THAT WALL (owner 2026-10-27: grid stretch with the orange / green opening indicators "should do it first", before the BricsCAD film)
+**Measured first (the CLI-marked shed, 2026-10-27).** (1) After Convert the Modeller's grid is the DEFAULT (`bonsai_grid.js define()`: xs 0,4,8,12 / ys 0,3,6, at the origin); the only
+code that replaces it is §GRID-SPAN-GATE (`modeller.html:2175`, the STR walker's column lattice on Open). A DXF Convert never sets it, on any set; on the shed (~650 m from the origin) a
+0.1 m drag of each of the 7 default lines gives 0 commands. The drawing states its grid: the base plan `0_FLOOR_PLAN` carries `@GRIDX=01…06,35…42` every 120 in and `@GRIDY=A…D` every
+200 in (`@UNITS=in`); × 0.0254 they land on the model (line 01 at −680.925 m). (2) The shed's 4 doors are hosted by no wall (0 cuts, 0 `swXEdges.fills`): the structure path
+(`Dxf2Structure`) builds walls as bodies from the drawn wall outlines, the drawing breaks a wall at its door, and the doors are leaves from swing symbols (§L16). All 41 walls are on the
+perimeter (N 15 · S 14 · W 6 · E 6).
+**Rule A (grid).** After a Convert that builds, the Modeller grid becomes the BASE plan's stated grid — `Dxf2Bodies.planGrid(sheets)`, next to `planOffset` (the one plan-alignment owner):
+the lowest-level plan's `desc.gridsX` / `desc.gridsY`, × its `factor`, sorted, with their labels — but only while the grid is still the untouched default (a user's grid is never replaced,
+as §GRID-SPAN-GATE). No stated grid on both axes -> nothing is defined and the log says why (`§DXF-GRID none reason=…`).
+**Rule B (door host) — SPEC, built after A is witnessed.** In the structure path, two wall bodies of one line (same z range, cross band to `snap_tol`) separated by a gap that a door
+leaf fills along the line (each side within `snap_tol`) become ONE wall body across the gap, with a GEOM_CUT of the door's box and a fill relation (cut -> door), published like the
+Duplex path's, so the grid move and the Conformity Gate's door checks see it. A gap no door fills stays a gap.
+**Witness (W-DXF-GRID, `modeller/tests/witness_dxf_grid_handoff.js`, page, software GL).** G1 after Convert of the marked shed the Modeller grid = the base plan's markings
+(14 x-lines, labels 01…42, 4 y-lines A…D, values × 0.0254 to 1e-6 m); main: FAIL (the default). G2 a 0.1 m preview drag of a grid line through drawn walls gives > 0 commands (main: 0 on every line).
+G3 a user grid defined before Convert is kept. G4 the Duplex set gets its own plan grid the same way. (Rule B: claims added when it is built.)
+**RESULT A 2026-10-27 (W-DXF-GRID 4 / 0, page).** G1 the grid after Convert = the plan's markings: 14 x-lines `01..06,35..42`, 4 y-lines `D..A`, first line −680.925384 m (want the same);
+`§DXF-GRID defined from=0_FLOOR_PLAN_marked.dxf xs=14 ys=4`. G2 a one-bay (3.048 m) preview drag of the last x-line `gx13`: 18 commands — IfcColumn translate 4, IfcBeam translate 3,
+IfcFooting translate 4, IfcWall translate 1, IfcWall SCALE 6; riders 0, refusals 0. G3 a user grid is kept (`§DXF-GRID none reason=the grid is the user's (kept)`). 0 page errors.
+On main the same drag gives 0 commands (default grid, measured above).
+**What a one-bay stretch does NOT do yet (measured, G2):** the roof — 168 IfcMember (purlins, 36.58 m) + 117 IfcPlate (sheets); the shed has no IfcRoof — is not in the grid move's
+`_STRUCTURAL_CLASSES` (`bonsai_gridmove.js:93`: Wall, WallStandardCase, Slab, Footing, Column, Beam, Railing, StairFlight, Roof), so it neither stretches nor moves; and no frame is added in
+the new bay (§GRID-SPAN "add one more" exists for the STR walker's column lattice only). Owner's call: widen the class list (it applies to EVERY building: an opened IFC's curtain-wall
+plates and members would start following grid drags too) or a shed/DXF-only rule; and whether a new bay gets a frame copied from its neighbour.
+
+## §D89 ADD A BAY TO A REPEATING-BAY BUILDING, WITH ITS COST VARIANCE (owner 2026-10-27: "Yes if it's normal practice where it gets additional set of identical spaced openings, and the usual variance costs was done in that too, but if not don't fix it") — SPEC, NOT BUILT
+**Why it qualifies (normal practice, stated as such, not data):** a uniform-bay farm / industrial shed is lengthened by whole bays; the extension repeats the typical bay (frame, side wall,
+purlins, sheets) at the same pitch, and the change is priced as a variation. Fans / EC pad are an airflow sizing, not a repeat: NOT copied (named, never invented).
+**Measured (the converted marked shed after §D88 A, 2026-10-27, page probe):** grid lines every 3.048 m (`01..42`, 14 lines). Typical bay (bays 1, 4, 6-11 identical): IfcBeam 2, IfcWall 2,
+IfcMember 12, IfcPlate 9; each inner line 1-12: IfcColumn 2 + IfcFooting 2; end lines 0 / 13: Column 4, Beam 3, Footing 4, Wall 6 (+ Fan 9 on line 0, Covering 1 on line 13); bay 0: + Fan 2,
+Door 2; bay 2: + Fan 2; bay 5: Beam 4, Wall 4; bay 12: Wall 3, Door 2. Spanning the whole length: IfcMember 12, IfcCovering 2. No cut openings (the curtain side is open above the
+support wall). Today a one-bay drag of the end line (W-DXF-GRID G2): the end frame translates (18 commands), 6 walls stretch, the roof (Member / Plate) does nothing (not in
+`_STRUCTURAL_CLASSES`), no frame appears in the new bay, and the cost Δ is BLOCKED for a grid move (`viewer/edit_delta.js:31` §S8-QTY) and absent for added elements.
+**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): (1) the end line and everything at or beyond it
+translate by one pitch (the existing grid move); (2) a copy of ONE typical bay (the nearest identical bay to that end) and of its inner line's columns + footings is inserted one pitch on,
+as GEOM_INSERTs of the same geometry (copies, never new shapes); (3) the full-length members / coverings stretch by the pitch about the fixed end; (4) ONE gesture, ONE undo. A set with
+no repeating bay refuses with the reason. (5) Cost variance: the §S8 Δ covers it — copies priced at rate × their own quantity (the same row basis as the Project Order line),
+stretched / moved elements through `netEdits` (GEOM_GRID_MOVE unblocked by reading its commands as SCALE / MOVE), the total shown and written as a variation.
+**Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
+source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
+B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
