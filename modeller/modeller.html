@@ -252,7 +252,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- DXF2BIM lane L3 (prompts/DXF2BIM_MODELLER_LANE.md §L3): Open ▸ 2D drawings (.dxf) → canvas → Convert. Loads its pipeline lazily. -->
 <script src="dxf_export_ui.js?v=1" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
 <script src="viewer_db_export.js?v=1" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
-<script src="dxf_import_ui.js?v=7" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
+<script src="dxf_import_ui.js?v=8" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
 <!-- Grid Kinematics engine (§S270, pure recompose math) + the modeller adapter (gridline-drag → GEOM_GRID_MOVE). -->
@@ -270,6 +270,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="real_geometry.js?v=2" onerror="console.warn('§REALGEOM LOAD_FAIL real_geometry.js')"></script>
 <script src="arc_editable.js?v=8" onerror="console.warn('§ARC LOAD_FAIL arc_editable.js')"></script>
 <script src="sdg_cascade.js?v=1" onerror="console.warn('§SDG LOAD_FAIL sdg_cascade.js')"></script>
+<script src="clipboard.js?v=1" onerror="console.warn('§CLIPBOARD LOAD_FAIL clipboard.js')"></script>
 <script src="sdg_gate.js?v=3" onerror="console.warn('§GATE LOAD_FAIL sdg_gate.js')"></script>
 <!-- §DAGEVU: relationship-edge engine (anchor-default hosted openings) — wraps sdg_cascade + sdg_gate above. -->
 <script src="dagevu_engine.js?v=1" onerror="console.warn('§DAGEVU LOAD_FAIL dagevu_engine.js')"></script>
@@ -2303,10 +2304,60 @@ async function commitGridMove(extra) {
 }
 window.__dg = () => _dragGrid;   // test hook (§GRID-SPAN-GATE witness reads the live drag delta)
 window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };
+// §CLIPBOARD (BIMCompiler prompts/MODELLER_CLIPBOARD_COPY_PASTE.md §REGROUND 2026-10-28 — W-CLIPBOARD-KEYS): after a commit carrying clipboard.js build() ops, the predicted ids
+// must be the real ones (else undo + refuse: the DXF convert's convention, dxf_import_ui.js commit), then the copies join the §ARC-1 bridge and their re-keyed fills edges join
+// swXEdges.fills, so a pasted wall drags its pasted door like the source does.
+async function _publishCopies(copy, r) {
+  const ids = (r && r.ids) || [];
+  if (!ids.every((id, i) => id === copy.firstId + i)) { await window.Bonsai.oplog.undo(); console.error('§CLIPBOARD REFUSED ids not contiguous from ' + copy.firstId + ' got ' + JSON.stringify(ids.slice(0, 5)) + ' — undone'); return { ok: false, why: 'op ids not contiguous (undone)' }; }
+  const gbf = {}, fbg = {}; Object.keys(copy.guidOf || {}).forEach(k => { if (/^\d+$/.test(k)) { gbf[k] = copy.guidOf[k]; fbg[copy.guidOf[k]] = +k; } });
+  window.__arcGuidByFid = Object.assign({}, window.__arcGuidByFid || {}, gbf); window.__arcFidByGuid = Object.assign({}, window.__arcFidByGuid || {}, fbg);   // added, never replacing
+  const X0 = window.swXEdges || {}; if ((copy.edges || []).length) window.swXEdges = Object.assign({ abuts: [], anchored: [], datums: [], spans: [], aggregates: [] }, X0, { fills: (X0.fills || []).concat(copy.edges) });
+  return { ok: true, guids: Object.keys(gbf).length, edges: (copy.edges || []).length };
+}
+const _copyCascade = () => (window.SdgCascade && window.swXEdges && window.swXEdges.fills && window.__arcGuidByFid && window.__arcFidByGuid) ? { ridersFor: window.SdgCascade.ridersFor, guidByFid: window.__arcGuidByFid, fidByGuid: window.__arcFidByGuid, fills: window.swXEdges.fills } : null;
+const _activeOps = () => { const O = window.Bonsai.oplog, all = O._geomOps(); return all.slice(0, typeof O.cursor === 'number' ? Math.min(O.cursor, all.length) : all.length); };
+const _nextOpId = async () => { const db = await window.Bonsai.oplog._ensureDb(), mr = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); return (mr.length ? Number(mr[0].values[0][0]) : 0) + 1; };
+window.Bonsai.copyCtx = async () => ({ build: window.Clipboard && window.Clipboard.build, ops: _activeOps(), firstId: await _nextOpId(), cascade: _copyCascade() });   // the bay planner's copier (dxf_import_ui.js addBay)
+// Ctrl+C holds the selection (memory only, nothing written); Ctrl+V builds the copy from the CURRENT op log and commits ONE gesture (one undo). Offset (spec §OPEN-1, a stated default):
+// one grid bay on +x (the grid lines either side of the selection's centre x); outside the grid, the selection's own x width; the k-th paste of one copy goes k offsets on.
+let _clip = null;
+window.Bonsai.clipboard = {
+  get held() { return _clip; },
+  copy() {
+    const ids = selectedIds.size ? Array.from(selectedIds) : (selectedId != null ? [selectedId] : []);
+    if (!ids.length) { setStat('copy: nothing selected'); return null; }
+    _clip = { fids: ids, n: 0 }; console.log('§CLIPBOARD copy n=' + ids.length + ' fids=' + ids.join(',')); setStat('copied ' + ids.length + ' element' + (ids.length > 1 ? 's' : '') + ' (Ctrl+V pastes)'); return _clip;
+  },
+  async paste(shift) {
+    if (!_clip || !window.Clipboard) { setStat('paste: nothing copied'); return { ok: false, why: 'nothing copied' }; }
+    const before = _gateBoxes(), G = window.Bonsai.grid;
+    if (!shift) {
+      let x0 = Infinity, x1 = -Infinity; _clip.fids.forEach(f => { const b = before[f]; if (b) { x0 = Math.min(x0, b[0]); x1 = Math.max(x1, b[1]); } });
+      const cx = (x0 + x1) / 2, xs = (G && G.xs) || []; let step = x1 - x0, how = 'the selection width';
+      for (let j = 0; j + 1 < xs.length; j++) if (cx >= xs[j] && cx < xs[j + 1]) { step = xs[j + 1] - xs[j]; how = 'one grid bay ' + (G.xlabels[j] || j) + '-' + (G.xlabels[j + 1] || j + 1); break; }
+      if (!(step > 0)) { setStat('paste refused: the copy has no size on x'); return { ok: false, why: 'no x size' }; }
+      _clip.n += 1; shift = [_clip.n * step, 0, 0]; _clip.how = how;
+    }
+    const firstId = await _nextOpId(), B = window.Clipboard.build(_clip.fids, shift, _activeOps(), firstId, _copyCascade(), { nonce: 'p' + firstId });
+    if (!B.ok) { console.log('§CLIPBOARD paste refused: ' + B.why); setStat('paste refused: ' + B.why); return B; }
+    setStat('pasting ' + B.items.length + '…');
+    const r = await window.Bonsai.oplog.commitGesture(B.ops), pub = await _publishCopies(Object.assign({ firstId }, B), r);
+    if (!pub.ok) { setStat('paste refused: ' + pub.why); return Object.assign(B, { ok: false, why: pub.why }); }
+    const copies = {}; B.items.forEach(it => { copies[it.to] = { src: it.from, shift }; });
+    const gateMsg = _runGate(before, r.ids, { copies }); window.__lastGate = gateMsg;
+    console.log('§CLIPBOARD paste n=' + B.items.length + ' riders=' + B.riders.length + ' cuts=' + B.cuts + ' edges=' + pub.edges + ' ops=' + B.ops.length + ' shift=' + shift.map(v => v.toFixed(3)).join(',') + (_clip.how ? ' (' + _clip.how + ')' : '') + ' gid=' + r.gid + ' verify=' + r.verify + ' gate=' + (gateMsg || 'clean'));
+    setStat('pasted ' + B.items.length + (B.riders.length ? ' (+' + B.riders.length + ' hosted)' : '') + ' Δx ' + shift[0].toFixed(2) + '  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : ''));
+    audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
+    window.Bonsai.selectMany(B.items.map(it => it.to));
+    return Object.assign(B, { gid: r.gid, verify: r.verify, ids: r.ids, gate: gateMsg, shift });
+  }
+};
 // §D89 add a bay (DXF2BIM_FOUNDATION_LANE.md, W-DXF-ADD-BAY): the planner's ops (moves, copies, stretches) as ONE user gesture through the same gate / history path as a move.
-window.Bonsai.commitBay = async (ops, changedIds, label) => {
+window.Bonsai.commitBay = async (ops, changedIds, label, copy) => {
   const before = _gateBoxes(); setStat('adding a bay…');
   const r = await _commitUserGesture(ops);
+  if (copy) { const pub = await _publishCopies(copy, r); if (!pub.ok) { setStat('add a bay refused: ' + pub.why); return { verify: false, ids: [], gate: 'refused: ' + pub.why, refused: pub.why }; } }
   // the copies are new feature ids: the gate checks them too, each inheriting its source's relations (sdg_gate opts.copies)
   const copies = {}; ops.forEach((o, i) => { const bc = o.params && o.params.bayCopy; if (o.op_type === 'GEOM_INSERT' && bc && r.ids && r.ids[i] != null) { const sh = [0, 0, 0]; sh[bc.axis === 'x' ? 0 : 1] = bc.dir * bc.pitch; copies[r.ids[i]] = { src: bc.src, shift: sh }; } });
   const gateMsg = _runGate(before, (changedIds || []).concat(r.ids || []), { copies }); window.__lastGate = gateMsg;
@@ -3041,6 +3092,7 @@ function _runGate(before, moved, gopts) {
   window.__gateOrange = [];                                   // §ORANGE-ACCEPT: suggestions belong to the edit just made only
   if (!(window.SdgGate && window.__arcFidByGuid)) return '';
   const res = window.SdgGate.evaluate(before, _gateBoxes(), moved, _gateRel(), gopts || {});
+  window.__lastGateDetail = res;   // test hook: the last gate's pairs (W-DXF-ADD-BAY B9)
   if (!res.red.length && !res.orange.length) return '';
   if (window.SdgSave) window.__gateOrange = window.SdgSave.planHeal(res.orange).healable;
   console.log('§GATE red=' + res.red.length + ' orange=' + res.orange.length + ' ' + JSON.stringify(res.red.slice(0, 3)) + ' ' + JSON.stringify(res.orange.slice(0, 3)));
@@ -3949,6 +4001,8 @@ window.addEventListener('keydown', (e) => {
   }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && !sketching && !routing && (selectedIds.size || selectedId != null)) { e.preventDefault(); window.Bonsai.clipboard.copy(); }   // §CLIPBOARD
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V') && !sketching && !routing && window.Bonsai.clipboard.held) { e.preventDefault(); window.Bonsai.clipboard.paste(); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.mode === 'circle' && (window.Bonsai.sketch.pendingCircle || window.Bonsai.sketch.circles.length)) { e.preventDefault(); const SK = window.Bonsai.sketch; if (SK.pendingCircle) SK.pendingCircle = null; else SK.circles.pop(); sketchMarkers(); sketchDimsRefresh(); setStat('sketch: ' + SK.circles.length + ' circle' + (SK.circles.length === 1 ? '' : 's')); }
   // Arc (W-E2E-SKETCH-ARC): step back ONE CLICK at a time — start clicked → back to centre-only; centre
   // clicked → back to nothing; else drop the last committed arc (never an all-or-nothing clear).

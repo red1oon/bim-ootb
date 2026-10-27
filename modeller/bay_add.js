@@ -10,18 +10,22 @@
   'use strict';
   var TAG = '§DXF-BAY', ON_LINE = 0.3;   // ON_LINE: an element whose centre is this close (m) to a grid line belongs to that line's frame (the §D88 bay probe's tolerance)
 
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function sig(counts) { return Object.keys(counts).sort().map(function (k) { return k + ':' + counts[k]; }).join(','); }
 
   // rows: [{ id, cls, params, box: [x0,y0,z0,x1,y1,z1] world }], grid: { xs, ys, xlabels, ylabels }, rule: edits.bay_repeat, end: 'max' | 'min'
   // cascade (optional): { ridersFor, guidByFid, fidByGuid, fills } = SdgCascade.ridersFor + the §ARC-1 bridge + swXEdges.fills (§D89 step 3: a filling rides its host, never moves on its own)
-  function plan(rows, grid, rule, end, cascade) {
+  // copier: { build: Clipboard.build, ops: the active geom ops, firstId: the id the gesture's first op will get } — the Modeller's ONE copy path (clipboard.js, §D89 step 4)
+  function plan(rows, grid, rule, end, cascade, copier) {
     var out = { ok: false, why: null, ops: [], moved: [], riders: [], copied: [], stretched: [], left: [] };
     if (!rule) { out.why = 'no bay_repeat rule for this building type'; return out; }
     var axis = rule.axis === 'grid-long' ? ((grid.xs || []).length >= (grid.ys || []).length ? 'x' : 'y') : rule.axis, k = axis === 'x' ? 0 : 1;
     var L = (axis === 'x' ? grid.xs : grid.ys).slice(), labs = (axis === 'x' ? grid.xlabels : grid.ylabels) || [];
     if (L.length < 3) { out.why = 'the grid has ' + L.length + ' lines on ' + axis + ' (needs 3 or more)'; return out; }
-    var copyC = rule.copy || [], lineC = rule.line_copy || [], strC = rule.stretch || [];
+    var strC = rule.stretch || [], never = rule.never_copy || {};
+    if (!copier || !copier.build) { out.why = 'no copy path (clipboard.js not loaded)'; return out; }
+    // an element's CURRENT local size = its insert bbox x the product of the GEOM_SCALEs already on it (the fold multiplies them, bonsai_kernel.js foldChainToScene)
+    var netF = function (fid) { var f3 = [1, 1, 1]; (copier.ops || []).forEach(function (o) { var q = o.parameters || {}; if (o.op_type === 'GEOM_SCALE' && q.parent === fid) { f3[0] *= q.fx != null ? q.fx : 1; f3[1] *= q.fy != null ? q.fy : 1; f3[2] *= q.fz != null ? q.fz : 1; } }); return f3; };
+    var dimsOf = function (r) { var b = r.params.bbox, n3 = netF(r.id); return [(b[1] - b[0]) * n3[0], (b[3] - b[2]) * n3[1], (b[5] - b[4]) * n3[2]]; };
     // classify every insert: on a line, in a bay, or spanning several bays
     var bays = L.slice(0, -1).map(function () { return { counts: {}, rows: [] }; }), lines = L.map(function () { return { rows: [] }; }), span = [];
     rows.forEach(function (r) {
@@ -57,19 +61,24 @@
     // 1 move the hosts + free elements beyond the hinge; their fillings ride as hosted-by (SdgCascade.ridersFor, as commitMove does); a filling never moves on its own
     rows.forEach(function (r) { if (span.indexOf(r) >= 0 || !beyond(r) || hostOf[r.id] != null) return; out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) }); out.moved.push(r.id); });
     if (C && out.moved.length) C.ridersFor(out.moved, C.guidByFid, C.fidByGuid, C.fills, new Set(out.moved)).forEach(function (f) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: f, induced: 'hosted-by' }, mv) }); out.riders.push(f); });
-    // 2 copies: the typical bay's elements (copy classes) and the hinge line's frame (line_copy classes), one pitch on
-    var put = function (r) { var p = clone(r.params); p.placement = Object.assign({}, p.placement); p.placement[axis] = +(((p.placement[axis] || 0) + d).toFixed(6));
-      p.provenance = 'derived:user-edit'; p.bayCopy = Object.assign({ src: r.id }, tag); out.ops.push({ op_type: 'GEOM_INSERT', params: p }); out.copied.push({ from: r.id, cls: r.cls }); };
-    bays[bk].rows.filter(function (r) { return copyC.indexOf(r.cls) >= 0; }).forEach(put);
-    lines[hinge].rows.filter(function (r) { return lineC.indexOf(r.cls) >= 0; }).forEach(put);
-    // 3 stretch the full-length members / coverings by one pitch (local axis = the longest of the op's own bbox; GEOM_SCALE is anchored at the local min edge)
-    span.forEach(function (r) { var b = r.params.bbox, ld = [b[1] - b[0], b[3] - b[2], b[5] - b[4]], lk = ld.indexOf(Math.max.apply(null, ld)), Lm = ld[lk], f = (Lm + pitch) / Lm;
+    // 2 copies: the typical bay and the hinge line's frame AS THEY ARE, one pitch on, through the clipboard (each copy carries its source's later edits, cuts and hosted fillings,
+    //   §D89 step 4); never_copy = building-wide sizing only; fillings are not handed in — they come as riders of their copied host
+    var src = bays[bk].rows.concat(lines[hinge].rows).filter(function (r) { return !never[r.cls] && hostOf[r.id] == null; }).map(function (r) { return r.id; });
+    var sh = [0, 0, 0]; sh[k] = d;
+    var cp = copier.build(src, sh, copier.ops, copier.firstId, C, { at: out.ops.length, nonce: id, tag: function (p, f) { return { bayCopy: Object.assign({ src: f }, tag) }; } });
+    if (!cp.ok) { out.why = 'the bay copy refused: ' + cp.why; out.ops = []; out.moved = []; out.riders = []; return out; }
+    cp.ops.forEach(function (o) { out.ops.push(o); }); var rowOf = {}; rows.forEach(function (r) { rowOf[r.id] = r; });
+    cp.items.forEach(function (it) { out.copied.push({ from: it.from, cls: it.cls, to: it.to, dims: rowOf[it.from] ? dimsOf(rowOf[it.from]) : null }); });
+    out.copy = { edges: cp.edges, guidOf: cp.guidOf, copyOf: cp.copyOf, riders: cp.riders, cuts: cp.cuts, firstId: copier.firstId };
+    // 3 stretch the full-length members / coverings by one pitch (local axis = the longest of the op's CURRENT local size = its bbox x the product of the GEOM_SCALEs already on it,
+    //   as the fold multiplies them; GEOM_SCALE is anchored at the local min edge). Before: the insert's own bbox, so a second bay over-stretched what the first had stretched.
+    span.forEach(function (r) { var ld = dimsOf(r), lk = ld.indexOf(Math.max.apply(null, ld)), Lm = ld[lk], f = (Lm + pitch) / Lm;
       var sp = { parent: r.id, fx: 1, fy: 1, fz: 1, induced: 'bay-add' }; sp['f' + 'xyz'[lk]] = +f.toFixed(9); out.ops.push({ op_type: 'GEOM_SCALE', params: sp });
       if (dir < 0) out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) });
-      out.stretched.push({ id: r.id, cls: r.cls, length: Lm, factor: f }); });
+      out.stretched.push({ id: r.id, cls: r.cls, length: Lm, factor: f, dims: ld }); });
     out.ok = true; out.tag = tag; out.pitch = pitch; out.hingeLabel = labs[hinge] || String(hinge);
     out.counts = out.copied.reduce(function (a, c) { a[c.cls] = (a[c.cls] || 0) + 1; return a; }, {});
-    out.never = Object.keys(rule.never_copy || {}).map(function (c) { return { cls: c, why: rule.never_copy[c], inBay: bays[bk].counts[c] || 0 }; });
+    out.never = Object.keys(never).map(function (c) { return { cls: c, why: never[c], inBay: bays[bk].counts[c] || 0 }; });
     return out;
   }
 
@@ -77,9 +86,9 @@
   function cost(p, rows, ED, env, ctx) {
     var BD = env.BigDecimal, added = BD.of('0'), changed = BD.of('0'), byId = {}; rows.forEach(function (r) { byId[r.id] = r; });
     var rec = function (r) { var b = r.params.bbox; return { guid: 'bay:' + r.id, cls: r.cls, name: null, dims: [b[1] - b[0], b[3] - b[2], b[5] - b[4]] }; };
-    p.copied.forEach(function (c) { added = added.add(BD.of(ED.deltaFor(rec(byId[c.from]), null, ctx, env).costBefore)); });
+    p.copied.forEach(function (c) { var r0 = rec(byId[c.from]); if (c.dims) r0.dims = c.dims; added = added.add(BD.of(ED.deltaFor(r0, null, ctx, env).costBefore)); });   // a copy is priced at its source's CURRENT size
     var net = ED.netEdits(p.ops.filter(function (o) { return o.op_type === 'GEOM_SCALE'; }).map(function (o) { return { op_type: o.op_type, parameters: o.params }; }));
-    p.stretched.forEach(function (s) { changed = changed.add(BD.of(ED.deltaFor(rec(byId[s.id]), net.get(s.id), ctx, env).costDelta)); });
+    p.stretched.forEach(function (s) { var r0 = rec(byId[s.id]); if (s.dims) r0.dims = s.dims; changed = changed.add(BD.of(ED.deltaFor(r0, net.get(s.id), ctx, env).costDelta)); });   // priced on the CURRENT size
     return { added: added.toString(), changed: changed.toString(), total: added.add(changed).toString() };
   }
 

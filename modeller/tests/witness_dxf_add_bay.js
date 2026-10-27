@@ -12,6 +12,8 @@
 //   B7 the Conformity Gate on the commit is clean: a copy inherits its source's relations (sdg_gate opts.copies); on the same boxes, without the rule the gate reports RED,
 //      and with a wrong shift (no true counterpart) it reports RED again — the rule removes inherited contacts only
 //   B3r the moves went through the spine's cascade: the page handed the planner SdgCascade.ridersFor + the convert's fills edges (§D89 step 3; the ride itself: W-BAY-RIDE)
+//   B9 (§D89 step 4) a wall of the last typical bay moved 5 cm, then a second bay: every copy = its source's CURRENT box + one pitch (1 mm) — the edited wall's copy carries the edit
+//      (main's bay copy cloned the insert row: the copy sat at the wall's pre-edit place)
 //   B5 one Ctrl+Z restores every element and the grid; Ctrl+Y brings the bay back      B6 0 page errors
 // Input: the 9 CLI-marked shed sheets (SHED_MARKED_DIR, default ~/Videos/dxf2bim_film_work/why/cli/marked). Missing input -> MISSING, exit 2.
 // usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_add_bay.js
@@ -121,6 +123,26 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     await pg.keyboard.down('Control'); await pg.keyboard.press('z'); await pg.keyboard.up('Control'); await sleep(2500); const S2 = await snap(pg), u = same(S0, S2);
     await pg.keyboard.down('Control'); await pg.keyboard.press('y'); await pg.keyboard.up('Control'); await sleep(2500); const S3 = await snap(pg), y = same(S1, S3);
     ok('B5 one Ctrl+Z restores every element and the grid; Ctrl+Y brings the bay back', u === '' && y === '', 'undo: ' + (u || 'identical (' + Object.keys(S2.els).length + ' elements, ' + S2.xs.length + ' lines)') + ' | redo: ' + (y || 'identical (' + Object.keys(S3.els).length + ' elements)'));
+    // B9 edit a wall of the bay the next add copies (the first bay's own copies are now the last typical bay), then add a second bay
+    const wcopy = added.find(a1 => a1.c === 'IfcWall'), wfid = wcopy && wcopy.id;
+    if (wfid == null) ok('B9 a second bay copies the edited wall at its edited place', false, 'the first bay added no wall');
+    else {
+      await pg.evaluate(async f => { window.Bonsai.selectMany([f]); await window.__commitMove(0, 0.05, 0); window.Bonsai.selectMany([]); }, wfid); await sleep(2500);
+      const S4 = await snap(pg); await pg.click('#dxf-bay-max'); await sleep(4000);
+      const R2 = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay, ops = window.Bonsai.oplog._geomOps(), cls = f => { const o = ops.find(q => q.id === +f); return o && o.parameters ? o.parameters.ifc_class : '?'; };
+        const role = f => L.plan.moved.indexOf(+f) >= 0 ? 'moved' : L.plan.stretched.some(x => x.id === +f) ? 'stretched' : (L.res.ids || []).indexOf(+f) >= 0 ? 'copy' : 'static';
+        const g = window.__lastGateDetail || null;
+        return { ok: L.plan.ok, why: L.plan.why, pitch: L.plan.pitch, copied: L.plan.copied, stretched: L.plan.stretched, gate: L.res && L.res.gate, roles: g ? g.red.concat(g.orange).map(r => r.kind + ' #' + r.a + ' ' + cls(r.a) + ' ' + role(r.a) + ' | #' + r.b + ' ' + cls(r.b) + ' ' + role(r.b) + ' ' + (r.depth != null ? 'depth ' + r.depth : 'gap ' + r.gap)) : ['(no gate detail hook)'] }; });
+      R2.roles.forEach(l => console.log('§ADD-BAY B9 gate ' + l));
+      const S5 = await snap(pg), add2 = Object.keys(S5.els).filter(id => !S4.els[id]).map(id => Object.assign({ id: +id }, S5.els[id]));
+      const off9 = add2.filter(a2 => { const s0 = S4.els[a2.bay && a2.bay.src]; if (!s0) return true; const w = sh(s0.b, R2.pitch * a2.bay.dir); return a2.b.some((v, i) => Math.abs(v - w[i]) > MM); });
+      const mine = add2.find(a2 => a2.bay && a2.bay.src === wfid), wb = S4.els[wfid];
+      const st9 = (R2.stretched || []).filter(x => { const a4 = S4.els[x.id], a5 = S5.els[x.id]; return !a4 || !a5 || Math.abs((a5.b[K + 3] - a5.b[K]) - (a4.b[K + 3] - a4.b[K] + R2.pitch)) > MM; });
+      ok('B9s the second bay stretches each full-length member by one pitch of its CURRENT length', R2.ok && (R2.stretched || []).length > 0 && st9.length === 0,
+        'stretched ' + (R2.stretched || []).length + ' off ' + st9.length + (st9[0] ? ' e.g. #' + st9[0].id + ' ' + st9[0].cls + ' length ' + (S4.els[st9[0].id].b[K + 3] - S4.els[st9[0].id].b[K]).toFixed(4) + ' -> ' + (S5.els[st9[0].id].b[K + 3] - S5.els[st9[0].id].b[K]).toFixed(4) + ' (want +' + R2.pitch.toFixed(4) + ')' : ''));
+      ok('B9 a second bay after editing a wall of the bay it copies: every copy = its source\'s current box + one pitch; the edited wall\'s copy carries the 5 cm', R2.ok && add2.length === added.length && off9.length === 0 && !!mine && Math.abs((mine.b[1] + mine.b[4]) / 2 - (wb.b[1] + wb.b[4]) / 2) < MM,
+        'plan ok=' + R2.ok + (R2.why ? ' why=' + R2.why : '') + ' copies ' + add2.length + ' (first bay ' + added.length + ') off ' + off9.length + (off9[0] ? ' e.g. #' + off9[0].id + ' ' + off9[0].c : '') + ' | wall #' + wfid + ' y-centre ' + ((wb.b[1] + wb.b[4]) / 2).toFixed(4) + ' -> its copy ' + (mine ? ((mine.b[1] + mine.b[4]) / 2).toFixed(4) : 'none') + ' | gate=' + (R2.gate || 'clean'));
+    }
     ok('B6 no page errors', errs.length === 0, 'errors=' + errs.length + (errs[0] ? ' ' + errs[0] : ''));
   } catch (e) { if (!/not offered|no bay/.test(String(e && e.message))) ok('B run', false, 'threw ' + String(e && e.stack || e).slice(0, 300)); }
   await br.close(); srv.close();

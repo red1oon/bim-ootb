@@ -1150,3 +1150,19 @@ filling of a stretched element refuses. `dxf_import_ui.js addBay` passes the spi
 R4 refused "1 filling(s) hosted by a full-length element that the bay stretches (first: #22 in #21)"; R5 no cascade = 9 bay-add moves = the 9 elements beyond. **Falsifier** (main's `bay_add.js`):
 R1, R2, R4 FAIL (D3 `bay-add`, D2 pulled out of its wall, the covering's window planned). **W-DXF-ADD-BAY 9 / 0** on the shed (unchanged numbers: 29 copies, 46 moved, 14 stretched,
 USD +14260, gate clean, undo 445 / redo 474) + new B3r: the page handed the planner the cascade (`cascade=0fills riders=0`: the shed has no hosted filling, as measured in §D87).
+
+**§D89 step 4 — the bay copy is the Modeller's ONE copy path (review session 10, item 2; owner "Go" 2026-10-28) — spec: BIMCompiler `prompts/MODELLER_CLIPBOARD_COPY_PASTE.md` §REGROUND 2026-10-28.**
+**✅ BUILT 2026-10-28 (witness).** `modeller/clipboard.js` (pure `build()`: a copy = its insert + every later op on it re-pointed and shifted; fillings ride; cuts, cut moves and grid
+commands carried; fills edges re-keyed; an unknown op type refuses, named) + `modeller.html` (`Bonsai.clipboard` Ctrl+C / Ctrl+V, `_publishCopies` id check + bridge + edges, `copyCtx`);
+`bay_add.js` hands the typical bay + hinge line to it (`copy` / `line_copy` allow-lists dropped from `element_defaults.json`; `never_copy` = IfcFan only). **Found on the way, fixed:** a
+second bay over-stretched the full-length members — the factor was `(L + pitch) / L` with L = the insert's ORIGINAL length while the fold multiplies GEOM_SCALEs (measured: 6 RED,
+#264 vs #440-442 depth 0.0508 m, on the second bay); now L = the current local length (bbox x the product of earlier scales), and stretches and copies are priced on that current size.
+**Witnesses (logs read):** W-CLIPBOARD 6/0 (pure; C2: a moved / scaled / grid-stretched / room-moved source's copy folds, through the shipped `foldInsert`, to the source + shift within
+2 float32 steps; the insert-only control is 2.7 m off). W-BAY-RIDE 6/0 (+R6 = the spec's B8: a typical bay with a cut wall + window gives the new bay the window, its cut in the copied
+wall one pitch on, fillingFid and edge re-keyed; FAIL on the step-3 planner: nothing copied). W-DXF-ADD-BAY 11/0 (B1-B7 unchanged: 29 copies, 46 moved, 14 stretched, USD +14260,
+gate clean; +B9 a wall of the last typical bay moved 5 cm, then a second bay: 29 copies all = their source's CURRENT box + pitch, the wall's copy at y −95.6482 = its source; +B9s the
+14 stretched members each +1 pitch of their current length; the second bay's gate: 0 RED, 1 ORANGE = the 5 cm-moved wall vs its own copy 0.254 m apart, a new pair the edit made).
+W-CLIPBOARD-KEYS 4/0 (the converted Duplex, real keys: wall #15 hosting door #57 + window #65 -> +3 elements, +2 cuts, every pasted-wall vertex = source + shift; one Ctrl+Z / Ctrl+Y;
+the pasted door rides a 0.5 m move of the pasted wall, the source door stays).
+**Open (named):** the default paste offset (no grid around the selection -> its own x width) put the Duplex wall 0.417 m beside itself: the gate reports 4 RED against the cross walls —
+the stated §OPEN-1 default works as written, whether a different default is wanted is the owner's call. Labour of a copy stays count-based (no building db in a DXF convert).
