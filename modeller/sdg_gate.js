@@ -23,6 +23,9 @@
     return (ov[0] > 0 && ov[1] > 0 && ov[2] > 0) ? Math.min(ov[0], ov[1], ov[2]) : 0;
   }
   // face-gap when separated on EXACTLY one axis (a clean face-to-face near-miss); null for corner/overlap.
+  // §D89 the boxes come from float32 vertices: a gap is a difference of two float32 coordinates, so "tighter than before" must exceed 2 float32 steps of the largest
+  // coordinate involved (measured: the converted shed sits ~640 m from the origin, one step there = 2^(9-23) = 6.1e-5 m; the old 1e-9 flagged unchanged gaps as tighter)
+  function f32eps(a, b) { var mx = 0; [a, b].forEach(function (q) { (q || []).forEach(function (v) { mx = Math.max(mx, Math.abs(v)); }); }); return mx > 0 ? Math.max(1e-9, 2 * Math.pow(2, Math.floor(Math.log2(mx)) - 23)) : 1e-9; }
   function faceGap(a, b) {
     var ov = overlaps(a, b), sep = [];
     for (var k = 0; k < 3; k++) if (ov[k] < 0) sep.push(k);
@@ -80,18 +83,31 @@
     var movedSet = {}; moved.forEach(function (m) { movedSet[m] = 1; });
     var allFids = Object.keys(after);
     var red = [], orange = [], seen = {};
+    // §D89 (DXF2BIM_FOUNDATION_LANE.md, W-DXF-ADD-BAY): a COPY inherits its source's relations. opts.copies = {fid: {src, shift:[dx,dy,dz]}}. A copy has no before-state, so
+    // without this every contact its source already had (a beam bearing on its column) read as NEW. Its "before" pair is the source with the same neighbour, or with the
+    // neighbour's counterpart one shift back (the element whose before-box = the neighbour's box − shift, to 1 mm). No counterpart = no before = judged as new. Absent = as before.
+    var copies = opts.copies || null, bIndex = null;
+    var bkey = function (b) { return b.map(function (v) { return Math.round(v * 1000); }).join(','); };
+    if (copies) { bIndex = {}; Object.keys(before).forEach(function (f) { bIndex[bkey(before[f])] = f; }); }
+    function originPairs(m, o) {
+      var cm = copies && copies[m], co = copies && copies[o], c = cm || co; if (!c) return null;
+      var s = c.shift, back = function (b) { return b ? [b[0] - s[0], b[1] - s[0], b[2] - s[1], b[3] - s[1], b[4] - s[2], b[5] - s[2]] : null; };
+      var side = function (f, cf) { if (cf) return [before[cf.src]]; var bb = back(after[f]), cp = bb ? bIndex[bkey(bb)] : null; return [before[f], cp != null ? before[cp] : null]; };
+      var out = []; side(m, cm).forEach(function (x) { if (x) side(o, co).forEach(function (y) { if (y) out.push([x, y]); }); }); return out;
+    }
 
     // (1) CLASH + (3) CLEARANCE — each moved element vs every other (deduped by unordered pair)
     function pairCheck(m, o) {
       if (related(+m, +o)) return;                            // expected contact (door-in-wall, abuts) → never a clash
       var penA = penetration(after[m], after[o]);
-      var penB = (before[m] && before[o]) ? penetration(before[m], before[o]) : 0;
+      var op = originPairs(m, o);
+      var penB = op ? op.reduce(function (mx, pr) { return Math.max(mx, penetration(pr[0], pr[1])); }, 0) : ((before[m] && before[o]) ? penetration(before[m], before[o]) : 0);
       if (penA > clashTol && penA > penB + clashTol) {         // NEW or WORSENED interpenetration
         red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
       }
       var gapA = faceGap(after[m], after[o]);
-      var gapB = (before[m] && before[o]) ? faceGap(before[m], before[o]) : null;
-      if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - 1e-9)) {
+      var gapB = op ? op.reduce(function (mn, pr) { var g = faceGap(pr[0], pr[1]); return g == null ? mn : (mn == null ? g : Math.min(mn, g)); }, null) : ((before[m] && before[o]) ? faceGap(before[m], before[o]) : null);
+      if (gapA != null && gapA >= 0 && gapA < clearance && (gapB == null || gapA < gapB - f32eps(after[m], after[o]))) {
         orange.push({ kind: 'clearance', a: +m, b: +o, gap: +gapA.toFixed(4) });
       }
     }

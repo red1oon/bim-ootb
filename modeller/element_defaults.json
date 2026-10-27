@@ -699,6 +699,31 @@
      "basis": "Farming Shed: roof overhang at least 3.5 ft to keep rain out (TNAU)"
     }
    },
+   "edits": {
+    "bay_repeat": {
+     "axis": "grid-long",
+     "copy": [
+      "IfcBeam",
+      "IfcWall",
+      "IfcMember",
+      "IfcPlate"
+     ],
+     "line_copy": [
+      "IfcColumn",
+      "IfcFooting"
+     ],
+     "stretch": [
+      "IfcMember",
+      "IfcCovering"
+     ],
+     "never_copy": {
+      "IfcFan": "fan count is an airflow sizing for the new length, not a repeat",
+      "IfcDoor": "doors are placed by use, not per bay"
+     },
+     "min_identical": 3,
+     "basis": "normal practice for a uniform-bay farm / industrial shed: it is lengthened by whole bays, each new bay repeating the typical bay's frame, side wall, purlins and sheets at the same pitch (owner 2026-10-27/28, DXF2BIM_FOUNDATION_LANE.md §D89 / §D90)"
+    }
+   },
    "expect": [
     "IfcFan",
     "IfcCovering",

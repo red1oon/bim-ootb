@@ -63,6 +63,15 @@
           if (sp.index >= 0 && sp.index <= arr.length) { arr.splice(sp.index, 0, sp.pos); lab.splice(sp.index, 0, (lab[sp.index - 1] || '') + '.5'); }
           continue;
         }
+        // §D89 (DXF2BIM_FOUNDATION_LANE.md): "add a bay" lands as GEOM_INSERT rows carrying params.bayCopy {id,axis,index,pos,pitch,dir} — the lines beyond
+        // the hinge shift by the pitch and the new line goes in at `index` (its label = the hinge line's + 'A'), once per gesture, in op order.
+        if (op.op_type === 'GEOM_INSERT' && p.bayCopy) {
+          const bc = p.bayCopy; if (splitSeen[bc.id]) continue; splitSeen[bc.id] = 1;
+          const arr = bc.axis === 'x' ? xs : ys, lab = bc.axis === 'x' ? xl : yl, hinge = bc.pos - bc.dir * bc.pitch;
+          for (let j = 0; j < arr.length; j++) if (bc.dir > 0 ? arr[j] > hinge + 1e-6 : arr[j] < hinge - 1e-6) arr[j] += bc.dir * bc.pitch;
+          if (bc.index >= 0 && bc.index <= arr.length) { const hl = lab[bc.dir > 0 ? bc.index - 1 : bc.index] || ''; arr.splice(bc.index, 0, bc.pos); lab.splice(bc.index, 0, hl + 'A'); }
+          continue;
+        }
         if (op.op_type !== 'GEOM_GRID_MOVE') continue;
         const mm = /^g([xy])(\d+)$/.exec(p.gridId || '');
         if (!mm || !p.delta) continue;
