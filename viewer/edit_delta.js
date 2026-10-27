@@ -28,8 +28,17 @@
       if (t === 'GEOM_MOVE') { var a = get(P.parent); a.dx += P.dx || 0; a.dy += P.dy || 0; a.dz += P.dz || 0; a.ops++; }
       else if (t === 'GEOM_SCALE') { var b = get(P.parent); b.fx *= P.fx != null ? P.fx : 1; b.fy *= P.fy != null ? P.fy : 1; b.fz *= P.fz != null ? P.fz : 1; b.ops++; }
       else if (t === 'GEOM_ROTATE') { var c = get(P.parent); c.ops++; }            // yaw: no quantity change
-      else if (t === 'GEOM_GRID_MOVE') {                                             // §S8-QTY ⛔ BLOCKED — named, never guessed
-        (P.commands || []).forEach(function (cmd) { if (cmd.featureId != null) { var d = get(cmd.featureId); d.ops++; if (d.unsupported.indexOf(t) < 0) d.unsupported.push(t); } });
+      else if (t === 'GEOM_GRID_MOVE') {
+        // §S8-QTY (answered 2026-10-28, DXF2BIM §D89): the stored op keeps each command; read it as the fold applies it (bonsai_library.js foldInsert §STRETCH-1) —
+        // TRANSLATE shifts the WORLD axis (no quantity), SCALE multiplies the extent on that world axis = the local axis of the same name at yaw 0 / 180°, the other one at ±90°.
+        // An oblique yaw is named unsupported, never guessed.
+        (P.commands || []).forEach(function (cmd) {
+          if (cmd.featureId == null) return; var d = get(cmd.featureId), k = cmd.axis === 'x' ? 0 : cmd.axis === 'y' ? 1 : 2; d.ops++;
+          if (cmd.action === 'TRANSLATE') { d['d' + 'xyz'[k]] += cmd.delta || 0; return; }
+          var y = cmd.yawRad || 0, sn = Math.abs(Math.sin(y)), cs = Math.abs(Math.cos(y)), lk = k === 2 || sn < 1e-6 ? k : (cs < 1e-6 ? 1 - k : -1);
+          if (lk < 0) { if (d.unsupported.indexOf('GEOM_GRID_MOVE(oblique)') < 0) d.unsupported.push('GEOM_GRID_MOVE(oblique)'); return; }
+          d['f' + 'xyz'[lk]] *= cmd.newScale != null ? cmd.newScale : 1;
+        });
       }
     });
     return m;

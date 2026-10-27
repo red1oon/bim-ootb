@@ -9,7 +9,8 @@
 //   P4 WALL-FLAT    the same wall: labourDelta == 0 and basis 'flat per element' (the shipped rule; a fabricated schedule number fails).
 //   P5 LINEAR       an 'M'-unit class element, longest edge x2: labourDelta > 0, basis 'length-weighted' (INCONCLUSIVE if no such class).
 //   P6 MOVE         a pure GEOM_MOVE net (dx only): costDelta 0.00 and label 'a move changes no quantity' (a move billed as quantity fails).
-//   P7 GRID-BLOCKED a GEOM_GRID_MOVE touching a feature is FLAGGED unsupported, never priced.
+//   P7 GRID-STRETCH a GEOM_GRID_MOVE SCALE command (y x1.5, yaw 0) prices EXACTLY as the same GEOM_SCALE (P3's independent SQL recompute); before §D89 it was FLAGGED, never priced.
+//   P7b OBLIQUE a grid SCALE on a 30° yawed element is named unsupported (GEOM_GRID_MOVE(oblique)), costDelta 0; P7c a grid TRANSLATE changes no quantity (0).
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const V = path.join(__dirname, '..'), ROOT = path.join(V, '..');
@@ -76,8 +77,12 @@ const realLog = console.log; const quiet = (f) => { console.log = () => {}; try 
     const mv = ED.netEdits([{ op_type: 'GEOM_MOVE', parameters: { parent: 1, dx: 0.5, dy: 0, dz: 0 } }]).get(1); const dm = quiet(() => ED.deltaFor(rec, mv, ctx, env));
     G('P6 MOVE', dm.costDelta === '0' && dm.labourSecsDelta === 0 && dm.labels.indexOf('a move changes no quantity') >= 0 ? 'PASS' : 'FAIL', 'costDelta=' + dm.costDelta + ' labourDelta=' + dm.labourSecsDelta + ' labels[0]=' + dm.labels[0]);
     // P7 grid
-    const gm = ED.netEdits([{ op_type: 'GEOM_GRID_MOVE', parameters: { commands: [{ featureId: 1 }] } }]).get(1); const dg = quiet(() => ED.deltaFor(rec, gm, ctx, env));
-    G('P7 GRID-BLOCKED', dg.unsupported.indexOf('GEOM_GRID_MOVE') >= 0 && dg.costDelta === '0' ? 'PASS' : 'FAIL', 'unsupported=' + JSON.stringify(dg.unsupported) + ' costDelta=' + dg.costDelta);
+    const gm = ED.netEdits([{ op_type: 'GEOM_GRID_MOVE', parameters: { gridId: 'gx1', delta: 1, commands: [{ featureId: 1, action: 'SCALE', axis: 'y', newScale: 1.5, translateDelta: 0 }] } }]).get(1); const dg = quiet(() => ED.deltaFor(rec, gm, ctx, env));
+    G('P7 GRID-STRETCH', dg.costDelta === exp && !dg.unsupported.length ? 'PASS' : 'FAIL', 'costDelta=' + dg.costDelta + ' expected(independent, = P3)=' + exp + ' unsupported=' + JSON.stringify(dg.unsupported));
+    const go = ED.netEdits([{ op_type: 'GEOM_GRID_MOVE', parameters: { commands: [{ featureId: 1, action: 'SCALE', axis: 'y', newScale: 1.5, yawRad: Math.PI / 6 }] } }]).get(1); const dgo = quiet(() => ED.deltaFor(rec, go, ctx, env));
+    G('P7b OBLIQUE', dgo.unsupported.indexOf('GEOM_GRID_MOVE(oblique)') >= 0 && dgo.costDelta === '0' ? 'PASS' : 'FAIL', 'unsupported=' + JSON.stringify(dgo.unsupported) + ' costDelta=' + dgo.costDelta);
+    const gt = ED.netEdits([{ op_type: 'GEOM_GRID_MOVE', parameters: { commands: [{ featureId: 1, action: 'TRANSLATE', axis: 'x', delta: 0.7 }] } }]).get(1); const dgt = quiet(() => ED.deltaFor(rec, gt, ctx, env));
+    G('P7c GRID-TRANSLATE', dgt.costDelta === '0' && !dgt.unsupported.length ? 'PASS' : 'FAIL', 'costDelta=' + dgt.costDelta + ' dx=' + gt.dx);
   }
 
   // P5 — a linear class
