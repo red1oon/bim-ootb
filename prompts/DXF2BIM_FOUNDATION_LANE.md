@@ -1070,3 +1070,20 @@ On main the same drag gives 0 commands (default grid, measured above).
 `_STRUCTURAL_CLASSES` (`bonsai_gridmove.js:93`: Wall, WallStandardCase, Slab, Footing, Column, Beam, Railing, StairFlight, Roof), so it neither stretches nor moves; and no frame is added in
 the new bay (§GRID-SPAN "add one more" exists for the STR walker's column lattice only). Owner's call: widen the class list (it applies to EVERY building: an opened IFC's curtain-wall
 plates and members would start following grid drags too) or a shed/DXF-only rule; and whether a new bay gets a frame copied from its neighbour.
+
+## §D89 ADD A BAY TO A REPEATING-BAY BUILDING, WITH ITS COST VARIANCE (owner 2026-10-27: "Yes if it's normal practice where it gets additional set of identical spaced openings, and the usual variance costs was done in that too, but if not don't fix it") — SPEC, NOT BUILT
+**Why it qualifies (normal practice, stated as such, not data):** a uniform-bay farm / industrial shed is lengthened by whole bays; the extension repeats the typical bay (frame, side wall,
+purlins, sheets) at the same pitch, and the change is priced as a variation. Fans / EC pad are an airflow sizing, not a repeat: NOT copied (named, never invented).
+**Measured (the converted marked shed after §D88 A, 2026-10-27, page probe):** grid lines every 3.048 m (`01..42`, 14 lines). Typical bay (bays 1, 4, 6-11 identical): IfcBeam 2, IfcWall 2,
+IfcMember 12, IfcPlate 9; each inner line 1-12: IfcColumn 2 + IfcFooting 2; end lines 0 / 13: Column 4, Beam 3, Footing 4, Wall 6 (+ Fan 9 on line 0, Covering 1 on line 13); bay 0: + Fan 2,
+Door 2; bay 2: + Fan 2; bay 5: Beam 4, Wall 4; bay 12: Wall 3, Door 2. Spanning the whole length: IfcMember 12, IfcCovering 2. No cut openings (the curtain side is open above the
+support wall). Today a one-bay drag of the end line (W-DXF-GRID G2): the end frame translates (18 commands), 6 walls stretch, the roof (Member / Plate) does nothing (not in
+`_STRUCTURAL_CLASSES`), no frame appears in the new bay, and the cost Δ is BLOCKED for a grid move (`viewer/edit_delta.js:31` §S8-QTY) and absent for added elements.
+**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): (1) the end line and everything at or beyond it
+translate by one pitch (the existing grid move); (2) a copy of ONE typical bay (the nearest identical bay to that end) and of its inner line's columns + footings is inserted one pitch on,
+as GEOM_INSERTs of the same geometry (copies, never new shapes); (3) the full-length members / coverings stretch by the pitch about the fixed end; (4) ONE gesture, ONE undo. A set with
+no repeating bay refuses with the reason. (5) Cost variance: the §S8 Δ covers it — copies priced at rate × their own quantity (the same row basis as the Project Order line),
+stretched / moved elements through `netEdits` (GEOM_GRID_MOVE unblocked by reading its commands as SCALE / MOVE), the total shown and written as a variation.
+**Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
+source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
+B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
