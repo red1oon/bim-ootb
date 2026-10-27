@@ -1038,5 +1038,10 @@ element stays, one op-log step; E2 `<axis>1.05` + Enter: length +5 % (±1 mm), t
 E2 state; E5 0 page errors. The status line after each step is logged (`§SHED-EDIT-SHOWN`).
 **RESULT 2026-10-27: 7 / 0.** Wall #138, 5.080 m → moved 0.1000 m (others 0.0000) → 5.3340 m (want 5.3340), thickness 0.1270 kept; undo 0.0000 m over 445; redo 0.0000. Screen says
 `moved #138 Δ(0.00,0.10,0.00)` then `scaled #138 Y ×1.05` (the typed numbers are on screen for the narration). Unchanged: W-E2E-NUMROT 7/0, W-E2E-SKETCH-DIMS 20/0, W-E2E-RSARM 8/0.
+**The Modeller's edit indicators on the shed (measured 2026-10-27, owner asked; probe = this witness's harness, wall #138, typed steps + arrow keys, nothing else changed):**
+grid move (orange / green openings, `bonsai_gridmove.js`) — 0 commands on all 7 grid lines: after Convert the Modeller's grid is a default 4 m x 3 m grid at the origin, not the shed's
+drawn grid (~650 m away); and it follows only recorded door-wall relations (0 on the shed). Conformity Gate (`sdg_gate.js` §GATE-1; inputs abuts 0, fills 0): moves of 0.1 m and 1 m
+along the wall -> nothing; 1 m sideways -> `⚠ 2 ORANGE` (clearance x2, "accept or ignore"); another 1 m -> `⛔ 3 RED` (clash x2 + a Revert button); another 1 m -> `⚠ 3 ORANGE`.
+So on the shed the film CAN show the red / orange gate (clash, clearance); the door kinds (door off its wall, door-crush) and abuts-realign cannot fire there (0 fills, 0 abuts).
 **Open (owner's call, not built):** doors riding a shed wall would need the structure path to join wall pieces across a door gap into one host with a cut + fill (§D59's rule for the
 structure path) — a new feature, not a fix.
