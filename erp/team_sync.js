@@ -28,7 +28,8 @@
   if (!_on) return;   // without ?team=1 (or the Team panel's switch) nothing changes
 
   var OWNER = 'red1oon', REPO = 'bim-teams-pipe';
-  var MSG_CRM = 'Current record was changed by another user, please ReQuery';   // AD_Message CurrentRecordModified (ad_full.db; the browser seed has no ad_message table)
+  // the core's message (TEAM_REPLICATION_PLUGIN_STUDY §8.3 A4, §12.4): Msg.getMsg over AD_Message (ad_callout.js; patches/ad_seed.db.sql ships CurrentRecordModified) - never a copy of its text here
+  function coreMsg(key) { var M = global.AdCallout && global.AdCallout.Msg; try { return M ? M.getMsg(null, key) : key; } catch (e) { return key; } }
   // The table scope is DATA, not a list in this file: the compiled plan (erp/team_plan.js, GENERATED from flow rows by bim-compiler build/scriptor/emit_erp_plan.js, TEAMWORK_FRAMEWORK §25),
   // read through the one shared reader TeamScope (common/comm/team_scope.js): 'share' (a FACT/BOTH/space row), 'station-local' (a declared LOCAL row: per-station numbering, the user's recent items,
   // session/audit rows - sharing them would make every document save a spurious crossed edit) or 'unplanned' (no row => local-only, never shared by default). No plan => nothing is shared.
@@ -393,7 +394,7 @@
     (await S.placedEnvelopes()).forEach(function (p) { if (p.env.body.op_type === 'CRUD_CREATE') byUu[p.env.target.uu] = (p.env.body.params.fields || {}).documentno || null; });
     if (box) box.innerHTML = cf.map(function (k) {
       return '<div class="team-conflict" data-uu="' + k.uu + '" data-table="' + k.table + '" data-col="' + k.col + '">⚠ ' + k.table + ' ' + (byUu[k.uu] ? '<b>' + byUu[k.uu] + '</b> ' : '') + '(' + k.uu.slice(0, 8) + ') · ' + k.col + ': values ' +
-        k.candidates.map(function (x) { return JSON.stringify(x.value); }).join(' / ') + ', kept ' + JSON.stringify(k.before) + ' — ' + MSG_CRM + '</div>'; }).join('');
+        k.candidates.map(function (x) { return JSON.stringify(x.value); }).join(' / ') + ', kept ' + JSON.stringify(k.before) + ' — ' + esc(coreMsg('CurrentRecordModified')) + '</div>'; }).join('');
     c.setAttribute('data-team', 'ready'); c.setAttribute('data-conflicts', String(cf.length)); c.setAttribute('data-localonly', String(lo));
     lastRefused = dl.filter(function (x) { return x.verdict === 'REFUSED'; }).length;
   }
@@ -497,7 +498,7 @@
   async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
   async function openStore(bytes) {
     baseSt = { state: 'unknown' }; bmemo = {};
-    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: function () { return MSG_CRM; }, baseRow: hostBaseRow, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
+    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: coreMsg, baseRow: hostBaseRow, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
     S = global.CommStore.open(new SQL.Database(bytes), storeOpts);
     var pu = new URLSearchParams(global.location.search).get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
