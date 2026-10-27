@@ -2,6 +2,31 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶▶▶▶ RESUME HERE (session 10 entry; written 2026-10-28 at the close of session 9; read this first, then the session-9 block below for its record)
+**Done in session 9 (all merged, live, witnessed; logs read):** bim-ootb #2415 Viewer rates from the PACK (BIMCompiler `RATES_SOURCE_OF_TRUTH.md` §6; W-RATES-PACK 6/0, W-JSON-4D5D-LIVE 6/0 live)
+· #2416 §D87 shed wall edit in typed steps + typed Move/Scale fields no longer under the history line (W-SHED-WALL-EDIT 7/0) · #2417 §D87 edit indicators measured on the shed ·
+#2418 §D88 A the drawing's grid reaches the Modeller (W-DXF-GRID 4/0) · #2419 / #2421 §D89 spec + its consistency table with the Modeller spine · #2422 §S8 prices a grid stretch
+(W-S8-PURE 9/0) · #2423 §D89 "add a bay" by building type (`element_defaults.json` `Farming Shed.edits.bay_repeat`, `modeller/bay_add.js`, `Bonsai.commitBay`; W-DXF-ADD-BAY 8/0) +
+two Conformity Gate fixes (a copy inherits its source's relations; clearance at float32 precision). Owner rulings this session: the company name may show in the film (no cover);
+add-a-bay is normal practice and must carry its cost variance; rules by building type live in the one type row (§D90). All specs + measured numbers: `DXF2BIM_FOUNDATION_LANE.md` §D87-§D90.
+**Waiting on the owner:** merge BIMCompiler #268 (the §S8-QTY spec row; auto-mode refused a merge without review, that repo has no auto-merge).
+**▶ ORDER FOR SESSION 10 (owner 2026-10-28: "isn't our Modeller prior done work handles ... what to drag along, remesh, opening following compliance dims, distance" -> note for a fresh session):**
+(1) **Rewire the bay's moves through the spine's cascade.** `bay_add.js plan()` today commits a raw GEOM_MOVE for EVERY element beyond the hinge (a door moves because it lies beyond,
+not because it rides its wall). Move only hosts + free elements and let `SdgCascade.ridersFor` add the hosted fillings as `induced: 'hosted-by'` riders, exactly as `commitMove`
+does (`modeller.html` ~3085). Holes need nothing under a pure move (cut_move: a TRANSLATE-only host carries its void). Witness: W-DXF-ADD-BAY unchanged on the shed (0 fills there) +
+a claim on a set WITH hosted doors beyond the hinge (the Duplex has fills but no repeating bay: build the case as a pure planner test with fills rows, or find a repeating-bay set with doors).
+(2) **Build the Modeller copy/paste that carries relations, then make the bay copy use it** — the one thing the spine lacks. Spec exists: BIMCompiler `prompts/MODELLER_CLIPBOARD_COPY_PASTE.md`
+(2026-08-11, "⛔ BLOCKED, session wrapped without dispatching"; owner's go is implied by this order — confirm in one line at session start). Re-read it against today's code first
+(it predates §D59 wall lines, CUT-MOVE / CUT-RESIZE, DAGEVU, `commitGesture`); extend it so a copied host brings its GEOM_CUTs (parent remapped to the copy) and its fill edges (published
+to `swXEdges.fills` like §D59 (c)). Then `bay_repeat` becomes "copy the typical bay AS IT IS" (drop the class allow-lists `copy` / `line_copy`; keep `never_copy` only for
+building-wide sizing: IfcFan, evaporative pad — airflow), and the bay copy calls the clipboard instead of cloning op params itself (one copy path). Witness B8: a typical bay that holds
+a window / door / opening gives the new bay the same, cut into the copied wall (FAIL on today's rule).
+(3) Then, owner's pick: §D88 B (a door in a wall gap hosted by that wall, structure path) · §D90 (2) `applies_to_types` on the compliance files · the BricsCAD film
+(`FILM_DXF2BIM_WHY_MARKINGS.md` "BRICSCAD FILM": story needs the owner's OK; the take states `building.type = Farming Shed` in the editor, edits a door-free ground wall, shows add-a-bay
+with its cost and the orange / red gate; no walker).
+**Session-9 lessons (do not repeat):** read the spine before speccing a new mechanism (the owner had to ask twice: "are these part of the spine", "isn't our Modeller prior work handles");
+a probe that injects code into a tracked file must not exit before cleanup (use a scratch copy); `pkill -f '<pattern>'` kills the calling shell when the pattern is in its own command line.
+
 ## ▶▶▶▶▶ RESUME HERE (session 9 entry; written 2026-10-26 at the close of session 8; read this first, then `## RESULT 2026-10-26 (session 8)` at the end)
 **Merged in session 8:** bim-ootb #2389 §D81 yellow list grouped (W-YELLOW-GROUP 20/0, W-EVIDENCE 26/0, runner PASS 79 / ENV 10 / FAIL 0) + §D82 SPEC · #2390 §D83 a failing Convert says so and undoes its gesture (W-CONVERT-FAIL 4/0, R7-9) · #2391 in-app guide names the split accept buttons (W-GUIDE-BUTTONS 2/0, R7-2) · BIMCompiler #256 guide factual fixes (R7-2, R7-3, §D81, §D83; NOT deployed to GH Pages). Modeller sw v171. Then #2393 §D84 + BIMCompiler #257: the yellow-list page is generated from the registry (W-YELLOW-PAGE 4/0 on master; R7-5 ✅).
 **Owner answers 2026-10-26 ("answer for me"): Q1 yes, Q2 yes after Q1 + Q3, Q3 yes after Q1, Q4 yes (DONE: BIMCompiler #258 + guarded publish, old page 404, guide + yellow list live). Q1 needed NO upload: R8-1 was a wrong diagnosis (retracted below), the cause was the page's loader, fixed as §D85.** Former questions: (Q1) **R8-1:** republish the OCI library shards so they include `DUPLEX_CASEMENT` (+ its `M_Casement 819x759` mesh, present in `component_library.db` sha 7e5df6e1)? Without it our own Duplex set is refused wherever no local subset exists (GH Pages included). (Q2) **§D82:** go to BUILD the marked sheet view as spec'd? (Q3) **R7-1 / R7-4:** go for the guide's step-3 rewrite + 5 new paragraphs (proposal in the session-8 RESULT)? The walk it needs stops at the gate until Q1 is answered. (Q4) **R7-7:** retire the live `DXF2BIM_USER_GUIDE` page (a page removal on GH Pages: `ALLOW_SHRINK=1` deploy) after folding its one rule ("labels set what geometry cannot", its §1) into the main guide?
