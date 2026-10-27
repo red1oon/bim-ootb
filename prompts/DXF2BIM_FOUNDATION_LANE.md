@@ -1164,5 +1164,8 @@ gate clean; +B9 a wall of the last typical bay moved 5 cm, then a second bay: 29
 14 stretched members each +1 pitch of their current length; the second bay's gate: 0 RED, 1 ORANGE = the 5 cm-moved wall vs its own copy 0.254 m apart, a new pair the edit made).
 W-CLIPBOARD-KEYS 4/0 (the converted Duplex, real keys: wall #15 hosting door #57 + window #65 -> +3 elements, +2 cuts, every pasted-wall vertex = source + shift; one Ctrl+Z / Ctrl+Y;
 the pasted door rides a 0.5 m move of the pasted wall, the source door stays).
+**Falsifier (W-DXF-ADD-BAY on main 3f7d1fd8, same witness):** B9 FAIL (the edited wall #494's copy at y −95.6982 = its pre-edit place, 5 cm off), B9s FAIL (all 14: e.g. IfcCovering
+#115 18.2880 -> 21.9456, +3.6576 instead of +3.0480), the second bay's gate 6 RED. Regressions on the branch: W-SDG-GATE 11/0, W-GATE-SMOKE 6/0, W-E2E-GESTURE-UNDO 6/0, W-DXF-GRID 4/0,
+W-SHED-WALL-EDIT 7/0.
 **Open (named):** the default paste offset (no grid around the selection -> its own x width) put the Duplex wall 0.417 m beside itself: the gate reports 4 RED against the cross walls —
 the stated §OPEN-1 default works as written, whether a different default is wanted is the owner's call. Labour of a copy stays count-based (no building db in a DXF convert).

@@ -2,6 +2,16 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶▶▶▶▶ RESUME HERE (session 11 entry; written 2026-10-28 at the close of session 10; read this first, then the session-10 block below for its record)
+**Done in session 10 (witnessed, logs read; specs + numbers: `DXF2BIM_FOUNDATION_LANE.md` §D89 steps 3-4, BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §REGROUND):**
+(1) ✅ #2425 the bay's moves go through `SdgCascade.ridersFor` (W-BAY-RIDE; main R1 R2 R4 FAIL). (2) ✅ owner "Go": `modeller/clipboard.js` = the ONE copy path (Ctrl+C / Ctrl+V; a copy = insert + every
+later op on it re-pointed, fillings ride, cuts + fills edges carried) and "add a bay" uses it (allow-lists dropped, `never_copy` = IfcFan); found + fixed a second bay over-stretching.
+W-CLIPBOARD 6/0, W-CLIPBOARD-KEYS 4/0, W-BAY-RIDE 6/0, W-DXF-ADD-BAY 11/0 (main: B9 + B9s FAIL).
+**Waiting on the owner:** merge BIMCompiler #268 (§S8-QTY row) + the BIMCompiler clipboard-spec PR (that repo has no auto-merge). Default paste offset: one grid bay, else the selection's x width —
+on the Duplex it put a wall 0.417 m beside itself (gate 4 RED); keep, or name another default? Guide: ModellerGuide has no copy / paste or add-a-bay paragraph yet (proposal, docs rule).
+**▶ ORDER FOR SESSION 11:** item (3) of session 10, owner's pick: §D88 B (a door in a wall gap hosted by that wall, structure path) · §D90 (2) `applies_to_types` on the compliance files ·
+the BricsCAD film (`FILM_DXF2BIM_WHY_MARKINGS.md` "BRICSCAD FILM", story needs the owner's OK).
+
 ## ▶▶▶▶▶▶ RESUME HERE (session 10 entry; written 2026-10-28 at the close of session 9; read this first, then the session-9 block below for its record)
 **Done in session 9 (all merged, live, witnessed; logs read):** bim-ootb #2415 Viewer rates from the PACK (BIMCompiler `RATES_SOURCE_OF_TRUTH.md` §6; W-RATES-PACK 6/0, W-JSON-4D5D-LIVE 6/0 live)
 · #2416 §D87 shed wall edit in typed steps + typed Move/Scale fields no longer under the history line (W-SHED-WALL-EDIT 7/0) · #2417 §D87 edit indicators measured on the shed ·
