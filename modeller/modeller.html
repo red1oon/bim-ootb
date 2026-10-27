@@ -2484,6 +2484,12 @@ const MV_CANCEL = _ico('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>') + '<span>
 let moving = false, _moveDrag = null, moveGizmo = null, moveGhost = null;
 const dimMove = document.getElementById('dim-move');
 const dimRot = document.getElementById('dim-rot'), dimScale = document.getElementById('dim-scale');
+// §D87 (prompts/DXF2BIM_FOUNDATION_LANE.md, W-SHED-WALL-EDIT): the typed Move / Rotate / Scale fields stay just above the history dot line. #hist-dots (bottom 58px, z 9999)
+// grows upward as ops accumulate; at a fixed bottom:62px the fields ended under it after a Convert (measured: elementFromPoint on #dim-move = #hist-back), unclickable.
+const dimRow = document.getElementById('dim-row'), histDots = document.getElementById('hist-dots');
+function _dimAboveHist() { if (!dimRow || !histDots) return; const r = histDots.getBoundingClientRect(); dimRow.style.bottom = Math.max(62, Math.round(r.height > 0 ? window.innerHeight - r.top + 6 : 62)) + 'px'; }
+if (window.ResizeObserver && histDots) new ResizeObserver(_dimAboveHist).observe(histDots);
+window.addEventListener('resize', _dimAboveHist);
 // ── §POLISH3 §V7 (RESUME_MODELLER_POLISH3.md — Witness: W-E2E-FLOATDIM): in-scene floating dimension
 // readout during a drag. ONE reusable canvas-texture Sprite (core build — CSS2DRenderer is not vendored),
 // depthTest:false + high renderOrder so it reads over geometry, scaled by camera distance to hold a constant
@@ -2750,6 +2756,7 @@ function enterMove() {
   if (!window.Bonsai.grid.active) { window.Bonsai.grid.show(true); bGrid.classList.add('on'); }
   moving = true; _moveDrag = null; bMove.innerHTML = MV_CANCEL; bMove.classList.add('on'); controls.enabled = false; applyModeCursor();
   if (dimMove) dimMove.style.display = '';
+  _dimAboveHist();
   // §P6 (RESUME_MODELLER_POLISH_BATCH.md — Witness: W-E2E-NUMROT): typed numeric input for Rotate/Scale,
   // shown ONLY when the matching gizmo sub-handle would be offered (same gates as buildMoveGizmo: ring =
   // every selected id INSERT/SOLID; cubes = a single INSERT) — never an input the drag couldn't honour.
