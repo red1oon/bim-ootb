@@ -97,7 +97,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
 
   // ── the recorded stubs: what each (fake) provider answers for a QR text. NEVER a live call: the context aborts everything that is not 127.0.0.1 or a stub host. ──
   var SLIPS = {};                       // qr -> { ref, amount, mode: 'ok'|'refuse' }
-  var NET = { stubHits: {}, aborted: [], keys: [], otherHits: 0, offline: {} };
+  var NET = { stubHits: {}, aborted: [], homeFrame: [], keys: [], otherHits: 0, offline: {} };
   function stubBody(qr, amount) {
     var s = SLIPS[qr]; if (!s) return { code: 1007, message: 'QR code is not a slip we know (recorded stub: unknown QR)' };
     if (s.mode === 'refuse' || (amount != null && Number(amount) !== Number(s.amount))) { var r = JSON.parse(JSON.stringify(REFUSED)); delete r._comment; r.data.transRef = s.ref; r.data.amount = s.amount; return r; }
@@ -118,7 +118,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
         var s = SLIPS[body.qr]; if (!s || Number(body.amount) !== Number(s.amount)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'amount does not match the slip' }) });
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, reference: s.ref, approval: 'OV-OK', paid: { amount: s.amount }, when: '2026-10-28T11:00:00+07:00' }) });
       }
-      NET.aborted.push(u.host); return route.abort('blockedbyclient');
+      (u.host === 'www.idempiere.org' ? NET.homeFrame : NET.aborted).push(u.host); return route.abort('blockedbyclient');   // www.idempiere.org = the seed's own Donate gadget (an HTML frame legacy draws on the Home since W-MF-LENS), a page-load request, not part of any verify call; still aborted, counted apart
     });
   }
 
