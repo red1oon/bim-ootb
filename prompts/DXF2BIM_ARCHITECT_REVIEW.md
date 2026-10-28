@@ -9,7 +9,7 @@ review first, specs second, code only if the owner says so. **Read the log after
 its code clause)? The files hold 5 egress rules (door_clear_width, circulation_distance, isolated_room, common_path_of_egress_travel, exit_remoteness) and 5 structural (floating_member,
 span_depth_steel / _concrete / _cantilever, column_continuity), keyed by IFC class. Owner question: e.g. does a Farming Shed (agricultural) skip any of them, per which code?
 **⛔ needs the owner's OK — the BricsCAD film:** the story (`FILM_DXF2BIM_WHY_MARKINGS.md` "BRICSCAD FILM") before a take. It can now show a door riding its wall on the shed (§D88 B).
-**Open owner calls carried:** default paste offset (session 10 RESULT); grid drag EDGE_TOL vs the shed's 127 mm wall-end setback (§D88 B note); BIMCompiler #268 + #269 merges; ModellerGuide paragraph.
+**Closed 2026-10-28 (owner "Ensure fixes before film. Ok with ModellerGuide para"):** paste lands at the pointer (§PLACE, W-CLIPBOARD-KEYS 7/0); the shed grid drag (§D91, W-GRID-ONLINE 4/0: end walls no longer stretched 25x, the end bay stretches); ModellerGuide Copy & paste + Add a bay (BIMCompiler docs PR). Still waiting: BIMCompiler #268 + #269 + the guide PR merges.
 
 ## ▶▶▶▶▶▶▶ RESUME HERE (session 11 entry; written 2026-10-28 at the close of session 10; read this first, then the session-10 block below for its record)
 **Done in session 10 (witnessed, logs read; specs + numbers: `DXF2BIM_FOUNDATION_LANE.md` §D89 steps 3-4, BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §REGROUND):**

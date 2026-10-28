@@ -1527,7 +1527,7 @@ window.Bonsai.frameElementByGuid = (guid) => {
   } catch (e) { console.warn('§FRAME_GUID fail ' + (e && e.message)); return false; }
   finally { if (db) { try { db.close(); } catch (e) { } } }
 };
-function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting || roomMoving || itemDragging); }
+function inSelectCtx() { return !(sketching || routing || edgePicking || gridMoving || moving || inserting || roomMoving || itemDragging || pasting); }
 // §Q2 (RESUME_MODELLER_POLISH2.md — Witness: W-E2E-INSTPICK): walked fixtures live as InstancedMesh buckets
 // under dwRoot (NOT direct children of g), so the old non-recursive intersect never even raycast them — a
 // canvas click on a walked fixture was a silent miss, instanceId or not. Include the buckets; THREE populates
@@ -1626,7 +1626,7 @@ canvas.addEventListener('pointerdown', (e) => {           // bare (no-shift) pic
 // Composes with the M3 hover-pointer: a mode that owns the cursor WINS; in plain browsing (no mode), hovering an
 // object still shows 'pointer'. One mode is active at a time, but the order is defensive. Pure CSS cursor, no deps.
 function modeCursor() {
-  if (inserting) return 'copy';                 // dropping a new component onto the grid
+  if (inserting || pasting) return 'copy';      // dropping a new component / a pasted copy onto the grid
   if (sketching || routing) return 'crosshair'; // drawing sketch points / a route
   if (edgePicking) return 'crosshair';          // picking edges to fillet
   if (gridMoving) return 'grab';                // grabbing a gridline to drag
@@ -2319,9 +2319,21 @@ const _copyCascade = () => (window.SdgCascade && window.swXEdges && window.swXEd
 const _activeOps = () => { const O = window.Bonsai.oplog, all = O._geomOps(); return all.slice(0, typeof O.cursor === 'number' ? Math.min(O.cursor, all.length) : all.length); };
 const _nextOpId = async () => { const db = await window.Bonsai.oplog._ensureDb(), mr = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); return (mr.length ? Number(mr[0].values[0][0]) : 0) + 1; };
 window.Bonsai.copyCtx = async () => ({ build: window.Clipboard && window.Clipboard.build, ops: _activeOps(), firstId: await _nextOpId(), cascade: _copyCascade() });   // the bay planner's copier (dxf_import_ui.js addBay)
-// Ctrl+C holds the selection (memory only, nothing written); Ctrl+V builds the copy from the CURRENT op log and commits ONE gesture (one undo). Offset (spec §OPEN-1, a stated default):
-// one grid bay on +x (the grid lines either side of the selection's centre x); outside the grid, the selection's own x width; the k-th paste of one copy goes k offsets on.
-let _clip = null;
+// Ctrl+C holds the selection (memory only, nothing written). Ctrl+V enters PASTE PLACEMENT (spec §PLACE): a ghost of the held boxes follows the pointer on the plane at their base z,
+// anchored at their box centre and snapped by the grid (the Insert tool's snap); a click commits paste(shift) = ONE gesture (one undo) built from the CURRENT op log; Esc cancels.
+let _clip = null, pasting = false, _paste = null;
+const _heldBox = (B, fids) => { let b = null; fids.forEach(f => { const q = B[f]; if (!q) return; if (!b) b = q.slice(); else for (let k = 0; k < 6; k++) b[k] = k % 2 ? Math.max(b[k], q[k]) : Math.min(b[k], q[k]); }); return b; };
+function _pasteTarget(clientX, clientY) {
+  const r = canvas.getBoundingClientRect(), ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), hit = new THREE.Vector3();
+  raycaster.setFromCamera(ndc, camera); if (!raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -_paste.z), hit)) return null;
+  const s = window.Bonsai.grid.snap(hit.x, hit.y); return [s.x - _paste.anchor[0], s.y - _paste.anchor[1], 0];
+}
+canvas.addEventListener('pointermove', (e) => { if (!pasting || !_paste) return; const sh = _pasteTarget(e.clientX, e.clientY); if (!sh) return; _paste.shift = sh; _paste.ghost.position.set(sh[0], sh[1], 0); if (window.A && A.requestRender) A.requestRender(); });
+canvas.addEventListener('pointerdown', async (e) => {
+  if (!pasting || e.button !== 0 || e.shiftKey) return;
+  const sh = _pasteTarget(e.clientX, e.clientY); if (!sh) return; window.Bonsai.clipboard.cancel(true); await window.Bonsai.clipboard.paste(sh);
+});
+window.__worldToClient = (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera), r = canvas.getBoundingClientRect(); return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height, inView: Math.abs(v.x) < 1 && Math.abs(v.y) < 1 && v.z < 1 }; };   // test hook (W-CLIPBOARD-KEYS)
 window.Bonsai.clipboard = {
   get held() { return _clip; },
   copy() {
@@ -2329,16 +2341,28 @@ window.Bonsai.clipboard = {
     if (!ids.length) { setStat('copy: nothing selected'); return null; }
     _clip = { fids: ids, n: 0 }; console.log('§CLIPBOARD copy n=' + ids.length + ' fids=' + ids.join(',')); setStat('copied ' + ids.length + ' element' + (ids.length > 1 ? 's' : '') + ' (Ctrl+V pastes)'); return _clip;
   },
+  // Ctrl+V: the placement mode (a ghost of the held boxes at the pointer)
+  place() {
+    if (!_clip) { setStat('paste: nothing copied'); return null; }
+    const B = _gateBoxes(), hb = _heldBox(B, _clip.fids); if (!hb) { setStat('paste: the copied elements are gone'); return null; }
+    const boxes = _clip.fids.map(f => B[f]).filter(Boolean), cap = boxes.length > 2000 ? [hb] : boxes, P = new Float32Array(cap.length * 24), I = new Uint32Array(cap.length * 36);
+    const F = [0, 1, 3, 0, 3, 2, 4, 6, 7, 4, 7, 5, 0, 4, 5, 0, 5, 1, 2, 3, 7, 2, 7, 6, 0, 2, 6, 0, 6, 4, 1, 5, 7, 1, 7, 3];
+    cap.forEach((q, n) => { for (let c = 0; c < 8; c++) { P.set([c & 1 ? q[1] : q[0], c & 2 ? q[3] : q[2], c & 4 ? q[5] : q[4]], n * 24 + c * 3); } F.forEach((v, j) => { I[n * 36 + j] = n * 8 + v; }); });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setIndex(new THREE.BufferAttribute(I, 1)); geo.computeBoundingSphere();
+    const ghost = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.32, depthWrite: false })); ghost.name = 'PasteGhost'; ghost.renderOrder = 999; scene.add(ghost);
+    _paste = { anchor: [(hb[0] + hb[1]) / 2, (hb[2] + hb[3]) / 2], z: hb[4], ghost, shift: null }; pasting = true; applyModeCursor(); if (window.A && A.requestRender) A.requestRender();
+    console.log('§CLIPBOARD place n=' + _clip.fids.length + ' anchor=' + _paste.anchor.map(v => v.toFixed(3)).join(',') + ' z=' + _paste.z.toFixed(3) + ' ghost_boxes=' + cap.length);
+    setStat('click where the copy goes (' + _clip.fids.length + ' element' + (_clip.fids.length > 1 ? 's' : '') + ', snapped to the grid) · Esc cancels'); return _paste;
+  },
+  cancel(placing) {
+    if (!_paste) return; scene.remove(_paste.ghost); _paste.ghost.geometry.dispose(); _paste.ghost.material.dispose(); _paste = null; pasting = false; applyModeCursor();
+    if (window.A && A.requestRender) A.requestRender(); if (!placing) { console.log('§CLIPBOARD place cancelled (nothing committed)'); setStat('paste cancelled'); }
+  },
+  get placing() { return pasting; },
   async paste(shift) {
     if (!_clip || !window.Clipboard) { setStat('paste: nothing copied'); return { ok: false, why: 'nothing copied' }; }
-    const before = _gateBoxes(), G = window.Bonsai.grid;
-    if (!shift) {
-      let x0 = Infinity, x1 = -Infinity; _clip.fids.forEach(f => { const b = before[f]; if (b) { x0 = Math.min(x0, b[0]); x1 = Math.max(x1, b[1]); } });
-      const cx = (x0 + x1) / 2, xs = (G && G.xs) || []; let step = x1 - x0, how = 'the selection width';
-      for (let j = 0; j + 1 < xs.length; j++) if (cx >= xs[j] && cx < xs[j + 1]) { step = xs[j + 1] - xs[j]; how = 'one grid bay ' + (G.xlabels[j] || j) + '-' + (G.xlabels[j + 1] || j + 1); break; }
-      if (!(step > 0)) { setStat('paste refused: the copy has no size on x'); return { ok: false, why: 'no x size' }; }
-      _clip.n += 1; shift = [_clip.n * step, 0, 0]; _clip.how = how;
-    }
+    if (!shift) return { ok: false, why: 'no shift: Ctrl+V places with the pointer (place())' };
+    const before = _gateBoxes();
     const firstId = await _nextOpId(), B = window.Clipboard.build(_clip.fids, shift, _activeOps(), firstId, _copyCascade(), { nonce: 'p' + firstId });
     if (!B.ok) { console.log('§CLIPBOARD paste refused: ' + B.why); setStat('paste refused: ' + B.why); return B; }
     setStat('pasting ' + B.items.length + '…');
@@ -2346,8 +2370,8 @@ window.Bonsai.clipboard = {
     if (!pub.ok) { setStat('paste refused: ' + pub.why); return Object.assign(B, { ok: false, why: pub.why }); }
     const copies = {}; B.items.forEach(it => { copies[it.to] = { src: it.from, shift }; });
     const gateMsg = _runGate(before, r.ids, { copies }); window.__lastGate = gateMsg;
-    console.log('§CLIPBOARD paste n=' + B.items.length + ' riders=' + B.riders.length + ' cuts=' + B.cuts + ' edges=' + pub.edges + ' ops=' + B.ops.length + ' shift=' + shift.map(v => v.toFixed(3)).join(',') + (_clip.how ? ' (' + _clip.how + ')' : '') + ' gid=' + r.gid + ' verify=' + r.verify + ' gate=' + (gateMsg || 'clean'));
-    setStat('pasted ' + B.items.length + (B.riders.length ? ' (+' + B.riders.length + ' hosted)' : '') + ' Δx ' + shift[0].toFixed(2) + '  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : ''));
+    console.log('§CLIPBOARD paste n=' + B.items.length + ' riders=' + B.riders.length + ' cuts=' + B.cuts + ' edges=' + pub.edges + ' ops=' + B.ops.length + ' shift=' + shift.map(v => v.toFixed(3)).join(',') + ' gid=' + r.gid + ' verify=' + r.verify + ' gate=' + (gateMsg || 'clean'));
+    setStat('pasted ' + B.items.length + (B.riders.length ? ' (+' + B.riders.length + ' hosted)' : '') + ' Δ(' + shift[0].toFixed(2) + ',' + shift[1].toFixed(2) + ')  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : ''));
     audioCue('commit'); syncHistory(); if (window.Bonsai.outliner) window.Bonsai.outliner.refresh();
     window.Bonsai.selectMany(B.items.map(it => it.to));
     return Object.assign(B, { gid: r.gid, verify: r.verify, ids: r.ids, gate: gateMsg, shift });
@@ -3994,7 +4018,7 @@ window.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '');
   if (typing) return;
   if (e.key === 'Escape') {                                       // cancel whatever mode is active
-    if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
+    if (pasting) window.Bonsai.clipboard.cancel(); else if (sketching) exitSketch(); else if (routing) exitRoute(); else if (edgePicking) exitFillet();
     else if (gridMoving) exitGridMove(); else if (roomMoving) exitRoomMove(); else if (itemDragging) exitItemDrag();
     else if (moving) exitMove(); else if (inserting) exitInsert(); else { highlight(null); clearInstPick(); }
     return;
@@ -4002,7 +4026,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); (e.shiftKey ? doRedo : doUndo)(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); doRedo(); }
   else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && !sketching && !routing && (selectedIds.size || selectedId != null)) { e.preventDefault(); window.Bonsai.clipboard.copy(); }   // §CLIPBOARD
-  else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V') && !sketching && !routing && window.Bonsai.clipboard.held) { e.preventDefault(); window.Bonsai.clipboard.paste(); }
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V') && !sketching && !routing && window.Bonsai.clipboard.held && !pasting) { e.preventDefault(); window.Bonsai.clipboard.place(); }
   else if (e.key === 'Backspace' && sketching && window.Bonsai.sketch.mode === 'circle' && (window.Bonsai.sketch.pendingCircle || window.Bonsai.sketch.circles.length)) { e.preventDefault(); const SK = window.Bonsai.sketch; if (SK.pendingCircle) SK.pendingCircle = null; else SK.circles.pop(); sketchMarkers(); sketchDimsRefresh(); setStat('sketch: ' + SK.circles.length + ' circle' + (SK.circles.length === 1 ? '' : 's')); }
   // Arc (W-E2E-SKETCH-ARC): step back ONE CLICK at a time — start clicked → back to centre-only; centre
   // clicked → back to nothing; else drop the last committed arc (never an all-or-nothing clear).
@@ -6150,6 +6174,9 @@ console.log('§MODELLER scene ready supported=' + (window.Bonsai ? window.Bonsai
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg></span><span class="hp-name">Undo</span>' + _kbd('Ctrl+Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg></span><span class="hp-name">Redo</span>' + _kbd('Ctrl+⇧Z') + '</div>';
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span><span class="hp-name">Cancel current mode</span>' + _kbd('Esc') + '</div>';
+      // §CLIPBOARD copy / paste (paste places at the pointer, click to drop, Esc cancels)
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span><span class="hp-name">Copy</span>' + _kbd('Ctrl+C') + '</div>';
+      h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg></span><span class="hp-name">Paste (click to place)</span>' + _kbd('Ctrl+V') + '</div>';
       // §P7: G (snap-to-geometry toggle while moving) was a real, working shortcut the panel never listed.
       h += '<div class="hp-row" style="opacity:.85"><span class="hp-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="hp-name">Snap-to-geometry on/off (while moving)</span>' + _kbd('G') + '</div>';
       // §V8: T/S arm the Move gizmo's rotate-ring / scale-cube sub-modes (R stays Insert — decided 2026-07-03).
