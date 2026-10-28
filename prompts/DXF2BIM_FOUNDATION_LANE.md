@@ -1222,3 +1222,17 @@ deferred seal/persist in `kernel_ops.js` firing after the witness closed the db.
 **Paste at the pointer (same branch; BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §PLACE):** W-CLIPBOARD-KEYS 7/0 — K1 real pointer move + click beside the Duplex: the copy's centre =
 the snapped click (9.5e-7 m), gate clean; K5 Ctrl+V + Esc: 0 ops; K6 a click over an element places (gate ORANGE) and selects the copies, not that element; K7 ? Help lists Copy / Paste.
 W-DXF-ADD-BAY 12/0, W-CLIPBOARD 6/0, W-BAY-RIDE 6/0, W-DOOR-GAP 4/0 unchanged.
+
+## §D92 THE BAY'S RESULT SAYS WHAT WAS BUILT AND WHERE ITS COST CAME FROM, AND OPENS THE RATES (owner 2026-10-28, on the BricsCAD film v1: "zoom in further and x-ray mode to show each part built to make sure no column or beam left out. And the cost variance read out but not shown on screen where they came from" … "aren't we supposed to take the opportunity to show where the rates are stored so user can edit?" … "Proceed to do as all planned here")
+**Measured:** after "Add a bay" the panel shows one status line only (`Added a bay at 41: 33 copied, 51 moved (+2 hosted), 17 stretched · cost USD +23623 (added 10906, changed 12717)`):
+no per-class count, no rate, no quantity; the rates a user may edit live in the Viewer's Settings ▸ Edit Project JSON ▸ 5D Rate Pack (W-JSON-4D5D-LIVE), with no way there from the Modeller.
+**Rule.** (1) `bay_add.js cost()` also returns the LINES its total is the sum of, one per (added | changed, class): count, unit, quantity (ADDED: the copies' own quantity; CHANGED: after − before),
+rate, amount = Σ of the same per-element amounts it already adds (`deltaFor`); Σ lines = added / changed by construction. (2) Under the bay row the panel shows the result: copied per class,
+stretched per class, moved (+ hosted), and the cost table (class · count · quantity unit · rate · amount), the total, and the pack in force (`RATE_TEMPLATE_META.name`, `RATE_TEMPLATE_NAME`,
+currency) with an **Edit rates** button. (3) Edit rates opens `../viewer/viewer.html?rates=<pack>&edit=rates` in a new tab; the Viewer, once that pack is loaded, opens the 5D Rate Pack entry of
+Edit Project JSON (`A._openJsonEditor`, the same editor the hub and the clash panel open: `measure.js:947`). The edited copy (`json_rates_<pack>`, same origin) is what the Modeller's cost
+loads (`edit_delta_ui.js` → `rates.js initRateTemplate` → `loadRateTemplate` merges `json_rates_<pack>`, `rates.js:756`).
+**Witness claims.** W-DXF-ADD-BAY: B4b the table's lines sum to the shown added / changed / total and each line = the witness's own recompute for that class (the B4 recompute, grouped);
+B1b the shown per-class copy counts = the copies found in the scene. W-EDIT-RATES-LINK (page): R1 `viewer.html?rates=pwd2024_bd&edit=rates` opens the 5D Rate Pack editor of pwd2024_bd;
+R2 a rate saved there (`json_rates_pwd2024_bd`) prices the Modeller's bay (`?rates=pwd2024_bd`) with it: the line of that class = n × qty × the edited rate (main: the Modeller never shows a line, so
+the claim is new; falsifier: with the copy removed, the shipped rate).

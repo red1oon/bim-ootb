@@ -2420,6 +2420,15 @@ function setupPanels(A) {
       });
     }
     A._openJsonEditor = _openJsonEditor;
+    // §D92 (DXF2BIM_FOUNDATION_LANE.md, W-EDIT-RATES-LINK): ?edit=rates opens the active rate pack's editor once that pack is loaded, so the Modeller's "Edit rates" lands on the
+    // rows its cost came from (with ?rates=<pack>, the pack the Modeller priced with). The SAME editor the hub opens; nothing new is edited here.
+    try { if (new URLSearchParams(location.search).get('edit') === 'rates') (function wait(n) {
+      var pk = window.RATE_TEMPLATE_NAME, want = new URLSearchParams(location.search).get('rates');
+      if (!pk || (want && pk !== want)) { if (n < 240) setTimeout(function () { wait(n + 1); }, 250); else console.warn('§EDIT_RATES_LINK no pack loaded in 60 s (want ' + want + ')'); return; }
+      var e = _jsonRegistry.filter(function (x) { return /^rates_/.test(x.id); })[0];
+      if (!e) { console.warn('§EDIT_RATES_LINK no rate-pack entry'); return; }
+      _openJsonEditor(e); console.log('§EDIT_RATES_LINK opened pack=' + pk + ' entry=' + e.id + ' storage=' + e.storageKey);
+    })(0); } catch (err) { console.warn('§EDIT_RATES_LINK ' + err); }
 
     // PILL_DRAWER_REORGANIZATION.md §FINAL RAIL ORDER: Document(Save,Open) → Navigate → Inspect
     // → Visual FX → Camera/View → Share → Settings, Help. 9 visible icons (rest are pill:false,
