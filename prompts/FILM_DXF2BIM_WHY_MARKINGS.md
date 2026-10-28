@@ -195,3 +195,20 @@ script, beat_min, + the product fixes found by the dry runs: Farming Shed stretc
 `§FILM_FACT` of the take). Assembly (`film_dxf2bim_why_assemble.sh`, `FILM_SET=bricscad2`, cards from BIMCompiler #271): `§POLY_TONE lang=en wrong=0` (b05 re-worded: "Could I have drawn it so it
 never has to ask?" fell at the end, −0.3 st; "Could I have avoided all these questions?" rises +0.9 st), DETAIL 20 / 20, frames 8,892 == master, −17.6 LUFS (1.6 dB under the playbook's ≈ −16),
 one silence = the last 8.7 s (end card + hold), 0 black frames. Voices: Kokoro, local (no text sent out). Chapter cards 7. Not claimed: no person has listened to or watched it.
+
+## ▶▶▶ RESUME HERE — BricsCAD film v2 (written 2026-10-28 evening, end of a long session; read this, then the STORYBOARD block above)
+**Owner on v1 (2026-10-28):** the canvas did not show the sheet being explained; the bay should be zoomed in, in x-ray, each part shown; the cost read out but not shown where it came from;
+show where the rates live so a user can edit them; use the client's rates (Kazi Farms, Bangladesh: `pwd2024_bd`, PWD Bangladesh 2024, BDT); the client name shows on the sheets: blur it,
+so a viewer knows it is a private client whose name stays in the DXF; USD was fine for the locale but the client is in Bangladesh ("choose their rates instead"). "Proceed to do as all planned here".
+**State: branch `feat/bay-breakdown-rates` (bim-ootb, pushed, NO PR yet), worktree `/tmp/wt-bd`.** Built + witnessed: §D92 the bay's result (per-class counts, cost lines + table, the pack,
+Edit rates; the result survives a panel re-render; Edit rates reachable in an 810 px window) + the Viewer's `?edit=rates` deep link — W-DXF-ADD-BAY 16/0 (B4b B1b B4c new),
+W-EDIT-RATES-LINK 4/0. Recorder (`prompts/film_dxf2bim_bricscad_shed_rec.js`): Bangladesh rates via `?rates=`, the private-name blur (`FILM_PRIVATE_RE` given at RUN time, never committed),
+list rows fly the canvas to their evidence, the bay in x-ray with its 33 copies tinted, the cost table row by row, the Viewer's rate editor tab recorded. Script: 21 rows (+b18r). Dry run
+340.3 s, 22 beats, 0 PAGEERR, walker 0, blur 1 per Sheet open, editor opened on IfcColumn 16000 BDT/m; bay BDT 1,047,139. `prompts/film_dxf2bim_bricscad_shed_beat_min.json` re-measured (288 s).
+Known limit (stated in the facts): the North elevation is not on the canvas when its heights are typed, so that sentence keeps the previous view.
+**Next, in order:** (1) the take, on a quiet machine (ask bim-compiler-cc to hold browser runs, as before): from `/tmp/wt-bd`, serve it (`python3 -m http.server 8417 --bind 127.0.0.1`), then
+`FILM_PRIVATE_RE=<the client's word> SITE=http://127.0.0.1:8417/modeller/modeller.html SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw SHED_MARKED_DIR=~/Videos/dxf2bim_film_work/why/cli/marked node prompts/film_dxf2bim_bricscad_shed_rec.js <take dir> prompts/film_dxf2bim_bricscad_shed_beat_min.json > <take dir>.log`
+(read the log: 22 beats, 0 PAGEERR, walker_lines 0, blurred_texts 1 at each Sheet open); (2) `node prompts/film_narration_fill.js prompts/film_narration_dxf2bim_bricscad_shed_en.tsv <log> <dir>/filled.tsv`;
+(3) `FILM_SET=bricscad2 FILM_CARDS_PY=<BIMCompiler film/bricscad2-cards prompts/film_title_cards.py> BEAT_MIN_JSON=prompts/film_dxf2bim_bricscad_shed_beat_min.json bash prompts/film_dxf2bim_why_assemble.sh <take dir> <log> <dir>/filled.tsv ~/Videos/Shed_BricsCAD_Film_1920x1080_<date>_v2.mp4`
+(the take dir must hold `take.log`-equivalent beats: pass the log as arg 2); read: POLY_TONE wrong=0, DETAIL 21/21, frames == master; (4) a 720p send copy ≤ 30 MB (two-pass 560k);
+(5) PR for `feat/bay-breakdown-rates` (+ regressions: W-SHEET-FRAME, W-SHED-WALL-EDIT, W-DXF-GRID, W-CLIPBOARD-KEYS), BIMCompiler #271 (cards) still open; (6) tell bim-compiler-cc the take is done.
