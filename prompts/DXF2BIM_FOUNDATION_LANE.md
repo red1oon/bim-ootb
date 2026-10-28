@@ -1089,13 +1089,136 @@ support wall). Today a one-bay drag of the end line (W-DXF-GRID G2): the end fra
 | cost Δ of the edit | §S8 `edit_delta.js netEdits` (MOVE / SCALE) — GEOM_GRID_MOVE ⛔ blocked on "does a command carry the new span?" | ANSWERED from code: the stored op keeps the full commands (`action`, `axis`, `newScale`, `translateDelta`; `bonsai_gridmove.js:387`), applied by the fold at `bonsai_kernel.js:340` (§STRETCH-1) — `netEdits` reads them the way the fold does; copies are priced as ADDED |
 | the variation (cost variance) | `viewer/variation_order.js` (ADDED = rate × 1.0, REMOVED × 0.3, CHANGED × 1.3) and §S9 Project Order / VO rows from the Modeller | the bay's copies appear as ADDED rows, the stretched long members as CHANGED |
 | the roof follows | the grid move classifies only `_STRUCTURAL_CLASSES` (no IfcMember / IfcPlate) | the full-length members / coverings stretch as explicit GEOM_SCALE rows in the same `extra.ops` — the class list (every building) is NOT widened |
-**Rule (to build).** "Add a bay" at an end line of a set whose bays repeat (>= 3 identical typical bays by the class-count signature above): ONE gesture = the end line's
-GEOM_GRID_MOVE by one pitch (the end frame translates, as today) + `extra.ops`: GEOM_INSERT copies of one typical bay (the identical bay nearest that end) and of its inner line's
-columns + footings, one pitch on, `params.bayCopy`; GEOM_SCALE of each full-length member / covering by (L + pitch) / L anchored at the fixed end. A set with no repeating bay refuses
-with the reason. The §S8 Δ and the VO price it through their existing owners (rows above).
+**Rule (to build; corrected 2026-10-28 after reading the seams).** A grid move of the end line would STRETCH the end bay's side walls (W-DXF-GRID G2: IfcWall SCALE 6), so "add a bay" is
+not one GEOM_GRID_MOVE. It is offered only when the type in force declares it (§D90 `edits.bay_repeat`). Insert after the typical bay k nearest the chosen end (before it, at the low end): ONE
+`commitGesture` (`modeller.html` `Bonsai.commitBay`, the same gate / history path as a move) of: GEOM_MOVE of every element beyond line k+1 by one pitch; GEOM_INSERT copies of bay k's
+elements and of line k+1's columns + footings, one pitch on (`params` = the source op's own, placement shifted, `provenance: 'derived:user-edit'`, `bayCopy {id, axis, index, pos, pitch,
+from}` — the §GRID-SPAN copy rule); GEOM_SCALE of each full-length member / covering by (L + pitch) / L (+ a GEOM_MOVE of −pitch at the low end). The grid folds `bayCopy` like `spanSplit`:
+one line inserted at the new position, the later lines shifted by the pitch. A set with no declared rule, fewer than `min_identical` identical bays, or a yawed full-length member refuses
+with the reason. Cost (§S8 owners): each copy = its own row amount (`deltaFor(copy, no edit).costBefore`, ADDED ×1.0 as `variation_order.js`), each stretched member = `deltaFor(rec,
+netEdits)` (CHANGED); moves change no quantity. Shown in the panel and logged `§DXF-BAY`.
 **Witness claim (W-DXF-ADD-BAY):** B1 counts +1 typical bay exactly (+2 beams, +2 walls, +12 members, +9 plates, +2 columns, +2 footings), nothing else added; B2 every copy = its
 source + one pitch (1 mm); B3 end frame +pitch; long members / coverings +pitch in length; B4 the Δ = Σ copies' line costs + the stretched elements' Δ, recomputed independently;
 B5 one Ctrl+Z restores all 445; B6 a non-repeating set (the Duplex) refuses with the reason. Falsifier: today's code (B1-B4 FAIL).
 **§D89 step 1 ✅ 2026-10-28 (witness): the §S8 Δ prices a grid stretch.** `viewer/edit_delta.js netEdits` reads a GEOM_GRID_MOVE's stored commands as the fold applies them (spec row: BIMCompiler
 `TM_4D5D_VARIANCE_LANE.md` §S8-QTY). W-S8-PURE 9 / 0: P7 a grid SCALE y ×1.5 = 3906 = the same GEOM_SCALE's independent SQL recompute; P7b a 30° yaw named `GEOM_GRID_MOVE(oblique)`, 0; P7c a grid
 TRANSLATE 0. On main: P7 / P7b / P7c FAIL (`unsupported=["GEOM_GRID_MOVE"]`, 0). Next: step 2, the bay copies + long-member stretch in `extra.ops`, priced as ADDED / CHANGED.
+
+## §D90 RULES BY BUILDING TYPE LIVE IN THE ONE TYPE ROW, NOT IN CODE (owner 2026-10-28: "think out if some rules abstraction needed by type or category of building" -> "agree")
+**Measured (2026-10-28):** the abstraction already exists — `modeller/element_defaults.json` `building_types` (`General`, `Farming Shed`) with cited `overrides`, `expect`ed classes and
+`typical` ranges; the type in force is the `building.type` setting (`@DEFAULT=building.type,<type>` or the editor's dropdown; `dxf2defaults.js:18`), read by `dxf2defaults`, `dxf2typology`
+(advisories) and `dxf2library_types` (library order). NOT typed: the compliance files (`viewer/rates/egress_rules.json`, `structural_rules.json`, `SW_SPAN_RULES`, the Conformity Gate) are
+keyed by IFC class / material; the Modeller's edit behaviour is not typed at all. The CLI-marked shed states no `building.type`, so it converts as **General** (the Farming Shed row does not apply).
+**Rule.** (1) A type row may carry `edits` — the edit behaviours that type allows, as data the generic engine reads. First entry, `Farming Shed.edits.bay_repeat`: `axis: "grid-long"` (the
+grid axis with more lines), `copy` (classes copied with a bay), `line_copy` (classes copied with its frame line), `stretch` (full-length classes stretched), `never_copy` (with the reason),
+`min_identical`, `basis`. A type without the row offers nothing. (2) — SPEC, not built: a compliance rule may carry `applies_to_types` (absent = every type), read by its existing owner.
+(3) The film's shed states its type (the editor's dropdown -> `Farming Shed`), so the row applies.
+**Witness:** W-DXF-ADD-BAY (§D89) reads the rule from the row; with the type `General` the action is refused ("the building type General declares no bay_repeat").
+
+**§D89 step 2 + §D90 (1) ✅ BUILT 2026-10-28 (witness).** `modeller/bay_add.js` (the planner), `dxf_import_ui.js` (the "Add a bay (<type>) at <first> / at <last>" row, offered only when the type
+row declares `edits.bay_repeat`), `modeller.html Bonsai.commitBay` (one gesture, the gate, history), `bonsai_grid.js` (folds `bayCopy`), `element_defaults.json` (`Farming Shed.edits.bay_repeat`).
+**W-DXF-ADD-BAY 8 / 0** (the CLI-marked shed, page, software GL; the type stated through the editor: Element defaults ▸ building.type ▸ Farming Shed ▸ Set): B0 General: no offer, refused
+"the building type General declares no bay_repeat"; B1 +29 = IfcBeam 2, IfcWall 2, IfcMember 12, IfcPlate 9, IfcColumn 2, IfcFooting 2 (nothing else); B2 every copy = source + 3.0480 m;
+B3 46 moved one pitch, 14 full-length members one pitch longer, 0 others changed, grid 14 -> 15 lines, new `41A` at −641.301; B4 cost USD +14260 = ADDED 9084 + CHANGED 5176, = the
+witness's own BigDecimal recompute; B7 the commit's gate clean; B5 one Ctrl+Z: 445 elements + 14 lines identical, Ctrl+Y: 474 identical; B6 0 page errors.
+**Two gate defects found and fixed on the way (`sdg_gate.js`, spine owner):** (a) a COPY had no before-state, so every contact it reproduced from its source read as NEW: 54 RED / 38
+ORANGE after one bay. Rule: `opts.copies {fid: {src, shift}}` — a copy's before-pair is its source with the same neighbour or the neighbour's counterpart one shift back (B7 control: a
+copy put into an unrelated element is RED with the rule). (b) "tighter than before" used 1e-9 m on float32 boxes: at ~640 m from the origin one float32 step is 6.1e-5 m, so unchanged
+gaps of elements that moved together read as tighter (5 ORANGE) — now 2 float32 steps of the largest coordinate. Unchanged: W-SDG-GATE 11/0, W-GATE-SCALE 5/0, W-RED-REVERT 4/0,
+W-ORANGE-ACCEPT 5/0, W-E2E-GRID-GREENORANGE 13/0, W-DXF-GRID 4/0, W-SHED-WALL-EDIT 7/0, W-YELLOW-PAGE PASS.
+**Still open (named):** §D90 (2) `applies_to_types` on the compliance files (spec only); §D88 B (a door in a wall gap hosted by that wall); labour of a bay copy is count-based (no building
+db in a DXF convert); the film's shed must state its type (the editor's dropdown, one step in the take).
+
+**§D89 step 3 — the bay's moves go through the spine's cascade (review session 10, item 1; owner 2026-10-28: "isn't our Modeller prior done work handles ... what to drag along") — SPEC.**
+**Defect (read in code, `bay_add.js plan()` step 1, main 1e7b6d40):** every element whose centre lies beyond the hinge gets its own raw `GEOM_MOVE {induced: 'bay-add'}`. A door moves because it
+lies beyond, not because it rides its wall: (a) a door beyond the hinge in a wall that does NOT move (the wall's centre is on the near side) is pulled out of its wall; (b) a hosted door
+beyond is moved as a free element, so the op log does not say it rode its host. The spine already owns "what drags along": `SdgCascade.ridersFor` (`sdg_cascade.js:79`), used by `commitMove`
+(`modeller.html` ~3085) and `_healOps` (~2994).
+**Rule.** `plan(rows, grid, rule, end, cascade?)`, `cascade = { ridersFor, guidByFid, fidByGuid, fills }` (the page passes `window.SdgCascade.ridersFor`, the §ARC-1 bridge and
+`window.swXEdges.fills`, which a DXF convert publishes, §D59 (c)). A row is a FILLING when a fills edge names it as `filling_guid` and its host is one of the rows. Fillings are never moved
+on their own: the direct moves are the hosts + free elements beyond the hinge; then `ridersFor(directMoves)` adds each moved host's fillings as `GEOM_MOVE {induced: 'hosted-by'}` by
+the same delta (exactly `commitMove`'s ops). A filling whose host does not move stays with it. A filling whose host is STRETCHED (a full-length member) refuses the plan with the reason:
+the ride of a GEOM_SCALE is proportional (`stretchRide`), which would not put it one pitch on. Holes need nothing: a TRANSLATE-only host carries its void (cut_move). `out.riders` lists the
+riders; the commit's gate checks them. Without `cascade` (or with no fills edge among the rows) the plan is byte-identical to today's.
+**Witness claims (W-BAY-RIDE, pure planner, node; built set: 5 bays at 3 m, bays 0-2 typical, a hosted door in bay 3, a wall straddling the hinge with a door beyond it):**
+R1 the hosted door beyond the hinge moves as a `hosted-by` rider of its moved wall, same delta, no `bay-add` op of its own; R2 the door whose wall stays gets no op (its offset to its wall
+unchanged); R3 an unhosted element beyond still moves one pitch; R4 a filling of a stretched member refuses with the reason; R5 without `cascade` the ops equal the plan without fills
+(the shed path, 0 fills: W-DXF-ADD-BAY unchanged). Falsifier: main's `bay_add.js` (R1, R2, R4 FAIL).
+**§D89 step 3 ✅ BUILT 2026-10-28 (witness).** `bay_add.js plan(..., cascade)`: fillings are excluded from the direct moves; `SdgCascade.ridersFor(moved)` adds their `hosted-by` moves; a
+filling of a stretched element refuses. `dxf_import_ui.js addBay` passes the spine's cascade (`§DXF-BAY plan ... riders=N cascade=<n>fills`); `commitBay` gates the riders too.
+**W-BAY-RIDE 5 / 0** (`modeller/tests/witness_bay_ride.js`, pure): R1 D3 `GEOM_MOVE(hosted-by dx=3)`, its wall `bay-add dx=3`; R2 D2 and its straddling wall: no op; R3 free D4 `bay-add dx=3`;
+R4 refused "1 filling(s) hosted by a full-length element that the bay stretches (first: #22 in #21)"; R5 no cascade = 9 bay-add moves = the 9 elements beyond. **Falsifier** (main's `bay_add.js`):
+R1, R2, R4 FAIL (D3 `bay-add`, D2 pulled out of its wall, the covering's window planned). **W-DXF-ADD-BAY 9 / 0** on the shed (unchanged numbers: 29 copies, 46 moved, 14 stretched,
+USD +14260, gate clean, undo 445 / redo 474) + new B3r: the page handed the planner the cascade (`cascade=0fills riders=0`: the shed has no hosted filling, as measured in §D87).
+
+**§D89 step 4 — the bay copy is the Modeller's ONE copy path (review session 10, item 2; owner "Go" 2026-10-28) — spec: BIMCompiler `prompts/MODELLER_CLIPBOARD_COPY_PASTE.md` §REGROUND 2026-10-28.**
+**✅ BUILT 2026-10-28 (witness).** `modeller/clipboard.js` (pure `build()`: a copy = its insert + every later op on it re-pointed and shifted; fillings ride; cuts, cut moves and grid
+commands carried; fills edges re-keyed; an unknown op type refuses, named) + `modeller.html` (`Bonsai.clipboard` Ctrl+C / Ctrl+V, `_publishCopies` id check + bridge + edges, `copyCtx`);
+`bay_add.js` hands the typical bay + hinge line to it (`copy` / `line_copy` allow-lists dropped from `element_defaults.json`; `never_copy` = IfcFan only). **Found on the way, fixed:** a
+second bay over-stretched the full-length members — the factor was `(L + pitch) / L` with L = the insert's ORIGINAL length while the fold multiplies GEOM_SCALEs (measured: 6 RED,
+#264 vs #440-442 depth 0.0508 m, on the second bay); now L = the current local length (bbox x the product of earlier scales), and stretches and copies are priced on that current size.
+**Witnesses (logs read):** W-CLIPBOARD 6/0 (pure; C2: a moved / scaled / grid-stretched / room-moved source's copy folds, through the shipped `foldInsert`, to the source + shift within
+2 float32 steps; the insert-only control is 2.7 m off). W-BAY-RIDE 6/0 (+R6 = the spec's B8: a typical bay with a cut wall + window gives the new bay the window, its cut in the copied
+wall one pitch on, fillingFid and edge re-keyed; FAIL on the step-3 planner: nothing copied). W-DXF-ADD-BAY 11/0 (B1-B7 unchanged: 29 copies, 46 moved, 14 stretched, USD +14260,
+gate clean; +B9 a wall of the last typical bay moved 5 cm, then a second bay: 29 copies all = their source's CURRENT box + pitch, the wall's copy at y −95.6482 = its source; +B9s the
+14 stretched members each +1 pitch of their current length; the second bay's gate: 0 RED, 1 ORANGE = the 5 cm-moved wall vs its own copy 0.254 m apart, a new pair the edit made).
+W-CLIPBOARD-KEYS 4/0 (the converted Duplex, real keys: wall #15 hosting door #57 + window #65 -> +3 elements, +2 cuts, every pasted-wall vertex = source + shift; one Ctrl+Z / Ctrl+Y;
+the pasted door rides a 0.5 m move of the pasted wall, the source door stays).
+**Falsifier (W-DXF-ADD-BAY on main 3f7d1fd8, same witness):** B9 FAIL (the edited wall #494's copy at y −95.6982 = its pre-edit place, 5 cm off), B9s FAIL (all 14: e.g. IfcCovering
+#115 18.2880 -> 21.9456, +3.6576 instead of +3.0480), the second bay's gate 6 RED. Regressions on the branch: W-SDG-GATE 11/0, W-GATE-SMOKE 6/0, W-E2E-GESTURE-UNDO 6/0, W-DXF-GRID 4/0,
+W-SHED-WALL-EDIT 7/0.
+**Open (named):** the default paste offset (no grid around the selection -> its own x width) put the Duplex wall 0.417 m beside itself: the gate reports 4 RED against the cross walls —
+the stated §OPEN-1 default works as written, whether a different default is wanted is the owner's call. Labour of a copy stays count-based (no building db in a DXF convert).
+
+**§D88 B — measured 2026-10-28 (review session 11; node probe of `Dxf2Structure.judge` + `toOps` on the CLI-marked shed, main c9447340): 445 inserts, 41 walls, 4 doors, 0 cuts.**
+| door(s) | along the line | wall pieces either side | Rule B as written (`snap_tol` 1 mm) |
+|---|---|---|---|
+| 1D7 (y −95.7), 2D1 (y −110.9) | single leaf 0.839 m | one side wall 125 / 115 at 12.7 mm; the other side a COLUMN (38D / 390) at 37 mm | no: no wall piece on the column side |
+| 33B + 353 (y −95.7, x −643.511..−642.140) | a double door, 2 leaves 0.2 mm apart | CC-L1 and CC-L0, same z 0.610-3.048, same band; each leaf 76.4 mm (3 in, the frame) from its wall end | no: 76 mm > 1 mm |
+**Rule B (refined, to build).** The frame allowance is `host_tol` (0.3 m: the existing door-to-wall rule, `dxf2bim.js hostFor`), not `snap_tol`. In `toOps` §D59 (a), two wall bodies of one line
+(same storey, class, layer, evidence kind, type, z range within `snap_tol`, cross band within `snap_tol`) whose facing ends are a gap g apart join into ONE body when door bodies (IfcDoor,
+same storey) fill the gap: each leaf inside the gap along the line and over the wall's band, its foot at the wall foot (`elev_tol`), its head not above the wall top, the leaves contiguous
+(`snap_tol`), and the uncovered length at each wall end ≤ `host_tol`. Each leaf gets ITS OWN GEOM_CUT in the joined body (the export's IfcRelFillsElement is one filling per opening,
+`bonsai_ifc.js:278`): along the line from its wall end (or the leaves' midpoint) to the midpoint (or its wall end), each void 1 mm past the midpoint so two voids never share a face;
+across = the wall band; height = the wall foot to the leaf head. The cut names its leaf (`slide.filling`, `fillingIdx`), so the convert publishes the fills edge (§D59 (c)) and the export
+writes Voids + Fills. A gap a door does not fill both ways (1D7, 2D1: a column on one side) stays as drawn — named, not hosted.
+**Witness claims (W-DOOR-GAP, node, the CLI-marked shed + a built control):** D1 the double door: CC-L1 + CC-L0 become ONE wall body, 2 cuts, each naming one leaf, union of voids = the
+gap along the line (1 mm), height = foot to leaf head; walls 41 -> 40, cuts 0 -> 2; D2 1D7 / 2D1 stay unhosted (no cut names them), their wall pieces unchanged; D3 control: the same pair
+with one leaf removed (the gap not filled) stays two bodies, 0 cuts; D4 control: a leaf 0.31 m short of a wall end (> `host_tol`) stays two bodies. Page (W-DXF-ADD-BAY, updated): the
+double door now rides its wall when "add a bay" moves it (B3r riders 2). Falsifier: main (D1 FAIL: 41 walls, 0 cuts).
+**§D88 B ✅ BUILT 2026-10-28 (witness).** `dxf2bim_import.js toOps` §D59 (a): the door-gap join + one cut per leaf (`lines.door_gaps` / `door_gap_cuts` in the convert's report).
+**W-DOOR-GAP 4/0** (node, the shed): D1 CC-L0 + CC-L1 -> one wall #99, cuts `353` x −643.587375..−642.824389 and `33B` x −642.826389..−642.063375, z 0.6096..2.9972 = the gap as drawn
+(−643.5874..−642.0634); walls 41 -> 40, cuts 0 -> 2; D2 1D7 / 2D1 unhosted, walls 125 / 115 single; D3 leaf 353 removed -> 41 walls, 0 cuts; D4 0.3115 m left -> 41 / 0, 0.2965 m -> 40 / 2.
+**Falsifier** (main's `dxf2bim_import.js`): D1 + D4 FAIL (41 walls, 0 cuts). **Page:** W-DXF-ADD-BAY 12/0 — new B0h the opening is cut in the rendered wall (mesh vertices at x −643.587 /
+−642.063 and z 2.997); B3r the double door rides its wall one pitch as hosted-by (fills 2, riders 353 + 33B); B3 43 moved + 2 riders, 0 others changed; B1/B4/B5/B9 unchanged in value
+(444 elements now). W-SHED-WALL-EDIT 7/0 (free walls 36 of 40), W-DXF-GRID 4/0, W-CLIPBOARD-KEYS 4/0, W-CLIPBOARD 6/0, W-BAY-RIDE 6/0, W-WALL-LINE L1-L3 (Duplex: `door_gaps` 0, unchanged).
+**Measured change, named (open):** W-DXF-GRID G2's one-bay drag of the end line went 18 -> 17 commands. Before, the 0.635 m piece CC-L0 ATTACHed to line 42 by its centre (0.445 m,
+`grid_kinematics.js` ATTACH_TOL 0.5) and translated alone — pulling the wall apart at its door, the doors left behind. Now the joined wall's ends are 0.127 m off lines 41 / 42 (> EDGE_TOL
+0.1) and its centre 1.4 m off, so it is not attached and stays. Neither is a stretch; the drawing sets the wall ends 127 mm in from the grid. EDGE_TOL is spine-wide (every building's
+grid drag), so it is not changed here: owner's call. "Add a bay" moves this wall and its doors correctly (B3 / B3r).
+
+## §D91 A GRID DRAG ON THE SHED: WALLS ON THE LINE RIDE IT, MEMBERS FRAMED INTO ITS COLUMNS STRETCH (owner 2026-10-28: "Ensure fixes before film")
+**Measured (node, the shipped `modeller/grid_kinematics.js` on the converted shed's boxes + the drawing's grid, one-bay drag of the end line 42, main 1799c504):** 17 commands.
+The 6 end walls ON line 42 (0.127 m thick, faces 0.064 m either side of it) get **SCALE f=25.000** — stretched across to 3.18 m thick; the end bay's side walls (the door wall CC, A6;
+ends 0.127 m inside lines 41 / 42) and eave beams (2AF+2EA, 2D1+2B0; ends 0.152 m inside = at the faces of the columns on the lines) get **no command** — left behind 3 m short; the
+columns and cross beams on line 42 translate (right). W-DXF-GRID G2 had recorded the 6 SCALEs as a pass (it asserted > 0 commands only).
+**Cause (`_findBestGrid`):** an EDGE match (a face within EDGE_TOL 0.1 m of a line) outranks the centreline ATTACH, so a thin wall standing on the line counts as edge-attached and is
+stretched; and a member ending at the face of the column standing on a line is beyond EDGE_TOL of the line itself, so nothing attaches it.
+**Rule (generic engine, no class branch beyond the column that defines the band).** A line's BAND = the line ± h ± EDGE_TOL, h = the largest half-extent (on that axis) of the IfcColumns
+centred on it (within EDGE_TOL); no column -> h = 0. (1) An element whose whole extent on the axis lies inside a line's band stands ON that line: ATTACH (it rides the line), ahead of any
+edge. (2) An element end within EDGE_TOL of the band's face (line ± h) is an EDGE on that line, as an end within EDGE_TOL of the line is today. The page passes each element's real class
+(`bonsai_gridmove.js elementData`, `realClass`); a caller that passes none gets h = 0 (rule (1) alone).
+**Witness claims (W-GRID-ONLINE, node: the shed + built controls):** O1 the 6 end walls on line 42 TRANSLATE by the drag (main: SCALE f=25); O2 the end bay's side walls and eave beams
+SCALE to (L + 3.048) / L, their far end anchored (main: no command); O3 control: the same member ending 0.127 m from a line with NO column on it stays unattached (the band comes
+from columns only); O4 control: a 0.15 m wall centred on a line with no column ATTACHes (main: EDGE -> SCALE). Regression: the 10 node grid witnesses (98 + 8 + 34 + 29 + 21 + 6 + 4 + 9 +
+20 + 6 PASS on main) and W-DXF-GRID, re-read for changed numbers.
+**§D91 ✅ BUILT 2026-10-28 (witness).** `grid_kinematics.js` (a line's band from its columns; ON THE LINE ahead of an edge; an end at the band's face is an edge), `bonsai_gridmove.js
+elementData` passes `realClass`. **W-GRID-ONLINE 4/0** (O1 the 6 end walls TRANSLATE d=3.048; O2 CC-L0+CC-L1 / A6 SCALE f=2.091, eave beams 2AF+2EA / 2D1+2B0 f=2.111 = (L+3.048)/L;
+O3 no column -> no command; O4 a 0.15 m wall centred on a line TRANSLATEs). **Falsifier** (main's engine): O1 SCALE f=25.000 x6, O2 no command x4, O4 SCALE f=7.667. **Regression:** the 10
+node grid witnesses PASS and their logs are byte-identical to main's (one timing line aside); page W-DXF-GRID 4/0 (G2 now 21 commands: IfcWall TRANSLATE 6 + SCALE 2, IfcBeam SCALE 2 +
+TRANSLATE 3, IfcColumn 4, IfcFooting 4), W-E2E-GRIDSTRETCH 7/0, W-E2E-GRID-GREENORANGE 13/0, W-E2E-GRIDMOVE-REAL 8/0, W-E2E-STRETCH-RIDE 11/0, W-E2E-GRIDSTRETCH-MULTI 21/0,
+W-E2E-GESTURE-UNDO 6/0. Pre-existing, not from this change (measured): W-E2E-GRID-GREENORANGE logs `§KRN_SEAL_ERR Database closed` in 2 of 4 runs on main and 1 of 3 here — the 2 s
+deferred seal/persist in `kernel_ops.js` firing after the witness closed the db.
+**Paste at the pointer (same branch; BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §PLACE):** W-CLIPBOARD-KEYS 7/0 — K1 real pointer move + click beside the Duplex: the copy's centre =
+the snapped click (9.5e-7 m), gate clean; K5 Ctrl+V + Esc: 0 ops; K6 a click over an element places (gate ORANGE) and selects the copies, not that element; K7 ? Help lists Copy / Paste.
+W-DXF-ADD-BAY 12/0, W-CLIPBOARD 6/0, W-BAY-RIDE 6/0, W-DOOR-GAP 4/0 unchanged.

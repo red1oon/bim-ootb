@@ -9,9 +9,9 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '6';
+  var V = '10';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -734,6 +734,43 @@
     return '<span class="dxf-role">ROOF @' + s.roofZ + '</span>';
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  // §D89 / §D90 "add a bay": offered only when the building type in force declares edits.bay_repeat (element_defaults.json, the page's registry); the planner is
+  // bay_add.js, the cost the §S8 owner (edit_delta.js), the commit ONE gesture (modeller.html Bonsai.commitBay). Log tag §DXF-BAY.
+  function bayRule() {
+    var R = state.gate && state.gate.R, row = R && (R.defaults_table || []).filter(function (r) { return r.key === 'building.type'; })[0], T = row ? String(row.value) : 'General';
+    var bt = state.defaultsRef && state.defaultsRef.building_types && state.defaultsRef.building_types[T];
+    return { type: T, rule: (bt && bt.edits && bt.edits.bay_repeat) || null };
+  }
+  function bayRow() {
+    var p = state.panel; if (!p) return; var old = p.querySelector('#dxf-bay-row'); if (old) old.remove();
+    var b = bayRule(); if (!state.last || !b.rule) { console.log('§DXF-BAY offer=0 type=' + b.type + (state.last ? ' (the type declares no bay_repeat)' : ' (nothing converted yet)')); return; }
+    var G = window.Bonsai && window.Bonsai.grid, ax = (G.xs.length >= G.ys.length) ? 'x' : 'y', lab = ax === 'x' ? G.xlabels : G.ylabels;
+    var d = document.createElement('div'); d.className = 'dxf-cat'; d.id = 'dxf-bay-row';
+    d.title = 'Add one bay like the typical bay, at the chosen end: its frame, side walls, purlins and sheets are copied one bay on, the longer members stretch, and the cost of the change is shown. One Ctrl+Z undoes it. (' + b.type + ': ' + b.rule.basis + ')';
+    d.innerHTML = '<span class="nm">Add a bay (' + esc(b.type) + ')</span><button id="dxf-bay-min">at ' + esc(lab[0] || 'start') + '</button><button id="dxf-bay-max">at ' + esc(lab[lab.length - 1] || 'end') + '</button>';
+    var foot = p.querySelector('.ip-foot'); if (foot) foot.parentNode.insertBefore(d, foot); else p.appendChild(d);
+    d.querySelector('#dxf-bay-min').onclick = function () { addBay('min'); }; d.querySelector('#dxf-bay-max').onclick = function () { addBay('max'); };
+    console.log('§DXF-BAY offer=1 type=' + b.type + ' axis=' + ax + ' ends=' + lab[0] + '/' + lab[lab.length - 1]);
+  }
+  async function addBay(end) {
+    var b = bayRule(); if (!b.rule) { status('Add a bay: the building type ' + b.type + ' declares no bay_repeat'); console.log('§DXF-BAY refused type=' + b.type + ' reason=no bay_repeat'); return { ok: false, why: 'the building type ' + b.type + ' declares no bay_repeat' }; }
+    var O = window.Bonsai.oplog, g = window.Bonsai.group(), G = window.Bonsai.grid;
+    var box = function (fid) { var m = g.children.find(function (q) { return q.isMesh && q.userData && q.userData.featureId === fid; }); if (!m) return null; m.geometry.computeBoundingBox(); var bb = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld); return [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z]; };
+    var rows = O._geomOps().filter(function (o) { return o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.ifc_class; }).map(function (o) { return { id: o.id, cls: o.parameters.ifc_class, params: o.parameters, box: box(o.id) }; }).filter(function (r) { return r.box; });
+    var cx = await window.Bonsai.copyCtx(), cas = cx.cascade;   // §D89 step 3 the spine's hosted-by ride; step 4 the ONE copy path (clipboard.js) with the current op log + the gesture's first id
+    var P = window.BayAdd.plan(rows, { xs: G.xs, ys: G.ys, xlabels: G.xlabels, ylabels: G.ylabels }, b.rule, end, cas, cx);
+    console.log('§DXF-BAY plan end=' + end + ' ok=' + P.ok + (P.ok ? ' axis=' + P.axis + ' hinge=' + P.hingeLabel + ' pitch=' + P.pitch.toFixed(4) + ' identical=' + P.identical + ' copies=' + P.copied.length + ' ' + JSON.stringify(P.counts) + ' copy_riders=' + P.copy.riders.length + ' copy_cuts=' + P.copy.cuts + ' copy_edges=' + P.copy.edges.length + ' moved=' + P.moved.length + ' riders=' + P.riders.length + ' cascade=' + (cas ? cas.fills.length + 'fills' : 'off') + ' stretched=' + P.stretched.length + ' never=' + JSON.stringify(P.never) : ' reason=' + P.why));
+    if (!P.ok) { status('Add a bay refused: ' + P.why); return P; }
+    var C = null;
+    try { if (window.EditDeltaUI && await window.EditDeltaUI.ensure()) { var ED = window.EditDelta, env = ED.envFromGlobals(); if (!state.costDb) state.costDb = window.SQL ? new window.SQL.Database() : null;   // the class context wants a db; an empty one degrades labour to count-based (logged), prices unaffected
+      C = window.BayAdd.cost(P, rows, ED, env, ED.classCtx(state.costDb, env)); } } catch (e) { console.warn('§DXF-BAY cost failed: ' + e.message); }
+    var cur = (window._TRL && window._TRL.cur) || '';
+    var label = 'Added a bay at ' + P.hingeLabel + ': ' + P.copied.length + ' copied, ' + P.moved.length + ' moved' + (P.riders.length ? ' (+' + P.riders.length + ' hosted)' : '') + ', ' + P.stretched.length + ' stretched' + (C ? ' · cost ' + cur + ' +' + C.total + ' (added ' + C.added + ', changed ' + C.changed + ')' : ' · cost not computed');
+    var res = await window.Bonsai.commitBay(P.ops, P.moved.concat(P.riders, P.stretched.map(function (s) { return s.id; })), label, P.copy);
+    console.log('§DXF-BAY committed verify=' + res.verify + ' rows=' + res.ids.length + ' gate=' + (res.gate || 'clean') + (C ? ' cost added=' + C.added + ' changed=' + C.changed + ' total=' + C.total + ' cur=' + cur : ''));
+    status(label); state.lastBay = { plan: P, cost: C, res: res, cascadeFills: cas ? cas.fills.length : null }; return state.lastBay;
+  }
+
   function renderPanel() {
     css();
     var p = state.panel || document.createElement('div'); p.id = 'dxf-panel';
@@ -871,6 +908,7 @@
     status('Converted: ' + T.inserts.length + ' elements (' + nFills + ' door/window fills), ' + T.cuts.length + ' openings cut.' + (fillGaps.length ? ' Fills not placed: ' + fillGaps.length + (fillNeed ? ' (LOD400 library not reachable here).' : ' (named GAPs, see console).') : ''));
     setLines(false);
     if (window.Bonsai.frameSelection) window.Bonsai.frameSelection();
+    bayRow();
     return state.last;
   }
 
@@ -1014,6 +1052,6 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

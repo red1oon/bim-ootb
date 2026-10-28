@@ -108,6 +108,16 @@
       this._sortedGrids[ax].sort(function(a, b) { return a.pos - b.pos; });
     }
 
+    // §D91 (DXF2BIM_FOUNDATION_LANE.md, W-GRID-ONLINE) each line's BAND half-width h = the largest half-extent, on the line's axis, of the IfcColumns centred on it (within EDGE_TOL):
+    // a member framed into a column standing on the line ends at the column's face (line ± h), not at the line. No column (or no realClass passed) -> h = 0.
+    this._band = {};
+    for (var ci = 0; ci < this._elements.length; ci++) {
+      var ce = this._elements[ci]; if (ce.realClass !== 'IfcColumn' && ce.realClass !== 'IfcColumnStandardCase') continue;
+      for (var gj = 0; gj < this._gridLines.length; gj++) { var gc = this._gridLines[gj], cp = ce[gc.axis];
+        if (cp == null || Math.abs(cp - gc.pos) >= EDGE_TOL) continue;
+        var ch = _halfExtentForAxis(ce, gc.axis); if (!(this._band[gc.id] >= ch)) this._band[gc.id] = ch; }
+    }
+
     // Phase 1: Classify each element against each grid line
     for (var ei = 0; ei < this._elements.length; ei++) {
       var elem = this._elements[ei];
@@ -208,11 +218,18 @@
     var bestRelation = 'ATTACH';
     var bestEdge = 'near';
 
+    var band = this._band || {};
     for (var gi = 0; gi < this._gridLines.length; gi++) {
       var gl = this._gridLines[gi];
       if (gl.axis !== axis) continue;
 
-      var gp = gl.pos;
+      var gp = gl.pos, bh = band[gl.id] || 0;
+
+      // §D91 ON THE LINE: the whole extent inside the line's band (line ± h ± EDGE_TOL) -> the element stands on the line and rides it, ahead of any edge
+      // (before: a 0.127 m wall on a line had both faces within EDGE_TOL, counted as edge-attached, and a drag stretched it 25x across)
+      if (pos - halfExtent > gp - bh - EDGE_TOL && pos + halfExtent < gp + bh + EDGE_TOL) {
+        return { gridId: gl.id, relation: 'ATTACH', edge: 'near' };
+      }
 
       // Centerline proximity → ATTACH
       var dist = Math.abs(pos - gp);
@@ -226,13 +243,13 @@
         var lo = pos - halfExtent;
         var hi = pos + halfExtent;
 
-        // Edge detection: grid at left or right edge (within EDGE_TOL)
-        if (Math.abs(hi - gp) < EDGE_TOL) {
+        // Edge detection: grid at left or right edge (within EDGE_TOL), or §D91 at the face of the column standing on the line (line ∓ h)
+        if (Math.abs(hi - gp) < EDGE_TOL || (bh > 0 && Math.abs(hi - (gp - bh)) < EDGE_TOL)) {
           bestGridId = gl.id;
           bestRelation = 'EDGE_RIGHT';
           bestDist = 0;
           bestEdge = 'right';
-        } else if (Math.abs(lo - gp) < EDGE_TOL) {
+        } else if (Math.abs(lo - gp) < EDGE_TOL || (bh > 0 && Math.abs(lo - (gp + bh)) < EDGE_TOL)) {
           bestGridId = gl.id;
           bestRelation = 'EDGE_LEFT';
           bestDist = 0;

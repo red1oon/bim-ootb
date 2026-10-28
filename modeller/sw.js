@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v180';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v186';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -116,6 +116,8 @@ const PRECACHE_ASSETS = [
   'dxf2bim/dxf2qualify.js',
   'dxf_meta_editor.js',   // §DXF-META (lane L4): the Drawing metadata editor
   'dxf_sheet_frame.js',   // §D82 the full-frame marked sheet view
+  'bay_add.js',          // §D89 add a bay (the planner)
+  'clipboard.js',        // the ONE copy path (Ctrl+C / Ctrl+V, the bay copy)
   '../viewer/dxf_sheet_view.js',   // §D82 its renderer (shared with the Viewer's 2D wing)
   'dxf_export_ui.js',   // §DXF-EXPORT (lane L5): Export ▸ 2D drawings (DXF)
   'viewer_db_export.js',   // §D43: Export ▸ Viewer database (.db)
