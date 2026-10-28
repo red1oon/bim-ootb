@@ -9,7 +9,19 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 <h1>Team — working together without a server</h1>
 <p>Several people (or several of your own devices) can work on the same records — orders in the ERP, the building in the Modeller. There is no database server and no application server: the devices pass small encrypted bundles through a shared place on GitHub, and each device keeps its own copy.</p>
 
+<div class="box"><b>Videos</b> <span class="mut">(the owner's channel, ranked by how well each fits this guide)</span><!-- links chosen against each video's title and description, 2026-10-29; TEAMWORK §43 -->
+<ol>
+<li><a href="https://www.youtube.com/watch?v=hd1Z0j_pRkw" target="_blank" rel="noopener">No Server To Keep Alive — Books Still Close</a> <span class="mut">(2026, 8:25): the whole <i>Standard imports, local first</i> section.</span></li>
+<li><a href="https://www.youtube.com/watch?v=KKeN7RjB5a0" target="_blank" rel="noopener">The Server Is Dead. Local First ERP multi user setup</a> <span class="mut">(2026, 3:15): <i>Set up</i>.</span></li>
+<li><a href="https://www.youtube.com/watch?v=-LQwoPuQ1QU" target="_blank" rel="noopener">Team Trust and Thin Pipe in serverless local first ERP</a> <span class="mut">(2026, 6:18): <i>For the team admin</i>. Its chapter 3 ("a second device can work the results out") was later superseded; see <a href="#who-completes">Who may complete a document</a>.</span></li>
+<li><a href="https://www.youtube.com/watch?v=ABQdnkC2F1g" target="_blank" rel="noopener">No Server In The Sale Path — Replication Engine</a> <span class="mut">(2026, 5:07): background on the concept; it uses earlier simulated data.</span></li>
+<li><a href="https://www.youtube.com/watch?v=FRrYu5zuO7w" target="_blank" rel="noopener">POS to ERP integration fast demo from scratch</a> and <a href="https://www.youtube.com/watch?v=FTCK3pvWMFo" target="_blank" rel="noopener">Sistem ERP iDempiere sepadu dengan POS Unicenta</a> <span class="mut">(2019; the second in Malay): the owner's earlier Unicenta POS integration, the prior art of the till's day.</span></li>
+<li><a href="https://www.youtube.com/watch?v=sGu5HU2waHE" target="_blank" rel="noopener">Micro Financing local first payment mobile UI with ERP admin</a> <span class="mut">(2026): an earlier mock-up (ThaiGoldPawn); this guide's Micro Finance steps use the GardenWorld borrower page.</span></li>
+<li><a href="https://www.youtube.com/watch?v=qKptvJOOHFg" target="_blank" rel="noopener">From Compiere to iDempiere to SQLite Kernel ERP</a> <span class="mut">(2026, 1:46): where this ERP comes from.</span></li>
+</ol></div>
+
 <h2>Set up</h2>
+<p class="mut">▶ Watch: <a href="https://www.youtube.com/watch?v=KKeN7RjB5a0" target="_blank" rel="noopener">The Server Is Dead. Local First ERP multi user setup</a></p>
 <ol>
 <li>Press the <b>Team</b> pill (the two heads) — in the Modeller, the <b>Team</b> icon. Press <b>Turn on team mode</b>. The page reloads; in the ERP a Team chip appears in the status bar.</li>
 <li>On the first device, open the Team panel and press <b>Start a team</b>. Copy the <b>invite link</b> it shows.</li>
@@ -41,7 +53,7 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 <h2>What happens when two people change the same thing</h2>
 <p>If two devices change the same field (or both Complete the same document) before they have visited, nobody's work is silently dropped: both devices show the same message as the classic client, <i>Current record was changed by another user, please ReQuery</i>, and keep the last agreed value. A Complete is all-or-nothing: until the clash is settled the document stays as it was, with none of its consequences.</p>
 
-<h2>Who may complete a document (ERP)</h2>
+<h2 id="who-completes">Who may complete a document (ERP)</h2>
 <p>Who may complete a document is a <b>role</b>, the same as in the classic client: the role's <b>Document Action Access</b> tab (Role window). The <b>Process</b> button lists, under <b>Document Action</b>, only the actions the role you are logged in with may use on that document. If none is left, the list is empty and the button says <i>No legal actions from …</i>. <!-- W-TEAM-DOCACTION 24/0; W-UPS-E2-HOST 18/0 --></p>
 <p>A team can also name <b>the one role that completes</b> each kind of document: for example only head office's role completes orders, while the shops' devices only send in their sales. The team admin publishes that list (see <i>For the team admin</i>). On every device it then works like ordinary Document Action Access: for the roles that are <i>not</i> the executor, the Process button offers no document action for those documents, and the offer comes back by itself when the list changes. <!-- W-UPS-E2-HOST 18/0 (X7 / X9) --></p>
 <ul>
@@ -53,6 +65,7 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 </ul>
 
 <h2>Standard imports, local first</h2>
+<p class="mut">▶ Watch: <a href="https://www.youtube.com/watch?v=hd1Z0j_pRkw" target="_blank" rel="noopener">No Server To Keep Alive — Books Still Close</a></p>
 <p>A till or a borrower's phone never calls the office while it works. It writes its own rows on the device (the classic client's <i>Import Order</i> lines and <i>Import Payment</i> tenders) and they go up at the next <b>Visit</b>. Head office then runs the same import processes the classic client has, so the books are made the classic way. No real-time connection is needed anywhere. <!-- W-POS-CHAIN 13/0; W-FILM-OFFLINE 10/0 --></p>
 
 <h3>1. Set up a POS team</h3>
@@ -69,6 +82,7 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 </ol>
 
 <h3>2. The till's day, including offline</h3>
+<p class="mut">▶ Prior art: <a href="https://www.youtube.com/watch?v=FRrYu5zuO7w" target="_blank" rel="noopener">POS to ERP integration fast demo from scratch</a> (2019) · <a href="https://www.youtube.com/watch?v=FTCK3pvWMFo" target="_blank" rel="noopener">Sistem ERP iDempiere sepadu dengan POS Unicenta</a> (2019, Malay)</p>
 <ol>
 <li>Each sale is saved on the till itself: its lines as <b>Import Order</b> rows (the ticket number is the <b>Document No</b>, for example <code>POS1/2026-10-28/0101</code>: station, date, number, so it is unique) and its tenders as <b>Import Payment</b> rows. A return is a line with quantity −1. These are plain saved rows; nothing waits for a connection. <!-- W-FILM-OFFLINE 10/0; W-POS-RETURN 10/0 --></li>
 <li>Nothing leaves the till until you press <b>Visit</b> on the Team bar. A Visit sends only what this till wrote, and brings back only what the plan declares for it (below).</li>
@@ -98,6 +112,7 @@ For plain orders open <b>Import Order</b>, press the gear in the toolbar, choose
 </ol>
 
 <h3>4. Micro Finance</h3>
+<p class="mut">▶ Watch: <a href="https://www.youtube.com/watch?v=sGu5HU2waHE" target="_blank" rel="noopener">Micro Financing local first payment mobile UI with ERP admin</a> <span>(an earlier mock-up, ThaiGoldPawn; the steps below use the GardenWorld borrower page)</span></p>
 <p>Customers' instalments on the GardenWorld books. It follows the same spine as the POS: the phone declares a payment row, head office imports it, the books are posted at the end of the day.</p>
 <ol>
 <li><b>The System Administrator starts it once.</b> Sign in as <b>System</b> / <b>System</b>, press <b>⋯</b> then the <b>Plugin Engine</b> pill, and press <b>Start</b> beside <code>org.kernel.mf-lens</code> (and <code>org.kernel.pos-integration</code> for the POS windows). They are installed but stopped until then.
@@ -133,6 +148,7 @@ For plain orders open <b>Import Order</b>, press the gear in the toolbar, choose
 </ol>
 
 <h2>For the team admin</h2>
+<p class="mut">▶ Watch: <a href="https://www.youtube.com/watch?v=-LQwoPuQ1QU" target="_blank" rel="noopener">Team Trust and Thin Pipe in serverless local first ERP</a> <span>(its chapter 3 was later superseded: see <a href="#who-completes">Who may complete a document</a>)</span></p>
 <ul>
 <li><b>Translation rules.</b> A rule that lets older devices' changes be taken in must be signed with the team owner's key; the admin publishes it, and every device checks the signature before using it. A rule that is unsigned, edited after signing, or signed by a key the team does not trust is refused. Every device judges a rule by the keys the team trusted <i>when it was published</i>, so a later change of keys never undoes a rule on one device and not on another. A published rule cannot be withdrawn.</li>
 <li><b>Trusted keys.</b> When the app is set up with signing keys, a team started on it writes those keys into the team itself (for example a primary and a backup). They can be changed later — add a key, or let the backup replace a lost primary — only by a change signed with a key the team already trusts. An admin device on its own cannot change them.</li>
