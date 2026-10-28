@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v932';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v933';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -299,6 +299,24 @@ const PRECACHE_ASSETS = [
   '../common/comm/team_panel.js',     // TEAMWORK_FRAMEWORK §13.8 / §15.15 — the Team panel, shared with the Modeller (loaded on every idempiere.html page, inert until opened)
   '../common/comm/team_avatars.js',   // §15.15.2 — the built-in avatar set
   'team_guide.html',   // §13.8 T6 — the team user guide the panel links to
+  'guide_img/team_acct_processor_dialog.png',   // wave-1 team guide screenshot
+  'guide_img/team_import_error_grid.png',   // wave-1 team guide screenshot
+  'guide_img/team_import_orders_dialog.png',   // wave-1 team guide screenshot
+  'guide_img/team_import_orders_result1.png',   // wave-1 team guide screenshot
+  'guide_img/team_import_orders_result2.png',   // wave-1 team guide screenshot
+  'guide_img/team_import_pos_sales_dialog.png',   // wave-1 team guide screenshot
+  'guide_img/team_lens_home.png',   // wave-1 team guide screenshot
+  'guide_img/team_menu_dataimport.png',   // wave-1 team guide screenshot
+  'guide_img/team_panel_before.png',   // wave-1 team guide screenshot
+  'guide_img/team_panel_founded.png',   // wave-1 team guide screenshot
+  'guide_img/team_panel_requests.png',   // wave-1 team guide screenshot
+  'guide_img/team_phone_approved.png',   // wave-1 team guide screenshot
+  'guide_img/team_phone_loan.png',   // wave-1 team guide screenshot
+  'guide_img/team_phone_notacked.png',   // wave-1 team guide screenshot
+  'guide_img/team_phone_refused.png',   // wave-1 team guide screenshot
+  'guide_img/team_plugins_admin.png',   // wave-1 team guide screenshot
+  'guide_img/team_plugins_readonly.png',   // wave-1 team guide screenshot
+  'guide_img/team_replenish_dialog.png',   // wave-1 team guide screenshot
   '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)
   '../common/comm/team_scope.js',    // TEAMWORK_FRAMEWORK §25.1 — the one reader of the compiled plan (both hosts)
   '../common/comm/op_versions.js',   // TEAMWORK_FRAMEWORK §16.30 — the shape-version registry
