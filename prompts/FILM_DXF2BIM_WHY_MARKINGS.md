@@ -182,3 +182,11 @@ bubbles + the box (units / view / name stated, level open) (`§SHEET-MARKS marks
 | 6 | ONE MORE BAY | Add a bay at the last grid line; a turn over the new bay | copies, moved, hosted riders, stretched, cost added / changed / total + currency, gate |
 | 7 | THE PRINTED SHEET + PRIOR ART | Sheet on the floor plan with its markings, Save SVG; the prior-art card (text EXTRACTED from `docs/DXF2BIMGuide.md` "## Prior art", BIMCompiler master, current 2026-10-28) | the SVG saved (bytes) |
 **Witness of the take (log, not a look):** every beat in order, every spoken number = a `§FILM_FACT`, 0 `§PAGEERR`, the raw sheets' sha before = after, no walker log line (`§DW`/`§STRWALK` walk / `§MEP`) during the take.
+**▶ RESUME (2026-10-28, paused by the owner: "Pause for 30 mins as tokens running out").** TAKE 1 RECORDED, not assembled: `~/Videos/dxf2bim_film_work/bricscad_2026-10-28/take1/`
+(`film.mp4` 355.6 s, 20,885 frames, `take.log` = the recorder's stdout with every `§FILM_FACT` / `§FILM_BEAT` / `§FILM_CHAPTER`, `page.log`, `backdrops.txt`, `saved/` = the 9 marked copies + the SVG).
+Take log read: 21 beats, 0 `§PAGEERR`, `walker_lines 0`, `raw_unchanged true`, `wall_pick pointer`, `move_gate_words one red clash`, bay committed (gate clean, USD +23,623), SVG 73,633 B.
+**Next (in order):** (1) fill the script from THIS take: `node prompts/film_narration_fill.js prompts/film_narration_dxf2bim_bricscad_shed_en.tsv <take1>/take.log <take1>/filled.tsv` (read every `§FILL`);
+(2) assemble with the Why assembler, cards from the BIMCompiler branch `film/bricscad2-cards` (`FILM_SET=bricscad2`, not yet merged: use that worktree's `prompts/film_title_cards.py`):
+`FILM_SET=bricscad2 FILM_CARDS_PY=<that file> BEAT_MIN_JSON=prompts/film_dxf2bim_bricscad_shed_beat_min.json bash prompts/film_dxf2bim_why_assemble.sh <take1> <take1>/take.log <take1>/filled.tsv ~/Videos/Shed_BricsCAD_Film_1920x1080_2026-10-28_v1.mp4`;
+(3) witness the output from its log (DETAIL 20/20, `wrong=0`, frames == master, about −16 LUFS, silences, 0 black frames), no claim without a `§FILM_FACT`; (4) PRs: this branch (`film/bricscad-shed`: recorder,
+script, beat_min, + the product fixes found by the dry runs: Farming Shed stretch += IfcSlab / IfcRoof (W-DXF-ADD-BAY B10), `§SHEET-MARKS` open_box, W-SHEET-RENDER falsifier) and BIMCompiler `film/bricscad2-cards`.
