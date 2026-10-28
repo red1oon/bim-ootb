@@ -605,10 +605,11 @@
     var isZ = needKey === 'Z', nd = need && isZ ? ' need' : '';
     if (need && isZ) {   // §D40 the question, from what the sheet already states
       var z0 = sh.marks.filter(function (m) { return m.key === 'Z'; })[0];
-      h += '<div class="dm-ask" data-ask="Z">' + (z0 ? 'One height is known: ' + esc(z0.value) + ' m at y ' + num(z0.y) + '. Give a second:' : 'No height is known yet. Give two:') + ' read a level text or a dimension on this sheet, type it in metres, and the y where it is drawn.</div>';
+      h += '<div class="dm-ask" data-ask="Z">' + (z0 ? 'One height is known: ' + esc(z0.value) + ' m at y ' + num(z0.y) + '. Give a second:' : 'No height is known yet. Give two:') + ' read a level text or a dimension on this sheet, type it in metres, and the y where it is drawn (or Pick the line on the sheet).</div>';
     }
     h += '<div class="dm-row">' + kSel + '<input class="dm-in lab' + nd + '" id="dm-av-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'height, m' : 'label') + '" data-add-val="' + si + '-' + needKey + '" spellcheck="false">' +
       '<input class="dm-in n' + nd + '" id="dm-ap-' + si + '-' + needKey + '" placeholder="' + (isZ ? 'y where drawn' : keys.length > 1 ? 'x or y' : 'x') + '" data-add-pos="' + si + '-' + needKey + '" inputmode="decimal">' +
+      (isZ ? '<button class="dm-btn" data-act="zpick" data-sheet="' + si + '" title="Click the drawn line on the sheet: its y fills the field (you still type the height)">' + IC.crosshair + '<span>Pick</span></button>' : '') +   // §D94
       '<button class="dm-btn" data-act="add" data-sheet="' + si + '" data-group="' + needKey + '" data-keys="' + keys.join(',') + '">' + IC.plus + '<span>Add</span></button></div>';
     return h;
   }
@@ -1033,6 +1034,9 @@
       if (a === 'defkeep') el.onclick = function () { var k = el.getAttribute('data-key'); defRows().forEach(function (r) { if (r.key === k && r.kind === 'default') r.kind = 'chosen'; }); S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = String(defRows().filter(function (r) { return r.key === k; })[0].value); console.log(TAG + ' default-kept ' + k); refeed(); render(); attention(); };
       if (a === 'acceptall') el.onclick = function () { var n = 0, b; S.tierHold = true; while (n++ < 300 && (b = firstInOrder('#dm-yellows [data-act="confirm"],#dm-yellows [data-act="dconfirm"],#dm-yellows [data-act="defkeep"]'))) b.click(); S.tierHold = false; console.log(TAG + ' accept-all clicks=' + (n - 1)); render(); attention(); };
       if (a === 'sheetview') el.onclick = function () { if (window.DxfSheetFrame) window.DxfSheetFrame.open(Number(el.getAttribute('data-sheet'))); };   // §D82
+      if (a === 'zpick') el.onclick = function () { var si = Number(el.getAttribute('data-sheet')); if (!window.DxfSheetFrame) return;   // §D94 the y comes from the drawn line; the height stays typed
+        window.DxfSheetFrame.open(si, { pick: 'Z', onPick: function (r) { var pe = S.panel.querySelector('[data-add-pos="' + si + '-Z"]'), ve = S.panel.querySelector('[data-add-val="' + si + '-Z"]');
+          if (!pe) return; pe.value = String(r.y); S.draft['p' + si + '-Z'] = pe.value; if (ve) ve.focus(); } }); };
       if (a === 'grpopen') el.onclick = function () { var k = el.getAttribute('data-grp'); S.grpOpen[k] = !S.grpOpen[k]; render(); };
       if (a === 'grpok') el.onclick = function () { var k = el.getAttribute('data-grp'), h = el.closest('.dm-grp'), ids = JSON.parse(h.getAttribute('data-grp-ids') || '[]'), n = 0;   // §D81 exactly the rows the group showed at the click, wherever a re-render puts them
         S.tierHold = true; ids.forEach(function (id) { var r = Array.prototype.filter.call(S.panel.querySelectorAll('#dm-yellows [data-yid]'), function (x) { return x.getAttribute('data-yid') === id; })[0], b = r && r.querySelector('[data-act="confirm"],[data-act="dconfirm"],[data-act="defkeep"]'); if (b) { b.click(); n++; } });
