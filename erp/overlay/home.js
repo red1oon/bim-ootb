@@ -4,6 +4,11 @@
 // overlay/home.js — the legacy HOME dashboard as an OVERLAY (prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D2c, §EXTENSION-LAYER LAW). When the core shows its empty-content placeholder for a logged-in
 // session, the Home is drawn next to it (the placeholder is hidden, not removed; the core replaces #idmp-content whenever a window opens, which removes the Home). Reads: window.APP (actor/client/role/org),
 // window.__idmpDb (read-only SELECTs; TEMP views only), window.IdmpHost.focus (to open a window by name), IdmpHost.zoom/recentItems/recentRemove (Recent Items, §UDP-6G). NOTHING in the core calls this file.
+// W-MF-LENS (TEAMWORK_FRAMEWORK.md §42.5) adds the three plain gadget kinds of DashboardController.asyncRenderComponents (:752-846): HTML (the HTML column rendered as HTML inside PAPanel.css's `.content`, stripHtml :1600-1612), Window (a button
+//   named by the window's menu, MDashboardContent.getAD_Menu_ID :237-252) and Process (a button named by the process's menu, :790-805; the client-0 AccessLevel gate :792-798); a click on either button is DefaultDesktop.onMenuSelected(menuId)
+//   (DashboardController.onEvent :1150-1158) = the click on that role's own menu leaf. LINKS INSIDE THE HTML: legacy puts the HTML into the page untouched (a plain browser link), and reaches the application through its own URL
+//   (AEnv.getZoomUrl :920-940 -> AdempiereWebUI.processParameters :402-430); the twin's application URL carries `?window=<AD_Window_ID>` / `?process=<AD_Process_ID>`, so a click on such a link is resolved against the DICTIONARY (resolveLink) and opened
+//   through the same menu leaf; any other link is left to the browser, as legacy leaves it. Goal / Chart / ZUL / StatusLine stay "Not ported yet" and are named. Everything is read at render time from the dictionary: no item is listed here.
 (function () {
   'use strict';
   var engineOn = false, dsOn = false, busy = false;
@@ -20,6 +25,9 @@
       '#idmp-home .idmp-hside{flex:0 1 240px}#idmp-home .ri-list{display:flex;flex-direction:column;gap:4px}#idmp-home .ri-item{color:var(--idmp-link,#1c5fa8);text-decoration:none;cursor:pointer}' +
       '#idmp-home .ri-item:hover{text-decoration:underline}#idmp-home .ri-bar{display:flex;justify-content:flex-end;gap:10px;align-items:center;padding:4px 10px;border-top:1px solid var(--idmp-border,#d0d7de)}' +
       '#idmp-home .ri-refresh{border:none;background:none;cursor:pointer;font-size:16px;color:inherit}#idmp-home .ri-trash{font-size:16px}' +
+      '#idmp-home .idmp-pa .content{margin:6px 10px;background:#fff}#idmp-home .idmp-pa .header{background-color:#B5C6C6}#idmp-home .idmp-pa .hrefNode{color:#000;background-color:#EBF1EF;text-align:right;text-decoration:none}' +
+      '#idmp-home .idmp-pa .dataGrid{border:1px solid #BBB;border-collapse:collapse;width:60%;background-color:#EBF1EF}#idmp-home .idmp-pa .dataGrid th{text-align:center;padding:2px;font-weight:normal;font-size:13px;background-color:#C6D1CD;border:1px solid #BBB}' +
+      '#idmp-home .idmp-pa .dataGrid td{border:1px solid #BBB}#idmp-home .idmp-pa .label{background-color:#C6D1CD}#idmp-home .idmp-pa .tdcontent{background-color:#D6E1DD}#idmp-home .idmp-btn{display:block;margin:4px 0;border:none;background:none;padding:0;color:var(--idmp-link,#1c5fa8);cursor:pointer;font-size:13px;text-align:left}#idmp-home .idmp-btn:hover{text-decoration:underline}' +   // PAPanel.css, scoped to the gadget (legacy injects it page-wide)
       '.idmp-ovl-pane{padding:14px;max-width:880px}.idmp-ovl-pane h3{margin:0 0 6px}.idmp-ovl-pane .sub{font-size:12px;color:var(--idmp-muted);margin-bottom:8px}.idmp-ovl-pane .fld{margin:8px 0}.idmp-ovl-pane .fld label{font-weight:600;font-size:13px}';
     document.head.appendChild(s);
   }
@@ -60,6 +68,60 @@
     load();
     return box;
   }
+  // ---- plain gadgets: HTML / Window / Process (DashboardController.asyncRenderComponents) ----
+  function stripHtml(h) { return String(h).replace(/<html>/g, '').replace(/<\/html>/g, '').replace(/<body>/g, '').replace(/<\/body>/g, '').replace(/<head>/g, '').replace(/<\/head>/g, ''); }   // :1600-1612 (all=false)
+  // DefaultDesktop.onMenuSelected(menuId): the click on the role's own menu leaf. A role without that leaf is refused (its menu does not have the entry), never opened around the menu.
+  function openMenu(menuId, why) {
+    var lf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + Number(menuId) + '"]');
+    if (!lf) { console.log('§DASH-LINK refused menu=' + menuId + ' (not in this role\'s menu)' + (why ? ' from=' + why : '')); return false; }
+    console.log('§DASH-LINK open menu=' + menuId + (why ? ' from=' + why : '')); lf.click(); return true;
+  }
+  // an application link of the HTML -> { ok, kind, id, name, menuId } | { ok:false, reason } | { external:true }. The target must be a row of the dictionary (AD_Window / AD_Process, active) - never a number taken on trust.
+  var KIND = { window: { table: 'AD_Window', pk: 'AD_Window_ID' }, process: { table: 'AD_Process', pk: 'AD_Process_ID' } };
+  function resolveLink(href) {
+    var u; try { u = new URL(href, location.href); } catch (e) { return { ok: false, reason: 'bad-url' }; }
+    if (u.origin !== location.origin || u.pathname !== location.pathname) return { external: true };
+    var kind = u.searchParams.get('window') != null ? 'window' : u.searchParams.get('process') != null ? 'process' : null;
+    if (!kind) return { external: true };
+    var id = Number(u.searchParams.get(kind)), K = KIND[kind];
+    var row = Number.isInteger(id) && id > 0 ? q('SELECT ' + K.pk + ' AS id, Name AS n FROM ' + K.table + ' WHERE ' + K.pk + "=? AND IsActive='Y'", [id])[0] : null;
+    if (!row) return { ok: false, reason: 'not-in-dictionary', kind: kind, id: id };
+    var m = q('SELECT AD_Menu_ID AS m FROM AD_Menu WHERE ' + K.pk + "=? AND IsActive='Y' ORDER BY AD_Menu_ID DESC", [id])[0];   // MDashboardContent.getAD_Menu_ID :246-250 (newest active menu of the window)
+    return { ok: true, kind: kind, id: id, name: row.n, menuId: m ? Number(m.m) : null };
+  }
+  function linkClick(e) {
+    var a = e.target && e.target.closest ? e.target.closest('.idmp-pa a[href]') : null; if (!a) return;
+    var r = resolveLink(a.getAttribute('href')); if (r.external) return;                                   // not an application link: the browser's business, as in legacy
+    e.preventDefault();
+    if (!r.ok) { console.log('§DASH-LINK refused href=' + a.getAttribute('href') + ' reason=' + r.reason); return; }
+    console.log('§DASH-LINK click kind=' + r.kind + ' id=' + r.id + ' name="' + r.name + '" menu=' + r.menuId);
+    if (r.menuId == null) { console.log('§DASH-LINK refused ' + r.kind + '=' + r.id + ' reason=no-menu'); return; }
+    openMenu(r.menuId, 'html');
+  }
+  function menuButton(menuId, label) {   // ToolBarButton(menu name) -> onMenuSelected
+    var b = el('button', 'idmp-btn', label); b.type = 'button'; b.setAttribute('data-menu-id', menuId);
+    b.addEventListener('click', function () { openMenu(menuId, 'button'); }); return b;
+  }
+  // -> components appended to body (0 = legacy detaches the gadget, :483-492); also logs what it could not draw
+  function plainComponents(g, S, body) {
+    var c = g.row, n = 0;
+    if (c.html != null && String(c.html) !== '') {                                                                      // HTML
+      var pa = el('div', 'idmp-pa'), ct = el('div', 'content'); ct.innerHTML = stripHtml(c.html) + '<br>\n'; pa.appendChild(ct); body.appendChild(pa); n++;
+    }
+    if (Number(c.ad_window_id) > 0) {                                                                                   // Window
+      var wm = q("SELECT AD_Menu_ID AS m, Name AS n FROM AD_Menu WHERE AD_Window_ID=? AND IsActive='Y' ORDER BY AD_Menu_ID DESC", [c.ad_window_id])[0];
+      if (wm) { body.appendChild(menuButton(wm.m, wm.n)); n++; } else console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=window reason=no-menu-for-window-' + c.ad_window_id);
+    }
+    if (Number(c.ad_process_id) > 0) {                                                                                  // Process / Report
+      var pr = q('SELECT accesslevel AS a FROM AD_Process WHERE AD_Process_ID=?', [c.ad_process_id])[0], sys = pr && ['7', '4', '6'].indexOf(String(pr.a)) >= 0;
+      if (S.client !== 0 || sys) {                                                                                      // :792-798 (client 0 needs a System-level process)
+        var pm = q('SELECT AD_Menu_ID AS m, Name AS n FROM AD_Menu WHERE AD_Process_ID=? ORDER BY AD_Menu_ID', [c.ad_process_id])[0];
+        if (String(c.isembedreportcontent) === 'Y') console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=embedded-report');
+        else if (pm) { body.appendChild(menuButton(pm.m, pm.n)); n++; } else console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=process reason=no-menu-for-process-' + c.ad_process_id);
+      }
+    }
+    return n;
+  }
   function render() {
     if (busy) return; busy = true;
     try {
@@ -96,6 +158,9 @@
           });
           body.appendChild(dg); rendered++;
           console.log('§DASH-GADGET docstatus indicators=' + inds.length + ' ' + inds.map(function (i) { return i.name + '=' + i.count; }).join(' | ') + ' (click opens the window WITHOUT the indicator filter: §DASH-UNPORTED zoom-filter)');
+        } else if (g.kind === 'html' || g.kind === 'window' || g.kind === 'process') {
+          if (!plainComponents(g, S, body)) { console.log('§DASH-EMPTY id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' components=0 (legacy detaches the gadget: DashboardController.java:483-492)'); return; }
+          rendered++; console.log('§DASH-GADGET ' + g.kind + ' id=' + g.id + ' name="' + g.name + '" links=' + body.querySelectorAll('a[href]').length + ' buttons=' + body.querySelectorAll('button[data-menu-id]').length);
         } else { body.textContent = 'Not ported yet (' + g.kind + ').'; unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=main'); }
         var col = cols[g.effColumn]; if (!col) { col = cols[g.effColumn] = el('div', 'idmp-hcol'); home.appendChild(col); }
         col.appendChild(box);
@@ -108,12 +173,15 @@
         }
         unported++; console.log('§DASH-UNPORTED id=' + g.id + ' name="' + g.name + '" kind=' + g.kind + ' placement=side');
       });
+      home.addEventListener('click', linkClick);
       ph.style.display = 'none'; host.appendChild(home);
       console.log('§DASH-HOME client=' + S.client + ' role=' + S.role + ' user=' + S.user + ' main=' + sel.main.length + ' side=' + sel.side.length + ' cols=' + sel.cols + ' rendered=' + rendered + ' unported=' + unported + ' ids=[' + sel.main.map(function (g) { return g.id; }) + ']');
     } catch (e) { console.log('§OVERLAY home failed (core unaffected): ' + String(e && e.message).slice(0, 160)); }
     finally { busy = false; }
   }
-  window.OverlayHome = { render: render, session: session, q: q, el: el, css: css };
+  window.OverlayHome = { render: render, session: session, q: q, el: el, css: css, resolveLink: resolveLink };
+  // Plugins & Releases closing is the moment a Start / Stop of a bundle that stages gadget rows can have changed the Home: draw it again (legacy re-renders the home tab, DefaultDesktop.renderHomeTab :602-616)
+  try { new MutationObserver(function (ml) { ml.forEach(function (m) { [].forEach.call(m.removedNodes, function (nd) { if (nd.id === 'pr-root') { var h = document.getElementById('idmp-home'), ph = document.querySelector('#idmp-content > #idmp-placeholder'); if (h && ph) { h.remove(); ph.style.display = ''; setTimeout(render, 0); } } }); }); }).observe(document.body, { childList: true }); } catch (e) { console.log('§OVERLAY home console observer failed (core unaffected): ' + e.message); }
   try {
     var host = document.getElementById('idmp-content');
     if (host) { new MutationObserver(function () { setTimeout(render, 0); }).observe(host, { childList: true }); setTimeout(render, 0); }

@@ -84,11 +84,20 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     await page.evaluate(id => { const leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); let n = leaf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.classList && n.classList.contains('idmp-node')) n.classList.add('open'); n = n.parentElement; } leaf.click(); }, menuId);
   }
   // a page: fresh, Libero installed + started + ACTIVATED (its form/model registrations), Part I's off-camera prerequisite, logged in plainly (behind a card or before the cast)
+  // W-PLUGIN-ROLE (TEAMWORK_FRAMEWORK.md §41.1): installing / starting a bundle is the System Administrator's act. Off-camera, before the cast: log in as System / System, run `fn`, persist, reload to the login screen (the bundle is restored at boot).
+  const adminSetup = async (page, fn, arg) => {
+    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible');
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 });
+    await page.evaluate(fn, arg); await page.evaluate(() => window.PluginEngine.persist());
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForFunction(() => !!window.__idmpDb && !!window.PluginEngine && document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 30000 });
+  };
   async function prepare(p, client, user) {
     page = p; await page.bringToFront();   // a background tab is not painted: prepared in front, so its frames are current when the cast starts
     await page.goto(base + '/idempiere.html?lang=en_US', { waitUntil: 'networkidle' });
     await page.waitForFunction(() => !!window.__idmpDb && !!window.PluginEngine && document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 30000 });
-    await page.evaluate(async (u) => { const r = window.PluginEngine._reg(); if (!r.get('org.idempiere.mfg')) await r.installBundle(u); await r.startBundle('org.idempiere.mfg').catch(() => {}); }, base + '/plugins/libero_manufacturing.mjs');
+    await adminSetup(page, async (u) => { const r = window.PluginEngine._reg(); if (!r.get('org.idempiere.mfg')) await r.installBundle(u); await r.startBundle('org.idempiere.mfg').catch(() => {}); }, base + '/plugins/libero_manufacturing.mjs');
     await page.evaluate(() => { const db = window.__idmpDb, run = (s) => db.run(s);
       const cats = db.exec('SELECT DISTINCT m_product_category_id FROM m_product WHERE m_product_id IN (50007,50008,50014)')[0].values.map(r => r[0]);
       cats.forEach(c => run("UPDATE m_product_category_acct SET costingmethod='S' WHERE m_product_category_id=" + c));

@@ -1,4 +1,5 @@
 // ⚠ DO NOT REMOVE — W-FRIENDLY-PURCHASE (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §44). READ THE LOG; exit code is not evidence.
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -25,7 +26,7 @@ async function run(base, browser, lens) {
   await pg.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await pg.waitForSelector('#idmp-login-step1:visible');
   await pg.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await pg.waitForSelector('#idmp-login-step2:visible'); await pg.click('#idmp-login-ok');
   await pg.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0);
-  if (lens) await pg.evaluate(async (a) => { if (a.brk === 'nolines') globalThis.__FOPS_BREAK = 'nolines'; if (a.brk === 'nosql') window.__frBreak = 'nosql'; const r = window.PluginEngine._reg(); await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
+  if (lens) await pg.evaluate(async (a) => { if (a.brk === 'nolines') globalThis.__FOPS_BREAK = 'nolines'; if (a.brk === 'nosql') window.__frBreak = 'nosql'; const r = window.PluginEngine._reg().system; await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
   const tip = (sql) => pg.evaluate(s => window.__crud.withModelTrx(q => q(s)), sql);
   const hc = async (sel) => { const l = pg.locator(sel).first(); await l.scrollIntoViewIfNeeded().catch(() => {}); await l.click(); await pg.waitForTimeout(450); };
   const F = (c, t) => '#idmp-inline-mount ' + (t || 'input') + '[data-col="' + c + '"]';
@@ -72,7 +73,7 @@ async function run(base, browser, lens) {
     posted: inv[0] ? ((await tip("SELECT posted AS p FROM c_invoice WHERE c_invoice_id=" + inv[0].id))[0] || {}).p : null,
     miFact: inv[0] ? (await tip("SELECT COUNT(*) AS n, COALESCE(SUM(amtacctdr),0) AS d, COALESCE(SUM(amtacctcr),0) AS c FROM fact_acct WHERE ad_table_id=472 AND record_id IN (SELECT m_matchinv_id FROM m_matchinv WHERE c_invoiceline_id IN (SELECT c_invoiceline_id FROM c_invoiceline WHERE c_invoice_id=" + inv[0].id + "))"))[0] : null };
   const cnt = () => pg.evaluate(() => { const q = t => { const r = window.__idmpDb.exec(t); return r.length ? Number(r[0].values[0][0]) : 0; }; return q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id IN (53431,53432,53433,53434)') + q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id IN (53401,53402,53403,53404)'); });
-  R.rowsLive = await cnt(); await pg.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.kernel.friendly-ops'); }); await pg.waitForTimeout(500); R.rowsStopped = await cnt();
+  R.rowsLive = await cnt(); await pg.evaluate(async () => { await window.PluginEngine._reg().system.stopBundle('org.kernel.friendly-ops'); }); await pg.waitForTimeout(500); R.rowsStopped = await cnt();
   R.pageErr = logs.filter(l => /^PAGEERR/.test(l)).slice(0, 3);
   return R;
 }

@@ -146,6 +146,7 @@
     }
     var host = {
       engineVersion: ENGINE_VERSION,
+      actor: function () { var A = global.APP || {}; return { role: A.roleId, user: A.actor }; },   // W-PLUGIN-ROLE: the registry's write calls ask WHO is logged in; read lazily (the role changes at every login)
       db: hostDb,
       ops: { append: function (type, params) {
         try { return (glue.KO && glue.db) ? glue.KO.commitOp(glue.db, type, params) : null; } catch (e) { return null; }
@@ -179,7 +180,7 @@
     if (_hydrated) return Promise.resolve();
     return _packsReplay().then(_idbGet).then(function (saved) {
       // one implementation: the registry's restore() installs every saved bundle then restarts the ACTIVE ones in dependency order (Host work H1); failures are collected, never thrown.
-      var chain = _reg.restore((saved || []).filter(function (b) { return b && b.url; }))
+      var chain = _reg.system.restore((saved || []).filter(function (b) { return b && b.url; }))
         .then(function (r) { (r.failed || []).forEach(function (f) { console.warn('§PLUGIN-PILL rehydrate failed id=' + f.id + ': ' + f.error); }); });
       return chain.then(_builtins).then(function () { _hydrated = true; });
     });
@@ -189,7 +190,7 @@
   //   remembered (kv 'builtins_seen'); from then on the user's Install/Start/Stop/Uninstall decide - a stopped or uninstalled builtin is never brought back.
   var BUILTINS = ['plugins/ninja_excel.mjs', 'plugins/ninja_create.mjs'];
   // INSTALLED BUT NOT STARTED: legacy ships these bundles in the stack with nothing reachable until an admin switches them on (Plugins & Releases -> Enable). Web Services = ERP_WS_API.md S6.
-  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it
+  var INSTALL_ONLY = ['plugins/webservices.mjs', 'plugins/pos_integration.mjs', 'plugins/mf_lens.mjs'];   // + the head-office POS integration (POS_PLUGIN_LOCAL_FIRST.md §11): installed, stopped; the System Administrator enables it
   function _builtins() {
     if (typeof location === 'undefined') return Promise.resolve();
     return _kvGet('builtins_seen', []).then(function (seen) {
@@ -199,12 +200,12 @@
       if (!todo.length && !offTodo.length) return null;
       // install-only bundles first (default off: Plugins & Releases shows them Installed, not Active)
       var offP = offTodo.reduce(function (p, u) {
-        return p.then(function () { return _reg.installBundle(u); }).then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed (NOT started: default off) url=' + u); },
+        return p.then(function () { return _reg.system.installBundle(u); }).then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed (NOT started: default off) url=' + u); },
           function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN install failed url=' + u + ' ' + e.message); });
       }, Promise.resolve());
       return offP.then(function () {
         return todo.reduce(function (p, u) {
-          return p.then(function () { return _reg.installBundle(u); }).then(function (b) { return _reg.startBundle(b.id || (b.manifest && b.manifest.id)); })
+          return p.then(function () { return _reg.system.installBundle(u); }).then(function (b) { return _reg.system.startBundle(b.id || (b.manifest && b.manifest.id)); })
             .then(function () { seen.push(u); console.log('§PLUGIN-BUILTIN installed+started url=' + u); }, function (e) { if (/already installed/.test(e.message)) { seen.push(u); return; } console.warn('§PLUGIN-BUILTIN failed url=' + u + ' ' + e.message); });
         }, Promise.resolve());
       }).then(function () { return _kvPut('builtins_seen', seen); }).then(function () { return _persist(); });
@@ -283,7 +284,7 @@
   var OPTIONAL = global.PluginOffers || [];   // the one offers list lives in osgi_console.js (also drawn by the Plugins & Releases console)
   function _renderOffers(doc, bundles) {
     var box = doc.getElementById('pe-available'); if (!box) return;
-    box.innerHTML = '';
+    box.innerHTML = ''; if (!_reg.mayWrite()) return;
     OPTIONAL.filter(function (o) { return !bundles.some(function (b) { return b.id === o.id; }); }).forEach(function (o) {
       var row = doc.createElement('div'); row.className = 'pe-row'; row.setAttribute('data-offer', o.id);
       row.innerHTML = '<div class="pe-id">' + o.name + ' <small>' + o.blurb + '</small></div><button class="pe-btn pe-go pe-offer-install">Install</button>';
@@ -306,9 +307,10 @@
       row.innerHTML =
         '<div class="pe-id">' + b.id + ' <small>' + (b.version || '') + (b.url ? ' · ' + b.url.replace(/^https?:\/\//, '') : '') + '</small></div>' +
         '<span class="pe-chip ' + b.state + '" title="' + (b.state === 'STARTING' ? 'started; activates on first demand' : '') + '">' + b.state + '</span>' +
-        (lazyCapable ? '<button class="pe-btn pe-policy" title="Activation policy (takes effect on next start): lazy = activate on first demand, eager = at start">' + (eff === 'lazy' ? 'On demand' : 'At start') + '</button>' : '') +
-        '<button class="pe-btn pe-toggle">' + (active ? 'Stop' : 'Start') + '</button>' +
-        '<button class="pe-btn pe-uninstall" title="Uninstall">' + ICO('xmark') + '</button>';
+        (lazyCapable && _reg.mayWrite() ? '<button class="pe-btn pe-policy" title="Activation policy (takes effect on next start): lazy = activate on first demand, eager = at start">' + (eff === 'lazy' ? 'On demand' : 'At start') + '</button>' : '') +
+        (_reg.mayWrite() ? '<button class="pe-btn pe-toggle">' + (active ? 'Stop' : 'Start') + '</button>' +
+        '<button class="pe-btn pe-uninstall" title="Uninstall">' + ICO('xmark') + '</button>' : '');
+      if (!_reg.mayWrite()) { body.appendChild(row); return; }   // read-only: the row is the name, version and state (W-PLUGIN-ROLE)
       row.querySelector('.pe-toggle').onclick = function () {
         var op = active ? _reg.stopBundle(b.id) : _reg.startBundle(b.id);
         Promise.resolve(op).then(function () { return _persist(); })
@@ -330,7 +332,7 @@
     url = (url || '').trim();
     if (!url) { _toast(doc, 'Paste a bundle URL first'); return; }
     if (!global.PluginRegistry) { _toast(doc, 'Plugin engine not loaded'); return; }
-    _reg.installBundle(url)
+    Promise.resolve().then(function () { return _reg.installBundle(url); })
       .then(function (ins) { return _reg.startBundle(ins.id).then(function (st) { return { id: ins.id, state: st.state }; }); })
       .then(function (res) {
         return _persist().then(function () {
@@ -529,6 +531,7 @@
     var doc = opts.doc || global.document;
     if (!global.PluginRegistry) { _toast(doc, 'plugin_registry.js not loaded'); return; }
     ensure(opts);
+    var W = _reg.mayWrite();   // W-PLUGIN-ROLE: every role may SEE the list; only the System Administrator gets the write controls (the registry refuses the calls too)
 
     _css(doc);
     _close(doc);
@@ -537,21 +540,22 @@
       '<div id="pe-card">' +
         '<h3>' + ICO('plug') + ' Plugin Engine <span class="pe-sub">Fold-Engine bundles</span>' +
           '<button class="pe-x" id="pe-close">&times;</button></h3>' +
-        '<div class="pe-tabs">' +
+        (W ? '<div class="pe-tabs">' +
           '<button class="pe-tab on" id="pe-tab-install">Install</button>' +
           '<button class="pe-tab" id="pe-tab-create">Create</button>' +
-        '</div>' +
+        '</div>' : '') +
         // Install (PackIn) face — paste a bundle URL.
         '<div class="pe-body" id="pe-install-body">' +
-          '<div class="pe-install">' +
+          (W ? '' : '<div class="pe-warn" data-pe-readonly style="margin:0 0 10px">Read-only: only the System Administrator can install, start, stop or remove plugins. You can see what is installed.</div>') +
+          (W ? '<div class="pe-install">' +
             '<input id="pe-url" placeholder="https://raw.githubusercontent.com/&hellip;/my-plugin.mjs" />' +
             '<button class="pe-btn pe-go" id="pe-install">Install</button>' +
-          '</div>' +
+          '</div>' : '') +
           '<div id="pe-available"></div>' +
           '<div id="pe-list"></div>' +
         '</div>' +
         // Create (PackOut) face — drop a model sheet, preview, Emit & Install. Ninja mode (tribute to Red1 Ninja).
-        '<div class="pe-body" id="pe-create-body" style="display:none">' +
+        (W ? '<div class="pe-body" id="pe-create-body" style="display:none">' +
           '<div class="pe-ninja">Ninja mode — your spreadsheet becomes a running module</div>' +
           '<div class="pe-drop" id="pe-drop"><div class="pe-di">' + ICO('upload') + ' drop a .xlsx model sheet here</div></div>' +
           '<input type="file" id="pe-file" accept=".xlsx,.xls" style="display:none" />' +
@@ -567,21 +571,22 @@
             '</div>' +
           '</div>' +
           '<div class="pe-byline">A friendlier <b>Red1 Ninja</b>, in the browser — Excel defines the model; no JVM, no 2Pack.</div>' +
-        '</div>' +
+        '</div>' : '') +
       '</div>';
     doc.body.appendChild(ov);
     ov.addEventListener('click', function (e) { if (e.target === ov) _close(doc); });
     doc.getElementById('pe-close').onclick = function () { _close(doc); };
-    doc.getElementById('pe-install').onclick = function () { _doInstall(doc, doc.getElementById('pe-url').value); };
-    doc.getElementById('pe-url').addEventListener('keydown', function (e) { if (e.key === 'Enter') _doInstall(doc, e.target.value); });
-    doc.getElementById('pe-tab-install').onclick = function () { _switchTab(doc, 'install'); };
-    doc.getElementById('pe-tab-create').onclick = function () { _switchTab(doc, 'create'); };
-    _wireCreate(doc);
+    if (W) {
+      doc.getElementById('pe-install').onclick = function () { _doInstall(doc, doc.getElementById('pe-url').value); };
+      doc.getElementById('pe-url').addEventListener('keydown', function (e) { if (e.key === 'Enter') _doInstall(doc, e.target.value); });
+      doc.getElementById('pe-tab-install').onclick = function () { _switchTab(doc, 'install'); };
+      doc.getElementById('pe-tab-create').onclick = function () { _switchTab(doc, 'create'); };
+      _wireCreate(doc);
+    }
     _tab = 'install';
     // the Create face belongs to the Ninja bundle (§27): shown only while org.idempiere.ninja.create is ACTIVE; opts.face='create' lands on it (the Ninja pill)
     var nc = _reg && _reg.get && _reg.get('org.idempiere.ninja.create'), ncOn = !!(nc && nc.state === 'ACTIVE');
-    if (!ncOn) doc.getElementById('pe-tab-create').style.display = 'none';
-    else if (opts.face === 'create') _switchTab(doc, 'create');
+    if (W) { if (!ncOn) doc.getElementById('pe-tab-create').style.display = 'none'; else if (opts.face === 'create') _switchTab(doc, 'create'); }
 
     // Hydrate persisted bundles, then render. (First open re-activates ACTIVE bundles into the engines.)
     _hydrate().then(function () { _render(doc); }).catch(function () { _render(doc); });

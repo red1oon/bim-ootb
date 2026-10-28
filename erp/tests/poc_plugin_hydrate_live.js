@@ -16,7 +16,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §PLG-L
   const state = () => pg.evaluate(() => { const r = window.PluginEngine._reg(); const x = r && r.get('com.example.wip-token'); const t = window.PostResolver && window.PostResolver.TOKENS && window.PostResolver.TOKENS['{Production.WIP}']; return { state: x ? x.state : null, token: !!t, resolved: t && t.resolved ? t.resolved.name : null }; });
   await boot();
   const s0 = await state(); ok('L0 before install: no bundle, no token', s0.state === null && !s0.token, s0);
-  const url = await pg.evaluate(async () => { const r = window.PluginEngine._reg(); const u = new URL('plugins/wip_token.mjs', location.href).href; await r.installBundle(u); await r.startBundle('com.example.wip-token');
+  const url = await pg.evaluate(async () => { const r = (() => { const R = window.PluginEngine._reg(); return Object.assign({}, R, R.system); })();   /* W-PLUGIN-ROLE: setup/ops via reg.system (the boot-restore path); the gate is judged in witness_plugin_role.js */ const u = new URL('plugins/wip_token.mjs', location.href).href; await r.installBundle(u); await r.startBundle('com.example.wip-token');
     // the pill persists the registry list to IndexedDB after each action (plugin_overlay _persist): emulate exactly that record shape
     await new Promise((res, rej) => { const rq = indexedDB.open('fold_plugins', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('kv'); rq.onsuccess = () => { const tx = rq.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put(r.list(), 'bundles'); tx.oncomplete = res; tx.onerror = rej; }; rq.onerror = rej; }); return u; });
   const s1 = await state(); console.log('§PLG-LIVE-1 after start: ' + JSON.stringify(s1) + ' url=' + url);
@@ -24,7 +24,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §PLG-L
   await boot(); await pg.waitForTimeout(500);   // NO manual ensure/open: the page's own boot must restore it
   const s2 = await state(); console.log('§PLG-LIVE-2 after RELOAD (restore from IndexedDB): ' + JSON.stringify(s2));
   ok('L2 a plain page reload restores the ACTIVE bundle at BOOT (no pill opened) and its token is live again', s2.state === 'ACTIVE' && s2.token, s2);
-  const s3 = await pg.evaluate(async () => { const r = window.PluginEngine._reg(); await r.stopBundle('com.example.wip-token'); const t = window.PostResolver.TOKENS['{Production.WIP}']; return { state: r.get('com.example.wip-token').state, tokenGone: !t }; });
+  const s3 = await pg.evaluate(async () => { const r = (() => { const R = window.PluginEngine._reg(); return Object.assign({}, R, R.system); })();   /* W-PLUGIN-ROLE: setup/ops via reg.system (the boot-restore path); the gate is judged in witness_plugin_role.js */ await r.stopBundle('com.example.wip-token'); const t = window.PostResolver.TOKENS['{Production.WIP}']; return { state: r.get('com.example.wip-token').state, tokenGone: !t }; });
   ok('L3 STOP removes the token automatically (no hand-written cleanup beyond the bundle\'s own)', s3.state === 'STOPPED' && s3.tokenGone, s3);
   await pg.evaluate(async () => { const r = window.PluginEngine._reg(); await new Promise((res, rej) => { const rq = indexedDB.open('fold_plugins', 1); rq.onsuccess = () => { const tx = rq.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put(r.list(), 'bundles'); tx.oncomplete = res; tx.onerror = rej; }; rq.onerror = rej; }); });
   await boot(); await pg.waitForTimeout(500);

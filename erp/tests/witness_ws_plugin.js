@@ -7,6 +7,7 @@
 //   Negative control WSG_BREAK=started starts the bundle before G1 -> G1 must turn RED. INCONCLUSIVE if a step could not run.
 // Run: [WSG_BREAK=started] node erp/tests/witness_ws_plugin.js
 'use strict';
+// W-PLUGIN-ROLE: setup via reg.system; who may start is judged in witness_plugin_role.js
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), os = require('os'), path = require('path'), { spawn } = require('child_process');
 const REPO = process.env.REPO || path.join(__dirname, '..', '..'), BREAK = process.env.WSG_BREAK || '';
@@ -29,10 +30,10 @@ const v = (id, claim, ok, info, inc) => { if (inc) { fails++; console.log('§WSG
   const ID = 'org.idempiere.webservices';
   const st = () => page.evaluate(id => { const x = window.PluginEngine._reg().get(id); return x ? x.state : null; }, ID);
   const pill = async () => { if (!(await page.locator('#pill-webservices').first().isVisible().catch(() => false))) { await page.click('#idmp-pill-trigger').catch(() => {}); await hold(400); } return await page.locator('#pill-webservices').count(); };
-  if (BREAK === 'started') await page.evaluate(async id => { await window.PluginEngine._reg().startBundle(id); }, ID);
+  if (BREAK === 'started') await page.evaluate(async id => { await window.PluginEngine._reg().system.startBundle(id); }, ID);
   const s0 = await st(); await page.click('#idmp-pill-trigger').catch(() => {}); await hold(500); const p0 = await page.locator('#pill-webservices').count();
   v('G1', 'fresh boot: bundle state=' + s0 + ' (installed, NOT active), Web Services pills in the tray=' + p0, s0 != null && s0 !== 'ACTIVE' && p0 === 0, { s0, p0 }, s0 == null);
-  await page.evaluate(async id => { await window.PluginEngine._reg().startBundle(id); }, ID); await hold(900);
+  await page.evaluate(async id => { await window.PluginEngine._reg().system.startBundle(id); }, ID); await hold(900);
   if (!(await page.locator('#pill-webservices').first().isVisible().catch(() => false))) { await page.click('#idmp-pill-trigger').catch(() => {}); await hold(500); }
   const s1 = await st(), p1 = await page.locator('#pill-webservices').count();
   v('G2', 'Start: state=' + s1 + ', pill present=' + p1, s1 === 'ACTIVE' && p1 === 1, { s1, p1 });
@@ -50,7 +51,7 @@ const v = (id, claim, ok, info, inc) => { if (inc) { fails++; console.log('§WSG
   const hit = async () => (await fetch('http://localhost:' + PORT + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', body: '<x/>' })).status;
   const a = await hit(); fs.writeFileSync(cfgFile, JSON.stringify({ state: 'STOPPED' })); const b = await hit(); fs.writeFileSync(cfgFile, JSON.stringify(cfg || {})); const c = await hit();
   v('G5', 'host: no config -> ' + a + ', STOPPED -> ' + b + ', exported ACTIVE config -> ' + c + ' (404/404/200 = off, off, serving)', a === 404 && b === 404 && c === 200, { a, b, c }, !cfg);
-  await page.evaluate(async id => { await window.PluginEngine._reg().stopBundle(id); }, ID); await hold(900);
+  await page.evaluate(async id => { await window.PluginEngine._reg().system.stopBundle(id); }, ID); await hold(900);
   const s2 = await st(), p2 = await page.locator('#pill-webservices').count(), pan2 = await page.locator('#idmp-ws-panel').count(); fs.writeFileSync(cfgFile, JSON.stringify({ state: 'STOPPED' })); const d2 = await hit(); host.kill();
   v('G6', 'Stop: state=' + s2 + ', pill=' + p2 + ', panel=' + pan2 + ', host (config STOPPED) -> ' + d2, s2 !== 'ACTIVE' && p2 === 0 && pan2 === 0 && d2 === 404, { s2, p2, pan2, d2 });
   console.log(LOG.filter(l => /§WS-PLUGIN|§PLUGIN-BUILTIN.*webservices|PAGEERR/.test(l)).slice(0, 8).join('\n'));

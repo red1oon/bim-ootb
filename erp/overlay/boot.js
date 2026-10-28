@@ -42,7 +42,7 @@
   var loaded = 0, failed = [];
   function next(i) {
     if (i >= FILES.length) { console.log('§OVERLAY loaded ' + loaded + '/' + FILES.length + (failed.length ? ' FAILED=' + failed.join(',') : '')); return; }
-    var s = document.createElement('script'); s.src = base + FILES[i] + '?v=1';
+    var s = document.createElement('script'); s.src = base + FILES[i] + '?v=2';
     s.onload = function () { loaded++; next(i + 1); };
     s.onerror = function () { failed.push(FILES[i]); next(i + 1); };
     try { document.head.appendChild(s); } catch (e) { failed.push(FILES[i]); next(i + 1); }
