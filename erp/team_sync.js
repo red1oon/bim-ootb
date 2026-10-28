@@ -71,7 +71,7 @@
   }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
-  var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, withheld = {}, withheldN = 0, lastRefused = 0, lastVisitAt = null, lastSyncRep = null, fired = {}, replExc = [];
+  var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null, fired = {}, replExc = [];
   var baseSt = { state: 'unknown' }, loadedP = null, pristineP = null, storeOpts = null, bmemo = {}, bcols = {};
   var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
   var $ = function (id) { return document.getElementById(id); };
@@ -81,7 +81,7 @@
   function idb() { return new Promise(function (res, rej) { var r = indexedDB.open('comm_phone', 1); r.onupgradeneeded = function () { r.result.createObjectStore('kv'); }; r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); }; }); }
   async function kvGet(k) { var d = await idb(); return new Promise(function (res) { var q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(undefined); }; }); }
   async function kvPut(k, v) { var d = await idb(); return new Promise(function (res, rej) { var t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = function () { rej(t.error); }; }); }
-  async function persist() { if (S) await kvPut('erp_db', S.db.export()); await kvPut('erp_sent', sent); await kvPut('erp_localonly', localOnly); await kvPut('erp_withheld', withheld); await kvPut('erp_replfired', fired); }
+  async function persist() { if (S) await kvPut('erp_db', S.db.export()); await kvPut('erp_sent', sent); await kvPut('erp_localonly', localOnly); await kvPut('erp_replfired', fired); }
 
   // ── the AD layer's canUpdate over this page's own dictionary (same adapter as comm_phone.html) ──
   function adDb() { return global.__idmpDb; }
@@ -187,26 +187,24 @@
     var v = r[0].values[0], p; try { p = JSON.parse(v[2]); } catch (e) { return null; }
     return v[0] === 'CRUD_CREATE' ? { uu: String(v[1] || '').toLowerCase(), table: String((p && p.table) || '').toLowerCase(), team: v[3] === 'team', fields: (p && p.fields) || {} } : null;
   }
-  // §41.2 L1: what a withheld record needs from the kernel later (the CREATE rows its device-local FKs point at), kept with it so the catch-up never has to ask the kernel
-  var WITHHELD_CAP = 2000;                                           // bounded: a cash sale's invoice is addressed to a customer nobody will ever bind
-  function snapRefs(db, fields, out, depth) {
-    Object.keys(fields || {}).forEach(function (c) { var v = fields[c]; if (!(isNeg(v) && /_id$/i.test(c) && depth < 3)) return; var k = -Number(v); if (out[k]) return;
-      var q = db.exec('SELECT op_type, op_uuid, parameters, user_tag FROM kernel_ops WHERE id=' + k); if (!q.length || !q[0].values.length) return;
-      var x = q[0].values[0]; out[k] = { op_type: x[0], op_uuid: x[1], parameters: x[2], user_tag: x[3] }; var pp; try { pp = JSON.parse(x[2]); } catch (e) { pp = null; } snapRefs(db, pp && pp.fields, out, depth + 1); });
-  }
-  function refDb(refs) { return { exec: function (sql) { var m = /WHERE id=(\d+)/.exec(sql), x = m && refs[m[1]]; return x ? [{ values: [[x.op_type, x.op_uuid, x.parameters, x.user_tag]] }] : []; } }; }
-  // §41.2 L1 CATCH-UP ON BIND: a record the hub withheld (its entity had no bound person) is sent - once, in the order it was made, through the SAME translate (same carries, same admission) - as soon as the roster
-  // holds a person for its entity. Bind-first stays the procedure; this is the bank showing a late-enrolled customer the accounts they already hold, and a replaced phone getting its loans back.
-  async function catchUp() {
-    if (!S || scopeCtx.kind !== 'pos' || !Object.keys(withheld).length) return 0;
-    var R = (await S.order()).roster, ids = Object.keys(withheld).filter(function (k) { return R.persons[withheld[k].addr]; }).sort(function (a, b) { return withheld[a].n - withheld[b].n; }), n = 0;
-    for (var id of ids) { var w = withheld[id]; delete localOnly[id];
-      var t = await translate(w.row, refDb(w.refs));
-      if (!t.body) { if (t.local) localOnly[id] = t.local; delete withheld[id]; log('§TEAM_CATCHUP skip op=' + w.row.op_type + ' table=' + w.table + ' reason=' + (t.local || t.quiet || t.skip) + ' (the record is no longer sendable)'); continue; }
-      try { var a = await S.author({ target: t.target, body: stamped(t.body), refs: t.refs, intent: w.row.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: w.row.timestamp }); sent[id] = a.hash; delete withheld[id]; n++;
-        log('§TEAM_CATCHUP op=' + w.row.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' entity=' + String(w.addr).slice(0, 8) + ' seq=' + a.env.seq + ' hash=' + a.hash.slice(0, 12) + ' (withheld until its entity was bound)'); }
-      catch (e) { localOnly[id] = 'author-failed ' + (e && e.message); delete withheld[id]; log('🔴 §TEAM_CATCHUP op=' + w.row.op_type + ' author-failed ' + (e && e.message)); } }
-    return n;                                                          // the Visit persists (sent / withheld / localOnly) right after
+  // §41.2 L1 CATCH-UP ON BIND, derived not remembered. When the roster gains a person, the hub looks at ITS OWN unsent rows of every flow that is addressed `by` an entity (marked 'no-addressee' when they were made) and
+  // sends - through the SAME translate (same carries, same admission), oldest first, once (`sent`) - those whose entity now has a bound person. Nothing is stored for a record nobody binds (a cash sale costs nothing),
+  // nothing is capped, and a restart changes nothing: the rows, `sent` and `localOnly` are the device's persisted state. Bind-first stays the procedure; this is the bank showing a late-enrolled customer the accounts they hold.
+  var personsSeen = -1;
+  function rowsDb(rows) { var by = {}; rows.forEach(function (r) { by[r.id] = r; }); return { exec: function (sql) { var m = /WHERE id=(\d+)/.exec(sql), x = m && by[m[1]]; return x ? [{ values: [[x.op_type, x.op_uuid, x.parameters, x.user_tag]] }] : []; } }; }
+  async function releaseFor(oldRows, force) {
+    var out = { n: 0, ids: {} }; if (!S || scopeCtx.kind !== 'pos') return out;
+    var R = (await S.order()).roster, np = Object.keys(R.persons).length; if (!force && np === personsSeen) return out; personsSeen = np;
+    var cands = oldRows.filter(function (r) { if (r.user_tag === 'team' || r.undone || !r.op_uuid || sent[r.op_uuid] || !/^no-addressee/.test(localOnly[r.op_uuid] || '')) return false;
+      try { return global.TeamScope.scopeOf(JSON.parse(r.parameters).table, scopeCtx.role) === 'down'; } catch (e) { return false; } }).sort(function (a, b) { return Number(a.id) - Number(b.id); });
+    if (!cands.length) return out; var db = rowsDb(oldRows);
+    for (var r of cands) { var t = await translate(r, db);
+      if (!t.body) continue;                                           // its entity is still unbound (or the record is no longer sendable): left exactly as it was
+      try { var a = await S.author({ target: t.target, body: stamped(t.body), refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp }); sent[r.op_uuid] = a.hash; delete localOnly[r.op_uuid]; out.n++; out.ids[r.id] = 1;
+        if (out.n <= 20) log('§TEAM_CATCHUP op=' + r.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' hash=' + a.hash.slice(0, 12) + ' (held until its entity was bound)'); }
+      catch (e) { log('🔴 §TEAM_CATCHUP op=' + r.op_type + ' author-failed ' + (e && e.message)); } }
+    if (out.n) log('§TEAM_CATCHUP released=' + out.n + ' (persons now ' + np + ')');
+    return out;
   }
   function normNeg(db, fields, fo, depth) {            // a copy of the fields with every device-local FK (-k) replaced by {uu} of its CREATE; that record's fields are kept in fo (for the entity path)
     var out = {}; Object.keys(fields || {}).forEach(function (c) { var v = fields[c];
@@ -255,11 +253,7 @@
     else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
     if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
       var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo);
-      if (!ad || !(await S.order()).roster.persons[ad]) {
-        if (ad && !withheld[r.op_uuid]) { var refs0 = {}; snapRefs(db, base, refs0, 0); if (isNeg(p.id)) { var tg = createRowOf(db, p.id); if (tg) { refs0[-Number(p.id)] = { op_type: 'CRUD_CREATE', op_uuid: tg.uu, parameters: JSON.stringify({ table: tg.table, fields: tg.fields }), user_tag: tg.team ? 'team' : null }; snapRefs(db, tg.fields, refs0, 0); } }
-          var wk = Object.keys(withheld); if (wk.length >= WITHHELD_CAP) { wk.sort(function (x, y) { return withheld[x].n - withheld[y].n; }).slice(0, wk.length - WITHHELD_CAP + 1).forEach(function (k) { delete withheld[k]; }); log('§TEAM_CATCHUP_CAP the oldest withheld records were dropped (cap ' + WITHHELD_CAP + '): an entity bound later will not receive them'); }
-          withheld[r.op_uuid] = { n: ++withheldN, addr: ad, table: table, row: { op_type: r.op_type, op_uuid: r.op_uuid, gid: r.gid || null, timestamp: r.timestamp, parameters: r.parameters }, refs: refs0 }; }      // §41.2 L1: remembered for the catch-up on bind
-        return { local: 'no-addressee ' + table, table: table, undeclared: true }; }
+      if (!ad || !(await S.order()).roster.persons[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
     }
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
@@ -356,7 +350,7 @@
   }
 
   async function project(oldRows) {
-    var fold = await S.foldable(), sc = await refreshScope(), baseKeys = {}, thin = sc.kind === 'pos' ? await admitAll(fold, sc) : null;
+    var fold = await S.foldable(), sc = await refreshScope(), baseKeys = {}, thin = sc.kind === 'pos' ? await admitAll(fold, sc) : null, rel = sc.kind === 'pos' ? await releaseFor(oldRows) : { n: 0, ids: {} };
     if (baseOn()) {                                                 // §13.12.I.2: targets that live in the base (no CREATE in the log) -> how THIS device addresses them
       var made = {}; fold.forEach(function (q) { if (q.env.body.op_type === 'CRUD_CREATE') made[q.env.target.uu] = 1; });
       for (var q of fold) { var qe = q.env; if (qe.body.op_type === 'CRUD_CREATE' || made[qe.target.uu]) continue;
@@ -367,7 +361,7 @@
     if (thin) { var byHash = {}; oldRows.forEach(function (r) { if (r.user_tag !== 'team' && sent[r.op_uuid]) byHash[sent[r.op_uuid]] = r; });
       fold.forEach(function (p) { var sc2 = byHash[p.hash] && p.env.author === (dev && dev.kid) ? global.TeamScope.scopeOf(p.env.target.table, sc.role) : null;
         if (sc2 === 'up' || sc2 === 'down') { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
-    var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && (!sent[r.op_uuid] || ownIds[r.id]); }).map(function (r) {
+    var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && (!sent[r.op_uuid] || ownIds[r.id] || rel.ids[r.id]); }).map(function (r) {
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
       return c; });
@@ -413,7 +407,7 @@
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
     if (thin) log('§TEAM_THIN plan=pos role=' + sc.role + ' placed=' + thin.placed + ' accepted=' + thin.accepted + ' refused=' + thin.refused + ' bytes_accepted=' + thin.bytesAccepted + ' bytes_refused=' + thin.bytesRefused +
                   ' refused_tables=' + JSON.stringify(thin.byTable) + ' (REFUSED not-addressed: this role is not the recipient of those flows; they are never projected)');
-    project.last = { thin: thin ? { placed: thin.placed, accepted: thin.accepted, refused: thin.refused, bytesAccepted: thin.bytesAccepted, bytesRefused: thin.bytesRefused, byTable: thin.byTable } : null, kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
+    project.last = { released: rel.n, thin: thin ? { placed: thin.placed, accepted: thin.accepted, refused: thin.refused, bytesAccepted: thin.bytesAccepted, bytesRefused: thin.bytesRefused, byTable: thin.byTable } : null, kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
     return out;
   }
 
@@ -495,13 +489,13 @@
       await verifyBase();                                           // verify-then-fold: a copy that is not the team's base never projects anything
       await pinTrust();                                             // a joiner learns the pinned plan trust list when the genesis arrives
       await refreshScope();                                         // ... and which plan (office | pos) the genesis names
-      if (await catchUp()) { var rep2 = await S.sync(pipe); rep.sent += rep2.sent; }       // §41.2 L1: records withheld for want of a bound entity go out the moment the roster has one
       await adoptSets();
       if (baseBlocked()) {
         log('§TEAM_VISIT sent=' + rep.sent + ' fetched=' + rep.fetched + ' received=' + rep.received + ' placed=' + rep.placed + ' | BASE ' + baseSt.state + ' — NOTHING FOLDED: ' + baseSt.message);
         await persist(); await render(); return { rep: rep, res: { ok: false, reason: 'base-' + baseSt.state }, pj: {} };
       }
       var res = await global.__crud.teamRebuild(project), pj = project.last || {};
+      if (pj.released) { var rep2 = await S.sync(pipe); rep.sent += rep2.sent; }       // §41.2 L1: the records the projection just released go out in this Visit
       var rin = res && res.ok ? await fireReceived(pj) : null;        // §13.2 2.6: only on a committed projection
       await peopleRound();                                          // §13.12.G.1: publish my focus, collect the others', rank, heads-up (never throws into the Visit)
       var dirty = false; try { dirty = !!(global.__crud.inlineDirty && global.__crud.inlineDirty()); } catch (e) {}
@@ -639,7 +633,7 @@
     if (!cfg.space) { log('§TEAM_BOOT not paired — device=' + !!dev + ' space=false (open the Team pill: Start a team or Join)'); _resolveReady(false); await render(); return; }
     var own = await kvGet('erp_db'), seed = own ? null : await kvGet('db');
     await openStore(own || seed || undefined);
-    sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {}; withheld = (await kvGet('erp_withheld')) || {}; withheldN = Object.keys(withheld).reduce(function (m, k) { return Math.max(m, withheld[k].n || 0); }, 0);
+    sent = (await kvGet('erp_sent')) || {}; localOnly = (await kvGet('erp_localonly')) || {};
     var fr = await kvGet('erp_replfired');                         // §13.2 2.6: a device upgrading to replica firing takes what it ALREADY holds as fired (never re-runs a trigger on old history)
     if (fr) fired = fr; else { fired = {}; (await S.placedEnvelopes()).forEach(function (p) { if (p.env.author !== dev.kid) fired[p.hash] = 1; }); log('§TEAM_REPLICA_BASELINE already-received=' + Object.keys(fired).length + ' (taken as fired: replica timings run only for rows received from now on)'); await kvPut('erp_replfired', fired); }
     log('§TEAM_BOOT device=' + dev.kid + ' space=' + cfg.space.slice(0, 12) + ' store=' + (own ? 'own(erp_db)' : seed ? 'seeded-from-phone-page' : 'new') + ' pipe=' + pipe.id + ' sent=' + Object.keys(sent).length + ' localOnly=' + Object.keys(localOnly).length);
@@ -663,7 +657,7 @@
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
   }
   function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !cfg.token) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
-  async function fresh() { sent = {}; localOnly = {}; withheld = {}; withheldN = 0; fired = {}; replExc = []; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); await kvPut('erp_withheld', {}); await kvPut('erp_replfired', {}); }
+  async function fresh() { sent = {}; localOnly = {}; fired = {}; replExc = []; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); await kvPut('erp_replfired', {}); }
   async function found() {
     await ready; needKey(); await fresh();
     var bi = null; try { bi = await loadedBase(); } catch (e) { log('§TEAM_BASE none reason=' + (e && e.message) + ' (space founded WITHOUT a base)'); }
@@ -709,7 +703,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, _catchUp: catchUp, _withheld: function () { return withheld; }, _sentMap: function () { return sent; }, _translate: translate, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);

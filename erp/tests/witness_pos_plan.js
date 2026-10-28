@@ -155,7 +155,12 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var nC = 'LN-C-' + tag, invC = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[2][0], documentno: nC, grandtotal: 70, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of C' });
   var scC = invC != null ? await T.create(A, 'c_invoicepayschedule', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: invC, dueamt: 35, duedate: '2026-12-01 00:00:00' }) : null;
   await T.visit(A); await T.visit(A);
-  var whFor = function (d) { return d.pg.evaluate(function (u) { var w = window.TeamSync._withheld(); return Object.keys(w).filter(function (k) { return w[k].addr === u; }).length; }, bps[2][1]); }, wh0 = await whFor(A);
+  var whFor = function (d) { return d.pg.evaluate(function () { var w = window.TeamSync.localOnly(); return Object.keys(w).filter(function (k) { return /^no-addressee/.test(w[k]); }).length; }); }, wh0 = await whFor(A);
+  // the processor's page RELOADS between issue and bind: only what the device persisted (rows, sent, localOnly) comes back
+  await A.pg.reload({ waitUntil: 'load' });
+  await A.pg.waitForFunction(function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0; }, null, { timeout: 180000 });
+  await A.pg.evaluate(function () { return window.TeamSync.ready; }); await T.visit(A);
+  var whR = await whFor(A);
   var C3 = await device('C3'); await T.join(C3, space);
   var c3Before = await T.rows(C3, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'");
   for (var k3 = 0; k3 < 5; k3++) { await T.approve(A, await T.kid(C3), BORR, bps[2][1]); await T.visit(C3); await T.visit(A); await T.visit(C3); if (await T.enrolled(C3)) break; await sleep(300); }
@@ -164,8 +169,8 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var c3q = await T.rows(C3, "SELECT documentno AS d, description AS ds FROM c_invoice WHERE documentno='" + nC + "'"), c3s = await T.rows(C3, "SELECT dueamt AS a FROM c_invoicepayschedule WHERE duedate LIKE '2026-12-01%'");
   var leak = await T.rows(C1, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'"), leak2 = await T.rows(C2, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'");
   console.log('   §PPB_CATCHUP withheld before bind=' + wh0 + ' after=' + wh1 + ' §TEAM_CATCHUP lines=' + cuLines.length + ' late borrower holds ' + JSON.stringify([c3q, c3s]));
-  verdict('B3', wh0 === 2 && Number(c3Before[0].n) === 0, 'BEFORE the bind the processor holds the late borrower\'s loan + instalment WITHHELD (2) and the device (just joined) has nothing', 'withheld=' + wh0 + ' device has ' + c3Before[0].n);
-  verdict('B3', wh1 === 0 && cuLines.length === 2 && c3q.length === 1 && c3q[0].d === nC && !c3q[0].ds && c3s.length === 1 && Number(c3s[0].a) === 35, 'AFTER the bind the processor released exactly 2 records (§TEAM_CATCHUP x2, once, across ' + 3 + ' further Visits) and the late borrower holds its loan and instalment with carried columns only', JSON.stringify([wh1, cuLines.length, c3q, c3s]).slice(0, 170));
+  verdict('B3', wh0 >= 2 && whR === wh0 && Number(c3Before[0].n) === 0, 'BEFORE the bind the processor holds the late borrower\'s loan + instalment back (marked no-addressee, ' + wh0 + ' held in all), the mark SURVIVES a reload of the page (' + whR + '), and the device (just joined) has nothing', 'held=' + wh0 + ' after reload=' + whR + ' device has ' + c3Before[0].n);
+  verdict('B3', whR - wh1 === 2 && cuLines.length === 2 && c3q.length === 1 && c3q[0].d === nC && !c3q[0].ds && c3s.length === 1 && Number(c3s[0].a) === 35, 'AFTER the bind the RELOADED processor released exactly 2 records (§TEAM_CATCHUP x2, once, across 3 further Visits) and the late borrower holds its loan and instalment with carried columns only', JSON.stringify([wh1, cuLines.length, c3q, c3s]).slice(0, 170));
   verdict('B3', Number(leak[0].n) === 0 && Number(leak2[0].n) === 0, 'borrowers 1 and 2 received none of it', 'C1=' + leak[0].n + ' C2=' + leak2[0].n);
   var red = Object.keys(ARMS).filter(function (k) { return ARMS[k]; });
   console.log('§PPB_ARMS red=' + (red.length ? red.join(',') : 'none') + ' judged=' + judged);
@@ -176,7 +181,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var M = [
     ['the inbound filter is off (everything the relay delivered is projected)', 'adapter', '      if (thin && thin.refuse[p.hash]) return;', '', ['B2']],
     ['`by` is ignored: a DOWN row is addressed by role alone', 'reader', 'if (!by || !by.length) return { ok: true };', 'if (true) return { ok: true };', ['B2']],
-    ['catch-up on bind is off (a withheld record is never released)', 'adapter', "if (!S || scopeCtx.kind !== 'pos' || !Object.keys(withheld).length) return 0;", 'return 0;', ['B3']],
+    ['catch-up on bind is off (a held record is never released)', 'adapter', "if (!S || scopeCtx.kind !== 'pos') return out;", 'return out;', ['B3']],
     ['the sender sends undeclared tables (every table is shipped as a flow)', 'adapter', "else if (scope !== 'share') return {", "else if (false) return {", ['B2']]];
   var cp = require('child_process'), muts = [];
   for (var m of M) {
