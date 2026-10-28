@@ -14,6 +14,8 @@
 //   B3r the moves went through the spine's cascade: the shed's double door, hosted by its joined wall (§D88 B), rides it one pitch as hosted-by (2 fills edges, 2 riders)
 //   B9 (§D89 step 4) a wall of the last typical bay moved 5 cm, then a second bay: every copy = its source's CURRENT box + one pitch (1 mm) — the edited wall's copy carries the edit
 //      (main's bay copy cloned the insert row: the copy sat at the wall's pre-edit place)
+//   B10 with Complete the building ticked (a floor slab + two roofs, full length): the bay is added, and the slab and both roofs are one pitch longer (main: refused "3 full-length element(s)
+//       the rule does not stretch", measured 2026-10-28 by the BricsCAD film's dry run)
 //   B5 one Ctrl+Z restores every element and the grid; Ctrl+Y brings the bay back      B6 0 page errors
 // Input: the 9 CLI-marked shed sheets (SHED_MARKED_DIR, default ~/Videos/dxf2bim_film_work/why/cli/marked). Missing input -> MISSING, exit 2.
 // usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_add_bay.js
@@ -33,7 +35,7 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
   await new Promise(z => srv.listen(0, '127.0.0.1', z));
   const br = await puppeteer.launch({ headless: 'new', protocolTimeout: 1800000, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const errs = [];
-  const open = async (type) => {
+  const open = async (type, complete) => {
     const pg = await (await br.createBrowserContext()).newPage(); await pg.setViewport({ width: 1440, height: 810 });
     pg.on('pageerror', e => { errs.push(String(e).slice(0, 200)); console.log('§PAGEERR ' + String(e).slice(0, 200)); });
     pg.on('console', m => { const t = m.text(); if (/^§DXF-BAY|^§GATE /.test(t)) console.log('  ' + t.slice(0, 300)); });
@@ -53,6 +55,7 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     }
     await pg.waitForFunction('window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.ok', { timeout: 300000 }).catch(() => {});
     if (!await pg.evaluate(() => !!(window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.ok))) return null;
+    if (complete) { await pg.click('#dxf-complete'); await sleep(800); }   // B10: Complete the building (floor slab + roofs, amber)
     await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 300000 }); await sleep(2500);
     return pg;
   };
@@ -153,6 +156,19 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
         'plan ok=' + R2.ok + (R2.why ? ' why=' + R2.why : '') + ' copies ' + add2.length + ' (first bay ' + added.length + ') off ' + off9.length + (off9[0] ? ' e.g. #' + off9[0].id + ' ' + off9[0].c : '') + ' | wall #' + wfid + ' y-centre ' + ((wb.b[1] + wb.b[4]) / 2).toFixed(4) + ' -> its copy ' + (mine ? ((mine.b[1] + mine.b[4]) / 2).toFixed(4) : 'none') + ' | gate=' + (R2.gate || 'clean'));
     }
     ok('B6 no page errors', errs.length === 0, 'errors=' + errs.length + (errs[0] ? ' ' + errs[0] : ''));
+    // B10 the completed shed
+    await pg.close();
+    const pc = await open('Farming Shed', true);
+    if (!pc) ok('B10 a completed shed takes a bay', false, 'the completed shed did not qualify');
+    else {
+      const C0 = await snap(pc); await pc.evaluate(() => document.getElementById('dxf-bay-max').scrollIntoView({ block: 'center' })); await pc.click('#dxf-bay-max'); await sleep(4000);
+      const R10 = await pc.evaluate(() => { const L = window.DxfImportUI.state.lastBay, st = (document.getElementById('dxf-status') || {}).textContent; return L ? { ok: L.plan.ok, why: L.plan.why, pitch: L.plan.pitch, stretched: L.plan.stretched.map(x => ({ id: x.id, cls: x.cls })), gate: L.res.gate || 'clean', cost: L.cost } : { ok: false, why: st }; });
+      const C1 = await snap(pc), K10 = 0, long = (R10.stretched || []).filter(x => x.cls === 'IfcSlab' || x.cls === 'IfcRoof');
+      const off10 = long.filter(x => { const a = C0.els[x.id], b = C1.els[x.id]; return !a || !b || Math.abs((b.b[K10 + 3] - b.b[K10]) - (a.b[K10 + 3] - a.b[K10] + R10.pitch)) > MM; });
+      ok('B10 with Complete ticked, the bay is added and the floor slab + both roofs are one pitch longer', R10.ok && long.filter(x => x.cls === 'IfcSlab').length === 1 && long.filter(x => x.cls === 'IfcRoof').length === 2 && off10.length === 0,
+        'ok=' + R10.ok + (R10.why ? ' why=' + R10.why : '') + ' | slab/roof stretched ' + long.map(x => '#' + x.id + ' ' + x.cls).join(',') + ' off ' + off10.length + ' | gate=' + R10.gate + ' | cost ' + JSON.stringify(R10.cost));
+      await pc.close();
+    }
   } catch (e) { if (!/not offered|no bay/.test(String(e && e.message))) ok('B run', false, 'threw ' + String(e && e.stack || e).slice(0, 300)); }
   await br.close(); srv.close();
   console.log('§W-DXF-ADD-BAY ' + (fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE') + ' judged=' + judged + ' fail=' + fails); process.exit(fails || !judged ? 1 : 0);

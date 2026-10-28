@@ -26,7 +26,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fs.mkdirSync(OUT, { recursive: true });
   const br = await puppeteer.launch({ headless: 'new', env: GPU_ENV, args: ['--no-sandbox', '--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist', '--enable-gpu', '--window-size=1440,810'] });
   const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810, deviceScaleFactor: 4 / 3 });   // browser zoom 133 %: the panels' small text legible in a 1920 x 1080 frame
-  const plog = []; pg.on('console', m => { const t = m.text(); plog.push(t); if (/§DXF-ARRANGE (start|done|skip|hand)|§DXF-META|PAGEERR/.test(t)) console.log(t.slice(0, 300)); });
+  const plog = []; pg.on('console', m => { const t = m.text(); plog.push(t); if (/§DXF-ARRANGE (start|done|skip|hand)|§DXF-META|PAGEERR|§DXF-BAY|§GATE /.test(t)) console.log(t.slice(0, 300)); });
   pg.on('pageerror', e => console.log('§PAGEERR ' + String(e).slice(0, 300)));
   await pg.evaluateOnNewDocument(() => { const mk = () => { if (document.getElementById('film-ptr')) return; const d = document.createElement('div'); d.id = 'film-ptr';
       d.style.cssText = 'position:fixed;left:-50px;top:-50px;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:rgba(255,214,64,.95);border:2px solid #14161c;box-shadow:0 0 0 2px rgba(255,214,64,.45);z-index:2147483647;pointer-events:none;transition:transform .12s';
@@ -187,8 +187,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   // ---- chapter 2 THE SHEET, AS YOU DREW IT ----
   chapter(2, 'sheet'); await beat('b04');
   const fp = await fpIndex(); await openSheet(fp); await backdrop(2);
-  { const q = await pg.evaluate(() => [...document.querySelectorAll('#dxf-sheet-frame text')].map(t => t.textContent.trim()).filter(t => /\?/.test(t)));   // the box's open rows (a row with a ?)
-    fact('box_open_rows', q); const lv = q.find(t => /^@LEVEL/.test(t)); fact('box_open_word', lv ? 'the floor level' : (q.length ? q[q.length - 1] : 'none')); }
+  { const ob = (/open_box="([^"]*)"/.exec(sheetMarks()) || [])[1] || ''; fact('box_open_rows', ob);   // the frame's own log: the box's open rows as written on the sheet
+    fact('box_open_word', /^@LEVEL\b/.test(ob) ? 'the floor level' : (ob || 'none')); }
   fact('sheet_open', sheetMarks()); { const m = /rings=(\d+) boxed_open=(\d+)/.exec(sheetMarks()) || []; fact('rings', m[1] || 'none'); fact('boxed_open', m[2] || 'none'); }
   await moveTo(1000, 160, 1400); await sleep(1500); await moveTo(760, 260, 1400); await sleep(1200);
   await beat('b05'); await closeSheet();
@@ -295,7 +295,8 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
     window.__fb = bb; const ins = window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT'), cls = o => (o.parameters || {}).ifc_class;
     const doors = ins.filter(o => cls(o) === 'IfcDoor').map(o => bb(o.id)).filter(Boolean), walls = ins.filter(o => cls(o) === 'IfcWall').map(o => ({ id: o.id, b: bb(o.id), lb: o.parameters.bbox })).filter(w => w.b);
     const free = walls.filter(w => { const k = (w.b[3] - w.b[0]) >= (w.b[4] - w.b[1]) ? 0 : 1, j = 1 - k; return !doors.some(d => d[j + 3] >= w.b[j] - 0.05 && d[j] <= w.b[j + 3] + 0.05 && d[k + 3] >= w.b[k] - 1.5 && d[k] <= w.b[k + 3] + 1.5); });
-    const len = w => Math.max(w.b[3] - w.b[0], w.b[4] - w.b[1]); free.sort((a, b) => len(b) - len(a)); const w = free[0], ld = [w.lb[1] - w.lb[0], w.lb[3] - w.lb[2], w.lb[5] - w.lb[4]];
+    const foot = Math.min(...walls.map(w => w.b[2])), ground = free.filter(w => w.b[2] <= foot + 0.05);   // the brief: a ground wall (a gable piece sits under the roof's overhang)
+    const len = w => Math.max(w.b[3] - w.b[0], w.b[4] - w.b[1]); ground.sort((a, b) => len(b) - len(a)); const w = ground[0], ld = [w.lb[1] - w.lb[0], w.lb[3] - w.lb[2], w.lb[5] - w.lb[4]];
     return { id: w.id, b: w.b, k: (w.b[3] - w.b[0]) >= (w.b[4] - w.b[1]) ? 0 : 1, len: +len(w).toFixed(3), localAxis: 'xyz'[ld.indexOf(Math.max.apply(null, ld))] }; });
   fact('wall_id', String(W.id)); fact('wall_len', W.len.toFixed(2));
   const wb = W.b, pad = 3, C0 = await pg.evaluate(() => { const T = window.THREE, b = new T.Box3(); window.Bonsai.group().children.forEach(m => { if (m.isMesh) b.union(new T.Box3().setFromObject(m)); }); const c = b.getCenter(new T.Vector3()); return [c.x, c.y]; });
@@ -304,14 +305,15 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('wall_side', (W.k === 0 ? (out > 0 ? '+y' : '-y') : (out > 0 ? '+x' : '-x')));
   const wc = await pg.evaluate(([b, k, out]) => { const j = 1 - k, p = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2]; p[j] = out > 0 ? b[j + 3] : b[j]; p[2] = b[2] + (b[5] - b[2]) * 0.3; return window.__worldToClient(p[0], p[1], p[2]); }, [wb, W.k, out]);   // the outward face, mid length, low (under any eave)
   await moveTo(wc.x, wc.y, 900); await sleep(300); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); await sleep(800);
-  let sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (sel.length !== 1 || sel[0] !== W.id) { const hc = await pg.evaluate(id => { const o = window.Bonsai.oplog._geomOps().find(q => q.id === id); return o ? o.parameters.ifc_class + ' ' + ((o.parameters.provenance || {}).dxf_handle || '') : '?'; }, sel[0]); fact('wall_pick', 'pointer picked ' + JSON.stringify(sel) + ' (' + hc + '): selected by id (stated)'); await pg.evaluate(id => window.Bonsai.select(id), W.id); } else fact('wall_pick', 'pointer');
+  let sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (sel.length !== 1 || sel[0] !== W.id) { const hc = await pg.evaluate(id => { const o = window.Bonsai.oplog._geomOps().find(q => q.id === id); return o ? o.parameters.ifc_class + ' ' + ((o.parameters.provenance || {}).dxf_handle || '') : '?'; }, sel[0]); fact('wall_pick', 'pointer picked ' + JSON.stringify(sel) + ' (' + hc + '): selected by id (stated)'); fact('pick_boxes', await pg.evaluate(([a, b]) => ({ hit: window.__fb(a), wall: window.__fb(b) }), [sel[0], W.id])); await pg.evaluate(id => window.Bonsai.select(id), W.id); } else fact('wall_pick', 'pointer');
   await clickAt('#b-move', 700); await sleep(700);
   const w0 = await pg.evaluate(id => window.__fb(id), W.id);
   const n0 = await pg.evaluate(() => window.Bonsai.oplog.length);
   { const r = await pointAt('#dim-move'); await sleep(250); await pg.mouse.click(r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, { clickCount: 3 }); await sleep(250); await pg.keyboard.type('0.1', { delay: 110 }); await sleep(400);
     await pg.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }); await sleep(300); }
   await pg.keyboard.press(W.k === 0 ? 'ArrowRight' : 'ArrowUp'); await sleep(2200);
-  const w1 = await pg.evaluate(id => window.__fb(id), W.id); fact('move_status', await stat()); fact('moved_m', (w1[W.k] - w0[W.k]).toFixed(3)); fact('moved_cm', String(Math.round((w1[W.k] - w0[W.k]) * 100)));
+  const w1 = await pg.evaluate(id => window.__fb(id), W.id); fact('move_status', await stat()); fact('moved_m', (w1[W.k] - w0[W.k]).toFixed(3)); fact('moved_cm', String(Math.round((w1[W.k] - w0[W.k]) * 100))); { const g = await pg.evaluate(() => window.__lastGate || ''), r = (/(\d+) RED/.exec(g) || [])[1], o = (/(\d+) ORANGE/.exec(g) || [])[1]; fact('move_gate', g || 'clean'); fact('move_gate_pairs', await pg.evaluate(() => { const d = window.__lastGateDetail, ops = window.Bonsai.oplog._geomOps(), c = f => { const o = ops.find(q => q.id === +f); return o ? o.parameters.ifc_class : '?'; }; return d ? d.red.concat(d.orange).map(x => x.kind + ' ' + c(x.a) + '#' + x.a + '/' + c(x.b) + '#' + x.b) : []; }));
+    fact('move_gate_words', r ? (r === '1' ? 'one red clash' : r + ' red clashes') : o ? (o === '1' ? 'one orange warning' : o + ' orange warnings') : 'nothing'); }
   await beat('b15');
   { const r = await pointAt('#dim-scale'); await sleep(250); await pg.mouse.click(r.x + Math.min(r.w / 2, 60), r.y + r.h / 2, { clickCount: 3 }); await sleep(250); await pg.keyboard.type(W.localAxis + '1.05', { delay: 110 }); await sleep(350); await pg.keyboard.press('Enter'); await sleep(2600); }
   const w2 = await pg.evaluate(id => window.__fb(id), W.id); fact('scale_status', await stat()); fact('len_after', (Math.max(w2[3] - w2[0], w2[4] - w2[1])).toFixed(3)); fact('len_before', (Math.max(w1[3] - w1[0], w1[4] - w1[1])).toFixed(3));
@@ -326,11 +328,15 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await setFold(false); await fitCentre(1.15, 1800); await sleep(400);
   if (!(await pg.$('#dxf-bay-max'))) throw new Error('no "Add a bay" row: the building type is ' + JSON.stringify(await pg.evaluate(() => window.DxfImportUI.bayRule && window.DxfImportUI.bayRule().type)));
   fact('bay_button', await pg.$eval('#dxf-bay-max', e => e.textContent.trim()));
-  await clickAt('#dxf-bay-max', 900); await pg.waitForFunction(() => window.DxfImportUI.state.lastBay && window.DxfImportUI.state.lastBay.res, { timeout: 120000 }); await sleep(2500); await backdrop(6);
+  const nBayLog = logHas(/§DXF-BAY (committed|plan end=\S+ ok=false|refused)/).length;
+  await pg.$eval('#dxf-bay-max', e => e.scrollIntoView({ block: 'center' })); await sleep(500); await clickAt('#dxf-bay-max', 900);
+  for (let g = 0; g < 240 && logHas(/§DXF-BAY (committed|plan end=\S+ ok=false|refused)/).length === nBayLog; g++) await sleep(500);
+  const bayOut = logHas(/§DXF-BAY (committed|plan end=\S+ ok=false|refused)/).slice(nBayLog)[0] || 'no §DXF-BAY outcome in 120 s'; fact('bay_outcome', bayOut);
+  if (!/committed/.test(bayOut)) throw new Error('add a bay did not commit: ' + bayOut + ' | status ' + await pg.$eval('#dxf-status', e => e.innerText.trim()).catch(() => '')); await sleep(2500); await backdrop(6);
   const B = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay; return { ok: L.plan.ok, copies: L.plan.copied.length, moved: L.plan.moved.length, riders: (L.plan.riders || []).length, stretched: L.plan.stretched.length,
     hinge: L.plan.hingeLabel, pitch: L.plan.pitch, cost: L.cost, gate: L.res.gate || 'clean', cur: (window._TRL && window._TRL.cur) || '' }; });
   Object.keys(B).forEach(k => fact('bay_' + k, typeof B[k] === 'object' ? B[k] : String(B[k])));
-  fact('bay_added', B.cost ? B.cost.added : 'none'); fact('bay_changed', B.cost ? B.cost.changed : 'none'); fact('bay_total', B.cost ? B.cost.total : 'none'); fact('bay_gate_words', B.gate === 'clean' ? 'clean' : B.gate); fact('bay_status', await pg.$eval('#dxf-status', e => e.innerText.trim()).catch(() => ''));
+  fact('bay_added', B.cost ? B.cost.added : 'none'); fact('bay_changed', B.cost ? B.cost.changed : 'none'); fact('bay_total', B.cost ? B.cost.total : 'none'); fact('bay_gate_words', B.gate === 'clean' ? 'clean' : B.gate); fact('bay_cur_words', ({ USD: 'US dollars', MYR: 'ringgit', GBP: 'pounds', EUR: 'euros', SGD: 'Singapore dollars', AUD: 'Australian dollars' })[B.cur] || B.cur); fact('bay_status', await pg.$eval('#dxf-status', e => e.innerText.trim()).catch(() => ''));
   await beat('b18'); await setFold(true); await fitCentre(1.1, 1500); await orbitZ(70, 11000);
   // ---- chapter 7 THE MARKED SHEET, then the prior-art card ----
   chapter(7, 'print'); await beat('b19');
@@ -344,7 +350,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await card('<div style="font-size:15px;letter-spacing:.2em;color:#9fb4c8;margin-bottom:18px">PRIOR ART</div><div style="max-width:980px;font-size:22px;line-height:1.6">' + esc(paText) + '</div><div style="margin-top:22px;font-size:14px;color:#8a93a0">from the DXF2BIM guide, section Prior art</div>');
   await sleep(1500);
   await beat('end'); await hold(); await sleep(600);
-  fact('walker_lines', String(logHas(/§DW[A-Z_-]*\b|§STRWALK|§MEP[-_ ]WALK|§DISC-WALK/).length));
+  fact('walker_lines', String(logHas(/§DW[A-Z_-]*\b|§STRWALK|§MEP[-_ ]WALK|§DISC-WALK/).filter(t => !/module loaded|registered|wrapped/.test(t)).length));   // boot lines (a module loaded, a category registered) are not a walk
   sampling = false; clearInterval(sampler);
   { const inCh = shares.filter(([t, v]) => t > 8); const mn = inCh.length ? Math.min(...inCh.map(x => x[1])) : null; console.log('§FILM_SHARE_SUMMARY samples=' + shares.length + ' min=' + (mn === null ? 'n/a' : mn.toFixed(2)) + ' below0.6=' + inCh.filter(x => x[1] < 0.6).map(x => x[0].toFixed(0) + 's').join(',')); }
   await cdp.send('Page.stopScreencast'); await br.close();
