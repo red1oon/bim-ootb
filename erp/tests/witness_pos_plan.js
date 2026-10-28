@@ -27,7 +27,7 @@ function loadPlan(file, g) { var o = {}; vm.runInNewContext(fs.readFileSync(file
 var OFFICE = loadPlan(path.join(ROOT, 'erp', 'team_plan.js'), 'TEAM_PLAN'), POSPLAN = loadPlan(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'TEAM_PLAN_POS');
 var planJs = function (name, o) { return '(function (g) { g.' + name + ' = ' + JSON.stringify(o) + '; })(typeof window !== \'undefined\' ? window : globalThis);\n'; };
 var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8'), READER = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_scope.js'), 'utf8');
-var KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), LINES = JSON.parse(process.env.PC_LINES || 'null'), TILL = 200001, BORR = 103, HQ = 102;
+var KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), LINES = JSON.parse(process.env.PC_LINES || 'null'), TILL = 200001, BORR = 50004, HQ = 102;
 var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
 (async function () {
@@ -106,7 +106,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   for (var k = 0; k < 5; k++) { await T.approve(A, await T.kid(B), TILL); await T.approve(A, await T.kid(C1), BORR, bps[0][1]); await T.approve(A, await T.kid(C2), BORR, bps[1][1]);
     for (var d2 of [B, C1, C2, A]) await T.visit(d2); if ((await T.enrolled(B)) && (await T.enrolled(C1)) && (await T.enrolled(C2))) break; await sleep(300); }
   var kind = async function (d) { return d.pg.evaluate(function () { return window.TeamScope.kind() + ':' + window.TeamSync._scopeCtx().role; }); };
-  verdict('B1', (await kind(A)) === 'pos:102' && (await kind(B)) === 'pos:200001' && (await kind(C1)) === 'pos:103' && (await kind(C2)) === 'pos:103', 'all four devices read the POS plan from the genesis (kind:role) - nobody was told by a flag', [await kind(A), await kind(B), await kind(C1), await kind(C2)].join(' '));
+  verdict('B1', (await kind(A)) === 'pos:102' && (await kind(B)) === 'pos:200001' && (await kind(C1)) === 'pos:' + BORR && (await kind(C2)) === 'pos:' + BORR, 'all four devices read the POS plan from the genesis (kind:role) - nobody was told by a flag', [await kind(A), await kind(B), await kind(C1), await kind(C2)].join(' '));
   var tid = await A.pg.evaluate(function () { return Number(window.__idmpDb.exec("SELECT ad_table_id FROM ad_table WHERE lower(tablename)='i_order'")[0].values[0][0]); });
   var rid = await T.create(A, 'ad_rule', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: 990206, accesslevel: '3', entitytype: 'U', eventtype: 'T', isactive: 'Y', name: 'POS ticket -> Import Orders', ruletype: 'S', value: 'twin:process:206?DocAction=CO' });
   await T.create(A, 'ad_table_scriptvalidator', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: rid, ad_table_id: tid, eventmodelvalidator: 'TANR', isactive: 'Y', seqno: 10 });
