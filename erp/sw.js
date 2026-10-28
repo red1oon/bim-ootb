@@ -83,6 +83,10 @@ const PRECACHE_ASSETS = [
   'ad_modelval.js',
   'ad_rule.js',        // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus (window.AdRule), W-BUS-ROW
   'ad_import_tables.js',   // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER
+  'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
+  'borrower.js',
+  'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
+  'slipverify/slipok.js',
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
   'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
   'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage

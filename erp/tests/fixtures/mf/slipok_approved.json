@@ -1,0 +1,19 @@
+{
+  "_comment": "RECORDED STUB (not a live call) shaped like SlipOK's documented success reply: HTTP 200 body of POST https://api.slipok.com/api/line/apikey/<branchId>. Field set = SlipCheckResponse {success:true,data:SlipCheckInnerResponse} of the typed SDK github.com/Khaomi/node-slipok src/types.ts (slipok.com's own docs answered HTTP 403 to this build). Values are synthetic; 'message' wording and the bank codes are illustrative. transRef/amount/transTimestamp are filled per slip by the witness.",
+  "success": true,
+  "data": {
+    "success": true,
+    "message": "Slip verified",
+    "language": "EN",
+    "receivingBank": "004",
+    "sendingBank": "014",
+    "transRef": "<per slip, 20 chars>",
+    "transDate": "<yyyyMMdd>",
+    "transTime": "<HH:mm:ss>",
+    "transTimestamp": "<ISO 8601>",
+    "sender": { "displayName": "BORROWER (synthetic)", "name": "BORROWER", "proxy": { "type": "MSISDN", "value": "xxx-xxx-1234" }, "account": { "type": "BANKAC", "value": "xxx-x-x1234-x" } },
+    "receiver": { "displayName": "MICRO FINANCE (synthetic)", "name": "MICRO FINANCE", "proxy": { "type": "MSISDN", "value": "xxx-xxx-5678" }, "account": { "type": "BANKAC", "value": "xxx-x-x5678-x" } },
+    "amount": "<per slip>",
+    "countryCode": "TH"
+  }
+}
