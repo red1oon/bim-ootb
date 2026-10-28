@@ -100,7 +100,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   // ═══ §B1 AFTER: the POS space ═══
   if (!QUIET) console.log('§B1 AFTER — a POS space (?teamplan=pos): A processor, B till, C1 + C2 borrowers bound to two C_BPartners');
   var A = await device('A', '&teamplan=pos'), B = await device('B'), C1 = await device('C1'), C2 = await device('C2'), space = await T.found(A);
-  var bps = await T.db(A, "SELECT c_bpartner_id, c_bpartner_uu FROM c_bpartner WHERE ad_client_id=11 AND iscustomer='Y' AND c_bpartner_uu IS NOT NULL AND c_bpartner_id<>(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11) ORDER BY c_bpartner_id LIMIT 2");      // not the cash customer: a POS order's own invoice must stay addressed to nobody
+  var bps = await T.db(A, "SELECT c_bpartner_id, c_bpartner_uu FROM c_bpartner WHERE ad_client_id=11 AND iscustomer='Y' AND c_bpartner_uu IS NOT NULL AND c_bpartner_id<>(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11) ORDER BY c_bpartner_id LIMIT 3");      // not the cash customer: a POS order's own invoice must stay addressed to nobody
   var locs = await T.db(A, "SELECT m_locator_id FROM m_locator WHERE ad_client_id=11 ORDER BY m_locator_id LIMIT 2");
   for (var d of [B, C1, C2]) await T.join(d, space);
   for (var k = 0; k < 5; k++) { await T.approve(A, await T.kid(B), TILL); await T.approve(A, await T.kid(C1), BORR, bps[0][1]); await T.approve(A, await T.kid(C2), BORR, bps[1][1]);
@@ -151,6 +151,22 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var ordA = await T.rows(A, "SELECT docstatus AS ds, (SELECT count(*) FROM c_orderline l WHERE l.c_order_id=o.c_order_id) AS nl FROM c_order o WHERE documentno='" + KEY + "'");
   verdict('B2', ordA.length === 1 && ordA[0].ds === 'CO' && Number(ordA[0].nl) === LINES.length, 'the processor still imported ONE completed order from the till\'s declaration (the plan thinned the pipe, not the business)', JSON.stringify(ordA));
   verdict('B2', errors === 0, '0 page errors on all devices', 'errors=' + errors + (errors ? ' ' + [A, B, C1, C2].map(function (d) { return d.errs[0]; }).filter(Boolean).slice(0, 2).join(' | ') : ''));
+  // ── §B3 catch-up on bind (§41.2 L1): a loan issued BEFORE its borrower's phone is bound reaches it when it is ──
+  var nC = 'LN-C-' + tag, invC = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[2][0], documentno: nC, grandtotal: 70, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of C' });
+  var scC = invC != null ? await T.create(A, 'c_invoicepayschedule', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: invC, dueamt: 35, duedate: '2026-12-01 00:00:00' }) : null;
+  await T.visit(A); await T.visit(A);
+  var whFor = function (d) { return d.pg.evaluate(function (u) { var w = window.TeamSync._withheld(); return Object.keys(w).filter(function (k) { return w[k].addr === u; }).length; }, bps[2][1]); }, wh0 = await whFor(A);
+  var C3 = await device('C3'); await T.join(C3, space);
+  var c3Before = await T.rows(C3, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'");
+  for (var k3 = 0; k3 < 5; k3++) { await T.approve(A, await T.kid(C3), BORR, bps[2][1]); await T.visit(C3); await T.visit(A); await T.visit(C3); if (await T.enrolled(C3)) break; await sleep(300); }
+  for (var r3 = 0; r3 < 3; r3++) for (var d5 of [A, C3, C1, C2, B]) await T.visit(d5);
+  var wh1 = await whFor(A), cuLines = A.logs.filter(function (l) { return /§TEAM_CATCHUP op=/.test(l); });
+  var c3q = await T.rows(C3, "SELECT documentno AS d, description AS ds FROM c_invoice WHERE documentno='" + nC + "'"), c3s = await T.rows(C3, "SELECT dueamt AS a FROM c_invoicepayschedule WHERE duedate LIKE '2026-12-01%'");
+  var leak = await T.rows(C1, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'"), leak2 = await T.rows(C2, "SELECT count(*) AS n FROM c_invoice WHERE documentno='" + nC + "'");
+  console.log('   §PPB_CATCHUP withheld before bind=' + wh0 + ' after=' + wh1 + ' §TEAM_CATCHUP lines=' + cuLines.length + ' late borrower holds ' + JSON.stringify([c3q, c3s]));
+  verdict('B3', wh0 === 2 && Number(c3Before[0].n) === 0, 'BEFORE the bind the processor holds the late borrower\'s loan + instalment WITHHELD (2) and the device (just joined) has nothing', 'withheld=' + wh0 + ' device has ' + c3Before[0].n);
+  verdict('B3', wh1 === 0 && cuLines.length === 2 && c3q.length === 1 && c3q[0].d === nC && !c3q[0].ds && c3s.length === 1 && Number(c3s[0].a) === 35, 'AFTER the bind the processor released exactly 2 records (§TEAM_CATCHUP x2, once, across ' + 3 + ' further Visits) and the late borrower holds its loan and instalment with carried columns only', JSON.stringify([wh1, cuLines.length, c3q, c3s]).slice(0, 170));
+  verdict('B3', Number(leak[0].n) === 0 && Number(leak2[0].n) === 0, 'borrowers 1 and 2 received none of it', 'C1=' + leak[0].n + ' C2=' + leak2[0].n);
   var red = Object.keys(ARMS).filter(function (k) { return ARMS[k]; });
   console.log('§PPB_ARMS red=' + (red.length ? red.join(',') : 'none') + ' judged=' + judged);
   await browser.close(); server.close();
@@ -160,6 +176,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var M = [
     ['the inbound filter is off (everything the relay delivered is projected)', 'adapter', '      if (thin && thin.refuse[p.hash]) return;', '', ['B2']],
     ['`by` is ignored: a DOWN row is addressed by role alone', 'reader', 'if (!by || !by.length) return { ok: true };', 'if (true) return { ok: true };', ['B2']],
+    ['catch-up on bind is off (a withheld record is never released)', 'adapter', "if (!S || scopeCtx.kind !== 'pos' || !Object.keys(withheld).length) return 0;", 'return 0;', ['B3']],
     ['the sender sends undeclared tables (every table is shipped as a flow)', 'adapter', "else if (scope !== 'share') return {", "else if (false) return {", ['B2']]];
   var cp = require('child_process'), muts = [];
   for (var m of M) {

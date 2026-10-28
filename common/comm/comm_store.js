@@ -159,7 +159,7 @@
         // §16.31: the shape-version judgement only ever DOWNGRADES an op that was admitted (a refusal or park for signature, role, access, scope or deps stays as it is)
         if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.policy ? roster.policy.params : null); if (vj) verdict[o.hash] = vj; }
         // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from a device whose signed team role IS that executor (study §12.2 2.5: a role only)
-        if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var ex = roster.executors[String(o.env.target.table).toLowerCase()];
+        if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var exm = roster.exeAt(o.env.author, o.env.seq), ex = exm ? exm[String(o.env.target.table).toLowerCase()] : undefined;       // §41.2 L2: the map at THIS op's position, not the final one
           if (ex !== undefined) { var okExe = roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
             if (!okExe) verdict[o.hash] = { verdict: 'REFUSED', reason: 'not-executor' }; } }
       }
@@ -539,7 +539,9 @@
     async function setRole(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'ROLE', params: p } }); }
     // §13.12.1: the admin's config op. params = { epoch, visit_ms?, bundle_max_ops?, gate?, checkpoint?, lease_ttl_ms?, pipes?, manifest?, number_prefix? }.
     // A new POLICY reads the previous one (same record), so concurrent policies show up as heads and the fold keeps one epoch.
-    async function setPolicy(params) { return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
+    async function setPolicy(params) {
+      if (params && params.executors !== undefined && params.from_seq === undefined) params = Object.assign({}, params, { from_seq: await frontier() });       // §41.2 L2: a map is published WITH the frontier it was published at
+      return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
     // §38.10 (G-8): publish an owner-signed statement (executors map / plan-trust rotation) as the next POLICY, every other param carried forward; the answer is THIS
     // device's fold verdict — the same one every device reaches — so a stale, untrusted or non-admin statement is reported at once, before any Visit
     var STMT_PARAM = { executors: ['executors', 'executorsStmtProblem'], 'plan-trust': ['planTrust', 'planTrustStmtProblem'] };
@@ -547,7 +549,7 @@
       var k = stmt && STMT_PARAM[stmt.kind]; if (!k) return { ok: false, reason: 'unknown-kind' };
       var prob = ROS[k[1]](stmt); if (prob) return { ok: false, reason: 'bad-statement:' + prob };
       var pol = await policy(); var base = pol ? JSON.parse(JSON.stringify(pol.params)) : {};
-      base.epoch = (pol ? pol.epoch : 0) + 1; base[k[0]] = stmt;
+      base.epoch = (pol ? pol.epoch : 0) + 1; base[k[0]] = stmt; if (stmt.kind === 'executors') delete base.from_seq;       // a fresh frontier is stamped by setPolicy
       var op = await setPolicy(base), v = (await cur()).verdict[op.hash];
       return { ok: !!v && v.verdict === 'MERGED', verdict: v ? v.verdict + (v.reason ? ':' + v.reason : '') : 'none', reason: v && v.verdict !== 'MERGED' ? v.reason : null, hash: op.hash };
     }
