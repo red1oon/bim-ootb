@@ -304,6 +304,12 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 103, TILL_ROLE = Number(process.en
   var ipA = await T.rows(A, "SELECT i_payment_id AS id, invoicedocumentno AS inv, payamt, isapproved, r_pnref, r_authcode, i_isimported FROM i_payment ORDER BY r_pnref");
   var expectRefs = [ref('C1A'), ref('C2A'), ref('C2B')].sort();
   verdict('I1', ipA.length === 3 && JSON.stringify(ipA.map(function (r) { return r.r_pnref; })) === JSON.stringify(expectRefs) && ipA.every(function (r) { return r.isapproved === 'Y' && r.i_isimported === 'N'; }), 'head office holds exactly the 3 approved slips the phones declared (the refused slip and the withdrawn one never left their phones); all I_IsImported=N', JSON.stringify(ipA.map(function (r) { return r.inv + ':' + r.payamt + ':' + r.r_pnref; })));
+  var reg = await eng(A, function (W) { return W.AdProcess.registeredClassnames().concat(Object.keys(W.AdProcess.JAVA || {})); });   // legacy-verbatim ports live in AdProcess.JAVA (defineProcess)
+  var hasRec = reg.indexOf('org.compiere.process.Recurring') >= 0 && reg.indexOf('org.idempiere.process.RecurringRun') >= 0, hasAcct = reg.indexOf('org.adempiere.process.ClientAcctProcessor') >= 0;
+  if (hasAcct) {    // end of day: head office queues the books (legacy CLIENT_ACCOUNTING = Q, a client row of AD_SysConfig, MClient.isClientAccountingImmediate) so the receipts are NOT posted at Complete; the Tenant Accounting Processor posts them below
+    var swId = await T.create(A, 'ad_sysconfig', { ad_client_id: 11, ad_org_id: 0, isactive: 'Y', name: 'CLIENT_ACCOUNTING', value: 'Q', description: 'MF-SEED: the books are posted by the Tenant Accounting Processor at end of day' });
+    say('   §MFS_STEP CLIENT_ACCOUNTING=Q row ' + swId);
+  }
   var nI = A.logs.length, opened = await clickLeaf(A.pg, 374); say('   §MFS_STEP import window opened=' + opened);
   await A.pg.waitForSelector('#idmp-toolbar [data-tb="process"]', { timeout: 30000 }); await sleep(2500);
   await A.pg.waitForFunction(function () { var b = document.querySelector('#idmp-toolbar [data-tb="process"]'); return b && !b.disabled; }, null, { timeout: 20000 }).catch(function () {});
@@ -343,29 +349,37 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 103, TILL_ROLE = Number(process.en
   var tabs2 = Object.keys(mC2.byTable).filter(function (t) { return mC2.byTable[t] > 0; }).sort();
   verdict('B2', Number(own1[0].inv) === 1 && Number(own1[0].sch) === 2 && Number(own1[0].al) >= 1 && (mC1.thin.accepted - mC1.ownPlaced) > 0 && Number(foreign[0].inv) === 0 && Number(foreign[0].sch) === 0 && Number(foreign[0].al) === 0 && mC2.thin.refused > 0, 'borrower 2 received 0 ops of borrower 1: none of its invoice / instalments / allocations is in borrower 2\'s tables, although the relay delivered ' + mC2.delivered + ' ops and borrower 2 refused ' + mC2.thin.refused + ' locally (non-vacuous: borrower 1 holds its own ' + own1[0].sch + ' instalments and ' + own1[0].al + ' allocation)', JSON.stringify(foreign[0]) + ' projected by C2: ' + tabs2.map(function (t) { return t + ':' + mC2.byTable[t]; }).join(','));
 
-  // ═══ §R / §P (agent F1) ═══
-  var reg = await eng(A, function (W) { return W.AdProcess.registeredClassnames(); });
-  var hasRec = reg.indexOf('org.compiere.process.Recurring') >= 0 && reg.indexOf('org.idempiere.process.RecurringRun') >= 0, hasAcct = reg.indexOf('org.adempiere.process.ClientAcctProcessor') >= 0;
+  // ═══ §R / §P (agent F1's ports: Recurring 213 / 200074, Tenant Accounting Processor 53187) ═══
+  var inv2 = loans.map(function (l) { return l.id; }).join(',');
+  async function runMenuProcess(procId, label) {            // menu -> process dialog -> OK, as the clerk does; -> the §AD-PROC-LIVE line
+    var mid = await T.rows(A, "SELECT ad_menu_id AS id FROM ad_menu WHERE ad_process_id=" + procId + " AND isactive='Y'"), n0 = A.logs.length;
+    if (!mid.length || !(await clickLeaf(A.pg, mid[0].id))) return { line: '', note: 'no menu leaf for ' + label };
+    await sleep(2500);
+    try { await A.pg.waitForSelector('#idmp-content [data-proc-run]', { timeout: 20000 }); await A.pg.click('#idmp-content [data-proc-run]'); } catch (e) { return { line: '', note: 'no dialog for ' + label }; }
+    await waitFor(async function () { return A.logs.slice(n0).some(function (l) { return new RegExp('§AD-PROC-LIVE proc=' + procId + ' ').test(l); }); }, 120000); await sleep(2500);
+    return { line: A.logs.slice(n0).filter(function (l) { return new RegExp('§AD-PROC-LIVE proc=' + procId + ' ').test(l); }).pop() || '', note: '' };
+  }
   if (!hasRec) inconclusive('R', 'needs F1: Recurring (213 / 200074) is not registered in this tree (feat/mf-ports not merged) - no renewal invoice can be judged');
   else {
-    // UNVERIFIED until F1 merges: written against the dictionary (AD_Process 200074 "Recurring Run"), not against F1's code.
-    var rm = await T.rows(A, "SELECT ad_menu_id AS id FROM ad_menu WHERE ad_process_id IN (200074,213) AND isactive='Y' ORDER BY ad_process_id DESC");
-    var before = Number((await T.rows(A, 'SELECT count(*) AS n FROM c_invoice WHERE c_bpartner_id=' + bps[0].id))[0].n);
-    var rid = await T.create(A, 'c_recurring', { ad_client_id: 11, ad_org_id: 11, isactive: 'Y', name: 'MF renewal ' + TAG, recurringtype: 'I', c_invoice_id: loans[0].id, datenextrun: '2026-10-28 00:00:00', frequencytype: 'M', frequency: 1, runsmax: 1, runsremaining: 1 });
-    var nR = A.logs.length, okLeaf = rm.length ? await clickLeaf(A.pg, rm[0].id) : false; await sleep(2500);
-    try { await A.pg.waitForSelector('#idmp-content [data-proc-run]', { timeout: 20000 }); await A.pg.click('#idmp-content [data-proc-run]'); await waitFor(async function () { return A.logs.slice(nR).some(function (l) { return /§AD-PROC-LIVE proc=(213|200074) /.test(l); }); }, 60000); await sleep(2500); } catch (e) { /* judged below */ }
-    var after = Number((await T.rows(A, 'SELECT count(*) AS n FROM c_invoice WHERE c_bpartner_id=' + bps[0].id))[0].n);
-    await visitAll([A, C1, C2], 3); var rb = await out(C1);
-    verdict('R', okLeaf && after === before + 1 && rb.loans.length === 2, 'a renewed certificate = a NEW invoice raised by legacy Recurring (menu -> dialog -> OK), and it reaches the borrower\'s phone as a second loan (UNVERIFIED against F1\'s code at write time)', 'invoices ' + before + '->' + after + ' phone loans ' + rb.loans.length + ' menu=' + okLeaf);
+    // the seed's own C_Recurring 100 'Monthy Invoice' has no invoice (legacy RecurringRun would fail on it and roll the whole run back: 'Fill mandatory fields: Invoice'); the operator pauses it first
+    var seedRec = await T.rows(A, 'SELECT c_recurring_id AS id, c_invoice_id AS inv, isactive FROM c_recurring WHERE c_recurring_id=100'); if (seedRec.length && seedRec[0].isactive === 'Y') await update(A, 'c_recurring', 100, { isactive: 'N' });
+    var before = await T.rows(A, 'SELECT documentno AS d FROM c_invoice WHERE c_bpartner_id=' + bps[0].id);
+    await T.create(A, 'c_recurring', { ad_client_id: 11, ad_org_id: 11, isactive: 'Y', name: 'MF renewal ' + TAG, recurringtype: 'I', c_invoice_id: loans[0].id, frequencytype: 'M', frequency: 1, runsmax: 3, runsremaining: 3, datenextrun: '2026-10-28 00:00:00' });
+    var nRR = A.logs.length, rr = await runMenuProcess(200074, 'Recurring Run');
+    console.log('   §MFS_NOTE recurring-run ' + A.logs.slice(nRR).filter(function (l) { return /RECUR|Recurring|PROC-|Error|error|🔴/.test(l); }).slice(-8).map(function (l) { return l.slice(0, 260); }).join(' || '));
+    var after = await T.rows(A, 'SELECT documentno AS d, grandtotal AS gt, docstatus AS ds, (SELECT count(*) FROM c_invoicepayschedule s WHERE s.c_invoice_id=i.c_invoice_id) AS ns FROM c_invoice i WHERE c_bpartner_id=' + bps[0].id);
+    var fresh = after.filter(function (x) { return !before.some(function (b) { return b.d === x.d; }); });
+    await visitAll([A, C1, C2], 3); var rb = await out(C1), rb2 = await out(C2);
+    verdict('R', /ok=Y/.test(rr.line) && fresh.length === 1 && fresh[0].ds === 'CO' && Number(fresh[0].gt) === loans[0].gt && Number(fresh[0].ns) === 2 && rb.loans.length === 2 && rb.loans.some(function (l) { return l.no === fresh[0].d && Number(l.open) === loans[0].gt; }) && rb2.loans.length === 1, 'a renewed certificate = a NEW invoice raised by legacy Recurring Run (menu -> dialog -> OK): completed, same total, 2 instalments; it reaches the borrower\'s phone as a second loan (open = its total) and not the other borrower\'s', rr.note + ' ' + rr.line.slice(0, 110) + ' fresh=' + JSON.stringify(fresh) + ' phone1 loans=' + JSON.stringify(rb.loans.map(function (l) { return l.no + ':' + l.open; })) + ' phone2 loans=' + rb2.loans.length);
   }
   if (!hasAcct) inconclusive('P', 'needs F1: Tenant Accounting Processor (53187) is not registered in this tree - no end-of-day posting can be judged');
   else {
-    var pm = await T.rows(A, "SELECT ad_menu_id AS id FROM ad_menu WHERE ad_process_id=53187 AND isactive='Y'");
-    var pre = await T.rows(A, 'SELECT posted FROM c_payment WHERE c_invoice_id IN (' + inv2 + ')'); console.log('   §MFS_NOTE posted-before-processor=' + JSON.stringify(pre.map(function (x) { return x.posted; })));
-    var nP = A.logs.length, okLeafP = pm.length ? await clickLeaf(A.pg, pm[0].id) : false; await sleep(2500);
-    try { await A.pg.waitForSelector('#idmp-content [data-proc-run]', { timeout: 20000 }); await A.pg.click('#idmp-content [data-proc-run]'); await waitFor(async function () { return A.logs.slice(nP).some(function (l) { return /§AD-PROC-LIVE proc=53187 /.test(l); }); }, 90000); await sleep(2500); } catch (e) { /* judged below */ }
-    var post = await T.rows(A, "SELECT p.c_payment_id AS id, p.posted, (SELECT COALESCE(SUM(amtacctdr),0) FROM fact_acct f WHERE f.ad_table_id=335 AND f.record_id=p.c_payment_id) AS dr, (SELECT COALESCE(SUM(amtacctcr),0) FROM fact_acct f WHERE f.ad_table_id=335 AND f.record_id=p.c_payment_id) AS cr FROM c_payment p WHERE p.c_invoice_id IN (" + inv2 + ")");
-    verdict('P', okLeafP && post.length === 3 && post.every(function (x) { return x.posted === 'Y' && Number(x.dr) > 0 && Math.abs(Number(x.dr) - Number(x.cr)) < 0.005; }), 'end of day the Tenant Accounting Processor posts the receipts: Posted=Y and Fact_Acct balanced (dr = cr) for each (UNVERIFIED against F1\'s code at write time)', JSON.stringify(post));
+    var idsP = pays.map(function (x) { return x.id; }).join(',');
+    var factsOf = "SELECT p.c_payment_id AS id, p.posted, (SELECT COALESCE(SUM(amtacctdr),0) FROM fact_acct f WHERE f.ad_table_id=335 AND f.record_id=p.c_payment_id) AS dr, (SELECT COALESCE(SUM(amtacctcr),0) FROM fact_acct f WHERE f.ad_table_id=335 AND f.record_id=p.c_payment_id) AS cr FROM c_payment p WHERE p.c_payment_id IN (" + idsP + ") ORDER BY p.c_payment_id";
+    var pre = await T.rows(A, factsOf);
+    var pr = await runMenuProcess(53187, 'Tenant Accounting Processor'), post = await T.rows(A, factsOf);
+    console.log('   §MFS_NOTE queued-before=' + JSON.stringify(pre.map(function (x) { return x.posted + ':' + x.dr; })) + ' after=' + JSON.stringify(post.map(function (x) { return x.posted + ':' + x.dr + '/' + x.cr; })) + ' ' + pr.line.slice(0, 120));
+    verdict('P', pre.length === 3 && pre.every(function (x) { return x.posted !== 'Y' && Number(x.dr) === 0; }) && /ok=Y/.test(pr.line) && post.length === 3 && post.every(function (x) { return x.posted === 'Y' && Number(x.dr) > 0 && Math.abs(Number(x.dr) - Number(x.cr)) < 0.005; }), 'end of day the Tenant Accounting Processor (from the menu) posts the QUEUED receipts: before it Posted<>Y and no Fact_Acct (non-vacuous), after it Posted=Y and Fact_Acct balanced (dr = cr) for each of the 3', pr.note + ' ' + pr.line.slice(0, 100));
   }
 
   await finish();
