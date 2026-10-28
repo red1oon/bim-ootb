@@ -190,3 +190,8 @@ Take log read: 21 beats, 0 `§PAGEERR`, `walker_lines 0`, `raw_unchanged true`, 
 `FILM_SET=bricscad2 FILM_CARDS_PY=<that file> BEAT_MIN_JSON=prompts/film_dxf2bim_bricscad_shed_beat_min.json bash prompts/film_dxf2bim_why_assemble.sh <take1> <take1>/take.log <take1>/filled.tsv ~/Videos/Shed_BricsCAD_Film_1920x1080_2026-10-28_v1.mp4`;
 (3) witness the output from its log (DETAIL 20/20, `wrong=0`, frames == master, about −16 LUFS, silences, 0 black frames), no claim without a `§FILM_FACT`; (4) PRs: this branch (`film/bricscad-shed`: recorder,
 script, beat_min, + the product fixes found by the dry runs: Farming Shed stretch += IfcSlab / IfcRoof (W-DXF-ADD-BAY B10), `§SHEET-MARKS` open_box, W-SHEET-RENDER falsifier) and BIMCompiler `film/bricscad2-cards`.
+**RESULT 2026-10-28 — the BricsCAD film v1: `~/Videos/Shed_BricsCAD_Film_1920x1080_2026-10-28_v1.mp4`, 355.7 s, 1920x1080 25 fps, LOCAL ONLY.** Take 1 (`~/Videos/dxf2bim_film_work/bricscad_2026-10-28/take1/`,
+`take.log` read: 21 beats, 0 `§PAGEERR`, `walker_lines 0`, `raw_unchanged true`). Script filled from THIS take: `§FILL_DONE rows=20 placeholders=41 missing=0 left=0` (every spoken number is a
+`§FILM_FACT` of the take). Assembly (`film_dxf2bim_why_assemble.sh`, `FILM_SET=bricscad2`, cards from BIMCompiler #271): `§POLY_TONE lang=en wrong=0` (b05 re-worded: "Could I have drawn it so it
+never has to ask?" fell at the end, −0.3 st; "Could I have avoided all these questions?" rises +0.9 st), DETAIL 20 / 20, frames 8,892 == master, −17.6 LUFS (1.6 dB under the playbook's ≈ −16),
+one silence = the last 8.7 s (end card + hold), 0 black frames. Voices: Kokoro, local (no text sent out). Chapter cards 7. Not claimed: no person has listened to or watched it.
