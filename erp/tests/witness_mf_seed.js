@@ -55,7 +55,7 @@ var MUT = process.env.MFS_MUT ? JSON.parse(process.env.MFS_MUT) : null;
 var FIX = path.join(HERE, 'erp', 'tests', 'fixtures', 'mf');
 var APPROVED = JSON.parse(fs.readFileSync(path.join(FIX, 'slipok_approved.json'), 'utf8')), REFUSED = JSON.parse(fs.readFileSync(path.join(FIX, 'slipok_refused_1013.json'), 'utf8'));
 var TAG = String(Math.floor(Math.random() * 9000) + 1000), KEY_TEST = 'TEST-NOT-A-KEY-' + TAG;
-var BORROWERS = [121, 200000], SHIPPED_ROLE = 103, TILL_ROLE = Number(process.env.MFS_BOR_ROLE || 50004), HQ_BANK = 100, STUB_HOST = 'api.slipok.com', OTHER_HOST = 'verify.other.example';
+var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.env.MFS_BOR_ROLE || 50004), HQ_BANK = 100, STUB_HOST = 'api.slipok.com', OTHER_HOST = 'verify.other.example';
 
 (async function () {
   say('═══ W-MF-SEED — Micro Finance on the GardenWorld seed: slip check behind one interface, offline acknowledgement, Import Payment, derived balance (§40/§40.2) ═══  tag=' + TAG + (MUT ? '  MUTANT=' + JSON.stringify(MUT).slice(0, 140) : '') + '\n');
@@ -89,9 +89,8 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 103, TILL_ROLE = Number(process.en
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port, PIPE = base + '/pipe';
   var browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
-  // FINDING (this build): the shipped POS plan names the borrower role 103 'GardenWorld User' (user level '  O'). Its I_Payment declaration is REFUSED at the fold by legacy's own table access
-  // (comm_admit -> ad_access.canUpdate: I_Payment AccessLevel 2 = Client only, needs user level 'C'): REFUSED access:missing=T (MFS_BOR_ROLE=103 reproduces it, see §MFS_EVIDENCE). So this witness serves the shipped plan with the borrower
-  // rows moved to a client-level role (default 50004 'Web Service Execution', user level ' CO') and approves the phones with it. Nothing else in the plan changes.
+  // The shipped POS plan now names the borrower rows on role 50004 'Web Service Execution' (user level ' CO', legacy's external depositor; TEAMWORK §41.2): nothing is patched here. MFS_BOR_ROLE=103 still reproduces the old
+  // REFUSED access:missing=T (I_Payment is AccessLevel 2) by moving the rows back, as §MFS_EVIDENCE shows.
   if (TILL_ROLE !== SHIPPED_ROLE) POSPLAN.flows.forEach(function (f) { if (f.role === SHIPPED_ROLE) f.role = TILL_ROLE; });
   var owner = await mkKey(); cur.plans.office = planJs('TEAM_PLAN', await signObj(OFFICE, owner)); cur.plans.pos = planJs('TEAM_PLAN_POS', await signObj(POSPLAN, owner));
   var xcfg = encodeURIComponent(Buffer.from(JSON.stringify({ trust: [owner.pub] })).toString('base64'));

@@ -65,6 +65,9 @@
     function cutEq(x, y, f) { var X = x == null ? Infinity : x, Y = y == null ? Infinity : y; return X === Y || (X >= f && Y >= f); }
     var persons = {};
     var kids = Object.keys(frontier);
+    for (var xi = 0; xi < kids.length; xi++) { var xk = kids[xi], xf = frontier[xk], pts = { 1: 1 }; pts[xf] = 1;       // §41.2 L2: a later map may not re-judge an op of the closed prefix
+      (ra.exeHist || []).concat(rs.exeHist || []).forEach(function (e) { var c = e.from[xk]; if (c !== undefined) { if (c >= 1 && c <= xf) pts[c] = 1; if (c + 1 >= 1 && c + 1 <= xf) pts[c + 1] = 1; } });
+      for (var pt of Object.keys(pts)) if (ENV.canonical(rs.exeAt(xk, Number(pt))) !== ENV.canonical(ra.exeAt(xk, Number(pt)))) return 'executors-changed'; }
     for (var k = 0; k < kids.length; k++) { var kid = kids[k], f = frontier[kid], ds = rs.devices[kid], da = ra.devices[kid];
       if (!ds || !da) return 'device-missing';
       if (ds.jwk.x !== da.jwk.x || ds.jwk.y !== da.jwk.y || ds.person !== da.person) return 'device-changed';
@@ -104,6 +107,7 @@
     if (p.upcasters !== undefined) { if (!Array.isArray(p.upcasters) || p.upcasters.length > 16 || p.upcasters.some(function (u) { return !u || typeof u !== 'object' || u.kind !== 'upcasters' || typeof u.op !== 'string' || !Array.isArray(u.steps) || !u.steps.length || u.steps.length > 32 || !u.signer || typeof u.signer !== 'object' || typeof u.sig !== 'string'; })) return 'upcasters'; }   // §16.35: signed mapping sets an admin publishes; the engine checks the SHAPE only — signature and vocabulary are the host registry's (OpVersions.loadSet)
     if (p.planTrust !== undefined && planTrustStmtProblem(p.planTrust)) return 'planTrust';
     if (p.executors !== undefined && executorsStmtProblem(p.executors)) return 'executors';      // FL-8 E3: who runs the DocAction per table, owner-signed      // §35: an owner-signed rotation statement; who signed it is judged in the fold
+    if (p.from_seq !== undefined) { if (!p.from_seq || typeof p.from_seq !== 'object' || Array.isArray(p.from_seq) || Object.keys(p.from_seq).some(function (k) { return !(Number.isInteger(p.from_seq[k]) && p.from_seq[k] >= 0); })) return 'from_seq'; }       // §41.2 L2: the publisher's frontier {kid: highest seq it holds}
     if (p.min_v !== undefined) { if (!p.min_v || typeof p.min_v !== 'object' || Array.isArray(p.min_v) || Object.keys(p.min_v).some(function (k) { return !pint(p.min_v[k], 1); })) return 'min_v'; }       // §16.31: the lowest shape version still accepted, per op type
     return null;
   }
@@ -189,7 +193,7 @@
                (p.plan === undefined || p.plan === 'office' || p.plan === 'pos');       // §38.15: the topology the founder chose; any other value makes the genesis untrusted
       if (ok && !gen) gen = ident[i]; else verdict[ident[i].hash] = { verdict: 'REFUSED', reason: ok ? 'second-genesis' : 'untrusted-genesis' };
     }
-    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, base: null, plan: 'office', planTrust: null, roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
+    if (!gen) return { ok: false, reason: 'no-trusted-genesis', verdicts: verdict, devices: {}, persons: {}, revokes: {}, grants: [], rekeys: [], epoch: 0, encrypted: false, holdersAll: {}, policy: null, checkpoints: {}, base: null, plan: 'office', planTrust: null, exeAt: function () { return null; }, exeHist: [], roleAt: function () { return { ad_role_id: null, comm_admin: false }; } };
 
     // the only key a kid can have is the one that hashes to it — collect them, then verify every op once
     var jwkOf = {}, keyOk = {}; jwkOf[gen.env.body.params.founder.kid] = gen.env.body.params.founder.jwk;
@@ -218,7 +222,7 @@
       exSig[ident[q2].hash] = SIGMEMO[mq2]; exHash[ENV.canonical(st2.map)] = await executorsHash(st2.map); }
 
     function walk(cut) {
-      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, setTrust = {};
+      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, exeHist = [], setTrust = {};
       L.order.forEach(function (h) {
         var e = byHash[h], p = e.body.params || {}, t = e.body.op_type;
         if (h === gen.hash) {
@@ -291,7 +295,7 @@
           }
           var trustAt = trust;                                                          // §38.11 (G-7): the list this POLICY arrived under (before its own rotation)
           if (rot) { trust = rot; trustStmt = ENV.canonical(p.planTrust); trustEpoch = p.epoch; }
-          if (rotE) { exe = rotE; exeStmt = ENV.canonical(p.executors); exeEpoch = p.epoch; }   // applied only now: every other check of this POLICY has passed
+          if (rotE) { exe = rotE; exeStmt = ENV.canonical(p.executors); exeEpoch = p.epoch; exeHist.push({ map: rotE, from: (p.from_seq && typeof p.from_seq === 'object' && !Array.isArray(p.from_seq)) ? p.from_seq : {} }); }       // §41.2 L2: every map is recorded with the publisher's per-device frontier, so an op is judged by the map in force at ITS position   // applied only now: every other check of this POLICY has passed
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
           // §38.11 (G-7): each upcaster set is judged by the hosts against the list in force when the POLICY that FIRST carried it arrived — never the list of today
           /*G7:RECORD*/ (Array.isArray(p.upcasters) ? p.upcasters : []).forEach(function (u) { var ck7 = ENV.canonical(u); if (setTrust[ck7] === undefined) setTrust[ck7] = trustAt ? JSON.parse(JSON.stringify(trustAt)) : null; });
@@ -305,14 +309,16 @@
         } else if (t === 'GENESIS') return no('second-genesis');
         v[h] = { verdict: 'MERGED', reason: t.toLowerCase() };
       });
-      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch, setTrust: setTrust };
+      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch, exeHist: exeHist, setTrust: setTrust };
     }
     var cut = {}, w = null, walks = 0, stable = false;
     while (walks < 5) { walks++; w = walk(cut); if (JSON.stringify(w.rev) === JSON.stringify(cut)) { stable = true; break; } cut = w.rev; }
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), plan: gen.env.body.params.plan === 'pos' ? 'pos' : 'office', planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, setTrust: w.setTrust, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), plan: gen.env.body.params.plan === 'pos' ? 'pos' : 'office', planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch,
+             // §41.2 L2: the executor map in force for the op (kid, seq): the latest map whose publisher's frontier did not yet cover it - the same cut-off rule as roleAt. null = no map yet (legacy).
+             exeAt: function (kid, seq) { var m = null; w.exeHist.forEach(function (e) { if ((e.from[kid] || 0) < seq) m = e.map; }); return m; }, exeHist: w.exeHist, setTrust: w.setTrust, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 
