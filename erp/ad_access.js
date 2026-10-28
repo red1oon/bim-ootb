@@ -188,9 +188,9 @@
   // checkActionAccess — port of MRole.checkActionAccess (MRole.java:2685-2778), called by the DocAction list after getValidActions
   //   (WDocActionPanel.java:185-205). Starts EMPTY; for each role in the walk, the rows for the offered values — a tenant role by client + doctype, a
   //   master role on System by the doctype's DocBaseType (+ DocSubTypeSO for SOO, for POO when set, DocSubTypeInv for MMI) — DISTINCT (value, IsActive):
-  //   'Y' adds, 'N' removes. A value with no row is not offered. overlay (optional) = values removed after the walk, exactly as an 'N' row would remove
-  //   them (§38.5 E2b: the team's in-log executor map). The getValidActions order is kept (the legacy SQL result order is an open oracle check, §38.5).
-  RoleContext.prototype.checkActionAccess = function (clientId, docTypeId, options, overlay) {
+  //   'Y' adds, 'N' removes. A value with no row is not offered. The getValidActions order is kept (the legacy SQL result order is an open oracle check, §38.5).
+  //   The team's executor map reaches this function only as 'N' rows (team_sync projectExecutorRows, §38.5 E2b / study 2.5): there is no other input.
+  RoleContext.prototype.checkActionAccess = function (clientId, docTypeId, options) {
     var opt = (options || []).slice(); if (!opt.length) return opt;
     if (!this.docActRoles) return opt;   /*E2:FILTER*/
     var offered = {}; opt.forEach(function (v) { offered[v] = 1; });
@@ -210,7 +210,6 @@
       pairs.sort(function (a, b) { return a.v < b.v ? -1 : a.v > b.v ? 1 : (a.act < b.act ? -1 : a.act > b.act ? 1 : 0); });
       pairs.forEach(function (r) { var v = r.v, act = r.act; if (act === 'N') delete valid[v]; else valid[v] = 1; });
     });
-    if (overlay) overlay.forEach(function (v) { delete valid[v]; });
     return opt.filter(function (v) { return valid[v]; });
   };
 
