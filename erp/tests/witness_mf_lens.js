@@ -18,6 +18,7 @@
 //   MFL5 SEED ITEMS    GardenWorld's own KPI1, KPI2 and Calendar each appear on the role-102 Home as a named gadget, drawn as "Not ported yet (<kind>)" with a `§DASH-UNPORTED id=<id> name="<name>" kind=<kind>` line (statusline, statusline, calendar - AD_StatusLine and the ZK calendar are not in the twin);
 //                      "Donate" (the seed's own HTML gadget) is now DRAWN as HTML (it was one of the unported). None is dropped silently.
 //   MFL6 STOP          the System Administrator stops the bundle: registry not ACTIVE; 0 rows of it left in both tables; the role-102 Home no longer has the item and still has the 8 legacy gadgets; base hash = pin.
+//   MFL8 OFFLINE DONATE the seed's Donate gadget frames www.idempiere.org (legacy data, kept as legacy draws it); with that host unreachable the request is refused, there is no page error, the frame element is present and every other gadget is drawn.
 //   MFL7 0 page errors on every page of the run.
 // MUTANTS (MFL_MUTANTS=1; each an in-memory copy of the real file, applied exactly once or the child aborts as a CRASH, which is NOT a kill): the access row is ignored (every role sees the item) -> MFL4 · the Line order is ignored -> MFL2 · a link to a target that is not in
 //   the dictionary is accepted -> MFL3 · Stop leaves the rows behind -> MFL6.
@@ -65,6 +66,7 @@ var LEGACY102 = (function () { var c = ORA.cases.filter(function (x) { return x.
   var ctx = await browser.newContext({ viewport: { width: 1500, height: 950 } });
   async function finishRun() { var red = Object.keys(ARMS).filter(function (k) { return ARMS[k]; }); console.log('§MFL_ARMS red=' + (red.length ? red.join(',') : 'none') + ' judged=' + judged); await browser.close(); server.close(); return red; }
 
+  var frameHits = []; await ctx.route(/\/\/www\.idempiere\.org\//, function (r) { frameHits.push(r.request().url()); return r.abort('internetdisconnected'); });   // the seed's Donate gadget frames www.idempiere.org: unreachable here, as it is offline
   var pg = await ctx.newPage(), logs = [], errs = [];
   pg.on('console', function (m) { logs.push(m.text()); }); pg.on('pageerror', function (e) { errs.push(e.message); errors++; });
   await pg.goto(base + '/erp/idempiere.html?lang=en_US', { waitUntil: 'load' });
@@ -125,6 +127,9 @@ var LEGACY102 = (function () { var c = ORA.cases.filter(function (x) { return x.
   var donate = g102.filter(function (x) { return x.id === 200005; })[0], donateHtml = await pg.evaluate(function () { var g = document.querySelector('#idmp-home .idmp-gadget[data-gadget-id="200005"] .idmp-pa .content'); return g ? g.innerHTML.length : 0; });
   verdict('MFL5', seedOk && !!donate && donate.kind === 'html' && donateHtml > 10 && !/Not ported yet/.test(donate.text), 'KPI1 / KPI2 / Calendar each a named "Not ported yet" gadget with a §DASH-UNPORTED line (' + seedOk + '); Donate (seed HTML gadget) drawn as HTML (' + donateHtml + ' chars, kind ' + (donate && donate.kind) + ')', J({ seed: SEED.map(function (s) { return g102.filter(function (x) { return x.id === s[0]; })[0]; }) }));
 
+  // MFL8 OFFLINE DONATE: the Donate gadget's iframe to www.idempiere.org (legacy seed data, drawn as legacy draws it) fails QUIETLY when the host is unreachable: the request was made and refused, no page error, the frame element is there, and every other gadget of the Home is drawn
+  var frameEl = await pg.evaluate(function () { return document.querySelectorAll('#idmp-home .idmp-gadget[data-gadget-id="200005"] iframe').length; });
+  verdict('MFL8', frameHits.length >= 1 && frameEl === 1 && errors === 0 && J(names102) === J(want102), 'Donate frame host unreachable: ' + frameHits.length + ' request(s) refused, ' + frameEl + ' iframe in the gadget, ' + errors + ' page errors, all ' + names102.length + ' gadgets still drawn', J({ frameHits: frameHits.slice(0, 2) }));
   // ───────────────── MFL3 links, X of N ─────────────────
   say('§S4 every link: dictionary target, resolver, a real click');
   var resolved = [], opened = 0, detail = [];

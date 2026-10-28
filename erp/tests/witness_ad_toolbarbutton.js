@@ -9,6 +9,7 @@
 //   Breaks: TBB_BREAK=noform (the AD_Form branch skipped) must turn T3 RED; TBB_BREAK=noaccess (role access ignored) must turn T2 RED where a hidden-by-access button exists.
 //   A comparison over nothing prints INCONCLUSIVE.
 // Run: [TBB_BREAK=noform|noaccess] node erp/tests/witness_ad_toolbarbutton.js > <log>
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
@@ -46,7 +47,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     console.log('§TBB dictionary legacy=' + legacy.length + ' twin=' + twin.length + ' onlyLegacy=' + onlyL.length + ' onlyTwin=' + onlyT.length);
     verdict('T1', 'AD_ToolBarButton: ' + twin.length + ' of ' + legacy.length + ' legacy rows, row for row', legacy.length > 0 && !onlyL.length && !onlyT.length, { onlyL: onlyL.slice(0, 5), onlyT: onlyT.slice(0, 5) }, !legacy.length);
     // setup: Libero installed + started, GardenAdmin logged in
-    await page.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
+    await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system; await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
     await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible');
     await page.click('#idmp-login-ok'); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);
@@ -122,7 +123,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
       { dictRows, btn, formState, menuState });
     verdict('T3b', 'Process from that form commits its collectors (the same form run as the menu path)', !!coll && /committed=true/.test(coll.commit) && /ok/.test(coll.msg), { coll }, !coll);
     // T4 stop the bundle
-    await page.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.idempiere.mfg'); }); await hold(800);
+    await page.evaluate(async () => { await window.PluginEngine._reg().system.stopBundle('org.idempiere.mfg'); }); await hold(800);
     const after = { process: await q("SELECT COUNT(*) FROM ad_process WHERE ad_process_uu='" + PUU + "'"), button: await q("SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_uu='" + BUU + "'"), access: await q("SELECT COUNT(*) FROM ad_process_access a JOIN ad_process p ON p.ad_process_id=a.ad_process_id WHERE p.ad_process_uu='" + PUU + "' AND a.ad_role_id=" + Number(role)) };
     console.log('§TBB after stop ' + JSON.stringify(after));
     verdict('T4', 'bundle stopped: its process, button and access rows stay (legacy convention)', [after.process, after.button, after.access].every(r => Number(r[0][0]) === 1), { after });

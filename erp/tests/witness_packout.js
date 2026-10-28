@@ -12,6 +12,7 @@
 //      that the system unzip lists and whose PackOut.xml carries the process.
 // Run: node erp/tests/witness_packout.js > <log>
 'use strict';
+// W-PLUGIN-ROLE: setup via reg.system; who may start is judged in witness_plugin_role.js
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process');
 const REPO = process.env.REPO || path.join(__dirname, '..', '..');
@@ -47,7 +48,7 @@ const PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01', BUU = '6f1f9b8e-1d0a-4c55-9a
     const A = await mk();
     for (const n of ['erp_cache', 'fold_plugins']) await A.evaluate(x => new Promise(r => { const d = indexedDB.deleteDatabase(x); d.onsuccess = d.onerror = d.onblocked = () => r(); }), n);
     await A.reload({ waitUntil: 'networkidle' }); await A.waitForFunction(() => !!window.__idmpDb && !!window.PluginEngine && document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 60000 });
-    await A.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
+    await A.evaluate(async (u) => { const r = window.PluginEngine._reg().system; await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
     await login(A, 'System', 'System');
 
     // ── O1 legacy format oracle ──

@@ -46,9 +46,13 @@ const EX = 'org.idempiere.ninja.excel', NC = 'org.idempiere.ninja.create';
     verdict('N1', 'fresh profile: Excel Report ' + s1.ex + ', Ninja ' + s1.nc + '; rail has pill-ninja (named icon ' + gridIcon + ') at ' + iN + ' and pill-ninjacreate (letter box N ' + letterN + ') at ' + iC + '; ' + add1.length + ' §PILL-CONTRIB add',
       s1.ex === 'ACTIVE' && s1.nc === 'ACTIVE' && iN >= 0 && iC > iN && gridIcon && letterN && add1.length >= 2, { r1, s1, add1, bi });
     // ── N2 (NinjaExcel needs a tenant db: log in) ──
-    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
-    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
+    // W-PLUGIN-ROLE: the behaviour under test is the plugin lifecycle (Stop / Start / Uninstall / install of a bundle); writes belong to the System Administrator, so this witness runs as System / System (role 0). The same actions as role 102 are refused in N8.
+    const adminLogin = async () => {
+    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible');
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
     await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 }); await page.waitForTimeout(1000);
+    };   // a page reload logs the session out, and the registry's writes need the System Administrator
+    await adminLogin();
     await tap('ninja'); await page.waitForTimeout(800);
     const np = await page.evaluate(() => !!document.getElementById('np-drop')); await page.evaluate(() => { const c = document.getElementById('np-close'); if (c) c.click(); });
     await tap('ninjacreate'); await page.waitForTimeout(1200);
@@ -57,7 +61,7 @@ const EX = 'org.idempiere.ninja.excel', NC = 'org.idempiere.ninja.create';
     verdict('N2', 'Excel Report opens the NinjaExcel panel (' + np + '); Ninja opens the Plugin Engine (' + pe.ov + ') on the Create face (' + pe.create + ')', np && pe.ov && pe.create, { np, pe });
     // ── N3 ──
     n0 = LOG.length; const e3 = await reg('stopBundle', EX); const r3 = await rail(), rm3 = since(n0, /^§PILL-CONTRIB remove id=ninja /);
-    await load(); const r3b = await rail(), s3b = await state(EX);
+    await load(); await adminLogin(); const r3b = await rail(), s3b = await state(EX);
     const e3s = await reg('startBundle', EX); const r3c = await rail();
     verdict('N3', 'Stop Excel Report: button gone (' + !r3.some(b => b.id === 'ninja') + ', ' + rm3.length + ' remove); after reload state ' + s3b + ', button ' + r3b.some(b => b.id === 'ninja') + '; Start: button back (' + r3c.some(b => b.id === 'ninja') + ')',
       !e3 && !r3.some(b => b.id === 'ninja') && rm3.length === 1 && s3b !== 'ACTIVE' && s3b != null && !r3b.some(b => b.id === 'ninja') && !e3s && r3c.some(b => b.id === 'ninja'), { e3, e3s, s3b, r3, r3b, r3c });
@@ -68,7 +72,7 @@ const EX = 'org.idempiere.ninja.excel', NC = 'org.idempiere.ninja.create';
     await page.evaluate(() => { const c = document.getElementById('pe-close'); if (c) c.click(); });
     verdict('N4', 'Stop Ninja: button gone (' + !r4.some(b => b.id === 'ninjacreate') + '), Plugin Engine open (' + pe4.ov + ') with no Create tab (tab ' + pe4.tab + ', face ' + pe4.create + ')', !e4 && !r4.some(b => b.id === 'ninjacreate') && pe4.ov && !pe4.tab && !pe4.create, { e4, r4, pe4 });
     // ── N5 ──
-    const e5 = await reg('uninstallBundle', NC); n0 = LOG.length; await load();
+    const e5 = await reg('uninstallBundle', NC); n0 = LOG.length; await load(); await adminLogin();
     const s5 = await state(NC), bi5 = since(n0, /^§PLUGIN-BUILTIN /), r5 = await rail();
     verdict('N5', 'Uninstall Ninja, reload: state ' + s5 + ' (not re-installed), ' + bi5.length + ' §PLUGIN-BUILTIN, no button (' + !r5.some(b => b.id === 'ninjacreate') + ')', !e5 && s5 == null && bi5.length === 0 && !r5.some(b => b.id === 'ninjacreate'), { e5, s5, bi5 });
     // ── N6 ──
@@ -82,6 +86,19 @@ const EX = 'org.idempiere.ninja.excel', NC = 'org.idempiere.ninja.create';
       await r.uninstallBundle('wnb.img'); await r.uninstallBundle('wnb.letter'); return out; }, base + '/redpill.png');
     verdict('N6', 'img pill draws <img src=' + r6.img + '>; unknown icon + no img -> letter box (' + /<rect/.test(r6.letter || '') + ', Q ' + />Q<\/text>/.test(r6.letter || '') + '); after Stop present=' + r6.after,
       r6.img === base + '/redpill.png' && /<rect/.test(r6.letter || '') && />Q<\/text>/.test(r6.letter || '') && !r6.after, r6);
+    // ── N8 (W-PLUGIN-ROLE) the same lifecycle actions as GardenWorld Admin (role 102) are refused, and the Ninja button shows a read-only Plugin Engine: no Create face, no install box, a notice ──
+    await page.click('#idmp-switch-btn'); await page.waitForTimeout(600);
+    if (await page.isVisible('#idmp-login-clients')) await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))");
+    await page.waitForSelector('#idmp-login-users .idmp-login-user', { timeout: 15000 });
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.selectOption('#idmp-login-role', '102'); await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 }); await page.waitForTimeout(1500);
+    const role8 = await page.evaluate(() => window.APP.roleId), st8a = await state(EX), rail8a = await rail();
+    const e8 = await reg('stopBundle', EX), e8b = await reg('uninstallBundle', EX), st8b = await state(EX), st8c = await state(EX), rail8b = await rail();
+    await page.evaluate(() => window.IdmpPillActions.plugin({ face: 'create' })); await page.waitForTimeout(1000);
+    const pe8 = await page.evaluate(() => ({ ov: !!document.getElementById('pe-ov'), tab: !!document.getElementById('pe-tab-create'), body: !!document.getElementById('pe-create-body'), url: !!document.getElementById('pe-url'), toggles: document.querySelectorAll('.pe-toggle,.pe-uninstall').length, rows: document.querySelectorAll('#pe-list .pe-row').length, notice: (document.querySelector('[data-pe-readonly]') || {}).textContent || '' }));
+    await page.evaluate(() => { const c = document.getElementById('pe-close'); if (c) c.click(); });
+    verdict('N8', 'as role ' + role8 + ': Stop / Uninstall of Excel Report are refused (' + JSON.stringify([e8, e8b]).slice(0, 110) + '), states unchanged (' + st8b + '/' + st8c + '), pills unchanged (' + (rail8a.length === rail8b.length) + '); the Ninja button opens the Plugin Engine READ-ONLY: ' + pe8.rows + ' bundles listed, create tab ' + pe8.tab + ', install box ' + pe8.url + ', start/stop/uninstall buttons ' + pe8.toggles + ', notice "' + pe8.notice.slice(0, 40) + '..."',
+      role8 === 102 && st8a === 'ACTIVE' && /System Administrator/.test(e8 || '') && /System Administrator/.test(e8b || '') && st8b === 'ACTIVE' && st8c === 'ACTIVE' && rail8a.length === rail8b.length && pe8.ov && !pe8.tab && !pe8.body && !pe8.url && pe8.toggles === 0 && pe8.rows > 0 && /Read-only/.test(pe8.notice), { role8, e8, e8b, pe8 });
   } catch (e) { fails++; console.log('§WNB ERROR ' + (e.stack || e)); }
   const perr = LOG.filter(l => /^PAGEERR/.test(l)); console.log('§WNB page errors ' + perr.length + (perr.length ? ' ' + JSON.stringify(perr.slice(0, 4)) : '')); if (perr.length) fails++;
   console.log('§WNB VERDICT ' + (judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' failed=' + fails);

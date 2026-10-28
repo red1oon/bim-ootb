@@ -109,6 +109,7 @@
     function act(fn, id, msg) { return function () { Promise.resolve().then(function () { return fn(id); }).then(function () { if (msg && deps.toast) deps.toast(msg); render(el, deps); }, function (e) { if (deps.toast) deps.toast(e.message); render(el, deps); }); }; }
     var h = '<div class="oc"><div class="oc-bar"><b>BIM OOTB Web Console</b><span class="oc-tab on">Bundles</span></div>' +
       '<div class="oc-tools"><span>Apply Filter:</span><input type="text" data-oc-filter value="' + esc(_filter) + '"/><button data-oc-clear>Clear</button><button data-oc-reload>Reload</button>' + (W ? '<button data-oc-installtoggle>Install/Update...</button>' : '') + '</div>' +
+      (W ? '' : '<div class="oc-sum" data-oc-readonly>Read-only: only the System Administrator can install, start, stop or remove bundles. You can see what is installed.</div>') +
       (W && _showInstall ? '<div class="oc-inst"><span>Bundle URL:</span><input type="text" data-oc-url placeholder="plugins/my_bundle.mjs or https://.../bundle.mjs"/><button data-oc-doinstall>Install and start</button></div>' : '') +
       (W ? offersHtml(M) : '') +
       '<div class="oc-sum">' + esc(M.summary) + '</div>' +

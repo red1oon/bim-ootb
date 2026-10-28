@@ -3,6 +3,8 @@
 //   reload, Stop removes them, Uninstall puts the offer back. INCONCLUSIVE (never PASS) if the Sales Order window never reached a New form.
 //   O1 fresh profile: no lens bar on a New Sales Order, bundle not installed, offer row present   O2 Install click: ACTIVE + lens bar   O3 reload: still ACTIVE + bar
 //   O4 Stop: no bar; Uninstall: offer back, no bar
+// W-PLUGIN-ROLE (TEAMWORK_FRAMEWORK.md §41.1): the install click IS the behaviour under test, and writes belong to the System Administrator. So the Install / Stop / Uninstall / console-offer steps run as System / System (role 0),
+//   the lens is USED as GardenAdmin (role 102), and O1 gains the arm that role 102 is shown NO offer (the Plugin Engine is read-only for it). Every earlier arm keeps its claim; O2/O3 now read the bar as role 102 after an administrator installed it.
 // Run: node erp/tests/witness_fo_optin.js > <log>
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
@@ -23,6 +25,11 @@ const J = (id, claim, cond, info) => { judged++; if (!cond) fails++; console.log
   const login = async () => { await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
     await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 }); await page.waitForTimeout(1000); };
+  const loginSys = async () => { await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible');
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 60000 }); await page.waitForTimeout(1200); };
+  const reloadTo = async (who) => { await page.reload({ waitUntil: 'networkidle' }); await ready(); await page.waitForTimeout(800); await (who === 'sys' ? loginSys() : login()); };
+  const barNow = () => page.evaluate(() => { const r = window.__idmpDb.exec("SELECT name FROM ad_toolbarbutton WHERE componentname LIKE 'FO_Order_%'"); return r.length ? r[0].values.map(x => x[0]) : null; });
   // 2026-10-17 (ERP_FRIENDLY_OPS_LENS.md §42): 'bar' is now the plugin's toolbar-button dictionary rows, not a lens bar
   // open Sales Order (window 143) and press New; returns whether the New form reached and whether a lens bar is drawn
   const newOrderBar = async () => {
@@ -33,27 +40,30 @@ const J = (id, claim, cond, info) => { judged++; if (!cond) fails++; console.log
     await page.click('#idmp-toolbar [data-tb="new"]'); const form = await page.waitForSelector('#idmp-inline-mount .cfrow', { timeout: 8000 }).then(() => true, () => false); await page.waitForTimeout(600);
     return { form, bar: await page.evaluate(() => { const r = window.__idmpDb.exec("SELECT name FROM ad_toolbarbutton WHERE componentname LIKE 'FO_Order_%'"); return r.length ? r[0].values.map(x => x[0]) : null; }) };
   };
-  const openPE = async () => { await page.evaluate(() => { const b = document.getElementById('pill-ninjacreate'); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); }); await page.waitForSelector('#pe-ov'); await page.click('#pe-tab-install'); await page.waitForTimeout(400); };
+  const openPE = async () => { await page.evaluate(() => { const b = document.getElementById('pill-ninjacreate'); b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); }); await page.waitForSelector('#pe-ov'); if (await page.$('#pe-tab-install')) await page.click('#pe-tab-install'); await page.waitForTimeout(400); };
   const offer = () => page.evaluate((id) => !!document.querySelector('#pe-available [data-offer="' + id + '"]'), ID);
   const closePE = () => page.evaluate(() => { const c = document.getElementById('pe-close'); if (c) c.click(); });
   try {
     await page.goto(base + '/idempiere.html?lang=en_US', { waitUntil: 'networkidle' });
     for (const n of ['erp_cache', 'fold_plugins']) await page.evaluate(x => new Promise(r => { const d = indexedDB.deleteDatabase(x); d.onsuccess = d.onerror = d.onblocked = () => r(); }), n);
     await page.reload({ waitUntil: 'networkidle' }); await ready(); await page.waitForTimeout(800); await login();
-    const o1 = await newOrderBar(); await openPE(); const of1 = await offer(); const st1 = await state(); await closePE();
+    const o1 = await newOrderBar(); await openPE(); const of1 = await offer(); const st1 = await state(); const ro1 = await page.evaluate(() => !!document.querySelector('[data-pe-readonly]') && !document.getElementById('pe-tab-install')); await closePE();
     if (!o1.form) { incon++; console.log('§WFO INCONCLUSIVE New Sales Order form never opened'); }
-    J('O1', 'fresh profile: no lens bar on a New Sales Order, bundle not installed, offer row present', o1.form && o1.bar === null && st1 === null && of1, { o1, st1, of1 });
-    await openPE(); await page.click('#pe-available [data-offer="' + ID + '"] .pe-offer-install'); await page.waitForTimeout(2500); await closePE();
-    const st2 = await state(); const o2 = await newOrderBar();
-    J('O2', 'Install click: bundle ' + st2 + ', lens bar ' + JSON.stringify(o2.bar), st2 === 'ACTIVE' && o2.form && Array.isArray(o2.bar) && o2.bar.length > 0, { st2, o2 });
-    await page.reload({ waitUntil: 'networkidle' }); await ready(); await page.waitForTimeout(800); await login();
-    const st3 = await state(), o3 = await newOrderBar();
+    J('O1', 'fresh profile, GardenAdmin (role 102): no lens bar on a New Sales Order, bundle not installed, and NO offer row - the Plugin Engine is read-only for this role (notice shown: ' + ro1 + ')', o1.form && o1.bar === null && st1 === null && !of1 && ro1, { o1, st1, of1, ro1 });
+    await reloadTo('sys'); await openPE(); const of1s = await offer();
+    J('O1b', 'System Administrator (role 0): the offer row IS present', of1s, { of1s });
+    await page.click('#pe-available [data-offer="' + ID + '"] .pe-offer-install'); await page.waitForTimeout(2500); await closePE();
+    const st2 = await state(), bar2s = await barNow();
+    await reloadTo('ga'); const st2b = await state(); const o2 = await newOrderBar();
+    J('O2', 'Install click (as the administrator): bundle ' + st2 + ' there, then restored ' + st2b + ' for GardenAdmin, lens bar ' + JSON.stringify(o2.bar), st2 === 'ACTIVE' && Array.isArray(bar2s) && st2b === 'ACTIVE' && o2.form && Array.isArray(o2.bar) && o2.bar.length > 0, { st2, bar2s, st2b, o2 });
+    await reloadTo('ga'); const st3 = await state(), o3 = await newOrderBar();
     J('O3', 'reload: bundle ' + st3 + ', lens bar present', st3 === 'ACTIVE' && o3.form && Array.isArray(o3.bar) && o3.bar.length > 0, { st3, o3 });
+    await reloadTo('sys');
     await page.evaluate(async (id) => { const r = window.PluginEngine._reg(); await r.stopBundle(id); await window.PluginEngine.persist(); }, ID);
-    const o4 = await newOrderBar();
+    const o4bar = await barNow();
     await page.evaluate(async (id) => { const r = window.PluginEngine._reg(); await r.uninstallBundle(id); await window.PluginEngine.persist(); }, ID);
     await openPE(); const of4 = await offer(); await closePE();
-    J('O4', 'Stop: no lens bar; Uninstall: offer row back', o4.form && o4.bar === null && of4, { o4, of4 });
+    J('O4', 'Stop: no lens bar; Uninstall: offer row back', o4bar === null && of4, { o4bar, of4 });
     // O5 the Plugins & Releases console (the Felix-style Bundles page) offers the same bundle: one click installs and starts it; the offer then disappears
     await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await page.waitForTimeout(500);
     const of5 = await page.evaluate((id) => !!document.querySelector('[data-oc-offerrow="' + id + '"]'), ID);

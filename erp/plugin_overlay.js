@@ -546,6 +546,7 @@
         '</div>' : '') +
         // Install (PackIn) face — paste a bundle URL.
         '<div class="pe-body" id="pe-install-body">' +
+          (W ? '' : '<div class="pe-warn" data-pe-readonly style="margin:0 0 10px">Read-only: only the System Administrator can install, start, stop or remove plugins. You can see what is installed.</div>') +
           (W ? '<div class="pe-install">' +
             '<input id="pe-url" placeholder="https://raw.githubusercontent.com/&hellip;/my-plugin.mjs" />' +
             '<button class="pe-btn pe-go" id="pe-install">Install</button>' +

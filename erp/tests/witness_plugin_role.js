@@ -107,7 +107,7 @@ var WRITE_CARD = ['#pe-install', '#pe-url', '.pe-toggle', '.pe-uninstall', '.pe-
   say('§S1 System Administrator: install + start + stop + start through the console');
   var a0 = await firstLogin(pg, 'System', 'System');
   await openConsole(pg);
-  var ctl0 = await count(pg, WRITE_CONSOLE);
+  var ctl0 = await count(pg, WRITE_CONSOLE), ro0 = sum(await count(pg, ['[data-oc-readonly]']));
   await pg.click('[data-oc-installtoggle]'); await pg.fill('[data-oc-url]', url); var n1 = logs.length; await pg.click('[data-oc-doinstall]'); await sleep(2500);
   var s1 = await stateOf(pg, PROBE);
   await pg.click('[data-oc-stop="' + PROBE + '"]'); await sleep(1500); var s2 = await stateOf(pg, PROBE);
@@ -120,17 +120,17 @@ var WRITE_CARD = ['#pe-install', '#pe-url', '.pe-toggle', '.pe-uninstall', '.pe-
   verdict('PLR1', a0.role === 0 && sum(ctl0) > 0 && s1 === 'ACTIVE' && s2 === 'STOPPED' && s3 === 'ACTIVE' && gotOk,
     'as role ' + a0.role + ' (actor ' + a0.actor + '): the console shows ' + sum(ctl0) + ' write controls; install -> ' + s1 + ', stop -> ' + s2 + ', start -> ' + s3 + '; every write logged with who and what (' + okLines.length + ' ok lines)', J({ ctl0: ctl0, s: [s1, s2, s3], okLines: okLines }));
   await pg.evaluate(function () { window.PluginRelease.close(); });
-  await openCard(pg); card0 = await count(pg, WRITE_CARD); await pg.evaluate(function () { var c = document.getElementById('pe-ov'); if (c) c.remove(); });
+  await openCard(pg); card0 = await count(pg, WRITE_CARD); var roc0 = sum(await count(pg, ['[data-pe-readonly]'])); await pg.evaluate(function () { var c = document.getElementById('pe-ov'); if (c) c.remove(); });
 
   // ───────────────── PLR2..PLR5 as role 102 ─────────────────
   say('§S2 GardenWorld Admin (role 102): same list, no controls, refused registry calls');
   var a1 = await switchTo(pg, 'GardenWorld', 'GardenAdmin', 102);
   await openConsole(pg); await openProbeDetail(pg);
-  var rows1 = await consoleRows(pg), text1 = await consoleText(pg), ctl1 = await count(pg, WRITE_CONSOLE);
+  var rows1 = await consoleRows(pg), text1 = await consoleText(pg), ctl1 = await count(pg, WRITE_CONSOLE), ro1 = sum(await count(pg, ['[data-oc-readonly]']));
   verdict('PLR2', a1.role === 102 && rows0.length > 3 && J(rows1) === J(rows0), 'as role ' + a1.role + ' the console lists the same ' + rows1.length + ' rows as role 0 saw (' + rows0.length + ')', J({ same: J(rows1) === J(rows0), only0: rows0.filter(function (r) { return rows1.indexOf(r) < 0; }), only102: rows1.filter(function (r) { return rows0.indexOf(r) < 0; }) }));
   await pg.evaluate(function () { window.PluginRelease.close(); });
-  await openCard(pg); var card1 = await count(pg, WRITE_CARD), cardRows1 = await pg.evaluate(function () { return document.querySelectorAll('#pe-list .pe-row').length; }); await pg.evaluate(function () { var c = document.getElementById('pe-ov'); if (c) c.remove(); });
-  verdict('PLR3', sum(ctl1) === 0 && sum(card1) === 0 && sum(ctl0) > 0 && sum(card0) > 0 && cardRows1 > 0, 'role 102: ' + sum(ctl1) + ' write controls in the console and ' + sum(card1) + ' in the Plugin Engine card (which still lists ' + cardRows1 + ' bundles); role 0 had ' + sum(ctl0) + ' and ' + sum(card0), J({ ctl1: ctl1, card1: card1, ctl0: ctl0, card0: card0 }));
+  await openCard(pg); var card1 = await count(pg, WRITE_CARD), roc1 = sum(await count(pg, ['[data-pe-readonly]'])), cardRows1 = await pg.evaluate(function () { return document.querySelectorAll('#pe-list .pe-row').length; }); await pg.evaluate(function () { var c = document.getElementById('pe-ov'); if (c) c.remove(); });
+  verdict('PLR3', sum(ctl1) === 0 && sum(card1) === 0 && sum(ctl0) > 0 && sum(card0) > 0 && cardRows1 > 0 && ro1 === 1 && roc1 === 1 && ro0 === 0 && roc0 === 0, 'role 102 sees a "Read-only" notice in both views (' + ro1 + '/' + roc1 + '; role 0: ' + ro0 + '/' + roc0 + '); role 102: ' + sum(ctl1) + ' write controls in the console and ' + sum(card1) + ' in the Plugin Engine card (which still lists ' + cardRows1 + ' bundles); role 0 had ' + sum(ctl0) + ' and ' + sum(card0), J({ ctl1: ctl1, card1: card1, ctl0: ctl0, card0: card0 }));
 
   var before = await regList(pg), viewBefore = await pg.evaluate(function () { var r = window.__idmpDb.exec("SELECT count(*) FROM sqlite_master WHERE name='i_possales'"); return r[0].values[0][0]; });
   var n2 = logs.length;
