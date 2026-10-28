@@ -7,7 +7,7 @@
 //   local-first claim says: the till keeps working, head office knows nothing, and when the link returns the same tickets arrive once.
 // "OFFLINE" HERE MEANS (stated so nobody over-reads it): the till's BROWSER CONTEXT is cut with Playwright context.setOffline(true) - every network request of that page fails (net::ERR_INTERNET_DISCONNECTED) and navigator.onLine is false - AND no Visit is possible:
 //   the pipe (a dumb folder served by this witness) is unreachable FROM THE TILL; it is still reachable from head office, so "head office sees none" is not "the whole network is down". It is not a model of a flaky link, a slow link or a partial outage.
-// HARNESS: the W-POS-PLAN pattern (two real pages of erp/idempiere.html?team=1 on one dumb folder pipe, POS plan ?teamplan=pos): A = head office (founder, processor), B = the till (team role 200001, window 281 Import Order open).
+// HARNESS: the W-POS-PLAN pattern (two real pages of erp/idempiere.html?team=1 on one dumb folder pipe, POS plan ?teamplan=pos): A = head office (founder, processor), B = the till (team role 50004 bound to org 12, window 281 Import Order open).
 // SPEC (every number is counted from the engine's fold, the page's grid, the pipe folder or the browser's own request log - never from a screenshot):
 //   FOFF0 ONLINE CONTROL  before the cut: the till's page reaches the pipe (fetch ok), a Visit succeeds and logs "§TEAM_VISIT sent=", and head office holds 0 rows of the ticket. (A cut that leaves a working link would also "pass" later arms; this is the control.)
 //   FOFF1 THE CUT         setOffline(true): navigator.onLine=false and a fetch of the pipe FAILS from the till (TypeError), while the SAME fetch from head office succeeds (non-vacuous: the pipe is up). A Visit on the till returns without delivering anything:
@@ -37,7 +37,7 @@ function loadPlan(file, g) { var o = {}; vm.runInNewContext(fs.readFileSync(file
 var POSPLAN = loadPlan(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'TEAM_PLAN_POS');
 var OFFICE = loadPlan(path.join(ROOT, 'erp', 'team_plan.js'), 'TEAM_PLAN');
 var planJs = function (name, o) { return '(function (g) { g.' + name + ' = ' + JSON.stringify(o) + '; })(typeof window !== \'undefined\' ? window : globalThis);\n'; };
-var TILL = 200001, KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), J = JSON.stringify;
+var TILL = 50004, KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), J = JSON.stringify;
 var LINES = [{ m_product_id: 123, qtyordered: 2 }, { m_product_id: 130, qtyordered: 1 }, { m_product_id: 134, qtyordered: 3 }].map(function (l) { return Object.assign({ ad_client_id: 11, ad_org_id: 11, i_isimported: 'N', issotrx: 'Y', doctypename: 'POS Order', c_uom_id: 100, dateordered: '2026-10-28 00:00:00' }, l); });
 var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
@@ -79,7 +79,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     found: function (d) { return d.pg.evaluate(function () { return window.TeamSync.found(); }); },
     join: function (d, space) { return d.pg.evaluate(function (sp) { return window.TeamSync.join(sp); }, space); },
     kid: function (d) { return d.pg.evaluate(async function () { return (await window.TeamSync.pairState()).device; }); },
-    approve: function (a, kid, role) { return a.pg.evaluate(async function (x) { var r = await window.TeamSync.requests(); for (var q of r) if (q.rq.kid === x.kid) { await window.TeamSync.approve(q.rq, x.role, null); return true; } return false; }, { kid: kid, role: role }); },
+    approve: function (a, kid, role, ent) { return a.pg.evaluate(async function (x) { var r = await window.TeamSync.requests(); for (var q of r) if (q.rq.kid === x.kid) { await window.TeamSync.approve(q.rq, x.role, x.ent || null); return true; } return false; }, { kid: kid, role: role, ent: ent || null }); },
     visit: function (d) { return d.pg.evaluate(async function () { var v = await window.TeamSync.visit(); return v ? { ok: true, sent: v.rep && v.rep.sent } : null; }); },
     enrolled: function (d) { return d.pg.evaluate(async function () { return (await window.TeamSync.pairState()).enrolled; }); },
     create: function (d, table, fields) { return d.pg.evaluate(function (a) { return new Promise(function (res) { var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === a.t) { window.removeEventListener('overlay:committed', once); res(e.detail.createdId); } }; window.addEventListener('overlay:committed', once); window.__crud.applyOp({ op_type: 'CRUD_CREATE', key: a.t, table: a.t, verb: 'create', fields: a.f }); setTimeout(function () { res(null); }, 8000); }); }, { t: table, f: fields }); },
@@ -96,9 +96,10 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   var Q = "SELECT i_order_uu AS uu, m_product_id AS p, qtyordered AS q, documentno AS k, i_isimported AS imp FROM i_order WHERE documentno='" + KEY + "' ORDER BY m_product_id";
 
   // ── set up the POS space: A processor, B till ──
-  say('§S0 set up: A = head office (processor), B = the till (role ' + TILL + ')');
+  say('§S0 set up: A = head office (processor), B = the till (role ' + TILL + ' bound to org 12)');
   var A = await device('A', '&teamplan=pos'), B = await device('B'), space = await T.found(A); await T.join(B, space);
-  for (var i = 0; i < 5; i++) { await T.approve(A, await T.kid(B), TILL); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
+  var tillOrg = await A.pg.evaluate(function () { return window.__idmpDb.exec('SELECT ad_org_uu FROM ad_org WHERE ad_org_id=12')[0].values[0][0]; });      // POS plan: tills are role 50004, each bound to its org (_uu)
+  for (var i = 0; i < 5; i++) { await T.approve(A, await T.kid(B), TILL, tillOrg); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   await T.visit(A); await T.visit(B);
   evt({ actor: 'till', kind: 'online', step: 'O0' }); evt({ actor: 'clerk', kind: 'online', step: 'O0' });
 

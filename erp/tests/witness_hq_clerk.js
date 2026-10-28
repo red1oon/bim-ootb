@@ -28,7 +28,7 @@
 //   §MUTANTS          — the page served with one rule broken; each must turn >= 1 arm red (a crashed child is NOT a kill): process access ignored (H3/H5), window access ignored (H3/H5), Import Orders re-import on a second run (H7),
 //                       Visit drops the movement (H11), Visit drops the order (H11); the movement mutant is declared NOT JUDGED only if H10 is blocked (a mutant on a path that never ran is not a kill).
 //   VERDICT           — PASS only when nothing is blocked; PARTIAL (exit 3) when an arm is named BLOCKED; INCONCLUSIVE when nothing was judged; FAIL when a base arm is red.
-//   POS-PLAN MODE (HQ_PLAN=pos, film evidence gap 2, TEAMWORK_FRAMEWORK §42.1 Ch 3 / §42.2; default = OFFICE mode above, whose verdict lines are unchanged): the SAME clerk steps in a POS space (A founded with ?teamplan=pos, the signed POS plan served). Only §S8/H11 differ,
+//   POS-PLAN MODE (the till is the external-depositor role 50004 bound to org 12, as E's POS plan requires; HQ_PLAN=pos, film evidence gap 2, TEAMWORK_FRAMEWORK §42.1 Ch 3 / §42.2; default = OFFICE mode above, whose verdict lines are unchanged): the SAME clerk steps in a POS space (A founded with ?teamplan=pos, the signed POS plan served). Only §S8/H11 differ,
 //   because under the POS plan the till receives only what the plan declares for its role (W-POS-PLAN B2): the MOVEMENT, not the order, shipment, invoice or postings.
 //   §H11 (pos)  the station's accepted ops are exactly the M_MovementLine ops head office authored (3, quantities = Qty To Order) and no other table; it holds 0 orders for the key and no new shipment / invoice / posting (counts equal to before the day); the relay-delivered ops it
 //               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the space founded without the POS plan (the till would get the order etc. -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
@@ -111,7 +111,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var T = {
     found: function (d) { return d.pg.evaluate(function () { return window.TeamSync.found(); }); },
     join: function (d, space) { return d.pg.evaluate(function (sp) { return window.TeamSync.join(sp); }, space); },
-    approveAll: function (d, role) { return d.pg.evaluate(async function (role) { var r = await window.TeamSync.requests(); for (var x of r) await window.TeamSync.approve(x.rq, role); return r.length; }, role); },
+    approveAll: function (d, role, entityUu) { return d.pg.evaluate(async function (a) { var r = await window.TeamSync.requests(); for (var x of r) await window.TeamSync.approve(x.rq, a.role, a.ent || null); return r.length; }, { role: role, ent: entityUu || null }); },
     visit: function (d) { return d.pg.evaluate(async function () { var v = await window.TeamSync.visit(); return v && v.replicaIn; }); },
     enrolled: function (d) { return d.pg.evaluate(async function () { return (await window.TeamSync.pairState()).enrolled; }); },
     // the ERP's own write path (what a window's Save commits): applyOp, then wait for the seal. Used ONLY for the deposit (the station's act) and the operator master data (§HQ_SETUP) — never for a business step.
@@ -159,7 +159,9 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
 
   say('§S0 two devices: A = head office (founder; clerk then stock role), B = station/till (team role 200001)');
   var A = await device('A', POS && !(MUT && MUT.noPosFlag) ? '&teamplan=pos' : ''), B = await device('B'), space = await T.found(A); await T.join(B, space);
-  for (var i = 0; i < 4; i++) { await T.approveAll(A, 200001); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
+  // POS plan (E, TEAMWORK §41): tills are the external-depositor role 50004, each BOUND to its org (_uu); the replenishment row is addressed M_LocatorTo > M_Warehouse > AD_Org - the branch warehouse 104 (Store Central) is org 12
+  var till_org = POS ? (await A.pg.evaluate(function () { var r = window.__idmpDb.exec('SELECT ad_org_uu FROM ad_org WHERE ad_org_id=12'); return r[0].values[0][0]; })) : null;
+  for (var i = 0; i < 4; i++) { await T.approveAll(A, POS ? 50004 : 200001, POS ? till_org : null); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   var hasIo = async function (d) { return d.pg.evaluate(function () { return window.__idmpDb.exec("SELECT count(*) FROM sqlite_master WHERE name='i_order'")[0].values[0][0]; }); };
   var tanr = async function (d) { return Number((await T.rows(d, "SELECT count(*) AS n FROM ad_table_scriptvalidator WHERE eventmodelvalidator IN ('TANR','TACR')"))[0].n); };
   verdict('H0', (await T.enrolled(B)) && (await hasIo(A)) === 1 && (await hasIo(B)) === 1 && (await tanr(A)) === 0 && (await tanr(B)) === 0, 'B enrolled as the till; I_Order exists on both; ZERO TANR/TACR rule rows on A and on B (nothing is automatic in this witness)', 'io=' + (await hasIo(A)) + '/' + (await hasIo(B)) + ' tanr A=' + (await tanr(A)) + ' B=' + (await tanr(B)));
