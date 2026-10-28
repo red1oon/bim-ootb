@@ -21,6 +21,10 @@
 //   startBundle    — resolve `requires` (semver + must be ACTIVE first), call activate(ctx), append PLUGIN_START.
 //   stopBundle     — call deactivate(ctx), append PLUGIN_STOP, state STOPPED.
 //   uninstallBundle— stop if active, append PLUGIN_UNINSTALL, drop from store.
+// WHO MAY WRITE (W-PLUGIN-ROLE, bim-compiler prompts/TEAMWORK_FRAMEWORK.md §41.1; owner 2026-10-28): the registry is READ-ONLY for every role and WRITABLE (install / start / stop / remove / policy) only for the System
+//   Administrator (AD_Role_ID 0). The gate is in the write calls THEMSELVES (authorize() below), not in the buttons. host.actor() answers {role, user} of the logged-in session; a host that injects none (a Node witness, a headless
+//   embed) has no session to judge and is open. A refused call logs `§PLUGIN-ROLE refused role=<id> action=<a> bundle=<id|url>`, imports and changes nothing; an authorised one logs `§PLUGIN-ROLE ok role=0 user=<id> action=<a> bundle=<id>`.
+//   `system` holds the same operations WITHOUT the gate for the host's own acts that are not a user's write: restoring persisted state at boot, installing the built-in bundles, the AD-row proposals (ad_modelval_bridge).
 //   resolveDeps    — semver-checked topological sort over a manifest set; rejects missing deps + cycles.
 //
 // EXTRACT, DON'T INVENT: the host fabricates nothing — every account/value a bundle resolves comes from the
@@ -516,20 +520,46 @@
       return { started: started, failed: failed };
     }
 
+    // ── WHO MAY WRITE (W-PLUGIN-ROLE) ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    var ADMIN_ROLE = 0;   // AD_Role_ID 0 = System Administrator (legacy: the one role that manages the OSGi stack)
+    function actorNow() { return typeof host.actor === 'function' ? (host.actor() || {}) : null; }
+    function mayWrite() { var a = actorNow(); return a === null || (a.role != null && Number(a.role) === ADMIN_ROLE); }
+    function authorize(action, ref) {
+      var a = actorNow();
+      if (a === null) return { role: null, user: null };   // no session injected (Node witness / headless embed): nothing to judge
+      if (a.role == null || Number(a.role) !== ADMIN_ROLE) {
+        console.log('§PLUGIN-ROLE refused role=' + a.role + ' action=' + action + ' bundle=' + ref);
+        throw new Error('Plugins: only the System Administrator may ' + action + ' a bundle (this session: role ' + a.role + '); the console is read-only for every other role');
+      }
+      return a;
+    }
+    function guarded(action, fn, refOf) {   // the gate is checked BEFORE anything runs (a refused install never imports the module); success is logged with who and what
+      return function () {
+        var args = arguments, ref = refOf.apply(null, args), a = authorize(action, ref);
+        var done = function (r) { if (a.role !== null) console.log('§PLUGIN-ROLE ok role=' + a.role + ' user=' + a.user + ' action=' + action + ' bundle=' + ((r && r.id) || ref)); return r; };
+        var r = fn.apply(null, args);
+        return r && typeof r.then === 'function' ? r.then(done) : done(r);
+      };
+    }
+    var idOrUrl = function (x) { return typeof x === 'string' ? x : (x && x.manifest && x.manifest.id) || (x && x.default && x.default.manifest && x.default.manifest.id) || '(bundle object)'; };
+    function id0(x) { return x; }
+
     return {
-      installBundle: installBundle,
-      startBundle: startBundle,
-      stopBundle: stopBundle,
+      installBundle: guarded('install', installBundle, idOrUrl),
+      startBundle: guarded('start', startBundle, id0),
+      stopBundle: guarded('stop', stopBundle, id0),
+      uninstallBundle: guarded('remove', uninstallBundle, id0),
+      setPolicy: guarded('policy', setPolicy, id0),
+      restore: guarded('restore', restore, function () { return 'persisted-state'; }),   // gated too: restore installs and starts, so an open one would be a way around the gate
       need: need,
       describe: describe,
       hasPending: hasPending,
       noteTouched: noteTouched,
-      setPolicy: setPolicy,
-      restore: restore,
-      uninstallBundle: uninstallBundle,
+      mayWrite: mayWrite,
       resolveDeps: resolveDeps,
       list: list,
       get: get,
+      system: { installBundle: installBundle, startBundle: startBundle, stopBundle: stopBundle, uninstallBundle: uninstallBundle, setPolicy: setPolicy, restore: restore },
       STATES: STATES
     };
   }

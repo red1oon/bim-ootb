@@ -1,6 +1,6 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// ad_import_tables.js — the physical I_* import tables of the ERP twin as a device-local BOOT OVERLAY (prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.1/§13.2 B1 — Witness: W-IMPORT-ORDER, erp/tests/witness_import_order.js).
+// ad_import_tables.js — the physical I_* import tables of the ERP twin as a device-local BOOT OVERLAY (prompts/TEAM_REPLICATION_PLUGIN_STUDY.md §13.1/§13.2 B1 — Witness: W-IMPORT-ORDER, erp/tests/witness_import_order.js; I_Payment added for Import Payment, AD_Process 343 — Witness: W-IMPORT-PAYMENT, erp/tests/witness_import_payment.js).
 //
 // GAP (measured): erp/ad_seed.db holds AD_Table 591 I_Order (AccessLevel 2) and its 68 AD_Column rows, but NOT the physical table, so Import Orders (AD_Process 206) and window 281 "Import Order" had nothing to read or write.
 //
@@ -12,7 +12,15 @@
   'use strict';
 
   var DDL = {
+    // i_payment: AD_Table 597, 74 AD_Column rows in the seed, no physical table (W-IMPORT-PAYMENT B1, prompts/TEAMWORK_FRAMEWORK.md section 41 row B); DDL verbatim from build/erp/ad_full.db (sqlite3 .schema i_payment)
+    i_payment: 'CREATE TABLE IF NOT EXISTS "i_payment" ("i_payment_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processed" TEXT, "c_payment_id" NUMERIC, "documentno" TEXT, "datetrx" TEXT, "isreceipt" TEXT, "c_doctype_id" NUMERIC, "doctypename" TEXT, "trxtype" TEXT, "c_bankaccount_id" NUMERIC, "bankaccountno" TEXT, "c_bpartner_id" NUMERIC, "bpartnervalue" TEXT, "c_invoice_id" NUMERIC, "invoicedocumentno" TEXT, "tendertype" TEXT, "creditcardtype" TEXT, "creditcardnumber" TEXT, "creditcardvv" TEXT, "creditcardexpmm" NUMERIC, "creditcardexpyy" NUMERIC, "micr" TEXT, "routingno" TEXT, "accountno" TEXT, "checkno" TEXT, "a_name" TEXT, "a_street" TEXT, "a_city" TEXT, "a_state" TEXT, "a_zip" TEXT, "a_country" TEXT, "a_ident_dl" TEXT, "a_ident_ssn" TEXT, "a_email" TEXT, "voiceauthcode" TEXT, "swipe" TEXT, "orig_trxid" TEXT, "ponum" TEXT, "c_currency_id" NUMERIC, "payamt" NUMERIC, "discountamt" NUMERIC, "writeoffamt" NUMERIC, "isoverunderpayment" TEXT, "overunderamt" NUMERIC, "c_charge_id" NUMERIC, "chargename" TEXT, "chargeamt" NUMERIC, "taxamt" NUMERIC, "isapproved" TEXT, "isselfservice" TEXT, "isdelayedcapture" TEXT, "r_pnref" TEXT, "r_result" TEXT, "r_respmsg" TEXT, "r_authcode" TEXT, "r_info" TEXT, "processing" TEXT, "iso_code" TEXT, "dateacct" TEXT, "i_payment_uu" TEXT, "iban" TEXT, "swiftcode" TEXT, "description" TEXT, "c_activity_id" NUMERIC, "activityvalue" TEXT)',
     i_order: 'CREATE TABLE IF NOT EXISTS "i_order" ("i_order_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "ad_orgtrx_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processing" TEXT, "processed" TEXT, "salesrep_id" NUMERIC, "m_warehouse_id" NUMERIC, "m_pricelist_id" NUMERIC, "c_currency_id" NUMERIC, "m_shipper_id" NUMERIC, "issotrx" TEXT, "c_bpartner_id" NUMERIC, "bpartnervalue" TEXT, "name" TEXT, "c_bpartner_location_id" NUMERIC, "billto_id" NUMERIC, "c_location_id" NUMERIC, "address1" TEXT, "address2" TEXT, "postal" TEXT, "city" TEXT, "c_region_id" NUMERIC, "regionname" TEXT, "c_country_id" NUMERIC, "countrycode" TEXT, "ad_user_id" NUMERIC, "contactname" TEXT, "email" TEXT, "phone" TEXT, "c_project_id" NUMERIC, "c_activity_id" NUMERIC, "c_doctype_id" NUMERIC, "doctypename" TEXT, "c_paymentterm_id" NUMERIC, "paymenttermvalue" TEXT, "c_order_id" NUMERIC, "documentno" TEXT, "dateordered" TEXT, "dateacct" TEXT, "description" TEXT, "m_product_id" NUMERIC, "productvalue" TEXT, "upc" TEXT, "sku" TEXT, "c_tax_id" NUMERIC, "taxindicator" TEXT, "taxamt" NUMERIC, "c_orderline_id" NUMERIC, "linedescription" TEXT, "c_uom_id" NUMERIC, "qtyordered" NUMERIC, "priceactual" NUMERIC, "freightamt" NUMERIC, "c_campaign_id" NUMERIC, "c_charge_id" NUMERIC, "chargename" TEXT, "c_ordersource_id" NUMERIC, "c_ordersourcevalue" TEXT, "deliveryrule" TEXT, "i_order_uu" TEXT)'
+  };
+  // RECURRING overlay (F1, prompts/TEAMWORK_FRAMEWORK.md section 41; Witness: W-RECURRING, erp/tests/witness_recurring.js): AD_Table 573 C_Recurring_Run and 200143 C_RecurringGroup are in the seed dictionary WITHOUT a physical
+  //   table (C_Recurring 574 has one); DDL verbatim from build/erp/ad_full.db (sqlite3 .schema c_recurring_run / c_recurringgroup). Kept apart from DDL so ensure() still reports the import tables only.
+  var DDL_RECURRING = {
+    c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
+    c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
   };
   function log(s) { try { if (typeof console !== 'undefined') console.log(s); } catch (e) { /* logging never breaks boot */ } }
 
@@ -25,10 +33,22 @@
       db.run(DDL[t]); made++;
     });
     log('§IMPORT_TABLES ensure created=' + made + ' (' + Object.keys(DDL).join(', ') + '; boot overlay, outside the team base hash)');
+    ensureRecurring(db);
+    return made;
+  }
+  // ensureRecurring(db) - the Recurring tables (see DDL_RECURRING); idempotent; returns the number it created. ensure() calls it, so every host that boots the import tables boots these too.
+  function ensureRecurring(db) {
+    var made = 0;
+    Object.keys(DDL_RECURRING).forEach(function (t) {
+      var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'");
+      if (r.length && r[0].values.length) return;
+      db.run(DDL_RECURRING[t]); made++;
+    });
+    log('§RECUR_TABLES ensure created=' + made + ' (' + Object.keys(DDL_RECURRING).join(', ') + '; boot overlay, outside the team base hash)');
     return made;
   }
 
-  var API = { DDL: DDL, ensure: ensure };
+  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, ensure: ensure, ensureRecurring: ensureRecurring };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;

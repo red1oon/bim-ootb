@@ -84,7 +84,7 @@
       var name = row.name || row.Name || ('#' + rowId);
       if (!cls) continue;   // no class named — nothing to install, not an error
       try {
-        var ins = await reg.installBundle(cls);            // R1: install only — never startBundle here
+        var ins = await (reg.system || reg).installBundle(cls);   // R1: install only — never startBundle here (a proposal from an AD row is the host's act, not a user's write: W-PLUGIN-ROLE)
         var opId = (glue.KO && glue.db) ? glue.KO.commitOp(glue.db, 'MODELVAL_AUTOINSTALL',
           { adModelValidatorId: rowId, name: name, id: ins.id, modelValidationClass: cls }) : null;
         console.log('§MODELVAL_AUTOINSTALL id=' + ins.id + ' source=ad_modelvalidator name="' + name +

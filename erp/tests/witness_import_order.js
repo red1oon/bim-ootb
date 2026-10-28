@@ -78,7 +78,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
     if (!AIT.m || typeof AIT.m.ensure !== 'function') { check('TABLE', 'ensure', 'ad_import_tables.js exports ensure(db)', false, AIT.err || 'no ensure'); return; }
     var n1 = AIT.m.ensure(db), n2 = AIT.m.ensure(db);
     var phys = q0("PRAGMA table_info(i_order)").map(function (r) { return String(r.name).toLowerCase(); }).sort();
-    check('TABLE', 'ensure', 'ensure(db) creates i_order once (1), then nothing (0); physical columns == the 68 dictionary columns', n1 === 1 && n2 === 0 && J(phys) === J(dict), { n1: n1, n2: n2, phys: phys.length, onlyPhys: phys.filter(function (c) { return dict.indexOf(c) < 0; }), onlyDict: dict.filter(function (c) { return phys.indexOf(c) < 0; }) });
+    check('TABLE', 'ensure', 'ensure(db) creates i_order once (1), then nothing (0); physical columns == the 68 dictionary columns', n1 === Object.keys(AIT.m.DDL).length && n2 === 0 && J(phys) === J(dict), { n1: n1, n2: n2, phys: phys.length, onlyPhys: phys.filter(function (c) { return dict.indexOf(c) < 0; }), onlyDict: dict.filter(function (c) { return phys.indexOf(c) < 0; }) });
   });
   var h = baseOracle();
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: B1 touched no hashed file (a teams-wide base-mismatch otherwise)', h === BASE_PIN, { got: h, pin: BASE_PIN });
@@ -337,7 +337,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
         if ((st.isFile() && /\.js$/.test(f)) || (st.isDirectory() && (f === 'callouts' || f === 'processes'))) { try { fs.unlinkSync(path.join(dir, f)); } catch (e) {} fs.cpSync(src, path.join(dir, f), { recursive: true }); } });
       var ok = true;
       m.edits.forEach(function (ed) {
-        var src = fs.readFileSync(path.join(ERP, ed.file), 'utf8'), want = ed.count || 1, have = src.split(ed.from).length - 1;
+        var src = fs.readFileSync(path.join(dir, ed.file), 'utf8'), want = ed.count || 1, have = src.split(ed.from).length - 1;   // read the COPY being edited, so a second edit on one file keeps the first (was ERP = the original tree: the first edit was lost)
         if (have !== want) { ok = false; say('§IMPORT-MUTANT-EDIT ' + m.name + ' ' + ed.file + ' found ' + have + ' time(s), expected ' + want); return; }
         fs.writeFileSync(path.join(dir, ed.file), src.split(ed.from).join(ed.to));
       });

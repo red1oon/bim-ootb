@@ -55,12 +55,15 @@
   }
 
   // details(row, d) -> [[key, value], ...]: the expanded pane. d = registry.describe(id) for a plugin.
-  function details(row, d) {
+  // W-PLUGIN-ROLE: a read-only role sees the bundle's identity and state, never a value that could be configuration: the location is shown without its query string / fragment (where a key or token would sit).
+  function stripQuery(u) { return String(u).replace(/[?#].*$/, ''); }
+  function details(row, d, readOnly) {
     var out = [['Symbolic Name', row.symbolic], ['Version', row.version || '-'], ['Bundle Id', String(row.id)], ['Status', row.status + (row.state === 'STARTING' ? ' (started, activates on first demand)' : '')]];
     if (row.kind === 'system') { out.push(['Kind', 'System bundle: the running engine release (service-worker cache version)']); return out; }
     if (row.kind === 'builtin') { out.push(['Kind', row.core ? 'Built-in core module (always active: the substrate the fold runs through)' : 'Built-in optional module']); return out; }
     var m = (d && d.manifest) || {};
-    out.push(['Location', row.url || '(in memory)']);
+    var shownUrl = readOnly ? stripQuery(row.url) : row.url;
+    out.push(['Location', shownUrl || '(in memory)']);
     var pol = (d && d.policy) || null, act = m.activation || 'eager';
     out.push(['Activation Policy', (pol || act) + (pol && pol !== act ? '  (admin override; bundle default: ' + act + ')' : '')]);
     var t = m.triggers; if (act === 'lazy' && t) out.push(['Lazy triggers', ['tables: ' + (t.tables || []).join(', '), (t.processes || []).length ? 'processes: ' + t.processes.join(', ') : '', (t.windows || []).length ? 'windows: ' + t.windows.join(', ') : ''].filter(Boolean).join(' · ')]);
@@ -90,7 +93,8 @@
     '.oc ul.oc-svc{margin:0;padding-left:16px}.oc .oc-inst{display:flex;gap:6px;align-items:center;padding:6px 0}.oc .oc-inst input{flex:1}.oc .oc-offers{margin:6px 0;padding:8px 10px;border:1px solid #9bb7e0;background:#eef5ff;border-radius:6px}.oc .oc-offer{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0}.oc .oc-offer small{color:#556}';
   function ensureCss(doc) { if (doc.getElementById('oc-css')) return; var s = doc.createElement('style'); s.id = 'oc-css'; s.textContent = CSS; doc.head.appendChild(s); }
 
-  // render(el, deps): deps = { systemName, version, builtins, list():plugin rows, describe(id), start(id), stop(id), refresh(id), uninstall(id), install(url), setPolicy(id, p), reload(), toast(msg) }
+  // render(el, deps): deps.canWrite === false draws the console READ-ONLY (no Install/Update, offers, per-row actions or activation toggle; W-PLUGIN-ROLE).
+  //   deps = { systemName, version, builtins, list():plugin rows, describe(id), start(id), stop(id), refresh(id), uninstall(id), install(url), setPolicy(id, p), reload(), toast(msg) }
   var _open = {}, _filter = '', _showInstall = false;
   function offersHtml(M) {
     var have = {}; (M.all || []).forEach(function (r) { if (r.kind === 'plugin') have[r.key] = 1; });
@@ -100,22 +104,24 @@
   }
   function render(el, deps) {
     var doc = el.ownerDocument; ensureCss(doc);
+    var W = deps.canWrite !== false;
     var M = model({ systemName: deps.systemName, version: deps.version, builtins: deps.builtins, plugins: deps.list(), filter: _filter });
     function act(fn, id, msg) { return function () { Promise.resolve().then(function () { return fn(id); }).then(function () { if (msg && deps.toast) deps.toast(msg); render(el, deps); }, function (e) { if (deps.toast) deps.toast(e.message); render(el, deps); }); }; }
     var h = '<div class="oc"><div class="oc-bar"><b>BIM OOTB Web Console</b><span class="oc-tab on">Bundles</span></div>' +
-      '<div class="oc-tools"><span>Apply Filter:</span><input type="text" data-oc-filter value="' + esc(_filter) + '"/><button data-oc-clear>Clear</button><button data-oc-reload>Reload</button><button data-oc-installtoggle>Install/Update...</button></div>' +
-      (_showInstall ? '<div class="oc-inst"><span>Bundle URL:</span><input type="text" data-oc-url placeholder="plugins/my_bundle.mjs or https://.../bundle.mjs"/><button data-oc-doinstall>Install and start</button></div>' : '') +
-      offersHtml(M) +
+      '<div class="oc-tools"><span>Apply Filter:</span><input type="text" data-oc-filter value="' + esc(_filter) + '"/><button data-oc-clear>Clear</button><button data-oc-reload>Reload</button>' + (W ? '<button data-oc-installtoggle>Install/Update...</button>' : '') + '</div>' +
+      (W ? '' : '<div class="oc-sum" data-oc-readonly>Read-only: only the System Administrator can install, start, stop or remove bundles. You can see what is installed.</div>') +
+      (W && _showInstall ? '<div class="oc-inst"><span>Bundle URL:</span><input type="text" data-oc-url placeholder="plugins/my_bundle.mjs or https://.../bundle.mjs"/><button data-oc-doinstall>Install and start</button></div>' : '') +
+      (W ? offersHtml(M) : '') +
       '<div class="oc-sum">' + esc(M.summary) + '</div>' +
       '<table class="oc-t"><thead><tr><th class="oc-id">Id</th><th>Name</th><th class="oc-ver">Version</th><th class="oc-st">Status</th><th class="oc-act">Actions</th></tr></thead><tbody>';
     M.rows.forEach(function (r, i) {
       var a = r.actions || {}, ic = function (key, glyph, title) { return '<span class="oc-ic' + (a[key] ? '' : ' off') + '" title="' + title + '" data-oc-' + key + '="' + esc(r.key) + '">' + glyph + '</span>'; };
       h += '<tr class="' + (i % 2 ? 'odd' : '') + '"><td class="oc-id">' + r.id + '</td><td><a class="oc-nm" data-oc-name="' + r.id + '">' + esc(r.name) + '</a>' + (r.name === r.symbolic ? '' : ' <span class="oc-sym">(' + esc(r.symbolic) + ')</span>') + '</td><td class="oc-ver">' + esc(r.version) + '</td>' +
-        '<td class="oc-st oc-s-' + r.status + '">' + r.status + '</td><td class="oc-act">' + (r.kind === 'plugin' ? ic('start', '&#9654;', 'Start') + ic('stop', '&#9632;', 'Stop') + ic('refresh', '&#8635;', 'Refresh (stop and start)') + ic('uninstall', '&#10005;', 'Uninstall') : '<span class="oc-sym">' + (r.kind === 'system' ? 'system' : 'built-in') + '</span>') + '</td></tr>';
+        '<td class="oc-st oc-s-' + r.status + '">' + r.status + '</td><td class="oc-act">' + (r.kind === 'plugin' && !W ? '<span class="oc-sym">view only</span>' : r.kind === 'plugin' ? ic('start', '&#9654;', 'Start') + ic('stop', '&#9632;', 'Stop') + ic('refresh', '&#8635;', 'Refresh (stop and start)') + ic('uninstall', '&#10005;', 'Uninstall') : '<span class="oc-sym">' + (r.kind === 'system' ? 'system' : 'built-in') + '</span>') + '</td></tr>';
       if (_open[r.id]) {
-        var d = r.kind === 'plugin' ? deps.describe(r.key) : null, kv = details(r, d);
+        var d = r.kind === 'plugin' ? deps.describe(r.key) : null, kv = details(r, d, !W);
         h += '<tr class="oc-d"><td></td><td colspan="4"><table class="oc-kv">' + kv.map(function (p) { return '<tr><td>' + esc(p[0]) + '</td><td>' + (Array.isArray(p[1]) ? '<ul class="oc-svc">' + p[1].map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : esc(p[1])) + '</td></tr>'; }).join('') +
-          (r.kind === 'plugin' && r.activation === 'lazy' ? '<tr><td>Set activation</td><td><button data-oc-pol="' + esc(r.key) + '">' + ((r.policy || r.activation) === 'lazy' ? 'Lazy (on demand) - click for Eager (at start)' : 'Eager (at start) - click for Lazy (on demand)') + '</button> <span class="oc-sym">takes effect on the next start</span></td></tr>' : '') +
+          (W && r.kind === 'plugin' && r.activation === 'lazy' ? '<tr><td>Set activation</td><td><button data-oc-pol="' + esc(r.key) + '">' + ((r.policy || r.activation) === 'lazy' ? 'Lazy (on demand) - click for Eager (at start)' : 'Eager (at start) - click for Lazy (on demand)') + '</button> <span class="oc-sym">takes effect on the next start</span></td></tr>' : '') +
           '</table></td></tr>';
       }
     });
@@ -125,7 +131,7 @@
     q('[data-oc-filter]').addEventListener('input', function (e) { _filter = e.target.value; var pos = e.target.selectionStart; render(el, deps); var n = q('[data-oc-filter]'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} });
     q('[data-oc-clear]').onclick = function () { _filter = ''; render(el, deps); };
     q('[data-oc-reload]').onclick = function () { Promise.resolve(deps.reload && deps.reload()).then(function () { render(el, deps); }); };
-    q('[data-oc-installtoggle]').onclick = function () { _showInstall = !_showInstall; render(el, deps); };
+    var it = q('[data-oc-installtoggle]'); if (it) it.onclick = function () { _showInstall = !_showInstall; render(el, deps); };
     Array.prototype.forEach.call(el.querySelectorAll('[data-oc-offer]'), function (b) { b.onclick = function () { var o = (GL.PluginOffers || []).filter(function (x) { return x.id === b.getAttribute('data-oc-offer'); })[0]; if (o) act(function () { return deps.install(o.url); }, null, 'Installed')(); }; });
     var di = q('[data-oc-doinstall]'); if (di) di.onclick = function () { var u = q('[data-oc-url]').value.trim(); if (!u) { if (deps.toast) deps.toast('Enter a bundle URL'); return; } act(function () { return deps.install(u); }, null, 'Installed')(); };
     [].forEach.call(el.querySelectorAll('[data-oc-name]'), function (a) { a.onclick = function () { var k = a.getAttribute('data-oc-name'); _open[k] = !_open[k]; render(el, deps); }; });

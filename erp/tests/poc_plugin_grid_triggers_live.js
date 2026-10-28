@@ -16,7 +16,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §PLG-G
   await pg.goto(`http://localhost:${port}/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin&window=123`, { waitUntil: 'networkidle' });
   await pg.waitForSelector('[data-ad-table]', { timeout: 20000 }).catch(async () => { const u = await pg.$('#idmp-login-users .idmp-login-user:not(.disabled)'); if (u) { await u.click(); const o = await pg.$('#idmp-login-ok'); if (o) await o.click(); } await pg.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {}); });
   await pg.waitForTimeout(1200);
-  const st = await pg.evaluate(async (b) => { const r = window.PluginEngine._reg(); const out = {};
+  const st = await pg.evaluate(async (b) => { const r = (() => { const R = window.PluginEngine._reg(); return Object.assign({}, R, R.system); })();   /* W-PLUGIN-ROLE: setup/ops via reg.system (the boot-restore path); the gate is judged in witness_plugin_role.js */ const out = {};
     for (const f of ['lazy_probe_win', 'lazy_probe_proc']) { await r.installBundle(b + f + '.mjs'); } 
     out.w = (await r.startBundle('com.test.lazy-win')).state; out.p = (await r.startBundle('com.test.lazy-proc')).state; out.cw = window.__lazyWin || 0; out.cp = window.__lazyProc || 0; return out; }, `http://localhost:${port}/erp/tests/fixtures/`);
   console.log('§PLG-GRID-1 after START: ' + JSON.stringify(st));

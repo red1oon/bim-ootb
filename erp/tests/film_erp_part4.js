@@ -95,6 +95,16 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
   const EN = 'friendly-ops', FID = 'org.kernel.friendly-ops', NX = 'org.idempiere.ninja.excel';
   const menuIdOf = (win) => page.evaluate((w) => { const r = window.__idmpDb.exec("SELECT AD_Menu_ID FROM AD_Menu WHERE Action='W' AND AD_Window_ID=" + w + " AND IsActive='Y'"); return (r.length ? r[0].values.map(x => x[0]) : []).find(i => document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + i + '"]')); }, win);
   const pills = () => page.$$eval('#idmp-pill button[id^="pill-"]', b => b.map(x => x.id.slice(5)));
+  // W-PLUGIN-ROLE (TEAMWORK_FRAMEWORK.md §41.1): the console's Install / Start are the System Administrator's. Off-camera: log in as System / System before the console beat, and come back to the login screen after it (the story then continues from the login screen as before).
+  const asSystem = async () => {
+    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible');
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 });
+  };
+  const toLoginScreen = async () => {
+    await page.evaluate(() => window.PluginRelease && window.PluginRelease.close());
+    await page.click('#idmp-switch-btn'); await page.waitForSelector('#idmp-login-clients .idmp-login-user', { timeout: 15000 }); await page.waitForTimeout(600);
+  };
   const openConsole = async () => { await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(700); };
   const closeConsole = async () => { await hclick('#pr-root [data-pr-close]'); await pace(500); };
   const readOr2 = (f) => readOr(f);
@@ -103,7 +113,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ P0 title card; behind it the login screen and the Plugins & Releases console ═══
     await card('Getting friendlier', 'The SQLite based Kernel ERP, with the friendly plugin: the same documents and postings as iDempiere, fewer steps to reach them. Optional, and off until you install it.');
     await cast(); await page.mouse.move(720, 500); await beat('p0', 'title card');
-    await ipc('#idmp-release-link'); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(DRY ? 200 : 2500);
+    await asSystem(); await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await hold(DRY ? 200 : 2500);
 
     // ═══ P1 offered, not imposed: the console lists what is on the page; the friendly plugin is an offer, one click ═══
     await beat('p1', 'offer in the console'); await uncard(); await pace(1500);
@@ -116,6 +126,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     // ═══ P3 behind a short card: log in, open the Sales Order window ═══
     await beat('p3', 'card: a sales order');
     await card('A sales order, start to finish', 'Standard Order, one line. The plugin adds its next steps to the order\'s Process (gear) menu.');
+    await toLoginScreen();
     await ipc("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await ipc("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible');
     await ipc('#idmp-login-ok'); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);

@@ -21,7 +21,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §LIBER
   const st = () => pg.evaluate(() => { const r = window.PluginEngine._reg(), x = r.get('org.idempiere.mfg'); return { state: x ? x.state : null, model: !!(window.ModelLayer && window.ModelLayer.MODEL.pp_order) }; });
   await boot();
   ok('V0 before install: no Manufacturing Order leaf, no bundle, no pp_order model class', !(await leaf()) && (await st()).state === null && !(await st()).model, await st());
-  await pg.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg');
+  await pg.evaluate(async (u) => { const r = (() => { const R = window.PluginEngine._reg(); return Object.assign({}, R, R.system); })();   /* W-PLUGIN-ROLE: setup/ops via reg.system (the boot-restore path); the gate is judged in witness_plugin_role.js */ await r.installBundle(u); await r.startBundle('org.idempiere.mfg');
     await new Promise((res, rej) => { const rq = indexedDB.open('fold_plugins', 1); rq.onupgradeneeded = () => rq.result.createObjectStore('kv'); rq.onsuccess = () => { const tx = rq.result.transaction('kv', 'readwrite'); tx.objectStore('kv').put(r.list(), 'bundles'); tx.oncomplete = res; tx.onerror = rej; }; rq.onerror = rej; }); }, `http://localhost:${port}/erp/plugins/libero_manufacturing.mjs`);
   console.log('§LIBERO-LIVE-1 after START: ' + JSON.stringify(await st()));
   await boot();

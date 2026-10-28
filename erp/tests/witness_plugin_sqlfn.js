@@ -9,6 +9,7 @@
 //   Precondition logged: the page's UDF data access (AdCallout.RUNTIME.DB) is bound on its first model transaction - core's own bomqtyonhand needs it too (named in §24).
 //   Break WSF_BREAK=nobind: the functions module is served EMPTY at the reload -> S4 must go RED.
 // Run: [WSF_BREAK=nobind] node erp/tests/witness_plugin_sqlfn.js > <log>
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process');
@@ -47,7 +48,7 @@ const num = (v) => (v == null || v === '') ? null : Number(v);
     await load();
     // ── S1 ──
     let n0 = PAGELOG.length;
-    await page.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); }, base + '/plugins/libero_manufacturing.mjs');
+    await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system; await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); }, base + '/plugins/libero_manufacturing.mjs');
     const p100 = since(n0, /§PACKIN pack=org.idempiere.mfg version=1.0.0 /)[0] || '', bound = since(n0, /§PACKIN-FN bundle=org.idempiere.mfg/)[0] || '';
     const vs = /views=\[([^\]]*)\] viewsMissing=\[([^\]]*)\] functionsMissing=\[([^\]]*)\]/.exec(p100) || [];
     const created = [...new Set((vs[1] || '').split(',').filter(Boolean))], vMiss = (vs[2] || '').split(',').filter(Boolean), fMiss = (vs[3] || '').split(',').filter(Boolean);
@@ -103,7 +104,7 @@ const num = (v) => (v == null || v === '') ? null : Number(v);
     verdict('S3', 'every created view is queryable in the page (twin-internal, row counts ' + JSON.stringify(Object.fromEntries(vq)) + ')', vq.every(v => typeof v[1] === 'number'), vq);
     // ── S4 stop + reload ──
     const probe = twin.tuples.map((t, i) => ({ t, v: twin.vals[i] })).filter(x => x.v.some(v => v !== 0 && v !== 99999 && !/^ERR/.test(String(v)))).slice(0, 6);
-    await page.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); });
+    await page.evaluate(async () => { await window.PluginEngine._reg().system.stopBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); });
     if (BREAK === 'nobind') await page.route(/libero_sqlfn\.mjs/, r => r.fulfill({ status: 200, contentType: 'text/javascript', body: 'export function functions() { return {}; }' }));
     n0 = PAGELOG.length; await load();
     const bind4 = since(n0, /§PACKIN-FN bundle=org.idempiere.mfg/)[0] || '', rep4 = since(n0, /§PACKIN-REPLAY bundle=org.idempiere.mfg/)[0] || '';

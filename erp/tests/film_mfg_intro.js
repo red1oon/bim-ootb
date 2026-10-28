@@ -58,10 +58,20 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
   await page.waitForFunction(() => !!window.__idmpDb && !!window.PluginRelease, null, { timeout: 30000 });
   await page.waitForFunction(() => document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 20000 });
   await hold(1200); await cast(); await page.mouse.move(720, 500); await hold(DRY ? 100 : 800);
+  // W-PLUGIN-ROLE (TEAMWORK_FRAMEWORK.md §41.1): the console's Install / Start are the System Administrator's. Off-camera: log in as System / System before the console beat, and come back to the login screen after it (the story then continues from the login screen as before).
+  const asSystem = async () => {
+    await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step1:visible');
+    await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await page.waitForSelector('#idmp-login-step2:visible'); await page.click('#idmp-login-ok');
+    await page.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 });
+  };
+  const toLoginScreen = async () => {
+    await page.evaluate(() => window.PluginRelease && window.PluginRelease.close());
+    await page.click('#idmp-switch-btn'); await page.waitForSelector('#idmp-login-clients .idmp-login-user', { timeout: 15000 }); await page.waitForTimeout(600);
+  };
   try {
     // ═══ B1 the plugin panel (Felix style): Install and start, lazy ═══
     beat('b1', 'Plugins & Releases panel');
-    await hclick('#idmp-release-link'); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pace(1500);
+    await asSystem(); await page.evaluate(() => window.PluginRelease.open()); await page.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pace(1500);
     const rowsOf = () => page.evaluate(() => [...document.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)')].map(tr => ({ id: tr.cells[0].textContent.trim(), name: tr.cells[1].textContent.trim(), status: tr.cells[3].textContent.trim() })));
     const sum = () => page.$eval('#pr-osgi .oc-sum', e => e.textContent).catch(() => '');
     const r0 = await rowsOf(); fact('console.before', r0.length + ' bundles; ' + await sum());
@@ -73,7 +83,7 @@ const CURSOR = `(() => { const go = () => { if (document.getElementById('__fc'))
     fact('console.after', JSON.stringify(mfg) + ' | ' + await sum()); fact('startLog', lastLog(n1, /§PLUGIN-START/));
     await hclick('#pr-osgi a.oc-nm[data-oc-name="' + mfg.id + '"]'); await pace(2500);
     fact('detail', (await page.evaluate(() => (document.querySelector('#pr-osgi tr.oc-d') || {}).textContent || '')).replace(/\s+/g, ' ').slice(0, 380));
-    await hclick('#pr-root [data-pr-close]'); await hold(500);
+    await hclick('#pr-root [data-pr-close]'); await hold(500); await toLoginScreen();
 
     // ═══ B2 login, the opening screen carries the plugin's indicator + goal while it is only STARTING ═══
     beat('b2', 'login then Home');

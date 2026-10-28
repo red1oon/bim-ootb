@@ -726,6 +726,7 @@
       return fn(ctx);
     } finally { RT.DB = sDB; RT.PO = sPO; }
   };
+  S.MInvoice_copyFrom = MInvoice_copyFrom;   // the ONE MInvoice.copyFrom port (:255-330) - also run by Recurring (AD_Process 213, processes/Recurring.js)
   S.copyLinesForReversal = function (trx, to, from, counter, setOrder) { return S.inTrxRuntime(trx, function (ctx) { return S.MInvoice_copyLinesFrom(trx, ctx, to, from, counter, setOrder, true); }); };
   // MInvoice.isCreditMemo (MInvoice.java:1072-1077) — ONE copy (the older charAt(2) heuristic in isCM() was superseded by this exact DocBaseType test)
   S.docBaseType = function (trx, id) { var d = T.dt(trx, id); return d ? d.docbasetype : null; };          // MDocType.get(id).getDocBaseType()
