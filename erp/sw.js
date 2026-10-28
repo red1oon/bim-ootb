@@ -204,6 +204,9 @@ const PRECACHE_ASSETS = [
   'processes/InOutGenerate.js',
   'processes/ImportOrder.js',   // verbatim ImportOrder.java (AD_Process 206), W-IMPORT-ORDER
   'processes/ImportPayment.js',   // verbatim ImportPayment.java (AD_Process 343), W-IMPORT-PAYMENT
+  'processes/Recurring.js',   // verbatim Recurring.java (AD_Process 213) + MRecurring, W-RECURRING
+  'processes/RecurringRun.js',   // verbatim RecurringRun.java (AD_Process 200074), W-RECURRING
+  'processes/ClientAcctProcessor.js',   // verbatim ClientAcctProcessor.java (AD_Process 53187), W-ACCT-PROCESSOR
   'processes/InventoryCountCreate.js',
   'processes/InventoryCountUpdate.js',
   'processes/InvoiceCreateInOut.js',
