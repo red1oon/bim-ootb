@@ -1196,3 +1196,29 @@ double door now rides its wall when "add a bay" moves it (B3r riders 2). Falsifi
 `grid_kinematics.js` ATTACH_TOL 0.5) and translated alone — pulling the wall apart at its door, the doors left behind. Now the joined wall's ends are 0.127 m off lines 41 / 42 (> EDGE_TOL
 0.1) and its centre 1.4 m off, so it is not attached and stays. Neither is a stretch; the drawing sets the wall ends 127 mm in from the grid. EDGE_TOL is spine-wide (every building's
 grid drag), so it is not changed here: owner's call. "Add a bay" moves this wall and its doors correctly (B3 / B3r).
+
+## §D91 A GRID DRAG ON THE SHED: WALLS ON THE LINE RIDE IT, MEMBERS FRAMED INTO ITS COLUMNS STRETCH (owner 2026-10-28: "Ensure fixes before film")
+**Measured (node, the shipped `modeller/grid_kinematics.js` on the converted shed's boxes + the drawing's grid, one-bay drag of the end line 42, main 1799c504):** 17 commands.
+The 6 end walls ON line 42 (0.127 m thick, faces 0.064 m either side of it) get **SCALE f=25.000** — stretched across to 3.18 m thick; the end bay's side walls (the door wall CC, A6;
+ends 0.127 m inside lines 41 / 42) and eave beams (2AF+2EA, 2D1+2B0; ends 0.152 m inside = at the faces of the columns on the lines) get **no command** — left behind 3 m short; the
+columns and cross beams on line 42 translate (right). W-DXF-GRID G2 had recorded the 6 SCALEs as a pass (it asserted > 0 commands only).
+**Cause (`_findBestGrid`):** an EDGE match (a face within EDGE_TOL 0.1 m of a line) outranks the centreline ATTACH, so a thin wall standing on the line counts as edge-attached and is
+stretched; and a member ending at the face of the column standing on a line is beyond EDGE_TOL of the line itself, so nothing attaches it.
+**Rule (generic engine, no class branch beyond the column that defines the band).** A line's BAND = the line ± h ± EDGE_TOL, h = the largest half-extent (on that axis) of the IfcColumns
+centred on it (within EDGE_TOL); no column -> h = 0. (1) An element whose whole extent on the axis lies inside a line's band stands ON that line: ATTACH (it rides the line), ahead of any
+edge. (2) An element end within EDGE_TOL of the band's face (line ± h) is an EDGE on that line, as an end within EDGE_TOL of the line is today. The page passes each element's real class
+(`bonsai_gridmove.js elementData`, `realClass`); a caller that passes none gets h = 0 (rule (1) alone).
+**Witness claims (W-GRID-ONLINE, node: the shed + built controls):** O1 the 6 end walls on line 42 TRANSLATE by the drag (main: SCALE f=25); O2 the end bay's side walls and eave beams
+SCALE to (L + 3.048) / L, their far end anchored (main: no command); O3 control: the same member ending 0.127 m from a line with NO column on it stays unattached (the band comes
+from columns only); O4 control: a 0.15 m wall centred on a line with no column ATTACHes (main: EDGE -> SCALE). Regression: the 10 node grid witnesses (98 + 8 + 34 + 29 + 21 + 6 + 4 + 9 +
+20 + 6 PASS on main) and W-DXF-GRID, re-read for changed numbers.
+**§D91 ✅ BUILT 2026-10-28 (witness).** `grid_kinematics.js` (a line's band from its columns; ON THE LINE ahead of an edge; an end at the band's face is an edge), `bonsai_gridmove.js
+elementData` passes `realClass`. **W-GRID-ONLINE 4/0** (O1 the 6 end walls TRANSLATE d=3.048; O2 CC-L0+CC-L1 / A6 SCALE f=2.091, eave beams 2AF+2EA / 2D1+2B0 f=2.111 = (L+3.048)/L;
+O3 no column -> no command; O4 a 0.15 m wall centred on a line TRANSLATEs). **Falsifier** (main's engine): O1 SCALE f=25.000 x6, O2 no command x4, O4 SCALE f=7.667. **Regression:** the 10
+node grid witnesses PASS and their logs are byte-identical to main's (one timing line aside); page W-DXF-GRID 4/0 (G2 now 21 commands: IfcWall TRANSLATE 6 + SCALE 2, IfcBeam SCALE 2 +
+TRANSLATE 3, IfcColumn 4, IfcFooting 4), W-E2E-GRIDSTRETCH 7/0, W-E2E-GRID-GREENORANGE 13/0, W-E2E-GRIDMOVE-REAL 8/0, W-E2E-STRETCH-RIDE 11/0, W-E2E-GRIDSTRETCH-MULTI 21/0,
+W-E2E-GESTURE-UNDO 6/0. Pre-existing, not from this change (measured): W-E2E-GRID-GREENORANGE logs `§KRN_SEAL_ERR Database closed` in 2 of 4 runs on main and 1 of 3 here — the 2 s
+deferred seal/persist in `kernel_ops.js` firing after the witness closed the db.
+**Paste at the pointer (same branch; BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §PLACE):** W-CLIPBOARD-KEYS 7/0 — K1 real pointer move + click beside the Duplex: the copy's centre =
+the snapped click (9.5e-7 m), gate clean; K5 Ctrl+V + Esc: 0 ops; K6 a click over an element places (gate ORANGE) and selects the copies, not that element; K7 ? Help lists Copy / Paste.
+W-DXF-ADD-BAY 12/0, W-CLIPBOARD 6/0, W-BAY-RIDE 6/0, W-DOOR-GAP 4/0 unchanged.

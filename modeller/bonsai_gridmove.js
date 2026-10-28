@@ -163,7 +163,7 @@
         return { guid: m.userData.featureId,
           x: (bb.min.x + bb.max.x) / 2, y: (bb.min.y + bb.max.y) / 2, z: (bb.min.z + bb.max.z) / 2,
           bboxX: bb.max.x - bb.min.x, bboxY: bb.max.y - bb.min.y, bboxZ: bb.max.z - bb.min.z,
-          ifcClass: 'IfcWall',
+          ifcClass: 'IfcWall', realClass: classByFid[m.userData.featureId] || null,   // §D91 the real class: the engine reads only IfcColumn from it (a line's band)
           yawRad: yawRadByFid[m.userData.featureId],   // §ROTATION-GUARD: undefined when unrecorded ⇒ engine behavior unchanged
           tiltXRad: tiltXRadByFid[m.userData.featureId],   // §ROTATION-GUARD-3AXIS: ditto
           tiltYRad: tiltYRadByFid[m.userData.featureId] };
