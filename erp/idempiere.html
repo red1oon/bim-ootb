@@ -2558,7 +2558,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       orderBy = (/^Created( DESC)?$/.test(_ob) && !_colExists(tab.tableName, 'Created')) ? orderBy : _ob;
     }
     _curQ = { tm: tm, q: gq, where: where, tabIdx: _activeTabIdx, win: _activeWin };
-    _records = ADD.readRecords(db, tab.tableName, where, orderBy) || [];
+    _records = ADD.readRecords(_tableIsView(tab.tableName) ? _tipDb() : db, tab.tableName, where, orderBy) || [];   // §VIEW-TIP: a VIEW tab is read over the tip (W-POS-SALES-LIVE POSL3)
     // §UDP-ORDER — PostgreSQL's ORDER BY over the rows SQLite read: text under the legacy DB collation (AdFind.collate), NULLs last on ASC
     if (orderBy && window.AdGridTab && AdGridTab.sortRows) {
       var _so = AdGridTab.sortRows(_records, orderBy, window.AdFind ? AdFind.collate : null);
@@ -5130,6 +5130,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { var r = db.exec("SELECT IsView FROM AD_Table WHERE UPPER(TableName)=UPPER(?) LIMIT 1", [tn]);
       v = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
     _isViewCache[key] = v; return v;
+  }
+  // §VIEW-TIP (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §42 film evidence; Witness: W-POS-SALES-LIVE POSL3). A VIEW tab (AD_Table.IsView='Y') has no op-log rows of its own for _overlayListTip to fold, but its rows derive from tables this session WROTE (tickets that
+  //   arrived by Visit, rows the user created): the grid read the view in the bare bundle and showed "No records". _tipDb() is the db-shaped handle ADData.readRecords needs, whose exec() is the ONE tip reader (_sqlRows, W-TIP-READERS), which also shadows every view over a written table (§VIEW-SHADOW). No table is named.
+  function _tipDb() {
+    return { exec: function (sql) {
+      var rows = _sqlRows(sql); if (!rows.length) return [];
+      var cols = Object.keys(rows[0]); return [{ columns: cols, values: rows.map(function (r) { return cols.map(function (c) { return r[c]; }); }) }];
+    } };
   }
   // _foldableTab — editable per AD only: not AD_Table.IsView, not AD_Tab.IsReadOnly, has displayed fields.
   function _foldableTab(tab) {
