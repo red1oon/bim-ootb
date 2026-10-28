@@ -514,7 +514,7 @@
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
      decisions to window.AdAccess instead of computing them independently. -->
-<script src="ad_access.js?v=3"></script>
+<script src="ad_access.js?v=4"></script>
 <script src="idmp_session.js?v=25"></script>
 <!-- DESCRIPTOR SEAM (IDEMPIERE_2.md §pivot, renderer #2) — one chrome, N dictionaries. AD = first descriptor
      (facets ARE ADParser/ADData/IdmpSession above, verbatim). MUST load after those three. -->
@@ -537,7 +537,7 @@
 <script src="post_resolver.js?v=1"></script>
 <script src="doc_poster.js?v=2"></script>
 <script src="genesis_seed.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §SA1 — default-CoA seed; MUST load before genesis.js (it reads global.GenesisSeed at load) -->
-<script src="genesis.js?v=7"></script>
+<script src="genesis.js?v=10"></script>
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
@@ -759,7 +759,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=9"></script>
-<script src="crud_overlay.js?v=38"></script>
+<script src="crud_overlay.js?v=39"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
@@ -903,6 +903,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       req.onsuccess = function () { req.result.transaction('blobs', 'readwrite').objectStore('blobs').put(val, key); };
     } catch (e) {}
   }
+  // §PROJ (W-BUNDLE-PROJECTION; TEAMWORK_FRAMEWORK.md §41.2 L4b) - PROJECTED rows are not base data. A module that overlays the in-memory bundle (Team's executor map sets IsActive='N' on Document Action Access rows) registers
+  //   {name, unproject(db), reproject(db)}: both SYNCHRONOUS, unproject returns the rows to their base value, reproject puts the overlay back. _persistBundle() is the ONE way the host writes the bundle to the resident cache:
+  //   unproject -> export -> reproject (in one synchronous block, so nothing observes the base state), so a snapshot taken under an overlay persists the BASE, never the projection. No table is named here.
+  var _projectors = [];
+  window.BundleProjection = { register: function (p) { if (!p || typeof p.unproject !== 'function' || typeof p.reproject !== 'function') return null; _projectors.push(p);
+      return function () { var i = _projectors.indexOf(p); if (i >= 0) _projectors.splice(i, 1); }; }, count: function () { return _projectors.length; } };
+  function _persistBundle() {
+    var done = [], bytes = null;
+    try {
+      _projectors.slice().reverse().forEach(function (p) { p.unproject(db); done.push(p); });
+      bytes = db.export();
+    } finally {
+      done.reverse().forEach(function (p) { try { p.reproject(db); } catch (e) { console.log('🔴 §PROJ reproject ' + (p.name || '?') + ' failed: ' + (e && e.message)); } });
+    }
+    idbPut('ad_seed_v18', bytes.buffer);
+    console.log('§PROJ-SNAPSHOT projectors=' + _projectors.length + ' unprojected=' + done.length + ' bytes=' + bytes.length);
+  }
   function idbDel(key) {
     try {
       var req = indexedDB.open('erp_cache', 1);
@@ -975,7 +992,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // clobber a ?seed= gen db), and only when rows actually merged. INSERT OR IGNORE upstream keeps it idempotent.
       var persisted = false;
       if (mRow > 0 && (!seedParam || seedFile === 'ad_seed.db')) {
-        try { idbPut('ad_seed_v18', db.export().buffer); persisted = true;
+        try { _persistBundle(); persisted = true;
           console.log('§IDEMPIERE shard-persist key=ad_seed_v18 rows=' + mRow + ' resident=Y');
           // CONSISTENCY_FINISH.md §K-3 — a tenant becoming resident is the largest state change a user
           // can make; it earns a World-history dot like any doc moment. Guarded, best-effort, NOT a
@@ -1016,7 +1033,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     console.log('§GENESIS-RESIDENT-LIVE install name=' + name + ' client=' + newId + ' rows=' + rows + ' grants=' + grants + ' clients→' + clAfter);
     var persisted = false;
     if (rows > 0) {
-      try { idbPut('ad_seed_v18', db.export().buffer); persisted = true;
+      try { _persistBundle(); persisted = true;
         console.log('§GENESIS-RESIDENT-LIVE persist key=ad_seed_v18 client=' + newId + ' resident=Y');
         try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
           label: 'Installed tenant ' + name + ' (' + rows + ' rows, client ' + newId + ')' }); } catch (e2) {} }
@@ -1343,8 +1360,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     $('idmp-del-go').onclick = function () {
       var res = SES.deleteClient(db, c.id);
       if (!res.ok) { closeOv(); return; }
-      try { idbPut('ad_seed_v18', db.export().buffer); } catch (e) {}
-      console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=Y');
+      var pOk = true; try { _persistBundle(); } catch (e) { pOk = false; console.log('🔴 §PROJ-SNAPSHOT NOT persisted: ' + (e && e.message)); }
+      console.log('§IDEMPIERE tenant-deleted client=' + c.id + ' rows=' + res.deleted + ' tables=' + res.tables + ' persisted=' + (pOk ? 'Y' : 'N'));
       try { if (window.WholeHistory) window.WholeHistory.record({ page: 'idempiere', kind: 'op',
         label: 'Deleted tenant ' + c.name + ' (Client ' + c.id + ', ' + res.deleted + ' rows)' }); } catch (e) {}
       closeOv();
@@ -1910,8 +1927,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // §FO-A2 (ERP_FRIENDLY_OPS_LENS.md §35): a "next step" runs a dictionary process from the record - the SAME run path as the process form's Run (_runProcessGuarded),
       //   parameters = the process's own defaults, overridden by the preset; the result shows in the same ProcessModalDialog a button-launched process uses.
       val: function (col) { return rec ? recVal(rec, col) : null; },
-      row: function (sql) { if (keyVal == null) return null; return _tipSql(String(sql).replace(/:key\b/g, _lit(keyVal)))[0] || null; },
-      exists: function (sql) { if (keyVal == null) return false; return _tipSql(String(sql).replace(/:key\b/g, _lit(keyVal))).length > 0; },
+      row: function (sql) { if (keyVal == null) return null; return _sqlRows(String(sql).replace(/:key\b/g, _lit(keyVal)))[0] || null; },
+      exists: function (sql) { if (keyVal == null) return false; return _sqlRows(String(sql).replace(/:key\b/g, _lit(keyVal))).length > 0; },
       // FO-A4 (ERP_FRIENDLY_OPS_LENS.md §39): open the default window of a table on a NEW record with the fields preset as if the user had picked them (each followed by the same change the
       //   user's pick fires, so the callouts run in order). The window, New and the field pick are the host's own paths (openWindow, _openCreate, the form's change handlers).
       openNew: function (tableName, preset) {
@@ -1973,7 +1990,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (val == null || !/_ID$/i.test(col)) return val;
     var rt = String(col).replace(/_ID$/i, ''); if (!_tableExists(rt)) return val;
     var ic = _identCols(rt).filter(function (c) { return !/_ID$/i.test(c); }); if (!ic.length) return val;
-    var r = _tipSql('SELECT ' + ic.join(', ') + ' FROM ' + rt + ' WHERE ' + rt + '_ID=' + _lit(val))[0];
+    var r = _sqlRows('SELECT ' + ic.join(', ') + ' FROM ' + rt + ' WHERE ' + rt + '_ID=' + _lit(val))[0];
     return r ? ic.map(function (c) { return r[c.toLowerCase()]; }).filter(function (x) { return x != null && x !== ''; }).join(' ') : val;
   }
   function _showSavePreview(tab, res) {
@@ -2145,8 +2162,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function who(a) { return a == null ? '' : (/^-?\d+$/.test(String(a)) ? _userName(Number(a)) : String(a)); }
     var role = _sqlRows('SELECT preferencetype AS p, ischangelog AS c FROM ad_role WHERE ad_role_id=' + Number(App.roleId))[0] || {};
     var showLog = String(role.p || '').toUpperCase() === 'C';
-    var ins = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='SYSTEM_INSERT_CHANGELOG' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
-    var base = pk != null && _colExists(tn, kc) ? (_sqlRows('SELECT * FROM ' + tn + ' WHERE ' + kc + '=' + _lit(pk))[0] || null) : null;
+    var ins = _sysConfig('SYSTEM_INSERT_CHANGELOG', App.clientId);
+    var base = pk != null && _colExists(tn, kc) ? (_baseRows('SELECT * FROM ' + tn + ' WHERE ' + kc + '=' + _lit(pk))[0] || null) : null;
     var entries = showLog && window.__crud && typeof window.__crud.changeLog === 'function' ? (window.__crud.changeLog(tn, pk, { roleChangeLog: String(role.c || '').toUpperCase() === 'Y', insertLog: ins && ins.v, baseRow: base }) || []) : null;
     var lines = [], cBy = recVal(rec, 'CreatedBy'), c = recVal(rec, 'Created'), uBy = recVal(rec, 'UpdatedBy'), u = recVal(rec, 'Updated'), uu = recVal(rec, tn + '_UU');
     if (cBy != null) lines.push('CreatedBy: ' + who(cBy) + ' - ' + (c == null ? '' : fmtTs(c)));
@@ -2513,7 +2530,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _ow.initialQuery = false;
       var _hv = (_sqlRows("SELECT COALESCE(t.IsHighVolume, tb.IsHighVolume) AS h, t.MaxQueryRecords AS m FROM AD_Tab t JOIN AD_Table tb ON tb.AD_Table_ID=t.AD_Table_ID WHERE t.AD_Tab_ID=" + Number(tab.id))[0]) || {};
       var _rl = _session && _session.role ? (_sqlRows('SELECT MaxQueryRecords AS m, ConfirmQueryRecords AS c FROM AD_Role WHERE AD_Role_ID=' + Number(_session.role.id))[0] || {}) : {};
-      var _gm = (_sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='GLOBAL_MAX_QUERY_RECORDS' AND ad_client_id IN (0," + Number(_session && _session.client ? _session.client.id : 0) + ") ORDER BY ad_client_id DESC")[0] || {}).v;
+      var _gm = (_sysConfig('GLOBAL_MAX_QUERY_RECORDS', _session && _session.client ? _session.client.id : 0) || {}).v;
       var _dec = AdGridTab.initialDecision({ isTransaction: _w0 && _w0.windowType === 'T', isHighVolume: _hv.h === 'Y', tabMax: _hv.m, roleMax: _rl.m, globalMax: _gm, roleConfirm: _rl.c,
         countAll: function () { try { var r = db.exec('SELECT count(*) FROM ' + tab.tableName + (clauses.length ? ' WHERE ' + clauses.join(' AND ') : '')); return r.length ? Number(r[0].values[0][0]) : 0; } catch (e) { return -1; } } });
       _ow.onlyCurrentRows = _dec.onlyCurrentRows; _ow.autoNewCheck = _dec.onlyCurrentRows;   // AutoNew is set for a transaction window (:416-419)
@@ -2594,7 +2611,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     inp.setAttribute(attr, f.columnName); return inp;
   }
   function _userQueries(tab, cb) {   // seed ad_userquery + the signed op-log, then MUserQuery.get
-    var base = _sqlRows('SELECT * FROM ad_userquery WHERE ad_tab_id=' + Number(tab.id)), c = window.__crud;
+    var base = _baseRows('SELECT * FROM ad_userquery WHERE ad_tab_id=' + Number(tab.id)), c = window.__crud;
     var ctx = { clientId: _session && _session.client ? _session.client.id : (window.APP || {}).clientId, userId: (window.APP || {}).actor, roleId: _session && _session.role ? _session.role.id : null,
       includedRoles: _session && _session.role ? _sqlRows("SELECT included_role_id AS r FROM ad_role_included WHERE ad_role_id=" + Number(_session.role.id) + " AND isactive='Y'").map(function (x) { return x.r; }) : [] };
     var done = function (rows) { cb(AdFind.userQueryList(rows, tab.id, ctx), ctx); };
@@ -2768,7 +2785,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   ZK_GRID_MOBILE_MAX_COLUMNS (default 10). A legacy-shape bundle without IsDisplayedGrid keeps the form's display fields.
   function _gridCols(tab) {
     var mobile = false; try { mobile = window.matchMedia('(max-width:760px)').matches; } catch (e) {}
-    var mx = mobile ? _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_GRID_MOBILE_MAX_COLUMNS' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number((window.APP || {}).clientId || 0) + ") ORDER BY ad_client_id DESC")[0] : null;
+    var mx = mobile ? _sysConfig('ZK_GRID_MOBILE_MAX_COLUMNS', (window.APP || {}).clientId) : null;
     var cu = _tabCust[String(tab.id)] || null;
     var g = window.AdGridTab && AdGridTab.gridFields ? AdGridTab.gridFields(tab.fields || [], { mobile: mobile, maxMobile: mx && mx.v, custom: cu && cu.custom }) : null;
     if (g) console.log('§GRID-COLS tab=' + tab.name + ' cols=' + g.length + ' mobile=' + mobile + (cu ? ' custom=' + cu.custom : '') + ' [' + g.map(function (f) { return f.columnName; }).join(',') + ']');
@@ -3248,14 +3265,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _procHandlersInstalled = true;
     console.log('§AD-PROC-LIVE handlers=[' + window.AdProcess.registeredClassnames().join(',') + '] reportCore=' + (core ? 'Y' : 'N') + ' engine=' + (window.ERPEngine ? 'Y' : 'N'));
   }
-  // raw sql.js exec → array of lowercase-keyed row objects; an ABSENT table (seed slice) → [] + §-named, never a throw.
-  // _tipSql — _sqlRows over the TIP: the bundle PLUS every row this session's signed ops wrote (crud_overlay.withModelTrx shadows the written tables).
-  //   Reports/processes read through it so a document completed a moment ago is in them; falls back to the bare bundle when the overlay is absent.
-  function _tipSql(sql) {
-    try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }); if (r) return r; } } catch (e) {}
-    return _sqlRows(sql);
-  }
+  // _sqlRows - THE reader of what this device holds (W-TIP-READERS, TEAMWORK_FRAMEWORK.md §41.2 L3): the TIP = the shipped bundle PLUS every row this session's signed ops wrote
+  //   (crud_overlay.withModelTrx shadows the written tables the statement names). Legacy reads its own committed writes everywhere; the twin used to read the bare bundle at ~100 sites
+  //   and the tip at 10, so a record made this session was missing from a process parameter, a name lookup, a receipt. Every data read goes through here. Falls back to the bare bundle when the overlay is absent.
+  // _baseRows - the BARE BUNDLE, for the two reads that must not see the session: the BASE a site folds ops over itself (core.listTip / _recentTip / _foldTable would double-count a tip), and the bundle's own
+  //   structure (PRAGMA / sqlite_master). A new use is a conscious entry in witness_tip_readers.js BASE_OK. An absent table (seed slice) -> [] + §-named, never a throw.
   function _sqlRows(sql) {
+    try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }, { sql: sql }); if (r) return r; } } catch (e) {}
+    return _baseRows(sql);
+  }
+  function _baseRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);
       if (!res.length) return [];
@@ -3264,6 +3283,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       console.log('§AD-PROC-LIVE seed-gap (' + String((e && e.message) || e).slice(0, 90) + ') → empty set (honest)');
       return [];
     }
+  }
+  // _sysConfig - the AD_SysConfig row for a name: client-specific over system (ORDER BY AD_Client_ID DESC), {v} or undefined. One statement, was written out at 8 sites.
+  function _sysConfig(name, clientId) {
+    return _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='" + String(name).replace(/'/g, "''") + "' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
   }
   // ctx — REAL row accessors for the registered handlers (EXTRACT: every value is a seed row; absent table → honest 0).
   // §GENSHIP-LIVE / §GENINV-LIVE (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-21, "Stage 2, one layer deeper") —
@@ -3322,9 +3345,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _foldOrderRow(id) {
     // §TIP-READ (ERP_FRIENDLY_OPS_LENS.md §32): the model's own tip-shadowed reader first - a session-made order's folded CRUD row lacks the columns the model defaults at write
     //   (IsSOTrx), so the gate read "not a Sales Order" for an order the grid showed as one. Falls through to the old fold when there is no model reader.
-    var tipRow = _tipSql('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    var tipRow = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
     if (tipRow) { try { var tdb = window.__crud && window.__crud.kernelDb && window.__crud.kernelDb(), tst = tdb && window.__crud.core.readTip(tdb, 'c_order', tipRow.c_order_id, null); if (tst != null) tipRow.docstatus = tst; } catch (e) {} return tipRow; }
-    var base = _sqlRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
+    var base = _baseRows('SELECT * FROM c_order WHERE c_order_id=' + Number(id))[0] || null;
     var c = window.__crud;
     if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function' || typeof c.core.readTip !== 'function') return base;
     var sdb = c.kernelDb(); if (!sdb) return base;
@@ -3334,9 +3357,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     return row;
   }
   function _foldOrderLines(id) {
-    var tipLines = _tipSql('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    var tipLines = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
     if (tipLines.length) return tipLines;   // §TIP-READ: same reader as the model
-    var base = _sqlRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
+    var base = _baseRows('SELECT * FROM c_orderline WHERE c_order_id=' + Number(id) + ' ORDER BY line, c_orderline_id');
     var c = window.__crud;
     if (!c || typeof c.kernelDb !== 'function' || !c.core || typeof c.core.listTip !== 'function') return base;
     var sdb = c.kernelDb(); if (!sdb) return base;
@@ -3348,7 +3371,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function header(key, info) {
       var map = RM[key]; if (!map) return null;
       var w = (info && info.Record_ID) ? ' WHERE ' + map.pk + '=' + Number(info.Record_ID) : '';
-      return _sqlRows('SELECT * FROM ' + map.key + w + ' ORDER BY ' + map.pk + ' LIMIT 1')[0] || null;
+      // a keyed read is the tip (a record made this session is receipted); the unkeyed "first row" fallback stays on the bundle: a session record (negative pk) must not become "the first row"
+      return (info && info.Record_ID ? _sqlRows : _baseRows)('SELECT * FROM ' + map.key + w + ' ORDER BY ' + map.pk + ' LIMIT 1')[0] || null;
     }
     return {
       // §CP — a verbatim SvrProcess port runs in ONE ModelLayer.Trx over the tip-shadowed bundle (crud_overlay withModelTrx)
@@ -3391,15 +3415,15 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         var as = p.C_AcctSchema_ID != null ? p.C_AcctSchema_ID : p.c_acctschema_id;
         if (as != null && String(as).trim() !== '' && !isNaN(Number(as))) w.push('c_acctschema_id=' + Number(as));
         console.log('§TB-SCOPE where=' + (w.join(' AND ') || '(none)'));
-        return _tipSql('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));   // tip-shadowed: includes the books posted this session
+        return _sqlRows('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct' + (w.length ? ' WHERE ' + w.join(' AND ') : ''));   // tip-shadowed: includes the books posted this session
       },
       // FS-14 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2l): Aging reads RV_OpenItem's sources through this
       // accessor; `today` = the browser's local day (statement_timestamp()), `clientId` = MRole.addAccessSQL's clause.
-      query: function (sql) { return _tipSql(sql); },   // tip-shadowed (bundle + this session's signed ops): Aging must see the invoice completed a moment ago
+      query: function (sql) { return _sqlRows(sql); },   // tip-shadowed (bundle + this session's signed ops): Aging must see the invoice completed a moment ago
       // FS-16 (§FS2n): the TIP of a table (bundle + this session's signed CRUD ops), keys lower-cased — ImportBPartner reads
       // the staging rows the File Loader committed, and matches BPs / users / locations created in the session too.
       tipRows: function (table) {
-        return _foldRowsSync(table, table + '_id', _sqlRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
+        return _foldRowsSync(table, table + '_id', _baseRows('SELECT * FROM ' + table)).map(function (r) { var o = {}; for (var k in r) o[String(k).toLowerCase()] = r[k]; return o; });
       },
       stdDefaults: (window.APP && (window.APP.actor != null || window.APP.clientId != null)) ? { actor: window.APP.actor, clientId: window.APP.clientId, orgId: window.APP.orgId != null ? window.APP.orgId : 0 } : null,
       finReport: function (rid, opts) { return (window.__report && window.__report.fold) ? window.__report.fold(rid, opts) : null; },
@@ -3440,7 +3464,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         return _foldOrderLines(id);
       },
       onHandOf: function (pid, wh) {
-        var r = _sqlRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
+        var r = _baseRows('SELECT COALESCE(SUM(s.qtyonhand),0) oh FROM m_storageonhand s JOIN m_locator l ON l.m_locator_id=s.m_locator_id WHERE s.m_product_id=' + Number(pid) + ' AND l.m_warehouse_id=' + Number(wh));
         var base = r.length ? Number(r[0].oh) : 0;
         return base + _sidecarStockDelta(pid, wh);
       }
@@ -3457,7 +3481,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (m && _procRecord && _procRecord.row && window.__frBreak !== 'noctx') { var v = recVal(_procRecord.row, m[1]); return (v == null) ? '' : String(v); }
     if (/^@SQL=/i.test(s) && _procRecord && _procRecord.row) {   // GridField.getDefault: "@SQL=..." - @Col@ = the launching record's value, the first column of the first row
       var sq = s.replace(/^@SQL=/i, '').replace(/@([A-Za-z0-9_]+)(?::[^@]*)?@/g, function (_, c) { var v = recVal(_procRecord.row, c); return (v == null || v === '') ? '0' : _lit(v); });
-      try { var dr = _tipSql(sq)[0]; if (dr) { var dk = Object.keys(dr)[0]; return dr[dk] == null ? '' : String(dr[dk]); } } catch (e) { console.log('§AD-DEFAULT @SQL ERROR ' + e.message); }
+      try { var dr = _sqlRows(sq)[0]; if (dr) { var dk = Object.keys(dr)[0]; return dr[dk] == null ? '' : String(dr[dk]); } } catch (e) { console.log('§AD-DEFAULT @SQL ERROR ' + e.message); }
       return '';
     }
     if (/^@.*@$/.test(s)) return '';
@@ -3466,7 +3490,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // DisplayLogic '@SQL=...' (Evaluator.parseSQLLogic): @Col@ / @Col:0@ become the record's values, the query runs, any row = true. Not a boolean expression, so the evaluator never sees it.
   function _sqlLogicShows(dl, rec) {
     var sql = String(dl).trim().replace(/^@SQL=/i, '').replace(/@([A-Za-z0-9_]+)(?::[^@]*)?@/g, function (_, c) { var v = recVal(rec, c); return (v == null || v === '') ? '0' : _lit(v); });
-    try { var n = _tipSql(sql).length; console.log('§AD-TBB sqllogic rows=' + n + ' ds=' + recVal(rec, 'docstatus') + ' dbds=' + JSON.stringify(_tipSql('SELECT docstatus FROM c_order WHERE c_order_id=' + _lit(recVal(rec, 'c_order_id') || 0))) + ' sql=' + sql.replace(/\s+/g, ' ').slice(-90)); return n > 0; }
+    try { var n = _sqlRows(sql).length; console.log('§AD-TBB sqllogic rows=' + n + ' ds=' + recVal(rec, 'docstatus') + ' dbds=' + JSON.stringify(_sqlRows('SELECT docstatus FROM c_order WHERE c_order_id=' + _lit(recVal(rec, 'c_order_id') || 0))) + ' sql=' + sql.replace(/\s+/g, ' ').slice(-90)); return n > 0; }
     catch (e) { console.log('§AD-TBB sqllogic ERROR ' + e.message); return false; }
   }
   // ProcessModalDialog (ADTabpanel.actionButton → ProcessModalDialog): a process launched from a record's Button field opens as a MODAL DIALOG over the
@@ -3660,7 +3684,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // takes the table — and form #2 reads M_Transaction through the same two sources. Same function, honest
   // name; the §-log tag is generalised with it.
   function _appendOnlyRowsFor(table, cb) {
-    var base = _sqlRows('SELECT * FROM ' + table);
+    var base = _baseRows('SELECT * FROM ' + table);
     var c = window.__crud, out = base.slice();
     var K = (c && typeof c.kernelDb === 'function') ? c.kernelDb() : null;
     if (K && window.KernelOps && typeof window.KernelOps.replayOps === 'function') {
@@ -3771,7 +3795,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var matched = modeSel.value === 'M';
       // headers: DocStatus IN ('CO','CL') AND the direction's DocBaseType filter — both from the Java's own
       // INNER JOIN C_DocType (…) clause, applied after the tip fold so a freshly-Completed doc qualifies.
-      var hdrBase = _sqlRows('SELECT * FROM ' + dir.doc);
+      var hdrBase = _baseRows('SELECT * FROM ' + dir.doc);
       _foldTable(dir.doc, dir.docPk, hdrBase, true, function (hdrs) {
         var dtBase = {};
         _sqlRows('SELECT c_doctype_id, docbasetype FROM c_doctype').forEach(function (d) { dtBase[String(d.c_doctype_id)] = d.docbasetype; });
@@ -3785,7 +3809,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           if (dir.doc === 'm_inout' && base === 'MMS' && String(h.issotrx) !== 'N') return;
           h._docbase = base; hdrById[String(h[dir.docPk])] = h; kept++;
         });
-        var lineBase = _sqlRows('SELECT * FROM ' + dir.line);
+        var lineBase = _baseRows('SELECT * FROM ' + dir.line);
         _foldTable(dir.line, dir.linePk, lineBase, false, function (lns) {
           _appendOnlyRowsFor(dir.match, function (mrows) {
             var sum = {};
@@ -4074,7 +4098,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         Object.keys(pk.values).forEach(function (col) { var v = pk.values[col]; if (v == null || v === '') return; var num = v !== '' && !isNaN(Number(v)) && String(v).trim() !== '';
           db.run('INSERT INTO t_selection_infowindow (ad_pinstance_id, t_selection_id, columnname, value_string, value_number) VALUES (?,?,?,?,?)', [pin, tid, col, num ? null : String(v), num ? Number(v) : null]); });
       });
-      console.log('§INFOWIN-SELECTION pinstance=' + pin + ' infowindow=' + iwId + ' process=' + pr.id + ' rows=' + picks.length + ' t_selection=' + JSON.stringify(_sqlRows('SELECT t_selection_id AS i, viewid AS v FROM t_selection WHERE ad_pinstance_id=' + pin)));
+      console.log('§INFOWIN-SELECTION pinstance=' + pin + ' infowindow=' + iwId + ' process=' + pr.id + ' rows=' + picks.length + ' t_selection=' + JSON.stringify(_baseRows('SELECT t_selection_id AS i, viewid AS v FROM t_selection WHERE ad_pinstance_id=' + pin)));
       _procExtra = { AD_InfoWindow_ID: iwId, AD_PInstance_ID: pin };
       close(); _runButtonProcess(Number(pr.id), pr.name, rec);
     } });
@@ -4335,14 +4359,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var rows = _sqlRows('SELECT ' + key + ' AS k, ' + disp + ' AS d FROM ' + tbl + " WHERE IsActive='Y'" + acc + (rw ? ' AND (' + rw + ')' : '') + ' ORDER BY ' + (orderBy || '2'));   // a rule that reads a context variable we cannot resolve here (rw === null) filters nothing and says so in the log line
       var want = keep || (dflt != null ? String(dflt) : ''), seen = false;
       rows.forEach(function (r) { var o = el('option', null, r.d); o.value = String(r.k); if (want === String(r.k)) { o.selected = true; seen = true; } sel.appendChild(o); });
-      // a value the window context hands us can name a record made THIS session (the order a toolbar process was launched from carries a synthetic negative id the BASE list cannot hold): it is kept - and labelled like its
-      //   siblings - ONLY if that row exists in this session's own writes (the tip). A default that names nothing, in the base or in the tip, stays dropped, as before (a blank filter is not a silent filter on a stranger).
-      if (want !== '' && !seen) {
-        var tipRow = null;
-        try { if (window.__crud && window.__crud.withModelTrx) tipRow = window.__crud.withModelTrx(function (q) { var r = q('SELECT ' + disp + ' AS d FROM ' + tbl + ' WHERE ' + key + '=' + Number(want)); return r && r.length ? r[0] : null; }); } catch (e) { tipRow = null; }
-        if (tipRow) { var ox = el('option', null, tipRow.d + ' (' + want + ')'); ox.value = want; ox.selected = true; sel.appendChild(ox); console.log('§PROC-PARAM-PICKER col=' + key + ' kept session record ' + want + ' (not in the base list, found in the tip)'); }
-        else console.log('§PROC-PARAM-PICKER col=' + key + ' default ' + want + ' names no record (base or tip) - not selected');
-      }
+      // a default the window context hands us that names no record in the list (the tip: bundle + this session's writes) stays dropped - a blank filter is not a silent filter on a stranger
+      if (want !== '' && !seen) console.log('§PROC-PARAM-PICKER col=' + key + ' default ' + want + ' names no record in the list - not selected');
       console.log('§PROC-PARAM-PICKER col=' + key + ' table=' + tbl + ' rows=' + rows.length + ' display=[' + ids.join(',') + '] clause="' + acc.replace(/^ AND /, '') + '"' + (ruleCode ? ' valrule=' + (rw === null ? 'UNRESOLVED' : rw) : ''));
     };
     fill(); if (ruleCode) sel._refilter = fill;
@@ -4355,8 +4373,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   Rows = seed ad_pinstance(_para) + the signed op-log (CORE.listTip); every write is ONE signed CRUD group. The list/load/save maths are
   //   the AdProcess ports (pinstanceList / parasToParams / paramsToParas), judged against the real MPInstance.get by W-UDP2-ENGINE.
   function _procInstances(procId, cb) {
-    var bi = _sqlRows('SELECT * FROM ad_pinstance WHERE ad_process_id=' + Number(procId)), ids = bi.map(function (r) { return Number(r.ad_pinstance_id); });
-    var bp = ids.length ? _sqlRows('SELECT * FROM ad_pinstance_para WHERE ad_pinstance_id IN (' + ids.join(',') + ')') : [];
+    var bi = _baseRows('SELECT * FROM ad_pinstance WHERE ad_process_id=' + Number(procId)), ids = bi.map(function (r) { return Number(r.ad_pinstance_id); });
+    var bp = ids.length ? _baseRows('SELECT * FROM ad_pinstance_para WHERE ad_pinstance_id IN (' + ids.join(',') + ')') : [];
     var c = window.__crud;
     if (!c || typeof c.withSidecar !== 'function' || !c.core || typeof c.core.listTip !== 'function') { cb(bi, bp); return; }
     c.withSidecar(function (sdb) {
@@ -4374,8 +4392,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _procSavedRow(proc, pane) {
     var A = window.AdProcess, App = window.APP || {}, user = App.actor, client = App.clientId;
     var msgOf = function (v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + v + "'")[0]; return (r && r.msgtext) || en; };
-    var lrRow = _sqlRows("SELECT value FROM ad_sysconfig WHERE name='LASTRUN_RECORD_COUNT' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(client || 0) + ") ORDER BY ad_client_id DESC")[0];
-    var lastRunCount = lrRow && lrRow.value != null && String(lrRow.value).trim() !== '' ? Number(lrRow.value) : 5, lastRunMsg = msgOf('LastRun', 'Last Run');
+    var lrRow = _sysConfig('LASTRUN_RECORD_COUNT', client);
+    var lastRunCount = lrRow && lrRow.v != null && String(lrRow.v).trim() !== '' ? Number(lrRow.v) : 5, lastRunMsg = msgOf('LastRun', 'Last Run');
     var row = el('div', 'fld idmp-savedparam'), dl = document.createElement('datalist'), dlId = 'idmp-savedparam-' + proc.AD_Process_ID;
     dl.id = dlId;
     var name = document.createElement('input'); name.type = 'text'; name.setAttribute('list', dlId); name.setAttribute('data-proc-saved', '1');
@@ -5334,10 +5352,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var rec = (ct.tabLevel || 0) === 0 ? _records[_recIdx] : _recByLevel[0]; if (!rec) return;
     var id = recVal(rec, _keyCol(t0)), uu = recVal(rec, t0.tableName + '_UU'), App = window.APP || {};
     if ((uu == null || uu === '') && !(id != null && Number(id) !== 0)) return;   // legacy: !isEmpty(Record_UU) || Record_ID > 0 (a twin-created row's pk is negative)
-    var mx = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='RecentItems_MaxSaved' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var mx = _sysConfig('RecentItems_MaxSaved', App.clientId);
     var max = mx && mx.v != null && String(mx.v).trim() !== '' ? Number(mx.v) : 50;
     var a = { table: t0.tableId, record: id, uu: uu || null, user: App.actor, role: App.roleId, window: _activeWin, tab: t0.id, client: App.clientId };
-    var base = _sqlRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), c = window.__crud;
+    var base = _baseRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), c = window.__crud;
     var go = function (rows) {
       var now = _procNowTs(), intents = AdRecent.addModified(rows, a, max), work = rows.map(function (r) { var o = {}; for (var k in r) o[k] = r[k]; return o; }), seq = -1;
       intents.forEach(function (it) { if (it.op === 'create') { var f = {}; for (var k in it.fields) f[k] = it.fields[k]; f.ad_recentitem_id = seq--; f.ad_client_id = App.clientId; f.isactive = 'Y'; f.updated = now; f.__new = it; work.push(f); }
@@ -5372,10 +5390,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     cb = typeof cb === 'function' ? cb : function () {};
     var App = window.APP || {};
     if (!window.AdRecent || App.actor == null || App.clientId == null) { cb([]); return; }
-    var mx = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='RecentItems_MaxShown' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId) + ") ORDER BY ad_client_id DESC")[0];
+    var mx = _sysConfig('RecentItems_MaxShown', App.clientId);
     var maxShown = mx && mx.v != null && String(mx.v).trim() !== '' ? Number(mx.v) : 10;
     if (!(maxShown > 0)) { console.log('§UDP6G-LIST shown=0 maxShown=' + maxShown); cb([]); return; }
-    _recentTip('ad_recentitem', 'ad_recentitem_id', _sqlRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), function (all) {
+    _recentTip('ad_recentitem', 'ad_recentitem_id', _baseRows('SELECT * FROM ad_recentitem WHERE ad_user_id=' + Number(App.actor)), function (all) {
       var rows = AdRecent.listFor(all.filter(function (r) { return String(r.ad_user_id) === String(App.actor); }), App.actor, App.clientId);
       var out = [], stale = [], noAccess = 0, i = 0;
       var next = function () {
@@ -5391,7 +5409,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (!tb || !tb.t) { stale.push(r.ad_recentitem_id); next(); return; }
         var tn = String(tb.t).toLowerCase(), kc = tn + '_id', uuc = tn + '_uu', hasUU = r.record_uu != null && String(r.record_uu) !== '';
         var where = hasUU ? (uuc + '=' + _lit(String(r.record_uu))) : (kc + '=' + Number(r.record_id));
-        var base = _colExists(tn, hasUU ? uuc : kc) ? _sqlRows('SELECT * FROM ' + tn + ' WHERE ' + where) : [];
+        var base = _colExists(tn, hasUU ? uuc : kc) ? _baseRows('SELECT * FROM ' + tn + ' WHERE ' + where) : [];
         _recentTip(tn, kc, base, function (recs) {
           var po = recs.filter(function (x) { return hasUU ? String(x[uuc]) === String(r.record_uu) : String(x[kc]) === String(r.record_id); })[0] || null;
           if (po) po.__id = r.record_id;
@@ -5423,10 +5441,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   never a named AD_PInstance (Saved Parameters) nor its AD_PInstance_Para rows, never this login's AD_Session row.
   var _HK_RUNTIME = /^(ad_changelog|ad_session|ad_pinstance|ad_pinstance_para|ad_pinstance_log|ad_issue|ad_attachment|ad_migrationscript|ad_package_imp.*|ad_alertprocessorlog|ad_schedulerlog|ad_workflowprocessorlog|ad_sequence_no|ad_note|ad_recentitem)$/;
   var _HK_THRESHOLD = 500, _HK_DAYS = 7, _HK_BATCH = 200;
-  function _hkPk(t) { var r = _sqlRows('PRAGMA table_info(' + t + ')'), pk = r.filter(function (c) { return Number(c.pk) === 1; })[0]; return pk ? String(pk.name).toLowerCase() : t + '_id'; }
+  function _hkPk(t) { var r = _baseRows('PRAGMA table_info(' + t + ')'), pk = r.filter(function (c) { return Number(c.pk) === 1; })[0]; return pk ? String(pk.name).toLowerCase() : t + '_id'; }
   function _hkRows(t, cb) {
-    var App = window.APP || {}, pk = _hkPk(t), cols = _sqlRows('PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); });
-    var base = cols.indexOf('ad_client_id') >= 0 ? _sqlRows('SELECT * FROM ' + t + ' WHERE ad_client_id=' + Number(App.clientId)) : _sqlRows('SELECT * FROM ' + t);
+    var App = window.APP || {}, pk = _hkPk(t), cols = _baseRows('PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); });
+    var base = cols.indexOf('ad_client_id') >= 0 ? _baseRows('SELECT * FROM ' + t + ' WHERE ad_client_id=' + Number(App.clientId)) : _baseRows('SELECT * FROM ' + t);
     _recentTip(t, pk, base, function (rows) { cb(rows.filter(function (r) { return r.ad_client_id == null || String(r.ad_client_id) === String(App.clientId); }), pk); });
   }
   function _hkKeep(t, rows) {   // ids a run must never delete
@@ -5438,7 +5456,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _hkScan(cb) {
     var App = window.APP || {}, out = [];
     if (App.actor == null || App.clientId == null) { cb({ loggedIn: false, tables: [] }); return; }
-    var tabs = _sqlRows("SELECT name FROM sqlite_master WHERE type='table'").map(function (r) { return String(r.name).toLowerCase(); }).filter(function (t) { return _HK_RUNTIME.test(t); }).sort(), i = 0;
+    var tabs = _baseRows("SELECT name FROM sqlite_master WHERE type='table'").map(function (r) { return String(r.name).toLowerCase(); }).filter(function (t) { return _HK_RUNTIME.test(t); }).sort(), i = 0;
     var next = function () {
       if (i >= tabs.length) { console.log('§UDP5-HK scan client=' + App.clientId + ' threshold=' + _HK_THRESHOLD + ' ' + out.map(function (o) { return o.table + '=' + o.rows + (o.red ? '(RED)' : ''); }).join(' ')); cb({ loggedIn: true, threshold: _HK_THRESHOLD, days: _HK_DAYS, tables: out }); return; }
       var t = tabs[i++];
@@ -5485,11 +5503,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     c.withSidecar(function (sdb) {
       try {
         if (!sdb) return;
-        var ins = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='SYSTEM_INSERT_CHANGELOG' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number(App.clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+        var ins = _sysConfig('SYSTEM_INSERT_CHANGELOG', App.clientId);
         var role = _sqlRows('SELECT ischangelog AS c FROM ad_role WHERE ad_role_id=' + Number(App.roleId))[0] || {};
-        var seedRow = function (t, kc, id) { return /^-/.test(String(id)) || !_colExists(t, kc) ? null : (_sqlRows('SELECT * FROM ' + t + ' WHERE ' + kc + '=' + _lit(id))[0] || null); };
+        var seedRow = function (t, kc, id) { return /^-/.test(String(id)) || !_colExists(t, kc) ? null : (_baseRows('SELECT * FROM ' + t + ' WHERE ' + kc + '=' + _lit(id))[0] || null); };
         var rows = c.core.changeLogAll(sdb, { insertLog: ins && ins.v, roleChangeLog: String(role.c || '').toUpperCase() === 'Y', baseRowOf: seedRow });
-        var baseS = _sqlRows('SELECT ad_session_id, createdby, created FROM ad_session');
+        var baseS = _baseRows('SELECT ad_session_id, createdby, created FROM ad_session');
         var sess = c.core.listTip(sdb, 'ad_session', 'ad_session_id', baseS, null).rows;
         var fmtTs = c.fmtTs || function (x) { return x; };
         db.run('DROP TABLE IF EXISTS temp.ad_changelog');
@@ -5521,7 +5539,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   function _tabCustLoad(cb) {
     var App = window.APP || {}; _tabCust = {};
     if (App.actor == null) { if (cb) cb(); return; }
-    var base = _tableExists('ad_tab_customization') ? _sqlRows('SELECT * FROM ad_tab_customization WHERE ad_user_id=' + Number(App.actor)) : [];
+    var base = _tableExists('ad_tab_customization') ? _baseRows('SELECT * FROM ad_tab_customization WHERE ad_user_id=' + Number(App.actor)) : [];
     _recentTip('ad_tab_customization', 'ad_tab_customization_id', base, function (rows) {
       rows.filter(function (r) { return String(r.ad_user_id) === String(App.actor) && String(r.isquickform || 'N') !== 'Y' && (r.ad_client_id == null || String(r.ad_client_id) === String(App.clientId)) && String(r.isactive || 'Y') === 'Y'; })
         .forEach(function (r) { _tabCust[String(r.ad_tab_id)] = r; });
@@ -5530,7 +5548,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
   }
   function _sysBool(name, def) {
-    var r = _sqlRows("SELECT value AS v FROM ad_sysconfig WHERE name='" + name + "' AND upper(isactive)='Y' AND ad_client_id IN (0," + Number((window.APP || {}).clientId || 0) + ") ORDER BY ad_client_id DESC")[0];
+    var r = _sysConfig(name, (window.APP || {}).clientId);
     return r && r.v != null && String(r.v).trim() !== '' ? /^(y|true)$/i.test(String(r.v).trim()) : def;
   }
   // GridView.autoHideEmptyColumns :882-962: when on, a column whose display text is empty in EVERY row is hidden (no rows = nothing hidden)

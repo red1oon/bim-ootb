@@ -337,7 +337,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
         if ((st.isFile() && /\.js$/.test(f)) || (st.isDirectory() && (f === 'callouts' || f === 'processes'))) { try { fs.unlinkSync(path.join(dir, f)); } catch (e) {} fs.cpSync(src, path.join(dir, f), { recursive: true }); } });
       var ok = true;
       m.edits.forEach(function (ed) {
-        var src = fs.readFileSync(path.join(ERP, ed.file), 'utf8'), want = ed.count || 1, have = src.split(ed.from).length - 1;
+        var src = fs.readFileSync(path.join(dir, ed.file), 'utf8'), want = ed.count || 1, have = src.split(ed.from).length - 1;   // read the COPY being edited, so a second edit on one file keeps the first (was ERP = the original tree: the first edit was lost)
         if (have !== want) { ok = false; say('§IMPORT-MUTANT-EDIT ' + m.name + ' ' + ed.file + ' found ' + have + ' time(s), expected ' + want); return; }
         fs.writeFileSync(path.join(dir, ed.file), src.split(ed.from).join(ed.to));
       });

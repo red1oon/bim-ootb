@@ -331,7 +331,9 @@
         issummary: 'N', issold: 'Y', ispurchased: 'Y', isstocked: 'Y', producttype: 'I' }),
       create('m_productprice', { m_productprice_id: ppId, m_pricelist_version_id: plvId, m_product_id: prodId, ad_client_id: clientId,
         pricelist: 1, pricestd: 1, pricelimit: 1 }),
-      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9, c_taxcategory_id: taxCatId, isdefault: 'Y' }),
+      // ValidFrom: MTax.java:177 (the constructor MSetup.java:1252 goes through) sets 1990-01-01. C_Tax.ValidFrom is mandatory; a NULL here made Tax.getByCategory (a verbatim port) throw
+      //   on `tax.getValidFrom().after(billDate)` for every order line of a born tenant, so no tax was derived (W-ERP-FIRST-SETUP S15b, found 2026-10-28).
+      create('c_tax', { c_tax_id: taxId, ad_client_id: clientId, name: 'Standard', rate: 9, c_taxcategory_id: taxCatId, isdefault: 'Y', validfrom: '1990-01-01' }),
       // FS-4: MSetup.java:1418-1426 — the 'Immediate' term, every day/discount 0, IsDefault=Y.
       create('c_paymentterm', { c_paymentterm_id: payTermId, ad_client_id: clientId, value: 'Immediate', name: 'Immediate',
         netdays: 0, gracedays: 0, discountdays: 0, discount: 0, discountdays2: 0, discount2: 0, isdefault: 'Y',
@@ -542,6 +544,12 @@
     grant('AD_Form', 'AD_Form_Access', 'AD_Form_ID', {});
     try { db.prepare("INSERT OR IGNORE INTO AD_Role_OrgAccess (AD_Client_ID,AD_Org_ID,AD_Role_ID,IsActive) VALUES (@c,@o,@r,'Y')")
       .run({ c: clientId, o: orgId || 0, r: roleId }); } catch (e) {}
+    // MRole.updateAccessRecords' sqlDocAction (MRole.java:582-598): the role may run every Document Action on every active DocType of its client. Without these rows the host's DocAction list
+    //   (MRole.checkActionAccess over the login role, WDocActionPanel.java:185-205; study 2.5) offers NOTHING, so a born tenant could not Complete any document (W-ERP-FIRST-SETUP S15b, found 2026-10-28).
+    try { db.prepare("INSERT OR IGNORE INTO AD_Document_Action_Access (AD_Client_ID,AD_Org_ID,IsActive,C_DocType_ID,AD_Ref_List_ID,AD_Role_ID) " +
+      "SELECT @c,0,'Y',d.C_DocType_ID,a.AD_Ref_List_ID,@r FROM C_DocType d, AD_Ref_List a WHERE d.AD_Client_ID=@c AND d.IsActive='Y' AND a.AD_Reference_ID=135")
+      .run({ c: clientId, r: roleId }); } catch (e) { console.log('§GENESIS-DOCACTION-ACCESS role=' + roleId + ' FAILED ' + (e && e.message)); }
+    try { var nd = db.prepare('SELECT count(*) AS n FROM AD_Document_Action_Access WHERE AD_Role_ID=@r').get({ r: roleId }); console.log('§GENESIS-DOCACTION-ACCESS role=' + roleId + ' client=' + clientId + ' rows=' + (nd && nd.n)); } catch (e) {}
     return n;
   }
 
