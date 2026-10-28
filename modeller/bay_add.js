@@ -86,10 +86,14 @@
   function cost(p, rows, ED, env, ctx) {
     var BD = env.BigDecimal, added = BD.of('0'), changed = BD.of('0'), byId = {}; rows.forEach(function (r) { byId[r.id] = r; });
     var rec = function (r) { var b = r.params.bbox; return { guid: 'bay:' + r.id, cls: r.cls, name: null, dims: [b[1] - b[0], b[3] - b[2], b[5] - b[4]] }; };
-    p.copied.forEach(function (c) { var r0 = rec(byId[c.from]); if (c.dims) r0.dims = c.dims; added = added.add(BD.of(ED.deltaFor(r0, null, ctx, env).costBefore)); });   // a copy is priced at its source's CURRENT size
+    // §D92 the lines the total is the sum of: one per (added | changed, class): count, unit, quantity (added: the copies' own; changed: after - before), rate, amount
+    var L = {}, line = function (kind, d, q, amt) { var k = kind + '|' + d.cls, x = L[k] || (L[k] = { kind: kind, cls: d.cls, n: 0, unit: d.unit, qty: 0, rate: d.rate, amount: BD.of('0') });
+      x.n++; x.qty += q; x.amount = x.amount.add(BD.of(amt)); };
+    p.copied.forEach(function (c) { var r0 = rec(byId[c.from]); if (c.dims) r0.dims = c.dims; var d = ED.deltaFor(r0, null, ctx, env); added = added.add(BD.of(d.costBefore)); line('added', d, d.qtyBefore, d.costBefore); });   // a copy is priced at its source's CURRENT size
     var net = ED.netEdits(p.ops.filter(function (o) { return o.op_type === 'GEOM_SCALE'; }).map(function (o) { return { op_type: o.op_type, parameters: o.params }; }));
-    p.stretched.forEach(function (s) { var r0 = rec(byId[s.id]); if (s.dims) r0.dims = s.dims; changed = changed.add(BD.of(ED.deltaFor(r0, net.get(s.id), ctx, env).costDelta)); });   // priced on the CURRENT size
-    return { added: added.toString(), changed: changed.toString(), total: added.add(changed).toString() };
+    p.stretched.forEach(function (s) { var r0 = rec(byId[s.id]); if (s.dims) r0.dims = s.dims; var d = ED.deltaFor(r0, net.get(s.id), ctx, env); changed = changed.add(BD.of(d.costDelta)); line('changed', d, d.qtyAfter - d.qtyBefore, d.costDelta); });   // priced on the CURRENT size
+    var lines = Object.keys(L).sort().map(function (k) { var x = L[k]; return { kind: x.kind, cls: x.cls, n: x.n, unit: x.unit, qty: +x.qty.toFixed(3), rate: x.rate, amount: x.amount.toString() }; });
+    return { added: added.toString(), changed: changed.toString(), total: added.add(changed).toString(), lines: lines };
   }
 
   return { plan: plan, cost: cost, TAG: TAG, ON_LINE: ON_LINE };

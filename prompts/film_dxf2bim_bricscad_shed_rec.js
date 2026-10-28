@@ -10,6 +10,8 @@ const fs = require('fs'), path = require('path'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const OUT = path.resolve(process.argv[2] || '.'), BEAT_MIN = process.argv[3] ? JSON.parse(fs.readFileSync(process.argv[3], 'utf8')) : {};
 const SITE = process.env.SITE || 'https://red1oon.github.io/bim-ootb/modeller/modeller.html';
+const RATES = process.env.FILM_RATES || 'pwd2024_bd', SITE_R = SITE + (SITE.indexOf('?') < 0 ? '?' : '&') + 'rates=' + RATES;   // owner 2026-10-28: the client is in Bangladesh, its rates (PWD 2024)
+const PRIV = process.env.FILM_PRIVATE_RE ? new RegExp(process.env.FILM_PRIVATE_RE, 'i') : null;   // a private client name, given at run time (never written in this file): blurred where the Sheet view draws it
 const RAW = process.env.SHED_RAW_DIR || '', MARKED = process.env.SHED_MARKED_DIR || path.join(process.env.HOME, 'Videos/dxf2bim_film_work/why/cli/marked');
 const dxfs = d => fs.readdirSync(d).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(d, f));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -95,7 +97,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
       (function step() { const k = Math.min(1, (performance.now() - t0) / ms), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; c.position.copy(o).add(v0.clone().applyAxisAngle(new T.Vector3(0, 0, 1), deg * Math.PI / 180 * s)); ctl.update();
         if (k < 1) requestAnimationFrame(step); else res(); })(); }), deg, ms);
 
-  const fresh = async () => { await pg.goto(SITE, { timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
+  const fresh = async () => { await pg.goto(SITE_R, { timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
     await sleep(1200); if (!(await pg.evaluate(() => document.body.classList.contains('ol-collapsed')))) { await clickAt('#ol-collapse', 500); await sleep(600); } await moveTo(900, 500, 300); };
   // the play-on-open hooks (stated): an automated browser opens without play; onStep only RECORDS each step (a read), it moves nothing
   const arm = (stepMs, holdMs) => pg.evaluate((stepMs, holdMs) => { window.__steps = []; const U = window.DxfImportUI.state; U.arrangeOnOpen = true;
@@ -152,8 +154,18 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const sheetMarks = () => logHas(/§SHEET-MARKS sheet=0_FLOOR_PLAN/).slice(-1)[0] || '';
   const fpIndex = () => pg.evaluate(() => window.DxfMetaEditor.state.sheets.findIndex(s => /FLOOR_PLAN/.test(s.name)));
   const openSheet = async (si) => { if (!(await pg.$('#dm-panel [data-act="sheetview"][data-sheet="' + si + '"]'))) await clickEl('#dm-panel [data-act="card"][data-sheet="' + si + '"]', 700);
-    await clickAt('#dm-panel [data-act="sheetview"][data-sheet="' + si + '"]', 800); await pg.waitForSelector('#dxf-sheet-frame', { timeout: 30000 }); await sleep(1500); };
-  const closeSheet = async () => { if (await pg.$('#dsf-close')) { await clickAt('#dsf-close', 600); await sleep(700); } };
+    await clickAt('#dm-panel [data-act="sheetview"][data-sheet="' + si + '"]', 800); await pg.waitForSelector('#dxf-sheet-frame', { timeout: 30000 }); await sleep(1200); await blurPrivate(); await sleep(300); };
+  const closeSheet = async () => { await pg.evaluate(() => document.querySelectorAll('.film-blur').forEach(e => e.remove())); if (await pg.$('#dsf-close')) { await clickAt('#dsf-close', 600); await sleep(700); } };
+  // a film overlay (stated): a blur over each text the Sheet view draws that matches FILM_PRIVATE_RE, at the renderer's own place (dxf_sheet_view.js: x = w/2 + (x - cx) s, font max(6, h s))
+  const blurPrivate = async () => { if (!PRIV) { fact('blurred_texts', 'no FILM_PRIVATE_RE'); return 0; }
+    const n = await pg.evaluate(src => { const re = new RegExp(src, 'i'), st = window.DxfSheetFrame.state, cv = st.el && st.el.querySelector('canvas'); if (!cv || !st.view || !st.last) return -1;
+      document.querySelectorAll('.film-blur').forEach(e => e.remove()); const cr = cv.getBoundingClientRect(), w = cv.clientWidth, h = cv.clientHeight, v = st.view, c2 = document.createElement('canvas').getContext('2d'); let k = 0;
+      st.last.list.filter(d => d.k === 'text' && re.test(d.s)).forEach(d => { const px = Math.max(6, d.h * v.s); c2.font = px + 'px sans-serif'; const tw = c2.measureText(d.s).width;
+        const x0 = cr.left + w / 2 + (d.p[0] - v.cx) * v.s, y0 = cr.top + h / 2 - (d.p[1] - v.cy) * v.s, L = d.mid ? x0 - tw / 2 : x0, T = d.mid ? y0 - px / 2 : y0 - px;
+        const b = document.createElement('div'); b.className = 'film-blur'; b.style.cssText = 'position:fixed;left:' + (L - 8) + 'px;top:' + (T - 5) + 'px;width:' + (tw + 16) + 'px;height:' + (px * 1.35 + 10) + 'px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);background:rgba(20,23,28,.3);border:1px dashed rgba(255,214,64,.85);border-radius:4px;z-index:2147483600;pointer-events:none';
+        const lab = document.createElement('div'); lab.textContent = 'private client name (kept in the DXF)'; lab.style.cssText = 'position:absolute;left:0;top:100%;margin-top:3px;font:12px sans-serif;color:#ffd640;white-space:nowrap;text-shadow:0 0 3px #000'; b.appendChild(lab); document.body.appendChild(b); k++; });
+      return k; }, PRIV.source);
+    fact('blurred_texts', String(n)); return n; };
   const frameBox = (box, fill, ms, dir) => pg.evaluate(([box, fill, ms, dir]) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
       const ctr = new T.Vector3((box[0] + box[3]) / 2, (box[1] + box[4]) / 2, (box[2] + box[5]) / 2), r = Math.max(box[3] - box[0], box[4] - box[1], (box[5] - box[2]) * 2, 0.5) * 0.5;
       const pr = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...pr), x1 = innerWidth - 70;
@@ -163,6 +175,14 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
       c.position.copy(p0); ctl.target.copy(q0); ctl.update(); const t0 = performance.now();
       (function step() { const k = Math.min(1, (performance.now() - t0) / ms), s = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; c.position.lerpVectors(p0, P1, s); ctl.target.lerpVectors(q0, Q1, s); ctl.update(); if (k < 1) requestAnimationFrame(step); else res(); })(); }), [box, fill, ms, dir || [1, -1, 1.1]]);
   const setFold = async want => { const slim = await pg.evaluate(() => !!window.DxfImportUI.state.slim); if (slim !== want) { await clickAt('#dxf-fold', 500); await sleep(500); } };   // the 2D panel folded (true) or open (false), whatever it was
+  const flyRow = async (rule) => { const grp = '#dm-yellows [data-act="grpopen"][data-grp="' + rule + '"]', row = '#dm-yellows .dm-pr[data-rule="' + rule + '"]';
+    if (!(await pg.$(row)) && await pg.$(grp)) { await wheelTo(grp, { step: 120, pace: 50 }); await clickEl(grp, 600); }
+    if (!(await pg.$(row))) { fact('fly_' + rule, 'no row'); return false; } await wheelTo(row, { step: 120, pace: 50 }); await clickAt(row, 700); await sleep(2200);
+    fact('fly_' + rule, await pg.$eval(row, e => e.getAttribute('data-ev'))); return true; };
+  const frameSheet = async (name, fill, ms) => { const b = await pg.evaluate(n => { const T = window.THREE, A = window.A, box = new T.Box3();
+      A.scene.children.filter(o => (o.name === 'dxf-sheets' || o.name === 'dxf-arrange') && o.visible).forEach(g => g.traverse(o => { const nm = o.userData && (o.userData.arrSheet || o.userData.dxfSheet); if (nm === n && o.geometry) box.expandByObject(o); }));
+      return box.isEmpty() ? null : [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z]; }, name);
+    if (b) await frameBox(b, fill || 1.05, ms || 1800, [0, -0.3, 1]); fact('framed', name + (b ? '' : ' (not on the canvas)')); return !!b; };
   const keyCtl = async k => { await pg.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }); await pg.keyboard.down('Control'); await pg.keyboard.press(k); await pg.keyboard.up('Control'); await sleep(1800); };
   const priorArt = cp.spawnSync('git', ['-C', path.join(process.env.HOME, 'bim-compiler'), 'show', 'origin/master:docs/DXF2BIMGuide.md'], { encoding: 'utf8' }).stdout || '';
   const paText = ((/## Prior art\s+([\s\S]*?)\n---/.exec(priorArt) || [])[1] || '').replace(/\*\*\[Prior art\]\(DXF2BIM_Prior_Art\.md\)\*\*/, 'the guide\'s Prior art page').replace(/\s+/g, ' ').trim();
@@ -180,10 +200,10 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const gN = (G, k) => { const g = G.find(x => x.key === k); return g ? String(g.n) : 'none'; }, chipN = c => ((/(\d+)/.exec(String(c)) || [])[1] || 'none');
   const v0 = await verdict(); fact('open_chip', v0.chip); fact('open_n', chipN(v0.chip)); fact('open_head', await head());
   { const G = await groups(); fact('open_groups', G); fact('g_units', gN(G, 'PR-UNITS')); fact('g_view', gN(G, 'PR-VIEW')); fact('g_name', gN(G, 'PR-NAME')); fact('open_yellow', String(G.reduce((a, g) => a + g.n, 0))); }
-  await beat('b02'); await wheelTo('#dm-yellows', { top: true }); await sleep(1500);
+  await beat('b02'); await wheelTo('#dm-yellows', { top: true }); await sleep(800); await flyRow('PR-VIEW');   // a row = the canvas flies to where that value was read (the product's own §D36)
   await beat('b03');
   for (const k of ['PR-UNITS', 'PR-VIEW', 'PR-NAME']) await tickGroup(k, 650);
-  await sleep(800); { const G = await groups(); fact('round2_groups', G); fact('g_grid', gN(G, 'PR-GRID-TICK')); fact('g_level', gN(G, 'PR-LEVEL')); fact('g_ground', gN(G, 'PR-Z-GROUND')); fact('g_face', gN(G, 'PR-FACE')); } fact('round2_chip', (await verdict()).chip);
+  await sleep(800); await flyRow('PR-GRID-TICK'); { const G = await groups(); fact('round2_groups', G); fact('g_grid', gN(G, 'PR-GRID-TICK')); fact('g_level', gN(G, 'PR-LEVEL')); fact('g_ground', gN(G, 'PR-Z-GROUND')); fact('g_face', gN(G, 'PR-FACE')); } fact('round2_chip', (await verdict()).chip);
   // ---- chapter 2 THE SHEET, AS YOU DREW IT ----
   chapter(2, 'sheet'); await beat('b04');
   const fp = await fpIndex(); await openSheet(fp); await backdrop(2);
@@ -210,7 +230,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   await wheelTo('#dm-f-0-SET', { step: 120, pace: 60 }); await typeIn('#dm-f-0-SET', setName, true); await idle(); fact('set_rows', String(await yrows())); await sleep(1200); await acceptY(); await sleep(800);
   const v2 = await verdict(); fact('after_set_blocking', String(v2.blocking));
   // (b) the second height of each elevation / section: the panel asks; the values are READ from the marked set's own @Z markings
-  await beat('b09');
+  await beat('b09'); await frameSheet(names.find(n => /ELEV_NORTH/i.test(n)) || names[1], 1.0, 1600);
   const second = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; const m = marks(f).filter(e => /^@Z=/.test(e['1'])); if (m.length >= 2) { const z = m.map(e => ({ z: Number(/^@Z=(\S+)/.exec(e['1'])[1]), y: e['20'] })).sort((a, b) => b.z - a.z)[0]; second[n] = z; } });
   fact('second_z', String(Object.values(second)[0].z)); let typed = 0;
   for (let si = 0; si < names.length; si++) { const z = second[names[si]]; if (!z) continue; const fast = true;
@@ -222,7 +242,7 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   fact('heights_typed', String(typed)); await wheelTop(); await acceptY(); await sleep(800);
   const v3 = await verdict(); fact('after_heights_blocking', String(v3.blocking));
   // (c) what each CAD layer is: the types READ from the marked set's own @LAYER markings, chosen in the Layers section (the layers the set states; the others stay as they are)
-  await beat('b10');
+  await beat('b10'); await frameSheet(names.find(n => /FLOOR_PLAN/i.test(n)) || names[0], 1.0, 1600);
   const stated = {}; names.forEach(n => { const f = markedOf(n); if (!f) return; readMarks(f).filter(m => /^@LAYER=/.test(m)).forEach(m => { const [l, t] = m.replace('@LAYER=', '').split(','); const role = { PLAN: 'plan', ELEV: 'elev', SECTION: 'section', ROOF: 'roof' }[roleOf[n]]; (stated[role + '|' + l] = stated[role + '|' + l] || new Set()).add(t); }); });
   fact('layers_to_state', String(Object.keys(stated).length));
   if (!(await pg.$('#dm-panel select[data-act="layer"]'))) await clickEl('#dm-panel [data-sec="layers"]', 700);
@@ -336,8 +356,38 @@ const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const B = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay; return { ok: L.plan.ok, copies: L.plan.copied.length, moved: L.plan.moved.length, riders: (L.plan.riders || []).length, stretched: L.plan.stretched.length,
     hinge: L.plan.hingeLabel, pitch: L.plan.pitch, cost: L.cost, gate: L.res.gate || 'clean', cur: (window._TRL && window._TRL.cur) || '' }; });
   Object.keys(B).forEach(k => fact('bay_' + k, typeof B[k] === 'object' ? B[k] : String(B[k])));
-  fact('bay_added', B.cost ? B.cost.added : 'none'); fact('bay_changed', B.cost ? B.cost.changed : 'none'); fact('bay_total', B.cost ? B.cost.total : 'none'); fact('bay_gate_words', B.gate === 'clean' ? 'clean' : B.gate); fact('bay_cur_words', ({ USD: 'US dollars', MYR: 'ringgit', GBP: 'pounds', EUR: 'euros', SGD: 'Singapore dollars', AUD: 'Australian dollars' })[B.cur] || B.cur); fact('bay_status', await pg.$eval('#dxf-status', e => e.innerText.trim()).catch(() => ''));
-  await beat('b18'); await setFold(true); await fitCentre(1.1, 1500); await orbitZ(70, 11000);
+  fact('bay_added', B.cost ? B.cost.added : 'none'); fact('bay_changed', B.cost ? B.cost.changed : 'none'); fact('bay_total', B.cost ? B.cost.total : 'none'); fact('bay_gate_words', B.gate === 'clean' ? 'clean' : B.gate); fact('bay_cur_words', ({ USD: 'US dollars', BDT: 'taka', MYR: 'ringgit', GBP: 'pounds', EUR: 'euros', SGD: 'Singapore dollars', AUD: 'Australian dollars' })[B.cur] || B.cur); fact('bay_status', await pg.$eval('#dxf-status', e => e.innerText.trim()).catch(() => ''));
+  { const P = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay; return { to: L.plan.copied.map(c => c.to).filter(x => x != null), cls: L.plan.copied.map(c => c.cls), st: L.plan.stretched.map(x => x.cls), lines: (L.cost && L.cost.lines) || [] }; });
+    const NAME = { IfcBeam: ['beam', 'beams'], IfcColumn: ['column', 'columns'], IfcFooting: ['footing', 'footings'], IfcMember: ['member', 'members'], IfcPlate: ['roof sheet', 'roof sheets'], IfcWall: ['wall', 'walls'], IfcSlab: ['floor slab', 'floor slabs'], IfcRoof: ['roof', 'roofs'], IfcCovering: ['covering', 'coverings'] };
+    const words = list => { const o = {}; list.forEach(c => { o[c] = (o[c] || 0) + 1; }); const ks = Object.keys(o).sort(), w = ks.map(k => o[k] + ' ' + (NAME[k] ? NAME[k][o[k] === 1 ? 0 : 1] : k.replace(/^Ifc/, '').toLowerCase())); return w.length > 1 ? w.slice(0, -1).join(', ') + ' and ' + w[w.length - 1] : w.join(''); };
+    fact('copied_words', words(P.cls)); fact('stretched_words', words(P.st)); fact('cost_lines', String(P.lines.length));
+    await setFold(true); await sleep(300);
+    const nb = await pg.evaluate(ids => { const g = window.Bonsai.group(), T = window.THREE, b = new T.Box3(); g.children.forEach(m => { if (m.isMesh && ids.indexOf(m.userData.featureId) >= 0) b.union(new T.Box3().setFromObject(m)); }); return b.isEmpty() ? null : [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]; }, P.to);
+    await pg.evaluate(() => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); }); await pg.keyboard.press('x'); await sleep(900);   // X = x-ray (the product's key)
+    fact('xray', String(await pg.evaluate(() => { const b = document.getElementById('b-xray'); return !!(b && (b.classList.contains('on') || b.getAttribute('aria-pressed') === 'true')); })));
+    await pg.evaluate(ids => window.Bonsai.selectMany(ids), P.to); fact('tinted', String(P.to.length));   // stated: the copies are selected so their tint shows each part the bay added
+    if (nb) { await frameBox(nb, 1.25, 2200, [1, -1.1, 0.75]); await orbitZ(35, 7000); } }
+  await beat('b18'); await setFold(false); await sleep(400);
+  // the cost table, row by row (the pointer rests on each line while it is told), then where the rates live
+  { await pg.$eval('#dxf-bay-detail', e => e.scrollIntoView({ block: 'center' })).catch(() => {}); await sleep(500);
+    const nRows = await pg.$$eval('#dxf-bay-cost tr[data-line]', rs => rs.length);
+    for (let i = 0; i < nRows; i++) { const [x, y] = await pg.evaluate(i => { const r = document.querySelectorAll('#dxf-bay-cost tr[data-line]')[i]; r.scrollIntoView({ block: 'nearest' }); const b = r.getBoundingClientRect(); return [b.left + b.width * 0.6, b.top + b.height / 2]; }, i); await moveTo(x, y, 420); await sleep(650); } fact('rates_name', await pg.evaluate(() => (window.RATE_TEMPLATE_META || {}).name || 'none')); fact('rates_label', await pg.$eval('#dxf-bay-detail', e => ((/Rates: [^\n]*/.exec(e.innerText) || [])[0] || '')).catch(() => '')); }
+  await beat('b18r');
+  { // Edit rates opens the Viewer's rate editor in a new tab: the screencast follows it (a second CDP session, the same frame list), then comes back
+    const tgt = new Promise(r => br.once('targetcreated', t => r(t)));
+    await pg.$eval('#dxf-bay-rates', e => e.scrollIntoView({ block: 'center' })); await sleep(400); await clickAt('#dxf-bay-rates', 800);
+    const t2 = await Promise.race([tgt, sleep(20000).then(() => null)]); if (!t2) throw new Error('Edit rates opened no tab in 20 s (' + (logHas(/§DXF-BAY edit-rates/).slice(-1)[0] || 'no §DXF-BAY edit-rates line') + ')');
+    const np = await t2.page(); await np.setViewport({ width: 1440, height: 810, deviceScaleFactor: 4 / 3 });
+    await cdp.send('Page.stopScreencast'); const cdp2 = await np.createCDPSession();
+    cdp2.on('Page.screencastFrame', async ev => { const f = path.join(FR, String(nf++).padStart(6, '0') + '.jpg'); fs.writeFileSync(f, Buffer.from(ev.data, 'base64')); frames.push({ f, ts: ev.metadata.timestamp }); try { await cdp2.send('Page.screencastFrameAck', { sessionId: ev.sessionId }); } catch (e) { } });
+    await cdp2.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+    const vlog = []; np.on('console', m => vlog.push(m.text())); np.on('pageerror', e => console.log('§PAGEERR viewer ' + String(e).slice(0, 300)));
+    await np.waitForFunction(p => { const e = document.getElementById('json-editor-rates_' + p); return !!e && e.getBoundingClientRect().width > 0; }, { timeout: 120000 }, RATES).catch(() => {});
+    const ed = await np.evaluate(() => { const r = document.querySelector('[data-row-id="materials/IfcColumn"]'); if (!r) return null; r.scrollIntoView({ block: 'center' }); r.style.outline = '2px solid #ffd640'; r.style.outlineOffset = '2px'; const i = r.querySelector('input'); return { value: i ? i.value : '', pack: window.RATE_TEMPLATE_NAME, meta: (window.RATE_TEMPLATE_META || {}).name || '' }; });
+    fact('rates_editor', ed || 'not open'); { let r = null; try { r = JSON.parse(ed.value).rate; } catch (e) { } fact('col_rate', r != null ? String(r) : 'none'); } fact('rates_link_log', vlog.find(t => /§EDIT_RATES_LINK/.test(t)) || 'none');   // the outline: a film overlay (stated) on the row the narration names
+    await sleep(Math.max(4000, ((BEAT_MIN.b18r || 10) - 4) * 1000));
+    await cdp2.send('Page.stopScreencast'); await np.close(); await pg.bringToFront(); await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 }); await sleep(600); }
+  await setFold(true); await fitCentre(1.1, 1500); await orbitZ(50, 8000);
   // ---- chapter 7 THE MARKED SHEET, then the prior-art card ----
   chapter(7, 'print'); await beat('b19');
   await setFold(false);

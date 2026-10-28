@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '10';
+  var V = '11';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -751,6 +751,9 @@
     var foot = p.querySelector('.ip-foot'); if (foot) foot.parentNode.insertBefore(d, foot); else p.appendChild(d);
     d.querySelector('#dxf-bay-min').onclick = function () { addBay('min'); }; d.querySelector('#dxf-bay-max').onclick = function () { addBay('max'); };
     console.log('§DXF-BAY offer=1 type=' + b.type + ' axis=' + ax + ' ends=' + lab[0] + '/' + lab[lab.length - 1]);
+    // §D92 the last bay's result survives a re-render (fold / unfold) while that bay is in the model (its first copy is a live op)
+    var L = state.lastBay, O = window.Bonsai && window.Bonsai.oplog;
+    if (L && L.res && L.res.ids && L.res.ids.length && O && O._geomOps().some(function (o) { return o.id === L.res.ids[0]; })) bayDetail(L.plan, L.cost, (window._TRL && window._TRL.cur) || '');
   }
   async function addBay(end) {
     var b = bayRule(); if (!b.rule) { status('Add a bay: the building type ' + b.type + ' declares no bay_repeat'); console.log('§DXF-BAY refused type=' + b.type + ' reason=no bay_repeat'); return { ok: false, why: 'the building type ' + b.type + ' declares no bay_repeat' }; }
@@ -768,9 +771,27 @@
     var label = 'Added a bay at ' + P.hingeLabel + ': ' + P.copied.length + ' copied, ' + P.moved.length + ' moved' + (P.riders.length ? ' (+' + P.riders.length + ' hosted)' : '') + ', ' + P.stretched.length + ' stretched' + (C ? ' · cost ' + cur + ' +' + C.total + ' (added ' + C.added + ', changed ' + C.changed + ')' : ' · cost not computed');
     var res = await window.Bonsai.commitBay(P.ops, P.moved.concat(P.riders, P.stretched.map(function (s) { return s.id; })), label, P.copy);
     console.log('§DXF-BAY committed verify=' + res.verify + ' rows=' + res.ids.length + ' gate=' + (res.gate || 'clean') + (C ? ' cost added=' + C.added + ' changed=' + C.changed + ' total=' + C.total + ' cur=' + cur : ''));
-    status(label); state.lastBay = { plan: P, cost: C, res: res, cascadeFills: cas ? cas.fills.length : null }; return state.lastBay;
+    status(label); state.lastBay = { plan: P, cost: C, res: res, cascadeFills: cas ? cas.fills.length : null }; bayDetail(P, C, cur); return state.lastBay;
   }
 
+  // §D92 the bay's result under its row: what was copied / stretched per class, what moved, the cost lines (their sum is the total shown) and the pack they came from, with Edit rates
+  function bayDetail(P, C, cur) {
+    var p = state.panel, row = p && p.querySelector('#dxf-bay-row'); if (!row) return; var old = p.querySelector('#dxf-bay-detail'); if (old) old.remove();
+    var by = function (list) { var o = {}; list.forEach(function (x) { o[x.cls] = (o[x.cls] || 0) + 1; }); return Object.keys(o).sort().map(function (k) { return k.replace(/^Ifc/, '') + ' ' + o[k]; }).join(' · '); };
+    var pack = window.RATE_TEMPLATE_NAME || '', meta = window.RATE_TEMPLATE_META || {}, d = document.createElement('div'); d.id = 'dxf-bay-detail';
+    d.style.cssText = 'margin:2px 10px 6px;padding:6px 8px;border:1px solid #2c3a4a;border-radius:6px;font-size:11px;color:#c7cdd6;line-height:1.5';
+    // the rates line first (always reachable); the table scrolls in its own box, so the panel never grows past the screen (measured: an 810 px window put Edit rates at y 828)
+    var h = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><span style="flex:1;color:#8a93a0">Rates: ' + esc(meta.name || pack || 'none loaded') + (pack ? ' (' + esc(pack) + ')' : '') + '</span>' + (pack ? '<button id="dxf-bay-rates" title="Open this rate pack in the Viewer\'s editor (Settings ▸ Edit Project JSON): your edits are your own copy, Reset brings the shipped rates back">Edit rates</button>' : '') + '</div>';
+    h += '<div><b>Copied</b> ' + esc(by(P.copied)) + '</div><div><b>Stretched</b> ' + esc(by(P.stretched)) + '</div><div><b>Moved</b> ' + P.moved.length + (P.riders.length ? ' (+' + P.riders.length + ' hosted)' : '') + '</div>';
+    if (C && C.lines) {
+      h += '<div style="max-height:160px;overflow:auto;margin-top:4px"><table id="dxf-bay-cost" style="width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums"><tr style="color:#8a93a0"><td></td><td>class</td><td style="text-align:right">n</td><td style="text-align:right">qty</td><td style="text-align:right">rate</td><td style="text-align:right">amount</td></tr>';
+      C.lines.forEach(function (l) { h += '<tr data-line="' + l.kind + '|' + esc(l.cls) + '"><td style="color:' + (l.kind === 'added' ? '#7fd17f' : '#e8b35a') + '">' + (l.kind === 'added' ? '+' : 'Δ') + '</td><td>' + esc(l.cls.replace(/^Ifc/, '')) + '</td><td style="text-align:right">' + l.n + '</td><td style="text-align:right">' + l.qty.toFixed(2) + ' ' + esc(l.unit) + '</td><td style="text-align:right">' + esc(String(l.rate)) + '</td><td style="text-align:right">' + esc(l.amount) + '</td></tr>'; });
+      h += '<tr style="border-top:1px solid #2c3a4a"><td></td><td colspan="4">total (added ' + esc(C.added) + ', changed ' + esc(C.changed) + ')</td><td style="text-align:right"><b>' + esc(cur + ' ' + C.total) + '</b></td></tr></table></div>';
+    }
+    d.innerHTML = h; row.parentNode.insertBefore(d, row.nextSibling);
+    var b = d.querySelector('#dxf-bay-rates'); if (b) b.onclick = function () { var u = new URL('../viewer/viewer.html?rates=' + encodeURIComponent(pack) + '&edit=rates', location.href).href; console.log('§DXF-BAY edit-rates open ' + u); window.open(u, '_blank'); };
+    console.log('§DXF-BAY detail copied=' + JSON.stringify(by(P.copied)) + ' stretched=' + JSON.stringify(by(P.stretched)) + ' lines=' + (C && C.lines ? C.lines.length : 0) + ' pack=' + pack + ' (' + (meta.name || '') + ')');
+  }
   function renderPanel() {
     css();
     var p = state.panel || document.createElement('div'); p.id = 'dxf-panel';

@@ -112,11 +112,23 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     const ops = await pg.evaluate(() => { const m = {}; window.Bonsai.oplog._geomOps().forEach(o => { if (o.op_type === 'GEOM_INSERT') m[o.id] = { c: o.parameters.ifc_class, bbox: o.parameters.bbox }; }); return m; });
     const dims = id => { const b = ops[id].bbox; return [b[1] - b[0], b[3] - b[2], b[5] - b[4]]; };
     let A = BigDecimal.of('0'), C = BigDecimal.of('0');
-    R.plan.copied.forEach(c => { A = A.add(row(ops[c.from].c, dims(c.from))); });
-    R.plan.stretched.forEach(s => { const d = dims(s.id), k = d.indexOf(Math.max.apply(null, d)), a = d.slice(); a[k] = d[k] * s.factor; C = C.add(row(ops[s.id].c, a).subtract(row(ops[s.id].c, d))); });
+    const byCls = {}, addTo = (k, v) => { byCls[k] = (byCls[k] || BigDecimal.of('0')).add(v); };   // B4b the same recompute, grouped per (added | changed, class)
+    R.plan.copied.forEach(c => { const v = row(ops[c.from].c, dims(c.from)); A = A.add(v); addTo('added|' + ops[c.from].c, v); });
+    R.plan.stretched.forEach(s => { const d = dims(s.id), k = d.indexOf(Math.max.apply(null, d)), a = d.slice(); a[k] = d[k] * s.factor; const v = row(ops[s.id].c, a).subtract(row(ops[s.id].c, d)); C = C.add(v); addTo('changed|' + ops[s.id].c, v); });
     const T = A.add(C).toString();
     ok('B4 the cost shown = an independent recompute (ADDED copies + CHANGED stretches)', R.cost && R.cost.added === A.toString() && R.cost.changed === C.toString() && R.cost.total === T && R.stat.indexOf('+' + T) >= 0,
       'shown added=' + (R.cost && R.cost.added) + ' changed=' + (R.cost && R.cost.changed) + ' total=' + (R.cost && R.cost.total) + ' | independent ' + A + ' / ' + C + ' / ' + T + ' | panel "' + String(R.stat).slice(0, 160) + '" gate=' + (R.gate || 'clean'));
+    // B4b the table under the bay row: its lines sum to the shown totals and each = the recompute for that class; B1b its per-class copy counts = the copies found in the scene
+    const D = await pg.evaluate(() => { const t = document.getElementById('dxf-bay-detail'); return t ? { text: t.innerText, rows: [...t.querySelectorAll('tr[data-line]')].map(r => ({ k: r.getAttribute('data-line'), amt: r.lastElementChild.textContent.trim() })) } : null; });
+    const lines = (R.cost && R.cost.lines) || [], sumOf = kind => lines.filter(l => l.kind === kind).reduce((a, l) => a.add(BigDecimal.of(l.amount)), BigDecimal.of('0')).toString();
+    const lineOff = lines.filter(l => !byCls[l.kind + '|' + l.cls] || byCls[l.kind + '|' + l.cls].toString() !== l.amount).map(l => l.kind + '|' + l.cls + ' ' + l.amount + ' vs ' + (byCls[l.kind + '|' + l.cls] || 'none'));
+    const shownOk = D && D.rows.length === lines.length && D.rows.every(r => { const l = lines.find(x => x.kind + '|' + x.cls === r.k); return l && r.amt === l.amount; });
+    ok('B4b the bay\'s cost table: lines sum to the shown added / changed, each line = the independent recompute for its class, the panel shows exactly those lines', lines.length > 0 && sumOf('added') === R.cost.added && sumOf('changed') === R.cost.changed && lineOff.length === 0 && Object.keys(byCls).length === lines.length && shownOk,
+      lines.length + ' lines: ' + lines.map(l => (l.kind === 'added' ? '+' : 'Δ') + l.cls.replace(/^Ifc/, '') + ' ' + l.n + 'x ' + l.qty + ' ' + l.unit + ' @' + l.rate + ' = ' + l.amount).join(' | ') + ' | off ' + lineOff.length + ' | panel rows ' + (D ? D.rows.length : 'none'));
+    const shownCopied = D ? ((/Copied ([^\n]*)/.exec(D.text) || [])[1] || '') : '', sceneCopied = Object.keys(by).sort().map(k => k.replace(/^Ifc/, '') + ' ' + by[k]).join(' · ');
+    const reach = await pg.evaluate(() => { const b = document.getElementById('dxf-bay-rates'); if (!b) return { btn: false }; const r = b.getBoundingClientRect(), el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { btn: true, y: Math.round(r.top), vh: innerHeight, top: el === b }; });
+    ok('B4c Edit rates can be clicked in an 810 px window: inside the screen and nothing on top of it (measured before: y 828 of 810)', reach.btn && reach.top && reach.y + 10 < reach.vh, JSON.stringify(reach));
+    ok('B1b the panel\'s per-class copy counts = the copies found in the scene', shownCopied.trim() === sceneCopied, 'panel "' + shownCopied.trim() + '" | scene "' + sceneCopied + '"');
     const G7 = await pg.evaluate(() => { const L = window.DxfImportUI.state.lastBay, ids = L.res.ids, after = window.__gbx(), cp = {}, bad = {};
       L.plan.ops.forEach((o, i) => { const bc = o.params.bayCopy; if (o.op_type === 'GEOM_INSERT' && bc) { const sh = [0, 0, 0]; sh[bc.axis === 'x' ? 0 : 1] = bc.dir * bc.pitch; cp[ids[i]] = { src: bc.src, shift: sh }; bad[ids[i]] = { src: bc.src, shift: sh.map(v => v * 2) }; } });
       const moved = L.plan.moved.concat(L.plan.stretched.map(s => s.id)).concat(ids), E = (o) => window.SdgGate.evaluate(window.__gb0, after, moved, {}, o);
