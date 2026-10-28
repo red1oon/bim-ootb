@@ -5131,14 +5131,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       v = r.length && r[0].values.length && String(r[0].values[0][0]).toUpperCase() === 'Y'; } catch (e) {}
     _isViewCache[key] = v; return v;
   }
-  // §VIEW-TIP (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §42 film evidence; Witness: W-POS-SALES-LIVE POSL3). A VIEW tab (AD_Table.IsView='Y') has no op-log rows of its own for _overlayListTip to fold, but its rows are derived from tables this session
-  //   WROTE (tickets that arrived by Visit, rows the user created): the grid read the view in the bare bundle and showed "No records" for rows the user could see in every other reader. _tipDb() is the db-shaped handle ADData.readRecords
-  //   needs, whose exec() runs the SAME SQL over the tip (crud_overlay.withModelTrx -> _tipShadowOn also shadows every view over a written table, §VIEW-SHADOW). No table is named; with no overlay it falls back to the bundle.
+  // §VIEW-TIP (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §42 film evidence; Witness: W-POS-SALES-LIVE POSL3). A VIEW tab (AD_Table.IsView='Y') has no op-log rows of its own for _overlayListTip to fold, but its rows derive from tables this session WROTE (tickets that
+  //   arrived by Visit, rows the user created): the grid read the view in the bare bundle and showed "No records". _tipDb() is the db-shaped handle ADData.readRecords needs, whose exec() is the ONE tip reader (_sqlRows, W-TIP-READERS), which also shadows every view over a written table (§VIEW-SHADOW). No table is named.
   function _tipDb() {
     return { exec: function (sql) {
-      var rows = null; try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') rows = window.__crud.withModelTrx(function (q) { return q(sql); }); } catch (e) { rows = null; }
-      if (!rows) return db.exec(sql);
-      if (!rows.length) return [];
+      var rows = _sqlRows(sql); if (!rows.length) return [];
       var cols = Object.keys(rows[0]); return [{ columns: cols, values: rows.map(function (r) { return cols.map(function (c) { return r[c]; }); }) }];
     } };
   }

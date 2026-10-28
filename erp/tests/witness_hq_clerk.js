@@ -31,7 +31,7 @@
 //   POS-PLAN MODE (HQ_PLAN=pos, film evidence gap 2, TEAMWORK_FRAMEWORK §42.1 Ch 3 / §42.2; default = OFFICE mode above, whose verdict lines are unchanged): the SAME clerk steps in a POS space (A founded with ?teamplan=pos, the signed POS plan served). Only §S8/H11 differ,
 //   because under the POS plan the till receives only what the plan declares for its role (W-POS-PLAN B2): the MOVEMENT, not the order, shipment, invoice or postings.
 //   §H11 (pos)  the station's accepted ops are exactly the M_MovementLine ops head office authored (3, quantities = Qty To Order) and no other table; it holds 0 orders for the key and no new shipment / invoice / posting (counts equal to before the day); the relay-delivered ops it
-//               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the plan carries a C_Order DOWN flow (the till would get the order -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
+//               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the sender ships undeclared tables (the order etc. would leave head office -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
 //   Also in POS mode the run prints §FILM_EVT lines (film6/FILM_EVT.md §2) for the steps whose arm is green.
 // Run: node erp/tests/witness_hq_clerk.js 2>&1 | tee /tmp/witness_hq_clerk.log      (HQ_NO_MUT=1 skips the mutants; HQ_ONLY_ARMS=1 is the mutant child mode)
 'use strict';
@@ -361,7 +361,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var partial = BLOCKED.length ? ' blocked=' + BLOCKED.join(',') : '';
   if (process.env.HQ_NO_MUT) { console.log('§HQ_VERDICT ' + (BLOCKED.length ? 'PARTIAL' : 'PASS') + ' judged=' + judged + ' fails=0' + partial + ' mutants=skipped pageerrors=' + errors); process.exit(BLOCKED.length ? 3 : 0); }
   var M = POS ? [
-    ['the POS plan also carries the order down (a C_Order DOWN flow): the till would receive the completed order', { 'pos-plan-add': [{ name: 'MUT order-down', table: 'C_Order', dir: 'DOWN', audience: 'hub', role: 200001, group: 'Order doc key', payload: [{ col: 'DocumentNo', cls: 'TEXT' }], ship: ['AD_Client_ID', 'AD_Org_ID', 'DocumentNo'] }] }, ['H11']],
+    ['the sender ships undeclared tables (the order, shipment, invoice, postings leave head office as flows: the source-side filter is off)', { file: '/erp/team_sync.js', from: "else if (scope !== 'share') return {", to: "else if (false) return {" }, ['H11']],
     ['the POS plan drops M_MovementLine (the movement never reaches the till)', { 'pos-plan-drop': ['M_MovementLine'] }, ['H11']]] : [
     ['process access ignored (every role is granted Replenish Report and Import Orders)', { file: '/erp/idmp_session.js', from: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; });", to: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; }); set[53267] = { rw: true }; set[206] = { rw: true };", stopAfter: 'H5' }, ['H3', 'H5']],
     ['window access ignored in the menu (a role sees Import Order without AD_Window_Access)', { file: '/erp/idmp_session.js', from: "if (!winSet[wid]) return null;", to: "if (false) return null;", stopAfter: 'H5' }, ['H3', 'H5']],
