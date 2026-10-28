@@ -575,7 +575,7 @@
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, colorFor = opts.colorFor || function () { return undefined; };
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
-    var assets = [], inserts = [], cuts = [], groups = [], skipped = [], lineReport = null;
+    var assets = [], inserts = [], cuts = [], groups = [], skipped = [], lineReport = null, gapReport = [];
     // §L1.16: a wing set was drawn rotated by -angle about (ox,oy); the model is turned back by +angle. Bodies are rotated as world vertices (so the baked mesh is already in
     // place, placement.rot 0); a library fill keeps its mesh and gets the rotated centre + placement.rot. Openings of a framed wall are BAKED (no GEOM_CUT: the worker only cuts
     // axis-aligned boxes and a GEOM_ROTATE on an insert is a no-op there, L1.16 slice 2).
@@ -659,6 +659,30 @@
         if (!near(A[2], B[2]) || !near(A[5], B[5])) continue;
         var xLine = near(A[1], B[1]) && near(A[4], B[4]) && (near(A[3], B[0]) || near(B[3], A[0])), yLine = near(A[0], B[0]) && near(A[3], B[3]) && (near(A[4], B[1]) || near(B[4], A[1]));
         if (xLine || yLine) par[find(a)] = find(b); } }
+      // §D88 B (DXF2BIM_FOUNDATION_LANE.md, W-DOOR-GAP) a door gap: two bodies of one line whose facing ends stand apart, the gap filled by door leaves (contiguous to snap_tol, each wall end
+      // uncovered by at most host_tol = the door-to-wall rule's own reach, dxf2bim.js hostFor), join into one body; each leaf gets its own cut below (one filling per opening, as the export writes)
+      var htol = C.CFG.host_tol, etol = C.CFG.elev_tol, gapJoin = [], usedDoor = {};
+      var dbox = inserts.map(function (o) { var P = o.params; if (P.ifc_class !== 'IfcDoor' || P.anchorOnly) return null; var b = P.bbox, c = P.placement, h = (b[5] - b[4]) / 2;
+        return [c.x + b[0], c.y + b[2], c.z + h + b[4], c.x + b[1], c.y + b[3], c.z + h + b[5]]; });
+      for (var a2 = 0; a2 < n; a2++) { if (!box[a2]) continue; for (var b2 = a2 + 1; b2 < n; b2++) { if (!box[b2]) continue;
+        var A2 = box[a2], B2 = box[b2], Qa = inserts[a2].params, Qb = inserts[b2].params;
+        if (Qa.storey !== Qb.storey || Qa.ifc_class !== Qb.ifc_class || (Qa.provenance && Qa.provenance.layer) !== (Qb.provenance && Qb.provenance.layer) || kind(Qa) !== kind(Qb)) continue;
+        if (typ(Qa) && typ(Qb) && typ(Qa) !== typ(Qb)) continue;
+        if (!near(A2[2], B2[2]) || !near(A2[5], B2[5])) continue;
+        [0, 1].forEach(function (k) { var o = 1 - k;
+          if (!near(A2[o], B2[o]) || !near(A2[o + 3], B2[o + 3])) return;
+          var g0, g1; if (A2[k + 3] < B2[k] - tol) { g0 = A2[k + 3]; g1 = B2[k]; } else if (B2[k + 3] < A2[k] - tol) { g0 = B2[k + 3]; g1 = A2[k]; } else return;
+          var lv = []; for (var d = 0; d < n; d++) { var Db = dbox[d]; if (!Db || usedDoor[d] || inserts[d].params.storey !== Qa.storey) continue;
+            if (Db[k] < g0 - tol || Db[k + 3] > g1 + tol) continue;                                                       // inside the gap along the line
+            if (Math.min(Db[o + 3], A2[o + 3]) - Math.max(Db[o], A2[o]) <= 0) continue;                                // over the wall's band
+            if (Math.abs(Db[2] - A2[2]) > etol || Db[5] > A2[5] + tol) continue;                                       // foot at the wall foot, head not above its top
+            lv.push({ i: d, b: Db }); }
+          if (!lv.length) return; lv.sort(function (p, q) { return p.b[k] - q.b[k]; });
+          for (var j = 1; j < lv.length; j++) if (lv[j].b[k] - lv[j - 1].b[k + 3] > tol) return;                     // the leaves are contiguous
+          if (lv[0].b[k] - g0 > htol || g1 - lv[lv.length - 1].b[k + 3] > htol) return;                              // each wall end within the door-to-wall reach
+          lv.forEach(function (x) { usedDoor[x.i] = 1; }); par[find(a2)] = find(b2); cutOf[a2] = cutOf[b2] = true;
+          gapJoin.push({ a: a2, k: k, g0: g0, g1: g1, band: [A2[o], A2[o + 3]], z0: A2[2], leaves: lv });
+        }); } }
       var lines = {}; for (var k = 0; k < n; k++) if (box[k]) (lines[find(k)] = lines[find(k)] || []).push(k);
       var keep = [], remap = {}, newIns = [], newAs = [], merged = 0;
       for (var q = 0; q < n; q++) {
@@ -679,8 +703,18 @@
       }
       cuts.forEach(function (c) { c.params.parent = remap[c.params.parent]; });
       groups.forEach(function (g) { g.body = remap[g.body]; g.guid = newIns[g.body].outputGuid; });
+      // §D88 B one cut per leaf in the joined body: along the line from its wall end (or the leaves' midpoint, 1 mm past it so two voids never share a face) to the other; across the wall band; wall foot to leaf head
+      gapJoin.forEach(function (J) { var k = J.k, o = 1 - k, L = J.leaves, host = remap[J.a];
+        L.forEach(function (lf, j) {
+          var s0 = j === 0 ? J.g0 : (L[j - 1].b[k + 3] + lf.b[k]) / 2 - 0.001, s1 = j === L.length - 1 ? J.g1 : (lf.b[k + 3] + L[j + 1].b[k]) / 2 + 0.001;
+          var c1 = [0, 0, r6(J.z0)], c2 = [0, 0, r6(lf.b[5])]; c1[k] = r6(s0); c2[k] = r6(s1); c1[o] = r6(J.band[0]); c2[o] = r6(J.band[1]);
+          var D = newIns[remap[lf.i]], h = String(D.params.provenance.dxf_handle);
+          cuts.push({ op_type: 'GEOM_CUT', params: { parent: host, void: { c1: c1, c2: c2 }, slide: { opening: 'door-gap:' + h, filling: D.outputGuid, fillingIdx: remap[lf.i], fillingFid: null },
+            provenance: { dxf_handle: h, layer: D.params.provenance.layer, sheet: D.params.provenance.sheet, run_id: R.run_id, rule: 'D88B door gap' } }, outputGuid: 'dxf-' + hashHex(newIns[host].outputGuid + '|gapcut|' + h).slice(0, 32) });
+        }); });
+      if (gapJoin.length) gapReport = gapJoin.map(function (J) { return { leaves: J.leaves.length, gap: r6(J.g1 - J.g0) }; });
       inserts.length = 0; Array.prototype.push.apply(inserts, newIns); assets.length = 0; Array.prototype.push.apply(assets, newAs);
-      lineReport = { bodies_before: n, bodies_after: newIns.length, merged_members: merged };
+      lineReport = { bodies_before: n, bodies_after: newIns.length, merged_members: merged, door_gaps: gapReport.length, door_gap_cuts: gapReport.reduce(function (t, g) { return t + g.leaves; }, 0) };
     })();
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];

@@ -1169,3 +1169,30 @@ the pasted door rides a 0.5 m move of the pasted wall, the source door stays).
 W-SHED-WALL-EDIT 7/0.
 **Open (named):** the default paste offset (no grid around the selection -> its own x width) put the Duplex wall 0.417 m beside itself: the gate reports 4 RED against the cross walls —
 the stated §OPEN-1 default works as written, whether a different default is wanted is the owner's call. Labour of a copy stays count-based (no building db in a DXF convert).
+
+**§D88 B — measured 2026-10-28 (review session 11; node probe of `Dxf2Structure.judge` + `toOps` on the CLI-marked shed, main c9447340): 445 inserts, 41 walls, 4 doors, 0 cuts.**
+| door(s) | along the line | wall pieces either side | Rule B as written (`snap_tol` 1 mm) |
+|---|---|---|---|
+| 1D7 (y −95.7), 2D1 (y −110.9) | single leaf 0.839 m | one side wall 125 / 115 at 12.7 mm; the other side a COLUMN (38D / 390) at 37 mm | no: no wall piece on the column side |
+| 33B + 353 (y −95.7, x −643.511..−642.140) | a double door, 2 leaves 0.2 mm apart | CC-L1 and CC-L0, same z 0.610-3.048, same band; each leaf 76.4 mm (3 in, the frame) from its wall end | no: 76 mm > 1 mm |
+**Rule B (refined, to build).** The frame allowance is `host_tol` (0.3 m: the existing door-to-wall rule, `dxf2bim.js hostFor`), not `snap_tol`. In `toOps` §D59 (a), two wall bodies of one line
+(same storey, class, layer, evidence kind, type, z range within `snap_tol`, cross band within `snap_tol`) whose facing ends are a gap g apart join into ONE body when door bodies (IfcDoor,
+same storey) fill the gap: each leaf inside the gap along the line and over the wall's band, its foot at the wall foot (`elev_tol`), its head not above the wall top, the leaves contiguous
+(`snap_tol`), and the uncovered length at each wall end ≤ `host_tol`. Each leaf gets ITS OWN GEOM_CUT in the joined body (the export's IfcRelFillsElement is one filling per opening,
+`bonsai_ifc.js:278`): along the line from its wall end (or the leaves' midpoint) to the midpoint (or its wall end), each void 1 mm past the midpoint so two voids never share a face;
+across = the wall band; height = the wall foot to the leaf head. The cut names its leaf (`slide.filling`, `fillingIdx`), so the convert publishes the fills edge (§D59 (c)) and the export
+writes Voids + Fills. A gap a door does not fill both ways (1D7, 2D1: a column on one side) stays as drawn — named, not hosted.
+**Witness claims (W-DOOR-GAP, node, the CLI-marked shed + a built control):** D1 the double door: CC-L1 + CC-L0 become ONE wall body, 2 cuts, each naming one leaf, union of voids = the
+gap along the line (1 mm), height = foot to leaf head; walls 41 -> 40, cuts 0 -> 2; D2 1D7 / 2D1 stay unhosted (no cut names them), their wall pieces unchanged; D3 control: the same pair
+with one leaf removed (the gap not filled) stays two bodies, 0 cuts; D4 control: a leaf 0.31 m short of a wall end (> `host_tol`) stays two bodies. Page (W-DXF-ADD-BAY, updated): the
+double door now rides its wall when "add a bay" moves it (B3r riders 2). Falsifier: main (D1 FAIL: 41 walls, 0 cuts).
+**§D88 B ✅ BUILT 2026-10-28 (witness).** `dxf2bim_import.js toOps` §D59 (a): the door-gap join + one cut per leaf (`lines.door_gaps` / `door_gap_cuts` in the convert's report).
+**W-DOOR-GAP 4/0** (node, the shed): D1 CC-L0 + CC-L1 -> one wall #99, cuts `353` x −643.587375..−642.824389 and `33B` x −642.826389..−642.063375, z 0.6096..2.9972 = the gap as drawn
+(−643.5874..−642.0634); walls 41 -> 40, cuts 0 -> 2; D2 1D7 / 2D1 unhosted, walls 125 / 115 single; D3 leaf 353 removed -> 41 walls, 0 cuts; D4 0.3115 m left -> 41 / 0, 0.2965 m -> 40 / 2.
+**Falsifier** (main's `dxf2bim_import.js`): D1 + D4 FAIL (41 walls, 0 cuts). **Page:** W-DXF-ADD-BAY 12/0 — new B0h the opening is cut in the rendered wall (mesh vertices at x −643.587 /
+−642.063 and z 2.997); B3r the double door rides its wall one pitch as hosted-by (fills 2, riders 353 + 33B); B3 43 moved + 2 riders, 0 others changed; B1/B4/B5/B9 unchanged in value
+(444 elements now). W-SHED-WALL-EDIT 7/0 (free walls 36 of 40), W-DXF-GRID 4/0, W-CLIPBOARD-KEYS 4/0, W-CLIPBOARD 6/0, W-BAY-RIDE 6/0, W-WALL-LINE L1-L3 (Duplex: `door_gaps` 0, unchanged).
+**Measured change, named (open):** W-DXF-GRID G2's one-bay drag of the end line went 18 -> 17 commands. Before, the 0.635 m piece CC-L0 ATTACHed to line 42 by its centre (0.445 m,
+`grid_kinematics.js` ATTACH_TOL 0.5) and translated alone — pulling the wall apart at its door, the doors left behind. Now the joined wall's ends are 0.127 m off lines 41 / 42 (> EDGE_TOL
+0.1) and its centre 1.4 m off, so it is not attached and stays. Neither is a stretch; the drawing sets the wall ends 127 mm in from the grid. EDGE_TOL is spine-wide (every building's
+grid drag), so it is not changed here: owner's call. "Add a bay" moves this wall and its doors correctly (B3 / B3r).
