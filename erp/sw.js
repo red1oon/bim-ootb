@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v930';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v931';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -282,6 +282,7 @@ const PRECACHE_ASSETS = [
   'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
   'plugins/pos_integration.mjs',    // ERP-side POS integration bundle, head office (POS_PLUGIN_LOCAL_FIRST.md §9/§11, W-POS-SALES)
   'plugins/pos_import_sales.mjs',   // its hot chunk: the per-ticket import process class
+  'plugins/mf_lens.mjs',            // the Micro Finance lens: two dictionary rows on the Home dashboard (TEAMWORK_FRAMEWORK.md §42.5, W-MF-LENS)
   'icons.js',
   '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)

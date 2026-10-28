@@ -102,7 +102,7 @@
     if (!pr) { el.innerHTML = '<div class="pr-dim">Plugin Engine not active yet.</div>'; return; }
     var persist = function () { return (global.PluginEngine && global.PluginEngine.persist) ? global.PluginEngine.persist() : Promise.resolve(); };
     global.OsgiConsole.render(el, {
-      systemName: 'BIM OOTB ERP engine (system bundle)', version: cur || '', builtins: MODULES,
+      systemName: 'BIM OOTB ERP engine (system bundle)', version: cur || '', builtins: MODULES, canWrite: pr.mayWrite(),   // every role sees the console; only the System Administrator gets the controls (W-PLUGIN-ROLE)
       list: function () { return pr.list(); }, describe: function (id) { return pr.describe(id); },
       start: function (id) { console.log('§PLUGIN-RELEASE console start id=' + id); return Promise.resolve(pr.startBundle(id)).then(persist); },
       stop: function (id) { console.log('§PLUGIN-RELEASE console stop id=' + id); return Promise.resolve(pr.stopBundle(id)).then(persist); },

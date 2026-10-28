@@ -541,8 +541,8 @@
 <script src="system_tenant.js?v=1"></script><!-- SYSTEM_ADMIN_LANE §SA1 — boot overlay: make System(0) a log-in-able tenant -->
 <script src="field_health.js?v=1"></script><!-- SYSTEM_MONITOR_WIDGETS §H — 4 field-health widgets engine (ERP.FieldHealth.fold); folded into the System Monitor panel below -->
 <script src="system_monitor.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — iDempiere System Monitor, serverless reframe (window.SystemMonitor) + §H field-health widgets -->
-<script src="osgi_console.js?v=2"></script>
-<script src="plugin_release.js?v=2"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
+<script src="osgi_console.js?v=3"></script>
+<script src="plugin_release.js?v=3"></script><!-- SYSTEM_ADMIN_LANE §6 — Plugin Management + gated Release/Update surface (window.PluginRelease) -->
 <script src="erp_preview.js?v=2"></script>
 <!-- CONSISTENCY_FINISH.md §K-1/§K-2 — icons.js (verbatim glyph DATA) + the shared overlay kit load BEFORE
      the import overlays (migrate_showme builds its STEPS at module load and renders Lucide icons). -->
@@ -557,7 +557,7 @@
 <script src="ad_valrule.js?v=1"></script>
 <script src="ad_gridtab.js?v=5"></script>
 <script src="ad_infowin.js?v=1"></script>
-<script src="plugin_registry.js?v=5"></script>
+<script src="plugin_registry.js?v=6"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
@@ -570,12 +570,12 @@
 <script src="pg_view_sql.js?v=1"></script>  <!-- ONE Postgres->SQLite view translator (core views + plugin packs), ERP_FRIENDLY_OPS_LENS.md §24 -->
 <script src="pipo_packin.js?v=2"></script>
 <script src="pipo_packout.js?v=1"></script>  <!-- Pack Out to a real 2Pack (ERP_FRIENDLY_OPS_LENS.md §25) -->  <!-- Pack In of a bundle's 2Packs (bim-compiler ERP_FRIENDLY_OPS_LENS.md §20.A/§22) -->
-<script src="plugin_overlay.js?v=7"></script>
+<script src="plugin_overlay.js?v=8"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
      readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
      way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
      plugin_overlay.js, called lazily by crud_overlay.js's existing model-validator install pass. -->
-<script src="ad_modelval_bridge.js?v=1"></script>
+<script src="ad_modelval_bridge.js?v=2"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (supersedes migrate_showme + the Install/Migrate
      pills). Mounted from the `showme` pill → AboutDIY.open(). icons.js + overlay_kit loaded above. -->
 <script src="../common/about_diy.js?v=2"></script>
