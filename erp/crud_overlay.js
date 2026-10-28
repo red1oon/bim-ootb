@@ -1750,6 +1750,18 @@
     }
     return done;
   }
+  // §TIPR (TEAMWORK_FRAMEWORK.md §41.2 L3; witness W-TIP-READERS TR3/TR4) - the host's ONE reader of "what this device holds" (idempiere.html _sqlRows) runs here for every data read, so it must be cheap and re-entrant.
+  //   _tipTablesFor: the written tables a statement can see. No hint = all of them (a Trx runs arbitrary SQL). With the statement: only the written tables it names; a statement that names a VIEW gets all of them (a view reads tables
+  //   this scan cannot see). Before this, every read re-materialised every written table (35 ms with 4 written; ad_session alone is written at login and cost 1.1 ms a call) and logged one §MV-TIP-SHADOW line each.
+  //   _tipHeld: while a tip read is open, a nested one shadows only what the outer lacks and never drops the outer's temp tables (the inner Off used to).
+  var _tipHeld = null;
+  function _tipTablesFor(db, sql) {
+    var all = _sideTables(SIDE);
+    if (!sql || !all.length) return all;
+    var words = {}; (String(sql).toLowerCase().match(/[a-z_][a-z0-9_]*/g) || []).forEach(function (w) { words[w] = 1; });
+    try { var vs = db.exec("SELECT name FROM main.sqlite_master WHERE type='view'"); if (vs.length && vs[0].values.some(function (v) { return words[String(v[0]).toLowerCase()]; })) return all; } catch (e) { return all; }
+    return all.filter(function (t) { return words[t]; });
+  }
   function _tipShadowOff(db, done) { (done || []).forEach(function (t) { try { if (String(t).indexOf('view:') === 0) db.run('DROP VIEW IF EXISTS temp.' + t.slice(5)); else db.run('DROP TABLE IF EXISTS temp.' + t); } catch (e) {} }); }
   // ══ MODEL LAYER seam (bim-compiler prompts/ERP_MODEL_LAYER.md §Seams — Witness: W-MODEL-ORACLE, pilot replay) ══════
   // modelRun(spec, cb): ModelLayer.run over the bundle with EVERY session-written table tip-shadowed (so the model
@@ -3161,8 +3173,11 @@
                     calloutTab: function () { return _co ? _co.tab : null; },
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
                     bindUdf: _coBindUdf,   // the stored-function UDFs + their data access (AdCallout.RUNTIME.DB) on a DB handle; idempiere.html calls it at load (ERP_FRIENDLY_OPS_LENS.md §24.1)
-                    withModelTrx: function (fn) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return; var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
-                      try { _coBindUdf(db); var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
+                    withModelTrx: function (fn, opts) { var r = null; if (typeof withBundle !== 'function') return null; withBundle(function (db) { if (!db) return;   // §TIPR (TEAMWORK_FRAMEWORK.md §41.2 L3): opts.sql = the statement fn will run -> shadow only the written tables it names; nested reads add only what the outer lacks
+                      var held = _tipHeld && _tipHeld.db === db ? _tipHeld : null, want = SIDE ? _tipTablesFor(db, opts && opts.sql) : [];
+                      if (held) want = want.filter(function (t) { return !held.have[t]; });
+                      var sh = _tipShadowOn(db, want), prev = _tipHeld, have = {}; if (held) for (var h in held.have) have[h] = 1; want.forEach(function (t) { have[t] = 1; }); _tipHeld = { db: db, have: have };
+                      try { _coBindUdf(db); var env = _modelEnv(); env.role = (global.APP && global.APP.roleId) || 0; r = fn(_modelQuery(db), env); } finally { _tipHeld = prev; _tipShadowOff(db, sh); } }); return r; },   // §CP (W-CP-CALLOUT-LIVE): read-only witness seam — the open form's GridTab
                     // §P10 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 5 — W-DOCNO-BRANCH):
                     //   READ-ONLY witness seam over the two IsDocNoControlled branches. The only DocNo witness
                     //   asserted the TABLE-level path against a MOCKED __idmpDb whose oracle was written beside

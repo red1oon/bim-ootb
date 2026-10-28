@@ -409,9 +409,11 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
     await page.waitForTimeout(300); await save(page);
     const plUpd = last(n0, /§CRUD validate key=m_pricelist /), plPer = last(n0, /§CRUD-PERSIST key=m_pricelist /);
     const NT = await newOrder(143, bpN, /^Standard Order/, 'Order Line', prodN, 2, oP || 1, null, ADMIN);
-    const djN = (line) => { const m = /derived=(\{[^}]*\})/.exec(line || ''); try { return m ? JSON.parse(m[1]) : null; } catch (e) { return null; } };
-    const dN = djN(NT.callout) || {};
-    const plUsed = Number((/§FS6-PRICE [^|]*pricelist=(\d+)/.exec(NT.fs6) || [])[1]);
+    // 2026-10-28 (TEAMWORK_FRAMEWORK §41.2 L4d): this step read two log tags the page no longer prints (§CRUD-CALLOUT ... derived=, §FS6-PRICE ... pricelist=), so it could only ever say GAP once the order reached
+    //   the line. It now reads what the user SEES: the line editor's auto-filled values (newOrder's autoFilled, read right after the product pick) and the header's price list (the list a line prices from).
+    const af = NT.autoFilled || {};
+    const dN = { PriceEntered: af.priceentered == null || af.priceentered === '' ? undefined : Number(af.priceentered), C_UOM_ID: af.c_uom_id ? Number(af.c_uom_id) : undefined, C_Tax_ID: af.c_tax_id ? Number(af.c_tax_id) : undefined };
+    const plUsed = Number(NT.newPriceList);
     const plCli = plUsed ? Number(await one(page, 'SELECT AD_Client_ID FROM M_PriceList WHERE M_PriceList_ID=' + plUsed)) : null;
     const okN = oP > 0 && oU > 0 && oT > 0 && dN.PriceEntered === oP && dN.C_UOM_ID === oU && dN.C_Tax_ID === oT && plUsed === plN && plCli === CID;
     const coN = /to=CO verifyChain=ok/.test(NT.co);
@@ -419,7 +421,7 @@ const tipOf = (page, table, id) => page.evaluate(([t, i]) => new Promise(res => 
       'a sales order in the NEW company prices its line (price/UOM/tax == oracle) and completes',
       'markSalesList=' + plUpd.slice(0, 50) + ' persist=' + !!plPer + ' client=' + CID + ' bp=' + bpN + ' product=' + prodN + ' newRecordPriceList=' + NT.newPriceList + ' derived={PriceEntered:' + dN.PriceEntered + ',C_UOM_ID:' + dN.C_UOM_ID + ',C_Tax_ID:' + dN.C_Tax_ID +
       '} oracle={pl:' + plN + ',plv:' + plvN + ',price:' + oP + ',uom:' + oU + ',tax:' + oT + '} pricedFrom(pl=' + plUsed + ',client=' + plCli + ') hdr=' + NT.hdr.slice(0, 60) +
-      ' line=' + NT.line.slice(0, 60) + ' ' + NT.co.slice(0, 120) + ' | ' + NT.fs6.slice(0, 200));
+      ' line=' + NT.line.slice(0, 60) + ' actions=' + JSON.stringify(NT.actions) + ' ' + NT.co.slice(0, 120));
   } catch (e) { step('S15b', 'I', 'SO in the new company', 'harness: ' + e.message); }
 
   let SO = null;
