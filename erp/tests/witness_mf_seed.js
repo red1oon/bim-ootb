@@ -41,6 +41,8 @@ var subtle = nodeCrypto.webcrypto.subtle, fails = 0, judged = 0, errors = 0, ARM
 function verdict(arm, ok, label, detail) { judged++; ARMS[arm] = ARMS[arm] || 0; if (!ok) { fails++; ARMS[arm]++; } if (!QUIET) console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
 function inconclusive(arm, label) { INCONC.push(arm); if (!QUIET) console.log('   ⚪ ' + arm + ' INCONCLUSIVE — ' + label); }
 function say(s) { if (!QUIET) console.log(s); }
+var SEQ = 0;   // FILM EVIDENCE (film6/FILM_EVT.md §6): §FILM_EVT lines, printed only while no arm has failed, never in a mutant child; test-only, no product code
+function evt(o) { if (QUIET || MUT || fails) return; console.log('§FILM_EVT ' + Object.entries(Object.assign({ seq: ++SEQ, ts: Date.now() }, o)).map(function (kv) { return kv[0] + '=' + (/[\s"]/.test(String(kv[1])) ? JSON.stringify(String(kv[1])) : kv[1]); }).join(' ')); }
 function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d).forEach(function (n) { var p = path.join(d, n), r = rel ? rel + '/' + n : n; if (fs.statSync(p).isDirectory()) walk(p, r, out); else out.push(r); }); return out; }
 function canon(o) { if (o === null || typeof o !== 'object') return JSON.stringify(o); if (Array.isArray(o)) return '[' + o.map(canon).join(',') + ']'; return '{' + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(o[k]); }).join(',') + '}'; }
 async function mkKey() { var kp = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']), j = await subtle.exportKey('jwk', kp.publicKey); return { priv: kp.privateKey, pub: { kty: j.kty, crv: j.crv, x: j.x, y: j.y } }; }
@@ -183,6 +185,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var st1 = await C1.pg.evaluate(function () { return document.getElementById('cfg-state').textContent; });
   verdict('S0', /Using SlipOK \(org\.kernel\.slipverify\.SlipOK\)/.test(st1), 'the slip-verify service is two local rows (C_PaymentProcessor names the adapter class, C_BankAccount_Processor holds branch id + key); the page reads them back', st1);
 
+  ['clerk', 'phone1', 'phone2', 'verifier'].forEach(function (a) { evt({ actor: a, kind: 'online', step: 'S0' }); });
   // ═══ §S1 ═══
   say('§S1 the admin issues one invoice per borrower on term 108 and validates the schedule with AD_Process 242');
   var loans = [];
@@ -240,6 +243,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var P1 = loans[0].sched[0].dueamt, P2 = loans[1].sched[0].dueamt, Q2 = loans[1].sched[1].dueamt;
   if (process.env.MFS_STOP === 'S1') { await finish(); }
 
+  evt({ actor: 'clerk', kind: 'run', process: 'Validate', text: 'payment schedule validated', step: 'S1' }); evt({ actor: 'clerk', kind: 'send', label: 'loan', step: 'S1' }); evt({ actor: 'clerk', kind: 'send', label: 'loan', step: 'S1' }); evt({ actor: 'phone1', kind: 'deliver', from: 'relay', label: 'loan', step: 'S1' }); evt({ actor: 'phone2', kind: 'deliver', from: 'relay', label: 'loan', step: 'S1' });
   // ═══ §V1 approved slip ═══
   say('§V1 C1 pays the first instalment: approved slip');
   var visitsBefore = T.count(C1, /§TEAM_VISIT /), aBefore = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_payment'))[0].n);
@@ -248,6 +252,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   verdict('V1', rows1.length === 1 && rows1[0].isapproved === 'Y' && rows1[0].r_pnref === ref('C1A') && rows1[0].r_authcode === '014-004' && rows1[0].r_result === 'approved' && !!rows1[0].r_respmsg && rows1[0].inv === loans[0].docno && rows1[0].doctypename === 'AR Receipt' && Number(rows1[0].payamt) === P1, 'ONE I_Payment row in legacy\'s processor-response columns: IsApproved=Y, R_PnRef = the bank reference, R_AuthCode, R_Result, R_RespMsg, InvoiceDocumentNo, DocTypeName, PayAmt', JSON.stringify(rows1[0]));
   verdict('V1', r1.bannerKind === 'ok' && /Payment received/.test(r1.banner) && r1.slips.length === 1 && r1.slips[0].state === 'received' && aBefore === 0 && aAfter === 0 && T.count(C1, /§TEAM_VISIT /) === visitsBefore, '"Payment received" is on the phone BEFORE any Visit: head office holds 0 I_Payment rows, the phone ran no Visit between the click and the banner', r1.banner + ' | A rows ' + aBefore + '->' + aAfter + ' visits ' + visitsBefore + '->' + T.count(C1, /§TEAM_VISIT /));
   verdict('V1', NET.stubHits[STUB_HOST] === 1 && NET.keys[0] === KEY_TEST && NET.aborted.length === 0, 'the verify call went to the recorded stub only, once, with the phone\'s own key (a test string); no other host was reached', 'hits=' + JSON.stringify(NET.stubHits) + ' aborted=' + NET.aborted.length);
+  evt({ actor: 'phone1', kind: 'verify', to: 'verifier', label: 'slip', step: 'V1' }); evt({ actor: 'verifier', kind: 'ack', to: 'phone1', status: 'approved', label: 'slip', step: 'V1' }); evt({ actor: 'phone1', kind: 'local', queue: 1, slip: 'received', text: 'payment received', step: 'V1' });
   // ── D1 ──
   say('§D1 the same bank reference twice, and the same QR twice');
   var hitsD = NET.stubHits[STUB_HOST], qr1b = SL('C1-1b', P1, ref('C1A')), d1a = await submitSlip(C1, loans[0].docno, qr1b, P1), rowsD1 = await slipRows(C1);
@@ -262,6 +267,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var qrBad = SL('C2-bad', P2, ref('C2X'), 'refuse'), r3 = await submitSlip(C2, loans[1].docno, qrBad, P2), rows3 = await slipRows(C2);
   verdict('V3', r3.bannerKind === 'bad' && r3.banner === REFUSED.message && r3.slips.length === 1 && r3.slips[0].state === 'refused' && !r3.slips.some(function (x) { return x.state === 'received'; }) && rows3.length === 0, 'refused: the service\'s own message is shown as is, nothing is shown as paid, no I_Payment row exists (a refused slip never becomes a receipt)', r3.banner + ' | rows=' + rows3.length + ' | ' + JSON.stringify(r3.slips));
 
+  evt({ actor: 'phone2', kind: 'verify', to: 'verifier', label: 'slip', step: 'V3' }); evt({ actor: 'verifier', kind: 'ack', to: 'phone2', status: 'refused', label: 'slip', step: 'V3' }); evt({ actor: 'phone2', kind: 'local', slip: 'refused', text: 'refused, nothing paid', step: 'V3' }); evt({ actor: 'phone2', kind: 'note', cls: 'bad', text: String(r3.banner).slice(0, 95), step: 'V3' });
   // ═══ §V2 unreached ═══
   say('§V2 C2: the service is unreachable (phone offline), then comes back');
   async function setOffline(d, on) { NET.offline[d.name] = on; await d.ctx.setOffline(on); await sleep(500); }
@@ -274,6 +280,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var okAgain = await waitFor(async function () { var rr = await slipRows(C2); return rr.length === 1 && rr[0].isapproved === 'Y' ? rr[0] : null; }, 30000); await waitFor(async function () { return (await out(C2)).todo.length === 0; }, 15000); var r2b = await out(C2);
   verdict('V2', !!okAgain && okAgain.r_pnref === ref('C2A') && okAgain.r_authcode === '014-004' && okAgain.r_result === 'approved' && r2b.todo.length === 0 && r2b.slips.length >= 1 && r2b.slips.some(function (x) { return x.state === 'received'; }), 'back online the phone re-checks BY ITSELF: the row is updated (IsApproved=Y, R_PnRef, R_AuthCode, R_Result) and the ToDo is gone', JSON.stringify(okAgain) + ' todo=' + r2b.todo.length);
   verdict('V2', Number((await T.rows(A, 'SELECT count(*) AS n FROM i_payment'))[0].n) === aV2 && T.count(C2, /§TEAM_VISIT /) === visV2, 'all of this happened BEFORE any Visit sent the row (head office still holds the same number of I_Payment rows; the phone ran no Visit)', 'A rows ' + aV2 + '; visits ' + visV2);
+  evt({ actor: 'phone2', kind: 'offline', step: 'V2' }); evt({ actor: 'phone2', kind: 'local', queue: 1, todo: 'set', text: 'no acknowledgement yet', step: 'V2' }); evt({ actor: 'phone2', kind: 'note', cls: 'bad', text: String(r2.todo[0].text).replace(/\s*\([^)]*\)/, '').split('. ')[0].slice(0, 95), step: 'V2' }); evt({ actor: 'phone2', kind: 'online', step: 'V2' }); evt({ actor: 'phone2', kind: 'verify', to: 'verifier', label: 'slip', step: 'V2' }); evt({ actor: 'verifier', kind: 'ack', to: 'phone2', status: 'approved', label: 'slip', step: 'V2' }); evt({ actor: 'phone2', kind: 'local', todo: 'clear', slip: 'received', text: 'row updated before send', step: 'V2' });
   // V2b: unreached, then REFUSED on the re-check
   say('§V2b C2: unreached, then refused on the re-check');
   await setOffline(C2, true);
@@ -296,6 +303,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var h1 = core.map(function (f) { return sha(path.join(ROOT, f)); });
   verdict('V4', JSON.stringify(h0) === JSON.stringify(h1) && !otherBefore && NET.otherHits === 1 && NET.stubHits[STUB_HOST] === slipokHits && r4.bannerKind === 'ok' && /OtherVerifier confirmed/.test(r4.banner) && rows4.length === 2 && rows4.filter(function (r) { return r.r_pnref === ref('C2B') && r.r_authcode === 'OV-OK' && r.isapproved === 'Y'; }).length === 1, 'a second provider is swapped in with ZERO code change outside the adapter: the page + core files are byte-identical (sha256 before = after), the new adapter file is the only addition, the OTHER provider\'s stub was called (1 hit), SlipOK\'s was not, the row is approved with that provider\'s reference', 'files same=' + (JSON.stringify(h0) === JSON.stringify(h1)) + ' other_before=' + otherBefore + ' otherHits=' + NET.otherHits + ' slipokHits ' + slipokHits + '->' + NET.stubHits[STUB_HOST] + ' banner=' + r4.bannerKind + ' ' + r4.banner + ' rows=' + JSON.stringify(rows4.map(function (r) { return r.r_pnref + '/' + r.r_authcode + '/' + r.isapproved; })));
   verdict('V4', NET.keys.indexOf(KEY_TEST + '-OV') >= 0 && NET.keys.indexOf(KEY_TEST) >= 0 && !core.some(function (f) { return fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('TEST-NOT-A-KEY') >= 0; }), 'each provider got ITS OWN key from the phone\'s local rows; no key or branch id is in any shipped file', 'keys seen: ' + NET.keys.map(function (k) { return String(k).replace(TAG, '<tag>'); }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(','));
+  evt({ actor: 'verifier', kind: 'note', cls: 'n', text: 'second provider row, no code change', step: 'V4' });
   if (process.env.MFS_STOP === 'V4') { await finish(); }
 
   // ═══ §I1 / §I2 head office imports ═══
@@ -336,6 +344,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
   var oracle = {};
   for (var oi = 0; oi < 2; oi++) { var al = await T.rows(A, 'SELECT COALESCE(SUM(COALESCE(amount,0)+COALESCE(discountamt,0)+COALESCE(writeoffamt,0)),0) AS a FROM c_allocationline WHERE c_invoice_id=' + loans[oi].id); oracle[loans[oi].docno] = Math.round((loans[oi].gt - Number(al[0].a)) * 100) / 100; }
   verdict('I1', oracle[loans[0].docno] === loans[0].sched[1].dueamt && oracle[loans[1].docno] === 0, 'at head office the first borrower\'s open amount is the SECOND instalment and the second borrower\'s is 0 (independent oracle over C_AllocationLine)', JSON.stringify(oracle));
+  evt({ actor: 'phone1', kind: 'send', label: 'I_Payment', step: 'I1' }); evt({ actor: 'phone2', kind: 'send', label: 'I_Payment', step: 'I1' }); evt({ actor: 'phone2', kind: 'send', label: 'I_Payment', step: 'I1' }); for (var di = 0; di < 3; di++) evt({ actor: 'clerk', kind: 'deliver', from: 'relay', label: 'I_Payment', step: 'I1' }); evt({ actor: 'clerk', kind: 'run', process: 'Import Payment', text: 'a receipt per slip, allocated', step: 'I1' });
   if (process.env.MFS_STOP === 'I1') { await finish(); }
 
   // ═══ §B1 / §B2 ═══
@@ -353,6 +362,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
 
   // ═══ §R / §P (agent F1's ports: Recurring 213 / 200074, Tenant Accounting Processor 53187) ═══
   var inv2 = loans.map(function (l) { return l.id; }).join(',');
+  evt({ actor: 'phone1', kind: 'deliver', from: 'relay', label: 'balance', step: 'B1' }); evt({ actor: 'phone2', kind: 'deliver', from: 'relay', label: 'balance', step: 'B1' }); evt({ actor: 'phone2', kind: 'refuse', cls: 'n', text: 'not addressed to this phone: refused here', step: 'B2' });
   async function runMenuProcess(procId, label) {            // menu -> process dialog -> OK, as the clerk does; -> the §AD-PROC-LIVE line
     var mid = await T.rows(A, "SELECT ad_menu_id AS id FROM ad_menu WHERE ad_process_id=" + procId + " AND isactive='Y'"), n0 = A.logs.length;
     if (!mid.length || !(await clickLeaf(A.pg, mid[0].id))) return { line: '', note: 'no menu leaf for ' + label };
@@ -373,6 +383,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
     var fresh = after.filter(function (x) { return !before.some(function (b) { return b.d === x.d; }); });
     await visitAll([A, C1, C2], 3); var rb = await out(C1), rb2 = await out(C2);
     verdict('R', /ok=Y/.test(rr.line) && fresh.length === 1 && fresh[0].ds === 'CO' && Number(fresh[0].gt) === loans[0].gt && Number(fresh[0].ns) === 2 && rb.loans.length === 2 && rb.loans.some(function (l) { return l.no === fresh[0].d && Number(l.open) === loans[0].gt; }) && rb2.loans.length === 1, 'a renewed certificate = a NEW invoice raised by legacy Recurring Run (menu -> dialog -> OK): completed, same total, 2 instalments; it reaches the borrower\'s phone as a second loan (open = its total) and not the other borrower\'s', rr.note + ' ' + rr.line.slice(0, 110) + ' fresh=' + JSON.stringify(fresh) + ' phone1 loans=' + JSON.stringify(rb.loans.map(function (l) { return l.no + ':' + l.open; })) + ' phone2 loans=' + rb2.loans.length);
+    evt({ actor: 'clerk', kind: 'run', process: 'Recurring Run', text: 'renewal invoice raised', step: 'R' });
   }
   if (!hasAcct) inconclusive('P', 'needs F1: Tenant Accounting Processor (53187) is not registered in this tree - no end-of-day posting can be judged');
   else {
@@ -382,6 +393,7 @@ var BORROWERS = [121, 200000], SHIPPED_ROLE = 50004, TILL_ROLE = Number(process.
     var pr = await runMenuProcess(53187, 'Tenant Accounting Processor'), post = await T.rows(A, factsOf);
     console.log('   §MFS_NOTE queued-before=' + JSON.stringify(pre.map(function (x) { return x.posted + ':' + x.dr; })) + ' after=' + JSON.stringify(post.map(function (x) { return x.posted + ':' + x.dr + '/' + x.cr; })) + ' ' + pr.line.slice(0, 120));
     verdict('P', pre.length === 3 && pre.every(function (x) { return x.posted !== 'Y' && Number(x.dr) === 0; }) && /ok=Y/.test(pr.line) && post.length === 3 && post.every(function (x) { return x.posted === 'Y' && Number(x.dr) > 0 && Math.abs(Number(x.dr) - Number(x.cr)) < 0.005; }), 'end of day the Tenant Accounting Processor (from the menu) posts the QUEUED receipts: before it Posted<>Y and no Fact_Acct (non-vacuous), after it Posted=Y and Fact_Acct balanced (dr = cr) for each of the 3', pr.note + ' ' + pr.line.slice(0, 100));
+    evt({ actor: 'clerk', kind: 'run', process: 'Tenant Accounting Processor', text: 'receipts posted at close', step: 'P' });
   }
 
   await finish();
