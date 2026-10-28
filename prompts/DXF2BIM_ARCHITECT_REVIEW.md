@@ -2,6 +2,15 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶▶▶▶▶▶ RESUME HERE (session 12 entry; written 2026-10-28 at the close of session 11; read this first)
+**Done in session 11:** ✅ §D88 B a door in a wall gap is hosted by that wall (structure path): the shed's double door 33B + 353 -> one joined wall + one cut per leaf; the single doors 1D7 /
+2D1 stand beside a column and stay unhosted (measured, named). W-DOOR-GAP 4/0 (main D1 D4 FAIL), W-DXF-ADD-BAY 12/0 (+B0h hole rendered, B3r the doors ride). Foundation lane §D88 B.
+**⛔ BLOCKED — §D90 (2) `applies_to_types`:** the mechanism is a few lines, but it is empty without the fact it scopes: WHICH compliance rule does not apply to WHICH building type (with
+its code clause)? The files hold 5 egress rules (door_clear_width, circulation_distance, isolated_room, common_path_of_egress_travel, exit_remoteness) and 5 structural (floating_member,
+span_depth_steel / _concrete / _cantilever, column_continuity), keyed by IFC class. Owner question: e.g. does a Farming Shed (agricultural) skip any of them, per which code?
+**⛔ needs the owner's OK — the BricsCAD film:** the story (`FILM_DXF2BIM_WHY_MARKINGS.md` "BRICSCAD FILM") before a take. It can now show a door riding its wall on the shed (§D88 B).
+**Open owner calls carried:** default paste offset (session 10 RESULT); grid drag EDGE_TOL vs the shed's 127 mm wall-end setback (§D88 B note); BIMCompiler #268 + #269 merges; ModellerGuide paragraph.
+
 ## ▶▶▶▶▶▶▶ RESUME HERE (session 11 entry; written 2026-10-28 at the close of session 10; read this first, then the session-10 block below for its record)
 **Done in session 10 (witnessed, logs read; specs + numbers: `DXF2BIM_FOUNDATION_LANE.md` §D89 steps 3-4, BIMCompiler `MODELLER_CLIPBOARD_COPY_PASTE.md` §REGROUND):**
 (1) ✅ #2425 the bay's moves go through `SdgCascade.ridersFor` (W-BAY-RIDE; main R1 R2 R4 FAIL). (2) ✅ owner "Go": `modeller/clipboard.js` = the ONE copy path (Ctrl+C / Ctrl+V; a copy = insert + every

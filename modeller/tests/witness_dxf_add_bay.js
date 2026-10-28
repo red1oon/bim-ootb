@@ -11,7 +11,7 @@
 //      qty = the shipped 5D basis (M longest edge, M2 longest × second, M3 volume, else count), rate = the page's active pack (window.RATES)
 //   B7 the Conformity Gate on the commit is clean: a copy inherits its source's relations (sdg_gate opts.copies); on the same boxes, without the rule the gate reports RED,
 //      and with a wrong shift (no true counterpart) it reports RED again — the rule removes inherited contacts only
-//   B3r the moves went through the spine's cascade: the page handed the planner SdgCascade.ridersFor + the convert's fills edges (§D89 step 3; the ride itself: W-BAY-RIDE)
+//   B3r the moves went through the spine's cascade: the shed's double door, hosted by its joined wall (§D88 B), rides it one pitch as hosted-by (2 fills edges, 2 riders)
 //   B9 (§D89 step 4) a wall of the last typical bay moved 5 cm, then a second bay: every copy = its source's CURRENT box + one pitch (1 mm) — the edited wall's copy carries the edit
 //      (main's bay copy cloned the insert row: the copy sat at the wall's pre-edit place)
 //   B5 one Ctrl+Z restores every element and the grid; Ctrl+Y brings the bay back      B6 0 page errors
@@ -73,6 +73,14 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
       'shed: type=' + offered.type + ' row=' + offered.row + ' button="' + offered.max + '" | general: type=' + g0.type + ' row=' + g0.row + ' refused="' + (g0.r && g0.r.why) + '"');
     if (!offered.row) throw new Error('not offered');
     const S0 = await snap(pg);
+    // B0h the shed's double door opening is cut in the rendered wall (§D88 B): the joined wall's mesh carries vertices at both gap ends, up to the leaf head
+    const H0 = await pg.evaluate(() => { const ops = window.Bonsai.oplog._geomOps(), cuts = ops.filter(o => o.op_type === 'GEOM_CUT' && /^door-gap:/.test(o.parameters.slide && o.parameters.slide.opening || ''));
+      if (!cuts.length) return { cuts: 0 }; const host = cuts[0].parameters.parent, m = window.Bonsai.group().children.find(q => q.isMesh && q.userData && q.userData.featureId === host); if (!m) return { cuts: cuts.length, mesh: false };
+      m.updateMatrixWorld(true); const a = m.geometry.attributes.position, e = m.matrixWorld.elements, xs = new Set(), zs = new Set();
+      for (let i = 0; i < a.count; i++) { const x = a.getX(i), y = a.getY(i), z = a.getZ(i); xs.add((e[0] * x + e[4] * y + e[8] * z + e[12]).toFixed(3)); zs.add((e[2] * x + e[6] * y + e[10] * z + e[14]).toFixed(3)); }
+      const lo = Math.min(...cuts.map(c => Math.min(c.parameters.void.c1[0], c.parameters.void.c2[0]))), hi = Math.max(...cuts.map(c => Math.max(c.parameters.void.c1[0], c.parameters.void.c2[0]))), head = Math.max(...cuts.map(c => c.parameters.void.c2[2]));
+      return { cuts: cuts.length, host, lo: lo.toFixed(3), hi: hi.toFixed(3), head: head.toFixed(3), hasLo: xs.has(lo.toFixed(3)), hasHi: xs.has(hi.toFixed(3)), hasHead: zs.has(head.toFixed(3)), verts: a.count }; });
+    ok('B0h the double door\'s opening is cut in the rendered wall (vertices at both gap ends and at the leaf head)', H0.cuts === 2 && H0.hasLo && H0.hasHi && H0.hasHead, JSON.stringify(H0));
     const gboxes = 'window.__gbx = () => { const out = {}; window.Bonsai.group().children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } }); return out; }; window.__gb0 = window.__gbx(); 1';
     await pg.evaluate(gboxes);
     await pg.click('#dxf-bay-max'); await sleep(4000);
@@ -86,14 +94,15 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     const sh = (b, d) => b.map((v, i) => (i % 3 === K ? v + d : v));
     const bad2 = added.filter(a => { const s = S0.els[a.bay && a.bay.src]; if (!s) return true; const w = sh(s.b, P * a.bay.dir); return a.b.some((v, i) => Math.abs(v - w[i]) > MM); });
     ok('B2 every copy = its source + one pitch', added.length > 0 && bad2.length === 0, 'pitch ' + P.toFixed(4) + ' m, copies ' + added.length + ', off ' + bad2.length + (bad2[0] ? ' e.g. #' + bad2[0].id + ' ' + bad2[0].c : ''));
-    const mv = R.plan.moved.filter(id => { const a = S0.els[id], b = S1.els[id]; return !a || !b || b.b.some((v, i) => Math.abs(v - (i % 3 === K ? a.b[i] + P : a.b[i])) > MM); });
+    const mv = R.plan.moved.concat(R.riders || []).filter(id => { const a = S0.els[id], b = S1.els[id]; return !a || !b || b.b.some((v, i) => Math.abs(v - (i % 3 === K ? a.b[i] + P : a.b[i])) > MM); });
     const st = R.plan.stretched.filter(s => { const a = S0.els[s.id], b = S1.els[s.id]; return !a || !b || Math.abs((b.b[K + 3] - b.b[K]) - (a.b[K + 3] - a.b[K] + P)) > MM; });
-    const still = Object.keys(S0.els).filter(id => R.plan.moved.indexOf(+id) < 0 && !R.plan.stretched.some(s => s.id === +id)).filter(id => S0.els[id].b.some((v, i) => Math.abs(v - S1.els[id].b[i]) > MM));
+    const still = Object.keys(S0.els).filter(id => R.plan.moved.indexOf(+id) < 0 && (R.riders || []).indexOf(+id) < 0 && !R.plan.stretched.some(s => s.id === +id)).filter(id => S0.els[id].b.some((v, i) => Math.abs(v - S1.els[id].b[i]) > MM));
     const hingeX = R.plan.tag.pos - P * R.plan.tag.dir, nl = S1.xs.length === S0.xs.length + 1 && Math.abs(S1.xs[R.plan.tag.index] - R.plan.tag.pos) <= 1e-6 && S1.xl[R.plan.tag.index] === R.plan.hinge + 'A';
     ok('B3 beyond the hinge moved one pitch, full-length members one pitch longer, nothing else changed, the grid gained the new line', mv.length === 0 && st.length === 0 && still.length === 0 && R.plan.moved.length > 0 && R.plan.stretched.length > 0 && nl,
       'moved ' + R.plan.moved.length + ' (off ' + mv.length + ') stretched ' + R.plan.stretched.length + ' (off ' + st.length + ') others changed ' + still.length + ' | grid ' + S0.xs.length + '->' + S1.xs.length + ' new ' + S1.xl[R.plan.tag.index] + '@' + (S1.xs[R.plan.tag.index] || 0).toFixed(3) + ' hinge ' + R.plan.hinge + '@' + hingeX.toFixed(3));
-    ok('B3r the moves went through the spine\'s cascade (SdgCascade.ridersFor + the convert\'s fills edges)', R.cascadeFills != null && Array.isArray(R.riders),
-      'cascade fills=' + R.cascadeFills + ' riders=' + (R.riders ? R.riders.length : 'none') + ' (the shed holds no hosted filling beyond the hinge; the ride is W-BAY-RIDE)');
+    const rid = await pg.evaluate(ids => { const ops = window.Bonsai.oplog._geomOps(); return ids.map(id => { const o = ops.find(q => q.id === id); return o ? o.parameters.ifc_class + ' ' + o.parameters.provenance.dxf_handle : '?'; }); }, R.riders || []);
+    ok('B3r the moves went through the spine\'s cascade: the double door (§D88 B, hosted by its joined wall) rides that wall one pitch, as hosted-by', R.cascadeFills === 2 && (R.riders || []).length === 2 && rid.every(r => /^IfcDoor (33B|353)$/.test(r)),
+      'cascade fills=' + R.cascadeFills + ' riders=' + JSON.stringify(rid) + ' (moved one pitch: checked in B3)');
     // B4 independent cost recompute (own BigDecimal, own quantity rule, the page's rates)
     const qty = (u, d) => { const s = d.slice().sort((a, b) => b - a); return u === 'M' ? s[0] : u === 'M2' ? s[0] * s[1] : u === 'M3' ? d[0] * d[1] * d[2] : 1; };
     const row = (cls, d) => { const r = R.rates[cls]; if (!r) return BigDecimal.of('0'); return BigDecimal.of(String(r.rate)).multiply(BigDecimal.of(qty(r.unit, d).toFixed(6))).setScale(0, BigDecimal.RoundingMode.HALF_UP); };
