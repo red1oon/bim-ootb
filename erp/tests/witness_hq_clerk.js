@@ -28,6 +28,11 @@
 //   §MUTANTS          — the page served with one rule broken; each must turn >= 1 arm red (a crashed child is NOT a kill): process access ignored (H3/H5), window access ignored (H3/H5), Import Orders re-import on a second run (H7),
 //                       Visit drops the movement (H11), Visit drops the order (H11); the movement mutant is declared NOT JUDGED only if H10 is blocked (a mutant on a path that never ran is not a kill).
 //   VERDICT           — PASS only when nothing is blocked; PARTIAL (exit 3) when an arm is named BLOCKED; INCONCLUSIVE when nothing was judged; FAIL when a base arm is red.
+//   POS-PLAN MODE (HQ_PLAN=pos, film evidence gap 2, TEAMWORK_FRAMEWORK §42.1 Ch 3 / §42.2; default = OFFICE mode above, whose verdict lines are unchanged): the SAME clerk steps in a POS space (A founded with ?teamplan=pos, the signed POS plan served). Only §S8/H11 differ,
+//   because under the POS plan the till receives only what the plan declares for its role (W-POS-PLAN B2): the MOVEMENT, not the order, shipment, invoice or postings.
+//   §H11 (pos)  the station's accepted ops are exactly the M_MovementLine ops head office authored (3, quantities = Qty To Order) and no other table; it holds 0 orders for the key and no new shipment / invoice / posting (counts equal to before the day); the relay-delivered ops it
+//               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the plan carries a C_Order DOWN flow (the till would get the order -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
+//   Also in POS mode the run prints §FILM_EVT lines (film6/FILM_EVT.md §2) for the steps whose arm is green.
 // Run: node erp/tests/witness_hq_clerk.js 2>&1 | tee /tmp/witness_hq_clerk.log      (HQ_NO_MUT=1 skips the mutants; HQ_ONLY_ARMS=1 is the mutant child mode)
 'use strict';
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), vm = require('vm'), nodeCrypto = require('crypto');
@@ -44,10 +49,14 @@ async function signObj(obj, key) { var b = JSON.parse(JSON.stringify(obj)); dele
 var PLAN_SRC = fs.readFileSync(path.join(ROOT, 'erp', 'team_plan.js'), 'utf8');
 var PLAN = (function () { var g = {}; vm.runInNewContext(PLAN_SRC, { window: g, globalThis: g }); return g.TEAM_PLAN; })();
 var planJs = function (o) { return '(function (g) { g.TEAM_PLAN = ' + JSON.stringify(o) + '; })(typeof window !== \'undefined\' ? window : globalThis);\n'; };
+var POSPLAN = (function () { var g = {}; vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'utf8'), { window: g, globalThis: g }); return g.TEAM_PLAN_POS; })();
+var planPosJs = function (o) { return '(function (g) { g.TEAM_PLAN_POS = ' + JSON.stringify(o) + '; })(typeof window !== \'undefined\' ? window : globalThis);\n'; };
 // HQ_MUT = JSON {"plan-drop": ["M_Movement","M_MovementLine"]} (flows dropped before signing) or {"file": "/erp/x.js", "from": "...", "to": "..."} (the page served with that file changed) — mutant child mode only
 var MUT = process.env.HQ_MUT ? JSON.parse(process.env.HQ_MUT) : null;
 // the ticket: one key, three lines (the §13.5 fixture: SAMPLE products 123 Oak Tree x2, 130 Plum Tree x1, 134 Patio Table x3; POS Order doctype declared by name; client 11, org 11)
 var BLOCKED = [];
+var POS = process.env.HQ_PLAN === 'pos', SEQ = 0, EVT = [];
+function evt(o) { if (QUIET || MUT || !POS) return; var line = '§FILM_EVT ' + Object.entries(Object.assign({ seq: ++SEQ, ts: Date.now() }, o)).map(function (kv) { return kv[0] + '=' + (/[\s"]/.test(String(kv[1])) ? JSON.stringify(String(kv[1])) : kv[1]); }).join(' '); EVT.push(line); console.log(line); }
 var KEY = process.env.HQ_KEY || ('POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)));
 var PRODS = [123, 130, 134], QTYS = [2, 1, 3];
 var LINES = PRODS.map(function (p, i) { return { ad_client_id: 11, ad_org_id: 11, i_isimported: 'N', issotrx: 'Y', doctypename: 'POS Order', m_product_id: p, qtyordered: QTYS[i], c_uom_id: 100, dateordered: '2026-10-28 00:00:00' }; });
@@ -57,7 +66,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
 
 (async function () {
   say('═══ W-HQ-CLERK — a clerk imports, the stock role replenishes, the station gets the order AND the movement (study §14) ═══  key=' + KEY + (MUT ? '  MUTANT=' + JSON.stringify(MUT).slice(0, 120) : '') + '\n');
-  var FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-clerk-')), cur = { plan: null, over: {} };
+  var FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'hq-clerk-')), cur = { plan: null, planPos: null, over: {} };
   if (MUT && MUT.file) cur.over[MUT.file] = null;   // filled once the original is read
   var server = http.createServer(function (req, res) {
     var u = new URL(req.url, 'http://x'), p = decodeURIComponent(u.pathname);
@@ -65,6 +74,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
     if (p.indexOf('/pipe/f/') === 0) { var fp = path.join(FOLDER, p.slice(8)); if (fp.indexOf(FOLDER) !== 0) { res.writeHead(400); res.end(); return; }
       if (req.method === 'PUT') { var ch = []; req.on('data', function (c) { ch.push(c); }); req.on('end', function () { fs.mkdirSync(path.dirname(fp), { recursive: true }); fs.writeFileSync(fp, Buffer.concat(ch)); res.writeHead(200); res.end('ok'); }); return; }
       if (!fs.existsSync(fp)) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': 'application/octet-stream' }); fs.createReadStream(fp).pipe(res); return; }
+    if (p === '/erp/team_plan_pos.js' && cur.planPos) { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(cur.planPos); return; }
     if (p === '/erp/team_plan.js' && cur.plan) { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(cur.plan); return; }
     if (cur.over[p]) { res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(cur.over[p]); return; }
     var f = path.join(ROOT, p === '/' ? '/erp/idempiere.html' : p);
@@ -78,16 +88,22 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var owner = await mkKey(), plan = JSON.parse(JSON.stringify(PLAN));
   if (MUT && MUT['plan-drop']) plan.flows = plan.flows.filter(function (f) { return MUT['plan-drop'].indexOf(f.table) < 0; });
   cur.plan = planJs(await signObj(plan, owner));
+  if (POS) {                                                  // the POS plan (signed by the same owner), with the mutant's flow edits applied BEFORE signing
+    var pplan = JSON.parse(JSON.stringify(POSPLAN));
+    if (MUT && MUT['pos-plan-drop']) pplan.flows = pplan.flows.filter(function (f) { return MUT['pos-plan-drop'].map(function (x) { return x.toLowerCase(); }).indexOf(String(f.table).toLowerCase()) < 0; });
+    if (MUT && MUT['pos-plan-add']) pplan.flows = pplan.flows.concat(MUT['pos-plan-add']);
+    cur.planPos = planPosJs(await signObj(pplan, owner));
+  }
   // end of run: print the arms; a mutant child may stop early (HQ_MUT.stopAfter) once the arms it can turn red have been judged
   async function finishRun() { var red = Object.keys(ARMS).filter(function (k) { return ARMS[k]; }); console.log('§HQ_ARMS red=' + (red.length ? red.join(',') : 'none') + ' judged=' + judged); await browser.close(); server.close(); return red; }
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
-  async function device(name) {
+  async function device(name, extra) {
     var ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } }), pg = await ctx.newPage(), logs = [], errs = [];
     pg.on('console', function (m) { logs.push(m.text()); }); pg.on('pageerror', function (e) { errs.push(e.message); errors++; });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
     var xcfg = Buffer.from(JSON.stringify({ trust: [owner.pub] })).toString('base64');
-    await pg.goto(base + '/erp/idempiere.html?login=GardenAdmin&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + encodeURIComponent(xcfg), { waitUntil: 'load' });
+    await pg.goto(base + '/erp/idempiere.html?login=GardenAdmin&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + encodeURIComponent(xcfg) + (extra || ''), { waitUntil: 'load' });
     await pg.waitForFunction(function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; }, null, { timeout: 180000 });
     await pg.evaluate(function () { return window.TeamSync.ready; });
     return { name: name, pg: pg, logs: logs, errs: errs, ctx: ctx };
@@ -104,6 +120,10 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
     rows: function (d, sql) { return d.pg.evaluate(function (q) { return new Promise(function (res) { window.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { res(trx.q(q)); return { ok: true }; } }, function () {}); }); }, sql); },
     dict: function (d, sql) { return d.pg.evaluate(function (q) { var r = window.__idmpDb.exec(q); if (!r.length) return []; var cols = r[0].columns; return r[0].values.map(function (v) { var o = {}; cols.forEach(function (c, i) { o[c.toLowerCase()] = v[i]; }); return o; }); }, sql); },
     count: function (d, re) { return d.logs.filter(function (l) { return re.test(l); }).length; },
+    // POS mode: what the RELAY delivered into this device's fold, and what the device TOOK IN (projection) - counted from the engine's fold and the adapter's last projection (the W-POS-PLAN measure)
+    measure: function (d) { return d.pg.evaluate(async function () { var S = window.TeamSync.store(), kid = (await window.TeamSync.pairState()).device, f = await S.foldable(), m = { delivered: 0, deliveredBytes: 0, ownPlaced: 0, ownBytes: 0, ownTabs: {} };
+      f.forEach(function (p) { var n = JSON.stringify(p.env).length; if (p.env.author === kid) { m.ownPlaced++; m.ownBytes += n; m.ownTabs[p.env.target.table] = (m.ownTabs[p.env.target.table] || 0) + 1; } else { m.delivered++; m.deliveredBytes += n; } });
+      var last = window.TeamSync._project.last || {}; m.projected = last.projected; m.thin = last.thin || null; m.byTable = last.byTable || {}; return m; }); },
     // the user's own hands: the menu tree, the window toolbar, the process dialog
     leaf: function (pg, id) { return pg.evaluate(function (id) { return !!document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); }, id); },
     clickLeaf: function (pg, id) { return pg.evaluate(function (id) { var leaf = document.querySelector('#idmp-tree .idmp-row.leaf[data-menu-id="' + id + '"]'); if (!leaf) return false; var n = leaf.parentElement; while (n && n.id !== 'idmp-tree') { if (n.classList && n.classList.contains('idmp-node')) n.classList.add('open'); n = n.parentElement; } leaf.click(); return true; }, id); },
@@ -138,22 +158,26 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   }
 
   say('§S0 two devices: A = head office (founder; clerk then stock role), B = station/till (team role 200001)');
-  var A = await device('A'), B = await device('B'), space = await T.found(A); await T.join(B, space);
+  var A = await device('A', POS ? '&teamplan=pos' : ''), B = await device('B'), space = await T.found(A); await T.join(B, space);
   for (var i = 0; i < 4; i++) { await T.approveAll(A, 200001); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   var hasIo = async function (d) { return d.pg.evaluate(function () { return window.__idmpDb.exec("SELECT count(*) FROM sqlite_master WHERE name='i_order'")[0].values[0][0]; }); };
   var tanr = async function (d) { return Number((await T.rows(d, "SELECT count(*) AS n FROM ad_table_scriptvalidator WHERE eventmodelvalidator IN ('TANR','TACR')"))[0].n); };
   verdict('H0', (await T.enrolled(B)) && (await hasIo(A)) === 1 && (await hasIo(B)) === 1 && (await tanr(A)) === 0 && (await tanr(B)) === 0, 'B enrolled as the till; I_Order exists on both; ZERO TANR/TACR rule rows on A and on B (nothing is automatic in this witness)', 'io=' + (await hasIo(A)) + '/' + (await hasIo(B)) + ' tanr A=' + (await tanr(A)) + ' B=' + (await tanr(B)));
 
+  var base0 = POS ? { inout: Number((await T.rows(B, 'SELECT count(*) AS n FROM m_inout'))[0].n), inv: Number((await T.rows(B, 'SELECT count(*) AS n FROM c_invoice'))[0].n), fact: Number((await T.rows(B, 'SELECT count(*) AS n FROM fact_acct'))[0].n), ord: Number((await T.rows(B, 'SELECT count(*) AS n FROM c_order'))[0].n) } : null;
+  evt({ actor: 'till', kind: 'online', step: 'H0' }); evt({ actor: 'clerk', kind: 'online', step: 'H0' });
   say('§S1 the station deposits the ticket ' + KEY + ' (' + LINES.length + ' lines) and Visits');
   var made = [];
   for (var li = 0; li < LINES.length; li++) made.push(await T.create(B, 'i_order', Object.assign({ documentno: KEY }, LINES[li])));
   await T.visit(B);
   verdict('H1', made.every(function (x) { return x != null; }) && T.count(B, /§RULE_PROCESS ref=206/) === 0, 'the station sealed ' + LINES.length + ' I_Order rows through the ERP write path and ran no Import Orders', 'created=' + JSON.stringify(made));
+  if (made.every(function (x) { return x != null; })) { for (var ei = 0; ei < LINES.length; ei++) evt({ actor: 'till', kind: 'local', queue: 1, text: 'ticket line written', step: 'H1' }); for (var ej = 0; ej < LINES.length; ej++) evt({ actor: 'till', kind: 'send', label: 'I_Order', step: 'H1' }); }
 
   say('§S2 head office Visits — the rows arrive, nothing runs');
   await T.visit(A); await T.visit(A);
   var ioA = await T.rows(A, "SELECT i_isimported AS imp FROM i_order WHERE documentno='" + KEY + "'"), ordA0 = await T.rows(A, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY + "'");
   verdict('H2', ioA.length === LINES.length && ioA.every(function (r) { return r.imp === 'N'; }) && Number(ordA0[0].n) === 0 && T.count(A, /§RULE_PROCESS/) === 0, 'head office holds the ' + LINES.length + ' deposited rows (I_IsImported=N), ZERO orders for the key, ZERO §RULE_PROCESS: a person has to start it', 'rows=' + JSON.stringify(ioA) + ' orders=' + ordA0[0].n + ' ruleProcess=' + T.count(A, /§RULE_PROCESS/));
+  if (ioA.length === LINES.length) { for (var ek = 0; ek < LINES.length; ek++) evt({ actor: 'clerk', kind: 'deliver', from: 'relay', label: 'I_Order', step: 'H2' }); evt({ actor: 'clerk', kind: 'note', cls: 'n', text: 'rows arrived, nothing runs', step: 'H2' }); }
 
   // ── H3 menu X of N, H5 negative ──
   say('§S3 menu / access sweep over the dictionary (4 roles x 2 entries) on plain sessions');
@@ -221,10 +245,12 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   verdict('H4', pc206.n === 4 && pc206.ok === pc206.tot && pc206.extra.length === 0 && run1.paras.length === pc206.n, 'Import Orders dialog renders exactly the AD_Process_Para rows (order, mandatory flag, default): X of N = ' + pc206.ok + ' of ' + pc206.tot + ' checks over ' + pc206.n + ' parameters, extra=' + pc206.extra.length, JSON.stringify(pc206.bad));
   verdict('H6', run1.opened === true && run1.items.length === 1 && /Import Orders/.test(run1.items[0]) && /OK #1\/3/.test(run1.text) && /dispatched=Y ok=Y/.test(run1.proc), 'the clerk opened menu 376 -> the window -> the gear offers "Import Orders" (the AD button) -> the dialog -> OK: the dictionary-resolved process ran and imported 1 of 3 rows-groups', 'items=' + JSON.stringify(run1.items) + ' text=' + run1.text.slice(0, 120));
   verdict('H6', ordNow.length === 1 && ordNow[0].ds === 'CO' && Number(ordNow[0].nl) === LINES.length && Number(ordNow[0].bp) === 112 && ioNow.length === LINES.length && ioNow.every(function (r) { return r.imp === 'Y' && r.oid != null; }) && T.count(A, /§RULE_PROCESS/) === 0, 'ONE C_Order with DocumentNo = the ticket key, CO, ' + LINES.length + ' lines (cash BP 112); the ' + LINES.length + ' I_Order rows read imported; still ZERO §RULE_PROCESS (a person ran it, no rule)', JSON.stringify({ ord: ordNow, io: ioNow, rule: T.count(A, /§RULE_PROCESS/) }));
+  if (ordNow.length === 1 && ordNow[0].ds === 'CO') evt({ actor: 'clerk', kind: 'run', process: 'Import Orders', text: 'order per ticket', step: 'H6' });
   var allBefore = await T.rows(A, "SELECT count(*) AS n FROM c_order"), run2 = await clerkImport('again');
   var ordAgain = await T.rows(A, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY + "'"), allAfter = await T.rows(A, "SELECT count(*) AS n FROM c_order");
   say('   clerk run 2: ' + run2.text);
   verdict('H7', /OK #0\/0/.test(run2.text) && Number(ordAgain[0].n) === 1 && Number(allAfter[0].n) === Number(allBefore[0].n), 'the clerk runs Import Orders AGAIN: it imports #0/0, still ONE order for the key and no new order of any kind (orders in the tenant ' + allBefore[0].n + ' -> ' + allAfter[0].n + ')', run2.text.slice(0, 100));
+  if (/OK #0\/0/.test(run2.text)) evt({ actor: 'clerk', kind: 'run', process: 'Import Orders', text: 'second run: nothing new', step: 'H7' });
 
   if (MUT && MUT.stopAfter === 'H7') { process.exit((await finishRun()).length ? 1 : 0); }
   // ── the stock role: SAME device, logs out, logs in as role 103 ──
@@ -243,6 +269,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var roleNow = await A.pg.evaluate(function () { return window.APP.roleId; });
   var leaves103 = [await T.leaf(A.pg, 376), await T.leaf(A.pg, 53354)];
   verdict('H8', Number(roleNow) === 103 && leaves103[0] === false && leaves103[1] === true && (await tanr(A)) === 0, 'the same head-office device is now the stock role: APP.roleId=103, menu has Replenish Report and NOT Import Order; still no TANR row', 'role=' + roleNow + ' leaves=' + JSON.stringify(leaves103));
+  if (Number(roleNow) === 103) evt({ actor: 'stock', kind: 'online', step: 'H8' });
 
   say('§S6 the stock role runs Replenish Report for the branch warehouse (menu 53354)');
   async function openReplenish() { await T.clickLeaf(A.pg, 53354); await A.pg.waitForSelector('#idmp-content [data-proc-run]', { timeout: 20000 }); await sleep(800); return T.params(A.pg); }
@@ -272,6 +299,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var movCount0 = Number((await T.rows(A, "SELECT count(*) AS n FROM m_movement WHERE m_movement_id<0"))[0].n);
   say('   report rows: ' + JSON.stringify(trep) + ' expected: ' + JSON.stringify(exp));
   verdict('H9', /OK #|OK\b/.test(rep) && trep.length === PRODS.length && trep.every(function (r) { return exp[r.p] && Number(r.q) === exp[r.p].q && Number(r.oh) === exp[r.p].oh ; }) && movCount0 === 0, 'the report (Create blank) lists exactly the ' + PRODS.length + ' branch products with Qty To Order and On Hand equal to the independent expectation, and made no document', JSON.stringify({ rows: trep, exp: exp, movements: movCount0 }));
+  if (trep.length === PRODS.length) evt({ actor: 'stock', kind: 'run', process: 'Replenish Report', text: 'quantities, no document', step: 'H9' });
 
   say('§S7 the stock role confirms the create: Create = Inventory Movement + Material Movement');
   var parasR2 = await openReplenish(); await T.setPara(A.pg, 'M_Warehouse_ID', BRANCH); await T.setPara(A.pg, 'ReplenishmentCreate', 'MMM');
@@ -288,18 +316,42 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var warn = A.logs.slice(n1).filter(function (l) { return /§PROC-WARNING/.test(l); }).join(' | ');
   var MOVE_OK = mv.length === 1;
   if (MOVE_OK) verdict('H10', Number(mv[0].dt) === RECIPE_DOCTYPE_MMM && ml.length === PRODS.length && ml.every(function (l) { return exp[l.p] && Number(l.q) === exp[l.p].q && Number(l.lf) === 101 && Number(l.lt) === Number(BRANCH_LOC); }), 'OK makes ONE M_Movement (doctype 143) with ' + PRODS.length + ' lines, quantity = the report\'s Qty To Order, from HQ locator 101 to the branch default locator', JSON.stringify({ mv: mv, ml: ml }));
+  if (MOVE_OK) { evt({ actor: 'stock', kind: 'run', process: 'Material Movement', text: 'one movement', step: 'H10' }); evt({ actor: 'stock', kind: 'send', label: 'movement', step: 'H10' }); }
   else { BLOCKED.push('H10'); console.log('§HQ_BLOCKED H10/H11b the Movement is NOT created: srcSeen=' + srcSeen + ' (M_Warehouse.M_WarehouseSource_ID set by a signed CRUD_UPDATE on warehouse ' + BRANCH + ' is not read by the model layer: ' + srcSeen + ' != ' + SOURCE + ') report warning="' + warn.slice(0, 120) + '" movements=' + mv.length + '. Not a dictionary row. By code reading: crud_core.listTip (called by crud_overlay _tipShadowOn) keys base rows by r[\'m_warehouse_id\'] while the seed row key is \'M_Warehouse_ID\', so the UPDATE of a base row of this mixed-case table never folds; and a warehouse CREATED in the sidecar is not offered by the process dialog lookup (base-only).'); }
 
+  if (POS) {
+    say('§S8 (POS plan) Visit: the station receives ONLY the movement');
+    await T.visit(A); await T.visit(B); await T.visit(A); await T.visit(B);
+    var mB = await T.measure(B), mAx = await T.measure(A);
+    var tillRecv = mB.thin.accepted - mB.ownPlaced, tillBytes = mB.thin.bytesAccepted - mB.ownBytes, acc = Object.keys(mB.byTable).filter(function (t) { return mB.byTable[t] > 0; });
+    var aSent = mAx.ownTabs;
+    var uuA = mv.length ? (await T.rows(A, "SELECT m_movementline_uu AS u FROM m_movementline WHERE m_movement_id=" + mv[0].id)).map(function (r) { return r.u; }) : [];
+    var mlB2 = uuA.length ? await T.rows(B, "SELECT m_product_id AS p, qtyentered AS q FROM m_movementline WHERE m_movementline_uu IN ('" + uuA.join("','") + "') ORDER BY m_product_id") : [];      // the SAME lines (same uu) as head office made; the POS plan ships QtyEntered (not MovementQty) for them
+    var ordB2 = await T.rows(B, "SELECT count(*) AS n FROM c_order WHERE documentno='" + KEY + "'"), olB2 = await T.rows(B, "SELECT count(*) AS n FROM c_orderline WHERE c_order_id IN (SELECT c_order_id FROM c_order WHERE documentno='" + KEY + "')");
+    var after = { inout: Number((await T.rows(B, 'SELECT count(*) AS n FROM m_inout'))[0].n), inv: Number((await T.rows(B, 'SELECT count(*) AS n FROM c_invoice'))[0].n), fact: Number((await T.rows(B, 'SELECT count(*) AS n FROM fact_acct'))[0].n), ord: Number((await T.rows(B, 'SELECT count(*) AS n FROM c_order'))[0].n) };
+    var mvHdrB = await T.rows(B, "SELECT count(*) AS n FROM m_movement WHERE m_movement_uu='" + (mv[0] ? mv[0].uu : 'none') + "'");
+    var wantLines = mv.length ? ml.map(function (l) { return [Number(l.p), Number(l.q)]; }) : [];
+    console.log('   §HQ_POSLINES head_office_uu=' + JSON.stringify(uuA) + ' till_rows=' + JSON.stringify(mlB2) + ' expected=' + JSON.stringify(wantLines));
+    console.log('   §HQ_POSMODE till_received_ops=' + tillRecv + ' till_received_bytes=' + tillBytes + ' accepted_tables=' + JSON.stringify(mB.byTable) + ' relay_delivered=' + mB.delivered + ' (' + mB.deliveredBytes + ' B) refused_locally=' + mB.thin.refused + ' (' + mB.thin.bytesRefused + ' B) head_office_put_on_pipe=' + JSON.stringify(aSent) + ' till_counts before=' + JSON.stringify(base0) + ' after=' + JSON.stringify(after) + ' movement_header_at_till=' + (mvHdrB[0] && mvHdrB[0].n));
+    verdict('H11', MOVE_OK && tillRecv === (aSent.m_movementline || 0) && tillRecv === PRODS.length && acc.length === 1 && acc[0] === 'm_movementline' && uuA.length === PRODS.length && mlB2.length === PRODS.length && wantLines.every(function (w) { return mlB2.some(function (r) { return Number(r.p) === w[0] && Number(r.q) === w[1]; }); }),
+      'POS PLAN: the station took in exactly ' + tillRecv + ' ops (' + tillBytes + ' bytes) = the ' + (aSent.m_movementline || 0) + ' M_MovementLine ops head office put on the pipe, no other table (' + JSON.stringify(acc) + '), and holds the movement lines with the report\'s quantities ' + JSON.stringify(wantLines), JSON.stringify({ tillRecv: tillRecv, acc: acc, aSent: aSent }));
+    verdict('H11', Number(ordB2[0].n) === 0 && Number(olB2[0].n) === 0 && after.inout === base0.inout && after.inv === base0.inv && after.fact === base0.fact && after.ord === base0.ord && !(aSent.c_order || aSent.m_inout || aSent.c_invoice || aSent.fact_acct),
+      'POS PLAN: the station does NOT hold the order (0 orders / 0 lines for the key), and its shipments, invoices, postings and orders are exactly as before the day (' + JSON.stringify(base0) + ' -> ' + JSON.stringify(after) + '); head office never put them on the pipe (kept at the source: ' + JSON.stringify(aSent) + ')', JSON.stringify({ ordB2: ordB2, base0: base0, after: after }));
+    verdict('H11', T.count(B, /§AD-PROC-LIVE proc=/) === 0 && T.count(B, /§RULE_PROCESS/) === 0, 'the station ran neither Import Orders nor Replenish Report (no process ran on it; it only received)', 'bProc=' + T.count(B, /§AD-PROC-LIVE proc=/));
+    if (MOVE_OK && tillRecv === PRODS.length) { for (var eq = 0; eq < tillRecv; eq++) evt({ actor: 'till', kind: 'deliver', from: 'relay', label: 'm_movementline', step: 'H11' }); evt({ actor: 'till', kind: 'note', cls: 'ok', text: 'only the movement came back', step: 'H11' }); }
+    if (mB.thin.refused > 0) evt({ actor: 'till', kind: 'refuse', text: 'not declared for this role', step: 'H11' });
+  } else {
   say('§S8 Visit: the station receives the order AND the movement');
-  await T.visit(A); await T.visit(B); await T.visit(A); await T.visit(B);
-  var ordB = await T.rows(B, "SELECT c_order_uu AS uu, docstatus AS ds, (SELECT count(*) FROM c_orderline l WHERE l.c_order_id=o.c_order_id) AS nl FROM c_order o WHERE documentno='" + KEY + "'");
-  var mvB = await T.rows(B, "SELECT m_movement_id AS id, m_movement_uu AS uu, docstatus AS ds FROM m_movement WHERE m_movement_uu='" + (mv[0] ? mv[0].uu : 'none') + "'");
-  var mlB = mvB.length ? await T.rows(B, "SELECT m_product_id AS p, movementqty AS q FROM m_movementline WHERE m_movement_id=" + mvB[0].id + " ORDER BY m_product_id") : [];
-  console.log('   §HQ_B orders=' + JSON.stringify(ordB) + ' movement=' + JSON.stringify(mvB) + ' lines=' + JSON.stringify(mlB));
-  verdict('H11', ordB.length === 1 && ordB[0].uu === ordNow[0].uu && ordB[0].ds === 'CO' && Number(ordB[0].nl) === LINES.length, 'the station holds THE SAME completed order (same c_order_uu, CO, ' + LINES.length + ' lines)', JSON.stringify(ordB));
-  verdict('H11', T.count(B, /§AD-PROC-LIVE proc=/) === 0 && T.count(B, /§RULE_PROCESS/) === 0, 'the station ran neither Import Orders nor Replenish Report (no process ran on it; it only received)', 'bProc=' + T.count(B, /§AD-PROC-LIVE proc=/));
-  if (MOVE_OK) verdict('H11', mvB.length === 1 && mlB.length === PRODS.length && mlB.every(function (l) { return exp[l.p] && Number(l.q) === exp[l.p].q; }), 'the station holds THE SAME movement (same m_movement_uu, ' + PRODS.length + ' lines, same quantities)', JSON.stringify({ mvB: mvB, mlB: mlB }));
-  else { BLOCKED.push('H11b'); console.log('§HQ_BLOCKED H11b the station-receives-the-movement arm is not judged: no movement exists to receive (see H10)'); }
+    await T.visit(A); await T.visit(B); await T.visit(A); await T.visit(B);
+    var ordB = await T.rows(B, "SELECT c_order_uu AS uu, docstatus AS ds, (SELECT count(*) FROM c_orderline l WHERE l.c_order_id=o.c_order_id) AS nl FROM c_order o WHERE documentno='" + KEY + "'");
+    var mvB = await T.rows(B, "SELECT m_movement_id AS id, m_movement_uu AS uu, docstatus AS ds FROM m_movement WHERE m_movement_uu='" + (mv[0] ? mv[0].uu : 'none') + "'");
+    var mlB = mvB.length ? await T.rows(B, "SELECT m_product_id AS p, movementqty AS q FROM m_movementline WHERE m_movement_id=" + mvB[0].id + " ORDER BY m_product_id") : [];
+    console.log('   §HQ_B orders=' + JSON.stringify(ordB) + ' movement=' + JSON.stringify(mvB) + ' lines=' + JSON.stringify(mlB));
+    verdict('H11', ordB.length === 1 && ordB[0].uu === ordNow[0].uu && ordB[0].ds === 'CO' && Number(ordB[0].nl) === LINES.length, 'the station holds THE SAME completed order (same c_order_uu, CO, ' + LINES.length + ' lines)', JSON.stringify(ordB));
+    verdict('H11', T.count(B, /§AD-PROC-LIVE proc=/) === 0 && T.count(B, /§RULE_PROCESS/) === 0, 'the station ran neither Import Orders nor Replenish Report (no process ran on it; it only received)', 'bProc=' + T.count(B, /§AD-PROC-LIVE proc=/));
+    if (MOVE_OK) verdict('H11', mvB.length === 1 && mlB.length === PRODS.length && mlB.every(function (l) { return exp[l.p] && Number(l.q) === exp[l.p].q; }), 'the station holds THE SAME movement (same m_movement_uu, ' + PRODS.length + ' lines, same quantities)', JSON.stringify({ mvB: mvB, mlB: mlB }));
+    else { BLOCKED.push('H11b'); console.log('§HQ_BLOCKED H11b the station-receives-the-movement arm is not judged: no movement exists to receive (see H10)'); }
+  }
   verdict('H12', errors === 0, '0 page errors on every page of the run (both devices and the plain sessions)', 'errors=' + errors + (errors ? ' ' + A.errs.concat(B.errs).slice(0, 2).join(' | ') : ''));
 
   var red = await finishRun();
@@ -308,7 +360,9 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   if (judged === 0) { console.log('§HQ_VERDICT INCONCLUSIVE nothing was judged'); process.exit(3); }
   var partial = BLOCKED.length ? ' blocked=' + BLOCKED.join(',') : '';
   if (process.env.HQ_NO_MUT) { console.log('§HQ_VERDICT ' + (BLOCKED.length ? 'PARTIAL' : 'PASS') + ' judged=' + judged + ' fails=0' + partial + ' mutants=skipped pageerrors=' + errors); process.exit(BLOCKED.length ? 3 : 0); }
-  var M = [
+  var M = POS ? [
+    ['the POS plan also carries the order down (a C_Order DOWN flow): the till would receive the completed order', { 'pos-plan-add': [{ name: 'MUT order-down', table: 'C_Order', dir: 'DOWN', audience: 'hub', role: 200001, group: 'Order doc key', payload: [{ col: 'DocumentNo', cls: 'TEXT' }], ship: ['AD_Client_ID', 'AD_Org_ID', 'DocumentNo'] }] }, ['H11']],
+    ['the POS plan drops M_MovementLine (the movement never reaches the till)', { 'pos-plan-drop': ['M_MovementLine'] }, ['H11']]] : [
     ['process access ignored (every role is granted Replenish Report and Import Orders)', { file: '/erp/idmp_session.js', from: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; });", to: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; }); set[53267] = { rw: true }; set[206] = { rw: true };", stopAfter: 'H5' }, ['H3', 'H5']],
     ['window access ignored in the menu (a role sees Import Order without AD_Window_Access)', { file: '/erp/idmp_session.js', from: "if (!winSet[wid]) return null;", to: "if (false) return null;", stopAfter: 'H5' }, ['H3', 'H5']],
     ['Import Orders run twice re-imports (the I_IsImported filter of the import loop removed)', { file: '/erp/processes/ImportOrder.js', from: "var impRows = trx.find('i_order', {}).filter(function (r) { return eq(r.i_isimported, 'N') && cc(r); })", to: "var impRows = trx.find('i_order', {}).filter(function (r) { return cc(r); })", stopAfter: 'H7' }, ['H7']],
