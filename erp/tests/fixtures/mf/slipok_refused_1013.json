@@ -1,0 +1,6 @@
+{
+  "_comment": "RECORDED STUB (not a live call) shaped like SlipOK's documented refusal that carries the slip's own data: {code:1013,message,data:SlipCheckInnerResponse} (SDK github.com/Khaomi/node-slipok src/types.ts: 1013 = the amount sent does not equal the amount on the slip). The 'message' wording is illustrative, not copied from SlipOK.",
+  "code": 1013,
+  "message": "The amount sent is not equal to the amount on the slip",
+  "data": { "success": true, "message": "Slip verified", "transRef": "<per slip>", "amount": "<per slip>", "sendingBank": "014", "receivingBank": "004", "countryCode": "TH" }
+}
