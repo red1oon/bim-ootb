@@ -28,7 +28,7 @@ let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §PLG-L
   ok('L1 control: the pp_order DocAction reached the funnel but NO model DocAction ran (no class) - the status-only path', ctrl.some(l => /§CRUD-HOSTPROCESS table=pp_order/.test(l)) && !ctrl.some(l => /§MODEL-DOCACTION table=pp_order/.test(l)), ctrl.slice(0, 6));
   // install + START the lazy fixture
   const url = `http://localhost:${port}/erp/tests/fixtures/lazy_probe.mjs`;
-  const st = await pg.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); const x = await r.startBundle('com.test.lazy-probe'); return { state: x.state, probe: window.__lazyProbe || 0, docClass: !!window.ModelLayer.docActionFor('pp_order') }; }, url);
+  const st = await pg.evaluate(async (u) => { const r = (() => { const R = window.PluginEngine._reg(); return Object.assign({}, R, R.system); })();   /* W-PLUGIN-ROLE: setup/ops via reg.system (the boot-restore path); the gate is judged in witness_plugin_role.js */ await r.installBundle(u); const x = await r.startBundle('com.test.lazy-probe'); return { state: x.state, probe: window.__lazyProbe || 0, docClass: !!window.ModelLayer.docActionFor('pp_order') }; }, url);
   console.log('§PLG-LAZY-1 after START: ' + JSON.stringify(st));
   ok('L2 started LAZY: state STARTING, the bundle code has NOT run (0 activations), no DocAction class yet', st.state === 'STARTING' && st.probe === 0 && st.docClass === false, st);
   // THE DEMAND: first DocAction on a pp_order row

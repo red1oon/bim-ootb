@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- borrower.html — the Micro Finance borrower page: a thin app for ONE borrower's phone (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §40, §40.1, §40.2; Witness: W-MF-SEED erp/tests/witness_mf_seed.js).
+     It is a Team device: the device's own ERP engine (idempiere.html?team=1) runs in a hidden frame; this page is only the borrower's view over it. Query parameters (pipe=, xcfg=, teamplan=, login=) are passed through to the engine. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My loan</title>
+<style>
+  :root { --bg:#121218; --panel:#1a1a24; --line:#33334a; --fg:#e8e8ed; --mut:#8b8b9e; --acc:#6c9fff; --ok:#5fd08a; --warn:#e8b45a; --bad:#ff7a7a; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui,sans-serif; }
+  main { max-width:520px; margin:0 auto; padding:12px 16px 40px; }
+  h1 { font-size:18px; margin:6px 0 2px; } h2 { font-size:13px; letter-spacing:.5px; text-transform:uppercase; color:var(--mut); margin:18px 0 6px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:8px 0; }
+  .row { display:flex; justify-content:space-between; gap:8px; } .mut { color:var(--mut); font-size:13px; }
+  .chip { display:inline-block; padding:1px 9px; border-radius:12px; border:1px solid var(--line); font-size:12px; margin-right:6px; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .big { font-size:22px; font-weight:600; }
+  input, select, button { font:inherit; color:var(--fg); background:#16161d; border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; margin:3px 0; }
+  button { cursor:pointer; background:#22223a; } button.go { background:var(--acc); color:#08101f; border-color:var(--acc); font-weight:600; }
+  ul { list-style:none; margin:0; padding:0; } details { margin-top:18px; } summary { color:var(--mut); cursor:pointer; }
+  #b-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; }
+  #b-banner:empty { display:none; }
+</style></head><body><main>
+  <h1>My loan <span id="b-who" class="mut"></span></h1>
+  <div><span id="b-net" class="chip">online</span><span id="b-pair" class="chip">starting</span></div>
+  <div id="b-banner" class="card" role="status" aria-live="polite"></div>
+
+  <h2>Loan</h2><div id="b-loans"></div>
+
+  <h2>Pay with a bank transfer slip</h2>
+  <div class="card">
+    <label class="mut" for="b-invoice">Loan</label><select id="b-invoice"></select>
+    <label class="mut" for="b-qr">Slip QR code (text)</label><input id="b-qr" autocomplete="off" placeholder="paste or scan the slip's QR code">
+    <label class="mut" for="b-amount">Amount you paid</label><input id="b-amount" inputmode="decimal" autocomplete="off">
+    <button id="b-submit" class="go">Check the slip and save</button>
+  </div>
+
+  <h2>To do</h2><ul id="b-todo"></ul>
+  <h2>My slips</h2><ul id="b-slips"></ul>
+
+  <div class="row" style="margin-top:14px"><button id="b-visit">Visit head office</button></div>
+  <div id="b-visitinfo" class="mut"></div>
+
+  <details><summary>Phone set-up</summary>
+    <div class="card">
+      <div class="mut" id="b-code"></div>
+      <label class="mut" for="b-space">Join a team (space id)</label><input id="b-space" autocomplete="off"><button id="b-join">Join</button>
+      <div class="mut" style="margin-top:8px">Slip-verify service (kept on this phone only)</div>
+      <label class="mut" for="cfg-name">Name</label><input id="cfg-name" autocomplete="off">
+      <label class="mut" for="cfg-class">Adapter class</label><input id="cfg-class" autocomplete="off">
+      <label class="mut" for="cfg-host">Host</label><input id="cfg-host" autocomplete="off">
+      <label class="mut" for="cfg-branch">Branch id</label><input id="cfg-branch" autocomplete="off">
+      <label class="mut" for="cfg-key">Key</label><input id="cfg-key" type="password" autocomplete="off">
+      <button id="cfg-save">Save the service</button><div class="mut" id="cfg-state"></div>
+    </div>
+  </details>
+</main>
+<iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
+<script src="slipverify/slipverify.js"></script>
+<script src="borrower.js"></script>
+</body></html>

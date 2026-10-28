@@ -11,9 +11,12 @@ const srv = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split
   fs.stat(f, (e, s) => { if (e || s.isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }); });
 let fails = 0; const ok = (n, c, i) => { if (!c) fails++; console.log('  §OC-LIVE ' + n + ' ' + (c ? 'PASS' : 'FAIL') + (c ? '' : ' ' + JSON.stringify(i))); };
 (async () => {
-  await new Promise(r => srv.listen(0, r)); const port = srv.address().port, base = `http://localhost:${port}/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin&window=123`;
+  await new Promise(r => srv.listen(0, r)); const port = srv.address().port, base = `http://localhost:${port}/erp/idempiere.html?seed=ad_seed.db`;
   const browser = await chromium.launch({ args: ['--no-sandbox'] }); const pg = await (await browser.newContext()).newPage(); const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  const boot = async () => { await pg.goto(base, { waitUntil: 'networkidle' }); await pg.waitForSelector('[data-ad-table]', { timeout: 20000 }).catch(async () => { const u = await pg.$('#idmp-login-users .idmp-login-user:not(.disabled)'); if (u) { await u.click(); const o = await pg.$('#idmp-login-ok'); if (o) await o.click(); } await pg.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {}); }); await pg.waitForTimeout(1000); };
+  // W-PLUGIN-ROLE: the console's Install / Start / Stop / Uninstall are the System Administrator's, so the page is entered as System / System (role 0); ?login= cannot do it (SuperUser lands on GardenWorld Admin, role 102)
+  const boot = async () => { await pg.goto(base, { waitUntil: 'networkidle' }); await pg.waitForSelector('#idmp-login-clients .idmp-login-user', { timeout: 30000 });
+    await pg.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('System'))"); await pg.waitForSelector('#idmp-login-step1:visible'); await pg.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('System'))"); await pg.waitForSelector('#idmp-login-step2:visible'); await pg.click('#idmp-login-ok');
+    await pg.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0, null, { timeout: 30000 }); await pg.waitForTimeout(1000); };
   const openConsole = async () => { await pg.evaluate(() => { window.PluginRelease.close && window.PluginRelease.close(); window.PluginRelease.open(); }); await pg.waitForSelector('#pr-osgi table.oc-t', { timeout: 10000 }); await pg.waitForTimeout(400); };
   const rows = () => pg.evaluate(() => [...document.querySelectorAll('#pr-osgi table.oc-t > tbody > tr:not(.oc-d)')].map(tr => ({ id: tr.cells[0].textContent.trim(), name: tr.cells[1].textContent.trim(), status: tr.cells[3].textContent.trim() })));
   const summary = () => pg.evaluate(() => (document.querySelector('#pr-osgi .oc-sum') || {}).textContent || '');

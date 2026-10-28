@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v923';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v932';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -83,6 +83,10 @@ const PRECACHE_ASSETS = [
   'ad_modelval.js',
   'ad_rule.js',        // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus (window.AdRule), W-BUS-ROW
   'ad_import_tables.js',   // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER
+  'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
+  'borrower.js',
+  'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
+  'slipverify/slipok.js',
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
   'i18n/chrome.json',   // UI locales — chrome catalogue (login card / header / toolbar)
   'i18n/index.json',    // UI locales — locale list + per-pack provenance/coverage
@@ -199,6 +203,10 @@ const PRECACHE_ASSETS = [
   'processes/InvoiceGenerate.js',
   'processes/InOutGenerate.js',
   'processes/ImportOrder.js',   // verbatim ImportOrder.java (AD_Process 206), W-IMPORT-ORDER
+  'processes/ImportPayment.js',   // verbatim ImportPayment.java (AD_Process 343), W-IMPORT-PAYMENT
+  'processes/Recurring.js',   // verbatim Recurring.java (AD_Process 213) + MRecurring, W-RECURRING
+  'processes/RecurringRun.js',   // verbatim RecurringRun.java (AD_Process 200074), W-RECURRING
+  'processes/ClientAcctProcessor.js',   // verbatim ClientAcctProcessor.java (AD_Process 53187), W-ACCT-PROCESSOR
   'processes/InventoryCountCreate.js',
   'processes/InventoryCountUpdate.js',
   'processes/InvoiceCreateInOut.js',
@@ -272,6 +280,9 @@ const PRECACHE_ASSETS = [
   'plugins/ninja_excel.mjs',        // built-in bundle: the Excel Report pill (ERP_FRIENDLY_OPS_LENS.md §27)
   'plugins/ninja_create.mjs',       // built-in bundle: the Ninja pill + the Plugin Engine's Create face (§27)
   'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
+  'plugins/pos_integration.mjs',    // ERP-side POS integration bundle, head office (POS_PLUGIN_LOCAL_FIRST.md §9/§11, W-POS-SALES)
+  'plugins/pos_import_sales.mjs',   // its hot chunk: the per-ticket import process class
+  'plugins/mf_lens.mjs',            // the Micro Finance lens: two dictionary rows on the Home dashboard (TEAMWORK_FRAMEWORK.md §42.5, W-MF-LENS)
   'icons.js',
   '../common/pill_builder.js',   // THE one canonical builder (PILLS_CONSOLIDATION_REVIEW_2026-07-03 — fork retired)
   'kernel_ops.js',     // shared infra — dedupe to common/ later (ERP_FOLDER_HOME.md)
@@ -293,6 +304,7 @@ const PRECACHE_ASSETS = [
   '../common/comm/op_versions.js',   // TEAMWORK_FRAMEWORK §16.30 — the shape-version registry
   '../common/comm/team_versions.js', // TEAMWORK_FRAMEWORK §16.33 — host glue (TEAM_SHAPE_V, TEAM_UPCASTERS, trust = TEAM_PLAN_TRUST)
   'team_plan.js',      // §25 — the compiled team scope (GENERATED); read through TeamScope
+  'team_plan_pos.js',  // §38.15 — the POS (star) plan, beside the office plan; chosen by the genesis plan:'pos' (GENERATED)
   'team_sync.js',      // TEAMWORK_FRAMEWORK §13.1 W1 — the team-mode adapter (written into idempiere.html only with ?team=1; inert otherwise)
   '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths (rank / history / heads-up / role scope / inbox)
   '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe (s/<space>/f/<kid>)

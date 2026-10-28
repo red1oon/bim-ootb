@@ -11,6 +11,7 @@
 //   F9 a preview of an order Save refuses (start before the BOM is valid) shows Save's own refusal text and writes nothing
 //   A compare over an empty sequence prints INCONCLUSIVE, never PASS.
 // Run: [FOPS_BREAK=skipsave] node erp/tests/witness_friendly_ops.js > <log>
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -72,7 +73,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     await page.goto(base + '/idempiere.html?lang=en_US', { waitUntil: 'networkidle' });
     await page.waitForFunction(() => !!window.__idmpDb && !!window.PluginEngine && document.querySelector('#idmp-login-clients') && document.querySelector('#idmp-login-clients').children.length > 0, null, { timeout: 30000 });
     // setup, NOT measured: Libero installed + started (as the film's b1), login, the film's off-camera prerequisite (with ample on-hand so both runs issue from one storage row)
-    await page.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
+    await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system; await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); }, base + '/plugins/libero_manufacturing.mjs');
     await click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))", false); await page.waitForSelector('#idmp-login-step1:visible');
     await click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))", false); await page.waitForSelector('#idmp-login-step2:visible');
     await click('#idmp-login-ok', false); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);
@@ -115,7 +116,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { c
     console.log('§FOPS plain order=' + JSON.stringify(oP) + ' saveComplete.gestures=' + JSON.stringify(gPc) + ' events=' + seqPc.length + ' backflush.gestures=' + JSON.stringify(gPb) + ' events=' + seqPb.length + ' collectors=' + JSON.stringify(colP) + ' stockDelta=' + JSON.stringify(dP));
 
     // ═══ LENS path: install the lens bundle (setup, not measured), back to the window ═══
-    await page.evaluate(async (a) => { if (a.brk) globalThis.__FOPS_BREAK = a.brk; const r = window.PluginEngine._reg(); await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
+    await page.evaluate(async (a) => { if (a.brk) globalThis.__FOPS_BREAK = a.brk; const r = window.PluginEngine._reg().system; await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
     console.log('§FOPS lens installed: ' + JSON.stringify(await page.evaluate(() => ({ lenses: window.AdLens.describe(), state: window.PluginEngine._reg().get('org.kernel.friendly-ops').state }))));
     await openMenuById(53055, false); await page.waitForSelector(NEWB, { timeout: 20000 });
     await fillOrder();

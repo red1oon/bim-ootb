@@ -5,12 +5,18 @@
 //   Issue: with the owner-signed executor map {c_order: HQ} in force (FL-8 E3), every device refuses a station's Complete (not-executor) — but the station's
 //   Process button still OFFERED it. Legacy filters the DocAction list by the role (WDocActionPanel.java:185-205 -> MRole.checkActionAccess); the team map
 //   rides the same check (erp/idempiere.html _docActionAccess, erp/team_sync.js notExecutor).
-//   The REAL erp/idempiere.html (?team=1, GardenAdmin, window 143 Sales Order) in TWO headless Chromium contexts on one dumb folder pipe: A = founder (role 102),
-//   B = joiner approved as role 103 (the station). Both open the same seed order and press the Process button; the Document Action buttons are read from the DOM.
+//   2.5 (study §12.2): the rule is DATA now - Team projects the owner-signed map onto AD_Document_Action_Access rows (IsActive='N' for every role but the executor, on the
+//   doctypes of the table); the host's DocAction list is legacy's own check over the LOGIN role's rows, with no team branch; 'author' is retired.
+//   The REAL erp/idempiere.html (?team=1, window 143 Sales Order, ?record= a completed order WITH a doctype) in headless Chromium contexts on one dumb folder pipe: A = founder
+//   (login GardenAdmin, role 102), B = joiner approved as role 103 and logged in as GardenUser (role 103 - a login role IS the role, as in legacy), C = joiner approved as 103 but
+//   logged in as GardenAdmin (login 102 != team 103: M4). The Document Action buttons are read from the DOM.
 //   §X0 precondition — B enrolled as role 103; both see the same record and the same non-empty Document Action list BEFORE any map (control: team without the rule).
 //   §X1 the map    — A publishes {c_order: 102} signed by the owner key (the deployment's plan trust key): MERGED on both after a Visit.
 //   §X2 offered    — after its Visit, B's Document Action group is GONE for the order (the map reached the list through the fold, no reload); A's is unchanged.
 //   §X3 log        — B printed §TEAM_EXECUTORS (map + its role) and §DOCACTION_ACCESS (what was removed and why).   §X4 0 page errors.
+//   §X5 rows alone — B's AD_Document_Action_Access rows of role 103 on the order's doctype are ALL 'N', A's role-102 rows untouched; TeamSync has no notExecutor; the host's _docActionAccess names no TeamSync.
+//   §X7 M4         — C (login 102, team 103) is offered the list (legacy judges the login role), prints §TEAM_ROLE_MISMATCH, and its DocAction is REFUSED at fold (not-executor) on A - the order on A is unchanged.
+//   §X6 vanishes   — the map replaced by {} (second owner-signed statement): B's rows are back to 'Y' and B is offered the control list again.
 //   §MUTANTS       — the adapter served with one rule broken; each must turn >= 1 arm red (a crashed child is NOT a kill).
 // Run: node erp/tests/witness_team_executors.js 2>&1 | tee /tmp/witness_team_executors.log
 'use strict';
@@ -54,12 +60,12 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
   var owner = await mkKey();
   cur.plan = planJs(await signObj(PLAN, owner));            // the plan trust key is also the key that signs the executor map (§38.3: the same two-key scheme as §35)
 
-  async function device(name) {
+  async function device(name, login, record) {
     var ctx = await browser.newContext({ viewport: { width: 1200, height: 800 } }), pg = await ctx.newPage(), logs = [], errs = [];
     pg.on('console', function (m) { logs.push(m.text()); }); pg.on('pageerror', function (e) { errs.push(e.message); errors++; });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
     var xcfg = Buffer.from(JSON.stringify({ trust: [owner.pub] })).toString('base64');
-    await pg.goto(base + '/erp/idempiere.html?login=GardenAdmin&window=143&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + encodeURIComponent(xcfg), { waitUntil: 'load' });
+    await pg.goto(base + '/erp/idempiere.html?login=' + (login || 'GardenAdmin') + '&window=143&record=' + (record || 108) + '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + encodeURIComponent(xcfg), { waitUntil: 'load' });
     await pg.waitForFunction(function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0; }, null, { timeout: 180000 });
     await pg.evaluate(function () { return window.TeamSync.ready; });
     return { name: name, pg: pg, logs: logs, errs: errs, ctx: ctx };
@@ -86,7 +92,7 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
   };
 
   if (!QUIET) console.log('§S1 two devices: A founds (role 102), B joins as role 103 (the station)');
-  var A = await device('A'), B = await device('B'), space = await T.found(A); await T.join(B, space);
+  var A = await device('A', 'GardenAdmin'), B = await device('B', 'GardenUser'), space = await T.found(A); await T.join(B, space);
   for (var i = 0; i < 4; i++) { await T.approveAll(A, 103); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   var rA = await T.myRole(A), rB = await T.myRole(B);
   var a0 = await T.offered(A), b0 = await T.offered(B);
@@ -108,13 +114,57 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
   var a1 = await T.offered(A), b1 = await T.offered(B);
   verdict('X2', !b1.err && b1.rec === b0.rec && b1.acts.length === 0, 'after its Visit, the station (B) is offered NO Document Action on the order (no reload)', 'B ' + b1.rec + ' [' + (b1.acts || []) + ']' + (b1.err ? ' ' + b1.err : ''));
   verdict('X2', !a1.err && a1.acts.join() === a0.acts.join(), 'the executor (A) keeps the same list', 'A [' + (a1.acts || []) + ']');
-  var diag = await B.pg.evaluate(function (rec) { var o = {}; try { o.fn = typeof (window.AdAccess && window.AdAccess.RoleContext.prototype.checkActionAccess); o.app = { role: window.APP && window.APP.roleId, client: window.APP && window.APP.clientId };
-    var rc = window.IdmpSession && window.IdmpSession.roleContextFor(window.__idmpDb, Number(window.APP.roleId)); o.rc = !!rc; o.docActRoles = rc && rc.docActRoles ? rc.docActRoles.map(function (R) { return R.roleId + ':' + R.rows.length; }) : null;
-    o.notExe = window.TeamSync.notExecutor('C_Order', Number(rec)); var r = window.__idmpDb.exec('SELECT c_doctype_id, c_doctypetarget_id FROM c_order WHERE c_order_id=' + Number(rec)); o.dt = r.length ? r[0].values[0] : null; } catch (e) { o.err = e.message; } return o; }, b1.rec);
-  console.log('§WX_DIAG B ' + JSON.stringify(diag));
-  var exB = B.logs.filter(function (l) { return /§TEAM_EXECUTORS map=\{"c_order":102\} myRole=103/.test(l); }), daB = B.logs.filter(function (l) { return /§DOCACTION_ACCESS table=C_Order .*-> \[\] \(team: not the executor\)/.test(l); });
-  verdict('X3', exB.length > 0 && daB.length > 0, 'B printed the map it applies and what it removed', (exB[0] || 'no §TEAM_EXECUTORS') + ' | ' + (daB[0] || 'no §DOCACTION_ACCESS'));
+  var exB = B.logs.filter(function (l) { return /§TEAM_EXECUTORS map=\{"c_order":102\} myRole=103/.test(l); }), daB = B.logs.filter(function (l) { return /§DOCACTION_ACCESS table=C_Order .*-> \[\]/.test(l); });
+  verdict('X3', exB.length > 0 && daB.length > 0, 'B printed the map it applies and what its login role was left with', (exB[0] || 'no §TEAM_EXECUTORS') + ' | ' + (daB[0] || 'no §DOCACTION_ACCESS'));
+  // §X5 the list is decided by Document Action Access ROWS alone (study §12.2 2.5): read the rows, the API, the host source
+  var dtId = await B.pg.evaluate(function (rec) { var r = window.__idmpDb.exec('SELECT c_doctypetarget_id, c_doctype_id FROM c_order WHERE c_order_id=' + Number(rec)); return r.length ? (r[0].values[0][0] || r[0].values[0][1]) : null; }, b1.rec);
+  var rows = function (d, role, dt) { return d.pg.evaluate(function (x) { var o = { Y: 0, N: 0 }; var r = window.__idmpDb.exec("SELECT isactive, count(*) FROM ad_document_action_access WHERE ad_role_id=" + x.role + " AND c_doctype_id=" + x.dt + " GROUP BY 1"); (r.length ? r[0].values : []).forEach(function (v) { o[v[0]] = v[1]; }); return o; }, { role: role, dt: dt }); };
+  var rB = await rows(B, 103, dtId), rA = await rows(A, 102, dtId), rA3 = await rows(A, 103, dtId);
+  verdict('X5', dtId > 0 && rB.N > 0 && rB.Y === 0 && rA.Y > 0 && rA.N === 0, "the map is DATA: on B every AD_Document_Action_Access row of role 103 on the order's doctype is IsActive='N'; the executor's (102) rows are untouched", 'doctype=' + dtId + ' B role103 ' + JSON.stringify(rB) + ' | B-side role102 ' + JSON.stringify(await rows(B, 102, dtId)) + ' | A role102 ' + JSON.stringify(rA) + ' A role103 ' + JSON.stringify(rA3));
+  var apiB = await B.pg.evaluate(function () { return typeof window.TeamSync.notExecutor; });
+  var hostSrc = await B.pg.evaluate(async function () { return await (await fetch('idempiere.html', { cache: 'no-cache' })).text(); });
+  var blk = hostSrc.slice(hostSrc.indexOf('function _docActionAccess('), hostSrc.indexOf('function _fsmCtx('));
+  verdict('X5', apiB === 'undefined' && blk.length > 200 && !/TeamSync|notExecutor|team/i.test(blk.replace(/§DOCACTION_ACCESS[^\n]*/g, '')), "the host's _docActionAccess names no team and TeamSync has no notExecutor: the DocAction list is legacy's check over the login role, nothing else", 'TeamSync.notExecutor=' + apiB + ' block=' + blk.length + ' bytes' + (/TeamSync|notExecutor|team/i.test(blk) ? ' TEAM TEXT: ' + (blk.match(/.{30}(TeamSync|notExecutor|team).{30}/i) || [''])[0] : ''));
   verdict('X4', errors === 0, '0 page errors on both devices', 'errors=' + errors + (errors ? ' ' + A.errs.concat(B.errs).slice(0, 2).join(' | ') : ''));
+
+  // §X7 M4: login role != team role. C logs in as GardenAdmin (102) and is approved as 103.
+  if (!QUIET) console.log('§S3 M4: a device logged in as role 102 but approved as team role 103 (C)');
+  var C = await device('C', 'GardenAdmin', 100), spaceC = space; await T.join(C, spaceC);
+  for (var j = 0; j < 4; j++) { await T.approveAll(A, 103); await T.visit(C); await T.visit(A); if (await T.enrolled(C)) break; await sleep(300); }
+  await T.visit(C); await T.visit(A); await T.visit(B);
+  var rC = await T.myRole(C), c1 = await T.offered(C);
+  verdict('X7', rC === 103 && !c1.err && c1.acts.length > 0 && c1.acts.indexOf('CL') >= 0, 'C (login 102, team role 103; its own order 100, so the later removal in X6 cannot touch the order B and A watch) is offered the list its LOGIN role is entitled to (legacy judges the login role); the hidden button is gone', 'team=' + rC + ' C [' + (c1.acts || []) + '] rec ' + c1.rec + (c1.err ? ' ' + c1.err : ''));
+  var mmC = C.logs.filter(function (l) { return /§TEAM_ROLE_MISMATCH login=102 team=103/.test(l); });
+  verdict('X7', mmC.length > 0, 'C printed the mismatch (evidence: login role vs team role)', mmC[0] || 'no §TEAM_ROLE_MISMATCH');
+  var nExe = function (d) { return d.pg.evaluate(async function () { var L = await window.TeamSync.store().order(); return Object.keys(L.verdict).filter(function (h) { var v = L.verdict[h]; return v.reason === 'not-executor'; }).length; }); };
+  var stat = function (d, rec) { return d.pg.evaluate(function (rec) { return window.__idmpDb.exec('SELECT docstatus FROM c_order WHERE c_order_id=' + Number(rec))[0].values[0][0]; }, rec); };
+  var n0 = await nExe(A), st0 = await stat(A, c1.rec), pick = 'CL';
+  var did = await C.pg.evaluate(async function (act) { var btn = document.querySelector('#idmp-toolbar [data-tb="process"]'); if (!btn) return 'no Process button'; btn.click();
+    for (var i = 0; i < 50 && !document.getElementById('idmp-proc-ov'); i++) await new Promise(function (r) { setTimeout(r, 100); });
+    var b = document.querySelector('#idmp-proc-ov [data-docact="' + act + '"]'); if (!b) return 'no button ' + act; b.click(); return 'clicked ' + act; }, pick);
+  await sleep(1500); await T.visit(C); await T.visit(A); await T.visit(B); await T.visit(C);
+  var n1 = await nExe(A), st1 = await stat(A, c1.rec), stC = await stat(C, c1.rec);
+  verdict('X7', /^clicked/.test(did) && n1 > n0 && st1 === st0, "C's DocAction (" + pick + ') is REFUSED at fold on A (E3 stays: not-executor), and the order on A is unchanged', did + ' | not-executor verdicts ' + n0 + ' -> ' + n1 + ' | A status ' + st0 + ' -> ' + st1 + ' | C status after its Visit ' + stC);
+
+  // §X6 the map is replaced by {}: the rows go back (the rule vanishes with the policy, nothing was written to the op log)
+  if (!QUIET) console.log('§S4 the owner replaces the map by {} (second signed statement)');
+  var KD2 = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-key2-'));
+  fs.writeFileSync(path.join(KD2, 'priv.jwk'), JSON.stringify(await subtle.exportKey('jwk', owner.priv))); fs.writeFileSync(path.join(KD2, 'pub.jwk'), JSON.stringify(owner.pub)); fs.writeFileSync(path.join(KD2, 'map.json'), JSON.stringify({})); fs.writeFileSync(path.join(KD2, 'prev.json'), JSON.stringify({ c_order: 102 }));
+  require('child_process').spawnSync(process.execPath, [SIGNJS, 'stmt', 'executors', path.join(KD2, 'map.json'), path.join(KD2, 'prev.json'), path.join(KD2, 'priv.jwk'), path.join(KD2, 'pub.jwk'), path.join(KD2, 'exe.json')], { encoding: 'utf8' });
+  var stmt2 = fs.existsSync(path.join(KD2, 'exe.json')) ? JSON.parse(fs.readFileSync(path.join(KD2, 'exe.json'), 'utf8')) : null; fs.rmSync(KD2, { recursive: true, force: true });
+  var pub2 = stmt2 ? await A.pg.evaluate(function (st) { return window.TeamSync.publishStatement(st); }, stmt2) : { ok: false, reason: 'cli wrote nothing' };
+  await T.visit(A); await T.visit(B);
+  var rB2 = await rows(B, 103, dtId), b2 = await T.offered(B), vB2 = pub2.hash ? await T.verdict(B, pub2.hash) : 'none';
+  verdict('X6', pub2.ok === true && /^MERGED/.test(vB2), 'the second statement (map {}) is published and MERGED on B', JSON.stringify(pub2) + ' B=' + vB2);
+  verdict('X6', rB.N > 0 && rB2.Y > 0 && rB2.N === 0 && !b2.err && b2.acts.join() === a0.acts.join(), "the rule vanished with the policy: B's role-103 rows are back to 'Y' and B is offered the control list again", 'B role103 before ' + JSON.stringify(rB) + ' after ' + JSON.stringify(rB2) + ' B [' + (b2.acts || []) + '] control [' + a0.acts + ']');
+  // §X8 rows alone (no Team in the loop): a Document Action Access row set 'N' by anyone + the MRole cache reset (ad:access-changed) changes B's list; set back, it returns
+  var flip = function (d, v) { return d.pg.evaluate(function (x) { window.__idmpDb.run("UPDATE ad_document_action_access SET isactive=? WHERE ad_role_id=103 AND c_doctype_id=" + x.dt, [x.v]); window.dispatchEvent(new CustomEvent('ad:access-changed', { detail: { table: 'ad_document_action_access' } })); }, { dt: dtId, v: v }); };
+  await flip(B, 'N'); var b8n = await T.offered(B); await flip(B, 'Y'); var b8y = await T.offered(B);
+  verdict('X8', !b8n.err && b8n.acts.length === 0 && !b8y.err && b8y.acts.join() === a0.acts.join(), "the list follows the ROWS and the cache reset alone: role 103's rows set 'N' by hand -> B offered none; set 'Y' -> the control list (no map, no Team rule)", 'N [' + (b8n.acts || []) + '] Y [' + (b8y.acts || []) + ']');
+  // §41.2 L2: E3 judges each SET_STATUS by the map in force at ITS position (the publisher's frontier), so retiring the map with {} does NOT re-admit what it had refused
+  var late = await A.pg.evaluate(async function (rec) { var S = window.TeamSync.store(), L = await S.order(); return S.query("SELECT op_hash AS h, envelope AS e FROM cl_op").filter(function (r) { return JSON.parse(r.e).body.op_type === 'SET_STATUS'; }).map(function (r) { return L.verdict[r.h].verdict + ':' + (L.verdict[r.h].reason || ''); }); }, c1.rec);
+  verdict('X9', late.filter(function (l) { return l === 'REFUSED:not-executor'; }).length >= 1 && late.indexOf('MERGED:role 103 ok') < 0, 'after the map {} the SET_STATUS the station was refused on STAYS refused (judged by the policy in force when it was done)', JSON.stringify(late));
+  verdict('X4', errors === 0, '0 page errors on all devices (after the mismatch and the removal)', 'errors=' + errors + (errors ? ' ' + A.errs.concat(B.errs, C.errs).slice(0, 2).join(' | ') : ''));
 
   var red = Object.keys(ARMS).filter(function (k) { return ARMS[k]; });
   console.log('§WX_ARMS red=' + (red.length ? red.join(',') : 'none') + ' judged=' + judged);
@@ -125,8 +175,9 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
 
   var M = [
     ['the map is not refreshed after a fold (render skips it)', 'try { await refreshExecutors(); } catch (eX)', 'try { } catch (eX)', ['X2']],
-    ['the overlay never removes anything', 'if (!exe.map) return false;', 'return false;', ['X2']],
-    ['every device is treated as a non-executor', "if (ex !== 'author') return exe.role !== ex;", "if (ex !== 'author') return true;", ['X2']]];
+    ['the rows are never set to N', "db.run(\"UPDATE ad_document_action_access SET isactive='N' WHERE", "db.run(\"UPDATE ad_document_action_access SET isactive='Y' WHERE", ['X2', 'X5']],
+    ['the executor role is flipped too', 'WHERE ad_role_id<>? AND c_doctype_id', 'WHERE ad_role_id<>(?*0-1) AND c_doctype_id', ['X2', 'X5']],
+    ['the rows are never restored when the map goes', "'UPDATE ad_document_action_access SET isactive=? WHERE", "'UPDATE ad_document_action_access SET isactive=CASE WHEN ?<>\\'\\' THEN isactive ELSE isactive END WHERE", ['X6']]];
   var cp = require('child_process'), muts = [];
   for (var m of M) {
     if (ADAPTER.split(m[1]).length !== 2) { muts.push({ name: m[0], error: 'MUTATION DID NOT APPLY (anchor not found exactly once)' }); continue; }

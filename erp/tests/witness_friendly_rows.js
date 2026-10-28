@@ -3,6 +3,7 @@
 //   order's values preset: strictly fewer gestures than the plain chain (menu -> parameters -> Run, twice), identical §EVENT_SEQ of the two process runs, identical shipment and invoice rows.
 //   Lens not installed: no Ship/Invoice buttons. INCONCLUSIVE (never PASS) if an event trace is empty or the order never reached CO.
 // Run: [FR_BREAK=noctx|nosql] node erp/tests/witness_friendly_rows.js > <log>
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -25,7 +26,7 @@ async function run(base, browser, lens) {
   await pg.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await pg.waitForSelector('#idmp-login-step1:visible');
   await pg.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await pg.waitForSelector('#idmp-login-step2:visible'); await pg.click('#idmp-login-ok');
   await pg.waitForFunction(() => document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0);
-  if (lens) await pg.evaluate(async (a) => { if (a.brk) window.__frBreak = a.brk; const r = window.PluginEngine._reg(); await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
+  if (lens) await pg.evaluate(async (a) => { if (a.brk) window.__frBreak = a.brk; const r = window.PluginEngine._reg().system; await r.installBundle(a.u); await r.startBundle('org.kernel.friendly-ops'); }, { u: base + '/plugins/friendly_ops.mjs', brk: BREAK });
   await pg.evaluate(() => { window.__eventSeq = true; });
   const tip = (sql) => pg.evaluate(s => window.__crud.withModelTrx(q => q(s)), sql);
   const hc = async (sel) => { GT.click++; const l = pg.locator(sel).first(); await l.scrollIntoViewIfNeeded().catch(() => {}); await l.click(); await pg.waitForTimeout(450); };
@@ -103,7 +104,7 @@ async function run(base, browser, lens) {
   const inp = await tip("SELECT ispaid AS p FROM c_invoice WHERE c_invoice_id < 0");
   const ord = await tip("SELECT SUM(qtydelivered) AS d, SUM(qtyinvoiced) AS i FROM c_orderline WHERE c_order_id < 0");
   const rowsLive = await pg.evaluate(() => { const q = t => { const r = window.__idmpDb.exec(t); return r.length ? Number(r[0].values[0][0]) : 0; }; return q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id IN (53431,53432)') + q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_para WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_access WHERE ad_process_id IN (53401,53402)'); });
-  let rowsStopped = null; if (lens) { await pg.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.kernel.friendly-ops'); }); await pg.waitForTimeout(500); rowsStopped = await pg.evaluate(() => { const q = t => { const r = window.__idmpDb.exec(t); return r.length ? Number(r[0].values[0][0]) : 0; }; return q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id IN (53431,53432)') + q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_para WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_access WHERE ad_process_id IN (53401,53402)'); }); }
+  let rowsStopped = null; if (lens) { await pg.evaluate(async () => { await window.PluginEngine._reg().system.stopBundle('org.kernel.friendly-ops'); }); await pg.waitForTimeout(500); rowsStopped = await pg.evaluate(() => { const q = t => { const r = window.__idmpDb.exec(t); return r.length ? Number(r[0].values[0][0]) : 0; }; return q('SELECT COUNT(*) FROM ad_toolbarbutton WHERE ad_toolbarbutton_id IN (53431,53432)') + q('SELECT COUNT(*) FROM ad_process WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_para WHERE ad_process_id IN (53401,53402)') + q('SELECT COUNT(*) FROM ad_process_access WHERE ad_process_id IN (53401,53402)'); }); }
   return { lens, formShip, formInv, barAfter, rowsLive, rowsStopped, oo, chainGestures, ev, bar0, barPay, ok1, ok2, payForm: JSON.stringify(payForm), payDa, books: JSON.stringify({ shr, ivr, ord, pay, inp }) };
 }
 (async () => {

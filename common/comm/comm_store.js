@@ -158,9 +158,9 @@
           scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
         // §16.31: the shape-version judgement only ever DOWNGRADES an op that was admitted (a refusal or park for signature, role, access, scope or deps stays as it is)
         if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.policy ? roster.policy.params : null); if (vj) verdict[o.hash] = vj; }
-        // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from that executor (a role, or the document's author)
-        if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var ex = roster.executors[String(o.env.target.table).toLowerCase()];
-          if (ex !== undefined) { var okExe = ex === 'author' ? !!(cr && cr.author === o.env.author) : roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
+        // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from a device whose signed team role IS that executor (study §12.2 2.5: a role only)
+        if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var exm = roster.exeAt(o.env.author, o.env.seq), ex = exm ? exm[String(o.env.target.table).toLowerCase()] : undefined;       // §41.2 L2: the map at THIS op's position, not the final one
+          if (ex !== undefined) { var okExe = roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
             if (!okExe) verdict[o.hash] = { verdict: 'REFUSED', reason: 'not-executor' }; } }
       }
       // all-or-none: every op of a DocAction group whose status op was refused not-executor is refused with it (no ghost consequence is ever placed)
@@ -489,15 +489,24 @@
     }
 
     // spec = { target, body, intent?, refs?:[uu], ts?, attrib? }. Identity ops also read the space + my device + my person.
-    async function author(spec) {
-      var me = selfRow(), ver = await versions(), reads = {}, ident = !!ROS.IDENTITY[spec.body.op_type];
+    async function author(spec) { return authorOne(spec, await versions(), null); }
+    // §41.2 L1 (profiled: author() costs O(log size) per op - versions() walks the whole log, cur() refolds it - so N ops cost O(N^2)): a BATCH of business ops reads the versions and the base ONCE and keeps its own
+    // heads current (an op's head replaces what it read). The envelopes are the ones author() would have made one by one. -> { done: [{env, hash}], error }
+    async function authorMany(specs) {
+      var ver = await versions(), rbc = {}, done = [];
+      try { for (var sp of specs) { if (ROS.IDENTITY[sp.body.op_type]) throw new Error('authorMany: business ops only'); var a = await authorOne(sp, ver, rbc); ver[String(sp.target.uu).toLowerCase()] = a.hash; done.push(a); } }
+      catch (e) { return { done: done, error: e }; }
+      return { done: done, error: null };
+    }
+    async function authorOne(spec, ver, rbc) {
+      var me = selfRow(), reads = {}, ident = !!ROS.IDENTITY[spec.body.op_type];
       var uus = [String(spec.target.uu).toLowerCase()].concat((spec.refs || []).map(function (u) { return String(u).toLowerCase(); }));
       if (ident && spec.body.op_type !== 'GENESIS') uus = uus.concat([await ROS.spaceUU(space), await ROS.devUU(self.kid), String(me.person_uu || '').toLowerCase()].filter(Boolean));
       uus.forEach(function (u) { reads[u] = ver[u] || null; });
       var deps = [].concat.apply([], Object.keys(reads).map(function (k) { var r = reads[k]; return r == null ? [] : (Array.isArray(r) ? r : [r]); })).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
       // §13.12.I.1: in a space with a base every business op carries the short hash of the base it was authored on (the DB the host actually
       // loaded, opts.baseSha256, else the team's own); identity ops stay m0. A caller-supplied manifest wins.
-      var rb = ident ? null : (await cur()).roster.base, stamp = rb ? ADM.baseStamp({ sha256: opts.baseSha256 || rb.sha256 }) : null;
+      var rb = ident ? null : rbc ? (rbc.v !== undefined ? rbc.v : (rbc.v = (await cur()).roster.base)) : (await cur()).roster.base, stamp = rb ? ADM.baseStamp({ sha256: opts.baseSha256 || rb.sha256 }) : null;
       var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps, reads: reads,
                   manifest: spec.manifest || stamp || 'm0', policy: spec.policy || 'p0', intent: spec.intent || (ident ? 'K-ID' : 'K1'),
                   target: spec.target, base: reads[uus[0]], ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
@@ -539,7 +548,9 @@
     async function setRole(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'ROLE', params: p } }); }
     // §13.12.1: the admin's config op. params = { epoch, visit_ms?, bundle_max_ops?, gate?, checkpoint?, lease_ttl_ms?, pipes?, manifest?, number_prefix? }.
     // A new POLICY reads the previous one (same record), so concurrent policies show up as heads and the fold keeps one epoch.
-    async function setPolicy(params) { return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
+    async function setPolicy(params) {
+      if (params && params.executors !== undefined && params.from_seq === undefined) params = Object.assign({}, params, { from_seq: await frontier() });       // §41.2 L2: a map is published WITH the frontier it was published at
+      return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
     // §38.10 (G-8): publish an owner-signed statement (executors map / plan-trust rotation) as the next POLICY, every other param carried forward; the answer is THIS
     // device's fold verdict — the same one every device reaches — so a stale, untrusted or non-admin statement is reported at once, before any Visit
     var STMT_PARAM = { executors: ['executors', 'executorsStmtProblem'], 'plan-trust': ['planTrust', 'planTrustStmtProblem'] };
@@ -547,7 +558,7 @@
       var k = stmt && STMT_PARAM[stmt.kind]; if (!k) return { ok: false, reason: 'unknown-kind' };
       var prob = ROS[k[1]](stmt); if (prob) return { ok: false, reason: 'bad-statement:' + prob };
       var pol = await policy(); var base = pol ? JSON.parse(JSON.stringify(pol.params)) : {};
-      base.epoch = (pol ? pol.epoch : 0) + 1; base[k[0]] = stmt;
+      base.epoch = (pol ? pol.epoch : 0) + 1; base[k[0]] = stmt; if (stmt.kind === 'executors') delete base.from_seq;       // a fresh frontier is stamped by setPolicy
       var op = await setPolicy(base), v = (await cur()).verdict[op.hash];
       return { ok: !!v && v.verdict === 'MERGED', verdict: v ? v.verdict + (v.reason ? ':' + v.reason : '') : 'none', reason: v && v.verdict !== 'MERGED' ? v.reason : null, hash: op.hash };
     }
@@ -855,7 +866,7 @@
       return !!every && (L.order.length - (L.base ? L.base.pos : 0)) >= every;
     }
 
-    return { kid: self.kid, space: space, db: db, author: author, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
+    return { kid: self.kid, space: space, db: db, author: author, authorMany: authorMany, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
              genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
@@ -892,6 +903,10 @@
     if (nsOpts && nsOpts.planTrust !== undefined && nsOpts.planTrust !== null) {      // §33: the plan trust list (public keys only) is pinned in the genesis; the space id hashes it
       var tp = ROS.planTrustProblem(nsOpts.planTrust); if (tp) throw new Error('newSpace: invalid planTrust (' + tp + ')');
       params.planTrust = ROS.planTrustOf(nsOpts.planTrust);
+    }
+    if (nsOpts && nsOpts.plan !== undefined && nsOpts.plan !== null) {      // §38.15: the topology - 'office' (the mesh plan, the default) or 'pos' (the star plan); the space id hashes it, so every device reads the same one
+      if (nsOpts.plan !== 'office' && nsOpts.plan !== 'pos') throw new Error('newSpace: invalid plan (' + String(nsOpts.plan) + ')');
+      params.plan = nsOpts.plan;
     }
     return { params: params, space: await ROS.spaceOf(params) };
   }

@@ -13,6 +13,7 @@
 //      org.libero.callouts.Callout_PP_Order (fired count), values == the same pick on the pre-pack twin (AD_Column path, the film's recorded fact)
 //   A comparison over nothing prints INCONCLUSIVE.
 // Run: [WPP_BREAK=noreplay] node erp/tests/witness_plugin_packs.js > <log>
+// W-PLUGIN-ROLE: this install/start/stop is SETUP, not the behaviour under test - done through reg.system (the host's own boot-restore path; a real user's bundle was installed earlier by the System Administrator). Who may write is judged in witness_plugin_role.js.
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), os = require('os'), path = require('path'), { execFileSync } = require('child_process');
@@ -63,7 +64,7 @@ const BUNDLE = 'org.idempiere.mfg', PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01'
     console.log('§WPP before ' + JSON.stringify(before));
     // ── K1 ──
     let n0 = PAGELOG.length;
-    await page.evaluate(async (u) => { const r = window.PluginEngine._reg(); await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); }, base + '/plugins/libero_manufacturing.mjs');
+    await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system; await r.installBundle(u); await r.startBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); }, base + '/plugins/libero_manufacturing.mjs');
     const k1 = await snap(), startLine = since(n0, /§PACKIN-START bundle=org.idempiere.mfg/)[0] || '';
     const manualN = await page.evaluate(() => window.__idmpDb.exec("SELECT COUNT(*) FROM ad_role WHERE ismanual='N'")[0].values[0][0]);
     const manualRoles = await page.evaluate(() => window.__idmpDb.exec("SELECT ad_role_id, ad_client_id, ad_org_id FROM ad_role WHERE ismanual='N' ORDER BY ad_role_id")[0].values);
@@ -83,7 +84,7 @@ const BUNDLE = 'org.idempiere.mfg', PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01'
     verdict('K2', 'reload: ' + rep2.replace(/^§PACKIN-REPLAY /, '') + '; rows equal K1: ' + same(k2, k1) + '; the restore\'s Start: ' + st2.replace(/^§PACKIN-START /, ''),
       / mode=delta /.test(rep2) && same(k2, k1) && /applied=\[\] ok=true/.test(st2), { k2, rep2, st2 }, !rep2);
     // ── K3 stop, then reload stopped ──
-    await page.evaluate(async () => { await window.PluginEngine._reg().stopBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); });
+    await page.evaluate(async () => { await window.PluginEngine._reg().system.stopBundle('org.idempiere.mfg'); await window.PluginEngine.persist(); });
     const k3 = await snap(), desc3 = await page.evaluate(() => !!(window.AdFormGeneric && window.AdFormGeneric.get('org.libero.form.VOrderReceiptIssue')));
     n0 = PAGELOG.length; await load();
     const k3r = await snap(), rep3 = since(n0, /§PACKIN-REPLAY bundle=org.idempiere.mfg/)[0] || '', state3 = await page.evaluate(() => { const b = window.PluginEngine._reg().get('org.idempiere.mfg'); return b ? b.state : null; });
@@ -101,25 +102,25 @@ const BUNDLE = 'org.idempiere.mfg', PUU = '6f1f9b8e-1d0a-4c55-9a3e-18c2b1f00a01'
     console.log('§WPP K4b next load after the full re-apply: ' + rep4b);
     verdict('K4b', 'the load after a full re-apply replays the refreshed delta: ' + rep4b.replace(/^§PACKIN-REPLAY /, '').slice(0, 120), / mode=delta /.test(rep4b) && same(await snap(), k1), { rep4b }, !rep4b);
     // ── K5 negative: failing pack ──
-    const k5 = await page.evaluate(async (u) => { const r = window.PluginEngine._reg(), q = (s) => window.__idmpDb.exec(s);
+    const k5 = await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system, R = window.PluginEngine._reg(), q = (s) => window.__idmpDb.exec(s);
       const bundle = { manifest: { id: 'wpp.bad', name: 'WPP bad pack', version: '1.0.0', engineVersion: '*', packs: [u] }, activate: async () => {} };
       await r.installBundle(bundle); let err = null; try { await r.startBundle('wpp.bad'); } catch (e) { err = e.message; }
       const kept = await new Promise(res => { const rq = indexedDB.open('fold_plugins', 1); rq.onsuccess = () => { const g = rq.result.transaction('kv').objectStore('kv').get('packs'); g.onsuccess = () => res(g.result && g.result['wpp.bad'] ? (g.result['wpp.bad'].packs || []).length : 0); g.onerror = () => res(-1); }; });
-      const m = q("SELECT COUNT(*) FROM ad_message WHERE value='WPP_NEG_1'")[0].values[0][0], imp = q("SELECT pk_version, pk_status FROM ad_package_imp WHERE name='wpp.bad'"), st = r.get('wpp.bad').state;
+      const m = q("SELECT COUNT(*) FROM ad_message WHERE value='WPP_NEG_1'")[0].values[0][0], imp = q("SELECT pk_version, pk_status FROM ad_package_imp WHERE name='wpp.bad'"), st = R.get('wpp.bad').state;
       await r.uninstallBundle('wpp.bad'); return { err, kept, m, imp: imp.length ? imp[0].values : [], st }; }, base.replace(/\/erp$/, '') + '/__wpp/bad/2Pack_1.0.0.zip');
     console.log('§WPP K5 ' + JSON.stringify(k5));
     verdict('K5', 'failing pack: Start refused (' + String(k5.err).slice(0, 120) + '), state ' + k5.st + ', its AD_Message rows ' + k5.m + ', recorded ' + JSON.stringify(k5.imp) + ', pack bytes kept ' + k5.kept,
       !!k5.err && /Pack In failed/.test(k5.err) && k5.st === 'INSTALLED' && Number(k5.m) === 0 && k5.imp.length === 1 && /^Import Failed/.test(k5.imp[0][1]) && k5.kept === 0, k5);
     // ── K6 negative: §PACKIN-CHECK ──
-    const k6 = await page.evaluate(async (u) => { const r = window.PluginEngine._reg();
+    const k6 = await page.evaluate(async (u) => { const r = window.PluginEngine._reg().system, R = window.PluginEngine._reg();
       const bundle = { manifest: { id: 'wpp.noform', name: 'WPP form without row', version: '1.0.0', engineVersion: '*', packs: [u] }, activate: async (ctx) => { ctx.form.register('org.wpp.NoSuchForm', { title: 'x', params: [], rows: () => [], run: () => ({ ok: true }) }); } };
       await r.installBundle(bundle); let err = null; try { await r.startBundle('wpp.noform'); } catch (e) { err = e.message; }
-      const st = r.get('wpp.noform').state, desc = !!(window.AdFormGeneric && window.AdFormGeneric.get('org.wpp.NoSuchForm')); await r.uninstallBundle('wpp.noform'); return { err, st, desc }; }, base.replace(/\/erp$/, '') + '/__wpp/noform/2Pack_1.0.0.zip');
+      const st = R.get('wpp.noform').state, desc = !!(window.AdFormGeneric && window.AdFormGeneric.get('org.wpp.NoSuchForm')); await r.uninstallBundle('wpp.noform'); return { err, st, desc }; }, base.replace(/\/erp$/, '') + '/__wpp/noform/2Pack_1.0.0.zip');
     console.log('§WPP K6 ' + JSON.stringify(k6) + ' ' + (PAGELOG.filter(l => /§PACKIN-CHECK bundle=wpp.noform/.test(l)).pop() || ''));
     verdict('K6', 'a bundle with packs registering a form no AD_Form row carries: Start refused (' + String(k6.err).slice(0, 120) + '), state ' + k6.st + ', descriptor left registered=' + k6.desc,
       !!k6.err && /PACKIN-CHECK/.test(k6.err) && k6.st === 'INSTALLED' && k6.desc === false, k6);
     // ── K7 callouts after the packs (bundle started again, GardenAdmin) ──
-    await page.evaluate(async () => { await window.PluginEngine._reg().startBundle('org.idempiere.mfg'); });
+    await page.evaluate(async () => { await window.PluginEngine._reg().system.startBundle('org.idempiere.mfg'); });
     await page.click("#idmp-login-clients .idmp-login-user:has(.nm:text-is('GardenWorld'))"); await page.waitForSelector('#idmp-login-step1:visible');
     await page.click("#idmp-login-users .idmp-login-user:has(.nm:text-is('GardenAdmin'))"); await page.waitForSelector('#idmp-login-step2:visible');
     await page.click('#idmp-login-ok'); await page.waitForSelector('#idmp-home', { timeout: 20000 }).catch(() => {}); await hold(1500);
