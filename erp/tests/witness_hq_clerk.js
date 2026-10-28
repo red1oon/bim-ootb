@@ -31,7 +31,7 @@
 //   POS-PLAN MODE (HQ_PLAN=pos, film evidence gap 2, TEAMWORK_FRAMEWORK §42.1 Ch 3 / §42.2; default = OFFICE mode above, whose verdict lines are unchanged): the SAME clerk steps in a POS space (A founded with ?teamplan=pos, the signed POS plan served). Only §S8/H11 differ,
 //   because under the POS plan the till receives only what the plan declares for its role (W-POS-PLAN B2): the MOVEMENT, not the order, shipment, invoice or postings.
 //   §H11 (pos)  the station's accepted ops are exactly the M_MovementLine ops head office authored (3, quantities = Qty To Order) and no other table; it holds 0 orders for the key and no new shipment / invoice / posting (counts equal to before the day); the relay-delivered ops it
-//               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the sender ships undeclared tables (the order etc. would leave head office -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
+//               REFUSED locally and their bytes are counted (§HQ_POSMODE ops/bytes); it ran neither process. Mutants (pos): the space founded without the POS plan (the till would get the order etc. -> H11), the plan drops M_MovementLine (the movement never arrives -> H11).
 //   Also in POS mode the run prints §FILM_EVT lines (film6/FILM_EVT.md §2) for the steps whose arm is green.
 // Run: node erp/tests/witness_hq_clerk.js 2>&1 | tee /tmp/witness_hq_clerk.log      (HQ_NO_MUT=1 skips the mutants; HQ_ONLY_ARMS=1 is the mutant child mode)
 'use strict';
@@ -158,7 +158,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   }
 
   say('§S0 two devices: A = head office (founder; clerk then stock role), B = station/till (team role 200001)');
-  var A = await device('A', POS ? '&teamplan=pos' : ''), B = await device('B'), space = await T.found(A); await T.join(B, space);
+  var A = await device('A', POS && !(MUT && MUT.noPosFlag) ? '&teamplan=pos' : ''), B = await device('B'), space = await T.found(A); await T.join(B, space);
   for (var i = 0; i < 4; i++) { await T.approveAll(A, 200001); await T.visit(B); await T.visit(A); if (await T.enrolled(B)) break; await sleep(300); }
   var hasIo = async function (d) { return d.pg.evaluate(function () { return window.__idmpDb.exec("SELECT count(*) FROM sqlite_master WHERE name='i_order'")[0].values[0][0]; }); };
   var tanr = async function (d) { return Number((await T.rows(d, "SELECT count(*) AS n FROM ad_table_scriptvalidator WHERE eventmodelvalidator IN ('TANR','TACR')"))[0].n); };
@@ -323,7 +323,8 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
     say('§S8 (POS plan) Visit: the station receives ONLY the movement');
     await T.visit(A); await T.visit(B); await T.visit(A); await T.visit(B);
     var mB = await T.measure(B), mAx = await T.measure(A);
-    var tillRecv = mB.thin.accepted - mB.ownPlaced, tillBytes = mB.thin.bytesAccepted - mB.ownBytes, acc = Object.keys(mB.byTable).filter(function (t) { return mB.byTable[t] > 0; });
+    var thinB = mB.thin || { accepted: mB.ownPlaced + mB.delivered, bytesAccepted: mB.ownBytes + mB.deliveredBytes, refused: 0, bytesRefused: 0 };      // no thinning (office plan): everything the relay delivered is taken in
+    var tillRecv = thinB.accepted - mB.ownPlaced, tillBytes = thinB.bytesAccepted - mB.ownBytes, acc = Object.keys(mB.byTable).filter(function (t) { return mB.byTable[t] > 0; });
     var aSent = mAx.ownTabs;
     var uuA = mv.length ? (await T.rows(A, "SELECT m_movementline_uu AS u FROM m_movementline WHERE m_movement_id=" + mv[0].id)).map(function (r) { return r.u; }) : [];
     var mlB2 = uuA.length ? await T.rows(B, "SELECT m_product_id AS p, qtyentered AS q FROM m_movementline WHERE m_movementline_uu IN ('" + uuA.join("','") + "') ORDER BY m_product_id") : [];      // the SAME lines (same uu) as head office made; the POS plan ships QtyEntered (not MovementQty) for them
@@ -332,14 +333,14 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
     var mvHdrB = await T.rows(B, "SELECT count(*) AS n FROM m_movement WHERE m_movement_uu='" + (mv[0] ? mv[0].uu : 'none') + "'");
     var wantLines = mv.length ? ml.map(function (l) { return [Number(l.p), Number(l.q)]; }) : [];
     console.log('   §HQ_POSLINES head_office_uu=' + JSON.stringify(uuA) + ' till_rows=' + JSON.stringify(mlB2) + ' expected=' + JSON.stringify(wantLines));
-    console.log('   §HQ_POSMODE till_received_ops=' + tillRecv + ' till_received_bytes=' + tillBytes + ' accepted_tables=' + JSON.stringify(mB.byTable) + ' relay_delivered=' + mB.delivered + ' (' + mB.deliveredBytes + ' B) refused_locally=' + mB.thin.refused + ' (' + mB.thin.bytesRefused + ' B) head_office_put_on_pipe=' + JSON.stringify(aSent) + ' till_counts before=' + JSON.stringify(base0) + ' after=' + JSON.stringify(after) + ' movement_header_at_till=' + (mvHdrB[0] && mvHdrB[0].n));
+    console.log('   §HQ_POSMODE till_received_ops=' + tillRecv + ' till_received_bytes=' + tillBytes + ' accepted_tables=' + JSON.stringify(mB.byTable) + ' relay_delivered=' + mB.delivered + ' (' + mB.deliveredBytes + ' B) refused_locally=' + thinB.refused + ' (' + thinB.bytesRefused + ' B) head_office_put_on_pipe=' + JSON.stringify(aSent) + ' till_counts before=' + JSON.stringify(base0) + ' after=' + JSON.stringify(after) + ' movement_header_at_till=' + (mvHdrB[0] && mvHdrB[0].n));
     verdict('H11', MOVE_OK && tillRecv === (aSent.m_movementline || 0) && tillRecv === PRODS.length && acc.length === 1 && acc[0] === 'm_movementline' && uuA.length === PRODS.length && mlB2.length === PRODS.length && wantLines.every(function (w) { return mlB2.some(function (r) { return Number(r.p) === w[0] && Number(r.q) === w[1]; }); }),
       'POS PLAN: the station took in exactly ' + tillRecv + ' ops (' + tillBytes + ' bytes) = the ' + (aSent.m_movementline || 0) + ' M_MovementLine ops head office put on the pipe, no other table (' + JSON.stringify(acc) + '), and holds the movement lines with the report\'s quantities ' + JSON.stringify(wantLines), JSON.stringify({ tillRecv: tillRecv, acc: acc, aSent: aSent }));
     verdict('H11', Number(ordB2[0].n) === 0 && Number(olB2[0].n) === 0 && after.inout === base0.inout && after.inv === base0.inv && after.fact === base0.fact && after.ord === base0.ord && !(aSent.c_order || aSent.m_inout || aSent.c_invoice || aSent.fact_acct),
       'POS PLAN: the station does NOT hold the order (0 orders / 0 lines for the key), and its shipments, invoices, postings and orders are exactly as before the day (' + JSON.stringify(base0) + ' -> ' + JSON.stringify(after) + '); head office never put them on the pipe (kept at the source: ' + JSON.stringify(aSent) + ')', JSON.stringify({ ordB2: ordB2, base0: base0, after: after }));
     verdict('H11', T.count(B, /§AD-PROC-LIVE proc=/) === 0 && T.count(B, /§RULE_PROCESS/) === 0, 'the station ran neither Import Orders nor Replenish Report (no process ran on it; it only received)', 'bProc=' + T.count(B, /§AD-PROC-LIVE proc=/));
     if (MOVE_OK && tillRecv === PRODS.length) { for (var eq = 0; eq < tillRecv; eq++) evt({ actor: 'till', kind: 'deliver', from: 'relay', label: 'm_movementline', step: 'H11' }); evt({ actor: 'till', kind: 'note', cls: 'ok', text: 'only the movement came back', step: 'H11' }); }
-    if (mB.thin.refused > 0) evt({ actor: 'till', kind: 'refuse', text: 'not declared for this role', step: 'H11' });
+    if (thinB.refused > 0) evt({ actor: 'till', kind: 'refuse', text: 'not declared for this role', step: 'H11' });
   } else {
   say('§S8 Visit: the station receives the order AND the movement');
     await T.visit(A); await T.visit(B); await T.visit(A); await T.visit(B);
@@ -361,7 +362,7 @@ var RECIPE_DOCTYPE_MMM = 143;   // C_DocType 143 'Material Movement' (DocBaseTyp
   var partial = BLOCKED.length ? ' blocked=' + BLOCKED.join(',') : '';
   if (process.env.HQ_NO_MUT) { console.log('§HQ_VERDICT ' + (BLOCKED.length ? 'PARTIAL' : 'PASS') + ' judged=' + judged + ' fails=0' + partial + ' mutants=skipped pageerrors=' + errors); process.exit(BLOCKED.length ? 3 : 0); }
   var M = POS ? [
-    ['the sender ships undeclared tables (the order, shipment, invoice, postings leave head office as flows: the source-side filter is off)', { file: '/erp/team_sync.js', from: "else if (scope !== 'share') return {", to: "else if (false) return {" }, ['H11']],
+    ['the space is founded WITHOUT the POS plan (the office plan: the till would receive the order, shipment, invoice and postings)', { noPosFlag: true }, ['H11']],
     ['the POS plan drops M_MovementLine (the movement never reaches the till)', { 'pos-plan-drop': ['M_MovementLine'] }, ['H11']]] : [
     ['process access ignored (every role is granted Replenish Report and Import Orders)', { file: '/erp/idmp_session.js', from: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; });", to: "ctx.proc.forEach(function (rw, id) { set[id] = { rw: !!rw }; }); set[53267] = { rw: true }; set[206] = { rw: true };", stopAfter: 'H5' }, ['H3', 'H5']],
     ['window access ignored in the menu (a role sees Import Order without AD_Window_Access)', { file: '/erp/idmp_session.js', from: "if (!winSet[wid]) return null;", to: "if (false) return null;", stopAfter: 'H5' }, ['H3', 'H5']],
