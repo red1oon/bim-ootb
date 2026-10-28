@@ -99,7 +99,25 @@ var ROLE = 102, DT = 115, RL = 178, CONTROL_RL = 179;   // role 102 GardenWorld 
     verdict('BP2', memAfter && memAfter[0] === 'N', 'after the snapshot the overlay is back in memory (N): the running device is unchanged', 'memory=' + JSON.stringify(memAfter));
     verdict('BP3', rb[1][0] && rb[1][0][0] === 'Y' && vUsers > 0 && Number(rb[3][0][0]) === 0, 'the snapshot is a real one: the deleted tenant ' + victim + ' is gone from it (users ' + vUsers + ' -> ' + rb[3][0][0] + ') and the control row nobody overlaid is Y', 'control=' + JSON.stringify(rb[1][0]));
   }
-  console.log('§BP-REAL INCONCLUSIVE the real Team overlay is not judged here (team_sync.js is agent E\'s; it must register {unproject: projectExecutorRows(null), reproject: projectExecutorRows(exe.map)})');
+  // ── §BP-REAL: Team's OWN registration (team_sync.js boot) and Team's OWN projection code, in a fresh browser context (fresh resident cache, so tenant 12 can be deleted again). The only stand-in is the roster the executor
+  //   map is read from (a stub store answering order()): projectExecutorRows / refreshExecutors / the BundleProjection registration are Team's real code. ──
+  var ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } }); pg = await ctx2.newPage(); pg.on('pageerror', function (e) { errs.push(e.message); }); pg.on('console', function (m) { logs.push(m.text()); });
+  await pg.goto(base + '/erp/idempiere.html?lang=en_US&team=1', { waitUntil: 'load' });
+  await pg.waitForFunction(function () { return window.__idmpDb && window.SQL && document.querySelector('.idmp-tenant-del') && window.TeamSync; }, null, { timeout: 120000 }); await sleep(800);
+  var NQ = "SELECT count(*) FROM ad_document_action_access WHERE isactive='N'";
+  var regd = await pg.evaluate(function () { return { count: window.BundleProjection.count(), team: typeof window.TeamSync }; }), nBase = (await q(NQ))[0][0];
+  await pg.evaluate(async function () { var st = { order: async function () { return { roster: { ok: true, executors: { c_order: 102 }, roleAt: function () { return { ad_role_id: 103 }; } } }; } }; await window.TeamSync._refreshExecutors(st, 'witness-kid'); });
+  var nMem = (await q(NQ))[0][0], realRow = await q("SELECT ad_role_id, c_doctype_id, ad_ref_list_id FROM ad_document_action_access WHERE isactive='N' AND ad_role_id=103 LIMIT 1");
+  var dR = nMem > nBase ? await deleteTenant(12) : 'NO-OVERLAY'; await sleep(800);
+  var bR = await readBlob([NQ, 'SELECT count(*) FROM ad_user WHERE ad_client_id=12']), memR = (await q(NQ))[0][0];
+  console.log('§BP-REAL registered=' + JSON.stringify(regd) + ' N-rows base=' + nBase + ' under Team overlay=' + nMem + ' delete=' + dR + ' persisted N-rows=' + JSON.stringify(bR && bR.out[0][0]) + ' users12InBlob=' + (bR && bR.out[1][0][0]) + ' memoryAfter=' + memR + ' ' + (logs.filter(function (l) { return /§PROJ-SNAPSHOT|§TEAM_EXEC_ROWS/.test(l); }).slice(-2).join(' | ')).slice(0, 220));
+  verdict('BP5', regd.team === 'object' && regd.count === 1, 'Team REGISTERED its overlay with the host (BundleProjection.count() = 1 on a ?team=1 page, nothing else registered it)', JSON.stringify(regd));
+  verdict('BP6', nMem > nBase && realRow.length === 1, 'Team\'s own executor-map projection really overlays the bundle: ' + (nMem - nBase) + ' Document Action Access rows are IsActive=N in memory (role 103 among them)', 'N rows ' + nBase + ' -> ' + nMem);
+  if (dR !== 'deleted' || !bR) console.log('§BP-INCONCLUSIVE BP7-8 no snapshot was taken (delete=' + dR + ' blob=' + !!bR + ')');
+  else {
+    verdict('BP7', Number(bR.out[0][0][0]) === Number(nBase) && Number(bR.out[1][0][0]) === 0, 'the snapshot taken under Team\'s REAL overlay persists the BASE: ' + bR.out[0][0][0] + ' N rows in the blob = the ' + nBase + ' the shipped seed has (not ' + nMem + '), and it is a real snapshot (tenant 12 gone from it)', 'blob N=' + bR.out[0][0][0]);
+    verdict('BP8', memR === nMem, 'after the snapshot Team\'s overlay is back in memory (' + memR + ' N rows): the running device is unchanged', 'memory N=' + memR);
+  }
 
   var pe = errs.length;
   console.log('§BP-VERDICT ' + (judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' arms=' + JSON.stringify(ARMS) + ' pageerrors=' + pe + (pe ? ' ' + errs[0].slice(0, 120) : ''));
@@ -108,6 +126,8 @@ var ROLE = 102, DT = 115, RL = 178, CONTROL_RL = 179;   // role 102 GardenWorld 
     var cp = require('child_process'), killed = 0, notKilled = [], MUTANTS = [
       ['the snapshot exports the live bundle (no unproject)', '/erp/idempiere.html', "      _projectors.slice().reverse().forEach(function (p) { p.unproject(db); done.push(p); });\n", "", ['BP1']],
       ['the overlay is not put back after the snapshot', '/erp/idempiere.html', "      done.reverse().forEach(function (p) { try { p.reproject(db); }", "      done.reverse().forEach(function (p) { try { void 0; }", ['BP2']],
+      ['Team does not register its overlay (the real seam is not wired)', '/erp/team_sync.js', "global.BundleProjection.register({ name: 'team-executors'", "void ({ name: 'team-executors'", ['BP5', 'BP7']],
+      ['Team registers an overlay that does not unproject (reproject only)', '/erp/team_sync.js', "unproject: function () { projectExecutorRows(null); }", "unproject: function () { }", ['BP7']],
       ['a failing unproject is swallowed and the snapshot persists anyway', '/erp/idempiere.html', "      _projectors.slice().reverse().forEach(function (p) { p.unproject(db); done.push(p); });\n", "      _projectors.slice().reverse().forEach(function (p) { try { p.unproject(db); done.push(p); } catch (e) {} });\n", ['BP4']]
     ];
     MUTANTS.forEach(function (m) {

@@ -27,7 +27,7 @@ function loadPlan(file, g) { var o = {}; vm.runInNewContext(fs.readFileSync(file
 var OFFICE = loadPlan(path.join(ROOT, 'erp', 'team_plan.js'), 'TEAM_PLAN'), POSPLAN = loadPlan(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'TEAM_PLAN_POS');
 var planJs = function (name, o) { return '(function (g) { g.' + name + ' = ' + JSON.stringify(o) + '; })(typeof window !== \'undefined\' ? window : globalThis);\n'; };
 var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8'), READER = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_scope.js'), 'utf8');
-var KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), LINES = JSON.parse(process.env.PC_LINES || 'null'), TILL = 200001, BORR = 50004, HQ = 102;
+var KEY = 'POS1/2026-10-28/' + String(1000 + Math.floor(Math.random() * 8999)), LINES = JSON.parse(process.env.PC_LINES || 'null'), TILL = 50004, OFFTILL = 200001, BORR = 50004, HQ = 102;       // POS mode: tills and borrowers are ONE external-depositor role (legacy 50004 'Web Service Execution'); office mode keeps the till on 200001
 var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 
 (async function () {
@@ -83,7 +83,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   // ═══ §B0 BEFORE: the office space (no `plan`): the same ticket as W-POS-CHAIN ═══
   if (!QUIET) console.log('§B0 BEFORE — an OFFICE space (no plan): A processor, B till');
   var A0 = await device('A0'), B0 = await device('B0'), sp0 = await T.found(A0); await T.join(B0, sp0);
-  for (var i = 0; i < 4; i++) { await T.approve(A0, await T.kid(B0), TILL); await T.visit(B0); await T.visit(A0); if (await T.enrolled(B0)) break; await sleep(300); }
+  for (var i = 0; i < 4; i++) { await T.approve(A0, await T.kid(B0), OFFTILL); await T.visit(B0); await T.visit(A0); if (await T.enrolled(B0)) break; await sleep(300); }
   var tid0 = await A0.pg.evaluate(function () { return Number(window.__idmpDb.exec("SELECT ad_table_id FROM ad_table WHERE lower(tablename)='i_order'")[0].values[0][0]); });
   var rid0 = await T.create(A0, 'ad_rule', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: 990206, accesslevel: '3', entitytype: 'U', eventtype: 'T', isactive: 'Y', name: 'POS ticket -> Import Orders', ruletype: 'S', value: 'twin:process:206?DocAction=CO' });
   await T.create(A0, 'ad_table_scriptvalidator', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: rid0, ad_table_id: tid0, eventmodelvalidator: 'TANR', isactive: 'Y', seqno: 10 });
@@ -99,14 +99,14 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
 
   // ═══ §B1 AFTER: the POS space ═══
   if (!QUIET) console.log('§B1 AFTER — a POS space (?teamplan=pos): A processor, B till, C1 + C2 borrowers bound to two C_BPartners');
-  var A = await device('A', '&teamplan=pos'), B = await device('B'), C1 = await device('C1'), C2 = await device('C2'), space = await T.found(A);
+  var A = await device('A', '&teamplan=pos'), B = await device('B'), Bs = await device('Bs'), C1 = await device('C1'), C2 = await device('C2'), space = await T.found(A);
   var bps = await T.db(A, "SELECT c_bpartner_id, c_bpartner_uu FROM c_bpartner WHERE ad_client_id=11 AND iscustomer='Y' AND c_bpartner_uu IS NOT NULL AND c_bpartner_id<>(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11) ORDER BY c_bpartner_id LIMIT 3");      // not the cash customer: a POS order's own invoice must stay addressed to nobody
-  var locs = await T.db(A, "SELECT m_locator_id FROM m_locator WHERE ad_client_id=11 ORDER BY m_locator_id LIMIT 2");
-  for (var d of [B, C1, C2]) await T.join(d, space);
-  for (var k = 0; k < 5; k++) { await T.approve(A, await T.kid(B), TILL); await T.approve(A, await T.kid(C1), BORR, bps[0][1]); await T.approve(A, await T.kid(C2), BORR, bps[1][1]);
-    for (var d2 of [B, C1, C2, A]) await T.visit(d2); if ((await T.enrolled(B)) && (await T.enrolled(C1)) && (await T.enrolled(C2))) break; await sleep(300); }
+  var orgs = await T.db(A, "SELECT ad_org_uu FROM ad_org WHERE ad_org_id IN (50002, 50004) ORDER BY ad_org_id");      // Store North (warehouse 50003, locator 50002), Store South (warehouse 50004, locator 50003)
+  for (var d of [B, Bs, C1, C2]) await T.join(d, space);
+  for (var k = 0; k < 5; k++) { await T.approve(A, await T.kid(B), TILL, orgs[0][0]); await T.approve(A, await T.kid(Bs), TILL, orgs[1][0]); await T.approve(A, await T.kid(C1), BORR, bps[0][1]); await T.approve(A, await T.kid(C2), BORR, bps[1][1]);
+    for (var d2 of [B, Bs, C1, C2, A]) await T.visit(d2); if ((await T.enrolled(B)) && (await T.enrolled(Bs)) && (await T.enrolled(C1)) && (await T.enrolled(C2))) break; await sleep(300); }
   var kind = async function (d) { return d.pg.evaluate(function () { return window.TeamScope.kind() + ':' + window.TeamSync._scopeCtx().role; }); };
-  verdict('B1', (await kind(A)) === 'pos:102' && (await kind(B)) === 'pos:200001' && (await kind(C1)) === 'pos:' + BORR && (await kind(C2)) === 'pos:' + BORR, 'all four devices read the POS plan from the genesis (kind:role) - nobody was told by a flag', [await kind(A), await kind(B), await kind(C1), await kind(C2)].join(' '));
+  verdict('B1', (await kind(A)) === 'pos:102' && (await kind(B)) === 'pos:' + TILL && (await kind(Bs)) === 'pos:' + TILL && (await kind(C1)) === 'pos:' + BORR && (await kind(C2)) === 'pos:' + BORR, 'all five devices read the POS plan from the genesis (kind:role) - nobody was told by a flag', [await kind(A), await kind(B), await kind(Bs), await kind(C1), await kind(C2)].join(' '));
   var tid = await A.pg.evaluate(function () { return Number(window.__idmpDb.exec("SELECT ad_table_id FROM ad_table WHERE lower(tablename)='i_order'")[0].values[0][0]); });
   var rid = await T.create(A, 'ad_rule', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: 990206, accesslevel: '3', entitytype: 'U', eventtype: 'T', isactive: 'Y', name: 'POS ticket -> Import Orders', ruletype: 'S', value: 'twin:process:206?DocAction=CO' });
   await T.create(A, 'ad_table_scriptvalidator', { ad_client_id: 11, ad_org_id: 0, ad_rule_id: rid, ad_table_id: tid, eventmodelvalidator: 'TANR', isactive: 'Y', seqno: 10 });
@@ -115,7 +115,8 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   for (var lj = 0; lj < LINES.length; lj++) await T.create(B, 'i_order', Object.assign({ documentno: KEY }, LINES[lj]));
   await T.visit(B); await T.visit(A); await T.visit(A);                                           // the processor imports (103-op Complete group)
   var tag = String(Math.floor(Math.random() * 9000) + 1000), nA = 'LN-A-' + tag, nB = 'LN-B-' + tag, slip = 'SLIP-' + tag;
-  var mv = await T.create(A, 'm_movementline', { ad_client_id: 11, ad_org_id: 11, m_product_id: 123, qtyentered: 5, c_uom_id: 100, m_locator_id: locs[0][0], m_locatorto_id: locs[1][0], description: 'replenish note that must stay' });
+  var mv = await T.create(A, 'm_movementline', { ad_client_id: 11, ad_org_id: 11, m_product_id: 123, qtyentered: 13, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50002, description: 'replenish note that must stay' });
+  var mv2 = await T.create(A, 'm_movementline', { ad_client_id: 11, ad_org_id: 11, m_product_id: 130, qtyentered: 17, c_uom_id: 100, m_locator_id: 101, m_locatorto_id: 50003, description: 'second branch' });
   var invA = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[0][0], documentno: nA, grandtotal: 228.85, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of A' });
   var invB = await T.create(A, 'c_invoice', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[1][0], documentno: nB, grandtotal: 100, dateinvoiced: '2026-10-28 00:00:00', issotrx: 'Y', description: 'secret of B' });
   var scA = invA != null ? await T.create(A, 'c_invoicepayschedule', { ad_client_id: 11, ad_org_id: 11, c_invoice_id: invA, dueamt: 114.43, duedate: '2026-11-27 00:00:00' }) : null;
@@ -123,18 +124,20 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   console.log('   §PPB_MADE movementline=' + mv + ' invoiceA=' + invA + ' invoiceB=' + invB + ' scheduleA=' + scA + ' scheduleB=' + scB);
   await T.visit(A);
   var payId = await T.create(C1, 'c_payment', { ad_client_id: 11, ad_org_id: 11, c_bpartner_id: bps[0][0], payamt: 114.43, documentno: slip, description: 'photo of the slip' });
-  for (var r = 0; r < 3; r++) for (var d4 of [C1, C2, B, A]) await T.visit(d4);
-  var mA = await T.measure(A), mB = await T.measure(B), mC1 = await T.measure(C1), mC2 = await T.measure(C2);
+  for (var r = 0; r < 3; r++) for (var d4 of [C1, C2, B, Bs, A]) await T.visit(d4);
+  var mA = await T.measure(A), mB = await T.measure(B), mBs = await T.measure(Bs), mC1 = await T.measure(C1), mC2 = await T.measure(C2);
   var table = function (m) { return Object.keys(m.byTable).sort().map(function (t) { return t + ':' + m.byTable[t]; }).join(','); };
   [['A', mA], ['B(till)', mB], ['C1', mC1], ['C2', mC2]].forEach(function (x) { console.log('   §PPB_AFTER ' + x[0] + ' delivered_by_relay=' + x[1].delivered + ' (' + x[1].deliveredBytes + ' B) projected=' + x[1].projected + ' own=' + x[1].ownPlaced + ' thin=' + JSON.stringify(x[1].thin) + ' projected_tables=' + table(x[1])); });
 
   // ── §B2 judged against the plan ──
   var tillRecv = mB.thin.accepted - mB.ownPlaced, tillBytes = mB.thin.bytesAccepted - mB.ownBytes;
-  var declared = await B.pg.evaluate(function (ts) { return ts.filter(function (t) { return window.TeamScope.scopeOf(t, 200001) === 'receive'; }); }, Object.keys(Object.assign({}, mA.byTable, mB.deliveredTables)));
   var aSentTables = await A.pg.evaluate(async function () { var f = await window.TeamSync.store().foldable(), kid = (await window.TeamSync.pairState()).device, t = {}; f.forEach(function (p) { if (p.env.author === kid) t[p.env.target.table] = (t[p.env.target.table] || 0) + 1; }); return t; });
-  var expectTill = declared.reduce(function (s, t) { return s + (aSentTables[t] || 0); }, 0);
-  console.log('   §PPB_TILL before(office): ops=' + before.ops + ' bytes=' + before.bytes + ' | after(pos): ops=' + tillRecv + ' bytes=' + tillBytes + ' | the plan declares for role ' + TILL + ' to RECEIVE: ' + JSON.stringify(declared) + ' -> processor authored ' + expectTill + ' such ops');
-  verdict('B2', before.ops > 40 && tillRecv === expectTill && expectTill >= 1 && tillRecv < before.ops / 10, 'THE TILL: received ' + tillRecv + ' ops (was ' + before.ops + ') = exactly the ' + expectTill + ' the plan declares for its role (the replenishment line)', 'bytes ' + before.bytes + ' -> ' + tillBytes);
+  var mvq = "SELECT m_locatorto_id AS l FROM m_movementline WHERE qtyentered IN (13, 17) ORDER BY 1", mvB = await T.rows(B, mvq), mvBs = await T.rows(Bs, mvq), mvC1 = await T.rows(C1, mvq), mvC2 = await T.rows(C2, mvq);
+  var tillRecvS = mBs.thin.accepted - mBs.ownPlaced, expectTill = 1;
+  console.log('   §PPB_TILL before(office): ops=' + before.ops + ' bytes=' + before.bytes + ' | after(pos): till North ops=' + tillRecv + ' bytes=' + tillBytes + ', till South ops=' + tillRecvS + ' | the processor authored ' + (aSentTables.m_movementline || 0) + ' movement lines, one per branch');
+  verdict('B2', (aSentTables.m_movementline || 0) === 2 && mvB.length === 1 && Number(mvB[0].l) === 50002 && mvBs.length === 1 && Number(mvBs[0].l) === 50003, 'PER BRANCH: two tills on ONE role, each bound to its org\'s ad_org_uu - till North holds ONLY the movement into locator 50002, till South ONLY the one into 50003 (0 of the other\'s)', JSON.stringify([mvB, mvBs]));
+  verdict('B2', mvC1.length === 0 && mvC2.length === 0, 'a borrower (the SAME role as the tills) receives NO replenishment movement', 'C1=' + mvC1.length + ' C2=' + mvC2.length);
+  verdict('B2', before.ops > 40 && tillRecv === expectTill && tillRecvS === expectTill && tillRecv < before.ops / 10, 'THE TILL: received ' + tillRecv + ' ops (was ' + before.ops + ') = exactly the ' + expectTill + ' addressed to its branch (its replenishment line); till South ' + tillRecvS + ' likewise', 'bytes ' + before.bytes + ' -> ' + tillBytes);
   var undeclared = sum(A, /§TEAM_NOT_DECLARED plan=pos role=102 ops=(\d+)/);
   verdict('B2', undeclared >= 90 && Object.keys(aSentTables).every(function (t) { return ['m_movementline', 'c_invoice', 'c_invoicepayschedule'].indexOf(t) >= 0; }), 'AT THE SOURCE: the processor kept ' + undeclared + ' undeclared ops on its own device (§TEAM_NOT_DECLARED) and put on the pipe only ' + JSON.stringify(aSentTables), 'sent tables=' + Object.keys(aSentTables).join(','));
   var bTabs = Object.keys(mB.byTable).filter(function (t) { return mB.byTable[t] > 0; });
