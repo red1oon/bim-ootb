@@ -10,7 +10,7 @@
 // Log tags: §SHEET-VIEW §SHEET-MARKS §SHEET-FRAME.
 (function () {
   'use strict';
-  var TAG = '§SHEET-VIEW', MARK_LAYER = 'DXF2BIM-MARK';
+  var TAG = '§SHEET-VIEW', MARK_LAYER = 'DXF2BIM-MARK', PICK_ZOOM = 6;
   var COL = { yours: '#f2f2f2', stated: '#ffd21f', read: '#ffd21f', inferred: '#ff8a1f', notstated: '#ffd21f', frame: '#9aa3b2' };
   var POS_X = { GRIDX: 1, GRIDH: 1 }, POS_Y = { GRIDY: 1, Z: 1 }, POS_PT = { TAG: 1, WALLTOP: 1 };   // x-only labels are written vertically (a grid bay can be narrower than its label); GRIDX/GRIDH a vertical line through x, GRIDY/Z a horizontal one through y, TAG/WALLTOP a point; EXCLUDE its box
   var PAPERS = [['A4', 297, 210], ['A3', 420, 297], ['A2', 594, 420], ['A1', 841, 594], ['A0', 1189, 841]], SCALES = [100, 200, 500, 50];   // ISO 216 landscape; 1:100 first (the std2d convention)
@@ -86,19 +86,39 @@
     console.log('§SHEET-FRAME sheet=' + i.sheet + ' own=' + (i.frame.own ? 1 : 0) + ' paper=' + (i.frame.paper || '-') + ' scale=' + (i.frame.scale ? '1:' + i.frame.scale : '-') + ' units=' + (i.frame.units || 'unknown')); }
 
   function paint() { if (!st.el) return; var cv = st.el.querySelector('canvas'), r = st.last, w = cv.clientWidth, h = cv.clientHeight; cv.width = w; cv.height = h;
-    if (!st.view) st.view = V().fit(r.info.view, w, h, 24); V().paintCanvas(cv.getContext('2d'), r.list, st.view, w, h); }
-  function refresh() { if (st.si === null || !st.el) return; st.last = build(st.si, { marks: st.marks }); log(st.last); paint(); }
-  function close(why) { if (!st.el) return; st.el.remove(); st.el = null; st.si = null; st.view = null; document.removeEventListener('keydown', onKey, true); console.log(TAG + ' closed by=' + (why || 'close')); }
+    if (!st.view) { st.view = V().fit(r.info.view, w, h, 24); var z0 = st.pick && datumOf(); if (z0) { st.view.cy = z0.y; st.view.s *= PICK_ZOOM; } }   /* §D94 the pick opens on the known datum, closer */ V().paintCanvas(cv.getContext('2d'), r.list, st.view, w, h); paintPick(cv.getContext('2d'), w, h); }
+  // §D94 pick mode: the drawn horizontal segments of the sheet itself (not the markings, not the added frame); the pointer snaps to the nearest within 8 px, else stays free
+  function hsegs(list) { var out = []; list.forEach(function (d) { if (d.grp === 'marks' || /^DXF2BIM-/.test(d.layer || '')) return;
+      var sg = d.k === 'line' ? [[d.a, d.b]] : d.k === 'poly' && d.pts ? d.pts.slice(1).map(function (q, i) { return [d.pts[i], q]; }).concat(d.closed && d.pts.length > 2 ? [[d.pts[d.pts.length - 1], d.pts[0]]] : []) : [];
+      sg.forEach(function (e) { if (Math.abs(e[0][1] - e[1][1]) < 1e-6 && Math.abs(e[0][0] - e[1][0]) > 1e-6) out.push({ y: e[0][1], x0: Math.min(e[0][0], e[1][0]), x1: Math.max(e[0][0], e[1][0]) }); }); });
+    return out; }
+  function snapAt(mx, my, w, h) { var v = st.view, px = v.cx + (mx - w / 2) / v.s, py = v.cy - (my - h / 2) / v.s, tol = 8 / v.s, best = null;
+    var ys = [];   // the distinct drawn y values inside the tolerance: two or more = the pointer cannot tell them apart at this zoom, so nothing is picked (zoom in)
+    (st.pick.segs || []).forEach(function (g) { if (px < g.x0 - tol || px > g.x1 + tol) return; var d = Math.abs(g.y - py); if (d > tol) return;
+      if (!ys.some(function (u) { return Math.abs(u - g.y) < 1e-6; })) ys.push(g.y);
+      if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && g.x1 - g.x0 > best.len)) best = { d: d, y: g.y, len: g.x1 - g.x0 }; });
+    if (ys.length > 1) return { y: py, snap: 'ambiguous', n: ys.length, dy_px: 0, len: 0 };
+    return best ? { y: best.y, snap: 'line', dy_px: Math.round(best.d * v.s * 10) / 10, len: best.len } : { y: py, snap: 'free', dy_px: 0, len: 0 }; }
+  function datumOf() { var sh = ME().state.sheets[st.si]; return (sh.marks || []).filter(function (q) { return q.key === 'Z' && isFinite(q.y); })[0] || null; }
+  function pickLabel(q) { var z = datumOf(), u = unitsOf(ME().state.sheets[st.si]) || 'drawing units';
+    if (q.snap === 'ambiguous') return q.n + ' drawn lines within 8 px here: zoom in (wheel) to choose one';
+    return 'y ' + (Math.round(q.y * 1e4) / 1e4) + (q.snap === 'line' ? ', on a drawn line' : ', free (no drawn line here)') + (z ? ' · ' + Math.abs(q.y - z.y).toFixed(2) + ' ' + u + (q.y >= z.y ? ' above' : ' below') + ' @Z=' + z.value : ''); }
+  function paintPick(ctx, w, h) { var q = st.pick && st.pick.hover; if (!q) return; var v = st.view, sy = h / 2 - (q.y - v.cy) * v.s;
+    ctx.save(); ctx.strokeStyle = q.snap === 'line' ? '#ffe14d' : q.snap === 'ambiguous' ? '#ff8a3d' : '#8a8a8a'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    ctx.setLineDash([]); ctx.font = '12px system-ui,sans-serif'; var t = pickLabel(q), tw = ctx.measureText(t).width; ctx.fillStyle = 'rgba(20,23,28,.85)'; ctx.fillRect(8, sy - 22, tw + 12, 18);
+    ctx.fillStyle = q.snap === 'line' ? '#ffe14d' : q.snap === 'ambiguous' ? '#ff8a3d' : '#c7cdd8'; ctx.fillText(t, 14, sy - 9); ctx.restore(); }
+  function refresh() { if (st.si === null || !st.el) return; st.last = build(st.si, { marks: st.marks }); if (st.pick) st.pick.segs = hsegs(st.last.list); log(st.last); paint(); }
+  function close(why) { if (!st.el) return; if (st.pick && why !== 'pick') console.log('§DXF-DATUM-PICK cancel sheet=' + ME().state.sheets[st.si].name + ' by=' + (why || 'close')); st.pick = null; st.el.remove(); st.el = null; st.si = null; st.view = null; document.removeEventListener('keydown', onKey, true); console.log(TAG + ' closed by=' + (why || 'close')); }
   function onKey(e) { if (e.key === 'Escape' && st.el) { e.stopPropagation(); close('esc'); } }
   function download(name, text, type) { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0); }
-  function open(si) {
+  function open(si, opts) {
     close('reopen'); if (!ME() || !V() || !ME().state.sheets[si]) { console.warn(TAG + ' refused: no such sheet ' + si); return null; }
     var pr = document.getElementById('dm-panel'), left = pr && pr.style.display !== 'none' ? Math.round(pr.getBoundingClientRect().right) : 0, el = document.createElement('div');
     el.id = 'dxf-sheet-frame'; el.style.cssText = 'position:fixed;top:0;bottom:0;right:0;left:' + left + 'px;z-index:60;background:#14171c;display:flex;flex-direction:column;font:12px system-ui,sans-serif;color:#c7cdd8';
     el.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid #2c303a"><b id="dsf-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>' +
       '<label><input type="checkbox" id="dsf-marks"' + (st.marks ? ' checked' : '') + '> Markings</label><button class="dm-btn" id="dsf-svg">Save SVG</button><button class="dm-btn" id="dsf-print">Print</button><button class="dm-btn" id="dsf-close" title="Close (Esc)">✕</button></div>' +
       '<canvas style="flex:1;width:100%;min-height:0;cursor:grab"></canvas>';
-    document.body.appendChild(el); st.el = el; st.si = si; st.view = null;
+    document.body.appendChild(el); st.el = el; st.si = si; st.view = null; st.pick = opts && opts.pick ? { kind: opts.pick, onPick: opts.onPick, hover: null, segs: null } : null;
     el.querySelector('#dsf-name').textContent = ME().state.sheets[si].name;
     el.querySelector('#dsf-close').onclick = function () { close('close'); };
     el.querySelector('#dsf-marks').onchange = function (e) { st.marks = !!e.target.checked; refresh(); };
@@ -108,8 +128,15 @@
     var cv = el.querySelector('canvas'), drag = null;
     cv.onwheel = function (e) { e.preventDefault(); var f = e.deltaY < 0 ? 1.15 : 1 / 1.15, r = cv.getBoundingClientRect(), v = st.view, mx = e.clientX - r.left, my = e.clientY - r.top;
       var px = v.cx + (mx - r.width / 2) / v.s, py = v.cy - (my - r.height / 2) / v.s; v.s *= f; v.cx = px - (mx - r.width / 2) / v.s; v.cy = py + (my - r.height / 2) / v.s; paint(); };
-    cv.onmousedown = function (e) { drag = [e.clientX, e.clientY]; }; window.addEventListener('mouseup', function () { drag = null; });
-    cv.onmousemove = function (e) { if (!drag) return; st.view.cx -= (e.clientX - drag[0]) / st.view.s; st.view.cy += (e.clientY - drag[1]) / st.view.s; drag = [e.clientX, e.clientY]; paint(); };
+    var down = null;
+    cv.onmousedown = function (e) { drag = [e.clientX, e.clientY]; down = [e.clientX, e.clientY]; }; window.addEventListener('mouseup', function () { drag = null; });
+    cv.onmousemove = function (e) { if (st.pick && !drag) { var r = cv.getBoundingClientRect(); st.pick.hover = snapAt(e.clientX - r.left, e.clientY - r.top, r.width, r.height); paint(); return; }
+      if (!drag) return; st.view.cx -= (e.clientX - drag[0]) / st.view.s; st.view.cy += (e.clientY - drag[1]) / st.view.s; drag = [e.clientX, e.clientY]; paint(); };
+    cv.onmouseup = function (e) { if (!st.pick || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 3) return; var r = cv.getBoundingClientRect(), q = snapAt(e.clientX - r.left, e.clientY - r.top, r.width, r.height), z = datumOf(), y = Number(q.y.toFixed(6)), cb = st.pick.onPick;   // §D94 a click, not a drag
+      if (q.snap === 'ambiguous') { console.log('§DXF-DATUM-PICK refused sheet=' + ME().state.sheets[st.si].name + ' ambiguous lines=' + q.n + ' scale=' + (Math.round(st.view.s * 1e4) / 1e4)); st.pick.hover = q; paint(); return; }
+      console.log('§DXF-DATUM-PICK sheet=' + ME().state.sheets[st.si].name + ' y=' + y + ' snap=' + q.snap + ' dy_px=' + q.dy_px + ' len=' + (Math.round(q.len * 1e4) / 1e4) + ' from_datum=' + (z ? (Math.round((q.y - z.y) * 1e4) / 1e4) : '-'));
+      close('pick'); if (cb) cb({ y: y, snap: q.snap }); };
+    if (st.pick) { cv.style.cursor = 'crosshair'; el.querySelector('#dsf-name').textContent += ' · click the drawn line of the height you will type (Esc to cancel)'; }
     document.addEventListener('keydown', onKey, true);
     refresh(); return st.last;
   }
