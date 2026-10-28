@@ -704,7 +704,9 @@
      "axis": "grid-long",
      "stretch": [
       "IfcMember",
-      "IfcCovering"
+      "IfcCovering",
+      "IfcSlab",
+      "IfcRoof"
      ],
      "never_copy": {
       "IfcFan": "fan count is an airflow sizing for the new length, not a repeat"

@@ -75,14 +75,14 @@
       vb = { x0: Math.min(b.x0, b.x1 - W * 0.35), y0: b.y0 - th * (2 + 1.3 * box.length), x1: b.x1 + th * 8, y1: b.y1 + top }; }
     if (opts.marks === false) list = list.filter(function (d) { return d.grp !== 'marks'; });
     var info = { si: si, sheet: sh.name, ents: Object.keys(dl.stats.by_type).reduce(function (a, k) { return a + dl.stats.by_type[k]; }, 0), drawn: Object.keys(dl.stats.drawn_by_type).reduce(function (a, k) { return a + dl.stats.drawn_by_type[k]; }, 0),
-      unsupported: dl.stats.unsupported || 0, marks: (sh.marks || []).length, positional: marks.length, boxed: box.filter(function (q) { return q.mi !== undefined; }).length, boxedMarks: box.filter(function (q) { return q.mi !== undefined; }).map(function (q) { return q.mi; }), open: E.openRows(si).length, rings: rings, boxedOpen: box.filter(function (q) { return q.ev !== undefined; }).map(function (q) { return q.ev; }),
+      unsupported: dl.stats.unsupported || 0, marks: (sh.marks || []).length, positional: marks.length, boxed: box.filter(function (q) { return q.mi !== undefined; }).length, boxedMarks: box.filter(function (q) { return q.mi !== undefined; }).map(function (q) { return q.mi; }), open: E.openRows(si).length, rings: rings, boxedOpen: box.filter(function (q) { return q.ev !== undefined; }).map(function (q) { return q.ev; }), boxedOpenText: box.filter(function (q) { return q.ev !== undefined; }).map(function (q) { return q.s; }),
       placed: marks, frame: fr, bounds: b, view: vb };
     return { list: list, info: info, svg: function () { return V().toSVG(list, vb, '#14171c', fr.mm ? { mm: fr.mm } : null); } };
   }
 
   function log(r) { var i = r.info;
     console.log(TAG + ' sheet=' + i.sheet + ' ents=' + i.ents + ' drawn=' + i.drawn + ' unsupported=' + i.unsupported);
-    console.log('§SHEET-MARKS sheet=' + i.sheet + ' marks=' + i.marks + ' positional=' + i.positional + ' boxed=' + i.boxed + ' open_yellow=' + i.open + ' rings=' + i.rings.length + ' boxed_open=' + i.boxedOpen.length);
+    console.log('§SHEET-MARKS sheet=' + i.sheet + ' marks=' + i.marks + ' positional=' + i.positional + ' boxed=' + i.boxed + ' open_yellow=' + i.open + ' rings=' + i.rings.length + ' boxed_open=' + i.boxedOpen.length + (i.boxedOpenText.length ? ' open_box="' + i.boxedOpenText.join(' | ') + '"' : ''));   // the box's open rows, as written on the sheet (the film quotes them)
     console.log('§SHEET-FRAME sheet=' + i.sheet + ' own=' + (i.frame.own ? 1 : 0) + ' paper=' + (i.frame.paper || '-') + ' scale=' + (i.frame.scale ? '1:' + i.frame.scale : '-') + ' units=' + (i.frame.units || 'unknown')); }
 
   function paint() { if (!st.el) return; var cv = st.el.querySelector('canvas'), r = st.last, w = cv.clientWidth, h = cv.clientHeight; cv.width = w; cv.height = h;
