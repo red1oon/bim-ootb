@@ -51,7 +51,7 @@ ok('N4 model.ifc carries the Note_ properties', /Note_fc_MPa/.test(A.ifc) && /No
     await pg.evaluate(() => { const c = document.getElementById('dxf-complete'); if (c && !c.checked) c.click(); }); await new Promise(r => setTimeout(r, 2500));
     await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 });
     const r = await pg.evaluate(() => { const o = window.Bonsai.oplog._geomOps().filter(x => x.op_type === 'GEOM_INSERT'), P = x => x.parameters || x.params || {}, pr = x => (P(x).provenance && P(x).provenance.ifc && P(x).provenance.ifc.props) || {}; return { n: window.DxfImportUI.state.last.nInserts, cols: o.filter(x => pr(x).Kind === 'column').length, noted: o.filter(x => pr(x).Note_fc_MPa === '24').length, panelNoted: o.filter(x => pr(x).Kind === 'panel' && pr(x).Note_fc_MPa).length }; });
-    ok('P1 page: marked sheets incl. 5_DETAILS accepted; Convert = 512 inserts, 96 columns, notes on concrete bodies only', r.n === 512 && r.cols === 96 && r.noted > 0 && r.panelNoted === 0, JSON.stringify(r));
+    ok('P1 page: marked sheets incl. 5_DETAILS accepted; Convert = 511 inserts (512 bodies less the one wall join, §D88 B), 96 columns, notes on concrete bodies only', r.n === 511 && r.cols === 96 && r.noted > 0 && r.panelNoted === 0, JSON.stringify(r));
   } catch (e) { ok('P1 page', false, String(e && e.stack || e).slice(0, 300)); } finally { await br.close(); srv.close(); }
   console.log('§W-L29 ' + (fails ? 'FAIL ' + fails : 'PASS')); process.exit(fails ? 1 : 0);
 })();
