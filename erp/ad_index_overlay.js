@@ -21,6 +21,14 @@
       if (!have2 || !cs.every(function (c) { return have2.indexOf(c) >= 0; })) { skip++; return; }
       try { db.run('CREATE INDEX IF NOT EXISTS "' + name + '" ON "' + t + '" (' + cs.map(function (c) { return '"' + c + '"'; }).join(',') + ')'); made++; } catch (x) { skip++; }
     });
+    // legacy's primary key of a table this host created WITHOUT one (the boot overlays' physical tables: I_Order, I_Payment, ...): an id lookup index, derived from the DDL (no table is named here)
+    var keyed = 0;
+    try { (db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND upper(sql) NOT LIKE '%PRIMARY KEY%'")[0] || { values: [] }).values.forEach(function (v) {
+      var t = String(v[0]), idx = t + '_key_idx'; if (haveIdx[idx.toLowerCase()]) return;
+      var cs = (db.exec('PRAGMA table_info("' + t + '")')[0] || { values: [] }).values.map(function (c) { return String(c[1]).toLowerCase(); });
+      if (cs.indexOf(t.toLowerCase() + '_id') < 0) return;
+      try { db.run('CREATE INDEX IF NOT EXISTS "' + idx + '" ON "' + t + '" ("' + t.toLowerCase() + '_id")'); keyed++; } catch (x) {} }); } catch (e) {}
+    made += keyed;
     var out = { created: made, present: have, skipped: skip, ms: Date.now() - t0 };
     log('§INDEX_OVERLAY ensure created=' + made + ' present=' + have + ' skipped=' + skip + ' ms=' + out.ms + ' (legacy official dictionary indexes, IDEMPIERE-1132; boot overlay, outside the team base hash)');
     return out;
