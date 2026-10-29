@@ -319,13 +319,13 @@
   // MBPartner.setTotalOpenBalance :711-757 — SUM(currencyBase(invoiceOpen …)) / currencyBase(paymentAvailable …)
   function bpOpenBalance(trx, bpId) {
     var credit = Z, bal = Z;
-    trx.find('c_invoice', { c_bpartner_id: bpId }).forEach(function (i) {
+    trx.find('c_invoice', { c_bpartner_id: bpId, ispaid: 'N' }).forEach(function (i) {      // IsPaid='N' in the SELECT (MBPartner.java:719-722 filters in SQL): the BP's paid history is not read (HS3)
       if (i.ispaid !== 'N' || !/^(CO|CL)$/.test(i.docstatus || '')) return;
       var o = currencyBase(trx, invoiceOpen(trx, i), i.c_currency_id, i.dateinvoiced), m = invMult(trx, i);
       if (i.issotrx === 'Y') credit = credit.add(o);
       bal = bal.add(o.multiply(D(m.ap)));
     });
-    trx.find('c_payment', { c_bpartner_id: bpId }).forEach(function (p) {
+    trx.find('c_payment', { c_bpartner_id: bpId, isallocated: 'N' }).forEach(function (p) {   // IsAllocated='N' in the SELECT (HS3)
       if (p.isallocated !== 'N' || nz(p.c_charge_id) || !/^(CO|CL)$/.test(p.docstatus || '')) return;
       bal = bal.subtract(currencyBase(trx, paymentAvailable(trx, p), p.c_currency_id, p.datetrx));
     });

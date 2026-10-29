@@ -198,20 +198,22 @@
   // §41.2 L1 CATCH-UP ON BIND, derived not remembered. When the roster gains a person, the hub looks at ITS OWN unsent rows of every flow that is addressed `by` an entity (marked 'no-addressee' when they were made) and
   // sends - through the SAME translate (same carries, same admission), oldest first, once (`sent`) - those whose entity now has a bound person. Nothing is stored for a record nobody binds (a cash sale costs nothing),
   // nothing is capped, and a restart changes nothing: the rows, `sent` and `localOnly` are the device's persisted state. Bind-first stays the procedure; this is the bank showing a late-enrolled customer the accounts they hold.
-  var personsSeen = -1, relPersons = null;                           // relPersons: the roster's persons, read ONCE for a release pass (S.order() refolds the whole log after every author)
+  var personsSeen = -1, relPersons = null, passDepth = 0;           // relPersons: the roster's persons, read ONCE per translate pass (S.order() refolds the whole log after every author; HS2, TEAMWORK_FRAMEWORK §45.7)
+  async function rosterPersons() { if (!passDepth) return (await S.order()).roster.persons; return relPersons || (relPersons = (await S.order()).roster.persons); }   // outside a pass: a fresh read, nothing kept
+  async function withRoster(fn) { passDepth++; try { return await fn(); } finally { if (--passDepth === 0) relPersons = null; } }   // a translate pass (onCommit's batch, the release pass, a host's batch of replies): ONE roster snapshot for all its rows
   function rowsDb(rows) { var by = {}; rows.forEach(function (r) { by[r.id] = r; }); return { exec: function (sql) { var m = /WHERE id=(\d+)/.exec(sql), x = m && by[m[1]]; return x ? [{ values: [[x.op_type, x.op_uuid, x.parameters, x.user_tag]] }] : []; } }; }
   async function releaseFor(oldRows, force) {
     var out = { n: 0, ids: {} }; if (!S || scopeCtx.kind !== 'pos') return out;
     var R = (await S.order()).roster, np = Object.keys(R.persons).length; if (!force && np === personsSeen) return out; personsSeen = np;
     var cands = oldRows.filter(function (r) { if (r.user_tag === 'team' || r.undone || !r.op_uuid || sent[r.op_uuid] || !/^no-addressee/.test(localOnly[r.op_uuid] || '')) return false;
       try { return global.TeamScope.scopeOf(JSON.parse(r.parameters).table, scopeCtx.role) === 'down'; } catch (e) { return false; } }).sort(function (a, b) { return Number(a.id) - Number(b.id); });
-    if (!cands.length) return out; var db = rowsDb(oldRows); relPersons = R.persons;
+    if (!cands.length) return out; var db = rowsDb(oldRows); passDepth++; relPersons = R.persons;
     var ms = { translate: 0, author: 0 }, tq = Date.now(), batch = [];
     try { for (var r of cands) { var t0 = Date.now(), t = await translate(r, db); ms.translate += Date.now() - t0;
         if (!t.body) continue;                                         // its entity is still unbound (or the record is no longer sendable): left exactly as it was
         sent[r.op_uuid] = 'pending';                                   // so a later row of this pass that points at it (a schedule at its invoice) finds it shared
         batch.push({ row: r, spec: { target: t.target, body: stamped(t.body), refs: t.refs, intent: r.op_type === 'SET_STATUS' ? 'K4' : 'K2', ts: r.timestamp } }); }
-    } finally { relPersons = null; }
+    } finally { if (--passDepth === 0) relPersons = null; }
     var t1 = Date.now(), ar = await S.authorMany(batch.map(function (b) { return b.spec; })); ms.author = Date.now() - t1;       // ONE read of the log's versions for the whole pass (author() would walk the log once per record)
     batch.forEach(function (b, k) { var a = ar.done[k], r2 = b.row;
       if (a) { sent[r2.op_uuid] = a.hash; delete localOnly[r2.op_uuid]; out.n++; out.ids[r2.id] = 1; if (out.n <= 20) log('§TEAM_CATCHUP op=' + r2.op_type + ' table=' + b.spec.target.table + ' uu=' + b.spec.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' hash=' + a.hash.slice(0, 12) + ' (held until its entity was bound)'); }
@@ -267,7 +269,7 @@
     else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
     if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
       var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo, table);
-      if (!ad || !(relPersons || (await S.order()).roster.persons)[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
+      if (!ad || !(await rosterPersons())[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
     }
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
@@ -299,6 +301,8 @@
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
       trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
       if (trial.finished) log('§TEAM_TRIAL ' + trial.reason + ' cycles=' + trial.cycles + ' businessOps=' + trial.businessOps + ' (new business ops stay on this device)'); }
+    passDepth++;                                                       // one roster snapshot for the whole batch (HS2): S.order() is not refolded per DOWN row
+    try {
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (r.undone || !r.op_uuid || sent[r.op_uuid] || localOnly[r.op_uuid] || r.user_tag === 'team') continue;   // undo/redo snapshots, replays, projected rows
@@ -314,6 +318,7 @@
         log('§TEAM_OUT op=' + r.op_type + ' table=' + t.target.table + ' uu=' + t.target.uu.slice(0, 8) + ' seq=' + a.env.seq + ' refs=' + t.refs.length + ' hash=' + a.hash.slice(0, 12));
       } catch (e) { localOnly[r.op_uuid] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + t.table + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
     }
+    } finally { if (--passDepth === 0) relPersons = null; }
     if (undeclN) log('§TEAM_NOT_DECLARED plan=pos role=' + scopeCtx.role + ' ops=' + undeclN + ' tables=' + JSON.stringify(undecl) + ' (stay on this device: the plan declares no flow for them from this role - FL-8 e)');
     await persist(); await render();
     return n;
@@ -751,7 +756,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _withRoster: withRoster, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);

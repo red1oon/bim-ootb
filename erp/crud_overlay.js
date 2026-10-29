@@ -352,7 +352,7 @@
   // column the callout sets that has no form field rides the save as an EXTRA column (GridTable saves the whole row).
   // A New runs GridTab.dataNew's callout fan (M/GridTab.java:1179-1181). Generic over the dictionary: no table or column
   // is named here. Supersedes the 14 hand-written host handlers + 9 bundle accessors this block used to carry.
-  var _co = null, _coLogin = null, _coLoginKey = null, _coUdfDb = null;
+  var _co = null, _coUdfDb = null;
   // bind the AD runtime to this db AND register the stored-function UDFs on it (once per db). Shared by the callout path and every model transaction (withModelTrx), so an
   // @SQL default, an info window or a process port can call bomQtyOnHand()/invoiceOpen()/... exactly as the legacy DB lets any SQL call its PL/pgSQL functions.
   function _coBindUdf(db) {
@@ -373,17 +373,12 @@
       finally { _tipShadowOff(db, sh); }
     });
   }
-  // the session's login context (Login.loadPreferences port), rebuilt when the session identity changes
+  // the session's login context (Env.getCtx(): Login.loadPreferences port) - ad_callout sessionContext keeps ONE per holder and rebuilds it only when the session identity changes (HS1, TEAMWORK_FRAMEWORK §45.7)
+  var _coSession = {}, _modelSession = {};
   function _coLoginCtx(A) {
-    var app = global.APP || {}, d = new Date(), day = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
-    var key = [app.clientId, app.orgId, app.roleId, app.actor, day].join('|');
-    if (_coLogin && _coLoginKey === key) return _coLogin;
-    var wh = null;
+    var app = global.APP || {}, d = new Date(), day = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2), wh = null;
     try { var w = A.RUNTIME.DB.query('SELECT m_warehouse_id AS w FROM ad_orginfo WHERE ad_org_id=?', [Number(app.orgId) || 0])[0]; wh = w && w.w != null ? Number(w.w) : null; } catch (e) {}
-    _coLogin = A.loginContext({ client: Number(app.clientId) || 0, org: Number(app.orgId) || 0, role: Number(app.roleId) || 0, user: Number(app.actor) || 0, wh: wh, date: day });
-    _coLoginKey = key;
-    console.log('§CALLOUT-LOGINCTX client=' + app.clientId + ' org=' + app.orgId + ' keys=' + _coLogin.keys().length);
-    return _coLogin;
+    return A.sessionContext({ client: Number(app.clientId) || 0, org: Number(app.orgId) || 0, role: Number(app.roleId) || 0, user: Number(app.actor) || 0, wh: wh, date: day, session: _coSession });
   }
   function _coEl(col) { return fhost ? (fhost.querySelector('[data-col="' + col + '"]') || fhost.querySelector('[data-col="' + String(col).toLowerCase() + '"]')) : null; }
   function _coOnSet(col, v) {
@@ -1784,8 +1779,9 @@
   function _modelEnv() {
     var A = global.APP || {}, d = new Date(), pad = function (n) { return ('0' + n).slice(-2); };
     var day = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    return { client: A.clientId != null ? Number(A.clientId) : null, org: A.orgId != null ? Number(A.orgId) : 0, user: A.actor != null ? A.actor : null,
+    return { client: A.clientId != null ? Number(A.clientId) : null, org: A.orgId != null ? Number(A.orgId) : 0, user: A.actor != null ? A.actor : null, role: A.roleId || 0,
              date: day + ' 00:00:00', now: day + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), nowMillis: d.getTime(),
+             session: _modelSession,   // the holder of this tab's login context (ad_callout sessionContext: built once per login identity, HS1)
              std: (A.actor != null || A.clientId != null) ? { actor: A.actor, clientId: A.clientId, orgId: A.orgId != null ? A.orgId : 0 } : null,
              eventSeq: !!global.__eventSeq,   // §EVENT_SEQ trace (ERP_FRIENDLY_OPS_LENS.md §15.6): off unless a witness sets window.__eventSeq
              uuid: function () { return (global.crypto && global.crypto.randomUUID) ? global.crypto.randomUUID() : null; } };

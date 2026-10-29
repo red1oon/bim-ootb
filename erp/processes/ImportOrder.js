@@ -67,7 +67,7 @@
       try { trx.q('SELECT 1 AS x FROM i_order LIMIT 1'); } catch (e) { throw new Error('I_Order has no physical table on this host (AdImportTables.ensure, TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1)'); }
       var nowTs = trx.env.now || (trx.env.nowMillis != null ? new Date(trx.env.nowMillis).toISOString().slice(0, 19).replace('T', ' ') : new Date().toISOString().slice(0, 19).replace('T', ' '));   // getDate()
       var R = [];                                                                                          // working copies of the I_Order rows: { id, base, cur }
-      function load() { R = trx.find('i_order', {}).map(function (r) { return { id: r.i_order_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
+      function load() { R = trx.find('i_order', {}, null, self.m_deleteOldImported ? undefined : { exclude: { i_isimported: 'Y' } }).map(function (r) { return { id: r.i_order_id, base: Object.assign({}, r), cur: Object.assign({}, r) }; }); }
       function flush() {                                                                                    // the raw UPDATEs reach the Trx (no model events, like DB.executeUpdate)
         R.forEach(function (w) {
           var ch = {}; Object.keys(w.cur).forEach(function (c) { if (!same(w.cur[c], w.base[c])) ch[c] = w.cur[c]; });
@@ -221,7 +221,7 @@
         var live = trx.get('i_order', imp.i_order_id), msg = cat(live.i_errormsg, 'ERR=Not ported: ' + branch + ', ');
         var sv = ML().save(trx, 'i_order', live, { i_errormsg: msg }); if (!sv.ok) throw new Error('SaveError i_order: ' + sv.error);
       }
-      var bpRows = trx.find('i_order', {}).filter(function (r) { return eq(r.i_isimported, 'N') && r.c_bpartner_id == null && cc(r); }).sort(function (a, b) { return idNum(a.i_order_id) - idNum(b.i_order_id); });
+      var bpRows = trx.find('i_order', {}, null, { exclude: { i_isimported: 'Y' } }).filter(function (r) { return eq(r.i_isimported, 'N') && r.c_bpartner_id == null && cc(r); }).sort(function (a, b) { return idNum(a.i_order_id) - idNum(b.i_order_id); });
       bpRows.forEach(function (rec) {
         var imp = Object.assign({}, rec);
         if (imp.bpartnervalue == null) { if (imp.email != null) imp.bpartnervalue = imp.email; else if (imp.name != null) imp.bpartnervalue = imp.name; else return; }   // :505-512 (continue)
@@ -261,7 +261,7 @@
 
       // -- New Orders -----------------------------------------------------
       var noInsert = 0, noInsertLine = 0, MO = G().MO(), docAction = this.m_docAction;
-      var impRows = trx.find('i_order', {}).filter(function (r) { return eq(r.i_isimported, 'N') && cc(r); }).sort(function (a, b) {                                   // :639-641 ORDER BY C_BPartner_ID, BillTo_ID, C_BPartner_Location_ID, I_Order_ID
+      var impRows = trx.find('i_order', {}, null, { exclude: { i_isimported: 'Y' } }).filter(function (r) { return eq(r.i_isimported, 'N') && cc(r); }).sort(function (a, b) {                                   // :639-641 ORDER BY C_BPartner_ID, BillTo_ID, C_BPartner_Location_ID, I_Order_ID
         function nl(x) { return x == null ? 1e18 : Number(x); }
         return (nl(a.c_bpartner_id) - nl(b.c_bpartner_id)) || (nl(a.billto_id) - nl(b.billto_id)) || (nl(a.c_bpartner_location_id) - nl(b.c_bpartner_location_id)) || (idNum(a.i_order_id) - idNum(b.i_order_id)); });
       var oldBP = 0, oldBillTo = 0, oldLoc = 0, oldDocNo = '', order = null, lineNo = 0;

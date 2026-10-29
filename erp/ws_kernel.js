@@ -15,6 +15,7 @@ function load(extraSql) {
     (extraSql || []).forEach(function (f) { run(fs.readFileSync(f, 'utf8')); });
     require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
     require('./ad_import_tables.js').ensure(db);   // §13.2 B1: the I_Order physical table (boot overlay, not in the hashed patches)
+    require('./ad_index_overlay.js').ensure(db);   // HS3: legacy's official dictionary indexes on the physical tables (boot overlay, not in the hashed patches)
     return build(db);
   });
 }
@@ -68,9 +69,10 @@ function build(db) {
     return ids;
   }
   let clock = Date.now(), uu = 0;
+  const sessionTok = new WeakMap();   // one token per (this kernel, login session): the holder of that login's context (ad_callout sessionContext = Env.getCtx())
   function env(s) {   // the session of the WS login, like Env.getCtx() for the request
     clock += 1000; const d = new Date(clock), day = d.toISOString().slice(0, 10);
-    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock, ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
+    return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: day + ' 00:00:00', now: d.toISOString().slice(0, 19).replace('T', ' '), nowMillis: clock, session: sessionTok.get(s) || (sessionTok.set(s, {}), sessionTok.get(s)), ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
       uuid: function () { uu++; return crypto.randomUUID(); } };
   }
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)

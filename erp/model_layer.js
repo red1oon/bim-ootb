@@ -111,20 +111,29 @@
     var r = this.q('SELECT * FROM ' + table + ' WHERE ' + idc + '=?', [id])[0];
     return r || null;
   };
-  // find(table, where{col:val}, orderBy[]) — base rows (host reader) overlaid with this Trx's pending writes.
-  Trx.prototype.find = function (table, where, orderBy) {
-    table = table.toLowerCase(); where = where || {};
+  // find(table, where{col:val}, orderBy[], opts) — base rows (host reader) overlaid with this Trx's pending writes.
+  //   opts.exclude {col:val}: rows whose col is NULL or <> val (SQL `col IS NULL OR col<>?`); opts.ids [key,...]: only those keys. Both are pushed into the base SELECT (HS3: a caller that filtered
+  //   the whole table in JS paid O(rows in the table) per call) AND applied to the overlay, so the answer is exactly what filtering the unrestricted answer would give.
+  Trx.prototype.find = function (table, where, orderBy, opts) {
+    table = table.toLowerCase(); where = where || {}; opts = opts || {};
     var cols = Object.keys(where), self = this, idc = this.idCol(table), seen = {}, out = [];
-    var base = [];
+    var exc = Object.keys(opts.exclude || {}), idSet = null, base = [];
+    if (opts.ids) { idSet = {}; opts.ids.forEach(function (i) { idSet[String(i)] = 1; }); }
     var anyNew = cols.some(function (c) { return isNewId(where[c]); });
     if (!anyNew) {
-      var sql = 'SELECT * FROM ' + table + (cols.length ? ' WHERE ' + cols.map(function (c) { return where[c] == null ? c + ' IS NULL' : c + '=?'; }).join(' AND ') : '');
-      try { base = this.q(sql, cols.filter(function (c) { return where[c] != null; }).map(function (c) { return where[c]; })); } catch (e) { base = []; }
+      var sql = 'SELECT * FROM ' + table, cl = cols.map(function (c) { return where[c] == null ? c + ' IS NULL' : c + '=?'; }), args = cols.filter(function (c) { return where[c] != null; }).map(function (c) { return where[c]; });
+      exc.forEach(function (c) { cl.push('(' + c + ' IS NULL OR ' + c + '<>?)'); args.push(opts.exclude[c]); });
+      var pk = idSet ? Object.keys(idSet).filter(function (k) { return !isNewId(k); }) : null;      // '#new:' keys exist only in the overlay; the base can only hold the rest
+      if (pk && pk.length <= 800) { cl.push(idc + ' IN (' + pk.map(function () { return '?'; }).join(',') + ')'); pk.forEach(function (k) { args.push(/^-?\d+$/.test(k) ? Number(k) : k); }); }
+      if (!(pk && !pk.length)) {
+        sql += cl.length ? ' WHERE ' + cl.join(' AND ') : '';
+        try { base = this.q(sql, args); } catch (e) { base = []; }
+      }
     }
     base.forEach(function (b) { seen[String(b[idc])] = 1; var m = self._merge(table, b); if (m && match(m)) out.push(m); });
     var p = this._p(table);
     Object.keys(p).forEach(function (k) { var e = p[k]; if (seen[k] || e.deleted) return; if (match(e.row)) out.push(e.row); });
-    function match(r) { return cols.every(function (c) { return same(r[c], where[c]); }); }
+    function match(r) { return cols.every(function (c) { return same(r[c], where[c]); }) && exc.every(function (c) { return r[c] == null || String(r[c]) !== String(opts.exclude[c]); }) && (!idSet || idSet[String(r[idc])] === 1); }
     if (orderBy && orderBy.length) out.sort(function (a, b) {
       for (var i = 0; i < orderBy.length; i++) { var c = orderBy[i], x = a[c], y = b[c];
         var nx = Number(x), ny = Number(y), d = (!isNaN(nx) && !isNaN(ny)) ? nx - ny : String(x) < String(y) ? -1 : String(x) > String(y) ? 1 : 0;

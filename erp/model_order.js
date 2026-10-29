@@ -735,7 +735,7 @@
   // MOrderLine.beforeSave :865-867 - the tax of a line that arrives without one; `l` is the plain row of the save (get/set adapter for olSetTax)
   S.MOrderLine_setTaxIfMissing = function (trx, l, order) {
     if (nz(l.c_tax_id) || !nz(l.m_product_id) && !nz(l.c_charge_id)) return;
-    var ctx = (trx.env.ctx && typeof trx.env.ctx.getProperty === 'function') ? trx.env.ctx : A().loginContext({ client: trx.env.client, org: trx.env.org, role: trx.env.role || 0, user: trx.env.user, wh: trx.env.wh, date: trx.env.date });
+    var ctx = (trx.env.ctx && typeof trx.env.ctx.getProperty === 'function') ? trx.env.ctx : A().sessionContext(trx.env);
     var h = { get: function (c) { return l[c]; }, set: function (c, v) { l[c] = v; return h; } };
     olSetTax(trx, ctx, h, order);
   };

@@ -61,17 +61,17 @@ export function activate(ctx) {
       // the pending population, read BEFORE any scope is set
       const tickets = {}, order = [];
       function T(r) { const kk = keyOf(r); if (!tickets[kk]) { tickets[kk] = { key: kk, docno: r.documentno == null ? '' : String(r.documentno), org: nz(r.ad_org_id), lines: [], tenders: [], first: Infinity }; order.push(tickets[kk]); } return tickets[kk]; }
-      trx.find('i_order', {}).filter(pending).sort((a, b) => idNum(a.i_order_id) - idNum(b.i_order_id)).forEach((r) => { const t = T(r); t.lines.push(r.i_order_id); t.first = Math.min(t.first, idNum(r.i_order_id)); });
-      trx.find('i_payment', {}).filter(pending).sort((a, b) => idNum(a.i_payment_id) - idNum(b.i_payment_id)).forEach((r) => { const t = T(r); t.tenders.push(r.i_payment_id); if (t.first === Infinity) t.first = 1e17 + idNum(r.i_payment_id); });
+      trx.find('i_order', {}, null, { exclude: { i_isimported: 'Y' } }).filter(pending).sort((a, b) => idNum(a.i_order_id) - idNum(b.i_order_id)).forEach((r) => { const t = T(r); t.lines.push(r.i_order_id); t.first = Math.min(t.first, idNum(r.i_order_id)); });
+      trx.find('i_payment', {}, null, { exclude: { i_isimported: 'Y' } }).filter(pending).sort((a, b) => idNum(a.i_payment_id) - idNum(b.i_payment_id)).forEach((r) => { const t = T(r); t.tenders.push(r.i_payment_id); if (t.first === Infinity) t.first = 1e17 + idNum(r.i_payment_id); });
       const todo = order.filter((t) => !self.p_key || t.docno === self.p_key).sort((a, b) => a.first - b.first);
 
       // per-ticket SCOPE (deviation b): lists only the ticket's rows to the legacy ports; lifted by the caller's finally
       function scope(ids) {
         const own = Object.prototype.hasOwnProperty.call(trx, 'find'), orig = trx.find;
-        trx.find = function (table, where, orderBy) {
-          const rows = orig.call(this, table, where, orderBy), t = String(table).toLowerCase();
-          if (ids[t] && (!where || !Object.keys(where).length)) { const idc = this.idCol(t); return rows.filter((r) => ids[t][String(r[idc])]); }
-          return rows;
+        trx.find = function (table, where, orderBy, opts) {
+          const t = String(table).toLowerCase();
+          if (ids[t] && (!where || !Object.keys(where).length)) return orig.call(this, table, where, orderBy, Object.assign({}, opts, { ids: Object.keys(ids[t]) }));   // the ticket's own keys, pushed into the SELECT (was: the whole table read, then filtered here)
+          return orig.call(this, table, where, orderBy, opts);
         };
         return () => { if (own) trx.find = orig; else delete trx.find; };
       }

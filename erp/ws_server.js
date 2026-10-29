@@ -14,6 +14,7 @@ async function openDb(extraSql) {
   (extraSql || []).forEach(f => run(fs.readFileSync(f, 'utf8')));
   require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
   require('./ad_import_tables.js').ensure(db);   // §13.2 B1: the I_Order physical table (boot overlay, not in the hashed patches)
+  require('./ad_index_overlay.js').ensure(db);   // HS3: legacy's official dictionary indexes (boot overlay, not in the hashed patches)
   const q = (sql, params) => { const st = db.prepare(sql), rows = []; try { if (params && params.length) st.bind(params.map(v => v === undefined ? null : v)); const cols = st.getColumnNames(); while (st.step()) { const v = st.get(), o = {}; cols.forEach((c, i) => { o[String(c).toLowerCase()] = v[i]; }); rows.push(o); } } finally { st.free(); } return rows; };
   return { db, q };
 }
