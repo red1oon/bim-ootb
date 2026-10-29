@@ -18,7 +18,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const ROOT = path.join(__dirname, '..', '..'), DB = process.argv[2] || '/tmp/db2/DXARC.db';
 const SHED_RAW = process.env.SHED_RAW_DIR || '';
 const RAW9 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
-const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-TAG-WIDTH': 'inferred', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred' };   // the spec's table
+const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-TAG-WIDTH': 'inferred', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred' };   // the spec's table (§D96 PR-Z-DIM: inferred)
 const HANDLE_RULES = ['PR-GRID-TICK', 'PR-GRID', 'PR-Z-GROUND', 'PR-Z'];   // the rules whose `why` names the entity they read
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);

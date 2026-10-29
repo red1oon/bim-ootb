@@ -40,8 +40,10 @@ runE2E('W-DXF-SHED', async (t) => {
   const s1 = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.prop.list.map(p => p.rule).join(',')));
   t.assert('H1 raw shed sheets: the first suggestions are UNITS / VIEW / NAME only', s1.every(x => /^PR-UNITS,PR-VIEW,PR-NAME$/.test(x)), JSON.stringify(s1));
   await acceptAll();
-  const m = await pg.evaluate(() => { const E = window.DxfMetaEditor.state.sheets[1].marks; return { gridh: E.filter(x => x.key === 'GRIDH').length, z: E.filter(x => x.key === 'Z').map(x => [x.value, x.y]), face: (E.find(x => x.key === 'FACE') || {}).value, src: [...new Set(E.map(x => x.source))] }; });
-  t.assert('H2 Accept all: 14 elevation grid marks from the dimension ticks, @Z=0 at the ground line (y -4470.581), FACE minY from "South", all `user`', m.gridh === 14 && m.z.length === 1 && m.z[0][0] === '0' && Math.abs(m.z[0][1] + 4470.581) < 1e-3 && m.face === 'minY' && m.src.join() === 'user', JSON.stringify(m));
+  const m = await pg.evaluate(() => { const E = window.DxfMetaEditor.state.sheets[1].marks; return { gridh: E.filter(x => x.key === 'GRIDH').length, z: E.filter(x => x.key === 'Z').map(x => [x.value, x.y, x.rule]), face: (E.find(x => x.key === 'FACE') || {}).value, src: [...new Set(E.map(x => x.source))] }; });
+  // §D96: Accept all now also takes the second height the drawing's own dimension gives (PR-Z-DIM): z = (y - ground y) x 0.0254 on this inch sheet
+  t.assert('H2 Accept all: 14 elevation grid marks from the dimension ticks, @Z=0 at the ground line (y -4470.581), a second @Z from the drawing\'s own dimension (PR-Z-DIM, on the ground line\'s scale), FACE minY from "South", all `user`',
+    m.gridh === 14 && m.z.length === 2 && m.z[0][0] === '0' && Math.abs(m.z[0][1] + 4470.581) < 1e-3 && m.z[1][2] === 'PR-Z-DIM' && Math.abs((m.z[1][1] - m.z[0][1]) * 0.0254 - Number(m.z[1][0])) < 1e-5 && m.face === 'minY' && m.src.join() === 'user', JSON.stringify(m));
   await facts();
   const roles = await pg.evaluate(() => window.DxfImportUI.state.sheets.map(s => s.name + ':' + (s.role || 'NONE')));
   t.assert('H3 after the typed facts (SET, LEVEL, the PL datum +24 in) both sheets have roles', roles.join() === '0_FLOOR_PLAN.dxf:plan,1S_ELEV_SOUTH.dxf:elev', JSON.stringify(roles));
