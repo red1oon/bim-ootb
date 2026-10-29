@@ -1,0 +1,105 @@
+#!/usr/bin/env node
+// ⚠ DO NOT REMOVE — W-LOAD-SUMMARY (prompts/DXF2BIM_FOUNDATION_LANE.md §D97). Read the log after every run.
+// THE ISSUE THIS PROVES OR DISPROVES: a structural engineer asked "what does this shed weigh, and what does each footing carry?" had no answer from the drawings,
+// although the converted bodies carry every material and drawn size. §D97 computes it. What could go wrong, one check each:
+//   L1 a weight not traceable to size x a cited unit weight: each group's kN = the witness's own Σ(quantity x unit weight), the unit weights re-read from the
+//      BNBC reference text (modeller/reference/BNBC2012_P6C2_dead_load_tables.txt), not retyped.
+//   L2 a body counted twice or dropped: Σ footing loads + the ground-bearing slab = the total weighed; every weighed body carried exactly once.
+//   L3 a missing weight quietly filled: the MISSING list is exactly the bodies with no drawn size / no stated weight (103 unsized members, 13 fans, 4 doors,
+//      3 nettings) + site district + soil capacity, and none of them carries a kN.
+//   L3b falsifier: a body with neither bbox nor vertices is MISSING ('no geometry to measure'), never weighed 0 (first run: the page's bodies carry vertices, not
+//      bbox, and 7 groups were silently weighed 0 kN — 707 kN against the CLI's 5,352 kN for the same shed).
+//   L4 falsifier: load.rc_steel_percent 1 -> 2 raises every concrete weight by exactly 0.63 kN/m3 x volume, and nothing else moves.
+//   L6 the page shows other numbers than the module, or Apply does nothing: Export ▸ Load Summary on the CLI-marked shed (Complete ticked, Convert) opens
+//      load_summary.html whose §LOAD_PAGE total equals the module's on the page's own bodies AND the CLI bodies.json total (within 0.01 %: the CLI rounds its boxes);
+//      the inputs editor with p = 2 gives L4's total; 0 §PAGEERR.
+//   L5 the defaults' basis is not the table: element_defaults.json load.* values = the reference text's numbers (22.8, 0.63, 18.9, 77.0, 0.096).
+// Input: the CLI-marked shed's bodies.json (SHED_BODIES, default ~/Videos/dxf2bim_film_work/why/cli/bodies.json); missing -> INCONCLUSIVE (exit 2).
+'use strict';
+const fs = require('fs'), path = require('path'), os = require('os');
+const ROOT = path.join(__dirname, '..', '..'), M = path.join(ROOT, 'modeller'), L = require(path.join(M, 'load_summary.js'));
+const BODIES = process.env.SHED_BODIES || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'bodies.json');
+let fails = 0, judged = 0; const ok = (id, c, m) => { judged++; console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
+if (!fs.existsSync(BODIES)) { console.log('§VERDICT INCONCLUSIVE missing ' + BODIES); process.exit(2); }
+const bodies = JSON.parse(fs.readFileSync(BODIES, 'utf8')), D = JSON.parse(fs.readFileSync(path.join(M, 'element_defaults.json'), 'utf8')).defaults;
+// the reference text's own numbers
+const REF = fs.readFileSync(path.join(M, 'reference', 'BNBC2012_P6C2_dead_load_tables.txt'), 'utf8');
+const grab = re => { const m = re.exec(REF); return m ? Number(m[1]) : NaN; };
+const T = { concrete: grab(/Concrete\s*‐\s*stone aggregate \(unreinforced\)\s+([\d.]+)\*/), add: grab(/add\s+([\d.]+)\s*kN\/m3 for each 1% by volume/), brick: grab(/\n\s*Brick\s+([\d.]+)/), steel: grab(/Steel\s+([\d.]+)\n/), sheet08: grab(/Steel, galvanized std\. corrugated sheeting[\s\S]*?0\.8 mm thick\s+([\d.]+)/) };
+console.log('§LOAD_REF ' + JSON.stringify(T));
+const values = Object.fromEntries(L.KEYS.map(k => [k, D[k].value])), sources = Object.fromEntries(L.KEYS.map(k => [k, D[k].kind]));
+// ---- L5 ----
+ok('L5 the defaults equal the reference text (concrete 22.8, +0.63 per 1%, brick 18.9, steel 77.0, sheet 0.8 mm 0.096)', D['load.unit_weight.concrete'].value === T.concrete && D['load.unit_weight.brick'].value === T.brick && D['load.unit_weight.steel'].value === T.steel && D['load.roof_sheet'].value === T.sheet08 && /0\.63/.test(D['load.rc_steel_percent'].basis) && T.add === 0.63,
+  'ref=' + JSON.stringify(T) + ' defaults=' + L.KEYS.map(k => k.replace('load.', '') + ':' + D[k].value).join(' '));
+const R = L.compute(bodies, { values, sources, facts: {} }); L.log(R, s => console.log('  ' + s.slice(0, 220)));
+// ---- L1: the witness's own sums ----
+const dim = b => [0, 1, 2].map(i => b.bbox[i + 3] - b.bbox[i]), n = v => v && typeof v === 'object' ? Number(v.number) : Number(v), s = (b, k) => b.size && b.size[k] !== undefined ? n(b.size[k]) : NaN;
+const rc = T.concrete + T.add * values['load.rc_steel_percent'], own = {};
+const add = (k, kN) => { own[k] = (own[k] || 0) + kN; };
+bodies.forEach(b => { const d = dim(b), h = b.z1 - b.z0, mat = (b.ifc && b.ifc.material) || '', c = b.class, tn = (b.ifc && b.ifc.type_name) || '';
+  if (/concrete/i.test(mat)) add(c + '|' + mat, rc * (c === 'IfcBeam' ? (s(b, 'w') || d[1]) * (s(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (s(b, 't') || d[2]) : (s(b, 'x') || d[0]) * (s(b, 'y') || d[1]) * h));
+  else if (/brick/i.test(mat)) add(c + '|' + mat, T.brick * Math.max(d[0], d[1]) * h * (s(b, 't') || Math.min(d[0], d[1])));
+  else if (c === 'IfcPlate') { const e = d.slice().sort((p, q) => q - p); add(c + '|' + mat, T.steel * e[0] * e[1] * (s(b, 't') || e[2])); }
+  else if (c === 'IfcMember') { const A = L.angleOf(tn); if (A) add(c + '|' + mat, T.steel * A.area * L.barLength(b)); }
+  else if (c === 'IfcRoof') add(c + '|' + mat, T.sheet08 * d[0] * d[1] / Math.cos(Number(b.size.slope_deg) * Math.PI / 180)); });
+const bad1 = R.groups.filter(g => !g.missing).filter(g => Math.abs(g.kN - (own[g.cls + '|' + g.material] || 0)) > 1e-6 * Math.max(1, g.kN));
+ok('L1 each group = Σ quantity x the reference unit weight (witness recompute)', bad1.length === 0 && R.groups.filter(g => !g.missing).length === 8, R.groups.filter(g => !g.missing).map(g => g.cls.replace('Ifc', '') + ' ' + g.kN.toFixed(1) + '=' + (own[g.cls + '|' + g.material] || 0).toFixed(1)).join(' | '));
+// ---- L2 ----
+const carried = R.rows.filter(r => r.kN >= 0), onceOk = carried.every(r => r.carriedBy && (r.carriedBy === 'ground' || R.footings.some(f => f.guid === r.carriedBy)));
+ok('L2 Σ footings + ground-bearing slab = total weighed; every weighed body carried once', Math.abs(R.toFootings_kN + R.onGround_kN - R.total_kN) < 1e-6 && onceOk && R.footings.reduce((a, f) => a + f.n, 0) + carried.filter(r => r.carriedBy === 'ground').length === carried.length,
+  'footings ' + R.toFootings_kN.toFixed(1) + ' + ground ' + R.onGround_kN.toFixed(1) + ' = ' + R.total_kN.toFixed(1) + ' kN; bodies ' + carried.length);
+// ---- L3 ----
+const mm = Object.fromEntries(R.missing.map(m => [m.what, m.n])), unsized = bodies.filter(b => b.class === 'IfcMember' && !L.angleOf((b.ifc && b.ifc.type_name) || '')).length;
+ok('L3 missing = exactly the bodies with no drawn size or stated weight + district + soil, none weighed', unsized === 103 && mm['IfcMember: section size not drawn'] === 103 && mm['IfcFan: fan weight not stated'] === 13 && mm['IfcDoor: door weight not stated'] === 4 && mm['IfcCovering: netting weight not stated'] === 3 && R.missing.some(m => m.fact === 'district') && R.missing.some(m => m.fact === 'soil_kPa') && R.rows.filter(r => r.missing).every(r => !(r.kN >= 0)),
+  JSON.stringify(mm));
+// ---- L3b ----
+const nb = JSON.parse(JSON.stringify(bodies)); const wi = nb.findIndex(b => b.class === 'IfcWall'); delete nb[wi].bbox; delete nb[wi].vertices;
+const R3 = L.compute(nb, { values, sources, facts: {} }), w3 = R3.rows.find(r => r.guid === nb[wi].guid);
+ok('L3b falsifier: a body with no geometry is MISSING, not weighed 0', w3 && w3.missing === 'no geometry to measure' && !(w3.kN >= 0) && R3.unweighed === R.unweighed + 1, (w3 ? w3.guid + ' missing="' + w3.missing + '" kN=' + w3.kN : 'row not found') + ' unweighed ' + R.unweighed + ' -> ' + R3.unweighed);
+// ---- L4 ----
+const R2 = L.compute(bodies, { values: Object.assign({}, values, { 'load.rc_steel_percent': 2 }), sources, facts: {} });
+const dif = R2.groups.map(g2 => { const g1 = R.groups.find(g => g.cls === g2.cls && g.material === g2.material && !!g.missing === !!g2.missing); return { k: g2.cls, conc: /concrete/i.test(g2.material), d: g2.kN - g1.kN, want: /concrete/i.test(g2.material) ? T.add * g2.qty : 0 }; });
+ok('L4 falsifier: p 1 -> 2 adds exactly 0.63 kN/m3 x volume to every concrete group and moves nothing else', dif.every(x => Math.abs(x.d - x.want) < 1e-6), dif.filter(x => x.d !== 0).map(x => x.k.replace('Ifc', '') + ' +' + x.d.toFixed(2)).join(' '));
+// ---- L6: the page ----
+(async () => {
+  const MARKED = process.env.SHED_MARKED_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
+  const files = fs.existsSync(MARKED) ? fs.readdirSync(MARKED).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(MARKED, f)) : [];
+  if (process.env.BROWSER === '0' || files.length !== 9) { console.log('§LOAD_PAGE_SKIP ' + (files.length !== 9 ? 'marked sheets missing (' + MARKED + ')' : 'BROWSER=0') + ' — L6 not judged'); }
+  else {
+    const http = require('http'), puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer'));
+    const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+    const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(b); }); });
+    await new Promise(z => srv.listen(0, '127.0.0.1', z));
+    const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }), errs = [], plog = [];
+    try {
+      const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); pg.on('pageerror', e => { errs.push(String(e).slice(0, 160)); console.log('§PAGEERR ' + String(e).slice(0, 160)); });
+      pg.on('console', m => { const t = m.text(); if (/^§LOAD_SUMMARY (handoff|refused)/.test(t)) console.log('  ' + t.slice(0, 200)); });
+      await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 });
+      await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI', { timeout: 120000 }); await pg.evaluate(() => { window.DxfImportUI.state.arrangeOnOpen = false; });
+      await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
+      const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept(files);
+      await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 240000 });
+      await pg.evaluate(() => { const c = document.getElementById('dxf-complete'); if (c && !c.checked) c.click(); }); await new Promise(r => setTimeout(r, 2500));
+      await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 180000 }); await new Promise(r => setTimeout(r, 1500));
+      const els = await pg.evaluate(() => JSON.stringify(window.DxfImportUI.state.gate.R.els));
+      const tgt = new Promise(res => br.once('targetcreated', t => res(t)));
+      await pg.click('#b-export'); await pg.waitForSelector('#m-export-panel', { visible: true }); await pg.evaluate(() => { const r = [...document.querySelectorAll('#m-export-panel *')].find(e => /^Load Summary/.test((e.textContent || '').trim()) && e.closest('[data-key]')); (r ? r.closest('[data-key]') : document.querySelector('#m-export-panel [data-key="load"]')).click(); });
+      const rp = await (await tgt).page(); rp.on('console', m => { const t = m.text(); if (/^§LOAD_/.test(t)) { plog.push(t); } }); rp.on('pageerror', e => { errs.push('report: ' + String(e).slice(0, 160)); console.log('§PAGEERR report ' + String(e).slice(0, 160)); });
+      await rp.waitForFunction(() => document.querySelectorAll('#groups tr').length > 1, { timeout: 60000 });
+      const pageTotal = () => rp.evaluate(() => document.getElementById('cards').innerText);
+      const mod = L.compute(JSON.parse(els), { values, sources, facts: {} }), mod2 = L.compute(JSON.parse(els), { values: Object.assign({}, values, { 'load.rc_steel_percent': 2 }), sources, facts: {} });
+      const fmt = v => (Math.round(v * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      const t1 = await pageTotal();
+      await rp.evaluate(() => { const t = document.getElementById('inputs'), j = JSON.parse(t.value); j.values['load.rc_steel_percent'] = 2; t.value = JSON.stringify(j, null, 2); document.getElementById('apply').click(); }); await new Promise(r => setTimeout(r, 400));
+      const t2 = await pageTotal(), applied = await rp.evaluate(() => document.getElementById('msg').textContent);
+      const cliRel = Math.abs(mod.total_kN - R.total_kN) / R.total_kN;
+      ok('L6 the report page: its total = the module on the page\'s own bodies = the CLI bodies (0.01 %), Apply p = 2 = the module with p = 2, 0 page errors', t1.indexOf(fmt(mod.total_kN) + ' kN') >= 0 && t2.indexOf(fmt(mod2.total_kN) + ' kN') >= 0 && cliRel <= 1e-4 && errs.length === 0,
+        'page-vs-CLI ' + (cliRel * 100).toFixed(5) + ' % | ' +
+        'bodies=' + JSON.parse(els).length + ' module ' + fmt(mod.total_kN) + ' -> ' + fmt(mod2.total_kN) + ' kN | page "' + t1.split('\n').slice(0, 3).join(' ') + '" -> "' + applied + '" | errors ' + errs.length);
+      plog.slice(0, 3).forEach(l => console.log('  ' + l.slice(0, 220)));
+    } catch (e) { ok('L6 the report page', false, 'crash ' + String(e && e.message || e).slice(0, 200)); }
+    await br.close(); srv.close();
+  }
+  console.log('§VERDICT ' + (judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS') + ' W-LOAD-SUMMARY judged=' + judged + ' fail=' + fails);
+  process.exit(fails ? 1 : 0);
+})();

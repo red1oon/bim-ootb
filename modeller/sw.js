@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v189';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v190';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -93,6 +93,8 @@ const PRECACHE_ASSETS = [
   'dxf2defaults.js',
   'dxf2typology.js',
   'element_defaults.json',
+  'load_summary.js',
+  'load_summary.html',
   'dxf2hatch.js',
   'dxf2panels.js',
   'dxf2profile.js',
