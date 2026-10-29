@@ -3274,6 +3274,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     try { if (window.__crud && typeof window.__crud.withModelTrx === 'function') { var r = window.__crud.withModelTrx(function (q) { return q(sql); }, { sql: sql }); if (r) return r; } } catch (e) {}
     return _baseRows(sql);
   }
+  window.__tipRead = { rows: _sqlRows, ident: _identCols };   // §44: the Team panel's pickers read what this device holds through THE reader, not a second one
   function _baseRows(sql) {
     try {
       var res = window.__idmpDb.exec(sql);

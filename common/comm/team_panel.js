@@ -85,22 +85,33 @@
     var T = host(), sec = w.querySelector('#tp-pairsec'); if (!sec) return;
     var st = await T.pairState(), inv = (/#join=([0-9a-f]{64})/.exec(location.hash) || [])[1] || '', html = '<div style="font-weight:600;margin-bottom:6px">Pairing</div>', msg = '';
     function B(id, t) { return '<button id="' + id + '" style="min-height:40px;cursor:pointer;margin:4px 6px 0 0">' + t + '</button>'; }
-    if (!st.space) html += '<div>This browser is not in a team yet.</div>' + B('tp-found', 'Start a team') +
+    var pc = T.planChoices ? T.planChoices() : [], many = pc.length > 1;      // §44 C1: the host (ERP) lists the plans it loaded; a host with none (the Modeller) shows nothing new
+    if (!st.space) html += '<div>This browser is not in a team yet.</div>' +
+      (many ? '<div id="tp-planbox" style="margin-top:8px"><div style="font-weight:600">Kind of team</div>' + pc.map(function (c) { return '<label style="display:block;min-height:44px"><input type="radio" name="tp-plan" value="' + esc(c.id) + '"' + (c.selected ? ' checked' : '') + ' style="width:20px;height:20px;margin-right:8px"><b>' + esc(c.label) + '</b>' + (c.hint ? ' <span style="color:#666">— ' + esc(c.hint) + '</span>' : '') + '</label>'; }).join('') + '</div>' : '') + B('tp-found', 'Start a team') +
       '<div style="margin-top:8px">or join one:<input id="tp-inv" style="width:100%;min-height:40px" placeholder="invite (64 characters) — or open the invite link" value="' + esc(inv) + '"></div>' + B('tp-join', 'Join');
     else if (st.enrolled) html += '<div id="tp-paired" style="color:#137a3a">✓ Paired · team devices ' + st.devices + ' · this device ' + esc(st.code) + (st.founder ? ' · founder' : '') + '</div>' +
+      (many && st.plan ? '<div id="tp-plan" style="margin-top:6px">Kind of team: <b>' + esc((pc.filter(function (c) { return c.id === st.plan; })[0] || { label: st.plan }).label) + '</b> <span style="color:#666">· chosen when the team was started; it cannot be changed</span></div>' : '') +
       (st.founder ? '<div style="margin-top:6px">Invite link for another user or device:<input id="tp-link" readonly style="width:100%;min-height:40px" value="' + esc(T.inviteLink()) + '"></div>' + B('tp-req', 'Check join requests') + '<div id="tp-reqs"></div>' : '') + B('tp-leave', 'Leave this team');
     else html += '<div id="tp-wait">Your device code — tell it to the team founder: <b id="tp-code" style="font:600 20px ui-monospace,monospace;letter-spacing:2px">' + esc(st.code) + '</b></div><div>Waiting for approval — then press Visit.</div>' + B('tp-visit', 'Visit') + B('tp-leave', 'Leave');
     sec.style.display = 'block'; sec.innerHTML = html;
     function act(id, fn) { var b = sec.querySelector('#' + id); if (b) b.onclick = async function () { b.disabled = true; try { await fn(); } catch (e) { if (e && e.message === '__noerr') { b.disabled = false; return; } console.log('🔴 §TEAM_PANEL ' + (e && e.message || e)); sec.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e;margin-top:6px">' + esc(e && e.message || e) + '</div>'); b.disabled = false; return; } renderPair(w); }; }
-    act('tp-found', function () { return T.found(); });
+    act('tp-found', function () { var r = sec.querySelector('input[name=tp-plan]:checked'); return T.found(r ? r.value : undefined); });
     act('tp-join', function () { return T.join(sec.querySelector('#tp-inv').value); });
     act('tp-visit', function () { return T.visit(); });
     act('tp-leave', function () { return T.leave(); });
     act('tp-req', async function () {
       var list = await T.requests(), box = sec.querySelector('#tp-reqs'), opts = T.roles().map(function (r) { return '<option value="' + r.id + '"' + (r.id === 102 ? ' selected' : '') + '>' + esc(r.name) + ' (' + r.id + ')</option>'; }).join('');
-      box.innerHTML = list.length ? list.map(function (x, i) { return '<div class="tp-request" data-i="' + i + '" style="padding:6px 0;border-top:1px solid #eee"><b class="tp-rcode" style="font:600 18px ui-monospace,monospace">' + esc(x.code) + '</b> as <select class="tp-role" style="min-height:40px">' + opts + '</select> <button class="tp-approve" style="min-height:40px;cursor:pointer">Approve</button></div>'; }).join('') : '<div style="color:#666;margin-top:6px">no pending requests</div>';
+      box.innerHTML = list.length ? list.map(function (x, i) { return '<div class="tp-request" data-i="' + i + '" style="padding:6px 0;border-top:1px solid #eee"><b class="tp-rcode" style="font:600 18px ui-monospace,monospace">' + esc(x.code) + '</b> as <select class="tp-role" style="min-height:40px">' + opts + '</select><span class="tp-bound-box"></span> <button class="tp-approve" style="min-height:40px;cursor:pointer">Approve</button></div>'; }).join('') : '<div style="color:#666;margin-top:6px">no pending requests</div>';
+      // §44 C2: "Bound to" - only when the host's plan has records addressed to ONE entity for the chosen role (T.bindingFor); the choices are the host's, read from the plan and the dictionary
+      function bindBox(row) { var rs = row.querySelector('.tp-role'), role = rs.value, bx = row.querySelector('.tp-bound-box'); row.removeAttribute('data-bound-for'); if (!T.bindingFor) return;
+        row._bp = T.bindingFor(Number(role)).then(function (b) { if (rs.value !== role) return;
+          bx.innerHTML = b ? '<label style="display:block;margin:6px 0">Bound to <select class="tp-bound" style="min-height:40px;max-width:100%"><option value="">— choose —</option>' + b.types.map(function (t) { return '<optgroup label="' + esc(t.label) + '">' + t.options.map(function (o) { return '<option value="' + esc(o.uu) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' : '';
+          row.setAttribute('data-bound-for', role); }); }
+      box.querySelectorAll('.tp-request').forEach(function (row) { row.querySelector('.tp-role').onchange = function () { bindBox(row); }; bindBox(row); });
       box.querySelectorAll('.tp-approve').forEach(function (bt) { bt.onclick = async function () { var row = bt.closest('.tp-request'); bt.disabled = true;
-        try { await T.approve(list[Number(row.getAttribute('data-i'))].rq, row.querySelector('.tp-role').value); } catch (e) { box.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">' + esc(e && e.message || e) + '</div>'); bt.disabled = false; return; } renderPair(w); }; });
+        try { if (row._bp) await row._bp; var bs = row.querySelector('.tp-bound');
+          if (bs && !bs.value) { row.querySelectorAll('.tp-err').forEach(function (x) { x.remove(); }); row.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">Choose what this device is bound to first: the plan sends it only that record\'s data.</div>'); bt.disabled = false; return; }
+          await T.approve(list[Number(row.getAttribute('data-i'))].rq, row.querySelector('.tp-role').value, bs ? bs.value : undefined); } catch (e) { box.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">' + esc(e && e.message || e) + '</div>'); bt.disabled = false; return; } renderPair(w); }; });
       throw new Error('__noerr');   // keep the list on screen (do not re-render the section)
     });
   }

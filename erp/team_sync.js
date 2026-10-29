@@ -53,9 +53,17 @@
     if (JSON.stringify(gt) === JSON.stringify(global.TEAM_PLAN_TRUST || [])) return;
     global.TEAM_PLAN_TRUST = gt; await verifyPlan('trust=genesis(' + gt.length + ')');
   }
-  function spaceOpts(bi) {                                             // what a founder pins in the genesis: the shared base and the deployment's plan trust list (public keys)
-    var o = {}, t = global.TEAM_PLAN_TRUST, pc = new URLSearchParams(global.location.search).get('teamplan'); if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t;
-    if (pc === 'pos') o.plan = 'pos';                                  // §38.15: the founder chooses the star (POS) plan; absent = the office plan, so every existing space reads as before
+  // §44 C1: WHICH plans this page can found a team on = the plan files it loaded (the office plan; a plan whose own `kind` names another topology). The panel offers exactly these; `?teamplan=` only PRE-SELECTS one.
+  var PLAN_TEXT = { office: ['Office team', 'everyone shares the same records'], pos: ['Point-of-sale team', 'tills and phones send up what the plan declares and receive only what is addressed to them'] };
+  function planChoices() {
+    var ids = [], P = global.TEAM_PLAN_POS, pre = new URLSearchParams(global.location.search).get('teamplan');
+    if (global.TEAM_PLAN) ids.push('office'); if (P && P.kind && ids.indexOf(P.kind) < 0) ids.push(P.kind);
+    var sel = ids.indexOf(pre) >= 0 ? pre : 'office';
+    return ids.map(function (id) { var t = PLAN_TEXT[id] || [id, '']; return { id: id, label: t[0], hint: t[1], selected: id === sel }; });
+  }
+  function spaceOpts(bi, plan) {                                       // what a founder pins in the genesis: the shared base, the deployment's plan trust list (public keys) and the plan the founder chose
+    var o = {}, t = global.TEAM_PLAN_TRUST, pc = plan || new URLSearchParams(global.location.search).get('teamplan'); if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t;
+    if (pc && pc !== 'office' && planChoices().some(function (c) { return c.id === pc; })) o.plan = pc;   // §38.15: absent = the office plan, so every existing space reads as before
     return Object.keys(o).length ? o : undefined;
   }
   // §38.15 (G-6): WHICH plan this space reads (the genesis' `plan`) and WHO this device is in it (its role, its person). 'office' (the default) is the mesh plan as always; 'pos' is the star plan whose hub rows
@@ -595,6 +603,8 @@
     var myScope = me ? scopeOf(me.role) : null, pref = (cfg && cfg.peopleMode) || 'scope', mode = myScope && pref === 'scope' ? 'scope' : 'all';
     var envs = allEnvs(), D = global.TeamDefaults || {};
     peopleList = TP.rank(envs, headsArr, focusObjs, clock(), { directory: dirc, ttlMs: D.focusTtlMs, mode: mode, scope: myScope, scopeOf: scopeOf, selfPerson: me && me.person });
+    await refreshScope(); var bm = {}; bindTypes().forEach(function (t) { recordsOf(t.table, peopleList.map(function (p) { return p.person; })).forEach(function (r) { bm[r.uu] = r.label; }); });   // §44: a person bound to a record shows it by name
+    peopleList.forEach(function (p) { if (bm[String(p.person).toLowerCase()]) p.boundTo = bm[String(p.person).toLowerCase()]; });
     if (cfg && cfg.avatar) peopleList.forEach(function (p) { if (p.self) p.avatar = cfg.avatar; });   // my own choice shows at once; the others get it at my next Visit (§15.15.2)
     var kidP = {}, kidR = {}; dirc.forEach(function (p) { p.kids.forEach(function (k) { kidP[k] = p; }); });
     var placed = (await S.placedEnvelopes()).map(function (x) { return x.env; });
@@ -675,10 +685,10 @@
   }
   function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !cfg.token) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
   async function fresh() { sent = {}; localOnly = {}; fired = {}; replExc = []; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); await kvPut('erp_replfired', {}); }
-  async function found() {
+  async function found(plan) {
     await ready; needKey(); await fresh();
     var bi = null; try { bi = await loadedBase(); } catch (e) { log('§TEAM_BASE none reason=' + (e && e.message) + ' (space founded WITHOUT a base)'); }
-    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, spaceOpts(bi));
+    var sp = await global.CommStore.newSpace('team-poc', dev, dev.person_uu, 'founder', 102, spaceOpts(bi, plan));
     cfg.space = sp.space; cfg.founder = true; await kvPut('cfg', cfg); await openStore(undefined); await S.genesis(sp.params); await pinTrust();
     log('§TEAM_PAIR founded space ' + sp.space.slice(0, 12) + (bi ? ' base=' + bi.name + ' sha=' + bi.sha256.slice(0, 12) + ' bytes=' + bi.bytes : ' (no base)')); await verifyBase(); await visit(); await persist(); await render(); return sp.space;
   }
@@ -699,6 +709,27 @@
       if (rq.space !== cfg.space || L.roster.devices[rq.kid] || rq.kid !== await global.CommStore.kidOf(rq.jwk)) continue; out.push({ rq: rq, code: codeOf(rq.kid) }); }
     log('§TEAM_PAIR requests listed: ' + names.length + ' pending=' + out.length); return out;
   }
+  // §44 C2: what a device approved at `roleId` can be BOUND to. The record types are the terminal FK targets of the plan's DOWN rows that address one entity (`by`) for that role, named by the dictionary;
+  // the records are read through the host's ONE tip reader (a record made this session is offered). Nothing here names a table: an office plan, or a role with no `by` row, has no types.
+  var colMemo = {};
+  function colsOf(tbl) { return colMemo[tbl] || (colMemo[tbl] = (function () { var o = {}; try { bq(adDb(), 'SELECT lower(c.columnname) AS n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=?', [tbl]).forEach(function (r) { o[r.n] = 1; }); } catch (e) {} return o; })()); }
+  function bindTypes(roleId) {
+    var seen = {}, out = [];
+    global.TeamScope.downBy(roleId).forEach(function (r) { var t = String(r.table).toLowerCase(); r.by.forEach(function (c) { t = t && fkTarget(t, c); });
+      if (t && !seen[t] && /^[a-z][a-z0-9_]*$/.test(t)) { seen[t] = 1; var n = bq(adDb(), 'SELECT name AS n FROM ad_table WHERE lower(tablename)=?', [t]); out.push({ table: t, label: n.length && n[0].n ? n[0].n : t }); } });
+    return out;
+  }
+  function recordsOf(tbl, uus) {                                       // [{uu, label}] - the tip's records of `tbl`: the active ones of this client (the picker), or exactly these _uu (the names on the people strip)
+    var rd = global.__tipRead, cols = colsOf(tbl); if (!rd || !cols[tbl + '_uu']) return [];
+    var ic = rd.ident(tbl).filter(function (c) { return !/_id$/i.test(c); }), cid = global.__idmpClient && Number(global.__idmpClient.id);
+    var w = tbl + '_id<>0 AND ' + tbl + '_uu IS NOT NULL' + (uus ? ' AND ' + tbl + "_uu IN ('" + uus.filter(function (u) { return /^[0-9a-f-]{8,40}$/i.test(u); }).join("','") + "')" : (cols.isactive ? " AND isactive='Y'" : '') + (cols.ad_client_id && cid ? ' AND ad_client_id IN (0,' + cid + ')' : ''));
+    return rd.rows('SELECT ' + tbl + '_uu AS uu' + ic.map(function (c) { return ', ' + c; }).join('') + ' FROM ' + tbl + ' WHERE ' + w + ' ORDER BY ' + (ic.length ? ic.join(', ') : tbl + '_id')).map(function (r) {
+      return { uu: String(r.uu).toLowerCase(), label: ic.map(function (c) { return r[c.toLowerCase()]; }).filter(function (x) { return x != null && x !== ''; }).join(' ') || String(r.uu).slice(0, 8) }; });
+  }
+  async function bindingFor(roleId) {                                  // -> null (nothing to bind at this role) | { types: [{table, label, options: [{uu, label}]}] }
+    await refreshScope(); var ts = bindTypes(roleId); if (!ts.length) return null;
+    return { types: ts.map(function (t) { return { table: t.table, label: t.label, options: recordsOf(t.table) }; }) };
+  }
   function roleList() { return shim(adDb()).prepare("SELECT ad_role_id AS id, name FROM ad_role WHERE ad_client_id IN (0, 11) ORDER BY ad_role_id").all(); }
   // entityUu (optional, §38.15): the device is bound to a RECORD - the person is created with person_uu = that record's _uu (a borrower's C_BPartner_UU, a till's AD_Org_UU), signed by this admin in the roster;
   // a second device of the same record is enrolled onto the person that already exists. Without it: exactly as before.
@@ -710,13 +741,13 @@
   }
   async function pairState() {
     await ready; var st = { device: dev ? dev.kid : null, code: dev ? codeOf(dev.kid) : null, space: cfg && cfg.space || null, founder: !!(cfg && cfg.founder), enrolled: false, devices: 0 };
-    if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; } return st;
+    if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; st.plan = L.roster.ok ? L.roster.plan : null; } return st;
   }
 
   global.TeamSync = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
                       // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
-                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, pairState: pairState,
+                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
