@@ -6,6 +6,7 @@
 //     R.setApp(op, v) · R.setPolicy({min_v:{op:n}}) · R.setShape(op, {defaults:{k:v}}) · await R.loadSet(set) -> {ok, reason?}
 //     R.fold(rows) -> {folded, parked:[{id,op_uuid,reason}], refused:[…], parked_count, provisional}      (sync, deterministic; call it again after loading a set / changing appV — there is no timer)
 //     await R.ledgerOf(result) -> sha256 hex over the folded ops only
+//   §46.6: judge() PARKS (needs-translation) below the floor instead of refusing; fold() below is the kernel-level path (no log positions) and still refuses retired-version - it has no consumer but W-OP-VERSIONS.
 //   OpVersions.setHash(set) -> sha256 hex of the canonical JSON of the set without `sig` (what the admin signs) · OpVersions.canonical(x)
 'use strict';
 (function (root, factory) {
@@ -110,11 +111,16 @@
     function minOf(t, policyParams) { var a = (policy.min_v[t]) || 1, b = policyParams && policyParams.min_v && policyParams.min_v[t]; return Math.max(a, b || 1); }
     // a version marker: an envelope body carries `sv` (the envelope itself has its own `v:3` format number — a different thing); a kernel op carries `_sv` inside its params; neither = shape 1 (legacy)
     function versionOfBody(body) { return body.sv !== undefined ? body.sv : (body.params && body.params._sv !== undefined ? body.params._sv : 1); }
-    // judge(body, policyParams) -> null (judge it as usual) | {verdict:'REFUSED'|'PARKED', reason}. Dependencies are the caller's (the comm fold already parks what reads a parked op).
+    // judge(body, policyParams) -> null (judge it as usual) | {verdict:'PARKED'|'REFUSED', reason}. Dependencies are the caller's (the comm fold already parks what reads a parked op).
+    // §46.6 S2 (F1/F2): a shape version BELOW the floor is never REFUSED for its age. It folds THROUGH a loaded translation (an upcaster chain that covers it) and is otherwise PARKED `needs-translation`
+    //   (also when the app itself is at or below the floor: nothing can translate it until the app is upgraded). Only a version that is not a version at all (`bogus-version`) is refused.
+    //   `policyParams.min_v` is the floor IN FORCE AT THE OP'S POSITION (the caller's job: roster.minVAt), not the final policy.
     function judge(body, policyParams) {
-      var t = body.op_type, v = versionOfBody(body), why = retireReason(t, v, minOf(t, policyParams));
-      if (why) return { verdict: 'REFUSED', reason: why };
-      why = parkReason(t, v);
+      var t = body.op_type, v = versionOfBody(body);
+      if (!isVersion(v)) return { verdict: 'REFUSED', reason: 'bogus-version' };
+      var why = parkReason(t, v), below = v < minOf(t, policyParams);
+      if (why === 'needs-upgrade') return { verdict: 'PARKED', reason: why };
+      if (below && (why || v >= (appVs[t] || 1))) return { verdict: 'PARKED', reason: 'needs-translation' };
       return why ? { verdict: 'PARKED', reason: why } : null;
     }
     function upcastInto(t, v, q) {

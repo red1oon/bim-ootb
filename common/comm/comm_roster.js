@@ -68,6 +68,9 @@
     for (var xi = 0; xi < kids.length; xi++) { var xk = kids[xi], xf = frontier[xk], pts = { 1: 1 }; pts[xf] = 1;       // §41.2 L2: a later map may not re-judge an op of the closed prefix
       (ra.exeHist || []).concat(rs.exeHist || []).forEach(function (e) { var c = e.from[xk]; if (c !== undefined) { if (c >= 1 && c <= xf) pts[c] = 1; if (c + 1 >= 1 && c + 1 <= xf) pts[c + 1] = 1; } });
       for (var pt of Object.keys(pts)) if (ENV.canonical(rs.exeAt(xk, Number(pt))) !== ENV.canonical(ra.exeAt(xk, Number(pt)))) return 'executors-changed'; }
+    for (var fi = 0; fi < kids.length; fi++) { var fk = kids[fi], ff = frontier[fk], fp = { 1: 1 }; fp[ff] = 1;          // §46.6 S1: a later floor raise may not re-judge an op of the closed prefix
+      (ra.minvHist || []).concat(rs.minvHist || []).forEach(function (e) { var c = e.from[fk]; if (c !== undefined) { if (c >= 1 && c <= ff) fp[c] = 1; if (c + 1 >= 1 && c + 1 <= ff) fp[c + 1] = 1; } });
+      for (var fq of Object.keys(fp)) if (ENV.canonical(rs.minVAt ? rs.minVAt(fk, Number(fq)) : {}) !== ENV.canonical(ra.minVAt ? ra.minVAt(fk, Number(fq)) : {})) return 'floor-changed'; }
     for (var k = 0; k < kids.length; k++) { var kid = kids[k], f = frontier[kid], ds = rs.devices[kid], da = ra.devices[kid];
       if (!ds || !da) return 'device-missing';
       if (ds.jwk.x !== da.jwk.x || ds.jwk.y !== da.jwk.y || ds.person !== da.person) return 'device-changed';
@@ -222,7 +225,7 @@
       exSig[ident[q2].hash] = SIGMEMO[mq2]; exHash[ENV.canonical(st2.map)] = await executorsHash(st2.map); }
 
     function walk(cut) {
-      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, exeHist = [], setTrust = {};
+      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, exeHist = [], setTrust = {}, minvHist = [], minvNow = {};
       L.order.forEach(function (h) {
         var e = byHash[h], p = e.body.params || {}, t = e.body.op_type;
         if (h === gen.hash) {
@@ -296,6 +299,9 @@
           var trustAt = trust;                                                          // §38.11 (G-7): the list this POLICY arrived under (before its own rotation)
           if (rot) { trust = rot; trustStmt = ENV.canonical(p.planTrust); trustEpoch = p.epoch; }
           if (rotE) { exe = rotE; exeStmt = ENV.canonical(p.executors); exeEpoch = p.epoch; exeHist.push({ map: rotE, from: (p.from_seq && typeof p.from_seq === 'object' && !Array.isArray(p.from_seq)) ? p.from_seq : {} }); }       // §41.2 L2: every map is recorded with the publisher's per-device frontier, so an op is judged by the map in force at ITS position   // applied only now: every other check of this POLICY has passed
+          // §46.6 S1 (F1): every RAISE of the shape floor is recorded with the publisher's per-device frontier (only the keys that rose), so an op is judged by the floor in force at ITS position, never by today's policy
+          if (p.min_v) { var dlt = {}, rose = false; Object.keys(p.min_v).forEach(function (mk) { if (p.min_v[mk] > (minvNow[mk] || 1)) { dlt[mk] = p.min_v[mk]; rose = true; } minvNow[mk] = Math.max(minvNow[mk] || 1, p.min_v[mk]); });
+            if (rose) minvHist.push({ min_v: dlt, from: (p.from_seq && typeof p.from_seq === 'object' && !Array.isArray(p.from_seq)) ? p.from_seq : {} }); }
           policy = { epoch: p.epoch, params: p, hash: h, author: e.author };
           // §38.11 (G-7): each upcaster set is judged by the hosts against the list in force when the POLICY that FIRST carried it arrived — never the list of today
           /*G7:RECORD*/ (Array.isArray(p.upcasters) ? p.upcasters : []).forEach(function (u) { var ck7 = ENV.canonical(u); if (setTrust[ck7] === undefined) setTrust[ck7] = trustAt ? JSON.parse(JSON.stringify(trustAt)) : null; });
@@ -309,7 +315,7 @@
         } else if (t === 'GENESIS') return no('second-genesis');
         v[h] = { verdict: 'MERGED', reason: t.toLowerCase() };
       });
-      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch, exeHist: exeHist, setTrust: setTrust };
+      return { dev: dev, person: person, rev: rev, v: v, holders: holders, grants: grants, rekeys: rekeys, epoch: maxE, policy: policy, ck: ck, trust: trust, trustEpoch: trustEpoch, exe: exe, exeEpoch: exeEpoch, exeHist: exeHist, setTrust: setTrust, minvHist: minvHist };
     }
     var cut = {}, w = null, walks = 0, stable = false;
     while (walks < 5) { walks++; w = walk(cut); if (JSON.stringify(w.rev) === JSON.stringify(cut)) { stable = true; break; } cut = w.rev; }
@@ -318,7 +324,9 @@
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
              encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), plan: gen.env.body.params.plan === 'pos' ? 'pos' : 'office', planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch,
              // §41.2 L2: the executor map in force for the op (kid, seq): the latest map whose publisher's frontier did not yet cover it - the same cut-off rule as roleAt. null = no map yet (legacy).
-             exeAt: function (kid, seq) { var m = null; w.exeHist.forEach(function (e) { if ((e.from[kid] || 0) < seq) m = e.map; }); return m; }, exeHist: w.exeHist, setTrust: w.setTrust, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
+             exeAt: function (kid, seq) { var m = null; w.exeHist.forEach(function (e) { if ((e.from[kid] || 0) < seq) m = e.map; }); return m; }, exeHist: w.exeHist, setTrust: w.setTrust,
+             // §46.6 S1: the shape floor in force for the op (kid, seq): per op type the highest raise whose publisher's frontier did not yet cover it - the same cut-off rule as exeAt / roleAt. {} = no floor (an unstamped raise, from = {}, covers every op).
+             minvHist: w.minvHist, minVAt: function (kid, seq) { var r = {}; w.minvHist.forEach(function (e) { if ((e.from[kid] || 0) < seq) Object.keys(e.min_v).forEach(function (k) { if (!(r[k] >= e.min_v[k])) r[k] = e.min_v[k]; }); }); return r; }, grants: w.grants, rekeys: w.rekeys, policy: w.policy, checkpoints: w.ck, holdersAll: (function () { var a = {}; Object.keys(w.holders).forEach(function (e) { Object.keys(w.holders[e]).forEach(function (k) { a[k] = 1; }); }); return a; })(),
              roleAt: function (kid, seq) { var d = w.dev[kid]; return roleAt(d && w.person[d.person], kid, seq); } };
   }
 

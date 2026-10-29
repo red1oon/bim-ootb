@@ -157,7 +157,7 @@
         verdict[o.hash] = ADM.admit(o.env, roster, { sigOk: dv ? await sigOk(o.hash, o.env, dv.jwk) : false, base: ADM.baseStamp(roster.base), baseMissing: bmiss,
           scope: sc, access: access || function () { return { allowed: false, reason: 'no-access-adapter' }; } });
         // §16.31: the shape-version judgement only ever DOWNGRADES an op that was admitted (a refusal or park for signature, role, access, scope or deps stays as it is)
-        if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.policy ? roster.policy.params : null); if (vj) verdict[o.hash] = vj; }
+        if (opts.versions && verdict[o.hash].verdict === 'MERGED') { var vj = opts.versions.judge(o.env.body, roster.minVAt ? { min_v: roster.minVAt(o.env.author, o.env.seq) } : (roster.policy ? roster.policy.params : null)); if (vj) verdict[o.hash] = vj; }       // §46.6 S1: the floor in force at THIS op's position (like exeAt), never the final policy
         // FL-8 E3 (§38.3): a DocAction status op on a table with a named executor is admitted only from a device whose signed team role IS that executor (study §12.2 2.5: a role only)
         if (roster.executors && verdict[o.hash].verdict === 'MERGED' && o.env.body.op_type === 'SET_STATUS') { var exm = roster.exeAt(o.env.author, o.env.seq), ex = exm ? exm[String(o.env.target.table).toLowerCase()] : undefined;       // §41.2 L2: the map at THIS op's position, not the final one
           if (ex !== undefined) { var okExe = roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
@@ -213,6 +213,7 @@
       return { claims: claims, used: used, losers: losers };
     }
     // ── checkpoints (§13.12.3) ───────────────────────────────────────────────────────────────────────────────────
+    var VERSION_WAIT = { 'needs-upgrade': 1, 'needs-mapping': 1, 'needs-translation': 1 };     // §46.6: the parked reasons that are about what THIS app can read yet - a wait, never a condemnation
     var IDTYPES = Object.keys(ROS.IDENTITY), base = null, verified = {}, badCk = {}, waitCk = {}, rosterCache = {}, baseCache = {}, trusted = {}, authors = null, hasCk = null, ckLoaded = false, prevRest = [], logged = {};
     var HEX = /^[0-9a-f]{64}$/;
     function _once(key, msg) { if (!logged[key]) { logged[key] = 1; log(msg); } }
@@ -243,7 +244,7 @@
       var pf = prevSt ? prevSt.frontier : {}, ids = identityRows(), idS = prevSt ? idUpTo(ids, pf) : [];
       var bs = prevSt ? { verdict: prevSt.verdict, scopes: prevSt.scopes, claims: prevSt.claims || {}, used: prevSt.used || {}, c: prevC } : null;
       var raw = rangeRows(pf, frontier), res = await core(bs, raw, [], idS);
-      if (res.parked.length) return { problem: 'parked-in-S', versioned: res.parked.some(function (h) { var r = res.verdict[h] && res.verdict[h].reason; return r === 'needs-upgrade' || r === 'needs-mapping'; }) };
+      if (res.parked.length) return { problem: 'parked-in-S', versioned: res.parked.some(function (h) { var r = res.verdict[h] && res.verdict[h].reason; return VERSION_WAIT[r]; }) };
       if (res.equivocations.length) return { problem: 'equivocation-in-S' };
       var verdict = Object.assign({}, prevSt ? prevSt.verdict : {}, res.verdict), scopes = Object.assign({}, prevSt ? prevSt.scopes : {});
       Object.keys(res.createOf).forEach(function (u) { var sc = _scopeOfCreate(res.createOf[u]); if (sc) scopes[u] = [sc.client, sc.org]; });
@@ -446,11 +447,17 @@
     async function versionState() {
       var L = await order(), parked = {}, refused = {}, prov = false, nP = 0, nR = 0;
       Object.keys(L.verdict).forEach(function (h) { var v = L.verdict[h];
-        if (v.verdict === 'PARKED') { nP++; parked[v.reason] = (parked[v.reason] || 0) + 1; if (v.reason === 'needs-upgrade' || v.reason === 'needs-mapping') prov = true; }
+        if (v.verdict === 'PARKED') { nP++; parked[v.reason] = (parked[v.reason] || 0) + 1; if (VERSION_WAIT[v.reason]) prov = true; }
         else if (v.verdict === 'REFUSED' && /^(bogus-version|retired-version)$/.test(v.reason)) { nR++; refused[v.reason] = (refused[v.reason] || 0) + 1; } });
       return { parked_count: nP, provisional: prov, parked_by_reason: parked, refused_count: nR, refused_by_reason: refused };
     }
     function refold() { last = null; waitCk = {}; }
+    // §46.6 S3: the version-parked ops that hold their OWN author's chain out of every checkpoint (an undecided op caps that author's frontier; the other authors proceed). [{author, seq, reason, hash}], first held op per author.
+    function heldOps(L) { var by = {};
+      Object.keys(L.verdict).forEach(function (h) { var v = L.verdict[h]; if (v.verdict !== 'PARKED' || !VERSION_WAIT[v.reason]) return;
+        var r = _q(db, 'SELECT author_kid AS a, author_seq AS q FROM cl_op WHERE op_hash=?', [h])[0]; if (!r) return;
+        if (!by[r.a] || r.q < by[r.a].seq) by[r.a] = { author: r.a, seq: r.q, reason: v.reason, hash: h }; });
+      return Object.keys(by).sort().map(function (a) { return by[a]; }); }
     // notices for one person: every conflict where one of their devices is a candidate (derived, never an op)
     async function notices(personUu) {
       var pu = String(personUu).toLowerCase(), msg = opts.messageText ? opts.messageText('CurrentRecordModified') : null;
@@ -489,6 +496,12 @@
     }
 
     // spec = { target, body, intent?, refs?:[uu], ts?, attrib? }. Identity ops also read the space + my device + my person.
+    var unrFor = null, unrVal = {};
+    async function unreadable() { var L = await cur(); if (unrFor === L) return unrVal; var out = {};          // §46.6 S5: every record touched by an op parked for a VERSION reason (memoised on the fold result)
+      for (var h of Object.keys(L.verdict)) { var v = L.verdict[h]; if (v.verdict !== 'PARKED' || !VERSION_WAIT[v.reason]) continue;
+        var rr = _q(db, 'SELECT envelope FROM cl_op WHERE op_hash=?', [h])[0]; if (!rr) continue;
+        for (var tu of await ROS.touched(JSON.parse(rr.envelope))) out[String(tu).toLowerCase()] = 1; }
+      unrFor = L; unrVal = out; return out; }
     async function author(spec) { return authorOne(spec, await versions(), null); }
     // §41.2 L1 (profiled: author() costs O(log size) per op - versions() walks the whole log, cur() refolds it - so N ops cost O(N^2)): a BATCH of business ops reads the versions and the base ONCE and keeps its own
     // heads current (an op's head replaces what it read). The envelopes are the ones author() would have made one by one. -> { done: [{env, hash}], error }
@@ -501,6 +514,8 @@
     async function authorOne(spec, ver, rbc) {
       var me = selfRow(), reads = {}, ident = !!ROS.IDENTITY[spec.body.op_type];
       var uus = [String(spec.target.uu).toLowerCase()].concat((spec.refs || []).map(function (u) { return String(u).toLowerCase(); }));
+      if (opts.versions && !ident) { var unr = await unreadable(), hit = uus.filter(function (u) { return unr[u]; })[0];         // §46.6 S5 (D10): a record whose history holds ops THIS app has parked is read-only here - a write would be made from a partial picture of it
+        if (hit) { var er = new Error('needs-upgrade: record ' + hit + ' has changes this app cannot read yet; it is read-only here until the app (or a translation) is updated'); er.code = 'needs-upgrade'; er.uu = hit; log('§VERSION_READONLY kid=' + self.kid + ' uu=' + hit.slice(0, 8) + ' (a write was refused locally: needs-upgrade)'); throw er; } }
       if (ident && spec.body.op_type !== 'GENESIS') uus = uus.concat([await ROS.spaceUU(space), await ROS.devUU(self.kid), String(me.person_uu || '').toLowerCase()].filter(Boolean));
       uus.forEach(function (u) { reads[u] = ver[u] || null; });
       var deps = [].concat.apply([], Object.keys(reads).map(function (k) { var r = reads[k]; return r == null ? [] : (Array.isArray(r) ? r : [r]); })).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
@@ -550,6 +565,8 @@
     // A new POLICY reads the previous one (same record), so concurrent policies show up as heads and the fold keeps one epoch.
     async function setPolicy(params) {
       if (params && params.executors !== undefined && params.from_seq === undefined) params = Object.assign({}, params, { from_seq: await frontier() });       // §41.2 L2: a map is published WITH the frontier it was published at
+      if (params && params.min_v && typeof params.min_v === 'object') { var cp0 = await policy(), cm0 = (cp0 && cp0.params.min_v) || {};         // §46.6 S1: a RAISE of the floor is published WITH the frontier it was published at (a carried-forward stamp is stale: replaced)
+        if (Object.keys(params.min_v).some(function (k) { return params.min_v[k] > (cm0[k] || 1); }) && (params.from_seq === undefined || (cp0 && ENV.canonical(params.from_seq) === ENV.canonical(cp0.params.from_seq || null)))) params = Object.assign({}, params, { from_seq: await frontier() }); }
       return author({ target: { table: 'comm_policy', uu: await ROS.policyUU(space) }, body: { op_type: 'POLICY', params: params } }); }
     // §38.10 (G-8): publish an owner-signed statement (executors map / plan-trust rotation) as the next POLICY, every other param carried forward; the answer is THIS
     // device's fold verdict — the same one every device reaches — so a stale, untrusted or non-admin statement is reported at once, before any Visit
@@ -819,6 +836,7 @@
             if (!(bs && bs.verdict[d]) && !(dr && dr.env.seq <= (f[dr.env.author] || 0))) { f[r.env.author] = r.env.seq - 1; changed = true; return; } } }); }
       Object.keys(f).forEach(function (a) { if (f[a] < 1) delete f[a]; });
       if (!Object.keys(f).some(function (a) { return f[a] > (f0[a] || 0); })) return { skipped: 'nothing-new' };
+      var held = heldOps(L); if (held.length) _once('held:' + held.map(function (x) { return x.author + '#' + x.seq; }).join(','), '§CKPT_HELD kid=' + self.kid + ' held=' + held.map(function (x) { return x.author.slice(0, 8) + '@' + x.seq + ':' + x.reason; }).join(',') + ' — each holds only its own author out of the checkpoint; the others proceed; a loaded translation lifts the hold');
       var r = await foldS(bs ? bs.state : null, f, bs ? bs.c : null); if (r.problem) return { skipped: r.problem };
       var body = r.state, sh = await stateHashOf(body); body.hash = sh;
       var ids = identityRows(), rs = await ROS.fold(idUpTo(ids, f), space);
@@ -856,7 +874,7 @@
     }
     async function checkpointInfo() {
       var L = await cur(), R = L.roster; await loadCk();
-      return { inForce: L.base ? { state_hash: L.base.stateHash, pos: L.base.pos, frontier: L.base.frontier } : null,
+      return { held: heldOps(L), inForce: L.base ? { state_hash: L.base.stateHash, pos: L.base.pos, frontier: L.base.frontier } : null,
         candidates: Object.keys(R.checkpoints || {}).map(function (sh) { var c = R.checkpoints[sh];
           return { state_hash: sh, pos: c.params.pos, cosigners: Object.keys(c.persons).length, status: badCk[sh] ? 'BAD' : (waitCk[sh] ? 'WAITING-VERSION' : (L.base && L.base.stateHash === sh ? 'IN-FORCE' : (verified[sh] ? (trusted[sh] ? 'TRUSTED' : 'VERIFIED') : 'PENDING'))) }; }) };
     }
