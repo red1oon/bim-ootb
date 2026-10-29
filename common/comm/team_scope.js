@@ -38,6 +38,7 @@
     kind: function () { return memo.kind; },
     hub: function () { var I = idx(); return I && I.hubRole !== undefined ? I.hubRole : null; },
     by: function (table) { var I = idx(), h = I && I.hub[lc(table)]; return h && Array.isArray(h.by) && h.by.length ? h.by.slice() : null; },       // the FK path that narrows a DOWN row to one entity (and so one person)
+    downBy: function (role) { var I = idx(), out = []; if (!I) return out; Object.keys(I.hub).forEach(function (t) { var h = I.hub[t]; if (h.dir === 'DOWN' && Array.isArray(h.by) && h.by.length && (role === undefined || role === null || String(h.role) === String(role))) out.push({ table: h.table, by: h.by.slice() }); }); return out; },   // the DOWN rows that address ONE entity (a FK path) for this role: what a device of that role can be BOUND to
     ship: function (table) { var I = idx(), h = I && I.hub[lc(table)]; return h && Array.isArray(h.ship) ? h.ship.map(lc) : null; },              // the ONLY columns of a hub row that may leave the device (FL-1)
     // INBOUND, pure: may this device take in an op another device authored? c = { self, authorRole, authorPerson, myPerson, addr } - addr = the uu of the entity the record is addressed to (the host resolves it), or null.
     admits: function (table, role, c) { var s = global.TeamScope.scopeOf(table, role), I = idx(), t = lc(table); c = c || {};
