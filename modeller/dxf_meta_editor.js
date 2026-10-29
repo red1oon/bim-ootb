@@ -48,7 +48,7 @@
   var TAGE = '§DXF-EVIDENCE';
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
-    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
   function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
@@ -842,7 +842,7 @@
   // a row with another value than the most common one is its own open group (`<rule>!`, marked disagrees) that the group tick does not take. Rows stay in the page (hidden while closed): every control works on them.
   var GROUP_NAME = { 'PR-GRID': 'Grid lines', 'PR-GRID-TICK': 'Grid lines from dimension ticks', 'PR-Z': 'Level datums', 'PR-Z-GROUND': 'Ground line (z 0)', 'PR-UNITS': 'Units', 'PR-VIEW': 'Sheet roles', 'PR-NAME': 'Sheet names',
     'PR-SET': 'Set name', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
-    'PR-CUT-TITLE': 'Section cut from the title', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
+    'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
   var SET_WIDE = { UNITS: 1, SET: 1, ROOF: 1 };
   function firstInOrder(sel) {   // §D81 the button of the row that comes first in the flat list (grouping changes the page order, not the order the markings are written in)
     var best = null, bo = Infinity; Array.prototype.forEach.call(S.panel.querySelectorAll(sel), function (b) { var r = b.closest('[data-yord]'), o = r ? Number(r.getAttribute('data-yord')) : -1; if (o < bo) { bo = o; best = b; } }); return best; }

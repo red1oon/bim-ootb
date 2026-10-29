@@ -200,7 +200,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     const st0 = await state(); await pg.evaluate(() => { window.__arr = { steps: [], checks: [], stage0: null }; }); const rp = await play(); await sleep(400); const st1 = await state();
     ok('A7b[shed raw] a replay (Arrange button path) of all ' + rp.total + ' yellow steps leaves verdict, markings, saved texts, gate byte-identical', same(st0, st1) && rp.steps === rp.total, JSON.stringify(rp));
     // the one-datum preview rule against the CLI's stated second datum: the yellow ground line + the unit factor put the stated y at 0.6096 m (within 0.5 mm)
-    const oneDatum = await pg.evaluate(D => window.DxfMetaEditor.preview().filter(p => p.desc.zs.length === 1 && Object.keys(D).some(k => p.name.indexOf(k) === 0)).map(p => { const k = Object.keys(D).filter(q => p.name.indexOf(q) === 0)[0], z = p.desc.zs[0], f = { in: 0.0254, mm: 0.001 }[p.desc.units];
+    const oneDatum = await pg.evaluate(D => window.DxfMetaEditor.preview().filter(p => p.desc.zs.length >= 1 && Object.keys(D).some(k => p.name.indexOf(k) === 0)).map(p => { const k = Object.keys(D).filter(q => p.name.indexOf(q) === 0)[0], z = p.desc.zs.find(q => q.z === 0) || p.desc.zs[0], f = { in: 0.0254, mm: 0.001 }[p.desc.units];
       return { n: k, dz: Math.abs(z.z + (D[k] - z.y) * f - 0.6096) }; }), DATUM);
     ok('A7a[shed raw] one datum + units place the heights in the preview: the stated second datum of the CLI run (0.6096 m) lands within 0.5 mm of the suggested ground line', oneDatum.length === 5 && oneDatum.every(x => x.dz <= 0.0005), oneDatum.map(x => x.n + ':' + (x.dz * 1000).toFixed(3) + 'mm').join(' '));
     // A7 part 2: Accept all, then the values the CLI states (--set SHED, --level 0, the five second datums) typed into the panel's own fields, Accept all again
@@ -233,8 +233,11 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       const v = document.getElementById('dm-av-' + si + '-Z'), p = document.getElementById('dm-ap-' + si + '-Z'); if (!v) return null; const ask = v.closest('.dm-row').previousElementSibling, z0 = S.sheets[si].marks.filter(m => m.key === 'Z')[0];
       return { ask: ask && ask.classList.contains('dm-ask') ? ask.innerText : null, y: z0 ? String(Number(Number(z0.y).toFixed(6))) : null, needV: v.classList.contains('need'), needP: p.classList.contains('need'), ph: v.placeholder + '|' + p.placeholder }; }, si);
     const eIdx = names.map((n, i) => /ELEV|SECTION/.test(n) ? i : -1).filter(i => i >= 0), asks = []; for (const si of eIdx) asks.push(await askOf(si));
-    ok('A11a[shed raw] each of the ' + eIdx.length + ' elevation / section cards asks for the second height: the question quotes the sheet\'s own ground y, both inputs carry `need`, the placeholders say what goes in',
-      eIdx.length === 5 && asks.every(a => a && a.ask && a.y && a.ask.indexOf('One height is known') === 0 && a.ask.indexOf('at y ' + a.y) > 0 && a.needV && a.needP && a.ph === 'height, m|y where drawn'), asks.map(a => a ? (a.y + ':' + (a.needV && a.needP)) : 'null').join(' '));
+    // §D96: the shed's elevations / section now read their second height from the drawing's own dimension, so after Accept all no card asks; the question itself
+    // (the ground y it quotes, the red outlines, the placeholders) is witnessed on sheets that still ask: W-DATUM-PICK P8 (rule off)
+    const zNow = await pg.evaluate(ix => ix.map(si => { const S = window.DxfMetaEditor.state; return { n: S.sheets[si].name, z: S.sheets[si].marks.filter(m => m.key === 'Z').map(m => m.rule || m.source) }; }), eIdx);
+    ok('A11a[shed raw] (§D96) after Accept all none of the ' + eIdx.length + ' elevation / section cards asks for a second height: each holds 2 @Z, one read from the drawing\'s dimension (PR-Z-DIM)',
+      eIdx.length === 5 && asks.every(a => a === null || !a.ask) && zNow.every(q => q.z.length === 2 && q.z.indexOf('PR-Z-DIM') >= 0), zNow.map(q => q.n.replace(/\.dxf$/, '') + ':' + q.z.join('+')).join(' '));
     await typeField(0, 'SET', 'SHED'); await idle(); await sleep(1500);
     // A8: a typed value moves the sheet live: @LEVEL=0 typed on the plans gives the reference plan, so HAXIS is suggested (yellow) and the other plans align: the view tweens them from where they stand
     const before8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
