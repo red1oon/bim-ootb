@@ -787,6 +787,9 @@
       // as "not checked" — `rulesOverlay.source` says which.
       rulesOverlay: meta.rulesOverlay || null,
       rulesProvenance: meta.rulesProvenance || [],
+      // T13.3/T13.4 (STRUCTURAL_SANITY.md): what each rule judged (ran / nothing_to_judge / not_checkable / not_applicable) and the building type the rules saw
+      ruleCoverage: meta.coverage || null,
+      buildingType: meta.buildingType || null,
       totals: { findings: all.length, rules: rules.length, severity: bySev,
         withWitness: all.filter(function (r) { return r.witness !== undefined; }).length },
       rules: rules,
@@ -818,7 +821,31 @@
   // Stable JSON — key order is insertion order above, so the same rows give the same bytes (T8.6).
   function toJson(report) { return JSON.stringify(report, null, 2); }
 
-  return {
+  // ══ T13 §CODE_NAMED (STRUCTURAL_SANITY.md) — pure: which codes judged, and what was NOT judged ══
+  // codesAndCoverage(rulesUsed, coverage, {overlay, type}) -> { codes, n:{ran,nothing_to_judge,not_checkable,not_applicable}, total, idle[], overlay, type }
+  // codes = the distinct `basis.code` of the rules whose coverage state is `ran` (top-level basis, or per-threshold basis entries); a rule without a basis adds none.
+  function codesAndCoverage(rulesUsed, cov, o) {
+    o = o || {}; var list = []; Object.keys(rulesUsed || {}).forEach(function (k) { if (Array.isArray(rulesUsed[k])) list = list.concat(rulesUsed[k]); });
+    var byName = {}; list.forEach(function (r) { if (r && r.name) byName[r.name] = r; });
+    var codes = [], n = { ran: 0, nothing_to_judge: 0, not_checkable: 0, not_applicable: 0 }, idle = [];
+    var addCode = function (b) { if (b && b.code && codes.indexOf(b.code) < 0) codes.push(b.code); };
+    Object.keys(cov || {}).forEach(function (k) { var c = cov[k]; n[c.state] = (n[c.state] || 0) + 1;
+      if (c.state === 'ran') { var b = (byName[k] || {}).basis; if (b) { if (b.code) addCode(b); else Object.keys(b).forEach(function (f) { addCode(b[f]); }); } }
+      else idle.push(k + ' (' + (c.state === 'nothing_to_judge' ? 'nothing to judge' + (c.of ? ': no ' + c.of : '') : c.state === 'not_applicable' ? 'not for this building type' : 'not checkable: ' + (c.reason || '')) + ')'); });
+    return { codes: codes.sort(), n: n, total: Object.keys(cov || {}).length, idle: idle, overlay: o.overlay && o.overlay.source === 'fetched' ? o.overlay.id : null, type: o.type || null };
+  }
+  // applyTypes(rulesKey, rules, rows, cov, type, log) -> rows without the findings of rules whose `applies_to_types` excludes `type` (absent field = every type;
+  // type not stated + a rule that names types = not applicable: a typed rule is never assumed to hold). cov[rule] becomes { state:'not_applicable', types, dropped }.
+  function applyTypes(rulesKey, rules, rows, cov, type, log) {
+    log = log || function () {}; var na = {};
+    ((rules || {})[rulesKey] || []).forEach(function (r) { if (r && r.name && Array.isArray(r.applies_to_types) && !(type && r.applies_to_types.indexOf(type) >= 0)) na[r.name] = r.applies_to_types; });
+    Object.keys(na).forEach(function (k) { var dropped = rows.filter(function (x) { return x.rule === k; }).length;
+      cov[k] = { judged: 0, findings: 0, state: 'not_applicable', types: na[k], dropped: dropped };
+      log('§RULE_APPLIES rule=' + k + ' state=not_applicable type=' + (type || 'not_stated') + ' applies_to_types=' + na[k].join('|') + ' findings_dropped=' + dropped); });
+    return rows.filter(function (x) { return !na[x.rule]; });
+  }
+
+  return { codesAndCoverage: codesAndCoverage, applyTypes: applyTypes,
     buildRuleReport: buildRuleReport,
     loadRules: loadRules,
     artifactRates: artifactRates,

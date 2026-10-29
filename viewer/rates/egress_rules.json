@@ -1,21 +1,112 @@
 {
   "egress_rules": [
-    { "name": "door_clear_width", "applies_to": ["IfcDoor"],
-      "warning_m": 0.85, "critical_m": 0.813, "max_severity": "WARNING" },
-    { "name": "circulation_distance", "applies_to": ["room_graph_node"],
-      "target": "exit_or_own_storey_circ", "warning_m": 45.7, "critical_m": 60.96,
-      "max_severity": "WARNING" },
-    { "name": "isolated_room", "applies_to": ["room_graph_node"],
-      "target": "own_storey_circ" },
-
-    { "_cite": "IBC 2021 §1006.2.1 / Table 1006.2.1 — distance from the most remote point in a space to where an occupant FIRST gains a choice of two paths. 100ft=30.5m sprinklered, 75ft=22.9m not. The evaluator uses the UNSPRINKLERED figure unless real sprinkler evidence is found, matching this file's own over-flag-never-under-flag bias.",
-      "name": "common_path_of_egress_travel", "applies_to": ["room_graph_node"],
+    {
+      "name": "door_clear_width",
+      "applies_to": [
+        "IfcDoor"
+      ],
+      "warning_m": 0.85,
+      "critical_m": 0.813,
+      "max_severity": "WARNING",
+      "basis": {
+        "critical_m": {
+          "code": "IBC 2021",
+          "clause": "§1010.1.1",
+          "note": "general minimum clear opening width (32 in)",
+          "source": "viewer/egress_sanity.js:18"
+        },
+        "warning_m": {
+          "kind": "buffer",
+          "note": "uncited early heads-up above the cited minimum",
+          "source": "viewer/egress_sanity.js:19"
+        }
+      }
+    },
+    {
+      "name": "circulation_distance",
+      "applies_to": [
+        "room_graph_node"
+      ],
+      "target": "exit_or_own_storey_circ",
+      "warning_m": 45.7,
+      "critical_m": 60.96,
+      "max_severity": "WARNING",
+      "basis": {
+        "critical_m": {
+          "code": "IBC 2021",
+          "clause": "Table 1017.2 (Group I-2)",
+          "source": "viewer/egress_sanity.js:25"
+        },
+        "warning_m": {
+          "kind": "buffer",
+          "note": "about 75 % of the cited limit, uncited",
+          "source": "viewer/egress_sanity.js:27"
+        }
+      }
+    },
+    {
+      "name": "isolated_room",
+      "applies_to": [
+        "room_graph_node"
+      ],
+      "target": "own_storey_circ",
+      "basis": {
+        "kind": "topology",
+        "note": "a room with no door path to its storey circulation; no code threshold"
+      }
+    },
+    {
+      "_cite": "IBC 2021 §1006.2.1 / Table 1006.2.1 — distance from the most remote point in a space to where an occupant FIRST gains a choice of two paths. 100ft=30.5m sprinklered, 75ft=22.9m not. The evaluator uses the UNSPRINKLERED figure unless real sprinkler evidence is found, matching this file's own over-flag-never-under-flag bias.",
+      "name": "common_path_of_egress_travel",
+      "applies_to": [
+        "room_graph_node"
+      ],
       "target": "first_choice_of_two_paths",
-      "critical_m": 22.9, "critical_m_sprinklered": 30.5, "max_severity": "WARNING" },
-
-    { "_cite": "IBC 2021 §1007.1.1 — where two exits are required they shall be placed not less than one-half the maximum overall diagonal dimension of the area served apart; one-third where sprinklered throughout per §903.3.1.1/§903.3.1.2. A RATIO of the diagonal, not a distance, so it carries no _m threshold.",
-      "name": "exit_remoteness", "applies_to": ["storey"],
+      "critical_m": 22.9,
+      "critical_m_sprinklered": 30.5,
+      "max_severity": "WARNING",
+      "basis": {
+        "code": "IBC 2021",
+        "clause": "§1006.2.1 / Table 1006.2.1",
+        "source": "viewer/rates/egress_rules.json (_cite)"
+      }
+    },
+    {
+      "_cite": "IBC 2021 §1007.1.1 — where two exits are required they shall be placed not less than one-half the maximum overall diagonal dimension of the area served apart; one-third where sprinklered throughout per §903.3.1.1/§903.3.1.2. A RATIO of the diagonal, not a distance, so it carries no _m threshold.",
+      "name": "exit_remoteness",
+      "applies_to": [
+        "storey"
+      ],
       "target": "max_overall_diagonal",
-      "ratio_unsprinklered": 0.5, "ratio_sprinklered": 0.3333, "max_severity": "WARNING" }
+      "ratio_unsprinklered": 0.5,
+      "ratio_sprinklered": 0.3333,
+      "max_severity": "WARNING",
+      "basis": {
+        "code": "IBC 2021",
+        "clause": "§1007.1.1",
+        "source": "viewer/rates/egress_rules.json (_cite)"
+      }
+    },
+    {
+      "name": "door_occupant_capacity",
+      "applies_to": [
+        "IfcDoor"
+      ],
+      "occupant_load_factor_m2": 13.94,
+      "width_per_occupant_m": 0.00508,
+      "max_severity": "WARNING",
+      "basis": {
+        "occupant_load_factor_m2": {
+          "code": "IBC 2021",
+          "clause": "Table 1004.5 \"Business areas\" (150 gross sf/person)",
+          "source": "viewer/egress_sanity.js:330"
+        },
+        "width_per_occupant_m": {
+          "code": "IBC 2021",
+          "clause": "§1005.3.2 (non-sprinklered, 0.2 in/occupant)",
+          "source": "viewer/egress_sanity.js:337"
+        }
+      }
+    }
   ]
 }

@@ -410,6 +410,8 @@
     var support = _supportChecks(beamRows, supportRows, floatingRule.tolerance_m, floatingRule.framing_dz_m, anyRows, framingRows);
     var floatingCount = { CRITICAL: 0 };
     var unmatched = 0;
+    // T13.3 (STRUCTURAL_SANITY.md): what each rule actually JUDGED, so a rule that judged nothing says so instead of reading clean
+    var judged = { floating_member: beamRows.length, span_depth_steel: 0, span_depth_concrete: 0, span_depth_cantilever: 0, column_continuity: 0 };
     var spanDepthCounts = { span_depth_steel: { WARNING: 0, uncapped_critical: 0 }, span_depth_concrete: { WARNING: 0, uncapped_critical: 0 }, span_depth_cantilever: { WARNING: 0, uncapped_critical: 0 } };
 
     beamRows.forEach(function (b) {
@@ -435,6 +437,7 @@
         unmatched++;
         return; // no material signal — not scored, not silently guessed (Prime Rule)
       }
+      judged[ruleName]++;
       var uncappedCrit = ratio >= rule.critical_ratio;
       if (uncappedCrit) spanDepthCounts[ruleName].uncapped_critical++;
       var sev = _severityForRatio(ratio, rule);
@@ -492,8 +495,21 @@
       }
     });
     log('§STRUCT_SANITY rule=column_continuity severity=' + unsupportedColCount);
+    judged.column_continuity = colRows.length;
+    _coverage(rows, judged, { span_depth_steel: 'beams named ' + (steelRule.name_hints || []).join('/'), span_depth_concrete: 'beams named ' + (concreteRule.name_hints || []).join('/'), span_depth_cantilever: 'beams with one supported end', floating_member: 'IfcBeam (STR)', column_continuity: 'IfcColumn' }, opts, log, 'STRUCT', unmatched);
 
     return rows;
+  }
+
+  // T13.3: per rule { judged, findings, of } into opts.coverage (when given) + one § line per rule; the findings are untouched
+  function _coverage(rows, judged, of, opts, log, tag, unmatched) {
+    var f = {}; rows.forEach(function (r) { f[r.rule] = (f[r.rule] || 0) + 1; });
+    Object.keys(judged).forEach(function (k) {
+      var c = { judged: judged[k], findings: f[k] || 0, of: of[k] || '', state: judged[k] > 0 ? 'ran' : 'nothing_to_judge' };
+      if (opts.coverage) opts.coverage[k] = c;
+      log('§RULE_COVERAGE kind=' + tag + ' rule=' + k + ' state=' + c.state + ' judged=' + c.judged + ' findings=' + c.findings + ' of="' + c.of + '"');
+    });
+    if (unmatched !== undefined) log('§RULE_COVERAGE kind=' + tag + ' unscored_no_material_signal=' + unmatched);
   }
 
   return { evaluate: evaluate,
