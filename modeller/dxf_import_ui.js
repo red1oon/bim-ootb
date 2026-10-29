@@ -362,7 +362,8 @@
     if (!n) console.log(TAGA + ' skip-on-open: no yellow step, every value is stated in the set, it opens placed');
     return n > 0;
   }
-  function arrNeeded(R) { return R.items.some(function (it) { return it.tintFinal || (it.view && lacksOf(it).length && it.stages.length > 1 && maxDiff(it.stages[it.stages.length - 1], it.stages[0]) > 1e-12 && !(state.canvas && state.canvas[it.name])); }); }
+  function arrNeeded(R) { return R.items.some(function (it) { return it.tintFinal || (it.view && lacksOf(it).length && it.stages.length > 1 && maxDiff(it.stages[it.stages.length - 1], it.stages[0]) > 1e-12 && !(state.canvas && state.canvas[it.name]))
+    || (it.view && it.stages.length > 1 && !(state.canvas && state.canvas[it.name])); }); }   // §D96: never hand over to a canvas that does not draw the placed sheet (no set name yet: the canvas is empty)
   function handOver(why) { console.log(TAGA + ' hand-over to the canvas (' + why + ')'); arrClear(); if (state.panel) renderPanel(); if (window.A && window.A.requestRender) window.A.requestRender(); }
   function minimise(on) { var p = document.getElementById('dxf-panel'); if (p) p.classList.toggle('dxf-min', !!on); state.playSlim = !!on; applySlim(); }
   // §D39 the slim bar: folded by the user (state.slim) or while the Arrange play stands; the metadata panel follows through body.dxf-slim

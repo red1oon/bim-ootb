@@ -118,6 +118,31 @@
       var y0 = ys[0], g = by[y0];
       out.push({ rule: 'PR-Z-GROUND', key: 'Z', value: '0', x: 0, y: Number(y0.toFixed(3)), why: 'ground line ' + g.h + (g.n > 1 ? ' + ' + (g.n - 1) + ' more segment(s)' : '') + ' (lowest line group covering ' + Math.round(100 * g.len / maxLen) + '% of the longest one); a second @Z is yours to state' });
     }
+    // §D96 PR-Z-DIM: the second height from the drawing's own dimension. A DIMENSION the CAD measures (no text override), whose measurement equals the vertical span of its
+    // defpoints, on a file whose dimension scale factor is 1, states the sheet is drawn at full size: the line at its top is then z0 + (top - y0) x units. Inferred (orange).
+    var ZDIM_TOL = { measure: 1e-6, factor: 1e-9, sameY: 1e-3 };   // §D96: measure = |dy| (relative), a scale factor other than 1, two y's taken as one line
+    function dimScale(sh) {   // the file's $DIMLFAC and every DIMSTYLE record's 144 (the parser does not read the DIMSTYLE table): the first factor that is not 1, else 1
+      var h = sh.dxf.header && sh.dxf.header.$DIMLFAC; if (h !== undefined && Math.abs(Number(h) - 1) > ZDIM_TOL.factor) return Number(h);
+      var t = String(sh.text || ''), i = t.search(/\n\s*0\r?\n\s*TABLE\r?\n\s*2\r?\n\s*DIMSTYLE\r?\n/); if (i < 0) return 1;
+      var j = t.indexOf('ENDTAB', i), seg = t.slice(i, j < 0 ? undefined : j), re = /\n\s*144\r?\n\s*([^\r\n]+)/g, m;
+      while ((m = re.exec(seg))) if (Math.abs(Number(m[1]) - 1) > ZDIM_TOL.factor) return Number(m[1]);
+      return 1; }
+    function propZDim(sh, out, refused) {
+      if ((typeof process !== 'undefined' && process.env && process.env.DXF_NO_ZDIM) || (typeof window !== 'undefined' && window.DXF_NO_ZDIM)) return;   // the falsifier's switch (CLI env / page global)
+      var zs = sh.marks.filter(function (q) { return q.key === 'Z'; }); if (zs.length !== 1) return;
+      if (out.some(function (q) { return q.key === 'Z' && Math.abs(q.y - zs[0].y) > ZDIM_TOL.sameY; })) return;   // a datum the sheet's own texts give is proposed already (PR-Z): that one first
+      var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z-DIM', why: 'units unknown (no @UNITS, no $INSUNITS)' }); return; }
+      var f = dimScale(sh); if (f !== 1) { refused.push({ rule: 'PR-Z-DIM', why: 'dimension scale factor ' + f + ': the dimensions do not show the drawn size, a height is yours to state' }); return; }
+      var c = sh.dxf.entities.filter(function (e) { if (e.type !== 'DIMENSION' || e.layer === LAYER || !e.linearOrAngularPoint1 || !e.linearOrAngularPoint2) return false;
+        if (e.text !== undefined && String(e.text).trim() !== '' && String(e.text).trim() !== '<>') return false;   // typed over: a person's figure, not the CAD's measure
+        if ((e.extendedData && (e.extendedData.customStrings || []).some(function (q) { return /^DSTYLE$/i.test(String(q)); }))) return false;   // a per-dimension style override
+        var m = Number(e.actualMeasurement), dy = Math.abs(e.linearOrAngularPoint1.y - e.linearOrAngularPoint2.y); return m > 0 && Math.abs(m - dy) <= ZDIM_TOL.measure * Math.max(1, m); });
+      if (!c.length) { refused.push({ rule: 'PR-Z-DIM', why: 'no self-measured vertical dimension (text not typed over, measure = its vertical span)' }); return; }
+      var b = c.sort(function (p, q) { return q.actualMeasurement - p.actualMeasurement; })[0], top = Math.max(b.linearOrAngularPoint1.y, b.linearOrAngularPoint2.y), z0 = Number(zs[0].value), y0 = zs[0].y;
+      if (!isFinite(z0) || !isFinite(y0) || Math.abs(top - y0) < ZDIM_TOL.measure) { refused.push({ rule: 'PR-Z-DIM', why: 'the dimension ends on the known datum' }); return; }
+      var z = Number((z0 + (top - y0) * k).toFixed(6));
+      out.push({ rule: 'PR-Z-DIM', key: 'Z', value: String(z), x: 0, y: Number(top.toFixed(4)), why: 'the drawing\'s own dimension ' + b.handle + ' (' + b.actualMeasurement + ', measured by the CAD, scale factor 1) shows the sheet at full size: the line at its top is @Z=' + zs[0].value + ' + ' + Number((top - y0).toFixed(4)) + ' drawing units' });
+    }
     function propZ(sh, out, refused) {                          // mark_dx_set.js levelPairs: level text +-z.zzz paired by its own y or a level line
       var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z', why: 'units unknown' }); return; }
       var LL = ctx.levelLayers(), tol = 0.001 / k, seen = {};
@@ -179,7 +204,7 @@
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
       if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN') propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
-      if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); }
+      if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); }
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
         var ct = /\bAT\s+([XY])\s*=\s*([-+]?\d+(?:\.\d+)?)\b/i.exec(noScale(tl[0] || ''));   // §D46 (d) the title states the cut: the label pairs are not looked at
