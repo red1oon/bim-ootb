@@ -42,34 +42,14 @@
     STOPPED: 'STOPPED', UNINSTALLED: 'UNINSTALLED'
   };
 
-  // ── Minimal semver (no dep): parse "1.2.3" → [1,2,3]; satisfies a single-comparator range. ────────────
-  // Supported ranges (enough for `engineVersion`/`requires`): "*", "x.y.z", "=x.y.z", ">=", ">", "<=", "<".
-  // Pre-release/caret/tilde are deliberately NOT modelled (the lane is non-blocking; extend when a real
-  // bundle needs them — never invent semantics we don't exercise).
-  function parseVer(v) {
-    var m = String(v == null ? '0' : v).trim().match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
-    if (!m) return [0, 0, 0];
-    return [Number(m[1] || 0), Number(m[2] || 0), Number(m[3] || 0)];
-  }
-  function cmpVer(a, b) {
-    var x = parseVer(a), y = parseVer(b);
-    for (var i = 0; i < 3; i++) { if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1; }
-    return 0;
-  }
-  function satisfies(version, range) {
-    var r = String(range == null ? '*' : range).trim();
-    if (r === '' || r === '*') return true;
-    var m = r.match(/^(>=|<=|>|<|=)?\s*(.+)$/);
-    if (!m) return false;
-    var op = m[1] || '=', target = m[2], c = cmpVer(version, target);
-    switch (op) {
-      case '>=': return c >= 0;
-      case '>':  return c > 0;
-      case '<=': return c <= 0;
-      case '<':  return c < 0;
-      default:   return c === 0;   // "=" or bare version → exact
-    }
-  }
+  // ── Versions: ONE strict library, common/comm/semver_strict.js (TEAMWORK_FRAMEWORK §46.6 S4 / review F4). ──────────────────────────────
+  // It THROWS on a malformed version or range - the old parseVer returned [0,0,0] for garbage, so "[1.2,2)" silently meant "= 0.0.0".
+  // Ranges: "*", "x.y.z" / "=x.y.z" (exact), ">=" ">" "<=" "<", and the OSGi two-sided intervals "[a,b)" "(a,b]" "[a,b]" "(a,b)". An absent range (undefined/null) means "*".
+  var V = (typeof VersionRange !== 'undefined') ? VersionRange : (typeof require === 'function' ? require('../common/comm/semver_strict.js') : null);
+  if (!V) throw new Error('plugin_registry.js needs common/comm/semver_strict.js loaded first (window.VersionRange)');
+  function parseVer(v) { var p = V.parse(v); return [p.major, p.minor, p.micro]; }
+  function cmpVer(a, b) { return V.compare(a, b); }
+  function satisfies(version, range) { return V.satisfies(version, range == null ? '*' : range); }
 
   // ── Default in-memory store (node witness). Browser injects an IndexedDB-backed store (Phase D). ───────
   function memStore() {
@@ -88,6 +68,9 @@
     if (!mf || typeof mf !== 'object') throw new Error('plugin: manifest is not an object');
     if (!mf.id || typeof mf.id !== 'string') throw new Error('plugin: manifest.id missing');
     if (!mf.version) throw new Error('plugin ' + mf.id + ': manifest.version missing');
+    // §46.6 S4: a version or range that cannot be read is a clear install error, never a silent "= 0.0.0"
+    try { V.parse(mf.version); if (mf.engineVersion) V.parseRange(mf.engineVersion); Object.keys(mf.requires || {}).forEach(function (d) { V.parseRange(mf.requires[d]); }); }
+    catch (e) { throw new Error('plugin ' + mf.id + ': ' + e.message); }
     // manifest.events - the bus grant (TEAM_REPLICATION_PLUGIN_STUDY §12.3): 'gate' (default, every bundle before Phase 2) or 'observe' (post-commit, read-only: the comm class)
     if (mf.events !== undefined && GRANTS.indexOf(mf.events) < 0) throw new Error('plugin ' + mf.id + ": manifest.events must be one of " + GRANTS.join('|') + ' (got ' + JSON.stringify(mf.events) + ')');
     // `signature` is reserved but NOT enforced (no signing gate — see lane §Out of Scope).
@@ -514,7 +497,7 @@
         try { await installBundle(b.url || b.bundle); if (b.policy !== undefined && store.get(b.id)) { var rr0 = store.get(b.id); rr0.policy = b.policy; store.put(rr0); } if (wasUp) toStart.push(b.id); }
         catch (e) { if (!/already installed/.test(e.message)) failed.push({ id: b.id, error: e.message }); else if (wasUp) toStart.push(b.id); }
       }
-      var order = toStart; try { order = resolveDeps(toStart.map(function (x) { var r = store.get(x); return { id: x, version: r ? r.version : '0', requires: r ? r.requires : {} }; })); } catch (e) { /* keep saved order; startBundle reports the missing dep */ }
+      var order = toStart; try { order = resolveDeps(toStart.map(function (x) { var r = store.get(x); return { id: x, version: r ? r.version : '0', requires: r ? r.requires : {} }; })); } catch (e) { try { console.log('§PLUGIN_RESOLVE_FAILED ' + (e && e.message) + ' - keeping the saved start order; startBundle reports the failing dependency'); } catch (_) {} }
       var started = [];
       for (var k = 0; k < order.length; k++) { try { await startBundle(order[k]); started.push(order[k]); } catch (e) { failed.push({ id: order[k], error: e.message }); } }
       return { started: started, failed: failed };

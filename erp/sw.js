@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v935';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v936';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -321,6 +321,7 @@ const PRECACHE_ASSETS = [
   'guide_img/team_replenish_dialog.png',   // wave-1 team guide screenshot
   '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)
   '../common/comm/team_scope.js',    // TEAMWORK_FRAMEWORK §25.1 — the one reader of the compiled plan (both hosts)
+  '../common/comm/semver_strict.js', // TEAMWORK_FRAMEWORK §46.6 S4 — the ONE strict version + range parser (plugin_registry.js loads it first)
   '../common/comm/op_versions.js',   // TEAMWORK_FRAMEWORK §16.30 — the shape-version registry
   '../common/comm/team_versions.js', // TEAMWORK_FRAMEWORK §16.33 — host glue (TEAM_SHAPE_V, TEAM_UPCASTERS, trust = TEAM_PLAN_TRUST)
   'team_plan.js',      // §25 — the compiled team scope (GENERATED); read through TeamScope

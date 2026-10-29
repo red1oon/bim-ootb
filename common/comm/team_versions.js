@@ -48,14 +48,15 @@
     Object.keys(verdictMap || {}).forEach(function (h) { var v = verdictMap[h];
       if (v.verdict === 'PARKED') { parked++; by[v.reason] = (by[v.reason] || 0) + 1; }
       else if (v.verdict === 'REFUSED' && (v.reason === 'retired-version' || v.reason === 'bogus-version')) { refused++; rby[v.reason] = (rby[v.reason] || 0) + 1; } });
-    var up = by['needs-upgrade'] || 0, mp = by['needs-mapping'] || 0, dp = by.deps || 0, ret = rby['retired-version'] || 0, bog = rby['bogus-version'] || 0, parts = [];
+    var up = by['needs-upgrade'] || 0, mp = by['needs-mapping'] || 0, nt = by['needs-translation'] || 0, dp = by.deps || 0, ret = rby['retired-version'] || 0, bog = rby['bogus-version'] || 0, parts = [];
     var pl = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
     if (up) parts.push(pl(up, 'change from a newer app waits', 'changes from a newer app wait') + ' — update this app');
     if (mp) parts.push(pl(mp, 'change waits', 'changes wait') + ' for a translation rule from the team admin');
-    if ((up || mp) && dp) parts.push(pl(dp, 'more waits', 'more wait') + ' on those');
+    if (nt) parts.push(pl(nt, 'change from a retired version waits', 'changes from a retired version wait') + ' for a translation from the team admin — nothing is lost');       // §46.6 S2: below the floor is a wait, never a refusal
+    if ((up || mp || nt) && dp) parts.push(pl(dp, 'more waits', 'more wait') + ' on those');
     if (ret) parts.push(pl(ret, 'change from a retired version was ignored', 'changes from a retired version were ignored'));
     if (bog) parts.push(pl(bog, 'change with an unreadable version was ignored', 'changes with an unreadable version were ignored'));
-    var vParked = up + mp > 0, lines = Object.keys(by).sort().map(function (k) { return k + ': ' + by[k]; }).concat(Object.keys(rby).sort().map(function (k) { return k + ': ' + rby[k]; }));
+    var vParked = up + mp + nt > 0, lines = Object.keys(by).sort().map(function (k) { return k + ': ' + by[k]; }).concat(Object.keys(rby).sort().map(function (k) { return k + ': ' + rby[k]; }));
     return { level: vParked ? 'provisional' : (refused ? 'refused' : 'ok'), parked: parked, refused: refused, by_reason: by, text: parts.length ? '⚠ ' + parts.join(' · ') : '', title: lines.join('\n') };
   }
   // paint the result on the host's Team chip (#team-chip) and append it to its warning line (#team-warn); the local-only warning is untouched
