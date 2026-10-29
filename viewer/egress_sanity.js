@@ -79,9 +79,20 @@
         target: 'first_choice_of_two_paths',
         critical_m: 22.9, critical_m_sprinklered: 30.5, max_severity: 'WARNING' },
       { name: 'exit_remoteness', applies_to: ['storey'], target: 'max_overall_diagonal',
-        ratio_unsprinklered: 0.5, ratio_sprinklered: 0.3333, max_severity: 'WARNING' }
+        ratio_unsprinklered: 0.5, ratio_sprinklered: 0.3333, max_severity: 'WARNING' },
+      // T13.2 (STRUCTURAL_SANITY.md): the two constants of rule 5 live in the rules, so an overlay can state them
+      { name: 'door_occupant_capacity', applies_to: ['IfcDoor'], occupant_load_factor_m2: 13.94, width_per_occupant_m: 0.00508, max_severity: 'WARNING' }
     ]
   };
+  // T13.3: per rule { judged, findings, state } into opts.coverage (when given) + one § line per rule (twin of structural_sanity.js _coverage); findings untouched
+  function _coverage(rows, judged, notCheckable, opts, log) {
+    var f = {}; rows.forEach(function (r) { f[r.rule] = (f[r.rule] || 0) + 1; });
+    Object.keys(judged).concat(Object.keys(notCheckable).filter(function (k) { return !(k in judged); })).forEach(function (k) {
+      var c = notCheckable[k] ? { judged: 0, findings: f[k] || 0, state: 'not_checkable', reason: notCheckable[k] } : { judged: judged[k], findings: f[k] || 0, state: judged[k] > 0 ? 'ran' : 'nothing_to_judge' };
+      if (opts.coverage) opts.coverage[k] = c;
+      log('§RULE_COVERAGE kind=EGRESS rule=' + k + ' state=' + c.state + ' judged=' + c.judged + ' findings=' + c.findings + (c.reason ? ' reason="' + c.reason + '"' : ''));
+    });
+  }
   function _fallback(name) {
     var rs = FALLBACK_RULES.egress_rules;
     for (var i = 0; i < rs.length; i++) if (rs[i].name === name) return rs[i];
@@ -268,6 +279,9 @@
       }
     });
     log('§EGRESS rule=door_clear_width severity=' + (doorFlags.CRITICAL + doorFlags.WARNING) + ' critical=' + doorFlags.CRITICAL);
+    // T13.3 (STRUCTURAL_SANITY.md): what each rule JUDGED; a rule that could not run says why instead of reading clean
+    var judged = { door_clear_width: doorRows.length }, notCheckable = {};
+    var GRAPH_RULES = ['space_coverage', 'door_occupant_capacity', 'circulation_distance', 'isolated_room', 'common_path_of_egress_travel', 'exit_remoteness'];
 
     // ── Rules 2 + 3: circulation-distance / isolated-room, via the real room graph ──
     // Resolved HERE, at call time — not captured at module-load time (§EGRESS_ROOMGRAPH_LATE_BIND
@@ -276,6 +290,8 @@
     var RoomGraph = _resolveRoomGraph();
     if (!RoomGraph) {
       log('§EGRESS_NO_ROOMGRAPH RoomGraph module not available — rules 2/3 skipped');
+      GRAPH_RULES.forEach(function (k) { notCheckable[k] = 'room graph module not available'; });
+      _coverage(rows, judged, notCheckable, opts, log);
       return rows;
     }
     // §REAL-AABB (ROOM_GRAPH_REAL_AABB.md §4 item 3): pass through opts.doorRealXY unchanged (this
@@ -291,7 +307,8 @@
     var RoomCoverage = _resolveRoomCoverage();
     var coverageCount = { WARNING: 0 };
     if (RoomCoverage) {
-      RoomCoverage.computeCoverage(graph).forEach(function (c) {
+      var _cov = RoomCoverage.computeCoverage(graph); judged.space_coverage = _cov.length;
+      _cov.forEach(function (c) {
         if (!c.severity) return;
         coverageCount[c.severity]++;
         rows.push({ guid: 'STOREY::' + c.storey, ifc_class: 'IfcBuildingStorey', name: c.storey, storey: c.storey,
@@ -306,6 +323,7 @@
       log('§EGRESS rule=space_coverage severity=' + coverageCount.WARNING);
     } else {
       log('§EGRESS_NO_ROOMCOVERAGE RoomCoverage module not available — rule 4 skipped');
+      notCheckable.space_coverage = 'room coverage module not available';
     }
 
     // ── Rule 5: door occupant-load capacity (§EGRESS_HARDENING item 2, 2026-09-18) ──
@@ -322,8 +340,9 @@
     // extracted either — uses the STRICTER non-sprinklered figure as the safer default, the same
     // "over-flag, never under-flag" bias circulation_distance's own citation already states as its
     // design philosophy for this screening tool.
-    var OCCUPANT_LOAD_FACTOR_M2 = 13.94;   // IBC Table 1004.5, "Business areas", 150 gross sf/person
-    var WIDTH_PER_OCCUPANT_M = 0.00508;    // IBC §1005.3.2, non-sprinklered, 0.2in/occupant
+    var occRule = byName.door_occupant_capacity || _fallback('door_occupant_capacity');   // T13.2: from the rules (cited there), so an overlay can state them
+    var OCCUPANT_LOAD_FACTOR_M2 = occRule.occupant_load_factor_m2;   // IBC Table 1004.5, "Business areas", 150 gross sf/person
+    var WIDTH_PER_OCCUPANT_M = occRule.width_per_occupant_m;         // IBC §1005.3.2, non-sprinklered, 0.2in/occupant
     var roomAreaByGuid = {};
     graph.nodes.forEach(function (r) {
       var a = 0;
@@ -348,6 +367,7 @@
       var actualWidthM = Math.max(bx, by);
       var roomGuids = doorRoomsByGuid[guid];
       if (!roomGuids || !roomGuids.length) return; // no measured room connection — nothing to size against
+      judged.door_occupant_capacity = (judged.door_occupant_capacity || 0) + 1;
       var occupantLoad = 0, seen = {};
       roomGuids.forEach(function (rg) { if (seen[rg]) return; seen[rg] = 1; occupantLoad += (roomAreaByGuid[rg] || 0) / OCCUPANT_LOAD_FACTOR_M2; });
       var requiredWidthM = occupantLoad * WIDTH_PER_OCCUPANT_M;
@@ -521,6 +541,7 @@
     log('§EGRESS rule=circulation_distance severity=' + circCount.WARNING + ' uncapped_critical=' + circCount.uncapped_critical +
       ' viaExit=' + viaExit + ' viaFallback=' + viaFallback);
     log('§EGRESS rule=isolated_room severity=' + isolatedCount);
+    judged.circulation_distance = graph.nodes.length; judged.isolated_room = graph.nodes.length; if (judged.door_occupant_capacity === undefined) judged.door_occupant_capacity = 0;
 
     // LARGE_DB_BAKE.md §2 L1 — this is "the egress rule" the raster is for: without
     // storey_walkable_raster, every room's shortestPath() fallback above legalizes its chords from
@@ -611,7 +632,9 @@
       log('§EGRESS rule=common_path_of_egress_travel severity=' + cpCount.WARNING +
         ' noChoice=' + cpNoChoice + ' measured=' + cpMeasured + ' skippedNoExit=' + cpSkipped +
         ' limit=' + cpLimit + 'm (unsprinklered; sprinklered would be ' + cpRule.critical_m_sprinklered + 'm)');
+      judged.common_path_of_egress_travel = graph.nodes.length - cpSkipped;
     } else {
+      notCheckable.common_path_of_egress_travel = 'escape-route functions unavailable or no limit in the rulebook';
       log('§EGRESS rule=common_path_of_egress_travel SKIPPED — RoomGraph.escapeRoutes/divergenceFrom' +
         ' unavailable (older cached room_graph.js) or no limit in the rulebook');
     }
@@ -628,6 +651,8 @@
       ' storeysWithExits=' + Object.keys(_exitsByStorey(graph)).length +
       ' ratio=' + remRule.ratio_unsprinklered +
       ' (unsprinklered; sprinklered would be ' + remRule.ratio_sprinklered + ')');
+    judged.exit_remoteness = Object.keys(_exitsByStorey(graph)).length;
+    _coverage(rows, judged, notCheckable, opts, log);
 
     return rows;
   }

@@ -192,6 +192,14 @@ function _rcGroupHtml(label, sevRows, headerColor, expanded, colorMap) {
 // config: { title, checkId, colorMap:{CRITICAL,WARNING,OPTIMIZED}, categories:[{label,ruleNames}], rows }
 // activeCategory: a category `label` string to filter to, or null/undefined for the "All" view.
 // Returns { html, counts:{CRITICAL,WARNING,OPTIMIZED} } — counts are of the (possibly filtered) rows shown.
+// T13.1/T13.3 — top level (the HTML builder is top level and Node-tested); the pure part is RuleReport.codesAndCoverage
+function _rcCodesAndCoverage(config) {
+  if (!config.coverage || typeof RuleReport === 'undefined' || !RuleReport.codesAndCoverage) return null;
+  var r = RuleReport.codesAndCoverage(config.rulesUsed, config.coverage, { overlay: config.rulesOverlay, type: config.buildingType });
+  console.log('§RULE_CODES check=' + (config.checkId || '?') + ' codes="' + r.codes.join('|') + '" overlay=' + (r.overlay || 'none') + ' type=' + (r.type || 'not_stated') + ' rules=' + r.total + ' ran=' + r.n.ran + ' nothing_to_judge=' + r.n.nothing_to_judge + ' not_checkable=' + r.n.not_checkable + ' not_applicable=' + r.n.not_applicable);
+  return r;
+}
+
 function _buildRuleChecklistHtml(config, activeCategory) {
   config = config || {};
   var rows = config.rows || [];
@@ -219,6 +227,12 @@ function _buildRuleChecklistHtml(config, activeCategory) {
   var counts = { CRITICAL: bySev.CRITICAL.length, WARNING: bySev.WARNING.length, OPTIMIZED: bySev.OPTIMIZED.length };
 
   var html = '<div style="color:#4fc3f7;font-weight:bold;margin-bottom:6px">' + _rcEscAttr(config.title || 'Rule Checklist') + '</div>';
+  // T13.1 + T13.3 (STRUCTURAL_SANITY.md): which codes judged, and what was NOT judged — a panel with 0 findings must not read as compliant
+  var cc = _rcCodesAndCoverage(config);
+  if (cc) html += '<div class="rc-codes" data-codes="' + _rcEscAttr(cc.codes.join('|')) + '" style="font-size:11px;color:#9aa4b2;margin-bottom:6px;line-height:1.45">' +
+    'Judged against: ' + _rcEscAttr(cc.codes.length ? cc.codes.join(', ') : 'no cited code') + (cc.overlay ? ' · overlay: ' + _rcEscAttr(cc.overlay) : ' · overlay: none') + ' · building type: ' + _rcEscAttr(cc.type || 'not stated') +
+    '<br><span class="rc-coverage" data-ran="' + cc.n.ran + '" data-vacuous="' + cc.n.nothing_to_judge + '" data-notcheckable="' + cc.n.not_checkable + '" data-na="' + cc.n.not_applicable + '">Rules ' + cc.total + ': ' + cc.n.ran + ' ran · ' + cc.n.nothing_to_judge + ' nothing to judge · ' + cc.n.not_checkable + ' not checkable · ' + cc.n.not_applicable + ' not applicable</span>' +
+    (cc.idle.length ? '<br><span style="color:#ffaa33">Not judged: ' + _rcEscAttr(cc.idle.join('; ')) + '</span>' : '') + '</div>';
 
   // Toggle buttons: "All" default + one per config.categories entry (UI MODEL).
   html += '<div class="rc-toggles" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">';
@@ -369,7 +383,7 @@ function setupRuleChecklist(A) {
           ? { egress: config.rulesSource || 'unknown' }
           : { structural: config.rulesSource || 'unknown' },
         roomGraph: config.roomGraph || null,
-        rulesOverlay: config.rulesOverlay || null,
+        rulesOverlay: config.rulesOverlay || null, coverage: config.coverage || null, buildingType: config.buildingType || null,
         rulesProvenance: config.rulesProvenance || [],
         longestExitSteps: _rcLongestExitSteps(rows),
         // T8.11 — the panel has A.dbQuery, so it can review its own input the same way the CLI
@@ -729,6 +743,13 @@ function setupRuleChecklist(A) {
     }
   } catch (e) { console.warn('§RULE_DEEPLINK_ERR ' + e.message); }
 
+  // T13.1/T13.3/T13.4 — the pure parts live in rule_report.js (RuleReport.codesAndCoverage / applyTypes, Node-tested by W-CODE-NAMED); this glue only reads the DB and logs
+  function _rcBuildingType() { try { var r = A.dbQuery ? A.dbQuery("SELECT value FROM project_metadata WHERE key='building_type'") : []; return (r && r[0] && r[0][0]) || null; } catch (e) { return null; } }
+  function _rcApplyTypes(rulesKey, rules, rows, cov, type) {
+    if (typeof RuleReport === 'undefined' || !RuleReport.applyTypes) return rows;
+    return RuleReport.applyTypes(rulesKey, rules, rows, cov, type, console.log);
+  }
+
   // ── T4.3: A.showStructuralSanity() — Sanity-SPECIFIC glue (kept out of the generic chassis
   // functions above, and out of viewer/structural_sanity.js which stays DOM-free/portable per
   // brief). Loads viewer/rates/structural_rules.json via fetch, hardcoded-fallback pattern
@@ -794,9 +815,10 @@ function setupRuleChecklist(A) {
     // downloaded report can never present the fallback constant above as an authored threshold.
     function runWith(rules, source) {
       if (typeof StructuralSanity === 'undefined' || !A.dbQuery) { console.warn('§STRUCT_SANITY_UNAVAILABLE no evaluator or dbQuery'); return; }
-      var rows = StructuralSanity.evaluate(A.dbQuery, rules, { log: console.log });
+      var cov = {}, btype = _rcBuildingType();
+      var rows = _rcApplyTypes('structural_rules', rules, StructuralSanity.evaluate(A.dbQuery, rules, { log: console.log, coverage: cov }), cov, btype);
       A.showRuleChecklist({
-        title: 'Structural Sanity', checkId: 'sanity',
+        title: 'Structural Sanity', checkId: 'sanity', coverage: cov, buildingType: btype,
         rulesUsed: rules, rulesSource: source || 'unknown',
         rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [],
         colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },
@@ -844,7 +866,8 @@ function setupRuleChecklist(A) {
           try { doorRealXY = window.DoorRealPosition.resolveDoorRealXY(A.db, A.libDb || A.db); }
           catch (e) { console.warn('§DOOR_REAL_AABB_ERR ' + (e && e.message)); doorRealXY = null; }
         }
-        var rows = EgressSanity.evaluate(A.dbQuery, rules, { log: console.log, doorRealXY: doorRealXY });
+        var cov = {}, btype = _rcBuildingType();
+        var rows = _rcApplyTypes('egress_rules', rules, EgressSanity.evaluate(A.dbQuery, rules, { log: console.log, doorRealXY: doorRealXY, coverage: cov }), cov, btype);
         // T8.4 — §ROOM_GRAPH_EXITS's own numbers (exits / noRaster / doors). The evaluator calls
         // RoomGraph.buildGraph with its log SILENCED, so that line never reaches console here;
         // build it once more with a CAPTURING log purely to read the facts. buildGraph is
@@ -860,7 +883,7 @@ function setupRuleChecklist(A) {
           }
         } catch (e) { console.warn('§RULE_REPORT_ROOMGRAPH_FACTS_FAIL ' + e.message); }
         A.showRuleChecklist({
-          title: 'Egress', checkId: 'egress',
+          title: 'Egress', checkId: 'egress', coverage: cov, buildingType: btype,
           rulesUsed: rules, rulesSource: source || 'unknown',
         rulesOverlay: A._ruleOverlay || null, rulesProvenance: A._ruleProvenance || [], roomGraph: rgFacts,
           colorMap: { CRITICAL: '#cc4444', WARNING: '#ffaa33', OPTIMIZED: '#44cc44' },

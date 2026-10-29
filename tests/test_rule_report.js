@@ -83,7 +83,7 @@ const ROWS_E = [
     const dw = rep.rules.filter(r => r.rule === 'door_clear_width')[0];
     chk('R3 door_clear_width is LISTED with count 0 when nothing fired', !!dw && dw.count === 0, JSON.stringify(dw));
     const names = rep.rules.map(r => r.rule);
-    chk('R3 all 8 rules from both rules files appear', names.length === 8, names.join(','));
+    chk('R3 every rule of both rules files appears (counted from the files: ' + (STRUCT_RULES.structural_rules.filter(r => r.name).length + EGRESS_RULES.egress_rules.filter(r => r.name).length) + ')', names.length === STRUCT_RULES.structural_rules.filter(r => r.name).length + EGRESS_RULES.egress_rules.filter(r => r.name).length, names.join(','));   // was a literal 8: stale since exit rules + T13.2 door_occupant_capacity
     // The inverse guard: a rule that fired but is NOT in ruleDefs must still be listed (never hide).
     const rep2 = RuleReport.buildRuleReport({ rowsS: [{ guid: 'x', rule: 'some_future_rule', severity: 'WARNING', ratio: null }], ruleDefs: [] });
     chk('R3 a rule with rows but no ruleDef is still listed', rep2.rules.some(r => r.rule === 'some_future_rule'));
@@ -237,7 +237,9 @@ const ROWS_E = [
       JSON.stringify(disagree.map(d => d.rule + ' report=' + d.count + ' log=' + logged[d.rule])));
     console.log('  ℹ real Hospital_meta.db: findings=' + rep.totals.findings + ' ' +
       JSON.stringify(rep.rules.map(r => r.rule + ':' + r.count)));
-    chk('R8 the report lists all 8 rules on a real building, zeros included', rep.rules.length === 8,
+    // every rule of both files (zeros included) plus any rule the evaluators emit without a file row (space_coverage: a data-coverage rule, no threshold)
+    const fileNames = STRUCT_RULES.structural_rules.concat(EGRESS_RULES.egress_rules).filter(r => r.name).map(r => r.name), want = new Set(fileNames.concat(rowsS.concat(rowsE).map(r => r.rule)));
+    chk('R8 the report lists every rule of both files on a real building, zeros included (+ evaluator-only rules that emitted)', rep.rules.length === want.size && fileNames.every(n => rep.rules.some(r => r.rule === n)),
       rep.rules.map(r => r.rule + '=' + r.count).join(' '));
     chk('R8 sufficiency ran on the real DB and every probe has a measured value',
       rep.dataSufficiency.length === 8 && rep.dataSufficiency.every(s => s.verdict !== 'unavailable'),

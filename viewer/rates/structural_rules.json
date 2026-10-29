@@ -1,15 +1,92 @@
 {
   "structural_rules": [
-    { "name": "floating_member", "applies_to": ["IfcBeam"], "tolerance_m": 0.15,
-      "framing_dz_m": 0.4 },
-    { "name": "span_depth_steel", "applies_to": ["IfcBeam"], "material": "steel",
-      "name_hints": ["UB","UC","Channel","HSS"], "cantilever": false,
-      "warning_ratio": 24, "critical_ratio": 30, "max_severity": "WARNING" },
-    { "name": "span_depth_concrete", "applies_to": ["IfcBeam"], "material": "concrete",
-      "name_hints": ["Concrete","RC"], "cantilever": false,
-      "warning_ratio": 16, "critical_ratio": 21, "max_severity": "WARNING" },
-    { "name": "span_depth_cantilever", "applies_to": ["IfcBeam"], "cantilever": true,
-      "warning_ratio": 12, "critical_ratio": 16, "max_severity": "WARNING" },
-    { "name": "column_continuity", "applies_to": ["IfcColumn"], "tolerance_m": 0.3 }
+    {
+      "name": "floating_member",
+      "applies_to": [
+        "IfcBeam"
+      ],
+      "tolerance_m": 0.15,
+      "framing_dz_m": 0.4,
+      "basis": {
+        "kind": "topology",
+        "note": "a beam end with nothing to bear on; no code threshold (tolerance is a modelling tolerance)"
+      }
+    },
+    {
+      "name": "span_depth_steel",
+      "applies_to": [
+        "IfcBeam"
+      ],
+      "material": "steel",
+      "name_hints": [
+        "UB",
+        "UC",
+        "Channel",
+        "HSS"
+      ],
+      "cantilever": false,
+      "warning_ratio": 24,
+      "critical_ratio": 30,
+      "max_severity": "WARNING",
+      "basis": {
+        "kind": "convention",
+        "note": "not cited by any code: AISC has no prescribed span/depth table (serviceability is deflection-based); 20-24 is a widely cited preliminary-sizing rule of thumb, 24 at its upper end",
+        "source": "prompts/STRUCTURAL_SANITY.md:29-35"
+      }
+    },
+    {
+      "name": "span_depth_concrete",
+      "applies_to": [
+        "IfcBeam"
+      ],
+      "material": "concrete",
+      "name_hints": [
+        "Concrete",
+        "RC"
+      ],
+      "cantilever": false,
+      "warning_ratio": 16,
+      "critical_ratio": 21,
+      "max_severity": "WARNING",
+      "basis": {
+        "warning_ratio": {
+          "code": "ACI 318-19",
+          "clause": "Table 9.3.1.1, simply supported h >= L/16",
+          "note": "the tightest case, used because continuity is not extracted; crossing it means the code requires a deflection calculation (ACI 24.2), not that the member is deficient",
+          "source": "prompts/STRUCTURAL_SANITY.md:17-25"
+        },
+        "critical_ratio": {
+          "kind": "convention",
+          "note": "reuses the code's own both-ends-continuous figure (L/21) as an 'even the most lenient real code condition is exceeded' heuristic, not a cited critical value in its own right",
+          "source": "prompts/STRUCTURAL_SANITY.md:22-24"
+        }
+      }
+    },
+    {
+      "name": "span_depth_cantilever",
+      "applies_to": [
+        "IfcBeam"
+      ],
+      "cantilever": true,
+      "warning_ratio": 12,
+      "critical_ratio": 16,
+      "max_severity": "WARNING",
+      "basis": {
+        "kind": "convention",
+        "note": "partially informed: ACI 318-19's concrete cantilever exemption is h >= L/8 (span/depth <= 8), tighter than 12; this rule is material-agnostic, so 12/16 is kept pending a material-split cantilever rule",
+        "source": "prompts/STRUCTURAL_SANITY.md:37-42"
+      }
+    },
+    {
+      "name": "column_continuity",
+      "applies_to": [
+        "IfcColumn"
+      ],
+      "tolerance_m": 0.3,
+      "basis": {
+        "kind": "topology",
+        "note": "a column with nothing below it; no code threshold (tolerance is a modelling tolerance)"
+      }
+    }
   ]
 }
