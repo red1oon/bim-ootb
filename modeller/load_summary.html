@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — §D97 LOAD SUMMARY page (prompts/DXF2BIM_FOUNDATION_LANE.md §D97, W-LOAD-SUMMARY L6). Read the log after every run.
+     Opened by the Modeller's Export ▸ Load Summary…; the bodies + stated defaults arrive in localStorage 'dagevu_load_summary' (same origin). The numbers are
+     modeller/load_summary.js's (pure, Node-tested); this page only renders them and lets the inputs be edited and re-applied. NOT a design check. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Load Summary</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1d2330;--mut:#5b6473;--line:#dde1e7;--acc:#2b6cb0;--red:#c53030;--amb:#b7791f;--grn:#2f855a;--bar:#4a7fc1}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1c2028;--ink:#e6e9ee;--mut:#9aa4b2;--line:#2c313b;--acc:#63a4ff;--red:#fc8181;--amb:#f6c25b;--grn:#68d391;--bar:#5b8fd6}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 48px}h1{font-size:22px;margin:0}h2{font-size:15px;margin:26px 0 8px;letter-spacing:.02em}
+.sub{color:var(--mut);margin:2px 0 10px}.banner{border:1px solid var(--amb);background:color-mix(in srgb,var(--amb) 12%,transparent);border-radius:8px;padding:8px 12px;margin:10px 0}
+.meta{color:var(--mut);font-size:12px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:12px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}.card b{display:block;font-size:20px}.card span{color:var(--mut);font-size:12px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{font-size:12px;color:var(--mut);font-weight:600}td.r,th.r{text-align:right}
+.bar{height:10px;background:var(--bar);border-radius:3px;min-width:1px}.miss{color:var(--red);font-weight:600}.tier{font-size:11px;padding:1px 6px;border-radius:9px;border:1px solid var(--line);white-space:nowrap}
+.t-std{color:var(--grn)}.t-guess{color:var(--amb)}.t-default{color:var(--amb)}.t-missing{color:var(--red)}.wrap{overflow-x:auto}
+textarea{width:100%;min-height:230px;font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+button{font:inherit;padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}button.p{background:var(--acc);color:#fff;border-color:var(--acc)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}.err{color:var(--red)}ul.missing li{margin:3px 0}code{font-size:12px}
+@media print{.noprint{display:none}body{background:#fff;color:#000}.card,table{border-color:#bbb}}
+</style></head><body><main>
+<h1>Load Summary</h1><div class="sub">What your drawings tell the structural engineer. <b>Not a design check.</b></div>
+<div class="banner">This page weighs what the drawings show, using the unit weights of BNBC 2012 Part 6 Chapter 2 (Tables 2.2.1 / 2.2.2; the gazetted BNBC 2020 text was not checked). It does not compute live load, wind, earthquake or member strength: those need the inputs listed in red below and an engineer's analysis.</div>
+<div class="meta" id="meta">—</div>
+<div class="cards" id="cards"></div>
+<h2>Own weight by part</h2><div class="wrap"><table id="groups"></table></div>
+<h2>Load on each footing</h2><div class="sub">Each weighed part goes once to the nearest footing in plan (on a regular grid this is the tributary area). A slab within 1 m of the ground datum bears on the ground, not on a footing.</div><div class="wrap"><table id="footings"></table></div>
+<h2>Shape (for wind and earthquake)</h2><div class="wrap"><table id="shape"></table></div>
+<h2>What only you can state</h2><ul class="missing" id="missing"></ul>
+<h2 class="noprint">Inputs</h2><div class="sub noprint">Unit weights are the defaults table's rows (green = a cited table value, amber = best effort to confirm). Facts have no table: state them here. <b>Apply</b> recomputes on this page; to keep a value with the drawings, state it in the Modeller as <code>@DEFAULT=&lt;key&gt;,&lt;value&gt;</code>.</div>
+<textarea id="inputs" class="noprint" spellcheck="false"></textarea>
+<div class="row noprint"><button class="p" id="apply">Apply</button><button id="dl">Download inputs</button><button id="print">Print / Save as PDF</button><span id="msg"></span></div>
+<h2>Sources</h2><div class="sub" id="sources"></div>
+</main>
+<script src="load_summary.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); }, esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var f1 = function (v) { return (Math.round(v * 10) / 10).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }); };
+  var P = null, DEF = null, state = null;
+  try { P = JSON.parse(localStorage.getItem('dagevu_load_summary') || 'null'); } catch (e) { P = null; }
+  function tierOf(key) { var d = DEF && DEF[key]; return d ? (state.stated && state.stated[key] !== undefined ? 'stated' : d.kind) : 'default'; }
+  function render(R) {
+    $('meta').textContent = [P.building || 'Building', 'type: ' + (P.type || 'not stated'), P.set ? 'set: ' + P.set : '', 'bodies: ' + P.bodies.length, P.date || '', P.run ? 'run ' + String(P.run).slice(0, 12) : ''].filter(Boolean).join(' · ');
+    var heavy = R.footings.slice().sort(function (a, b) { return b.kPa - a.kPa; })[0];
+    $('cards').innerHTML = [['Own weight weighed', f1(R.total_kN) + ' kN', f1(R.tonnes) + ' t · ' + R.weighed + ' parts'], ['Carried by footings', f1(R.toFootings_kN) + ' kN', R.footings.length + ' footings'], ['On the ground', f1(R.onGround_kN) + ' kN', 'ground-bearing slab'],
+      ['Heaviest footing', heavy ? f1(heavy.kN) + ' kN' : '—', heavy ? f1(heavy.kPa) + ' kPa on the soil' : ''], ['Not weighed', R.unweighed + ' parts', 'listed in red below']].map(function (c) { return '<div class="card"><span>' + esc(c[0]) + '</span><b>' + esc(c[1]) + '</b><span>' + esc(c[2]) + '</span></div>'; }).join('');
+    var max = Math.max.apply(null, R.groups.map(function (g) { return g.kN; }).concat([1]));
+    $('groups').innerHTML = '<tr><th>Part</th><th>Material</th><th class="r">Count</th><th class="r">Quantity</th><th class="r">Unit weight</th><th>Size from</th><th class="r">kN</th><th style="width:22%"></th></tr>' + R.groups.map(function (g) {
+      var t = g.missing ? 'missing' : tierOf(g.uwKey), sf = Object.keys(g.sizeFrom || {}).map(function (k) { return k + ' ' + g.sizeFrom[k]; }).join(', ');
+      return '<tr><td>' + esc(g.cls.replace(/^Ifc/, '')) + '</td><td>' + esc(g.material) + '</td><td class="r">' + g.n + '</td><td class="r">' + (g.missing ? (g.lengthMissing ? f1(g.lengthMissing) + ' m' : '—') : (Math.round(g.qty * 1000) / 1000) + ' ' + esc(g.unit)) + '</td>' +
+        '<td class="r">' + (g.missing ? '<span class="miss">' + esc(g.missing) + '</span>' : esc(g.uw) + ' <span class="tier t-' + esc(t) + '" title="' + esc(DEF && DEF[g.uwKey] ? DEF[g.uwKey].basis : '') + '">' + esc(t) + '</span>') + '</td><td>' + esc(sf) + '</td>' +
+        '<td class="r">' + (g.missing ? '<span class="miss">—</span>' : f1(g.kN)) + '</td><td>' + (g.missing ? '' : '<div class="bar" style="width:' + (100 * g.kN / max).toFixed(1) + '%"></div>') + '</td></tr>'; }).join('');
+    var F = R.footings.slice().sort(function (a, b) { return b.kPa - a.kPa; });
+    $('footings').innerHTML = '<tr><th>Footing</th><th class="r">Parts</th><th class="r">Load kN</th><th class="r">Area m²</th><th class="r">Pressure kPa</th><th>Against the soil</th></tr>' + F.map(function (f) {
+      return '<tr><td>' + esc(f.guid) + '</td><td class="r">' + f.n + '</td><td class="r">' + f1(f.kN) + '</td><td class="r">' + (Math.round(f.area * 100) / 100) + '</td><td class="r">' + f1(f.kPa) + '</td><td class="' + (f.soil === 'OVER' ? 'miss' : f.soil === 'within' ? 't-std' : 'miss') + '">' + esc(f.soil) + '</td></tr>'; }).join('');
+    var S = R.shape; $('shape').innerHTML = [['Length × width', f1(S.length_m) + ' × ' + f1(S.width_m) + ' m'], ['Eave / ridge height', (S.eave_m != null ? f1(S.eave_m) : '—') + ' / ' + f1(S.ridge_m) + ' m above the ground datum'], ['Roof slope', S.roof_slope_deg != null ? f1(S.roof_slope_deg) + '°' : '—'], ['Footings', S.footings]].map(function (r) { return '<tr><th>' + esc(r[0]) + '</th><td>' + esc(r[1]) + '</td></tr>'; }).join('');
+    $('missing').innerHTML = R.missing.map(function (m) { return '<li class="miss">' + esc(m.what) + (m.n > 1 ? ' — ' + m.n + ' parts' : '') + '</li>'; }).join('') || '<li>Nothing: every input is stated.</li>';
+    LoadSummary.log(R, console.log);
+    console.log('§LOAD_PAGE rendered groups=' + R.groups.length + ' footings=' + R.footings.length + ' missing=' + R.missing.length + ' total_kN=' + R.total_kN.toFixed(1));
+  }
+  function inputsFrom() { var v = {}; LoadSummary.KEYS.forEach(function (k) { v[k] = state.stated && state.stated[k] !== undefined ? Number(state.stated[k]) : DEF[k].value; }); return v; }
+  function run() { var values = inputsFrom(), sources = {}; LoadSummary.KEYS.forEach(function (k) { sources[k] = tierOf(k); }); var R = LoadSummary.compute(P.bodies, { values: values, sources: sources, facts: state.facts }); render(R); return R; }
+  function boot() {
+    if (!P || !P.bodies || !P.bodies.length) { document.querySelector('main').insertAdjacentHTML('beforeend', '<p class="err">No converted building was handed over. In the Modeller, open a 2D set, Convert, then Export ▸ Load Summary.</p>'); console.log('§LOAD_PAGE no_payload'); return; }
+    fetch('element_defaults.json').then(function (r) { return r.json(); }).then(function (j) { DEF = j.defaults;
+      state = { stated: {}, facts: {} }; Object.keys(P.overrides || {}).forEach(function (k) { if (DEF[k]) state.stated[k] = P.overrides[k]; });
+      var ed = { values: {}, facts: {} }; LoadSummary.KEYS.forEach(function (k) { ed.values[k] = state.stated[k] !== undefined ? Number(state.stated[k]) : DEF[k].value; });
+      LoadSummary.FACTS.forEach(function (f) { ed.facts[f.key] = null; });
+      $('inputs').value = JSON.stringify(ed, null, 2);
+      $('sources').innerHTML = LoadSummary.KEYS.map(function (k) { return '<div><code>' + esc(k) + '</code> = ' + esc(DEF[k].value) + ' ' + esc(DEF[k].unit) + ' <span class="tier t-' + esc(DEF[k].kind) + '">' + esc(DEF[k].kind) + '</span> — ' + esc(DEF[k].basis) + '</div>'; }).join('') +
+        '<div style="margin-top:6px">Source text kept verbatim: <code>modeller/reference/BNBC2012_P6C2_dead_load_tables.txt</code> (BNBC 2012 final draft, law.resource.org).</div>';
+      run();
+    }).catch(function (e) { $('msg').innerHTML = '<span class="err">defaults table not loaded: ' + esc(e.message) + '</span>'; console.log('§LOAD_PAGE defaults_fail ' + e.message); });
+  }
+  $('apply').onclick = function () { try { var j = JSON.parse($('inputs').value); state.stated = {}; Object.keys(j.values || {}).forEach(function (k) { if (DEF[k] && Number(j.values[k]) !== DEF[k].value) state.stated[k] = Number(j.values[k]); });
+      state.facts = {}; Object.keys(j.facts || {}).forEach(function (k) { if (j.facts[k] !== null && j.facts[k] !== '') state.facts[k] = j.facts[k]; }); var R = run(); $('msg').textContent = 'Applied: ' + f1(R.total_kN) + ' kN';
+      console.log('§LOAD_PAGE applied stated=' + JSON.stringify(state.stated) + ' facts=' + JSON.stringify(state.facts));
+    } catch (e) { $('msg').innerHTML = '<span class="err">Not applied: ' + esc(e.message) + '</span>'; } };
+  $('dl').onclick = function () { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([$('inputs').value], { type: 'application/json' })); a.download = (P && P.building || 'building') + '_load_inputs.json'; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0); };
+  $('print').onclick = function () { window.print(); };
+  boot();
+})();
+</script></body></html>

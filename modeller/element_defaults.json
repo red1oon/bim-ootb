@@ -663,6 +663,58 @@
     0.03
    ],
    "used_by": "dxf2panels fan (§D67.1)"
+  },
+  "load.unit_weight.concrete": {
+   "element": "load",
+   "value": 22.8,
+   "unit": "kN/m3",
+   "kind": "std",
+   "basis": "BNBC 2012 Part 6 Ch 2 Table 2.2.1: \"Concrete - stone aggregate (unreinforced) 22.8\" (modeller/reference/BNBC2012_P6C2_dead_load_tables.txt)",
+   "used_by": "load_summary (§D97)"
+  },
+  "load.rc_steel_percent": {
+   "element": "load",
+   "value": 1.0,
+   "unit": "% by volume",
+   "kind": "guess",
+   "basis": "main reinforcement not drawn; BNBC 2012 Table 2.2.1 note: \"for reinforced concrete, add 0.63 kN/m3 for each 1% by volume of main reinforcement\"",
+   "options": [
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0
+   ],
+   "used_by": "load_summary (§D97)"
+  },
+  "load.unit_weight.brick": {
+   "element": "load",
+   "value": 18.9,
+   "unit": "kN/m3",
+   "kind": "std",
+   "basis": "BNBC 2012 Part 6 Ch 2 Table 2.2.1: \"Brick 18.9\" (modeller/reference/BNBC2012_P6C2_dead_load_tables.txt)",
+   "used_by": "load_summary (§D97)"
+  },
+  "load.unit_weight.steel": {
+   "element": "load",
+   "value": 77.0,
+   "unit": "kN/m3",
+   "kind": "std",
+   "basis": "BNBC 2012 Part 6 Ch 2 Table 2.2.1: \"Steel 77.0\" (modeller/reference/BNBC2012_P6C2_dead_load_tables.txt)",
+   "used_by": "load_summary (§D97)"
+  },
+  "load.roof_sheet": {
+   "element": "load",
+   "value": 0.096,
+   "unit": "kN/m2",
+   "kind": "guess",
+   "basis": "sheet thickness not drawn; BNBC 2012 Part 6 Ch 2 Table 2.2.2 \"Steel, galvanized std. corrugated sheeting (incl. lap and fastenings) 0.8 mm thick 0.096\"",
+   "options": [
+    0.077,
+    0.096,
+    0.12
+   ],
+   "used_by": "load_summary (§D97)"
   }
  },
  "building_types": {

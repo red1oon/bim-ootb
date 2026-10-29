@@ -1,0 +1,117 @@
+# BNBC 2012 (final draft), Part 6 Chapter 2 'Loads on Buildings and Structures' — text extracted with pdftotext -layout from https://law.resource.org/pub/bd/bnbc.2012/gov.bd.bnbc.2012.06.02.pdf (public, Housing and Building Research Institute draft as published), 2026-10-29. Sec 2.2.4 + Tables 2.2.1 and 2.2.2, verbatim. The gazetted BNBC 2020 text was NOT checked.
+
+2.2.4         WEIGHT OF MATERIALS AND CONSTRUCTIONS
+In estimating dead loads, the actual weights of materials and constructions shall be used, provided that in the
+absence of definite information, the weights given in Tables 2.2.1 and 2.2.2 shall be assumed for the purposes
+of design.
+
+             Table 2.2.1 : Unit Weight of Basic Materials
+
+                                                              Unit weight                            Unit
+             Material                                         (kN/m3)          Material              Weight
+                                                                                                     (kN/m3)
+             Aluminium                                         27.0              Granite, Basalt     26.4
+             Asphalt                                           21.2              Iron ‐ cast         70.7
+             Brass                                             83.6                   ‐ wrought      75.4
+             Bronze                                            87.7              Lead                111.0
+             Brick                                             18.9              Limestone           24.5
+             Cement                                            14.7              Marble              26.4
+             Coal, loose                                       8.8               Sand, dry           15.7
+             Concrete ‐ stone aggregate (unreinforced) 22.8*                     Sandstone           22.6
+                        ‐ brick aggregate (unreinforced) 20.4*                   Slate               28.3
+             Copper                                            86.4              Steel               77.0
+             Cork, normal                                      1.7               Stainless Steel     78.75
+             Cork, compressed                                  3.7               Timber              5.9‐11.0
+             Glass, window (soda‐lime)                         25.5              Zinc                70.0
+             * for reinforced concrete, add 0.63 kN/m3 for each 1% by volume of main reinforcement
+
+2.2.5         WEIGHT OF PERMANENT PARTITIONS
+When partition walls are indicated on the plans, their weight shall be considered as dead load acting as
+concentrated line loads in their actual positions on the floor. The loads due to anticipated partition walls, which
+are not indicated on the plans, shall be treated as live loads and determined in accordance with Sec 2.3.2.4.
+
+2.2.6         WEIGHT OF FIXED SERVICE EQUIPMENT
+Weights of fixed service equipment and other permanent machinery, such as electrical feeders and other
+machinery, heating, ventilating and air‐conditioning systems, lifts and escalators, plumbing stacks and risers etc.
+shall be included as dead load whenever such equipment are supported by structural members.
+
+2.2.7         ADDITIONAL LOADS
+In evaluating the final dead loads on a structural member for design purposes, allowances shall be made for
+additional loads resulting from the (i) difference between the prescribed and the actual weights of the
+members and construction materials; (ii) inclusion of future installations; (iii) changes in occupancy or use of
+buildings; and (iv) inclusion of structural and non‐structural members not covered in Sec 2.2.2 and 2.2.3.
+
+
+2.3           LIVE LOADS
+2.3.1         GENERAL
+The live loads used for the structural design of floors, roof and the supporting members shall be the greatest
+applied loads arising from the intended use or occupancy of the building, or from the stacking of materials and
+the use of equipment and propping during construction, but shall not be less than the minimum design live
+loads set out by the provisions of this section. For the design of structural members for forces including live
+loads, requirements of the relevant sections of Chapter 1 shall also be fulfilled.
+
+
+
+
+                                                               2
+                                                                                                                         Chapter 2
+
+
+
+Table 2.2.2 Dead Load
+                                                      Weight per                                                 Weight
+Material / Component / Member                         Unit Area        Material                                  per
+                                                      (kN/m2)                                                    Unit Area
+                                                                                                                 (kN/m2)
+Floor                                                                  Walls and Partitions
+Floor                                                                  Walls and Partitions
+ Asphalt, 25 mm thick                                 0.526              Acrylic resin sheet, flat, per mm       0.012
+ Clay tiling, 13 mm thick                             0.268            thickness
+ Concrete slab (stone aggregate)* ‐‐‐                                    Asbestos cement sheeting ‐‐‐‐           0.072
+           solid, 100 mm thick                        2.360                       4.5 mm thick                   0.106
+           solid, 150 mm thick                        3.540                       6.0 mm thick
+ Galvanized steel floor deck (excl. topping)          0.147‐0.383        Brick masonry work, excl. plaster ‐‐‐   1.910
+ Magnesium oxychloride‐                                                           burnt clay,    per 100 mm      1.980
+           normal (sawdust filler), 25 mm thick       0.345            thickness
+           heavy duty (mineral filler), 25 mm thick   0.527                       sand‐lime,    per 100 mm       2.360
+ Terrazzo paving 16 mm thick                          0.431            thickness                                 3.540
+                                                                         Concrete (stone aggregate)* ‐‐‐         5.900
+Roof                                                                              100 mm thick                   0.034
+ Acrylic resin sheet, corrugated ‐‐‐‐                                             150 mm thick                   0.092
+            3 mm thick, standard corrugations         0.043                       250 mm thick                   0.269
+            3 mm thick, deep corrugations             0.062              Fibre insulation board, per 10 mm       0.961
+ Asbestos cement, corrugated sheeting ‐‐‐                              thickness                                 0.075
+            (incl. lap and fastenings)                                   Fibrous plaster board, per 10 mm        0.092
+            6 mm thick (standard corrugations)        0.134            thickness                                 0.061
+            6 mm thick(deep corrugations)             0.158              Glass, per 10 mm thickness
+ Aluminium, corrugated sheeting ‐‐‐                                      Hardboard, per 10 mm thickness
+            (incl. lap and fastenings)                                   Particle or flake board, per 10 mm      0.081
+            1.2 mm thick                              0.048            thickness                                 0.287
+            0.8 mm thick                              0.028              Plaster board, per 10 mm thickness      0.480
+            0.6 mm thick                              0.024              Plywood, per 10 mm thickness
+ Aluminium sheet(plain) ‐‐‐
+            1.2 mm thick                              0.033            Ceiling
+            1.0 mm thick                              0.024             Fibrous plaster, 10 mm thick             0.019
+            0.8 mm thick                              0.019             Cement plaster, 13 mm thick
+ Bituminous felt(5 ply) and gravel                    0.431             Suspended metal lath and plaster         0.230
+ Slates ‐‐‐                                                                      (two faced incl. studding)      0.191
+            4.7 mm thick                              0.335                                                      0.153
+            9.5 mm thick                              0.671            Miscellaneous                             0.151
+ Steel sheet, flat galvanized ‐‐‐                                       Felt (insulating), per 10 mm thickness
+            1.00 mm thick                             0.082             Plaster ‐‐‐                              0.671
+            0.80 mm thick                             0.067                      cement, per 10 mm thickness     0.995
+            0.60 mm thick                             0.053                      lime, per 10 mm thickness       1.388
+ Steel, galvanized std. corrugated sheeting ‐‐‐                         PVC sheet, per 10 mm thickness
+            (incl. lap and fastenings)                                  Rubber paving, per 10 mm thickness
+            1.0 mm thick                              0.120             Terra‐cotta Hollow Block Masonry ‐‐‐
+            0.8 mm thick                              0.096                      75 mm thick
+            0.6 mm thick                              0.077                      100 mm thick
+  Tiles ‐‐‐                                                                      150 mm thick
+            terra‐cotta (French pattern)              0.575
+            concrete , 25 mm thick                    0.527
+            clay tiles                                0.6‐0.9
+* for brick aggregate, 90% of the listed values may be used.
+
+
+
+2.3.2         DEFINITION

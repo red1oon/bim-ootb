@@ -3436,6 +3436,19 @@ if (dimScale) dimScale.addEventListener('keydown', (e) => {
 // ONE Export pill (#b-export) replaces the two flat #b-ifc/#b-bcf pills; a small chooser (the exact
 // #m-open-panel idiom from initOpenChooser) offers Native .db / IFC / BCF. IFC + BCF handler bodies
 // are UNCHANGED (pure UI move); Native .db is the NEW symmetric save of what #b-open loads.
+// §D97 Load Summary: the converted bodies + the stated defaults handed to load_summary.html (same origin, localStorage); the numbers are modeller/load_summary.js's
+function doLoadSummary() {
+  const U = window.DxfImportUI && window.DxfImportUI.state, E = window.DxfMetaEditor, els = U && U.gate && U.gate.R && U.gate.R.els;
+  if (!els || !els.length) { setStat('Load Summary: open a 2D set and Convert first — the summary weighs the converted parts'); console.log('§LOAD_SUMMARY refused no_bodies'); return; }
+  const marks = (E && E.state && E.state.sheets || []).reduce((a, sh) => a.concat(sh.marks || []), []), stated = {};
+  marks.filter(m => m.key === 'DEFAULT').forEach(m => { const i = String(m.value).indexOf(','); if (i > 0) stated[String(m.value).slice(0, i)] = String(m.value).slice(i + 1); });
+  const ch = (E && E.defaultChoices && E.defaultChoices()) || {}; Object.keys(ch).forEach(k => { if (ch[k] !== '' && ch[k] !== undefined) stated[k] = ch[k]; });
+  const set = (marks.find(m => m.key === 'SET') || {}).value || null, overrides = {}; Object.keys(stated).forEach(k => { if (/^load\./.test(k)) overrides[k] = Number(stated[k]); });
+  const payload = { building: set || 'Building', set, type: stated['building.type'] || null, bodies: els, overrides, date: new Date().toISOString().slice(0, 10), run: (U.gate && U.gate.R && U.gate.R.run_id) || null };
+  try { localStorage.setItem('dagevu_load_summary', JSON.stringify(payload)); } catch (e) { setStat('Load Summary: could not hand the parts to the page (' + e.message + ')'); console.log('§LOAD_SUMMARY handoff_fail ' + e.message); return; }
+  console.log('§LOAD_SUMMARY handoff bodies=' + els.length + ' overrides=' + JSON.stringify(overrides) + ' type=' + (payload.type || 'not_stated'));
+  window.open('load_summary.html', '_blank'); setStat('Load Summary opened in a new tab (' + els.length + ' parts)');
+}
 async function doViewerDbExport() {   // §D43: the Viewer's own database from the model (IFC4 -> the shared extractor core), not the signed op-log
   if (window.Bonsai.oplog.length === 0) { setStat('author or convert something first'); return; }
   setStat('Viewer database: building the IFC, then extracting it…');
@@ -3512,6 +3525,7 @@ async function doDbExport() {
     { key: 'native', icon: '⛁', label: 'Native .db', sub: 'full fidelity — the signed op-log', run: doDbExport },
     { key: 'vdb', icon: '▦', label: 'Viewer database (.db)', sub: 'opens in the Viewer: elements, materials, positions', run: doViewerDbExport },
     { key: 'ifc', icon: '⬇', label: 'IFC (IFC4)', sub: 'geometry translation via web-ifc', run: doIfcExport },
+    { key: 'load', icon: '⚖', label: 'Load Summary…', sub: 'own weight by part and per footing, for the structural engineer (opens a report)', run: doLoadSummary },
     { key: 'bcf', icon: '⚑', label: 'BCF issue (.bcfzip)', sub: 'current view + selection', run: doBcfExport },
     { key: 'dxf', icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>', label: '2D drawings (DXF)', sub: 'plans, elevations, roof, section + markings', run: doDxfExport }
   ];
