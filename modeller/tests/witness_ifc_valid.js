@@ -52,7 +52,7 @@ ok('V5 extractor: 512 Provenance rows from the new name AND from the old name (e
     await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 240000 });
     const txt = await pg.evaluate(async () => { const b = (await window.Bonsai.ifc.build()).bytes; let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode.apply(null, b.subarray(i, i + 32768)); return s; });
     const f2 = path.join(dir, 'page.ifc'); fs.writeFileSync(f2, Buffer.from(txt, 'latin1')); const v2 = py(f2);
-    ok('V2 PAGE writer on the same sheets: IFC4, 0 validation statements, header fine, no reserved Pset_ name, 512 evidence sets', v2.schema === 'IFC4' && v2.statements === 0 && !v2.header_problems.length && !v2.reserved_pset_names.length && v2.evidence_sets === 512, JSON.stringify(v2).slice(0, 300));
+    ok('V2 PAGE writer on the same sheets: IFC4, 0 validation statements, header fine, no reserved Pset_ name, 511 evidence sets (the page joins one wall, §D88 B)', v2.schema === 'IFC4' && v2.statements === 0 && !v2.header_problems.length && !v2.reserved_pset_names.length && v2.evidence_sets === 511, JSON.stringify(v2).slice(0, 300));
   } catch (e) { ok('V2 page', false, String(e && e.stack || e).slice(0, 300)); } finally { await br.close(); srv.close(); }
   console.log('§W-IFC-VALID ' + (fails ? 'FAIL ' + fails : 'PASS')); process.exit(fails ? 1 : 0);
 })();
