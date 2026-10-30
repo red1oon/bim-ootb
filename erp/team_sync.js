@@ -75,7 +75,22 @@
     if (R && R.ok && kind !== global.TeamScope.kind()) { global.TeamScope.setKind(kind); await verifyPlan('plan=' + kind); }
     var d = dev && R && R.ok ? R.devices[dev.kid] : null;
     scopeCtx = { kind: global.TeamScope.kind(), role: d ? R.roleAt(dev.kid, Infinity).ad_role_id : null, person: d ? d.person : null };
+    if (d && !docnoOn) docnoOverlay();
     return scopeCtx;
+  }
+  // TEAMWORK §48.11b/§48.11c — LOCAL NUMBERING switched on with Team: once this device is enrolled (more than one device can number documents), the boot overlay gives every
+  // un-prefixed DocType sequence the OrgValue-UserValue- prefix on the LIVE database (not an op, not sent; the base hash does not move). A solo device never reaches here.
+  var docnoOn = false;
+  function docnoOverlay() {
+    var db = adDb(); if (!db || !global.TeamDocNo) return;
+    try { global.TeamDocNo.ensure(function (sql, a) { return bq(db, sql, a); }, function (sql, a) { db.run(sql, a || []); }, log); docnoOn = true; }   // re-applied on every boot (idempotent), so nothing to persist
+    catch (e) { log('🔴 §TEAM_DOCNO_PREFIX ' + (e && e.message)); }
+  }
+  // the fold rule (opts.docno): judged against the PRISTINE base (the same rows on every device), never this device's live dictionary; a space without a verified base is not judged
+  async function hostDocNo(o) {
+    if (!global.TeamDocNo) return null;
+    if (baseSt.state !== 'ok') return { unjudged: 'base-' + baseSt.state };
+    return global.TeamDocNo.judge(Object.assign({}, o, { baseQ: async function (sql, a) { return bq(await pristine(), sql, a); } }));
   }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
@@ -683,7 +698,7 @@
   async function newDevice() { dev = await global.CommStore.newDevice(); dev.person_uu = global.crypto.randomUUID(); await kvPut('device', dev); }
   async function openStore(bytes) {
     baseSt = { state: 'unknown' }; bmemo = {};
-    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: coreMsg, baseRow: hostBaseRow, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
+    storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: coreMsg, baseRow: hostBaseRow, docno: hostDocNo, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
     S = global.CommStore.open(new SQL.Database(bytes), storeOpts);
     var pu = new URLSearchParams(global.location.search).get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });

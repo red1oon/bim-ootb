@@ -82,6 +82,13 @@
   function isEmpty(v, trim) { return v == null || (trim ? String(v).trim() : String(v)) === ''; }   // Util.isEmpty
   // DefaultEvaluatee.get_ValueAsString (util/DefaultEvaluatee.java:150-340) over a PO row + the session context (env):
   // <format> operator, '.' reference operator (X_ID.Column → the referenced row), ':' default, '#'/'$' globals.
+  // Env.getCtx() of the session that draws the number: env.ctx when it IS a login Ctx, else the session's login context (ad_callout sessionContext, built once per login, HS1); null when no dictionary is bound
+  function loginCtx(trx) {
+    var env = trx.env || {}; if (env.ctx && typeof env.ctx.getProperty === 'function') return env.ctx;
+    var AC = (typeof module !== 'undefined' && module.exports) ? require('./ad_callout.js') : (typeof window !== 'undefined' ? window : globalThis).AdCallout;
+    if (!AC || typeof AC.sessionContext !== 'function' || !(env.session || env.client != null)) return null;
+    try { return AC.sessionContext(env); } catch (e) { return null; }
+  }
   function evalVar(trx, po, variableName) {
     var format = '', f = variableName.indexOf('<');                                           // :160-164 format
     if (f > 0 && /\>$/.test(variableName)) { format = variableName.slice(f + 1, -1); variableName = variableName.slice(0, f); }
@@ -89,10 +96,13 @@
     if (f > 0) { var t0 = variableName.slice(0, f); if (/.*[_]ID([:].+)?$/.test(t0)) { foreignColumn = variableName.slice(f + 1); variableName = t0; } }
     var defaultValue = null, idx = variableName.indexOf(':');                                 // :177-182 default value
     if (idx >= 0) { defaultValue = variableName.slice(idx + 1); variableName = variableName.slice(0, idx); }
-    var value = null, globalVariable = /^[#$]/.test(variableName);                           // Env.isGlobalVariable
+    var value = null, globalVariable = /^[#$]/.test(variableName), preference = variableName.indexOf('P|') === 0;   // Env.isGlobalVariable / Env.isPreference (Env.java:2632,2644)
     if (po && !globalVariable) { var dv = po[variableName.toLowerCase()]; value = dv != null ? String(dv) : null; }   // :188-192 data provider
-    if (isEmpty(value) && globalVariable) {                                                   // :216-219 global context
-      var ctxName = variableName.slice(1), env = trx.env || {}, ctx = env.ctx || {};
+    if (isEmpty(value) && (globalVariable || preference)) {                                   // :216-219 Env.getContext(ctx, variableName) — the LOGIN context (TEAMWORK §48.11c G1/G2)
+      var lc = loginCtx(trx); if (lc) value = lc.getProperty(variableName, '') || null;
+    }
+    if (isEmpty(value) && globalVariable) {                                                   // fallback when no login context exists (a node caller with no dictionary bound)
+      var ctxName = variableName.slice(1), env = trx.env || {}, ctx = (env.ctx && typeof env.ctx.getProperty !== 'function') ? env.ctx : {};
       value = ctx[ctxName] != null ? String(ctx[ctxName]) : ctxName === 'AD_Client_ID' ? (env.client != null ? String(env.client) : null)
         : ctxName === 'AD_Org_ID' ? (env.org != null ? String(env.org) : null) : ctxName === 'AD_User_ID' ? (env.user != null ? String(env.user) : null)
         : ctxName === 'Date' ? (env.date || null) : null;

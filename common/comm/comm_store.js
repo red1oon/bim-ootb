@@ -163,6 +163,18 @@
           if (ex !== undefined) { var okExe = roster.roleAt(o.env.author, o.env.seq).ad_role_id === ex;
             if (!okExe) verdict[o.hash] = { verdict: 'REFUSED', reason: 'not-executor' }; } }
       }
+      // TEAMWORK §48.11c piece 4 — LOCAL NUMBERING at fold (host rule opts.docno, downgrade-only like versions): run AFTER every op was admitted, so the log it reads (a format edit on a
+      // sequence, a user's CREATE) is the set of MERGED ops — the same on every device whatever the slot order. The station = the author's roster person (bound to an AD_User, §38.15).
+      var docno = { judged: 0, refused: 0, unjudged: {} };
+      if (opts.docno) {
+        var merged = ops.filter(function (x) { return verdict[x.hash] && verdict[x.hash].verdict === 'MERGED'; }), byT = {};
+        merged.forEach(function (x) { var tt = String(x.env.target.table).toLowerCase(); (byT[tt] = byT[tt] || []).push({ uu: x.env.target.uu, op_type: x.env.body.op_type, params: x.env.body.params || {} }); });
+        for (var dno of merged) { var bt = dno.env.body.op_type; if (bt !== 'CRUD_CREATE' && bt !== 'CRUD_UPDATE') continue;
+          var dd = roster.devices[dno.env.author], dj = await opts.docno({ table: dno.env.target.table, uu: dno.env.target.uu, body: dno.env.body, person: dd ? dd.person : null, logOps: function (tt) { return byT[String(tt).toLowerCase()] || []; } });
+          if (!dj) continue; docno.judged++;
+          if (dj.verdict) { verdict[dno.hash] = { verdict: dj.verdict, reason: dj.reason }; docno.refused++; if (dj.detail) _once('dn:' + dno.hash, '§TEAM_DOCNO_REFUSED ' + dj.reason + ' ' + dj.detail); }
+          else if (dj.unjudged) docno.unjudged[dj.unjudged] = (docno.unjudged[dj.unjudged] || 0) + 1; }
+      }
       // all-or-none: every op of a DocAction group whose status op was refused not-executor is refused with it (no ghost consequence is ever placed)
       var badGrp = {}; ops.forEach(function (o) { var v = verdict[o.hash], g = (o.env.body.params || {}).grp; if (v && v.reason === 'not-executor' && g) badGrp[g] = 1; });
       ops.forEach(function (go) { var g = (go.env.body.params || {}).grp; if (g && badGrp[g] && verdict[go.hash] && verdict[go.hash].verdict === 'MERGED') verdict[go.hash] = { verdict: 'REFUSED', reason: 'not-executor-group' }; });
@@ -191,7 +203,7 @@
         if (!cp.losers.length) break;
         cp.losers.forEach(function (l) { verdict[l.h] = { verdict: 'REFUSED', reason: l.reason }; excluded[l.h] = 1; });
       }
-      return { order: L.order, verdict: verdict, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, createOf: createOf, ops: ops, claims: claims, used: used };
+      return { docno: docno, order: L.order, verdict: verdict, parked: Object.keys(verdict).filter(function (h) { return verdict[h].verdict === 'PARKED'; }).sort(), equivocations: equiv, roster: roster, createOf: createOf, ops: ops, claims: claims, used: used };
     }
 
     function claimsPass(order, byHash, bs) {
@@ -331,7 +343,7 @@
       db.run('DELETE FROM cl_verdict');
       var pos = {}; res.order.forEach(function (h, i) { pos[h] = i; });
       Object.keys(res.verdict).forEach(function (h) { db.run('INSERT INTO cl_verdict VALUES (?,?,?,?)', [h, pos[h] != null ? pos[h] : null, res.verdict[h].verdict, res.verdict[h].reason || null]); });
-      last = { order: res.order, parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, claims: res.claims, used: res.used };
+      last = { docno: res.docno, order: res.order, parked: res.parked, equivocations: res.equivocations, roster: res.roster, verdict: res.verdict, claims: res.claims, used: res.used };
       return last;
     }
     async function orderWithCkpt() {
