@@ -2,6 +2,31 @@
 SCOPE: the brief for an ARCHITECT REVIEW session of DXF2BIM (2D DXF sets -> 3D model in the Modeller), written 2026-10-23 at the owner's request. Read-only
 review first, specs second, code only if the owner says so. **Read the log after every run; exit code is not evidence.** Honour this block until the review is DONE.
 
+## ▶▶▶▶▶▶▶▶▶ RESUME HERE (session 13 entry; written 2026-10-30 at the close of session 12; read this first — the session-12 block below is history)
+**Merged + live this session (each witnessed, logs read):** BricsCAD film v2 assembled (431.8 s, `~/Videos/Shed_BricsCAD_Film_1920x1080_2026-10-29_v2.mp4` + 720p send copy; FILM file RESULT) ·
+**§D93** guide passages brought to the code (title-read cut/level/roof, tags by width, size-tie default) + ranked YouTube links (BIMCompiler #272) · **§D94** Pick the second height on the Sheet view
+(#2437, W-DATUM-PICK 9/0; refuses when 2 drawn lines are within 8 px) · **§D96** the second height READ from the drawing's own self-measured dimensions (`PR-Z-DIM`, #2441, W-ZDIM 5/0: the shed now
+asks 0 height questions; also fixed Arrange handing over to an EMPTY canvas before the set name) · **§D95** NOTE (not built): after Add a bay, "Show what changed" toggle on until the user turns it off ·
+4 stale shed witnesses closed (#2444: the page joins one wall since §D88 B → 511 + 2 cuts) · **T13 §CODE_NAMED** (`STRUCTURAL_SANITY.md`, #2443, W-CODE-NAMED 6/0): every compliance rule
+states its basis; the panel names the codes that judged + a coverage line (Duplex: 3 of 12 rules ran) · **§D97 Load Summary** (#2445, W-LOAD-SUMMARY 7/0, runner PASS 92 / ENV 10 / FAIL 0, Modeller
+sw v190, guide §7 + yellow list live): Export ▸ Load Summary… = own weight per part (BNBC 2012 P6C2 unit weights, verbatim in `modeller/reference/`), per footing, shape, red missing inputs, editable page.
+**▶ NEXT, in order (owner's direction 2026-10-29: compliance + "what users might need"; best-effort defaults allowed when shown amber and editable):**
+1. **5D rates price the shed's concrete as steel (OPEN, measured):** `viewer/rates/pwd2024_bd.json` maps `IfcColumn` = "Structural Steel Column" 16,000 BDT/M, `IfcBeam` = "Structural Steel I-Beam"
+   9,500 BDT/M, `IfcWall` = "Blockwork 150 mm"; the shed's 96 column parts + 35 beams are `Reinforced concrete`, walls 5"/10" brick. Fix = rate rows by class **+ material** (generic, no shed literal),
+   values EXTRACTED from the PWD Schedule of Rates. **Source found (owner, 2026-10-30):** https://ss.pwd.gov.bd/sor/sordownload/1 = **PWD SoR 2022 for Civil Works (15-06-22)** — the pages say 2022,
+   so the pack's "PWD Schedule of Rates Bangladesh 2024" label is UNVERIFIED (state it, do not repeat it). Chapters per PDF (`https://ss.pwd.gov.bd/document/sor/<name>.pdf`): CHAPTER 04 Brick works,
+   **07 Reinforced cement concrete (RCC) works** (e.g. 07.1.2 "Pedestal, column, column capital, lift wall … up to ground floor" per cum, several REGIONAL columns), **10 Structural steel works,
+   Sheet roofing**, 13 Netting, + "Rates of Man, Materials and Mark-ups", Approval-SoR (Bangla, legacy font: text does not extract). ⚠ the chapter PDFs are scanned + OCR'd: numbers misread
+   (`9.032.00`, `E,781.00`) — every rate taken must be checked against the page image, and which regional column applies is a stated fact (the site district, same as the Load Summary's).
+2. **T13.5 the exports write the building type** (`STRUCTURAL_SANITY.md` T13 RESULT): Modeller IFC export → `Pset_BuildingCommon.OccupancyType`, Viewer-DB export → `project_metadata building_type`,
+   the extractor maps it; until then every model reads "building type: not stated".
+3. **Load Summary follow-ons (§D97 "Not built"):** write the page's edited inputs back to the drawing as `@DEFAULT`; live / wind / earthquake need BNBC Sec 2.3-2.5 + district + soil.
+4. **First real code pack: UBBL** (`UBBL_RULES_GATE.md`: gazetted primary text needed, + the room-size miscite); then **BNBC 2020** (the gazetted 2020 text, not the 2012 draft used for unit weights).
+5. §D95 Show-what-changed toggle (spec'd); the DXF guide's "Status: preliminary" header + a quickstart (the outside-review suggestions; send that review with: code at `bim-ootb/modeller/`, the
+   guide's walk dated 2026-10-22, the "nothing is metadata until ticked" rule).
+**Facts not to re-derive:** the shed has 512 bodies headless / 511 on the page (§D88 B join); own weight 5,352 kN (546 t), 1,815 kN on 32 footings, heaviest 246 kN / 133 kPa; today's
+compliance checks on the shed: 4 of 12 rules ran, 5 US-code warnings (4 doors under IBC §1010.1.1 buffer/minimum, 1 cantilever B-2 span/depth 15.7), NOT assessed against Bangladesh code.
+
 ## ▶▶▶▶▶▶▶▶ RESUME HERE (session 12 entry; written 2026-10-28 at the close of session 11; read this first)
 **Done in session 11:** ✅ §D88 B a door in a wall gap is hosted by that wall (structure path): the shed's double door 33B + 353 -> one joined wall + one cut per leaf; the single doors 1D7 /
 2D1 stand beside a column and stay unhosted (measured, named). W-DOOR-GAP 4/0 (main D1 D4 FAIL), W-DXF-ADD-BAY 12/0 (+B0h hole rendered, B3r the doors ride). Foundation lane §D88 B.
