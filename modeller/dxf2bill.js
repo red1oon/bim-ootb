@@ -65,6 +65,13 @@
     return mat;
   }
   // bodies: [{guid, kind, class, prov, vertices, faces, ifc:{type_name}}]; opts: { ref, pack: {meta, materials}, packName }
+  var MEASURE_OF = { M3: 'V', M2: 'A', M: 'L', EA: 'N' };
+  // pack.material_rates = { IfcClass: [ { material, rate, unit, desc, source } ] }; the material is matched whole, case-insensitively (no pack row = the class rate, as before)
+  function materialRate(pack, cls, material) {
+    var rows = pack && pack.material_rates && pack.material_rates[cls]; if (!rows || !material) return null;
+    for (var i = 0; i < rows.length; i++) if (String(rows[i].material).toLowerCase() === String(material).toLowerCase() && rows[i].rate > 0) return rows[i];
+    return null;
+  }
   function bill(bodies, opts) {
     var ref = opts.ref, pack = opts.pack || { materials: {} }, lines = [], flags = [], tot = { amount: 0, by_prov: { drawn: 0, derived: 0, assumed: 0 }, by_class: {} };
     bodies.forEach(function (b) {
@@ -75,14 +82,16 @@
       (part.materialByLabel || []).forEach(function (m) { if (new RegExp(m.match, 'i').test(label)) mat = m.material; });
       line.material = mat;
       var q = evalFormula(part.quantity.formula, ms); line.quantity = r6(q); line.unit = part.quantity.unit; line.formula = part.quantity.formula;
-      var pe = pack.materials[(part.rate_ref && part.rate_ref.class) || b.class];
+      var rcls = (part.rate_ref && part.rate_ref.class) || b.class, pe = pack.materials[rcls];
+      var mr = materialRate(pack, rcls, mat);   // T14: a pack row stated for THIS class AND material wins over the class rate (concrete columns are not priced as steel)
+      if (mr) { pe = mr; var bm = MEASURE_OF[mr.unit]; if (bm && mr.unit !== part.quantity.unit) { q = ms[bm]; line.quantity = r6(q); line.unit = mr.unit; line.formula = bm + ' (the unit of the material rate ' + mr.unit + ')'; } line.rate_basis = 'material'; if (mr.source) line.rate_source = mr.source; }
       if (!pe || !(pe.rate > 0)) { flagsL.push('no_rate'); flags.push({ id: b.guid, flag: 'no_rate', class: b.class }); }
       else {
-        line.rate = pe.rate; line.pack_class = part.rate_ref.class; line.pack_desc = pe.desc;
-        if (pe.unit !== part.quantity.unit) { flagsL.push('unit_mismatch'); flags.push({ id: b.guid, flag: 'unit_mismatch', class: b.class, formula_unit: part.quantity.unit, pack_unit: pe.unit }); }
+        line.rate = pe.rate; line.pack_class = rcls; line.pack_desc = pe.desc;
+        if (pe.unit !== line.unit) { flagsL.push('unit_mismatch'); flags.push({ id: b.guid, flag: 'unit_mismatch', class: b.class, formula_unit: line.unit, pack_unit: pe.unit }); }
         else {
           var fct = 1;
-          if (part.factor) {
+          if (part.factor && !mr) {
             var tr = tRefOf(pe);
             if (tr && ms.t > 0) { fct = evalFormula(part.factor.formula, { t: ms.t, t_ref: tr }); line.factor_formula = part.factor.formula + ' (t_ref = ' + tr + ' m from the pack description)'; }
             else flagsL.push('no_t_ref');
@@ -98,5 +107,5 @@
     return { pack: opts.packName || (pack.meta && pack.meta.name) || null, currency: cur, lines: lines, totals: tot, flags: flags,
       log: '§BILL lines=' + lines.length + ' amount=' + tot.amount + (cur ? ' ' + cur : '') + ' drawn=' + tot.by_prov.drawn + ' derived=' + tot.by_prov.derived + ' assumed=' + tot.by_prov.assumed + ' flags=' + flags.length };
   }
-  return { evalFormula: evalFormula, measures: measures, bill: bill, tRefOf: tRefOf, materialOf: materialOf };
+  return { materialRate: materialRate, evalFormula: evalFormula, measures: measures, bill: bill, tRefOf: tRefOf, materialOf: materialOf };
 });
