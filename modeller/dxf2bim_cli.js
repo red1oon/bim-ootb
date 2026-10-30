@@ -137,9 +137,11 @@ function webIfc() {
   for (const m of ['web-ifc', process.env.WEB_IFC, path.join(process.env.HOME || '', 'bim-compiler/node_modules/web-ifc')]) { if (!m) continue; try { return require(m); } catch (e) { /* next */ } }
   throw new Error('--ifc needs web-ifc (npm i web-ifc, or set WEB_IFC=<dir>)');
 }
+// T13.5: the type counts as stated only when a file/sheet/editor choice gave it, never the registry default or a type override
+function statedType(R) { const r = ((R && R.defaults_table) || []).find(x => x.key === 'building.type'); return r && /^(file|sheet|choice)$/.test(r.source) ? String(r.value) : null; }
 async function writeIfc(res, dir) {
   const W = webIfc(), api = new W.IfcAPI(); await api.Init();
-  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc' });
+  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc', buildingType: statedType(R) });
   fs.writeFileSync(path.join(dir, 'model.ifc'), Buffer.from(r.bytes));
   return r;
 }

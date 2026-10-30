@@ -1074,6 +1074,8 @@
     var b = document.getElementById('dxf-convert'); if (b) b.disabled = true; status(why);
   }
 
-  window.DxfImportUI = { addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  // T13.5: the building type the export writes: only a type the drawing / sheet / editor stated (never the registry default), else null
+  function statedBuildingType() { var R = state.gate && state.gate.R, row = R && (R.defaults_table || []).filter(function (r) { return r.key === 'building.type'; })[0]; return row && /^(file|sheet|choice)$/.test(row.source) ? String(row.value) : null; }
+  window.DxfImportUI = { statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();
