@@ -9,7 +9,7 @@ const HB = '| Setting | Element | Unit | Default | Kind | Basis | Offered choice
 const esc = t => String(t).replace(/\|/g, '\\|');
 function rowsB() {
   const D = REG.defaults, keys = Object.keys(D).sort((a, b) => { const ea = D[a].element === 'Building' ? '' : D[a].element, eb = D[b].element === 'Building' ? '' : D[b].element; return ea < eb ? -1 : ea > eb ? 1 : a < b ? -1 : a > b ? 1 : 0; });
-  return keys.map(k => { const r = D[k]; return '| `' + k + '` | ' + esc(r.element) + ' | ' + esc(r.unit) + ' | **' + esc(r.value) + '** | ' + esc(r.kind) + ' | ' + esc(r.basis) + ' | ' + (r.options || []).map(esc).join(', ') + ' |'; });
+  return keys.map(k => { const r = D[k]; return '| `' + k + '` | ' + esc(r.element) + ' | ' + esc(r.unit) + ' | ' + (r.value === '' ? '*(empty)*' : '**' + esc(r.value) + '**') + ' | ' + esc(r.kind) + ' | ' + esc(r.basis) + ' | ' + (r.options || []).map(esc).join(', ') + ' |'; });
 }
 function rowsC() { const O = (REG.building_types[SHED] || {}).overrides || {}; return Object.keys(O).sort().map(k => '| `' + k + '` | ' + esc(O[k].value) + ' | ' + esc(O[k].basis) + ' |'); }
 // replace the rows that follow `header` + its |---| line, up to the first line that is not a table row
