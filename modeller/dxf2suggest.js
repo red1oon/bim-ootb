@@ -11,6 +11,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
+  var SET_PLACEHOLDER = 'BUILD-NAME';   // §D98: the set name offered when no sheet states one (DXF2BIM_ARCHITECT_REVIEW.md §D98)
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
   var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // canonical: the position that carries meaning
   function num(v) { return String(Number(Number(v).toFixed(6))); }
@@ -198,8 +199,11 @@
         out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
         out.push({ rule: 'PR-NAME', key: 'NAME', value: noScale(t), x: 0, y: 0, why: 'title text' });
       } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });
+      // §D98: a set no sheet names gets the placeholder (inferred, stays yellow until renamed: never counts as stated); a real set on another sheet wins over it; two real sets still ask
       var sets = {}; ctx.sheets().forEach(function (o) { if (o !== sh) { var m = get1(o, 'SET'); if (m) sets[m.value] = 1; } });
-      if (Object.keys(sets).length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: Object.keys(sets)[0], x: 0, y: 0, why: 'the other sheets state it' });
+      var real = Object.keys(sets).filter(function (k) { return k !== SET_PLACEHOLDER; }), own = get1(sh, 'SET');
+      if (real.length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: real[0], x: 0, y: 0, why: 'the other sheets state it' });
+      else if (!real.length && !own) out.push({ rule: 'PR-SET-PLACEHOLDER', key: 'SET', value: SET_PLACEHOLDER, x: 0, y: 0, why: 'no sheet names the set: a placeholder, rename it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
       if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN') propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
@@ -227,7 +231,7 @@
         var hx = propHaxis(sh); if (hx.value) out.push(hx); else refused.push(hx);
       }
       var have = {}; sh.marks.forEach(function (m) { have[canonOne(m)] = 1; });
-      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP'].indexOf(p.key) < 0 && get1(sh, p.key)); });
+      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP'].indexOf(p.key) < 0 && get1(sh, p.key) && !(p.key === 'SET' && get1(sh, p.key).value === SET_PLACEHOLDER)); });   // §D98: a real set name replaces the placeholder
       return { list: out, refused: refused };
     }
     function propHaxis(sh) {                                    // mark_dx_set.js: unique axis/sign fit of @GRIDH against the lowest plan's grids
@@ -260,5 +264,5 @@
     });
     return { groups: Object.keys(groups).sort().map(function (k) { return groups[k]; }), left: left, refused: refused };
   }
-  return { create: create, tagByWidth: tagByWidth, stripMarks: stripMarks, markText: markText, effText: effText, get1: get1, viewOf: viewOf, canonOne: canonOne, posOf: posOf, layerOf: layerOf, HEADER_UNITS: HEADER_UNITS, SINGLE_POS: SINGLE_POS, LAYER: LAYER };
+  return { create: create, tagByWidth: tagByWidth, stripMarks: stripMarks, markText: markText, effText: effText, get1: get1, viewOf: viewOf, canonOne: canonOne, posOf: posOf, layerOf: layerOf, HEADER_UNITS: HEADER_UNITS, SINGLE_POS: SINGLE_POS, LAYER: LAYER, SET_PLACEHOLDER: SET_PLACEHOLDER };
 });

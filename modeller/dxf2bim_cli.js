@@ -80,7 +80,7 @@ function run(args, log) {
     say('§CLI accept-all ' + tag + ' accepted=' + total); return total;
   };
   if (args.accept) acceptAll('1');
-  if (args.set) sheets.forEach(sh => { if (!get1(sh, 'SET')) put(sh, 'SET', args.set); });
+  if (args.set) sheets.forEach(sh => { const s0 = get1(sh, 'SET'); if (!s0 || s0.value === SG.SET_PLACEHOLDER) put(sh, 'SET', args.set); });   // §D98: --set replaces the placeholder Accept-all took
   if (args.level !== null) sheets.forEach(sh => { if (viewOf(sh) === 'PLAN') put(sh, 'LEVEL', args.level); });
   if (args.accept) acceptAll('2');
   args.haxis.forEach(h => { const [n, v] = h.split(':'); const sh = sheets.find(s => s.name.includes(n)); if (!sh) throw new Error('--haxis: no sheet ' + n); put(sh, 'HAXIS', v); });
