@@ -105,6 +105,10 @@
     value = String(value === undefined || value === null ? '' : value).trim();
     if (value !== '') { var p = posOf(key, 0, 0); sh.marks.push({ key: key, value: value, x: p.x, y: p.y, source: 'user' }); }
     console.log(TAG + ' edit sheet=' + sh.name + ' @' + key + '=' + (value || '(cleared)') + (had.length ? ' was ' + had.map(function (h) { return h.value; }).join('|') : ''));
+    // §D98: the placeholder stands for "the set name, not given yet": the first real name typed replaces it on every sheet that holds it (else the sheets would disagree until each is accepted)
+    var PH = window.Dxf2Suggest && window.Dxf2Suggest.SET_PLACEHOLDER;
+    if (key === 'SET' && PH && value !== '' && value !== PH) { var nr = 0; S.sheets.forEach(function (o) { if (o === sh) return; o.marks.forEach(function (q) { if (q.key === 'SET' && q.value === PH) { q.value = value; q.source = 'user'; delete q.by; nr++; } }); });
+      if (nr) console.log(TAG + ' §D98 set placeholder ' + PH + ' -> ' + value + ' on ' + nr + ' other sheets'); }
     changed();
   }
   function addMulti(sh, key, value, x, y, rule) {

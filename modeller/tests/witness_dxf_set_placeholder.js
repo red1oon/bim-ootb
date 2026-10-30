@@ -11,6 +11,7 @@
  *   D5 RENAME WINS — every sheet holds the placeholder, then one is typed SHED: the other 8 are offered PR-SET SHED (a real name replaces the placeholder).
  *   D6 CLI --set  — raw shed with --accept-suggestions --set FARM: every sheet SET=FARM, none left at BUILD-NAME (the placeholder must not block --set).
  *   D7 STAYS YELLOW — the editor's tier for PR-SET-PLACEHOLDER is "inferred" and its source label for a SET equal to the placeholder is the yellow "default" badge.
+ *   D8 NEVER STATED — the Regulatory Report's set line (RegReport.setLine): placeholder alone -> "not stated (placeholder BUILD-NAME)"; beside a real name -> the real name only.
  * Input: the raw shed (SHED_RAW_DIR, default ~/Videos/dxf2bim_film_work/why/raw); missing -> §SKIP (the runner's ENV/SKIP baseline).
  */
 'use strict';
@@ -51,4 +52,7 @@ ok('D6 CLI --set FARM after Accept-all: every sheet FARM, none left at ' + P, fs
 const ED = fs.readFileSync(path.join(M, 'dxf_meta_editor.js'), 'utf8');
 const tier = /'PR-SET-PLACEHOLDER': '(\w+)'/.exec(ED), badge = /function srcLabel\(m\) \{[^\n]*m\.key === 'SET' && window\.Dxf2Suggest && m\.value === window\.Dxf2Suggest\.SET_PLACEHOLDER\) return '<span class="dm-src default"/.test(ED);
 ok('D7 STAYS YELLOW tier of PR-SET-PLACEHOLDER = inferred; a SET equal to the placeholder shows the yellow "default" badge', tier && tier[1] === 'inferred' && badge, 'tier=' + (tier && tier[1]) + ' badge=' + badge);
+// D8
+const RGr = require(path.join(M, 'reg_report.js')), a8 = RGr.setLine([P, P], P), b8 = RGr.setLine([P, 'SHED'], P), c8 = RGr.setLine([], P);
+ok('D8 NEVER STATED the report\'s set line: placeholder alone -> "' + a8 + '"; with SHED -> "' + b8 + '"; none -> ' + c8, a8 === 'not stated (placeholder ' + P + ')' && b8 === 'SHED' && c8 === null, '');
 console.log(fail ? '§VERDICT FAIL W-SET-PLACEHOLDER judged=' + judged + ' fail=' + fail : '§VERDICT PASS W-SET-PLACEHOLDER judged=' + judged + ' fail=0'); process.exit(fail ? 1 : 0);

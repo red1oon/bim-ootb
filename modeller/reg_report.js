@@ -116,10 +116,15 @@
     LS.rows.forEach(function (r) { if (r.kN != null && isFinite(r.kN)) weights[r.guid] = r.kN; if (r.assumed) assumed[r.guid] = r.sectionFrom; });
     return { loadSummary: LS, bill: o.BL.bill(els, { ref: o.ref, pack: o.pack, packName: o.packName, weights: weights, assumed: assumed, values: values, sources: sources }) };
   }
+  // §D98: the set line. The placeholder a set gets when no sheet names it never counts as stated: alone it reads "not stated (placeholder …)", beside a real name it is dropped.
+  function setLine(sets, placeholder) {
+    var u = (sets || []).filter(function (x, i, a) { return x && a.indexOf(x) === i; }), real = u.filter(function (x) { return !placeholder || x !== placeholder; });
+    return real.length ? real.join(' / ') : u.length ? 'not stated (placeholder ' + placeholder + ')' : null;
+  }
   function today(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
   // RR.5/RR.6 the ONE composition the CLI and the Modeller page both run: model IFC bytes -> the shipped extractor (sql.js) -> the shipped rule engines + RuleReport -> compose.
   // e: { ifcBytes, WebIFC, ifcApi (initialised), SQL (the sql.js module), Core (ifc_extract_core), SR, ER (rule files), SS, ES, RRp (engines), R (the converted run),
-  //      bill, loadSummary, measures, facts, sets (the drawings' @SET values), sheets (names), date, tool, packJ, sha256 (bytes -> hex, may be async), leftOut, buildingName, log }
+  //      bill, loadSummary, measures, facts, sets (the drawings' @SET values), setPlaceholder (Dxf2Suggest.SET_PLACEHOLDER, §D98), sheets (names), date, tool, packJ, sha256 (bytes -> hex, may be async), leftOut, buildingName, log }
   async function fromModel(e) {
     var say = e.log || function () {}, db = new e.SQL.Database();
     try {
@@ -132,11 +137,11 @@
     } finally { db.close(); }
     var byName = {}; [].concat(e.SR.structural_rules, e.ER.egress_rules).forEach(function (r) { if (r && r.name) byName[r.name] = r; });
     var codes = e.RRp.codesAndCoverage({ structural_rules: e.SR.structural_rules, egress_rules: e.ER.egress_rules }, Object.assign({}, covS, covE), { type: bt });
-    var sets = (e.sets || []).filter(function (x, i, a) { return x && a.indexOf(x) === i; }), pack = e.bill && e.bill.pack, pj = pack ? e.packJ : null, R = e.R || {};
+    var pack = e.bill && e.bill.pack, pj = pack ? e.packJ : null, R = e.R || {};
     return compose({
-      identity: { set: sets.length ? sets.join(' / ') : null, sheets: e.sheets || [], date: e.date, tool: e.tool, modelSha256: await e.sha256(e.ifcBytes), pack: pack, packSource: pj && pj.meta ? (pj.meta.material_rates_note || pj.meta.source || '') : '' },
+      identity: { set: setLine(e.sets, e.setPlaceholder), sheets: e.sheets || [], date: e.date, tool: e.tool, modelSha256: await e.sha256(e.ifcBytes), pack: pack, packSource: pj && pj.meta ? (pj.meta.material_rates_note || pj.meta.source || '') : '' },
       buildingType: bt, facts: e.facts || {}, storeys: R.ST || [], bodies: R.els || [], measures: e.measures, loadSummary: e.loadSummary, bill: e.bill,
       rules: { structural: { rows: rs, cov: covS }, egress: { rows: re, cov: covE }, byName: byName, codes: codes }, cli: { left_out: e.leftOut != null ? e.leftOut : null }, defaults_table: R.defaults_table || [] });
   }
-  return { compose: compose, ruleSection: ruleSection, FACTS: FACTS, statedType: statedType, billAndLoad: billAndLoad, fromModel: fromModel, today: today };
+  return { compose: compose, ruleSection: ruleSection, FACTS: FACTS, statedType: statedType, billAndLoad: billAndLoad, fromModel: fromModel, today: today, setLine: setLine };
 });
