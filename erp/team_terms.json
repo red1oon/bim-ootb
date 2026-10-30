@@ -1,0 +1,341 @@
+{
+ "schema": "terms-v1",
+ "kind": "harness",
+ "at": "2026-10-30T14:04:18.046Z",
+ "node": "v18.19.1",
+ "verdict": "PASS",
+ "rows": [
+  {
+   "id": "visit-bounded",
+   "term": "VISIT (bounded)",
+   "guarantee": "Visit #1 download stays bounded as the team grows",
+   "roadmap": "TEAMWORK §45.2 F1 per-device mailboxes",
+   "witnesses": [],
+   "controls": [],
+   "status": "OPEN",
+   "note": "measured §45.5: 384 KB / 4.5 MB / 45.8 MB at N=10/100/1000 (linear); triggered from N=10"
+  },
+  {
+   "id": "sealing-real",
+   "term": "RELAY (sealing)",
+   "guarantee": "the relay does not retain readable history",
+   "roadmap": "TEAMWORK §29 (simulator PASS only, real comm layer untouched)",
+   "witnesses": [],
+   "controls": [],
+   "status": "OPEN",
+   "note": "witness_scriptor_seal judges the simulator only; its own log marks the real layer INCONCLUSIVE"
+  },
+  {
+   "id": "doc-numbering",
+   "term": "LEDGER (document numbering)",
+   "guarantee": "two devices never give the same document number",
+   "roadmap": "per-device counters today; team-wide numbering not switched on",
+   "witnesses": [],
+   "controls": [],
+   "status": "OPEN",
+   "note": null
+  },
+  {
+   "id": "key-roles-threshold",
+   "term": "trusted keys (roles + threshold)",
+   "guarantee": "key roles, a signing threshold, signed bundles",
+   "roadmap": "TEAMWORK §46.5 versioning Stage 2",
+   "witnesses": [],
+   "controls": [],
+   "status": "OPEN",
+   "note": null
+  },
+  {
+   "id": "statement-signed",
+   "term": "LEDGER signed / STATEMENT",
+   "guarantee": "a statement edited after signing, or signed by an outside key, is refused",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_plantrust.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "edited-after-signing refused",
+     "found": true,
+     "evidence": "keys edited after signing -> REFUSED:plan-trust-signature"
+    },
+    {
+     "id": "outside signer refused",
+     "found": true,
+     "evidence": "REFUSED:plan-trust-untrusted-signer"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "trusted-keys",
+   "term": "trusted keys",
+   "guarantee": "the backup key replaces a lost primary; a non-admin or stale statement cannot change the list",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_plantrust.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
+    },
+    {
+     "file": "witness_comm_policy.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_policy.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "backup recovers lost primary",
+     "found": true,
+     "evidence": "the BACKUP signs [K1,K3] (primary dropped, lost-key recovery): MERGED, list in force = [K1,K3] — MERGED:policy MERGED"
+    },
+    {
+     "id": "non-admin refused",
+     "found": true,
+     "evidence": "NON-admin device B -> REFUSED:not-admin"
+    },
+    {
+     "id": "stale replay refused",
+     "found": true,
+     "evidence": "REFUSED:plan-trust-stale"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "rule-in-force",
+   "term": "STATEMENT (rule in force)",
+   "guarantee": "a claim stays judged by the rule in force when it was made; a later statement never rewrites it",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_executors.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_executors.log"
+    },
+    {
+     "file": "witness_comm_settrust.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_settrust.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "Complete under old map stays refused after {}",
+     "found": true,
+     "evidence": "AFTER {} the Complete done under the old map STAYS refused"
+    },
+    {
+     "id": "set published under the old list still loads after rotation",
+     "found": true,
+     "evidence": "V3 MERGED; a fresh device on [K2,K3] loads S0 and S2"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "complete-all-or-nothing",
+   "term": "BUNDLE (Complete)",
+   "guarantee": "a Complete by the wrong role is refused on every device, the consequences with it",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_executors.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_executors.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "status op refused not-executor everywhere",
+     "found": true,
+     "evidence": "status op is REFUSED not-executor on EVERY device"
+    },
+    {
+     "id": "group consequence refused with it",
+     "found": true,
+     "evidence": "REFUSED not-executor-group everywhere (all-or-none)"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "ledger-convergent",
+   "term": "LEDGER convergent",
+   "guarantee": "devices with the same history agree; a stale copy is not taken in",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_cl3_store.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+    },
+    {
+     "file": "witness_comm_cl5_conflict.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_cl5_conflict.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "same order on every device",
+     "found": true,
+     "evidence": "same order on every device"
+    },
+    {
+     "id": "stale save refused (ReQuery)",
+     "found": true,
+     "evidence": "saveCheck stale=true msg=\"Current record was changed by another user, please ReQuery\"  fresh=false"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "visit-lossless-offline",
+   "term": "VISIT (offline / interrupted)",
+   "guarantee": "no connection or a lying pipe sends nothing and loses nothing; the later Visit sends everything once",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_terms_visit.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "dead pipe: nothing lost",
+     "found": true,
+     "evidence": "a dead pipe: every claim still held locally, none marked sent"
+    },
+    {
+     "id": "liar pipe caught by read-back",
+     "found": true,
+     "evidence": "the read-back catches the dropped bundle"
+    },
+    {
+     "id": "checkers fail on doctored state",
+     "found": true,
+     "evidence": "CONTROL V2 liar-checker on a Visit that claims success (checker on a doctored state must FAIL) — failed as designed"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "visit-once",
+   "term": "VISIT (voluntary, once)",
+   "guarantee": "one Visit sends everything once; a second sends nothing",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_terms_visit.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+    },
+    {
+     "file": "witness_comm_cl3_store.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "third Visit sends nothing",
+     "found": true,
+     "evidence": "a third Visit sends nothing (once only)"
+    },
+    {
+     "id": "incremental fetch is 0",
+     "found": true,
+     "evidence": "a visit with nothing new fetches 0 bundles"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "ack-trail",
+   "term": "ACK",
+   "guarantee": "sent → seen → refused is visible on the sender",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_cl3_store.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+    },
+    {
+     "file": "witness_terms_visit.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "sent then SEEN by peers",
+     "found": true,
+     "evidence": "SEEN by B and C"
+    },
+    {
+     "id": "refused shown on the sender with a reason",
+     "found": true,
+     "evidence": "the refused claim is on the sender's own trail with a named reason"
+    },
+    {
+     "id": "counter fails with the refused claim removed",
+     "found": true,
+     "evidence": "CONTROL V3 refused-counter with the refused claim removed (checker on a doctored state must FAIL) — failed as designed"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  },
+  {
+   "id": "version-skew",
+   "term": "BUNDLE (version skew)",
+   "guarantee": "newer waits, older waits for a rule, retired is ignored",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_comm_versions.js",
+     "exit": 0,
+     "verdict": "PASS",
+     "log": "build/scriptor/terms_run/witness_comm_versions.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "18 mutants killed",
+     "found": true,
+     "evidence": "§CV_VERDICT PASS judged=54 fails=0 vacuous=0 mutants_killed=18/18"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": null
+  }
+ ]
+}
