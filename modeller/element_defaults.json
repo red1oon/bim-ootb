@@ -6,8 +6,8 @@
    "element": "IfcWall",
    "value": 0.15,
    "unit": "m",
-   "kind": "std",
-   "basis": "rate pack: 'Blockwork Wall 150mm' (viewer/rates/cidb2024_my.json IfcWall)",
+   "kind": "guess",
+   "basis": "a guess: no sheet states the wall thickness. 150 mm is the wall line every rate pack's class table names (the same 150 mm in all 16 country packs), a priced item, not a design value for this building (§D99)",
    "options": [
     0.1,
     0.115,
@@ -40,8 +40,8 @@
    "element": "IfcSlab",
    "value": 0.25,
    "unit": "m",
-   "kind": "std",
-   "basis": "rate pack: 'RC Slab 250mm' (viewer/rates/cidb2024_my.json IfcSlab)",
+   "kind": "guess",
+   "basis": "a guess: no sheet states the slab thickness. 250 mm is the slab line every rate pack's class table names ('RC Slab 250mm', the same 250 mm in all 16 country packs), a priced item, not a design value for this building (§D99)",
    "options": [
     0.15,
     0.2,
