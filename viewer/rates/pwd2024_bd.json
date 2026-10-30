@@ -8,7 +8,7 @@
     "source": "PWD Schedule of Rates Bangladesh 2024",
     "validity_days": 60,
     "measurement_standard": "BNBC / PWD SoR",
-    "material_rates_note": "Rows in material_rates are extracted from PWD SoR 2022 for Civil Works; the pack's other rows and its 2024 label are unverified. Edit the JSON to use another mix, district or year."
+    "material_rates_note": "material_rates / material_adds are extracted from PWD SoR 2022 for Civil Works (Dhaka column, ground-floor items, RCC 1:2:4 stone chips, Grade 400 bar); the pack's other rows and its 2024 label are unverified. Edit the JSON to use another mix, district, grade or year."
   },
   "materials": {
     "IfcDuct": {
@@ -873,7 +873,8 @@
           "page": "136",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
-        }
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
     "IfcColumn": [
@@ -889,7 +890,8 @@
           "page": "136",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
-        }
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
     "IfcBeam": [
@@ -905,7 +907,8 @@
           "page": "136",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
-        }
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
     "IfcSlab": [
@@ -921,7 +924,8 @@
           "page": "136",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
-        }
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
     "IfcWall": [
@@ -935,6 +939,59 @@
           "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
           "item": "04.2",
           "page": "116 (page 2 of chapter 04)",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        }
+      }
+    ],
+    "IfcMember": [
+      {
+        "material": "Steel section",
+        "rate": 129,
+        "unit": "KG",
+        "quantity": "kN * 1000 / 9.80665",
+        "desc": "Hot rolled structural steel channel and angle in roof truss or any structure (ASTM A36), primer incl., up to level 4; weight = the Load Summary's weight of the member (section from its label) / standard gravity",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "10.6",
+          "page": "166",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        }
+      }
+    ],
+    "IfcRoof": [
+      {
+        "material": "Profiled metal roofing",
+        "rate": 578,
+        "unit": "M2",
+        "quantity": "A",
+        "desc": "0.457 mm corrugated galvanized iron sheet fixed on M.S. sections with J-hooks, up to level 4 (the profile item priced per sqm; 10.19 / 10.20 zinc-alum profile sheet is per kg)",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "10.21",
+          "page": "168",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        }
+      }
+    ]
+  },
+  "material_adds": {
+    "Reinforced concrete": [
+      {
+        "what": "reinforcement",
+        "rate": 100,
+        "unit": "KG",
+        "quantity": "V * load_rc_steel_percent / 100 * load_unit_weight_steel * 1000 / 9.80665",
+        "desc": "Grade 400 (B400DWR / B420DWR) deformed bar, supply, fabrication and fixing, up to ground floor (excluding splices or laps); mass = concrete volume x reinforcement % (load.rc_steel_percent, editable) x steel unit weight / g",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "08.1.2",
+          "page": "153",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
         }
