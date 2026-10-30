@@ -58,4 +58,15 @@ ok('M8b the same line is derived once the percent and the steel weight were stat
 ok('M9 NOT-PRICED shuttering is listed as excluded for the RC line and named in the log', rb.excluded.length === 1 && /shuttering/.test(rb.excluded[0].what) && rb.excluded[0].lines === 1 && /NOT_PRICED=Reinforced concrete:shuttering/.test(rb.log), rb.log);
 const r0 = BL.bill([body('c', 'IfcColumn', box(0, 0, 0, 0.3, 0.3, 3))], { ref, pack }).lines.find(l => l.kind === 'add');
 ok('M10 CONTROL no defaults given: the reinforcement line is flagged no_input and costs 0 (no guessed percent)', r0.amount === 0 && r0.flags.some(f => /^no_input:load_/.test(f)), JSON.stringify(r0.flags));
+// ── T14c ──
+const lab = body('l1', 'IfcMember', box(0, 0, 0, 6, 0.05, 0.05), '1.5"x1.5"x1/4" Angle'), un = Object.assign(body('u1', 'IfcMember', box(0, 0, 0, 6, 0.05, 0.05), 'Section member'), {}); lab.kind = un.kind = 'bar';
+const LSc = LS.compute([lab, un], { values, sources: {} }), ru = LSc.rows.find(r => r.guid === 'u1'), rl0 = LSc.rows.find(r => r.guid === 'l1');
+const asmMap = {}; LSc.rows.forEach(r => { if (r.assumed) asmMap[r.guid] = r.sectionFrom; });
+const bc = BL.bill([lab, un], { ref, pack, values, weights: { l1: rl0.kN, u1: ru.kN }, assumed: asmMap });
+ok('M11 T14c an unlabelled bar beside a labelled 1.5"x1.5"x1/4" bar weighs the same, is assumed (load_summary + bill) and says why', near(ru.kN, rl0.kN) && ru.assumed && bc.lines[1].prov === 'assumed' && bc.lines[0].prov === 'drawn' && /most common bar section/.test(bc.lines[1].assumed) && near(bc.totals.by_prov.assumed, bc.lines[1].amount), (ru.sectionFrom || ru.missing) + ' | provs ' + bc.lines.map(l => l.prov).join(','));
+const strict = LS.compute([lab, un], { values: Object.assign({}, values, { 'member.section': 'none' }), sources: {} }).rows.find(r => r.guid === 'u1');
+const stated = LS.compute([lab, un], { values: Object.assign({}, values, { 'member.section': '2 - 2"x2"x1/4"' }), sources: {} }).rows.find(r => r.guid === 'u1');
+ok('M12 CONTROL member.section = none keeps it unweighed; a stated section is used instead of the mode (2 - 2"x2"x1/4" weighs more than 1.5"x1.5"x1/4")', strict.missing === 'section size not drawn' && !(strict.kN >= 0) && stated.kN > ru.kN && /stated member.section/.test(stated.sectionFrom), 'strict=' + strict.missing + ' stated kN=' + (stated.kN || 0).toFixed(4) + ' vs ' + ru.kN.toFixed(4));
+const otherKind = Object.assign(body('o1', 'IfcMember', box(0, 0, 0, 6, 0.05, 0.05), 'Section run'), { kind: 'member' }), ro = LS.compute([lab, otherKind], { values, sources: {} }).rows.find(r => r.guid === 'o1');
+ok('M13 CONTROL no labelled member of the same kind: still missing (no cross-kind guess)', ro.missing === 'section size not drawn' && !ro.assumed, ro.missing);
 console.log(fail ? 'FAIL ' + fail : 'ALL PASS'); process.exit(fail ? 1 : 0);
