@@ -4,6 +4,7 @@
 // to a submission. A COMPOSER: every number is handed in by its owner (LoadSummary.compute, Dxf2Bill.bill, structural_sanity / egress_sanity + RuleReport.codesAndCoverage,
 // the defaults table, the importer); this file only lays them out and words the verdicts (PASS / FINDINGS n / INCONCLUSIVE / NOT STATED — never "compliant").
 // The one measure it takes itself is a slab's plan area, through the measures function it is handed (Dxf2Bill.measures). Log tag §REG_REPORT.
+// RR.6: fromModel / billAndLoad / statedType are the CLI's and the Modeller page's (reg_report_ui.js) ONE path to the page — neither keeps its own copy.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.RegReport = factory();
@@ -104,5 +105,38 @@
     log.push('§REG_REPORT sections=' + S.length + ' verdicts=' + S.map(function (s) { return s.id + ':' + s.verdict.replace(/ /g, '_'); }).join(','));
     return { html: html, sections: S, verdicts: verdicts, log: log };
   }
-  return { compose: compose, ruleSection: ruleSection, FACTS: FACTS };
+  // T13.5: the type counts as stated only when a file/sheet/editor choice gave it, never the registry default or a type override
+  function statedType(R) { var r = ((R && R.defaults_table) || []).filter(function (x) { return x.key === 'building.type'; })[0]; return r && /^(file|sheet|choice)$/.test(r.source) ? String(r.value) : null; }
+  // T14b: the defaults in force (values + where each came from) and each body's weight from load_summary.js (the one owner of a body's weight) feed the bill rows that
+  // state a quantity formula. o: { LS (LoadSummary), BL (Dxf2Bill), ref (synthetic_ref.json), pack (the pack JSON), packName }. No pack or no bodies -> both null.
+  function billAndLoad(els, defaultsTable, o) {
+    if (!o.pack || !els || !els.length) return { bill: null, loadSummary: null };
+    var values = {}, sources = {}; (defaultsTable || []).forEach(function (r) { values[r.key] = r.value; sources[r.key] = r.source; });
+    var LS = o.LS.compute(els, { values: values, sources: sources }), weights = {}, assumed = {};
+    LS.rows.forEach(function (r) { if (r.kN != null && isFinite(r.kN)) weights[r.guid] = r.kN; if (r.assumed) assumed[r.guid] = r.sectionFrom; });
+    return { loadSummary: LS, bill: o.BL.bill(els, { ref: o.ref, pack: o.pack, packName: o.packName, weights: weights, assumed: assumed, values: values, sources: sources }) };
+  }
+  function today(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  // RR.5/RR.6 the ONE composition the CLI and the Modeller page both run: model IFC bytes -> the shipped extractor (sql.js) -> the shipped rule engines + RuleReport -> compose.
+  // e: { ifcBytes, WebIFC, ifcApi (initialised), SQL (the sql.js module), Core (ifc_extract_core), SR, ER (rule files), SS, ES, RRp (engines), R (the converted run),
+  //      bill, loadSummary, measures, facts, sets (the drawings' @SET values), sheets (names), date, tool, packJ, sha256 (bytes -> hex, may be async), leftOut, buildingName, log }
+  async function fromModel(e) {
+    var say = e.log || function () {}, db = new e.SQL.Database();
+    try {
+      await e.Core.extractToDb({ WebIFC: e.WebIFC, ifcApi: e.ifcApi, ifcData: e.ifcBytes, db: e.Core.sqljsDb(db), Buf: e.Core.browserBuf, buildingName: e.buildingName || 'MODEL', sourceName: 'model.ifc', log: function () {} });
+      var q = function (sql, p) { var r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
+      var bt = (q("SELECT value FROM project_metadata WHERE key='building_type'")[0] || [])[0] || null;
+      var covS = {}, covE = {}, rlog = function (m) { if (/§RULE_COVERAGE|§RULE_APPLIES/.test(m)) say(m); };
+      var rs = e.SS.evaluate(q, e.SR, { log: rlog, coverage: covS }), re = e.ES.evaluate(q, e.ER, { log: rlog, coverage: covE });
+      rs = e.RRp.applyTypes('structural_rules', e.SR, rs, covS, bt, rlog); re = e.RRp.applyTypes('egress_rules', e.ER, re, covE, bt, rlog);
+    } finally { db.close(); }
+    var byName = {}; [].concat(e.SR.structural_rules, e.ER.egress_rules).forEach(function (r) { if (r && r.name) byName[r.name] = r; });
+    var codes = e.RRp.codesAndCoverage({ structural_rules: e.SR.structural_rules, egress_rules: e.ER.egress_rules }, Object.assign({}, covS, covE), { type: bt });
+    var sets = (e.sets || []).filter(function (x, i, a) { return x && a.indexOf(x) === i; }), pack = e.bill && e.bill.pack, pj = pack ? e.packJ : null, R = e.R || {};
+    return compose({
+      identity: { set: sets.length ? sets.join(' / ') : null, sheets: e.sheets || [], date: e.date, tool: e.tool, modelSha256: await e.sha256(e.ifcBytes), pack: pack, packSource: pj && pj.meta ? (pj.meta.material_rates_note || pj.meta.source || '') : '' },
+      buildingType: bt, facts: e.facts || {}, storeys: R.ST || [], bodies: R.els || [], measures: e.measures, loadSummary: e.loadSummary, bill: e.bill,
+      rules: { structural: { rows: rs, cov: covS }, egress: { rows: re, cov: covE }, byName: byName, codes: codes }, cli: { left_out: e.leftOut != null ? e.leftOut : null }, defaults_table: R.defaults_table || [] });
+  }
+  return { compose: compose, ruleSection: ruleSection, FACTS: FACTS, statedType: statedType, billAndLoad: billAndLoad, fromModel: fromModel, today: today };
 });
