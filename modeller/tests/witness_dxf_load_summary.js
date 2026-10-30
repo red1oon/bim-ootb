@@ -36,11 +36,14 @@ const R = L.compute(bodies, { values, sources, facts: {} }); L.log(R, s => conso
 const dim = b => [0, 1, 2].map(i => b.bbox[i + 3] - b.bbox[i]), n = v => v && typeof v === 'object' ? Number(v.number) : Number(v), s = (b, k) => b.size && b.size[k] !== undefined ? n(b.size[k]) : NaN;
 const rc = T.concrete + T.add * values['load.rc_steel_percent'], own = {};
 const add = (k, kN) => { own[k] = (own[k] || 0) + kN; };
+// T14c: the witness's own mode: per kind, the most frequent labelled section (by area + legs), ties lighter first
+const modeK = {}; { const cnt = {}; bodies.filter(b => b.class === 'IfcMember').forEach(b => { const A = L.angleOf((b.ifc && b.ifc.type_name) || ''); if (!A) return; const k = b.kind || '', key = [A.n, A.a, A.b, A.t].join('|'); ((cnt[k] = cnt[k] || {})[key] = cnt[k][key] || { A, n: 0 }).n++; });
+  Object.keys(cnt).forEach(k => { modeK[k] = Object.values(cnt[k]).sort((p, q) => q.n - p.n || p.A.area - q.A.area)[0].A; }); }
 bodies.forEach(b => { const d = dim(b), h = b.z1 - b.z0, mat = (b.ifc && b.ifc.material) || '', c = b.class, tn = (b.ifc && b.ifc.type_name) || '';
   if (/concrete/i.test(mat)) add(c + '|' + mat, rc * (c === 'IfcBeam' ? (s(b, 'w') || d[1]) * (s(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (s(b, 't') || d[2]) : (s(b, 'x') || d[0]) * (s(b, 'y') || d[1]) * h));
   else if (/brick/i.test(mat)) add(c + '|' + mat, T.brick * Math.max(d[0], d[1]) * h * (s(b, 't') || Math.min(d[0], d[1])));
   else if (c === 'IfcPlate') { const e = d.slice().sort((p, q) => q - p); add(c + '|' + mat, T.steel * e[0] * e[1] * (s(b, 't') || e[2])); }
-  else if (c === 'IfcMember') { const A = L.angleOf(tn); if (A) add(c + '|' + mat, T.steel * A.area * L.barLength(b)); }
+  else if (c === 'IfcMember') { const A = L.angleOf(tn) || modeK[b.kind || '']; if (A) add(c + '|' + mat, T.steel * A.area * L.barLength(b)); }
   else if (c === 'IfcRoof') add(c + '|' + mat, T.sheet08 * d[0] * d[1] / Math.cos(Number(b.size.slope_deg) * Math.PI / 180)); });
 const bad1 = R.groups.filter(g => !g.missing).filter(g => Math.abs(g.kN - (own[g.cls + '|' + g.material] || 0)) > 1e-6 * Math.max(1, g.kN));
 ok('L1 each group = Σ quantity x the reference unit weight (witness recompute)', bad1.length === 0 && R.groups.filter(g => !g.missing).length === 8, R.groups.filter(g => !g.missing).map(g => g.cls.replace('Ifc', '') + ' ' + g.kN.toFixed(1) + '=' + (own[g.cls + '|' + g.material] || 0).toFixed(1)).join(' | '));
@@ -50,7 +53,10 @@ ok('L2 Σ footings + ground-bearing slab = total weighed; every weighed body car
   'footings ' + R.toFootings_kN.toFixed(1) + ' + ground ' + R.onGround_kN.toFixed(1) + ' = ' + R.total_kN.toFixed(1) + ' kN; bodies ' + carried.length);
 // ---- L3 ----
 const mm = Object.fromEntries(R.missing.map(m => [m.what, m.n])), unsized = bodies.filter(b => b.class === 'IfcMember' && !L.angleOf((b.ifc && b.ifc.type_name) || '')).length;
-ok('L3 missing = exactly the bodies with no drawn size or stated weight + district + soil, none weighed', unsized === 103 && mm['IfcMember: section size not drawn'] === 103 && mm['IfcFan: fan weight not stated'] === 13 && mm['IfcDoor: door weight not stated'] === 4 && mm['IfcCovering: netting weight not stated'] === 3 && R.missing.some(m => m.fact === 'district') && R.missing.some(m => m.fact === 'soil_kPa') && R.rows.filter(r => r.missing).every(r => !(r.kN >= 0)),
+// T14c: an unsized member with a same-kind labelled sibling is weighed, ASSUMED and saying from what; only kinds with no labelled sibling stay missing
+const noMode = bodies.filter(b => b.class === 'IfcMember' && !L.angleOf((b.ifc && b.ifc.type_name) || '') && !modeK[b.kind || '']).length, asm = R.rows.filter(r => r.assumed);
+ok('L3c T14c the members filled from the drawing\'s most common same-kind section are marked assumed with their source, never silent (' + asm.length + ' of ' + unsized + ' unsized)', unsized === 103 && asm.length === unsized - noMode && asm.every(r => r.kN > 0 && /most common/.test(r.sectionFrom) && /section:/.test(r.formula)), asm.length + ' assumed: ' + (asm[0] ? asm[0].sectionFrom : '-'));
+ok('L3 missing = exactly the bodies with no drawn size (and no same-kind drawn section) or stated weight + district + soil, none weighed', noMode === 12 && mm['IfcMember: section size not drawn'] === noMode && mm['IfcFan: fan weight not stated'] === 13 && mm['IfcDoor: door weight not stated'] === 4 && mm['IfcCovering: netting weight not stated'] === 3 && R.missing.some(m => m.fact === 'district') && R.missing.some(m => m.fact === 'soil_kPa') && R.rows.filter(r => r.missing).every(r => !(r.kN >= 0)),
   JSON.stringify(mm));
 // ---- L3b ----
 const nb = JSON.parse(JSON.stringify(bodies)); const wi = nb.findIndex(b => b.class === 'IfcWall'); delete nb[wi].bbox; delete nb[wi].vertices;

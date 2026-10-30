@@ -35,6 +35,19 @@
     inputs = inputs || {}; var V = inputs.values || {}, F = inputs.facts || {}, src = inputs.sources || {};
     var rc = Number(V['load.unit_weight.concrete']) + 0.63 * Number(V['load.rc_steel_percent']), brick = Number(V['load.unit_weight.brick']), steel = Number(V['load.unit_weight.steel']), sheet = Number(V['load.roof_sheet']);
     var rows = [], missing = [];
+    // T14c: the section a member with none on its label takes: the stated member.section, else the most common drawn section of the SAME kind in this set (ties: lighter, then label)
+    var MS = String(V['member.section'] == null ? '' : V['member.section']).trim(), modeOf = {};
+    (function () { var cnt = {};
+      (bodies || []).forEach(function (b) { if (b['class'] !== 'IfcMember') return; var A = angleOf(tname(b)); if (!A) return;
+        var k = (b.kind || ''), key = [A.n, A.a, A.b, A.t].map(function (x) { return x.toFixed(6); }).join('|'), m = cnt[k] = cnt[k] || {}; (m[key] = m[key] || { A: A, label: tname(b), n: 0 }).n++; });
+      Object.keys(cnt).forEach(function (k) { var c = Object.keys(cnt[k]).map(function (q) { return cnt[k][q]; }), N = c.reduce(function (a, x) { return a + x.n; }, 0);
+        c.sort(function (p, q) { return q.n - p.n || p.A.area - q.A.area || (p.label < q.label ? -1 : 1); }); modeOf[k] = { A: c[0].A, label: c[0].label, n: c[0].n, of: N }; });
+    })();
+    function assumedSection(b) {
+      if (/^none$/i.test(MS)) return null;
+      if (MS) { var A = angleOf(MS); return A ? { A: A, from: 'stated member.section ' + MS, label: MS } : null; }
+      var m = modeOf[b.kind || '']; return m ? { A: m.A, from: 'the drawing\'s most common ' + (b.kind || 'member') + ' section ' + m.label + ' (' + m.n + ' of ' + m.of + ' labelled)', label: m.label } : null;
+    }
     (bodies || []).forEach(function (b) {
       var d = dims(b), h = (b.z1 - b.z0), c = b['class'], mat = String((b.ifc && b.ifc.material) || ''), r = { guid: b.guid, cls: c, type: tname(b) || c.replace(/^Ifc/, ''), material: mat, sheet: b.sheet, handle: b.handle, cx: 0, cy: 0, z0: b.z0, z1: b.z1 }, bx = box(b);
       if (bx) { r.cx = (bx[0] + bx[3]) / 2; r.cy = (bx[1] + bx[4]) / 2; }
@@ -48,8 +61,8 @@
         set(vol, 'm3', rc, 'load.unit_weight.concrete', 'volume x (22.8 + 0.63 x p) with p = load.rc_steel_percent');
       } else if (/brick/i.test(mat)) set(Math.max(d[0], d[1]) * h * (sz(b, 't') || Math.min(d[0], d[1])), 'm3', brick, 'load.unit_weight.brick', 'length x height x drawn thickness x brick');
       else if (c === 'IfcPlate') { var e = d.slice().sort(function (p, q) { return q - p; }); set(e[0] * e[1] * (sz(b, 't') || e[2]), 'm3', steel, 'load.unit_weight.steel', 'plate area x drawn thickness x steel'); }
-      else if (c === 'IfcMember') { var A = angleOf(tname(b)), L = barLength(b);
-        if (A) { set(L * A.area, 'm3', steel, 'load.unit_weight.steel', 'length x ' + (A.n > 1 ? A.n + ' x ' : '') + 't(a + b - t) from the label x steel (root fillet ignored)'); r.section = A; r.length = L; }
+      else if (c === 'IfcMember') { var A = angleOf(tname(b)), L = barLength(b), AS = A ? null : assumedSection(b); if (AS) { A = AS.A; r.assumed = true; r.sectionFrom = AS.from; r.sizeFrom = 'assumed'; }
+        if (A) { set(L * A.area, 'm3', steel, 'load.unit_weight.steel', 'length x ' + (A.n > 1 ? A.n + ' x ' : '') + 't(a + b - t) from the label x steel (root fillet ignored)'); r.section = A; r.length = L; if (AS) r.formula += ' [section: ' + AS.from + ']'; }
         else { r.missing = 'section size not drawn'; r.length = c === 'IfcMember' && b.size && b.size.run ? Math.abs(b.size.run[1] - b.size.run[0]) : L; } }
       else if (c === 'IfcRoof') { var slope = Number(b.size && b.size.slope_deg) || 0, area = d[0] * d[1] / Math.cos(slope * Math.PI / 180); set(area, 'm2', sheet, 'load.roof_sheet', 'plan area / cos(slope) x sheet weight'); }
       else { var f = FACTS.filter(function (q) { return q.applies === c; })[0];
@@ -85,6 +98,8 @@
     return { rows: rows, groups: G2, footings: F2, missing: missing, shape: shape, total_kN: total, onGround_kN: onGround, toFootings_kN: F2.reduce(function (a, f) { return a + f.kN; }, 0), weighed: weighed.length, unweighed: missRows.length, rc_kNm3: rc, tonnes: total / G };
   }
   function log(res, logFn) { logFn = logFn || function () {};
+    var asm = res.rows.filter(function (r) { return r.assumed; }), by = {}; asm.forEach(function (r) { by[r.sectionFrom] = (by[r.sectionFrom] || 0) + 1; });
+    logFn('§LOAD_ASSUMED_SECTION members=' + asm.length + (asm.length ? ' ' + Object.keys(by).sort().map(function (k) { return by[k] + ' x ' + k; }).join(' ; ') : ''));
     logFn('§LOAD_SUMMARY total_kN=' + res.total_kN.toFixed(1) + ' tonnes=' + res.tonnes.toFixed(1) + ' weighed=' + res.weighed + ' unweighed=' + res.unweighed + ' to_footings_kN=' + res.toFootings_kN.toFixed(1) + ' on_ground_kN=' + res.onGround_kN.toFixed(1) + ' footings=' + res.footings.length + ' missing=' + res.missing.map(function (m) { return m.what.split(' (')[0] + 'x' + m.n; }).join('; '));
     res.groups.forEach(function (g) { logFn('§LOAD_BODY cls=' + g.cls + ' material="' + g.material + '" n=' + g.n + ' qty=' + g.qty.toFixed(3) + g.unit + ' kN=' + g.kN.toFixed(2) + (g.missing ? ' MISSING="' + g.missing + '" length_m=' + g.lengthMissing.toFixed(1) : ' uw=' + g.uw + ' (' + g.uwKey + ')')); }); }
   return { compute: compute, log: log, KEYS: KEYS, FACTS: FACTS, angleOf: angleOf, barLength: barLength };

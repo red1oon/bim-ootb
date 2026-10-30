@@ -82,7 +82,7 @@
   // opts: + weights { guid: kN } (load_summary.js), values { defaults key: value }, sources { defaults key: file|sheet|choice|default|type }
   function bill(bodies, opts) {
     var ref = opts.ref, pack = opts.pack || { materials: {} }, lines = [], flags = [], tot = { amount: 0, by_prov: { drawn: 0, derived: 0, assumed: 0 }, by_class: {} }, excl = {};
-    var W = opts.weights || {}, VAL = opts.values || {}, SRC = opts.sources || {};
+    var W = opts.weights || {}, VAL = opts.values || {}, SRC = opts.sources || {}, ASM = opts.assumed || {};   // assumed: { guid: why } the body's weight rests on an assumed size (T14c)
     var noteExcl = function (mat, row) { if (!row || !row.excludes) return; var k = mat + '|' + row.excludes; (excl[k] = excl[k] || { material: mat, what: row.excludes, lines: 0 }).lines++; };
     bodies.forEach(function (b) {
       var part = ref.parts[b.class], prov = b.prov || 'drawn', ms = measures(b), flagsL = [];
@@ -101,6 +101,7 @@
           line.quantity = r6(q); line.unit = mr.unit; line.formula = mr.quantity;
         } else if (bm && mr.unit !== part.quantity.unit) { q = ms[bm]; line.quantity = r6(q); line.unit = mr.unit; line.formula = bm + ' (the unit of the material rate ' + mr.unit + ')'; }
         line.rate_basis = 'material'; if (mr.source) line.rate_source = mr.source; noteExcl(mat, mr);
+        if (mr.quantity && /\bkN\b/.test(mr.quantity) && ASM[b.guid]) { prov = 'assumed'; line.prov = prov; line.assumed = ASM[b.guid]; }   // T14c: the weight rests on an assumed section
       }
       if (!pe || !(pe.rate > 0)) { flagsL.push('no_rate'); flags.push({ id: b.guid, flag: 'no_rate', class: b.class }); }
       else {

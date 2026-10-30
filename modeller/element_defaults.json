@@ -715,6 +715,14 @@
     0.12
    ],
    "used_by": "load_summary (§D97)"
+  },
+  "member.section": {
+   "element": "IfcMember",
+   "value": "",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a member whose label carries no section: empty = the most common section drawn on the same set for the same kind of member (load_summary.js, shown assumed); a label such as 1.5\"x1.5\"x1/4\" Angle = that section; none = leave them unweighed",
+   "used_by": "load_summary (§D97), dxf2bill (T14c)"
   }
  },
  "building_types": {
