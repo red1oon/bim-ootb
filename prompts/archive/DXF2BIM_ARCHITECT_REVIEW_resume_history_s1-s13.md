@@ -199,3 +199,39 @@ Guide redone and live in the docs source (`docs/DXF2BIMGuide.md`; the GH Pages d
 reverse hand-off verified (512 = 512, same classes); film v4 (EN) and its Malay version are done, local only (`FILM_DXF2BIM_WHY_MARKINGS.md §MALAY VERSION`; cards PR bim-compiler #237 merged); the guide is not yet deployed to GH Pages. Known limits already in the guide: component library local so
 door/window fills may be 0; roof/slab estimated (amber); 4 bodies left out on the shed (no elevation / conflicting heights); door and window schedules not read.
 
+## (archived 2026-10-31) RESUME (session 14 entry; written 2026-10-31 at the close of session 13 — the ONLY current block)
+**Merged in session 13 (bim-ootb main, each witnessed, logs read):** #2447 **T13.5** exports write the stated building type (`Pset_BuildingCommon.OccupancyType` → `project_metadata
+building_type`, W-BUILDING-TYPE-EXPORT 5/0) · #2448 **T14** bill prices by class + material from PWD SoR 2022 (`pwd2024_bd.json material_rates`) · #2452 **T14b** steel by weight
+(Load Summary), CGI roofing by area, a Grade 400 rebar line per RC body, shuttering stated NOT PRICED · #2453 **T14c** a member with no section takes the drawing's most common
+same-kind section, amber (`member.section`: stated / none) + the RR spec + research · #2455 **RR.5 step 1** Regulatory Report composer `modeller/reg_report.js` + `dxf2bim_cli.js --report
+[--fact k=v]` (W-REG-REPORT 8/0) · #2456 **§D99** yellow defaults measured by impact (prompts only). Witness totals: W-BILL-MATERIAL 18/0, W-LOAD-SUMMARY 8/0, W-CLI, W-BILL, W-SYNTH,
+W-DXF-EDEFAULTS 9/0 (62 settings). Full runner on main after these merges: see the `RUNNER` line below.
+**▶ NEXT, in order:**
+1. **RR.5 step 2 — the Modeller's Export ▸ Regulatory Report…** (the page's bodies + defaults + facts form for the `--fact` keys; rules on the in-browser extracted DB). The CLI's
+   `writeReport()` (`dxf2bim_cli.js`) is the reference composition: the page must produce the same sections from the same owners. Spec: `### RR.5 BUILD SPEC` below.
+2. **§D98** empty Set → `BUILD-NAME` placeholder that unblocks but STAYS YELLOW (spec below; code at `modeller/dxf2suggest.js` PR-SET, :201-202).
+3. **§D99** (recommended P4 + P2 first, owner not yet answered on the order vs 1-2): read the drawing's notes before defaulting — the shed's DETAILS sheet states "Footing, Column,
+   Grade Beam Casting Ratio = 1:1.5:3" (→ SoR 07.3.x, not the 07.2.x rows priced today), "Floor Casting Ratio = 1:2:4", a "THICk." dimension (unread); rank the used defaults by
+   measured impact. **Defect to fix with it:** `synth.slab.thickness` 0.25 cites the MALAYSIAN pack (`cidb2024_my.json` 'RC Slab 250mm') for a Bangladesh set (−21 % of the bill at 0.15).
+4. **Film "from drawings to a submission pack"** (0 height questions → Complete → compliance panel with codes named → Load Summary → bill with SoR sources → Regulatory Report):
+   ⛔ the story needs the owner's OK before a take; needs item 1 first.
+5. Carried, not started: Load Summary follow-ons (edited inputs back to the drawing as `@DEFAULT`; live / wind / seismic need BNBC Sec 2.3-2.5 + district + soil) · first real code packs
+   (UBBL, then BNBC 2020 gazetted text; `applies_to_types` rows arrive WITH them, each with its clause — §D90 (2) is answered that way, not by asking) · §D95 Show-what-changed toggle ·
+   the DXF guide's "Status: preliminary" header + quickstart.
+6. Rates, still open: the viewer's other cost paths (`schedule_author.js` AUTHOR_COST, `edit_delta.js`, `cost_panel.js`) price by class only — only the DXF2BIM bill reads
+   `material_rates`; steel plate keeps the class rate (no SoR item matches a base plate); shuttering/centering not priced; 12 "Section run" members need a section (no labelled run on
+   the set); the pack's "2024" label is unverified (its sourced rows are SoR **2022**).
+7. RR authority headers (RAJUK / NBeS): their checklists were NOT found (RAJUK site unreachable; BNBC 2020 text, NBeS guide, UBBL by-law numbers, JKR requirements not obtained).
+**Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`, 2026-10-31):** set SHED, 512 bodies; floor 603.87 m2 (1 slab, Complete's); height 5.815 m; own weight 5,361.0 kN
+(91 members on the assumed 1.5"x1.5"x1/4" section; supersedes session 12's 5,352); 32 footings, heaviest 247.0 kN / 132.9 kPa; checks 4 of 12 rules ran: 4 door findings (IBC §1010.1.1),
+1 cantilever (B-2), column_continuity 0 of 96; bill 6,178,335 BDT, 12 lines unpriced; WITHOUT `--complete` columns start +0.61 m and footings stop −1.143 m → column_continuity 32/32.
+62 default settings, 15 used on the shed, 7 of 11 tried change no quantity (§D99 table).
+**Recipes:** shed report `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd
+--complete --report [--fact soil_kPa=150]` · full runner `NODE_PATH=~/bim-compiler/node_modules node modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw
+NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` · PWD SoR chapter PDFs: `https://ss.pwd.gov.bd/document/sor/<name>.pdf` with spaces URL-encoded; read rates
+off the PAGE IMAGE (`pdftoppm -r 110`), never the OCR text (it misread 1:2:4 as 1:2:1 and several digits).
+**Landmines (each hit this session):** (a) auto-merge squashes fast: a follow-up pushed to a branch whose PR already merged is ORPHANED (twice) — `gh pr view <n> --json state` before every
+push, follow-ups start off fresh `origin/main`; (b) the CLI's `R.set` is the pipeline's name `STRUCT` — the drawings' set is `res.read[].desc.set`; (c) the raw shed DXFs' title block
+carries a client name: never print their TEXT wholesale (grep only the words you need); (d) a new `element_defaults.json` key touches `witness_dxf_cli` C36, `witness_dxf_edefaults` E1 and
+the BIMCompiler yellow-list page (W-YELLOW-PAGE): see RUNNER.
+**RUNNER (2026-10-31, bim-ootb main @87f58b24 after the six merges, `witness_dbs.js` fresh 6/6):** `§ALLWITNESS PASS=93 ENV=10 FAIL=1 of 104`. The ENV 10 are missing local inputs (count unchanged from session 12; the set not compared). **The 1 FAIL was caused this session:** W-YELLOW-PAGE YP1 — T14c added `member.section` to `element_defaults.json` but the published yellow list (BIMCompiler `docs/DXF2BIM_Yellow_List.md`, read from bim-compiler origin/master) was not regenerated. Fixed: page regenerated in **BIMCompiler PR #276** (62 rows; that repo has no auto-merge — check it merged) + `gen_yellow_list.js` prints an empty default as *(empty)* (was `****`); W-YELLOW-PAGE PASS against the regenerated page. **Lesson:** a new `element_defaults.json` key touches THREE witnesses (C36, E1, YP1) and the BIMCompiler page — run `gen_yellow_list.js` in the same change.
