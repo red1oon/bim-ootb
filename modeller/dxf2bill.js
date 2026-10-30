@@ -72,8 +72,18 @@
     for (var i = 0; i < rows.length; i++) if (String(rows[i].material).toLowerCase() === String(material).toLowerCase() && rows[i].rate > 0) return rows[i];
     return null;
   }
+  // T14b S1: the names a row's quantity formula may use: the mesh measures, kN (the body's weight from load_summary.js, when it weighed the body) and the defaults (dots -> _)
+  function formulaVars(ms, kN, values) {
+    var v = { V: ms.V, A: ms.A, t: ms.t, L: ms.L, N: 1 }; if (kN != null && isFinite(kN)) v.kN = kN;
+    Object.keys(values || {}).forEach(function (k) { var n = Number(values[k]); if (isFinite(n)) v[k.replace(/\./g, '_')] = n; });
+    return v;
+  }
+  var STATED = /^(file|sheet|choice)$/;
+  // opts: + weights { guid: kN } (load_summary.js), values { defaults key: value }, sources { defaults key: file|sheet|choice|default|type }
   function bill(bodies, opts) {
-    var ref = opts.ref, pack = opts.pack || { materials: {} }, lines = [], flags = [], tot = { amount: 0, by_prov: { drawn: 0, derived: 0, assumed: 0 }, by_class: {} };
+    var ref = opts.ref, pack = opts.pack || { materials: {} }, lines = [], flags = [], tot = { amount: 0, by_prov: { drawn: 0, derived: 0, assumed: 0 }, by_class: {} }, excl = {};
+    var W = opts.weights || {}, VAL = opts.values || {}, SRC = opts.sources || {};
+    var noteExcl = function (mat, row) { if (!row || !row.excludes) return; var k = mat + '|' + row.excludes; (excl[k] = excl[k] || { material: mat, what: row.excludes, lines: 0 }).lines++; };
     bodies.forEach(function (b) {
       var part = ref.parts[b.class], prov = b.prov || 'drawn', ms = measures(b), flagsL = [];
       var line = { id: b.guid, kind: b.kind || null, class: b.class, prov: prov, material: null, measures: { V: r6(ms.V), A: r6(ms.A), t: r6(ms.t), L: r6(ms.L), N: 1 }, quantity: 0, unit: null, rate: 0, pack_class: null, pack_desc: null, factor: 1, amount: 0, formula: null, flags: flagsL };
@@ -84,7 +94,14 @@
       var q = evalFormula(part.quantity.formula, ms); line.quantity = r6(q); line.unit = part.quantity.unit; line.formula = part.quantity.formula;
       var rcls = (part.rate_ref && part.rate_ref.class) || b.class, pe = pack.materials[rcls];
       var mr = materialRate(pack, rcls, mat);   // T14: a pack row stated for THIS class AND material wins over the class rate (concrete columns are not priced as steel)
-      if (mr) { pe = mr; var bm = MEASURE_OF[mr.unit]; if (bm && mr.unit !== part.quantity.unit) { q = ms[bm]; line.quantity = r6(q); line.unit = mr.unit; line.formula = bm + ' (the unit of the material rate ' + mr.unit + ')'; } line.rate_basis = 'material'; if (mr.source) line.rate_source = mr.source; }
+      if (mr) {
+        pe = mr; var bm = MEASURE_OF[mr.unit];
+        if (mr.quantity) {   // S1: the row states its own quantity
+          try { q = evalFormula(mr.quantity, formulaVars(ms, W[b.guid], VAL)); } catch (e) { var nm = (/unknown name "([^"]+)"/.exec(e.message) || [])[1] || 'formula'; q = 0; flagsL.push('no_input:' + nm); flags.push({ id: b.guid, flag: 'no_input:' + nm, class: b.class }); }
+          line.quantity = r6(q); line.unit = mr.unit; line.formula = mr.quantity;
+        } else if (bm && mr.unit !== part.quantity.unit) { q = ms[bm]; line.quantity = r6(q); line.unit = mr.unit; line.formula = bm + ' (the unit of the material rate ' + mr.unit + ')'; }
+        line.rate_basis = 'material'; if (mr.source) line.rate_source = mr.source; noteExcl(mat, mr);
+      }
       if (!pe || !(pe.rate > 0)) { flagsL.push('no_rate'); flags.push({ id: b.guid, flag: 'no_rate', class: b.class }); }
       else {
         line.rate = pe.rate; line.pack_class = rcls; line.pack_desc = pe.desc;
@@ -101,11 +118,23 @@
       }
       tot.amount += line.amount; tot.by_prov[prov] = (tot.by_prov[prov] || 0) + line.amount; tot.by_class[b.class] = (tot.by_class[b.class] || 0) + line.amount;
       lines.push(line);
+      // S4: lines a material brings with it (reinforcement in RC): own rate, own quantity formula; assumed unless every default it reads was stated
+      ((pack.material_adds && mat && pack.material_adds[mat]) || []).forEach(function (ad) {
+        var used = Object.keys(VAL).filter(function (k) { return new RegExp('\\b' + k.replace(/\./g, '_') + '\\b').test(ad.quantity); });
+        var pv = used.length && used.every(function (k) { return STATED.test(SRC[k] || ''); }) ? 'derived' : 'assumed', fl = [], aq = 0;
+        try { aq = evalFormula(ad.quantity, formulaVars(ms, W[b.guid], VAL)); } catch (e) { var nm = (/unknown name "([^"]+)"/.exec(e.message) || [])[1] || 'formula'; fl.push('no_input:' + nm); flags.push({ id: b.guid + ':' + ad.what, flag: 'no_input:' + nm, class: b.class }); }
+        var al = { id: b.guid + ':' + ad.what, kind: 'add', class: b.class, prov: pv, material: mat, add: ad.what, measures: line.measures, quantity: r6(aq), unit: ad.unit, rate: ad.rate, pack_class: null, pack_desc: ad.desc, factor: 1,
+          amount: fl.length ? 0 : r6(aq * ad.rate), formula: ad.quantity, inputs: used, rate_basis: 'material_add', rate_source: ad.source || null, flags: fl };
+        tot.amount += al.amount; tot.by_prov[pv] = (tot.by_prov[pv] || 0) + al.amount; tot.by_class[b.class] = (tot.by_class[b.class] || 0) + al.amount; noteExcl(mat, ad);
+        lines.push(al);
+      });
     });
+    var excluded = Object.keys(excl).sort().map(function (k) { return excl[k]; });
     tot.amount = r6(tot.amount); Object.keys(tot.by_prov).forEach(function (k) { tot.by_prov[k] = r6(tot.by_prov[k]); }); Object.keys(tot.by_class).forEach(function (k) { tot.by_class[k] = r6(tot.by_class[k]); });
     var cur = (pack.meta && pack.meta.currency) || null;
-    return { pack: opts.packName || (pack.meta && pack.meta.name) || null, currency: cur, lines: lines, totals: tot, flags: flags,
-      log: '§BILL lines=' + lines.length + ' amount=' + tot.amount + (cur ? ' ' + cur : '') + ' drawn=' + tot.by_prov.drawn + ' derived=' + tot.by_prov.derived + ' assumed=' + tot.by_prov.assumed + ' flags=' + flags.length };
+    return { pack: opts.packName || (pack.meta && pack.meta.name) || null, currency: cur, lines: lines, totals: tot, flags: flags, excluded: excluded,
+      log: '§BILL lines=' + lines.length + ' amount=' + tot.amount + (cur ? ' ' + cur : '') + ' drawn=' + tot.by_prov.drawn + ' derived=' + tot.by_prov.derived + ' assumed=' + tot.by_prov.assumed + ' flags=' + flags.length +
+        (excluded.length ? ' NOT_PRICED=' + excluded.map(function (x) { return x.material + ':' + x.what + 'x' + x.lines; }).join(';') : '') };
   }
   return { materialRate: materialRate, evalFormula: evalFormula, measures: measures, bill: bill, tRefOf: tRefOf, materialOf: materialOf };
 });

@@ -111,7 +111,10 @@ function run(args, log) {
   // §L13.1 the bill: every body priced by the reference's stated formula x the rate pack's class rate (nothing guessed: no rate = 0 + flag)
   let billRes = null;
   { const BL = require('./dxf2bill.js'), pf = packFile;
-    if (packJ && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: packJ, packName }); say(billRes.log); } }
+    if (packJ && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { // T14b: the defaults in force (values + where each came from) and each body's weight from load_summary.js (the one owner of a body's weight) feed the rows that state a quantity formula
+      const DT = out.gate.R.defaults_table || [], values = {}, sources = {}; DT.forEach(r => { values[r.key] = r.value; sources[r.key] = r.source; });
+      const LS = require('./load_summary.js').compute(out.gate.R.els, { values, sources }), weights = {}; LS.rows.forEach(r => { if (r.kN != null && isFinite(r.kN)) weights[r.guid] = r.kN; });
+      billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: packJ, packName, weights, values, sources }); say(billRes.log); } }
   return { sheets, eff, read, out, choices, audit, account, bill: billRes };
 }
 
