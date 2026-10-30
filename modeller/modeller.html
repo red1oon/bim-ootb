@@ -3449,6 +3449,14 @@ function doLoadSummary() {
   console.log('§LOAD_SUMMARY handoff bodies=' + els.length + ' overrides=' + JSON.stringify(overrides) + ' type=' + (payload.type || 'not_stated'));
   window.open('load_summary.html', '_blank'); setStat('Load Summary opened in a new tab (' + els.length + ' parts)');
 }
+// RR.6 Regulatory Report: the facts form + the ONE composition the CLI's --report runs (reg_report_ui.js, lazy; nothing loads until this row is clicked)
+let _regRepLoading = null;
+async function doRegReport() {
+  try {
+    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=1'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
+    await _regRepLoading; await window.RegReportUI.open(setStat);
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§REG_REPORT_UI fail ' + err); }
+}
 async function doViewerDbExport() {   // §D43: the Viewer's own database from the model (IFC4 -> the shared extractor core), not the signed op-log
   if (window.Bonsai.oplog.length === 0) { setStat('author or convert something first'); return; }
   setStat('Viewer database: building the IFC, then extracting it…');
@@ -3526,6 +3534,7 @@ async function doDbExport() {
     { key: 'vdb', icon: '▦', label: 'Viewer database (.db)', sub: 'opens in the Viewer: elements, materials, positions', run: doViewerDbExport },
     { key: 'ifc', icon: '⬇', label: 'IFC (IFC4)', sub: 'geometry translation via web-ifc', run: doIfcExport },
     { key: 'load', icon: '⚖', label: 'Load Summary…', sub: 'own weight by part and per footing, for the structural engineer (opens a report)', run: doLoadSummary },
+    { key: 'regrep', icon: '§', label: 'Regulatory Report…', sub: 'facts of the model for a submission: checks, loads, bill, assumptions (a page to attach)', run: doRegReport },
     { key: 'bcf', icon: '⚑', label: 'BCF issue (.bcfzip)', sub: 'current view + selection', run: doBcfExport },
     { key: 'dxf', icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>', label: '2D drawings (DXF)', sub: 'plans, elevations, roof, section + markings', run: doDxfExport }
   ];

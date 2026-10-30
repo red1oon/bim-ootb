@@ -25,7 +25,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), { Buffer } = require('buffer');
 const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2marks.js'), I = require('./dxf2bim_import.js'), P = require('./dxf2prep.js'),
-  B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js');
+  B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js'), RG = require('./reg_report.js');
 
 function parseArgs(argv) {
   const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], fact: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false, report: false };
@@ -111,13 +111,9 @@ function run(args, log) {
   const AC = require('./dxf2account.js'), HT = require('./dxf2hatch.js'), account = { sheets: {}, dropped: {} };
   sheets.forEach(sh => { const a = AC.account(sh.text, sh.dxf.entities, { HATCH: HT.parseHatches(sh.text).hatches.length, LEADER: HT.parseLeaders(sh.text).length }); account.sheets[sh.name] = { total: a.total, dropped: a.dropped }; a.dropped.forEach(d => { account.dropped[d.type] = (account.dropped[d.type] || 0) + d.n; }); });
   say('§ACCOUNT entities=' + Object.keys(account.sheets).reduce((n, k) => n + account.sheets[k].total, 0) + ' dropped=' + (Object.keys(account.dropped).map(k => k + ':' + account.dropped[k]).join(',') || 'none'));
-  // §L13.1 the bill: every body priced by the reference's stated formula x the rate pack's class rate (nothing guessed: no rate = 0 + flag)
-  let billRes = null, lsRes = null;
-  { const BL = require('./dxf2bill.js'), pf = packFile;
-    if (packJ && out.gate && out.gate.R && out.gate.R.els && out.gate.R.els.length) { // T14b: the defaults in force (values + where each came from) and each body's weight from load_summary.js (the one owner of a body's weight) feed the rows that state a quantity formula
-      const DT = out.gate.R.defaults_table || [], values = {}, sources = {}; DT.forEach(r => { values[r.key] = r.value; sources[r.key] = r.source; });
-      const LS = lsRes = require('./load_summary.js').compute(out.gate.R.els, { values, sources }), weights = {}, assumed = {}; LS.rows.forEach(r => { if (r.kN != null && isFinite(r.kN)) weights[r.guid] = r.kN; if (r.assumed) assumed[r.guid] = r.sectionFrom; });
-      billRes = BL.bill(out.gate.R.els, { ref: JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pack: packJ, packName, weights, assumed, values, sources }); say(billRes.log); } }
+  // §L13.1 the bill: every body priced by the reference's stated formula x the rate pack's class rate (nothing guessed: no rate = 0 + flag); T14b weights from load_summary.js (RegReport.billAndLoad, shared with the Modeller page)
+  const R0 = out.gate && out.gate.R, BLR = RG.billAndLoad(R0 && R0.els, R0 && R0.defaults_table, { LS: require('./load_summary.js'), BL: BL0, ref: refJ, pack: packJ, packName }), billRes = BLR.bill, lsRes = BLR.loadSummary;
+  if (billRes) say(billRes.log);
   return { sheets, eff, read, out, choices, audit, account, bill: billRes, loadSummary: lsRes };
 }
 
@@ -143,11 +139,9 @@ function webIfc() {
   for (const m of ['web-ifc', process.env.WEB_IFC, path.join(process.env.HOME || '', 'bim-compiler/node_modules/web-ifc')]) { if (!m) continue; try { return require(m); } catch (e) { /* next */ } }
   throw new Error('--ifc needs web-ifc (npm i web-ifc, or set WEB_IFC=<dir>)');
 }
-// T13.5: the type counts as stated only when a file/sheet/editor choice gave it, never the registry default or a type override
-function statedType(R) { const r = ((R && R.defaults_table) || []).find(x => x.key === 'building.type'); return r && /^(file|sheet|choice)$/.test(r.source) ? String(r.value) : null; }
 async function writeIfc(res, dir) {
   const W = webIfc(), api = new W.IfcAPI(); await api.Init();
-  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc', buildingType: statedType(R) });
+  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc', buildingType: RG.statedType(R) });
   fs.writeFileSync(path.join(dir, 'model.ifc'), Buffer.from(r.bytes));
   return r;
 }
@@ -171,26 +165,15 @@ function sqlJs() {
 }
 async function writeReport(res, dir, args) {
   const V = path.join(__dirname, '..', 'viewer'), W = webIfc(), api = new W.IfcAPI(); await api.Init();
-  const bytes = fs.readFileSync(path.join(dir, 'model.ifc')), SQL = await sqlJs()(), db = new SQL.Database(), Core = require('./dxf2bim/ifc_extract_core.js'), xlog = [];
-  await Core.extractToDb({ WebIFC: W, ifcApi: api, ifcData: new Uint8Array(bytes), db: Core.sqljsDb(db), Buf: Core.browserBuf, buildingName: (args.set || 'MODEL'), sourceName: 'model.ifc', log: m => xlog.push(m) });
-  const q = (sql, p) => { const r = p ? db.exec(sql, p) : db.exec(sql); return r.length ? r[0].values : []; };
-  const SR = JSON.parse(fs.readFileSync(path.join(V, 'rates/structural_rules.json'), 'utf8')), ER = JSON.parse(fs.readFileSync(path.join(V, 'rates/egress_rules.json'), 'utf8'));
-  const SS = require(path.join(V, 'structural_sanity.js')), ES = require(path.join(V, 'egress_sanity.js')), RRp = require(path.join(V, 'rule_report.js'));
-  const bt = (q("SELECT value FROM project_metadata WHERE key='building_type'")[0] || [])[0] || null;
-  const covS = {}, covE = {}, rlog = m => { if (/§RULE_COVERAGE|§RULE_APPLIES/.test(m)) console.log(m); };
-  let rs = SS.evaluate(q, SR, { log: rlog, coverage: covS }), re = ES.evaluate(q, ER, { log: rlog, coverage: covE });
-  rs = RRp.applyTypes('structural_rules', SR, rs, covS, bt, rlog); re = RRp.applyTypes('egress_rules', ER, re, covE, bt, rlog);
-  const byName = {}; [].concat(SR.structural_rules, ER.egress_rules).forEach(r => { if (r && r.name) byName[r.name] = r; });
-  const codes = RRp.codesAndCoverage({ structural_rules: SR.structural_rules, egress_rules: ER.egress_rules }, Object.assign({}, covS, covE), { type: bt });
-  const R = res.out.gate.R, facts = {}; (args.fact || []).forEach(f => { const i = f.indexOf('='); if (i > 0) facts[f.slice(0, i).trim()] = f.slice(i + 1).trim(); });
-  const sw = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8'), ver = (/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?';
-  const packJ = res.bill && res.bill.pack ? JSON.parse(fs.readFileSync(path.join(V, 'rates', ((args.pack && args.pack[0]) || 'cidb2024_my') + '.json'), 'utf8')) : null;
-  const sheetsSet = (res.sheets || []).map(s => s.name), sets = [...new Set((res.read || []).map(s => s.desc && s.desc.set).filter(Boolean))], setName = sets.length ? sets.join(' / ') : args.set || null;   // the drawings' @SET (R.set is the pipeline's own name)
-  const out = require('./reg_report.js').compose({
-    identity: { set: setName, sheets: sheetsSet, date: (d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'))(new Date()), tool: 'BIMCompiler Modeller DXF2BIM (sw ' + ver + ', dxf2bim_cli)', modelSha256: require('crypto').createHash('sha256').update(bytes).digest('hex'),
-      pack: res.bill && res.bill.pack, packSource: packJ && packJ.meta ? (packJ.meta.material_rates_note || packJ.meta.source || '') : '' },
-    buildingType: bt, facts, storeys: R.ST || [], bodies: R.els || [], measures: require('./dxf2bill.js').measures, loadSummary: res.loadSummary, bill: res.bill,
-    rules: { structural: { rows: rs, cov: covS }, egress: { rows: re, cov: covE }, byName, codes }, cli: { left_out: res.out.gate.structure ? res.out.gate.structure.left_out : null }, defaults_table: R.defaults_table || [] });
+  const rj = f => JSON.parse(fs.readFileSync(path.join(V, 'rates', f), 'utf8')), packName = (args.pack && args.pack[0]) || 'cidb2024_my', sw = fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8');
+  const facts = {}; (args.fact || []).forEach(f => { const i = f.indexOf('='); if (i > 0) facts[f.slice(0, i).trim()] = f.slice(i + 1).trim(); });
+  const out = await RG.fromModel({ ifcBytes: new Uint8Array(fs.readFileSync(path.join(dir, 'model.ifc'))), WebIFC: W, ifcApi: api, SQL: await sqlJs()(), Core: require('./dxf2bim/ifc_extract_core.js'),
+    SR: rj('structural_rules.json'), ER: rj('egress_rules.json'), SS: require(path.join(V, 'structural_sanity.js')), ES: require(path.join(V, 'egress_sanity.js')), RRp: require(path.join(V, 'rule_report.js')),
+    R: res.out.gate.R, bill: res.bill, loadSummary: res.loadSummary, measures: require('./dxf2bill.js').measures, facts,
+    sets: (res.read || []).map(s => s.desc && s.desc.set).concat(args.set ? [args.set] : []),   // the drawings' @SET (R.set is the pipeline's own name); --set only when no sheet states one
+    sheets: (res.sheets || []).map(s => s.name), date: args.date || RG.today(new Date()) /* args.date: a witness seam, no CLI flag */, tool: 'BIMCompiler Modeller DXF2BIM (sw ' + ((/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?') + ', dxf2bim_cli)',
+    packJ: res.bill && fs.existsSync(path.join(V, 'rates', packName + '.json')) ? rj(packName + '.json') : null, sha256: b => require('crypto').createHash('sha256').update(b).digest('hex'),
+    leftOut: res.out.gate.structure ? res.out.gate.structure.left_out : null, buildingName: args.set || 'MODEL', log: m => console.log(m) });
   fs.writeFileSync(path.join(dir, 'regulatory_report.html'), out.html);
   out.log.forEach(l => console.log(l));
   return out;
