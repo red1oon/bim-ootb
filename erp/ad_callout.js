@@ -950,6 +950,24 @@
     Env.setContext(ctx, '#C_Country_ID', ctry ? Number(ctry.c) : 100);
     return ctx;
   }
+  // sessionContext(env) — Env.getCtx() of the session: Login.loadPreferences (U/Login.java:477) runs ONCE per login, not per process. RolePanel.java:910 calls it when the user logs in or
+  //   changes role / organization / warehouse / date; ValuePreference.java:583 (and its insert) updates ONE key of the live ctx; a row written to AD_Preference from anywhere else is NOT seen until the next
+  //   login. Processes (ProcessInfo ctx) and models read Env.getCtx(), they never rebuild it. So: one entry per HOLDER (env.session when the host has one - the DB/tab the session lives in - else the env
+  //   itself, i.e. one build per Trx), rebuilt only when the identity {client, org, role, user, warehouse, language, day} the context was loaded for changes. resetSession(holder) = a fresh login.
+  //   Witness: scripts/witness_hq_hotspots.js (bim-compiler) HS1; the cost it removes: TEAMWORK_FRAMEWORK.md §45.5 HS1 (the builder is ~2 s on the full dictionary, ~4 builds per imported ticket).
+  var SESSIONS = new WeakMap();
+  function sessionContext(env) {
+    env = env || {};
+    var holder = env.session || env, d = env.date ? String(env.date).slice(0, 10) : new Timestamp(RUNTIME.now()).toString().slice(0, 10);
+    var o = { client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date, language: env.language };
+    var key = [o.client, o.org, o.role, o.user, o.wh == null ? '' : o.wh, o.language || '', d].join('|'), e = SESSIONS.get(holder);
+    if (e && e.key === key) return e.ctx;
+    var t0 = Date.now(), ctx = loginContext(o);
+    SESSIONS.set(holder, { key: key, ctx: ctx });
+    console.log('§LOGINCTX build client=' + o.client + ' org=' + o.org + ' role=' + o.role + ' user=' + o.user + ' wh=' + (o.wh == null ? '' : o.wh) + ' day=' + d + ' keys=' + ctx.keys().length + ' ms=' + (Date.now() - t0));
+    return ctx;
+  }
+  function resetSession(holder) { if (holder) SESSIONS.delete(holder); }
 
   // coverageScan — X/N of AD_Column.Callout rows (optionally on a table set) whose EVERY ';'-callout has a ported method
   function coverageScan(tables) {
@@ -988,7 +1006,7 @@
   var API = { BigDecimal: BD, RoundingMode: RM, Timestamp: Timestamp, TimeUtil: TimeUtil, DisplayType: DT, Env: Env, Ctx: Ctx,
     Msg: Msg, typed: typed, stored: stored, toBD: toBD, isEmpty: isEmpty, AdempiereException: AdempiereException,
     CalloutEngine: CalloutEngine, GridTab: GridTab, GridField: GridField, RUNTIME: RUNTIME, convertSql: convertSql, bind: bind, openTab: openTab,
-    fieldsFor: fieldsFor, loginContext: loginContext, defineCallout: defineCallout, defineColumnCallout: defineColumnCallout,
+    fieldsFor: fieldsFor, loginContext: loginContext, sessionContext: sessionContext, resetSession: resetSession, defineCallout: defineCallout, defineColumnCallout: defineColumnCallout,
     findColumnCallouts: findColumnCallouts, COLUMN_CALLOUTS: COLUMN_CALLOUTS, getCallout: getCallout, hasCallout: hasCallout, CLASSES: CLASSES,
     coverageScan: coverageScan, registerHandler: registerHandler, unregisterHandler: unregisterHandler, removeOwner: removeOwner, describe: describe, hasHandler: hasHandler, REGISTRY: LEGACY,
     registeredNames: function () { return Object.keys(CLASSES).filter(function (k) { return k.indexOf('.') > 0; }); } };

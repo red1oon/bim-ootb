@@ -1146,7 +1146,7 @@
     } finally { if (kept) { RT0.DB = kept.DB; RT0.PO = kept.PO; RT0.now = kept.now; RT0.log = kept.log; A.Env.now = kept.envNow; } }
   }
   function _runJavaIn(A, C, trx, env, query, pi, shared) {
-    var ctx = pi.ctx || A.loginContext({ client: env.client, org: env.org, role: env.role || 0, user: env.user, wh: env.wh, date: env.date });
+    var ctx = pi.ctx || A.sessionContext(env);                     // Env.getCtx(): the session's context, built at login (HS1), not rebuilt per process
     // ProcessInfoParameter[] from AD_Process_Para (SeqNo order) — the parameter types the UI's AD_PInstance_Para carry
     var paras = [];
     try { paras = query('SELECT columnname AS c, ad_reference_id AS r FROM ad_process_para WHERE ad_process_id=? AND isactive=? ORDER BY seqno', [pi.AD_Process_ID, 'Y']) || []; } catch (e) {}

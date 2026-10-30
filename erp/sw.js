@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v936';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v937';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -82,6 +82,8 @@ const PRECACHE_ASSETS = [
   'ad_graph.js',
   'ad_modelval.js',
   'ad_rule.js',        // TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus (window.AdRule), W-BUS-ROW
+  'ad_official_indexes.js',   // HS3: legacy's official dictionary indexes (generated list)
+  'ad_index_overlay.js',   // HS3: ... created as a boot overlay (window.AdIndexOverlay), outside the team base hash
   'ad_import_tables.js',   // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',

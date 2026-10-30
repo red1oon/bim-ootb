@@ -502,7 +502,7 @@
 <script src="ad_lens.js?v=2"></script>
 <script src="ad_modelval.js?v=7"></script>
 <script src="ad_rule.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
-<script src="ad_import_tables.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
+<script src="ad_official_indexes.js?v=1"></script><script src="ad_index_overlay.js?v=1"></script><script src="ad_import_tables.js?v=2"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -1150,6 +1150,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (window.AdRule) { try { AdRule.ensure(db); } catch (e) { console.log('§RULE_TABLES_ERR ' + e.message); } }
     // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the physical I_Order table (dictionary rows are in the seed): the same device-local boot overlay, outside the hashed patches (W-IMPORT-ORDER).
     if (window.AdImportTables) { try { AdImportTables.ensure(db); } catch (e) { console.log('§IMPORT_TABLES_ERR ' + e.message); } }
+    // HS3 (TEAMWORK_FRAMEWORK §45.7) - legacy's official dictionary indexes on the physical tables: the same boot overlay, outside the hashed patches
+    if (window.AdIndexOverlay) { try { AdIndexOverlay.ensure(db); } catch (e) { console.log('§INDEX_OVERLAY_ERR ' + e.message); } }
     // Host work H1 (plugin lifecycle): restore the persisted ACTIVE plugin bundles at BOOT, after the seed + patches are in, so a bundle's hot hooks (model/doc/validator/process/callout/posting class) are live before the first save.
     if (window.PluginEngine && window.PluginEngine.boot) { try { await window.PluginEngine.boot({ db: db }); console.log('§PLUGIN-BOOT restored=' + (window.PluginEngine._reg() ? window.PluginEngine._reg().list().filter(function (b) { return b.state === 'ACTIVE'; }).length : 0)); } catch (e) { console.log('§PLUGIN-BOOT-ERR ' + e.message); } }
     // ?shard=<file>.db — SHARD-IN (the URL install path). Same installShard() the Install dialog drives in-page.
