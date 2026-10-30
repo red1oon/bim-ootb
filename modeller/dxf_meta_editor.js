@@ -46,7 +46,8 @@
   // states it, read = a text names it, inferred = geometry or a convention (orange). Every suggestion stays yellow, not yours, until accepted. W-EVIDENCE E1: every
   // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
   var TAGE = '§DXF-EVIDENCE';
-  var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read',   // §D46: each READ from a text the sheet holds
+  var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred',   // §D98 a placeholder name: a convention, stays yellow until renamed
+    'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
     'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
@@ -104,6 +105,10 @@
     value = String(value === undefined || value === null ? '' : value).trim();
     if (value !== '') { var p = posOf(key, 0, 0); sh.marks.push({ key: key, value: value, x: p.x, y: p.y, source: 'user' }); }
     console.log(TAG + ' edit sheet=' + sh.name + ' @' + key + '=' + (value || '(cleared)') + (had.length ? ' was ' + had.map(function (h) { return h.value; }).join('|') : ''));
+    // §D98: the placeholder stands for "the set name, not given yet": the first real name typed replaces it on every sheet that holds it (else the sheets would disagree until each is accepted)
+    var PH = window.Dxf2Suggest && window.Dxf2Suggest.SET_PLACEHOLDER;
+    if (key === 'SET' && PH && value !== '' && value !== PH) { var nr = 0; S.sheets.forEach(function (o) { if (o === sh) return; o.marks.forEach(function (q) { if (q.key === 'SET' && q.value === PH) { q.value = value; q.source = 'user'; delete q.by; nr++; } }); });
+      if (nr) console.log(TAG + ' §D98 set placeholder ' + PH + ' -> ' + value + ' on ' + nr + ' other sheets'); }
     changed();
   }
   function addMulti(sh, key, value, x, y, rule) {
@@ -583,7 +588,8 @@
     document.head.appendChild(st);
   }
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
+  function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; if (m.key === 'SET' && window.Dxf2Suggest && m.value === window.Dxf2Suggest.SET_PLACEHOLDER) return '<span class="dm-src default" data-src="default" title="§D98: no sheet names the set; this is a placeholder. Type the set name to replace it.">default</span>';
+    if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
   function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(label === undefined ? (v === '' ? '—' : v) : label) + '</option>'; }
   function missingOf(sh) { var d = describeOf(sh), miss = []; d.errors.forEach(function (e) { if (e.code === 'MARK:missing') miss = miss.concat(e.keys || []); }); return { miss: miss, errors: d.errors.filter(function (e) { return e.code !== 'MARK:missing'; }), desc: d.desc }; }
   function field(sh, si, key, label, miss, kind, choices) {
@@ -841,7 +847,7 @@
   // §D81 (prompts/DXF2BIM_FOUNDATION_LANE.md): the rows grouped by the rule that proposed them, in the order they first appear. A set-wide key (UNITS, SET, ROOF) names its one value when all rows agree;
   // a row with another value than the most common one is its own open group (`<rule>!`, marked disagrees) that the group tick does not take. Rows stay in the page (hidden while closed): every control works on them.
   var GROUP_NAME = { 'PR-GRID': 'Grid lines', 'PR-GRID-TICK': 'Grid lines from dimension ticks', 'PR-Z': 'Level datums', 'PR-Z-GROUND': 'Ground line (z 0)', 'PR-UNITS': 'Units', 'PR-VIEW': 'Sheet roles', 'PR-NAME': 'Sheet names',
-    'PR-SET': 'Set name', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
+    'PR-SET': 'Set name', 'PR-SET-PLACEHOLDER': 'Set name (placeholder)', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
     'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
   var SET_WIDE = { UNITS: 1, SET: 1, ROOF: 1 };
   function firstInOrder(sel) {   // §D81 the button of the row that comes first in the flat list (grouping changes the page order, not the order the markings are written in)

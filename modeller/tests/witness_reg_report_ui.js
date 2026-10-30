@@ -41,7 +41,7 @@ const quiet = async (fn, keep) => { const orig = console.log; console.log = s =>
   const D = { WebIFC: W, ifcApi: api, SQL: await sqlJs()(), Core: require(path.join(M, 'dxf2bim/ifc_extract_core.js')), Dxf2Ifc: require(path.join(M, 'dxf2ifc.js')), RegReport: RG,
     LoadSummary: require(path.join(M, 'load_summary.js')), Dxf2Bill: require(path.join(M, 'dxf2bill.js')), SS: require(path.join(V, 'structural_sanity.js')), ES: require(path.join(V, 'egress_sanity.js')),
     RRp: require(path.join(V, 'rule_report.js')), SR: rj('structural_rules.json'), ER: rj('egress_rules.json'), packJ: rj('pwd2024_bd.json'), ref: JSON.parse(fs.readFileSync(path.join(M, 'synthetic_ref.json'), 'utf8')),
-    sha256: b => require('crypto').createHash('sha256').update(b).digest('hex') };
+    sha256: b => require('crypto').createHash('sha256').update(b).digest('hex'), setPlaceholder: require(path.join(M, 'dxf2suggest.js')).SET_PLACEHOLDER };
   const page = (facts) => quiet(() => UI.assemble(D, { gate: res.out.gate, sheets: res.read, facts, packName: 'pwd2024_bd', date: DATE, tool: 'BIMCompiler Modeller DXF2BIM (sw x, Modeller)', log: m => console.log(m) }), /§REG_REPORT/);
   // U1
   const P = await page({}), a = mask(cli.html), b = mask(P.html);

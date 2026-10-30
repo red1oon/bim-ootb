@@ -35,7 +35,7 @@
     var built = D.Dxf2Ifc.build(D.Dxf2Ifc.fromEls(R.els, R.ST), { api: D.ifcApi, WebIFC: D.WebIFC, name: 'dxf2bim.ifc', buildingType: RG.statedType(R) }), bytes = new Uint8Array(built.bytes);
     var out = await RG.fromModel({ ifcBytes: bytes, WebIFC: D.WebIFC, ifcApi: D.ifcApi, SQL: D.SQL, Core: D.Core, SR: D.SR, ER: D.ER, SS: D.SS, ES: D.ES, RRp: D.RRp,
       R: R, bill: bl.bill, loadSummary: bl.loadSummary, measures: D.Dxf2Bill.measures, facts: factsFrom(inp.facts),
-      sets: (inp.sheets || []).map(function (s) { return s.desc && s.desc.set; }), sheets: (inp.sheets || []).map(function (s) { return s.name; }),
+      sets: (inp.sheets || []).map(function (s) { return s.desc && s.desc.set; }), sheets: (inp.sheets || []).map(function (s) { return s.name; }), setPlaceholder: D.setPlaceholder,
       date: inp.date, tool: inp.tool, packJ: D.packJ, sha256: D.sha256, leftOut: g.structure ? g.structure.left_out : null, log: say });
     out.log.forEach(say);
     say(TAG + ' built bodies=' + R.els.length + ' pack=' + (inp.packName || '-') + ' bytes=' + out.html.length + ' ifc=' + bytes.length);
@@ -103,7 +103,7 @@
       U.ref ? Promise.resolve(U.ref) : json('synthetic_ref.json')]);
     var sw = await fetch(new URL('sw.js', _base).href).then(function (r) { return r.text(); }).catch(function () { return ''; }), ver = (/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?';
     var D = { WebIFC: window.WebIFC, ifcApi: api, SQL: SQL, Core: window.IfcExtractCore, Dxf2Ifc: window.Dxf2Ifc, RegReport: window.RegReport, LoadSummary: window.LoadSummary, Dxf2Bill: window.Dxf2Bill,
-      SS: window.StructuralSanity, ES: window.EgressSanity, RRp: window.RuleReport, SR: rs[0], ER: rs[1], packJ: rs[2], ref: rs[3],
+      setPlaceholder: window.Dxf2Suggest && window.Dxf2Suggest.SET_PLACEHOLDER, SS: window.StructuralSanity, ES: window.EgressSanity, RRp: window.RuleReport, SR: rs[0], ER: rs[1], packJ: rs[2], ref: rs[3],
       sha256: function (b) { return crypto.subtle.digest('SHA-256', b).then(function (h) { return Array.prototype.map.call(new Uint8Array(h), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }); } };
     if (!rs[2]) console.log(TAG + ' pack ' + o.packName + ' not found: the bill is left out');
     var out = await assemble(D, { gate: U.gate, sheets: U.sheets, facts: o.facts, packName: o.packName, date: window.RegReport.today(new Date()), tool: 'BIMCompiler Modeller DXF2BIM (sw ' + ver + ', Modeller)', log: function (m) { console.log(m); } });

@@ -17,7 +17,8 @@ const PL_Y = { '1S_ELEV_SOUTH.dxf': -4446.6, '1N_ELEV_NORTH.dxf': -3895.2 };   /
 runE2E('W-DXF-SHED', async (t) => {
   const pg = t.pg, sleep = t.sleep;
   const idle = async () => { await pg.waitForFunction('!window.DxfMetaEditor.state.busy', { timeout: 180000 }); await sleep(900); };
-  const acceptAll = async () => { await pg.evaluate(() => { const b = document.querySelector('#dm-yellows [data-act="acceptall"]'); if (b) b.click(); }); await idle(); };
+  // accept every row: the single button, or (§D36: stated/read and inferred rows both present, e.g. the §D98 placeholder in round 1) its two split buttons in turn
+  const acceptAll = async () => { for (let i = 0; i < 6; i++) { const hit = await pg.evaluate(() => { const b = ['acceptall', 'acceptsr', 'acceptinf'].map(k => document.querySelector('#dm-yellows [data-act="' + k + '"]')).find(Boolean); if (b) b.click(); return !!b; }); if (!hit) break; await idle(); } };
   const type = async (sel, v) => { await pg.click(sel, { clickCount: 3 }); await pg.type(sel, String(v)); await pg.keyboard.press('Tab'); await sleep(500); };
   const open = async (names) => { await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
     const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept(names.map(n => SH + n));
@@ -38,7 +39,7 @@ runE2E('W-DXF-SHED', async (t) => {
   // ---- Flow A: plan + South elevation ----
   await open(['0_FLOOR_PLAN.dxf', '1S_ELEV_SOUTH.dxf']);
   const s1 = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.prop.list.map(p => p.rule).join(',')));
-  t.assert('H1 raw shed sheets: the first suggestions are UNITS / VIEW / NAME only', s1.every(x => /^PR-UNITS,PR-VIEW,PR-NAME$/.test(x)), JSON.stringify(s1));
+  t.assert('H1 raw shed sheets: the first suggestions are UNITS / VIEW / NAME + the §D98 set placeholder only', s1.every(x => /^PR-UNITS,PR-VIEW,PR-NAME,PR-SET-PLACEHOLDER$/.test(x)), JSON.stringify(s1));
   await acceptAll();
   const m = await pg.evaluate(() => { const E = window.DxfMetaEditor.state.sheets[1].marks; return { gridh: E.filter(x => x.key === 'GRIDH').length, z: E.filter(x => x.key === 'Z').map(x => [x.value, x.y, x.rule]), face: (E.find(x => x.key === 'FACE') || {}).value, src: [...new Set(E.map(x => x.source))] }; });
   // §D96: Accept all now also takes the second height the drawing's own dimension gives (PR-Z-DIM): z = (y - ground y) x 0.0254 on this inch sheet

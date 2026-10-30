@@ -213,6 +213,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     alog.length = 0;
     await acceptAll();
     const sync1 = alog.filter(l => / sync /.test(l)), moved1 = sync1.map(l => Number((/moved=(\d+)/.exec(l) || [])[1] || 0));
+    const ho1 = alog.filter(l => / hand-over to the canvas /.test(l))[0] || null;   // §D98: with the set placeholder, Accept all can complete every placing value: the view hands over here (its own compare in the line)
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(sh => sh.name));
     // A13 (§D42): the build stays in frame. Proves/disproves: after the play hands over to the canvas (and after typed values) the camera must still show the sheets: the share of the role sheets' points inside the free canvas strip
     const share = () => pg.evaluate(() => { const A = window.A, T = window.THREE, U = window.DxfImportUI.state, g = A.scene.children.find(o => o.name === 'dxf-arrange' && o.visible) || A.scene.children.find(o => o.name === 'dxf-sheets' && o.visible);
@@ -240,16 +241,17 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       eIdx.length === 5 && asks.every(a => a === null || !a.ask) && zNow.every(q => q.z.length === 2 && q.z.indexOf('PR-Z-DIM') >= 0), zNow.map(q => q.n.replace(/\.dxf$/, '') + ':' + q.z.join('+')).join(' '));
     await typeField(0, 'SET', 'SHED'); await idle(); await sleep(1500);
     // A8: a typed value moves the sheet live: @LEVEL=0 typed on the plans gives the reference plan, so HAXIS is suggested (yellow) and the other plans align: the view tweens them from where they stand
-    const before8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
+    const snap8 = () => pg.evaluate(() => { const U = window.DxfImportUI.state, F = U.arr ? U.arrLast.final : Object.fromEntries(Object.keys(U.canvas || {}).map(n => [n, U.canvas[n].segOf])), o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });   // the live view, else (handed over) the canvas
+    const live8 = await pg.evaluate(() => !!window.DxfImportUI.state.arr), before8 = await snap8();
     alog.length = 0;
     for (let si = 0; si < names.length; si++) if (/FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(names[si])) await typeField(si, 'LEVEL', '3');
     await idle(); await sleep(2500);
     if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_level0.png') });
     const sync8 = alog.filter(l => / sync moved=/.test(l)), movedNames = Array.from(new Set([].concat.apply([], sync8.map(l => ((/moved=\d+ \(([^)]*)\)/.exec(l) || [])[1] || '').split(',').filter(Boolean)))));
-    const after8 = await pg.evaluate(() => { const F = window.DxfImportUI.state.arrLast.final, o = {}; Object.keys(F).forEach(n => { const h = Object.keys(F[n])[0]; o[n] = h ? F[n][h].slice(0, 3) : null; }); return o; });
+    const after8 = await snap8();
     const want8 = names.filter(n => /FLOOR_PLAN|BEAM_LAYOUT|FOUNDATION_LAYOUT/.test(n)), lifted = want8.filter(n => before8[n] && after8[n] && Math.abs((after8[n][2] - before8[n][2]) - 3) < 1e-6);
     ok('A8[shed raw] a typed value moves the sheet live (§D37: @LEVEL=0 is now the orange default already in place, so the typed value is 3): @LEVEL=3 typed on the 3 plans after play -> each plan is lifted by exactly 3.000 m in the view (sync tween)',
-      want8.length === 3 && lifted.length === 3 && sync8.some(l => /tween=700ms/.test(l)), 'lifted=' + lifted.map(n => n.replace(/\.dxf$/, '')).join(',') + ' dz=' + want8.map(n => before8[n] && after8[n] ? (after8[n][2] - before8[n][2]).toFixed(4) : 'na').join('/') + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
+      want8.length === 3 && lifted.length === 3 && (live8 ? sync8.some(l => /tween=700ms/.test(l)) : true), (live8 ? 'view' : 'canvas (handed over at Accept all)') + ' lifted=' + lifted.map(n => n.replace(/\.dxf$/, '')).join(',') + ' dz=' + want8.map(n => before8[n] && after8[n] ? (after8[n][2] - before8[n][2]).toFixed(4) : 'na').join('/') + ' | ' + sync8.map(l => l.replace(/\(.*\)/, '').replace('§DXF-ARRANGE ', '')).join(' | '));
     for (let si = 0; si < names.length; si++) { const k = Object.keys(DATUM).filter(q => names[si].indexOf(q) === 0)[0]; if (k) await addZ(si, 0.6096, DATUM[k]); }
     { const left = []; for (const si of eIdx) { const a = await pg.evaluate(si => { const v = document.getElementById('dm-av-' + si + '-Z'); const q = v && v.closest('.dm-row').previousElementSibling; return v ? { ask: !!(q && q.classList.contains('dm-ask')), need: v.classList.contains('need') } : null; }, si); if (a && (a.ask || a.need)) left.push(si); }
       ok('A11b[shed raw] once the second height is added the question and the red outline are gone on all 5 cards', left.length === 0, 'cards still asking=' + left.join(',')); }
@@ -261,8 +263,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, 'w_shedraw_after_typed.png') });
     console.log('  shed raw after Accept all + typed: ' + JSON.stringify({ live: L1.live, tinted: L1.tinted, canvas: L1.canvas.length, roles: L1.roles, yellowPlacing: L1.yellowPlacing, syncMovedOnFirstAccept: moved1 }));
     ok('A7[shed raw] yellow is not yours: the play left the accepted markings / verdict / texts as opened (0 accepted before Accept all); accepting the yellow values re-morphs nothing (sync moved=0); after Accept all + the CLI\'s stated values typed in the panel no tint is left and every sheet the canvas places ends where buildCanvas puts it',
-      L0.marks === 0 && L0.tinted > 0 && moved1.length > 0 && moved1.every(n => n === 0) && L1.yellowPlacing === 0 && (L1.tinted === null || L1.tinted.length === 0) && a1.length === 8 && a1.every(x => x.worst <= 1e-6) && errs.length === e0,
-      'before: marks=' + L0.marks + ' tinted=' + L0.tinted + ' | first accept syncs moved=' + moved1.join(',') + ' | after: tinted=' + JSON.stringify(L1.tinted) + ' canvas=' + a1.map(x => x.n.replace(/\.dxf$/, '') + ':' + x.worst).join(' ') + ' errors=' + (errs.length - e0) + ' st0.gate=' + st0.gate);
+      L0.marks === 0 && L0.tinted > 0 && moved1.length > 0 && moved1.every(n => n === 0) && L1.yellowPlacing === 0 && (L1.tinted === null || L1.tinted.length === 0) && (ho1 ? /final_equal=true compared=8\)/.test(ho1) : a1.length === 8 && a1.every(x => x.worst <= 1e-6)) && errs.length === e0,   // handed over at Accept all: the view's own compare at that moment (later typed values move the canvas, A8)
+      'before: marks=' + L0.marks + ' tinted=' + L0.tinted + ' | first accept syncs moved=' + moved1.join(',') + ' | after: tinted=' + JSON.stringify(L1.tinted) + ' canvas=' + a1.map(x => x.n.replace(/\.dxf$/, '') + ':' + x.worst).join(' ') + ' errors=' + (errs.length - e0) + ' st0.gate=' + st0.gate + (ho1 ? ' | ' + ho1.replace(/^§DXF-ARRANGE /, '') : ''));
   }
   { await pg.click('#dxf-close'); await sleep(300); const gh = await pg.evaluate(() => { const G = window.A.scene.children.find(o => o.type === 'GridHelper'); return { x: G.position.x, y: G.position.y, s: G.scale.x }; });
     ok('A14c closing the 2D Drawings panel puts the grid back at its home (origin, scale 1)', gh.x === 0 && gh.y === 0 && gh.s === 1, JSON.stringify(gh)); }

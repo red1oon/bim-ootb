@@ -18,7 +18,7 @@ const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modu
 const ROOT = path.join(__dirname, '..', '..'), DB = process.argv[2] || '/tmp/db2/DXARC.db';
 const SHED_RAW = process.env.SHED_RAW_DIR || '';
 const RAW9 = ['0_FLOOR_PLAN', '1S_ELEV_SOUTH', '1N_ELEV_NORTH', '2_ELEV_WEST', '7_ELEV_EAST', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '8_SECTION_AA_TRUSS', '5_DETAILS'];
-const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-TAG-WIDTH': 'inferred', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred' };   // the spec's table (§D96 PR-Z-DIM: inferred)
+const SPEC = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred', 'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-TAG-WIDTH': 'inferred', 'PR-GRID-TICK': 'inferred', 'PR-LEVEL': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred' };   // the spec's table (§D96 PR-Z-DIM: inferred)
 const HANDLE_RULES = ['PR-GRID-TICK', 'PR-GRID', 'PR-Z-GROUND', 'PR-Z'];   // the rules whose `why` names the entity they read
 let fails = 0; const ok = (id, c, m) => { console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const skip = (id, why) => console.log('§SKIP ' + id + '  ' + why);
@@ -27,11 +27,11 @@ const SHOTS = process.env.EVIDENCE_SHOTS || null;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 
 // the oracle for E2 on the shed: the suggestion engine outside the page (modeller/dxf2bim_cli.js --accept-suggestions [--level 0]), its accepted rows tallied by the spec's table
-function cliTally(files, level) {
+function cliTally(files, level, typedSet) {   // typedSet: the page typed a set name, so the §D98 placeholder (offered only when no sheet names a set) never appears there
   const CLI = require(path.join(ROOT, 'modeller', 'dxf2bim_cli.js')), lines = [];
   const args = CLI.parseArgs(['--sheets'].concat(files, ['--out', fs.mkdtempSync(path.join(os.tmpdir(), 'evcli-')), '--accept-suggestions'], level === null ? [] : ['--level', String(level)]));
   CLI.run(args, s => lines.push(s));
-  const t = { stated: 0, read: 0, inferred: 0, none: 0 }; lines.forEach(l => { const m = /^§CLI mark .*\((PR-[A-Z-]+)\)$/.exec(l); if (m && !(m[1] === 'PR-LEVEL' && level !== null)) t[SPEC[m[1]] || 'none']++; });   // §D37: a typed --level replaces the PR-LEVEL default, so it is no longer a suggestion row
+  const t = { stated: 0, read: 0, inferred: 0, none: 0 }; lines.forEach(l => { const m = /^§CLI mark .*\((PR-[A-Z-]+)\)$/.exec(l); if (m && !(m[1] === 'PR-LEVEL' && level !== null) && !(m[1] === 'PR-SET-PLACEHOLDER' && typedSet)) t[SPEC[m[1]] || 'none']++; });   // §D37: a typed --level replaces the PR-LEVEL default, so it is no longer a suggestion row
   return t;
 }
 
@@ -144,8 +144,8 @@ function cliTally(files, level) {
     const r2 = await counted('#dm-yellows .dm-pr[data-tier]'), l2 = lastLog(/ tiers stated=/);
     await shot('duplex_list_round2');
     ok('E2[duplex plain] the tier counts are the list\'s: round 1 and round 2 counted from the rows (each row\'s mark = its tier, orange = inferred) = the §DXF-EVIDENCE log = the preview rounds (the suggestion engine over shadow copies)',
-      eq3(r1, l1) && eq3(r1, pv[1]) && eq3(r2, l2) && eq3(r2, pv[2]) && !r1.bad && !r2.bad && r1.rows === r1.stated + r1.read + r1.inferred && single1,
-      'round1 rows=' + s3(r1) + ' log=' + s3(l1) + ' preview=' + s3(pv[1]) + ' | round2 rows=' + s3(r2) + ' log=' + s3(l2) + ' preview=' + s3(pv[2]) + ' | one kind -> Accept all only=' + single1);
+      eq3(r1, l1) && eq3(r1, pv[1]) && eq3(r2, l2) && eq3(r2, pv[2]) && !r1.bad && !r2.bad && r1.rows === r1.stated + r1.read + r1.inferred && single1 === (r1.inferred === 0),   // §D98: round 1 may hold the orange placeholder rows: Accept all alone only when one kind
+      'round1 rows=' + s3(r1) + ' log=' + s3(l1) + ' preview=' + s3(pv[1]) + ' | round2 rows=' + s3(r2) + ' log=' + s3(l2) + ' preview=' + s3(pv[2]) + ' | Accept all alone=' + single1 + ' (one kind in round 1: ' + (r1.inferred === 0) + ')');
     // the roles and levels typed by the user (since §D46 the titles give them too: a typed value replaces the yellow one), then the Arrange view (preview placement of the yellow values)
     const names = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.name));
     for (let i = 0; i < names.length; i++) { if (/FLOOR_LEVEL/.test(names[i])) await typeField(i, 'VIEW', 'PLAN'); if (/FRONT|REAR|LEFT|RIGHT/.test(names[i])) await typeField(i, 'VIEW', 'ELEV'); }
@@ -163,7 +163,7 @@ function cliTally(files, level) {
   const rawOk = SHED_RAW && RAW9.every(n => fs.existsSync(path.join(SHED_RAW, n + '.dxf')));
   if (!rawOk) ['E2[shed raw]', 'E3[shed raw]', 'E4[shed raw]', 'E5[shed raw]'].forEach(id => skip(id, 'LOCAL MATERIAL ABSENT: set SHED_RAW_DIR to the 9 raw shed sheets (' + RAW9.join(' ') + ')' + (SHED_RAW ? ', not all found in ' + SHED_RAW : ', unset')));
   else {
-    const files = RAW9.map(n => path.join(SHED_RAW, n + '.dxf')), cli0 = cliTally(files, null), cli1 = cliTally(files, 0);
+    const files = RAW9.map(n => path.join(SHED_RAW, n + '.dxf')), cli0 = cliTally(files, null), cli1 = cliTally(files, 0, true);
     elog.length = 0; const e0 = errs.length;
     await openSet(files, true); await cardsOpen(); await sleep(400);
     const l1 = await counted('#dm-yellows .dm-pr[data-tier]'), lg1 = lastLog(/ tiers stated=/), p1 = await counted('#dm-panel [data-card] .dm-pv[data-tier]'), pl1 = lastLog(/ preview-tiers /);

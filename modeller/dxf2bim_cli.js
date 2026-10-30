@@ -80,7 +80,7 @@ function run(args, log) {
     say('§CLI accept-all ' + tag + ' accepted=' + total); return total;
   };
   if (args.accept) acceptAll('1');
-  if (args.set) sheets.forEach(sh => { if (!get1(sh, 'SET')) put(sh, 'SET', args.set); });
+  if (args.set) sheets.forEach(sh => { const s0 = get1(sh, 'SET'); if (!s0 || s0.value === SG.SET_PLACEHOLDER) put(sh, 'SET', args.set); });   // §D98: --set replaces the placeholder Accept-all took
   if (args.level !== null) sheets.forEach(sh => { if (viewOf(sh) === 'PLAN') put(sh, 'LEVEL', args.level); });
   if (args.accept) acceptAll('2');
   args.haxis.forEach(h => { const [n, v] = h.split(':'); const sh = sheets.find(s => s.name.includes(n)); if (!sh) throw new Error('--haxis: no sheet ' + n); put(sh, 'HAXIS', v); });
@@ -171,7 +171,7 @@ async function writeReport(res, dir, args) {
     SR: rj('structural_rules.json'), ER: rj('egress_rules.json'), SS: require(path.join(V, 'structural_sanity.js')), ES: require(path.join(V, 'egress_sanity.js')), RRp: require(path.join(V, 'rule_report.js')),
     R: res.out.gate.R, bill: res.bill, loadSummary: res.loadSummary, measures: require('./dxf2bill.js').measures, facts,
     sets: (res.read || []).map(s => s.desc && s.desc.set).concat(args.set ? [args.set] : []),   // the drawings' @SET (R.set is the pipeline's own name); --set only when no sheet states one
-    sheets: (res.sheets || []).map(s => s.name), date: args.date || RG.today(new Date()) /* args.date: a witness seam, no CLI flag */, tool: 'BIMCompiler Modeller DXF2BIM (sw ' + ((/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?') + ', dxf2bim_cli)',
+    setPlaceholder: SG.SET_PLACEHOLDER, sheets: (res.sheets || []).map(s => s.name), date: args.date || RG.today(new Date()) /* args.date: a witness seam, no CLI flag */, tool: 'BIMCompiler Modeller DXF2BIM (sw ' + ((/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?') + ', dxf2bim_cli)',
     packJ: res.bill && fs.existsSync(path.join(V, 'rates', packName + '.json')) ? rj(packName + '.json') : null, sha256: b => require('crypto').createHash('sha256').update(b).digest('hex'),
     leftOut: res.out.gate.structure ? res.out.gate.structure.left_out : null, buildingName: args.set || 'MODEL', log: m => console.log(m) });
   fs.writeFileSync(path.join(dir, 'regulatory_report.html'), out.html);
