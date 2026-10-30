@@ -328,6 +328,8 @@ const PRECACHE_ASSETS = [
   '../common/comm/team_versions.js', // TEAMWORK_FRAMEWORK §16.33 — host glue (TEAM_SHAPE_V, TEAM_UPCASTERS, trust = TEAM_PLAN_TRUST)
   'team_plan.js',      // §25 — the compiled team scope (GENERATED); read through TeamScope
   'team_plan_pos.js',  // §38.15 — the POS (star) plan, beside the office plan; chosen by the genesis plan:'pos' (GENERATED)
+  'team_terms.js',    // TEAMWORK_FRAMEWORK §48.3 — the Test Harness button (reads team_terms.json)
+  'team_terms.json',  // recorded witness run, schema terms-v1
   'team_sync.js',      // TEAMWORK_FRAMEWORK §13.1 W1 — the team-mode adapter (written into idempiere.html only with ?team=1; inert otherwise)
   '../common/comm/team_people.js',    // TEAMWORK_FRAMEWORK §13.12.G.1 — the people strip's pure maths (rank / history / heads-up / role scope / inbox)
   '../common/comm/team_focus.js',     // §13.12.G.1 — the signed focus board over the pipe (s/<space>/f/<kid>)
