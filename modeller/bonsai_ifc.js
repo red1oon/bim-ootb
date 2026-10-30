@@ -111,6 +111,8 @@
       const site = api.CreateIfcEntity(mID, T.IFCSITE, spatialGid(1), null, label('Site'), null, null, sitePl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null, null, null);
       const building = api.CreateIfcEntity(mID, T.IFCBUILDING, spatialGid(2), null, label('Building'), null, null, bldPl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null);
       [project, site, building].forEach(e => api.WriteLine(mID, e));
+      const _bt = window.DxfImportUI && window.DxfImportUI.statedBuildingType && window.DxfImportUI.statedBuildingType();   // T13.5: the stated type only
+      if (window.Dxf2Ifc && _bt) window.Dxf2Ifc.buildingType({ api, T, mID, label, gid: spatialGid }, building, _bt);
       const storeys = new Map();                      // storey name -> { e, elev, products: [] }
       const buildingProducts = [];
       let _curOp = null;

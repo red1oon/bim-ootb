@@ -63,6 +63,16 @@
     return { style: style, pset: pset, styles: () => Object.keys(cache).length, psets: () => n };
   }
 
+  // T13.5 (prompts/STRUCTURAL_SANITY.md): the STATED building type goes on the IfcBuilding as the IFC4 standard property Pset_BuildingCommon.OccupancyType, so the rule panel can read it back
+  // (extractor -> project_metadata building_type). Nothing is written when no type is stated: a missing property means "not stated", never a guessed "General".
+  function buildingType(c, building, type) {
+    type = type == null ? '' : String(type).trim(); if (!type) return false;
+    const api = c.api, T = c.T, mID = c.mID;
+    const hp = [api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, c.label('OccupancyType'), null, c.label(type), null)];
+    const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, c.gid(3999000), null, c.label('Pset_BuildingCommon'), null, hp); api.WriteLine(mID, ps);
+    api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, c.gid(3999001), null, null, null, [building], ps)); return true;
+  }
+
   function build(elements, o) {
     const api = o.api, T = o.WebIFC;
     const mID = api.CreateModel({ schema: 'IFC4', name: o.name || 'dxf2bim.ifc' });
@@ -81,6 +91,7 @@
     const site = api.CreateIfcEntity(mID, T.IFCSITE, spatialGid(1), null, label('Site'), null, null, sitePl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null, null, null);
     const building = api.CreateIfcEntity(mID, T.IFCBUILDING, spatialGid(2), null, label('Building'), null, null, bldPl, null, null, enumOf('IfcElementCompositionEnum', 'ELEMENT'), null, null, null);
     [project, site, building].forEach(e => api.WriteLine(mID, e));
+    buildingType({ api, T, mID, label, gid: spatialGid }, building, o.buildingType);
     const storeys = new Map(), buildingProducts = [];
     const storeyFor = el => {
       if (el.storey == null || el.storey_elev == null || !isFinite(+el.storey_elev)) return null;
@@ -129,5 +140,5 @@
       objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: e.ifc && e.ifc.props || null,
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
-  return { build: build, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET };
+  return { build: build, buildingType: buildingType, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET };
 });

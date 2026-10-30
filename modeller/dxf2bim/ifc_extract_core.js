@@ -231,6 +231,24 @@ async function extractToDb(ctx) {
     } catch(e) {}
   }
 
+  // T13.5: Pset_BuildingCommon.OccupancyType on the IfcBuilding -> project_metadata building_type (absent = not stated, no row)
+  let buildingType = null;
+  try {
+    const ref = v => (v && typeof v === 'object' && 'value' in v) ? v.value : v;
+    const dIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES);
+    for (let i = 0; i < dIds.size() && !buildingType; i++) {
+      const r = ifcApi.GetLine(modelID, dIds.get(i));
+      if (!r.RelatingPropertyDefinition || !r.RelatedObjects || !r.RelatedObjects.some(h => (ref(h) in buildingMap))) continue;
+      const ps = ifcApi.GetLine(modelID, ref(r.RelatingPropertyDefinition));
+      if (!ps || ps.type !== WebIFC.IFCPROPERTYSET || !ps.Name || ps.Name.value !== 'Pset_BuildingCommon') continue;
+      for (const ph of ps.HasProperties || []) {
+        const p = ifcApi.GetLine(modelID, ref(ph));
+        if (p && p.Name && p.Name.value === 'OccupancyType' && p.NominalValue && String(p.NominalValue.value).trim()) { buildingType = String(p.NominalValue.value).trim(); break; }
+      }
+    }
+  } catch (e) { log(`§BUILDING_TYPE_FAIL ${e.message}`); }
+  log(`§BUILDING_TYPE ${buildingType == null ? 'not stated' : buildingType}`);
+
   // ── Containment (element → storey) ──
   const elementToStorey = {};
   const relIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
@@ -934,6 +952,7 @@ async function extractToDb(ctx) {
   metaStmt.run('import_date', new Date().toISOString());
   metaStmt.run('building_name', buildingName);
   metaStmt.run('source_file', ctx.sourceName);
+  if (buildingType) metaStmt.run('building_type', buildingType);
 
   // Insert elements
   const elStmt = db.prepare('INSERT OR IGNORE INTO elements_meta VALUES (?,?,?,?,?,?,?,?)');
