@@ -916,6 +916,9 @@
     Env.setContext(ctx, Env.AD_CLIENT_ID, o.client); Env.setContext(ctx, Env.AD_ORG_ID, o.org);
     Env.setContext(ctx, Env.AD_ROLE_ID, o.role); Env.setContext(ctx, Env.AD_USER_ID, o.user);
     Env.setContext(ctx, '#AD_Language', o.language || 'en_US');
+    // #AD_User_Name — legacy RolePanel.java:857 (AbstractService.java:140 for WebServices); #AD_User_Value — the station key of LOCAL NUMBERING (TEAMWORK §48.11b G4; legacy gets it from the pilot's login validator)
+    var lu = null; try { lu = DB.query('SELECT Name AS n, Value AS v FROM AD_User WHERE AD_User_ID=?', [o.user])[0]; } catch (e) { lu = null; }
+    if (lu) { Env.setContext(ctx, '#AD_User_Name', lu.n == null ? '' : lu.n); Env.setContext(ctx, '#AD_User_Value', lu.v == null ? '' : lu.v); }
     if (o.wh != null) Env.setContext(ctx, Env.M_WAREHOUSE_ID, o.wh); else Env.setContext(ctx, Env.M_WAREHOUSE_ID, '');
     Env.setContext(ctx, Env.DATE, o.date ? Timestamp.of(o.date) : new Timestamp(RUNTIME.now()));
     Env.setContext(ctx, '#Printer', '');
