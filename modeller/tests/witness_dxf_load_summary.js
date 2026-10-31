@@ -32,7 +32,7 @@ const values = Object.fromEntries(L.KEYS.map(k => [k, D[k].value])), sources = O
 ok('L5 the defaults equal the reference text (concrete 22.8, +0.63 per 1%, brick 18.9, steel 77.0, sheet 0.8 mm 0.096)', D['load.unit_weight.concrete'].value === T.concrete && D['load.unit_weight.brick'].value === T.brick && D['load.unit_weight.steel'].value === T.steel && D['load.roof_sheet'].value === T.sheet08 && /0\.63/.test(D['load.rc_steel_percent'].basis) && T.add === 0.63,
   'ref=' + JSON.stringify(T) + ' defaults=' + L.KEYS.map(k => k.replace('load.', '') + ':' + D[k].value).join(' '));
 const R = L.compute(bodies, { values, sources, facts: {} }); L.log(R, s => console.log('  ' + s.slice(0, 220)));
-// ---- L1: the witness's own sums ----
+// ---- L1: the witness's own sums ---- (§D104, 2026-11-01: the beam line below was a copy of load_summary's defect, (w || bbox-y); moved to the beam's width = the smaller plan extent, because a beam along Y has its LENGTH in bbox-y. L7 below is the falsifier)
 const dim = b => [0, 1, 2].map(i => b.bbox[i + 3] - b.bbox[i]), n = v => v && typeof v === 'object' ? Number(v.number) : Number(v), s = (b, k) => b.size && b.size[k] !== undefined ? n(b.size[k]) : NaN;
 const rc = T.concrete + T.add * values['load.rc_steel_percent'], own = {};
 const add = (k, kN) => { own[k] = (own[k] || 0) + kN; };
@@ -40,7 +40,7 @@ const add = (k, kN) => { own[k] = (own[k] || 0) + kN; };
 const modeK = {}; { const cnt = {}; bodies.filter(b => b.class === 'IfcMember').forEach(b => { const A = L.angleOf((b.ifc && b.ifc.type_name) || ''); if (!A) return; const k = b.kind || '', key = [A.n, A.a, A.b, A.t].join('|'); ((cnt[k] = cnt[k] || {})[key] = cnt[k][key] || { A, n: 0 }).n++; });
   Object.keys(cnt).forEach(k => { modeK[k] = Object.values(cnt[k]).sort((p, q) => q.n - p.n || p.A.area - q.A.area)[0].A; }); }
 bodies.forEach(b => { const d = dim(b), h = b.z1 - b.z0, mat = (b.ifc && b.ifc.material) || '', c = b.class, tn = (b.ifc && b.ifc.type_name) || '';
-  if (/concrete/i.test(mat)) add(c + '|' + mat, rc * (c === 'IfcBeam' ? (s(b, 'w') || d[1]) * (s(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (s(b, 't') || d[2]) : (s(b, 'x') || d[0]) * (s(b, 'y') || d[1]) * h));
+  if (/concrete/i.test(mat)) add(c + '|' + mat, rc * (c === 'IfcBeam' ? (s(b, 'w') || Math.min(d[0], d[1])) * (s(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (s(b, 't') || d[2]) : (s(b, 'x') || d[0]) * (s(b, 'y') || d[1]) * h));
   else if (/brick/i.test(mat)) add(c + '|' + mat, T.brick * Math.max(d[0], d[1]) * h * (s(b, 't') || Math.min(d[0], d[1])));
   else if (c === 'IfcPlate') { const e = d.slice().sort((p, q) => q - p); add(c + '|' + mat, T.steel * e[0] * e[1] * (s(b, 't') || e[2])); }
   else if (c === 'IfcMember') { const A = L.angleOf(tn) || modeK[b.kind || '']; if (A) add(c + '|' + mat, T.steel * A.area * L.barLength(b)); }
@@ -66,6 +66,15 @@ ok('L3b falsifier: a body with no geometry is MISSING, not weighed 0', w3 && w3.
 const R2 = L.compute(bodies, { values: Object.assign({}, values, { 'load.rc_steel_percent': 2 }), sources, facts: {} });
 const dif = R2.groups.map(g2 => { const g1 = R.groups.find(g => g.cls === g2.cls && g.material === g2.material && !!g.missing === !!g2.missing); return { k: g2.cls, conc: /concrete/i.test(g2.material), d: g2.kN - g1.kN, want: /concrete/i.test(g2.material) ? T.add * g2.qty : 0 }; });
 ok('L4 falsifier: p 1 -> 2 adds exactly 0.63 kN/m3 x volume to every concrete group and moves nothing else', dif.every(x => Math.abs(x.d - x.want) < 1e-6), dif.filter(x => x.d !== 0).map(x => x.k.replace('Ifc', '') + ' +' + x.d.toFixed(2)).join(' '));
+// ---- L7 (§D104): a beam with no stated width weighs the same running along X or along Y ----
+{ const box = (x0, y0, x1, y1) => ({ guid: 'bm', class: 'IfcBeam', z0: 3, z1: 3.254, sheet: 's', handle: 'h', ifc: { material: 'Reinforced concrete' }, bbox: [x0, y0, 3, x1, y1, 3.254] });
+  const kx = L.compute([box(0, 0, 4.775, 0.305)], { values, sources, facts: {} }).rows[0].kN, ky = L.compute([box(0, 0, 0.305, 4.775)], { values, sources, facts: {} }).rows[0].kN;
+  const oldY = rc * 0.305 * 4.775 * 0.254 * (4.775 / 0.305), want = rc * 0.305 * 0.254 * 4.775;   // the old formula (w || bbox-y) on the Y beam: length / width times too heavy
+  ok('L7a one beam, no stated size: along X ' + kx.toFixed(3) + ' kN = along Y ' + ky.toFixed(3) + ' kN = width x depth x length x rc (' + want.toFixed(3) + '); the OLD formula would give ' + oldY.toFixed(3) + ' kN for the Y one (x' + (oldY / want).toFixed(2) + ')', Math.abs(kx - want) < 1e-9 && Math.abs(ky - want) < 1e-9 && oldY > 10 * want, '');
+  const bm = R.rows.find(r => r.handle === '2A1+2A4');
+  const bb = bodies.find(b => b.handle === '2A1+2A4'), dd = dim(bb), oldKN = rc * dd[1] * dd[2] * Math.max(dd[0], dd[1]), newKN = rc * Math.min(dd[0], dd[1]) * dd[2] * Math.max(dd[0], dd[1]);
+  console.log('  §LOAD_D104 beam 2A1+2A4 ' + oldKN.toFixed(3) + ' -> ' + (bm ? bm.kN.toFixed(3) : 'n/a') + ' kN; shed own-weight total ' + (R.total_kN - (bm ? bm.kN : 0) + oldKN).toFixed(1) + ' -> ' + R.total_kN.toFixed(1) + ' kN');
+  ok('L7b the shed: beam 2A1+2A4 (no stated size, along Y) weighs its box ' + newKN.toFixed(3) + ' kN, not ' + oldKN.toFixed(3) + '; the total drops by ' + (oldKN - newKN).toFixed(3) + ' kN', !!bm && Math.abs(bm.kN - newKN) < 1e-9 && Math.abs(newKN - 8.662) < 0.01 && oldKN > 100, ''); }
 // ---- L6: the page ----
 (async () => {
   const MARKED = process.env.SHED_MARKED_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
