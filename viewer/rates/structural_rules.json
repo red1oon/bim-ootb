@@ -87,6 +87,16 @@
         "kind": "topology",
         "note": "a column with nothing below it; no code threshold (tolerance is a modelling tolerance)"
       }
+    },
+    {
+      "name": "load_path",
+      "applies_to": [
+        "IfcBeam"
+      ],
+      "basis": {
+        "kind": "topology",
+        "note": "a beam held only by beams that never reach a column, wall or slab (a frame holding itself up); no code threshold"
+      }
     }
   ]
 }

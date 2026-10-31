@@ -71,7 +71,8 @@
         warning_ratio: 16, critical_ratio: 21, max_severity: 'WARNING' },
       { name: 'span_depth_cantilever', applies_to: ['IfcBeam'], cantilever: true,
         warning_ratio: 12, critical_ratio: 16, max_severity: 'WARNING' },
-      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 }
+      { name: 'column_continuity', applies_to: ['IfcColumn'], tolerance_m: 0.3 },
+      { name: 'load_path', applies_to: ['IfcBeam'] }
     ]
   };
   function _fallback(name) {
@@ -190,16 +191,19 @@
       var bb = bbox(beam);
       var ends = beamEndpoints(bb);
       var supportedCount = 0;
-      var freeEnds = [];
+      var freeEnds = [], endsBy = [];   // §D100: per end, what carries it: 'v' (a vertical support) or the guid of the beam it frames into
       for (var e = 0; e < ends.length; e++) {
         var pt = ends[e];
-        var found = false;
-        // (a) vertical support element, Z-bracketed
+        var found = false, below = false, frameOn = null;
+        // (a) vertical support element, Z-bracketed. §D100: also noted whether one REACHES THE END FROM BELOW (its bottom under the beam's soffit); a truss member or plate resting ON
+        // the beam passes the z-bracket too (floating_member keeps accepting it, unchanged), but it carries nothing down — load_path only takes a support from below
+        var soffit = bb.cz - bb.bz / 2;
         for (var s = 0; s < supports.length; s++) {
           var sb = bbox(supports[s]);
-          if (pt.z < sb.zmin - tolerance_m || pt.z > sb.zmax + tolerance_m) continue;
           if (!pointInFootprint(pt, sb, tolerance_m)) continue;
-          found = true; break;
+          if (sb.zmin < soffit - tolerance_m && sb.zmax >= soffit - tolerance_m) below = true;   // from below: its bottom under the soffit, its top reaching the soffit (not the beam's mid-depth)
+          if (pt.z < sb.zmin - tolerance_m || pt.z > sb.zmax + tolerance_m) continue;   // floating_member's z-bracket at the end's mid-depth, unchanged
+          found = 'v'; if (below) break;
         }
         // (b) another beam framing in at the same level.
         //
@@ -215,7 +219,7 @@
         // Accept EITHER datum: top-flush (the steel norm) or bottom-flush (soffit-aligned
         // concrete framing, which the original test was right about). Widening to two datums
         // cannot hide a genuinely unsupported end — nothing is near either way.
-        if (!found) {
+        if (!found || !below) {
           var cands = framingCandidates || beams;
           for (var j = 0; j < cands.length; j++) {
             if (cands[j][0] === beam[0]) continue;
@@ -224,9 +228,10 @@
             var botAligned = Math.abs(ob.zmin - bb.zmin) <= framing_dz_m;
             if (!topAligned && !botAligned) continue;
             if (!pointInFootprint(pt, ob, tolerance_m)) continue;
-            found = true; break;
+            frameOn = cands[j][0]; if (!found) found = frameOn; break;
           }
         }
+        endsBy.push(below ? 'v' : frameOn ? frameOn : found ? 'above' : null);
         if (found) supportedCount++;
         // Witness only for the ends the rule REJECTED — a supported end needs no explaining.
         // Search radius is deliberately WIDER than the rule's own tolerance (4x horizontal, 1m
@@ -234,12 +239,22 @@
         else if (anyRows) freeEnds.push({ end: e, at: { x: +pt.x.toFixed(2), y: +pt.y.toFixed(2), z: +pt.z.toFixed(2) },
           nearest: _nearestAtPoint(pt, anyRows, beam[0], tolerance_m * 4, 1.0, bb) });
       }
-      out[beam[0]] = { supportedCount: supportedCount, span: Math.max(bb.bx, bb.by), depth: bb.bz, freeEnds: freeEnds };
+      out[beam[0]] = { supportedCount: supportedCount, span: Math.max(bb.bx, bb.by), depth: bb.bz, freeEnds: freeEnds, endsBy: endsBy };
     }
     return out;
   }
 
   // ── Rule 5: column load-path continuity — centerline distance, not footprint overlap ──
+  // §D100 load_path, pure: beams whose every end rests on something (_supportChecks endsBy) are the candidates; REACHES THE GROUND = least fixed point of "some end on a support from
+  // below ('v') or on a beam that reaches the ground"; 'above' (only parts resting on top) never carries. A candidate that never reaches the ground is a frame holding itself up.
+  // (Measured 2026-10-31: the stricter "EVERY end" variant flagged 330 / 1,929 Hospital beams, mostly ends a wall / covering / member sits within 0.5 m under — tolerance cases,
+  // not a frame without a path; this variant flags only beams with no path at all.) -> { cand: [beam rows], carried: { guid: true } }
+  function _loadPath(beamRows, support) {
+    var cand = beamRows.filter(function (b) { var e = support[b[0]] && support[b[0]].endsBy; return e && e.length && e.every(function (x) { return x != null; }); }), carried = {};
+    for (var grew = true, it = 0; grew && it < 1000; it++) { grew = false;
+      cand.forEach(function (b) { if (carried[b[0]]) return; if (support[b[0]].endsBy.some(function (x) { return x === 'v' || carried[x]; })) { carried[b[0]] = true; grew = true; } }); }
+    return { cand: cand, carried: carried };
+  }
   function _columnContinuity(columns, supports, tolerance_m, anyRows) {
     var out = {};
     for (var i = 0; i < columns.length; i++) {
@@ -496,7 +511,16 @@
     });
     log('§STRUCT_SANITY rule=column_continuity severity=' + unsupportedColCount);
     judged.column_continuity = colRows.length;
-    _coverage(rows, judged, { span_depth_steel: 'beams named ' + (steelRule.name_hints || []).join('/'), span_depth_concrete: 'beams named ' + (concreteRule.name_hints || []).join('/'), span_depth_cantilever: 'beams with one supported end', floating_member: 'IfcBeam (STR)', column_continuity: 'IfcColumn' }, opts, log, 'STRUCT', unmatched);
+    // §D100 load_path (prompts/DXF2BIM_ARCHITECT_REVIEW.md §D100): a beam whose ends are all "supported" only by framing into beams that never reach a vertical support is a frame
+    // holding itself up (floating_member's test (b) accepts it). CARRIED = least fixed point: both ends on a vertical support or on a carried beam, grown from the verticals.
+    var lpRule = byName.load_path || _fallback('load_path'), LP = _loadPath(beamRows, support), lpCand = LP.cand, carried = LP.carried;
+    judged.load_path = lpRule && lpRule.name ? lpCand.length : 0;
+    if (judged.load_path) lpCand.forEach(function (b) { if (carried[b[0]]) return;
+      var e = support[b[0]].endsBy, words = e.map(function (x) { return x === 'v' ? 'a support from below' : x === 'above' ? 'only parts resting on top of it' : 'beam ' + x + ' (not carried)'; });
+      rows.push({ guid: b[0], ifc_class: 'IfcBeam', name: b[1], storey: b[2], rule: 'load_path', severity: 'CRITICAL', ratio: null,
+        witness: { endsBy: e, reads: 'its ends rest on ' + words.join(' / ') + ': no path down to a column, wall or slab' } }); });
+    log('§STRUCT_SANITY rule=load_path judged=' + judged.load_path + ' carried=' + Object.keys(carried).length + ' findings=' + (judged.load_path - Object.keys(carried).length));
+    _coverage(rows, judged, { span_depth_steel: 'beams named ' + (steelRule.name_hints || []).join('/'), span_depth_concrete: 'beams named ' + (concreteRule.name_hints || []).join('/'), span_depth_cantilever: 'beams with one supported end', load_path: 'beams with something under or on both ends', floating_member: 'IfcBeam (STR)', column_continuity: 'IfcColumn' }, opts, log, 'STRUCT', unmatched);
 
     return rows;
   }
@@ -528,6 +552,6 @@
     SUPPORT_CLASSES: Object.freeze(SUPPORT_CLASSES.slice()),
     COL_SUPPORT_CLASSES: Object.freeze(COL_SUPPORT_CLASSES.slice()),
     // exported for the witness fixture / debugging — not part of the row-producing contract above
-    _supportChecks: _supportChecks, _columnContinuity: _columnContinuity, _matchesHints: _matchesHints
+    _supportChecks: _supportChecks, _loadPath: _loadPath, _columnContinuity: _columnContinuity, _matchesHints: _matchesHints
   };
 });

@@ -475,5 +475,25 @@ beam at 3.10 m on every line. The two sheets disagree and both were reproduced. 
 **Proposed (spec, owner decides (b)):** (a) a generic structural rule **beam_bearing** — each beam end has a column (or wall) whose top reaches the beam's underside within a tolerance;
 else FINDINGS with the gap per end (here 24 ends + the bay's), shown in the compliance panel + the Regulatory Report; and a DXF2BIM advisory naming the sheet that disagrees.
 (b) ⛔ owner: also OFFER an orange inferred "run the column up to the beam it carries" (a convention, accepted like the other orange rows)? Never applied silently.
+### §D100 BUILD SPEC (2026-10-31, session 15; owner: "You decide. I pointed out.") — (a) the `load_path` rule now; (b) the orange "run the column up to its beam" offer next
+**Why floating_member missed it (read, `viewer/structural_sanity.js` `_supportChecks` :186-237):** an end counts as supported if it frames into ANOTHER BEAM at the same level (test (b));
+over lines 36–41 the cross beams frame into the long beams and the long beams into the cross beams, so the whole grid at 3.10 m supports itself and no end reaches a column. The test
+never asks whether the beam it frames into is itself carried.
+- **Rule `load_path`** (new, `applies_to: IfcBeam`, basis topology, no code threshold): `_supportChecks` records, per end, what carries it (`v` = a vertical support, or the guid of the beam
+  it frames into). A beam with both ends supported is CARRIED when each end is `v` or a carried beam — least fixed point, iterated from the beams that rest on verticals. A beam with both
+  ends "supported" that is never carried is a finding (CRITICAL), its witness naming the frame it hangs in. `floating_member` is untouched (its fleet results do not move).
+- **Witness W-LOAD-PATH (claim first):** P1 fixture: a 4-beam frame on 4 columns reaching it → 0 findings; P2 the same columns cut 1.5 m short → all 4 beams findings (floating_member 0:
+  the scope-blind case); P3 one corner column restored → the beams resting on it carried, the chain from it carried, only beams with no path flagged; P4 the shed (`--complete`): the beams
+  over lines 36–41 are findings, every beam over lines 01–35 carried; P5 FALLBACK_RULES = structural_rules.json (T8.13 parity).
+**§D100 (a) RESULT (2026-10-31, session 15): BUILT — rule `load_path`.** Two holes found in `floating_member`'s support test, both left as they are for that rule (its fleet results do
+not move): (1) a beam end framing into another beam counts as supported even when that beam reaches nothing; (2) the vertical test is a z-bracket at the beam's mid-depth, so a truss
+member / gusset plate resting ON the beam "supports" it. `_supportChecks` now records per end `v` (a support whose bottom is under the soffit and whose top reaches it), `above` (only
+parts resting on top), or the beam it frames into; `_loadPath` = the least fixed point "some end on `v` or on a beam that reaches the ground"; a beam that never does is a finding.
+**Definition measured, not chosen:** the stricter "EVERY end" variant flagged 330 / 1,929 Hospital beams (ends with a wall / covering / member within 0.5 m under: tolerance cases);
+"no path at all" flags Hospital 0 / 1,929, Clinic 0, Terminal 0, Duplex 0, JKR 2 / 141, LTU AHouse 130 / 524 (already the noisiest model: floating_member 172), **the shed 10** = the
+long-wall beams over the bays between lines 36 and 41. Every existing rule identical on all 7 buildings (main vs branch). **W-LOAD-PATH 5/0** (P2: floating_member 0 vs load_path 4 on a
+self-held frame; P3: one full column carries the whole frame through the chain). W-CODE-NAMED 6/0 (its counts 11→12 rows, "Rules 6: 5 ran"), tests/test_structural_sanity_rules 8/8,
+test_rule_report 102/102, test_rule_checklist_panel 26/26. Viewer sw bumped. **The shed's report now says structural FINDINGS 11** (cantilever 1 + load_path 10).
+**(b) next:** the orange offer "run the column up to the beam it carries" — needs a per-column height marking (none exists: `@BODYZ` is per kind); spec it with the editor's rows.
 **§D99 defect RESULT (2026-10-31, session 14): FIXED.** `synth.slab.thickness` AND `wall.thickness` (the same defect) cited a Malaysian price row (`cidb2024_my.json` 'RC Slab 250mm' / 'Blockwork Wall 150mm') as a *standard*. Measured: every country pack carries the same 250 mm slab / 150 mm wall line (16 of 16 packs, translated), so no pack is a basis. Both are now `kind: guess` with that stated; values unchanged (no quantity moves). W-DEFAULTS DF3 now refuses a std basis that names a rate pack (old registry -> DF3 RED, new -> PASS). Yellow-list page regenerated in the BIMCompiler docs PR. **P1–P5 not built: owner picks** (see the questions in RESUME).
 **Lane finding (session 14):** `witness_dxf_convert_fail` CF2 fails inside full runner runs (twice: main+RR.6 and §D98 trees) and passes 3/3 standalone each time — a load-timing read of the status in the witness, not a product change; fix the witness's wait (status settles after the undo) when next touched.

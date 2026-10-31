@@ -37,7 +37,7 @@ const dbOf = n => [path.join(ROOT, 'buildings', n), path.join(os.homedir(), 'bim
       else if (/egress_rules\.json \(_cite\)/.test(b.source || '')) text = ER.egress_rules.filter(x => x._cite).map(x => x._cite).join('\n');
       else { bad.push(r.name + ': source "' + b.source + '" not a file:line'); return; }
       if (text.indexOf(clauseKey) < 0) bad.push(r.name + ': "' + clauseKey + '" not at ' + b.source); }); });
-  ok('C1 every rule row has a basis, and each cited clause is at the line its source names', bad.length === 0 && rows.length === 11, rows.length + ' rows; ' + (bad.join(' | ') || 'all found'));
+  ok('C1 every rule row has a basis, and each cited clause is at the line its source names', bad.length === 0 && rows.length === 12 /* + load_path, §D100 2026-10-31 */, rows.length + ' rows; ' + (bad.join(' | ') || 'all found'));
   const H = dbOf('Hospital_meta.db'), D = dbOf('Duplex_extracted.db');
   if (!H || !D) { console.log('§VERDICT INCONCLUSIVE missing DB: Hospital_meta.db=' + !!H + ' Duplex_extracted.db=' + !!D); process.exit(2); }
   const SQL = await initSqlJs(), open = f => { const db = new SQL.Database(new Uint8Array(fs.readFileSync(f))); return (s, p) => { const r = p ? db.exec(s, p) : db.exec(s); return r.length ? r[0].values : []; }; };
@@ -72,7 +72,7 @@ const dbOf = n => [path.join(ROOT, 'buildings', n), path.join(os.homedir(), 'bim
   const cfg = { title: 'Structural Sanity', checkId: 'sanity', rows: h.rs, coverage: Object.fromEntries(Object.entries(h.cov).filter(([k]) => SR.structural_rules.some(r => r.name === k))), rulesUsed: SR, rulesOverlay: { source: 'none' }, buildingType: null, categories: [], colorMap: {} };
   const out = RC.buildRuleChecklistHtml(cfg, null), html = typeof out === 'string' ? out : (out && out.html) || '';
   const m6 = /class="rc-codes" data-codes="([^"]*)"[^>]*>([\s\S]*?)<\/div>/.exec(html), txt = m6 ? m6[2].replace(/<[^>]+>/g, ' ') : '';
-  ok('C6 the panel header says the codes, overlay none, building type not stated, the coverage counts, and names the rule that judged nothing', !!m6 && m6[1] === '' && /Judged against: no cited code/.test(txt) && /overlay: none/.test(txt) && /building type: not stated/.test(txt) && /Rules 5: 4 ran · 1 nothing to judge · 0 not checkable · 0 not applicable/.test(txt) && /span_depth_concrete \(nothing to judge: no beams named Concrete\/RC\)/.test(txt),
+  ok('C6 the panel header says the codes, overlay none, building type not stated, the coverage counts, and names the rule that judged nothing', !!m6 && m6[1] === '' && /Judged against: no cited code/.test(txt) && /overlay: none/.test(txt) && /building type: not stated/.test(txt) && /Rules 6: 5 ran · 1 nothing to judge · 0 not checkable · 0 not applicable/.test(txt) && /span_depth_concrete \(nothing to judge: no beams named Concrete\/RC\)/.test(txt),
     m6 ? txt.replace(/\s+/g, ' ').trim().slice(0, 300) : 'no rc-codes block');
   console.log('§VERDICT ' + (judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS') + ' W-CODE-NAMED judged=' + judged + ' fail=' + fails);
   process.exit(fails ? 1 : 0);
