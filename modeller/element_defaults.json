@@ -736,6 +736,33 @@
    "kind": "guess",
    "basis": "a member whose label carries no section: empty = the most common section drawn on the same set for the same kind of member (load_summary.js, shown assumed); a label such as 1.5\"x1.5\"x1/4\" Angle = that section; none = leave them unweighed",
    "used_by": "load_summary (§D97), dxf2bill (T14c)"
+  },
+  "analytical.node_snap": {
+   "element": "analytical",
+   "value": 0.25,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "ends closer than this are one joint in the analytical model (§D103): a beam drawn to a column face and a column top under the beam's axis are one joint; too small leaves joints open (dangling ends), too large merges separate joints",
+   "options": [
+    0.05,
+    0.1,
+    0.15,
+    0.25,
+    0.4
+   ],
+   "used_by": "dxf2analytical (§D103)"
+  },
+  "analytical.support": {
+   "element": "analytical",
+   "value": "FIXED",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a footing is assumed to restrain the column base; the engineer confirms (FIXED = no translation or rotation, PINNED = no translation)",
+   "options": [
+    "FIXED",
+    "PINNED"
+   ],
+   "used_by": "dxf2analytical (§D103)"
   }
  },
  "building_types": {

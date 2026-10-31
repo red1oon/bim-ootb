@@ -3457,6 +3457,24 @@ async function doRegReport() {
     await _regRepLoading; await window.RegReportUI.open(setStat);
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§REG_REPORT_UI fail ' + err); }
 }
+// §D103 Export ▸ Analytical model (STAAD)…: the converted parts -> Dxf2Analytical.build (the ONE builder the CLI's --analytical also runs) -> model.std. Lazy: nothing loads until the row is clicked.
+let _analyticalLoading = null;
+async function doAnalytical() {
+  try {
+    const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
+    if (!window.Dxf2Analytical || !window.LoadSummary) _analyticalLoading = _analyticalLoading || Promise.all([window.LoadSummary ? null : load('load_summary.js?v=1'), window.Dxf2Analytical ? null : load('dxf2analytical.js?v=1')]).catch(e => { _analyticalLoading = null; throw e; });
+    await _analyticalLoading;
+    const R = window.DxfImportUI && window.DxfImportUI.state && window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.R;
+    if (!R || !R.els || !R.els.length) { setStat('Analytical model: open a 2D set and Convert first'); console.log('§ANALYTICAL refused no_bodies'); return; }
+    const values = {}, sources = {}; (R.defaults_table || []).forEach(r => { values[r.key] = r.value; sources[r.key] = r.source; });
+    const m = window.Dxf2Analytical.build(R.els, { values, sources, LS: window.LoadSummary });
+    m.log.forEach(l => console.log(l));
+    if (m.refused) { setStat('Analytical model: ' + m.refused); return; }
+    const blob = new Blob([window.Dxf2Analytical.toStaad(m)], { type: 'text/plain' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (window.__dwName || 'model') + '.std'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    setStat('Analytical model (STAAD) downloaded  members=' + m.members.length + '  joints=' + m.nodes.length + '  supports=' + m.supports.length + '  dangling ends=' + m.dangling.length + '  findings=' + m.findings.length + ' — a starting model, not a design');
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§ANALYTICAL fail ' + err); }
+}
 async function doViewerDbExport() {   // §D43: the Viewer's own database from the model (IFC4 -> the shared extractor core), not the signed op-log
   if (window.Bonsai.oplog.length === 0) { setStat('author or convert something first'); return; }
   setStat('Viewer database: building the IFC, then extracting it…');
@@ -3535,6 +3553,7 @@ async function doDbExport() {
     { key: 'ifc', icon: '⬇', label: 'IFC (IFC4)', sub: 'geometry translation via web-ifc', run: doIfcExport },
     { key: 'load', icon: '⚖', label: 'Load Summary…', sub: 'own weight by part and per footing, for the structural engineer (opens a report)', run: doLoadSummary },
     { key: 'regrep', icon: '§', label: 'Regulatory Report…', sub: 'facts of the model for a submission: checks, loads, bill, assumptions (a page to attach)', run: doRegReport },
+    { key: 'analytical', icon: '∑', label: 'Analytical model (STAAD)…', sub: 'nodes, members, sections, supports and self-weight as a .std — a starting model, not a design', run: doAnalytical },
     { key: 'bcf', icon: '⚑', label: 'BCF issue (.bcfzip)', sub: 'current view + selection', run: doBcfExport },
     { key: 'dxf', icon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>', label: '2D drawings (DXF)', sub: 'plans, elevations, roof, section + markings', run: doDxfExport }
   ];
