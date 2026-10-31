@@ -203,13 +203,12 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   { const wc = await pg.evaluate(b => window.__worldToClient((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2), F.bb); await moveTo(wc.x, wc.y, 900); await sleep(300); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); await sleep(900); }
   { const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
     if (sel.length === 1 && sel[0] === F.id) fact('footing_pick', 'pointer'); else { fact('footing_pick', 'pointer picked ' + JSON.stringify(sel) + ': selected by id (stated)'); await pg.evaluate(id => window.Bonsai.select(id), F.id); }
-    await sleep(500);
+    await sleep(1800);
     // §D101 D6: the product's select frames the one footing so close it fills the frame; re-frame it with its nearest neighbours (the 3 nearest footings' boxes, from the converted model)
     { const nb = await pg.evaluate(b => { const els = window.DxfImportUI.state.gate.R.els.filter(e => e.ifc && e.ifc.ifc_class === 'IfcFooting'), bx = e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1]; };
         const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2], bs = els.map(bx).sort((p, q) => Math.hypot((p[0] + p[3]) / 2 - c[0], (p[1] + p[4]) / 2 - c[1]) - Math.hypot((q[0] + q[3]) / 2 - c[0], (q[1] + q[4]) / 2 - c[1])).slice(0, 4);
-        const u = bs.reduce((u, q) => [Math.min(u[0], q[0]), Math.min(u[1], q[1]), Math.min(u[2], q[2]), Math.max(u[3], q[3]), Math.max(u[4], q[4]), Math.max(u[5], q[5])], b);
-        const hx = Math.max(c[0] - u[0], u[3] - c[0]), hy = Math.max(c[1] - u[1], u[4] - c[1]); return [c[0] - hx, c[1] - hy, u[2], c[0] + hx, c[1] + hy, u[5]]; }, F.bb);   // centred on the picked footing
-      await frameBox(nb, 1.0, 1400, [0.6, -1, 0.8]); await sleep(1800);
+        return bs.reduce((u, q) => [Math.min(u[0], q[0]), Math.min(u[1], q[1]), Math.min(u[2], q[2]), Math.max(u[3], q[3]), Math.max(u[4], q[4]), Math.max(u[5], q[5])], b); }, F.bb);
+      await frameBox(nb, 1.0, 1800, [0.6, -1, 0.8]); await sleep(600);
       const span = Math.max(nb[3] - nb[0], nb[4] - nb[1]), foot = Math.max(F.bb[3] - F.bb[0], F.bb[4] - F.bb[1]); console.log('§FILM_FRAME footing_in_context span_m=' + span.toFixed(2) + ' footing_m=' + foot.toFixed(2) + ' ratio=' + (span / foot).toFixed(2)); }
     fact('footing_selected', JSON.stringify(await pg.evaluate(() => Array.from(window.Bonsai._selSet || []))));
     const shown = await pg.evaluate(v => { const t = document.body.innerText; return /CastingRatio|Sched_Footing/.test(t) || t.indexOf(v) >= 0; }, F.ratio_a);   // is the property on any page text after the click?
