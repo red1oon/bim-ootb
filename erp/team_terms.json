@@ -1,14 +1,14 @@
 {
  "schema": "terms-v1",
  "kind": "harness",
- "at": "2026-10-31T00:39:00.612Z",
+ "at": "2026-10-31T02:01:32.339Z",
  "node": "v18.19.1",
  "verdict": "PASS",
  "browser": {
   "judged": 5,
   "skipped": 0,
   "reason": null,
-  "reused": false
+  "reused": true
  },
  "rows": [
   {
@@ -19,7 +19,7 @@
    "witnesses": [],
    "controls": [],
    "status": "OPEN",
-   "note": "measured §45.5: 384 KB / 4.5 MB / 45.8 MB at N=10/100/1000 (linear); triggered from N=10"
+   "note": "measured (build/scriptor/witness_scale_star_engine_{10,100,1000}.log, first station Visit #1 bytes_down): 367 KB / 4.5 MB / 45.8 MB at N=10/100/1000 (linear); triggered from N=10"
   },
   {
    "id": "sealing-real",
@@ -53,7 +53,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
     },
     {
@@ -62,7 +62,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_publish.log"
     }
    ],
@@ -114,7 +114,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
     },
     {
@@ -123,7 +123,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_policy.log"
     },
     {
@@ -132,7 +132,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_publish.log"
     }
    ],
@@ -178,7 +178,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_executors.log"
     },
     {
@@ -187,7 +187,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_settrust.log"
     },
     {
@@ -196,7 +196,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_executors.log"
     }
    ],
@@ -236,7 +236,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_executors.log"
     },
     {
@@ -245,7 +245,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_executors.log"
     }
    ],
@@ -285,7 +285,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     },
     {
@@ -294,7 +294,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_cl5_conflict.log"
     },
     {
@@ -303,7 +303,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_base.log"
     }
    ],
@@ -349,7 +349,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
     }
    ],
@@ -389,7 +389,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
     },
     {
@@ -398,7 +398,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     }
    ],
@@ -432,7 +432,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     },
     {
@@ -441,7 +441,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
     },
     {
@@ -450,7 +450,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_so.log"
     }
    ],
@@ -502,7 +502,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_comm_versions.log"
     },
     {
@@ -511,7 +511,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_team_versions.log"
     }
    ],
@@ -557,7 +557,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_docno_till.log"
     },
     {
@@ -566,7 +566,7 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
+     "reused": true,
      "log": "build/scriptor/terms_run/witness_docno_till_mutants.log"
     }
    ],
