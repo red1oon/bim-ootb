@@ -16,10 +16,12 @@ between lines 36 and 41, columns drawn 1.524 m under beams at 3.10 m); `--impact
 **BIMCompiler (owner merges; the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated (63 rows, incl. `column.top_under_beam`) + guide `@SET` row + PROGRESS pointer;
 it contains #276's commit → after #277 merges, close #276. Until then the runner shows **YP1 FAIL** (W-YELLOW-PAGE passes against #277's page).
 **▶ NEXT, in order (session 16 progress inline):**
-1. ✅ **§D99 P2 step 2 — the page** (session 16): Element defaults ▸ Measure impact; W-IMPACT 8/0 incl. the real page = the CLI. See `**§D99 P2 step 2 RESULT`.
+1. ✅ **§D99 P2 step 2 — the page** (session 16, **#2483 merged**): Element defaults ▸ Measure impact; W-IMPACT 8/0 incl. the real page = the CLI. See `**§D99 P2 step 2 RESULT`.
 2. **Submission-pack film** — storyline approved (owner: "Ok on fresh storyline that naturally flows from the last one"); its Next list in `FILM_DXF2BIM_WHY_MARKINGS.md` (recorder → dry run →
-   take on a quiet machine → fill → assemble → witness). Session 16: recorder + script + CPU (swiftshader) dry run dispatched to a worker (branch `film/submission-recorder`, PR not auto-merged);
-   check its PR + its `SUBMISSION FILM — DRY RUN RESULT` section. ⛔ the take itself runs on the GPU: needs the owner's go (VRAM beside a live tab).
+   take on a quiet machine → fill → assemble → witness). Session 16: ✅ recorder `prompts/film_dxf2bim_submission_rec.js` + script (13 rows) + beat_min + CPU (swiftshader) dry run,
+   **bim-ootb #2484** (read `### SUBMISSION FILM — DRY RUN RESULT` in the FILM file): 0 §PAGEERR over both tabs, fill missing=0, 1637 frames / 256 s; the page's report verdict line = the
+   CLI's for the same set + soil 150 (measured). Gaps there: the Modeller has NO properties panel (beat 2 shows the selection + the DETAILS sheet; values from the model) — a product gap,
+   not faked. ⛔ the take itself: GPU beside a live tab → needs the owner's go; then fill → assemble → witness → title cards (BIMCompiler `film_title_cards.py`, new FILM_SET).
 3. Small: ✅ `synth.roof.sheet_thickness` basis now says the own weight reads the sheet's plan box (widened by t·sin(slope)); yellow list regenerated onto BIMCompiler #277 ·
    ✅ `witness_dxf_convert_fail` CF2: each click waits for its OWN status text + log line (after CF1 the status already began "Convert failed", so the wait returned at once) ·
    ✅ the pack's label: `pwd2024_bd` meta now "PWD Bangladesh SoR 2022" (Finance Division approval letter 21 June 2022, read off the page image: "দর তফসিল-২০২২", valid three
