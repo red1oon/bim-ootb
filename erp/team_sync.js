@@ -50,6 +50,7 @@
   async function pinTrust(st) {
     st = st || S; if (!st || !st.planTrust) return;
     var gt = await st.planTrust(); if (!gt) return;
+    if (st.planTrustInfo) { var ti = await st.planTrustInfo(); global.TEAM_PLAN_TRUST_THRESHOLD = ti ? ti.threshold : 1; }       // §46.5 F5: translation sets are judged with the threshold in force
     if (JSON.stringify(gt) === JSON.stringify(global.TEAM_PLAN_TRUST || [])) return;
     global.TEAM_PLAN_TRUST = gt; await verifyPlan('trust=genesis(' + gt.length + ')');
   }
@@ -62,7 +63,7 @@
     return ids.map(function (id) { var t = PLAN_TEXT[id] || [id, '']; return { id: id, label: t[0], hint: t[1], selected: id === sel }; });
   }
   function spaceOpts(bi, plan) {                                       // what a founder pins in the genesis: the shared base, the deployment's plan trust list (public keys) and the plan the founder chose
-    var o = {}, t = global.TEAM_PLAN_TRUST, pc = plan || new URLSearchParams(global.location.search).get('teamplan'); if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t;
+    var o = {}, t = global.TEAM_PLAN_TRUST, pc = plan || new URLSearchParams(global.location.search).get('teamplan'); if (bi) o.base = bi; if (Array.isArray(t) && t.length) o.planTrust = t; if (o.planTrust && Number(global.TEAM_PLAN_TRUST_THRESHOLD) > 1) o.planTrustThreshold = Number(global.TEAM_PLAN_TRUST_THRESHOLD);
     if (pc && pc !== 'office' && planChoices().some(function (c) { return c.id === pc; })) o.plan = pc;   // §38.15: absent = the office plan, so every existing space reads as before
     return Object.keys(o).length ? o : undefined;
   }
@@ -785,6 +786,53 @@
     if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; st.plan = L.roster.ok ? L.roster.plan : null; } return st;
   }
 
+  // ── §46.5 Stage 4 (STAGE4_SPEC): the Team panel's Releases screens - data and actions. Read-only views over the store, plus Publish = the Stage 3 pub/ area. GENERIC: names no window or table. ──
+  var releasesApi = (function () {
+    var TUp = function () { return global.TeamUpdates; };
+    function installedMap() { var m = Object.assign({}, global.TEAM_INSTALLED || {}); try { var reg = global.PluginEngine && global.PluginEngine._reg && global.PluginEngine._reg(); ((reg && reg.list && reg.list()) || []).forEach(function (r) { if (r && r.id) m[r.id] = r.version; }); } catch (e) { /* none */ } return m; }
+    async function ctxFor() {
+      var info = await S.planTrustInfo(), pol = await S.policy(), base = await S.baseInfo();
+      return { space: cfg.space, trust: info ? { keys: info.keys, threshold: info.threshold } : { keys: [], threshold: 1 }, anchor: await S.anchor(), state: { last: cfg.updList || null }, installed: installedMap(),
+               base: base ? { sha256: base.sha256 } : null, policySets: pol && Array.isArray(pol.params.upcasters) ? pol.params.upcasters.length : 0, log: log,
+               release: function (e) { return TUp().getRelease(pipe, cfg.space, e); } };
+    }
+    return {
+      view: async function () {
+        await ready; if (!S || !dev || !cfg || !cfg.space) return null;
+        var L = await S.order(), R = L.roster; if (!R.ok || !R.devices[dev.kid]) return null;
+        var info = await S.planTrustInfo(), pol = await S.policy(), fr = await S.frontier(), ck = S.checkpointInfo ? await S.checkpointInfo() : { held: [] };
+        var devices = Object.keys(R.devices).sort().map(function (kid) { var d = R.devices[kid], pr = R.persons[d.person] || {}; return { kid: kid, code: codeOf(kid), person: pr.name || '', role: R.roleAt(kid, Infinity).ad_role_id, you: kid === dev.kid, revoked: R.revokes[kid] != null }; });
+        return { self: dev.kid, admin: !!R.roleAt(dev.kid, Infinity).comm_admin, keys: info, policy: pol ? pol.params : null, epoch: pol ? pol.epoch : null, plan: R.plan, anchor: typeof R.anchor === 'number' ? R.anchor : null, devices: devices, frontier: fr, held: ck.held || [] };
+      },
+      updates: async function () {
+        await ready; if (!S || !cfg || !cfg.space) return null;
+        var ctx = await ctxFor(), best = await TUp().pickBest(pipe, ctx);
+        if (!best.list) { log('§UPD_PICK none rejected=' + JSON.stringify(best.rejected)); return { list: null, rejected: best.rejected }; }
+        var rows = await TUp().classify(best.list, ctx);
+        cfg.updList = { number: best.list.number, hash: best.hash }; await kvPut('cfg', cfg);              // monotonic memory: a lower number is a replay, a different list of the same number a fork
+        log('§UPD_PICK number=' + best.list.number + ' rows=' + rows.length + ' outOfDate=' + best.outOfDate + ' rejected=' + best.rejected.length);
+        return { list: { number: best.list.number, signed_at: best.list.signed_at, expires: best.list.expires }, rows: rows, outOfDate: best.outOfDate, rejected: best.rejected };
+      },
+      // files: [{name, bytes}] - exactly one signed update list (JSON, kind 'update-list') and its release files. The list goes through the SAME verification receivers run; releases that match no entry are not put.
+      publish: async function (files) {
+        await ready; if (!S) return { ok: false, reason: 'not-paired' };
+        var lists = [], rels = [];
+        (files || []).forEach(function (f) { var j = null; try { j = JSON.parse(new TextDecoder().decode(f.bytes)); } catch (e) { /* a release */ } if (j && j.kind === 'update-list') lists.push(j); else rels.push(f); });
+        if (lists.length !== 1) return { ok: false, reason: lists.length ? 'more-than-one-list' : 'no-list' };
+        var ctx = await ctxFor(), r = await TUp().publish(pipe, cfg.space, dev.kid, lists[0], ctx);
+        if (!r.ok) { log('§UPD_PUBLISH refused reason=' + r.reason); return r; }
+        cfg.updList = { number: lists[0].number, hash: r.hash }; await kvPut('cfg', cfg);
+        var names = [r.name], hashes = {}; lists[0].entries.forEach(function (e) { hashes[e.hash] = 1; });
+        for (var i = 0; i < rels.length; i++) { var h = await global.TeamKeys.sha256hex(rels[i].bytes);
+          if (!hashes[h]) { log('§UPD_PUBLISH release ' + rels[i].name + ' matches no entry: not put'); continue; }
+          var pr = await TUp().putRelease(pipe, cfg.space, dev.kid, rels[i].bytes); names.push(pr.name); }
+        log('§UPD_PUBLISH ok number=' + lists[0].number + ' objects=' + names.length); return { ok: true, name: r.name, names: names, message: 'Published list #' + lists[0].number + ' with ' + (names.length - 1) + ' release file(s).' };
+      },
+      anchor: async function () { await ready; if (!S) return { ok: false, reason: 'not-paired' };
+        var r = await S.publishAnchor(Date.now()); if (r.hash) await visit(); log('§TEAM_ANCHOR ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }
+    };
+  })();
+
   global.TeamSync = { seatbeltState: seatbeltState, publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
                       // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
@@ -793,6 +841,7 @@
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
                       _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _withRoster: withRoster, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
+  global.TeamSync.releases = releasesApi;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
