@@ -218,3 +218,29 @@ Known limit (stated in the facts): the North elevation is not on the canvas when
 `§FILL_DONE rows=21 placeholders=44 missing=0 left=0` (`take2/fill.log`). Assembly (`take2/assemble.log`; `FILM_SET=bricscad2`, cards = BIMCompiler master `prompts/film_title_cards.py`): `§POLY_TONE lang=en wrong=0`,
 DETAIL 21 / 21 (SHORT 0, SKIP 0), `§CARDS chapters=7`, frames 10,796 == master, −17.7 LUFS (v1: −17.6), one silence = the last 8.7 s (end card + hold), 0 black frames. Voices: Kokoro, local.
 Not claimed: no person has listened to or watched it; the frames were not each inspected for the blur (the take log says `blurred_texts 1` at each Sheet open).
+
+## ▶▶▶ SUBMISSION-PACK FILM — STORYLINE (owner 2026-10-31: "Ok on fresh storyline that naturally flows from the last one. Cite last one for reference.") — NOT RECORDED
+**Follows from:** the BricsCAD film v2 (`RESULT 2026-10-29` above: `~/Videos/Shed_BricsCAD_Film_1920x1080_2026-10-29_v2.mp4`, 431.8 s; published as "BricsCAD 2D to BIM 5D in depth",
+https://youtu.be/TuTlhO8cCIY). v2 ended on the printed sheet + prior art, after one wall edited and one bay added (cost in BDT, PWD rates, Edit rates shown). **This film starts where v2
+stopped: the same converted shed, and asks the next question a BricsCAD user's client asks — "can I hand this in?"** Nothing in v2 is re-shown except a 5 s recap.
+**What is NEW since v2 (each shipped + witnessed; the film lingers only here):** the drawing's own notes chose the concrete price row (§D99 P4, #2464: "Footing, Column, Grade Beam
+Casting Ratio = 1:1.5:3" → PWD SoR 07.3.1 / 07.3.2); the checks name the code they judge and what they did NOT judge (T13); the Load Summary (§D97); the bill by class + material with each
+rate's SoR item and page, steel by weight, roofing by area, shuttering stated NOT PRICED (T14 / T14b / T14c); the Regulatory Report from the Modeller with its facts form (RR.6, #2458);
+an unnamed set shows the `BUILD-NAME` placeholder as a default, never as stated (§D98); defaults that were wrongly "standard" are honest guesses (§D99 defect).
+| # | chapter card | on screen (real clicks, `FILM_SET` to be named at build) | facts the narration may speak (each a `§FILM_FACT` of the take, numbers below are today's CLI values, re-read from the take) |
+|---|---|---|---|
+| 1 | WHERE WE LEFT THE SHED | the converted shed (the v2 state: Complete ticked, Convert), a slow turn; a 5 s card "previously: BricsCAD 2D to BIM 5D" | bodies 512, by class |
+| 2 | WHAT YOUR DRAWING ALREADY SAID | the DETAILS sheet in the Sheet view, held on the notes; a footing selected: its `Note_CastingRatio 1:1.5:3`, `Sched_Footing_T 12"` | the two casting ratios read, footings 32 / columns 96 carrying 1:1.5:3; footing drawn 0.3048 m = the schedule's 12" |
+| 3 | WHAT IT WEIGHS | Export ▸ Load Summary…: the page, own weight by part, the footing table, the red "not stated" inputs | own weight 5,361.0 kN; 32 footings; heaviest 247.0 kN / 132.9 kPa; soil capacity not stated |
+| 4 | WHAT YOU HAND IN | Export ▸ Regulatory Report…: the facts form, soil typed 150 kPa (the rest left empty), Build; the page opens | sections 9; the not-a-certificate line; signature blocks blank |
+| 5 | THE CHECKS, WITH THEIR CODES | the report scrolled to sections 3 + 4: each rule's result word + its code | rules 12, 4 ran; doors FINDINGS 4 (IBC 2021 §1010.1.1); cantilever FINDINGS 1; column continuity PASS 96; "not for this building type" / INCONCLUSIVE rows named |
+| 6 | WHAT IT COSTS, AND WHERE EACH PRICE COMES FROM | sections 6 (foundations: 150 kPa stated → ratio 0.89 PASS) and 7 (the bill): the SoR items list, 07.3.1 / 07.3.2 beside 07.2.3 | total 6,188,538 BDT; 12 lines unpriced; shuttering NOT PRICED (164 lines); each rate's SoR item + page |
+| 7 | WHAT IT DOES NOT CLAIM | section 9: the assumptions table (amber guesses, e.g. slab thickness "no sheet states it"), the facts not stated; end card | used defaults count, guesses count; facts not stated count |
+**Advice (stated, for the owner's look before the take):** EN first (Kokoro, local), target ≈ 4 min (the story is seven short beats; v2 was 7:12); no walker; the private-name blur as v2
+(`FILM_PRIVATE_RE` at run time) on any Sheet view; the report page is recorded in its own tab (the U7 path of W-REG-REPORT-UI already drives it headless); the soil value 150 kPa is a
+TYPED example, so the narration says "a soil report's value, typed here as an example", never that the shed's soil is 150. Deliverable `~/Videos/Shed_SubmissionPack_Film_1920x1080_<date>.mp4`.
+**Witness of the take (log, not a look):** every beat in order, every spoken number = a `§FILM_FACT`, 0 `§PAGEERR`, walker lines 0, the raw sheets' sha unchanged, the report page's
+`§REG_REPORT` verdict line in the take log = the CLI's for the same set and facts.
+**Next (in order, a fresh session):** (1) recorder: a new `prompts/film_dxf2bim_submission_rec.js` from the BricsCAD recorder's open/convert prelude + the U7 drive of the report;
+(2) script TSV + beat_min; (3) dry run, read the log; (4) the take on a quiet machine (ask other sessions to hold browser runs); (5) fill, assemble, witness the output as v2 (POLY_TONE
+wrong=0, DETAIL n/n, frames == master, ≈ −16 LUFS); (6) title cards in BIMCompiler `prompts/film_title_cards.py` (new FILM_SET).
