@@ -6,7 +6,7 @@
 //   SV2 the Duplex standard set written from the model (std2d, what the Viewer's 2D wing draws): draw list JSON and SVG byte-identical between origin/main's module and this one.
 //       (§D101: the stats compared are the pre-§D101 keys; §D101 adds counters block_parts / dim_block / dim_geom / dim_unmatched / insert_* / points / dim_text_unformatted.)
 //   SV3 (§D101, owner: "I see thin stripes. Dimension failure?") the raw shed's 147 DIMENSIONs carry no block name: every one is drawn (its *D block found by its definition points, or, with no
-//       block, from those points + its DIMSTYLE), dim_unmatched 0, each sheet draws dimension parts; falsifier: the module before §D101 (D101_BASE_REF, default origin/main) draws 0 parts.
+//       block, from those points + its DIMSTYLE), dim_unmatched 0, each sheet draws dimension parts; falsifier: the module before §D101 (D101_BASE_REF, default the parent of the main commit that holds it) draws 0 parts.
 //   SV4 (§D101) no DXF special code (%%c / %%d / %%p ...) is left in any drawn string; the DETAILS sheet's Ø count = its %%c count; falsifier: the module before §D101 leaves them.
 // Inputs: SHED_RAW_DIR (the 9 raw shed sheets; absent -> MISSING input) and the Duplex db (argv[2] or ~/.cache/dxf2bim/db/DXARC.db, §D79).
 // usage: SHED_RAW_DIR=<dir> NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_sheet_render.js [DXARC.db]
@@ -35,7 +35,7 @@ const diff = std.filter(f => { const t = fs.readFileSync(f, 'utf8'), a = OLD.toD
   return JSON.stringify(a.list) !== JSON.stringify(b.list) || JSON.stringify(keep(a.stats)) !== JSON.stringify(keep(b.stats)) || OLD.toSVG(a.list, ba) !== V.toSVG(b.list, bb); }).map(f => path.basename(f));
 ok('SV2 a sheet the 2D wing already draws is unchanged (draw list + SVG byte-identical to main)', std.length > 0 && !diff.length, 'std sheets=' + std.length + (diff.length ? ' DIFFER ' + diff.join(',') : ' identical'));
 // SV3 + SV4 (§D101) against the module before §D101
-const prePath = path.join(tmp, 'dxf_sheet_view_pre101.js'); fs.writeFileSync(prePath, cp.execFileSync('git', ['-C', ROOT, 'show', (process.env.D101_BASE_REF || 'origin/main') + ':viewer/dxf_sheet_view.js']));
+const prePath = path.join(tmp, 'dxf_sheet_view_pre101.js'); fs.writeFileSync(prePath, cp.execFileSync('git', ['-C', ROOT, 'show', (process.env.D101_BASE_REF || 'cb25ff14~1') + ':viewer/dxf_sheet_view.js']));
 const PRE = require(prePath), per = rf.map(f => { const t = fs.readFileSync(f, 'utf8'), a = V.toDrawList(V.parse(t)), b = PRE.toDrawList(PRE.parse(t)), str = L => L.filter(d => d.k === 'text' || d.k === 'mtext').flatMap(d => d.k === 'text' ? [d.s] : d.lines);
   return { f: path.basename(f), dims: a.stats.by_type.DIMENSION || 0, drawn: a.stats.drawn_by_type.DIMENSION || 0, block: a.stats.dim_block || 0, geom: a.stats.dim_geom || 0, un: a.stats.dim_unmatched || 0,
     parts: (a.stats.dim_parts || 0) + 3 * (a.stats.dim_geom || 0), preParts: b.stats.dim_parts || 0, pct: str(a.list).filter(s => /%%[cdpuo%\d]/i.test(s)).length, prePct: str(b.list).filter(s => /%%[cdpuo%\d]/i.test(s)).length,

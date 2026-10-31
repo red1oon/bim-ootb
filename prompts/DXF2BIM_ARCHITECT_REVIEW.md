@@ -574,3 +574,27 @@ decoded (23 Ø on DETAILS). **W-SHEET-RENDER 4/0** (SV3 147 of 147 drawn, before
 blocks). `dxf_import_ui.js` / `dxf_meta_editor.js`: a notes sheet shows **NOTES** + "general notes read: 4", not counted in "need input". **W-SHEET-NOTES 3/0** (N2 falsifier: notes emptied →
 NO ROLE + "1 need input"). Recorder: one plain blur region (no outline, no label), the picked footing re-framed with its 3 nearest footings (`§FILM_FRAME`); narration b02 names the sheet's
 sections (beams, footing, column) before its notes. sw modeller v197, viewer v1666.
+
+## §D102 SPEC (2026-11-01, session 16; owner: "So the drawings or each diagram is correct dims proportions? … You may fix those gaps you found") — a type mark tagged, detailed and modelled, checked as one
+**Measured (the shed, raw + CLI-marked):** (1) the DETAILS sheet is NOT to scale: `Dxf2Pair.auditDims` (unit in) gives every written value a different drawn ratio — spans 10'-0" drawn 199 (x1.66),
+cross-sections 12" drawn 50-54 (x4.2-4.5), the EC pad 2'-5" drawn 170 (x5.9), its 3" ledge drawn 21.5 (x7.2); the long sections label one span "10'-0" / 16'-8"" (one detail for two spans).
+The written values govern; the Sheet view draws the drafter's geometry as given. (2) **Tag ↔ detail ↔ model, by mark:** GB-1 is tagged 4 times on the FOUNDATION layout and detailed ("Long
+Section of GB-1 (12"x12")", the footing section's "GB 12"x12""), but no sheet draws its outline: **0 grade-beam bodies** (every IfcBeam is from the BEAM layout: B-1 13, B-2 17, unmarked 5).
+No check said so. **Withdrawn (session 16, same day):** "B-3 and B-4 are tagged but have no detail" was a grep of the raw files matching the header GUIDs ("…834B-3094…", "…254B-46A7…"); no such tags exist (MarkRefs: 5 marks).
+**Rule (new pure module `modeller/dxf2markrefs.js`, `MarkRefs.build(sheets, els)`):** a type mark = the grammar `dxf2bodies` §L9.4 already reads (`/^[A-Z]{1,3}-\d+$/`, now exported as
+`Dxf2Bodies.MARK_RE`, one owner). Per mark: **tags** = such texts on role sheets (count per sheet); **bodies** = els whose `mark` or `Sched_<kind>_Type` is the mark; **details** = on notes sheets,
+a "Long Section of <name>" title or a schedule row (the bodies' `SchedSource_*`), where <name> is the mark itself or its spelled-out form "Beam-1" → B-1 / "Column-1" → C-1 (first letter +
+number: a stated convention, recorded `via: 'abbreviation'`). Advisories only on a set that converts (no refusal, no blocking) and has a notes sheet (on a partial set a mark's bodies may just wait for a height; W-DXF-SHED F2 caught the flood) — never blocking, NOT in `left_out`: `GAP:mark_not_modelled` (tagged, 0 bodies,
+with its detail if any) and `GAP:mark_no_detail` (tagged or modelled, no detail). Never builds a body. Log `§MARKREFS marks=… modelled=… not_modelled=… no_detail=…`.
+**Witness W-MARK-REFS (claim first):** R1 the shed: GB-1 not_modelled (4 tags FOUNDATION, detail "Long Section of GB-1"), B-1 / B-2 modelled + detailed via abbreviation,
+C-1 / F-1 modelled + detailed by schedule; R2 `left_out` unchanged (4) and the verdict stays `qualifies`; R3 fixtures: a tag "B-9" with a body and no detail → no_detail; adding "Long Section of Beam-9" → modelled (abbreviation);
+a GB-1 body added → GB-1 leaves not_modelled; a header GUID string containing "B-3" is never a tag (the grammar is whole-text); R4 one grammar: `nearMark` and MarkRefs both use `Dxf2Bodies.MARK_RE`.
+**Decision (2026-11-01, owner: "Decision i leave to your better learning"): NOT built, reported.** Four GB-1 tags do not say which spans the grade beams run (every wall? the
+four tagged sides only?); building them under every wall would turn four tags into a perimeter-wide guess. `GAP:mark_not_modelled` states what is missing (the outline); a drafter who draws it
+on a typed layer gets it built as drawn. Revisit only if a set states the spans (a GB layer, or a schedule row with its grid lines).
+**§D102 RESULT (2026-11-01, session 16): BUILT.** `modeller/dxf2markrefs.js` + `Dxf2Bodies.MARK_RE` (one grammar, nearMark reads it), wired in `dxf2structure.judge` (`R.bodies.markRefs`, `§MARKREFS`),
+the page loads it (`dxf_import_ui` SCRIPTS, sw v198). Shed: 5 marks — B-1 / B-2 modelled + detailed (abbreviation), C-1 / F-1 by schedule, **GB-1 not_modelled** (4 FOUNDATION tags, "Long Section of
+GB-1 (12"x12")"); one advisory, `left_out` 4, qualifies. **W-MARK-REFS 4/0.** First runner `PASS=99 FAIL=5`: W-DXF-SHED F2 caught a flood on a partial set (every mark "not modelled" while
+its bodies waited for a height) → advisories only on a set that converts and has a notes sheet; W-SHEET-RENDER SV3's falsifier read origin/main (now §D101) → pinned to `cb25ff14~1`;
+W-REG-REPORT-UI U7 compared a fixed CLI date with the page's today (failed after midnight) → dates masked. After the fixes: W-DXF-SHED 12/0, W-SHEET-RENDER 4/0, W-REG-REPORT-UI 7/0;
+the remaining FAILs are YP1 (BIMCompiler #277) and LT7 (the never-committed `library_building_types.json`).

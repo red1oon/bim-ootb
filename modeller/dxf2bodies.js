@@ -114,11 +114,12 @@
   }
   var sameRegion = function (a, b, tol) { return Math.abs(a.x0 - b.x0) <= tol && Math.abs(a.x1 - b.x1) <= tol && Math.abs(a.y0 - b.y0) <= tol && Math.abs(a.y1 - b.y1) <= tol; };
   // §L9.4 the type mark (B-1, F-2, ...) written next to a band region: the nearest such label within maxD (drawing units); two DIFFERENT marks about equally near name nothing
+  var MARK_RE = /^[A-Z]{1,3}-\d+$/;   // §D102 the type-mark grammar, one owner (Dxf2MarkRefs reads it from here)
   function nearMark(sheet, g, maxD) {
     var cx = (g.x0 + g.x1) / 2, cy = (g.y0 + g.y1) / 2, c = [];
     sheet.dxf.entities.forEach(function (e) {
       if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === 'DXF2BIM-MARK') return;
-      var t = cleanText(e.text); if (!/^[A-Z]{1,3}-\d+$/.test(t)) return;
+      var t = cleanText(e.text); if (!MARK_RE.test(t)) return;
       var p = e.startPoint || e.position || {}; if (typeof p.x !== 'number') return;
       var d = Math.hypot(p.x - cx, p.y - cy); if (d <= maxD) c.push({ t: t, d: d });
     });
@@ -336,5 +337,5 @@
     return { els: els, gaps: gaps, report: report, defaults: DEF.rows() };
   }
 
-  return { buildBodies: buildBodies, planOffset: planOffset, planGrid: planGrid, KINDS: KINDS, bandRegions: bandRegions };
+  return { buildBodies: buildBodies, planOffset: planOffset, planGrid: planGrid, KINDS: KINDS, bandRegions: bandRegions, MARK_RE: MARK_RE, cleanText: cleanText };
 });

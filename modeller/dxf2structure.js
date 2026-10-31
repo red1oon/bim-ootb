@@ -86,6 +86,9 @@
         e.ifc = Object.assign({}, e.ifc, { colour: c || null, props: Object.assign({ Provenance: e.prov || 'drawn', SourceSheet: e.sheet || '', SourceHandle: String(e.handle || ''), SourceLayer: e.layer || '', Kind: e.kind || '', SizeBasis: basis }, NT ? NT.propsFor(e, notes.rows) : {}, NT && notes.schedules ? NT.schedProps(e, notes.schedules.tables) : {}) }); });
       Object.keys(miss).sort().forEach(function (mn) { res.gaps.push({ code: 'GAP:no_colour', kind: 'material', detail: 'material "' + mn + '" has no entry in material_colour: shown neutral grey' }); }); }
     res.notes = notes;
+    // §D102 a type mark checked as one: tagged / detailed / modelled (advisories only, outside left_out: no body is built or dropped by it)
+    var MR = ctx.MR || (typeof module === 'object' && module.exports ? require('./dxf2markrefs.js') : (typeof self !== 'undefined' ? self.Dxf2MarkRefs : null));
+    res.markRefs = MR && B.MARK_RE ? MR.build(sheets, res.els, { B: B, notesSheets: notes.sheets }) : null;
     // §F3b the layer ledger: what is on every layer, how it was typed, how much of it produced a body (the entity account only says the parser read it)
     var LG = ctx.LG || (typeof module === 'object' && module.exports ? require('./dxf2ledger.js') : (typeof self !== 'undefined' ? self.Dxf2Ledger : null));
     res.ledger = LG ? LG.build(sheets, res.els) : null;
@@ -96,13 +99,15 @@
     advisory.filter(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }).forEach(function (a) { blocking.push(a); });
     var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
     var counts = { bodies: res.els.length, left_out: leftOut }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
+    // only on a set that converts and has a notes sheet: on a partial set a mark's bodies may simply wait (a height, a role), and without a details sheet every mark lacks a detail trivially
+    if (res.markRefs && !refused.length && !blocking.length && notes.sheets.length) res.markRefs.advisories.forEach(function (a) { advisory.push(a); counts[a.code] = (counts[a.code] || 0) + 1; });
     var verdict = { verdict: blocking.length || refused.length ? 'blocked' : 'qualifies', blocking: blocking, advisory: advisory, counts: counts, by_shape: { walls: { blocking: 0, advisory: 0 }, slabs: { blocking: 0, advisory: 0 }, roof: { blocking: 0, advisory: 0 }, openings: { blocking: 0, advisory: 0 } } };   // by_shape: the editor's wall/slab/roof/opening table (a structure set reads none of them)
     var runId = I.sha256Hex(JSON.stringify({ structure: 1, sheets: sheets.map(function (s) { return s.sha; }), snap: res.report && res.report.snap_tol }));
     var R = { els: res.els, ST: plans.map(function (p) { return p.level; }).filter(function (l, i, arr) { return arr.indexOf(l) === i; }).sort(function (x, y) { return x - y; }).map(function (l, i) { return { name: 'Level ' + (i + 1), sheet: plans.filter(function (p) { return p.level === l; })[0].name, level: l, bridge: { voids: [] }, infill: [], fills: { gaps: [] } }; }),
       infillGuid: {}, libGeom: {}, run_id: runId, set: 'STRUCT', gaps: res.gaps, refused: null, fillGaps: [], bodies: res, defaults_table: res.defaults_table || null, defaults_invalid: res.defaults_invalid || [] };
     var g = { ok: !refused.length && !blocking.length, set: null, setFrom: 'structure', roles: { ok: !refused.length, set: null, evidence: 'structure', refused: refused }, refused: refused,
       verdict: verdict, R: R, lib: null, structure: { bodies: res.els.length, left_out: leftOut } };
-    return { gate: g, defaults: res.defaults || [], ledger: res.ledger || null, log: 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + leftOut + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
+    return { gate: g, defaults: res.defaults || [], ledger: res.ledger || null, markRefs: res.markRefs, log: (res.markRefs ? res.markRefs.log + ' | ' : '') + 'gate STRUCTURE ok=' + g.ok + ' bodies=' + res.els.length + ' left_out=' + leftOut + ' blocking=' + blocking.length + ' refused=' + JSON.stringify(refused).slice(0, 300) };
   }
 
   return { isStructure: isStructure, judge: judge, BODY_KINDS: BODY_KINDS, WALLISH: WALLISH };
