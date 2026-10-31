@@ -130,7 +130,7 @@
    "value": 0.0254,
    "unit": "m",
    "kind": "guess",
-   "basis": "display thickness of a roofing sheet (1 in); the cost is by area",
+   "basis": "display thickness of a roofing sheet (1 in); the cost is by area. The own weight is by area too, read off the sheet's plan box, which this thickness widens by thickness x sin(slope): a small weight change, no cost change",
    "options": [
     0.0254,
     0.05

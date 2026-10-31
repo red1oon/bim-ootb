@@ -15,15 +15,18 @@ own weight with the 12 raised columns (re-read from LoadSummary, not re-typed he
 between lines 36 and 41, columns drawn 1.524 m under beams at 3.10 m); `--impact`: slab thickness −1,298,309 BDT (0.15), section spacing −262,675 BDT / −126 bodies, 6 settings inert.
 **BIMCompiler (owner merges; the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated (63 rows, incl. `column.top_under_beam`) + guide `@SET` row + PROGRESS pointer;
 it contains #276's commit → after #277 merges, close #276. Until then the runner shows **YP1 FAIL** (W-YELLOW-PAGE passes against #277's page).
-**▶ NEXT, in order:**
-1. **§D99 P2 step 2 — the page**: a "Measure impact" button in the defaults list (on demand, never at open), rows sorted by `impact` with "± n BDT · ± n kN at <option>", the 6 inert rows in
-   one collapsed "No effect on quantities or checks" line (P3). The page's `run(choices)` = the structure gate with that choice + `RegReport.billAndLoad` (lazy-load the bill owners as
-   `reg_report_ui.js` does). Witness: the page's ranking = the CLI's `--impact` for the shed. Spec: `### §D99 P2 SPEC` + step 1 RESULT.
+**▶ NEXT, in order (session 16 progress inline):**
+1. ✅ **§D99 P2 step 2 — the page** (session 16): Element defaults ▸ Measure impact; W-IMPACT 8/0 incl. the real page = the CLI. See `**§D99 P2 step 2 RESULT`.
 2. **Submission-pack film** — storyline approved (owner: "Ok on fresh storyline that naturally flows from the last one"); its Next list in `FILM_DXF2BIM_WHY_MARKINGS.md` (recorder → dry run →
-   take on a quiet machine → fill → assemble → witness). Its numbers moved since it was written (bill 6,227,255; structural findings 1): the recorder reads them from the take.
-3. Small, open: `synth.roof.sheet_thickness` basis says display-only but it moves the own weight (+0.06 kN); `witness_dxf_convert_fail` CF2 flakes inside full runs only (fix its wait);
-   the viewer's other cost paths do not read `material_rates`; the pack's "2024" label (its rows are SoR 2022); carried: code packs (UBBL, BNBC 2020), RR authority headers.
-**RUNNER (end of session 15, the §D100 (b) tree + its three witness fixes):** `§ALLWITNESS PASS=97 ENV=10 FAIL=4 of 111` before the fixes; after them the 3 re-ran green; the 4th = YP1 (#277).
+   take on a quiet machine → fill → assemble → witness). Session 16: recorder + script + CPU (swiftshader) dry run dispatched to a worker (branch `film/submission-recorder`, PR not auto-merged);
+   check its PR + its `SUBMISSION FILM — DRY RUN RESULT` section. ⛔ the take itself runs on the GPU: needs the owner's go (VRAM beside a live tab).
+3. Small: ✅ `synth.roof.sheet_thickness` basis now says the own weight reads the sheet's plan box (widened by t·sin(slope)); yellow list regenerated onto BIMCompiler #277 ·
+   ✅ `witness_dxf_convert_fail` CF2: each click waits for its OWN status text + log line (after CF1 the status already began "Convert failed", so the wait returned at once) ·
+   ✅ the pack's label: `pwd2024_bd` meta now "PWD Bangladesh SoR 2022" (Finance Division approval letter 21 June 2022, read off the page image: "দর তফসিল-২০২২", valid three
+   years; ss.pwd.gov.bd serves no 2024 edition, 2026-10-31); the file id is kept. NOT changed: `viewer/locales/bn_BD.js`/`bl_BD.js` carry their own "2024" source labels (materials,
+   labour, equipment) — unverified, a separate check. Open: the viewer's other cost paths do not read `material_rates`; carried: code packs (UBBL, BNBC 2020), RR authority headers.
+**RUNNER (session 16, the P2 step 2 tree):** `§ALLWITNESS PASS=99 ENV=10 FAIL=2 of 111` — edefaults (row ids followed the table order, not the rendered order: fixed, 9/0 standalone) and
+YP1 (#277); W-IMPACT 8/0, CF 4/0, W-EDIT-RATES-LINK 4/0 re-run after the last edits.
 **Recipes:** shed report `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
 --report [--impact] [--choice k=v] [--fact k=v]` · runner `NODE_PATH=~/bim-compiler/node_modules node modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw
 NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` · SoR chapter PDFs `https://ss.pwd.gov.bd/document/sor/<name>.pdf` (list: `/sor/sordownload/1`); read rates off the
@@ -473,6 +476,33 @@ display thickness. Negligible, but the basis sentence ("display thickness … th
 **P2 step 2 (open):** the page — a "Measure impact" button in the defaults list (on demand, never at open: W-IMPACT I5), rows sorted by `impact` with "± n BDT · ± n kN at <option>",
 the inert rows in one collapsed "No effect on quantities or checks" line (P3); the page's `run(choices)` = the structure gate with that choice + `RegReport.billAndLoad` (lazy-load
 the bill owners as `reg_report_ui.js` does); witness: the page's ranking = the CLI's for the shed.
+### §D99 P2 step 2 BUILD SPEC (2026-10-31, session 16; RESUME item 1) — the page: "Measure impact" in Element defaults
+**Issue:** step 1 measured the ranking in the CLI only; the person who hunts through 62 equal rows is on the page. The page must show the SAME ranking (one owner, `Dxf2Impact.rank`),
+computed only when asked.
+- **The page's run (`Dxf2Impact.pageRun(D, sheets)`, pure, in `dxf2impact.js`):** per option, every sheet re-read with the base choices + that choice (`I.readSheet(name, effText, sha, {prepChoices})`:
+  what `DxfMetaEditor.effSheet` does when a person picks an option), judged by `Dxf2Structure.judge` with the page's own `{complete, ref, defaultsRef}` (what `structureGate` passes), priced by
+  `RegReport.billAndLoad` (the CLI's and the Regulatory Report's one path). It touches no page state: the model on screen does not change while measuring.
+- **Where:** the Element defaults section (`renderElementDefaults`) gets a "Measure impact" button + a rate-pack select (the Regulatory Report's list and default: a Bangladesh set read in another
+  locale must be priceable with its own pack). The owners load lazily through `RegReportUI.loadScripts()` + `dxf2impact.js`; nothing loads or runs at open.
+- **After measuring:** the section lists the ranked rows first, in `impact` order, each with "± n <cur> · ± n kN · ± n bodies at <option>"; then ONE collapsed line "No effect on the bill, the loads or
+  the body count (n)" holding the inert rows (click to open; P3); then every other row as before, grouped by element. The result is keyed on (sheet markings, base choices, pack, Complete): any change
+  marks it stale ("measured before your last change — measure again") and the list goes back to the element order. The label says loads/bill/bodies, not "checks": step 1 does not re-run the checks.
+- **Structure sets only** (the gate `judge` owns); a standard set: the button says so, nothing runs.
+- **Log:** the module's own `§IMPACT` / `§IMPACT_RANK` lines (ms included) + `§DXF-META impact pack=… rows=… active=… inert=…`.
+- **Witness — W-IMPACT extended (claim first):** I5 PAGE RUN: `pageRun` on the CLI-marked shed (Node, the page's own call chain) gives the CLI's `--impact` ranking: same active keys in the same order,
+  same top option and Δ bill / Δ kN / Δ bodies per row, same inert set; I6 THE PAGE: the real Modeller headless (open the marked shed, Complete, Convert): no `§IMPACT` line before the click; the
+  button + pack pwd2024_bd → the rendered rows' order and deltas = the CLI's; the inert line holds the CLI's inert keys; a later choice marks it stale; 0 page errors (BROWSER=0 skips I6, printed);
+  I7 FALSIFIER: `pageRun` with the choice ignored (a sabotage run) → I5 RED.
+**§D99 P2 step 2 RESULT (2026-10-31, session 16): BUILT.** `Dxf2Impact.pageRun(D, sheets)` (pure; the page's chain: `readSheet` with the choices → `Dxf2Structure.judge` with the page's
+complete / ref / defaultsRef → `RegReport.billAndLoad`; no page state touched) + Element defaults ▸ **Measure impact** (`dxf_meta_editor.js` `measureImpact`, `impSig`): the first click loads
+the owners through `RegReportUI.loadScripts()` (now exported with `packDefault` / `packList`, one loader, one pack list) and shows the pack picker (the locale's pack preselected; the pack is a
+choice, shown before any run); the click after it measures. Result: ranked rows with "± n BDT · ± n kN [· ± n bodies] at <option>", the inert rows in one `<details>` line "No effect on the
+bill, the loads or the body count (n)", then the rest grouped by element under "Not ranked". Keyed on markings + choices + pack + Complete: a change shows "Measured before your last change".
+**Shed (page, pwd2024_bd, 1.37 s in the browser):** 6 active — synth.slab.thickness −1,298,308.80 (0.15) · section.spacing −262,674.57 (2 x column pitch, −126 bodies) · **column.top_under_beam
+−38,716.90 / −41.13 kN (as_drawn; new since §D100 b)** · building.type +19,968.24 · synth.roof.overhang +11,230.73 · synth.roof.sheet_thickness 0 BDT / +0.06 kN; 6 inert; 4 skipped.
+**W-IMPACT 8/0** (I1-I4 as before; I5 pageRun = CLI; I6 the real page headless: owners not loaded and 0 §IMPACT before the click, rendered rows (order, option, Δ bill) = the CLI's, inert
+line 6 = 6, 0 page errors; I6b a later choice → stale, ranked rows gone; I7 sabotage (choice dropped) → mismatch). sw modeller v196 (+ `dxf2impact.js` precached).
+Label note: "checks" from the step-1 wording is not claimed — the measurement re-runs bill / own weight / bodies, not the structural checks.
 **§D100 FINDING — beams with nothing under them (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall" … "It was not highlighted during the X-ray selection").**
 Measured (CLI `--complete` + the real page, headless): the bay DOES copy the column pair (the new line 41A carries the same three-piece stack as line 41, tinted in x-ray: 6 of 6 copies
 emissive, own materials; x-ray draws every mesh at opacity 0.06, so a selected part reads mostly by its outline). **The defect is upstream:** at grid lines **36–41** the columns stop at

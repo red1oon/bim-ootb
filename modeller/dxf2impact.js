@@ -34,5 +34,16 @@
       ' top=' + active.slice(0, 3).map(function (r) { return r.key + ':' + r.top.dBill.toFixed(0); }).join(',') + ' ms=' + (Date.now() - t0));
     return { base: b0, rows: rows, active: active, inert: inert, skipped: skipped, share: function (r) { return sum > 0 ? r.impact / sum : 0; } };
   }
-  return { rank: rank };
+  // §D99 P2 step 2: the page's run(choices), the Modeller's own call chain without touching its state: every sheet re-read with the choices (DxfMetaEditor.effSheet's call),
+  // judged as structureGate judges (Dxf2Structure.judge with the page's complete / ref / defaultsRef), priced by RegReport.billAndLoad (the CLI's and the Regulatory Report's one path).
+  // D: { I, B, ST, RG, LS, BL, effText(sheet), prep (Node only: the browser's readSheet finds self.Dxf2Prep), complete, ref, defaultsRef, pack, packName }
+  function pageRun(D, sheets) {
+    return function (choices) {
+      var eff = sheets.map(function (sh) { return D.I.readSheet(sh.name, D.effText(sh), D.I.sha256Hex, { prep: D.prep, prepChoices: choices }); });
+      var R = D.ST.judge(eff, { I: D.I, B: D.B, choices: choices, complete: D.complete ? {} : null, ref: D.ref || null, defaultsRef: D.defaultsRef || null }).gate.R;
+      var bl = D.RG.billAndLoad(R && R.els, R && R.defaults_table, { LS: D.LS, BL: D.BL, ref: D.ref, pack: D.pack, packName: D.packName });
+      return { bodies: R && R.els ? R.els.length : 0, total: bl.bill ? bl.bill.totals.amount : 0, kN: bl.loadSummary ? bl.loadSummary.total_kN : 0 };
+    };
+  }
+  return { rank: rank, pageRun: pageRun };
 });
