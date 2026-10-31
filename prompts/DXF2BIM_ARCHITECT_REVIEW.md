@@ -19,8 +19,10 @@ pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status
 **▶ NEXT, in order:**
 1. **§D99 P2 — build it** (`### §D99 P2 SPEC`, written session 15; witness W-IMPACT first). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
    6,188,538 BDT); P4 step 2 REFUTED ("THICk." is the footing schedule's T = 12", already read; no slab thickness is stated anywhere).
-2. **Owner: keep the split buttons in round 1?** (§D36 shows Accept all alone only when one kind is present; the placeholder is "inferred", like applied defaults). ⛔ owner's choice.
-3. **Film "from drawings to a submission pack"** — RR.6 is in now; ⛔ the story needs the owner's OK before a take.
+2. ✅ **DECIDED 2026-10-31 (owner: "Buttons do advice"): keep the split buttons in round 1** — the placeholder is a convention like the applied defaults; Accept all alone would hide
+   that one value is not from the drawing. No code change.
+3. **Film "from drawings to a submission pack"** — owner OK'd a fresh storyline flowing from the BricsCAD film v2 (2026-10-31); STORYLINE written in
+   `prompts/FILM_DXF2BIM_WHY_MARKINGS.md` (`## ▶▶▶ SUBMISSION-PACK FILM — STORYLINE`): build the recorder, dry run, take, assemble (its Next list).
 4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
    header + quickstart; the viewer's other cost paths do not read `material_rates`; RR authority headers (RAJUK / NBeS checklists not found).
 **Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`):** unchanged from session 13 (archived block): 512 bodies, floor 603.87 m2, own weight 5,361.0 kN, bill 6,178,335 BDT,
