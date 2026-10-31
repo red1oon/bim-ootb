@@ -37,6 +37,7 @@
       '<div id="tp-pairsec" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
       '<div id="tp-avatar" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
       '<div id="tp-people" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
+      '<div id="tp-releases" style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px;display:none"></div>' +
       '<div style="border:1px solid #ddd;border-radius:8px;padding:10px;margin-bottom:10px">' +
         '<div><b id="tp-source">' + esc(v.source) + '</b> <span style="color:#666">· where team data is exchanged</span></div>' +
         '<label style="display:block;margin-top:6px">Repository owner<input id="tp-owner" style="width:100%;min-height:40px" value="' + esc(v.owner) + '"></label>' +
@@ -70,6 +71,7 @@
     console.log('§TEAM_PANEL opened ' + JSON.stringify(v));
     if (host() && host().pairState) { w.querySelector('#tp-pair').style.display = 'none'; renderPair(w); }
     renderAvatar(w);
+    if (host() && host().releases && global.TeamReleasesUI) { var rb = w.querySelector('#tp-releases'); host().pairState().then(function (st) { if (st.enrolled) global.TeamReleasesUI.render(rb, host().releases); }); }      // §46.5 Stage 4: Releases screens
     if (global.TeamsEmbedBim && w.querySelector('#tp-dots') == null) { var db = document.createElement('button'); db.id = 'tp-dots'; db.type = 'button'; db.style.cssText = 'min-height:40px;cursor:pointer;margin:0 8px 10px 0'; db.textContent = 'Show dots on this machine (Outliner)'; db.title = 'The older Teams overlay: dots on the Outliner rows, same-browser presence'; db.onclick = function () { try { localStorage.setItem('teamsEmbed', '1'); } catch (e) {} global.TeamsEmbedBim.init().then(function () { console.log('§TEAM_PANEL dots overlay requested'); close(); }); }; w.querySelector('#tp-mode').parentNode.insertBefore(db, w.querySelector('#tp-mode').parentNode.firstChild); }
     if (host() && host().peopleView) { renderPeople(w); var onP = function () { if (document.body.contains(w)) renderPeople(w, true); else global.removeEventListener('team:people', onP); }; global.addEventListener('team:people', onP); }
   }

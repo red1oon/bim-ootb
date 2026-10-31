@@ -323,6 +323,7 @@ const PRECACHE_ASSETS = [
   'guide_img/team_replenish_dialog.png',   // wave-1 team guide screenshot
   '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)
   '../common/comm/team_scope.js',    // TEAMWORK_FRAMEWORK §25.1 — the one reader of the compiled plan (both hosts)
+  '../common/comm/team_releases.js', // TEAMWORK_FRAMEWORK §46.5 Stage 4 — the Releases screens in the Team panel (pure models + renderer)
   '../common/comm/team_updates.js',  // TEAMWORK_FRAMEWORK §46.3/§46.5 (Stage 3) — the signed update list (pub/ area): verify, classify, publish
   '../common/comm/team_keys.js',     // TEAMWORK_FRAMEWORK §46.5 F5-F7 (Stage 2) — key roles, threshold, bundle signature check, time anchor
   '../common/comm/semver_strict.js', // TEAMWORK_FRAMEWORK §46.6 S4 — the ONE strict version + range parser (plugin_registry.js loads it first)

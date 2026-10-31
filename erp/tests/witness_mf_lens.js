@@ -33,7 +33,7 @@ function verdict(arm, ok, label, detail) { judged++; ARMS[arm] = ARMS[arm] || 0;
 function say(s) { if (!QUIET) console.log(s); }
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 var BUNDLE = 'org.kernel.mf-lens', CID = 9539001, NAME = 'Micro Finance', BAND_LO = 9539001, BAND_HI = 9539999;
-var BASE_PIN = 'd35e8a75a3be06295e3a695381998c2bed38027071c27a5adcbd3b81f5ffaa52';       // team base of origin/main 9d092972 (the pin of W-IMPORT-ORDER / W-POS-SALES); a later INTENDED base change must move this pin on purpose
+var BASE_PIN = 'a3eef3f59d775cc2adfc320b82c8ec5c8045721d74490c5dfaa421cbf595b8ab';       // team base of origin/main 9d092972 (the pin of W-IMPORT-ORDER / W-POS-SALES); a later INTENDED base change must move this pin on purpose · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75…
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
 function baseOracle() {
   var buf = fs.readFileSync(path.join(ERP, 'ad_seed.db')), man = 'seed ' + sha256(buf) + ' ' + buf.length + '\n';
