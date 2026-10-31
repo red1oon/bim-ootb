@@ -32,6 +32,6 @@ var openRows = h.split('<tr class="tt-row"').filter(function (s) { return /data-
 ck('T5b', 'no OPEN row carries the green colour', openRows.length === open.length && openRows.every(function (s) { return !/data-colour="green"|#1a7f37/.test(s.split('</tr>')[0]); }), 'openRows=' + openRows.length);
 ck('T5c', 'the panel names how to reproduce the run (the browser cannot run it)', /witness_terms\.js/.test(h) && /cannot run the witnesses/.test(h));
 var page = fs.readFileSync(path.join(E, 'idempiere.html'), 'utf8'), sw = fs.readFileSync(path.join(E, 'sw.js'), 'utf8');
-ck('T6', 'wiring: idempiere.html loads team_terms.js; sw.js precaches the script and the record', /'team_terms\.js\?v=1'/.test(page) && /'team_terms\.js',/.test(sw) && /'team_terms\.json',/.test(sw));
+ck('T6', 'wiring: idempiere.html loads team_terms.js; sw.js precaches the script and the record', /'team_terms\.js\?v=\d+'/.test(page) && /'team_terms\.js',/.test(sw) && /'team_terms\.json',/.test(sw));
 console.log('§TT_VERDICT ' + (!judged ? 'INCONCLUSIVE' : fails || killed !== mut ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' mutants_killed=' + killed + '/' + mut + ' (browser click not judged)');
 process.exit(fails || killed !== mut ? 1 : 0);

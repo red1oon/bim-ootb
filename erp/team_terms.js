@@ -33,7 +33,7 @@
       h += '<tr class="tt-row" data-id="' + esc(r.id) + '" data-status="' + r.status + '" data-colour="' + r.colour + '"><td>' + esc(r.term) + '<br><small>' + esc(r.guarantee) + '</small></td><td style="color:' + COL[r.colour] + ';font-weight:bold">' + r.status + '</td><td>' +
         (r.status === 'OPEN' ? '—' : esc(r.witnesses.join('; '))) + '</td><td>' + (r.status === 'OPEN' ? '—' : r.controls.map(function (c) { return (c.found ? '✔ ' : '✘ MISSING ') + esc(c.id); }).join('<br>')) + '</td><td>' + esc(r.roadmap || '') + (r.note ? '<br><small>' + esc(r.note) + '</small>' : '') + '</td></tr>';
     });
-    return h + '</table><p><button id="tt-export" type="button">Export JSON</button></p></div>';
+    return h + '</table><p><button id="tt-export" type="button">Export JSON</button> <a href="team_objectives.html" target="_blank" rel="noopener">Project quality objectives</a></p></div>';
   }
   async function load() { try { var r = await fetch('team_terms.json', { cache: 'no-cache' }); return r.ok ? await r.json() : null; } catch (e) { return null; } }
   async function open() {
