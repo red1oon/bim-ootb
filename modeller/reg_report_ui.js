@@ -60,6 +60,12 @@
     if (n && !/^hardcoded/.test(n)) return n;
     return (L && M[L.detectLocale()]) || 'cidb2024_my';   // the CLI's default when no locale maps
   }
+  // the packs the locale map names (rates.js, its one owner) + the default; §D99 P2 step 2's impact block offers the same list
+  function packList(pack) {
+    var l = Object.keys(window.LOCALE_RATE_MAP || {}).map(function (k) { return window.LOCALE_RATE_MAP[k]; }).filter(function (p, i, a) { return a.indexOf(p) === i; }).sort();
+    if (pack && l.indexOf(pack) < 0) l.unshift(pack);
+    return l;
+  }
   function savedFacts() { try { return JSON.parse(localStorage.getItem(FACTS_KEY) || '{}'); } catch (e) { return {}; } }
   function close() { if (panel) { panel.remove(); panel = null; } }
 
@@ -69,8 +75,7 @@
     stat('Regulatory Report: loading…');
     await loadScripts();
     close();
-    var packs = Object.keys(window.LOCALE_RATE_MAP || {}).map(function (k) { return window.LOCALE_RATE_MAP[k]; }).filter(function (p, i, a) { return a.indexOf(p) === i; }).sort(), pack = packDefault();
-    if (packs.indexOf(pack) < 0) packs.unshift(pack);
+    var pack = packDefault(), packs = packList(pack);
     panel = document.createElement('div'); panel.id = 'm-regrep-panel';
     panel.style.cssText = 'position:fixed;bottom:74px;right:330px;z-index:42;width:330px;max-height:70vh;overflow:auto;padding:12px;background:rgba(20,22,30,0.96);border:1px solid #2c303a;' +
       'border-radius:12px;color:#c7cdd8;font:12px system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,0.5)';
@@ -115,5 +120,6 @@
     return out;
   }
 
-  return { SCRIPTS: SCRIPTS, GLOBALS: GLOBALS, assemble: assemble, factsFrom: factsFrom, formHtml: formHtml, open: open, build: build, last: function () { return _last; } };
+  return { SCRIPTS: SCRIPTS, GLOBALS: GLOBALS, assemble: assemble, factsFrom: factsFrom, formHtml: formHtml, open: open, build: build, last: function () { return _last; },
+    loadScripts: loadScripts, packDefault: packDefault, packList: packList };   // §D99 P2 step 2: the impact block loads the same owners and offers the same packs
 });

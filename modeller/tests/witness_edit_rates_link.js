@@ -61,7 +61,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
     console.log('§EDIT-RATES edited field=' + String(t).slice(0, 80) + ' saved=' + saved); await pv.close();
     // R2 the Modeller's bay with the edited copy
     const A = await bay(), wantA = A.line ? amountOf(NEW, A.cols) : 'none';
-    ok('R2 the edited column rate prices the Modeller\'s bay: rate ' + NEW + ', amount = Σ round(rate x qty), the panel names the pack', saved === NEW && A.line && A.line.rate === NEW && A.line.amount === wantA && A.pack === PACK && /PWD Bangladesh 2024 \(pwd2024_bd\)/.test(A.rates),
+    ok('R2 the edited column rate prices the Modeller\'s bay: rate ' + NEW + ', amount = Σ round(rate x qty), the panel names the pack', saved === NEW && A.line && A.line.rate === NEW && A.line.amount === wantA && A.pack === PACK && /PWD Bangladesh SoR 2022 \(pwd2024_bd\)/.test(A.rates),
       'line ' + JSON.stringify(A.line) + ' want amount ' + wantA + ' (qty ' + A.cols.map(q => q.toFixed(3)).join('+') + ') | pack ' + A.pack + ' ' + A.cur + ' | "' + A.rates + '"');
     // R3 the copy removed: the shipped rate
     // a FRESH browser context: no saved copy (the control), and no Modeller model saved by R2's page (a second page in R2's profile restored R2's model and converted on top of it:

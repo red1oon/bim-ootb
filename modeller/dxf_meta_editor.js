@@ -923,13 +923,60 @@
     var g = gateNow(); if (!g || !g.structure || !g.R || !g.R.defaults_table) return '';
     var tb = g.R.defaults_table, stated = defaultMarks(), nStated = tb.filter(function (r) { return r.source === 'file'; }).length, nUsed = tb.filter(function (r) { return r.used; }).length, h = '', last = '';
     h += '<div class="dm-ref" style="margin:2px 0 6px">Settings the drawings may not carry. A value you state is kept in the drawing set; otherwise the default (a standard value or a guess, tagged) is used to determine the measurement. Highlighted = used in this model.</div>';
-    tb.slice().sort(function (a, b) { return a.element < b.element ? -1 : a.element > b.element ? 1 : a.key < b.key ? -1 : 1; }).forEach(function (r, i) {
-      if (r.element !== last) { last = r.element; h += '<div class="dm-sub">' + esc(r.element) + '</div>'; }
-      h += '<div class="dm-f' + (r.used ? ' dm-defrow' : '') + '" data-edef="' + esc(r.key) + '"><label style="width:auto;flex:1" title="' + esc(r.basis) + '">' + esc(r.key) + ' <span class="dm-ref" style="margin:0">' + esc(r.kind === 'std' ? 'standard' : 'guess') + (r.unit && r.unit !== 'text' ? ' · ' + esc(r.unit) : '') + (r.source !== 'default' ? ' · ' + (r.source === 'file' ? 'stated' : r.source === 'type' ? 'type default' : 'chosen') : '') + '</span></label>' +
+    var nRow = 0;   // a row's input id = its place in the list as rendered (the element order, or the ranked order after Measure impact): the Set button reads #dm-ed-<i>
+    function rowOf(r) {
+      var i = nRow++;
+      return '<div class="dm-f' + (r.used ? ' dm-defrow' : '') + '" data-edef="' + esc(r.key) + '"><label style="width:auto;flex:1" title="' + esc(r.basis) + '">' + esc(r.key) + ' <span class="dm-ref" style="margin:0">' + esc(r.kind === 'std' ? 'standard' : 'guess') + (r.unit && r.unit !== 'text' ? ' · ' + esc(r.unit) : '') + (r.source !== 'default' ? ' · ' + (r.source === 'file' ? 'stated' : r.source === 'type' ? 'type default' : 'chosen') : '') + '</span></label>' +
         (r.key === 'building.type' && r.options ? '<select class="dm-in" id="dm-ed-' + i + '">' + r.options.map(function (o) { return '<option' + (o === String(r.value) ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>' : '<input class="dm-in n" id="dm-ed-' + i + '" value="' + esc(r.value) + '" ' + (r.unit === 'text' ? '' : 'inputmode="decimal"') + '>') + '<button class="dm-btn" data-act="edefset" data-key="' + esc(r.key) + '" data-i="' + i + '">' + IC.check + '<span>Set</span></button>' +
         (r.source === 'file' ? '<button class="dm-ib" title="Remove (back to the default)" data-act="edefdel" data-key="' + esc(r.key) + '">' + IC.trash + '</button>' : '') + '</div>';
-    });
-    return secHead('edefaults', IC.ruler, 'Element defaults', nStated + ' stated · ' + nUsed + ' used', 0) + (S.sec.edefaults ? '<div class="dm-sb">' + h + '</div>' : '');
+    }
+    function byElement(rows) { var o = ''; rows.slice().sort(function (a, b) { return a.element < b.element ? -1 : a.element > b.element ? 1 : a.key < b.key ? -1 : 1; }).forEach(function (r) { if (r.element !== last) { last = r.element; o += '<div class="dm-sub">' + esc(r.element) + '</div>'; } o += rowOf(r); }); return o; }
+    // §D99 P2 step 2: "Measure impact" — the used defaults ranked by what each option moves (Dxf2Impact.rank over Dxf2Impact.pageRun); computed only on the click, never at open
+    var M = S.impact, fresh = M && M.res && M.sig === impSig(M.pack), RU = window.RegReportUI, packs = RU && window.LOCALE_RATE_MAP ? RU.packList(M && M.pack || RU.packDefault()) : null;
+    h += '<div class="dm-f" style="gap:6px"><button class="dm-btn" id="dm-impact-go" data-act="impact"' + (M && M.busy ? ' disabled' : '') + ' title="Judge the model again with each option of every default it uses, and rank the defaults by what they move: the bill, the own weight, the body count">' + IC.bulb + '<span>Measure impact</span></button>' +
+      (packs ? '<select class="dm-sel" id="dm-impact-pack" title="The rate pack the bill is priced with (the Regulatory Report\'s list)">' + packs.map(function (p) { return '<option' + (p === (M && M.pack || RU.packDefault()) ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>' : '') + '</div>';
+    if (M && M.msg) h += '<div class="dm-ref" data-impact-msg>' + esc(M.msg) + '</div>';
+    if (M && M.res && !fresh) h += '<div class="dm-ref" data-impact-stale>Measured before your last change — measure again.</div>';
+    if (!fresh) return secHead('edefaults', IC.ruler, 'Element defaults', nStated + ' stated · ' + nUsed + ' used', 0) + (S.sec.edefaults ? '<div class="dm-sb">' + h + byElement(tb) + '</div>' : '');
+    var R = M.res, cur = M.cur || '', fmt = function (v, d) { return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }); }, byKey = {}, done = {};
+    tb.forEach(function (r) { byKey[r.key] = r; });
+    h += '<div class="dm-sub">Ranked by impact (priced with ' + esc(M.pack) + ')</div>';
+    R.active.forEach(function (x) { var r = byKey[x.key]; if (!r) return; done[x.key] = 1; var t = x.top;
+      h += rowOf(r) + '<div class="dm-ref" style="margin:-2px 0 6px 8px" data-impact-row="' + esc(x.key) + '" data-impact-option="' + esc(String(t.option)) + '" data-impact-dbill="' + t.dBill.toFixed(2) + '">' + fmt(t.dBill, 0) + ' ' + esc(cur) + ' · ' + fmt(t.dKN, 2) + ' kN' + (t.dBodies ? ' · ' + fmt(t.dBodies, 0) + ' bodies' : '') + ' at ' + esc(String(t.option)) + '</div>'; });
+    if (R.inert.length) { h += '<details data-impact-inert="' + R.inert.length + '"' + (S.impInertOpen ? ' open' : '') + '><summary class="dm-sub" style="cursor:pointer">No effect on the bill, the loads or the body count (' + R.inert.length + ')</summary>';
+      R.inert.forEach(function (x) { if (byKey[x.key]) { done[x.key] = 1; h += rowOf(byKey[x.key]); } }); h += '</details>'; }
+    h += '<div class="dm-sub" style="margin-top:8px">Not ranked (stated, no option to try, or not used here)</div>'; last = '';
+    h += byElement(tb.filter(function (r) { return !done[r.key]; }));
+    return secHead('edefaults', IC.ruler, 'Element defaults', nStated + ' stated · ' + nUsed + ' used · ' + R.active.length + ' move the model', 0) + (S.sec.edefaults ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
+  // §D99 P2 step 2: what the measurement depends on — the markings, the choices made, the pack, Complete — any change makes it stale
+  function impSig(pack) { return JSON.stringify(S.sheets.map(sigOf)) + '|' + JSON.stringify(S.defaultChoices || {}) + '|' + pack + '|' + !!(window.DxfImportUI && window.DxfImportUI.state.complete); }
+  var _impLoad = null;
+  function impactOwners() {   // the Regulatory Report's own loader (reg_report.js, load_summary.js, rates.js …) + dxf2impact.js; nothing of this loads before the click
+    if (_impLoad) return _impLoad;
+    var add = function (src) { return new Promise(function (res, rej) { var sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(sc); }); };
+    _impLoad = (window.RegReportUI ? Promise.resolve() : add('reg_report_ui.js?v=1')).then(function () { return window.Dxf2Impact ? null : add('dxf2impact.js?v=1'); })
+      .then(function () { return window.RegReportUI.loadScripts(); }).catch(function (e) { _impLoad = null; throw e; });
+    return _impLoad;
+  }
+  async function measureImpact() {
+    var sel = S.panel && S.panel.querySelector('#dm-impact-pack'), g = gateNow(), st = window.DxfImportUI.state;
+    if (!g || !g.structure || !g.R) { S.impact = { msg: 'Measure impact works on a structure set that converts (the structure gate owns the re-run).' }; render(); return; }
+    S.impact = { busy: true, pack: sel && sel.value, msg: 'Loading the bill and load owners…' }; render();
+    try { await impactOwners(); } catch (e) { S.impact = { msg: 'Could not load the bill owners: ' + (e && e.message || e) }; render(); return; }
+    if (!sel) { var p0 = window.RegReportUI.packDefault(); S.impact = { pack: p0, msg: 'Rate pack ' + p0 + ' (the locale\'s). Change it if the drawings are priced elsewhere, then Measure impact.' }; render(); return; }   // the pack is a real choice: shown before any run
+    var pack = sel.value, sig = impSig(pack), packJ = await fetch('../viewer/rates/' + pack + '.json').then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    if (!packJ) { S.impact = { pack: pack, msg: 'Rate pack ' + pack + ' not found: nothing measured.' }; render(); return; }
+    S.impact = { busy: true, pack: pack, msg: 'Measuring: the model judged again for each option…' }; render();
+    await new Promise(function (r) { setTimeout(r, 30); });   // let the message paint: the measurement is synchronous
+    var Z = window.Dxf2Impact, D = { I: window.Dxf2BimImport, B: window.Dxf2Bodies, ST: window.Dxf2Structure, RG: window.RegReport, LS: window.LoadSummary, BL: window.Dxf2Bill, effText: effText,
+      complete: !!st.complete, ref: st.ref || null, defaultsRef: st.defaultsRef || null, pack: packJ, packName: pack };
+    try {
+      var res = Z.rank(g.R.defaults_table, Object.assign({}, S.defaultChoices || {}), Z.pageRun(D, S.sheets), function (l) { console.log(l); });
+      S.impact = { sig: sig, pack: pack, res: res, cur: packJ.meta && packJ.meta.currency || '' };
+      console.log(TAG + ' impact pack=' + pack + ' rows=' + res.rows.length + ' active=' + res.active.length + ' inert=' + res.inert.length + ' skipped=' + res.skipped.length + ' order=' + res.active.map(function (r) { return r.key; }).join(','));
+    } catch (e) { S.impact = { pack: pack, msg: 'Measure failed: ' + (e && e.message || e) }; console.error(TAG + ' impact failed ' + (e && e.stack || e)); }
+    render();
   }
   // §L22 "Typology": advisories (never blocking) that set the model next to the cited ranges of the building type in force; nothing here changes a body or a default.
   function renderTypology() {
@@ -1018,6 +1065,7 @@
     var P = S.panel;
     document.getElementById('dm-close').onclick = function () { close(); };
     document.getElementById('dm-save').onclick = function () { save(); };
+    var dIn = P.querySelector('[data-impact-inert]'); if (dIn) dIn.ontoggle = function () { S.impInertOpen = dIn.open; };   // §D99 P2 step 2: the collapsed line keeps its state across renders
     P.querySelectorAll('[data-act]').forEach(function (el) {
       var a = el.getAttribute('data-act');
       if (a === 'bodyzadd') el.onclick = function () { var k = el.getAttribute('data-kind'), a0 = document.getElementById('dm-bz-' + k + '-0').value.trim(), a1 = document.getElementById('dm-bz-' + k + '-1').value.trim(), z0 = Number(a0), z1 = Number(a1);
@@ -1054,6 +1102,7 @@
       if (a === 'defchoose') el.onchange = function () { var k = el.getAttribute('data-key'), v = el.value, num = Number(v);
         defRows().forEach(function (r) { if (r.key === k && (r.kind === 'default' || r.kind === 'chosen')) { r.value = (typeof r.value === 'number' && isFinite(num)) ? num : v; r.kind = 'chosen'; } });
         S.defaultChoices = S.defaultChoices || {}; S.defaultChoices[k] = v; console.log(TAG + ' default-chosen ' + k + '=' + v); refeed(); render(); attention(); };
+      if (a === 'impact') el.onclick = function () { measureImpact(); };   // §D99 P2 step 2
       if (a === 'sec') el.onclick = function () { var k = el.getAttribute('data-sec'); S.sec[k] = !S.sec[k]; render(); };
       else if (a === 'card') el.onclick = function () { var k = el.getAttribute('data-sheet'); S.open[k] = !S.open[k]; render(); };
       else if (a === 'single') { el.onchange = function () { setSingle(sheetAt(el), el.getAttribute('data-key'), el.value); }; if (el.tagName === 'INPUT') el.onkeydown = function (e) { if (e.key === 'Enter') el.blur(); }; }
@@ -1244,7 +1293,7 @@
       S.cache[s.name + '|' + sigOf(sh)] = Object.assign(s, { effText: s.text });   // unedited = the opened file itself
       return sh;
     });
-    S.defaultChoices = {}; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.wsched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null; S.evRows = {}; S.ev = null; S.evNote = null; S.tierSig = null; S.pvTierSig = null;
+    S.defaultChoices = {}; S.impact = null; S.impInertOpen = false; S.split = {}; S.verdict = null; S.open = {}; S.setOverride = null; S.saved = null; S.pick = null; S.sched = []; S.wsched = []; S.dpick = null; S.dcache = {}; S.dmsg = null; S.dprops = []; S.exSheet = null; S.wtLevel = {}; S.draft = {}; S.pv = null; S.focus = null; S.fsave = null; _pv = null; S.evRows = {}; S.ev = null; S.evNote = null; S.tierSig = null; S.pvTierSig = null;
     S.sheets.forEach(function (sh, i) { var mi = missingOf(sh); if (!viewOf(sh) || mi.miss.length) S.open[i] = true; });
     console.log(TAG + ' loaded sheets=' + S.sheets.length + ' markings from file=' + S.sheets.map(function (sh) { return sh.name + ':' + sh.marks.length; }).join(',') + ' bySuffixAccepted=' + S.byOk);
     css();
