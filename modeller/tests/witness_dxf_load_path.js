@@ -7,7 +7,7 @@
  *   P1 CARRIED   — a frame of 4 beams on 4 full columns + a secondary beam framing into two of them: 5 carried, 0 findings (the chain from the columns is followed).
  *   P2 SELF-HELD — the same columns cut 1.5 m short, a gusset plate resting on each corner: floating_member reads all 4 beams supported (the scope-blind case); load_path flags all 4.
  *   P3 ONE PATH  — all four columns short but ONE: every beam of the frame reaches the ground through the chain from that column (0 findings); a frame with no full column: 4.
- *   P4 THE SHED  — the CLI-marked shed (--complete) through the shipped extractor: findings = exactly the long-wall beams over the bays between lines 36 and 41 (both walls),
+ *   P4 THE SHED  — the CLI-marked shed (--complete, column.top_under_beam=as_drawn: the columns as the drawing draws them) through the shipped extractor: findings = exactly the long-wall beams over the bays between lines 36 and 41 (both walls),
  *                  floating_member / span_depth_cantilever / column_continuity unchanged from main (0 / 1 / 0).
  *   P5 PARITY    — FALLBACK_RULES carries load_path and so does viewer/rates/structural_rules.json.
  * Input for P4: SHED_MARKED (default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> P4 skipped (printed, not judged).
@@ -38,7 +38,7 @@ const MK = process.env.SHED_MARKED || path.join(os.homedir(), 'Videos', 'dxf2bim
   if (!fs.existsSync(MK)) console.log('§LOAD_PATH_SHED_SKIP no marked shed set at ' + MK + ' — P4 not judged');
   else {
     const C = require(path.join(ROOT, 'modeller', 'dxf2bim_cli.js')), out = path.join(os.tmpdir(), 'w_load_path_' + process.pid);
-    const args = C.parseArgs(['--sheets', ...fs.readdirSync(MK).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(MK, f)), '--out', out, '--pack', 'pwd2024_bd', '--complete', '--ifc']);
+    const args = C.parseArgs(['--sheets', ...fs.readdirSync(MK).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(MK, f)), '--out', out, '--pack', 'pwd2024_bd', '--complete', '--ifc', '--choice', 'column.top_under_beam=as_drawn']);   // the model AS DRAWN (§D100 (b) defaults those columns up to their beams: W-COL-TO-BEAM K1/K2)
     const res = C.run(args, () => {}); C.write(res, out); await C.writeIfc(res, out);
     let W; for (const m of ['web-ifc', path.join(os.homedir(), 'bim-compiler/node_modules/web-ifc')]) { try { W = require(m); break; } catch (e) { /* next */ } }
     let Q; for (const m of ['sql.js', path.join(os.homedir(), 'bim-compiler/node_modules/sql.js')]) { try { Q = require(m); break; } catch (e) { /* next */ } }

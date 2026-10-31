@@ -2,6 +2,19 @@
  "version": 2,
  "about": "Element defaults (prompts/DXF2BIM_MODELLER_LANE.md §L18). One entry per setting a 2D layout may not carry. kind 'std' = a value with a named source in this repo or the rate pack; 'guess' = typical practice, to be confirmed. A person states a value with @DEFAULT=<key>,<value> in the drawing (or in the editor / CLI); otherwise the default is used to determine measurements and the row is yellow. A 2D layout carries these only when it comes fully formed from an IFC model.",
  "defaults": {
+  "column.top_under_beam": {
+   "element": "IfcColumn",
+   "value": "beam_above",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a column under a beam end carries it up to the beam's underside; an elevation may draw it short where a wall, a net or another sheet hides it (§D100: the shed's lines 36–41 drawn 1.52 m under beams at 3.10 m). 'as_drawn' keeps the drawn top and the gap shows as a load_path finding",
+   "options": [
+    "beam_above",
+    "as_drawn"
+   ],
+   "used_by": "dxf2structure (§D100)",
+   "tolerance_m": 0.15
+  },
   "wall.thickness": {
    "element": "IfcWall",
    "value": 0.15,
