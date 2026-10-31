@@ -213,7 +213,7 @@ async function gateArm(Esut, Ebase) {
     { id: 'M1', what: 'read() returns every box (the edge lists the others\' mail)', host: 'allboxes', expect: ['A', 'E'] },
     { id: 'M7', what: 'wantHead always true (heads are not bounded)', host: 'allheads', expect: ['A'] },
     { id: 'M2', what: 'every business op is put on the hub lane (DOWN envelopes mis-boxed)', host: 'allhub', expect: ['A', 'B', 'E'] },
-    { id: 'M3', what: 'an identity op is given a lane', file: 'comm_store.js', needle: "var lane = null;\n      if (!ident &&", repl: "var lane = null;\n      if (true &&", expect: ['D'] },
+    { id: 'M3', what: 'an identity op is given a lane', file: 'comm_store.js', needle: "var lane = null, box = null;\n      if (!ident &&", repl: "var lane = null, box = null;\n      if (true &&", expect: ['D'] },
     { id: 'M5', what: 'the genesis gate forced on (a pre-F1 space sprouts m/)', file: 'comm_roster.js', needle: "mailboxes: gen.env.body.params.mailboxes === 1", repl: "mailboxes: true", expect: ['C', 'F'] },
     { id: 'M8', what: 'the relay name rule forgets the mailbox path (gate refuses m/…)', file: 'comm_pipe.js', needle: "p[2] === 'm' && p[3] && p[4] === 'o' && p[5]) return p[5];", repl: "p[2] === 'zz' && p[3] && p[4] === 'o' && p[5]) return p[5];", expect: ['I'] },
     { id: 'M6', what: 'the signed head keeps the contiguous prefix (the holes block SEEN)', file: 'comm_store.js', needle: "frontier: mbFlag ? await recvMax() : await frontier()", repl: "frontier: await frontier()", expect: ['G'] }
