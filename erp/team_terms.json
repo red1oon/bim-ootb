@@ -1,26 +1,16 @@
 {
  "schema": "terms-v1",
  "kind": "harness",
- "at": "2026-10-31T05:27:45.271Z",
+ "at": "2026-10-31T07:46:19.460Z",
  "node": "v18.19.1",
  "verdict": "PASS",
  "browser": {
   "judged": 5,
   "skipped": 0,
   "reason": null,
-  "reused": false
+  "reused": true
  },
  "rows": [
-  {
-   "id": "sealing-real",
-   "term": "RELAY (sealing)",
-   "guarantee": "the relay does not retain readable history",
-   "roadmap": "TEAMWORK §29 (simulator PASS only, real comm layer untouched)",
-   "witnesses": [],
-   "controls": [],
-   "status": "OPEN",
-   "note": "witness_scriptor_seal judges the simulator only; its own log marks the real layer INCONCLUSIVE"
-  },
   {
    "id": "statement-signed",
    "term": "LEDGER signed / STATEMENT",
@@ -33,8 +23,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_plantrust.log"
     },
     {
      "file": "witness_team_publish.js",
@@ -42,8 +32,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_publish.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_publish.log"
     }
    ],
    "controls": [
@@ -94,8 +84,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_plantrust.log"
     },
     {
      "file": "witness_comm_policy.js",
@@ -103,8 +93,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_policy.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_policy.log"
     },
     {
      "file": "witness_team_publish.js",
@@ -112,8 +102,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_publish.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_publish.log"
     }
    ],
    "controls": [
@@ -158,8 +148,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_executors.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_executors.log"
     },
     {
      "file": "witness_comm_settrust.js",
@@ -167,8 +157,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_settrust.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_settrust.log"
     },
     {
      "file": "witness_team_executors.js",
@@ -176,8 +166,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_executors.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_executors.log"
     }
    ],
    "controls": [
@@ -216,8 +206,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_executors.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_executors.log"
     },
     {
      "file": "witness_team_executors.js",
@@ -225,8 +215,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_executors.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_executors.log"
     }
    ],
    "controls": [
@@ -265,8 +255,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_comm_cl5_conflict.js",
@@ -274,8 +264,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_cl5_conflict.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_cl5_conflict.log"
     },
     {
      "file": "witness_team_base.js",
@@ -283,8 +273,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_base.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_base.log"
     }
    ],
    "controls": [
@@ -329,8 +319,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
     }
    ],
    "controls": [
@@ -369,8 +359,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
     },
     {
      "file": "witness_comm_cl3_store.js",
@@ -378,8 +368,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
     }
    ],
    "controls": [
@@ -412,8 +402,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_terms_visit.js",
@@ -421,8 +411,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_terms_visit.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
     },
     {
      "file": "witness_team_so.js",
@@ -430,8 +420,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_so.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_so.log"
     }
    ],
    "controls": [
@@ -457,7 +447,7 @@
      "id": "page: chip shows seen/refused/waiting/last visit",
      "layer": "browser",
      "found": true,
-     "evidence": "🟢 the ERP chip shows device code · team devices 2 · a Visit button with the hand cursor (A) — {\"text\":\"Team · E782-4DA1 · team devices 2 Visit my ops 5 · seen "
+     "evidence": "🟢 the ERP chip shows device code · team devices 2 · a Visit button with the hand cursor (A) — {\"text\":\"Team · 1308-5879 · team devices 2 Visit my ops 5 · seen "
     },
     {
      "id": "page: unsent DocAction shows local-only warning",
@@ -482,8 +472,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_comm_versions.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_comm_versions.log"
     },
     {
      "file": "witness_team_versions.js",
@@ -491,8 +481,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_versions.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_versions.log"
     }
    ],
    "controls": [
@@ -537,8 +527,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_docno_till.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_docno_till.log"
     },
     {
      "file": "witness_docno_till.js",
@@ -546,8 +536,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_docno_till_mutants.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_docno_till_mutants.log"
     }
    ],
    "controls": [
@@ -616,8 +606,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_f1_mailbox.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_f1_mailbox.log"
     }
    ],
    "controls": [
@@ -663,6 +653,91 @@
    "layers": "bim-ootb tree (node, real modules)"
   },
   {
+   "id": "sealing-real",
+   "term": "RELAY (sealing)",
+   "guarantee": "in a mailbox (star) space each station's mail is sealed to its pair (that station + head office): another member holding the team key reads none of it, the relay reads none of it, and a withheld mailbox bundle shows as a gap",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_read_scope.js",
+     "layer": "ootb",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_read_scope.log"
+    },
+    {
+     "file": "witness_f1_mailbox.js",
+     "layer": "ootb",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_f1_mailbox.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "a modified member opens 0 of another station's mail",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-A Y (a modified client that lists and gets every m/ object) opens 0 of the 3 laned ops of X - leaked=0"
+    },
+    {
+     "id": "CONTROL team key only: the same member opens all of it",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-A CONTROL: with audience sealing off (space key, as F1) the same Y opens 3 of 3"
+    },
+    {
+     "id": "a rogue key for another pair is never sealed to",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-E Y (holding its own candidate key for p_X, accepted by the roster) opens 0 of H's DOWN mail"
+    },
+    {
+     "id": "revoked device opens 0 after the rekey",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-F the revoked device opens 0 of it"
+    },
+    {
+     "id": "withheld middle bundle is a gap",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-G the relay withholds X's MIDDLE m/hub/ bundle -> gaps() = [{author X, box hub, seq 2}]"
+    },
+    {
+     "id": "withheld last bundle is a gap (signed head)",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-G the relay withholds X's LAST bundle -> reported from X's signed head"
+    },
+    {
+     "id": "CONTROL F1 engine: the same withholding shows no gap",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-G CONTROL (the F1 engine, same withholding): gaps() = []"
+    },
+    {
+     "id": "no key yet: held, never sent under the team key",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "PASS §RS-H the held op is nowhere on the relay (not under the space key, not plaintext) - objects containing it=0"
+    },
+    {
+     "id": "9 mutants killed",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§RS_SCOPE_VERDICT PASS judged=39 fails=0 inconclusive=0 mutants=9/9"
+    }
+   ],
+   "status": "ENFORCED",
+   "note": "TEAMWORK §45.11 (bim-ootb #2486; witness common/tests/witness_read_scope.js, 9 mutants run by the witness itself; RED first on the F1 engine: FAIL judged=39 fails=13). Stated limits: the relay still sees metadata (author, box, counts, timing, sizes); a checkpoint state is sealed with the team key, so record ids and verdicts of laned ops are visible to every member; an insider holding a pair key can leak it; office spaces and spaces founded before F1 keep the team-wide key (unchanged by design)",
+   "layers": "bim-ootb tree (node, real modules)"
+  },
+  {
    "id": "key-roles-threshold",
    "term": "trusted keys (roles + threshold)",
    "guarantee": "a key may only do what its role allows; a rotation or publication needs the declared number of DISTINCT valid keys; a device clock never expires anything",
@@ -674,8 +749,8 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": false,
-     "log": "build/scriptor/terms_run/witness_team_keys.log"
+     "reused": true,
+     "log": "build/scriptor/terms_postSeal/witness_team_keys.log"
     }
    ],
    "controls": [

@@ -11,12 +11,19 @@ var fs = require('fs'), path = require('path'), E = path.join(__dirname, '..'), 
 var judged = 0, fails = 0, mut = 0, killed = 0;
 function ck(id, issue, ok, d) { judged++; if (!ok) fails++; console.log('§TT ' + (ok ? 'PASS' : 'FAIL') + ' ' + id + ' - ' + issue + (d ? ' :: ' + d : '')); }
 function kill(id, ok, d) { mut++; if (ok) killed++; console.log('§TT-MUTANT ' + id + ' ' + (ok ? 'KILLED' : 'SURVIVED') + (d ? ' :: ' + d : '')); }
-var rec = JSON.parse(fs.readFileSync(path.join(E, 'team_terms.json'), 'utf8')), m = TT.model(rec);
+var shipped = JSON.parse(fs.readFileSync(path.join(E, 'team_terms.json'), 'utf8')), rec = shipped;
+// 2026-10-31 (13 enforced / 0 open, bim-ootb #2486): the shipped record may hold NO open row. The open-row arms (T1b T2 T5a T5b) would then judge nothing, so they judge a copy with ONE synthetic
+// OPEN row (an enforced row cloned, status OPEN, no witness) — the rule "open is listed first and never green" is still judged on a real population; the shipped open count is printed.
+var shippedOpen = (shipped.rows || []).filter(function (r) { return r.status === 'OPEN'; }).length;
+if (!shippedOpen && shipped.rows && shipped.rows.length) { rec = JSON.parse(JSON.stringify(shipped)); var syn = JSON.parse(JSON.stringify(rec.rows[0])); syn.id = 'synthetic-open'; syn.status = 'OPEN'; syn.witnesses = []; syn.controls = []; syn.roadmap = 'synthetic (witness only)'; rec.rows.push(syn); }
+console.log('§TT shipped record: rows=' + (shipped.rows || []).length + ' open=' + shippedOpen + (rec !== shipped ? ' -> open-row arms judge a copy with 1 synthetic OPEN row' : ''));
+var m = TT.model(rec);
 var open = m.rows.filter(function (r) { return r.status === 'OPEN'; }), enf = m.rows.filter(function (r) { return r.colour === 'green'; });
-ck('T1a', 'the record is terms-v1 with rows (else everything below is vacuous)', rec.schema === 'terms-v1' && rec.rows.length >= 9, 'rows=' + rec.rows.length);
+ck('T1a', 'the record is terms-v1 with rows (else everything below is vacuous)', shipped.schema === 'terms-v1' && shipped.rows.length >= 9, 'rows=' + shipped.rows.length);
 ck('T1b', 'open terms are listed first and none is green', open.length >= 1 && m.rows.slice(0, open.length).every(function (r) { return r.status === 'OPEN' && r.colour === 'amber'; }), 'open=' + open.length + ' first=' + m.rows.slice(0, open.length).map(function (r) { return r.id; }).join(','));
 ck('T1c', 'every green row has a passing witness and every control found', enf.length >= 1 && enf.every(function (r) { return r.witnesses.length && r.witnesses.every(function (w) { return /PASS$/.test(w); }) && r.controls.length && r.controls.every(function (c) { return c.found; }); }), 'green=' + enf.length);
-ck('T1d', 'verdict PASS only because nothing is red', m.verdict === 'PASS' && !m.rows.some(function (r) { return r.colour === 'red'; }), m.verdict + ' ' + JSON.stringify(m.counts));
+var mS = TT.model(shipped); ck('T1d', 'verdict PASS only because nothing is red (the SHIPPED record)', mS.verdict === 'PASS' && !mS.rows.some(function (r) { return r.colour === 'red'; }), mS.verdict + ' ' + JSON.stringify(mS.counts));
+ck('T1e', 'verdict PASS only because nothing is red (the copy the open-row arms judge)', m.verdict === 'PASS' && !m.rows.some(function (r) { return r.colour === 'red'; }), m.verdict + ' ' + JSON.stringify(m.counts));
 function clone() { return JSON.parse(JSON.stringify(rec)); }
 var c2 = clone(), o = c2.rows.filter(function (r) { return r.status === 'OPEN'; })[0]; o.status = 'ENFORCED'; var m2 = TT.model(c2), r2 = m2.rows.filter(function (r) { return r.id === o.id; })[0];
 ck('T2', 'an OPEN row flipped to ENFORCED without a witness or control is NOT green', r2.colour !== 'green', r2.status + '/' + r2.colour); kill('open-flipped-green', r2.colour !== 'green');
