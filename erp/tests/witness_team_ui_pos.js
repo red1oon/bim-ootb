@@ -124,7 +124,8 @@ var TILL = 50004, HQ = 102, SRC = {};
   var rosterO = await T.roster(Ao, await T.kid(Ao));
   verdict('U4', rosterO.plan === null || rosterO.plan === 'office', 'the Office choice writes no POS plan to the genesis (the roster reads office)', JSON.stringify(rosterO));
   var apO = await P.approve(Ao, await T.code(Bo), TILL, null);
-  verdict('U4', apO.bound === false, 'an OFFICE team: role 50004 shows NO "Bound to"', JSON.stringify(apO));
+  // TEAMWORK §48.13 (2026-10-31, deliberate change): an office team offers an OPTIONAL binding to a User (the station key of LOCAL NUMBERING, docno-station at fold); approving without one still works
+  verdict('U4', apO.bound === true && apO.groups.length === 1 && /user/i.test(apO.groups[0]) && /not bound/.test(apO.options[0] || '') && !apO.msg, 'an OFFICE team: "Bound to" offers only Users and is OPTIONAL (first choice "not bound"); approving without a choice gives no error', JSON.stringify(apO));
   await T.settle([Bo, Ao], Bo);
   verdict('U4', (await T.enrolled(Bo)) && (await T.kind(Bo)) === 'office', 'the office device was approved without a binding and reads the office plan', 'kind=' + (await T.kind(Bo)));
   verdict('U5', (await P.planLine(Ao) || '').indexOf('Office team') >= 0 && (await P.choices(Ao)).length === 0, 'the founded OFFICE team shows its plan read-only on the founder', String(await P.planLine(Ao)));
@@ -220,7 +221,7 @@ var TILL = 50004, HQ = 102, SRC = {};
     { name: '"Bound to" is shown for a role without `by` rows (the role is ignored)', file: 'erp/team_sync.js', from: "var ts = bindTypes(roleId); if (!ts.length) return null;", to: "var ts = bindTypes(); if (!ts.length) return null;", expect: ['U8'] },
     { name: 'the picker reads the bare bundle, not the tip (a record made this session is missing)', file: 'erp/idempiere.html', from: "window.__tipRead = { rows: _sqlRows,", to: "window.__tipRead = { rows: _baseRows,", expect: ['U10'] },
     { name: 'the picker\'s record type is hand-coded (organisation only)', file: 'erp/team_sync.js', from: "r.by.forEach(function (c) { t = t && fkTarget(t, c); });", to: "r.by.forEach(function (c) { t = t && fkTarget(t, c); }); t = 'ad_org';", expect: ['U2', 'U3'] },
-    { name: 'an empty binding is sent (the panel does not refuse)', file: 'common/comm/team_panel.js', from: "if (bs && !bs.value) {", to: "if (false && bs && !bs.value) {", expect: ['U7'] },
+    { name: 'an empty binding is sent (the panel does not refuse)', file: 'common/comm/team_panel.js', from: "if (bs && !bs.value && !(row._bopt)) {", to: "if (false && bs && !bs.value && !(row._bopt)) {", expect: ['U7'] },
     { name: 'the founded team does not show its plan', file: 'common/comm/team_panel.js', from: "(many && st.plan ?", to: "(false && many && st.plan ?", expect: ['U5'] },
     { name: 'Who is on what does not show the bound record', file: 'common/comm/team_people_ui.js', from: "(p.boundTo ? ' <span", to: "(false && p.boundTo ? ' <span", expect: ['U9'] }];
   var cp = require('child_process'), muts = [];

@@ -23,10 +23,11 @@
   function ensure(q, run, log) {
     var rows = lc(q(TARGETS, [])), applied = 0, kept = 0;
     rows.forEach(function (r) { if (isEmpty(r.prefix)) { run('UPDATE AD_Sequence SET Prefix=? WHERE AD_Sequence_ID=?', [FORMAT, r.id]); applied++; } else kept++; });
+    var sh = 0; try { sh = (lc(q("SELECT count(*) AS n FROM (SELECT AD_Client_ID, Value FROM AD_User WHERE IsActive='Y' AND AD_Client_ID<>0 AND Value IS NOT NULL AND Value<>'' GROUP BY AD_Client_ID, Value HAVING count(*) > 1)", []))[0] || {}).n || 0; } catch (e) { sh = -1; }
     var vl = 0; try { vl = Number((lc(q("SELECT count(*) AS n FROM AD_User WHERE IsActive='Y' AND AD_Client_ID<>0 AND (Value IS NULL OR Value='')", []))[0] || {}).n || 0); } catch (e) { vl = -1; }
-    (log || console.log)('§TEAM_DOCNO_PREFIX applied=' + applied + ' kept=' + kept + ' format=' + FORMAT + ' valueless_users=' + vl + ' (boot overlay, live DB only, base hash unchanged' +
-      (vl > 0 ? '; a user with no Search Key numbers Org--n and shares that series with every other such user: give each station user a Value in the User window' : '') + ')');
-    return { applied: applied, kept: kept, valueless: vl };
+    (log || console.log)('§TEAM_DOCNO_PREFIX applied=' + applied + ' kept=' + kept + ' format=' + FORMAT + ' valueless_users=' + vl + ' shared_values=' + sh + ' (boot overlay, live DB only, base hash unchanged' +
+      (sh > 0 ? '; ' + sh + ' Search Key(s) are shared by two or more users of one client: those users share one series' : '') + (vl > 0 ? '; a user with no Search Key numbers Org--n and shares that series with every other such user: give each station user a Value in the User window' : '') + ')');
+    return { applied: applied, kept: kept, valueless: vl, shared: sh };
   }
   function overlaid(prefix) { return isEmpty(prefix) ? FORMAT : prefix; }   // the overlay applied in memory to a BASE row
   function globalsOf(fmt) { var m = String(fmt).replace(/\/K@/g, '@').match(/@[#$][^@]*@/g) || []; return m.map(function (x) { return x.slice(1, -1).split(/[.:<]/)[0]; }); }

@@ -263,6 +263,17 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     console.log('   §TEAM-CONFLICT-MSG ad_message A=' + JSON.stringify(mA) + ' B=' + JSON.stringify(mB) + ' literalInPlugin=' + /please ReQuery/.test(tsSrc));
     verdict(!!mA && !!mB && cfA.length === 1 && cfB.length === 1 && cfA[0].slice(-mA.length) === mA && cfB[0].slice(-mB.length) === mB && !/please ReQuery/.test(tsSrc),
       'the conflict line ends with the page\'s OWN AD_Message CurrentRecordModified text and team_sync.js carries no copy of it (the core shows its message, §8.3 A4)', 'A=' + JSON.stringify(mA) + ' B=' + JSON.stringify(mB));
+    // ═══ §TEAM-SEATBELT (bim-compiler TEAMWORK §48.13): the real Seatbelt button on A, after the real cross-edit conflict — S7 must ADVISE, its count = the chip's, nothing blocked ═══
+    console.log('\n§TEAM-SEATBELT');
+    var sbBtn = await pg.A.waitForSelector('#team-seatbelt', { timeout: 5000 }).then(function () { return true; }, function () { return false; });
+    if (sbBtn) await pg.A.click('#team-seatbelt');
+    var sb = sbBtn ? await pg.A.waitForSelector('#team-seatbelt-panel .sb-row', { timeout: 10000 }).then(function () { return pg.A.evaluate(function () { var p = document.getElementById('team-seatbelt-panel');
+      return { verdict: p.getAttribute('data-verdict'), rows: Array.prototype.map.call(p.querySelectorAll('.sb-row'), function (r) { return { id: r.getAttribute('data-id'), st: r.getAttribute('data-status'), t: r.textContent.replace(/\s+/g, ' ').trim() }; }) }; }); }, function () { return null; }) : null;
+    var chA = await chip('A'), s7 = sb ? sb.rows.filter(function (r) { return r.id === 'S7'; })[0] : null;
+    console.log('   §TEAM-SEATBELT A=' + JSON.stringify(sb) + ' chip.conflicts=' + (chA && chA.conflicts));
+    verdict(!!sb && sb.rows.length === 9 && sb.verdict === 'ADVISE' && !!s7 && s7.st === 'ADVISE' && s7.t.indexOf(String(chA.conflicts) + ' records') >= 0 && chA.conflicts === cfA.length,
+      'A clicks the real Seatbelt button: 9 rows, S7 (changed by another device) ADVISE with the SAME count the chip shows; advisory only', sb ? 'verdict=' + sb.verdict + ' S7=' + (s7 && s7.t) : 'no panel');
+    if (sbBtn) await pg.A.click('#team-seatbelt');
     await toHeaderGrid('A'); await toHeaderGrid('B');
     var dmA = await descMap('A'), dmB = await descMap('B');
     console.log('   §TEAM-CONFLICT descriptions A=' + JSON.stringify(dmA) + ' B=' + JSON.stringify(dmB));
