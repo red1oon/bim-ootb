@@ -14,6 +14,11 @@
 //   D11 CONTROL same user on two devices collides · D12 an admin's prefix is kept · D13 a user preference named like the variable does not change the number
 //   D14 a received document with another station's prefix is REFUSED docno-station on every device (the honest one MERGED; an unbound author is not judged, counted)
 //   D15 an admin's format edit changes the next number (as legacy), and at fold it is honoured once the edit is in the log (control: without it, refused)
+// §48.11d station users get a Search Key (shipped patch = legacy MUser.setValue applied to every empty Value, erp/tools/user_value_rule.js):
+//   D16 no seed user left without a Value (measured before/after) · D17 each patched Value = the legacy rule on its Name, GardenAdmin = the pilot's own value · D18 no two users of
+//   one client share a Value · D19 the demo station (GardenAdmin) numbers OrgValue-gardenad-n, never Org--n · LEGACY arm: twin Value == pilot Value for every shared AD_User_ID
+//   D20 LEGACY arm of LOCAL NUMBERING: scripts/bridge/docno_station_legacy.js ran the same format on the pilot through real WebServices logins (its own login rule sets
+//   #AD_User_Value); the twin replays that config + login order and must give the SAME DocumentNo at every position and the same AD_Sequence_No keys/next values.
 //   MUTANTS (--mutants): evalvar / logincv / overlay / judge — each served broken through a require hook that proves it applied; each must turn >= 1 row red (a crash is not a kill).
 'use strict';
 var fs = require('fs'), path = require('path'), os = require('os'), Module = require('module'), cp = require('child_process'), nodeCrypto = require('crypto');
@@ -105,6 +110,38 @@ async function localNumbering(SQL) {
   E.db.run('UPDATE ad_sequence SET prefix=? WHERE ad_sequence_id=?', ['@AD_Org_ID.Value/K@/@#AD_User_Value/K@/', seqO]); var n15 = E.drawDT(DOCS.order, { ad_org_id: 11 }, JOE);
   ck('D15', "an admin's edit of the format in the Document Sequence window changes the next number (as legacy)", n15 === 'HQ/' + uv[JOE] + '/50000', 'number=' + n15);
 }
+async function userValues(SQL) {
+  var R = require(path.join(ERP, 'tools', 'user_value_rule.js')), raw = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
+  var emptyRaw = raw.exec("SELECT ad_user_id, name, ldapuser FROM ad_user WHERE value IS NULL OR value=''")[0]; emptyRaw = emptyRaw ? emptyRaw.values : [];
+  var U = await device(SQL, 'U'), left = U.q("SELECT count(*) AS n FROM ad_user WHERE value IS NULL OR value=''", [])[0].n;
+  ck('D16', 'after the shipped patch no user is left without a Search Key (before: ' + emptyRaw.length + ' in the seed file)', emptyRaw.length > 0 && left === 0, 'before=' + emptyRaw.length + ' after=' + left);
+  var bad = emptyRaw.filter(function (x) { var v = U.q('SELECT value AS v FROM ad_user WHERE ad_user_id=?', [x[0]])[0].v; return v !== R.rule(x[1], x[2]); });
+  var ga = U.q('SELECT value AS v FROM ad_user WHERE ad_user_id=101', [])[0].v;
+  ck('D17', "every patched Value is legacy MUser.setValue's own result on that user's Name (not typed), and GardenAdmin = gardenad (the value legacy's pilot already carries)", bad.length === 0 && ga === 'gardenad', 'mismatch=' + JSON.stringify(bad.map(function (x) { return x[0]; })) + ' GardenAdmin=' + ga);
+  var dup = U.q("SELECT ad_client_id AS c, value AS v, count(*) AS n FROM ad_user WHERE isactive='Y' GROUP BY ad_client_id, value HAVING count(*) > 1", []);
+  ck('D18', 'no two active users of one client share a Search Key in the shipped data (else two stations would share one series)', dup.length === 0, 'shared=' + JSON.stringify(dup));
+  overlay(U); var n19 = U.drawDT(DOCS.order, { ad_org_id: 11 }, 101);
+  ck('D19', 'the demo station (GardenAdmin) numbers HQ-gardenad-n, never HQ--n (the live defect seen in W-TEAM-SO, §48.11c)', n19 === 'HQ-gardenad-50000', 'number=' + n19);
+  // LEGACY arm: the pilot (docker postgres, idempiere_pilot) — the same AD_User_ID must carry the same Value on both sides
+  var pr = cp.spawnSync('psql', ['-h', 'localhost', '-U', 'postgres', '-d', 'idempiere_pilot', '-AtF', '|', '-c', 'SELECT ad_user_id, coalesce(value,\'\') FROM adempiere.ad_user ORDER BY 1'], { env: Object.assign({}, process.env, { PGPASSWORD: process.env.PGPASSWORD || 'postgres' }), encoding: 'utf8', timeout: 20000 });
+  if (pr.status !== 0) { inconc++; log('§DT INCONCLUSIVE LEGACY-USER-VALUE - pilot not reachable (' + String(pr.stderr || pr.error || '').trim().slice(0, 120) + ')'); return; }
+  var pv = {}; pr.stdout.trim().split('\n').forEach(function (l) { var a = l.split('|'); pv[a[0]] = a[1]; });
+  var both = U.q('SELECT ad_user_id AS id, value AS v FROM ad_user', []).filter(function (r) { return pv[String(r.id)] !== undefined; }), diff = both.filter(function (r) { return pv[String(r.id)] !== r.v; });
+  log('§DT-LEGACY-USER-VALUE pilot users=' + Object.keys(pv).length + ' shared ids=' + both.length + ' ' + both.map(function (r) { return r.id + '=' + r.v + (pv[String(r.id)] !== r.v ? '≠' + pv[String(r.id)] : ''); }).join(' '));
+  ck('D17L', 'LEGACY: every AD_User_ID present on both sides carries the same Search Key on the twin and on the pilot', both.length > 0 && diff.length === 0, 'shared=' + both.length + ' differ=' + JSON.stringify(diff.map(function (r) { return r.id; })));
+}
+async function legacyStation(SQL) {
+  var LJ = path.join(os.homedir(), 'bim-compiler/scripts/bridge/out/docno_station_legacy.json');
+  if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE D20 - no oracle file ' + LJ + ' (run scripts/bridge/docno_station_legacy.js on the pilot)'); return; }
+  var L = JSON.parse(fs.readFileSync(LJ, 'utf8')), X = await device(SQL, 'LEG'), SEQ2 = 9300201, DT2 = 9300202;
+  X.db.run("INSERT INTO ad_sequence (ad_sequence_id,ad_client_id,ad_org_id,isactive,name,isautosequence,incrementno,startno,currentnext,currentnextsys,istableid,prefix,startnewyear,decimalpattern,startnewmonth,isorglevelsequence) VALUES (?,11,0,'Y','DTLN replay','Y',1,?,?,100,'N',?,'N',NULL,'N','N')", [SEQ2, L.start, L.start, L.format]);
+  X.db.run('CREATE TEMP TABLE t AS SELECT * FROM c_doctype WHERE c_doctype_id=132'); X.db.run("UPDATE t SET c_doctype_id=?, name='DTLN replay', docnosequence_id=?, isdefault='N'", [DT2, SEQ2]); X.db.run('INSERT INTO c_doctype SELECT * FROM t');
+  var twin = L.numbers.map(function (n) { return X.drawDT(DT2, { ad_org_id: 11 }, n.createdby); }), leg = L.numbers.map(function (n) { return n.documentno; });
+  var keys = X.q('SELECT sequencekey AS k, currentnext AS c FROM ad_sequence_no WHERE ad_sequence_id=? ORDER BY 1', [SEQ2]).map(function (r) { return r.k + '=' + r.c; }), lkeys = (L.keys || []).map(function (r) { return r.key + '=' + r.currentnext; });
+  log('§DT-LEGACY-STATION plan=' + L.plan.join(',') + ' legacy=' + leg.join(',') + ' twin=' + twin.join(',') + ' | keys legacy=' + lkeys.join(',') + ' twin=' + keys.join(','));
+  ck('D20', 'LEGACY: the pilot (real WS logins, its own login rule) and the twin number the same format the same way: equal DocumentNo at every position, equal AD_Sequence_No keys and next values',
+    leg.length > 0 && JSON.stringify(leg) === JSON.stringify(twin) && JSON.stringify(lkeys) === JSON.stringify(keys), 'positions=' + leg.length + ' keys=' + keys.length);
+}
 async function foldArms(SQL, uv) {
   var CD = path.join(ERP, '..', 'common', 'comm'); ['CommEnvelope', 'CommOrder', 'CommRoster', 'CommAdmit', 'CommStore', 'CommPipe'].forEach(function (n) { delete globalThis[n]; });
   var STORE = require(path.join(CD, 'comm_store.js')), PIPE = require(path.join(CD, 'comm_pipe.js'));
@@ -178,6 +215,8 @@ if (process.argv.indexOf('--mutants') >= 0) {                    // each mutant 
   ck('D6', 'an order with no till gets a number outside every till series (measured: ' + none + ')', none && !/^HQ-T[12]-/.test(none) && !/^Store North-/.test(none), none);
   log('§DT-SEQLOG ' + (A.says.slice(0, 2).join(' | ') || '(no §MODEL-SEQ lines captured)'));
   await localNumbering(SQL);
+  await userValues(SQL);
+  await legacyStation(SQL);
   var LJ = path.join(os.homedir(), 'bim-compiler/scripts/bridge/out/docno_till_legacy.json');
   if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE LEGACY - no oracle file ' + LJ + ' (run the same config on the pilot; until then the twin numbers are not legacy-compared)'); }
   log('§DT_VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + inconc + (inconc ? ' (legacy arm)' : ''));
