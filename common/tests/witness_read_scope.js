@@ -17,7 +17,7 @@
  *   H  hold                    a station whose pair key does not exist yet HOLDS its laned op (reason=no-aud-key), puts nothing on the relay, sends after the hub's grant, always sealed to its audience.
  *   I  unchanged spaces        an office space and a pre-F1 POS genesis: relay shape (names + ops per object) equals the F1 engine's, no `box` field, no head `boxes`; a mailbox space DOES carry them.
  *   J  checkpoint              a snapshot built in a mailbox space: Y (space key only) opens 0 laned ops from it. CONTROL: without holds the snapshot's laned ops open for Y.
- *   MUT nine mutants, each a source replacement of the engine (needle count printed, 0 = NOT APPLIED = INCONCLUSIVE); each must turn >= 1 of its arms red; a crashing mutant is NOT a kill.
+ *   MUT ten mutants, each a source replacement of the engine (needle count printed, 0 = NOT APPLIED = INCONCLUSIVE); each must turn >= 1 of its arms red; a crashing mutant is NOT a kill.
  * Verdict: §RS_SCOPE_VERDICT PASS | FAIL | INCONCLUSIVE (an arm that judged nothing = INCONCLUSIVE).   Run: node common/tests/witness_read_scope.js [bim-ootb dir] [--no-mut] [--only=A,B] | tee <log> */
 'use strict';
 if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) globalThis.crypto = require('crypto').webcrypto;
@@ -329,12 +329,17 @@ async function armJ(E, ctx) {
     var inSnap = rowsOfObj(await w.relay.get(c.name)), inHash = {}; inSnap.forEach(function (r) { inHash[r.hash] = 1; });
     var foreign = laned(H).filter(function (r) { return ownerOf(w, r) !== w.devs[2].person_uu && inHash[r.op_hash]; });
     var note = H.query("SELECT op_hash FROM cl_op WHERE target_table='t_note'")[0];
-    return { c: c, foreign: foreign, leak: foreign.filter(function (r) { return yh[r.op_hash]; }).length, sealedY: Y.sealed().length, noteOpen: !!yh[note.op_hash], rows: inSnap.length };
+    return { c: c, foreign: foreign, leak: foreign.filter(function (r) { return yh[r.op_hash]; }).length, sealedY: Y.sealed().length, noteOpen: !!yh[note.op_hash], rows: inSnap.length, state: stateView(Y, foreign) };
   }
+  // G5 (§49.1): the snapshot STATE (verdicts + order + record ids), as Y holds it after sync, must carry no laned-op detail. stateView = what Y can read of it with the team key (+ its own pair key).
+  function stateView(Y, foreign) { var rows = Y.query('SELECT state_json FROM cl_snapmeta'), txt = rows.map(function (r) { return String(r.state_json); }).join('\n'), opened = rows.filter(function (r) { return /^\s*\{/.test(String(r.state_json)); }).length;
+    return { rows: rows.length, opened: opened, hashHits: foreign.filter(function (r) { return txt.indexOf(r.op_hash) >= 0; }).length, uuHits: foreign.filter(function (r) { return txt.toLowerCase().indexOf(String(r.target_uu).toLowerCase()) >= 0; }).length }; }
   var s = await snap(true), sc = await snap(false);
   if (s.skipped) return vacuous('J', 'the hub did not build a snapshot (' + s.skipped + ')');
   ok('J', s.foreign.length > 0 && s.leak === 0 && s.sealedY >= s.foreign.length, 'Y (space key only) opens 0 of the ' + s.foreign.length + ' laned ops of others that the snapshot carries (' + s.rows + ' ops in it)', 'leaked=' + s.leak + ' kept sealed=' + s.sealedY);
   ok('J', s.noteOpen, 'Y still opens the unaddressed (space-key) op (the snapshot does not lock everything)', 'note opened=' + s.noteOpen);
+  ok('J', s.state.hashHits === 0 && s.state.uuHits === 0 && s.foreign.length > 0, 'G5: the snapshot STATE (' + s.state.rows + ' state row(s) fetched, ' + s.state.opened + ' readable with the team key) names 0 of the ' + s.foreign.length + ' laned op ids and 0 of their record ids', 'op ids in state=' + s.state.hashHits + ' record ids in state=' + s.state.uuHits);
+  if (sc.skipped || !sc.state.opened) vacuous('J', 'G5 CONTROL: no readable state without audience sealing (' + (sc.skipped || 'state not opened') + ')'); else ok('J', sc.state.hashHits === sc.foreign.length, 'G5 CONTROL: without audience sealing the same STATE lists ' + sc.state.hashHits + ' of ' + sc.foreign.length + ' laned op ids (the check can find them)', 'op ids in state=' + sc.state.hashHits);
   if (sc.skipped) vacuous('J', 'CONTROL snapshot skipped (' + sc.skipped + ')'); else ok('J', sc.foreign.length > 0 && sc.leak === sc.foreign.length, 'CONTROL: without audience sealing the same snapshot opens ' + sc.foreign.length + ' of ' + sc.foreign.length + ' for Y', 'opened=' + sc.leak);
 }
 
@@ -361,7 +366,8 @@ var ARMFN = { A: armA, B: armB, C: armC, D: armD, E: armE, F: armF, G: armG, H: 
     { id: 'M6', what: 'the signed head without `boxes`', file: 'comm_store.js', needle: "if (mbFlag) { var bx = {};", repl: "if (false) { var bx = {};", expect: ['G', 'I'] },
     { id: 'M7', what: 'a box mismatch is ingested', file: 'comm_store.js', needle: "if (env.box && env.box.name !== bn) {", repl: "if (false) {", expect: ['D'] },
     { id: 'M8', what: 'the revoked device is granted the new epoch\'s key', file: 'comm_store.js', needle: ".filter(function (k) { return R.revokes[k] == null && R.devices[k].dh; });", repl: ".filter(function (k) { return R.devices[k].dh; });", expect: ['F'] },
-    { id: 'M9', what: 'a laned op with no audience key is sent under the space key', file: 'comm_store.js', needle: "if (!ak) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-aud-key aud=' + au); break; }", repl: "if (!ak) { ak = ring[ep][0]; au = null; }", expect: ['H'] }
+    { id: 'M9', what: 'a laned op with no audience key is sent under the space key', file: 'comm_store.js', needle: "if (!ak) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-aud-key aud=' + au); break; }", repl: "if (!ak) { ak = ring[ep][0]; au = null; }", expect: ['H'] },
+    { id: 'M10', what: 'G5: the snapshot state is sealed with the team key and carries the laned detail', file: 'comm_store.js', needle: "if (!aOnC) pk.run('INSERT INTO meta VALUES (?,?)', ['state', stText]);", repl: "if (true) pk.run('INSERT INTO meta VALUES (?,?)', ['state', stText]);", expect: ['J'] }
   ];
   var killed = 0, bad = 0;
   if (NOMUT || ONLY.length) console.log('\n§RS-MUTANTS skipped'); else {
