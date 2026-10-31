@@ -35,6 +35,10 @@
     'CREATE TABLE IF NOT EXISTS cl_verdict (op_hash TEXT PRIMARY KEY, fold_pos INTEGER, verdict TEXT, reason TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_fetched (name TEXT, pipe_id TEXT, PRIMARY KEY(name, pipe_id))',
     'CREATE TABLE IF NOT EXISTS cl_lane (op_hash TEXT PRIMARY KEY, lane TEXT NOT NULL)',       // F1 (TEAMWORK_FRAMEWORK §45.8): the mailbox an own op was addressed to; empty in every space without mailboxes
+    'CREATE TABLE IF NOT EXISTS cl_boxseq (lane TEXT PRIMARY KEY, n INTEGER NOT NULL)',       // §45.11: the last per-mailbox sequence number I assigned, per lane
+    'CREATE TABLE IF NOT EXISTS cl_box (op_hash TEXT PRIMARY KEY, author_kid TEXT NOT NULL, author_seq INTEGER NOT NULL, box TEXT NOT NULL, bseq INTEGER NOT NULL)',       // §45.11: every op I hold that carries a signed `box`
+    'CREATE INDEX IF NOT EXISTS cl_box_ab ON cl_box(author_kid, box)',
+    'CREATE TABLE IF NOT EXISTS cl_head_boxes (author_kid TEXT, pipe_id TEXT, boxes_json TEXT, PRIMARY KEY(author_kid, pipe_id))',       // §45.11: the `boxes` a signed head claimed
     'CREATE TABLE IF NOT EXISTS cl_sealed (op_hash TEXT PRIMARY KEY, epoch INTEGER, ct TEXT NOT NULL, bundle TEXT, pipe_id TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_outbox (bundle_name TEXT PRIMARY KEY, from_seq INTEGER, to_seq INTEGER, state TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_head_seen (author_kid TEXT, pipe_id TEXT, seq INTEGER, head_hash TEXT, frontier_json TEXT, sig TEXT, PRIMARY KEY(author_kid, pipe_id))',
@@ -54,32 +58,32 @@
   function _sub() { return globalThis.crypto.subtle; }
   function _b64(b) { b = new Uint8Array(b); if (typeof Buffer !== 'undefined') return Buffer.from(b).toString('base64'); var t = ''; for (var i = 0; i < b.length; i++) t += String.fromCharCode(b[i]); return btoa(t); }
   function _unb64(t) { if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(String(t), 'base64')); var s = atob(String(t)), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
-  var _aad = function (space, epoch) { return new TextEncoder().encode('bim-comm-op|' + space + '|' + epoch); };
+  var _aad = function (space, epoch, aud) { return new TextEncoder().encode('bim-comm-op|' + space + '|' + epoch + (aud ? '|' + aud : '')); };      // §45.11: an audience-sealed op cannot be moved to another audience
   // the KEK for one grant: ECDH(my private, their public) → HKDF-SHA256 (bound to space, epoch, from, to) → AES-KW-256
-  async function _kek(priv, pubJwk, space, epoch, from, to) {
+  async function _kek(priv, pubJwk, space, epoch, from, to, aud) {
     var pub = await _sub().importKey('jwk', ROS.dhOf(pubJwk), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
     var bits = await _sub().deriveBits({ name: 'ECDH', public: pub }, priv, 256);
     var hk = await _sub().importKey('raw', bits, 'HKDF', false, ['deriveKey']);
     return _sub().deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: new TextEncoder().encode('bim-comm-keygrant'),
-      info: new TextEncoder().encode(space + '|' + epoch + '|' + from + '|' + to) }, hk, { name: 'AES-KW', length: 256 }, false, ['wrapKey', 'unwrapKey']);
+      info: new TextEncoder().encode(space + '|' + epoch + '|' + from + '|' + to + (aud ? '|' + aud : '')) }, hk, { name: 'AES-KW', length: 256 }, false, ['wrapKey', 'unwrapKey']);
   }
   async function _newSpaceKey() { return _sub().generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']); }
-  async function _wrap(key, priv, pubJwk, space, epoch, from, to) { return _b64(await _sub().wrapKey('raw', key, await _kek(priv, pubJwk, space, epoch, from, to), 'AES-KW')); }
-  async function _unwrap(wrapped, priv, pubJwk, space, epoch, from, to) {
-    return _sub().unwrapKey('raw', _unb64(wrapped), await _kek(priv, pubJwk, space, epoch, from, to), 'AES-KW', { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  async function _wrap(key, priv, pubJwk, space, epoch, from, to, aud) { return _b64(await _sub().wrapKey('raw', key, await _kek(priv, pubJwk, space, epoch, from, to, aud), 'AES-KW')); }
+  async function _unwrap(wrapped, priv, pubJwk, space, epoch, from, to, aud) {
+    return _sub().unwrapKey('raw', _unb64(wrapped), await _kek(priv, pubJwk, space, epoch, from, to, aud), 'AES-KW', { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
   }
-  async function _seal(env, key, epoch, space) {
+  async function _seal(env, key, epoch, space, aud) {       // aud (§45.11): sealed to one audience, `enc:<epoch>@<aud>:<b64>`; no aud = the space key, `enc:<epoch>:<b64>`, exactly as before
     var iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
-    var ct = new Uint8Array(await _sub().encrypt({ name: 'AES-GCM', iv: iv, additionalData: _aad(space, epoch) }, key, new TextEncoder().encode(ENV.canonical(env))));
-    var out = new Uint8Array(12 + ct.length); out.set(iv, 0); out.set(ct, 12); return 'enc:' + epoch + ':' + _b64(out);
+    var ct = new Uint8Array(await _sub().encrypt({ name: 'AES-GCM', iv: iv, additionalData: _aad(space, epoch, aud) }, key, new TextEncoder().encode(ENV.canonical(env))));
+    var out = new Uint8Array(12 + ct.length); out.set(iv, 0); out.set(ct, 12); return 'enc:' + epoch + (aud ? '@' + aud : '') + ':' + _b64(out);
   }
   // → {state:'ok', env, epoch} | {state:'sealed', epoch} (no key for that epoch yet) | {state:'tampered'} (key held, GCM refused it)
-  async function _openText(text, ring, space) {
-    var m = /^enc:(\d+):([A-Za-z0-9+\/=]+)$/.exec(String(text)); if (!m) return { state: 'tampered' };
-    var epoch = Number(m[1]), b = _unb64(m[2]); if (b.length < 28) return { state: 'tampered' };
-    var ks = ring[epoch]; if (!ks || !ks.length) return { state: 'sealed', epoch: epoch };
+  async function _openText(text, ring, space, audRing) {
+    var m = /^enc:(\d+)(?:@([A-Za-z0-9_.-]+))?:([A-Za-z0-9+\/=]+)$/.exec(String(text)); if (!m) return { state: 'tampered' };
+    var epoch = Number(m[1]), aud = m[2] || null, b = _unb64(m[3]); if (b.length < 28) return { state: 'tampered' };
+    var ks = aud ? (((audRing || {})[aud] || {})[epoch] || []).map(function (e) { return e.key; }) : ring[epoch]; if (!ks || !ks.length) return { state: 'sealed', epoch: epoch, aud: aud };
     for (var i = 0; i < ks.length; i++) {
-      try { var pt = await _sub().decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: _aad(space, epoch) }, ks[i], b.slice(12));
+      try { var pt = await _sub().decrypt({ name: 'AES-GCM', iv: b.slice(0, 12), additionalData: _aad(space, epoch, aud) }, ks[i], b.slice(12));
         return { state: 'ok', env: JSON.parse(new TextDecoder().decode(pt)), epoch: epoch }; } catch (e) { /* try the next candidate key of this epoch */ }
     }
     return { state: 'tampered' };
@@ -106,8 +110,25 @@
     var last = null, sigCache = {};
     // F1 per-device mailboxes (§45.8). MB = the host's three callbacks { laneOf(spec)->lane|null, read({roster,self})->[box], wantHead(kid,{roster,self})->bool }; mbFlag = MB installed AND the genesis says `mailboxes:1`.
     // A space whose genesis lacks the flag (every space founded before F1, every office space) never leaves the shared stream: nothing below changes for it.
-    var MB = null, mbFlag = false;
+    var MB = null, mbFlag = false, mbBoxes = [];
     function setMailbox(cfg) { MB = cfg && typeof cfg.laneOf === 'function' && typeof cfg.read === 'function' ? cfg : null; }
+    // §45.11 SEALING IN THE REAL LAYER. Audience sealing is ON only in an encrypted mailbox space whose host supplies holds(aud, kid, ctx) -> bool (who may hold the key of an audience: 'hub' = the hub devices,
+    // 'p_<person>' = that person's devices + the hub devices). Without holds the space behaves as F1 (laned ops under the space key). Eligibility is the HOST's; the store only asks.
+    function audOn(R) { return !!(MB && typeof MB.holds === 'function' && R && R.ok && R.mailboxes && R.encrypted); }
+    function holdsOf(aud, kid, R) { try { return !!MB.holds(aud, kid, { roster: R, self: self }); } catch (e) { return false; } }
+    function eligForGrant(aud, kid, R) { return holdsOf(aud, kid, R); }
+    function eligForSeal(aud, origin, R) { return holdsOf(aud, origin, R); }
+    function audFor(lane, kid, R) {                       // the audience of a laned op: DOWN p_X -> p_X; UP (hub) by a station of person X -> p_X; UP/hub by a hub device -> hub
+      if (lane.indexOf('p_') === 0) return lane;
+      if (lane === 'hub') { if (holdsOf('hub', kid, R)) return 'hub'; var d = R.devices[kid]; return d ? 'p_' + d.person : null; }
+      return null;
+    }
+    function sealerKey(aud, ep, ar, R) {                  // the first accepted key (fold order) for (aud, epoch) whose ORIGIN is eligible - a member's own candidate key is never sealed to
+      var es = (ar[aud] || {})[ep] || [];
+      for (var i = 0; i < es.length; i++) if (eligForSeal(aud, es[i].origin, R)) return es[i].key;
+      return null;
+    }
+    function boxOfName(n) { var p = String(n).split('/'); return p[2] === 'm' ? p[3] : null; }
 
     function selfRow() { return _q(db, 'SELECT * FROM cl_self WHERE kid=?', [self.kid])[0]; }
     function allOps() { return _q(db, 'SELECT op_hash, envelope FROM cl_op').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; }); }
@@ -383,24 +404,27 @@
       var res;
       if (!opts.noCheckpoint && anyCkpt()) { var r = await orderWithCkpt(); if (r) res = r; }
       if (!res) res = await plainOrder();
-      mbFlag = !!(MB && res && res.roster && res.roster.mailboxes); return res;
+      mbFlag = !!(MB && res && res.roster && res.roster.mailboxes); mbBoxes = mbFlag ? ((await MB.read({ roster: res.roster, self: self })) || []) : []; return res;
     }
 
     async function cur() { return last || order(); }
 
     // my epoch keys, derived from the KEYGRANTs addressed to me that the roster accepted: {epoch: [CryptoKey]} (§13.2).
     // Memoised on the fold result, so any new op (a new grant, a revoke) re-derives; nothing is persisted.
-    var ringFor = null, ringVal = {};
+    var ringFor = null, ringVal = {}, audVal = {};
     async function keyring() {
       var L = await cur(); if (ringFor === L) return ringVal;
-      var ring = {}, R = L.roster;
+      var ring = {}, ar = {}, R = L.roster;
       if (self.dhPrivateKey && R.ok) for (var g of R.grants) {
         if (g.kid !== self.kid) continue;
         var from = R.devices[g.from_kid]; if (!from || !from.dh) continue;
-        try { var k = await _unwrap(g.wrapped, self.dhPrivateKey, from.dh, space, g.epoch, g.from_kid, self.kid); (ring[g.epoch] = ring[g.epoch] || []).push(k); } catch (e) { /* a grant that does not open is not a key */ }
+        try { var k = await _unwrap(g.wrapped, self.dhPrivateKey, from.dh, space, g.epoch, g.from_kid, self.kid, g.aud);
+          if (g.aud) ((ar[g.aud] = ar[g.aud] || {})[g.epoch] = ar[g.aud][g.epoch] || []).push({ key: k, origin: g.origin });       // §45.11: {aud: {epoch: [{key, origin}]}}
+          else (ring[g.epoch] = ring[g.epoch] || []).push(k); } catch (e) { /* a grant that does not open is not a key */ }
       }
-      ringFor = L; ringVal = ring; return ring;
+      ringFor = L; ringVal = ring; audVal = ar; return ring;
     }
+    async function audKeyring() { await keyring(); return audVal; }
     function _newest(ring) { var e = Object.keys(ring).map(Number).sort(function (a, b) { return b - a; })[0]; return e == null ? null : e; }
 
     // the version of each record THIS author sees: the record's HEADS (ops on it with no descendant on it), over the
@@ -503,11 +527,23 @@
         var n = 0; while (have[n + 1]) n++; f[r.a] = n; });
       return f;
     }
-    // F1: in a mailbox space a seq hole may be an op addressed to someone else, so the receipt a head carries is the highest seq held per author (the sender's SEEN still turns on)
-    // and gaps() cannot tell a hole from mail for another box: it reports none (STATED LIMIT, §45.8 - a withheld mailbox bundle shows as a parked dependent op, not as a gap).
+    // F1: in a mailbox space a seq hole may be an op addressed to someone else, so the receipt a head carries is the highest seq held per author (the sender's SEEN still turns on).
+    // A withheld mailbox bundle is seen through the signed per-box sequence instead (§45.11, boxGaps below).
     async function recvMax() { var f = {}; _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m FROM cl_op GROUP BY author_kid').forEach(function (r) { f[r.a] = r.m; }); return f; }
+    // §45.11: in a mailbox space a missing op is a missing BOX sequence number. Per (author, box I read): the numbers I hold (cl_box) plus the top the author's signed head claimed (cl_head_boxes);
+    // every n below the top that I do not hold is a gap {author, box, seq}. (Plain author seq holes stay meaningless here: they are mail for another box.)
+    function boxGaps() {
+      var mine = {}, held = {}, top = {}, out = []; mbBoxes.forEach(function (b) { mine[b] = 1; });
+      _q(db, 'SELECT author_kid AS a, box AS b, bseq AS s FROM cl_box WHERE author_kid<>?', [self.kid]).forEach(function (r) { if (!mine[r.b]) return;
+        ((held[r.a] = held[r.a] || {})[r.b] = held[r.a][r.b] || {})[r.s] = 1; ((top[r.a] = top[r.a] || {})[r.b] = Math.max(top[r.a][r.b] || 0, r.s)); });
+      _q(db, 'SELECT author_kid AS a, boxes_json AS j FROM cl_head_boxes').forEach(function (r) { if (r.a === self.kid) return; var bx; try { bx = JSON.parse(r.j); } catch (e) { return; }
+        Object.keys(bx).forEach(function (b) { if (!mine[b] || !Number.isInteger(bx[b])) return; (top[r.a] = top[r.a] || {}); top[r.a][b] = Math.max(top[r.a][b] || 0, bx[b]); }); });
+      Object.keys(top).sort().forEach(function (a) { Object.keys(top[a]).sort().forEach(function (b) { var have = (held[a] || {})[b] || {};
+        for (var n = 1; n <= top[a][b]; n++) if (!have[n]) out.push({ author: a, box: b, seq: n }); }); });
+      return out;
+    }
     function gaps() {
-      if (mbFlag) return [];
+      if (mbFlag) return boxGaps();
       var out = [], ops = {}, top = {}, order = [];
       _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m, COUNT(*) AS c FROM cl_op GROUP BY author_kid').forEach(function (r) { ops[r.a] = r; top[r.a] = r.m; order.push(r.a); });
       _q(db, 'SELECT author_kid AS a, MAX(seq) AS s FROM cl_head_seen GROUP BY author_kid').forEach(function (r) { if (!(r.a in top)) order.push(r.a); top[r.a] = Math.max(top[r.a] || 0, r.s); });
@@ -545,27 +581,56 @@
       // §13.12.I.1: in a space with a base every business op carries the short hash of the base it was authored on (the DB the host actually
       // loaded, opts.baseSha256, else the team's own); identity ops stay m0. A caller-supplied manifest wins.
       var rb = ident ? null : rbc ? (rbc.v !== undefined ? rbc.v : (rbc.v = (await cur()).roster.base)) : (await cur()).roster.base, stamp = rb ? ADM.baseStamp({ sha256: opts.baseSha256 || rb.sha256 }) : null;
+      // F1 (§45.8): the lane of a business op in a mailbox space (the genesis gate: a space without `mailboxes:1` never has a lane). §45.11: computed BEFORE signing, because a laned op carries a SIGNED
+      // per-mailbox sequence `box: {name, seq}` (n = 1,2,3... per author and lane), which is what lets a receiver see a withheld mailbox bundle as a gap.
+      var lane = null, box = null;
+      if (!ident && MB) { var mbOn = rbc ? (rbc.mb !== undefined ? rbc.mb : (rbc.mb = !!(await cur()).roster.mailboxes)) : !!(await cur()).roster.mailboxes;
+        if (mbOn) { lane = MB.laneOf(spec); if (lane != null && !/^[A-Za-z0-9_.-]+$/.test(String(lane))) lane = null; if (lane) { lane = String(lane); var bq0 = _q(db, 'SELECT n FROM cl_boxseq WHERE lane=?', [lane])[0]; box = { name: lane, seq: (bq0 ? bq0.n : 0) + 1 }; } } }
       var env = { v: 3, space: space, author: self.kid, seq: me.next_seq, prev: me.head_hash || null, deps: deps, reads: reads,
                   manifest: spec.manifest || stamp || 'm0', policy: spec.policy || 'p0', intent: spec.intent || (ident ? 'K-ID' : 'K1'),
                   target: spec.target, base: reads[uus[0]], ts: spec.ts != null ? spec.ts : Date.now(), body: spec.body };
       if (spec.attrib) env.attrib = spec.attrib;
+      if (box) env.box = box;
       var vr = ENV.validate(env); if (!vr.ok) throw new Error('author: invalid envelope — ' + vr.errors.join('; '));
       env = await ENV.sign(env, self);
       var h = await ENV.hashHex(env);
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?,?)', [h, self.kid, env.seq, env.prev, JSON.stringify(env.deps), env.body.op_type, env.target.table, env.target.uu, JSON.stringify(env), 'local', 'OWN']);
       db.run('UPDATE cl_self SET next_seq=?, head_hash=? WHERE kid=?', [env.seq + 1, h, self.kid]);
-      var lane = null;
-      if (!ident && MB) { var mbOn = rbc ? (rbc.mb !== undefined ? rbc.mb : (rbc.mb = !!(await cur()).roster.mailboxes)) : !!(await cur()).roster.mailboxes;      // the genesis gate (a space without `mailboxes:1` never has a lane)
-        if (mbOn) { lane = MB.laneOf(spec); if (lane != null && !/^[A-Za-z0-9_.-]+$/.test(String(lane))) lane = null; if (lane) db.run('INSERT OR REPLACE INTO cl_lane VALUES (?,?)', [h, String(lane)]); } }
+      if (lane) db.run('INSERT OR REPLACE INTO cl_lane VALUES (?,?)', [h, lane]);
+      if (env.box) { db.run('INSERT OR REPLACE INTO cl_boxseq VALUES (?,?)', [lane, env.box.seq]); db.run('INSERT OR REPLACE INTO cl_box VALUES (?,?,?,?,?)', [h, self.kid, env.seq, env.box.name, env.box.seq]); }
       if (authors) authors[self.kid] = 1; if (env.body.op_type === 'CHECKPOINT') hasCk = true;
       last = null; return { env: env, hash: h };
     }
 
     // identity helpers (the ops §11.5 names)
-    async function grantKey(kid, dhJwk, epoch, key) {     // one KEYGRANT: the epoch key wrapped for device `kid` (§13.2)
-      var wrapped = await _wrap(key, self.dhPrivateKey, dhJwk, space, epoch, self.kid, kid);
-      return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [await ROS.epochUU(space, epoch)],
-                      body: { op_type: 'KEYGRANT', params: { kid: kid, epoch: epoch, from_kid: self.kid, wrapped: wrapped } } });
+    async function grantKey(kid, dhJwk, epoch, key, aud, origin) {     // one KEYGRANT: the epoch key wrapped for device `kid` (§13.2); with aud/origin (§45.11) an AUDIENCE key of that epoch
+      var wrapped = await _wrap(key, self.dhPrivateKey, dhJwk, space, epoch, self.kid, kid, aud);
+      var params = { kid: kid, epoch: epoch, from_kid: self.kid, wrapped: wrapped }; if (aud) { params.aud = aud; params.origin = origin; }
+      return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [await ROS.epochUU(space, epoch)], body: { op_type: 'KEYGRANT', params: params } });
+    }
+    // §45.11 audience keys, a HUB device's housekeeping (and at enroll): at the newest epoch every audience ('hub', 'p_<person>' of every person with a non-hub device) has a key whose origin is eligible;
+    // a missing one is created here and granted to the eligible devices; every audience key I hold (eligible origin) that an eligible device lacks is granted. A station never creates keys.
+    async function audKeys(rep) {
+      var L = await cur(), R = L.roster;
+      if (!audOn(R) || !self.dhPrivateKey || !R.devices[self.kid] || R.revokes[self.kid] != null || !holdsOf('hub', self.kid, R)) return 0;
+      var ring = await keyring(), ep = _newest(ring); if (ep == null) return 0;
+      var ar = await audKeyring(), me = R.devices[self.kid], role = R.roleAt(self.kid, selfRow().next_seq), n = 0;
+      var active = Object.keys(R.devices).sort().filter(function (k) { return R.revokes[k] == null && R.devices[k].dh; });
+      var auds = {}; auds.hub = 1; active.forEach(function (k) { if (!holdsOf('hub', k, R)) auds['p_' + R.devices[k].person] = 1; });
+      var have = {}; R.grants.forEach(function (g) { if (g.aud && holdsOf(g.aud, g.origin, R)) have[g.kid + '#' + g.aud + '#' + g.epoch] = 1; });
+      rowsOf("SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND op_type='KEYGRANT'", [self.kid]).forEach(function (o) { var q = o.env.body.params; if (q.aud) have[q.kid + '#' + q.aud + '#' + q.epoch] = 1; });      // mine, accepted or not: never re-issue
+      function mayGrant(k) { return role.comm_admin || R.devices[k].person === me.person; }
+      async function give(aud, epoch, key, origin) {
+        for (var k of active) { if (have[k + '#' + aud + '#' + epoch] || !mayGrant(k) || !eligForGrant(aud, k, R)) continue;
+          await grantKey(k, R.devices[k].dh, epoch, key, aud, origin); have[k + '#' + aud + '#' + epoch] = 1; n++; if (rep) rep.granted++;
+          log('§COMM_KEY kid=' + self.kid + ' aud-grant to=' + k + ' aud=' + aud + ' epoch=' + epoch + ' origin=' + origin.slice(0, 12)); } }
+      for (var aud of Object.keys(auds).sort()) {                      // 1. create the key of an audience that has no eligible-origin key at the newest epoch
+        var has = ((ar[aud] || {})[ep] || []).some(function (e) { return holdsOf(aud, e.origin, R); });
+        if (!has) { var key = await _newSpaceKey(); if (!holdsOf(aud, self.kid, R)) continue; await give(aud, ep, key, self.kid); log('§COMM_KEY kid=' + self.kid + ' aud-create aud=' + aud + ' epoch=' + ep); } }
+      ar = await audKeyring();
+      for (var a2 of Object.keys(ar).sort()) for (var e2 of Object.keys(ar[a2]).map(Number).sort())          // 2. repair: a key I hold (eligible origin) that an eligible device lacks
+        for (var ent of ar[a2][e2]) if (holdsOf(a2, ent.origin, R)) await give(a2, e2, ent.key, ent.origin);
+      return n;
     }
     async function genesis(params) {
       var g = await author({ target: { table: 'comm_space', uu: await ROS.spaceUU(space) }, body: { op_type: 'GENESIS', params: params } });
@@ -583,7 +648,8 @@
       var r = await author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, refs: [String(personUu).toLowerCase()], body: { op_type: 'ENROLL', params: params } });
       if (dhJwk && self.dhPrivateKey) { var ring = await keyring(), n = 0;
         for (var ep of Object.keys(ring).map(Number).sort()) { await grantKey(kid, dhJwk, ep, ring[ep][0]); n++; }
-        log('§COMM_KEY kid=' + self.kid + ' enroll=' + kid + ' granted_epochs=' + n); }
+        log('§COMM_KEY kid=' + self.kid + ' enroll=' + kid + ' granted_epochs=' + n);
+        await audKeys(null); }                                                                  // §45.11: the same visit - the pair key(s) of the new device's audiences
       return r;
     }
     async function setRole(p) { return author({ target: { table: 'comm_person', uu: String(p.person_uu).toLowerCase() }, body: { op_type: 'ROLE', params: p } }); }
@@ -624,14 +690,18 @@
     async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
     async function revoke(kid, lastGood) { return author({ target: { table: 'comm_device', uu: await ROS.devUU(kid) }, body: { op_type: 'REVOKE', params: { kid: kid, last_good_seq: lastGood } } }); }
 
-    async function ingest(env, pipeId) {
+    async function ingest(env, pipeId, bundle) {         // bundle (§45.11) = the object name it came out of, null for a checkpoint snapshot / unknown
       var h = await ENV.hashHex(env);
       if (_q(db, 'SELECT 1 FROM cl_op WHERE op_hash=? UNION SELECT 1 FROM cl_contender WHERE op_hash=?', [h, h]).length) return 'DUP';
       if (!env || env.space !== space) return 'REFUSED:space';
       var vr = ENV.validate(env); if (!vr.ok) return 'REFUSED:invalid ' + vr.errors.join('; ');
+      if (env.box !== undefined && (!env.box || typeof env.box.name !== 'string' || !Number.isInteger(env.box.seq) || env.box.seq < 1)) return 'REFUSED:invalid box';
+      if (bundle) { var bn = boxOfName(bundle);          // a laned op is only ever in the bundle of its own box; an op with no `box` (F1-era senders) is not judged here
+        if (env.box && env.box.name !== bn) { log('§COMM_BOX_MISMATCH kid=' + self.kid + ' op=' + h.slice(0, 12) + ' box=' + env.box.name + ' bundle=' + bundle + ' not ingested'); return 'REFUSED:box-mismatch'; } }
       var slot = _q(db, 'SELECT op_hash FROM cl_op WHERE author_kid=? AND author_seq=?', [env.author, env.seq])[0];
       if (slot) { db.run('INSERT OR IGNORE INTO cl_contender VALUES (?,?,?,?)', [h, env.author, env.seq, JSON.stringify(env)]); last = null; return 'CONTENDER'; }
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?,?)', [h, env.author, env.seq, env.prev, JSON.stringify(env.deps), env.body.op_type, env.target.table, env.target.uu, JSON.stringify(env), pipeId, 'RECEIVED']);
+      if (env.box) db.run('INSERT OR IGNORE INTO cl_box VALUES (?,?,?,?,?)', [h, env.author, env.seq, env.box.name, env.box.seq]);
       if (authors) authors[env.author] = 1; if (env.body.op_type === 'CHECKPOINT') hasCk = true;
       last = null; return 'RECEIVED';
     }
@@ -641,19 +711,24 @@
     // encrypted space a business op I cannot yet encrypt is NOT sent (never plaintext) — the bundle stops before it (§13.2).
     async function bundleNew() {
       var me = selfRow(), rows = _q(db, "SELECT op_hash, author_seq, op_type, envelope FROM cl_op WHERE author_kid=? AND state='OWN' AND author_seq>? ORDER BY author_seq", [self.kid, me.bundled_to]);
-      var R = (await cur()).roster, ring = await keyring(), ep = _newest(ring), take = [], enc = {};
+      var R = (await cur()).roster, ring = await keyring(), ep = _newest(ring), take = [], enc = {}, ar = await audKeyring(), aOn = audOn(R);
       var cap = R.policy && R.policy.params.bundle_max_ops ? R.policy.params.bundle_max_ops : Infinity;     // §13.12.1: the rest goes out at the next visit
+      // F1 (§45.8): the ops an own CL_LANE row addresses leave in a bundle of their own under m/<lane>/o/<me>/; everything else (identity ops, ops with no addressee) is the shared bundle, byte-for-byte as before
+      var laneOf = {}; if (MB && R.mailboxes) _q(db, 'SELECT op_hash, lane FROM cl_lane').forEach(function (l) { laneOf[l.op_hash] = l.lane; });
       for (var r of rows) {
         if (take.length >= cap) break;
         if (!ROS.IDENTITY[r.op_type]) {
           if (!R.ok || R.encrypted) { if (ep == null) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-key-yet'); break; }
-            enc[r.op_hash] = await _seal(JSON.parse(r.envelope), ring[ep][0], ep, space); }
+            var ln = aOn ? laneOf[r.op_hash] : null;
+            if (ln) {        // §45.11: a laned op is sealed to ONE audience - held (never the space key, never plaintext) until an eligible-origin key of that audience exists at the newest epoch
+              var au = audFor(ln, self.kid, R), ak = au ? sealerKey(au, ep, ar, R) : null;
+              if (!ak) { log('§COMM_SEAL kid=' + self.kid + ' hold seq=' + r.author_seq + ' reason=no-aud-key aud=' + au); break; }
+              enc[r.op_hash] = await _seal(JSON.parse(r.envelope), ak, ep, space, au); }
+            else enc[r.op_hash] = await _seal(JSON.parse(r.envelope), ring[ep][0], ep, space); }
         }
         take.push(r);
       }
       if (!take.length) return null;
-      // F1 (§45.8): the ops an own CL_LANE row addresses leave in a bundle of their own under m/<lane>/o/<me>/; everything else (identity ops, ops with no addressee) is the shared bundle, byte-for-byte as before
-      var laneOf = {}; if (MB && R.mailboxes) _q(db, 'SELECT op_hash, lane FROM cl_lane').forEach(function (l) { laneOf[l.op_hash] = l.lane; });
       var groups = {}; take.forEach(function (r) { var k = laneOf[r.op_hash] || ''; (groups[k] = groups[k] || []).push(r); });
       var parts = [];
       for (var gk of Object.keys(groups).sort()) {                     // '' (the shared stream) sorts first
@@ -670,16 +745,17 @@
     function _rows(bytes) { var b = new SQL.Database(bytes), out = _q(b, 'SELECT op_hash, envelope FROM ops').map(function (r) { return { hash: r.op_hash, text: r.envelope }; }); b.close(); return out; }
     // readBundle → [{hash, env}]; a sealed row I can open now is opened, one I cannot is {hash, env:null, enc:<epoch>}
     async function readBundle(bytes) {
-      var ring = await keyring(), out = [];
+      var ring = await keyring(), arr = await audKeyring(), out = [];
       for (var r of _rows(bytes)) {
         if (r.text.indexOf('enc:') !== 0) { out.push({ hash: r.hash, env: JSON.parse(r.text) }); continue; }
-        var o = await _openText(r.text, ring, space);
+        var o = await _openText(r.text, ring, space, arr);
         out.push(o.state === 'ok' && (await ENV.hashHex(o.env)) === r.hash ? { hash: r.hash, env: o.env } : { hash: r.hash, env: null, enc: o.epoch != null ? o.epoch : 'tampered' });
       }
       return out;
     }
-    async function signedHead() {
+    async function signedHead(upTo) {         // upTo = the highest own seq this visit's batch carries (the put is not read back yet): the head's `boxes` claim only what is sent
       var me = selfRow(), head = { v: 1, space: space, author: self.kid, seq: me.next_seq - 1, hash: me.head_hash || null, frontier: mbFlag ? await recvMax() : await frontier(), ts: Date.now() };
+      if (mbFlag) { var bx = {}; _q(db, 'SELECT box AS b, MAX(bseq) AS m FROM cl_box WHERE author_kid=? AND author_seq<=? GROUP BY box', [self.kid, Math.max(me.bundled_to, upTo || 0)]).forEach(function (r) { bx[r.b] = r.m; }); head.boxes = bx; }       // §45.11
       return ENV.sign(head, self);
     }
 
@@ -687,13 +763,13 @@
     async function openSealed(rep) {
       for (var round = 0; round < 5; round++) {
         var rows = _q(db, 'SELECT * FROM cl_sealed'); if (!rows.length) return;
-        var ring = await keyring(), progressed = 0;
+        var ring = await keyring(), arr = await audKeyring(), progressed = 0;
         for (var r of rows) {
-          var o = await _openText(r.ct, ring, space);
+          var o = await _openText(r.ct, ring, space, arr);
           if (o.state === 'sealed') continue;
           db.run('DELETE FROM cl_sealed WHERE op_hash=?', [r.op_hash]); progressed++;
           if (o.state === 'ok' && (await ENV.hashHex(o.env)) === r.op_hash) {
-            var st = await ingest(o.env, r.pipe_id); rep.opened++; if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
+            var st = await ingest(o.env, r.pipe_id, /\.bimsnap$/.test(String(r.bundle)) ? null : r.bundle); rep.opened++; if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
           } else {                                     // GCM tag (or the op_hash) refused it: drop it, and forget the bundle so an honest copy can heal it
             rep.tampered++; rep.rejected++; db.run('DELETE FROM cl_fetched WHERE name=? AND pipe_id=?', [r.bundle, r.pipe_id]);
             log('§COMM_SEAL kid=' + self.kid + ' TAMPERED op=' + r.op_hash.slice(0, 12) + ' epoch=' + r.epoch + ' bundle=' + r.bundle + ' refused (GCM)');
@@ -727,6 +803,7 @@
         if (kid === self.kid || R.revokes[kid] != null || !d.dh || !(role.comm_admin || d.person === me.person)) continue;
         for (var ep of Object.keys(ring).map(Number).sort()) { if (have[kid + '#' + ep]) continue;
           await grantKey(kid, d.dh, ep, ring[ep][0]); rep.granted++; log('§COMM_KEY kid=' + self.kid + ' repair-grant to=' + kid + ' epoch=' + ep); } }
+      await audKeys(rep);                                                  // §45.11: the audience (pair) keys of a mailbox space
     }
 
     // the post-office visit (§11.17): note my visit, collect my mail
@@ -742,10 +819,10 @@
         if (isSnap && _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=?', [it.hash]).length) continue;
         if (it.text.indexOf('enc:') === 0) {
           var ex = _q(db, 'SELECT 1 FROM cl_op WHERE op_hash=? UNION SELECT 1 FROM cl_contender WHERE op_hash=? UNION SELECT 1 FROM cl_sealed WHERE op_hash=?', [it.hash, it.hash, it.hash]);
-          if (!ex.length) { var m = /^enc:(\d+):/.exec(it.text); db.run('INSERT INTO cl_sealed VALUES (?,?,?,?,?)', [it.hash, m ? Number(m[1]) : null, it.text, on, pipe.id]); }
+          if (!ex.length) { var m = /^enc:(\d+)/.exec(it.text); db.run('INSERT INTO cl_sealed VALUES (?,?,?,?,?)', [it.hash, m ? Number(m[1]) : null, it.text, on, pipe.id]); }
           continue;
         }
-        var st = await ingest(JSON.parse(it.text), pipe.id);
+        var st = await ingest(JSON.parse(it.text), pipe.id, isSnap ? null : on);
         if (st === 'RECEIVED') rep.received++; else if (st === 'CONTENDER') rep.contenders++; else if (st.indexOf('REFUSED') === 0) rep.rejected++;
       }
       db.run('INSERT OR IGNORE INTO cl_fetched VALUES (?,?)', [on, pipe.id]);
@@ -753,8 +830,8 @@
     // a snapshot's state travels sealed (enc:…) in an encrypted space; once I hold the epoch key I keep it opened in MY comm.db (like opened ops)
     async function openSnapMeta() {
       var rows = _q(db, "SELECT state_hash, state_json FROM cl_snapmeta WHERE state_json LIKE 'enc:%'"); if (!rows.length) return;
-      var ring = await keyring();
-      for (var r of rows) { var o = await _openText(r.state_json, ring, space);
+      var ring = await keyring(), arr = await audKeyring();
+      for (var r of rows) { var o = await _openText(r.state_json, ring, space, arr);
         if (o.state === 'ok') db.run('UPDATE cl_snapmeta SET state_json=? WHERE state_hash=?', [JSON.stringify(o.env), r.state_hash]);
         else if (o.state === 'tampered') db.run("UPDATE cl_snapmeta SET state_json='tampered' WHERE state_hash=?", [r.state_hash]); }       // a held key that refuses it: not a state
     }
@@ -809,7 +886,7 @@
       var batched = typeof pipe.putMany === 'function';
       if (nb && !batched) { for (var pp of nb.parts) await pipe.put(pp.name, pp.bytes); await readBack(); }
       var L = await order();
-      if (batched) { var batch = [{ name: SP + 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) nb.parts.slice().reverse().forEach(function (pt) { batch.unshift({ name: pt.name, bytes: pt.bytes }); });
+      if (batched) { var batch = [{ name: SP + 'h/' + self.kid, bytes: _json(await signedHead(nb ? nb.to : 0)) }]; if (nb) nb.parts.slice().reverse().forEach(function (pt) { batch.unshift({ name: pt.name, bytes: pt.bytes }); });
         await pipe.putMany(batch); if (nb) await readBack(); }
       else await pipe.put(SP + 'h/' + self.kid, _json(await signedHead()));
       for (var hn of await pipe.list(SP + 'h/')) {
@@ -817,6 +894,7 @@
         var hb = await pipe.get(hn); if (!hb) continue; var hd = _unjson(hb), dv = L.roster.devices[hd.author];
         if (!dv || !(await ENV.verify(hd, dv.jwk))) continue;            // a head counts only from an enrolled device
         db.run('INSERT OR REPLACE INTO cl_head_seen VALUES (?,?,?,?,?,?)', [hd.author, pipe.id, hd.seq, hd.hash, JSON.stringify(hd.frontier || {}), hd.sig]);
+        if (hd.boxes && typeof hd.boxes === 'object') db.run('INSERT OR REPLACE INTO cl_head_boxes VALUES (?,?,?)', [hd.author, pipe.id, JSON.stringify(hd.boxes)]);
       }
       var cnt = function (v) { return Object.keys(L.verdict).filter(function (h) { return L.verdict[h].verdict === v; }).length; };
       rep.placed = L.order.length; rep.parked = cnt('PARKED'); rep.refused = cnt('REFUSED') + (L.base ? L.base.nRefused : 0); rep.gaps = gaps().length; rep.equivocations = L.equivocations.length;
@@ -901,11 +979,17 @@
       var ver = await versions(), uuC = await ROS.ckptUU(space, sh), reads = [uuC, await ROS.spaceUU(space), await ROS.devUU(self.kid), String(selfRow().person_uu || '').toLowerCase()];
       for (var u of reads) { var hh = ver[u], arr = hh == null ? [] : (Array.isArray(hh) ? hh : [hh]); if (arr.some(function (x) { return !body.verdict[x]; })) return { skipped: 'reads-outside-frontier' }; }
       // the snapshot object: a bundle of S's ops (business sealed like any bundle) + the state
-      var R = L.roster, ring = await keyring(), ep = _newest(ring), sealedSpace = !R.ok || R.encrypted;
+      var R = L.roster, ring = await keyring(), ep = _newest(ring), sealedSpace = !R.ok || R.encrypted, arC = await audKeyring(), aOnC = audOn(R);
       if (sealedSpace && ep == null) return { skipped: 'no-key-yet' };
       var pk = new SQL.Database(); pk.run('CREATE TABLE ops (op_hash TEXT PRIMARY KEY, envelope TEXT NOT NULL)'); pk.run('CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
       for (var a of Object.keys(f)) for (var q of _q(db, 'SELECT op_hash, op_type, envelope FROM cl_op WHERE author_kid=? AND author_seq<=? ORDER BY author_seq', [a, f[a]])) {
-        var txt = q.envelope; if (!ROS.IDENTITY[q.op_type] && sealedSpace) txt = await _seal(JSON.parse(q.envelope), ring[ep][0], ep, space);
+        var txt = q.envelope;
+        if (!ROS.IDENTITY[q.op_type] && sealedSpace) { var qe = JSON.parse(q.envelope);
+          if (aOnC && qe.box) {        // §45.11: a laned op keeps its AUDIENCE seal inside the snapshot (every device reads the snapshot; only the audience may open the op). No key for it = no snapshot.
+            var qa = audFor(qe.box.name, qe.author, R), qk = qa ? sealerKey(qa, ep, arC, R) : null;
+            if (!qk) { pk.close(); log('§CKPT_HELD kid=' + self.kid + ' laned op ' + q.op_hash.slice(0, 12) + ' has no audience key at epoch ' + ep + ' - snapshot not built'); return { skipped: 'no-aud-key' }; }
+            txt = await _seal(qe, qk, ep, space, qa); }
+          else txt = await _seal(qe, ring[ep][0], ep, space); }
         pk.run('INSERT INTO ops VALUES (?,?)', [q.op_hash, txt]); }
       var bodyOnly = Object.assign({}, body); delete bodyOnly.hash;
       var stText = sealedSpace ? await _seal(bodyOnly, ring[ep][0], ep, space) : JSON.stringify(bodyOnly);        // the state is sealed like any business op: it holds record uuids, scopes, claim keys (hashed)
@@ -1004,7 +1088,7 @@
              message: 'Your copy of ' + info.name + ' is not the team\'s (yours ' + (have ? have.slice(0, 12) : 'unknown') + ', the team\'s ' + want.slice(0, 12) + (info.version ? ', version ' + info.version : '') + '). Update it, then try again.' };
   }
 
-  var API = { open: open, newDevice: newDevice, ensureDh: ensureDh, newSpace: newSpace, baseFromBytes: baseFromBytes, checkBase: checkBase, kidOf: function (j) { return ROS.kidOf(j); } };
+  var API = { _t: { seal: _seal, openText: _openText, wrap: _wrap, newKey: _newSpaceKey }, open: open, newDevice: newDevice, ensureDh: ensureDh, newSpace: newSpace, baseFromBytes: baseFromBytes, checkBase: checkBase, kidOf: function (j) { return ROS.kidOf(j); } };
   global.CommStore = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

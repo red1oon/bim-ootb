@@ -252,7 +252,7 @@
 
     var gThreshold = gen.env.body.params.planTrustThreshold || 1;
     function walk(cut) {
-      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, exeHist = [], setTrust = {}, setTrustT = {}, minvHist = [], minvNow = {}, trustT = gThreshold, anchor = null;
+      var dev = {}, person = {}, rev = {}, v = {}, holders = {}, audHold = {}, grants = [], rekeys = [], maxE = 0, policy = null, ck = {}, trust = gTrust, trustStmt = null, trustEpoch = 0, exe = null, exeStmt = null, exeEpoch = 0, exeHist = [], setTrust = {}, setTrustT = {}, minvHist = [], minvNow = {}, trustT = gThreshold, anchor = null;
       L.order.forEach(function (h) {
         var e = byHash[h], p = e.body.params || {}, t = e.body.op_type;
         if (h === gen.hash) {
@@ -295,7 +295,13 @@
           if (!(admin || gk.person === signer.person)) return no('not-admin-or-same-person');
           if (typeof p.wrapped !== 'string' || !holders[p.epoch]) return no('no-epoch');
           if (!holders[p.epoch][e.author]) return no('granter-not-holder');       // only a device that holds the epoch can pass it on
-          holders[p.epoch][p.kid] = 1; grants.push({ hash: h, epoch: p.epoch, kid: p.kid, from_kid: e.author, wrapped: p.wrapped });
+          if (p.aud !== undefined) {         // §45.11: an AUDIENCE key of that epoch (mailbox sealing). Accepted if the granter holds the space epoch (above) AND holds (aud, epoch, origin) or IS the origin (first grant of that key). Who SHOULD hold it is the host's rule, not the roster's.
+            if (typeof p.aud !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(p.aud) || typeof p.origin !== 'string' || !dev[p.origin]) return no('bad-aud-grant');
+            var ak = p.aud + '#' + p.epoch + '#' + p.origin; audHold[ak] = audHold[ak] || {};
+            if (e.author !== p.origin && !audHold[ak][e.author]) return no('granter-not-aud-holder');
+            audHold[ak][e.author] = 1; audHold[ak][p.kid] = 1;
+            grants.push({ hash: h, epoch: p.epoch, kid: p.kid, from_kid: e.author, wrapped: p.wrapped, aud: p.aud, origin: p.origin });
+          } else { holders[p.epoch][p.kid] = 1; grants.push({ hash: h, epoch: p.epoch, kid: p.kid, from_kid: e.author, wrapped: p.wrapped }); }
         } else if (t === 'REKEY') {          // §13.2: epoch n+1; a second REKEY for the same epoch is refused (first in fold order wins)
           if (!admin) return no('not-admin');
           if (!dev[e.author].dh) return no('no-dh');
