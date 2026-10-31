@@ -235,3 +235,31 @@ push, follow-ups start off fresh `origin/main`; (b) the CLI's `R.set` is the pip
 carries a client name: never print their TEXT wholesale (grep only the words you need); (d) a new `element_defaults.json` key touches `witness_dxf_cli` C36, `witness_dxf_edefaults` E1 and
 the BIMCompiler yellow-list page (W-YELLOW-PAGE): see RUNNER.
 **RUNNER (2026-10-31, bim-ootb main @87f58b24 after the six merges, `witness_dbs.js` fresh 6/6):** `§ALLWITNESS PASS=93 ENV=10 FAIL=1 of 104`. The ENV 10 are missing local inputs (count unchanged from session 12; the set not compared). **The 1 FAIL was caused this session:** W-YELLOW-PAGE YP1 — T14c added `member.section` to `element_defaults.json` but the published yellow list (BIMCompiler `docs/DXF2BIM_Yellow_List.md`, read from bim-compiler origin/master) was not regenerated. Fixed: page regenerated in **BIMCompiler PR #276** (62 rows; that repo has no auto-merge — check it merged) + `gen_yellow_list.js` prints an empty default as *(empty)* (was `****`); W-YELLOW-PAGE PASS against the regenerated page. **Lesson:** a new `element_defaults.json` key touches THREE witnesses (C36, E1, YP1) and the BIMCompiler page — run `gen_yellow_list.js` in the same change.
+
+## (archived 2026-10-31) RESUME (session 15 entry; written 2026-10-31 at the close of session 14 — the ONLY current block)
+**Merged in session 14 (bim-ootb main, each witnessed, logs read):** #2458 **RR.6** Modeller Export ▸ Regulatory Report… — `RegReport.fromModel` / `billAndLoad` / `statedType`
+are the ONE composition the CLI and the page run; `reg_report_ui.js` (lazy) + facts form; W-REG-REPORT-UI 7/0 (U7: the real page = the CLI byte for byte, tool + hash masked) ·
+#2460 **§D98** `BUILD-NAME` set placeholder (orange suggestion, yellow *default* badge once accepted, typing the real name replaces it on every sheet, `--set` replaces it, the report
+says "not stated (placeholder …)"); W-SET-PLACEHOLDER 8/0 · #2461 **§D99 defect** `wall.thickness` + `synth.slab.thickness` are guesses (all 16 country packs carry the same
+150 / 250 mm price line), values unchanged; W-DEFAULTS DF3 refuses a std basis naming a pack. sw v193.
+**Consequences of §D98 to know (measured):** a raw set's round 1 now holds the orange placeholder rows, so the editor shows the split buttons (Accept stated + read / Accept inferred)
+instead of Accept all alone; Accept all can now complete every placing value, so the Arrange view hands over to the canvas at Accept all (W-ARRANGE A7/A8 measure the canvas after
+that). Raw shed round 1 = 9 / 16 / 9 (was 9 / 16 / 0); every round 9 / 16 / 123.
+**BIMCompiler docs (needs a merge by the owner — the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated for §D99 (W-YELLOW-PAGE 4/4 against it) +
+the guide's `@SET` row + PROGRESS pointer; it contains #276's commit, so merging #277 covers #276. **Until #277 merges, the runner shows YP1 FAIL.**
+**RUNNER (2026-10-31, §D98 tree):** `§ALLWITNESS PASS=95 ENV=10 FAIL=2 of 107` — YP1 (above) and `witness_dxf_convert_fail` CF2, which fails only inside full runs (also on the
+pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status after the undo.
+**▶ NEXT, in order:**
+1. **§D99 P2 step 2 — the page** (step 1 = `dxf2impact.js` + CLI `--impact` + W-IMPACT 4/0 BUILT, see its RESULT; the page's button + sorted / collapsed list is left). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
+   6,188,538 BDT); P4 step 2 REFUTED ("THICk." is the footing schedule's T = 12", already read; no slab thickness is stated anywhere).
+2. ✅ **DECIDED 2026-10-31 (owner: "Buttons do advice"): keep the split buttons in round 1** — the placeholder is a convention like the applied defaults; Accept all alone would hide
+   that one value is not from the drawing. No code change.
+3. **Film "from drawings to a submission pack"** — owner OK'd a fresh storyline flowing from the BricsCAD film v2 (2026-10-31); STORYLINE written in
+   `prompts/FILM_DXF2BIM_WHY_MARKINGS.md` (`## ▶▶▶ SUBMISSION-PACK FILM — STORYLINE`): build the recorder, dry run, take, assemble (its Next list).
+4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
+   header + quickstart; the viewer's other cost paths do not read `material_rates`; RR authority headers (RAJUK / NBeS checklists not found).
+**Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`):** unchanged from session 13 (archived block): 512 bodies, floor 603.87 m2, own weight 5,361.0 kN, bill 6,178,335 BDT,
+4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns); since §D100 (b) **6,227,255 BDT** (12 columns raised to their beams), structural findings 1 (cantilever).
+**Recipes + landmines:** as in the archived session-14 block (recipes for the shed report and the runner; PWD SoR page images; auto-merge orphan trap; `R.set` vs `desc.set`; the raw
+title block's client name; a new `element_defaults.json` key touches C36, E1, YP1 + the BIMCompiler page — and a changed kind/basis touches YP1 too). New: a headless witness that
+opens a new tab (the report's blob) must poll by interval, not rAF (the page goes background).
