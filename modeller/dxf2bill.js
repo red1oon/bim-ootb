@@ -67,10 +67,13 @@
   // bodies: [{guid, kind, class, prov, vertices, faces, ifc:{type_name}}]; opts: { ref, pack: {meta, materials}, packName }
   var MEASURE_OF = { M3: 'V', M2: 'A', M: 'L', EA: 'N' };
   // pack.material_rates = { IfcClass: [ { material, rate, unit, desc, source } ] }; the material is matched whole, case-insensitively (no pack row = the class rate, as before)
-  function materialRate(pack, cls, material) {
+  // §D99 P4: a row may state its concrete `mix`; a body's stated casting ratio (dxf2notes Note_CastingRatio) takes the row with that mix. The pack lists mixes but none matches
+  // -> { noMix: mix } (the caller leaves the line unpriced: never priced at another mix); no stated mix -> the first row (the line records mix null); rows without mix -> as before.
+  function materialRate(pack, cls, material, mix) {
     var rows = pack && pack.material_rates && pack.material_rates[cls]; if (!rows || !material) return null;
-    for (var i = 0; i < rows.length; i++) if (String(rows[i].material).toLowerCase() === String(material).toLowerCase() && rows[i].rate > 0) return rows[i];
-    return null;
+    var m = rows.filter(function (r) { return String(r.material).toLowerCase() === String(material).toLowerCase() && r.rate > 0; }); if (!m.length) return null;
+    if (mix && m.some(function (r) { return r.mix; })) { var hit = m.filter(function (r) { return r.mix === String(mix).replace(/\s+/g, ''); })[0]; return hit || { noMix: String(mix) }; }
+    return m[0];
   }
   // T14b S1: the names a row's quantity formula may use: the mesh measures, kN (the body's weight from load_summary.js, when it weighed the body) and the defaults (dots -> _)
   function formulaVars(ms, kN, values) {
@@ -93,7 +96,9 @@
       line.material = mat;
       var q = evalFormula(part.quantity.formula, ms); line.quantity = r6(q); line.unit = part.quantity.unit; line.formula = part.quantity.formula;
       var rcls = (part.rate_ref && part.rate_ref.class) || b.class, pe = pack.materials[rcls];
-      var mr = materialRate(pack, rcls, mat);   // T14: a pack row stated for THIS class AND material wins over the class rate (concrete columns are not priced as steel)
+      var mix = (b.ifc && b.ifc.props && b.ifc.props.Note_CastingRatio) || null, mr = materialRate(pack, rcls, mat, mix);   // T14: a pack row stated for THIS class AND material wins over the class rate (concrete columns are not priced as steel); §D99 P4 + the stated mix
+      if (mr && mr.noMix) { flagsL.push('no_rate_for_mix:' + mr.noMix); flags.push({ id: b.guid, flag: 'no_rate_for_mix:' + mr.noMix, class: b.class }); line.mix = mr.noMix; mr = null; pe = null; }
+      else if (mr && mr.mix) { line.mix = mix ? mr.mix : null; if (!mix) line.mix_note = 'not stated: the pack\'s first row (' + mr.mix + ')'; }
       if (mr) {
         pe = mr; var bm = MEASURE_OF[mr.unit];
         if (mr.quantity) {   // S1: the row states its own quantity
