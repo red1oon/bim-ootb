@@ -69,6 +69,20 @@
   // §38.15 (G-6): WHICH plan this space reads (the genesis' `plan`) and WHO this device is in it (its role, its person). 'office' (the default) is the mesh plan as always; 'pos' is the star plan whose hub rows
   // carry a direction per role. Refreshed before every commit and projection; the roster is the same on every device, so the verdicts are too.
   var scopeCtx = { kind: 'office', role: null, person: null };
+  // TEAMWORK_FRAMEWORK §45.8 F1 PER-DEVICE MAILBOXES. The plan knowledge the comm engine does not have: an UP envelope goes to head office's inbox ('hub'), a DOWN envelope that addresses ONE entity (`by`, §38.15) to the
+  // addressee's mailbox ('p_<person_uu>'); everything else (office flows, DOWN rows with no `by`, all identity ops) stays in the shared stream. The engine applies this only in a space whose genesis says `mailboxes:1`
+  // (new star spaces); a space founded earlier never leaves the shared stream. A device lists only its own boxes: the hub reads 'hub', everyone else 'p_<own person>'.
+  var lanes = {};                                                     // target record uu -> lane, set by translate (the addressee is a property of the RECORD)
+  function hubRole() { var P = global.TEAM_PLAN_POS; return P && P.hub != null ? String(P.hub) : null; }
+  function mailboxCfg() {
+    return {
+      laneOf: function (spec) { return lanes[String(spec.target.uu).toLowerCase()] || null; },
+      read: function (c) { var d = c.roster.devices[c.self.kid]; if (!d) return []; var hr = hubRole(), me = 'p_' + String(d.person).toLowerCase();
+        return hr == null ? ['hub', me] : String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr ? ['hub'] : [me]; },   // plan unreadable: both (never miss mail)
+      wantHead: function (kid, c) { var hr = hubRole(), d = c.roster.devices[kid], me = c.roster.devices[c.self.kid]; if (!d) return false; if (hr == null || !me) return true;
+        return String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr || String(c.roster.roleAt(kid, Infinity).ad_role_id) === hr || d.person === me.person; }
+    };
+  }
   async function refreshScope(st) {
     st = st || S; if (!st) return scopeCtx;
     var R = (await st.order()).roster, kind = R && R.ok && R.plan === 'pos' ? 'pos' : 'office';
@@ -293,13 +307,14 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
-    var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null;
+    var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : null;
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };
     if (scope === 'up' || scope === 'down') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
     else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
     if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
       var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo, table);
       if (!ad || !(await rosterPersons())[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
+      laneTo = 'p_' + String(ad).toLowerCase();
     }
     var clean = {}; Object.keys(p).forEach(function (k) { if (!KERNEL_STAMPS[k]) clean[k] = p[k]; });
     var refs = [], rw;
@@ -321,7 +336,8 @@
     if (baseOn() && seeded && table) { try { bu = await baseUuOf(table, p.id); } catch (e) { return { local: 'base-unavailable (' + (e && e.message) + ')', table: table }; } }
     var w = CommEnvelope.wrapKernelOp({ op_type: r.op_type, op_uuid: r.op_uuid, parameters: clean }, function (t, id) { return bu && !isNeg(id) ? bu : uuOf(db)(t, id); });
     if (!w.ok) return { local: /uu-unresolved/.test(w.reason) ? (baseOn() && seeded ? 'seeded-row-has-no-uu (' + w.reason + ') — the base row cannot be addressed' : 'target-not-a-team-record (' + w.reason + ') — the comm layer admits an op only against its record\'s CREATE scope') : w.reason, table: table };
-    return { target: w.target, body: w.body, refs: refs, table: table };
+    var tu = String(w.target.uu).toLowerCase(); if (laneTo) lanes[tu] = laneTo; else delete lanes[tu];      // F1: the lane the engine reads when it authors this record's op
+    return { target: w.target, body: w.body, refs: refs, table: table, lane: laneTo };
   }
 
   async function onCommit(rows, db) {
@@ -717,7 +733,7 @@
   async function openStore(bytes) {
     baseSt = { state: 'unknown' }; bmemo = {};
     storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: coreMsg, baseRow: hostBaseRow, docno: hostDocNo, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
-    S = global.CommStore.open(new SQL.Database(bytes), storeOpts);
+    S = global.CommStore.open(new SQL.Database(bytes), storeOpts); if (S.setMailbox) S.setMailbox(mailboxCfg());
     var pu = new URLSearchParams(global.location.search).get('pipe');
     pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
   }
@@ -792,7 +808,7 @@
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },
-                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _withRoster: withRoster, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
+                      _setClock: function (f) { clock = f || function () { return Date.now(); }; }, _pinTrust: pinTrust, _spaceOpts: spaceOpts, _refreshExecutors: refreshExecutors, _attach: async function (st, d) { S = st; dev = d; if (st.setMailbox) st.setMailbox(mailboxCfg()); return refreshScope(); }, localOnly: function () { return localOnly; }, _release: releaseFor, _localOnly: function () { return localOnly; }, _sentMap: function () { return sent; }, _state: function () { return JSON.parse(JSON.stringify({ sent: sent, localOnly: localOnly })); }, _restore: function (x) { sent = x.sent; localOnly = x.localOnly; }, _translate: translate, _withRoster: withRoster, _project: project, _scopeCtx: function () { return scopeCtx; }, _resetDict: function () { dictC = null; } };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); }); });
   else boot().catch(function (e) { log('🔴 §TEAM_BOOT ' + (e && e.stack || e)); _resolveReady(false); });
 })(typeof window !== 'undefined' ? window : globalThis);
