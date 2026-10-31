@@ -116,12 +116,16 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   const blurPrivate = async () => { if (!PRIV) { fact('blurred_texts', 'no FILM_PRIVATE_RE'); return 0; }
     const n = await pg.evaluate(src => { const re = new RegExp(src, 'i'), st = window.DxfSheetFrame.state, cv = st.el && st.el.querySelector('canvas'); if (!cv || !st.view || !st.last) return -1;
       document.querySelectorAll('.film-blur').forEach(e => e.remove()); const cr = cv.getBoundingClientRect(), w = cv.clientWidth, h = cv.clientHeight, v = st.view, c2 = document.createElement('canvas').getContext('2d'); let k = 0;
+      // §D101 D5 (owner: "just blur and no need to explain"): ONE blur region = the union of the matched texts' boxes + padding; no outline, no label, no tint
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
       st.last.list.filter(d => d.k === 'text' && re.test(d.s)).forEach(d => { const px = Math.max(6, d.h * v.s); c2.font = px + 'px sans-serif'; const tw = c2.measureText(d.s).width;
-        const x0 = cr.left + w / 2 + (d.p[0] - v.cx) * v.s, y0 = cr.top + h / 2 - (d.p[1] - v.cy) * v.s, L = d.mid ? x0 - tw / 2 : x0, T = d.mid ? y0 - px / 2 : y0 - px;
-        const b = document.createElement('div'); b.className = 'film-blur'; b.style.cssText = 'position:fixed;left:' + (L - 8) + 'px;top:' + (T - 5) + 'px;width:' + (tw + 16) + 'px;height:' + (px * 1.35 + 10) + 'px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);background:rgba(20,23,28,.3);border:1px dashed rgba(255,214,64,.85);border-radius:4px;z-index:2147483600;pointer-events:none';
-        const lab = document.createElement('div'); lab.textContent = 'private client name (kept in the DXF)'; lab.style.cssText = 'position:absolute;left:0;top:100%;margin-top:3px;font:12px sans-serif;color:#ffd640;white-space:nowrap;text-shadow:0 0 3px #000'; b.appendChild(lab); document.body.appendChild(b); k++; });
+        const ax = cr.left + w / 2 + (d.p[0] - v.cx) * v.s, ay = cr.top + h / 2 - (d.p[1] - v.cy) * v.s, L = d.mid ? ax - tw / 2 : ax, T = d.mid ? ay - px / 2 : ay - px;
+        x0 = Math.min(x0, L); y0 = Math.min(y0, T); x1 = Math.max(x1, L + tw); y1 = Math.max(y1, T + px * 1.3); k++; });
+      if (k) { const pad = 10, b = document.createElement('div'); b.className = 'film-blur';
+        b.style.cssText = 'position:fixed;left:' + (x0 - pad) + 'px;top:' + (y0 - pad) + 'px;width:' + (x1 - x0 + 2 * pad) + 'px;height:' + (y1 - y0 + 2 * pad) + 'px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:6px;z-index:2147483600;pointer-events:none';
+        document.body.appendChild(b); }
       return k; }, PRIV.source);
-    fact('blurred_texts', String(n)); return n; };
+    fact('blurred_texts', String(n)); fact('blur_regions', String(await pg.evaluate(() => document.querySelectorAll('.film-blur').length))); fact('blur_labels', String(await pg.evaluate(() => [...document.querySelectorAll('.film-blur')].filter(e => e.textContent.trim()).length))); return n; };
   const frameBox = (box, fill, ms, dir) => pg.evaluate(([box, fill, ms, dir]) => new Promise(res => { const A = window.A, T = window.THREE, c = A.camera, ctl = A.controls;
       const ctr = new T.Vector3((box[0] + box[3]) / 2, (box[1] + box[4]) / 2, (box[2] + box[5]) / 2), r = Math.max(box[3] - box[0], box[4] - box[1], (box[5] - box[2]) * 2, 0.5) * 0.5;
       const pr = ['dm-panel', 'dxf-panel'].map(id => document.getElementById(id)).filter(e => e && e.style.display !== 'none' && e.getBoundingClientRect().width > 0).map(e => e.getBoundingClientRect().right), x0 = Math.max(0, ...pr), x1 = innerWidth - 70;
@@ -199,7 +203,14 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   { const wc = await pg.evaluate(b => window.__worldToClient((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2), F.bb); await moveTo(wc.x, wc.y, 900); await sleep(300); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); await sleep(900); }
   { const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || []));
     if (sel.length === 1 && sel[0] === F.id) fact('footing_pick', 'pointer'); else { fact('footing_pick', 'pointer picked ' + JSON.stringify(sel) + ': selected by id (stated)'); await pg.evaluate(id => window.Bonsai.select(id), F.id); }
-    await sleep(1800); fact('footing_selected', JSON.stringify(await pg.evaluate(() => Array.from(window.Bonsai._selSet || []))));
+    await sleep(1800);
+    // §D101 D6: the product's select frames the one footing so close it fills the frame; re-frame it with its nearest neighbours (the 3 nearest footings' boxes, from the converted model)
+    { const nb = await pg.evaluate(b => { const els = window.DxfImportUI.state.gate.R.els.filter(e => e.ifc && e.ifc.ifc_class === 'IfcFooting'), bx = e => { const xs = e.vertices.map(v => v[0]), ys = e.vertices.map(v => v[1]); return [Math.min(...xs), Math.min(...ys), e.z0, Math.max(...xs), Math.max(...ys), e.z1]; };
+        const c = [(b[0] + b[3]) / 2, (b[1] + b[4]) / 2], bs = els.map(bx).sort((p, q) => Math.hypot((p[0] + p[3]) / 2 - c[0], (p[1] + p[4]) / 2 - c[1]) - Math.hypot((q[0] + q[3]) / 2 - c[0], (q[1] + q[4]) / 2 - c[1])).slice(0, 4);
+        return bs.reduce((u, q) => [Math.min(u[0], q[0]), Math.min(u[1], q[1]), Math.min(u[2], q[2]), Math.max(u[3], q[3]), Math.max(u[4], q[4]), Math.max(u[5], q[5])], b); }, F.bb);
+      await frameBox(nb, 1.0, 1800, [0.6, -1, 0.8]); await sleep(600);
+      const span = Math.max(nb[3] - nb[0], nb[4] - nb[1]), foot = Math.max(F.bb[3] - F.bb[0], F.bb[4] - F.bb[1]); console.log('§FILM_FRAME footing_in_context span_m=' + span.toFixed(2) + ' footing_m=' + foot.toFixed(2) + ' ratio=' + (span / foot).toFixed(2)); }
+    fact('footing_selected', JSON.stringify(await pg.evaluate(() => Array.from(window.Bonsai._selSet || []))));
     const shown = await pg.evaluate(v => { const t = document.body.innerText; return /CastingRatio|Sched_Footing/.test(t) || t.indexOf(v) >= 0; }, F.ratio_a);   // is the property on any page text after the click?
     fact('props_visible', String(shown)); if (!shown) gap('beat2', 'no_properties_panel: selecting a body frames + highlights it (§ZOOM-SEL) but the Modeller renders none of its ifc.props (Note_CastingRatio, Sched_Footing_T); the values are READ from the converted model for the narration, not shown; the DETAILS sheet (b02) shows the drawn notes. status: "' + (await stat()).slice(0, 80) + '"'); }
   await sleep(2500); await pg.keyboard.press('x'); await pg.keyboard.press('Escape'); await sleep(500);

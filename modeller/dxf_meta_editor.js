@@ -630,7 +630,10 @@
     });
     return h;
   }
+  // §D101 D4: a notes sheet (read by the structure gate for its general notes) is not missing a role
+  function isNotes(sh) { return !viewOf(sh) && !!(window.DxfImportUI && window.DxfImportUI.notesOf && window.DxfImportUI.notesOf(sh.name)); }
   function roleChip(sh, miss) {
+    if (isNotes(sh)) return '<span class="dm-role">NOTES</span>';
     var v = viewOf(sh), bad = !v || miss.miss.length || miss.errors.length;
     var t = !v ? 'NO ROLE' : v === 'PLAN' ? 'PLAN' + (get1(sh, 'LEVEL') ? ' @' + get1(sh, 'LEVEL').value : '') : v === 'ELEV' ? 'ELEV' + (get1(sh, 'FACE') ? ' ' + get1(sh, 'FACE').value : '') : v === 'ROOF' ? 'ROOF' + (get1(sh, 'ROOF') ? ' @' + get1(sh, 'ROOF').value : '') : v;
     return '<span class="dm-role' + (bad ? ' need' : '') + '">' + esc(t) + '</span>';
@@ -642,7 +645,7 @@
     var nBad = 0, h = '';
     S.sheets.forEach(function (sh, si) {
       var mi = missingOf(sh), v = viewOf(sh), open = !!S.open[si];
-      if (!v || mi.miss.length || mi.errors.length) nBad++;
+      if (!isNotes(sh) && (!v || mi.miss.length || mi.errors.length)) nBad++;
       h += '<div class="dm-card" data-card="' + si + '"><div class="dm-ch" data-act="card" data-sheet="' + si + '">' + (open ? IC.chevD : IC.chevR) + IC.file + '<span class="nm" title="' + esc(sh.name) + '">' + esc(sh.name) + '</span>' + roleChip(sh, mi) + '</div>';
       if (open) {
         h += '<div class="dm-cb">';
