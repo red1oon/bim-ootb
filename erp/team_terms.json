@@ -1,7 +1,7 @@
 {
  "schema": "terms-v1",
  "kind": "harness",
- "at": "2026-10-31T07:46:19.460Z",
+ "at": "2026-10-31T07:51:11.274Z",
  "node": "v18.19.1",
  "verdict": "PASS",
  "browser": {
@@ -649,7 +649,7 @@
     }
    ],
    "status": "ENFORCED",
-   "note": "TEAMWORK §45.2/§45.8 F1 per-device mailboxes (bim-ootb #2477; witness common/tests/witness_f1_mailbox.js, mutants run by the witness itself). Measured edge Visit #1 download 384 / 386 / 388 B at N=10/100/1000 (W-SCALE-STAR: build/scriptor/f1_mailboxes/scale_star_F1_final_engine_{10,100}.log, scale_star_F1_engine_1000.log; was 367 KB / 4.5 MB / 45.8 MB). Stated limits: the identity/roster floor on a first-ever Visit is not bounded (identity ops reach everyone); withholding of one mailbox bundle shows as a parked op, not a gap; an old app in a new star space silently misses mailbox mail; the GitHub listing is still O(N) calls",
+   "note": "TEAMWORK §45.2/§45.8 F1 per-device mailboxes (bim-ootb #2477; witness common/tests/witness_f1_mailbox.js, mutants run by the witness itself). Measured edge Visit #1 download 384 / 386 / 388 B at N=10/100/1000 (W-SCALE-STAR: build/scriptor/f1_mailboxes/scale_star_F1_final_engine_{10,100}.log, scale_star_F1_engine_1000.log; was 367 KB / 4.5 MB / 45.8 MB). Stated limits: the identity/roster floor on a first-ever Visit is not bounded (identity ops reach everyone); withholding of one mailbox bundle now shows as a gap (per-mailbox sequence, §45.11 / bim-ootb #2486; was a parked op); an old app in a new star space silently misses mailbox mail; the GitHub listing is still O(N) calls",
    "layers": "bim-ootb tree (node, real modules)"
   },
   {
