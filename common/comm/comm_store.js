@@ -593,10 +593,18 @@
     }
     // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
     async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
-      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null, setTrust: L.roster.setTrust || {} }; }
+      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null, setTrust: L.roster.setTrust || {}, setThreshold: L.roster.setThreshold || {} }; }
     // §13.12.I.1: the base this space sits on, as folded from the trusted genesis: {name, sha256, bytes?, version?} | null (no genesis seen yet, or a space without base —
     // tell them apart with (await order()).roster.ok)
     async function planTrust() { var R = (await cur()).roster; return R.ok && R.planTrust ? R.planTrust : null; }   // §33: the pinned plan trust list, or null
+    // §46.5 F5/F7: the folded trust list WITH roles and the threshold in force; the admin time anchor (ms | null). publishAnchor(ts): the admin NAMES ts (no implicit clock read here); the answer is this device's fold verdict.
+    async function planTrustInfo() { var R = (await cur()).roster; return R.ok && R.planTrust ? { keys: R.planTrust, threshold: R.planTrustThreshold || 1, epoch: R.planTrustEpoch } : null; }
+    async function anchor() { var R = (await cur()).roster; return R.ok && typeof R.anchor === 'number' ? R.anchor : null; }
+    async function publishAnchor(ts) {
+      var pol = await policy(), base = pol ? JSON.parse(JSON.stringify(pol.params)) : {}; base.epoch = (pol ? pol.epoch : 0) + 1; base.anchor_ts = ts;
+      var op = await setPolicy(base), v = (await cur()).verdict[op.hash];
+      return { ok: !!v && v.verdict === 'MERGED', verdict: v ? v.verdict + (v.reason ? ':' + v.reason : '') : 'none', reason: v && v.verdict !== 'MERGED' ? v.reason : null, hash: op.hash };
+    }
     async function baseInfo() { var R = (await cur()).roster; return R.ok && R.base ? R.base : null; }
     // my offset inside the visit period V (ms); null until a policy fixes V
     async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
@@ -897,7 +905,7 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, authorMany: authorMany, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
+             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, planTrustInfo: planTrustInfo, anchor: anchor, publishAnchor: publishAnchor, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
@@ -933,6 +941,9 @@
     if (nsOpts && nsOpts.planTrust !== undefined && nsOpts.planTrust !== null) {      // §33: the plan trust list (public keys only) is pinned in the genesis; the space id hashes it
       var tp = ROS.planTrustProblem(nsOpts.planTrust); if (tp) throw new Error('newSpace: invalid planTrust (' + tp + ')');
       params.planTrust = ROS.planTrustOf(nsOpts.planTrust);
+      if (nsOpts.planTrustThreshold !== undefined && nsOpts.planTrustThreshold !== null) {      // §46.5 F5: the signing threshold, pinned with the list
+        var thp = ROS.planTrustThresholdProblem(nsOpts.planTrust, nsOpts.planTrustThreshold); if (thp) throw new Error('newSpace: invalid planTrustThreshold (' + thp + ')');
+        params.planTrustThreshold = nsOpts.planTrustThreshold; }
     }
     if (nsOpts && nsOpts.plan !== undefined && nsOpts.plan !== null) {      // §38.15: the topology - 'office' (the mesh plan, the default) or 'pos' (the star plan); the space id hashes it, so every device reads the same one
       if (nsOpts.plan !== 'office' && nsOpts.plan !== 'pos') throw new Error('newSpace: invalid plan (' + String(nsOpts.plan) + ')');
