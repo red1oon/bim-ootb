@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- Team — technical notes for developers. bim-compiler prompts/TEAMWORK_FRAMEWORK.md §48 (terms), §45.10 (F1 mailboxes), §45.11 (sealing + per-mailbox sequence), §51 / §51.1 (witness cache), §50.1 (fresh-clone run, not yet done).
+     Every number here is copied from a log named in that file (2026-10-31); each behaviour cites, in an HTML comment, the witness that proves it. Linked from team_guide.html. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Team — for developers</title>
+<style>:root{--bg:#fff;--fg:#1d1d1f;--mut:#555;--line:#ddd}@media(prefers-color-scheme:dark){:root{--bg:#151517;--fg:#ececee;--mut:#a0a0a6;--line:#333}}
+body{margin:0 auto;padding:16px;max-width:720px;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}h1{font-size:22px}h2{font-size:17px;margin-top:24px}
+.box{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:12px 0}code{background:rgba(127,127,127,.15);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+pre{background:rgba(127,127,127,.12);padding:10px 12px;border-radius:8px;overflow-x:auto;font-size:13.5px}table{border-collapse:collapse;width:100%;font-size:14.5px}td,th{border-bottom:1px solid var(--line);padding:5px 6px;vertical-align:top;text-align:left}.mut{color:var(--mut)}a{color:inherit}</style></head><body>
+<p class="mut"><a href="team_guide.html">← Team guide</a></p>
+<h1>Team — technical notes for developers</h1>
+<p>Team mode makes promises: a station cannot read another station's mail, a Complete by the wrong role is refused on every device, and so on. This page shows how each promise is checked, how to run the checks yourself, and what is still a stated limit. It is for developers and reviewers; people using team mode only need the <a href="team_guide.html">Team guide</a>.</p>
+
+<h2>What is checked</h2>
+<p>Each promise is a <b>term</b>. A term is <b>ENFORCED</b> only when a test (a <i>witness</i>) passes <i>and</i> every one of its <b>broken controls</b> is found in the test's output. A broken control is the same test aimed at a deliberately broken case, so it shows the test can fail. A term that is stated but not tested is <b>OPEN</b> and is never shown as met. A test that judged nothing prints INCONCLUSIVE, never PASS.</p>
+<p>Current record: <b>13 enforced, 0 open</b> (run of 2026-10-31). It is published as <a href="team_objectives.html">Project quality objectives</a> (tested properties and stated limits, not a warranty; see <a href="https://github.com/red1oon/bim-ootb/blob/main/GOVERNANCE.md">GOVERNANCE.md</a>) and as the <b>Terms</b> button in the Team panel. The raw record is <a href="team_terms.json">team_terms.json</a> (schema <code>terms-v1</code>). <!-- W-TERMS: §TERMS_VERDICT PASS enforced=13 open=0 browser=judged 5/skipped 0 --></p>
+<p><b>The checker can say no.</b> Removing one broken control from a test's output turns that term UNCONTROLLED and the whole run FAIL; this was tried for the newest term (sealing). Many tests also run <b>mutants</b>: the product code is edited on purpose (one exact line, which must be found exactly once), and the test must go red. A mutant that crashes the test does not count as caught. <!-- terms_postSeal_neg/neg_seal.out --></p>
+
+<h2>Run the checks yourself</h2>
+<p>The checks run in Node on your own machine. Two public repositories are needed: <a href="https://github.com/red1oon/BIMCompiler">BIMCompiler</a> (the terms runner and the comm-engine tests) and <a href="https://github.com/red1oon/bim-ootb">bim-ootb</a> (this app, its browser tests). The terms runner is on BIMCompiler's <code>fable/meshdb-livewire</code> branch; its default branch (<code>master</code>) does not have it yet, so clone that branch as shown.</p>
+<pre>git clone -b fable/meshdb-livewire https://github.com/red1oon/BIMCompiler.git
+git clone https://github.com/red1oon/bim-ootb.git
+cd BIMCompiler &amp;&amp; npm install
+# only for the browser layer (the real page in headless Chromium):
+cd ../bim-ootb/tests &amp;&amp; npm install &amp;&amp; npx playwright install chromium
+cd ../../BIMCompiler
+node scripts/witness_terms.js --ootb ../bim-ootb</pre>
+<p>The last line it prints is the verdict, for example <code>§TERMS_VERDICT PASS enforced=13 open=0 witness_failed=0 uncontrolled=0 browser=judged 5/skipped 0</code>. Every test's log is written under <code>build/scriptor/terms_run/</code>.</p>
+<table><tr><th>Option</th><th>What it does</th></tr>
+<tr><td><code>--browser 0</code></td><td>Skip the browser layer (no Playwright needed). The verdict then says <code>browser=judged 0/skipped 5</code>, so a skipped layer is never read as a pass.</td></tr>
+<tr><td><code>--only id,id</code></td><td>Judge only some terms (ids as in <code>team_terms.json</code>).</td></tr>
+<tr><td><code>--fresh 1</code></td><td>Run every test again, ignoring the cache below. Published records are made this way.</td></tr>
+<tr><td><code>--json file</code></td><td>Write the record (<code>terms-v1</code>) that the Terms button and the objectives page are generated from.</td></tr>
+<tr><td><code>--logs dir</code></td><td>Where the logs go.</td></tr></table>
+<div class="box"><b>Not yet proven:</b> the commands above are what the author runs. Nobody has yet run them from a fresh clone on another machine, so a missing install step or a file that only exists on the author's machine may still turn up. That run is the next planned check (TEAMWORK §50.1); this section will be rewritten from what it actually needed.</div>
+
+<h2>The test cache</h2>
+<p>A full run takes minutes, and most of it repeats tests whose inputs have not changed. The runner therefore keeps each passing test's result together with a fingerprint of <b>every file the test actually read</b>. The files are recorded while the test runs, not taken from a hand-written list. If none of those files changed, the stored result is replayed, marked <code>§CACHED</code> with its fingerprint; nothing runs. <!-- W-WITNESS-CACHE §WC_VERDICT PASS judged=23 mutants=6/6 --></p>
+<ul>
+<li><b>What counts as an input:</b> files loaded with <code>require</code>, files read by name, files the test serves to headless Chromium through its own small web server, folders it lists, files it checks for (a file that was missing and now exists counts as a change), and files read by any Node program the test starts. The arguments and the settings the runner gives the test count too.</li>
+<li><b>Never stored:</b> a failing run; a run in which nothing inside the two repositories was read; a run whose Node code contains <code>import(</code>, because Node loads those modules without going through the recorded file calls. These always run again and say why (<code>§CACHE_SKIP</code>).</li>
+<li><b>Not part of the fingerprint:</b> reads that bypass Node's file calls (a git or sqlite program, the network, the clock) and the Playwright/Chromium version. Use <code>--fresh 1</code> when one of those changed.</li>
+<li><b>Measured (2026-10-31):</b> the terms runner without the browser layer took 269 s, and 6 s when run again unchanged, with the same 13 results (one test re-ran because of the <code>import(</code> rule). One browser test (the Publish screen) read 348 files and went from 158 s to 0 s with the same result.</li>
+<li>The cache lives in <code>~/.cache/bim-witness/</code>; deleting it is always safe.</li></ul>
+
+<h2>How team data moves</h2>
+<ul>
+<li><b>The relay</b> is a shared folder of files (on GitHub, or a plain folder in the tests). It runs no logic and is never asked a question in real time. Each device keeps its own full copy and sends small bundles of signed changes. <!-- W-PIPE-OPAQUE --></li>
+<li><b>Encryption:</b> business changes are encrypted with AES-GCM under a team key; a device gets that key wrapped for it alone (ECDH + HKDF). Identity records (who is in the team, roles) are signed but not encrypted. <!-- W-PIPE-OPAQUE 44/0 --></li>
+<li><b>Mailboxes</b> (POS teams founded since 2026-10-31): a till's sales go to head office's inbox and a message for one person goes to that person's box, so a device downloads only its own mail. The first download of a station stayed at about 384–399 bytes whether the team had 10, 100 or 1,000 stations (it was 367 KB, 4.5 MB and 45.8 MB). <!-- W-F1-MAILBOX 21/0 7/7; W-SCALE-STAR --></li>
+<li><b>Sealing between a station and head office:</b> in those teams, mail between one station (or person) and head office is sealed with a key only that pair holds. Another member of the team who holds the team key, even running a modified app that downloads everything, opens none of it; with the team key alone the same member opens all of it. A key minted by another member for someone else's pair is never used to seal. A device removed from the team gets none of the new keys. <!-- W-READ-SCOPE 39/0 9/9: A, E, F --></li>
+<li><b>Nothing withheld goes unnoticed:</b> every message in a mailbox carries a signed running number, and each device's signed summary says how far it has sent. If the relay holds back a bundle, in the middle or the last one, the receiver reports the gap. <!-- W-READ-SCOPE G --></li>
+<li><b>Older teams are unchanged:</b> office teams and teams founded before mailboxes existed keep the shared stream and the single team key, byte for byte as before. <!-- W-F1-MAILBOX C/F; W-READ-SCOPE I --></li></ul>
+<p><b>Stated limits:</b> the relay still sees who sent how much and when (sender, box, counts, sizes); a checkpoint (a compacted history) is sealed with the team key, so record ids from mailbox mail are visible to every member; someone who holds a pair key can pass it on outside the system; an older app in a new POS team does not read mailboxes and silently misses that mail (the version floor is the lever); the first-ever download of a new device still contains the whole member list; mailboxes have not yet been tested on the GitHub relay itself, only on a folder.</p>
+
+<h2>Where the specifications are</h2>
+<p>Design, test specifications and results, each with its log: <a href="https://github.com/red1oon/BIMCompiler/blob/fable/meshdb-livewire/prompts/TEAMWORK_FRAMEWORK.md">TEAMWORK_FRAMEWORK.md</a> in BIMCompiler — §48 the terms and their wording, §45.10 mailboxes, §45.11 sealing and the per-mailbox number, §51 the cost of keeping the checks honest and the cache. The tests themselves: <code>scripts/witness_terms.js</code>, <code>scripts/witness_witness_cache.js</code> (BIMCompiler); <code>common/tests/witness_f1_mailbox.js</code>, <code>common/tests/witness_read_scope.js</code>, <code>erp/tests/witness_team_*.js</code> (bim-ootb).</p>
+</body></html>
