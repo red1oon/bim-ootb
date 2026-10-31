@@ -57,7 +57,7 @@
       var set = function (qty, unit, uw, uwKey, formula) { r.qty = qty; r.unit = unit; r.uw = uw; r.uwKey = uwKey; r.kN = qty * uw; r.formula = formula; r.tier = uwKey ? (src[uwKey] || 'default') : 'stated'; };
       if (!bx) { r.missing = 'no geometry to measure'; rows.push(r); return; }
       if (/concrete/i.test(mat)) {
-        var vol = c === 'IfcBeam' ? (sz(b, 'w') || d[1]) * (sz(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (sz(b, 't') || d[2]) : (sz(b, 'x') || d[0]) * (sz(b, 'y') || d[1]) * h;
+        var vol = c === 'IfcBeam' ? (sz(b, 'w') || Math.min(d[0], d[1])) * (sz(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (sz(b, 't') || d[2]) : (sz(b, 'x') || d[0]) * (sz(b, 'y') || d[1]) * h;
         set(vol, 'm3', rc, 'load.unit_weight.concrete', 'volume x (22.8 + 0.63 x p) with p = load.rc_steel_percent');
       } else if (/brick/i.test(mat)) set(Math.max(d[0], d[1]) * h * (sz(b, 't') || Math.min(d[0], d[1])), 'm3', brick, 'load.unit_weight.brick', 'length x height x drawn thickness x brick');
       else if (c === 'IfcPlate') { var e = d.slice().sort(function (p, q) { return q - p; }); set(e[0] * e[1] * (sz(b, 't') || e[2]), 'm3', steel, 'load.unit_weight.steel', 'plate area x drawn thickness x steel'); }
