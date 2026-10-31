@@ -285,7 +285,10 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   console.log('§FILM_SYNC firstFrame=' + t0.toFixed(3) + ' firstBeat=' + beatLog[0][1].toFixed(3) + ' lastFrame=' + frames[frames.length - 1].ts.toFixed(3) + ' frames=' + frames.length + ' ffmpeg_rc=' + mkv.status + ' ' + (mkv.stderr || '').slice(0, 200));
   beatLog.forEach(([id, ep]) => console.log('§FILM_BEAT id=' + id + ' t=' + Math.max(0, ep - t0).toFixed(3)));
   chapLog.forEach(([n, key, ep]) => console.log('§FILM_CHAPTER n=' + n + ' key=' + key + ' t=' + Math.max(0, ep - t0).toFixed(3)));
-  fs.writeFileSync(path.join(OUT, 'backdrops.txt'), chapLog.filter(([n]) => n <= 3).map(([n]) => 'c' + n + ' ' + path.join(OUT, 'bd' + n + '.png')).join('\n') + '\n');
+  // one backdrop per chapter (the card's dimmed still): the recorder's own screenshot where it took one, else the take's own frame 1.5 s into the chapter (session 16: take 3 had bd2/bd3 only)
+  chapLog.forEach(([n, key, ep]) => { const f = path.join(OUT, 'bd' + n + '.png'); if (fs.existsSync(f) && fs.statSync(f).size) { console.log('§FILM_BACKDROP c' + n + ' recorder'); return; }
+    const ss = (Math.max(0, ep - t0) + 1.5).toFixed(3), x = cp.spawnSync('ffmpeg', ['-v', 'error', '-y', '-ss', ss, '-i', path.join(OUT, 'film.mp4'), '-frames:v', '1', f]); console.log('§FILM_BACKDROP c' + n + ' from_video t=' + ss + ' rc=' + x.status); });
+  fs.writeFileSync(path.join(OUT, 'backdrops.txt'), chapLog.map(([n]) => 'c' + n + ' ' + path.join(OUT, 'bd' + n + '.png')).join('\n') + '\n');
   fs.writeFileSync(path.join(OUT, 'page.log'), plog.join('\n'));
   fs.rmSync(FR, { recursive: true, force: true });
   console.log('§FILM_REC sec=' + (frames[frames.length - 1].ts - t0 + 1).toFixed(1) + ' out=' + path.join(OUT, 'film.mp4'));

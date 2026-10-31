@@ -23,7 +23,7 @@ const ROOT = path.join(__dirname, '..', '..'), M = path.join(ROOT, 'modeller'), 
 const C = require(path.join(M, 'dxf2bim_cli.js')), RG = require(path.join(M, 'reg_report.js')), UI = require(path.join(M, 'reg_report_ui.js'));
 const MK = process.env.SHED_MARKED || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
 let fail = 0, judged = 0; const ok = (n, c, i) => { judged++; console.log((c ? 'PASS ' : 'FAIL ') + n + (i ? '  ' + i : '')); if (!c) fail++; };
-const mask = h => h.replace(/BIMCompiler Modeller DXF2BIM \(sw [^)]*\)/g, 'TOOL').replace(/\b[0-9a-f]{64}\b/g, 'SHA256');
+const mask = h => h.replace(/BIMCompiler Modeller DXF2BIM \(sw [^)]*\)/g, 'TOOL').replace(/\b[0-9a-f]{64}\b/g, 'SHA256').replace(/\b20\d\d-\d\d-\d\d\b/g, 'DATE');   // the page stamps today, the CLI side a fixed DATE (they differ after midnight)
 const firstDiff = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return i >= a.length && a.length === b.length ? 'identical' : 'at ' + i + ': "' + a.slice(i, i + 80) + '" vs "' + b.slice(i, i + 80) + '"'; };
 const DATE = '2026-10-31';
 function webIfc() { for (const m of ['web-ifc', path.join(os.homedir(), 'bim-compiler/node_modules/web-ifc')]) { try { return require(m); } catch (e) { /* next */ } } throw new Error('needs web-ifc'); }
