@@ -63,6 +63,12 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
     window.Bonsai.oplog._geomOps().filter(o => o.op_type === 'GEOM_INSERT').forEach(o => { const m = g.children.find(q => q.isMesh && q.userData && q.userData.featureId === o.id); if (!m) return;
       m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld); out[o.id] = { c: o.parameters.ifc_class, b: [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z], bay: o.parameters.bayCopy || null }; });
     return { els: out, xs: G.xs.slice(), xl: G.xlabels.slice(), ys: G.ys.slice() }; });
+  // B11 (owner 2026-10-31: "during adding of bay, it seems it does not add a column support along the extended wall"): every x grid line carries a column on BOTH long walls
+  // (the rows of the outermost column centres), before and after the bay; the new line is one of them. A line with none, or a doubled stack, is listed.
+  const colLines = S => { const cs = Object.values(S.els).filter(e => e.c === 'IfcColumn').map(e => ({ x: (e.b[0] + e.b[3]) / 2, y: (e.b[1] + e.b[4]) / 2 })); if (!cs.length) return { rows: [], miss: ['no columns'], lines: 0 };
+    const ylo = Math.min(...cs.map(c => c.y)), yhi = Math.max(...cs.map(c => c.y)), miss = [], doubled = [];
+    S.xs.forEach((x, i) => [ylo, yhi].forEach(y => { const n = cs.filter(c => Math.abs(c.x - x) <= 0.3 && Math.abs(c.y - y) <= 0.3); const xs = [...new Set(n.map(c => c.x.toFixed(3)))]; if (!n.length) miss.push((S.xl[i] || i) + '@y' + y.toFixed(2)); else if (xs.length > 1) doubled.push((S.xl[i] || i) + '@y' + y.toFixed(2)); }));
+    return { lines: S.xs.length, miss, doubled, rows: [ylo.toFixed(2), yhi.toFixed(2)] }; };
   try {
     // B0 the General shed: not offered, refused with the reason
     const pG = await open(null);
@@ -96,6 +102,9 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
       'added ' + added.length + ' ' + JSON.stringify(by) + ' (want ' + JSON.stringify(WANT) + ')');
     const sh = (b, d) => b.map((v, i) => (i % 3 === K ? v + d : v));
     const bad2 = added.filter(a => { const s = S0.els[a.bay && a.bay.src]; if (!s) return true; const w = sh(s.b, P * a.bay.dir); return a.b.some((v, i) => Math.abs(v - w[i]) > MM); });
+    { const c0 = colLines(S0), c1 = colLines(S1);
+      ok('B11 every x grid line carries a column on both long walls, before (' + c0.lines + ' lines) and after the bay (' + c1.lines + ' lines, the new one included); none doubled', c0.miss.length === 0 && c1.miss.length === 0 && c1.doubled.length === 0 && c1.lines === c0.lines + 1,
+        'rows y=' + c1.rows.join('/') + ' | before missing ' + JSON.stringify(c0.miss) + ' | after missing ' + JSON.stringify(c1.miss) + ' doubled ' + JSON.stringify(c1.doubled)); }
     ok('B2 every copy = its source + one pitch', added.length > 0 && bad2.length === 0, 'pitch ' + P.toFixed(4) + ' m, copies ' + added.length + ', off ' + bad2.length + (bad2[0] ? ' e.g. #' + bad2[0].id + ' ' + bad2[0].c : ''));
     const mv = R.plan.moved.concat(R.riders || []).filter(id => { const a = S0.els[id], b = S1.els[id]; return !a || !b || b.b.some((v, i) => Math.abs(v - (i % 3 === K ? a.b[i] + P : a.b[i])) > MM); });
     const st = R.plan.stretched.filter(s => { const a = S0.els[s.id], b = S1.els[s.id]; return !a || !b || Math.abs((b.b[K + 3] - b.b[K]) - (a.b[K + 3] - a.b[K] + P)) > MM; });
@@ -177,6 +186,9 @@ const WANT = { IfcBeam: 2, IfcWall: 2, IfcMember: 12, IfcPlate: 9, IfcColumn: 2,
       const R10 = await pc.evaluate(() => { const L = window.DxfImportUI.state.lastBay, st = (document.getElementById('dxf-status') || {}).textContent; return L ? { ok: L.plan.ok, why: L.plan.why, pitch: L.plan.pitch, stretched: L.plan.stretched.map(x => ({ id: x.id, cls: x.cls })), gate: L.res.gate || 'clean', cost: L.cost } : { ok: false, why: st }; });
       const C1 = await snap(pc), K10 = 0, long = (R10.stretched || []).filter(x => x.cls === 'IfcSlab' || x.cls === 'IfcRoof');
       const off10 = long.filter(x => { const a = C0.els[x.id], b = C1.els[x.id]; return !a || !b || Math.abs((b.b[K10 + 3] - b.b[K10]) - (a.b[K10 + 3] - a.b[K10] + R10.pitch)) > MM; });
+      { const c0 = colLines(C0), c1 = colLines(C1);
+        ok('B11c with Complete ticked, every x grid line still carries a column on both long walls after the bay (' + c1.lines + ' lines); none doubled', c0.miss.length === 0 && c1.miss.length === 0 && c1.doubled.length === 0 && c1.lines === c0.lines + 1,
+          'after missing ' + JSON.stringify(c1.miss) + ' doubled ' + JSON.stringify(c1.doubled)); }
       ok('B10 with Complete ticked, the bay is added and the floor slab + both roofs are one pitch longer', R10.ok && long.filter(x => x.cls === 'IfcSlab').length === 1 && long.filter(x => x.cls === 'IfcRoof').length === 2 && off10.length === 0,
         'ok=' + R10.ok + (R10.why ? ' why=' + R10.why : '') + ' | slab/roof stretched ' + long.map(x => '#' + x.id + ' ' + x.cls).join(',') + ' off ' + off10.length + ' | gate=' + R10.gate + ' | cost ' + JSON.stringify(R10.cost));
       await pc.close();

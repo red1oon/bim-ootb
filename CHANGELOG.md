@@ -4,6 +4,18 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.84.0](https://github.com/red1oon/bim-ootb/compare/v1.83.0...v1.84.0) (2026-10-31)
+
+
+### ✨ Features
+
+* **erp:** Test Harness button (Terms) — recorded terms-v1 witness run, open terms first, never green; W-TEAM-TERMS 12/0, mutants 4/4; sw v937 ([#2450](https://github.com/red1oon/bim-ootb/issues/2450)) ([4cefa8c](https://github.com/red1oon/bim-ootb/commit/4cefa8cfc8ed19264db4b7470a7d469db42764a0))
+
+
+### ⚡ Performance
+
+* **erp:** head-office hot spots HS1-HS3 (login ctx once, roster once per pass, index overlay) ([#2449](https://github.com/red1oon/bim-ootb/issues/2449)) ([d342e70](https://github.com/red1oon/bim-ootb/commit/d342e708a6baba17256f049ca4efedfab76669ed))
+
 ## [1.83.0](https://github.com/red1oon/bim-ootb/compare/v1.82.0...v1.83.0) (2026-10-22)
 
 

@@ -1,35 +1,37 @@
 # ⚠ DO NOT REMOVE
 SCOPE: the DXF2BIM lane file (2D DXF sets -> 3D model in the Modeller -> the facts a user submits). Began 2026-10-23 as a read-only ARCHITECT REVIEW; since session 2 the owner
 authorises builds item by item (spec first, witness first). **Read the log after every run; exit code is not evidence.** Honour this block until the lane is closed.
-Old RESUME blocks (sessions 1-14) live in `prompts/archive/DXF2BIM_ARCHITECT_REVIEW_resume_history_s1-s13.md` — history only, never resume from there.
+Old RESUME blocks (sessions 1-15) live in `prompts/archive/DXF2BIM_ARCHITECT_REVIEW_resume_history_s1-s13.md` — history only, never resume from there.
 
-## ▶ RESUME HERE (session 15 entry; written 2026-10-31 at the close of session 14 — the ONLY current block)
-**Merged in session 14 (bim-ootb main, each witnessed, logs read):** #2458 **RR.6** Modeller Export ▸ Regulatory Report… — `RegReport.fromModel` / `billAndLoad` / `statedType`
-are the ONE composition the CLI and the page run; `reg_report_ui.js` (lazy) + facts form; W-REG-REPORT-UI 7/0 (U7: the real page = the CLI byte for byte, tool + hash masked) ·
-#2460 **§D98** `BUILD-NAME` set placeholder (orange suggestion, yellow *default* badge once accepted, typing the real name replaces it on every sheet, `--set` replaces it, the report
-says "not stated (placeholder …)"); W-SET-PLACEHOLDER 8/0 · #2461 **§D99 defect** `wall.thickness` + `synth.slab.thickness` are guesses (all 16 country packs carry the same
-150 / 250 mm price line), values unchanged; W-DEFAULTS DF3 refuses a std basis naming a pack. sw v193.
-**Consequences of §D98 to know (measured):** a raw set's round 1 now holds the orange placeholder rows, so the editor shows the split buttons (Accept stated + read / Accept inferred)
-instead of Accept all alone; Accept all can now complete every placing value, so the Arrange view hands over to the canvas at Accept all (W-ARRANGE A7/A8 measure the canvas after
-that). Raw shed round 1 = 9 / 16 / 9 (was 9 / 16 / 0); every round 9 / 16 / 123.
-**BIMCompiler docs (needs a merge by the owner — the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated for §D99 (W-YELLOW-PAGE 4/4 against it) +
-the guide's `@SET` row + PROGRESS pointer; it contains #276's commit, so merging #277 covers #276. **Until #277 merges, the runner shows YP1 FAIL.**
-**RUNNER (2026-10-31, §D98 tree):** `§ALLWITNESS PASS=95 ENV=10 FAIL=2 of 107` — YP1 (above) and `witness_dxf_convert_fail` CF2, which fails only inside full runs (also on the
-pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status after the undo.
+## ▶ RESUME HERE (session 16 entry; written 2026-10-31 at the close of session 15 — the ONLY current block)
+**Merged in session 15 (bim-ootb main, each witnessed, logs read):** #2464 **§D99 P4 step 1** the drawing's stated casting ratio picks the SoR row (`pwd2024_bd` 1:1.5:3 rows 07.3.1/07.3.2/
+07.3.3, read off the page images; a stated mix with no row → unpriced + flag; W-BILL-MIX 5/0) · #2465 P4 step 2 REFUTED ("THICk." = the footing schedule's T = 12", already read; no slab
+thickness is stated anywhere) + P2 spec · #2468 submission-pack film STORYLINE (in `FILM_DXF2BIM_WHY_MARKINGS.md`) + split buttons kept (owner: "Buttons do advice") · #2470 **§D99 P2 step 1**
+`dxf2impact.js` + CLI `--impact` (W-IMPACT 4/0) · #2472 §D100 finding · #2478 **§D100 rule `load_path`** in `viewer/structural_sanity.js` (a beam with no path down; floating_member untouched,
+fleet identical; W-LOAD-PATH 5/0) · #2480 **§D100 (b)** yellow default `column.top_under_beam` = `beam_above` (owner: "Wouldn't this default as standardized … Thus requiring precision from me";
+W-COL-TO-BEAM 3/0). In flight: **#2471** W-DXF-ADD-BAY B11/B11c (a column on both long walls at every grid line after a bay) — synced with main, auto-merge on; check it landed.
+**Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`, 2026-10-31 end of session 15):** 512 bodies; bill **6,227,255 BDT** (6,188,538.09 with `--choice column.top_under_beam=as_drawn`);
+own weight with the 12 raised columns (re-read from LoadSummary, not re-typed here); structural findings 1 (cantilever) + load_path 0 (as drawn: 10 = the long-wall beams over the bays
+between lines 36 and 41, columns drawn 1.524 m under beams at 3.10 m); `--impact`: slab thickness −1,298,309 BDT (0.15), section spacing −262,675 BDT / −126 bodies, 6 settings inert.
+**BIMCompiler (owner merges; the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated (63 rows, incl. `column.top_under_beam`) + guide `@SET` row + PROGRESS pointer;
+it contains #276's commit → after #277 merges, close #276. Until then the runner shows **YP1 FAIL** (W-YELLOW-PAGE passes against #277's page).
 **▶ NEXT, in order:**
-1. **§D99 P2 step 2 — the page** (step 1 = `dxf2impact.js` + CLI `--impact` + W-IMPACT 4/0 BUILT, see its RESULT; the page's button + sorted / collapsed list is left). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
-   6,188,538 BDT); P4 step 2 REFUTED ("THICk." is the footing schedule's T = 12", already read; no slab thickness is stated anywhere).
-2. ✅ **DECIDED 2026-10-31 (owner: "Buttons do advice"): keep the split buttons in round 1** — the placeholder is a convention like the applied defaults; Accept all alone would hide
-   that one value is not from the drawing. No code change.
-3. **Film "from drawings to a submission pack"** — owner OK'd a fresh storyline flowing from the BricsCAD film v2 (2026-10-31); STORYLINE written in
-   `prompts/FILM_DXF2BIM_WHY_MARKINGS.md` (`## ▶▶▶ SUBMISSION-PACK FILM — STORYLINE`): build the recorder, dry run, take, assemble (its Next list).
-4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
-   header + quickstart; the viewer's other cost paths do not read `material_rates`; RR authority headers (RAJUK / NBeS checklists not found).
-**Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`):** unchanged from session 13 (archived block): 512 bodies, floor 603.87 m2, own weight 5,361.0 kN, bill 6,178,335 BDT,
-4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns); since §D100 (b) **6,227,255 BDT** (12 columns raised to their beams), structural findings 1 (cantilever).
-**Recipes + landmines:** as in the archived session-14 block (recipes for the shed report and the runner; PWD SoR page images; auto-merge orphan trap; `R.set` vs `desc.set`; the raw
-title block's client name; a new `element_defaults.json` key touches C36, E1, YP1 + the BIMCompiler page — and a changed kind/basis touches YP1 too). New: a headless witness that
-opens a new tab (the report's blob) must poll by interval, not rAF (the page goes background).
+1. **§D99 P2 step 2 — the page**: a "Measure impact" button in the defaults list (on demand, never at open), rows sorted by `impact` with "± n BDT · ± n kN at <option>", the 6 inert rows in
+   one collapsed "No effect on quantities or checks" line (P3). The page's `run(choices)` = the structure gate with that choice + `RegReport.billAndLoad` (lazy-load the bill owners as
+   `reg_report_ui.js` does). Witness: the page's ranking = the CLI's `--impact` for the shed. Spec: `### §D99 P2 SPEC` + step 1 RESULT.
+2. **Submission-pack film** — storyline approved (owner: "Ok on fresh storyline that naturally flows from the last one"); its Next list in `FILM_DXF2BIM_WHY_MARKINGS.md` (recorder → dry run →
+   take on a quiet machine → fill → assemble → witness). Its numbers moved since it was written (bill 6,227,255; structural findings 1): the recorder reads them from the take.
+3. Small, open: `synth.roof.sheet_thickness` basis says display-only but it moves the own weight (+0.06 kN); `witness_dxf_convert_fail` CF2 flakes inside full runs only (fix its wait);
+   the viewer's other cost paths do not read `material_rates`; the pack's "2024" label (its rows are SoR 2022); carried: code packs (UBBL, BNBC 2020), RR authority headers.
+**RUNNER (end of session 15, the §D100 (b) tree + its three witness fixes):** `§ALLWITNESS PASS=97 ENV=10 FAIL=4 of 111` before the fixes; after them the 3 re-ran green; the 4th = YP1 (#277).
+**Recipes:** shed report `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
+--report [--impact] [--choice k=v] [--fact k=v]` · runner `NODE_PATH=~/bim-compiler/node_modules node modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw
+NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` · SoR chapter PDFs `https://ss.pwd.gov.bd/document/sor/<name>.pdf` (list: `/sor/sordownload/1`); read rates off the
+PAGE IMAGE at 250 dpi (`pdftoppm -r 250`), never the OCR text.
+**Landmines (each hit this session or last):** (a) a new `element_defaults.json` key touches C36 + E1 counts and the BIMCompiler yellow page (run `gen_yellow_list.js` in the same change);
+(b) a numeric literal in a comparison inside an engine module trips W-GUARD G3 — put tolerances in the registry row; (c) the stored `~/Videos/dxf2bim_film_work/why/cli/bodies.json` predates
+§D100: compare against a fresh CLI run, do not rewrite that film material; (d) a `// comment` inserted mid-statement swallows the rest of the line (twice this session) — use `/* */`;
+(e) PRs touching this file conflict with each other: merge main into a behind PR rather than assuming auto-merge lands it; (f) auto-merge squashes fast: follow-ups start off fresh `origin/main`.
 
 ## Where things are in this file
 §0-§4 the original review charter · `## RESULT 2026-10-23` (sessions 1-2: HHS round trip, seams, §D56-§D59) · `## RESULT 2026-10-26` (sessions 7-8: spec/code/tutorial review, §D79
@@ -456,6 +458,11 @@ spacing −262,675 BDT) and 7 of 11 tried move nothing. The user hunts through e
   the CLI's `--impact` (same owner); I4 falsifier: a setting whose option changes nothing in the registry but is wired into dxf2synth (e.g. `synth.roof.overhang`) reports Δ ≠ 0;
   I5 nothing is computed at open (no §IMPACT line until the button).
 
+**Bay columns — the bay copies them correctly; the missing support was upstream, see §D100 (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall? Check out if so").**
+Measured in the real Modeller (W-DXF-ADD-BAY, headless): the shed has a column on both long walls (rows y −110.94 / −95.70) at all 14 x grid lines (4 on each gable line);
+after Add a bay, all **15** lines carry one on both walls, the new line included, none doubled — plain and with Complete ticked (the copies are the hinge line's frame: 2 column stacks
+× 3 segments with Complete, + 2 footings; v2 take log: `{"IfcColumn":6,…,"IfcFooting":2}`). New check **B11 / B11c** (sabotage: the bay without the hinge line's frame → RED,
+`missing ["41A@y-110.94","41A@y-95.70"]`). What the film showed is not judged here (a look is not a measure); the v2 bay beat was in x-ray with the 33 copies tinted.
 **§D99 P2 step 1 RESULT (2026-10-31, session 15): BUILT — the measure + the CLI.** `modeller/dxf2impact.js` `Dxf2Impact.rank(table, base, run, log)` (pure: the caller's own pipeline per
 option) + `dxf2bim_cli.js --impact` (each option through the CLI's own `run()` with that `--choice`). Shed (`--complete --pack pwd2024_bd`, base 6,188,538 BDT, 2.9 s): tried 11, **active 5:
 synth.slab.thickness −1,298,308.80 BDT / −1,414.87 kN (at 0.15), section.spacing −262,674.57 / −24.31 kN / −126 bodies (2 x pitch), building.type +19,968.24 (Farming Shed),
