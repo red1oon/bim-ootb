@@ -21,6 +21,7 @@ pre{background:rgba(127,127,127,.12);padding:10px 12px;border-radius:8px;overflo
 <pre>git clone https://github.com/red1oon/BIMCompiler.git
 git clone https://github.com/red1oon/bim-ootb.git
 cd BIMCompiler &amp;&amp; npm install
+node scripts/dev_env_fetch.js --root-bim-ootb ../bim-ootb   # files git does not carry, from public storage, hash-checked
 # only for the browser layer (the real page in headless Chromium):
 cd ../bim-ootb/tests &amp;&amp; npm install &amp;&amp; npx playwright install chromium
 cd ../../BIMCompiler
@@ -32,14 +33,16 @@ node scripts/witness_terms.js --ootb ../bim-ootb</pre>
 <tr><td><code>--fresh 1</code></td><td>Run every test again, ignoring the cache below. Published records are made this way.</td></tr>
 <tr><td><code>--json file</code></td><td>Write the record (<code>terms-v1</code>) that the Terms button and the objectives page are generated from.</td></tr>
 <tr><td><code>--logs dir</code></td><td>Where the logs go.</td></tr></table>
-<div class="box"><b>Not yet proven:</b> the commands above are what the author runs. Nobody has yet run them from a fresh clone on another machine, so a missing install step or a file that only exists on the author's machine may still turn up. One gap is already known: six terms' engine tests open <code>build/erp/ad_full.db</code> (the full application dictionary, 45 MB), which is not in the repository; without it those tests fail and the run says so (WITNESS-FAILED, never PASS). Making that file reproducible is part of the same check (TEAMWORK §50.1); this section will be rewritten from what the run actually needed.</div>
+<div class="box"><b>Files git does not carry.</b> Some tests read a file that is too large or too generated for git, for example the application dictionary <code>build/erp/ad_full.db</code> (45 MB, the public iDempiere demo data). Each such file is listed in <code>dev_env/manifest.json</code> with its sha256 and kept on public storage; <code>dev_env_fetch.js</code> downloads it and refuses it if the hash differs. The runner finds these files by itself: it records every file each test reads and names any that git does not have (<code>§UNTRACKED</code>), then prints how many terms a fresh copy can check (<code>§TERMS_PORTABLE</code>, today 13 of 13). <!-- W-DEV-ENV 13/0 4/4 --><br><b>Not yet proven:</b> nobody has yet run these commands from a fresh copy on another machine. Until that run is done, a missing install step may still turn up; this section will be rewritten from what it needed.</div>
 
 <h2>The test cache</h2>
 <p>A full run takes minutes, and most of it repeats tests whose inputs have not changed. The runner therefore keeps each passing test's result together with a fingerprint of <b>every file the test actually read</b>. The files are recorded while the test runs, not taken from a hand-written list. If none of those files changed, the stored result is replayed, marked <code>§CACHED</code> with its fingerprint; nothing runs. <!-- W-WITNESS-CACHE §WC_VERDICT PASS judged=23 mutants=6/6 --></p>
 <ul>
 <li><b>What counts as an input:</b> files loaded with <code>require</code>, files read by name, files the test serves to headless Chromium through its own small web server, folders it lists, files it checks for (a file that was missing and now exists counts as a change), and files read by any Node program the test starts. The arguments and the settings the runner gives the test count too.</li>
-<li><b>Never stored:</b> a failing run; a run in which nothing inside the two repositories was read; a run whose Node code contains <code>import(</code>, because Node loads those modules without going through the recorded file calls. These always run again and say why (<code>§CACHE_SKIP</code>).</li>
-<li><b>Not part of the fingerprint:</b> reads that bypass Node's file calls (a git or sqlite program, the network, the clock) and the Playwright/Chromium version. Use <code>--fresh 1</code> when one of those changed.</li>
+<li><b>Never stored:</b> a failing run; a run in which nothing inside the two repositories was read; a run whose Node code contains <code>import(</code> (Node loads those modules without going through the recorded file calls); and a run that starts any program other than Node (git, a database client, a shell), because that program's reads cannot be recorded. Playwright's own browser is the exception: it reads only what the test's recorded server sends it. These always run again and say why (<code>§CACHE_SKIP</code>). <!-- W-WITNESS-CACHE E1, M9 --></li>
+<li><b>Databases opened by native code count too.</b> A database opened through <code>better-sqlite3</code> is read by native code, not by Node's file calls; it is recorded separately, so a changed database re-runs the test. This was missing at first: the check for files git does not carry exposed it, before a stale result was ever published (2026-11-01). <!-- W-WITNESS-CACHE M8 --></li>
+<li><b>Not part of the fingerprint:</b> the network, the clock, and the Playwright/Chromium version. Use <code>--fresh 1</code> when one of those changed.</li>
+<li>A change to the cache code itself invalidates every stored result.</li>
 <li><b>Measured (2026-10-31):</b> the terms runner without the browser layer took 269 s, and 6 s when run again unchanged, with the same 13 results (one test re-ran because of the <code>import(</code> rule). One browser test (the Publish screen) read 348 files and went from 158 s to 0 s with the same result.</li>
 <li>The cache lives in <code>~/.cache/bim-witness/</code>; deleting it is always safe.</li></ul>
 
