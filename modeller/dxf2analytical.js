@@ -9,7 +9,8 @@
   else root.Dxf2Analytical = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var TAG = '§ANALYTICAL', FORMAT = 'dxf2bim-analytical/1', ORDER = { IfcColumn: 0, IfcBeam: 1, IfcMember: 2 }, E_STEEL_KNM2 = 2.0E8;   /* 200 GPa, stated in the §D103 spec */
+  /* ZQ: heights are compared to 0.1 mm (the .std's own precision) so float noise from an IFC round trip cannot reorder members */
+  var TAG = '§ANALYTICAL', FORMAT = 'dxf2bim-analytical/1', ORDER = { IfcColumn: 0, IfcBeam: 1, IfcMember: 2 }, ZQ = 1E4, JQ = 1E4, E_STEEL_KNM2 = 2.0E8;   /* 200 GPa, stated in the §D103 spec */
   var LEFT = { IfcPlate: 'gusset: a connection, not a member', IfcWall: 'non-structural brick panel: a load, not applied in v1', IfcRoof: 'roof sheet: a load, not applied in v1',
     IfcFan: 'equipment: a load, not applied in v1', IfcDoor: 'opening: a load, not a member', IfcCovering: 'covering: a load, not applied in v1', IfcFooting: 'becomes a support (see supports)' };
 
@@ -63,7 +64,7 @@
     if (!LS) throw new Error('Dxf2Analytical.build needs o.LS (LoadSummary): the one section reader');
     var ls = LS.compute(els, { values: V, sources: o.sources || {} }), lsBy = {}; ls.rows.forEach(function (r) { lsBy[r.guid] = r; });
     var rc = Number(V['load.unit_weight.concrete']) + 0.63 * Number(V['load.rc_steel_percent']), steel = Number(V['load.unit_weight.steel']);
-    var sorted = (els || []).slice().sort(function (p, q) { var a = ORDER[p['class']], b = ORDER[q['class']]; a = a === undefined ? 9 : a; b = b === undefined ? 9 : b; return a - b || (p.z0 - q.z0) || (p.guid < q.guid ? -1 : p.guid > q.guid ? 1 : 0); });
+    var sorted = (els || []).slice().sort(function (p, q) { var a = ORDER[p['class']], b = ORDER[q['class']]; a = a === undefined ? 9 : a; b = b === undefined ? 9 : b; return a - b || (Math.round(p.z0 * ZQ) - Math.round(q.z0 * ZQ)) || (p.guid < q.guid ? -1 : p.guid > q.guid ? 1 : 0); });
     var cand = [], baseZ = Infinity;
     (els || []).forEach(function (e) { if (e['class'] === 'IfcColumn' && e.z0 < baseZ) baseZ = e.z0; });
     sorted.forEach(function (e) {
@@ -89,8 +90,13 @@
         } else why2 = 'no section drawn, none assumed (' + (row.missing || 'section size not drawn') + ')';
       }
       if (why2) { res.leftOut.push(Object.assign({ reason: why2 }, src)); res.findings.push({ code: 'no_section', message: c + ' ' + src.sheet + ' ' + src.handle + ': ' + why2 + '; left out, not given a section', guid: e.guid, sheet: src.sheet, handle: src.handle }); return; }
-      if (c === 'IfcMember') mat = { key: 'STEEL', E: E_STEEL_KNM2, density: steel, cite: 'steel E 200 GPa (§D103); density = registry load.unit_weight.steel' };
-      else {
+      var matName = String((e.ifc && e.ifc.material) || ''), steelLike = c === 'IfcMember' || /steel/i.test(matName);
+      if (steelLike) {
+        mat = { key: 'STEEL', E: E_STEEL_KNM2, density: steel, cite: 'steel E 200 GPa (§D103); density = registry load.unit_weight.steel' };
+        if (c !== 'IfcMember' && sec.kind === 'rect') res.findings.push({ code: 'box_section_steel', message: c + ' ' + src.sheet + ' ' + src.handle + ' is steel (' + matName + ') but its section is the geometry\'s box, not a rolled profile: the engineer sets the profile', guid: e.guid, sheet: src.sheet, handle: src.handle });
+      } else if (matName !== '' && !/concrete/i.test(matName)) {
+        res.findings.push({ code: 'material_unknown', message: c + ' ' + src.sheet + ' ' + src.handle + ': material "' + matName + '" is neither concrete nor steel, so no elastic modulus is given (the engineer states it)', guid: e.guid, sheet: src.sheet, handle: src.handle });
+      } else {
         var fc = Number(props.Note_fc_MPa);
         if (isFinite(fc) && fc > 0) mat = { key: 'CONC_fc' + fc, E: 4700 * Math.sqrt(fc) * 1000, density: rc, fc: fc, cite: 'E = 4700 sqrt(f\'c) MPa, f\'c ' + fc + ' MPa from the drawing\'s note ' + (props.NoteSource_fc_MPa || '') + ' (ACI 318-19 §19.2.2.1); density = registry load.unit_weight.concrete + 0.63 x load.rc_steel_percent (BNBC 2012 Table 2.2.1 note, as the Load Summary)' };
         else res.findings.push({ code: 'fc_missing', message: c + ' ' + src.sheet + ' ' + src.handle + ': no f\'c stated on the drawing, so no elastic modulus is given (the engineer states it)', guid: e.guid, sheet: src.sheet, handle: src.handle });
@@ -120,8 +126,8 @@
     var supNodes = {};
     nodes.forEach(function (n) {
       if (!botOfCol[n.id] || topOfCol[n.id]) return;
-      var best = null; feet.forEach(function (f) { if (n.p[0] >= f.x0 && n.p[0] <= f.x1 && n.p[1] >= f.y0 && n.p[1] <= f.y1 && f.top <= n.p[2] && (!best || f.top > best.top)) best = f; });
-      if (best) { supNodes[n.id] = true; res.supports.push({ node: n.id, type: supType, footing: best.guid, footingSheet: best.sheet, footingHandle: best.handle, footingTop: best.top, gap: n.p[2] - best.top }); }
+      var best = null; feet.forEach(function (f) { if (n.p[0] >= f.x0 && n.p[0] <= f.x1 && n.p[1] >= f.y0 && n.p[1] <= f.y1 && f.top <= n.p[2] + snap && (!best || f.top > best.top)) best = f; });
+      if (best) { supNodes[n.id] = true; res.supports.push({ node: n.id, type: supType, footing: best.guid, footingSheet: best.sheet, footingHandle: best.handle, footingTop: best.top, gap: Math.max(0, n.p[2] - best.top) }); }
     });
     var gaps = res.supports.map(function (s) { return s.gap; }).filter(function (g) { return g > snap; });
     if (gaps.length) res.findings.push({ code: 'support_gap', message: gaps.length + ' of ' + res.supports.length + ' column bases sit ' + fx(Math.min.apply(null, gaps), 4) + ' to ' + fx(Math.max.apply(null, gaps), 4) + ' m above their footing top: the pedestal between is not drawn, so the support is placed at the column base', n: gaps.length });
@@ -212,7 +218,44 @@
   function toJSON(M) {
     if (!M || M.refused) throw new Error('toJSON: no model (' + (M && M.refused) + ')');
     return JSON.stringify({ format: M.format, units: { length: 'm', force: 'kN', up: 'Z' }, params: M.params, assumptions: M.assumptions, nodes: M.nodes, members: M.members, supports: M.supports,
-      sections: M.sections, materials: M.materials, loads: [{ case: 'DEAD', selfweight: { z: -1 } }], dangling: M.dangling, leftOut: M.leftOut, findings: M.findings }, null, 1) + '\n';
+      sections: M.sections, materials: M.materials, loads: [{ case: 'DEAD', selfweight: { z: -1 } }], dangling: M.dangling, leftOut: M.leftOut, findings: M.findings }, function (k, v) { return typeof v === 'number' ? Math.round(v * JQ) / JQ : v; }, 1) + '\n';   /* numbers to 0.1 mm, the .std precision: the IFC's Float32 store carries 1e-7 noise */
   }
-  return { build: build, toStaad: toStaad, toJSON: toJSON, FORMAT: FORMAT, axisOf: axisOf, angleProps: angleProps };
+
+  // ---- the IFC side (§D105): what the shared extractor (ifc_extract_core.js) wrote -> the neutral element list `build` takes. Reads only the extractor's own tables; nothing is invented. ----
+  // q(sql) -> array of rows (RegReport.fromModel's q). elements_meta (class, Name, material), element_transforms (centre: the vertices are stored centred on it), element_instances ->
+  // component_geometries (Float32 x,y,z, one triple per triangle corner: deduplicated here), element_dxf2bim (the Dxf2Bim_Evidence pset: Kind, Source*, Note_*, SourceGuid, Size_*).
+  var SIZE_KEYS = ['x', 'y', 'w', 'd', 't', 'slope_deg'];
+  function fromDb(q) {
+    var ev = {};
+    try { q('SELECT guid, name, value FROM element_dxf2bim').forEach(function (r) { (ev[r[0]] = ev[r[0]] || {})[r[1]] = r[2]; }); } catch (e) { /* an IFC without the evidence pset has no such table */ }
+    var rows = q('SELECT m.guid, m.ifc_class, m.element_name, m.material_name, m.storey, t.center_x, t.center_y, t.center_z, g.vertices FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid ' +
+      'LEFT JOIN element_instances i ON i.guid = m.guid LEFT JOIN component_geometries g ON g.geometry_hash = i.geometry_hash ORDER BY m.guid');
+    return rows.map(function (r) {
+      var props = ev[r[0]] || {}, V = [], z0 = 0, z1 = 0;
+      if (r[8] && r[5] !== null) {
+        var u8 = r[8], f = new Float32Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)), seen = {};
+        for (var i = 0; i + 2 < f.length; i += 3) { var k = f[i] + ',' + f[i + 1] + ',' + f[i + 2]; if (!seen[k]) { seen[k] = 1; V.push([f[i] + r[5], f[i + 1] + r[6], f[i + 2] + r[7]]); } }
+        z0 = Math.min.apply(null, V.map(function (v) { return v[2]; })); z1 = Math.max.apply(null, V.map(function (v) { return v[2]; }));
+      }
+      if (props.Z0 !== undefined && props.Z1 !== undefined) { z0 = Number(props.Z0); z1 = Number(props.Z1); }   /* the writer's stated base / top (Z0, Z1); else the vertex extent above */
+      var size = null; SIZE_KEYS.forEach(function (k) { if (props['Size_' + k] !== undefined) { size = size || {}; size[k] = { number: Number(props['Size_' + k]) }; } });
+      var pr = {}; Object.keys(props).forEach(function (k) { pr[k] = props[k]; });
+      return { guid: props.SourceGuid || r[0], ifcGuid: r[0], 'class': r[1], kind: props.Kind || null, storey: r[4], z0: z0, z1: z1, vertices: V, size: size,
+        sheet: props.SourceSheet || '(ifc)', handle: props.SourceHandle || r[0], ifc: { type_name: r[2], material: r[3] || '', props: pr } };
+    });
+  }
+  // the whole route, one function for the CLI and the page: IFC bytes -> extractor -> fromDb -> build. e: { ifcBytes, WebIFC, ifcApi (initialised), SQL, Core, LS, values, sources, log }
+  async function fromIfc(e) {
+    var db = new e.SQL.Database(), els;
+    try {
+      await e.Core.extractToDb({ WebIFC: e.WebIFC, ifcApi: e.ifcApi, ifcData: e.ifcBytes, db: e.Core.sqljsDb(db), Buf: e.Core.browserBuf, buildingName: 'MODEL', sourceName: 'model.ifc', log: function () {} });
+      els = fromDb(function (sql) { var r = db.exec(sql); return r.length ? r[0].values : []; });
+    } finally { db.close(); }
+    var m = build(els, { values: e.values, sources: e.sources, LS: e.LS });
+    m.elements = els;   /* the neutral list the builder read: a witness re-builds from it */
+    m.input = { elements: els.length, withGeometry: els.filter(function (x) { return x.vertices.length; }).length, evidence: els.filter(function (x) { return x.ifc.props.SourceHandle !== undefined; }).length };
+    m.log.unshift(TAG + ' input ifc elements=' + m.input.elements + ' withGeometry=' + m.input.withGeometry + ' withEvidence=' + m.input.evidence);
+    return m;
+  }
+  return { build: build, fromDb: fromDb, fromIfc: fromIfc, toStaad: toStaad, toJSON: toJSON, FORMAT: FORMAT, axisOf: axisOf, angleProps: angleProps };
 });

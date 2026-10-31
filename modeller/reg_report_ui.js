@@ -100,6 +100,14 @@
     return panel;
   }
 
+  // §D105: the owners the Regulatory Report loads, ready to use (web-ifc initialised, sql.js, the extractor core, the IFC writer, LoadSummary): Export ▸ Analytical model reads an IFC with them
+  async function engine() {
+    await loadScripts();
+    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
+    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, _base).href; } });
+    return { WebIFC: window.WebIFC, ifcApi: api, SQL: SQL, Core: window.IfcExtractCore, Dxf2Ifc: window.Dxf2Ifc, LoadSummary: window.LoadSummary };
+  }
+
   async function build(o) {
     await loadScripts();
     var U = window.DxfImportUI.state, api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
@@ -121,5 +129,5 @@
   }
 
   return { SCRIPTS: SCRIPTS, GLOBALS: GLOBALS, assemble: assemble, factsFrom: factsFrom, formHtml: formHtml, open: open, build: build, last: function () { return _last; },
-    loadScripts: loadScripts, packDefault: packDefault, packList: packList };   // §D99 P2 step 2: the impact block loads the same owners and offers the same packs
+    loadScripts: loadScripts, engine: engine, packDefault: packDefault, packList: packList };   // §D99 P2 step 2: the impact block loads the same owners and offers the same packs
 });

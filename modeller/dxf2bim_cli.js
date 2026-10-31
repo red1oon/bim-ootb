@@ -21,6 +21,7 @@
 //   --report              also write <out>/regulatory_report.html (implies --ifc; RR.5): the model's facts, its rule checks, load summary, bill and assumptions
 //   --impact              rank the used defaults by measured impact: the set judged again per option, Δ bill / Δ own weight / Δ bodies (§IMPACT lines; §D99 P2)
 //   --fact                a fact the model cannot give, for the report: --fact plot_area_m2=1200 --fact soil_kPa=150 --fact district=Dhaka (absent = "not stated")
+//   --ifc-in <file.ifc>   no 2D sheets: build the analytical model from ANY IFC (needs --analytical and --out; web-ifc + sql.js as for --ifc) (§D105)
 //   --analytical          also write <out>/model.std (STAAD.Pro) + <out>/analytical.json (dxf2bim-analytical/1): a starting analytical model, not a design (dxf2analytical.js, §D103)
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
 // writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
@@ -30,7 +31,7 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js'), RG = require('./reg_report.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], fact: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false, report: false, impact: false, analytical: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], fact: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false, report: false, impact: false, analytical: false, ifcIn: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
@@ -40,10 +41,12 @@ function parseArgs(argv) {
     else if (k === '--complete') a.complete = true;
     else if (k === '--analytical') a.analytical = true;   // §D103
     else if (k === '--impact') a.impact = true;   // §D99 P2: rank the used defaults by what each option moves (bill, own weight, bodies)
+    else if (k === '--ifc-in') a.ifcIn = argv[++i];
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
     else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--default', '--choice', '--exclude', '--fact'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
   }
+  if (a.ifcIn) { if (!a.analytical || !a.out) throw new Error('--ifc-in needs --analytical and --out <dir>'); return a; }
   if (!a.sheets.length || !a.out) throw new Error('need --sheets <dxf...> and --out <dir>');
   return a;
 }
@@ -143,9 +146,12 @@ function webIfc() {
   for (const m of ['web-ifc', process.env.WEB_IFC, path.join(process.env.HOME || '', 'bim-compiler/node_modules/web-ifc')]) { if (!m) continue; try { return require(m); } catch (e) { /* next */ } }
   throw new Error('--ifc needs web-ifc (npm i web-ifc, or set WEB_IFC=<dir>)');
 }
+function buildIfc(res) {   // the converted parts -> the IFC bytes (in memory)
+  const W = webIfc(), R = res.out.gate.R, IFC = require('./dxf2ifc.js');
+  return (async () => { const api = new W.IfcAPI(); await api.Init(); return IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc', buildingType: RG.statedType(R) }); })();
+}
 async function writeIfc(res, dir) {
-  const W = webIfc(), api = new W.IfcAPI(); await api.Init();
-  const R = res.out.gate.R, IFC = require('./dxf2ifc.js'), r = IFC.build(IFC.fromEls(R.els, R.ST), { api, WebIFC: W, name: 'dxf2bim.ifc', buildingType: RG.statedType(R) });
+  const r = await buildIfc(res);
   fs.writeFileSync(path.join(dir, 'model.ifc'), Buffer.from(r.bytes));
   return r;
 }
@@ -153,10 +159,12 @@ async function writeIfc(res, dir) {
 if (require.main === module) {
   (async () => {
   try {
-    const args = parseArgs(process.argv.slice(2)), res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
+    const args = parseArgs(process.argv.slice(2));
+    if (args.ifcIn) { const m = await analyticalFromIfc(new Uint8Array(fs.readFileSync(args.ifcIn)), registryValues(), path.resolve(args.out)); process.exit(m.refused ? 2 : 0); }
+    const res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
     if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' coloured=' + r.coloured + ' psets=' + r.withPset + ' styles=' + r.styles + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
     if (args.report && g.ok) await writeReport(res, path.resolve(args.out), args);
-    if (args.analytical && g.ok) writeAnalytical(res, path.resolve(args.out));
+    if (args.analytical && g.ok) await writeAnalytical(res, path.resolve(args.out));
     if (args.impact && g.ok) impact(args);
     const by = {}; bodies.forEach(b => { const k = b.class; by[k] = (by[k] || 0) + 1; });
     console.log('§CLI result ok=' + g.ok + ' bodies=' + bodies.length + ' byClass=' + JSON.stringify(by) + ' left_out=' + (g.structure ? g.structure.left_out : '-') + ' out=' + path.resolve(args.out));
@@ -184,16 +192,27 @@ async function writeReport(res, dir, args) {
   out.log.forEach(l => console.log(l));
   return out;
 }
-// §D103: the converted parts -> the analytical model (dxf2analytical.js: the ONE builder the Modeller's Export row also runs); a refused model writes nothing
-function writeAnalytical(res, dir) {
-  const AN = require('./dxf2analytical.js'), R = res.out.gate.R, values = {}, sources = {};
-  (R.defaults_table || []).forEach(r => { values[r.key] = r.value; sources[r.key] = r.source; });
-  const m = AN.build(R.els, { values, sources, LS: require('./load_summary.js') });
+// §D103/§D105: the analytical model reads the IFC and only the IFC. DXF route: converted parts -> Dxf2Ifc -> bytes -> here; any IFC: --ifc-in. A refused model writes nothing.
+function registryValues() {   // the registry file's defaults (no run behind an arbitrary IFC, so no @DEFAULT overrides)
+  const D = JSON.parse(fs.readFileSync(path.join(__dirname, 'element_defaults.json'), 'utf8')).defaults, values = {}, sources = {};
+  Object.keys(D).forEach(k => { values[k] = D[k].value; sources[k] = 'default'; });
+  return { values, sources };
+}
+async function analyticalFromIfc(ifcBytes, vs, dir) {
+  const AN = require('./dxf2analytical.js'), W = webIfc(), api = new W.IfcAPI(); await api.Init();
+  const m = await AN.fromIfc({ ifcBytes, WebIFC: W, ifcApi: api, SQL: await sqlJs()(), Core: require('./dxf2bim/ifc_extract_core.js'), LS: require('./load_summary.js'), values: vs.values, sources: vs.sources });
   m.log.forEach(l => console.log(l));
   if (m.refused) return m;
-  fs.writeFileSync(path.join(dir, 'model.std'), AN.toStaad(m)); fs.writeFileSync(path.join(dir, 'analytical.json'), AN.toJSON(m));
+  fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, 'model.std'), AN.toStaad(m)); fs.writeFileSync(path.join(dir, 'analytical.json'), AN.toJSON(m));
   console.log('§ANALYTICAL wrote ' + path.join(dir, 'model.std') + ' + analytical.json');
   return m;
+}
+async function writeAnalytical(res, dir) {
+  const R = res.out.gate.R, values = {}, sources = {};
+  (R.defaults_table || []).forEach(r => { values[r.key] = r.value; sources[r.key] = r.source; });
+  if (!R.els || !R.els.length) { console.log('§ANALYTICAL refused no_bodies'); return { refused: 'no bodies' }; }
+  const built = await buildIfc(res);
+  return analyticalFromIfc(new Uint8Array(built.bytes), { values, sources }, dir);
 }
 // §D99 P2: every option of every used default, through this CLI's own run() (the choice path a person uses), measured by the bill and the load summary
 function impact(args, log) {
@@ -205,4 +224,4 @@ function impact(args, log) {
     return { bodies: G ? G.els.length : 0, total: r.bill ? r.bill.totals.amount : 0, kN: r.loadSummary ? r.loadSummary.total_kN : 0 };
   }, log || (l => console.log(l)));
 }
-module.exports = { run, write, parseArgs, writeIfc, writeReport, impact, writeAnalytical };
+module.exports = { run, write, parseArgs, writeIfc, writeReport, impact, writeAnalytical, analyticalFromIfc, registryValues, buildIfc };
