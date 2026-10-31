@@ -35,3 +35,17 @@ one-line caption, 4-6 s; `§FILM_SPOT`).
 **Subtitles to draw from (each must stay true):** "Entered once. Reused at every step. Never retyped." · "Every step adds information, and none is lost." · "A drawing note that ends up pricing
 the concrete and stiffening the frame." · "Not 3D for its own sake: information that travels."
 **Not claimed:** a structural design; "first" / "novel" (prior-art search limited); that the details' bars are used.
+
+## NARRATIVE: context + subtext (owner 2026-11-01: "the narrative has to put in some context and subtext") — DRAFT for the TSV
+Two voices as the shed films (F asks, M answers). Context = what each thing is, plainly; subtext = the one thread: every record was made to be read again — for millennia by a person; reuse begins when a tool reads it.
+| ch | context (spoken) | subtext (what it carries) |
+|---|---|---|
+| 0 | F: "Why is construction moving from flat drawings to a digital twin?" (held; a flat sheet beside the 3D shed) | no answer yet: the gap between paper and model |
+| 0a | M: "Nine thousand years ago, someone engraved a plan on stone, to scale. Five thousand years ago, a scribe in Uruk pressed accounts into clay. In Djoser's time, an architect sketched a curve with its heights in cubits." F: "Why write it down at all?" M: "So the next person could read it again." | recording is ancient; reuse was always the reason |
+| 0c | M: "Sixty years ago the drawing went onto a screen. Then objects that carry data. Then, in the nineties, one open model every tool can read: IFC. Standards and mandates followed." | each step moved information one stage further from its maker |
+| 0d | F: "So it's a history of drawing?" M: "No. Look at the marks. For four and a half thousand years, every one is hollow: recorded for a person to read. Even CAD in 1982: lines a person measures, notes as text." F: "And the stars?" M: "That is where a tool reads it too. The shed's own note on its concrete mix prices the concrete and sets the stiffness of the frame. Nobody typed it twice." | the pivot: recorded is not reusable |
+| 0b | M: "That is why construction goes digital. Not for the picture. For the information: entered once, reused forever." | the thesis; every later chapter is evidence |
+| 1-7 | at each reuse of the note, one quiet line: "read again — by a tool this time." At the IFC parity: "the same model, through the open standard — nothing lost on the way." | the thread, repeated |
+| 8 | "The engineer's judgement is not reused; it is still theirs." | honesty: where reuse stops |
+| 9 | M: "A drawing is read once. A twin is reused forever." | the opening question answered |
+Numbers spoken in 1-9 are `§FILM_FACT`s of the take; the dates in 0-0d are the charts' cited sources (no take fact needed).
