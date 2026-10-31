@@ -456,6 +456,11 @@ spacing −262,675 BDT) and 7 of 11 tried move nothing. The user hunts through e
   the CLI's `--impact` (same owner); I4 falsifier: a setting whose option changes nothing in the registry but is wired into dxf2synth (e.g. `synth.roof.overhang`) reports Δ ≠ 0;
   I5 nothing is computed at open (no §IMPACT line until the button).
 
+**Bay columns — the bay copies them correctly; the missing support was upstream, see §D100 (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall? Check out if so").**
+Measured in the real Modeller (W-DXF-ADD-BAY, headless): the shed has a column on both long walls (rows y −110.94 / −95.70) at all 14 x grid lines (4 on each gable line);
+after Add a bay, all **15** lines carry one on both walls, the new line included, none doubled — plain and with Complete ticked (the copies are the hinge line's frame: 2 column stacks
+× 3 segments with Complete, + 2 footings; v2 take log: `{"IfcColumn":6,…,"IfcFooting":2}`). New check **B11 / B11c** (sabotage: the bay without the hinge line's frame → RED,
+`missing ["41A@y-110.94","41A@y-95.70"]`). What the film showed is not judged here (a look is not a measure); the v2 bay beat was in x-ray with the 33 copies tinted.
 **§D99 P2 step 1 RESULT (2026-10-31, session 15): BUILT — the measure + the CLI.** `modeller/dxf2impact.js` `Dxf2Impact.rank(table, base, run, log)` (pure: the caller's own pipeline per
 option) + `dxf2bim_cli.js --impact` (each option through the CLI's own `run()` with that `--choice`). Shed (`--complete --pack pwd2024_bd`, base 6,188,538 BDT, 2.9 s): tried 11, **active 5:
 synth.slab.thickness −1,298,308.80 BDT / −1,414.87 kN (at 0.15), section.spacing −262,674.57 / −24.31 kN / −126 bodies (2 x pitch), building.type +19,968.24 (Farming Shed),
