@@ -222,7 +222,8 @@
 // v1663 (2026-10-31) §D99 P4: rates/pwd2024_bd.json gains 1:1.5:3 RCC rows (07.3.x) and a `mix` on its concrete rows (the Modeller's DXF2BIM bill chooses by the drawing's stated casting ratio).
 // v1664 (2026-10-31) §D100: structural_sanity.js gains the load_path rule (a beam with no path down: a frame held up only by itself or by parts resting on it) + rates/structural_rules.json.
 // v1665 (2026-10-31) rates/pwd2024_bd.json meta: named SoR 2022 (Finance Division approval 21 June 2022, valid three years; no 2024 edition is published)
-const CACHE_VERSION = 'v1665';
+// v1666 (2026-10-31) §D101 dxf_sheet_view.js: dimensions with no block name drawn (their *D block by definition points, or from their own points), INSERT in blocks, %%c/%%d/%%p
+const CACHE_VERSION = 'v1666';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

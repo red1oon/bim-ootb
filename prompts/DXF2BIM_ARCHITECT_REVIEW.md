@@ -542,3 +542,35 @@ a column whose plan box meets a beam's (0.15 m) and whose top is more than 0.15 
 both exactly. **W-COL-TO-BEAM 3/0.** The new key: C36 / E1 counts 62 → 63, the BIMCompiler yellow page regenerated (63 rows) onto PR #277 (W-YELLOW-PAGE 4/4 against it). sw v195.
 **§D99 defect RESULT (2026-10-31, session 14): FIXED.** `synth.slab.thickness` AND `wall.thickness` (the same defect) cited a Malaysian price row (`cidb2024_my.json` 'RC Slab 250mm' / 'Blockwork Wall 150mm') as a *standard*. Measured: every country pack carries the same 250 mm slab / 150 mm wall line (16 of 16 packs, translated), so no pack is a basis. Both are now `kind: guess` with that stated; values unchanged (no quantity moves). W-DEFAULTS DF3 now refuses a std basis that names a rate pack (old registry -> DF3 RED, new -> PASS). Yellow-list page regenerated in the BIMCompiler docs PR. **P1–P5 not built: owner picks** (see the questions in RESUME).
 **Lane finding (session 14):** `witness_dxf_convert_fail` CF2 fails inside full runner runs (twice: main+RR.6 and §D98 trees) and passes 3/3 standalone each time — a load-timing read of the status in the witness, not a product change; fix the witness's wait (status settles after the undo) when next touched.
+
+## §D101 SPEC (2026-10-31, session 16; owner on take 1 of the submission film: "At min 0:32 the hiding is double and not entirely. Just blur without further label explaination." · "Also the sheet is about what? I see thin stripes. Dimension failure? CHeck thru out for such erroneous" · "it shuld be just blur and no need to explain. Now it is a boxy")
+**Measured (take 1 frames + the shipped renderer on the 9 raw shed sheets, `viewer/dxf_sheet_view.js`):**
+- **D1 dimensions draw nothing.** Every DIMENSION of the set (147: FLOOR 25, NORTH 18, SOUTH 18, WEST 10, BEAM 23, FOUNDATION 21, DETAILS 12, EAST 10, SECTION 10) carries NO group 2
+  (the block name); the renderer draws a dimension only through `P.blocks[group 2]`, so `dim_parts` = 0 on every sheet while `drawn_by_type.DIMENSION` counts them "drawn" (W-SHEET-RENDER SV1 is
+  scope-blind on this). The pictures exist: one `*D<n>` block per dimension (LINE x3, INSERT x2 = the arrow ticks, MTEXT = the value, POINT x3 = the definition points). The value text is
+  also on the entity itself (group 1, e.g. `10'-0"`). The "thin stripes" of the DETAILS sheet are the beam long sections drawn WITHOUT their dimensions.
+- **D2 INSERT inside a block is not drawn** (the arrow ticks of every dimension block).
+- **D3 DXF special codes print literally:** `%%c` (Ø) in 21 of the DETAILS sheet's 76 strings (23 codes: "10mm %%C @ 6" c/c"); the longer strings then run over the schedule cells.
+- **D4 a notes sheet reads as an error:** DETAILS is read by `Dxf2Notes` (casting ratios, schedules) and never refused (§L29), yet both panels show it red: "NO ROLE", "markings name no role
+  (view=undefined, missing VIEW)", and the Sheets section counts it in "1 need input".
+- **D5 the film's blur** (recorder `blurPrivate`): one box + a label per matched text, a dashed outline; two texts on adjacent lines → two boxes and two labels overlapping, the second label's text
+  blurred by the first box. **D6 the footing pick** frames the selection so close that one grey box fills the frame (0:44-0:52): no context.
+**Fix (generic, no shed literal):**
+- D1: a DIMENSION with no group 2 takes the `*D` block whose POINT entities coincide with the dimension's own definition points (groups 13/23, 14/24, 10/20; tolerance = 1e-6 x the sheet
+  extent, a stated relative tolerance); none coincides → it is left out and COUNTED (`stats.dim_unmatched`), never drawn from a guess. `drawn_by_type.DIMENSION` counts only dimensions drawn.
+- D2: INSERT in a block draws the referenced block's entities through the insert's point (10/20), scale (41/42, default 1) and rotation (50), nesting ≤ 4.
+- D3: TEXT and MTEXT strings: `%%c`→Ø, `%%d`→°, `%%p`→±, `%%%`→%, `%%u` / `%%o` (underline / overline toggles) dropped; case-insensitive.
+- D4: a sheet listed in the gate's `R.bodies.notes.sheets` shows the chip **NOTES** (neutral) and "general notes read" (no red line) in the 2D panel, and the meta editor does not count it as needing input.
+- D5 (recorder): ONE blur region = the union of the matched texts' boxes + padding, `backdrop-filter: blur`, no outline, no label, no tint. D6 (recorder): the picked footing framed with its neighbours (frame the
+  selection's box grown to the grid bay), x-ray kept.
+**Witness (claim first):** W-SHEET-RENDER gains **SV3** the raw shed: every DIMENSION drawn (`dim_unmatched` 0, `dim_parts` > 0 on each of the 9 sheets, each drawn dimension's value text = its group 1)
+and the module before §D101 draws 0 dimension parts (falsifier); **SV4** no `%%` left in any drawn string, the DETAILS sheet's Ø count = its `%%c` count (23); SV2 (Duplex std2d byte identity) stays
+or its diff is explained. **D4:** W-SHEET-NOTES (new, headless page): the marked shed opened, DETAILS chip = NOTES, no `dxf-why` line for it, Sheets section count excludes it; falsifier: a sheet with
+no role AND no notes stays NO ROLE + counted. D5/D6: the re-take's log: one `.film-blur` element per Sheet open, `blur_label 0`, and the footing frame's distance / box ratio logged (`§FILM_FRAME`).
+**§D101 RESULT (2026-10-31, session 16): BUILT (D1-D6).** `viewer/dxf_sheet_view.js`: DIMENSIONs with no block name take their `*D` block by definition points (111 of 147 on the raw shed, each
+block used once, none ambiguous); the 36 on NORTH / SOUTH have no block at all and are drawn from their own points with the value per their DIMSTYLE (`Standard`: DIMLUNIT 2, DIMDEC 2, DIMTXT
+2.5 x DIMSCALE 1 — the file's own style, what a CAD program regenerates; small next to the sheet's 8-13 high texts, as stated); INSERT inside blocks draws the arrow ticks; `%%c`/`%%d`/`%%p`
+decoded (23 Ø on DETAILS). **W-SHEET-RENDER 4/0** (SV3 147 of 147 drawn, before §D101 0 parts; SV4 0 `%%` left, before 21; SV2 the Duplex std2d sheets byte-identical: their dimensions name their
+blocks). `dxf_import_ui.js` / `dxf_meta_editor.js`: a notes sheet shows **NOTES** + "general notes read: 4", not counted in "need input". **W-SHEET-NOTES 3/0** (N2 falsifier: notes emptied →
+NO ROLE + "1 need input"). Recorder: one plain blur region (no outline, no label), the picked footing re-framed with its 3 nearest footings (`§FILM_FRAME`); narration b02 names the sheet's
+sections (beams, footing, column) before its notes. sw modeller v197, viewer v1666.

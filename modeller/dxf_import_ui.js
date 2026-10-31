@@ -727,7 +727,10 @@
       '#dxf-status{width:100%;font-size:11px;color:#7f8aa0;line-height:1.4}#dxf-panel.dxf-min #dxf-body{display:none}#dxf-panel{transition:width .18s ease}#dxf-panel.dxf-slimmed{width:44px}#dxf-panel.dxf-slimmed .ip-title,#dxf-panel.dxf-slimmed #dxf-close,#dxf-panel.dxf-slimmed .ip-head>svg,#dxf-panel.dxf-slimmed #dxf-body{display:none}#dxf-panel.dxf-slimmed .ip-head{justify-content:center;padding:10px 0}body.dxf-slim #dm-panel{left:308px}body.dxf-slim.ol-collapsed #dm-panel{left:68px}.dxf-pv{font-size:10px;color:#e0c64a;margin:0 8px 4px 30px}';
     document.head.appendChild(st);
   }
+  // §D101 D4: a sheet the structure gate reads for its general notes (Dxf2Notes: casting ratios, schedules) has a job: it is a NOTES sheet, never a red "no role"
+  function notesOf(name) { var R = state.gate && state.gate.R, n = R && R.bodies && R.bodies.notes; return n && n.sheets.indexOf(name) >= 0 ? n : null; }
   function roleChip(s) {
+    if (!s.role && notesOf(s.name)) return '<span class="dxf-role">NOTES</span>';
     if (!s.role) return '<span class="dxf-role none">NO ROLE</span>';
     if (s.role === 'plan') return '<span class="dxf-role">PLAN @' + s.level + '</span>';
     if (s.role === 'elev') return '<span class="dxf-role">ELEV ' + s.face + '</span>';
@@ -807,8 +810,9 @@
         '<button id="dxf-cat-load">Load</button>' + (cc ? '<button id="dxf-cat-clear">Clear</button>' : '') + '</div>';
     }
     state.sheets.forEach(function (s) {
-      h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
-      if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
+      h += '<div class="dxf-row" data-sheet="' + esc(s.name) + '">' + (s.role || notesOf(s.name) ? ICON.fileText : ICON.alert) + '<span class="nm" title="' + esc(s.name) + '">' + esc(s.name) + '</span>' + roleChip(s) + '</div>';
+      if (!s.role && notesOf(s.name)) h += '<div class="dxf-why" style="color:#8a93a0" data-notes-sheet="' + esc(s.name) + '">general notes read: ' + notesOf(s.name).rows.filter(function (r) { return r.sheet === s.name || !r.sheet; }).length + '</div>';
+      else if (!s.role) h += '<div class="dxf-why">' + esc(s.why || 'no role') + '</div>';
       var L = state.arr && state.arr.live && !state.arr.playing && state.arr.lacks && state.arr.lacks[s.name];   // §D34 the Arrange view: what the effective values do not give
       if (L && L.length) h += '<div class="dxf-pv">Arrange: ' + esc(L.join('; ')) + '</div>';
     });
@@ -1076,6 +1080,6 @@
 
   // T13.5: the building type the export writes: only a type the drawing / sheet / editor stated (never the registry default), else null
   function statedBuildingType() { var R = state.gate && state.gate.R, row = R && (R.defaults_table || []).filter(function (r) { return r.key === 'building.type'; })[0]; return row && /^(file|sheet|choice)$/.test(row.source) ? String(row.value) : null; }
-  window.DxfImportUI = { statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { notesOf: notesOf, statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();
