@@ -844,8 +844,8 @@
           var pr = await TUp().putRelease(pipe, cfg.space, dev.kid, rels[i].bytes); names.push(pr.name); }
         log('§UPD_PUBLISH ok number=' + lists[0].number + ' objects=' + names.length); return { ok: true, name: r.name, names: names, message: 'Published list #' + lists[0].number + ' with ' + (names.length - 1) + ' release file(s).' };
       },
-      anchor: async function () { await ready; if (!S) return { ok: false, reason: 'not-paired' };
-        var r = await S.publishAnchor(Date.now()); if (r.hash) await visit(); log('§TEAM_ANCHOR ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }
+      anchor: async function (ts) { await ready; if (!S) return { ok: false, reason: 'not-paired' };
+        var r = await S.publishAnchor(typeof ts === 'number' ? ts : Date.now()); if (r.hash) await visit(); log('§TEAM_ANCHOR ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }
     };
   })();
 

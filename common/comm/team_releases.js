@@ -84,13 +84,22 @@
         m.rejected.map(function (x) { return '<div class="tp-upd-rejected" style="color:#b3261e">Not used: ' + esc(x.reason) + '</div>'; }).join(''), 'has=' + m.has + ' rows=' + m.rows.length + ' outOfDate=' + m.outOfDate + ' rejected=' + m.rejected.length); };
     if (v.admin) box.querySelector('#tp-rel-publish').onclick = function () {
       show('publish', '<div>Choose the signed update list (made with sign_updatelist) and its release files.</div><input type="file" id="tp-pub-files" multiple style="margin:6px 0"><div><button type="button" id="tp-pub-go" style="min-height:40px;cursor:pointer">Publish</button> ' +
-        '<button type="button" id="tp-pub-anchor" style="min-height:40px;cursor:pointer">Set the time anchor to now</button></div><div id="tp-pub-result" data-ok="" data-reason="" style="margin-top:6px"></div>', 'admin=true');
+        '<button type="button" id="tp-pub-anchor" style="min-height:40px;cursor:pointer">Set the time anchor to now</button></div><div id="tp-pub-confirm" data-ts="" style="display:none;margin-top:6px;padding:6px;border:1px solid #b3261e"></div><div id="tp-pub-result" data-ok="" data-reason="" style="margin-top:6px"></div>', 'admin=true');
       var res = body.querySelector('#tp-pub-result');
       function say(r) { res.setAttribute('data-ok', String(!!r.ok)); res.setAttribute('data-reason', r.reason || ''); res.textContent = r.ok ? (r.message || 'Published.') : 'Refused: ' + r.reason; }
       body.querySelector('#tp-pub-go').onclick = async function () { var fl = body.querySelector('#tp-pub-files').files, files = [];
         for (var i = 0; i < fl.length; i++) files.push({ name: fl[i].name, bytes: new Uint8Array(await fl[i].arrayBuffer()) });
         var r = await host.publish(files); console.log('§TEAM_RELEASES publish ok=' + r.ok + ' reason=' + (r.reason || '') + ' files=' + files.length); say(r); };
-      body.querySelector('#tp-pub-anchor').onclick = async function () { var r = await host.anchor(); console.log('§TEAM_RELEASES anchor ok=' + r.ok + ' reason=' + (r.reason || '')); say({ ok: r.ok, reason: r.reason, message: 'Time anchor set.' }); };
+      // Owner decision 2026-10-31: the anchor is signed only after an in-panel confirm that shows the exact moment (a wrong FIRST anchor can never be lowered). No browser dialog.
+      var cbox = body.querySelector('#tp-pub-confirm');
+      function closeConfirm() { cbox.style.display = 'none'; cbox.innerHTML = ''; cbox.setAttribute('data-ts', ''); }
+      body.querySelector('#tp-pub-anchor').onclick = function () { var t = Date.now(), when = new Date(t).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        cbox.setAttribute('data-ts', String(t)); cbox.style.display = 'block';
+        cbox.innerHTML = '<div id="tp-anchor-when">You are about to sign the time anchor: <b>' + esc(when) + '</b> (' + esc(String(t)) + ' ms).</div><div id="tp-anchor-warn">The first anchor can never be lowered. Nothing is signed until you confirm.</div>' +
+          '<button type="button" id="tp-anchor-yes" style="min-height:40px;cursor:pointer;margin-right:6px">Sign this time anchor</button><button type="button" id="tp-anchor-no" style="min-height:40px;cursor:pointer">Cancel</button>';
+        console.log('§TEAM_RELEASES anchor-confirm ts=' + t + ' when=' + when);
+        cbox.querySelector('#tp-anchor-no').onclick = function () { closeConfirm(); console.log('§TEAM_RELEASES anchor-cancel ts=' + t + ' signed=0'); say({ ok: false, reason: 'cancelled' }); res.textContent = 'Cancelled. Nothing was signed.'; };
+        cbox.querySelector('#tp-anchor-yes').onclick = async function () { closeConfirm(); var r = await host.anchor(t); console.log('§TEAM_RELEASES anchor ok=' + r.ok + ' reason=' + (r.reason || '') + ' ts=' + t); say({ ok: r.ok, reason: r.reason, message: 'Time anchor set.' }); }; };
     };
     console.log('§TEAM_RELEASES opened admin=' + v.admin + ' buttons=' + box.querySelectorAll('#tp-rel-buttons button').length);
   }

@@ -5,12 +5,12 @@
 //   THE ISSUE it proves/disproves: Stages 2-3 built keys, thresholds, bundle signatures, the anchor and the signed update list, but no person could SEE or USE any of it. The screens must show exactly what the store holds,
 //   publish only what receivers would accept, and touch nothing in the core ERP (twin rule). The REAL erp/idempiere.html (?team=1) in two headless Chromium contexts on one dumb folder pipe: A = founder/admin, B = a joined device.
 //   Every arm CLICKS the real button and asserts VALUES read from state (counts equal the store's) plus §-lines; nothing is "looks right".
-//   S0 the buttons (B has no Publish) · K trusted keys · R sync rules · O rollout · U updates (published through the Publish screen) · P publish refusals · T twin: AD rows unchanged, 0 page errors, source names no table · MUTANTS.
+//   S0 the buttons (B has no Publish) · K trusted keys · R sync rules · O rollout · U updates (published through the Publish screen) · C anchor confirm · G unsigned plugin badge · P publish refusals · T twin: AD rows unchanged, 0 page errors, source names no table · MUTANTS.
 // Run: node erp/tests/witness_team_releases.js 2>&1 | tee build/scriptor/versioning_s2_s4/witness_team_releases.log
 'use strict';
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), vm = require('vm'), nodeCrypto = require('crypto'), cp = require('child_process');
 var ROOT = path.join(__dirname, '..', '..');
-var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
+var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
 var subtle = nodeCrypto.webcrypto.subtle, judged = 0, errors = 0, ARMS = {}, QUIET = !!process.env.RS_ONLY_ARMS;
 function A(arm, ok, label, detail) { if (ok === null) { if (!QUIET) console.log('   ⚪ INCONCLUSIVE ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); ARMS['~' + arm] = 1; return null; } judged++; ARMS[arm] = ARMS[arm] || 0; if (!ok) ARMS[arm]++; if (!QUIET) console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
@@ -150,9 +150,25 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   A('U', JSON.stringify(puts.installed) === JSON.stringify({ 'kw.same': '1.0.0' }) && T.relayPub().length === 3 && b.logs.some(function (l) { return /§UPD_PICK number=1 rows=5 outOfDate=false/.test(l); }), 'nothing is applied by the screen: B\'s installed set is unchanged and it put nothing on the relay; §UPD_PICK says number=1 rows=5 outOfDate=false', JSON.stringify(puts));
   A('U', ub && ub.v === 'false' && !/out of date/.test(ub.t), 'no out-of-date banner while the anchor is within the list\'s life', ub && ub.v);
   // the administrator sets the time anchor: first the real "now", then (admin's assertion) 40 days on -> past `expires`
-  await T.click(a, 'tp-rel-publish'); await a.pg.click('#tp-pub-anchor'); await sleep(1500);
+  await T.click(a, 'tp-rel-publish');
+  // ── C anchor confirm (owner decision 2026-10-31): the exact moment is shown, nothing is signed until confirmed, cancel signs nothing ──
+  var anch0 = await a.pg.evaluate(function () { return window.TeamSync.store().anchor(); }), relay0 = JSON.stringify(walk(FOLDER, '', []).sort());
+  await a.pg.click('#tp-pub-anchor'); await sleep(500);
+  var cf = await a.pg.evaluate(function () { var c = document.getElementById('tp-pub-confirm'); return { vis: !!c && c.style.display !== 'none', ts: Number(c && c.getAttribute('data-ts')), when: (document.getElementById('tp-anchor-when') || {}).textContent || '', warn: (document.getElementById('tp-anchor-warn') || {}).textContent || '', yes: !!document.getElementById('tp-anchor-yes'), no: !!document.getElementById('tp-anchor-no') }; });
+  var anch1 = await a.pg.evaluate(function () { return window.TeamSync.store().anchor(); });
+  var iso = function (t) { return new Date(t).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; };
+  A('C', cf.vis && cf.yes && cf.no && cf.ts > 0 && cf.when.indexOf(iso(cf.ts)) >= 0 && /can never be lowered/.test(cf.warn), 'clicking "Set the time anchor to now" opens an IN-PANEL confirm showing the exact date and time (to the second, UTC) and that a first anchor can never be lowered', JSON.stringify(cf).slice(0, 220));
+  A('C', anch0 == null && anch1 == null && JSON.stringify(walk(FOLDER, '', []).sort()) === relay0, 'BEFORE confirming nothing is signed: the store anchor is still unset and the relay holds the same objects', 'anchor ' + anch0 + '->' + anch1);
+  await a.pg.click('#tp-anchor-no'); await sleep(500);
+  var cx = await a.pg.evaluate(function () { var c = document.getElementById('tp-pub-confirm'); return { hidden: c.style.display === 'none', res: document.getElementById('tp-pub-result').textContent }; }), anch2 = await a.pg.evaluate(function () { return window.TeamSync.store().anchor(); });
+  A('C', cx.hidden && /Nothing was signed/.test(cx.res) && anch2 == null && JSON.stringify(walk(FOLDER, '', []).sort()) === relay0 && !a.logs.some(function (l) { return /§TEAM_ANCHOR /.test(l); }), 'Cancel signs nothing: confirm closed, anchor still unset, relay unchanged, no §TEAM_ANCHOR line', 'anchor=' + anch2 + ' ' + cx.res);
+  await a.pg.click('#tp-pub-anchor'); await sleep(300);
+  var shown = await a.pg.evaluate(function () { var c = document.getElementById('tp-pub-confirm'); return { ts: Number(c.getAttribute('data-ts')), when: document.getElementById('tp-anchor-when').textContent }; });
+  await a.pg.click('#tp-anchor-yes'); await sleep(1500);
+  var anch3 = await a.pg.evaluate(function () { return window.TeamSync.store().anchor(); });
+  A('C', anch3 === shown.ts && shown.when.indexOf(iso(anch3)) >= 0 && a.logs.some(function (l) { return l.indexOf('§TEAM_ANCHOR ok=true') === 0; }), 'Confirm signs EXACTLY the moment that was shown: the anchor read from state equals the displayed time', 'shown=' + shown.ts + ' signed=' + anch3);
   await a.pg.evaluate(function (t) { Date.now = function () { return t; }; }, T0 + 40 * DAY);
-  await a.pg.click('#tp-pub-anchor'); await sleep(1500);
+  await a.pg.click('#tp-pub-anchor'); await sleep(300); await a.pg.click('#tp-anchor-yes'); await sleep(1500);
   var anchorA = await a.pg.evaluate(function () { return window.TeamSync.store().anchor(); });
   await T.visit(a); await T.visit(b); await T.click(b, 'tp-rel-updates');
   var ub2 = await T.attr(b, '#tp-upd-banner', 'data-out-of-date'), ur2 = await T.rows(b);
@@ -182,6 +198,22 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
   else { var eB = ent('kw.base', '3.0.0', { kind: 'release', base: { sha256: sha('another-base') } }), p5 = await T.pub(a, [f('b.json', Buffer.from(JSON.stringify(await signL(listBody(3, [eB], await listHash(L2)), [Ko, Kp]))))]);
     A('P', !p5.ok && /refused-base-change/.test(p5.reason), 'a base-changing entry is refused at Publish', p5.reason); }
 
+  // ── G unsigned plugin badge (owner decision 2026-10-31): installs stay allowed unsigned; the panel marks them and a §PLUGIN_UNSIGNED line is printed ──
+  var Cc = await device('C', 'GardenAdmin'), PURL = base + '/erp/plugins/wip_token.mjs';
+  await Cc.pg.evaluate(function () { window.APP = window.APP || {}; window.APP.roleId = 0; window.APP.actor = window.APP.actor || 'SuperUser'; });   // the registry's own writer gate (W-PLUGIN-ROLE, witness_plugin_role) admits only System Administrator; this arm judges the badge, not that gate
+  var openCard = async function () { await Cc.pg.evaluate(function () { var c = document.getElementById('pe-ov'); if (c) c.remove(); window.IdmpPillActions.plugin(); }); await Cc.pg.waitForSelector('#pe-url', { timeout: 20000 }); await sleep(800); };
+  var badgeOf = function (id) { return Cc.pg.evaluate(function (i) { var rows = Array.prototype.slice.call(document.querySelectorAll('#pe-list .pe-row')).filter(function (r) { return r.querySelector('.pe-id').textContent.indexOf(i) === 0; }); return rows.length ? { n: rows.length, badge: rows[0].querySelectorAll('.pe-unsigned').length, text: (rows[0].querySelector('.pe-unsigned') || {}).textContent || '' } : null; }, id); };
+  await openCard();
+  await Cc.pg.fill('#pe-url', PURL); await Cc.pg.evaluate(function () { window.APP.roleId = 0; }); await Cc.pg.click('#pe-install'); await sleep(2500);
+  var inst = await Cc.pg.evaluate(function (u) { return window.PluginEngine._reg().list().filter(function (b) { return b.url === u; })[0] || null; }, PURL);
+  if (!inst) console.log('   [debug] ' + Cc.logs.filter(function (l) { return /PLUGIN|ROLE/.test(l); }).slice(-3).map(function (l) { return l.slice(0, 260); }).join(' || ') + ' errs=' + Cc.errs.join(';'));
+  var bg = inst ? await badgeOf(inst.id) : null, ul = Cc.logs.filter(function (l) { return /^§PLUGIN_UNSIGNED /.test(l) && inst && l.indexOf('id=' + inst.id + ' ') >= 0; });
+  A('G', !!inst && inst.signed === false && bg && bg.n === 1 && bg.badge === 1 && bg.text === 'unsigned', 'a plugin installed through the Plugins panel (no signature) is ALLOWED and its row shows a visible "unsigned" badge; the registry reports signed=false', JSON.stringify({ inst: inst && { id: inst.id, state: inst.state, signed: inst.signed }, bg: bg }));
+  A('G', ul.length === 1 && ul[0] === '§PLUGIN_UNSIGNED id=' + inst.id + ' version=' + inst.version + ' source=' + PURL, 'exactly one §PLUGIN_UNSIGNED id=<id> version=<v> source=<url> line was printed at install', ul.join(' | '));
+  await Cc.pg.evaluate(function (id) { var R = window.PluginEngine._reg(), orig = R.list; R.list = function () { return orig.call(R).map(function (b) { return b.id === id ? Object.assign({}, b, { signed: true }) : b; }); }; }, inst.id);
+  await openCard(); var bg2 = await badgeOf(inst.id);
+  A('G', bg2 && bg2.n === 1 && bg2.badge === 0, 'CONTROL: the same row, reported as signed by the registry (signed=true), shows NO badge (the real signed/accepted path is witnessed in witness_team_keys B1)', JSON.stringify(bg2));
+
   // ── T twin ──
   var AD1 = await T.adCounts(a), AD1b = await T.adCounts(b), ADb0 = AD0;
   A('T', JSON.stringify(AD1) === JSON.stringify(ADb0) && JSON.stringify(AD1b) === JSON.stringify(ADb0), 'the AD dictionary (windows, tabs, fields, processes, menus, document-action access) has IDENTICAL row counts before and after every screen was opened and used, on both devices', JSON.stringify(AD1));
@@ -203,6 +235,11 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     ['last-seen taken from the wrong device', '/common/comm/team_releases.js', SRC, 'var n = fr[d.kid] || 0;', 'var n = fr[(v.devices[0] || {}).kid] || 0;', ['O']],
     ['withdrawn rows dropped', '/common/comm/team_releases.js', SRC, "var rows = (u.rows || []).map(", "var rows = (u.rows || []).filter(function (r) { return r.state !== 'withdrawn'; }).map(", ['U']],
     ['changelog expander shows only the first line', '/common/comm/team_releases.js', SRC, 'var cl = []; if (r.changelog) Object.keys(r.changelog).forEach(function (sec) { (r.changelog[sec] || []).forEach(', 'var cl = []; if (r.changelog) Object.keys(r.changelog).slice(0, 1).forEach(function (sec) { (r.changelog[sec] || []).slice(0, 1).forEach(', ['U']],
+    ['anchor signed without confirming', '/common/comm/team_releases.js', SRC, "cbox.setAttribute('data-ts', String(t)); cbox.style.display = 'block';", "cbox.setAttribute('data-ts', String(t)); cbox.style.display = 'block'; host.anchor(t);", ['C']],
+    ['cancel still signs', '/common/comm/team_releases.js', SRC, "cbox.querySelector('#tp-anchor-no').onclick = function () { closeConfirm();", "cbox.querySelector('#tp-anchor-no').onclick = function () { host.anchor(t); closeConfirm();", ['C']],
+    ['confirm signs a different moment than shown', '/common/comm/team_releases.js', SRC, 'var r = await host.anchor(t);', 'var r = await host.anchor(t + 5000);', ['C']],
+    ['unsigned badge hidden', '/erp/plugin_overlay.js', fs.readFileSync(path.join(ROOT, 'erp/plugin_overlay.js'), 'utf8'), "(b.signed ? '' : '<span class=\"pe-chip pe-unsigned\"", "(true ? '' : '<span class=\"pe-chip pe-unsigned\"", ['G']],
+    ['unsigned log line not printed', '/erp/plugin_registry.js', fs.readFileSync(path.join(ROOT, 'erp/plugin_registry.js'), 'utf8'), "if (!signedOk) console.log('§PLUGIN_UNSIGNED", "if (false) console.log('§PLUGIN_UNSIGNED", ['G']],
     ['Publish shown to a non-admin', '/common/comm/team_releases.js', SRC, "return s[0] !== 'publish' || v.admin;", 'return true;', ['S0']],
     ['out-of-date banner reads the device clock', '/common/comm/team_releases.js', SRC, "(u.outOfDate ? ' Update list is out of date: connect to check.' : '')", "(Date.now() > 0 && u.list.expires < Date.now() ? ' Update list is out of date: connect to check.' : '')", ['U']],
     ['Publish skips verification', '/erp/team_sync.js', SYNC, 'var ctx = await ctxFor(), r = await TUp().publish(pipe, cfg.space, dev.kid, lists[0], ctx);', 'var ctx = await ctxFor(), r = { ok: true, hash: "x", name: "s/" + cfg.space + "/pub/" + dev.kid + "/update-list-" + ("00000000" + lists[0].number).slice(-8) + ".json" }; await pipe.put(r.name, new TextEncoder().encode(JSON.stringify(lists[0])));', ['P']],
