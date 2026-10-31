@@ -17,8 +17,8 @@ the guide's `@SET` row + PROGRESS pointer; it contains #276's commit, so merging
 **RUNNER (2026-10-31, §D98 tree):** `§ALLWITNESS PASS=95 ENV=10 FAIL=2 of 107` — YP1 (above) and `witness_dxf_convert_fail` CF2, which fails only inside full runs (also on the
 pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status after the undo.
 **▶ NEXT, in order:**
-1. **§D99 P4 step 2** (owner "proceed on the next" = the recommendation): read the DETAILS sheet's "THICk." dimension into `synth.slab.thickness` (tier read). Step 1
-   (stated casting ratio → SoR 07.3.x row) BUILT, see `### §D99 P4 BUILD SPEC` + RESULT. Then P2 (rank the used defaults by measured impact).
+1. **§D99 P2 — build it** (`### §D99 P2 SPEC`, written session 15; witness W-IMPACT first). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
+   6,188,538 BDT); P4 step 2 REFUTED ("THICk." is the footing schedule's T = 12", already read; no slab thickness is stated anywhere).
 2. **Owner: keep the split buttons in round 1?** (§D36 shows Accept all alone only when one kind is present; the placeholder is "inferred", like applied defaults). ⛔ owner's choice.
 3. **Film "from drawings to a submission pack"** — RR.6 is in now; ⛔ the story needs the owner's OK before a take.
 4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
@@ -435,5 +435,24 @@ the OCI library answers (`dxf2bim/library/latest.json` HTTP 200); the live guide
 - **Witness W-BILL-MIX (claim first):** M1 the shed: footings priced at 07.3.1, columns at 07.3.2, the slab at 07.2.3 (1:2:4 stated), beams at 07.2.3 with `mix` null; M2 the bill total moves by exactly Σ V × (rate difference) over the 1:1.5:3 bodies (witness recompute); M3 falsifier: a footing stating 1:3:6 → 0 + flag, never 13,504; M4 a pack without mixes (cidb2024_my) prices a stated-mix body as before; M5 every new row's source names item + page.
 - Not in step 1: the "THICk." slab dimension (step 2).
 **§D99 P4 step 1 RESULT (2026-10-31, session 15): BUILT.** `Dxf2Bill.materialRate(…, mix)` + `pwd2024_bd.json` 1:1.5:3 rows (07.3.1 13,842 p.136; 07.3.2 14,201 p.137; 07.3.3 13,986 p.137, each read off the page image at 250 dpi; the OCR text was garbled) and `mix: "1:2:4"` on the four existing rows. Shed: footings 32 → 07.3.1, columns 96 → 07.3.2, slab 1 → 07.2.3 (1:2:4 stated), beams 35 → 07.2.3 with mix "not stated". **Bill 6,178,335 → 6,188,538 BDT (+10,202.78, exactly the 128 changed lines)**. W-BILL-MIX 5/0 (M3 falsifier: 1:3:6 → 0 + `no_rate_for_mix`, never 13,504); Viewer W-JSON-4D5D + area-weight 11/11 green. sw modeller v194, viewer v1663. Runner `PASS=97 ENV=10 FAIL=1 of 108` (YP1 = BIMCompiler #277). **Step 2 open:** the DETAILS sheet's "THICk." dimension → `synth.slab.thickness` read, not guessed.
+**§D99 P4 step 2 — REFUTED, nothing to build (2026-10-31, session 15, measured on the raw DETAILS sheet, only the nearby entities printed):** "THICk." is a column header of the
+**footing schedule** (Size (L x B) 4'-0" x 5'-0" · THICk. T = 12" · L.Bar 12 mm dia @ 6" C/C), not a slab dimension. It is already read: every footing carries `Sched_Footing_T = 12"`
+(`dxf2notes` schedules) and is drawn exactly 0.3048 m thick (z −1.4478..−1.1430). **The shed's drawings state no slab thickness**, so `synth.slab.thickness` stays an honest guess
+(§D99 defect fix). Session 13's lead ("a 'THICk.' dimension, unread") is withdrawn.
+
+### §D99 P2 SPEC — NOT BUILT (2026-10-31, session 15; next after P4 per the owner's "proceed on the next") — rank the used defaults by measured impact
+**Issue:** the defaults list shows 15 used settings with equal weight; §D99 measured that 2 carry almost all the assumed value (slab thickness −21 % of the bill at 0.15; section
+spacing −262,675 BDT) and 7 of 11 tried move nothing. The user hunts through equals.
+- **Owner of the measure:** one pure function `Dxf2Impact.rank(els-builder, defaults_table, {bill, load, rules})` (new `modeller/dxf2impact.js`): for each USED setting with `options`,
+  re-run the converted set with each option (the CLI's `--choice key=value` path = `Dxf2Structure.judge` with `choices`), then the bill (`RegReport.billAndLoad`), and report per option
+  Δ bill, Δ own weight, Δ bodies; the setting's impact = the largest |Δ bill|. Settings without options or not used: listed, not ranked ("no option to try").
+- **Page:** the defaults list sorts by impact, each row shows "± n BDT · ± n kN at <option>"; rows with Δ = 0 on bill, load and bodies collapse into one "No effect on quantities
+  or checks" line (this is P3, free with P2). The CLI gets `--impact` printing the same table (`§IMPACT key=… option=… dBill=… dKN=… dBodies=…`).
+- **Cost guard:** one re-judge per option (the shed: ~11 options × ~0.5 s); computed on demand (a button), never at open; logs its own ms.
+- **Witness W-IMPACT (claim first):** I1 on the shed the ranking's top two are `synth.slab.thickness` and `section.spacing` with Δ equal to §D99's measured numbers (−1,298,309 and
+  −262,675 BDT, re-measured at build time since P4 moved the bill); I2 the 7 settings §D99 found inert report Δ = 0 on all three and land in the collapsed line; I3 the page's table =
+  the CLI's `--impact` (same owner); I4 falsifier: a setting whose option changes nothing in the registry but is wired into dxf2synth (e.g. `synth.roof.overhang`) reports Δ ≠ 0;
+  I5 nothing is computed at open (no §IMPACT line until the button).
+
 **§D99 defect RESULT (2026-10-31, session 14): FIXED.** `synth.slab.thickness` AND `wall.thickness` (the same defect) cited a Malaysian price row (`cidb2024_my.json` 'RC Slab 250mm' / 'Blockwork Wall 150mm') as a *standard*. Measured: every country pack carries the same 250 mm slab / 150 mm wall line (16 of 16 packs, translated), so no pack is a basis. Both are now `kind: guess` with that stated; values unchanged (no quantity moves). W-DEFAULTS DF3 now refuses a std basis that names a rate pack (old registry -> DF3 RED, new -> PASS). Yellow-list page regenerated in the BIMCompiler docs PR. **P1–P5 not built: owner picks** (see the questions in RESUME).
 **Lane finding (session 14):** `witness_dxf_convert_fail` CF2 fails inside full runner runs (twice: main+RR.6 and §D98 trees) and passes 3/3 standalone each time — a load-timing read of the status in the witness, not a product change; fix the witness's wait (status settles after the undo) when next touched.
