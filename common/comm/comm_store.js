@@ -993,7 +993,11 @@
         pk.run('INSERT INTO ops VALUES (?,?)', [q.op_hash, txt]); }
       var bodyOnly = Object.assign({}, body); delete bodyOnly.hash;
       var stText = sealedSpace ? await _seal(bodyOnly, ring[ep][0], ep, space) : JSON.stringify(bodyOnly);        // the state is sealed like any business op: it holds record uuids, scopes, claim keys (hashed)
-      pk.run('INSERT INTO meta VALUES (?,?)', ['state', stText]); pk.run('INSERT INTO meta VALUES (?,?)', ['state_hash', sh]); pk.run('INSERT INTO meta VALUES (?,?)', ['frontier', JSON.stringify(f)]);
+      // G5 (§49.1): in a mailbox space the state lists laned op ids + verdicts + record ids, and the space key is every member's: so it is NOT published at all (state_hash + frontier stay, they are hashes).
+      // Cost: a light client cannot adopt the state without folding (no snapshot meta -> it folds S itself); full-log devices and the hub are unaffected.
+      if (!aOnC) pk.run('INSERT INTO meta VALUES (?,?)', ['state', stText]);
+      else log('§CKPT_STATE_OMITTED kid=' + self.kid + ' state=' + sh.slice(0, 12) + ' reason=mailbox-space-laned-detail');
+      pk.run('INSERT INTO meta VALUES (?,?)', ['state_hash', sh]); pk.run('INSERT INTO meta VALUES (?,?)', ['frontier', JSON.stringify(f)]);
       var bytes = pk.export(); pk.close();
       var name = SP + 'o/' + self.kid + '/ck.' + body.order.length + '.' + sh.slice(0, 12) + '.bimsnap';
       if ((await pipe.put(name, bytes)) === false) return { skipped: 'put-refused' };
