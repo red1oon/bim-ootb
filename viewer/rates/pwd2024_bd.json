@@ -8,7 +8,7 @@
     "source": "PWD Schedule of Rates Bangladesh 2024",
     "validity_days": 60,
     "measurement_standard": "BNBC / PWD SoR",
-    "material_rates_note": "material_rates / material_adds are extracted from PWD SoR 2022 for Civil Works (Dhaka column, ground-floor items, RCC 1:2:4 stone chips, Grade 400 bar); the pack's other rows and its 2024 label are unverified. Edit the JSON to use another mix, district, grade or year."
+    "material_rates_note": "material_rates / material_adds are extracted from PWD SoR 2022 for Civil Works (Dhaka column, ground-floor items, RCC 1:2:4 stone chips (07.2.x) and 1:1.5:3 (07.3.x, chosen when the drawing states that casting ratio), Grade 400 bar); the pack's other rows and its 2024 label are unverified. Edit the JSON to use another mix, district, grade or year."
   },
   "materials": {
     "IfcDuct": {
@@ -874,6 +874,23 @@
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
         },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)",
+        "mix": "1:2:4"
+      },
+      {
+        "material": "Reinforced concrete",
+        "mix": "1:1.5:3",
+        "rate": 13842,
+        "unit": "M3",
+        "desc": "RCC 1:1.5:3 stone chips (f'c 25 MPa), up to ground floor, concrete only (reinforcement and shuttering are separate SoR items) - footing",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "07.3.1",
+          "page": "136",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        },
         "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
@@ -888,6 +905,23 @@
           "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
           "item": "07.2.2",
           "page": "136",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)",
+        "mix": "1:2:4"
+      },
+      {
+        "material": "Reinforced concrete",
+        "mix": "1:1.5:3",
+        "rate": 14201,
+        "unit": "M3",
+        "desc": "RCC 1:1.5:3 stone chips (f'c 25 MPa), up to ground floor, concrete only (reinforcement and shuttering are separate SoR items) - column",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "07.3.2",
+          "page": "137",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
         },
@@ -908,6 +942,23 @@
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
         },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)",
+        "mix": "1:2:4"
+      },
+      {
+        "material": "Reinforced concrete",
+        "mix": "1:1.5:3",
+        "rate": 13986,
+        "unit": "M3",
+        "desc": "RCC 1:1.5:3 stone chips (f'c 25 MPa), up to ground floor, concrete only (reinforcement and shuttering are separate SoR items) - beam",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "07.3.3",
+          "page": "137",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        },
         "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)"
       }
     ],
@@ -922,6 +973,23 @@
           "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
           "item": "07.2.3",
           "page": "136",
+          "column": "Dhaka, Mymensingh",
+          "read": "checked against the page image"
+        },
+        "excludes": "shuttering and centering (separate SoR items; formwork area is not measured)",
+        "mix": "1:2:4"
+      },
+      {
+        "material": "Reinforced concrete",
+        "mix": "1:1.5:3",
+        "rate": 13986,
+        "unit": "M3",
+        "desc": "RCC 1:1.5:3 stone chips (f'c 25 MPa), up to ground floor, concrete only (reinforcement and shuttering are separate SoR items) - floor/roof slab",
+        "source": {
+          "doc": "PWD SoR 2022 for Civil Works (15-06-22)",
+          "url": "https://ss.pwd.gov.bd/sor/sordownload/1",
+          "item": "07.3.3",
+          "page": "137",
           "column": "Dhaka, Mymensingh",
           "read": "checked against the page image"
         },
