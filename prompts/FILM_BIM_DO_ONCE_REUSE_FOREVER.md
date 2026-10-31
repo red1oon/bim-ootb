@@ -17,7 +17,8 @@ any BIM model. Long film (no length cap; owner: "This can be a long movie"). Eve
 one-line caption, 4-6 s; `§FILM_SPOT`).
 | # | chapter | on screen | the information, reused / added (facts from the take) |
 |---|---|---|---|
-| 0 | THE PROMISE | title card; one line: "Going digital has one purpose: enter information once, reuse it forever." | — |
+| 0 | THE QUESTION | owner 2026-11-01: "Begin with a epistimological question, 'Why is constructoin transforming from flat drawings to a digital twin?'" — the question alone on a dark card, held; then a flat sheet beside the same building as a model (the shed: the DETAILS sheet, then its 3D), still no answer given | — |
+| 0b | THE PROMISE | the answer the whole film then demonstrates: "Not for the picture. For the information: entered once, reused forever." A flat drawing is read once, by a person; a digital twin is read again and again, by every step after it | — |
 | 1 | WRITTEN ONCE | the DETAILS sheet in the Sheet view (dimensions drawn, Ø); blow up the note "Footing, Column, Grade Beam Casting Ratio = 1:1.5:3" and "f'c = 24 MPa"; NOTES chip | the note, its sheet + handle |
 | 2 | READ, NOT RETYPED | convert; a footing selected; the properties carried (Note_CastingRatio, NoteSource sheet#handle, Sched_Footing_T) — via the model's own export if the Modeller still has no properties panel (state it) | footings + columns carrying the ratio; the schedule's 12" = drawn 0.3048 m |
 | 3 | REUSED FOR COST | Measure impact (which defaults matter) → the bill row priced at PWD SoR 07.3.1 / page | the price row chosen BY the note; bill total |
@@ -26,7 +27,7 @@ one-line caption, 4-6 s; `§FILM_SPOT`).
 | 6 | REUSED FOR STRUCTURE | from that IFC: the analytical model (STAAD) — joints, members, supports; the f'c note became the concrete's stiffness; **the proof: via the IFC = the direct route, byte for byte** | §D105 parity line; joints / members / supports |
 | 7 | ANY MODEL, NOT JUST THIS ONE | another IFC (Duplex / Hospital, as §D105 measured): the same chain, and what that model states vs lacks (listed, never guessed) | per-model stated / missing |
 | 8 | WHAT IT DOES NOT DO | the engineer's analysis and design, live / wind / seismic, bars from the details — stated plainly | — |
-| 9 | INFORMATION THAT GROWS | recap: one note → property → price → check → IFC → stiffness; "Entered once. Reused at every step. Never retyped." | — |
+| 9 | INFORMATION THAT GROWS | recap: one note → property → price → check → IFC → stiffness; "Entered once. Reused at every step. Never retyped." — and the opening question answered in one line: "That is why: a drawing is read once; a twin is reused forever." | — |
 | — | end card + back card (prior art: what we learned from others, what this adds; contact red1org@gmail.com) | | |
 **Subtitles to draw from (each must stay true):** "Entered once. Reused at every step. Never retyped." · "Every step adds information, and none is lost." · "A drawing note that ends up pricing
 the concrete and stiffening the frame." · "Not 3D for its own sake: information that travels."
