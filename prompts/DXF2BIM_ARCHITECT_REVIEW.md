@@ -17,7 +17,7 @@ the guide's `@SET` row + PROGRESS pointer; it contains #276's commit, so merging
 **RUNNER (2026-10-31, §D98 tree):** `§ALLWITNESS PASS=95 ENV=10 FAIL=2 of 107` — YP1 (above) and `witness_dxf_convert_fail` CF2, which fails only inside full runs (also on the
 pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status after the undo.
 **▶ NEXT, in order:**
-1. **§D99 P2 — build it** (`### §D99 P2 SPEC`, written session 15; witness W-IMPACT first). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
+1. **§D99 P2 step 2 — the page** (step 1 = `dxf2impact.js` + CLI `--impact` + W-IMPACT 4/0 BUILT, see its RESULT; the page's button + sorted / collapsed list is left). P4 step 1 BUILT (#2464: stated casting ratio → SoR 07.3.x row, shed bill
    6,188,538 BDT); P4 step 2 REFUTED ("THICk." is the footing schedule's T = 12", already read; no slab thickness is stated anywhere).
 2. ✅ **DECIDED 2026-10-31 (owner: "Buttons do advice"): keep the split buttons in round 1** — the placeholder is a convention like the applied defaults; Accept all alone would hide
    that one value is not from the drawing. No code change.
@@ -26,7 +26,7 @@ pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status
 4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
    header + quickstart; the viewer's other cost paths do not read `material_rates`; RR authority headers (RAJUK / NBeS checklists not found).
 **Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`):** unchanged from session 13 (archived block): 512 bodies, floor 603.87 m2, own weight 5,361.0 kN, bill 6,178,335 BDT,
-4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns).
+4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns); since §D100 (b) **6,227,255 BDT** (12 columns raised to their beams), structural findings 1 (cantilever).
 **Recipes + landmines:** as in the archived session-14 block (recipes for the shed report and the runner; PWD SoR page images; auto-merge orphan trap; `R.set` vs `desc.set`; the raw
 title block's client name; a new `element_defaults.json` key touches C36, E1, YP1 + the BIMCompiler page — and a changed kind/basis touches YP1 too). New: a headless witness that
 opens a new tab (the report's blob) must poll by interval, not rAF (the page goes background).
@@ -456,10 +456,55 @@ spacing −262,675 BDT) and 7 of 11 tried move nothing. The user hunts through e
   the CLI's `--impact` (same owner); I4 falsifier: a setting whose option changes nothing in the registry but is wired into dxf2synth (e.g. `synth.roof.overhang`) reports Δ ≠ 0;
   I5 nothing is computed at open (no §IMPACT line until the button).
 
-**Bay columns — checked, no defect (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall? Check out if so").**
+**Bay columns — the bay copies them correctly; the missing support was upstream, see §D100 (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall? Check out if so").**
 Measured in the real Modeller (W-DXF-ADD-BAY, headless): the shed has a column on both long walls (rows y −110.94 / −95.70) at all 14 x grid lines (4 on each gable line);
 after Add a bay, all **15** lines carry one on both walls, the new line included, none doubled — plain and with Complete ticked (the copies are the hinge line's frame: 2 column stacks
 × 3 segments with Complete, + 2 footings; v2 take log: `{"IfcColumn":6,…,"IfcFooting":2}`). New check **B11 / B11c** (sabotage: the bay without the hinge line's frame → RED,
 `missing ["41A@y-110.94","41A@y-95.70"]`). What the film showed is not judged here (a look is not a measure); the v2 bay beat was in x-ray with the 33 copies tinted.
+**§D99 P2 step 1 RESULT (2026-10-31, session 15): BUILT — the measure + the CLI.** `modeller/dxf2impact.js` `Dxf2Impact.rank(table, base, run, log)` (pure: the caller's own pipeline per
+option) + `dxf2bim_cli.js --impact` (each option through the CLI's own `run()` with that `--choice`). Shed (`--complete --pack pwd2024_bd`, base 6,188,538 BDT, 2.9 s): tried 11, **active 5:
+synth.slab.thickness −1,298,308.80 BDT / −1,414.87 kN (at 0.15), section.spacing −262,674.57 / −24.31 kN / −126 bodies (2 x pitch), building.type +19,968.24 (Farming Shed),
+synth.roof.overhang +11,230.73 (0.6), synth.roof.sheet_thickness 0 BDT but +0.06 kN; inert 6** (fan.blades, fan.depth, fan.housing_wall, net.thickness, profile.angle_heel,
+profile.angle_mesh); skipped 4 (3 no option, synth.column.belowgrade.size stated by the drawing). **W-IMPACT 4/0** (I1 top two + deltas = independent runs; sabotage "ignore the
+option" → I1 + I4 RED). **Finding:** §D99 called `synth.roof.sheet_thickness` appearance-only; it moves the own weight (+0.06 kN at 0.05 m): the Load Summary weighs the roof sheet by its
+display thickness. Negligible, but the basis sentence ("display thickness … the cost is by area") does not say the weight uses it — fix the basis or the weight with P2 step 2.
+**P2 step 2 (open):** the page — a "Measure impact" button in the defaults list (on demand, never at open: W-IMPACT I5), rows sorted by `impact` with "± n BDT · ± n kN at <option>",
+the inert rows in one collapsed "No effect on quantities or checks" line (P3); the page's `run(choices)` = the structure gate with that choice + `RegReport.billAndLoad` (lazy-load
+the bill owners as `reg_report_ui.js` does); witness: the page's ranking = the CLI's for the shed.
+**§D100 FINDING — beams with nothing under them (2026-10-31, session 15; owner: "during adding of bay, it seems it does not add a column support along the extended wall" … "It was not highlighted during the X-ray selection").**
+Measured (CLI `--complete` + the real page, headless): the bay DOES copy the column pair (the new line 41A carries the same three-piece stack as line 41, tinted in x-ray: 6 of 6 copies
+emissive, own materials; x-ray draws every mesh at opacity 0.06, so a selected part reads mostly by its outline). **The defect is upstream:** at grid lines **36–41** the columns stop at
+**1.52 m** while the beams on those lines sit at **3.10–3.40 m** and the trusses above (3.38–5.74 m): a **1.58 m gap**, 12 columns (6 lines × 2 long walls), copied by every bay
+(41A). Cause, read off the raw marks: the South elevation draws the column lines at 37–40 only 0.61..1.52 m (the block's end posts 36 / 41 go to ≈3.05–3.12 m); the beam layout puts a
+beam at 3.10 m on every line. The two sheets disagree and both were reproduced. **No check catches it:** `column_continuity` PASS 96 judges column-on-column only.
+**Proposed (spec, owner decides (b)):** (a) a generic structural rule **beam_bearing** — each beam end has a column (or wall) whose top reaches the beam's underside within a tolerance;
+else FINDINGS with the gap per end (here 24 ends + the bay's), shown in the compliance panel + the Regulatory Report; and a DXF2BIM advisory naming the sheet that disagrees.
+(b) ⛔ owner: also OFFER an orange inferred "run the column up to the beam it carries" (a convention, accepted like the other orange rows)? Never applied silently.
+### §D100 BUILD SPEC (2026-10-31, session 15; owner: "You decide. I pointed out.") — (a) the `load_path` rule now; (b) the orange "run the column up to its beam" offer next
+**Why floating_member missed it (read, `viewer/structural_sanity.js` `_supportChecks` :186-237):** an end counts as supported if it frames into ANOTHER BEAM at the same level (test (b));
+over lines 36–41 the cross beams frame into the long beams and the long beams into the cross beams, so the whole grid at 3.10 m supports itself and no end reaches a column. The test
+never asks whether the beam it frames into is itself carried.
+- **Rule `load_path`** (new, `applies_to: IfcBeam`, basis topology, no code threshold): `_supportChecks` records, per end, what carries it (`v` = a vertical support, or the guid of the beam
+  it frames into). A beam with both ends supported is CARRIED when each end is `v` or a carried beam — least fixed point, iterated from the beams that rest on verticals. A beam with both
+  ends "supported" that is never carried is a finding (CRITICAL), its witness naming the frame it hangs in. `floating_member` is untouched (its fleet results do not move).
+- **Witness W-LOAD-PATH (claim first):** P1 fixture: a 4-beam frame on 4 columns reaching it → 0 findings; P2 the same columns cut 1.5 m short → all 4 beams findings (floating_member 0:
+  the scope-blind case); P3 one corner column restored → the beams resting on it carried, the chain from it carried, only beams with no path flagged; P4 the shed (`--complete`): the beams
+  over lines 36–41 are findings, every beam over lines 01–35 carried; P5 FALLBACK_RULES = structural_rules.json (T8.13 parity).
+**§D100 (a) RESULT (2026-10-31, session 15): BUILT — rule `load_path`.** Two holes found in `floating_member`'s support test, both left as they are for that rule (its fleet results do
+not move): (1) a beam end framing into another beam counts as supported even when that beam reaches nothing; (2) the vertical test is a z-bracket at the beam's mid-depth, so a truss
+member / gusset plate resting ON the beam "supports" it. `_supportChecks` now records per end `v` (a support whose bottom is under the soffit and whose top reaches it), `above` (only
+parts resting on top), or the beam it frames into; `_loadPath` = the least fixed point "some end on `v` or on a beam that reaches the ground"; a beam that never does is a finding.
+**Definition measured, not chosen:** the stricter "EVERY end" variant flagged 330 / 1,929 Hospital beams (ends with a wall / covering / member within 0.5 m under: tolerance cases);
+"no path at all" flags Hospital 0 / 1,929, Clinic 0, Terminal 0, Duplex 0, JKR 2 / 141, LTU AHouse 130 / 524 (already the noisiest model: floating_member 172), **the shed 10** = the
+long-wall beams over the bays between lines 36 and 41. Every existing rule identical on all 7 buildings (main vs branch). **W-LOAD-PATH 5/0** (P2: floating_member 0 vs load_path 4 on a
+self-held frame; P3: one full column carries the whole frame through the chain). W-CODE-NAMED 6/0 (its counts 11→12 rows, "Rules 6: 5 ran"), tests/test_structural_sanity_rules 8/8,
+test_rule_report 102/102, test_rule_checklist_panel 26/26. Viewer sw bumped. **The shed's report now says structural FINDINGS 11** (cantilever 1 + load_path 10).
+**(b):** superseded by the owner's question — built as the yellow default `column.top_under_beam` (see (b) RESULT), no per-column marking.
+**§D100 (b) RESULT (2026-10-31, session 15; owner: "Wouldn't this default as standardized for such building model? Thus requiring precision from me."): BUILT as a yellow DEFAULT, not a
+per-column marking.** `element_defaults.json` `column.top_under_beam` = `beam_above` (kind guess; option `as_drawn`), applied in `dxf2structure.js` `columnsToBeams` before the completion:
+a column whose plan box meets a beam's (0.15 m) and whose top is more than 0.15 m under that beam's underside is raised to it; it becomes derived, SizeBasis `top:default`; the row is USED
+(yellow) so the user sees it and can switch to `as_drawn` once for the whole model — the precedent is `wall.top_when_unseen`. Shed (`--complete`): **12 columns raised 1.524 → 3.099 m**
+(lines 36–41 × both long walls), **load_path 10 → 0**, every other body's vertices identical, **bill 6,188,538.09 → 6,227,255.00 BDT** (+38,716.91, the taller columns); `as_drawn` restores
+both exactly. **W-COL-TO-BEAM 3/0.** The new key: C36 / E1 counts 62 → 63, the BIMCompiler yellow page regenerated (63 rows) onto PR #277 (W-YELLOW-PAGE 4/4 against it). sw v195.
 **§D99 defect RESULT (2026-10-31, session 14): FIXED.** `synth.slab.thickness` AND `wall.thickness` (the same defect) cited a Malaysian price row (`cidb2024_my.json` 'RC Slab 250mm' / 'Blockwork Wall 150mm') as a *standard*. Measured: every country pack carries the same 250 mm slab / 150 mm wall line (16 of 16 packs, translated), so no pack is a basis. Both are now `kind: guess` with that stated; values unchanged (no quantity moves). W-DEFAULTS DF3 now refuses a std basis that names a rate pack (old registry -> DF3 RED, new -> PASS). Yellow-list page regenerated in the BIMCompiler docs PR. **P1–P5 not built: owner picks** (see the questions in RESUME).
 **Lane finding (session 14):** `witness_dxf_convert_fail` CF2 fails inside full runner runs (twice: main+RR.6 and §D98 trees) and passes 3/3 standalone each time — a load-timing read of the status in the witness, not a product change; fix the witness's wait (status settles after the undo) when next touched.

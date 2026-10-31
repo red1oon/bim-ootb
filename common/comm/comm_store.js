@@ -34,6 +34,7 @@
     'CREATE TABLE IF NOT EXISTS cl_contender (op_hash TEXT PRIMARY KEY, author_kid TEXT, author_seq INTEGER, envelope TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_verdict (op_hash TEXT PRIMARY KEY, fold_pos INTEGER, verdict TEXT, reason TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_fetched (name TEXT, pipe_id TEXT, PRIMARY KEY(name, pipe_id))',
+    'CREATE TABLE IF NOT EXISTS cl_lane (op_hash TEXT PRIMARY KEY, lane TEXT NOT NULL)',       // F1 (TEAMWORK_FRAMEWORK §45.8): the mailbox an own op was addressed to; empty in every space without mailboxes
     'CREATE TABLE IF NOT EXISTS cl_sealed (op_hash TEXT PRIMARY KEY, epoch INTEGER, ct TEXT NOT NULL, bundle TEXT, pipe_id TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_outbox (bundle_name TEXT PRIMARY KEY, from_seq INTEGER, to_seq INTEGER, state TEXT)',
     'CREATE TABLE IF NOT EXISTS cl_head_seen (author_kid TEXT, pipe_id TEXT, seq INTEGER, head_hash TEXT, frontier_json TEXT, sig TEXT, PRIMARY KEY(author_kid, pipe_id))',
@@ -103,6 +104,10 @@
     SCHEMA.forEach(function (s) { db.run(s); });
     db.run('INSERT OR IGNORE INTO cl_self (kid, space, person_uu, next_seq, head_hash, bundled_to) VALUES (?,?,?,1,NULL,0)', [self.kid, space, self.person_uu || null]);
     var last = null, sigCache = {};
+    // F1 per-device mailboxes (§45.8). MB = the host's three callbacks { laneOf(spec)->lane|null, read({roster,self})->[box], wantHead(kid,{roster,self})->bool }; mbFlag = MB installed AND the genesis says `mailboxes:1`.
+    // A space whose genesis lacks the flag (every space founded before F1, every office space) never leaves the shared stream: nothing below changes for it.
+    var MB = null, mbFlag = false;
+    function setMailbox(cfg) { MB = cfg && typeof cfg.laneOf === 'function' && typeof cfg.read === 'function' ? cfg : null; }
 
     function selfRow() { return _q(db, 'SELECT * FROM cl_self WHERE kid=?', [self.kid])[0]; }
     function allOps() { return _q(db, 'SELECT op_hash, envelope FROM cl_op').map(function (r) { return { hash: r.op_hash, env: JSON.parse(r.envelope) }; }); }
@@ -375,8 +380,10 @@
       return last;
     }
     async function order() {
-      if (!opts.noCheckpoint && anyCkpt()) { var r = await orderWithCkpt(); if (r) return r; }
-      return plainOrder();
+      var res;
+      if (!opts.noCheckpoint && anyCkpt()) { var r = await orderWithCkpt(); if (r) res = r; }
+      if (!res) res = await plainOrder();
+      mbFlag = !!(MB && res && res.roster && res.roster.mailboxes); return res;
     }
 
     async function cur() { return last || order(); }
@@ -496,7 +503,11 @@
         var n = 0; while (have[n + 1]) n++; f[r.a] = n; });
       return f;
     }
+    // F1: in a mailbox space a seq hole may be an op addressed to someone else, so the receipt a head carries is the highest seq held per author (the sender's SEEN still turns on)
+    // and gaps() cannot tell a hole from mail for another box: it reports none (STATED LIMIT, §45.8 - a withheld mailbox bundle shows as a parked dependent op, not as a gap).
+    async function recvMax() { var f = {}; _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m FROM cl_op GROUP BY author_kid').forEach(function (r) { f[r.a] = r.m; }); return f; }
     function gaps() {
+      if (mbFlag) return [];
       var out = [], ops = {}, top = {}, order = [];
       _q(db, 'SELECT author_kid AS a, MAX(author_seq) AS m, COUNT(*) AS c FROM cl_op GROUP BY author_kid').forEach(function (r) { ops[r.a] = r; top[r.a] = r.m; order.push(r.a); });
       _q(db, 'SELECT author_kid AS a, MAX(seq) AS s FROM cl_head_seen GROUP BY author_kid').forEach(function (r) { if (!(r.a in top)) order.push(r.a); top[r.a] = Math.max(top[r.a] || 0, r.s); });
@@ -543,6 +554,9 @@
       var h = await ENV.hashHex(env);
       db.run('INSERT INTO cl_op VALUES (?,?,?,?,?,?,?,?,?,?,?)', [h, self.kid, env.seq, env.prev, JSON.stringify(env.deps), env.body.op_type, env.target.table, env.target.uu, JSON.stringify(env), 'local', 'OWN']);
       db.run('UPDATE cl_self SET next_seq=?, head_hash=? WHERE kid=?', [env.seq + 1, h, self.kid]);
+      var lane = null;
+      if (!ident && MB) { var mbOn = rbc ? (rbc.mb !== undefined ? rbc.mb : (rbc.mb = !!(await cur()).roster.mailboxes)) : !!(await cur()).roster.mailboxes;      // the genesis gate (a space without `mailboxes:1` never has a lane)
+        if (mbOn) { lane = MB.laneOf(spec); if (lane != null && !/^[A-Za-z0-9_.-]+$/.test(String(lane))) lane = null; if (lane) db.run('INSERT OR REPLACE INTO cl_lane VALUES (?,?)', [h, String(lane)]); } }
       if (authors) authors[self.kid] = 1; if (env.body.op_type === 'CHECKPOINT') hasCk = true;
       last = null; return { env: env, hash: h };
     }
@@ -593,10 +607,18 @@
     }
     // the policy as folded: { epoch, params, hash, author } | null — and where it sits in the fold order (the same on every device)
     async function policy() { var L = await cur(), pol = L.roster.policy; if (!pol) return null;
-      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null, setTrust: L.roster.setTrust || {} }; }
+      var vr = _q(db, 'SELECT fold_pos FROM cl_verdict WHERE op_hash=?', [pol.hash])[0]; return { epoch: pol.epoch, params: pol.params, hash: pol.hash, author: pol.author, pos: vr ? vr.fold_pos : null, setTrust: L.roster.setTrust || {}, setThreshold: L.roster.setThreshold || {} }; }
     // §13.12.I.1: the base this space sits on, as folded from the trusted genesis: {name, sha256, bytes?, version?} | null (no genesis seen yet, or a space without base —
     // tell them apart with (await order()).roster.ok)
     async function planTrust() { var R = (await cur()).roster; return R.ok && R.planTrust ? R.planTrust : null; }   // §33: the pinned plan trust list, or null
+    // §46.5 F5/F7: the folded trust list WITH roles and the threshold in force; the admin time anchor (ms | null). publishAnchor(ts): the admin NAMES ts (no implicit clock read here); the answer is this device's fold verdict.
+    async function planTrustInfo() { var R = (await cur()).roster; return R.ok && R.planTrust ? { keys: R.planTrust, threshold: R.planTrustThreshold || 1, epoch: R.planTrustEpoch } : null; }
+    async function anchor() { var R = (await cur()).roster; return R.ok && typeof R.anchor === 'number' ? R.anchor : null; }
+    async function publishAnchor(ts) {
+      var pol = await policy(), base = pol ? JSON.parse(JSON.stringify(pol.params)) : {}; base.epoch = (pol ? pol.epoch : 0) + 1; base.anchor_ts = ts;
+      var op = await setPolicy(base), v = (await cur()).verdict[op.hash];
+      return { ok: !!v && v.verdict === 'MERGED', verdict: v ? v.verdict + (v.reason ? ':' + v.reason : '') : 'none', reason: v && v.verdict !== 'MERGED' ? v.reason : null, hash: op.hash };
+    }
     async function baseInfo() { var R = (await cur()).roster; return R.ok && R.base ? R.base : null; }
     // my offset inside the visit period V (ms); null until a policy fixes V
     async function visitOffset() { var pol = (await cur()).roster.policy; return pol && pol.params.visit_ms ? ROS.staggerOffset(self.kid, pol.params.visit_ms) : null; }
@@ -630,11 +652,20 @@
         take.push(r);
       }
       if (!take.length) return null;
-      var b = new SQL.Database(); b.run('CREATE TABLE ops (op_hash TEXT PRIMARY KEY, envelope TEXT NOT NULL)');
-      take.forEach(function (r) { b.run('INSERT INTO ops VALUES (?,?)', [r.op_hash, enc[r.op_hash] || r.envelope]); });
-      var bytes = b.export(); b.close();
-      var from = take[0].author_seq, to = take[take.length - 1].author_seq, h12 = (await _sha(take.map(function (r) { return r.op_hash; }).join(','))).slice(0, 12);
-      return { name: SP + 'o/' + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: take.map(function (r) { return r.op_hash; }), sealed: Object.keys(enc).length };
+      // F1 (§45.8): the ops an own CL_LANE row addresses leave in a bundle of their own under m/<lane>/o/<me>/; everything else (identity ops, ops with no addressee) is the shared bundle, byte-for-byte as before
+      var laneOf = {}; if (MB && R.mailboxes) _q(db, 'SELECT op_hash, lane FROM cl_lane').forEach(function (l) { laneOf[l.op_hash] = l.lane; });
+      var groups = {}; take.forEach(function (r) { var k = laneOf[r.op_hash] || ''; (groups[k] = groups[k] || []).push(r); });
+      var parts = [];
+      for (var gk of Object.keys(groups).sort()) {                     // '' (the shared stream) sorts first
+        var rowsG = groups[gk], b = new SQL.Database(); b.run('CREATE TABLE ops (op_hash TEXT PRIMARY KEY, envelope TEXT NOT NULL)');
+        rowsG.forEach(function (r) { b.run('INSERT INTO ops VALUES (?,?)', [r.op_hash, enc[r.op_hash] || r.envelope]); });
+        var bytes = b.export(); b.close();
+        var from = rowsG[0].author_seq, to = rowsG[rowsG.length - 1].author_seq, h12 = (await _sha(rowsG.map(function (r) { return r.op_hash; }).join(','))).slice(0, 12);
+        parts.push({ name: SP + (gk ? 'm/' + gk + '/o/' : 'o/') + self.kid + '/' + from + '-' + to + '.' + h12 + '.bimpack', bytes: bytes, from: from, to: to, hashes: rowsG.map(function (r) { return r.op_hash; }), sealed: rowsG.filter(function (r) { return enc[r.op_hash]; }).length, lane: gk || null });
+      }
+      var nb = Object.assign({}, parts[0]);                            // one part (every space without lanes): exactly the descriptor it always was
+      if (parts.length > 1) { nb.from = take[0].author_seq; nb.to = take[take.length - 1].author_seq; nb.hashes = take.map(function (r) { return r.op_hash; }); nb.sealed = Object.keys(enc).length; }
+      nb.parts = parts; return nb;
     }
     function _rows(bytes) { var b = new SQL.Database(bytes), out = _q(b, 'SELECT op_hash, envelope FROM ops').map(function (r) { return { hash: r.op_hash, text: r.envelope }; }); b.close(); return out; }
     // readBundle → [{hash, env}]; a sealed row I can open now is opened, one I cannot is {hash, env:null, enc:<epoch>}
@@ -648,7 +679,7 @@
       return out;
     }
     async function signedHead() {
-      var me = selfRow(), head = { v: 1, space: space, author: self.kid, seq: me.next_seq - 1, hash: me.head_hash || null, frontier: await frontier(), ts: Date.now() };
+      var me = selfRow(), head = { v: 1, space: space, author: self.kid, seq: me.next_seq - 1, hash: me.head_hash || null, frontier: mbFlag ? await recvMax() : await frontier(), ts: Date.now() };
       return ENV.sign(head, self);
     }
 
@@ -748,6 +779,15 @@
         var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
         await takeBundle(on, ob, pipe, rep);
       }
+      // F1 (§45.8): my own mailboxes, listed AFTER the shared stream (the ENROLL that gives this device its role/person arrived in it). A device lists only the boxes the host names for it.
+      var mbCtx = null;
+      if (MB) { var R0 = (await cur()).roster;
+        if (R0.mailboxes) { mbCtx = { roster: R0, self: self };
+          for (var box of ((await MB.read(mbCtx)) || [])) for (var mn of await pipe.list(SP + 'm/' + box + '/')) {
+            if (mn.split('/')[5] === self.kid) continue;
+            if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [mn, pipe.id]).length) continue;
+            var mb2 = await pipe.get(mn); if (!mb2) continue;
+            await takeBundle(mn, mb2, pipe, rep); } } }
       await openSnapMeta();                                    // before the sealed ops open: a light client must know the state before it sees the ops it would otherwise fold
       await openSealed(rep);
       await fetchSnapshots(pipe, rep);
@@ -757,19 +797,23 @@
       // 2. send my news
       var nb = await bundleNew();
       async function readBack() {
-        var back = await pipe.get(nb.name), ok = false;
-        if (back) { var got = _rows(back).map(function (x) { return x.hash; }); ok = got.length === nb.hashes.length && got.every(function (h, i) { return h === nb.hashes[i]; }); }
-        db.run('INSERT OR REPLACE INTO cl_outbox VALUES (?,?,?,?)', [nb.name, nb.from, nb.to, ok ? 'SENT' : 'PUT-UNVERIFIED']);
-        if (ok) { db.run('UPDATE cl_self SET bundled_to=? WHERE kid=?', [nb.to, self.kid]); rep.sent = nb.hashes.length; } else rep.readBackFail++;
+        var allOk = true;
+        for (var pt of nb.parts) {
+          var back = await pipe.get(pt.name), ok = false;
+          if (back) { var got = _rows(back).map(function (x) { return x.hash; }); ok = got.length === pt.hashes.length && got.every(function (h, i) { return h === pt.hashes[i]; }); }
+          db.run('INSERT OR REPLACE INTO cl_outbox VALUES (?,?,?,?)', [pt.name, pt.from, pt.to, ok ? 'SENT' : 'PUT-UNVERIFIED']);
+          if (!ok) { allOk = false; rep.readBackFail++; } }
+        if (allOk) { db.run('UPDATE cl_self SET bundled_to=? WHERE kid=?', [nb.to, self.kid]); rep.sent = nb.hashes.length; }
       }
       // a pipe that can batch (GitHub: 6 pushes/min/repo) gets bundle + head in ONE putMany at the end of the visit
       var batched = typeof pipe.putMany === 'function';
-      if (nb && !batched) { await pipe.put(nb.name, nb.bytes); await readBack(); }
+      if (nb && !batched) { for (var pp of nb.parts) await pipe.put(pp.name, pp.bytes); await readBack(); }
       var L = await order();
-      if (batched) { var batch = [{ name: SP + 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) batch.unshift({ name: nb.name, bytes: nb.bytes });
+      if (batched) { var batch = [{ name: SP + 'h/' + self.kid, bytes: _json(await signedHead()) }]; if (nb) nb.parts.slice().reverse().forEach(function (pt) { batch.unshift({ name: pt.name, bytes: pt.bytes }); });
         await pipe.putMany(batch); if (nb) await readBack(); }
       else await pipe.put(SP + 'h/' + self.kid, _json(await signedHead()));
       for (var hn of await pipe.list(SP + 'h/')) {
+        if (mbCtx && typeof MB.wantHead === 'function' && !MB.wantHead(hn.split('/')[3], { roster: L.roster, self: self })) continue;      // F1: a station needs the hub's head (its ACK), not every peer's
         var hb = await pipe.get(hn); if (!hb) continue; var hd = _unjson(hb), dv = L.roster.devices[hd.author];
         if (!dv || !(await ENV.verify(hd, dv.jwk))) continue;            // a head counts only from an enrolled device
         db.run('INSERT OR REPLACE INTO cl_head_seen VALUES (?,?,?,?,?,?)', [hd.author, pipe.id, hd.seq, hd.hash, JSON.stringify(hd.frontier || {}), hd.sig]);
@@ -897,10 +941,10 @@
     }
 
     return { kid: self.kid, space: space, db: db, author: author, authorMany: authorMany, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
-             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
+             genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, planTrustInfo: planTrustInfo, anchor: anchor, publishAnchor: publishAnchor, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
              keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
-             bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, delivery: delivery, placedEnvelopes: placedEnvelopes,
+             bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, setMailbox: setMailbox, delivery: delivery, placedEnvelopes: placedEnvelopes,
              conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
              verdicts: verdicts, query: function (sql, args) { return _q(db, sql, args); } };
   }
@@ -933,11 +977,15 @@
     if (nsOpts && nsOpts.planTrust !== undefined && nsOpts.planTrust !== null) {      // §33: the plan trust list (public keys only) is pinned in the genesis; the space id hashes it
       var tp = ROS.planTrustProblem(nsOpts.planTrust); if (tp) throw new Error('newSpace: invalid planTrust (' + tp + ')');
       params.planTrust = ROS.planTrustOf(nsOpts.planTrust);
+      if (nsOpts.planTrustThreshold !== undefined && nsOpts.planTrustThreshold !== null) {      // §46.5 F5: the signing threshold, pinned with the list
+        var thp = ROS.planTrustThresholdProblem(nsOpts.planTrust, nsOpts.planTrustThreshold); if (thp) throw new Error('newSpace: invalid planTrustThreshold (' + thp + ')');
+        params.planTrustThreshold = nsOpts.planTrustThreshold; }
     }
     if (nsOpts && nsOpts.plan !== undefined && nsOpts.plan !== null) {      // §38.15: the topology - 'office' (the mesh plan, the default) or 'pos' (the star plan); the space id hashes it, so every device reads the same one
       if (nsOpts.plan !== 'office' && nsOpts.plan !== 'pos') throw new Error('newSpace: invalid plan (' + String(nsOpts.plan) + ')');
       params.plan = nsOpts.plan;
     }
+    if (params.plan === 'pos' && !(nsOpts && nsOpts.mailboxes === false)) params.mailboxes = 1;      // F1 (§45.8): a NEW star space is founded with per-device mailboxes; a genesis without the field (every earlier space) keeps the shared stream
     return { params: params, space: await ROS.spaceOf(params) };
   }
 

@@ -49,7 +49,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }; var v = !c
 function J(x) { return JSON.stringify(x); }
 function guard(cs, key, rule, fn) { try { fn(); } catch (e) { check(cs, key, rule, false, 'threw: ' + (e && (e.message || e.stack) || String(e))); } }
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
-var BASE_PIN = 'd35e8a75a3be06295e3a695381998c2bed38027071c27a5adcbd3b81f5ffaa52';       // team base of origin/main (same pin as W-IMPORT-PAYMENT)
+var BASE_PIN = 'a3eef3f59d775cc2adfc320b82c8ec5c8045721d74490c5dfaa421cbf595b8ab';       // team base of origin/main (same pin as W-IMPORT-PAYMENT) · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75…
 function baseOracle() {
   var buf = fs.readFileSync(path.join(ERP, 'ad_seed.db')), man = 'seed ' + sha256(buf) + ' ' + buf.length + '\n';
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (nm, i) { var f = path.join(ERP, 'patches', nm); man += '--patch ' + i + (fs.existsSync(f) ? '\n' + fs.readFileSync(f, 'utf8') : ' MISSING') + '\n'; });

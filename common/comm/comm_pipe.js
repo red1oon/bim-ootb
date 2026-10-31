@@ -73,7 +73,8 @@
     var s = atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
   // §13.6: names are s/<space>/<o|h|r|f>/<kid>[/…] — o = bundles, h = signed head, r = a join request (phone pairing), f = the focus board (§13.12.G.2). Anything else → null (refused).
   function _kidOfName(name) { var p = String(name).split('/');
-    return (p.length >= 4 && p[0] === 's' && /^[0-9a-f]{64}$/.test(p[1]) && (p[2] === 'o' || p[2] === 'h' || p[2] === 'r' || p[2] === 'f') && p[3]) ? p[3] : null; }
+    if (p.length >= 7 && p[0] === 's' && /^[0-9a-f]{64}$/.test(p[1]) && p[2] === 'm' && p[3] && p[4] === 'o' && p[5]) return p[5];        // F1 mailbox: s/<space>/m/<box>/o/<author>/<bundle> - the author owns the name
+    return (p.length >= 4 && p[0] === 's' && /^[0-9a-f]{64}$/.test(p[1]) && (p[2] === 'o' || p[2] === 'h' || p[2] === 'r' || p[2] === 'f' || p[2] === 'pub') && p[3]) ? p[3] : null; }
 
   function ghPipe(opts) {
     var f = opts.fetch || fetch, base = (opts.api || 'https://api.github.com') + '/repos/' + opts.owner + '/' + opts.repo;

@@ -17,15 +17,18 @@
   function bytes(h) { var u = new Uint8Array(h.length / 2); for (var i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i * 2, 2), 16); return u; }
   // §38.11 (G-7): a set from the log is judged against the list in force when its POLICY arrived (the engine's setTrust, the same on every device);
   //   a deployment-shipped set (window.TEAM_UPCASTERS) against the deployment list — `judgeWith` is set by adopt() around each load
-  var judgeWith = null;
-  async function verifySet(set) {                                 // -> null | 'unsigned' | 'untrusted-signer' | 'bad-signature'
+  var judgeWith = null, judgeT = null;
+  // §46.5 F5 (Stage 2): a translation set needs a signer holding the PUBLISH ability and >= T distinct such signers (set.cosigs), T = the threshold in force when the POLICY that carried it arrived
+  //   (the engine's setThreshold; a deployment-shipped set: window.TEAM_PLAN_TRUST_THRESHOLD, default 1). A trust list without roles / threshold behaves exactly as before.
+  async function verifySet(set) {                                 // -> null | 'unsigned' | 'untrusted-signer' | 'bad-signature' | 'role' | 'threshold'
     if (!set || !set.sig || !set.signer) return 'unsigned';
-    var t = judgeWith || trust();
+    var t = judgeWith || trust(), TK = global.TeamKeys;
     if (!t || !t.some(function (k) { return same(set.signer, k); })) return 'untrusted-signer';
+    if (!TK) return 'bad-signature';                              // no verifier loaded: refuse, never accept unjudged
+    var T = judgeT || global.TEAM_PLAN_TRUST_THRESHOLD || 1;
     try {
-      var body = JSON.parse(JSON.stringify(set)); delete body.sig; delete body.signer;
-      var key = await global.crypto.subtle.importKey('jwk', { kty: set.signer.kty, crv: set.signer.crv, x: set.signer.x, y: set.signer.y }, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
-      return (await global.crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, bytes(set.sig), new TextEncoder().encode(OV.canonical(body)))) ? null : 'bad-signature';
+      var why = TK.quorumReason(t, await TK.verifyAll(set), 'publish', T);
+      return why === null ? null : (why === 'untrusted-signer' || why === 'role' || why === 'threshold' ? why : 'bad-signature');
     } catch (e) { return 'bad-signature'; }
   }
   function appV(op) { var m = global.TEAM_SHAPE_V || {}, v = m[op]; return Number.isInteger(v) && v >= 1 ? v : 1; }
@@ -77,7 +80,7 @@
     var st = pol.setTrust || null; if (!st) console.log('§TEAM_VERSIONS_TRUST fallback=current (the engine names no per-set list)');
     for (var i = 0; i < sets.length; i++) { var k = OV.canonical(sets[i]); if (tried[k] !== undefined) continue;
       var at = st && Object.prototype.hasOwnProperty.call(st, k) ? (st[k] || []) : null;
-      judgeWith = at; var r; try { r = await load(sets[i]); } finally { judgeWith = null; }
+      judgeWith = at; judgeT = (pol.setThreshold && Object.prototype.hasOwnProperty.call(pol.setThreshold, k)) ? pol.setThreshold[k] : null; var r; try { r = await load(sets[i]); } finally { judgeWith = null; judgeT = null; }
       tried[k] = r.ok ? 'ok' : r.reason; if (r.ok && !r.dup) n++; }
     if (n && typeof store.refold === 'function') store.refold();
     if (n) console.log('§TEAM_VERSIONS_ADOPT newly loaded=' + n + ' (from the POLICY in force, epoch ' + pol.epoch + ')');
