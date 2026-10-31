@@ -241,6 +241,7 @@
       '.pe-row .pe-id{flex:1;font-size:13px}' +
       '.pe-row .pe-id small{display:block;color:#8b93a7;font-size:11px}' +
       '.pe-chip{font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:3px 8px;border-radius:20px}' +
+      '.pe-chip.pe-unsigned{background:rgba(251,146,60,.18);color:#fb923c;margin-right:6px}' +
       '.pe-chip.ACTIVE{background:rgba(34,197,94,.16);color:#4ade80}' +
       '.pe-chip.STARTING{background:rgba(250,204,21,.16);color:#facc15}' +
       '.pe-chip.STOPPED,.pe-chip.INSTALLED,.pe-chip.RESOLVED{background:rgba(148,163,184,.16);color:#94a3b8}' +
@@ -306,6 +307,7 @@
       var eff = b.policy || b.activation || 'eager', lazyCapable = b.activation === 'lazy';
       row.innerHTML =
         '<div class="pe-id">' + b.id + ' <small>' + (b.version || '') + (b.url ? ' · ' + b.url.replace(/^https?:\/\//, '') : '') + '</small></div>' +
+        (b.signed ? '' : '<span class="pe-chip pe-unsigned" title="Not signed by the team. Allowed, as in legacy iDempiere, which does not sign plugins.">unsigned</span>') +
         '<span class="pe-chip ' + b.state + '" title="' + (b.state === 'STARTING' ? 'started; activates on first demand' : '') + '">' + b.state + '</span>' +
         (lazyCapable && _reg.mayWrite() ? '<button class="pe-btn pe-policy" title="Activation policy (takes effect on next start): lazy = activate on first demand, eager = at start">' + (eff === 'lazy' ? 'On demand' : 'At start') + '</button>' : '') +
         (_reg.mayWrite() ? '<button class="pe-btn pe-toggle">' + (active ? 'Stop' : 'Start') + '</button>' +

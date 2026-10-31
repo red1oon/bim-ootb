@@ -558,7 +558,7 @@
 <script src="ad_gridtab.js?v=5"></script>
 <script src="ad_infowin.js?v=1"></script>
 <script src="../common/comm/semver_strict.js?v=1"></script>
-<script src="plugin_registry.js?v=7"></script>
+<script src="plugin_registry.js?v=8"></script>
 <!-- NINJA_MODE_PILL.md — the Plugin Engine "Create" (PackOut) face: Excel model sheet → AD model → live install.
      Engine == bim-compiler build/erp source (headless-proven W-NINJA-PILL). Load order: model→stage→bundle→create
      (bundle/create capture their deps at module-load) →starter, BEFORE plugin_overlay.js (the DOM host). -->
@@ -571,7 +571,7 @@
 <script src="pg_view_sql.js?v=1"></script>  <!-- ONE Postgres->SQLite view translator (core views + plugin packs), ERP_FRIENDLY_OPS_LENS.md §24 -->
 <script src="pipo_packin.js?v=2"></script>
 <script src="pipo_packout.js?v=1"></script>  <!-- Pack Out to a real 2Pack (ERP_FRIENDLY_OPS_LENS.md §25) -->  <!-- Pack In of a bundle's 2Packs (bim-compiler ERP_FRIENDLY_OPS_LENS.md §20.A/§22) -->
-<script src="plugin_overlay.js?v=8"></script>
+<script src="plugin_overlay.js?v=9"></script>
 <!-- PLUGIN_SYSTEM_LANE.md §Phase E — bridges the real ad_modelvalidator AD table (ad_modelval.js
      readValidators) into the plugin host above: adding an ad_modelvalidator row becomes the AD-native
      way to add a validator. Install-only (never auto-start — Q1); loads after ad_modelval.js/
@@ -765,7 +765,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/team_keys.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
-  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', '../common/comm/team_updates.js?v=1', '../common/comm/team_releases.js?v=1', 'team_plan.js?v=2', 'team_plan_pos.js?v=1', 'team_docno.js?v=2', 'team_seatbelt.js?v=1', 'team_sync.js?v=16', 'team_terms.js?v=2'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_avatars.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', '../common/comm/team_updates.js?v=1', '../common/comm/team_releases.js?v=2', 'team_plan.js?v=2', 'team_plan_pos.js?v=1', 'team_docno.js?v=2', 'team_seatbelt.js?v=1', 'team_sync.js?v=17', 'team_terms.js?v=2'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- FS-17 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2o): signed Backup / Restore (was glassbowl.html only). -->
 <script src="erp_replica_client.js?v=1"></script>
 <script src="erp_persist_ui.js?v=2"></script>
