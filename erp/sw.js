@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v950';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v951';   // bump on each deploy; per-change detail is the git commit message.
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -301,6 +301,7 @@ const PRECACHE_ASSETS = [
   '../common/comm/team_panel.js',     // TEAMWORK_FRAMEWORK §13.8 / §15.15 — the Team panel, shared with the Modeller (loaded on every idempiere.html page, inert until opened)
   '../common/comm/team_avatars.js',   // §15.15.2 — the built-in avatar set
   'team_guide.html',   // §13.8 T6 — the team user guide the panel links to
+  'team_developers.html',   // TEAMWORK §45.11/§51.1 — technical notes for developers, linked from the Team guide
   'guide_img/team_acct_processor_dialog.png',   // wave-1 team guide screenshot
   'guide_img/team_import_error_grid.png',   // wave-1 team guide screenshot
   'guide_img/team_import_orders_dialog.png',   // wave-1 team guide screenshot
