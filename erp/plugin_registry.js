@@ -293,6 +293,7 @@
         manifest = mod && mod.manifest;
       }
       validateManifest(manifest);
+      var signedOk = false;   // owner 2026-10-31: true only when the host's bundleTrust judged and accepted the signature; anything else installs unsigned (legacy iDempiere does not sign plugins) and is MARKED, not refused
       // §46.5 F6 (Stage 2): bundle signature gate. host.bundleTrust() -> {keys, threshold} | null turns it on; host.fetchBytes(url) lets the registry recompute the digest of what it is about to load.
       if (typeof host.bundleTrust === 'function') {
         var bt = host.bundleTrust();
@@ -302,6 +303,7 @@
           var bw = await TK.checkBundle(mod.signature || manifest.signature, manifest, bt, ldig);
           console.log('§BUNDLE_SIG id=' + manifest.id + ' version=' + manifest.version + ' verdict=' + (bw || 'accepted') + ' digest=' + (ldig ? 'checked' : 'UNCHECKED (no url / fetchBytes)'));
           if (bw) throw Object.assign(new Error('plugin ' + manifest.id + ': ' + bw), { code: bw });
+          signedOk = true;
         }
       }
       // engineVersion gate — the bundle declares the engine range it needs; host.engineVersion is the running one.
@@ -313,11 +315,12 @@
       var opId = appendOp('PLUGIN_INSTALL', { id: manifest.id, version: manifest.version, manifestUrl: url });
       var rec = {
         id: manifest.id, version: manifest.version, url: url,
-        state: STATES.INSTALLED, manifest: manifest, requires: manifest.requires || {}, budget: manifest.budget || null
+        state: STATES.INSTALLED, signed: signedOk, manifest: manifest, requires: manifest.requires || {}, budget: manifest.budget || null
       };
       store.put(rec);
       loaded[manifest.id] = { module: mod, ctx: null };
       console.log('§PLUGIN-INSTALL id=' + manifest.id + ' version=' + manifest.version + ' opId=' + opId);
+      if (!signedOk) console.log('§PLUGIN_UNSIGNED id=' + manifest.id + ' version=' + manifest.version + ' source=' + (url || 'object'));
       return { id: manifest.id, version: manifest.version, opId: opId, state: rec.state };
     }
 
@@ -485,7 +488,7 @@
 
     function list() {
       return store.list().map(function (r) {
-        return { id: r.id, version: r.version, state: r.state, url: r.url, name: (r.manifest && r.manifest.name) || null, budget: r.budget || null, policy: r.policy || null, activation: (r.manifest && r.manifest.activation) || 'eager' };
+        return { id: r.id, version: r.version, state: r.state, url: r.url, name: (r.manifest && r.manifest.name) || null, budget: r.budget || null, policy: r.policy || null, activation: (r.manifest && r.manifest.activation) || 'eager', signed: r.signed === true };
       });
     }
     function get(id) { var r = store.get(id); return r ? { id: r.id, version: r.version, state: r.state, url: r.url, name: (r.manifest && r.manifest.name) || null, budget: r.budget || null, policy: r.policy || null, activation: (r.manifest && r.manifest.activation) || 'eager' } : null; }
