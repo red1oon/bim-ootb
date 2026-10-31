@@ -105,12 +105,12 @@
       // §44 C2: "Bound to" - only when the host's plan has records addressed to ONE entity for the chosen role (T.bindingFor); the choices are the host's, read from the plan and the dictionary
       function bindBox(row) { var rs = row.querySelector('.tp-role'), role = rs.value, bx = row.querySelector('.tp-bound-box'); row.removeAttribute('data-bound-for'); if (!T.bindingFor) return;
         row._bp = T.bindingFor(Number(role)).then(function (b) { if (rs.value !== role) return;
-          bx.innerHTML = b ? '<label style="display:block;margin:6px 0">Bound to <select class="tp-bound" style="min-height:40px;max-width:100%"><option value="">— choose —</option>' + b.types.map(function (t) { return '<optgroup label="' + esc(t.label) + '">' + t.options.map(function (o) { return '<option value="' + esc(o.uu) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' : '';
-          row.setAttribute('data-bound-for', role); }); }
+          bx.innerHTML = b ? '<label style="display:block;margin:6px 0">Bound to <select class="tp-bound" style="min-height:40px;max-width:100%"><option value="">' + (b.optional ? '— not bound (its document numbers are not station-checked) —' : '— choose —') + '</option>' + b.types.map(function (t) { return '<optgroup label="' + esc(t.label) + '">' + t.options.map(function (o) { return '<option value="' + esc(o.uu) + '">' + esc(o.label) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select></label>' : '';
+          row._bopt = !!(b && b.optional); row.setAttribute('data-bound-for', role); }); }
       box.querySelectorAll('.tp-request').forEach(function (row) { row.querySelector('.tp-role').onchange = function () { bindBox(row); }; bindBox(row); });
       box.querySelectorAll('.tp-approve').forEach(function (bt) { bt.onclick = async function () { var row = bt.closest('.tp-request'); bt.disabled = true;
         try { if (row._bp) await row._bp; var bs = row.querySelector('.tp-bound');
-          if (bs && !bs.value) { row.querySelectorAll('.tp-err').forEach(function (x) { x.remove(); }); row.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">Choose what this device is bound to first: the plan sends it only that record\'s data.</div>'); bt.disabled = false; return; }
+          if (bs && !bs.value && !(row._bopt)) { row.querySelectorAll('.tp-err').forEach(function (x) { x.remove(); }); row.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">Choose what this device is bound to first: the plan sends it only that record\'s data.</div>'); bt.disabled = false; return; }
           await T.approve(list[Number(row.getAttribute('data-i'))].rq, row.querySelector('.tp-role').value, bs ? bs.value : undefined); } catch (e) { box.insertAdjacentHTML('beforeend', '<div class="tp-err" style="color:#b3261e">' + esc(e && e.message || e) + '</div>'); bt.disabled = false; return; } renderPair(w); }; });
       throw new Error('__noerr');   // keep the list on screen (do not re-render the section)
     });

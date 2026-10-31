@@ -92,6 +92,21 @@
     if (baseSt.state !== 'ok') return { unjudged: 'base-' + baseSt.state };
     return global.TeamDocNo.judge(Object.assign({}, o, { baseQ: async function (sql, a) { return bq(await pristine(), sql, a); } }));
   }
+  // §48.13 Seatbelt: a READ-ONLY view of the counters the chip already shows + the base, roster, version parks and local numbering. Nothing here changes state.
+  async function seatbeltState() {
+    await ready; if (!S) return { paired: false };
+    var L = await S.order(), dl = S.delivery(), d = dev ? L.roster.devices[dev.kid] : null, vs = S.versionState ? await S.versionState() : null, cf = await S.conflicts(), pol = L.roster.policy;
+    var refused = {}; dl.forEach(function (x) { if (x.verdict === 'REFUSED') refused[x.reason || '?'] = (refused[x.reason || '?'] || 0) + 1; });
+    var parked = {}, pb = (vs && vs.parked_by_reason) || {}; Object.keys(pb).forEach(function (k) { if (/^needs-/.test(k)) parked[k] = pb[k]; });
+    var dn = { bound: false, userValue: null, sharedValue: 0 }, db = adDb();
+    if (db) { try {
+      if (d && d.person) dn.bound = bq(db, 'SELECT 1 AS x FROM ad_user WHERE lower(ad_user_uu)=?', [String(d.person).toLowerCase()]).length > 0;
+      var me = global.APP && global.APP.actor != null ? bq(db, 'SELECT ad_client_id AS c, value AS v FROM ad_user WHERE ad_user_id=?', [Number(global.APP.actor)])[0] : null;
+      if (me) { dn.userValue = me.v || null; if (me.v) dn.sharedValue = bq(db, "SELECT count(*) AS n FROM ad_user WHERE ad_client_id=? AND value=? AND isactive='Y' AND ad_user_id<>?", [me.c, me.v, Number(global.APP.actor)])[0].n; }
+    } catch (e) { log('🔴 §TEAM_SEATBELT state ' + (e && e.message)); } }
+    return { paired: true, enrolled: !!d, base: baseSt.state, now: Date.now(), lastVisitAt: lastVisitAt, visit_ms: pol && pol.params && pol.params.visit_ms || null,
+             unsent: dl.filter(function (x) { return x.state === 'SAVED'; }).length, refusedReasons: refused, gaps: S.gaps().length, parked: parked, conflicts: cf.length, localOnly: Object.keys(localOnly).length, docno: dn };
+  }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null, fired = {}, replExc = [];
@@ -312,6 +327,8 @@
   async function onCommit(rows, db) {
     await ready; if (!S) return;                                      // paired later from the Team panel (§13.9) works too: S is set then
     await refreshScope();
+    // §48.13 Seatbelt: the state AT Process time; a DocAction under ADVISE is LOGGED (never stopped, owner 2026-10-30) — read here, before this batch changes the counters
+    var sbm = (global.TeamSeatbelt && rows.some(function (x) { return x.op_type === 'SET_STATUS' && !x.undone; })) ? global.TeamSeatbelt.model(await seatbeltState()) : null;
     var n = 0, trial = null, undecl = {}, undeclN = 0;
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
       trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
@@ -322,6 +339,7 @@
       var r = rows[i];
       if (r.undone || !r.op_uuid || sent[r.op_uuid] || localOnly[r.op_uuid] || r.user_tag === 'team') continue;   // undo/redo snapshots, replays, projected rows
       var t = await translate(r, db);
+      if (sbm && r.op_type === 'SET_STATUS') { var sp = (t.body && t.body.params) || {}; global.TeamSeatbelt.noteCommit(sbm, { op_type: 'SET_STATUS', from: sp.from, to: sp.to || sp.action, table: t.table || (t.target && t.target.table) }, log); }
       if (!t.quiet && trial && trial.finished) { localOnly[r.op_uuid] = trial.reason; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + trial.reason + ' (NOT SENT)'); continue; }
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
       if (baseBlocked()) { localOnly[r.op_uuid] = 'base-mismatch'; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=base-mismatch (NOT SENT — this copy is not the team\'s base)'); continue; }
@@ -737,6 +755,9 @@
     var seen = {}, out = [];
     global.TeamScope.downBy(roleId).forEach(function (r) { var t = String(r.table).toLowerCase(); r.by.forEach(function (c) { t = t && fkTarget(t, c); });
       if (t && !seen[t] && /^[a-z][a-z0-9_]*$/.test(t)) { seen[t] = 1; var n = bq(adDb(), 'SELECT name AS n FROM ad_table WHERE lower(tablename)=?', [t]); out.push({ table: t, label: n.length && n[0].n ? n[0].n : t }); } });
+    // TEAMWORK §48.13/§48.11c: a plan with nothing to bind (the office plan) offers the USER — a device approved as its login user carries that AD_User_UU as its roster person,
+    // which is what the fold reads to check the station prefix of the numbers it sends (docno-station). A plan that binds records (POS tills, borrowers) is unchanged.
+    if (!out.length && global.TeamScope.kind() === 'office') { var un = bq(adDb(), "SELECT name AS n FROM ad_table WHERE lower(tablename)='ad_user'"); out.push({ table: 'ad_user', label: un.length && un[0].n ? un[0].n : 'ad_user', optional: true }); }
     return out;
   }
   function recordsOf(tbl, uus) {                                       // [{uu, label}] - the tip's records of `tbl`: the active ones of this client (the picker), or exactly these _uu (the names on the people strip)
@@ -748,7 +769,7 @@
   }
   async function bindingFor(roleId) {                                  // -> null (nothing to bind at this role) | { types: [{table, label, options: [{uu, label}]}] }
     await refreshScope(); var ts = bindTypes(roleId); if (!ts.length) return null;
-    return { types: ts.map(function (t) { return { table: t.table, label: t.label, options: recordsOf(t.table) }; }) };
+    return { optional: ts.every(function (t) { return !!t.optional; }), types: ts.map(function (t) { return { table: t.table, label: t.label, options: recordsOf(t.table) }; }) };
   }
   function roleList() { return shim(adDb()).prepare("SELECT ad_role_id AS id, name FROM ad_role WHERE ad_client_id IN (0, 11) ORDER BY ad_role_id").all(); }
   // entityUu (optional, §38.15): the device is bound to a RECORD - the person is created with person_uu = that record's _uu (a borrower's C_BPartner_UU, a till's AD_Org_UU), signed by this admin in the roster;
@@ -764,7 +785,7 @@
     if (S) { var L = await S.order(); st.devices = Object.keys(L.roster.devices).length; st.enrolled = !!L.roster.devices[dev.kid]; st.plan = L.roster.ok ? L.roster.plan : null; } return st;
   }
 
-  global.TeamSync = { publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
+  global.TeamSync = { seatbeltState: seatbeltState, publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
                       // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
                         log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,

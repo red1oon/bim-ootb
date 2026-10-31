@@ -1,9 +1,15 @@
 {
  "schema": "terms-v1",
  "kind": "harness",
- "at": "2026-10-30T14:04:18.046Z",
+ "at": "2026-10-31T00:39:00.612Z",
  "node": "v18.19.1",
  "verdict": "PASS",
+ "browser": {
+  "judged": 5,
+  "skipped": 0,
+  "reason": null,
+  "reused": false
+ },
  "rows": [
   {
    "id": "visit-bounded",
@@ -26,16 +32,6 @@
    "note": "witness_scriptor_seal judges the simulator only; its own log marks the real layer INCONCLUSIVE"
   },
   {
-   "id": "doc-numbering",
-   "term": "LEDGER (document numbering)",
-   "guarantee": "two devices never give the same document number",
-   "roadmap": "per-device counters today; team-wide numbering not switched on",
-   "witnesses": [],
-   "controls": [],
-   "status": "OPEN",
-   "note": null
-  },
-  {
    "id": "key-roles-threshold",
    "term": "trusted keys (roles + threshold)",
    "guarantee": "key roles, a signing threshold, signed bundles",
@@ -53,25 +49,58 @@
    "witnesses": [
     {
      "file": "witness_comm_plantrust.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
+    },
+    {
+     "file": "witness_team_publish.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_publish.log"
     }
    ],
    "controls": [
     {
      "id": "edited-after-signing refused",
+     "layer": "engine",
      "found": true,
      "evidence": "keys edited after signing -> REFUSED:plan-trust-signature"
     },
     {
      "id": "outside signer refused",
+     "layer": "engine",
      "found": true,
      "evidence": "REFUSED:plan-trust-untrusted-signer"
+    },
+    {
+     "id": "page: unsigned set refused",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 P3 an UNSIGNED set is refused by the engine itself"
+    },
+    {
+     "id": "page: set edited after signing refused (bad-signature)",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 P3 a set edited after signing: the POLICY is merged (the admin may publish it) but B REFUSES the set (bad-signature)"
+    },
+    {
+     "id": "page: outside key refused",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 P4 a set signed by a key outside the trust list: refused:untrusted-signer"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "trusted-keys",
@@ -81,36 +110,61 @@
    "witnesses": [
     {
      "file": "witness_comm_plantrust.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_plantrust.log"
     },
     {
      "file": "witness_comm_policy.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_policy.log"
+    },
+    {
+     "file": "witness_team_publish.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_publish.log"
     }
    ],
    "controls": [
     {
      "id": "backup recovers lost primary",
+     "layer": "engine",
      "found": true,
      "evidence": "the BACKUP signs [K1,K3] (primary dropped, lost-key recovery): MERGED, list in force = [K1,K3] — MERGED:policy MERGED"
     },
     {
      "id": "non-admin refused",
+     "layer": "engine",
      "found": true,
      "evidence": "NON-admin device B -> REFUSED:not-admin"
     },
     {
      "id": "stale replay refused",
+     "layer": "engine",
      "found": true,
      "evidence": "REFUSED:plan-trust-stale"
+    },
+    {
+     "id": "page: non-admin publish refused on both devices",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 P5 a non-admin's publishUpcasters has no effect: its POLICY is REFUSED not-admin on both devices"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "rule-in-force",
@@ -120,31 +174,55 @@
    "witnesses": [
     {
      "file": "witness_comm_executors.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_executors.log"
     },
     {
      "file": "witness_comm_settrust.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_settrust.log"
+    },
+    {
+     "file": "witness_team_executors.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_executors.log"
     }
    ],
    "controls": [
     {
      "id": "Complete under old map stays refused after {}",
+     "layer": "engine",
      "found": true,
      "evidence": "AFTER {} the Complete done under the old map STAYS refused"
     },
     {
      "id": "set published under the old list still loads after rotation",
+     "layer": "engine",
      "found": true,
      "evidence": "V3 MERGED; a fresh device on [K2,K3] loads S0 and S2"
+    },
+    {
+     "id": "page: refused SET_STATUS stays refused after {}",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 X9 after the map {} the SET_STATUS the station was refused on STAYS refused"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "complete-all-or-nothing",
@@ -154,25 +232,46 @@
    "witnesses": [
     {
      "file": "witness_comm_executors.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_executors.log"
+    },
+    {
+     "file": "witness_team_executors.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_executors.log"
     }
    ],
    "controls": [
     {
      "id": "status op refused not-executor everywhere",
+     "layer": "engine",
      "found": true,
      "evidence": "status op is REFUSED not-executor on EVERY device"
     },
     {
      "id": "group consequence refused with it",
+     "layer": "engine",
      "found": true,
      "evidence": "REFUSED not-executor-group everywhere (all-or-none)"
+    },
+    {
+     "id": "page: clicked CL refused at fold, order unchanged",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 X7 C's DocAction (CL) is REFUSED at fold on A (E3 stays: not-executor), and the order on A is unchanged"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "ledger-convergent",
@@ -182,31 +281,61 @@
    "witnesses": [
     {
      "file": "witness_comm_cl3_store.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_comm_cl5_conflict.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_cl5_conflict.log"
+    },
+    {
+     "file": "witness_team_base.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_base.log"
     }
    ],
    "controls": [
     {
      "id": "same order on every device",
+     "layer": "engine",
      "found": true,
      "evidence": "same order on every device"
     },
     {
      "id": "stale save refused (ReQuery)",
+     "layer": "engine",
      "found": true,
      "evidence": "saveCheck stale=true msg=\"Current record was changed by another user, please ReQuery\"  fresh=false"
+    },
+    {
+     "id": "page: same refusal on A and B",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 role 103 has no write on org 0: REFUSED with an access: reason by the base row's scope — the SAME verdict on A and on B"
+    },
+    {
+     "id": "page: base-row-missing refused on both devices",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 an op on a uu that is in neither the log nor the base is REFUSED base-row-missing — on both devices"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "visit-lossless-offline",
@@ -216,30 +345,37 @@
    "witnesses": [
     {
      "file": "witness_terms_visit.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
     }
    ],
    "controls": [
     {
      "id": "dead pipe: nothing lost",
+     "layer": "engine",
      "found": true,
      "evidence": "a dead pipe: every claim still held locally, none marked sent"
     },
     {
      "id": "liar pipe caught by read-back",
+     "layer": "engine",
      "found": true,
      "evidence": "the read-back catches the dropped bundle"
     },
     {
      "id": "checkers fail on doctored state",
+     "layer": "engine",
      "found": true,
      "evidence": "CONTROL V2 liar-checker on a Visit that claims success (checker on a doctored state must FAIL) — failed as designed"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine only (no browser witness located)"
   },
   {
    "id": "visit-once",
@@ -249,31 +385,40 @@
    "witnesses": [
     {
      "file": "witness_terms_visit.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
     },
     {
      "file": "witness_comm_cl3_store.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     }
    ],
    "controls": [
     {
      "id": "third Visit sends nothing",
+     "layer": "engine",
      "found": true,
      "evidence": "a third Visit sends nothing (once only)"
     },
     {
      "id": "incremental fetch is 0",
+     "layer": "engine",
      "found": true,
      "evidence": "a visit with nothing new fetches 0 bundles"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine only (no browser witness located)"
   },
   {
    "id": "ack-trail",
@@ -283,36 +428,67 @@
    "witnesses": [
     {
      "file": "witness_comm_cl3_store.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_terms_visit.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_terms_visit.log"
+    },
+    {
+     "file": "witness_team_so.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_so.log"
     }
    ],
    "controls": [
     {
      "id": "sent then SEEN by peers",
+     "layer": "engine",
      "found": true,
      "evidence": "SEEN by B and C"
     },
     {
      "id": "refused shown on the sender with a reason",
+     "layer": "engine",
      "found": true,
      "evidence": "the refused claim is on the sender's own trail with a named reason"
     },
     {
      "id": "counter fails with the refused claim removed",
+     "layer": "engine",
      "found": true,
      "evidence": "CONTROL V3 refused-counter with the refused claim removed (checker on a doctored state must FAIL) — failed as designed"
+    },
+    {
+     "id": "page: chip shows seen/refused/waiting/last visit",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 the ERP chip shows device code · team devices 2 · a Visit button with the hand cursor (A) — {\"text\":\"Team · 0F32-3AD3 · team devices 2 Visit my ops 5 · seen "
+    },
+    {
+     "id": "page: unsent DocAction shows local-only warning",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 a DocAction is NOT sent and the chip shows a visible local-only warning"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
   },
   {
    "id": "version-skew",
@@ -322,20 +498,131 @@
    "witnesses": [
     {
      "file": "witness_comm_versions.js",
+     "layer": "engine",
      "exit": 0,
      "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
      "log": "build/scriptor/terms_run/witness_comm_versions.log"
+    },
+    {
+     "file": "witness_team_versions.js",
+     "layer": "browser",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_team_versions.log"
     }
    ],
    "controls": [
     {
      "id": "18 mutants killed",
+     "layer": "engine",
      "found": true,
      "evidence": "§CV_VERDICT PASS judged=54 fails=0 vacuous=0 mutants_killed=18/18"
+    },
+    {
+     "id": "page: newer op parked needs-upgrade",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 M2 the sv:2 op is PARKED needs-upgrade"
+    },
+    {
+     "id": "page: same op without sv merged (control)",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 M2 CONTROL: the same op without sv is MERGED"
+    },
+    {
+     "id": "page: tampered set refused",
+     "layer": "browser",
+     "found": true,
+     "evidence": "🟢 M4 tampered set -> refused:bad-signature"
     }
    ],
    "status": "ENFORCED",
-   "note": null
+   "note": null,
+   "layers": "engine + browser"
+  },
+  {
+   "id": "doc-numbering",
+   "term": "LOCAL NUMBERING (LEDGER)",
+   "guarantee": "with Team, two stations (login users with a Search Key) never issue the same document number: OrgValue-UserValue-n each; another station's or a typed number is refused at fold",
+   "roadmap": null,
+   "witnesses": [
+    {
+     "file": "witness_docno_till.js",
+     "layer": "ootb",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_docno_till.log"
+    },
+    {
+     "file": "witness_docno_till.js",
+     "layer": "ootb",
+     "exit": 0,
+     "verdict": "PASS",
+     "skipped": null,
+     "reused": false,
+     "log": "build/scriptor/terms_run/witness_docno_till_mutants.log"
+    }
+   ],
+   "controls": [
+    {
+     "id": "same user on two devices collides (control)",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D11 - CONTROL"
+    },
+    {
+     "id": "shipped plain sequence collides (control)",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D5 - CONTROL"
+    },
+    {
+     "id": "another station's / typed number refused at fold on every device",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D14 - "
+    },
+    {
+     "id": "new format refused until its edit is in the log",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D15b - "
+    },
+    {
+     "id": "user preference cannot change the station",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D13 - "
+    },
+    {
+     "id": "4 mutants killed",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT_MUTANTS killed=4/4"
+    },
+    {
+     "id": "legacy pilot (real WS logins) numbers the same at every position",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D20 - LEGACY"
+    },
+    {
+     "id": "demo station never numbers Org--n",
+     "layer": "ootb",
+     "found": true,
+     "evidence": "§DT PASS D19 - "
+    }
+   ],
+   "status": "ENFORCED",
+   "note": "TEAMWORK §48.11b-§48.11d. Legacy arm: the pilot's own WS-login run == the twin replay (D20, scripts/bridge/out/docno_station_legacy.json). Limits: an author not bound to an AD_User is not judged at fold (counted); two users sharing a Search Key share a series",
+   "layers": "bim-ootb tree (node, real modules)"
   }
  ]
 }

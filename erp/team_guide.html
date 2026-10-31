@@ -48,7 +48,19 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 <tr><td><i>N changes wait for a translation rule from the team admin</i></td><td>Someone works with an older version. The team admin publishes a rule that translates their changes; your device picks it up on its next Visit and takes the changes in.</td></tr>
 <tr><td><i>changes from a retired version were ignored</i></td><td>The team admin has retired that old version; changes still made with it are not taken in.</td></tr>
 <tr><td><i>N local-only (not shared)</i></td><td>Changes that stayed on this device (for example after the trial cycle). Hover to see why.</td></tr>
+<tr><td><b>Seatbelt</b></td><td>Press it before you Process a document. It checks nine things that decide whether your work will reach the team as you expect: the shared starting data, your device's approval, changes not yet sent, refused changes, missing changes from others, changes waiting for an app update, records someone else changed, changes kept on this device, and document numbering. Each line says OK or <b>ADVISE</b> and what to do. It never stops you: if you Process anyway, that is noted in the log and listed in the panel. <!-- W-SEATBELT 7/0, mutants 3/3; W-TEAM-SO §TEAM-SEATBELT --></td></tr>
+<tr><td><b>Terms</b></td><td>Shows which promises of team mode are checked by a test that must fail when the promise is broken, and which are not promised yet. It shows a recorded run and the command to repeat it. <!-- W-TERMS --></td></tr>
 </table>
+
+<h2 id="numbers">Document numbers in a team</h2>
+<p>There is no central counter in team mode, so each person numbers their own documents. When a device joins a team, every document type that has no prefix of its own gets one: <b>organization – user – number</b>, for example <code>HQ-gardenad-50000</code>. The middle part is the <b>Search Key</b> of the user you log in with (User window). Each user has their own running number, so two people working offline never give out the same number, and the number shows where it was made. <!-- W-DOCNO-TILL D7-D12 --></p>
+<ul>
+<li><b>One user per till or desk.</b> Two devices logged in as the same user share one series and can give out the same number. <!-- D11 --></li>
+<li><b>Every station user needs their own Search Key</b> in their client. Users without one were given one by the classic client's own rule (from the name, at most 8 letters and digits); two users with the same Search Key share a series. The Seatbelt warns about both. <!-- D16-D18 --></li>
+<li><b>A number made elsewhere cannot be passed off.</b> When a document arrives, every device checks that its number carries the prefix of the person who sent it; another station's prefix, or a number typed by hand, is refused (reason <code>docno-station</code>). This check covers devices approved as their user; the approval panel does not offer that choice yet (see <i>For the team admin</i>). <!-- D14, D14b --></li>
+<li><b>You can still change the format</b> in the Document Sequence window, as in the classic client; a prefix you set yourself is kept. <!-- D12, D15 --></li>
+<li>The classic client numbers the same way when it has the same setting (checked number by number). <!-- D20 --></li>
+</ul>
 
 <h2>What happens when two people change the same thing</h2>
 <p>If two devices change the same field (or both Complete the same document) before they have visited, nobody's work is silently dropped: both devices show the same message as the classic client, <i>Current record was changed by another user, please ReQuery</i>, and keep the last agreed value. A Complete is all-or-nothing: until the clash is settled the document stays as it was, with none of its consequences.</p>
@@ -157,6 +169,7 @@ For plain orders open <b>Import Order</b>, press the gear in the toolbar, choose
 <li><b>Trusted keys.</b> When the app is set up with signing keys, a team started on it writes those keys into the team itself (for example a primary and a backup). They can be changed later — add a key, or let the backup replace a lost primary — only by a change signed with a key the team already trusts. An admin device on its own cannot change them.</li>
 <li><b>Who completes.</b> A list of document kinds and the <i>role</i> that completes each, signed with the team owner's key. It names roles only, and a Complete is judged by the list in force when it was done.</li>
 <li><b>How to sign and publish.</b> The owner key stays offline. On the owner's own computer, with the compiler's signing tool (<code>build/scriptor/sign_plan.js</code>): <code>keygen &lt;folder&gt;</code> makes the key pair (it refuses a folder inside the project, so the private key never ends up in it); <code>stmt executors &lt;list.json&gt; &lt;previous list.json | none&gt; …</code> or <code>stmt plan-trust &lt;keys.json&gt; &lt;previous keys.json&gt; …</code> makes the signed change; <code>check &lt;file&gt;</code> confirms it before you use it. The admin device then publishes the file with the app's admin function <code>TeamSync.publishStatement</code> (Modeller: <code>TeamSyncModeller.publishStatement</code>). It answers at once: accepted, or why not — <i>stale</i> (it was built on an older list: build it again from the list in force), <i>untrusted</i> (signed with a key the team does not trust), <i>not admin</i> (sent from a device that is not the admin).</li>
+<li><b>Binding a device to its user.</b> The other devices can check the numbers a device sends only if that device was approved <i>as</i> its user (the admin function that approves a device with a record, given the user's record). The approval panel does not offer users as a choice yet; until it does, the number check covers only devices bound that way, and the Seatbelt says so on each device (see <a href="#numbers">Document numbers</a>).</li>
 <li>There are no buttons for these yet: they are done through the app's admin functions.</li>
 </ul>
 
@@ -166,7 +179,7 @@ For plain orders open <b>Import Order</b>, press the gear in the toolbar, choose
 <h2>Good to know</h2>
 <ul><li>Switching team mode off (<i>Turn off team mode</i> in the panel) leaves the page exactly as it was before.</li>
 <li>Edits to records that came with the demo data, and stock reservations, are shared like any other change.</li>
-<li>Document numbers are counted on each device, so two devices can give out the same number. Agreeing numbers across the team is not switched on yet.</li>
+<li>Document numbers are per user, not per company: there is no single unbroken number across the whole team (see <a href="#numbers">Document numbers in a team</a>).</li>
 <li><b>The relay still carries every declared message, and each device keeps only its own.</b> In a POS team a device takes in only the rows the plan declares for its role and its record, and refuses the rest on the device itself. The shared place on GitHub still holds the bundles the others sent: hiding them from it needs sealing, which is not built. <!-- W-POS-PLAN 16/0 --></li>
 <li>There is no standalone till program yet, and a credit sale (a ticket with no tender) is refused by Import POS Sales on purpose. Import Payment has no duplicate guard of its own.</li></ul>
 </body></html>
