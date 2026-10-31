@@ -13,6 +13,23 @@
   var BODY_KINDS = PREP.BODY_KINDS;   // §L24 one table (dxf2prep)
   var WALLISH = ['wall', 'wallline', 'slab', 'component', 'opening', 'glazing', 'elevwall', 'sectslab', 'sectwall', 'roof', 'levelline'];
   function isStructure(sheets, B) { return !!B && sheets.some(function (s) { return ((s.desc && s.desc.layers) || []).some(function (l) { return BODY_KINDS.indexOf(l.type) >= 0; }); }); }
+  // §D100: every IfcColumn whose top is under a beam it sits beneath (plan boxes overlapping within T, the beam's underside above the column top by more than T; T = the registry row's tolerance_m) gets its top
+  // raised to the lowest such underside. Pure over the bodies' own vertices; returns { raised, columns: [{ guid, from, to }] }.
+  function columnsToBeams(els, T) {
+    var box = function (e) { var a = [Infinity, Infinity, Infinity], b = [-Infinity, -Infinity, -Infinity]; (e.vertices || []).forEach(function (v) { for (var i = 0; i < 3; i++) { if (v[i] < a[i]) a[i] = v[i]; if (v[i] > b[i]) b[i] = v[i]; } }); return [a, b]; };
+    var beams = els.filter(function (e) { return e['class'] === 'IfcBeam'; }).map(box), out = [];
+    els.forEach(function (e) {
+      if (e['class'] !== 'IfcColumn' || !(e.vertices || []).length) return;
+      var c = box(e), top = c[1][2], to = Infinity;
+      beams.forEach(function (bb) { var soff = bb[0][2]; if (soff <= top + T) return; if (bb[0][0] > c[1][0] + T || bb[1][0] < c[0][0] - T || bb[0][1] > c[1][1] + T || bb[1][1] < c[0][1] - T) return; if (soff < to) to = soff; });
+      if (!isFinite(to)) return;
+      e.vertices = e.vertices.map(function (v) { return v[2] === top ? [v[0], v[1], to] : v; });   // top = the max of these same values: exact
+      if (e.z1 != null) e.z1 = to; e.prov = 'derived'; e.size = Object.assign({}, e.size || {}, { top: { value: +to.toFixed(4), source: 'default', key: 'column.top_under_beam', drawn: +top.toFixed(4) } });
+      out.push({ guid: e.guid, from: +top.toFixed(4), to: +to.toFixed(4) });
+    });
+    return { raised: out.length, columns: out };
+  }
+
   function judge(sheets, ctx) {
     var I = ctx.I, B = ctx.B, refused = [];
     // §L29 a details sheet (no role, but it states general notes: concrete grade, steel grade, casting ratios) is a NOTES sheet: read for its text, never refused
@@ -47,6 +64,9 @@
       var sc = SC.buildSections(sheets, { numbers: ctx.numbers, DF: DF });
       res.els = res.els.concat(sc.els); res.gaps = res.gaps.concat(sc.gaps); res.defaults = (res.defaults || []).concat(sc.defaults); res.report = Object.assign({}, res.report, { sections: sc.report });
     }
+    // §D100 a column that stops under a beam end runs up to the beam's underside (yellow default column.top_under_beam = beam_above; 'as_drawn' keeps the drawn top): the elevation may
+    // draw it short where a wall / net / another sheet hides it. Only the top moves; the column becomes derived, its SizeBasis says top:default. Before the completion (its pieces are separate).
+    if (DF && !refused.length && DF.has('column.top_under_beam') && String(DF.get('column.top_under_beam')) === 'beam_above') { var CB = columnsToBeams(res.els, Number((DF.meta('column.top_under_beam') || {}).tolerance_m)); if (CB.raised) DF.use('column.top_under_beam'); res.colToBeam = CB; }
     // §L13.2 best-effort completion (opt-in: ctx.complete = { slabT, roofT, overhang }): the floor slab and the gabled roof the drawings imply, derived + yellow defaults
     var SY = ctx.SY || (typeof module === 'object' && module.exports ? require('./dxf2synth.js') : (typeof self !== 'undefined' ? self.Dxf2Synth : null));
     if (SY && ctx.complete && !refused.length) {

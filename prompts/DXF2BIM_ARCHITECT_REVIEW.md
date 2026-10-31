@@ -26,7 +26,7 @@ pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status
 4. Carried (unchanged from session 13): Load Summary follow-ons; first real code packs (UBBL, BNBC 2020 text); §D95 Show-what-changed toggle; the guide's "Status: preliminary"
    header + quickstart; the viewer's other cost paths do not read `material_rates`; RR authority headers (RAJUK / NBeS checklists not found).
 **Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`):** unchanged from session 13 (archived block): 512 bodies, floor 603.87 m2, own weight 5,361.0 kN, bill 6,178,335 BDT,
-4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns).
+4 of 12 rules ran; the page's Regulatory Report = the CLI's. Since §D99 P4 step 1 the bill is **6,188,538 BDT** (stated 1:1.5:3 on footings + columns); since §D100 (b) **6,227,255 BDT** (12 columns raised to their beams), structural findings 1 (cantilever).
 **Recipes + landmines:** as in the archived session-14 block (recipes for the shed report and the runner; PWD SoR page images; auto-merge orphan trap; `R.set` vs `desc.set`; the raw
 title block's client name; a new `element_defaults.json` key touches C36, E1, YP1 + the BIMCompiler page — and a changed kind/basis touches YP1 too). New: a headless witness that
 opens a new tab (the report's blob) must poll by interval, not rAF (the page goes background).
@@ -494,6 +494,12 @@ parts resting on top), or the beam it frames into; `_loadPath` = the least fixed
 long-wall beams over the bays between lines 36 and 41. Every existing rule identical on all 7 buildings (main vs branch). **W-LOAD-PATH 5/0** (P2: floating_member 0 vs load_path 4 on a
 self-held frame; P3: one full column carries the whole frame through the chain). W-CODE-NAMED 6/0 (its counts 11→12 rows, "Rules 6: 5 ran"), tests/test_structural_sanity_rules 8/8,
 test_rule_report 102/102, test_rule_checklist_panel 26/26. Viewer sw bumped. **The shed's report now says structural FINDINGS 11** (cantilever 1 + load_path 10).
-**(b) next:** the orange offer "run the column up to the beam it carries" — needs a per-column height marking (none exists: `@BODYZ` is per kind); spec it with the editor's rows.
+**(b):** superseded by the owner's question — built as the yellow default `column.top_under_beam` (see (b) RESULT), no per-column marking.
+**§D100 (b) RESULT (2026-10-31, session 15; owner: "Wouldn't this default as standardized for such building model? Thus requiring precision from me."): BUILT as a yellow DEFAULT, not a
+per-column marking.** `element_defaults.json` `column.top_under_beam` = `beam_above` (kind guess; option `as_drawn`), applied in `dxf2structure.js` `columnsToBeams` before the completion:
+a column whose plan box meets a beam's (0.15 m) and whose top is more than 0.15 m under that beam's underside is raised to it; it becomes derived, SizeBasis `top:default`; the row is USED
+(yellow) so the user sees it and can switch to `as_drawn` once for the whole model — the precedent is `wall.top_when_unseen`. Shed (`--complete`): **12 columns raised 1.524 → 3.099 m**
+(lines 36–41 × both long walls), **load_path 10 → 0**, every other body's vertices identical, **bill 6,188,538.09 → 6,227,255.00 BDT** (+38,716.91, the taller columns); `as_drawn` restores
+both exactly. **W-COL-TO-BEAM 3/0.** The new key: C36 / E1 counts 62 → 63, the BIMCompiler yellow page regenerated (63 rows) onto PR #277 (W-YELLOW-PAGE 4/4 against it). sw v195.
 **§D99 defect RESULT (2026-10-31, session 14): FIXED.** `synth.slab.thickness` AND `wall.thickness` (the same defect) cited a Malaysian price row (`cidb2024_my.json` 'RC Slab 250mm' / 'Blockwork Wall 150mm') as a *standard*. Measured: every country pack carries the same 250 mm slab / 150 mm wall line (16 of 16 packs, translated), so no pack is a basis. Both are now `kind: guess` with that stated; values unchanged (no quantity moves). W-DEFAULTS DF3 now refuses a std basis that names a rate pack (old registry -> DF3 RED, new -> PASS). Yellow-list page regenerated in the BIMCompiler docs PR. **P1–P5 not built: owner picks** (see the questions in RESUME).
 **Lane finding (session 14):** `witness_dxf_convert_fail` CF2 fails inside full runner runs (twice: main+RR.6 and §D98 trees) and passes 3/3 standalone each time — a load-timing read of the status in the witness, not a product change; fix the witness's wait (status settles after the undo) when next touched.

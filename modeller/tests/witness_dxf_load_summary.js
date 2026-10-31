@@ -98,7 +98,9 @@ ok('L4 falsifier: p 1 -> 2 adds exactly 0.63 kN/m3 x volume to every concrete gr
       const t1 = await pageTotal();
       await rp.evaluate(() => { const t = document.getElementById('inputs'), j = JSON.parse(t.value); j.values['load.rc_steel_percent'] = 2; t.value = JSON.stringify(j, null, 2); document.getElementById('apply').click(); }); await new Promise(r => setTimeout(r, 400));
       const t2 = await pageTotal(), applied = await rp.evaluate(() => document.getElementById('msg').textContent);
-      const cliRel = Math.abs(mod.total_kN - R.total_kN) / R.total_kN;
+      // the CLI reference is a FRESH CLI run of the same marked set with Complete (the stored bodies.json predates §D100's column default and would compare against a stale model)
+      const CLI = require(path.join(M, 'dxf2bim_cli.js')), fresh = CLI.run(CLI.parseArgs(['--sheets', ...files, '--out', path.join(os.tmpdir(), 'w_ls_cli_' + process.pid), '--complete']), () => {}).out.gate.R.els;
+      const Rc = L.compute(fresh, { values, sources, facts: {} }), cliRel = Math.abs(mod.total_kN - Rc.total_kN) / Rc.total_kN;
       ok('L6 the report page: its total = the module on the page\'s own bodies = the CLI bodies (0.01 %), Apply p = 2 = the module with p = 2, 0 page errors', t1.indexOf(fmt(mod.total_kN) + ' kN') >= 0 && t2.indexOf(fmt(mod2.total_kN) + ' kN') >= 0 && cliRel <= 1e-4 && errs.length === 0,
         'page-vs-CLI ' + (cliRel * 100).toFixed(5) + ' % | ' +
         'bodies=' + JSON.parse(els).length + ' module ' + fmt(mod.total_kN) + ' -> ' + fmt(mod2.total_kN) + ' kN | page "' + t1.split('\n').slice(0, 3).join(' ') + '" -> "' + applied + '" | errors ' + errs.length);
