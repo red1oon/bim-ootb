@@ -36,23 +36,27 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
       return { sheets: (st.sheets || []).length, gate: !!g, ok: g && g.ok, refused: g && g.refused, blocking: g && g.verdict && (g.verdict.blocking || []).slice(0, 6).map(x => x.code + ' ' + (x.sheet || '')), btn: !!b, disabled: b && b.disabled, status: (document.getElementById('dxf-status') || {}).textContent }; });
       throw new Error('the gate did not qualify: ' + JSON.stringify(g).slice(0, 600)); }); await sleep(800);
     const snap = () => pg.evaluate(() => ({ n: window.Bonsai.oplog.length, status: (document.getElementById('dxf-status') || {}).textContent || '' }));
-    const click = async (want) => { const c0 = clog.length; await pg.click('#dxf-convert');
-      await pg.waitForFunction(w => ((document.getElementById('dxf-status') || {}).textContent || '').indexOf(w) === 0, { timeout: 180000 }, want).catch(() => {}); await sleep(600); return clog.slice(c0).filter(t => / failed stage=/.test(t)).pop() || ''; };
+    // wait for THIS click's own status and its own log line: after CF1 the status already starts with "Convert failed", so a prefix-only wait returned at once and CF2 read
+    // the state early inside loaded full runs (session 14-15 flake; passes standalone)
+    const click = async (want, logRe) => { const c0 = clog.length; await pg.click('#dxf-convert');
+      await pg.waitForFunction(w => ((document.getElementById('dxf-status') || {}).textContent || '').indexOf(w) === 0, { timeout: 180000 }, want).catch(() => {});
+      for (const t0 = Date.now(); Date.now() - t0 < 30000 && !clog.slice(c0).some(t => logRe.test(t));) await sleep(100);
+      await sleep(600); return clog.slice(c0).filter(t => / failed stage=/.test(t)).pop() || ''; };
     console.log('  gate qualifies; status before: ' + (await snap()).status.slice(0, 120));
     // CF1 before the commit
     const a0 = await snap();
     await pg.evaluate(() => { const I = window.Dxf2BimImport; window.__toOps = I.toOps; I.toOps = function () { throw new Error('W-PROBE-1'); }; });
-    const l1 = await click('Convert failed'), a1 = await snap();
+    const l1 = await click('Convert failed: W-PROBE-1', / failed stage=/), a1 = await snap();
     ok('CF1 a throw before the commit is said in the panel, nothing is built', a1.status === 'Convert failed: W-PROBE-1 (nothing was built)' && a1.n === a0.n && /stage=before-commit undone=0 /.test(l1), 'status="' + a1.status + '" oplog ' + a0.n + '->' + a1.n + ' log="' + l1.slice(0, 160) + '"');
     await pg.evaluate(() => { window.Dxf2BimImport.toOps = window.__toOps; });
     // CF2 after the commit
     const b0 = await snap();
     await pg.evaluate(() => { window.__frameSel = window.Bonsai.frameSelection; window.Bonsai.frameSelection = function () { throw new Error('W-PROBE-2'); }; });
-    const l2 = await click('Convert failed'), b1 = await snap();
+    const l2 = await click('Convert failed: W-PROBE-2', / failed stage=/), b1 = await snap();
     ok('CF2 a throw after the commit is said in the panel and the gesture is undone', b1.status === 'Convert failed: W-PROBE-2 (undone)' && b1.n === b0.n && /stage=after-commit undone=1 /.test(l2), 'status="' + b1.status + '" oplog ' + b0.n + '->' + b1.n + ' log="' + l2.slice(0, 160) + '"');
     await pg.evaluate(() => { window.Bonsai.frameSelection = window.__frameSel; });
     // CF3 the good run
-    const c0 = await snap(); await click('Converted'); const c1 = await snap(), last = await pg.evaluate(() => window.DxfImportUI.state.last ? window.DxfImportUI.state.last.nInserts : 0);
+    const c0 = await snap(); await click('Converted', /counts=/); const c1 = await snap(), last = await pg.evaluate(() => window.DxfImportUI.state.last ? window.DxfImportUI.state.last.nInserts : 0);
     ok('CF3 with the stubs removed the same click converts', last > 0 && c1.n > c0.n && c1.status.indexOf('Converted: ') === 0, 'inserts=' + last + ' oplog ' + c0.n + '->' + c1.n + ' status="' + c1.status.slice(0, 100) + '"');
     ok('CF0 no page errors', errs.length === 0, 'errors=' + errs.length);
   } catch (e) { ok('CF run', false, 'threw ' + (e && e.stack || e).toString().slice(0, 300)); }

@@ -109,14 +109,14 @@ function loadEngine(dir) {
   async function install(trust, sigObj, bytes, over) {
     var bundles = { 'u://b': mod(sigObj, over && over.id, over && over.version) }, host = { engineVersion: '0.10.0', import: function (u) { return Promise.resolve(bundles[u]); } };
     if (trust) { host.bundleTrust = function () { return trust; }; host.fetchBytes = function () { return Promise.resolve(bytes || BYTES); }; }
-    var reg = PR.create(host); try { var r = await reg.installBundle('u://b'); return { ok: true, r: r }; } catch (e) { return { ok: false, code: e.code || null, msg: e.message }; }
+    var reg = PR.create(host); try { var r = await reg.installBundle('u://b'); return { ok: true, r: r, signed: reg.list()[0].signed }; } catch (e) { return { ok: false, code: e.code || null, msg: e.message }; }
   }
   var Bo = await mkKey(), Bq = await mkKey(), Bo2 = await mkKey(), Brr = await mkKey('rotate-only'), Bpp = await mkKey('publish'), Bx = await mkKey();
   var TR = { keys: listOf([Bo, Brr, Bpp]), threshold: 1 };
   if (!PR) A('B0', false, 'plugin_registry.js loads', String(prErr && prErr.message));
   else {
     var b1 = await install(TR, await bundleSig([Bo]));
-    A('B1', b1.ok, 'a bundle signed by an owner key installs', b1.ok ? 'installed' : b1.code + ' ' + b1.msg);
+    A('B1', b1.ok && b1.signed === true, 'a bundle signed by an owner key installs and the registry reports signed=true (no unsigned badge)', b1.ok ? 'installed' : b1.code + ' ' + b1.msg);
     var b1b = await install(TR, await bundleSig([Bpp]));
     A('B1', b1b.ok, 'a publish-only key may sign a bundle', b1b.ok ? 'installed' : b1b.code + ' ' + b1b.msg);
     var b2 = await install(TR, undefined);
@@ -136,7 +136,7 @@ function loadEngine(dir) {
     var b9 = await install(TR, Object.assign(await bundleSig([Bo]), { sig: '00'.repeat(64) }));
     A('B9', !b9.ok && b9.code === 'bundle-signature', 'a corrupted signature is refused', b9.code);
     var b7 = await install(null, undefined);
-    A('B7', b7.ok, 'LEGACY: no bundleTrust => an unsigned bundle installs exactly as before', b7.ok ? 'installed' : b7.code);
+    A('B7', b7.ok && b7.signed === false, 'LEGACY: no bundleTrust => an unsigned bundle installs exactly as before', b7.ok ? 'installed' : b7.code);
     // the build step CLI: produces a signature the registry accepts
     var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kw-b-')), ent = path.join(dir, 'b.js'); fs.writeFileSync(ent, SRC);
     var pj = await subtle.exportKey('jwk', Bo.priv); fs.writeFileSync(path.join(dir, 'p.jwk'), JSON.stringify(pj)); fs.writeFileSync(path.join(dir, 'q.jwk'), JSON.stringify(Bo.pub));
