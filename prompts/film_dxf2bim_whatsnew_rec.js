@@ -164,6 +164,20 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
         if (top === null) return false; if (Math.abs(top - 70) < 12) return true; const st = await np.evaluate(() => [scrollY, document.documentElement.scrollHeight - innerHeight]);
         if ((top > 70 && st[0] >= st[1] - 1) || (top < 70 && st[0] <= 0)) return true; await np.mouse.wheel({ deltaY: Math.sign(top - 70) * Math.min(110, Math.abs(top - 70)) }); await sleep(60); } return false; };
     return { move, toHead, text: () => np.evaluate(() => document.body.innerText) }; };
+  // a wide text line cannot be enlarged inside a 1440 px frame, so the tab is shown at real browser zoom (viewport 1440/z x 810/z, device scale x z): the same DOM, laid out larger; then the viewport is put back
+  const tabRect = (np, kind) => np.evaluate(kind => {
+    const U = rs => { rs = rs.filter(q => q.width > 1 && q.height > 1); const x0 = Math.min(...rs.map(q => q.left)), y0 = Math.min(...rs.map(q => q.top)), x1 = Math.max(...rs.map(q => q.right)), y1 = Math.max(...rs.map(q => q.bottom)); return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; };
+    const rr = e => { const g = document.createRange(); g.selectNodeContents(e); return [...g.getClientRects()]; };
+    if (kind === 'cert') { const re = /It is not a compliance certificate/; let best = null; document.querySelectorAll('body *').forEach(e => { if (re.test(e.innerText || '') && (!best || e.innerText.length < best.innerText.length)) best = e; }); if (!best) return null; const r = U(rr(best)); r.t = best.innerText.replace(/\s+/g, ' ').slice(0, 160); return r; }
+    if (kind === 'missing') { const m = document.getElementById('missing'); if (!m) return null; const li = [...m.querySelectorAll('li')].find(l => /Soil bearing capacity/.test(l.innerText)) || m.querySelector('li'), h = m.previousElementSibling; const r = U(rr(li).concat(h && /^H/.test(h.tagName) ? rr(h) : [])); return { x: r.x - 8, y: r.y - 6, w: r.w + 16, h: r.h + 12 }; }
+    if (kind === 'sor') { const th = [...document.querySelectorAll('th')].find(e => /^SoR item/.test(e.innerText)); if (!th) return null; const tb = th.closest('table'), rows = [...tb.querySelectorAll('tr')].filter(q => q.querySelector('th') || /^07\.3\.[12]/.test(q.innerText.trim())); if (!rows.some(q => /^07\.3\.1/.test(q.innerText.trim()))) return null; return U(rows.map(q => q.getBoundingClientRect())); }
+    return null; }, kind);
+  const spotTab = async (np, id, kind, caption, ms, z) => {
+    await np.setViewport({ width: Math.round(1440 / z), height: Math.round(810 / z), deviceScaleFactor: (4 / 3) * z }); await np.mouse.move(360, 300); await sleep(700);
+    let r = await tabRect(np, kind); if (!r) throw new Error('spotTab ' + id + ': no element ' + kind); const vh = Math.round(810 / z);
+    for (let g = 0; g < 60 && (r.y < 40 || r.y + Math.min(r.h, vh * 0.6) > vh - 20); g++) { await np.mouse.wheel({ deltaY: Math.sign(r.y - vh * 0.25) * Math.min(160, Math.max(40, Math.abs(r.y - vh * 0.25))) }); await sleep(80); r = await tabRect(np, kind); }
+    await sleep(900); console.log('§FILM_ZOOM ' + id + ' browser_zoom=' + z + ' rect=' + [r.x, r.y, r.w, r.h].map(v => v.toFixed(0)).join(','));
+    await spot(np, id, r, caption, ms); await np.setViewport(VP); await np.mouse.move(760, 420); await sleep(500); return r; };
   // the report's sections, from its own text: "N. Title VERDICT" opens section N
   const sections = txt => { const out = {}, L = txt.split('\n'); let k = null; L.forEach(l => { const m = /^(\d)\. (.*)$/.exec(l); if (m) { k = m[1]; out[k] = { head: m[2], body: [] }; } else if (k) out[k].body.push(l); }); return out; };
   const row = (sec, re) => (sec.body.find(l => re.test(l)) || '').split('\t');
@@ -176,11 +190,12 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
     const x = Math.max(0, rc.x - pad), y = Math.max(0, rc.y - pad), w = Math.min(vp[0] - x, rc.w + 2 * pad), h = Math.min(vp[1] - y, rc.h + 2 * pad);
     if (w < 8 || h < 8) throw new Error('spot ' + id + ': rect off screen ' + JSON.stringify(rc));
     await P.evaluate(() => { const p = document.getElementById('film-ptr'); if (p) p.style.visibility = 'hidden'; });
-    const buf = await P.screenshot({ clip: { x, y, width: w, height: h, scale: 2 }, type: 'png' }); fs.writeFileSync(path.join(OUT, 'spots', id + '.png'), buf);
+    const sc0 = await P.evaluate(() => [scrollX, scrollY]);   // puppeteer's clip is in DOCUMENT coordinates
+    const buf = await P.screenshot({ clip: { x: x + sc0[0], y: y + sc0[1], width: w, height: h, scale: 2 }, type: 'png' }); fs.writeFileSync(path.join(OUT, 'spots', id + '.png'), buf);
     const sc = Math.min(SPOT_MAX, vp[0] * 0.86 / w, vp[1] * 0.66 / h);
     await P.evaluate((b64, wpx, cap, ssc) => { let o = document.getElementById('film-spot'); if (o) o.remove(); o = document.createElement('div'); o.id = 'film-spot';
       o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(12,14,18,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;font:24px/1.4 DejaVu Sans,sans-serif;color:#F3EEE8;text-align:center;padding:24px';
-      o.innerHTML = '<img src="data:image/png;base64,' + b64 + '" style="width:' + wpx + 'px;border:3px solid #FF6B78;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6)"><div style="margin-top:18px;max-width:1100px">' + cap + '</div>'; document.body.appendChild(o); }, buf.toString('base64'), Math.round(w * sc), esc(caption), sc);
+      o.innerHTML = '<img src="data:image/png;base64,' + b64 + '" style="width:' + wpx + 'px;border:3px solid #FF6B78;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.6)"><div style="margin-top:18px;max-width:1100px">' + cap + '</div>'; document.documentElement.appendChild(o); }, buf.toString('base64'), Math.round(w * sc), esc(caption), sc);
     const a = now(); console.log('§FILM_SPOT ' + id + ' rect=' + [x, y, w, h].map(v => v.toFixed(0)).join(',') + ' scale=' + sc.toFixed(2) + ' caption="' + caption + '"');
     await sleep(holdMs || 5000); spotLog.push([id, a, now()]);
     await P.evaluate(() => { const o = document.getElementById('film-spot'); if (o) o.remove(); const p = document.getElementById('film-ptr'); if (p) p.style.visibility = ''; }); await sleep(250); };
@@ -312,8 +327,7 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
     await spot(np, 'own_weight', cr, 'A quick dead-load estimate: own weight ' + num(cardOf(/Own weight/)[1]) + ' kN, pending the engineer\'s analysis. Not a design.', 5500);
     await beat('b09'); await T.toHead(/What only you can state/); await sleep(1500);
     const miss = await np.evaluate(() => [...document.querySelectorAll('#missing li')].map(l => l.innerText)); fact('ls_soil_not_stated', String(miss.some(t => /Soil bearing capacity/.test(t)))); fact('ls_missing_n', String(miss.length));
-    const mr = await np.evaluate(() => { const m = document.getElementById('missing'), h = m.previousElementSibling && /^H/.test(m.previousElementSibling.tagName) ? m.previousElementSibling : null, r = m.getBoundingClientRect(), a = h ? h.getBoundingClientRect() : r; return { x: Math.min(r.left, a.left), y: Math.min(r.top, a.top), w: Math.max(r.width, a.width), h: r.bottom - Math.min(r.top, a.top) }; });
-    await spot(np, 'not_stated', mr, 'In red: what only you can state (' + miss.length + ' inputs, the soil capacity among them)', 5000);
+    await spotTab(np, 'not_stated', 'missing', 'In red: what only you can state (' + miss.length + ' inputs, the soil capacity among them)', 5000, 2);
     await hold(); });
 
   // ---- 7 HAND IN, AND HAND ON (RR.6, §D103) ----
@@ -332,34 +346,29 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
     { const sg = (S['1'] ? S['1'].body : []).map(l => l.split('\t')).filter(c => c.length >= 4 && c[0] !== 'Role'); fact('rr_sig_roles', String(sg.length)); fact('rr_sig_blank', String(sg.filter(c => !c[3].trim()).length)); }
     await T.move(760, 330, 700); await sleep(1500);
     // the sentence's own element: the smallest element whose text holds it, scrolled into view by the real wheel
-    const cert = () => np.evaluate(() => { const re = /It is not a compliance certificate/; let best = null; document.querySelectorAll('body *').forEach(e => { if (re.test(e.innerText || '') && (!best || (e.innerText.length < best.innerText.length))) best = e; }); if (!best) return null; const r = best.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, t: best.innerText.replace(/\s+/g, ' ').slice(0, 160) }; });
-    let cr = await cert(); if (!cr) throw new Error('no certificate line element');
-    for (let g = 0; g < 40 && (cr.y < 60 || cr.y + cr.h > 700); g++) { await np.mouse.wheel({ deltaY: Math.sign(cr.y - 200) * 110 }); await sleep(80); cr = await cert(); }
-    fact('rr_cert_text', cr.t); await sleep(1200);
-    await spot(np, 'cert_line', { x: cr.x, y: cr.y, w: Math.min(cr.w, 1300), h: cr.h }, 'The report states what it is not: a compliance certificate. The signature blocks stay blank.', 5000);
+    { const cr = await tabRect(np, 'cert'); if (!cr) throw new Error('no certificate line element'); fact('rr_cert_text', cr.t); await sleep(800);
+      await spotTab(np, 'cert_line', 'cert', 'The report states what it is not: a compliance certificate. The signature blocks stay blank.', 5000, 2); }
     await beat('b12'); await T.toHead(/^7\. /); await sleep(1200);
     { const sec = S['7']; const si = sec.body.findIndex(l => /^SoR item\t/.test(l)), sor = []; for (let i = si + 1; i < sec.body.length && /^\d[\d.]*\t/.test(sec.body[i]); i++) sor.push(sec.body[i].split('\t')); fact('sor_rows', String(sor.length));
       const item = id => sor.find(r => r[0] === id) || []; sorA = item('07.3.1')[0] || 'none'; sorP = (/ p\.(\d+)/.exec(item('07.3.1')[1] || '') || [])[1] || 'none'; sorBook = (/PWD SoR \d{4} for Civil Works/.exec(item('07.3.1')[1] || '') || ['PWD SoR'])[0]; fact('sor_a', item('07.3.1')[0] || 'none'); fact('sor_b', item('07.3.2')[0] || 'none'); fact('sor_a_say', saySor(item('07.3.1')[0] || 'none')); fact('sor_page_a', (/ p\.(\d+)/.exec(item('07.3.1')[1] || '') || [])[1] || 'none'); fact('sor_book', (/PWD SoR \d{4} for Civil Works/.exec(item('07.3.1')[1] || '') || ['none'])[0]); fact('bill_total', (row(sec, /^Total\t/)[1]) || 'none'); }
     await T.toHead(/SoR item/, 'th'); await sleep(800);
-    const tr = () => np.evaluate(() => { const th = [...document.querySelectorAll('th')].find(e => /^SoR item/.test(e.innerText)); if (!th) return null; const tb = th.closest('table'), r = tb.getBoundingClientRect(), row = [...tb.querySelectorAll('tr')].find(q => /^07\.3\.1/.test(q.innerText.trim())); return row ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; });
-    let tq = await tr(); if (!tq) throw new Error('no SoR table with 07.3.1');
-    for (let g = 0; g < 30 && (tq.y < 50 || tq.y + tq.h > 780); g++) { await np.mouse.wheel({ deltaY: Math.sign(tq.y - 120) * 110 }); await sleep(80); tq = await tr(); }
-    await T.move(700, 400, 700); await sleep(1200);
-    await spot(np, 'sor_row', tq, 'Footings and columns are priced at item ' + sorA + ', page ' + sorP + ' of the ' + sorBook + ': the drawing\'s own note picked the row', 6000);
+    await T.move(700, 400, 500);
+    await spotTab(np, 'sor_row', 'sor', 'Footings and columns are priced at item ' + sorA + ', page ' + sorP + ' of the ' + sorBook + ': the drawing\'s own note picked the row', 6000, 2);
     await hold(); }, 240000);
   // ---- hand on: Export > Analytical model (STAAD)...: the downloaded model.std opened as text ----
   await beat('b13');
   await clickAt('#b-export', 700); await pg.waitForSelector('#m-export-panel .me-row[data-key="analytical"]', { visible: true }); await clickAt('#m-export-panel .me-row[data-key="analytical"]', 700);
   let stdF = null; for (let g = 0; g < 600 && !stdF; g++) { await sleep(500); const f = fs.readdirSync(SAVED).filter(n => /\.std$/.test(n)); if (f.length) { const p = path.join(SAVED, f[0]), a = fs.statSync(p).size; await sleep(400); if (a > 0 && a === fs.statSync(p).size) stdF = p; } }
   if (!stdF) throw new Error('no .std downloaded');
-  const STD = fs.readFileSync(stdF, 'utf8'), LN = STD.split('\n'), secOf = k => { const i = LN.findIndex(l => l === k); if (i < 0) return []; const o = []; for (let j = i + 1; j < LN.length && !/^[A-Z][A-Z ]+$/.test(LN[j]); j++) if (LN[j].trim() && !/^\*/.test(LN[j])) o.push(LN[j]); return o; };
+  const STD = fs.readFileSync(stdF, 'utf8'), LN = STD.split('\n'), secOf = k => { const i = LN.findIndex(l => l === k); if (i < 0) return []; const o = []; for (let j = i + 1; j < LN.length && !/^[A-Za-z]/.test(LN[j]); j++) if (LN[j].trim() && !/^\*/.test(LN[j])) o.push(LN[j]); return o; };
   const nJ = secOf('JOINT COORDINATES').length, nM = secOf('MEMBER INCIDENCES').length, supL = secOf('SUPPORTS');
-  const nS = supL.reduce((a, l) => { const t = l.replace(/\b(FIXED|PINNED)\b/g, '').trim().split(/\s+/).filter(Boolean); let c = 0; for (let i = 0; i < t.length; i++) { if (t[i + 1] === 'TO') { c += (+t[i + 2]) - (+t[i]) + 1; i += 2; } else c++; } return a + c; }, 0);
+  const nS = supL.reduce((a, l) => { const t = l.replace(/\b(FIXED|PINNED)\b/g, '').trim().split(/\s+/).filter(t => t && t !== '-'); let c = 0; for (let i = 0; i < t.length; i++) { if (t[i + 1] === 'TO') { c += (+t[i + 2]) - (+t[i]) + 1; i += 2; } else c++; } return a + c; }, 0);
   const stat2 = await stat(), sm = k => (new RegExp(k + '=(\\d+)').exec(stat2) || [])[1] || 'none';
   fact('std_file', path.basename(stdF) + ' ' + STD.length + ' bytes'); fact('st_joints', String(nJ)); fact('st_members', String(nM)); fact('st_supports', String(nS)); fact('st_dangling', sm('dangling ends')); fact('st_findings', sm('findings'));
   fact('st_stat_match', String(sm('joints') === String(nJ) && sm('members') === String(nM) && sm('supports') === String(nS))); fact('st_status', stat2.slice(0, 220)); fact('st_header', LN.slice(0, 3).join(' | ').slice(0, 220));
   fact('st_log', plog.filter(t => /^§ANALYTICAL/.test(t)).slice(-1)[0] || 'none');
-  await inTab('staad_text', async () => { const p = await br.newPage(); await p.goto('file://' + stdF); }, async (np) => {
+  await inTab('staad_text', async () => { await br.newPage(); }, async (np) => {   // headless Chrome downloads a .std instead of showing it: the file's own text is set into a <pre>
+    await np.setContent('<!doctype html><meta charset="utf-8"><body style="margin:0"><pre>' + STD.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>');
     await np.evaluate(() => { document.documentElement.style.background = '#14161c'; document.body.style.background = '#14161c'; const pre = document.querySelector('pre'); pre.style.color = '#F3EEE8'; pre.style.fontSize = '15px'; pre.style.lineHeight = '1.35'; pre.style.margin = '14px'; pre.style.whiteSpace = 'pre'; });   // stated: the text file shown dark; the text is the file's, unchanged
     await backdropP(7, np).catch(() => { });
     const T = mkTab(np), lineRect = (from, nLines) => np.evaluate((from, nLines) => { const pre = document.querySelector('pre'), tn = pre.firstChild, t = tn.data; let i = from === 0 ? 0 : t.indexOf('\n' + from + '\n') + 1; if (from !== 0 && i === 0) return null; let e = i; for (let k = 0; k < nLines; k++) { const n = t.indexOf('\n', e); if (n < 0) { e = t.length; break; } e = n + 1; }
