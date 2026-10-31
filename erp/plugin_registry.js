@@ -46,6 +46,7 @@
   // It THROWS on a malformed version or range - the old parseVer returned [0,0,0] for garbage, so "[1.2,2)" silently meant "= 0.0.0".
   // Ranges: "*", "x.y.z" / "=x.y.z" (exact), ">=" ">" "<=" "<", and the OSGi two-sided intervals "[a,b)" "(a,b]" "[a,b]" "(a,b)". An absent range (undefined/null) means "*".
   var V = (typeof VersionRange !== 'undefined') ? VersionRange : (typeof require === 'function' ? require('../common/comm/semver_strict.js') : null);
+  var TK = (typeof TeamKeys !== 'undefined') ? TeamKeys : (typeof require === 'function' ? (function () { try { return require('../common/comm/team_keys.js'); } catch (e) { return null; } })() : null);   // optional: only a host that sets bundleTrust needs it
   if (!V) throw new Error('plugin_registry.js needs common/comm/semver_strict.js loaded first (window.VersionRange)');
   function parseVer(v) { var p = V.parse(v); return [p.major, p.minor, p.micro]; }
   function cmpVer(a, b) { return V.compare(a, b); }
@@ -73,7 +74,7 @@
     catch (e) { throw new Error('plugin ' + mf.id + ': ' + e.message); }
     // manifest.events - the bus grant (TEAM_REPLICATION_PLUGIN_STUDY §12.3): 'gate' (default, every bundle before Phase 2) or 'observe' (post-commit, read-only: the comm class)
     if (mf.events !== undefined && GRANTS.indexOf(mf.events) < 0) throw new Error('plugin ' + mf.id + ": manifest.events must be one of " + GRANTS.join('|') + ' (got ' + JSON.stringify(mf.events) + ')');
-    // `signature` is reserved but NOT enforced (no signing gate — see lane §Out of Scope).
+    // Signatures are judged by installBundle (§46.5 F6, Stage 2): when the host passes `bundleTrust`, an install needs a valid `signature` (see installBundle). A host that passes none installs as before.
     return true;
   }
 
@@ -292,6 +293,17 @@
         manifest = mod && mod.manifest;
       }
       validateManifest(manifest);
+      // §46.5 F6 (Stage 2): bundle signature gate. host.bundleTrust() -> {keys, threshold} | null turns it on; host.fetchBytes(url) lets the registry recompute the digest of what it is about to load.
+      if (typeof host.bundleTrust === 'function') {
+        var bt = host.bundleTrust();
+        if (bt) {
+          if (!TK) throw Object.assign(new Error('plugin ' + manifest.id + ': bundleTrust is set but team_keys.js is not loaded'), { code: 'bundle-no-verifier' });
+          var ldig = (url && typeof host.fetchBytes === 'function') ? await TK.sha256hex(await host.fetchBytes(url)) : null;
+          var bw = await TK.checkBundle(mod.signature || manifest.signature, manifest, bt, ldig);
+          console.log('§BUNDLE_SIG id=' + manifest.id + ' version=' + manifest.version + ' verdict=' + (bw || 'accepted') + ' digest=' + (ldig ? 'checked' : 'UNCHECKED (no url / fetchBytes)'));
+          if (bw) throw Object.assign(new Error('plugin ' + manifest.id + ': ' + bw), { code: bw });
+        }
+      }
       // engineVersion gate — the bundle declares the engine range it needs; host.engineVersion is the running one.
       if (manifest.engineVersion && host.engineVersion && !satisfies(host.engineVersion, manifest.engineVersion))
         throw new Error('plugin ' + manifest.id + ' requires engine ' + manifest.engineVersion +

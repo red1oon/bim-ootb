@@ -188,7 +188,7 @@ var SET12 = { kind: 'upcasters', op: 'CRUD_CREATE', steps: [{ from: 1, map: [{ a
   var M = [
     ['versions not passed to the store', 'adapter', ", versions: global.TeamVersions && global.TeamVersions.registry", '', ['M2', 'M4']],
     ['verifySet accepts everything', 'glue', 'async function verifySet(set) {', 'async function verifySet(set) { return null;', ['M4', 'M5']],
-    ['an empty trust list accepts a set', 'glue', 'if (!t || !t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', 'if (t && !t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', ['M5']],
+    ['an empty trust list accepts a set', 'glue', 'if (!t || !t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', 'if (!t) return null; if (!t.some(function (k) { return same(set.signer, k); })) return \'untrusted-signer\';', ['M5']],       // Stage 2: the quorum check now also refuses a null list, so the mutant must accept an EMPTY list at the guard itself
     ['stamp ignores the shape', 'adapter', 'if (!(v > 1)) return body;', 'if (false) return body;', ['M1']],
     ['indicator text blanked', 'glue', "text: parts.length ? '⚠ ' + parts.join(' · ') : ''", "text: ''", ['I2', 'I3']],
     ['mapping wording swapped', 'glue', "' for a translation rule from the team admin'", "' — update this app'", ['I3']],

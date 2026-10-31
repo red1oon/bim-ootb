@@ -19,6 +19,7 @@
 //   --size                @SIZE=<body id>,<x|y|w|d>,<metres> on the first plan sheet              (the user's number for one body side, §L10.9)
 //   --choice              a default the user changes, e.g. loops.snap_tol=0.1, column.type_name=
 //   --report              also write <out>/regulatory_report.html (implies --ifc; RR.5): the model's facts, its rule checks, load summary, bill and assumptions
+//   --impact              rank the used defaults by measured impact: the set judged again per option, Δ bill / Δ own weight / Δ bodies (§IMPACT lines; §D99 P2)
 //   --fact                a fact the model cannot give, for the report: --fact plot_area_m2=1200 --fact soil_kPa=150 --fact district=Dhaka (absent = "not stated")
 //   --ifc                 also write <out>/model.ifc (IFC4, typed bodies, via dxf2ifc.js + web-ifc: `require('web-ifc')`, else $WEB_IFC, else ~/bim-compiler/node_modules/web-ifc)
 // writes <out>/marked/<sheet>_marked.dxf (the settings sheets), verdict.json, bodies.json, ops.json; prints §CLI lines; exit 0 = the set qualifies, 2 = it does not.
@@ -28,7 +29,7 @@ const DxfParser = require('./lib/dxf-parser.js'), MK = require('./dxf2bim/dxf2ma
   B = require('./dxf2bodies.js'), SG = require('./dxf2suggest.js'), ST = require('./dxf2structure.js'), RG = require('./reg_report.js');
 
 function parseArgs(argv) {
-  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], fact: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false, report: false };
+  const a = { sheets: [], layer: [], datum: [], haxis: [], bodyz: [], size: [], pack: [], default: [], choice: [], exclude: [], fact: [], out: null, accept: false, set: null, level: null, ifc: false, complete: false, report: false, impact: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--sheets') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) a.sheets.push(argv[++i]); }
@@ -36,6 +37,7 @@ function parseArgs(argv) {
     else if (k === '--ifc') a.ifc = true;
     else if (k === '--report') { a.report = true; a.ifc = true; }   // RR.5: the Regulatory Report needs the model file
     else if (k === '--complete') a.complete = true;
+    else if (k === '--impact') a.impact = true;   // §D99 P2: rank the used defaults by what each option moves (bill, own weight, bodies)
     else if (['--out', '--set', '--level'].includes(k)) a[k.slice(2)] = argv[++i];
     else if (['--layer', '--datum', '--haxis', '--bodyz', '--size', '--pack', '--default', '--choice', '--exclude', '--fact'].includes(k)) a[k.slice(2)].push(argv[++i]);
     else throw new Error('unknown argument ' + k);
@@ -152,6 +154,7 @@ if (require.main === module) {
     const args = parseArgs(process.argv.slice(2)), res = run(args), bodies = write(res, path.resolve(args.out)), g = res.out.gate;
     if (args.ifc && g.ok) { const r = await writeIfc(res, path.resolve(args.out)); console.log('§CLI ifc seeded=' + r.seeded + ' typed=' + r.typed + ' coloured=' + r.coloured + ' psets=' + r.withPset + ' styles=' + r.styles + ' byClass=' + JSON.stringify(r.byClass) + ' storeys=' + JSON.stringify(r.storeys)); }
     if (args.report && g.ok) await writeReport(res, path.resolve(args.out), args);
+    if (args.impact && g.ok) impact(args);
     const by = {}; bodies.forEach(b => { const k = b.class; by[k] = (by[k] || 0) + 1; });
     console.log('§CLI result ok=' + g.ok + ' bodies=' + bodies.length + ' byClass=' + JSON.stringify(by) + ' left_out=' + (g.structure ? g.structure.left_out : '-') + ' out=' + path.resolve(args.out));
     process.exit(g.ok ? 0 : 2);
@@ -178,4 +181,14 @@ async function writeReport(res, dir, args) {
   out.log.forEach(l => console.log(l));
   return out;
 }
-module.exports = { run, write, parseArgs, writeIfc, writeReport };
+// §D99 P2: every option of every used default, through this CLI's own run() (the choice path a person uses), measured by the bill and the load summary
+function impact(args, log) {
+  const base = {}; (args.choice || []).forEach(c => { const i = c.indexOf('='); base[c.slice(0, i)] = c.slice(i + 1); });
+  const first = run(args, () => {}), R = first.out.gate.R;
+  if (!R) throw new Error('--impact: the set does not convert (gate not ok)');
+  return require('./dxf2impact.js').rank(R.defaults_table, base, ch => {
+    const r = run(Object.assign({}, args, { choice: Object.keys(ch).map(k => k + '=' + ch[k]) }), () => {}), G = r.out.gate.R;
+    return { bodies: G ? G.els.length : 0, total: r.bill ? r.bill.totals.amount : 0, kN: r.loadSummary ? r.loadSummary.total_kN : 0 };
+  }, log || (l => console.log(l)));
+}
+module.exports = { run, write, parseArgs, writeIfc, writeReport, impact };
