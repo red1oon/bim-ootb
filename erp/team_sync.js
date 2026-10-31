@@ -80,6 +80,9 @@
       laneOf: function (spec) { return lanes[String(spec.target.uu).toLowerCase()] || null; },
       read: function (c) { var d = c.roster.devices[c.self.kid]; if (!d) return []; var hr = hubRole(), me = 'p_' + String(d.person).toLowerCase();
         return hr == null ? ['hub', me] : String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr ? ['hub'] : [me]; },   // plan unreadable: both (never miss mail)
+      // TEAMWORK §45.11: who may hold the key of an audience. 'hub' = the hub devices; 'p_<person>' = that person's devices and the hub devices. Plan unreadable: own person only, never the hub.
+      holds: function (aud, kid, c) { var d = c.roster.devices[kid]; if (!d) return false; var hr = hubRole(), isHub = hr != null && String(c.roster.roleAt(kid, Infinity).ad_role_id) === hr;
+        if (aud === 'hub') return isHub; var m = /^p_(.+)$/.exec(String(aud)); return !!m && (isHub || String(d.person).toLowerCase() === m[1].toLowerCase()); },
       wantHead: function (kid, c) { var hr = hubRole(), d = c.roster.devices[kid], me = c.roster.devices[c.self.kid]; if (!d) return false; if (hr == null || !me) return true;
         return String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr || String(c.roster.roleAt(kid, Infinity).ad_role_id) === hr || d.person === me.person; }
     };
