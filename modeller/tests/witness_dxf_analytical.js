@@ -13,6 +13,7 @@
  *   A5 falsifier: move one beam 1 m in plan -> its two ends become dangling (they were joined), and the rise in the dangling count is printed with its cause
  *   A6 two runs (two full conversions) -> identical bytes for model.std and analytical.json
  *   A7 a set with no structure (empty els) -> refused, nothing written
+ * §D105: the model is built FROM THE IFC the converter writes (Dxf2Ifc -> the shared extractor -> Dxf2Analytical.fromDb -> build); every claim below is judged on that route, none weakened (P4 of W-ANALYTICAL-IFC).
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2).
  */
 'use strict';
@@ -22,15 +23,20 @@ const MK = process.env.SHED_MARKED || path.join(os.homedir(), 'Videos', 'dxf2bim
 const files = fs.existsSync(MK) ? fs.readdirSync(MK).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(MK, f)) : [];
 if (files.length !== 9) { console.log('MISSING input: the 9 CLI-marked shed sheets in ' + MK + ' (SHED_MARKED), found ' + files.length); process.exit(2); }
 let fail = 0, judged = 0; const ok = (n, c, i) => { judged++; console.log((c ? 'PASS ' : 'FAIL ') + n + (i ? '  ' + i : '')); if (!c) fail++; };
+(async () => {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'w_analytical_'));
 function convert(dir) { return C.run(C.parseArgs(['--sheets', ...files, '--out', dir, '--pack', 'pwd2024_bd', '--complete', '--analytical']), () => {}); }
-const r1 = convert(path.join(tmp, 'a')), R = r1.out.gate.R, els = R.els;
+const r1 = convert(path.join(tmp, 'a')), R = r1.out.gate.R;
 const values = {}, sources = {}; R.defaults_table.forEach(x => { values[x.key] = x.value; sources[x.key] = x.source; });
 const opts = { values, sources, LS };
-const model = AN.build(els, opts); model.log.forEach(l => console.log('  ' + l));
-const outDir = path.join(tmp, 'a'); fs.mkdirSync(outDir, { recursive: true }); C.writeAnalytical(r1, outDir);
+const WI = require('web-ifc'), api = new WI.IfcAPI(); await api.Init(); const SQL = await require('sql.js')(), Core = require(path.join(M, 'dxf2bim', 'ifc_extract_core.js'));
+const built = await C.buildIfc(r1), ifcBytes = new Uint8Array(built.bytes);
+const viaIfc = bytes => AN.fromIfc({ ifcBytes: bytes, WebIFC: WI, ifcApi: api, SQL, Core, LS, values, sources });
+const model = await viaIfc(ifcBytes), els = model.elements; model.log.forEach(l => console.log('  ' + l));
+const outDir = path.join(tmp, 'a'); fs.mkdirSync(outDir, { recursive: true }); await C.writeAnalytical(r1, outDir);
 const std = fs.readFileSync(path.join(outDir, 'model.std'), 'utf8'), js = fs.readFileSync(path.join(outDir, 'analytical.json'), 'utf8');
-console.log('  files: model.std ' + std.length + ' bytes, analytical.json ' + js.length + ' bytes, format ' + JSON.parse(js).format);
+console.log('  files: model.std ' + std.length + ' bytes, analytical.json ' + js.length + ' bytes, format ' + JSON.parse(js).format + '; IFC ' + ifcBytes.length + ' bytes, ' + els.length + ' elements read back');
+ok('A0 the input is the IFC: ' + els.length + ' elements read back from the extractor\'s tables, ' + model.input.evidence + ' with the evidence pset, the model has no DXF body behind it', els.length === R.els.length && model.input.evidence === els.length && !!model.elements[0].ifcGuid, '');
 
 // A1
 const lsRows = LS.compute(els, { values, sources }).rows, lsBy = {}; lsRows.forEach(r => { lsBy[r.guid] = r; });
@@ -89,14 +95,15 @@ const secOf = k => model.sections[k], dens = q => (q.material ? model.materials[
 const byG = {}; model.members.forEach(q => { (byG[q.guid] = byG[q.guid] || []).push(q); });
 const cls = {}; STRUCT.forEach(c => { cls[c] = { axis: 0, node: 0, ls: 0, n: 0 }; });
 const elBy = {}; els.forEach(e => { elBy[e.guid] = e; });
-const bad = [], beamOff = [], snapOver = [], memOver = [];
+const F32 = 1e-6;   /* the IFC's Float32 vertex store: ~1e-7 relative; a real difference (the 127 kN beam) is 1e1 */
+let maxRel = 0; const bad = [], beamOff = [], snapOver = [], memOver = [];
 Object.keys(byG).forEach(g => {
   const P = byG[g], q0 = P[0], c = cls[q0.class], a = secOf(q0.section).AX, d = dens(q0), e = elBy[g], L = P.reduce((s, q) => s + q.length, 0);
-  const mine = q0.axisLength * a * d, ls = lsBy[g].kN; c.n++; c.axis += mine; c.node += L * a * d; c.ls += ls;
+  const mine = q0.axisLength * a * d, ls = lsBy[g].kN; if (q0.class !== 'IfcMember') maxRel = Math.max(maxRel, Math.abs(mine - ls) / ls); c.n++; c.axis += mine; c.node += L * a * d; c.ls += ls;
   if (Math.abs(L - q0.axisLength) > 2 * model.maxShift + 1e-9) snapOver.push(q0.handle);
   const X = e.vertices.map(v => v[0]), Y = e.vertices.map(v => v[1]), d0 = Math.max(...X) - Math.min(...X), d1 = Math.max(...Y) - Math.min(...Y), d2 = e.z1 - e.z0;
-  if (q0.class === 'IfcColumn' && Math.abs(mine - ls) > 1e-9 * ls) bad.push('column ' + q0.handle);
-  if (q0.class === 'IfcBeam' && Math.abs(mine - ls) > 1e-9 * ls) {   // the Load Summary reads (w || bbox-y) x (d || bbox-z) x max(bbox-x, bbox-y): wrong for a beam along Y with no stated size
+  if (q0.class === 'IfcColumn' && Math.abs(mine - ls) > F32 * ls) bad.push('column ' + q0.handle);
+  if (q0.class === 'IfcBeam' && Math.abs(mine - ls) > F32 * ls) {   // the Load Summary reads (w || bbox-y) x (d || bbox-z) x max(bbox-x, bbox-y): wrong for a beam along Y with no stated size
     const w = e.size && e.size.w !== undefined ? Number(e.size.w.number) : NaN, dd = e.size && e.size.d !== undefined ? Number(e.size.d.number) : NaN, lsFormula = (isFinite(w) ? w : d1) * (isFinite(dd) ? dd : d2) * Math.max(d0, d1) * rcD;
     beamOff.push({ handle: q0.handle, mine, ls, lsFormula, alongY: d1 > d0, sized: isFinite(w) && isFinite(dd) });
   }
@@ -108,6 +115,7 @@ console.log('     snap bound: no body changes length by more than 2 x max end sh
 beamOff.forEach(b => console.log('     beam ' + b.handle + ' mine ' + b.mine.toFixed(3) + ' kN, Load Summary ' + b.ls.toFixed(3) + ' kN; the Load Summary formula (w||bbox-y) x (d||bbox-z) x max(bbox-x,bbox-y) gives ' + b.lsFormula.toFixed(3) + ' kN; along Y ' + b.alongY + ', size stated ' + b.sized));
 const lsBeamFixed = cls.IfcBeam.ls - beamOff.reduce((s, b) => s + b.ls - b.mine, 0), tot = k => STRUCT.reduce((s, c) => s + cls[c][k], 0);
 console.log('     TOTAL axis ' + tot('axis').toFixed(3) + ' kN | snapped ' + tot('node').toFixed(3) + ' kN | Load Summary ' + tot('ls').toFixed(3) + ' kN (' + beamOff.length + ' beam(s) the Load Summary mis-reads: without them ' + (tot('ls') - beamOff.reduce((s, b) => s + b.ls - b.mine, 0)).toFixed(3) + ' kN)');
+console.log('     largest column / beam body-by-body relative difference vs the Load Summary: ' + maxRel.toExponential(2) + ' (IFC Float32 limit ' + F32 + ')');
 ok('A4 self-weight: columns equal the Load Summary body by body (' + cls.IfcColumn.n + ' bodies, ' + cls.IfcColumn.axis.toFixed(3) + ' kN); beams equal the Load Summary body by body, NO exception (' + beamOff.length + ' differ; §D104 fixed the Y-beam width fallback); members within the cross-section diagonal of the bar length (axis ' + cls.IfcMember.axis.toFixed(3) + ' vs ' + cls.IfcMember.ls.toFixed(3) + ' kN); snap bounded by the shifts',
   bad.length === 0 && beamOff.length === 0 && memOver.length === 0 && snapOver.length === 0 && cls.IfcColumn.n === 96 && cls.IfcBeam.n === 35 && cls.IfcMember.n === 156,
   [bad, memOver, snapOver].map(x => x.length).join(',') + ' ' + lsBeamFixed.toFixed(1));
@@ -129,22 +137,23 @@ console.log('  A5 beam ' + (f5 && f5.e.handle) + ' moved 1 m by ' + (f5 && JSON.
 ok('A5 falsifier: moving one joined beam 1 m in plan leaves exactly its two ends dangling (0 -> 2) and the dangling count rises by 2 + ' + others + ' (other member ends that lost their only partner)', !!f5 && others >= 0 && cnt(f5.m2) === cnt(model) + 2 + others, '');
 
 // A6 determinism: a second full conversion, identical bytes
-const r2 = convert(path.join(tmp, 'b')); const dirB = path.join(tmp, 'b'); fs.mkdirSync(dirB, { recursive: true }); C.writeAnalytical(r2, dirB);
+const r2 = convert(path.join(tmp, 'b')); const dirB = path.join(tmp, 'b'); fs.mkdirSync(dirB, { recursive: true }); await C.writeAnalytical(r2, dirB);
 const std2 = fs.readFileSync(path.join(dirB, 'model.std'), 'utf8'), js2 = fs.readFileSync(path.join(dirB, 'analytical.json'), 'utf8');
 ok('A6 two conversions -> identical bytes (model.std ' + std.length + ', analytical.json ' + js.length + '); toStaad / toJSON of one model twice also identical', std === std2 && js === js2 && AN.toStaad(model) === AN.toStaad(model) && AN.toJSON(model) === AN.toJSON(model), '');
 
 // A7 refusal
 const empty = AN.build([], opts), fake = { out: { gate: { R: { els: [], defaults_table: R.defaults_table } } } }, dirC = path.join(tmp, 'c'); fs.mkdirSync(dirC, { recursive: true });
-const wr = C.writeAnalytical(fake, dirC); let threw = false; try { AN.toStaad(empty); } catch (e) { threw = true; }
+const wr = await C.writeAnalytical(fake, dirC); let threw = false; try { AN.toStaad(empty); } catch (e) { threw = true; }
 const noStruct = AN.build(els.filter(e => !STRUCT.includes(e['class'])), opts);
 ok('A7 a set with no structure is refused (' + empty.refused + '), toStaad throws, the CLI writes nothing (' + fs.readdirSync(dirC).length + ' files); a set with only walls / roof / fans is refused too', !!empty.refused && threw && wr.refused && fs.readdirSync(dirC).length === 0 && !!noStruct.refused, '');
 
-// A8 nothing guessed: no f'c on the drawing -> no elastic modulus for concrete + a finding per member; PINNED from the registry reaches the file
-const noFc = els.map(e => e.ifc && e.ifc.props && e.ifc.props.Note_fc_MPa ? Object.assign({}, e, { ifc: Object.assign({}, e.ifc, { props: Object.assign({}, e.ifc.props, { Note_fc_MPa: undefined }) }) }) : e), m8 = AN.build(noFc, opts);
+// A8 nothing guessed (through the IFC): no f'c in the IFC -> no elastic modulus for concrete + a finding per member; PINNED from the registry reaches the file
+const txt = Buffer.from(ifcBytes).toString('latin1'), noFcBytes = new Uint8Array(Buffer.from(txt.split("'Note_fc_MPa'").join("'Note_fc_GONE'"), 'latin1')), m8 = await viaIfc(noFcBytes);
 const pin = AN.build(els, { values: Object.assign({}, values, { 'analytical.support': 'PINNED' }), sources, LS }), pinStd = AN.toStaad(pin);
 const fcF = m8.findings.filter(f => f.code === 'fc_missing').length;
-ok('A8 no f\'c on the drawing: ' + fcF + ' findings, concrete materials ' + Object.keys(m8.materials).filter(k => /^CONC/.test(k)).length + ' (E never guessed), steel kept; analytical.support=PINNED -> ' + pin.supports.length + ' PINNED supports in the file',
+ok('A8 no f\'c in the IFC: ' + fcF + ' findings, concrete materials ' + Object.keys(m8.materials).filter(k => /^CONC/.test(k)).length + ' (E never guessed), steel kept; analytical.support=PINNED -> ' + pin.supports.length + ' PINNED supports in the file',
   fcF === 131 && Object.keys(m8.materials).filter(k => /^CONC/.test(k)).length === 0 && !!m8.materials.STEEL && pin.supports.every(s => s.type === 'PINNED') && /PINNED$/m.test(pinStd) && !/FIXED$/m.test(pinStd), 'fc findings ' + fcF);
 
 console.log((fail ? '§W-ANALYTICAL FAIL ' + fail : judged ? '§W-ANALYTICAL PASS ' + judged + '/0' : '§W-ANALYTICAL INCONCLUSIVE nothing judged'));
 process.exit(fail ? 1 : 0);
+})();

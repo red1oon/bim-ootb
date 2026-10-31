@@ -133,11 +133,21 @@
     return { bytes, seeded, typed, coloured, withPset, styles: AP.styles(), byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
   }
 
+  // §D105: the evidence pset also carries what a downstream reader needs and the tessellation cannot say: the body's own guid (SourceGuid), its stated base / top (Z0, Z1) and each numeric size the body states
+  // (Size_<key>, metres; the key's source stays in SizeBasis). A reader of the IFC never goes back to the drawing for them.
+  const SIZE_KEYS = ['x', 'y', 'w', 'd', 't', 'slope_deg'];
+  function evidence(e) {
+    const p = e.ifc && e.ifc.props; if (!p) return null;
+    const o = Object.assign({}, p); if (e.guid) o.SourceGuid = e.guid;
+    if (isFinite(Number(e.z0)) && isFinite(Number(e.z1)) && e.z0 !== undefined && e.z1 !== undefined) { o.Z0 = String(Number(e.z0)); o.Z1 = String(Number(e.z1)); }   /* the body's stated base / top: a sloped prism's tessellation does not say them */
+    SIZE_KEYS.forEach(k => { const v = e.size && e.size[k], n = v && typeof v === 'object' ? v.number : v; if (n !== undefined && n !== null && isFinite(Number(n))) o['Size_' + k] = String(Number(n)); });
+    return o;
+  }
   // the importer's `els` (Dxf2Bodies / toOps form) -> writer elements
   function fromEls(els, ST) {
     const elev = {}; (ST || []).forEach(s => { elev[s.name] = s.level; });
     return els.map((e, i) => ({ class: e.class, name: (e.ifc && e.ifc.type_name) || (e.class + ' ' + (i + 1)),   // unnamed: class + its 1-based order (the page's names are class + op id: the same when the set is the page's first convert)
-      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: e.ifc && e.ifc.props || null,
+      objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: evidence(e),
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
   return { build: build, buildingType: buildingType, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET };
