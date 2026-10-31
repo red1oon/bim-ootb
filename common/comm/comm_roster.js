@@ -354,7 +354,7 @@
     Object.keys(w.v).forEach(function (h) { verdict[h] = w.v[h]; });
     L.parked.forEach(function (h) { verdict[h] = { verdict: 'PARKED', reason: 'deps' }; });
     return { ok: stable, reason: stable ? 'ok' : 'unstable', genesis: gen.hash, walks: walks, devices: w.dev, persons: w.person, revokes: w.rev, verdicts: verdict,
-             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), plan: gen.env.body.params.plan === 'pos' ? 'pos' : 'office', planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, planTrustThreshold: w.trustT, anchor: w.anchor, setThreshold: w.setTrustT,
+             encrypted: w.epoch > 0, epoch: w.epoch, base: baseOf(gen.env.body.params.base), plan: gen.env.body.params.plan === 'pos' ? 'pos' : 'office', mailboxes: gen.env.body.params.mailboxes === 1, planTrust: w.trust, planTrustEpoch: w.trustEpoch, executors: w.exe, executorsEpoch: w.exeEpoch, planTrustThreshold: w.trustT, anchor: w.anchor, setThreshold: w.setTrustT,
              // §41.2 L2: the executor map in force for the op (kid, seq): the latest map whose publisher's frontier did not yet cover it - the same cut-off rule as roleAt. null = no map yet (legacy).
              exeAt: function (kid, seq) { var m = null; w.exeHist.forEach(function (e) { if ((e.from[kid] || 0) < seq) m = e.map; }); return m; }, exeHist: w.exeHist, setTrust: w.setTrust,
              // §46.6 S1: the shape floor in force for the op (kid, seq): per op type the highest raise whose publisher's frontier did not yet cover it - the same cut-off rule as exeAt / roleAt. {} = no floor (an unstamped raise, from = {}, covers every op).
