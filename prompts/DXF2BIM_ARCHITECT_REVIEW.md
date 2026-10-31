@@ -598,3 +598,29 @@ GB-1 (12"x12")"); one advisory, `left_out` 4, qualifies. **W-MARK-REFS 4/0.** Fi
 its bodies waited for a height) → advisories only on a set that converts and has a notes sheet; W-SHEET-RENDER SV3's falsifier read origin/main (now §D101) → pinned to `cb25ff14~1`;
 W-REG-REPORT-UI U7 compared a fixed CLI date with the page's today (failed after midnight) → dates masked. After the fixes: W-DXF-SHED 12/0, W-SHEET-RENDER 4/0, W-REG-REPORT-UI 7/0;
 the remaining FAILs are YP1 (BIMCompiler #277) and LT7 (the never-committed `library_building_types.json`).
+
+### §D103 SPEC (2026-11-01, session 16; owner: "Build the analytical model export as next step") — a starting analytical model from the converted set (STAAD.Pro text + open JSON)
+**Issue:** an engineer re-draws the frame by hand in STAAD / ETABS / SAP2000 from the 2D set (nodes, members, sections, supports) before any analysis. The converted model already holds every
+structural part with its drawn size and source; nothing hands it on.
+**Owner (pure, new):** `modeller/dxf2analytical.js` `Dxf2Analytical.build(els, opts) -> { nodes, members, supports, sections, materials, leftOut, findings, log }` + `toStaad(model) -> text` + `toJSON(model)`.
+- **Members** (centrelines): IfcColumn = its plan centre, z0..z1 (a stack of pieces = consecutive members sharing nodes); IfcBeam = the long axis of its box at the box's mid-height
+  (a stated convention: centroid axis); IfcMember = the axis of its prism (the two end faces' centres). **Not members, listed in `leftOut` with a reason:** IfcPlate (gusset: a connection,
+  not a member), IfcWall (non-structural brick panel: a load, v1 does not apply it), IfcSlab on grade (bears on the ground), IfcRoof sheet, IfcFan / IfcDoor / IfcCovering (loads, not members), IfcFooting (becomes a SUPPORT).
+- **Nodes:** member ends merged within `analytical.node_snap` (new registry row, metres, kind guess, basis "ends closer than this are one joint"); a member end that lands on another member's
+  span within the snap is a joint there (that member is split). A column base on a footing's top face = a **support**, type from new registry row `analytical.support` (options FIXED | PINNED,
+  default FIXED, kind guess, basis "a footing is assumed to restrain the column base; the engineer confirms"). Coordinates in metres, Z up (STAAD `SET Z UP`).
+- **Sections:** concrete rectangles from the body's stated/drawn size (`size.x`/`size.y` for columns; beam width × depth from its size or box) → STAAD `PRIS YD .. ZD ..`; steel angles from the label
+  through LoadSummary's `angleOf` (area, and the I's computed from the legs and thickness: show the formula in a comment) → `PRIS AX .. IY .. IZ ..`; an unlabelled member takes LoadSummary's `assumedSection`
+  and is flagged `assumed` (same rule as the Load Summary); a member with no section at all → listed in findings, not given one.
+- **Materials:** concrete E = 4700·√f'c MPa with f'c from the body's `Note_fc_MPa` (the drawing's note; ACI 318-19 §19.2.2.1 — cite), density from `load.unit_weight.concrete`; steel E 200 GPa,
+  density `load.unit_weight.steel` (cite the registry rows). No f'c stated → E left out + finding, never guessed.
+- **Loads (v1):** one load case `DEAD` = `SELFWEIGHT Z -1` only (STAAD computes it from sections × density). Walls, roof sheet, fans etc. are NOT applied in v1: listed. No live / wind / seismic
+  (the engineer's), stated in the file header.
+- **Findings (never blocking):** dangling member ends (an end joined to nothing and not a support), members shorter than the snap, sections assumed, f'c missing.
+- **Outputs:** CLI `--analytical` writes `<out>/model.std` and `<out>/analytical.json` (format `dxf2bim-analytical/1`); Modeller Export menu row "Analytical model (STAAD)…" downloads `model.std`
+  (lazy-load the module like `reg_report_ui.js`). The .std header states: generated from the drawings, every assumption listed, not a design, the engineer reviews supports, releases, sections and loads.
+**Witness W-ANALYTICAL (claim first):** A1 every IfcColumn / IfcBeam / IfcMember with a section becomes ≥ 1 member and every other class is in `leftOut` with its reason (counts printed);
+A2 joints: each member end is a support, shared with another member, or a listed dangling end — print the dangling count and their sheets/handles (expect the shed's known §D100 facts to show:
+do not hide them); A3 the .std parses back with the witness's own small reader (JOINT COORDINATES / MEMBER INCIDENCES / MEMBER PROPERTY / SUPPORTS counts = the model's); A4 self-weight
+cross-check: Σ length × area × density over the exported members vs LoadSummary's kN for the same bodies, within the stated geometric difference (centreline length vs body length: print both, no fudge);
+A5 falsifier: move one beam 1 m in plan → its two ends become dangling (count rises by 2) ; A6 deterministic: two runs → identical bytes; A7 a set with no structure (empty els) → refused, nothing written.
