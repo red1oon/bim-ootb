@@ -14,6 +14,7 @@
  *                  same marked shed ranks as the CLI: same active keys in order, same top option and deltas per row, same inert set.
  *   I6 THE PAGE  — the real Modeller headless: open, Complete, Convert; no §IMPACT line before the click; Element defaults ▸ Measure impact with pwd2024_bd -> the rendered ranked rows
  *                  (order, option, Δ bill) = the CLI's; the collapsed inert line holds the CLI's inert keys; a later choice marks it stale; 0 page errors. BROWSER=0 skips (printed).
+ *   I8 (U3) a setting whose options move the bill by 0 but the weight by 0.06 kN shows the option that moves the weight, not the first option (fixture; before U3: the first, 0.00 kN).
  *   I7 FALSIFIER — pageRun with the choice dropped (sabotage) does not match the CLI (I5's comparison goes RED on it).
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> §SKIP.
  */
@@ -58,6 +59,10 @@ const P5 = quiet(() => Z.rank(R0.out.gate.R.defaults_table, {}, Z.pageRun(D, R0.
 ok('I5 PAGE RUN Dxf2Impact.pageRun ranks as the CLI (' + P5.active.length + ' active, ' + P5.inert.length + ' inert)', sig(P5) === cliSig, sig(P5) === cliSig ? '' : 'page ' + sig(P5).slice(0, 300) + ' | cli ' + cliSig.slice(0, 300));
 const run7 = Z.pageRun(D, R0.eff), P7 = quiet(() => Z.rank(R0.out.gate.R.defaults_table, {}, () => run7({})));
 ok('I7 FALSIFIER pageRun with the choice dropped does not match the CLI (I5 can fail)', sig(P7) !== cliSig, 'sabotage active=' + P7.active.length);
+// I8 (U3): the shown option moves something when anything moves
+{ const tb = [{ key: 'x.k', value: 'base', source: 'default', used: true, options: ['base', 'A', 'B'] }];
+  const run = c => ({ bodies: 10, total: 1000, kN: c['x.k'] === 'B' ? 5.06 : 5 }), X = Z.rank(tb, {}, run), row = X.rows[0];
+  ok('I8 0 BDT on every option but 0.06 kN at B: the row is active and shows ' + row.top.option + ' (' + row.top.dKN.toFixed(2) + ' kN), not the first option', !row.inert && row.top.option === 'B' && Math.abs(row.top.dKN - 0.06) < 1e-9, ''); }
 // I6: the real page
 if (process.env.BROWSER === '0' || files.length !== 9) { console.log('§IMPACT_PAGE_SKIP ' + (files.length !== 9 ? 'marked sheets missing' : 'BROWSER=0') + ' — I6 not judged'); done(); }
 else page6().then(() => done(), e => { ok('I6 THE PAGE', false, 'crash ' + String(e && e.message || e).slice(0, 200)); done(); });

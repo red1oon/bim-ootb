@@ -8,6 +8,7 @@
 //   SV3 (§D101, owner: "I see thin stripes. Dimension failure?") the raw shed's 147 DIMENSIONs carry no block name: every one is drawn (its *D block found by its definition points, or, with no
 //       block, from those points + its DIMSTYLE), dim_unmatched 0, each sheet draws dimension parts; falsifier: the module before §D101 (D101_BASE_REF, default the parent of the main commit that holds it) draws 0 parts.
 //   SV4 (§D101) no DXF special code (%%c / %%d / %%p ...) is left in any drawn string; the DETAILS sheet's Ø count = its %%c count; falsifier: the module before §D101 leaves them.
+//   SV5 (U4) a DIMENSION drawn from its own points whose DIMSTYLE is not in the file: lines drawn, value only if stated literally, else no text + stats.dim_style_missing (before U4: AutoCAD defaults, '4.0000').
 // Inputs: SHED_RAW_DIR (the 9 raw shed sheets; absent -> MISSING input) and the Duplex db (argv[2] or ~/.cache/dxf2bim/db/DXARC.db, §D79).
 // usage: SHED_RAW_DIR=<dir> NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_sheet_render.js [DXARC.db]
 'use strict';
@@ -48,4 +49,14 @@ const det = per.find(q => /DETAILS/i.test(q.f));
 ok('SV4 no DXF special code left in a drawn string (' + tot('pct') + '; before §D101 ' + tot('prePct') + '); DETAILS diameter signs ' + (det && det.dia) + ' = its %%c codes ' + (det && det.codes),
   tot('pct') === 0 && tot('prePct') > 0 && det && det.codes > 0 && det.dia === det.codes, '');
 fs.rmSync(tmp, { recursive: true, force: true });
+{ // SV5 (U4) fixtures: one linear DIMENSION with no block, from (0,0) to (4,0), dimension line at y = 1
+  const dxf = (style, txt, withTable) => ['0', 'SECTION', '2', 'TABLES'].concat(withTable ? ['0', 'DIMSTYLE', '2', 'Standard', '271', '2', '277', '2', '140', '2.5', '40', '1'] : [], ['0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES',
+    '0', 'DIMENSION', '8', 'Dim', '3', style, '1', txt, '70', '0', '10', '0', '20', '1', '13', '0', '23', '0', '14', '4', '24', '0', '0', 'ENDSEC', '0', 'EOF']).join('\n') + '\n';
+  const run = t => { const r = V.toDrawList(V.parse(t)); return { lines: r.list.filter(d => d.k === 'line').length, texts: r.list.filter(d => d.k === 'text').map(d => d.s), miss: r.stats.dim_style_missing || 0 }; };
+  const a = run(dxf('Standard', '', true)), b = run(dxf('NOPE', '', true)), c = run(dxf('NOPE', "10'-0\"", true)), preU4p = path.join(os.tmpdir(), 'dxf_sheet_view_preU4_' + process.pid + '.js');
+  fs.writeFileSync(preU4p, cp.execFileSync('git', ['-C', ROOT, 'show', (process.env.U4_BASE_REF || '6e0abbeb') + ':viewer/dxf_sheet_view.js']));   // main before U4 (a main commit: survives the squash, landmine g)
+  const P4 = require(preU4p), pre = P4.toDrawList(P4.parse(dxf('NOPE', '', true))).list.filter(d => d.k === 'text').map(d => d.s); fs.rmSync(preU4p, { force: true });
+  console.log('§SHEET-DIMSTYLE present ' + JSON.stringify(a) + ' | missing ' + JSON.stringify(b) + ' | missing+literal ' + JSON.stringify(c) + ' | before U4 missing -> ' + JSON.stringify(pre));
+  ok('SV5 style present -> "' + a.texts[0] + '"; style missing -> ' + b.lines + ' lines, no text, counted ' + b.miss + ' (before U4: ' + JSON.stringify(pre) + '); missing + literal -> "' + c.texts[0] + '", counted ' + c.miss,
+    a.texts[0] === '4.00' && a.miss === 0 && b.lines === 3 && b.texts.length === 0 && b.miss === 1 && c.texts[0] === "10'-0\"" && c.miss === 0 && pre[0] === '4.0000', ''); }
 console.log('§W-SHEET-RENDER ' + (fails ? 'FAIL' : 'PASS')); process.exit(fails ? 1 : 0);

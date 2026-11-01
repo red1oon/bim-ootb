@@ -20,16 +20,6 @@
   function mean(P) { var s = [0, 0, 0]; P.forEach(function (p) { s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; }); return [s[0] / P.length, s[1] / P.length, s[2] / P.length]; }
   function numOf(v) { return v && typeof v === 'object' ? Number(v.number) : Number(v); }
   function extent(P, u) { var lo = Infinity, hi = -Infinity; P.forEach(function (p) { var d = dot(p, u); if (d < lo) lo = d; if (d > hi) hi = d; }); return hi - lo; }
-  // the long axis of a prism: power iteration on the vertex covariance (deterministic start); the two end centres are the means of the vertices on either side of the mid projection
-  function axisOf(P) {
-    var c = mean(P), C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    P.forEach(function (p) { var d = sub(p, c); for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) C[i][j] += d[i] * d[j]; });
-    var u = [1, 1, 1];
-    for (var k = 0, ITER = 60; k < ITER; k++) { var w = [0, 1, 2].map(function (i) { return C[i][0] * u[0] + C[i][1] * u[1] + C[i][2] * u[2]; }), n = Math.hypot(w[0], w[1], w[2]); if (!(n > 0)) break; u = [w[0] / n, w[1] / n, w[2] / n]; }
-    var pr = P.map(function (p) { return dot(sub(p, c), u); }), lo = Math.min.apply(null, pr), hi = Math.max.apply(null, pr), mid = (lo + hi) / 2;
-    var A = P.filter(function (p, i) { return pr[i] <= mid; }), B = P.filter(function (p, i) { return pr[i] > mid; });
-    return { a: mean(A), b: mean(B), u: u };
-  }
   // an angle's second moments about its own centroidal axes, parallel to the legs: two rectangles (leg a x t, then (b - t) x t); n angles = n x one (the gap between a pair is not drawn)
   function angleProps(A) {
     var a = A.a, b = A.b, t = A.t, a1 = a * t, a2 = (b - t) * t, ar = a1 + a2, yb = (a1 * t / 2 + a2 * (t + b) / 2) / ar, xb = (a1 * a / 2 + a2 * t / 2) / ar;
@@ -81,11 +71,11 @@
         A = [xy[0], xy[1], e.z0]; B = [xy[0], xy[1], e.z1];
         sec = { kind: 'rect', YD: isFinite(sy) ? sy : by, ZD: isFinite(sx) ? sx : bx, from: isFinite(sx) && isFinite(sy) ? 'the body\'s stated size' : 'the body\'s box', assumed: false };
       } else {
-        var ax = axisOf(P); A = ax.a; B = ax.b;
-        if (c === 'IfcBeam') {
-          var h = Math.hypot(ax.u[0], ax.u[1]), pw = h > 0 ? [-ax.u[1] / h, ax.u[0] / h, 0] : [1, 0, 0], sw = e.size && e.size.w !== undefined ? numOf(e.size.w) : NaN, sd = e.size && e.size.d !== undefined ? numOf(e.size.d) : NaN;
-          sec = { kind: 'rect', YD: isFinite(sd) ? sd : e.z1 - e.z0, ZD: isFinite(sw) ? sw : extent(P, pw), from: isFinite(sw) && isFinite(sd) ? 'the body\'s stated size' : 'the body\'s box (width across the axis, depth = height)', assumed: false };
+        if (c === 'IfcBeam') {   /* U2: the beam's axis and section are LoadSummary.beamSection's (the one rule the Load Summary weighs with) */
+          var bs = LS.beamSection(e); A = bs.axis.a; B = bs.axis.b;
+          sec = { kind: 'rect', YD: bs.depth, ZD: bs.width, from: bs.stated ? 'the body\'s stated size' : 'the body\'s box (width across the axis, depth = height)', assumed: false };
         } else if (row.section) {
+          var ax = LS.axisOf(P); A = ax.a; B = ax.b;
           sec = { kind: 'angle', A: row.section, label: row.assumed ? row.sectionFrom : (e.ifc && e.ifc.type_name) || '', from: row.assumed ? 'assumed: ' + row.sectionFrom : 'the member\'s label', assumed: !!row.assumed };
         } else why2 = 'no section drawn, none assumed (' + (row.missing || 'section size not drawn') + ')';
       }
@@ -257,5 +247,5 @@
     m.log.unshift(TAG + ' input ifc elements=' + m.input.elements + ' withGeometry=' + m.input.withGeometry + ' withEvidence=' + m.input.evidence);
     return m;
   }
-  return { build: build, fromDb: fromDb, fromIfc: fromIfc, toStaad: toStaad, toJSON: toJSON, FORMAT: FORMAT, axisOf: axisOf, angleProps: angleProps };
+  return { build: build, fromDb: fromDb, fromIfc: fromIfc, toStaad: toStaad, toJSON: toJSON, FORMAT: FORMAT, angleProps: angleProps };
 });

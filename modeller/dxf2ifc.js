@@ -55,7 +55,7 @@
       api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCSTYLEDITEM, item, [cache[key]], null)); return true;
     }
     function pset(prod, props) {
-      const names = Object.keys(props || {}).filter(k => props[k] !== '' && props[k] != null).sort(); if (!names.length) return false;
+      const names = written(props); if (!names.length) return false;
       const hp = names.map(k => api.CreateIfcEntity(mID, T.IFCPROPERTYSINGLEVALUE, c.label(k), null, api.CreateIfcType(mID, T.IFCTEXT, String(props[k])), null));
       const ps = api.CreateIfcEntity(mID, T.IFCPROPERTYSET, c.gid(3000000 + 2 * n), null, c.label(EVIDENCE_PSET), null, hp); api.WriteLine(mID, ps);
       api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCRELDEFINESBYPROPERTIES, c.gid(3000000 + 2 * n + 1), null, null, null, [prod], ps)); n++; return true;
@@ -133,6 +133,8 @@
     return { bytes, seeded, typed, coloured, withPset, styles: AP.styles(), byClass, materials: Object.keys(matProducts).sort(), proxyTyped: proxy, storeys: stList.map(s => [s.e.Name && s.e.Name.value, s.elev, s.products.length]) };
   }
 
+  // the pset's property names as the file carries them: an empty or null value is not written; sorted (U1: the Properties panel shows exactly these)
+  function written(props) { return Object.keys(props || {}).filter(k => props[k] !== '' && props[k] != null).sort(); }
   // §D105: the evidence pset also carries what a downstream reader needs and the tessellation cannot say: the body's own guid (SourceGuid), its stated base / top (Z0, Z1) and each numeric size the body states
   // (Size_<key>, metres; the key's source stays in SizeBasis). A reader of the IFC never goes back to the drawing for them.
   const SIZE_KEYS = ['x', 'y', 'w', 'd', 't', 'slope_deg'];
@@ -150,5 +152,5 @@
       objectType: e.ifc && e.ifc.type_name || null, predefined: e.ifc && e.ifc.PredefinedType || null, material: e.ifc && e.ifc.material || null, colour: e.ifc && e.ifc.colour || null, props: evidence(e),
       storey: e.storey, storey_elev: elev[e.storey], vertices: e.vertices, faces: e.faces }));
   }
-  return { build: build, buildingType: buildingType, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET };
+  return { build: build, buildingType: buildingType, fromEls: fromEls, guid: guid, appearance: appearance, openingAttrs: openingAttrs, bboxOf: bboxOf, fixHeader: fixHeader, EVIDENCE_PSET: EVIDENCE_PSET, written: written };
 });
