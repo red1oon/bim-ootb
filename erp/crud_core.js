@@ -1316,7 +1316,7 @@
     var rec = { table: String(table || '').toLowerCase(), id: id == null ? null : id, vals: vals, cols: cols,
                 tipSnapshot: opts.tipSnapshot || opts.baseline || null, ts: opts.ts || 0, actor: opts.actor || null };
     try { storage.setItem(key, JSON.stringify(rec)); } catch (e) { return null; }
-    console.log('§DRAFT-PUT key=' + key + ' cols=' + cols.join(',') + ' (private buffer, NO official dot)');
+    console.log('§DRAFT-PUT key=' + key + ' cols=' + cols.join(',') + (opts.quiet ? ' quiet=1' : '') + ' (private buffer, NO official dot)');
     return rec;
   }
   function draftGet(storage, table, id) {

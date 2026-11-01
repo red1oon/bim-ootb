@@ -53,7 +53,66 @@
   // buffer the unsaved typing for (table,id) WITHOUT committing an official op. Cleared by closeForm. _draftSeq is
   // a monotonic ts (no Date.now — the draft buffer is not the op-log but we keep determinism anyway).
   var _formCtx = null, _draftSeq = 0;
-  function _draftStore() { try { return (typeof localStorage !== 'undefined') ? localStorage : null; } catch (e) { return null; } }
+  function _draftStore() { return _durStore(); }
+  // ── §52.1a (d) DURABLE MIRROR (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §52.1a — Witness: W-RESUME-AS-IT-WAS R1a).
+  //   MEASURED: Chromium had NOT written localStorage to disk 1 s after typing — a SIGKILL then lost the draft (run of
+  //   2026-11-02); an IndexedDB commit survives a 200 ms kill (W-POWER-CUT E1, 3/3). So the draft (erpdraft:*) and the
+  //   resume (erpresume:*) keys are written THROUGH to an IndexedDB mirror; localStorage stays the synchronous read path
+  //   Item 1 already uses. On boot the mirror is copied back over localStorage (the mirror is the newer copy after a
+  //   crash), except an erpresume entry whose tab closed CLEANLY (its localStorage tombstone erpresume-closed:<tab>,
+  //   written on pagehide, is flushed by a normal quit even when the last IndexedDB delete is not).
+  var _DUR = { db: null, q: [], ready: null, done: false };
+  function _durMirrored(k) { return typeof k === 'string' && (k.indexOf('erpdraft:') === 0 || k.indexOf('erpresume:') === 0); }
+  function _durTx(fn) { if (_DUR.db) { try { var tx = _DUR.db.transaction('kv', 'readwrite'); fn(tx.objectStore('kv')); } catch (e) {} } else _DUR.q.push(fn); }
+  var _durLS = null;
+  function _durStore() {
+    if (_durLS) return _durLS;
+    var ls = null; try { ls = (typeof localStorage !== 'undefined') ? localStorage : null; } catch (e) {}
+    if (!ls) return null;
+    _durLS = {
+      getItem: function (k) { return ls.getItem(k); },
+      setItem: function (k, v) { ls.setItem(k, v); if (_durMirrored(k)) _durTx(function (os) { os.put(String(v), k); }); },
+      removeItem: function (k) { ls.removeItem(k); if (_durMirrored(k)) _durTx(function (os) { os['delete'](k); }); },
+      key: function (i) { return ls.key(i); },
+      get length() { return ls.length; },
+      raw: ls
+    };
+    return _durLS;
+  }
+  function _durInit() {
+    if (_DUR.ready) return _DUR.ready;
+    _DUR.ready = new Promise(function (resolve) {
+      var t0 = (typeof performance !== 'undefined' ? performance.now() : 0), ls = _durStore() && _durStore().raw;
+      var finish = function (n, restored, closed) {
+        _DUR.done = true; var q = _DUR.q; _DUR.q = []; q.forEach(function (fn) { _durTx(fn); });
+        console.log('§DURABLE-KV hydrate mirror=' + n + ' restored=' + restored + ' skippedClosed=' + closed + ' ms=' + Math.round((typeof performance !== 'undefined' ? performance.now() : 0) - t0) + (_DUR.db ? '' : ' (no IndexedDB — localStorage only)'));
+        resolve();
+      };
+      if (!ls || typeof indexedDB === 'undefined') { finish(0, 0, 0); return; }
+      var rq; try { rq = indexedDB.open('erp_durable_kv', 1); } catch (e) { finish(0, 0, 0); return; }
+      rq.onupgradeneeded = function () { try { rq.result.createObjectStore('kv'); } catch (e) {} };
+      rq.onerror = function () { finish(0, 0, 0); };
+      rq.onsuccess = function () {
+        _DUR.db = rq.result;
+        var n = 0, restored = 0, closed = 0, tx = _DUR.db.transaction('kv', 'readwrite'), os = tx.objectStore('kv');
+        var cur = os.openCursor();
+        cur.onsuccess = function () {
+          var c = cur.result; if (!c) return;
+          var k = String(c.key), v = c.value; n++;
+          if (k.indexOf('erpresume:') === 0 && ls.getItem('erpresume-closed:' + k.slice(10))) { c['delete'](); ls.removeItem('erpresume-closed:' + k.slice(10)); ls.removeItem(k); closed++; }
+          else if (ls.getItem(k) !== v) { try { ls.setItem(k, v); restored++; } catch (e) {} }
+          c['continue']();
+        };
+        tx.oncomplete = function () {   // tombstones mean something only to this hydrate
+          try { for (var i = ls.length - 1; i >= 0; i--) { var tk = ls.key(i); if (tk && tk.indexOf('erpresume-closed:') === 0) ls.removeItem(tk); } } catch (e) {}
+          finish(n, restored, closed);
+        };
+        tx.onerror = function () { finish(n, restored, closed); };
+      };
+    });
+    return _DUR.ready;
+  }
+  if (typeof window !== 'undefined') _durInit();
   var ICONS = [
     { verb: 'create', glyph: '＋', cls: 'new',  title: 'New' },
     { verb: 'view',   glyph: '👁', cls: 'view', title: 'View data' },
@@ -536,7 +595,8 @@
   // NEVER become an official dot or leak to other docs (they read the committed tip). On leave we refresh a private
   // buffer + an amber dirty-pip (distinct from committed dots); on return the form DEFAULTS to the saved tip and the
   // pip lets the user OPT IN to restore their typing. Witness: W-DRAFT-RESTORE-LIVE. Engine: W-DRAFT-RESTORE 14/14.
-  function _bufferDraft() {
+  function _bufferDraft(bopts) {
+    var quiet = !!(bopts && bopts.quiet === true);   // §52.1a (a): the while-typing buffer — no amber pip while working
     if (!_formCtx || _formCtx.verb !== 'update') return null;
     var st = _draftStore(); if (!st) return null;
     var vals = gatherVals(_formCtx.e);
@@ -547,10 +607,51 @@
     //   so an untouched inline open now buffers NOTHING. The modal path keeps the raw baseline (unchanged).
     var baseDraft = (_formCtx.inline && _inlineBaseline) ? _inlineBaseline : _formCtx.baseline;
     var rec = draftPut(st, _formCtx.e.key, _formCtx.id, vals,
-      { baseline: baseDraft, tipSnapshot: baseDraft, ts: ++_draftSeq });
-    if (rec) _setDraftPip(_formCtx.e.key, _formCtx.id, rec.cols);
+      { baseline: baseDraft, tipSnapshot: baseDraft, ts: ++_draftSeq, quiet: quiet });
+    if (rec) { if (!quiet) _setDraftPip(_formCtx.e.key, _formCtx.id, rec.cols); }   // quiet never touches the pip (neither raises nor drops it)
     else _clearDraftPip(_formCtx.e.key, _formCtx.id);   // clean leave → strand no stale pip
     return rec;
+  }
+  // ── §52.1a RESUME-AS-IT-WAS (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §52.1a — Witness: W-RESUME-AS-IT-WAS).
+  // (a) the while-typing buffer: a hang/crash fires no leave event, so the edit form also buffers its typing QUIETLY
+  //   (no pip) 400 ms after typing pauses, capped at 1 s after the first unbuffered change (continuous typing must not
+  //   postpone it forever — the flaw W-POWER-CUT measured in the kernel's 2 s debounce). Save/Ignore/revert still own it.
+  var _qbT = 0, _qbFirst = 0;
+  function _scheduleQuietBuffer() {
+    if (!_formCtx || _formCtx.verb !== 'update') return;
+    var now = Date.now(); if (!_qbT) _qbFirst = now;
+    var wait = Math.max(0, Math.min(400, _qbFirst + 1000 - now));
+    if (_qbT) clearTimeout(_qbT);
+    _qbT = setTimeout(function () { _qbT = 0; try { _bufferDraft({ quiet: true }); } catch (e) {} }, wait);
+  }
+  function _cancelQuietBuffer() { if (_qbT) { clearTimeout(_qbT); _qbT = 0; } }
+  // (c) the resume: the host arms (table,id) after an UNCLEAN exit; when THAT edit form mounts, its draft is applied as
+  //   ordinary unsaved changes (fields filled, Save/Ignore lit, legacy's own unsaved mark) — no dialog, no pip. If the
+  //   record moved since the draft was typed (draftDrift) nothing is applied: Item 1's opt-in pip is offered instead
+  //   (the generic save path has no ReQuery check yet — §52.1a finding (2) — so applying would clobber silently).
+  var _resumeArm = null;
+  function armResume(table, id) {
+    _resumeArm = table == null ? null : { table: String(table).toLowerCase(), id: String(id), until: Date.now() + 20000, applied: 0 };
+    if (_resumeArm) console.log('§RESUME armed table=' + _resumeArm.table + ' id=' + _resumeArm.id);
+  }
+  function _tryResume(e, id) {
+    var a = _resumeArm; if (!a) return false;
+    if (Date.now() > a.until) { _resumeArm = null; console.log('§RESUME applied=0 table=' + a.table + ' id=' + a.id + ' reason=not-found (form never mounted)'); return false; }
+    if (a.table !== String(e.key).toLowerCase() || a.id !== String(id)) return false;   // another form on the way (e.g. the header before its line)
+    // The arm stays for its window, not one mount: after login the page re-draws the landed form more than once (measured:
+    //   3 mounts of the same record within ~2 s of the zoom), and each re-draw starts from the saved tip.
+    var st = _draftStore(), d = st ? draftGet(st, e.key, id) : null;
+    if (!d || !d.cols || !d.cols.length) { _resumeArm = null; if (!a.applied) console.log('§RESUME applied=0 table=' + a.table + ' id=' + a.id + ' reason=no-draft'); return false; }
+    var drift = draftDrift(d, _inlineBaseline || _formCtx.baseline);
+    if (drift.drifted) { _resumeArm = null; console.log('§RESUME applied=0 table=' + a.table + ' id=' + a.id + ' cols=' + d.cols.join(',') + ' reason=drift(' + drift.cols.join(',') + ')'); return false; }
+    (_formCtx.e.fields || []).forEach(function (f) {
+      if (!Object.prototype.hasOwnProperty.call(d.vals || {}, f.col)) return;
+      var el = fhost.querySelector('[data-col="' + f.col + '"]'); if (el) _setVal(el, d.vals[f.col]);
+    });
+    try { applyAdLogic(_formCtx.e); } catch (er) {}
+    a.applied++;
+    console.log('§RESUME applied=1 table=' + a.table + ' id=' + a.id + ' cols=' + d.cols.join(',') + ' reason=ok' + (a.applied > 1 ? ' remount=' + a.applied : ''));
+    return true;
   }
   // offer the restore pip when reopening a form that has a buffered draft (default view stays the saved tip).
   function _offerDraftRestore(e, id) {
@@ -1433,14 +1534,14 @@
     // baseline = the values AS RENDERED (populateRefs picks the selected option, fieldInput normalizes dates/numbers),
     //   so a freshly-mounted form reads CLEAN — dirty is a true user delta, not a render-normalization artifact.
     _inlineBaseline = gatherVals(e);
-    host.addEventListener('input', function () { applyAdLogic(e); _refreshInlineDirty(); });
+    host.addEventListener('input', function () { applyAdLogic(e); _refreshInlineDirty(); _scheduleQuietBuffer(); });
     host.addEventListener('change', function (ev) {
       applyAdLogic(e);
       // §P3 — a DEPENDENT lookup refresh: changing @C_BPartner_ID@ must re-narrow C_BPartner_Location_ID.
       // valRuleOnly, because a full re-run would reset every list select to its render-time data-cur.
       populateRefs(e, orig, { valRuleOnly: true });
       { var el = ev.target && ev.target.closest ? ev.target.closest('[data-col]') : null; var col = el ? el.getAttribute('data-col') : null; if (col) _coFieldChange(e, col); }   // §CP create AND edit
-      _refreshInlineDirty();
+      _refreshInlineDirty(); _scheduleQuietBuffer();
     });
     // Save validates + diffs against the POST-RENDER baseline (the true user delta) — so untouched fields that the
     //   spec/render handles imperfectly (a readonly fk select that fell to another option, a string-coded fk) never
@@ -1470,7 +1571,8 @@
     wire('copy', function () { if (_inlineOpts && typeof _inlineOpts.onCopy === 'function') _inlineOpts.onCopy(); });
     wire('delete', function () { _inlineConfirmDelete(e, id); });
     _formCtx = { verb: verb, e: e, id: id, baseline: orig || {}, inline: true };
-    if (verb === 'update') _offerDraftRestore(e, id);
+    _cancelQuietBuffer();
+    if (verb === 'update' && !_tryResume(e, id)) _offerDraftRestore(e, id);
     _refreshInlineDirty();
     console.log('§INPLACE-' + (verb === 'create' ? 'NEW' : 'EDIT') + ' table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' verb=' + verb + ' fields=' + (e.fields || []).length + ' mount=inline (no modal, no ✎ Edit)');
   }
@@ -1478,6 +1580,7 @@
   //   a CREATE (a not-yet-saved new record) the whole record is thrown away (auto-discard of an untouched/abandoned New).
   function ignoreInline(verb) {
     if (!_inlineHost || !_formCtx) return;
+    _cancelQuietBuffer();
     var v = verb || _formCtx.verb;
     if (v === 'create') {
       console.log('§INPLACE-IGNORE table=' + _formCtx.e.key + ' verb=create discarded=new-record (nothing committed)');
@@ -1869,6 +1972,7 @@
   // closeForm(opts) — opts.saved===true after a committed Save: clear the draft (it's now official), no buffering.
   // A plain close/cancel/nav (or an Event from an onclick listener — no .saved) BUFFERS the dirty typing first.
   function closeForm(opts) {
+    _cancelQuietBuffer();
     var saved = opts && opts.saved === true;
     var inline = !!_inlineHost;
     var fverb = _formCtx ? _formCtx.verb : null;
@@ -3164,7 +3268,9 @@
                     saveInline: saveInline,   // §GT (W-GRIDTAB-LIVE): onSave0 seam — Save the inline form, report ok/REJECT to the navigating host
                     ignoreInline: ignoreInline, inlineDirty: _inlineDirty, formNeedsSave: _inlineContentDirty,   // Leg 4 (W-DIRTY-GATE): content-aware "leaving loses real work?" seam
                     formValues: function () { return _formCtx ? gatherVals(_formCtx.e) : null; },   // §P2 (W-PARITY-REFLIST): read-only witness seam — the open form's values AS THE ENGINE READS THEM (Y/N for a Yes-No)
-                    formEntry: function () { return _formCtx ? _formCtx.e : null; },              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only
+                    formEntry: function () { return _formCtx ? _formCtx.e : null; },
+                    formCtx: function () { return _formCtx ? { verb: _formCtx.verb, table: _formCtx.e.key, id: _formCtx.id } : null; },   // §52.1a (b): which record is open (host remembers it)
+                    armResume: armResume, durableStore: _durStore, durableReady: _durInit,   // §52.1a (c)(d): resume + the crash-durable draft/resume store   // §52.1a (c): the host arms the unclean-exit resume for (table,id)              // §P1 (W-PARITY-FIELDSET): the open form's (merged) entry — field set + pins, read-only
                     registerFolded: registerFolded, ensureStore: _ensureStore, hasEntry: hasEntry,   // S2B: AD-folded CRUD — host registers a dictionary-derived spec so ANY table is editable (entryFor fallback)
                     calloutTab: function () { return _co ? _co.tab : null; },
                     // §CP (W-CP-PROC-LIVE): a SvrProcess port's transaction — the tip-shadowed query + the session env (ModelLayer.Trx inputs)
