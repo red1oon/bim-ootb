@@ -15,6 +15,10 @@
   'use strict';
 
   function _stats() { return { put: 0, get: 0, list: 0, bytesPut: 0, bytesGet: 0 }; }
+  // §45.14a (TEAMWORK_FRAMEWORK.md — Witness: W-PIPE-RETRY): ghPipe retries ONE request, not the whole Visit, when the connection drops or GitHub
+  //   answers 5xx. MEASURED need (§45.14): a Visit restarts on any dropped request and its request count grows with the team, so on a 2 %-loss
+  //   line only 29 % of catch-up Visits got through at 100 users; with 2 retries per request, 99.95 %. Any 2xx/3xx/4xx is an ANSWER: never retried.
+  var RETRIES_DEFAULT = 2, RETRY_MS = [250, 750];
 
   function memPipe(id) {
     var m = new Map(), s = _stats(), drop = Object.create(null);
@@ -86,7 +90,16 @@
       if (body) h['Content-Type'] = 'application/json';
       // cache:'no-store' — a browser's HTTP cache otherwise serves a stale branch pointer (GitHub sends max-age=60), and
       // every commit after the first looks like it goes backwards (W-PHONE-PAGE found it). Our own ETag keeps unchanged reads free.
-      var r = await f(base + path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+      var init = { method: method, headers: h, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }, r = null, attempt = 0, maxA = opts.retries != null ? opts.retries : RETRIES_DEFAULT;
+      for (;;) {   // §45.14a: blob/tree POSTs are content-addressed, a repeated commit POST leaves at most one unreferenced commit, the ref PATCH is a compare-and-swap
+        var why = null;
+        try { r = await f(base + path, init); if (r.status >= 500) why = 'http-' + r.status; }
+        catch (e) { if (attempt >= maxA) throw e; why = 'network'; }
+        if (!why || attempt >= maxA) break;
+        attempt++; s.retries = (s.retries || 0) + 1;
+        console.log('§PIPE-RETRY method=' + method + ' path=' + String(path).split('?')[0] + ' attempt=' + attempt + '/' + maxA + ' why=' + why);
+        await new Promise(function (res) { setTimeout(res, RETRY_MS[Math.min(attempt - 1, RETRY_MS.length - 1)]); });
+      }
       s.reqs++; if (method !== 'GET') s.writes++;
       var rem = r.headers.get('x-ratelimit-remaining'); if (rem != null) s.rateRemaining = Number(rem);
       if (r.status === 304) { s.notModified++; return { status: 304, json: cacheBody[path] }; }
