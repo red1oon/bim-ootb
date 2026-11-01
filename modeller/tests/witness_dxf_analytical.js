@@ -154,6 +154,15 @@ const fcF = m8.findings.filter(f => f.code === 'fc_missing').length;
 ok('A8 no f\'c in the IFC: ' + fcF + ' findings, concrete materials ' + Object.keys(m8.materials).filter(k => /^CONC/.test(k)).length + ' (E never guessed), steel kept; analytical.support=PINNED -> ' + pin.supports.length + ' PINNED supports in the file',
   fcF === 131 && Object.keys(m8.materials).filter(k => /^CONC/.test(k)).length === 0 && !!m8.materials.STEEL && pin.supports.every(s => s.type === 'PINNED') && /PINNED$/m.test(pinStd) && !/FIXED$/m.test(pinStd), 'fc findings ' + fcF);
 
+// A9 (U2) one beam-section owner: the builder takes a beam's axis and section from LoadSummary.beamSection; a beam turned 45 degrees in plan exports the same section and length
+{ const Lb = 4.775, Wb = 0.305, Db = 0.254, beamAt = deg => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), V = [];
+    [0, Lb].forEach(x => [-Wb / 2, Wb / 2].forEach(y => [3, 3 + Db].forEach(z => V.push([x * c - y * s, x * s + y * c, z])))); return { guid: 'b' + deg, class: 'IfcBeam', z0: 3, z1: 3 + Db, sheet: 's', handle: 'h' + deg, vertices: V, ifc: { material: 'Reinforced concrete', props: { Note_fc_MPa: '24' } } }; };
+  const one = deg => { const m = AN.build([beamAt(deg)], opts), k = Object.keys(m.sections)[0]; return { key: k, len: m.members[0] && m.members[0].length }; }, a0 = one(0), a45 = one(45);
+  const asrc = fs.readFileSync(path.join(M, 'dxf2analytical.js'), 'utf8');
+  console.log('  A9 0 deg ' + JSON.stringify(a0) + ' | 45 deg ' + JSON.stringify(a45));
+  ok('A9 one beam-section owner: dxf2analytical.js has no axisOf of its own and calls LS.beamSection; the beam at 45 degrees exports section ' + a45.key + ' = the 0 degree ' + a0.key + ', length ' + (a45.len || 0).toFixed(4) + ' = ' + (a0.len || 0).toFixed(4),
+    !/function axisOf/.test(asrc) && /\.beamSection\(/.test(asrc) && a0.key === a45.key && Math.abs(a0.len - a45.len) < 1e-6 && a0.key === 'RECT ' + Db.toFixed(4) + 'x' + Wb.toFixed(4), ''); }
+
 console.log((fail ? '§W-ANALYTICAL FAIL ' + fail : judged ? '§W-ANALYTICAL PASS ' + judged + '/0' : '§W-ANALYTICAL INCONCLUSIVE nothing judged'));
 process.exit(fail ? 1 : 0);
 })();

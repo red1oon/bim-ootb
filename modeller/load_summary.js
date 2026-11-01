@@ -31,6 +31,29 @@
   }
   // a bar's length from its box: the largest extent, or the diagonal of the two largest when it runs on a slope (± the section width)
   function barLength(b) { var d = dims(b).slice().sort(function (p, q) { return q - p; }), w = sz(b, 'w') || 0; return d[1] > 2 * w + 1e-6 ? Math.hypot(d[0], d[1]) : d[0]; }
+  // U2 (prompts/DXF2BIM_ARCHITECT_REVIEW.md): the long axis of a prism — power iteration on the vertex covariance (deterministic start); the two end centres are the means of the
+  // vertices on either side of the mid projection (moved here from dxf2analytical.js, unchanged: the one section reader owns it)
+  function axisOf(P) {
+    var mean = function (Q) { var s = [0, 0, 0]; Q.forEach(function (p) { s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; }); return [s[0] / Q.length, s[1] / Q.length, s[2] / Q.length]; };
+    var c = mean(P), C = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    P.forEach(function (p) { var d = [p[0] - c[0], p[1] - c[1], p[2] - c[2]]; for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) C[i][j] += d[i] * d[j]; });
+    var u = [1, 1, 1];
+    for (var k = 0, ITER = 60; k < ITER; k++) { var w = [0, 1, 2].map(function (i) { return C[i][0] * u[0] + C[i][1] * u[1] + C[i][2] * u[2]; }), n = Math.hypot(w[0], w[1], w[2]); if (!(n > 0)) break; u = [w[0] / n, w[1] / n, w[2] / n]; }
+    var pr = P.map(function (p) { return (p[0] - c[0]) * u[0] + (p[1] - c[1]) * u[1] + (p[2] - c[2]) * u[2]; }), lo = Math.min.apply(null, pr), hi = Math.max.apply(null, pr), mid = (lo + hi) / 2;
+    return { a: mean(P.filter(function (p, i) { return pr[i] <= mid; })), b: mean(P.filter(function (p, i) { return pr[i] > mid; })), u: u };
+  }
+  function extentAlong(P, u) { var lo = Infinity, hi = -Infinity; P.forEach(function (p) { var d = p[0] * u[0] + p[1] * u[1] + p[2] * u[2]; if (d < lo) lo = d; if (d > hi) hi = d; }); return hi - lo; }
+  // U2: a beam's section and length, the ONE rule (the Load Summary weighs with it, the analytical model exports it): with vertices, the principal axis: length along it, width = stated w
+  // or the extent across it in plan, depth = stated d or z1 - z0; with only a box, the box rule (width = w or the smaller plan extent, length = the larger, depth = d or the box height)
+  function beamSection(b) {
+    var w = sz(b, 'w'), dd = sz(b, 'd'), P = b.vertices;
+    if (P && P.length >= 4) {
+      var ax = axisOf(P), h = Math.hypot(ax.u[0], ax.u[1]), pw = h > 0 ? [-ax.u[1] / h, ax.u[0] / h, 0] : [1, 0, 0], zh = b.z1 - b.z0;
+      return { axis: ax, length: extentAlong(P, ax.u), width: isFinite(w) && w ? w : extentAlong(P, pw), depth: isFinite(dd) && dd ? dd : (isFinite(zh) ? zh : extentAlong(P, [0, 0, 1])), stated: isFinite(w) && isFinite(dd), basis: 'axis' };
+    }
+    var d = dims(b);
+    return { axis: null, length: Math.max(d[0], d[1]), width: w || Math.min(d[0], d[1]), depth: dd || d[2], stated: isFinite(w) && isFinite(dd), basis: 'box' };
+  }
   function compute(bodies, inputs) {
     inputs = inputs || {}; var V = inputs.values || {}, F = inputs.facts || {}, src = inputs.sources || {};
     var rc = Number(V['load.unit_weight.concrete']) + 0.63 * Number(V['load.rc_steel_percent']), brick = Number(V['load.unit_weight.brick']), steel = Number(V['load.unit_weight.steel']), sheet = Number(V['load.roof_sheet']);
@@ -57,7 +80,7 @@
       var set = function (qty, unit, uw, uwKey, formula) { r.qty = qty; r.unit = unit; r.uw = uw; r.uwKey = uwKey; r.kN = qty * uw; r.formula = formula; r.tier = uwKey ? (src[uwKey] || 'default') : 'stated'; };
       if (!bx) { r.missing = 'no geometry to measure'; rows.push(r); return; }
       if (/concrete/i.test(mat)) {
-        var vol = c === 'IfcBeam' ? (sz(b, 'w') || Math.min(d[0], d[1])) * (sz(b, 'd') || d[2]) * Math.max(d[0], d[1]) : c === 'IfcSlab' ? d[0] * d[1] * (sz(b, 't') || d[2]) : (sz(b, 'x') || d[0]) * (sz(b, 'y') || d[1]) * h;
+        var bs = c === 'IfcBeam' ? beamSection(b) : null, vol = bs ? bs.width * bs.depth * bs.length : c === 'IfcSlab' ? d[0] * d[1] * (sz(b, 't') || d[2]) : (sz(b, 'x') || d[0]) * (sz(b, 'y') || d[1]) * h;
         set(vol, 'm3', rc, 'load.unit_weight.concrete', 'volume x (22.8 + 0.63 x p) with p = load.rc_steel_percent');
       } else if (/brick/i.test(mat)) set(Math.max(d[0], d[1]) * h * (sz(b, 't') || Math.min(d[0], d[1])), 'm3', brick, 'load.unit_weight.brick', 'length x height x drawn thickness x brick');
       else if (c === 'IfcPlate') { var e = d.slice().sort(function (p, q) { return q - p; }); set(e[0] * e[1] * (sz(b, 't') || e[2]), 'm3', steel, 'load.unit_weight.steel', 'plate area x drawn thickness x steel'); }
@@ -102,5 +125,5 @@
     logFn('§LOAD_ASSUMED_SECTION members=' + asm.length + (asm.length ? ' ' + Object.keys(by).sort().map(function (k) { return by[k] + ' x ' + k; }).join(' ; ') : ''));
     logFn('§LOAD_SUMMARY total_kN=' + res.total_kN.toFixed(1) + ' tonnes=' + res.tonnes.toFixed(1) + ' weighed=' + res.weighed + ' unweighed=' + res.unweighed + ' to_footings_kN=' + res.toFootings_kN.toFixed(1) + ' on_ground_kN=' + res.onGround_kN.toFixed(1) + ' footings=' + res.footings.length + ' missing=' + res.missing.map(function (m) { return m.what.split(' (')[0] + 'x' + m.n; }).join('; '));
     res.groups.forEach(function (g) { logFn('§LOAD_BODY cls=' + g.cls + ' material="' + g.material + '" n=' + g.n + ' qty=' + g.qty.toFixed(3) + g.unit + ' kN=' + g.kN.toFixed(2) + (g.missing ? ' MISSING="' + g.missing + '" length_m=' + g.lengthMissing.toFixed(1) : ' uw=' + g.uw + ' (' + g.uwKey + ')')); }); }
-  return { compute: compute, log: log, KEYS: KEYS, FACTS: FACTS, angleOf: angleOf, barLength: barLength };
+  return { compute: compute, log: log, KEYS: KEYS, FACTS: FACTS, angleOf: angleOf, barLength: barLength, axisOf: axisOf, beamSection: beamSection };
 });

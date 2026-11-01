@@ -13,6 +13,7 @@
 //   L6 the page shows other numbers than the module, or Apply does nothing: Export ▸ Load Summary on the CLI-marked shed (Complete ticked, Convert) opens
 //      load_summary.html whose §LOAD_PAGE total equals the module's on the page's own bodies AND the CLI bodies.json total (within 0.01 %: the CLI rounds its boxes);
 //      the inputs editor with p = 2 gives L4's total; 0 §PAGEERR.
+//   L8 (U2, prompts/DXF2BIM_ARCHITECT_REVIEW.md) a beam with no stated size weighs the same at any plan angle (LoadSummary.beamSection: the vertices' axis); the §D104 box rule at 45 deg is ~9x.
 //   L5 the defaults' basis is not the table: element_defaults.json load.* values = the reference text's numbers (22.8, 0.63, 18.9, 77.0, 0.096).
 // Input: the CLI-marked shed's bodies.json (SHED_BODIES, default ~/Videos/dxf2bim_film_work/why/cli/bodies.json); missing -> INCONCLUSIVE (exit 2).
 'use strict';
@@ -75,6 +76,15 @@ ok('L4 falsifier: p 1 -> 2 adds exactly 0.63 kN/m3 x volume to every concrete gr
   const bb = bodies.find(b => b.handle === '2A1+2A4'), dd = dim(bb), oldKN = rc * dd[1] * dd[2] * Math.max(dd[0], dd[1]), newKN = rc * Math.min(dd[0], dd[1]) * dd[2] * Math.max(dd[0], dd[1]);
   console.log('  §LOAD_D104 beam 2A1+2A4 ' + oldKN.toFixed(3) + ' -> ' + (bm ? bm.kN.toFixed(3) : 'n/a') + ' kN; shed own-weight total ' + (R.total_kN - (bm ? bm.kN : 0) + oldKN).toFixed(1) + ' -> ' + R.total_kN.toFixed(1) + ' kN');
   ok('L7b the shed: beam 2A1+2A4 (no stated size, along Y) weighs its box ' + newKN.toFixed(3) + ' kN, not ' + oldKN.toFixed(3) + '; the total drops by ' + (oldKN - newKN).toFixed(3) + ' kN', !!bm && Math.abs(bm.kN - newKN) < 1e-9 && Math.abs(newKN - 8.662) < 0.01 && oldKN > 100, ''); }
+// ---- L8 (U2): one beam-section owner — a beam with no stated size weighs the same at any plan angle (its vertices' axis, not its plan box) ----
+{ const Lb = 4.775, Wb = 0.305, Db = 0.254, want = rc * Lb * Wb * Db;
+  const beamAt = deg => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), V = [];
+    [0, Lb].forEach(x => [-Wb / 2, Wb / 2].forEach(y => [3, 3 + Db].forEach(z => V.push([10 + x * c - y * s, 20 + x * s + y * c, z])))); return { guid: 'b' + deg, class: 'IfcBeam', z0: 3, z1: 3 + Db, sheet: 's', handle: 'h' + deg, ifc: { material: 'Reinforced concrete' }, vertices: V }; };
+  const ks = [0, 30, 45, 90].map(d => L.compute([beamAt(d)], { values, sources, facts: {} }).rows[0].kN);
+  const b45 = beamAt(45), x45 = b45.vertices.map(v => v[0]), y45 = b45.vertices.map(v => v[1]), dx = Math.max(...x45) - Math.min(...x45), dy = Math.max(...y45) - Math.min(...y45);
+  const boxRule45 = rc * Math.min(dx, dy) * Db * Math.max(dx, dy);
+  ok('L8 one beam, no stated size, at 0/30/45/90 degrees in plan: ' + ks.map(k => k.toFixed(3)).join(' / ') + ' kN, all = width x depth x length x rc (' + want.toFixed(3) + '); the §D104 box rule at 45 degrees would give ' + boxRule45.toFixed(3) + ' kN (x' + (boxRule45 / want).toFixed(2) + ')',
+    ks.every(k => Math.abs(k - want) < 1e-9) && boxRule45 > 5 * want && typeof L.beamSection === 'function', ''); }
 // ---- L6: the page ----
 (async () => {
   const MARKED = process.env.SHED_MARKED_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
