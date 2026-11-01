@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<!-- ⚠ DO NOT REMOVE — W-POWER-CUT harness (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §52 D0). Loads ONE real kernel copy
+     (?k=viewer|modeller|erp) + sql.js and exposes window.PC for the witness. No product logic here. -->
+<html><head><meta charset="utf-8"><title>W-POWER-CUT harness</title>
+<script src="/tests/node_modules/sql.js/dist/sql-wasm.js"></script>
+<script>
+  var K = (new URLSearchParams(location.search)).get('k') || 'viewer';
+  window.APP = { DB_URL: 'power_cut_' + K + '.db' };
+  // the app's single cache opener, as viewer/scene.js A.openCacheDB (version 2, ensures the 'dbs' store)
+  APP.openCacheDB = function () { return new Promise(function (res) { var r = indexedDB.open('bim_ootb_cache', 2);
+    r.onupgradeneeded = function () { if (!r.result.objectStoreNames.contains('dbs')) r.result.createObjectStore('dbs'); };
+    r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(null); }; }); };
+  document.write('<script src="/' + K + '/kernel_ops.js"><\/script>');
+</script>
+</head><body>
+<script>
+  function opsDb() { return new Promise(function (res) { var r = indexedDB.open('power_cut_ops', 1);
+    r.onupgradeneeded = function () { r.result.createObjectStore('ops', { autoIncrement: true }); };
+    r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(null); }; }); }
+  window.PC = {
+    kernel: K,
+    ready: initSqlJs({ locateFile: function (f) { return '/tests/node_modules/sql.js/dist/' + f; } }).then(function (SQL) {
+      window.SQL = SQL; APP.db = new SQL.Database(); KernelOps.ensureTable(APP.db); return true; }),
+    // a mutating kernel op, exactly as a viewer/modeller/erp edit commits it (commitOp -> the kernel's own persist path)
+    commit: function (n, tag) { for (var i = 0; i < n; i++) KernelOps.commitOp(APP.db, 'GRID_MOVE', { tag: tag || 'pc', i: i, at: Date.now() }); return APP.db.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0]; },
+    // the ERP record path's durability primitive (crud_overlay _sidePersist): commit, then append the row to an add()-only store, awaited
+    commitAppend: async function (n) { var db = await opsDb(); for (var i = 0; i < n; i++) { var id = KernelOps.commitOp(APP.db, 'GRID_MOVE', { tag: 'append', i: i });
+      await KernelOps.appendOpsRecords(db, 'ops', KernelOps.rowsByIds(APP.db, [id])); } return n; },
+    hide: function () { Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'hidden'; } });
+      Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return true; } }); document.dispatchEvent(new Event('visibilitychange')); },
+    // what is ON DISK now: the snapshot under APP.DB_URL (rows + chain check) and the append store
+    readDisk: async function () {
+      var out = { snapshot: false, rows: 0, chain: null, appended: 0 };
+      var idb = await APP.openCacheDB();
+      var buf = idb ? await new Promise(function (res) { var g = idb.transaction('dbs', 'readonly').objectStore('dbs').get(APP.DB_URL); g.onsuccess = function () { res(g.result || null); }; g.onerror = function () { res(null); }; }) : null;
+      if (buf) { var d = new SQL.Database(new Uint8Array(buf)); out.snapshot = true; try { out.rows = d.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0]; } catch (e) { out.rows = 0; }
+        try { var v = await KernelOps.verifyChain(d); out.chain = v && v.ok === false ? 'FAIL' : 'ok'; } catch (e) { out.chain = 'error:' + e.message; } }
+      var od = await opsDb(); if (od) out.appended = await new Promise(function (res) { var c = od.transaction('ops', 'readonly').objectStore('ops').count(); c.onsuccess = function () { res(c.result); }; c.onerror = function () { res(0); }; });
+      return out;
+    }
+  };
+</script>
+</body></html>
