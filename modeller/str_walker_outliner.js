@@ -303,6 +303,10 @@
             if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
             else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
           };
+          // §M1-IFC-GEONONE (MODELLER_MASTER §RESUME 2026-11-02 M-1): an IFC open has no separate _geo.db (its meshes are in the opened DB itself), exactly as a disk-opened .db (_forkLocal, §D61).
+          // Without this, _dwLod400Only (modeller.html) waited its full 60 s cap for a geo buffer that never comes, PER DISCIPLINE (measured Duplex/ifc: waited=60087ms, 60071ms ... = 4 x 60 s), so Walk ALL outlived any caller.
+          window.__dwGeoBuf = null; window.__dwGeoNone = true;
+          console.log(TAG + ' §M1-IFC-GEONONE building=' + name + ' dwGeoBuf=null dwGeoNone=true (no _geo.db for an IFC open; the walk does not wait for one)');
           _seedPending(name);
           if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
           else openIt();
@@ -665,6 +669,7 @@
     window.__arcSeedDone = function (why) { if (done) { console.log(TAG + ' §WALK-AFTER-SEED seed settled building=' + key + ' (' + why + ')'); done(why); done = null; } };
   }
   function _forkEditable(res) {
+    window.__dwGeoNone = false;   // §M1-IFC-GEONONE: a resident DOES fetch a _geo.db; clear a flag left by an earlier IFC / disk open in this tab so its walk waits for the fetch
     _seedPending(res.key);
     var O = window.Bonsai && window.Bonsai.oplog;
     if (!(O && O.setModelKey)) window.__arcSeedDone('no-oplog');

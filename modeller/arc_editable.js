@@ -192,6 +192,40 @@
     return best;
   }
 
+  // §AGG-PARTS-DRAWN (MODELLER_MASTER §M-2, 2026-11-02; MEASURE ONLY, changes no op). A composed aggregate parent (IfcRoof / IfcStair / IfcCurtainWall ... : no mesh of its own,
+  // element_transforms.transform_source='composed_aggregate', §NOGEO_COMPOSE) is NOT drawn (decided: its LOD400 geometry IS its parts). For each such parent: how many of its
+  // IfcRelAggregates parts are in the seed's ops (drawn), and the undrawn ones by class / discipline / reason. A part that is itself a composed parent counts as 'parent'.
+  function _aggregatePartsDrawn(db, ops, skipped, building) {
+    try {
+      var has = function (t) { var r = db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='" + t + "'"); return r.length > 0; };
+      if (!has('rel_aggregates')) { _log(TAG + ' §AGG-PARTS-DRAWN building=' + building + ' parents=0 (no rel_aggregates table)'); return { parents: 0 }; }
+      var cols = db.exec("PRAGMA table_info(element_transforms)"); var hasSrc = cols.length && cols[0].values.some(function (c) { return c[1] === 'transform_source'; });
+      // a composed parent = an elements_meta row that is the parent of a rel_aggregates pair and has NO real mesh-bearing transform: either marked transform_source='composed_aggregate'
+      // (the open's in-memory compose) or, on the seed's own re-opened copy of the buffer, simply no element_transforms row. Spatial containers (Site / Building / Storey / Project) are excluded.
+      var comp = {}; if (hasSrc) { var cr = db.exec("SELECT guid FROM element_transforms WHERE transform_source='composed_aggregate'"); if (cr.length) cr[0].values.forEach(function (v) { comp[v[0]] = 1; }); }
+      var noXf = db.exec("SELECT m.guid FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL AND m.ifc_class NOT IN ('IfcSite','IfcBuilding','IfcBuildingStorey','IfcProject')");
+      if (noXf.length) noXf[0].values.forEach(function (v) { comp[v[0]] = 1; });
+      var meta = {}; var mr = db.exec("SELECT guid, ifc_class, discipline FROM elements_meta"); if (mr.length) mr[0].values.forEach(function (v) { meta[v[0]] = { c: v[1], d: v[2] }; });
+      var seeded = {}; ops.forEach(function (o) { if (!(o.params && o.params.anchorOnly)) seeded[o.outputGuid] = 1; });
+      var skipWhy = {}; skipped.forEach(function (k) { skipWhy[k.guid] = k.reason; });
+      var kids = {}; var ar = db.exec("SELECT parent_guid, child_guid FROM rel_aggregates"); if (ar.length) ar[0].values.forEach(function (v) { if (comp[v[0]]) (kids[v[0]] = kids[v[0]] || []).push(v[1]); });
+      var tot = { parents: 0, parts: 0, drawn: 0, undrawn: 0 }, undrawnBy = {}, lines = [];
+      Object.keys(kids).forEach(function (pg) {
+        var ks = kids[pg], dr = 0, und = {}; tot.parents++;
+        ks.forEach(function (g) {
+          tot.parts++; var m = meta[g] || { c: '?', d: '?' };
+          if (seeded[g]) { dr++; tot.drawn++; return; }
+          var why = comp[g] ? 'composed-parent' : (skipWhy[g] || (m.d !== 'ARC' ? 'discipline-not-ARC' : 'not-seeded'));
+          var key = m.c + '/' + m.d + '/' + why; und[key] = (und[key] || 0) + 1; undrawnBy[key] = (undrawnBy[key] || 0) + 1; tot.undrawn++;
+        });
+        lines.push('parent ' + (meta[pg] ? meta[pg].c : '?') + ' ' + pg + ' parts=' + ks.length + ' drawn=' + dr + ' undrawn=' + (ks.length - dr) + ' ' + JSON.stringify(und));
+      });
+      _log(TAG + ' §AGG-PARTS-DRAWN building=' + building + ' composedParents=' + tot.parents + ' parts=' + tot.parts + ' drawn=' + tot.drawn + ' undrawn=' + tot.undrawn + ' undrawnBy(class/discipline/reason)=' + JSON.stringify(undrawnBy));
+      lines.forEach(function (l) { _log(TAG + ' §AGG-PARTS-DRAWN ' + l); });
+      return tot;
+    } catch (e) { _log(TAG + ' §AGG-PARTS-DRAWN failed ' + (e && e.message)); return { parents: 0 }; }
+  }
+
   // buildSeedOps(db) — PURE read of a sql.js *_extracted.db → {ops, skipped, discipline}. Each op is the exact
   // GEOM_INSERT shape foldInsert consumes for a raw-bbox (hash-less) insert.
   //
@@ -426,7 +460,8 @@
     if (layerGate.armed) _log(TAG + ' §LAYER-GATE armed multiLayer=' + layerGate.nMulti +
       ' layeredHashes=' + layerGate.nHashes + ' refused=' + layerRefused +
       ' (authored multi-layer elements must resolve per-layer slabs — §LOD400-ENVELOPE)');
-    return { ops: ops, skipped: skipped, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
+    var aggParts = _aggregatePartsDrawn(db, ops, skipped, opts.building);   // §AGG-PARTS-DRAWN (M-2, measure only)
+    return { ops: ops, skipped: skipped, aggParts: aggParts, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, noSubstrate: noSubstrate, geomTable: geomIdx.table, geomap: gmAudit,
       anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
       layerRefused: layerRefused,
@@ -473,6 +508,7 @@
     // absent for every pre-existing caller, and provably incapable of altering the committed ops (W1).
     var bo = io.classify ? { classify: io.classify } : undefined;
     if (io.geoIndex) { bo = bo || {}; bo.geoIndex = io.geoIndex; }   // §B1-ROW3
+    bo = bo || {}; bo.building = name;   // §AGG-PARTS-DRAWN label only
     var built = buildSeedOps(buildingDb, io.geoDb, bo);
     if (io.registerGeometry && built.geomAssets.length) {
       try { io.registerGeometry(built.geomAssets); } catch (e) { _log(TAG + ' §REAL-GEOM registerGeometry failed ' + (e && e.message)); }
