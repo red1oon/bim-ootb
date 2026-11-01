@@ -759,8 +759,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=1"></script>
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=9"></script>
-<script src="crud_overlay.js?v=39"></script>
+<script src="crud_core.js?v=10"></script>
+<script src="crud_overlay.js?v=40"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
@@ -1436,6 +1436,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     });
   }
   function _sessionClose() {
+    _rsForget();   // §52.1a — a deliberate logout is a clean exit
     var c = window.__crud, id = _sessionRow; if (!c || id == null || typeof c.applyOpGroup !== 'function') return;
     _sessionRow = null;
     c.applyOpGroup([_procCrud('update', 'ad_session', { id: id, changes: { processed: { old: 'N', new: 'Y' }, updated: { old: null, new: _procNowTs() } } })], function (cr) {
@@ -1488,6 +1489,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       if (_session.procSet && _session.procSet[pp]) { openProcess(pp); _wOpened = true; }
       else console.log('§AD-PROC-LIVE deeplink proc=' + pp + ' DENIED — not in role procSet (ad_process_access)'); }
     if (_pendingLens) { var ln = _pendingLens; _pendingLens = null; if (ln === 'pos') { openPosFor(); console.log('§DEEPLINK lens=pos opened post-login'); } }
+    if (!_wOpened && window.__crud && typeof window.__crud.armResume === 'function') _resumeAfterLogin();   // §52.1a — a deep link wins over resume
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
   }
   // §MOBILE-LANDING — on a phone the post-login landing is an empty "select a menu item" canvas with the menu
@@ -1710,7 +1712,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §UDP-6G zoom — AEnv.zoom(AD_Window_ID, MQuery) :537-550 / DPRecentItems.doOnClick :222-260: open the window with an EQUAL query on
   //   its header tab (column defaults to the key) and land on that record. ONE implementation: the ?record= deep link, the Home gadgets
   //   (IdmpHost.zoom) all come here. Role gate = the window access set (MRole.getWindowAccess).
-  function _zoom(windowId, column, value, why) {
+  function _zoom(windowId, column, value, why, then) {
     var w = Number(windowId);
     if (!_session || !_session.winSet || !_session.winSet[w]) { console.log('§ZOOM refused window=' + w + ' (no window access for this role)' + (why ? ' from=' + why : '')); return false; }
     var zw = null; try { zw = ADP.getWindow(db, w); } catch (e) {}
@@ -1722,8 +1724,70 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _openWindowNow(w, null, true);
       var ok = _landOnRecord(value, col);
       console.log('§ZOOM window=' + w + ' ' + zt.tableName + '.' + col + '=' + value + ' rows=' + _records.length + ' landed=' + ok + (why ? ' from=' + why : ''));
+      if (typeof then === 'function') then(ok);   // §52.1a resume walks on down its tab path
     });
     return true;
+  }
+  // ── §52.1a RESUME-AS-IT-WAS (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §52.1a — Witness: W-RESUME-AS-IT-WAS).
+  // (b) each tab remembers, while an EDIT form is open, where it is: erpresume:<tabId> = {who, window, tab path, record}.
+  //   Removed on pagehide (a clean exit) and on logout. (c) After login, an entry left by a DEAD tab (its Web Lock gone,
+  //   or — without navigator.locks, e.g. plain-HTTP LAN — a heartbeat older than 4 s) for the SAME user/client/role,
+  //   whose draft still exists, is reopened: zoom the header key, walk the path, and the crud engine applies the draft
+  //   as ordinary unsaved changes when that form mounts. A ?window=/?record= deep link wins over resume.
+  var _RS_PFX = 'erpresume:', _rsTab = 't' + Math.random().toString(36).slice(2, 10), _rsLocks = !!(navigator.locks && navigator.locks.request);
+  function _rsStore() { try { return (window.__crud && window.__crud.durableStore) ? window.__crud.durableStore() : window.localStorage; } catch (e) { return null; } }
+  if (_rsLocks) { try { navigator.locks.request('erptab:' + _rsTab, function () { return new Promise(function () {}); }); } catch (e) { _rsLocks = false; } }
+  function _rsWho() { return _session ? { user: _session.user && _session.user.id, client: _session.client && _session.client.id, role: _session.role && _session.role.id } : null; }
+  function _rsTick() {
+    var st = _rsStore(); if (!st) return;
+    var c = (window.__crud && typeof window.__crud.formCtx === 'function') ? window.__crud.formCtx() : null, w = _curWin(), who = _rsWho();
+    if (!who || !c || c.verb !== 'update' || c.id == null || !w || !w.tabs) { try { st.removeItem(_RS_PFX + _rsTab); } catch (e) {} return; }
+    var ti = _activeTabIdx, lvl = (w.tabs[ti] && w.tabs[ti].tabLevel) || 0, path = [{ tabIdx: ti, key: c.id }];
+    for (var i = ti - 1, want = lvl - 1; i >= 0 && want >= 0; i--) if ((w.tabs[i].tabLevel || 0) === want) { path.unshift({ tabIdx: i, key: _selByLevel[want] }); want--; }
+    try { st.setItem(_RS_PFX + _rsTab, JSON.stringify({ who: who, windowId: _activeWin, tabIdx: ti, table: String(c.table).toLowerCase(), recordId: c.id, path: path, hb: Date.now() })); } catch (e) {}
+  }
+  setInterval(_rsTick, 1000);
+  window.addEventListener('pagehide', function () { try { var st = _rsStore(); if (st && st.getItem(_RS_PFX + _rsTab) != null) { st.removeItem(_RS_PFX + _rsTab); window.localStorage.setItem('erpresume-closed:' + _rsTab, '1'); } } catch (e) {} });   // the tombstone outlives an unfinished IndexedDB delete
+  function _rsForget() { try { var st = _rsStore(); if (st) st.removeItem(_RS_PFX + _rsTab); } catch (e) {} }
+  // _resumeAfterLogin — returns true when a candidate for THIS session exists (the open itself is async: the lock query).
+  function _resumeAfterLogin() {
+    if (!_rsWho()) return false;
+    window.__crud.durableReady().then(_resumeScan);   // the crash copy (IndexedDB) is back in place before the scan
+    return false;   // nothing is open YET (the scan is async) — the phone landing still surfaces its menu
+  }
+  function _resumeScan() {
+    var st = _rsStore(), who = _rsWho(); if (!st || !who) return;
+    var cands = [], seen = 0, other = 0, nodraft = 0;
+    for (var i = 0; i < st.length; i++) {
+      var k = st.key(i); if (!k || k.indexOf(_RS_PFX) !== 0 || k === _RS_PFX + _rsTab) continue;
+      seen++;
+      var r = null; try { r = JSON.parse(st.getItem(k)); } catch (e) {}
+      if (!r || !r.who || String(r.who.user) !== String(who.user) || String(r.who.client) !== String(who.client) || String(r.who.role) !== String(who.role)) { other++; continue; }   // another user's entry stays theirs
+      if (!st.getItem('erpdraft:' + r.table + ':' + r.recordId)) { nodraft++; st.removeItem(k); i--; continue; }   // nothing unsaved there → nothing to resume
+      r._key = k; r._tab = k.slice(_RS_PFX.length); cands.push(r);
+    }
+    if (!cands.length) { console.log('§RESUME candidate=0 seen=' + seen + ' otherUser=' + other + ' noDraft=' + nodraft); return; }
+    var pick = function (dead, how) {
+      console.log('§RESUME candidate=' + cands.length + ' dead=' + dead.length + ' liveness=' + how + (dead.length ? ' chosen=' + dead[0].table + ':' + dead[0].recordId : ' (all alive — another tab still holds them)'));
+      if (!dead.length) return;
+      dead.sort(function (a, b) { return (b.hb || 0) - (a.hb || 0); });
+      var r = dead[0]; st.removeItem(r._key);
+      var w = Number(r.windowId), path = (r.path && r.path.length) ? r.path : [{ tabIdx: 0, key: r.recordId }];
+      if (!_session.winSet || !_session.winSet[w]) { console.log('§RESUME applied=0 table=' + r.table + ' id=' + r.recordId + ' reason=no-window-access'); return; }
+      window.__crud.armResume(r.table, r.recordId);
+      _zoom(w, null, path[0].key, 'resume', function (ok) {
+        if (!ok) return;
+        for (var j = 1; j < path.length; j++) {
+          _activeTabIdx = path[j].tabIdx; _viewMode = _openModeFor(path[j].tabIdx); renderActiveTab(); renderTabStrip(); renderToolbar();
+          if (!_landOnRecord(path[j].key)) break;
+        }
+      });
+    };
+    if (_rsLocks && navigator.locks.query) navigator.locks.query().then(function (q) {
+      var held = {}; (q.held || []).forEach(function (l) { held[l.name] = 1; });
+      pick(cands.filter(function (r) { return !held['erptab:' + r._tab]; }), 'locks');
+    }, function () { pick(cands.filter(function (r) { return Date.now() - (r.hb || 0) > 4000; }), 'heartbeat'); });
+    else pick(cands.filter(function (r) { return Date.now() - (r.hb || 0) > 4000; }), 'heartbeat');
   }
   function _landOnRecord(rid, col) {
     var tab = _curTab(); if (!tab) return false;
