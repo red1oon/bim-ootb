@@ -12,8 +12,9 @@
  *   P5 layout: at 1440 x 900 the panel's box overlaps no other visible fixed panel (boxes printed) and no visible toolbar control has the panel on top of it (elementFromPoint at its centre; at 1024 x 768 with the meta editor open there is no room beside it: the panel must then be ON TOP (overlay flag, visible at its own top) and still cover no control;
  *      first runner run: #b-move was covered, so W-SHED-WALL-EDIT could not enter Move); the same at 1024 x 768
  *   P6 (U7) an opened .db (DXARC.db, the Duplex; DXARC_DB): pick a wall -> class / name / material and its Pset_*Common rows = that guid's rows in the file (sql.js oracle in Node)
- *   P7 (U7) a raw .ifc (the Duplex architecture IFC; DUPLEX_IFC) opened in the Modeller: pick a part -> after ONE shared-extractor read its Pset rows = the shared extractor's
- *      element_pset_common rows for that guid (Node oracle on the same file); a second pick -> still one §PROPS_IFC_EXTRACT
+ *   P7 (U7; P-X 2026-11-02) a raw .ifc (the Duplex architecture IFC; DUPLEX_IFC) opened in the Modeller: pick a part -> its Pset rows = the shared extractor's
+ *      element_pset_common rows for that guid (Node oracle on the same file), read from the OPENED building's DB (source=building): since P-X the open itself is the
+ *      shared extractor, so the file is never read a second time (0 §PROPS_IFC_EXTRACT; U7 had one) — a second pick, the same
  *   P8 FALSIFIER (U7): OpenBuildingDb.partOf on a guid the DB lacks -> null, the panel shows no groups
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2).
  */
@@ -153,12 +154,12 @@ async function opened() {
     ok('P6 an opened .db: the wall\'s class / name / material and its ' + oA.psets.length + ' Pset_*Common rows = the file\'s rows for guid ' + gA,
       a.fid != null && a.src === 'building' && a.kv['IFC class'] === oA.meta.ifc_class && a.kv['Name'] === (oA.meta.element_name || '—') && a.kv['Material'] === (oA.meta.material_name || '—') && JSON.stringify(a.rows) === wantA && oA.psets.length > 0, '');
     await pa.close();
-    const pb = await openWith(IFCF), b = await shown(pb, gB, 'ifc-extract');
-    const other = await pb.evaluate(g => Object.keys(window.__arcFidByGuid).find(k => k !== g && !/^dxf-/.test(k)), gB), b2 = await shown(pb, other, 'ifc-extract');
+    const pb = await openWith(IFCF), b = await shown(pb, gB, 'building');
+    const other = await pb.evaluate(g => Object.keys(window.__arcFidByGuid).find(k => k !== g && !/^dxf-/.test(k)), gB), b2 = await shown(pb, other, 'building');
     const nExt = ext.filter(l => /^§PROPS_IFC_EXTRACT /.test(l)).length, wantB = JSON.stringify(oB.psets.map(r => [r.pset, r.name, String(r.value)]));
     console.log('  P7 page fid=' + b.fid + ' src=' + b.src + ' rows=' + b.rows.length + ' (oracle ' + oB.psets.length + '); second pick src=' + b2.src + '; §PROPS_IFC_EXTRACT lines ' + nExt);
-    ok('P7 a raw .ifc opened: after one shared-extractor read the wall\'s ' + oB.psets.length + ' Pset rows = the extractor\'s rows for guid ' + gB + '; a second pick reads no file again (' + nExt + ' extract); page errors ' + errs.length,
-      b.fid != null && b.src === 'ifc-extract' && JSON.stringify(b.rows) === wantB && oB.psets.length > 0 && b2.src === 'ifc-extract' && nExt === 1 && errs.length === 0, '');
+    ok('P7 a raw .ifc opened: the wall\'s ' + oB.psets.length + ' Pset rows = the extractor\'s rows for guid ' + gB + ', read from the opened building\'s DB (P-X: the open is the shared extractor); the file is not read again (' + nExt + ' extract); page errors ' + errs.length,
+      b.fid != null && b.src === 'building' && JSON.stringify(b.rows) === wantB && oB.psets.length > 0 && b2.src === 'building' && nExt === 0 && errs.length === 0, '');
   } finally { await br.close(); srv.close(); }
 }
 function done() { console.log(fail ? '§VERDICT FAIL W-PROPS-PANEL judged=' + judged + ' fail=' + fail : '§VERDICT PASS W-PROPS-PANEL judged=' + judged + ' fail=0'); process.exit(fail ? 1 : 0); }

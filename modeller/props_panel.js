@@ -29,7 +29,7 @@
   function rowsFor(fid, ctx) {
     var g = ctx.guidByFid && ctx.guidByFid[fid], guid = g && /^dxf-/.test(g) ? g.slice(4) : null, R = ctx.R;
     var hit = guid && R && R.els && ctx.Dxf2Ifc ? writerElements(R.els, ctx.Dxf2Ifc, R.ST)[guid] : null;
-    if (!hit && ctx.part) return buildingRows(fid, ctx.part, ctx.via);   // U7: an opened building's part — what its DB states
+    if (!hit && ctx.part) return buildingRows(fid, ctx.part);   // U7: an opened building's part — what its DB states
     if (!hit) {
       var cls = (ctx.ifcClassOf && ctx.ifcClassOf(fid)) || null;
       if (ctx.pending) return { fid: fid, guid: g || null, cls: cls, source: 'pending', head: [['IFC class', cls || 'not known'], ['GlobalId / guid', g || 'not known']], groups: [], note: 'reading the building\'s data…' };
@@ -54,7 +54,7 @@
       groups: groups, pset: 'Dxf2Bim_Evidence' };
   }
   // U7: a part of an opened building, from the building's DB (OpenBuildingDb.partOf): elements_meta + element_type head, one group per Pset_*Common set (occurrence / type stated)
-  function buildingRows(fid, P, via) {
+  function buildingRows(fid, P) {
     var m = P.meta, head = [['IFC class', m.ifc_class], ['Name', m.element_name || '—'], ['Storey', m.storey || '—'], ['Material', m.material_name || '—']];
     if (P.type) head.push(['Type', P.type.type_name || '—']);
     head.push(['GlobalId', P.guid]);
@@ -62,8 +62,7 @@
     (P.psets || []).forEach(function (r) { var k = r.pset; if (!by[k]) { by[k] = { title: k, rows: [], src: {} }; groups.push(by[k]); } by[k].rows.push([r.name, String(r.value)]); by[k].src[r.source || 'occurrence'] = 1; });
     groups.forEach(function (G) { G.title = G.title + ' (' + Object.keys(G.src).sort().join(' + ') + ')'; delete G.src; });
     var note = P.psets === null ? 'this building\'s database stores no property sets' : !P.psets.length ? 'its IFC states no Pset_*Common set for this part' : null;
-    return { fid: fid, guid: P.guid, cls: m.ifc_class, source: via === 'ifc-extract' ? 'ifc-extract' : 'building', head: head, groups: groups, note: note,
-      intro: via === 'ifc-extract' ? 'Its standard property sets, read from the opened IFC by the shared extractor:' : 'Its standard property sets, from the building\'s database:' };
+    return { fid: fid, guid: P.guid, cls: m.ifc_class, source: 'building', head: head, groups: groups, note: note, intro: 'Its standard property sets, from the building\'s database:' };
   }
   function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function render(m, nSel) {

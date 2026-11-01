@@ -5,7 +5,8 @@
  * THE ISSUE THIS PROVES OR DISPROVES: an .ifc opened in the Modeller (or imported in the Viewer) was built by viewer/import_db_builder.js with no rel_fills_host, so no door or window rode its wall
  * on ANY opened IFC; the resident dbs and the Viewer-DB export (the shared extractor core) have the table.
  *   I1 SAME     — the import db's rel_fills_host rows = the extractor core's (bim-compiler extractIFC2DB.js on the same file): same (opening, host, filling) triples, 0 missing, 0 extra; schema = the core's.
- *   I2 ARC      — after the Modeller's ARC filter (_filterArc, run from str_walker_outliner.js's own source) every row's host is an element of the db; a filling not kept is NULL.
+ *   I2 OPEN     — the Modeller's raw-IFC open (since P-X: modeller/ifc_open_db.js, the shared extractor + the residents' rule; the _filterArc path is retired) keeps rel_fills_host and every row's host
+ *                 is an element of the db; a filling is in the db or NULL.
  *   I3 FALSIFIER — the file with its IFCRELFILLSELEMENT lines removed: every row void-only (filling NULL), as the core gives; with IFCRELVOIDSELEMENT removed too: 0 rows.
  *   I4 SAME     — every other table of the import db has the same rows as BASE's builder + worker (BASE=<repo root at origin/main>).
  * The worker runs in a Node vm (importScripts shim; web-ifc = the Node build of the Viewer's 0.0.77): the Viewer's own parse, not a re-implementation. No browser.
@@ -35,9 +36,10 @@ function runWorker(root, bytes, filename) {   // the Viewer's import_worker.js i
 }
 function buildDb(root, SQL, data) { const ctx = { console: { log() {}, warn() {}, error() {} }, SQL, data, Uint8Array, Float32Array, Uint32Array, Math, JSON, Date, Object, Array };
   vm.createContext(ctx); vm.runInContext(fs.readFileSync(path.join(root, 'viewer', 'import_db_builder.js'), 'utf8') + '\n;__out = buildImportDBs(SQL, data);', ctx); return new SQL.Database(new Uint8Array(ctx.__out.extractedDb)); }
-function filterArc(root, parsed) {   // the Modeller's own _filterArc, cut from its source
-  const src = fs.readFileSync(path.join(root, 'modeller', 'str_walker_outliner.js'), 'utf8'), a = src.indexOf('  function _filterArc(parsed) {'), b = src.indexOf('  function openIfcFile(file)');
-  const ctx = { console: { log() {} }, TAG: '' }; vm.createContext(ctx); vm.runInContext(src.slice(a, b) + '\n;__f = _filterArc;', ctx); return ctx.__f(parsed); }
+async function modellerOpen(root, SQL, bytes, name) {   // the Modeller's own open (P-X): modeller/ifc_open_db.js over the shared extractor, as ifc_open_worker.js runs it
+  const WI = require(path.join(process.env.HOME, 'bim-compiler/node_modules/web-ifc')), api = new WI.IfcAPI(); await api.Init();
+  const Core = require(path.join(root, 'modeller', 'dxf2bim', 'ifc_extract_core.js')), IOD = require(path.join(root, 'modeller', 'ifc_open_db.js'));
+  return (await IOD.open({ WebIFC: WI, ifcApi: api, SQL, Core, bytes: new Uint8Array(bytes), name, log: () => {} })).db; }
 const rows = (db, sql) => { try { const r = db.exec(sql); return r.length ? r[0].values : []; } catch (e) { return null; } };
 (async () => {
   const SQL = await initSqlJs();
@@ -55,10 +57,10 @@ const rows = (db, sql) => { try { const r = db.exec(sql); return r.length ? r[0]
     const miss = [...W].filter(x => !G.has(x)), extra = [...G].filter(x => !W.has(x));
     check('I1[' + name + ']', 'the import db\'s rel_fills_host = the extractor core\'s (same triples, same schema)', got && want && want.length > 0 && !miss.length && !extra.length && JSON.stringify(schema) === JSON.stringify(wantSchema),
       `import=${got ? got.length : 'no table'} core=${want ? want.length : 'n/a ' + (ex.stdout || '').slice(-120)} filled=${(got || []).filter(r => r[2]).length} missing=${miss.length} extra=${extra.length} schema_same=${JSON.stringify(schema) === JSON.stringify(wantSchema)}`);
-    // I2: the Modeller's ARC open
-    const fa = filterArc(ROOT, parsed), a = buildDb(ROOT, SQL, fa);
+    // I2: the Modeller's open (P-X)
+    const a = await modellerOpen(ROOT, SQL, bytes, name);
     const ar = rows(a, 'SELECT r.host_guid, r.filling_guid, (SELECT count(*) FROM elements_meta m WHERE m.guid = r.host_guid), (SELECT count(*) FROM elements_meta m WHERE m.guid = r.filling_guid) FROM rel_fills_host r') || [];
-    check('I2[' + name + ']', 'after the ARC filter every row\'s host is in the db; a filling is in the db or NULL', ar.length > 0 && ar.every(r => r[2] === 1 && (r[1] === null || r[3] === 1)), `rows=${ar.length} filled=${ar.filter(r => r[1]).length} hosts_missing=${ar.filter(r => r[2] !== 1).length}`);
+    check('I2[' + name + ']', 'the Modeller\'s open keeps rel_fills_host; every row\'s host is in the db; a filling is in the db or NULL', ar.length > 0 && ar.every(r => r[2] === 1 && (r[1] === null || r[3] === 1)), `rows=${ar.length} filled=${ar.filter(r => r[1]).length} hosts_missing=${ar.filter(r => r[2] !== 1).length}`);
     // I3: falsifiers on edited copies of the file
     const txt = bytes.toString('latin1'), noFill = txt.split('\n').filter(l => !/IFCRELFILLSELEMENT\(/i.test(l)).join('\n'), noBoth = noFill.split('\n').filter(l => !/IFCRELVOIDSELEMENT\(/i.test(l)).join('\n');
     const r1 = rows(buildDb(ROOT, SQL, await runWorker(ROOT, Buffer.from(noFill, 'latin1'), path.basename(f))), 'SELECT count(*), sum(filling_guid IS NOT NULL) FROM rel_fills_host')[0];
@@ -70,7 +72,8 @@ const rows = (db, sql) => { try { const r = db.exec(sql); return r.length ? r[0]
       const sel = t => 'SELECT * FROM "' + t + '"' + (t === 'project_metadata' ? " WHERE key <> 'import_date'" : '');   // import_date = the run's clock
       const diff = tabs.filter(t => JSON.stringify(rows(b, sel(t))) !== JSON.stringify(rows(db, sel(t))));
       const added = tabsNew.filter(t => tabs.indexOf(t) < 0);
-      check('I4[' + name + ']', 'every other table has BASE\'s rows; the only table added is rel_fills_host', !diff.length && JSON.stringify(added) === '["rel_fills_host"]', `tables=${tabs.length} differ=${JSON.stringify(diff)} added=${JSON.stringify(added)}`);
+      // the table set may only grow by rel_fills_host (the PR that added it); once BASE has it too, nothing is added (P-X 2026-11-02: the clause read '== ["rel_fills_host"]' and failed on a BASE that already holds it)
+      check('I4[' + name + ']', 'every table has BASE\'s rows; no table added beyond rel_fills_host', !diff.length && added.every(t => t === 'rel_fills_host'), `tables=${tabs.length} differ=${JSON.stringify(diff)} added=${JSON.stringify(added)}`);
     } else say('INCONCLUSIVE I4[' + name + '] no BASE');
   }
   say('SUMMARY fail=' + fail); process.exit(fail ? 1 : 0);

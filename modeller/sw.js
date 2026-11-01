@@ -10,7 +10,7 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v203';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v204';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -47,6 +47,8 @@ const PRECACHE_ASSETS = [
   'dxf2ifc.js',
   'props_panel.js',   // U1 the Properties panel (what the selected part's IFC carries)
   'open_building_db.js',   // U7 the one reader of the open building's DB (Properties panel, edit deltas, project order)
+  'ifc_open_worker.js',   // P-X a raw .ifc opened: the shared extractor in a worker
+  'ifc_open_db.js',   // P-X the residents' rule over the extractor's DB (the one owner of IFC -> building DB)
   'bonsai_ifc.js',
   'bonsai_grid.js',
   'bonsai_gridmove.js',
