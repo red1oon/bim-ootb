@@ -15,13 +15,21 @@
 //      the inputs editor with p = 2 gives L4's total; 0 §PAGEERR.
 //   L8 (U2, prompts/DXF2BIM_ARCHITECT_REVIEW.md) a beam with no stated size weighs the same at any plan angle (LoadSummary.beamSection: the vertices' axis); the §D104 box rule at 45 deg is ~9x.
 //   L5 the defaults' basis is not the table: element_defaults.json load.* values = the reference text's numbers (22.8, 0.63, 18.9, 77.0, 0.096).
-// Input: the CLI-marked shed's bodies.json (SHED_BODIES, default ~/Videos/dxf2bim_film_work/why/cli/bodies.json); missing -> INCONCLUSIVE (exit 2).
+// Input (U5): today's converter on the CLI-marked shed (SHED_MARKED_DIR, default ~/Videos/dxf2bim_film_work/why/cli/marked; missing -> MISSING, exit 2); SHED_BODIES pins a bodies.json (logged).
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os');
 const ROOT = path.join(__dirname, '..', '..'), M = path.join(ROOT, 'modeller'), L = require(path.join(M, 'load_summary.js'));
-const BODIES = process.env.SHED_BODIES || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'bodies.json');
+// U5 (prompts/DXF2BIM_ARCHITECT_REVIEW.md): the input is TODAY's converter on the CLI-marked shed (it was a bodies.json frozen 2026-10-22, before §D100 b); SHED_BODIES pins a file (logged)
+const MARKED0 = process.env.SHED_MARKED_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
+let BODIES = process.env.SHED_BODIES || null;
 let fails = 0, judged = 0; const ok = (id, c, m) => { judged++; console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
-if (!fs.existsSync(BODIES)) { console.log('§VERDICT INCONCLUSIVE missing ' + BODIES); process.exit(2); }
+if (BODIES) { if (!fs.existsSync(BODIES)) { console.log('§VERDICT INCONCLUSIVE missing ' + BODIES); process.exit(2); } console.log('§LOAD_INPUT pinned ' + BODIES + ' (' + fs.statSync(BODIES).mtime.toISOString().slice(0, 10) + ')'); }
+else {
+  const mk = fs.existsSync(MARKED0) ? fs.readdirSync(MARKED0).filter(f => /\.dxf$/i.test(f)).sort().map(f => path.join(MARKED0, f)) : [];
+  if (mk.length !== 9) { console.log('MISSING input: the 9 CLI-marked shed sheets in ' + MARKED0 + ' (SHED_MARKED_DIR), found ' + mk.length); process.exit(2); }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'w_load_')), CLI = require(path.join(__dirname, '..', 'dxf2bim_cli.js')), res = CLI.run(CLI.parseArgs(['--sheets', ...mk, '--out', dir, '--pack', 'pwd2024_bd', '--complete']), () => {});
+  CLI.write(res, dir); BODIES = path.join(dir, 'bodies.json'); console.log('§LOAD_INPUT fresh ' + dir + ' (today\'s converter on the marked set)');
+}
 const bodies = JSON.parse(fs.readFileSync(BODIES, 'utf8')), D = JSON.parse(fs.readFileSync(path.join(M, 'element_defaults.json'), 'utf8')).defaults;
 // the reference text's own numbers
 const REF = fs.readFileSync(path.join(M, 'reference', 'BNBC2012_P6C2_dead_load_tables.txt'), 'utf8');
