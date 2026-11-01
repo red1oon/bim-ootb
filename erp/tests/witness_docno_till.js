@@ -31,7 +31,11 @@ if (process.env.MUTATE) { var mu = MUT[process.env.MUTATE], js0 = Module._extens
   Module._extensions['.js'] = function (m, fn) { if (mu && path.basename(fn) === mu[0] && fn.indexOf(path.join('erp', mu[0])) >= 0) { var src = fs.readFileSync(fn, 'utf8');
     if (src.indexOf(mu[1]) < 0) { console.log('§DT MUTANT-NOT-APPLIED ' + process.env.MUTATE); process.exit(3); } console.log('§DT MUTANT-APPLIED ' + process.env.MUTATE + ' in ' + mu[0]); return m._compile(src.replace(mu[1], mu[2]), fn); } return js0(m, fn); }; }
 var ERP = path.join(__dirname, '..');
-var SQLJS_DIR = process.env.SQLJS_DIR || path.join(os.homedir(), 'bim-ootb/tests/node_modules/sql.js'), initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(SQLJS_DIR); }
+var TREE = path.join(__dirname, '..', '..'), initSqlJs;      // §50.3: SQLJS_DIR, the tree's own tests/ install, normal resolution; never a home-directory path
+[process.env.SQLJS_DIR, path.join(TREE, 'tests', 'node_modules', 'sql.js'), 'sql.js'].filter(Boolean).some(function (c) { try { initSqlJs = require(c); return true; } catch (e) { return false; } });
+if (!initSqlJs) { console.log('§DT_VERDICT INCONCLUSIVE sql.js is not installed: run `cd ' + TREE + '/tests && npm install` (or set SQLJS_DIR) — §50.3: no home-directory fallback'); process.exit(2); }
+// §50.3: BIMCompiler (the legacy oracle files are tracked there): BIM_COMPILER_ROOT (the terms runner sets it), else a sibling of this tree; never homedir()
+var BC = process.env.BIM_COMPILER_ROOT || ['BIMCompiler', 'bim-compiler'].map(function (n) { return path.join(TREE, '..', n); }).filter(function (d) { return fs.existsSync(path.join(d, 'scripts', 'bridge')); })[0] || path.join(TREE, '..', 'BIMCompiler');
 var judged = 0, fails = 0, inconc = 0, log = function (s) { console.log(s); };
 function ck(id, issue, ok, d) { judged++; if (!ok) fails++; log('§DT ' + (ok ? 'PASS' : 'FAIL') + ' ' + id + ' - ' + issue + (d ? ' :: ' + d : '')); }
 var PREFIX = '@AD_Org_ID.Value/K@-@C_POS_ID.Name/K@-', SEQ = 9300001, POS = { T1: 9300101, T2: 9300102, N1: 9300103 }, ORG2 = 50002;
@@ -131,7 +135,7 @@ async function userValues(SQL) {
   ck('D17L', 'LEGACY: every AD_User_ID present on both sides carries the same Search Key on the twin and on the pilot', both.length > 0 && diff.length === 0, 'shared=' + both.length + ' differ=' + JSON.stringify(diff.map(function (r) { return r.id; })));
 }
 async function legacyStation(SQL) {
-  var LJ = path.join(os.homedir(), 'bim-compiler/scripts/bridge/out/docno_station_legacy.json');
+  var LJ = path.join(BC, 'scripts/bridge/out/docno_station_legacy.json');
   if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE D20 - no oracle file ' + LJ + ' (run scripts/bridge/docno_station_legacy.js on the pilot)'); return; }
   var L = JSON.parse(fs.readFileSync(LJ, 'utf8')), X = await device(SQL, 'LEG'), SEQ2 = 9300201, DT2 = 9300202;
   X.db.run("INSERT INTO ad_sequence (ad_sequence_id,ad_client_id,ad_org_id,isactive,name,isautosequence,incrementno,startno,currentnext,currentnextsys,istableid,prefix,startnewyear,decimalpattern,startnewmonth,isorglevelsequence) VALUES (?,11,0,'Y','DTLN replay','Y',1,?,?,100,'N',?,'N',NULL,'N','N')", [SEQ2, L.start, L.start, L.format]);
@@ -217,8 +221,11 @@ if (process.argv.indexOf('--mutants') >= 0) {                    // each mutant 
   await localNumbering(SQL);
   await userValues(SQL);
   await legacyStation(SQL);
-  var LJ = path.join(os.homedir(), 'bim-compiler/scripts/bridge/out/docno_till_legacy.json');
+  var LJ = path.join(BC, 'scripts/bridge/out/docno_till_legacy.json');
   if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE LEGACY - no oracle file ' + LJ + ' (run the same config on the pilot; until then the twin numbers are not legacy-compared)'); }
+  // §51.3 C4: the limits this witness does NOT judge, stated where the code is tested (the terms runner copies them into the record)
+  log('§LIMIT an author not bound to an AD_User is not judged at fold (counted)');
+  log('§LIMIT two users sharing a Search Key share a series');
   log('§DT_VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + inconc + (inconc ? ' (legacy arm)' : ''));
   process.exit(fails ? 1 : 0);
 })().catch(function (e) { console.log('§DT_VERDICT FAIL crash ' + (e && e.stack || e)); process.exit(1); });

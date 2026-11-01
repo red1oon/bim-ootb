@@ -25,8 +25,8 @@ var path = require('path'), fs = require('fs'), os = require('os'), cp = require
 var ARGS = process.argv.slice(2), NOMUT = ARGS.indexOf('--no-mut') >= 0, POS = ARGS.filter(function (a) { return !/^--/.test(a); });
 var ONLY = (ARGS.filter(function (a) { return /^--only=/.test(a); })[0] || '').replace('--only=', '').split(',').filter(Boolean);
 var TREE = path.resolve(POS[0] || path.join(__dirname, '..', '..')), BASE_COMMIT = process.env.RS_BASE || 'c02eaa58';
-var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : '/home/red1/bim-ootb/tests/node_modules/sql.js');
-var initSqlJs = require(SQLJS);
+var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : 'sql.js');      // §50.3: the tree's own install, else normal resolution; never a home-directory path
+var initSqlJs; try { initSqlJs = require(SQLJS); } catch (e) { console.log('§RS_SCOPE_VERDICT INCONCLUSIVE sql.js is not installed: run `cd ' + TREE + '/tests && npm install` (or set SQLJS_DIR) — §50.3: no home-directory fallback'); process.exit(2); }
 var ALL_ARMS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
 // ── collector: the product run prints; a mutant run only collects (its failures are kills, not product failures) ──
@@ -388,6 +388,11 @@ var ARMFN = { A: armA, B: armB, C: armC, D: armD, E: armE, F: armF, G: armG, H: 
   var armsOut = {}; Object.keys(product.arms).forEach(function (a) { armsOut[a] = { pass: product.arms[a].pass, fail: product.arms[a].fail, inc: product.arms[a].inc }; });
   console.log('\n§RS-ARMS ' + JSON.stringify(armsOut));
   var mutBad = !(NOMUT || ONLY.length) && killed !== MUT.length, v = (product.fails || mutBad) ? 'FAIL' : (product.inc || !product.judged) ? 'INCONCLUSIVE' : 'PASS';
+  // §51.3 C4: stated limits of audience sealing (§45.11), printed by the witness that judges it; the terms runner copies them into the record
+  console.log('§LIMIT the relay still sees metadata (author, box, counts, timing, sizes)');
+  console.log('§LIMIT in a mailbox space a checkpoint publishes no state (bim-ootb #2498, so no laned record id or verdict is readable with the team key) — the cost: a light client there folds instead of adopting a checkpoint');
+  console.log('§LIMIT an insider holding a pair key can leak it');
+  console.log('§LIMIT office spaces and spaces founded before F1 keep the team-wide key (unchanged by design)');
   console.log('§RS_SCOPE_VERDICT ' + v + ' judged=' + product.judged + ' fails=' + product.fails + ' inconclusive=' + product.inc + ' mutants=' + ((NOMUT || ONLY.length) ? 'skipped' : killed + '/' + MUT.length));
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 2);
 })().catch(function (e) { console.log('§RS_SCOPE_VERDICT INCONCLUSIVE - witness crashed: ' + (e && e.stack || e)); process.exit(2); });

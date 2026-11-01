@@ -22,8 +22,8 @@ pre{background:rgba(127,127,127,.12);padding:10px 12px;border-radius:8px;overflo
 git clone https://github.com/red1oon/bim-ootb.git
 cd BIMCompiler &amp;&amp; npm install
 node scripts/dev_env_fetch.js --root-bim-ootb ../bim-ootb   # files git does not carry, from public storage, hash-checked
-# only for the browser layer (the real page in headless Chromium):
-cd ../bim-ootb/tests &amp;&amp; npm install &amp;&amp; npx playwright install chromium
+cd ../bim-ootb/tests &amp;&amp; npm install                    # the bim-ootb tests need it (sql.js), with or without the browser layer
+npx playwright install chromium                          # only for the browser layer (the real page in headless Chromium)
 cd ../../BIMCompiler
 node scripts/witness_terms.js --ootb ../bim-ootb</pre>
 <p>The last line it prints is the verdict, for example <code>§TERMS_VERDICT PASS enforced=13 open=0 witness_failed=0 uncontrolled=0 browser=judged 5/skipped 0</code>. Every test's log is written under <code>build/scriptor/terms_run/</code>.</p>

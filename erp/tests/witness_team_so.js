@@ -22,7 +22,10 @@
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), crypto = require('crypto');
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
-function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
+function reqPw() {      // §50.3: the tree's own tests/ install, else normal resolution; never a home-directory path
+  var c = [require('path').join(__dirname, '..', '..', 'tests', 'node_modules', 'playwright'), 'playwright'];
+  for (var i = 0; i < c.length; i++) { try { return require(c[i]); } catch (e) { /* next */ } }
+  throw new Error('playwright is not installed: run `cd ' + require('path').join(__dirname, '..', '..', 'tests') + ' && npm install && npx playwright install chromium` (§50.3)'); }
 var fails = 0, judged = 0, inconclusive = [], errors = 0;
 function verdict(ok, label, detail) { judged++; if (!ok) fails++; console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + label + (detail ? ' — ' + detail : '')); }
 function incon(label, why) { inconclusive.push(label); console.log('   ⚪ INCONCLUSIVE ' + label + ' — ' + why); }

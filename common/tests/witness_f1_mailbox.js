@@ -20,8 +20,8 @@ if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) globa
 var path = require('path'), fs = require('fs'), os = require('os'), cp = require('child_process'), nodeCrypto = require('crypto');
 var ARGS = process.argv.slice(2), NOMUT = ARGS.indexOf('--no-mut') >= 0, POS = ARGS.filter(function (a) { return !/^--/.test(a); });
 var TREE = path.resolve(POS[0] || path.join(__dirname, '..', '..')), BASE_COMMIT = 'c23e28cf';
-var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : '/home/red1/bim-ootb/tests/node_modules/sql.js');
-var initSqlJs = require(SQLJS);
+var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : 'sql.js');      // §50.3: the tree's own install, else normal resolution; never a home-directory path
+var initSqlJs; try { initSqlJs = require(SQLJS); } catch (e) { console.log('§F1-VERDICT INCONCLUSIVE sql.js is not installed: run `cd ' + TREE + '/tests && npm install` (or set SQLJS_DIR) — §50.3: no home-directory fallback'); process.exit(2); }
 
 var fails = 0, judged = 0, inconcl = 0, arms = {};
 function ok(arm, cond, label, detail) { judged++; arms[arm] = arms[arm] || { pass: 0, fail: 0 }; if (cond) arms[arm].pass++; else { arms[arm].fail++; fails++; }
@@ -252,6 +252,10 @@ async function gateArm(Esut, Ebase) {
   }
   console.log('\n§F1-ARMS ' + JSON.stringify(arms));
   var v = fails ? 'FAIL' : (inconcl || !judged) ? 'INCONCLUSIVE' : 'PASS';
+  // §51.3 C4: stated limits of F1 (term=visit-bounded: this witness also serves sealing-real, where they do not apply)
+  console.log('§LIMIT term=visit-bounded the identity/roster floor on a first-ever Visit is not bounded (identity ops reach everyone)');
+  console.log('§LIMIT term=visit-bounded an old app in a new star space silently misses mailbox mail');
+  console.log('§LIMIT term=visit-bounded the GitHub listing is still O(N) calls');
   console.log('§F1-VERDICT ' + v + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + inconcl + ' product_fails=' + realFails);
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 2);
 })().catch(function (e) { console.log('§F1-VERDICT INCONCLUSIVE - witness crashed: ' + (e && e.stack || e)); process.exit(2); });

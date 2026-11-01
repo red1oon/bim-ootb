@@ -15,7 +15,7 @@
     var rows = rec.rows.map(function (r) {
       var colour = r.status === 'OPEN' ? 'amber' : (green(r) ? 'green' : 'red'), st = (r.status === 'ENFORCED' && colour !== 'green') ? 'UNCONTROLLED' : r.status;
       counts[st] = (counts[st] || 0) + 1;
-      return { id: r.id, term: r.term, guarantee: r.guarantee, status: st, colour: colour, roadmap: r.roadmap || null, note: r.note || null,
+      return { id: r.id, term: r.term, guarantee: r.guarantee, status: st, colour: colour, roadmap: r.roadmap || null, note: r.note || null, limits: (r.limits || []).map(function (l) { return l.text; }),       // §51.3 C4: stated by the witness, copied by the runner
                witnesses: (r.witnesses || []).map(function (w) { return w.file + ' ' + w.verdict; }), controls: (r.controls || []).map(function (c) { return { id: c.id, found: !!c.found, evidence: c.evidence || null }; }) };
     });
     rows.sort(function (a, b) { return (rank[a.status] == null ? 9 : rank[a.status]) - (rank[b.status] == null ? 9 : rank[b.status]); });
@@ -31,7 +31,7 @@
     h += '<table style="border-collapse:collapse;margin-top:6px"><tr><th align=left>Term</th><th align=left>Status</th><th align=left>Witness</th><th align=left>Broken control (must fail)</th><th align=left>Closes with</th></tr>';
     m.rows.forEach(function (r) {
       h += '<tr class="tt-row" data-id="' + esc(r.id) + '" data-status="' + r.status + '" data-colour="' + r.colour + '"><td>' + esc(r.term) + '<br><small>' + esc(r.guarantee) + '</small></td><td style="color:' + COL[r.colour] + ';font-weight:bold">' + r.status + '</td><td>' +
-        (r.status === 'OPEN' ? '—' : esc(r.witnesses.join('; '))) + '</td><td>' + (r.status === 'OPEN' ? '—' : r.controls.map(function (c) { return (c.found ? '✔ ' : '✘ MISSING ') + esc(c.id); }).join('<br>')) + '</td><td>' + esc(r.roadmap || '') + (r.note ? '<br><small>' + esc(r.note) + '</small>' : '') + '</td></tr>';
+        (r.status === 'OPEN' ? '—' : esc(r.witnesses.join('; '))) + '</td><td>' + (r.status === 'OPEN' ? '—' : r.controls.map(function (c) { return (c.found ? '✔ ' : '✘ MISSING ') + esc(c.id); }).join('<br>')) + '</td><td>' + esc(r.roadmap || '') + (r.note ? '<br><small>' + esc(r.note) + '</small>' : '') + (r.limits && r.limits.length ? '<br><small class="tt-limits">Limits (stated by the witness): ' + esc(r.limits.join('; ')) + '</small>' : '') + '</td></tr>';
     });
     return h + '</table><p><button id="tt-export" type="button">Export JSON</button> <a href="team_objectives.html" target="_blank" rel="noopener">Project quality objectives</a></p></div>';
   }
