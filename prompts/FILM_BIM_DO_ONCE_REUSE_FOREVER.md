@@ -3,12 +3,18 @@ SCOPE: the film "BIM — The Untold Story of Do Once, Reuse Forever" (a new topi
 **Read the log after every run; exit code is not evidence.** Every spoken or captioned number is a `§FILM_FACT` of the take. Never print the shed's private title-block text (client, site).
 Honour this block until the film is published.
 
-## ▶ RESUME HERE (written 2026-11-01, session 16)
-Storyline below is APPROVED (owner: "Yes, make it the storyline. 'BIM - The Untold Story of Do Once, Reuse Forever'"). **Blocked on §D105** (bim-ootb lane
-`prompts/DXF2BIM_ARCHITECT_REVIEW.md`: the analytical builder reads ONLY the IFC; parity shed-via-IFC = direct; other IFCs measured) — chapters 5-6 claim exactly that, so no take
-before §D105 is merged and witnessed. Then: recorder spec → recorder (reuse `prompts/film_dxf2bim_submission_rec.js` harness + the spotlight helper on branch `film/whatsnew`, pushed,
-stopped WIP) → CPU dry run → GPU take (ask the other sessions to hold browser runs) → fill → cards (BIMCompiler `prompts/film_title_cards.py`, new FILM_SET; the whatsnew cards PR #285
-is superseded) → assemble (`prompts/film_dxf2bim_why_assemble.sh`) → back card (`prompts/film_back_card.py`) → witness of the output.
+## ▶ RESUME HERE (rewritten 2026-11-01 at the close of session 16 — the ONLY current block)
+**✅ MADE — two films from one GPU take (owner: "Proceed with your plan": one take, cut in two):**
+- `~/Videos/BIM_DoOnce_ReuseForever_Part1_TheIdea_1920x1080_2026-11-01.mp4` — 2:58 (the question, Before the screen, How we got here, Not history: reusability, the promise + back card).
+- `~/Videos/BIM_DoOnce_ReuseForever_Part2_InPractice_1920x1080_2026-11-01.mp4` — 6:19 (chapters 1-9, the note followed through + back card).
+**Take** `~/Videos/bim_do_once_reuse_forever/take_gpu/take1/` (log `../take1.log`): GPU, served from origin/main @1a3fc2ed, bim-compiler-95 held its browser runs; 0 §PAGEERR, 0 §FILM_GAP, 40 beats,
+14 chapters, 32 spotlights, blur 1 region / 2 texts per sheet view (`FILM_PRIVATE_RE` given at run time), raw sheets unchanged, walker 0, 507.2 s, 22,348 frames; own weight spoken 5,275.1 kN (§D104);
+STAAD parity 19,330 bytes three ways (set / IFC alone / fixture). Fill 32 placeholders, missing 0 (`foot_sched_t_spoken` = "12 inches"). **Assembly** (`take1/work_en`, the dry run's assembler,
+voices `FILM_VOX_F=af_kore FILM_VOX_M=am_onyx FILM_VOX_SPEED=0.92`, `FILM_SET=doonce`): POLY_TONE wrong 0, DETAIL 40/40, frames 12,681 = master, −17.8 LUFS, end hold 2.8 s. **Cut** at chapter 1
+(`w_sheet` t = 152.903 s; the promise line ends 151.7 s): 0.8 s fade out / 0.6 s in; back card appended to each (Part 1 frames 3,823 + 625 = 4,448 ✔; Part 2 9,484 vs 8,858 + 625 = 9,483: one frame
+at the mid-stream cut, 0.04 s).
+**Not done / open:** a properties panel in the Modeller (chapter 2 shows the IFC pset and says so); publish titles/descriptions (owner); the full 8:27 single cut exists as `take_gpu/assembled_full.mp4` (no back card).
+The charts and their scripts: `~/Videos/bim_do_once_reuse_forever/*.png` + `*.py`. Superseded: the what's-new film (branch `film/whatsnew`), BIMCompiler cards PR #285.
 
 ## STORYLINE (approved 2026-11-01)
 **Owner's frame:** "I wana revolve around the underlying foundation of BIM itself. The sole purpose of going digital is for its reusability and info building."
