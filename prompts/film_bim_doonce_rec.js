@@ -3,6 +3,7 @@
 // then ONE note of the converted shed followed through every reuse (property, price, checks, IFC, analytical model, any other IFC). LIVE recorder: the Modeller (SITE= a local server), REAL clicks / typing / wheel / file chooser; pages' state is READ for facts only.
 // spot()/chartSpot() = a REAL screenshot / the chart's own pixels, enlarged with a one-line caption; every one logs §FILM_SPOT <id>. Every number the narration or a caption quotes is a §FILM_FACT line of THIS take (chart dates are the charts' cited sources).
 // Private-name blur on the Sheet view (FILM_PRIVATE_RE at run time, never written here). READ take.log after every run: §PAGEERR, §FILM_GAP, a missing fact or walker_lines > 0 = not a take.
+// F1 + F2 installments (2026-11-01): captions c0d_shed / recap card say TWO notes; chapter 2 blows up the Properties panel (props_panel.js) instead of the IFC text tab.
 // NEVER run the real take on the GPU without the owner's go (FILM_GL=swiftshader = the CPU dry run). Voices for the fit: FILM_VOX_F=af_kore FILM_VOX_M=am_onyx FILM_VOX_SPEED=0.92 (BIMCompiler film/vox-switch).
 // usage: [FILM_GL=swiftshader] SHED_RAW_DIR=<9 raw sheets> [SHED_MARKED_DIR=<9 CLI-marked sheets>] SITE=<modeller.html> node prompts/film_bim_doonce_rec.js <take dir> [beat_min.json] > <take dir>.log
 'use strict';
@@ -317,7 +318,7 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   chapter(3, '0d'); await beat('r_full'); await chartShow('recorded_not_reusable_1920x1080.png'); await backdropP(3);
   await beat('r_hollow'); await chartSpot('c0d_hollow', [190, 225, 520, 420], 'Four and a half thousand years: every mark hollow, recorded for a person to read');
   await beat('r_cad'); await chartSpot('c0d_cad', [1320, 225, 170, 300], 'CAD and DXF, 1982: lines a person measures, notes as text');
-  await beat('r_shed'); await chartSpot('c0d_shed', [1495, 215, 190, 480], 'This work, the shed: its note on the concrete mix prices it and sets the stiffness');
+  await beat('r_shed'); await chartSpot('c0d_shed', [1495, 215, 190, 480], 'This work, the shed: its notes on the concrete (mix, strength) price it and set the stiffness');
   await beat('r_ifc'); await chartSpot('c0d_ifc', [1680, 215, 210, 400], 'One open model (IFC): what the schema can carry, filled all the way down');
 
   // ---- 0b THE PROMISE ----
@@ -369,7 +370,13 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
   { const wc = await pg.evaluate(b => window.__worldToClient((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2), F.bb); await moveTo(wc.x, wc.y, 900); await sleep(300); await pg.mouse.down(); await sleep(90); await pg.mouse.up(); await sleep(900); }
   { const sel = await pg.evaluate(() => Array.from(window.Bonsai._selSet || [])); if (sel.length === 1 && sel[0] === F.id) fact('footing_pick', 'pointer'); else { fact('footing_pick', 'pointer picked ' + JSON.stringify(sel) + ': selected by id (stated)'); await pg.evaluate(id => window.Bonsai.select(id), F.id); } await sleep(1500);
     fact('footing_selected', JSON.stringify(await pg.evaluate(() => Array.from(window.Bonsai._selSet || []))));
-    fact('props_panel', String(await pg.evaluate(() => /CastingRatio|Sched_Footing/.test(document.body.innerText)))); }   // the gap, measured: is the property on any page text after the select?
+  }
+  // F2 (installment, 2026-11-01): the Modeller's Properties panel (DXF2BIM U1, props_panel.js) opens on the pick; its rows are READ for the facts, then the panel is blown up
+  await pg.waitForFunction(() => { const p = document.getElementById('pp-panel'); return p && p.style.display === 'block' && p.querySelector('[data-pp-key="Note_CastingRatio"]'); }, { timeout: 20000 })
+    .catch(() => { throw new Error('the Properties panel did not open on the footing (props_panel.js loaded: ' + 'see page log)'); });
+  const PP = await pg.evaluate(() => { const kv = {}; document.querySelectorAll('#pp-panel .pp-r').forEach(r => { kv[r.getAttribute('data-pp-key')] = r.querySelector('b').textContent; }); return kv; });
+  fact('props_panel', 'shown'); fact('pp_ratio', PP.Note_CastingRatio || 'none'); fact('pp_ratio_src', PP.NoteSource_CastingRatio || 'none'); fact('pp_fc', PP.Note_fc_MPa || 'none'); fact('pp_fc_src', PP.NoteSource_fc_MPa || 'none'); fact('pp_sched_t', PP.Sched_Footing_T || 'none');
+  if (PP.Note_CastingRatio !== F.ratio_a) console.log('§FILM_GAP pp_ratio ' + PP.Note_CastingRatio + ' != ratio_a ' + F.ratio_a);
   await beat('x_pset');
   const IFC = await buildIfc(), IFCT = IFC.toString('latin1'), IDX = stepIndex(IFCT); fs.writeFileSync(path.join(SAVED, 'shed.ifc'), IFC);
   const psetLines = Object.values(IDX).filter(l => /IFCPROPERTYSET\(.*'Dxf2Bim_Evidence'/.test(l)), fcLines = Object.values(IDX).filter(l => /Note_fc_MPa/.test(l));
@@ -380,9 +387,10 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
       const oid = objs.split(',')[0].replace('#', ''), ent = IDX[oid] || '', cls = (/^#\d+=(IFC[A-Z0-9]+)\(/.exec(ent) || [])[1] || ''; if (clsWant && cls !== clsWant) continue; return { ent, pset: l, props, cls }; } return null; };
   const footP = pickPset(/Note_CastingRatio/, 'IFCFOOTING');
   if (!footP) throw new Error('no Dxf2Bim_Evidence pset carrying Note_CastingRatio in the IFC'); fact('ifc_footing_entity', footP.cls || 'none'); fact('ifc_footing_props', JSON.stringify(footP.props.map(p => (/'([A-Za-z0-9_]+)',\$,IFC[A-Z]+\('?([^')]*)/.exec(p) || []).slice(1, 3).join('='))).slice(0, 700));
-  await textTab('ifc_footing', ['# the converter\'s own IFC (' + IFC.length + ' bytes, ' + (/FILE_SCHEMA\(\('([A-Z0-9_]+)'/.exec(IFCT) || [])[1] + '): the footing and some of the properties in its Dxf2Bim_Evidence set (selected lines, copied from the file)', '', footP.ent].concat(footP.props.filter(q => /'(Kind|Note_CastingRatio|NoteSource_CastingRatio|Sched_Footing_T|SourceSheet)'/.test(q))), async (np, T, lineRect) => {
-    const r = await np.evaluate(() => { const b = document.querySelector('pre').getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; }); await sleep(1200);
-    await spot(np, 'ifc_footing_pset', r, 'The footing\'s properties, from the model\'s own IFC (the Modeller has no properties panel): the note, its sheet and handle, the schedule', 6500); await hold(); });
+  { const r = await pg.evaluate(() => { const p = document.getElementById('pp-panel'), g = p.querySelector('[data-pp-group="Drawing notes"]'), rows = Array.from(p.querySelectorAll('.pp-r')).filter(e => /^(Note|NoteSource|Sched_Footing_T|IFC class)/.test(e.getAttribute('data-pp-key')));
+      p.scrollTop = Math.max(0, g.offsetTop - 8); const bs = [p.querySelector('.pp-h'), g].concat(rows).map(e => e.getBoundingClientRect()).filter(b => b.height > 0 && b.bottom > p.getBoundingClientRect().top && b.top < p.getBoundingClientRect().bottom);
+      const pb = p.getBoundingClientRect(), top = Math.max(pb.top, Math.min(...bs.map(b => b.top))), bot = Math.min(pb.bottom, Math.max(...bs.map(b => b.bottom))); return { x: pb.left, y: top, w: pb.width, h: bot - top }; });
+    await sleep(900); await spot(pg, 'props_panel', r, 'The footing\'s Properties: what its IFC carries — the mix note and the strength note, each with its sheet and handle, and the schedule', 6500); await hold(); }
 
   // ---- 3 REUSED FOR COST: Measure impact, then the bill row the note chose ----
   chapter(7, 'cost'); await beat('c_impact'); await backdropP(7);
@@ -505,7 +513,7 @@ const num = s => { const m = /-?[\d,]+(?:\.\d+)?/.exec(String(s || '')); return 
 
   // ---- 9 INFORMATION THAT GROWS ----
   chapter(13, 'grows'); await beat('g_recap'); await backdropP(13);
-  await bigCard('9 · INFORMATION THAT GROWS', 'one note &rarr; a property &rarr; a price &rarr; a check &rarr; the IFC &rarr; the frame\'s stiffness<br><span style="font-size:24px;color:#9fb4c8">Entered once. Reused at every step. Never retyped.</span>');
+  await bigCard('9 · INFORMATION THAT GROWS', 'two notes (the mix, the strength) &rarr; properties &rarr; a price &rarr; a check &rarr; the IFC &rarr; the frame\'s stiffness<br><span style="font-size:24px;color:#9fb4c8">Entered once. Reused at every step. Never retyped.</span>');
   await beat('end'); await bigCard('THE ANSWER', 'A drawing is read once.<br>A twin is reused forever.');
   await sleep(1500);
   fact('raw_unchanged', String(rawFiles.map(sha).every((h, i) => h === rawSha0[i])));
