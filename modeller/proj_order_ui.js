@@ -97,12 +97,7 @@
     if (state.generated) { var a = document.createElement('a'); a.id = 's9-open'; a.textContent = 'Open in ERP ↗'; a.href = state.url; a.target = '_blank'; a.rel = 'noopener'; a.style.cssText = 'margin-left:6px;color:#4fc3f7'; row.appendChild(a); }
   }
 
-  var _bdbCache = null, _bdbBuf = null;
-  async function _bdb() {   // the Open building's own DB (window.__dwBuf), as edit_delta_ui.js
-    var b = window.__dwBuf; if (_bdbCache && _bdbBuf === b) return _bdbCache;
-    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, location.href).href; } });
-    _bdbCache = new SQL.Database(b instanceof Uint8Array ? b : new Uint8Array(b)); _bdbBuf = b; return _bdbCache;
-  }
+  async function _bdb() { return window.OpenBuildingDb ? window.OpenBuildingDb.get() : null; }   // U7: the Open building's own DB, via its one reader (open_building_db.js)
 
   async function act(kind) {
     if (_busy) return; _busy = true;

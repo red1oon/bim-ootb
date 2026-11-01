@@ -8,7 +8,7 @@
 (function () {
   'use strict';
   var SRC = ['../viewer/rates.js?v=12', '../viewer/locale_loader.js?v=14', '../erp/bigdecimal.js', '../viewer/schedule_author.js?v=14', '../viewer/edit_delta.js?v=4'];
-  var _loading = null, _db = null, _dbBuf = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
+  var _loading = null, _mx = 0, _my = 0, _hoverFid = null, _selFid = null, _seenEdited = {};
 
   function _load(src) {
     return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function () { rej(new Error('load ' + src)); }; document.body.appendChild(s); });   // BODY (document-order last): locale_loader.js derives its base URL from the LAST <script> in the document
@@ -29,12 +29,7 @@
     }
     return _loading;
   }
-  async function _dbFor() {
-    if (!window.__dwBuf) return null;
-    if (_db && _dbBuf === window.__dwBuf) return _db;
-    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, location.href).href; } });
-    var b = window.__dwBuf; _db = new SQL.Database(b instanceof Uint8Array ? b : new Uint8Array(b)); _dbBuf = b; return _db;
-  }
+  async function _dbFor() { return window.OpenBuildingDb ? window.OpenBuildingDb.get() : null; }   // U7: the one reader of the open building's DB (open_building_db.js)
 
   // The op-log record of an ARC element (used when the opened DB carries no element_transforms — e.g. a user .ifc opened directly, measured 2026-09-30):
   // class + local bbox extents from the signed seed row, discipline/storey from elements_meta when present. Never invented: absent -> null.
