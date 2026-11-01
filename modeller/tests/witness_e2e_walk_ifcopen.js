@@ -59,6 +59,8 @@ const CASES = [
     console.log(`\n═══ W-E2E-WALK-IFCOPEN — ${c.resident} via ${c.mode}-open → STR surface + Walk ALL Disciplines (production path) ═══`);
     const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    // §M1-IFC-GEONONE: read the shipped § lines (not re-derive): how long each discipline's LOD400 gate WAITED for a geo buffer, and the M-2 aggregate-parts count.
+    const waits = [], agg = []; pg.on('console', m => { const t = m.text(); let x = /§DW-LOD400-REFUSE disc=(\S+).*waited=(\d+)ms/.exec(t); if (x) waits.push({ disc: x[1], ms: +x[2] }); if (/§AGG-PARTS-DRAWN building=\S+ composedParents=/.test(t)) agg.push(t.replace(/^.*§AGG-PARTS-DRAWN /, '')); });
 
     await pg.goto(`http://localhost:${port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
     await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function"', { timeout: 30000 }).catch(() => {});
@@ -120,6 +122,17 @@ const CASES = [
     chk('G4 WALK-ALL-OK (completes; every disc walked or honestly refused)', rowUp && walkOk && (walkedAll.length + refusedAll.length) > 0, 'walked=' + walkedAll.length + ' refused=' + refusedAll.length);
     chk('G5 COMMITTED (oplog += placedTotal + routed-network rows, chain OK)', after && after.oplogLen === before.oplogLen + placedTotal + after.routeRows && chain === true, 'oplog ' + before.oplogLen + '→' + (after && after.oplogLen) + ' (+' + placedTotal + ' placed +' + (after && after.routeRows) + ' runs/fittings) chain=' + chain);
     chk('G6 NO-ERROR', errs.length === 0, errs.slice(0, 3).join(' | '));
+    // G7 — the issue M-1 names: the gate waited for a _geo.db an IFC open never has (measured 60087 ms x 4 disciplines before the fix). INCONCLUSIVE if no discipline refused (nothing waited).
+    if (c.mode === 'ifc') {
+      if (!waits.length) console.log('  ➖ G7 NO-GEO-WAIT INCONCLUSIVE (no §DW-LOD400-REFUSE line: nothing reached the gate)');
+      else chk('G7 NO-GEO-WAIT (no discipline waited > 5 s for a geo buffer an IFC open does not have)', waits.every(w => w.ms < 5000), JSON.stringify(waits));
+    }
+    // G8 — M-2 measure line present and non-vacuous on the IFC-opened Duplex (composed parents with parts counted).
+    if (c.resident === 'Duplex' && c.mode === 'ifc') {
+      const m = /composedParents=(\d+) parts=(\d+) drawn=(\d+) undrawn=(\d+)/.exec(agg[0] || '');
+      if (!m || +m[2] === 0) console.log('  ➖ G8 AGG-PARTS-DRAWN INCONCLUSIVE ' + (agg[0] || 'no line'));
+      else chk('G8 AGG-PARTS-DRAWN (parents>0, drawn+undrawn=parts)', +m[1] > 0 && (+m[3]) + (+m[4]) === +m[2], agg[0].slice(0, 200));
+    }
 
     await pg.close();
   }
