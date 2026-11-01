@@ -24,7 +24,8 @@
         say('§IMPACT key=' + r.key + ' from=' + r.value + ' option=' + o + ' dBill=' + d.dBill.toFixed(2) + ' dKN=' + d.dKN.toFixed(2) + ' dBodies=' + d.dBodies);
         return d;
       });
-      var top = tries.reduce(function (m, d) { return Math.abs(d.dBill) > Math.abs(m.dBill) ? d : m; }, tries[0]);
+      var mag = function (d) { return [Math.abs(d.dBill), Math.abs(d.dKN), Math.abs(d.dBodies)]; }, more = function (p, q) { for (var i = 0; i < 3; i++) { if (p[i] > q[i] + EPS) return true; if (p[i] < q[i] - EPS) return false; } return false; };
+      var top = tries.reduce(function (m, d) { return more(mag(d), mag(m)) ? d : m; }, tries[0]);   /* U3: |Δ bill| first, then |Δ kN|, then |Δ bodies| */
       var inert = tries.every(function (d) { return Math.abs(d.dBill) < EPS && Math.abs(d.dKN) < EPS && d.dBodies === 0; });
       rows.push({ key: r.key, value: r.value, source: r.source, kind: r.kind, impact: Math.abs(top.dBill), top: top, tries: tries, inert: inert });
     });
