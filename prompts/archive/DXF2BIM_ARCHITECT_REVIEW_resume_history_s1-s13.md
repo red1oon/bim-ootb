@@ -263,3 +263,41 @@ pre-§D98 tree) and passes 3/3 standalone: fix the witness's wait for the status
 **Recipes + landmines:** as in the archived session-14 block (recipes for the shed report and the runner; PWD SoR page images; auto-merge orphan trap; `R.set` vs `desc.set`; the raw
 title block's client name; a new `element_defaults.json` key touches C36, E1, YP1 + the BIMCompiler page — and a changed kind/basis touches YP1 too). New: a headless witness that
 opens a new tab (the report's blob) must poll by interval, not rAF (the page goes background).
+
+
+## Session 16 RESUME block (archived verbatim 2026-11-01 at the close of session 16)
+### (was) RESUME HERE (session 16 entry; written 2026-10-31 at the close of session 15 — the ONLY current block)
+**Merged in session 15 (bim-ootb main, each witnessed, logs read):** #2464 **§D99 P4 step 1** the drawing's stated casting ratio picks the SoR row (`pwd2024_bd` 1:1.5:3 rows 07.3.1/07.3.2/
+07.3.3, read off the page images; a stated mix with no row → unpriced + flag; W-BILL-MIX 5/0) · #2465 P4 step 2 REFUTED ("THICk." = the footing schedule's T = 12", already read; no slab
+thickness is stated anywhere) + P2 spec · #2468 submission-pack film STORYLINE (in `FILM_DXF2BIM_WHY_MARKINGS.md`) + split buttons kept (owner: "Buttons do advice") · #2470 **§D99 P2 step 1**
+`dxf2impact.js` + CLI `--impact` (W-IMPACT 4/0) · #2472 §D100 finding · #2478 **§D100 rule `load_path`** in `viewer/structural_sanity.js` (a beam with no path down; floating_member untouched,
+fleet identical; W-LOAD-PATH 5/0) · #2480 **§D100 (b)** yellow default `column.top_under_beam` = `beam_above` (owner: "Wouldn't this default as standardized … Thus requiring precision from me";
+W-COL-TO-BEAM 3/0). In flight: **#2471** W-DXF-ADD-BAY B11/B11c (a column on both long walls at every grid line after a bay) — synced with main, auto-merge on; check it landed.
+**Facts not to re-derive (shed, CLI `--complete --pack pwd2024_bd`, 2026-10-31 end of session 15):** 512 bodies; bill **6,227,255 BDT** (6,188,538.09 with `--choice column.top_under_beam=as_drawn`);
+own weight with the 12 raised columns (re-read from LoadSummary, not re-typed here); structural findings 1 (cantilever) + load_path 0 (as drawn: 10 = the long-wall beams over the bays
+between lines 36 and 41, columns drawn 1.524 m under beams at 3.10 m); `--impact`: slab thickness −1,298,309 BDT (0.15), section spacing −262,675 BDT / −126 bodies, 6 settings inert.
+**BIMCompiler (owner merges; the classifier refuses `gh pr merge` there):** **PR #277** = yellow list regenerated (63 rows, incl. `column.top_under_beam`) + guide `@SET` row + PROGRESS pointer;
+it contains #276's commit → after #277 merges, close #276. Until then the runner shows **YP1 FAIL** (W-YELLOW-PAGE passes against #277's page).
+**▶ NEXT, in order (session 16 progress inline):**
+1. ✅ **§D99 P2 step 2 — the page** (session 16, **#2483 merged**): Element defaults ▸ Measure impact; W-IMPACT 8/0 incl. the real page = the CLI. See `**§D99 P2 step 2 RESULT`.
+2. **Submission-pack film** — storyline approved (owner: "Ok on fresh storyline that naturally flows from the last one"); its Next list in `FILM_DXF2BIM_WHY_MARKINGS.md` (recorder → dry run →
+   take on a quiet machine → fill → assemble → witness). Session 16: ✅ recorder `prompts/film_dxf2bim_submission_rec.js` + script (13 rows) + beat_min + CPU (swiftshader) dry run,
+   **bim-ootb #2484** (read `### SUBMISSION FILM — DRY RUN RESULT` in the FILM file): 0 §PAGEERR over both tabs, fill missing=0, 1637 frames / 256 s; the page's report verdict line = the
+   CLI's for the same set + soil 150 (measured). Gaps there: the Modeller has NO properties panel (beat 2 shows the selection + the DETAILS sheet; values from the model) — a product gap,
+   not faked. ⛔ the take itself: GPU beside a live tab → needs the owner's go; then fill → assemble → witness → title cards (BIMCompiler `film_title_cards.py`, new FILM_SET).
+3. Small: ✅ `synth.roof.sheet_thickness` basis now says the own weight reads the sheet's plan box (widened by t·sin(slope)); yellow list regenerated onto BIMCompiler #277 ·
+   ✅ `witness_dxf_convert_fail` CF2: each click waits for its OWN status text + log line (after CF1 the status already began "Convert failed", so the wait returned at once) ·
+   ✅ the pack's label: `pwd2024_bd` meta now "PWD Bangladesh SoR 2022" (Finance Division approval letter 21 June 2022, read off the page image: "দর তফসিল-২০২২", valid three
+   years; ss.pwd.gov.bd serves no 2024 edition, 2026-10-31); the file id is kept. NOT changed: `viewer/locales/bn_BD.js`/`bl_BD.js` carry their own "2024" source labels (materials,
+   labour, equipment) — unverified, a separate check. Open: `witness_dxf_libtypes` LT7 FAILS since BIMCompiler #278 put master's `scripts/library_building_types.js` + exporter in `~/bim-compiler`: the map `scripts/library_building_types.json` (§L23) was never committed (`.gitignore:79 /scripts/*.json` swallowed it; diagnosed by bim-compiler-95) — its content (which building types each library component serves) is lane data to EXTRACT, not to guess (`{"default":["General"]}` would be a guess); the viewer's other cost paths do not read `material_rates`; carried: code packs (UBBL, BNBC 2020), RR authority headers.
+**RUNNER (session 16, the P2 step 2 tree):** `§ALLWITNESS PASS=99 ENV=10 FAIL=2 of 111` — edefaults (row ids followed the table order, not the rendered order: fixed, 9/0 standalone) and
+YP1 (#277); W-IMPACT 8/0, CF 4/0, W-EDIT-RATES-LINK 4/0 re-run after the last edits.
+**Recipes:** shed report `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
+--report [--impact] [--choice k=v] [--fact k=v]` · runner `NODE_PATH=~/bim-compiler/node_modules node modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw
+NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` · SoR chapter PDFs `https://ss.pwd.gov.bd/document/sor/<name>.pdf` (list: `/sor/sordownload/1`); read rates off the
+PAGE IMAGE at 250 dpi (`pdftoppm -r 250`), never the OCR text.
+**Landmines (each hit this session or last):** (a) a new `element_defaults.json` key touches C36 + E1 counts and the BIMCompiler yellow page (run `gen_yellow_list.js` in the same change);
+(b) a numeric literal in a comparison inside an engine module trips W-GUARD G3 — put tolerances in the registry row; (c) the stored `~/Videos/dxf2bim_film_work/why/cli/bodies.json` predates
+§D100: compare against a fresh CLI run, do not rewrite that film material; (d) a `// comment` inserted mid-statement swallows the rest of the line (twice this session) — use `/* */`;
+(e) PRs touching this file conflict with each other: merge main into a behind PR rather than assuming auto-merge lands it; (f) auto-merge squashes fast: follow-ups start off fresh `origin/main`.
+
