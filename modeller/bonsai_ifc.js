@@ -227,9 +227,14 @@
           if (!mesh) { seedNoMesh++; continue; }   // NO SILENT BOX — counted and named in §IFC-SEED below
           const fs = triFaceSet(mesh);
           if (!fs) { seedNoMesh++; continue; }
-          const cls = P.ifc_class || 'IfcBuildingElementProxy';
-          const ent = _CLASS_MAP[cls] || 'IFCBUILDINGELEMENTPROXY';
-          if (!_CLASS_MAP[cls]) seedProxy++;
+          // §M3-WALKED-CLASS: an ARC-seed row carries params.ifc_class; a WALKED fixture (modeller.html _commitDiscWalk) carries its class in params._dw.ifc
+          // (+ _dw.disc) and no params.ifc_class. Read what the op already carries; the discipline is the extractor's own class->discipline rule (ifc_extract_core DISC_MAP).
+          // A bend fitting (_dwFitOp) or a catalog drop carries only its catalog hash: the class is the catalog entry's own (the same library.get(hash).ifc_class read the Outliner/select path uses, modeller.html ~L818).
+          const _lib = window.Bonsai && window.Bonsai.library, _cat = P.hash && _lib && _lib.get ? _lib.get(P.hash) : null;
+          const cls = P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'IfcBuildingElementProxy';
+          // a class web-ifc can create is written as itself (IfcLightFixture, IfcFireSuppressionTerminal …) — no second class table; only a genuinely uncreatable class falls to the Proxy
+          const ent = _CLASS_MAP[cls] || (T[String(cls).toUpperCase()] != null ? String(cls).toUpperCase() : 'IFCBUILDINGELEMENTPROXY');
+          if (ent === 'IFCBUILDINGELEMENTPROXY' && cls !== 'IfcBuildingElementProxy') seedProxy++;
           seedByClass[cls] = (seedByClass[cls] || 0) + 1;
           const rep = api.CreateIfcEntity(mID, T.IFCSHAPEREPRESENTATION, ctx, label('Body'), label('Tessellation'), [fs]);
           // §L7.4 typing for 4D/5D: the importer's per-body IFC typing (provenance.ifc) travels into the file: Name + ObjectType = the drawing's type label, PredefinedType from the IFC4 enum
@@ -239,7 +244,7 @@
             const gp = mesh.geometry.attributes.position, vv = []; for (let i = 0; i < gp.count; i++) vv.push([gp.getX(i), gp.getY(i), gp.getZ(i)]);
             pdx = window.Dxf2Ifc.openingAttrs(ent, window.Dxf2Ifc.bboxOf(vv), { api, T, mID, enumOf }, tp && tp.PredefinedType);
           }
-          const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
+          const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
           productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
