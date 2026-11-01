@@ -3,6 +3,40 @@ SCOPE: spec + storyboard of the film "Why the markings: nine drawings, one shed"
 NEUTRAL NAMING (owner rule, `FILM_DXF2BIM_BRICSCAD.md`): the shed is "a common BricsCAD drawing set"; its title block carries a client name: the Modeller canvas does not draw TEXT entities, and every frame is checked for the title block, client or sponsor names before assembly; panel rows that quote sheet text (`@NAME` suggestions, notes) are checked the same way. The sheets stay local (`$SHED_RAW_DIR`, private OCI backup); the repo gets this spec, the recorder, the TSV; media in `~/Videos/dxf2bim_film_work/why/`.
 Status: RECORDED 2026-10-22; CURRENT FILM = v3 (see the v3 block): `~/Videos/DXF2BIM_Why_Markings_Shed_1920x1080_2026-10-22_v3.mp4`, 289.3 s, 7,231 frames == master, -16.7 LUFS, 13 / 13 DETAIL, 0 black frames, `§PAGEERR` 0, `§FILM_SHARE` build in frame on 136 of 138 samples (the 2 below 0.6 are the page reloads). (v1 line follows.) Earlier: Film `~/Videos/DXF2BIM_Why_Markings_Shed_1920x1080_2026-10-22.mp4`, 202.3 s, 1920 x 1080, 5,056 frames == master, -16.7 LUFS, 0 black frames, one silence (-40 dB, >= 2 s) = the end card's tail, `§POLY_TONE wrong=0`, 10 / 10 lines DETAIL, 0 SHORT, 0 SKIP, `§PAGEERR` 0, `film_narration_fill.js` 23 placeholders 0 missing. LOCAL ONLY: the sheets are a client's private drawings; not published, not uploaded.
 
+## ▶▶▶ §2D→FILM E2E — "nine sheets to a layered film" (spec 2026-11-02, session bim-compiler-88; owner, verbatim)
+**Owner:** "test its saving as a DB that can open in Viewer. THen do a silent bake alt-c with all checkboxes on. This is a fast regression end to end test from Modeller to Viewer and also showcase how the
+2Ds finally ends up as a hi quality film showing all its meta-data layers" · "see the path to go thru the whole shed." · "should we MEP walk first, so that it has DISCs to show?" · "THen use it to narrate a
+film take snips from other films how a 2D set is opened and built into a full hi quality BIM layered movie. U may cut out boring parts" · on the export defect below, owner chose "Full shed now".
+**E2E measured first (main 8984af69, log-read):** W-VIEWERDB V3/V4 PASS (Viewer: "DONE — SHED 511 elements", native op-log DB does not open), V1/V2 FAIL = stale oracle since §D88 B (bisect: first 511 =
+1799c504); the CLI agrees with the page (ops.json 511 GEOM_INSERT; its "bodies=512" is the gate count before the §D88 B door-gap join, an early "parity drift" reading here was wrong). Reopen + Walk ALL: 69 lights + 30 sprinklers lod400 (= W-FARM-RULES F2/F3), but Export ▸ Viewer database after it = 507 rows, IfcMember/IfcFooting/IfcFan -> 0,
+198 IfcBuildingElementProxy ARC (`bonsai_ifc.js:230` falls back when an op has no `ifc_class`). Sent to the DXF2BIM lane (bim-compiler-dd) 2026-11-02: export loss = Modeller core, handed to BIMCompiler `prompts/MODELLER_MASTER.md` M-3 (P1); W-VIEWERDB refresh taken by the DXF2BIM lane. NOT fixed here.
+**Alt+C path:** Alt+C derived a 25.7 m walk = 43 % of the 40.8 m shed (settle at bbox centre, nearest door). Stored path for the film: start 1.8 m inside the east wall on the aisle centreline
+(y = shed bbox mid), a band mid-shed, then the planner's own exit + outside bands; aisle clear (every column/wall/fan in the band sits on the end walls); walk seconds scaled at the planner's measured rate
+(15.7 s / 25.7 m): 46.8 m, out 28.6 s, total 68.2 s. All 12 Alt+C boxes on, saved through the shipped Save this path + `_exportBuildingDb` (`§CPE_PATH_SAVED`), bake size 1920x1080@24.
+**Film:** `~/Videos/Shed_2D_to_Film_1920x1080_2026-11-02_v1.mp4`, EN dialogue (Kokoro, local), cards `FILM_SET=shed2film`, the Why assembler. Silent sources only; every cut listed (`§CUT src= in= out=`):
+| # | card | source | cut (s) |
+|---|---|---|---|
+| 1 | NINE SHEETS, AS DRAWN | BricsCAD take2 `film.mp4` b01, b02 | [0.575, 14.156], [14.156, 26.0] |
+| 2 | WHAT THE DRAWING NEVER SAID | take2 b04, b06 | [44.105, 60.0], [79.344, 92.165] |
+| 3 | A PERSON STATES THE REST (rush) | take2 b07, b10, b12 | [92.165, 100.0], [137.930, 146.0], [201.704, 213.0] |
+| 4 | ONE SHED | take2 b13 | [215.630, 237.648] |
+| 5 | SERVICES, WALKED | NEW take, `film_dxf2bim_shed_v2_rec.js` (main 8984af69, SHED_DB = today's Modeller export, 513 rows) | s03..s08 (the recorder's own compute cuts) |
+| 6 | THE LAYERED FILM | the Alt+C silent bake of the whole-shed path | whole |
+**Facts:** every spoken number is a `§FILM_FACT` of take2 / the services take, or a `§` line of the bake log (copied beside the film). **Not claimed:** chapter 6 carries no walked MEP (the export defect
+above): the narration says the services are walked in the Modeller; it never says they are in the film.
+**Witness (log, not a look):** frames == composite master; DETAIL n/n, `wrong=0`; about -16 LUFS; 0 black frames; every cut in `§CUT`; services take `§PAGEERR` 0, lights/sprinklers > 0.
+**RESULT 2026-11-02 — `~/Videos/Shed_2D_to_Film_1920x1080_2026-11-02_v1.mp4`, 242.1 s, 1920x1080 25 fps, LOCAL ONLY.** Composite of three silent sources (work dir
+`~/Videos/dxf2bim_film_work/shed2film_2026-11-02/`, `comp/take.log` = beats + every source fact + `§CUT` list): BricsCAD take2 (8 cuts, 103.5 s), a NEW services take (`services_take/`, main 8984af69:
+`§FILM_FACT lights 69 · sprinklers 30 · lamps_moved 24 · pipe_segs 34 · joint_parts 90`, `§DW-PRIM-LOD` ELEC lod400=69 / FP lod400=30, 0 page errors, 6 cuts 52.7 s), the Alt+C bake (whole, 24->25 fps).
+**The bake** (`Shed_DXF_to_film_AFTER.mp4`, 2,062 frames, 85.9 s, 1080p24): `§CLI_BAKE_POSECHECK ... (MATCH) bandAnchorMinDistM=[0.02,0.01,0,0.02]` (the camera passed every stored band: the whole
+shed walked), `§MAXQ_QUALITY unconverged=0`. Boxes that drew: buildup (513/513, day 10 of 10), 4D/5D (ledger 513/513 PASS, cost 117,855 / 1,769.6 h PASS), reveal (ARC+STR hidden, ACMV shown), clash
+(189 mesh-true), measure datum (96 columns), load-path freeze (6 hops, PASS) + CCTV panel (PASS), storey highlight, bounce. Drew nothing, logged why: sun compass (no site lat/long), escape route
+(`FAIL reason=metadata-absent`: no `storey_walkable_raster` in a Modeller-exported DB — open, owner of ESCAPE_ROUTE_REVEAL to decide), audio panel (not built).
+**Assembly** (Why assembler, `FILM_SET=shed2film` from BIMCompiler branch `film/shed2film-cards`, script `prompts/film_narration_shed2film_en.tsv`): `§POLY_TONE lang=en wrong=0` (sa re-worded: "Can it put in
+the services too?" fell -1.3 st; "And the services?" rises), DETAIL 14 / 14, frames 6,053 == master, -17.8 LUFS (playbook ~-16), one silence = the end card (8.7 s), 0 black frames. Voices: Kokoro, local.
+Not claimed: no person has watched or listened to it. **Next:** when Modeller M-3 (b) merges (reopen keeps IfcMember/IfcFooting/IfcFan; (a) #2527 already exports ELEC/FP with their classes), re-export
+the walked shed, re-stage the same whole-shed path, re-bake, and swap chapter 6 so the services appear in the film (bim-compiler-dd will message bim-compiler-88).
+
 ## ▶▶▶ §LAST PART v2 SHORT (spec 2026-10-23, session 3; owner on v1: "cut out half to focus on the opening as an ARC and walk the MEP right away, faster pace; cam view should earnestly follow as parts are laid")
 **Film:** "A saved building, serviced", target ~90 s, EN. Recorder `prompts/film_dxf2bim_shed_v2_rec.js` (the v1 recorder's helpers, kept), narration `prompts/film_narration_dxf2bim_shed_v2_en.tsv`, cards
 `FILM_SET=shedlast2` (compiler `film_title_cards.py`, 2 chapters), the same `film_dxf2bim_why_assemble.sh`. Input = the shed's Viewer database exported by the Modeller (`SHED_DB`: v1's chapter 1 writes
