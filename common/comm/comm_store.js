@@ -410,17 +410,21 @@
     async function cur() { return last || order(); }
 
     // my epoch keys, derived from the KEYGRANTs addressed to me that the roster accepted: {epoch: [CryptoKey]} (§13.2).
-    // Memoised on the fold result, so any new op (a new grant, a revoke) re-derives; nothing is persisted.
-    var ringFor = null, ringVal = {}, audVal = {};
+    // The RING is rebuilt from the current fold's grants whenever the fold result changes (a new grant, a revoke), so a grant
+    // the roster no longer accepts drops out. The CRYPTO is memoised per grant (§45.12): one ECDH+HKDF+unwrap per grant per
+    // store, keyed on everything the unwrap depends on; a grant that does not open is remembered too. Memory only, nothing persisted.
+    var ringFor = null, ringVal = {}, audVal = {}, _openCache = new Map(), _NOKEY = {};
     async function keyring() {
       var L = await cur(); if (ringFor === L) return ringVal;
       var ring = {}, ar = {}, R = L.roster;
       if (self.dhPrivateKey && R.ok) for (var g of R.grants) {
         if (g.kid !== self.kid) continue;
         var from = R.devices[g.from_kid]; if (!from || !from.dh) continue;
-        try { var k = await _unwrap(g.wrapped, self.dhPrivateKey, from.dh, space, g.epoch, g.from_kid, self.kid, g.aud);
-          if (g.aud) ((ar[g.aud] = ar[g.aud] || {})[g.epoch] = ar[g.aud][g.epoch] || []).push({ key: k, origin: g.origin });       // §45.11: {aud: {epoch: [{key, origin}]}}
-          else (ring[g.epoch] = ring[g.epoch] || []).push(k); } catch (e) { /* a grant that does not open is not a key */ }
+        var ck = g.wrapped + '|' + g.from_kid + '|' + g.epoch + '|' + (g.aud || '') + '|' + from.dh.x + ',' + from.dh.y, k = _openCache.get(ck);
+        if (k === undefined) { try { k = await _unwrap(g.wrapped, self.dhPrivateKey, from.dh, space, g.epoch, g.from_kid, self.kid, g.aud); } catch (e) { k = _NOKEY; } _openCache.set(ck, k); }
+        if (k === _NOKEY) continue;                                                             // a grant that does not open is not a key
+        if (g.aud) ((ar[g.aud] = ar[g.aud] || {})[g.epoch] = ar[g.aud][g.epoch] || []).push({ key: k, origin: g.origin });       // §45.11: {aud: {epoch: [{key, origin}]}}
+        else (ring[g.epoch] = ring[g.epoch] || []).push(k);
       }
       ringFor = L; ringVal = ring; audVal = ar; return ring;
     }
@@ -1031,7 +1035,7 @@
     return { kid: self.kid, space: space, db: db, author: author, authorMany: authorMany, ingest: ingest, order: order, frontier: frontier, versions: versions, gaps: gaps,
              genesis: genesis, baseInfo: baseInfo, planTrust: planTrust, planTrustInfo: planTrustInfo, anchor: anchor, publishAnchor: publishAnchor, addPerson: addPerson, enroll: enroll, setRole: setRole, revoke: revoke, setPolicy: setPolicy, publishStatement: publishStatement, policy: policy, visitOffset: visitOffset, versionState: versionState, refold: refold,
              checkpoint: checkpoint, cosign: cosign, claim: claim, claimOf: claimOf, claims: claims, claimNotices: claimNotices, checkpointInfo: checkpointInfo, checkpointDue: checkpointDue,
-             keyring: keyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
+             keyring: keyring, audKeyring: audKeyring, sealed: function () { return _q(db, 'SELECT op_hash, epoch, bundle FROM cl_sealed'); },
              bundleNew: bundleNew, readBundle: readBundle, signedHead: signedHead, sync: sync, setMailbox: setMailbox, delivery: delivery, placedEnvelopes: placedEnvelopes,
              conflicts: conflicts, foldable: foldable, notices: notices, saveCheck: saveCheck,
              verdicts: verdicts, query: function (sql, args) { return _q(db, sql, args); } };
