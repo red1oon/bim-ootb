@@ -80,6 +80,21 @@ function o1(O, R, G, arcOnly) {
   const ok = rS.size > 0 && !missing.length && !extra.length && dC <= 1e-9 && dB <= 1e-9 && !k.unexplained && !k.noMesh && (!rf.size || (!fMiss && !fExtra));
   return { ok, oN: oS.size, rN: rS.size, shared, missing, extra, dC, dB, k, firstBad, fills: rf.size ? `fills R=${rf.size} O=${of.size} missing=${fMiss} extra=${fExtra}` : 'fills R=none (table absent)' };
 }
+
+// O6 judged as a pure function (a falsifier feeds it a wrong DB). Pairs = rel_aggregates (parent|child). "Spatial" = parent is no element (the storey -> building rows).
+function o6(O, R) {
+  const pairs = db => new Set((has(db, 'rel_aggregates') ? rows(db, 'SELECT parent_guid, child_guid FROM rel_aggregates') : []).map(r => r[0] + '|' + r[1]));
+  const isEl = db => { const s = new Set(rows(db, 'SELECT guid FROM elements_meta').map(r => r[0])); return g => s.has(g); };
+  const hasTr = db => { const s = new Set(rows(db, 'SELECT guid FROM element_transforms').map(r => r[0])); return g => s.has(g); };
+  const cls = db => { const o = {}; rows(db, 'SELECT guid, ifc_class FROM elements_meta').forEach(r => o[r[0]] = r[1]); return o; };
+  const op = pairs(O), rp = pairs(R), oEl = isEl(O), oTr = hasTr(O), oCls = cls(O), rCls = cls(R);
+  const missing = [...rp].filter(x => !op.has(x)), oGhost = [...op].filter(x => { const g = x.split('|')[0]; return oEl(g) && !oTr(g); });
+  const ghostExtra = oGhost.filter(x => !rp.has(x)), spatial = [...op].filter(x => !oEl(x.split('|')[0])).length;
+  const withGeo = [...op].filter(x => { const g = x.split('|')[0]; return oEl(g) && oTr(g) && !rp.has(x); }), byCls = {};
+  withGeo.forEach(x => { const [p, c] = x.split('|'), k = (oCls[p] || '?') + '>' + (oCls[c] || '?'); byCls[k] = (byCls[k] || 0) + 1; });
+  const nameP = x => { const [p, c] = x.split('|'); return (rCls[p] || oCls[p] || '?') + ' ' + p + ' > ' + (rCls[c] || oCls[c] || '?') + ' ' + c; };
+  return { ok: rp.size > 0 && !missing.length && !ghostExtra.length, rN: rp.size, oN: op.size, spatial, missing, ghostExtra, withGeo: withGeo.length, byCls, nameP };
+}
 // the Viewer's own import (kept, untouched): import_worker.js in a vm (web-ifc = the Node build of the same 0.0.77) + import_db_builder.js, no Modeller filter
 function runWorker(bytes, filename) {
   return new Promise((resolve, reject) => {
@@ -120,8 +135,10 @@ function o2(O, Wd) {   // byte-identical mesh + centre + bbox on every guid both
     say(`  §O1[${c.key}] opened=${r.oN} resident=${r.rN} (patch statements ${R.n}) shared=${r.shared} missing=${r.missing.length} ${clsCount(R.db, r.missing.slice(0, 500))} extra=${r.extra.length} ${clsCount(out.db, r.extra.slice(0, 500))} dCentre=${r.dC.toFixed(9)} dBbox=${r.dB.toFixed(9)} meshes=${JSON.stringify(r.k)} ${r.fills}${r.firstBad.length ? ' first=' + r.firstBad.join(' | ') : ''}`);
     if (!G) { inconclusive++; say('INCONCLUSIVE O1[' + c.key + '] the resident mesh DB could not be read: meshes not judged'); }
     else check('O1[' + c.key + ']', 'the opened DB = the resident\'s' + (c.arcOnly ? ' (ARC rows: the resident is an older ARC-only lineage)' : '') + ': rows, centres, bboxes, meshes, fills', r.ok, `rows ${r.oN}/${r.rN} missing=${r.missing.length} extra=${r.extra.length} meshes ${JSON.stringify(r.k)}`);
-    const rAgg = has(R.db, 'rel_aggregates') ? rows(R.db, 'SELECT count(*) FROM rel_aggregates')[0][0] : 0, oAgg = rows(out.db, 'SELECT count(*) FROM rel_aggregates')[0][0];
-    say(`  §P-X2[${c.key}] rel_aggregates resident(patched)=${rAgg} opened=${oAgg} (element-level aggregates are carried as P-X2, not claimed)`);
+    const a6 = o6(out.db, R.db);
+    say(`  §O6[${c.key}] resident(patched) pairs=${a6.rN} opened pairs=${a6.oN} (spatial ${a6.spatial}) missing=${a6.missing.length} ghostExtra=${a6.ghostExtra.length} extraWithGeometryParent=${a6.withGeo} ${JSON.stringify(a6.byCls)}${a6.missing.length ? ' firstMissing=' + a6.missing.slice(0, 3).map(a6.nameP).join(' | ') : ''}`);
+    if (!a6.rN) { inconclusive++; say('INCONCLUSIVE O6[' + c.key + '] the resident has no element-level rel_aggregates: nothing judged'); }
+    else check('O6[' + c.key + ']', 'the opened rel_aggregates hold every patched-resident pair and, for ghost parents, exactly the resident\'s', a6.ok, `resident ${a6.rN} opened ${a6.oN} missing=${a6.missing.length} ghostExtra=${a6.ghostExtra.length} geometryParentExtra=${a6.withGeo}`);
     // O2: the Viewer's import, same file
     const t0 = Date.now(), Wd = buildViewerDb(SQL, await runWorker(bytes, path.basename(c.ifc))), w = o2(out.db, Wd);
     check('O2[' + c.key + ']', 'every element the Viewer\'s import and the open both keep: byte-identical mesh, centre, bbox', w.ok, `shared=${w.shared} meshDiff=${w.diff} maxTransformDiff=${w.dT} (${Date.now() - t0} ms)${w.first.length ? ' first=' + w.first.join(',') : ''}`);
@@ -149,6 +166,11 @@ function o2(O, Wd) {   // byte-identical mesh + centre + bbox on every guid both
     else { const ng = (m[1][0] === 'Z' ? 'Y' : 'Z') + m[1].slice(1), edited = Buffer.from(txt.replace("IFCWALLSTANDARDCASE('" + m[1] + "'", "IFCWALLSTANDARDCASE('" + ng + "'"), 'latin1');
       const e = await openIt(edited, name), cc = o1(e.db, R.db, G, false);
       check('O4c', 'FALSIFIER wall ' + m[1] + ' renamed ' + ng + ' in the IFC text -> O1 FAILS: 1 missing, 1 extra', !cc.ok && cc.missing.length === 1 && cc.missing[0] === m[1] && cc.extra.length === 1 && cc.extra[0] === ng, `O1 ok=${cc.ok} missing=${cc.missing.join(',')} extra=${cc.extra.join(',')}`); e.db.close(); }
+    { const tx = bytes.toString('latin1'), rm = /#(\d+)\s*=\s*IFCROOF\('([^']{22})'/.exec(tx);
+      if (!rm) { inconclusive++; say('INCONCLUSIVE O4d no IFCROOF line found'); }
+      else { const re = new RegExp('#\\d+\\s*=\\s*IFCRELAGGREGATES\\([^;]*?,#' + rm[1] + ',\\([^;]*\\);', 'g'), n = (tx.match(re) || []).length, e = await openIt(Buffer.from(tx.replace(re, ''), 'latin1'), name), d = o6(e.db, R.db);
+        const roofR = rows(R.db, 'SELECT count(*) FROM rel_aggregates WHERE parent_guid = \'' + rm[2] + '\'')[0][0], named = d.missing.length > 0 && d.missing.length === roofR && d.missing.every(x => x.startsWith(rm[2] + '|'));
+        check('O4d', 'FALSIFIER the ' + n + ' IFCRELAGGREGATES line(s) of roof ' + rm[2] + ' removed from the IFC -> O6 FAILS naming the roof > slab pair', n > 0 && !d.ok && named, `removed=${n} O6 ok=${d.ok} missing=${d.missing.length} (the roof's resident pairs: ${roofR}) onlyRoof=${named} first=${d.missing.slice(0, 2).map(d.nameP).join(' | ')}`); e.db.close(); } }
     // O5 the page
     if (process.env.BROWSER === '0') { inconclusive++; say('INCONCLUSIVE O5 BROWSER=0: the page was not judged'); }
     else await page(c, out.db, R.db);
@@ -170,7 +192,7 @@ async function page(c, O, R) {
   try {
     const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 900 });
     pg.on('pageerror', e => { errs.push(String(e).slice(0, 160)); say('  §PAGEERR ' + String(e).slice(0, 160)); });
-    pg.on('console', m => { const t = m.text(); if (/§IFC-OPEN|§ARC-SEED-WIRE|§PROPS_IFC_EXTRACT|§PSET_COMMON|§SUMMARY/.test(t)) { logs.push(t); say('  page ' + t.slice(0, 220)); } });
+    pg.on('console', m => { const t = m.text(); if (/§IFC-OPEN|§ARC-SEED-WIRE|§PROPS_IFC_EXTRACT|§PSET_COMMON|§SUMMARY|§NOGEO_COMPOSE/.test(t)) { logs.push(t); say('  page ' + t.slice(0, 220)); } });
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 });
     await pg.waitForFunction('window.__sceneReady===true && window.OpenBuildingDb && window.PropsPanel', { timeout: 120000 });
     await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__local"]', { visible: true });
@@ -182,6 +204,18 @@ async function page(c, O, R) {
     const x = logs.filter(l => /§IFC-OPEN-X /.test(l)), seed = logs.find(l => /§ARC-SEED-WIRE .* editable ARC elements=/.test(l)) || '';
     const kept = +((/kept=(\d+)/.exec(x[0] || '') || [])[1]), committed = +((/elements=(\d+)/.exec(seed) || [])[1]), hardfail = +((/hardfail=(\d+)/.exec(seed) || [])[1]);
     say(`  §O5 open ${openMs} ms; §IFC-OPEN-X lines=${x.length} kept=${kept} (oracle ${rows(O, 'SELECT count(*) FROM elements_meta')[0][0]}); seed committed=${committed} hardfail=${hardfail} (oracle ARC rows with a transform ${oracleArc}; resident ${resArc}); bridge=${st.bridge} group=${st.group}`);
+    // O7: the aggregates consumer (composeGhostsFromAggregates, str_walker_outliner.js) on THIS open. Oracle = the same rule run in Node on the opened DB (fixpoint over rel_aggregates).
+    { const gh = {}; rows(O, 'SELECT m.guid, m.ifc_class FROM elements_meta m LEFT JOIN element_transforms t ON t.guid = m.guid WHERE t.guid IS NULL').forEach(r => gh[r[0]] = r[1]);
+      const kids = {}; (has(O, 'rel_aggregates') ? rows(O, 'SELECT parent_guid, child_guid FROM rel_aggregates') : []).forEach(r => (kids[r[0]] = kids[r[0]] || []).push(r[1]));
+      const geo = new Set(rows(O, 'SELECT guid FROM element_transforms').map(r => r[0])), exp = {}; let prog = true;
+      while (prog) { prog = false; for (const g in gh) if (!exp[g] && (kids[g] || []).some(k => geo.has(k))) { exp[g] = gh[g]; geo.add(g); prog = true; } }
+      const expBy = {}; Object.values(exp).forEach(k => expBy[k] = (expBy[k] || 0) + 1);
+      const cl = logs.find(l => /§NOGEO_COMPOSE composed=/.test(l)) || '', ul = logs.find(l => /§NOGEO_COMPOSE_UNRESOLVED/.test(l)) || '';
+      const composed = +((/composed=(\d+)/.exec(cl) || [])[1] || 0), unresolvedRoofStair = /IfcRoof|IfcStair/.test(ul);
+      say(`  §O7 ghosts=${Object.keys(gh).length} oracle composable=${Object.keys(exp).length} ${JSON.stringify(expBy)}; page: composed=${composed} unresolved=${ul ? ul.replace(/.*count=/, 'count=').replace(/ \(.*/, '') : 'none'}; seed committed=${committed}`);
+      if (!Object.keys(gh).length) { inconclusive++; say('INCONCLUSIVE O7 the opened DB has no ghost parents: nothing judged'); }
+      else check('O7', 'the IFC-opened Duplex: composeGhostsFromAggregates composes exactly the oracle\'s ghost parents (the IfcRoof + the IfcStairs), none of them left in §NOGEO_COMPOSE_UNRESOLVED', composed === Object.keys(exp).length && (expBy.IfcRoof || 0) === 1 && (expBy.IfcStair || 0) === 2 && !unresolvedRoofStair,
+        `composed=${composed} oracle=${Object.keys(exp).length} ${JSON.stringify(expBy)} unresolvedMentionsRoofStair=${unresolvedRoofStair} seedCommitted=${committed}`); }
     // the panel on a wall with property sets
     const fid = await pg.evaluate(g => window.__arcFidByGuid[g], gW);
     let pr = { fid: null };
