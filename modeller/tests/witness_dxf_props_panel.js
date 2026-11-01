@@ -9,7 +9,8 @@
  *   P3 THE PAGE (headless Modeller): open the marked shed, Complete, Convert, select a footing -> panel visible with Note_CastingRatio 1:1.5:3 (NoteSource ...#2E2) and Note_fc_MPa 24 (...#2E1);
  *      another part -> its own rows; x closes; select(null) -> hidden; 0 page errors (BROWSER=0 skips P3-P5, printed)
  *   P4 FALSIFIER: a part with no body behind it (a wall authored after Convert; and a fid absent from the bridge in Node) -> source "other", no evidence groups
- *   P5 layout: at 1440 x 900 the panel's box overlaps no other visible fixed panel (boxes printed)
+ *   P5 layout: at 1440 x 900 the panel's box overlaps no other visible fixed panel (boxes printed) and no visible toolbar control has the panel on top of it (elementFromPoint at its centre; at 1024 x 768 with the meta editor open there is no room beside it: the panel must then be ON TOP (overlay flag, visible at its own top) and still cover no control;
+ *      first runner run: #b-move was covered, so W-SHED-WALL-EDIT could not enter Move); the same at 1024 x 768
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2).
  */
 'use strict';
@@ -79,6 +80,19 @@ async function page(R, mo) {
     // P5 layout, while the footing is shown: every other visible fixed element that is a panel (box > 60 x 60 px)
     const boxes = await pg.evaluate(() => Array.from(document.querySelectorAll('body *')).filter(e => e.id !== 'pp-panel' && !e.closest('#pp-panel') && getComputedStyle(e).position === 'fixed' && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden')
       .map(e => { const b = e.getBoundingClientRect(); return { id: e.id || e.className || e.tagName, b: [b.left, b.top, b.right, b.bottom].map(Math.round) }; }).filter(x => x.b[2] - x.b[0] > 60 && x.b[3] - x.b[1] > 60 && x.id !== 'bar'));
+    // P5b every visible toolbar control is still the top element at its own centre (nothing of the panel on top of it: the runner caught #b-move covered)
+    const covered = await pg.evaluate(() => Array.from(document.querySelectorAll('#bar button, #bar input, #bar select')).filter(b => { const cs = getComputedStyle(b); return cs.display !== 'none' && cs.visibility !== 'hidden' && b.getClientRects().length > 0; }).map(b => { const q = b.getBoundingClientRect(); if (!q.width || !q.height) return null;
+      const t = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); return t && t.closest('#pp-panel') ? (b.id || b.title || b.tagName) : null; }).filter(Boolean));
+    const nCtl = await pg.evaluate(() => Array.from(document.querySelectorAll('#bar button, #bar input, #bar select')).filter(b => { const cs = getComputedStyle(b); return cs.display !== 'none' && cs.visibility !== 'hidden' && b.getClientRects().length > 0; }).length);
+    // P5c the same at 1024 x 768 (the meta editor open): no panel overlap, no control covered
+    await pg.setViewport({ width: 1024, height: 768 }); await new Promise(r => setTimeout(r, 400));
+    const small = await pg.evaluate(() => { const vis = b => { const cs = getComputedStyle(b); return cs.display !== 'none' && cs.visibility !== 'hidden' && b.getClientRects().length > 0; };
+      const P = document.getElementById('pp-panel'), pb = P.getBoundingClientRect(), box = [pb.left, pb.top, pb.right, pb.bottom].map(Math.round);
+      const cov = Array.from(document.querySelectorAll('#bar button, #bar input, #bar select')).filter(vis).map(b => { const q = b.getBoundingClientRect(); const t = document.elementFromPoint(q.left + q.width / 2, q.top + q.height / 2); return t && t.closest('#pp-panel') ? b.id : null; }).filter(Boolean);
+      const ov = ['bonsai-outliner', 'dxf-panel', 'dm-panel'].map(id => document.getElementById(id)).filter(e => e && vis(e)).map(e => { const q = e.getBoundingClientRect(); return { id: e.id, hit: !(q.right <= pb.left || q.left >= pb.right || q.bottom <= pb.top || q.top >= pb.bottom) }; }).filter(x => x.hit).map(x => x.id);
+      return { box, cov, ov, shown: P.style.display === 'block', overlay: P.getAttribute('data-pp-overlay') === '1', top: (() => { const t = document.elementFromPoint((pb.left + pb.right) / 2, pb.top + 12); return !!(t && t.closest('#pp-panel')); })() }; });
+    console.log('  P5c 1024 x 768 ' + JSON.stringify(small));
+    await pg.setViewport({ width: 1440, height: 900 }); await new Promise(r => setTimeout(r, 400));
     await pg.evaluate(f => window.Bonsai.select(f), fB); const b = await read();
     await pg.evaluate(() => document.getElementById('pp-close').click()); const c = await read();
     await pg.evaluate(() => window.Bonsai.select(null)); const d = await read();
@@ -93,7 +107,7 @@ async function page(R, mo) {
       mo.source === 'other' && mo.groups.length === 0 && e.shown && e.note && e.groups === 0, '');
     const over = boxes.filter(x => !(x.b[2] <= a.box[0] || x.b[0] >= a.box[2] || x.b[3] <= a.box[1] || x.b[1] >= a.box[3]));
     console.log('  P5 panel ' + JSON.stringify(a.box) + ' vs ' + boxes.length + ' visible fixed panels: ' + boxes.map(x => x.id + JSON.stringify(x.b)).join(' ').slice(0, 600));
-    ok('P5 layout at 1440 x 900: the panel overlaps none of the ' + boxes.length + ' other visible fixed panels' + (over.length ? ' (overlaps ' + over.map(x => x.id).join(',') + ')' : ''), a.shown && boxes.length > 0 && over.length === 0, '');
+    ok('P5 layout at 1440 x 900: the panel overlaps none of the ' + boxes.length + ' other visible fixed panels' + (over.length ? ' (overlaps ' + over.map(x => x.id).join(',') + ')' : '') + ' and covers none of the ' + nCtl + ' visible toolbar controls' + (covered.length ? ' (covers ' + covered.join(',') + ')' : ''), a.shown && boxes.length > 0 && over.length === 0 && nCtl > 0 && covered.length === 0 && small.shown && small.cov.length === 0 && (small.ov.length === 0 || (small.overlay && small.top)), 'at 1024 x 768: ' + JSON.stringify(small));
   } finally { await br.close(); srv.close(); }
 }
 function done() { console.log(fail ? '§VERDICT FAIL W-PROPS-PANEL judged=' + judged + ' fail=' + fail : '§VERDICT PASS W-PROPS-PANEL judged=' + judged + ' fail=0'); process.exit(fail ? 1 : 0); }

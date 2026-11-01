@@ -68,7 +68,7 @@
   function ensure() {
     if (panel) return panel;
     var st = document.createElement('style');
-    st.textContent = '#pp-panel{position:fixed;top:40px;right:14px;width:300px;max-height:calc(100vh - 170px);overflow:auto;z-index:30;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;' +
+    st.textContent = '#pp-panel{position:fixed;top:60px;right:70px;width:300px;max-height:calc(100vh - 190px);overflow:auto;z-index:30;background:#1b1d23;border:1px solid #2c303a;border-radius:10px;' +
       'color:#c7cdd8;font:12px system-ui,sans-serif;padding:8px 10px;box-shadow:0 8px 30px rgba(0,0,0,.45);display:none}' +
       '#pp-panel .pp-h{display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.14em;color:#5b6473;margin-bottom:6px}' +
       '#pp-panel .pp-h button{background:none;border:0;color:#8a93a0;font-size:16px;cursor:pointer;padding:0 2px}' +
@@ -77,6 +77,21 @@
     document.head.appendChild(st);
     panel = document.createElement('div'); panel.id = 'pp-panel'; document.body.appendChild(panel); return panel;
   }
+  // U1 (runner find: W-SHED-WALL-EDIT E1a could not click #b-move): the panel never covers a toolbar control or a left-side panel. It sits left of the right-hand rail (right: 70px,
+  // the side panels' convention), below every visible #bar control in its column, and narrows (to 220 px) so it clears the outliner / 2D / meta-editor panels; with less room than that (a 1024 px screen with the meta editor open) it opens on top of them.
+  function visible(b) { var cs = getComputedStyle(b); return cs.display !== 'none' && cs.visibility !== 'hidden' && b.getClientRects().length > 0; }   /* offsetParent is null for fixed controls */
+  function place(P) {
+    var W = window.innerWidth, H = window.innerHeight, leftLim = 0;
+    ['bonsai-outliner', 'dxf-panel', 'dm-panel', 'ins-panel'].forEach(function (id) { var e = document.getElementById(id); if (e && visible(e)) { var q = e.getBoundingClientRect(); if (q.top < H / 2) leftLim = Math.max(leftLim, Math.ceil(q.right) + 8); } });
+    var room = W - 70 - leftLim, width = Math.max(220, Math.min(300, room)); P.style.width = width + 'px';
+    P.style.zIndex = room < 220 ? '32' : '30'; P.setAttribute('data-pp-overlay', room < 220 ? '1' : '0');   /* no room beside the open panels: on top of them (x closes it), still clear of the toolbar */
+    var x0 = W - 70 - width, x1 = W - 70, top = 60;
+    Array.prototype.forEach.call(document.querySelectorAll('#bar button, #bar input, #bar select, #bar label'), function (b) {
+      if (!visible(b)) return; var q = b.getBoundingClientRect(); if (!q.width || !q.height) return;
+      if (q.right > x0 && q.left < x1 && q.top < H / 2) top = Math.max(top, Math.ceil(q.bottom) + 8); });
+    P.style.top = top + 'px'; P.style.maxHeight = 'calc(100vh - ' + (top + 130) + 'px)';
+  }
+  if (typeof window !== 'undefined') window.addEventListener('resize', function () { if (panel && panel.style.display === 'block') place(panel); });
   // ids: the selection; primary: the part shown. Called by the Modeller's setSelectionIds (its one owner of the selection).
   function update(ids, primary, ctx) {
     var P = ensure(), key = (ids || []).join(',') + '|' + primary;
@@ -84,7 +99,7 @@
     if (closedFor === key) return null;
     closedFor = null;
     var m = rowsFor(primary, ctx);
-    P.innerHTML = render(m, (ids || []).length); P.style.display = 'block';
+    P.innerHTML = render(m, (ids || []).length); P.style.display = 'block'; place(P);
     P.querySelector('#pp-close').onclick = function () { closedFor = key; P.style.display = 'none'; console.log(TAG + ' closed fid=' + primary); };
     console.log(logLine(m));
     return m;

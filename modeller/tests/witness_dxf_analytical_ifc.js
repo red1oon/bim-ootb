@@ -15,6 +15,7 @@
  *      (d) §D106 (session 17 review): the members' stated material renamed to "Timber section" -> no member is written as STEEL; each such bar body gets a material_unknown finding and no E
  *          (before §D106 every IfcMember was steel whatever its material); the member count is unchanged
  *   P2 with no other IFC on the machine prints §INCONCLUSIVE and is not counted as a PASS (PRIMAL LAW 4)
+ *   P5 (U6) THE PAGE: Export ▸ Analytical model on the converted shed, and on a fresh page from the shed's .ifc chosen in the file chooser -> both .std = the fixture byte for byte; 0 page errors (BROWSER=0: not judged, printed)
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2). P2 models: IFC_MODELS (colon-separated paths) else the built-in list; a missing file is reported SKIPPED.
  */
 'use strict';
@@ -90,6 +91,42 @@ const MODELS = (process.env.IFC_MODELS ? process.env.IFC_MODELS.split(':') : [
   const withMembers = rows.filter(r => r.members > 0).length;
   if (!ran) console.log('  §INCONCLUSIVE P2 no other IFC on this machine: nothing judged, not counted as a PASS');
   else ok('P2 ' + ran + ' other IFC(s) went through the same code (' + withMembers + ' with members); the joint invariant holds on every one; INCONCLUSIVE verdicts are printed above, not hidden', allInvariant && rows.every(r => !/^ERROR/.test(r.verdict)), '');
+  // P5 (U6) the page
+  if (process.env.BROWSER === '0') console.log('§ANALYTICAL_PAGE_SKIP BROWSER=0 — P5 not judged');
+  else { const ifcPath = path.join(tmp, 'shed.ifc'); fs.writeFileSync(ifcPath, Buffer.from(bytes));
+    try { await page5(ifcPath, fStd); } catch (e) { ok('P5 THE PAGE', false, 'crash ' + String(e && e.stack || e).slice(0, 300)); } }
   console.log((fail ? '§W-ANALYTICAL-IFC FAIL ' + fail : judged ? '§W-ANALYTICAL-IFC PASS ' + judged + '/0' + (ran ? '' : ' (P2 INCONCLUSIVE)') : '§W-ANALYTICAL-IFC INCONCLUSIVE nothing judged'));
   process.exit(fail ? 1 : 0);
 })();
+async function page5(ifcPath, fStd) {
+  const http = require('http'), ROOT = path.join(__dirname, '..', '..'), puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer'));
+  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+  const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, buf) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(buf); }); });
+  await new Promise(z => srv.listen(0, '127.0.0.1', z));
+  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }), errs = [];
+  const URLx = 'http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html';
+  const open = async () => { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 900 }); pg.on('pageerror', e => { errs.push(String(e).slice(0, 160)); console.log('§PAGEERR ' + String(e).slice(0, 160)); });
+    pg.on('console', m => { const t = m.text(); if (/^§ANALYTICAL members/.test(t)) console.log('  page ' + t.slice(0, 160)); });
+    await pg.evaluateOnNewDocument(() => { const o = URL.createObjectURL.bind(URL); window.__blobs = []; URL.createObjectURL = b => { if (b instanceof Blob) window.__blobs.push(b); return o(b); }; });
+    await pg.goto(URLx, { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI', { timeout: 120000 }); return pg; };
+  const stdOf = async (pg, chooseFile) => {
+    const n0 = await pg.evaluate(() => window.__blobs.length), ch = chooseFile ? pg.waitForFileChooser({ timeout: 120000 }).then(c => c.accept([chooseFile])) : null;
+    const dis = await pg.evaluate(() => document.getElementById('b-export').disabled); if (dis) throw new Error('#b-export is disabled: Export ▸ Analytical model unreachable');
+    await pg.click('#b-export');
+    await pg.waitForSelector('#m-export-panel .me-row[data-key="analytical"]', { visible: true }); await pg.click('#m-export-panel .me-row[data-key="analytical"]'); if (ch) await ch;
+    await pg.waitForFunction(n => window.__blobs.length > n && window.__blobs[window.__blobs.length - 1].type === 'text/plain', { timeout: 300000, polling: 500 }, n0);
+    return pg.evaluate(async () => ({ txt: await window.__blobs[window.__blobs.length - 1].text(), stat: (document.getElementById('stat') || {}).textContent || '' })); };
+  try {
+    const pg = await open(); await pg.evaluate(() => { window.DxfImportUI.state.arrangeOnOpen = false; });
+    await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
+    const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__dxf"]')]); await ch.accept(files);
+    await pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict', { timeout: 240000 });
+    await pg.evaluate(() => { const c = document.getElementById('dxf-complete'); if (c && !c.checked) c.click(); }); await new Promise(r => setTimeout(r, 2500));
+    await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 180000 }); await new Promise(r => setTimeout(r, 1500));
+    const a = await stdOf(pg, null);
+    const pg2 = await open(), b = await stdOf(pg2, ifcPath);
+    console.log('  P5 set route ' + Buffer.byteLength(a.txt) + ' bytes, status "' + a.stat.slice(0, 120) + '"; fresh page + chosen .ifc ' + Buffer.byteLength(b.txt) + ' bytes; fixture ' + Buffer.byteLength(fStd));
+    ok('P5 THE PAGE Export ▸ Analytical model: the converted set -> ' + Buffer.byteLength(a.txt) + ' bytes, a fresh page + the shed .ifc -> ' + Buffer.byteLength(b.txt) + ' bytes, both = the fixture byte for byte; status names 337 / 319 / 32; page errors ' + errs.length,
+      a.txt === fStd && b.txt === fStd && /members=337\s+joints=319\s+supports=32/.test(a.stat) && errs.length === 0, '');
+  } finally { await br.close(); srv.close(); }
+}
