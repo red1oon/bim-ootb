@@ -12,6 +12,9 @@
  *      f'c stated / missing. INCONCLUSIVE where the model states no section; the invariant "every member end is a support, shared, or a listed dangling end" must hold on every model that builds
  *   P3 FALSIFIER: (a) f'c property renamed away in the shed IFC -> 131 findings, no concrete E; (b) the Size_ properties renamed away -> the column sections come from the box (same numbers, source text changes);
  *      (c) the whole evidence pset renamed away (a plain IFC) -> still builds, f'c findings, SourceGuid gone (IFC GlobalId used)
+ *      (d) §D106 (session 17 review): the members' stated material renamed to "Timber section" -> no member is written as STEEL; each such bar body gets a material_unknown finding and no E
+ *          (before §D106 every IfcMember was steel whatever its material); the member count is unchanged
+ *   P2 with no other IFC on the machine prints §INCONCLUSIVE and is not counted as a PASS (PRIMAL LAW 4)
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2). P2 models: IFC_MODELS (colon-separated paths) else the built-in list; a missing file is reported SKIPPED.
  */
 'use strict';
@@ -37,9 +40,9 @@ const MODELS = (process.env.IFC_MODELS ? process.env.IFC_MODELS.split(':') : [
   const FX = path.join(__dirname, 'fixtures'), fStd = fs.readFileSync(path.join(FX, 'analytical_shed_direct.std'), 'utf8'), fJs = fs.readFileSync(path.join(FX, 'analytical_shed_direct.json'), 'utf8');
   const std = AN.toStaad(m1), js = AN.toJSON(m1), firstDiff = (a, b) => { const A = a.split('\n'), B = b.split('\n'); for (let i = 0; i < Math.max(A.length, B.length); i++) if (A[i] !== B[i]) return 'line ' + (i + 1) + ': ' + String(A[i]).slice(0, 80) + ' | ' + String(B[i]).slice(0, 80); return 'none'; };
   console.log('  ' + m1.log[0] + '\n  ' + m1.log[1].slice(0, 260));
-  console.log('  P1 model.std ' + std.length + ' bytes vs fixture ' + fStd.length + ' (first difference: ' + firstDiff(std, fStd) + '); analytical.json ' + js.length + ' vs ' + fJs.length + ' (first difference: ' + firstDiff(js, fJs) + ')');
+  console.log('  P1 model.std ' + Buffer.byteLength(std) + ' bytes vs fixture ' + Buffer.byteLength(fStd) + ' (first difference: ' + firstDiff(std, fStd) + '); analytical.json ' + Buffer.byteLength(js) + ' vs ' + Buffer.byteLength(fJs) + ' (first difference: ' + firstDiff(js, fJs) + ')');
   const cliSrc = fs.readFileSync(path.join(M, 'dxf2bim_cli.js'), 'utf8'), pageSrc = fs.readFileSync(path.join(M, 'modeller.html'), 'utf8'), direct = /\.build\(\s*R\.els/;
-  ok('P1 PARITY: the shed through the IFC = the retired direct route: model.std ' + std.length + ' bytes and analytical.json ' + js.length + ' bytes byte-identical; no direct build(R.els) call remains in the CLI or the page',
+  ok('P1 PARITY: the shed through the IFC = the retired direct route: model.std ' + Buffer.byteLength(std) + ' bytes and analytical.json ' + Buffer.byteLength(js) + ' bytes byte-identical; no direct build(R.els) call remains in the CLI or the page',
     std === fStd && js === fJs && !direct.test(cliSrc) && !/Dxf2Analytical\.build\(\s*R\.els/.test(pageSrc) && /fromIfc/.test(cliSrc), '');
 
   // P3
@@ -54,6 +57,13 @@ const MODELS = (process.env.IFC_MODELS ? process.env.IFC_MODELS.split(':') : [
   console.log('  P3c evidence names renamed away: ' + c.log[1].slice(0, 200));
   ok('P3c a plain IFC (no SourceGuid / Kind / handles / f\'c / sizes): still builds ' + c.members.length + ' members, GlobalId used as the guid (' + (c.members[0] && c.members[0].guid.length) + ' chars), f\'c findings ' + c.findings.filter(f => f.code === 'fc_missing').length + ', no refusal',
     !c.refused && c.members.length > 0 && c.members.every(q => q.guid.length === 22) && c.findings.some(f => f.code === 'fc_missing'), '');
+
+  const steelBars = new Set(m1.members.filter(q => q.material === 'STEEL').map(q => q.guid)).size;
+  const dd = await via(new Uint8Array(Buffer.from(txt.split("'Steel section'").join("'Timber section'"), 'latin1'))), steelD = dd.members.filter(q => q.material === 'STEEL').length;
+  const unkD = dd.findings.filter(f => f.code === 'material_unknown' && /Timber section/.test(f.message)).length;
+  console.log('  P3d members as timber: STEEL members ' + steelD + ' (was ' + m1.members.filter(q => q.material === 'STEEL').length + '), material_unknown findings ' + unkD + ' = steel bar bodies ' + steelBars + ', materials ' + Object.keys(dd.materials).join(','));
+  ok('P3d the members stated as "Timber section": 0 written as STEEL, ' + unkD + ' material_unknown findings (one per bar body, ' + steelBars + '), no STEEL material, members unchanged ' + dd.members.length + ' = ' + m1.members.length,
+    steelBars > 0 && steelD === 0 && unkD === steelBars && !dd.materials.STEEL && dd.members.length === m1.members.length, '');
 
   // P2
   console.log('  P2 other IFCs (IFC_MODELS to override the list):');
@@ -78,8 +88,8 @@ const MODELS = (process.env.IFC_MODELS ? process.env.IFC_MODELS.split(':') : [
   rows.forEach(r => console.log(r.members === undefined ? '     ' + r.name + ': ' + r.verdict : '     ' + r.name + ': elements ' + r.elements + ', members ' + r.members + ' ' + JSON.stringify(r.by) + ', joints ' + r.joints + ', supports ' + r.supports + ', dangling ' + r.dangling +
     ', sections stated ' + r.stated + ' / box ' + r.box + ' / assumed ' + r.asm + ' / none ' + r.noSec + ', f\'c on ' + r.fcOk + ' members, missing ' + r.fcMiss + ', leftOut ' + r.left + ' -> ' + r.verdict + ' (' + r.secs + ' s)'));
   const withMembers = rows.filter(r => r.members > 0).length;
-  if (!ran) console.log('  §INCONCLUSIVE P2 no other IFC on this machine');
-  ok('P2 ' + ran + ' other IFC(s) went through the same code (' + withMembers + ' with members); the joint invariant holds on every one; INCONCLUSIVE verdicts are printed above, not hidden', ran === 0 ? true : allInvariant && rows.every(r => !/^ERROR/.test(r.verdict)), ran === 0 ? 'INCONCLUSIVE: nothing judged' : '');
+  if (!ran) console.log('  §INCONCLUSIVE P2 no other IFC on this machine: nothing judged, not counted as a PASS');
+  else ok('P2 ' + ran + ' other IFC(s) went through the same code (' + withMembers + ' with members); the joint invariant holds on every one; INCONCLUSIVE verdicts are printed above, not hidden', allInvariant && rows.every(r => !/^ERROR/.test(r.verdict)), '');
   console.log((fail ? '§W-ANALYTICAL-IFC FAIL ' + fail : judged ? '§W-ANALYTICAL-IFC PASS ' + judged + '/0' + (ran ? '' : ' (P2 INCONCLUSIVE)') : '§W-ANALYTICAL-IFC INCONCLUSIVE nothing judged'));
   process.exit(fail ? 1 : 0);
 })();

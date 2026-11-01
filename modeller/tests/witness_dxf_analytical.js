@@ -139,7 +139,7 @@ ok('A5 falsifier: moving one joined beam 1 m in plan leaves exactly its two ends
 // A6 determinism: a second full conversion, identical bytes
 const r2 = convert(path.join(tmp, 'b')); const dirB = path.join(tmp, 'b'); fs.mkdirSync(dirB, { recursive: true }); await C.writeAnalytical(r2, dirB);
 const std2 = fs.readFileSync(path.join(dirB, 'model.std'), 'utf8'), js2 = fs.readFileSync(path.join(dirB, 'analytical.json'), 'utf8');
-ok('A6 two conversions -> identical bytes (model.std ' + std.length + ', analytical.json ' + js.length + '); toStaad / toJSON of one model twice also identical', std === std2 && js === js2 && AN.toStaad(model) === AN.toStaad(model) && AN.toJSON(model) === AN.toJSON(model), '');
+ok('A6 two conversions -> identical bytes (model.std ' + Buffer.byteLength(std) + ' bytes, analytical.json ' + Buffer.byteLength(js) + ' bytes); toStaad / toJSON of one model twice also identical', std === std2 && js === js2 && AN.toStaad(model) === AN.toStaad(model) && AN.toJSON(model) === AN.toJSON(model), '');
 
 // A7 refusal
 const empty = AN.build([], opts), fake = { out: { gate: { R: { els: [], defaults_table: R.defaults_table } } } }, dirC = path.join(tmp, 'c'); fs.mkdirSync(dirC, { recursive: true });

@@ -8,6 +8,8 @@
  *   R2 left_out unchanged (4), verdict qualifies: the advisories are not dropped bodies.
  *   R3 fixtures: B-9 tagged + body, no detail -> no_detail; + "Long Section of Beam-9" -> modelled (abbreviation); a GB-1 body -> GB-1 modelled; a GUID-like text holding "B-3" is no tag.
  *   R4 one grammar: dxf2bodies' nearMark and MarkRefs read the same Dxf2Bodies.MARK_RE.
+ *   R5 (§D106, session 17 review) a mark carried by NO body is never "modelled": a notes sheet's "Long Section of Beam-7" with no tag and no body -> detail_only, no advisory, modelled=0
+ *      in the log (before §D106 the status fell through to "modelled": B-7:modelled(t0,b0,d1)).
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2).
  */
 'use strict';
@@ -36,6 +38,10 @@ const f2 = MR.build([plan([T('GB-1')]), det([T('Long Section of GB-1')])], [{ ma
 const st = (X, k) => (X.rows.find(x => x.mark === k) || {}).status;
 ok('R3 fixtures: B-9 no detail -> ' + st(f0, 'B-9') + '; with "Long Section of Beam-9" -> ' + st(f1x, 'B-9') + '; a GB-1 body -> ' + st(f2, 'GB-1') + '; marks from the GUID text: ' + f0.rows.length,
   st(f0, 'B-9') === 'no_detail' && st(f1x, 'B-9') === 'modelled' && f1x.rows[0].details[0].via === 'abbreviation' && st(f2, 'GB-1') === 'modelled' && f0.rows.length === 1, '');
+const f5 = MR.build([plan([]), det([T('Long Section of Beam-7')])], [], { B, notesSheets: ['det.dxf'] });
+console.log('  R5 ' + f5.log);
+ok('R5 detail only (no tag, no body): B-7 -> ' + st(f5, 'B-7') + ', advisories ' + f5.advisories.length + ', the log counts modelled=0',
+  st(f5, 'B-7') === 'detail_only' && f5.advisories.length === 0 && /modelled=0 /.test(f5.log) && /detail_only=1/.test(f5.log), '');
 const src = fs.readFileSync(path.join(M, 'dxf2bodies.js'), 'utf8'), msrc = fs.readFileSync(path.join(M, 'dxf2markrefs.js'), 'utf8');
 ok('R4 one grammar: nearMark tests MARK_RE, MarkRefs reads B.MARK_RE, no second mark regex in dxf2markrefs.js', /if \(!MARK_RE\.test\(t\)\) return;/.test(src) && /B\.MARK_RE/.test(msrc) && !/\[A-Z\]\{1,3\}/.test(msrc), '');
 console.log(fail ? '§VERDICT FAIL W-MARK-REFS judged=' + judged + ' fail=' + fail : '§VERDICT PASS W-MARK-REFS judged=' + judged + ' fail=0'); process.exit(fail ? 1 : 0);

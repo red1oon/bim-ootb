@@ -63,7 +63,7 @@
     if (!(snap > 0) || (supType !== 'FIXED' && supType !== 'PINNED')) { res.refused = 'registry rows analytical.node_snap / analytical.support missing or invalid'; log.push(TAG + ' refused ' + res.refused); return res; }
     if (!LS) throw new Error('Dxf2Analytical.build needs o.LS (LoadSummary): the one section reader');
     var ls = LS.compute(els, { values: V, sources: o.sources || {} }), lsBy = {}; ls.rows.forEach(function (r) { lsBy[r.guid] = r; });
-    var rc = Number(V['load.unit_weight.concrete']) + 0.63 * Number(V['load.rc_steel_percent']), steel = Number(V['load.unit_weight.steel']);
+    var rc = ls.rc_kNm3, steel = Number(V['load.unit_weight.steel']);   /* §D106: the reinforced-concrete density is the Load Summary's one rule (rc_kNm3), not a copy */
     var sorted = (els || []).slice().sort(function (p, q) { var a = ORDER[p['class']], b = ORDER[q['class']]; a = a === undefined ? 9 : a; b = b === undefined ? 9 : b; return a - b || (Math.round(p.z0 * ZQ) - Math.round(q.z0 * ZQ)) || (p.guid < q.guid ? -1 : p.guid > q.guid ? 1 : 0); });
     var cand = [], baseZ = Infinity;
     (els || []).forEach(function (e) { if (e['class'] === 'IfcColumn' && e.z0 < baseZ) baseZ = e.z0; });
@@ -90,7 +90,7 @@
         } else why2 = 'no section drawn, none assumed (' + (row.missing || 'section size not drawn') + ')';
       }
       if (why2) { res.leftOut.push(Object.assign({ reason: why2 }, src)); res.findings.push({ code: 'no_section', message: c + ' ' + src.sheet + ' ' + src.handle + ': ' + why2 + '; left out, not given a section', guid: e.guid, sheet: src.sheet, handle: src.handle }); return; }
-      var matName = String((e.ifc && e.ifc.material) || ''), steelLike = c === 'IfcMember' || /steel/i.test(matName);
+      var matName = String((e.ifc && e.ifc.material) || ''), steelLike = /steel/i.test(matName) || (c === 'IfcMember' && matName === '');   /* §D106: a member's stated material wins; only an angle-sectioned member with none is taken as steel */
       if (steelLike) {
         mat = { key: 'STEEL', E: E_STEEL_KNM2, density: steel, cite: 'steel E 200 GPa (§D103); density = registry load.unit_weight.steel' };
         if (c !== 'IfcMember' && sec.kind === 'rect') res.findings.push({ code: 'box_section_steel', message: c + ' ' + src.sheet + ' ' + src.handle + ' is steel (' + matName + ') but its section is the geometry\'s box, not a rolled profile: the engineer sets the profile', guid: e.guid, sheet: src.sheet, handle: src.handle });
