@@ -301,3 +301,34 @@ PAGE IMAGE at 250 dpi (`pdftoppm -r 250`), never the OCR text.
 §D100: compare against a fresh CLI run, do not rewrite that film material; (d) a `// comment` inserted mid-statement swallows the rest of the line (twice this session) — use `/* */`;
 (e) PRs touching this file conflict with each other: merge main into a behind PR rather than assuming auto-merge lands it; (f) auto-merge squashes fast: follow-ups start off fresh `origin/main`.
 
+---
+# Archived 2026-11-02 at the close of session 17: the session-17 entry block (written at the close of session 16), verbatim
+## (archived) RESUME (session 17 entry; written 2026-11-01 at the close of session 16 — the ONLY current block)
+**Merged in session 16 (bim-ootb main, each witnessed, logs read; specs + RESULTs below in this file):** #2483 **§D99 P2 step 2** Element defaults ▸ Measure impact (page = CLI `--impact`,
+W-IMPACT 8/0) · #2492 **§D101** Sheet view draws all 147 shed dimensions (111 via their *D block by definition points, 36 from their own points + DIMSTYLE), INSERT in blocks, `%%c`→Ø; a notes
+sheet shows NOTES (W-SHEET-RENDER 4/0, W-SHEET-NOTES 3/0) · #2496 **§D102** type marks checked across tags / details / bodies (GB-1 tagged 4x + detailed, NOT modelled: reported, not built —
+owner left the decision, reason in §D102; W-MARK-REFS 4/0) · #2499 **§D103** analytical model export (STAAD `.std` + JSON; W-ANALYTICAL) · #2500 **§D104** Load Summary beam-width defect fixed
+(a Y-running beam with no stated width weighed its length: shed own weight −127.0 kN; W-LOAD-SUMMARY 10/0) · #2505 **§D105** the analytical builder reads ONLY the IFC (DXF → `Dxf2Ifc` → extractor →
+`fromDb` → build; shed `.std` byte-identical to the retired direct route; `--ifc-in` for any IFC; W-ANALYTICAL 9/0, W-ANALYTICAL-IFC 5/0) · also: CF2 wait fixed, PWD pack named "SoR 2022",
+roof-sheet basis text, film back card + recorder backdrops. **Withdrawn:** "B-3 / B-4 have no detail" (a grep hit header GUIDs).
+**Facts not to re-derive (shed, `--complete --pack pwd2024_bd`, 2026-11-01):** 512 bodies; bill 6,227,255 BDT; own weight (page) 5,275.1 kN; analytical 319 joints / 337 members / 32 supports /
+36 dangling ends, `.std` 19,330 bytes; marks B-1 / B-2 / C-1 / F-1 modelled, GB-1 not modelled.
+**BIMCompiler (git admin this session: merged #277 #281 #282 #283 #287 #288; docs deployed via `scripts/safe_gh_deploy.sh` — deploy from a tree that ALSO merges `origin/docs/halaltrace`
+(PR #230, unmerged) or the guard aborts on 37 live Halal pages; never ALLOW_SHRINK them).** Open there: #276 (contained in #277: close it; the classifier refused this session), #285 (superseded by #288).
+**Session 17 (review of session 16, 2026-11-01):** `## RESULT 2026-11-01 (session 17 …)` at the end of this file: §D106 fixed M1-M3 + a vacuous witness PASS; **H1: the do-once film says ONE note prices the concrete AND sets the stiffness, but the price comes from the casting-ratio note (#2E2) and the stiffness from the strength note (#2E1): re-voice r_shed + g_recap and redo two captions before publishing**; design debts P-B (one beam-section owner), P-W1/P-W2 (witness oracles, stale Load Summary input), P-K, P-V, P-E, P-L, P-I await the owner.
+**Session 17, part 2 (owner: "Film repair can be done later in installments, as the fixes that we can do now to make a bim user experience better"):** `## SESSION 17 WORK LIST` — U1 Properties panel, U2 one beam-section owner, U3 impact option, U4 missing DIMSTYLE counted, U5 W-LOAD-SUMMARY fresh input, U6 page analytical export witnessed: all ✅. Film installments F1 + F2 ✅ MADE 2026-11-01 (one GPU take; `_v2` Part 1 / Part 2 files, see the film file's top). Proposals still open: P-W1, P-K, P-V, P-E, P-L.
+**▶ NEXT, in order:**
+1. The film "BIM — The Untold Story of Do Once, Reuse Forever": its own lane file `prompts/FILM_BIM_DO_ONCE_REUSE_FOREVER.md` (read its RESUME).
+2. Open: the viewer's other cost paths (5D / Time Machine) do not read `material_rates` (needs its own spec: a shared pricing owner); `witness_dxf_libtypes` LT7 FAILS: BIMCompiler
+   `scripts/library_building_types.json` was never committed (`.gitignore:79`), its content is lane data to EXTRACT (§L23), not guess; the BD locale files carry unverified "2024" labels;
+   a Modeller properties panel (the film's chapter 2 shows the IFC pset instead); carried: code packs (UBBL, BNBC 2020), RR authority headers, `--ifc-in` on real STAAD (no STAAD on this machine).
+**RUNNER (end of session 16, after §D105):** `§ALLWITNESS PASS=105 ENV=9 FAIL=1 of 115` — the only FAIL is LT7 (above).
+**Recipes:** shed `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
+[--report] [--impact] [--analytical] [--choice k=v]` · any IFC `node modeller/dxf2bim_cli.js --ifc-in <file.ifc> --analytical --out <dir>` · runner `NODE_PATH=~/bim-compiler/node_modules node
+modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js`.
+**Landmines (kept):** (a) a new `element_defaults.json` key moves W-DXF-EDEFAULTS E1 + W-CLI C36 counts and the BIMCompiler yellow page (`gen_yellow_list.js` in the same change); (b) a numeric
+literal in an engine comparison trips W-GUARD G3; (d) `// comment` mid-statement swallows the line; (e) PRs touching this file conflict: merge main in; (f) after a squash-merge start off fresh
+origin/main; (g) a witness pinned to `origin/main` as its "before" baseline goes stale once the change merges — pin the parent commit (SV1, SV3); (h) a witness comparing a fixed date with the
+page's today fails after midnight (U7: mask dates).
+
+
