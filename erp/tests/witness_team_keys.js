@@ -13,7 +13,10 @@ if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) globa
 var path = require('path'), fs = require('fs'), os = require('os'), cp = require('child_process'), nodeCrypto = require('crypto');
 var HERE = path.join(__dirname, '..', '..'), ROOT = process.env.KW_ROOT || HERE, QUIET = !!process.env.KW_ONLY_ARMS;
 var COMM = path.join(ROOT, 'common', 'comm');
-function reqSql() { try { return require('sql.js'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/sql.js'); } }
+function reqSql() {      // §50.3: SQLJS_DIR, the tree's own tests/ install, normal resolution; never a home-directory path
+  var c = [process.env.SQLJS_DIR, path.join(ROOT, 'tests', 'node_modules', 'sql.js'), path.join(HERE, 'tests', 'node_modules', 'sql.js'), 'sql.js'].filter(Boolean);
+  for (var i = 0; i < c.length; i++) { try { return require(c[i]); } catch (e) { /* next */ } }
+  console.log('§KW_VERDICT INCONCLUSIVE sql.js is not installed: run `cd ' + HERE + '/tests && npm install` (or set SQLJS_DIR) — §50.3: no home-directory fallback'); process.exit(2); }
 var subtle = nodeCrypto.webcrypto.subtle, judged = 0, ARMS = {}, say = function (s) { if (!QUIET) console.log(s); };
 function A(arm, ok, label, detail) { if (ok === null) { say('   ⚪ ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return null; } judged++; ARMS[arm] = ARMS[arm] || 0; if (!ok) ARMS[arm]++; say('   ' + (ok ? '🟢' : '🔴') + ' ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
 function canon(o) { if (o === null || typeof o !== 'object') return JSON.stringify(o); if (Array.isArray(o)) return '[' + o.map(canon).join(',') + ']'; return '{' + Object.keys(o).sort().map(function (k) { return JSON.stringify(k) + ':' + canon(o[k]); }).join(',') + '}'; }
