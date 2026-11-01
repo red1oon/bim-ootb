@@ -219,6 +219,9 @@ if (process.argv.indexOf('--mutants') >= 0) {                    // each mutant 
   await legacyStation(SQL);
   var LJ = path.join(os.homedir(), 'bim-compiler/scripts/bridge/out/docno_till_legacy.json');
   if (!fs.existsSync(LJ)) { inconc++; log('§DT INCONCLUSIVE LEGACY - no oracle file ' + LJ + ' (run the same config on the pilot; until then the twin numbers are not legacy-compared)'); }
+  // §51.3 C4: the limits this witness does NOT judge, stated where the code is tested (the terms runner copies them into the record)
+  log('§LIMIT an author not bound to an AD_User is not judged at fold (counted)');
+  log('§LIMIT two users sharing a Search Key share a series');
   log('§DT_VERDICT ' + (fails ? 'FAIL' : 'PASS') + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + inconc + (inconc ? ' (legacy arm)' : ''));
   process.exit(fails ? 1 : 0);
 })().catch(function (e) { console.log('§DT_VERDICT FAIL crash ' + (e && e.stack || e)); process.exit(1); });

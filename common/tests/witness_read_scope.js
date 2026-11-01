@@ -388,6 +388,11 @@ var ARMFN = { A: armA, B: armB, C: armC, D: armD, E: armE, F: armF, G: armG, H: 
   var armsOut = {}; Object.keys(product.arms).forEach(function (a) { armsOut[a] = { pass: product.arms[a].pass, fail: product.arms[a].fail, inc: product.arms[a].inc }; });
   console.log('\n§RS-ARMS ' + JSON.stringify(armsOut));
   var mutBad = !(NOMUT || ONLY.length) && killed !== MUT.length, v = (product.fails || mutBad) ? 'FAIL' : (product.inc || !product.judged) ? 'INCONCLUSIVE' : 'PASS';
+  // §51.3 C4: stated limits of audience sealing (§45.11), printed by the witness that judges it; the terms runner copies them into the record
+  console.log('§LIMIT the relay still sees metadata (author, box, counts, timing, sizes)');
+  console.log('§LIMIT in a mailbox space a checkpoint publishes no state (bim-ootb #2498, so no laned record id or verdict is readable with the team key) — the cost: a light client there folds instead of adopting a checkpoint');
+  console.log('§LIMIT an insider holding a pair key can leak it');
+  console.log('§LIMIT office spaces and spaces founded before F1 keep the team-wide key (unchanged by design)');
   console.log('§RS_SCOPE_VERDICT ' + v + ' judged=' + product.judged + ' fails=' + product.fails + ' inconclusive=' + product.inc + ' mutants=' + ((NOMUT || ONLY.length) ? 'skipped' : killed + '/' + MUT.length));
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 2);
 })().catch(function (e) { console.log('§RS_SCOPE_VERDICT INCONCLUSIVE - witness crashed: ' + (e && e.stack || e)); process.exit(2); });

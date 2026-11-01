@@ -252,6 +252,10 @@ async function gateArm(Esut, Ebase) {
   }
   console.log('\n§F1-ARMS ' + JSON.stringify(arms));
   var v = fails ? 'FAIL' : (inconcl || !judged) ? 'INCONCLUSIVE' : 'PASS';
+  // §51.3 C4: stated limits of F1 (term=visit-bounded: this witness also serves sealing-real, where they do not apply)
+  console.log('§LIMIT term=visit-bounded the identity/roster floor on a first-ever Visit is not bounded (identity ops reach everyone)');
+  console.log('§LIMIT term=visit-bounded an old app in a new star space silently misses mailbox mail');
+  console.log('§LIMIT term=visit-bounded the GitHub listing is still O(N) calls');
   console.log('§F1-VERDICT ' + v + ' judged=' + judged + ' fails=' + fails + ' inconclusive=' + inconcl + ' product_fails=' + realFails);
   process.exit(v === 'PASS' ? 0 : v === 'FAIL' ? 1 : 2);
 })().catch(function (e) { console.log('§F1-VERDICT INCONCLUSIVE - witness crashed: ' + (e && e.stack || e)); process.exit(2); });
