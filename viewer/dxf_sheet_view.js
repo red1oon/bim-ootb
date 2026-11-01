@@ -92,7 +92,7 @@
     }
     // §D101 a DIMENSION: its named *D block; no name -> the *D block whose POINTs are its own definition points (13/23, 14/24, 10/20; tolerance 1e-6 x the point's magnitude);
     // no block at all -> a linear dimension (type 0 rotated / 1 aligned) drawn from those points: extension lines to the dimension line, the line, the value (group 1, '<>' = the measurement) per its
-    // DIMSTYLE (DIMLUNIT 2 decimal with DIMDEC places x DIMLFAC; text height DIMTXT x DIMSCALE); any other type or unit format -> counted, the value not invented
+    // DIMSTYLE (DIMLUNIT 2 decimal with DIMDEC places x DIMLFAC; text height DIMTXT x DIMSCALE); any other type or unit format, or a style the file does not carry (U4) -> counted, the value not invented
     const defPts = e => [['13', '23'], ['14', '24'], ['10', '20']].filter(c => gv(e, c[0]) !== undefined).map(c => [num(e, c[0]), num(e, c[1])]);
     const near = (p, q) => Math.abs(p[0] - q[0]) <= 1e-6 * Math.max(1, Math.abs(p[0])) && Math.abs(p[1] - q[1]) <= 1e-6 * Math.max(1, Math.abs(p[1]));
     let dimBlocks = null;
@@ -109,10 +109,10 @@
       const ang = type === 0 ? num(e, '50', 0) * Math.PI / 180 : Math.atan2(p14[1] - p13[1], p14[0] - p13[0]), u = [Math.cos(ang), Math.sin(ang)];
       const foot = p => { const t = (p[0] - p10[0]) * u[0] + (p[1] - p10[1]) * u[1]; return [p10[0] + t * u[0], p10[1] + t * u[1]]; }, f1 = foot(p13), f2 = foot(p14), layer = e.layer, c = lay(layer);
       [[p13, f1], [p14, f2], [f1, f2]].forEach(s => list.push({ k: 'line', layer, c, a: s[0], b: s[1] }));
-      const S = P.dimstyles[gv(e, '3') || 'Standard'] || {}, sv = (k, d) => S[k] === undefined ? d : N(S[k]), unit = sv('277', 2), dec = sv('271', 4), lf = sv('144', 1), sc = sv('40', 1) || 1, h = sv('140', 0.18) * sc;
+      const S = P.dimstyles[gv(e, '3') || 'Standard'] || null, sv = (k, d) => S[k] === undefined ? d : N(S[k]), unit = S ? sv('277', 2) : null, dec = S ? sv('271', 4) : 4, lf = S ? sv('144', 1) : 1, sc = S ? sv('40', 1) || 1 : 1, h = S ? sv('140', 0.18) * sc : 0.18;   // U4: a style the file does not carry formats nothing (the value is drawn only if stated literally); the defaults apply to a key the carried style omits (the DXF reference's)
       const meas = gv(e, '42') !== undefined ? num(e, '42') : Math.hypot(f2[0] - f1[0], f2[1] - f1[1]), given = gv(e, '1'), fmt = unit === 2 ? (meas * lf).toFixed(dec) : null;
       const txt = given && given !== '<>' && given.indexOf('<>') < 0 ? specials(given) : fmt === null ? null : given ? specials(given).replace('<>', fmt) : fmt;
-      if (txt === null) stats.dim_text_unformatted = (stats.dim_text_unformatted || 0) + 1;
+      if (txt === null) { if (!S) stats.dim_style_missing = (stats.dim_style_missing || 0) + 1; else stats.dim_text_unformatted = (stats.dim_text_unformatted || 0) + 1; }
       else { let deg = ang * 180 / Math.PI; while (deg > 90) deg -= 180; while (deg <= -90) deg += 180;
         list.push({ k: 'text', layer, c, p: gv(e, '11') !== undefined ? [num(e, '11'), num(e, '21')] : [(f1[0] + f2[0]) / 2, (f1[1] + f2[1]) / 2], h, s: txt, rot: deg, mid: true }); }
       stats.dim_geom = (stats.dim_geom || 0) + 1; if (!inBlk) stats.drawn_by_type.DIMENSION = (stats.drawn_by_type.DIMENSION || 0) + 1;
