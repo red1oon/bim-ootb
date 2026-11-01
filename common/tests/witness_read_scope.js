@@ -25,8 +25,8 @@ var path = require('path'), fs = require('fs'), os = require('os'), cp = require
 var ARGS = process.argv.slice(2), NOMUT = ARGS.indexOf('--no-mut') >= 0, POS = ARGS.filter(function (a) { return !/^--/.test(a); });
 var ONLY = (ARGS.filter(function (a) { return /^--only=/.test(a); })[0] || '').replace('--only=', '').split(',').filter(Boolean);
 var TREE = path.resolve(POS[0] || path.join(__dirname, '..', '..')), BASE_COMMIT = process.env.RS_BASE || 'c02eaa58';
-var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : '/home/red1/bim-ootb/tests/node_modules/sql.js');
-var initSqlJs = require(SQLJS);
+var SQLJS = process.env.SQLJS_DIR || (fs.existsSync(path.join(TREE, 'tests/node_modules/sql.js')) ? path.join(TREE, 'tests/node_modules/sql.js') : 'sql.js');      // §50.3: the tree's own install, else normal resolution; never a home-directory path
+var initSqlJs; try { initSqlJs = require(SQLJS); } catch (e) { console.log('§RS_SCOPE_VERDICT INCONCLUSIVE sql.js is not installed: run `cd ' + TREE + '/tests && npm install` (or set SQLJS_DIR) — §50.3: no home-directory fallback'); process.exit(2); }
 var ALL_ARMS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
 // ── collector: the product run prints; a mutant run only collects (its failures are kills, not product failures) ──

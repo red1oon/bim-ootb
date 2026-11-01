@@ -23,7 +23,10 @@
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), vm = require('vm'), nodeCrypto = require('crypto');
 var ROOT = path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
-function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
+function reqPw() {      // §50.3: the tree's own tests/ install, else normal resolution; never a home-directory path
+  var c = [require('path').join(__dirname, '..', '..', 'tests', 'node_modules', 'playwright'), 'playwright'];
+  for (var i = 0; i < c.length; i++) { try { return require(c[i]); } catch (e) { /* next */ } }
+  throw new Error('playwright is not installed: run `cd ' + require('path').join(__dirname, '..', '..', 'tests') + ' && npm install && npx playwright install chromium` (§50.3)'); }
 var subtle = nodeCrypto.webcrypto.subtle, fails = 0, judged = 0, errors = 0, ARMS = {}, QUIET = !!process.env.WX_ONLY_ARMS;
 function verdict(arm, ok, label, detail) { judged++; ARMS[arm] = ARMS[arm] || 0; if (!ok) { fails++; ARMS[arm]++; } if (!QUIET) console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + arm + ' ' + label + (detail ? ' — ' + detail : '')); return ok; }
 function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d).forEach(function (n) { var p = path.join(d, n), r = rel ? rel + '/' + n : n; if (fs.statSync(p).isDirectory()) walk(p, r, out); else out.push(r); }); return out; }
@@ -101,7 +104,7 @@ var ADAPTER = fs.readFileSync(path.join(ROOT, 'erp', 'team_sync.js'), 'utf8');
 
   if (!QUIET) console.log('§S2 the owner-signed executor map {c_order: 102}, published by the admin device');
   // the owner's real path (§38.10, G-8): the statement is built and signed OFFLINE by the compiler's CLI, then published from the admin's app with TeamSync.publishStatement
-  var KD = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-key-')), SIGNJS = process.env.WX_SIGN_PLAN || path.join(os.homedir(), 'bim-compiler', 'build', 'scriptor', 'sign_plan.js');
+  var KD = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-key-')), SIGNJS = process.env.WX_SIGN_PLAN || path.join(process.env.BIM_COMPILER_ROOT || ['BIMCompiler', 'bim-compiler'].map(function (n) { return path.join(__dirname, '..', '..', '..', n); }).filter(function (d) { return fs.existsSync(path.join(d, 'build', 'scriptor', 'sign_plan.js')); })[0] || path.join(__dirname, '..', '..', '..', 'BIMCompiler'), 'build', 'scriptor', 'sign_plan.js');      // §50.3: BIM_COMPILER_ROOT (set by the terms runner) or a sibling clone; never homedir()
   fs.writeFileSync(path.join(KD, 'priv.jwk'), JSON.stringify(await subtle.exportKey('jwk', owner.priv))); fs.writeFileSync(path.join(KD, 'pub.jwk'), JSON.stringify(owner.pub)); fs.writeFileSync(path.join(KD, 'map.json'), JSON.stringify({ c_order: 102 }));
   var cl = require('child_process').spawnSync(process.execPath, [SIGNJS, 'stmt', 'executors', path.join(KD, 'map.json'), 'none', path.join(KD, 'priv.jwk'), path.join(KD, 'pub.jwk'), path.join(KD, 'exe.json')], { encoding: 'utf8' });
   var stmt = fs.existsSync(path.join(KD, 'exe.json')) ? JSON.parse(fs.readFileSync(path.join(KD, 'exe.json'), 'utf8')) : null; fs.rmSync(KD, { recursive: true, force: true });
