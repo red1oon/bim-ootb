@@ -563,8 +563,16 @@ function _decStr(v) { return _bigDec(v); }
 function _scaleTo(d, k) { return k >= d.k ? d.n * 10n ** BigInt(k - d.k) : _rhuB(d.n, 10n ** BigInt(d.k - k)); }
 function _fmtDec(n, k) { var neg = n < 0n, a = neg ? -n : n, t = a.toString().padStart(k + 1, '0'); return (neg ? '-' : '') + (k ? t.slice(0, -k) + '.' + t.slice(-k) : t); }
 // the active accounting schemas the costing walks (every one posts; IsActive only where the column exists) — one definition for all of the cost-quantity code
+// The schemas legacy costs and posts in — MAcctSchema.getClientAcctSchema (MAcctSchema.java:150-153): ACTIVE and with BOTH a C_AcctSchema_GL and a
+//   C_AcctSchema_Default row (the model layer ports the whole rule: model_master.js:70 clientAcctSchemas). Without this a half-made schema (the pilot's
+//   NC4 test schemas: active, no GL row) made the twin refuse a shipment legacy posted (BIMCompiler prompts/SQLiteIDEMPIERE.md §S-SCHEMASET). Table-guarded;
+//   callers pass no client, so the client filter / primary-first order of the legacy method are not applied here.
 function _activeSchemas(db, withCur) {
-  return allRows(db, 'SELECT c_acctschema_id AS id, m_costtype_id AS ct' + (withCur ? ', c_currency_id AS cur' : '') + ' FROM c_acctschema' + (_hasCol(db, 'c_acctschema', 'isactive') ? " WHERE isactive='Y'" : '') + ' ORDER BY c_acctschema_id', []);
+  var w = [], hasT = function (t) { return !!getRow(db, "SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name=?", t); };
+  if (_hasCol(db, 'c_acctschema', 'isactive')) w.push("s.isactive='Y'");
+  if (hasT('c_acctschema_gl')) w.push('EXISTS (SELECT 1 FROM c_acctschema_gl gl WHERE gl.c_acctschema_id=s.c_acctschema_id)');
+  if (hasT('c_acctschema_default')) w.push('EXISTS (SELECT 1 FROM c_acctschema_default d WHERE d.c_acctschema_id=s.c_acctschema_id)');
+  return allRows(db, 'SELECT s.c_acctschema_id AS id, s.m_costtype_id AS ct' + (withCur ? ', s.c_currency_id AS cur' : '') + ' FROM c_acctschema s' + (w.length ? ' WHERE ' + w.join(' AND ') : '') + ' ORDER BY s.c_acctschema_id', []);
 }
 function costUpdatesForMatchPO(db, matchPOId) {   // → { updates:[new m_cost values], absent:[names] } — ONE shape (§REVIEW2 R6): a caller loops .updates, never meets a {absent} pseudo-record
   var mp = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(matchPOId)); if (!mp || !num(mp.m_inoutline_id)) return { updates: [], absent: [] };
