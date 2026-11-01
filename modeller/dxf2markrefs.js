@@ -24,13 +24,13 @@
       row(mk).details.push({ title: t.trim(), via: via, source: sh.name }); }); });
     var rows = Object.keys(by).sort().map(function (k) { return by[k]; }), adv = [];
     rows.forEach(function (r) {
-      r.status = r.nTags && !r.bodies ? 'not_modelled' : !r.details.length ? 'no_detail' : 'modelled';
+      r.status = !r.bodies ? (r.nTags ? 'not_modelled' : 'detail_only') : !r.details.length ? 'no_detail' : 'modelled';   /* §D106: no body is never 'modelled'; detailed only (no tag) asks for nothing */
       var where = Object.keys(r.tags).map(function (s) { return s.replace(/(_marked)?\.dxf$/i, '') + ' x' + r.tags[s]; }).join(', ') || 'no tag';
       if (r.status === 'not_modelled') adv.push({ code: 'GAP:mark_not_modelled', sheet: '(set)', handles: [], message: 'mark ' + r.mark + ': tagged (' + where + ') but no body carries it' + (r.details.length ? '; detailed: ' + r.details.map(function (d) { return d.title; }).join('; ') : '; no detail either') + ' — nothing in the set is built for it' });
       if (!r.details.length) adv.push({ code: 'GAP:mark_no_detail', sheet: '(set)', handles: [], message: 'mark ' + r.mark + ' (' + where + ', ' + r.bodies + ' bodies): no long section and no schedule row states its section or bars' });
     });
     var n = function (s) { return rows.filter(function (r) { return r.status === s; }).length; };
-    return { rows: rows, advisories: adv, log: '§MARKREFS marks=' + rows.length + ' modelled=' + n('modelled') + ' not_modelled=' + n('not_modelled') + ' no_detail=' + rows.filter(function (r) { return !r.details.length; }).length +
+    return { rows: rows, advisories: adv, log: '§MARKREFS marks=' + rows.length + ' modelled=' + n('modelled') + ' not_modelled=' + n('not_modelled') + ' detail_only=' + n('detail_only') + ' no_detail=' + rows.filter(function (r) { return !r.details.length; }).length +
       ' ' + rows.map(function (r) { return r.mark + ':' + r.status + '(t' + r.nTags + ',b' + r.bodies + ',d' + r.details.length + (r.details.some(function (d) { return d.via === 'abbreviation'; }) ? ',abbr' : '') + ')'; }).join(' ') };
   }
   return { build: build };

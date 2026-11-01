@@ -3466,7 +3466,7 @@ async function doAnalytical() {
     if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=1').catch(e => { _analyticalLoading = null; throw e; });
     await _analyticalLoading;
     const eng = await window.RegReportUI.engine();   // web-ifc, sql.js, the extractor core, Dxf2Ifc, LoadSummary: the owners the Regulatory Report loads
-    if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=2');
+    if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=3');
     const R = window.DxfImportUI && window.DxfImportUI.state && window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.R;
     let bytes, values = {}, sources = {}, name = window.__dwName || 'model';
     if (R && R.els && R.els.length) {
