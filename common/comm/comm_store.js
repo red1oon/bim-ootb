@@ -565,10 +565,15 @@
         var rr = _q(db, 'SELECT envelope FROM cl_op WHERE op_hash=?', [h])[0]; if (!rr) continue;
         for (var tu of await ROS.touched(JSON.parse(rr.envelope))) out[String(tu).toLowerCase()] = 1; }
       unrFor = L; unrVal = out; return out; }
-    async function author(spec) { return authorOne(spec, await versions(), null); }
+    // §52.4 SELF-RESTORE: a store rebuilt EMPTY for a device whose signed head is on the relay must fetch its own history before it authors anything,
+    // or its new ops would reuse its old sequence numbers (= equivocation). Set by sync(); authoring is refused while the restore is incomplete.
+    var restorePending = false;
+    function _refuseIfRestoring() { if (restorePending) { var er = new Error('restore-pending: this device is restoring its own history from the relay; it can author again once restore completes'); er.code = 'restore-pending'; throw er; } }
+    async function author(spec) { _refuseIfRestoring(); return authorOne(spec, await versions(), null); }
     // §41.2 L1 (profiled: author() costs O(log size) per op - versions() walks the whole log, cur() refolds it - so N ops cost O(N^2)): a BATCH of business ops reads the versions and the base ONCE and keeps its own
     // heads current (an op's head replaces what it read). The envelopes are the ones author() would have made one by one. -> { done: [{env, hash}], error }
     async function authorMany(specs) {
+      _refuseIfRestoring();
       var ver = await versions(), rbc = {}, done = [];
       try { for (var sp of specs) { if (ROS.IDENTITY[sp.body.op_type]) throw new Error('authorMany: business ops only'); var a = await authorOne(sp, ver, rbc); ver[String(sp.target.uu).toLowerCase()] = a.hash; done.push(a); } }
       catch (e) { return { done: done, error: e }; }
@@ -853,9 +858,16 @@
 
     async function sync(pipe) {
       var rep = { sent: 0, fetched: 0, received: 0, contenders: 0, rejected: 0, readBackFail: 0, sealed: 0, opened: 0, tampered: 0, granted: 0 };
+      // §52.4: an empty store (no own op, next_seq 1) whose device has a SIGNED head on the relay is a rebuilt device -> fetch its own objects too, this visit
+      var restoring = false, rHead = null;
+      if (!_q(db, 'SELECT 1 FROM cl_op WHERE author_kid=? LIMIT 1', [self.kid]).length && (selfRow() || {}).next_seq === 1 && self.pubJwk) {
+        var hb0 = await pipe.get(SP + 'h/' + self.kid);
+        if (hb0) { try { var hd0 = _unjson(hb0); if (hd0 && hd0.author === self.kid && hd0.space === space && hd0.seq > 0 && (await ENV.verify(hd0, self.pubJwk))) { restoring = true; rHead = hd0; } } catch (e) { /* not my head: a new device */ } }
+        if (restoring) log('§COMM_RESTORE kid=' + self.kid + ' start head_seq=' + rHead.seq);
+      }
       // 1. collect: plaintext ops are ingested; sealed ones wait in cl_sealed until a key opens them
       for (var on of await pipe.list(SP + 'o/')) {
-        if (on.indexOf(SP + 'o/' + self.kid + '/') === 0) continue;
+        if (!restoring && on.indexOf(SP + 'o/' + self.kid + '/') === 0) continue;
         if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [on, pipe.id]).length) continue;
         var ob = await pipe.get(on); if (!ob) continue;                 // withheld/absent: try again next visit
         await takeBundle(on, ob, pipe, rep);
@@ -869,11 +881,23 @@
             if (_q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [mn, pipe.id]).length) continue;
             var mb2 = await pipe.get(mn); if (!mb2) continue;
             await takeBundle(mn, mb2, pipe, rep); } } }
+      if (restoring) for (var rn of await pipe.list(SP + 'm/')) {                 // §52.4: my own mailbox bundles, in whichever box they went (a station's UP mail is in m/hub/)
+        if (rn.split('/')[5] !== self.kid || _q(db, 'SELECT 1 FROM cl_fetched WHERE name=? AND pipe_id=?', [rn, pipe.id]).length) continue;
+        var rb2 = await pipe.get(rn); if (rb2) await takeBundle(rn, rb2, pipe, rep); }
       await openSnapMeta();                                    // before the sealed ops open: a light client must know the state before it sees the ops it would otherwise fold
       await openSealed(rep);
       await fetchSnapshots(pipe, rep);
       await openSealed(rep);
       await openSnapMeta();
+      if (restoring) {                                                              // §52.4: what I fetched of my own is mine again; numbering continues after the highest seq I ever signed
+        db.run("UPDATE cl_op SET state='OWN' WHERE author_kid=?", [self.kid]);
+        var rmx = _q(db, 'SELECT author_seq AS s, op_hash AS h FROM cl_op WHERE author_kid=? ORDER BY author_seq DESC LIMIT 1', [self.kid])[0], rn0 = _q(db, 'SELECT COUNT(*) AS n FROM cl_op WHERE author_kid=?', [self.kid])[0].n;
+        var rtop = Math.max(rHead.seq, rmx ? rmx.s : 0);
+        db.run('UPDATE cl_self SET next_seq=?, head_hash=?, bundled_to=? WHERE kid=?', [rtop + 1, (rmx && rmx.s === rtop) ? rmx.h : rHead.hash, rtop, self.kid]);
+        _q(db, 'SELECT box AS b, MAX(bseq) AS m FROM cl_box WHERE author_kid=? GROUP BY box', [self.kid]).forEach(function (r) { db.run('INSERT OR REPLACE INTO cl_boxseq VALUES (?,?)', [r.b, r.m]); });
+        restorePending = rn0 < rHead.seq; last = null;
+        log('§COMM_RESTORE kid=' + self.kid + ' own_ops=' + rn0 + ' head_seq=' + rHead.seq + ' next_seq=' + (rtop + 1) + ' pending=' + restorePending);
+      } else if (restorePending && _q(db, 'SELECT COUNT(*) AS n FROM cl_op WHERE author_kid=?', [self.kid])[0].n >= (selfRow().next_seq - 1)) { restorePending = false; log('§COMM_RESTORE kid=' + self.kid + ' complete'); }
       await autoKeys(rep);
       // 2. send my news
       var nb = await bundleNew();
