@@ -1,14 +1,22 @@
 {
  "schema": "terms-v1",
  "kind": "harness",
- "at": "2026-10-31T07:51:11.274Z",
+ "at": "2026-11-01T00:57:19.330Z",
  "node": "v18.19.1",
+ "fresh": true,
+ "portable": {
+  "rows": 13,
+  "portable": 13,
+  "not_portable": 0,
+  "unknown": 0
+ },
+ "cachedRows": 0,
  "verdict": "PASS",
  "browser": {
   "judged": 5,
   "skipped": 0,
   "reason": null,
-  "reused": true
+  "reused": false
  },
  "rows": [
   {
@@ -23,8 +31,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_plantrust.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 13,
+     "key": "eba603fad757",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_plantrust.log"
     },
     {
      "file": "witness_team_publish.js",
@@ -32,8 +43,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_publish.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 349,
+     "key": "51d38b505485",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_publish.log"
     }
    ],
    "controls": [
@@ -70,7 +84,9 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "trusted-keys",
@@ -84,8 +100,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_plantrust.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 13,
+     "key": "eba603fad757",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_plantrust.log"
     },
     {
      "file": "witness_comm_policy.js",
@@ -93,8 +112,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_policy.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "c2f4c5d2f380",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_policy.log"
     },
     {
      "file": "witness_team_publish.js",
@@ -102,8 +124,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_publish.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 349,
+     "key": "51d38b505485",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_publish.log"
     }
    ],
    "controls": [
@@ -134,7 +159,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "rule-in-force",
@@ -148,8 +185,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_executors.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 12,
+     "key": "0e469ac78f56",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_executors.log"
     },
     {
      "file": "witness_comm_settrust.js",
@@ -157,8 +197,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_settrust.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 13,
+     "key": "f9e4b642c48f",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_settrust.log"
     },
     {
      "file": "witness_team_executors.js",
@@ -166,8 +209,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_executors.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 349,
+     "key": "78dcb1030d87",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_executors.log"
     }
    ],
    "controls": [
@@ -192,7 +238,9 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "complete-all-or-nothing",
@@ -206,8 +254,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_executors.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 12,
+     "key": "0e469ac78f56",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_executors.log"
     },
     {
      "file": "witness_team_executors.js",
@@ -215,8 +266,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_executors.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 349,
+     "key": "78dcb1030d87",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_executors.log"
     }
    ],
    "controls": [
@@ -241,7 +295,9 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "ledger-convergent",
@@ -255,8 +311,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "82906d2466e7",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_comm_cl5_conflict.js",
@@ -264,8 +323,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_cl5_conflict.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 12,
+     "key": "1be5670ef511",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_cl5_conflict.log"
     },
     {
      "file": "witness_team_base.js",
@@ -273,8 +335,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_base.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 355,
+     "key": "ffafbae14633",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_base.log"
     }
    ],
    "controls": [
@@ -305,7 +370,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "visit-lossless-offline",
@@ -319,8 +396,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "6ec93727dd99",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_terms_visit.log"
     }
    ],
    "controls": [
@@ -345,7 +425,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine only (no browser witness located)"
+   "layers": "engine only (no browser witness located)",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "visit-once",
@@ -359,8 +451,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "6ec93727dd99",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_terms_visit.log"
     },
     {
      "file": "witness_comm_cl3_store.js",
@@ -368,8 +463,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "82906d2466e7",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_cl3_store.log"
     }
    ],
    "controls": [
@@ -388,7 +486,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine only (no browser witness located)"
+   "layers": "engine only (no browser witness located)",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "ack-trail",
@@ -402,8 +512,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_cl3_store.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "82906d2466e7",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_cl3_store.log"
     },
     {
      "file": "witness_terms_visit.js",
@@ -411,8 +524,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_terms_visit.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 11,
+     "key": "6ec93727dd99",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_terms_visit.log"
     },
     {
      "file": "witness_team_so.js",
@@ -420,8 +536,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_so.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 355,
+     "key": "b7da5a9ddc0c",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_so.log"
     }
    ],
    "controls": [
@@ -447,7 +566,7 @@
      "id": "page: chip shows seen/refused/waiting/last visit",
      "layer": "browser",
      "found": true,
-     "evidence": "🟢 the ERP chip shows device code · team devices 2 · a Visit button with the hand cursor (A) — {\"text\":\"Team · 1308-5879 · team devices 2 Visit my ops 5 · seen "
+     "evidence": "🟢 the ERP chip shows device code · team devices 2 · a Visit button with the hand cursor (A) — {\"text\":\"Team · 907A-8ACC · team devices 2 Visit my ops 5 · seen "
     },
     {
      "id": "page: unsent DocAction shows local-only warning",
@@ -458,7 +577,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "version-skew",
@@ -472,8 +603,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_comm_versions.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 15,
+     "key": "62bef7b27a98",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_comm_versions.log"
     },
     {
      "file": "witness_team_versions.js",
@@ -481,8 +615,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_versions.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 349,
+     "key": "b721e12e5c0e",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_versions.log"
     }
    ],
    "controls": [
@@ -513,7 +650,19 @@
    ],
    "status": "ENFORCED",
    "note": null,
-   "layers": "engine + browser"
+   "layers": "engine + browser",
+   "untracked": [
+    {
+     "repo": "BIMCompiler",
+     "path": "build/erp/ad_full.db",
+     "kind": "untracked",
+     "why": "gitignored",
+     "bytes": 44937216,
+     "sha256": "179cd349cedb",
+     "manifest": "ok"
+    }
+   ],
+   "portable": true
   },
   {
    "id": "doc-numbering",
@@ -527,8 +676,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_docno_till.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 20,
+     "key": "25ddff9ab3a2",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_docno_till.log"
     },
     {
      "file": "witness_docno_till.js",
@@ -536,8 +688,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_docno_till_mutants.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 20,
+     "key": "fd868de6c65d",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_docno_till_mutants.log"
     }
    ],
    "controls": [
@@ -592,7 +747,9 @@
    ],
    "status": "ENFORCED",
    "note": "TEAMWORK §48.11b-§48.11d. Legacy arm: the pilot's own WS-login run == the twin replay (D20, scripts/bridge/out/docno_station_legacy.json). Limits: an author not bound to an AD_User is not judged at fold (counted); two users sharing a Search Key share a series",
-   "layers": "bim-ootb tree (node, real modules)"
+   "layers": "bim-ootb tree (node, real modules)",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "visit-bounded",
@@ -606,8 +763,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_f1_mailbox.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 24,
+     "key": "12d9b9600f0d",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_f1_mailbox.log"
     }
    ],
    "controls": [
@@ -650,7 +810,9 @@
    ],
    "status": "ENFORCED",
    "note": "TEAMWORK §45.2/§45.8 F1 per-device mailboxes (bim-ootb #2477; witness common/tests/witness_f1_mailbox.js, mutants run by the witness itself). Measured edge Visit #1 download 384 / 386 / 388 B at N=10/100/1000 (W-SCALE-STAR: build/scriptor/f1_mailboxes/scale_star_F1_final_engine_{10,100}.log, scale_star_F1_engine_1000.log; was 367 KB / 4.5 MB / 45.8 MB). Stated limits: the identity/roster floor on a first-ever Visit is not bounded (identity ops reach everyone); withholding of one mailbox bundle now shows as a gap (per-mailbox sequence, §45.11 / bim-ootb #2486; was a parked op); an old app in a new star space silently misses mailbox mail; the GitHub listing is still O(N) calls",
-   "layers": "bim-ootb tree (node, real modules)"
+   "layers": "bim-ootb tree (node, real modules)",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "sealing-real",
@@ -664,8 +826,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_read_scope.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 24,
+     "key": "42c7d7f803bf",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_read_scope.log"
     },
     {
      "file": "witness_f1_mailbox.js",
@@ -673,8 +838,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_f1_mailbox.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 24,
+     "key": "12d9b9600f0d",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_f1_mailbox.log"
     }
    ],
    "controls": [
@@ -727,15 +895,17 @@
      "evidence": "PASS §RS-H the held op is nowhere on the relay (not under the space key, not plaintext) - objects containing it=0"
     },
     {
-     "id": "9 mutants killed",
+     "id": "all mutants killed",
      "layer": "ootb",
      "found": true,
-     "evidence": "§RS_SCOPE_VERDICT PASS judged=39 fails=0 inconclusive=0 mutants=9/9"
+     "evidence": "§RS_SCOPE_VERDICT PASS judged=41 fails=0 inconclusive=0 mutants=10/10"
     }
    ],
    "status": "ENFORCED",
-   "note": "TEAMWORK §45.11 (bim-ootb #2486; witness common/tests/witness_read_scope.js, 9 mutants run by the witness itself; RED first on the F1 engine: FAIL judged=39 fails=13). Stated limits: the relay still sees metadata (author, box, counts, timing, sizes); a checkpoint state is sealed with the team key, so record ids and verdicts of laned ops are visible to every member; an insider holding a pair key can leak it; office spaces and spaces founded before F1 keep the team-wide key (unchanged by design)",
-   "layers": "bim-ootb tree (node, real modules)"
+   "note": "TEAMWORK §45.11 (bim-ootb #2486, #2498; witness common/tests/witness_read_scope.js, 10 mutants run by the witness itself; RED first on the F1 engine: FAIL judged=39 fails=13). Stated limits: the relay still sees metadata (author, box, counts, timing, sizes); in a mailbox space a checkpoint publishes no state (bim-ootb #2498, so no laned record id or verdict is readable with the team key) — the cost: a light client there folds instead of adopting a checkpoint; an insider holding a pair key can leak it; office spaces and spaces founded before F1 keep the team-wide key (unchanged by design)",
+   "layers": "bim-ootb tree (node, real modules)",
+   "untracked": [],
+   "portable": true
   },
   {
    "id": "key-roles-threshold",
@@ -749,8 +919,11 @@
      "exit": 0,
      "verdict": "PASS",
      "skipped": null,
-     "reused": true,
-     "log": "build/scriptor/terms_postSeal/witness_team_keys.log"
+     "reused": false,
+     "cached": false,
+     "inputs": 27,
+     "key": "0349ab0ddd75",
+     "log": "../../home/red1/bim-compiler/build/scriptor/gaps_49_1/terms_fresh_c/witness_team_keys.log"
     }
    ],
    "controls": [
@@ -805,7 +978,9 @@
    ],
    "status": "ENFORCED",
    "note": "TEAMWORK §46.5 versioning Stage 2 (bim-ootb #2473; witness erp/tests/witness_team_keys.js, 9 mutants run by the witness, L1 legacy-fold arm needs KW_OLD = common/comm before #2473, built by the runner with git archive)",
-   "layers": "bim-ootb tree (node, real modules)"
+   "layers": "bim-ootb tree (node, real modules)",
+   "untracked": [],
+   "portable": true
   }
  ]
 }
