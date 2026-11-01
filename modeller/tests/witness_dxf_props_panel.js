@@ -11,6 +11,10 @@
  *   P4 FALSIFIER: a part with no body behind it (a wall authored after Convert; and a fid absent from the bridge in Node) -> source "other", no evidence groups
  *   P5 layout: at 1440 x 900 the panel's box overlaps no other visible fixed panel (boxes printed) and no visible toolbar control has the panel on top of it (elementFromPoint at its centre; at 1024 x 768 with the meta editor open there is no room beside it: the panel must then be ON TOP (overlay flag, visible at its own top) and still cover no control;
  *      first runner run: #b-move was covered, so W-SHED-WALL-EDIT could not enter Move); the same at 1024 x 768
+ *   P6 (U7) an opened .db (DXARC.db, the Duplex; DXARC_DB): pick a wall -> class / name / material and its Pset_*Common rows = that guid's rows in the file (sql.js oracle in Node)
+ *   P7 (U7) a raw .ifc (the Duplex architecture IFC; DUPLEX_IFC) opened in the Modeller: pick a part -> after ONE shared-extractor read its Pset rows = the shared extractor's
+ *      element_pset_common rows for that guid (Node oracle on the same file); a second pick -> still one §PROPS_IFC_EXTRACT
+ *   P8 FALSIFIER (U7): OpenBuildingDb.partOf on a guid the DB lacks -> null, the panel shows no groups
  * Input: the CLI-marked shed set (SHED_MARKED, default ~/Videos/dxf2bim_film_work/why/cli/marked); missing -> MISSING input (exit 2).
  */
 'use strict';
@@ -52,7 +56,9 @@ let fail = 0, judged = 0; const ok = (n, c, i) => { judged++; console.log((c ? '
   ok('P2 the converted IFC carries the panel\'s key/values for a footing, a beam and a bar (element_dxf2bim, read by the shared extractor)', p2.every(x => x.same && x.rows > 0), '');
   if (process.env.BROWSER === '0') { console.log('§PROPS_PAGE_SKIP BROWSER=0 — P3 and P5 not judged; P4 judged in Node only');
     ok('P4 FALSIFIER (Node) a fid with no body -> source ' + mo.source + ', evidence groups ' + mo.groups.length, mo.source === 'other' && mo.groups.length === 0, ''); return done(); }
-  await page(R, mo).then(() => done(), e => { ok('P3 THE PAGE', false, 'crash ' + String(e && e.stack || e).slice(0, 300)); done(); });
+  await page(R, mo).catch(e => { ok('P3 THE PAGE', false, 'crash ' + String(e && e.stack || e).slice(0, 300)); });
+  await opened().catch(e => { ok('P6 OPENED BUILDING', false, 'crash ' + String(e && e.stack || e).slice(0, 300)); });
+  done();
 })();
 async function page(R, mo) {
   const http = require('http'), ROOT = path.join(__dirname, '..', '..'), puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer'));
@@ -108,6 +114,51 @@ async function page(R, mo) {
     const over = boxes.filter(x => !(x.b[2] <= a.box[0] || x.b[0] >= a.box[2] || x.b[3] <= a.box[1] || x.b[1] >= a.box[3]));
     console.log('  P5 panel ' + JSON.stringify(a.box) + ' vs ' + boxes.length + ' visible fixed panels: ' + boxes.map(x => x.id + JSON.stringify(x.b)).join(' ').slice(0, 600));
     ok('P5 layout at 1440 x 900: the panel overlaps none of the ' + boxes.length + ' other visible fixed panels' + (over.length ? ' (overlaps ' + over.map(x => x.id).join(',') + ')' : '') + ' and covers none of the ' + nCtl + ' visible toolbar controls' + (covered.length ? ' (covers ' + covered.join(',') + ')' : ''), a.shown && boxes.length > 0 && over.length === 0 && nCtl > 0 && covered.length === 0 && small.shown && small.cov.length === 0 && (small.ov.length === 0 || (small.overlay && small.top)), 'at 1024 x 768: ' + JSON.stringify(small));
+  } finally { await br.close(); srv.close(); }
+}
+// ---- P6-P8 (U7): an opened building's part, from its own DB; a raw .ifc through the shared extractor ----
+async function opened() {
+  const DXARC = process.env.DXARC_DB || path.join(os.homedir(), '.cache', 'dxf2bim', 'db', 'DXARC.db'), IFCF = process.env.DUPLEX_IFC || path.join(os.homedir(), 'bim-compiler', 'internal', 'sources', 'Ifc2x3_Duplex_Architecture.ifc');
+  if (!fs.existsSync(DXARC) || !fs.existsSync(IFCF)) { console.log('§INCONCLUSIVE P6/P7 input missing: ' + [DXARC, IFCF].filter(f => !fs.existsSync(f)).join(' ')); return; }
+  const SQLm = await require('sql.js')(), OB = require(path.join(M, 'open_building_db.js'));
+  const pick = db => { const r = db.exec("SELECT p.guid FROM element_pset_common p JOIN elements_meta m ON m.guid = p.guid WHERE m.ifc_class LIKE 'IfcWall%' GROUP BY p.guid ORDER BY count(*) DESC, p.guid LIMIT 1"); return r.length ? r[0].values[0][0] : null; };
+  const rowsKey = P => JSON.stringify((P.psets || []).map(r => [r.pset, r.name, String(r.value)]));
+  // oracles
+  const dbA = new SQLm.Database(fs.readFileSync(DXARC)), gA = pick(dbA), oA = OB.partOf(dbA, gA);
+  const WI = require('web-ifc'), api = new WI.IfcAPI(); await api.Init(); const Core = require(path.join(M, 'dxf2bim', 'ifc_extract_core.js')), dbB = new SQLm.Database();
+  await Core.extractToDb({ WebIFC: WI, ifcApi: api, ifcData: new Uint8Array(fs.readFileSync(IFCF)), db: Core.sqljsDb(dbB), Buf: Core.browserBuf, buildingName: 'MODEL', sourceName: path.basename(IFCF), log: () => {} });
+  const gB = pick(dbB), oB = OB.partOf(dbB, gB);
+  console.log('  P6 oracle ' + path.basename(DXARC) + ' guid=' + gA + ' class=' + (oA && oA.meta.ifc_class) + ' psetRows=' + (oA && oA.psets.length) + ' | P7 oracle guid=' + gB + ' psetRows=' + (oB && oB.psets.length));
+  ok('P8 FALSIFIER a guid the DB lacks -> partOf null; the panel model of a null part has no groups', OB.partOf(dbA, 'NOT-A-GUID') === null && PP.rowsFor(1, { guidByFid: { 1: 'NOT-A-GUID' }, part: null }).groups.length === 0, '');
+  const http = require('http'), ROOT = path.join(__dirname, '..', '..'), puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer'));
+  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+  const srv = http.createServer((q, r) => { const p = decodeURIComponent(q.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, buf) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); r.end(buf); }); });
+  await new Promise(z => srv.listen(0, '127.0.0.1', z));
+  const br = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }), errs = [], ext = [];
+  const openWith = async file => { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 900 }); pg.on('pageerror', e => { errs.push(String(e).slice(0, 160)); console.log('§PAGEERR ' + String(e).slice(0, 160)); });
+    pg.on('console', m => { const t = m.text(); if (/^§PROPS_IFC_EXTRACT|^§PSET_COMMON/.test(t)) { ext.push(t); console.log('  page ' + t.slice(0, 200)); } });
+    await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.OpenBuildingDb && window.PropsPanel', { timeout: 120000 });
+    await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__local"]', { visible: true });
+    const [ch] = await Promise.all([pg.waitForFileChooser(), pg.click('#m-open-panel .mo-row[data-key="__local"]')]); await ch.accept([file]);
+    await pg.waitForFunction('window.__dwBuf && window.__arcFidByGuid && Object.keys(window.__arcFidByGuid).length > 0', { timeout: 300000, polling: 500 }); await new Promise(r => setTimeout(r, 1500)); return pg; };
+  const shown = (pg, guid, src) => pg.evaluate(async (g, src) => { const fid = window.__arcFidByGuid[g]; if (fid == null) return { fid: null }; window.Bonsai.select(fid);
+      for (let i = 0; i < 600; i++) { const p = document.getElementById('pp-panel'), s = p && p.querySelector('[data-pp-source]'); if (s && s.getAttribute('data-pp-source') === src) break; await new Promise(r => setTimeout(r, 200)); }
+      const p = document.getElementById('pp-panel'), kv = {}, rows = []; let grp = null;
+      p.querySelectorAll('.pp-g, .pp-r').forEach(e => { if (e.classList.contains('pp-g')) grp = e.textContent.replace(/ \(.*\)$/, ''); else { const k = e.getAttribute('data-pp-key'), v = e.querySelector('b').textContent; if (grp) rows.push([grp, k, v]); else kv[k] = v; } });
+      const s = p.querySelector('[data-pp-source]'); return { fid, src: s && s.getAttribute('data-pp-source'), kv, rows }; }, guid, src);
+  try {
+    const pa = await openWith(DXARC), a = await shown(pa, gA, 'building');
+    const wantA = JSON.stringify(oA.psets.map(r => [r.pset, r.name, String(r.value)]));
+    console.log('  P6 page fid=' + a.fid + ' src=' + a.src + ' class=' + a.kv['IFC class'] + ' rows=' + a.rows.length + ' (oracle ' + oA.psets.length + ')');
+    ok('P6 an opened .db: the wall\'s class / name / material and its ' + oA.psets.length + ' Pset_*Common rows = the file\'s rows for guid ' + gA,
+      a.fid != null && a.src === 'building' && a.kv['IFC class'] === oA.meta.ifc_class && a.kv['Name'] === (oA.meta.element_name || '—') && a.kv['Material'] === (oA.meta.material_name || '—') && JSON.stringify(a.rows) === wantA && oA.psets.length > 0, '');
+    await pa.close();
+    const pb = await openWith(IFCF), b = await shown(pb, gB, 'ifc-extract');
+    const other = await pb.evaluate(g => Object.keys(window.__arcFidByGuid).find(k => k !== g && !/^dxf-/.test(k)), gB), b2 = await shown(pb, other, 'ifc-extract');
+    const nExt = ext.filter(l => /^§PROPS_IFC_EXTRACT /.test(l)).length, wantB = JSON.stringify(oB.psets.map(r => [r.pset, r.name, String(r.value)]));
+    console.log('  P7 page fid=' + b.fid + ' src=' + b.src + ' rows=' + b.rows.length + ' (oracle ' + oB.psets.length + '); second pick src=' + b2.src + '; §PROPS_IFC_EXTRACT lines ' + nExt);
+    ok('P7 a raw .ifc opened: after one shared-extractor read the wall\'s ' + oB.psets.length + ' Pset rows = the extractor\'s rows for guid ' + gB + '; a second pick reads no file again (' + nExt + ' extract); page errors ' + errs.length,
+      b.fid != null && b.src === 'ifc-extract' && JSON.stringify(b.rows) === wantB && oB.psets.length > 0 && b2.src === 'ifc-extract' && nExt === 1 && errs.length === 0, '');
   } finally { await br.close(); srv.close(); }
 }
 function done() { console.log(fail ? '§VERDICT FAIL W-PROPS-PANEL judged=' + judged + ' fail=' + fail : '§VERDICT PASS W-PROPS-PANEL judged=' + judged + ' fail=0'); process.exit(fail ? 1 : 0); }
