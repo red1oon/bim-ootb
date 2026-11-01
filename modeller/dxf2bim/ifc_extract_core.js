@@ -819,6 +819,7 @@ async function extractToDb(ctx) {
   } catch (e) { log(`§ELEMENT_TYPE_FAIL ${e.message}`); }
   log(`§ELEMENT_TYPE rows=${typeRows.length}`);
   const partRows = [];   // §L1.14 { parent, child, parentClass, childClass }: the decomposition (IfcRelAggregates) of every IfcCurtainWall: its panels (IfcPlate), mullions (IfcMember), doors
+  const aggRows = [];    // P-X2 { parent, child, parentClass }: element-level IfcRelAggregates (both ends extracted elements)
   const relFills = [];   // { opening, host, filling, hostClass, fillingClass }
   const psetRows = [];   // { guid, pset, name, value, source }
   {
@@ -853,14 +854,22 @@ async function extractToDb(ctx) {
         relFills.push({ opening: o.guid, host: h.guid, filling: f ? f.guid : null, hostClass: h.cls, fillingClass: f ? f.cls : null });
       }
     } catch (e) { log(`§REL_FILLS_HOST_FAIL ${e.message}`); }
-    try {   // §L1.14: a curtain wall carries no geometry of its own; its parts do. Parent class IfcCurtainWall only (additive table element_parts).
+    try {   // ONE IfcRelAggregates pass. §L1.14: a curtain wall carries no geometry of its own; its parts do (additive table element_parts, parent class IfcCurtainWall only).
+            // P-X2: every aggregate whose parent AND child are both extracted elements -> rel_aggregates, verbatim (no class list, no geometry filter).
+      const elGuid = new Set(elements.map(e => e.guid));
       const aIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELAGGREGATES);
       for (let i = 0; i < aIds.size(); i++) {
         const r = ifcApi.GetLine(modelID, aIds.get(i));
         if (!r.RelatingObject || !r.RelatedObjects) continue;
         const p = infoOf(ref(r.RelatingObject));
-        if (!p || !p.guid || p.cls !== 'IfcCurtainWall') continue;
-        for (const oh of r.RelatedObjects) { const c = infoOf(ref(oh)); if (c && c.guid) partRows.push({ parent: p.guid, child: c.guid, parentClass: p.cls, childClass: c.cls }); }
+        if (!p || !p.guid) continue;
+        const isCW = p.cls === 'IfcCurtainWall', isEl = elGuid.has(p.guid);
+        if (!isCW && !isEl) continue;
+        for (const oh of r.RelatedObjects) {
+          const c = infoOf(ref(oh)); if (!c || !c.guid) continue;
+          if (isCW) partRows.push({ parent: p.guid, child: c.guid, parentClass: p.cls, childClass: c.cls });
+          if (isEl && elGuid.has(c.guid)) aggRows.push({ parent: p.guid, child: c.guid, parentClass: p.cls });
+        }
       }
     } catch (e) { log(`§ELEMENT_PARTS_FAIL ${e.message}`); }
     try {
@@ -974,10 +983,15 @@ async function extractToDb(ctx) {
     ssStmt.run(g, 'IfcBuildingStorey', storeyMap[sid], storeyParentBuildingGuid[sid] || null, null, null, storeyElevation[sid]);
   }
   const raStmt = db.prepare('INSERT OR IGNORE INTO rel_aggregates (parent_guid, child_guid) VALUES (?,?)');
+  let raSpatial = 0;
   for (const sid in storeyParentBuildingGuid) {
     const g = storeyGuid[sid];
-    if (g) raStmt.run(storeyParentBuildingGuid[sid], g);
+    if (g) { raStmt.run(storeyParentBuildingGuid[sid], g); raSpatial++; }
   }
+  for (const r of aggRows) raStmt.run(r.parent, r.child);
+  { const pc = {}; for (const r of aggRows) pc[r.parentClass] = (pc[r.parentClass] || 0) + 1;
+    const uniq = new Set(aggRows.map(r => r.parent + '|' + r.child)).size;   // INSERT OR IGNORE dedups a repeated pair
+    log(`§REL_AGGREGATES rows=${uniq + raSpatial} elementLevel=${aggRows.length} spatial=${raSpatial} parentClasses=${JSON.stringify(pc)}`); }
 
   // Insert transforms
   const trStmt = db.prepare('INSERT OR IGNORE INTO element_transforms VALUES (?,?,?,?,?,?,?,?,?,?)');
