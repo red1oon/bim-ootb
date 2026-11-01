@@ -1256,7 +1256,7 @@ function _propsPanel() {
     // U7: a part of an OPENED building (no 'dxf-' body): its facts come from the building's DB (OpenBuildingDb, the one reader); shown "reading…" until they arrive
     if (g && !/^dxf-/.test(g) && window.OpenBuildingDb && window.__dwBuf) {
       window.PropsPanel.update(ids, sel, Object.assign({ pending: true }, ctx));
-      window.OpenBuildingDb.partFor(g).then(r => { if (tok === _ppTok) window.PropsPanel.update(ids, sel, Object.assign({ part: r.part, via: r.via }, ctx)); })
+      window.OpenBuildingDb.partFor(g).then(r => { if (tok === _ppTok) window.PropsPanel.update(ids, sel, Object.assign({ part: r.part }, ctx)); })
         .catch(e => console.warn('§PROPS building fail ' + (e && e.message || e)));
       return;
     }

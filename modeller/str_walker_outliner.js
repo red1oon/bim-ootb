@@ -260,97 +260,56 @@
     });
   }
 
-  // ── Open a raw .ifc file directly (2026-07-04 — the Modeller becomes its own IFC ingestion
-  // point, not just the Viewer, because a direct launch — URL/desktop icon — may never pass
-  // through the Viewer first). Reuses the Viewer's OWN parse engine (import_worker.js's web-ifc
-  // wasm parse + import_db_builder.js's buildImportDBs) — not a second parser. ALWAYS filters to
-  // discipline==='ARC' before building the db, regardless of what the source file actually
-  // contains — that is the hard invariant (ARC is the sole edited substrate, VISION-LOCK), not a
-  // convenience for already-ARC-only files. Output lands in the exact same table schema _openBuffer
-  // already reads, so zero changes below this point: same walker-init, same BOM-tab seed, same
-  // cross-edge derive as any resident/.db open.
-  var _ifcEngineLoaded = false;
-  function _ensureIfcEngine() {
-    if (_ifcEngineLoaded || typeof buildImportDBs === 'function') { _ifcEngineLoaded = true; return Promise.resolve(); }
-    return new Promise(function (resolve, reject) {
-      var s = document.createElement('script');
-      s.src = '../viewer/import_db_builder.js?v=9';
-      s.onload = function () { _ifcEngineLoaded = true; resolve(); };
-      s.onerror = function () { reject(new Error('import_db_builder.js load failed')); };
-      document.head.appendChild(s);
-    });
-  }
-  function _getWebIfcWasmBytes() {
-    return fetch('../viewer/lib/web-ifc.wasm').then(function (r) {
-      if (!r || !r.ok) throw new Error('web-ifc.wasm fetch failed (' + (r && r.status) + ')');
-      return r.arrayBuffer();
-    });
-  }
-  // NON-INVENT: drop rows, never re-derive them — a straight discipline filter over what the
-  // parser actually classified (same classifyDisc heuristic the Viewer's own import already uses).
-  function _filterArc(parsed) {
-    var kept = {}, elements = [];
-    for (var i = 0; i < parsed.elements.length; i++) {
-      var el = parsed.elements[i];
-      if (el.discipline === 'ARC') { kept[el.guid] = true; elements.push(el); }
-    }
-    var transforms = parsed.transforms.filter(function (t) { return kept[t.guid]; });
-    var geometries = parsed.geometries.filter(function (g) { return kept[g.guid]; });
-    var bomTree = (parsed.bomTree || []).filter(function (bt) { return kept[bt.parentGuid] && kept[bt.childGuid]; });
-    // §D69: a fills row lives with its host (an ARC wall); a filling outside ARC is kept as NULL, the way a void-only opening is
-    var relFills = parsed.relFills ? parsed.relFills.filter(function (r) { return kept[r.host]; }).map(function (r) { return kept[r.filling] ? r : { opening: r.opening, host: r.host, filling: null, hostClass: r.hostClass, fillingClass: null }; }) : undefined;
-    console.log(TAG + ' §IFC-OPEN-ARC-FILTER discs=' + JSON.stringify(parsed.meta && parsed.meta.disciplines || {}) +
-      ' total=' + parsed.elements.length + ' kept-arc=' + elements.length);
-    return { meta: parsed.meta, elements: elements, transforms: transforms, geometries: geometries, bomTree: bomTree, relFills: relFills };
-  }
+  // ── Open a raw .ifc file directly (2026-07-04 — the Modeller is its own IFC ingestion point, not just the Viewer: a direct launch — URL/desktop
+  // icon — may never pass through the Viewer first). §P-X (prompts/DXF2BIM_ARCHITECT_REVIEW.md ### P-X SPEC — Witness: W-IFC-OPEN-ONE, 2026-11-02, owner:
+  // "all downstream just work on the DB format. A single source of truth"): the file is converted by the SHARED extractor (dxf2bim/ifc_extract_core.js —
+  // the converter every resident and every export uses) in a worker (ifc_open_worker.js, off the main thread), into the residents' DB shape
+  // (ifc_open_db.js: IfcSpace + IfcOpeningElement element rows removed, every discipline kept — the ARC seed draws discipline='ARC' itself). Measured
+  // before the switch: every element the retired import-worker path and this one both keep has the same mesh hash, centre and bbox (9 files, 0 m), and
+  // the opened DB now holds the facts (element_pset_common, element_type, spatial_structure …) a resident's does. The output lands in the table schema
+  // _openBuffer already reads, so nothing below changes: same walker-init, same BOM-tab seed, same cross-edge derive as any resident/.db open.
   function openIfcFile(file) {
-    window.__lastIfcFile = file;   // §L5: Export ▸ 2D drawings (DXF) re-reads the user's own IFC with the shared extractor core
+    window.__lastIfcFile = file;   // §L5: Export ▸ 2D drawings (DXF) / Analytical model re-read the user's own IFC with the same extractor (they need the openings + spaces)
     console.log(TAG + ' §IFC-OPEN start file=' + file.name + ' size=' + (file.size / 1048576).toFixed(1) + 'MB');
-    Promise.all([file.arrayBuffer(), _getWebIfcWasmBytes(), _ensureIfcEngine()]).then(function (r) {
-      var arrayBuffer = r[0], wasmBytes = r[1];
-      var worker = new Worker(new URL('../viewer/import_worker.js?v=16', location.href).href);
+    var name = file.name.replace(/\.ifc$/i, '');
+    file.arrayBuffer().then(function (arrayBuffer) {
+      var worker = new Worker(new URL('ifc_open_worker.js?v=1', location.href).href);
       worker.onmessage = function (e) {
-        var msg = e.data;
-        if (msg.type === 'progress') { console.log(TAG + ' §IFC-OPEN-PROGRESS ' + msg.phase); return; }
-        if (msg.type === 'error') { console.warn(TAG + ' §IFC-OPEN-ERROR ' + msg.message); worker.terminate(); return; }
-        if (msg.type === 'done') {
-          worker.terminate();
-          try {
-            var filtered = _filterArc(msg);
-            var dbs = buildImportDBs(window.SQL, filtered);
-            var name = file.name.replace(/\.ifc$/i, '');
-            // §IFC-OPEN-KEY-FIX (2026-07-04, found by witness_e2e_walk_ifcopen.js's cross-building diag):
-            // without this, an IFC-opened building never forks its own op-log instance (unlike a .db
-            // resident's _forkEditable → setModelKey('mo_'+key)) — it just keeps writing to whatever key
-            // is currently active (the shared default on a fresh tab). Opening building A via IFC, walking
-            // it, then opening building B via IFC in the SAME tab silently folds A's signed ops onto B's
-            // scene (confirmed: Duplex inherited SampleHouse's 80 walked-MEP ops under 'bonsai_model_v1').
-            // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
-            // collides with a same-named .db resident's own instance either.
-            var O = window.Bonsai && window.Bonsai.oplog;
-            // §IFC-OPEN-SEED-FIX (2026-07-07, W-ARC-SOURCE-PARITY witness finding): openResident() always
-            // follows _openBuffer with _forkEditable(res) → _seedArcEditable, the commit that actually places
-            // GEOM_INSERT ops into window.Bonsai.group() — this path never did, so an IFC-opened building was
-            // WALKABLE (element_transforms queryable) but rendered ZERO ARC geometry (empty 3D scene, nothing
-            // to grab/edit; measured: SampleHouse/Duplex both 0 window.Bonsai.group().children after IFC-open).
-            // Mirror _forkEditable's replay+seed steps directly here (NOT a call to _forkEditable(res) itself
-            // — that re-runs setModelKey('mo_'+res.key), which would stomp the 'mo_ifc_'+name key just set
-            // below and re-collide with a same-named .db resident's instance, exactly what §IFC-OPEN-KEY-FIX
-            // above prevents). No res object exists for an ad-hoc IFC-opened file, so _fetchGeoDb (Terminal's
-            // split-geo-db fetch) is skipped — geoBuf=null, same as every non-Terminal .db resident already.
-            var openIt = function () {
-              var ok = _openBuffer(dbs.extractedDb, name);
-              if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
-              else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
-            };
-            _seedPending(name);
-            if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
-            else openIt();
-          } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
-        }
+        var msg = e.data; worker.terminate();
+        (msg.logs || []).forEach(function (l) { console.log(TAG + ' ' + l); });   // the extractor's own § lines + §IFC-OPEN-X
+        if (msg.type !== 'done') { console.warn(TAG + ' §IFC-OPEN-ERROR ' + msg.message); return; }
+        try {
+          // §IFC-OPEN-KEY-FIX (2026-07-04, found by witness_e2e_walk_ifcopen.js's cross-building diag):
+          // without this, an IFC-opened building never forks its own op-log instance (unlike a .db
+          // resident's _forkEditable → setModelKey('mo_'+key)) — it just keeps writing to whatever key
+          // is currently active (the shared default on a fresh tab). Opening building A via IFC, walking
+          // it, then opening building B via IFC in the SAME tab silently folds A's signed ops onto B's
+          // scene (confirmed: Duplex inherited SampleHouse's 80 walked-MEP ops under 'bonsai_model_v1').
+          // 'mo_ifc_' prefix (not 'mo_', which .db residents use) so an IFC-opened building never
+          // collides with a same-named .db resident's own instance either.
+          var O = window.Bonsai && window.Bonsai.oplog;
+          // §IFC-OPEN-SEED-FIX (2026-07-07, W-ARC-SOURCE-PARITY witness finding): openResident() always
+          // follows _openBuffer with _forkEditable(res) → _seedArcEditable, the commit that actually places
+          // GEOM_INSERT ops into window.Bonsai.group() — this path never did, so an IFC-opened building was
+          // WALKABLE (element_transforms queryable) but rendered ZERO ARC geometry (empty 3D scene, nothing
+          // to grab/edit; measured: SampleHouse/Duplex both 0 window.Bonsai.group().children after IFC-open).
+          // Mirror _forkEditable's replay+seed steps directly here (NOT a call to _forkEditable(res) itself
+          // — that re-runs setModelKey('mo_'+res.key), which would stomp the 'mo_ifc_'+name key just set
+          // below and re-collide with a same-named .db resident's instance, exactly what §IFC-OPEN-KEY-FIX
+          // above prevents). No res object exists for an ad-hoc IFC-opened file, so _fetchGeoDb (Terminal's
+          // split-geo-db fetch) is skipped — geoBuf=null, same as every non-Terminal .db resident already.
+          var openIt = function () {
+            var ok = _openBuffer(msg.bytes, name);
+            if (ok && O) { _replayEdits(); _seedArcEditable(O, name, null); }
+            else if (window.__arcSeedDone) window.__arcSeedDone('ifc-open-not-seeded');
+          };
+          _seedPending(name);
+          if (O && O.setModelKey) O.setModelKey('mo_ifc_' + name).then(openIt);
+          else openIt();
+        } catch (err) { console.warn(TAG + ' §IFC-OPEN-BUILD-FAIL ' + (err && err.message)); }
       };
       worker.onerror = function (err) { console.warn(TAG + ' §IFC-OPEN-WORKER-ERROR ' + err.message); worker.terminate(); };
-      worker.postMessage({ arrayBuffer: arrayBuffer, filename: file.name, wasmBytes: wasmBytes }, [arrayBuffer]);
+      worker.postMessage({ bytes: arrayBuffer, name: name }, [arrayBuffer]);
     }).catch(function (err) { console.warn(TAG + ' §IFC-OPEN-FAIL ' + (err && err.message)); });
   }
 
