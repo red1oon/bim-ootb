@@ -262,6 +262,9 @@
     var hasDisc = _hasDiscipline(db);
     var where = hasDisc ? "m.discipline='ARC'"
       : '(' + ARC_CLASSES.map(function (c) { return "m.ifc_class='" + c + "'"; }).join(' OR ') + ')';
+    // §M3B-REST (MODELLER_MASTER §RESUME 2026-11-02 "M-3(b) SPEC"): opts.rest = the COMPLEMENT of the ARC seed, with the SAME resolve/refuse rules per row — the authored non-ARC bodies
+    // (STR members/footings, ACMV fans, any discipline). ONE owner of "which rows are ARC" (this `where`); Export > Viewer database carries these rows through (viewer_db_export.js), they are never seeded into the op-log.
+    var rest = !!opts.rest; if (rest) where = 'NOT (' + where + ')';
     var hasId = _hasIdColumn(db);
     if (!hasId) _log(TAG + ' §ARC-SEED-SCHEMA elements_meta has no id column — ORDER BY guid fallback (stable, guid-keyed bridge unaffected)');
     // §ANCHOR: select the is_anchor flag when the column exists (else a constant 0 — identical SQL shape,
@@ -280,7 +283,7 @@
     var layerGate = geomIdx.table ? _layerGate(db, geoDb || db) : { armed: false, multiLayer: {}, layeredHashes: {}, nMulti: 0, nHashes: 0 };
     var layerRefused = 0;
     var anchorOps = [];   // §ANCHOR — collected SEPARATELY, appended AFTER the normal ops (see below)
-    var slide = geomIdx.table ? _slideTables(db) : { hosts: {}, openings: [] }, slideSeeded = {}, slideHostN = 0;   // §SLIDE-SEED
+    var slide = (geomIdx.table && !rest) ? _slideTables(db) : { hosts: {}, openings: [] }, slideSeeded = {}, slideHostN = 0;   // §SLIDE-SEED (ARC walls only)
     if (r.length) r[0].values.forEach(function (v) {
       var guid = v[0], cls = v[1], cx = v[2], cy = v[3], cz = v[4], bx = v[5], by = v[6], bz = v[7], rx = v[8] || 0, ry = v[9] || 0, rz = v[10] || 0, rgba = v[11], isAnchor = v[12] === 1;
       // §ANCHOR branch — BEFORE every count/audit/hardfail below (the user's binding condition: anchors are
@@ -460,7 +463,7 @@
     if (layerGate.armed) _log(TAG + ' §LAYER-GATE armed multiLayer=' + layerGate.nMulti +
       ' layeredHashes=' + layerGate.nHashes + ' refused=' + layerRefused +
       ' (authored multi-layer elements must resolve per-layer slabs — §LOD400-ENVELOPE)');
-    var aggParts = _aggregatePartsDrawn(db, ops, skipped, opts.building);   // §AGG-PARTS-DRAWN (M-2, measure only)
+    var aggParts = rest ? null : _aggregatePartsDrawn(db, ops, skipped, opts.building);   // §AGG-PARTS-DRAWN (M-2, measure only)
     return { ops: ops, skipped: skipped, aggParts: aggParts, discipline: hasDisc ? 'ARC' : 'fallback', matched: matched, unmatched: unmatched, tilted: tilted, colorN: colorN,
       geomAssets: geomAssets, realResolved: realResolved, hardfail: hardfail, noSubstrate: noSubstrate, geomTable: geomIdx.table, geomap: gmAudit,
       anchorN: anchorOps.length, layerGate: layerGate.armed ? { multiLayer: layerGate.nMulti, layeredHashes: layerGate.nHashes } : null,
