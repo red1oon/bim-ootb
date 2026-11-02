@@ -16,3 +16,8 @@ DELETE FROM project_metadata WHERE key IN ('site_latitude','site_longitude','sit
 INSERT INTO project_metadata (key,value) VALUES ('site_latitude','22.617'),('site_longitude','90.117'),
   ('site_latlong_source','geocoded:title-block address -> Srimantakati (Wikipedia 22d37mN 90d7mE)'),
   ('true_north_angle','0'),('true_north_source','default_zero');
+-- §SHED_FILM_STOREY (2026-11-02): the walked-MEP Export leaves every element on storey 'Unknown' and storey_elevation empty, so the load-path pick (lp_chain.js _hasStorey) found 0 candidates
+-- (§LOADPATH_BEARING candidates=0 on the first v3 bake). The building has ONE storey, Level 1 (spatial_structure 0BtqBaYD0tB5DiKBAAD0JK, elevation 0.0), same as Shed_wholewalk.db.
+UPDATE elements_meta SET storey='Level 1' WHERE storey='Unknown' AND ifc_class<>'IfcOpeningElement';
+DELETE FROM storey_elevation WHERE guid='0BtqBaYD0tB5DiKBAAD0JK';
+INSERT INTO storey_elevation (guid,name,elevation_attr_m,placement_z_m) VALUES ('0BtqBaYD0tB5DiKBAAD0JK','Level 1',0.0,0.0);
