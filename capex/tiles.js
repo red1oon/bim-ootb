@@ -152,20 +152,23 @@
     return o;
   }
 
+  // PER_SOURCE (prompts/CAPEX_DASHBOARD.md §12.6, owner 2026-11-02): a tile whose value is by definition the source's own write clock (MAX(Updated)) — printed, never MATCH/DIFF.
+  var PER_SOURCE = ['last_updated'];
   function twin(a, b, log) {
-    log = log || function () {}; var match = 0, diff = 0, inc = 0;
+    log = log || function () {}; var match = 0, diff = 0, inc = 0, per = 0;
     Object.keys(a).forEach(function (k) {
       var va = a[k], vb = b[k], v;
-      if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
+      if (PER_SOURCE.indexOf(k) >= 0) v = 'PER_SOURCE';
+      else if (va === 'INCONCLUSIVE' || vb === 'INCONCLUSIVE' || vb === undefined || (va === 'PENDING' && vb === 'PENDING')) v = 'INCONCLUSIVE';   // pending/unreadable: nothing was judged
       else if (va === 'no data' && vb === 'no data') v = 'INCONCLUSIVE';          // both empty: nothing was judged
       else v = va === vb ? 'MATCH' : 'DIFF';
-      if (v === 'MATCH') match++; else if (v === 'DIFF') diff++; else inc++;
+      if (v === 'MATCH') match++; else if (v === 'DIFF') diff++; else if (v === 'PER_SOURCE') per++; else inc++;
       log('§DASH_TWIN tile=' + k + ' sqlite=' + va + ' legacy=' + vb + ' ' + v);
     });
     var verdict = diff ? 'FAIL' : match ? 'PASS' : 'INCONCLUSIVE';
-    log('§DASH_TWIN_VERDICT ' + verdict + ' match=' + match + ' diff=' + diff + ' inconclusive=' + inc);
-    return { verdict: verdict, match: match, diff: diff, inconclusive: inc };
+    log('§DASH_TWIN_VERDICT ' + verdict + ' match=' + match + ' diff=' + diff + ' inconclusive=' + inc + ' per_source=' + per);
+    return { verdict: verdict, match: match, diff: diff, inconclusive: inc, per_source: per };
   }
-  var API = { compute: compute, flatten: flatten, twin: twin, FORMULA: FORMULA, CAVEAT: CAVEAT };
+  var API = { compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexTiles = API;
 })(typeof window !== 'undefined' ? window : this);
