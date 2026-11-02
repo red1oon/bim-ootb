@@ -1,0 +1,11 @@
+c1	en	§FILM_FACT sheets 9 (take15) · the 9 sheets open as drawn	F: Nine flat sheets. A building?	F: Nine flat BricsCAD sheets. Can they become a building? | M: Open them all, exactly as drawn.
+c2a	en	§FILM_FACT steps 54 / phase1..4 (take15) · auto-assemble at 2x	M: It places them by rule.	F: And the layout? | M: It places the plans and elevations by rule. 54 steps, nothing typed.
+c2b	en	§FILM_FACT sheets 9 / tinted 9 (take15) · placed	M: Nine sheets, placed.	M: All 9 sheets, placed. | F: One building? | M: Nearly.
+c3	en	§FILM_FACT n_columns 96 n_beams 35 n_footings 32 n_members 168 (take15) · Convert + fly-round	M: Convert. One shed.	M: Convert. 96 columns, 35 beams, 32 footings and 168 steel members. | F: And the walls? | M: And the roof. One shed.
+v1	en	§FILM_FACT viewer_status DONE 709 elements (viewer take)	M: Saved, and reopened in the Viewer.	F: Now what? | M: Saved as a database, and reopened in the Viewer. 709 elements.
+v2	en	§FILM_FACT altc_all_on true / altc_boxes 12 (viewer take)	M: Alt C, and every box on.	M: Alt and C show the film panel. | F: Are the boxes ticked? | M: All 12.
+f1	en	§CPE_BUILDUP_SOURCE covered=511/511 · §CPE_DAY_COUNTER day=10 of=10 · §COST_ODOMETER_FINAL cost=117855 hours=1769.6 (bake v2)	M: The same shed, built day by day.	F: And the film? | M: The same shed, built day by day: 513 parts over 10 days, the cost and hours counting up as each one lands.
+f2	en	§LOADPATH_BUILD ok hops=6 durSec=12.00 (bake v2)	M: The load path, roof to ground.	F: Why has it stopped? | M: The load path. The camera holds on one chain of 6 hops, from the roof down to the footing.
+f3	en	§CPE_REVEAL_ROUND discs=[ACMV] shell=[ARC,STR] · IfcFan 13 (take15) (bake v2)	M: Walls and frame step aside for the fans.	F: Where did the walls go? | M: The reveal round: walls and frame step aside, so the 13 fans stand on their own.
+f4	en	§CLASH_NARROWPHASE meshTrue=189 · §LEDGER_TICKER final=513/513 (bake v2)	M: 189 real contacts. Every part sealed.	M: 189 places where parts truly touch, highlighted. | F: Can I trust it? | M: Every one of the 513 parts is sealed in the ledger.
+f5	en	§MEASURE_BUILDING_CARD 4,973 m3, 40.8x16.8x7.3 m · §ESCAPE_ROUTE_SUMMARY maxDrawn=20.68m walk=0:17 (bake v2)	M: And the way out: 20.68 metres.	M: The shed measures 40.8 by 16.8 by 7.3 metres. | F: And the way out? | M: 20.68 metres, a 17 second walk.

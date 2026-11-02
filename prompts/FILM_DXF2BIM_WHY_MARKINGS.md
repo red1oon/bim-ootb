@@ -37,6 +37,13 @@ the services too?" fell -1.3 st; "And the services?" rises), DETAIL 14 / 14, fra
 Not claimed: no person has watched or listened to it. **Next:** when Modeller M-3 (b) merges (reopen keeps IfcMember/IfcFooting/IfcFan; (a) #2527 already exports ELEC/FP with their classes), re-export
 the walked shed, re-stage the same whole-shed path, re-bake, and swap chapter 6 so the services appear in the film (bim-compiler-dd will message bim-compiler-88).
 
+
+### RESULT 2026-11-02 — shed film v2 (owner: "use what we have first"; compass/services version deferred)
+- Walked-MEP DB on main (#2527, #2531): `Shed_film.db` 711 rows, 0 IfcBuildingElementProxy; IfcMember 168, IfcFooting 32, IfcFan 13, IfcBeam 35, IfcColumn 96, IfcOpeningElement 2, IfcLightFixture 69, IfcFireSuppressionTerminal 30, IfcPipeFitting 60, IfcPipeSegment 30, IfcFlowFitting 9, IfcPlate 117, IfcWall 40, IfcDoor 4, IfcCovering 3, IfcRoof 2, IfcSlab 1. Convert 511 bodies / 513 rows.
+- FINDING: the Export leaves every element on storey 'Unknown' and storey_elevation empty -> first v3 bake `§LOADPATH_BEARING candidates=0`. `buildings/patches/Shed_film.db.sql` now sets Level 1 + storey_elevation (re-bake: `§LOADPATH_BUILD ok hops=6`, `kept=170/204`), adds the compiled room + walkable raster (identical to Shed_wholewalk's) and the georef rows. v3 bake (compass + walked ELEC/FP in the reveal) was stopped by the owner at ~85% (DB + patch kept for a later version).
+- Film (chapter 5 = existing Alt+C bake `Shed_DXF_to_film_AFTER_v2.mp4`, owner cut [26,33) and [72,79) s: build-up days 7-9 and reveal-round orbit removed; load path, clash, measure cards, escape route all kept): `~/Videos/Shed_2D_to_Film_1920x1080_2026-11-02_v2.mp4`, 4063 frames = master, 162.52 s, -18.1 LUFS, 0 black frames, `§POLY_TONE wrong=0`, DETAIL 10 of 11 (1 SHORT). Bake v2: `§ESCAPE_ROUTE_SUMMARY maxDrawn=20.68m of 20.68m`, `§CLI_BAKE_POSECHECK MATCH`, `§CLI_BAKE_WALL fileOk=true`. No compass, no walked services in it.
+- Script: `prompts/film_narration_shed2film_v2_en.tsv`; cards: bim-compiler PR #301 `FILM_SET=shed2film2`.
+
 ## ▶▶▶ §LAST PART v2 SHORT (spec 2026-10-23, session 3; owner on v1: "cut out half to focus on the opening as an ARC and walk the MEP right away, faster pace; cam view should earnestly follow as parts are laid")
 **Film:** "A saved building, serviced", target ~90 s, EN. Recorder `prompts/film_dxf2bim_shed_v2_rec.js` (the v1 recorder's helpers, kept), narration `prompts/film_narration_dxf2bim_shed_v2_en.tsv`, cards
 `FILM_SET=shedlast2` (compiler `film_title_cards.py`, 2 chapters), the same `film_dxf2bim_why_assemble.sh`. Input = the shed's Viewer database exported by the Modeller (`SHED_DB`: v1's chapter 1 writes
