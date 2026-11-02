@@ -25,3 +25,6 @@ INSERT INTO storey_elevation (guid,name,elevation_attr_m,placement_z_m) VALUES (
 -- (and the first Convert export carries building_name=SHED). Restore the stated name. Reported to the Modeller lane (export-after-reopen naming).
 UPDATE project_metadata SET value='SHED' WHERE key='building_name';
 UPDATE project_metadata SET value='SHED.ifc' WHERE key='source_file';
+-- The Viewer shows the name carried on every row (elements_meta.building 711 rows, component_geometries.building 267 rows), not project_metadata: restore SHED there too.
+UPDATE elements_meta SET building='SHED' WHERE building='SHEDFRESHDB';
+UPDATE component_geometries SET building='SHED' WHERE building='SHEDFRESHDB';
