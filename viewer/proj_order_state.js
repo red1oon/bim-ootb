@@ -164,9 +164,12 @@
   // UNCHANGED with a neutral voConfig (factors 1, no loading) and one CHANGED row per class (count 1, rate = delta): unitPrice = delta exactly, GrandTotal = sum(delta).
   // INVARIANT (witnessed): PlannedAmt(original order of the parts) + VO == a fresh fold of the edited parts, to the cent. The old per-element x1.3 x loading model is not used here.
   var NEUTRAL_VO = { addFactor: 1, removeFactor: 1, changeFactor: 1, overheadPct: 0, markupPct: 0, disruptionPct: 0 };
-  function rowsAmount(rows, env) {   // per class: sum of round0(rate x qty) — exactly proj_fold's line amount — as BigDecimal
-    var BD = env.BigDecimal || global.BigDecimal, out = {};
-    rows.forEach(function (r) { var a = BD.of(String(r.rate)).multiply(BD.of(String(r.qty))).setScale(0, BD.RoundingMode.HALF_UP); out[r.cls] = (out[r.cls] || BD.ZERO).add(a); });
+  // per class: the plan line's own amount = PlannedPrice × PlannedQty, exactly as legacy computes it (MProjectLine.beforeSave :212) on the line proj_fold writes
+  //   (PlannedQty = round3(Σ qty), PlannedPrice = the class rate) — ONE PRICING BASIS with the plan (owner 2026-09-30 Q1, restated 2026-11-02: prompts/CAPEX_DASHBOARD.md §12.4)
+  function rowsAmount(rows, env) {
+    var BD = env.BigDecimal || global.BigDecimal, q = {}, rate = {}, out = {};
+    rows.forEach(function (r) { q[r.cls] = (q[r.cls] || 0) + r.qty; if (rate[r.cls] == null) rate[r.cls] = r.rate; });
+    Object.keys(q).forEach(function (c) { out[c] = BD.of(String(rate[c])).multiply(BD.of(String(Math.round(q[c] * 1000) / 1000))); });
     return out;
   }
   // `existing` = {cls: amount} the order LINES currently hold (readState().lines): the line being amended is the base, literally "the priced difference of the order line it amends"

@@ -60,7 +60,8 @@
   }
   function _uu() {
     try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
-    return 'bim-' + Math.abs((Date.now ? Date.now() : 0) ^ (Math.random() * 1e9 | 0)).toString(16);
+    // a v4 UUID either way: legacy's *_UU columns are Postgres `uuid` — the old 'bim-<hex>' fallback was refused on push ("invalid input syntax for type uuid", prompts/CAPEX_DASHBOARD.md §12.1 D4)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
   }
   // §F1 W-FIN-CURRENCY — resolve a currency by ISO_Code first, then CurSymbol (packs carry 'RM', not 'MYR';
   // MYR.CurSymbol='RM' bridges them). ISO-exact wins. EXTRACT-only — never invent a currency.

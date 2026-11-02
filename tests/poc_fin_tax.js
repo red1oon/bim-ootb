@@ -78,7 +78,11 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   const projId = r.projectId;
   const ph1 = edb.exec("SELECT C_ProjectPhase_ID,PlannedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + projId + " ORDER BY SeqNo LIMIT 1")[0].values[0];
   edb.run("UPDATE C_ProjectPhase SET IsComplete='Y' WHERE C_ProjectPhase_ID=" + ph1[0]);
-  const net = BD.of(String(ph1[1]));
+  // restated 2026-11-02 (owner; prompts/CAPEX_DASHBOARD.md §12.4): the claim line is legacy's MInvoiceLine.setLineNetAmt — PriceEntered × Qty rounded HALF_UP to the currency's StdPrecision
+  //   (the phase PlannedAmt is legacy's unrounded qty × price). Precision read from the project's own currency row, independently of proj_claim.js.
+  const _prec = Number(edb.exec("SELECT c.StdPrecision FROM C_Currency c JOIN C_Project p ON p.C_Currency_ID=c.C_Currency_ID WHERE p.C_Project_ID=" + projId)[0].values[0][0]);
+  const _round = v => { const b = BD.of(String(v)); return b.scale() > _prec ? b.setScale(_prec, BD.RoundingMode.HALF_UP) : b; };
+  const net = _round(ph1[1]);
   const taxGold = net.multiply(BD.of('6')).divide(BD.of('100'), 2, HALF_UP);
   const grossGold = net.add(taxGold);
 

@@ -71,13 +71,17 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   // complete the first phase (the PM marks progress).
   const ph1 = edb.exec("SELECT C_ProjectPhase_ID,PlannedAmt FROM C_ProjectPhase WHERE C_Project_ID=" + projId + " ORDER BY SeqNo LIMIT 1")[0].values[0];
   edb.run("UPDATE C_ProjectPhase SET IsComplete='Y' WHERE C_ProjectPhase_ID=" + ph1[0]);
-  const earned = ph1[1];
+  // restated 2026-11-02 (owner; prompts/CAPEX_DASHBOARD.md §12.4): the claim line is legacy's MInvoiceLine.setLineNetAmt — PriceEntered × Qty rounded HALF_UP to the currency's StdPrecision
+  //   (the phase PlannedAmt is legacy's unrounded qty × price). Precision read from the project's own currency row, independently of proj_claim.js.
+  const _prec = Number(edb.exec("SELECT c.StdPrecision FROM C_Currency c JOIN C_Project p ON p.C_Currency_ID=c.C_Currency_ID WHERE p.C_Project_ID=" + projId)[0].values[0][0]);
+  const _round = v => { const b = BD.of(String(v)); return b.scale() > _prec ? b.setScale(_prec, BD.RoundingMode.HALF_UP) : b; };
+  const earnedEV = ph1[1], earned = _round(earnedEV).toString();   // EV stays the phase amount; the claim (and AC) is its legacy-rounded invoice line
 
   // ── W-FIN-CLAIM-1 — claim == earned value of the completed phase. ──
   const cl = Claim.progressClaim(edb, projId, { now: now, bpartnerId: 119 });
   const invGrand = scalar(edb, "SELECT GrandTotal FROM C_Invoice WHERE C_Invoice_ID=" + cl.invoiceId);
   const c1 = cl.ok && !cl.idempotent && eq(cl.claimAmt, earned) && eq(invGrand, earned) && cl.phasesClaimed === 1;
-  console.log('§FIN_CLAIM_1 inv=' + cl.documentNo + ' claim=' + cl.claimAmt + ' earned=' + earned + ' invGrand=' + invGrand + ' phases=' + cl.phasesClaimed + ' ok=' + c1);
+  console.log('§FIN_CLAIM_1 inv=' + cl.documentNo + ' claim=' + cl.claimAmt + ' earned(EV)=' + earnedEV + ' lineRounded=' + earned + ' invGrand=' + invGrand + ' phases=' + cl.phasesClaimed + ' ok=' + c1);
 
   // ── W-FIN-CLAIM-2 — AC moves; CPI now computable. ──
   const acAfter = scalar(edb, "SELECT InvoicedAmt FROM C_Project WHERE C_Project_ID=" + projId);
@@ -115,7 +119,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   console.log('§FIN_CLAIM_7 contract ok=' + c7);
 
   const pass = c1 && c2 && c3 && c4 && c5 && c6 && c7;
-  console.log('§FIN_CLAIM ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-CLAIM: progress claim==EV, AC moves, preview balances ΣDr=ΣCr, idempotent, honest; building=' + building);
+  console.log('§FIN_CLAIM ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-CLAIM: progress claim==EV as the legacy-rounded invoice line, AC moves, preview balances ΣDr=ΣCr, idempotent, honest; building=' + building);
   bdb.close(); edb.close();
   process.exit(pass ? 0 : 1);
 })();

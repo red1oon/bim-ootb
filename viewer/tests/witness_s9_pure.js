@@ -50,11 +50,16 @@ const HALF_UP = BigDecimal.RoundingMode.HALF_UP;
   // S3 — generate
   const rows0 = PS.pricedRowsFor(bdb, guids, env, null).rows;
   const p0 = quiet(() => PS.generate(erp, BUILD, rows0, env, NOW, 'USD'));
-  const indep = (rows) => rows.reduce((s, r) => s.add(BigDecimal.of(String(r.rate)).multiply(BigDecimal.of(String(r.qty))).setScale(0, HALF_UP)), BigDecimal.ZERO).toString();
+  // independent oracle = legacy's plan-line rule (MProjectLine.beforeSave :212): per class PlannedPrice (the rate) × PlannedQty (round3 of the class's summed qty), exact, summed —
+  //   restated 2026-11-02 (prompts/CAPEX_DASHBOARD.md §12.4; was per-row integer rounding, which legacy never does)
+  const indepByCls = (rows) => { const q = {}, rt = {}, o = {}; rows.forEach(r => { q[r.cls] = (q[r.cls] || 0) + r.qty; if (rt[r.cls] == null) rt[r.cls] = r.rate; });
+    Object.keys(q).forEach(c => { o[c] = BigDecimal.of(String(rt[c])).multiply(BigDecimal.of(String(Math.round(q[c] * 1000) / 1000))); }); return o; };
+  const indep = (rows) => { const o = indepByCls(rows); return Object.keys(o).reduce((s, c) => s.add(o[c]), BigDecimal.ZERO).toString(); };
+  const eqBD = (a, b) => BigDecimal.of(String(a)).compareTo(BigDecimal.of(String(b))) === 0;
   const s1 = PS.readState(erp, BUILD, ['IfcWallStandardCase'], env);
   const again = quiet(() => PS.generate(erp, BUILD, rows0, env, NOW, 'USD'));
   const nProj = PS.countProjects(erp, BUILD);
-  G('S3 GENERATE', nProj === 1 && s1.generated && s1.plannedAmt === indep(rows0) && again.created.lines === 0 && again.created.phases === 0 ? 'PASS' : 'FAIL',
+  G('S3 GENERATE', nProj === 1 && s1.generated && eqBD(s1.plannedAmt, indep(rows0)) && again.created.lines === 0 && again.created.phases === 0 ? 'PASS' : 'FAIL',
     'projectRows=' + nProj + ' plannedAmt=' + s1.plannedAmt + ' independentSum=' + indep(rows0) + ' secondGenerate lines=+' + again.created.lines + ' phases=+' + again.created.phases + ' inPO=' + s1.inPO.join());
 
   // S4 — an edited wall makes it a variant
@@ -79,15 +84,20 @@ const HALF_UP = BigDecimal.RoundingMode.HALF_UP;
   const voRows = PS.voRowsFromEdit(bdb, guids, env, edits, null, ex);
   const vo = quiet(() => PS.issueVO(erpC, BUILD, voRows, env, NOW, 'USD'));
   const rowsE = PS.pricedRowsFor(bdb, guids, env, edits).rows, rows0b = PS.pricedRowsFor(bdb, guids, env, null).rows;
-  const expVO = BigDecimal.of(indep(rowsE)).subtract(BigDecimal.of(indep(rows0b))).toString();
+  // restated 2026-11-02 (§12.4): each VO order line = round(Δ class amount, 2) (legacy order line); VO == Σ of those exactly, and PO + VO == fresh fold within legacy's own per-line
+  //   rounding (≤ 0.005 per VO line) — the plan keeps legacy's unrounded qty × price
+  const bE = indepByCls(rowsE), b0 = indepByCls(rows0b);
+  const expVO = Object.keys(Object.assign({}, bE, b0)).reduce((s, c) => { const d = (bE[c] || BigDecimal.ZERO).subtract(b0[c] || BigDecimal.ZERO); return d.signum() === 0 ? s : s.add(d.setScale(2, HALF_UP)); }, BigDecimal.ZERO).toString();
+  const tolVO = BigDecimal.of('0.005').multiply(BigDecimal.of(String(Math.max(1, voRows.length))));
+  const within = (a, b) => BigDecimal.of(String(a)).subtract(BigDecimal.of(String(b))).abs().compareTo(tolVO) <= 0;
   const sV = PS.readState(erpC, BUILD, ['IfcWallStandardCase'], env);
   const rev0 = sV.contract.revised;
   const fresh = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db')));
   const freshPlanned = quiet(() => PS.generate(fresh, BUILD, rowsE, env, NOW, 'USD')).plannedAmt;
   const ap = quiet(() => VoApprove.approveVariationOrder(erpC, vo.orderId, { now: NOW }));
   const sV2 = PS.readState(erpC, BUILD, ['IfcWallStandardCase'], env);
-  const inv = BigDecimal.of(s1.plannedAmt).add(BigDecimal.of(vo.grandTotal)).compareTo(BigDecimal.of(freshPlanned)) === 0;
-  G('S7 OPTION-B', vo.created.orders === 1 && BigDecimal.of(vo.grandTotal).compareTo(BigDecimal.of(expVO)) === 0 && Number(expVO) > 0 && inv && sV.vos.length === 1 && rev0 === sV.contract.original && ap.ok && BigDecimal.of(sV2.contract.revised).compareTo(BigDecimal.of(freshPlanned)) === 0 && PS.voStatusLabel(sV.vos[0].status) === 'Drafted' && PS.voStatusLabel(sV2.vos[0].status) === 'Approved' ? 'PASS' : 'FAIL',
+  const inv = within(BigDecimal.of(s1.plannedAmt).add(BigDecimal.of(vo.grandTotal)).toString(), freshPlanned);
+  G('S7 OPTION-B', vo.created.orders === 1 && BigDecimal.of(vo.grandTotal).compareTo(BigDecimal.of(expVO)) === 0 && Number(expVO) > 0 && inv && sV.vos.length === 1 && rev0 === sV.contract.original && ap.ok && within(sV2.contract.revised, freshPlanned) && PS.voStatusLabel(sV.vos[0].status) === 'Drafted' && PS.voStatusLabel(sV2.vos[0].status) === 'Approved' ? 'PASS' : 'FAIL',
     'voRows=' + JSON.stringify(voRows.map(r => r.status + ':' + r.cls + '@' + r.rate)) + ' grandTotal=' + vo.grandTotal + ' independent(edited-original)=' + expVO + ' | INVARIANT PO(' + s1.plannedAmt + ') + VO(' + vo.grandTotal + ') == fresh fold of edited parts (' + freshPlanned + '): ' + inv + ' | status ' + PS.voStatusLabel(sV.vos[0].status) + ' -> ' + PS.voStatusLabel(sV2.vos[0].status) + ' revised before-approve=' + rev0 + ' after=' + sV2.contract.revised);
 
   // S5 — option A on the uncommitted store
@@ -96,7 +106,7 @@ const HALF_UP = BigDecimal.RoundingMode.HALF_UP;
   const sA = PS.readState(erp, BUILD, ['IfcWallStandardCase'], env);
   const dPlanned = BigDecimal.of(sA.plannedAmt).subtract(BigDecimal.of(s1.plannedAmt)).toString();
   const dIndep = BigDecimal.of(indep(rows1b)).subtract(BigDecimal.of(indep(rows0))).toString();
-  G('S5 OPTION-A', ra.ok && PS.countProjects(erp, BUILD) === 1 && sA.plannedAmt === indep(rows1b) && dPlanned === dIndep && Number(dPlanned) > 0 ? 'PASS' : 'FAIL',
+  G('S5 OPTION-A', ra.ok && PS.countProjects(erp, BUILD) === 1 && eqBD(sA.plannedAmt, indep(rows1b)) && eqBD(dPlanned, dIndep) && Number(dPlanned) > 0 ? 'PASS' : 'FAIL',
     'ok=' + ra.ok + ' projectRows ' + ra.projectRowsBefore + '->' + ra.projectRowsAfter + ' plannedAmt ' + s1.plannedAmt + '->' + sA.plannedAmt + ' (delta ' + dPlanned + ', independent ' + dIndep + ')');
 
   // S8 — launch url

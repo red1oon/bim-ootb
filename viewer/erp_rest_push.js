@@ -70,7 +70,11 @@
     var m = xml.match(new RegExp('<' + tagName + '\\b[^>]*\\b' + attrName + '="([^"]*)"'));
     return m ? m[1] : null;
   }
+  // A real iDempiere prefixes every reply element with a namespace (`<_0:StandardResponse IsError="true" xmlns:_0=…>`, measured on the local pilot 2026-11-02 — prompts/CAPEX_DASHBOARD.md
+  //   §12.1 D3); without this every refusal read as success with RecordID null and every find saw 0 rows. Element prefixes are dropped before parsing (attributes untouched).
+  function unprefix(xml) { return String(xml == null ? '' : xml).replace(/<(\/?)[A-Za-z_][\w.-]*:/g, '<$1'); }
   function parseStandardResponse(xml) {
+    xml = unprefix(xml);
     var isErrorAttr = attr(xml, 'StandardResponse', 'IsError');
     var recordIdAttr = attr(xml, 'StandardResponse', 'RecordID');
     return {
@@ -80,6 +84,7 @@
     };
   }
   function parseWindowTabData(xml) {
+    xml = unprefix(xml);
     var rows = [];
     var rowRe = /<DataRow>([\s\S]*?)<\/DataRow>/g, rm;
     while ((rm = rowRe.exec(xml))) {
@@ -110,8 +115,12 @@
   }
 
   // ── §FIND-OR-CREATE — query_data by natural-key Filter, create_data if RowCount=0 ──────────────
+  // serviceType: a WS_WebServiceType.Value, or { query, create } — legacy binds a type to ONE method (AbstractService.authenticate :223-252, "Service type X not configured"), so a real
+  //   server needs a read type for query_data and a create type for create_data (prompts/CAPEX_DASHBOARD.md §12.1 D1). A plain string = the same type for both (the stand-in only).
   function findOrCreate(baseUrl, login, serviceType, tableName, filter, fields) {
-    return call(baseUrl, 'query_data', login, { serviceType: serviceType, tableName: tableName, action: 'Read', filter: filter })
+    var qType = serviceType && typeof serviceType === 'object' ? serviceType.query : serviceType;
+    var cType = serviceType && typeof serviceType === 'object' ? serviceType.create : serviceType;
+    return call(baseUrl, 'query_data', login, { serviceType: qType, tableName: tableName, action: 'Read', filter: filter })
       .then(function (r) {
         var parsed = parseWindowTabData(r.text);
         if (parsed.error) throw new Error('§ERP_REST_QUERY_ERR ' + tableName + ': ' + parsed.error);
@@ -120,7 +129,7 @@
           console.log('§ERP_REST_FOUND table=' + tableName + ' id=' + parsed.rows[0][idCol] + ' (+0)');
           return { id: parseInt(parsed.rows[0][idCol], 10), created: false };
         }
-        return call(baseUrl, 'create_data', login, { serviceType: serviceType, tableName: tableName, action: 'Create', fields: fields })
+        return call(baseUrl, 'create_data', login, { serviceType: cType, tableName: tableName, action: 'Create', fields: fields })
           .then(function (r2) {
             var resp = parseStandardResponse(r2.text);
             if (resp.isError) throw new Error('§ERP_REST_CREATE_ERR ' + tableName + ': ' + resp.error);
@@ -134,6 +143,9 @@
   // plan = { building, phases: [ { name, seqno, startDate, endDate, plannedAmt,
   //            tasks: [ { name } ],
   //            lines: [ { productValue, productName, categoryName, qty, price, plannedAmt } ] } ] }
+  // Optional (the twin push, CAPEX_DASHBOARD.md §12.1): plan.name; plan.fields / phase.fields / task.fields / line.fields / line.productFields / line.categoryFields = extra
+  //   [{column,val}] input columns appended to that row's create (the target's whitelist decides); line.taskName links the line to that phase's task (C_ProjectTask_ID);
+  //   line.plannedAmt omitted ⇒ not sent (legacy computes it: MProjectLine.beforeSave :212).
   function pushProjectOrder(cfg, plan) {
     var baseUrl = cfg.baseUrl, login = cfg.login;
     var svc = cfg.serviceTypes || {}; // per-table WS_WebServiceType.Value (§5 #2 registration)
@@ -141,7 +153,7 @@
 
     return findOrCreate(baseUrl, login, svc.C_Project || 'BIMOOTB_Project', 'C_Project',
       "Value='" + plan.building + "'",
-      [{ column: 'Value', val: plan.building }, { column: 'Name', val: 'BIM: ' + plan.building }])
+      [{ column: 'Value', val: plan.building }, { column: 'Name', val: plan.name || ('BIM: ' + plan.building) }].concat(plan.fields || []))
       .then(function (proj) {
         if (proj.created) created.projects++;
         var phaseChain = Promise.resolve();
@@ -150,30 +162,36 @@
             return findOrCreate(baseUrl, login, svc.C_ProjectPhase || 'BIMOOTB_ProjectPhase', 'C_ProjectPhase',
               "C_Project_ID=" + proj.id + " AND Name='" + ph.name + "'",
               [{ column: 'C_Project_ID', val: proj.id }, { column: 'Name', val: ph.name },
-               { column: 'SeqNo', val: ph.seqno }, { column: 'StartDate', val: ph.startDate }, { column: 'EndDate', val: ph.endDate }])
+               { column: 'SeqNo', val: ph.seqno }, { column: 'StartDate', val: ph.startDate }, { column: 'EndDate', val: ph.endDate }].concat(ph.fields || []))
               .then(function (phase) {
                 if (phase.created) created.phases++;
-                var taskChain = Promise.resolve();
+                var taskChain = Promise.resolve(), taskIds = {};
                 (ph.tasks || []).forEach(function (t) {
                   taskChain = taskChain.then(function () {
                     return findOrCreate(baseUrl, login, svc.C_ProjectTask || 'BIMOOTB_ProjectTask', 'C_ProjectTask',
                       "C_ProjectPhase_ID=" + phase.id + " AND Name='" + t.name + "'",
-                      [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'Name', val: t.name }])
-                      .then(function (task) { if (task.created) created.tasks++; });
+                      [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'Name', val: t.name }].concat(t.fields || []))
+                      .then(function (task) { if (task.created) created.tasks++; taskIds[t.name] = task.id; });
                   });
                 });
                 var lineChain = taskChain;
                 (ph.lines || []).forEach(function (ln) {
                   lineChain = lineChain.then(function () {
-                    return findOrCreate(baseUrl, login, svc.M_Product_Category || 'BIMOOTB_ProductCategory', 'M_Product_Category',
+                    // line.uom = { x12de355, name, fields } — the product's UOM by its natural key on the TARGET (ids differ per instance; a UOM the target lacks is created). §12.1 D6
+                    var uomStep = ln.uom && ln.uom.x12de355 ? findOrCreate(baseUrl, login, svc.C_UOM || 'BIMOOTB_UOM', 'C_UOM', "X12DE355='" + ln.uom.x12de355 + "'",
+                      [{ column: 'X12DE355', val: ln.uom.x12de355 }, { column: 'Name', val: ln.uom.name }].concat(ln.uom.fields || []))
+                      .then(function (u) { if (u.created) created.uoms = (created.uoms || 0) + 1; return u.id; }) : Promise.resolve(null);
+                    var uomId = null;
+                    return uomStep.then(function (u) { uomId = u; return findOrCreate(baseUrl, login, svc.M_Product_Category || 'BIMOOTB_ProductCategory', 'M_Product_Category',
                       "Name='" + ln.categoryName + "'",
-                      [{ column: 'Name', val: ln.categoryName }])
+                      [{ column: 'Name', val: ln.categoryName }].concat(ln.categoryFields || [])); })
                       .then(function (cat) {
                         if (cat.created) created.categories++;
                         return findOrCreate(baseUrl, login, svc.M_Product || 'BIMOOTB_Product', 'M_Product',
                           "Value='" + ln.productValue + "'",
                           [{ column: 'Value', val: ln.productValue }, { column: 'Name', val: ln.productName },
-                           { column: 'M_Product_Category_ID', val: cat.id }]);
+                           { column: 'M_Product_Category_ID', val: cat.id }].concat((ln.productFields || []).filter(function (f) { return !(uomId && f.column === 'C_UOM_ID'); }))
+                           .concat(uomId ? [{ column: 'C_UOM_ID', val: uomId }] : []));
                       })
                       .then(function (prod) {
                         if (prod.created) created.products++;
@@ -181,7 +199,10 @@
                           "C_ProjectPhase_ID=" + phase.id + " AND M_Product_ID=" + prod.id,
                           [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'C_Project_ID', val: proj.id },
                            { column: 'M_Product_ID', val: prod.id }, { column: 'PlannedQty', val: ln.qty },
-                           { column: 'PlannedPrice', val: ln.price }, { column: 'PlannedAmt', val: ln.plannedAmt }]);
+                           { column: 'PlannedPrice', val: ln.price }]
+                            .concat(ln.plannedAmt != null ? [{ column: 'PlannedAmt', val: ln.plannedAmt }] : [])
+                            .concat(ln.taskName != null && taskIds[ln.taskName] ? [{ column: 'C_ProjectTask_ID', val: taskIds[ln.taskName] }] : [])
+                            .concat(ln.fields || []));
                       })
                       .then(function (line) { if (line.created) created.lines++; });
                   });

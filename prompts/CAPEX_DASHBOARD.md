@@ -9,18 +9,17 @@ Honour this block until the lane is closed. Cardinal rule: SQLite == legacy; a `
 **The goal (owner, verbatim):** "We can build an adhoc HTML that resembles that dashboard (they eventually will share their app) and perhaps it be adopted or replace theirs as it is
 expected to be simple vanilla (their notes so far indicated it was prototyped not wired)" · "This is where we be twinning silently in the background to get a free parity testing
 (which we been doing in another lane)." Client context: `~/Projects/SYSNOVA/BIMSYSNOVA_Project.md` (LAST section, links 1-7 + N1-N4) and `~/Projects/SYSNOVA/BIM_OOTB_iDempiere_Integration_Spec.md`.
-**State:** page live in `capex/` (#2530); twin vs the LOCAL pilot (#2532) = `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Session 77 measured every DIFF (§11 table):
+**State (session 77):** NEXT-2 DONE except the last_updated tile (§12.2-§12.5: shed pushed to the pilot, 121/121 rows MATCH; 7 bridge/fold defects fixed; invariants restated by the owner; R1 overlay shipped). Earlier: page live in `capex/` (#2530); twin vs the LOCAL pilot (#2532) = `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Session 77 measured every DIFF (§11 table):
 the harness keeps NO SQLite state (no "post-run SQLite DB" exists — §11 premise correction), so absolute-state DIFFs are history drift + one SQLite-only fold (Hospital) + ONE REAL KERNEL GAP, now fixed:
 document-value workflows (legacy "Business Partner Approval" pending per new BP) — `model_layer.js docValue` + W/X/I suspend + boot overlay `ad_docvalue_overlay.js` (base hash unchanged), witness
 `erp/tests/witness_docvalue_wf.js` W-DOCVALUE-WF RED 6/7 → GREEN 8/8, break FAILs; 21-witness regression before/after in §11.3.
 **▶ NEXT, in order:**
-1. **NEXT-1 remainder** (the absolute twin): (a) Hospital #990000 → pushed with the shed's write types (same ⛔ go as 2); (b) history drift → the SQLiteIDEMPIERE lane decides on a persistent SQLite twin reset
-   with the pilot (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`); then re-run `node capex/tools/twin.js <twin.db>`. (c) §11.2 DocAction-path responsible gap (ERP lane).
-2. **NEXT-2** ⛔ **owner go:** WRITE WS types for C_Project/Phase/Task/Line on the local pilot. Spec §12: the push must carry the folded SQLite rows column for column (today's REST push writes fewer columns
-   than the fold → would DIFF by construction).
-3. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js` (PWD SoR); proj_fold takes the bill's priced rows. Pointer in `prompts/DXF2BIM_ARCHITECT_REVIEW.md` RESUME item 4.
-4. **Client questions** (§7, 9 items) go to Sysnova through the owner; the page keeps "definition pending" until answered.
-**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) is running with the 6 extra READ types (§10 has the DELETE restore recipe). Nothing written to the pilot by session 77 (read-only psql + WS reads).
+1. **⛔ owner — "Last Updated" tile:** SQLite and legacy each stamp their own write; the WS cannot set `Updated`. Exempt in the owner's words or redefine the tile (§12.2). It is the ONLY shed-twin DIFF left.
+2. **⛔ owner — seed `bim-…` UUs** (64 rows, Hospital tree + products/categories/UOMs): legacy `uuid` refuses them; fixing them moves the Team base hash (§12.1 D4). The push drops them visibly today.
+3. **NEXT-1 remainder** (absolute twin): Hospital push (write types now exist on the pilot); harness history drift → SQLiteIDEMPIERE lane (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`); §11.2 DocAction responsible gap.
+4. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js`.
+5. **Client questions** (§7) go to Sysnova through the owner.
+**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) runs with the 6 READ types of §10 + the 5 CREATE + 1 READ types of §12.2 (restore recipes in §10/§12.1), and holds the pushed SHED (project #1000004, 6 phases, 8 tasks, 12 lines, products/categories/2 UOMs).
 **Rules that bind here:** PRIME RULE (no invented number), CARDINAL TWIN RULE, never `git stash`, never claude-in-chrome, witness = numbers, bim-ootb only via a `/tmp/wt-*` worktree,
 no .db committed, every legacy-server config change needs the owner's go, never move the Team base hash (`patches/ad_seed.db.sql`) without the owner — use a boot overlay.
 
@@ -197,3 +196,71 @@ cost reading `material_rates` is the same carried item (DXF2BIM RESUME item 4). 
   mf_lens all checks 🟢 `red=none judged=9`, ran past the 300 s timeout. CI fast checks local: audit_sw_precache, audit_script_tags, audit_spec_paths, W-AGENT-ZIP-SYNC = 0.
 - **The CAPEX twin itself is still FAIL** (§11 table): the remaining DIFFs are the Hospital push (⛔ owner go) and the harness history drift (SQLiteIDEMPIERE lane). The approvals tile cannot MATCH 261 until the
   SQLite twin lives the same history; what is proven is that the SAME operation now moves both sides the same way (+1 per new BP).
+
+### 12.1 BUILD SPEC (owner go 2026-11-02: "yes go ahead with the write types on the local pilot") — written before code, session bim-compiler-77
+**Found while specifying (measured, both are SQLite-side / bridge defects under the CARDINAL RULE):**
+- **D1 bridge:** `erp_rest_push.findOrCreate` sends ONE `serviceType` to both `query_data` and `create_data`. Legacy binds a WS type to one method (`AbstractService.authenticate` :223-243 —
+  `WS_WebServiceMethod_ID=? AND Value=?`), so against a real iDempiere every find-or-create fails at the first call (#1701 was proven against a stand-in only). Fix: a service type per method —
+  `cfg.serviceTypes[Table] = { query, create }` (a plain string keeps the old single-type behaviour for the stand-in test).
+- **D2 fold vs legacy rule:** legacy line `PlannedAmt = PlannedQty × PlannedPrice` unrounded (`MProjectLine.beforeSave` :212) and `updateHeader` (:280-325) rolls lines up into the project (PlannedAmt/Qty/MarginAmt,
+  Committed*, Invoiced*), the phase and the TASK (PlannedAmt, CommittedAmt). The SQLite fold writes rounded line amounts (Σ 15,147,437 vs Σqty×price 15,147,435.96847), project PlannedQty 513
+  (element count), task PlannedAmt 0. Expected to show as DIFF in the twin; fixed on the SQLite side in `viewer/proj_fold.js` after the twin run measures it.
+**Pilot config (local pilot only):** `capex/tools/ws_capex_writetypes.sql` — CREATE types (method createData 50024, role 102, `isreadwrite='Y'`, params TableName/Action=Create/RecordID) with an input
+whitelist = exactly the columns the push sends, nothing derived: `BridgeCreateCProject` (Value, Name, C_Currency_ID, IsCommitment, ProjInvoiceRule, ProjectLineLevel, C_Project_UU),
+`BridgeCreateCProjectPhase` (C_Project_ID, Name, SeqNo, StartDate, EndDate, IsComplete, Qty, C_ProjectPhase_UU), `BridgeCreateCProjectTask` (C_ProjectPhase_ID, Name, SeqNo, Qty, C_ProjectTask_UU),
+`BridgeCreateCProjectLine` (C_Project_ID, C_ProjectPhase_ID, C_ProjectTask_ID, M_Product_ID, M_Product_Category_ID, Line, Description, PlannedQty, PlannedPrice, DoPricing, C_ProjectLine_UU).
+Products/categories use the parity lane's existing `Bridge_createData_M_Product(_Category)` + `QueryMProduct(Category)`. Before/after counts of the 4 ws tables recorded; restore = DELETE these 4 values as §10.
+**Push (`capex/tools/shed_twin.js`):** read the folded SHED rows from the SQLite DB → plan (the input columns above, taken from the rows, UUs kept for identity) → `ErpRestPush.pushProjectOrder` with query/create
+pairs → per-row `§SHED_PUSH`. Then `legacy_snapshot.js` and a **Δ-twin**: tiles(after) − tiles(before) on each side (legacy: snapshots around the push; SQLite: seed before vs fold after), per tile
+`§DASH_TWIN_DELTA tile=… sqlite=… legacy=… MATCH|DIFF`, plus a row-level compare of the SHED rows (`§SHED_ROW table=… col=… sqlite=… legacy=… MATCH|DIFF`). Done-claim: every Δ tile and row MATCH; any DIFF
+is fixed on the SQLite side and re-run. Idempotent: a second run finds every row (+0 created).
+**Witness:** `viewer/tests/poc_erp_rest_push.js` stays green (string service type path) + a stub case where query and create types differ and the stub rejects a mismatched method (D1 RED before the fix).
+
+### 12.2 RESULT 2026-11-02 (session bim-compiler-77) — the shed pushed to the local pilot, twin run; logs read
+**Pilot config (owner go):** `capex/tools/ws_capex_writetypes.sql` applied with psql on `idempiere_pilot` only: `BridgeCreateCProject / CProjectPhase / CProjectTask / CProjectLine / CUOM` (createData) +
+`QueryCUOM` (read). ws tables (types/access/para/fieldinput/fieldoutput) **273/505/948/2771/3603 → 279/511/967/2809/3621**. Server restarted (`stop.sh`/`start.sh`, /webui/ 200). Restore = §12.1 recipe for these 6 values.
+**What the real pilot exposed, in order (each RED first, fixed, re-run; all SQLite/bridge side):**
+- **D1** one service type for query AND create → `erp_rest_push` takes `{query, create}` pairs (mock now binds a type to one method; `tests/poc_erp_rest_push.js` old bridge FAIL → PASS).
+- **D3** the real server replies namespace-prefixed (`<_0:StandardResponse IsError="true">`) → the bridge read every refusal as success with `RecordID null` and never found an existing row (the first real push
+  "created" 51 rows that did not exist). `unprefix()` in both parsers; mock `nsPrefix` reproduces it (RED: id=null + duplicate categories → PASS).
+- **D4** fold UUs `bim-<hex>` (node fallback) → legacy `uuid` column refuses → v4 UUID fallback in `proj_fold.js` + `vo_fold.js`. The shipped seed still carries **64** such UUs (Hospital tree) → ⛔ owner.
+- **D5** fold products had no `C_TaxCategory_ID` (legacy NOT NULL) → the fold now takes the `IsDefault='Y'` tax category, as the legacy window does (`Login.loadDefault` :701-734 → `#C_TaxCategory_ID`).
+  The shipped seed has **100** products with none (9 used by the shed) → **R1 repair applied to the scratch copy ONLY, labelled** (`UPDATE … SET c_taxcategory_id=<IsDefault> WHERE NULL`, 100 rows) → ⛔ owner: ship R1 as a boot overlay?
+- **D6** SQLite-only UOMs M/M2/M3 (990000-2) absent on legacy → the bridge resolves a product's UOM by `X12DE355` on the target (find-or-create; legacy created ids 1000000/1000001), never sends the SQLite id.
+- **D2** the fold skipped legacy's project-line rules → `_legacyProjectRules`: line `PlannedAmt = PlannedQty × PlannedPrice` (exact), margin 0 without a price list (`getLimitPrice` :170-183),
+  NULL → physical default (`ad_ddl_default`), `updateHeader` rollups to task/phase/project. SHED PlannedAmt **15,147,437 → 15,147,435.96847** (legacy's number), PlannedQty 513 (element count) → 2,910.661.
+- **D7** fold timestamps were UTC, legacy stamps server-local → `_localNow()`; and the no-`now` schedule start was a literal `2026-01-01` → the fold's own clock.
+- `fold_demo.js` now opens the seed WITH `patches/ad_seed.db.sql`, as the ERP does (without it `ad_ddl_default` is absent).
+**Final run** (`node capex/tools/shed_twin.js <fold5.db> SHED 2026-11-02`, legacy project #1000004): `§SHED_PUSH created=+0` (idempotent re-run) · rows **121 MATCH / 0 DIFF** (project, 6 phases, 8 tasks,
+12 lines: amounts, qty, dates, completion, rollups) · tiles **16 MATCH, 3 INCONCLUSIVE (both empty), 1 DIFF = last_updated** (SQLite 18:35:17 = the fold's write, legacy 18:29:07 = the pilot's write): two
+systems never write at the same instant; the WS cannot set `Updated`. ⛔ owner: exempt in your words, or redefine the tile (e.g. per source) — the CARDINAL RULE forbids accepting it silently.
+
+### 12.3 OPEN 2026-11-02 — D2 (legacy line amounts) ripples into owner-stated invariants; branch `capex/shed-twin`, NOT merged
+Regression of 27 fold/bridge/capex tests, origin/main vs this branch: 24 unchanged (incl. pre-existing failures), 3 changed:
+- `tests/poc_fin_claim.js`, `tests/poc_fin_tax.js`: with unrounded phase amounts the claim invoice was unrounded → `proj_claim.js` now rounds `LineNetAmt` to the currency StdPrecision HALF_UP
+  (legacy `MInvoiceLine.setLineNetAmt`), preview balances (Dr=Cr=1,244.23) — but both tests assert claim == EV (1,244.22784) exactly; under legacy the claim is round(EV, 2).
+- `viewer/tests/witness_s9_pure.js` S3/S5/S7: its oracle `indep()` is the old per-line integer rounding; S7 is the owner's rule (2026-09-30 Q1) "PO + VO == fresh fold, to the cent": VO 1,953.64 vs plan
+  delta 1,953.44 — the VO prices its edited rows from the 5D cost basis while the plan now carries legacy's qty × price, so the two no longer share one pricing basis.
+**Question for the owner:** keep the twin rule (SQLite amounts = legacy's unrounded qty × price) and restate "claim == EV" / "PO + VO == fresh fold" as equal after legacy's own per-document-line
+rounding to the currency precision — then give `voRowsFromEdit` the same qty × price basis and update the 3 witnesses' oracles with the legacy source lines.
+
+### 12.4 SPEC (owner 2026-11-02: "1 yes restate them, 2 yes ship the overlay") — written before code
+**Invariants restated (owner's words above; legacy rules cited):**
+- **"claim == EV"** becomes: each claim invoice line `LineNetAmt = round(phase PlannedAmt, currency StdPrecision, HALF_UP)` (`MInvoiceLine.setLineNetAmt`), claim = Σ those lines, project InvoicedAmt (EVM AC) = claim.
+  `tests/poc_fin_claim.js` / `poc_fin_tax.js` oracles = the rounded line, computed independently in the test.
+- **"PO + VO == fresh fold, to the cent"** (2026-09-30 Q1, ONE PRICING BASIS) becomes: the VO prices each class with the plan's own rule — amount(class) = `PlannedPrice × round3(Σ qty)` exact
+  (= the plan line legacy computes) — `ProjOrderState.rowsAmount`; each VO order line = round(Δ, 2) (legacy order line); so `VO == Σ round2(Δ_class)` exactly and
+  `|PO + VO − fresh fold| ≤ 0.005 × VO lines` (only legacy's own order-line rounding separates them). `viewer/tests/witness_s9_pure.js` `indep()` = the same plan rule; S3/S5 compare to it.
+**R1 boot overlay** `erp/ad_taxcat_overlay.js` (call sites = the overlays': `idempiere.html`, `ws_kernel.js`, `ws_server.js`; sw precache): `UPDATE M_Product SET C_TaxCategory_ID = <the client's IsDefault='Y'
+active tax category, most specific first (Login.loadDefault :701-734)> WHERE C_TaxCategory_ID IS NULL`; logs `§TAXCAT_OVERLAY filled=N left=M`; idempotent (2nd run filled=0); never touches a set value;
+not in the hashed patch (Team base hash unchanged); a client with no default tax category leaves its rows (counted in `left`). Witness `erp/tests/witness_taxcat_overlay.js` (issue: legacy refuses a
+product without a tax category, the shipped seed has 100): before NULL=100 → after 0 for clients with a default; set values unchanged; 2nd run 0; `TAXCAT_BREAK=1` → FAIL; patch file untouched.
+
+### 12.5 RESULT 2026-11-02 (session bim-compiler-77) — invariants restated + R1 overlay shipped; logs read
+- **VO basis:** `ProjOrderState.rowsAmount` = PlannedPrice × round3(Σ qty) (the plan line's legacy amount). `witness_s9_pure` (oracle restated the same way, S7 within 0.005 × VO lines):
+  RED on this branch before (S3/S5/S7 FAIL) → **8 PASS / 0 FAIL**; S7 holds to the cent here: PO 171,427.36 + VO 1,953.44 = fresh 173,380.80.
+- **Claim basis:** `proj_claim.js` LineNetAmt = round(phase PlannedAmt, StdPrecision, HALF_UP). `poc_fin_claim` claim 1,244.23 (EV 1,244.22784), AC 1,244.23, preview Dr=Cr=1,244.23 → PASS;
+  `poc_fin_tax` net 1,244.23 + SST 74.65 = 1,318.88 → PASS. Both FAIL again if the claim is left unrounded.
+- **R1** `erp/ad_taxcat_overlay.js` + `erp/tests/witness_taxcat_overlay.js`: `filled=41 left=59` (left = clients 12/14/16 have no default tax category), set values untouched (211), 2nd boot 0, hashed patch
+  unchanged → `§TAXCAT_VERDICT PASS 5/5`; `TAXCAT_BREAK=1` → FAIL. `fold_demo.js` applies the ERP's boot overlays like the app.
+- **Shed twin with shipped code only (no hand repair):** rows **121/121 MATCH**, tiles **16 MATCH / 1 DIFF (last_updated) / 3 INCONCLUSIVE**; 28 `§SHED_PUSH_NOTE uu-not-uuid` = the seed's Hospital-era `bim-…` UUs (⛔ owner, base hash).

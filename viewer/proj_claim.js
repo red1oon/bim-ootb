@@ -64,8 +64,13 @@
         notes: ['DateAcct ' + (period.dateAcct) + ' is in period "' + period.name + '" status=' + period.status + ' (not Open) — claim refused'] };
     }
 
+    // MInvoiceLine.setLineNetAmt: LineNetAmt = PriceEntered × QtyEntered, rounded HALF_UP to the invoice currency's StdPrecision when its scale is larger (legacy).
+    //   Phase amounts are now legacy's unrounded qty × price sums (proj_fold §12.1 D2), so the line must round here as legacy does (prompts/CAPEX_DASHBOARD.md §12.3).
+    var prec = Number(_scalar(db, "SELECT StdPrecision FROM C_Currency WHERE C_Currency_ID=?", [curId]));
+    if (!(prec >= 0)) prec = 2;
+    var lineNet = function (amt) { var b = BD.of(String(amt || 0)); return b.scale() > prec ? b.setScale(prec, HALF_UP) : b; };
     var claim = BD.ZERO;
-    newPhases.forEach(function (p) { claim = claim.add(BD.of(String(p[2] || 0))); });
+    newPhases.forEach(function (p) { claim = claim.add(lineNet(p[2])); });
 
     // §F7 — optional tax (SST/GST). When opts.taxId is given, each line carries TaxAmt = round(net×rate);
     // GrandTotal = net + tax. EXTRACT the rate from C_Tax (never invent). No taxId → net == gross (F6).
@@ -80,10 +85,10 @@
     // per-phase tax + the rolled gross (BigDecimal).
     var totalTax = BD.ZERO;
     var perPhase = newPhases.map(function (p) {
-      var net = BD.of(String(p[2] || 0));
+      var net = lineNet(p[2]), price = BD.of(String(p[2] || 0));
       var tax = taxRate ? net.multiply(taxRate).divide(BD.of('100'), 2, HALF_UP) : BD.ZERO;
       totalTax = totalTax.add(tax);
-      return { phase: p, net: net, tax: tax, total: net.add(tax) };
+      return { phase: p, net: net, price: price, tax: tax, total: net.add(tax) };
     });
     var grand = claim.add(totalTax);
 
@@ -102,7 +107,7 @@
       db.run("INSERT INTO C_InvoiceLine (C_InvoiceLine_ID,C_Invoice_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
         "Line,Description,M_Product_ID,QtyInvoiced,QtyEntered,PriceActual,PriceEntered,LineNetAmt,C_Tax_ID,TaxAmt,LineTotalAmt,C_Project_ID,C_ProjectPhase_ID,Processed,C_InvoiceLine_UU) " +
         "VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,1,1,?,?,?,?,?,?,?,?,'N',?)",
-        [lnId, invId, CL, OG, now, U, now, U, lineNo, 'Progress: ' + p[1], prodId, pp.net.toString(), pp.net.toString(), pp.net.toString(), taxId, pp.tax.toString(), pp.total.toString(), projectId, p[0], _uu()]);
+        [lnId, invId, CL, OG, now, U, now, U, lineNo, 'Progress: ' + p[1], prodId, pp.price.toString(), pp.price.toString(), pp.net.toString(), taxId, pp.tax.toString(), pp.total.toString(), projectId, p[0], _uu()]);
       lineNo += 10;
     });
 
