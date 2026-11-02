@@ -152,10 +152,27 @@
 
   // ── the fold ──────────────────────────────────────────────────────────────────────────────────
   // priced: [{disc,cls,storey,count,unit,qty,rate,cost}]  (apply5DRates output, already scoped)
-  // opts: { seqRules, laborRates, packCurrencyISO, now, clientId=11, orgId=11, user=100, bpartnerId=null }
+  // opts: { seqRules, packCurrencyISO, now, clientId=11, orgId=11, user=100, bpartnerId=null, schedule=null }
+  // opts.schedule = the 4D OWNER's programme (prompts/CAPEX_DASHBOARD.md §5.1 R1): { start:'YYYY-MM-DD',
+  //   tasks:[{id, phase, storey, sDays, eDays, guids}] (= schedule_author.js materializeZones(...).tasks), phaseSeq:{phase→template sequence} }.
+  //   The fold computes NO schedule: phases, their dates, the task grid and each line's phase all come from it; priced rows carry `guids`.
+  //   Absent → phases grouped by classify() with NO dates + note NO_4D_SCHEDULE (never a fallback estimate).
   function foldProjectOrder(db, building, priced, opts) {
     opts = opts || {};
-    var SR = opts.seqRules || {}, LR = opts.laborRates || {};
+    var SR = opts.seqRules || {};
+    var SCH = (opts.schedule && opts.schedule.tasks && opts.schedule.tasks.length) ? opts.schedule : null;
+    var g2t = {};   // guid → 4D task (the owner's)
+    if (SCH) SCH.tasks.forEach(function (t) { (t.guids || []).forEach(function (g) { g2t[g] = t; }); });
+    // a row's 4D task: the ONE task all its guids sit in; otherwise null (→ 'Unsequenced', named in notes, never guessed)
+    function rowTask(r) {
+      if (!r.guids || !r.guids.length) return null;
+      var t = g2t[r.guids[0]];
+      if (!t) return null;
+      for (var i = 1; i < r.guids.length; i++) if (g2t[r.guids[i]] !== t) return null;
+      return t;
+    }
+    // day offset → date, the owner's rule (schedule_author.js _addDays: UTC days from the start)
+    function dayDate(d) { return new Date(Date.parse(SCH.start + 'T00:00:00Z') + d * 86400000).toISOString().slice(0, 10) + ' 00:00:00'; }
     var HIER = opts.hierarchy || (typeof window !== 'undefined' ? window.IFC_SCHEMA_HIERARCHY : null) || {};
     // §EXACT_LOOKUP_BLINDSPOT P2 — was a raw SR[cls] dict lookup, missing tier 2 (schema-hierarchy
     // inheritance) and tier 3's §CLASS_UNMATCHED visibility. classify() always returns a rule object
@@ -183,6 +200,7 @@
     var id = _allocator(db);
     var created = { projects: 0, phases: 0, tasks: 0, lines: 0, products: 0, categories: 0, order: 0 };
     var notes = [];
+    if (!SCH) notes.push('NO_4D_SCHEDULE phases carry no dates — the programme is the 4D owner\'s (pass opts.schedule)');
 
     // currency (§F1): resolve the pack currency by ISO_Code OR CurSymbol; carry it onto C_Project/C_Order.
     // Fall back to seed default only if TRULY unresolvable (EXTRACT-only — never invent a currency).
@@ -213,39 +231,40 @@
       if (phaseSeq[p] == null || s < phaseSeq[p]) phaseSeq[p] = s;
     });
 
-    // group priced rows by 4D phase (sequence_rules), seqno = the canonical phase sequence
-    var phases = {};   // phaseName → { seqno, resources:{res:[rows]}, rows:[] }
+    // group priced rows by phase. WITH a programme: the 4D phase of the row's task (and the task is the line's WBS slot);
+    // WITHOUT: classify() as before (sequence_rules), and no dates. seqno = template sequence (schedule) / canonical phase sequence.
+    var phases = {};   // phaseName → { seqno, resources:{res:[rows]}, tasks:{taskId:{t,rows}}, rows:[] }
+    var unplaced = 0, taskOfRow = new Map();   // row → its 4D task (kept off the caller's row objects)
     priced.forEach(function (r) {
-      var sr = classifyCls(r.cls);
-      var ph = sr.phase || 'Unsequenced';
+      var sr = classifyCls(r.cls), ph, t = null;
+      if (SCH) { t = rowTask(r); ph = t ? t.phase : 'Unsequenced'; if (!t) unplaced += (r.count || 0); }
+      else ph = sr.phase || 'Unsequenced';
       var res = sr.resource || 'GENERAL';
-      var p = phases[ph] || (phases[ph] = { seqno: (phaseSeq[ph] != null ? phaseSeq[ph] : (sr.sequence != null ? sr.sequence : 99)), resources: {}, rows: [] });
-      (p.resources[res] || (p.resources[res] = [])).push(r);
+      var seq = SCH ? (SCH.phaseSeq && SCH.phaseSeq[ph] != null ? SCH.phaseSeq[ph] : 99)
+                    : (phaseSeq[ph] != null ? phaseSeq[ph] : (sr.sequence != null ? sr.sequence : 99));
+      var p = phases[ph] || (phases[ph] = { seqno: seq, resources: {}, tasks: {}, rows: [] });
+      if (SCH) { if (t) (p.tasks[t.id] || (p.tasks[t.id] = { t: t, rows: [] })).rows.push(r); }
+      else (p.resources[res] || (p.resources[res] = [])).push(r);
+      taskOfRow.set(r, t);
       p.rows.push(r);
     });
+    if (unplaced) notes.push('ROW_NOT_IN_ONE_4D_TASK elements=' + unplaced + ' → phase Unsequenced (rows without guids, or guids outside / across 4D tasks)');
     var phaseNames = Object.keys(phases).sort(function (a, b) { return phases[a].seqno - phases[b].seqno; });
-
-    // forward-pass schedule: duration(days) per phase = Σ ceil(count / productivity) over its classes
-    var startDate = String(opts.now || now).slice(0, 10);   // the fold's own clock (was a literal 2026-01-01 when no now was passed)
-    var cursor = new Date(startDate + 'T00:00:00');
-    function fmt(d) { return d.toISOString().slice(0, 10) + ' 00:00:00'; }
+    // a phase's window = min start / max end over ALL the owner's tasks of that phase (not only the ones this selection touches)
+    var phWin = {};
+    if (SCH) SCH.tasks.forEach(function (t) {
+      var w = phWin[t.phase] || (phWin[t.phase] = { s: Infinity, e: -Infinity });
+      if (t.sDays < w.s) w.s = t.sDays; if (t.eDays > w.e) w.e = t.eDays;
+    });
 
     var projAmt = BD.ZERO, projQty = 0;
     var seqLog = [];
 
     phaseNames.forEach(function (ph) {
       var P = phases[ph];
-      // duration
-      var days = 0;
-      P.rows.forEach(function (r) {
-        var lr = LR[classifyCls(r.cls).resource];
-        var prod = lr && lr.productivity && lr.productivity[r.cls];
-        days += prod ? Math.ceil(r.count / prod) : Math.max(1, Math.ceil(r.count / 20));
-      });
-      days = Math.max(1, days);
-      var sDate = fmt(cursor);
-      cursor.setDate(cursor.getDate() + days);
-      var eDate = fmt(cursor);
+      // dates: the owner's programme, or none (the fold computes no duration)
+      var w = SCH ? phWin[ph] : null;
+      var sDate = w ? dayDate(w.s) : null, eDate = w ? dayDate(w.e) : null;
 
       // find-or-create C_ProjectPhase (Project + Name)
       var phId = _scalar(db, "SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=? AND Name=?", [projId, ph]);
@@ -258,21 +277,24 @@
       } else {
         db.run("UPDATE C_ProjectPhase SET SeqNo=?,StartDate=?,EndDate=? WHERE C_ProjectPhase_ID=?", [P.seqno, sDate, eDate, phId]);
       }
-      seqLog.push({ phase: ph, seqno: P.seqno, start: sDate.slice(0, 10), end: eDate.slice(0, 10) });
+      seqLog.push({ phase: ph, seqno: P.seqno, start: sDate ? sDate.slice(0, 10) : null, end: eDate ? eDate.slice(0, 10) : null });
 
-      // tasks per resource
-      var taskByRes = {};
-      Object.keys(P.resources).forEach(function (res) {
-        var tId = _scalar(db, "SELECT C_ProjectTask_ID FROM C_ProjectTask WHERE C_ProjectPhase_ID=? AND Name=?", [phId, res]);
+      // tasks: WITH a programme one per 4D task (= one Gantt bar, named as the owner names it in tasks.name); WITHOUT, per resource as before
+      var taskByRes = {}, taskBy4D = {};
+      function _task(name) {
+        var tId = _scalar(db, "SELECT C_ProjectTask_ID FROM C_ProjectTask WHERE C_ProjectPhase_ID=? AND Name=?", [phId, name]);
         if (tId == null) {
           tId = id('C_ProjectTask', 'C_ProjectTask_ID');
           db.run("INSERT INTO C_ProjectTask (C_ProjectTask_ID,C_ProjectPhase_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
             "Name,SeqNo,PlannedAmt,Qty,C_ProjectTask_UU) VALUES (?,?,?,?,'Y',?,?,?,?,?,?,0,0,?)",
-            [tId, phId, CL, OG, now, U, now, U, res, P.seqno, _uu()]);
+            [tId, phId, CL, OG, now, U, now, U, name, P.seqno, _uu()]);
           created.tasks++;
         }
-        taskByRes[res] = tId;
-      });
+        return tId;
+      }
+      if (SCH) Object.keys(P.tasks).sort(function (a, b) { return P.tasks[a].t.sDays - P.tasks[b].t.sDays || (a < b ? -1 : 1); })
+        .forEach(function (k) { var t = P.tasks[k].t; taskBy4D[k] = _task(t.phase + ' \u2014 ' + t.storey); });
+      else Object.keys(P.resources).forEach(function (res) { taskByRes[res] = _task(res); });
 
       // lines per IFC class (the BoQ line); roll the cls's per-group rounded costs (BigDecimal)
       var phAmt = BD.ZERO;
@@ -280,10 +302,13 @@
       // §PROXY_BY_DISC: the generic IfcBuildingElementProxy says nothing about WHAT it is (every civil element is one) —
       // its identity is the DISCIPLINE, so a proxy with a discipline gets one line per discipline. Other classes unchanged.
       function _lineKey(r) { return (r.cls === 'IfcBuildingElementProxy' && r.disc && r.disc.charAt(0) !== '_') ? r.cls + ':' + r.disc : r.cls; }
-      P.rows.forEach(function (r) { var k = _lineKey(r); (byCls[k] || (byCls[k] = [])).push(r); });
+      // with a programme a line is (product, 4D task): every line sits in exactly one Gantt bar
+      P.rows.forEach(function (r) { var k = _lineKey(r) + (SCH ? '#' + (taskOfRow.get(r) ? taskOfRow.get(r).id : '') : ''); (byCls[k] || (byCls[k] = [])).push(r); });
       var lineNo = 10;
       Object.keys(byCls).forEach(function (key) {
         var rows = byCls[key];
+        var t4 = SCH ? taskOfRow.get(rows[0]) : null;
+        key = _lineKey(rows[0]);
         var cls = rows[0].cls, byDisc = key !== cls;
         var pName = byDisc ? rows[0].disc.charAt(0) + rows[0].disc.slice(1).toLowerCase() : cls;
         var unpriced = rows.some(function (r) { return r.unpriced; });
@@ -322,8 +347,11 @@
           created.products++;
         }
 
-        // find-or-create C_ProjectLine (Project + Product)
-        var lnId = _scalar(db, "SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=? AND m_product_id=?", [projId, prodId]);
+        // find-or-create C_ProjectLine: (Project + Product) — with a programme (Project + Product + Phase + 4D task)
+        var lnTask = SCH ? (t4 ? taskBy4D[t4.id] : null) : taskByRes[res];
+        var lnId = SCH
+          ? _scalar(db, "SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=? AND m_product_id=? AND c_projectphase_id=? AND COALESCE(c_projecttask_id,-1)=?", [projId, prodId, phId, lnTask == null ? -1 : lnTask])
+          : _scalar(db, "SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=? AND m_product_id=?", [projId, prodId]);
         var amtStr = amt.toString(), qtyStr = String(Math.round(qty * 1000) / 1000), rateStr = String(rate);
         if (lnId == null) {
           lnId = id('C_ProjectLine', 'c_projectline_id');
@@ -332,11 +360,11 @@
             "isprinted,processed,dopricing,c_projectline_uu) VALUES (?,?,?,?,'Y',?,?,?,?,?,?,?,?,?,?,?,?,?,'Y','N','Y',?)",
             [lnId, projId, CL, OG, now, U, now, U, lineNo,
              byDisc ? cnt + ' ea · discipline ' + disc + (unpriced ? ' · rate not set' : '') : cls + ' · ' + cnt + ' ea · per ' + unit,
-             qtyStr, rateStr, amtStr, prodId, catId, phId, taskByRes[res], _uu()]);
+             qtyStr, rateStr, amtStr, prodId, catId, phId, lnTask, _uu()]);
           created.lines++;
         } else {
           db.run("UPDATE C_ProjectLine SET plannedqty=?,plannedprice=?,plannedamt=?,c_projectphase_id=?,c_projecttask_id=? WHERE c_projectline_id=?",
-            [qtyStr, rateStr, amtStr, phId, taskByRes[res], lnId]);
+            [qtyStr, rateStr, amtStr, phId, lnTask, lnId]);
         }
         lineNo += 10;
         projQty += cnt;

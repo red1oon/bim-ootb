@@ -20,15 +20,23 @@ HHS 160/160 rows, 16/16 judged tiles, Last Updated = PER_SOURCE) · kernel fixes
 namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot overlay), local time · `?project=` filter · films EN/ZH/MS v5 (`~/Videos/CAPEX_Dashboard_Addon_narrated_{EN,ZH,MS}_AFTER_2026-11-03_v5.mp4`).
 **▶ NEXT, in order (spec before code; each its own §5 entry):**
 1. **R0 — measure what legacy can already do** (answers "is the Sysnova dashboard doable in legacy?"): define ONE CAPEX measure (Approved Budget) + one goal with a colour schema + one chart as PA/AD_Chart
-   rows on the LOCAL pilot and read the result back (WS read + ZK render log). ⛔ owner go: it is a config change on the pilot (data rows, restorable).
-2. **R1 — ONE schedule** (§5 R1): the Project Order fold takes phases/dates from the 4D owner, computes none.
+   rows on the LOCAL pilot and read the result back (WS read + ZK render log). The rows ship as ONE migration script in iDempiere's format (LEGACY CONVENTION below) — PA is data, no process,
+   so no plugin. ⛔ owner go: it is a config change on the pilot (data rows, restorable).
+2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2)**; open from it: browser callers pass no programme yet (R1-f), re-push + re-twin HHS/shed on the pilot (owner go), re-voice the films.
 3. **R2 — the PA engine in the SQLite kernel**, generic (MMeasure / MGoal / MColorSchema semantics ported from the legacy source, cited file:line), witnessed against the same rows on the pilot.
 4. **R3 — tiles as data:** each §3 tile → a `PA_MeasureCalc` / `PA_Measure` (+ `PA_ColorSchema` for health) row; `tiles.js` keeps only what PA cannot express (named); deletion budget stated.
 5. **R4 — the editor:** the generic AD windows (Performance Measurement / Goal / Color Schema / Dashboard Content) in our ERP UI — no dashboard-specific code; an edit re-renders and re-twins.
 6. **R5 — Sysnova's own design** (pending them): compare tile by tile with §3; their definition wins; then the DOWN sync (§5 R5). Client questions §6 go via the owner.
 **Rules that bind:** PRIME RULE · CARDINAL TWIN RULE (SQLite == legacy incl. L&F; fixes on the SQLite side; exemptions only in the owner's words) · AD-LAYER LAW (one generic engine, X of N) · one
 owner per relation (4D: `bim-compiler prompts/4D_MODEL_INTEGRITY.md §I`) · never move the Team base hash (`erp/patches/ad_seed.db.sql`) without the owner — use a boot overlay · every legacy-server config
-change needs the owner's go (local pilot only so far) · never `git stash` · never claude-in-chrome · bim-ootb only in a `/tmp/wt-*` worktree · no `.db` committed.
+change needs the owner's go (local pilot only so far) · never `git stash` · never claude-in-chrome · bim-ootb only in a `/tmp/wt-*` worktree · no `.db` committed ·
+**LEGACY CONVENTION (owner 2026-11-03: "at the legacy side, all changes, add-on be following its convention ie as a plugin or migration script if there is no processes")** —
+anything we change or add on a legacy iDempiere (pilot or client) ships the way iDempiere ships its own: DATA-only (AD/PA/WS rows, no Java) = a migration script in its format
+(`migration/iD13/postgresql/<yyyymmddHHMM>_<ticket>.sql`, first statement `SELECT register_migration_script('<file>') FROM dual;`, plain DML with IDs ≥ 1000000 + `*_UU`, as written by ZK's
+"Log Migration Script"; measured in `~/idempiere-dev-setup/idempiere/migration/iD13/postgresql/202601130707_IDEMPIERE-6815.sql`); anything with a process / callout / model validator = an OSGi
+plugin (2Pack in the bundle). **Staging (owner, same day: "we do things adhoc as POC first, quick and dirty. But once proven or clearer, we evolve to convention"):** a POC on the LOCAL pilot may be
+ad-hoc; once it is proven — and always before it reaches a client server — it is re-expressed in the convention. Proven and due: the three pilot scripts
+`capex/tools/ws_capex_{readtypes,writetypes,updatetypes}.sql` (ad-hoc `DO $$` blocks; the twin PASSed on them) → one migration script each (named, not yet done).
 
 ## 1. What exists (map — read the file before changing it)
 | piece | file | witness |
@@ -104,6 +112,46 @@ sides — the twin compares a definition's result, not two hand-written formulas
   counts) — read-only role + types on THEIR server via the owner; network path = small job / relay / CORS (owner's choice).
 - **Carried (other lanes):** one cost source for BIM lines = `modeller/dxf2bill.js` (DXF2BIM lane) · DocAction-path workflow responsible = Invoker (ERP lane) · seed `bim-…` UUIDs ⏸ HOLD (base hash) ·
   persistent harness twin = SQLiteIDEMPIERE lane proposal (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`).
+
+### 5.1 R1 BUILD SPEC (2026-11-03, written before code) — the fold takes the 4D owner's programme
+**Measured first (logs: `cache_4d_run.js HHS_Office_Federated` at code key `b1ea8c3659df` — the persisted run was stale code `dda4439f69cd`):** `§CPM_RUN makespanDays=34.4`; 16 tasks, 6 phases,
+day 0 → 53 (Superstructure 0-23, Architecture Envelope 14-25, MEP Rough-in 21-48, Architecture Closeup 30-41, MEP Final 33-52, Finishes 45-53). All 6,839 priced elements sit in a 4D task (0 without).
+Fold line keys whose elements span TWO 4D phases: `IfcSlab` (Superstructure 79 / Envelope 4) and `IfcPlate` (Superstructure 191 / Envelope 438) — so a line cannot be keyed by product alone.
+**Input (the owner's own objects, no new shape):** `opts.schedule = { start:'YYYY-MM-DD', tasks:[{id, phase, storey, sDays, eDays, guids}], phaseSeq:{phase→sequence} }` = `materializeZones(...).tasks`
+(what `cache_4d_run.js` persists as `run.json.tasks`); `phaseSeq` from `rates/4D_template.json phases[].sequence` (owner of the task grid). Days → date = `start + days` (the owner's `_addDays`).
+Priced rows gain `guids` (the elements of the row); a producer that has a schedule groups its rows by (disc, cls, storey, 4D task) so no row spans two tasks.
+**Rules:**
+- R1-a phases = the 4D phases present; SeqNo = template sequence; StartDate/EndDate = start + min(sDays) / start + max(eDays) over that phase's tasks.
+- R1-b one C_ProjectTask per 4D task, Name = `<phase> — <storey>` (the name the owner writes into `tasks.name`), under its phase; SeqNo = template sequence.
+- R1-c a row's phase and task = the 4D task of its guids. A row with no guids, a guid in no task, or guids in >1 task → phase `Unsequenced`, no task, note `ROW_NOT_IN_ONE_4D_TASK` (never a guess).
+  With a schedule, C_ProjectLine natural key = (project, product, 4D task) — every line sits in exactly one Gantt bar; a product over two bars is two lines. Without one: (project, product) as today.
+- R1-d no `opts.schedule` → phases grouped as today (classify) with NULL StartDate/EndDate and note `NO_4D_SCHEDULE`; tasks per resource as today. No duration is computed on ANY path.
+- R1-e deletion: the duration loop (`LR.productivity`, `Math.ceil(count/20)`, the serial cursor) goes; `laborRates` is no longer read by the fold.
+- R1-f producers: `capex/tools/fold_demo.js` reads the schedule via `scripts/cache_4d_run.js read()` (current code key; builds if missing); browser callers (`find_erp_push.js`,
+  `proj_order_state.js`) pass none yet → `NO_4D_SCHEDULE` (honest); wiring them to the Time Machine's `materializeZones` result is NAMED, not in this build.
+**Witness W-FOLD-ONE-SCHEDULE (`capex/tests/witness_fold_one_schedule.js`, names the defect: "the Project Order carries a programme the 4D owner never produced"):** HHS from the cache — every phase's
+Start/End == start + min/max of its 4D tasks; phase set == 4D phase set; task count == 4D task count; every line's phase == the 4D phase of its rows' guids; elements conserved; project PlannedAmt with vs without a
+programme differs by at most the per-line 3-dp quantity rounding (bound computed); no `NO_4D_SCHEDULE`. Negative: no schedule → 0 dated phases + `NO_4D_SCHEDULE`. Break switch `BREAK=1` (shift one task) must FAIL. RED on main (main ignores `opts.schedule`:
+its phase dates come from its own serial duration loop). Regression before/after: `poc_proj_push`, `poc_fin_evm`, `poc_fin_period`, `witness_s9_pure` (baseline on main: proj_push FAIL and
+fin_evm FAIL — both ONLY the stale `navigate_find.js` source-contract check, pre-existing; fin_period PASS; s9_pure 8/0/0).
+
+### 5.2 R1 RESULT (2026-11-03) — logs read (scratch logs, not committed)
+**W-FOLD-ONE-SCHEDULE RED on main → GREEN:** main `§W_FOLD1_VERDICT FAIL judged=11 fail=5` (dates, tasks 10≠16, 66/66 lines in the wrong phase, no-programme path dated) → after `PASS judged=11 fail=0`;
+`BREAK=1` → `FAIL fail=1` (PHASE-DATES). HHS order now: 6 phases / 16 tasks (one per Gantt bar, `<phase> — <storey>`) / 45 lines (product × 4D task), programme **2026-11-01 → 2026-12-24**
+(was → 2028-05-24); Superstructure 2026-11-01 → 11-24 (was 247 d). Money: PlannedAmt 4,996,320.807 with vs 4,996,320.867 without (|Δ| 0.06, bound 18.33 — per-line 3-dp rounding only).
+Also fixed on the way: the old serial loop wrote dates in LOCAL time (`toISOString` of a local midnight → Superstructure started 2026-10-31 for a 2026-11-01 start); dates are now UTC days (the owner's `_addDays`).
+**Code (lines):** `viewer/proj_fold.js` (duration loop + `laborRates` gone; `opts.schedule`; `NO_4D_SCHEDULE`; `ROW_NOT_IN_ONE_4D_TASK`), new `capex/tools/fold_inputs.js` (ONE node producer: per-element 5D qty grouped
+by 4D task + `schedule4D()` from `cache_4d_run.js read()`), `capex/tools/fold_demo.js` uses it (5th arg = start), witness `capex/tests/witness_fold_one_schedule.js`.
+**Regression (19 fold callers, before/after, §-lines diffed):** exit codes identical. Two had gone VACUOUS, not red, and were fixed by feeding them the programme: `poc_fin_evm` EVM_4 judged `asOf=null`
+(PV 0 = gold 0) → now asOf 2026-06-16, PV 69,147.91 = gold over overlapping 4D phases; `poc_proj_push` §PROJ_SEQ judged null dates → restated: SeqNo = template sequence, dates = the 4D window,
+NO ordering claim (Duplex 4D starts MEP Rough-in before Architecture Envelope — "starts monotonic" would have been invented), 5D golden = legacy line rule exact (1,054,482.22784 = fold).
+Pre-existing FAILs unchanged (main too): `poc_proj_push`/`poc_fin_evm` source-contract on `navigate_find.js`, `poc_fin_uom`, `poc_bim_overlay` (seed has no BIM rows), `poc_proj_fold_proxy_disc` RED control.
+KRN seal hashes moved in `poc_fin_blue_*` (row content changed: NULL dates) — expected. Dashboard compute on the HHS fold (node, `tiles.compute ?project=`): 2026-11-03 On Time; 2026-12-10 At Risk, avg delay 16 d.
+**Finding (5D, not 4D — no 4D fix needed):** Duplex prices 1,190 elements, the 4D run schedules 1,119; the 71 extra are `IfcOpeningElement` 50 + `IfcSpace` 21 (voids and rooms — not built work, the 4D owner
+rightly leaves them out). They now land in `Unsequenced` with a note instead of a classify() phase. Question for the cost lane: should the 5D quantity producer price voids/spaces at all.
+**Open from R1:** (a) R1-f browser: `find_erp_push.js` / `proj_order_state.js` pass no programme → `NO_4D_SCHEDULE` until wired to the Time Machine's `materializeZones` result;
+(b) pilot: HHS #1000005 and SHED #1000004 were pushed with the old tree (resource tasks, serial dates) — re-push + `shed_twin.js` needs the owner's go (pilot write); (c) `erp/tests/bake_gw_hospital_seed.js`
+still folds without a programme — re-baking moves the Team base hash (⏸ HOLD); (d) films: re-voice the model beat with the programme length read from the recording run's `§FOLD_DEMO_PHASE` lines (nothing voiced before that run).
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.

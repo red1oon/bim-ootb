@@ -1,0 +1,58 @@
+// capex/tools/fold_inputs.js — the node-side INPUTS of viewer/proj_fold.js foldProjectOrder, in one place
+// (prompts/CAPEX_DASHBOARD.md §5.1 R1 BUILD SPEC). Nothing here computes a schedule: the programme is the
+// 4D owner's (schedule_author.js materializeZones → tasks), read from the persisted run of
+// scripts/cache_4d_run.js (current code key only — a stale run is never read; build it with `node scripts/cache_4d_run.js <bld>`). Quantities are the Viewer's 5D rule
+// (bbox length / area / volume per element, the same expressions compute5D used in tests/poc_proj_push.js).
+'use strict';
+const fs = require('fs'), path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
+
+// per-element quantities (one row per element with a size) — grouped below, never re-measured
+function elementQty(db, building) {
+  const bld = String(building).replace(/'/g, "''");
+  const areaExpr = 'MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) ELSE MAX(t.bbox_x,t.bbox_y) END';
+  const sql = "SELECT m.guid, m.discipline, m.ifc_class, m.storey, MAX(t.bbox_x,t.bbox_y,t.bbox_z), " + areaExpr + ", t.bbox_x*t.bbox_y*t.bbox_z FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE m.building='" + bld + "' AND t.bbox_x IS NOT NULL AND t.bbox_x>0";
+  const res = db.exec(sql);
+  return (res.length ? res[0].values : []).map(r => ({ guid: r[0], disc: r[1], cls: r[2], storey: r[3], len: r[4] || 0, area: r[5] || 0, vol: r[6] || 0 }));
+}
+
+// compute5D(db, building, schedule?) — rows {disc, cls, storey, count, length_m, area_m2, vol_m3, guids}. With a schedule the
+// group key also carries the element's 4D task (R1 spec: a row never spans two tasks); an element in no task keeps taskId null.
+function compute5D(db, building, schedule) {
+  const g2t = {};
+  if (schedule && schedule.tasks) schedule.tasks.forEach(t => (t.guids || []).forEach(g => { g2t[g] = t.id; }));
+  const groups = {}, order = [];
+  elementQty(db, building).forEach(e => {
+    const tid = schedule ? (g2t[e.guid] || null) : null;
+    const k = e.disc + '|' + e.cls + '|' + e.storey + '|' + tid;
+    let g = groups[k];
+    if (!g) { g = groups[k] = { disc: e.disc, cls: e.cls, storey: e.storey, taskId: tid, count: 0, length_m: 0, area_m2: 0, vol_m3: 0, guids: [] }; order.push(k); }
+    g.count++; g.length_m += e.len; g.area_m2 += e.area; g.vol_m3 += e.vol; g.guids.push(e.guid);
+  });
+  return order.map(k => { const g = groups[k]; ['length_m', 'area_m2', 'vol_m3'].forEach(f => { g[f] = Math.round(g[f] * 1000) / 1000; }); return g; });
+}
+
+function apply5DRates(rows, RATES) {
+  return rows.map(r => {
+    const rt = RATES[r.cls]; let unit = rt ? rt.unit : 'EA'; const rate = rt ? rt.rate : 0; let qty;
+    if (unit === 'M') qty = r.length_m; else if (unit === 'M2') qty = r.area_m2; else if (unit === 'M3') qty = r.vol_m3; else { unit = rt ? unit : 'EA'; qty = r.count; }
+    return { disc: r.disc, cls: r.cls, storey: r.storey, count: r.count, unit, qty, rate, cost: Math.round(rate * qty), guids: r.guids };
+  });
+}
+
+// schedule4D(bld, start) — the 4D owner's programme for a building, as the fold's opts.schedule. null when no run can be had
+// (the fold then writes NO dates and notes NO_4D_SCHEDULE). start = the project's own start date (the fold's clock).
+function schedule4D(bld, start) {
+  const CACHE = require(path.join(ROOT, 'scripts', 'cache_4d_run.js'));
+  const r = CACHE.read(bld);
+  const run = r && (r.run || r), key = r && r.dir ? path.basename(r.dir) : '?';
+  if (!run || !run.tasks || !run.tasks.length) { console.log('§FOLD_INPUT_4D bld=' + bld + ' tasks=0 → no schedule'); return null; }
+  const T = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', '4D_template.json'), 'utf8'));
+  const phaseSeq = {}; (T.phases || []).forEach(p => { phaseSeq[p.name] = p.sequence; });
+  const tasks = run.tasks.map(t => ({ id: t.id, phase: t.phase, storey: t.storey, sDays: t.sDays, eDays: t.eDays, guids: t.guids }));
+  console.log('§FOLD_INPUT_4D bld=' + bld + ' run=' + key + ' dbFile=' + (run.dbFile || '?') + ' tasks=' + tasks.length +
+    ' lastDay=' + Math.max.apply(null, tasks.map(t => t.eDays)) + ' start=' + start);
+  return { start: String(start).slice(0, 10), tasks, phaseSeq, source: 'cache_4d_run ' + key };
+}
+
+module.exports = { elementQty, compute5D, apply5DRates, schedule4D };
