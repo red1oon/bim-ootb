@@ -17,7 +17,7 @@ document-value workflows (legacy "Business Partner Approval" pending per new BP)
 1. ✅ DECIDED 2026-11-02 (owner "Decide for me", §12.6): Last Updated = PER_SOURCE in the twin; **shed twin `§SHED_TWIN_VERDICT PASS`** (121/121 rows, 16/16 judged tiles).
 2. ⏸ HOLD (§12.6): seed `bim-…` UUs — batch with the next base-hash change made for another reason.
 3. **NEXT-1 remainder** (whole-database twin): **owner 2026-11-02: Hospital push DROPPED** ("yes drop it" — it is shipped demo data, not client data; only the whole-DB compare sees it).
-   **Owner 2026-11-02 — the dashboard lives on OUR framework:** "On SQLite for the legacy to use with the dashboard, yes" · "Of course we like to move things to our framework, thus the dashboard is
+   **Owner 2026-11-02 — the dashboard lives on OUR framework (PENDING Sysnova's own design; offered as a transition, §14):** "On SQLite for the legacy to use with the dashboard, yes" · "Of course we like to move things to our framework, thus the dashboard is
    something external to idempiere core thus we propose to as such." The dashboard is NOT an iDempiere core module: it runs on the SQLite kernel; legacy's project data is folded DOWN into that SQLite DB
    through the stock WebServices (read types only, no plugin, no core change); legacy users open the dashboard. This is the proposal to Sysnova (§14). The harness's own persistent twin
    (SQLiteIDEMPIERE §CAPEX-TWIN item 1) stays a separate, unapproved lane proposal.
@@ -285,5 +285,8 @@ product without a tax category, the shipped seed has 100): before NULL=100 → a
   no write on their server for the dashboard itself. The BIM path (§12) is the only writer, and only when they choose to push a building.
 - **What it needs from them (via the owner):** a read-only service account + role, the 8 read types registered (template `capex/tools/ws_capex_readtypes.sql`), the base URL, and a network path for the sync
   (a browser cannot call their server without a CORS rule; the alternative is a small scheduled sync job beside their server or our relay — owner's choice), plus the §7 definitions.
-- **Build order (ours, spec before code):** (1) DOWN sync of the 8 tables into SQLite, idempotent, keyed by `*_UU`, `§DASH_SYNC` counts per table; (2) the page reads that DB by default; (3) the twin
+- **Status (owner 2026-11-02): PENDING their design.** "pending what they designed for their dashboard, which we can then compare, but we like them to consider our local first framework as a
+  transition." Do NOT build the sync yet: when Sysnova shares their app, compare it tile by tile with §3 (formulas, columns, the §7 answers) first; the proposal is framed as a TRANSITION, not a replacement —
+  our local-first kernel runs beside their iDempiere (read-only, no core change), the dashboard is the first module to live on it, further modules move only when their twin check matches.
+- **Build order (after their design is compared; spec before code):** (1) DOWN sync of the 8 tables into SQLite, idempotent, keyed by `*_UU`, `§DASH_SYNC` counts per table; (2) the page reads that DB by default; (3) the twin
   becomes the sync's own check: legacy (WS read) vs the synced SQLite, every tile MATCH except PER_SOURCE; (4) the BIM button + shed push stay as built.
