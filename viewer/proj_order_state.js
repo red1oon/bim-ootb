@@ -135,7 +135,7 @@
   }
 
   // ── actions ──
-  function _foldOpts(env, now, cur) { return { seqRules: env.SEQUENCE_RULES || {}, laborRates: env.LABOR_RATES || {}, packCurrencyISO: cur || 'USD', now: now }; }
+  function _foldOpts(env, now, cur) { return { seqRules: env.SEQUENCE_RULES || {}, packCurrencyISO: cur || 'USD', now: now, schedule: env.schedule || null }; }   // env.schedule = ProjFold.scheduleFromDb (§5.5 R1-f)
   function generate(db, building, rows, env, now, cur) {
     var r = env.ProjFold.foldProjectOrder(db, building, rows, _foldOpts(env, now, cur));
     console.log('§S9-GENERATE building=' + building + ' project=' + r.projectId + ' lines=+' + r.created.lines + ' phases=+' + r.created.phases + ' plannedAmt=' + r.plannedAmt);
