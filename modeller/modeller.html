@@ -4821,6 +4821,19 @@ function _flashSettleDisc(disc) {
 // window.discWalk already uses — dwInit/dwWalk/connectorEnrich/_discGate/_commitDiscWalk) per discipline, so
 // there is ONE walk implementation, not two. Honest-refuse per discipline is preserved and logged, never
 // swallowed. X-ray brackets the whole loop (on before, off after — try/finally so an error still restores).
+// §WALKALL-PRESENT (M-4, MODELLER_MASTER §RESUME 2026-11-02; red1: "walkers FILL IN services"): ONE owner of "which
+// disciplines does the open building already carry". `building` = a disc node in the BOM tree built from the opened DB
+// (elements_meta.discipline; the SAME test the Outliner roster rows always used, formerly inline there). `walked` = a
+// committed, un-undone GEOM op carrying _dw.disc (a walk already in the op-log). `absent` = the roster minus `building`
+// (what the per-discipline rows list, so a walked disc keeps its re-walk row); `fill` = absent minus `walked` (what
+// Walk ALL walks). `roots` = the tree to read (the roster row passes the one it is wrapping).
+window._dwPresence = function (ds, roots) {
+  var building = {}, walked = {};
+  try { (function w(nodes) { (nodes || []).forEach(function (n) { if (n.disc) building[n.disc] = true; if (n.children) w(n.children); }); })(roots || (window.__dwBomBaseRoots ? window.__dwBomBaseRoots() : [])); } catch (e) {}
+  try { var O = window.Bonsai && window.Bonsai.oplog; ((O && O.db && O._geomOps && O._geomOps()) || []).forEach(function (o) { var d = o.parameters && o.parameters._dw && o.parameters._dw.disc; if (d) walked[d] = (walked[d] || 0) + 1; }); } catch (e) {}
+  var absent = ds.filter(function (d) { return !building[d]; });
+  return { building: building, walked: walked, absent: absent, fill: absent.filter(function (d) { return !walked[d]; }) };
+};
 window.discWalkAll = async function (ctx) {
   await _awaitArcSeed('Walk ALL Services');
   var t0 = Date.now();
@@ -4833,7 +4846,12 @@ window.discWalkAll = async function (ctx) {
   var _nonMep = ['STR', 'roof'], _skipped = ds.filter(function (d) { return _nonMep.indexOf(d) >= 0; });
   ds = ds.filter(function (d) { return _nonMep.indexOf(d) < 0; });
   if (_skipped.length) console.log('§WALKALL-MEP-ONLY skipped=[' + _skipped.join(',') + '] (walk them from their own rows)');
-  if (!ds.length) { setStat('Walk ALL — no disciplines available (open a building first)'); console.log('§DISCWALK-ALL abort — roster empty (open a building / rules not ready)'); window.__dwAllResult = { walked: [], refused: [], ms: 0 }; window.__dwAllDone = true; return window.__dwAllResult; }
+  // §WALKALL-PRESENT (M-4): walkers FILL IN what the building lacks. A discipline it already carries (BOM tree) or that a
+  // walk already placed (op-log) is authored/done: re-walking would stack invented services on it. Same owner as the rows.
+  var _pr = window._dwPresence(ds), _carried = ds.filter(function (d) { return _pr.fill.indexOf(d) < 0; });
+  console.log('§WALKALL-PRESENT roster=[' + ds.join(',') + '] skipped=[' + _carried.map(function (d) { return d + '(' + (_pr.building[d] ? 'building' : 'walked ' + _pr.walked[d]) + ')'; }).join(',') + '] walking=[' + _pr.fill.join(',') + ']');
+  ds = _pr.fill;
+  if (!ds.length) { setStat(_carried.length ? 'Walk ALL — nothing to fill in: ' + _carried.join(', ') + ' already present' : 'Walk ALL — no disciplines available (open a building first)'); console.log('§DISCWALK-ALL abort — ' + (_carried.length ? 'every service already present/walked' : 'roster empty (open a building / rules not ready)')); window.__dwAllResult = { walked: [], refused: [], placedTotal: 0, skipped: _carried, ms: 0 }; window.__dwAllDone = true; return window.__dwAllResult; }
   var sceneTotal = (window.Bonsai.group && window.Bonsai.group()) ? window.Bonsai.group().children.length : 0;
   var proxyMode = sceneTotal > window.DW_ALL_PROXY_THRESHOLD;
   console.log('§DISCWALK-ALL start disciplines=[' + ds.join(',') + '] n=' + ds.length + ' sceneElements=' + sceneTotal + ' threshold=' + window.DW_ALL_PROXY_THRESHOLD + ' proxyMode=' + proxyMode);
@@ -4880,7 +4898,7 @@ window.discWalkAll = async function (ctx) {
   var ms = Date.now() - t0;
   setStat('Walk ALL — ' + walked.length + '/' + ds.length + ' disciplines · ' + placedTotal + ' placed' + (refused.length ? ' · ' + refused.length + ' refused' : ''));
   console.log('§DISCWALK-ALL done walked=[' + walked.map(function (w) { return w.disc; }).join(',') + '] refused=[' + refused.map(function (r) { return r.disc; }).join(',') + '] placedTotal=' + placedTotal + ' ms=' + ms);
-  window.__dwAllResult = { walked: walked, refused: refused, placedTotal: placedTotal, ms: ms, proxyMode: proxyMode, disciplines: ds };
+  window.__dwAllResult = { walked: walked, refused: refused, placedTotal: placedTotal, ms: ms, proxyMode: proxyMode, disciplines: ds, skipped: _carried };
   window.__dwAllDone = true;   // sentinel for the witness
   return window.__dwAllResult;
 };
@@ -5824,6 +5842,7 @@ function _registerDiscRoster() {
     var bomCat = window.Bonsai.outliner._categories.filter(function (c) { return c.key === 'bomtree'; })[0];
     if (!bomCat) { console.warn('§DISC-WALK bomtree category not found — roster merge skipped'); return; }
     var origTree = bomCat.tree, origOnWalk = bomCat.onWalk;
+    window.__dwBomBaseRoots = function () { return origTree.call(bomCat) || []; };   // the tree WITHOUT the roster node (its absent rows carry .disc too)
     bomCat.tree = function () {
       var roots = origTree.call(bomCat) || [];
       try {
@@ -5831,9 +5850,7 @@ function _registerDiscRoster() {
         if (!ds.length) return roots;
         // disciplines already rendered as REAL nodes anywhere in the current tree (n.disc is tagged by
         // bom_tree_outliner.js's treeNodes() for every disc-kind node) — don't duplicate those here.
-        var present = {};
-        (function walk(nodes) { (nodes || []).forEach(function (n) { if (n.disc) present[n.disc] = true; if (n.children) walk(n.children); }); })(roots);
-        var absent = ds.filter(function (d) { return !present[d]; });
+        var absent = window._dwPresence(ds, roots).absent;   // §WALKALL-PRESENT (M-4): the ONE owner of "which disciplines are absent"
         if (!absent.length) return roots;
         var rf = (window.DiscWalker && window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || 'terminal_rules.db';
         // §DISCWALK-ALL: one synthetic "Walk ALL" row — disc:'__ALL__' is not a real discipline code

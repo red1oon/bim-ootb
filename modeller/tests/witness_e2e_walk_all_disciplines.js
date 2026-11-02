@@ -31,6 +31,14 @@
  *                          surfaced to the USER exactly ONCE per walk-all run (§TOAST line), not per
  *                          discipline (Duplex roster = 4 discs → 4 BATCH flashes, still 1 toast).
  *
+ *   M-4 (§WALKALL-PRESENT, MODELLER_MASTER §RESUME 2026-11-02 "M-4 SPEC"): Walk ALL FILLS IN absent services; it skips a discipline
+ *   the building already carries (BOM tree) or already walked (op-log _dw.disc), through window._dwPresence = the ONE owner the
+ *   Outliner rows use too.
+ *   W-a  Clinic carries PLB (elements_meta): Walk ALL lists it present+skipped (§WALKALL-PRESENT), places 0 of it, walks the rest.
+ *   W-b  Duplex carries none: §A above is the unchanged-counts check (walked/refused/placedTotal printed; compare to main).
+ *   W-c  a 2nd Walk ALL in the same session skips what the 1st one walked (places 0 new of it).
+ *   W-f  falsifier: _dwPresence forced to "nothing carried" -> W-a's property is FALSE (PLB is walked again). INCONCLUSIVE if nothing judged.
+ *
  * PERF-GUARD NOTE (§4 of the walk-all spec): this witness runs on Duplex (253 scene elements), far below
  * window.DW_ALL_PROXY_THRESHOLD (50000) — the guard's proxyMode branch does NOT fire here by construction.
  * A second, lighter run below (§B) lowers the threshold via window.DW_ALL_PROXY_THRESHOLD so the guard's
@@ -42,12 +50,16 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const ROOT = path.join(__dirname, '..', '..');
+const ROOT = process.env.M4_ROOT || path.join(__dirname, '..', '..');   // M4_ROOT: run this witness against another checkout (main) to show the FAIL
 const SHOTS = path.join(__dirname, 'e2e_shots'); try { fs.mkdirSync(SHOTS, { recursive: true }); } catch (e) {}
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream', '.data': 'application/octet-stream' };
 const server = http.createServer((q, r) => { let p = decodeURIComponent(q.url.split('?')[0]); if (p === '/') p = '/modeller/modeller.html';
   fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { r.writeHead(404); r.end('404'); return; } r.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); }); });
 
+// M-4: the signed op-log persists in localStorage/IndexedDB per origin, so a page opened after another walk in the SAME profile restores that
+// walk (and Walk ALL now correctly skips it). Every page after §A therefore gets its own browser context = a fresh profile.
+async function freshPage(br) { const cx = await (br.createBrowserContext ? br.createBrowserContext() : br.createIncognitoBrowserContext()); const pg = await cx.newPage(); pg.__cx = cx; return pg; }
+async function clickRetry(pg, sel) { for (let i = 0; i < 6; i++) { try { await pg.click(sel); return; } catch (e) { await sleep(400); } } await pg.click(sel); }
 async function openDuplex(pg) {
   await pg.goto(`http://localhost:${server.address().port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
   await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function"', { timeout: 30000 }).catch(() => {});
@@ -170,12 +182,12 @@ async function openDuplex(pg) {
 
   console.log('═══ W-E2E-WALK-ALL §B — perf-guard SIMULATION: window.DW_ALL_PROXY_THRESHOLD lowered so the >50k branch fires on Duplex-scale data (honest: NOT a real 48k-element Terminal run) ═══');
   {
-    const pg = await br.newPage(); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
+    const pg = await freshPage(br); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 2 });
     const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
     const proxyToasts = []; pg.on('console', m => { const t = m.text(); if (/^§TOAST/.test(t) && t.indexOf('reveal animation simplified') >= 0) proxyToasts.push(t); });
     await openDuplex(pg);
     await pg.evaluate(() => { window.DW_ALL_PROXY_THRESHOLD = 10; });   // Duplex has 253 scene elements > 10 → guard fires
-    await pg.click('[data-bnode="dw-all"]');
+    await clickRetry(pg, '[data-bnode="dw-all"]');
     const done = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 60000, polling: 250 }).then(() => true).catch(() => false);
     const result = await pg.evaluate(() => window.__dwAllResult);
     console.log('  §GUARD-RUN done=' + done + ' ' + JSON.stringify(result));
@@ -183,6 +195,74 @@ async function openDuplex(pg) {
     chk('B1 PROXY-MODE FIRES when scene > threshold', done && result && result.proxyMode === true, 'proxyMode=' + (result && result.proxyMode));
     chk('B2 NO-ERROR in guard path', errs.length === 0, errs.slice(0, 2).join(' | '));
     chk('B3 PROXY-TOAST-ONCE (row 18: downgrade surfaced to the user exactly once per run)', proxyToasts.length === 1, 'toasts=' + proxyToasts.length + ' (want 1; per-disc would be ' + ((result && result.walked && result.walked.length) || '?') + ')');
+    await pg.close();
+  }
+
+
+  console.log('═══ W-E2E-WALK-ALL §C — M-4 §WALKALL-PRESENT: Clinic (carries PLB/MEP) — Walk ALL skips what the building carries (W-a), falsifier (W-f) ═══');
+  async function clinicRun(forceAllAbsent) {
+    const pg = await freshPage(br); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 1 });
+    const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    const lines = []; pg.on('console', m => { const t = m.text(); if (/^§WALKALL-PRESENT|^§DISCWALK-ALL (start|done)/.test(t)) lines.push(t); });
+    await pg.goto(`http://localhost:${server.address().port}/modeller/modeller.html`, { waitUntil: 'load', timeout: 60000 });
+    await pg.waitForFunction('window.__sceneReady === true && !!window.Bonsai && typeof window.discWalkAll==="function"', { timeout: 30000 }).catch(() => {});
+    await pg.click('#b-open'); await sleep(200);
+    await pg.click('#m-open-panel .mo-row[data-key="Clinic"]');
+    await pg.waitForFunction(() => !!window.__dwBuf, { timeout: 60000 }).catch(() => {});
+    await pg.waitForFunction(() => window.Bonsai && window.Bonsai.oplog && window.Bonsai.oplog.length > 0, { timeout: 60000 }).catch(() => {});
+    await pg.waitForFunction(() => !!document.querySelector('[data-bnode="dw-all"]'), { timeout: 30000 }).catch(() => {});
+    await sleep(1500);
+    if (forceAllAbsent) await pg.evaluate(() => { window._dwPresence = function (ds) { return { building: {}, walked: {}, absent: ds.slice(), fill: ds.slice() }; }; });
+    const pre = await pg.evaluate(() => { const ds = window.DiscWalker.disciplines().filter(d => d !== 'STR' && d !== 'roof'); let meta = []; try { const db = new window.SQL.Database(new Uint8Array(window.__dwBuf)); const r = db.exec("SELECT DISTINCT discipline FROM elements_meta"); meta = r.length ? r[0].values.map(v => v[0]) : []; db.close(); } catch (e) {}
+      return { roster: ds, meta, pres: window._dwPresence ? window._dwPresence(ds) : null }; });
+    await pg.evaluate(() => { window.__dwAllDone = false; });
+    await clickRetry(pg, '[data-bnode="dw-all"]');
+    const done = await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 150000, polling: 250 }).then(() => true).catch(() => false);
+    const post = await pg.evaluate(() => { const r = window.__dwAllResult || {}; const per = {};
+      window.Bonsai.oplog._geomOps().forEach(o => { const d = o.parameters && o.parameters._dw && o.parameters._dw.disc; if (d) per[d] = (per[d] || 0) + 1; });
+      return { walked: (r.walked || []).map(w => w.disc), refused: (r.refused || []).map(w => w.disc), placedTotal: r.placedTotal, skipped: r.skipped, perDiscOps: per }; });
+    await pg.close();
+    return { pre, post, done, errs, lines };
+  }
+  const C = await clinicRun(false);
+  C.lines.forEach(l => console.log('  ' + l.slice(0, 260)));
+  console.log('  §M4-CLINIC ' + JSON.stringify({ roster: C.pre.roster, building: C.pre.pres && C.pre.pres.building, post: C.post }));
+  const carried = C.pre.roster.filter(d => C.pre.meta.indexOf(d) >= 0);   // from elements_meta of the opened DB, independent of the owner under test
+  if (!carried.length) console.log('  ➖ W-a PRESENT-SKIPPED INCONCLUSIVE (Clinic roster ' + JSON.stringify(C.pre.roster) + ' vs elements_meta ' + JSON.stringify(C.pre.meta) + ' carries none)');
+  else {
+    const touched = d => C.post.walked.indexOf(d) >= 0 || C.post.refused.indexOf(d) >= 0 || (C.post.perDiscOps[d] || 0) > 0;
+    const absentRest = C.pre.roster.filter(d => carried.indexOf(d) < 0);
+    chk('W-a PRESENT-SKIPPED (carried ' + JSON.stringify(carried) + ' listed skipped, 0 placed, absent ones still walked)',
+      C.done && carried.every(d => (C.post.skipped || []).indexOf(d) >= 0 && !touched(d)) && absentRest.every(d => touched(d) || C.post.refused.indexOf(d) >= 0) && C.lines.some(l => /^§WALKALL-PRESENT/.test(l)),
+      'carried=' + JSON.stringify(carried) + ' skipped=' + JSON.stringify(C.post.skipped) + ' walked=' + JSON.stringify(C.post.walked) + ' refused=' + JSON.stringify(C.post.refused) + ' ops=' + JSON.stringify(C.post.perDiscOps));
+    chk('W-a2 NO-ERROR', C.errs.length === 0, C.errs.slice(0, 2).join(' | '));
+    const F = await clinicRun(true);
+    const fTouched = carried.some(d => F.post.walked.indexOf(d) >= 0 || F.post.refused.indexOf(d) >= 0 || (F.post.perDiscOps[d] || 0) > 0);
+    console.log('  §M4-FALSIFIER filter-off ' + JSON.stringify(F.post));
+    chk('W-f FALSIFIER (filter off -> the carried discipline IS walked again; W-a would FAIL)', F.done && fTouched, 'carried=' + JSON.stringify(carried) + ' walked=' + JSON.stringify(F.post.walked) + ' refused=' + JSON.stringify(F.post.refused) + ' ops=' + JSON.stringify(F.post.perDiscOps));
+  }
+
+  console.log('═══ W-E2E-WALK-ALL §D — M-4 W-c: a 2nd Walk ALL in the same session skips what the 1st one walked (Duplex) ═══');
+  {
+    const pg = await freshPage(br); await pg.setViewport({ width: 1200, height: 850, deviceScaleFactor: 1 });
+    const errs = []; pg.on('pageerror', e => errs.push(String(e).slice(0, 160)));
+    const lines = []; pg.on('console', m => { const t = m.text(); if (/^§WALKALL-PRESENT/.test(t)) lines.push(t); });
+    await openDuplex(pg);
+    const run = async () => { await pg.evaluate(() => { window.__dwAllDone = false; }); await clickRetry(pg, '[data-bnode="dw-all"]');
+      await pg.waitForFunction(() => window.__dwAllDone === true, { timeout: 90000, polling: 250 }).catch(() => {});
+      return pg.evaluate(() => { const r = window.__dwAllResult || {}; const n = window.Bonsai.oplog._geomOps().filter(o => o.parameters && o.parameters._dw && o.parameters._dw.disc).length;
+        return { walked: (r.walked || []).map(w => w.disc), refused: (r.refused || []).map(w => w.disc), placedTotal: r.placedTotal, skipped: r.skipped || [], dwOps: n }; }); };
+    const r1 = await run();
+    await pg.evaluate(() => { const b = document.querySelector('[data-bnode="dw-all"]'); });
+    const hasRow2 = await pg.evaluate(() => !!document.querySelector('[data-bnode="dw-all"]'));
+    const r2 = await pg.evaluate(async () => { window.__dwAllDone = false; await window.discWalkAll({ building: window.__dwName }); const r = window.__dwAllResult || {};
+      return { walked: (r.walked || []).map(w => w.disc), refused: (r.refused || []).map(w => w.disc), placedTotal: r.placedTotal, skipped: r.skipped || [], dwOps: window.Bonsai.oplog._geomOps().filter(o => o.parameters && o.parameters._dw && o.parameters._dw.disc).length }; });
+    lines.forEach(l => console.log('  ' + l.slice(0, 260)));
+    console.log('  §W-b Duplex 1st Walk ALL (no discipline carried): ' + JSON.stringify(r1));
+    console.log('  §W-c Duplex 2nd Walk ALL: ' + JSON.stringify(r2));
+    if (!r1.walked.length) console.log('  ➖ W-c SECOND-SKIPS INCONCLUSIVE (1st run walked nothing)');
+    else chk('W-c SECOND-SKIPS (2nd run skips every disc the 1st walked, adds 0 walked-disc ops)', r1.walked.every(d => r2.skipped.indexOf(d) >= 0 && r2.walked.indexOf(d) < 0) && r2.dwOps === r1.dwOps, '1st walked=' + JSON.stringify(r1.walked) + ' dwOps ' + r1.dwOps + ' | 2nd skipped=' + JSON.stringify(r2.skipped) + ' walked=' + JSON.stringify(r2.walked) + ' dwOps ' + r2.dwOps);
+    chk('W-b2 NO-ERROR (Duplex 1st+2nd)', errs.length === 0, errs.slice(0, 2).join(' | '));
     await pg.close();
   }
 
