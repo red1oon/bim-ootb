@@ -21,7 +21,7 @@ namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot ove
 **▶ NEXT, in order (spec before code; each its own §5 entry):**
 1. **R0 — ✅ DONE (§5.4): YES, legacy computes a CAPEX tile as PA data with no Java** — Approved Budget (USD) 4,996,920.867 == our tile to the cent. Three legacy behaviours found that bind R2
    (§5.4). Not in R0: AD_Chart, the ZK render, the colour (no target stated, §6 Q1).
-2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; open: browser callers pass no programme yet (R1-f); the SHED re-push
+2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; R1-f ✅ (§5.6: the viewer's push carries the Gantt's programme); open: the SHED re-push
    (its building DB is gone, §5.4); re-voice the films.
 3. **R2 — the PA engine in the SQLite kernel**, generic (MMeasure / MGoal / MColorSchema semantics ported from the legacy source, cited file:line), witnessed against the same rows on the pilot.
 4. **R3 — tiles as data:** each §3 tile → a `PA_MeasureCalc` / `PA_Measure` (+ `PA_ColorSchema` for health) row; `tiles.js` keeps only what PA cannot express (named); deletion budget stated.
@@ -190,6 +190,30 @@ twin below is the real check). `shed_twin.js <HHS fold> HHS_Office_Federated 202
 Last Updated PER_SOURCE. Re-run at today=2026-12-10: `created +0` (idempotent), health red=1, schedule At Risk=1, avg delay 16.00 d — the same on both sides.
 **SHED not re-pushed:** its building DB (`/tmp/wt-shed-e2e/buildings/ShedModeller.db`) no longer exists anywhere on disk; rebuilding it is the DXF2BIM lane's job (`prompts/DXF2BIM_ARCHITECT_REVIEW.md`).
 On the pilot SHED #1000004 still carries the OLD fold's serial dates. Re-fold (no 4D run exists for the shed → phases without dates, `NO_4D_SCHEDULE`) and re-push when the DB is back.
+
+### 5.5 DECISION + R1-f SPEC (2026-11-03; owner "you can decide") — written before code
+**Decision (the §5.4 (c) collision):** the SQLite PA engine (R2) returns what legacy returns — a measure whose SQL fails is **0**, as in legacy (CARDINAL TWIN RULE, incl. L&F) — and logs
+`§PA_MEASURE_ERROR measure=<id> sql=<…> err=<…>`. The PRIME RULE is kept by the witness, not by a different number: the twin judges any measure whose SQL errored on EITHER side as INCONCLUSIVE,
+never MATCH, and a page built on PA rows shows the error mark beside the 0 only where legacy ZK also does (to be read from the ZK source when R4 builds it). `tiles.js` tiles keep "no data" until R3
+moves them onto PA rows. (a) and (b) are twinned too: no compute on create, performance against the previously committed target.
+**R1-f — the viewer's push takes the programme the viewer already has.** Owner of "which schedule is active": `ScheduleAuthor.activeSchedule(db)` (authored `SCH_AUTHORED` first, else the imported
+one). Owner of the rows: what `materializeZones` / the import wrote — `tasks` (non-summary, dated) + `task_elements`. New `ProjFold.scheduleFromDb(bdb, template)` → the fold's `opts.schedule`
+shape: `start` = the schedule's earliest task start; per task `sDays/eDays` = days from it; `phase` = the template phase whose name prefixes the task name as `<phase> — <storey>` (the name
+`_writeTemplateSchedule` writes), else the task's WBS parent (summary) name, else none → its rows go to `Unsequenced` (`TASK_PHASE_UNKNOWN`); `phaseSeq` from the template, else by earliest start
+(note `PHASE_SEQ_FROM_START`). No active schedule → null → `NO_4D_SCHEDULE` (as today). Callers: `find_erp_push.js _pushToErp` and `proj_order_state.js generate` pass it (`A.db`, `window._4dTemplate`);
+their priced rows gain `guids` (both already start from a guid set). Phase dates in the order = the Gantt's own dates.
+**Witness W-FOLD-SCHEDULE-FROM-DB (`capex/tests/witness_fold_schedule_from_db.js`; issue: "the viewer's push ignores the programme on screen"):** run the shipped pipeline on HHS (`cache_4d_run.build`
+with a read-only `onDb` hook, no second harness) → `scheduleFromDb(db, template)` == the run's own `res.tasks` (same ids, phase, storey, guid sets, day offsets); then the fold over it gives phase
+dates == the DB's task dates. Negative: a DB with no schedule → null. Break `BREAK=1` (drop one task_elements row) must FAIL. Regression: `witness_s9_pure`, `witness_civil_find_erp_push`, W-FOLD-ONE-SCHEDULE.
+
+### 5.6 R1-f RESULT (2026-11-03) — logs read
+`ProjFold.scheduleFromDb` + `ProjFold.pricedPerTask` (viewer/proj_fold.js), wired in `find_erp_push.js _pushToErp` (whole-selection size cap kept) and `proj_order_state._foldOpts` (`env.schedule`).
+`scripts/cache_4d_run.js build(bld, force, want, hooks)` gained a read-only `onDb` hook (cache_4d_run.js is not in its own code key — caches unaffected).
+- **W-FOLD-SCHEDULE-FROM-DB PASS 8/8** (`capex/tests/witness_fold_schedule_from_db.js`): reader == the pipeline's own 16 tasks (ids, phase, storey, start/end, 6,839 element ids); no schedule → null; `BREAK=1` → FAIL.
+- **W-FIND-PUSH-4D PASS 5/5** (`capex/tests/witness_find_push_4d.js`, headless — the REAL `_pushToErp` with stubbed OPFS/DOM): `§PROJ_PUSH_SCHEDULE from=building db SCH_AUTHORED tasks=16`, order
+  phases == the Gantt's dates (Superstructure 2026-01-01 → 01-24 … Finishes 02-15 → 02-23), 16 tasks; no programme → 6 phases without dates + `§PROJ_PUSH_SCHEDULE none`; `BREAK=1` → FAIL.
+- Regression: W-FOLD-ONE-SCHEDULE 11/11, `witness_s9_pure` 8/0/0, `poc_proj_push` engine PASS, `poc_erp_rest_push` PASS, `witness_exact_lookup_p2` 8/0 — unchanged; `poc_fin_evm` only its
+  pre-existing EVM_6 source-contract FAIL. NOT run: `viewer/tests/witness_civil_find_erp_push.js` (Playwright + full GPU viewer — not run unasked; my one attempt was from the wrong cwd and closed).
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.

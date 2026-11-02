@@ -164,7 +164,10 @@
     var g2t = {};   // guid → 4D task (the owner's)
     if (SCH) SCH.tasks.forEach(function (t) { (t.guids || []).forEach(function (g) { g2t[g] = t; }); });
     // a row's 4D task: the ONE task all its guids sit in; otherwise null (→ 'Unsequenced', named in notes, never guessed)
+    var taskById = {};
+    if (SCH) SCH.tasks.forEach(function (t) { taskById[t.id] = t; });
     function rowTask(r) {
+      if (r.taskId != null) return taskById[r.taskId] || null;      // a producer that split its rows per 4D task (pricedPerTask) names the task directly
       if (!r.guids || !r.guids.length) return null;
       var t = g2t[r.guids[0]];
       if (!t) return null;
@@ -451,7 +454,62 @@
     return { projectId: projId, created: created };
   }
 
-  var API = { foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, BIM_BASE: BIM_BASE };
+  // ── scheduleFromDb(bdb, template, SA) — the programme the viewer already holds, as foldProjectOrder's opts.schedule (prompts/CAPEX_DASHBOARD.md §5.5 R1-f).
+  // Which schedule: the owner's ScheduleAuthor.activeSchedule(db) (authored first, else imported). Rows: what materializeZones / the import wrote (tasks + task_elements).
+  // phase = the template phase prefixing the task name as "<phase> — <storey>" (the name _writeTemplateSchedule writes), else the WBS parent summary's name (not the root),
+  // else none (its rows go to Unsequenced). phaseSeq = template sequence, else rank by earliest start (noted). Returns null when there is no dated schedule. Reads only.
+  function scheduleFromDb(bdb, template, SA) {
+    SA = SA || _SA();
+    var act = null; try { act = SA && SA.activeSchedule ? SA.activeSchedule(bdb) : null; } catch (e) { act = null; }
+    if (!act) { console.log('§PROJ_FOLD_SCHEDULE none — no active dated schedule in the building db'); return null; }
+    function rows(sql, p) { var r = bdb.exec(sql, p || []); return r.length ? r[0].values : []; }
+    var all = rows("SELECT task_id, name, schedule_start, schedule_finish, wbs_parent, is_summary FROM tasks WHERE schedule_id=?", [act.id]);
+    var byId = {}; all.forEach(function (v) { byId[v[0]] = { id: v[0], name: v[1], s: v[2], f: v[3], parent: v[4], summary: v[5] === 1 || v[5] === '1' }; });
+    var names = ((template && template.phases) || []).map(function (p) { return p.name; }).sort(function (a, b) { return b.length - a.length; });
+    var leaf = all.filter(function (v) { return !(v[5] === 1 || v[5] === '1') && v[2] != null; }).map(function (v) { return byId[v[0]]; });
+    if (!leaf.length) { console.log('§PROJ_FOLD_SCHEDULE none — schedule ' + act.id + ' has no dated task'); return null; }
+    var gOf = {};
+    rows("SELECT te.task_id, te.guid FROM task_elements te JOIN tasks t ON t.task_id=te.task_id WHERE t.schedule_id=?", [act.id])
+      .forEach(function (v) { (gOf[v[0]] || (gOf[v[0]] = [])).push(v[1]); });
+    function dnum(x) { var d = String(x).slice(0, 10).split('-'); return Date.UTC(+d[0], d[1] - 1, +d[2]) / 86400000; }
+    var start = leaf.reduce(function (m, t) { var d = String(t.s).slice(0, 10); return m == null || d < m ? d : m; }, null), s0 = dnum(start);
+    var unknown = 0;
+    var tasks = leaf.map(function (t) {
+      var phase = null, storey = null;
+      for (var i = 0; i < names.length; i++) if (String(t.name).indexOf(names[i] + ' \u2014 ') === 0) { phase = names[i]; storey = String(t.name).slice(names[i].length + 3); break; }
+      if (!phase) { var par = byId[t.parent]; if (par && par.parent != null && byId[par.parent]) phase = par.name; }
+      if (!phase) unknown++;
+      return { id: t.id, phase: phase || 'Unsequenced', storey: storey, sDays: dnum(t.s) - s0, eDays: dnum(t.f != null ? t.f : t.s) - s0, guids: gOf[t.id] || [] };
+    }).filter(function (t) { return t.phase !== 'Unsequenced'; });
+    var phaseSeq = {}, fromStart = false;
+    ((template && template.phases) || []).forEach(function (p) { phaseSeq[p.name] = p.sequence; });
+    var missing = tasks.some(function (t) { return phaseSeq[t.phase] == null; });
+    if (missing) {
+      fromStart = true;
+      var first = {}; tasks.forEach(function (t) { if (first[t.phase] == null || t.sDays < first[t.phase]) first[t.phase] = t.sDays; });
+      Object.keys(first).sort(function (a, b) { return first[a] - first[b] || (a < b ? -1 : 1); }).forEach(function (ph, i) { if (phaseSeq[ph] == null) phaseSeq[ph] = 100 + i; });
+    }
+    console.log('§PROJ_FOLD_SCHEDULE schedule=' + act.id + ' name="' + (act.name || act.id) + '" tasks=' + tasks.length + ' start=' + start +
+      ' lastDay=' + Math.max.apply(null, tasks.map(function (t) { return t.eDays; })) + (unknown ? ' TASK_PHASE_UNKNOWN=' + unknown : '') + (fromStart ? ' PHASE_SEQ_FROM_START' : ''));
+    return { start: start, tasks: tasks, phaseSeq: phaseSeq, source: 'building db ' + act.id };
+  }
+
+  // ── pricedPerTask(guids, schedule, priceFn) — split a selection by its elements' 4D task and price each part with the CALLER's own producer
+  // (priceFn(guidArray) → {rows, elements}), tagging rows with taskId, so no row spans two Gantt bars. Elements in no task are priced once, untagged.
+  function pricedPerTask(guids, schedule, priceFn) {
+    var g2t = {}, parts = {}, order = [];
+    (schedule && schedule.tasks || []).forEach(function (t) { t.guids.forEach(function (g) { g2t[g] = t.id; }); });
+    guids.forEach(function (g) { var k = g2t[g] != null ? g2t[g] : ''; if (!parts[k]) { parts[k] = []; order.push(k); } parts[k].push(g); });
+    var out = [], elements = 0;
+    order.forEach(function (k) {
+      var p = priceFn(parts[k]); if (!p || !p.rows) return;
+      elements += p.elements || 0;
+      p.rows.forEach(function (r) { if (k !== '') r.taskId = k; out.push(r); });
+    });
+    return { rows: out, elements: elements, parts: order.length };
+  }
+
+  var API = { foldProjectOrder: foldProjectOrder, foldAuthoredPhases: foldAuthoredPhases, scheduleFromDb: scheduleFromDb, pricedPerTask: pricedPerTask, BIM_BASE: BIM_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ProjFold = API;
 })(typeof self !== 'undefined' ? self : this);

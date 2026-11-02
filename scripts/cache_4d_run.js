@@ -189,7 +189,7 @@ function read(bld, want) {
     log: __readSrc(path.join(d, 'witness.log'), 'utf8'), dir: d };
 }
 
-function build(bld, force, want) {
+function build(bld, force, want, hooks) {   // hooks.onDb(db, res) — READ-ONLY peek at the building db right after materializeZones (W-FOLD-SCHEDULE-FROM-DB)
   // §CACHE_DB_KIND — resolve the db the viewer loads, and say which one and why, BEFORE anything runs.
   const dbf = resolveDbFile(bld, want);
   if (!dbf.path) { console.log('§CACHE_SKIP ' + bld + ' — ' + dbf.reason); return null; }
@@ -244,6 +244,7 @@ function build(bld, force, want) {
           x0: e.x0, x1: e.x1, y0: e.y0, y1: e.y1, bz: e.base_z, tz: e.top_z }));
         globalThis.APP = { db: db };          // §S50 CELL gate reads the db through APP, as the viewer does
         const res = SA.materializeZones(db, sb.SEQUENCE_RULES, base);
+        if (hooks && hooks.onDb) hooks.onDb(db, res, { SA: SA, template: T, start: base.start });
         sched = res && res.displaySchedule;
         // task grid (id, window, member guids) — needed to compute reveal-time-within-task-window,
         // 4D_GANTT_TM_REFACTOR.md §FUTURE item 2. Not derivable from els/sched alone: the task_id a
