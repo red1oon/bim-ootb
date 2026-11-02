@@ -5,28 +5,24 @@ It is fed ONLY by real iDempiere project data: Source A = the SQLite ERP DB (`er
 no random fill. An empty population prints "no data" / VACUOUS / INCONCLUSIVE, never 0% or 100% green.** Read the log after every run (`§DASH_*` lines); exit code is not evidence.
 Honour this block until the lane is closed. Cardinal rule: SQLite == legacy; a `§DASH_TWIN ... DIFF` is fixed on the SQLite side, never hidden.
 
-## ▶ RESUME HERE (written 2026-11-02 at the close of session bim-compiler-88; the ONLY current block — read it, then §3, §7, §10)
+## ▶ RESUME HERE (written 2026-11-02 at the close of session bim-compiler-77; the ONLY current block — read it, then §11, §12, §13, §7)
 **The goal (owner, verbatim):** "We can build an adhoc HTML that resembles that dashboard (they eventually will share their app) and perhaps it be adopted or replace theirs as it is
 expected to be simple vanilla (their notes so far indicated it was prototyped not wired)" · "This is where we be twinning silently in the background to get a free parity testing
-(which we been doing in another lane)." Client context: `~/Projects/SYSNOVA/BIMSYSNOVA_Project.md` (read its LAST section, "2026-11-02 — The shed, end to end, and how it reaches
-the dashboard", links 1-7 + N1-N4) and `~/Projects/SYSNOVA/BIM_OOTB_iDempiere_Integration_Spec.md` (REST push, the dashboard "BIM" link).
-**State:** page live in `capex/` (#2530); twin run for real against the LOCAL pilot (#2532): `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Every DIFF is a data-state
-difference (same `tiles.js` both sides): Source A read the SHIPPED seed `erp/ad_seed.db`, not the twin after a parity run. The shed (DXF2BIM) folds via `capex/tools/fold_demo.js`
-into a temp copy (project SHED, BDT, 6 phases / 8 tasks / 12 lines, PlannedAmt 15,147,437 BDT).
+(which we been doing in another lane)." Client context: `~/Projects/SYSNOVA/BIMSYSNOVA_Project.md` (LAST section, links 1-7 + N1-N4) and `~/Projects/SYSNOVA/BIM_OOTB_iDempiere_Integration_Spec.md`.
+**State:** page live in `capex/` (#2530); twin vs the LOCAL pilot (#2532) = `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Session 77 measured every DIFF (§11 table):
+the harness keeps NO SQLite state (no "post-run SQLite DB" exists — §11 premise correction), so absolute-state DIFFs are history drift + one SQLite-only fold (Hospital) + ONE REAL KERNEL GAP, now fixed:
+document-value workflows (legacy "Business Partner Approval" pending per new BP) — `model_layer.js docValue` + W/X/I suspend + boot overlay `ad_docvalue_overlay.js` (base hash unchanged), witness
+`erp/tests/witness_docvalue_wf.js` W-DOCVALUE-WF RED 6/7 → GREEN 8/8, break FAILs; 21-witness regression before/after in §11.3.
 **▶ NEXT, in order:**
-1. **Real twin (the SQLite side):** run Source A against the POST-RUN SQLite DB of the parallel-run harness (`bim-compiler scripts/bridge/run_all.sh`, log `~/.cache/bim_bridge/`;
-   CARDINAL RULE + RESUME at the top of `bim-compiler prompts/SQLiteIDEMPIERE.md`), not the seed. Every DIFF left is fixed on the SQLite side (never accepted, never a LEGACY-QUIRK
-   without the owner's words). Known causes to check first: the BIM-folded Hospital #990000 exists only in SQLite; legacy Standard#100 ProjectBalanceAmt 318.68 from PJI1 runs (replay
-   on SQLite); AD_WF_Activity 261 vs 10. Coordinate with the SQLiteIDEMPIERE lane session (ListAgents) before touching its harness.
-2. **N3 — the shed as a twin scenario:** push the folded shed Project Order to the local pilot through the merged REST bridge (`viewer/erp_rest_push.js`, #1701) AND into SQLite;
-   the dashboard then shows SHED from both sources; `§DASH_TWIN` MATCH is the done-claim. Needs write WS types for C_Project/Phase/Task/Line/M_Product on the pilot (owner go —
-   the 6 read types were authorised 2026-11-02, writes were not).
-3. **N2 — one cost source:** the shed carries three numbers — DXF2BIM bill 6,227,255 BDT (PWD SoR `material_rates`), proj_fold 15,147,437 BDT (generic `materials` rates), film HUD
-   130,639 (labour). The Project Lines must carry the stated bill. Owner of the rate paths: the DXF2BIM / 5D lanes (DXF2BIM RESUME carried item 4) — spec + hand off, don't fork.
-4. **Client questions** (§7, 8 items) go to Sysnova through the owner; the page keeps "definition pending" until answered.
-**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) may still be running with the 6 extra READ types (§10 has the before/after counts + the DELETE restore recipe).
+1. **NEXT-1 remainder** (the absolute twin): (a) Hospital #990000 → pushed with the shed's write types (same ⛔ go as 2); (b) history drift → the SQLiteIDEMPIERE lane decides on a persistent SQLite twin reset
+   with the pilot (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`); then re-run `node capex/tools/twin.js <twin.db>`. (c) §11.2 DocAction-path responsible gap (ERP lane).
+2. **NEXT-2** ⛔ **owner go:** WRITE WS types for C_Project/Phase/Task/Line on the local pilot. Spec §12: the push must carry the folded SQLite rows column for column (today's REST push writes fewer columns
+   than the fold → would DIFF by construction).
+3. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js` (PWD SoR); proj_fold takes the bill's priced rows. Pointer in `prompts/DXF2BIM_ARCHITECT_REVIEW.md` RESUME item 4.
+4. **Client questions** (§7, 9 items) go to Sysnova through the owner; the page keeps "definition pending" until answered.
+**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) is running with the 6 extra READ types (§10 has the DELETE restore recipe). Nothing written to the pilot by session 77 (read-only psql + WS reads).
 **Rules that bind here:** PRIME RULE (no invented number), CARDINAL TWIN RULE, never `git stash`, never claude-in-chrome, witness = numbers, bim-ootb only via a `/tmp/wt-*` worktree,
-no .db committed, every legacy-server config change needs the owner's go.
+no .db committed, every legacy-server config change needs the owner's go, never move the Team base hash (`patches/ad_seed.db.sql`) without the owner — use a boot overlay.
 
 ## 1. Purpose
 The client (a CAPEX portfolio owner) prototyped an executive dashboard that is not wired to data (screenshot `~/Projects/SYSNOVA/SYSNOVADashboardScreenshot.png`).
@@ -135,3 +131,69 @@ physical `301:0.5724`→no data; spent 0→0.5311; schedule ontime 1→0; budget
 **Causes (all SQLite-side items under the CARDINAL RULE; none accepted):** (1) POPULATION: the seed holds the BIM-folded Hospital #990000 (and its 7 phases) which legacy does not — drives total/active/approved/committed/health/stage/physical/schedule;
 (2) legacy `Standard#100` has `ProjectBalanceAmt=318.6805` from the parity lane's Project Issue runs (PJI1) while the SQLite seed has 0 — drives actual/spent/overrun/budget_status (a replay of PJI1 on the SQLite side must produce the same balance; the seed file is a dictionary seed, not a post-run twin);
 (3) `AD_WF_Activity` pending 261 on legacy vs 10 in the seed (legacy accumulated activities from runs); (4) `Updated` timestamps. The dashboard computes identically on both sources (same `tiles.js`); the DIFFs are data-state differences between the two DBs, which is exactly what the twin is for. Fix path: align the SQLite DB under test to the pilot (run the twin against the post-run SQLite DB of `scripts/bridge/run_all.sh`, not the shipped seed).
+
+## 11. NEXT-1 "real twin" — measured premise, DIFF causes, the SQLite-side fixes (spec written BEFORE code, 2026-11-02, session bim-compiler-77)
+**Premise correction (measured, not assumed).** There is NO "post-run SQLite DB" of the parallel-run harness to point Source A at: every scenario in `bim-compiler scripts/bridge/` copies
+`build/erp/glassbowl_data.db` to `os.tmpdir()`, compares the legacy delta with the SQLite delta, and deletes the copy (`witness_m3_gap.js:20,1137-1174`); `glassbowl_data.db` has no `c_project`
+table at all. The legacy pilot, in contrast, KEEPS every run's writes. So the two DBs drift apart by construction: legacy = seed + all harness history, SQLite = seed. The §10 DIFFs are that drift, plus one real kernel gap.
+**Each §10 DIFF, its measured cause, its fix (all on the SQLite side — CARDINAL RULE):**
+
+| DIFF tiles | measured cause (read-only psql on `idempiere_pilot` + the seed) | class | fix / owner |
+|---|---|---|---|
+| total/active projects, approved/committed budget, health, stage, physical, schedule | Hospital #990000 exists only in SQLite: a BIM fold made on the SQLite side and never pushed (the twin principle, SQLiteIDEMPIERE §21: every SQLite op reaches legacy through the Bridge) | UP-push missing | push it with the shed (NEXT-2) through the REST bridge — needs the write WS types (⛔ owner go, same go as NEXT-2) |
+| actual cost, spent, budget status, overrun | legacy `Standard#100.ProjectBalanceAmt=318.6805` = 46 `C_ProjectIssue` rows (2026-10-10..11-02), one per harness run of PJI1 (`MProjectIssue.updateBalanceAmt` :555-590 adds `MCost.getCost` per issue); the SQLite side of each run was discarded | harness history not persisted | a persistent SQLite twin that every harness run writes to, reset together with the pilot from one baseline (`pilot/snapshot.sh`) — harness change, SQLiteIDEMPIERE lane; handed off in `bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN` |
+| approvals 10 → 261 (now 261 OS on table 291) | legacy `AD_Workflow 131 "Business Partner Approval"` (WorkflowType V, AD_Table 291, DocValueLogic `@Created@=@Updated@`, start node 244 action W) starts on EVERY new C_BPartner (`PO.saveFinish` :2806-2817 → `DocWorkflowManager.process` :70-125) and suspends at the user-window node (`MWFActivity.performWork` :1389-1393 returns false → WFState OS). 251 of the 261 came from BPs created 2026-10-17..22 by user 101 and later deleted (ad_changelog I/D); the activities stay (legacy delete does not remove them). The 2 surviving October BPs (1000472/3) have 1 activity each. SQLite: (a) DATA — the seed patch ships only DocAction process workflows (`build_model_patch.py` WF filter), so workflow 131 is absent; (b) RULE — `model_layer.js` has no doc-value trigger and `runWorkflow` aborts on any node action other than D/Z | DATA + RULE kernel gap | **this session: §11.1** |
+| last updated | `MAX(C_Project.Updated)` differs because the rows differ (legacy Standard#100 updated by the issues) | follows the rows above | none on its own; re-judge after the others |
+
+### 11.1 Doc-value workflows in the SQLite kernel (generic — AD-LAYER LAW, no BP-specific code)
+- **DATA:** every document-value workflow of the reference DB (`WorkflowType='V'`: today only 131) + its nodes + node-nexts, extracted by `erp/patches/build_docvalue_overlay.py` into `erp/ad_docvalue_wf.js`
+  and applied at boot by `erp/ad_docvalue_overlay.js` (idempotent `INSERT OR IGNORE`; call sites = the overlays' own: `idempiere.html`, `ws_kernel.js`, `ws_server.js`). **Not** in the hashed
+  `patches/ad_seed.db.sql`: the first try put the 2 rows there and W-IMPORT-ORDER / W-ACCT-PROCESSOR failed `base-hash` — moving the Team BASE hash re-founds every team (owner decision, TEAMWORK §48.11b);
+  the boot-overlay path is the lane's accepted alternative (ad_index_overlay.js, ad_import_tables.js).
+- **RULE:** `model_layer.js` `_save` → after the AFTER_* validators and `postEvent` (the `PO.saveFinish` order :2800-2817): `docValue(trx, table, live, isNew)` = `MWorkflow.getDocValue` (WorkflowType='V', IsValid='Y', IsActive='Y',
+  AD_Client_ID = session client, AD_Table_ID = the table) → for each: skip when `wf.AD_Client_ID != doc.AD_Client_ID`; logic `SQL=` → **named-unported** (`§MODEL-NAMED docvalue-sql`), else
+  `AdEvaluator.evaluate(logic, doc)` where the doc carries the save stamps PO sets before `saveFinish` (new: Created = Updated = the save time; change: Updated = the save time, Created kept) → start = `runWorkflow`'s process/activity rows.
+- **RULE (shared with DocAction workflows):** `runWorkflow` node actions `W` (UserWindow), `X` (UserForm) and `I` (UserInfo) SUSPEND (UserChoice `C` is a different legacy rule, :1302-1382, left named-unported): the activity stays `WFState='OS'`, `Processed='N'`, the
+  process `WFState='OS'`, an event audit `SC/OS` is written (pilot: activity 1000305 / process 1000305 / audit `244|SC|OS`), and the walk stops (no CA abort). Before this change they aborted (`node action W not modeled`).
+- **Witness W-DOCVALUE-WF** (`erp/tests/witness_docvalue_wf.js`, issue proved: SQLite starts and suspends the same approval workflow legacy starts, so "Approval Pending" moves the same way):
+  (1) new C_BPartner → exactly 1 `ad_wf_process` + 1 `ad_wf_activity` (wf 131, node 244, OS, Processed N, AD_Table 291, Record_ID = the BP) + 1 `ad_wf_eventaudit` (SC, OS) — the pilot values above;
+  (2) a later update of the same BP → 0 new activities (logic false once Updated != Created); (3) a new row of a table with no V workflow (C_Project) → 0; (4) `DOCVALUE_BREAK=1` disables the trigger → (1) must FAIL;
+  (5) vacuous guard: the patch must carry workflow 131 (else INCONCLUSIVE, not PASS); (6) Approval Pending tile (`tiles.js`, unchanged) on the witness DB moves by exactly +1 per new BP.
+  Regression: the existing DocAction-workflow witnesses keep their verdicts (before/after logs).
+
+### 11.2 Named, not fixed here
+- The DocAction workflow path (`runWorkflow` without `opts.wf`) still writes `ad_wf_process.ad_wf_responsible_id = NULL` when the workflow has none and the session user on every activity; legacy resolves the
+  Invoker (pilot: C_Order wf 116 process → responsible 101 / user 101). Same helpers (`wfStartResp`/`wfNodeResp`) apply; switching that path is a separate change with its own before/after (ERP lane).
+- Absolute-state twins need a persistent SQLite twin of the harness (proposal handed to `bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`).
+
+## 12. NEXT-2 — the shed as a twin scenario (spec, 2026-11-02, session bim-compiler-77) — ⛔ write WS types need the owner's go
+**Measured mismatch first (would DIFF even after a push):** the REST bridge (`viewer/erp_rest_push.js` `pushProjectOrder`) writes C_Project `Value`, `Name='BIM: '+building` only (no `C_Currency_ID`,
+no `PlannedAmt`), C_ProjectPhase `C_Project_ID/Name/SeqNo/StartDate/EndDate` (no `PlannedAmt`, no `IsComplete`), C_ProjectTask `C_ProjectPhase_ID/Name`, C_ProjectLine `PlannedQty/PlannedPrice/PlannedAmt`.
+The SQLite fold (`viewer/proj_fold.js` via `capex/tools/fold_demo.js`) writes currency BDT, the project's and phases' PlannedAmt, and its own Name. The tiles Approved Budget (C_Project.PlannedAmt), Physical
+(phase PlannedAmt), currency split and the Projects table would DIFF by construction. **Twin principle (SQLiteIDEMPIERE §21): SQLite is the origin; legacy must receive the SAME rows.** So the push must be
+fed FROM the folded SQLite rows (column for column the dashboard reads: §3 tiles 1-16), not from a separate plan object.
+**Steps:** (1) `capex/tools/shed_twin.js`: fold the shed into a temp copy of the seed (as `fold_demo.js`) → read back the folded C_Project/Phase/Task/Line/M_Product rows → push those rows' columns with the
+REST bridge (`erp_rest_push.js`, extended to carry the extra columns; the column list comes from the folded rows, not a hand list) → `legacy_snapshot.js` → `twin.js` restricted to nothing (full population).
+(2) Done-claim: `§DASH_TWIN` MATCH on every tile the SHED row moves (Δ-twin from a snapshot before the push, both sides), and the absolute verdict reported as is.
+**⛔ owner go needed:** register WRITE WS types on the local pilot for C_Project / C_ProjectPhase / C_ProjectTask / C_ProjectLine (create + the read already exists) — the pilot today has none of these
+(`ws_webservicetype` lists only Query* for the four, plus `Bridge_createData_M_Product*` for products). Same SQL template + restore recipe as §10; nothing on Kazi's server.
+
+## 13. NEXT-3 — one cost source for the shed's Project Lines (spec, 2026-11-02, session bim-compiler-77; hand-off, not a fork)
+**Three numbers, measured owners:** (a) DXF2BIM bill 6,227,255 BDT = `modeller/dxf2bill.js` pricing each body by `pack.material_rates[IfcClass]` (PWD SoR 2022 rows, matched on the body's material, row
+cited per item/page); (b) proj_fold 15,147,437 BDT = `capex/tools/fold_demo.js` → `apply5DRates(compute5D(...), pack.materials)` = the generic per-class `materials` table of the same pack (no material
+match, bbox quantities); (c) film HUD 130,639 = labour from the Time Machine path. **Rule:** the Project Lines carry the stated bill — ONE pricing owner, `dxf2bill.js` (it already reads the SoR rows
+and their quantities); `proj_fold` takes its priced rows (class, material, unit, qty, rate, cost, source item) from that bill instead of re-pricing with `materials`. The Viewer's 5D / Time Machine
+cost reading `material_rates` is the same carried item (DXF2BIM RESUME item 4). **Owner: the DXF2BIM / 5D lanes** — pointer added to `prompts/DXF2BIM_ARCHITECT_REVIEW.md` RESUME item 4.
+**Done-claim for the hand-off:** the shed's `SUM(C_ProjectLine.PlannedAmt)` == the bill total 6,227,255 BDT (a witness reading both), and the fold's per-line `rate` == the bill row's `rate` for the same class+material.
+
+### 11.3 RESULT 2026-11-02 (session bim-compiler-77) — logs read
+- **W-DOCVALUE-WF** `NODE_PATH=<bim-ootb>/node_modules node erp/tests/witness_docvalue_wf.js`: RED before the rule (6 of 7 FAIL, `activities=[]`, tile 10→10) → `§DVWF_VERDICT PASS judged=8 failed=0`:
+  new BP → activity `[131,244,OS,N,resp 100,user 100]`, process `[131,OS,N,101,101]`, audit `[244,SC,OS]` = the pilot's BP 1000473 row for row; update → no new activity; new C_Project → none;
+  `§DVWF_TILE approvals before=10 after=11`. `DOCVALUE_BREAK=1` → `FAIL judged=8 failed=7`. `§DOCVALUE_OVERLAY ensure applied=2 skipped=0`.
+- **First design rejected by the witnesses:** the 2 rows in `patches/ad_seed.db.sql` failed W-IMPORT-ORDER / W-ACCT-PROCESSOR `base-hash` (pin a3eef3f5…) → moved to the boot overlay; both PASS again.
+- **Regression, before (origin/main ad9a640d) vs after:** 15 model-layer witnesses identical exit codes and verdict lines (void_reversal, event_seq, event_bus, docno_till, import_order, acct_processor,
+  costing_sweep, libero_corehooks/activity/mto/bundle, plugin_lifecycle = 0; rma_window_path 2, fn_parity 1, post_matchinv_diff 3 — same on main: patch/oracle-dependent, pre-existing).
+  + import_payment, pos_sales, recurring, script_validator PASS; team_base prints base sha256 a3eef3f5… = pin, then crashes on "playwright is not installed" in the worktree (environment);
+  mf_lens all checks 🟢 `red=none judged=9`, ran past the 300 s timeout. CI fast checks local: audit_sw_precache, audit_script_tags, audit_spec_paths, W-AGENT-ZIP-SYNC = 0.
+- **The CAPEX twin itself is still FAIL** (§11 table): the remaining DIFFs are the Hospital push (⛔ owner go) and the harness history drift (SQLiteIDEMPIERE lane). The approvals tile cannot MATCH 261 until the
+  SQLite twin lives the same history; what is proven is that the SAME operation now moves both sides the same way (+1 per new BP).
