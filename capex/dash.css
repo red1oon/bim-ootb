@@ -1,0 +1,31 @@
+/* capex/dash.css — plain CSS, no preprocessor. Colours are variables; swap them to rebrand. */
+:root{--bg:#f4f6fb;--card:#fff;--ink:#1c2433;--mut:#6b7488;--line:#e3e7f0;--acc:#2f5bea;--ok:#1f9d55;--warn:#e8a317;--bad:#d6343f;--none:#9aa3b5}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+#side{width:220px;background:var(--card);border-right:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:16px;flex:none}
+.brand{display:flex;gap:10px;align-items:center}.logo{width:34px;height:34px;border-radius:8px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700}
+.brand small{display:block;color:var(--mut);font-size:11px}
+#nav a{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:8px;color:var(--ink);text-decoration:none;margin-bottom:2px}
+#nav a.on{background:var(--acc);color:#fff}#nav a:hover:not(.on){background:var(--bg)}
+.badge{background:var(--bad);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px}.badge:empty{display:none}
+.srcbox{margin-top:auto;font-size:12px;color:var(--mut)}.srcbox select{width:100%;margin:4px 0}
+#main{flex:1;padding:20px 26px;min-width:0}h1{margin:0;font-size:22px}.sub{margin:2px 0 14px;color:var(--mut)}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.filters label{display:flex;flex-direction:column;font-size:11px;color:var(--mut);gap:2px}
+select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.lastupd small{display:block;color:var(--mut);font-size:11px}
+.grid{display:grid;gap:14px}.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.panels{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600}
+.big{font-size:24px;font-weight:700;line-height:1.2}.big .cur{font-size:12px;color:var(--mut);font-weight:600;margin-right:4px}
+.subv{color:var(--mut);font-size:12px;margin-top:2px}.note{margin-top:8px;font-size:10.5px;color:var(--mut);border-top:1px dashed var(--line);padding-top:5px;overflow-wrap:anywhere}
+.nodata,.pending{color:var(--mut);font-size:13px;font-style:italic;font-weight:400}.pending{color:var(--warn)}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:13px}.row b{font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:2px 0 6px}.bar i{display:block;height:100%;background:var(--acc)}
+.donut{display:flex;gap:14px;align-items:center}.donut svg{flex:none}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--mut);font-weight:600;background:#fafbfe}td.n{text-align:right;font-variant-numeric:tabular-nums}
+a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-decoration:none;font-size:12px}
+#foot{margin-top:18px;color:var(--mut);font-size:11px;overflow-wrap:anywhere}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.panels{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){body{flex-direction:column}#side{width:auto}.kpis,.panels{grid-template-columns:1fr}}

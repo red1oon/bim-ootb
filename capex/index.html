@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAPEX Project Management — Executive Dashboard</title>
+<link rel="stylesheet" href="dash.css">
+</head>
+<body>
+<!-- Plain files, no build step: tiles.js (formulas) + adapters.js (data sources) + dash.js (page). Spec: prompts/CAPEX_DASHBOARD.md -->
+<aside id="side">
+  <div class="brand"><div class="logo" id="brandMark"></div><div><b id="brandName"></b><small id="brandSub"></small></div></div>
+  <nav id="nav">
+    <a href="#dashboard" data-view="dashboard" class="on">Dashboard</a>
+    <a href="#projects" data-view="projects">Projects</a>
+    <a href="#budget" data-view="budget">Budget &amp; Cost</a>
+    <a href="#procurement" data-view="procurement">Procurement Risks</a>
+    <a href="#approvals" data-view="approvals">Approval Pending <span class="badge" id="badgeApprovals" data-flat="approvals"></span></a>
+    <a href="#handover" data-view="handover">Handover</a>
+  </nav>
+  <div class="srcbox"><label for="src">Data source</label><select id="src"></select><small id="srcInfo"></small></div>
+</aside>
+<main id="main">
+  <header>
+    <h1 id="title"></h1>
+    <p class="sub" id="subtitle"></p>
+    <div class="filters">
+      <label>Org <select id="fOrg"></select></label>
+      <label>Category <select id="fCat"></select></label>
+      <label>Status <select id="fStatus"></select></label>
+      <div class="lastupd"><small>Last Updated</small><b id="lastUpdated" data-flat="last_updated"></b></div>
+    </div>
+  </header>
+  <section id="view"></section>
+  <footer id="foot"></footer>
+</main>
+<script src="tiles.js"></script>
+<script src="adapters.js"></script>
+<script src="dash.js"></script>
+</body>
+</html>
