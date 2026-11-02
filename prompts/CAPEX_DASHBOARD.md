@@ -9,13 +9,13 @@ Honour this block until the lane is closed. Cardinal rule: SQLite == legacy; a `
 **The goal (owner, verbatim):** "We can build an adhoc HTML that resembles that dashboard (they eventually will share their app) and perhaps it be adopted or replace theirs as it is
 expected to be simple vanilla (their notes so far indicated it was prototyped not wired)" · "This is where we be twinning silently in the background to get a free parity testing
 (which we been doing in another lane)." Client context: `~/Projects/SYSNOVA/BIMSYSNOVA_Project.md` (LAST section, links 1-7 + N1-N4) and `~/Projects/SYSNOVA/BIM_OOTB_iDempiere_Integration_Spec.md`.
-**State (session 77):** NEXT-2 DONE except the last_updated tile (§12.2-§12.5: shed pushed to the pilot, 121/121 rows MATCH; 7 bridge/fold defects fixed; invariants restated by the owner; R1 overlay shipped). Earlier: page live in `capex/` (#2530); twin vs the LOCAL pilot (#2532) = `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Session 77 measured every DIFF (§11 table):
+**State (session 77):** NEXT-2 DONE — `§SHED_TWIN_VERDICT PASS` (§12.2-§12.6: shed pushed to the pilot, 121/121 rows MATCH; 7 bridge/fold defects fixed; invariants restated by the owner; R1 overlay shipped). Earlier: page live in `capex/` (#2530); twin vs the LOCAL pilot (#2532) = `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Session 77 measured every DIFF (§11 table):
 the harness keeps NO SQLite state (no "post-run SQLite DB" exists — §11 premise correction), so absolute-state DIFFs are history drift + one SQLite-only fold (Hospital) + ONE REAL KERNEL GAP, now fixed:
 document-value workflows (legacy "Business Partner Approval" pending per new BP) — `model_layer.js docValue` + W/X/I suspend + boot overlay `ad_docvalue_overlay.js` (base hash unchanged), witness
 `erp/tests/witness_docvalue_wf.js` W-DOCVALUE-WF RED 6/7 → GREEN 8/8, break FAILs; 21-witness regression before/after in §11.3.
 **▶ NEXT, in order:**
-1. **⛔ owner — "Last Updated" tile:** SQLite and legacy each stamp their own write; the WS cannot set `Updated`. Exempt in the owner's words or redefine the tile (§12.2). It is the ONLY shed-twin DIFF left.
-2. **⛔ owner — seed `bim-…` UUs** (64 rows, Hospital tree + products/categories/UOMs): legacy `uuid` refuses them; fixing them moves the Team base hash (§12.1 D4). The push drops them visibly today.
+1. ✅ DECIDED 2026-11-02 (owner "Decide for me", §12.6): Last Updated = PER_SOURCE in the twin; **shed twin `§SHED_TWIN_VERDICT PASS`** (121/121 rows, 16/16 judged tiles).
+2. ⏸ HOLD (§12.6): seed `bim-…` UUs — batch with the next base-hash change made for another reason.
 3. **NEXT-1 remainder** (absolute twin): Hospital push (write types now exist on the pilot); harness history drift → SQLiteIDEMPIERE lane (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`); §11.2 DocAction responsible gap.
 4. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js`.
 5. **Client questions** (§7) go to Sysnova through the owner.
@@ -264,3 +264,12 @@ product without a tax category, the shipped seed has 100): before NULL=100 → a
 - **R1** `erp/ad_taxcat_overlay.js` + `erp/tests/witness_taxcat_overlay.js`: `filled=41 left=59` (left = clients 12/14/16 have no default tax category), set values untouched (211), 2nd boot 0, hashed patch
   unchanged → `§TAXCAT_VERDICT PASS 5/5`; `TAXCAT_BREAK=1` → FAIL. `fold_demo.js` applies the ERP's boot overlays like the app.
 - **Shed twin with shipped code only (no hand repair):** rows **121/121 MATCH**, tiles **16 MATCH / 1 DIFF (last_updated) / 3 INCONCLUSIVE**; 28 `§SHED_PUSH_NOTE uu-not-uuid` = the seed's Hospital-era `bim-…` UUs (⛔ owner, base hash).
+
+### 12.6 DECISIONS 2026-11-02 (owner: "Decide for me") — written before code
+- **Last Updated = PER_SOURCE (a definition, not an exemption).** `MAX(C_Project.Updated)` is each system's own write clock; the WS cannot set `Updated`, so SQLite and legacy can never hold the same
+  instant. The page keeps the client's tile unchanged (per source it reads). `tiles.twin` lists it in `PER_SOURCE`, prints `§DASH_TWIN tile=last_updated sqlite=… legacy=… PER_SOURCE`, counts it as
+  `per_source=N` in `§DASH_TWIN_VERDICT`, never as MATCH or DIFF; every other tile is judged as before. Witness (capex/tests/witness_capex.js): a last_updated-only difference → PASS with per_source=1;
+  the existing negative control (a changed amount) still FAILs; a PER_SOURCE-only population (nothing else judged) → INCONCLUSIVE.
+- **Seed `bim-…` UUs: HOLD.** Rewriting them moves the Team base hash (every team re-founds). Today's cost is only that the push drops those UUs (logged per row) and legacy links by Value. Batch it with
+  the next base change made for another reason.
+- Instrument fix found on the way: W-CAPEX-NODATA-DEFAULTS read a local git-ignored `capex/legacy_snapshot.json` and failed on main too; it now names a missing snapshot as well (34/34 PASS without it).

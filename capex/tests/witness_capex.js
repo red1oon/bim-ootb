@@ -163,7 +163,7 @@ async function verify(label, browser, base, dbFile, dbUrl, f, extra) {
     { const { page } = await load(browser, base, '/__tmp/empty.db'); const t = await page.evaluate(() => ({ circles: document.querySelectorAll('svg circle').length, text: document.getElementById('view').textContent })); check('W-CAPEX-VACUOUS no donut ring, no percent text', t.circles === 0 && !/\b\d+%/.test(t.text), `circles=${t.circles}`); await page.close(); }
 
     // ── 4. no source at all ──
-    { const { page } = await load(browser, base, '/__tmp/does_not_exist.db'); const t = await page.evaluate(() => document.getElementById('view').textContent); check('W-CAPEX-NODATA-DEFAULTS missing DB => "no data source", not zeros', /no data source/.test(t), t.slice(0, 60)); await page.close(); }
+    { const { page } = await load(browser, base, '/__tmp/does_not_exist.db', '&snapshot=' + encodeURIComponent('/__tmp/does_not_exist.json')); /* NEITHER source: a local git-ignored legacy_snapshot.json must not change this verdict (§12.6) */ const t = await page.evaluate(() => document.getElementById('view').textContent); check('W-CAPEX-NODATA-DEFAULTS missing DB => "no data source", not zeros', /no data source/.test(t), t.slice(0, 60)); await page.close(); }
 
     // ── 5. shed fold (temp DB produced by capex/tools/fold_demo.js; only if provided) ──
     const shed = process.argv[2];
@@ -197,6 +197,11 @@ async function verify(label, browser, base, dbFile, dbUrl, f, extra) {
       tamper = true; const lg2 = await A.loadLegacy(cfg), l2 = [], tw2 = Tl.twin(Tl.flatten(Tl.compute(sq, f).tiles), Tl.flatten(Tl.compute(lg2, f).tiles), m => l2.push(m));
       l2.filter(l => /DIFF/.test(l)).forEach(l => say('  (negative control) ' + l)); check('twin negative control: one changed legacy row => DIFF => FAIL', tw2.verdict === 'FAIL' && tw2.diff >= 1, JSON.stringify(tw2));
       const tw3 = Tl.twin({ a: 'no data' }, { a: 'no data' }, () => {}); check('twin both-empty => INCONCLUSIVE (never PASS)', tw3.verdict === 'INCONCLUSIVE', tw3.verdict);
+      // §12.6 PER_SOURCE: each system's own write clock is printed, never judged
+      const tw4 = Tl.twin({ total_projects: '3', last_updated: '2026-11-02 18:35:17' }, { total_projects: '3', last_updated: '2026-11-02 18:29:07' }, () => {});
+      check('twin: last_updated-only difference => PASS, per_source=1 (not a DIFF)', tw4.verdict === 'PASS' && tw4.diff === 0 && tw4.per_source === 1, JSON.stringify(tw4));
+      const tw5 = Tl.twin({ last_updated: 'x' }, { last_updated: 'y' }, () => {});
+      check('twin: PER_SOURCE-only population => INCONCLUSIVE (never PASS)', tw5.verdict === 'INCONCLUSIVE', tw5.verdict);
       stubSrv.close(); }
 
     // ── 6b. in-page twin wiring: a snapshot file (rows copied from the SQLite DB — wiring test only) => the PAGE logs §DASH_TWIN lines + verdict ──
