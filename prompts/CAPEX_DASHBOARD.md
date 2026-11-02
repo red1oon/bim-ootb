@@ -16,7 +16,10 @@ document-value workflows (legacy "Business Partner Approval" pending per new BP)
 **▶ NEXT, in order:**
 1. ✅ DECIDED 2026-11-02 (owner "Decide for me", §12.6): Last Updated = PER_SOURCE in the twin; **shed twin `§SHED_TWIN_VERDICT PASS`** (121/121 rows, 16/16 judged tiles).
 2. ⏸ HOLD (§12.6): seed `bim-…` UUs — batch with the next base-hash change made for another reason.
-3. **NEXT-1 remainder** (absolute twin): Hospital push (write types now exist on the pilot); harness history drift → SQLiteIDEMPIERE lane (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`); §11.2 DocAction responsible gap.
+3. **NEXT-1 remainder** (whole-database twin): **owner 2026-11-02: Hospital push DROPPED** ("yes drop it" — it is shipped demo data, not client data; only the whole-DB compare sees it).
+   **Owner 2026-11-02: YES to a persistent SQLite twin** ("On SQLite for the legacy to use with the dashboard, yes"): the parallel-run harness keeps ONE SQLite DB that every run's local side writes to,
+   reset together with the pilot from one baseline; the dashboard compares that DB with legacy. Build owner = the SQLiteIDEMPIERE lane (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`).
+   §11.2 DocAction-path responsible gap → ERP lane.
 4. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js`.
 5. **Client questions** (§7) go to Sysnova through the owner.
 **Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) runs with the 6 READ types of §10 + the 5 CREATE + 1 READ types of §12.2 (restore recipes in §10/§12.1), and holds the pushed SHED (project #1000004, 6 phases, 8 tasks, 12 lines, products/categories/2 UOMs).
