@@ -326,3 +326,12 @@ one project in `tiles.compute` (and the Projects list), shown as "Project: …" 
 total=1 & budget=its PlannedAmt; unknown Value → no data). Stills: `capex/tools/film_shots.js` (software GL, every shown value also printed as `§FILM_SHOT`), cards + narration TSV in `capex/tools/film_cards/`.
 **Finding (not fixed, for the 4D / 5D lanes):** the Viewer's own 4D film of HHS shows a 50-day programme and a labour cost HUD, while the Project Order fold (`sequence_rules.json`) schedules HHS over
 2026-11-01 → 2028-05-24 (~19 months): two programmes for one building. The film crops the Viewer HUD out and never voices its numbers; the two engines should agree before a film shows both.
+
+### 15.2 v4 (owner review 2026-11-03) — chapters, closing card, legibility; logs read
+**Film:** `~/Videos/CAPEX_Dashboard_Addon_narrated_EN_AFTER_2026-11-03_v4.mp4` — 143.08 s, 3,434 frames (= its picture), `§NARR_FIT` 12/12 DETAIL, `§NARR_TONE` 0 WRONG, −16.9 LUFS, longest pause 7.0 s.
+Owner notes answered: (iv) side-by-side close-ups re-shot at device-scale 3, labels 44-46 px sky-blue, headings below the tag strip, bottom 230 px empty (witnessed: band mean = background 0.1046);
+(v) beat 7 reworded — "In the project's phase list: Superstructure, complete" + on screen "Project › Phases › Superstructure › Complete ☑" (C_ProjectPhase.IsComplete), "Spent stays at zero, no costs
+booked yet"; (vi) five chapter cards in the house style (`FILM_SET=capexaddon`, bim-compiler `prompts/film_title_cards.py`), arranged in the flow: 1 A full spatial ERP · in the making (t=0) ·
+2 Project order intelligence (t=23) · 3 No rekeying of site data (t=41, + a 7.6 s shed "from a 2D drawing set" inset) · 4 Full parity · twin and legacy (t=66) · 5 Roadmap · dashboard editor (t=114, "not
+built yet") + the owner's closing card (sponsor SYSNOVA UK/Bangladesh, RED1's vision, Claude Code + GitHub guardrails, WITNESSed/MIT). "About nineteen months" dropped from the voice: the Project
+Order's own schedule is the defect below (§16). Layout lessons → bim-compiler `prompts/FILM_NARRATION.md` ▶ PLAYBOOK C.
