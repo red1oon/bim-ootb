@@ -17,8 +17,10 @@ document-value workflows (legacy "Business Partner Approval" pending per new BP)
 1. ✅ DECIDED 2026-11-02 (owner "Decide for me", §12.6): Last Updated = PER_SOURCE in the twin; **shed twin `§SHED_TWIN_VERDICT PASS`** (121/121 rows, 16/16 judged tiles).
 2. ⏸ HOLD (§12.6): seed `bim-…` UUs — batch with the next base-hash change made for another reason.
 3. **NEXT-1 remainder** (whole-database twin): **owner 2026-11-02: Hospital push DROPPED** ("yes drop it" — it is shipped demo data, not client data; only the whole-DB compare sees it).
-   **Owner 2026-11-02: YES to a persistent SQLite twin** ("On SQLite for the legacy to use with the dashboard, yes"): the parallel-run harness keeps ONE SQLite DB that every run's local side writes to,
-   reset together with the pilot from one baseline; the dashboard compares that DB with legacy. Build owner = the SQLiteIDEMPIERE lane (`bim-compiler prompts/SQLiteIDEMPIERE.md §CAPEX-TWIN`).
+   **Owner 2026-11-02 — the dashboard lives on OUR framework:** "On SQLite for the legacy to use with the dashboard, yes" · "Of course we like to move things to our framework, thus the dashboard is
+   something external to idempiere core thus we propose to as such." The dashboard is NOT an iDempiere core module: it runs on the SQLite kernel; legacy's project data is folded DOWN into that SQLite DB
+   through the stock WebServices (read types only, no plugin, no core change); legacy users open the dashboard. This is the proposal to Sysnova (§14). The harness's own persistent twin
+   (SQLiteIDEMPIERE §CAPEX-TWIN item 1) stays a separate, unapproved lane proposal.
    §11.2 DocAction-path responsible gap → ERP lane.
 4. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js`.
 5. **Client questions** (§7) go to Sysnova through the owner.
@@ -276,3 +278,12 @@ product without a tax category, the shipped seed has 100): before NULL=100 → a
 - **Seed `bim-…` UUs: HOLD.** Rewriting them moves the Team base hash (every team re-founds). Today's cost is only that the push drops those UUs (logged per row) and legacy links by Value. Batch it with
   the next base change made for another reason.
 - Instrument fix found on the way: W-CAPEX-NODATA-DEFAULTS read a local git-ignored `capex/legacy_snapshot.json` and failed on main too; it now names a missing snapshot as well (34/34 PASS without it).
+
+## 14. PROPOSAL to Sysnova (owner direction 2026-11-02) — the CAPEX dashboard as an external module on our framework (spec only; client-facing text goes through the owner)
+- **Shape:** the dashboard is outside iDempiere core. It runs in the browser on our SQLite ERP kernel; a DOWN sync reads C_Project / C_ProjectPhase / C_ProjectTask / C_ProjectLine / C_Phase / C_Currency /
+  AD_Org / AD_WF_Activity from their iDempiere through the stock WebServices (read-only types, a dedicated read role) into that SQLite DB; the page reads only the SQLite DB. No plugin, no schema change,
+  no write on their server for the dashboard itself. The BIM path (§12) is the only writer, and only when they choose to push a building.
+- **What it needs from them (via the owner):** a read-only service account + role, the 8 read types registered (template `capex/tools/ws_capex_readtypes.sql`), the base URL, and a network path for the sync
+  (a browser cannot call their server without a CORS rule; the alternative is a small scheduled sync job beside their server or our relay — owner's choice), plus the §7 definitions.
+- **Build order (ours, spec before code):** (1) DOWN sync of the 8 tables into SQLite, idempotent, keyed by `*_UU`, `§DASH_SYNC` counts per table; (2) the page reads that DB by default; (3) the twin
+  becomes the sync's own check: legacy (WS read) vs the synced SQLite, every tile MATCH except PER_SOURCE; (4) the BIM button + shed push stay as built.
