@@ -28,6 +28,7 @@ function apply5DRates(rows, RATES) {
   // the ERP opens the seed WITH its self-heal patch (idempiere.html; erp/tests/dd_common.js does the same): ad_ddl_default etc. come from it
   let pOk = 0, pBad = 0; fs.readFileSync(path.join(ROOT, 'erp', 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { edb.run(st); pOk++; } catch (e) { pBad++; } });
   console.log('§FOLD_DEMO seed patch applied ok=' + pOk + ' failed=' + pBad);
+  ['ad_docvalue_overlay.js', 'ad_taxcat_overlay.js'].forEach(f => require(path.join(ROOT, 'erp', f)).ensure(edb));   // the ERP's boot overlays (idempiere.html / ws_kernel.js), same order
   const building = bdb.exec('SELECT DISTINCT building FROM elements_meta LIMIT 1')[0].values[0][0];
   const pack = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', packFile), 'utf8'));
   const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));

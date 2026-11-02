@@ -16,7 +16,8 @@ function load(extraSql) {
     require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
     require('./ad_import_tables.js').ensure(db);   // §13.2 B1: the I_Order physical table (boot overlay, not in the hashed patches)
     require('./ad_index_overlay.js').ensure(db);
-    require('./ad_docvalue_overlay.js').ensure(db);   // W-DOCVALUE-WF: document-value workflow rows (boot overlay, not in the hashed patches)   // HS3: legacy's official dictionary indexes on the physical tables (boot overlay, not in the hashed patches)
+    require('./ad_docvalue_overlay.js').ensure(db);
+    require('./ad_taxcat_overlay.js').ensure(db);   // W-TAXCAT-OVERLAY: products without the legacy-mandatory tax category (boot overlay, not in the hashed patches)   // W-DOCVALUE-WF: document-value workflow rows (boot overlay, not in the hashed patches)   // HS3: legacy's official dictionary indexes on the physical tables (boot overlay, not in the hashed patches)
     return build(db);
   });
 }
