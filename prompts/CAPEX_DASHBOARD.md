@@ -5,6 +5,29 @@ It is fed ONLY by real iDempiere project data: Source A = the SQLite ERP DB (`er
 no random fill. An empty population prints "no data" / VACUOUS / INCONCLUSIVE, never 0% or 100% green.** Read the log after every run (`§DASH_*` lines); exit code is not evidence.
 Honour this block until the lane is closed. Cardinal rule: SQLite == legacy; a `§DASH_TWIN ... DIFF` is fixed on the SQLite side, never hidden.
 
+## ▶ RESUME HERE (written 2026-11-02 at the close of session bim-compiler-88; the ONLY current block — read it, then §3, §7, §10)
+**The goal (owner, verbatim):** "We can build an adhoc HTML that resembles that dashboard (they eventually will share their app) and perhaps it be adopted or replace theirs as it is
+expected to be simple vanilla (their notes so far indicated it was prototyped not wired)" · "This is where we be twinning silently in the background to get a free parity testing
+(which we been doing in another lane)." Client context: `~/Projects/SYSNOVA/BIMSYSNOVA_Project.md` (read its LAST section, "2026-11-02 — The shed, end to end, and how it reaches
+the dashboard", links 1-7 + N1-N4) and `~/Projects/SYSNOVA/BIM_OOTB_iDempiere_Integration_Spec.md` (REST push, the dashboard "BIM" link).
+**State:** page live in `capex/` (#2530); twin run for real against the LOCAL pilot (#2532): `§DASH_TWIN_VERDICT FAIL match=4 diff=15 inconclusive=2` (§10). Every DIFF is a data-state
+difference (same `tiles.js` both sides): Source A read the SHIPPED seed `erp/ad_seed.db`, not the twin after a parity run. The shed (DXF2BIM) folds via `capex/tools/fold_demo.js`
+into a temp copy (project SHED, BDT, 6 phases / 8 tasks / 12 lines, PlannedAmt 15,147,437 BDT).
+**▶ NEXT, in order:**
+1. **Real twin (the SQLite side):** run Source A against the POST-RUN SQLite DB of the parallel-run harness (`bim-compiler scripts/bridge/run_all.sh`, log `~/.cache/bim_bridge/`;
+   CARDINAL RULE + RESUME at the top of `bim-compiler prompts/SQLiteIDEMPIERE.md`), not the seed. Every DIFF left is fixed on the SQLite side (never accepted, never a LEGACY-QUIRK
+   without the owner's words). Known causes to check first: the BIM-folded Hospital #990000 exists only in SQLite; legacy Standard#100 ProjectBalanceAmt 318.68 from PJI1 runs (replay
+   on SQLite); AD_WF_Activity 261 vs 10. Coordinate with the SQLiteIDEMPIERE lane session (ListAgents) before touching its harness.
+2. **N3 — the shed as a twin scenario:** push the folded shed Project Order to the local pilot through the merged REST bridge (`viewer/erp_rest_push.js`, #1701) AND into SQLite;
+   the dashboard then shows SHED from both sources; `§DASH_TWIN` MATCH is the done-claim. Needs write WS types for C_Project/Phase/Task/Line/M_Product on the pilot (owner go —
+   the 6 read types were authorised 2026-11-02, writes were not).
+3. **N2 — one cost source:** the shed carries three numbers — DXF2BIM bill 6,227,255 BDT (PWD SoR `material_rates`), proj_fold 15,147,437 BDT (generic `materials` rates), film HUD
+   130,639 (labour). The Project Lines must carry the stated bill. Owner of the rate paths: the DXF2BIM / 5D lanes (DXF2BIM RESUME carried item 4) — spec + hand off, don't fork.
+4. **Client questions** (§7, 8 items) go to Sysnova through the owner; the page keeps "definition pending" until answered.
+**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) may still be running with the 6 extra READ types (§10 has the before/after counts + the DELETE restore recipe).
+**Rules that bind here:** PRIME RULE (no invented number), CARDINAL TWIN RULE, never `git stash`, never claude-in-chrome, witness = numbers, bim-ootb only via a `/tmp/wt-*` worktree,
+no .db committed, every legacy-server config change needs the owner's go.
+
 ## 1. Purpose
 The client (a CAPEX portfolio owner) prototyped an executive dashboard that is not wired to data (screenshot `~/Projects/SYSNOVA/SYSNOVADashboardScreenshot.png`).
 This page reproduces its structure (sidebar; filter bar Org / Category / Status / Last Updated; KPI tiles; Project Health donut; Project Stage pipeline; Physical vs Spent;
