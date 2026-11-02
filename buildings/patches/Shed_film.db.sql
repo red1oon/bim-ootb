@@ -21,3 +21,7 @@ INSERT INTO project_metadata (key,value) VALUES ('site_latitude','22.617'),('sit
 UPDATE elements_meta SET storey='Level 1' WHERE storey='Unknown' AND ifc_class<>'IfcOpeningElement';
 DELETE FROM storey_elevation WHERE guid='0BtqBaYD0tB5DiKBAAD0JK';
 INSERT INTO storey_elevation (guid,name,elevation_attr_m,placement_z_m) VALUES ('0BtqBaYD0tB5DiKBAAD0JK','Level 1',0.0,0.0);
+-- §SHED_FILM_NAME (2026-11-02): the reopen + walk export names the building after the FILE (ShedFresh.db -> SHEDFRESHDB); the drawings state @SET=SHED on all 9 marked sheets
+-- (and the first Convert export carries building_name=SHED). Restore the stated name. Reported to the Modeller lane (export-after-reopen naming).
+UPDATE project_metadata SET value='SHED' WHERE key='building_name';
+UPDATE project_metadata SET value='SHED.ifc' WHERE key='source_file';
