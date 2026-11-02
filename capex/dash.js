@@ -100,7 +100,7 @@
     var tb = '<table data-tile="' + head + '"><thead><tr>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr></thead><tbody>' + P.map(rowFn).join('') + '</tbody></table>';
     v.innerHTML = tb;
   }
-  function passes(p) { var f = filters(); return (!f.org || String(p.AD_Org_ID) === f.org) && (!f.category || p.ProjectCategory === f.category) && ({ all: 1, active: p.IsActive === 'Y' && p.Processed !== 'Y', closed: p.Processed === 'Y', inactive: p.IsActive !== 'Y' }[f.status]); }
+  function passes(p) { var f = filters(); return (!f.org || String(p.AD_Org_ID) === f.org) && (!f.category || p.ProjectCategory === f.category) && (!f.project || p.Value === f.project) && ({ all: 1, active: p.IsActive === 'Y' && p.Processed !== 'Y', closed: p.Processed === 'Y', inactive: p.IsActive !== 'Y' }[f.status]); }
   function orgName(id) { var o = (data().orgs || []).filter(function (r) { return String(r.AD_Org_ID) === String(id); })[0]; return o ? o.Name : 'Org #' + id; }
   function amt(p, k) { return p[k] == null ? '<span class="nodata">—</span>' : (+p[k]).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
   function bimLink(p) { var b = S.bim[p.Value]; return b ? '<a class="bim" href="' + esc(CFG.viewerUrl + '?db=' + encodeURIComponent(b) + '&record=' + p.C_Project_ID) + '">BIM</a>' : ''; }
@@ -117,11 +117,12 @@
   }
   function simple(title, body, k) { var v = $('view'); v.innerHTML = ''; v.appendChild(card(title, body, k)); fillFlat(v); }
 
-  function filters() { return { org: $('fOrg').value, category: $('fCat').value, status: $('fStatus').value, today: TODAY }; }
+  var PROJECT = Q.get('project') || '';   // ?project=<C_Project.Value> — one project, same filter for both sources (prompts/CAPEX_DASHBOARD.md §15.1); shown in the filter bar
+  function filters() { return { org: $('fOrg').value, category: $('fCat').value, status: $('fStatus').value, project: PROJECT, today: TODAY }; }
   function render() {
     var d = data(); if (!d) { $('view').innerHTML = '<div class="card"><span class="nodata">no data source loaded</span></div>'; $('foot').textContent = '§DASH_NODATA no source'; return; }
     var f = filters(); S.res = T.compute(d, f); S.flat = T.flatten(S.res.tiles);
-    log('§DASH_RENDER source=' + S.cur + ' today=' + TODAY + ' filters=' + JSON.stringify({ org: f.org, category: f.category, status: f.status }) + ' pop=' + JSON.stringify(S.res.pop));
+    log('§DASH_RENDER source=' + S.cur + ' today=' + TODAY + ' filters=' + JSON.stringify({ org: f.org, category: f.category, status: f.status, project: f.project }) + ' pop=' + JSON.stringify(S.res.pop));
     Object.keys(S.flat).forEach(function (k) { log('§DASH_TILE source=' + S.cur + ' tile=' + k + ' value=' + S.flat[k]); });
     $('lastUpdated').textContent = S.flat.last_updated; $('lastUpdated').setAttribute('data-value', S.flat.last_updated);
     var b = $('badgeApprovals'); b.textContent = S.res.tiles.approvals.n != null ? S.res.tiles.approvals.n : ''; b.setAttribute('data-value', S.flat.approvals);
@@ -170,6 +171,7 @@
     catch (e) { log('§DASH_SOURCE legacy none (' + CFG.legacySnapshot + ')'); }
     S.cur = S.sources.sqlite ? 'sqlite' : (S.sources.legacy ? 'legacy' : 'none');
     $('src').innerHTML = Object.keys(S.sources).map(function (k) { return '<option value="' + k + '">' + (k === 'sqlite' ? 'A · SQLite ERP DB' : 'B · Legacy iDempiere') + '</option>'; }).join('');
+    if (PROJECT) { var fp = $('fProject'); fp.hidden = false; fp.textContent = 'Project: ' + PROJECT; }
     $('src').value = S.cur; $('srcInfo').textContent = S.sources.legacy ? '' : 'Source B (legacy) not loaded';
     fillSelects(); await probeBim(); runTwin(); render();
     $('src').onchange = function () { S.cur = this.value; fillSelects(); probeBim().then(render); };

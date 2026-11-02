@@ -54,12 +54,9 @@ const uuField = (col, v, where) => { if (v == null) return null; if (UUID.test(v
   const r = await Push.pushProjectOrder(pushCfg, plan);
   console.log('§SHED_PUSH projectId=' + r.projectId + ' created=' + JSON.stringify(r.created));
   // ── scoped twin: the SAME tiles.js over {this project} on each side ──
-  const scope = (d, pid) => ({ source: d.source, unavailable: d.unavailable, meta: d.meta, orgs: d.orgs, phaseRef: d.phaseRef, currencies: d.currencies, wf: [],
-    projects: d.projects.filter(p => String(p.C_Project_ID) === String(pid)), phases: d.phases.filter(p => String(p.C_Project_ID) === String(pid)),
-    tasks: d.tasks.filter(t => d.phases.some(p => String(p.C_Project_ID) === String(pid) && String(p.C_ProjectPhase_ID) === String(t.C_ProjectPhase_ID))),
-    lines: d.lines.filter(l => String(l.C_Project_ID) === String(pid)) });
-  const sa = scope(A.fromSqlite(db), proj.c_project_id), sb = scope(await A.loadLegacy(legacyCfg), r.projectId);
-  const fa = T.flatten(T.compute(sa, { status: 'all', today }).tiles), fb = T.flatten(T.compute(sb, { status: 'all', today }).tiles);
+  // one implementation: tiles.compute's own project filter (§15.1), same on both sides
+  const sa = A.fromSqlite(db), sb = await A.loadLegacy(legacyCfg);
+  const fa = T.flatten(T.compute(sa, { status: 'all', today, project: value }).tiles), fb = T.flatten(T.compute(sb, { status: 'all', today, project: value }).tiles);
   delete fa.approvals; delete fb.approvals;   // system-wide (AD_WF_Activity), not this project's — out of this scope, judged by W-DOCVALUE-WF
   console.log('§DASH_TWIN_SCOPE project=' + value + ' sqlite#' + proj.c_project_id + ' legacy#' + r.projectId + ' today=' + today);
   const tv = T.twin(fa, fb, console.log);

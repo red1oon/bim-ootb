@@ -312,3 +312,15 @@ shed's number, not HHS's. **Rate pack:** the scratch fold used the tool default 
 pilot — same class as the owner's write-types go — and the twin re-run must still PASS; (b) money: the shed's amounts are priced from the rate pack's per-class EXAMPLE rates — shown labelled
 "example rates, editable", or kept off screen until NEXT-3 (one cost source) lands; (c) clips chosen without a cost HUD so one shed never shows two different totals.
 **Open for the owner:** OK this storyboard · amounts on screen (labelled example rates) or off · language set (EN only, or the PLAYBOOK multi-language set) · go for beat 7's pilot step and the recording.
+
+### 15.1 BUILT 2026-11-02 (owner: "English only, go ahead") — the add-on film; logs read
+**Film:** `~/Videos/CAPEX_Dashboard_Addon_narrated_EN_AFTER_2026-11-02_v2.mp4` — 116.0 s, 1920x1080 @ 24, 2,784 frames (= its silent picture), two-voice English (Kokoro af_heart / am_michael),
+subtitles burned, −16.8 LUFS, longest silence < 4 s. (v1, 147 s, had gaps of 9.2 / 8.5 / 7.2 s over the PLAYBOOK bar → beats re-timed to the speech = v2.) `§NARR_FIT` 10/10 DETAIL, `§NARR_TONE` 0 WRONG.
+**Run behind it (local test server only):** HHS folded in USD (`fold_demo.js <HHS> <out> rsmeans2024_us.json USD`) → pushed (`§SHED_PUSH projectId=1000005 created phases=6 tasks=10 lines=19 products=12`) →
+twin `§SHED_TWIN_VERDICT PASS rows 160/160, tiles 16/16` first time (the shed's fixes carried) → re-run +0 → progress beat `capex/tools/phase_progress.js` (Superstructure complete on BOTH sides, pilot-only
+type `BridgeUpdateCProjectPhase`, `capex/tools/ws_capex_updatetypes.sql`, ws tables 279/511/967/2809 → 280/512/970/2810) → Physical 0 % → 62 % (0.6245) on both, twin still PASS.
+**Page change found necessary by the film:** the full page mixed other demo projects (SQLite Hospital in MYR, the pilot's SHED in BDT) so the two sources LOOKED different; `?project=<Value>` filters
+one project in `tiles.compute` (and the Projects list), shown as "Project: …" in the filter bar; `shed_twin.js` now uses that same filter (one implementation). `witness_capex.js` 38/38 (+2: scoped
+total=1 & budget=its PlannedAmt; unknown Value → no data). Stills: `capex/tools/film_shots.js` (software GL, every shown value also printed as `§FILM_SHOT`), cards + narration TSV in `capex/tools/film_cards/`.
+**Finding (not fixed, for the 4D / 5D lanes):** the Viewer's own 4D film of HHS shows a 50-day programme and a labour cost HUD, while the Project Order fold (`sequence_rules.json`) schedules HHS over
+2026-11-01 → 2028-05-24 (~19 months): two programmes for one building. The film crops the Viewer HUD out and never voices its numbers; the two engines should agree before a film shows both.

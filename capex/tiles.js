@@ -45,7 +45,7 @@
     var byProj = {}; (data.phases || []).forEach(function (ph) { (byProj[ph.C_Project_ID] = byProj[ph.C_Project_ID] || []).push(ph); });
 
     var P = data.projects.filter(function (p) {
-      return (!f.org || String(p.AD_Org_ID) === String(f.org)) && (!f.category || p.ProjectCategory === f.category);
+      return (!f.org || String(p.AD_Org_ID) === String(f.org)) && (!f.category || p.ProjectCategory === f.category) && (!f.project || p.Value === f.project);   // f.project = one project by Value (§15.1)
     });
     var isActive = function (p) { return yes(p.IsActive) && !yes(p.Processed); };
     var S = P.filter(function (p) {
