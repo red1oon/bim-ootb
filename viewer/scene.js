@@ -1956,21 +1956,6 @@ async function setupScene(A) {
   // the light_zones.js hash; primeDb ignores a stale row). Format 'LFP1' + u32 header length + JSON header {key,bld,fp,bytes,
   // raw_bytes,created} + the gzip blob, inserted with a prepared statement: derived data, not a hand-written SQL patch (a multi-MB
   // hex literal is what the bundled sql-wasm cannot take, and SQLite || turns blobs into text). 404 = nothing to add (logged).
-  A._applyLightFieldPatch = async function(buf, dir, dbFile) {
-    var u = dir + 'patches/' + dbFile + '.lightfield.bin';
-    try { var r = await fetch(u); if (!r.ok) { console.log('§LIGHT_FIELD_PATCH none ' + dbFile + ' (' + r.status + ')'); return buf; }
-      var ab = await r.arrayBuffer(), dv = new DataView(ab), SQLF = A._SQL || window.SQL || window._SQL_CACHED;
-      if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' bad magic'); return buf; }
-      if (!SQLF) { console.warn('§LIGHT_FIELD_PATCH_FAIL sql.js factory not loaded'); return buf; }
-      var hl = dv.getUint32(4, true), H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))), blob = new Uint8Array(ab, 8 + hl);
-      if (blob.byteLength !== H.bytes) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' blob ' + blob.byteLength + ' != header ' + H.bytes); return buf; }
-      var t0 = performance.now(), pdb = new SQLF.Database(new Uint8Array(buf));
-      pdb.run("DROP TABLE IF EXISTS light_field_cache"); pdb.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
-      var st = pdb.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); st.free();
-      var out = pdb.export().buffer; pdb.close();
-      console.log('§LIGHT_FIELD_PATCH applied ' + dbFile + ' key=' + H.key + ' bytes=' + H.bytes + ' raw=' + H.raw_bytes + ' created=' + H.created + ' ms=' + Math.round(performance.now() - t0) + ' from ' + u); return out;
-    } catch (e) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' — ' + (e && e.message)); return buf; }
-  };
   // §FILM_FIELD_BY_BUILDING (bim-compiler prompts/ALTC_FOUNDATION.md "§FILM_INHERIT"): a film opens its PATH db (HospitalAjaibPath.db,
   // Hospital_silent.db) — that file name has no sidecar, the baked field is keyed on the building's own db (patches/Hospital_meta.db
   // .lightfield.bin). §POC_BAKE measured §LIGHT_FIELD_PATCH none (404) + §LIGHT_FIELD_DB skip reason=no-table on the film. So, when the
@@ -2029,54 +2014,100 @@ async function setupScene(A) {
   // before; THEN an optional, separately-owned <db>.qto.sql (the building's own cost rows, copied from
   // its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent: a missing main
   // patch does not skip the cost patch, a missing cost patch changes nothing.
+  // §A1 (prompts/CODE_HYGIENE_REVIEW_2026-11.md): ONE open, ONE export for the whole patch chain. Order and skip rules are
+  // exactly the old three-step chain: main .sql -> .lightfield.bin (reached if main was 404 or applied; a main FAILURE skips
+  // it) -> .qto.sql (independent). All payloads are fetched first (no DB), then patches are applied inside a single
+  // sql.js Database, each wrapped in a SAVEPOINT so a failing patch is rolled back without losing the earlier ones and without
+  // a re-open. No applicable patch => the original buffer is returned untouched, opens=0.
   A._applyPendingPatch = async function(buf, url) {
-    var out = await A._applyMainPatch(buf, url);
-    return A._applyQtoPatch(out, url);
-  };
-  A._applyQtoPatch = async function(buf, url) {
+    var dir = url.slice(0, url.lastIndexOf('/') + 1);
+    var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
+    var patchUrl = dir + 'patches/' + dbFile + '.sql', lfUrl = dir + 'patches/' + dbFile + '.lightfield.bin', qUrl = dir + 'patches/' + dbFile + '.qto.sql';
+    var P = { main: null, lf: null, qto: null };
+    // ── phase 1: fetch only (no DB, no logs except main's, which precede everything as before)
     try {
-      var dir = url.slice(0, url.lastIndexOf('/') + 1);
-      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
-      var qUrl = dir + 'patches/' + dbFile + '.qto.sql';
-      var r = await fetch(qUrl);
-      if (!r.ok) { console.log('§PATCH_QTO_NONE ' + dbFile + ' (' + r.status + ')'); return buf; }
-      var sql = await r.text();
-      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;
-      if (!SQLFactory) { console.warn('§PATCH_QTO_FAIL ' + url + ' — sql.js factory not loaded yet'); return buf; }
-      var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      var _ch = A._runSqlChunked(pdb, sql);
-      var n = 0; try { n = pdb.exec('SELECT count(*) FROM qto_cache')[0].values[0][0]; } catch (e) { n = -1; }
-      var out = pdb.export().buffer;
-      pdb.close();
-      console.log('§PATCH_QTO ' + dbFile + ' applied (' + _ch.statements + ' statements) qto_cache rows=' + n + ' from ' + qUrl);
-      return out;
-    } catch (e) {
-      console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', e && e.message);
-      return buf;
-    }
-  };
-  A._applyMainPatch = async function(buf, url) {
-    try {
-      var dir = url.slice(0, url.lastIndexOf('/') + 1);
-      var dbFile = url.slice(url.lastIndexOf('/') + 1).split('?')[0];
-      var patchUrl = dir + 'patches/' + dbFile + '.sql';
       console.log('§DB_LOAD_STEP patch-fetch ' + patchUrl);
       var r = await fetch(patchUrl);
       console.log('§DB_LOAD_STEP patch-response status=' + r.status);
-      if (!r.ok) { console.log(`[S203] §PATCH_NONE ${dbFile} (${r.status})`); return A._applyLightFieldPatch(buf, dir, dbFile); }
-      var sql = await r.text();
-      var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
-      if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); return buf; }
-      var pdb = new SQLFactory.Database(new Uint8Array(buf));
-      var _ch = A._runSqlChunked(pdb, sql);   // §PATCH_CHUNK — see comment above _runSqlChunked
-      var out = pdb.export().buffer;
-      pdb.close();
-      console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${_ch.statements} statements, ${_ch.chunks} chunk(s)) from ${patchUrl}`);
-      return A._applyLightFieldPatch(out, dir, dbFile);
-    } catch (e) {
-      console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, e && e.message);
-      return buf;
+      P.main = r.ok ? { text: await r.text() } : { none: r.status };
+    } catch (e) { P.main = { err: e }; }
+    try { var r2 = await fetch(lfUrl); P.lf = r2.ok ? { ab: await r2.arrayBuffer() } : { none: r2.status }; } catch (e) { P.lf = { err: e }; }
+    try { var r3 = await fetch(qUrl); P.qto = r3.ok ? { text: await r3.text() } : { none: r3.status }; } catch (e) { P.qto = { err: e }; }
+    // ── phase 2: lazy single open
+    var SQLFactory = A._SQL || window.SQL || window._SQL_CACHED;   // viewer caches the sql.js factory as A._SQL (streaming.js)
+    var db = null, opens = 0, nApplied = 0, done = [], bytesIn = buf.byteLength;
+    var ensure = function() { if (!db) { db = new SQLFactory.Database(new Uint8Array(buf)); opens++; } return db; };
+    // run fn inside a savepoint; true = applied, {err} = rolled back. If the rollback itself fails (a patch that
+    // COMMITs/RELEASEs its own transaction), recover by re-opening from the untouched input and replaying the winners.
+    var step = function(fn) {
+      try { ensure().run('SAVEPOINT a1_patch'); var res = fn(db); db.run('RELEASE a1_patch'); done.push(fn); nApplied++; return { ok: true, res: res }; }
+      catch (e) {
+        if (!db) return { err: e };   // the open itself failed
+        try { db.run('ROLLBACK TO a1_patch'); db.run('RELEASE a1_patch'); }
+        catch (e2) {
+          try { db.close(); } catch (e3) {}
+          db = null; ensure();
+          for (var i = 0; i < done.length; i++) { db.run('SAVEPOINT a1_patch'); done[i](db); db.run('RELEASE a1_patch'); }
+        }
+        return { err: e };
+      }
+    };
+    var skipLF = false;
+    // main
+    if (P.main.err) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, P.main.err && P.main.err.message); skipLF = true; }
+    else if (P.main.none !== undefined) console.log(`[S203] §PATCH_NONE ${dbFile} (${P.main.none})`);
+    else if (!SQLFactory) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — sql.js factory not loaded yet`); skipLF = true; }
+    else {
+      var sql = P.main.text, mr = step(function(d) { return A._runSqlChunked(d, sql); });   // §PATCH_CHUNK — see comment above _runSqlChunked
+      if (mr.err) { console.warn(`[S203] §PATCH_APPLY_FAIL ${url} — using unpatched db`, mr.err && mr.err.message); skipLF = true; }
+      else console.log(`[S203] §PATCH_APPLY ${dbFile} applied (${sql.length} bytes, ${mr.res.statements} statements, ${mr.res.chunks} chunk(s)) from ${patchUrl}`);
     }
+    // light field (binary sidecar, see §LIGHT_FIELD_PATCH above)
+    if (!skipLF) {
+      try {
+        if (P.lf.err) throw P.lf.err;
+        if (P.lf.none !== undefined) console.log('§LIGHT_FIELD_PATCH none ' + dbFile + ' (' + P.lf.none + ')');
+        else {
+          var ab = P.lf.ab, dv = new DataView(ab), t0 = performance.now(), H = null, blob = null, bad = null;
+          if (ab.byteLength < 8 || String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3)) !== 'LFP1') bad = 'bad magic';
+          else if (!SQLFactory) bad = 'sql.js factory not loaded';
+          else {
+            var hl = dv.getUint32(4, true); H = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 8, hl))); blob = new Uint8Array(ab, 8 + hl);
+            if (blob.byteLength !== H.bytes) bad = 'blob ' + blob.byteLength + ' != header ' + H.bytes;
+          }
+          if (bad) console.warn('§LIGHT_FIELD_PATCH_FAIL ' + (bad === 'sql.js factory not loaded' ? bad : dbFile + ' ' + bad));
+          else {
+            var lr = step(function(d) {
+              d.run("DROP TABLE IF EXISTS light_field_cache"); d.run("CREATE TABLE light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)");
+              var st = d.prepare("INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)"); try { st.run([H.key, H.bld, H.fp, H.bytes, H.raw_bytes, blob, H.created]); } finally { st.free(); }
+            });
+            if (lr.err) throw lr.err;
+            console.log('§LIGHT_FIELD_PATCH applied ' + dbFile + ' key=' + H.key + ' bytes=' + H.bytes + ' raw=' + H.raw_bytes + ' created=' + H.created + ' ms=' + Math.round(performance.now() - t0) + ' from ' + lfUrl);
+          }
+        }
+      } catch (e) { console.warn('§LIGHT_FIELD_PATCH_FAIL ' + dbFile + ' — ' + (e && e.message)); }
+    }
+    // §PATCH_QTO (prompts/FIND_ASK_ANSWERS.md §K.1) — optional, separately-owned <db>.qto.sql (the building's own cost rows,
+    // copied from its live _extracted.db — split-mode _meta.db never carried qto_cache). Independent of the main patch.
+    if (P.qto.err) console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', P.qto.err && P.qto.err.message);
+    else if (P.qto.none !== undefined) console.log('§PATCH_QTO_NONE ' + dbFile + ' (' + P.qto.none + ')');
+    else if (!SQLFactory) console.warn('§PATCH_QTO_FAIL ' + url + ' — sql.js factory not loaded yet');
+    else {
+      var qsql = P.qto.text, qr = step(function(d) {
+        var ch = A._runSqlChunked(d, qsql), n = 0; try { n = d.exec('SELECT count(*) FROM qto_cache')[0].values[0][0]; } catch (e) { n = -1; }
+        return { ch: ch, n: n };
+      });
+      if (qr.err) console.warn('§PATCH_QTO_FAIL ' + url + ' — using db without the cost patch', qr.err && qr.err.message);
+      else console.log('§PATCH_QTO ' + dbFile + ' applied (' + qr.res.ch.statements + ' statements) qto_cache rows=' + qr.res.n + ' from ' + qUrl);
+    }
+    // ── ONE export
+    var out = buf, exports = 0;
+    if (db) {
+      if (nApplied) { out = db.export().buffer; exports = 1; }
+      db.close();
+    }
+    console.log('§PATCH_CHAIN opens=' + opens + ' exports=' + exports + ' patches=' + nApplied + ' bytesIn=' + bytesIn + ' bytesOut=' + out.byteLength);
+    return out;
   };
 
   // §NOGEO_COMPOSE (2026-08-09, prompts/4D_SCHEDULE_PERFECTION.md) — ONE shared function, ONE
