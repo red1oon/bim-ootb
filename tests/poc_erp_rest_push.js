@@ -92,6 +92,23 @@ mock.listen(0, function () {
       });
     })
     .then(function () {
+      // D1 (prompts/CAPEX_DASHBOARD.md §12.1): a legacy WS type is bound to ONE method (AbstractService.authenticate :223-252). Against a mock that enforces it, the push must use a
+      //   query type for query_data and a create type for create_data. Before the fix the bridge sent one type to both → every find-or-create failed ("Service type … not configured").
+      var T = ['C_Project', 'C_ProjectPhase', 'C_ProjectTask', 'C_ProjectLine', 'M_Product', 'M_Product_Category'], methodOf = {}, pairs = {};
+      T.forEach(function (t) { pairs[t] = { query: 'Query_' + t, create: 'Create_' + t }; methodOf['Query_' + t] = 'query_data'; methodOf['Create_' + t] = 'create_data'; });
+      var bound = Mock.createMockServer({ methodOf: methodOf, nsPrefix: true });   // + D3: the real server's namespace-prefixed replies
+      return new Promise(function (resolve) { bound.listen(0, resolve); }).then(function () {
+        var cfg2 = { baseUrl: 'http://127.0.0.1:' + bound.address().port, login: cfg.login, serviceTypes: pairs };
+        return ErpRestPush.pushProjectOrder(cfg2, PLAN).then(function (r) {
+          var n = countCreates(r.created), rej = bound.callLog.length;
+          console.log('§POC_D1_METHOD_BOUND created=' + JSON.stringify(r.created) + ' calls=' + rej + (n === 12 ? ' OK' : ' MISMATCH'));
+          if (n !== 12) failures.push('D1 method-bound push created ' + n + ', expected 12 (= run 1)');
+          if (!(r.projectId > 0)) failures.push('D3 projectId not parsed from the prefixed reply: ' + r.projectId);
+        }, function (e) { failures.push('D1 method-bound push failed: ' + (e && e.message)); console.log('§POC_D1_METHOD_BOUND FAIL ' + (e && e.message)); })
+          .then(function () { return new Promise(function (r) { bound.close(r); }); });
+      });
+    })
+    .then(function () {
       mock.close(function () {
         console.log('§POC_ERP_REST_PUSH_VERDICT ' + (failures.length ? ('FAIL (' + failures.length + '): ' + failures.join(' | ')) : 'PASS'));
         process.exit(failures.length ? 1 : 0);

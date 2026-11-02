@@ -25,6 +25,9 @@ function apply5DRates(rows, RATES) {
   const SQL = await initSqlJs();
   const bdb = new SQL.Database(fs.readFileSync(bldPath));
   const edb = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db')));
+  // the ERP opens the seed WITH its self-heal patch (idempiere.html; erp/tests/dd_common.js does the same): ad_ddl_default etc. come from it
+  let pOk = 0, pBad = 0; fs.readFileSync(path.join(ROOT, 'erp', 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { edb.run(st); pOk++; } catch (e) { pBad++; } });
+  console.log('§FOLD_DEMO seed patch applied ok=' + pOk + ' failed=' + pBad);
   const building = bdb.exec('SELECT DISTINCT building FROM elements_meta LIMIT 1')[0].values[0][0];
   const pack = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', packFile), 'utf8'));
   const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));
@@ -33,7 +36,7 @@ function apply5DRates(rows, RATES) {
   const golden = priced.reduce((a, r) => a + r.cost, 0);
   const cnt = () => ['C_Project', 'C_ProjectPhase', 'C_ProjectTask', 'C_ProjectLine', 'M_Product'].map(t => t + '=' + edb.exec('SELECT COUNT(*) FROM ' + t)[0].values[0][0]).join(' ');
   console.log('§FOLD_DEMO before ' + cnt());
-  const r = ProjFold.foldProjectOrder(edb, building, priced, { seqRules: sr.SEQUENCE_RULES, laborRates: sr.LABOR_RATES, hierarchy: hier.hierarchy || hier, packCurrencyISO: iso, now: new Date().toISOString().slice(0, 19).replace('T', ' ') });
+  const r = ProjFold.foldProjectOrder(edb, building, priced, { seqRules: sr.SEQUENCE_RULES, laborRates: sr.LABOR_RATES, hierarchy: hier.hierarchy || hier, packCurrencyISO: iso });   // now = the fold's default (server-local time, like legacy)
   console.log('§FOLD_DEMO building=' + building + ' pack=' + packFile + ' cur=' + iso + ' priced_rows=' + priced.length + ' golden_5D=' + golden);
   console.log('§FOLD_DEMO created ' + JSON.stringify(r.created) + ' projectId=' + r.projectId + ' orderId=' + (r.orderId || '-'));
   (r.notes || []).forEach(n => console.log('§FOLD_DEMO_NOTE ' + n));

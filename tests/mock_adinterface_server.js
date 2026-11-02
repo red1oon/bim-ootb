@@ -69,6 +69,9 @@ function createMockServer(opts) {
 
   function xmlResponse(res, status, body) {
     res.writeHead(status, { 'Content-Type': 'application/xml' });
+    // opts.nsPrefix — the reply shape a REAL iDempiere sends: every element namespace-prefixed (`<_0:StandardResponse IsError="true" xmlns:_0="…">`, measured on the local pilot 2026-11-02,
+    //   prompts/CAPEX_DASHBOARD.md §12.1 D3). Off by default (the original stand-in replied unprefixed).
+    if (opts.nsPrefix) body = '<?xml version="1.0" encoding="UTF-8"?>\n' + body.replace(/<(\/?)(\w+)/g, '<$1_0:$2').replace(/^<_0:(\w+)/, '<_0:$1 xmlns:_0="http://idempiere.org/ADInterface/1_0"');
     res.end(body);
   }
   function standardResponse(res, isError, recordId, error) {
@@ -104,6 +107,14 @@ function createMockServer(opts) {
       console.log('§MOCK_ADINTERFACE op=' + op + ' table=' + tableName + ' action=' + action + (filter ? ' filter=' + filter : ''));
 
       if (!loginOk) return standardResponse(res, true, null, 'No login credentials');
+      // opts.methodOf = { serviceType: 'query_data'|'create_data' } — legacy binds a WS type to ONE method (AbstractService.authenticate :223-252:
+      //   WS_WebServiceMethod_ID=? AND Value=? → "Service type X not configured"). Off by default (the original stand-in accepted any pairing).
+      var st = tag(body, 'serviceType');
+      if (opts.methodOf && opts.methodOf[st] !== op) {
+        var err = 'Service type ' + st + ' not configured';
+        console.log('§MOCK_ADINTERFACE_REJECT op=' + op + ' serviceType=' + st + ' (' + err + ')');
+        return op === 'query_data' ? windowTabData(res, [], err) : standardResponse(res, true, null, err);
+      }
 
       if (op === 'query_data') {
         var rows = table(tableName).filter(function (r) { return matchFilter(r, filter); });

@@ -41,9 +41,53 @@
       return next[table]++;
     };
   }
+  // ── legacy project-line rules (prompts/CAPEX_DASHBOARD.md §12.1 D2, measured by capex/tools/shed_twin.js against the pilot) ──
+  // MProjectLine.beforeSave :206-230 — PlannedAmt = PlannedQty × PlannedPrice (exact, unrounded); PlannedMarginAmt = (PlannedPrice − LimitPrice) × PlannedQty where LimitPrice = the
+  //   PlannedPrice unless the project's price list prices the product (getLimitPrice :170-183) ⇒ 0 for a project with no price list. MProjectLine.updateHeader :280-325 — rolls the active lines
+  //   up into C_Project (PlannedAmt, PlannedQty, PlannedMarginAmt, CommittedAmt, CommittedQty, InvoicedAmt, InvoicedQty), C_ProjectPhase and C_ProjectTask (PlannedAmt, CommittedAmt).
+  //   PO.saveNew leaves omitted columns to the physical DEFAULT (ad_ddl_default, extracted). Decimal arithmetic is exact (BigInt), as Postgres numeric is.
+  function _dec(v) { var t = String(v == null || v === '' ? '0' : v).trim(), neg = t[0] === '-'; if (neg) t = t.slice(1); var p = t.split('.'), f = p[1] || ''; return { i: BigInt((neg ? '-' : '') + (p[0] || '0') + f), sc: f.length }; }
+  function _decAlign(a, b) { var sc = Math.max(a.sc, b.sc); return [a.i * BigInt(10) ** BigInt(sc - a.sc), b.i * BigInt(10) ** BigInt(sc - b.sc), sc]; }
+  function _decAdd(a, b) { var x = _decAlign(a, b); return { i: x[0] + x[1], sc: x[2] }; }
+  function _decMul(a, b) { return { i: a.i * b.i, sc: a.sc + b.sc }; }
+  function _decStr(d) { var neg = d.i < 0, s = (neg ? -d.i : d.i).toString(); if (d.sc > 0) { while (s.length <= d.sc) s = '0' + s; s = s.slice(0, s.length - d.sc) + '.' + s.slice(s.length - d.sc); } return (neg ? '-' : '') + s; }
+  function _ddlFill(db, table, keyCol, id, notes) {      // PO.saveNew: an omitted (NULL) column takes the physical DEFAULT
+    var dd; try { dd = db.exec("SELECT columnname, defaultvalue FROM ad_ddl_default WHERE tablename=?", [table.toLowerCase()]); } catch (e) { dd = []; }
+    if (!dd.length) { if (notes && notes.indexOf('NO_DDL_DEFAULTS') < 0) notes.push('NO_DDL_DEFAULTS'); return; }
+    var have = {}; (db.exec('PRAGMA table_info(' + table + ')')[0] || { values: [] }).values.forEach(function (r) { have[String(r[1]).toLowerCase()] = 1; });
+    dd[0].values.forEach(function (r) { var c = String(r[0]).toLowerCase(); if (!have[c]) return; db.run('UPDATE ' + table + ' SET ' + c + '=? WHERE ' + keyCol + '=? AND ' + c + ' IS NULL', [r[1], id]); });
+  }
+  function _legacyProjectRules(db, projId, notes) {
+    var q = function (sql, p) { var r = db.exec(sql, p || []); return r.length ? r[0].values : []; };
+    var pl = q('SELECT M_PriceList_Version_ID FROM C_Project WHERE C_Project_ID=?', [projId])[0];
+    if (pl && pl[0] != null) notes.push('MARGIN_PRICELIST_UNPORTED project=' + projId + ' (getLimitPrice via IProductPricing not ported; margin left as computed without it)');
+    q('SELECT c_projectline_id FROM C_ProjectLine WHERE c_project_id=?', [projId]).forEach(function (r) { _ddlFill(db, 'C_ProjectLine', 'c_projectline_id', r[0], notes); });
+    q('SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=?', [projId]).forEach(function (r) { _ddlFill(db, 'C_ProjectPhase', 'C_ProjectPhase_ID', r[0], notes);
+      q('SELECT C_ProjectTask_ID FROM C_ProjectTask WHERE C_ProjectPhase_ID=?', [r[0]]).forEach(function (t) { _ddlFill(db, 'C_ProjectTask', 'C_ProjectTask_ID', t[0], notes); }); });
+    _ddlFill(db, 'C_Project', 'C_Project_ID', projId, notes);
+    var Z = function () { return { i: BigInt(0), sc: 0 }; }, P = { pa: Z(), pq: Z(), pm: Z(), ca: Z(), cq: Z(), ia: Z(), iq: Z() }, PH = {}, TK = {};
+    q('SELECT c_projectline_id, plannedqty, plannedprice, committedamt, committedqty, invoicedamt, invoicedqty, c_projectphase_id, c_projecttask_id, isactive FROM C_ProjectLine WHERE c_project_id=?', [projId]).forEach(function (r) {
+      var amt = _decMul(_dec(r[1]), _dec(r[2])), margin = { i: BigInt(0), sc: 0 };
+      db.run('UPDATE C_ProjectLine SET plannedamt=?, plannedmarginamt=? WHERE c_projectline_id=?', [_decStr(amt), _decStr(margin), r[0]]);
+      if (r[9] !== 'Y') return;
+      P.pa = _decAdd(P.pa, amt); P.pq = _decAdd(P.pq, _dec(r[1])); P.pm = _decAdd(P.pm, margin); P.ca = _decAdd(P.ca, _dec(r[3])); P.cq = _decAdd(P.cq, _dec(r[4])); P.ia = _decAdd(P.ia, _dec(r[5])); P.iq = _decAdd(P.iq, _dec(r[6]));
+      if (r[7] != null) { var h = PH[r[7]] = PH[r[7]] || { a: Z(), c: Z() }; h.a = _decAdd(h.a, amt); h.c = _decAdd(h.c, _dec(r[3])); }
+      if (r[8] != null) { var k = TK[r[8]] = TK[r[8]] || { a: Z(), c: Z() }; k.a = _decAdd(k.a, amt); k.c = _decAdd(k.c, _dec(r[3])); }
+    });
+    db.run('UPDATE C_Project SET PlannedAmt=?, PlannedQty=?, PlannedMarginAmt=?, CommittedAmt=?, CommittedQty=?, InvoicedAmt=?, InvoicedQty=? WHERE C_Project_ID=?',
+      [_decStr(P.pa), _decStr(P.pq), _decStr(P.pm), _decStr(P.ca), _decStr(P.cq), _decStr(P.ia), _decStr(P.iq), projId]);
+    q('SELECT C_ProjectPhase_ID FROM C_ProjectPhase WHERE C_Project_ID=?', [projId]).forEach(function (r) { var h = PH[r[0]] || { a: Z(), c: Z() };   // a phase whose lines carry no phase: legacy updates only phases that HAVE lines
+      if (PH[r[0]]) db.run('UPDATE C_ProjectPhase SET PlannedAmt=?, CommittedAmt=? WHERE C_ProjectPhase_ID=?', [_decStr(h.a), _decStr(h.c), r[0]]);
+      q('SELECT C_ProjectTask_ID FROM C_ProjectTask WHERE C_ProjectPhase_ID=?', [r[0]]).forEach(function (t) { var k = TK[t[0]]; if (k) db.run('UPDATE C_ProjectTask SET PlannedAmt=?, CommittedAmt=? WHERE C_ProjectTask_ID=?', [_decStr(k.a), _decStr(k.c), t[0]]); });
+    });
+    return { plannedAmt: _decStr(P.pa), plannedQty: _decStr(P.pq) };
+  }
+  // legacy stamps Created/Updated in the SERVER'S local time (timestamp without time zone); the old default here was UTC (§12.1 D7)
+  function _localNow() { try { var d = new Date(), z = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds()); } catch (e) { return '2026-01-01 00:00:00'; } }
   function _uu() {
     try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
-    return 'bim-' + Math.abs((Date.now ? Date.now() : 0) ^ (Math.random() * 1e9 | 0)).toString(16);
+    // a v4 UUID either way: legacy's *_UU columns are Postgres `uuid` — the old 'bim-<hex>' fallback was refused on push ("invalid input syntax for type uuid", prompts/CAPEX_DASHBOARD.md §12.1 D4)
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
   }
   // §F1 W-FIN-CURRENCY — resolve a currency by ISO_Code first, then CurSymbol. The rate packs carry the
   // display symbol ('RM' in cidb2024_my), NOT the ISO ('MYR'); the seed's C_Currency.CurSymbol bridges
@@ -135,7 +179,7 @@
     var CL = opts.clientId != null ? opts.clientId : 11;
     var OG = opts.orgId != null ? opts.orgId : 11;
     var U = opts.user != null ? opts.user : 100;
-    var now = opts.now || (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })();
+    var now = opts.now || _localNow();
     var id = _allocator(db);
     var created = { projects: 0, phases: 0, tasks: 0, lines: 0, products: 0, categories: 0, order: 0 };
     var notes = [];
@@ -182,7 +226,7 @@
     var phaseNames = Object.keys(phases).sort(function (a, b) { return phases[a].seqno - phases[b].seqno; });
 
     // forward-pass schedule: duration(days) per phase = Σ ceil(count / productivity) over its classes
-    var startDate = opts.now ? opts.now.slice(0, 10) : '2026-01-01';
+    var startDate = String(opts.now || now).slice(0, 10);   // the fold's own clock (was a literal 2026-01-01 when no now was passed)
     var cursor = new Date(startDate + 'T00:00:00');
     function fmt(d) { return d.toISOString().slice(0, 10) + ' 00:00:00'; }
 
@@ -267,10 +311,14 @@
         var prodId = _scalar(db, "SELECT M_Product_ID FROM M_Product WHERE Value=?", [key]);
         if (prodId == null) {
           prodId = id('M_Product', 'M_Product_ID');
+          // C_TaxCategory_ID is MANDATORY on legacy M_Product (NOT NULL); the window defaults it from #C_TaxCategory_ID = the IsDefault='Y' tax category, most specific first
+          //   (Login.loadDefault :701-734 + GridField system preference). Without it legacy refuses the product on push (prompts/CAPEX_DASHBOARD.md §12.1 D5).
+          var taxCat = null; try { taxCat = _scalar(db, "SELECT C_TaxCategory_ID FROM C_TaxCategory WHERE IsDefault='Y' AND IsActive='Y' AND AD_Client_ID IN (0,?) ORDER BY AD_Client_ID DESC, AD_Org_ID DESC", [CL]); } catch (e) { taxCat = null; }
+          if (taxCat == null) notes.push('NO_DEFAULT_TAXCATEGORY ' + key + ' — legacy will refuse this product (C_TaxCategory_ID mandatory)');
           db.run("INSERT INTO M_Product (M_Product_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
-            "Value,Name,Description,M_Product_Category_ID,C_UOM_ID,ProductType,IsSummary,IsStocked,IsSold,IsPurchased,M_Product_UU) " +
-            "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,?,?,'I','N','Y','Y','Y',?)",
-            [prodId, CL, OG, now, U, now, U, key, pName + ' (BIM)', 'BIM type · billed per ' + unit, catId, uomId, _uu()]);
+            "Value,Name,Description,M_Product_Category_ID,C_UOM_ID,ProductType,IsSummary,IsStocked,IsSold,IsPurchased,M_Product_UU,C_TaxCategory_ID) " +
+            "VALUES (?,?,?,'Y',?,?,?,?,?,?,?,?,?,'I','N','Y','Y','Y',?,?)",
+            [prodId, CL, OG, now, U, now, U, key, pName + ' (BIM)', 'BIM type · billed per ' + unit, catId, uomId, _uu(), taxCat]);
           created.products++;
         }
 
@@ -299,8 +347,10 @@
       projAmt = projAmt.add(phAmt);
     });
 
-    // roll up project
-    db.run("UPDATE C_Project SET PlannedAmt=?,PlannedQty=? WHERE C_Project_ID=?", [projAmt.toString(), projQty, projId]);
+    // roll up project — legacy's own rule set (line amount, margin, defaults, updateHeader) replaces the fold's rounded per-phase sums (§12.1 D2)
+    var LR = _legacyProjectRules(db, projId, notes);
+    if (projAmt.toString() !== LR.plannedAmt) notes.push('LEGACY_LINE_RULE plannedAmt fold=' + projAmt.toString() + ' legacy=' + LR.plannedAmt + ' (PlannedQty x PlannedPrice, unrounded); plannedQty elements=' + projQty + ' legacy=' + LR.plannedQty);
+    projAmt = { toString: function () { return LR.plannedAmt; } }; projQty = LR.plannedQty;
 
     // PO gate (§C step 5): only with a supplier — else plan-only (non-invent)
     var orderId = null;
@@ -336,7 +386,7 @@
     var CL = opts.clientId != null ? opts.clientId : 11;
     var OG = opts.orgId != null ? opts.orgId : 11;
     var U = opts.user != null ? opts.user : 100;
-    var now = opts.now || (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })();
+    var now = opts.now || _localNow();
     var id = _allocator(db);
     var created = { projects: 0, phases: 0, updated: 0 };
     function _ts(d) { if (!d) return null; d = String(d); return d.length <= 10 ? d + ' 00:00:00' : d.slice(0, 19); }
