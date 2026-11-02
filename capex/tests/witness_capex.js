@@ -200,6 +200,10 @@ async function verify(label, browser, base, dbFile, dbUrl, f, extra) {
       // §12.6 PER_SOURCE: each system's own write clock is printed, never judged
       const tw4 = Tl.twin({ total_projects: '3', last_updated: '2026-11-02 18:35:17' }, { total_projects: '3', last_updated: '2026-11-02 18:29:07' }, () => {});
       check('twin: last_updated-only difference => PASS, per_source=1 (not a DIFF)', tw4.verdict === 'PASS' && tw4.diff === 0 && tw4.per_source === 1, JSON.stringify(tw4));
+      // §15.1 ?project= — one project by Value, the same filter on both sources: total == 1 and the budget == that project's own PlannedAmt (independent SQL), unknown Value => no data
+      { const one = sq.projects.find(x => x.PlannedAmt != null && Number(x.PlannedAmt) > 0), fp = Tl.flatten(Tl.compute(sq, { status: 'all', today: TODAY, project: one.Value }).tiles), fz = Tl.flatten(Tl.compute(sq, { status: 'all', today: TODAY, project: '__none__' }).tiles);
+        check('?project= scopes to one project (total=1, budget=its PlannedAmt)', fp.total_projects === '1' && fp.approved_budget === one.C_Currency_ID + ':' + Number(one.PlannedAmt).toFixed(2), JSON.stringify({ v: one.Value, t: fp.total_projects, b: fp.approved_budget }));
+        check('?project= unknown Value => no data (never zeros)', fz.total_projects === 'no data' || fz.total_projects === '0' ? fz.approved_budget === 'no data' : false, JSON.stringify({ t: fz.total_projects, b: fz.approved_budget })); }
       const tw5 = Tl.twin({ last_updated: 'x' }, { last_updated: 'y' }, () => {});
       check('twin: PER_SOURCE-only population => INCONCLUSIVE (never PASS)', tw5.verdict === 'INCONCLUSIVE', tw5.verdict);
       stubSrv.close(); }

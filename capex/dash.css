@@ -29,3 +29,4 @@ a.bim{background:var(--acc);color:#fff;padding:2px 9px;border-radius:6px;text-de
 #foot{margin-top:18px;color:var(--mut);font-size:11px;overflow-wrap:anywhere}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.panels{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){body{flex-direction:column}#side{width:auto}.kpis,.panels{grid-template-columns:1fr}}
+.fproject{font-weight:600;padding:4px 10px;border-radius:6px;background:#e0ecff;color:#1e3a8a;align-self:center}
