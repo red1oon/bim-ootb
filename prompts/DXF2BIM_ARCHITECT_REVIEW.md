@@ -47,6 +47,13 @@ Old RESUME blocks (sessions 1-15) live in `prompts/archive/DXF2BIM_ARCHITECT_REV
 - **(m) a baseline run in the SAME worktree you are editing is contaminated: take baselines in a separate detached checkout of main;**
 - **(n) a witness that cuts a function out of a source file by regex breaks on a rename (W-IFC-GUID): grep `src.match(` in modeller/tests when renaming a function.**
 
+## ▶ HAND-OFF 2026-11-03 — lane CLOSED (owner); one carried task moved to the CAPEX lane
+**Owner (2026-11-03):** *"that lane has closed. Recall and update its prompt and launch an agent here to handle that"* — "here" = the CAPEX lane (`prompts/CAPEX_DASHBOARD.md`).
+**The task:** the CAPEX twin's SHED (legacy pilot project #1000004) was folded on 2026-11-02 from `/tmp/wt-shed-e2e/buildings/ShedModeller.db`, which no longer exists. It must be re-made
+from this lane's own recipe (RESUME above: `modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --pack pwd2024_bd --complete`) or the kept model
+`~/Projects/SYSNOVA/DXF2BIM/ShedDrawing/model/ShedDrawing_512_extracted.db` (`build_model.sh`), then given the 4D owner's programme and re-folded (CAPEX §5.1 R1), re-pushed, re-twinned.
+Result is recorded in `prompts/CAPEX_DASHBOARD.md`, NOT here. Nothing else of this lane is reopened: the open proposals (P-W1, P-K, P-V, P-E, P-L) and the carried list stay as written.
+
 ## Where things are in this file
 §0-§4 the original review charter · `## RESULT 2026-10-23` (sessions 1-2: HHS round trip, seams, §D56-§D59) · `## RESULT 2026-10-26` (sessions 7-8: spec/code/tutorial review, §D79
 witness dbs) · `## RESULT 2026-10-30 (session 13 …)` T13.5 + T14 · `## T14b SPEC` + RESULT · `## RR — REGULATORY REPORT` (owner's words, research, revised sections) · `## T14c SPEC` +
