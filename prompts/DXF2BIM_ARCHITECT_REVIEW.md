@@ -838,3 +838,39 @@ overlap is stated here, not merged in this task. Log `§REL_AGGREGATES rows=… 
 **Witness:** the refreshed W-VIEWERDB itself. V1a / V1b / V2 / V3 / V4 printed with their numbers.
 - **Falsifier (V1F):** the page DB with one `IfcMember` row relabelled `IfcBeam` → V1a FAILS naming both classes. Before the fix, main's run is logged as FAIL V1 / V2 (the stale oracle).
 **U8 RESULT (2026-11-02, session 18): ✅ BUILT.** W-VIEWERDB refreshed and in the runner: **7/0** (main: `§W-VIEWERDB FAIL 2`, V1 stale oracle, V2 openings counted — the teammate's log). V1a page classes = a fresh CLI `ops.json` (11 classes: IfcMember 168, IfcPlate 117, IfcColumn 96, IfcWall 40, IfcBeam 35, IfcFooting 32, IfcFan 13, IfcDoor 4, IfcCovering 3, IfcRoof 2, IfcSlab 1); V1F one IfcMember→IfcBeam → `differ IfcBeam 36/35, IfcMember 167/168`; V1b 19 tables = the Node extractor on the page's own IFC (elements_meta 513); V2 inserts 511 + openings 2 = cuts 2 = rel_fills_host 2 → 513; V3 "DONE — SHED 511 elements"; V4 native op-log refused; 0 page errors. The RESUME's "512 bodies" fact now says gate bodies vs 511 inserts. **Runner: `§ALLWITNESS PASS=108 ENV=9 FAIL=1 of 118`** (one witness more; the only FAIL the known LT7). The teammate's other finding (reopen + Walk ALL → export loses STR/ACMV, fixtures as proxies) is Modeller core: **M-3 in BIMCompiler `prompts/MODELLER_MASTER.md`**, worked by its own Modeller agent.
+
+### RC SPEC — release check: the Modeller's authoring witnesses outside the runner (2026-11-02, session 18; RESUME NEXT item 2)
+**Issue (counted on main a483a005):** `modeller/tests` holds 314 witnesses. The runner (`run_all_witnesses.js`) runs 118 of them (the `witness_dxf_*` family + 9 named). The other **196** never run with the lane's changes. This session changed the Modeller's open path and export (P-X, P-X2, U8, and the Modeller lane's M-1 / M-3), so "the Modeller is on par" is unclaimed until the authoring witnesses run.
+**The set (the denominator), by §STRATEGY ASSEMBLE + OUT (edits on authored parts, then hand-off), 49 witnesses:**
+- **edit / undo:** e2e_move, e2e_rotate, e2e_scale, e2e_scalerot, e2e_numrot, e2e_delete, e2e_gesture_undo, gesture_undo, modeller_redo_order, undo_resurrect, e2e_red_revert
+- **clipboard:** clipboard, clipboard_keys
+- **grid:** e2e_gridmove_real, e2e_gridstretch, e2e_gridstretch_multi, grid_span_gate, gridmove_smart_scope, grid_insert
+- **openings / slide / cut:** e2e_opening_slide, e2e_slide_real_wall, opening_slide, e2e_cut, e2e_cut_move, e2e_insert, sdg_cascade, stretch_ride
+- **walk:** modeller_disc_walk, e2e_walk, e2e_walk_all_disciplines, e2e_walk_ifcopen, walk_lod400_only, farm_rules
+- **open / IFC in:** arc_source_parity, ifc_open_fills (Duplex IFC arg), ifc_reopen_ride, arc_editable
+- **save / export / IFC out:** e2e_save, e2e_export_db, e2e_anchor_save_roundtrip, ifc_export_seed, ifc_guid, ifc_spatial
+- **S8 / S9 (`S8_LOCAL=1 S9_LOCAL=1`):** s8_edit_delta, s9_modeller_project, s9_ifc_key
+- **history:** modeller_git_history, history_threads
+- **sketch (the lifebelt):** e2e_sketch
+**Rule:** each runs alone, serially, on main (`NODE_PATH=~/bim-compiler/node_modules S8_LOCAL=1 S9_LOCAL=1`, 900 s cap), log saved and read, and is classed PASS / FAIL / ENV (missing input) / INCONCLUSIVE.
+- Every FAIL is re-run alone once (a load flake is named as one, never silently passed).
+- A FAIL that holds is run again on the session's base **7aa68244** (before P-X). The same FAIL there = pre-existing (named, routed to its owning lane); PASS there and FAIL now = caused by this session's changes → fixed here, or by the lane that made it.
+**Witness:** the table itself (49 rows, each with its tail line). The verdict line prints `RC PASS=… FAIL=… ENV=… INCONCLUSIVE=… of 49`. A FAIL caused by this session blocks the "on par" claim.
+**RC RESULT (2026-11-02, session 18): `RC PASS=44 FAIL=4 ENV=1 INCONCLUSIVE=0 of 49` on main a483a005 — no FAIL caused by this session remains.**
+- Logs: scratchpad `rc/main`, `rc/rerun`, `rc/base`. Each FAIL was re-run alone (held), then run on the base 7aa68244.
+- **Caused by this session, fixed here:** W-IFC-GUID crashed on main because §M3B-CARRY (#2531) renamed `guid` → `_guid0` and wrapped it (the generator itself is unchanged), and the witness's source cut no longer matched. The cut now takes the generator + wrapper. A new G5 checks that the wrapper never hands out a reserved (carried) GlobalId. **W-IFC-GUID 5/0** (base: PASS 4/0).
+- **Pre-existing (the same FAIL on the base 7aa68244), routed to the Modeller lane (BIMCompiler `prompts/MODELLER_MASTER.md` §RESUME 2026-11-02, RC findings):**
+  - W-E2E-SCALEROT S2 "no ghost" during the drag;
+  - W-CLIPBOARD-KEYS K1 "no empty ground point in view";
+  - W-E2E-INSERT I5 framebuffer unchanged (a pixel gate);
+  - W-E2E-EXPORT-DB E1, which expects 3 export rows: the menu has 8 (`native, vdb, ifc, load, regrep, analytical, bcf, dxf`), so the witness is stale.
+- **ENV:** W-MODELLER-GIT-HISTORY needs `playwright`, which this machine's bim-compiler `node_modules` lacks.
+- **PASS (44):**
+  - edit / undo 10 of 11 (move 7, rotate 7, scale 7, numrot 7, delete 8, gesture-undo 6 + 9, redo-order 6, resurrect 5, red-revert 4);
+  - clipboard 6/0; grid 6 of 6 (gridmove-real 8, gridstretch 7, multi 21, span-gate 20, smart-scope 6, insert 6);
+  - openings / slide / cut 7 of 8 (opening-slide 8, slide-real 9, dagevu-slide 11, cut 6, cut-move 12, SDG cascade 7, stretch-ride 9);
+  - walk 6 of 6 (disc 8, walk 8, walk-all 13, walk-ifcopen 21, LOD400-only 7, farm 5);
+  - open / IFC in 4 of 4 (arc-source-parity 8, fills I1-I3 + I4 INCONCLUSIVE without BASE, reopen-ride 4, arc-editable 9);
+  - save / export 5 of 6 (save 11, anchor round trip 6, export-seed 7, guid 5, spatial);
+  - S8 10/0, S9 modeller 10/0, S9 IFC key 3/0; history-threads 10/0; sketch 7/0.
+- So the Modeller is **on par with its pre-session state** on the authoring set. Its 4 standing reds belong to the Modeller lane.
