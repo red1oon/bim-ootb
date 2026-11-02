@@ -14,17 +14,12 @@ the harness keeps NO SQLite state (no "post-run SQLite DB" exists — §11 premi
 document-value workflows (legacy "Business Partner Approval" pending per new BP) — `model_layer.js docValue` + W/X/I suspend + boot overlay `ad_docvalue_overlay.js` (base hash unchanged), witness
 `erp/tests/witness_docvalue_wf.js` W-DOCVALUE-WF RED 6/7 → GREEN 8/8, break FAILs; 21-witness regression before/after in §11.3.
 **▶ NEXT, in order:**
-1. ✅ DECIDED 2026-11-02 (owner "Decide for me", §12.6): Last Updated = PER_SOURCE in the twin; **shed twin `§SHED_TWIN_VERDICT PASS`** (121/121 rows, 16/16 judged tiles).
-2. ⏸ HOLD (§12.6): seed `bim-…` UUs — batch with the next base-hash change made for another reason.
-3. **NEXT-1 remainder** (whole-database twin): **owner 2026-11-02: Hospital push DROPPED** ("yes drop it" — it is shipped demo data, not client data; only the whole-DB compare sees it).
-   **Owner 2026-11-02 — the dashboard lives on OUR framework (PENDING Sysnova's own design; offered as a transition, §14):** "On SQLite for the legacy to use with the dashboard, yes" · "Of course we like to move things to our framework, thus the dashboard is
-   something external to idempiere core thus we propose to as such." The dashboard is NOT an iDempiere core module: it runs on the SQLite kernel; legacy's project data is folded DOWN into that SQLite DB
-   through the stock WebServices (read types only, no plugin, no core change); legacy users open the dashboard. This is the proposal to Sysnova (§14). The harness's own persistent twin
-   (SQLiteIDEMPIERE §CAPEX-TWIN item 1) stays a separate, unapproved lane proposal.
-   §11.2 DocAction-path responsible gap → ERP lane.
-4. **NEXT-3** handed off (§13): one cost owner = `modeller/dxf2bill.js`.
-5. **Client questions** (§7) go to Sysnova through the owner.
-**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) runs with the 6 READ types of §10 + the 5 CREATE + 1 READ types of §12.2 (restore recipes in §10/§12.1), and holds the pushed SHED (project #1000004, 6 phases, 8 tasks, 12 lines, products/categories/2 UOMs).
+1. **§16 — ONE schedule (owner 2026-11-03):** the Project Order fold takes phases/dates from the 4D owner, computes none. Spec + witnesses written; build next session (cross-lane: 4D owners per
+   `bim-compiler prompts/4D_MODEL_INTEGRITY.md §I`). Then re-voice the film's model beat with the real programme length.
+2. Film v4 DONE (§15.2) — `~/Videos/CAPEX_Dashboard_Addon_narrated_EN_AFTER_2026-11-03_v4.mp4`; layout recipe = bim-compiler `prompts/FILM_NARRATION.md` ▶ PLAYBOOK C.
+3. ⏸ HOLD: seed `bim-…` UUs (base hash). ⏸ PENDING Sysnova's own dashboard design (§14) before the DOWN sync.
+4. Cost source (§13, DXF2BIM lane) · DocAction responsible gap (§11.2, ERP lane) · client questions (§7, via the owner).
+**Machine state left:** the local pilot (`~/idempiere-pilot`, :8088) runs with the 6 READ types of §10 + the 5 CREATE + 1 READ types of §12.2 (restore recipes in §10/§12.1), and holds the pushed SHED (#1000004) and HHS_Office_Federated (#1000005, Superstructure IsComplete=Y) + the update type `BridgeUpdateCProjectPhase` (§15.1). Film scratch inputs: worktree `/tmp/wt-capex-twin/capex/__film/` (git-ignored).
 **Rules that bind here:** PRIME RULE (no invented number), CARDINAL TWIN RULE, never `git stash`, never claude-in-chrome, witness = numbers, bim-ootb only via a `/tmp/wt-*` worktree,
 no .db committed, every legacy-server config change needs the owner's go, never move the Team base hash (`patches/ad_seed.db.sql`) without the owner — use a boot overlay.
 
@@ -326,3 +321,30 @@ one project in `tiles.compute` (and the Projects list), shown as "Project: …" 
 total=1 & budget=its PlannedAmt; unknown Value → no data). Stills: `capex/tools/film_shots.js` (software GL, every shown value also printed as `§FILM_SHOT`), cards + narration TSV in `capex/tools/film_cards/`.
 **Finding (not fixed, for the 4D / 5D lanes):** the Viewer's own 4D film of HHS shows a 50-day programme and a labour cost HUD, while the Project Order fold (`sequence_rules.json`) schedules HHS over
 2026-11-01 → 2028-05-24 (~19 months): two programmes for one building. The film crops the Viewer HUD out and never voices its numbers; the two engines should agree before a film shows both.
+
+### 15.2 v4 (owner review 2026-11-03) — chapters, closing card, legibility; logs read
+**Film:** `~/Videos/CAPEX_Dashboard_Addon_narrated_EN_AFTER_2026-11-03_v4.mp4` — 143.08 s, 3,434 frames (= its picture), `§NARR_FIT` 12/12 DETAIL, `§NARR_TONE` 0 WRONG, −16.9 LUFS, longest pause 7.0 s.
+Owner notes answered: (iv) side-by-side close-ups re-shot at device-scale 3, labels 44-46 px sky-blue, headings below the tag strip, bottom 230 px empty (witnessed: band mean = background 0.1046);
+(v) beat 7 reworded — "In the project's phase list: Superstructure, complete" + on screen "Project › Phases › Superstructure › Complete ☑" (C_ProjectPhase.IsComplete), "Spent stays at zero, no costs
+booked yet"; (vi) five chapter cards in the house style (`FILM_SET=capexaddon`, bim-compiler `prompts/film_title_cards.py`), arranged in the flow: 1 A full spatial ERP · in the making (t=0) ·
+2 Project order intelligence (t=23) · 3 No rekeying of site data (t=41, + a 7.6 s shed "from a 2D drawing set" inset) · 4 Full parity · twin and legacy (t=66) · 5 Roadmap · dashboard editor (t=114, "not
+built yet") + the owner's closing card (sponsor SYSNOVA UK/Bangladesh, RED1's vision, Claude Code + GitHub guardrails, WITNESSed/MIT). "About nineteen months" dropped from the voice: the Project
+Order's own schedule is the defect below (§16). Layout lessons → bim-compiler `prompts/FILM_NARRATION.md` ▶ PLAYBOOK C.
+
+## 16. SPEC — ONE schedule: the Project Order takes its programme from the 4D owner (owner 2026-11-03: "there should be no redundancy as the BIM integration concept is that all data is GIGO from the BIM side") — NOT built
+**Measured (HHS):** the Viewer 4D programme (cached run `~/.cache/bim4d/HHS_Office_Federated/…/run.json`, built 2026-10-16) = 16 tasks (phase × storey, overlapping), last task ends day 54, `§CPM_RUN
+makespanDays=35.4`; the Project Order fold = 6 serial phases 2026-11-01 → 2028-05-24 (~19 months), Superstructure alone 247 days vs ~24 days in 4D.
+**Cause (code, `viewer/proj_fold.js:228-247` + its class→phase mapping):** the fold re-derives three relations the 4D lane OWNS (`bim-compiler prompts/4D_MODEL_INTEGRITY.md §I`):
+phase of an element (owner `schedule_author.js matchRule()` / `rates.js`; the fold reads `rates/sequence_rules.json`, "a MIRROR, never executed"), duration (owner `schedule_author.js:78 _installSecs`;
+the fold hand-rolls Σ ceil(count / productivity) with ONE crew, ignoring crew_size / max_crews, 20/day when no rate), task grid + dates (owner `instantiateTemplate` → `computeSchedule` → `cpm_schedule.run`;
+the fold loops phases end to end, no storey split, no overlap).
+**Rule:** the fold computes NO schedule. Input = the 4D owner's task list for the building (`tasks[] = {phase, storey, sDays, eDays, guids}` — the same objects the Time Machine plays / `run.json` persists):
+- C_ProjectPhase per 4D phase: StartDate = start + min(sDays), EndDate = start + max(eDays) over that phase's tasks; SeqNo = the template's phase order.
+- C_ProjectTask per 4D task (phase × storey) — or, if the owner keeps trade tasks, the trade comes from the same owner (matchRule's resource); decide in the build, cite it.
+- C_ProjectLine: each line's phase = the 4D phase its elements are in (from the task guids), never `sequence_rules.json`.
+- No 4D programme available → phases get NO dates (dashboard shows "No schedule data", honest) + note `NO_4D_SCHEDULE`; never a fallback estimate.
+- Deletion budget: the fold's duration loop + its `seqRules`/`laborRates` phase logic go (lines −, not +).
+**Witnesses (name before code):** W-FOLD-ONE-SCHEDULE — for HHS from the persisted run: every phase's Start/End == min/max of the 4D tasks (days → dates), phase set == template phases present,
+each line's phase == the phase of its elements' 4D task; a building with no 4D run → 0 dated phases + `NO_4D_SCHEDULE`; RED on today's fold (Superstructure 247 d ≠ 24 d). Regression: shed + HHS twin
+(`shed_twin.js`) still PASS (dates are pushed inputs, so legacy follows); `poc_fin_evm`, `witness_s9_pure`, `poc_fin_period` before/after (they read phase dates).
+**Then:** re-voice the film's model beat with the real programme length (from the run's `§` line), not "nineteen months".
