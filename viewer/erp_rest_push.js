@@ -195,8 +195,11 @@
                       })
                       .then(function (prod) {
                         if (prod.created) created.products++;
+                        // natural key = (phase, product) — plus the line's TASK when it has one: a fold given the 4D programme writes one line per product × 4D task
+                        // (prompts/CAPEX_DASHBOARD.md §5.1 R1), so (phase, product) alone would find the first storey's line and silently drop the others
+                        var lnTaskId = ln.taskName != null && taskIds[ln.taskName] ? taskIds[ln.taskName] : null;
                         return findOrCreate(baseUrl, login, svc.C_ProjectLine || 'BIMOOTB_ProjectLine', 'C_ProjectLine',
-                          "C_ProjectPhase_ID=" + phase.id + " AND M_Product_ID=" + prod.id,
+                          "C_ProjectPhase_ID=" + phase.id + " AND M_Product_ID=" + prod.id + (lnTaskId ? " AND C_ProjectTask_ID=" + lnTaskId : ""),
                           [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'C_Project_ID', val: proj.id },
                            { column: 'M_Product_ID', val: prod.id }, { column: 'PlannedQty', val: ln.qty },
                            { column: 'PlannedPrice', val: ln.price }]

@@ -19,10 +19,10 @@ learn); OUR side is a TRUE twin that executes the same rows and must show the sa
 HHS 160/160 rows, 16/16 judged tiles, Last Updated = PER_SOURCE) · kernel fixes found by the twin: document-value workflows, legacy project-line rules, REST bridge (service type per method,
 namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot overlay), local time · `?project=` filter · films EN/ZH/MS v5 (`~/Videos/CAPEX_Dashboard_Addon_narrated_{EN,ZH,MS}_AFTER_2026-11-03_v5.mp4`).
 **▶ NEXT, in order (spec before code; each its own §5 entry):**
-1. **R0 — measure what legacy can already do** (answers "is the Sysnova dashboard doable in legacy?"): define ONE CAPEX measure (Approved Budget) + one goal with a colour schema + one chart as PA/AD_Chart
-   rows on the LOCAL pilot and read the result back (WS read + ZK render log). The rows ship as ONE migration script in iDempiere's format (LEGACY CONVENTION below) — PA is data, no process,
-   so no plugin. ⛔ owner go: it is a config change on the pilot (data rows, restorable).
-2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2)**; open from it: browser callers pass no programme yet (R1-f), re-push + re-twin HHS/shed on the pilot (owner go), re-voice the films.
+1. **R0 — ✅ DONE (§5.4): YES, legacy computes a CAPEX tile as PA data with no Java** — Approved Budget (USD) 4,996,920.867 == our tile to the cent. Three legacy behaviours found that bind R2
+   (§5.4). Not in R0: AD_Chart, the ZK render, the colour (no target stated, §6 Q1).
+2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; open: browser callers pass no programme yet (R1-f); the SHED re-push
+   (its building DB is gone, §5.4); re-voice the films.
 3. **R2 — the PA engine in the SQLite kernel**, generic (MMeasure / MGoal / MColorSchema semantics ported from the legacy source, cited file:line), witnessed against the same rows on the pilot.
 4. **R3 — tiles as data:** each §3 tile → a `PA_MeasureCalc` / `PA_Measure` (+ `PA_ColorSchema` for health) row; `tiles.js` keeps only what PA cannot express (named); deletion budget stated.
 5. **R4 — the editor:** the generic AD windows (Performance Measurement / Goal / Color Schema / Dashboard Content) in our ERP UI — no dashboard-specific code; an edit re-renders and re-twins.
@@ -153,6 +153,44 @@ rightly leaves them out). They now land in `Unsequenced` with a note instead of 
 (b) pilot: HHS #1000005 and SHED #1000004 were pushed with the old tree (resource tasks, serial dates) — re-push + `shed_twin.js` needs the owner's go (pilot write); (c) `erp/tests/bake_gw_hospital_seed.js`
 still folds without a programme — re-baking moves the Team base hash (⏸ HOLD); (d) films: re-voice the model beat with the programme length read from the recording run's `§FOLD_DEMO_PHASE` lines (nothing voiced before that run).
 
+### 5.3 R0 BUILD SPEC (owner "go" 2026-11-03, written before code) — can legacy compute a CAPEX tile as PA data, with no Java?
+**Legacy mechanism, read in source (`~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/`):** a Calculated measure's value =
+`MMeasureCalc.getSqlPI` (`:153-189`: SelectClause + " " + WhereClause, date filter only for data type T) → `addRestrictions` → `role.addAccessSQL(sql, null, true, false)` (`:612`, the role's client/org
+access) → `DB.getSQLValueBD` → `MGoal.setMeasureActual` (`MMeasure.java:500-541`), performance = actual ÷ target, 0 when target is 0 (`MGoal.java:428-436`). It is computed ONLY on a model save of the
+goal (`MGoal.afterSave` new record / target / scope changed → `updateGoal(true)`, `:597-605`) or on a ZK dashboard render (`WPAWidget.java:54` → `updateGoal(false)`, which runs when DateLastRun is null
+or older than the refresh interval, `:390-399`). A plain SQL insert computes nothing.
+**Rows (the tile = "Approved Budget", USD line; `tiles.js` population S with status=all → `SUM(PlannedAmt)` of C_Project where C_Currency_ID=100):**
+- migration script (LEGACY CONVENTION, data only) `capex/legacy/migration/iD13/postgresql/202611031900_CAPEX-R0.sql`: PA_MeasureCalc "CAPEX Approved Budget (USD)" (AD_Table C_Project,
+  `SELECT SUM(PlannedAmt) FROM C_Project` / `WHERE C_Currency_ID=100`, OrgColumn AD_Org_ID) + PA_Measure (type C, data type S) — client 11, IDs from the 1000000 band + fixed UUs; then the stock
+  post-migration `update_sequences` so later saves cannot collide.
+- the GOAL is user data (a goal belongs to a user/role, as in the window): created through stock `create_data` (a model save → legacy computes it). Target: **none stated by the client** → 0, so
+  GoalPerformance = 0 and the colour is NOT judged (INCONCLUSIVE, §6 Q1). Colour schema = the stock "Red (50) - Yellow (100) - Green" (mandatory column).
+- POC-stage pilot types (ad-hoc, `capex/tools/ws_capex_patypes.sql`): `BridgeCreatePAGoal` (createData, PA_Goal) + `QueryPAGoal` (read). AD_Chart and the ZK render are NOT in R0 (named).
+**Witness W-PA-LEGACY-PROBE (`capex/tools/pa_probe.js`, issue: "a CAPEX tile cannot be defined as iDempiere PA data without Java"):** legacy `PA_Goal.MeasureActual` (WS read) == `tiles.js`
+approved_budget USD over a fresh legacy snapshot (same role 102), to the cent; DateLastRun set by the save. Negative: a goal on a measure whose SelectClause is broken must NOT yield a number
+(an error, or MeasureActual unset) — that negative measure is inserted pilot-only by the probe and deleted after. Break switch `BREAK=1` compares against the tile + 1 cent → FAIL.
+
+### 5.4 RESULT 2026-11-03 (owner "go") — R0 legacy PA probe + HHS re-push; logs read (scratch, not committed)
+**R0 — W-PA-LEGACY-PROBE `capex/tools/pa_probe.js` PASS judged=4 fail=0, `BREAK=1` → FAIL.** Pilot before→after: `ad_migrationscript` 1300→1301 (`202611031900_CAPEX-R0.sql`, status CO, the first script we
+ship in iDempiere's own format) · pa_measurecalc 6→7 · pa_measure 4→5 · `update_sequences()` run (PA_Measure/PA_MeasureCalc next = 1000001) · ws types 280→283 (`ws_capex_patypes.sql`, POC ad-hoc:
+BridgeCreatePAGoal, BridgeUpdatePAGoal [MeasureTarget only], QueryPAGoal) · one goal left: "CAPEX Approved Budget (USD)", MeasureActual 4,996,920.867, target 0, performance 0.
+Legacy's own measure SQL (`SELECT SUM(PlannedAmt) FROM C_Project WHERE C_Currency_ID=100` + role 102 access) == `tiles.js` approved_budget USD over a fresh legacy read: 4,996,920.87.
+**Three legacy behaviours, each from the log AND the source — they bind R2 (the SQLite PA engine must twin them, CARDINAL RULE):**
+- (a) **A goal is not computed when it is created.** `MGoal.afterSave` → `updateGoal(true)` → `MMeasure.updateCalculatedGoals` → `MGoal.getMeasureGoals` (`MGoal.java:150-163`) reads with NO trx, so the
+  goal still inside its create transaction is invisible: 0 goals updated. MeasureActual stays 0; DateLastRun is set by the constructor default (my probe's first "computed = DateLastRun set" check was
+  a bad proxy and is gone). It computes on the next model save that CHANGES target/scope, or on a ZK render once the refresh interval (default 30 min, `MGoal.java:390-399`) has passed.
+- (b) **Performance uses the previous committed target.** The same no-trx re-read means a save of target 1→0 scores actual ÷ 1 (GoalPerformance 4,996,920.867 with target 0). The probe resets it to
+  legacy's rule for target 0 (= 0, `MGoal.java:428-436`) and logs it.
+- (c) **A broken measure shows 0, never an error.** `DB.getSQLValueBD` (`DB.java:1393-1404`) catches the SQL error, logs, returns null; `MMeasure.java:530-535` turns null into 0. No error reaches the caller.
+  ⚠ This collides with this lane's PRIME RULE ("an empty / failed population prints no data, never 0") — the twin of a legacy PA tile shows 0 where our page shows "no data". Not decided here (R2 design).
+**HHS re-push (pilot write, owner go):** the deletion of the old tree was refused by this session's safety gate, so the old project was kept and made reversible instead: #1000005 Value →
+`HHS_Office_Federated_preR1`, IsActive=N (restore = rename back). Push bug found and fixed first: `viewer/erp_rest_push.js` looked a line up by (phase, product) — with lines per product × 4D task it would
+have found the first storey's line and dropped the rest; the key now includes the line's task (`poc_erp_rest_push` §-lines identical, PASS — it never pushes two lines of one product in a phase, so the
+twin below is the real check). `shed_twin.js <HHS fold> HHS_Office_Federated 2026-11-03`: new project #1000006, `created phases=6 tasks=16 lines=45`, **rows 302/302 MATCH, tiles 16 MATCH / 0 DIFF**,
+Last Updated PER_SOURCE. Re-run at today=2026-12-10: `created +0` (idempotent), health red=1, schedule At Risk=1, avg delay 16.00 d — the same on both sides.
+**SHED not re-pushed:** its building DB (`/tmp/wt-shed-e2e/buildings/ShedModeller.db`) no longer exists anywhere on disk; rebuilding it is the DXF2BIM lane's job (`prompts/DXF2BIM_ARCHITECT_REVIEW.md`).
+On the pilot SHED #1000004 still carries the OLD fold's serial dates. Re-fold (no 4D run exists for the shed → phases without dates, `NO_4D_SCHEDULE`) and re-push when the DB is back.
+
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
 Q2 Project Stage: how do Concept / Initiation / Planning / Execution / Closing map onto `C_Project.C_Phase_ID` (stock `C_Phase` rows are sales-cycle steps in the seed)? Or is it a custom column/`C_ProjectType`?
@@ -166,5 +204,6 @@ Q9 Legacy read types for C_ProjectPhase / C_ProjectTask / C_ProjectLine / C_Phas
 
 
 ## 7. Machine state (left 2026-11-03)
-Local pilot `~/idempiere-pilot` (:8088, docker `postgres` DB `idempiere_pilot`) runs with the CAPEX read/write/update WS types (restore recipes in the three `ws_capex_*.sql` headers) and holds pushed
-projects SHED (#1000004) and HHS_Office_Federated (#1000005, Superstructure IsComplete=Y). Nothing on any client server. Film inputs kept in `~/.cache/capex_film/` (scratch DBs + legacy snapshots, not committed).
+Local pilot `~/idempiere-pilot` (:8088, docker `postgres` DB `idempiere_pilot`) runs with the CAPEX read/write/update WS types + the R0 PA types (restore recipes in the four `ws_capex_*.sql` headers),
+migration `202611031900_CAPEX-R0.sql` applied (PA_MeasureCalc/PA_Measure 1000000) + goal "CAPEX Approved Budget (USD)", and holds pushed projects SHED (#1000004, OLD fold: serial dates),
+HHS_Office_Federated (#1000006, R1 fold: 4D dates, 45 lines) and the kept pre-R1 HHS (#1000005, Value `HHS_Office_Federated_preR1`, inactive; its Superstructure IsComplete=Y from the film beat). Nothing on any client server. Film inputs kept in `~/.cache/capex_film/` (scratch DBs + legacy snapshots, not committed).
