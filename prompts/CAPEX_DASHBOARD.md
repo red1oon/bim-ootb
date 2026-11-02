@@ -348,3 +348,11 @@ the fold loops phases end to end, no storey split, no overlap).
 each line's phase == the phase of its elements' 4D task; a building with no 4D run → 0 dated phases + `NO_4D_SCHEDULE`; RED on today's fold (Superstructure 247 d ≠ 24 d). Regression: shed + HHS twin
 (`shed_twin.js`) still PASS (dates are pushed inputs, so legacy follows); `poc_fin_evm`, `witness_s9_pure`, `poc_fin_period` before/after (they read phase dates).
 **Then:** re-voice the film's model beat with the real programme length (from the run's `§` line), not "nineteen months".
+
+### 15.3 v5 (owner review 2026-11-03) — cards as their own silent segments; 2D shown as stills; logs read
+`~/Videos/CAPEX_Dashboard_Addon_narrated_EN_AFTER_2026-11-03_v5.mp4` — 156.875 s, 3,765 frames (= its picture), `§NARR_FIT` 12/12 DETAIL, 0 WRONG, −17.0 LUFS, longest pause 6.6 s (a card hold).
+Owner notes: *"remove the chapter header during the film as it obscured the top part of screen"* → no chapter / series tags at all; *"during chapter cards, have no background as it is noisy. Give them a
+sec more and hold off the narrative until it has played"* → five cards as standalone 3.6 s segments on plain #0b0f17 (ImageMagick, house typography), no voice over them, cues re-set from measured
+segment starts; *"the clip does not show any 2D drawing … just still snaps"* → 3 labelled stills: the floor plan rendered from the DXF (`DXF2BIM_Chapter_BricsCAD_Shed_to_Viewer…v4.mp4` @ 7 s),
+the 2D sheets assembled in 3D (`Shed_2D_to_Film…v3.mp4` @ 14.5 s), the converted model (BricsCAD film @ 90 s). Office clip trimmed 17.2 → 13.2 s (its tail + card 4 made a 10.5 s pause).
+Preference recorded in bim-compiler `prompts/FILM_NARRATION.md` ▶ PLAYBOOK C; TSV `prompts/film_narration_capex_addon_en_v5.tsv`.
