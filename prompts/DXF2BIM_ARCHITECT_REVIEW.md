@@ -3,34 +3,49 @@ SCOPE: the DXF2BIM lane file (2D DXF sets -> 3D model in the Modeller -> the fac
 authorises builds item by item (spec first, witness first). **Read the log after every run; exit code is not evidence.** Honour this block until the lane is closed.
 Old RESUME blocks (sessions 1-15) live in `prompts/archive/DXF2BIM_ARCHITECT_REVIEW_resume_history_s1-s13.md` — history only, never resume from there.
 
-## ▶ RESUME HERE (session 18 entry; written 2026-11-02 at the close of session 17 — the ONLY current block)
-**Merged in session 17 (bim-ootb main, each witnessed, logs read; specs + RESULTs at the END of this file: `## RESULT 2026-11-01 (session 17 …)`, `## SESSION 17 WORK LIST`, `### U7 SPEC`):**
-#2511 **review of session 16 + §D106** (mark with no body never "modelled" → `detail_only`; IfcMember steel only by its stated material; RC density from LoadSummary; W-ANALYTICAL-IFC P2 no vacuous PASS) ·
-#2512 **U1 Properties panel** (`props_panel.js`, content = the IFC writer's element via `Dxf2Ifc.written`; sits left of the tool rail, overlays only when no room) · **U2 one beam-section owner** (`LoadSummary.beamSection`: a 45° beam no longer
-weighs 9x) · **U3** Measure impact shows the option that moves something · **U4** a dimension whose DIMSTYLE is missing is counted, not formatted · **U5** W-LOAD-SUMMARY converts the shed itself (was a 22 Oct bodies.json) ·
-**U6** the page's Export ▸ Analytical model witnessed headless · #2514 **film do-once v2** (F1 "two notes, not one" + F2 chapter 2 shows the Properties panel; `_v2` Part 1 / Part 2 in ~/Videos replace the v1 files, v1 kept until the owner confirms) ·
-#2516 **U7 Properties panel for OPENED buildings** (`open_building_db.js` = the one reader of the open DB; a raw .ifc read ONCE by the shared extractor) · #2517 stray witness screenshots removed + ignored.
-BIMCompiler: #294 #295 `docs/DXF2BIMGuide.md` (5a Properties incl. opened buildings, 9 Analytical model, Load Summary numbers) — **published** via `safe_gh_deploy.sh` (guard 453 vs 451 live, canaries 200, content fetched back).
-**Facts not to re-derive (shed, `--complete --pack pwd2024_bd`, 2026-11-02):** 512 gate bodies (`§CLI … gate STRUCTURE bodies=512`, `bodies.json`) = **511 inserts** after the import's §D88 B door-gap join (CLI `ops.json` = page Convert = 511; + 2 GEOM_CUT → the Viewer DB's 513 rows, U8); bill 6,227,255 BDT; own weight 5,275.1 kN (page) / 5,275.2 (module), 480 weighed, 32 not, heaviest footing 120.0 kN (64.6 kPa);
-analytical 337 members / 319 joints / 32 supports / 36 dangling, `.std` 19,330 BYTES (19,328 is the JS string length), sha 62e7c47a83d9; the mix note = DETAILS `#2E2` (prices), the strength note = `#2E1` (stiffness) — TWO notes.
-Duplex IFC via the shared extractor: 289 elements, 219 Pset_*Common rows, 0.57 s.
+## ▶ RESUME HERE (session 19 entry; written 2026-11-03 at the close of session 18 — the ONLY current block)
+**Merged in session 18 (bim-ootb main; each witnessed, logs read; specs + RESULTs at the END of this file):**
+- **#2520 P-X one converter:** a raw .ifc opened in the Modeller = the shared extractor in a worker (`modeller/ifc_open_db.js` + `ifc_open_worker.js`) → the residents' DB shape (IfcSpace + IfcOpeningElement element rows dropped, all disciplines kept). The import-worker path is retired in the Modeller; the Viewer's import is untouched. Measured first on 9 IFCs: both converters tessellate identically (0 m). **W-IFC-OPEN-ONE** in the runner.
+- **#2522 P-X2:** the extractor writes element-level IfcRelAggregates → `rel_aggregates` (= the residents' patched pairs, 0 missing on 7).
+- **#2524:** Modeller items handed to BIMCompiler `prompts/MODELLER_MASTER.md` §RESUME 2026-11-02 (scope separation, owner). The Modeller lane then closed M-1, Q, M-2, M-3, M-3(b) and M-4 there (bim-ootb #2526 #2527 #2531 #2535).
+- **#2525 U8:** W-VIEWERDB refreshed (fresh CLI + Node-extractor oracles, openings per cut) + in the runner, 7/0.
+- **#2536 release check:** 49 Modeller authoring witnesses outside the runner, 44 PASS / 4 pre-existing FAIL (→ MODELLER_MASTER RC-1..RC-4) / 1 ENV. W-IFC-GUID fixed (the source cut after §M3B-CARRY's wrapper) + G5.
+- **Retracted this session (do not re-raise):** "CLI 512 vs UI 511 drift" (512 = gate bodies before the §D88 B join; both make 511 inserts); "SOURCE.md sha drift" (bim-ootb is the source of `dxf2bim/` by owner decision 2026-10-23; the table is history).
+**Facts not to re-derive (shed, `--complete --pack pwd2024_bd`):**
+- 512 gate bodies = **511 inserts** + 2 GEOM_CUT → the Viewer DB has 513 rows; a walked shed export keeps every class (M-3).
+- bill 6,227,255 BDT; own weight 5,275.1 kN (page) / 5,275.2 (module); analytical 337 members / 319 joints / 32 supports / 36 dangling, `.std` 19,330 bytes sha 62e7c47a83d9.
+- Duplex IFC via the shared extractor: 289 elements → 218 kept (= the resident), 219 Pset_*Common rows.
 **▶ NEXT, in order:**
-1. **P-X ✅ DONE (session 18, `### P-X SPEC` + RESULT at the END of this file):** a raw .ifc opened in the Modeller is converted by the shared extractor (`ifc_open_db.js` in `ifc_open_worker.js`) into the residents' DB shape; W-IFC-OPEN-ONE 22/0 (in the runner);
-   runner PASS=107 ENV=9 FAIL=1 of 117 (LT7). Follow-ups it found: **P-X2 ✅ DONE (session 18, RESULT at the END of this file)**; W-E2E-WALK-IFCOPEN G4 (Walk all on an IFC-opened building walks 0, pre-existing on main); (the SOURCE.md sha item was RETRACTED: bim-ootb is the source by owner decision, the table is history).
-   **Moved out of this lane 2026-11-02 (owner: "switching to Modeller mode … separation of scope"):** the Walk-all-on-IFC-open defect (W-E2E-WALK-IFCOPEN G4) and the composed-parents question are now **M-1 / M-2 in BIMCompiler `prompts/MODELLER_MASTER.md` §RESUME 2026-11-02**, worked by the Modeller lane. Decided there on red1's recorded direction (roof = prefab ARC/STR, walkers fill in MEP; stair/curtain generators out of scope): composed parents are NOT drawn (their parts are the LOD400 geometry; drawing the parent would double it or box it). red1's question "why would DISC Walker do roof and stairs?" is posed to that lane. **This lane's next item = 2 (release check).**
-2. Release check: run the Modeller authoring witnesses beyond the DXF lane (modeller/tests: clipboard, gridmove, redo, disc-walk, S8/S9 with `S8_LOCAL=1 S9_LOCAL=1` …) before calling the Modeller "on par".
-3. Proposals still open (owner picks): P-W1 independent joint oracle, P-K one `Size_` contract, P-V one table→values helper, P-E `reg_report_ui` build() via engine(), P-L the extractor's log passed through, vendor property sets in the panel,
-   the Regulatory Report form overlapping the Properties panel (newer panel on top: cosmetic).
-4. Carried: LT7 (`library_building_types.json` never committed: EXTRACT, §L23), the 5D / Time Machine cost paths not reading `material_rates` (+ the Project Order fold: one cost source = `dxf2bill.js`, spec `prompts/CAPEX_DASHBOARD.md §13`, 2026-11-02), BD locale "2024" labels, code packs, RR authority headers, `--ifc-in` on real STAAD.
-**RUNNER (end of session 17):** `§ALLWITNESS PASS=106 ENV=9 FAIL=1 of 116` (only LT7); W-PROPS-PANEL 8/0 after U7 (not in a full runner since — run it first).
-**Recipes:** shed `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
-[--report] [--impact] [--analytical] [--choice k=v]` · any IFC `node modeller/dxf2bim_cli.js --ifc-in <file.ifc> --analytical --out <dir>` · runner `NODE_PATH=~/bim-compiler/node_modules node
-modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules node modeller/tests/run_all_witnesses.js` (~20 min) · docs publish: BIMCompiler `scripts/safe_gh_deploy.sh`
-from a tree that ALSO merges `origin/docs/halaltrace` (PR #230) AND holds the git-ignored `docs/glassbowl_data.db` (copy from `~/bim-compiler/docs/`, same sha as live) — else the guard aborts; never push that tree.
-**Landmines (kept + new):** (a) a new `element_defaults.json` key moves W-DXF-EDEFAULTS E1 + W-CLI C36 and the BIMCompiler yellow page; (b) a numeric literal in an engine comparison trips W-GUARD G3; (d) `// comment` mid-statement swallows
-the line; (e) PRs touching this file conflict: merge main in; (f) after a squash-merge start off fresh origin/main; (g) pin a witness's "before" baseline to a MAIN commit, never a branch commit (it vanishes in the squash);
-(h) mask dates in witnesses; **(i) W-S8-EDIT-DELTA / W-S9-* default to the LIVE site — set `S8_LOCAL=1 S9_LOCAL=1` to judge your branch; (j) witness runs write tracked-looking artifacts (s8_shots, s9_shots now ignored):
-never `git add -A modeller` after a witness run — add files by name; (k) `offsetParent` is null for fixed elements: never use it as a visibility test (P5 saw 0 toolbar controls); (l) BIMCompiler has no auto-merge: merge PRs directly.**
+1. **Owner picks** among the open proposals:
+   - P-W1 independent joint oracle; P-K one `Size_` contract; P-V one table→values helper; P-E `reg_report_ui` build() via engine(); P-L the extractor's log passed through;
+   - vendor property sets in the Properties panel; the Regulatory Report form overlapping the Properties panel (cosmetic).
+   - Nothing is to be built here without the pick.
+2. **Carried:**
+   - LT7 (`library_building_types.json` never committed: EXTRACT, §L23; the runner's only FAIL);
+   - the 5D / Time Machine cost paths not reading `material_rates`; BD locale "2024" labels; code packs; RR authority headers; `--ifc-in` on a real STAAD file;
+   - a georeferenced (>10 km) raw IFC is unmeasured (the extractor has no rebase).
+3. **Not this lane** (read MODELLER_MASTER for them): RC-1..RC-4, carried-row colour / psets / storey, the Hospital export heap.
+**RUNNER (end of session 18):** `§ALLWITNESS PASS=109 ENV=9 FAIL=1 of 119` (only LT7; the `-witness_dxf_libtypes:ENV` set-change line is that same item). `witness_dxf_arrange` A13 has flaked once under heavy load (passes alone).
+**Recipes:**
+- shed: `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete [--report] [--impact] [--analytical] [--choice k=v]`
+- any IFC: `node modeller/dxf2bim_cli.js --ifc-in <file.ifc> --analytical --out <dir>`
+- runner (~20 min): `NODE_PATH=~/bim-compiler/node_modules node modeller/tools/witness_dbs.js && SHED_RAW_DIR=~/Videos/dxf2bim_film_work/why/raw NODE_PATH=~/bim-compiler/node_modules S8_LOCAL=1 S9_LOCAL=1 node modeller/tests/run_all_witnesses.js`
+- release check: the 49-name set + serial runner in `### RC SPEC` (each FAIL re-run alone, then on the session base).
+- docs publish: BIMCompiler `scripts/safe_gh_deploy.sh` from a tree that ALSO merges `origin/docs/halaltrace` (PR #230) AND holds the git-ignored `docs/glassbowl_data.db` (copy from `~/bim-compiler/docs/`) — else the guard aborts; never push that tree.
+**Landmines:**
+- (a) a new `element_defaults.json` key moves W-DXF-EDEFAULTS E1 + W-CLI C36 and the BIMCompiler yellow page;
+- (b) a numeric literal in an engine comparison trips W-GUARD G3;
+- (d) `// comment` mid-statement swallows the line;
+- (e) PRs touching this file conflict: merge main in;
+- (f) after a squash-merge start off fresh origin/main;
+- (g) pin a witness's "before" baseline to a MAIN commit;
+- (h) mask dates in witnesses;
+- (i) W-S8-EDIT-DELTA / W-S9-* default to the LIVE site: `S8_LOCAL=1 S9_LOCAL=1`;
+- (j) never `git add -A` after a witness run — add files by name;
+- (k) `offsetParent` is null for fixed elements;
+- (l) BIMCompiler has no auto-merge: merge PRs directly;
+- **(m) a baseline run in the SAME worktree you are editing is contaminated: take baselines in a separate detached checkout of main;**
+- **(n) a witness that cuts a function out of a source file by regex breaks on a rename (W-IFC-GUID): grep `src.match(` in modeller/tests when renaming a function.**
 
 ## Where things are in this file
 §0-§4 the original review charter · `## RESULT 2026-10-23` (sessions 1-2: HHS round trip, seams, §D56-§D59) · `## RESULT 2026-10-26` (sessions 7-8: spec/code/tutorial review, §D79
