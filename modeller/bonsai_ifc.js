@@ -10,7 +10,7 @@
   const TAG = '§IFC';
   const _base = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src : location.href;
   const GUID_AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$';
-  function guid(n) {                          // deterministic 22-char IfcGloballyUniqueId (no Math.random), UNIQUE per n
+  function _guid0(n) {                        // deterministic 22-char IfcGloballyUniqueId (no Math.random), UNIQUE per n
     // Bug fixed 2026-10-18: the old LCG took x % 64 (its LOW bits have period 64), so at most 64 distinct ids existed: a 457-product export
     // had 64 duplicated GlobalIds and the extractor collapsed products. Now: the last 6 chars ARE n (base-64, unique for n < 2^36), the first
     // char is 0-3 (IFC compressed-GUID rule), the middle 15 chars are mixed from n (high bits, murmur finalizer).
@@ -20,6 +20,11 @@
     let m = n; const t = []; for (let i = 0; i < 6; i++) { t.unshift(GUID_AB[m % 64]); m = Math.floor(m / 64); }
     return s + t.join('');
   }
+
+  // §M3B-CARRY: GlobalIds of the opened building's carried non-ARC rows (kept verbatim on their products). The writer's counter ids (n = 0,1,2 ...) were also what the earlier export used, so a counter id can equal a carried
+  // one; guid(n) then moves to n + 2^30*j (still deterministic, still unique), never onto a carried id. Null outside build() with carried rows = byte-identical to before.
+  let _reserved = null;
+  function guid(n) { let g = _guid0(n); if (_reserved && _reserved.has(g)) { let k = n; do { k += 1073741824; g = _guid0(k); } while (_reserved.has(g)); } return g; }
 
   // ── GEOM_ARRAY export mapping (prompts/BONSAI_ARRAY_PATTERN_SPEC.md Task 5) ────────────────────────
   // NON-INVENT, corrected 2026-07-07 per the spec's own "2026-07-07 Research finding": IfcElementAssembly
@@ -79,10 +84,17 @@
     },
 
     // Build an IFC4 model from the op-log GEOM features; returns { bytes, walls, openings, rels }.
-    async build() {
+    // opts.carried (§M3B-CARRY, viewer_db_export.js): { ops: [{id,op_type,parameters,outputGuid,carried:{guid,name}}], skipDerivedClasses: Set } — the opened building's authored non-ARC bodies, folded for this export only.
+    async build(opts) {
+      const carried = (opts && opts.carried) || null;
+      _reserved = carried && carried.ops.length ? new Set(carried.ops.map(o => o.carried.guid)) : null;
+      try { return await this._build(carried); } finally { _reserved = null; }
+    },
+    async _build(carried) {
       const api = await this._init();
       const T = WebIFC;
-      const ops = window.Bonsai.oplog._geomOps();          // [{id, op_type, parameters, parent}]
+      let ops = window.Bonsai.oplog._geomOps();            // [{id, op_type, parameters, parent}]
+      if (carried && carried.ops.length) ops = ops.concat(carried.ops);   // after every ARC/walked insert, so a carried cut finds its host + filling products
       const _cutMoves = window.CutMove ? window.CutMove.netOverrides(ops) : null;   // §CUT-MOVE/§CUT-RESIZE: net void overrides (cut_move.js, one definition)
       if (!ops.length) throw new Error('nothing authored to export');
       const mID = api.CreateModel({ schema: 'IFC4', name: 'bonsai_model.ifc' });
@@ -131,7 +143,7 @@
       const worldPl = api.CreateIfcEntity(mID, T.IFCLOCALPLACEMENT, null, place3([0, 0, 0]));
       const productFromRep = (rep, type, name, gn, extra, objType) => {   // an already-built IfcShapeRepresentation -> a product
         const pds = api.CreateIfcEntity(mID, T.IFCPRODUCTDEFINITIONSHAPE, null, null, [rep]);
-        const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn));
+        const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, typeof gn === 'string' ? gn : guid(gn));   // a string gn = the carried row's own GlobalId
         const args = [g, null, label(name), null, objType ? label(objType) : null, worldPl, pds, null];   // §F1: IfcProduct.WR1: a product with a Representation needs an ObjectPlacement (geometry is in world coordinates: shared identity)
         if (extra) args.push(...extra);                       // IfcOpeningElement adds Tag + PredefinedType
         const e = api.CreateIfcEntity(mID, type, ...args);
@@ -196,6 +208,7 @@
 
       // One IfcTriangulatedFaceSet from a mesh's WORLD-space position/index buffers (IFC4 native
       // triangle form — no tessellation, no approximation, no box standing in for authored geometry).
+      const _arrMesh = (p, ix) => ({ geometry: { attributes: { position: { count: p.length / 3, getX: i => p[3 * i], getY: i => p[3 * i + 1], getZ: i => p[3 * i + 2] } }, index: ix ? { count: ix.length, getX: i => ix[i] } : null } });
       const triFaceSet = (mesh) => {
         const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
         if (!pos || !pos.count) return null;
@@ -214,8 +227,12 @@
       const matProducts = {};
       const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + the evidence set Dxf2Bim_Evidence from the body's typing
       let seedColoured = 0, seedPsets = 0;
+      let derivedSkipped = 0, carriedIns = 0, carriedCuts = 0, carriedCutNoHost = 0;
       for (const op of ops) {
         _curOp = op;
+        // §M3B-NO-DOUBLE: the STR skeleton (swbRenderOps: provenance derived:grid / derived:str-walk) is a regenerated approximation of the building's own columns/beams. When the opened building's authored
+        // bodies of that class are carried, the skeleton's copy is NOT exported (IfcBeam 35 + 11 girders would be 46); a building with no authored STR carries nothing, so its skeleton still exports.
+        if (carried && carried.skipDerivedClasses && op.parameters && typeof op.parameters.provenance === 'string' && /^derived:(grid|str-walk)$/.test(op.parameters.provenance) && carried.skipDerivedClasses.has(op.parameters.ifc_class)) { derivedSkipped++; continue; }
         if (op.op_type === 'GEOM_INSERT') {
           const P = op.parameters;
           // §ANCHOR — void-consumed hosts are invisible ride anchors. The user's binding condition is
@@ -223,7 +240,12 @@
           // these, SampleCastle has 65, so this is load-bearing, not theoretical.
           if (P.anchorOnly) { seedAnchors++; continue; }
           const fid = op.outputGuid != null && _fidByGuid[op.outputGuid] != null ? _fidByGuid[op.outputGuid] : op.id;
-          const mesh = _meshByFid.get(fid);
+          let mesh = op.carried ? null : _meshByFid.get(fid);
+          if (op.carried) {   // §M3B-CARRY: the opened building's own body, folded by the renderer's own foldInsert (world positions) and never added to the scene
+            let fo = null; try { fo = window.Bonsai.library.foldInsert(op, null, null); } catch (e) { fo = null; }
+            if (fo && fo.positions && fo.positions.length) mesh = _arrMesh(fo.positions, fo.indices);
+            carriedIns++;
+          }
           if (!mesh) { seedNoMesh++; continue; }   // NO SILENT BOX — counted and named in §IFC-SEED below
           const fs = triFaceSet(mesh);
           if (!fs) { seedNoMesh++; continue; }
@@ -244,7 +266,7 @@
             const gp = mesh.geometry.attributes.position, vv = []; for (let i = 0; i < gp.count; i++) vv.push([gp.getX(i), gp.getY(i), gp.getZ(i)]);
             pdx = window.Dxf2Ifc.openingAttrs(ent, window.Dxf2Ifc.bboxOf(vv), { api, T, mID, enumOf }, tp && tp.PredefinedType);
           }
-          const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || ((P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'Element') + ' ' + op.id), gn++, pdx, tp && tp.type_name);
+          const prodE = productFromRep(rep, T[ent], (tp && tp.type_name) || (op.carried ? (op.carried.name || cls) : ((P.ifc_class || (P._dw && P._dw.ifc) || (_cat && _cat.ifc_class) || 'Element') + ' ' + op.id)), op.carried ? op.carried.guid : gn++, pdx, tp && tp.type_name);
           if (tp) seedTyped++;
           productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
@@ -274,7 +296,8 @@
           const rectPlace = api.CreateIfcEntity(mID, T.IFCAXIS2PLACEMENT2D, api.CreateIfcEntity(mID, T.IFCCARTESIANPOINT, [len(0), len(0)]), null);
           const rect = api.CreateIfcEntity(mID, T.IFCRECTANGLEPROFILEDEF, T.IFC4.IfcProfileTypeEnum.AREA, label('Void'), rectPlace, plm(dx || 1e-3), plm(dy || 1e-3));
           const voidSolid = api.CreateIfcEntity(mID, T.IFCEXTRUDEDAREASOLID, rect, place3([cx, cy, z0]), z3(), plm(dz || 1e-3));
-          const opening = product(voidSolid, T.IFCOPENINGELEMENT, 'Opening ' + op.id, gn++, [null, null]);
+          const opening = product(voidSolid, T.IFCOPENINGELEMENT, op.carried ? (op.carried.name || 'Opening') : 'Opening ' + op.id, op.carried ? op.carried.guid : gn++, [null, null]);
+          if (op.carried) { carriedCuts++; if (!(wallByFeature.get(op.parent) || productByFeature.get(op.parent))) carriedCutNoHost++; }
           openings++;
           const wall = wallByFeature.get(op.parent) || productByFeature.get(op.parent);
           if (wall) {
@@ -364,6 +387,7 @@
       console.log(TAG + ' build walls=' + walls + ' openings=' + openings + ' rels=' + rels + ' arrays=' + arrays + ' arrayMembers=' + arrayMembers + ' bytes=' + bytes.length);
       // §IFC-SEED — the seeded half, with its refusals NAMED. seedNoMesh > 0 means real elements were
       // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
+      if (carried) console.log(TAG + ' §M3B-BUILD carriedInserts=' + carriedIns + ' carriedCuts=' + carriedCuts + ' (no host product: ' + carriedCutNoHost + ') derivedSkeletonSkipped=' + derivedSkipped + ' skipDerivedClasses=' + JSON.stringify([...(carried.skipDerivedClasses || [])]));
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
         ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' coloured=' + seedColoured + ' psets=' + seedPsets + ' byClass=' + JSON.stringify(seedByClass));
       return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,

@@ -387,6 +387,10 @@
       console.log(TAG + ' §REAL-GEOM registered ' + n + ' distinct element mesh(es) (of ' + entries.length + ' offered)');
       return n;
     },
+    // §M3B-CARRY: Export > Viewer database folds the opened building's authored non-ARC bodies TRANSIENTLY (no scene mesh, no op-log row). It registers their meshes, folds them to export, then releases
+    // exactly the ones it added (a hash already registered by the ARC seed stays). hasRealGeometry/releaseRealGeometry are that pair.
+    hasRealGeometry(hash) { return !!(hash && this._geom && this._geom['rg:' + hash]); },
+    releaseRealGeometry(hashes) { let n = 0; (hashes || []).forEach(h => { if (this._geom && this._geom['rg:' + h]) { delete this._geom['rg:' + h]; n++; } }); return n; },
     // §SLIDE-SEED: is this registered real mesh an UNCUT host body (no baked opening — its holes are GEOM_CUT rows)?
     isUncutBody(hash) {
       const g = hash && this._geom && this._geom['rg:' + hash];
