@@ -382,6 +382,7 @@
     if (e3) return { ok: false, error: e3 };
     if (repl) trx.say('§BUS_REPLICA table=' + table + ' ' + (isNew ? 'new' : 'change') + ' fired=' + (isNew ? 'afterNewReplication' : 'afterChangeReplication') + ' (not ' + (isNew ? 'afterNew' : 'afterChange') + ') key=' + live[trx.idCol(table)]);
     postEvent(trx, isNew ? 'POST_CREATE' : 'POST_UPDATE', table, live, old, repl);
+    docValue(trx, table, live, isNew);   // PO.saveFinish :2806-2817 — after the post event, every save (new or change)
     (trx._saved = trx._saved || {})[table + ':' + live[trx.idCol(table)]] = Object.assign({}, live);   // PO.save resets is_ValueChanged: the next save of the SAME PO diffs from here (runWorkflow §DOC-SAVE)
     return { ok: true, row: live };
   }
@@ -565,22 +566,75 @@
     var r = trx.q('SELECT ad_table_id AS id FROM ad_table WHERE lower(tablename)=?', [table])[0];
     return r ? r.id : null;
   }
-  function runWorkflow(trx, table, id, action) {
+  // ══ document-value workflows — DocWorkflowManager.process (DocWorkflowManager.java:70-125), called by PO.saveFinish :2806-2817 (CAPEX_DASHBOARD.md §11.1, W-DOCVALUE-WF) ══
+  //   MWorkflow.getDocValue :130-171: WorkflowType='V' AND IsValid='Y', active, of the SESSION client, for this table; re-check the document's client; logic 'SQL=' → testStart (named-unported
+  //   here, logged), else Evaluator.evaluateLogic(document, logic). The document carries the save stamps PO sets before saveFinish: a new row Created = Updated = the save time; a change Updated = the save time.
+  function docValue(trx, table, row, isNew) {
+    if (trx.env && trx.env.noDocValue) return;   // W-DOCVALUE-WF break switch (DOCVALUE_BREAK=1) — the witness must then FAIL
+    var tid, wfs;
+    try { tid = tableIdOf(trx, table); if (tid == null) return;
+      wfs = trx.q("SELECT * FROM ad_workflow WHERE workflowtype='V' AND isvalid='Y' AND isactive='Y' AND ad_client_id=? AND ad_table_id=? ORDER BY ad_workflow_id", [trx.env.client, tid]); }
+    catch (e) { return; }   // a bundle without ad_workflow: nothing to start (the DocAction path makes the same choice, workflowOf)
+    if (!wfs.length) return;
+    var now = trx.env.now || trx.env.date, doc = Object.assign({}, row, { updated: now }); if (isNew) doc.created = now;
+    var Ev = (typeof AdEvaluator !== 'undefined' && AdEvaluator) || (typeof require === 'function' ? (function () { try { return require('./ad_evaluator'); } catch (e) { return null; } })() : null);
+    wfs.forEach(function (wf) {
+      var logic = wf.docvaluelogic;
+      if (logic == null || String(logic) === '') { trx.say('§MODEL-DOCVALUE wf=' + wf.ad_workflow_id + ' severe=Workflow has no Logic'); return; }
+      if (Number(wf.ad_client_id) !== Number(doc.ad_client_id)) return;
+      if (/^SQL=/.test(logic)) { trx.say('§MODEL-NAMED docvalue-sql wf=' + wf.ad_workflow_id + ' (testStart not ported) — not started'); return; }
+      var ok; try { ok = Ev ? Ev.evaluate(logic, doc, doc) : null; } catch (e) { ok = null; }
+      if (ok == null) { trx.say('§MODEL-NAMED docvalue-logic wf=' + wf.ad_workflow_id + ' logic="' + logic + '" evaluator unavailable/unparsed — not started'); return; }
+      if (!ok) return;
+      var r = runWorkflow(trx, table, row[trx.idCol(table)], null, { wf: wf });
+      trx.say('§MODEL-DOCVALUE table=' + table + ' id=' + row[trx.idCol(table)] + ' wf=' + wf.ad_workflow_id + ' logic="' + logic + '" started path=' + (r.path || []).join('>'));
+    });
+  }
+  function wfRespRow(trx, id) { return id == null ? null : (trx.q('SELECT * FROM ad_wf_responsible WHERE ad_wf_responsible_id=?', [id])[0] || null); }
+  function wfIsInvoker(r) { return !!r && !(Number(r.ad_user_id) > 0) && !(Number(r.ad_role_id) > 0) && r.ismanual !== 'Y'; }   // MWFResponsible.isInvoker :195-198
+  // MWFProcess ctor :138-142 (+ setAD_WF_Responsible_ID() :487-496: the Human responsible with no user, client rows first) and setUser_ID :508-545 (responsible user → invoker: doc owner,
+  //   SalesRep_ID, UpdatedBy → the process invoker = the session user)
+  function wfStartResp(trx, wf, doc) {
+    var rid = Number(wf.ad_wf_responsible_id) > 0 ? wf.ad_wf_responsible_id
+      : ((trx.q("SELECT ad_wf_responsible_id AS id FROM ad_wf_responsible WHERE responsibletype='H' AND COALESCE(ad_user_id,0)=0 AND ad_client_id IN (0,?) ORDER BY ad_client_id DESC", [trx.env.client])[0] || {}).id || null);
+    var r = wfRespRow(trx, rid), u = r && Number(r.ad_user_id) > 0 ? Number(r.ad_user_id) : 0;
+    if (!u && wfIsInvoker(r)) {
+      if (doc.salesrep_id != null && Number(doc.salesrep_id) > 0) u = Number(doc.salesrep_id);
+      if (!u && Number(doc.updatedby) > 0) u = Number(doc.updatedby);
+    }
+    if (!u && trx.env.user != null) u = Number(trx.env.user);
+    return { resp: rid, user: u || null };
+  }
+  // MWFActivity.setResponsible (the node's responsible, the client override MWFResponsible.getClientWFResp = AD_Client_ID=session AND Override_ID=it, else the process's; user = the
+  //   responsible's user, an invoker takes the process user)
+  function wfNodeResp(trx, node, pr) {
+    var rid = Number(node.ad_wf_responsible_id) > 0 ? node.ad_wf_responsible_id : 0;
+    if (rid) { var ov = null; try { ov = trx.q("SELECT ad_wf_responsible_id AS id FROM ad_wf_responsible WHERE ad_client_id=? AND override_id=? AND isactive='Y'", [trx.env.client, rid])[0]; } catch (e) { ov = null; } if (ov) rid = ov.id; }
+    if (!rid) rid = pr.resp;
+    var r = wfRespRow(trx, rid), u = r && Number(r.ad_user_id) > 0 ? Number(r.ad_user_id) : 0;
+    if (!u && wfIsInvoker(r)) u = pr.user;
+    return { resp: rid, user: u || null };
+  }
+  // opts.wf = a workflow to start instead of the DocAction one (document-value start, docValue() below): no DocAction is saved, and the process/activity responsible + user follow
+  //   MWFProcess :138-142/:487-545 and MWFActivity.setResponsible (wfStartResp/wfNodeResp). The DocAction path keeps its earlier responsible rule (named gap, CAPEX_DASHBOARD.md §11.2).
+  function runWorkflow(trx, table, id, action, opts) {
     table = table.toLowerCase();
-    var wf = workflowOf(trx, table), doc = trx.get(table, id), impl = DOCS[table];
+    var dv = !!(opts && opts.wf), wf = dv ? opts.wf : workflowOf(trx, table), doc = trx.get(table, id), impl = DOCS[table];
     if (doc && action) trx.update(table, doc, { docaction: action });   // the user's selection is saved first
     if (!wf) { trx.say('§MODEL-WF table=' + table + ' workflow=absent → direct DocumentEngine.processIt'); return processIt(trx, table, id, action); }
     var env = trx.env, tid = tableIdOf(trx, table);
-    var resp = wf.ad_wf_responsible_id != null ? wf.ad_wf_responsible_id : null;
+    var resp = wf.ad_wf_responsible_id != null ? wf.ad_wf_responsible_id : null, pr = dv ? wfStartResp(trx, wf, doc) : null;
+    if (pr) resp = pr.resp;
     var proc = trx.insert('ad_wf_process', { ad_org_id: doc.ad_org_id, ad_workflow_id: wf.ad_workflow_id, ad_wf_responsible_id: resp,
-      ad_user_id: env.user != null ? env.user : null, wfstate: 'OR', processing: 'N', processed: 'N', ad_table_id: tid, record_id: id, priority: wf.priority != null ? wf.priority : 0 });
-    var cur = wf.ad_wf_node_id, steps = 0, res = { ok: true, status: doc.docstatus }, path = [], abort = null;
+      ad_user_id: pr ? pr.user : (env.user != null ? env.user : null), wfstate: 'OR', processing: 'N', processed: 'N', ad_table_id: tid, record_id: id, priority: wf.priority != null ? wf.priority : 0 });
+    var cur = wf.ad_wf_node_id, steps = 0, res = { ok: true, status: doc.docstatus }, path = [], abort = null, suspended = null;
     while (cur != null && steps++ < 50) {
       var node = trx.q('SELECT * FROM ad_wf_node WHERE ad_wf_node_id=?', [cur])[0];
       if (!node) { abort = 'node-missing:' + cur; break; }
       path.push(cur);
+      var nr = pr ? wfNodeResp(trx, node, pr) : null;
       var act = trx.insert('ad_wf_activity', { ad_org_id: doc.ad_org_id, ad_wf_process_id: proc.ad_wf_process_id, ad_wf_node_id: cur, ad_workflow_id: wf.ad_workflow_id,
-        ad_wf_responsible_id: node.ad_wf_responsible_id != null ? node.ad_wf_responsible_id : resp, ad_user_id: env.user != null ? env.user : null,
+        ad_wf_responsible_id: nr ? nr.resp : (node.ad_wf_responsible_id != null ? node.ad_wf_responsible_id : resp), ad_user_id: nr ? nr.user : (env.user != null ? env.user : null),
         wfstate: 'OR', processing: 'N', processed: 'N', ad_table_id: tid, record_id: id, priority: node.priority != null ? node.priority : 0 });
       var text = null;
       if (node.action === 'D') {
@@ -596,6 +650,13 @@
         if (now) Object.keys(now).forEach(function (k) { if (!same(now[k], before[k]) || (now[k] == null) !== (before[k] == null)) chg[k] = now[k]; });
         if (Object.keys(chg).length) { var sv = save(trx, table, before, chg); if (!sv.ok) { res = { ok: false, status: null, msg: sv.error || 'SaveError' }; } }
         if (!res.ok) { abort = res.msg || ('DocAction ' + da + ' failed'); trx.update('ad_wf_activity', act, { wfstate: 'CA', processed: 'Y', textmsg: abort }); break; }
+      } else if (node.action === 'W' || node.action === 'X' || node.action === 'I') {
+        // MWFActivity.performWork :1383-1398 — UserForm / UserWindow / UserInfo `return false` ⇒ run() sets WFState Suspended (OS): the activity waits for a user, the walk stops here.
+        //   Legacy evidence (idempiere_pilot, BP 1000473): activity OS / Processed N, process OS, one event audit (node, 'SC', 'OS'). UserChoice (C) is NOT this rule (:1302-1382) — still named-unported.
+        trx.update('ad_wf_activity', act, { wfstate: 'OS' });
+        trx.insert('ad_wf_eventaudit', { ad_org_id: doc.ad_org_id, ad_wf_process_id: proc.ad_wf_process_id, ad_wf_node_id: cur, ad_table_id: tid, record_id: id,
+          ad_wf_responsible_id: act.ad_wf_responsible_id, ad_user_id: act.ad_user_id, eventtype: 'SC', wfstate: 'OS', textmsg: null, elapsedtimems: 0 });
+        suspended = cur; break;
       } else if (node.action !== 'Z') { abort = 'node action ' + node.action + ' not modeled (named, MWFActivity.performWork)'; break; }
       trx.update('ad_wf_activity', act, { wfstate: 'CC', processed: 'Y', textmsg: text });
       trx.insert('ad_wf_eventaudit', { ad_org_id: doc.ad_org_id, ad_wf_process_id: proc.ad_wf_process_id, ad_wf_node_id: cur, ad_table_id: tid, record_id: id,
@@ -609,8 +670,8 @@
       }
       cur = nxt;
     }
-    var pstate = abort ? 'CA' : 'CC';
-    trx.update('ad_wf_process', proc, { wfstate: pstate, processed: 'Y', textmsg: abort || (impl && impl.getSummary ? impl.getSummary(trx, trx.get(table, id)) : null) });
+    var pstate = abort ? 'CA' : (suspended != null ? 'OS' : 'CC');
+    trx.update('ad_wf_process', proc, { wfstate: pstate, processed: suspended != null ? 'N' : 'Y', textmsg: abort || (impl && impl.getSummary ? impl.getSummary(trx, trx.get(table, id)) : null) });
     trx.say('§MODEL-WF table=' + table + ' id=' + id + ' workflow=' + wf.ad_workflow_id + ' path=' + path.join('>') + ' state=' + pstate + (abort ? ' abort="' + abort + '"' : ''));
     return Object.assign({}, res, { ok: !abort && res.ok, workflow: wf.ad_workflow_id, path: path });
   }

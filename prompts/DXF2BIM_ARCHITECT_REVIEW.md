@@ -21,7 +21,7 @@ Duplex IFC via the shared extractor: 289 elements, 219 Pset_*Common rows, 0.57 s
 2. Release check: run the Modeller authoring witnesses beyond the DXF lane (modeller/tests: clipboard, gridmove, redo, disc-walk, S8/S9 with `S8_LOCAL=1 S9_LOCAL=1` …) before calling the Modeller "on par".
 3. Proposals still open (owner picks): P-W1 independent joint oracle, P-K one `Size_` contract, P-V one table→values helper, P-E `reg_report_ui` build() via engine(), P-L the extractor's log passed through, vendor property sets in the panel,
    the Regulatory Report form overlapping the Properties panel (newer panel on top: cosmetic).
-4. Carried: LT7 (`library_building_types.json` never committed: EXTRACT, §L23), the 5D / Time Machine cost paths not reading `material_rates`, BD locale "2024" labels, code packs, RR authority headers, `--ifc-in` on real STAAD.
+4. Carried: LT7 (`library_building_types.json` never committed: EXTRACT, §L23), the 5D / Time Machine cost paths not reading `material_rates` (+ the Project Order fold: one cost source = `dxf2bill.js`, spec `prompts/CAPEX_DASHBOARD.md §13`, 2026-11-02), BD locale "2024" labels, code packs, RR authority headers, `--ifc-in` on real STAAD.
 **RUNNER (end of session 17):** `§ALLWITNESS PASS=106 ENV=9 FAIL=1 of 116` (only LT7); W-PROPS-PANEL 8/0 after U7 (not in a full runner since — run it first).
 **Recipes:** shed `NODE_PATH=~/bim-compiler/node_modules node modeller/dxf2bim_cli.js --sheets ~/Videos/dxf2bim_film_work/why/cli/marked/*.dxf --out <dir> --pack pwd2024_bd --complete
 [--report] [--impact] [--analytical] [--choice k=v]` · any IFC `node modeller/dxf2bim_cli.js --ifc-in <file.ifc> --analytical --out <dir>` · runner `NODE_PATH=~/bim-compiler/node_modules node
