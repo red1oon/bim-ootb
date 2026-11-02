@@ -21,8 +21,7 @@ namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot ove
 **▶ NEXT, in order (spec before code; each its own §5 entry):**
 1. **R0 — ✅ DONE (§5.4): YES, legacy computes a CAPEX tile as PA data with no Java** — Approved Budget (USD) 4,996,920.867 == our tile to the cent. Three legacy behaviours found that bind R2
    (§5.4). Not in R0: AD_Chart, the ZK render, the colour (no target stated, §6 Q1).
-2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; R1-f ✅ (§5.6: the viewer's push carries the Gantt's programme); open: the SHED re-push
-   (its building DB is gone, §5.4); re-voice the films.
+2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; R1-f ✅ (§5.6: the viewer's push carries the Gantt's programme); SHED re-pushed + twin PASS (§5.7); open: re-voice the films.
 3. **R2 — the PA engine in the SQLite kernel**, generic (MMeasure / MGoal / MColorSchema semantics ported from the legacy source, cited file:line), witnessed against the same rows on the pilot.
 4. **R3 — tiles as data:** each §3 tile → a `PA_MeasureCalc` / `PA_Measure` (+ `PA_ColorSchema` for health) row; `tiles.js` keeps only what PA cannot express (named); deletion budget stated.
 5. **R4 — the editor:** the generic AD windows (Performance Measurement / Goal / Color Schema / Dashboard Content) in our ERP UI — no dashboard-specific code; an edit re-renders and re-twins.
@@ -215,6 +214,24 @@ dates == the DB's task dates. Negative: a DB with no schedule → null. Break `B
 - Regression: W-FOLD-ONE-SCHEDULE 11/11, `witness_s9_pure` 8/0/0, `poc_proj_push` engine PASS, `poc_erp_rest_push` PASS, `witness_exact_lookup_p2` 8/0 — unchanged; `poc_fin_evm` only its
   pre-existing EVM_6 source-contract FAIL. NOT run: `viewer/tests/witness_civil_find_erp_push.js` (Playwright + full GPU viewer — not run unasked; my one attempt was from the wrong cwd and closed).
 
+### 5.7 SHED on the R1 fold (2026-11-03, agent) — SPEC (written before the pilot steps)
+Claim: the SHED Project Order, folded with the 4D owner's programme (R1) and re-pushed to the LOCAL pilot, twins PASS. Steps: (1) pick the building DB by measuring against the old fold (golden 15,147,437 BDT, 6 phases, 8 tasks, 12 lines);
+(2) `cache_4d_run.js` for it; (3) `fold_demo.js` with `BLD_DIR` = scratch (`§FOLD_INPUT_4D`, `§FOLD_DEMO_PHASE`); (4) pilot: rename old #1000004 to `SHED_preR1` + IsActive=N ONLY if the new Value is `SHED` (no deletes), count before/after;
+(5) `shed_twin.js` at 2026-11-03 then at a later date: `§SHED_TWIN_VERDICT` must PASS, second run `created +0`. A DIFF is a SQLite-side defect to fix (CARDINAL TWIN RULE), never hidden. Scratch: `/tmp/claude-shed-scratch` (no .db committed).
+
+### 5.7 RESULT (2026-11-03, agent) — logs read (scratch `/tmp/claude-shed-scratch`, not committed)
+**Source chosen (measured):** the CLI on the marked sheets (`dxf2bim_cli.js --sheets .../why/cli/marked/*.dxf --out D --pack pwd2024_bd --complete --ifc` → `D/model.ifc`, 512 bodies) extracted with `~/bim-compiler/scripts/extractIFC2DB.js`; the extractor takes the building name
+from the IFC basename, so `SHED.ifc` → building `SHED` → project Value `SHED` (`model.ifc` → `model`). Compared on the old fold (golden 15,147,437 / 6 phases / 8 tasks / 12 lines), all folded without a programme: kept model
+`ShedDrawing_512_extracted.db` → golden 14,836,915 (-310,522), 11 lines, 2 products; CLI-from-marked → 15,139,267 (-8,170), 11 lines. Neither reproduces the gone DB exactly (the CLI one is 0.05 % off; the kept one was rebuilt with manual
+`--layer/--datum/--bodyz` options, 2 % off). With the programme the CLI one gives 12 lines (the old count): golden 15,139,268; PlannedAmt 15,139,265.66847 (`§FOLD_DEMO_NOTE LEGACY_LINE_RULE`). Residual gap to 15,147,437 is a different source DB, not explained further.
+**4D run (yes):** `BLD_DIR=D cache_4d_run.js SHED` → `§CACHE_BUILT SHED n=512 scheduled=512` (code key b1ea8c3659df), `§CELL_RUN makespanDays=5.1`, `§AUTHOR_TPL tasks=5 edges=4 totalDays=9`, `§TPL_PHASE_COVERAGE declared=7 levels=1 tasksEmitted=5 absentPhasesEntirely=2` (single storey; MEP Rough-in absent).
+**Fold:** `§FOLD_INPUT_4D bld=SHED tasks=5 lastDay=9`; created 5 phases / 5 tasks / 12 lines / 2 products; programme 2026-11-01 → 11-10 (Substructure 11-01→11-02, Superstructure 11-02→11-07, Envelope 11-07→11-08, Closeup 11-08→11-09, Finishes 11-09→11-10). Old fold: 6 phases / 8 tasks (serial dates to 2027-01-04).
+`witness_fold_one_schedule.js SHED` → `§W_FOLD1_VERDICT INCONCLUSIVE no building db for SHED` (it reads only `buildings/<bld>_extracted.db`; scratch DB not copied in, by rule).
+**Pilot:** old #1000004 → Value `SHED_preR1`, name `BIM: SHED (pre-R1 fold, kept)`, IsActive=N (no deletes; restore = rename back). New SHED = **#1000007**. Counts c_project/phase/task/line before 6/18/34/77 → after 7/23/39/89.
+**Twin, today=2026-11-03:** `§SHED_PUSH projectId=1000007 created={"projects":1,"phases":5,"tasks":5,"lines":12}` · `§SHED_TWIN_VERDICT PASS tiles(match=17 diff=0 inconclusive=2) rows(match=109 diff=0)` (inconclusive = forecast_cost PENDING, actual_overrun no data; last_updated PER_SOURCE; schedule atrisk=1, avg_delay 1.00 d).
+**Twin, today=2026-12-10:** `created={projects:0,phases:0,tasks:0,lines:0}` (idempotent) · `§SHED_TWIN_VERDICT PASS tiles(match=17 diff=0 inconclusive=2) rows(match=109 diff=0)`; health red=1, schedule atrisk=1, avg_delay 38.00 d, budget_status notstarted=1 — same on both sides.
+No defect found; no code changed.
+
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
 Q2 Project Stage: how do Concept / Initiation / Planning / Execution / Closing map onto `C_Project.C_Phase_ID` (stock `C_Phase` rows are sales-cycle steps in the seed)? Or is it a custom column/`C_ProjectType`?
@@ -229,5 +246,5 @@ Q9 Legacy read types for C_ProjectPhase / C_ProjectTask / C_ProjectLine / C_Phas
 
 ## 7. Machine state (left 2026-11-03)
 Local pilot `~/idempiere-pilot` (:8088, docker `postgres` DB `idempiere_pilot`) runs with the CAPEX read/write/update WS types + the R0 PA types (restore recipes in the four `ws_capex_*.sql` headers),
-migration `202611031900_CAPEX-R0.sql` applied (PA_MeasureCalc/PA_Measure 1000000) + goal "CAPEX Approved Budget (USD)", and holds pushed projects SHED (#1000004, OLD fold: serial dates),
+migration `202611031900_CAPEX-R0.sql` applied (PA_MeasureCalc/PA_Measure 1000000) + goal "CAPEX Approved Budget (USD)", and holds pushed projects SHED (#1000007, R1 fold: 4D dates, 12 lines; the old fold is kept as #1000004 `SHED_preR1`, inactive),
 HHS_Office_Federated (#1000006, R1 fold: 4D dates, 45 lines) and the kept pre-R1 HHS (#1000005, Value `HHS_Office_Federated_preR1`, inactive; its Superstructure IsComplete=Y from the film beat). Nothing on any client server. Film inputs kept in `~/.cache/capex_film/` (scratch DBs + legacy snapshots, not committed).
