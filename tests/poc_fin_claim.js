@@ -119,7 +119,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   console.log('§FIN_CLAIM_7 contract ok=' + c7);
 
   const pass = c1 && c2 && c3 && c4 && c5 && c6 && c7;
-  console.log('§FIN_CLAIM ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-CLAIM: progress claim==EV as legacy's rounded invoice line, AC moves, preview balances ΣDr=ΣCr, idempotent, honest; building=' + building);
+  console.log('§FIN_CLAIM ' + (pass ? 'PASS' : 'FAIL') + ' — W-FIN-CLAIM: progress claim==EV as the legacy-rounded invoice line, AC moves, preview balances ΣDr=ΣCr, idempotent, honest; building=' + building);
   bdb.close(); edb.close();
   process.exit(pass ? 0 : 1);
 })();
