@@ -224,7 +224,8 @@
 // v1665 (2026-10-31) rates/pwd2024_bd.json meta: named SoR 2022 (Finance Division approval 21 June 2022, valid three years; no 2024 edition is published)
 // v1666 (2026-10-31) §D101 dxf_sheet_view.js: dimensions with no block name drawn (their *D block by definition points, or from their own points), INSERT in blocks, %%c/%%d/%%p
 // v1669 (2026-11-03) CAPEX R1 proj_fold.js: the Project Order takes the 4D owner's programme (opts.schedule); no own duration loop; no programme → phases without dates (NO_4D_SCHEDULE)
-const CACHE_VERSION = 'v1669';
+// v1670 (2026-11-03) CAPEX R0 erp_rest_push.js: a project line's natural key includes its task (lines per product × 4D task were dropped after the first)
+const CACHE_VERSION = 'v1670';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
