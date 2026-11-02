@@ -291,7 +291,14 @@
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
       if (!window.ProjFold) { _pushReject('ERP push engine not loaded'); console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
       var building = A.activeBuilding;
-      var priced = D.selectionPriced(set);
+      // the programme the viewer already holds (prompts/CAPEX_DASHBOARD.md §5.5 R1-f): the active schedule in the building db, if any — the order then carries the
+      // Gantt's own dates, one task per bar, rows split per bar; none → the fold writes no dates (NO_4D_SCHEDULE). Never a computed schedule.
+      var sched4D = null;
+      try { sched4D = (window.ProjFold.scheduleFromDb && A.db) ? window.ProjFold.scheduleFromDb(A.db, window._4dTemplate || null, window.ScheduleAuthor) : null; } catch (e) { sched4D = null; console.log('[RP-C] §PROJ_PUSH_SCHEDULE_ERR ' + e.message); }
+      var priced = D.selectionPriced(set);   // the whole selection first: keeps _selectionPriced's size cap (a capped result is refused below, as before)
+      if (sched4D && priced && !priced.capped && priced.rows.length)
+        priced = window.ProjFold.pricedPerTask(Array.from(set), sched4D, function (sub) { return D.selectionPriced(new Set(sub)); });
+      console.log('[RP-C] §PROJ_PUSH_SCHEDULE ' + (sched4D ? 'from=' + sched4D.source + ' tasks=' + sched4D.tasks.length + ' start=' + sched4D.start + ' parts=' + (priced && priced.parts) : 'none → NO_4D_SCHEDULE'));
       // no priced rows = nothing costable (e.g. a single element, or an old-schema model whose transforms
       // carry no bbox sizes). Say so + a low cue, instead of looking like the push silently did nothing.
       if (!priced || !priced.rows.length) { _pushReject('Nothing costable in selection — pick a type/storey group (this model may lack element sizes)'); console.log('[RP-C] §PROJ_PUSH_DEFER no priced rows (elements=' + (priced ? priced.elements : 0) + ')'); return; }
@@ -299,7 +306,7 @@
       _ensureErpDb().then(function (db) {
         if (!db) { _pushReject('ERP db unavailable for push'); console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
         var opts = {
-          seqRules: window.SEQUENCE_RULES || {}, laborRates: window.LABOR_RATES || {},
+          seqRules: window.SEQUENCE_RULES || {}, schedule: sched4D,
           hierarchy: window.IFC_SCHEMA_HIERARCHY || {},
           packCurrencyISO: D.cur(), now: (function () { try { return new Date().toISOString().replace('T', ' ').slice(0, 19); } catch (e) { return '2026-01-01 00:00:00'; } })()
         };
