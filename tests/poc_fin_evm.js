@@ -62,7 +62,11 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
   const building = bdb.exec('SELECT DISTINCT building FROM elements_meta LIMIT 1')[0].values[0][0];
   const pack = JSON.parse(fs.readFileSync(path.join(RATES_DIR, 'cidb2024_my.json'), 'utf8'));
   const sr = JSON.parse(fs.readFileSync(path.join(RATES_DIR, 'sequence_rules.json'), 'utf8'));
-  const priced = apply5DRates(compute5D(bdb, building), pack.materials || {});
+  // phase dates are the 4D owner's (prompts/CAPEX_DASHBOARD.md §5.1 R1) — without a programme EVM-4 would judge asOf=null (vacuous)
+  const FI = require('../capex/tools/fold_inputs.js');
+  const sched = FI.schedule4D('Duplex', '2026-06-15');
+  if (!sched) { console.log('§FIN_EVM INCONCLUSIVE — no 4D run for Duplex at the current code key (node scripts/cache_4d_run.js Duplex)'); process.exit(1); }
+  const priced = FI.apply5DRates(FI.compute5D(bdb, building, sched), pack.materials || {});
 
   // ── W-FIN-EVM-1 — pure math vs hand golden. PV=1000 EV=800 AC=900:
   //    CV=EV-AC=-100 ; SV=EV-PV=-200 ; CPI=800/900=0.8889 ; SPI=800/1000=0.8
@@ -77,7 +81,7 @@ function eq(a, b) { return BD.of(String(a)).compareTo(BD.of(String(b))) === 0; }
 
   // ── fold the project + a VO amendment ──
   const now = '2026-06-15 00:00:00';
-  const r = ProjFold.foldProjectOrder(edb, building, priced, { seqRules: sr.SEQUENCE_RULES, laborRates: sr.LABOR_RATES, packCurrencyISO: 'RM', now: now, bpartnerId: 119 });
+  const r = ProjFold.foldProjectOrder(edb, building, priced, { seqRules: sr.SEQUENCE_RULES, packCurrencyISO: 'RM', now: now, bpartnerId: 119, schedule: sched });
   const projId = r.projectId;
   const original = scalar(edb, "SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=" + projId);
   // a small synthetic delta priced via vo_fold (one ADDED class) — real GUID classes from the building.

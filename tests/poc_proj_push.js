@@ -59,10 +59,13 @@ function tot(c) { return c.projects + c.phases + c.tasks + c.lines + c.products 
   const packISO = 'MYR';                                       // CIDB Malaysia pack → MYR
   const sr = JSON.parse(fs.readFileSync(path.join(RATES_DIR, 'sequence_rules.json'), 'utf8'));
 
-  const priced = apply5DRates(compute5D(bdb, building), RATES); // whole building = select-nothing
+  // the programme is the 4D owner's (prompts/CAPEX_DASHBOARD.md §5.1 R1): rows carry guids and are split per 4D task
+  const FI = require('../capex/tools/fold_inputs.js');
+  const sched = FI.schedule4D('Duplex', '2026-06-14');
+  const priced = sched ? FI.apply5DRates(FI.compute5D(bdb, building, sched), RATES) : apply5DRates(compute5D(bdb, building), RATES); // whole building = select-nothing
   const golden = priced.reduce(function (a, r) { return a + r.cost; }, 0); // 5D golden (Number, apply5DRates)
 
-  const opts = { seqRules: sr.SEQUENCE_RULES, laborRates: sr.LABOR_RATES, packCurrencyISO: packISO, now: '2026-06-14 00:00:00' };
+  const opts = { seqRules: sr.SEQUENCE_RULES, packCurrencyISO: packISO, now: '2026-06-14 00:00:00', schedule: sched };
 
   // ── FOLD 1 ──
   const r1 = ProjFold.foldProjectOrder(edb, building, priced, opts);
@@ -79,21 +82,38 @@ function tot(c) { return c.projects + c.phases + c.tasks + c.lines + c.products 
 
   // ── W-PROJ-FOLD: project PlannedAmt == 5D golden (to the cent) ──
   const projAmt = edb.exec("SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=" + r1.projectId)[0].values[0][0];
-  const foldOk = Math.round(Number(projAmt)) === golden;
-  console.log('§PROJ_FOLD plannedAmt=' + projAmt + ' golden=' + golden + ' match=' + foldOk + ' (BigDecimal == apply5DRates 5D)');
+  // golden restated 2026-11-03 (prompts/CAPEX_DASHBOARD.md §5.1 R1): legacy's own line rule, computed HERE independently of the fold —
+  //   per BoQ line (class, or proxy:discipline; × its 4D task when a programme is given) PlannedPrice × round3(Σ qty), exact, summed
+  //   (MProjectLine.beforeSave; §12.4). Σ per-row integer rounding (the old golden) depends on how many rows there are, so it moved when rows split per task.
+  const BigDecimal = require('../erp/bigdecimal.js');
+  const g2t = {}; if (sched) sched.tasks.forEach(function (t) { t.guids.forEach(function (g) { g2t[g] = t.id; }); });
+  const lq = {}, lr = {};
+  priced.forEach(function (r) {
+    var k = (r.cls === 'IfcBuildingElementProxy' && r.disc && r.disc.charAt(0) !== '_' ? r.cls + ':' + r.disc : r.cls);
+    if (sched) { var t0 = r.guids && g2t[r.guids[0]], one = t0 && r.guids.every(function (g) { return g2t[g] === t0; }); k += '#' + (one ? t0 : ''); }
+    lq[k] = (lq[k] || 0) + r.qty; if (lr[k] == null) lr[k] = r.rate;
+  });
+  const legacyGold = Object.keys(lq).reduce(function (a, k) { return a.add(BigDecimal.of(String(lr[k])).multiply(BigDecimal.of(String(Math.round(lq[k] * 1000) / 1000)))); }, BigDecimal.ZERO);
+  const foldOk = BigDecimal.of(String(projAmt)).compareTo(legacyGold) === 0;
+  console.log('§PROJ_FOLD plannedAmt=' + projAmt + ' legacyGold=' + legacyGold.toString() + ' (Σrow-rounded 5D=' + golden + ') match=' + foldOk + ' (legacy line rule, exact)');
 
-  // ── W-PROJ-SEQ: seqno traces to sequence_rules; dates monotonic ──
-  let seqOk = true, lastEnd = '';
-  r1.seqLog.forEach(function (s) {
-    // the phase's seqno must equal the MIN sequence among its classes in sequence_rules
-    var clsSeqs = Object.keys(sr.SEQUENCE_RULES).filter(function (c) { return sr.SEQUENCE_RULES[c].phase === s.phase; })
-      .map(function (c) { return sr.SEQUENCE_RULES[c].sequence; });
-    var expect = clsSeqs.length ? Math.min.apply(null, clsSeqs) : s.seqno;
+  // ── W-PROJ-SEQ (restated 2026-11-03, prompts/CAPEX_DASHBOARD.md §5.1 R1): seqno traces to the 4D template's phase sequence; each phase's
+  //    dates == the 4D owner's window (min sDays / max eDays of its tasks). Phases OVERLAP and need not start in template order in the real
+  //    programme (Duplex: MEP Rough-in starts before Architecture Envelope), so no ordering claim is made here — ordering is the 4D owner's.
+  //    'Unsequenced' (elements the 4D run did not schedule) must carry seqno 99 and NO dates. No programme → INCONCLUSIVE, never PASS.
+  let seqOk = !!sched;
+  const addD = function (d) { return new Date(Date.parse(sched.start + 'T00:00:00Z') + d * 86400000).toISOString().slice(0, 10); };
+  if (!sched) console.log('§PROJ_SEQ INCONCLUSIVE — no 4D run for Duplex at the current code key (node scripts/cache_4d_run.js Duplex)');
+  else r1.seqLog.forEach(function (s) {
+    var uns = s.phase === 'Unsequenced';
+    var expect = uns ? 99 : (sched.phaseSeq[s.phase] != null ? sched.phaseSeq[s.phase] : null);
     var traces = (expect === s.seqno);
-    var mono = s.start >= lastEnd; lastEnd = s.end;
-    if (!traces || !mono) seqOk = false;
-    console.log('§PROJ_SEQ phase="' + s.phase + '" seqno=' + s.seqno + ' start=' + s.start + ' end=' + s.end +
-      ' traces=' + traces + ' monotonic=' + mono);
+    var mine = sched.tasks.filter(function (t) { return t.phase === s.phase; });
+    var win = mine.length ? addD(Math.min.apply(null, mine.map(function (t) { return t.sDays; }))) + '→' + addD(Math.max.apply(null, mine.map(function (t) { return t.eDays; }))) : 'none';
+    var dates = uns ? (s.start === null && s.end === null && !mine.length) : (win === s.start + '→' + s.end);
+    if (!traces || !dates) seqOk = false;
+    console.log('§PROJ_SEQ phase="' + s.phase + '" seqno=' + s.seqno + ' start=' + s.start + ' end=' + s.end + ' 4D=' + win +
+      ' traces=' + traces + ' dates4D=' + dates);
   });
 
   // counts written back (proof the tree exists)
@@ -104,7 +124,7 @@ function tot(c) { return c.projects + c.phases + c.tasks + c.lines + c.products 
 
   const engineOk = r1.created.projects === 1 && r1.created.lines > 0 && idemp && foldOk && seqOk;
   console.log('§PROJ_PUSH ' + (engineOk ? 'PASS' : 'FAIL') + ' — fold created the C_Project tree, is idempotent, ' +
-    'amount folds to the 5D golden, seqno traces to sequence_rules; building=' + building);
+    'amount folds to the 5D golden, seqno + dates trace to the 4D owner; building=' + building);
 
   // ── CONTRACT: the > to ERP button call-path must actually be wired in the deployed viewer source ──
   function srcHas(file, tokens) {
