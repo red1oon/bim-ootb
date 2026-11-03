@@ -4,32 +4,46 @@ being **editable without code or AI**. Every number comes from rows of a real DB
 "no data" / INCONCLUSIVE, never 0 % or green. **Read the log after every run (`§DASH_*`, `§SHED_*`, `§FILM_SHOT`); the exit code is not evidence.** Spec before code; every witness names the issue it
 proves and has a break switch that must FAIL. Honour this block until the lane is closed. Full history (sessions 88 + 77, 2026-11-02 → 11-03): `prompts/archive/CAPEX_DASHBOARD_history_2026-11-02_to_11-03.md`.
 
-## ▶ RESUME HERE (rewritten 2026-11-03 at the close of session bim-compiler-77 for a NEW session dedicated to this dashboard — the ONLY current block)
-**Owner's goal (verbatim):** "We can build an adhoc HTML that resembles that dashboard (they eventually will share their app) and perhaps it be adopted or replace theirs as it is expected to be simple
-vanilla" · "This is where we be twinning silently in the background to get a free parity testing" · "Of course we like to move things to our framework, thus the dashboard is something external to
-idempiere core" · "pending what they designed for their dashboard, which we can then compare, but we like them to consider our local first framework as a transition" · "the BIM integration concept
-is that all data is GIGO from the BIM side" · roadmap: "Dashboard Editor (where user can make changes without coding or AI)" · (2026-11-03, on hearing legacy defines dashboards as PA data) **"then we can continue the twin-legacy parity, where our side is a true twin and idempiere side retains its learning curve"**.
-**The frame (§4 — read it before designing anything):** the dashboard is where the whole scheme meets — BIM computes the project (no rekeying), the ERP holds it (Project Order), the twin proves
-SQLite == legacy, and the dashboard shows it. The editable dashboard is NOT a new invention: legacy iDempiere already defines dashboards as DATA (Performance Analysis: `PA_MeasureCalc` SQL,
-`PA_Measure`, `PA_Goal`, `PA_ColorSchema` thresholds, `PA_DashboardContent`, `AD_Chart`). Port that mechanism (AD-LAYER LAW), move today's hard-coded tile formulas into those rows, and the "editor" is the
-generic AD windows over them — the same rows then run in legacy ZK and in the SQLite twin, and the twin judges them.
-**Guiding rule (owner, above):** the dashboard is DEFINED the iDempiere way (PA / AD_Chart rows, maintained in the windows legacy users already know — their learning curve is kept, nothing new to
-learn); OUR side is a TRUE twin that executes the same rows and must show the same values (CARDINAL RULE). The `capex/` page becomes a renderer of those rows, not a second formula engine.
-**State (all merged on bim-ootb main; witnessed):** page `capex/` (#2530) · twin tools (#2532, #2539–#2541, #2545) · shed and HHS pushed to the LOCAL pilot and twinned PASS (shed 121/121 rows,
-HHS 160/160 rows, 16/16 judged tiles, Last Updated = PER_SOURCE) · kernel fixes found by the twin: document-value workflows, legacy project-line rules, REST bridge (service type per method,
-namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot overlay), local time · `?project=` filter · films EN/ZH/MS v5 (`~/Videos/CAPEX_Dashboard_Addon_narrated_{EN,ZH,MS}_AFTER_2026-11-03_v5.mp4`).
-**▶ NEXT, in order (spec before code; each its own §5 entry):**
-0. **§5.13 GROUND UP (owner 2026-11-03) — the dashboard on our SQLite WASM framework: PA rows → SQLite PA engine → renderer → generic editor; next = G1.** (§5.12 superseded.)
-1. **R0 — ✅ DONE (§5.4): YES, legacy computes a CAPEX tile as PA data with no Java** — Approved Budget (USD) 4,996,920.867 == our tile to the cent. Three legacy behaviours found that bind R2
-   (§5.4). Not in R0: AD_Chart, the ZK render, the colour (no target stated, §6 Q1).
-2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; R1-f ✅ (§5.6: the viewer's push carries the Gantt's programme); SHED re-pushed + twin PASS (§5.7); open: re-voice the films.
-3. **R2 — the PA engine in the SQLite kernel**, generic (MMeasure / MGoal / MColorSchema semantics ported from the legacy source, cited file:line), witnessed against the same rows on the pilot.
-4. **R3 — tiles as data:** each §3 tile → a `PA_MeasureCalc` / `PA_Measure` (+ `PA_ColorSchema` for health) row; `tiles.js` keeps only what PA cannot express (named); deletion budget stated.
-5. **R4 — the editor:** the generic AD windows (Performance Measurement / Goal / Color Schema / Dashboard Content) in our ERP UI — no dashboard-specific code; an edit re-renders and re-twins.
-6. **R5 — Sysnova's own design** (pending them): compare tile by tile with §3; their definition wins; then the DOWN sync (§5 R5). Client questions §6 go via the owner.
+## ▶ RESUME HERE (rewritten 2026-11-03 end of session for a NEW session — the ONLY current block; older resume text is history in §5.x)
+**TWO TASKS — keep them apart (owner 2026-11-03):**
+- **TASK 1 — THE DASHBOARD** (this file). Built from the ground up on OUR SQLite WASM framework (§5.13): data in the browser's SQLite ERP DB (the twin) → dashboard DEFINED as iDempiere PA rows
+  (PA_MeasureCalc / PA_Measure / PA_Goal / PA_ColorSchema / PA_DashboardContent — the same rows legacy runs, R0 §5.4) → a SQLite PA engine → a generic renderer → the generic AD windows as the editor.
+  NOT inside the iDempiere plugin, NOT a ZK gadget, NOT a separate server (§5.12 superseded).
+- **TASK 2 — THE iDEMPIERE PLUGIN `org.idempiere.bimootb`** = ONLY the BIM Viewer → ERP Project Order (owner: *"the plugin is only for the BIM to ERP Project Order"*). Lane file: bim-compiler
+  `prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md` §8–§8.8 (two bundles: tab + 2Pack / the viewer at `/bimootb`). The dashboard's files are NOT in it.
+**What the CAPEX film's "no change" line meant (correction, owner 2026-11-03: "Clarify over our film statement that no change needed actually meant"):** the shipped film says (bim-compiler
+`prompts/film_narration_capex_addon_en_v5.tsv` row 2): *"F: So what do I have to change in iDempiere? M: Nothing. No plugin, no new table. It reads through the standard web services, keeps its own
+local copy, and the dashboard runs on that copy."* **"Nothing" overclaimed** — the same row's own fact column says "read-only query types + create types on the test server". What is true FOR THE
+DASHBOARD: no change to iDempiere's code, no plugin, no new table or column. It still needs SETUP DATA on their
+iDempiere: read-only web-service types for the tables it reads + a read-only user/role (and, once PA-defined, its PA rows) — data, shipped the iDempiere way (migration script / 2Pack, LEGACY
+CONVENTION below). It does NOT cover the BIM push: sending a Project Order INTO iDempiere needs TASK 2's plugin (its create types, the "BIM OOTB Push" master role, settings, the BIM tab). Any future
+film/doc says it this way: *"No change to iDempiere's code or tables. The dashboard needs only read-only setup data; the BIM push is one standard plugin."*
+**Sysnova (2026-11-03):** their PM replied their dashboard is **still a prototype** (§6 Q-S2) → **we proceed with ours**, as we are further along (owner). Q-S1/Q-S3..S6 stay useful (their tile
+definitions feed L2 rows); Q1–Q8 still open.
+**State (merged, witnessed — details in the §5.x RESULT sections):** R0 legacy PA probe (#2551) · R1 one schedule from the 4D owner (#2550) · R1-f viewer push carries the Gantt (#2552) · SHED on R1 (#2555)
+· WS lookups by DataRow keys, no free Filter (IDEMPIERE-1784, #2558) · money tiles SUM-then-round (#2559) · P5 viewer push lands in iDempiere, password in memory only (#2561) · viewer store opens with the
+ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-compiler): renewal #316, P5 tab login context #319, browser checks + bundle rule + ZK requires #321.
+**▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
+1. **G1** `erp/pa_engine.js` — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
+   `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
+2. **G2** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) · **G4** bucket tiles (health / schedule / budget status:
+   PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
+3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
+**▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
+link-back Description (`BIM src db=…`) with the plan (`viewer/erp_push_plan.js` + the `BIMOOTB_Create_C_Project` whitelist), re-Pack-Out, reinstall, re-run B3 headless. Then the film "Installing BIM to
+iDempiere" (storyboard §8.5 — ⛔ owner OK of the storyboard + language set still pending). Later: the Tycho/Maven build (the convention) replaces `tools/build_bundle_poc.sh`.
+**Machine state:** local pilot `~/idempiere-pilot` (:8088, DB `idempiere_pilot`, RUNNING) holds the POC types (Filter Constant `1=1`), the BIMOOTB_* types + master role, the R0 PA rows + goal, role
+"BIM Push Test" 1200003, and test projects (SHED #1000007 + SHED_preR1 #1000004, HHS #1000010 + HHS_Office_Federated_preR1/_preKeys #1000005/#1000006, HHS_PLUGIN_POC #1000009, witness runs
+HHS_VIEWER_PUSH_* #1000011-#1000014 — never deleted: the safety gate refuses deletes; rename + IsActive=N instead). Clean plugin-only test instance `~/idempiere-bimplugin` (:8098/:8454, DB
+`idempiere_bimplugin` = TEMPLATE pilot_snap, STOPPED; `start.sh`/`stop.sh` — its stop pattern matches ONLY that path; install = 2 `bundles.info` lines). Scratch: bundles under the session scratchpad
+(rebuild with bim-compiler `iDempiereOOTB/org.idempiere.bimootb/tools/build_bundle_poc.sh <server> <bim-ootb> <out>` — it must print `§BIMOOTB_BUNDLE`).
+**Landmines learned this session (do not re-learn):** iDempiere refuses a FREE `Filter` WS param on any model save (IDEMPIERE-1784) → find by DataRow keys · a WS access refusal is cached 60 min per
+(role, type) → restart or Cache Reset after including a role · Pack Out exports only the LOGIN client's rows, and role 0 is not allowed on web services (use a System WS role) · a web bundle that
+Require-Bundles org.adempiere.ui.zk fails to start (split the viewer into its own bundle) and the tab bundle must Require-Bundle zcommon/zk/zul/zweb · headless Chrome: `--disable-gpu` kills WebGL —
+use `--use-gl=swiftshader --disable-gpu-sandbox --enable-unsafe-swiftshader` · never `pkill -f <text in your own command>` · a copied server's stop script must be re-pointed BEFORE first start.
 **Rules that bind:** PRIME RULE · CARDINAL TWIN RULE (SQLite == legacy incl. L&F; fixes on the SQLite side; exemptions only in the owner's words) · AD-LAYER LAW (one generic engine, X of N) · one
 owner per relation (4D: `bim-compiler prompts/4D_MODEL_INTEGRITY.md §I`) · never move the Team base hash (`erp/patches/ad_seed.db.sql`) without the owner — use a boot overlay · every legacy-server config
-change needs the owner's go (local pilot only so far) · never `git stash` · never claude-in-chrome · bim-ootb only in a `/tmp/wt-*` worktree · no `.db` committed ·
+change needs the owner's go (local pilot / test instance only so far) · never `git stash` · never claude-in-chrome · bim-ootb only in a `/tmp/wt-*` worktree · no `.db` committed · agents = Sonnet.
 **LEGACY CONVENTION (owner 2026-11-03: "at the legacy side, all changes, add-on be following its convention ie as a plugin or migration script if there is no processes")** —
 anything we change or add on a legacy iDempiere (pilot or client) ships the way iDempiere ships its own: DATA-only (AD/PA/WS rows, no Java) = a migration script in its format
 (`migration/iD13/postgresql/<yyyymmddHHMM>_<ticket>.sql`, first statement `SELECT register_migration_script('<file>') FROM dual;`, plain DML with IDs ≥ 1000000 + `*_UU`, as written by ZK's
@@ -37,6 +51,7 @@ anything we change or add on a legacy iDempiere (pilot or client) ships the way 
 plugin (2Pack in the bundle). **Staging (owner, same day: "we do things adhoc as POC first, quick and dirty. But once proven or clearer, we evolve to convention"):** a POC on the LOCAL pilot may be
 ad-hoc; once it is proven — and always before it reaches a client server — it is re-expressed in the convention. Proven and due: the three pilot scripts
 `capex/tools/ws_capex_{readtypes,writetypes,updatetypes}.sql` (ad-hoc `DO $$` blocks; the twin PASSed on them) → one migration script each (named, not yet done).
+
 
 ## 1. What exists (map — read the file before changing it)
 | piece | file | witness |
@@ -358,6 +373,7 @@ Q9 Legacy read types for C_ProjectPhase / C_ProjectTask / C_ProjectLine / C_Phas
 **For the Sysnova PM (owner's ask 2026-11-03: "their script and whether it is live or still prototype"):**
 Q-S1 Please share the dashboard's source code (the v2 app at `:8000/v2`, and v1 if it still runs) — or a zip / repo access.
 Q-S2 Is it LIVE on real Kazi Farms data today, or a prototype on sample/test data? (Footer says "Live data from iDempiere" — which iDempiere: production or a copy?)
+  **ANSWER (Sysnova PM, via the owner, 2026-11-03): still a PROTOTYPE.** → we proceed with ours (TASK 1, §5.13).
 Q-S3 How does it read iDempiere — straight from the PostgreSQL database (SQL / views), through iDempiere web services, or through a REST plugin? Read-only user?
 Q-S4 How do users sign in to it — its own login, the iDempiere login, or none (LAN only)?
 Q-S5 For each tile, the formula or SQL it uses (answers §6 Q1–Q8 in one go), and what "Procurement Risks" and "Handover" show.
