@@ -88,6 +88,8 @@ const PRECACHE_ASSETS = [
   'ad_import_tables.js',   // TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',
+  'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
+  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js',
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
   'slipverify/slipok.js',
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
