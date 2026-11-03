@@ -39,18 +39,32 @@
   function launchUrl(projectId) { return '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(projectId); }   // == find_erp_push.js's link
 
   // ── store: OPFS-first (what the > ERP / > VO pushes wrote), else the seed — the diff.js _loadVoErpDb precedent ──
+  // §5.11 (prompts/CAPEX_DASHBOARD.md): the store opens with the ERP's OWN boot overlays, exactly as erp/idempiere.html:1155-1156, erp/ws_kernel.js:19-20 and capex/tools/fold_demo.js do —
+  // without them the viewer's ERP data differed from the ERP app's (products without the legacy-mandatory C_TaxCategory_ID: a real iDempiere refused the viewer's push, found by the browser check).
+  // Idempotent (each overlay never touches a set value), outside the team base hash. Globals in the browser, require() in node.
+  function _overlay(db, src) {
+    var out = [];
+    [['AdDocValueOverlay', '../erp/ad_docvalue_overlay.js'], ['AdTaxCatOverlay', '../erp/ad_taxcat_overlay.js']].forEach(function (o) {
+      var mod = global[o[0]];
+      if (!mod && typeof require === 'function') { try { mod = require(o[1]); } catch (e) { mod = null; } }
+      if (!mod || !mod.ensure) { out.push(o[0] + '=absent'); return; }
+      try { var r = mod.ensure(db); out.push(o[0] + '=' + JSON.stringify(r && (r.filled != null ? { filled: r.filled, left: r.left } : r))); } catch (e) { out.push(o[0] + '=ERR ' + e.message); }
+    });
+    console.log('§S9-STORE overlays src=' + src + ' ' + out.join(' '));
+    return db;
+  }
   async function openStore(SQL, fetchSeed) {
     try {
       if (navigator.storage && navigator.storage.getDirectory) {
         var root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle(STORE_DIR), fh = await dir.getFileHandle(STORE_FILE);
         var f = await fh.getFile(), buf = await f.arrayBuffer();
         console.log('§S9-STORE src=opfs bytes=' + buf.byteLength);
-        return { db: new SQL.Database(new Uint8Array(buf)), src: 'opfs' };
+        return { db: _overlay(new SQL.Database(new Uint8Array(buf)), 'opfs'), src: 'opfs' };
       }
     } catch (e) { /* no OPFS store yet */ }
     var b = await fetchSeed();
     console.log('§S9-STORE src=seed bytes=' + (b && b.byteLength));
-    return { db: new SQL.Database(new Uint8Array(b)), src: 'seed' };
+    return { db: _overlay(new SQL.Database(new Uint8Array(b)), 'seed'), src: 'seed' };
   }
   // §STORE_STAMP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §BIM-CRUD; user 2026-10-07 stale-tab fix): the store's identity on disk
   //   = lastModified:size, or 'gone'. A writer that cached the store reuses its copy ONLY while the stamp is unchanged — a seed reset

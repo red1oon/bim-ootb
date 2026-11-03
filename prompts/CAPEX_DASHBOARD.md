@@ -286,6 +286,16 @@ Pilot projects left in place (no deletes): 1000011, 1000012 (early iterations, n
 HHS `§SHED_TWIN_VERDICT PASS tiles(match=16 diff=0 inconclusive=3) rows(match=302 diff=0) created={…0…}` → identical; SHED (`fold_shed.db`, the file with Value `SHED`) `§SHED_TWIN_VERDICT PASS tiles(match=17 diff=0 inconclusive=2) rows(match=109 diff=0) created={…0…}` → identical (non-`§ERP_REST` log lines diff-empty for HHS).
 Not done: the BIM tab passing the `erp*` params (bim-compiler `BIMTabPanel`, other lane); the shipped DOM dialog `_askLoginDom` is untested headlessly (no browser allowed) — the witness stubs `D.askErpLogin` as specified.
 
+### 5.11 The viewer's Project-Order store opens with the ERP's boot overlays (2026-11-03) — spec + result; logs read
+**Found by the headless browser check** (bim-compiler `prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8.8`, software GL, test instance): the viewer's real push from `/bimootb` was refused by legacy —
+`§ERP_REST_CREATE_ERR M_Product: … null value in column "c_taxcategory_id"`. Cause: `ProjOrderState.openStore` (`viewer/proj_order_state.js:42-53`) opened the seed / OPFS store WITHOUT the ERP's own boot
+overlays, which every other opener applies (`erp/idempiere.html:1155-1156`, `erp/ws_kernel.js:19-20`, `capex/tools/fold_demo.js:19`) — so the viewer's ERP data was not the ERP app's (TWIN rule).
+**Fix:** `openStore` applies `AdDocValueOverlay` + `AdTaxCatOverlay` (globals in the browser, `require` in node; idempotent; logged `§S9-STORE overlays src=…`); `viewer.html` loads
+`../erp/ad_docvalue_wf.js`, `ad_docvalue_overlay.js`, `ad_taxcat_overlay.js` (the ERP's order, `erp/idempiere.html:505`); sw precache + bump.
+**Witness W-VIEWER-STORE-OVERLAYS** (`capex/tests/witness_viewer_store_overlays.js`, node): raw seed 41 products without a tax category (a default exists) → the store 0; `BREAK=1` (overlays hidden) → 41 → FAIL;
+main's `proj_order_state.js` → 41. **End of chain (browser, test instance):** the same push then `§PROJ_PUSH_LEGACY base=http://localhost:8098 … projectId=1000003`; legacy == local fold (7/10/16,
+PlannedAmt 383827.36788); the real password dialog shown prefilled (user/client/role/org/warehouse read-only, only the password typed), removed after submit, password in 0 of 697 log lines.
+
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
 Q2 Project Stage: how do Concept / Initiation / Planning / Execution / Closing map onto `C_Project.C_Phase_ID` (stock `C_Phase` rows are sales-cycle steps in the seed)? Or is it a custom column/`C_ProjectType`?
