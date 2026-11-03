@@ -48,24 +48,6 @@
       "note": "lifecycle-as-data governance gate (openRuleFor) — Lucide scale glyph (rules/governance) — de-collided from checkList, which stays UBBL Compliance (PILLS_CONSOLIDATION_REVIEW_2026-07-03 §ICON MAP)."
     },
     {
-      "id": "pos",
-      "name": "POS",
-      "key": "",
-      "icon": "shoppingCart",
-      "showWhen": "pos-station",
-      "order": 4.5,
-      "note": "POS_ADDON_SPEC §P-1 — the point-of-sale lens (openPosFor → PosLens.open): c_poskey tile grid, sealed master prices, Complete = ONE signed group (order+ship+invoice+backflush, WR from the dictionary), replenishment fold after. shopping-cart glyph (Lucide verbatim). §AD-GATE showWhen:pos-station — surfaces only when the tenant carries a c_pos row (window.IdmpPillPosGate, mirrors the Posting-Preview data-gate)."
-    },
-    {
-      "id": "kitchen",
-      "name": "Kitchen",
-      "key": "",
-      "icon": "clipboard",
-      "showWhen": "pos-station",
-      "order": 4.6,
-      "note": "RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC — Kitchen Display (openKitchenFor → KitchenLens.open): the 'ordered, not yet delivered' queue = KitchenCore fold over the op log (deliver-later shipments born DR) ∪ the §S-2 seed selector; Serve = ONE signed group riding pos_core completeShipmentOps (confirm-gate + FSM intact). W-KDS-QUEUE headless witness. Same §AD-GATE showWhen:pos-station as the POS pill (a kitchen without a station is meaningless)."
-    },
-    {
       "id": "warehouse",
       "name": "Warehouse Walk",
       "key": "",
@@ -96,14 +78,6 @@
       "icon": "plug",
       "order": 8.5,
       "note": "PLUGIN_SYSTEM_LANE.md §Phase D — the Fold-Engine plugin host (W-PLUGIN). TAP opens PluginEngine.open: paste a raw ES-module bundle URL → one click → ACTIVE (collapses iDempiere's drop-JAR-restart + 2Pack-import into one in-surface action). A bundle contributes into the live engine registries (AdModelVal/AdCallout/AdProcess/PostResolver) via plugin_registry.js; state persists in IndexedDB. plug glyph (Lucide verbatim). NEVER stage-gated (engine plugins are a global concern). §-witness §PLUGIN-PILL."
-    },
-    {
-      "id": "audio",
-      "name": "Sound FX",
-      "key": "v",
-      "icon": "volume2",
-      "order": 8.7,
-      "note": "The SAME Sound-FX speaker pill as the BIM viewer (panels.js id=audio, key v) — idempiere.html loads ../viewer/sfx.js so window.toggleSfx + window.__sfx are present. TAP toggles the ERP/POS earcons (POS ring/pay/complete, §R2-AUDIO); lit when on (IdmpPillActive.audio → __sfx.isOn()), live-synced via builder.sync(). The choice PERSISTS (localStorage sfx_on overrides erp/sfx.json master.enabled), so a mute sticks across reloads — surfaces the control instead of an invisible default. volume2 glyph (Lucide verbatim, already in icons.js). [[feedback_pill_icon_consistency]]."
     },
     {
       "id": "worldhist",

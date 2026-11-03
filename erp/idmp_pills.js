@@ -124,10 +124,6 @@
     // window.IdmpPillDocGate(); absent/false → the pill is fully off the bar (pill=false), not just overflow.
     var _docOk = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
     _actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk ? undefined : false; });
-    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): the POS pill surfaces only when the tenant
-    // carries a c_pos row (data-gated like Posting-Preview). Host answers via window.IdmpPillPosGate().
-    var _posOk = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
-    _actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk ? undefined : false; });
     // GRID_BATCH_FORM_PILL_SPEC item 5 — showWhen:"form-view": the relocated record toolbar pills (New/Save/
     // Process) surface ONLY with a record open in FORM view. Host answers via window.IdmpPillFormGate().
     var _formOk = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
@@ -254,9 +250,6 @@
       // the host's IdmpPillDocGate() is false → showWhen:"posting-doc" pills (Posting-Preview) start OFF the bar.
       var _docOk0 = (typeof window.IdmpPillDocGate === 'function') ? !!window.IdmpPillDocGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'posting-doc') a.pill = _docOk0 ? undefined : false; });
-      // §AD-GATE — pos-station at BUILD too (POS pill off the bar until a c_pos tenant is open)
-      var _posOk0 = (typeof window.IdmpPillPosGate === 'function') ? !!window.IdmpPillPosGate() : false;
-      actions.forEach(function (a) { if (a._showWhen === 'pos-station') a.pill = _posOk0 ? undefined : false; });
       // form-view at BUILD too (the New/Save/Process pills start OFF the bar until a record is open in form view)
       var _formOk0 = (typeof window.IdmpPillFormGate === 'function') ? !!window.IdmpPillFormGate() : false;
       actions.forEach(function (a) { if (a._showWhen === 'form-view') a.pill = _formOk0 ? undefined : false; });

@@ -19,7 +19,26 @@
     { name: 'bank',   label: 'Bank',    tender: 'A', live: true },
     { name: 'slip',   label: 'Slip',    tender: null, live: false, reason: 'no AD_Reference 214 value is a bank slip; no extracted mapping (uniCenta 5.0 JPaymentSlip.java:76)' }
   ];
-  function tenderOf(name) { return TENDERS.filter(function (t) { return t.name === name; })[0] || null; }
+  // U11 refund tabs (5.0 JPaymentSelectRefund.java:67-70 : Refund(cash), Cheque, Voucher, Card): names cashrefund/chequerefund/paperout/magcardrefund (PaymentInfo*Refund, 3.81 JPaymentSelect.java:467,503,539) -> the same TenderType as the sale tab; the PayAmt is NEGATIVE
+  var REFUND_TENDERS = [
+    { name: 'cashrefund',   label: 'Refund',  tender: 'X', live: true },
+    { name: 'chequerefund', label: 'Cheque',  tender: 'K', live: true },
+    { name: 'paperout',     label: 'Voucher', tender: null, live: false, reason: 'AD_Reference 214 has no voucher value; no extracted mapping' },
+    { name: 'magcardrefund', label: 'Card',   tender: 'C', live: true }
+  ];
+  // U12 customer-payment tabs (5.0 JPaymentSelectCustomer.java:67-72): Cash, Cheque, Voucher, Bank, Card, Slip = the sale tabs minus Free and Debt
+  var CUSTOMER_TENDERS = ['cash', 'cheque', 'paperin', 'bank', 'magcard', 'slip'];
+  function tenderOf(name) { return TENDERS.concat(REFUND_TENDERS).filter(function (t) { return t.name === name; })[0] || null; }
+  function tabsFor(kind) { return kind === 'R' ? REFUND_TENDERS : kind === 'P' ? CUSTOMER_TENDERS.map(tenderOf) : TENDERS; }
+  // a ticket line list with its Line Discount lines (script.Linediscount.txt: a `disc` line follows its parent) folded into the parent's unit price: what travels (Import Orders needs a product per line) and what the totals are made of
+  function foldLines(lines) {
+    var out = [], last = null;
+    lines.forEach(function (l) {
+      if (l.disc && last) { last.price = (last.qty * last.price + l.qty * l.price) / last.qty; return; }
+      last = { pid: l.pid, name: l.name, qty: l.qty, price: Number(l.price) }; out.push(last);
+    });
+    return out;
+  }
   var cents = function (v) { return Math.round(Number(v || 0) * 100 + (Number(v) < 0 ? -1e-7 : 1e-7)); };
   var money = function (c) { return (c / 100).toFixed(2); };
   // MOrderLine.setLineNetAmt: QtyOrdered x PriceActual at currency precision
@@ -61,14 +80,18 @@
 
   // ── the deposit rows (§15.2). ctx { client, org, iso, uomOf(pid), day, shiftTag }
   function depositRows(ticket, key, applied, ctx) {
+    var sgn = ctx.sign || 1;
     var orders = ticket.lines.map(function (l) {
-      return { ad_client_id: ctx.client, ad_org_id: ctx.org, isactive: 'Y', i_isimported: 'N', issotrx: 'Y', doctypename: 'POS Order', documentno: key, m_product_id: l.pid,
+      var o = { ad_client_id: ctx.client, ad_org_id: ctx.org, isactive: 'Y', i_isimported: 'N', issotrx: 'Y', doctypename: 'POS Order', documentno: key, m_product_id: l.pid,
         qtyordered: l.qty, priceactual: l.price, c_uom_id: ctx.uomOf(l.pid), dateordered: ctx.day + ' 00:00:00', description: ctx.shiftTag };
+      if (ctx.refundOf) o.linedescription = 'Refund of ' + ctx.refundOf;   // 5.0 JTicketsBagTicket.java:559 refundticket.setTicketStatus(original id): the link to the original ticket (I_Order has no PO reference column)
+      return o;
     });
     var payments = applied.parts.filter(function (p) { return !p.error && p.applied > 0; }).map(function (p) {
       var f = { ad_client_id: ctx.client, ad_org_id: ctx.org, isactive: 'Y', i_isimported: 'N', isreceipt: 'Y', documentno: key, doctypename: 'AR Receipt', iso_code: ctx.iso,
-        payamt: p.applied / 100, tendertype: p.tender, datetrx: ctx.day + ' 00:00:00' };
-      if (p.name === 'magcard') { f.isapproved = 'Y'; f.r_pnref = p.ref; f.r_authcode = p.auth; f.r_result = '0'; f.r_respmsg = 'APPROVED'; }   // the terminal's reply keyed by the cashier; the card NUMBER is never a column of this row
+        payamt: sgn * p.applied / 100, tendertype: p.tender, datetrx: ctx.day + ' 00:00:00', description: ctx.shiftTag };
+      if (ctx.bpartnerValue) f.bpartnervalue = ctx.bpartnerValue;
+      if (p.name === 'magcard' || p.name === 'magcardrefund') { f.isapproved = 'Y'; f.r_pnref = p.ref; f.r_authcode = p.auth; f.r_result = '0'; f.r_respmsg = 'APPROVED'; }   // the terminal's reply keyed by the cashier; the card NUMBER is never a column of this row
       return f;
     });
     return { orders: orders, payments: payments };
@@ -76,22 +99,23 @@
 
   // ── receipt model: the fields of Printer.Ticket.xml:26-125 in their order (the card-number line is deliberately absent: PCI)
   function receiptModel(o) {   // o { type, number, date, terminal, user, lines:[{name, price, qty, value}], gross, applied, change }
-    var f = [['Receipt', o.type === 'R' ? 'Refund' : 'Receipt'], [o.type === 'R' ? 'Refund' : 'Receipt', o.number], ['Date', o.date], ['Terminal', o.terminal], ['Served by', o.user]];
+    var f = [['Receipt', o.type === 'R' ? 'Refund' : o.type === 'P' ? 'Payment' : 'Receipt'], [o.type === 'R' ? 'Refund' : 'Receipt', o.number], ['Date', o.date], ['Terminal', o.terminal], ['Served by', o.user]];
     f = f.slice(1);
     f.push(['Item', 'Price', 'Qty', 'Value']);
     o.lines.forEach(function (l) { f.push(['line', l.name, money(l.price), 'x' + l.qty, money(l.value)]); });
     f.push(['Items count', String(o.lines.reduce(function (a, l) { return a + Number(l.qty); }, 0))]);
-    f.push(['Total', money(o.gross)]);
+    f.push(['Total', money(o.gross)]);   // a refund prints a negative total
     o.applied.parts.forEach(function (p) {
       if (p.name === 'cash') { f.push(['Cash']); f.push(['Tendered', money(p.tendered)]); f.push(['Change', money(p.tendered - p.applied)]); }
-      else if (p.name === 'magcard') { f.push(['CARD SALE']); f.push(['AMOUNT', money(o.gross)]); f.push(['Tranx ID', p.ref || '']); f.push(['Auth Code', p.auth || '']); }
+      else if (p.name === 'cashrefund') { f.push(['Cash Refund']); f.push(['Refunded', money(p.applied)]); }
+      else if (p.name === 'magcard' || p.name === 'magcardrefund') { f.push([p.name === 'magcard' ? 'CARD SALE' : 'CARD REFUND']); f.push(['AMOUNT', money(Math.abs(o.gross))]); f.push(['Tranx ID', p.ref || '']); f.push(['Auth Code', p.auth || '']); }
       else { f.push([tenderOf(p.name).label, money(p.applied)]); }
     });
     return f;
   }
 
   // ── Close Cash (§14.4): the Z is a QUERY over the shift's deposited rows. orders/payments = rows of the shift; taxEnv as totals().
-  function zTotals(orders, payments, env) {
+  function zTotals(orders, payments, env, extra) {
     var byTicket = {}, order = [];
     orders.forEach(function (r) { var k = r.documentno; if (!byTicket[k]) { byTicket[k] = []; order.push(k); } byTicket[k].push(r); });
     var z = { tickets: order.length, units: 0, gross: 0, net: 0, tax: 0, taxes: {}, payments: 0, byTender: {}, ok: true };
@@ -102,9 +126,13 @@
       z.gross += t.gross; z.net += t.net; z.tax += t.tax;
       t.rows.forEach(function (x) { var s = z.taxes[x.c_tax_id] = z.taxes[x.c_tax_id] || { base: 0, amount: 0 }; s.base += x.taxbaseamt; s.amount += x.taxamt; });
     });
-    var TN = { X: 'cash', K: 'cheque', C: 'magcard', A: 'bank' };
-    payments.forEach(function (p) { z.payments++; var n = TN[p.tendertype] || p.tendertype; z.byTender[n] = (z.byTender[n] || 0) + cents(p.payamt); });
+    var TN = { X: 'cash', K: 'cheque', C: 'magcard', A: 'bank' }, TR = { X: 'cashrefund', K: 'chequerefund', C: 'magcardrefund' };
+    payments.forEach(function (p) {
+      z.payments++; var ref = /-R\d+$/.test(p.documentno || ''), n = (ref ? TR : TN)[p.tendertype] || TN[p.tendertype] || p.tendertype;
+      z.byTender[n] = (z.byTender[n] || 0) + cents(p.payamt);
+    });
+    (extra || []).forEach(function (c) { z.payments++; z.byTender[c.reason] = (z.byTender[c.reason] || 0) + cents(c.amount); });   // PaymentsModel.java:201 : cash in / out are payment rows with NOTES
     return z;
   }
-  return { TENDERS: TENDERS, tenderOf: tenderOf, cents: cents, money: money, lineNetCents: lineNetCents, keyPrefix: keyPrefix, nextNumber: nextNumber, totals: totals, applyTenders: applyTenders, depositRows: depositRows, receiptModel: receiptModel, zTotals: zTotals };
+  return { TENDERS: TENDERS, REFUND_TENDERS: REFUND_TENDERS, tabsFor: tabsFor, foldLines: foldLines, tenderOf: tenderOf, cents: cents, money: money, lineNetCents: lineNetCents, keyPrefix: keyPrefix, nextNumber: nextNumber, totals: totals, applyTenders: applyTenders, depositRows: depositRows, receiptModel: receiptModel, zTotals: zTotals };
 });

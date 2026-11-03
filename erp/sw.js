@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v969';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots
+const CACHE_VERSION = 'v970';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -89,7 +89,7 @@ const PRECACHE_ASSETS = [
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',
   'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
-  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js',
+  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js',
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
   'slipverify/slipok.js',
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers
@@ -351,11 +351,6 @@ const PRECACHE_ASSETS = [
   'blue_future.js',    // FRONTEND_LANE_MASTER §OUTSTANDING item 0 — Blue Future UNOFFICIAL speculative-branch skin (W-BLUE-FUTURE-LIVE)
   'crud_ops.json',     // SO_FULL_CRUD_GAP.md — keyed CRUD verb/field/docAction store the overlay fetches on enable (incl. T1 docPolicy fan-out table)
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
-  'img_store.js',      // POS_KILLER_DEMO E-3 — device-local images folder (IDB, window.ImgStore), == bim-compiler build/erp source
-  'pos_lens.js',       // POS_ADDON_SPEC — dumb-terminal POS lens (window.PosLens): record/pay/SEND, zero client state
-  'kitchen_core.js',   // §T2-SPEC Kitchen Display fold (window.KitchenCore, W-KDS-QUEUE), == bim-compiler build/erp source
-  'kitchen_lens.js',   // §T2-SPEC Kitchen Display lens (window.KitchenLens): fold-rendered tickets, Serve = one signed group
-  'sfx.json',          // §R2-AUDIO — ERP-surface SFX config (subtle POS earcons; sfx.js itself rides the viewer scope)
   'ninja_excel.js',   // NINJA EXCEL — Excel-as-report-binder engine (read/gate/run/verify; == bim-compiler build/erp)
   'ninja_rule.js',    // NINJA EXCEL — RULE tier: business phrase → SQL candidates from the AD dictionary (§7)
   'ninja_pill.js',    // NINJA EXCEL — the lens UI (drop/download); xlsx.mini.min.js lazy-loads, see below
