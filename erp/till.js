@@ -71,7 +71,7 @@
     S.screen = name; ['u1', 'u2', 'u3', 'u8', 'u9', 'u14'].forEach(function (id) { $('#' + id).classList.remove('on'); });
     var map = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14' };
     if (map[name]) $('#' + map[name]).classList.add('on'); else { msg('This panel is not in this release', 'info'); return false; }
-    if (name === 'close') renderClose(); if (name === 'sales') renderSales();
+    if (name === 'close') renderClose(); if (name === 'sales') { renderSales(); loadConfig().then(renderSales); }   // master data (prices, taxes) is re-read on every entry to Sales: a Visit may have delivered changes
     return true;
   }
 
@@ -269,7 +269,7 @@
     $('#s-dep').textContent = 'deposited ' + S.deposited;
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§TILL_COST engine_ready_ms=' + ms + ' heap_mb=' + heap + ' products=' + S.prods.length + ' (the engine frame is the full ERP)');
-    window.Till = { ready: true, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
+    window.Till = { ready: true, refresh: loadConfig, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
   boot().catch(function (e) { log('🔴 §TILL_BOOT ' + (e && e.stack || e)); });

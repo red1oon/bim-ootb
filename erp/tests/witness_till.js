@@ -227,10 +227,10 @@ async function runDeposit(ctx, base) {
   var pg = await openTill(ctx, base);
   // a non-zero tax so the rounding is exercised (the seed's Standard tax is 0%): the same edit on the device (an op) and on the head-office replica
   var taxWritten = await pg.evaluate(function (rate) { return new Promise(function (res) { var E = window.Till.engine(); var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === 'c_tax') { E.removeEventListener('overlay:committed', once); res(true); } }; E.addEventListener('overlay:committed', once); E.__crud.applyOp({ op_type: 'CRUD_UPDATE', key: 'c_tax', table: 'c_tax', verb: 'update', id: 104, changes: { rate: rate } }); setTimeout(function () { res(false); }, 10000); }); }, TAX);
-  check('deposit', 'tax-edit-committed', taxWritten === true, 'the tax edit (Standard 0% -> ' + TAX + '%) committed on the device before the page is reopened', taxWritten);
-  await pg.close(); pg = await openTill(ctx, base);
+  check('deposit', 'tax-edit-committed', taxWritten === true, 'the tax edit (Standard 0% -> ' + TAX + '%) committed on the device', taxWritten);
+  await pg.evaluate(function () { return window.Till.refresh(); });                                    // the till re-reads master data (it also does on every entry to Sales)
   var trate = (await rowsOf(pg, 'SELECT rate FROM c_tax WHERE c_tax_id=104'))[0];
-  check('deposit', 'tax-live', num(trate.rate) === TAX, 'the device sees Standard tax at ' + TAX + '% (non-vacuous: the seed has 0%)', trate);
+  check('deposit', 'tax-live', num(trate.rate) === TAX, 'the till sees Standard tax at ' + TAX + '% (non-vacuous: the seed has 0%)', trate);
   var before = await coreCounts(pg);
   await loginSales(pg);
   // ticket 1: 3 lines through the pad (quantity typed before the product tile), cash + card
