@@ -109,6 +109,47 @@ mock.listen(0, function () {
       });
     })
     .then(function () {
+      // §5.8 (prompts/CAPEX_DASHBOARD.md): legacy forbids a FREE Filter parameter (MWebServicePara.beforeSave :114-121) and refuses a request Filter on a type without one
+      //   (validateParameter :307-338 "invalid parameter Filter"); a DataRow column not whitelisted on the QUERY type is "input column X not allowed" (queryData :1494-1498).
+      //   ISSUE: the old client sent Filter strings → a faithful mock must now REFUSE them, so this suite can no longer pass what legacy refuses.
+      //   Each probe below goes straight on the wire (fetch), so it proves the MOCK refuses; the pushes above prove the CLIENT no longer triggers either refusal.
+      var BREAK = process.env.BREAK === '1', posts = function (xml) { return fetch(cfg.baseUrl + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', headers: { 'Content-Type': 'application/xml' }, body: xml }); };
+      var withFilter = ErpRestPush.buildCrudXml(cfg.login, { serviceType: 'Q', tableName: 'C_Project', action: 'Read' }).replace('<Action>', '<Filter>Value=\'Hospital_Demo\'</Filter><Action>');
+      var badCol = ErpRestPush.buildCrudXml(cfg.login, { serviceType: 'Q', tableName: 'C_Project', action: 'Read', fields: [{ column: 'Description', val: 'x' }] });
+      var callsBefore = mock.callLog.filter(function (l) { return l.op === 'query_data' && l.filter; }).length;
+      return posts(withFilter).then(function (r) {
+        var ok = r.status === 500; if (!ok) failures.push('request Filter was NOT refused (status ' + r.status + ')');
+        console.log('§POC_FILTER_REFUSED status=' + r.status + (ok ? ' OK (legacy: invalid parameter Filter)' : ' MISMATCH'));
+        return posts(badCol);
+      }).then(function (r) {
+        var ok = r.status === 500; if (!ok) failures.push('non-whitelisted query column was NOT refused (status ' + r.status + ')');
+        console.log('§POC_QUERY_COLUMN_REFUSED status=' + r.status + (ok ? ' OK (legacy: input column Description not allowed)' : ' MISMATCH'));
+        // the whole of run1+run2 above sent NO Filter: every query_data call the client made carried DataRow keys only
+        var clientFilters = callsBefore;   // counted before the two probes above
+        if (clientFilters !== 0) failures.push('client sent ' + clientFilters + ' Filter(s)');
+        console.log('§POC_CLIENT_FILTER_FREE filtersSentByClient=' + clientFilters + (clientFilters === 0 ? ' OK' : ' MISMATCH'));
+      });
+    })
+    .then(function () {
+      // LIKE wildcard: legacy binds CHAR keys with LIKE, so a key 'WALL_' also matches the stored 'WALL1'. The client must keep only EXACT rows (§ERP_REST_LIKE_EXTRA) or it would
+      //   treat 'WALL_' as already present and silently never create it. BREAK=1 expects the wrong outcome (+0) → must FAIL.
+      var BREAK = process.env.BREAK === '1', lm = Mock.createMockServer(), logs = [], realLog = console.log;
+      var plan = function (pv) { return { building: 'LikeBld', phases: [{ name: 'P', seqno: 1, startDate: '2026-01-01', endDate: '2026-01-02', tasks: [], lines: [{ productValue: pv, productName: pv, categoryName: 'C', qty: 1, price: 1, plannedAmt: 1 }] }] }; };
+      return new Promise(function (resolve) { lm.listen(0, resolve); }).then(function () {
+        var c3 = { baseUrl: 'http://127.0.0.1:' + lm.address().port, login: cfg.login };
+        return ErpRestPush.pushProjectOrder(c3, plan('WALL1')).then(function () {
+          console.log = function (m) { logs.push(String(m)); realLog.apply(console, arguments); };
+          return ErpRestPush.pushProjectOrder(c3, plan('WALL_'));
+        }).then(function (r) {
+          console.log = realLog;
+          var extra = logs.filter(function (l) { return /^§ERP_REST_LIKE_EXTRA table=M_Product dropped=1/.test(l); }).length;
+          var want = BREAK ? 0 : 1, ok = r.created.products === want && extra >= 1;
+          if (!ok) failures.push('LIKE extra: products created=' + r.created.products + ' expected ' + want + ', LIKE_EXTRA lines=' + extra);
+          console.log('§POC_LIKE_EXTRA productsCreatedForKey_WALL_=' + r.created.products + ' expected=' + want + ' likeExtraLogged=' + extra + (ok ? ' OK (exact post-filter dropped the LIKE extra)' : ' MISMATCH'));
+        }).then(function () { return new Promise(function (r) { lm.close(r); }); });
+      });
+    })
+    .then(function () {
       mock.close(function () {
         console.log('§POC_ERP_REST_PUSH_VERDICT ' + (failures.length ? ('FAIL (' + failures.length + '): ' + failures.join(' | ')) : 'PASS'));
         process.exit(failures.length ? 1 : 0);

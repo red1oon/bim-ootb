@@ -54,7 +54,7 @@
     for (var i = 0; i < ENTITIES.length; i++) {
       var e = ENTITIES[i];
       var res = await fetch(cfg.base + PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ ModelCRUDRequest: { ModelCRUD: { serviceType: types[e], Filter: '' }, ADLoginRequest: cfg.login } }) });
+        body: JSON.stringify({ ModelCRUDRequest: { ModelCRUD: { serviceType: types[e] }, ADLoginRequest: cfg.login } }) });
       var txt = await res.text(), j; try { j = JSON.parse(txt); } catch (x) { throw new Error('§AD_HTTP ' + res.status + ' non-JSON: ' + txt.slice(0, 120)); }
       var sr = j.StandardResponse;
       if (j.status === '500' || j.message || (sr && sr['@IsError'])) {            // a read type that is not registered => this entity is UNAVAILABLE (never guessed)

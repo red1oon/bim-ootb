@@ -16,11 +16,8 @@ const pushCfg = { baseUrl: base, login: { user: L.user, pass: L.pass, lang: L.la
 // master role "BIM OOTB Push" (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8); default = the pilot POC types above (unchanged).
 if ((env.BRIDGE_SVC || '').toLowerCase() === 'bimootb') Object.keys(pushCfg.serviceTypes).forEach(t => { pushCfg.serviceTypes[t] = { query: 'BIMOOTB_Query_' + t, create: 'BIMOOTB_Create_' + t }; });
 const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; return r; };
-async function legacyQuery(type, filter) {       // the adapters' own JSON wire form, with a Filter
-  const res = await fetch(base + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ModelCRUDRequest: { ModelCRUD: { serviceType: type, Filter: filter }, ADLoginRequest: L } }) });
-  return A.parseRows(JSON.parse(await res.text())).map(lc);
-}
+// legacy forbids a free Filter parameter (prompts/CAPEX_DASHBOARD.md §5.8): rows are read by DataRow KEY fields through the ONE shared reader (Push.queryRows: exact post-filter on LIKE keys)
+const legacyQuery = async (type, table, keys) => (await Push.queryRows(pushCfg.baseUrl, pushCfg.login, type, table, keys)).map(lc);
 const num = v => v == null || v === '' ? null : Number(v);
 // legacy *_UU columns are Postgres uuid: a non-UUID UU (the shipped seed's Hospital-era 'bim-…' products, §12.1 D4) cannot be sent — dropped from the create and LOGGED, never silently
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, notes = [];
@@ -70,14 +67,14 @@ const uuField = (col, v, where) => { if (v == null) return null; if (UUID.test(v
     const same = b && (isNum ? Math.abs(num(va) - num(vb)) < 1e-9 : String(va == null ? '' : va).slice(0, 19) === String(vb == null ? '' : vb).replace('T', ' ').slice(0, 19));
     same ? rm++ : rd++; console.log('§SHED_ROW table=' + tbl + ' key=' + key + ' col=' + c + ' sqlite=' + va + ' legacy=' + (b ? vb : 'ABSENT') + ' ' + (same ? 'MATCH' : 'DIFF'));
   });
-  const lp = (await legacyQuery('QueryCProject', 'C_Project_ID=' + r.projectId))[0];
+  const lp = (await legacyQuery('QueryCProject', 'C_Project', [{ column: 'C_Project_ID', val: r.projectId }]))[0];
   cmp('C_Project', value, proj, lp, ['name', 'c_currency_id', 'plannedamt', 'plannedqty', 'plannedmarginamt', 'committedamt', 'invoicedamt', 'projectbalanceamt', 'processed']);
-  const lph = await legacyQuery('QueryCProjectPhase', 'C_Project_ID=' + r.projectId);
+  const lph = await legacyQuery('QueryCProjectPhase', 'C_ProjectPhase', [{ column: 'C_Project_ID', val: r.projectId }]);
   for (const ph of phases) {
     const b = lph.find(x => x.c_projectphase_uu === ph.c_projectphase_uu) || lph.find(x => x.name === ph.name);
     cmp('C_ProjectPhase', ph.name, ph, b, ['seqno', 'startdate', 'enddate', 'iscomplete', 'plannedamt', 'committedamt']);
     if (!b) continue;
-    const lt = await legacyQuery('QueryCProjectTask', 'C_ProjectPhase_ID=' + b.c_projectphase_id), ll = await legacyQuery('QueryCProjectLine', 'C_ProjectPhase_ID=' + b.c_projectphase_id);
+    const lt = await legacyQuery('QueryCProjectTask', 'C_ProjectTask', [{ column: 'C_ProjectPhase_ID', val: +b.c_projectphase_id }]), ll = await legacyQuery('QueryCProjectLine', 'C_ProjectLine', [{ column: 'C_ProjectPhase_ID', val: +b.c_projectphase_id }]);
     for (const t of q('SELECT * FROM c_projecttask WHERE c_projectphase_id=?', [ph.c_projectphase_id])) cmp('C_ProjectTask', ph.name + '/' + t.name, t, lt.find(x => x.c_projecttask_uu === t.c_projecttask_uu) || lt.find(x => x.name === t.name), ['seqno', 'plannedamt']);
     for (const l of q('SELECT * FROM c_projectline WHERE c_projectphase_id=?', [ph.c_projectphase_id])) cmp('C_ProjectLine', ph.name + '/' + l.description, l, (ll.find(x => x.c_projectline_uu === l.c_projectline_uu) || ll.find(x => x.description === l.description)), ['line', 'plannedqty', 'plannedprice', 'plannedamt', 'plannedmarginamt']);
   }

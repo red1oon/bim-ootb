@@ -25,6 +25,28 @@ var WHITELIST = {
   C_ProjectLine: ['C_ProjectPhase_ID', 'C_Project_ID', 'M_Product_ID', 'PlannedQty', 'PlannedPrice', 'PlannedAmt']
 };
 
+// Per-table QUERY input whitelist — stands in for WS_WebServiceFieldInput rows on the QUERY type (queryData :1470-1500: a DataRow column that is not whitelisted → "input column X not allowed").
+// These are exactly the natural keys erp_rest_push.js looks rows up by (the pilot's Query* types carry the same list: capex/tools/ws_capex_querykeys.sql).
+var QUERY_KEYS = {
+  C_Project: ['Value', 'C_Project_ID'],
+  C_ProjectPhase: ['C_Project_ID', 'Name', 'C_ProjectPhase_ID'],
+  C_ProjectTask: ['C_ProjectPhase_ID', 'Name'],
+  M_Product_Category: ['Name'],
+  M_Product: ['Value'],
+  C_ProjectLine: ['C_ProjectPhase_ID', 'M_Product_ID', 'C_ProjectTask_ID'],
+  C_UOM: ['X12DE355']
+};
+// Postgres LIKE with the default escape: `_` = any one char, `%` = any run, `\x` = literal x. (queryData binds CHAR columns with LIKE, :1488-1490.)
+function likeMatch(value, pattern) {
+  var re = '', i, c;
+  for (i = 0; i < pattern.length; i++) {
+    c = pattern[i];
+    if (c === '\\' && i + 1 < pattern.length) { re += pattern[++i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); continue; }
+    re += c === '_' ? '.' : c === '%' ? '.*' : c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp('^' + re + '$').test(String(value));
+}
+
 function createMockServer(opts) {
   opts = opts || {};
   var db = {}; // tableName -> array of row objects
@@ -57,13 +79,12 @@ function createMockServer(opts) {
       return { column: col, val: val };
     });
   }
-  // Only what erp_rest_push.js actually sends: single/AND-ed "Col='val'" or "Col=NNN" clauses.
-  function matchFilter(row, filter) {
-    if (!filter) return true;
-    return filter.split(/\s+AND\s+/i).every(function (clause) {
-      var m = clause.match(/^\s*([\w_]+)\s*=\s*'?([^']*)'?\s*$/);
-      if (!m) return false;
-      return String(row[m[1]]) === String(m[2]);
+  // DataRow key binding, as queryData does: *_ID columns `=?`, every other (CHAR) column `LIKE ?` — so `_`/`%` in a key are wildcards.
+  function matchKeys(row, fields) {
+    return fields.every(function (f) {
+      var v = row[f.column];
+      if (v == null) return false;
+      return /_ID$/.test(f.column) ? String(v) === String(f.val) : likeMatch(v, String(f.val));
     });
   }
 
@@ -117,7 +138,19 @@ function createMockServer(opts) {
       }
 
       if (op === 'query_data') {
-        var rows = table(tableName).filter(function (r) { return matchFilter(r, filter); });
+        // legacy, validateCRUD → validateParameter(:307-338): a type with no Filter parameter refuses ANY request Filter → IdempiereServiceFault → HTTP 500, empty body (measured on the pilot)
+        if (filter != null && filter.length > 0) {
+          console.log('§MOCK_ADINTERFACE_REJECT op=query_data table=' + tableName + ' (Web service type ' + st + ': invalid parameter Filter)');
+          res.writeHead(500); return res.end();
+        }
+        var qf = parseFields(tag(body, 'DataRow')), qAllowed = (opts.queryKeys || QUERY_KEYS)[tableName] || [];
+        for (var qi = 0; qi < qf.length; qi++) {
+          if (qAllowed.indexOf(qf[qi].column) === -1) {
+            console.log('§MOCK_ADINTERFACE_REJECT op=query_data table=' + tableName + ' (Web service type ' + st + ': input column ' + qf[qi].column + ' not allowed)');
+            res.writeHead(500); return res.end();
+          }
+        }
+        var rows = table(tableName).filter(function (r) { return matchKeys(r, qf); });
         return windowTabData(res, rows);
       }
       if (op === 'create_data') {
