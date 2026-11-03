@@ -91,10 +91,13 @@
       var n2 = rows.length - n1;
       // UPDATE :279-290 QtyOnHand / QtyReserved (IsSOTrx='Y') / QtyOrdered (IsSOTrx='N') [, C_DocType_ID]
       rows.forEach(function (t) {
-        var oh = trx.q('SELECT COALESCE(SUM(s.QtyOnHand),0) AS q FROM M_StorageOnHand s, M_Locator l WHERE s.M_Product_ID=? AND l.M_Locator_ID=s.M_Locator_ID AND l.M_Warehouse_ID=?', [t.m_product_id, t.m_warehouse_id])[0];
-        var rs = trx.q("SELECT COALESCE(SUM(s.Qty),0) AS q FROM M_StorageReservation s WHERE s.M_Product_ID=? AND s.M_Warehouse_ID=? AND s.IsSOTrx='Y'", [t.m_product_id, t.m_warehouse_id])[0];
-        var od = trx.q("SELECT COALESCE(SUM(s.Qty),0) AS q FROM M_StorageReservation s WHERE s.M_Product_ID=? AND s.M_Warehouse_ID=? AND s.IsSOTrx='N'", [t.m_product_id, t.m_warehouse_id])[0];
-        t.qtyonhand = D(oh ? oh.q : 0); t.qtyreserved = D(rs ? rs.q : 0); t.qtyordered = D(od ? od.q : 0);
+        // twin fix (POS_PLUGIN_LOCAL_FIRST.md §21): Java reads these sums through its OWN Trx, so it sees stock moved by an earlier step of the same transaction (Branch Day Close: the sales it just shipped); the raw SELECT
+        // here reads committed rows only. The same sums through the overlay-aware trx.find: identical when nothing is pending (W-REPLENISH), and right when a step of the same Trx moved stock.
+        var sumOv = function (rs0, col) { var a = Z; rs0.forEach(function (r) { a = a.add(D(r[col])); }); return a; };
+        var oh = sumOv(trx.find('m_storageonhand', { m_product_id: t.m_product_id }).filter(function (s) { var l = trx.get('m_locator', s.m_locator_id); return l && Number(l.m_warehouse_id) === Number(t.m_warehouse_id); }), 'qtyonhand');
+        var rs = sumOv(trx.find('m_storagereservation', { m_product_id: t.m_product_id, m_warehouse_id: t.m_warehouse_id, issotrx: 'Y' }), 'qty');
+        var od = sumOv(trx.find('m_storagereservation', { m_product_id: t.m_product_id, m_warehouse_id: t.m_warehouse_id, issotrx: 'N' }), 'qty');
+        t.qtyonhand = oh; t.qtyreserved = rs; t.qtyordered = od;
         if (self.p_C_DocType_ID !== 0) t.c_doctype_id = self.p_C_DocType_ID;
       });
       // UPDATE :292-303 add production lines: QtyReserved - SUM(MovementQty<0), QtyOrdered + SUM(MovementQty>0) of the unprocessed M_ProductionLine at the warehouse's locators
