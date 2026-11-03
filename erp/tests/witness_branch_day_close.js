@@ -72,9 +72,9 @@ async function child() {
     return R;
   }
   // tax arms (§23): a NON-ZERO rate (10 percent on the tax the till's own lookup resolves for the branch), tax-exclusive or tax-inclusive default SO price list. Tender oracle written by hand: exclusive = round(net x 1.10), inclusive = net.
+  db.run('UPDATE ad_orginfo SET c_location_id=114 WHERE ad_org_id IN (?,?)', [NORTH, SOUTH]);   // a branch station has its address (the till reads its org's location for the tax lookup, the gate reads the same); the seed's branch orgs had none
   var TAX = ARM === 'tax_ex' || ARM === 'tax_in', INCL = ARM === 'tax_in', taxIds = [];
   if (TAX) {
-    db.run('UPDATE ad_orginfo SET c_location_id=114 WHERE ad_org_id IN (?,?)', [NORTH, SOUTH]);   // a branch station has its address (the till reads its org's location for the tax lookup); the fixture orgs had none
     [NORTH, SOUTH].forEach(function (org) {
       var inp = TC.driveSync(TC.taxInputs({ ad_client_id: 11, ad_org_id: org, m_warehouse_id: WH[org] }), function (sq) { return q0(sq)[0]; }, function (sq) { return q0(sq); }), cat = {};
       q0('SELECT m_product_id AS p, c_taxcategory_id AS t FROM m_product WHERE m_product_id IN (123,130)').forEach(function (r) { cat[r.p] = r.t; });
