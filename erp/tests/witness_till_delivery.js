@@ -151,9 +151,10 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
   var gotO = {}, gotP = {}; ao.forEach(function (r) { gotO[r.documentno] = Number(r.n); }); ap.forEach(function (r) { gotP[r.documentno] = Number(r.n); });
   check('D2-each-key-once', keys.length === 10 && keys.every(function (k) { return gotO[k] === shape[k].lines; }) && Object.keys(gotO).length === 10, 'head office holds each of the 10 I_Order keys once with its lines', { gotO: gotO, keys: keys });
   check('D2-plan-ships-payment-key', keys.every(function (k) { return gotP[k] === shape[k].tenders; }) && Object.keys(gotP).length === 10, 'head office holds each ticket\'s I_Payment under the SAME key (DocumentNo) - the POS plan must ship I_Payment.DocumentNo (measured: ' + J(Object.keys(gotP).slice(0, 3)) + ')', gotP);
-  var dcols = await T.rows(A, 'SELECT priceactual, description, tendertype FROM i_order o, (SELECT tendertype FROM i_payment LIMIT 1) WHERE o.documentno=' + J(keys[0]).replace(/"/g, "'") + ' LIMIT 1');
-  var till0 = await T.rows(C, 'SELECT priceactual, description FROM i_order WHERE documentno=' + J(keys[0]).replace(/"/g, "'") + ' ORDER BY ABS(i_order_id) LIMIT 1');
-  check('D2-plan-ships-price', dcols.length === 1 && Number(dcols[0].priceactual) === Number(till0[0].priceactual) && dcols[0].description === till0[0].description && dcols[0].tendertype === 'X', 'the price paid (PriceActual), the shift tag (Description) and TenderType arrive intact: till ' + J(till0[0]) + ' vs head office ' + J(dcols[0]), { hq: dcols[0], till: till0[0] });
+  var kq = J(keys[0]).replace(/"/g, "'");
+  var hqL = await T.rows(A, 'SELECT priceactual, description FROM i_order WHERE documentno=' + kq + ' ORDER BY priceactual'), tlL = await T.rows(C, 'SELECT priceactual, description FROM i_order WHERE documentno=' + kq + ' ORDER BY priceactual');
+  var hqP = await T.rows(A, 'SELECT tendertype, description, payamt FROM i_payment WHERE documentno=' + kq), tlP = await T.rows(C, 'SELECT tendertype, description, payamt FROM i_payment WHERE documentno=' + kq);
+  check('D2-plan-ships-price', J(hqL) === J(tlL) && tlL.length === 2 && J(hqP) === J(tlP) && tlP.length === 1 && hqP[0].tendertype === 'X', 'PriceActual and Description of every line, and TenderType / Description / PayAmt of the tender, arrive intact: till ' + J(tlL) + ' ' + J(tlP) + ' vs head office ' + J(hqL) + ' ' + J(hqP), { hqL: hqL, tlL: tlL, hqP: hqP, tlP: tlP });
   var sent = await pg.evaluate(function () { return window.Till.state().store.sent; });
   check('D2-till-marks-sent', keys.every(function (k) { return sent && sent[k] === 1; }), 'after the Visits the till marks all 10 keys as sent (store.sent)', sent);
   // ═══ §D3 more Visits add 0
