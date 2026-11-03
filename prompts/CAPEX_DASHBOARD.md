@@ -19,6 +19,7 @@ learn); OUR side is a TRUE twin that executes the same rows and must show the sa
 HHS 160/160 rows, 16/16 judged tiles, Last Updated = PER_SOURCE) · kernel fixes found by the twin: document-value workflows, legacy project-line rules, REST bridge (service type per method,
 namespaced replies, UOM by code), real UUIDs, mandatory tax category (+ boot overlay), local time · `?project=` filter · films EN/ZH/MS v5 (`~/Videos/CAPEX_Dashboard_Addon_narrated_{EN,ZH,MS}_AFTER_2026-11-03_v5.mp4`).
 **▶ NEXT, in order (spec before code; each its own §5 entry):**
+0. **§5.13 GROUND UP (owner 2026-11-03) — the dashboard on our SQLite WASM framework: PA rows → SQLite PA engine → renderer → generic editor; next = G1.** (§5.12 superseded.)
 1. **R0 — ✅ DONE (§5.4): YES, legacy computes a CAPEX tile as PA data with no Java** — Approved Budget (USD) 4,996,920.867 == our tile to the cent. Three legacy behaviours found that bind R2
    (§5.4). Not in R0: AD_Chart, the ZK render, the colour (no target stated, §6 Q1).
 2. **R1 — ONE schedule — ✅ DONE (engine + node path, witness §5.2); HHS re-pushed to the pilot + twin PASS (§5.4)**; R1-f ✅ (§5.6: the viewer's push carries the Gantt's programme); SHED re-pushed + twin PASS (§5.7); open: re-voice the films.
@@ -296,7 +297,7 @@ overlays, which every other opener applies (`erp/idempiere.html:1155-1156`, `erp
 main's `proj_order_state.js` → 41. **End of chain (browser, test instance):** the same push then `§PROJ_PUSH_LEGACY base=http://localhost:8098 … projectId=1000003`; legacy == local fold (7/10/16,
 PlannedAmt 383827.36788); the real password dialog shown prefilled (user/client/role/org/warehouse read-only, only the password typed), removed after submit, password in 0 of 697 log lines.
 
-### 5.12 SPEC — the dashboard the way Sysnova runs theirs: a standalone app beside iDempiere (2026-11-03; written before code)
+### 5.12 SPEC — the dashboard the way Sysnova runs theirs: a standalone app beside iDempiere (2026-11-03; written before code) — ⛔ SUPERSEDED by §5.13 (owner: ground up, same SQLite WASM framework)
 **Owner:** *"i was originally proposing that the plugin is only for the BIM to ERP Project Order"* · *"If u already could guess from the info what they are using we be copying that"*. So the dashboard is
 NOT in `org.idempiere.bimootb` and NOT a ZK gadget; it copies the ARCHITECTURE Sysnova's own dashboard shows (the framework is not knowable from what we have, and the page stays vanilla).
 **Evidence (screenshot `~/Projects/SYSNOVA/SYSNOVADashboardScreenshot.png`, 2026-09-02 screen share; notes `BIMSYSNOVA_Project.md` §Target dashboard):** URL `http://172.16.9.25:8000/v2/#/dashboard` = a
@@ -316,6 +317,33 @@ part on that port reads iDempiere (a page alone could not without CORS) — HOW 
 from legacy for HHS and SHED (`?project=`); `/v2/` serves index.html and the six routes; no account → 503 + "no data source"; the password string in no response body/header/log; a second server on a
 taken port refuses to start. Break: `BREAK=1` drops one project from the payload → the count compare FAILs.
 **Open (owner → Sysnova PM, §6 Q-S1..Q-S6):** their app's source, live or prototype, how it reads iDempiere, how it signs in, the tile definitions, where it runs.
+
+### 5.13 SPEC — the CAPEX dashboard from the ground up, on our SQLite WASM framework (2026-11-03; written before code; supersedes §5.12)
+**Owner:** *"just act as if we are doing it afresh, as it is better we do from the ground up and i prefer to be same SQLite WASM framework"* — and earlier: the plugin is only BIM → Project Order; legacy
+defines dashboards as PA data ("our side is a true twin and idempiere side retains its learning curve"). Whatever Sysnova runs is not copied; their answers (§6 Q-S1..Q-S6) only feed the DEFINITIONS.
+**Measured before writing:** the ERP kernel already converts iDempiere SQL to SQLite at one choke point (`erp/ad_callout.js:264 convertSql`, via `makeDB().query`); the seed holds `pa_measure` 4 /
+`pa_goal` 4 / `pa_dashboardcontent` 3 and the boot patch adds `pa_measurecalc`, `pa_colorschema`, `ad_chart` (`erp/patches/build_ad_seed_patch.sh:40`); the dictionary already has the windows
+Performance Measure, Performance Measure Calculation, Performance Goal, Performance Color Schema, Dashboard Content (rendered by the ONE generic AD engine — to be measured, not assumed).
+**Layers (each one owner, AD-LAYER LAW — no dashboard-specific window code):**
+- **L1 Data = the SQLite WASM ERP DB in the browser** (same schema as iDempiere). Local-first: the twin's own rows (BIM folds, documents) — and, for a site that runs iDempiere, a DOWN copy of its
+  project tables (C_Project, C_ProjectPhase, C_ProjectTask, C_ProjectLine, C_Phase, C_Currency, AD_Org, AD_WF_Activity) by `*_UU`, idempotent, read-only on their side (§14 build order 1).
+- **L2 Definitions = PA rows** (PA_MeasureCalc SQL, PA_Measure, PA_Goal, PA_ColorSchema, PA_DashboardContent) — THE SAME rows legacy runs (R0 proved legacy computes a CAPEX tile from them, no Java).
+  Rows ship as data: our boot overlay / patch on our side, a migration script or 2Pack on theirs (LEGACY CONVENTION) — one definition, two engines.
+- **L3 Engine = a SQLite port of MMeasure / MMeasureCalc / MGoal / MColorSchema** (`erp/pa_engine.js`, cited file:line from `~/idempiere-dev-setup/idempiere/org.adempiere.base`): SelectClause + WhereClause
+  through `convertSql`, the role's access restriction as legacy adds it (`MMeasureCalc.java:612`), performance = actual ÷ target, colour from the schema marks; legacy's three behaviours twinned as decided
+  in §5.5 (no compute on create; performance against the previously committed target; a failed SQL = 0 + `§PA_MEASURE_ERROR`, judged INCONCLUSIVE by the witness).
+- **L4 Renderer = a home dashboard driven by PA_DashboardContent rows** in our ERP app: each content row → its goal/measure → value + colour + the formula text; no per-tile code. The visual
+  vocabulary is the one the client asked for (the §3 tiles: counts, sums per currency, health ring, stage pipeline, physical vs spent, schedule / budget buckets) built as GENERIC tile kinds a row picks.
+- **L5 Editor = the generic AD windows above**, in our ERP UI; an edit → re-compute → re-render → re-twin. "Without coding or AI" is then literally true.
+- **Twin:** the same PA rows on both sides; legacy `PA_Goal.MeasureActual` (WS read) vs our engine's value, per goal, to the cent (`capex/tools/pa_probe.js` grows into it).
+- **The `capex/` page + `tiles.js` (today's build) become the ORACLE** during the move: every PA-defined tile must equal its `tiles.js` value on the same data; when all match, `tiles.js`'s hand formulas
+  are deleted (deletion budget stated). What PA cannot express (per-project EVM health, average delay) is MEASURED first: either one MeasureCalc SQL per bucket that runs in both dialects, or it stays a
+  named generic tile kind in L4 — never a hidden special case.
+**Build order (each its own spec line + witness before code):** G1 the PA engine on the seed + the R0 measure (Approved Budget USD) == legacy's goal on the pilot · G2 the §3 count/sum tiles as PA rows,
+each == `tiles.js` · G3 the renderer from PA_DashboardContent · G4 the bucket tiles (health, schedule, budget status) — PA SQL or named tile kinds · G5 the editor windows X of N (the five above) ·
+G6 the DOWN copy for a real site (needs their read-only account — §6 Q-S3/Q-S4).
+**Witnesses (named before code):** W-PA-ENGINE (G1: same rows → same value as legacy, cent-exact; broken SQL → 0 + INCONCLUSIVE; BREAK=1 FAIL) · W-PA-TILES-ORACLE (G2/G4: each PA tile == `tiles.js`) ·
+W-PA-RENDER (G3: the rendered value of every content row == its engine value, read from the DOM headlessly) · W-PA-EDITOR (G5: X of 5 windows open, edit a target → the tile moves on both sides).
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
