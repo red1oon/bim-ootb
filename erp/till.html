@@ -27,9 +27,11 @@
 
 <section id="u3" class="screen">
   <div id="north">
-    <span id="m_jButtons"><button data-btn="Scale" disabled data-disabled-reason="no scale device on a browser till">Scale</button><button data-btn="Mooring" disabled data-disabled-reason="marina module not in this release">Mooring</button><button data-btn="Split Sale" disabled data-disabled-reason="split sale: slice 2">Split Sale</button><button data-btn="Reprint Last Ticket" disabled data-disabled-reason="reprint: slice 2">Reprint Last Ticket</button><button data-btn="Send Order" disabled data-disabled-reason="kitchen screen is P2">Send Order</button><button data-btn="Customer" disabled data-disabled-reason="customers: slice 2">Customer</button></span>
-    <span id="bag"><button data-btn="Add New Ticket" disabled data-disabled-reason="shared tickets: slice 2">Add New Ticket</button><button data-btn="Tickets awaiting completion" disabled data-disabled-reason="shared tickets: slice 2">Tickets awaiting completion</button><button data-btn="Delete" disabled data-disabled-reason="shared tickets: slice 2">Delete</button><button data-btn="Reprint Ticket" disabled data-disabled-reason="shared tickets: slice 2">Reprint Ticket</button><button data-btn="Quick LogOff" disabled data-disabled-reason="shared tickets: slice 2">Quick LogOff</button></span>
-    <span id="scriptbar"></span>
+    <span id="m_jButtons"><button data-btn="Scale" disabled data-disabled-reason="no scale device on a browser till">Scale</button><button data-btn="Mooring" disabled data-disabled-reason="marina module not in this release">Mooring</button><button data-btn="Split Sale" disabled data-disabled-reason="split sale: not in this release">Split Sale</button><button data-btn="Reprint Last Ticket">Reprint Last Ticket</button><button data-btn="Send Order" disabled data-disabled-reason="kitchen screen is P2">Send Order</button><button data-btn="Customer" disabled data-disabled-reason="customers on a ticket: not in this release">Customer</button></span>
+    <span id="bag"><button data-btn="Add New Ticket">Add New Ticket</button><button data-btn="Tickets awaiting completion">Tickets awaiting completion <b id="heldcount"></b></button><button data-btn="Delete">Delete</button><button data-btn="Reprint Ticket">Reprint Ticket</button><button data-btn="Quick LogOff">Quick LogOff</button></span>
+    <span id="floorbar" hidden><button data-btn="Reload">Reload</button><button data-btn="Reservations">Reservations</button><button data-btn="Tables">Tables</button></span>
+    <span id="scriptbar"><button data-btn="Total discount">Total discount</button><button data-btn="Line discount">Line discount</button><button data-btn="Print preview">Print preview</button><button data-btn="Open drawer">Open drawer</button><button data-btn="Virtual Keyboard">Virtual Keyboard</button></span>
+    <span id="tid" class="chip"></span>
   </div>
   <div><div id="lines"><table><thead><tr><th>Item</th><th>Price</th><th>Qty</th><th>Value</th></tr></thead><tbody id="tl"></tbody></table></div>
     <div id="totals"><span data-total="Subtotal">Subtotal <b id="t-sub">0.00</b></span><span data-total="Taxes">Taxes <b id="t-tax">0.00</b></span><span data-total="Total">Total <b id="t-tot">0.00</b></span></div></div>
@@ -55,6 +57,43 @@
   <div data-z="bytender">By tender <span id="z-bytender"></span></div><div data-z="net">Net <b id="z-net"></b></div><div data-z="taxes">Taxes <span id="z-taxes"></span></div><div data-z="removed">Lines removed <b id="z-removed"></b></div><div data-z="nosales">No Sale - Drawer Openings <b id="z-nosales"></b></div>
   <div><button id="zprint">Print</button><button id="zclose" class="go">Close Cash</button><button id="zconfirm" hidden>Yes, close the cash</button><select id="zpast" title="Reprint a past Z"></select><button id="zreprint">Reprint a past Z</button><button id="zback">Back</button></div><div id="zdone"></div></div></section>
 
+
+<section id="u10" class="screen"><div class="dlg" id="editsales"><h2>Edit Sales</h2>
+  <div><label><input type="radio" name="es-kind" value="S" checked> Sales</label> <label><input type="radio" name="es-kind" value="R"> Refund</label> <label>Ticket number <input id="es-number" inputmode="numeric"></label> <button id="es-find" class="go">Find</button> <button id="es-finder">Finder</button></div>
+  <div id="es-list"></div><div id="es-ticket" class="rf"></div><div id="es-status" class="why"></div>
+  <div><button id="es-edit">Edit</button><button id="es-refund">Refund</button><button id="es-print">Print</button><button id="es-back">Back</button></div></div></section>
+
+<section id="u11" class="screen"><div class="dlg" id="refund"><h2>Refund</h2><div class="why">Lines of the original ticket <b id="rf-orig"></b>: add the lines to refund</div>
+  <div id="rf-lines"></div><div><button id="rf-all">Add all lines</button><button id="rf-go" class="go">Refund</button><button id="rf-back">Back</button></div></div></section>
+
+<section id="u12" class="screen"><div class="dlg" id="custpay"><h2>Customer Payment</h2>
+  <div><label>Customer <input id="cp-find" placeholder="name or search key"></label> <button id="cp-search">Find</button></div><div id="cp-list"></div>
+  <div id="cp-card" hidden><div data-f="name">Name <b id="cp-name"></b></div><div data-f="maxdebt">Credit Limit <b id="cp-max"></b></div><div data-f="curdebt">Current Debt <b id="cp-debt"></b></div><div><label>Amount <input id="cp-amount" inputmode="decimal"></label></div></div>
+  <div><button id="cp-pay" class="go" disabled>Pay</button><button id="cp-back">Back</button></div></div></section>
+
+<section id="u13" class="screen"><div class="dlg" id="payments"><h2>Payments</h2>
+  <div><label>Reason <select id="pm-reason"><option value="cashin">Cash (In)</option><option value="cashout">Cash (Out)</option></select></label> <label>Amount <input id="pm-amount" inputmode="decimal"></label> <label>Notes <input id="pm-notes"></label> <button id="pm-save" class="go">Save</button></div>
+  <div id="pm-list"></div><div><button id="pm-back">Back</button></div></div></section>
+
+<section id="u19" class="screen"><div class="dlg" id="vouchers"><h2>Voucher</h2>
+  <div><label>Number <input id="vo-number" readonly></label> <label>Customer <input id="vo-customer"></label> <label>Amount <input id="vo-amount" inputmode="decimal"></label> <button id="vo-issue" class="go">Issue</button></div>
+  <div id="vo-list"></div><div><label>Redeem number <input id="vo-redeem-number"></label> <button id="vo-redeem">Redeem</button> <span id="vo-msg" class="why"></span></div><div class="why">A voucher is a till-local ledger: it does not travel to head office (no tender type for it).</div><div><button id="vo-back">Back</button></div></div></section>
+
+<section id="u21" class="screen"><div class="dlg" id="presence"><h2>Check In/Out</h2><div id="pr-msg"></div><div><button id="pr-in">Check In</button><button id="pr-out">Check Out</button><button id="pr-back">Back</button></div></div></section>
+
+<section id="u22" class="screen"><div class="dlg" id="pickup"><h2>Pickup Reset</h2><div>Next pick-up number <b id="pu-next"></b></div><div><button id="pu-reset" class="go">Reset</button><button id="pu-confirm" hidden>Do you really want to reset the Order Pickup number to 0?</button><button id="pu-back">Back</button></div><div id="pu-done"></div></div></section>
+
+<section id="u16" class="screen"><div class="dlg" id="floors" style="max-width:1000px"><h2>Restaurant floor</h2><div id="fl-state" class="why"></div><div id="fl-map" style="position:relative;height:430px;background:#fafafa;border:1px solid #bbb"></div><div><button id="fl-reload">Reload</button><button id="fl-res">Reservations</button><button id="fl-back">Back</button></div></div></section>
+
+<section id="u17" class="screen"><div class="dlg" id="reservations"><h2>Reservations</h2>
+  <div><label>Select Person <input id="rs-customer"></label> <label>Persons <input id="rs-chairs" inputmode="numeric" value="1"></label> <label>Booking Time <input id="rs-date" type="datetime-local"></label> <label>Notes <input id="rs-notes"></label> <label>Table <select id="rs-place"></select></label> <button id="rs-save" class="go">Save</button></div>
+  <div id="rs-list"></div><div><button id="rs-tables">Tables</button><button id="rs-back">Back</button></div></div></section>
+
+<section id="u7" class="screen"><div class="dlg" id="heldlist"><h2>Tickets awaiting completion</h2><div id="hl-list"></div><div><button id="hl-cancel">Cancel</button></div></div></section>
+<section id="u5r" class="screen"><div class="dlg" id="reprintlist"><h2>Reprint Ticket</h2><div id="rl-list"></div><div><button id="rl-cancel">Cancel</button></div></div></section>
+<div id="vkbd" hidden style="position:fixed;bottom:0;left:0;right:0;background:#ddd;border-top:1px solid #999;padding:4px"></div>
+<div id="confirmbox" class="bar" hidden><span id="confirm-text"></span><button id="confirm-yes" class="go">Yes</button><button id="confirm-no">No</button></div>
+
 <iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
-<script src="till_pad.js"></script><script src="till_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script>
+<script src="till_pad.js"></script><script src="till_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_ext.js"></script>
 </body></html>

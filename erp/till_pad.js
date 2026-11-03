@@ -1,8 +1,8 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — till_pad.js: U4 number-pad grammar of the Unicenta-alike till. READ THE LOG (§TILL_PAD lines of erp/tests/witness_till.js), exit codes are not evidence.
-// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §15.5 (W4) - Witness: W-TILL-PAD. A TRANSCRIPTION of uniCenta 3.81 JPanelTicket.stateTransition (JPanelTicket.java:886-1291);
-//   labels/lines are `pending-5x` (owner: branches ran 5.x, §14A will confirm). Pure: press(state, ch, ctx) -> { state, effect }; the host performs the effect.
+// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §15.5 (W4) - Witness: W-TILL-PAD. A TRANSCRIPTION of uniCenta 3.81 JPanelTicket.stateTransition (886-1291), RE-READ against 5.0 (1037-1790, prompts §17.1):
+//   digit/dot/star transitions are identical; `+`/`-` on a selected line follow 5.0 (refund ticket: qty -1 / -n; `n -` no longer negates the price). Pure: press(state, ch, ctx) -> { state, effect }; the host performs the effect.
 //   ctx: { selected: bool (a ticket line is selected), selMultiply, lines: count of ticket lines, canEdit: bool (permission sales.EditLines), type: 'S' }  priceWith00 (till.pricewith00) is OFF only.
 // State names are Unicenta's: NUMBER_INPUTZERO..NUMBER_PORDEC (JPanelTicket.java:87-94), NUMBERZERO/NUMBERVALID (:84-85).
 'use strict';
@@ -47,16 +47,16 @@
     else if (ch === '+' && !s.inValid && !s.porValid) {                                                                  // :1174-1189 one unit more on the selected line
       if (!ctx.selected) return { state: s, effect: BEEP('no-selected-line') };
       return { state: zero(), effect: { type: 'incLine', delta: ctx.type === 'R' ? -1 : 1 } };
-    } else if (ch === '-' && !s.inValid && !s.porValid && ctx.canEdit !== false) {                                       // :1191-1217 one unit less; a line at <=0 is removed
+    } else if (ch === '-' && !s.inValid && !s.porValid && ctx.canEdit !== false) {                                       // 5.0 :1589-1640 one unit less; a SALE line at <=0 is removed; on a REFUND line `-` adds -1 like `+` (3.81 went toward 0)
       if (!ctx.selected) return { state: s, effect: BEEP('no-selected-line') };
+      if (ctx.type === 'R') return { state: zero(), effect: { type: 'incLine', delta: -1 } };
       return { state: zero(), effect: { type: 'decLine' } };
-    } else if (ch === '+' && !s.inValid && s.porValid) {                                                                 // :1220-1236 set n units on the selected line, price made positive
+    } else if (ch === '+' && !s.inValid && s.porValid) {                                                                 // 5.0 :1642-1685 set n units on the selected line, price made positive (REFUND: -n)
       if (!ctx.selected) return { state: s, effect: BEEP('no-selected-line') };
-      return { state: zero(), effect: { type: 'setLine', qty: porValue(s), absPrice: true } };
-    } else if (ch === '-' && !s.inValid && s.porValid && ctx.canEdit !== false) {                                        // :1239-1255 n units, NEGATIVE price (normal ticket only)
+      return { state: zero(), effect: { type: 'setLine', qty: ctx.type === 'R' ? -porValue(s) : porValue(s), absPrice: true } };
+    } else if (ch === '-' && !s.inValid && s.porValid && ctx.canEdit !== false) {                                        // 5.0 :1686-1730 same as `n +` (3.81 :1239 made the price NEGATIVE on a sale; 5.0 does not)
       if (!ctx.selected) return { state: s, effect: BEEP('no-selected-line') };
-      if (ctx.type === 'R') return { state: zero(), effect: { type: 'noop' } };
-      return { state: zero(), effect: { type: 'negateLine', qty: porValue(s) } };
+      return { state: zero(), effect: { type: 'setLine', qty: ctx.type === 'R' ? -porValue(s) : porValue(s), absPrice: true } };
     } else if (ch === '+' && s.inValid && !s.porValid && ctx.canEdit !== false) { return { state: zero(), effect: { type: 'addFree', qty: 1, price: inputValue(s) } }; }       // :1258-1264 one free-price product
     else if (ch === '-' && s.inValid && !s.porValid && ctx.canEdit !== false) { return { state: zero(), effect: { type: 'addFree', qty: 1, price: -inputValue(s) } }; }      // :1266-1270 negative price
     else if (ch === '+' && s.inValid && s.porValid && ctx.canEdit !== false) { return { state: zero(), effect: { type: 'addFree', qty: porValue(s), price: inputValue(s) } }; }  // :1273-1277 n free-price products

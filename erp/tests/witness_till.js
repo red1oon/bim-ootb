@@ -18,7 +18,7 @@ var ROOT = path.join(__dirname, '..', '..'), ERP = path.join(ROOT, 'erp');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
 var SQLJS_DIR = process.env.SQLJS_DIR || '/home/red1/bim-ootb/tests/node_modules/sql.js';
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
-var ARMS = (process.env.TILL_ARMS || 'pad,parity,deposit,offline').split(','), CHILD = process.env.TILL_MUT_ONE || '';
+var ARMS = (process.env.TILL_ARMS || 'pad,deposit,offline,bar,held,edit,refund,custpay,panels,rest,parity').split(','), CHILD = process.env.TILL_MUT_ONE || '';
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 var V = {};   // verdict counters per arm
 function check(arm, key, ok, label, info) { var c = V[arm] = V[arm] || { judged: 0, failed: 0 }; c.judged++; if (!ok) c.failed++; console.log('  §TILL_CHECK arm=' + arm + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + label + (ok ? '' : ' got=' + J(info))); return ok; }
@@ -28,7 +28,7 @@ function inconclusive(arm, name, why) { console.log('§' + name + ' verdict=INCO
 // ═══ PAD: the cases. State = {st, price, por, inV, porV}; st numbering = JPanelTicket.java:87-94. Expected effects are written from the Java line cited.
 var Z = { st: 0, price: '', por: '', inV: 0, porV: 0 };
 function S(st, price, por, inV, porV) { return { st: st, price: price, por: por, inV: inV, porV: porV }; }
-var SEL = { selected: true, lines: 2, canEdit: true, type: 'S' }, NOSEL = { selected: false, lines: 2, canEdit: true, type: 'S' }, NOLINES = { selected: false, lines: 0, canEdit: true, type: 'S' };
+var SEL = { selected: true, lines: 2, canEdit: true, type: 'S' }, SELR = { selected: true, lines: 2, canEdit: true, type: 'R' }, NOSEL = { selected: false, lines: 2, canEdit: true, type: 'S' }, NOLINES = { selected: false, lines: 0, canEdit: true, type: 'S' };
 var PAD_CASES = [   // [line, name, start, key, ctx, expect{st,price,por,inV,porV,effect}]
   [1026, 'zero stays zero', Z, '0', SEL, S(0, '0', '', 0, 0), 'none'],
   [1028, 'first nonzero digit starts an integer', Z, '5', SEL, S(2, '5', '', 1, 0), 'none'],
@@ -61,7 +61,11 @@ var PAD_CASES = [   // [line, name, start, key, ctx, expect{st,price,por,inV,por
   [1191, '- with nothing typed and no selected line beeps', Z, '-', NOSEL, Z, 'beep'],
   [1220, '+ after a factor: set n units on the selected line', S(6, '', 'x3', 0, 1), '+', SEL, Z, 'setLine'],
   [1220, '+ after a factor and no selected line beeps', S(6, '', 'x3', 0, 1), '+', NOSEL, S(6, '', 'x3', 0, 1), 'beep'],
-  [1239, '- after a factor: n units at a negative price', S(6, '', 'x3', 0, 1), '-', SEL, Z, 'negateLine'],
+  [1686, '5.0: - after a factor on a SALE: n units, price made positive (the 3.81 negation is gone)', S(6, '', 'x3', 0, 1), '-', SEL, Z, 'setLine'],
+  [1686, '5.0: - after a factor on a REFUND: n units taken as -n', S(6, '', 'x3', 0, 1), '-', SELR, Z, 'setLine'],
+  [1642, '5.0: + after a factor on a REFUND: -n units', S(6, '', 'x3', 0, 1), '+', SELR, Z, 'setLine'],
+  [1550, '5.0: + with nothing typed on a REFUND line: one more refunded unit (qty -1)', Z, '+', SELR, Z, 'incLine'],
+  [1589, '5.0: - with nothing typed on a REFUND line: also qty -1 (3.81 went toward 0)', Z, '-', SELR, Z, 'incLine'],
   [1258, '+ after a price: one free-price product', S(3, '2.5', '', 1, 0), '+', SEL, Z, 'addFree'],
   [1266, '- after a price: one negative-price product', S(3, '2.5', '', 1, 0), '-', SEL, Z, 'addFree'],
   [1273, '+ after price and factor: n free-price products', S(6, '2.5', 'x3', 1, 1), '+', SEL, Z, 'addFree'],
@@ -86,6 +90,13 @@ function runPad(P) {
   // payload checks the effect carries what the Java reads (getPorValue/getInputValue)
   var sFree = P.press(Object.assign(P.zero(), { st: 6, price: '2.5', por: 'x3', inValid: 1, porValid: 1 }), '+', SEL).effect;
   check('pad', 'payload-free', sFree.qty === 3 && sFree.price === 2.5, 'n free-price products carries qty 3 price 2.5', sFree);
+  var pq = function (type, key) { return P.press(Object.assign(P.zero(), { st: 6, price: '', por: 'x3', inValid: 0, porValid: 1 }), key, Object.assign({}, SEL, { type: type })).effect; };
+  check('pad', 'q-sale-minus', pq('S', '-').qty === 3, 'JPanelTicket.java:1686 5.0 n - on a sale line sets qty 3', pq('S', '-'));
+  check('pad', 'q-refund-minus', pq('R', '-').qty === -3, 'JPanelTicket.java:1686 5.0 n - on a refund line sets qty -3', pq('R', '-'));
+  check('pad', 'q-refund-plus', pq('R', '+').qty === -3, 'JPanelTicket.java:1642 5.0 n + on a refund line sets qty -3', pq('R', '+'));
+  check('pad', 'q-sale-plus', pq('S', '+').qty === 3, 'JPanelTicket.java:1642 n + on a sale line sets qty 3', pq('S', '+'));
+  var dR = P.press(P.zero(), '-', SELR).effect, iR = P.press(P.zero(), '+', SELR).effect;
+  check('pad', 'delta-refund', dR.delta === -1 && iR.delta === -1, 'JPanelTicket.java:1550,1589 5.0 + and - on a refund line both add -1 to the qty', { dR: dR, iR: iR });
   var sNeg = P.press(Object.assign(P.zero(), { st: 3, price: '2.5', por: '', inValid: 1, porValid: 0 }), '-', SEL).effect;
   check('pad', 'payload-neg', sNeg.price === -2.5, 'negative-price product carries -2.5', sNeg);
   var pa = P.product(Z, {}), pb = P.product(Object.assign(P.zero(), { st: 2, price: '3', inValid: 1 }), {}), pc = P.product(Object.assign(P.zero(), { st: 6, price: '3', por: 'x2', inValid: 1, porValid: 1 }), {});
@@ -113,11 +124,11 @@ async function startServer() {
   return { server: server, base: 'http://127.0.0.1:' + server.address().port };
 }
 var ERRS = [];
-async function openTill(ctx, base) {
+async function openTill(ctx, base, qs) {
   var pg = await ctx.newPage(); pg.__logs = [];
-  pg.on('console', function (m) { var t = m.text(); pg.__logs.push(t); if (/^§TILL_(COST|BOOT|DEPOSIT|Z|CLOSE|ZREPRINT|MSG)|🔴/.test(t)) console.log('   [page] ' + t.slice(0, 300)); });
+  pg.on('console', function (m) { var t = m.text(); pg.__logs.push(t); if (/^§TILL_(COST|BOOT|DEPOSIT|Z|CLOSE|ZREPRINT|MSG|ES|HELD|REFUND|EDIT|DISCOUNT|TABLE|CASHIO|PRESENCE|PICKUP|VOUCHER|REPRINT|LINEREMOVED|QUICKLOGOFF|EXT)|🔴/.test(t)) console.log('   [page] ' + t.slice(0, 300)); });
   pg.on('pageerror', function (e) { ERRS.push(e.message); console.log('   [pageerror] ' + e.message); });
-  await pg.goto(base + '/erp/till.html', { waitUntil: 'load' });
+  await pg.goto(base + '/erp/till.html' + (qs || ''), { waitUntil: 'load' });
   await pg.waitForFunction(function () { return window.Till && window.Till.ready; }, null, { timeout: 170000 });
   return pg;
 }
@@ -151,10 +162,12 @@ async function pay(pg, parts) {   // parts [{tab, amount, ref, auth}] then OK
 var num = function (x) { return x == null ? null : Number(x); };
 
 var LOGGED = false;
+// ═══ PARITY: X of N from the registry against the live DOM. A row whose source asserts BEHAVIOUR is present only if the arm that walks that behaviour has judged > 0 and failed 0 in this run (ROWARM); parity runs last.
+var ROWARM = { 6: 'bar', 7: 'held', 10: 'edit', 11: 'refund', 12: 'custpay', 13: 'panels', 16: 'rest', 17: 'rest', 18: 'panels', 19: 'panels', 21: 'panels', 22: 'panels' };
 async function prepare(pg, screen) {   // put the live page on the screen a registry row talks about, by the cashier's own clicks
   if (screen === 'login') { await pg.evaluate(function () { window.Till.go('login'); }); return; }
   if (!LOGGED) { await pg.evaluate(function () { window.Till.go('login'); }); await pg.click('#u1 .u-user:has-text("GardenAdmin")'); LOGGED = true; }
-  if (screen === 'menu' || screen === 'close') { await pg.evaluate(function (s) { window.Till.go(s); }, screen); return; }
+  if (['menu', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations'].indexOf(screen) >= 0) { await pg.evaluate(function (s) { window.Till.go(s); }, screen); return; }
   await pg.evaluate(function () { window.Till.go('sales'); });
   if (!(await pg.$('#products .prod'))) { var c = await pg.$('#cats [data-cat]'); if (c) await c.click(); }
   if (screen === 'sales') return;
@@ -163,32 +176,35 @@ async function prepare(pg, screen) {   // put the live page on the screen a regi
   if (screen === 'pay') return;
   await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
 }
-// ═══ PARITY: X of N from the registry against the live DOM
-async function runParity(pg) {
+async function runParity(pg, pgRest) {
   var R = await pg.evaluate(function () { return window.Till.registry.ROWS; }), x = 0, N = R.length, detail = [];
+  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations'];
   for (var row of R) {
-    var ok = false, why = '';
-    if (['login', 'menu', 'sales', 'pay', 'receipt', 'close'].indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
+    var ok = false, why = '', page = row.mode === 'restaurant' ? pgRest : pg;
+    if (row.status !== 'built' || SCREENS.indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
     else {
       try {
-        await prepare(pg, row.screen);
+        if (page === pgRest) { await page.evaluate(function (s) { window.Till.go(s); }, row.screen); } else await prepare(page, row.screen);
         ok = true;
-        for (var sel of row.sels || []) {
-          // pay/receipt screens only exist during a sale: open them for the check
-          if (!(await pg.$(sel))) { ok = false; why += ' missing ' + sel; }
-        }
+        for (var sel of row.sels || []) { if (!(await page.$(sel))) { ok = false; why += ' missing ' + sel; } }
         var ords = ['order', 'order2', 'order3'].map(function (k) { return row[k]; }).filter(Boolean);
         for (var o of ords) {
-          var texts = await pg.$$eval(o.container + ' ' + (o.item.indexOf(':scope') === 0 ? '' : o.item), function (els) { return els.map(function (e) { return e.textContent.trim().replace(/\s+[\d.,?-]+$/, ''); }); }).catch(function () { return []; });
-          if (o.item.indexOf(':scope') === 0) texts = await pg.$$eval(o.container + ' > [data-btn]', function (els) { return els.map(function (e) { return e.getAttribute('data-btn'); }); });
+          var texts = await page.$$eval(o.container + ' ' + (o.item.indexOf(':scope') === 0 ? '' : o.item), function (els) { return els.map(function (e) { return e.textContent.trim().replace(/\s+[\d.,?-]+$/, ''); }); }).catch(function () { return []; });
+          if (o.item.indexOf(':scope') === 0) texts = await page.$$eval(o.container + ' > [data-btn]', function (els) { return els.map(function (e) { return e.getAttribute('data-btn'); }); });
           if (J(texts) !== J(o.texts)) { ok = false; why += ' order ' + o.container + ' got ' + J(texts); }
         }
-        if (row.tile) { var tl = await pg.evaluate(function () { var c = document.querySelector('#products .prod'); if (!c) return null; var cs = getComputedStyle(c); return [cs.width, cs.height]; }); if (!tl) { why += ' no tile on screen'; } else if (tl[0] !== row.tile.w + 'px' || tl[1] !== row.tile.h + 'px') { ok = false; why += ' tile ' + tl; } }
+        if (row.btns) { var bs = await page.$$eval(row.btns.container + ' [data-btn]', function (b) { return b.map(function (e) { return [e.getAttribute('data-btn'), e.disabled]; }); }); if (J(bs.map(function (e) { return e[0]; })) !== J(row.btns.texts) || (row.btns.enabled && bs.some(function (e) { return e[1]; }))) { ok = false; why += ' buttons ' + J(bs); } }
+        if (row.absent) { var pres = []; for (var an of row.absent) if (await page.$('#scriptbar [data-btn="' + an + '"]')) pres.push(an); if (pres.length) { ok = false; why += ' present but commented out in Ticket.Buttons.xml: ' + pres; } }
+        if (row.optionTexts) { var ot = await page.$$eval(row.optionTexts.sel, function (o) { return o.map(function (x) { return x.textContent; }); }); if (J(ot) !== J(row.optionTexts.texts)) { ok = false; why += ' options ' + J(ot); } }
+        if (row.count) { var cn = (await page.$$(row.count.sel)).length; if (cn !== row.count.n) { ok = false; why += ' count ' + row.count.sel + '=' + cn; } }
+        if (row.tile) { var tl = await page.evaluate(function () { var c = document.querySelector('#products .prod'); if (!c) return null; var cs = getComputedStyle(c); return [cs.width, cs.height]; }); if (!tl) { why += ' no tile on screen'; ok = false; } else if (tl[0] !== row.tile.w + 'px' || tl[1] !== row.tile.h + 'px') { ok = false; why += ' tile ' + tl; } }
+        if (row.padWitness && !(V.pad && V.pad.judged > 0 && V.pad.failed === 0)) { ok = false; why += ' pad witness not PASS in this run'; }
+        var arm = ROWARM[row.w]; if (ok && arm && !(V[arm] && V[arm].judged > 0 && V[arm].failed === 0)) { ok = false; why += ' behaviour arm "' + arm + '" not PASS in this run (' + J(V[arm] || null) + ')'; }
       } catch (e) { ok = false; why = 'threw ' + e.message; }
     }
     if (ok) x++; detail.push(row.w + (ok ? '+' : '-'));
     if (ok && row.status !== 'built') console.log('  §TILL_PARITY_STALE w=' + row.w + ' registry says ' + row.status + ' but the DOM has it');
-    console.log('  §TILL_PARITY_ROW w=' + row.w + ' ' + row.u + ' "' + row.label + '" status=' + row.status + ' ' + (ok ? 'PRESENT' : 'MISSING') + (why ? ' (' + why.trim() + ')' : ''));
+    console.log('  §TILL_PARITY_ROW w=' + row.w + ' ' + row.u + ' "' + row.label + '" status=' + row.status + (row.partial ? ' PARTIAL' : '') + ' ' + (ok ? 'PRESENT' : 'MISSING') + (why ? ' (' + why.trim() + ')' : ''));
   }
   return { x: x, N: N, detail: detail };
 }
@@ -347,6 +363,307 @@ async function runOffline(ctx, base) {
   await pg.close();
 }
 
+
+// ═══ slice 2 (prompts §17): helpers shared by the arms
+var TAX2 = 7.25;
+async function withTax(ctx, base, qs) {   // the seed's Standard tax is 0%: the same edit on the device (an op) so rounding is exercised; the head-office replica gets it in nodeHead
+  var pg = await openTill(ctx, base, qs);
+  var ok = await pg.evaluate(function (rate) { return new Promise(function (res) { var E = window.Till.engine(); var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === 'c_tax') { E.removeEventListener('overlay:committed', once); res(true); } }; E.addEventListener('overlay:committed', once); E.__crud.applyOp({ op_type: 'CRUD_UPDATE', key: 'c_tax', table: 'c_tax', verb: 'update', id: 104, changes: { rate: rate } }); setTimeout(function () { res(false); }, 10000); }); }, TAX2);
+  await pg.close(); pg = await openTill(ctx, base, qs);
+  var tr = (await rowsOf(pg, 'SELECT rate FROM c_tax WHERE c_tax_id=104'))[0];
+  return ok && num(tr.rate) === TAX2 ? pg : null;
+}
+async function ring(pg, items) { for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
+async function totalOf(pg) { return pg.$eval('#t-tot', function (e) { return e.textContent; }); }
+async function payExact(pg) { var t = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: t }]); return t; }
+async function receiptKey(pg) { return pg.$eval('#receipt .rf[data-f="Receipt"], #receipt .rf[data-f="Refund"]', function (e) { return e.textContent.split('  ')[1]; }); }
+async function domLines(pg) { return pg.$$eval('#tl tr.line', function (trs) { return trs.map(function (t) { var c = t.querySelectorAll('td'); return { name: c[0].textContent, price: c[1].textContent, qty: c[2].textContent, value: c[3].textContent }; }); }); }
+async function importDevice(pg) {   // the device's deposited rows replayed in the node kernel, then the SHIPPED Import POS Sales
+  var orders = await rowsOf(pg, 'SELECT * FROM i_order ORDER BY ABS(i_order_id)'), pays = await rowsOf(pg, 'SELECT * FROM i_payment ORDER BY ABS(i_payment_id)');
+  return importRows(orders, pays);
+}
+async function importRows(orders, pays, only) {
+  var H = await nodeHead(TAX2);
+  var d = H.commit(function (trx, ML) { var all = orders.map(function (r) { return { t: 'i_order', f: clean(r) }; }).concat(pays.map(function (r) { return { t: 'i_payment', f: clean(r) }; }));
+    for (var i = 0; i < all.length; i++) { var sv = ML.save(trx, all[i].t, null, ML.newPO(trx, all[i].t, all[i].f)); if (!sv.ok) return { ok: false, error: all[i].t + ' #' + i + ': ' + sv.error }; } return { ok: true }; });
+  var run = H.commit(function (trx) { var r0 = H.AP.runInTrx(trx, 9538001, { params: { C_BankAccount_ID: 100, AD_Client_ID: 11 } }); return { ok: r0.ok, error: r0.summary }; }, { ws: 'import_pos_sales' });
+  var logs = (run.log || []).filter(function (l) { return /^§POSS/.test(l); }); logs.forEach(function (l) { console.log('   [head office] ' + l.slice(0, 300)); });
+  return { H: H, replay: d, run: run, logs: logs, orders: orders, pays: pays };
+}
+function orderOf(H, key) { var o = H.q0('SELECT * FROM c_order WHERE documentno=?', [key])[0] || null; return { order: o, invoice: o ? H.q0('SELECT * FROM c_invoice WHERE c_order_id=?', [o.c_order_id])[0] || null : null, receipts: H.q0('SELECT * FROM c_payment WHERE documentno=?', [key]) }; }
+var imported = function (R, key) { return R.logs.some(function (l) { return l.indexOf('key=' + key + ' ') >= 0 && l.indexOf('result=IMPORTED') >= 0; }); };
+
+// ═══ BAR (U6) : the ticket button bar. ISSUES: the bar must be Ticket.Buttons.xml's enabled five and none of the commented ones; a discount must reach head office to the cent (Import Orders needs a product per line, so a Line Discount line travels FOLDED)
+async function runBar(ctx, base) {
+  var pg = await withTax(ctx, base); check('bar', 'tax-live', !!pg, 'Standard tax edited to ' + TAX2 + '% on the device (non-vacuous: seed 0%)', null); if (!pg) return;
+  await loginSales(pg);
+  var bt = await pg.$$eval('#scriptbar [data-btn]', function (b) { return b.map(function (x) { return [x.getAttribute('data-btn'), x.disabled]; }); });
+  check('bar', 'bar-buttons', J(bt.map(function (x) { return x[0]; })) === J(['Total discount', 'Line discount', 'Print preview', 'Open drawer', 'Virtual Keyboard']) && bt.every(function (x) { return !x[1]; }), 'Ticket.Buttons.xml:39-54 enabled: Total discount, Line discount, Print preview, Open drawer, Virtual Keyboard', bt);
+  var ab = []; for (var n of ['Refund item', 'Service charge', 'Line note', 'Set person', 'Send order']) if (await pg.$('#scriptbar [data-btn="' + n + '"]')) ab.push(n);
+  check('bar', 'commented-absent', ab.length === 0, 'Ticket.Buttons.xml:30-46 commented buttons are absent', ab);
+  // ticket A: 3 x product 128, line discount 10%
+  await ring(pg, [[128, 3]]); await typeNum(pg, 10); await pg.click('#scriptbar [data-btn="Line discount"]'); var refused = (await domLines(pg)).length;
+  check('bar', 'under-limit-refused', refused === 1, 'a 10% line discount takes product 128 (23.75, price limit 22.50) under its PriceLimit: refused on the till, because legacy Import Orders refuses it (UnderLimitPrice, seen in the first run)', refused);
+  await typeNum(pg, 4); await pg.click('#scriptbar [data-btn="Line discount"]');
+  var la = await domLines(pg), p0 = Number(la[0] && la[0].price);
+  check('bar', 'line-discount-line', la.length === 2 && la[1].name === 'Line Discount 4%' && Number(la[1].value) < 0 && la[1].qty === la[0].qty, 'script.Linediscount.txt: a "Line Discount 4%" line follows the selected line with the same quantity and a negative value', la);
+  var dv = Math.round(Math.abs(p0 * 0.04 * 100)) / 100 * 3;
+  check('bar', 'line-discount-value', Math.abs(Math.abs(Number(la[1].value)) - dv) < 0.0101, 'the discount line value is price x 4% x qty (' + money2(dv) + ') to the cent', { dom: la[1].value, want: dv });
+  var totA = await totalOf(pg); var keyA = null; await pay(pg, [{ tab: 'cash', amount: totA }]); keyA = await receiptKey(pg); await pg.click('#rc-ok');
+  // ticket B: 128 + 2 x 129, select first line, 15, Total discount
+  await ring(pg, [[128, 1], [129, 2]]); await pg.click('#tl tr.line:first-child'); await typeNum(pg, 3); var before = await domLines(pg);
+  await pg.click('#scriptbar [data-btn="Total discount"]'); var lb = await domLines(pg);
+  check('bar', 'total-discount-names', lb.length === 2 && lb.every(function (l) { return l.name.indexOf(' - Item Discount @  3%') > 0; }), 'script.Totaldiscount.txt: every line renamed "<name> - Item Discount @  3%"', lb);
+  check('bar', 'total-discount-prices', lb.every(function (l, i) { var p = Number(before[i].price), want = p - Math.abs(p * 0.03 * 100) / 100; return Math.abs(Number(l.price) - want) < 0.0051; }), 'every line price lowered by abs(price x 3% x 100)/100', { before: before, after: lb });
+  var totB = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: totB }]); var keyB = await receiptKey(pg); await pg.click('#rc-ok');
+  // print preview does not save, does not clear
+  await ring(pg, [[129, 1]]); await pg.click('#scriptbar [data-btn="Print preview"]'); await pg.waitForSelector('#u9.on');
+  var pv = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent; }); await pg.click('#rc-ok'); var nAfter = (await domLines(pg)).length;
+  check('bar', 'print-preview', /\(preview\)/.test(pv) && nAfter === 1, 'Print preview shows the open ticket as a receipt without a number and leaves it open', { pv: pv, n: nAfter });
+  // drawer twice -> no-sale count in the Z
+  await pg.click('#scriptbar [data-btn="Open drawer"]'); await pg.click('#scriptbar [data-btn="Open drawer"]');
+  await pg.evaluate(function () { window.Till.go('close'); }); await sleep(600); var ns = await pg.$eval('#z-nosales', function (e) { return e.textContent; });
+  check('bar', 'drawer-nosales', ns === '2', 'two Open drawer presses = "No Sale - Drawer Openings" 2 on the Z (PaymentsModel NOSALES)', ns);
+  // virtual keyboard types into the focused input
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.click('#scriptbar [data-btn="Virtual Keyboard"]').catch(function () {});
+  await pg.evaluate(function () { document.querySelector('#scriptbar'); var k = document.getElementById('vkbd'); k.hidden = false; });
+  var vk = await pg.evaluate(function () { return new Promise(function (res) { var t = window.Till; t.go('editsales'); var i = document.getElementById('es-number'); i.focus(); var b = document.querySelector('#vkbd .vk[data-vk="4"]'); if (!b) { res({ noKbd: true }); return; } b.click(); res({ v: i.value, shown: !document.getElementById('vkbd').hidden }); }); });
+  check('bar', 'virtual-keyboard', vk.v === '4' && vk.shown, 'Virtual Keyboard: a key press lands in the focused input', vk);
+  // head office: both discounted tickets import to the screen total, to the cent
+  var rowsA = (await rowsOf(pg, 'SELECT * FROM i_order WHERE documentno=' + J(keyA).replace(/"/g, "'"))), rowsB = (await rowsOf(pg, 'SELECT * FROM i_order WHERE documentno=' + J(keyB).replace(/"/g, "'")));
+  check('bar', 'discount-folded', rowsA.length === 1 && Math.abs(num(rowsA[0].priceactual) - p0 * 0.96) < 0.0051, 'the Line Discount line travels folded: ONE I_Order row, PriceActual = price - 4% (' + (p0 * 0.96) + ')', rowsA.map(function (r) { return r.priceactual; }));
+  var R = await importDevice(pg);
+  check('bar', 'plugin-up', R.H.started === 'ACTIVE' && R.replay.ok, 'head office up and the deposited rows accepted as they stand', R.replay.error);
+  [[keyA, totA, 'A'], [keyB, totB, 'B']].forEach(function (t) {
+    var o = orderOf(R.H, t[0]); check('bar', t[2] + '-imported', imported(R, t[0]) && o.order && o.order.docstatus === 'CO', 'ticket ' + t[2] + ' (discounted) imported as ONE completed order', o.order && o.order.docstatus);
+    check('bar', t[2] + '-to-the-cent', o.invoice && Math.round(Number(o.invoice.grandtotal) * 100) === Math.round(Number(t[1]) * 100), 'ticket ' + t[2] + ': screen total ' + t[1] + ' == imported GrandTotal ' + (o.invoice && o.invoice.grandtotal) + ' to the cent', { screen: t[1], grand: o.invoice && o.invoice.grandtotal });
+  });
+  await pg.close();
+}
+
+// ═══ HELD (U7): shared tickets. ISSUES: a held ticket must survive a reload, a recalled ticket must leave the held list and deposit exactly once; Quick LogOff keeps the open ticket; Delete confirms
+async function runHeld(ctx, base) {
+  var pg = await openTill(ctx, base); await loginSales(pg);
+  var bt = await pg.$$eval('#bag [data-btn]', function (b) { return b.map(function (x) { return [x.getAttribute('data-btn'), x.disabled]; }); });
+  check('held', 'bag-buttons', J(bt.map(function (x) { return x[0]; })) === J(['Add New Ticket', 'Tickets awaiting completion', 'Delete', 'Reprint Ticket', 'Quick LogOff']) && bt.every(function (x) { return !x[1]; }), '5.0 JTicketsBagShared.java:255-331 five bag buttons, all enabled', bt);
+  var keys0 = await pg.evaluate(function () { return window.Till.depositedDocNos(); });
+  await ring(pg, [[128, 2], [129, 1]]); var hl1 = (await domLines(pg)).length; var tot1 = await totalOf(pg);
+  await pg.click('#bag [data-btn="Add New Ticket"]');
+  var cleared = (await domLines(pg)).length, hc = await pg.$eval('#heldcount', function (e) { return e.textContent; });
+  check('held', 'add-new-holds', cleared === 0 && hc === '1', 'Add New Ticket keeps the open ticket (2 lines) as held and starts an empty one (held count ' + hc + ')', { cleared: cleared, hc: hc });
+  await pg.click('#bag [data-btn="Add New Ticket"]'); var hc2 = await pg.$eval('#heldcount', function (e) { return e.textContent; });
+  check('held', 'empty-not-held', hc2 === '1', 'Add New Ticket on an EMPTY ticket holds nothing (saveCurrentTicket drops a ticket with no lines)', hc2);
+  await pg.close(); pg = await openTill(ctx, base); await loginSales(pg);
+  var hc3 = await pg.$eval('#heldcount', function (e) { return e.textContent; });
+  check('held', 'survives-reload', hc3 === '1', 'the held ticket survives a page reload (device store)', hc3);
+  await ring(pg, [[127, 1]]); await pg.click('#bag [data-btn="Tickets awaiting completion"]'); await pg.waitForSelector('#u7.on');
+  var items = await pg.$$eval('#hl-list [data-held]', function (b) { return b.length; }); await pg.click('#hl-list [data-held]'); await pg.waitForSelector('#u3.on');
+  var rec = await domLines(pg), hc4 = await pg.$eval('#heldcount', function (e) { return e.textContent; });
+  check('held', 'recall-lists-one', items === 1, 'Tickets awaiting completion lists the 1 held ticket', items);
+  check('held', 'recalled-lines', rec.length === hl1 && rec[0].qty === 'x2', 'the recalled ticket shows its own 2 lines (x2 first)', rec);
+  check('held', 'recall-removes-held-row', hc4 === '1', 'recall DELETES the held row (JTicketsBagShared.setActiveTicket) while the ticket that was open (1 line) is saved: held count stays 1', hc4);
+  var totRec = await totalOf(pg); check('held', 'recalled-total', totRec === tot1, 'the recalled ticket total equals the total it had when held (' + tot1 + ')', { tot1: tot1, totRec: totRec });
+  await pay(pg, [{ tab: 'cash', amount: totRec }]); var kRec = await receiptKey(pg); await pg.click('#rc-ok');
+  var rowsRec = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + kRec + "'");
+  check('held', 'deposits-once', rowsRec.length === hl1, 'the recalled ticket deposited exactly once: ' + hl1 + ' I_Order rows under ' + kRec, rowsRec.length);
+  // the other held ticket (1 line) recalled via Quick LogOff path
+  await pg.click('#bag [data-btn="Tickets awaiting completion"]'); await pg.click('#hl-list [data-held]'); await pg.waitForSelector('#u3.on');
+  var hc5 = await pg.$eval('#heldcount', function (e) { return e.textContent; });
+  check('held', 'held-list-empties', hc5 === '', 'after both held tickets were recalled the held count is empty', hc5);
+  await pg.click('#bag [data-btn="Quick LogOff"]'); await pg.waitForSelector('#u1.on');
+  var hc6 = await pg.evaluate(function () { return window.Till.state().store.held.length; });
+  check('held', 'quick-logoff', hc6 === 1 && (await pg.$eval('#s-who', function (e) { return e.textContent; })) === '', 'Quick LogOff returns to Login (cashier cleared) and keeps the open ticket as held', hc6);
+  await loginSales(pg); await pg.click('#bag [data-btn="Tickets awaiting completion"]'); await pg.click('#hl-list [data-held]'); await pg.waitForSelector('#u3.on'); var tot3 = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: tot3 }]); var kLast = await receiptKey(pg); await pg.click('#rc-ok');
+  // Delete: confirm
+  await ring(pg, [[129, 1]]); var rem0 = await pg.evaluate(function () { return window.Till.state().store.shift.removed || 0; });
+  await pg.click('#bag [data-btn="Delete"]'); var cb = await pg.$eval('#confirmbox', function (e) { return { hidden: e.hidden, text: e.textContent }; }); await pg.click('#confirm-no');
+  var stay = (await domLines(pg)).length; await pg.click('#bag [data-btn="Delete"]'); await pg.click('#confirm-yes'); var gone = (await domLines(pg)).length, rem1 = await pg.evaluate(function () { return window.Till.state().store.shift.removed || 0; });
+  check('held', 'delete-confirm', cb.hidden === false && /Are you sure you want to Delete the current Order\?/.test(cb.text) && stay === 1 && gone === 0 && rem1 === rem0 + 1, 'Delete asks "Are you sure you want to Delete the current Order?"; No keeps the ticket; Yes clears it and logs one removed-line audit', { cb: cb, stay: stay, gone: gone, rem0: rem0, rem1: rem1 });
+  // each key once
+  var keys1 = (await pg.evaluate(function () { return window.Till.depositedDocNos(); })).filter(function (k) { return keys0.indexOf(k) < 0; });
+  check('held', 'keys-once', keys1.length === 2 && new Set(keys1).size === 2, 'two tickets were paid in this arm: exactly 2 new keys, none doubled', keys1);
+  // Reprint Ticket list + Reprint Last Ticket
+  await pg.click('#bag [data-btn="Reprint Ticket"]'); await pg.waitForSelector('#u5r.on'); var rl = await pg.$$eval('#rl-list [data-reprint]', function (b) { return b.map(function (x) { return x.getAttribute('data-reprint'); }); });
+  check('held', 'reprint-list', rl.indexOf(kRec) >= 0 && rl.indexOf(kLast) >= 0 && rl[0] === kLast, 'Reprint Ticket lists the saved tickets, newest first', rl.slice(0, 4));
+  await pg.click('#rl-list [data-reprint="' + kRec + '"]'); await pg.waitForSelector('#u9.on'); var rp = await pg.$$eval('#receipt .rf', function (e) { return e.map(function (x) { return x.textContent; }); });
+  check('held', 'reprint-same', rp.some(function (t) { return t.indexOf(kRec) > 0; }) && rp.some(function (t) { return t.indexOf('Total  ' + totRec) === 0; }), 'the reprinted receipt shows its own key and Total ' + totRec, rp.slice(0, 3)); await pg.click('#rc-ok');
+  await pg.click('#north [data-btn="Reprint Last Ticket"]'); await pg.waitForSelector('#u9.on'); var rk = await receiptKey(pg);
+  check('held', 'reprint-last', rk === kLast, 'Reprint Last Ticket prints lastticket (' + kLast + ')', rk); await pg.click('#rc-ok');
+  await pg.close();
+}
+
+// ═══ EDIT (U10) : ISSUES: Edit must REPLACE the ticket's rows under the same key (old rows gone, not doubled), only in the open shift and only before a Visit sent the key; head office imports the edited ticket to the cent
+async function runEdit(ctx, base) {
+  var pg = await withTax(ctx, base); check('edit', 'tax-live', !!pg, 'tax edited on the device', null); if (!pg) return; await loginSales(pg);
+  await ring(pg, [[128, 2], [129, 1]]); var tot0 = await payExact(pg); var key = await receiptKey(pg); await pg.click('#rc-ok');
+  var n0 = (await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + key + "'")).length;
+  var num0 = key.replace(/^.*-S/, '');
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', num0); await pg.click('#es-find'); await sleep(900);
+  var txt = await pg.$eval('#es-ticket', function (e) { return e.textContent; }), dis = await pg.$$eval('#es-edit, #es-refund, #es-print', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); });
+  check('edit', 'find-by-number', txt.indexOf(key) === 0 && txt.indexOf('Total  ' + tot0) > 0, 'Edit Sales finds ticket ' + num0 + ' by number and shows its lines and Total ' + tot0, txt.slice(0, 120));
+  check('edit', 'buttons-enabled', J(dis) === J(['es-edit:false', 'es-refund:false', 'es-print:false']), 'a sale ticket in the open shift: Edit, Refund and Print are enabled', dis);
+  await pg.fill('#es-number', '99999'); await pg.click('#es-find'); await sleep(500); var none = await pg.$eval('#es-ticket', function (e) { return e.textContent; });
+  check('edit', 'unknown-number', none === '', 'an unknown number shows no ticket (message.notexiststicket)', none);
+  await pg.fill('#es-number', num0); await pg.click('#es-find'); await sleep(700);
+  await pg.click('#es-edit'); await pg.waitForSelector('#u3.on'); var el = await domLines(pg);
+  check('edit', 'edit-loads-lines', el.length === 2 && el[0].qty === 'x2', 'Edit loads the ticket\'s 2 lines into the Sales screen', el);
+  await clickProduct(pg, 127); var tot1 = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: tot1 }]); var key1 = await receiptKey(pg); await pg.click('#rc-ok');
+  var o1 = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + key + "' ORDER BY ABS(i_order_id)"), p1 = await rowsOf(pg, "SELECT * FROM i_payment WHERE documentno='" + key + "'");
+  check('edit', 'same-key', key1 === key, 'the edited ticket keeps its number (TicketInfo.copyTicket :183): ' + key, key1);
+  check('edit', 'old-rows-gone', o1.length === 3 && p1.length === 1 && o1.every(function (r) { return num(r.qtyordered) > 0; }), 'the old rows are replaced, not doubled: 3 I_Order lines (was ' + n0 + ') and ONE I_Payment under ' + key, { o: o1.length, p: p1.length });
+  check('edit', 'payment-new-total', Math.abs(num(p1[0].payamt) - Number(tot1)) < 0.0051, 'the I_Payment carries the NEW total ' + tot1, p1[0].payamt);
+  check('edit', 'edited-keys-once', (await pg.evaluate(function () { return window.Till.depositedDocNos(); })).filter(function (k) { return k === key; }).length === 1, 'the key exists once among the till\'s deposited keys', null);
+  // a key that went out in a Visit is not rewritten
+  await pg.evaluate(function (k) { var s = window.Till.state(); s.store.sent = s.store.sent || {}; s.store.sent[k] = 1; }, key);
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', num0); await pg.click('#es-find'); await sleep(700);
+  var d2 = await pg.$$eval('#es-edit, #es-refund', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); }), st2 = await pg.$eval('#es-status', function (e) { return e.textContent; });
+  check('edit', 'sent-refuses-edit', J(d2) === J(['es-edit:true', 'es-refund:false']) && /sent to head office/.test(st2), 'once the key is marked sent (a Visit took it) Edit is refused, Refund stays: "' + st2 + '"', { d2: d2, st2: st2 });
+  // closed shift
+  await ring(pg, [[129, 1]]); var t3 = await payExact(pg); var key3 = await receiptKey(pg); await pg.click('#rc-ok');
+  await pg.evaluate(function () { window.Till.go('close'); }); await sleep(500); await pg.click('#zclose'); await pg.click('#zconfirm'); await sleep(800);
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', key3.replace(/^.*-S/, '')); await pg.click('#es-find'); await sleep(700);
+  var d3 = await pg.$eval('#es-edit', function (b) { return b.disabled; }), st3 = await pg.$eval('#es-status', function (e) { return e.textContent; });
+  check('edit', 'closed-shift-refuses-edit', d3 === true && /Closed cash/.test(st3), 'after Close Cash the ticket of the closed shift cannot be edited (isCashActive): "' + st3 + '"', st3);
+  var R = await importDevice(pg), o = orderOf(R.H, key);
+  check('edit', 'edited-imports-to-the-cent', imported(R, key) && o.invoice && Math.round(Number(o.invoice.grandtotal) * 100) === Math.round(Number(tot1) * 100), 'the edited ticket imports as ONE order whose GrandTotal ' + (o.invoice && o.invoice.grandtotal) + ' == new screen total ' + tot1, { imported: imported(R, key), grand: o.invoice && o.invoice.grandtotal });
+  await pg.close();
+}
+
+// ═══ REFUND (U11) : ISSUES: a refund deposits NEGATIVE quantities and NEGATIVE tenders under its own counter and head office imports it as the -1 line return of witness_pos_return.js; the pad follows 5.0 on a refund ticket; a ticket cannot be refunded twice
+async function runRefund(ctx, base) {
+  var pg = await withTax(ctx, base); check('refund', 'tax-live', !!pg, 'tax edited on the device', null); if (!pg) return; await loginSales(pg);
+  await ring(pg, [[128, 2], [129, 1]]); var totS = await payExact(pg); var keyS = await receiptKey(pg); await pg.click('#rc-ok');
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', keyS.replace(/^.*-S/, '')); await pg.click('#es-find'); await sleep(700); await pg.click('#es-refund'); await pg.waitForSelector('#u11.on');
+  var rl = await pg.$$eval('#rf-lines [data-rf]', function (d) { return d.length; }); check('refund', 'lists-original-lines', rl === 2, 'the refund screen lists the 2 lines of the original ticket', rl);
+  await pg.click('#rf-lines [data-rf-add="0"]'); await pg.click('#rf-go'); await pg.waitForSelector('#u3.on');
+  var rt = await domLines(pg), tid = await pg.$eval('#tid', function (e) { return e.textContent; });
+  check('refund', 'refund-ticket-negated', rt.length === 1 && rt[0].qty === 'x-2' && /Refund of /.test(tid), 'the refund ticket takes line 1 negated (x-2) and says "Refund of <key>"', { rt: rt, tid: tid });
+  await pg.click('#tl tr.line'); await pg.click('#east .key[data-key="*"]'); await typeNum(pg, 1); await pg.click('#east .key[data-key="+"]'); var rt2 = await domLines(pg);
+  check('refund', 'pad-refund-n-plus', rt2[0].qty === 'x-1', '5.0 JPanelTicket.java:1642: "1 +" on a refund line sets the quantity to -1', rt2);
+  await pg.click('#east .key[data-key="-"]'); var rt3 = await domLines(pg);
+  check('refund', 'pad-refund-minus', rt3[0].qty === 'x-2', '5.0 JPanelTicket.java:1589: "-" on a refund line adds -1 (x-2); 3.81 went toward 0', rt3);
+  await pg.click('#east .key[data-key="*"]'); await typeNum(pg, 1); await pg.click('#east .key[data-key="-"]'); var rt4 = await domLines(pg);
+  check('refund', 'pad-refund-n-minus', rt4[0].qty === 'x-1', '5.0 JPanelTicket.java:1686: "1 -" on a refund line sets -1', rt4);
+  var totR = await totalOf(pg); check('refund', 'refund-total-negative', Number(totR) < 0, 'the ticket total is negative (' + totR + ')', totR);
+  await pg.click('#east .key[data-key="="]'); await pg.waitForSelector('#u8.on');
+  var tabs = await pg.$$eval('#tabs [data-tab]', function (b) { return b.map(function (x) { return [x.textContent, x.disabled]; }); });
+  check('refund', 'refund-tabs', J(tabs.map(function (x) { return x[0]; })) === J(['Refund', 'Cheque', 'Voucher', 'Card']) && tabs[2][1] === true && tabs[0][1] === false, '5.0 JPaymentSelectRefund.java:67-70: tabs Refund, Cheque, Voucher (disabled: no 214 value), Card', tabs);
+  var due = await pg.$eval('#paytotal', function (e) { return e.textContent; });
+  await pg.fill('#tender-amount', due.replace('-', '')); await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
+  var keyR = await receiptKey(pg), rtot = await pg.$eval('#receipt .rf[data-f="Total"]', function (e) { return e.textContent; }); await pg.click('#rc-ok');
+  check('refund', 'refund-key', /-R1$/.test(keyR) && /-S\d+$/.test(keyS), 'the refund has its own counter: ' + keyR + ' beside sale ' + keyS, { keyR: keyR, keyS: keyS });
+  var orR = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + keyR + "'"), pyR = await rowsOf(pg, "SELECT * FROM i_payment WHERE documentno='" + keyR + "'");
+  check('refund', 'rows-negative', orR.length === 1 && num(orR[0].qtyordered) === -1 && num(orR[0].priceactual) > 0 && pyR.length === 1 && num(pyR[0].payamt) < 0 && pyR[0].tendertype === 'X' && /^Refund of /.test(orR[0].linedescription), 'I_Order QtyOrdered -1 with positive PriceActual and "Refund of <key>"; I_Payment PayAmt negative, TenderType X', { o: orR[0] && [orR[0].qtyordered, orR[0].priceactual, orR[0].linedescription], p: pyR[0] && [pyR[0].payamt, pyR[0].tendertype] });
+  check('refund', 'receipt-total-negative', rtot.indexOf('Total  -') === 0, 'the refund receipt prints a negative total: ' + rtot, rtot);
+  // second refund of the same ticket
+  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', keyS.replace(/^.*-S/, '')); await pg.click('#es-find'); await sleep(700);
+  var d2 = await pg.$$eval('#es-edit, #es-refund', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); }), s2 = await pg.$eval('#es-status', function (e) { return e.textContent; });
+  check('refund', 'no-second-refund', J(d2) === J(['es-edit:true', 'es-refund:true']) && /refunded/.test(s2), 'a refunded ticket allows neither Edit nor a second Refund: "' + s2 + '"', { d2: d2, s2: s2 });
+  // the refund ticket itself is findable under the Refund radio
+  await pg.click('#u10 input[name="es-kind"][value="R"]'); await pg.fill('#es-number', '1'); await pg.click('#es-find'); await sleep(700); var rtxt = await pg.$eval('#es-ticket', function (e) { return e.textContent; });
+  check('refund', 'find-refund-ticket', rtxt.indexOf(keyR) === 0, 'Edit Sales with the Refund radio finds the refund ticket', rtxt.slice(0, 80));
+  // head office
+  var R = await importDevice(pg), os = orderOf(R.H, keyS), or = orderOf(R.H, keyR);
+  check('refund', 'sale-imported', imported(R, keyS) && os.invoice && os.invoice.docstatus === 'CO', 'the sale imports as a completed order + invoice', os.invoice && os.invoice.docstatus);
+  check('refund', 'refund-imported', imported(R, keyR) && or.order && or.order.docstatus === 'CO', 'the refund ticket IMPORTS through Import POS Sales (POS log: ' + (R.logs.filter(function (l) { return l.indexOf(keyR) >= 0; })[0] || 'none').slice(0, 160) + ')', or.order && or.order.docstatus);
+  var rl2 = or.order ? R.H.q0('SELECT * FROM c_orderline WHERE c_order_id=?', [or.order.c_order_id]) : [];
+  check('refund', 'refund-order-minus-one', rl2.length === 1 && num(rl2[0].qtyordered) === -1 && or.invoice && Number(or.invoice.grandtotal) < 0, 'witness_pos_return.js RET2: the refund is an order with a -1 line and a NEGATIVE invoice GrandTotal (' + (or.invoice && or.invoice.grandtotal) + ')', { lines: rl2.map(function (l) { return l.qtyordered; }), grand: or.invoice && or.invoice.grandtotal });
+  check('refund', 'refund-to-the-cent', or.invoice && Math.round(Number(or.invoice.grandtotal) * 100) === Math.round(Number(totR) * 100), 'screen refund total ' + totR + ' == imported GrandTotal ' + (or.invoice && or.invoice.grandtotal) + ' to the cent', { screen: totR, grand: or.invoice && or.invoice.grandtotal });
+  check('refund', 'refund-receipt-open-0', or.receipts.length === 1 && or.receipts[0].docstatus === 'CO' && Number(or.receipts[0].payamt) < 0 && or.invoice && or.invoice.ispaid === 'Y', 'the negative tender completes as ONE receipt and the invoice is settled (IsPaid)', { receipts: or.receipts.map(function (p) { return [p.docstatus, p.payamt]; }), paid: or.invoice && or.invoice.ispaid });
+  var cp = R.H.q0('SELECT count(*) AS n FROM c_order WHERE documentno IN (?,?)', [keyS, keyR])[0].n; check('refund', 'two-orders', cp === 2, 'two tickets = exactly two orders at head office', cp);
+  // the Z folds the refund in
+  await pg.evaluate(function () { window.Till.go('close'); }); await sleep(900);
+  var z = await pg.evaluate(function () { function t(id) { return document.getElementById(id).textContent; } return { tickets: t('z-tickets'), units: t('z-units'), gross: t('z-gross'), bytender: [].map.call(document.querySelectorAll('#z-bytender [data-tender]'), function (e) { return e.textContent; }) }; });
+  var gs = Number(os.invoice.grandtotal), gr = Number(or.invoice.grandtotal);
+  console.log('§TILL_REFUND_Z ' + J(z) + ' oracle sale=' + gs + ' refund=' + gr);
+  check('refund', 'z-folds-refund', z.tickets === '2' && z.units === '2' && z.gross === money2(gs + gr) && z.bytender.indexOf('cash ' + money2(gs)) >= 0 && z.bytender.indexOf('cashrefund ' + money2(gr)) >= 0, 'Close Cash: 2 tickets, 2 units (3 sold, 1 refunded), Sales == sale + refund invoices (' + money2(gs + gr) + '), tenders cash ' + money2(gs) + ' and cashrefund ' + money2(gr), z);
+  await pg.close();
+}
+
+// ═══ CUSTPAY (U12) : ISSUES: a customer payment deposits ONLY an I_Payment with the customer's Value; Import Payment (343) turns it into a receipt for THAT partner; Import POS Sales refuses it (no ticket lines) so the two imports cannot be confused
+async function runCustPay(ctx, base) {
+  var pg = await openTill(ctx, base); await loginSales(pg); await pg.evaluate(function () { window.Till.go('custpay'); }); await sleep(900);
+  var cs = await pg.$$eval('#cp-list [data-cust]', function (b) { return b.map(function (x) { return [x.getAttribute('data-n'), x.getAttribute('data-v')]; }); });
+  check('custpay', 'customers-listed', cs.length > 0, 'the customer list is filled from c_bpartner (IsCustomer) of the tenant (n=' + cs.length + ')', cs.length);
+  await pg.fill('#cp-find', 'Patio'); await pg.click('#cp-search'); await sleep(500); var c1 = await pg.$$eval('#cp-list [data-cust]', function (b) { return b.map(function (x) { return [x.getAttribute('data-n'), x.getAttribute('data-v')]; }); });
+  check('custpay', 'find-by-name', c1.length >= 1 && /Patio/.test(c1[0][0]), 'finding "Patio" lists Patio Fun', c1);
+  await pg.click('#cp-list [data-cust]'); var card = await pg.evaluate(function () { return { name: document.getElementById('cp-name').textContent, max: document.getElementById('cp-max').textContent, debt: document.getElementById('cp-debt').textContent }; });
+  check('custpay', 'card-fields', card.name === c1[0][0] && card.max !== '' && card.debt !== '', '5.0 CustomersPayment: Name, Credit Limit (label.maxdebt) and Current Debt (label.curdebt) are shown', card);
+  await pg.fill('#cp-amount', '25.00'); await pg.click('#cp-pay'); await pg.waitForSelector('#u8.on');
+  var tabs = await pg.$$eval('#tabs [data-tab]', function (b) { return b.map(function (x) { return [x.textContent, x.disabled]; }); });
+  check('custpay', 'customer-tabs', J(tabs.map(function (x) { return x[0]; })) === J(['Cash', 'Cheque', 'Voucher', 'Bank', 'Card', 'Slip']), '5.0 JPaymentSelectCustomer.java:67-72: Cash, Cheque, Voucher, Bank, Card, Slip', tabs);
+  await pg.click('#tabs [data-tab="cash"]'); await pg.fill('#tender-amount', '25.00'); await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 }); var key = await receiptKey(pg);
+  var o = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + key + "'"), p = await rowsOf(pg, "SELECT * FROM i_payment WHERE documentno='" + key + "'");
+  check('custpay', 'deposit-shape', /-P1$/.test(key) && o.length === 0 && p.length === 1 && p[0].bpartnervalue === c1[0][1] && num(p[0].payamt) === 25 && p[0].tendertype === 'X' && p[0].isreceipt === 'Y', 'ONE I_Payment (no I_Order), key ' + key + ', BPartnerValue ' + c1[0][1] + ', 25.00 cash', { o: o.length, p: p[0] && [p[0].bpartnervalue, p[0].payamt, p[0].tendertype] });
+  var orders = await rowsOf(pg, 'SELECT * FROM i_order'), pays = await rowsOf(pg, 'SELECT * FROM i_payment');
+  var R = await importRows(orders, pays);
+  check('custpay', 'pos-sales-refuses', R.logs.some(function (l) { return l.indexOf('key=' + key) >= 0 && l.indexOf('result=REFUSED') >= 0 && /no ticket lines/.test(l); }), 'Import POS Sales REFUSES a key without lines ("ERR=no ticket lines") : customer payments are not its job', R.logs.filter(function (l) { return l.indexOf(key) >= 0; }).map(function (l) { return l.slice(0, 160); }));
+  var H = R.H; var run = H.commit(function (trx) { var r0 = H.AP.runInTrx(trx, 343, { params: { AD_Org_ID: 11, C_BankAccount_ID: 100, DocAction: 'CO', DeleteOldImported: 'N' } }); return { ok: r0.ok, error: r0.summary }; });
+  var rc = H.q0('SELECT * FROM c_payment WHERE documentno=?', [key]), bp = H.q0('SELECT c_bpartner_id FROM c_bpartner WHERE value=?', [c1[0][1]])[0];
+  check('custpay', 'import-payment-343', run.ok && rc.length === 1 && rc[0].docstatus === 'CO' && bp && String(rc[0].c_bpartner_id) === String(bp.c_bpartner_id) && Number(rc[0].payamt) === 25, 'Import Payment (343) makes ONE completed receipt of 25.00 for the partner ' + c1[0][1], { run: run.ok && run.error, rc: rc.map(function (r) { return [r.docstatus, r.payamt, r.c_bpartner_id]; }), bp: bp });
+  await pg.close();
+}
+
+// ═══ PANELS (U13 / N18 / N19 / N21 / N22) : ISSUES: Payments in/out reach the Z under their own tender names; the voucher ledger is single-use; presence and pick-up behave as the 5.0 panels; none of it writes a deposit row
+async function runPanels(ctx, base) {
+  var pg = await openTill(ctx, base); await loginSales(pg); var before = await rowsOf(pg, 'SELECT (SELECT count(*) FROM i_order) AS o, (SELECT count(*) FROM i_payment) AS p');
+  var pickups = []; for (var i = 0; i < 2; i++) { await ring(pg, [[129, 1]]); await payExact(pg); var k = await receiptKey(pg); pickups.push(await pg.evaluate(function (kk) { return window.Till.state().store.rcpt[kk].pickup; }, k)); await pg.click('#rc-ok'); }
+  check('panels', 'pickup-increments', pickups[0] >= 1 && pickups[1] === pickups[0] + 1, 'each saved ticket takes the next pick-up number (' + pickups.join(',') + ')', pickups);
+  await pg.evaluate(function () { window.Till.go('pickup'); }); await pg.click('#pu-reset'); var cf = await pg.$eval('#pu-confirm', function (e) { return { hidden: e.hidden, text: e.textContent }; });
+  check('panels', 'pickup-confirm', cf.hidden === false && /reset the Order Pickup number to 0/.test(cf.text), 'Reset asks message.resetpickup before acting', cf);
+  await pg.click('#pu-confirm'); var nx = await pg.$eval('#pu-next', function (e) { return e.textContent; }), dn = await pg.$eval('#pu-done', function (e) { return e.textContent; });
+  await pg.evaluate(function () { window.Till.go('sales'); }); await ring(pg, [[129, 1]]); await payExact(pg); var k3 = await receiptKey(pg); var pk3 = await pg.evaluate(function (kk) { return window.Till.state().store.rcpt[kk].pickup; }, k3); await pg.click('#rc-ok');
+  check('panels', 'pickup-reset', nx === '1' && dn === 'Reset complete.' && pk3 === 1, 'after Reset the next pick-up is 1 ("Reset complete.") and the next ticket takes 1', { nx: nx, dn: dn, pk3: pk3 });
+  // Payments in/out
+  await pg.evaluate(function () { window.Till.go('payments'); });
+  var opts = await pg.$$eval('#pm-reason option', function (o) { return o.map(function (x) { return x.textContent; }); }); check('panels', 'reasons', J(opts) === J(['Cash (In)', 'Cash (Out)']), 'PaymentsEditor.java:59-60 reasons Cash (In), Cash (Out)', opts);
+  await pg.selectOption('#pm-reason', 'cashin'); await pg.fill('#pm-amount', '50.00'); await pg.fill('#pm-notes', 'float'); await pg.click('#pm-save');
+  await pg.selectOption('#pm-reason', 'cashout'); await pg.fill('#pm-amount', '20.00'); await pg.fill('#pm-notes', 'milk'); await pg.click('#pm-save');
+  await pg.selectOption('#pm-reason', 'cashout'); await pg.fill('#pm-amount', '1.00'); await pg.click('#pm-save'); var n3 = (await pg.$$('#pm-list [data-cashio]')).length; await pg.locator('#pm-list [data-pm-del]').last().click(); var n2 = (await pg.$$('#pm-list [data-cashio]')).length;
+  check('panels', 'payments-save-delete', n3 === 3 && n2 === 2, 'three Payments saved then one deleted leaves 2', { n3: n3, n2: n2 });
+  await pg.evaluate(function () { window.Till.go('close'); }); await sleep(700);
+  var z = await pg.evaluate(function () { return { bytender: [].map.call(document.querySelectorAll('#z-bytender [data-tender]'), function (e) { return e.textContent; }), payments: document.getElementById('z-payments').textContent }; });
+  check('panels', 'z-cashio', z.bytender.indexOf('cashin 50.00') >= 0 && z.bytender.indexOf('cashout -20.00') >= 0, 'Close Cash shows cashin 50.00 and cashout -20.00 beside the tenders (PaymentsModel.java:201)', z);
+  var after = await rowsOf(pg, 'SELECT (SELECT count(*) FROM i_order) AS o, (SELECT count(*) FROM i_payment) AS p');
+  check('panels', 'cashio-not-deposited', num(after[0].p) - num(before[0].p) === 3, 'Payments in/out wrote no deposit row: I_Payment grew only by the 3 cash tenders of the 3 tickets (' + (num(after[0].p) - num(before[0].p)) + ')', { before: before[0], after: after[0] });
+  // voucher
+  await pg.evaluate(function () { window.Till.go('vouchers'); }); var vn = await pg.$eval('#vo-number', function (e) { return e.value; });
+  await pg.fill('#vo-customer', 'Test'); await pg.fill('#vo-amount', '30'); await pg.click('#vo-issue'); var vl = await pg.$$eval('#vo-list [data-voucher]', function (d) { return d.map(function (x) { return x.getAttribute('data-voucher') + ':' + x.getAttribute('data-status'); }); });
+  await pg.fill('#vo-redeem-number', vn); await pg.click('#vo-redeem'); var m1 = await pg.$eval('#vo-msg', function (e) { return e.textContent; }); await pg.click('#vo-redeem'); var m2 = await pg.$eval('#vo-msg', function (e) { return e.textContent; });
+  check('panels', 'voucher-single-use', vl.length === 1 && vl[0] === vn + ':A' && /redeemed 30.00/.test(m1) && /already used/.test(m2), 'a voucher is issued (Active), redeems once ("' + m1 + '") and a second redeem is refused ("' + m2 + '")', { vl: vl, m1: m1, m2: m2 });
+  // presence
+  await pg.evaluate(function () { window.Till.go('presence'); }); var st0 = await pg.$$eval('#pr-in, #pr-out', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); });
+  await pg.click('#pr-in'); var m3 = await pg.$eval('#pr-msg', function (e) { return e.textContent; }), st1 = await pg.$$eval('#pr-in, #pr-out', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); });
+  await pg.click('#pr-out'); var m4 = await pg.$eval('#pr-msg', function (e) { return e.textContent; });
+  check('panels', 'presence', /GardenAdmin has Checked In at \d{4}-/.test(m3) && /GardenAdmin has Checked Out at \d{4}-/.test(m4) && J(st1) === J(['pr-in:true', 'pr-out:false']), 'Check In then Check Out: "' + m3 + '" / "' + m4 + '", the buttons toggle (JPanelEmployeePresence)', { m3: m3, m4: m4, st1: st1 });
+  // reprint last = the ticket just paid
+  await pg.evaluate(function () { window.Till.go('sales'); }); await pg.click('#north [data-btn="Reprint Last Ticket"]'); await pg.waitForSelector('#u9.on'); var rk = await receiptKey(pg);
+  check('panels', 'reprint-last', rk === k3, 'Reprint Last Ticket prints the last saved ticket ' + k3, rk);
+  await pg.close();
+}
+
+// ═══ REST (U16 / U17) : mode=restaurant. ISSUES: the table map replaces the bag; a table\'s ticket is held under the table and comes back; a reservation checks in onto its table; the sale still deposits as an ordinary ticket
+async function runRest(ctx, base) {
+  var pg = await openTill(ctx, base, '?mode=restaurant'); await pg.click('#u1 .u-user:has-text("GardenAdmin")'); await pg.click('#u2 [data-panel="Sales"]'); await pg.waitForSelector('#u16.on');
+  var np = (await pg.$$('#fl-map .place')).length, names = await pg.$$eval('#fl-map .place', function (b) { return [b[0].getAttribute('data-place'), b[23].getAttribute('data-place')]; }), bagHidden = await pg.$eval('#bag', function (e) { return e.hidden; });
+  check('rest', 'table-map', np === 24 && J(names) === J(['Table 1', 'Table 24']) && bagHidden === true, 'SQLite-create.sql:652-683 seed: 24 tables on the floor; the 5-button bag is replaced by the map', { np: np, names: names, bagHidden: bagHidden });
+  await pg.click('#fl-map [data-place="Table 3"]'); await pg.waitForSelector('#u3.on'); var tid = await pg.$eval('#tid', function (e) { return e.textContent; }), fb = await pg.$$eval('#floorbar [data-btn]', function (b) { return b.map(function (x) { return x.getAttribute('data-btn'); }); });
+  check('rest', 'table-opens', /Table 3/.test(tid) && J(fb) === J(['Reload', 'Reservations', 'Tables']), 'a table click opens that table\'s ticket; the bar offers Reload, Reservations, Tables', { tid: tid, fb: fb });
+  await ring(pg, [[129, 2]]); await pg.click('#floorbar [data-btn="Tables"]'); await pg.waitForSelector('#u16.on');
+  var occ = await pg.$eval('#fl-map [data-place="Table 3"]', function (b) { return b.getAttribute('data-occupied'); }); check('rest', 'table-occupied', occ === '1', 'leaving a table with lines keeps its ticket and marks the table occupied', occ);
+  await pg.click('#fl-map [data-place="Table 3"]'); await pg.waitForSelector('#u3.on'); var back = await domLines(pg); check('rest', 'table-recalled', back.length === 1 && back[0].qty === 'x2', 'the same table brings its ticket back (x2)', back);
+  var tot = await payExact(pg); var key = await receiptKey(pg); await pg.click('#rc-ok'); await pg.waitForSelector('#u16.on');
+  var occ2 = await pg.$eval('#fl-map [data-place="Table 3"]', function (b) { return b.getAttribute('data-occupied'); });
+  check('rest', 'paid-frees-table', occ2 === '0', 'after payment the receipt returns to the map and the table is free', occ2);
+  var ro = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + key + "'"); check('rest', 'deposits-as-ticket', ro.length === 1 && /-S\d+$/.test(key), 'the table sale deposits as an ordinary S ticket (1 I_Order row)', { n: ro.length, key: key });
+  await pg.click('#fl-res'); await pg.waitForSelector('#u17.on');
+  await pg.fill('#rs-customer', 'Ms Lee'); await pg.fill('#rs-chairs', '4'); await pg.fill('#rs-date', '2026-11-04T19:00'); await pg.selectOption('#rs-place', 'Table 7'); await pg.click('#rs-save');
+  var rl = await pg.$$eval('#rs-list [data-res]', function (d) { return d.map(function (x) { return x.textContent; }); }); check('rest', 'reservation-saved', rl.length === 1 && /Ms Lee/.test(rl[0]) && /Table 7/.test(rl[0]), 'a reservation (person, 4 persons, booking time, table) is listed', rl);
+  await pg.click('#rs-list [data-res-in]'); await pg.waitForSelector('#u3.on'); var tid2 = await pg.$eval('#tid', function (e) { return e.textContent; }); check('rest', 'check-in-now', /Table 7/.test(tid2), 'Check-In Now opens the reserved table', tid2);
+  var hold = await pg.evaluate(function () { return window.Till.state().store.reservations[0].in; }); check('rest', 'check-in-marked', hold === true, 'the reservation is marked checked in', hold);
+  await pg.close();
+}
+
 // ═══ mutants: each child serves ONE broken copy; a kill = the child ran to its own verdict, FAILED on the named check, and did not crash
 var MUTANTS = [
   { name: 'price-not-carried', arms: 'deposit', expect: 'price-carried', edit: { file: 'erp/till_core.js', from: 'qtyordered: l.qty, priceactual: l.price,', to: 'qtyordered: l.qty,' } },
@@ -380,17 +697,20 @@ else
     var sv = await startServer(), browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
     var newCtx = function () { return browser.newContext({ viewport: { width: 1400, height: 900 } }); }, ctx = null;
     try {
-      if (ARMS.indexOf('parity') >= 0) {
-        ctx = await newCtx(); var pg = await openTill(ctx, sv.base);
-        var pr = await runParity(pg); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
-        check('parity', 'non-vacuous', pr.N === 22 && pr.x > 0, 'N is the registry (22, §14A.6) and at least one row was judged present', pr);
-        console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
-        await pg.close();
-      }
       if (ARMS.indexOf('deposit') >= 0) { ctx = await newCtx(); await runDeposit(ctx, sv.base); verdict('deposit', 'TILL_DEPOSIT_VERDICT W-TILL-DEPOSIT'); }
       if (ARMS.indexOf('offline') >= 0) {
-        ctx = await newCtx(); await runOffline(ctx, sv.base); var off = verdict('offline', 'TILL_OFFLINE_VERDICT W-TILL-OFFLINE (local half)');
-        inconclusive('offline', 'TILL_OFFLINE_DELIVERY W-TILL-OFFLINE (Visit delivery)', 'needs the two-device pipe harness of witness_mf_seed.js; not judged in slice 1');
+        ctx = await newCtx(); await runOffline(ctx, sv.base); verdict('offline', 'TILL_OFFLINE_VERDICT W-TILL-OFFLINE (local half)');
+        inconclusive('offline', 'TILL_OFFLINE_DELIVERY W-TILL-OFFLINE (Visit delivery)', 'judged by erp/tests/witness_till_delivery.js (the two-device pipe harness of witness_mf_seed.js), not in this file');
+      }
+      var NAMES = { bar: 'TILL_BAR_VERDICT W-TILL-BAR', held: 'TILL_HELD_VERDICT W-TILL-HELD', edit: 'TILL_EDIT_VERDICT W-TILL-EDIT', refund: 'TILL_REFUND_VERDICT W-TILL-REFUND', custpay: 'TILL_CUSTPAY_VERDICT W-TILL-CUSTPAY', panels: 'TILL_PANELS_VERDICT W-TILL-PANELS', rest: 'TILL_REST_VERDICT W-TILL-REST' };
+      var FNS = { bar: runBar, held: runHeld, edit: runEdit, refund: runRefund, custpay: runCustPay, panels: runPanels, rest: runRest };
+      for (var an of Object.keys(NAMES)) if (ARMS.indexOf(an) >= 0) { ctx = await newCtx(); try { await FNS[an](ctx, sv.base); } catch (e) { check(an, 'arm-threw', false, 'the arm ran to its end', String(e && e.stack || e).slice(0, 400)); } verdict(an, NAMES[an]); await ctx.close().catch(function () {}); }
+      if (ARMS.indexOf('parity') >= 0) {
+        ctx = await newCtx(); var pgp = await openTill(ctx, sv.base), ctx2 = await newCtx(), pgr = await openTill(ctx2, sv.base, '?mode=restaurant'); await pgr.click('#u1 .u-user:has-text("GardenAdmin")');
+        var pr = await runParity(pgp, pgr); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
+        check('parity', 'non-vacuous', pr.N === 22 && pr.x > 0, 'N is the registry (22, §14A.6) and at least one row was judged present', pr);
+        console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
+        await pgp.close(); await pgr.close();
       }
       console.log('§TILL_PAGE_ERRORS n=' + ERRS.length + (ERRS.length ? ' ' + J(ERRS.slice(0, 3)) : ''));
     } finally { await browser.close(); sv.server.close(); }

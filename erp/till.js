@@ -11,7 +11,7 @@
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
   function log(s) { try { console.log(s); } catch (e) { /* logging never breaks the page */ } }
   var chain = Promise.resolve(); function serial(fn) { var p = chain.then(fn, fn); chain = p.catch(function () {}); return p; }
-  var S = { cfg: null, cashier: null, ticket: null, pad: P.zero(), screen: 'login', cat: null, catPath: [], prods: [], cats: [], store: null, taxEnv: null, pay: null, deposited: 0 };
+  var S = { mode: 'standard', cfg: null, cashier: null, ticket: null, pad: P.zero(), screen: 'login', cat: null, catPath: [], prods: [], cats: [], store: null, taxEnv: null, pay: null, deposited: 0 };
 
   // ── engine bridge ──
   function rows(sql) { return new Promise(function (res) { E.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { res(trx.q(sql)); return { ok: true }; } }, function () {}); }); }
@@ -36,7 +36,7 @@
     var plv = (await rows('SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=' + Number(pos.m_pricelist_id) + ' ORDER BY validfrom DESC, m_pricelist_version_id DESC LIMIT 1'))[0];
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
-    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
@@ -62,16 +62,21 @@
 
   // ── shift + ticket ──
   function freshShift(seq) { return { host: S.cfg.tillKey, seq: seq, start: nowIso(), end: null, nosales: 0, removed: 0 }; }
-  function newTicket() { return { type: 'S', lines: [], sel: -1 }; }
+  function newTicket() { return { type: 'S', lines: [], sel: -1, pickup: null, old: null, orig: null, table: null }; }
   function persist() { S.store.ticket = S.ticket; saveStore(); }
-  function depositedDocNos() { return rows('SELECT DISTINCT documentno FROM i_order WHERE documentno LIKE ' + q(C.keyPrefix(S.cfg.orgValue, S.cfg.userValue, 'S') + '%')).then(function (r) { return r.map(function (x) { return x.documentno; }); }); }
+  function depositedDocNos(kind) {   // the keys of this till (all types, or one type letter)
+    var like = C.keyPrefix(S.cfg.orgValue, S.cfg.userValue, kind || '') + '%';
+    return rows('SELECT documentno FROM i_order WHERE documentno LIKE ' + q(like) + ' UNION SELECT documentno FROM i_payment WHERE documentno LIKE ' + q(like)).then(function (r) { return r.map(function (x) { return x.documentno; }); });
+  }
 
   function msg(t, kind) { var el = $('#msg'); el.hidden = !t; el.textContent = t || ''; el.setAttribute('data-kind', kind || ''); if (t) log('§TILL_MSG ' + (kind || 'info') + ' ' + t); }
+  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', heldlist: 'u7', reprintlist: 'u5r' };
+  var HOOKS = {};   // screen name -> function run after the screen is shown (the screens of till_ext.js)
   function go(name) {
-    S.screen = name; ['u1', 'u2', 'u3', 'u8', 'u9', 'u14'].forEach(function (id) { $('#' + id).classList.remove('on'); });
-    var map = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14' };
-    if (map[name]) $('#' + map[name]).classList.add('on'); else { msg('This panel is not in this release', 'info'); return false; }
-    if (name === 'close') renderClose(); if (name === 'sales') renderSales();
+    if (!SCREENS[name]) { msg('This panel is not in this release', 'info'); return false; }
+    S.screen = name; $$('.screen').forEach(function (e) { e.classList.remove('on'); });
+    $('#' + SCREENS[name]).classList.add('on');
+    if (name === 'close') renderClose(); if (name === 'sales') renderSales(); if (HOOKS[name]) HOOKS[name]();
     return true;
   }
 
@@ -82,8 +87,8 @@
   }
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   function renderMenu() {
-    var built = { Sales: 'sales', 'Close Cash': 'close' };
-    $('#panels').innerHTML = R.MENU.map(function (n) { var on = !!built[n]; return '<button data-panel="' + esc(n) + '"' + (on ? '' : ' disabled data-disabled-reason="not in this release"') + '>' + esc(n) + '</button>'; }).join('');
+    $('#panels').innerHTML = R.MENU.map(function (n) { return '<button data-panel="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') +
+      '<div id="extras">' + [['Check In/Out', 'presence'], ['Voucher', 'vouchers'], ['Pickup Reset', 'pickup']].map(function (x) { return '<button data-extra="' + x[1] + '">' + x[0] + '</button>'; }).join('') + '</div>';   // Menu.Root.txt:115-143 (5.0), after the five Register panels
   }
 
   // ── U3 / U4 / U5 ──
@@ -101,27 +106,34 @@
     var t = S.ticket, l = t.lines[t.sel];
     if (ef.type === 'incLine') { l.qty = Number(l.qty) + ef.delta; }
     else if (ef.type === 'decLine') { l.qty = Number(l.qty) - 1; if (l.qty <= 0) removeLine(t.sel); }
-    else if (ef.type === 'setLine') { l.qty = ef.qty; }
+    else if (ef.type === 'setLine') { l.qty = ef.qty; l.price = Math.abs(l.price); }
     else if (ef.type === 'addProduct') { /* handled by the product button */ }
     else if (ef.type === 'barcode') { var p = S.prods.filter(function (x) { return x.upc === ef.code || x.value === ef.code; })[0]; if (p) addLine(p, 1); else { msg(ef.code + ' - no such product', 'warn'); } }
-    else if (ef.type === 'addFree' || ef.type === 'negateLine') { msg('A free-price or negative line has no legacy import mapping in this release (Import Orders needs a product)', 'warn'); }
+    else if (ef.type === 'addFree') { msg('A free-price or negative line has no legacy import mapping in this release (Import Orders needs a product)', 'warn'); }
     else if (ef.type === 'pay') { openPay(); }
     else if (ef.type === 'beep') { /* Unicenta beeps; the till stays silent and unchanged */ }
     if (ef.type !== 'pay') { persist(); renderSales(); }
   }
   function addLine(p, qty) {
-    var t = S.ticket, ex = t.lines.filter(function (l) { return l.pid === p.pid; })[0];   // Unicenta merges a repeated product into its line (JPanelTicket.addTicketLine)
+    var t = S.ticket; if (t.type === 'R') { msg('A refund takes lines of the original ticket (Edit Sales, Refund)', 'warn'); return; }
+    var ex = t.lines.filter(function (l) { return l.pid === p.pid && !l.disc; })[0];   // Unicenta merges a repeated product into its line (JPanelTicket.addTicketLine)
     if (ex) { ex.qty = Number(ex.qty) + qty; t.sel = t.lines.indexOf(ex); } else { t.lines.push({ pid: p.pid, name: p.name, qty: qty, price: Number(p.price) }); t.sel = t.lines.length - 1; }
     persist(); renderSales(); log('§TILL_LINE add pid=' + p.pid + ' qty=' + qty + ' lines=' + t.lines.length);
   }
-  function removeLine(i) { S.ticket.lines.splice(i, 1); S.ticket.sel = Math.min(S.ticket.sel, S.ticket.lines.length - 1); S.store.shift.removed = (S.store.shift.removed || 0) + 1; }
-  function curTotals() { return C.totals(S.ticket.lines, S.taxEnv); }
+  function removeLine(i) {   // LINEREMOVED audit per line; a parent takes its Line Discount lines with it
+    var n = 1; if (!S.ticket.lines[i].disc) while (S.ticket.lines[i + n] && S.ticket.lines[i + n].disc) n++;
+    S.ticket.lines.splice(i, n); S.ticket.sel = Math.min(S.ticket.sel, S.ticket.lines.length - 1); S.store.shift.removed = (S.store.shift.removed || 0) + n;
+  }
+  function curTotals() { return C.totals(C.foldLines(S.ticket.lines), S.taxEnv); }   // the totals are those of the folded lines: what head office will import
   function renderSales() {
     var t = S.ticket;
     $('#tl').innerHTML = t.lines.map(function (l, i) { return '<tr class="line' + (i === t.sel ? ' sel' : '') + '" data-i="' + i + '"><td>' + esc(l.name) + '</td><td>' + C.money(C.cents(l.price)) + '</td><td>x' + l.qty + '</td><td>' + C.money(C.lineNetCents(l.qty, l.price)) + '</td></tr>'; }).join('');
     var tt = curTotals();
     $('#t-sub').textContent = tt.ok ? C.money(tt.net) : '?'; $('#t-tax').textContent = tt.ok ? C.money(tt.tax) : '?'; $('#t-tot').textContent = tt.ok ? C.money(tt.gross) : '?';
     renderCats(); renderPad();
+    var lab = t.type === 'R' ? 'Refund of ' + t.orig : t.old ? 'Editing ' + t.old : 'Ticket'; $('#tid').textContent = lab + (t.pickup ? ' · pick-up ' + t.pickup : '') + (t.table ? ' · ' + t.table : '');
+    $('#south').style.display = t.type === 'R' ? 'none' : '';
+    $('#heldcount').textContent = (S.store.held || []).length || '';
   }
   function childrenOf(id) { return S.cats.filter(function (c) { return (c.parent == null || c.parent === '' ? null : Number(c.parent)) === id; }); }
   function renderCats() {
@@ -133,19 +145,21 @@
     $('#products').innerHTML = list.map(function (p) { return '<button class="prod" data-pid="' + p.pid + '">' + esc(p.name) + '<br>' + C.money(C.cents(p.price)) + '</button>'; }).join('');
   }
 
-  // ── U8 payment dialog ──
-  function openPay() {
-    var tt = curTotals(); if (!tt.ok) { msg('Cannot price the ticket: ' + tt.error, 'bad'); return; }
-    S.pay = { gross: tt.gross, parts: [], tab: 'cash', print: true };
-    $('#tabs').innerHTML = C.TENDERS.map(function (t) { return '<button data-tab="' + t.name + '"' + (t.live ? '' : ' disabled data-disabled-reason="' + esc(t.reason) + '"') + '>' + t.label + '</button>'; }).join('');
+  // ── U8 payment dialog (sale, refund U11, customer payment U12 share it: the tabs differ, 5.0 JPaymentSelectReceipt / Refund / Customer) ──
+  function openPay(kind, amountCents, customer) {
+    var sign = 1, gross;
+    if (kind === 'P') { gross = amountCents; }
+    else { var tt = curTotals(); if (!tt.ok) { msg('Cannot price the ticket: ' + tt.error, 'bad'); return; } kind = S.ticket.type; sign = tt.gross < 0 ? -1 : 1; gross = Math.abs(tt.gross); }
+    S.pay = { gross: gross, kind: kind, sign: sign, customer: customer || null, parts: [], tab: C.tabsFor(kind)[0].name, print: true };
+    $('#tabs').innerHTML = C.tabsFor(kind).map(function (t) { return '<button data-tab="' + t.name + '"' + (t.live ? '' : ' disabled data-disabled-reason="' + esc(t.reason || 'no import mapping for this tender') + '"') + '>' + t.label + '</button>'; }).join('');
     go('pay'); renderPay();
   }
-  function paidSoFar() { return S.pay.parts.reduce(function (a, p) { return a + p.tendered; }, 0); }
+  var sg = function (c) { return (S.pay && S.pay.sign < 0 && c ? '-' : '') + C.money(c); };
   function renderPay() {
     var p = S.pay, left = Math.max(p.gross - p.parts.reduce(function (a, x) { return a + Math.min(x.tendered, x.appliedMax); }, 0), 0);
-    $('#paytotal').textContent = C.money(p.gross); $('#remaining').textContent = C.money(left);
+    $('#paytotal').textContent = sg(p.gross); $('#remaining').textContent = sg(left);
     $$('#tabs [data-tab]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-tab') === p.tab); });
-    $('#cardfields').hidden = p.tab !== 'magcard';
+    $('#cardfields').hidden = !/^magcard/.test(p.tab);
     $('#tender-amount').value = C.money(left);
     var ap = C.applyTenders(p.parts.map(function (x) { return { name: x.name, tendered: x.tendered, ref: x.ref, auth: x.auth }; }), p.gross);
     $('#change').textContent = C.money(ap.change);
@@ -159,28 +173,39 @@
     if (left <= 0) { msg('The ticket is already covered', 'warn'); return false; }
     if (p.tab !== 'cash' && amt > left) { msg('Only cash gives change: the amount is more than remaining', 'warn'); return false; }
     var part = { name: p.tab, tendered: amt, appliedMax: left };
-    if (p.tab === 'magcard') { part.ref = $('#card-ref').value.trim(); part.auth = $('#card-auth').value.trim(); if (!part.ref || !part.auth) { msg('Card: the terminal reference and approval code are needed (the card number is never keyed here)', 'warn'); return false; } }
+    if (/^magcard/.test(p.tab)) { part.ref = $('#card-ref').value.trim(); part.auth = $('#card-auth').value.trim(); if (!part.ref || !part.auth) { msg('Card: the terminal reference and approval code are needed (the card number is never keyed here)', 'warn'); return false; } }
     p.parts.push(part); renderPay(); return true;
   }
   function delPart() { S.pay.parts.pop(); renderPay(); }
   function remainingCents() { var p = S.pay; return p.gross - p.parts.reduce(function (a, x) { return a + Math.min(x.tendered, x.appliedMax); }, 0); }
+  function bumpPickup() { S.store.pickup = (S.store.pickup || 0) + 1; return S.store.pickup; }   // DataLogicSales.getNextPickupIndex (the pickup_number sequence)
   async function payOk() {
     var p = S.pay; if (remainingCents() > 0 && !addPart()) return;
     if (remainingCents() > 0) { msg('The ticket is not covered yet: Add Part Payment', 'warn'); return; }
     return serial(async function () {
-      var t = S.ticket, tt = curTotals(), ap = C.applyTenders(p.parts.map(function (x) { return { name: x.name, tendered: x.tendered, ref: x.ref, auth: x.auth }; }), tt.gross);
+      var kind = p.kind, t = kind === 'P' ? { type: 'P', lines: [], old: null, orig: null } : S.ticket, folded = C.foldLines(t.lines), tt = kind === 'P' ? { gross: p.gross, ok: true } : C.totals(folded, S.taxEnv);
+      var ap = C.applyTenders(p.parts.map(function (x) { return { name: x.name, tendered: x.tendered, ref: x.ref, auth: x.auth }; }), p.gross);
       if (!ap.ok || ap.remaining > 0) { msg('Tenders do not cover the ticket', 'bad'); return; }
-      var dn = await depositedDocNos(), prefix = C.keyPrefix(S.cfg.orgValue, S.cfg.userValue, 'S');
-      var n = C.nextNumber(prefix, S.store.counters && S.store.counters.S, dn), key = prefix + n;
-      var rowsOut = C.depositRows(t, key, ap, { client: S.cfg.client, org: S.cfg.org, iso: S.cfg.iso, uomOf: function (pid) { return (S.prods.filter(function (x) { return x.pid === pid; })[0] || {}).uom; }, day: today(), shiftTag: shiftTag() });
-      var ops = rowsOut.orders.map(function (r) { return create('i_order', r); }).concat(rowsOut.payments.map(function (r) { return create('i_payment', r); }));
+      var prefix = C.keyPrefix(S.cfg.orgValue, S.cfg.userValue, kind), key, n = null;
+      if (t.old) key = t.old;                                                            // 5.0 TicketInfo.copyTicket keeps the number: an edited ticket is saved under its own key
+      else { var dn = await depositedDocNos(kind); n = C.nextNumber(prefix, S.store.counters && S.store.counters[kind], dn); key = prefix + n; }
+      var rowsOut = C.depositRows({ lines: folded }, key, ap, { client: S.cfg.client, org: S.cfg.org, iso: S.cfg.iso, uomOf: function (pid) { return (S.prods.filter(function (x) { return x.pid === pid; })[0] || {}).uom; }, day: today(), shiftTag: shiftTag(),
+        sign: p.sign, refundOf: kind === 'R' ? t.orig : null, bpartnerValue: kind === 'P' ? p.customer.value : null });
+      var ops = [];
+      if (t.old) {                                                                       // Edit: the old rows are removed in the SAME atomic group (DataLogicSales.deleteTicket, then saveTicket)
+        (await rows('SELECT i_order_id AS id FROM i_order WHERE documentno=' + q(key))).forEach(function (r) { ops.push({ op_type: 'CRUD_DELETE', key: 'i_order', table: 'i_order', verb: 'delete', id: r.id, tombstone: true }); });
+        (await rows('SELECT i_payment_id AS id FROM i_payment WHERE documentno=' + q(key))).forEach(function (r) { ops.push({ op_type: 'CRUD_DELETE', key: 'i_payment', table: 'i_payment', verb: 'delete', id: r.id, tombstone: true }); });
+      }
+      ops = ops.concat(rowsOut.orders.map(function (r) { return create('i_order', r); }), rowsOut.payments.map(function (r) { return create('i_payment', r); }));
       var res = await depositGroup(ops);
       if (!res || res.committed !== true) { msg('Could not save the sale on this device: ' + (res && res.reason), 'bad'); log('§TILL_DEPOSIT FAIL ' + (res && res.reason)); return; }
-      S.store.counters = S.store.counters || {}; S.store.counters.S = n;
-      var terminal = S.cfg.tillKey, rm = C.receiptModel({ type: 'S', number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: tt.gross, applied: ap, change: ap.change });
+      if (n != null) { S.store.counters = S.store.counters || {}; S.store.counters[kind] = n; }
+      var pickup = t.pickup || (kind === 'P' ? null : bumpPickup());
+      var terminal = S.cfg.tillKey, rm = C.receiptModel({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change });
       S.lastReceipt = { key: key, model: rm, gross: tt.gross, change: ap.change, firstCash: ap.parts[0] && ap.parts[0].name === 'cash' };
-      log('§TILL_DEPOSIT key=' + key + ' lines=' + rowsOut.orders.length + ' tenders=' + rowsOut.payments.length + ' gross=' + C.money(tt.gross) + ' ops=' + ops.length + ' gid=' + res.gid + ' core_docs_written=0');
-      S.ticket = newTicket(); S.pad = P.zero(); persist(); S.deposited++; $('#s-dep').textContent = 'deposited ' + S.deposited;
+      S.store.last = { type: kind, key: key }; (S.store.rcpt = S.store.rcpt || {})[key] = { model: rm, change: ap.change, firstCash: S.lastReceipt.firstCash, pickup: pickup };   // 5.0 lastticket.number/type (JPanelTicket closeTicket); the detail a reprint needs and the rows do not hold (tendered, change, discount lines)
+      log('§TILL_DEPOSIT key=' + key + ' type=' + kind + (t.old ? ' edit=1' : '') + ' lines=' + rowsOut.orders.length + ' tenders=' + rowsOut.payments.length + ' gross=' + sg(Math.abs(tt.gross)) + ' ops=' + ops.length + ' gid=' + res.gid + ' pickup=' + pickup + ' core_docs_written=0');
+      if (kind !== 'P') S.ticket = newTicket(); S.pad = P.zero(); persist(); S.deposited++; $('#s-dep').textContent = 'deposited ' + S.deposited;
       showReceipt(p.print);
     });
   }
@@ -197,7 +222,8 @@
     var os = await rows('SELECT * FROM i_order WHERE description=' + q(tag) + ' ORDER BY i_order_id');
     var keys = os.map(function (r) { return r.documentno; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
     var ps = keys.length ? await rows('SELECT * FROM i_payment WHERE documentno IN (' + keys.map(q).join(',') + ')') : [];
-    return C.zTotals(os, ps, S.taxEnv);
+    var seq = S.store.shift.seq;
+    return C.zTotals(os, ps, S.taxEnv, (S.store.cashio || []).filter(function (c) { return c.shift === seq; }));
   }
   async function renderClose() {
     var z = await zFromRows(), sh = S.store.shift;
@@ -229,7 +255,8 @@
     document.addEventListener('click', function (ev) {
       var b = ev.target.closest && ev.target.closest('button'); if (!b || b.disabled) return;
       if (b.classList.contains('u-user')) { S.cashier = { id: Number(b.getAttribute('data-user-id')), name: b.textContent }; $('#s-who').textContent = S.cashier.name; log('§TILL_LOGIN cashier=' + S.cashier.name); go('menu'); }
-      else if (b.hasAttribute('data-panel')) { var n = b.getAttribute('data-panel'); go(n === 'Sales' ? 'sales' : n === 'Close Cash' ? 'close' : 'x'); }
+      else if (b.hasAttribute('data-panel')) { var n = b.getAttribute('data-panel'); go({ Sales: S.mode === 'restaurant' ? 'floors' : 'sales', 'Edit Sales': 'editsales', 'Customer Payment': 'custpay', Payments: 'payments', 'Close Cash': 'close' }[n]); }
+      else if (b.hasAttribute('data-extra')) go(b.getAttribute('data-extra'));
       else if (b.classList.contains('key')) press(b.getAttribute('data-key'));
       else if (b.id === 'b-barcode') press('\n');
       else if (b.hasAttribute('data-cat')) { S.catPath.push(Number(b.getAttribute('data-cat'))); S.cat = null; renderCats(); }
@@ -239,7 +266,7 @@
       else if (b.hasAttribute('data-tab')) { S.pay.tab = b.getAttribute('data-tab'); renderPay(); }
       else if (b.id === 'addpart') addPart(); else if (b.id === 'delpart') delPart();
       else if (b.id === 'pay-ok') { S.pay.print = $('#printtoggle').checked; payOk(); } else if (b.id === 'pay-cancel') { go('sales'); }
-      else if (b.id === 'rc-ok') go('sales');
+      else if (b.id === 'rc-ok') { var back = S.afterReceipt || 'sales'; S.afterReceipt = null; go(back); }
       else if (b.id === 'zprint') { renderClose(); } else if (b.id === 'zclose') { $('#zconfirm').hidden = false; } else if (b.id === 'zconfirm') closeCash(); else if (b.id === 'zback') go('menu'); else if (b.id === 'zreprint') reprintZ();
       else if (b.id === 'visit') visit();
     });
@@ -249,11 +276,11 @@
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
   function netChip() { var off = navigator.onLine === false; $('#s-net').textContent = off ? 'offline' : 'online'; }
-  async function visit() { try { var v = await E.TeamSync.visit(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
+  async function visit() { try { var v = await E.TeamSync.visit(); (await depositedDocNos()).forEach(function (k) { S.store.sent = S.store.sent || {}; S.store.sent[k] = 1; }); saveStore(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
 
   async function boot() {
     var t0 = performance.now();
-    var qs = new URLSearchParams(location.search); if (!qs.has('team')) qs.set('team', '1'); if (!qs.has('login')) qs.set('login', '50001');   // 50001 = the Web Service user = role 50004, the role W-TEAM-UI-POS approves a till as (§15.4)
+    var qs = new URLSearchParams(location.search); S.mode = qs.get('mode') === 'restaurant' ? 'restaurant' : 'standard'; qs.delete('mode'); document.body.setAttribute('data-mode', S.mode); if (!qs.has('team')) qs.set('team', '1'); if (!qs.has('login')) qs.set('login', '50001');   // 50001 = the Web Service user = role 50004, the role W-TEAM-UI-POS approves a till as (§15.4)
     var f = $('#b-engine'); f.src = 'idempiere.html?' + qs.toString();
     await new Promise(function (r) { f.addEventListener('load', r, { once: true }); });
     E = f.contentWindow;
@@ -269,6 +296,9 @@
     $('#s-dep').textContent = 'deposited ' + S.deposited;
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§TILL_COST engine_ready_ms=' + ms + ' heap_mb=' + heap + ' products=' + S.prods.length + ' (the engine frame is the full ERP)');
+    var api = { S: S, C: C, P: P, R: R, $: $, $$: $$, q: q, esc: esc, rows: rows, depositGroup: depositGroup, create: create, msg: msg, log: log, go: go, hooks: HOOKS, persist: persist, saveStore: saveStore, newTicket: newTicket, renderSales: renderSales, openPay: openPay,
+      nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
+    if (window.TillExt) window.TillExt.init(api);
     window.Till = { ready: true, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
