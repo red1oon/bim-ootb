@@ -675,7 +675,7 @@
     }
     if (!app.DB_URL) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=no_db_url'); return; }
     if (app._cacheDisabled) { console.log('§GANTT_EDIT_PERSIST_SKIP what=' + what + ' reason=cache_disabled'); return; }
-    var persistUrl = app._dbPersistUrl || app.DB_URL;
+    var persistUrl = SA.persistUrlFor ? SA.persistUrlFor(app) : (app._dbPersistUrl || app.DB_URL);   // §PERSIST_TARGET: one rule
     SA.persistDb(app.db, persistUrl, {}).then(function (ok) {
       console.log('§GANTT_EDIT_PERSIST what=' + what + ' url=' + persistUrl + ' ok=' + ok);
       // §GANTT_EDIT_PERSIST_FAIL (bim-compiler 4D_GANTT_TM_REFACTOR.md §5b) — a save that fails must

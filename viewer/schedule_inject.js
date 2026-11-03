@@ -174,7 +174,8 @@
         var tp0 = _now();
         // immediate:true — a deliberate one-time commit, same as schedule_author_ui.js's Apply-to-4D
         // (§SE-6); do not let the default 1200ms debounce delay the honest result the UI reports.
-        return SA.persistDb(d, A.DB_URL, { immediate: true }).then(function (saved) {
+        // §PERSIST_TARGET: split mode keys the META url (A._dbPersistUrl) — a raw A.DB_URL slot is never read back.
+        return SA.persistDb(d, (SA.persistUrlFor ? SA.persistUrlFor(A) : A.DB_URL), { immediate: true }).then(function (saved) {
           var persistMs = _now() - tp0;
           _busy = false;
           var out = { ok: true, scheduleId: schedId, persisted: !!saved,
