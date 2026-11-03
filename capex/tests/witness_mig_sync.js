@@ -23,10 +23,11 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §MIG_WITNESS '
   var reg = H.q("SELECT name, status, isapply, filename FROM ad_migrationscript ORDER BY name");
   log('§MIG_WITNESS rows before=' + JSON.stringify(before) + ' after=' + JSON.stringify(after) + ' registered=' + JSON.stringify(reg.map(function (r) { return r.name + ':' + r.status; })));
   check('S1 first boot applies every pending script, in name order, none failing', r1.pending === files.length && r1.applied === files.length && !r1.stopped, r1);
-  check('S2 rows arrive: +13 calcs, +13 measures, +13 goals', after.calc - before.calc === 13 && after.meas - before.meas === 13 && after.goal - before.goal === 13, { before: before, after: after });
+  var want = { calc: 0, meas: 0, goal: 0 }; files.forEach(function (f) { MA.split(f.text).forEach(function (st) { var m = /^INSERT\s+INTO\s+(PA_MeasureCalc|PA_Measure|PA_Goal)\b/i.exec(st); if (m) want[{ pa_measurecalc: 'calc', pa_measure: 'meas', pa_goal: 'goal' }[m[1].toLowerCase()]]++; }); });   // expected = what the scripts insert
+  check('S2 rows arrive = the scripts\' INSERTs (calcs +' + want.calc + ', measures +' + want.meas + ', goals +' + want.goal + ')', after.calc - before.calc === want.calc && after.meas - before.meas === want.meas && after.goal - before.goal === want.goal, { before: before, after: after, want: want });
   check('S3 each script registered once, Status CO, FileName postgresql/<name> (register_migration_script)', reg.length === files.length && reg.every(function (r) { return r.status === 'CO' && r.isapply === 'Y' && r.filename === 'postgresql/' + r.name; }), reg);
   var seq = H.one("SELECT currentnext AS c FROM ad_sequence WHERE lower(name)='pa_goal' AND istableid='Y'");
-  if (seq) check('S4 update_sequences: PA_Goal CurrentNext = MAX(id)+1 = 1000044', Number(seq.c) === 1000044, seq);
+  if (seq) check('S4 update_sequences: PA_Goal CurrentNext = MAX(id)+1', Number(seq.c) === Number(H.one('SELECT MAX(pa_goal_id) AS m FROM pa_goal').m) + 1, seq);
   else log('  §MIG_WITNESS S4 NOT JUDGED — the twin holds no PA_Goal table-ID row in AD_Sequence (keys are allocated at commit), so update_sequences has nothing to move here');
   if (BREAK) H.db.run('DELETE FROM ad_migrationscript');
   var r2 = MA.ensureAll(O(files));
@@ -41,10 +42,11 @@ function check(n, ok, info) { judged++; if (!ok) fails++; log('  §MIG_WITNESS '
   // end of the chain: the goals reach the twin's Performance gadget for a client-11 user
   GE.install(H.db);
   var S = { client: 11, user: 101, role: 102, today: H.TODAY, access: GE.accessOf(H.q, 102, 11) };
+  global.AdCallout = H.A;   // the page's converter, as window.AdCallout in idempiere.html (the G4 measures read SYSDATE, §5.20)
   var items = DG.performance(H.q, S, GE).filter(function (g) { return /^CAPEX /.test(g.name); });
   items.forEach(function (g) { log('  §MIG_WITNESS gadget ' + JSON.stringify(g.title) + ' colour=' + g.color + (g.error ? ' error=' + g.error : '')); });
   var errs = items.filter(function (g) { return g.error; });
-  check('S7 the 13 shipped CAPEX goals are in the Performance gadget model, in SeqNo order, none in error', items.length === 13 && !errs.length && items[0].name === 'CAPEX Total Projects', { n: items.length, errors: errs.map(function (e) { return e.name + ': ' + e.error; }) });
+  check('S7 every shipped CAPEX goal (' + want.goal + ') is in the Performance gadget model, in SeqNo order, none in error', items.length === want.goal && !errs.length && items[0].name === 'CAPEX Total Projects', { n: items.length, errors: errs.map(function (e) { return e.name + ': ' + e.error; }) });
   var spot = items.filter(function (g) { return g.name === 'CAPEX Total Projects'; })[0], cnt = n("SELECT COUNT(*) AS n FROM c_project WHERE ad_client_id=11");
   check('S8 a shown value is the twin\'s own data (Total Projects == COUNT(C_Project) of client 11)', spot && spot.actual === cnt, { shown: spot && spot.actual, count: cnt });
   var verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS';

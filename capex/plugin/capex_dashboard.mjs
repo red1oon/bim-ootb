@@ -9,10 +9,10 @@
 export const manifest = {
   id: 'org.bimootb.capex',
   name: 'CAPEX Dashboard',
-  version: '1.0.0',
+  version: '1.0.1',
   engineVersion: '>=0.9.0',
   requires: {},
-  packs: ['capex_2pack/2Pack_1.0.0.zip']
+  packs: ['capex_2pack/2Pack_1.0.0.zip', 'capex_2pack/2Pack_1.0.1.zip']   // 1.0.0 = R0 + G2 + G3; 1.0.1 = G4 (the bucket tiles, §5.20)
 };
 export async function activate() { console.log('§CAPEX-PLUGIN start (the 2Pack rows are applied by the host Pack In before this runs)'); }
 export async function deactivate() { console.log('§CAPEX-PLUGIN stop (packed-in rows are dictionary data: kept, as legacy keeps them)'); }
