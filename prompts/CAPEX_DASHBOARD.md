@@ -26,7 +26,7 @@ ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-com
 **▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
 1. **G1 ✅ DONE (witness W-PA-ENGINE PASS 30/30 vs the pilot, BREAK=1 FAIL — §5.15)** `erp/pa_engine.js` — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
-2. **G2** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) · **G4** bucket tiles (health / schedule / budget status:
+2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) · **G4** bucket tiles (health / schedule / budget status:
    PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
 3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
 **▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
@@ -430,6 +430,43 @@ throws with NO message; each view alone reads 20 / 56 rows) and #105 "Open Invoi
 **Open (named):** the two non-converting stock measures (#100 view join error, #105 missing `C_Invoice_v`) — fix in `convertSql`/the views patch, once, not in PA rows · summary-org expansion (legacy adds
 dependents; the A match holds because the pushed projects sit in leaf org 11) · register_migration_script needs an AD_MigrationScript table in the twin (boot overlay, not the base hash) · Week scope
 uses `TRUNC(…,'D')`, whose SQLite port is day-only — unverified against legacy. **Next: G2** — the §3 count/sum tiles as PA rows in a migration script (one file, both sides), each == `tiles.js`.
+
+### 5.16 SPEC — G2: the §3 count/sum tiles as PA rows (2026-11-03, owner "proceed"; written before code)
+**Issue proved/disproved:** *"the CAPEX count/sum tiles cannot be expressed as iDempiere PA data that gives the same value on legacy, on the twin, and in today's `tiles.js`."*
+**Measured first:** pilot C_Project client 11 = 12 rows in two currencies — USD (100) 10 rows, BDT (322) 2 rows (currencies taken from the data, not chosen); `AD_WF_Activity` OS+unprocessed = 261 (system-wide,
+before role access). `PA_MeasureCalc` SelectClause / WhereClause / DateColumn / OrgColumn / KeyColumn are NOT NULL on legacy (so every row carries all five). Pilot sequences PA_MeasureCalc / PA_Measure next = 1000011.
+**Rows (one migration script `capex/legacy/migration/iD13/postgresql/202611032000_CAPEX-G2.sql`, LEGACY CONVENTION, IDs 1000011–1000022 + fixed UUs; the twin applies the same file via `erp/migration_apply.js`):**
+| tile (§3) | PA_MeasureCalc SelectClause / WhereClause | data type / goal scope |
+|---|---|---|
+| 1 Total Projects | `SELECT COUNT(*) FROM C_Project` / `WHERE 1=1` | S / Total |
+| 1-sub Closed | same / `WHERE Processed='Y'` | S / Total |
+| 2 Active Projects | same / `WHERE IsActive='Y' AND Processed='N'` | S / Total |
+| 3 Approved Budget (BDT) — USD is R0 | `SELECT SUM(PlannedAmt) FROM C_Project` / `WHERE C_Currency_ID=322` | S / Total |
+| 4 Actual Cost USD, BDT | `SELECT SUM(ProjectBalanceAmt) …` / `WHERE C_Currency_ID=<100\|322>` | S / Total |
+| 5 Committed Cost USD, BDT | `SELECT SUM(CommittedAmt) …` | S / Total |
+| 5-sub Invoiced USD, BDT | `SELECT SUM(InvoicedAmt) …` | S / Total |
+| 7 Completed this year | `SELECT COUNT(*) FROM C_Project` / `WHERE Processed='Y'`, DateColumn `C_Project.DateFinish` | **T / Year** (legacy's own date filter `TRUNC(DateFinish,'Y')=TRUNC(today,'Y')`, `MMeasureCalc.getSqlPI` :159-180) |
+| 13 Approval Pending | `SELECT COUNT(*) FROM AD_WF_Activity` / `WHERE WFState='OS' AND Processed='N'` | S / Total |
+Not PA-expressible, stays named in `tiles.js`: 14 Last Updated (a date, not a number), 2-sub "closing" (a join to C_Phase by name), 4-sub % of plan (a ratio of two tiles — PA_Ratio is G4's question),
+6 / 17 (client definitions pending). Goals are user data (as R0): on legacy created through stock `create_data` (`BridgeCreatePAGoal`, name = measure name, target 0) and computed by a target save
+1→0; on the twin created the same way through the model layer and computed by `updateGoal(force)`.
+**Witness W-PA-TILES-ORACLE (`capex/tests/witness_pa_tiles.js`, LOCAL pilot only):** for each of the 13 measures (R0 + 12): legacy `PA_Goal.MeasureActual` (WS read, after recompute) == engine value on
+the twin over the SAME rows (C_Project / AD_WF_Activity of clients 0+11 copied DOWN read-only) at legacy's scale == `tiles.js` (money: engine rounded once to the cent). A measure whose base population is
+empty (no row in its table for the role) prints INCONCLUSIVE, never PASS. Break `BREAK=1` (+1 on every engine value) → FAIL. Pilot writes: the migration script + 12 goals (owner "proceed"; restore =
+delete the rows by `*_UU` / goal name, recipe in the script header).
+
+### 5.17 RESULT — G2 built (2026-11-03); logs read (scratch, not committed)
+**Migration script** `capex/legacy/migration/iD13/postgresql/202611032000_CAPEX-G2.sql` (12 PA_MeasureCalc + 12 PA_Measure, IDs 1000011–1000022). Twin: `§MIG_APPLY statements=25 ok=24 failed=0 skipped=1`
+(register skipped, §5.15). **Local pilot** (owner "proceed"): applied with psql `ON_ERROR_STOP` → "202611032000_CAPEX-G2.sql successfully registered"; `update_sequences()` run. Before → after:
+pa_measurecalc 7→19 · pa_measure 5→17 · ad_migrationscript 1301→1302 (status CO) · PA_Measure / PA_MeasureCalc next 1000011→1000023 · PA_Goal +12 (#1000019–#1000030, created by the witness through
+stock create_data, one per measure, target 0, GoalPerformance reset to legacy's target-0 rule). Restore recipe in the script header (cast `*_UU::text` — the column is `uuid`, a bare LIKE errors; found on the first run).
+**W-PA-TILES-ORACLE** `capex/tests/witness_pa_tiles.js`: DOWN copy c_project 12 / ad_wf_activity 264 (clients 0+11, read-only); WS read projects 12 / wf 264. Per measure, legacy == engine == tiles.js:
+approved USD 39971166.170 / BDT 30286701.63694 · actual USD 318.6805 / BDT 0 · committed USD 0 / BDT 0 · invoiced USD 0 / BDT 0 · total 12 · active 9 · approvals 261 — all PASS.
+INCONCLUSIVE (empty population, a 0 judges nothing): closed projects (no Processed='Y' row on the pilot) and completed-this-year (same) — the year filter `TRUNC(DateFinish,'Y')` is therefore NOT yet
+proven against legacy. `§PA_TILES_VERDICT PASS judged=23 fail=0 inconclusive=2`; re-run creates 0 goals (idempotent); `BREAK=1` → `FAIL judged=23 fail=22` (every value check). W-PA-ENGINE re-run PASS 30/30.
+**Finding (open, named):** the twin's BDT sum reads `30286701.636940002` — SQLite SUM over REAL (binary double), where legacy's NUMERIC sum is exact. It matches at legacy's own scale (5 dp) and to the
+cent, so no tile differs today, but the raw value is not legacy's. Fix belongs in the kernel's money path (an exact SUM for NUMERIC columns, one place), not in the PA rows or the engine — the
+`bigdecimal.js` header already names this risk (`docs/DepreciationPerf.md`). **Next: G3** — the renderer from PA_DashboardContent rows (W-PA-RENDER).
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
