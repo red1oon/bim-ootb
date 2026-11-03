@@ -33,10 +33,9 @@
   }
   function session() {
     var A = window.APP || {}; if (A.actor == null || A.clientId == null || A.roleId == null || !window.__idmpDb) return null;
-    var role = A.roleId, cl = A.clientId, all = q('SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?', [role])[0], orgIds = null;
-    if (!all || String(all.a) !== 'Y') orgIds = [0].concat(q("SELECT DISTINCT AD_Org_ID AS o FROM AD_Role_OrgAccess WHERE AD_Role_ID=? AND IsActive='Y'", [role]).map(function (r) { return Number(r.o); }));
+    var role = A.roleId, cl = A.clientId, access = window.GoalEngine.accessOf(q, role, cl);   // the one owner of the role's client/org access (goal_engine.js accessOf)
     var d = new Date(), p2 = function (n) { return ('0' + n).slice(-2); }, today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
-    return { client: cl, user: A.actor, role: role, today: today, now: today + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()), orgIds: orgIds, access: { clientIds: cl === 0 ? [0] : [0, cl], orgIds: orgIds } };
+    return { client: cl, user: A.actor, role: role, today: today, now: today + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()), orgIds: access.orgIds, access: access };
   }
   // Recent Items side gadget = DPRecentItems (org.adempiere.ui.zk/.../dashboard/DPRecentItems.java): links newest first, click -> zoom
   //   (:222-260), refresh button + trash drop target (:183-190, :309-320). The list, the labels and the delete are the CORE's

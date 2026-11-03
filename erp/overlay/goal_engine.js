@@ -96,6 +96,49 @@
     var perf = div6(actual, g.measuretarget);
     return { ok: true, goalId: Number(goalId), actual: actual, target: Number(g.measuretarget), performance: perf, percent: Math.trunc(Number(perf) * 100), scope: scope, sql: sql };
   }
-  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, _div6: div6 };
+  // ── accessOf: the role's client/org access (MRole.getClientWhere(false) :1110-1117 / getOrgWhere(false) :1192-1235). ONE owner: overlay/home.js session() and the CAPEX witnesses call it
+  //   (moved here from home.js, rule unchanged; isUseUserOrgAccess / summary-org dependents are NOT ported — bim-ootb prompts/CAPEX_DASHBOARD.md §5.18).
+  function accessOf(q, roleId, clientId) {
+    var all = q('SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?', [roleId])[0], orgIds = null, cl = Number(clientId);
+    if (!all || String(all.a) !== 'Y') orgIds = [0].concat(q("SELECT DISTINCT AD_Org_ID AS o FROM AD_Role_OrgAccess WHERE AD_Role_ID=? AND IsActive='Y'", [roleId]).map(function (r) { return Number(r.o); }));
+    return { clientIds: cl === 0 ? [0] : [0, cl], orgIds: orgIds };
+  }
+  // ── STORING a goal (bim-ootb prompts/CAPEX_DASHBOARD.md §5.18; Witness W-PA-ENGINE): what legacy writes, built on evaluate (no second SQL builder).
+  // MMeasure.updateCalculatedGoals :500-541 — every ACTIVE goal of the measure, read through q (the COMMITTED reader: MGoal.getMeasureGoals :150-163 reads with no trx, so a goal inside its own
+  //   create is not seen, and a goal scores against its previously committed target — §5.4 a/b fall out, nothing emulated). Role per goal: its AD_Role_ID, else ctx.role (MRole.getDefault, :519);
+  //   a goal tied to a user only is NOT written (MUser.getRoles order not ported). SQL failure → 0 stored (DB.getSQLValueBD :1393-1404 swallows it; evaluate keeps the reason for the log).
+  function updateMeasureGoals(q, write, measureId, ctx) {
+    var goals = q("SELECT * FROM pa_goal WHERE isactive='Y' AND pa_measure_id=? ORDER BY seqno", [measureId]), out = [];
+    goals.forEach(function (g) {
+      if (!Number(g.ad_role_id) && Number(g.ad_user_id)) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: 'INCONCLUSIVE goal role via AD_User not ported' }); return; }
+      var role = Number(g.ad_role_id) || ctx.role, r = evaluate(q, g.pa_goal_id, { today: ctx.today, access: accessOf(q, role, ctx.client) });
+      var failed = !r.ok && /^SQL failed/.test(r.reason || '');
+      if (!r.ok && !failed) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: r.reason }); return; }
+      var actual = r.ok ? r.actual : 0, perf = r.ok ? r.performance : div6(0, g.measuretarget), ch = { measureactual: actual, goalperformance: Number(perf), datelastrun: ctx.now };
+      write(g, ch);
+      out.push({ goalId: Number(g.pa_goal_id), written: true, actual: actual, performance: perf, reason: failed ? r.reason : null, sql: r.sql });
+    });
+    return out;
+  }
+  // MGoal.updateGoal(force) :383-415 — the render-time call (WPAWidget.java:54, force=false): recompute when DateLastRun is null or older than ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL
+  //   (default 1800000 ms, MSysConfig, client-specific first). run(sql, params) writes straight to the db.
+  function updateGoal(q, run, goalId, ctx, opts) {
+    var g = q('SELECT * FROM pa_goal WHERE pa_goal_id=?', [goalId])[0]; if (!g) return { updated: false, reason: 'no PA_Goal ' + goalId };
+    var sc = q("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL' AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC", [ctx.client])[0];
+    var iv = sc && isFinite(parseInt(sc.v, 10)) ? parseInt(sc.v, 10) : 1800000, ms = function (t) { return Date.parse(String(t).replace(' ', 'T') + 'Z'); };
+    if (!(opts && opts.force) && g.datelastrun && !(ms(ctx.now) - ms(g.datelastrun) > iv)) return { updated: false, reason: 'not due', interval: iv };
+    var res = updateMeasureGoals(q, function (row, ch) { var k = Object.keys(ch); run('UPDATE pa_goal SET ' + k.map(function (c) { return c + '=?'; }).join(',') + ' WHERE pa_goal_id=?', k.map(function (c) { return ch[c]; }).concat([Number(row.pa_goal_id)])); }, g.pa_measure_id, ctx);
+    return { updated: res.some(function (r) { return r.written; }), goals: res };
+  }
+  // MGoal.afterSave :594-603 as the PA_Goal model class (layered registry, owner 'core'): a new goal or a changed MeasureTarget / MeasureScope recomputes the measure's goals, read COMMITTED (trx.q)
+  //   and written into the SAME Trx (legacy: the measure carries the goal's trxName). ctxFor(trx) → { client, role, today, now }.
+  function installModel(ML, ctxFor) {
+    ML.registerModel('pa_goal', { afterSave: function (trx, row, isNew, old) {
+      var ch = function (c) { return !old || String(old[c]) !== String(row[c]); };
+      if (!(isNew || ch('measuretarget') || ch('measurescope'))) return;
+      updateMeasureGoals(trx.q, function (g, c) { trx.update('pa_goal', g, c); }, row.pa_measure_id, ctxFor(trx));
+    } });
+  }
+  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.GoalEngine = api;
 })(typeof window !== 'undefined' ? window : this);
