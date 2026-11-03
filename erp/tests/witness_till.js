@@ -162,8 +162,15 @@ async function pay(pg, parts) {   // parts [{tab, amount, ref, auth}] then OK
 var num = function (x) { return x == null ? null : Number(x); };
 
 var LOGGED = false;
+async function runKdsChild() {   // W-KDS-BRANCH + W-KDS-REPLACE as a child process; TILL_KDS_LOG=<file> reads an existing log of the SAME tree instead (named in the run)
+  var out = ''; var cp = require('child_process');
+  if (process.env.TILL_KDS_LOG) out = fs.readFileSync(process.env.TILL_KDS_LOG, 'utf8');
+  else { var r = cp.spawnSync('node', [path.join(ERP, 'tests', 'witness_kds.js')], { env: Object.assign({}, process.env, { KDS_ARMS: 'branch,replace', KDS_ROOT: ROOT }), encoding: 'utf8', timeout: 1200000, maxBuffer: 64 * 1024 * 1024 }); out = (r.stdout || '') + (r.stderr || ''); }
+  var judged = 0, failed = 0, n = 0; out.split('\n').forEach(function (l) { var m = /^§KDS_VERDICT (W-KDS-(?:BRANCH|REPLACE)) verdict=(\w+) judged=(\d+) failed=(\d+)/.exec(l); if (m) { n++; judged += Number(m[3]); failed += Number(m[4]); if (m[2] !== 'PASS') failed += 1; } });
+  return { judged: n === 2 ? judged : 0, failed: failed, note: 'verdict lines read=' + n + (process.env.TILL_KDS_LOG ? ' (from ' + process.env.TILL_KDS_LOG + ')' : ' (child run)') };
+}
 // ═══ PARITY: X of N from the registry against the live DOM. A row whose source asserts BEHAVIOUR is present only if the arm that walks that behaviour has judged > 0 and failed 0 in this run (ROWARM); parity runs last.
-var ROWARM = { 6: 'bar', 7: 'held', 10: 'edit', 11: 'refund', 12: 'custpay', 13: 'panels', 16: 'rest', 17: 'rest', 18: 'panels', 19: 'panels', 21: 'panels', 22: 'panels' };
+var ROWARM = { 15: 'kds', 20: 'kds', 6: 'bar', 7: 'held', 10: 'edit', 11: 'refund', 12: 'custpay', 13: 'panels', 16: 'rest', 17: 'rest', 18: 'panels', 19: 'panels', 21: 'panels', 22: 'panels' };
 async function prepare(pg, screen) {   // put the live page on the screen a registry row talks about, by the cashier's own clicks
   if (screen === 'login') { await pg.evaluate(function () { window.Till.go('login'); }); return; }
   if (!LOGGED) { await pg.evaluate(function () { window.Till.go('login'); }); await pg.click('#u1 .u-user:has-text("GardenAdmin")'); LOGGED = true; }
@@ -176,15 +183,16 @@ async function prepare(pg, screen) {   // put the live page on the screen a regi
   if (screen === 'pay') return;
   await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
 }
-async function runParity(pg, pgRest) {
+async function runParity(pg, pgRest, pgKit) {
   var R = await pg.evaluate(function () { return window.Till.registry.ROWS; }), x = 0, N = R.length, detail = [];
-  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations'];
+  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'kitchen'];
   for (var row of R) {
-    var ok = false, why = '', page = row.mode === 'restaurant' ? pgRest : pg;
+    var ok = false, why = '', page = row.page === 'kitchen.html' ? pgKit : row.mode === 'restaurant' ? pgRest : pg;
     if (row.status !== 'built' || SCREENS.indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
     else {
       try {
-        if (page === pgRest) { await page.evaluate(function (s) { window.Till.go(s); }, row.screen); } else await prepare(page, row.screen);
+        if (!page) { why = 'its page (' + row.page + ') did not open'; throw new Error(why); }
+        if (row.page) { /* a separate page (the kitchen screen): nothing to prepare */ } else if (page === pgRest) { await page.evaluate(function (s) { window.Till.go(s); }, row.screen); } else await prepare(page, row.screen);
         ok = true;
         for (var sel of row.sels || []) { if (!(await page.$(sel))) { ok = false; why += ' missing ' + sel; } }
         var ords = ['order', 'order2', 'order3'].map(function (k) { return row[k]; }).filter(Boolean);
@@ -710,11 +718,14 @@ else
       var FNS = { bar: runBar, held: runHeld, edit: runEdit, refund: runRefund, custpay: runCustPay, panels: runPanels, rest: runRest };
       for (var an of Object.keys(NAMES)) if (ARMS.indexOf(an) >= 0) { ctx = await newCtx(); try { await FNS[an](ctx, sv.base); } catch (e) { check(an, 'arm-threw', false, 'the arm ran to its end', String(e && e.stack || e).slice(0, 400)); } verdict(an, NAMES[an]); await ctx.close().catch(function () {}); }
       if (ARMS.indexOf('parity') >= 0) {
+        // the kitchen rows (15, 20) are judged by what they DO: the three-device witness (erp/tests/witness_kds.js) runs as a child and its verdicts feed ROWARM 'kds'; a missing/failed child leaves both rows MISSING
+        var kv = await runKdsChild(); V.kds = kv; console.log('§TILL_KDS_ARM judged=' + kv.judged + ' failed=' + kv.failed + ' ' + kv.note);
         ctx = await newCtx(); var pgp = await openTill(ctx, sv.base), ctx2 = await newCtx(), pgr = await openTill(ctx2, sv.base, '?mode=restaurant'); await pgr.click('#u1 .u-user:has-text("GardenAdmin")');
-        var pr = await runParity(pgp, pgr); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
+        var ctx3 = await newCtx(), pgk = null; if (fs.existsSync(path.join(ERP, 'kitchen.html'))) { pgk = await ctx3.newPage(); pgk.on('pageerror', function (e) { ERRS.push(e.message); }); await pgk.goto(sv.base + '/erp/kitchen.html?login=50001', { waitUntil: 'load' }); await pgk.waitForFunction(function () { return window.Kitchen && window.Kitchen.ready; }, null, { timeout: 170000 }).catch(function () { pgk = null; }); }
+        var pr = await runParity(pgp, pgr, pgk); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
         check('parity', 'non-vacuous', pr.N === 22 && pr.x > 0, 'N is the registry (22, §14A.6) and at least one row was judged present', pr);
         console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
-        await pgp.close(); await pgr.close();
+        await pgp.close(); await pgr.close(); if (pgk) await pgk.close();
       }
       console.log('§TILL_PAGE_ERRORS n=' + ERRS.length + (ERRS.length ? ' ' + J(ERRS.slice(0, 3)) : ''));
     } finally { await browser.close(); sv.server.close(); }

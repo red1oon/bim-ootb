@@ -4814,8 +4814,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // iDempiere's own Generate-Shipments/Invoices UX is preview-then-confirm (this table IS the preview);
       // the missing half was the commit itself. r.ops here is the SAME CREATE_DOCUMENT+N×CREATE_LINE group
       // erp_engine.js's buildDoc already produces (its own header: "Verbs return ops[]; the kernel applies
-      // + commitOps them") — pos_lens.js's buildSaleGroup/buildRegisterGroup already commit the identical
-      // shape via KO.commitGroup; window.__crud.applyOpGroup (crud_overlay.js) wraps that same primitive.
+      // + commitOps them") — the retired POS lens (pos_lens.js, deleted in #2585) committed the identical
+      // shape via KO.commitGroup; window.__crud.applyOpGroup (crud_overlay.js) wraps that same primitive,
+      // and the standalone till (till.js depositGroup) and kitchen (kitchen.js) call it the same way.
       var cfWrap = el('div', 'actions'); cfWrap.style.cssText = 'margin-top:10px';
       var cfBtn = el('button', 'run', 'Confirm & Post'); cfBtn.setAttribute('data-genprocess-confirm', '1');
       var cfMsg = el('div', 'msg'); cfMsg.style.cssText = 'margin-top:6px';
@@ -5848,8 +5849,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 
   // ── Pill rail (mobile-style, right edge) — Posted · Graph · Kanban · Install · Migrate (Odoo effects). ──
   // onClose (optional, §BUGFIX 2026-07-13): callers that mount extra body-level chrome alongside `node`
-  // (POS lens's cart float panel + ⋯ dock — see pos_lens.js) pass a teardown so it fires on EVERY close
-  // path (✕ tap, back-gesture), not just their own explicit exit button. Unused callers are unaffected.
+  // pass a teardown so it fires on EVERY close path (✕ tap, back-gesture), not just their own explicit
+  // exit button (the retired POS lens's cart float panel + ⋯ dock was the first user; pos_lens.js was deleted
+  // in #2585). Callers that pass none are unaffected.
   function _overlay(title, node, onClose) {
     _injectPostedCSS(); _injectPillCSS();
     var prev = $('posted-overlay'); if (prev && prev.parentNode) prev.parentNode.removeChild(prev);

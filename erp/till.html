@@ -27,11 +27,11 @@
 
 <section id="u3" class="screen">
   <div id="north">
-    <span id="m_jButtons"><button data-btn="Scale" disabled data-disabled-reason="no scale device on a browser till">Scale</button><button data-btn="Mooring" disabled data-disabled-reason="marina module not in this release">Mooring</button><button data-btn="Split Sale" disabled data-disabled-reason="split sale: not in this release">Split Sale</button><button data-btn="Reprint Last Ticket">Reprint Last Ticket</button><button data-btn="Send Order" disabled data-disabled-reason="kitchen screen is P2">Send Order</button><button data-btn="Customer" disabled data-disabled-reason="customers on a ticket: not in this release">Customer</button></span>
+    <span id="m_jButtons"><button data-btn="Scale" disabled data-disabled-reason="no scale device on a browser till">Scale</button><button data-btn="Mooring" disabled data-disabled-reason="marina module not in this release">Mooring</button><button data-btn="Split Sale" disabled data-disabled-reason="split sale: not in this release">Split Sale</button><button data-btn="Reprint Last Ticket">Reprint Last Ticket</button><button data-btn="Send Order" title="Print Ticket to remote printer">Send Order</button><button data-btn="Customer" disabled data-disabled-reason="customers on a ticket: not in this release">Customer</button></span>
     <span id="bag"><button data-btn="Add New Ticket">Add New Ticket</button><button data-btn="Tickets awaiting completion">Tickets awaiting completion <b id="heldcount"></b></button><button data-btn="Delete">Delete</button><button data-btn="Reprint Ticket">Reprint Ticket</button><button data-btn="Quick LogOff">Quick LogOff</button></span>
     <span id="floorbar" hidden><button data-btn="Reload">Reload</button><button data-btn="Reservations">Reservations</button><button data-btn="Tables">Tables</button></span>
     <span id="scriptbar"><button data-btn="Total discount">Total discount</button><button data-btn="Line discount">Line discount</button><button data-btn="Print preview">Print preview</button><button data-btn="Open drawer">Open drawer</button><button data-btn="Virtual Keyboard">Virtual Keyboard</button></span>
-    <span id="tid" class="chip"></span>
+    <span id="tid" class="chip"></span><span id="kchip" class="chip" hidden></span>
   </div>
   <div><div id="lines"><table><thead><tr><th>Item</th><th>Price</th><th>Qty</th><th>Value</th></tr></thead><tbody id="tl"></tbody></table></div>
     <div id="totals"><span data-total="Subtotal">Subtotal <b id="t-sub">0.00</b></span><span data-total="Taxes">Taxes <b id="t-tax">0.00</b></span><span data-total="Total">Total <b id="t-tot">0.00</b></span></div></div>
@@ -95,5 +95,5 @@
 <div id="confirmbox" class="bar" hidden><span id="confirm-text"></span><button id="confirm-yes" class="go">Yes</button><button id="confirm-no">No</button></div>
 
 <iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
-<script src="till_pad.js"></script><script src="till_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_ext.js"></script>
+<script src="till_pad.js"></script><script src="till_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_ext.js"></script><script src="kds_core.js"></script><script src="kds_link.js"></script><script src="till_kds.js"></script>
 </body></html>
