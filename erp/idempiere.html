@@ -608,7 +608,7 @@
 <!-- POS_ADDON_SPEC §P-1..§P-4 — the POS addon: engine verbs (UMD of bim-compiler scripts/erp_engine.js),
      the fold glue (pos_core.js, == bim-compiler build/erp source of truth), the dumb-terminal lens.
      Order matters: pos_core needs ERPEngine + BigDecimal (above). Witnesses W-POS-* headless + poc_pos_live. -->
-<script src="erp_engine.js?v=2"></script>
+<script src="erp_engine.js?v=3"></script>
 <!-- bim-compiler prompts/ERP_MODEL_LAYER.md — the MODEL layer: iDempiere PO + DocAction + DocumentEngine + AD_Workflow contract
      (model_layer.js) and the ported trade-cycle classes registered into it. crud_overlay.completeFanout / save seams call
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
