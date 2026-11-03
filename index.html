@@ -184,6 +184,7 @@
 <script src="viewer/import_db_builder.js?v=8"></script>
 <script src="common/import_key.js?v=1"></script>
 <script src="import_own.js?v=5"></script>
+<script src="viewer/db_resolve.js?v=3"></script><!-- §SEAM-W3 F13: cached-badge exact key -->
 
 <script>
 'use strict';
@@ -523,7 +524,21 @@ function _card(a){
     '<div class="db">'+bars+'</div></div>';
 }
 // §CACHE-INDICATOR — green a building's name if its DB is already in the IndexedDB building cache
-// (bim_ootb_cache/dbs, keyed by fetched URL). After Clear cache → no keys → names stay white. Best-effort.
+// (bim_ootb_cache/dbs). §SEAM-W3 F13: matched by EXACT key — DbResolve.readKeys(cardDbUrl) = [canonical 'buildings/<file>', raw url]
+// (the Viewer writes the canonical one; pre-fix profiles hold the raw url). NOT by stem substring ('Hospital_3' must not green 'Hospital'). After Clear cache → no keys → names stay white. Best-effort.
+// Expected cache keys of a card: the SAME url openBuilding() builds (bld.gh||_prodBase + 'buildings/' + bld.db), run through
+// DbResolve.readKeys (canonical + legacy raw). Split builds cache <stem>_meta/_geo/_positions.db, not the monolith — accept those too.
+function _cardCacheKeys(bld){
+  var base = bld.gh || _prodBase, out = [];
+  var urls = [base + 'buildings/' + bld.db];
+  var stem = bld.db.replace(/_extracted\.db$/,'').replace(/\.db$/,'');
+  ['_meta.db','_geo.db','_positions.db'].forEach(function(x){ urls.push(base + 'buildings/' + stem + x); });
+  urls.forEach(function(u){
+    var ks = (window.DbResolve && DbResolve.readKeys) ? DbResolve.readKeys(u, _prodBase) : [u];
+    ks.forEach(function(k){ if(out.indexOf(k) < 0) out.push(k); });
+  });
+  return out;
+}
 async function _markCachedBuildings(){
   try{
     var keys = await new Promise(function(res){
@@ -539,13 +554,11 @@ async function _markCachedBuildings(){
         } catch(e){ db.close(); res([]); }
       };
     });
-    var keyStr = '\n' + keys.join('\n') + '\n';
+    var have = {}; keys.forEach(function(k){ have[k] = 1; });
     document.querySelectorAll('#hub .hub-card[data-bld]').forEach(function(card){
       var bld = BUILDINGS[card.getAttribute('data-bld')];
       if(!bld || !bld.db){ card.classList.remove('cached'); return; }
-      var stem = bld.db.replace(/_extracted\.db$/,'').replace(/\.db$/,'');
-      // split builds cache *_meta/_geo/_positions, single caches *_extracted.db — match on the stem boundary
-      var hit = keyStr.indexOf('/'+stem+'_') >= 0 || keyStr.indexOf('/'+bld.db) >= 0;
+      var hit = _cardCacheKeys(bld).some(function(k){ return have[k] === 1; });
       card.classList.toggle('cached', hit);  // idempotent: green if cached, white if not (handles eviction too)
     });
   }catch(e){ /* indicator is best-effort, never blocks the hub */ }

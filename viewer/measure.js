@@ -635,16 +635,53 @@ function setupMeasure(A) {
     return 'bim-clash-statuses-' + (A.activeBuilding || 'default');
   };
   A._clashStatuses = {};
+  // §SEAM-W3 F14 — ONE owner of the unordered-pair identity (SEAM_IDENTITY_AUDIT F14). The pair {a,b} is the same
+  // clash whichever producer emitted it first, so the STORAGE key is order-normalised (sorted, single '|').
+  // Display order (which element is A/B in the row/link) is untouched. IFC GUIDs never contain '|' or '~'.
+  //   split(s)      accepts every historical form: 'a|b', 'b|a', 'a~b' (deep link) → [x,y] | null
+  //   key(a,b)      canonical status key  = sorted join '|'
+  //   link(a,b)     deep-link payload     = 'a~b' in DISPLAY order (old links keep the same shape)
+  //   migrate(map)  → {map, moved, conflicts}: every legacy-form key re-keyed canonically, values kept
+  var CP = A._clashPair = {
+    split: function(s) {
+      if (typeof s !== 'string') return null;
+      var i = s.indexOf('|'); if (i < 0) i = s.indexOf('~'); if (i <= 0 || i === s.length - 1) return null;
+      return [s.slice(0, i), s.slice(i + 1)];
+    },
+    key: function(a, b) { return a < b ? a + '|' + b : b + '|' + a; },
+    link: function(a, b) { return a + '~' + b; },
+    migrate: function(map) {
+      var out = {}, moved = 0, conflicts = 0, k, p, ck;
+      for (k in map) { p = CP.split(k); if (p && CP.key(p[0], p[1]) === k) out[k] = map[k]; }   // canonical entries win
+      for (k in map) {
+        p = CP.split(k); if (!p) { out[k] = map[k]; continue; }
+        ck = CP.key(p[0], p[1]); if (ck === k) continue;
+        if (Object.prototype.hasOwnProperty.call(out, ck)) { if (out[ck] !== map[k]) conflicts++; continue; }
+        out[ck] = map[k]; moved++;
+      }
+      return { map: out, moved: moved, conflicts: conflicts };
+    }
+  };
   A._loadClashStatuses = function() {
     try {
       var raw = localStorage.getItem(A._clashStatusKey());
-      A._clashStatuses = raw ? JSON.parse(raw) : {};
+      var st = raw ? JSON.parse(raw) : {};
+      var m = CP.migrate(st);
+      A._clashStatuses = m.map;
+      if (m.moved || m.conflicts || Object.keys(st).length !== Object.keys(m.map).length) {
+        // write-then-remove: first persist canonical + legacy together, then the canonical-only blob
+        var both = {}, k; for (k in st) both[k] = st[k]; for (k in m.map) both[k] = m.map[k];
+        var key = A._clashStatusKey();
+        localStorage.setItem(key, JSON.stringify(both));
+        if (localStorage.getItem(key) === JSON.stringify(both)) localStorage.setItem(key, JSON.stringify(m.map));
+        console.log('§CLASH_STATUS_MIGRATE moved=' + m.moved + ' conflicts=' + m.conflicts + ' total=' + Object.keys(m.map).length);
+      }
     } catch(e) { A._clashStatuses = {}; }
   };
   A._saveClashStatuses = function() {
     try { localStorage.setItem(A._clashStatusKey(), JSON.stringify(A._clashStatuses)); } catch(e) {}
   };
-  A._clashPairKey = function(guidA, guidB) { return guidA + '|' + guidB; };
+  A._clashPairKey = function(guidA, guidB) { return CP.key(guidA, guidB); };   // §SEAM-W3 F14: sorted
 
   // Fly to a specific clash by index — extracted for pointerup (mobile) and click (desktop)
   A._flyToClash = function(idx) {
@@ -803,7 +840,7 @@ function setupMeasure(A) {
     var storey = storeyRows.length ? storeyRows[0][0] : '';
     // Short deep-link using hash fragment — avoids repeating the long OCI base URL
     var dbParam = new URLSearchParams(location.search).get('db') || '';
-    var hash = '#clash=' + c[0] + '~' + c[1] +
+    var hash = '#clash=' + CP.link(c[0], c[1]) +
       '&st=' + encodeURIComponent(storey || '') +
       '&cam=' + p.x.toFixed(2) + ',' + p.y.toFixed(2) + ',' + p.z.toFixed(2) +
       '&tgt=' + t.x.toFixed(2) + ',' + t.y.toFixed(2) + ',' + t.z.toFixed(2) +
