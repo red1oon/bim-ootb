@@ -518,19 +518,12 @@ function _dec(str) { var t = String(str == null ? '0' : str).trim(), neg = t[0] 
 function _rhu(n, d) { // HALF_UP (away from zero on .5), d > 0
   var neg = n < 0n, a = neg ? -n : n, q = a / d, r = a % d; if (r * 2n >= d) q += 1n; return neg ? -q : q;
 }
-// calcTax — MTax.calculateTax (MTax.java:340-367). tax {rate, issummary, c_tax_id}; children(taxId) → child taxes (summary). amount in minor units at `scale`.
-function calcTax(tax, amountMinor, included, children) {
-  var list = String(tax.issummary) === 'Y' ? (children ? children(tax.c_tax_id) : []) : [tax];
-  var a = BigInt(amountMinor), total = 0n;
-  list.forEach(function (t) {
-    var r = _dec(t.rate); if (r.n === 0n) return;                       // isZeroTax ⇒ 0 (per child too: 0 adds nothing)
-    var den = 100n * (10n ** BigInt(r.k));                              // rate/100 = r.n / den
-    if (!included) total += _rhu(a * r.n, den);                         // amount × rate/100, HALF_UP at scale (:355-358)
-    else {                                                              // base = amount / (1+rate/100) at 12 decimals, tax = amount − base, HALF_UP at scale (:360-365)
-      var S = 10n ** 10n, base12 = _rhu(a * S * den, den + r.n); total += _rhu(a * S - base12, S);
-    }
-  });
-  return Number(total);
+// calcTax — MTax.calculateTax (MTax.java:340-372). THIN ADAPTER: the arithmetic lives in ONE place, BigDecimal.mtaxCalculate (bigdecimal.js). This only maps the engine's shape:
+// tax {rate, issummary, c_tax_id}; children(taxId) → ACTIVE child taxes (summary); amountMinor = integer minor units at `prec` (default 2 = the currency StdPrecision); returns minor units (Number).
+function calcTax(tax, amountMinor, included, children, prec) {
+  var BD = typeof BigDecimal !== 'undefined' ? BigDecimal : require('./bigdecimal'), P = prec == null ? 2 : prec;
+  var kids = String(tax.issummary) === 'Y' ? (children ? children(tax.c_tax_id) : []) : [];
+  return Number(BD.mtaxCalculate(tax, new BD(BigInt(amountMinor), P), !!included, P, kids).setScale(P, BD.RoundingMode.HALF_UP).unscaledValue());
 }
 // taxLookup — Tax.getProduct + Tax.get (Tax.java:475-600, 679-697, 723-840). Pure: the host passes every row.
 //   inp = { taxes:[c_tax rows of the client], postalsOf(taxId)→[{postal,postal_to,isactive}] (optional), groupHas(groupId,countryId)→bool (optional),
@@ -594,8 +587,8 @@ function orderTaxes(lines, taxById, included, children, prec) {   // prec (optio
     var t = taxById(id); if (!t) { rows.push({ c_tax_id: id, error: 'tax not found' }); return; }
     if (Number(t.c_taxprovider_id || 0)) { rows.push({ c_tax_id: id, error: 'external tax provider not ported' }); return; }
     var parent = Number(t.parent_tax_id || 0), base = 0, amt = 0, doc = String(t.isdocumentlevel) === 'Y';
-    lines.forEach(function (l) { if (Number(l.c_tax_id) === id || (parent > 0 && Number(l.c_tax_id) === parent)) { base += c(l.linenetamt); if (!doc) amt += calcTax(t, c(l.linenetamt), included, children); } });
-    if (doc) amt = calcTax(t, base, included, children);
+    lines.forEach(function (l) { if (Number(l.c_tax_id) === id || (parent > 0 && Number(l.c_tax_id) === parent)) { base += c(l.linenetamt); if (!doc) amt += calcTax(t, c(l.linenetamt), included, children, P); } });
+    if (doc) amt = calcTax(t, base, included, children, P);
     rows.push({ c_tax_id: id, taxbaseamt: included ? base - amt : base, taxamt: amt });
   });
   var out = [], grand = totalLines;
@@ -603,7 +596,7 @@ function orderTaxes(lines, taxById, included, children, prec) {   // prec (optio
     if (r.error) { out.push(r); return; }
     var t = taxById(r.c_tax_id);
     if (String(t.issummary) === 'Y') {                                  // :75-99 one row per child, the summary row deleted
-      (children ? children(r.c_tax_id) : []).forEach(function (ch) { var a = calcTax(ch, r.taxbaseamt, false, children); out.push({ c_tax_id: ch.c_tax_id, taxbaseamt: r.taxbaseamt, taxamt: a }); if (!included) grand += a; });
+      (children ? children(r.c_tax_id) : []).forEach(function (ch) { var a = calcTax(ch, r.taxbaseamt, false, children, P); out.push({ c_tax_id: ch.c_tax_id, taxbaseamt: r.taxbaseamt, taxamt: a }); if (!included) grand += a; });
     } else { out.push(r); if (!included) grand += r.taxamt; }
   });
   return { rows: out, totalLines: totalLines, grandTotal: grand };

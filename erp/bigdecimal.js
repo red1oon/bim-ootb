@@ -132,6 +132,22 @@
   BigDecimal.ZERO = new BigDecimal(0n, 0);
   BigDecimal.ONE  = new BigDecimal(1n, 0);
 
+  // ── MTax.calculateTax — THE ONE port (org.adempiere.base/src/org/compiere/model/MTax.java:340-372) ─────────
+  // Every caller (erp_engine.calcTax, doc_poster._mtaxCalc, model_trade.calcTax) delegates here; they only adapt units/child lookup.
+  // t = {rate, issummary}; kids = the ACTIVE child taxes (MTax.getChildTaxes :244-263), read by the caller; amount = BigDecimal-able; scale = rounding scale.
+  // Witness: erp/tests/witness_one_tax_owner.js (vs real java.math.BigDecimal). Lives here because bigdecimal.js is the only module every host of the three callers loads.
+  BigDecimal.mtaxCalculate = function (t, amount, taxIncluded, scale, kids) {
+    var dd = function (v) { return v instanceof BigDecimal ? v : BigDecimal.fromString(String(v)); };
+    if (dd(t.rate).signum() === 0) return BigDecimal.ZERO;                                   // :343 isZeroTax (:310)
+    var arr = (t.issummary === 'Y' || t.issummary === true) ? (kids || []) : [t], sum = BigDecimal.ZERO, amt = dd(amount);   // :346-350
+    arr.forEach(function (tc) {
+      var mult = dd(tc.rate).divide(new BigDecimal(100n, 0), 12, RM.HALF_UP);                // :354
+      if (!taxIncluded) sum = sum.add(amt.multiply(mult).setScale(scale, RM.HALF_UP));       // :355-358
+      else { var base = amt.divide(mult.add(BigDecimal.ONE), 12, RM.HALF_UP); sum = sum.add(amt.subtract(base).setScale(scale, RM.HALF_UP)); }   // :361-365
+    });
+    return sum;                                                                              // :371
+  };
+
   if (typeof module !== 'undefined' && module.exports) module.exports = BigDecimal;
   else global.BigDecimal = BigDecimal;
 })(typeof self !== 'undefined' ? self : this);

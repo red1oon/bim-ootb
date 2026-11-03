@@ -98,10 +98,10 @@
     });
   }
   async function ensureDeps() {
-    if (!window.ERPEngine) await loadScript('../erp/erp_engine.js?v=1');
+    if (!window.ERPEngine) await loadScript('../erp/erp_engine.js?v=2');
     if (!window.AdDocFsm) await loadScript('../erp/ad_docfsm.js?v=1');
     // §S-2b POS-shipment route deps: BigDecimal BEFORE pos_core (its UMD factory reads root.BigDecimal)
-    if (!window.BigDecimal) await loadScript('../erp/bigdecimal.js?v=1');
+    if (!window.BigDecimal) await loadScript('../erp/bigdecimal.js?v=2');
     if (!window.POSCore) await loadScript('../erp/pos_core.js?v=3');
     if (!window.InOutConfirm) await loadScript('../erp/inout_confirm.js?v=1');
     if (!W.erpDb) {

@@ -448,16 +448,10 @@ function _fxConvertCents(db, cents, curFrom, schema, dateAcct, client, org, abse
   if (rate == null) { absent.push('NoCurrencyConversion ' + curFrom + '->' + as.c_currency_id); return null; }
   var r = _bigDec(rate); return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k)));
 }
-// MTax.calculateTax (MTax.java:340-367) on scaled integers: amt12 = amount at scale 12, returns the tax at `scale`. Summary => the sum over its active child taxes (a summary parent has rate 0 => isZeroTax first).
+// MTax.calculateTax (MTax.java:340-372): THIN ADAPTER over the ONE port, BigDecimal.mtaxCalculate (bigdecimal.js). Shape only: amt12 = amount as a BigInt at scale 12, `scale` = rounding scale, returns the tax as a BigInt at `scale`.
 function _mtaxCalc(t, kids, amt12, incl, scale) {
-  if (Number(t.rate) === 0) return 0n;
-  var list = String(t.issummary) === 'Y' ? kids : [t], tax = 0n, P = 10n ** 12n;
-  list.forEach(function (c) {
-    var m12 = _rhuB(_scaleTo(_bigDec(c.rate), 12), 100n);                                   // Rate / 100, scale 12 HALF_UP
-    if (!incl) tax += _rhuB(amt12 * m12, 10n ** BigInt(24 - scale));                         // amount x multiplier, setScale(scale, HALF_UP)
-    else { var base12 = _rhuB(amt12 * P, m12 + P); tax += _rhuB(amt12 - base12, 10n ** BigInt(12 - scale)); }   // amount - amount/(1+m)
-  });
-  return tax;
+  var BD = typeof BigDecimal !== 'undefined' ? BigDecimal : require('./bigdecimal');
+  return BD.mtaxCalculate(t, new BD(amt12, 12), incl, scale, kids).setScale(scale, BD.RoundingMode.HALF_UP).unscaledValue();
 }
 // Doc_InOut.createFacts:719-783 (@{u} org.compiere.acct): the per-unit receipt cost of an order line = PriceCost, else PriceActual corrected for tax: included tax is taken OUT unless the tax is
 // distributed with the line item (TaxPostingIndicator '1'); an excluded tax is ADDED only when distributed (calculated at scale 12, not rounded to the currency before x Qty). Returns a decimal string.
@@ -1611,5 +1605,5 @@ var _api = { legacyDocClassExists: legacyDocClassExists, legacyDocClassOf: legac
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, deriveMovement: deriveMovement, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 // Internal helpers for witnesses, exposed on the Node module ONLY (never on window.DocPoster): the public _api is not widened.
-if (typeof module !== 'undefined' && module.exports) { module.exports = Object.assign({}, _api, { _test: { poLineCost: _poLineCost, inventoryPostRefused: inventoryPostRefused } }); }
+if (typeof module !== 'undefined' && module.exports) { module.exports = Object.assign({}, _api, { _test: { poLineCost: _poLineCost, mtaxCalc: _mtaxCalc, inventoryPostRefused: inventoryPostRefused } }); }
 if (typeof window !== 'undefined') { window.DocPoster = _api; }
