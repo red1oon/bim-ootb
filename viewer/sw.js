@@ -236,7 +236,9 @@
 // v1679 (2026-11-03) §SEAM-W1 cache READERS: boq_charts.html/clash_report.html/city.js read the canonical DbResolve key first, raw url second (db_resolve.js?v=3 readKeys/readCached); routewalker.js?v=4 + clash_report open the shared cache with NO version (VersionError at v3); W-SEAM-CACHE-READERS.
 // v1680 (2026-11-03) §SEAM-W2 F4: scene.js?v=76 _evictOldest enumerates timestamps U dbs, evicts ONLY re-downloadable keys (never import://, never the open building), logs §CACHE_EVICT_LRU key=/§CACHE_EVICT_SKIP_USERDATA
 // v1681 (2026-11-03) §SEAM-W2 ONE import:// key/url owner (+ scene.js?v=77 §IMPORT_KEY_ALIAS legacy-url read) common/import_key.js?v=1 (import.js?v=11, materialize.js?v=2; import_own.js?v=5 on the landing): monolith url K/v0 everywhere, legacy K/extracted+K/library re-keyed put-then-delete (§IMPORT_KEY_REKEY); W-ONE-IMPORT-KEY.
-const CACHE_VERSION = 'v1682';   // SEAM-W3A: edited-snapshot mark + Open-DB ImportKey shapes
+// v1682 (2026-11-03) §SEAM-W3A: edited-snapshot mark (A.markEdited, §CACHE_EVICT_SKIP_EDITED) + Open-DB urls from ImportKey (#2571)
+// v1683 (2026-11-03) §SEAM-W3C F8: common/walk_rules.js?v=1 (the one rules-DB/class owner) precached; Viewer PLANT_ROOM classifier NOT switched (owner decision, SEAM_IDENTITY_AUDIT F8)
+const CACHE_VERSION = 'v1683';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1242,6 +1244,7 @@ const PRECACHE_ASSETS = [
   // audit gained its second direction. Offline users got them from the network or not at all.
   // 344 KB total, measured, against a shell that already precaches 121 assets.
   // History + share + sfx:
+  '../common/walk_rules.js',   // SEAM-W3C: the one building-class -> rules-DB owner
   '../common/import_key.js',   // SEAM-W2: the one import:// key/url owner (import.js + materialize.js)
   '../common/history_tap.js', '../common/whole_history.js', '../common/history_bar.js',
   '../common/about_diy.js', 'universal_history.js', 'share.js', 'sfx.js',
