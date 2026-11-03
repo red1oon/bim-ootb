@@ -28,11 +28,13 @@ const dbBuilderSrc = fs.readFileSync(path.join(viewerDir, 'import_db_builder.js'
 // ══════════════════════════════════════════════════════════════════════════════
 
 // T1: import.js stores meta under: import://{key}/{key}_meta.db
-var metaStorePattern = /import:\/\/.*?_meta\.db/;
+// SEAM-W2: the url shape is owned by common/import_key.js; import.js must go through it.
+var IK = require(path.join(viewerDir, '..', 'common', 'import_key.js'));
+var metaStorePattern = { test: function (src) { return /ImportKey\.importUrl\(key, 'meta'\)/.test(src) && /_meta\.db$/.test(IK.importUrl('K.ifc', 'meta')); } };
 assert(metaStorePattern.test(importSrc), 'T1', 'import.js stores split meta under import://*_meta.db key');
 
 // T2: import.js stores geo under: import://{key}/{key}_geo.db
-var geoStorePattern = /import:\/\/.*?_geo\.db/;
+var geoStorePattern = { test: function (src) { return /ImportKey\.importUrl\(key, 'geo'\)/.test(src) && /_geo\.db$/.test(IK.importUrl('K.ifc', 'geo')); } };
 assert(geoStorePattern.test(importSrc), 'T2', 'import.js stores split geo under import://*_geo.db key');
 
 // T3: streaming.js derives meta URL by replacing _extracted.db → _meta.db
@@ -47,10 +49,10 @@ assert(geoDerive, 'T4', 'streaming.js derives geo URL via _extracted.db → _geo
 // import.js: 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db')
 // streaming.js: A.DB_URL.replace('_extracted.db', '_meta.db')
 // → import://{key}/{key}_meta.db on both sides ✓
-var importDbUrlLine = importSrc.match(/importDbUrl\s*=\s*'import:\/\/'\s*\+\s*key\s*\+\s*'\/'\s*\+\s*key\.replace\(\/\\\.ifc\$\/i,\s*'_extracted\.db'\)/);
+var importDbUrlLine = /importDbUrl\s*=\s*ImportKey\.importUrl\(key,\s*'extracted'\)/.test(importSrc) && IK.importUrl('K.ifc','extracted') === 'import://K.ifc/K_extracted.db';
 assert(!!importDbUrlLine, 'T5', 'import.js sets importDbUrl = import://{key}/{key}_extracted.db');
 
-var metaUrlLine = importSrc.match(/metaUrl\s*=\s*'import:\/\/'\s*\+\s*key\s*\+\s*'\/'\s*\+\s*key\.replace\(\/\\\.ifc\$\/i,\s*'_meta\.db'\)/);
+var metaUrlLine = /metaUrl\s*=\s*ImportKey\.importUrl\(key,\s*'meta'\)/.test(importSrc) && IK.importUrl('K.ifc','meta') === 'import://K.ifc/K_meta.db';
 assert(!!metaUrlLine, 'T6', 'import.js sets metaUrl = import://{key}/{key}_meta.db (matches streaming.js derivation)');
 
 // T7: streaming.js uses _checkCache for import:// URLs (IDB, not HEAD)

@@ -50,6 +50,7 @@
   "ListBuilder": "readonly",
   "LocationAxis": "readonly",
   "Materialize": "readonly",
+  "ImportKey": "readonly",
   "NavigateControls": "readonly",
   "NavigateEngine": "readonly",
   "NavigateFind": "readonly",

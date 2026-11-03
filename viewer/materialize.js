@@ -23,6 +23,8 @@
 (function (root) {
   'use strict';
 
+  var IK = (typeof module !== 'undefined' && module.exports) ? require('../common/import_key.js') : root.ImportKey;
+
   // toBuffer(db) — PURE. Edited in-memory sql.js Database → NewIFC.db bytes (Uint8Array).
   //   This is the whole of materialization: serialize what the editor already holds. No invention.
   function toBuffer(db) {
@@ -36,7 +38,9 @@
   //   so a stored NewIFC.db round-trips through the viewer with ZERO streaming change.
   function urlsFor(designKey) {
     var safe = String(designKey || 'NewIFC').replace(/[^A-Za-z0-9_.-]/g, '_');
-    var dbUrl = 'import://' + safe + '/' + safe + '_extracted.db';
+    // SEAM-W2 (F6): url shape owned by common/import_key.js — filename part is the stem (`.ifc` stripped), like the importers.
+    // `safe` stays sanitised on purpose: designKey is a generated name that ends up inside a viewer ?db= link.
+    var dbUrl = IK.importUrl(safe, 'extracted');
     return {
       db: dbUrl,
       lib: dbUrl,
