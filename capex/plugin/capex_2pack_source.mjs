@@ -11,15 +11,19 @@ import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 const here = path.dirname(fileURLToPath(import.meta.url)), MA = createRequire(import.meta.url)('../tools/migration_apply.js');
 const DIR = path.join(here, '..', 'legacy', 'migration', 'iD13', 'postgresql');
-const files = fs.readdirSync(DIR).filter((f) => /^\d{12}_.*\.sql$/.test(f)).sort();
+// which scripts each released pack carries (a released pack is immutable; a new script = a new version, applied after the earlier ones by Incremental2PackActivator)
+const PACKS = { '1.0.0': ['202611031900_CAPEX-R0.sql', '202611032000_CAPEX-G2.sql', '202611032100_CAPEX-G3.sql'], '1.0.1': ['202611032200_CAPEX-G4.sql'] };
+const VERSION = process.env.CAPEX_PACK || Object.keys(PACKS).sort().pop();   // default = the newest; CAPEX_PACK=1.0.0 re-generates an older one (gen_2pack must say "unchanged")
+const files = PACKS[VERSION];
+if (!files) throw new Error('no pack ' + VERSION);
 const elements = [];
 files.forEach((f) => MA.split(fs.readFileSync(path.join(DIR, f), 'utf8')).filter((st) => !/^SELECT\s+register_migration_script\s*\(/i.test(st))
   .forEach((st, i) => elements.push({ key: f + '#' + i, table: 'SQLStatement', values: { dbType: 'ALL', statement: st } })));
 export const manifest = {
   id: 'org.bimootb.capex',
   name: 'CAPEX Dashboard',
-  version: '1.0.0',
-  provides: { version: '1.0.0', date: '2026-11-03 00:00:00', updateDictionary: false, packsDir: 'capex_2pack',
+  version: VERSION,
+  provides: { version: VERSION, date: '2026-11-03 00:00:00', updateDictionary: false, packsDir: 'capex_2pack',
     description: 'CAPEX dashboard as iDempiere Performance Analysis data (PA_MeasureCalc / PA_Measure / PA_Goal) from ' + files.join(', ') + ' (bim-ootb prompts/CAPEX_DASHBOARD.md §5.19)',
     elements }
 };
