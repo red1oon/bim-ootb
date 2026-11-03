@@ -242,7 +242,8 @@
 // v1685 (2026-11-03) §PERSIST_TARGET: DbResolve.persistTarget = the ONE save-key rule; needle room persist (nf_tree_lens.js) keyed by it (was raw DB_URL: rooms recomputed every load, wrong url in split mode) + erp/kernel_ops.js uses it; W-NEEDLE-PERSIST-KEY 7/7.
 // v1686 (2026-11-03) §PERSIST_TARGET: ScheduleAuthor.persistUrlFor — Apply-to-4D (schedule_inject.js) and the authored-schedule persist (schedule_author_ui.js) passed raw A.DB_URL, a slot never read back in split mode (edits vanished on reload); all three callers use the one rule; W-SCHED-PERSIST-TARGET 7/7.
 // v1687 (2026-11-03) cache-bust follow-up to v1686: schedule_inject.js?v=3 + tm_gantt_edit.js?v=3 (their tags were missed in #2577)
-const CACHE_VERSION = 'v1687';
+// v1688 (2026-11-03) §ONE_LIB: shared libs (sql-wasm.js/.wasm, OrbitControls, web-ifc api+wasm) load from common/lib/ (viewer/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path. import.js?v=12 loader.js?v=13 main.js?v=60 panels.js?v=51 streaming.js?v=90 edit_delta_viewer.js?v=2 wizard.js?v=3 import_worker.js?v=17.
+const CACHE_VERSION = 'v1688';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -957,9 +958,9 @@ const SHELL_LIBS = [
   'lib/three.webgpu.min.js', // §GI_LIVE: r186 WebGPU (imports three.core.min.js) — was r184/r185 (§S276)
   'lib/three.module.min.js', // §S276: r184 standard ESM fallback
   'lib/three.core.min.js',  // §GI_LIVE: r186 core (split build); three.module.min.js (WebGL renderer) unchanged
-  'lib/OrbitControls.module.js',  // §S276: r184 ESM
-  'lib/sql-wasm.js',
-  'lib/sql-wasm.wasm',
+  '../common/lib/OrbitControls.module.js',  // §S276: r184 ESM
+  '../common/lib/sql-wasm.js',
+  '../common/lib/sql-wasm.wasm',
   'lib/chart.umd.min.js',
   'lib/FileSaver.min.js',
   // §EFFECTS_COMPOSER_OFFLINE: setupEffects() (effects.js) dynamic-imports these 6 unconditionally
@@ -994,8 +995,8 @@ const SHELL_LIBS = [
 ];
 // DEFERRED — heavy, feature-gated; cache-on-first-use OR via the offline-download button.
 const DEFERRED_LIBS = [
-  'lib/web-ifc-api-iife.js',  // §S284c: IFC parser (~5.8MB) — only on IFC drag-drop import
-  'lib/web-ifc.wasm',          // §S284c: IFC parser WASM (~1.2MB)
+  '../common/lib/web-ifc-api-iife.js',  // §S284c: IFC parser (~5.8MB) — only on IFC drag-drop import
+  '../common/lib/web-ifc.wasm',          // §S284c: IFC parser WASM (~1.2MB)
   'lib/xlsx.full.min.js',      // ~0.9MB — only on boq_charts.html / spreadsheet export
   'lib/exceljs.min.js',        // ~0.9MB — only on Excel export
 ];

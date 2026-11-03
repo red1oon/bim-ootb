@@ -12,7 +12,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql');
-const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/overlay/goal_engine.js')), MA = require(path.join(ROOT, 'erp/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
+const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/overlay/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
 const Ad = require('../adapters.js'), Tl = require('../tiles.js'), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
 const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process.env.BREAK === '1';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }

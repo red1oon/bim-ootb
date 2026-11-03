@@ -17,7 +17,7 @@
     key = key || STORE_KEY;
     var s = null; try { s = localStorage.getItem(key); } catch (e) { }
     if (!s) { console.log('§S8-VIEWER store key=' + key + ' MISSING (IDB-only overflow store is not readable here)'); return { ops: [], reason: 'no-shared-store' }; }
-    var SQL = global.APP && global.APP._SQL || await global.initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
+    var SQL = global.APP && global.APP._SQL || await global.initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
     if (global.APP) global.APP._SQL = SQL;
     var db = new SQL.Database(_unb64(s));
     try {

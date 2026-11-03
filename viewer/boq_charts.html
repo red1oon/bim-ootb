@@ -54,7 +54,7 @@
 <div class="charts" id="charts"></div>
 <div id="status"></div>
 
-<script src="lib/sql-wasm.js"></script>
+<script src="../common/lib/sql-wasm.js"></script>
 <script src="lib/xlsx.full.min.js"></script>
 <script src="lib/exceljs.min.js"></script>
 <script src="lib/FileSaver.min.js"></script>
@@ -1114,7 +1114,7 @@ async function init() {
       }
     }
     const SQL = await initSqlJs({
-      locateFile: f => 'lib/' + f
+      locateFile: f => (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f
     });
     document.getElementById('info').textContent = _trl('ui_loading_url', { url: _actualUrl }, 'Loading {url}...');
     // _meta.db split is an OPTIMIZATION, never a hard dependency — fall back to the sibling.

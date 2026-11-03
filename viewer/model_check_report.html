@@ -46,7 +46,7 @@
 <h1>Road Model Check — compliance mock-up</h1>
 <div class="subtitle" id="info">Loading...</div>
 <div id="report-content"></div>
-<script src="lib/sql-wasm.js"></script>
+<script src="../common/lib/sql-wasm.js"></script>
 <script src="road_check.js?v=1"></script>
 <script src="earthworks_volume.js?v=1"></script>
 <script>
@@ -90,7 +90,7 @@ function _csv() {
 }
 (async function () {
   var t0 = performance.now();
-  var SQL = await initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
+  var SQL = await initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
   var buf = null; try { buf = await fetchDbBuffer(DB_URL); } catch (e) { buf = null; }
   if (!buf) { document.getElementById('info').textContent = 'Load the model first — open it in the 3D viewer, then reopen this report.'; console.log('§MC_REPORT INCONCLUSIVE no db'); return; }
   var db = new SQL.Database(new Uint8Array(buf));

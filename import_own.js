@@ -236,7 +236,7 @@ async function _loadSqlJs() {
       console.log('§STANDALONE_SQL inline initSqlJs loaded');
     } else {
       // Load local sql-wasm.js text (network or SW cache), then eval to define initSqlJs
-      var jsResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.js');
+      var jsResp = await _fetchLocalOrCache('common/lib/sql-wasm.js');
       var jsText = await jsResp.text();
       (new Function(jsText + '\n; if (typeof initSqlJs !== "undefined") window.initSqlJs = initSqlJs;'))();
       console.log('§SQL_LOCAL initSqlJs loaded from viewer/lib');
@@ -250,12 +250,12 @@ async function _loadSqlJs() {
     return await initSqlJs({ wasmBinary: buf.buffer });
   }
   // PWA / online: feed the local WASM binary directly (works offline via Cache Storage)
-  var wasmResp = await _fetchLocalOrCache('viewer/lib/sql-wasm.wasm');
+  var wasmResp = await _fetchLocalOrCache('common/lib/sql-wasm.wasm');
   var wasmBuf = await wasmResp.arrayBuffer();
   return await initSqlJs({ wasmBinary: wasmBuf });
 }
 var _IFC_ENGINE_CACHE = 'bim-ifc-engine';
-var _IFC_WASM_URL = 'viewer/lib/web-ifc.wasm';
+var _IFC_WASM_URL = 'common/lib/web-ifc.wasm';
 async function _getWebIfcWasm() {
   // 1. Standalone HTML — bytes embedded as base64.
   if (window._WEBIFC_WASM_B64) {
@@ -352,7 +352,7 @@ async function handleImportFile(file) {
   progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd';
   if (file.size > 200 * 1024 * 1024) status.textContent = 'Very large (' + sizeMB + 'MB) — may take a few minutes';
   const arrayBuffer = await file.arrayBuffer();
-  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=15' : 'viewer/mesh_import_worker.js?v=2';
+  var workerFile = (fmt.route === 'ifc') ? 'viewer/import_worker.js?v=16' : 'viewer/mesh_import_worker.js?v=2';
   var workerMsg = (fmt.route === 'ifc') ? { arrayBuffer, filename: file.name } : { arrayBuffer, filename: file.name, ext: fmt.ext };
   if (fmt.route === 'ifc') {
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
@@ -524,7 +524,7 @@ function _parseOwnIFC(file, onProgress, forceGeorefOffset) {
     var workerMsg = { arrayBuffer: await file.arrayBuffer(), filename: file.name, forceGeorefOffset: forceGeorefOffset || null };
     try { workerMsg.wasmBytes = await _getWebIfcWasm(); }
     catch (engineErr) { reject(engineErr); return; }
-    var worker = _createWorker('viewer/import_worker.js?v=15');
+    var worker = _createWorker('viewer/import_worker.js?v=16');
     worker.onmessage = function (e) {
       var msg = e.data;
       if (msg.type === 'progress') { if (onProgress) onProgress(msg.pct, msg.phase); return; }

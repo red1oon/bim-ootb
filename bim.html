@@ -79,10 +79,10 @@ button.btn{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:6
 <script src="bim/tools/table.js"></script>
 <script src="bim/tools/zip.js"></script>
 <script src="bim/tools/kit.js"></script>
-<script src="viewer/lib/web-ifc-api-iife.js"></script>
+<script src="common/lib/web-ifc-api-iife.js"></script>
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from './viewer/lib/OrbitControls.module.js';
+import { OrbitControls } from './common/lib/OrbitControls.module.js';
 const S = BIM_STEP, T = BIM_TOOLS, $ = (id) => document.getElementById(id);
 const LIBS = { BIM_UPGRADE, BIM_EXTRACT, BIM_SPLIT, BIM_HEALTH };
 const params = new URLSearchParams(location.search), SERVED = params.get('served') === '1';
@@ -267,7 +267,7 @@ async function loadMeshes(c) {
   }
   if (c.rendered) return true;
   busy('Building 3D — starting the IFC engine…', null); await nextFrame();
-  const api = new WebIFC.IfcAPI(); api.SetWasmPath(new URL('viewer/lib/', location.href).href, true); await api.Init();
+  const api = new WebIFC.IfcAPI(); api.SetWasmPath(new URL('common/lib/', location.href).href, true); await api.Init();
   busy('Building 3D — opening ' + c.name + ' in the IFC engine (' + MB(c.bytes.length) + ', big files take a while)…', null); await nextFrame();
   const id = api.OpenModel(c.bytes, { COORDINATE_TO_ORIGIN: false, USE_FAST_BOOLS: true });
   busy('Building 3D — drawing the shapes…', null); await nextFrame();

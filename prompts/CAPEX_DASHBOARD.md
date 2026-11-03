@@ -26,7 +26,7 @@ ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-com
 **▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
 1. **G1 ✅ DONE — ⚠ CORRECTED §5.18: the twin's PA owner is the EXISTING `erp/overlay/goal_engine.js` (DASHBOARD-PARITY D1); the §5.15 `erp/pa_engine.js` was a duplicate and is deleted; W-PA-ENGINE PASS 22/22 on the owner** — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
-2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4** bucket tiles (health / schedule / budget status:
+2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3 ✅ DONE (§5.19: legacy = migration script 202611032100_CAPEX-G3.sql on the pilot, GardenAdmin 17 goals; twin = plugin bundle `capex/plugin/capex_dashboard.mjs`, W-PA-RENDER PASS 18/18 in the real idempiere.html, BREAK FAIL 13)** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4** bucket tiles (health / schedule / budget status:
    PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
 3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
 **▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
@@ -485,8 +485,35 @@ W-DASH-PERF PASS 5/5 · W-DASH-SELECT PASS 5/5 · W-DASH-DICT PASS 19/19 (run WI
 (`§PA_ENGINE_X_OF_N runs=3 of 3`). The BDT float tail (`30286701.636940002`, §5.17) — the owner rounds the actual to 6 dp, giving legacy's `30286701.63694`; a legacy value with more than 6 decimals
 would still differ (named, not seen). **Divergence to judge next (named):** `dashboard_gadgets.colorOf` does not apply MGoal.getColor's "target 0 → white" (:463-475); legacy's ZK gadget path decides
 whether that rule shows — read `WPAPanel`/`WPAWidget` before changing anything.
-**Next: G3** — the CAPEX goals on the EXISTING home dashboard: a PA_DashboardContent row (migration script, LEGACY CONVENTION) for the Performance gadget where it is missing, then W-PA-RENDER =
-the rendered goal values in `#idmp-home` == `goal_engine` values, read headlessly from the DOM.
+**Next: G3** — done, §5.19.
+
+### 5.19 G3 — the CAPEX goals on the stock Home dashboard, both sides (2026-11-03; spec + result; logs read, scratch not committed)
+**Owner decisions (verbatim, two questions asked this session):** (1) "Ship goals + boot-apply" — the default goals ship as data, not as per-site user input. (2) on hearing the boot step would break the
+EXTENSION-LAYER LAW (`erp/tests/witness_core_untouched.js`: core files under erp/ change only by the overlay seam + CACHE_VERSION; the overlay writes no DB): **"Twin plugin bundle"** — so on the twin
+the rows arrive through the ONE core extension enabler (CLAUDE.md AD-LAYER LAW 6), installed once per site by the System Administrator, restored at every boot.
+**Measured first:** legacy's stock Performance gadget `/zul/performance.zul` (PA_DashboardContent 50003, IsShowInLogin, all users) lists `MGoal.getUserGoals` (MGoal.java:60-108: client's active goals with no
+user/role, or the user's own / role's) and computes each by `updateGoal(false)` (DateLastRun NULL or older than the refresh interval); the twin's `dashboard_gadgets.performance` uses the same SQL. So NO
+new PA_DashboardContent row: a goal row is enough. Colour: ZK draws a dial from the schema marks (`PerformanceGraphBuilder` / `WPerformanceIndicator`), never `MGoal.getColor` — §5.18's suspected
+"target 0 → white" divergence does NOT exist in ZK (retracted). Title rule = `WPerformanceIndicator.init` (Name: percent% with a target, else Name: MeasureActual #,##0) — the twin's rule.
+**Legacy (LOCAL pilot):** `202611032100_CAPEX-G3.sql` — 13 PA_Goal (IDs 1000031–1000043, UUs `…cafe0003…`, target 0, no user/role, MeasureScope Year for the T measure, DateLastRun NULL → computed at first
+render). Before applying, the 13 goals my G2 witness had created by create_data (#1000018–#1000030, same names) were deleted (pilot fixture). Applied with psql `ON_ERROR_STOP`: "successfully registered";
+update_sequences; pilot after: PA_Goal client 11 = 17 (4 stock + 13), GardenAdmin's getUserGoals = 17, PA_Goal next 1000044, ad_migrationscript R0/G2/G3 all CO. `capex/tools/pa_probe.js` now uses its OWN goal
+name and deletes it at the end (a leftover probe goal would be an 18th on everyone's Home); W-PA-TILES reuses the shipped goals (created=0) — PASS 23/23.
+**Twin:** `capex/plugin/capex_2pack_source.mjs` (node, dev time) turns the legacy migration scripts (split by `capex/tools/migration_apply.js`, name order, `register_migration_script` dropped — it is the
+migration ledger) into 39 legacy SQLStatement elements; `node erp/tools/gen_2pack.js capex/plugin/capex_2pack_source.mjs` (the ONE Pack Out engine) → `capex/plugin/capex_2pack/2Pack_1.0.0.zip`
+(`§PACKGEN elements=39 bytes=2486`). `capex/plugin/capex_dashboard.mjs` = `manifest.packs` only, no code. Outside erp/ (erp/plugins and the built-in lists are core). `migration_apply.js` MOVED from erp/ to
+`capex/tools/` (it was a core addition of #2572; node witnesses only) — its RUN_SyncDB port (`ensureAll`: AD_MigrationScript register, pending by name, stop on error, update_sequences) stays for them.
+**Witnesses:** W-PA-RENDER `capex/tests/witness_pa_render.js` (headless CPU Chromium, real erp/idempiere.html, one browser profile): System Administrator installs + starts the bundle (`§PACKIN sql=39/39`,
+`§PLUGIN-START id=org.bimootb.capex state=ACTIVE`); next boot: `§PACKIN-REPLAY bundle=org.bimootb.capex mode=delta`, `§PACKIN incremental … installed=[1.0.0] toApply=[]`; AD_Package_Imp
+org.bimootb.capex 1.0.0 "Completed successfully"; GardenAdmin's Home draws 17 indicators; each of the 13 CAPEX ones drawn == goal_engine (title + colour) → `§PA_RENDER_VERDICT PASS judged=18 fail=0`;
+`PA_RENDER_BREAK=1` → FAIL 13. W-MIG-SYNC `capex/tests/witness_mig_sync.js` PASS 7/7 (MIG_BREAK=1 FAIL; S4 update_sequences NOT JUDGED — the twin has no table-ID AD_Sequence rows). W-PA-ENGINE 22/22 ·
+W-GOAL-ENGINE 5/5 · W-DASH-PERF 5/5 · W-DASH-SELECT 5/5 · W-HOME-DASHBOARD-LIVE 18/18 (unchanged: it judges the twin WITHOUT the CAPEX bundle = 4 goals; W-PA-RENDER judges it WITH).
+`witness_core_untouched`: CU1 names only the REMOVAL of erp/migration_apply.js (restores the law once merged); CU4 `plugins/mf_lens.mjs` pre-existing. Instrument faults found and fixed in the witness, not the
+product: the test server lacked the `.mjs` MIME type; `browser.newPage()` gives each page its own storage (the "reboot" was a fresh browser).
+**Named, open:** (a) twin values on the Home are the twin's own data (seed: 3 projects / 600 USD), not the pilot's — the DOWN copy is G6. (b) legacy shows a goal's STORED value refreshed when older than
+30 min; the twin's gadget computes live on every render — equal except inside that window after a data change (CARDINAL: to fix on the twin side by rendering through `GoalEngine.updateGoal(force=false)`
++ the stored row; W-DASH-PERF's oracle must move with it). (c) "closed" / "completed this year" still unproven on the pilot (no processed project). **Next: G4** bucket tiles (health / schedule /
+budget status) — PA SQL in both dialects or named tile kinds, measured first.
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.

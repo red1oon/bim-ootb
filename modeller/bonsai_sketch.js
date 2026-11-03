@@ -50,8 +50,8 @@
 
     async _ensure() {
       if (!this._gcs) {
-        const mod = await import(new URL('lib/planegcs/index.js', _base).href);
-        this._gcs = await mod.make_gcs_wrapper(new URL('lib/planegcs/planegcs_dist/planegcs.wasm', _base).href);
+        const mod = await import(new URL('../common/lib/planegcs/index.js', _base).href);
+        this._gcs = await mod.make_gcs_wrapper(new URL('../common/lib/planegcs/planegcs_dist/planegcs.wasm', _base).href);
         console.log(TAG + ' solver ready');
       }
       return this._gcs;

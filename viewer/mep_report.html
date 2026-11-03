@@ -55,7 +55,7 @@
 <div id="report-content" data-trl="ui_loading_ellipsis">Loading...</div>
 <div id="status"></div>
 
-<script src="lib/sql-wasm.js"></script>
+<script src="../common/lib/sql-wasm.js"></script>
 <script src="rates.js?v=12"></script>
 <script src="analysis_sidecar.js?v=1"></script>
 <script src="locale_loader.js?v=14"></script>
@@ -218,7 +218,7 @@ async function init() {
   }
 
   var SQL = await initSqlJs({
-    locateFile: function(f) { return 'lib/' + f; }
+    locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; }
   });
   // The _meta.db split is an OPTIMIZATION, never a hard dependency. If the chosen URL
   // fails (offline + only the sibling is cached), fall back to the other one — the full
