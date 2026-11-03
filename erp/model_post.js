@@ -16,7 +16,7 @@
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321, gl_journal: 224 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321, gl_journal: 224, c_bankstatement: 392 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -714,6 +714,44 @@
     return !F.err;
   }
 
+  // Doc_BankStatement (acct/Doc_BankStatement.java :49-300, DocLine_Bank.java :39-123) - loadDocumentDetails :70-88, loadLines :102-120, getBalance :126-145, createFacts :160-285 (spec BST_RESULT).
+  //   Per active line: DR/CR BankAsset = +StmtAmt, BankInTransit = -TrxAmt, Charge (ChargeAmt>0 -> CR, else DR -ChargeAmt), Interest (-InterestAmt on InterestExp when the interest is negative, else InterestRev).
+  //   Accounts: C_BankAccount_Acct / C_Charge_Acct by schema with NO default fallback (Doc.getValidCombination_ID, MCharge.getAccount) = acctOf. DateAcct per line: DocLine_Bank :50.
+  function sysConfigBool(trx, name, dflt) {                                                // MSysConfig.getBooleanValue(name, dflt, AD_Client_ID) - client row, else System row; no table = the default
+    var r = null; try { r = trx.q("SELECT value FROM ad_sysconfig WHERE name=? AND ad_client_id IN (0,?) AND COALESCE(ad_org_id,0)=0 AND COALESCE(isactive,'Y')='Y' ORDER BY ad_client_id DESC", [name, trx.env.client])[0]; } catch (e) { r = null; }
+    return r && r.value != null && r.value !== '' ? /^(y|true)$/i.test(String(r.value)) : dflt;
+  }
+  function Doc_BankStatement(trx, bs, as, F) {
+    var sch = as.c_acctschema_id, ba = trx.get('c_bankaccount', bs.c_bankaccount_id), docCur = ba ? ba.c_currency_id : as.c_currency_id, bankOrg = ba && nz(ba.ad_org_id) ? Number(ba.ad_org_id) : 0;   // :76-83 / :291-298
+    var ctx = Doc(trx, 'c_bankstatement', bs, { dateDoc: bs.statementdate, dateAcct: bs.dateacct, c_currency_id: docCur }), fromLine = sysConfigBool(trx, 'BANK_STATEMENT_POST_WITH_DATE_FROM_LINE', false);   // :73-74 / MBankStatement.java:801
+    var lines = trx.find('c_bankstatementline', { c_bankstatement_id: bs.c_bankstatement_id }, ['line', 'c_bankstatementline_id']).filter(function (l) { return l.isactive !== 'N'; }).map(function (l) {   // :109
+      var dl = DocLine(trx, 'c_bankstatementline', l, { c_conversiontype_id: l.c_conversiontype_id });
+      dl.dateDoc = l.valutadate; dl.dateAcct = fromLine ? l.dateacct : bs.dateacct; dl.cur = nz(l.c_currency_id) ? l.c_currency_id : docCur;                    // DocLine_Bank :49-50 / DocLine.getC_Currency_ID :132-147
+      dl.payOrg = nz(l.c_payment_id) ? (trx.q('SELECT ad_org_id AS o FROM c_payment WHERE c_payment_id=?', [l.c_payment_id])[0] || {}).o : null; return dl; });
+    var diff = D(bs.statementdifference == null ? 0 : bs.statementdifference); lines.forEach(function (dl) { diff = diff.subtract(D(dl.row.stmtamt == null ? 0 : dl.row.stmtamt)); });
+    if (diff.signum() !== 0) { F.err = 'C_BankStatement StatementDifference <> sum(StmtAmt) (Doc.isBalanced, STATUS_NotBalanced) not ported - named'; return false; }   // :126-145 / Doc.java:1097-1110 (single-currency document)
+    var asset = acctOf(trx, 'c_bankaccount_acct', 'b_asset_acct', 'c_bankaccount_id', bs.c_bankaccount_id, sch), transit = acctOf(trx, 'c_bankaccount_acct', 'b_intransit_acct', 'c_bankaccount_id', bs.c_bankaccount_id, sch);
+    var intExp = acctOf(trx, 'c_bankaccount_acct', 'b_interestexp_acct', 'c_bankaccount_id', bs.c_bankaccount_id, sch), intRev = acctOf(trx, 'c_bankaccount_acct', 'b_interestrev_acct', 'c_bankaccount_id', bs.c_bankaccount_id, sch);
+    var signed = function (dl, acct, amt) { return amt.signum() < 0 ? createLine(F, ctx, dl, acct, dl.cur, null, amt.abs()) : createLine(F, ctx, dl, acct, dl.cur, amt, null); };   // Fact.createLine(docLine, account, cur, Amt) :205-211
+    for (var i = 0; i < lines.length; i++) {
+      var dl = lines[i], r = dl.row, fl, stmt = D(r.stmtamt == null ? 0 : r.stmtamt), trxAmt = D(r.trxamt == null ? 0 : r.trxamt), chg = D(r.chargeamt == null ? 0 : r.chargeamt), intr = D(r.interestamt == null ? 0 : r.interestamt);
+      if (nz(r.c_depositbatch_id)) { F.err = 'C_BankStatementLine ' + dl.id + ' C_DepositBatch (:214-238) not ported - named'; return false; }
+      if (!Y(as.ispostifclearingequal) && asset != null && String(asset) === String(transit)) {                                   // :184-198 one line: the difference
+        var dif = stmt.subtract(trxAmt); if (dif.signum() !== 0) { fl = signed(dl, asset, dif); if (fl && bankOrg) fl.ad_org_id = bankOrg; }
+      } else {
+        fl = signed(dl, asset, stmt); if (fl && bankOrg) fl.ad_org_id = bankOrg;                                                   // :205-210
+        fl = signed(dl, transit, trxAmt.negate()); if (fl) { var o = bankOrg || Number(dl.payOrg || 0) || Number(dl.ad_org_id || 0); if (o) fl.ad_org_id = o; }   // :240-249 org: bank, else the payment's (DocLine_Bank.getAD_Org_ID(true) :77-87)
+      }
+      var chAcct = nz(r.c_charge_id) ? acctOf(trx, 'c_charge_acct', 'ch_expense_acct', 'c_charge_id', r.c_charge_id, sch) : null;     // DocLine.getChargeAccount :485-491 / MCharge.getAccount
+      if (chg.signum() > 0) createLine(F, ctx, dl, chAcct, dl.cur, null, chg); else createLine(F, ctx, dl, chAcct, dl.cur, chg.negate(), null);   // :256-264
+      signed(dl, intr.signum() < 0 ? intExp : intRev, intr.negate());                                                              // :269-276
+      if (F.err) return false;
+    }
+    var sd = Z, cur = {}, nCur = 0; F.lines.forEach(function (f) { sd = sd.add(D(f.amtsourcedr)).subtract(D(f.amtsourcecr)); if (!(f.c_currency_id in cur)) { cur[f.c_currency_id] = 1; nCur++; } });
+    if (nCur <= 1 && sd.signum() !== 0) { F.err = 'C_BankStatement source-unbalanced (Fact.balanceSource suspense, Fact.java:298-322) not ported - named'; return false; }   // Doc.postLogic :846-853
+    return !F.err;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
@@ -723,6 +761,7 @@
     m_movement: function (trx, mv, as, F) { return Doc_Movement(trx, mv, as, F); },
     m_inventory: function (trx, inv, as, F) { return Doc_Inventory(trx, inv, as, F); },
     gl_journal: function (trx, j, as, F) { return Doc_GLJournal(trx, j, as, F); },
+    c_bankstatement: function (trx, bs, as, F) { return Doc_BankStatement(trx, bs, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
