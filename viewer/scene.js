@@ -649,24 +649,49 @@ async function setupScene(A) {
   // §CACHE_EVICT_LRU_FORCE (W-DB-CACHE-KEY F3): `forceN` drops the N oldest entries even when the
   // count is under the cap — the quota-abort path calls it that way. It used to .clear() the WHOLE
   // store instead, so one over-quota write threw away every other building that was fitting fine.
+  // §SEAM-W2 F4 (SEAM_IDENTITY_AUDIT): eviction may ONLY remove re-downloadable / derived entries.
+  // import:// blobs, edit snapshots, Time-Machine json, kanban/walk progress are the user's work — default-deny.
+  A._cacheEvictable = function(key) {
+    if (typeof key !== 'string' || !key) return false;
+    if (key.indexOf('import://') === 0) return false;
+    if (/::tip$/.test(key)) return false;
+    return /^(https?:)?\/\//.test(key) || /^\.{0,2}\//.test(key) || /^(buildings|modeller)\//.test(key) ||
+           /^(mrooms_|rw_|occlStruct:)/.test(key);
+  };
   A._evictOldest = async function(cacheDb, forceN) {
     try {
-      var tx = cacheDb.transaction('timestamps', 'readonly');
-      var store = tx.objectStore('timestamps');
-      var allKeys = await new Promise(function(r) {
-        var req = store.getAllKeys(); req.onsuccess = function() { r(req.result || []); }; req.onerror = function() { r([]); };
+      var getKeys = function(name) { return new Promise(function(r) {
+        try { var rq = cacheDb.transaction(name, 'readonly').objectStore(name).getAllKeys();
+              rq.onsuccess = function() { r(rq.result || []); }; rq.onerror = function() { r([]); };
+        } catch (e) { r([]); } }); };
+      var tsKeys = await getKeys('timestamps');
+      var dbKeys = await getKeys(A.CACHE_STORE);   // §SEAM-W2: dbs-only entries are part of the inventory too
+      var seen = {}, allKeys = [];
+      tsKeys.concat(dbKeys).forEach(function(k) { if (!seen[k]) { seen[k] = 1; allKeys.push(k); } });
+      // Open building is never evicted (canonical key + raw url).
+      var openKeys = {};
+      if (A.DB_URL) {
+        openKeys[A.DB_URL] = 1;
+        try { if (window.DbResolve && window.DbResolve.cacheKey) openKeys[window.DbResolve.cacheKey(A.DB_URL, A.PROD_BASE)] = 1; } catch (e0) {}
+      }
+      var eligible = [], skipped = [];
+      allKeys.forEach(function(k) {
+        if (openKeys[k]) { skipped.push('§CACHE_EVICT_SKIP_OPEN key=' + k); return; }
+        if (!A._cacheEvictable(k)) { skipped.push('§CACHE_EVICT_SKIP_USERDATA key=' + k); return; }
+        eligible.push(k);
       });
-      if (!forceN && allKeys.length < A._MAX_CACHE_ENTRIES) return 0;
-      if (forceN && !allKeys.length) return 0;
-      // Get all timestamps, sort by oldest
+      if (!forceN && eligible.length < A._MAX_CACHE_ENTRIES) return 0;
+      if (forceN && !eligible.length) return 0;
+      skipped.forEach(function(l) { console.log('[S203] ' + l); });   // only when an eviction is actually being weighed
+      var tsSet = {}; tsKeys.forEach(function(k) { tsSet[k] = 1; });
       var entries = [];
-      var tx2 = cacheDb.transaction('timestamps', 'readonly');
-      var store2 = tx2.objectStore('timestamps');
-      for (var i = 0; i < allKeys.length; i++) {
-        var ts = await new Promise(function(r) {
-          var req = store2.get(allKeys[i]); req.onsuccess = function() { r(req.result || 0); }; req.onerror = function() { r(0); };
+      var store2 = cacheDb.transaction('timestamps', 'readonly').objectStore('timestamps');
+      for (var i = 0; i < eligible.length; i++) {
+        var ts = 0;
+        if (tsSet[eligible[i]]) ts = await new Promise(function(r) {
+          var req = store2.get(eligible[i]); req.onsuccess = function() { r(req.result || 0); }; req.onerror = function() { r(0); };
         });
-        entries.push({ key: allKeys[i], ts: ts });
+        entries.push({ key: eligible[i], ts: ts });
       }
       entries.sort(function(a, b) { return a.ts - b.ts; });
       // Remove oldest until we're under limit (or the forced count, for the quota-abort retry).
@@ -686,6 +711,9 @@ async function setupScene(A) {
             if (_hasRevalStore2) tx3.objectStore('revalidation').delete(toRemove[j].key);
           }
           tx3.oncomplete = done; tx3.onerror = done; tx3.onabort = done;
+        });
+        toRemove.forEach(function(e) {
+          console.log('[S203] §CACHE_EVICT_LRU key=' + e.key + ' reason=' + (forceN ? 'forced' : 'cap') + (e.ts ? '' : ' no_timestamp=yes'));
         });
         console.log('[S203] §CACHE_EVICT_LRU removed=' + toRemove.length + ' forced=' + (forceN ? 'yes' : 'no') +
           ' keys=' + toRemove.map(function(e){return String(e.key).split('/').pop();}).join(','));

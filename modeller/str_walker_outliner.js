@@ -650,7 +650,7 @@
       return fetch(url).then(function (r) { if (!r.ok) throw new Error('fetch ' + r.status); return r.arrayBuffer(); })
         .then(function (buf) {
           _assertRealGeoDb(buf, res, url);
-          _idbPutDb(url, buf).then(function (p) {
+          _idbPutVersioned(url, buf).then(function (p) {
             console.log(TAG + ' §STRWALK-CACHE ' + res.geoDb + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024 / 1024).toFixed(1) + 'MB');
           });
           console.log(TAG + ' §GEO-SERVED ' + res.key + ' real geometry substrate ' + (buf.byteLength / 1024 / 1024).toFixed(2) + 'MB verified SQLite');
@@ -997,16 +997,17 @@
       }).catch(function () { return null; });
     } catch (e) { return Promise.resolve(null); }
   }
-  function _idbDropStale(prefix, keepKey) {
+  function _idbDropStale(prefix, keepKey, exactOnly, logTag) {   // §SEAM-W2 F15: exactOnly = match `prefix` as a whole key; logTag = print a §-line per dropped key
     return _idbEnsureStore().then(function () { return new Promise(function (resolve) {
       try {
         var rq = indexedDB.open('bim_ootb_cache');
         rq.onsuccess = function () {
           var idb = rq.result, dropped = 0;
           try {
-            var tx = idb.transaction('dbs', 'readwrite'), st = tx.objectStore('dbs');
-            var kr = st.getAllKeys(IDBKeyRange.bound(prefix, prefix + '\uffff'));
-            kr.onsuccess = function () { (kr.result || []).forEach(function (k) { if (k !== keepKey) { st.delete(k); dropped++; } }); };
+            var hasTs = idb.objectStoreNames.contains('timestamps');
+            var tx = idb.transaction(hasTs ? ['dbs', 'timestamps'] : ['dbs'], 'readwrite'), st = tx.objectStore('dbs');
+            var kr = st.getAllKeys(exactOnly ? IDBKeyRange.only(prefix) : IDBKeyRange.bound(prefix, prefix + '\uffff'));
+            kr.onsuccess = function () { (kr.result || []).forEach(function (k) { if (k !== keepKey) { st.delete(k); if (hasTs) tx.objectStore('timestamps').delete(k); dropped++; if (logTag) console.log(TAG + ' ' + logTag + ' key=' + k); } }); };
             tx.oncomplete = function () { idb.close(); resolve(dropped); };
             tx.onerror = function () { idb.close(); resolve(-1); };
           } catch (e) { idb.close(); resolve(-1); }
@@ -1014,6 +1015,22 @@
         rq.onerror = function () { resolve(-1); };
       } catch (e) { resolve(-1); }
     }); });
+  }
+  // §SEAM-W2 F15 (SEAM_IDENTITY_AUDIT): a resident cached under `<base>?v=N` must not leave `<base>?v=M` / bare `<base>` behind.
+  // Reuses _idbDropStale (prefix scan on '<base>?v=', then the exact bare '<base>'); the new key is kept.
+  function _idbDropOtherVersions(url) {
+    var i = String(url).indexOf('?v='); if (i < 0) return Promise.resolve(0);
+    var base = url.slice(0, i);
+    return _idbDropStale(base + '?v=', url, false, '§RESIDENT_STALE_DROP').then(function (a) {
+      return _idbDropStale(base, url, true, '§RESIDENT_STALE_DROP').then(function (b) { return Math.max(a, 0) + Math.max(b, 0); });
+    });
+  }
+  // Cache a resident/geo blob and drop its superseded versions (put first: never lose the current copy).
+  function _idbPutVersioned(url, buf) {
+    return _idbPutDb(url, buf).then(function (ok) {
+      if (!ok) return ok;
+      return _idbDropOtherVersions(url).then(function () { return ok; });
+    });
   }
   function _openResidentBuffer(patched, res, url) {
     var V = window.RoomWalker && window.RoomWalker.ROOM_WALKER_V;
@@ -1058,7 +1075,7 @@
         .then(function (buf) { return _applyPendingPatch(buf, res.db).then(function (patched) { return _openResidentBuffer(patched, res, url); }).then(function (ok) {
           if (ok) {
             _forkEditable(res);
-            _idbPutDb(url, buf).then(function (p) {   // cache RAW server bytes, not the patched buffer
+            _idbPutVersioned(url, buf).then(function (p) {   // cache RAW server bytes, not the patched buffer
               console.log(TAG + ' §STRWALK-CACHE ' + res.db + ' persisted=' + p + ' (next Open is local) ' + (buf.byteLength / 1024).toFixed(0) + 'KB');
             });
           }
