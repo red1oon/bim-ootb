@@ -54,10 +54,12 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
   console.log('═══ W-TILL-OFFLINE delivery — a till offline, tickets arrive at the next Visit once each (prompts §17.5) ═══' + (MUTNAME ? ' MUTANT=' + MUTNAME : ''));
   var POSPLAN = loadPlan(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'TEAM_PLAN_POS'), OFFICE = loadPlan(path.join(ROOT, 'erp', 'team_plan.js'), 'TEAM_PLAN');
   var FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'till-deliv-')), cur = { plans: {}, over: {} };
-  if (MUTNAME) { var MUTS = { 'visit-not-marked-sent': ['/erp/till.js', "S.store.sent[k] = 1; });", "});"] }, m = MUTS[MUTNAME]; if (!m) { console.log('§TILL_CRASH unknown mutant'); process.exit(2); }
+  if (MUTNAME) { var MUTS = { 'visit-not-marked-sent': ['/erp/till.js', "S.store.sent[k] = 1; });", "});"], 'visit-per-ticket': ['/erp/till.js', '      showReceipt(p.print);\n    });\n  }', '      showReceipt(p.print); visit();\n    });\n  }'] }, m = MUTS[MUTNAME]; if (!m) { console.log('§TILL_CRASH unknown mutant'); process.exit(2); }
     var orig = fs.readFileSync(path.join(ROOT, m[0]), 'utf8'); if (orig.split(m[1]).length !== 2) { console.log('§TILL_CRASH MUTATION DID NOT APPLY ' + m[0]); process.exit(2); } cur.over[m[0]] = orig.replace(m[1], function () { return m[2]; }); }
+  var relay = { n: 0, put: 0 };
   var server = http.createServer(function (req, res) {
     var u = new URL(req.url, 'http://x'), p = decodeURIComponent(u.pathname);
+    if (p.indexOf('/pipe/') === 0) { relay.n++; if (req.method === 'PUT') relay.put++; }
     if (p === '/pipe/list') { var pre = u.searchParams.get('prefix') || ''; res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(J(walk(FOLDER, '', []).filter(function (n) { return n.indexOf(pre) === 0; }))); return; }
     if (p.indexOf('/pipe/f/') === 0) { var fp = path.join(FOLDER, p.slice(8)); if (fp.indexOf(FOLDER) !== 0) { res.writeHead(400); res.end(); return; }
       if (req.method === 'PUT') { var ch = []; req.on('data', function (c) { ch.push(c); }); req.on('end', function () { fs.mkdirSync(path.dirname(fp), { recursive: true }); fs.writeFileSync(fp, Buffer.concat(ch)); res.writeHead(200); res.end('ok'); }); return; }
@@ -71,6 +73,14 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port, PIPE = base + '/pipe';
   var browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
+  if (process.env.TILL_DELIV_PLAN === 'widened') {   // DIAGNOSTIC copy of the plan (the brief forbids changing team_plan_pos.js): ship the columns the till deposits
+    var widen = function (flow, cols) { cols.forEach(function (c) { if (flow.ship.indexOf(c[0]) < 0) { flow.ship.push(c[0]); flow.payload.push({ col: c[0], cls: c[1] }); } }); };
+    POSPLAN.flows.forEach(function (f) {
+      if (f.table === 'I_Order' && f.dir === 'UP') widen(f, [['PriceActual', 'MEASURE'], ['Description', 'TEXT'], ['LineDescription', 'TEXT']]);
+      if (f.table === 'I_Payment' && f.dir === 'UP') widen(f, [['DocumentNo', 'TEXT'], ['TenderType', 'TEXT'], ['IsReceipt', 'FLAG'], ['BPartnerValue', 'TEXT'], ['Description', 'TEXT']]);
+    });
+    console.log('§TILL_DELIV_PLAN widened (diagnostic copy of the POS plan)');
+  }
   var owner = await mkKey(); cur.plans.office = planJs('TEAM_PLAN', await signObj(OFFICE, owner)); cur.plans.pos = planJs('TEAM_PLAN_POS', await signObj(POSPLAN, owner));
   var xcfg = encodeURIComponent(Buffer.from(J({ trust: [owner.pub] })).toString('base64')), NET = { aborted: [] };
   async function open(name, urlPath, ready) {
@@ -108,37 +118,48 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
   var a0 = (await T.rows(A, 'SELECT (SELECT count(*) FROM i_order) AS o, (SELECT count(*) FROM i_payment) AS p'))[0], c0 = (await T.rows(C, 'SELECT (SELECT count(*) FROM i_order) AS o, (SELECT count(*) FROM i_payment) AS p'))[0];
   check('D0-empty-start', Number(a0.o) === 0 && Number(a0.p) === 0 && Number(c0.o) === 0, 'non-vacuous: head office and the till start with 0 I_Order / 0 I_Payment rows', { a0: a0, c0: c0 });
 
-  // ═══ §D1 offline: ring 2 tickets, a Visit delivers nothing
-  console.log('§D1 the till goes offline and rings 2 tickets');
+  // ═══ §D1..§D3 shifts. relay = the pipe requests (list/get/put) the server saw; the owner's rule (2026-11-03): messages are batched, a Visit carries the shift's pending rows, central usage must not grow with the number of tickets
   var pg = C.pg; await pg.click('#u1 .u-user:has-text("GardenAdmin")'); await pg.click('#u2 [data-panel="Sales"]');
-  await C.ctx.setOffline(true);
   async function clickProduct(pid) { async function vis() { return (await pg.$('#products .prod[data-pid="' + pid + '"]')) !== null; } if (await vis()) { await pg.click('#products .prod[data-pid="' + pid + '"]'); return true; }
     var cats = await pg.$$eval('#cats [data-cat]', function (b) { return b.map(function (x) { return x.getAttribute('data-cat'); }); });
     for (var c of cats) { await pg.click('#cats [data-cat="' + c + '"]'); if (await vis()) { await pg.click('#products .prod[data-pid="' + pid + '"]'); return true; } if (await pg.$('#cats [data-cat-up]')) await pg.click('#cats [data-cat-up]'); } return false; }
   async function payCash() { var tot = await pg.$eval('#t-tot', function (e) { return e.textContent; }); await pg.click('#east .key[data-key="="]'); await pg.waitForSelector('#u8.on'); await pg.click('#tabs [data-tab="cash"]'); await pg.fill('#tender-amount', tot); await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
     var key = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; }); await pg.click('#rc-ok'); return key; }
   var keys = [], shape = {};
-  await clickProduct(128); await clickProduct(129); keys.push(await payCash()); shape[keys[0]] = { lines: 2, tenders: 1 };
-  await clickProduct(127); keys.push(await payCash()); shape[keys[1]] = { lines: 1, tenders: 1 };
-  var onl = await pg.evaluate(function () { return navigator.onLine; });
+  async function ringShift(n) { var ks = []; for (var i = 0; i < n; i++) { await clickProduct(128); if (i % 2 === 0) await clickProduct(129); var k = await payCash(); ks.push(k); shape[k] = { lines: i % 2 === 0 ? 2 : 1, tenders: 1 }; keys.push(k); } return ks; }
+  async function tillVisit() { var r0 = relay.n, p0 = relay.put; await pg.evaluate(function () { return window.Till.visit(); }); return { n: relay.n - r0, put: relay.put - p0 }; }
+  var counts = {};
+  console.log('§D1 the till is offline and rings a shift of 2 tickets');
+  await C.ctx.setOffline(true);
+  var k2 = await ringShift(2), onl = await pg.evaluate(function () { return navigator.onLine; });
   var localO = Number((await T.rows(C, 'SELECT count(*) AS n FROM i_order'))[0].n);
-  check('D1-offline-and-local', onl === false && localO === 3 && keys.length === 2 && keys[0] !== keys[1], 'offline (navigator.onLine false); 2 tickets under 2 keys are on the device (3 I_Order rows)', { onl: onl, localO: localO, keys: keys });
-  await T.visit(C);   // the pipe is unreachable: the Visit cannot deliver
-  var aMid = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_order'))[0].n);
-  check('D1-nothing-delivered-offline', aMid === 0, 'while the till is offline head office receives nothing (0 I_Order rows after an attempted Visit)', aMid);
+  check('D1-offline-and-local', onl === false && localO === 3 && k2.length === 2 && k2[0] !== k2[1], 'offline (navigator.onLine false); 2 tickets under 2 keys are on the device (3 I_Order rows)', { onl: onl, localO: localO, keys: k2 });
+  var vOff = await tillVisit();
+  var aMid = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_order'))[0].n), sentOff = await pg.evaluate(function () { return Object.keys(window.Till.state().store.sent || {}).length; });
+  check('D1-nothing-delivered-offline', aMid === 0 && sentOff === 0, 'while the till is offline a Visit delivers nothing (head office 0 I_Order rows) and the till does NOT mark the keys as sent', { aMid: aMid, sentOff: sentOff });
 
-  // ═══ §D2 online Visit
-  console.log('§D2 the network returns; the next Visit delivers');
-  await C.ctx.setOffline(false); await visitAll([C, A, C, A], 2);
-  var ao = await T.rows(A, 'SELECT documentno, count(*) AS n FROM i_order GROUP BY documentno ORDER BY documentno'), ap = await T.rows(A, 'SELECT documentno, count(*) AS n FROM i_payment GROUP BY documentno ORDER BY documentno');
+  console.log('§D2 the network returns; ONE Visit delivers the shift');
+  await C.ctx.setOffline(false); counts[2] = await tillVisit(); await visitAll([A, C, A], 1);
+  console.log('§D2b a second shift of 5 tickets, rung offline, ONE Visit');
+  await C.ctx.setOffline(true); var k5 = await ringShift(5); await C.ctx.setOffline(false); counts[5] = await tillVisit(); await visitAll([A, C, A], 1);
+  console.log('§D2c a shift of 3 tickets rung ONLINE: no relay request while ringing, then ONE Visit');
+  var rr0 = relay.n; var k3 = await ringShift(3); var ringing = relay.n - rr0; await sleep(1500); ringing = relay.n - rr0; counts[3] = await tillVisit(); await visitAll([A, C, A], 1);
+  console.log('§TILL_RELAY ring_online_3_tickets_requests=' + ringing + ' | one Visit after 2 tickets: requests=' + counts[2].n + ' (put ' + counts[2].put + ') | after 5 tickets: requests=' + counts[5].n + ' (put ' + counts[5].put + ') | after 3 tickets: requests=' + counts[3].n + ' (put ' + counts[3].put + ')');
+  check('D2-relay-no-visit-per-ticket', ringing === 0, 'ringing 3 tickets while ONLINE makes 0 relay requests: the till does not Visit per ticket (measured ' + ringing + ')', ringing);
+  check('D2-relay-not-growing-with-N', counts[5].n <= counts[2].n && counts[3].n <= counts[2].n, 'the relay requests of ONE Visit do not grow with the number of tickets: 2 tickets -> ' + counts[2].n + ', 5 tickets -> ' + counts[5].n + ', 3 tickets -> ' + counts[3].n, counts);
+  var ao = await T.rows(A, 'SELECT documentno, count(*) AS n FROM i_order GROUP BY documentno'), ap = await T.rows(A, 'SELECT documentno, count(*) AS n FROM i_payment GROUP BY documentno');
   var gotO = {}, gotP = {}; ao.forEach(function (r) { gotO[r.documentno] = Number(r.n); }); ap.forEach(function (r) { gotP[r.documentno] = Number(r.n); });
-  check('D2-each-key-once', keys.every(function (k) { return gotO[k] === shape[k].lines && gotP[k] === shape[k].tenders; }) && Object.keys(gotO).length === 2 && Object.keys(gotP).length === 2, 'head office holds each of the 2 keys once with its lines and tenders (' + J(gotO) + ')', { gotO: gotO, gotP: gotP, keys: keys });
+  check('D2-each-key-once', keys.length === 10 && keys.every(function (k) { return gotO[k] === shape[k].lines; }) && Object.keys(gotO).length === 10, 'head office holds each of the 10 I_Order keys once with its lines', { gotO: gotO, keys: keys });
+  check('D2-plan-ships-payment-key', keys.every(function (k) { return gotP[k] === shape[k].tenders; }) && Object.keys(gotP).length === 10, 'head office holds each ticket\'s I_Payment under the SAME key (DocumentNo) - the POS plan must ship I_Payment.DocumentNo (measured: ' + J(Object.keys(gotP).slice(0, 3)) + ')', gotP);
+  var dcols = await T.rows(A, 'SELECT priceactual, description, tendertype FROM i_order o, (SELECT tendertype FROM i_payment LIMIT 1) WHERE o.documentno=' + J(keys[0]).replace(/"/g, "'") + ' LIMIT 1');
+  var till0 = await T.rows(C, 'SELECT priceactual, description FROM i_order WHERE documentno=' + J(keys[0]).replace(/"/g, "'") + ' ORDER BY ABS(i_order_id) LIMIT 1');
+  check('D2-plan-ships-price', dcols.length === 1 && Number(dcols[0].priceactual) === Number(till0[0].priceactual) && dcols[0].description === till0[0].description && dcols[0].tendertype === 'X', 'the price paid (PriceActual), the shift tag (Description) and TenderType arrive intact: till ' + J(till0[0]) + ' vs head office ' + J(dcols[0]), { hq: dcols[0], till: till0[0] });
   var sent = await pg.evaluate(function () { return window.Till.state().store.sent; });
-  check('D2-till-marks-sent', keys.every(function (k) { return sent && sent[k] === 1; }), 'after the Visit the till marks both keys as sent (store.sent)', sent);
-  // ═══ §D3 a second Visit adds 0
+  check('D2-till-marks-sent', keys.every(function (k) { return sent && sent[k] === 1; }), 'after the Visits the till marks all 10 keys as sent (store.sent)', sent);
+  // ═══ §D3 more Visits add 0
   await visitAll([C, A, C, A], 2);
-  var ao2 = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_order'))[0].n), ap2 = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_payment'))[0].n);
-  check('D3-second-visit-adds-0', ao2 === 3 && ap2 === 2, 'two more Visits each way add 0 rows: 3 I_Order, 2 I_Payment at head office', { ao2: ao2, ap2: ap2 });
+  var ao2 = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_order'))[0].n), ap2 = Number((await T.rows(A, 'SELECT count(*) AS n FROM i_payment'))[0].n), expO = keys.reduce(function (a, k) { return a + shape[k].lines; }, 0);
+  check('D3-second-visit-adds-0', ao2 === expO && ap2 === 10, 'four more Visits each way add 0 rows: ' + expO + ' I_Order, 10 I_Payment at head office', { ao2: ao2, ap2: ap2, expO: expO });
   // ═══ §D4 sent key not editable
   await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', keys[0].replace(/^.*-S/, '')); await pg.click('#es-find'); await sleep(900);
   var ed = await pg.$eval('#es-edit', function (b) { return b.disabled; }), est = await pg.$eval('#es-status', function (e) { return e.textContent; });
@@ -151,9 +172,10 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
   check('D5-rows-accepted', H.started === 'ACTIVE' && rep.ok, 'the rows exactly as head office received them are accepted by the head-office kernel', rep.error || H.started);
   function runImport() { var run = H.commit(function (trx) { var r0 = H.AP.runInTrx(trx, 9538001, { params: { C_BankAccount_ID: 100, AD_Client_ID: 11 } }); return { ok: r0.ok, error: r0.summary }; }, { ws: 'import_pos_sales' }); (run.log || []).filter(function (l) { return /^§POSS/.test(l); }).forEach(function (l) { console.log('   [head office] ' + l.slice(0, 260)); }); return run; }
   var run1 = runImport(), perKey = keys.map(function (k) { return [k, Number(H.q0('SELECT count(*) AS n FROM c_order WHERE documentno=?', [k])[0].n), Number(H.q0("SELECT count(*) AS n FROM c_order WHERE documentno=? AND docstatus='CO'", [k])[0].n)]; });
-  check('D5-one-order-per-key', run1.ok && perKey.every(function (x) { return x[1] === 1 && x[2] === 1; }), 'Import POS Sales makes exactly ONE completed order per delivered key: ' + J(perKey), perKey);
-  var run2 = runImport(), total = Number(H.q0('SELECT count(*) AS n FROM c_order WHERE documentno IN (?,?)', keys)[0].n);
-  check('D5-rerun-adds-0', total === 2, 'running Import POS Sales again adds 0 orders (still 2)', total);
+  var tgt = keys.length;
+  check('D5-one-order-per-key', run1.ok && perKey.every(function (x) { return x[1] === 1 && x[2] === 1; }), 'Import POS Sales makes exactly ONE completed order per delivered key (' + keys.length + ' keys): ' + J(perKey.slice(0, 3)) + '...', perKey);
+  var run2 = runImport(), total = Number(H.q0('SELECT count(*) AS n FROM c_order WHERE documentno IN (' + keys.map(function () { return '?'; }).join(',') + ')', keys)[0].n);
+  check('D5-rerun-adds-0', total === keys.length, 'running Import POS Sales again adds 0 orders (still ' + keys.length + ')', total);
   check('D6-page-errors', errors.length === 0, '0 page errors on head office and the till', errors.slice(0, 3));
   check('D6-no-live-network', NET.aborted.filter(function (h) { return h !== 'www.idempiere.org'; }).length === 0, 'no request left 127.0.0.1 (aborted hosts: ' + J(NET.aborted.slice(0, 3)) + ')', NET.aborted.slice(0, 5));
   await browser.close(); server.close();

@@ -248,6 +248,7 @@
     S.store.shift = freshShift(sh.seq + 1); saveStore();
     $('#zdone').textContent = 'Cash Closed OK'; log('§TILL_CLOSE closed=' + sh.seq + ' next=' + S.store.shift.seq + ' tickets=' + z.tickets + ' gross=' + C.money(z.gross));
     $('#zconfirm').hidden = true; await renderClose();
+    visit();   // cadence: ONE Visit per shift at Close Cash carries the shift's pending rows (owner 2026-11-03: batch, minimise central usage; §17.7)
   }
 
   // ── events ──
@@ -276,7 +277,7 @@
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
   function netChip() { var off = navigator.onLine === false; $('#s-net').textContent = off ? 'offline' : 'online'; }
-  async function visit() { try { var v = await E.TeamSync.visit(); (await depositedDocNos()).forEach(function (k) { S.store.sent = S.store.sent || {}; S.store.sent[k] = 1; }); saveStore(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
+  async function visit() { try { var v = await E.TeamSync.visit(); if (v && v.rep && v.rep.sent > 0) { (await depositedDocNos()).forEach(function (k) { S.store.sent = S.store.sent || {}; S.store.sent[k] = 1; }); saveStore(); }   /* a Visit that sent nothing (offline, nothing pending) marks nothing */ log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
 
   async function boot() {
     var t0 = performance.now();
