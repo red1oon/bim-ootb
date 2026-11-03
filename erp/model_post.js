@@ -7,8 +7,8 @@
 // Facts are written through the SAME Trx (one signed group with the completion). Accounts are READ from the master
 // *_acct rows (C_ValidCombination → C_ElementValue), amounts from document rows, FX from C_Conversion_Rate — none invented.
 // Doc classes ported here: Doc_Order (no facts — commitment accounting off), Doc_InOut (customer shipment C- / vendor
-// receipt V+ via NotInvoicedReceipts), Doc_Invoice (ARI/ARC/API), Doc_Payment, Doc_AllocationHdr (payment↔invoice,
-// no discount/write-off/FX-gain legs — those return a NAMED refusal, the doc stays Posted='N').
+// receipt V+ via NotInvoicedReceipts), Doc_Invoice (ARI/ARC/API), Doc_Payment, Doc_AllocationHdr (payment / cash line ↔ SO/PO invoice, discount,
+// write-off, VAT tax correction; foreign-currency gain/loss + rounding corrections are NAMED refusals unless they add no line — W-POST-ALLOCATION).
 // Doc_Movement (§60) and Doc_Inventory (§67: Physical Inventory / Internal Use / Cost Adjustment) are ported below on the same Doc/DocLine/createLine framework.
 'use strict';
 (function (root, factory) {
@@ -30,6 +30,7 @@
     var v = trx.q('SELECT account_id AS e FROM c_validcombination WHERE c_validcombination_id=?', [r.a])[0];
     return v ? v.e : null;
   }
+  function bpg(t, col, bp, s) { var b = nz(bp) ? t.get('c_bpartner', bp) : null; return b ? vc(t, 'c_bp_group_acct', col, 'c_bp_group_id', b.c_bp_group_id, s) : null; }
   var ACCT = {                                                                            // Doc*.getAccount sources (ProductCost/DocLine/Doc.getAccount)
     receivable: function (t, bp, s) { return vc(t, 'c_bp_customer_acct', 'c_receivable_acct', 'c_bpartner_id', bp, s); },
     liability: function (t, bp, s) { return vc(t, 'c_bp_vendor_acct', 'v_liability_acct', 'c_bpartner_id', bp, s); },
@@ -43,7 +44,14 @@
     chargeExpense: function (t, c, s) { return vc(t, 'c_charge_acct', 'ch_expense_acct', 'c_charge_id', c, s); },
     taxCredit: function (t, x, s) { return vc(t, 'c_tax_acct', 't_credit_acct', 'c_tax_id', x, s); },
     inTransit: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_intransit_acct', 'c_bankaccount_id', b, s); },
-    unallocated: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_unallocatedcash_acct', 'c_bankaccount_id', b, s); }
+    unallocated: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_unallocatedcash_acct', 'c_bankaccount_id', b, s); },
+    paymentSelect: function (t, b, s) { return vc(t, 'c_bankaccount_acct', 'b_paymentselect_acct', 'c_bankaccount_id', b, s); },              // Doc.java:1434
+    cashTransfer: function (t, cb, s) { return vc(t, 'c_cashbook_acct', 'cb_cashtransfer_acct', 'c_cashbook_id', cb, s); },                   // Doc.java:1493
+    prepaymentC: function (t, bp, s) { return vc(t, 'c_bp_customer_acct', 'c_prepayment_acct', 'c_bpartner_id', bp, s); },                    // Doc.java:1418
+    prepaymentV: function (t, bp, s) { return vc(t, 'c_bp_vendor_acct', 'v_prepayment_acct', 'c_bpartner_id', bp, s); },
+    discountExp: function (t, bp, s) { return bpg(t, 'paydiscount_exp_acct', bp, s); },                                                       // Doc.java:1441-1456 (the BP's group)
+    discountRev: function (t, bp, s) { return bpg(t, 'paydiscount_rev_acct', bp, s); },
+    writeOff: function (t, bp, s) { return bpg(t, 'writeoff_acct', bp, s); }
   };
   var rate = T.rate;   // MConversionRate.getRate — one implementation (model_trade.js)
   function periodId(trx, date) {
@@ -788,22 +796,112 @@
       else { F.line(un, p.c_currency_id, p.payamt, null, base); F.line(it, p.c_currency_id, null, p.payamt, base); }
       return true;
     },
-    c_allocationhdr: function (trx, h, as, F) {                                              // Doc_AllocationHdr — payment ↔ AR invoice, AR invoice ↔ AR invoice; no discount/write-off/realized FX
-      var ok = true, ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']);
+    c_allocationhdr: function (trx, h, as, F) {                                              // Doc_AllocationHdr.createFacts :193-555 — SO / PO invoice branches, discount, write-off, payment + cash-line legs, VAT tax correction
+      var ls = trx.find('c_allocationline', { c_allocationhdr_id: h.c_allocationhdr_id }, ['c_allocationline_id']), sch = as.c_acctschema_id, cur = h.c_currency_id, named = function (m) { F.err = m + ' not ported - named'; return false; };
       if (ls.length === 2) {                                                                 // :199-213 "Do not create fact lines for reversal of invoice"
         var l1 = ls[0], l2 = ls[1], only = function (l) { return !nz(l.c_payment_id) && !nz(l.c_order_id) && !nz(l.c_cashline_id) && nz(l.c_invoice_id) > 0; };
         if (only(l1) && only(l2)) { var i1 = trx.get('c_invoice', l1.c_invoice_id), i2 = trx.get('c_invoice', l2.c_invoice_id);
           if (i1 && i2 && D(i1.grandtotal).compareTo(D(i2.grandtotal).negate()) === 0 && String(i2.reversal_id) === String(i1.c_invoice_id)) return true; }   // (BigDecimal.equals: same value; the scale of a stored REAL is not observable here — named)
       }
-      ls.forEach(function (l) {
-        if (D(l.discountamt).signum() || D(l.writeoffamt).signum() || nz(l.c_cashline_id) || !nz(l.c_invoice_id)) { F.err = 'allocation discount/write-off/cash/no-invoice legs not ported — named'; ok = false; return; }
-        var p = nz(l.c_payment_id) ? trx.get('c_payment', l.c_payment_id) : null, inv = trx.get('c_invoice', l.c_invoice_id);
-        if (!Y(inv.issotrx)) { F.err = 'AP allocation not ported — named'; ok = false; return; }
-        var base = { ad_org_id: h.ad_org_id, c_bpartner_id: l.c_bpartner_id, line_id: l.c_allocationline_id, qty: 0, description: h.documentno + ' #0' + (h.description ? ' (' + h.description + ')' : '') };
-        if (p) F.line(ACCT.unallocated(trx, p.c_bankaccount_id, as.c_acctschema_id), h.c_currency_id, l.amount, null, Object.assign({}, base, { ad_org_id: p.ad_org_id }));   // :308-321 Payment DR at the payment org (only with a payment)
-        F.line(ACCT.receivable(trx, inv.c_bpartner_id, as.c_acctschema_id), h.c_currency_id, null, l.amount, Object.assign({}, base, { ad_org_id: inv.ad_org_id }));   // :347-357 AR CR at the invoice org
-      });
-      return ok;
+      if (!Y(as.isaccrual)) return named('allocation in a cash-based schema (createCashBasedAcct :686-719)');
+      var pice = Y(as.ispostifclearingequal), tcType = as.taxcorrectiontype, tcOn = !!tcType && tcType !== 'N', tcD = tcType === 'D' || tcType === 'B', tcW = tcType === 'W' || tcType === 'B';   // MAcctSchema.isTaxCorrection / Discount / WriteOff
+      var rows = ls.map(function (l) { return { l: l, pay: nz(l.c_payment_id) ? trx.get('c_payment', l.c_payment_id) : null, inv: nz(l.c_invoice_id) ? trx.get('c_invoice', l.c_invoice_id) : null,
+        cl: nz(l.c_cashline_id) ? trx.get('c_cashline', l.c_cashline_id) : null, amt: D(l.amount), disc: D(l.discountamt), wo: D(l.writeoffamt), org: nz(l.ad_org_id) ? Number(l.ad_org_id) : Number(h.ad_org_id) }; });
+      var oo = trx.q("SELECT isbalanced AS b FROM c_acctschema_element WHERE c_acctschema_id=? AND elementtype='OO'", [sch])[0], interOrg = false;   // isInterOrg :564-620
+      if (oo && Y(oo.b) && rows.length) { var so = rows[0].org; rows.forEach(function (r) { var op = r.pay ? Number(r.pay.ad_org_id) : so, oi = r.inv ? Number(r.inv.ad_org_id) : so, oc = r.cl ? Number(r.cl.ad_org_id) : so, od = nz(r.l.c_order_id) ? Number((trx.get('c_order', r.l.c_order_id) || {}).ad_org_id) : so; if (r.org !== so || op !== so || oi !== so || oc !== so || od !== so) interOrg = true; }); }
+      // getPaymentAcct :728-783 / getCashAcct :791-804 — the account a payment / cash line clears through (null = NONE: no bank account / no cash book)
+      function payAcct(r) { var pr = trx.q('SELECT p.c_bankaccount_id AS b, d.docbasetype AS t, p.isreceipt AS rc, p.isprepayment AS pp, p.c_charge_id AS ch FROM c_payment p JOIN c_doctype d ON d.c_doctype_id=p.c_doctype_id WHERE p.c_payment_id=?', [r.pay.c_payment_id])[0];
+        if (!pr || !nz(pr.b)) return null; if (nz(pr.ch)) return ACCT.chargeExpense(trx, pr.ch, sch);
+        if (Y(pr.pp)) return Y(pr.rc) ? ACCT.prepaymentC(trx, r.l.c_bpartner_id, sch) : ACCT.prepaymentV(trx, r.l.c_bpartner_id, sch);
+        return pr.t === 'APP' ? ACCT.paymentSelect(trx, pr.b, sch) : ACCT.unallocated(trx, pr.b, sch); }
+      function cashAcct(r) { var cb = trx.q('SELECT c.c_cashbook_id AS b FROM c_cash c, c_cashline cl WHERE c.c_cash_id=cl.c_cash_id AND cl.c_cashline_id=?', [r.cl.c_cashline_id])[0]; return cb && nz(cb.b) ? ACCT.cashTransfer(trx, cb.b, sch) : null; }
+      var fx = String(cur) !== String(as.c_currency_id), bad = null, isSOpay = function (q) { return !!q.inv && Y(q.inv.issotrx); };
+      for (var i = 0; i < rows.length && !bad; i++) {
+        var r = rows[i], l = r.l, bp = l.c_bpartner_id;
+        if (r.pay && !r.inv && !nz(l.c_order_id) && !r.cl && !nz(bp) && r.disc.signum() === 0 && r.wo.signum() === 0) continue;   // :215-221 CashBankTransfer
+        if (!r.inv) return named('allocation line without an invoice (charge only / payment only :257-285)');
+        var base = { ad_org_id: r.org, c_bpartner_id: bp, line_id: l.c_allocationline_id, qty: 0, description: h.documentno + ' #0' + (h.description ? ' (' + h.description + ')' : '') };
+        var withOrg = function (o) { return Object.assign({}, base, { ad_org_id: o }); }, payOrg = r.pay ? Number(r.pay.ad_org_id) : r.org, clrOrg = r.pay ? payOrg : (r.cl ? Number(r.cl.ad_org_id) : r.org);
+        var src = r.amt.add(r.disc).add(r.wo), clr = r.pay ? payAcct(r) : r.cl ? cashAcct(r) : null, isSO = Y(r.inv.issotrx), mac = null;
+        if (isSO) {                                                                          // :288-379
+          var rec = ACCT.receivable(trx, bp, sch);
+          if (!pice && clr != null && String(clr) === String(rec) && !interOrg) src = r.disc.add(r.wo);   // :303-308 avoid clearing accounts
+          else if (r.pay || r.cl) F.line(clr, cur, r.amt, null, withOrg(clrOrg));            // :316-333 Payment / Cash DR (org = payment / cash line)
+          if (r.disc.signum() !== 0) F.line(ACCT.discountExp(trx, bp, sch), cur, r.disc, null, withOrg(payOrg));   // :338 Discount DR
+          if (r.wo.signum() !== 0) F.line(ACCT.writeOff(trx, bp, sch), cur, r.wo, null, withOrg(payOrg));         // :346 Write off DR
+          F.line(rec, cur, null, src, withOrg(Number(r.inv.ad_org_id))); mac = rec;          // :357-365 AR Invoice Amount CR (org = invoice)
+        } else {                                                                             // :381-466 purchase invoice
+          var liab = ACCT.liability(trx, bp, sch), usingClearing = true;
+          if (!pice && clr != null && String(clr) === String(liab) && !interOrg) { src = r.disc.add(r.wo); usingClearing = false; }   // :397-404
+          F.line(liab, cur, src.negate(), null, withOrg(Number(r.inv.ad_org_id))); mac = liab;   // :409-424 AP Invoice Amount DR (the amount is negative)
+          if (r.disc.signum() !== 0) F.line(ACCT.discountRev(trx, bp, sch), cur, null, r.disc.negate(), withOrg(payOrg));   // :441 Discount CR
+          if (r.wo.signum() !== 0) F.line(ACCT.writeOff(trx, bp, sch), cur, null, r.wo.negate(), withOrg(payOrg));         // :449 Write off CR
+          if (usingClearing && (r.pay || r.cl)) F.line(clr, cur, null, r.amt.negate(), withOrg(clrOrg));   // :455-470 Payment / Cash CR
+        }
+        if (tcOn && ((tcD && r.disc.signum() !== 0) || (tcW && r.wo.signum() !== 0))) {      // :469-490 VAT Tax Correction (createTaxCorrection :825-877, Doc_AllocationTax.createEntries :1991-2190)
+          var dAmt = tcD ? r.disc : Z, wAmt = tcW ? r.wo : Z, discAcct = isSO ? ACCT.discountExp(trx, bp, sch) : ACCT.discountRev(trx, bp, sch), woAcct = ACCT.writeOff(trx, bp, sch);
+          var facts = trx.find('fact_acct', { ad_table_id: TABLE_ID.c_invoice, record_id: r.inv.c_invoice_id, c_acctschema_id: sch }).filter(function (f) { return f.line_id == null || f.line_id === ''; }).sort(function (a, b) { return Number(a.fact_acct_id) - Number(b.fact_acct_id); });
+          if (!facts.length) { F.err = 'Cannot create Tax correction'; return false; }   // "Invoice not posted yet" -> p_Error (status E)
+          if (facts.length >= 2) {
+            var total = Z, ti = 0; facts.forEach(function (f, k) { var sd = D(f.amtsourcedr), sc = D(f.amtsourcecr);
+              if ((sd.signum() > 0 && sd.compareTo(total) > 0) || (sd.signum() < 0 && sd.compareTo(total) < 0)) { total = sd; ti = k; }
+              if ((sc.signum() > 0 && sc.compareTo(total) > 0) || (sc.signum() < 0 && sc.compareTo(total) < 0)) { total = sc; ti = k; } });
+            var dt = nz(r.inv.c_doctype_id) ? trx.get('c_doctype', r.inv.c_doctype_id) : null, dbt = dt ? dt.docbasetype : '', prec = T.precisionOf(trx, as.c_currency_id), sc2 = as.c_currency_id;
+            var calc = function (tax, amt) { if (tax.signum() === 0 || total.signum() === 0 || amt.signum() === 0) return Z; var m = tax.divide(total, 10, HU).multiply(amt); return m.scale() > prec ? m.setScale(prec, HU) : m; };   // calcAmount :2202
+            var pair = function (xAcct, taxAcct, amount, taxIsDr) {                            // SO: ARC negates; AP: APC is the un-negated one
+              var cm = isSO ? dbt === 'ARC' : dbt !== 'APC', a = cm ? amount.negate() : amount;
+              if (taxIsDr) { F.line(taxAcct, sc2, a, null, base); F.line(xAcct, sc2, null, a, base); } else { F.line(xAcct, sc2, a, null, base); F.line(taxAcct, sc2, null, a, base); } };
+            facts.forEach(function (f, k) { if (k === ti) return; var tacct = f.account_id;
+              [[dAmt, discAcct], [wAmt, woAcct]].forEach(function (pr) { if (pr[0].signum() === 0) return;
+                var isDr = D(f.amtsourcedr).signum() !== 0, amount = calc(isDr ? D(f.amtsourcedr) : D(f.amtsourcecr), pr[0]); if (amount.signum() === 0) return;
+                pair(pr[1], tacct, amount, !isDr); }); });
+          }
+        }
+        r.mac = mac;
+      }
+      if (!pice && rows.length && !interOrg && F.lines.length && F.lines.every(function (x) { return String(x.account_id) === String(F.lines[0].account_id); })) {
+        var net = Z; F.lines.forEach(function (x) { net = net.add(D(x.amtsourcedr)).subtract(D(x.amtsourcecr)); }); if (net.signum() === 0) return named('allocation net-zero clearing-equal removal (:522-538)'); }
+      if (fx || rows.some(function (q) { return q.inv && String(q.inv.c_currency_id) !== String(cur); })) {   // :493-516 realized gain/loss + :541-548 rounding corrections: none of them adds a line when the allocation books exactly what the
+        var sum = function (rs, acct) { var sd = Z, ad = Z, sc = Z, ac = Z; rs.forEach(function (x) { if (String(x.account_id) !== String(acct)) return; sd = sd.add(D(x.amtsourcedr)); ad = ad.add(D(x.amtacctdr)); sc = sc.add(D(x.amtsourcecr)); ac = ac.add(D(x.amtacctcr)); }); return { sd: sd, ad: ad, sc: sc, ac: ac }; };   //   invoice / payment stored (Java: acctDifference == 0 -> "No Difference"); anything else is named, never invented
+        var prec2 = T.precisionOf(trx, as.c_currency_id), tol = D('0.02'), part = function (srcAmt, accAmt, rec) {      // the "partial or MC" arm :952-966 / :1092-1107: source converted at the document's own date + type
+          var rt = rate(trx, cur, as.c_currency_id, rec.dateacct, rec.c_conversiontype_id); if (!rt) return null; var a0 = D(srcAmt).multiply(rt).setScale(prec2, HU); return { a0: a0 }; };
+        var revPair = ls.length === 2 && rows[0].inv && rows[1].inv && (nz(rows[0].inv.reversal_id) ? String(rows[0].inv.reversal_id) === String(rows[1].inv.c_invoice_id) : (nz(rows[1].inv.reversal_id) && String(rows[1].inv.reversal_id) === String(rows[0].inv.c_invoice_id)));   // isReversedInvoice :1908-1930
+        var payCount = {}; rows.forEach(function (q) { if (q.pay) payCount[q.pay.c_payment_id] = (payCount[q.pay.c_payment_id] || 0) + 1; });
+        for (var j = 0; j < rows.length; j++) { var q = rows[j], mine = F.lines.filter(function (x) { return String(x.line_id) === String(q.l.c_allocationline_id); });
+          if (q.inv) {                                                                         // createInvoiceGainLoss :892-1030
+            var iso = Y(q.inv.issotrx), idt = nz(q.inv.c_doctype_id) ? trx.get('c_doctype', q.inv.c_doctype_id) : null, cm = !!idt && (idt.docbasetype === 'ARC' || idt.docbasetype === 'APC'), gt = D(q.inv.grandtotal);
+            var hasDebit = (iso && gt.signum() >= 0 && !cm) || (iso && gt.signum() < 0 && cm) || (!iso && gt.signum() >= 0 && cm) || (!iso && gt.signum() < 0 && !cm);   // hasDebitTradeAmt :1896
+            var ifacts = trx.find('fact_acct', { ad_table_id: TABLE_ID.c_invoice, record_id: q.inv.c_invoice_id, c_acctschema_id: sch, account_id: q.mac, postingtype: 'A' });
+            if (!ifacts.length) { F.err = 'Gain/Loss - Invoice not posted yet'; return false; }   // :924-926 -> p_Error (status E)
+            var iv = sum(ifacts, q.mac), useDr = (!nz(q.inv.reversal_id) || Number(q.inv.c_invoice_id) < Number(q.inv.reversal_id)) ? hasDebit : !hasDebit, iSrc = useDr ? iv.sd : iv.sc, iAcc = useDr ? iv.ad : iv.ac;
+            var al = sum(mine, q.mac), aSrc = iso ? al.sc : al.sd, aAcc = iso ? al.ac : al.ad, diff;
+            if (aSrc.abs().compareTo(iSrc.abs()) === 0) diff = iAcc.abs().subtract(aAcc.abs());
+            else { var pr = part(aSrc, aAcc, q.inv); if (!pr) return named('foreign-currency allocation gain/loss (no conversion rate)'); diff = pr.a0.abs().subtract(aAcc.abs()); if (diff.abs().compareTo(tol) < 0) diff = Z; }
+            if (diff.signum() !== 0) return named('foreign-currency allocation realized gain/loss lines (createInvoiceGainLoss :892-1030)');
+            if (!revPair) { var others = trx.q("SELECT 1 AS x FROM c_allocationline al JOIN c_allocationhdr ah ON ah.c_allocationhdr_id=al.c_allocationhdr_id WHERE al.c_invoice_id=? AND ah.c_allocationhdr_id<>? AND ah.docstatus IN ('CO','CL')", [q.inv.c_invoice_id, h.c_allocationhdr_id]);
+              if (others.length) return named('foreign-currency allocation rounding correction across several allocations of one invoice (createInvoiceRoundingCorrection :1147-1530)'); }
+          }
+          if (q.pay && fx) {                                                                   // createPaymentGainLoss :1045-1135 (+ createPaymentRoundingCorrection :1535: one payment on several lines is named)
+            var pa = payAcct(q), pf = pa == null ? [] : trx.find('fact_acct', { ad_table_id: TABLE_ID.c_payment, record_id: q.pay.c_payment_id, c_acctschema_id: sch, account_id: pa, postingtype: 'A' });
+            if (!pf.length) continue;                                                            // "Payment not posted yet" -> return null (:1074)
+            if (payCount[q.pay.c_payment_id] > 1) return named('foreign-currency allocation: one payment on several lines (createPaymentRoundingCorrection :1535)');
+            var pv = sum(pf, pa), pSrc = pv.sd.signum() === 0 && pv.ad.signum() === 0 ? pv.sc : pv.sd, pAcc = pv.sd.signum() === 0 && pv.ad.signum() === 0 ? pv.ac : pv.ad, pl = sum(mine, pa), lSrc = isSOpay(q) ? pl.sd : pl.sc, lAcc = isSOpay(q) ? pl.ad : pl.ac, pd;
+            if (lSrc.abs().compareTo(pSrc.abs()) === 0) pd = lAcc.abs().subtract(pAcc.abs());
+            else { var pp = part(lSrc, lAcc, q.pay); if (!pp) return named('foreign-currency allocation gain/loss (no conversion rate)'); pd = lAcc.abs().subtract(pp.a0.abs()); if (pd.abs().compareTo(tol) < 0) pd = Z; }
+            if (pd.signum() !== 0) return named('foreign-currency allocation realized gain/loss lines (createPaymentGainLoss :1045-1135)');
+          }
+        }
+        // Doc_AllocationHdr.balanceAccounting :1866-1890 (called :550 when the document currency != the schema currency): an accounting imbalance (here the per-line rounding of the converted amounts)
+        //   is booked through Fact.createLine(null, ...) in the SCHEMA currency: UseCurrencyBalancing and |diff| < TOLERANCE 0.02 -> CurrencyBalancing_Acct, else RealizedLoss (DR) / RealizedGain (CR).
+        var dd = Z; F.lines.forEach(function (x) { dd = dd.add(D(x.amtacctdr)).subtract(D(x.amtacctcr)); });
+        if (fx && dd.signum() !== 0) {
+          var gl = trx.q('SELECT usecurrencybalancing AS u, currencybalancing_acct AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', [sch])[0], sd = trx.q('SELECT realizedgain_acct AS g, realizedloss_acct AS l FROM c_acctschema_default WHERE c_acctschema_id=?', [sch])[0], vcA = function (id) { var v = nz(id) ? trx.get('c_validcombination', id) : null; return v ? v.account_id : null; };
+          var amt = dd.negate(), useCb = gl && Y(gl.u) && dd.abs().compareTo(D('0.02')) < 0, acct = useCb ? vcA(gl.a) : (amt.signum() < 0 ? vcA(sd && sd.g) : vcA(sd && sd.l));
+          var lastBp = rows.length ? rows[rows.length - 1].l.c_bpartner_id : null;            // Doc.setC_BPartner_ID(line) stays set until the end of the loop (:559 resets it AFTER the Fact is built... :550 runs before)
+          F.line(acct, as.c_currency_id, amt.signum() >= 0 ? amt : null, amt.signum() < 0 ? amt.abs() : null, { ad_org_id: h.ad_org_id, c_bpartner_id: lastBp, qty: 0, description: h.documentno });
+        }
+      }
+      return true;
     }
   };
 

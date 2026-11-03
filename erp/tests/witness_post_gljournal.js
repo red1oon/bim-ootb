@@ -64,7 +64,8 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); };
   ok('G2', 'intercompany Due-To (600) and Due-From (741) legs present on every journal', judged ? g2.have === g2.want : null, judged ? g2.have + '/' + g2.want : 'VACUOUS');
 
   // ── G3: every other doc type, candidate vs pinned baseline, byte-identical (result, ops, log) ──
-  var TABLES = ['c_order', 'm_inout', 'c_invoice', 'c_payment', 'c_allocationhdr', 'm_matchinv', 'm_matchpo', 'm_movement', 'm_inventory'], n3 = 0, d3 = [], per = {};
+  // c_allocationhdr deliberately NOT here: Doc_AllocationHdr gained its legs (W-POST-ALLOCATION owns that judgement, PIN f4cdcdf8)
+  var TABLES = ['c_order', 'm_inout', 'c_invoice', 'c_payment', 'm_matchinv', 'm_matchpo', 'm_movement', 'm_inventory'], n3 = 0, d3 = [], per = {};
   if (!PB) ok('G3', 'baseline model_post loadable via git show ' + BASE, null, 'git show failed - INCONCLUSIVE');
   else {
     TABLES.forEach(function (t) {

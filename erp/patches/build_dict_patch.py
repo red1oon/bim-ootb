@@ -8,9 +8,13 @@
 import json, os, re, sqlite3, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ERP = os.path.dirname(HERE)
-TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn ad_toolbarbutton ad_toolbarbuttonrestrict ad_entitytype ad_printpaper ad_reportview ad_tableindex ad_indexcolumn').split()   # + §20 (ERP_FRIENDLY_OPS_LENS.md): what a real 2Pack writes (Libero 2Pack_1.0.0 touches all of these)   # + §18 (bim-compiler ERP_FRIENDLY_OPS_LENS.md): window/tab toolbar buttons (MToolBarButton), absent from the seed
+TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn ad_toolbarbutton ad_toolbarbuttonrestrict ad_entitytype ad_printpaper ad_reportview ad_tableindex ad_indexcolumn c_cash').split()   # + §20 (ERP_FRIENDLY_OPS_LENS.md): what a real 2Pack writes (Libero 2Pack_1.0.0 touches all of these)   # + §18 (bim-compiler ERP_FRIENDLY_OPS_LENS.md): window/tab toolbar buttons (MToolBarButton), absent from the seed
 
-DDL_ONLY = os.environ.get('G_DICT_DDL', 'c_cash c_cashline m_movementlinema r_requestupdates ad_session ad_pinstance ad_pinstance_para ad_package_exp ad_package_exp_detail ad_package_imp_inst ad_tab_customization').split()   # §UDP-2: ad_pinstance(_para) hold the process dialog's Saved Parameters + Last Run (written through the signed op-log). tables the legacy views read that the seed lacks: structure only (the twin gains rows when its own flows write them)
+DDL_ONLY = os.environ.get('G_DICT_DDL', 'c_cashline m_movementlinema r_requestupdates ad_session ad_pinstance ad_pinstance_para ad_package_exp ad_package_exp_detail ad_package_imp_inst ad_tab_customization').split()   # §UDP-2: ad_pinstance(_para) hold the process dialog's Saved Parameters + Last Run (written through the signed op-log). tables the legacy views read that the seed lacks: structure only (the twin gains rows when its own flows write them)
+
+# §POSTING-PARITY item 1c (bim-compiler prompts/SQLiteIDEMPIERE.md): C_Cash rows of the SHIPPED GardenWorld dataset (ids < 1000000 = the three cash journals the legacy-extracted seed carries; the pilot's own
+#   test traffic starts at 1000000 and is NOT dictionary/seed data). Doc_AllocationHdr.getCashAcct (Doc_AllocationHdr.java:791-804) joins C_Cash to C_CashLine - without the header rows the cash leg has no cash book.
+ROW_WHERE = {'c_cash': 'c_cash_id < 1000000'}
 
 
 def pg(sql):
@@ -47,6 +51,7 @@ for t in TABLES:
     pcols = set(pg("select column_name from information_schema.columns where table_schema='adempiere' and table_name='%s'" % t))
     cols = [c for c in scols if c in pcols]
     where = ' where ad_client_id in (0,11)' if 'ad_client_id' in cols else ''
+    if t in ROW_WHERE: where += (' and ' if where else ' where ') + ROW_WHERE[t]
     have = set(tuple(str(x) for x in r) for r in db.execute('select %s from %s' % (','.join(pk), t)))
     sel = ', '.join('%s::text as %s' % (c, c) for c in cols)
     legacy = [json.loads(l) for l in pg('select row_to_json(x)::text from (select %s from %s%s) x' % (sel, t, where))]
