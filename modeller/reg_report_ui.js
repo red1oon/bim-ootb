@@ -103,15 +103,15 @@
   // §D105: the owners the Regulatory Report loads, ready to use (web-ifc initialised, sql.js, the extractor core, the IFC writer, LoadSummary): Export ▸ Analytical model reads an IFC with them
   async function engine() {
     await loadScripts();
-    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
-    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, _base).href; } });
+    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
+    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, _base).href; } });
     return { WebIFC: window.WebIFC, ifcApi: api, SQL: SQL, Core: window.IfcExtractCore, Dxf2Ifc: window.Dxf2Ifc, LoadSummary: window.LoadSummary };
   }
 
   async function build(o) {
     await loadScripts();
-    var U = window.DxfImportUI.state, api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
-    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, _base).href; } });
+    var U = window.DxfImportUI.state, api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
+    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, _base).href; } });
     var rs = await Promise.all([json('../viewer/rates/structural_rules.json'), json('../viewer/rates/egress_rules.json'), json('../viewer/rates/' + o.packName + '.json').catch(function () { return null; }),
       U.ref ? Promise.resolve(U.ref) : json('synthetic_ref.json')]);
     var sw = await fetch(new URL('sw.js', _base).href).then(function (r) { return r.text(); }).catch(function () { return ''; }), ver = (/CACHE_VERSION = '([^']+)'/.exec(sw) || [])[1] || '?';

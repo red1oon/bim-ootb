@@ -393,7 +393,7 @@
     if (!(global.Bonsai && global.Bonsai.oplog && global.CommStore)) { log('🔴 §TEAM_BOOT prerequisites missing'); _resolveReady(false); return; }
     await global.Bonsai.oplog._ensureDb();
     if (global.TeamVersions) await global.TeamVersions.ready;      // §16.32: the signed upcaster sets are verified and loaded BEFORE the first fold, so no op is judged against a half-loaded registry
-    SQLm = await global.initSqlJs({ locateFile: function (f) { return 'lib/' + f; } });
+    SQLm = await global.initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
     dev = await kvGet('device'); cfg = (await kvGet('cfg')) || {};
     if (dev && global.CommStore.ensureDh && !dev.dhPrivateKey) { try { await global.CommStore.ensureDh(dev); await kvPut('device', dev); log('§TEAM_BOOT dh key ensured for ' + dev.kid); } catch (e) { log('§TEAM_BOOT ensureDh failed ' + (e && e.message)); } }
     applySystemDefault();

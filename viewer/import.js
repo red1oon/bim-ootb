@@ -28,7 +28,7 @@ function detectFormat(filename) {
 // whenever the 1.3MB binary isn't in a cache layer. The viewer is SW-controlled, so caches.match
 // reads the precache offline. Throws a CLEAR error if genuinely unavailable.
 async function _getWebIfcWasmBytes() {
-  var url = 'lib/web-ifc.wasm';
+  var url = '../common/lib/web-ifc.wasm';
   try { var hit = await caches.match(url); if (hit) { console.log('[S220] §IFC_WASM_FROM_CACHE'); return await hit.arrayBuffer(); } } catch (e) {}
   try { var r = await fetch(url); if (r && r.ok) { console.log('[S220] §IFC_WASM_FROM_NET'); return await r.arrayBuffer(); } } catch (e) {}
   console.warn('[S220] §IFC_ENGINE_UNAVAILABLE web-ifc.wasm not cached and offline');
@@ -166,7 +166,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=16', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=17', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -191,7 +191,7 @@ function setupImport(A) {
 
           // Build sql.js DBs on main thread (sql.js already loaded)
           try {
-            const SQL = await initSqlJs({ locateFile: f => 'lib/' + f });
+            const SQL = await initSqlJs({ locateFile: f => (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f });
             const dbs = buildImportDBs(SQL, msg);
 
             // Save to IndexedDB. S224: when split (meta+geo) exists, store ONLY the split.
@@ -340,7 +340,7 @@ function setupImport(A) {
     if (progressBar) progressBar.style.width = '92%';
 
     try {
-      var SQL = await initSqlJs({ locateFile: function(f) { return 'lib/' + f; } });
+      var SQL = await initSqlJs({ locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
       var mergedData = {
         meta: {
           name: buildingName,
@@ -400,7 +400,7 @@ function setupImport(A) {
   function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=16', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=17', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {
@@ -469,7 +469,7 @@ function setupImport(A) {
             ' geom=' + msg.meta.geomCount + ' format=' + msg.meta.sourceFormat);
 
           try {
-            var SQL = await initSqlJs({ locateFile: function(f) { return 'lib/' + f; } });
+            var SQL = await initSqlJs({ locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
             var dbs = buildImportDBs(SQL, msg);
 
             // S224: split present → store split only (monolith would overflow IDB ~1GB limit)
@@ -691,7 +691,7 @@ function setupImport(A) {
     if (!dbBuf) { alert('No DB data'); return; }
 
     // Load sql.js if needed
-    var SQL = await initSqlJs({ locateFile: function(f) { return 'lib/' + f; } });
+    var SQL = await initSqlJs({ locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
     var db = new SQL.Database(new Uint8Array(dbBuf));
 
     var elements = [], transforms = [], geometries = [];

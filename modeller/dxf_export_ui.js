@@ -78,7 +78,7 @@
       console.log(TAG + ' built (.db) file=' + file.name + ' sheets=' + Object.keys(Md.R.files).length + ' drawable=' + Md.report.drawable);
       return Object.assign({ prefix: prefix, extras: [], q: qd, scopes: null, exLog: [] }, Md);
     }
-    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
+    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
     var Core = window.IfcExtractCore, sdb = new window.SQL.Database(), exLog = [];
     step('Extracting the model (web-ifc)');
     await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: data, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: file.name,
@@ -86,7 +86,7 @@
     var qOf = function (db) { return function (sql) { var r = db.exec(sql); if (!r.length) return []; return r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }); }; };
     for (var xi = 0; xi < (extras || []).length; xi++) {
       step('Reading ' + extras[xi].name + ' (columns for the grid)');
-      var xdb = new window.SQL.Database(), xapi = new window.WebIFC.IfcAPI(); await xapi.Init(function (p) { return new URL('lib/' + p, _base).href; });
+      var xdb = new window.SQL.Database(), xapi = new window.WebIFC.IfcAPI(); await xapi.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
       await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: xapi, ifcData: new Uint8Array(await extras[xi].arrayBuffer()), db: Core.sqljsDb(xdb), Buf: Core.browserBuf, buildingName: extras[xi].name, sourceName: extras[xi].name, log: function () {}, progress: function () {} });
       Core.mergeElements(Core.sqljsDb(sdb), qOf(sdb), qOf(xdb), ['IfcColumn'], function (m) { exLog.push(m); }); xdb.close();
     }

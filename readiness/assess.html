@@ -1486,7 +1486,7 @@ document.addEventListener('drop', function (e) {
    this project cannot reach, revoke or charge for.
 
    ⚠ Everything below reuses the platform's own modules UNMODIFIED — ../viewer/import_worker.js,
-   ../viewer/import_db_builder.js, ../viewer/lib/sql-wasm.js. Nothing is copied and the viewer is
+   ../viewer/import_db_builder.js, ../common/lib/sql-wasm.js. Nothing is copied and the viewer is
    not touched. If those move, this breaks loudly rather than drifting out of sync.
    ============================================================ */
 
@@ -1579,7 +1579,7 @@ async function convertAndDownload() {
   var name = LASTFILE.name, base = name.replace(/\.ifc$/i, '');
   try {
     convStatus('Loading the compiler', 4);
-    await loadScriptOnce('../viewer/lib/sql-wasm.js');
+    await loadScriptOnce('../common/lib/sql-wasm.js');
     await loadScriptOnce('../viewer/import_db_builder.js');
 
     convStatus('Reading your file', 8);
@@ -1598,7 +1598,7 @@ async function convertAndDownload() {
     });
 
     convStatus('Building the database', 86);
-    var SQL = await initSqlJs({ locateFile: function (f) { return '../viewer/lib/' + f; } });
+    var SQL = await initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : '../viewer/lib/') + f; } });
     var dbs = buildImportDBs(SQL, msg);
 
     convStatus('Saving to your Downloads folder', 96);

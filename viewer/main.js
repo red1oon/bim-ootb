@@ -299,7 +299,7 @@ async function initViewer() {
         return;
       }
       var s = document.createElement('script');
-      s.src = 'wizard.js?v=2';
+      s.src = 'wizard.js?v=3';
       s.onload = function() {
         APP._wizardLoaded = true;
         console.log('[S239] §WIZARD_LAZY_LOADED');
@@ -1052,7 +1052,7 @@ async function initViewer() {
         const buf = await APP.cachedFetch(diffDbUrl);
         console.log('[S223] §DIFF_FETCH_DONE bytes=' + buf.byteLength);
         // Reuse SQL instance from A.init() — avoids re-downloading WASM
-        var SQL = APP._SQL || await initSqlJs({ locateFile: f => 'lib/' + f });
+        var SQL = APP._SQL || await initSqlJs({ locateFile: f => (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f });
         APP.diffDb = new SQL.Database(new Uint8Array(buf));
         // §S260c: Validate diff DB has elements_meta
         try {

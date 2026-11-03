@@ -958,7 +958,7 @@
   function impactOwners() {   // the Regulatory Report's own loader (reg_report.js, load_summary.js, rates.js …) + dxf2impact.js; nothing of this loads before the click
     if (_impLoad) return _impLoad;
     var add = function (src) { return new Promise(function (res, rej) { var sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = function () { rej(new Error('load failed ' + src)); }; document.head.appendChild(sc); }); };
-    _impLoad = (window.RegReportUI ? Promise.resolve() : add('reg_report_ui.js?v=1')).then(function () { return window.Dxf2Impact ? null : add('dxf2impact.js?v=1'); })
+    _impLoad = (window.RegReportUI ? Promise.resolve() : add('reg_report_ui.js?v=2')).then(function () { return window.Dxf2Impact ? null : add('dxf2impact.js?v=1'); })
       .then(function () { return window.RegReportUI.loadScripts(); }).catch(function (e) { _impLoad = null; throw e; });
     return _impLoad;
   }

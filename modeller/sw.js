@@ -12,7 +12,8 @@
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
 // v212 (2026-11-03) §SEAM-W2 F15: str_walker_outliner.js?v=25 drops superseded <base>?v=M / bare <base> resident DBs when caching <base>?v=N (§RESIDENT_STALE_DROP)
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
-const CACHE_VERSION = 'v213';   // bump on each deploy; per-change detail is the git commit message.
+// v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
+const CACHE_VERSION = 'v214';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -21,17 +22,17 @@ const SHELL_LIBS = [
   'lib/three.webgpu.min.js',
   'lib/three.module.min.js',
   'lib/three.core.min.js',
-  'lib/OrbitControls.module.js',
-  'lib/sql-wasm.js',
-  'lib/sql-wasm.wasm',
+  '../common/lib/OrbitControls.module.js',
+  '../common/lib/sql-wasm.js',
+  '../common/lib/sql-wasm.wasm',
 ];
 // Deferred — heavy/feature-gated; cache-on-first-use via cacheFirst (lib/ is always cache-first).
 const DEFERRED_LIBS = [
-  'lib/web-ifc-api-iife.js',
-  'lib/web-ifc.wasm',
+  '../common/lib/web-ifc-api-iife.js',
+  '../common/lib/web-ifc.wasm',
   'lib/kernel/occt-wasm.js',
   'lib/kernel/occt-wasm.wasm',
-  'lib/planegcs/planegcs_dist/planegcs.wasm',
+  '../common/lib/planegcs/planegcs_dist/planegcs.wasm',
   'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
 ];
 const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];

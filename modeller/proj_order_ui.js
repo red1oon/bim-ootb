@@ -43,7 +43,7 @@
 
   async function _db() {
     if (_store) return _store;
-    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, location.href).href; } });
+    var SQL = window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, location.href).href; } });
     _store = await window.ProjOrderState.openStore(SQL, function () { return fetch('../erp/ad_seed.db').then(function (r) { if (!r.ok) throw new Error('seed HTTP ' + r.status); return r.arrayBuffer(); }); });
     return _store;
   }
