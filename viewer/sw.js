@@ -230,7 +230,8 @@
 // v1673 (2026-11-03) §A4 hygiene: ONE shared Project-Order store instance (ProjOrderState.shared/persistShared, proj_order_state.js?v=5); diff.js?v=5, find_erp_push.js?v=4, whatif_panel.js?v=6, schedule_author_ui.js?v=10 stop holding private 27 MB copies; W-ONE-PO-STORE.
 // v1674 (2026-11-03) CAPEX §5.8 erp_rest_push.js: legacy lookups by DataRow KEY fields (queryRows + exact post-filter), no Filter string — legacy forbids a free Filter parameter (IDEMPIERE-1784)
 // v1675 (2026-11-03) §A3a ONE kernel_ops: READONLY_OPS defer, §KRN_PERSIST_GUARD, split-mode key and DbResolve.cacheKey key ported into erp/kernel_ops.js (the only copy the Viewer loads); viewer/kernel_ops.js deleted; viewer.html kernel_ops.js?v=14; W-ONE-KERNEL-OPS.
-const CACHE_VERSION = 'v1675';
+// v1676 (2026-11-03) CAPEX §5.10 / P5: erp_push_plan.js (the one plan builder, moved from capex/tools/shed_twin.js) + erp_rest_push.js loaded by viewer.html; config.js?v=5 A.LEGACY_ERP; find_erp_push.js?v=5 pushes the fold to a real iDempiere (password in memory only)
+const CACHE_VERSION = 'v1676';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1240,7 +1241,7 @@ const PRECACHE_ASSETS = [
   '../common/about_diy.js', 'universal_history.js', 'share.js', 'sfx.js',
   // ERP fold set (the viewer-side fold verbs and their FSM/decimal deps):
   '../erp/bigdecimal.js', '../erp/ad_docfsm.js', 'blue_fold.js', 'proj_fold.js', 'vo_fold.js',
-  'proj_control.js', 'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js',
+  'proj_control.js', 'erp_push_plan.js', 'erp_rest_push.js', 'whatif.js', 'whatif_panel.js', 'vo_approve.js', 'proj_period.js',
   'proj_claim.js',
 ];
 

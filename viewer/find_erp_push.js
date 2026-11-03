@@ -263,6 +263,78 @@
       var keys = Object.keys(gs);
       return { description: 'BIM src db=' + dbUrl, note: keys.join(','), count: keys.length };
     }
+    // ── §PROJ_PUSH_LEGACY (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8.6 SPEC P5) ──────────────────────────────────────────────────────────────────
+    // After the LOCAL fold succeeds, push the SAME Project Order (planFromDb over the same store) to the real iDempiere the viewer came from (A.LEGACY_ERP — config.js) through the
+    // plugin's BIMOOTB_* service types, with erp_rest_push.js pushProjectOrder (the proven node path). Stock web services take user + password on EVERY call (no token:
+    // AbstractService.java:118-121 Login.getClients(user, pass, …)), so the password is asked ONCE per tab and held in the closure variable _erpPass below — never localStorage / IndexedDB /
+    // URL / DOM-after-close / log (every logged string passes _scrub). A failed push (a refused login included) clears it, so the next push asks again.
+    var _erpPass = null, _erpIdent = null;
+    function _scrub(m) { m = String(m == null ? '' : m); return _erpPass ? m.split(_erpPass).join('***') : m; }
+    // The small password dialog. Resolves {user,pass,clientId,roleId,orgId,warehouseId} or null (cancelled). `ask.prefill` = the non-secret context from the URL params
+    // (readonly when given, editable when absent). Injectable as D.askErpLogin (the witness stubs it); this DOM version is the shipped default.
+    function _askLoginDom(ask) {
+      return new Promise(function (resolve) {
+        if (typeof document === 'undefined') { resolve(null); return; }
+        var pf = ask.prefill || {}, fields = [['user', 'User', pf.user], ['clientId', 'Client ID', pf.clientId], ['roleId', 'Role ID', pf.roleId], ['orgId', 'Org ID', pf.orgId], ['warehouseId', 'Warehouse ID', pf.warehouseId]];
+        var ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;font:13px sans-serif';
+        var box = document.createElement('form'); box.autocomplete = 'off';
+        box.style.cssText = 'background:#1e2530;color:#eee;padding:16px 18px;border-radius:8px;min-width:300px;box-shadow:0 4px 24px #000a';
+        var h = document.createElement('div'); h.textContent = 'Sign in to iDempiere (' + (ask.base || '') + ')'; h.style.cssText = 'font-weight:bold;margin-bottom:8px'; box.appendChild(h);
+        if (ask.error) { var er = document.createElement('div'); er.textContent = ask.error; er.style.cssText = 'color:#ff8a80;margin-bottom:8px'; box.appendChild(er); }
+        var inputs = {};
+        fields.forEach(function (f) {
+          var row = document.createElement('label'); row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;margin:3px 0'; row.textContent = f[1];
+          var inp = document.createElement('input'); inp.type = 'text'; inp.value = f[2] == null ? '' : f[2]; if (f[2] != null && f[2] !== '') inp.readOnly = true;
+          inp.style.cssText = 'width:150px;background:#0f141b;color:#eee;border:1px solid #445;padding:2px 4px'; row.appendChild(inp); box.appendChild(row); inputs[f[0]] = inp;
+        });
+        var prow = document.createElement('label'); prow.style.cssText = 'display:flex;justify-content:space-between;gap:8px;margin:3px 0'; prow.textContent = 'Password';
+        var pw = document.createElement('input'); pw.type = 'password'; pw.autocomplete = 'current-password'; pw.style.cssText = 'width:150px;background:#0f141b;color:#eee;border:1px solid #445;padding:2px 4px';
+        prow.appendChild(pw); box.appendChild(prow);
+        var bt = document.createElement('div'); bt.style.cssText = 'margin-top:10px;text-align:right';
+        var ok = document.createElement('button'); ok.type = 'submit'; ok.textContent = 'Push'; var no = document.createElement('button'); no.type = 'button'; no.textContent = 'Cancel'; no.style.marginRight = '6px';
+        bt.appendChild(no); bt.appendChild(ok); box.appendChild(bt); ov.appendChild(box); document.body.appendChild(ov);
+        function done(v) { pw.value = ''; if (ov.parentNode) ov.parentNode.removeChild(ov); resolve(v); }
+        no.onclick = function () { done(null); };
+        box.onsubmit = function (e) { e.preventDefault(); done(pw.value ? { user: inputs.user.value.trim(), pass: pw.value, clientId: +inputs.clientId.value, roleId: +inputs.roleId.value, orgId: +inputs.orgId.value, warehouseId: +inputs.warehouseId.value } : null); };
+        (inputs.user.readOnly ? pw : inputs.user).focus();
+      });
+    }
+    function _legacyTarget() {
+      if (A.LEGACY_ERP !== undefined) return A.LEGACY_ERP;
+      return (global.ErpPushPlan && global.ErpPushPlan.legacyTarget && global.location) ? global.ErpPushPlan.legacyTarget(global.location) : null;
+    }
+    // returns a promise; never throws (additive — the local fold already succeeded and stays).
+    function _pushLegacy(db, building) {
+      var tgt = _legacyTarget();
+      if (!tgt || !tgt.base) { console.log('[RP-C] §PROJ_PUSH_LEGACY skip=no-target'); return Promise.resolve(null); }
+      var PL = global.ErpPushPlan, RP = global.ErpRestPush;
+      if (!PL || !RP) { console.log('[RP-C] §PROJ_PUSH_LEGACY_ERR base=' + tgt.base + ' reason=module-absent plan=' + !!PL + ' rest=' + !!RP); return Promise.resolve(null); }
+      var built;
+      try { built = PL.planFromDb(db, building); } catch (e) { console.log('[RP-C] §PROJ_PUSH_LEGACY_ERR base=' + tgt.base + ' reason=plan ' + _scrub(e.message)); return Promise.resolve(null); }
+      if (!built.plan) { console.log('[RP-C] §PROJ_PUSH_LEGACY_ERR base=' + tgt.base + ' reason=no-local-project project="' + building + '"'); return Promise.resolve(null); }
+      built.notes.forEach(function (n) { console.log('[RP-C] §PROJ_PUSH_LEGACY_NOTE uu-not-uuid dropped ' + n); });
+      var plan = built.plan;
+      var login = _erpPass && _erpIdent ? Promise.resolve(null) : Promise.resolve((D.askErpLogin || _askLoginDom)({ base: tgt.base, prefill: A.LEGACY_ERP_CTX || {}, error: null }));
+      return login.then(function (got) {
+        if (got) { _erpPass = got.pass; _erpIdent = { user: got.user, clientId: got.clientId, roleId: got.roleId, orgId: got.orgId, warehouseId: got.warehouseId }; }
+        if (!_erpPass || !_erpIdent) { _erpPass = null; _erpIdent = null; console.log('[RP-C] §PROJ_PUSH_LEGACY skip=no-credentials base=' + tgt.base); return null; }
+        if (A.status) A.status.textContent = 'Pushing Project Order to iDempiere…';
+        var cfg = { baseUrl: tgt.base, serviceTypes: PL.bimootbServiceTypes(),
+          login: { user: _erpIdent.user, pass: _erpPass, lang: 'en_US', clientId: _erpIdent.clientId, roleId: _erpIdent.roleId, orgId: _erpIdent.orgId, warehouseId: _erpIdent.warehouseId, stage: 0 } };
+        return RP.pushProjectOrder(cfg, plan).then(function (r) {
+          console.log('[RP-C] §PROJ_PUSH_LEGACY base=' + tgt.base + ' project="' + building + '" projectId=' + r.projectId + ' created=' + JSON.stringify(r.created));
+          if (A.status) A.status.textContent = 'iDempiere Project #' + r.projectId + ' · created ' + JSON.stringify(r.created);
+          return r;
+        });
+      }).catch(function (e) {
+        var msg = _scrub(e && e.message);
+        console.log('[RP-C] §PROJ_PUSH_LEGACY_ERR base=' + tgt.base + ' project="' + building + '" error=' + msg + ' password=forgotten');
+        _erpPass = null; _erpIdent = null;   // a refused login (or any failed push) forgets the password: the next push asks again
+        _pushReject('iDempiere push failed: ' + msg.slice(0, 160));
+        return null;
+      });
+    }
     function _pushToErp() {
       var set = D.getLastSelSet();
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
@@ -280,7 +352,7 @@
       // carry no bbox sizes). Say so + a low cue, instead of looking like the push silently did nothing.
       if (!priced || !priced.rows.length) { _pushReject('Nothing costable in selection — pick a type/storey group (this model may lack element sizes)'); console.log('[RP-C] §PROJ_PUSH_DEFER no priced rows (elements=' + (priced ? priced.elements : 0) + ')'); return; }
       if (A.status) A.status.textContent = 'Folding Project Order…';
-      _ensureErpDb().then(function (db) {
+      return _ensureErpDb().then(function (db) {
         if (!db) { _pushReject('ERP db unavailable for push'); console.log('[RP-C] §PROJ_PUSH_DEFER no ERP db'); return; }
         var opts = {
           seqRules: window.SEQUENCE_RULES || {}, schedule: sched4D,
@@ -327,7 +399,7 @@
               ' %complete=' + ctrl.evm.percentComplete + (ctrl.note ? ' note="' + ctrl.note + '"' : ''));
           } catch (e) { console.log('[RP-C] §PROJ_CONTROL_ERR ' + e.message); }
         }
-        _persistErpDb(db).then(function (ok) {
+        return _persistErpDb(db).then(function (ok) {
           console.log('[RP-C] §PROJ_PUSH_PERSIST opfs=' + ok + ' store=bim_project_orders.db');
           var revised = ctrl ? Number(ctrl.contract.revised) : Number(r.plannedAmt);
           if (A.status) A.status.textContent = 'Project Order: ' + r.created.lines + ' lines · contract ' + D.cur() + ' ' +
@@ -342,6 +414,7 @@
             _pushSfx('erp_pushed');   // happy chime — Project Order folded + deep-link ready
             console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
           }
+          return _pushLegacy(db, building);   // §8.6 P5: the local fold is done and persisted — now the real iDempiere (if there is a target)
         });
       }).catch(function (e) { _pushReject('Project Order push failed: ' + (e && e.message)); console.log('[RP-C] §PROJ_PUSH_ERR ' + (e && e.stack || e)); });
     }
@@ -349,7 +422,7 @@
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,
              foldClassTwin: _foldClassTwin, surfaceExistingOrder: _surfaceExistingOrder,
              surfaceConstructionLink: _surfaceConstructionLink, showClassCost: _showClassCost,
-             show4DWindow: _show4DWindow, pushToErp: _pushToErp };
+             show4DWindow: _show4DWindow, pushToErp: _pushToErp, pushLegacy: _pushLegacy };
   }
 
   var API = { create: create };
