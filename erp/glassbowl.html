@@ -873,7 +873,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- model-validator beforeSave hooks (W-*-SAVE, faithful M*.beforeSave ports) — window.AdModelVal; crud_overlay.saveForm fires BEFORE_SAVE: reject blocks, derived fills (§AD-MODELVAL-LIVE, UI_UNPARK B-3). MUST load before crud_overlay. -->
 <script src="ad_modelval.js"></script>
 <!-- T1 (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the PROVEN engine (UMD of bim-compiler scripts/erp_engine.js — window.ERPEngine, same file idempiere.html loads). crud_overlay.completeFanout extracts the completeIt consequence set (ship+invoice creates) from it. MUST load before crud_overlay. -->
-<script src="erp_engine.js?v=2"></script>
+<script src="erp_engine.js?v=3"></script>
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
 <!-- T7 (W-T7-INC): memoized tip-folds — load BEFORE crud_overlay so readTip/tipValues delegate. -->
 <script src="tip_fold.js?v=1"></script>
