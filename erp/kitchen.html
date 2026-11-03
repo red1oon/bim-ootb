@@ -12,7 +12,7 @@
   .chip { padding:1px 9px; border:1px solid var(--ln); border-radius:10px; } input, select { font:inherit; background:#0f151b; color:var(--fg); border:1px solid var(--ln); border-radius:4px; padding:3px 6px; }
   button { font:inherit; padding:8px 12px; border:1px solid var(--ln); border-radius:4px; background:#22303d; color:var(--fg); cursor:pointer; } button.go { background:var(--acc); border-color:var(--acc); } button[disabled] { opacity:.4; cursor:not-allowed; }
   #k-cards { display:flex; flex-wrap:wrap; gap:10px; padding:10px; align-items:flex-start; }
-  .kcard { width:250px; background:var(--pn); border:2px solid var(--ln); border-radius:6px; } .kcard[data-age="green"] .khead { background:var(--green); } .kcard[data-age="amber"] .khead { background:var(--amber); color:#111; } .kcard[data-age="red"] .khead { background:var(--red); }
+  .kcard { width:250px; background:var(--pn); border:2px solid var(--ln); border-radius:6px; } .kcard[data-age="off"] .khead { background:#33414f; } .kcard[data-age="green"] .khead { background:var(--green); } .kcard[data-age="amber"] .khead { background:var(--amber); color:#111; } .kcard[data-age="red"] .khead { background:var(--red); }
   .khead { display:flex; justify-content:space-between; padding:6px 10px; font-weight:700; } .kbody { padding:6px 10px; } .kline { padding:4px 0; border-bottom:1px solid #2a3846; cursor:pointer; } .kline[data-state="D"] { text-decoration:line-through; opacity:.55; }
   .kline[data-state="V"] { text-decoration:line-through; color:var(--red); } .kline[data-mark="added"] { color:#7be39c; } .kline[data-mark="changed"] { color:#ffd166; } .kline.removed { color:var(--red); text-decoration:line-through; cursor:default; }
   .kflag { display:inline-block; margin:4px 10px; padding:0 8px; border-radius:8px; background:#5a4a12; color:#ffd166; font-size:12px; } .kflag.cancel { background:#5a1d16; color:#ffb3a8; }
@@ -21,7 +21,7 @@
 </style></head><body>
 <div class="bar"><b>Kitchen</b><span id="k-net" class="chip">online</span><span id="k-pair" class="chip">starting</span>
   <label>Station <select id="k-station"><option value="">All</option></select></label>
-  <label>Amber min <input id="k-amber" size="2" value="5"></label><label>Red min <input id="k-red" size="2" value="10"></label><label>Poll s <input id="k-poll" size="3" value="10"></label>
+  <label>Amber min <input id="k-amber" size="2" value="" placeholder="off"></label><label>Red min <input id="k-red" size="2" value="" placeholder="off"></label><label>Poll s <input id="k-poll" size="3" value="10"></label>
   <button id="k-recall" disabled>Recall</button><span id="k-count" class="chip">0 open</span><span id="k-msg" class="chip" hidden></span></div>
 <main id="kitchen"><div id="k-cards"></div></main>
 <iframe id="k-engine" title="engine" aria-hidden="true"></iframe>

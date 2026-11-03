@@ -48,8 +48,8 @@
   }
 
   function utcMs(t) { var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(t || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : NaN; }
-  // Chromis OrderPanel.java:143-162: elapsed minutes > amber -> amber, > red -> red, else green. The two limits are settings (Chromis screen.amber/screen.red; no default in the source).
-  function ageClass(elapsedMs, amberMin, redMin) { var m = Math.floor(elapsedMs / 60000); return m > redMin ? 'red' : m > amberMin ? 'amber' : 'green'; }
+  // Chromis OrderPanel.java:143-162: elapsed minutes > amber -> amber, > red -> red, else green. The two limits are branch settings (Chromis screen.amber/screen.red); the source has no default and the owner ruled none: both unset = colour off.
+  function ageClass(elapsedMs, amberMin, redMin) { if (!(amberMin > 0) || !(redMin > 0)) return 'off'; var m = Math.floor(elapsedMs / 60000); return m > redMin ? 'red' : m > amberMin ? 'amber' : 'green'; }   // owner 2026-11-03 "Off until set": NO default; with either limit unset the card carries no colour ('off')
   function mmss(ms) { var s = Math.max(0, Math.floor(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }   // OrderPanel.java:135-136 MM:SS
 
   // fold(orderRows, statusRows, opts{now, amber, red, station}) -> cards. A card = one (till, order id). Its CURRENT queue is the highest Seq (replace-all result); the generation before it gives the change marks.
@@ -79,7 +79,7 @@
       if (opts.station != null && !cancelled && !stationLines.length) return;      // a card appears on a station only if it has a line for it (Chromis DataLogicKitchen.java:50-56)
       cards.push({ till: c.till, ref: c.ref, seq: cur, firstSeq: seqs[0], modified: prevSeq != null && !cancelled && (removed.length > 0 || Object.keys(marks).some(function (l) { return marks[l]; })), cancelled: cancelled,
         lines: stationLines.map(function (r) { return { line: Number(r.line), qty: Number(r.qty), details: r.details, display: Number(r.displayid), mark: marks[r.line] || null, state: items[r.line] || 'W' }; }),
-        removed: removed, state: ticketState, bumpedAt: bumpedAt, time: rows[0].ordertime, elapsedMs: elapsed, age: ageClass(elapsed, opts.amber == null ? 5 : opts.amber, opts.red == null ? 10 : opts.red), clock: mmss(elapsed), maxStatusSeq: maxStatusSeq });
+        removed: removed, state: ticketState, bumpedAt: bumpedAt, time: rows[0].ordertime, elapsedMs: elapsed, age: ageClass(elapsed, opts.amber, opts.red), clock: mmss(elapsed), maxStatusSeq: maxStatusSeq });
     });
     cards.sort(function (a, b) { return utcMs(a.time) - utcMs(b.time) || (a.ref < b.ref ? -1 : 1); });
     return cards;
