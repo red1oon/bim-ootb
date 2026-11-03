@@ -699,12 +699,6 @@
 
   function uomPrecision(trx, uomId) { var u = nz(uomId) ? trx.get('c_uom', uomId) : null; return u ? Number(u.stdprecision) : 0; }   // MUOM.getPrecision
   function dayTS(v) { return v == null ? null : A().Timestamp.of(v); }
-  // Core.getTaxLookup().get(...) = Tax.get(...) (DefaultTaxLookup.java; ported callouts/tax.js)
-  function taxGet(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule) {
-    var M = R().M;
-    if (M.Core && typeof M.Core.getTaxLookup === 'function') return M.Core.getTaxLookup().get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
-    return M.Tax.get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
-  }
 
   // ══ MOrderLine (MOrderLine.java) ═════════════════════════════════════════════════════════════════════════════
   // setOrder :227-238
@@ -726,7 +720,7 @@
   }
   // setTax :346-361
   function olSetTax(trx, ctx, line, order) {
-    var ii = taxGet(ctx, nz(line.get('m_product_id')), nz(line.get('c_charge_id')), dayTS(line.get('dateordered')), dayTS(line.get('dateordered')),
+    var ii = T.taxGet(ctx, nz(line.get('m_product_id')), nz(line.get('c_charge_id')), dayTS(line.get('dateordered')), dayTS(line.get('dateordered')),
       nz(line.get('ad_org_id')), nz(line.get('m_warehouse_id')), nz(line.get('c_bpartner_location_id')), nz(line.get('c_bpartner_location_id')),
       nz(order.dropship_location_id), Y(order.issotrx), order.deliveryviarule == null ? null : order.deliveryviarule);
     if (ii === 0) { say(trx, '§MODEL-SEVERE MOrderLine.setTax No Tax found'); return false; }

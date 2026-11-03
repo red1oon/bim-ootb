@@ -29,16 +29,16 @@
   function isStocked(p) { return p && Y(p.isstocked) && isItem(p); }                       // MProduct.isStocked
   function precisionOf(trx, cur) { var c = cur ? trx.get('c_currency', cur) : null; return c ? Number(c.stdprecision) : 2; }
   function tax(trx, i) { return trx.get('c_tax', i); }
-  // MTax.calculateTax :340-372
+  // MTax.calculateTax :340-372 — THIN ADAPTER over the ONE port BigDecimal.mtaxCalculate (bigdecimal.js); children = MTax.getChildTaxes :244-263 (parent_tax_id=?, ACTIVE only).
   function calcTax(trx, t, amount, incl, scale) {
-    if (D(t.rate).signum() === 0) return Z;                                                 // isZeroTax :310
-    var arr = Y(t.issummary) ? trx.find('c_tax', { parent_tax_id: t.c_tax_id }) : [t], sum = Z;
-    arr.forEach(function (tc) {
-      var mult = D(tc.rate).divide(D(100), 12, HU);
-      if (!incl) sum = sum.add(D(amount).multiply(mult).setScale(scale, HU));
-      else { var base = D(amount).divide(mult.add(BigDecimal.ONE), 12, HU); sum = sum.add(D(amount).subtract(base).setScale(scale, HU)); }
-    });
-    return sum;
+    var kids = Y(t.issummary) ? trx.find('c_tax', { parent_tax_id: t.c_tax_id }).filter(function (k) { return k.isactive !== 'N'; }) : [];
+    return BigDecimal.mtaxCalculate(t, amount, incl, scale, kids);
+  }
+  // Core.getTaxLookup().get(...) = Tax.get(...) (DefaultTaxLookup.java; ported callouts/tax.js) — the ONE taxGet (was copy-pasted in model_order + model_invoice)
+  function taxGet(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule) {
+    var NODE = typeof module !== 'undefined' && module.exports, A = NODE ? require('./ad_callout.js') : (typeof window !== 'undefined' ? window : globalThis).AdCallout, M = A.RUNTIME.M;
+    if (M.Core && typeof M.Core.getTaxLookup === 'function') return M.Core.getTaxLookup().get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
+    return M.Tax.get(ctx, prod, charge, billDate, shipDate, org, wh, billLoc, shipLoc, drop, isSO, rule, null);
   }
   // MPeriod.isOpen (static :291-314 → instance :704-760): the period of DateAcct must exist and be active; when the client's
   // primary schema has AutoPeriodControl='Y' the gate is today−Period_OpenHistory ≤ date ≤ today+Period_OpenFuture (today =
@@ -882,7 +882,7 @@
   PXS_ = PXS;
 
   return Object.assign({}, PXT, PXS, { rate: rate, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
-    precisionOf: precisionOf, tax: tax, calcTax: calcTax, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
+    precisionOf: precisionOf, tax: tax, calcTax: calcTax, taxGet: taxGet, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
     creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z });
 });
