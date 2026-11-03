@@ -55,7 +55,9 @@ const q = (db, sql, p) => { const r = db.exec(sql, p || []); return r.length ? r
   async function push(withSchedule) {
     const bdb = buildingDb(withSchedule), edb = openErp();
     globalThis._4dTemplate = withSchedule ? tpl : null;
-    globalThis.ProjOrderState = { storeStamp: () => Promise.resolve('w'), openStore: () => Promise.resolve({ db: edb }) };
+    // the viewer's store API as of bim-ootb #2557 (ProjOrderState.shared — one shared Project-Order store); openStore kept for older callers
+    globalThis.ProjOrderState = { storeStamp: () => Promise.resolve('w'), openStore: () => Promise.resolve({ db: edb }),
+      shared: () => Promise.resolve({ db: edb, stamp: 'w' }), persistShared: () => Promise.resolve(true), invalidateShared: () => {} };
     const guids = q(bdb, 'SELECT m.guid FROM elements_meta m JOIN element_transforms t ON m.guid=t.guid WHERE t.bbox_x>0').map(v => v[0]);
     // the Find panel's _selectionPriced shape (nf_highlight_cost.js), over the same SQL basis
     const AREA = 'MAX(t.bbox_x,t.bbox_y,t.bbox_z) * CASE WHEN t.bbox_x>=t.bbox_y AND t.bbox_x>=t.bbox_z THEN MAX(t.bbox_y,t.bbox_z) WHEN t.bbox_y>=t.bbox_x AND t.bbox_y>=t.bbox_z THEN MAX(t.bbox_x,t.bbox_z) ELSE MAX(t.bbox_x,t.bbox_y) END';

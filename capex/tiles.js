@@ -30,8 +30,24 @@
   function cur(p) { return p.C_Currency_ID == null ? 'none' : String(p.C_Currency_ID); }
 
   // per-currency sum of one column; NULLs ignored (SQL SUM); no non-null value at all -> {} (vacuous)
+  // SUM then round ONCE (the tile's own formula, and what legacy's PA measure does: SELECT SUM(PlannedAmt) … → one value). Rounding each project to the cent first drifted by up to
+  // ½ cent per project: pa_probe legacy=14989562.481 vs tile 14989562.49 (prompts/CAPEX_DASHBOARD.md §5.9). Exact: the value's own decimal digits as a BigInt at 1e-9, half away from zero.
+  var SCALE = 9;
+  function nano(v) {
+    if (v == null || v === '') return null;
+    var s = String(v).trim(), neg = s.charAt(0) === '-'; if (neg || s.charAt(0) === '+') s = s.slice(1);
+    if (/e/i.test(s)) s = Number(s).toFixed(SCALE);
+    var parts = s.split('.'), frac = ((parts[1] || '') + '000000000').slice(0, SCALE);
+    if (!/^\d*$/.test(parts[0]) || !/^\d*$/.test(frac)) return null;
+    var b = BigInt((parts[0] || '0') + frac); return neg ? -b : b;
+  }
+  function nanoToCents(b) {
+    var unit = BigInt(Math.pow(10, SCALE - 2)), half = unit / BigInt(2), neg = b < BigInt(0), a = neg ? -b : b;
+    var c = (a + half) / unit; return Number(neg ? -c : c);
+  }
   function sumBy(list, f) {
-    var m = {}; list.forEach(function (p) { var c = cents(f(p)); if (c == null) return; m[cur(p)] = (m[cur(p)] || 0) + c; }); return m;
+    var m = {}; list.forEach(function (p) { var n = nano(f(p)); if (n == null) return; var k = cur(p); m[k] = (m[k] || BigInt(0)) + n; });
+    Object.keys(m).forEach(function (k) { m[k] = nanoToCents(m[k]); }); return m;
   }
   function ratioBy(numMap, denMap) {
     var r = {}; Object.keys(denMap).forEach(function (k) { if (denMap[k] > 0 && numMap[k] != null) r[k] = numMap[k] / denMap[k]; }); return r;   // numerator never recorded (all NULL) => no data, not 0%
@@ -169,6 +185,6 @@
     log('§DASH_TWIN_VERDICT ' + verdict + ' match=' + match + ' diff=' + diff + ' inconclusive=' + inc + ' per_source=' + per);
     return { verdict: verdict, match: match, diff: diff, inconclusive: inc, per_source: per };
   }
-  var API = { compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
+  var API = { _sumBy: sumBy, compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexTiles = API;
 })(typeof window !== 'undefined' ? window : this);
