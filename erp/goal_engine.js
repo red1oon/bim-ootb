@@ -103,7 +103,7 @@
     var perf = div6(actual, g.measuretarget);
     return { ok: true, goalId: Number(goalId), actual: actual, target: Number(g.measuretarget), performance: perf, percent: Math.trunc(Number(perf) * 100), scope: scope, sql: sql };
   }
-  // ── accessOf: the role's client/org access (MRole.getClientWhere(false) :1110-1117 / getOrgWhere(false) :1192-1235). ONE owner: overlay/home.js session() and the CAPEX witnesses call it
+  // ── accessOf: the role's client/org access (MRole.getClientWhere(false) :1110-1117 / getOrgWhere(false) :1192-1235). ONE owner: the Home overlay's session() and the CAPEX witnesses call it
   //   (moved here from home.js, rule unchanged; isUseUserOrgAccess / summary-org dependents are NOT ported — bim-ootb prompts/CAPEX_DASHBOARD.md §5.18).
   function accessOf(q, roleId, clientId) {
     var all = q('SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?', [roleId])[0], orgIds = null, cl = Number(clientId);
