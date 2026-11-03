@@ -143,8 +143,13 @@
   #ins-elev { width: 56px; box-sizing: border-box; background: #13151a; border: 1px solid #2c303a;
     border-radius: 7px; color: #c7cdd8; padding: 4px 7px; outline: none; }
 </style>
+<!-- §THREE_ONE_BUILD (2026-11-03, mirrors the Viewer's §GI_POC repoint of 2026-07-16): "three" -> three.module.min.js, the
+     SAME build the bootstrap below loads for window.THREE, so every bare `from 'three'` (common/lib/OrbitControls.module.js)
+     resolves to one wrapper instead of also evaluating the 638 KB WebGPU wrapper on every load. Both wrappers import the one
+     three.core.min.js, so classes were already shared — this removes the wasted wrapper, nothing else. Nothing in the Modeller
+     uses WebGPURenderer/TSL (grepped). Revert to ./lib/three.webgpu.min.js if WebGPU/TSL work starts here. -->
 <script type="importmap">
-{ "imports": { "three": "./lib/three.webgpu.min.js" } }
+{ "imports": { "three": "./lib/three.module.min.js" } }
 </script>
 </head>
 <body>

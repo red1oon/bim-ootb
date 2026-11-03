@@ -11,7 +11,7 @@
 'use strict';
 var fs = require('fs'), path = require('path'), C = require('./dd_common.js');
 var ROOT = path.join(__dirname, '..', '..'), MIG = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql/202611031900_CAPEX-R0.sql');
-var GE = require('../overlay/goal_engine.js'), DG = require('../overlay/dashboard_gadgets.js'), MA = require('../migration_apply.js'), BD = require('../bigdecimal.js');
+var GE = require('../overlay/goal_engine.js'), DG = require('../overlay/dashboard_gadgets.js'), MA = require('../../capex/tools/migration_apply.js'), BD = require('../bigdecimal.js');
 var OFFLINE = process.argv.indexOf('--offline') >= 0, BREAK = process.env.BREAK === '1';
 var judged = 0, fails = 0, inconc = 0, log = console.log;
 function check(n, ok, info) { judged++; if (!ok) fails++; log('  §PA_ENGINE ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); }
@@ -80,7 +80,7 @@ var R0_MEASURE = 1000000, GOAL = 'CAPEX Approved Budget (USD)';
     var data = null, lg = null;
     try { data = await Ad.loadLegacy({ base: base, login: L }); lg = (await Push.queryRows(base, login, 'QueryPAGoal', 'PA_Goal', [{ column: 'Name', val: GOAL }]))[0]; }
     catch (e) { inc('A', 'pilot not readable: ' + String(e && e.message || e)); }
-    if (data && !lg) inc('A', 'pilot has no goal "' + GOAL + '" (run capex/tools/pa_probe.js)');
+    if (data && !lg) inc('A', 'pilot has no goal "' + GOAL + '" (apply capex/legacy/migration/iD13/postgresql/202611032100_CAPEX-G3.sql)');
     if (data) {
       var pr = data.projects.map(function (p) { var o = {}; Object.keys(p).forEach(function (k) { o[k.toLowerCase()] = p[k]; }); return o; });
       var lastUpd = pr.filter(function (p) { return Number(p.c_currency_id) === 100; }).map(function (p) { return String(p.updated || ''); }).sort().pop();
@@ -89,7 +89,7 @@ var R0_MEASURE = 1000000, GOAL = 'CAPEX Approved Budget (USD)';
       var ev = GE.evaluate(H.q, gid, { today: H.TODAY, access: ACC }), eng = ev.ok ? bd(ev.actual) : null; if (BREAK && eng) eng = eng.add(BD.fromString('0.01'));
       log('§PA_ENGINE_TWIN rows=' + pr.length + ' usd=' + pr.filter(function (p) { return Number(p.c_currency_id) === 100; }).length + ' twin=' + (eng && eng.toString()) + ' sql=' + JSON.stringify(ev.sql) + (BREAK ? ' (BREAK=+0.01)' : ''));
       if (lg) {
-        if (lg.DateLastRun && lastUpd && String(lastUpd) > String(lg.DateLastRun)) inc('A', 'legacy goal computed ' + lg.DateLastRun + ' before the last USD project change ' + lastUpd + ' — run capex/tools/pa_probe.js, then re-run');
+        if (lg.DateLastRun && lastUpd && String(lastUpd) > String(lg.DateLastRun)) inc('A', 'legacy goal computed ' + lg.DateLastRun + ' before the last USD project change ' + lastUpd + ' — recompute it (capex/tests/witness_pa_tiles.js saves every CAPEX goal target), then re-run');
         else {
           var lv = bd(lg.MeasureActual), sc = (String(lg.MeasureActual).split('.')[1] || '').length;
           check('A legacy PA_Goal.MeasureActual == twin, at legacy\'s own scale (' + sc + ' dp)', !!(eng && lv && eng.setScale(sc, BD.RoundingMode.HALF_UP).eq(lv)), 'legacy=' + lg.MeasureActual + ' twin=' + (eng && eng.toString()) + ' legacyDateLastRun=' + lg.DateLastRun);
