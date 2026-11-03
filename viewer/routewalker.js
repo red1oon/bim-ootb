@@ -1258,11 +1258,14 @@ function _rwInsertElement(db, guid, ifcClass, name, building, storey, disc, rgba
 
 function _rwFetchCached(url) {
   return new Promise(function(resolve, reject) {
-    var req = indexedDB.open('bim_ootb_cache', 1);
-    req.onupgradeneeded = function() { req.result.createObjectStore('dbs'); };
+    // §SEAM-W1 (SEAM_IDENTITY_AUDIT.md F2): NO version arg — a hardcoded 1 throws VersionError once the
+    // shared cache DB is v2+/v3 (scene.js A.openCacheDB). Store creation guarded; tx guarded → bare fetch.
+    var req = indexedDB.open('bim_ootb_cache');
+    req.onupgradeneeded = function() { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = function() {
-      var idb = req.result;
-      var tx = idb.transaction('dbs', 'readonly');
+      var idb = req.result, tx;
+      try { tx = idb.transaction('dbs', 'readonly'); }
+      catch (e) { console.warn('§RW_CACHE_TX_FAIL ' + e.message + ' — bare fetch'); fetch(url).then(function(r) { return r.arrayBuffer(); }).then(resolve).catch(reject); return; }
       var get = tx.objectStore('dbs').get('rw_' + url);
       get.onsuccess = function() {
         if (get.result) {

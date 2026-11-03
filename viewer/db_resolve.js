@@ -82,7 +82,41 @@
     return 'buildings/' + file;                                      // K2
   }
 
-  var DbResolve = { ociRetryUrl: ociRetryUrl, cacheKey: cacheKey };
+  // readKeys(url, prodBase) → [canonicalKey, rawUrl]  (§SEAM-W1 — the READ order of A._checkCache)
+  // Pure. Canonical first (what the Viewer's cachedFetch writes), raw url second (pre-fix profiles).
+  // One element when the two coincide (K1 import://, K3 deploy/ modeller/, K4) — no duplicate probe.
+  function readKeys(url, prodBase) {
+    if (!url || typeof url !== 'string') return [];
+    var k = cacheKey(url, prodBase);
+    return (k === url) ? [url] : [k, url];
+  }
+
+  // readCached(idb, url, prodBase [, store]) → Promise<{buf,key,which}|null>  (§SEAM-W1)
+  // Read-only: probes readKeys() in order against an already-open cache DB. Never throws, never
+  // writes, never deletes (the re-key/delete is scene.js cachedFetch's job alone).
+  function readCached(idb, url, prodBase, store) {
+    store = store || 'dbs';
+    var keys = readKeys(url, prodBase), i = 0;
+    function get(k) {
+      return new Promise(function (resolve) {
+        try {
+          var req = idb.transaction(store, 'readonly').objectStore(store).get(k);
+          req.onsuccess = function () { resolve(req.result || null); };
+          req.onerror = function () { resolve(null); };
+        } catch (e) { resolve(null); }
+      });
+    }
+    if (!idb || !keys.length) return Promise.resolve(null);
+    return (function next() {
+      if (i >= keys.length) return Promise.resolve(null);
+      var k = keys[i++];
+      return get(k).then(function (buf) {
+        return buf ? { buf: buf, key: k, which: i === 1 ? 'canonical' : 'raw' } : next();
+      });
+    })();
+  }
+
+  var DbResolve = { ociRetryUrl: ociRetryUrl, cacheKey: cacheKey, readKeys: readKeys, readCached: readCached };
   if (typeof window !== 'undefined') window.DbResolve = DbResolve;
   if (typeof module !== 'undefined' && module.exports) module.exports = DbResolve;
 })();

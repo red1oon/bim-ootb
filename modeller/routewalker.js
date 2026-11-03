@@ -1450,7 +1450,7 @@ function _rwInsertElement(db, guid, ifcClass, name, building, storey, disc, rgba
 //     primary path already had.
 function _rwFetchCached(url) {
   return new Promise(function(resolve, reject) {
-    var req = indexedDB.open('bim_ootb_cache', 1);
+    var req = indexedDB.open('bim_ootb_cache');   // §SEAM-W1 F2: NO version — a hardcoded 1 throws VersionError once the profile is v2+/v3
     req.onupgradeneeded = function() { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
     req.onsuccess = function() {
       var idb = req.result, tx;
