@@ -235,7 +235,7 @@ async function initViewer() {
         'find_ask_grammar.js?v=1',
         'find_ask.js?v=4',
         'nf_ui_history.js?v=1',
-        'nf_tree_lens.js?v=1',
+        'nf_tree_lens.js?v=2',
         'nf_highlight_cost.js?v=1',
         'nf_room.js?v=1',
         'nf_trees.js?v=1',

@@ -116,7 +116,17 @@
     })();
   }
 
-  var DbResolve = { ociRetryUrl: ociRetryUrl, cacheKey: cacheKey, readKeys: readKeys, readCached: readCached };
+  // persistTarget(app) → {url, key} | null  (§PERSIST_TARGET — the ONE rule for "where does the open building's edited
+  // bytes go"). url = the url APP.db's bytes actually came from (split mode: APP._dbPersistUrl = the meta url, §S78);
+  // key = cacheKey(url) — the slot cachedFetch reads (§S70 / SEAM F1). Pure. Used by erp/kernel_ops.js and the
+  // needle room persist (nf_tree_lens.js); a raw `url !== key` copy is dead weight the caller may reclaim.
+  function persistTarget(app) {
+    var url = (app && (app._dbPersistUrl || app.DB_URL)) || null;
+    if (!url || typeof url !== 'string') return null;
+    return { url: url, key: cacheKey(url, app && app.PROD_BASE) };
+  }
+
+  var DbResolve = { ociRetryUrl: ociRetryUrl, cacheKey: cacheKey, readKeys: readKeys, readCached: readCached, persistTarget: persistTarget };
   if (typeof window !== 'undefined') window.DbResolve = DbResolve;
   if (typeof module !== 'undefined' && module.exports) module.exports = DbResolve;
 })();
