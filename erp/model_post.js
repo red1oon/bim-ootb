@@ -16,7 +16,7 @@
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321, gl_journal: 224 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -692,6 +692,28 @@
     return true;
   }
 
+  // Doc_GLJournal (acct/Doc_GLJournal.java :61-177) - loadLines :79-107, createFacts :140-177. Lines post DIRECTLY (account = the line's C_ValidCombination, source amounts, own currency);
+  //   the inter-org Due-To/Due-From legs are NOT written here: Doc.postLogic's Fact.balanceSegments (Fact.java:405-499) books them for every Doc - the one helper post() already runs (spec GLJ_RESULT).
+  function Doc_GLJournal(trx, j, as, F) {
+    if (String(as.c_acctschema_id) !== String(j.c_acctschema_id)) return true;                                           // :145-146 other schema -> empty fact list
+    var dt = nz(j.c_doctype_id) ? T.dt(trx, j.c_doctype_id) : null;
+    if (!dt || dt.docbasetype !== 'GLJ') { F.err = 'DocumentType unknown: ' + (dt ? dt.docbasetype : j.c_doctype_id); return false; }   // :168-172 p_Error -> status E
+    if (j.postingtype != null && j.postingtype !== 'A') { F.err = 'GL_Journal PostingType ' + j.postingtype + ' not ported - named'; return false; }   // Fact(this, as, m_PostingType) - twin books Actual only
+    var ctx = Doc(trx, 'gl_journal', j, { dateDoc: j.datedoc || j.dateacct, dateAcct: j.dateacct, c_currency_id: j.c_currency_id }), cur = {}, nCur = 0, sb = Z;
+    var lines = trx.find('gl_journalline', { gl_journal_id: j.gl_journal_id }, ['line', 'gl_journalline_id']).filter(function (l) { return l.isactive !== 'N'; }).map(function (l) {   // MJournal.getLines(false)
+      var dl = DocLine(trx, 'gl_journalline', l, { c_conversiontype_id: l.c_conversiontype_id }); dl.qty = D(l.qty == null ? 0 : l.qty);                     // :88 setQty(line.getQty(), false)
+      dl.cur = nz(l.c_currency_id) ? l.c_currency_id : j.c_currency_id;                                                  // DocLine.getC_Currency_ID :132-147
+      var vcr = nz(l.c_validcombination_id) ? trx.get('c_validcombination', l.c_validcombination_id) : null; dl.acct = vcr ? vcr.account_id : null;             // :94-95 line.getAccount_Combi
+      return dl; });
+    lines.forEach(function (dl) { if (!(dl.cur in cur)) { cur[dl.cur] = 1; nCur++; } sb = sb.add(D(dl.row.amtsourcedr)).subtract(D(dl.row.amtsourcecr)); });
+    if (nCur <= 1 && sb.signum() !== 0) { F.err = 'GL_Journal source-unbalanced (Fact.balanceSource suspense, Fact.java:298-322) not ported - named'; return false; }   // Doc.postLogic :846-853; >1 currency => balanced (Fact.java:255-262)
+    for (var i = 0; i < lines.length; i++) {
+      var dl = lines[i]; if (dl.acct == null) { F.err = 'GL_JournalLine ' + dl.id + ' account not resolvable - named'; return false; }
+      createLine(F, ctx, dl, dl.acct, dl.cur, dl.row.amtsourcedr, dl.row.amtsourcecr);                                    // :160-164
+    }
+    return !F.err;
+  }
+
   // ── the Doc_* classes: createFacts(trx, doc, as, fact) ──
   var DOC = {
     c_order: function () { return true; },                                                  // Doc_Order: no commitment accounting → no facts, Posted='Y'
@@ -700,6 +722,7 @@
     m_matchpo: function (trx, mp, as, F) { return Doc_MatchPO(trx, mp, as, F); },
     m_movement: function (trx, mv, as, F) { return Doc_Movement(trx, mv, as, F); },
     m_inventory: function (trx, inv, as, F) { return Doc_Inventory(trx, inv, as, F); },
+    gl_journal: function (trx, j, as, F) { return Doc_GLJournal(trx, j, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
       var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
