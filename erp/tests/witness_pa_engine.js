@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — W-PA-ENGINE (spec bim-ootb prompts/CAPEX_DASHBOARD.md §5.14 / §5.18). READ THE LOG: verdict = §PA_ENGINE_VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: "a PA-defined tile gives a different number / colour on the SQLite twin than on legacy iDempiere" (CARDINAL RULE) — judged on the ONE PA owner of the twin,
-//   erp/overlay/goal_engine.js (evaluate + the storing path §5.18) and erp/overlay/dashboard_gadgets.js colorOf. (The §5.15 second engine erp/pa_engine.js was deleted, §5.18.)
+//   erp/goal_engine.js (evaluate + the storing path §5.18) and erp/overlay/dashboard_gadgets.js colorOf. (The §5.15 second engine erp/pa_engine.js was deleted, §5.18.)
 // Steps: M the SAME migration script legacy applied is applied to the twin · V vectors from the Java rules · N negatives · Q the PA_Goal model class reproduces legacy's no-compute-on-create +
 //   previous-target behaviours · A oracle legacy pilot (READ-ONLY stock query_data; INCONCLUSIVE when down / stale) · B oracle tiles.js on the same rows.
 // Breaks (MUST FAIL): BREAK=1 (+1 cent on the twin's value before the oracles compare).
@@ -11,7 +11,7 @@
 'use strict';
 var fs = require('fs'), path = require('path'), C = require('./dd_common.js');
 var ROOT = path.join(__dirname, '..', '..'), MIG = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql/202611031900_CAPEX-R0.sql');
-var GE = require('../overlay/goal_engine.js'), DG = require('../overlay/dashboard_gadgets.js'), MA = require('../../capex/tools/migration_apply.js'), BD = require('../bigdecimal.js');
+var GE = require('../goal_engine.js'), DG = require('../overlay/dashboard_gadgets.js'), MA = require('../../capex/tools/migration_apply.js'), BD = require('../bigdecimal.js');
 var OFFLINE = process.argv.indexOf('--offline') >= 0, BREAK = process.env.BREAK === '1';
 var judged = 0, fails = 0, inconc = 0, log = console.log;
 function check(n, ok, info) { judged++; if (!ok) fails++; log('  §PA_ENGINE ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); }

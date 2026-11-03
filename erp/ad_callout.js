@@ -832,7 +832,11 @@
     BD: BD, RM: RM, Env: Env, Msg: Msg, Timestamp: Timestamp, TimeUtil: TimeUtil, DisplayType: DT, typed: typed, stored: stored,
     toBD: toBD, isEmpty: isEmpty, AdempiereException: AdempiereException, CalloutEngine: CalloutEngine,
     DB: null, PO: null, M: {},              // M = model/support classes (erp/callouts/support.js fills it)
-    now: function () { return Date.now(); },
+    // the LOCAL wall clock, held the twin's way (Timestamp keeps wall-clock fields as UTC ms, :22-41): legacy's "now" / SYSDATE / @#Date@ is the SERVER's local time (iDempiere runs the DB session in
+    //   the JVM's timezone), and the twin's model env already uses the local day (crud_overlay _modelEnv). Was Date.now() = the UTC wall clock: east of UTC, between local midnight and the offset, every
+    //   default date, the login date and SQL SYSDATE were YESTERDAY (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24: Average Delay 189 vs legacy 190 at 00:11 +08).
+    //   Same rule as bim-compiler prompts/ERP_DEPTH_FILM.md §LOCAL-TIME (crud_core.js localDay / local stamps, W-LOCAL-TIME), which did not reach this clock.
+    now: function () { var d = new Date(); return d.getTime() - d.getTimezoneOffset() * 60000; },
     log: function (s) { if (typeof console !== 'undefined') console.log(s); },
     fired: function (cmd) { _stats.fired[cmd] = (_stats.fired[cmd] || 0) + 1; },
     unported: function (cmd, table, col) {

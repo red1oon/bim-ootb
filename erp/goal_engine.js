@@ -1,7 +1,8 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 //
-// goal_engine.js — PERFORMANCE GOAL ENGINE (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D1; Witness: W-GOAL-ENGINE).
+// goal_engine.js — PERFORMANCE GOAL ENGINE (bim-compiler prompts/ERP_DEPTH_FILM.md §DASHBOARD-PARITY D1; Witness: W-GOAL-ENGINE). CORE since bim-ootb prompts/CAPEX_DASHBOARD.md §5.24 (was overlay/):
+//   MGoal is legacy CORE behaviour — the PA_Goal model class (model_pa.js) needs this engine in the save path, and the core may not reference the overlay (witness_core_untouched CU4).
 // Ports MGoal.updateGoal -> MMeasure.updateCalculatedGoals (MMeasure.java:500-541) / updateRequests (:558-595): the SQL is BUILT FROM THE DICTIONARY ROWS (PA_Goal, PA_Measure, PA_MeasureCalc, R_RequestType)
 // exactly as MMeasureCalc.getSqlPI (MMeasureCalc.java:153-189) / MRequestType.getSqlPI (:417-457) + MMeasureCalc.addRestrictions (:400-613) + MRole.addAccessSQL's client/org where (MRole.java:1110-1260) build it,
 // then run. No per-goal code: a new PA_MeasureCalc row works with zero host code. The Postgres-isms the dictionary SQL uses (TRUNC(d,fmt), currencyBase, invoiceOpen, the RV_C_Invoice / C_Invoice_v views)
@@ -102,7 +103,7 @@
     var perf = div6(actual, g.measuretarget);
     return { ok: true, goalId: Number(goalId), actual: actual, target: Number(g.measuretarget), performance: perf, percent: Math.trunc(Number(perf) * 100), scope: scope, sql: sql };
   }
-  // ── accessOf: the role's client/org access (MRole.getClientWhere(false) :1110-1117 / getOrgWhere(false) :1192-1235). ONE owner: overlay/home.js session() and the CAPEX witnesses call it
+  // ── accessOf: the role's client/org access (MRole.getClientWhere(false) :1110-1117 / getOrgWhere(false) :1192-1235). ONE owner: the Home overlay's session() and the CAPEX witnesses call it
   //   (moved here from home.js, rule unchanged; isUseUserOrgAccess / summary-org dependents are NOT ported — bim-ootb prompts/CAPEX_DASHBOARD.md §5.18).
   function accessOf(q, roleId, clientId) {
     var all = q('SELECT IsAccessAllOrgs AS a FROM AD_Role WHERE AD_Role_ID=?', [roleId])[0], orgIds = null, cl = Number(clientId);
@@ -128,11 +129,18 @@
   }
   // MGoal.updateGoal(force) :383-415 — the render-time call (WPAWidget.java:54, force=false): recompute when DateLastRun is null or older than ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL
   //   (default 1800000 ms, MSysConfig, client-specific first). run(sql, params) writes straight to the db.
+  // refreshDue(q, goalRow, ctx): MGoal.updateGoal's rule (:383-399) — recompute when DateLastRun is null or older than ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL (MSysConfig, client first, default
+  //   1800000 ms). ONE owner: updateGoal below and the Home gadget (dashboard_gadgets.performance draws the STORED row when not due, as WPerformanceIndicator does).
+  function refreshDue(q, g, ctx) {
+    var sc = null; try { sc = q("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL' AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC", [ctx.client])[0]; } catch (e) { sc = null; }   // no AD_SysConfig → MSysConfig's default
+    var iv = sc && isFinite(parseInt(sc.v, 10)) ? parseInt(sc.v, 10) : 1800000, ms = function (t) { return Date.parse(String(t).replace(' ', 'T') + 'Z'); };
+    var now = ctx.now ? ms(ctx.now) : Date.now();   // legacy: System.currentTimeMillis() (MGoal.java:390-393) when the caller carries no clock
+    return { due: !g.datelastrun || now - ms(g.datelastrun) > iv, interval: iv };
+  }
   function updateGoal(q, run, goalId, ctx, opts) {
     var g = q('SELECT * FROM pa_goal WHERE pa_goal_id=?', [goalId])[0]; if (!g) return { updated: false, reason: 'no PA_Goal ' + goalId };
-    var sc = q("SELECT value AS v FROM ad_sysconfig WHERE name='ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL' AND ad_client_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC", [ctx.client])[0];
-    var iv = sc && isFinite(parseInt(sc.v, 10)) ? parseInt(sc.v, 10) : 1800000, ms = function (t) { return Date.parse(String(t).replace(' ', 'T') + 'Z'); };
-    if (!(opts && opts.force) && g.datelastrun && !(ms(ctx.now) - ms(g.datelastrun) > iv)) return { updated: false, reason: 'not due', interval: iv };
+    var rd = refreshDue(q, g, ctx), iv = rd.interval;
+    if (!(opts && opts.force) && !rd.due) return { updated: false, reason: 'not due', interval: iv };
     var res = updateMeasureGoals(q, function (row, ch) { var k = Object.keys(ch); run('UPDATE pa_goal SET ' + k.map(function (c) { return c + '=?'; }).join(',') + ' WHERE pa_goal_id=?', k.map(function (c) { return ch[c]; }).concat([Number(row.pa_goal_id)])); }, g.pa_measure_id, ctx);
     return { updated: res.some(function (r) { return r.written; }), goals: res };
   }
@@ -145,6 +153,6 @@
       updateMeasureGoals(trx.q, function (g, c) { trx.update('pa_goal', g, c); }, row.pa_measure_id, ctxFor(trx));
     } });
   }
-  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, aliasOf: aliasOf, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel };
+  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, aliasOf: aliasOf, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel, refreshDue: refreshDue };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.GoalEngine = api;
 })(typeof window !== 'undefined' ? window : this);

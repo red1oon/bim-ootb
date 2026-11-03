@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v975';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned). v973: erp_engine.js pruned to the browser subset (-970 lines). v975: friendly_ops.mjs Branch Day Close (POS_PLUGIN_LOCAL_FIRST §21), ReplenishReportProduction + ad_process.js runInTrx pinstance
+const CACHE_VERSION = 'v976';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned). v973: erp_engine.js pruned to the browser subset (-970 lines). v975: friendly_ops.mjs Branch Day Close (POS_PLUGIN_LOCAL_FIRST §21), ReplenishReportProduction + ad_process.js runInTrx pinstance
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -188,7 +188,7 @@ const PRECACHE_ASSETS = [
   'erp_postings.js',   // FRONTEND_LANE_MASTER §2 Item C — frozen read-fold (UMD copy, window.ERPPostings)
   'accts_posted.js',   // Accts-Posted lens (buildCtx/buildPostedVM/mount/mountAccordion, window.AcctsPosted)
   'post_resolver.js',  // POSTING_PREVIEW_PANEL.md — token→account resolver (UMD, window.PostResolver), FOLD-frozen
-  'ad_workflow.js', 'model_layer.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_asi.js', 'model_dd.js', 'model_movement.js', 'model_inventory.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
+  'ad_workflow.js', 'model_layer.js', 'invoice_open.js', 'goal_engine.js', 'model_pa.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_asi.js', 'model_dd.js', 'model_movement.js', 'model_inventory.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
   'doc_poster.js',     // POSTING_PREVIEW_PANEL.md — per-doc GL derivation (UMD, window.DocPoster), == fact_acct(318)
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
   'ad_callout.js',
