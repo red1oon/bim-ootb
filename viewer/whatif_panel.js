@@ -326,8 +326,10 @@
   // refresh() — re-read the OPFS store (which the Author wizard's Apply just re-folded) and, if the panel
   // is open, re-pick the project + re-render in place. Nulls the cached _db so _loadDb re-reads from disk.
   function refresh() {
+    // §A4: no invalidateShared() here. The Author wizard's Apply writes INTO the shared db through persistShared (memo stamp
+    // moves with it), and any other writer moves the disk stamp, which shared() already checks; dropping the memo would only
+    // re-parse the 27 MB store and leave a second instance alive.
     _db = null; _dbShared = false;
-    if (global.ProjOrderState && global.ProjOrderState.invalidateShared) global.ProjOrderState.invalidateShared();
     if (document.getElementById('whatif-panel')) { console.log('§WHATIF-UI refresh — panel open, reloading'); open(); }
     else console.log('§WHATIF-UI refresh — panel closed, will reload on next open');
   }

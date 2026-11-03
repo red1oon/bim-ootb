@@ -138,7 +138,7 @@ process.on('unhandledRejection', function (e) { console.log('§A4_INFO unhandled
   // store with phases = the seed itself (Hospital 990000, 7 phases); store WITHOUT phases = seed with C_ProjectPhase emptied
   var noPh = (function () { var d = new SQL.Database(new Uint8Array(SEED)); d.run('DELETE FROM C_ProjectTask WHERE C_ProjectPhase_ID IN (SELECT C_ProjectPhase_ID FROM C_ProjectPhase)'); d.run('DELETE FROM C_ProjectPhase'); var b = Buffer.from(d.export()); d.close(); return b; })();
 
-  async function runAll(opts) {   // the S1 sequence on a store-with-phases; snapshot taken BEFORE the author's refresh() invalidates the memo
+  async function runAll(opts) {   // the S1 sequence on a store-with-phases; snapshot taken BEFORE the author's refresh()
     var W = mk(Object.assign({ SQL: SQL }, opts || {}), SEED);
     await driveDiff(W); await driveFind(W, 'find'); W.wi = await driveWhatIf(W, true);
     W.snap = { store: W.counts.store, seed: W.counts.seed, opens: W.opens(), reads: W.opfs.reads, reloads: W.count('§PO_SHARED reload') };
@@ -157,7 +157,7 @@ process.on('unhandledRejection', function (e) { console.log('§A4_INFO unhandled
   var disk = new SQL.Database(new Uint8Array(W1.opfs.get())), mkd = markers(disk);
   claim('C2b-persistence-round-trip', mkd.join(',') === 'diff,find,author' && W1.opfs.writes === 4, 'on-disk bytes carry markers=[' + mkd + '] opfs writes=' + W1.opfs.writes + ' (diff, find, whatif accept, author)');
   var authorSaw = W1.logs.filter(function (l) { return l.indexOf('§AUTHOR_UI_WHATIF folded') >= 0; })[0] || '';
-  claim('C2c-author-persist-ok-and-refresh-reread', /persisted=true/.test(authorSaw) && W1.has('§WHATIF-UI refresh') && W1.opens() === 2 && W1.count('§PO_SHARED reload') === 0, authorSaw.replace(/^\[.*?\]\s*/, '') + ' ; refresh() with the panel open -> invalidateShared -> re-read: opens 1 -> ' + W1.opens() + ' (reload-by-stamp lines=' + W1.count('§PO_SHARED reload') + ', the re-open was the explicit invalidate)');
+  claim('C2c-author-persist-ok-and-refresh-no-reparse', /persisted=true/.test(authorSaw) && W1.has('§WHATIF-UI refresh') && W1.opens() === 1 && W1.count('§PO_SHARED reload') === 0, authorSaw.replace(/^\[.*?\]\s*/, '') + ' ; refresh() with the panel open -> stamp check, no re-parse: opens 1 -> ' + W1.opens() + ' (reload-by-stamp lines=' + W1.count('§PO_SHARED reload') + ', the re-open was the explicit invalidate)');
 
   // ── C3: external change (another tab) ──
   var extDb = new SQL.Database(new Uint8Array(SEED)); mark(extDb, 'EXTERNAL'); var extBytes = Buffer.from(extDb.export()); extDb.close();
