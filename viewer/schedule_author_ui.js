@@ -50,38 +50,17 @@
   // Without this, pressing Generate/Apply writes only `tasks`; What-if keeps showing a stale, thin
   // C_ProjectPhase from a one-time `> to ERP` push (user-reported: SampleCastle What-if had one phase while
   // the wizard showed four). We fold the authored phases 1:1 into the SAME OPFS store What-if reads, then
-  // refresh it. Open OPFS-first (else the bundled seed), exactly like whatif_panel._loadDb.
+  // refresh it. Open OPFS-first (else the bundled seed) via the ONE shared store (§A4).
+  // §A4: ONE shared sql.js instance of the store (ProjOrderState.shared, stamp-guarded); no private OPFS open / export here.
   function _openErpDb(SQL) {
-    var fromOpfs = Promise.resolve(null);
-    try {
-      if (navigator.storage && navigator.storage.getDirectory) {
-        fromOpfs = navigator.storage.getDirectory()
-          .then(function (root) { return root.getDirectoryHandle('bim_analysis'); })
-          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db'); })
-          .then(function (fh) { return fh.getFile(); })
-          .then(function (f) { return f.arrayBuffer(); })
-          .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
-          .catch(function () { return null; });
-      }
-    } catch (e) {}
-    return fromOpfs.then(function (d) {
-      if (d) return d;
-      return APP.cachedFetch('../erp/ad_seed.db')
-        .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
-        .catch(function () { return null; });
-    });
+    var PS = global.ProjOrderState, seed = function () { return APP.cachedFetch('../erp/ad_seed.db'); };
+    var p = (PS && PS.shared) ? PS.shared(SQL, seed, 'schedule_author_ui').then(function (st) { return st.db; })
+      : seed().then(function (buf) { return new SQL.Database(new Uint8Array(buf)); });
+    return p.catch(function () { return null; });
   }
   function _persistErpDb(d) {
-    try {
-      if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
-      var bytes = d.export();
-      return navigator.storage.getDirectory()
-        .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
-        .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
-        .then(function (fh) { return fh.createWritable(); })
-        .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-        .then(function () { return true; }).catch(function () { return false; });
-    } catch (e) { return Promise.resolve(false); }
+    var PS = global.ProjOrderState;
+    return (PS && PS.persistShared) ? PS.persistShared(d, 'schedule_author_ui').catch(function () { return false; }) : Promise.resolve(false);
   }
   function _syncWhatIf() {
     var d = db(), a = A();

@@ -69,6 +69,52 @@
     } catch (e) { console.log('§S9-STORE persist FAILED ' + e.message); return false; }
   }
 
+  // §A4 (bim-compiler prompts/CODE_HYGIENE_REVIEW_2026-11.md §A4 SPEC): ONE resident sql.js copy of the store per tab. diff.js / find_erp_push.js /
+  //   whatif_panel.js / schedule_author_ui.js each used to open + export() their own 27 MB copy. shared() memoises ONE instance keyed on storeStamp();
+  //   persistShared() is the one guarded writer and re-stamps the memo so the OTHER consumers do not reload after our own write.
+  //   The replaced instance on a reload is NOT closed (a consumer may still hold it across an await) — the cost is logged (§PO_SHARED reload/opens).
+  var _shared = null, _sharedQ = Promise.resolve(), _opens = 0;
+  function _sharedImpl(SQL, fetchSeed, writer) {
+    return storeStamp().then(function (st) {
+      if (_shared && st === _shared.stamp && st !== 'unknown') return _shared;
+      var was = _shared && _shared.stamp;
+      return openStore(SQL, fetchSeed).then(function (o) {
+        _opens++;
+        if (_shared) {
+          console.log('§PO_SHARED reload was=' + was + ' now=' + st);
+          console.log('§PUSH_STORE_RELOAD writer=' + (writer || 'shared') + ' was=' + was + ' now=' + st);
+        }
+        _shared = { db: o.db, src: o.src, stamp: st };
+        console.log('§PO_SHARED opens=' + _opens + ' src=' + o.src + ' stamp=' + st);
+        return _shared;
+      });
+    });
+  }
+  function shared(SQL, fetchSeed, writer) {   // serialised: concurrent first calls share ONE open
+    var p = _sharedQ.then(function () { return _sharedImpl(SQL, fetchSeed, writer); });
+    _sharedQ = p.catch(function () {});
+    return p;
+  }
+  function invalidateShared() { _shared = null; }   // next shared() re-opens from disk (WhatIfPanel.refresh)
+  function sharedOpens() { return _opens; }
+  function sharedStamp() { return _shared ? _shared.stamp : null; }
+  // Persist the shared instance. Refused (false) when the file on disk is no longer the one the memo was loaded/written from (another tab, a seed reset)
+  //   or `db` is not the current memo instance — writing it would put old orders back. lastPersist.reason: 'ok' | 'stale' | 'no-opfs' | 'error'.
+  function persistShared(db, writer) {
+    API.lastPersist = { ok: false, reason: 'no-opfs' };
+    if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    return storeStamp().then(function (st) {
+      if (!_shared || db !== _shared.db || st !== _shared.stamp) {
+        console.log('§PUSH_STORE_STALE writer=' + (writer || 'shared') + ' was=' + (_shared && _shared.stamp) + ' now=' + st + (_shared && db !== _shared.db ? ' (superseded instance)' : ''));
+        _shared = null; API.lastPersist = { ok: false, reason: 'stale' }; return false;
+      }
+      return persist(db).then(function (ok) {
+        if (!ok) { API.lastPersist = { ok: false, reason: 'error' }; return false; }
+        return storeStamp().then(function (n) { _shared.stamp = n; API.lastPersist = { ok: true, reason: 'ok' }; return true; });
+      });
+    });
+  }
+
   // ── priced rows for a set of guids — the SAME shape as navigate_find.js _selectionPriced (disc,cls,storey,count,unit,qty,rate,cost), from the
   // SHIPPED 5D quantity basis (EditDelta.qtyOf == compute5D). `edits` = {guid: net} (EditDelta.netEdits entry) applies the post-edit dims (the VARIANT). ──
   function pricedRowsFor(db, guids, env, edits, fallback) {
@@ -193,7 +239,7 @@
   }
   function voStatusLabel(s) { return s === 'DR' ? 'Drafted' : s === 'CO' ? 'Approved' : s === 'IP' ? 'In progress' : s === 'RE' ? 'Reversed' : String(s); }
 
-  var API = { BUILDING_LABELS: BUILDING_LABELS, projectKey: projectKey, openStore: openStore, persist: persist, storeStamp: storeStamp, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
+  var API = { BUILDING_LABELS: BUILDING_LABELS, projectKey: projectKey, openStore: openStore, persist: persist, storeStamp: storeStamp, shared: shared, persistShared: persistShared, invalidateShared: invalidateShared, sharedOpens: sharedOpens, sharedStamp: sharedStamp, lastPersist: null, pricedRowsFor: pricedRowsFor, readState: readState, decide: decide, generate: generate,
     deleteReissue: deleteReissue, voRowsFromEdit: voRowsFromEdit, rowsAmount: rowsAmount, voStatusLabel: voStatusLabel, issueVO: issueVO, launchUrl: launchUrl, countProjects: countProjects, STORE_FILE: STORE_FILE };
   if (typeof window !== 'undefined') window.ProjOrderState = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

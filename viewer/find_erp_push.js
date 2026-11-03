@@ -58,42 +58,19 @@
     // The writable ERP db is loaded lazily (fetch erp/ad_seed.db → sql.js) and the folded result is
     // persisted to OPFS (bim_project_orders.db) — a viewer-owned project-orders store. NOTE: the
     // cross-page hand-off so the ERP app reads it is the BIMtoERP §B write-path (follow-on).
-    var _bimErpDb = null, _bimErpStamp = null;
-    function _stamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
+    // §A4: the store is ONE shared sql.js instance (ProjOrderState.shared, stamp-guarded; OPFS-first, else the seed) — no private copy / export here.
     function _ensureErpDb() {
-      // §STORE_STAMP: reuse the cached store only while the file on disk is the one we loaded/wrote; else reload (logged, never silent).
-      return _stamp().then(function (st) {
-        if (_bimErpDb && st === _bimErpStamp && st !== 'unknown') return _bimErpDb;
-        if (_bimErpDb) console.log('[RP-C] §PUSH_STORE_RELOAD writer=find_erp_push was=' + _bimErpStamp + ' now=' + st);
-        _bimErpDb = null; _bimErpStamp = st;
-        return _loadErpDb();
-      });
-    }
-    function _loadErpDb() {
       var SQL = A._SQL || (typeof window !== 'undefined' && (window.SQL || window._SQL_CACHED));   // viewer caches the sql.js factory as A._SQL (streaming.js:1343); window.SQL is only set on the ERP page
       if (!SQL || !global.ProjFold) return Promise.resolve(null);
-      // §S9 (TM_4D5D_VARIANCE_LANE §S9): OPFS-FIRST, exactly as diff.js _loadVoErpDb already does for the VO path — so a Project Order the MODELLER (or an
-      // earlier session) generated is the SAME store this push amends (context-based: an existing Project Order is a variant, not a duplicate). Falls back to the seed.
-      if (global.ProjOrderState && global.ProjOrderState.openStore) {
-        return global.ProjOrderState.openStore(SQL, function () { return A.cachedFetch('../erp/ad_seed.db'); })
-          .then(function (st) { _bimErpDb = st.db; return _bimErpDb; })
-          .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
-      }
-      return A.cachedFetch('../erp/ad_seed.db')
-        .then(function (buf) { _bimErpDb = new SQL.Database(new Uint8Array(buf)); return _bimErpDb; })
-        .catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
+      var seed = function () { return A.cachedFetch('../erp/ad_seed.db'); };
+      var p = (global.ProjOrderState && global.ProjOrderState.shared)
+        ? global.ProjOrderState.shared(SQL, seed, 'find_erp_push').then(function (st) { return st.db; })
+        : seed().then(function (buf) { return new SQL.Database(new Uint8Array(buf)); });
+      return p.catch(function (e) { console.log('[RP-C] §PROJ_PUSH_DBERR ' + e.message); return null; });
     }
     function _persistErpDb(db) {
-      try {
-        if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
-        var bytes = db.export();
-        return navigator.storage.getDirectory()
-          .then(function (root) { return root.getDirectoryHandle('bim_analysis', { create: true }); })
-          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db', { create: true }); })
-          .then(function (fh) { return fh.createWritable(); })
-          .then(function (w) { return w.write(bytes).then(function () { return w.close(); }); })
-          .then(function () { return _stamp().then(function (st) { if (db === _bimErpDb) _bimErpStamp = st; return true; }); }).catch(function () { return false; });
-      } catch (e) { return Promise.resolve(false); }
+      var PS = global.ProjOrderState;
+      return (PS && PS.persistShared) ? PS.persistShared(db, 'find_erp_push').catch(function () { return false; }) : Promise.resolve(false);
     }
     // ── §S2 (TM_4D5D_VARIANCE_LANE) — Zoom-Across cost fold ─────────────────────────────────────────────────
     // When the ERP "Zoom Across" pill lands the viewer on an IFC class, fold that class's STORED twin cost into
