@@ -232,7 +232,8 @@
 // v1675 (2026-11-03) §A3a ONE kernel_ops: READONLY_OPS defer, §KRN_PERSIST_GUARD, split-mode key and DbResolve.cacheKey key ported into erp/kernel_ops.js (the only copy the Viewer loads); viewer/kernel_ops.js deleted; viewer.html kernel_ops.js?v=14; W-ONE-KERNEL-OPS.
 // v1676 (2026-11-03) CAPEX §5.10 / P5: erp_push_plan.js (the one plan builder, moved from capex/tools/shed_twin.js) + erp_rest_push.js loaded by viewer.html; config.js?v=5 A.LEGACY_ERP; find_erp_push.js?v=5 pushes the fold to a real iDempiere (password in memory only)
 // v1677 (2026-11-03) §A3b erp/kernel_ops.js?v=15: persist under DbResolve.cacheKey (+ split-mode _dbPersistUrl) so Viewer edits survive a refresh (owner rulings §S70, HISTORY_PERSIST_RECALL §LOCKED-2); raw-url copy reclaimed; W-ONE-KERNEL-OPS 17/17.
-const CACHE_VERSION = 'v1677';
+// v1678 (2026-11-03) §5.11 the Project-Order store opens with the ERP's boot overlays (proj_order_state.js v6 + ../erp/ad_docvalue_wf.js, ad_docvalue_overlay.js, ad_taxcat_overlay.js)
+const CACHE_VERSION = 'v1678';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1166,7 +1167,7 @@ const PRECACHE_ASSETS = [
   'info_dxf2bim.js',
   'edit_delta.js',
   'edit_delta_viewer.js',
-  'proj_order_state.js',
+  'proj_order_state.js', '../erp/ad_docvalue_wf.js', '../erp/ad_docvalue_overlay.js', '../erp/ad_taxcat_overlay.js',
   // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
   // sched4d pill. KEEP BOTH on any precache conflict.
   // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without
