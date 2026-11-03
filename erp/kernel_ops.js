@@ -183,6 +183,8 @@
                 console.log('§KRN_PERSIST_RAW_RECLAIM url=' + dbUrl + ' (superseded by key=' + dbKey + ')');
               }
               console.log('§KRN_PERSIST url=' + dbUrl + ' key=' + dbKey + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB tip=' + String(myTip).slice(0,12) + '…');
+              // SEAM-W3A F4: mark the slot as holding user edits so scene.js's LRU never evicts it (ONE helper, fail-soft when absent).
+              try { if (typeof window !== 'undefined' && window.APP && APP.markEdited) APP.markEdited(dbKey); } catch (eM) {}
               resolve();
             };
             getReq.onsuccess = function() {

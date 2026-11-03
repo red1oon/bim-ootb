@@ -55,6 +55,9 @@
   function importLegacyUrls(projectKey, part) {
     var k = importProjectKey(projectKey);
     if (part === 'monolith' || part === 'v0' || part == null) return ['import://' + k + '/extracted', 'import://' + k + '/library'];
+    // SEAM-W3A: scene.js "Open DB" split shape `import://<K>_<part>.db/v0` (K = stem, no .ifc).
+    if (part === 'extracted' || part === 'library') return ['import://' + k + '_extracted.db/v0'];
+    if (part === 'meta' || part === 'geo') return ['import://' + k + '_' + part + '.db/v0'];
     return [];
   }
   // currentUrlFor(url) — the url a LEGACY monolith url now lives under (import://K/extracted|library → import://K/v0),
@@ -62,7 +65,9 @@
   // Split urls end `_extracted.db` etc. and are never matched.
   function currentUrlFor(url) {
     var m = /^import:\/\/(.+)\/(extracted|library)$/.exec(String(url || ''));
-    return m ? importUrl(m[1], 'monolith') : null;
+    if (m) return importUrl(m[1], 'monolith');
+    var s = /^import:\/\/(.+)_(extracted|meta|geo)\.db\/v0$/.exec(String(url || ''));   // SEAM-W3A Open-DB split shape
+    return s ? importUrl(s[1], s[2]) : null;
   }
 
   // Old materialize shape (stem kept). Informational: never moved or deleted (a saved ?db= link carries the whole url).

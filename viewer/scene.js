@@ -651,12 +651,43 @@ async function setupScene(A) {
   // store instead, so one over-quota write threw away every other building that was fitting fine.
   // §SEAM-W2 F4 (SEAM_IDENTITY_AUDIT): eviction may ONLY remove re-downloadable / derived entries.
   // import:// blobs, edit snapshots, Time-Machine json, kanban/walk progress are the user's work — default-deny.
-  A._cacheEvictable = function(key) {
+  // SEAM-W3A F4 tail: `edited` = { key:1 } from A._editedKeys — a key a saver marked as holding USER EDITS is never evictable.
+  A._cacheEvictable = function(key, edited) {
     if (typeof key !== 'string' || !key) return false;
+    if (edited && edited[key]) return false;
     if (key.indexOf('import://') === 0) return false;
     if (/::tip$/.test(key)) return false;
     return /^(https?:)?\/\//.test(key) || /^\.{0,2}\//.test(key) || /^(buildings|modeller)\//.test(key) ||
            /^(mrooms_|rw_|occlStruct:)/.test(key);
+  };
+  // revalidation records carry {etag, contentLength[, edited:<ts>]}; this reads ONLY the edited marks.
+  A._editedKeys = async function(cacheDb) {
+    var out = {};
+    try {
+      if (!cacheDb || !cacheDb.objectStoreNames.contains('revalidation')) return out;
+      var st = cacheDb.transaction('revalidation', 'readonly').objectStore('revalidation');
+      var ks = await new Promise(function(r) { try { var q = st.getAllKeys(); q.onsuccess = function() { r(q.result || []); }; q.onerror = function() { r([]); }; } catch (e) { r([]); } });
+      for (var i = 0; i < ks.length; i++) {
+        var rec = await new Promise(function(r) { try { var q = st.get(ks[i]); q.onsuccess = function() { r(q.result); }; q.onerror = function() { r(null); }; } catch (e) { r(null); } });
+        if (rec && rec.edited) out[ks[i]] = 1;
+      }
+    } catch (e) {}
+    return out;
+  };
+  // The ONE writer of the mark (savers: erp/kernel_ops.js _idbPersist, schedule_author.js persistDb, nf_tree_lens). Merges — etag/contentLength untouched.
+  A.markEdited = async function(key) {
+    try {
+      if (!key) return false;
+      var cacheDb = await A.openCacheDB();
+      if (!cacheDb || !cacheDb.objectStoreNames.contains('revalidation')) return false;   // fail soft: behaviour as before
+      var rec = await new Promise(function(r) { try { var q = cacheDb.transaction('revalidation', 'readonly').objectStore('revalidation').get(key); q.onsuccess = function() { r(q.result); }; q.onerror = function() { r(null); }; } catch (e) { r(null); } });
+      var next = Object.assign({}, (rec && typeof rec === 'object') ? rec : {}, { edited: Date.now() });
+      return await new Promise(function(r) {
+        try { var tx = cacheDb.transaction('revalidation', 'readwrite'); tx.objectStore('revalidation').put(next, key);
+              tx.oncomplete = function() { console.log('[S203] §CACHE_MARK_EDITED key=' + key); r(true); }; tx.onerror = tx.onabort = function() { r(false); };
+        } catch (e) { r(false); }
+      });
+    } catch (e) { return false; }
   };
   A._evictOldest = async function(cacheDb, forceN) {
     try {
@@ -674,9 +705,11 @@ async function setupScene(A) {
         openKeys[A.DB_URL] = 1;
         try { if (window.DbResolve && window.DbResolve.cacheKey) openKeys[window.DbResolve.cacheKey(A.DB_URL, A.PROD_BASE)] = 1; } catch (e0) {}
       }
+      var edited = await A._editedKeys(cacheDb);
       var eligible = [], skipped = [];
       allKeys.forEach(function(k) {
         if (openKeys[k]) { skipped.push('§CACHE_EVICT_SKIP_OPEN key=' + k); return; }
+        if (edited[k]) { skipped.push('§CACHE_EVICT_SKIP_EDITED key=' + k); return; }
         if (!A._cacheEvictable(k)) { skipped.push('§CACHE_EVICT_SKIP_USERDATA key=' + k); return; }
         eligible.push(k);
       });
@@ -1516,7 +1549,7 @@ async function setupScene(A) {
       console.log('§MERGE_SKIP reason=no_building_open — replace path');
     }
     var key = fileName.replace(/\.(db|sqlite)$/i, '') + '.db';
-    var dbUrl = 'import://' + key + '/v0';
+    var dbUrl = window.ImportKey.importUrl(key, 'monolith');   // SEAM-W3A: ImportKey owns the shape (== import://key/v0)
     var cacheDb = await A.openCacheDB();
     if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
     await new Promise(function(resolve){
@@ -1545,9 +1578,10 @@ async function setupScene(A) {
       console.log('§MERGE_SKIP reason=no_building_open — replace path');
     }
     var key = fileName.replace(/_meta\.db$/i, '').replace(/\.(db|sqlite)$/i, '');
-    var extractedUrl = 'import://' + key + '_extracted.db/v0';
-    var metaUrl = 'import://' + key + '_meta.db/v0';
-    var geoUrl = 'import://' + key + '_geo.db/v0';
+    // SEAM-W3A: owner shapes import://K/K_{extracted,meta,geo}.db (streaming.js derives meta/geo by suffix swap → same urls).
+    var extractedUrl = window.ImportKey.importUrl(key, 'extracted');
+    var metaUrl = window.ImportKey.importUrl(key, 'meta');
+    var geoUrl = window.ImportKey.importUrl(key, 'geo');
     var cacheDb = await A.openCacheDB();
     if (!cacheDb) { if (A.status) A.status.textContent = 'Cache unavailable'; return; }
     await new Promise(function(resolve) {
@@ -1558,6 +1592,12 @@ async function setupScene(A) {
       store.put(metaBytes, extractedUrl);   // meta as primary — fast load, same as import.js's openImported
       tx.oncomplete = resolve; tx.onerror = resolve;
     });
+    // USER DATA (R4): entries under the old `import://K_<part>.db/v0` shape move only when byte-identical (put→verify→delete); else kept.
+    try {
+      var _st = window.ImportKey.importIdbStore(cacheDb, A.CACHE_STORE);
+      var _parts = ['extracted', 'meta', 'geo'];
+      for (var _pi = 0; _pi < _parts.length; _pi++) await window.ImportKey.importRekey(_st, key, _parts[_pi]);
+    } catch (eRk) { console.warn('§IMPORT_KEY_REKEY_ERR ' + (eRk && eRk.message)); }
     console.log('§OPEN_DB_SPLIT cached key=' + key + ' meta=' + metaBytes.byteLength + ' geo=' + geoBytes.byteLength + ' → navigate');
     location.assign('viewer.html?db=' + encodeURIComponent(extractedUrl) + '&lib=' + encodeURIComponent(extractedUrl) + '&ghost=1');
   };

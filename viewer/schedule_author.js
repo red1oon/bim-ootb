@@ -3433,6 +3433,8 @@
             if (_hasTs) tx.objectStore('timestamps').put(Date.now(), key);
             tx.oncomplete = function () {
               console.log('§SCHED_PERSIST url=' + url + ' key=' + key + ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');
+              // SEAM-W3A F4: flag the slot as holding user edits so the LRU never evicts it (the ONE helper lives in scene.js).
+              try { var _A = window.APP || window.A; if (_A && _A.markEdited) _A.markEdited(key); } catch (eM) {}
               resolve(true);
             };
             tx.onerror = function () { console.warn('§SCHED_PERSIST_ERR tx ' + (tx.error && tx.error.message)); resolve(false); };
