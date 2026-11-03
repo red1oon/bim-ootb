@@ -14,7 +14,8 @@ const base = process.env.BRIDGE_BASE || 'http://localhost:8088';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.error('§CFG local pilot only'); process.exit(2); }
 const L = { user: 'GardenAdmin', pass: 'GardenAdmin', lang: 'en_US', ClientID: 11, RoleID: 102, OrgID: 11, WarehouseID: 103, stage: 0 };
 const login = { user: L.user, pass: L.pass, lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
-const GOAL = 'CAPEX Approved Budget (USD)', BAD = 'CAPEX R0 negative control (broken SQL)';
+// its OWN goal name: the shipped goal 'CAPEX Approved Budget (USD)' (202611032100_CAPEX-G3.sql, CAPEX_DASHBOARD.md §5.19) is never deleted by this probe
+const GOAL = 'CAPEX R0 probe — Approved Budget (USD)', BAD = 'CAPEX R0 negative control (broken SQL)';
 let fails = 0, judged = 0;
 function check(name, ok, detail) { judged++; if (!ok) fails++; console.log('§PA_PROBE_ASSERT ' + (ok ? 'PASS' : 'FAIL') + ' ' + name + (detail ? ' ' + detail : '')); }
 function psql(sql) { return execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-U', 'adempiere', '-d', 'idempiere_pilot', '-v', 'ON_ERROR_STOP=1', '-qtA'], { input: 'SET search_path=adempiere;\n' + sql }).toString().trim(); }
@@ -93,6 +94,9 @@ async function recompute(goalId) { const a = await saveTarget(goalId, '1'), b = 
   } finally {
     psql("DELETE FROM PA_Goal WHERE AD_Client_ID=11 AND Name='" + BAD + "'; DELETE FROM PA_Measure WHERE PA_Measure_ID=" + badMeas + "; DELETE FROM PA_MeasureCalc WHERE PA_MeasureCalc_ID=" + badCalc + ";");
     console.log('§PA_PROBE negative control removed');
+    // §5.19: the probe's own goal is removed too — the shipped goals (202611032100_CAPEX-G3.sql) are what every user's Performance gadget shows; a leftover probe goal would be an 18th
+    const gone2 = psql("DELETE FROM PA_Goal WHERE AD_Client_ID=11 AND Name='" + GOAL + "' RETURNING PA_Goal_ID;");
+    console.log('§PA_PROBE probe goal removed ' + (gone2 || 'none'));
   }
   const verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS';
   console.log('§PA_PROBE_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' colour=INCONCLUSIVE(no target)' + (process.env.BREAK === '1' ? ' (BREAK=1 — must be FAIL)' : ''));
