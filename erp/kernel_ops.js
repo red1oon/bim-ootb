@@ -71,6 +71,11 @@
    * @param {string} [outputGuid] created/modified entity ID
    * @returns {number} op id
    */
+  // §A3a — ported from the (now deleted) viewer/kernel_ops.js: MOBILE_PERF.md §OPEN LEVERS 2 fix (a),
+  // conservative deny-list — ONLY ops proven non-mutating skip the full-DB persist. Every edit op
+  // (GRID_*, DISC_SWITCH, ENACT_MOVE, SECTION_CUT, VIEW_FILTER, history replays) persists as before.
+  var READONLY_OPS = { ELEMENT_PICK: 1, BUILDING_OPEN: 1, WING_PLANE: 1, EXPORT_2D: 1 };   // §F7: the 2D wand's plane and save are view state, not edits
+
   function commitOp(db, opType, params, inputGuids, outputGuid, opUuid, ts) {
     ensureTable(db);
     // G-IDENTITY (§0.21 D1/D4): identity is an edge-minted INPUT, recorded — never recomputed on
@@ -98,8 +103,18 @@
     var opId = r[0].values[0][0];
     console.log('§KERNEL_OP committed id=' + opId + ' uuid=' + (uuid ? uuid.slice(0, 8) : 'null') +
                 ' type=' + opType + ' params=' + JSON.stringify(vParams));
-    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives
-    _persistToIdb(db);
+    // S243 §3.7: persist modified DB back to IndexedDB so refresh survives.
+    // Implementing MOBILE_PERF.md §OPEN LEVERS 2 fix (a) — Witness: §KRN_PERSIST_DEFER.
+    // Observational ops (a pick highlights, an open is a marker — neither mutates the model)
+    // don't justify db.export()ing the WHOLE building DB synchronously on the main thread
+    // (42MB on LTU_AHouse = a visible stall 2s after every click). Their rows still reach IDB
+    // inside the next mutating op's export. Gate HERE, not in _persistToIdb — its clearTimeout
+    // would let a read-only op reset a pending mutating persist's debounce.
+    if (READONLY_OPS[opType]) {
+      console.log('§KRN_PERSIST_DEFER type=' + opType + ' (observational — rides the next mutating persist)');
+    } else {
+      _persistToIdb(db);
+    }
     return opId;
   }
 
@@ -124,9 +139,9 @@
   // so the 0ms UI is untouched. See docs/DistributedERP.md §0 (the two-domain split).
   // T6: serialized across tabs via navigator.locks AND tip-guarded — a stale tab can no longer clobber a
   // newer tab's committed, sealed, signed ops (the zero-op-count-threshold data-loss bomb). A companion
-  // '<dbUrl>::tip' key records the stored chain tip so the guard is O(1), no blob re-open.
+  // '<dbKey>::tip' key records the stored chain tip so the guard is O(1), no blob re-open.
   var _persistTimer = null;
-  function _idbPersist(db, dbUrl) {
+  function _idbPersist(db, dbKey, dbUrl) {
     // T7 fix 1 (W-T7-INC, prompts/T7_INCREMENTAL_SHARD_SPEC.md): seal INCREMENTALLY on the persist
     // path — sealFrom is O(new ops), sealChain was O(whole log) on every debounced persist. Full
     // sealChain remains the post-compaction/post-import/post-shard re-seal (those renumber/delete).
@@ -156,17 +171,17 @@
           try {
             if (!idb.objectStoreNames.contains('dbs')) { console.warn('§KRN_PERSIST_ERR no dbs store'); resolve(); return; }
             var store = idb.transaction('dbs', 'readwrite').objectStore('dbs');
-            var tipKey = dbUrl + '::tip';
+            var tipKey = dbKey + '::tip';   // §A3a: follows the canonical key
             var getReq = store.get(tipKey);
             var writeAndDone = function() {
-              store.put(buf, dbUrl); store.put(myTip, tipKey);
-              console.log('§KRN_PERSIST url=' + dbUrl + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB tip=' + String(myTip).slice(0,12) + '…');
+              store.put(buf, dbKey); store.put(myTip, tipKey);
+              console.log('§KRN_PERSIST url=' + dbUrl + ' key=' + dbKey + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB tip=' + String(myTip).slice(0,12) + '…');
               resolve();
             };
             getReq.onsuccess = function() {
               var storedTip = getReq.result || null;
               if (!_storedTipIsAncestor(db, storedTip)) {
-                console.warn('§KRN_PERSIST_STALE url=' + dbUrl + ' storedTip=' + String(storedTip).slice(0,12) +
+                console.warn('§KRN_PERSIST_STALE url=' + dbKey + ' storedTip=' + String(storedTip).slice(0,12) +
                              '… is not an ancestor of myTip=' + String(myTip).slice(0,12) +
                              '… — refusing to clobber a newer log (T6); reload to merge.');
                 resolve(); return;
@@ -180,24 +195,39 @@
     }).catch(function(e) { console.warn('§KRN_SEAL_ERR', e); });
   }
   function _persistToIdb(db) {
-    // LARGE_DB_BAKE.md §2 L2 — same gate as viewer/kernel_ops.js's twin: a bake profile is
-    // disposable, never reopened from cache, so this export()+IDB-put buys nothing and only risks
-    // the write-loop race (CPE_4D_PERF_MEM_FINDINGS.md §8.6). Found firing on an LTU bake despite
-    // the viewer/kernel_ops.js gate — this is a SEPARATE duplicate implementation (erp/kernel_ops.js
-    // ships its own _persistToIdb, loaded via find_erp_push.js in the Find panel's module chain).
+    // §KRN_PERSIST_GUARD (ported from viewer/kernel_ops.js, §A3a): the IDB write is keyed by the
+    // building url, so ONLY the building db (APP.db) may be persisted under it. A lens committing on
+    // its own in-memory op db (wh_walk W.opDb) used to clobber the cached building with a 16KB
+    // op-only db → refresh served it → building never loaded (P0 2026-06-12). Guard BEFORE the timer
+    // so a foreign-db commit can't cancel a pending legit persist either.
+    if (typeof window !== 'undefined' && window.APP && APP.db && db !== APP.db) {
+      console.log('§KRN_PERSIST_SKIP foreign db (not APP.db) — building cache preserved');
+      return;
+    }
+    // LARGE_DB_BAKE.md §2 L2 — a bake profile is disposable, never reopened from cache, so this
+    // export()+IDB-put buys nothing and only risks the write-loop race (CPE_4D_PERF_MEM_FINDINGS.md
+    // §8.6). Skip outright rather than debounce-and-skip, so no timer is even armed to race against.
     if (typeof window !== 'undefined' && window.APP && APP._bakeOwned) {
       console.log('§KRN_PERSIST_SKIP reason=bake — bake profile is disposable, never reopened from cache');
       return;
     }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
-      var dbUrl = (typeof window !== 'undefined' && window.APP && APP.DB_URL) || null;
+      var A = (typeof window !== 'undefined' && window.APP) || null;
+      var dbUrl = (A && A.DB_URL) || null;
       if (!dbUrl) return;
+      if (A._cacheDisabled) return;   // incognito / low quota → no IDB
+      // §A3a DECISION PENDING (bim-compiler prompts/CODE_HYGIENE_REVIEW_2026-11.md §A3a): the key stays the RAW url, as
+      // shipped. The reader keys by the canonical cache key (§SCHED_PERSIST_KEY) and split mode loads APP.db from
+      // APP._dbPersistUrl (§TM_SPLITMODE_PERSIST_KEY); both fixes were written into the unloaded viewer copy on
+      // 2026-08-23 and have NEVER run here. Switching to them turns on "Viewer edits replace the cached building and
+      // survive a refresh" for the first time — a product decision, not a hygiene fix. Until decided, no new behaviour.
+      var dbKey = dbUrl;
       // T6: serialize same-origin tabs so the read-guard-write is not interleaved. Fallback runs direct.
       if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
-        navigator.locks.request('krn_persist:' + dbUrl, function() { return _idbPersist(db, dbUrl); });
+        navigator.locks.request('krn_persist:' + dbKey, function() { return _idbPersist(db, dbKey, dbUrl); });
       } else {
-        _idbPersist(db, dbUrl);
+        _idbPersist(db, dbKey, dbUrl);
       }
     }, 2000);
   }
@@ -646,7 +676,10 @@
     }
     console.log('§KRN_GROUP committed gid=' + gid + ' ops=' + ids.length + ' groupHash=' + groupHash.slice(0, 12) +
                 '… tip=' + sealRes.tip.slice(0, 12) + '… sealed=' + sealRes.sealed + ' (WHOLE — all-or-none)');
-    _persistToIdb(db);
+    // §A3a: a group made ONLY of observational ops defers like commitOp; any mutating op persists.
+    var allRO = opsArray.every(function (o) { return o && READONLY_OPS[o.op_type]; });
+    if (allRO) console.log('§KRN_PERSIST_DEFER type=GROUP(' + ids.length + ') (observational — rides the next mutating persist)');
+    else _persistToIdb(db);
     // §S7 (W-EMIT): AFTER-commit op-event for the Teams overlay. No-op unless setOpEmitter wired → the
     // return value, the rows, the chain, and the timing above are all unchanged when no emitter is set.
     _emitOps({ kind: 'TEAM_OP', gid: gid, ids: ids, op_hashes: opHashes, tip: sealRes.tip,

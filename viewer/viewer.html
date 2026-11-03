@@ -980,7 +980,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- BIM→Project Order (TASK C): BigDecimal must precede proj_fold (it reads global.BigDecimal at load) -->
 <script src="../erp/bigdecimal.js"></script>
 <script src="../erp/ad_docfsm.js"></script>
-<script src="../erp/kernel_ops.js"></script>
+<script src="../erp/kernel_ops.js?v=14"></script>
 <script src="blue_fold.js?v=1"></script>
 <script src="proj_fold.js?v=4"></script>
 <script src="vo_fold.js?v=3"></script>
@@ -1016,7 +1016,8 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="grid_dim_chains.js?v=4" onerror="console.warn('[DimChains] grid_dim_chains.js skipped')"></script>
 <!-- kernel_ops: loaded ONCE as ../erp/kernel_ops.js above (v13). The viewer-local copy (v8) used
      to be re-loaded here and CLOBBERED v13 — silently breaking blue_fold.js/whatif.js, which call
-     v13-only discardBranch/acceptBranchUpTo. Do not re-add a second kernel_ops include. -->
+     v13-only discardBranch/acceptBranchUpTo. Do not re-add a second kernel_ops include.
+     §A3a (2026-11-03): the viewer-local copy is DELETED; erp/kernel_ops.js is the only one and carries the persist guards. -->
 <script src="../common/whole_history.js?v=4" onerror="console.warn('[WholeHistory] common/whole_history.js skipped')"></script>
 <script src="../common/history_bar.js?v=8" onerror="console.warn('[HistoryBar] common/history_bar.js skipped')"></script>
 <!-- ABOUT_BOX_CONSOLIDATE.md — the ONE shared About/DIY modal (the command-palette corner download triangle → AboutDIY.open; the Help pill keeps the shortcuts palette). Self-contained
