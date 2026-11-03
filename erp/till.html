@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- till.html — the Unicenta-alike till (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §13, §14, §15; Witness: W-TILL-DEPOSIT / -OFFLINE / -PAD / -UNICENTA-PARITY erp/tests/witness_till.js).
+     A standalone Team device page like borrower.html: the device's own ERP engine (idempiere.html?team=1) runs in a hidden frame; this page is only the cashier's view. It DEPOSITS I_Order + I_Payment rows and completes nothing.
+     Query parameters (login=, pipe=, xcfg=, teamplan=) are passed through to the engine. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>uniCenta-style till</title>
+<style>
+  :root { --bg:#f0f0f0; --pn:#fff; --ln:#9aa; --fg:#111; --mut:#667; --acc:#2a6db0; --ok:#1e8e3e; --bad:#c0392b; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.3 system-ui,sans-serif; }
+  .screen { display:none; padding:8px; } .screen.on { display:block; }
+  button { font:inherit; padding:10px 14px; margin:2px; border:1px solid var(--ln); border-radius:4px; background:#e8eef5; cursor:pointer; }
+  button[disabled] { opacity:.45; cursor:not-allowed; } button.go { background:var(--acc); color:#fff; }
+  .bar { display:flex; gap:6px; align-items:center; padding:4px 8px; background:#dde; border-bottom:1px solid var(--ln); font-size:13px; } .chip { padding:1px 8px; border:1px solid var(--ln); border-radius:10px; }
+  #u3 { display:grid; grid-template-columns: 1fr 260px; grid-template-rows:auto 1fr auto; gap:6px; } #north { grid-column:1/3; } #south { grid-column:1/3; }
+  #lines table { width:100%; border-collapse:collapse; background:var(--pn); } #lines td, #lines th { border-bottom:1px solid #ddd; padding:4px 6px; text-align:right; } #lines td:first-child, #lines th:first-child { text-align:left; } tr.sel { background:#cfe3ff; }
+  #totals { display:flex; gap:16px; font-size:18px; justify-content:flex-end; } #east .pad { display:grid; grid-template-columns:repeat(4,1fr); } #east .key { padding:14px 0; font-size:18px; }
+  #price, #por { display:inline-block; min-width:60px; font-size:20px; } .prod { width:107px; height:60px; padding:2px; } #cats button.on { background:var(--acc); color:#fff; }
+  .dlg { max-width:720px; margin:0 auto; background:var(--pn); border:1px solid var(--ln); padding:10px; } #tabs button.on { background:var(--acc); color:#fff; } .rf { font-family:monospace; white-space:pre; }
+  #b-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; } .why { color:var(--mut); font-size:12px; }
+</style></head><body>
+<div class="bar"><b>Till</b><span id="s-net" class="chip">online</span><span id="s-pair" class="chip">starting</span><span id="s-who" class="chip"></span><span id="s-dep" class="chip">deposited 0</span><span style="flex:1"></span><button id="visit">Visit head office</button></div>
+<div id="msg" class="bar" role="status" aria-live="polite" hidden></div>
+
+<section id="u1" class="screen"><h2>Login</h2><div id="users"></div></section>
+
+<section id="u2" class="screen"><h2>Register</h2><div id="panels"></div></section>
+
+<section id="u3" class="screen">
+  <div id="north">
+    <span id="m_jButtons"><button data-btn="Scale" disabled data-disabled-reason="no scale device on a browser till">Scale</button><button data-btn="Mooring" disabled data-disabled-reason="marina module not in this release">Mooring</button><button data-btn="Split Sale" disabled data-disabled-reason="split sale: slice 2">Split Sale</button><button data-btn="Reprint Last Ticket" disabled data-disabled-reason="reprint: slice 2">Reprint Last Ticket</button><button data-btn="Send Order" disabled data-disabled-reason="kitchen screen is P2">Send Order</button><button data-btn="Customer" disabled data-disabled-reason="customers: slice 2">Customer</button></span>
+    <span id="bag"><button data-btn="Add New Ticket" disabled data-disabled-reason="shared tickets: slice 2">Add New Ticket</button><button data-btn="Tickets awaiting completion" disabled data-disabled-reason="shared tickets: slice 2">Tickets awaiting completion</button><button data-btn="Delete" disabled data-disabled-reason="shared tickets: slice 2">Delete</button><button data-btn="Reprint Ticket" disabled data-disabled-reason="shared tickets: slice 2">Reprint Ticket</button><button data-btn="Quick LogOff" disabled data-disabled-reason="shared tickets: slice 2">Quick LogOff</button></span>
+    <span id="scriptbar"></span>
+  </div>
+  <div><div id="lines"><table><thead><tr><th>Item</th><th>Price</th><th>Qty</th><th>Value</th></tr></thead><tbody id="tl"></tbody></table></div>
+    <div id="totals"><span data-total="Subtotal">Subtotal <b id="t-sub">0.00</b></span><span data-total="Taxes">Taxes <b id="t-tax">0.00</b></span><span data-total="Total">Total <b id="t-tot">0.00</b></span></div></div>
+  <div id="rightcol"><button id="b-remove" data-btn="Delete line">Delete line</button><button data-btn="Search product" disabled data-disabled-reason="product finder: slice 2">Search product</button><button data-btn="Edit line" disabled data-disabled-reason="line editor: slice 2">Edit line</button><button data-btn="Choose attributes" disabled data-disabled-reason="attributes: slice 2">Choose attributes</button><button data-btn="Check Stock" disabled data-disabled-reason="stock check: slice 2">Check Stock</button>
+    <div id="east"><div><span id="price"></span><span id="por"></span></div><div class="pad" id="pad"></div>
+      <button id="b-barcode">Get Barcode</button><div><select id="taxcombo" title="Tax category"></select> <label><input type="checkbox" id="addtax"> +</label></div></div></div>
+  <div id="south"><div id="cats"></div><div id="products"></div></div>
+</section>
+
+<section id="u8" class="screen"><div class="dlg"><h2>Payment</h2>
+  <div>Total <b id="paytotal">0.00</b> · Remaining <b id="remaining">0.00</b></div>
+  <div id="tabs"></div>
+  <div id="tabbody"><label>Amount <input id="tender-amount" inputmode="decimal"></label> <span id="cardfields" hidden><label>Terminal ref <input id="card-ref"></label> <label>Approval code <input id="card-auth"></label></span><div id="tabnote" class="why"></div></div>
+  <div>Change <b id="change">0.00</b></div><div id="parts"></div>
+  <div><button id="addpart">Add Part Payment</button><button id="delpart">Delete Part Payment</button> <label><input type="checkbox" id="printtoggle" checked> Print Receipt</label></div>
+  <div><button id="pay-cancel">Cancel</button><button id="pay-ok" class="go">OK</button></div></div></section>
+
+<section id="u9" class="screen"><div class="dlg"><h2>Receipt</h2><div id="receipt"></div><div id="changepop" hidden></div><button id="rc-ok" class="go">OK</button></div></section>
+
+<section id="u14" class="screen"><div class="dlg"><h2>Close Cash</h2>
+  <div data-z="sequence">Sequence <b id="z-seq"></b></div><div data-z="start">Start Date <b id="z-start"></b></div><div data-z="end">End Date <b id="z-end"></b></div>
+  <div data-z="tickets">Transactions <b id="z-tickets"></b></div><div data-z="units">Units <b id="z-units"></b></div><div data-z="gross">Sales <b id="z-gross"></b></div><div data-z="payments">Cash/payments <b id="z-payments"></b></div>
+  <div data-z="bytender">By tender <span id="z-bytender"></span></div><div data-z="net">Net <b id="z-net"></b></div><div data-z="taxes">Taxes <span id="z-taxes"></span></div><div data-z="removed">Lines removed <b id="z-removed"></b></div><div data-z="nosales">No Sale - Drawer Openings <b id="z-nosales"></b></div>
+  <div><button id="zprint">Print</button><button id="zclose" class="go">Close Cash</button><button id="zconfirm" hidden>Yes, close the cash</button><select id="zpast" title="Reprint a past Z"></select><button id="zreprint">Reprint a past Z</button><button id="zback">Back</button></div><div id="zdone"></div></div></section>
+
+<iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
+<script src="till_pad.js"></script><script src="till_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script>
+</body></html>
