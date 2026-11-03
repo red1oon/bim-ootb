@@ -3405,6 +3405,16 @@
     return (DR && DR.cacheKey) ? DR.cacheKey(url, A && A.PROD_BASE) : url;
   }
 
+  // persistUrlFor(app) — the url whose cache slot the OPEN building's bytes belong to (§TM_SPLITMODE_PERSIST_KEY §S78:
+  // split mode loads app.db from the META url → app._dbPersistUrl; else app.DB_URL). One rule, DbResolve.persistTarget
+  // (§PERSIST_TARGET), with the identical inline fallback. EVERY persistDb(app.db, …) caller passes this, never DB_URL:
+  // a raw DB_URL in split mode writes a slot the loader never reads back (the edit vanishes on reload).
+  function persistUrlFor(app) {
+    var DR = (typeof window !== 'undefined') && window.DbResolve;
+    var t = (DR && DR.persistTarget) ? DR.persistTarget(app) : null;
+    return t ? t.url : ((app && (app._dbPersistUrl || app.DB_URL)) || null);
+  }
+
   function persistDb(db, url, opts) {
     opts = opts || {};
     if (!db || !url) return Promise.resolve(false);
@@ -3456,7 +3466,8 @@
   }
 
   var API = {
-    _cacheKeyFor: _cacheKeyFor,   // §S70: read and write MUST derive the slot the same way
+    _cacheKeyFor: _cacheKeyFor,
+    persistUrlFor: persistUrlFor,   // §PERSIST_TARGET: the url every persistDb(app.db, …) caller passes   // §S70: read and write MUST derive the slot the same way
     matchRule: matchRule,
     classify: classify,
     matchNameOverride: matchNameOverride,

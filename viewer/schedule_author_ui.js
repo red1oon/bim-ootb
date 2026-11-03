@@ -24,7 +24,7 @@
   function persist(opts) {
     var a = A(), d = db();
     if (!SA().persistDb || !d || !a || !a.DB_URL) return;
-    SA().persistDb(d, a.DB_URL, opts);
+    SA().persistDb(d, (SA().persistUrlFor ? SA().persistUrlFor(a) : a.DB_URL), opts);   // §PERSIST_TARGET (split mode → meta url)
   }
 
   var _panel = null, _built = false;

@@ -240,7 +240,8 @@
 // v1683 (2026-11-03) §SEAM-W3C F8: common/walk_rules.js?v=1 (the one rules-DB/class owner) precached; Viewer PLANT_ROOM classifier NOT switched (owner decision, SEAM_IDENTITY_AUDIT F8)
 // v1684 (2026-11-03) §SEAM-W3b F14: measure.js?v=56 A._clashPair (sorted pair key, legacy a|b/b|a/a~b read+migrate) + main.js?v=58 shared #clash= parser; F13 landing badge exact key (index.html loads db_resolve.js?v=3).
 // v1685 (2026-11-03) §PERSIST_TARGET: DbResolve.persistTarget = the ONE save-key rule; needle room persist (nf_tree_lens.js) keyed by it (was raw DB_URL: rooms recomputed every load, wrong url in split mode) + erp/kernel_ops.js uses it; W-NEEDLE-PERSIST-KEY 7/7.
-const CACHE_VERSION = 'v1685';
+// v1686 (2026-11-03) §PERSIST_TARGET: ScheduleAuthor.persistUrlFor — Apply-to-4D (schedule_inject.js) and the authored-schedule persist (schedule_author_ui.js) passed raw A.DB_URL, a slot never read back in split mode (edits vanished on reload); all three callers use the one rule; W-SCHED-PERSIST-TARGET 7/7.
+const CACHE_VERSION = 'v1686';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
