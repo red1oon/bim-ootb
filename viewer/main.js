@@ -1111,7 +1111,7 @@ async function initViewer() {
     console.log('§HASH_PARSE keys=' + Object.keys(hashParams).join(',') + ' clash=' + (hashParams.clash || 'none') + ' db=' + !!APP.db);
     const clashParam = hashParams.clash;
     if (clashParam && APP.db) {
-      const [guidA, guidB] = clashParam.split('~');
+      const [guidA, guidB] = (APP._clashPair ? APP._clashPair.split(clashParam) : clashParam.split('~')) || [];   // §SEAM-W3 F14: one parser (accepts a~b and legacy a|b)
       if (guidA && guidB) {
         let clashChecks = 0;
         const clashTimer = setInterval(function() {
