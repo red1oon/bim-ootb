@@ -208,7 +208,7 @@ function setupImport(A) {
               record.libraryDb = dbs.extractedDb;  // same buffer — viewer reads libDb from here
             }
             console.log('[S224] §STORE_RECORD key=' + file.name + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
-            await saveImport(file.name, record);
+            await saveImport(ImportKey.importProjectKey(file.name), record);
 
             // S260b: Download split DBs for large buildings
             _downloadSplitDBs(dbs, file.name);
@@ -278,11 +278,8 @@ function setupImport(A) {
     if (progressBar) { progressBar.style.width = '0%'; progressBar.parentElement.style.display = 'block'; }
 
     // Derive building name from common prefix: LTU_AHouse_ARC.ifc + LTU_AHouse_STR.ifc → LTU_AHouse
-    var stems = [];
-    for (var i = 0; i < files.length; i++) {
-      stems.push(files[i].name.replace(/\.(ifc|IFC)$/, ''));
-    }
-    var buildingName = _commonPrefix(stems).replace(/[_\-]+$/, '') || stems[0];
+    var _mk = ImportKey.importMultiProjectKey(Array.prototype.map.call(files, function(f) { return f.name; }));
+    var buildingName = _mk.buildingName;
 
     console.log('[S220] §MULTI_IMPORT_START files=' + files.length + ' building=' + buildingName +
       ' names=' + Array.from(files).map(function(f) { return f.name; }).join(','));
@@ -372,7 +369,7 @@ function setupImport(A) {
         record.extractedDb = dbs.extractedDb;
         record.libraryDb = dbs.extractedDb;
       }
-      var key = buildingName + '.ifc';
+      var key = _mk.key;
       console.log('[S224] §STORE_RECORD key=' + key + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
       await saveImport(key, record);
 
@@ -433,18 +430,7 @@ function setupImport(A) {
     });
   }
 
-  // Find common prefix of an array of strings
-  function _commonPrefix(strs) {
-    if (!strs.length) return '';
-    var prefix = strs[0];
-    for (var i = 1; i < strs.length; i++) {
-      while (strs[i].indexOf(prefix) !== 0) {
-        prefix = prefix.substring(0, prefix.length - 1);
-        if (!prefix) return '';
-      }
-    }
-    return prefix;
-  }
+  // (common prefix rule now lives in common/import_key.js — SEAM-W2)
 
   // ── Process mesh file (DAE/OBJ/GLB/3DS/FBX/STL) — S228 ──
   A.importMesh = async function(file, ext) {
@@ -497,7 +483,7 @@ function setupImport(A) {
               record.libraryDb = dbs.extractedDb;
             }
             console.log('[S224] §STORE_RECORD key=' + file.name + ' split=' + !!_recSplit + ' MB=' + ((_recSplit ? dbs.metaDb.byteLength + dbs.geoDb.byteLength : dbs.extractedDb.byteLength) / 1048576).toFixed(1));
-            await saveImport(file.name, record);
+            await saveImport(ImportKey.importProjectKey(file.name), record);
 
             // S260b: Download split DBs for large mesh imports
             _downloadSplitDBs(dbs, file.name);
@@ -565,10 +551,10 @@ function setupImport(A) {
 
       if (hasSplit) {
         // Store split DBs — viewer's split-DB detection in streaming.js picks these up
-        importDbUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
-        importLibUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
-        var metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
-        var geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+        importDbUrl = ImportKey.importUrl(key, 'extracted');
+        importLibUrl = ImportKey.importUrl(key, 'library');
+        var metaUrl = ImportKey.importUrl(key, 'meta');
+        var geoUrl = ImportKey.importUrl(key, 'geo');
         await new Promise(resolve => {
           var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
           var store = tx.objectStore(A.CACHE_STORE);
@@ -580,8 +566,10 @@ function setupImport(A) {
         });
         console.log('[S274] §IMPORT_OPEN_SPLIT meta=' + (record.metaDb.byteLength/1024/1024).toFixed(1) + 'MB geo=' + (record.geoDb.byteLength/1024/1024).toFixed(1) + 'MB');
       } else {
-        importDbUrl = 'import://' + key + '/extracted';
-        importLibUrl = 'import://' + key + '/library';
+        // SEAM-W2: ONE monolith url (K/v0, same as the landing); adopt legacy K/extracted + K/library blobs first.
+        await ImportKey.importRekey(ImportKey.importIdbStore(cacheDb, A.CACHE_STORE), key, 'monolith');
+        importDbUrl = ImportKey.importUrl(key, 'monolith');
+        importLibUrl = importDbUrl;
         await new Promise(resolve => {
           var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
           tx.objectStore(A.CACHE_STORE).put(dbBuf, importDbUrl);

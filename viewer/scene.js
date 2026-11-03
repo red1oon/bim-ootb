@@ -1771,6 +1771,20 @@ async function setupScene(A) {
 
     // import:// URLs live only in IndexedDB — no network fallback
     if (url.startsWith('import://')) {
+      // §IMPORT_KEY_ALIAS (SEAM-W2 R4): a legacy monolith url (K/extracted, K/library) whose blob was re-keyed to K/v0
+      // by ImportKey.importRekey — an old ?db= link, restored tab or pwa_last_db must still open the user's file.
+      var _cur = (window.ImportKey && window.ImportKey.currentUrlFor) ? window.ImportKey.currentUrlFor(url) : null;
+      if (_cur && _cur !== url && cacheDb) {
+        var _aliased = await new Promise(function (resolve) {
+          try {
+            var txA = cacheDb.transaction(A.CACHE_STORE, 'readonly');
+            var reqA = txA.objectStore(A.CACHE_STORE).get(_cur);
+            reqA.onsuccess = function () { resolve(reqA.result || null); };
+            reqA.onerror = function () { resolve(null); };
+          } catch (e) { resolve(null); }
+        });
+        if (_aliased) { console.log('§IMPORT_KEY_ALIAS url=' + url + ' → ' + _cur); return _aliased; }
+      }
       A.status.textContent = 'Imported IFC not found — browser storage was cleared. Please re-import the file.';
       console.log('§IMPORT_CACHE_MISS url=' + url + ' — IDB cleared or quota reclaimed');
       throw new Error('DB not found in cache: ' + url);

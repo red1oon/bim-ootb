@@ -112,8 +112,8 @@ async function openProject(key, btnEl, opts) {
   // If split-DB was pre-populated during import, skip reading the heavy project record entirely.
   const cacheDb = await openCacheDB();
   var dbUrl, libUrl;
-  var _splitUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_extracted.db');
-  var _geoUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_geo.db');
+  var _splitUrl = ImportKey.importUrl(key, 'extracted');
+  var _geoUrl = ImportKey.importUrl(key, 'geo');
 
   // IDB getKey() doesn't exist everywhere — use count() to check presence without loading data
   var _hasCachedGeo = false;
@@ -146,7 +146,7 @@ async function openProject(key, btnEl, opts) {
       // Split-DB but cache not populated — legacy import, populate now
       dbUrl = _splitUrl;
       libUrl = _splitUrl;
-      var _metaUrl = 'import://' + key + '/' + key.replace(/\.ifc$/i, '_meta.db');
+      var _metaUrl = ImportKey.importUrl(key, 'meta');
       await new Promise(function(resolve) {
         var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
         var store = tx.objectStore(CACHE_STORE);
@@ -158,7 +158,9 @@ async function openProject(key, btnEl, opts) {
       console.log('[S274] §OPEN_PROJECT_CACHE_FILL key=' + key + ' (legacy, populating cache)');
     } else {
       // Monolith — no split DBs available
-      dbUrl = 'import://' + key + '/v0';
+      // SEAM-W2: adopt legacy K/extracted + K/library blobs under K/v0 (put-then-delete) before writing.
+      await ImportKey.importRekey(ImportKey.importIdbStore(cacheDb, CACHE_STORE), key, 'monolith');
+      dbUrl = ImportKey.importUrl(key, 'monolith');
       libUrl = dbUrl;
       await new Promise(resolve => {
         var tx = cacheDb.transaction(CACHE_STORE, 'readwrite');
@@ -178,7 +180,7 @@ async function openProject(key, btnEl, opts) {
     if (record.versions && record.versions.length > 1) {
       for (var vi = 1; vi < record.versions.length; vi++) {
         if (/revised/i.test(record.versions[vi].key || '')) {
-          var revUrl = 'import://' + key + '/v' + vi;
+          var revUrl = ImportKey.importUrl(key, 'v' + vi);
           await new Promise(resolve => {
             var tx2 = cacheDb.transaction(CACHE_STORE, 'readwrite');
             tx2.objectStore(CACHE_STORE).put(record.versions[vi].db, revUrl);
@@ -388,7 +390,7 @@ async function handleImportFile(file) {
           await saveProject(projectKey, _rec);
           console.log('§VERSION_MERGE_ACCEPT existingKey=' + projectKey + ' versions=' + _rec.versions.length + ' latestVersion=' + _rec.latestVersion);
         } else {
-          projectKey = file.name;
+          projectKey = ImportKey.importProjectKey(file.name);
           _rec = { meta: msg.meta, versions: [{ key: file.name, importDate: new Date().toISOString(), db: _recSplit ? null : dbBuf }], latestVersion: 0 };
           if (_recSplit) { _rec.metaDb = dbs.metaDb; _rec.geoDb = dbs.geoDb; }
           await saveProject(projectKey, _rec);
@@ -397,9 +399,9 @@ async function handleImportFile(file) {
         var _cacheDb = await openCacheDB();
         if (_cacheDb && dbs.metaDb && dbs.geoDb) {
           var _ck = projectKey;
-          var _cDbUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_extracted.db');
-          var _cMetaUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_meta.db');
-          var _cGeoUrl = 'import://' + _ck + '/' + _ck.replace(/\.ifc$/i, '_geo.db');
+          var _cDbUrl = ImportKey.importUrl(_ck, 'extracted');
+          var _cMetaUrl = ImportKey.importUrl(_ck, 'meta');
+          var _cGeoUrl = ImportKey.importUrl(_ck, 'geo');
           await new Promise(function (resolve) {
             var tx = _cacheDb.transaction(CACHE_STORE, 'readwrite'); var store = tx.objectStore(CACHE_STORE);
             store.put(dbs.metaDb, _cMetaUrl); store.put(dbs.metaDb, _cDbUrl); store.put(dbs.geoDb, _cGeoUrl);
@@ -513,18 +515,7 @@ function _confirmVersionMerge(existingName) {
   );
 }
 
-// ── common prefix (building name from N IFC stems) — VERBATIM from index.html import.js ──
-function _commonPrefix(strs) {
-  if (!strs.length) return '';
-  var prefix = strs[0];
-  for (var i = 1; i < strs.length; i++) {
-    while (strs[i].indexOf(prefix) !== 0) {
-      prefix = prefix.substring(0, prefix.length - 1);
-      if (!prefix) return '';
-    }
-  }
-  return prefix;
-}
+// (common prefix rule now lives in common/import_key.js — SEAM-W2)
 
 // Parse ONE IFC file via worker → resolves the 'done' msg (elements/geometries/transforms/meta),
 // with discipline-from-filename override applied (mirrors handleImportFile's parse half).
@@ -606,9 +597,7 @@ async function importMultiIFC(files) {
   var progressBar = document.getElementById('import-progress-bar');
   if (progressBar) { progressBar.parentElement.style.display = 'block'; progressBar.style.width = '0%'; progressBar.style.background = '#0277bd'; }
 
-  var stems = [];
-  for (var i = 0; i < files.length; i++) stems.push(files[i].name.replace(/\.(ifc|IFC)$/, ''));
-  var buildingName = _commonPrefix(stems).replace(/[_\-]+$/, '') || stems[0];
+  var buildingName = ImportKey.importMultiProjectKey(Array.prototype.map.call(files, function (f) { return f.name; })).buildingName;
 
   // §VERSION_MERGE: catalog-similarity check on the COMBINED building name, before the (slow) N-file parse.
   var _mergeTarget = null;
@@ -713,9 +702,9 @@ async function importMultiIFC(files) {
     }
     var _cacheDb = await openCacheDB();
     if (_cacheDb && dbs.metaDb && dbs.geoDb) {
-      var _cDbUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_extracted.db');
-      var _cMetaUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_meta.db');
-      var _cGeoUrl = 'import://' + projectKey + '/' + projectKey.replace(/\.ifc$/i, '_geo.db');
+      var _cDbUrl = ImportKey.importUrl(projectKey, 'extracted');
+      var _cMetaUrl = ImportKey.importUrl(projectKey, 'meta');
+      var _cGeoUrl = ImportKey.importUrl(projectKey, 'geo');
       await new Promise(function (resolve) {
         var tx = _cacheDb.transaction(CACHE_STORE, 'readwrite'); var store = tx.objectStore(CACHE_STORE);
         store.put(dbs.metaDb, _cMetaUrl); store.put(dbs.metaDb, _cDbUrl); store.put(dbs.geoDb, _cGeoUrl);
