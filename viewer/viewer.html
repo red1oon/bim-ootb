@@ -884,7 +884,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="settings_editor.js?v=1" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
 <script src="../common/history_tap.js?v=7" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
 <script src="wind_flip.js?v=1" onerror="console.warn('§LOAD_FAIL wind_flip.js')"></script>
-<script src="scene.js?v=77" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=78" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=6" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=1" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
@@ -980,7 +980,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- BIM→Project Order (TASK C): BigDecimal must precede proj_fold (it reads global.BigDecimal at load) -->
 <script src="../erp/bigdecimal.js"></script>
 <script src="../erp/ad_docfsm.js"></script>
-<script src="../erp/kernel_ops.js?v=15"></script>
+<script src="../erp/kernel_ops.js?v=16"></script>
 <script src="blue_fold.js?v=1"></script>
 <script src="proj_fold.js?v=4"></script>
 <!-- §8.6 P5: the push to a real iDempiere — plan builder (shared with capex/tools/shed_twin.js) + REST client; both read at call time by find_erp_push.js, config.js reads ErpPushPlan.legacyTarget -->
@@ -1007,7 +1007,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="import_db_builder.js?v=9"></script>
 <script src="diff.js?v=5"></script>
 <script src="variation_order.js?v=2"></script>
-<script src="../common/import_key.js?v=1"></script>
+<script src="../common/import_key.js?v=2"></script>
 <script src="import.js?v=11"></script>
 <script src="mep_coordination.js?v=1" onerror="console.warn('§LOAD_FAIL mep_coordination.js — MEP coordination disabled')"></script>
 <script src="real_placement_resolver.js?v=1" onerror="console.warn('§RPR LOAD_FAIL real_placement_resolver.js')"></script>
@@ -1098,7 +1098,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
      two call sites, never a second copy. -->
 <script src="info_dxf2bim.js?v=1" onerror="console.warn('§LOAD_FAIL info_dxf2bim.js')"></script>
 <script src="info_4d_panel.js?v=2" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
-<script src="schedule_author.js?v=16" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
+<script src="schedule_author.js?v=17" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second

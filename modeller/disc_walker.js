@@ -61,7 +61,7 @@
   // file. Browser-only (node witnesses use dwBorrow with an fs-opened handle and never reach _loadDbBuf's fetch).
   async function dwBorrowFile(disc, SQL, baseUrl, file) {
     if (_borrow[disc] && _borrow[disc]._dwFile === file) return _borrow[disc];   // already borrowed this file
-    var url = (baseUrl || '../modeller/') + file;
+    var url = dwRulesKey(file, baseUrl);
     var buf = await _loadDbBuf(url);
     var db = new SQL.Database(new Uint8Array(buf));
     db._dwFile = file; _borrow[disc] = db;
@@ -164,12 +164,14 @@
     }
     return (await fetch(url)).arrayBuffer();                  // no IDB / no 'dbs' store → bare fetch
   }
+  // §SEAM-W3C (F18): the ONE rules-DB cache/fetch key builder — read, write AND the modeller's stale-cache bust use it.
+  function dwRulesKey(file, baseUrl) { return (baseUrl || '../modeller/') + file; }
   async function dwInit(SQL, baseUrl, rulesFile) {
     var file = rulesFile || 'terminal_rules.db';
     // Building-class select: reload only when the requested standard CHANGES (open a house
     // after a terminal → swap residential rules in). Same file already loaded → no-op.
     if (_ready && _loadedFile === file) return _ready;
-    var url = (baseUrl || '../modeller/') + file;
+    var url = dwRulesKey(file, baseUrl);
     var buf = await _loadDbBuf(url);                          // §DW_IDB: IDB-cached, network only on first open
     _db = new SQL.Database(new Uint8Array(buf));
     _ready = true; _loadedFile = file;
@@ -2661,7 +2663,7 @@
     return ds.filter(function (d) { return d && d !== 'ARC'; });
   }
 
-  var API = { rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
+  var API = { rulesMeta: function () { return _rulesMeta; }, hasRules: function (disc) { try { var r = _db && _db.exec("SELECT COUNT(*) FROM rule_placement WHERE disc='" + String(disc).replace(/'/g, "''") + "'"); return !!(r && r.length && r[0].values[0][0] > 0); } catch (e) { return false; } }, dwInit: dwInit, dwRulesKey: dwRulesKey, dwOpen: dwOpen, dwBorrow: dwBorrow, dwBorrowFile: dwBorrowFile, dwWalk: dwWalk, assemble: assemble, connectorFor: connectorFor, connectorEnrich: connectorEnrich, substrate: substrate, place: place, hostBind: hostBind, dwTraceZ: dwTraceZ,
     route: route, routeChains: routeChains, routePattern: routePattern,
     // §MEP-ROUTE-DISC: the disciplines the pattern bridge covers (modeller.html gates its mep_rw.db load on this)
     patternDiscs: function () { return Object.keys(_RW_PATTERN_DISC); },

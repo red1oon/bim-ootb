@@ -11,7 +11,8 @@
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
 // v212 (2026-11-03) §SEAM-W2 F15: str_walker_outliner.js?v=25 drops superseded <base>?v=M / bare <base> resident DBs when caching <base>?v=N (§RESIDENT_STALE_DROP)
-const CACHE_VERSION = 'v212';   // bump on each deploy; per-change detail is the git commit message.
+// v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
+const CACHE_VERSION = 'v213';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -64,6 +65,7 @@ const PRECACHE_ASSETS = [
   'proj_order_ui.js',   // §S9 ERP Project Order panel (lazy-loads the Viewer-side ERP owners on first click)
   'edit_delta_ui.js',   // §S8 hover/click Δ display (lazy-loads the Viewer-side owners on first use)
   'disc_walker.js',
+  '../common/walk_rules.js',   // §SEAM-W3C: the one building-class -> rules-DB owner
   'dw_instances_outliner.js',   // §I5 Walked Fixtures per-instance rows (W-E2E-INSTHIDE)
   'teams_embed.js',   // §TEAMS-EMBED — gated Teams overlay (off by default = inert; lazy-loads teams/ when ON)
   '../common/comm/team_trust.js',    // TEAMWORK_FRAMEWORK §32 — the trust anchor list for signed team plans (empty by default)

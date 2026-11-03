@@ -324,7 +324,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="disc_walker.js?v=11" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="../common/walk_rules.js?v=1" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
+<script src="disc_walker.js?v=12" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -4321,7 +4322,7 @@ async function _discWalkOneBody(disc, ctx, opts) {
     // same file is already loaded; reloads on a class change). The residential clearances (~0.5m)
     // stop the airport-plenum numbers from manufacturing phantom clashes on a small building.
     await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
-    try { await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(name || window.__dwName)); }
+    try { await window.DiscWalker.dwInit(window.SQL, window._DW_BASE, window._dwRules(name || window.__dwName)); }
     catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return { refused: true, reason: 'rules not available', placed: 0 }; }
     { var _rf = window._dwRules(name || window.__dwName), _rm = (window.DiscWalker.rulesMeta && window.DiscWalker.rulesMeta()) || {};   // §D61 the reference is STATED when it was not measured on this building
       if (_DW_RULES_SOURCE[_rf] && [].concat(_DW_RULES_SOURCE[_rf]).indexOf(name || window.__dwName) < 0) {
@@ -5893,30 +5894,40 @@ function _registerDiscRoster() {
 // the residential standard (duplex_rules.db, mined off Duplex) covers houses; the large-complex
 // standard (terminal_rules.db, mined off Terminal) covers everything else. §DATA-LOCALITY: both
 // are bim-compiler-built modeller/ copies carrying a stamped rules_meta provenance row.
-window._dwRules = function (nm) {
-  if (/shed|farm|barn|poultry|livestock|broiler/i.test(nm || '')) return 'farm_rules.db';   // §D62 the Farming Shed reference (cited values, bake_farm_rules.py)
-  return /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i.test(nm || '')
-    ? 'duplex_rules.db' : 'terminal_rules.db';
-};
+window._dwRules = function (nm) { return window.WalkRules.rulesDb(nm); };   // §SEAM-W3C F8: ONE owner (common/walk_rules.js); WalkerDoctrine §1
 // §DW-RULES-BUST: the rules DBs (terminal_rules/duplex_rules) are MUTABLE at a FIXED url, but disc_walker's
 // §DW_IDB caches them in bim_ootb_cache/'dbs' keyed by url with NO version → a returning user keeps the OLD
 // rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
 // two rules keys ONCE so the fresh DBs load + re-cache normally. Bump window.__dwRulesVer whenever a *_rules.db
 // changes (in lock-step with sw.js CACHE_VERSION). Building *_extracted.db are immutable per url → never evicted.
 window.__dwRulesVer = 'v22';
+window._DW_BASE = './';   // §SEAM-W3C F18: the base every modeller dwInit/dwBorrowFile caller passes — the bust builds its keys from the SAME base
 window._dwBustStaleRulesCache = async function () {
   try {
     var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
     if (typeof localStorage !== 'undefined' && localStorage.getItem(KEY) === cur) return;   // already fresh
+    // §SEAM-W3C F18: keys come from disc_walker's own builder (dwRulesKey) — never a hardcoded './x.db'. In-use file first
+    // (WalkRules owner), then its sibling rules DBs so the "fresh" mark below cannot strand a stale sibling.
+    var inUse = window.WalkRules.rulesDb(window.__dwName), files = [inUse];
+    window.WalkRules.RULES_DBS.forEach(function (f) { if (files.indexOf(f) < 0) files.push(f); });
+    var keys = files.map(function (f) { return window.DiscWalker.dwRulesKey(f, window._DW_BASE); });
     await new Promise(function (res) {
       var rq = indexedDB.open('bim_ootb_cache');
       rq.onsuccess = function () {
         var idb = rq.result;
-        if (!idb.objectStoreNames || !idb.objectStoreNames.contains('dbs')) { res(); return; }
+        if (!idb.objectStoreNames || !idb.objectStoreNames.contains('dbs')) { console.log('§RULES_BUST no dbs store — nothing to evict for ' + cur); res(); return; }
         try {
-          var tx = idb.transaction('dbs', 'readwrite'), os = tx.objectStore('dbs');
-          os.delete('./terminal_rules.db'); os.delete('./duplex_rules.db');
-          tx.oncomplete = function () { console.log('§DW-RULES-BUST evicted stale rules DBs for ' + cur); res(); };
+          var tx = idb.transaction('dbs', 'readwrite'), os = tx.objectStore('dbs'), nDel = 0, nChk = 0;
+          keys.forEach(function (k) {
+            var cq = os.count(k);
+            cq.onsuccess = function () {
+              var had = (cq.result || 0) > 0;
+              if (had) { os.delete(k); nDel++; }
+              console.log('§RULES_BUST key=' + k + ' deleted=' + had);
+              nChk++;
+            };
+          });
+          tx.oncomplete = function () { console.log('§RULES_BUST ' + cur + ' checked=' + nChk + ' deleted=' + nDel + ' of ' + keys.length); res(); };
           tx.onerror = function () { res(); };
         } catch (e) { res(); }
       };
@@ -5935,14 +5946,14 @@ window._dwEnsureBorrow = async function () {
   if (!window.DiscWalker || !window.DiscWalker.dwBorrowFile) return;
   var primary = (window.DiscWalker.loadedFile && window.DiscWalker.loadedFile()) || '';
   if (primary === 'terminal_rules.db' || (window.DiscWalker.hasRules && window.DiscWalker.hasRules('FP'))) { if (window.DiscWalker.dwBorrow) window.DiscWalker.dwBorrow('FP', null); return; }   // §D62 a reference with its own FP rule does not borrow
-  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, './', 'terminal_rules.db'); }
+  try { await window.DiscWalker.dwBorrowFile('FP', window.SQL, window._DW_BASE, 'terminal_rules.db'); }
   catch (e) { console.warn('§DISC-WALK borrow FP←terminal failed ' + (e && e.message)); }
 };
 // Ensure the engine is loaded (building-class rules fetch) + the roster is registered. Called on open.
 window.__ensureDiscWalker = async function () {
   try {
     await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
-    if (window.DiscWalker) await window.DiscWalker.dwInit(window.SQL, './', window._dwRules(window.__dwName));
+    if (window.DiscWalker) await window.DiscWalker.dwInit(window.SQL, window._DW_BASE, window._dwRules(window.__dwName));
     await window._dwEnsureBorrow();   // residential builds borrow FP/sprinkler from terminal_rules (doctrine §2)
   } catch (e) { console.warn('§DISC-WALK dwInit (roster) failed ' + (e && e.message)); }
   _registerDiscRoster();
