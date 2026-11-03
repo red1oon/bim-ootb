@@ -38,6 +38,11 @@ function setupConfig(A) {
   // carried by ZoomAcross's 'viewer' destination launch(): ?find=<guid|employee-code>). Consumed on boot by
   // hba_lens.js's own readiness poll (flyToZone / attendance-log zone resolution) — see that file's header.
   A.FIND_GUID = _params.get('find') || null;
+  // §8.6 SPEC P5 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md): where Find > ERP also pushes the folded Project Order — a real iDempiere.
+  // Rule (viewer/erp_push_plan.js legacyTarget): served under /bimootb/ -> its own origin; else ?erp=<base> (https, or http on localhost); none -> null = local fold only.
+  // The login CONTEXT (never the password) comes from the BIM tab's URL; find_erp_push.js asks for the password and keeps it in a closure variable only.
+  A.LEGACY_ERP = window.ErpPushPlan ? window.ErpPushPlan.legacyTarget(location) : null;
+  A.LEGACY_ERP_CTX = { user: _params.get('erpUser'), clientId: _params.get('erpClient'), roleId: _params.get('erpRole'), orgId: _params.get('erpOrg'), warehouseId: _params.get('erpWarehouse') };
 
   // Discipline colours (same as Blender addon)
   A.DISC_COLORS = {

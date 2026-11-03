@@ -3,7 +3,7 @@
 // The push sends only what a user types (inputs taken from the folded rows); what legacy derives (line PlannedAmt = qty x price, phase/task/project rollups) is COMPARED, never sent.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/shed_twin.js <fold.db> [projectValue=SHED] [today=YYYY-MM-DD]   (env BRIDGE_* as legacy_snapshot.js; localhost only without creds)
 const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js');
-const A = require('../adapters.js'), T = require('../tiles.js'), Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js'));
+const A = require('../adapters.js'), T = require('../tiles.js'), Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js')), Plan = require(path.join(__dirname, '..', '..', 'viewer', 'erp_push_plan.js'));
 const env = process.env, base = env.BRIDGE_BASE || 'http://localhost:8088';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base) && !(env.BRIDGE_USER && env.BRIDGE_PASS)) { console.error('§CFG BRIDGE_USER/BRIDGE_PASS required for a non-localhost base'); process.exit(2); }
 const L = { user: env.BRIDGE_USER || 'GardenAdmin', pass: env.BRIDGE_PASS || 'GardenAdmin', lang: 'en_US', ClientID: +(env.BRIDGE_CLIENT || 11), RoleID: +(env.BRIDGE_ROLE || 102), OrgID: +(env.BRIDGE_ORG || 11), WarehouseID: +(env.BRIDGE_WH || 103), stage: 0 };
@@ -12,16 +12,12 @@ const pushCfg = { baseUrl: base, login: { user: L.user, pass: L.pass, lang: L.la
   serviceTypes: { C_Project: { query: 'QueryCProject', create: 'BridgeCreateCProject' }, C_ProjectPhase: { query: 'QueryCProjectPhase', create: 'BridgeCreateCProjectPhase' },
     C_ProjectTask: { query: 'QueryCProjectTask', create: 'BridgeCreateCProjectTask' }, C_ProjectLine: { query: 'QueryCProjectLine', create: 'BridgeCreateCProjectLine' },
     M_Product: { query: 'QueryMProduct', create: 'Bridge_createData_M_Product' }, M_Product_Category: { query: 'QueryMProductCategory', create: 'Bridge_createData_M_Product_Category' }, C_UOM: { query: 'QueryCUOM', create: 'BridgeCreateCUOM' } } };
-// BRIDGE_SVC=bimootb → the service types the org.idempiere.bimootb plugin installs at System level (BIMOOTB_Query_<Table> / BIMOOTB_Create_<Table>), reached through its
-// master role "BIM OOTB Push" (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8); default = the pilot POC types above (unchanged).
-if ((env.BRIDGE_SVC || '').toLowerCase() === 'bimootb') Object.keys(pushCfg.serviceTypes).forEach(t => { pushCfg.serviceTypes[t] = { query: 'BIMOOTB_Query_' + t, create: 'BIMOOTB_Create_' + t }; });
+// BRIDGE_SVC=bimootb → the plugin's BIMOOTB_Query_/Create_<Table> types (viewer/erp_push_plan.js bimootbServiceTypes — the one map, bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8); default = the pilot POC types above.
+if ((env.BRIDGE_SVC || '').toLowerCase() === 'bimootb') pushCfg.serviceTypes = Plan.bimootbServiceTypes();
 const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; return r; };
 // legacy forbids a free Filter parameter (prompts/CAPEX_DASHBOARD.md §5.8): rows are read by DataRow KEY fields through the ONE shared reader (Push.queryRows: exact post-filter on LIKE keys)
 const legacyQuery = async (type, table, keys) => (await Push.queryRows(pushCfg.baseUrl, pushCfg.login, type, table, keys)).map(lc);
 const num = v => v == null || v === '' ? null : Number(v);
-// legacy *_UU columns are Postgres uuid: a non-UUID UU (the shipped seed's Hospital-era 'bim-…' products, §12.1 D4) cannot be sent — dropped from the create and LOGGED, never silently
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, notes = [];
-const uuField = (col, v, where) => { if (v == null) return null; if (UUID.test(v)) return { column: col, val: v }; notes.push(col + '=' + v + ' (' + where + ')'); return null; };
 (async () => {
   const [foldPath, value = 'SHED', today = new Date().toISOString().slice(0, 10)] = process.argv.slice(2);
   if (!foldPath) { console.error('usage: shed_twin.js <fold.db> [projectValue] [today]'); process.exit(2); }
@@ -30,24 +26,7 @@ const uuField = (col, v, where) => { if (v == null) return null; if (UUID.test(v
   const proj = q('SELECT * FROM c_project WHERE value=?', [value])[0];
   if (!proj) { console.log('§SHED_TWIN_VERDICT INCONCLUSIVE reason=no project ' + value + ' in ' + foldPath); process.exit(1); }
   const phases = q('SELECT * FROM c_projectphase WHERE c_project_id=? ORDER BY seqno, c_projectphase_id', [proj.c_project_id]);
-  const plan = { building: proj.value, name: proj.name, fields: [{ column: 'C_Currency_ID', val: proj.c_currency_id }, { column: 'IsCommitment', val: proj.iscommitment },
-    { column: 'ProjInvoiceRule', val: proj.projinvoicerule }, { column: 'ProjectLineLevel', val: proj.projectlinelevel }, uuField('C_Project_UU', proj.c_project_uu, 'C_Project ' + proj.value)].filter(f => f && f.val != null), phases: [] };
-  for (const ph of phases) {
-    const tasks = q('SELECT * FROM c_projecttask WHERE c_projectphase_id=? ORDER BY seqno, c_projecttask_id', [ph.c_projectphase_id]);
-    const tname = {}; tasks.forEach(t => { tname[t.c_projecttask_id] = t.name; });
-    const lines = q('SELECT l.*, p.value AS pvalue, p.name AS pname, p.description AS pdesc, p.c_uom_id AS puom, p.c_taxcategory_id AS ptax, p.producttype AS ptype, p.isstocked AS pstk, p.ispurchased AS ppur, p.issold AS psold, p.m_product_uu AS puu, '
-      + 'c.name AS cname, c.value AS cvalue, c.m_product_category_uu AS cuu, u.x12de355 AS ucode, u.name AS uname, u.uomsymbol AS usym, u.stdprecision AS ustd, u.costingprecision AS ucost, u.isdefault AS udef, u.c_uom_uu AS uuu FROM c_projectline l JOIN m_product p ON p.m_product_id=l.m_product_id LEFT JOIN m_product_category c ON c.m_product_category_id=p.m_product_category_id LEFT JOIN c_uom u ON u.c_uom_id=p.c_uom_id '
-      + 'WHERE l.c_projectphase_id=? ORDER BY l.line, l.c_projectline_id', [ph.c_projectphase_id]);
-    plan.phases.push({ name: ph.name, seqno: ph.seqno, startDate: ph.startdate, endDate: ph.enddate,
-      fields: [{ column: 'IsComplete', val: ph.iscomplete }, { column: 'Qty', val: ph.qty }, uuField('C_ProjectPhase_UU', ph.c_projectphase_uu, 'phase ' + ph.name)].filter(f => f && f.val != null),
-      tasks: tasks.map(t => ({ name: t.name, fields: [{ column: 'SeqNo', val: t.seqno }, { column: 'Qty', val: t.qty }, uuField('C_ProjectTask_UU', t.c_projecttask_uu, 'task ' + t.name)].filter(f => f && f.val != null) })),
-      lines: lines.map(l => ({ productValue: l.pvalue, productName: l.pname, categoryName: l.cname, qty: l.plannedqty, price: l.plannedprice, taskName: l.c_projecttask_id != null ? tname[l.c_projecttask_id] : null,
-        uom: l.ucode ? { x12de355: l.ucode, name: l.uname, fields: [{ column: 'UOMSymbol', val: l.usym }, { column: 'StdPrecision', val: l.ustd }, { column: 'CostingPrecision', val: l.ucost }, { column: 'IsDefault', val: l.udef }, uuField('C_UOM_UU', l.uuu, 'uom ' + l.ucode)].filter(f => f && f.val != null) } : null,
-        categoryFields: [{ column: 'Value', val: l.cvalue }, uuField('M_Product_Category_UU', l.cuu, 'category ' + l.cname)].filter(f => f && f.val != null),
-        productFields: [{ column: 'Description', val: l.pdesc }, { column: 'C_UOM_ID', val: l.puom }, { column: 'C_TaxCategory_ID', val: l.ptax }, { column: 'ProductType', val: l.ptype }, { column: 'IsStocked', val: l.pstk },
-          { column: 'IsPurchased', val: l.ppur }, { column: 'IsSold', val: l.psold }, uuField('M_Product_UU', l.puu, 'product ' + l.pvalue)].filter(f => f && f.val != null),
-        fields: [{ column: 'Line', val: l.line }, { column: 'Description', val: l.description }, { column: 'DoPricing', val: l.dopricing }, uuField('C_ProjectLine_UU', l.c_projectline_uu, 'line ' + l.description)].filter(f => f && f.val != null) })) });
-  }
+  const { plan, notes } = Plan.planFromDb(db, value);   // viewer/erp_push_plan.js — the ONE plan builder (moved out of this file, §8.6 P5)
   notes.forEach(n => console.log('§SHED_PUSH_NOTE uu-not-uuid dropped ' + n + ' — the SQLite row keeps a UU legacy cannot hold (shipped seed, owner decision: base hash)'));
   console.log('§SHED_PLAN project=' + value + ' phases=' + plan.phases.length + ' tasks=' + plan.phases.reduce((a, p) => a + p.tasks.length, 0) + ' lines=' + plan.phases.reduce((a, p) => a + p.lines.length, 0));
   // ── push (idempotent find-or-create) ──
