@@ -28,7 +28,7 @@ BEGIN
     VALUES (11,0,102,now(),100,now(),100,'Y','N',tid,gen_random_uuid());
     INSERT INTO ws_webservice_para(ad_client_id,ad_org_id,constantvalue,created,createdby,isactive,parametername,parametertype,updated,updatedby,ws_webservice_para_id,ws_webservicetype_id,ws_webservice_para_uu)
     SELECT 11,0,v.cv,now(),100,'Y',v.pn,v.pt,now(),100,nextidfunc((SELECT ad_sequence_id FROM ad_sequence WHERE name='WS_WebService_Para')::int,'N'::varchar),tid,gen_random_uuid()
-    FROM (VALUES ('TableName','C','PA_Goal'),('Action','C','Read'),('RecordID','F',NULL),('Filter','F',NULL)) AS v(pn,pt,cv);
+    FROM (VALUES ('TableName','C','PA_Goal'),('Action','C','Read'),('RecordID','F',NULL),('Filter','C','1=1')) AS v(pn,pt,cv);
     INSERT INTO ws_webservicefieldoutput(ad_client_id,ad_column_id,ad_org_id,created,createdby,isactive,updated,updatedby,ws_webservicefieldoutput_id,ws_webservicetype_id,ws_webservicefieldoutput_uu)
     SELECT 11,c.ad_column_id,0,now(),100,'Y',now(),100,nextidfunc((SELECT ad_sequence_id FROM ad_sequence WHERE name='WS_WebServiceFieldOutput')::int,'N'::varchar),tid,gen_random_uuid()
     FROM ad_column c WHERE c.ad_table_id=t AND c.columnname IN ('PA_Goal_ID','Name','PA_Measure_ID','MeasureActual','MeasureTarget','GoalPerformance','DateLastRun','MeasureScope');

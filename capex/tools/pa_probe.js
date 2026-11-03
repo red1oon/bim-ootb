@@ -18,11 +18,8 @@ const GOAL = 'CAPEX Approved Budget (USD)', BAD = 'CAPEX R0 negative control (br
 let fails = 0, judged = 0;
 function check(name, ok, detail) { judged++; if (!ok) fails++; console.log('§PA_PROBE_ASSERT ' + (ok ? 'PASS' : 'FAIL') + ' ' + name + (detail ? ' ' + detail : '')); }
 function psql(sql) { return execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-U', 'adempiere', '-d', 'idempiere_pilot', '-v', 'ON_ERROR_STOP=1', '-qtA'], { input: 'SET search_path=adempiere;\n' + sql }).toString().trim(); }
-async function query(filter) {
-  const r = await fetch(base + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ ModelCRUDRequest: { ModelCRUD: { serviceType: 'QueryPAGoal', Filter: filter }, ADLoginRequest: L } }) });
-  return A.parseRows(JSON.parse(await r.text()));
-}
+// no Filter (legacy forbids a free one, prompts/CAPEX_DASHBOARD.md §5.8): DataRow KEY fields (Name | PA_Goal_ID) through the one shared reader (Push.queryRows)
+const query = keys => Push.queryRows(base, login, 'QueryPAGoal', 'PA_Goal', keys);
 async function createGoal(name, measureId) {
   const xml = Push.buildCrudXml(login, { serviceType: 'BridgeCreatePAGoal', tableName: 'PA_Goal', action: 'Create', fields: [
     { column: 'Name', val: name }, { column: 'PA_Measure_ID', val: String(measureId) }, { column: 'MeasureScope', val: '0' },        // 0 = Total (X_PA_Goal MEASURESCOPE_Total)
@@ -55,14 +52,14 @@ async function recompute(goalId) { const a = await saveTarget(goalId, '1'), b = 
 
   const sr = await createGoal(GOAL, mid);
   console.log('§PA_PROBE create goal → ' + (sr.isError ? 'ERROR ' + sr.error : 'RecordID=' + sr.recordId));
-  const g = (await query("Name='" + GOAL + "'"))[0];
+  const g = (await query([{ column: 'Name', val: GOAL }]))[0];
   console.log('§PA_PROBE legacy goal ' + JSON.stringify(g));
   check('GOAL CREATED by a model save', !sr.isError && !!g, sr.isError ? sr.error : '');
   if (g) {
     console.log('§PA_PROBE_FINDING after CREATE only: MeasureActual=' + g.MeasureActual + ' (tile ' + (cents / 100).toFixed(2) + ') DateLastRun=' + g.DateLastRun +
       ' — DateLastRun comes from the constructor default, NOT a computation; a fresh goal shows ' + g.MeasureActual + ' until saved again or ZK refreshes it (30 min interval)');
     const ru = await recompute(g.PA_Goal_ID);
-    const g2 = (await query('PA_Goal_ID=' + g.PA_Goal_ID))[0];
+    const g2 = (await query([{ column: 'PA_Goal_ID', val: +g.PA_Goal_ID }]))[0];
     console.log('§PA_PROBE recompute (target 0→1→0) → ' + (ru.isError ? 'ERROR ' + ru.error : 'ok') + ' goal=' + JSON.stringify(g2));
     const actC = Math.round(Number(g2 && g2.MeasureActual) * 100);
     check('LEGACY MeasureActual (its own SQL, after a model save) == dashboard tile (USD, to the cent)', !ru.isError && actC === expCents, 'legacy=' + (g2 && g2.MeasureActual) + ' tile=' + (expCents / 100).toFixed(2));
@@ -84,9 +81,9 @@ async function recompute(goalId) { const a = await saveTarget(goalId, '1'), b = 
   console.log('§PA_PROBE negative control calc=' + badCalc + ' measure=' + badMeas);
   try {
     const sb = await createGoal(BAD, badMeas);
-    const gb0 = (await query("Name='" + BAD + "'"))[0];
+    const gb0 = (await query([{ column: 'Name', val: BAD }]))[0];
     const rb = gb0 ? await recompute(gb0.PA_Goal_ID) : { isError: true, error: 'no goal row' };
-    const gb = gb0 ? (await query('PA_Goal_ID=' + gb0.PA_Goal_ID))[0] : null;
+    const gb = gb0 ? (await query([{ column: 'PA_Goal_ID', val: +gb0.PA_Goal_ID }]))[0] : null;
     console.log('§PA_PROBE negative create → ' + (sb.isError ? 'ERROR ' + sb.error : 'RecordID=' + sb.recordId) + ' recompute → ' + (rb.isError ? 'ERROR ' + rb.error : 'ok') + ' goal=' + JSON.stringify(gb || null));
     // what the spec asked ("a broken SelectClause must show an error, not a number") is judged here; source says legacy swallows it (DB.getSQLValueBD :1393-1404 → null → 0, MMeasure :530-535)
     const errorShown = sb.isError || rb.isError || !gb;

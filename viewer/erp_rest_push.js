@@ -44,7 +44,6 @@
       '<serviceType>' + esc(crud.serviceType) + '</serviceType>' +
       '<TableName>' + esc(crud.tableName) + '</TableName>' +
       '<RecordID>' + (crud.recordId || 0) + '</RecordID>' +
-      (crud.filter ? ('<Filter>' + esc(crud.filter) + '</Filter>') : '') +
       '<Action>' + esc(crud.action) + '</Action>' +
       dataRow +
       '</ModelCRUD>' +
@@ -105,7 +104,7 @@
     if (!_fetch) return Promise.reject(new Error('no fetch available'));
     var url = baseUrl.replace(/\/$/, '') + '/ADInterface/services/rest/model_adservice/' + path;
     var body = buildCrudXml(login, crud);
-    console.log('§ERP_REST_CALL path=' + path + ' table=' + crud.tableName + ' action=' + crud.action + (crud.filter ? ' filter=' + crud.filter : ''));
+    console.log('§ERP_REST_CALL path=' + path + ' table=' + crud.tableName + ' action=' + crud.action + (crud.keys ? ' keys=' + crud.keys.map(function (k) { return k.column + '=' + k.val; }).join(',') : ''));
     return _fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/xml', 'Accept': 'application/xml' }, body: body })
       .then(function (res) { return res.text().then(function (text) { return { status: res.status, text: text }; }); })
       .then(function (r) {
@@ -114,20 +113,50 @@
       });
   }
 
-  // ── §FIND-OR-CREATE — query_data by natural-key Filter, create_data if RowCount=0 ──────────────
-  // serviceType: a WS_WebServiceType.Value, or { query, create } — legacy binds a type to ONE method (AbstractService.authenticate :223-252, "Service type X not configured"), so a real
-  //   server needs a read type for query_data and a create type for create_data (prompts/CAPEX_DASHBOARD.md §12.1 D1). A plain string = the same type for both (the stand-in only).
-  function findOrCreate(baseUrl, login, serviceType, tableName, filter, fields) {
-    var qType = serviceType && typeof serviceType === 'object' ? serviceType.query : serviceType;
-    var cType = serviceType && typeof serviceType === 'object' ? serviceType.create : serviceType;
-    return call(baseUrl, 'query_data', login, { serviceType: qType, tableName: tableName, action: 'Read', filter: filter })
+  // ── §QUERY-KEYS — read by DataRow KEY fields, never by a Filter string ───────────────────────────
+  // iDempiere forbids a FREE `Filter` web-service parameter (MWebServicePara.beforeSave :114-121, IDEMPIERE-1784) and a Filter may only be Constant (ModelADServiceImpl.validateParameter
+  //   :307-338); the safe lookup is queryData's DataRow path (ModelADServiceImpl.queryData :1470-1500): every DataRow field that the query type whitelists as a WS_WebServiceFieldInput becomes
+  //   `col LIKE ?` for CHAR columns, `col=?` otherwise, bound from the DataRow; a column not whitelisted throws "input column X not allowed" (:1494-1498).
+  // keys = [{column,val}]. Because CHAR keys are matched with LIKE, `_` and `%` in a key are WILDCARDS: the rows that come back are re-checked here for EXACT equality on every key
+  //   column (ids as numbers, everything else as strings) and the extras are dropped + logged (§ERP_REST_LIKE_EXTRA). A literal backslash is LIKE's escape, so it is doubled on the wire.
+  function likeSafe(v) { return typeof v === 'string' ? v.replace(/\\/g, '\\\\') : v; }
+  function exactRows(rows, keys) {
+    return rows.filter(function (r) {
+      return keys.every(function (k) {
+        var got = r[k.column];
+        if (got == null) return false;
+        return typeof k.val === 'number' ? Number(got) === k.val : String(got) === String(k.val);
+      });
+    });
+  }
+  // the one owner of every legacy read we make: returns the rows (column-name case as the server sends) whose key columns EQUAL keys; throws on any fault (an HTTP 500 = a legacy fault such as
+  //   "input column X not allowed" / "invalid parameter Filter" — it must never read as "0 rows", which would create a duplicate).
+  function queryRows(baseUrl, login, serviceType, tableName, keys) {
+    keys = keys || [];
+    var wire = keys.map(function (k) { return { column: k.column, val: likeSafe(k.val) }; });
+    return call(baseUrl, 'query_data', login, { serviceType: serviceType, tableName: tableName, action: 'Read', fields: wire, keys: keys })
       .then(function (r) {
+        if (r.status !== 200 || r.text.indexOf('WindowTabData') < 0) throw new Error('§ERP_REST_QUERY_ERR ' + tableName + ': HTTP ' + r.status + ' ' + String(r.text).slice(0, 160));
         var parsed = parseWindowTabData(r.text);
         if (parsed.error) throw new Error('§ERP_REST_QUERY_ERR ' + tableName + ': ' + parsed.error);
+        var rows = exactRows(parsed.rows, keys);
+        if (rows.length !== parsed.rows.length) console.log('§ERP_REST_LIKE_EXTRA table=' + tableName + ' dropped=' + (parsed.rows.length - rows.length) + ' kept=' + rows.length);
+        return rows;
+      });
+  }
+
+  // ── §FIND-OR-CREATE — query_data by natural-key DataRow fields, create_data if no EXACT row ─────
+  // serviceType: a WS_WebServiceType.Value, or { query, create } — legacy binds a type to ONE method (AbstractService.authenticate :223-252, "Service type X not configured"), so a real
+  //   server needs a read type for query_data and a create type for create_data (prompts/CAPEX_DASHBOARD.md §12.1 D1). A plain string = the same type for both (the stand-in only).
+  function findOrCreate(baseUrl, login, serviceType, tableName, keys, fields) {
+    var qType = serviceType && typeof serviceType === 'object' ? serviceType.query : serviceType;
+    var cType = serviceType && typeof serviceType === 'object' ? serviceType.create : serviceType;
+    return queryRows(baseUrl, login, qType, tableName, keys)
+      .then(function (rows) {
         var idCol = tableName + '_ID';
-        if (parsed.rowCount > 0 && parsed.rows[0][idCol]) {
-          console.log('§ERP_REST_FOUND table=' + tableName + ' id=' + parsed.rows[0][idCol] + ' (+0)');
-          return { id: parseInt(parsed.rows[0][idCol], 10), created: false };
+        if (rows.length > 0 && rows[0][idCol]) {
+          console.log('§ERP_REST_FOUND table=' + tableName + ' id=' + rows[0][idCol] + ' (+0)');
+          return { id: parseInt(rows[0][idCol], 10), created: false };
         }
         return call(baseUrl, 'create_data', login, { serviceType: cType, tableName: tableName, action: 'Create', fields: fields })
           .then(function (r2) {
@@ -152,7 +181,7 @@
     var created = { categories: 0, products: 0, projects: 0, phases: 0, tasks: 0, lines: 0 };
 
     return findOrCreate(baseUrl, login, svc.C_Project || 'BIMOOTB_Project', 'C_Project',
-      "Value='" + plan.building + "'",
+      [{ column: 'Value', val: plan.building }],
       [{ column: 'Value', val: plan.building }, { column: 'Name', val: plan.name || ('BIM: ' + plan.building) }].concat(plan.fields || []))
       .then(function (proj) {
         if (proj.created) created.projects++;
@@ -160,7 +189,7 @@
         (plan.phases || []).forEach(function (ph) {
           phaseChain = phaseChain.then(function () {
             return findOrCreate(baseUrl, login, svc.C_ProjectPhase || 'BIMOOTB_ProjectPhase', 'C_ProjectPhase',
-              "C_Project_ID=" + proj.id + " AND Name='" + ph.name + "'",
+              [{ column: 'C_Project_ID', val: proj.id }, { column: 'Name', val: ph.name }],
               [{ column: 'C_Project_ID', val: proj.id }, { column: 'Name', val: ph.name },
                { column: 'SeqNo', val: ph.seqno }, { column: 'StartDate', val: ph.startDate }, { column: 'EndDate', val: ph.endDate }].concat(ph.fields || []))
               .then(function (phase) {
@@ -169,7 +198,7 @@
                 (ph.tasks || []).forEach(function (t) {
                   taskChain = taskChain.then(function () {
                     return findOrCreate(baseUrl, login, svc.C_ProjectTask || 'BIMOOTB_ProjectTask', 'C_ProjectTask',
-                      "C_ProjectPhase_ID=" + phase.id + " AND Name='" + t.name + "'",
+                      [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'Name', val: t.name }],
                       [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'Name', val: t.name }].concat(t.fields || []))
                       .then(function (task) { if (task.created) created.tasks++; taskIds[t.name] = task.id; });
                   });
@@ -178,17 +207,17 @@
                 (ph.lines || []).forEach(function (ln) {
                   lineChain = lineChain.then(function () {
                     // line.uom = { x12de355, name, fields } — the product's UOM by its natural key on the TARGET (ids differ per instance; a UOM the target lacks is created). §12.1 D6
-                    var uomStep = ln.uom && ln.uom.x12de355 ? findOrCreate(baseUrl, login, svc.C_UOM || 'BIMOOTB_UOM', 'C_UOM', "X12DE355='" + ln.uom.x12de355 + "'",
+                    var uomStep = ln.uom && ln.uom.x12de355 ? findOrCreate(baseUrl, login, svc.C_UOM || 'BIMOOTB_UOM', 'C_UOM', [{ column: 'X12DE355', val: ln.uom.x12de355 }],
                       [{ column: 'X12DE355', val: ln.uom.x12de355 }, { column: 'Name', val: ln.uom.name }].concat(ln.uom.fields || []))
                       .then(function (u) { if (u.created) created.uoms = (created.uoms || 0) + 1; return u.id; }) : Promise.resolve(null);
                     var uomId = null;
                     return uomStep.then(function (u) { uomId = u; return findOrCreate(baseUrl, login, svc.M_Product_Category || 'BIMOOTB_ProductCategory', 'M_Product_Category',
-                      "Name='" + ln.categoryName + "'",
+                      [{ column: 'Name', val: ln.categoryName }],
                       [{ column: 'Name', val: ln.categoryName }].concat(ln.categoryFields || [])); })
                       .then(function (cat) {
                         if (cat.created) created.categories++;
                         return findOrCreate(baseUrl, login, svc.M_Product || 'BIMOOTB_Product', 'M_Product',
-                          "Value='" + ln.productValue + "'",
+                          [{ column: 'Value', val: ln.productValue }],
                           [{ column: 'Value', val: ln.productValue }, { column: 'Name', val: ln.productName },
                            { column: 'M_Product_Category_ID', val: cat.id }].concat((ln.productFields || []).filter(function (f) { return !(uomId && f.column === 'C_UOM_ID'); }))
                            .concat(uomId ? [{ column: 'C_UOM_ID', val: uomId }] : []));
@@ -199,7 +228,7 @@
                         // (prompts/CAPEX_DASHBOARD.md §5.1 R1), so (phase, product) alone would find the first storey's line and silently drop the others
                         var lnTaskId = ln.taskName != null && taskIds[ln.taskName] ? taskIds[ln.taskName] : null;
                         return findOrCreate(baseUrl, login, svc.C_ProjectLine || 'BIMOOTB_ProjectLine', 'C_ProjectLine',
-                          "C_ProjectPhase_ID=" + phase.id + " AND M_Product_ID=" + prod.id + (lnTaskId ? " AND C_ProjectTask_ID=" + lnTaskId : ""),
+                          [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'M_Product_ID', val: prod.id }].concat(lnTaskId ? [{ column: 'C_ProjectTask_ID', val: lnTaskId }] : []),
                           [{ column: 'C_ProjectPhase_ID', val: phase.id }, { column: 'C_Project_ID', val: proj.id },
                            { column: 'M_Product_ID', val: prod.id }, { column: 'PlannedQty', val: ln.qty },
                            { column: 'PlannedPrice', val: ln.price }]
@@ -222,7 +251,7 @@
       });
   }
 
-  var API = { pushProjectOrder: pushProjectOrder, buildCrudXml: buildCrudXml, parseStandardResponse: parseStandardResponse, parseWindowTabData: parseWindowTabData };
+  var API = { pushProjectOrder: pushProjectOrder, queryRows: queryRows, exactRows: exactRows, buildCrudXml: buildCrudXml, parseStandardResponse: parseStandardResponse, parseWindowTabData: parseWindowTabData };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else global.ErpRestPush = API;
 })(typeof self !== 'undefined' ? self : this);

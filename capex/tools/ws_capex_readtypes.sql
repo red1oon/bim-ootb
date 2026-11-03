@@ -23,7 +23,7 @@ BEGIN
     INSERT INTO ws_webservice_para(ad_client_id,ad_org_id,constantvalue,created,createdby,isactive,parametername,parametertype,updated,updatedby,ws_webservice_para_id,ws_webservicetype_id,ws_webservice_para_uu)
     SELECT 11,0,v.cv,now(),100,'Y',v.pn,v.pt,now(),100,
            nextidfunc((SELECT ad_sequence_id FROM ad_sequence WHERE name='WS_WebService_Para')::int,'N'::varchar),tid,gen_random_uuid()
-    FROM (VALUES ('TableName','C',d.tbl),('Action','C','Read'),('RecordID','F',NULL),('Filter','F',NULL)) AS v(pn,pt,cv);
+    FROM (VALUES ('TableName','C',d.tbl),('Action','C','Read'),('RecordID','F',NULL),('Filter','C','1=1')) AS v(pn,pt,cv);
     FOR c IN SELECT ad_column_id FROM ad_column WHERE ad_table_id=t AND isactive='Y'
              AND columnsql IS NULL      -- virtual (SQL) columns are not in the table: WS query fails on them (found by M3: 'DocBaseType not found in ResultSet')
              AND (d.cols IS NULL OR columnname = ANY(d.cols)) LOOP
