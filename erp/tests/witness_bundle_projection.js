@@ -1,6 +1,6 @@
 // ⚠ DO NOT REMOVE — W-BUNDLE-PROJECTION (bim-compiler prompts/TEAMWORK_FRAMEWORK.md §41.2 L4b, agent J). READ THE LOG after every run; exit code is not evidence.
 // SPEC (written first): PROJECTED rows are not base data. While an executor map is in force Team sets IsActive='N' on Document Action Access rows IN MEMORY (team_sync.js projectExecutorRows, "nothing is written to the
-//   op log, so the rule vanishes with the policy"). The host persists the in-memory bundle to the resident cache (IndexedDB ad_seed_v18) at three points - tenant delete, shard install, tenant genesis - by db.export().
+//   op log, so the rule vanishes with the policy"). The host persists the in-memory bundle to the resident cache (IndexedDB ERP_SEED_KEY) at three points - tenant delete, shard install, tenant genesis - by db.export().
 //   A snapshot taken under the overlay therefore persisted the PROJECTION as if it were base: after a reload the rule stayed on the device with no policy behind it (the map retired, the rows still 'N').
 //   Rule: a module that overlays the bundle registers {unproject, reproject} with window.BundleProjection; the host's ONE snapshot function (_persistBundle) runs unproject -> export -> reproject. No table is named.
 // ISSUES (each arm names one):
@@ -71,7 +71,7 @@ var ROLE = 102, DT = 115, RL = 178, CONTROL_RL = 179;   // role 102 GardenWorld 
   }
   // the persisted snapshot is read AND opened inside the page (it is ~30 MB: never serialised out through the driver)
   function readBlob(sqls) { return pg.evaluate(function (ss) { return new Promise(function (res) { var rq = indexedDB.open('erp_cache', 1);
-    rq.onsuccess = function () { try { var g = rq.result.transaction('blobs').objectStore('blobs').get('ad_seed_v18');
+    rq.onsuccess = function () { try { var g = rq.result.transaction('blobs').objectStore('blobs').get(window.ERP_SEED_KEY);
       g.onsuccess = function () { if (!g.result) { res(null); return; } var d = new window.SQL.Database(new Uint8Array(g.result)), out = ss.map(function (s) { var r = d.exec(s); return r.length ? r[0].values : []; }); d.close(); res({ bytes: g.result.byteLength, out: out }); }; g.onerror = function () { res(null); };
       } catch (e) { res(null); } }; rq.onerror = function () { res(null); }; setTimeout(function () { res(null); }, 30000); }); }, sqls); }
   var BSQL = [cell(RL), cell(CONTROL_RL), 'SELECT count(*) FROM ad_user WHERE ad_client_id=12'];

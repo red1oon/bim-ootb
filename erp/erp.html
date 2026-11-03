@@ -79,6 +79,7 @@
 
 <!-- §INSTANT Phase 1: globe renders from initbubble.json in <300ms -->
 <script src="vfs_detect.js?v=1"></script>
+<script src="seed_key.js?v=1"></script><!-- SEAM F10 — the ONE seed IDB key owner (window.ERP_SEED_KEY) -->
 <script src="ad_graph.js?v=26"></script>
 <!-- AD logic-expression evaluator (window.AdEvaluator) — ad_ui.js reads it to hide fields whose AD DisplayLogic is false for a record (§AD-DISPLAYLOGIC-LIVE). MUST precede ad_ui.js. -->
 <script src="ad_evaluator.js?v=24"></script>
@@ -277,7 +278,7 @@ var _shellReady = false;
 
     if (!hasAD) {
       _t0 = performance.now();
-      var cached = await idbGet('ad_seed_v18');
+      var cached = await idbGet(window.ERP_SEED_KEY);
       var cacheValid = false;
       if (cached && cached.byteLength > 1000) {
         var header = new Uint8Array(cached, 0, 16);
@@ -318,7 +319,7 @@ var _shellReady = false;
           }
           db.close();
           db = new SQL.Database(new Uint8Array(seedBuf));
-          idbPut('ad_seed_v18', seedBuf);
+          idbPut(window.ERP_SEED_KEY, seedBuf);
           _bench.db_fetch = Math.round(performance.now() - _t0);
           _bench.db_size = Math.round(seedBuf.byteLength / 1024);
           _bench.db_source = 'network';
