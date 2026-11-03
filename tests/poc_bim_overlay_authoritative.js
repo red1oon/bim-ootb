@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 // poc_bim_overlay_authoritative.js — round-trip REGRESSION fix witness (W-BIM-OVERLAY-AUTHORITATIVE).
-// The bug: the idb seed cache (ad_seed_v16) can be persisted AFTER the BIM overlay has run (a demo-tenant
+// The bug: the idb seed cache (ERP_SEED_KEY) can be persisted AFTER the BIM overlay has run (a demo-tenant
 // install / seed reset / genesis / tenant delete does idbPut(db.export())), freezing a STALE BIM band into
 // the cache. The old overlay used INSERT OR IGNORE → a fresh push (same band PK) was SILENTLY SKIPPED, so the
 // Find › ERP deep-link opened the ERP but the project wasn't there. The fix: overlayTable does a PER-PK

@@ -296,6 +296,27 @@ overlays, which every other opener applies (`erp/idempiere.html:1155-1156`, `erp
 main's `proj_order_state.js` → 41. **End of chain (browser, test instance):** the same push then `§PROJ_PUSH_LEGACY base=http://localhost:8098 … projectId=1000003`; legacy == local fold (7/10/16,
 PlannedAmt 383827.36788); the real password dialog shown prefilled (user/client/role/org/warehouse read-only, only the password typed), removed after submit, password in 0 of 697 log lines.
 
+### 5.12 SPEC — the dashboard the way Sysnova runs theirs: a standalone app beside iDempiere (2026-11-03; written before code)
+**Owner:** *"i was originally proposing that the plugin is only for the BIM to ERP Project Order"* · *"If u already could guess from the info what they are using we be copying that"*. So the dashboard is
+NOT in `org.idempiere.bimootb` and NOT a ZK gadget; it copies the ARCHITECTURE Sysnova's own dashboard shows (the framework is not knowable from what we have, and the page stays vanilla).
+**Evidence (screenshot `~/Projects/SYSNOVA/SYSNOVADashboardScreenshot.png`, 2026-09-02 screen share; notes `BIMSYSNOVA_Project.md` §Target dashboard):** URL `http://172.16.9.25:8000/v2/#/dashboard` = a
+separate web app on its own port (not iDempiere's `/webui`), plain HTTP on the LAN; `/v2/` + sidebar link "← Classic dashboard (v1)" = two versions served by one app; `#/dashboard` = a single-page app with
+hash routes, sidebar Dashboard · Projects · Budget & Cost · Procurement Risks · Approval Pending (514) · Handover; footer "PMO Analytics — Live data from iDempiere" = it reads iDempiere live, so a server
+part on that port reads iDempiere (a page alone could not without CORS) — HOW (database or web services) is NOT known (Q-S2). Port 8000 = the default of Python dev servers / Laravel `artisan serve`: a hint, not a fact.
+**Build (bim-ootb, no framework, no new dependency):**
+1. `capex/server.js` (node `http`): serves `capex/` at `/v2/` (index.html), hash routes `#/dashboard`, `#/projects`, `#/budget`, `#/procurement`, `#/approvals`, `#/handover` — the same six modules; a module with
+   no stated definition shows "definition pending (client)" (§6 Q6), never a made-up table. Port from env (default 8000 like theirs; refuses to start if taken, never kills a process).
+2. `GET /api/legacy` — the server reads iDempiere through its stock web services with a dedicated READ-ONLY service account given by env (`LEGACY_BASE`, `LEGACY_USER`, `LEGACY_PASS`, client/role/org):
+   the SAME `adapters.loadLegacy` the snapshot tool uses (one owner; `capex/tools/legacy_snapshot.js` becomes a thin caller). Short cache (env seconds), `§DASH_SERVE` logs (row counts, ms) — the password
+   never in a response, a log line or the page. No account configured → HTTP 503 `{"error":"no legacy source"}` and the page shows "no data source" (no zeros).
+3. Page: a third source `fromServer('/api/legacy')` in `capex/adapters.js` (the page picks it when served by `server.js`); Source A (our SQLite twin) unchanged; `tiles.js` unchanged — one compute.
+4. The iDempiere side needs only the read-only account + its read types (the CAPEX read types, Filter Constant since §5.8): later shipped as the DASHBOARD's own setup pack (iDempiere convention), never
+   inside the BIM plugin. POC: the local pilot already holds them.
+**Witness W-DASH-SERVE (node, local pilot):** `/api/legacy` row counts == `legacy_snapshot.js` (projects/phases/tasks/lines …); the tiles computed from the API payload == the tiles `shed_twin.js` computes
+from legacy for HHS and SHED (`?project=`); `/v2/` serves index.html and the six routes; no account → 503 + "no data source"; the password string in no response body/header/log; a second server on a
+taken port refuses to start. Break: `BREAK=1` drops one project from the payload → the count compare FAILs.
+**Open (owner → Sysnova PM, §6 Q-S1..Q-S6):** their app's source, live or prototype, how it reads iDempiere, how it signs in, the tile definitions, where it runs.
+
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
 Q2 Project Stage: how do Concept / Initiation / Planning / Execution / Closing map onto `C_Project.C_Phase_ID` (stock `C_Phase` rows are sales-cycle steps in the seed)? Or is it a custom column/`C_ProjectType`?
@@ -306,6 +327,13 @@ Q6 Procurement Risks and Handover: definition and source columns.
 Q7 "Closed" project = `Processed='Y'`? and "completed this year" date = `DateFinish`? Also the BIM link shape (`db=` form vs `building=` form).
 Q8 Payment-based financial progress (their own caveat says it is not in the ERP) — which table will carry it?
 Q9 Legacy read types for C_ProjectPhase / C_ProjectTask / C_ProjectLine / C_Phase / C_Currency / AD_WF_Activity: owner's go to register them on the legacy server (WS Type rows) so Source B is complete.
+**For the Sysnova PM (owner's ask 2026-11-03: "their script and whether it is live or still prototype"):**
+Q-S1 Please share the dashboard's source code (the v2 app at `:8000/v2`, and v1 if it still runs) — or a zip / repo access.
+Q-S2 Is it LIVE on real Kazi Farms data today, or a prototype on sample/test data? (Footer says "Live data from iDempiere" — which iDempiere: production or a copy?)
+Q-S3 How does it read iDempiere — straight from the PostgreSQL database (SQL / views), through iDempiere web services, or through a REST plugin? Read-only user?
+Q-S4 How do users sign in to it — its own login, the iDempiere login, or none (LAN only)?
+Q-S5 For each tile, the formula or SQL it uses (answers §6 Q1–Q8 in one go), and what "Procurement Risks" and "Handover" show.
+Q-S6 Where does it run (server, port 8000, what starts it) and who maintains it.
 
 
 ## 7. Machine state (left 2026-11-03)

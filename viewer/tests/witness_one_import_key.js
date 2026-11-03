@@ -36,6 +36,12 @@ async function checks(IK, tag) {
   ck(IK.importUrl(A, 'geo') === 'import://Clinic_ARC.ifc/Clinic_ARC_geo.db', 'A geo');
   ck(IK.importUrl(A, 'monolith') === 'import://Clinic_ARC.ifc/v0', 'A monolith');
   ck(IK.importUrl(A, 'v2') === 'import://Clinic_ARC.ifc/v2', 'A v2');
+  // §IMPORT_KEY_ALIAS (R4 read side): an old ?db= link / restored tab to a legacy monolith url resolves to K/v0
+  ck(typeof IK.currentUrlFor === 'function' && IK.currentUrlFor('import://Clinic_ARC.ifc/extracted') === 'import://Clinic_ARC.ifc/v0', 'alias legacy extracted → v0');
+  ck(typeof IK.currentUrlFor === 'function' && IK.currentUrlFor('import://My House (v2).IFC/library') === 'import://My House (v2).IFC/v0', 'alias legacy library → v0');
+  ck(typeof IK.currentUrlFor === 'function' && IK.currentUrlFor(IK.importUrl(A, 'extracted')) === null && IK.currentUrlFor(IK.importUrl(A, 'monolith')) === null, 'alias never matches split or current urls');
+  { const sc = fs.readFileSync(P('viewer', 'scene.js'), 'utf8'), i = sc.indexOf("if (url.startsWith('import://')) {"), j = sc.indexOf('Imported IFC not found', i);
+    ck(i > 0 && j > i && sc.slice(i, j).indexOf('currentUrlFor') > 0 && sc.slice(i, j).indexOf('§IMPORT_KEY_ALIAS') > 0, 'scene.js cachedFetch tries the alias BEFORE declaring an import missing'); }
   ck(IK.importUrl(B, 'extracted') === 'import://My House (v2).IFC/My House (v2)_extracted.db', 'B extracted (.IFC stripped /i)');
   ck(IK.importProjectKey(B) === B, 'B key verbatim');
   ck(IK.importMultiProjectKey(['Clinic_ARC.ifc', 'Clinic_HVAC.ifc']).key === 'Clinic.ifc', 'C multi key');

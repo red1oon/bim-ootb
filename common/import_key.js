@@ -57,6 +57,14 @@
     if (part === 'monolith' || part === 'v0' || part == null) return ['import://' + k + '/extracted', 'import://' + k + '/library'];
     return [];
   }
+  // currentUrlFor(url) — the url a LEGACY monolith url now lives under (import://K/extracted|library → import://K/v0),
+  // or null. Lets an old ?db= link / restored tab / pwa_last_db still open after importRekey moved its blob (R4).
+  // Split urls end `_extracted.db` etc. and are never matched.
+  function currentUrlFor(url) {
+    var m = /^import:\/\/(.+)\/(extracted|library)$/.exec(String(url || ''));
+    return m ? importUrl(m[1], 'monolith') : null;
+  }
+
   // Old materialize shape (stem kept). Informational: never moved or deleted (a saved ?db= link carries the whole url).
   function legacyDesignUrls(safeKey) {
     var u = 'import://' + safeKey + '/' + safeKey + '_extracted.db';
@@ -116,7 +124,7 @@
   }
 
   var api = { importProjectKey: importProjectKey, importMultiProjectKey: importMultiProjectKey, importStem: importStem,
-    importUrl: importUrl, importLegacyUrls: importLegacyUrls, legacyDesignUrls: legacyDesignUrls,
+    importUrl: importUrl, importLegacyUrls: importLegacyUrls, currentUrlFor: currentUrlFor, legacyDesignUrls: legacyDesignUrls,
     importRekey: importRekey, importIdbStore: importIdbStore };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ImportKey = api;

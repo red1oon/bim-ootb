@@ -39,7 +39,7 @@
 
   // Copy BIM rows (PK >= BIM_BASE) of one table from srcDb (OPFS) into dstDb. The OPFS push is AUTHORITATIVE:
   // when OPFS has band rows for this table we CLEAR the dst band first, then INSERT — so a fresh push is NEVER
-  // masked by a stale BIM band frozen into the idb seed cache. (ad_seed_v16 can be persisted POST-overlay by a
+  // masked by a stale BIM band frozen into the idb seed cache. (the ERP_SEED_KEY idb blob can be persisted POST-overlay by a
   // demo-tenant install / seed reset / genesis / tenant delete → it captures the overlaid band; the old
   // INSERT OR IGNORE then silently skipped the new push on the PK collision = the round-trip regression.)
   // W-BIM-OVERLAY-AUTHORITATIVE. The push/OPFS-write path is untouched (revert-safe).

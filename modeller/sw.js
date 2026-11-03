@@ -10,7 +10,8 @@
 // ERP app's ('erp-ootb-') caches — each app owns its own (docs/ERP_FOLDER_HOME.md precedent).
 //
 // DEPLOY: bump CACHE_VERSION on every deploy. Old caches are purged on activate.
-const CACHE_VERSION = 'v211';   // bump on each deploy; per-change detail is the git commit message.
+// v212 (2026-11-03) §SEAM-W2 F15: str_walker_outliner.js?v=25 drops superseded <base>?v=M / bare <base> resident DBs when caching <base>?v=N (§RESIDENT_STALE_DROP)
+const CACHE_VERSION = 'v212';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
