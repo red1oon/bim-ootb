@@ -175,6 +175,13 @@
             var getReq = store.get(tipKey);
             var writeAndDone = function() {
               store.put(buf, dbKey); store.put(myTip, tipKey);
+              // §A3b: before the canonical key, every edit burst wrote a full copy under the RAW url — a slot only
+              // cachedFetch's one-time legacy adopt reads, and only when the canonical slot is empty. The canonical
+              // slot now holds the newer bytes, so the raw copy is dead weight in the user's storage: reclaim it.
+              if (dbUrl && dbUrl !== dbKey) {
+                store.delete(dbUrl); store.delete(dbUrl + '::tip');
+                console.log('§KRN_PERSIST_RAW_RECLAIM url=' + dbUrl + ' (superseded by key=' + dbKey + ')');
+              }
               console.log('§KRN_PERSIST url=' + dbUrl + ' key=' + dbKey + ' size=' + (buf.byteLength/1024).toFixed(0) + 'KB tip=' + String(myTip).slice(0,12) + '…');
               resolve();
             };
@@ -213,16 +220,18 @@
     }
     clearTimeout(_persistTimer);
     _persistTimer = setTimeout(function() {
+      // §TM_SPLITMODE_PERSIST_KEY (§S78): a split-mode building's APP.db is loaded from metaUrl, not
+      // APP.DB_URL (streaming.js) — APP._dbPersistUrl names the url APP.db's bytes actually came from.
       var A = (typeof window !== 'undefined' && window.APP) || null;
-      var dbUrl = (A && A.DB_URL) || null;
+      var dbUrl = (A && (A._dbPersistUrl || A.DB_URL)) || null;
       if (!dbUrl) return;
       if (A._cacheDisabled) return;   // incognito / low quota → no IDB
-      // §A3a DECISION PENDING (bim-compiler prompts/CODE_HYGIENE_REVIEW_2026-11.md §A3a): the key stays the RAW url, as
-      // shipped. The reader keys by the canonical cache key (§SCHED_PERSIST_KEY) and split mode loads APP.db from
-      // APP._dbPersistUrl (§TM_SPLITMODE_PERSIST_KEY); both fixes were written into the unloaded viewer copy on
-      // 2026-08-23 and have NEVER run here. Switching to them turns on "Viewer edits replace the cached building and
-      // survive a refresh" for the first time — a product decision, not a hygiene fix. Until decided, no new behaviour.
-      var dbKey = dbUrl;
+      // §SCHED_PERSIST_KEY (§S70) + SEAM_IDENTITY_AUDIT: cachedFetch reads under DbResolve.cacheKey(url), not the raw
+      // url — writing the raw url put "survive refresh" in a slot nothing reads. Owner rulings on record: §S70 ("edits
+      // vanishing on reload is a GAP, not a design choice"), HISTORY_PERSIST_RECALL §LOCKED-2 (the signed log always
+      // records). Staleness stays owned by cachedFetch's §R6a ETag/Content-Length revalidation (this writes 'dbs' only).
+      var dbKey = (window.DbResolve && window.DbResolve.cacheKey)
+        ? window.DbResolve.cacheKey(dbUrl, A.PROD_BASE) : dbUrl;
       // T6: serialize same-origin tabs so the read-guard-write is not interleaved. Fallback runs direct.
       if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
         navigator.locks.request('krn_persist:' + dbKey, function() { return _idbPersist(db, dbKey, dbUrl); });

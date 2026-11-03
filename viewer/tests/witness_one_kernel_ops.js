@@ -37,7 +37,8 @@ function makeEnv(koFile, appCfg) {          // appCfg === null -> no window.APP 
     objectStoreNames: { contains: function (n) { return n === 'dbs'; } },
     transaction: function () { return { objectStore: function () { return {
       get: function (k) { var rq = {}; Promise.resolve().then(function () { rq.result = idbMap.get(k); if (rq.onsuccess) rq.onsuccess(); }); return rq; },
-      put: function (v, k) { idbMap.set(k, v); puts.push(k); } }; } }; }
+      put: function (v, k) { idbMap.set(k, v); puts.push(k); },
+      delete: function (k) { idbMap.delete(k); } }; } }; }
   };
   var winObj = { DbResolve: DbResolve };
   global.window = winObj;
@@ -88,23 +89,27 @@ async function claims(koFile) {
     J('C1b RO rows present in the next mutating op\'s persisted bytes', RO_TYPES.every(function (t) { return rows.indexOf(t) >= 0; }) && rows.indexOf('GRID_MOVE') >= 0, 'rows=' + rows.join(','));
   } finally { e.restore(); }
 
-  // C2 — mutating op: exactly 1 export; the persist KEY is UNCHANGED from shipped (raw url) — §A3a decision pending
+  // C2 — mutating op: exactly 1 export, canonical key, tip follows the key, raw-url slot empty
   e = makeEnv(koFile, { DB_URL: SHIPPED, PROD_BASE: PROD_BASE }); e.APP.db = e.mkdb();
+  e.idb.set(SHIPPED, 'stale-raw-copy-from-before-A3b');   // what every pre-fix edit burst left behind
   try {
     e.KO.commitOp(e.APP.db, 'GRID_MOVE', { dx: 1 });
     await e.fire();
+    var key = DbResolve.cacheKey(SHIPPED, PROD_BASE);
     J('C2a mutating op -> exactly 1 export', e.exports.n === 1, 'exports=' + e.exports.n);
-    J('C2b key UNCHANGED: raw url + raw-url "::tip" (no new survive-refresh behaviour)',
-      e.idb.has(SHIPPED) && e.idb.has(SHIPPED + '::tip') && !e.idb.has(DbResolve.cacheKey(SHIPPED, PROD_BASE)), 'puts=' + e.puts.join('|'));
-    J('C2d navigator.locks name UNCHANGED (raw url)', e.locks.indexOf('krn_persist:' + SHIPPED) >= 0, 'locks=' + e.locks.join('|'));
+    J('C2b shipped url key == DbResolve.cacheKey(url) ("buildings/Duplex_extracted.db"), tip key == key+"::tip"',
+      key === 'buildings/Duplex_extracted.db' && e.idb.has(key) && e.idb.has(key + '::tip'), 'puts=' + e.puts.join('|') + ' expectKey=' + key);
+    J('C2c raw-url slot NOT written, and a pre-existing raw copy is reclaimed', !e.idb.has(SHIPPED) && !e.idb.has(SHIPPED + '::tip') && e.has('§KRN_PERSIST_RAW_RECLAIM'), 'rawSlot=' + e.idb.has(SHIPPED) + ' reclaimLogged=' + e.has('§KRN_PERSIST_RAW_RECLAIM'));
+    J('C2d navigator.locks name follows the key', e.locks.indexOf('krn_persist:' + key) >= 0, 'locks=' + e.locks.join('|'));
   } finally { e.restore(); }
 
-  // C3 — split mode: key still APP.DB_URL (unchanged; _dbPersistUrl is the pending decision)
+  // C3 — split mode
   e = makeEnv(koFile, { DB_URL: SHIPPED, _dbPersistUrl: SPLIT_META, PROD_BASE: PROD_BASE }); e.APP.db = e.mkdb();
   try {
     e.KO.commitOp(e.APP.db, 'GRID_MOVE', { dx: 1 });
     await e.fire();
-    J('C3 split mode: key UNCHANGED (APP.DB_URL)', e.idb.has(SHIPPED) && !e.idb.has(SPLIT_META) && !e.idb.has(DbResolve.cacheKey(SPLIT_META, PROD_BASE)), 'puts=' + e.puts.join('|'));
+    var sk = DbResolve.cacheKey(SPLIT_META, PROD_BASE);
+    J('C3 split mode: key derived from APP._dbPersistUrl', e.idb.has(sk) && !e.idb.has(DbResolve.cacheKey(SHIPPED, PROD_BASE)), 'puts=' + e.puts.join('|') + ' expectKey=' + sk);
   } finally { e.restore(); }
 
   // C4 — foreign db: 0 writes, logged, pending legit persist NOT cancelled
