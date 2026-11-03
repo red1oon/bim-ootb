@@ -9,7 +9,7 @@
 var http = require('http'), fs = require('fs'), path = require('path');
 var { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 var ROOT = path.join(__dirname, '..', '..'), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
-var EXT = ['boot.js', 'invoice_open.js', 'goal_engine.js', 'dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js'].map(function (f) { return 'overlay/' + f; });
+var EXT = ['boot.js', 'dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js'].map(function (f) { return 'overlay/' + f; });
 var server = http.createServer(function (req, res) { var f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0])); fs.readFile(f, function (e, buf) { if (e) { res.writeHead(404); return res.end('404'); } res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); res.end(buf); }); });
 var fails = 0, judged = 0; function ck(ok, what, info) { judged++; if (!ok) fails++; console.log('  §XCL-CHECK ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' ' + JSON.stringify(info))); }
 (async function () {

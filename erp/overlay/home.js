@@ -121,12 +121,39 @@
     }
     return n;
   }
+  // the Performance gadget's items over base + signed tip (§5.24 CAPEX_DASHBOARD.md: the committed state, as legacy reads its DB) and its grid; one builder for the first draw and the tip redraw
+  function perfItems(S) {
+    var perf = function (qq) { return window.DashboardGadgets.performance(qq || q, S, window.GoalEngine); };
+    try { return window.__crud && window.__crud.withTipQuery ? window.__crud.withTipQuery(perf) : perf(q); } catch (e) { console.log('§DASH-ERR performance: ' + (e && e.message)); return []; }
+  }
+  function perfGrid(items) {
+    var grid = el('div', 'pi-grid');
+    items.forEach(function (it) {
+      var pi = el('div', 'pi'); pi.setAttribute('data-goal-id', it.id); pi.setAttribute('data-percent', it.percent); pi.setAttribute('data-color', it.color); pi.title = it.tooltip;
+      var frac = Math.max(0, Math.min(1, it.percent / 100)), C = Math.PI * 40;
+      pi.innerHTML = '<svg viewBox="0 0 100 58"><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="#e3e6ea" stroke-width="12"/><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="' + it.color + '" stroke-width="12" stroke-dasharray="' + (C * frac).toFixed(2) + ' ' + C.toFixed(2) + '"/></svg>';
+      pi.appendChild(el('div', 'pt', it.title)); grid.appendChild(pi);
+    });
+    return grid;
+  }
+  // the sidecar (the signed tip) opened after the first draw: redraw the Performance grid IN PLACE over base + tip — nothing else of the Home is touched
+  function perfRedraw() {
+    var box = document.querySelector('#idmp-home .idmp-gadget[data-perf="1"]'), S = session(); if (!box || !S) return;
+    var items = perfItems(S), old = box.querySelector('.pi-grid'); if (!old) return;
+    old.parentNode.replaceChild(perfGrid(items), old);
+    console.log('§DASH-GADGET performance redrawn over base + tip goals=' + items.length);
+  }
+  var sideAsked = false;
   function render() {
     if (busy) return; busy = true;
     try {
       var host = document.getElementById('idmp-content'), ph = host && host.querySelector(':scope > #idmp-placeholder');
       if (!ph || host.querySelector('#idmp-home') || !window.DashboardHome || !window.DashboardGadgets || !window.GoalEngine) return;
       var S = session(); if (!S) return;
+      // §5.24 (CAPEX_DASHBOARD.md): the Home reads the committed state = base + signed tip; the tip lives in the sidecar, which opens lazily (async). Render now from what is open; when the
+      //   sidecar reports ready, draw the Home again over base + tip (a profile with no saved edit draws the same twice; one with edits shows them, as legacy's DB would).
+      if (window.__crud && window.__crud.withSidecar && !sideAsked) { sideAsked = true; window.__crud.withSidecar(function (sdb) { console.log('§DASH-HOME sidecar ready=' + !!sdb + ' (Performance redrawn over base + tip when the tip holds edits)'); if (!sdb) return; var nOps = 0; try { var r = sdb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0"); nOps = r.length ? Number(r[0].values[0][0]) : 0; } catch (e) {} if (!nOps) return;   // no saved edit: base == committed, nothing to redraw
+        setTimeout(perfRedraw, 0); }); }
       var sel = window.DashboardHome.select(q, { client: S.client, role: S.role, user: S.user });
       if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
       css();
@@ -136,15 +163,9 @@
         var box = el('div', 'idmp-gadget'); box.setAttribute('data-gadget-id', g.id); box.setAttribute('data-gadget-kind', g.kind); box.setAttribute('data-gadget-name', g.name);
         box.appendChild(el('div', 'gh', g.name)); var body = el('div', 'gb'); box.appendChild(body);
         if (g.kind === 'performance') {
-          var items = window.DashboardGadgets.performance(q, S, window.GoalEngine), grid = el('div', 'pi-grid');
+          var items = perfItems(S), grid = perfGrid(items);
           if (!items.length) { console.log('§DASH-EMPTY id=' + g.id + ' name="' + g.name + '" kind=performance goals=0 (a lazy gadget with nothing to show is detached: DashboardController.java:483-492)'); return; }
-          items.forEach(function (it) {
-            var pi = el('div', 'pi'); pi.setAttribute('data-goal-id', it.id); pi.setAttribute('data-percent', it.percent); pi.setAttribute('data-color', it.color); pi.title = it.tooltip;
-            var frac = Math.max(0, Math.min(1, it.percent / 100)), C = Math.PI * 40;
-            pi.innerHTML = '<svg viewBox="0 0 100 58"><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="#e3e6ea" stroke-width="12"/><path d="M10 50 A40 40 0 0 1 90 50" fill="none" stroke="' + it.color + '" stroke-width="12" stroke-dasharray="' + (C * frac).toFixed(2) + ' ' + C.toFixed(2) + '"/></svg>';
-            pi.appendChild(el('div', 'pt', it.title)); grid.appendChild(pi);
-          });
-          body.appendChild(grid); rendered++;
+          box.setAttribute('data-perf', '1'); body.appendChild(grid); rendered++;
           console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
         } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
           if (!dsOn) { window.DashboardDocStatus.install(window.__idmpDb, q); dsOn = true; }

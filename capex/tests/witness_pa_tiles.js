@@ -12,7 +12,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql');
-const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/overlay/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
+const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/goal_engine.js')), MA = require(path.join(ROOT, 'capex/tools/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
 const Ad = require('../adapters.js'), Tl = require('../tiles.js'), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
 const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process.env.BREAK === '1';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }
@@ -35,7 +35,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
 
 (async () => {
   // ── the twin: seed + patch + the SAME two migration scripts legacy applied ──
-  const H = await C.boot(), today = new Date().toISOString().slice(0, 10);
+  const H = await C.boot(), today = (() => { const d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); })();   // the LOCAL day (legacy: the server's local date), §5.24
   SCRIPTS.forEach(f => MA.apply(fs.readFileSync(path.join(MIGDIR, f), 'utf8'), { file: f, run: s => H.db.run(s), convertSql: H.A.convertSql, log, has: t => !!H.one('SELECT 1 AS x FROM sqlite_master WHERE lower(name)=?', [t]) }));
   const measures = H.q('SELECT * FROM pa_measure WHERE pa_measure_id>=1000000 ORDER BY pa_measure_id');
   const legacyMs = psql("SELECT PA_Measure_ID FROM PA_Measure WHERE PA_Measure_ID>=1000000 AND (PA_Measure_UU::text LIKE '5a0c3e1e-0b7d-4c1e-9f3a-cafe%') ORDER BY 1;").split('\n').filter(Boolean).map(Number);
@@ -65,7 +65,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   }
 
   // ── twin: the same goals through the model layer, computed by the engine ──
-  GE.install(H.db);   // the twin's ONE PA owner (erp/overlay/goal_engine.js, §5.18): its SQLite ports of trunc / invoiceopen / currencybase / the invoice views
+  GE.install(H.db);   // the twin's ONE PA owner (erp/goal_engine.js, §5.18/§5.24): its SQLite ports of trunc / invoiceopen / currencybase / the invoice views
   const CTX = { client: 11, role: 102, today, now: today + ' 12:00:00', convertSql: H.A.convertSql }, run = (s, p) => H.db.run(s, p || []), twin = {};
   measures.forEach(m => {
     H.save('pa_goal', { ad_client_id: 11, ad_org_id: 0, isactive: 'Y', name: m.name, pa_measure_id: m.pa_measure_id, pa_colorschema_id: 100, measuretarget: 0, measurescope: scopeOf(m), seqno: 0, issummary: 'N', relativeweight: 1, charttype: 'BC' });

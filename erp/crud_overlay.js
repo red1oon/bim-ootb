@@ -1902,6 +1902,18 @@
     var seen = {}, tabs = []; r.ops.forEach(function (o) { var t = o && (o.table || (o.params && o.params.table)); if (t && !seen[t]) { seen[t] = 1; tabs.push(t); } });
     if (tabs.length) PE.noteTouched(tabs);
   }
+  // withTipQuery(fn): fn(q) runs over the bundle with every session-written table tip-shadowed — the committed state the user sees (base + signed tip), exactly what the model layer reads
+  //   (modelRun below). Published for whole-SQL readers outside a save, e.g. the Home Performance gadget (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24: it read the BASE, so a goal edited in its window
+  //   never reached the Home). Synchronous; returns fn's result; the shadows are dropped after fn, even if it throws.
+  function withTipQuery(fn) {
+    var out = null;
+    withBundle(function (db) {
+      if (!db) { out = fn(null); return; }
+      var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [];
+      try { out = fn(_modelQuery(db)); } finally { _tipShadowOff(db, sh); }
+    });
+    return out;
+  }
   function modelRun(spec, cb) {
     var ML = global.ModelLayer;
     if (!ML || typeof withBundle !== 'function') { cb(null); return; }
@@ -3255,7 +3267,8 @@
     global.__lineageHover = { show: show, hide: hide, resolve: resolve };  // exposed for the live §-log probe
   })();
 
-  global.__crud = { modelRun: modelRun,   // ModelLayer.run over the tip-shadowed bundle (study §13.2: the Team adapter fires a received row's replica timing through it)
+  global.__crud = { modelRun: modelRun, withTipQuery: withTipQuery,   // withTipQuery: whole-SQL read of base + signed tip (§5.24, CAPEX_DASHBOARD.md)
+                      // ModelLayer.run over the tip-shadowed bundle (study §13.2: the Team adapter fires a received row's replica timing through it)
                     enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
