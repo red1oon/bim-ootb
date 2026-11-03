@@ -55,7 +55,7 @@
     try { built = await window.Bonsai.ifc.build(carry ? { carried: carry } : undefined); }
     finally { if (carry) { var rel = carry.release(); console.log(TAG + ' §M3B-CARRY released ' + rel + ' transient mesh registrations; heapMB after build=' + heapMB()); } }
     if (!built || !built.bytes || built.bytes.length < 1000) { console.log(TAG + ' FAIL the IFC build is empty bytes=' + (built && built.bytes ? built.bytes.length : 0)); return null; }
-    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL('lib/' + p, _base).href; });
+    var api = new window.WebIFC.IfcAPI(); await api.Init(function (p) { return new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href; });
     var Core = window.IfcExtractCore, sdb = new window.SQL.Database(), name = nameOf(), prefix = name.toUpperCase().replace(/[^A-Z0-9]/g, '') || 'MODEL', exLog = [];
     await Core.extractToDb({ WebIFC: window.WebIFC, ifcApi: api, ifcData: built.bytes, db: Core.sqljsDb(sdb), Buf: Core.browserBuf, buildingName: prefix, sourceName: name + '.ifc',
       log: function (m) { exLog.push(String(m)); }, progress: function () { } });

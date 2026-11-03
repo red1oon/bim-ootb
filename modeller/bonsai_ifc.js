@@ -77,7 +77,7 @@
     async _init() {
       if (this._api) return this._api;
       const api = new WebIFC.IfcAPI();
-      await api.Init((p) => new URL('lib/' + p, _base).href);   // locate web-ifc.wasm next to the api
+      await api.Init((p) => new URL((p === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + p, _base).href);   // locate web-ifc.wasm next to the api
       this._api = api;
       console.log(TAG + ' web-ifc ready');
       return api;

@@ -3609,7 +3609,7 @@ function setupStreaming(A) {
   A.init = async function() {
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_status_wasm||'Loading WebAssembly...');
     // Use WASM binary pre-fetched by loader.js (started in parallel with JS libs)
-    var sqlOpts = { locateFile: f => 'lib/' + f };
+    var sqlOpts = { locateFile: f => (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f };
     if (typeof _wasmBinaryPromise !== 'undefined') {
       var preloaded = await _wasmBinaryPromise;
       if (preloaded) sqlOpts.wasmBinary = preloaded;

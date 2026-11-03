@@ -21,7 +21,7 @@
     return { guid: guid, meta: m, type: t, psets: ps };
   }
   // ---- browser only below ----
-  async function sql() { return window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL('lib/' + f, location.href).href; } }); }
+  async function sql() { return window.SQL || await window.initSqlJs({ locateFile: function (f) { return new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, location.href).href; } }); }
   async function get() {
     var b = window.__dwBuf; if (!b) return null; if (_db && _buf === b) return _db;
     var SQL = await sql(); _db = new SQL.Database(b instanceof Uint8Array ? b : new Uint8Array(b)); _buf = b; return _db;

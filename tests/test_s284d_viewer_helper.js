@@ -29,9 +29,9 @@ const getLen = page => page.evaluate(async () => { try { const b = await _getWeb
 
     // V2 offline + cached (warm by fetching first, then go offline)
     ctx = await browser.newContext(); ({ page } = await load(ctx));
-    await page.evaluate(async ()=>{ try{ const c=await caches.open('bim-ifc-engine-test'); const r=await fetch('lib/web-ifc.wasm'); await c.put('lib/web-ifc.wasm', r.clone()); }catch(e){} });
+    await page.evaluate(async ()=>{ try{ const c=await caches.open('bim-ifc-engine-test'); const r=await fetch('../common/lib/web-ifc.wasm'); await c.put('../common/lib/web-ifc.wasm', r.clone()); }catch(e){} });
     // also confirm SW precache present
-    for (let i=0;i<30;i++){ if (await page.evaluate(()=>caches.match('lib/web-ifc.wasm').then(x=>!!x))) break; await sleep(1000); }
+    for (let i=0;i<30;i++){ if (await page.evaluate(()=>caches.match('../common/lib/web-ifc.wasm').then(x=>!!x))) break; await sleep(1000); }
     await ctx.setOffline(true);
     r = await getLen(page); rows.push({ engine:ename, name:'V2 offline cached', pass: r.ok && r.len===1303940, info: JSON.stringify(r) });
     await ctx.setOffline(false); await ctx.close();
@@ -41,7 +41,7 @@ const getLen = page => page.evaluate(async () => { try { const b = await _getWeb
     await ctx.route('**/web-ifc.wasm', route => route.abort());
     ({ page } = await load(ctx));
     const logs3 = page; // capture via closure below
-    await page.evaluate(async ()=>{ const ks=await caches.keys(); for(const k of ks){ const c=await caches.open(k); await c.delete('lib/web-ifc.wasm'); await c.delete('http://localhost:8080/bim-ootb/viewer/lib/web-ifc.wasm'); } });
+    await page.evaluate(async ()=>{ const ks=await caches.keys(); for(const k of ks){ const c=await caches.open(k); await c.delete('../common/lib/web-ifc.wasm'); await c.delete('http://localhost:8080/bim-ootb/viewer/lib/web-ifc.wasm'); } });
     await ctx.setOffline(true);
     r = await getLen(page);
     const clearErr = !r.ok && /not available offline/.test(r.err || '');

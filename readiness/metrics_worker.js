@@ -30,8 +30,8 @@
  */
 
 try {
-  importScripts('../viewer/lib/web-ifc-api-iife.js');
-  console.log('[READINESS] §MW_SRC local ../viewer/lib/web-ifc-api-iife.js');
+  importScripts('../common/lib/web-ifc-api-iife.js');
+  console.log('[READINESS] §MW_SRC local ../common/lib/web-ifc-api-iife.js');
 } catch (e) {
   console.warn('[READINESS] §MW_SRC_FALLBACK local failed (' + e.message + '), trying CDN');
   importScripts('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js');
@@ -86,7 +86,7 @@ self.onmessage = async function (e) {
   try {
     progress(4, 'Starting the IFC parser');
     api = new WebIFC.IfcAPI();
-    await api.Init(function (path) { return '../viewer/lib/' + path; }, true);
+    await api.Init(function (path) { return (path === 'web-ifc.wasm' ? '../common/lib/' : '../viewer/lib/') + path; }, true);
 
     progress(12, 'Reading the file');
     var data = new Uint8Array(arrayBuffer);

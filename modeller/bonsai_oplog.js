@@ -21,7 +21,7 @@
 
     async _ensureDb() {
       if (this.db) return this.db;
-      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, _base).href });
+      const SQL = await window.initSqlJs({ locateFile: f => new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, _base).href });
       // PERSISTENCE: restore the saved signed op-log — localStorage first, IndexedDB fallback (§AUTOSAVE_FIX,
       // SCALE_CHECK_TERMINAL_FINDINGS_2026-07-05.md Finding 4) if a Terminal-scale save overflowed localStorage's
       // quota and had to persist there instead. See _loadBytesEither() for the precedence rule.
@@ -234,7 +234,7 @@
     async importBytes(u8) {
       await this._ensureDb();                             // SQL runtime + edge signer ready
       if (window.Bonsai && window.Bonsai.clearKernelCache) window.Bonsai.clearKernelCache();
-      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, _base).href });   // cached module
+      const SQL = await window.initSqlJs({ locateFile: f => new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, _base).href });   // cached module
       if (this.db) { try { this.db.close(); } catch (e) { } }
       this.db = new SQL.Database(u8);
       window.KernelOps.ensureTable(this.db);

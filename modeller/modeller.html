@@ -217,12 +217,12 @@
 <script src="cut_move.js?v=2" onerror="console.warn('§CUT-MOVE LOAD_FAIL cut_move.js')"></script>
 <script src="bonsai_kernel.js?v=11" onerror="console.warn('§BONSAI LOAD_FAIL bonsai_kernel.js')"></script>
 <!-- Bonsai 2D sketch front: planegcs constraint solver -> solved profile -> GEOM_EXTRUDE_POLY. -->
-<script src="bonsai_sketch.js?v=1" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
+<script src="bonsai_sketch.js?v=2" onerror="console.warn('§SKETCH LOAD_FAIL bonsai_sketch.js')"></script>
 <!-- Signed op-log engine (shipped kernel_ops: hash chain + edge signature) + sql.js it commits into. -->
-<script src="lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
+<script src="../common/lib/sql-wasm.js" onerror="console.warn('§OPLOG LOAD_FAIL sql-wasm.js')"></script>
 <script src="kernel_ops.js?v=9" onerror="console.warn('§OPLOG LOAD_FAIL kernel_ops.js')"></script>
 <!-- Bonsai feature tree: the SIGNED op-log; geometry is a fold over it; history scrubber replays the recipe. -->
-<script src="bonsai_oplog.js?v=11" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
+<script src="bonsai_oplog.js?v=12" onerror="console.warn('§OPLOG LOAD_FAIL bonsai_oplog.js')"></script>
 <!-- §WORLD-HIST-MODELLER (RESUME_WORLD_HISTORY_DEDUP_RESTORE.md 4-step handoff): the SAME cross-page
      "W" log (common/whole_history.js) the Viewer/iDempiere/Gravity already write to. Loaded BEFORE
      history_bar.js so its internal WholeHistory.record mirror (the BUILDING_OPEN doc-type) has a live
@@ -245,15 +245,15 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="../common/history_bar.js?v=3" onerror="console.warn('§MHIST LOAD_FAIL history_bar.js')"></script>
 <script src="modeller_history.js?v=8" onerror="console.warn('§MHIST LOAD_FAIL modeller_history.js')"></script>
 <!-- Bonsai IFC export: the authored op-log -> a standards IFC4 file via web-ifc (author->sign->export). -->
-<script src="lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
+<script src="../common/lib/web-ifc-api-iife.js" onerror="console.warn('§IFC LOAD_FAIL web-ifc-api-iife.js')"></script>
 <script src="dxf2ifc.js?v=1" onerror="console.warn('§IFC LOAD_FAIL dxf2ifc.js')"></script>
-<script src="open_building_db.js?v=1" onerror="console.warn('§PROPS LOAD_FAIL open_building_db.js')"></script>
+<script src="open_building_db.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL open_building_db.js')"></script>
 <script src="props_panel.js?v=2" onerror="console.warn('§PROPS LOAD_FAIL props_panel.js')"></script>
-<script src="bonsai_ifc.js?v=6" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
+<script src="bonsai_ifc.js?v=7" onerror="console.warn('§IFC LOAD_FAIL bonsai_ifc.js')"></script>
 <script src="bcf_export.js?v=1" onerror="console.warn('§BCF LOAD_FAIL bcf_export.js')"></script>
 <!-- DXF2BIM lane L3 (prompts/DXF2BIM_MODELLER_LANE.md §L3): Open ▸ 2D drawings (.dxf) → canvas → Convert. Loads its pipeline lazily. -->
-<script src="dxf_export_ui.js?v=1" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
-<script src="viewer_db_export.js?v=1" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
+<script src="dxf_export_ui.js?v=2" onerror="console.warn('§DXF-EXPORT LOAD_FAIL dxf_export_ui.js')"></script>
+<script src="viewer_db_export.js?v=2" onerror="console.warn('§VIEWERDB LOAD_FAIL viewer_db_export.js')"></script>
 <script src="dxf_import_ui.js?v=11" onerror="console.warn('§DXF-IMPORT LOAD_FAIL dxf_import_ui.js')"></script>
 <!-- Bonsai architectural authoring grid: column grid on the sketch plane + snap-to-grid (2D correlation). -->
 <script src="bonsai_grid.js?v=2" onerror="console.warn('§GRID LOAD_FAIL bonsai_grid.js')"></script>
@@ -306,7 +306,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script src="../viewer/locale_loader.js?v=14"></script>
 <script src="edit_delta_ui.js?v=6" onerror="console.warn('§S8 LOAD_FAIL edit_delta_ui.js')"></script>
 <!-- §S9 (TM_4D5D_VARIANCE_LANE §S9): "ERP ▸ Project Order" for the selected parts. Lazy: the Viewer-side ERP owners load only when the button is clicked. -->
-<script src="proj_order_ui.js?v=6" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
+<script src="proj_order_ui.js?v=7" onerror="console.warn('§S9 LOAD_FAIL proj_order_ui.js')"></script>
 <!-- Real-placement gate (WalkerDoctrine.md §10): the ONE shared resolveRealPlacement() every leaf placement
      (fixture, pipe, future component) must route through instead of inventing a bbox constant. Loaded BEFORE
      routewalker.js, whose _rwPlaceFromBOM (Path B fixture placement) is its first wired call site. -->
@@ -346,7 +346,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <script>window.TEAM_PANEL_AUTO_OPEN = true;</script>
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=3"></script>
 <script>if (/[?&]team=1(&|$)/.test(location.search) || (function () { try { return localStorage.getItem('teamMode') === '1'; } catch (e) { return false; } })()) { ['../common/comm/team_trial.js', '../common/comm/comm_envelope.js', '../common/comm/comm_order.js', '../common/comm/team_keys.js', '../common/comm/comm_roster.js', '../common/comm/comm_admit.js',
-  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', 'team_plan.js?v=1', 'team_sync.js?v=10'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
+  '../common/comm/comm_pipe.js', '../common/comm/comm_store.js', '../common/comm/team_people.js', '../common/comm/team_focus.js', '../common/comm/team_people_ui.js', '../common/comm/team_trust.js?v=1', '../common/comm/team_scope.js?v=1', '../common/comm/op_versions.js?v=1', '../common/comm/team_versions.js?v=6', 'team_plan.js?v=1', 'team_sync.js?v=11'].forEach(function (f) { document.write('<script src="' + f + '"><\/script>'); }); }</script>
 <!-- §b-teams (§15.15.1, 2026-10-25): THE Team control. Not in a team (or team mode off) -> the Team panel: Start a team / Join / avatar / setup.
      Enrolled -> the People popover under this icon. The older Teams overlay (dots on the Outliner rows, same-browser presence) is no longer behind this button:
      it is reached from the panel ("Show dots on this machine"). Supersedes the 2026-07-04 note that forwarded this click to the overlay pill. -->
@@ -373,7 +373,7 @@ if ('serviceWorker' in navigator) {
 
 <!-- Scene bootstrap: reuse the viewer's THREE stack (r184 webgpu build), expose global THREE + window.A. -->
 <script type="module">
-import { OrbitControls } from './lib/OrbitControls.module.js';
+import { OrbitControls } from '../common/lib/OrbitControls.module.js';
 // ESM namespaces are frozen — copy into a plain mutable object (same shim as loader.js §S276).
 // scene.js overlays the STANDARD WebGL build for a real WebGLRenderer (the webgpu bundle ships
 // only WebGPURenderer); mirror that so the modeller uses the production rendering stack.
@@ -3476,7 +3476,7 @@ function doLoadSummary() {
 let _regRepLoading = null;
 async function doRegReport() {
   try {
-    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=1'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
+    if (!window.RegReportUI) _regRepLoading = _regRepLoading || new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'reg_report_ui.js?v=2'; s.onload = res; s.onerror = () => { _regRepLoading = null; rej(new Error('load failed reg_report_ui.js')); }; document.head.appendChild(s); });
     await _regRepLoading; await window.RegReportUI.open(setStat);
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§REG_REPORT_UI fail ' + err); }
 }
@@ -3486,7 +3486,7 @@ let _analyticalLoading = null;
 async function doAnalytical() {
   try {
     const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load failed ' + src)); document.head.appendChild(s); });
-    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=1').catch(e => { _analyticalLoading = null; throw e; });
+    if (!window.RegReportUI) _analyticalLoading = _analyticalLoading || load('reg_report_ui.js?v=2').catch(e => { _analyticalLoading = null; throw e; });
     await _analyticalLoading;
     const eng = await window.RegReportUI.engine();   // web-ifc, sql.js, the extractor core, Dxf2Ifc, LoadSummary: the owners the Regulatory Report loads
     if (!window.Dxf2Analytical) await load('dxf2analytical.js?v=4');
@@ -3714,7 +3714,7 @@ let _rwInitP = null;
 function _rwReadyOnce() {                                  // lazy one-shot rwInit(mep_rw.db) on the first building drop
   if (!_rwInitP) _rwInitP = (async () => {
     if (typeof rwInit !== 'function') return false;
-    const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+    const SQL = await window.initSqlJs({ locateFile: f => new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, location.href).href });
     return rwInit(SQL, '');
   })().catch(e => { console.warn('§MODELLER rwInit fail ' + e); return false; });
   return _rwInitP;
@@ -4187,7 +4187,7 @@ const qs = new URLSearchParams(location.search);
 // read window.SQL synchronously). bonsai_oplog inits its own copy for the op-log; this is a tiny parallel init
 // for the OPEN path (initSqlJs returns the same emscripten module shape; idempotent enough). NON-INVENT: just bytes→db.
 if (!window.SQL && window.initSqlJs) {
-  window.initSqlJs({ locateFile: f => 'lib/' + f }).then(function (S) { window.SQL = S; console.log('§MODELLER sql.js ready (window.SQL set for Open)'); })
+  window.initSqlJs({ locateFile: f => (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f }).then(function (S) { window.SQL = S; console.log('§MODELLER sql.js ready (window.SQL set for Open)'); })
     .catch(function (e) { console.warn('§MODELLER sql.js init fail ' + (e && e.message)); });
 }
 // (W-UX-3 2026-06-26) ARC LEADS, by DEFAULT. The Outliner IS the modeller's primary surface now, so the
@@ -6357,7 +6357,7 @@ if (qs.get('preload') === 'demo') {
     const ev = []; const out = {};
     try {
       const occt = new URL('lib/kernel/occt-wasm.wasm', location.href).href;
-      const planegcs = new URL('lib/planegcs/planegcs_dist/planegcs.wasm', location.href).href;
+      const planegcs = new URL('../common/lib/planegcs/planegcs_dist/planegcs.wasm', location.href).href;
       // occt = warm (bytes drive the worker); planegcs stands in for a 2nd asset (e.g. the iDempiere seed.db).
       await window.Bonsai.preload({ assets: [{ key: 'occt-wasm', url: occt, warm: true }, { key: 'idmp-seed-stub', url: planegcs }] },
         p => ev.push({ asset: p.asset, pct: +(p.pct || 0).toFixed(2), done: !!p.done }));
@@ -6656,7 +6656,7 @@ if (qs.get('routewalk') === 'demo') {
     const out = {};
     try {
       window.Bonsai.oplog.clear();
-      const SQL = await window.initSqlJs({ locateFile: f => new URL('lib/' + f, location.href).href });
+      const SQL = await window.initSqlJs({ locateFile: f => new URL((f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f, location.href).href });
       out.rwReady = await rwInit(SQL, '');                       // fetch mep_rw.db → _rwDb (real recipe)
       const segs = rwRouteSegments(null, 'Duplex');              // ARC envelope auto-loaded from mep_rw.db → 204 gated runs
       out.segments = segs.length;                               // expect 204 (ARC clash gate active)
