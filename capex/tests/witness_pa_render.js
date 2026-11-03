@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — W-PA-RENDER (spec prompts/CAPEX_DASHBOARD.md §5.19, G3). Headless CPU Chromium on the REAL erp/idempiere.html. READ THE LOG: verdict = §PA_RENDER_VERDICT; the exit code is not evidence.
 // THE ISSUE it proves/disproves: "the CAPEX dashboard does not reach the twin's own Home through the twin plugin bundle (capex/plugin/capex_dashboard.mjs, its 2Pack generated from the legacy
 //   migration scripts): the System Administrator installs + starts it, the next boot restores it, and a GardenWorld user's Performance gadget draws every CAPEX goal = what the twin's one PA owner
-//   (overlay/goal_engine.js) computes on that page's DB". No core file is involved (EXTENSION-LAYER LAW).
+//   (erp/goal_engine.js) computes on that page's DB". No core file is involved (EXTENSION-LAYER LAW).
 // Read from the page, never from a screenshot: the §PLUGIN / §PACKIN lines, the AD_Package_Imp row, and per CAPEX goal the drawn title / colour (DOM) vs goal_engine.evaluate + the stock title rule
 //   (WPerformanceIndicator.init: "<Name>: <percent>%" with a target, else "<Name>: <MeasureActual #,##0>") and MColorSchema colour (dashboard_gadgets.colorOf) on that same DB.
 // Break (MUST FAIL): PA_RENDER_BREAK=1 compares each drawn title against the computed value + 1.
@@ -44,12 +44,14 @@ var server = http.createServer(function (req, res) { var f = path.join(ROOT, dec
     var packin = logs.filter(function (l) { return /^§(PACKIN|PLUGIN-START|PLUGIN-INSTALL|CAPEX-PLUGIN)/.test(l); });
     log('§PA_RENDER install ' + JSON.stringify(inst)); packin.slice(0, 6).forEach(function (l) { log('    ' + l.slice(0, 220)); });
     ck('I1 the System Administrator installs + starts org.bimootb.capex (no error)', !inst.error && (inst.after || []).some(function (x) { return /^org\.bimootb\.capex:ACTIVE$/i.test(x); }), inst);
+    if (process.env.PA_RENDER_DEBUG) log('  dbg content=' + JSON.stringify(await page.evaluate(function () { var c = document.getElementById('idmp-content'); return { home: !!document.getElementById('idmp-home'), ph: !!document.getElementById('idmp-placeholder'), kids: c ? [].map.call(c.children, function (k) { return k.id || k.className; }).slice(0, 6) : null, text: c ? c.innerText.slice(0, 120) : null }; })));
     if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /PLUGIN|PACK|CAPEX/.test(l); }).forEach(function (l) { log('  dbg1 ' + l.slice(0, 240)); });
     await page.close();
     // 2 — next boot (the plugin restored), a GardenWorld user
     await open(); var bootLogs = logs.slice();
     await login('GardenWorld', 'GardenAdmin');
     if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /PLUGIN|PACK|CAPEX/.test(l); }).forEach(function (l) { log('  dbg2 ' + l.slice(0, 240)); });
+    if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /§DASH-HOME|§DASH-ERR|§DASH-GADGET perf|§OPLOG/i.test(l); }).slice(0, 40).forEach(function (l) { log('  dbg ' + l.slice(0, 260)); });
     var R = await page.evaluate(function (brk) {
       var db = window.__idmpDb, q = function (sql, p) { var st = db.prepare(sql), out = []; try { if (p) st.bind(p); while (st.step()) { var o = st.getAsObject(), k = {}; Object.keys(o).forEach(function (x) { k[x.toLowerCase()] = o[x]; }); out.push(k); } } finally { st.free(); } return out; };
       var A = window.APP || {}, access = window.GoalEngine.accessOf(q, A.roleId, A.clientId), d = new Date(), p2 = function (n) { return ('0' + n).slice(-2); }, today = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());

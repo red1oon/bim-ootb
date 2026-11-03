@@ -8,7 +8,7 @@
 // Breaks (MUST FAIL): MIG_BREAK=1 (the registry is wiped between the two boots → the 2nd boot re-applies and fails on duplicate keys).
 'use strict';
 var fs = require('fs'), path = require('path'), C = require('../../erp/tests/dd_common.js');
-var ROOT = path.join(__dirname, '..', '..'), MA = require('../tools/migration_apply.js'), GE = require(path.join(ROOT, 'erp/overlay/goal_engine.js')), DG = require(path.join(ROOT, 'erp/overlay/dashboard_gadgets.js'));
+var ROOT = path.join(__dirname, '..', '..'), MA = require('../tools/migration_apply.js'), GE = require(path.join(ROOT, 'erp/goal_engine.js')), DG = require(path.join(ROOT, 'erp/overlay/dashboard_gadgets.js'));
 var MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql');
 var log = console.log, judged = 0, fails = 0, BREAK = process.env.MIG_BREAK === '1';
 function check(n, ok, info) { judged++; if (!ok) fails++; log('  §MIG_WITNESS ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info ? ' ' + JSON.stringify(info) : '')); }

@@ -9,7 +9,7 @@
 //   user/role is excluded; a different colour schema flips the colour.
 'use strict';
 var fs = require('fs'), path = require('path');
-var ERP = path.join(__dirname, '..'), DG = null, GE = require(path.join(ERP, 'overlay', 'goal_engine.js'));
+var ERP = path.join(__dirname, '..'), DG = null, GE = require(path.join(ERP, 'goal_engine.js'));
 try { DG = require(path.join(ERP, 'overlay', 'dashboard_gadgets.js')); } catch (e) { DG = null; }
 var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
 var ORA = process.env.GE_ORACLE || '/home/red1/bim-compiler/scripts/bridge/out/goal_oracle_legacy.json', log = console.log, fails = 0, judged = 0;

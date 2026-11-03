@@ -38,7 +38,7 @@
     };
   } catch (e) { console.log('§OVERLAY pill shim failed (core unaffected): ' + e.message); }
   var cur = document.currentScript, base = cur && cur.src ? cur.src.replace(/[^\/]*$/, '') : 'overlay/';
-  var FILES = ['invoice_open.js', 'goal_engine.js', 'dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js'];
+  var FILES = ['dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js'];
   var loaded = 0, failed = [];
   function next(i) {
     if (i >= FILES.length) { console.log('§OVERLAY loaded ' + loaded + '/' + FILES.length + (failed.length ? ' FAILED=' + failed.join(',') : '')); return; }
