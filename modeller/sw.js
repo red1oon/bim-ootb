@@ -13,13 +13,13 @@
 // v212 (2026-11-03) §SEAM-W2 F15: str_walker_outliner.js?v=25 drops superseded <base>?v=M / bare <base> resident DBs when caching <base>?v=N (§RESIDENT_STALE_DROP)
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
-const CACHE_VERSION = 'v214';   // bump on each deploy; per-change detail is the git commit message.
+// v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
+const CACHE_VERSION = 'v215';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
 // Shell libs — auto-precached on install (needed to render the modeller).
 const SHELL_LIBS = [
-  'lib/three.webgpu.min.js',
   'lib/three.module.min.js',
   'lib/three.core.min.js',
   '../common/lib/OrbitControls.module.js',
@@ -33,6 +33,7 @@ const DEFERRED_LIBS = [
   'lib/kernel/occt-wasm.js',
   'lib/kernel/occt-wasm.wasm',
   '../common/lib/planegcs/planegcs_dist/planegcs.wasm',
+  'lib/three.webgpu.min.js',   // §THREE_ONE_BUILD: no longer the importmap target — cache-on-use only (was precached on every install)
   'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
 ];
 const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
