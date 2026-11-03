@@ -304,6 +304,7 @@
             o.set('bill_bpartner_id', imp.c_bpartner_id); o.set('bill_location_id', imp.billto_id);                                                                                  // :701-702
             if (imp.description != null) o.set('description', imp.description);                                                                                                      // :704-705
             o.set('c_paymentterm_id', imp.c_paymentterm_id); o.set('m_pricelist_id', imp.m_pricelist_id); o.set('m_warehouse_id', imp.m_warehouse_id);                               // :706-708
+            { const plr = imp.m_pricelist_id != null ? trx.get('m_pricelist', imp.m_pricelist_id) : null; if (plr && plr.m_pricelist_id != null) o.set('istaxincluded', plr.istaxincluded); }   // MOrder.setM_PriceList_ID (MOrder.java:905-917) also takes IsTaxIncluded from the list: the port's plain set() did not, so a tax-inclusive list priced the invoice as exclusive (found by W-AUDIT-GATE-TAX-INCLUSIVE, POS_PLUGIN_LOCAL_FIRST §23)
             if (nz(imp.m_shipper_id) !== 0) o.set('m_shipper_id', imp.m_shipper_id);                                                                                                 // :709-710
             //	SalesRep from Import or the person running the import
             if (nz(imp.salesrep_id) !== 0) o.set('salesrep_id', imp.salesrep_id);                                                                                                    // :712-713

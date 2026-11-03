@@ -38,6 +38,7 @@ async function child() {
   fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { try { db.run(st); } catch (e) { /* the loader's own tolerance */ } } });
   function q0(sql, params) { var st = db.prepare(sql), o = []; try { if (params && params.length) st.bind(params); while (st.step()) { var r = st.getAsObject(), l = {}; for (var k in r) l[k.toLowerCase()] = r[k]; o.push(l); } } finally { st.free(); } return o; }
   require(path.join(ERP, 'ad_import_tables.js')).ensure(db); require(path.join(ERP, 'ad_rule.js')).ensure(db);
+  global.ERPEngine = require(path.join(ERP, 'erp_engine.js')); var TC = require(path.join(ERP, 'till_core.js'));
   var K = require(path.join(ERP, 'ws_kernel.js')), k = K.build(db), ML = k.ML, AP = require(path.join(ERP, 'ad_process.js')), PR = require(path.join(ERP, 'plugin_registry.js'));
   var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103, actor: 'witness:day-close' };
   var one = function (sql, p) { return k.q(sql, p || [])[0] || null; };
@@ -70,16 +71,41 @@ async function child() {
     if (o.refuse) R.push(lineRow(org, p + 4, null, 1, 50, { productvalue: 'NO-SUCH-PRODUCT' }), tendRow(org, p + 4, 'X', 50));
     return R;
   }
+  // tax arms (§23): a NON-ZERO rate (10 percent on the tax the till's own lookup resolves for the branch), tax-exclusive or tax-inclusive default SO price list. Tender oracle written by hand: exclusive = round(net x 1.10), inclusive = net.
+  var TAX = ARM === 'tax_ex' || ARM === 'tax_in', INCL = ARM === 'tax_in', taxIds = [];
+  if (TAX) {
+    db.run('UPDATE ad_orginfo SET c_location_id=114 WHERE ad_org_id IN (?,?)', [NORTH, SOUTH]);   // a branch station has its address (the till reads its org's location for the tax lookup); the fixture orgs had none
+    [NORTH, SOUTH].forEach(function (org) {
+      var inp = TC.driveSync(TC.taxInputs({ ad_client_id: 11, ad_org_id: org, m_warehouse_id: WH[org] }), function (sq) { return q0(sq)[0]; }, function (sq) { return q0(sq); }), cat = {};
+      q0('SELECT m_product_id AS p, c_taxcategory_id AS t FROM m_product WHERE m_product_id IN (123,130)').forEach(function (r) { cat[r.p] = r.t; });
+      var env = TC.taxEnv(global.ERPEngine, inp, cat, DAY);
+      [123, 130].forEach(function (pid) { var t = env.taxOf(pid); if (t && t.ok && taxIds.indexOf(t.c_tax_id) < 0) taxIds.push(t.c_tax_id); else if (!t || !t.ok) taxIds.push('LOOKUP-FAILED'); });
+    });
+    taxIds.filter(function (x) { return x !== 'LOOKUP-FAILED'; }).forEach(function (id) { db.run('UPDATE c_tax SET rate=10 WHERE c_tax_id=?', [id]); });
+    if (INCL) db.run("UPDATE m_pricelist SET istaxincluded='Y' WHERE issopricelist='Y' AND ad_client_id=11");   // every sales list: the till reads the default one, Import Orders the cash partner's
+    say('§DAYCLOSE-TAXFIX arm=' + ARM + ' taxIds=' + J(taxIds) + ' rate=10 priceListIncludesTax=' + INCL);
+  }
+  var g = function (net) { return INCL ? net : Math.round(net * 110) / 100; };
+  var taxTill = function (org, pre, short) {                                   // T1 correct tickets; T2 (short) one ticket whose tender is 0.01 under
+    var p = pre + 'S', R = [];
+    if (!short) {
+      R.push(lineRow(org, p + 1, 123, 2, 65), tendRow(org, p + 1, 'X', g(130)));
+      R.push(lineRow(org, p + 2, 130, 1, 50), lineRow(org, p + 2, 123, 1, 65), tendRow(org, p + 2, 'X', 50), tendRow(org, p + 2, 'C', Math.round((g(115) - 50) * 100) / 100, card(pre + 2)));
+      R.push(lineRow(org, pre + 'R1', 123, -1, 65, { linedescription: 'Refund of ' + p + 1 }), tendRow(org, pre + 'R1', 'X', -g(65)));
+    } else R.push(lineRow(org, p + 1, 130, 1, 50), tendRow(org, p + 1, 'X', Math.round((g(50) - 0.01) * 100) / 100));
+    return R;
+  };
   var FIX = {
+    tax: [].concat(taxTill(NORTH, 'SN-T1-', false), taxTill(SOUTH, 'SS-T2-', true)),
     standard: [].concat(till(NORTH, 'SN-N1-', {}), till(SOUTH, 'SS-S1-', {})),
     gate: [].concat(till(NORTH, 'SN-A-', { gap: true }), till(SOUTH, 'SS-B-', { bad: true }), till(SOUTH, 'SS-C-', {})),
     stop1: [].concat(till(NORTH, 'SN-N1-', { refuse: true }), till(SOUTH, 'SS-S1-', {})),
     gap: [].concat(till(NORTH, 'SN-A-', { gap: true }), till(SOUTH, 'SS-S1-', {}))
   };
-  var fixName = { one: 'standard', steps: 'standard', gate: 'gate', stop3: 'standard', stop1: 'stop1', fb_one: 'standard', fb_steps: 'standard', fb_gap: 'gap' }[ARM];
+  var fixName = { tax_ex: 'tax', tax_in: 'tax', one: 'standard', steps: 'standard', gate: 'gate', stop3: 'standard', stop1: 'stop1', fb_one: 'standard', fb_steps: 'standard', fb_gap: 'gap' }[ARM];
   var dep = commit(saveAll(FIX[fixName]), { ws: 'deposit' });
   var nO = one('SELECT count(*) AS n FROM i_order').n, nP = one('SELECT count(*) AS n FROM i_payment').n;
-  check('FIX', 'deposit', 'the till deposits ' + fixName + ' through the ERP write path: I_Order lines and I_Payment tenders (n>0), all pending, no order made', dep.ok && nO > 6 && nP > 4 && one("SELECT count(*) AS n FROM i_order WHERE i_isimported<>'N'").n === 0 && one('SELECT count(*) AS n FROM c_order WHERE documentno LIKE ?', ['S_-%']).n === 0, { ok: dep.ok, err: dep.error, nO: nO, nP: nP });
+  check('FIX', 'deposit', 'the till deposits ' + fixName + ' through the ERP write path: I_Order lines and I_Payment tenders (n>0), all pending, no order made', dep.ok && nO >= 4 && nP >= 4 && one("SELECT count(*) AS n FROM i_order WHERE i_isimported<>'N'").n === 0 && one('SELECT count(*) AS n FROM c_order WHERE documentno LIKE ?', ['S_-%']).n === 0, { ok: dep.ok, err: dep.error, nO: nO, nP: nP });
 
   // ── plugins, installed exactly as the host does (generic extension points only) ──
   var hostDb = { query: function (sql, p) { return q0(sql, p); }, run: function (sql, p) { db.run(sql, p || []); } };
@@ -161,11 +187,23 @@ async function child() {
     check('GATE-FB', 'gap-named', 'the gap is named (§DAYCLOSE-GATE WITHHELD till=SN-A- reason="gap SN-A-S2")', /WITHHELD till=SN-A- reason="gap SN-A-S2"/.test(lf), { lf: lf.slice(0, 500) });
     saveSnap();
   }
+  if (TAX) {
+    var rt = runProc(PID_DC, dcParams(), 'tax'), lt = rt.log.filter(function (l) { return /^§DAYCLOSE/.test(l); }).join('\n'), mt = String((rt.r && rt.r.summary) || '');
+    var inv = function (key) { var o = orderOf(key)[0]; return o ? k.q('SELECT grandtotal AS g, ispaid AS p, docstatus AS d FROM c_invoice WHERE c_order_id=?', [o.c_order_id])[0] : null; };
+    var i1 = inv('SN-T1-S1'), i2 = inv('SN-T1-S2'), i3 = inv('SN-T1-R1'), want1 = [g(130), g(115), -g(65)];
+    check('TAX', 'nonzero-rate', 'the fixture really has tax: the rate the till lookup resolved is 10 (ids ' + J(taxIds) + ') and the exclusive invoice differs from the net: invoice 1 GrandTotal ' + (i1 && i1.g) + ' vs net 130', taxIds.length > 0 && taxIds.indexOf('LOOKUP-FAILED') < 0 && !!i1 && (INCL ? Number(i1.g) === 130 : Number(i1.g) === 143), { taxIds: taxIds, i1: i1 });
+    check('TAX', 'correct-closes', 'correct tickets (sale, split tender, refund) on a tax-' + (INCL ? 'INCLUSIVE' : 'EXCLUSIVE') + ' list pass the gate and close: invoices ' + J([i1 && i1.g, i2 && i2.g, i3 && i3.g]) + ' == tenders ' + J(want1) + ', each CO and paid', !!i1 && !!i2 && !!i3 && [i1, i2, i3].every(function (x, n) { return Number(x.g) === want1[n] && x.p === 'Y' && x.d === 'CO'; }), { i1: i1, i2: i2, i3: i3, lt: lt.slice(0, 600) });
+    check('TAX', 'balance-mode', 'the gate says it judged tax-aware, honouring IsTaxIncluded=' + (INCL ? 'Y' : 'N') + ': §DAYCLOSE-GATE ... balance=tax-aware', new RegExp('balance=tax-aware \\(till_core totals, price list IsTaxIncluded=' + (INCL ? 'Y' : 'N') + '\\)').test(lt), { lt: lt.slice(0, 400) });
+    var short = k.q("SELECT i_isimported AS i FROM i_order WHERE documentno='SS-T2-S1'"), exp1 = INCL ? '50.00' : '55.00', got1 = INCL ? '49.99' : '54.99';
+    check('TAX', 'short-withheld-named', 'a ticket whose tenders are 0.01 short is WITHHELD and NAMED (expected=' + exp1 + ' tenders=' + got1 + '), not imported (orders ' + orderOf('SS-T2-S1').length + ', row still N)', lt.indexOf('WITHHELD till=SS-T2-') > 0 && lt.indexOf('unbalanced SS-T2-S1 expected=' + exp1 + ' tenders=' + got1 + ' difference=-0.01') > 0 && orderOf('SS-T2-S1').length === 0 && short.length === 1 && short[0].i === 'N', { lt: lt.slice(0, 900) });
+    check('TAX', 'close-done', 'the close ends DONE with 3 tickets imported: "' + mt.slice(0, 100) + '"', /done: branches=2 tickets imported=3 till\/day withheld=1/.test(mt), { mt: mt });
+    saveSnap();
+  }
   if (ARM === 'gate') {
     var rg = runProc(PID_DC, dcParams({ ReplenishmentCreate: 'POO', C_DocType_ID: DOCTYPE_POO }), 'gate'), logs = rg.log.filter(function (l) { return /^§DAYCLOSE/.test(l); }).join('\n'), gm = String((rg.r && rg.r.summary) || '');
     var imported = function (pre) { return one('SELECT count(*) AS n FROM c_order WHERE documentno LIKE ?', [pre + '%']).n; }, pa = 'SN-A-', pb = 'SS-B-', pc = 'SS-C-';
     check('GATE', 'gap-withheld-named', 'till ' + pa + ' (ticket 2 missing) is withheld and NAMED with the missing number, none of its tickets imported (orders ' + imported(pa) + ', rows still N)', logs.indexOf('WITHHELD till=' + pa) > 0 && /gap SN-A-S2/.test(logs) && imported(pa) === 0 && keyState(pa).every(function (r) { return r.i === 'N'; }) && keyState(pa).length > 2, { logs: logs.slice(0, 600) });
-    check('GATE', 'unbalanced-withheld-named', 'till ' + pb + ' (ticket 2: lines 115.00, tenders 40.01) is withheld and NAMED with both totals, nothing of it imported (orders ' + imported(pb) + ')', logs.indexOf('WITHHELD till=' + pb) > 0 && /unbalanced SS-B-S2 lines=115.00 tenders=40.01/.test(logs) && imported(pb) === 0 && keyState(pb).every(function (r) { return r.i === 'N'; }), { logs: logs.slice(0, 600) });
+    check('GATE', 'unbalanced-withheld-named', 'till ' + pb + ' (ticket 2: expected 115.00, tenders 40.01) is withheld and NAMED with both totals, nothing of it imported (orders ' + imported(pb) + ')', logs.indexOf('WITHHELD till=' + pb) > 0 && /unbalanced SS-B-S2 expected=115.00 tenders=40.01/.test(logs) && imported(pb) === 0 && keyState(pb).every(function (r) { return r.i === 'N'; }), { logs: logs.slice(0, 600) });
     check('GATE', 'clean-still-closes', 'the clean till ' + pc + ' IS imported (orders ' + imported(pc) + ' > 0, each CO) and the close ends DONE: "' + gm.slice(0, 120) + '"', imported(pc) >= 4 && orderOf(pc + 'S1')[0].docstatus === 'CO' && /done/.test(gm), { gm: gm, imp: imported(pc) });
     var pos = one("SELECT count(*) AS n FROM c_order WHERE issotrx='N' AND dateordered>=?", ['2026-01-01']).n;
     check('GATE', 'steps-23-still-run', 'with Store North withheld whole its Replenish Report still ran and the branches closed through the create (POs made: ' + pos + ' > 0)', pos > 0 && /org=50002 step="Replenish Report" result=OK/.test(logs) && /step="Replenish confirm create POO" result=OK/.test(logs), { logs: logs.slice(0, 900) });
@@ -199,7 +237,7 @@ function verdictLine(cs, ok, judged, failed, extra) { var v = !judged ? 'INCONCL
 async function parent() {
   fs.writeFileSync(path.join(LOGS, 'parent.log'), '');
   var arms = {}, all = [];
-  ['steps', 'one', 'gate', 'stop3', 'stop1', 'fb_steps', 'fb_one', 'fb_gap'].forEach(function (a) { arms[a] = runArm(a); line('§DAYCLOSE-RUN arm=' + a + ' exit=' + arms[a].code + ' log=' + arms[a].log + ' verdict=' + J(arms[a].verdict)); });
+  ['steps', 'one', 'tax_ex', 'tax_in', 'gate', 'stop3', 'stop1', 'fb_steps', 'fb_one', 'fb_gap'].forEach(function (a) { arms[a] = runArm(a); line('§DAYCLOSE-RUN arm=' + a + ' exit=' + arms[a].code + ' log=' + arms[a].log + ' verdict=' + J(arms[a].verdict)); });
   function books(cs, A, B) {
     if (!A.snap || !B.snap) return all.push(verdictLine(cs, false, 0, 0, 'reason="an arm produced no snapshot (crashed): see its log"'));
     var d = diff(A, B, TABLES), named = NAMED.map(function (t) { return t + ' a=' + d.rep[t].a + ' b=' + d.rep[t].b + ' diff=' + d.rep[t].diff; }).join('; ');
@@ -211,25 +249,26 @@ async function parent() {
   }
   books('W-DAYCLOSE', arms.steps, arms.one);
   books('W-DAYCLOSE-FALLBACK', arms.fb_steps, arms.fb_one);
-  ['one', 'gate', 'stop3', 'stop1', 'fb_gap'].forEach(function (a) { var v = arms[a].verdict; var cs = { one: 'W-DAYCLOSE-ARM-one(RERUN,GS,STOPPLUG)', gate: 'W-AUDIT-GATE', stop3: 'W-DAYCLOSE-STOP-3', stop1: 'W-DAYCLOSE-STOP-1', fb_gap: 'W-AUDIT-GATE-FALLBACK' }[a]; all.push(verdictLine(cs, v && v.v === 'PASS', v ? v.judged : 0, v ? v.failed : 0, 'log=' + arms[a].log)); });
+  ['one', 'tax_ex', 'tax_in', 'gate', 'stop3', 'stop1', 'fb_gap'].forEach(function (a) { var v = arms[a].verdict; var cs = { tax_ex: 'W-AUDIT-GATE-TAX-EXCLUSIVE', tax_in: 'W-AUDIT-GATE-TAX-INCLUSIVE', one: 'W-DAYCLOSE-ARM-one(RERUN,GS,STOPPLUG)', gate: 'W-AUDIT-GATE', stop3: 'W-DAYCLOSE-STOP-3', stop1: 'W-DAYCLOSE-STOP-1', fb_gap: 'W-AUDIT-GATE-FALLBACK' }[a]; all.push(verdictLine(cs, v && v.v === 'PASS', v ? v.judged : 0, v ? v.failed : 0, 'log=' + arms[a].log)); });
   var gs = arms.one.verdict && arms.one.verdict.gs; if (gs) line('§DAYCLOSE-GS-RESULT before G=' + gs.before.G + ' S=' + gs.before.S + ' after G=' + gs.after.G + ' S=' + gs.after.S + ' (MODEL-DERIVED)');
   // mutants: copies of the shipped plugin, each rewrite proven applied exactly once; the named case must print FAIL itself
   if (process.env.DC_MUTANTS === '1') {
     var src = fs.readFileSync(path.join(ERP, 'plugins', 'friendly_ops.mjs'), 'utf8');
     var MUT = [
       { name: 'gate-off', arm: 'gate', old: "&& DC_BREAK !== 'nogate'", neu: '&& false', kills: 'W-AUDIT-GATE' },
+      { name: 'pretax-balance', arm: 'tax_ex', old: "if (DC_BREAK === 'pretax') return k.lc;", neu: 'if (true) return k.lc;', kills: 'W-AUDIT-GATE-TAX-EXCLUSIVE' },
       { name: 'steps-out-of-order', arm: 'one', old: "if (DC_BREAK === 'order')", neu: 'if (true)', kills: 'W-DAYCLOSE' },
       { name: 'direct-c_order-write', arm: 'one', old: "const l0 = trx.log.length, r = ap.runInTrx(trx, P_POSSALES, { params: { AD_Client_ID: C, AD_Org_ID: org, C_BankAccount_ID: P.C_BankAccount_ID, DocumentNo: k } });",
         neu: "const l0 = trx.log.length, r = (function () { const sv = X.ML.save(trx, 'c_order', null, X.ML.newPO(trx, 'c_order', { ad_org_id: org, documentno: k, issotrx: 'Y', dateordered: day, c_doctype_id: 135, c_bpartner_id: 117, m_warehouse_id: 50003, m_pricelist_id: 101, c_currency_id: 100, c_paymentterm_id: 105, paymentrule: 'P', deliveryrule: 'A', invoicerule: 'I', priorityrule: '5' })); return { ok: sv.ok, summary: sv.error || 'direct' }; })();", kills: 'W-DAYCLOSE' }
     ];
     var base = arms.steps;
     MUT.forEach(function (m) {
-      var n = src.split(m.old).length - 1, dir = '/tmp/dayclose_mut/' + m.name; fs.mkdirSync(dir, { recursive: true });
+      var n = src.split(m.old).length - 1, root = '/tmp/dayclose_mut/' + m.name, dir = root + '/plugins'; fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(ERP, 'till_core.js'), root + '/till_core.js');   // ../till_core.js of the copy
       var mutSrc = src.replace(m.old, function () { return m.neu; }), applied = n === 1 && mutSrc !== src; fs.writeFileSync(dir + '/friendly_ops.mjs', mutSrc);
       line('§DAYCLOSE-MUTANT name=' + m.name + ' applied=' + (applied ? 'YES exactly once' : 'NO occurrences=' + n) + ' copy=' + dir + '/friendly_ops.mjs (a copy, the shipped file untouched)');
       if (!applied) { all.push(verdictLine('MUTANT-' + m.name, false, 0, 0, 'reason="rewrite did not apply: not a kill"')); return; }
       var r = runArm(m.arm, { DC_PLUGIN: dir + '/friendly_ops.mjs' }, m.name), killed = false, why = '';
-      if (m.arm === 'gate') { killed = !!(r.verdict && r.verdict.v === 'FAIL'); why = 'arm gate verdict=' + (r.verdict && r.verdict.v); }
+      if (m.arm === 'gate' || m.arm === 'tax_ex') { killed = !!(r.verdict && r.verdict.v === 'FAIL'); why = 'arm gate verdict=' + (r.verdict && r.verdict.v); }
       else { if (!r.snap || !base.snap) why = 'CRASH (no snapshot): not a kill'; else { var d = diff(base, r, TABLES); killed = d.total > 0; why = 'W-DAYCLOSE rowDiff=' + d.total + ' ' + NAMED.map(function (t) { return t + ' ' + d.rep[t].a + '/' + d.rep[t].b; }).join(' '); } }
       line('§DAYCLOSE-MUTANT name=' + m.name + ' ' + (killed ? 'KILLED' : 'SURVIVED') + ' by=' + m.kills + ' ' + why + ' exit=' + r.code + ' log=' + r.log);
       all.push(verdictLine('MUTANT-' + m.name, killed, 1, killed ? 0 : 1, 'killed=' + killed));

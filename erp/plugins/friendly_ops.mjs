@@ -158,7 +158,8 @@ function billClass(SvrProcess, X) {
 // §21 Branch Day Close - the one process class. It calls the legacy processes through AdProcess.runInTrx (the dictionary names each class), in ONE Trx, each behind a savepoint; it owns no business rule.
 //   GATE (§21.2): only what the till really sends (I_Order / I_Payment rows; no Z travels): ticket-number gaps per till series and lines-vs-tenders per ticket. A till/day with a gap or an unbalanced ticket is withheld whole and named.
 //   STOP (§21.1): a failed step is rolled back alone, the close stops, earlier steps stay; the class returns normally so they commit (a throw would roll the whole group back).
-let HOSTP = null;                                                                       // ctx.process of activate(): the AdProcess engine through the plugin's own extension point
+let HOSTP = null, TILLCORE = null;                                                      // TILLCORE: erp/till_core.js, the till's own tax glue (one definition, POS_PLUGIN_LOCAL_FIRST.md §23)
+// HOSTP = ctx.process of activate(): the AdProcess engine through the plugin's own extension point
 function dayCloseClass(SvrProcess, X) {
   const AP = () => HOSTP || globalThis.AdProcess;
   const nz = (v) => (v == null || v === '' ? 0 : Number(v));
@@ -182,17 +183,34 @@ function dayCloseClass(SvrProcess, X) {
   };
   // the audit gate for ONE branch Org and the business day: reads the till's own deposit rows only
   function gate(trx, C, org, day) {
-    const rowsO = trx.q('SELECT documentno AS k, qtyordered AS q, priceactual AS p, substr(dateordered,1,10) AS d, i_isimported AS imp FROM i_order WHERE ad_client_id=? AND ad_org_id=?', [C, org]);
+    const rowsO = trx.q('SELECT documentno AS k, m_product_id AS pid, qtyordered AS q, priceactual AS p, substr(dateordered,1,10) AS d, i_isimported AS imp FROM i_order WHERE ad_client_id=? AND ad_org_id=?', [C, org]);
     const rowsP = trx.q('SELECT documentno AS k, payamt AS a, substr(datetrx,1,10) AS d, i_isimported AS imp FROM i_payment WHERE ad_client_id=? AND ad_org_id=?', [C, org]);
     const pend = (r) => String(r.imp) !== 'Y';
     const keys = {};                                                                      // the day's pending tickets
     const K = (k) => keys[k] || (keys[k] = { key: k, lines: 0, lc: 0, tenders: 0, tc: 0 });
-    rowsO.filter((r) => pend(r) && r.d === day).forEach((r) => { const t = K(r.k); t.lines++; t.lc += cents(nz(r.q) * nz(r.p)); });
+    rowsO.filter((r) => pend(r) && r.d === day).forEach((r) => { const t = K(r.k); t.lines++; t.lc += cents(nz(r.q) * nz(r.p)); (t.items = t.items || []).push({ pid: r.pid, qty: nz(r.q), price: nz(r.p) }); });
     rowsP.filter((r) => pend(r) && r.d === day).forEach((r) => { const t = K(r.k); t.tenders++; t.tc += cents(r.a); });
     const known = {};                                                                     // every number the head office has ever seen per series: any row, any day, any state, and the orders made
     const see = (k) => { const m = KEY.exec(String(k || '')); if (m) (known[m[1]] = known[m[1]] || {})[Number(m[3])] = 1; };
     rowsO.forEach((r) => see(r.k)); rowsP.forEach((r) => see(r.k));
     trx.q("SELECT documentno AS k FROM c_order WHERE ad_client_id=? AND ad_org_id=? AND issotrx='Y'", [C, org]).forEach((r) => see(r.k));
+    // the expected total of a ticket = the till's own receipt total: till_core.totals over the engine's taxLookup / orderTaxes, honouring the price list's IsTaxIncluded (no tax formula here)
+    let env = null, envWhy = '';
+    const Eng = globalThis.ERPEngine;
+    if (!TILLCORE || !Eng) envWhy = 'till_core.js or ERPEngine not loaded';
+    else try {
+      const wh = (trx.q("SELECT MAX(m_warehouse_id) AS w FROM m_warehouse WHERE ad_client_id=? AND ad_org_id=?", [C, org])[0] || {}).w;
+      const inputs = TILLCORE.driveSync(TILLCORE.taxInputs({ ad_client_id: C, ad_org_id: org, m_warehouse_id: wh }), (q) => trx.q(q)[0], (q) => trx.q(q)), cat = {};
+      trx.q('SELECT m_product_id AS p, c_taxcategory_id AS t FROM m_product WHERE ad_client_id IN (0,?)', [C]).forEach((r) => { cat[r.p] = r.t; });
+      env = TILLCORE.taxEnv(Eng, inputs, cat, day); env.inclusive = inputs.incl;
+    } catch (e) { envWhy = clean(e && e.message); }
+    const expCents = (k) => {
+      if (DC_BREAK === 'pretax') return k.lc;                                             // witness-only negative control: the pre-tax lines total
+      if (!env) return null;
+      const t = TILLCORE.totals(k.items || [], env);
+      if (!t.ok) { k.taxErr = t.error; return null; }
+      return Math.round(Number(t.gross));                                                 // till_core.totals answers in minor units (cents), as till.js's receipt does
+    };
     const tills = {};
     const till = (k) => { const m = KEY.exec(k); return m ? m[1].slice(0, -1) : '(unkeyed)'; };
     Object.keys(keys).forEach((k) => { const t = till(k), T = tills[t] = tills[t] || { till: t, keys: [], gaps: [], unbal: [], max: {} }; T.keys.push(keys[k]); const m = KEY.exec(k); if (m) T.max[m[1]] = Math.max(T.max[m[1]] || 0, Number(m[3])); });
@@ -201,8 +219,10 @@ function dayCloseClass(SvrProcess, X) {
       Object.keys(T.max).forEach((series) => { for (let n = 1; n <= T.max[series]; n++) if (!(known[series] || {})[n]) T.gaps.push(series + n); });
       T.keys.forEach((k) => { const m = KEY.exec(k.key), type = m ? m[2] : '';
         if (type === 'P' && !k.lines && k.tenders) { k.customerPayment = true; return; }                  // a customer payment (till_core.js kind P): I_Payment only, imported by Import Payment (343)
-        if (!k.lines || !k.tenders || k.lc !== k.tc) T.unbal.push(k.key + ' lines=' + money(k.lc) + ' tenders=' + money(k.tc) + ' difference=' + money(k.tc - k.lc)); }); });
-    const out = { tills: [], pass: [], left: [], withheld: [], pending: Object.keys(keys).length,
+        const want = k.lines ? expCents(k) : 0;
+        if (k.lines && want == null && !k.taxErr) { return; }            // no engine: the balance cannot be judged here (reported once, Import POS Sales still checks the exact total)
+        if (!k.lines || !k.tenders || k.taxErr || k.tc !== want) T.unbal.push(k.key + ' expected=' + (k.taxErr ? 'n/a(' + k.taxErr + ')' : money(want)) + ' tenders=' + money(k.tc) + (k.taxErr ? '' : ' difference=' + money(k.tc - want))); }); });
+    const out = { balance: env ? 'tax-aware (till_core totals, price list IsTaxIncluded=' + (env.inclusive ? 'Y' : 'N') + ')' : 'NOT-AVAILABLE ' + envWhy, tills: [], pass: [], left: [], withheld: [], pending: Object.keys(keys).length,
       otherDayPending: rowsO.filter((r) => pend(r) && r.d !== day).length + rowsP.filter((r) => pend(r) && r.d !== day).length };
     Object.keys(tills).sort().forEach((t) => { const T = tills[t], bad = (T.gaps.length || T.unbal.length) && DC_BREAK !== 'nogate';
       out.tills.push({ till: t, keys: T.keys.length, gaps: T.gaps, unbal: T.unbal, withheld: !!bad });
@@ -285,6 +305,7 @@ function dayCloseClass(SvrProcess, X) {
       g.withheld.forEach((w) => { withheldN++; line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' WITHHELD till=' + w.till + ' reason="' + w.reason + '" keys=' + w.keys.join(',')); self.addLog(0, null, null, 'Org ' + org + ' till ' + w.till + ' WITHHELD: ' + w.reason); });
       g.left.forEach((k) => line('§DAYCLOSE-GATE org=' + org + ' LEFT key=' + k + ' customer payment (no lines): import it with Import Payment (343)'));
       if (!g.pending) line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' INCONCLUSIVE no pending ticket for this branch and day: nothing judged');
+      line('§DAYCLOSE-GATE org=' + org + ' balance=' + g.balance);
       line('§DAYCLOSE-BRANCH org=' + org + ' warehouses=' + whs.join(',') + ' pass=' + g.pass.length + ' withheld=' + g.withheld.length + ' left=' + g.left.length);
       if (!g.pending) { line('§DAYCLOSE-BRANCH org=' + org + ' SKIPPED nothing pending for ' + day + ': no step runs (Replenish create is not idempotent in legacy; a re-run must make nothing new)'); return { org, list: [0, 1, 2].map(() => ['skipped', () => true]) }; }
       return { org, g, list: steps(org, g, whs) };
@@ -304,6 +325,7 @@ function dayCloseClass(SvrProcess, X) {
 }
 export async function activate(ctx) {
   HOSTP = ctx.process || null;
+  try { const m = await import(new URL('../till_core.js', import.meta.url).href); TILLCORE = globalThis.TillCore || (m && (m.default || m)) || null; } catch (e) { TILLCORE = null; }   // UMD: sets window.TillCore in the browser, module.exports in node
   if (!ctx.lens) throw new Error('host has no lens extension point');
   ctx.lens.register('friendly-ops', lens);
   if (ctx.process && ctx.process.defineProcess) { ctx.process.defineProcess('org.kernel.friendlyops.OrderReceive', receiveClass); ctx.process.defineProcess('org.kernel.friendlyops.OrderBill', billClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchDayClose', dayCloseClass); }
