@@ -12,6 +12,9 @@ const pushCfg = { baseUrl: base, login: { user: L.user, pass: L.pass, lang: L.la
   serviceTypes: { C_Project: { query: 'QueryCProject', create: 'BridgeCreateCProject' }, C_ProjectPhase: { query: 'QueryCProjectPhase', create: 'BridgeCreateCProjectPhase' },
     C_ProjectTask: { query: 'QueryCProjectTask', create: 'BridgeCreateCProjectTask' }, C_ProjectLine: { query: 'QueryCProjectLine', create: 'BridgeCreateCProjectLine' },
     M_Product: { query: 'QueryMProduct', create: 'Bridge_createData_M_Product' }, M_Product_Category: { query: 'QueryMProductCategory', create: 'Bridge_createData_M_Product_Category' }, C_UOM: { query: 'QueryCUOM', create: 'BridgeCreateCUOM' } } };
+// BRIDGE_SVC=bimootb → the service types the org.idempiere.bimootb plugin installs at System level (BIMOOTB_Query_<Table> / BIMOOTB_Create_<Table>), reached through its
+// master role "BIM OOTB Push" (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8); default = the pilot POC types above (unchanged).
+if ((env.BRIDGE_SVC || '').toLowerCase() === 'bimootb') Object.keys(pushCfg.serviceTypes).forEach(t => { pushCfg.serviceTypes[t] = { query: 'BIMOOTB_Query_' + t, create: 'BIMOOTB_Create_' + t }; });
 const lc = o => { const r = {}; for (const k in o) r[k.toLowerCase()] = o[k]; return r; };
 async function legacyQuery(type, filter) {       // the adapters' own JSON wire form, with a Filter
   const res = await fetch(base + '/ADInterface/services/rest/model_adservice/query_data', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
