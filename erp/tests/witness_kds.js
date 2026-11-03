@@ -30,6 +30,7 @@ var MUTS = {
   'changed-lines-not-marked': ['/erp/kds_core.js', "if (prevSeq != null && !cancelled) {", "if (prevSeq != null && !cancelled && false) {", 'replace'],
   'void-not-sent-back': ['/erp/kitchen.js', "if (c) return writeStatus(c, 0, a); }", "if (c) return writeStatus(c, 0, a === 'V' ? 'W' : a); }", 'replace'],
   'kitchen-rows-ship-to-hub': ['/erp/team_sync.js', "scope === 'branch' && scopeCtx.person ? 'b_' + String(scopeCtx.person).toLowerCase() : null;", "scope === 'branch' && scopeCtx.person ? 'hub' : null;", 'branch'],
+  'hard-coded-default': ['/erp/kds_core.js', "age: ageClass(elapsed, opts.amber, opts.red)", "age: ageClass(elapsed, opts.amber == null ? 5 : opts.amber, opts.red == null ? 10 : opts.red)", 'replace'],
   'line-per-visit': ['/erp/till_kds.js', "var res = await A.depositGroup(rows.map(function (r) { return A.create('pos_kitchenorder', r); }));", "var res = { committed: true, gid: 'm' }; for (var mi = 0; mi < rows.length; mi++) { var mr = await A.depositGroup([A.create('pos_kitchenorder', rows[mi])]); if (!mr || mr.committed !== true) res = mr; else await window.Till.visit(); }", 'relay']
 };
 
@@ -209,6 +210,20 @@ var MUTS = {
     var r4 = await sendOrder(); await kTick();
     var canc = await pk.$eval('.kcard[data-ref="' + ref + '"]', function (e) { return [e.getAttribute('data-cancelled'), e.querySelectorAll('.kline:not(.removed)').length]; }).catch(function () { return null; });
     check('r10-emptied-ticket-cancels', r4.r && r4.r.seq === 4 && canc && canc[0] === '1' && canc[1] === 0, 'an emptied ticket re-sent = replace-all with no lines: the card shows "Cancelled by the till" and no active line', { r4: r4.r, canc: canc });
+  }
+
+  // ═══ owner 2026-11-03 "Off until set": NO default amber/red; colour off until a branch sets BOTH; then Chromis OrderPanel.java:143-162 (minutes > amber -> amber, > red -> red)
+  if (setupOk && ARMS.indexOf('replace') >= 0) {
+    ARM = 'replace';
+    var live = await pk.$$eval('.kcard', function (c) { return c.map(function (x) { return x.getAttribute('data-age'); }); });
+    var inputs = await pk.evaluate(function () { return [document.getElementById('k-amber').value, document.getElementById('k-red').value, JSON.stringify(window.Kitchen.state().set)]; });
+    check('a1-no-setting-card-off', live.length >= 1 && live.every(function (a) { return a === 'off'; }) && inputs[0] === '' && inputs[1] === '', 'with no setting every card on the live board carries data-age="off" and both limit boxes are blank (' + J(live) + ', ' + inputs[2] + ')', { live: live, inputs: inputs });
+    var ages = await pk.evaluate(function () { var K = window.KdsCore, base = Date.UTC(2026, 10, 3, 10, 0, 0), rows = [{ tillkey: 'T', orderref: '9', seq: 1, line: 1, qty: 1, details: 'X', displayid: 1, ordertime: '2026-11-03 10:00:00', kind: 'L' }], out = {};
+      function age(min, a, r) { var c = K.fold(rows, [], { now: base + min * 60000, amber: a, red: r })[0]; return c.age; }
+      out.unset = [0, 1, 6, 11, 600, 100000].map(function (m) { return age(m, null, null); }); out.onlyAmber = [0, 6, 11, 600].map(function (m) { return age(m, 5, null); }); out.onlyRed = [0, 6, 11, 600].map(function (m) { return age(m, null, 10); });
+      out.set = [0, 4.99, 5, 5.99, 6, 9.99, 10, 10.99, 11, 600].map(function (m) { return age(m, 5, 10); }); out.set2 = [2.99, 3, 3.99, 4, 7, 8].map(function (m) { return age(m, 3, 7); }); return out; });
+    check('a2-unset-never-colours', ages.unset.concat(ages.onlyAmber, ages.onlyRed).every(function (a) { return a === 'off'; }), 'with no limit, or only one of the two, the card is "off" at every age (0 min to 100000 min)', ages);
+    check('a3-set-colours-at-the-set-minute', J(ages.set) === J(['green', 'green', 'green', 'green', 'amber', 'amber', 'amber', 'amber', 'red', 'red']) && J(ages.set2) === J(['green', 'green', 'green', 'amber', 'amber', 'red']), 'with amber 5 / red 10 the colour is green through minute 5, amber from minute 6 (whole minutes > amber), red from minute 11; with 3 / 7: green to minute 3, amber from 4, red from 8 - it moves at exactly the set minute', ages);
   }
 
   // ═══ RELAY

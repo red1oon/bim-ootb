@@ -6,7 +6,7 @@
 // (Floreant, Chromis). After a write it runs ONE Visit (the batch); between writes it PEEKS the branch box with ONE list request per poll period and Visits only when another device wrote (kds_link.js, §19.5).
 (function () {
   'use strict';
-  var E = null, K = window.KdsCore, S = { cfg: null, set: { amber: 5, red: 10, pollMs: 10000, station: '' }, cards: [], lastBumped: null, kid: null, link: null, draws: 0 };
+  var E = null, K = window.KdsCore, S = { cfg: null, set: { amber: null, red: null, pollMs: 10000, station: '' }, cards: [], lastBumped: null, kid: null, link: null, draws: 0 };
   var $ = function (s) { return document.querySelector(s); };
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
@@ -69,7 +69,7 @@
       else if (ln && card) itemTap(card.getAttribute('data-ref'), card.getAttribute('data-till'), Number(ln.getAttribute('data-line')));
     });
     $('#k-station').addEventListener('change', function () { S.set.station = this.value; saveSet(); render(); });
-    ['amber', 'red'].forEach(function (k) { $('#k-' + k).addEventListener('change', function () { var v = Number(this.value); if (v > 0) { S.set[k] = v; saveSet(); render(); } }); });
+    ['amber', 'red'].forEach(function (k) { $('#k-' + k).addEventListener('change', function () { var v = Number(this.value); S.set[k] = v > 0 ? v : null; saveSet(); render(); }); });      // blank = unset = colour off
     $('#k-poll').addEventListener('change', function () { var v = Number(this.value); if (v >= 1) { S.set.pollMs = v * 1000; saveSet(); startLink(); } });
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
@@ -90,7 +90,7 @@
     var org = (await rows('SELECT value FROM ad_org WHERE ad_org_id=' + Number(pos.ad_org_id)))[0] || {};
     S.cfg = { client: pos.ad_client_id, org: pos.ad_org_id, key: (org.value || pos.ad_org_id) + '-kitchen' }; loadSet();
     if (qs.get('poll')) S.set.pollMs = Number(qs.get('poll')) * 1000;   // ?poll=<seconds>: the peek period of this page (a device setting, §19.5)
-    $('#k-amber').value = S.set.amber; $('#k-red').value = S.set.red; $('#k-poll').value = Math.round(S.set.pollMs / 1000);
+    $('#k-amber').value = S.set.amber == null ? '' : S.set.amber; $('#k-red').value = S.set.red == null ? '' : S.set.red; $('#k-poll').value = Math.round(S.set.pollMs / 1000);
     bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#k-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
     await render(); startLink();
