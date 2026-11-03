@@ -16,7 +16,7 @@
  */
 var fs = require('fs'), path = require('path'), vm = require('vm'), cp = require('child_process');
 var ROOT = path.join(__dirname, '..', '..');
-var REF = ((process.argv.find(function (a) { return a.indexOf('--before-ref=') === 0; }) || '').split('=')[1]) || 'origin/main';
+var REF = ((process.argv.find(function (a) { return a.indexOf('--before-ref=') === 0; }) || '').split('=')[1]) || 'a3233475';   // pinned: the commit before #2564 (a moving origin/main stops discriminating once the fix is merged)
 var DbResolve = require(path.join(ROOT, 'viewer', 'db_resolve.js'));
 var PROD = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/';
 var OCI = PROD + 'buildings/Hospital_extracted.db', REL = '../buildings/Hospital_extracted.db';

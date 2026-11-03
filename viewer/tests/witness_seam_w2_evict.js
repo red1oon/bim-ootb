@@ -13,7 +13,7 @@
  */
 var fs = require('fs'), path = require('path'), vm = require('vm'), cp = require('child_process');
 var ROOT = path.join(__dirname, '..', '..');
-var REF = ((process.argv.find(function (a) { return a.indexOf('--before-ref=') === 0; }) || '').split('=')[1]) || 'origin/main';
+var REF = ((process.argv.find(function (a) { return a.indexOf('--before-ref=') === 0; }) || '').split('=')[1]) || '0d7ef429';   // pinned: the commit before #2566 (a moving origin/main stops discriminating once the fix is merged)
 var DbResolve = require(path.join(ROOT, 'viewer', 'db_resolve.js'));
 function show(ref, p) { return cp.execSync('git -C ' + JSON.stringify(ROOT) + ' show ' + ref + ':' + p, { encoding: 'utf8', maxBuffer: 1 << 28 }); }
 function rd(ref, p) { return ref ? show(ref, p) : fs.readFileSync(path.join(ROOT, p), 'utf8'); }
