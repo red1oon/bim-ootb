@@ -217,13 +217,16 @@ assert(disabled.got.length === 0 && disabled.logs.some(l => l.indexOf('reason=ca
 // only as a LEGACY fallback when the canonical key misses. On any profile that had loaded the
 // building normally, every persisted edit went somewhere nothing reads.
 const SA_SRC = __readSrc(path.join(__dirname, '..', 'schedule_author.js'), 'utf8');
-const KO_SRC = __readSrc(path.join(__dirname, '..', 'kernel_ops.js'), 'utf8');
+const KO_SRC = __readSrc(path.join(__dirname, '..', '..', 'erp', 'kernel_ops.js'), 'utf8');
 const SA_FNS = namedFns(SA_SRC);
 const persistDbFn = SA_FNS.find(f => f.name === 'persistDb');
 assert(!!persistDbFn && /put\(buf,\s*key\)/.test(persistDbFn.body) && /_cacheKeyFor\(url\)/.test(persistDbFn.body),
   'W-PERS-5a ScheduleAuthor.persistDb writes under the canonical cacheKey, not the raw url');
-const koFn = namedFns(KO_SRC).find(f => f.name === '_persistToIdb');
-assert(!!koFn && /put\(buf,\s*dbKey\)/.test(koFn.body) && /DbResolve\.cacheKey/.test(koFn.body),
+// §A3a: the ONE kernel_ops is erp/kernel_ops.js; its key derivation is in _persistToIdb, the put in _idbPersist.
+const koFns = namedFns(KO_SRC);
+const koFn = koFns.find(f => f.name === '_persistToIdb');
+const koPut = koFns.find(f => f.name === '_idbPersist');
+assert(!!koFn && !!koPut && /put\(buf,\s*dbKey\)/.test(koPut.body) && /DbResolve\.cacheKey/.test(koFn.body),
   'W-PERS-5b kernel_ops.js persists under the same canonical key — its "survive refresh" had the identical defect');
 // (W-PERS-5c retired 2026-08-24 with the Editor tab itself, §TM_P6_FOLD: it gated the deleted
 // schedule_editor_ui.js's _idbGetDb read-key derivation. The surviving reader is scene.js's
