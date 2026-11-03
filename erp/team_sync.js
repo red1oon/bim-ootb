@@ -79,10 +79,11 @@
     return {
       laneOf: function (spec) { return lanes[String(spec.target.uu).toLowerCase()] || null; },
       read: function (c) { var d = c.roster.devices[c.self.kid]; if (!d) return []; var hr = hubRole(), me = 'p_' + String(d.person).toLowerCase();
-        return hr == null ? ['hub', me] : String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr ? ['hub'] : [me]; },   // plan unreadable: both (never miss mail)
+        return hr == null ? ['hub', me] : String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr ? ['hub'] : [me, 'b_' + String(d.person).toLowerCase()]; },   // a station also reads its BRANCH box (b_<person>); the hub never does (POS_PLUGIN_LOCAL_FIRST §19.3)   // plan unreadable: both (never miss mail)
       // TEAMWORK §45.11: who may hold the key of an audience. 'hub' = the hub devices; 'p_<person>' = that person's devices and the hub devices. Plan unreadable: own person only, never the hub.
       holds: function (aud, kid, c) { var d = c.roster.devices[kid]; if (!d) return false; var hr = hubRole(), isHub = hr != null && String(c.roster.roleAt(kid, Infinity).ad_role_id) === hr;
-        if (aud === 'hub') return isHub; var m = /^p_(.+)$/.exec(String(aud)); return !!m && (isHub || String(d.person).toLowerCase() === m[1].toLowerCase()); },
+        if (aud === 'hub') return isHub; var bm = /^b_(.+)$/.exec(String(aud)); if (bm) return !isHub && String(d.person).toLowerCase() === bm[1].toLowerCase();   // the branch audience: this branch's own devices, NEVER the hub
+        var m = /^p_(.+)$/.exec(String(aud)); return !!m && (isHub || String(d.person).toLowerCase() === m[1].toLowerCase()); },
       wantHead: function (kid, c) { var hr = hubRole(), d = c.roster.devices[kid], me = c.roster.devices[c.self.kid]; if (!d) return false; if (hr == null || !me) return true;
         return String(c.roster.roleAt(c.self.kid, Infinity).ad_role_id) === hr || String(c.roster.roleAt(kid, Infinity).ad_role_id) === hr || d.person === me.person; }
     };
@@ -311,10 +312,11 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
-    var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : null;
+    var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : scope === 'branch' && scopeCtx.person ? 'b_' + String(scopeCtx.person).toLowerCase() : null;   // 'branch' (P2 kitchen, POS_PLUGIN_LOCAL_FIRST §19.3): the lane of MY branch Org; the hub neither reads nor holds it
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };
-    if (scope === 'up' || scope === 'down') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
+    if (scope === 'up' || scope === 'down' || scope === 'branch') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
     else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
+    if (scope === 'branch' && !laneTo) return { local: 'branch-without-person ' + table, table: table };   // a device not yet bound to its branch Org has no branch to address
     if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
       var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo, table);
       if (!ad || !(await rosterPersons())[ad]) return { local: 'no-addressee ' + table, table: table, undeclared: true };
@@ -441,7 +443,7 @@
     var ownFull = {}, ownIds = {};
     if (thin) { var byHash = {}; oldRows.forEach(function (r) { if (r.user_tag !== 'team' && sent[r.op_uuid]) byHash[sent[r.op_uuid]] = r; });
       fold.forEach(function (p) { var sc2 = byHash[p.hash] && p.env.author === (dev && dev.kid) ? global.TeamScope.scopeOf(p.env.target.table, sc.role) : null;
-        if (sc2 === 'up' || sc2 === 'down') { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
+        if (sc2 === 'up' || sc2 === 'down' || sc2 === 'branch') { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
     var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && (!sent[r.op_uuid] || ownIds[r.id] || rel.ids[r.id]); }).map(function (r) {
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
@@ -855,7 +857,9 @@
   global.TeamSync = { seatbeltState: seatbeltState, publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
                       // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
-                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
+                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit,
+                      // P2 (POS_PLUGIN_LOCAL_FIRST §19.5): ONE list request of MY branch box (m/b_<person>/). The kitchen and the till learn that the other wrote something without a full Visit (~15 requests).
+                      peekBranch: async function () { await ready; if (!S || !pipe) return null; await refreshScope(); if (!scopeCtx.person || scopeCtx.kind !== 'pos') return null; var names = await pipe.list('s/' + S.space + '/m/b_' + String(scopeCtx.person).toLowerCase() + '/'); return { names: names }; }, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },

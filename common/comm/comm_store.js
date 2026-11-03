@@ -119,7 +119,7 @@
     function eligForGrant(aud, kid, R) { return holdsOf(aud, kid, R); }
     function eligForSeal(aud, origin, R) { return holdsOf(aud, origin, R); }
     function audFor(lane, kid, R) {                       // the audience of a laned op: DOWN p_X -> p_X; UP (hub) by a station of person X -> p_X; UP/hub by a hub device -> hub
-      if (lane.indexOf('p_') === 0) return lane;
+      if (lane.indexOf('p_') === 0 || lane.indexOf('b_') === 0) return lane;      // 'b_<person>' (P2, POS_PLUGIN_LOCAL_FIRST §19.3): a BRANCH box is sealed to the branch's own devices; the hub is not eligible (host holds())
       if (lane === 'hub') { if (holdsOf('hub', kid, R)) return 'hub'; var d = R.devices[kid]; return d ? 'p_' + d.person : null; }
       return null;
     }
@@ -621,11 +621,13 @@
     // a missing one is created here and granted to the eligible devices; every audience key I hold (eligible origin) that an eligible device lacks is granted. A station never creates keys.
     async function audKeys(rep) {
       var L = await cur(), R = L.roster;
-      if (!audOn(R) || !self.dhPrivateKey || !R.devices[self.kid] || R.revokes[self.kid] != null || !holdsOf('hub', self.kid, R)) return 0;
+      if (!audOn(R) || !self.dhPrivateKey || !R.devices[self.kid] || R.revokes[self.kid] != null) return 0;
+      var isHubSelf = holdsOf('hub', self.kid, R), myBranch = R.devices[self.kid].person ? 'b_' + R.devices[self.kid].person : null;
+      if (!isHubSelf && !(myBranch && holdsOf(myBranch, self.kid, R))) return 0;       // a station never creates the hub / p_ keys; it may create the key of its OWN branch audience (b_<person>) when the host says it holds it
       var ring = await keyring(), ep = _newest(ring); if (ep == null) return 0;
       var ar = await audKeyring(), me = R.devices[self.kid], role = R.roleAt(self.kid, selfRow().next_seq), n = 0;
       var active = Object.keys(R.devices).sort().filter(function (k) { return R.revokes[k] == null && R.devices[k].dh; });
-      var auds = {}; auds.hub = 1; active.forEach(function (k) { if (!holdsOf('hub', k, R)) auds['p_' + R.devices[k].person] = 1; });
+      var auds = {}; if (isHubSelf) { auds.hub = 1; active.forEach(function (k) { if (!holdsOf('hub', k, R)) auds['p_' + R.devices[k].person] = 1; }); } else auds[myBranch] = 1;     // the hub keeps hub + p_ keys; a station only its own branch key
       var have = {}; R.grants.forEach(function (g) { if (g.aud && holdsOf(g.aud, g.origin, R)) have[g.kid + '#' + g.aud + '#' + g.epoch] = 1; });
       rowsOf("SELECT op_hash, envelope FROM cl_op WHERE author_kid=? AND op_type='KEYGRANT'", [self.kid]).forEach(function (o) { var q = o.env.body.params; if (q.aud) have[q.kid + '#' + q.aud + '#' + q.epoch] = 1; });      // mine, accepted or not: never re-issue
       function mayGrant(k) { return role.comm_admin || R.devices[k].person === me.person; }
@@ -637,8 +639,8 @@
         var has = ((ar[aud] || {})[ep] || []).some(function (e) { return holdsOf(aud, e.origin, R); });
         if (!has) { var key = await _newSpaceKey(); if (!holdsOf(aud, self.kid, R)) continue; await give(aud, ep, key, self.kid); log('§COMM_KEY kid=' + self.kid + ' aud-create aud=' + aud + ' epoch=' + ep); } }
       ar = await audKeyring();
-      for (var a2 of Object.keys(ar).sort()) for (var e2 of Object.keys(ar[a2]).map(Number).sort())          // 2. repair: a key I hold (eligible origin) that an eligible device lacks
-        for (var ent of ar[a2][e2]) if (holdsOf(a2, ent.origin, R)) await give(a2, e2, ent.key, ent.origin);
+      for (var a2 of Object.keys(ar).sort()) { if (!isHubSelf && a2 !== myBranch) continue; for (var e2 of Object.keys(ar[a2]).map(Number).sort())          // 2. repair: a key I hold (eligible origin) that an eligible device lacks
+        for (var ent of ar[a2][e2]) if (holdsOf(a2, ent.origin, R)) await give(a2, e2, ent.key, ent.origin); }
       return n;
     }
     async function genesis(params) {

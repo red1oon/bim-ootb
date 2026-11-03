@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com> · SPDX-License-Identifier: MIT -->
+<!-- kitchen.html — the standalone kitchen screen (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §19, parity row 20; Witness: W-KDS-BRANCH / -REPLACE / -RELAY erp/tests/witness_kds.js).
+     A Team device page like till.html / borrower.html: the device's own ERP engine (idempiere.html?team=1) runs in a hidden frame; this page is only the cook's view. It reads the branch-local POS_KitchenOrder
+     rows the till sent (Send Order) and writes POS_KitchenStatus rows (done / void / recall) back. Both are BRANCH-LOCAL: they go to the devices of this Org and never to head office (§19.2, §19.3).
+     Query parameters (login=, pipe=, xcfg=, teamplan=) are passed through to the engine. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kitchen screen</title>
+<style>
+  :root { --bg:#101418; --pn:#1b222a; --ln:#33414f; --fg:#eef2f6; --mut:#8fa0b0; --green:#2e9b57; --amber:#d9a21b; --red:#c8402f; --acc:#3b82c4; }
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.3 system-ui,sans-serif; }
+  .bar { display:flex; gap:8px; align-items:center; padding:6px 10px; background:#17202a; border-bottom:1px solid var(--ln); font-size:13px; flex-wrap:wrap; }
+  .chip { padding:1px 9px; border:1px solid var(--ln); border-radius:10px; } input, select { font:inherit; background:#0f151b; color:var(--fg); border:1px solid var(--ln); border-radius:4px; padding:3px 6px; }
+  button { font:inherit; padding:8px 12px; border:1px solid var(--ln); border-radius:4px; background:#22303d; color:var(--fg); cursor:pointer; } button.go { background:var(--acc); border-color:var(--acc); } button[disabled] { opacity:.4; cursor:not-allowed; }
+  #k-cards { display:flex; flex-wrap:wrap; gap:10px; padding:10px; align-items:flex-start; }
+  .kcard { width:250px; background:var(--pn); border:2px solid var(--ln); border-radius:6px; } .kcard[data-age="green"] .khead { background:var(--green); } .kcard[data-age="amber"] .khead { background:var(--amber); color:#111; } .kcard[data-age="red"] .khead { background:var(--red); }
+  .khead { display:flex; justify-content:space-between; padding:6px 10px; font-weight:700; } .kbody { padding:6px 10px; } .kline { padding:4px 0; border-bottom:1px solid #2a3846; cursor:pointer; } .kline[data-state="D"] { text-decoration:line-through; opacity:.55; }
+  .kline[data-state="V"] { text-decoration:line-through; color:var(--red); } .kline[data-mark="added"] { color:#7be39c; } .kline[data-mark="changed"] { color:#ffd166; } .kline.removed { color:var(--red); text-decoration:line-through; cursor:default; }
+  .kflag { display:inline-block; margin:4px 10px; padding:0 8px; border-radius:8px; background:#5a4a12; color:#ffd166; font-size:12px; } .kflag.cancel { background:#5a1d16; color:#ffb3a8; }
+  .kact { display:flex; gap:6px; padding:6px 10px 10px; } .kact button { flex:1; }
+  #k-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; }
+</style></head><body>
+<div class="bar"><b>Kitchen</b><span id="k-net" class="chip">online</span><span id="k-pair" class="chip">starting</span>
+  <label>Station <select id="k-station"><option value="">All</option></select></label>
+  <label>Amber min <input id="k-amber" size="2" value="5"></label><label>Red min <input id="k-red" size="2" value="10"></label><label>Poll s <input id="k-poll" size="3" value="10"></label>
+  <button id="k-recall" disabled>Recall</button><span id="k-count" class="chip">0 open</span><span id="k-msg" class="chip" hidden></span></div>
+<main id="kitchen"><div id="k-cards"></div></main>
+<iframe id="k-engine" title="engine" aria-hidden="true"></iframe>
+<script src="kds_core.js"></script><script src="kds_link.js"></script><script src="kitchen.js"></script>
+</body></html>
