@@ -233,7 +233,8 @@
 // v1676 (2026-11-03) CAPEX §5.10 / P5: erp_push_plan.js (the one plan builder, moved from capex/tools/shed_twin.js) + erp_rest_push.js loaded by viewer.html; config.js?v=5 A.LEGACY_ERP; find_erp_push.js?v=5 pushes the fold to a real iDempiere (password in memory only)
 // v1677 (2026-11-03) §A3b erp/kernel_ops.js?v=15: persist under DbResolve.cacheKey (+ split-mode _dbPersistUrl) so Viewer edits survive a refresh (owner rulings §S70, HISTORY_PERSIST_RECALL §LOCKED-2); raw-url copy reclaimed; W-ONE-KERNEL-OPS 17/17.
 // v1678 (2026-11-03) §5.11 the Project-Order store opens with the ERP's boot overlays (proj_order_state.js v6 + ../erp/ad_docvalue_wf.js, ad_docvalue_overlay.js, ad_taxcat_overlay.js)
-const CACHE_VERSION = 'v1678';
+// v1679 (2026-11-03) §SEAM-W1 cache READERS: boq_charts.html/clash_report.html/city.js read the canonical DbResolve key first, raw url second (db_resolve.js?v=3 readKeys/readCached); routewalker.js?v=4 + clash_report open the shared cache with NO version (VersionError at v3); W-SEAM-CACHE-READERS.
+const CACHE_VERSION = 'v1679';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

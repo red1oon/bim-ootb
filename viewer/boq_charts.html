@@ -59,6 +59,7 @@
 <script src="lib/exceljs.min.js"></script>
 <script src="lib/FileSaver.min.js"></script>
 <script src="lib/chart.umd.min.js"></script>
+<script src="db_resolve.js?v=3"></script>
 <script src="rates.js?v=12"></script>
 <script src="earthworks_volume.js?v=1"></script>
 <script src="analysis_sidecar.js?v=1"></script>
@@ -792,48 +793,50 @@ function audit4DSchedule(scheduleData, db, qtoData) {
 // Lets 4D/5D run fully offline once a building's DB is in cache (meta OR full).
 async function peekDbCache(url) {
   try {
-    const cacheDb = await new Promise(resolve => {
-      // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md): no version arg → opens at whatever version
-      // is actually stored (scene.js's canonical opener is v2+). A hardcoded v1 here throws
-      // VersionError forever once scene.js has run in the profile, so this always fell through to
-      // resolve(null) and forced a full network re-download of the building on every 4D/5D open.
+    const cacheDb = await _openCacheDbCompat();
+    if (!cacheDb) return null;
+    const hit = await _readCachedBuilding(cacheDb, url);
+    return hit ? hit.buf : null;
+  } catch(e) { return null; }
+}
+
+// §SEAM-W1 (SEAM_IDENTITY_AUDIT.md F1/F2): ONE opener + ONE reader for this page. Open with NO version
+// (whatever is stored — scene.js's canonical opener is v3; a hardcoded version throws VersionError),
+// create the `dbs` store only if absent. Read canonical key first, raw url second (== scene.js _checkCache).
+function _openCacheDbCompat() {
+  return new Promise(resolve => {
+    try {
       const req = indexedDB.open('bim_ootb_cache');
       req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => resolve(null);
-    });
-    if (!cacheDb) return null;
-    return await new Promise(resolve => {
-      const tx = cacheDb.transaction('dbs', 'readonly');
-      const req = tx.objectStore('dbs').get(url);
-      req.onsuccess = () => resolve(req.result || null);
+    } catch(e) { resolve(null); }
+  });
+}
+// cacheKey ignores prodBase today (K2 folds on the filename); passed for signature parity with scene.js.
+function _readCachedBuilding(cacheDb, url) {
+  if (window.DbResolve && window.DbResolve.readCached) return window.DbResolve.readCached(cacheDb, url, window.APP && window.APP.PROD_BASE);
+  return new Promise(resolve => {   // db_resolve.js failed to load: raw-url read, as before
+    try {
+      const req = cacheDb.transaction('dbs', 'readonly').objectStore('dbs').get(url);
+      req.onsuccess = () => resolve(req.result ? { buf: req.result, key: url, which: 'raw' } : null);
       req.onerror = () => resolve(null);
-    });
-  } catch(e) { return null; }
+    } catch(e) { resolve(null); }
+  });
 }
 
 // S238: Fetch DB buffer — checks bim_ootb_cache IDB first (same cache as scene.js), falls back to fetch
 // import:// URLs: IDB only (no network). OCI URLs: IDB first (scene.js wrote it), then network.
 async function fetchDbBuffer(url) {
   const _tFetch = performance.now();
-  const cacheDb = await new Promise(resolve => {
-    // §KRN_PERSIST_FIX (F2, SEAM_IDENTITY_AUDIT.md) — same fix as peekDbCache() above.
-    const req = indexedDB.open('bim_ootb_cache');
-    req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('dbs')) req.result.createObjectStore('dbs'); };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => resolve(null);
-  });
+  const cacheDb = await _openCacheDbCompat();
 
   if (cacheDb) {
-    const cached = await new Promise(resolve => {
-      const tx = cacheDb.transaction('dbs', 'readonly');
-      const req = tx.objectStore('dbs').get(url);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
-    });
+    const hit = await _readCachedBuilding(cacheDb, url);
+    const cached = hit && hit.buf;
     if (cached) {
       const src = url.startsWith('import://') ? 'import' : 'idb';
-      _dbSourceLine = '§CHARTS_DB_SOURCE source=' + src + ' url=' + url.split('/').pop() + ' size=' + (cached.byteLength / 1024).toFixed(0) + 'KB fetchMs=' + Math.round(performance.now() - _tFetch);
+      _dbSourceLine = '§CHARTS_DB_SOURCE source=' + src + ' url=' + url.split('/').pop() + ' key=' + hit.key + ' which=' + hit.which + ' size=' + (cached.byteLength / 1024).toFixed(0) + 'KB fetchMs=' + Math.round(performance.now() - _tFetch);
       _log(_dbSourceLine);
       return cached;
     }

@@ -449,12 +449,17 @@ function setupCity(A) {
       var cachedBuf = null;
       if (cacheDb) {
         try {
-          cachedBuf = await new Promise(function(resolve) {
-            var tx = cacheDb.transaction('dbs', 'readonly');
-            var req = tx.objectStore('dbs').get(dbUrl);
-            req.onsuccess = function() { resolve(req.result || null); };
-            req.onerror = function() { resolve(null); };
-          });
+          // §SEAM-W1 (SEAM_IDENTITY_AUDIT.md F3): the write at ~683 goes through cachedFetch → canonical
+          // key, so READ canonical first, raw url second (== A._checkCache). Cache-only, no network.
+          var _hit = (window.DbResolve && window.DbResolve.readCached)
+            ? await window.DbResolve.readCached(cacheDb, dbUrl, A.PROD_BASE)
+            : await new Promise(function(resolve) {
+                var req = cacheDb.transaction('dbs', 'readonly').objectStore('dbs').get(dbUrl);
+                req.onsuccess = function() { resolve(req.result ? { buf: req.result, key: dbUrl, which: 'raw' } : null); };
+                req.onerror = function() { resolve(null); };
+              });
+          cachedBuf = _hit ? _hit.buf : null;
+          if (_hit) console.log('§CITY_DB_SOURCE arch=' + archName + ' key=' + _hit.key + ' which=' + _hit.which);
         } catch(e) { cachedBuf = null; }
       }
       if (!cachedBuf) { _skippedArch++; continue; }
