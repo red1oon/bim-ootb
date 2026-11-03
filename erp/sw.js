@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v972';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned) — origin/main was v971 at branch time
+const CACHE_VERSION = 'v972';   // bump on each deploy; SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned)
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -90,6 +90,7 @@ const PRECACHE_ASSETS = [
   'borrower.js',
   'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
   'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js',
+  'kitchen.html', 'kitchen.js', 'kds_core.js', 'kds_link.js', 'till_kds.js',   // P2: the standalone kitchen screen + the till's Send Order (prompts/POS_PLUGIN_LOCAL_FIRST.md §19)
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
   'slipverify/slipok.js',
   'erp_i18n.js',        // UI locales (ERP_UI_LOCALES.md) — the switch + resolvers

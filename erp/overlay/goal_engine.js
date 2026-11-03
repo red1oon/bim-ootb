@@ -58,7 +58,10 @@
     if (access.orgIds) { var o = access.orgIds.filter(function (x, i, a) { return a.indexOf(x) === i; }); s += o.length === 1 ? ' AND ' + alias + '.AD_Org_ID=' + o[0] : ' AND (' + alias + '.AD_Org_ID IN (' + o.join(',') + '))'; }
     return s;
   }
-  function aliasOf(sql) { var m = /\bFROM\s+(\w+)(?:\s+(\w+))?/i.exec(sql); return m ? (m[2] && !/^(WHERE|JOIN|LEFT|INNER|ON)$/i.test(m[2]) ? m[2] : m[1]) : null; }
+  // the MAIN query's first table (MRole.addAccessSQL :2093-2104 via AccessSqlParser.getMainSql): sub-selects and quoted text are blanked first, so a correlated
+  //   "(SELECT MAX(..) FROM C_ProjectPhase ph ..)" in the select list is not mistaken for the main table (CAPEX_DASHBOARD.md §5.20: Average Delay read 0 — the access predicate landed on ph.).
+  function depth0(sql) { var out = '', d = 0, q = false; for (var i = 0; i < sql.length; i++) { var c = sql[i]; if (q) { out += ' '; if (c === "'") q = false; continue; } if (c === "'") { q = true; out += ' '; continue; } if (c === '(') { d++; out += ' '; continue; } if (c === ')') { d--; out += ' '; continue; } out += d === 0 ? c : ' '; } return out; }
+  function aliasOf(sql) { var m = /\bFROM\s+(\w+)(?:\s+(\w+))?/i.exec(depth0(sql)); return m ? (m[2] && !/^(WHERE|JOIN|LEFT|INNER|ON)$/i.test(m[2]) ? m[2] : m[1]) : null; }
   function has(q, t, schema) { try { return q("SELECT 1 AS x FROM " + (schema === 'main' ? 'sqlite_master' : 'sqlite_master') + " WHERE type IN ('table','view') AND lower(name)=?", [t]).length > 0; } catch (e) { return false; } }
   function restrictionSql(q, goalId, orgColumn) {   // MMeasureCalc.addRestrictions org part (:405-444); every other restriction type is named unported (zero rows on the pilot)
     if (!has(q, 'pa_goalrestriction')) return { sql: '' };
@@ -91,6 +94,9 @@
       var rq = restrictionSql(q, goalId, 'AD_Org_ID'); if (rq.unported) return { ok: false, reason: 'INCONCLUSIVE ' + rq.unported + ' not ported' };
       sql += rq.sql + accessSql('R_Request', ctx.access);
     } else return { ok: false, reason: 'MeasureType ' + m.measuretype + ' not ported (INCONCLUSIVE)' };
+    // legacy runs the measure SQL through its statement converter (CPreparedStatement → Convert_PostgreSQL: SYSDATE, DUAL, …); the twin's ONE converter is ad_callout.js convertSql
+    //   (CAPEX_DASHBOARD.md §5.20: the bucket measures read SYSDATE). ctx.convertSql in node, window.AdCallout.convertSql in the page; no converter → the SQL runs as built (unchanged behaviour).
+    var cv = ctx.convertSql || (global && global.AdCallout && global.AdCallout.convertSql); if (typeof cv === 'function') sql = cv(sql);
     var rows; try { rows = q(sql); } catch (e) { return { ok: false, reason: 'SQL failed: ' + String(e.message).slice(0, 120), sql: sql }; }
     var raw = rows.length ? rows[0][Object.keys(rows[0])[0]] : null, actual = raw == null ? 0 : Math.round(Number(raw) * 1e6) / 1e6;   // MMeasure: SQL may return no rows or null -> ZERO
     var perf = div6(actual, g.measuretarget);
@@ -111,7 +117,7 @@
     var goals = q("SELECT * FROM pa_goal WHERE isactive='Y' AND pa_measure_id=? ORDER BY seqno", [measureId]), out = [];
     goals.forEach(function (g) {
       if (!Number(g.ad_role_id) && Number(g.ad_user_id)) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: 'INCONCLUSIVE goal role via AD_User not ported' }); return; }
-      var role = Number(g.ad_role_id) || ctx.role, r = evaluate(q, g.pa_goal_id, { today: ctx.today, access: accessOf(q, role, ctx.client) });
+      var role = Number(g.ad_role_id) || ctx.role, r = evaluate(q, g.pa_goal_id, { today: ctx.today, access: accessOf(q, role, ctx.client), convertSql: ctx.convertSql });
       var failed = !r.ok && /^SQL failed/.test(r.reason || '');
       if (!r.ok && !failed) { out.push({ goalId: Number(g.pa_goal_id), written: false, reason: r.reason }); return; }
       var actual = r.ok ? r.actual : 0, perf = r.ok ? r.performance : div6(0, g.measuretarget), ch = { measureactual: actual, goalperformance: Number(perf), datelastrun: ctx.now };
@@ -139,6 +145,6 @@
       updateMeasureGoals(trx.q, function (g, c) { trx.update('pa_goal', g, c); }, row.pa_measure_id, ctxFor(trx));
     } });
   }
-  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel };
+  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, aliasOf: aliasOf, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.GoalEngine = api;
 })(typeof window !== 'undefined' ? window : this);

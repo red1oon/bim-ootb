@@ -26,7 +26,7 @@ ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-com
 **▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
 1. **G1 ✅ DONE — ⚠ CORRECTED §5.18: the twin's PA owner is the EXISTING `erp/overlay/goal_engine.js` (DASHBOARD-PARITY D1); the §5.15 `erp/pa_engine.js` was a duplicate and is deleted; W-PA-ENGINE PASS 22/22 on the owner** — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
-2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3 ✅ DONE (§5.19: legacy = migration script 202611032100_CAPEX-G3.sql on the pilot, GardenAdmin 17 goals; twin = plugin bundle `capex/plugin/capex_dashboard.mjs`, W-PA-RENDER PASS 18/18 in the real idempiere.html, BREAK FAIL 13)** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4** bucket tiles (health / schedule / budget status:
+2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3 ✅ DONE (§5.19: legacy = migration script 202611032100_CAPEX-G3.sql on the pilot, GardenAdmin 17 goals; twin = plugin bundle `capex/plugin/capex_dashboard.mjs`, W-PA-RENDER PASS 18/18 in the real idempiere.html, BREAK FAIL 13)** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4 ✅ DONE (§5.21: 14 bucket measures, legacy == twin == tiles.js PASS 65/65 incl. 3 shifted dates, 25 INCONCLUSIVE unexercised buckets; twin pack 1.0.1; W-PA-RENDER 32/32)** bucket tiles (health / schedule / budget status:
    PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
 3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
 **▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
@@ -514,6 +514,45 @@ product: the test server lacked the `.mjs` MIME type; `browser.newPage()` gives 
 30 min; the twin's gadget computes live on every render — equal except inside that window after a data change (CARDINAL: to fix on the twin side by rendering through `GoalEngine.updateGoal(force=false)`
 + the stored row; W-DASH-PERF's oracle must move with it). (c) "closed" / "completed this year" still unproven on the pilot (no processed project). **Next: G4** bucket tiles (health / schedule /
 budget status) — PA SQL in both dialects or named tile kinds, measured first.
+
+### 5.20 SPEC — G4: the bucket tiles (8 health, 11 schedule, 12 budget status) as PA rows (2026-11-03, owner "Proceed"; written before code)
+**Issue proved/disproved:** *"the per-project classification tiles need code: they cannot be one PA_MeasureCalc SQL that legacy and the twin both run and that equals tiles.js"*.
+**Measured first:** (a) each bucket is a COUNT over C_Project with correlated sub-selects on C_ProjectPhase — one scalar, so a Calculated measure (type C / S). (b) "today": legacy converts every statement
+(SYSDATE → statement_timestamp(), ConvertMap_PostgreSQL :71) and the pilot holds `adempiere.trunc(timestamp[tz])` + `adempiere.daysbetween(ts, ts) = CAST(d1 AS DATE) - CAST(d2 AS DATE)` (pg_get_functiondef);
+the twin has the same ports (callouts/sqlfn.js `trunc`, `daysbetween`, `statement_timestamp` on `RUNTIME.now`) and the converter (`ad_callout.js convertSql`). ⚠ `goal_engine.evaluate` runs the measure SQL
+RAW — legacy's CPreparedStatement converts it — so evaluate gains the kernel converter (the ONE choke point; a no-op for SQL without SYSDATE/DUAL/…). (c) pilot buckets today (tiles.js over the WS read):
+health red 3 / none 6 · schedule on-time 2, at-risk 3, no-schedule 4, avg delay 189 d · budget over 1, not-started 8, overrun USD 318.68; green / amber / delayed / within are 0 at every date tried
+(2026-11-03 … 2028-08-01) → those four are INCONCLUSIVE (never judged on a 0 nobody exercised; no fixture data is invented).
+**Rules = tiles.js `compute` (:84-135), as SQL on `C_Project p` (A = `p.IsActive='Y' AND p.Processed='N'`):** PV = Σ phase PlannedAmt with `TRUNC(EndDate)<=TRUNC(SYSDATE)` · EV = Σ phase PlannedAmt with
+IsComplete='Y' · AC = COALESCE(ProjectBalanceAmt,0) · DATED = a phase with StartDate and EndDate · OVERDUE = a phase with `COALESCE(IsComplete,'N')<>'Y'` and `TRUNC(EndDate)<TRUNC(SYSDATE)`.
+Health: none = PV≤0 · green = PV>0, EV≥0.9·PV and (AC≤0 or EV≥0.9·AC) · red = PV>0, EV<0.9·PV and (AC≤0 or EV<0.9·AC) · amber = the rest with PV>0. Schedule: no-schedule = not DATED · at-risk = DATED, PV>0,
+EV<0.9·PV · delayed = DATED, not at-risk, OVERDUE · on-time = DATED, neither · average delay = AVG over at-risk + delayed of MAX(daysbetween(TRUNC(SYSDATE), EndDate)) over the overdue phases (0 when
+none). Budget: not-started = AC=0 · over = AC≠0 and AC > COALESCE(PlannedAmt,0) · within = the rest · overrun per currency = Σ(AC − COALESCE(PlannedAmt,0)) over "over". Known difference to watch: tiles.js
+rounds every amount to the cent before comparing; the SQL compares raw amounts — equal unless a value sits within half a cent of a 0.9 boundary (the witness would show it).
+**Rows:** `capex/legacy/migration/iD13/postgresql/202611032200_CAPEX-G4.sql` — 14 PA_MeasureCalc + PA_Measure (IDs 1000023–1000036) + 14 default PA_Goal (1000044–1000057), LEGACY CONVENTION; the twin
+gets them as the bundle's next pack `capex_2pack/2Pack_1.0.1.zip` (a released pack is immutable; Incremental2PackActivator applies 1.0.1 after 1.0.0).
+**Witness:** W-PA-TILES-ORACLE grows to the G4 measures: A legacy goal == twin engine (real today, the same DOWN-copied rows) == tiles.js; B the twin engine == tiles.js at shifted dates (`RUNTIME.now`)
+2026-12-10 / 2027-06-01 / 2028-08-01 over the same rows (exercises the date rules legacy cannot be moved to); zero-on-every-side buckets INCONCLUSIVE; BREAK=1 FAIL. W-PA-RENDER: 27 CAPEX indicators.
+
+### 5.21 RESULT — G4 built (2026-11-03); logs read (scratch, not committed)
+**Legacy (LOCAL pilot):** `202611032200_CAPEX-G4.sql` applied with psql `ON_ERROR_STOP` — "successfully registered", update_sequences; pa_measurecalc 19→33, CAPEX goals 13→27, ad_migrationscript G4 = CO.
+**Twin:** the bundle's next pack `capex/plugin/capex_2pack/2Pack_1.0.1.zip` (`§PACKGEN elements=42`) — `capex_2pack_source.mjs` now maps pack version → scripts (1.0.0 = R0+G2+G3, 1.0.1 = G4);
+re-generating 1.0.0 says `result=unchanged` (released packs immutable). `capex_dashboard.mjs` version 1.0.1, packs [1.0.0, 1.0.1].
+**Owner change (one file):** `erp/overlay/goal_engine.js` — (1) `evaluate` runs the measure SQL through the kernel converter (`ctx.convertSql` / `window.AdCallout.convertSql`), as legacy's prepared
+statement converts it; (2) **DEFECT FOUND BY THE TWIN, fixed:** `aliasOf` took the first `FROM` in the text — for "Average Delay" that is the correlated sub-select's `C_ProjectPhase ph`, so the role
+predicate landed on `ph.AD_Client_ID` → `SQL failed: no such column` → stored 0 (legacy: 189). It now reads the depth-0 main query (MRole.addAccessSQL via AccessSqlParser.getMainSql); vector in
+W-PA-ENGINE (`V E2 main-table alias ignores a correlated sub-select`, 23/23).
+**W-PA-TILES-ORACLE** (now also copies C_ProjectPhase down: c_project 12 / c_projectphase 59 / ad_wf_activity 264): `§PA_TILES_VERDICT PASS judged=65 fail=0 inconclusive=25`; `BREAK=1` → FAIL 92.
+A (legacy == twin == tiles.js, real today 2026-11-03): health red 3 · none 6 · schedule on-time 2 · at-risk 3 · no-schedule 4 · avg delay 189 (legacy `189.0000000000000000`) · budget over 1 ·
+not-started 8 · overrun USD 318.6805 — all PASS, plus the 13 G2 measures unchanged. B (twin == tiles.js at 2026-12-10 / 2027-06-01 / 2028-08-01 through `RUNTIME.now`): red 5 · none 4 · at-risk 5 ·
+no-schedule 4 · avg delay 142 / 315 / 742 · over 1 · not-started 8 · overrun 318.6805 — all PASS. INCONCLUSIVE (0 on every side, never judged): health green, amber; schedule delayed (and on-time from
+December); budget within; overrun BDT — the pilot's data never reaches them, and no fixture is invented.
+**W-PA-RENDER** (real idempiere.html, install → reboot): both packs in AD_Package_Imp, reboot `installed=[1.0.0,1.0.1] toApply=[]`, 31 indicators for GardenAdmin, the 27 CAPEX ones each == goal_engine →
+PASS 32/32; break FAIL 27. **W-MIG-SYNC** 7/7 (expected counts now read from the scripts' INSERTs: +27 / +27 / +27). Unchanged: W-GOAL-ENGINE 5/5 · W-DASH-PERF 5/5 · W-DASH-SELECT 5/5 · W-DASH-DICT
+19/19 · W-HOME-DASHBOARD-LIVE 18/18 · pa_probe 4/4. `witness_core_untouched`: only CU4 (`plugins/mf_lens.mjs`, pre-existing).
+**Named, open:** a site with pack 1.0.0 already active picks up 1.0.1 at its next Start (Incremental2PackActivator) — not witnessed as an UPGRADE (W-PA-RENDER installs fresh). The four unexercised
+buckets need real data that reaches them (a client project that is on budget / ahead of plan). §6 Q1 (health thresholds) still governs the 0.9: it is the client's stated At-Risk number, applied as
+tiles.js does. **Next: G5** — the editor: the generic AD windows (Performance Measurement / Calculation / Goal / Color Schema / Dashboard Content) open and edit these rows, X of 5 (W-PA-EDITOR).
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.

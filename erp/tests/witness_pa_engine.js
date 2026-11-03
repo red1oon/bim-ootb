@@ -42,6 +42,7 @@ var R0_MEASURE = 1000000, GOAL = 'CAPEX Approved Budget (USD)';
   if (H.one('SELECT 1 AS x FROM pa_colorschema WHERE pa_colorschema_id=100')) [[50, 200000], [51, 200001], [100, 200001], [101, 200002], [9999, 200002], [10000, 200002], [-5, 200000]]   // "Red (50) - Yellow (100) - Green"
     .forEach(function (p) { var got = DG.colorOf(H.q, 100, p[0]); check('V E9 schema 100 percent ' + p[0] + ' → colour ' + p[1], got === hex(p[1]), 'got=' + got + ' want=' + hex(p[1])); });
   else inc('E9', 'schema 100 absent from the seed');
+  check('V E2 main-table alias ignores a correlated sub-select in the select list (§5.20)', GE.aliasOf('SELECT AVG(COALESCE((SELECT MAX(x) FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID),0)) FROM C_Project p WHERE 1=1') === 'p', GE.aliasOf('SELECT AVG(COALESCE((SELECT MAX(x) FROM C_ProjectPhase ph WHERE ph.C_Project_ID=p.C_Project_ID),0)) FROM C_Project p WHERE 1=1'));
   check('V E2 access of role 102 (isaccessallorgs=N) = client 0+11 and its org-access rows', JSON.stringify(ACC.clientIds) === '[0,11]' && Array.isArray(ACC.orgIds) && ACC.orgIds.indexOf(0) === 0 && ACC.orgIds.indexOf(11) > 0, ACC);
 
   // ── N: negatives ──

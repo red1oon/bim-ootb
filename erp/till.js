@@ -299,8 +299,10 @@
     log('§TILL_COST engine_ready_ms=' + ms + ' heap_mb=' + heap + ' products=' + S.prods.length + ' (the engine frame is the full ERP)');
     var api = { S: S, C: C, P: P, R: R, $: $, $$: $$, q: q, esc: esc, rows: rows, depositGroup: depositGroup, create: create, msg: msg, log: log, go: go, hooks: HOOKS, persist: persist, saveStore: saveStore, newTicket: newTicket, renderSales: renderSales, openPay: openPay,
       nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
+    api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
-    window.Till = { ready: true, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
+    window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
+    if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
   boot().catch(function (e) { log('🔴 §TILL_BOOT ' + (e && e.stack || e)); });
