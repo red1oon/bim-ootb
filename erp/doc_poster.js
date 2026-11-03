@@ -513,40 +513,6 @@ function deriveReceipt(db, R, ioId, schema) {
   });
   return { by: by, absent: absent };
 }
-// ── MATCH INVOICE — §65.2 (F25), Doc_MatchInv.createFacts (Doc_MatchInv.java:156-420), receipt-matched purchase case:
-// Dr {BPGroup.NotInvoicedReceipts} (BP of the INVOICE, :170-172) = the receipt line's posted amount × (Qty / MovementQty); Cr {Product.InventoryClearing} = the invoice line's posted amount × (Qty / QtyInvoiced)
-// (both read back from the posted documents: updateReverseLine :227-283 — here re-derived with the same folds); both legs removed when the accounts are equal and IsPostIfClearingEqual='N' (:362-372).
-// An invoice price variance (IPV ≠ 0, :376-380), partial matches (multiplier ≠ 1), services, shipments (MMS) and credit memos are named absent — never posted by guess.
-function _receiptLineAmt(db, line, hdr, schema, absent) {
-  var ol = num(line.c_orderline_id) ? getRow(db, 'SELECT ol.*, o.c_currency_id AS ocur FROM c_orderline ol LEFT JOIN c_order o ON o.c_order_id=ol.c_order_id WHERE ol.c_orderline_id=?', num(line.c_orderline_id)) : null;
-  if (!ol) { absent.push('receipt order line'); return null; }
-  var price = _poLineCost(db, ol, absent); if (price == null) return null;
-  var pd = _bigDec(price), qd = _bigDec(line.movementqty), src = Number(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k)));
-  return _fxConvertCents(db, src, ol.c_currency_id != null ? ol.c_currency_id : ol.ocur, schema, hdr.dateacct, hdr.ad_client_id, hdr.ad_org_id, absent);
-}
-function deriveMatchInv(db, R, id, schema) {
-  var mi = getRow(db, 'SELECT * FROM m_matchinv WHERE m_matchinv_id=?', num(id)); if (!mi) return null;
-  var by = {}, absent = [];
-  function add(side, el, amt) { if (!el) return; var k = el.id; if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 }; if (side === 'DR') by[k].dr += amt; else by[k].cr += amt; }
-  function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
-  if (!num(mi.m_product_id) || Number(mi.qty) === 0) return { by: by, absent: absent };
-  var rl = getRow(db, 'SELECT * FROM m_inoutline WHERE m_inoutline_id=?', num(mi.m_inoutline_id)), il = getRow(db, 'SELECT * FROM c_invoiceline WHERE c_invoiceline_id=?', num(mi.c_invoiceline_id));
-  if (!rl || !il) { absent.push(!rl ? 'credit-memo / no-receipt MatchInv not ported' : 'invoice line'); return { by: by, absent: absent }; }
-  var rh = getRow(db, 'SELECT * FROM m_inout WHERE m_inout_id=?', num(rl.m_inout_id)), ih = getRow(db, 'SELECT * FROM c_invoice WHERE c_invoice_id=?', num(il.c_invoice_id));
-  if (String(rh.movementtype) !== 'V+') { absent.push('MatchInv on a shipment not ported'); return { by: by, absent: absent }; }
-  if (Number(mi.qty) !== Number(rl.movementqty) || Number(mi.qty) !== Number(il.qtyinvoiced)) { absent.push('partial MatchInv (multiplier) not ported'); return { by: by, absent: absent }; }
-  var p = _hasCol(db, 'm_product', 'producttype') ? getRow(db, 'SELECT producttype FROM m_product WHERE m_product_id=?', num(mi.m_product_id)) : null;
-  if (!p || p.producttype !== 'I') { absent.push('service MatchInv not ported'); return { by: by, absent: absent }; }
-  var drAmt = _receiptLineAmt(db, rl, rh, schema, absent);
-  var crAmt = _fxConvertCents(db, cents(il.linenetamt), ih.c_currency_id, schema, ih.dateacct, ih.ad_client_id, ih.ad_org_id, absent);
-  if (drAmt == null || crAmt == null) return { by: by, absent: absent };
-  var nir = el(R.resolve(db, '{BPGroup.NotInvoicedReceipts}', num(ih.c_bpartner_id), schema)), clr = el(R.resolve(db, '{Product.InventoryClearing}', num(mi.m_product_id), schema));
-  if (!nir || !clr) return { by: by, absent: absent };
-  var sch = getRow(db, 'SELECT ispostifclearingequal FROM c_acctschema WHERE c_acctschema_id=?', num(schema)) || {};
-  if (!(String(sch.ispostifclearingequal) === 'N' && nir.id === clr.id && drAmt === crAmt)) { add('DR', nir, drAmt); add('CR', clr, crAmt); }
-  if (drAmt !== crAmt) absent.push('invoice price variance not ported (Doc_MatchInv.java:376-380, ipv=' + (crAmt - drAmt) + ')');
-  return { by: by, absent: absent };
-}
 
 // MatchPO → Average-PO cost (Doc_MatchPO.createFacts :285-410 + createMatchPOCostDetail :584-660 → MCostDetail.createOrder → process :1560-1576 → MCost.setWeightedAverage MCost.java:1696-1742).
 // poCost = order line PriceCost else PriceActual (tax corrections named absent), × rate and HALF_UP at the currency COSTING precision when the order is in another currency;
@@ -1246,38 +1212,6 @@ function deriveBankStatement(db, id, schema) {
   return d;
 }
 
-// Doc_MatchPO.createFacts:244-470 — the PPV pair posts ONLY under COSTINGMETHOD_StandardCosting
-// (Doc_MatchPO.java:429); this seed costs at 'A' Average → the REAL engine posted the EMPTY set for
-// all 37 docs (posted='Y', 0 fact rows — verified live 2026-07-18). ∅ is CONFIG-derived, not skipped:
-// under 'S' the manifest opens the PPV path (poCost vs standard cost via m_cost — absent-token when
-// the seed carries no standard-cost rows, which is itself the honest state).
-function deriveMatchPO(db, id, schema) {
-  var hdr = getRow(db, 'SELECT * FROM m_matchpo WHERE m_matchpo_id=?', num(id));
-  if (!hdr) return null;
-  var d = b3New();
-  if (num(hdr.m_product_id) === 0 || Number(hdr.qty) === 0) return d;      // :248-254
-  if (num(hdr.m_inoutline_id) === 0) return d;                             // :275-282 no shipment match
-  var as = schemaRow(db, schema);
-  var method = as ? String(as.costingmethod) : '';
-  // product-level override (m_product_category_acct costingmethod not captured — schema-level method,
-  // the same resolution the W-FOLD-MOVEMENT cost hop proved for this seed)
-  if (method !== 'S') return d;                                            // :429 gate → ∅ under Average
-  var cost = getRow(db,
-    "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
-    " AND e.costelementtype='M' AND e.costingmethod='S' WHERE c.m_product_id=? AND c.c_acctschema_id=?",
-    [num(hdr.m_product_id), num(schema)]);
-  if (!cost || Number(cost.p) === 0) { d.absent.push('{Product.StandardCost}#' + hdr.m_product_id); return d; }
-  var ol = getRow(db, 'SELECT priceactual FROM c_orderline WHERE c_orderline_id=?', num(hdr.c_orderline_id));
-  if (!ol) { d.absent.push('c_orderline#' + hdr.c_orderline_id); return d; }
-  var ppv = Math.round((cents(ol.priceactual) - cents(cost.p)) * Number(hdr.qty));
-  if (ppv !== 0) {
-    var pc = getRow(db, 'SELECT a.p_purchasepricevariance_acct AS acct FROM m_product p JOIN m_product_category_acct a ON a.m_product_category_id=p.m_product_category_id AND a.c_acctschema_id=? WHERE p.m_product_id=?', [num(schema), num(hdr.m_product_id)]);
-    var ppvEl = elOf(db, vcAcct(db, pc && pc.acct), d.absent, '{Product.PPV}');
-    var offEl = elOf(db, vcAcct(db, null), d.absent, '{Schema.PPVOffset}');  // c_acctschema_gl ppvoffset not captured — named absent
-    if (ppvEl && offEl) { d.add(ppv > 0 ? 'DR' : 'CR', ppvEl, Math.abs(ppv)); d.add(ppv > 0 ? 'CR' : 'DR', offEl, Math.abs(ppv)); }
-  }
-  return d;
-}
 
 // Doc_Requisition.createFacts:121-156 — posts ONLY under MAcctSchema.isCreateReservation
 // (commitmenttype 'B'/'A', MAcctSchema.java:662-669); this seed = 'N' → the REAL engine posted ∅ for
@@ -1366,28 +1300,6 @@ function deriveCash(db, R, id, schema) {
   return d;
 }
 
-// §69 (F33) Doc_GLJournal.createFacts (Doc_GLJournal.java:118-160 @{u}): ONLY the journal's own schema (another schema ⇒ no facts); per line createLine(account, source Dr/Cr) carrying the
-// line's ACCOUNTED amounts (DocLine.setConvertedAmt, :83-87); then Doc.post → Fact.balanceSource (Fact.java:298-322): an unbalanced single-currency journal ⇒ SuspenseBalancing (diff < 0 ⇒ DR).
-function deriveGLJournal(db, id, schema) {
-  var hdr = getRow(db, 'SELECT * FROM gl_journal WHERE gl_journal_id=?', num(id));
-  if (!hdr) return null;
-  var d = b3New();
-  if (num(hdr.c_acctschema_id) !== num(schema)) return d;
-  var lines = allRows(db, 'SELECT * FROM gl_journalline WHERE gl_journal_id=? ORDER BY line, gl_journalline_id', num(id)), bal = 0;
-  lines.forEach(function (l) {
-    var el = elOf(db, num(l.account_id), d.absent, 'GL_JournalLine.Account_ID'); if (!el) return;
-    var sd = cents(l.amtsourcedr), sc = cents(l.amtsourcecr), ad = cents(l.amtacctdr), ac = cents(l.amtacctcr);
-    if (!sd && !sc) return;                                                                              // Fact.createLine: no amounts ⇒ no line
-    if (ad) d.add('DR', el, ad); if (ac) d.add('CR', el, ac); bal += sd - sc;
-  });
-  if (bal !== 0) {
-    var gl = _hasCol(db, 'c_acctschema_gl', 'usesuspensebalancing') ? getRow(db, 'SELECT usesuspensebalancing AS u, suspensebalancing_acct AS a FROM c_acctschema_gl WHERE c_acctschema_id=?', num(schema)) : null;
-    if (!gl || String(gl.u) !== 'Y') { d.absent.push('NotBalanced (no suspense balancing, Doc.java:852-856)'); return d; }
-    var sus = elOf(db, vcAcct(db, gl.a), d.absent, 'SuspenseBalancing_Acct'); if (!sus) return d;
-    d.add(bal < 0 ? 'DR' : 'CR', sus, Math.abs(bal));
-  }
-  return d;
-}
 
 // Doc_Inventory.createFacts:211-513 (HARDEN_MATRIX.md §W-POST-TAIL-2), physical-inventory branch only
 // (this seed's docs are all DocSubTypeInv=PI). costs = the schema-costingmethod → cost-element →
@@ -1429,41 +1341,6 @@ function _inventoryNoCosts(db, l, schema) {
 function inventoryPostRefused(db, id) {
   var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id)), sch = _activeSchemas(db);
   return lines.some(function (l) { return sch.some(function (sc) { return _inventoryNoCosts(db, l, sc.id); }); });
-}
-function deriveInventory(db, id, schema) {
-  var hdr = getRow(db, 'SELECT * FROM m_inventory WHERE m_inventory_id=?', num(id));
-  if (!hdr) return null;
-  var lines = allRows(db, 'SELECT * FROM m_inventoryline WHERE m_inventory_id=? AND isactive=\'Y\'', num(id));
-  var d = b3New();
-  if (lines.length === 0) { d.absent.push('@NoLines@#' + id); return d; }   // MInventory.prepareIt:401-406
-  lines.forEach(function (l) {
-    var cost = _inventoryLineCost(db, l, schema);
-    var qtyDiff = Number(l.qtycount) - Number(l.qtybook);                  // PI branch :164-165
-    if (_inventoryNoCosts(db, l, schema)) { d.absent.push('{Product.NoCosts}#' + l.m_product_id); return; }  // :332-335 refusal
-    // §59 (F18): the LINE is rounded, not the unit cost (Doc_Inventory costs = ProductCost qty × current cost; same rule as poc_movement_fx) — exact HALF_UP
-    var amt = cost ? (function () { var pd = _bigDec(cost.p), qd = _bigDec(qtyDiff); return Number(_rhuB(pd.n * qd.n * 100n, 10n ** BigInt(pd.k + qd.k))); })() : 0;
-    var prod = getRow(db, 'SELECT producttype, m_product_category_id FROM m_product WHERE m_product_id=?', num(l.m_product_id));
-    var isService = prod && prod.producttype === 'S';
-    var pcol = isService ? 'p_expense_acct' : 'p_asset_acct';
-    var pacct = prod ? getRow(db, 'SELECT ' + pcol + ' AS acct FROM m_product_category_acct WHERE m_product_category_id=? AND c_acctschema_id=?', [num(prod.m_product_category_id), num(schema)]) : null;
-    var drEl = elOf(db, vcAcct(db, pacct && pacct.acct), d.absent, '{Product.' + (isService ? 'Expense' : 'Asset') + '}');
-    // Fact.createLine(docLine, acct, cur, Amt) single-amount form (Fact.java:206-212): a NEGATIVE amount goes to the CREDIT side as its absolute value (§59, PI2 loss)
-    // a ZERO amount keeps its line on the intended side (Fact.createLine keeps a zero line when the doc line has a quantity — the poc_post_tail blessing-flip falsifier)
-    var single = function (el, a, zeroSide) { if (!el) return; if (a < 0) d.add('CR', el, -a); else if (a > 0) d.add('DR', el, a); else d.add(zeroSide, el, 0); };
-    single(drEl, amt, 'DR');
-    // CR: line.getChargeAccount if C_Charge_ID≠0, else M_Warehouse_Acct.W_Differences_Acct (:1505-1509)
-    if (num(l.c_charge_id) > 0) {
-      var chg = getRow(db, 'SELECT ch_expense_acct AS acct FROM c_charge_acct WHERE c_charge_id=? AND c_acctschema_id=?', [num(l.c_charge_id), num(schema)]);
-      var chgEl = elOf(db, vcAcct(db, chg && chg.acct), d.absent, '{Charge.Expense}');
-      single(chgEl, -amt, 'CR');
-    } else {
-      var loc = getRow(db, 'SELECT m_warehouse_id FROM m_locator WHERE m_locator_id=?', num(l.m_locator_id));
-      var wa = loc ? getRow(db, 'SELECT w_differences_acct AS acct FROM m_warehouse_acct WHERE m_warehouse_id=? AND c_acctschema_id=?', [num(loc.m_warehouse_id), num(schema)]) : null;
-      var crEl = elOf(db, vcAcct(db, wa && wa.acct), d.absent, '{Warehouse.Differences}');
-      single(crEl, -amt, 'CR');
-    }
-  });
-  return d;
 }
 
 // ── §P9 (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §P4-OPEN item 7 — Witness: W-POST-GLCATEGORY) ──
@@ -1560,6 +1437,9 @@ function finish(d, basis, glCat) {
  *   recordRef = { table:'C_Order'|'C_Invoice', id }. C_Order → its generated invoice manifest (oracle
  *   path); a true-draft order with no invoice → the projected order manifest (basis='order', no oracle).
  *   Shipment COGS/Inventory leg is the §8 follow-up (cost data named-deferred in seed) — NOT in this slice.
+ *   W-PREVIEW-IS-POSTING: the Posting-Preview no longer derives through here for any table model_post has a Doc class for (it renders ModelPost.previewFacts —
+ *   the real poster on a never-committed Trx). The C_Payment / M_MatchInv / M_MatchPO / GL_Journal / M_Inventory branches were deleted with their derive*; the
+ *   remaining branches serve genesis.html, the --engine-dir parity scripts, witnesses, classes with no model_post equivalent and the draft-order projection.
  */
 function derivePostings(db, recordRef, schema, R) {
   R = R || _R();
@@ -1578,7 +1458,6 @@ function derivePostings(db, recordRef, schema, R) {
   // B-3 0-seed classes (W-POST-B3 §W-3) — these read per-asset/project acct config, not R tokens
   if (table === 'M_InOut') return finish(deriveInOut(db, R, id, schema), 'inout', glOf('m_inout', id));
   if (table === 'M_Movement') return finish(deriveMovement(db, R, id, schema), 'movement', glOf('m_movement', id));
-  if (table === 'C_Payment') return finish(derivePayment(db, R, id, schema), 'payment', glOf('c_payment', id));
   if (table === 'C_AllocationHdr') return finish(deriveAllocation(db, R, id, schema, recordRef), 'allocation', glOf('c_allocationhdr', id));
   if (table === 'A_Asset_Addition') return finish(deriveAssetAddition(db, id, schema), 'fa-addition', glOf('a_asset_addition', id));
   if (table === 'A_Depreciation_Entry') return finish(deriveDepreciationEntry(db, id, schema), 'fa-depreciation', glOf('a_depreciation_entry', id));
@@ -1588,12 +1467,8 @@ function derivePostings(db, recordRef, schema, R) {
   if (table === 'C_ProjectIssue') return finish(deriveProjectIssue(db, id, schema), 'project-issue', glOf('c_projectissue', id));
   // W-POST-TAIL classes (HARDEN_MATRIX.md §W-POST-TAIL)
   if (table === 'C_BankStatement') return finish(deriveBankStatement(db, id, schema), 'bank-statement', glOf('c_bankstatement', id));
-  if (table === 'M_MatchPO') return finish(deriveMatchPO(db, id, schema), 'matchpo', glOf('m_matchpo', id));
-  if (table === 'M_MatchInv') return finish(deriveMatchInv(db, R, id, schema), 'matchinv', glOf('m_matchinv', id));   // §65.2 (F25)
   if (table === 'M_Requisition') return finish(deriveRequisition(db, id, schema), 'requisition', glOf('m_requisition', id));
   if (table === 'C_Cash') return finish(deriveCash(db, R, id, schema), 'cash', glOf('c_cash', id));
-  if (table === 'GL_Journal') return finish(deriveGLJournal(db, id, schema), 'gl-journal', glOf('gl_journal', id));   // §69 (F33)
-  if (table === 'M_Inventory') return finish(deriveInventory(db, id, schema), 'inventory', glOf('m_inventory', id));
   var dc = docClassFor(table);   // a bundle's posting class (IDocFactory) - after every built-in class, before the empty fallback
   if (dc && typeof dc.derive === 'function') return finish(dc.derive(db, id, schema, R, recordRef), dc.basis || String(table).toLowerCase(), glOf(String(table).toLowerCase(), id));
   return { lines: [], balanced: false, sumDr: 0, sumCr: 0, absent: [], basis: 'none' };

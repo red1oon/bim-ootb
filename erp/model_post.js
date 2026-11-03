@@ -998,7 +998,28 @@
     trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=Y facts=' + out.length);
     return true;
   }
+  // ── previewFacts — the Posting-Preview's data source (W-PREVIEW-IS-POSTING; replaces doc_poster.derivePostings in erp_preview.js): the REAL post() above, run on the
+  //   caller's Trx, which is NEVER committed (the host seam crud_overlay.withModelTrx / a witness hands a Trx that is dropped afterwards - nothing reaches the db, no Posted flag,
+  //   no fact_acct row, no AD_Note). facts = the fact_acct CREATEs of the group = exactly what Complete writes; refusal = the text post() itself logged (or threw) when it posts nothing.
+  function hasDocClass(table) { var plug = _DP() && _DP().docClassFor(String(table).toLowerCase()); return !!(DOC[String(table).toLowerCase()] || (plug && typeof plug.createFacts === 'function')); }
+  function previewFacts(trx, table, id) {
+    table = String(table).toLowerCase();
+    var doc = trx.get(table, id);
+    if (!doc) return { state: 'absent', posted: false, facts: [], refusal: null, say: [] };
+    var mark = trx.log.length, res = false, exc = null;
+    try { res = post(trx, table, doc, { repost: true }); } catch (e) { exc = String(e && e.message || e); }
+    var say = trx.log.slice(mark), facts = [], refusal = null;
+    if (res === true) trx.groupOps().forEach(function (o) { if (o && o.table === 'fact_acct' && o.op_type === 'CRUD_CREATE') facts.push(o.fields); });
+    else {
+      var ln = say.filter(function (l) { return /^§MODEL-POST table=\S+ id=\S+ posted=\S+ (reason|error)="/.test(l); })[0] || say.filter(function (l) { return /^§MODEL-POST table=/.test(l); })[0] || '';
+      var m = ln.match(/(?:reason|error)="([^"]*)"/);
+      refusal = exc || (m ? m[1] : (ln.replace(/^§MODEL-POST table=\S+ id=\S+ /, '') || 'not posted'));
+    }
+    say.push('§PREVIEW-POST table=' + table + ' id=' + id + ' posted=' + (res === true ? 'Y' : 'N') + ' facts=' + facts.length + (refusal ? ' refusal="' + String(refusal).slice(0, 160) + '"' : '') + ' committed=N');
+    /*PREVIEW-END*/
+    return { state: res === true ? 'posted' : 'refused', posted: res === true, facts: facts, refusal: refusal, say: say };
+  }
   function _DP() { try { return (typeof module !== 'undefined' && module.exports) ? require('./doc_poster') : (typeof window !== 'undefined' ? window : globalThis).DocPoster; } catch (e) { return null; } }
   ML.setPoster(post);
-  return { post: post, DOC: DOC, rate: rate, schemas: schemas, Doc: Doc, DocLine: DocLine, createLine: createLine, updateReverseLine: updateReverseLine };
+  return { post: post, previewFacts: previewFacts, hasDocClass: hasDocClass, DOC: DOC, rate: rate, schemas: schemas, Doc: Doc, DocLine: DocLine, createLine: createLine, updateReverseLine: updateReverseLine };
 });
