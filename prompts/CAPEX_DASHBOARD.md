@@ -260,6 +260,17 @@ QueryCUOM, QueryPAGoal, QueryCPhase, QueryCCurrency, QueryADWFActivity — all `
 - `pa_probe.js`: BEFORE (main code) `§PA_PROBE_VERDICT FAIL judged=4 fail=1` (`legacy=14989562.481 tile=14989562.49`) → AFTER `FAIL judged=4 fail=1` (same assert; after the fresh HHS push `legacy=19985883.288 tile=19985883.30`); `BREAK=1` → FAIL. **Pre-existing, unchanged by this work:** the pilot now holds 3-dp PlannedAmt, and legacy's raw sum differs from the tile's cent-rounded sum at the 3rd decimal (the §5.4 PASS predates the HHS/SHED pushes). Not fixed here; a SQLite-side (tiles.js) rounding question for the owner/next lane. Asserts 1, 3, 4 PASS.
 **Other regressions (BEFORE on main → AFTER):** `witness_fold_one_schedule.js` `§W_FOLD1_VERDICT PASS judged=11 fail=0 inconclusive=0` → same · `witness_find_push_4d.js` `§W_FP4D_VERDICT FAIL judged=5 fail=3` → same 3 FAILs (ORDER PHASE DATES, ONE TASK PER GANTT BAR order=0, NO PROGRAMME → no dates) — already failing on main, it does not use the REST push · `witness_capex.js` NOT run (headless-Chromium witness; the brief forbids browser runs) — `adapters.loadLegacy` change (drop `Filter:''`) is covered by `legacy_snapshot.js` and both twins, which call it.
 
+### 5.9 Money tiles: SUM then round once; W-FIND-PUSH-4D stub follows #2557 (2026-11-03) — spec + result; logs read
+**Defect (found by `pa_probe` once the pilot held 3+ USD projects):** `tiles.js sumBy` rounded each project to the cent and then added (`cents()` per row) — the tile's own formula
+(`SUM(C_Project.PlannedAmt) per C_Currency_ID`) and legacy's PA measure add first and round once: `legacy=14989562.481 tile=14989562.49`, later `19985883.288` vs `19985883.30`. Both twin sides run
+`tiles.js`, so the twin could not see it; only the legacy measure (R0) could. **Fix (SQLite side, CARDINAL):** `sumBy` adds each currency's values exactly (the value's own decimal text as a BigInt
+at 1e-9) and rounds half away from zero once. Every money tile goes through `sumBy` (approved, actual, committed, invoiced, the % of plan and spent denominators).
+**Witness W-TILES-SUM-ONCE** (`capex/tests/witness_tiles_sum_once.js`, node): main's tiles.js FAIL 3/4 (3 × 0.004 → 0 instead of 1 cent; the pilot-shape sum 1498896249 instead of 1498896248;
+-0.005 → 0) → PASS 4/4; `BREAK=1` → FAIL. **End of chain:** `pa_probe` `§PA_PROBE_VERDICT PASS judged=4 fail=0` (legacy 19985883.288 == tile 19985883.29); HHS twin
+`§SHED_TWIN_VERDICT PASS tiles(match=16 diff=0 inconclusive=3) rows(match=302 diff=0)` created +0.
+**Instrument fix:** `capex/tests/witness_find_push_4d.js` stubbed `ProjOrderState.openStore`; #2557 moved the push to `ProjOrderState.shared()`, so the push fell through to a real fetch
+(`§PROJ_PUSH_DBERR not used`) and the witness read an empty store (FAIL 3/5 — reported in §5.8 as "fails on main"). Stub now provides `shared/persistShared` → PASS 5/5 on main + this change.
+
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
 Q2 Project Stage: how do Concept / Initiation / Planning / Execution / Closing map onto `C_Project.C_Phase_ID` (stock `C_Phase` rows are sales-cycle steps in the seed)? Or is it a custom column/`C_ProjectType`?
