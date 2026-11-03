@@ -710,19 +710,6 @@
 <script src="processes/support_stock_proc.js?v=1"></script>
 <!-- /§CP-SCRIPTS -->
 <script src="pos_core.js?v=3"></script>
-<!-- POS_KILLER_DEMO §LAYOUT.3 / E-3 — device-local images folder (IDB), loaded BEFORE pos_lens (window.ImgStore). -->
-<script src="img_store.js?v=2"></script>
-<!-- FOLLOW-UP ROUND 2 §R2-AUDIO — subtle POS earcons. The SAME synth engine the viewer uses (no audio
-     files, no DB); it reads erp/sfx.json (POS-surface config: enabled, ui_clicks:false → only the explicit
-     ring/pay/complete earcons pos_lens.js fires via window.__sfx.play, no per-button tick spam). Guarded:
-     pos_lens._sfx no-ops if absent. -->
-<script src="../viewer/sfx.js?v=1" onerror="console.warn('§POS-AUDIO sfx.js absent — POS earcons silent (guarded)')"></script>
-<script src="pos_lens.js?v=11"></script>
-<!-- Kitchen Display (RESUME_POS_KITCHEN_EINVOICE_OPS_PANELS §T2-SPEC) — queue = FOLD over the op log
-     (KitchenCore, == bim-compiler build/erp source of truth, W-KDS-QUEUE headless) + the dumb-terminal
-     lens (KitchenLens). Serve rides pos_core's completeShipmentOps — load AFTER pos_core. -->
-<script src="kitchen_core.js?v=1"></script>
-<script src="kitchen_lens.js?v=1"></script>
 <!-- §P-11 receipt QR (order ref URL, not payable EMVCo — POS_ADDON_SPEC §P-11 rails-honesty note) -->
 <script src="qrcode.min.js"></script>
 <!-- NINJA EXCEL (bim-compiler internal/NinjaExcelAdaptation.md §6.2, W-NINJA-PILL) — Excel-as-report-binder
@@ -837,7 +824,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   var _pendingWid = null;    // ?window=<id> deep link, opened AFTER login
   var _pendingRid = null;    // ?record=<pk> deep link — land on this record post-login (blank if wrong client/role)
   var _pendingPid = null;    // ?process=<id> deep link — launch this process post-login (§AD-PROC-LIVE, procSet-gated)
-  var _pendingLens = null;   // ?lens=<name> deep link — open a lens post-login (e.g. ?lens=pos)
 
   // open-window state (a faithful single-window desktop; MDI tabs track opened windows)
   var _openWins = {};        // windowId -> { win, name }
@@ -1187,7 +1173,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _pendingWid = new URLSearchParams(location.search).get('window');
     _pendingRid = new URLSearchParams(location.search).get('record');  // §DEEPLINK — set by erp.html globe long-press
     _pendingPid = new URLSearchParams(location.search).get('process'); // §AD-PROC-LIVE — process deep link (mirrors ?window=)
-    _pendingLens = new URLSearchParams(location.search).get('lens');   // §DEEPLINK — lens=pos opens POS surface post-login
     $('idmp-loading').style.display = 'none';
     // ?login=<AD_User_ID | name-substring> auto-logs-in (demo/kiosk wow — zero clicks to the opening screen).
     // Proper practice: tenant SETUP/migration is a SystemAdmin act (System, client 0 — ?login=SuperUser); a
@@ -1491,7 +1476,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (_pendingPid) { var pp = Number(_pendingPid); _pendingPid = null;
       if (_session.procSet && _session.procSet[pp]) { openProcess(pp); _wOpened = true; }
       else console.log('§AD-PROC-LIVE deeplink proc=' + pp + ' DENIED — not in role procSet (ad_process_access)'); }
-    if (_pendingLens) { var ln = _pendingLens; _pendingLens = null; if (ln === 'pos') { openPosFor(); console.log('§DEEPLINK lens=pos opened post-login'); } }
     if (!_wOpened && window.__crud && typeof window.__crud.armResume === 'function') _resumeAfterLogin();   // §52.1a — a deep link wins over resume
     _mobileSurfaceMenu(_wOpened);   // §MOBILE-LANDING: phone lands on an empty canvas → surface the menu drawer
   }
@@ -6969,39 +6953,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _kbMountBoard(root, board);
     console.log('§KANBAN-PILL live cols=' + board.columns.length + ' cards=' + board.cards.length + ' table=' + T + ' groupby=' + gr.col.columnName + ' axis-choices=' + _kbFields.length);
   }
-  // 🛒 POS — the point-of-sale lens (POS_ADDON_SPEC §P-1): tiles from c_poskey, sealed master prices,
-  // Complete = ONE signed group through the SAME published op log the Kanban write path rides.
-  async function openPosFor() {
-    console.log('§POS-PILL action=open');
-    if (!_session) { status('Log in first'); return; }
-    if (!window.PosLens || !window.POSCore || !window.ERPEngine) { status('POS lens not loaded.'); return; }
-    var ok = await _ensureKanbanERP();                    // publishes window.ERP (kernel + signer + seam) once
-    if (!ok || !window.ERP) { status('POS: write path unavailable (window.ERP not published)'); console.log('§POS-PILL write-path=absent'); return; }
-    PosLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
-      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status,
-      // §S-2b seam (WH_POS_PICK_LANE W-1): persist the op log to IDB (bim_ootb_cache/dbs/idmp_kanban_proj)
-      // so the warehouse-walk page can fold a deliver-later sale; same store the Kanban write path persists.
-      persist: function () { return window.KanbanHost.persist(window.ERP.opDb, _KPROJ); },
-      // T7 host opt-in (prompts/T7_HOST_WIRING_SPEC.md §Build 5): past ~5k ops the log shards (signed
-      // snapshot boundary, archive-confirmed) and the shrunk hot blob persists = instant first paint;
-      // full-history folds lazily pull the verified archive back on demand.
-      maybeShard: function () { return window.KanbanHost.maybeShard(window.ERP.opDb, _KPROJ); },
-      archivedOps: function () { return window.KanbanHost.archivedOps(window.ERP.opDb, _KPROJ); } });
-  }
-  // 🍳 Kitchen Display (§T2-SPEC) — the "ordered, not yet delivered" queue: KitchenCore folds the SAME
-  // published op log the POS writes (deliver-later shipments born DR) ∪ the §S-2 seed selector; Serve =
-  // ONE signed group riding completeShipmentOps. Same write-path bootstrap as openPosFor.
-  async function openKitchenFor() {
-    console.log('§KDS-PILL action=open');
-    if (!_session) { status('Log in first'); return; }
-    if (!window.KitchenLens || !window.KitchenCore || !window.POSCore) { status('Kitchen lens not loaded.'); return; }
-    var ok = await _ensureKanbanERP();
-    if (!ok || !window.ERP) { status('Kitchen: write path unavailable (window.ERP not published)'); console.log('§KDS-PILL write-path=absent'); return; }
-    KitchenLens.open({ b3: _b3(window.__idmpDb), opDb: window.ERP.opDb, KO: window.KernelOps,
-      seal: window.ERP.seal, chainVerify: window.ERP.chainVerify, overlay: _overlay, el: el, status: status,
-      // T7 (T7_HOST_WIRING_SPEC §Build 4): pre-shard deliver-later tickets stay in the queue — lazy archive.
-      archivedOps: function () { return window.KanbanHost.archivedOps(window.ERP.opDb, _KPROJ); } });
-  }
   // ⚖ Rule — THE ONE GESTURE: edit one rule → K records re-fold live, signed + reversible (RuleFold).
   function openRuleFor() {
     console.log('§RULE-PILL action=open');
@@ -7088,7 +7039,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       team: function () { if (window.TeamPanel) window.TeamPanel.open(); },   // §13.8 Team pill
       dashboard: openDashboard,   // unified multi-view (Graph/Cards/Pivot/List/Timeline) — replaces the 3 separate lens pills
       graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,   // kept: openDashboard fans into them
-      rule: openRuleFor, pos: openPosFor, kitchen: openKitchenFor,
+      rule: openRuleFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
       erpdoc: openReadCompare,
       // RED PILL — abstract ZOOM ACROSS (zoom_across.js): collect the cross-surface destinations available for
@@ -7141,11 +7092,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (navigator.share) navigator.share({ title: 'Warehouse Walk', url: url });
         else { try { navigator.clipboard.writeText(url); } catch(e){} }
         console.log('§WH-SHARE url=' + url); },
-      posShare: function () {
-        var url = location.href.split('?')[0] + '?lens=pos';
-        if (navigator.share) navigator.share({ title: 'POS — Garden User · Store', url: url });
-        else { try { navigator.clipboard.writeText(url); } catch(e){} }
-        console.log('§POS-SHARE url=' + url); },
       // HISTORY_KNOB_DIAL.md — W pill: tap = cross-page overlay; long-press drawer (Z + bomb) is in idmp_pills.js.
       worldhist: function () {
         // FUNDAMENTAL LAW — History is opt-in: pressing it REVEALS the bottom scrubber + the Blue-Future band
@@ -7154,17 +7100,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         console.log('§IDMP-HISTORY-TOGGLE open=' + on);
         if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen();
       },
-      // Sound FX — the SAME speaker pill as the BIM viewer (sfx.js loaded above publishes window.toggleSfx /
-      // window.__sfx). Tap toggles the ERP/POS earcons; the choice PERSISTS (localStorage sfx_on). builder.sync()
-      // re-lights the pill on the spot (isActive → __sfx.isOn()), like redpill/showme.
-      audio: function () {
-        if (window.toggleSfx) window.toggleSfx();
-        try { if (window.IdmpPills && IdmpPills.builder) IdmpPills.builder.sync(); } catch (e) {}
-      }
     };
     // §D — red pill lit in "just the pill" mode · §P3 — ShowMe pill lit while the guided tour is on
-    window.IdmpPillActive = { showme: _showMeOn,
-                              audio: function () { return !!(window.__sfx && window.__sfx.isOn && window.__sfx.isOn()); } };
+    window.IdmpPillActive = { showme: _showMeOn };
     // §C lifecycle — Install/Migrate belong at the FRONT DOOR (pre-client): show while the login/tenant picker
     // is open OR no client is entered; HIDE once a client context is committed (GATE-2). idmp_pills.js reads this.
     window.IdmpPillStage = function () {
@@ -7430,11 +7368,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     }
     // §CONNECT-ERP-SCRUB-END
 
-    // §AD-GATE — showWhen:"pos-station" (POS_ADDON_SPEC §P-1): true only when the tenant carries a c_pos row.
-    window.IdmpPillPosGate = function () {
-      try { var r = _b3(window.__idmpDb).prepare('SELECT c_pos_id FROM c_pos LIMIT 1').get(); return !!(r && r.c_pos_id); }
-      catch (e) { return false; }   // table absent in a slim tenant → pill honestly off the bar
-    };
     if (window.IdmpPills && window.IdmpPills.mount) window.IdmpPills.mount();
     else console.warn('§IDMP-PILLS registry not loaded (idmp_pills.js)');
     // §TEAMS-EMBED — mount the Teams pill into the just-built #idmp-pill bar. Flag-guarded: OFF (default)

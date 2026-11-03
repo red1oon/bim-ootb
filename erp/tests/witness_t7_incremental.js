@@ -53,8 +53,7 @@ var K = global.window.KernelOps, TipFold = global.window.TipFold, Shard = global
 var EK = require(path.join(ERP, 'erp_kernel.js'));
 require(path.join(ERP, 'kanban_host.js'));                     // W-T7-HOST: the host glue under test
 var KH = global.window.KanbanHost;
-var PL = require(path.join(ERP, 'pos_lens.js'))._t7;           // the shard-aware pure folds (node seam)
-var KC = require(path.join(ERP, 'kitchen_core.js'));
+// (POS pill folds pos_lens._t7 / kitchen_core retired with the pill, prompts/POS_PLUGIN_LOCAL_FIRST.md §14.8 / §17.4: their §T7-COUNT / §T7-LAZY arms are removed; the host shard glue is still judged by the arms below)
 
 var fails = 0;
 function verdict(ok, label, detail) { if (!ok) fails++; console.log('   ' + (ok ? '🟢' : '🔴') + ' ' + label + (detail ? ' — ' + detail : '')); }
@@ -300,14 +299,6 @@ function memStore() {
   var nH = dbH.exec('SELECT COUNT(*) FROM kernel_ops')[0].values[0][0];
   console.log('   built host-scale log: ' + nH + ' signed ops (' + ms(tH) + 'ms), pre-shard facts: 1 DR ticket + 1 open PO\n');
 
-  // the pre-shard truths (what the folds MUST still say after the boundary):
-  var idsPre = PL.nextIds(dbH);
-  var mvPre = JSON.stringify(PL.logMovements(dbH));
-  var pendPre = JSON.stringify(PL.pendingInbound(dbH, b3mock, 50));
-  var kqPre = KC.queue(KC.foldTickets(hotRows(dbH))).map(function (t) { return t.m_inout_id; });
-  verdict(kqPre.indexOf(910002) >= 0, '§T7-HOST pre-shard: the DR ticket is queued', 'queue=' + JSON.stringify(kqPre));
-  verdict(JSON.parse(pendPre)['124'] === 700, '§T7-HOST pre-shard: open PO counts 7.00 on-order for product 124', 'pend=' + pendPre);
-
   // §T7-HOST — shard through the host glue; measured first-paint proxies (blob size + cold boot verify).
   var bytesPre = dbH.export().length;
   dbH.__krnVerifiedTip = null;
@@ -321,33 +312,18 @@ function memStore() {
   verdict(bytesPost < bytesPre, '§T7-HOST persisted-blob size drop (first-paint payload)', bytesPre + '→' + bytesPost + ' bytes');
   verdict(tBootPost < tBootPre, '§T7-HOST measured cold boot-verify drop', tBootPre + 'ms→' + tBootPost + 'ms (' + nH + '→' + rHost.hotLen + ' ops)');
 
-  // §T7-COUNT — PK continuity: the very next ids are IDENTICAL pre vs post shard (no collision window).
-  var idsPost = PL.nextIds(dbH);
-  verdict(idsPost.orderId === idsPre.orderId && idsPost.inoutId === idsPre.inoutId,
-    '§T7-COUNT nextIds continuity across the boundary', 'pre=' + idsPre.orderId + ' post=' + idsPost.orderId);
   // generation 2: more sales, shard again (forced low threshold), continuity + CUMULATIVE opCounts hold.
-  var idsG2a = PL.nextIds(dbH);
-  await K.commitGroup(dbH, grp([{ op_type: 'CREATE_DOCUMENT', op_uuid: 'u-g2-o', table: 'C_Order', c_order_id: idsG2a.orderId }]), { gid: 'g-gen2', baseTs: 910000 });
+  await K.commitGroup(dbH, grp([{ op_type: 'CREATE_DOCUMENT', op_uuid: 'u-g2-o', table: 'C_Order', c_order_id: 920001 }]), { gid: 'g-gen2', baseTs: 910000 });
   createdDocs += 1;
   var rHost2 = await KH.maybeShard(dbH, 'hostlog', { store: storeH, persist: false, threshold: 2 });
   verdict(rHost2.sharded === true && rHost2.seq === 2, '§T7-COUNT generation-2 shard closes', 'seq=' + rHost2.seq);
   var snap2 = JSON.parse(dbH.exec("SELECT parameters FROM kernel_ops WHERE op_type='SHARD_SNAPSHOT' ORDER BY id DESC LIMIT 1")[0].values[0][0]).payload;
   verdict(Number(snap2.opCounts.CREATE_DOCUMENT) === createdDocs,
     '§T7-COUNT opCounts CUMULATIVE across two generations', 'recorded=' + snap2.opCounts.CREATE_DOCUMENT + ' truth=' + createdDocs);
-  var idsG2b = PL.nextIds(dbH);
-  verdict(idsG2b.orderId === idsG2a.orderId + 10, '§T7-COUNT PK band stays monotonic after gen-2 shard', idsG2a.orderId + '→' + idsG2b.orderId);
 
-  // §T7-LAZY — first SHOW the loss (the named issue: hot-only folds go thin), then the lazy cure.
-  var kqThin = KC.queue(KC.foldTickets(hotRows(dbH))).map(function (t) { return t.m_inout_id; });
-  verdict(kqThin.indexOf(910002) < 0, '§T7-LAZY (issue named) hot-only kitchen fold LOSES the pre-shard DR ticket', 'thinQueue=' + JSON.stringify(kqThin));
-  verdict(JSON.stringify(PL.pendingInbound(dbH, b3mock, 50)) !== pendPre, '§T7-LAZY (issue named) hot-only pending fold LOSES the open PO', 'hot-only=' + JSON.stringify(PL.pendingInbound(dbH, b3mock, 50)));
+  // §T7-LAZY — the archive walk (the pill-specific kitchen/pending/movement folds over it were retired with the pill)
   var arch = await KH.archivedOps(dbH, 'hostlog', { store: storeH });
   verdict(arch.ok === true && arch.shards === 2 && arch.ops.length > 0, '§T7-LAZY archivedOps walks 2 shards back to GENESIS', 'ops=' + arch.ops.length + ' shards=' + arch.shards);
-  var kqLazy = KC.queue(KC.foldTickets(arch.ops.concat(hotRows(dbH)))).map(function (t) { return t.m_inout_id; });
-  verdict(kqLazy.indexOf(910002) >= 0 && JSON.stringify(kqLazy) === JSON.stringify(kqPre),
-    '§T7-LAZY kitchen queue [archived ⊕ hot] == pre-shard queue (ticket still owed)', 'queue=' + JSON.stringify(kqLazy));
-  verdict(JSON.stringify(PL.logMovements(dbH, arch.ops)) === mvPre, '§T7-LAZY logMovements [archived ⊕ hot] == pre-shard fold', 'events=' + JSON.parse(mvPre).length);
-  verdict(JSON.stringify(PL.pendingInbound(dbH, b3mock, 50, arch.ops)) === pendPre, '§T7-LAZY pendingInbound [archived ⊕ hot] == pre-shard fold (no double order)', 'pend=' + pendPre);
   var arch2 = await KH.archivedOps(dbH, 'hostlog', { store: storeH });
   verdict(arch2.cached === true && arch2.ops.length === arch.ops.length, '§T7-LAZY second fetch serves the per-generation cache', 'cached=' + arch2.cached);
 

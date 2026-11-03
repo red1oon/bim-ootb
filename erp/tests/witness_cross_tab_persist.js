@@ -83,17 +83,7 @@ async function seedSealed(SQL, uuid) {
   var C = A;   // A itself extends its own stored tip
   verdict(KernelOps._storedTipIsAncestor(C.db, storedTip) === true, '§T6-FAST-FORWARD a tab that extends the stored tip → allow');
 
-  // ── §T6-CALLER — pos_lens/kitchen_lens branch on res.committed (silent-loss-in-log half) ──
-  function guardsCommitted(file) {
-    var src = fs.readFileSync(path.join(ERP, file), 'utf8');
-    var groups = (src.match(/\.commitGroup\(/g) || []).length;
-    var guards = (src.match(/!res\s*\|\|\s*!res\.committed/g) || []).length;
-    return { groups: groups, guards: guards };
-  }
-  ['pos_lens.js', 'kitchen_lens.js'].forEach(function (f) {
-    var g = guardsCommitted(f);
-    verdict(g.guards >= g.groups, '§T6-CALLER ' + f + ' every commitGroup checks res.committed', g.guards + ' guards / ' + g.groups + ' commitGroup');
-  });
+  // (§T6-CALLER over pos_lens.js / kitchen_lens.js retired with the POS pill, prompts/POS_PLUGIN_LOCAL_FIRST.md §14.8 / §17.4: no remaining caller of commitGroup in those files)
 
   console.log('\n' + (fails ? '🔴 W-CROSS-TAB-PERSIST ' : '🟢 W-CROSS-TAB-PERSIST ') + (fails ? fails + ' FAIL' : 'ALL PASS'));
   process.exit(fails ? 1 : 0);

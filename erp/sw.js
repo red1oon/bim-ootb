@@ -351,11 +351,6 @@ const PRECACHE_ASSETS = [
   'blue_future.js',    // FRONTEND_LANE_MASTER §OUTSTANDING item 0 — Blue Future UNOFFICIAL speculative-branch skin (W-BLUE-FUTURE-LIVE)
   'crud_ops.json',     // SO_FULL_CRUD_GAP.md — keyed CRUD verb/field/docAction store the overlay fetches on enable (incl. T1 docPolicy fan-out table)
   'pos_core.js',       // POS_ADDON_SPEC §P-1..§P-4 — POS fold glue (window.POSCore), == bim-compiler build/erp source
-  'img_store.js',      // POS_KILLER_DEMO E-3 — device-local images folder (IDB, window.ImgStore), == bim-compiler build/erp source
-  'pos_lens.js',       // POS_ADDON_SPEC — dumb-terminal POS lens (window.PosLens): record/pay/SEND, zero client state
-  'kitchen_core.js',   // §T2-SPEC Kitchen Display fold (window.KitchenCore, W-KDS-QUEUE), == bim-compiler build/erp source
-  'kitchen_lens.js',   // §T2-SPEC Kitchen Display lens (window.KitchenLens): fold-rendered tickets, Serve = one signed group
-  'sfx.json',          // §R2-AUDIO — ERP-surface SFX config (subtle POS earcons; sfx.js itself rides the viewer scope)
   'ninja_excel.js',   // NINJA EXCEL — Excel-as-report-binder engine (read/gate/run/verify; == bim-compiler build/erp)
   'ninja_rule.js',    // NINJA EXCEL — RULE tier: business phrase → SQL candidates from the AD dictionary (§7)
   'ninja_pill.js',    // NINJA EXCEL — the lens UI (drop/download); xlsx.mini.min.js lazy-loads, see below

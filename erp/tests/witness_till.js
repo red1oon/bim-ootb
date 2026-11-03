@@ -670,6 +670,10 @@ var MUTANTS = [
   { name: 'ticket-split-documentno', arms: 'deposit', expect: 'contiguous', edit: { file: 'erp/till_core.js', from: 'documentno: key, m_product_id: l.pid,', to: "documentno: key + (l.pid === 129 ? 'x' : ''), m_product_id: l.pid," } },
   { name: 'till-completes-the-order', arms: 'deposit', expect: 'zero-core-docs', edit: { file: 'erp/till.js', from: 'var res = await depositGroup(ops);', to: "ops.push({ op_type: 'CRUD_CREATE', key: 'c_order', table: 'c_order', verb: 'create', fields: { ad_client_id: S.cfg.client, ad_org_id: S.cfg.org, documentno: key, docstatus: 'CO' } }); var res = await depositGroup(ops);" } },
   { name: 'tax-left-out-of-total', arms: 'deposit', expect: 'T1-to-the-cent', edit: { file: 'erp/till_core.js', from: 'gross: r.grandTotal, rows: r.rows', to: 'gross: r.totalLines, rows: r.rows' } },
+  { name: 'refund-sign-dropped', arms: 'refund', expect: 'rows-negative', edit: { file: 'erp/till_core.js', from: 'payamt: sgn * p.applied / 100,', to: 'payamt: p.applied / 100,' } },
+  { name: 'recall-leaves-held-row', arms: 'held', expect: 'recall-removes-held-row', edit: { file: 'erp/till_ext.js', from: "st().held = (st().held || []).filter(function (y) { return y.id !== id; });", to: "(st().held = st().held || []).push(x);" } },
+  { name: 'line-discount-not-folded', arms: 'bar', expect: 'discount-folded', edit: { file: 'erp/till_core.js', from: 'if (l.disc && last) {', to: 'if (false && l.disc && last) {' } },
+  { name: 'edit-keeps-old-rows', arms: 'edit', expect: 'old-rows-gone', edit: { file: 'erp/till.js', from: 'if (t.old) {                                                                       // Edit:', to: 'if (false) {                                                                       // Edit:' } },
   { name: 'pad-dot-after-factor-integer', arms: 'pad', expect: 'L1108', edit: { file: 'erp/till_pad.js', from: "{ s.por += '.'; s.st = ST.PORDEC; }", to: "{ s.por += '.'; }" } }
 ];
 function runMutants() {

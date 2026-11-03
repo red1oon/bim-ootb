@@ -32,7 +32,6 @@
     { id: 'doc_poster', core: true, label: 'GL posting (== fact_acct)' },
     { id: 'genesis', core: true, label: 'Initial Tenant Setup (op-logged birth)' },
     { id: 'system_tenant', core: true, label: 'System(0) login surface' },
-    { id: 'pos_lens', core: false, label: 'POS terminal lens' },
     { id: 'kanban_lens', core: false, label: 'Kanban board' },
     { id: 'plugin_overlay', core: false, label: 'Plugin Engine (foreign bundles)' },
     { id: 'blue_future', core: false, label: 'Blue Future (speculative branch)' },
