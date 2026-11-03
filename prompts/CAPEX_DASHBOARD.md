@@ -24,9 +24,9 @@ definitions feed L2 rows); Q1–Q8 still open.
 · WS lookups by DataRow keys, no free Filter (IDEMPIERE-1784, #2558) · money tiles SUM-then-round (#2559) · P5 viewer push lands in iDempiere, password in memory only (#2561) · viewer store opens with the
 ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-compiler): renewal #316, P5 tab login context #319, browser checks + bundle rule + ZK requires #321.
 **▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
-1. **G1 ✅ DONE (witness W-PA-ENGINE PASS 30/30 vs the pilot, BREAK=1 FAIL — §5.15)** `erp/pa_engine.js` — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
+1. **G1 ✅ DONE — ⚠ CORRECTED §5.18: the twin's PA owner is the EXISTING `erp/overlay/goal_engine.js` (DASHBOARD-PARITY D1); the §5.15 `erp/pa_engine.js` was a duplicate and is deleted; W-PA-ENGINE PASS 22/22 on the owner** — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
-2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) · **G4** bucket tiles (health / schedule / budget status:
+2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4** bucket tiles (health / schedule / budget status:
    PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
 3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
 **▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
@@ -104,8 +104,7 @@ BIM link (row action): `../viewer/viewer.html?db=<buildingsBase><Value>_extracte
 only as good as the chain behind it; the twin is what lets us say so with evidence. So the dashboard must not become a second, private formula engine.
 **Measured:** legacy pilot holds `PA_Measure` 4 · `PA_MeasureCalc` 6 (columns `SelectClause, WhereClause, DateColumn, KeyColumn, OrgColumn, BPartnerColumn, ProductColumn, AD_Table_ID`) ·
 `PA_Goal` 4 · `PA_ColorSchema` 2 (e.g. "Red (50) - Yellow (100) - Green": mark1 50 / mark2 100 / mark3 9999) · `PA_DashboardContent` 12. The SQLite seed has `pa_measure`, `pa_goal`,
-`pa_dashboardcontent`, `pa_ratio*`, `pa_report*` (+ `pa_measurecalc`, `pa_colorschema`, `ad_chart` from `erp/patches/build_ad_seed_patch.sh:40`) — **but no SQLite code runs them** (only `erp/team_plan.js`
-mentions PA). So: legacy's design is "dashboard = rows"; ours is "dashboard = `tiles.js`".
+`pa_dashboardcontent`, `pa_ratio*`, `pa_report*` (+ `pa_measurecalc`, `pa_colorschema`, `ad_chart` from `erp/patches/build_ad_seed_patch.sh:40`) — ~~**but no SQLite code runs them**~~ ⚠ WRONG, see §5.18: `erp/overlay/goal_engine.js` runs them. So: legacy's design is "dashboard = rows"; ours is "dashboard = `tiles.js`".
 **Consequences (to verify in R0, not assumed):** (a) much of a CAPEX dashboard is expressible in legacy WITHOUT Java — counts/sums as MeasureCalc SQL, thresholds as a ColorSchema (= client Q1), charts as
 AD_Chart; (b) per-project logic (EVM health, schedule buckets, average delay) needs either SQL in MeasureCalc or stays named in `tiles.js`; (c) once tiles are PA rows, the SAME definition runs on both
 sides — the twin compares a definition's result, not two hand-written formulas — and the "editor" is the generic AD windows (AD-LAYER LAW) — "without coding or AI" is literally true.
@@ -467,6 +466,27 @@ proven against legacy. `§PA_TILES_VERDICT PASS judged=23 fail=0 inconclusive=2`
 **Finding (open, named):** the twin's BDT sum reads `30286701.636940002` — SQLite SUM over REAL (binary double), where legacy's NUMERIC sum is exact. It matches at legacy's own scale (5 dp) and to the
 cent, so no tile differs today, but the raw value is not legacy's. Fix belongs in the kernel's money path (an exact SUM for NUMERIC columns, one place), not in the PA rows or the engine — the
 `bigdecimal.js` header already names this risk (`docs/DepreciationPerf.md`). **Next: G3** — the renderer from PA_DashboardContent rows (W-PA-RENDER).
+
+### 5.18 CORRECTION — one PA engine, not two (2026-11-03; found while scoping G3)
+**What was wrong:** §5.13's "measured" line said *no SQLite code runs PA rows (only `erp/team_plan.js` mentions PA)*. It was never measured: `erp/overlay/goal_engine.js` (bim-compiler
+`prompts/ERP_DEPTH_FILM.md` §DASHBOARD-PARITY D1, Witness W-GOAL-ENGINE) already ports MMeasureCalc.getSqlPI / addRestrictions / MRole client-org / setGoalPerformance, plus SQLite ports of `trunc`,
+`invoiceopen`, `currencybase` and the `RV_C_Invoice` / `C_Invoice_v` views; `erp/overlay/home.js` + `dashboard_home.js` + `dashboard_gadgets.js` already RENDER the legacy home dashboard from
+PA_DashboardContent with legacy's Performance gadget and MColorSchema colours. §5.14/§5.15 built a SECOND engine (`erp/pa_engine.js`) beside it — AD-LAYER LAW rule 5 broken (one implementation per
+responsibility). The grep that would have found it (`grep -rln PA_DashboardContent erp`) is what found it.
+**Fixed (deletion budget):** `erp/pa_engine.js` DELETED (−229 lines; branch total +125 / −310). `goal_engine.js` keeps `evaluate` and gains only what no owner had: `accessOf` (MOVED from `home.js` `session()`, rule unchanged —
+`home.js` now calls it, −2 lines there), `updateMeasureGoals` / `updateGoal` (store a goal the way MMeasure.updateCalculatedGoals / MGoal.updateGoal do, built ON `evaluate` — no second SQL builder)
+and `installModel` (the MGoal.afterSave model class). `erp/migration_apply.js` stays (separate responsibility); `to_timestamp` in `callouts/sqlfn.js` stays — its consumer is the migration scripts'
+own `Created` values (removing it was tried and the twin then refused every statement, `no such function: TO_TIMESTAMP`).
+**Re-witnessed on the owner:** W-PA-ENGINE `§PA_ENGINE_VERDICT PASS judged=22 fail=0 inconclusive=0` (pilot A: legacy 39971166.170 == twin 39971166.17; B tiles.js PASS; Q1–Q4 legacy transaction
+behaviours PASS through `installModel`); `BREAK=1` → FAIL 2. W-PA-TILES-ORACLE `PASS judged=23 fail=0 inconclusive=2`; `BREAK=1` → FAIL 22. Owner witnesses unchanged: W-GOAL-ENGINE PASS 5/5 ·
+W-DASH-PERF PASS 5/5 · W-DASH-SELECT PASS 5/5 · W-DASH-DICT PASS 19/19 (run WITHOUT `NODE_PATH` — with it they load npm sql.js against the vendored wasm and crash: instrument, not defect).
+`witness_core_untouched` FAIL 2: CU1 names the `erp/pa_engine.js` deletion (intended); CU4 names `erp/plugins/mf_lens.mjs` referencing an overlay — not touched by this lane, pre-existing.
+**§5.15 findings that were artefacts of the duplicate (retracted):** "5 of 7 PA_MeasureCalc run" — the owner's `install(db)` provides the views; on the owner every calculated seed goal evaluates
+(`§PA_ENGINE_X_OF_N runs=3 of 3`). The BDT float tail (`30286701.636940002`, §5.17) — the owner rounds the actual to 6 dp, giving legacy's `30286701.63694`; a legacy value with more than 6 decimals
+would still differ (named, not seen). **Divergence to judge next (named):** `dashboard_gadgets.colorOf` does not apply MGoal.getColor's "target 0 → white" (:463-475); legacy's ZK gadget path decides
+whether that rule shows — read `WPAPanel`/`WPAWidget` before changing anything.
+**Next: G3** — the CAPEX goals on the EXISTING home dashboard: a PA_DashboardContent row (migration script, LEGACY CONVENTION) for the Performance gadget where it is missing, then W-PA-RENDER =
+the rendered goal values in `#idmp-home` == `goal_engine` values, read headlessly from the DOM.
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
