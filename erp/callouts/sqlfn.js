@@ -278,6 +278,15 @@
     if (fmt === 'MM' || fmt === 'MONTH') return new Timestamp(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
     return TimeUtil.getDay(t);
   };
+  // to_timestamp(text, format) — PostgreSQL builtin; what DB_PostgreSQL.TO_DATE emits (org.compiere.db.postgresql.provider/.../DB_PostgreSQL.java:446-468): only the two
+  //   formats legacy writes, 'YYYY-MM-DD' (dayOnly) and 'YYYY-MM-DD HH24:MI:SS'. Any other format is NOT guessed → null (CAPEX_DASHBOARD.md §5.14 E1, PA date filters).
+  F.to_timestamp = function (txt, fmt) {
+    if (txt == null) return null;
+    var f = String(fmt || '').toUpperCase(), t = String(txt);
+    if (f === 'YYYY-MM-DD' && /^\d{4}-\d{2}-\d{2}$/.test(t)) return Timestamp.of(t + ' 00:00:00');
+    if (f === 'YYYY-MM-DD HH24:MI:SS' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) return Timestamp.of(t);
+    return null;
+  };
   // nvl(a, b) — adempiere.nvl (text,text / numeric,integer / integer,numeric overloads, pg_get_functiondef 2026-10-05): RETURN COALESCE($1, $2).
   //   Used by @SQL= column defaults, e.g. C_InvoiceLine.Line `SELECT NVL(MAX(Line),0)+10 …` (GridField.defaultFromSQLExpression).
   F.nvl = function (a, b) { return a == null ? b : a; };
@@ -575,7 +584,7 @@
 
   // SQLite binds a UDF by (name, nArg) and sql.js takes nArg from fn.length — each wrapper declares the PL/pgSQL arity
   var ARITY = { bompricestd: [2], bompricelist: [2], bompricelimit: [2], currencyrate: [6], currencyround: [3], currencyconvert: [7],
-    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
+    currencybase: [5], invoiceopen: [2], invoicediscount: [3], paymenttermdiscount: [5], paymenttermduedate: [2], paymenttermduedays: [3], invoicewriteoff: [1], nvl: [2], get_sysconfig: [4], nextbusinessday: [2], getdate: [0], statement_timestamp: [0], trunc: [1, 2], to_timestamp: [2], add_months: [2], adddays: [2], subtractdays: [2], daysbetween: [2], charat: [2], firstof: [2], round: [2],
     bomqtyonhand: [3], bomqtyonhandforreservation: [3], bomqtyordered: [3], bomqtyreserved: [3], bomqtyavailable: [3],
     paymentavailable: [1], invoiceopentodate: [3], acctbalance: [3], documentno: [1], instr: [2, 3, 4], generate_uuid: [0, 1],
     invoicepaid: [3], invoicepaidtodate: [4], paymentallocated: [2], currencyconvertpayment: [2, 3, 4], prodqtyordered: [2], prodqtyreserved: [2], bpartnerremitlocation: [1],

@@ -24,7 +24,7 @@ definitions feed L2 rows); Q1–Q8 still open.
 · WS lookups by DataRow keys, no free Filter (IDEMPIERE-1784, #2558) · money tiles SUM-then-round (#2559) · P5 viewer push lands in iDempiere, password in memory only (#2561) · viewer store opens with the
 ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-compiler): renewal #316, P5 tab login context #319, browser checks + bundle rule + ZK requires #321.
 **▶ NEXT — TASK 1 (dashboard, §5.13 build order; spec line + witness before each):**
-1. **G1** `erp/pa_engine.js` — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
+1. **G1 ✅ DONE (witness W-PA-ENGINE PASS 30/30 vs the pilot, BREAK=1 FAIL — §5.15)** `erp/pa_engine.js` — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
 2. **G2** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3** renderer from PA_DashboardContent (W-PA-RENDER) · **G4** bucket tiles (health / schedule / budget status:
    PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
@@ -401,7 +401,35 @@ So the engine has ONE job: given the same PA rows and the same project data, pro
 **Release model (owner, 2026-11-03: "so we maintain one, deploy twin or legacy in the final release"):** ONE maintained artefact = the PA rows (+ the engine's tests). Release target is a choice, not a fork: **legacy** = the rows shipped as an iDempiere migration script / 2Pack (stock ZK renders and computes); **twin** = the same rows in the SQLite-WASM ERP DB (boot overlay/patch), `erp/pa_engine.js` computes. A row edited once goes to both; the twin-vs-legacy parity run is the proof that choosing either gives the same numbers. No dashboard code is forked per target.
 **Not in G1 (named, so they are not silently dropped):** the renderer and tile kinds (G3) · tiles as PA rows (G2) · per-project health/schedule/budget buckets, which a single `SELECT SUM/COUNT` cannot express (G4 — decided there after measuring) · the editor (G5) · `AD_Chart` · Ratio/Request/Project/Manual/Achievement measures · the DOWN copy (G6).
 **Open measurements before code (each answered by a `§` line, not a guess):** (1) role-access predicate parity E2 · (2) transaction-isolation behaviour E11 · (3) `convertSql` X-of-N on the 7 pilot MeasureCalcs · (4) whether `ad_printcolor` holds the schema's four colours in the seed (colour result needs real rows).
-**Status:** SPEC ONLY — no code written. Next: the four measurements, then W-PA-ENGINE RED first (against a stub engine), then `erp/pa_engine.js`.
+**Status:** built — see §5.15.
+
+### 5.15 RESULT — R2/G1 built (2026-11-03); logs read (scratch, not committed)
+**Owner, same day:** *"yes of course the PA model has to be the plugin. Do it as migration script be less hassle and intuitive to devs. Proceed"* → the legacy-side PA definition ships as an iDempiere
+migration script (data only, LEGACY CONVENTION) — and the twin applies **the same file** (`erp/migration_apply.js`), so there is ONE artefact for both release targets.
+**The four measurements (before code):** (1) E2 — `erp/ad_access.js` has NO row-level SQL predicate (no `addAccessSQL` twin; it gates windows/processes only) → the engine ports the client+org part
+of `MRole.addAccessSQL` :2074-2130 itself; table / record / dependent access and summary-org expansion are NOT ported and log `§PA_ACCESS_PARTIAL` / `§PA_ACCESS_SUMMARY_ORG` (role 102 holds 1 summary
+org). (2) E11 — `ML.Trx.q` IS the committed host reader (`model_layer.js:80-82`); the pending overlay lives only in `find/get` → reading goals through `trx.q` reproduces legacy's no-trx re-read
+WITHOUT emulation (Q1/Q3 below). (3) `convertSql` X of N: **5 of 7** PA_MeasureCalc rows run on the twin (6 stock + R0); fails: #100 "Invoiced Net Revenue" (`RV_C_Invoice ⋈ RV_C_InvoiceLine` — sql.js
+throws with NO message; each view alone reads 20 / 56 rows) and #105 "Open Invoice Amount" (`C_Invoice_v` view absent from the twin). (4) colours: `ad_printcolor` 23 rows and
+`ZK_DASHBOARD_PERFORMANCE_REFRESH_INTERVAL`=1800000 are in seed+patch. Also found: PostgreSQL `TO_TIMESTAMP` (what `DB_PostgreSQL.TO_DATE` :446-468 emits for PA date filters) had no SQLite port.
+**Built (+ lines, nothing superseded yet — `tiles.js` stays the oracle until G3, whose PR states the deletion budget):** `erp/pa_engine.js` (E1–E12 as tabled in §5.14, cited inline) ·
+`erp/migration_apply.js` (applies a legacy migration script through `convertSql`; `register_migration_script` → `§MIG_REGISTER_SKIPPED`: the twin has no AD_MigrationScript table) ·
+`erp/callouts/sqlfn.js` `to_timestamp(text, fmt)` — only the two formats legacy writes, anything else → NULL · `erp/tests/witness_pa_engine.js`.
+**W-PA-ENGINE (`NODE_PATH=<bim-ootb>/node_modules node erp/tests/witness_pa_engine.js [--offline]`):**
+- M: `§MIG_APPLY file=202611031900_CAPEX-R0.sql statements=3 ok=2 failed=0 skipped=1` — the same script legacy applied, unchanged.
+- V: 21 vectors from the Java rules PASS (performance 6 dp HALF_UP / target 0 → 0; percent truncates toward zero; schema 100 boundaries 50/51/100/101/9999/10000/−5; colour-id fallback; white at target 0;
+  main-table synonym; access predicate `… AND C_Project.AD_Client_ID IN (0,11) AND C_Project.AD_Org_ID IN (0,11,12,50000,…)`).
+- N: broken SQL → 0 + state ERROR (`no such column`); empty → 0 + EMPTY; type Q → INCONCLUSIVE, no number.
+- Q (model class in the layered registry, `PA.install`): Q1 a new goal is NOT computed by its own create (the hook's committed read saw 0 goals) · Q2 a target change computes it (600 == the measure SQL) ·
+  Q3 performance 0 with target now 1 = scored against the previous committed target, as legacy · Q4 force=false not due inside 30 min. (Harness note: `H.save` commits through `ML.run` — a first draft also
+  called `H.apply` and inserted the goal twice; caught by the log, guarded by Q0.)
+- A (pilot, read-only `query_data`): first run INCONCLUSIVE — legacy goal stale (computed 12:05, last USD project change 13:08). Re-ran the existing `capex/tools/pa_probe.js` on the LOCAL pilot (PASS 4/4;
+  goal #1000018 recomputed; it again showed §5.4 (b): GoalPerformance 39971166.17 at target 0, repaired to 0 by the probe). Then **A PASS: legacy 39971166.170 == engine 39971166.17** (12 project rows, 10 USD) ·
+  **B PASS: tiles.js 39971166.17**. `§PA_ENGINE_VERDICT PASS judged=30 fail=0 inconclusive=0`; `BREAK=1` → A and B FAIL, `VERDICT FAIL`.
+- Regressions (after the `to_timestamp` port): `witness_dict_sql_exec` PASS (functionGaps=0) · `witness_plugin_sqlfn` GREEN 5/5 · `witness_taxcat_overlay` PASS 5/5.
+**Open (named):** the two non-converting stock measures (#100 view join error, #105 missing `C_Invoice_v`) — fix in `convertSql`/the views patch, once, not in PA rows · summary-org expansion (legacy adds
+dependents; the A match holds because the pushed projects sit in leaf org 11) · register_migration_script needs an AD_MigrationScript table in the twin (boot overlay, not the base hash) · Week scope
+uses `TRUNC(…,'D')`, whose SQLite port is day-only — unverified against legacy. **Next: G2** — the §3 count/sum tiles as PA rows in a migration script (one file, both sides), each == `tiles.js`.
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
