@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — W-PA-TILES-ORACLE (spec prompts/CAPEX_DASHBOARD.md §5.16, G2). LOCAL PILOT ONLY. READ THE LOG: verdict = §PA_TILES_VERDICT; the exit code alone is not evidence.
 // THE ISSUE it proves/disproves: "the CAPEX count/sum tiles cannot be expressed as iDempiere PA data that gives the same value on legacy, on the SQLite twin, and in today's tiles.js".
-// Per measure (R0 + the 12 of 202611032000_CAPEX-G2.sql): legacy PA_Goal.MeasureActual (legacy's own engine, after a target save) == erp/pa_engine.js on the twin over the SAME rows (C_Project and
+// Per measure (R0 + the 12 of 202611032000_CAPEX-G2.sql): legacy PA_Goal.MeasureActual (legacy's own engine, after a target save) == erp/overlay/goal_engine.js (the twin's one PA owner) on the twin over the SAME rows (C_Project and
 //   AD_WF_Activity of clients 0+11 copied DOWN read-only) at legacy's scale == tiles.js over the stock web-service read (money: engine rounded once to the cent, §5.9).
 // A measure whose population is empty prints INCONCLUSIVE, never PASS. Break: BREAK=1 adds 1 to every engine value → FAIL.
 // Pilot writes (owner "proceed", §5.16): a missing goal is created through stock create_data and every goal is recomputed by a target save 1→0; legacy's previous-target GoalPerformance is
@@ -12,7 +12,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), MIGDIR = path.join(ROOT, 'capex/legacy/migration/iD13/postgresql');
-const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), PA = require(path.join(ROOT, 'erp/pa_engine.js')), MA = require(path.join(ROOT, 'erp/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
+const C = require(path.join(ROOT, 'erp/tests/dd_common.js')), GE = require(path.join(ROOT, 'erp/overlay/goal_engine.js')), MA = require(path.join(ROOT, 'erp/migration_apply.js')), BD = require(path.join(ROOT, 'erp/bigdecimal.js'));
 const Ad = require('../adapters.js'), Tl = require('../tiles.js'), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js'));
 const base = process.env.BRIDGE_BASE || 'http://localhost:8088', BREAK = process.env.BREAK === '1';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base)) { console.log('§PA_TILES_VERDICT INCONCLUSIVE local pilot only'); process.exit(2); }
@@ -30,6 +30,7 @@ const createGoal = (name, mid, scope) => ws('create_data', Push.buildCrudXml(log
 const saveTarget = (id, v) => ws('update_data', Push.buildCrudXml(login, { serviceType: 'BridgeUpdatePAGoal', tableName: 'PA_Goal', action: 'Update', recordId: id, fields: [{ column: 'MeasureTarget', val: v }] }));
 const queryGoal = keys => Push.queryRows(base, login, 'QueryPAGoal', 'PA_Goal', keys);
 const scopeOf = m => m.measuredatatype === 'T' ? '1' : '0';   // the T measure (tile 7) is judged per year: X_PA_Goal MEASURESCOPE_Year = "1"; others Total = "0"
+const bd = v => { if (v == null) return null; let x = String(v); if (/e/i.test(x)) x = Number(v).toFixed(12); return BD.fromString(x); };
 const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v) ? v.replace('T', ' ').replace(/\.\d+$/, '') : v;
 
 (async () => {
@@ -64,13 +65,14 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
   }
 
   // ── twin: the same goals through the model layer, computed by the engine ──
-  const E = PA.create({ q: H.q, run: (s, p) => H.db.run(s, p || []), convertSql: H.A.convertSql, ctx: H.ctx, now: () => today + ' 12:00:00', log: l => { if (!/§PA_ACCESS/.test(l)) log('    ' + l); } });
-  const twin = {};
+  GE.install(H.db);   // the twin's ONE PA owner (erp/overlay/goal_engine.js, §5.18): its SQLite ports of trunc / invoiceopen / currencybase / the invoice views
+  const CTX = { client: 11, role: 102, today, now: today + ' 12:00:00' }, run = (s, p) => H.db.run(s, p || []), twin = {};
   measures.forEach(m => {
     H.save('pa_goal', { ad_client_id: 11, ad_org_id: 0, isactive: 'Y', name: m.name, pa_measure_id: m.pa_measure_id, pa_colorschema_id: 100, measuretarget: 0, measurescope: scopeOf(m), seqno: 0, issummary: 'N', relativeweight: 1, charttype: 'BC' });
-    const gid = H.lastId('pa_goal'); E.updateGoal(gid, { force: true });
+    const gid = H.lastId('pa_goal'), u = GE.updateGoal(H.q, run, gid, CTX, { force: true });
+    (u.goals || []).forEach(r => log('    §PA_TILES_TWIN goal=' + r.goalId + ' measure=' + m.pa_measure_id + ' written=' + r.written + ' actual=' + r.actual + (r.reason ? ' reason=' + JSON.stringify(r.reason) : '') + ' sql=' + JSON.stringify(r.sql)));
     const row = H.one('SELECT * FROM pa_goal WHERE pa_goal_id=?', [gid]);
-    twin[m.pa_measure_id] = PA.bd(row.measureactual);
+    twin[m.pa_measure_id] = bd(row.measureactual);
   });
 
   // ── tiles.js over the stock WS read (today's dashboard) ──
@@ -92,7 +94,7 @@ const dt = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.
     const pop = Number(H.one('SELECT COUNT(*) AS n FROM ' + (t[4] || 'c_project') + ' WHERE ad_client_id=11 AND ' + t[3]).n);
     const money = t[1] === 'm', colPop = money ? Number(H.one('SELECT COUNT(*) AS n FROM c_project WHERE ad_client_id=11 AND ' + t[3] + ' AND ' + ({ 1000000: 'plannedamt', 1000014: 'plannedamt', 1000015: 'projectbalanceamt', 1000016: 'projectbalanceamt', 1000017: 'committedamt', 1000018: 'committedamt', 1000019: 'invoicedamt', 1000020: 'invoicedamt' }[m.pa_measure_id]) + ' IS NOT NULL').n) : pop;
     let eng = twin[m.pa_measure_id]; if (BREAK && eng) eng = eng.add(BD.of(1));
-    const lv = lg && lg.goal ? PA.bd(lg.goal.MeasureActual) : null, sc = lg && lg.goal ? (String(lg.goal.MeasureActual).split('.')[1] || '').length : 0;
+    const lv = lg && lg.goal ? bd(lg.goal.MeasureActual) : null, sc = lg && lg.goal ? (String(lg.goal.MeasureActual).split('.')[1] || '').length : 0;
     const info = 'legacy=' + (lg && lg.goal ? lg.goal.MeasureActual : 'ERR ' + (lg && lg.err)) + ' engine=' + (eng && eng.toString()) + ' tiles=' + (money ? (t[2] == null ? 'no data' : (t[2] / 100).toFixed(2)) : t[2]) + ' population=' + pop + (money ? ' valued=' + colPop : '');
     if (lg && lg.err) { check(tag + ' legacy goal computed', false, info); return; }
     if (colPop === 0) { inc(tag, 'empty population (' + info + ') — a 0 here judges nothing'); return; }
