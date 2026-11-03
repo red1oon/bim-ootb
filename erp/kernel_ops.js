@@ -225,15 +225,17 @@
       // §TM_SPLITMODE_PERSIST_KEY (§S78): a split-mode building's APP.db is loaded from metaUrl, not
       // APP.DB_URL (streaming.js) — APP._dbPersistUrl names the url APP.db's bytes actually came from.
       var A = (typeof window !== 'undefined' && window.APP) || null;
-      var dbUrl = (A && (A._dbPersistUrl || A.DB_URL)) || null;
+      // §PERSIST_TARGET: the ONE rule lives in DbResolve.persistTarget (viewer/db_resolve.js); inline fallback = same rule.
+      var _pt = (A && window.DbResolve && window.DbResolve.persistTarget) ? window.DbResolve.persistTarget(A) : null;
+      var dbUrl = _pt ? _pt.url : ((A && (A._dbPersistUrl || A.DB_URL)) || null);
       if (!dbUrl) return;
       if (A._cacheDisabled) return;   // incognito / low quota → no IDB
       // §SCHED_PERSIST_KEY (§S70) + SEAM_IDENTITY_AUDIT: cachedFetch reads under DbResolve.cacheKey(url), not the raw
       // url — writing the raw url put "survive refresh" in a slot nothing reads. Owner rulings on record: §S70 ("edits
       // vanishing on reload is a GAP, not a design choice"), HISTORY_PERSIST_RECALL §LOCKED-2 (the signed log always
       // records). Staleness stays owned by cachedFetch's §R6a ETag/Content-Length revalidation (this writes 'dbs' only).
-      var dbKey = (window.DbResolve && window.DbResolve.cacheKey)
-        ? window.DbResolve.cacheKey(dbUrl, A.PROD_BASE) : dbUrl;
+      var dbKey = _pt ? _pt.key : ((window.DbResolve && window.DbResolve.cacheKey)
+        ? window.DbResolve.cacheKey(dbUrl, A.PROD_BASE) : dbUrl);
       // T6: serialize same-origin tabs so the read-guard-write is not interleaved. Fallback runs direct.
       if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
         navigator.locks.request('krn_persist:' + dbKey, function() { return _idbPersist(db, dbKey, dbUrl); });

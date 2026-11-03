@@ -632,10 +632,17 @@
           if (cacheDb) {
             await new Promise(function(resolve) {
               try {
+                // §PERSIST_TARGET (SEAM F1): the raw A.DB_URL is a slot cachedFetch never reads for a shipped building
+                // (it reads DbResolve.cacheKey) — rooms were recomputed on every load and a full copy was wasted; and in
+                // split mode A.db is the META db, so the key must come from A._dbPersistUrl, never DB_URL.
+                var _pt = (window.DbResolve && window.DbResolve.persistTarget) ? window.DbResolve.persistTarget(A) : null;
+                var _pkey = _pt ? _pt.key : url;
                 var tx = cacheDb.transaction(A.CACHE_STORE, 'readwrite');
-                var req = tx.objectStore(A.CACHE_STORE).put(outBuf, url);
+                var store = tx.objectStore(A.CACHE_STORE);
+                var req = store.put(outBuf, _pkey);
+                if (_pt && _pt.url !== _pt.key) { try { store.delete(_pt.url); } catch (eDel) {} }   // reclaim the superseded raw copy
                 req.onerror = function() { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail err=' + req.error); };
-                tx.oncomplete = function() { console.log('[NEEDLE] §NEEDLE_PERSIST idb=ok bytes=' + outBuf.byteLength); resolve(); };
+                tx.oncomplete = function() { console.log('[NEEDLE] §NEEDLE_PERSIST idb=ok key=' + _pkey + ' bytes=' + outBuf.byteLength); resolve(); };
                 tx.onerror = function() { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail tx-error'); resolve(); };
               } catch (e2) { console.warn('[NEEDLE] §NEEDLE_PERSIST idb=fail ' + e2.message); resolve(); }
             });
