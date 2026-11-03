@@ -27,7 +27,7 @@ ERP boot overlays (#2563) · specs §5.12/§5.13 (#2567, #2568). Plugin (bim-com
 1. **G1 ✅ DONE — ⚠ CORRECTED §5.18: the twin's PA owner is the EXISTING `erp/overlay/goal_engine.js` (DASHBOARD-PARITY D1); the §5.15 `erp/pa_engine.js` was a duplicate and is deleted; W-PA-ENGINE PASS 22/22 on the owner** — port MMeasure / MMeasureCalc / MGoal / MColorSchema (cite `~/idempiere-dev-setup/idempiere/org.adempiere.base/src/org/compiere/model/` file:line); SQL through
    `erp/ad_callout.js convertSql`; W-PA-ENGINE: the R0 measure (Approved Budget USD) == the pilot goal "CAPEX Approved Budget (USD)" to the cent; broken SQL → 0 + INCONCLUSIVE (§5.5); BREAK=1 FAIL.
 2. **G2 ✅ DONE (W-PA-TILES-ORACLE PASS 23/23 on the owner, 2 INCONCLUSIVE empty populations, BREAK=1 FAIL 22 — §5.17, §5.18)** the §3 count/sum tiles as PA rows (W-PA-TILES-ORACLE: each == `tiles.js`) · **G3 ✅ DONE (§5.19: legacy = migration script 202611032100_CAPEX-G3.sql on the pilot, GardenAdmin 17 goals; twin = plugin bundle `capex/plugin/capex_dashboard.mjs`, W-PA-RENDER PASS 18/18 in the real idempiere.html, BREAK FAIL 13)** renderer from PA_DashboardContent (W-PA-RENDER) — ⚠ ALREADY EXISTS: `erp/overlay/home.js` + `dashboard_home.js` (gadget selection) + `dashboard_gadgets.js` (Performance gadget, colours) in `idempiere.html`, witnessed W-DASH-SELECT / W-DASH-PERF; G3 = witness that the CAPEX goals reach it, not a new renderer (§5.18) · **G4 ✅ DONE (§5.21: 14 bucket measures, legacy == twin == tiles.js PASS 65/65 incl. 3 shifted dates, 25 INCONCLUSIVE unexercised buckets; twin pack 1.0.1; W-PA-RENDER 32/32)** bucket tiles (health / schedule / budget status:
-   PA SQL in both dialects, or named generic tile kinds) · **G5** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
+   PA SQL in both dialects, or named generic tile kinds) · **G5 ⏳ RED (§5.23): windows 5 of 5 open, but an edit is not recomputed (D1, no MGoal model class) and the Home reads the base not the tip (D2) — fix design in §5.23, next session** editor windows X of 5 (W-PA-EDITOR) · **G6** DOWN copy of a real site (needs their read-only account, §6 Q-S3/Q-S4).
 3. Then `tiles.js`'s hand formulas are deleted (deletion budget) — today's `capex/` page is the ORACLE until every PA tile matches.
 **▶ NEXT — TASK 2 (plugin, bim-compiler §8.8):** B3 = the BIM tab in ZK: give tab 200500 its AD_Field rows (key C_Project_ID hidden, Value, Name, Description) through the dictionary, push the
 link-back Description (`BIM src db=…`) with the plan (`viewer/erp_push_plan.js` + the `BIMOOTB_Create_C_Project` whitelist), re-Pack-Out, reinstall, re-run B3 headless. Then the film "Installing BIM to
@@ -552,7 +552,41 @@ PASS 32/32; break FAIL 27. **W-MIG-SYNC** 7/7 (expected counts now read from the
 19/19 · W-HOME-DASHBOARD-LIVE 18/18 · pa_probe 4/4. `witness_core_untouched`: only CU4 (`plugins/mf_lens.mjs`, pre-existing).
 **Named, open:** a site with pack 1.0.0 already active picks up 1.0.1 at its next Start (Incremental2PackActivator) — not witnessed as an UPGRADE (W-PA-RENDER installs fresh). The four unexercised
 buckets need real data that reaches them (a client project that is on budget / ahead of plan). §6 Q1 (health thresholds) still governs the 0.9: it is the client's stated At-Risk number, applied as
-tiles.js does. **Next: G5** — the editor: the generic AD windows (Performance Measurement / Calculation / Goal / Color Schema / Dashboard Content) open and edit these rows, X of 5 (W-PA-EDITOR).
+tiles.js does. **Next: G5** — the editor: the generic AD windows (Performance Measurement / Calculation / Goal / Color Schema / Dashboard Content) open and edit these rows, X of 5 (W-PA-EDITOR). → §5.22 spec, §5.23 RED result + fix design.
+
+### 5.22 SPEC — G5: the editor = the five stock windows, and what an edit does (2026-11-03, owner "proceed"; written before code)
+**Denominator (dictionary, the same on the twin seed and the pilot):** Performance Goal (AD_Window 212, tabs Goal + Restriction) · Performance Measure Calculation (213) · Performance Measure (215) ·
+Performance Color Schema (364) · Dashboard Content (50007) — N = 5. No CAPEX-specific window, field or code (AD-LAYER LAW): "the editor" is the generic AD engine over these rows.
+**What legacy does on an edit (read in source, before any claim):** saving a goal whose MeasureTarget / MeasureScope changed recomputes it (`MGoal.afterSave` :594-603 → `updateGoal(true)`), reading the goals
+WITHOUT the save's transaction — so performance is scored against the PREVIOUS committed target (§5.4 b) — and stores MeasureActual / GoalPerformance / DateLastRun on the row the window shows. The Home
+gadget then draws the STORED performance (`WPerformanceIndicator.init` → `getPercent()`), recomputing only when DateLastRun is older than the refresh interval (`MGoal.getUserGoals` → `updateGoal(false)`).
+**Expected twin gap (to be shown RED first, not assumed):** the browser twin registers no PA_Goal model class (`GoalEngine.installModel` is only called by node witnesses) and its gadget computes live
+(`dashboard_gadgets.performance` → `evaluate`) — so after the same edit the window would show the old stored values and the Home a live percent legacy does not show.
+**Witness W-PA-EDITOR (`capex/tests/witness_pa_editor.js`, headless CPU Chromium, real erp/idempiere.html, the CAPEX bundle installed as in W-PA-RENDER):** E1 X of 5 windows open through the menu as
+GardenAdmin with grid rows == the role-visible table rows, the CAPEX rows among them (212/213/215) · E2 in Performance Goal, the goal "CAPEX Approved Budget (USD)" gets MeasureTarget 1000 through the
+form + Save · E3 the saved row (as the window re-reads it) carries legacy's recompute: MeasureActual = the measure SQL, GoalPerformance = actual ÷ the PREVIOUS target (0 → 0), DateLastRun set ·
+E4 the Home indicator for that goal == legacy's title rule on the stored row ("<Name>: <percent>%") · L legacy oracle on the pilot: the same edit through stock update_data (a model save, as the window
+does) → stored GoalPerformance 0 and DateLastRun set (then the pilot target is put back to 0). Break: PA_EDITOR_BREAK=1 expects the live percent → FAIL. **Fix location if RED:** a PA_Goal model class in the
+twin's CORE save path (a twin-fidelity fix, `Core-Fix:` trailer — `erp/tests/witness_core_untouched.js:15`), and the Home gadget drawing the stored row after `updateGoal(false)` as legacy does.
+
+### 5.23 RESULT — G5 measured: the editor opens 5 of 5, an edit does NOT do what legacy does (RED, 2026-11-03; logs read, scratch not committed)
+**W-PA-EDITOR `capex/tests/witness_pa_editor.js` — `§PA_EDITOR_VERDICT FAIL judged=7 fail=2`** (the RED this spec predicted; committed as the open witness of the fix below):
+- L1/L2 PASS — legacy (pilot, stock update_data = a model save): target 0→1000 → DateLastRun 20:15:32 → 21:53:12, MeasureActual 39971166.170, GoalPerformance **0.0** (scored against the previous target);
+  its Home therefore shows "0%". Pilot put back (target 0, performance 0).
+- **E1 PASS — 5 of 5 windows** open through the menu as GardenAdmin, grid rows == role-visible rows: Performance Goal 31/31 (CAPEX 27/27) · Measure Calculation 33/33 (27/27) · Measure 31/31 (27/27) ·
+  Color Schema 2/2 · Dashboard Content 12/12. The editor needs no code — the generic AD engine opens every row.
+- E2 PASS — the target is saved through the stock form (`§CRUD-PERSIST key=pa_goal id=1000034 op=CRUD_UPDATE cols=measuretarget source=sidecar … verifyChain=ok`).
+- **E3 FAIL (D1)** — the saved row is NOT recomputed: tip `{target 1000, actual 0, performance 0, dateLastRun null}`; legacy writes actual / DateLastRun on that save (`MGoal.afterSave`). The browser twin
+  registers no PA_Goal model class (`GoalEngine.installModel` is called only by node witnesses).
+- **E4 FAIL (D2)** — after a fresh boot + sign-in, the Home draws **"CAPEX Approved Budget (USD): 600"** (no target, live), legacy draws "…: 0%". Cause: `overlay/home.js` reads `window.__idmpDb` (the BASE,
+  target 0); the edit lives in the signed op-log TIP (`§CRUD-TIP … overlaid=measuretarget source=sidecar`), and no tip-aware SQL reader is published — only `__crud.modelRun` shadows the tip
+  (`crud_overlay.js:1807 _tipShadowOn`, used at :1912). Any whole-SQL Home gadget has the same blind spot (Activities / document status not checked here — named).
+**Fix design (next session, Core-Fix trailers — `witness_core_untouched.js:15` sanctions twin-fidelity fixes in core):** (1) MGoal is CORE legacy behaviour: move the PA engine `erp/overlay/goal_engine.js`
+(+ its `overlay/invoice_open.js`) to erp/ core, loaded by idempiere.html, and register `installModel` (the MGoal.afterSave model class) at boot — then the window save recomputes inside the save's own
+trx (reads through `_tipShadowOn`, so the PREVIOUS committed target is the tip's, not the base's). Touches the extension lane's lists (`overlay/boot.js` FILES, `poc_extension_clean_live.js` EXT,
+`witness_core_untouched.js` refs, `witness_libero_dashboard.js`/`witness_goal_engine.js`/`witness_dashboard_performance.js` require paths) — coordinate, don't break them. (2) publish a tip-shadowed
+SQL reader from crud_overlay (`__crud.withTipQuery(tables, cb(q))` over `_tipShadowOn`/`_tipShadowOff`) and have the Performance gadget read through it, drawing the STORED row after
+`updateGoal(false)` (legacy `MGoal.getUserGoals`) — which also closes §5.19 open item (b) (stored vs live). Re-run W-PA-EDITOR (must PASS; `PA_EDITOR_BREAK=1` must FAIL) + every witness of §5.21.
 
 ## 6. ⛔ Questions for the client (via the owner; Q1 thresholds map to `PA_ColorSchema` once R3 lands) (formula not stated, no honest iDempiere column)
 Q1 Health Green/Amber/Red thresholds (we use SPI/CPI 0.9 provisional, only 0.9 is theirs) and whether health uses cost (CPI) at all.
