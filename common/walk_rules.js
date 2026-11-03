@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 //
 // # ⚠ DO NOT REMOVE — SPEC (SEAM-W3C · prompts/SEAM_IDENTITY_AUDIT.md F8)
-// SCOPE: the ONE owner of "which rules DB / building class does this building walk". The rule is the former
+// SCOPE: the ONE owner of "which WALK RULES DB does this building use" (the Modeller's disc walk). The rule is the former
 //        modeller.html `_dwRules` verbatim (WalkerDoctrine.md §1 LOCKED: SH/DX/SC/Duplex/SampleHouse/SampleCastle ->
 //        duplex_rules.db; farm/shed -> farm_rules.db; everything else -> terminal_rules.db, the LOD400 reference).
-// NOT YET ADOPTED by the Viewer PLANT_ROOM gate (viewer/nf_tree_lens.js, modeller/building_parts_outliner.js): their
-//        name lists leave unlisted buildings 'null' (PLANT_ROOM hidden); this rule would call them 'terminal'
-//        (PLANT_ROOM shown) -> user-visible change, owner decision (see SEAM_IDENTITY_AUDIT.md F8 / PASS 3).
-// Witness: modeller/tests/witness_seam_w3_class.js — read the §BUILDING_CLASS log after every run.
+// NOT the building-TYPE question: the Find-panel PLANT_ROOM gate (viewer/nf_tree_lens.js, modeller/building_parts_outliner.js
+//        `_buildingClass`) deliberately mirrors config/building_taxonomy.yaml's classes and hides PLANT_ROOM on unlisted
+//        buildings — ruled in bim-compiler prompts/FIND_PANEL_PLANT_ROOM_GATE_FIX.md (2026-07-11). Do not "unify" it with this.
+// Witness: modeller/tests/witness_seam_w3_class.js — read the §WALK_RULES log after every run.
 (function (root) {
   'use strict';
   var RESIDENTIAL_RE = /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i;
@@ -27,5 +27,5 @@
   }
   var API = { rulesDb: rulesDb, buildingClass: buildingClass, RULES_DBS: RULES_DBS.slice() };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
-  else root.BuildingClass = API;
+  else root.WalkRules = API;
 })(typeof window !== 'undefined' ? window : this);

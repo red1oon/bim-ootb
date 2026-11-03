@@ -2,13 +2,13 @@
 /* ⚠ WITNESS — W-SEAM-W3-CLASS (§SEAM-W3C, bim-compiler prompts/SEAM_IDENTITY_AUDIT.md F8 + F18). READ THE LOG after every run.
  *
  * ISSUES IT PROVES OR DISPROVES
- *  F8   "which rules DB does this building walk" had a copy-pasted rule; the owner is common/building_class.js and modeller.html _dwRules
+ *  F8   "which rules DB does this building walk" had a copy-pasted rule; the owner is common/walk_rules.js and modeller.html _dwRules
  *       must be exactly it (no inline regex). Residential names (SH/DX/SC, Duplex, SampleHouse, SampleCastle, Schependomlaan) -> duplex_rules.db.
- *       STOPPED (owner decision, informational, never PASS): Viewer nf_tree_lens/building_parts_outliner _buildingClass still differ.
+ *       C6 INFO: the Viewer PLANT_ROOM gate's _buildingClass answers a different question (taxonomy class, ruled) — not judged.
  *  F18  _dwBustStaleRulesCache deleted a hardcoded './terminal_rules.db' while disc_walker keys by caller base; the log claimed eviction
  *       whether or not a key was deleted. Now keys = DiscWalker.dwRulesKey(file, base) and the log says deleted=true|false per key.
  * Drives the REAL _dwBustStaleRulesCache (extracted from modeller.html) against a Map-backed fake IndexedDB, the REAL disc_walker dwInit
- * (fetch stubbed to capture the actual read/write key), the REAL building_class.js.
+ * (fetch stubbed to capture the actual read/write key), the REAL walk_rules.js.
  * BASELINE: same claims against pinned BASE 7586a565 (git show) must FAIL on the F18 claims. MUTANTS: (a) _dwRules keeps its own regex;
  * (b) bust hardcodes './terminal_rules.db' — each must FAIL >=1 claim. Nothing judged -> INCONCLUSIVE (exit 2). Exit 0 only on PASS.
  * RUN: node modeller/tests/witness_seam_w3_class.js
@@ -18,7 +18,7 @@ var ROOT = path.join(__dirname, '..', '..');
 var BASE = '7586a565';   // pinned: origin/main before SEAM-W3C (a moving branch stops discriminating once merged)
 function show(p) { return cp.execSync('git -C ' + JSON.stringify(ROOT) + ' show ' + BASE + ':' + p, { encoding: 'utf8', maxBuffer: 1 << 28 }); }
 function cur(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
-var BC = require(path.join(ROOT, 'common', 'building_class.js'));
+var BC = require(path.join(ROOT, 'common', 'walk_rules.js'));
 var DW = require(path.join(ROOT, 'modeller', 'disc_walker.js'));
 
 var NAMES = ['SampleHouse_ARC.db', 'Duplex_ARC.db', 'SampleCastle_ARC.db', 'HHS_ARC.db', 'Clinic_ARC.db', 'Hospital_ARC.db', 'Garage_ARC.db', 'Terminal_ARC.db',
@@ -53,7 +53,7 @@ async function runBust(html, base, name, seedFiles, forceNoBc) {
   var src = bustSrc(html); if (!src) return { err: 'bust source not found' };
   var store = new Map(), logs = [];
   for (var i = 0; i < seedFiles.length; i++) store.set(await realKey(seedFiles[i], base), 1);
-  var ls = {}; var win = { __dwRulesVer: 'vT', __dwName: name, _DW_BASE: base, DiscWalker: DW, BuildingClass: forceNoBc ? undefined : BC };
+  var ls = {}; var win = { __dwRulesVer: 'vT', __dwName: name, _DW_BASE: base, DiscWalker: DW, WalkRules: forceNoBc ? undefined : BC };
   var ctx = { window: win, localStorage: { getItem: function (k) { return ls[k] || null; }, setItem: function (k, v) { ls[k] = v; } }, indexedDB: fakeIdb(store),
     console: { log: function (m) { logs.push(String(m)); }, warn: function (m) { logs.push('WARN ' + m); } } };
   vm.createContext(ctx); vm.runInContext(src, ctx);
@@ -69,7 +69,7 @@ async function judge(variant, html, opts) {
   console.log('§W3C variant=' + variant);
   // ---- F8 claims
   var fullDw = dwRulesFull(html), dwFn = null;
-  if (fullDw) { var c = { window: { BuildingClass: BC } }; vm.createContext(c); try { vm.runInContext(fullDw, c); dwFn = c.window._dwRules; } catch (e) { } }
+  if (fullDw) { var c = { window: { WalkRules: BC } }; vm.createContext(c); try { vm.runInContext(fullDw, c); dwFn = c.window._dwRules; } catch (e) { } }
   // C1/C3a: modeller.html _dwRules == owner for every tabulated name
   var bad = NAMES.filter(function (n) { return !dwFn || dwFn(n) !== BC.rulesDb(n); });
   claim(variant, 'C1 _dwRules(html) == owner for ' + NAMES.length + ' names', dwFn && !bad.length, bad.length ? 'differs: ' + bad.join(',') : '');
@@ -77,7 +77,7 @@ async function judge(variant, html, opts) {
   var badR = RESIDENTIAL.filter(function (n) { return BC.rulesDb(n) !== 'duplex_rules.db' || (dwFn && dwFn(n) !== 'duplex_rules.db'); });
   claim(variant, 'C2 residential names -> duplex_rules.db', !badR.length, badR.join(','));
   // C3 no inline regex copy in _dwRules
-  claim(variant, 'C3 _dwRules has no inline classifier regex (delegates to BuildingClass)', fullDw && !/sample\.\?house|schependomlaan/i.test(fullDw) && /BuildingClass\.rulesDb/.test(fullDw));
+  claim(variant, 'C3 _dwRules has no inline classifier regex (delegates to WalkRules)', fullDw && !/sample\.\?house|schependomlaan/i.test(fullDw) && /WalkRules\.rulesDb/.test(fullDw));
   // ---- F18 claims
   var bs = bustSrc(html);
   claim(variant, 'C4a bust has no hardcoded "./<x>_rules.db" key', bs && !/['"]\.\/(terminal|duplex|farm)_rules\.db['"]/.test(bs));
@@ -105,7 +105,7 @@ async function judge(variant, html, opts) {
   var HTML_NEW = cur('modeller/modeller.html'), HTML_BASE = show('modeller/modeller.html');
   console.log('§W3C pinned BASE=' + BASE);
   // owner purity (also shipped-name table)
-  console.log('§BUILDING_CLASS owner table (name -> cls / rulesDb):');
+  console.log('§WALK_RULES owner table (name -> cls / rulesDb):');
   NAMES.forEach(function (n) { var b = BC.buildingClass(n); console.log('  ' + n.padEnd(36) + b.cls.padEnd(12) + b.rulesDb); });
   await judge('NEW', HTML_NEW, {});
   var mutA = HTML_NEW.replace(/window\._dwRules = function \(nm\) \{[^\n]*\n/, "window._dwRules = function (nm) { return /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i.test(nm || '') ? 'duplex_rules.db' : 'terminal_rules.db'; };\n");
@@ -120,7 +120,8 @@ async function judge(variant, html, opts) {
   base = results.length; await judge('MUTANT-B(hardcoded bust key)', mutB, {});
   var mBfails = results.slice(base).filter(function (x) { return !x.ok; }).length;
 
-  // C6 STOPPED: viewer-side classifiers vs owner
+  // C6 INFO: two DIFFERENT questions by ruling (FIND_PANEL_PLANT_ROOM_GATE_FIX.md): the PLANT_ROOM gate follows
+  // config/building_taxonomy.yaml classes; walk rules follow WalkRules. Divergence below is expected, not a defect.
   function viewerClass(srcPath, getSrc) {
     var m = /function _buildingClass\(\) \{[\s\S]*?\n\s*\}\n/.exec(getSrc); if (!m) return null;
     var lists = /var _RESIDENTIAL_BUILDINGS[^\n]*\n\s*var _COMPLEX_BUILDINGS[^\n]*\n/.exec(getSrc); if (!lists) return null;
@@ -130,7 +131,7 @@ async function judge(variant, html, opts) {
   var diverge = [];
   if (vf && of) NAMES.forEach(function (n) { var o = BC.buildingClass(n).cls, a = vf(n), b = of(n);
     var expectA = (o === 'terminal') ? 'complex' : o; if (a !== expectA || b !== expectA) diverge.push(n + ' viewer=' + a + ' outliner=' + b + ' owner=' + o); });
-  console.log('§W3C STOPPED (owner decision, not judged): viewer/nf_tree_lens.js + modeller/building_parts_outliner.js classifiers diverge from owner on ' + diverge.length + '/' + NAMES.length + ' names; PLANT_ROOM gate is user-visible. e.g. ' + diverge.slice(0, 3).join(' | '));
+  console.log('§W3C INFO (ruled, two concepts — taxonomy class vs walk rules): viewer/nf_tree_lens.js + modeller/building_parts_outliner.js taxonomy class differs from the walk-rules class on ' + diverge.length + '/' + NAMES.length + ' names; PLANT_ROOM gate is user-visible. e.g. ' + diverge.slice(0, 3).join(' | '));
 
   console.log('§W3C verdict-input: judged=' + judged + ' NEWfails=' + newFails + ' BASEfails=' + baseFails + ' mutAfails=' + mAfails + ' mutBfails=' + mBfails);
   if (!judged || !vf || !of) { console.log('§W3C INCONCLUSIVE — nothing judged / viewer classifiers not extractable'); process.exit(2); }

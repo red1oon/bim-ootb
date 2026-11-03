@@ -324,7 +324,7 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="../common/building_class.js?v=1" onerror="console.warn('§BUILDING_CLASS LOAD_FAIL building_class.js')"></script>
+<script src="../common/walk_rules.js?v=1" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
 <script src="disc_walker.js?v=12" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
@@ -5894,7 +5894,7 @@ function _registerDiscRoster() {
 // the residential standard (duplex_rules.db, mined off Duplex) covers houses; the large-complex
 // standard (terminal_rules.db, mined off Terminal) covers everything else. §DATA-LOCALITY: both
 // are bim-compiler-built modeller/ copies carrying a stamped rules_meta provenance row.
-window._dwRules = function (nm) { return window.BuildingClass.rulesDb(nm); };   // §SEAM-W3C F8: ONE owner (common/building_class.js); WalkerDoctrine §1
+window._dwRules = function (nm) { return window.WalkRules.rulesDb(nm); };   // §SEAM-W3C F8: ONE owner (common/walk_rules.js); WalkerDoctrine §1
 // §DW-RULES-BUST: the rules DBs (terminal_rules/duplex_rules) are MUTABLE at a FIXED url, but disc_walker's
 // §DW_IDB caches them in bim_ootb_cache/'dbs' keyed by url with NO version → a returning user keeps the OLD
 // rules across a deploy (silently missing e.g. the new FP sprinkler shim). On a rules-version change, evict the
@@ -5907,9 +5907,9 @@ window._dwBustStaleRulesCache = async function () {
     var KEY = 'dw_rules_ver', cur = window.__dwRulesVer;
     if (typeof localStorage !== 'undefined' && localStorage.getItem(KEY) === cur) return;   // already fresh
     // §SEAM-W3C F18: keys come from disc_walker's own builder (dwRulesKey) — never a hardcoded './x.db'. In-use file first
-    // (BuildingClass owner), then its sibling rules DBs so the "fresh" mark below cannot strand a stale sibling.
-    var inUse = window.BuildingClass.rulesDb(window.__dwName), files = [inUse];
-    window.BuildingClass.RULES_DBS.forEach(function (f) { if (files.indexOf(f) < 0) files.push(f); });
+    // (WalkRules owner), then its sibling rules DBs so the "fresh" mark below cannot strand a stale sibling.
+    var inUse = window.WalkRules.rulesDb(window.__dwName), files = [inUse];
+    window.WalkRules.RULES_DBS.forEach(function (f) { if (files.indexOf(f) < 0) files.push(f); });
     var keys = files.map(function (f) { return window.DiscWalker.dwRulesKey(f, window._DW_BASE); });
     await new Promise(function (res) {
       var rq = indexedDB.open('bim_ootb_cache');
