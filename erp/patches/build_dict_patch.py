@@ -8,13 +8,17 @@
 import json, os, re, sqlite3, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ERP = os.path.dirname(HERE)
-TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn ad_toolbarbutton ad_toolbarbuttonrestrict ad_entitytype ad_printpaper ad_reportview ad_tableindex ad_indexcolumn c_cash').split()   # + §20 (ERP_FRIENDLY_OPS_LENS.md): what a real 2Pack writes (Libero 2Pack_1.0.0 touches all of these)   # + §18 (bim-compiler ERP_FRIENDLY_OPS_LENS.md): window/tab toolbar buttons (MToolBarButton), absent from the seed
+TABLES = os.environ.get('G_DICT_TABLES', 'ad_task ad_task_access ad_form_access ad_process_access ad_workflow_access ad_infowindow_access ad_document_action_access ad_message ad_printformat ad_printformatitem ad_form ad_sysconfig ad_image r_mailtext ad_impformat ad_impformat_row ad_ref_list ad_infowindow ad_infocolumn ad_toolbarbutton ad_toolbarbuttonrestrict ad_entitytype ad_printpaper ad_reportview ad_tableindex ad_indexcolumn c_cash m_costdetail m_costhistory').split()   # + §20 (ERP_FRIENDLY_OPS_LENS.md): what a real 2Pack writes (Libero 2Pack_1.0.0 touches all of these)   # + §18 (bim-compiler ERP_FRIENDLY_OPS_LENS.md): window/tab toolbar buttons (MToolBarButton), absent from the seed
 
 DDL_ONLY = os.environ.get('G_DICT_DDL', 'c_cashline m_movementlinema r_requestupdates ad_session ad_pinstance ad_pinstance_para ad_package_exp ad_package_exp_detail ad_package_imp_inst ad_tab_customization').split()   # §UDP-2: ad_pinstance(_para) hold the process dialog's Saved Parameters + Last Run (written through the signed op-log). tables the legacy views read that the seed lacks: structure only (the twin gains rows when its own flows write them)
 
 # §POSTING-PARITY item 1c (bim-compiler prompts/SQLiteIDEMPIERE.md): C_Cash rows of the SHIPPED GardenWorld dataset (ids < 1000000 = the three cash journals the legacy-extracted seed carries; the pilot's own
 #   test traffic starts at 1000000 and is NOT dictionary/seed data). Doc_AllocationHdr.getCashAcct (Doc_AllocationHdr.java:791-804) joins C_Cash to C_CashLine - without the header rows the cash leg has no cash book.
-ROW_WHERE = {'c_cash': 'c_cash_id < 1000000'}
+_CD_DOC = '(m_inoutline_id < 1000000 or c_invoiceline_id < 1000000 or c_orderline_id < 1000000 or m_matchinv_id < 1000000 or m_movementline_id < 1000000 or m_inventoryline_id < 1000000 or m_productionline_id < 1000000 or c_projectissue_id < 1000000 or pp_cost_collector_id < 1000000)'
+# §POSTING-PARITY cost history (bim-ootb erp/tests/witness_seed_cost_history.js): the m_costdetail / m_costhistory rows the SHIPPED GardenWorld documents were costed with (MCost.getCostInfo(dateAcct), MCost.java:1542-1572,
+#   reads the as-of-date history). The pilot gave even that original costing ids >= 1000000, so the tie is the DOCUMENT LINE (< 1000000 = a seed document line), not the detail id: 84 details (created 2026-06-21), their 172 history rows
+#   (m_costhistory.m_costdetail_id, never null on the pilot). Details of the pilot's own test documents (lines >= 1000000) are NOT seed data.
+ROW_WHERE = {'c_cash': 'c_cash_id < 1000000', 'm_costdetail': _CD_DOC, 'm_costhistory': 'm_costdetail_id in (select m_costdetail_id from m_costdetail where ' + _CD_DOC + ')'}
 
 
 def pg(sql):
@@ -56,6 +60,8 @@ for t in TABLES:
     sel = ', '.join('%s::text as %s' % (c, c) for c in cols)
     legacy = [json.loads(l) for l in pg('select row_to_json(x)::text from (select %s from %s%s) x' % (sel, t, where))]
     miss = [r for r in legacy if tuple(str(r[c]) for c in pk) not in have]; n = len(miss)
+    if t in ROW_WHERE and not any(r[5] > 0 for r in info):   # seed DDL has no PRIMARY KEY: INSERT OR IGNORE is only idempotent with a unique key (the key the generator already dedups on) - else a live-db re-apply doubles the rows
+        out.append('CREATE UNIQUE INDEX IF NOT EXISTS uq_%s_pk ON %s (%s);' % (t, t, ','.join(pk)))
     for i in range(0, n, 100):   # multi-row VALUES: the column list is written once per 100 rows (patch size + statement count)
         out.append('INSERT OR IGNORE INTO %s (%s) VALUES %s;' % (t, ','.join(cols), ',\n'.join('(' + ','.join(lit(r[c]) for c in cols) + ')' for r in miss[i:i + 100])))
     total += n
