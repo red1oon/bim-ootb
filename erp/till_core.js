@@ -134,5 +134,32 @@
     (extra || []).forEach(function (c) { z.payments++; z.byTender[c.reason] = (z.byTender[c.reason] || 0) + cents(c.amount); });   // PaymentsModel.java:201 : cash in / out are payment rows with NOTES
     return z;
   }
-  return { TENDERS: TENDERS, REFUND_TENDERS: REFUND_TENDERS, tabsFor: tabsFor, foldLines: foldLines, tenderOf: tenderOf, cents: cents, money: money, lineNetCents: lineNetCents, keyPrefix: keyPrefix, nextNumber: nextNumber, totals: totals, applyTenders: applyTenders, depositRows: depositRows, receiptModel: receiptModel, zTotals: zTotals };
+
+  // ── the tax inputs, ONE definition (POS_PLUGIN_LOCAL_FIRST.md §23): the till (till.js loadConfig, async) and Branch Day Close's audit gate (friendly_ops.mjs, sync) both drive this generator and hand the answers to
+  //   taxEnv; neither holds a query or a tax formula of its own. The rows are the ones Import Orders uses (cash-trx partner, default SO price list, org / warehouse / bill-to locations).
+  //   Yields { one: sql } | { many: sql } and receives the rows back; returns { r: inputs }.
+  function* taxInputs(pos) {
+    var c = Number(pos.ad_client_id), r = {};
+    r.bpId = ((yield { one: 'SELECT c_bpartnercashtrx_id AS b FROM ad_clientinfo WHERE ad_client_id=' + c }) || {}).b;
+    r.incl = ((yield { one: "SELECT istaxincluded AS t FROM m_pricelist WHERE m_pricelist_id=(SELECT MAX(m_pricelist_id) FROM m_pricelist WHERE isdefault='Y' AND issopricelist='Y' AND ad_client_id=" + c + ')' }) || {}).t === 'Y';
+    r.taxes = yield { many: 'SELECT * FROM c_tax WHERE ad_client_id=' + c };
+    var loc = function (id) { return id ? { one: 'SELECT c_country_id, c_region_id, postal FROM c_location WHERE c_location_id=' + Number(id) } : null; };
+    r.bp = (r.bpId ? yield { one: 'SELECT istaxexempt, deliveryviarule FROM c_bpartner WHERE c_bpartner_id=' + Number(r.bpId) } : null) || {};
+    var bl = r.bpId ? yield { one: "SELECT c_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=" + Number(r.bpId) + " AND isbillto='Y' AND isactive='Y' ORDER BY c_bpartner_location_id" } : null;
+    var oi = yield { one: 'SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=' + Number(pos.ad_org_id) }, wl = yield { one: 'SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=' + Number(pos.m_warehouse_id) };
+    r.dv = yield { one: "SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'" };
+    var a = loc(oi && oi.l), b = loc(bl && bl.l), w = loc(wl && wl.l);
+    r.locs = { from: a ? yield a : null, to: b ? yield b : null, wh: w ? yield w : null };
+    return r;
+  }
+  function driveSync(gen, one, many) { var st = gen.next(); while (!st.done) { var q = st.value; st = gen.next(q.one ? (one(q.one) || null) : many(q.many)); } return st.value; }
+  async function driveAsync(gen, one, many) { var st = gen.next(); while (!st.done) { var q = st.value; st = gen.next(q.one ? ((await one(q.one)) || null) : await many(q.many)); } return st.value; }
+  // r = taxInputs result ; taxcatOf: product id -> C_TaxCategory_ID ; day 'YYYY-MM-DD'
+  function taxEnv(Eng, r, taxcatOf, day) {
+    var children = {}; r.taxes.forEach(function (t) { if (t.parent_tax_id) (children[t.parent_tax_id] = children[t.parent_tax_id] || []).push(t); });
+    return { Eng: Eng, included: r.incl, taxById: function (id) { return r.taxes.filter(function (t) { return String(t.c_tax_id) === String(id); })[0]; },
+      taxChildren: function (id) { return (children[id] || []).filter(function (t) { return t.isactive === 'Y'; }); },
+      taxOf: function (pid) { return Eng.taxLookup({ taxes: r.taxes, taxCategoryId: taxcatOf[pid], isSOTrx: true, billDate: day, billFrom: r.locs.from, billTo: r.locs.to, warehouse: r.locs.wh, deliveryViaRule: r.bp.deliveryviarule || (r.dv && r.dv.d), bpTaxExempt: r.bp.istaxexempt }); } };
+  }
+  return { taxInputs: taxInputs, driveSync: driveSync, driveAsync: driveAsync, taxEnv: taxEnv, TENDERS: TENDERS, REFUND_TENDERS: REFUND_TENDERS, tabsFor: tabsFor, foldLines: foldLines, tenderOf: tenderOf, cents: cents, money: money, lineNetCents: lineNetCents, keyPrefix: keyPrefix, nextNumber: nextNumber, totals: totals, applyTenders: applyTenders, depositRows: depositRows, receiptModel: receiptModel, zTotals: zTotals };
 });

@@ -41,22 +41,11 @@
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
     // the tax inputs: the same rows the engine's Import Orders uses - the cash-trx partner (AD_ClientInfo.C_BPartnerCashTrx_ID, ImportOrder.js 'Set Default BP') and the default SO price list's tax flag
-    var bpId = ((await rows('SELECT c_bpartnercashtrx_id AS b FROM ad_clientinfo WHERE ad_client_id=' + Number(pos.ad_client_id)))[0] || {}).b;
-    var incl = ((await rows("SELECT istaxincluded AS t FROM m_pricelist WHERE m_pricelist_id=(SELECT MAX(m_pricelist_id) FROM m_pricelist WHERE isdefault='Y' AND issopricelist='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ')'))[0] || {}).t === 'Y';
-    var taxes = await rows('SELECT * FROM c_tax WHERE ad_client_id=' + Number(pos.ad_client_id));
     var one = async function (sql) { return (await rows(sql))[0] || null; };
-    var loc = async function (id) { return id ? one('SELECT c_country_id, c_region_id, postal FROM c_location WHERE c_location_id=' + Number(id)) : null; };
-    var bp = (bpId ? await one('SELECT istaxexempt, deliveryviarule FROM c_bpartner WHERE c_bpartner_id=' + Number(bpId)) : null) || {};
-    var bl = bpId ? await one("SELECT c_location_id AS l FROM c_bpartner_location WHERE c_bpartner_id=" + Number(bpId) + " AND isbillto='Y' AND isactive='Y' ORDER BY c_bpartner_location_id") : null;
-    var oi = await one('SELECT c_location_id AS l FROM ad_orginfo WHERE ad_org_id=' + Number(pos.ad_org_id)), wl = await one('SELECT c_location_id AS l FROM m_warehouse WHERE m_warehouse_id=' + Number(pos.m_warehouse_id));
-    var dv = await one("SELECT c.defaultvalue AS d FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE t.tablename='C_Order' AND c.columnname='DeliveryViaRule'");
-    var locs = { from: await loc(oi && oi.l), to: await loc(bl && bl.l), wh: await loc(wl && wl.l) };
+    var inputs = await C.driveAsync(C.taxInputs(pos), one, rows);                        // the tax inputs are till_core's ONE definition (shared with Branch Day Close's audit gate)
     var taxcatOf = {}; prods.forEach(function (p) { taxcatOf[p.pid] = p.taxcat; });
-    var children = {}; taxes.forEach(function (t) { if (t.parent_tax_id) (children[t.parent_tax_id] = children[t.parent_tax_id] || []).push(t); });
     var Eng = E.ERPEngine, day = today();
-    S.taxEnv = { Eng: Eng, included: incl, taxById: function (id) { return taxes.filter(function (t) { return String(t.c_tax_id) === String(id); })[0]; },
-      taxChildren: function (id) { return (children[id] || []).filter(function (t) { return t.isactive === 'Y'; }); },
-      taxOf: function (pid) { var r = Eng.taxLookup({ taxes: taxes, taxCategoryId: taxcatOf[pid], isSOTrx: true, billDate: day, billFrom: locs.from, billTo: locs.to, warehouse: locs.wh, deliveryViaRule: bp.deliveryviarule || (dv && dv.d), bpTaxExempt: bp.istaxexempt }); return r; } };
+    S.taxEnv = C.taxEnv(Eng, inputs, taxcatOf, day);
     S.taxCats = await rows("SELECT c_taxcategory_id AS id, name FROM c_taxcategory WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
   }
 
