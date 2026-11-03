@@ -227,7 +227,8 @@
 // v1670 (2026-11-03) CAPEX R0 erp_rest_push.js: a project line's natural key includes its task (lines per product × 4D task were dropped after the first)
 // v1671 (2026-11-03) CAPEX R1-f find_erp_push.js + proj_fold.js scheduleFromDb/pricedPerTask: the viewer's ERP push carries the Gantt's own programme
 // v1672 (2026-11-03) §A1 hygiene: scene.js?v=75 — _applyPendingPatch opens + exports the building DB ONCE (savepoint per patch; was up to 3 open/export copies at load); W-PATCH-CHAIN-ONE-OPEN.
-const CACHE_VERSION = 'v1672';
+// v1673 (2026-11-03) §A4 hygiene: ONE shared Project-Order store instance (ProjOrderState.shared/persistShared, proj_order_state.js?v=5); diff.js?v=5, find_erp_push.js?v=4, whatif_panel.js?v=6, schedule_author_ui.js?v=10 stop holding private 27 MB copies; W-ONE-PO-STORE.
+const CACHE_VERSION = 'v1673';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

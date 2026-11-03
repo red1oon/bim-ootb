@@ -37,39 +37,32 @@
   // S226 §R2b (2026-10-04): was `_date(ds)` on the string → 'NaN-NaN-Na' in every track tooltip (found by W-VIEWER-I18N).
   function _fmt(ds) { return (typeof ds === 'number' ? global.WhatIf._date(ds) : String(ds)).slice(0, 10); }
 
-  // Load the ERP db (OPFS push-store first, then bundled seed). Returns a sql.js Database or null.
-  var _dbStamp = null;
+  // Load the ERP db: the ONE shared Project-Order store (ProjOrderState.shared, §A4) when it carries a folded project, else a PRIVATE seed copy.
+  var _dbStamp = null, _dbShared = false;
   function _wiStamp() { return (global.ProjOrderState && global.ProjOrderState.storeStamp) ? global.ProjOrderState.storeStamp() : Promise.resolve('unknown'); }
-  // §STORE_STAMP: reuse the cached store only while the file on disk is unchanged; else reload (logged).
+  // §STORE_STAMP: a PRIVATE seed copy is reused only while the file on disk is unchanged; the shared db is always asked from shared() (memoised, same guard).
   function _loadDb() {
     return _wiStamp().then(function (st) {
-      if (_db && st === _dbStamp && st !== 'unknown') return _db;
-      if (_db) console.log('§PUSH_STORE_RELOAD writer=whatif was=' + _dbStamp + ' now=' + st);
-      _db = null; _dbStamp = st;
+      if (_db && !_dbShared && st === _dbStamp && st !== 'unknown') return _db;
+      if (_db && !_dbShared) console.log('§PUSH_STORE_RELOAD writer=whatif was=' + _dbStamp + ' now=' + st);
+      _db = null; _dbShared = false; _dbStamp = st;
       return _openDb();
     });
   }
   function _openDb() {
-    var SQL = _SQL();
+    var SQL = _SQL(), PS = global.ProjOrderState;
     if (!SQL || !global.WhatIf) return Promise.resolve(null);
-    var fromOpfs = Promise.resolve(null);
-    try {
-      if (navigator.storage && navigator.storage.getDirectory) {
-        fromOpfs = navigator.storage.getDirectory()
-          .then(function (root) { return root.getDirectoryHandle('bim_analysis'); })
-          .then(function (dir) { return dir.getFileHandle('bim_project_orders.db'); })
-          .then(function (fh) { return fh.getFile(); })
-          .then(function (f) { return f.arrayBuffer(); })
-          .then(function (buf) { return new SQL.Database(new Uint8Array(buf)); })
-          .catch(function () { return null; });
-      }
-    } catch (e) { fromOpfs = Promise.resolve(null); }
-    return fromOpfs.then(function (db) {
-      if (db && _hasFoldedProject(db)) { _db = db; return _db; }
-      return APP.cachedFetch('../erp/ad_seed.db')
-        .then(function (buf) { _db = new SQL.Database(new Uint8Array(buf)); return _db; })
+    var seed = function () { return APP.cachedFetch('../erp/ad_seed.db'); };
+    function privateSeed(reason) {
+      if (reason) console.log('§WHATIF-UI db=private-seed reason=' + reason);
+      return seed().then(function (buf) { _db = new SQL.Database(new Uint8Array(buf)); _dbShared = false; return _db; })
         .catch(function (e) { console.log('§WHATIF-UI db-load-err ' + e.message); return null; });
-    });
+    }
+    if (!(PS && PS.shared)) return privateSeed(null);
+    return PS.shared(SQL, seed, 'whatif').then(function (st) {
+      if (_hasFoldedProject(st.db)) { _db = st.db; _dbShared = true; _dbStamp = st.stamp; return _db; }
+      return privateSeed('no-folded-project');   // §NO_FALLTHROUGH-era rule kept: no phases in the store -> What-if reads its own seed copy
+    }).catch(function (e) { console.log('§WHATIF-UI db-load-err ' + e.message); return null; });
   }
   function _scalar(db, sql, p) { try { var r = db.exec(sql, p || []); return (r.length && r[0].values.length) ? r[0].values[0][0] : null; } catch (e) { return null; } }
   function _hasFoldedProject(db) {
@@ -184,15 +177,21 @@
 
   function _persist() {
     if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
-    // §STORE_STAMP: the panel held this copy while open — if the store changed on disk since (reset, another push), writing would
+    var PS = global.ProjOrderState;
+    function staleNote() { var stx = A().status; if (stx) stx.textContent = _wiTrl('wi_store_changed', 'What-if: the project store changed since you opened this — reopen What-if'); _db = null; return false; }
+    // shared db: persistShared owns the stamp guard (§STORE_STAMP) and re-stamps the memo on success.
+    if (_dbShared && PS && PS.persistShared) {
+      return PS.persistShared(_db, 'whatif').then(function (ok) {
+        if (ok) { _dbStamp = PS.sharedStamp ? PS.sharedStamp() : _dbStamp; return true; }
+        return (PS.lastPersist && PS.lastPersist.reason === 'stale') ? staleNote() : false;
+      });
+    }
+    // private seed copy: the panel held it while open — if the store changed on disk since (reset, another push), writing would
     // put old orders back. Refuse, say so; the user reopens What-if on the current store.
     return _wiStamp().then(function (st) {
-      if (st !== _dbStamp) {
-        console.log('§PUSH_STORE_STALE writer=whatif was=' + _dbStamp + ' now=' + st + ' — accept refused, reopen What-if');
-        var stx = A().status; if (stx) stx.textContent = _wiTrl('wi_store_changed', 'What-if: the project store changed since you opened this — reopen What-if');
-        _db = null; return false;
-      }
-      return _writeDb();
+      if (st === _dbStamp) return _writeDb();
+      console.log('§PUSH_STORE_STALE writer=whatif was=' + _dbStamp + ' now=' + st + ' — accept refused, reopen What-if');
+      return staleNote();
     });
   }
   function _writeDb() {
@@ -327,7 +326,8 @@
   // refresh() — re-read the OPFS store (which the Author wizard's Apply just re-folded) and, if the panel
   // is open, re-pick the project + re-render in place. Nulls the cached _db so _loadDb re-reads from disk.
   function refresh() {
-    _db = null;
+    _db = null; _dbShared = false;
+    if (global.ProjOrderState && global.ProjOrderState.invalidateShared) global.ProjOrderState.invalidateShared();
     if (document.getElementById('whatif-panel')) { console.log('§WHATIF-UI refresh — panel open, reloading'); open(); }
     else console.log('§WHATIF-UI refresh — panel closed, will reload on next open');
   }
