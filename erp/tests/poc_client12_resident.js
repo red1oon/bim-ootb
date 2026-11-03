@@ -4,7 +4,7 @@
 //   the merged db is never written to IDB, so a reload without the param loses Client 12."
 //   THREE checks, all on the REAL idempiere.html boot path (no mocks):
 //     A) §C12-INMEM   — with ?shard=12-odoo.db, the in-memory db HAS AD_Client 12 (+ its products). (loads ✓)
-//     B) §C12-IDB     — the PERSISTED IDB blob ('ad_seed_v13') does NOT contain Client 12.  (gap: not saved)
+//     B) §C12-IDB     — the PERSISTED IDB blob (window.ERP_SEED_KEY, was a stale literal v13) does NOT contain Client 12.  (gap: not saved)
 //     C) §C12-RELOAD  — reloading WITHOUT ?shard= → Client 12 is GONE.                      (consequence)
 //   Verdict §C12-RESIDENT resident=<Y|N>: resident=Y only if the shard survives a no-param reload. Expected N
 //   today — that N is the "make it stick" (persist + switcher) gap, i.e. migration is not yet actual.
@@ -39,7 +39,7 @@ const countInIdb = () => new Promise((resolve) => {
     const req = indexedDB.open('erp_cache', 1);
     req.onupgradeneeded = () => req.result.createObjectStore('blobs');
     req.onsuccess = () => {
-      const g = req.result.transaction('blobs', 'readonly').objectStore('blobs').get('ad_seed_v13');
+      const g = req.result.transaction('blobs', 'readonly').objectStore('blobs').get(window.ERP_SEED_KEY);
       g.onsuccess = () => {
         const buf = g.result;
         if (!buf || !window.SQL) return resolve({ blob: !!buf, client: -2 });

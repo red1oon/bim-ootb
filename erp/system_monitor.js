@@ -12,6 +12,7 @@
 
   function mb(n) { return (n == null) ? null : (n / 1048576).toFixed(1) + ' MB'; }
 
+  var SEED_KEY = global.ERP_SEED_KEY || (typeof require === 'function' ? require('./seed_key.js') : null);   // SEAM F10 — one owner: seed_key.js
   var REPO = 'red1oon/bim-ootb';   // provenance home for the Release link (…/releases/tag/vNNN)
 
   // sw CACHE_VERSION = our RELEASE tag — asked over the live SW (GET_PRECACHE → {version}).
@@ -262,12 +263,12 @@
 
   // resetSeedClients — SURGICAL reset (user 2026-06-19): restore the SHIPPED seed/demo ERP clients to their
   //   initial state WITHOUT touching the tenants the user created. The mutated/dirty state lives in the
-  //   persisted ad_seed_v16 blob (whole-db cache); pristine ad_seed.db carries only System(0)+GardenWorld(11),
+  //   persisted ERP_SEED_KEY blob (whole-db cache); pristine ad_seed.db carries only System(0)+GardenWorld(11),
   //   the demo band (12-16) re-installs from shards on demand, and born/resident tenants start at AD_Client_ID
   //   >= 17 (genesis nextClientId floor). So: snapshot every row >= 17 → re-fetch pristine ad_seed.db → re-insert
-  //   the snapshot (col-INTERSECT, INSERT OR IGNORE, like Genesis.mergeGenesisInto) → replace ad_seed_v16.
+  //   the snapshot (col-INTERSECT, INSERT OR IGNORE, like Genesis.mergeGenesisInto) → replace the ERP_SEED_KEY blob.
   //   Net: seed clients pristine · demo installs gone (re-installable) · born tenants + their data intact.
-  //   The op-log/overlay scoped to seed clients 0-16 is carried IN ad_seed_v16, so the wholesale replace drops it;
+  //   The op-log/overlay scoped to seed clients 0-16 is carried IN the ERP_SEED_KEY blob, so the wholesale replace drops it;
   //   the separate glassbowl demo sidecar (its own idb) is a different surface and is left alone. W-SEED-RESET-LIVE.
   var SEED_FLOOR = 17;
 
@@ -318,7 +319,7 @@
     console.log('§SEED-RESET reinsert residentRows=' + c.reins + ' tables=' + c.reinsTbls);
 
     // 3. persist the rebuilt base as the live cache (replaces the mutated blob).
-    try { await idbPutBlob('ad_seed_v18', fresh.export().buffer); console.log('§SEED-RESET persisted key=ad_seed_v18 pristine+resident'); }
+    try { await idbPutBlob(SEED_KEY, fresh.export().buffer); console.log('§SEED-RESET persisted key=' + SEED_KEY + ' pristine+resident'); }
     catch (e) { console.log('§SEED-RESET persist-fail ' + (e && e.message)); }
     try { fresh.close(); } catch (e) {}
     // 4. clear the World history (whole-history timeline) + the kernel op-log so the reset is a clean slate.
