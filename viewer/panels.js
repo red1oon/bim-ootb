@@ -2621,7 +2621,7 @@ function setupPanels(A) {
   }
 
   function _openBomDb(A, buf, bomName, source) {
-    initSqlJs({ locateFile: function(f) { return 'lib/' + f; } }).then(function(SQL) {
+    initSqlJs({ locateFile: function(f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } }).then(function(SQL) {
       A._bomDb = new SQL.Database(buf);
       console.log('§BOM_DB_READY name=' + bomName + ' source=' + source +
         ' size=' + (buf.byteLength / 1024).toFixed(0) + 'KB');

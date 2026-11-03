@@ -3,7 +3,7 @@
 // loader.js — Progressive script loader: local-first, CDN fallback
 // §S276: Three.js r184 ESM upgrade — import map + window.THREE shim
 // WASM binary fetch starts immediately — downloads in parallel with JS libs
-const _wasmBinaryPromise = fetch('lib/sql-wasm.wasm')
+const _wasmBinaryPromise = fetch('../common/lib/sql-wasm.wasm')
   .then(r => r.ok ? r.arrayBuffer().then(b => new Uint8Array(b)) : null)
   .catch(() => fetch('https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.wasm')
     .then(r => r.ok ? r.arrayBuffer().then(b => new Uint8Array(b)) : null)
@@ -18,7 +18,7 @@ const _timerIv = setInterval(() => {
 // Local-first, CDN fallback (SQLite + SheetJS remain UMD <script> inject)
 const LIBS = [
   { name: 'SQLite (WASM+RTree)',
-    url: 'lib/sql-wasm.js',
+    url: '../common/lib/sql-wasm.js',
     cdn: 'https://cdn.jsdelivr.net/npm/rtree-sql.js@1.7.0/dist/sql-wasm.js' },
   { name: 'SheetJS (Excel)',
     url: 'lib/xlsx.full.min.js',
@@ -152,7 +152,7 @@ async function loadAllLibs() {
     document.getElementById('lib-1-status').style.color = '#4fc3f7';
   }
   try {
-    const OC = await import('./lib/OrbitControls.module.js');
+    const OC = await import('../common/lib/OrbitControls.module.js');
     THREE.OrbitControls = OC.OrbitControls;
     window.OrbitControls = OC.OrbitControls;
     console.log('§UPGRADE_ORBIT local ESM loaded');

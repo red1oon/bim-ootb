@@ -11,8 +11,8 @@ const path = require('path');
 const BASE = 'http://localhost:8080/bim-ootb';
 const IFC = path.resolve('/home/red1/bim-ootb/tests/fixtures/Vogel_Gesamt_upgraded.ifc');
 const KEY = 'Vogel_Gesamt_upgraded.ifc';
-const WASM_URL = BASE + '/viewer/lib/web-ifc.wasm';
-const SQLWASM_URL = BASE + '/viewer/lib/sql-wasm.wasm';
+const WASM_URL = BASE + '/common/lib/web-ifc.wasm';
+const SQLWASM_URL = BASE + '/common/lib/sql-wasm.wasm';
 
 function mk() { const logs = []; return { logs,
   attach(page){ page.on('console', m => logs.push(m.text())); page.on('pageerror', e => logs.push('PAGEERR ' + e.message)); },
@@ -47,7 +47,7 @@ async function s2(browser){
   await page.evaluate(async ()=>{ const reg = await navigator.serviceWorker.getRegistration('viewer/'); const sw = reg && (reg.active||reg.waiting||reg.installing); if (sw && sw.state!=='activated') await new Promise(r=>sw.addEventListener('statechange',()=>sw.state==='activated'&&r())); });
   let warm=false, sqlc=false;
   for (let i=0;i<60;i++){
-    warm = await page.evaluate(async ()=>{ try{ return !!(await (await caches.open('bim-ifc-engine')).match('viewer/lib/web-ifc.wasm')); }catch(e){ return false; } });
+    warm = await page.evaluate(async ()=>{ try{ return !!(await (await caches.open('bim-ifc-engine')).match('common/lib/web-ifc.wasm')); }catch(e){ return false; } });
     sqlc = await page.evaluate(u=>caches.match(u).then(r=>!!r), SQLWASM_URL);
     if (warm && sqlc) break; await sleep(1000);
   }
@@ -71,7 +71,7 @@ async function s3(browser){
   // ensure SW active (sql-wasm precached) but web-ifc.wasm blocked → not cached
   await page.evaluate(async ()=>{ const reg = await navigator.serviceWorker.getRegistration('viewer/'); const sw = reg && (reg.active||reg.waiting||reg.installing); if (sw && sw.state!=='activated') await new Promise(r=>sw.addEventListener('statechange',()=>sw.state==='activated'&&r())); });
   // hard-evict web-ifc.wasm from every cache layer just in case
-  await page.evaluate(async ()=>{ const ks=await caches.keys(); for(const k of ks){ const c=await caches.open(k); await c.delete('viewer/lib/web-ifc.wasm'); await c.delete('http://localhost:8080/bim-ootb/viewer/lib/web-ifc.wasm'); } });
+  await page.evaluate(async ()=>{ const ks=await caches.keys(); for(const k of ks){ const c=await caches.open(k); await c.delete('common/lib/web-ifc.wasm'); await c.delete('http://localhost:8080/bim-ootb/common/lib/web-ifc.wasm'); } });
   await page.evaluate(async (k)=>{ if (typeof deleteProject==='function'){ try{await deleteProject(k);}catch(e){} } }, KEY);
   await ctx.setOffline(true);
   await page.locator('#import-file-input').setInputFiles(IFC);

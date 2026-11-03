@@ -17,8 +17,8 @@
 // can serve it offline (PWA imports IFC with no internet). CDN is fallback only.
 console.log('[S220] §WORKER_START loading web-ifc (local-first)...');
 try {
-  importScripts('lib/web-ifc-api-iife.js');
-  console.log('[S220] §WORKER_SRC local lib/web-ifc-api-iife.js');
+  importScripts('../common/lib/web-ifc-api-iife.js');
+  console.log('[S220] §WORKER_SRC local ../common/lib/web-ifc-api-iife.js');
 } catch (e) {
   console.warn('[S220] §WORKER_SRC_FALLBACK local failed (' + e.message + '), trying CDN');
   importScripts('https://unpkg.com/web-ifc@0.0.77/web-ifc-api-iife.js');
@@ -151,7 +151,7 @@ self.onmessage = async function(e) {
         return _url;
       }
       // 2. PWA / online — same-origin lib/ so the service worker serves it offline
-      var local = 'lib/' + path;
+      var local = (path === 'web-ifc.wasm' ? '../common/lib/' : 'lib/') + path;
       console.log('[S220] §WASM_LOCATE ' + path + ' → ' + local + ' (local, SW-cached)');
       return local;
     }, true);
