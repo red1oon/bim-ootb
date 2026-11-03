@@ -90,7 +90,8 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); };
   db.run("UPDATE c_acctschema SET ispostifclearingequal='" + as1 + "' WHERE c_acctschema_id=101"); db.run('UPDATE c_bankaccount_acct SET b_intransit_acct=? WHERE c_bankaccount_id=100 AND c_acctschema_id=101', [ba1]);
 
   // ── B3: every other doc type, candidate vs pinned baseline, byte-identical (result, ops, log) ──
-  var TABLES = ['c_order', 'm_inout', 'c_invoice', 'c_payment', 'c_allocationhdr', 'm_matchinv', 'm_matchpo', 'm_movement', 'm_inventory', 'gl_journal'], n3 = 0, d3 = [], per = {};
+  // c_allocationhdr deliberately NOT here: Doc_AllocationHdr gained its legs (W-POST-ALLOCATION owns that judgement, PIN f4cdcdf8)
+  var TABLES = ['c_order', 'm_inout', 'c_invoice', 'c_payment', 'm_matchinv', 'm_matchpo', 'm_movement', 'm_inventory', 'gl_journal'], n3 = 0, d3 = [], per = {};
   if (!PB) ok('B3', 'baseline model_post loadable via git show ' + BASE, null, 'git show failed - INCONCLUSIVE');
   else {
     TABLES.forEach(function (t) {
