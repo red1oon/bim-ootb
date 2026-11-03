@@ -863,7 +863,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- ReadMe/ShowMe HELP overlay — separated behavior layer, keyed to bubbles (READSHOWME_DYNAMIC_SPEC.md D3) -->
 <script src="help_overlay.js"></script>
 <!-- BigDecimal — exact decimal arithmetic for ALL money/qty math (== java.math.BigDecimal, proven; feedback_numbers_via_bigdecimal). MUST load before any money-math consumer. -->
-<script src="bigdecimal.js"></script>
+<script src="bigdecimal.js?v=2"></script>
 <!-- production signed kernel (W-CHAIN/W-SIGN) — one source, copied from bim-ootb/viewer/kernel_ops.js. GP3: Process ▶ commits real signed SET_STATUS ops to a sidecar log. -->
 <script src="kernel_ops.js"></script>
 <!-- edge signer (W-SIGN) — turns the signed checkpoint un-FORGEABLE; loadOrMint custody, reused by period-close. -->
@@ -873,7 +873,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:"glassbowl",rootPrefix:"../
 <!-- model-validator beforeSave hooks (W-*-SAVE, faithful M*.beforeSave ports) — window.AdModelVal; crud_overlay.saveForm fires BEFORE_SAVE: reject blocks, derived fills (§AD-MODELVAL-LIVE, UI_UNPARK B-3). MUST load before crud_overlay. -->
 <script src="ad_modelval.js"></script>
 <!-- T1 (SO_FULL_CRUD_GAP.md, W-SO-COMPLETE-UI): the PROVEN engine (UMD of bim-compiler scripts/erp_engine.js — window.ERPEngine, same file idempiere.html loads). crud_overlay.completeFanout extracts the completeIt consequence set (ship+invoice creates) from it. MUST load before crud_overlay. -->
-<script src="erp_engine.js?v=1"></script>
+<script src="erp_engine.js?v=2"></script>
 <!-- CRUD ring-of-fire + Process/DocAction overlay — peer behavior layer, keyed to bubbles. GP3: Process ▶ = REAL signed write (sidecar log, read-the-tip). T1: Complete a c_order = the WHOLE document process committed as ONE group. T2: renderDataTab unions CRUD_CREATE rows + hides DELETE tombstones (CORE.listTip). -->
 <!-- T7 (W-T7-INC): memoized tip-folds — load BEFORE crud_overlay so readTip/tipValues delegate. -->
 <script src="tip_fold.js?v=1"></script>
