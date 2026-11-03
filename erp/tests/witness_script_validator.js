@@ -44,7 +44,7 @@ function J(x) { return JSON.stringify(x); }
 function guard(cs, key, rule, fn) { try { fn(); } catch (e) { check(cs, key, rule, false, 'threw: ' + (e && (e.message || e.stack) || String(e))); } }
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
 // the team base as erp/team_sync.js hashBase computes it (an independent oracle in node): the seed file, then the two self-heal patch texts idempiere.html applies
-var BASE_PIN = '37134ec72f0e0ff8f3809e06871eb7d118f1cb198acabd0a74bcf6213bb4df67';       // measured on origin/main 90233440 (STEP 0); a later INTENDED base change must move this pin on purpose · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, owner "Patch it"); was d35e8a75…
+var BASE_PIN = '38ae6753148be42930bc1fe305a534e51bea644058f5a4acaef651ab9cbc87cb';       // measured on origin/main 90233440 (STEP 0); a later INTENDED base change must move this pin on purpose · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, owner "Patch it"); was d35e8a75… // MOVED ON PURPOSE 2026-11-04: seed cost history m_costdetail/m_costhistory rows (W-SEED-COSTHISTORY); was 37134ec7
 function baseOracle() {
   var buf = fs.readFileSync(path.join(ERP, 'ad_seed.db')), man = 'seed ' + sha256(buf) + ' ' + buf.length + '\n';
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (nm, i) { var f = path.join(ERP, 'patches', nm); man += '--patch ' + i + (fs.existsSync(f) ? '\n' + fs.readFileSync(f, 'utf8') : ' MISSING') + '\n'; });

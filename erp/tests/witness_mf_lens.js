@@ -33,7 +33,7 @@ function verdict(arm, ok, label, detail) { judged++; ARMS[arm] = ARMS[arm] || 0;
 function say(s) { if (!QUIET) console.log(s); }
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 var BUNDLE = 'org.kernel.mf-lens', CID = 9539001, NAME = 'Micro Finance', BAND_LO = 9539001, BAND_HI = 9539999;
-var BASE_PIN = '37134ec72f0e0ff8f3809e06871eb7d118f1cb198acabd0a74bcf6213bb4df67';       // team base of origin/main 9d092972 (the pin of W-IMPORT-ORDER / W-POS-SALES); a later INTENDED base change must move this pin on purpose · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75…
+var BASE_PIN = '38ae6753148be42930bc1fe305a534e51bea644058f5a4acaef651ab9cbc87cb';       // team base of origin/main 9d092972 (the pin of W-IMPORT-ORDER / W-POS-SALES); a later INTENDED base change must move this pin on purpose · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75… // MOVED ON PURPOSE 2026-11-04: seed cost history m_costdetail/m_costhistory rows (W-SEED-COSTHISTORY); was 37134ec7
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
 function baseOracle() {
   var buf = fs.readFileSync(path.join(ERP, 'ad_seed.db')), man = 'seed ' + sha256(buf) + ' ' + buf.length + '\n';

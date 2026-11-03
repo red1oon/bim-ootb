@@ -43,7 +43,7 @@ function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }; var v = !c
 function J(x) { return JSON.stringify(x); }
 function guard(cs, key, rule, fn) { try { fn(); } catch (e) { check(cs, key, rule, false, 'threw: ' + (e && (e.message || e.stack) || String(e))); } }
 function sha256(b) { return crypto.createHash('sha256').update(b).digest('hex'); }
-var BASE_PIN = '37134ec72f0e0ff8f3809e06871eb7d118f1cb198acabd0a74bcf6213bb4df67';       // team base of origin/main (same pin as W-IMPORT-PAYMENT) · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75…
+var BASE_PIN = '38ae6753148be42930bc1fe305a534e51bea644058f5a4acaef651ab9cbc87cb';       // team base of origin/main (same pin as W-IMPORT-PAYMENT) · MOVED ON PURPOSE 2026-10-31: user Search Keys patch (TEAMWORK §48.11d, bim-ootb #2463); was d35e8a75… // MOVED ON PURPOSE 2026-11-04: seed cost history m_costdetail/m_costhistory rows (W-SEED-COSTHISTORY); was 37134ec7
 function baseOracle() {
   var buf = fs.readFileSync(path.join(ERP, 'ad_seed.db')), man = 'seed ' + sha256(buf) + ' ' + buf.length + '\n';
   ['ad_seed.db.sql', 'mfg.sql'].forEach(function (nm, i) { var f = path.join(ERP, 'patches', nm); man += '--patch ' + i + (fs.existsSync(f) ? '\n' + fs.readFileSync(f, 'utf8') : ' MISSING') + '\n'; });
@@ -156,14 +156,14 @@ function r2(x) { return Math.round(Number(x) * 100) / 100; }
     var unposted0 = k.q("SELECT 1 FROM c_payment WHERE processed='Y' AND posted IN ('N','d')").length;
     var r = runAcct({}), pay = one('SELECT * FROM c_payment WHERE c_payment_id=?', [PAY1.c_payment_id]), fp = facts(TID_PAY, PAY1.c_payment_id);
     var dr = r2(fp.reduce(function (a, x) { return a + Number(x.amtacctdr); }, 0)), cr = r2(fp.reduce(function (a, x) { return a + Number(x.amtacctcr); }, 0)), ans = String(r.answer);
-    errTables = (ans.match(/([A-Za-z_]+)=\d+\(Errors=\d+\)/g) || []).map(function (s) { return s.split('=')[0]; });
+    errTables = (ans.match(/([A-Za-z_]+)=\d+\(Errors=\d+\)/g) || []).filter(function (s) { return !/\(Errors=0\)$/.test(s); }).map(function (s) { return s.split('=')[0]; });   // a table counted with Errors=0 posted every document: not an error table (W-SEED-COSTHISTORY: M_InOut #108 now posts)
     check('RUN', 'all-run', 'process ok; PAY1 Posted Y, facts balanced (Dr = Cr > 0); "C_Payment=' + unposted0 + '" in the answer; at least one table reports (Errors=n) (the named unported GL Journal / Allocation / Bank Statement) AND documents after it were still posted (M_MatchPO / M_MatchInv / M_InOut counted)',
       r.ok === true && pay.posted === 'Y' && fp.length > 0 && dr === cr && new RegExp('C_Payment=' + unposted0).test(ans) && errTables.length >= 1 && /M_InOut=\d+/.test(ans) && /M_MatchInv=\d+/.test(ans), { ok: r.ok, answer: ans.slice(0, 400), unposted0: unposted0, errTables: errTables, payPosted: pay.posted });
     check('RUN', 'skips-named', 'tables of the dictionary with no physical table here are skipped with ONE §ACCTP-SQL-ERROR line each per run (not silently): PP_Cost_Collector, DD_Order, A_Asset_Reval ...', ['PP_Cost_Collector', 'DD_Order', 'A_Asset_Reval'].every(function (t) { return r.log.filter(function (l) { return l.indexOf('§ACCTP-SQL-ERROR ' + t + ':') === 0; }).length === 1; }), r.log.filter(function (l) { return /SQL-ERROR/.test(l); }).map(function (l) { return l.slice(0, 60); }));
   });
   guard('RUN', 'rerun', 'a re-run posts NOTHING new: Fact_Acct count unchanged; the only documents counted are the ones that failed before (they stay Posted N and are retried, as legacy retries them); every table that is counted shows exactly its Errors', function () {
     var f0 = nFacts(), r = runAcct({}), ans = String(r.answer), parts = ans.split(' - ').filter(Boolean), allErr = parts.every(function (p) { var m = /^([A-Za-z_]+)=(\d+)\(Errors=(\d+)\)$/.exec(p); return m && m[2] === m[3]; });
-    check('RUN', 'rerun', 'ok; no new fact; every counted table is all-errors (' + parts.length + ' tables); the earlier error tables are exactly the counted ones', r.ok === true && nFacts() === f0 && allErr && J(parts.map(function (p) { return p.split('=')[0]; }).sort()) === J(errTables.slice().sort()), { ok: r.ok, dF: nFacts() - f0, answer: ans.slice(0, 300), errTables: errTables });
+    check('RUN', 'rerun', 'ok; no new fact; every counted table is all-errors (' + parts.length + ' tables); every counted table is one that errored before (an E-status document is not retried, as legacy; W-SEED-COSTHISTORY: M_InOut #108 now posts so only #103 stays E)', r.ok === true && nFacts() === f0 && allErr && parts.every(function (p) { return errTables.indexOf(p.split('=')[0]) >= 0; }), { ok: r.ok, dF: nFacts() - f0, answer: ans.slice(0, 300), errTables: errTables });
   });
   guard('RUN', 'two-second-guard', 'a document completed less than 2 s before the run (ProcessedOn > now - 2 s) is NOT posted; the same document IS posted by a run 5 s later (go back 2 seconds to be safe, :131-134)', function () {
     var fresh = completeCopy({ clientAccounting: 'Q' }), base = 1760000000000;
