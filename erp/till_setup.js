@@ -9,7 +9,7 @@
   'use strict';
   var T = { G: 'General', L: 'Locale', S: 'System Options', K: 'Ticket Setup', C: 'Company' }, A = null;
   var K = [   // [tab, key, label, type, default, scope]
-    ['G', 'machine.hostname', 'Terminal Name', 'text', '', 'tillkey'], ['G', 'machine.department', 'Department', 'text', '', 'device'], ['G', 'machine.ticketsbag', 'Tickets', 'mode', 'standard', 'device'], ['G', 'start.logo', 'Startup Logo', 'text', '', 'device'], ['G', 'start.text', 'Startup Text', 'text', '', 'device'],
+    ['G', 'machine.hostname', 'Terminal Name', 'text', '', 'tillkey'], ['G', 'machine.department', 'Department', 'text', '', 'device'], ['G', 'machine.ticketsbag', 'Tickets', 'mode', 'standard', 'device'], ['G', 'ui.theme', 'Look and Feel', 'theme', 'classic', 'device'], ['G', 'start.logo', 'Startup Logo', 'text', '', 'device'], ['G', 'start.text', 'Startup Text', 'text', '', 'device'],
     ['L', 'user.language', 'Locale: language', 'text', '', 'branch'], ['L', 'user.country', 'Locale: country', 'text', '', 'branch'], ['L', 'user.variant', 'Locale: variant', 'text', '', 'branch'],
     ['L', 'format.integer', 'Integer', 'text', '(Default)', 'branch'], ['L', 'format.double', 'Double', 'text', '(Default)', 'branch'], ['L', 'format.currency', 'Currency', 'text', '(Default)', 'branch'], ['L', 'format.percent', 'Percent', 'text', '(Default)', 'branch'],
     ['L', 'format.date', 'Date', 'text', '(Default)', 'branch'], ['L', 'format.time', 'Time', 'text', '(Default)', 'branch'], ['L', 'format.datetime', 'Date Time', 'text', '(Default)', 'branch'],
@@ -39,7 +39,8 @@
       else if (sc === 'branch') { val = key === 'user.language' ? dv.lang : (s[key] !== undefined ? s[key] : k[4]); note = 'from the branch client'; }
       else if (sc === 'admin') { val = key === 'override.pin' ? '' : true; note = 'set at the Branch POS Admin'; }
       else val = s[key] !== undefined ? s[key] : k[4];
-      var inp = k[3] === 'mode' ? '<select id="cfg-mode" data-key="' + key + '">' + MODES.map(function (m) { return '<option' + (m === (A.S.mode || 'standard') ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select>'
+      var inp = k[3] === 'theme' ? '<select id="cfg-theme" data-key="' + key + '">' + window.TillTheme.names().map(function (n) { return '<option value="' + n + '"' + (n === (val || 'classic') ? ' selected' : '') + '>' + A.esc(window.TillTheme.THEMES[n].label) + '</option>'; }).join('') + '</select>'
+        : k[3] === 'mode' ? '<select id="cfg-mode" data-key="' + key + '">' + MODES.map(function (m) { return '<option' + (m === (A.S.mode || 'standard') ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select>'
         : k[3] === 'bool' ? '<input type="checkbox" data-key="' + key + '"' + (val ? ' checked' : '') + (ro ? ' disabled' : '') + '>' : '<input data-key="' + key + '" type="' + (k[3] === 'num' ? 'number' : 'text') + '" value="' + A.esc(val) + '"' + (ro ? ' disabled' : '') + '>';
       return '<div class="cfgrow" data-scope="' + A.esc(sc) + '"><label>' + A.esc(k[2]) + ' ' + inp + '</label>' + (note ? ' <small>' + A.esc(note) + '</small>' : '') + '</div>';
     }).join('');
@@ -48,10 +49,11 @@
   function save() {
     var s = bag(), n = 0; A.$$('#cfg-body [data-key]:not([disabled])').forEach(function (e) { var k = e.getAttribute('data-key'), v = e.type === 'checkbox' ? e.checked : e.type === 'number' ? Number(e.value) : e.value; if (s[k] !== v) { s[k] = v; n++; } });
     var m = A.$('#cfg-mode'); if (m) s['machine.ticketsbag'] = m.value;
+    if (window.TillTheme) window.TillTheme.apply(s['ui.theme'] || 'classic');   // §36.3: the theme applies at once
     A.saveStore(); A.log('§TILL_SETUP_SAVE till=' + A.S.cfg.tillKey + ' changed=' + n + ' mode=' + s['machine.ticketsbag']); A.msg('Saved. A changed Tickets mode applies at the next start.', 'ok'); return s;
   }
   function init(api) {
-    A = api; A.hooks.setup = render;
+    A = api; A.hooks.setup = render; if (window.TillTheme) window.TillTheme.apply(bag()['ui.theme'] || 'classic');   // §36.3: the device's own choice, classic when none was made
     document.addEventListener('click', function (ev) {
       var b = ev.target.closest && ev.target.closest('button'); if (!b) return;
       if (b.id === 'cfg-open') A.go('setup'); else if (b.id === 'cfg-save') save(); else if (b.id === 'cfg-back') A.go('menu'); else if (b.hasAttribute('data-cfg-tab')) { render.tab = b.getAttribute('data-cfg-tab'); render(); }

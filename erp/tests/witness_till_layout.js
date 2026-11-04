@@ -15,8 +15,8 @@ var srv = http.createServer(function (q, r) { var u = q.url.split('?')[0], p = p
 srv.listen(0, async function () {
   var pw; try { pw = require('playwright'); } catch (e) { pw = require('/home/red1/bim-ootb/tests/node_modules/playwright'); }
   var b = await pw.chromium.launch(), errs = [];
-  async function open(w, h) { var pg = await (await b.newContext({ viewport: { width: w, height: h } })).newPage(); pg.on('console', function (m) { var t = m.text(); if (/§TILL_LAYOUT|§TILL_CATALOG|🔴/.test(t)) console.log(t.slice(0, 240)); }); pg.on('pageerror', function (e) { errs.push(e.message); console.log('PAGEERR ' + e.message.slice(0, 200)); });
-    await pg.goto('http://localhost:' + srv.address().port + '/erp/till.html', { waitUntil: 'load' }); await pg.waitForFunction('window.Till && window.Till.ready', null, { timeout: 170000 });
+  async function open(w, h) { var pg = await (await b.newContext({ viewport: { width: w, height: h } })).newPage(); pg.on("console", function (m) { var t = m.text(); if (/§TILL_LAYOUT|§TILL_CATALOG|§TILL_THEME_FORCED|🔴/.test(t)) console.log(t.slice(0, 240)); }); pg.on('pageerror', function (e) { errs.push(e.message); console.log('PAGEERR ' + e.message.slice(0, 200)); });
+    await pg.goto('http://localhost:' + srv.address().port + '/erp/till.html', { waitUntil: 'load' }); await pg.waitForFunction('window.Till && window.Till.ready', null, { timeout: 170000 }); if (process.env.TILL_THEME) await pg.evaluate(function (t) { var S = Till.state(); (S.store.setup = S.store.setup || {})['ui.theme'] = t; TillTheme.apply(t); console.log('§TILL_THEME_FORCED ' + t); }, process.env.TILL_THEME);
     await pg.click('#u1 .u-user:has-text("GardenAdmin")'); await pg.click('#u2 [data-panel="Sales"]'); return pg; }
   console.log('═══ W-TILL-LAYOUT / W-TILL-SCREENS ═══' + (MUT ? ' MUTANT=' + MUT : ''));
   async function measure(pg, ch) {

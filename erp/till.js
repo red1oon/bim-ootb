@@ -59,7 +59,7 @@
   }
 
   function msg(t, kind) { var el = $('#msg'); el.hidden = !t; el.textContent = t || ''; el.setAttribute('data-kind', kind || ''); if (t) log('§TILL_MSG ' + (kind || 'info') + ' ' + t); }
-  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', heldlist: 'u7', reprintlist: 'u5r' };
+  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', about: 'u24', heldlist: 'u7', reprintlist: 'u5r' };
   var HOOKS = {};   // screen name -> function run after the screen is shown (the screens of till_ext.js)
   function go(name) {
     if (!SCREENS[name]) { msg('This panel is not in this release', 'info'); return false; }
@@ -152,7 +152,7 @@
   }
   // §31/§32: ask the service worker to fetch ONLY the pictures it does not hold yet, then evict what the catalog no longer lists. The bytes stay on the device's disk, never in the twin's DB.
   async function mediaPrefetch() {
-    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean), sw = null;
+    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean).concat(window.TillCompany ? window.TillCompany.logoUrls() : []), sw = null;
     try { if (navigator.serviceWorker) { var reg = await Promise.race([navigator.serviceWorker.ready, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]); sw = navigator.serviceWorker.controller || (reg && reg.active); } } catch (e) { /* no SW */ }
     if (!urls.length || !sw) { log('§TILL_MEDIA INCONCLUSIVE urls=' + urls.length + ' sw=' + !!sw); return null; }
     var r = await new Promise(function (ok) { var ch = new MessageChannel(); ch.port1.onmessage = function (e) { ok(e.data); }; sw.postMessage({ type: 'MEDIA_PREFETCH', urls: urls, capMb: 50 }, [ch.port2]); setTimeout(function () { ok(null); }, 60000); });
@@ -227,7 +227,7 @@
   // ── U9 ──
   function showReceipt(print) {
     var r = S.lastReceipt;
-    $('#receipt').innerHTML = print ? r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
+    $('#receipt').innerHTML = print ? (window.TillCompany ? window.TillCompany.headerHtml() : '') + r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
     var cp = $('#changepop'); cp.hidden = !(r.firstCash && r.change > 0); cp.textContent = 'Change: ' + C.money(r.change);   // Ticket.Close.xml:23-60
     go('receipt');
   }
@@ -286,7 +286,9 @@
     if (!window.SodaCore) return null;
     var all = []; try { all = await rows('SELECT * FROM pos_tillref ORDER BY seq, ABS(pos_tillref_id)'); } catch (e) { return null; }
     var done = Number(S.store.sodaSeq || 0), fresh = all.filter(function (r) { return Number(r.seq) > done && r.kind !== 'B'; });
-    if (!fresh.length) return { applied: 0 };
+    var comp = fresh.filter(function (r) { return r.kind === 'O'; }); fresh = fresh.filter(function (r) { return r.kind !== 'O'; });   // §36.5: the company row is the till's own device record, not a table row
+    var cres = comp.length && window.TillCompany ? window.TillCompany.apply(comp) : null;
+    if (!fresh.length) { if (comp.length) { S.store.sodaSeq = comp.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
     var cur = {}, ops = [], pk = {};
     for (var i = 0; i < fresh.length; i++) { var r = fresh[i], t = r.kind === 'P' ? 'm_productprice' : r.kind === 'R' ? 'm_product' : 'c_tax';
       var w = r.kind === 'P' ? 'm_product_id=' + Number(r.m_product_id) + ' AND m_pricelist_version_id=' + Number(r.m_pricelist_version_id) : r.kind === 'R' ? 'm_product_id=' + Number(r.m_product_id) : 'c_tax_id=' + Number(r.c_tax_id);
@@ -296,7 +298,7 @@
       update: function (t, where, f) { var row = cur[key(t, where)]; if (!row) return; var idc = row[t + '_id'] != null ? t + '_id' : t + '_uu', ch = {}; Object.keys(f).forEach(function (k) { if (String(row[k] == null ? '' : row[k]) !== String(f[k] == null ? '' : f[k])) ch[k] = { old: row[k] == null ? null : row[k], new: f[k] }; }); if (!Object.keys(ch).length) return; ops.push({ op_type: 'CRUD_UPDATE', key: t, table: t, verb: 'update', id: row[idc], idCol: idc === t + '_id' ? undefined : idc, changes: ch }); },   // a single-key table by its id, a composite-key one (M_ProductPrice) by its UU; only the columns that differ
       insert: function (t, f) { ops.push(create(t, f)); } };
     var res = window.SodaCore.applyRef(W, fresh, { client: S.cfg.client });
-    var hi = fresh.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
+    var hi = fresh.concat(comp).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
     if (ops.length) { var g = await depositGroup(ops); if (!g || g.committed !== true) { log('§SODA_TILL_APPLY FAIL till=' + S.cfg.tillKey + ' ' + (g && g.reason)); return { failed: true }; } }
     S.store.sodaSeq = hi; saveStore(); await loadConfig(); mediaPrefetch();
     log('§SODA_TILL_APPLY till=' + S.cfg.tillKey + ' rows=' + fresh.length + ' prices=' + res.applied.prices + ' products=' + res.applied.products + ' taxes=' + res.applied.taxes + ' unchanged=' + res.noop + ' upToSeq=' + hi);
@@ -358,6 +360,7 @@
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
     if (window.TillSetupInit) window.TillSetupInit(api);
+    if (window.TillCompanyInit) window.TillCompanyInit(api);   // §36: left menu panel, About, brand strip, receipt header
     if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
     window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
