@@ -26,7 +26,7 @@ var WHITELIST = {
 };
 
 // Per-table QUERY input whitelist — stands in for WS_WebServiceFieldInput rows on the QUERY type (queryData :1470-1500: a DataRow column that is not whitelisted → "input column X not allowed").
-// These are exactly the natural keys erp_rest_push.js looks rows up by (the pilot's Query* types carry the same list: capex/tools/ws_capex_querykeys.sql).
+// These are exactly the natural keys erp_rest_push.js looks rows up by (the pilot's Query* types carry the same list: capex/legacy/ws/migration/iD13/postgresql/202611042300_CAPEX-WS-READ.sql).
 var QUERY_KEYS = {
   C_Project: ['Value', 'C_Project_ID'],
   C_ProjectPhase: ['C_Project_ID', 'Name', 'C_ProjectPhase_ID'],
