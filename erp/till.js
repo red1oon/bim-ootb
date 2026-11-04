@@ -36,7 +36,7 @@
     var plv = (await rows('SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=' + Number(pos.m_pricelist_id) + ' ORDER BY validfrom DESC, m_pricelist_version_id DESC LIMIT 1'))[0];
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
-    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim, p.imageurl AS img FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
@@ -131,8 +131,25 @@
     kids = kids.filter(function (c) { return hasProd(c.id); });
     $('#cats').innerHTML = (cur != null ? '<button data-cat-up="1">&larr;</button>' : '') + kids.map(function (c) { return '<button data-cat="' + c.id + '"' + (S.cat === c.id ? ' class="on"' : '') + '>' + esc(c.name) + '</button>'; }).join('');
     var list = cur == null ? [] : S.prods.filter(function (p) { return Number(p.cat) === Number(cur); });
-    $('#products').innerHTML = list.map(function (p) { return '<button class="prod" data-pid="' + p.pid + '">' + esc(p.name) + '<br>' + C.money(C.cents(p.price)) + '</button>'; }).join('');
+    var z = S.sizes || { 'img-width': 107, 'img-height': 60 };    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
+    $('#products').innerHTML = list.map(function (p) { return prodTile(p, z); }).join('');
+    log('§TILL_CATALOG tiles=' + list.length + ' withImage=' + list.filter(function (p) { return p.img; }).length + ' size=' + z['img-width'] + 'x' + z['img-height']);
   }
+  // Lucide image-off (placeholder, no GPL art; §29.D.2). The picture is decoded only when the tile is on screen (lazy + async), CORS so the SW media cache can store a real 200 (§31).
+  var NOIMG = '<svg class="noimg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"/><path d="M13.5 13.5 6 21"/><path d="M18 12l3 3"/><path d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"/><path d="M21 15V5a2 2 0 0 0-2-2H9"/></svg>';
+  function prodTile(p, z) {
+    var pic = p.img ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" width="' + z['img-width'] + '" height="' + z['img-height'] + '" style="object-fit:contain;display:block;margin:0 auto">' : '<span class="ph" style="display:block;height:' + z['img-height'] + 'px;text-align:center">' + NOIMG + '</span>';
+    return '<button class="prod" data-pid="' + p.pid + '" style="width:' + (z['img-width'] + 10) + 'px;min-height:' + (z['img-height'] + 34) + 'px;padding:2px">' + pic + '<span class="pn" style="display:block;text-align:center">' + esc(p.name) + '</span><span class="pp" style="display:block;text-align:center">' + C.money(C.cents(p.price)) + '</span></button>';
+  }
+  // §31/§32: ask the service worker to fetch ONLY the pictures it does not hold yet, then evict what the catalog no longer lists. The bytes stay on the device's disk, never in the twin's DB.
+  async function mediaPrefetch() {
+    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean), sw = null;
+    try { if (navigator.serviceWorker) { var reg = await Promise.race([navigator.serviceWorker.ready, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]); sw = navigator.serviceWorker.controller || (reg && reg.active); } } catch (e) { /* no SW */ }
+    if (!urls.length || !sw) { log('§TILL_MEDIA INCONCLUSIVE urls=' + urls.length + ' sw=' + !!sw); return null; }
+    var r = await new Promise(function (ok) { var ch = new MessageChannel(); ch.port1.onmessage = function (e) { ok(e.data); }; sw.postMessage({ type: 'MEDIA_PREFETCH', urls: urls, capMb: 50 }, [ch.port2]); setTimeout(function () { ok(null); }, 60000); });
+    log('§TILL_MEDIA files=' + (r && r.files) + ' bytes=' + (r && r.bytes) + ' fetched=' + (r && r.fetched) + ' evicted=' + (r && r.evicted) + ' heap_mb=' + (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1)); return r;
+  }
+  async function loadSizes() { try { var rs = await rows("SELECT recid, value FROM pos_floorplan WHERE kind='S'"); var o = {}; rs.forEach(function (r) { o[r.recid] = r.value; }); if (window.RestCore) S.sizes = RestCore.sizes(o); } catch (e) { /* table not made yet: defaults */ } }
 
   // ── U8 payment dialog (sale, refund U11, customer payment U12 share it: the tabs differ, 5.0 JPaymentSelectReceipt / Refund / Customer) ──
   function openPay(kind, amountCents, customer) {
@@ -272,7 +289,7 @@
     var res = window.SodaCore.applyRef(W, fresh, { client: S.cfg.client });
     var hi = fresh.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
     if (ops.length) { var g = await depositGroup(ops); if (!g || g.committed !== true) { log('§SODA_TILL_APPLY FAIL till=' + S.cfg.tillKey + ' ' + (g && g.reason)); return { failed: true }; } }
-    S.store.sodaSeq = hi; saveStore(); await loadConfig();
+    S.store.sodaSeq = hi; saveStore(); await loadConfig(); mediaPrefetch();
     log('§SODA_TILL_APPLY till=' + S.cfg.tillKey + ' rows=' + fresh.length + ' prices=' + res.applied.prices + ' products=' + res.applied.products + ' taxes=' + res.applied.taxes + ' unchanged=' + res.noop + ' upToSeq=' + hi);
     return res;
   }
@@ -315,7 +332,7 @@
     await E.TeamSync.ready;
     if (E.AdImportTables && E.AdImportTables.ensurePos) E.AdImportTables.ensurePos(E.__idmpDb);   // POS_TillHandoff (POS_PLUGIN_LOCAL_FIRST §26.2)
     E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
-    await loadConfig();
+    await loadConfig(); await loadSizes(); mediaPrefetch();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
     S.ticket = S.store.ticket || newTicket();
     initPad(); await renderLogin(); renderMenu(); bind(); netChip();
