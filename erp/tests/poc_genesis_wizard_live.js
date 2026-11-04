@@ -26,9 +26,10 @@ var server = http.createServer(function (req, res) {
 
   await page.goto(url, { waitUntil: 'networkidle' });
   await page.click('#go');
-  await page.waitForFunction(function () {
+  try { await page.waitForFunction(function () {
     return document.querySelector('#out .badge') !== null;
-  }, { timeout: 20000 });
+  }, { timeout: 20000 }); }
+  catch (eW) { console.log('§W-GENESIS-WIZARD-LIVE TIMEOUT waiting for the result badge — page §-log:'); logs.forEach(function (l) { console.log('  ' + l); }); console.log('  pageErrors=' + JSON.stringify(pageErrors).slice(0, 1200)); await browser.close(); server.close(); process.exit(1); }
   await page.waitForTimeout(500);
 
   console.log('═══ W-GENESIS-WIZARD-LIVE — genesis.html births + posts in a REAL browser (sql.js) ═══\n');

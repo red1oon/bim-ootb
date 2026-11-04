@@ -51,15 +51,21 @@
   <div id="out"></div>
 </div>
 
-<!-- engine (UMD globals; same modules the headless witness W-GENESIS-MINIMAL proved) -->
+<!-- engine (UMD globals; the page's posting path is Genesis.postSampleInvoice, judged headless by W-GENESIS-REAL-POSTER) -->
 <script src="lib/sql-wasm-fts5.js"></script>
 <script src="overlay_kit.js"></script>
 <script src="erp_snapshot_sign.js"></script>
 <script src="genesis_seed.js?v=2"></script>
-<script src="genesis.js?v=10"></script>
-<script src="post_resolver.js?v=1"></script>
+<script src="genesis.js?v=11"></script>
+<!-- the REAL poster (§POSTING-PARITY 5g): the model layer the app runs + the GENERATED dictionary subset it posts over -->
 <script src="bigdecimal.js?v=2"></script>
-<script src="doc_poster.js?v=5"></script>
+<script src="ad_modelval.js?v=7"></script>
+<script src="layered_registry.js?v=1"></script>
+<script src="model_layer.js?v=8"></script>
+<script src="model_trade.js?v=5"></script>
+<script src="model_cost.js?v=1"></script>
+<script src="model_post.js?v=9"></script>
+<script src="genesis_dict.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -94,37 +100,7 @@
   }
   window._genesisInstallResident = installResident;   // the render() button calls this
 
-  // ── better-sqlite3-shaped shim over a sql.js handle: get/all/run, named (@key) + positional (?). ──
-  // (idempiere.html's _b3 is read-only; foldGenesis needs run() for INSERTs, so this is the full shim.)
-  function b3(dbh) {
-    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
-    function bind(st, sql, args) {
-      if (!args.length) return;
-      var p = args[0];
-      if (p != null && typeof p === 'object' && !Array.isArray(p)) {       // named: map bare keys → sql prefix
-        var b = {};
-        Object.keys(p).forEach(function (k) {
-          var m = sql.match(new RegExp('[@:$]' + k + '\\b'));
-          b[(m ? m[0][0] : '@') + k] = p[k];
-        });
-        st.bind(b);
-      } else { st.bind(args.slice()); }                                    // positional
-    }
-    function exec(sql, args, all) {
-      var st = dbh.prepare(sql), out = all ? [] : undefined;
-      try {
-        bind(st, sql, args);
-        if (all) { while (st.step()) out.push(lc(st.getAsObject())); }
-        else if (st.step()) out = lc(st.getAsObject());
-      } finally { st.free(); }
-      return out;
-    }
-    return { prepare: function (sql) { return {
-      get: function () { return exec(sql, [].slice.call(arguments), false); },
-      all: function () { return exec(sql, [].slice.call(arguments), true); },
-      run: function () { var st = dbh.prepare(sql); try { bind(st, sql, [].slice.call(arguments)); st.step(); } finally { st.free(); } return {}; }
-    }; } };
-  }
+  var b3 = window.Genesis.b3;   // the better-sqlite3-shaped shim over sql.js (genesis.js - one implementation for the page and the witness)
 
   function money(n) { return Number(n).toFixed(2); }
 
@@ -143,14 +119,7 @@
       var chart = db.prepare('SELECT COUNT(*) n FROM c_elementvalue').get().n;
       console.log('§W-GENESIS-WIZARD-LIVE folded ops=' + nOps + ' chart=' + chart + ' acctschema=' + born.refs.acctSchemaId);
 
-      // CREATE one sales invoice on the born tenant's OWN default BP/product/tax ($100 net + $9 tax)
-      db.prepare('CREATE TABLE c_invoice (c_invoice_id,c_bpartner_id,grandtotal,issotrx,ispaid,dateinvoiced,docstatus)').run();
-      db.prepare('CREATE TABLE c_invoiceline (c_invoice_id,m_product_id,linenetamt)').run();
-      db.prepare('CREATE TABLE c_invoicetax (c_invoice_id,c_tax_id,taxamt)').run();
       var invId = 9000001;
-      db.prepare('INSERT INTO c_invoice VALUES (@a,@b,@c,@d,@e,@f,@g)').run({ a: invId, b: born.refs.bpartnerId, c: 109.00, d: 'Y', e: 'N', f: '2024-01-15', g: 'CO' });
-      db.prepare('INSERT INTO c_invoiceline VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.productId, c: 100.00 });
-      db.prepare('INSERT INTO c_invoicetax VALUES (@a,@b,@c)').run({ a: invId, b: born.refs.taxId, c: 9.00 });
 
       // INSTALL BUNDLE — G1..G6 + a G7 carrying THIS sample invoice (named columns so mergeGenesisInto can
       // column-intersect into the resident schema). The same op-log, just one group longer; reband bands its
@@ -162,13 +131,15 @@
           { op: 'CREATE', table: 'c_invoicetax', row: { c_invoice_id: invId, c_tax_id: born.refs.taxId, ad_client_id: born.refs.clientId, taxamt: 9.00 } }
         ] }]) };
 
-      // POST via the shipped doc_poster + post_resolver (same verbs the live Posting-Preview uses)
-      var gl = window.DocPoster.derivePostings(db, { table: 'C_Invoice', id: invId }, born.refs.acctSchemaId, window.PostResolver);
+      // POST through the REAL poster (§POSTING-PARITY 5g): a posting db = the generated dictionary subset + the born tenant, the sample invoice with the
+      //   dictionary's columns, ModelPost.previewFacts on a never-committed Trx (the seam the Posting-Preview uses). One code path: Genesis.postSampleInvoice.
+      var posted = window.Genesis.postSampleInvoice({ raw: window.Genesis.buildPostingDb(SQL, window.GENESIS_DICT), born: born, ML: window.ModelLayer, MP: window.ModelPost, invId: invId });
+      var gl = posted.gl;
       var byVal = {}; gl.lines.forEach(function (l) { byVal[l.value] = l; });
       var rcv = byVal['12110'], rev = byVal['41000'], tax = byVal['21610'];
       var cent = rcv && rcv.amtacctdr === 109 && rev && rev.amtacctcr === 100 && tax && tax.amtacctcr === 9;
       var ok = gl.balanced && gl.absent.length === 0 && cent;
-      console.log('§W-GENESIS-WIZARD-LIVE post basis=' + gl.basis + ' balanced=' + gl.balanced + ' absent=' + JSON.stringify(gl.absent)
+      console.log('§W-GENESIS-WIZARD-LIVE post poster=model_post state=' + gl.basis + ' balanced=' + gl.balanced + ' absent=' + JSON.stringify(gl.absent)
         + ' DR12110=' + (rcv && rcv.amtacctdr) + ' CR41000=' + (rev && rev.amtacctcr) + ' CR21610=' + (tax && tax.amtacctcr) + ' toTheCent=' + cent);
 
       window.Genesis.signHead(born.groups).then(function (sig) {
@@ -195,7 +166,7 @@
       '<div class="card"><b>' + born.input.clientName + '</b> born — ' + born.groups.length + ' signed op-groups, '
         + chart + '-account default chart. <span class="dim">op-log head <span class="mono">' + born.tip.slice(0, 16) + '…</span></span>'
         + '<div style="margin-top:10px">' + groups + '</div></div>'
-      + '<div class="card"><div style="margin-bottom:6px">Test sales invoice — posted via the shipped <span class="mono">doc_poster + post_resolver</span> '
+      + '<div class="card"><div style="margin-bottom:6px">Test sales invoice — posted by the real poster <span class="mono">model_post</span> (preview, not committed) '
         + (ok ? '<span class="badge ok">== oracle, to the cent</span>' : '<span class="badge bad">MISMATCH</span>') + '</div>'
         + '<table><thead><tr><th>Account</th><th>Name</th><th class="n">Debit</th><th class="n">Credit</th></tr></thead><tbody>' + rows + '</tbody></table>'
         + '<div class="dim" style="margin-top:8px">' + (gl.balanced ? '<span class="ok">balanced</span>' : '<span class="bad">unbalanced</span>')
