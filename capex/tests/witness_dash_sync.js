@@ -11,7 +11,7 @@
 const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), { spawnSync } = require('child_process'), { pathToFileURL } = require('url');
 const initSqlJs = require('sql.js'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 const ROOT = path.join(__dirname, '..', '..'), BD = require(path.join(ROOT, 'erp/bigdecimal.js')), Push = require(path.join(ROOT, 'viewer/erp_rest_push.js')), NB = require(path.join(ROOT, 'erp/ninja_bundle.js'));
-const { psqlRaw, pilotGoals, selects, parse } = require('../tools/legacy_goal_sql.js');
+const { psqlRaw, pilotGoals, selects, parse, recomputeGoals, titleOf } = require('../tools/legacy_goal_sql.js');
 const BREAK = process.env.DASH_SYNC_BREAK === '1', log = console.log, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dashsync-')), COPY = path.join(TMP, 'site_copy.json'), PASSWORD = 'GardenAdmin', PHASE = 1000018;
 const login = { user: 'GardenAdmin', pass: PASSWORD, lang: 'en_US', clientId: 11, roleId: 102, orgId: 11, warehouseId: 103, stage: 0 };
 let judged = 0, fails = 0, inconc = 0;
@@ -25,12 +25,10 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
 
 (async () => {
   if (phaseFlag() !== 'N') { log('§DASH_SYNC_W pilot phase ' + PHASE + ' is not N: a previous run was interrupted; restore it first'); finish(); }
-  // ── G: legacy's own engine computes every goal NOW (a target save 1→0, MGoal.afterSave, as W-PA-TILES §5.16; GoalPerformance reset to its rule for target 0). A stored goal is up to 30 min old by design and the pilot moves under other sessions
+  // ── G: legacy's own engine computes every goal NOW (legacy_goal_sql.js recomputeGoals: a target save t+1 → t, MGoal.afterSave, the target kept, §5.27). A stored goal is up to 30 min old by design and the pilot moves under other sessions
   //      (measured: Standard's balance 318.68 → 334.62 while this was built): compared to a stale PA_Goal, a correct copy reads as a defect. Only the goals' own computed columns change. ──
   const ws = async (method, body) => { const r = await fetch('http://localhost:8088/ADInterface/services/rest/model_adservice/' + method, { method: 'POST', headers: { 'Content-Type': 'application/xml', Accept: 'application/xml' }, body }); return Push.parseStandardResponse(await r.text()); };
-  const saveTarget = (id, v) => ws('update_data', Push.buildCrudXml(login, { serviceType: 'BridgeUpdatePAGoal', tableName: 'PA_Goal', action: 'Update', recordId: id, fields: [{ column: 'MeasureTarget', val: v }] }));
-  for (const g of pilotGoals()) { const a = await saveTarget(g.id, '1'), b = await saveTarget(g.id, '0'); if (a.isError || b.isError) log('§DASH_SYNC_W goal ' + g.name + ' recompute refused: ' + (a.error || b.error)); }
-  psqlRaw("UPDATE PA_Goal SET GoalPerformance=0 WHERE AD_Client_ID=11 AND Name LIKE 'CAPEX %' AND GoalPerformance<>0;");
+  await recomputeGoals(ws, Push.buildCrudXml, login, log);
   // ── J: the small job ──
   ck('J1 the job read the pilot and wrote the file', job() && fs.existsSync(COPY));
   const txt = fs.readFileSync(COPY, 'utf8'), snap = JSON.parse(txt);
@@ -69,12 +67,22 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
       const d = home.goals[g.name], v = want(g);
       if (!d) { ck(tag + ' ' + g.name + ' drawn', false, 'absent from the Home'); continue; }
       if (v == null) { inc(tag + ' ' + g.name, 'no legacy value'); continue; }
-      const exp = BREAK ? bd(v).add(BD.of(1)).toString() : String(v), wantT = g.name + ': ' + await pg.evaluate(x => window.DashboardGadgets.fmtInt(Number(x)), exp), sc = Math.min((exp.split('.')[1] || '').length, 6), eng = bd(d.engine);
+      const exp = BREAK ? bd(v).add(BD.of(1)).toString() : String(v), wantT = await titleOf(g, exp, x => pg.evaluate(y => window.DashboardGadgets.fmtInt(Number(y)), x)), sc = Math.min((exp.split('.')[1] || '').length, 6), eng = bd(d.engine);
       if (bd(exp).isZero() && eng.isZero()) { inc(tag + ' ' + g.name, 'not exercised: 0 on both sides'); continue; }
       exercised++;
       ck(tag + ' ' + g.name + ' Home title == legacy', d.title === wantT, 'drawn=' + JSON.stringify(d.title) + ' legacy=' + exp);
       ck(tag + ' ' + g.name + ' goal_engine == legacy at scale ' + sc, !d.err && eng.setScale(sc, BD.RoundingMode.HALF_UP).eq(bd(exp).setScale(sc, BD.RoundingMode.HALF_UP)), 'engine=' + d.engine + ' legacy=' + exp + (d.err ? ' err=' + d.err : ''));
     } log('§DASH_SYNC_W ' + tag + ' goals judged=' + exercised + ' of ' + goals.length); return exercised; };
+  // the pilot's real ZK Home, read only: the CAPEX captions of its Performance panel (a real login; rendering is what makes legacy refresh a due goal)
+  const zkHomeTitles = async br => { const zc = await br.newContext({ viewport: { width: 1440, height: 1000 } }), z = await zc.newPage();
+    try { await z.goto('http://localhost:8088/webui/', { waitUntil: 'load', timeout: 60000 }); await z.waitForSelector('input[type=password]', { timeout: 40000 }); await z.waitForTimeout(800);
+      const ins = await z.$$('input:not([type=password]):not([type=checkbox])'); await ins[0].fill('GardenAdmin'); await ins[0].press('Tab'); await z.fill('input[type=password]', PASSWORD); await z.press('input[type=password]', 'Tab'); await z.waitForTimeout(400);
+      if (!(await z.evaluate(() => { const x = [...document.querySelectorAll('input[type=checkbox]')].find(y => /Select Role/.test(y.parentElement.textContent)); return x && x.checked; }))) { await z.click('label:has-text("Select Role")'); await z.waitForTimeout(500); }
+      await z.click('button.btn-ok'); await z.waitForFunction(() => document.querySelectorAll('input.z-combobox-input').length >= 3, null, { timeout: 25000 }); await z.waitForTimeout(1000);
+      const cb = await z.$$('input.z-combobox-input'); await cb[1].click(); await cb[1].fill('GardenWorld Admin'); await cb[1].press('Tab'); await z.waitForTimeout(1200); await z.click('button.btn-ok');
+      await z.waitForFunction(() => [...document.querySelectorAll('*')].filter(e => e.children.length === 0 && /^CAPEX /.test((e.textContent || '').trim())).length >= 27, null, { timeout: 40000 }).catch(() => {});
+      return await z.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.children.length === 0 && /^CAPEX /.test((e.textContent || '').trim())).map(e => e.textContent.trim()).sort());
+    } finally { await zc.close(); } };
   let edited = false;
   try {
     await open(); await pg.evaluate(() => indexedDB.databases().then(ds => Promise.all(ds.map(d => new Promise(r => { const x = indexedDB.deleteDatabase(d.name); x.onsuccess = x.onerror = x.onblocked = () => r(); }))))); await pg.close();
@@ -83,7 +91,7 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     ck('H0 the capex bundle started; no file on the site = no change', Array.isArray(inst) && /^ACTIVE/.test(inst[0]) && logs.some(l => /^§DASH_SYNC none/.test(l)), { inst, none: logs.filter(l => /^§DASH_SYNC none/.test(l))[0] }); await pg.close();
 
     serveCopy = true;
-    await open(); const boot = logs.slice(); await signIn('GardenWorld', 'GardenAdmin');
+    await open(); await signIn('GardenWorld', 'GardenAdmin'); const boot = logs.slice();   // read after sign-in: the plugin's start finishes after __idmpDb is set (the login waits for it)
     boot.filter(l => /^§DASH_SYNC /.test(l)).forEach(l => log('    ' + l.slice(0, 200)));
     ck('H1 §DASH_SYNC: 8 tables applied, no failed row', boot.filter(l => /^§DASH_SYNC table=.* failed=0/.test(l)).length === 8 && boot.some(l => /^§DASH_SYNC done client=11/.test(l)));
     const H = await readHome(), pc = {}; Object.keys(H.counts).forEach(t => { pc[t] = Number(psqlRaw('SELECT COUNT(*) FROM ' + t + ' WHERE ad_client_id=11;')); });
@@ -91,6 +99,13 @@ const finish = () => { const v = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' 
     const stale = goals.filter(g => !g.fresh).map(g => g.name);
     if (stale.length) log('§DASH_SYNC_W stored PA_Goal not computed today for: ' + stale.join(', ') + ' — run capex/tests/witness_pa_tiles.js first');
     const nH = await judge('H', H, g => g.fresh ? g.stored : null);
+    // ── Z: DOM to DOM: the pilot's real ZK Home == the twin's Home, every CAPEX goal (§5.27) ──
+    const zk = await zkHomeTitles(browser), twinT = Object.keys(H.goals).map(k => H.goals[k].title).sort();
+    log('§DASH_SYNC_W zk titles=' + zk.length + ' twin titles=' + twinT.length);
+    const want = BREAK ? zk.map(t => t + ' ') : zk, dz = want.filter(t => !twinT.includes(t)).concat(twinT.filter(t => !want.includes(t)));
+    ck('Z the pilot\'s real Home captions == the twin\'s Home captions, all 27', zk.length === 27 && twinT.length === 27 && dz.length === 0, dz.slice(0, 8));
+    const grp = goals.reduce((m, g) => { const k = (Number(g.target) !== 0 ? 'target' : 'none') + ':' + g.schema; m[k] = (m[k] || 0) + 1; return m; }, {});
+    ck('Z2 targets as §5.27: 6 lower-is-better on 101, 3 higher-is-better on 100, 18 none on the gray schema', grp['target:101'] === 6 && grp['target:100'] === 3 && grp['none:1000000'] === 18, grp);
     if (!nH) ck('H3 at least one goal judged', false);
 
     if (BREAK) { log('§DASH_SYNC_W break run: the pilot edit is skipped (it proves nothing more here, and the pilot is shared)'); await browser.close(); server.close(); finish(); }
