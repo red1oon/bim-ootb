@@ -12,7 +12,7 @@
   button { font:inherit; padding:8px 12px; border:1px solid var(--ln); border-radius:4px; background:#22303d; color:var(--fg); cursor:pointer; } button.go { background:var(--acc); border-color:var(--acc); } button[disabled] { opacity:.4; cursor:not-allowed; }
   main { padding:10px; } table { border-collapse:collapse; width:100%; background:var(--pn); } th, td { border:1px solid var(--ln); padding:5px 8px; text-align:left; vertical-align:top; font-size:13px; } th { background:#22303d; }
   tr[data-closed="1"] td.st { color:#7be39c; } tr[data-closed="0"] td.st { color:#ffd166; } .gap { color:#ffb3a8; } tfoot td { font-weight:700; }
-  #a-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; } #a-msg[hidden] { display:none; }
+  #a-recv table { width:auto; margin-bottom:8px; } #a-recv input { width:70px; } [hidden] { display:none !important; } #a-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; } #a-msg[hidden] { display:none; }
 </style></head><body>
 <div class="bar"><b>Branch POS Admin</b><span id="a-net" class="chip">online</span><span id="a-pair" class="chip">starting</span><span id="a-org" class="chip"></span>
   <label>Business day <select id="a-day"></select></label><label>Tills <input id="a-tills" size="22" placeholder="expected till keys, comma separated"></label>
@@ -21,7 +21,7 @@
   <tfoot><tr id="a-total"><td>Branch total</td><td id="t-state"></td><td id="t-tickets"></td><td></td><td></td><td id="t-tender"></td><td id="t-tax"></td><td id="t-gross"></td></tr></tfoot></table>
   <p><label>Override reason (needed to send while a till is open) <input id="a-override" size="40"></label>
   <button id="a-send" class="go" disabled>Send EODA</button> <button id="a-status">Send status now</button> <span id="a-sendnote" class="chip"></span></p>
-  <p id="a-soda"><b>SODA</b> <span id="s-state" class="chip">no batch</span> <button id="a-soda-fan" disabled>Pass prices to tills</button> <button id="a-soda-recv" disabled>Receive stock</button> <span id="s-recv" class="chip"></span></p></main>
+  <p id="a-soda"><b>SODA</b> <span id="s-state" class="chip">no batch</span> <button id="a-soda-fan" disabled>Pass prices to tills</button> <button id="a-soda-recv" disabled>Receive stock</button> <span id="s-recv" class="chip"></span></p><div id="a-recv" hidden></div></main>
 <section id="floors" style="padding:10px"><h3>Floors, tables and till settings <small>(uniCenta Floors / Places editors; kept at the branch, never sent to head office)</small></h3>
   <p><input id="f-name" placeholder="Floor name"> <input id="f-image" size="30" placeholder="Background image URL (optional)"> <button id="f-save">Add floor</button></p>
   <table><thead><tr><th>Floor</th><th>Image</th><th></th></tr></thead><tbody id="f-floors"></tbody></table>

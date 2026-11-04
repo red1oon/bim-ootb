@@ -383,7 +383,8 @@ async function withTax(ctx, base, qs) {   // the seed's Standard tax is 0%: the 
   console.log('§TILL_TAXLIVE arm=' + (qs || 'withTax') + ' rate=' + (tr && tr.rate) + ' expect=' + TAX2);
   return ok && num(tr.rate) === TAX2 ? pg : null;
 }
-async function ring(pg, items) { for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
+// §33.2: a cashier rings on the Sales screen. These arms used to ring while another screen was open because #u3 was never hidden (the bug W-TILL-SCREENS now judges); they go to Sales first.
+async function ring(pg, items) { await pg.evaluate(function () { if (window.Till.state().screen !== 'sales') window.Till.go('sales'); }); for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
 async function totalOf(pg) { return pg.$eval('#t-tot', function (e) { return e.textContent; }); }
 async function payExact(pg) { var t = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: t }]); return t; }
 async function receiptKey(pg) { return pg.$eval('#receipt .rf[data-f="Receipt"], #receipt .rf[data-f="Refund"]', function (e) { return e.textContent.split('  ')[1]; }); }
@@ -435,7 +436,7 @@ async function runBar(ctx, base) {
   await pg.evaluate(function () { window.Till.go('close'); }); await sleep(600); var ns = await pg.$eval('#z-nosales', function (e) { return e.textContent; });
   check('bar', 'drawer-nosales', ns === '2', 'two Open drawer presses = "No Sale - Drawer Openings" 2 on the Z (PaymentsModel NOSALES)', ns);
   // virtual keyboard types into the focused input
-  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.click('#scriptbar [data-btn="Virtual Keyboard"]').catch(function () {});
+  await pg.evaluate(function () { window.Till.go('sales'); }); await pg.click('#scriptbar [data-btn="Virtual Keyboard"]').catch(function () {});
   await pg.evaluate(function () { document.querySelector('#scriptbar'); var k = document.getElementById('vkbd'); k.hidden = false; });
   var vk = await pg.evaluate(function () { return new Promise(function (res) { var t = window.Till; t.go('editsales'); var i = document.getElementById('es-number'); i.focus(); var b = document.querySelector('#vkbd .vk[data-vk="4"]'); if (!b) { res({ noKbd: true }); return; } b.click(); res({ v: i.value, shown: !document.getElementById('vkbd').hidden }); }); });
   check('bar', 'virtual-keyboard', vk.v === '4' && vk.shown, 'Virtual Keyboard: a key press lands in the focused input', vk);
