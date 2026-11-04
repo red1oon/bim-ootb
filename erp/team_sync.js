@@ -95,6 +95,7 @@
     var d = dev && R && R.ok ? R.devices[dev.kid] : null;
     scopeCtx = { kind: global.TeamScope.kind(), role: d ? R.roleAt(dev.kid, Infinity).ad_role_id : null, person: d ? d.person : null };
     if (d && !docnoOn) docnoOverlay();
+    if (kind === 'pos' && global.AdImportTables && global.AdImportTables.ensurePos && adDb()) { try { global.AdImportTables.ensurePos(adDb()); } catch (e) { log('§EODA_TABLES_ERR ' + (e && e.message)); } }   // §26.2: the twin-local POS row kinds exist on every device of a POS team (idempotent)
     return scopeCtx;
   }
   // TEAMWORK §48.11b/§48.11c — LOCAL NUMBERING switched on with Team: once this device is enrolled (more than one device can number documents), the boot overlay gives every
@@ -128,6 +129,7 @@
   }
   var KERNEL_STAMPS = { _sigv: 1, signed_by: 1, _sv: 1 };   // kernel-local artefacts, re-stamped by whoever commits
 
+  var held = {};   // POS_PLUGIN_LOCAL_FIRST §26.3: tables this DEVICE keeps (a device policy, set by the page at boot): the till holds i_order / i_payment, its branch POS admin sends them
   var SQL = null, dev = null, cfg = null, S = null, pipe = null, sent = {}, localOnly = {}, lastRefused = 0, lastVisitAt = null, lastSyncRep = null, fired = {}, replExc = [];
   var baseSt = { state: 'unknown' }, loadedP = null, pristineP = null, storeOpts = null, bmemo = {}, bcols = {};
   var _resolveReady, readyBoot = new Promise(function (r) { _resolveReady = r; }), ready = readyBoot.then(function (v) { return planVerified.then(function () { return v; }); });
@@ -312,6 +314,7 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
+    if (held[table]) return { local: 'held-by-device ' + table, table: table, held: true };
     var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : scope === 'branch' && scopeCtx.person ? 'b_' + String(scopeCtx.person).toLowerCase() : null;   // 'branch' (P2 kitchen, POS_PLUGIN_LOCAL_FIRST §19.3): the lane of MY branch Org; the hub neither reads nor holds it
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };
     if (scope === 'up' || scope === 'down' || scope === 'branch') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
@@ -351,7 +354,7 @@
     await refreshScope();
     // §48.13 Seatbelt: the state AT Process time; a DocAction under ADVISE is LOGGED (never stopped, owner 2026-10-30) — read here, before this batch changes the counters
     var sbm = (global.TeamSeatbelt && rows.some(function (x) { return x.op_type === 'SET_STATUS' && !x.undone; })) ? global.TeamSeatbelt.model(await seatbeltState()) : null;
-    var n = 0, trial = null, undecl = {}, undeclN = 0;
+    var n = 0, trial = null, undecl = {}, undeclN = 0, heldN = {};
     if (cfg && cfg.trial && global.TeamTrial) { var D = global.TeamDefaults || {};     // §13.8 T4: judged once per commit batch, so a whole Complete group is never cut in half
       trial = global.TeamTrial.status((await S.placedEnvelopes()).map(function (x) { return x.env; }), { trial: true, cycles: D.trialCycles, cap: D.trialOpCap });
       if (trial.finished) log('§TEAM_TRIAL ' + trial.reason + ' cycles=' + trial.cycles + ' businessOps=' + trial.businessOps + ' (new business ops stay on this device)'); }
@@ -365,6 +368,7 @@
       if (!t.quiet && trial && trial.finished) { localOnly[r.op_uuid] = trial.reason; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + trial.reason + ' (NOT SENT)'); continue; }
       if (t.quiet) { log('§TEAM_STATION_LOCAL op=' + r.op_type + ' ' + t.quiet + ' (not shared by design)'); continue; }
       if (baseBlocked()) { localOnly[r.op_uuid] = 'base-mismatch'; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=base-mismatch (NOT SENT — this copy is not the team\'s base)'); continue; }
+      if (t.held) { localOnly[r.op_uuid] = t.local; heldN[t.table] = (heldN[t.table] || 0) + 1; continue; }     // §26.3: counted, one line per batch (below)
       if (t.undeclared) { localOnly[r.op_uuid] = t.local; undecl[t.table] = (undecl[t.table] || 0) + 1; undeclN++; continue; }     // pos plan: counted, one line per batch (below)
       if (t.local || t.skip) { localOnly[r.op_uuid] = t.local || t.skip; log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + (t.table || '?') + ' uuid=' + String(r.op_uuid).slice(0, 8) + ' reason=' + (t.local || t.skip) + ' (NOT SENT)'); continue; }
       try {
@@ -374,6 +378,7 @@
       } catch (e) { localOnly[r.op_uuid] = 'author-failed ' + (e && e.message); log('§TEAM_LOCALONLY op=' + r.op_type + ' table=' + t.table + ' reason=author-failed ' + (e && e.message) + ' (NOT SENT)'); }
     }
     } finally { if (--passDepth === 0) relPersons = null; }
+    Object.keys(heldN).forEach(function (t) { log('§TEAM_HELD table=' + t + ' ops=' + heldN[t] + ' (stay on this device: the device holds this table, POS_PLUGIN_LOCAL_FIRST §26.3)'); });
     if (undeclN) log('§TEAM_NOT_DECLARED plan=pos role=' + scopeCtx.role + ' ops=' + undeclN + ' tables=' + JSON.stringify(undecl) + ' (stay on this device: the plan declares no flow for them from this role - FL-8 e)');
     await persist(); await render();
     return n;
@@ -859,7 +864,7 @@
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
                         log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit,
                       // P2 (POS_PLUGIN_LOCAL_FIRST §19.5): ONE list request of MY branch box (m/b_<person>/). The kitchen and the till learn that the other wrote something without a full Visit (~15 requests).
-                      peekBranch: async function () { await ready; if (!S || !pipe) return null; await refreshScope(); if (!scopeCtx.person || scopeCtx.kind !== 'pos') return null; var names = await pipe.list('s/' + S.space + '/m/b_' + String(scopeCtx.person).toLowerCase() + '/'); return { names: names }; }, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
+                      hold: function (tables) { (tables || []).forEach(function (t) { held[String(t).toLowerCase()] = 1; }); log('§TEAM_HOLD tables=' + Object.keys(held).join(',')); return Object.keys(held); }, peekBranch: async function () { await ready; if (!S || !pipe) return null; await refreshScope(); if (!scopeCtx.person || scopeCtx.kind !== 'pos') return null; var names = await pipe.list('s/' + S.space + '/m/b_' + String(scopeCtx.person).toLowerCase() + '/'); return { names: names }; }, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,
                       stationLocal: global.TeamScope.locals, scopeOf: global.TeamScope.scopeOf, sent: function () { return sent; }, localOnly: function () { return localOnly; }, replicaFired: function () { return fired; }, replicaExceptions: function () { return replExc.slice(); },
                       peopleView: function () { return pview; }, refreshPeople: refreshPeople, setAvatar: setAvatar, avatarOf: function () { return cfg && cfg.avatar || null; }, history: history, setHide: setHide, setMode: setMode, focusOwn: function () { return focusOwn.slice(); },

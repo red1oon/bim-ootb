@@ -22,6 +22,23 @@
     c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
     c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
   };
+  // POS row kinds (POS_PLUGIN_LOCAL_FIRST §26.2): twin-local, NOT legacy tables (no daily-declaration table exists in the dictionary). POS_TillHandoff is branch-local (till to branch POS admin);
+  //   POS_BranchDayStatement is the branch's declaration to HQ. Plan source: bim-compiler build/scriptor/flows_pos.json H1 / E1. Made only on a device of a POS team (team_sync.js refreshScope), with the
+  //   ad_table row the comm layer needs to admit an op (kds_core.js pattern), outside the base hash.
+  var BASE_COLS = '"ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, ';
+  var DDL_POS = {
+    pos_tillhandoff: 'CREATE TABLE IF NOT EXISTS "pos_tillhandoff" ("pos_tillhandoff_id" NUMERIC, ' + BASE_COLS + '"pos_tillhandoff_uu" TEXT, "tillkey" TEXT, "shiftseq" NUMERIC, "kind" TEXT, "documentno" TEXT, "body" TEXT)',
+    pos_branchdaystatement: 'CREATE TABLE IF NOT EXISTS "pos_branchdaystatement" ("pos_branchdaystatement_id" NUMERIC, ' + BASE_COLS + '"pos_branchdaystatement_uu" TEXT, "batchid" TEXT, "businessday" TEXT, "partial" TEXT, "seq" NUMERIC, "kind" TEXT, "tillkey" TEXT, "series" TEXT, "tickets" NUMERIC, "gross" NUMERIC, "net" NUMERIC, "tax" NUMERIC, "tenders" TEXT, "taxes" TEXT, "override" TEXT)'
+  };
+  var AD_ROWS_POS = { pos_tillhandoff: [7900003, 'POS Till Handoff', 'POS_TillHandoff'], pos_branchdaystatement: [7900004, 'POS Branch Day Statement', 'POS_BranchDayStatement'] };
+  function ensurePos(db) {
+    var made = 0;
+    Object.keys(DDL_POS).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_POS[t]); made++; });
+    Object.keys(AD_ROWS_POS).forEach(function (t) { var a = AD_ROWS_POS[t], r = db.exec('SELECT 1 FROM ad_table WHERE ad_table_id=' + a[0]); if (r.length && r[0].values.length) return;
+      db.run("INSERT INTO ad_table (ad_table_id, ad_client_id, ad_org_id, isactive, name, tablename, isview, accesslevel, entitytype, isdeleteable, ishighvolume, importtable, ischangelog, ad_table_uu) VALUES (?,0,0,'Y',?,?,'N','2','U','Y','N','N','N',?)", [a[0], a[1], a[2], 'eoda0000-0000-4000-8000-0000000' + a[0]]); made++; });
+    if (made) log('§EODA_TABLES ensurePos created=' + made + ' (' + Object.keys(DDL_POS).join(', ') + '; twin-local row kinds, outside the team base hash)');
+    return made;
+  }
   function log(s) { try { if (typeof console !== 'undefined') console.log(s); } catch (e) { /* logging never breaks boot */ } }
 
   // ensure(db) - idempotent boot overlay (a sql.js Database). Returns the number of tables it created (0 when all are already there).
@@ -48,7 +65,7 @@
     return made;
   }
 
-  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, ensure: ensure, ensureRecurring: ensureRecurring };
+  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
