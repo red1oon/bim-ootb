@@ -391,13 +391,28 @@ ok('YR34g set back: off', roofs(rfP(corners.concat(deck), { 'roof.from_spots': '
 // §D109 P9 the end of the chain: a body class with no line in the IFC writer's map leaves as a proxy, silently (25 curtain walls + 7 flights did, the log said typed)
 const PRP = require(path.join(M, 'dxf2prep.js')), ifcSrc = fs.readFileSync(path.join(M, 'dxf2ifc.js'), 'utf8'), mapSrc = /const CLASS_MAP = \{[\s\S]*?\};/.exec(ifcSrc)[0], unmapped = [...new Set(Object.keys(PRP.KIND).map(k => PRP.KIND[k][0]))].filter(c => !new RegExp('\\b' + c + ':').test(mapSrc));
 ok('YR35 every body class reaches the IFC as itself: none falls to a proxy', unmapped.length === 0, unmapped.join());
+// §D109 P3b whole walls
+const wN = g => wAll(g), wStep = wN(wlP([wl(0, 0, 3000), wl(200, 0, 3000), wl(0, 3000, 6000), wl(300, 3000, 6000)]));
+console.log('§YR37 ' + JSON.stringify(wStep.map(e => ({ size: e.size, vol: volOf(e) }))));
+ok('YR37a 200 thick then 300 thick on one face: one body, the volume of both, 2 stretches', wStep.length === 1 && wStep[0].size.stretches === 2 && Math.abs(volOf(wStep[0]) - (3 * 0.2 + 3 * 0.3) * 4.8) < 1e-3 && wStep[0].size.t_min === 0.2 && wStep[0].size.t_max === 0.3);
+ok('YR37b two walls 1 m apart along one line: 2 bodies', wN(wlP([wl(0, 0, 2500), wl(200, 0, 2500), wl(0, 3500, 6000), wl(200, 3500, 6000)])).length === 2);
+ok('YR37c two parallel walls 500 apart: 2 bodies', wN(wlP([wl(0), wl(200), wl(700), wl(900)])).length === 2);
+const perp = [edgeL('WALLS', A0(3000, 200), A0(3000, 3000)), edgeL('WALLS', A0(3200, 200), A0(3200, 3000))];
+ok('YR37d a perpendicular wall is its own body', wN(wlP([wl(0), wl(200)].concat(perp))).length === 2);
+const thinG = wlP([wl(0), wl(20)]);
+ok('YR37e a 20 mm band: no wall, counted', wN(thinG).length === 0 && wr(thinG).thin_m > 0, JSON.stringify(wr(thinG)));
+ok('YR37f set back: min_thick 0 reads it', wN(wlP([wl(0), wl(20)], { 'wall.min_thick': 0 })).length === 1);
+const cwThin = ST.judge([planB([edgeL('GL', A0(0, 0), A0(6000, 0)), edgeL('GL', A0(0, 20), A0(6000, 20))], 0, { layers: [{ layer: 'GL', type: 'curtainband' }] }), planB([], 4.8), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate;
+ok('YR37h min_thick is for solid walls: a glazing band 20 mm thin is still a curtain wall (a run lost all 25)', cwThin.R.els.filter(e => e.class === 'IfcCurtainWall').length === 1);
+const wLeaf = wN(wlP([wl(0), wl(100, 0, 3000), wl(200)]));
+ok('YR37g a leaf ending halfway in a 3-line wall: 1 body, not 2', wLeaf.length === 1 && wLeaf[0].size.stretches === 2 && Math.abs(volOf(wLeaf[0]) - 6 * 0.2 * 4.8) < 1e-3, JSON.stringify(wLeaf.map(e => e.size)));
 // §D109 the page's Convert goes through toOps, the CLI's IFC does not: a body the page refuses never showed in any CLI run (76 door leaves: "an opening body does not add up")
 const allK = ST.judge([planB(loopL('COL', R0).concat(arcA(950), openLine, dtag('1-01-A'), wl(0), wl(200), edgeL('GL', A0(0, 900), A0(6000, 900)), edgeL('GL', A0(0, 1050), A0(6000, 1050))), 0, { layers: [{ layer: 'COL', type: 'column' }, { layer: 'DTAG', type: 'doortag' }, { layer: 'WALLS', type: 'wallband' }, { layer: 'GL', type: 'curtainband' }] }), planB([], 4.8), schS(), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate;
 const opsK = IM.toOps(allK.R, {}), badK = opsK.skipped.filter(x => x.refuse), clsK = [...new Set(allK.R.els.map(e => e.class))].sort().join();
 console.log('§YR36 classes=' + clsK + ' inserts=' + opsK.inserts.length + ' refused=' + JSON.stringify(badK).slice(0, 200));
 ok('YR36 every class this lane builds passes the page\'s toOps: nothing refused, each body one insert', clsK === 'IfcColumn,IfcCurtainWall,IfcDoor,IfcWall' && badK.length === 0 && opsK.inserts.length >= allK.R.els.length, clsK + ' ' + opsK.inserts.length + '/' + allK.R.els.length);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'stair.flights': 'off', 'roof.from_spots': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'stair.flights': 'off', 'roof.from_spots': 'off', 'wall.min_thick': 0, 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

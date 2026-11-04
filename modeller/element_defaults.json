@@ -946,6 +946,18 @@
    ],
    "used_by": "dxf2bodies (§D109)"
   },
+  "wall.min_thick": {
+   "element": "IfcWall",
+   "value": 0.05,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "a band of wall lines thinner than this is a finish line, not a wall (§D109: 28 pieces measured 10-20 mm). 0 = read them as walls",
+   "options": [
+    0.05,
+    0
+   ],
+   "used_by": "dxf2walls (§D109)"
+  },
   "footing.z_from_plan": {
    "element": "IfcFooting",
    "value": "plan_level",
