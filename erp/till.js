@@ -124,6 +124,9 @@
     $('#south').style.display = t.type === 'R' ? 'none' : '';
     $('#heldcount').textContent = (S.store.held || []).length || '';
   }
+  var BARH = 28;
+  function catCollapsed() { return !!(S.store && S.store.setup && S.store.setup['catalog.collapsed']); }   // device-local, the §29.D.1 settings store
+  function setCatCollapsed(v) { S.store.setup = S.store.setup || {}; S.store.setup['catalog.collapsed'] = !!v; saveStore(); renderCats(); log('§TILL_CATALOG_TOGGLE collapsed=' + !!v); }
   function childrenOf(id) { return S.cats.filter(function (c) { return (c.parent == null || c.parent === '' ? null : Number(c.parent)) === id; }); }
   function renderCats() {
     var cur = S.catPath.length ? S.catPath[S.catPath.length - 1] : null, kids = childrenOf(cur);
@@ -131,8 +134,13 @@
     kids = kids.filter(function (c) { return hasProd(c.id); });
     $('#cats').innerHTML = (cur != null ? '<button data-cat-up="1">&larr;</button>' : '') + kids.map(function (c) { return '<button data-cat="' + c.id + '"' + (S.cat === c.id ? ' class="on"' : '') + '>' + esc(c.name) + '</button>'; }).join('');
     var list = cur == null ? [] : S.prods.filter(function (p) { return Number(p.cat) === Number(cur); });
-    var z = S.sizes || { 'img-width': 107, 'img-height': 60 };    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
+    var z = Object.assign({ 'img-width': 107, 'img-height': 60, 'cat-height': 320 }, S.sizes || {});    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
     $('#products').innerHTML = list.map(function (p) { return prodTile(p, z); }).join('');
+    var ch = Number(z['cat-height']) || 320, col = catCollapsed(); $('#south').style.height = (col ? BARH : ch) + 'px';    // cat-height: JPanelTicketSales.java:78-80 (code default 245, shipped 320, Ticket.Buttons.xml:77-80)
+    $('#catbody').hidden = col; $('#catbar').setAttribute('aria-expanded', col ? 'false' : 'true');
+    var cn = (S.cats.filter(function (c) { return c.id === cur; })[0] || {}).name;   // owner-requested addition beyond uniCenta (§33.8): the catalog folds to this bar, default expanded
+    $('#catbar').innerHTML = '<b>' + esc(cn || 'Products') + '</b>' + (col ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');   // Lucide chevron-up (collapsed: tap to expand) / chevron-down
+    log('§TILL_LAYOUT cat-height=' + ch + ' collapsed=' + col + ' tile=' + z['img-width'] + 'x' + z['img-height']);
     log('§TILL_CATALOG tiles=' + list.length + ' withImage=' + list.filter(function (p) { return p.img; }).length + ' size=' + z['img-width'] + 'x' + z['img-height']);
   }
   // Lucide image-off (placeholder, no GPL art; §29.D.2). The picture is decoded only when the tile is on screen (lazy + async), CORS so the SW media cache can store a real 200 (§31).
@@ -306,6 +314,7 @@
       else if (b.id === 'b-barcode') press('\n');
       else if (b.hasAttribute('data-cat')) { S.catPath.push(Number(b.getAttribute('data-cat'))); S.cat = null; renderCats(); }
       else if (b.hasAttribute('data-cat-up')) { S.catPath.pop(); renderCats(); }
+      else if (b.id === 'catbar') setCatCollapsed(!catCollapsed());
       else if (b.classList.contains('prod')) { var p = S.prods.filter(function (x) { return String(x.pid) === b.getAttribute('data-pid'); })[0]; var r = P.product(S.pad, p); S.pad = r.state; if (r.effect.type === 'addProduct') addLine(p, r.effect.qty); renderPad(); }
       else if (b.id === 'b-remove') { if (S.ticket.sel >= 0) { removeLine(S.ticket.sel); persist(); renderSales(); } }
       else if (b.hasAttribute('data-tab')) { S.pay.tab = b.getAttribute('data-tab'); renderPay(); }
