@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v999';   // bump on each deploy; v999: a tab model built from a failed AD read fails closed and is never cached (ERP_IDEMPIERE_UX_PARITY §MD-UPSTREAM); v998: merge of v996 (Classic 2011 theme + Look and Feel + left menu + About/company/logo) and v997 (branch blind stocktake, Import Inventory 219)
+const CACHE_VERSION = 'v999';   // v999: main till + branch relay (till_lan.js, routed pipe); was v998:   // bump on each deploy; v998: merge of v996 (Classic 2011 theme + Look and Feel + left menu + About/company/logo) and v997 (branch blind stocktake, Import Inventory 219)
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -89,7 +89,7 @@ const PRECACHE_ASSETS = [
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',
   'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
-  'till.js', 'till_theme.js', 'till_company.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js', 'till_rest.js', 'till_setup.js',
+  'till.js', 'till_lan.js', 'till_theme.js', 'till_company.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js', 'till_rest.js', 'till_setup.js',
   'branch_admin.html', 'branch_admin.js', 'eoda_core.js', 'soda_core.js', 'rest_core.js', 'branch_floors.js',   // §26: the Branch POS Admin (EODA)
   'kitchen.html', 'kitchen.js', 'kds_core.js', 'kds_link.js', 'till_kds.js',   // P2: the standalone kitchen screen + the till's Send Order (prompts/POS_PLUGIN_LOCAL_FIRST.md §19)
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
@@ -310,6 +310,7 @@ const PRECACHE_ASSETS = [
   'rule_fold.js',      // THE ONE GESTURE (window.RuleFold) — signed, reversible rule edit + re-fold (RULE_EDIT_SPEC)
   'erp_engine.js',     // POS_ADDON_SPEC — engine verbs (UMD of bim-compiler scripts/erp_engine.js, window.ERPEngine)
   'crud_core.js',      // §S60 physical split — the PURE CORE (window.CrudCore); MUST precede crud_overlay.js in page load order
+  '../common/comm/comm_pipe.js',     // §38: the branch-relay pipe for the till and the branch admin pages
   '../common/comm/team_panel.js',     // TEAMWORK_FRAMEWORK §13.8 / §15.15 — the Team panel, shared with the Modeller (loaded on every idempiere.html page, inert until opened)
   '../common/comm/team_avatars.js',   // §15.15.2 — the built-in avatar set
   'team_guide.html',   // §13.8 T6 — the team user guide the panel links to

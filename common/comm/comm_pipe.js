@@ -196,7 +196,15 @@
   // the gate parameters a POLICY carries (policy.params.gate) + the current token → the gateJson a post office loads
   function gateFromPolicy(policyParams, token) { var g = (policyParams && policyParams.gate) || {}; return { token: token, max_object_bytes: g.max_object_bytes, max_puts_per_hour: g.max_puts_per_hour }; }
 
-  var API = { memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe, ghPipe: ghPipe, gatedPipe: gatedPipe, gateFromPolicy: gateFromPolicy };
+  // §38 (POS_PLUGIN_LOCAL_FIRST): the MAIN till's pipe. Two dumb pipes, ONE name rule: a name under a BRANCH mailbox (s/<space>/m/b_<person>/...) lives on the branch relay (`lan`), everything else on `net` (the internet relay).
+  // Still a pipe: put / putIfAbsent / get / list, nothing decided here. list() asks each side for the names that belong to it.
+  function routedPipe(net, lan, id) {
+    var s = _stats(), isLan = function (n) { return /(^|\/)m\/b_[^/]+\//.test(String(n)); }, side = function (n) { return isLan(n) ? lan : net; };
+    return { id: id || 'routed', stats: s, ifAbsent: true, net: net, lan: lan, isLan: isLan,
+      put: function (n, b) { s.put++; return side(n).put(n, b); }, putIfAbsent: function (n, b) { s.put++; return side(n).putIfAbsent(n, b); }, get: function (n) { s.get++; return side(n).get(n); },
+      list: async function (pre) { s.list++; var a = (await net.list(pre)).filter(function (n) { return !isLan(n); }), b = (await lan.list(pre)).filter(isLan); return a.concat(b).sort(); } };
+  }
+  var API = { routedPipe: routedPipe, memPipe: memPipe, httpPipe: httpPipe, folderPipe: folderPipe, ghPipe: ghPipe, gatedPipe: gatedPipe, gateFromPolicy: gateFromPolicy };
   global.CommPipe = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : globalThis);

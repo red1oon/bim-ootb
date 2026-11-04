@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>till_lan harness</title>
+<script src="../../common/comm/comm_pipe.js"></script><script src="../till_lan.js"></script>
+<script>
+// W-* harness page (witness_branch_relay.js): one "till PC" at http://localhost:<port>. query: till, relay, net (internet relay base, main/mutant only), main (1 = flag via SODA row), expected
+var Q = new URLSearchParams(location.search), KEY = 'lanharness.v1:' + Q.get('till');
+window.mk = function () {
+  var st = JSON.parse(localStorage.getItem(KEY) || '{}'), clock = Number(Q.get('clock') || 0) || null;
+  window.NOW = window.NOW || Date.now;
+  var net = Q.get('net') ? CommPipe.httpPipe(Q.get('net'), 'net') : null;
+  window.NET = net; window.LANPIPE = CommPipe.httpPipe(Q.get('relay') + '/pipe', 'lan');
+  window.L = TillLan.create({ tillKey: Q.get('till'), isMain: Q.get('main') === '1', lan: window.LANPIPE, net: net, state: st, expected: (Q.get('expected') || '').split(',').filter(Boolean),
+    now: function () { return window.NOW(); }, save: function () { localStorage.setItem(KEY, JSON.stringify(st)); }, log: function (s) { console.log(s); }, windowMs: Number(Q.get('win') || 120000) });
+  window.ST = st; return true;
+};
+</script>

@@ -42,6 +42,9 @@
     R.sort(function (a, b) { return a.m_product_id - b.m_product_id; }).forEach(function (r) { rows.push(base({ kind: 'R', m_product_id: r.m_product_id, value: r.value, name: r.name, upc: r.upc, imageurl: r.imageurl, c_uom_id: r.c_uom_id, m_product_category_id: r.m_product_category_id, c_taxcategory_id: r.c_taxcategory_id })); });
     T.sort(function (a, b) { return a.c_tax_id - b.c_tax_id; }).forEach(function (t) { rows.push(base({ kind: 'T', c_tax_id: t.c_tax_id, c_taxcategory_id: t.c_taxcategory_id, name: t.name, rate: num(t.rate), validfrom: t.validfrom })); });
     O.forEach(function (c) { rows.push(base({ kind: 'O', value: c.value, name: c.name, imageurl: c.logo_url || null, detail: JSON.stringify(companyDetail(c)) })); });
+    // §38.2.3 / §38.2.5: the MAIN-TILL flag (kind M: Value = the till key, set at HQ) and HQ's StorageOnHand for the branch (kind S, main till only: M_Product_ID + Detail {"qty"}). Present only when given: a batch without them is byte-identical to before.
+    if (o.mainTill) rows.push(base({ kind: 'M', value: String(o.mainTill), detail: JSON.stringify({ main: 'Y' }) }));
+    (o.onhand || []).forEach(function (h) { rows.push(base({ kind: 'S', m_product_id: h.m_product_id, detail: JSON.stringify({ qty: Number(h.qty) }) })); });
     return { rows: rows, counts: { prices: P.length, products: R.length, taxes: T.length, company: O.length } };
   }
 
