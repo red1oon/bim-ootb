@@ -20,7 +20,14 @@
 <main><table id="a-table"><thead><tr><th>Till</th><th>State</th><th>Tickets</th><th>Series (first..last, count)</th><th>Gaps</th><th>Z by tender</th><th>Z by tax</th><th>Gross</th></tr></thead><tbody id="a-rows"></tbody>
   <tfoot><tr id="a-total"><td>Branch total</td><td id="t-state"></td><td id="t-tickets"></td><td></td><td></td><td id="t-tender"></td><td id="t-tax"></td><td id="t-gross"></td></tr></tfoot></table>
   <p><label>Override reason (needed to send while a till is open) <input id="a-override" size="40"></label>
-  <button id="a-send" class="go" disabled>Send EODA</button> <button id="a-status">Send status now</button> <span id="a-sendnote" class="chip"></span></p></main>
+  <button id="a-send" class="go" disabled>Send EODA</button> <button id="a-status">Send status now</button> <span id="a-sendnote" class="chip"></span></p>
+  <p id="a-soda"><b>SODA</b> <span id="s-state" class="chip">no batch</span> <button id="a-soda-fan" disabled>Pass prices to tills</button> <button id="a-soda-recv" disabled>Receive stock</button> <span id="s-recv" class="chip"></span></p></main>
+<section id="floors" style="padding:10px"><h3>Floors, tables and till settings <small>(uniCenta Floors / Places editors; kept at the branch, never sent to head office)</small></h3>
+  <p><input id="f-name" placeholder="Floor name"> <input id="f-image" size="30" placeholder="Background image URL (optional)"> <button id="f-save">Add floor</button></p>
+  <table><thead><tr><th>Floor</th><th>Image</th><th></th></tr></thead><tbody id="f-floors"></tbody></table>
+  <p><input id="p-name" placeholder="Table name"> <select id="f-floor"></select> Seats <input id="p-seats" size="3" value="4"> X <input id="p-x" size="4" value="100"> Y <input id="p-y" size="4" value="50"> W <input id="p-w" size="4" value="90"> H <input id="p-h" size="4" value="45"> <button id="p-save">Add table</button></p>
+  <table><thead><tr><th>Table</th><th>Floor</th><th>Seats</th><th>X</th><th>Y</th><th>Width</th><th>Height</th><th></th></tr></thead><tbody id="f-places"></tbody></table>
+  <p>Catalog tile width <input id="s-img-width" size="4"> height <input id="s-img-height" size="4"> category panel height <input id="s-cat-height" size="4"> Override PIN <input id="s-pin" type="password" size="8" placeholder="unchanged"> <button id="s-save">Save settings</button></p></section>
 <iframe id="a-engine" title="engine" aria-hidden="true"></iframe>
-<script src="eoda_core.js"></script><script src="kds_link.js"></script><script src="branch_admin.js"></script>
+<script src="eoda_core.js"></script><script src="soda_core.js"></script><script src="kds_link.js"></script><script src="rest_core.js"></script><script src="branch_admin.js"></script><script src="branch_floors.js"></script>
 </body></html>

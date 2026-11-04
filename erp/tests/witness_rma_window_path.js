@@ -205,7 +205,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
     return { id: hd.id, line: ln.id };
   }
   var cm1 = rcCo && rcCo.status === 'CO' ? drive('RW-CM', function () { return creditMemo(h1.id, s1, L1.m_rmaline_id, rc1.line, 2, 50); }) : null;
-  // RW-BOOKS-DRAFTCM (§POSTING-PARITY 5e, was W-SD16-ENGINE-PORT S5 on doc_poster.deriveInvoice): the Preview of the DRAFT credit memo = the REAL poster on a never-committed Trx; a draft carries its
+  // RW-BOOKS-DRAFTCM (§POSTING-PARITY 5e, was W-SD16-ENGINE-PORT S5 on the doc_poster invoice fold): the Preview of the DRAFT credit memo = the REAL poster on a never-committed Trx; a draft carries its
   //   type in C_DocTypeTarget_ID (C_DocType_ID 0 -> model_post docTypeIdOf reads the target) so it books MIRRORED (Doc_Invoice ARC :522-575). NEG-CONTROL: the same draft targeted ARI is NOT mirrored.
   var MPm = require(path.join(ERP, 'model_post.js'));
   function draftPreview(id, target) { var ivd = one('SELECT c_doctype_id AS d, c_doctypetarget_id AS t FROM c_invoice WHERE c_invoice_id=?', [id]), keep = ivd ? ivd.t : null;
@@ -305,7 +305,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   verdict('RW-CLOSE', cl9 ? [eq('closed', 'RMA close -> CL', [cl9.ok, cl9.status], [true, 'CL']), eq('amt_kept', 'close keeps the lines and Amt (closeIt only fires the validators)', n(rm(h9.h).amt), 110),
     eq('not_implemented', 'reverseCorrect / reverseAccrual / reActivate return false like MRMA (not implemented)', [rc9.ok, ra9.ok, re9.ok], [false, false, false]), eq('status_kept', 'and leave the status CL', rm(h9.h).docstatus, 'CL')] : []);
 
-  // ── RW-BOOKS-* (§POSTING-PARITY 5e: the book claims of W-SD16-ENGINE-PORT S5/S6, moved off the retired doc_poster.deriveInOut onto the REAL poster, Doc_InOut "Sales - Return" :451-675) ──
+  // ── RW-BOOKS-* (§POSTING-PARITY 5e: the book claims of W-SD16-ENGINE-PORT S5/S6, moved off the retired doc_poster shipment fold onto the REAL poster, Doc_InOut "Sales - Return" :451-675) ──
   var rvIo = rvRc ? one('SELECT m_inout_id AS id FROM m_inout WHERE reversal_id=? AND m_inout_id<>?', [rc1.id, rc1.id]) : null, bRv = rvIo ? books('M_InOut', rvIo.id) : null;
   verdict('RW-BOOKS-REVERSAL', bRv && !bRv[0].err ? [eq('swapped_original', 'the reversal books the ORIGINAL amounts with sides swapped (updateReverseLine :522-537 / :656-664): Cr {Product.Asset} 140.00 / Dr {Product.Cogs} 140.00 - never an invented amount', [sideSum(bRv, ACC.asset, 'cr'), sideSum(bRv, ACC.cogs, 'dr')], [140, 140])] : []);
   function setCost(v, why) { db.run('UPDATE m_cost SET currentcostprice=? WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [v, PROD]);

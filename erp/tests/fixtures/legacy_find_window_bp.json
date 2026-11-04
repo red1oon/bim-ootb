@@ -1,0 +1,829 @@
+{
+ "window": {
+  "w": 1024,
+  "h": 490,
+  "x": 208,
+  "y": 84,
+  "backgroundColor": "rgb(255, 255, 255)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+  "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+  "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "0px",
+  "textAlign": "start",
+  "lineHeight": "12px"
+ },
+ "header": {},
+ "content": {
+  "w": 1014,
+  "h": 490,
+  "x": 213,
+  "y": 84,
+  "backgroundColor": "rgb(255, 255, 255)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+  "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+  "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "5px 5px 0px",
+  "textAlign": "start",
+  "lineHeight": "12px"
+ },
+ "toolbar": {
+  "box": {
+   "w": 1004,
+   "h": 24,
+   "x": 218,
+   "y": 89,
+   "backgroundColor": "rgba(0, 0, 0, 0)",
+   "backgroundImage": "none",
+   "color": "rgba(0, 0, 0, 0.9)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+   "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+   "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+   "borderRadius": "0px",
+   "boxShadow": "none",
+   "padding": "0px",
+   "textAlign": "start",
+   "lineHeight": "12px"
+  },
+  "parts": [
+   {
+    "cls": "z-label",
+    "text": "Saved Query",
+    "icon": "",
+    "st": {
+     "w": 71,
+     "h": 17,
+     "x": 218,
+     "y": 93,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgb(51, 51, 51)",
+     "fontSize": "12px",
+     "borderTop": "0px none rgb(51, 51, 51)",
+     "borderRadius": "0px",
+     "padding": "0px"
+    }
+   },
+   {
+    "cls": "z-combobox",
+    "text": "",
+    "icon": "z-combobox-icon z-icon-caret-down",
+    "st": {
+     "w": 210,
+     "h": 24,
+     "x": 292,
+     "y": 89,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgba(0, 0, 0, 0.9)",
+     "fontSize": "12px",
+     "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+     "borderRadius": "0px",
+     "padding": "0px"
+    }
+   },
+   {
+    "cls": "z-combobox-button",
+    "text": "",
+    "icon": "z-combobox-icon z-icon-caret-down",
+    "st": {
+     "w": 24,
+     "h": 24,
+     "x": 478,
+     "y": 89,
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgba(0, 0, 0, 0.9)",
+     "fontSize": "12px",
+     "borderTop": "1px solid rgb(168, 168, 168)",
+     "borderRadius": "0px 4px 4px 0px",
+     "padding": "2px"
+    }
+   },
+   {
+    "cls": "medium-toolbarbutton z-toolbarbutton",
+    "text": "",
+    "icon": "z-icon-Save",
+    "st": {
+     "w": 42,
+     "h": 24,
+     "x": 505,
+     "y": 89,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgb(51, 51, 51)",
+     "fontSize": "12px",
+     "borderTop": "2px solid rgba(0, 0, 0, 0)",
+     "borderRadius": "4px",
+     "padding": "2px 11px"
+    }
+   },
+   {
+    "cls": "disableFilter medium-toolbarbutton z-toolbarbutton",
+    "text": "",
+    "icon": "z-icon-ellipsis-v",
+    "st": {
+     "w": 42,
+     "h": 24,
+     "x": 550,
+     "y": 89,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgba(0, 0, 0, 0.34)",
+     "fontSize": "12px",
+     "borderTop": "2px solid rgba(0, 0, 0, 0)",
+     "borderRadius": "4px",
+     "padding": "2px 11px"
+    }
+   },
+   {
+    "cls": "z-label",
+    "text": "History records",
+    "icon": "",
+    "st": {
+     "w": 86,
+     "h": 17,
+     "x": 592,
+     "y": 93,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgb(51, 51, 51)",
+     "fontSize": "12px",
+     "borderTop": "0px none rgb(51, 51, 51)",
+     "borderRadius": "0px",
+     "padding": "0px"
+    }
+   },
+   {
+    "cls": "z-combobox",
+    "text": "",
+    "icon": "z-combobox-icon z-icon-caret-down",
+    "st": {
+     "w": 210,
+     "h": 24,
+     "x": 681,
+     "y": 89,
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "color": "rgba(0, 0, 0, 0.9)",
+     "fontSize": "12px",
+     "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+     "borderRadius": "0px",
+     "padding": "0px"
+    }
+   },
+   {
+    "cls": "z-combobox-button",
+    "text": "",
+    "icon": "z-combobox-icon z-icon-caret-down",
+    "st": {
+     "w": 24,
+     "h": 24,
+     "x": 867,
+     "y": 89,
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgba(0, 0, 0, 0.9)",
+     "fontSize": "12px",
+     "borderTop": "1px solid rgb(236, 236, 236)",
+     "borderRadius": "0px 4px 4px 0px",
+     "padding": "2px"
+    }
+   }
+  ]
+ },
+ "tabs": [
+  {
+   "w": 110,
+   "h": 32,
+   "x": 219,
+   "y": 122,
+   "backgroundColor": "rgb(255, 255, 255)",
+   "backgroundImage": "none",
+   "color": "rgba(0, 0, 0, 0.9)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+   "borderBottom": "2px solid rgb(0, 147, 249)",
+   "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+   "borderRadius": "0px",
+   "boxShadow": "none",
+   "padding": "3px 13px",
+   "textAlign": "center",
+   "lineHeight": "30px",
+   "text": "Lookup Record",
+   "selected": true
+  },
+  {
+   "w": 81,
+   "h": 32,
+   "x": 330,
+   "y": 122,
+   "backgroundColor": "rgb(255, 255, 255)",
+   "backgroundImage": "none",
+   "color": "rgba(0, 0, 0, 0.9)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+   "borderBottom": "2px solid rgba(0, 0, 0, 0)",
+   "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+   "borderRadius": "0px",
+   "boxShadow": "none",
+   "padding": "3px 13px",
+   "textAlign": "center",
+   "lineHeight": "30px",
+   "text": "Advanced",
+   "selected": false
+  }
+ ],
+ "tabsBar": {
+  "w": 1002,
+  "h": 32,
+  "x": 219,
+  "y": 122,
+  "backgroundColor": "rgb(255, 255, 255)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+  "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+  "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "0px",
+  "textAlign": "start",
+  "lineHeight": "24px"
+ },
+ "simpleRows": [
+  {
+   "cells": [
+    {
+     "text": "Search Key",
+     "st": {
+      "w": 293,
+      "h": 41,
+      "x": 232,
+      "y": 168,
+      "textAlign": "right",
+      "width": "292.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 488,
+      "h": 41,
+      "x": 525,
+      "y": 168,
+      "textAlign": "left",
+      "width": "487.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": [
+      {
+       "w": 478,
+       "h": 24,
+       "x": 530,
+       "y": 177,
+       "height": "24px",
+       "borderTop": "1px solid rgb(0, 147, 249)",
+       "borderRadius": "4px",
+       "backgroundColor": "rgb(255, 255, 204)",
+       "fontSize": "12px",
+       "padding": "4px 5px",
+       "tag": "INPUT",
+       "type": "text",
+       "cls": "z-textbox z-flex-item"
+      }
+     ]
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 195,
+      "h": 41,
+      "x": 1012,
+      "y": 168,
+      "textAlign": "start",
+      "width": "195px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    }
+   ]
+  },
+  {
+   "cells": [
+    {
+     "text": "Name",
+     "st": {
+      "w": 293,
+      "h": 41,
+      "x": 232,
+      "y": 209,
+      "textAlign": "right",
+      "width": "292.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 488,
+      "h": 41,
+      "x": 525,
+      "y": 209,
+      "textAlign": "left",
+      "width": "487.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": [
+      {
+       "w": 478,
+       "h": 24,
+       "x": 530,
+       "y": 218,
+       "height": "24px",
+       "borderTop": "1px solid rgb(236, 236, 236)",
+       "borderRadius": "4px",
+       "backgroundColor": "rgb(255, 255, 255)",
+       "fontSize": "12px",
+       "padding": "4px 5px",
+       "tag": "INPUT",
+       "type": "text",
+       "cls": "z-textbox z-flex-item"
+      }
+     ]
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 195,
+      "h": 41,
+      "x": 1012,
+      "y": 209,
+      "textAlign": "start",
+      "width": "195px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    }
+   ]
+  },
+  {
+   "cells": [
+    {
+     "text": "Name 2",
+     "st": {
+      "w": 293,
+      "h": 41,
+      "x": 232,
+      "y": 250,
+      "textAlign": "right",
+      "width": "292.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 488,
+      "h": 41,
+      "x": 525,
+      "y": 250,
+      "textAlign": "left",
+      "width": "487.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": [
+      {
+       "w": 478,
+       "h": 24,
+       "x": 530,
+       "y": 259,
+       "height": "24px",
+       "borderTop": "1px solid rgb(236, 236, 236)",
+       "borderRadius": "4px",
+       "backgroundColor": "rgb(255, 255, 255)",
+       "fontSize": "12px",
+       "padding": "4px 5px",
+       "tag": "INPUT",
+       "type": "text",
+       "cls": "z-textbox z-flex-item"
+      }
+     ]
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 195,
+      "h": 41,
+      "x": 1012,
+      "y": 250,
+      "textAlign": "start",
+      "width": "195px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    }
+   ]
+  },
+  {
+   "cells": [
+    {
+     "text": "Description",
+     "st": {
+      "w": 293,
+      "h": 47,
+      "x": 232,
+      "y": 291,
+      "textAlign": "right",
+      "width": "292.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 488,
+      "h": 47,
+      "x": 525,
+      "y": 291,
+      "textAlign": "left",
+      "width": "487.5px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": [
+      {
+       "w": 478,
+       "h": 38,
+       "x": 530,
+       "y": 296,
+       "height": "38px",
+       "borderTop": "1px solid rgb(236, 236, 236)",
+       "borderRadius": "4px",
+       "backgroundColor": "rgb(255, 255, 255)",
+       "fontSize": "12px",
+       "padding": "4px 5px",
+       "tag": "TEXTAREA",
+       "type": "textarea",
+       "cls": "z-textbox z-flex-item"
+      }
+     ]
+    },
+    {
+     "text": "",
+     "st": {
+      "w": 195,
+      "h": 47,
+      "x": 1012,
+      "y": 291,
+      "textAlign": "start",
+      "width": "195px",
+      "padding": "0px",
+      "fontSize": "12px",
+      "color": "rgba(0, 0, 0, 0.9)",
+      "fontWeight": "400"
+     },
+     "inputs": []
+    }
+   ]
+  }
+ ],
+ "simpleCols": [],
+ "simpleGrid": {
+  "w": 977,
+  "h": 340,
+  "x": 231,
+  "y": 167,
+  "backgroundColor": "rgb(255, 255, 255)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "1px solid rgb(217, 217, 217)",
+  "borderBottom": "1px solid rgb(217, 217, 217)",
+  "borderLeft": "1px solid rgb(217, 217, 217)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "0px",
+  "textAlign": "start",
+  "lineHeight": "12px"
+ },
+ "southButtons": [
+  {
+   "w": 56,
+   "h": 24,
+   "x": 233,
+   "y": 516,
+   "backgroundColor": "rgb(0, 147, 249)",
+   "backgroundImage": "none",
+   "color": "rgb(255, 255, 255)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "2px solid rgba(0, 0, 0, 0)",
+   "borderBottom": "2px solid rgba(0, 0, 0, 0)",
+   "borderLeft": "2px solid rgba(0, 0, 0, 0)",
+   "borderRadius": "4px",
+   "boxShadow": "rgba(0, 0, 0, 0.16) 0px 2px 4px 0px",
+   "padding": "4px 20px",
+   "textAlign": "center",
+   "lineHeight": "normal",
+   "id": "vGgH1d3",
+   "cls": "img-btn btn-new font-icon-button z-button",
+   "text": "",
+   "title": "New",
+   "icon": "z-icon-New"
+  },
+  {
+   "w": 56,
+   "h": 24,
+   "x": 295,
+   "y": 516,
+   "backgroundColor": "rgb(0, 147, 249)",
+   "backgroundImage": "none",
+   "color": "rgb(255, 255, 255)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "2px solid rgba(0, 0, 0, 0)",
+   "borderBottom": "2px solid rgba(0, 0, 0, 0)",
+   "borderLeft": "2px solid rgba(0, 0, 0, 0)",
+   "borderRadius": "4px",
+   "boxShadow": "rgba(0, 0, 0, 0.16) 0px 2px 4px 0px",
+   "padding": "4px 20px",
+   "textAlign": "center",
+   "lineHeight": "normal",
+   "id": "vGgH3d3",
+   "cls": "img-btn btn-reset font-icon-button z-button",
+   "text": "",
+   "title": "Reset",
+   "icon": "z-icon-Reset"
+  },
+  {
+   "w": 56,
+   "h": 24,
+   "x": 1088,
+   "y": 516,
+   "backgroundColor": "rgb(0, 147, 249)",
+   "backgroundImage": "none",
+   "color": "rgb(255, 255, 255)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "2px solid rgba(0, 0, 0, 0)",
+   "borderBottom": "2px solid rgba(0, 0, 0, 0)",
+   "borderLeft": "2px solid rgba(0, 0, 0, 0)",
+   "borderRadius": "4px",
+   "boxShadow": "rgba(0, 0, 0, 0.16) 0px 2px 4px 0px",
+   "padding": "4px 20px",
+   "textAlign": "center",
+   "lineHeight": "normal",
+   "id": "vGgH5d3",
+   "cls": "img-btn btn-ok font-icon-button z-button",
+   "text": "",
+   "title": "OK",
+   "icon": "z-icon-Ok"
+  },
+  {
+   "w": 56,
+   "h": 24,
+   "x": 1150,
+   "y": 516,
+   "backgroundColor": "rgb(241, 241, 241)",
+   "backgroundImage": "none",
+   "color": "rgb(17, 17, 17)",
+   "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+   "fontSize": "12px",
+   "fontWeight": "400",
+   "borderTop": "2px solid rgba(0, 0, 0, 0)",
+   "borderBottom": "2px solid rgba(0, 0, 0, 0)",
+   "borderLeft": "2px solid rgba(0, 0, 0, 0)",
+   "borderRadius": "4px",
+   "boxShadow": "rgba(0, 0, 0, 0.16) 0px 2px 4px 0px",
+   "padding": "4px 20px",
+   "textAlign": "center",
+   "lineHeight": "normal",
+   "id": "vGgH7d3",
+   "cls": "img-btn btn-cancel font-icon-button z-button",
+   "text": "",
+   "title": "Cancel",
+   "icon": "z-icon-Cancel"
+  }
+ ],
+ "south": {
+  "w": 982,
+  "h": 33,
+  "x": 229,
+  "y": 509,
+  "backgroundColor": "rgb(255, 255, 255)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+  "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+  "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "0px",
+  "textAlign": "start",
+  "lineHeight": "12px"
+ },
+ "statusbar": {
+  "w": 1004,
+  "h": 24,
+  "x": 218,
+  "y": 550,
+  "backgroundColor": "rgba(0, 0, 0, 0)",
+  "backgroundImage": "none",
+  "color": "rgba(0, 0, 0, 0.9)",
+  "fontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Noto Sans\", Helvetica, Arial, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\"",
+  "fontSize": "12px",
+  "fontWeight": "400",
+  "borderTop": "0px none rgba(0, 0, 0, 0.9)",
+  "borderBottom": "0px none rgba(0, 0, 0, 0.9)",
+  "borderLeft": "0px none rgba(0, 0, 0, 0.9)",
+  "borderRadius": "0px",
+  "boxShadow": "none",
+  "padding": "0px",
+  "textAlign": "start",
+  "lineHeight": "12px",
+  "text": "Records = 20"
+ },
+ "groupRows": [
+  "..."
+ ],
+ "mask": null,
+ "outlineHead": [
+  "PARENTS: div.desktop-tabpanel.z-tabpanel < div.z-tabpanels < div.desktop-tabbox.z-tabbox.z-tabbox-top < div.z-center-body.z-flex.z-flex-column < div.desktop-center.z-center < div. < div.desktop-layout.z-borderlayout < div.z-div < div.z-page < body.webkit.chrome.iceblue_c < html.",
+  "MASK: none",
+  "div.find-window.z-window.z-window-noborder.z-window-noheader"
+ ],
+ "advanced": {
+  "heads": [
+   {
+    "w": 66,
+    "h": 28,
+    "x": 233,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "And/Or"
+   },
+   {
+    "w": 55,
+    "h": 28,
+    "x": 299,
+    "y": 200,
+    "textAlign": "center",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "("
+   },
+   {
+    "w": 117,
+    "h": 28,
+    "x": 354,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "Tab"
+   },
+   {
+    "w": 175,
+    "h": 28,
+    "x": 471,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "Field"
+   },
+   {
+    "w": 77,
+    "h": 28,
+    "x": 646,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "Operator"
+   },
+   {
+    "w": 234,
+    "h": 28,
+    "x": 724,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "Query Value"
+   },
+   {
+    "w": 195,
+    "h": 28,
+    "x": 957,
+    "y": 200,
+    "textAlign": "left",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": "To Query Value"
+   },
+   {
+    "w": 55,
+    "h": 28,
+    "x": 1152,
+    "y": 200,
+    "textAlign": "center",
+    "fontWeight": "700",
+    "backgroundColor": "rgb(224, 242, 255)",
+    "color": "rgba(0, 0, 0, 0.9)",
+    "text": ")"
+   }
+  ],
+  "rows": 1,
+  "cells": [
+   "z-select",
+   "z-select",
+   "z-combobox+z-combobox-input",
+   "z-combobox+z-combobox-input",
+   "z-combobox+z-combobox-input",
+   "",
+   "",
+   "z-select"
+  ],
+  "north": [
+   "z-icon-New:",
+   "z-icon-Delete:"
+  ],
+  "south": [
+   "z-icon-Ok@x1088",
+   "z-icon-Cancel@x1150"
+  ]
+ },
+ "theme": "webkit chrome iceblue_c",
+ "capturedAt": "2026-11-04T12:25:29.717Z"
+}

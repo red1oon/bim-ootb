@@ -18,7 +18,7 @@
   .dlg { max-width:720px; margin:0 auto; background:var(--pn); border:1px solid var(--ln); padding:10px; } #tabs button.on { background:var(--acc); color:#fff; } .rf { font-family:monospace; white-space:pre; }
   #b-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; } .why { color:var(--mut); font-size:12px; }
 </style></head><body>
-<div class="bar"><b>Till</b><span id="s-net" class="chip">online</span><span id="s-pair" class="chip">starting</span><span id="s-who" class="chip"></span><span id="s-dep" class="chip">deposited 0</span><span style="flex:1"></span><button id="visit">Visit head office</button></div>
+<div class="bar"><b>Till</b><span id="s-net" class="chip">online</span><span id="s-pair" class="chip">starting</span><span id="s-who" class="chip"></span><span id="s-dep" class="chip">deposited 0</span><span style="flex:1"></span><button id="cfg-open" title="Configuration" aria-label="Configuration"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button><button id="visit">Visit head office</button></div>
 <div id="msg" class="bar" role="status" aria-live="polite" hidden></div>
 
 <section id="u1" class="screen"><h2>Login</h2><div id="users"></div></section>
@@ -81,6 +81,7 @@
 
 <section id="u21" class="screen"><div class="dlg" id="presence"><h2>Check In/Out</h2><div id="pr-msg"></div><div><button id="pr-in">Check In</button><button id="pr-out">Check Out</button><button id="pr-back">Back</button></div></div></section>
 
+<section id="u23" class="screen"><div class="dlg" id="setup" style="max-width:900px"><h2>Configuration</h2><div id="cfg-tabs"></div><div id="cfg-body"></div><div><button id="cfg-save" class="go">Save</button><button id="cfg-back">Back</button></div></div></section>
 <section id="u22" class="screen"><div class="dlg" id="pickup"><h2>Pickup Reset</h2><div>Next pick-up number <b id="pu-next"></b></div><div><button id="pu-reset" class="go">Reset</button><button id="pu-confirm" hidden>Do you really want to reset the Order Pickup number to 0?</button><button id="pu-back">Back</button></div><div id="pu-done"></div></div></section>
 
 <section id="u16" class="screen"><div class="dlg" id="floors" style="max-width:1000px"><h2>Restaurant floor</h2><div id="fl-state" class="why"></div><div id="fl-map" style="position:relative;height:430px;background:#fafafa;border:1px solid #bbb"></div><div><button id="fl-reload">Reload</button><button id="fl-res">Reservations</button><button id="fl-back">Back</button></div></div></section>
@@ -95,5 +96,5 @@
 <div id="confirmbox" class="bar" hidden><span id="confirm-text"></span><button id="confirm-yes" class="go">Yes</button><button id="confirm-no">No</button></div>
 
 <iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
-<script src="till_pad.js"></script><script src="till_core.js"></script><script src="eoda_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_ext.js"></script><script src="kds_core.js"></script><script src="kds_link.js"></script><script src="till_kds.js"></script>
+<script src="till_pad.js"></script><script src="rest_core.js"></script><script src="till_core.js"></script><script src="eoda_core.js"></script><script src="soda_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_rest.js"></script><script src="till_setup.js"></script><script src="till_ext.js"></script><script src="kds_core.js"></script><script src="kds_link.js"></script><script src="till_kds.js"></script>
 </body></html>

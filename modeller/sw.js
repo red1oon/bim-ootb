@@ -14,30 +14,30 @@
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
-const CACHE_VERSION = 'v216';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v219';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
-// Shell libs — auto-precached on install (needed to render the modeller).
-const SHELL_LIBS = [
+// Libs — stored at install, like the page's own files (§L34: one visit and the Modeller works with no network; about 9.8 MB gzip including the library).
+const LOCAL_LIBS = [
   'lib/three.module.min.js',
   'lib/three.core.min.js',
   '../common/lib/OrbitControls.module.js',
   '../common/lib/sql-wasm.js',
   '../common/lib/sql-wasm.wasm',
-];
-// Deferred — heavy/feature-gated; cache-on-first-use via cacheFirst (lib/ is always cache-first).
-const DEFERRED_LIBS = [
+  'lib/dxf-parser.js',
   '../common/lib/web-ifc-api-iife.js',
   '../common/lib/web-ifc.wasm',
-  'lib/kernel/occt-wasm.js',
-  'lib/kernel/occt-wasm.wasm',
-  '../common/lib/planegcs/planegcs_dist/planegcs.wasm',
-  'lib/three.webgpu.min.js',   // §THREE_ONE_BUILD: no longer the importmap target — cache-on-use only (was precached on every install)
-  'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
+  // the 3D kernel: the worker imports all of it
+  'lib/kernel/index.js', 'lib/kernel/occt-wasm.js', 'lib/kernel/occt-wasm.wasm', 'lib/kernel/raw-types.js', 'lib/kernel/svg.js', 'lib/kernel/types.js', 'lib/kernel/xcaf-document.js',
+  // the sketch solver
+  '../common/lib/planegcs/index.js',
+  '../common/lib/planegcs/planegcs_dist/constraint_param_index.js', '../common/lib/planegcs/planegcs_dist/constraints.js', '../common/lib/planegcs/planegcs_dist/enums.js', '../common/lib/planegcs/planegcs_dist/gcs_system.js', '../common/lib/planegcs/planegcs_dist/gcs_system_mock.js', '../common/lib/planegcs/planegcs_dist/id.js', '../common/lib/planegcs/planegcs_dist/planegcs.js', '../common/lib/planegcs/planegcs_dist/planegcs.wasm',
+  '../common/lib/planegcs/sketch/emsc_vectors.js', '../common/lib/planegcs/sketch/gcs_wrapper.js', '../common/lib/planegcs/sketch/geom_params.js', '../common/lib/planegcs/sketch/sketch_index.js',
 ];
-const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
-const CDN_ASSETS = [];
+// The LOD400 library: immutable per sha, so its own cache that a deploy keeps (§L34)
+const LIB_BASE = 'https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/dxf2bim/library/';
+const LIB_PREFIX = CACHE_PREFIX + 'lib-';
 
 // Local files to precache on install — the modeller works offline after first visit.
 // DB files are NOT here — the resident *_extracted.db / terminal_rules.db are cached in IndexedDB.
@@ -96,6 +96,7 @@ const PRECACHE_ASSETS = [
   'routewalker.js',
   // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
   'dxf_import_ui.js',
+  'real_geometry.js', 'dagevu_engine.js', 'sdg_save.js', 'save_catalog.js', 'building_parts_outliner.js',   // §L33 air gap: page script tags that were never cached
   'dxf2bim_import.js',
   'dxf2prep.js',
   'dxf2pair.js',
@@ -161,8 +162,8 @@ const PRECACHE_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  const _installSet = [...PRECACHE_ASSETS, ...SHELL_LIBS];
-  console.log('§MODELLER-SW install set=' + _installSet.length + ' deferred=' + DEFERRED_LIBS.length);
+  const _installSet = [...PRECACHE_ASSETS, ...LOCAL_LIBS];
+  console.log('§MODELLER-SW install set=' + _installSet.length);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       Promise.all(
@@ -170,17 +171,32 @@ self.addEventListener('install', (event) => {
           cache.add(url).catch(err => console.warn('§SW_PRECACHE_SKIP', url, err.message))
         )
       )
-    )
+    ).then(() => cacheLibrary().catch(err => console.warn('§MODELLER-SW library not stored: ' + err.message + ' (online still works; the next install tries again)')))
   );
   self.skipWaiting();
 });
+
+// §L34 the whole library, once per sha. A complete copy is kept across deploys; a new sha replaces it only when complete.
+async function cacheLibrary() {
+  const rl = await fetch(LIB_BASE + 'latest.json', { cache: 'no-store' }); if (!rl.ok) throw new Error('latest.json HTTP ' + rl.status);
+  const latest = await rl.clone().json(), name = LIB_PREFIX + latest.library_sha256.slice(0, 12), c = await caches.open(name), DONE = LIB_BASE + '__complete';
+  await c.put(LIB_BASE + 'latest.json', rl);
+  if (await c.match(DONE)) { console.log('§MODELLER-SW library kept ' + name); return; }
+  const dir = latest.index.replace(/index\.json$/, ''), iu = LIB_BASE + latest.index; if (!(await c.match(iu))) await c.add(iu);
+  const index = await (await c.match(iu)).json(); let failed = 0;
+  await Promise.all(index.shards.map(async sh => { const u = LIB_BASE + dir + sh.name + '.json'; if (await c.match(u)) return; try { await c.add(u); } catch (e) { failed++; } }));
+  console.log('§MODELLER-SW library ' + name + ' shards=' + index.shards.length + ' failed=' + failed);
+  if (failed) return;
+  await c.put(DONE, new Response('1'));
+  for (const k of await caches.keys()) if (k.indexOf(LIB_PREFIX) === 0 && k !== name) await caches.delete(k);
+}
 
 self.addEventListener('activate', (event) => {
   // Purge ONLY this app's old caches (prefix-scoped) — never the viewer/ERP caches.
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys
-        .filter(k => k.indexOf(CACHE_PREFIX) === 0 && k !== CACHE_NAME)
+        .filter(k => k.indexOf(CACHE_PREFIX) === 0 && k !== CACHE_NAME && k.indexOf(LIB_PREFIX) !== 0)
         .map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
@@ -205,6 +221,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   // TEAMWORK_FRAMEWORK §15 (found by W-TEAM-MODELLER; same fix as erp/sw.js §13.1): a request that says cache:'no-store'/'reload' (the comm layer's pipe reads, and GitHub's
   // api reads) must never be answered from a cache — cacheFirst keys on the URL WITHOUT its query, so every list?prefix=… read got the FIRST list's answer.
+  if (url.split('?')[0].endsWith('/dxf2bim/library/latest.json')) { event.respondWith(networkFirst(event.request)); return; }   // §L33 air gap: no-store online, the last copy when there is no network
   if (event.request.cache === 'no-store' || event.request.cache === 'reload') return;
   if (url.split('?')[0].endsWith('.db')) return;       // DBs → IndexedDB, skip SW
   if (event.request.mode === 'navigate') { event.respondWith(networkFirst(event.request)); return; }

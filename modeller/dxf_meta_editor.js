@@ -1036,7 +1036,7 @@
   function attention() {   // §L7.2: a value the drawing does not state, only suggested, is a default until confirmed: the Metadata button shivers (yellow ring) while any stands
     var n = 0; try { n = pending(); } catch (e) { console.error(TAG + ' attention failed ' + (e && e.message)); }
     S.attn = n; var b = document.getElementById('dxf-meta'), closed = !S.panel || S.panel.style.display === 'none';
-    if (b) { b.classList.toggle('dxf-shiver', n > 0 && closed); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review' : 'Drawing metadata'; }
+    if (b) { b.classList.toggle('dxf-shiver', n > 0 && closed); b.title = n ? 'Drawing metadata: ' + n + ' suggested value(s) not confirmed yet, click to review (Shift+D)' : 'Drawing metadata (Shift+D)'; }
     console.log(TAG + ' attention unconfirmed=' + n); return n;
   }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }

@@ -10,7 +10,7 @@
 // A value 0 on both sides judges nothing (INCONCLUSIVE). CAPEX Approval Pending reads AD_WF_Activity, not a fold: INCONCLUSIVE, named (G6b). Every goal prints the pilot's whole-client value beside it (§G6A_GAP): that distance is G6b's.
 // Break (MUST FAIL): G6A_BREAK=1 adds 1 to every oracle value; G6A_BREAK=2 writes no store to OPFS (the overlay has nothing to land: a Home that still matched would be scope-blind). Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tests/witness_g6a_home.js   (env SHED_DB = the §5.7 SHED building db)
 'use strict';
-const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), { execFileSync, spawnSync } = require('child_process');
+const fs = require('fs'), os = require('os'), path = require('path'), http = require('http'), { spawnSync } = require('child_process');
 const initSqlJs = require('sql.js'), { chromium } = require('/home/red1/bim-ootb/tests/node_modules/playwright');
 const ROOT = path.join(__dirname, '..', '..'), BD = require(path.join(ROOT, 'erp/bigdecimal.js')), BREAK = process.env.G6A_BREAK === '1', NO_STORE = process.env.G6A_BREAK === '2';
 const SHED_DB = process.env.SHED_DB || '/tmp/claude-shed-scratch/cli2db/SHED_extracted.db', HHS_DB = path.join(ROOT, 'buildings/HHS_Office_Federated_extracted.db'), START = '2026-11-01';
@@ -19,8 +19,7 @@ const log = console.log, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'g6a-')), S
 let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, info) => { judged++; if (!ok) fails++; log('  §G6A ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); };
 const inc = (n, why) => { inconc++; log('  §G6A ' + n + ' INCONCLUSIVE ' + why); };
-const psqlRaw = s => execFileSync('docker', ['exec', '-i', 'postgres', 'psql', '-U', 'adempiere', '-d', 'idempiere_pilot', '-v', 'ON_ERROR_STOP=1', '-qtA'], { input: 'SET search_path=adempiere;\nSET TIME ZONE ' + "'" + Intl.DateTimeFormat().resolvedOptions().timeZone + "';\n" + s, maxBuffer: 256 << 20 }).toString().trim();
-const pj = (t, w) => JSON.parse(psqlRaw("SELECT COALESCE(json_agg(x),'[]') FROM " + t + ' x WHERE ' + w + ';') || '[]');
+const { psqlRaw, pj, pilotGoals, selects, parse, titleOf } = require('../tools/legacy_goal_sql.js');
 const lit = v => v == null ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'";
 const finish = () => { const verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§G6A_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK || NO_STORE ? ' (G6A_BREAK=' + process.env.G6A_BREAK + ': FAIL expected)' : '')); fs.rmSync(TMP, { recursive: true, force: true }); process.exit(verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 2); };
 const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Number(v).toFixed(12); return BD.fromString(x); };
@@ -59,19 +58,15 @@ const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Numbe
   }
 
   // ── O: the oracle = legacy's own measure SQL over the same rows (nothing written on the pilot) ──
-  const goals = JSON.parse(psqlRaw("SELECT COALESCE(json_agg(x),'[]') FROM (SELECT g.pa_goal_id AS id, g.name, g.measureactual AS stored, g.measurescope AS scope, g.datelastrun::date = current_date AS fresh, m.measuredatatype AS dt, m.measuretype AS mt, c.selectclause AS sel, c.whereclause AS wh, c.datecolumn AS dc FROM pa_goal g JOIN pa_measure m ON m.pa_measure_id=g.pa_measure_id LEFT JOIN pa_measurecalc c ON c.pa_measurecalc_id=m.pa_measurecalc_id WHERE g.ad_client_id=11 AND g.isactive='Y' AND g.name LIKE 'CAPEX %' ORDER BY g.seqno, g.pa_goal_id) x;"));
-  const TRUNC = { 1: 'Y', 3: 'Q', 5: 'MM', 7: 'D', 8: 'DD' };
-  const sqlOf = g => { const a = (g.sel.match(/FROM\s+\w+\s+(\w+)\s*$/i) || [])[1], pre = a ? a + '.' : ''; let s = g.sel + ' ' + g.wh; if (g.dc && g.dt === 'T' && String(g.scope) !== '0') { const t = TRUNC[g.scope] || 'DD'; s += ' AND TRUNC(' + g.dc + ",'" + t + "')=TRUNC(statement_timestamp(),'" + t + "')"; } return (s + ' AND ' + pre + 'AD_Client_ID IN (0,11)').replace(/\bSYSDATE\b/gi, 'statement_timestamp()'); };
+  const goals = pilotGoals();
   const seedP = rows('SELECT * FROM c_project WHERE ad_client_id=11 AND c_project_id NOT IN (' + foldedIds.join(',') + ')'), seedPh = rows('SELECT * FROM c_projectphase WHERE c_project_id IN (' + (seedP.map(r => r.c_project_id).join(',') || '0') + ')');
   log('§G6A_POP the twin\'s seed rows beside the 2 folds: ' + seedP.map(r => r.c_project_id + ' ' + r.value + ' balance=' + r.projectbalanceamt + ' cur=' + r.c_currency_id).join(' · ') + ' · their phases=' + seedPh.length);
   pj('c_project', "ad_client_id=11 AND c_project_id NOT IN (" + FOLDS.map(f => f.pilot).join(',') + ')').forEach(r => log('    §G6A_POP on the pilot only (or differing): ' + r.c_project_id + ' ' + r.value + ' active=' + r.isactive + ' planned=' + r.plannedamt + ' balance=' + r.projectbalanceamt));
   const insOf = (t, r, cols) => 'INSERT INTO ' + t + ' (' + cols.join(',') + ') VALUES (' + cols.map(c => lit(r[c])).join(',') + ');';
   const PC = ['c_project_id', 'ad_client_id', 'ad_org_id', 'isactive', 'processed', 'c_currency_id', 'plannedamt', 'committedamt', 'invoicedamt', 'projectbalanceamt', 'value', 'name', 'datefinish'], PHC = ['c_projectphase_id', 'c_project_id', 'ad_client_id', 'ad_org_id', 'isactive', 'plannedamt', 'committedamt', 'iscomplete', 'name', 'startdate', 'enddate', 'seqno'];
-  const calc = goals.filter(g => g.mt === 'C' && g.sel);
-  const sel = (tag) => calc.map(g => "SELECT '" + tag + "|" + g.id + "|' || COALESCE((" + sqlOf(g) + ")::text,'0');").join('\n');
-  const out = psqlRaw(sel('U') + '\nBEGIN;\nCREATE TEMP TABLE c_project ON COMMIT DROP AS SELECT * FROM adempiere.c_project WHERE c_project_id IN (' + FOLDS.map(f => f.pilot).join(',') + ');\nCREATE TEMP TABLE c_projectphase ON COMMIT DROP AS SELECT * FROM adempiere.c_projectphase WHERE c_project_id IN (' + FOLDS.map(f => f.pilot).join(',') + ');\n' +
-    seedP.map(r => insOf('c_project', r, PC)).join('\n') + '\n' + seedPh.map(r => insOf('c_projectphase', r, PHC)).join('\n') + '\n' + sel('S') + '\nROLLBACK;').split('\n');
-  const U = {}, S = {}; out.forEach(l => { const m = l.match(/^([US])\|(\d+)\|(.*)$/); if (m) (m[1] === 'U' ? U : S)[m[2]] = m[3]; });
+  const out = psqlRaw(selects(goals, 'U') + '\nBEGIN;\nCREATE TEMP TABLE c_project ON COMMIT DROP AS SELECT * FROM adempiere.c_project WHERE c_project_id IN (' + FOLDS.map(f => f.pilot).join(',') + ');\nCREATE TEMP TABLE c_projectphase ON COMMIT DROP AS SELECT * FROM adempiere.c_projectphase WHERE c_project_id IN (' + FOLDS.map(f => f.pilot).join(',') + ');\n' +
+    seedP.map(r => insOf('c_project', r, PC)).join('\n') + '\n' + seedPh.map(r => insOf('c_projectphase', r, PHC)).join('\n') + '\n' + selects(goals, 'S') + '\nROLLBACK;');
+  const P = parse(out), U = P.U || {}, S = P.S || {};
   let checked = 0;
   goals.forEach(g => { const tag = 'O ' + g.name + ' legacy SQL unshadowed == the stored PA_Goal.MeasureActual'; if (!g.fresh) { inc(tag, 'the stored goal was not computed today'); return; } const sc = (String(g.stored).split('.')[1] || '').length; const ok = U[g.id] != null && bd(U[g.id]).setScale(sc, BD.RoundingMode.HALF_UP).eq(bd(g.stored).setScale(sc, BD.RoundingMode.HALF_UP)); checked++; ck(tag, ok, 'sql=' + U[g.id] + ' stored=' + g.stored); });
   if (!checked) log('§G6A instrument check judged nothing: run capex/tests/witness_pa_tiles.js today first');
@@ -120,7 +115,7 @@ const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Numbe
       if (!d) { ck(tag + ' ' + g.name + ' drawn', false, 'absent from the Home'); continue; }
       if (g.name === 'CAPEX Approval Pending') { inc(tag + ' ' + g.name, 'AD_WF_Activity is not a fold: twin ' + d.title + ', pilot whole client ' + whole + ' (G6b)'); continue; }
       if (S[g.id] == null) { inc(tag + ' ' + g.name, 'no oracle (measure type ' + g.mt + ')'); continue; }
-      const oracle = BREAK ? bd(S[g.id]).add(BD.of(1)).toString() : S[g.id], want = g.name + ': ' + await fmtInt(oracle), sc = Math.min((String(oracle).split('.')[1] || '').length, 6), eng = bd(d.engine);
+      const oracle = BREAK ? bd(S[g.id]).add(BD.of(1)).toString() : S[g.id], want = await titleOf(g, oracle, fmtInt), sc = Math.min((String(oracle).split('.')[1] || '').length, 6), eng = bd(d.engine);
       if (tag === 'H') log('    §G6A_GAP ' + g.name + ' twinHome=' + JSON.stringify(d.title) + ' legacySameRows=' + oracle + ' pilotWholeClient=' + whole);
       if (bd(oracle).isZero() && eng.isZero()) { inc(tag + ' ' + g.name, 'not exercised — 0 on both sides'); continue; }
       ck(tag + ' ' + g.name + ' Home title == legacy over the same rows', d.title === want, 'drawn=' + JSON.stringify(d.title) + ' want=' + JSON.stringify(want));

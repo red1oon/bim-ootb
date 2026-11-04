@@ -20,8 +20,11 @@
     var P = cur();
     if (!P || !Array.isArray(P.flows) || !open(P)) return null;
     if (memo.plan === P) return memo.idx;
-    var I = { flows: {}, local: {}, hub: {}, branch: {}, hubRole: P.hub };
+    var I = { flows: {}, local: {}, hub: {}, hubUp: {}, hubDown: {}, branch: {}, hubRole: P.hub, executors: P.executors || {} };
     P.flows.forEach(function (f) { if (f.audience === 'space' && !I.flows[lc(f.table)]) I.flows[lc(f.table)] = f; else if (f.audience === 'hub' && !I.hub[lc(f.table)]) I.hub[lc(f.table)] = f; else if (f.audience === 'branch' && !I.branch[lc(f.table)]) I.branch[lc(f.table)] = f; });   // 'branch' (P2 kitchen, prompts/POS_PLUGIN_LOCAL_FIRST.md §19.3): shared by the devices of ONE branch Org, never with the hub
+    // §28.2 P2: a table MAY have a DOWN and an UP hub flow (the compiler admits the pair only when the UP role is the table's DocAction executor). hub[t] stays the DOWN flow of such a table (what every reader of it already assumed).
+    P.flows.forEach(function (f) { if (f.audience !== 'hub') return; var t = lc(f.table); if (f.dir === 'UP' && !I.hubUp[t]) I.hubUp[t] = f; else if (f.dir === 'DOWN' && !I.hubDown[t]) I.hubDown[t] = f; });
+    Object.keys(I.hubUp).forEach(function (t) { if (I.hubDown[t]) I.hub[t] = I.hubDown[t]; });
     (P.local || []).forEach(function (t) { I.local[lc(t)] = 1; });
     memo.plan = P; memo.idx = I; return I;
   }
@@ -32,7 +35,7 @@
     carries: function (table, name) { return !!col(table, name); },
     // scopeOf(table) is the office answer, unchanged (a hub row never counts there). scopeOf(table, myRole) adds the POS answers when the office answer is 'unplanned': 'up' (I declare it) · 'down' (I am the hub and send it) ·
     // 'receive' (it is addressed to my role) · else 'unplanned'.
-    scopeOf: function (table) { var role = arguments[1], I = idx(), s = !I ? 'unplanned' : I.local[lc(table)] ? 'station-local' : I.flows[lc(table)] ? 'share' : 'unplanned', h = I && s === 'unplanned' && role !== undefined && role !== null ? I.hub[lc(table)] : null; if (!h) { var bf = I && s === 'unplanned' && role !== undefined && role !== null ? I.branch[lc(table)] : null; return bf && String(bf.role) === String(role) ? 'branch' : s; } var me = String(role), hub = String(I.hubRole), edge = String(h.role); return h.dir === 'UP' ? (me === edge ? 'up' : me === hub ? 'receive' : 'unplanned') : h.dir === 'DOWN' ? (me === hub ? 'down' : me === edge ? 'receive' : 'unplanned') : 'unplanned'; },
+    scopeOf: function (table) { var role = arguments[1], I = idx(), dl = I && role !== undefined && role !== null && I.hubUp[lc(table)] && I.hubDown[lc(table)] ? I.hubUp[lc(table)] : null; if (dl) return String(role) === String(I.hubRole) ? 'down' : String(role) === String(dl.role) ? 'up' : 'unplanned'; var s = !I ? 'unplanned' : I.local[lc(table)] ? 'station-local' : I.flows[lc(table)] ? 'share' : 'unplanned', h = I && s === 'unplanned' && role !== undefined && role !== null ? I.hub[lc(table)] : null; if (!h) { var bf = I && s === 'unplanned' && role !== undefined && role !== null ? I.branch[lc(table)] : null; return bf && String(bf.role) === String(role) ? 'branch' : s; } var me = String(role), hub = String(I.hubRole), edge = String(h.role); return h.dir === 'UP' ? (me === edge ? 'up' : me === hub ? 'receive' : 'unplanned') : h.dir === 'DOWN' ? (me === hub ? 'down' : me === edge ? 'receive' : 'unplanned') : 'unplanned'; },
     hubFlow: function (table) { var I = idx(); return I && I.hub[lc(table)] || null; },
     setKind: function (k) { memo.kind = k === 'pos' ? 'pos' : 'office'; return memo.kind; },       // the genesis' `plan`; anything else is the office plan
     kind: function () { return memo.kind; },
@@ -40,10 +43,21 @@
     by: function (table) { var I = idx(), h = I && I.hub[lc(table)]; return h && Array.isArray(h.by) && h.by.length ? h.by.slice() : null; },       // the FK path that narrows a DOWN row to one entity (and so one person)
     downBy: function (role) { var I = idx(), out = []; if (!I) return out; Object.keys(I.hub).forEach(function (t) { var h = I.hub[t]; if (h.dir === 'DOWN' && Array.isArray(h.by) && h.by.length && (role === undefined || role === null || String(h.role) === String(role))) out.push({ table: h.table, by: h.by.slice() }); }); return out; },   // the DOWN rows that address ONE entity (a FK path) for this role: what a device of that role can be BOUND to
     branchFlow: function (table) { var I = idx(); return I && I.branch[lc(table)] || null; },
-    ship: function (table) { var I = idx(), h = I && (I.hub[lc(table)] || I.branch[lc(table)]); return h && Array.isArray(h.ship) ? h.ship.map(lc) : null; },              // the ONLY columns of a hub row that may leave the device (FL-1)
+    // dual(table): the table has a DOWN and an UP hub flow (§28.2 P2). executorFor(table): the DocAction executor role of a flow's table (an UP row of a line table follows its `executorOf` document).
+    dual: function (table) { var I = idx(); return !!(I && I.hubUp[lc(table)] && I.hubDown[lc(table)]); },
+    upFlow: function (table) { var I = idx(); return I && I.hubUp[lc(table)] || null; },
+    executorFor: function (table) { var I = idx(), u = I && I.hubUp[lc(table)], t = lc(u && u.executorOf || table), e = I && I.executors[t]; return e === undefined ? null : e; },
+    ship: function (table, role) { var I = idx(), t = lc(table), h = I && ((role !== undefined && role !== null && I.hubUp[t] && I.hubDown[t] && String(role) !== String(I.hubRole)) ? I.hubUp[t] : (I.hub[t] || I.branch[t])); return h && Array.isArray(h.ship) ? h.ship.map(lc) : null; },              // the ONLY columns of a hub row that may leave the device (FL-1)
     // INBOUND, pure: may this device take in an op another device authored? c = { self, authorRole, authorPerson, myPerson, addr } - addr = the uu of the entity the record is addressed to (the host resolves it), or null.
     admits: function (table, role, c) { var s = global.TeamScope.scopeOf(table, role), I = idx(), t = lc(table); c = c || {};
       if (s === 'share' || c.self) return { ok: true };
+      if (I && I.hubUp[t] && I.hubDown[t]) {                                                                         // §28.2 P2: a table with a DOWN and an UP flow - the AUTHOR's role says which flow this op belongs to
+        var ar = String(c.authorRole), hubR = String(I.hubRole), upR = String(I.hubUp[t].role);
+        if (c.authorPerson && c.myPerson && c.authorPerson === c.myPerson) return { ok: true };                    // my own person's other device
+        if (ar === upR && ar !== hubR) return String(role) === hubR ? (global.TeamScope.executorFor(table) !== null && String(global.TeamScope.executorFor(table)) === upR ? { ok: true } : { ok: false, why: 'not-executor' }) : { ok: false, why: 'not-addressed' };   // UP: only the hub takes it in, and only from the table's executor
+        if (ar !== hubR) return { ok: false, why: 'not-executor' };                                                  // any other role: it is neither the hub's DOWN nor the executor's UP
+        s = String(role) === hubR ? 'down' : 'receive';                                                              // the hub's DOWN: judged as every DOWN row below
+      }
       if (s === 'branch') return c.authorPerson && c.myPerson && lc(c.authorPerson) === lc(c.myPerson) ? { ok: true } : { ok: false, why: 'not-this-branch' };   // a branch fact is taken only from a device of MY branch Org (same person_uu)
       if (s === 'receive') { var by = I.hub[t].by; if (!by || !by.length) return { ok: true };
         return c.addr && c.myPerson && lc(c.addr) === lc(c.myPerson) ? { ok: true } : { ok: false, why: 'not-addressed' }; }

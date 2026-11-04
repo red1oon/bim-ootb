@@ -14,6 +14,7 @@
 //   (InOutGenerate 118, InvoiceGenerate 119); the variants default their parameters from the Order (@Column@ = window context) and show only while the order has something left (@SQL= DisplayLogic).
 const NOW = '2026-10-17 00:00:00';
 const STD = { ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100, entitytype: 'U' };
+let SODACORE = null;
 const P_SHIP = 53401, P_INV = 53402, P_RECV = 53403, P_BILL = 53404, P_DAYCLOSE = 53405;   // 53405: POS_PLUGIN_LOCAL_FIRST.md §21 Branch Day Close   // 53403/53404: ERP_FRIENDLY_OPS_LENS.md §44 (Purchase Order tab)
 const proc = (id, value, name, description, classname) => Object.assign({ ad_process_id: id, value, name, description, accesslevel: '1', isreport: 'N', isdirectprint: 'N', classname, statistic_count: 0, statistic_seconds: 0,
   isbetafunctionality: 'N', isserverprocess: 'N', showhelp: 'Y', allowmultipleexecution: 'Y' }, STD);
@@ -46,6 +47,16 @@ const DC_ACCESS = DC_ROLES.map((r) => { const x = Object.assign({ ad_process_id:
 const DC_MENU = Object.assign({ ad_menu_id: M_DAYCLOSE, name: 'Branch Day Close', description: 'Import the branches\' till sales for a business day, then the Replenish Report and its create, in legacy order', issummary: 'N', issotrx: 'Y', isreadonly: 'N',
   action: 'P', ad_process_id: P_DAYCLOSE, iscentrallymaintained: 'Y' }, STD);
 const DC_NODE = { ad_tree_id: 10, node_id: M_DAYCLOSE, parent_id: 163, seqno: 27, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
+// §28 SODA down (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §28): ONE head-office process, after Branch Day Close, that writes the branch's start-of-day batch (reference deltas, POS_SodaRef) beside the movements the Replenish create made.
+const P_SODA = 53406, M_SODA = 9534042;
+const SD_PARA = [[9534051, 'Organization', 'AD_Org_ID', 10, 19, null, 130, 'N', 10], [9534052, 'Branch Orgs (comma separated ids)', 'BranchOrgs', 20, 10, null, null, 'N', 255], [9534053, 'Business Day', 'BusinessDay', 30, 15, null, null, 'Y', 7],
+  [9534054, 'Send everything (Export2Queue SendAll: since = 2000-01-01)', 'SendAll', 40, 20, null, null, 'N', 1]]
+  .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_SODA, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_reference_value_id: r[5], ad_val_rule_id: r[6], ismandatory: r[7], fieldlength: r[8],
+    defaultvalue: null, iscentrallymaintained: 'Y', isrange: 'N' }, STD));
+const SD_ACCESS = DC_ROLES.map((r) => { const x = Object.assign({ ad_process_id: P_SODA, ad_role_id: r[0], isreadwrite: 'Y', ad_process_access_uu: 'fo-rows-' + P_SODA + '-' + r[0] }, STD); x.ad_client_id = r[1]; delete x.entitytype; return x; });
+const SD_MENU = Object.assign({ ad_menu_id: M_SODA, name: 'Branch SODA (start-of-day batch)', description: 'Write each branch\'s start-of-day batch: price, product and tax deltas since the last run (the movements the Replenish create made travel with it)', issummary: 'N', issotrx: 'Y', isreadonly: 'N',
+  action: 'P', ad_process_id: P_SODA, iscentrallymaintained: 'Y' }, STD);
+const SD_NODE = { ad_tree_id: 10, node_id: M_SODA, parent_id: 163, seqno: 28, ad_client_id: 0, ad_org_id: 0, isactive: 'Y', created: NOW, createdby: 100, updated: NOW, updatedby: 100 };
 
 export const manifest = {
   id: 'org.kernel.friendly-ops',
@@ -59,11 +70,13 @@ export const manifest = {
       proc(P_RECV, 'FO_Order_Receive', 'Receive', 'Receive the open lines of this purchase order (Material Receipt from the order, completed)', 'org.kernel.friendlyops.OrderReceive'),
       proc(P_BILL, 'FO_Order_Bill', 'Create Bill', 'Create the vendor invoice from this order\'s completed receipts (Generate Invoice from Receipt), completed', 'org.kernel.friendlyops.OrderBill'),
       Object.assign(proc(P_DAYCLOSE, 'FO_Branch_Day_Close', 'Branch Day Close', 'Close the branches\' business day at head office: Import POS Sales (or Import Orders + Import Payment), Replenish Report, its create; stops at the first error', 'org.kernel.friendlyops.BranchDayClose'), { accesslevel: '3',
-        help: 'Runs the legacy processes in legacy order for each chosen branch Org, each step reported on its own line. Before the import an audit gate holds back any till/day whose ticket numbers have a gap or whose tickets do not balance; held tills are named and never imported. Every step stays runnable on its own from its own menu entry.' })] },
-    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: PARA.concat(DC_PARA) },
-    { table: 'ad_process_access', idCol: 'ad_process_access_uu', rows: ACCESS.concat(DC_ACCESS) },
-    { table: 'ad_menu', idCol: 'ad_menu_id', rows: [DC_MENU] },
-    { table: 'ad_treenodemm', idCol: 'node_id', rows: [DC_NODE] },
+        help: 'Runs the legacy processes in legacy order for each chosen branch Org, each step reported on its own line. Before the import an audit gate holds back any till/day whose ticket numbers have a gap or whose tickets do not balance; held tills are named and never imported. Every step stays runnable on its own from its own menu entry.' }),
+      Object.assign(proc(P_SODA, 'FO_Branch_SODA', 'Branch SODA', 'Write each branch\'s start-of-day batch: product price / product / tax deltas since the last run, plus the movements the Replenish create made', 'org.kernel.friendlyops.BranchSoda'), { accesslevel: '3',
+        help: 'Run after Branch Day Close. Per branch Org: the price list version the till reads, rows changed since the last finished run of this process for that Org (Export2Queue rule), ONE batch. Unchanged rows never travel.' })] },
+    { table: 'ad_process_para', idCol: 'ad_process_para_id', rows: PARA.concat(DC_PARA, SD_PARA) },
+    { table: 'ad_process_access', idCol: 'ad_process_access_uu', rows: ACCESS.concat(DC_ACCESS, SD_ACCESS) },
+    { table: 'ad_menu', idCol: 'ad_menu_id', rows: [DC_MENU, SD_MENU] },
+    { table: 'ad_treenodemm', idCol: 'node_id', rows: [DC_NODE, SD_NODE] },
     { table: 'ad_toolbarbutton', idCol: 'ad_toolbarbutton_id', rows: [button(53431, 'FO_Order_Ship', 'Ship', P_SHIP, 20, leftSql('QtyDelivered')), button(53432, 'FO_Order_Invoice', 'Invoice', P_INV, 30, leftSql('QtyInvoiced')),
       button(53433, 'FO_Order_Receive', 'Receive', P_RECV, 20, RECV_SQL, 294), button(53434, 'FO_Order_Bill', 'Create Bill', P_BILL, 30, BILL_SQL, 294)] }
   ]
@@ -350,12 +363,68 @@ function dayCloseClass(SvrProcess, X) {
   };
   return BranchDayClose;
 }
+// §28.1 Branch SODA. One batch per branch Org: the watermark is Export2Queue's (the newest finished AD_PInstance of THIS process for the Org), the selection and the rows are soda_core.js (pure). The movements the Replenish create made for the
+// branch warehouse are real M_Movement rows that travel on the plan's own flows (S3/S4/S5/F2); this process names them in the batch header so the next run does not name them again, and reports them (§SODA-MOVE).
+function sodaClass(SvrProcess, X) {
+  const nz = (v) => (v == null || v === '' ? 0 : Number(v));
+  const SODA_BREAK = (typeof globalThis !== 'undefined' && globalThis.__SODA_BREAK) || '';   // witness-only negative controls: 'fulllist' (send every price), 'perline' (a group per row)
+  function BranchSoda() { SvrProcess.call(this); this.p = {}; }
+  BranchSoda.prototype = Object.create(SvrProcess.prototype);
+  BranchSoda.prototype.prepare = function () {
+    const para = this.getParameter();
+    for (let i = 0; i < para.length; i++) {
+      const name = para[i].getParameterName(), pv = para[i].getParameter();
+      if (pv == null || pv === '') continue;
+      if (name === 'AD_Org_ID') this.p[name] = para[i].getParameterAsInt();
+      else if (name === 'BusinessDay') this.p[name] = String(pv).slice(0, 10);
+      else if (name === 'BranchOrgs' || name === 'SendAll') this.p[name] = String(pv);
+      else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA BranchSoda ' + name);
+    }
+  };
+  BranchSoda.prototype.doIt = function () {
+    const trx = this.get_TrxName(), C = this.getAD_Client_ID(), P = this.p, line = (s) => { trx.say(s); };
+    if (!SODACORE) throw new Error('soda_core.js is not loaded');
+    if (!P.BusinessDay) throw new Error('@FillMandatory@ @BusinessDay@');
+    let orgs = P.AD_Org_ID ? [P.AD_Org_ID] : P.BranchOrgs ? P.BranchOrgs.split(',').map((x) => Number(String(x).trim())).filter((x) => x > 0) : trx.q('SELECT DISTINCT ad_org_id AS o FROM c_pos WHERE ad_client_id=? AND isactive=?', [C, 'Y']).map((r) => Number(r.o));
+    orgs = orgs.filter((o, i, a) => a.indexOf(o) === i).sort((a, b) => a - b);
+    const upto = trx.q("SELECT strftime('%Y-%m-%d %H:%M:%S','now') AS t")[0].t;
+    line('§SODA-START client=' + C + ' day=' + P.BusinessDay + ' branches=' + orgs.join(',') + ' sendAll=' + (P.SendAll || 'N') + ' break=' + (SODA_BREAK || 'none'));
+    if (!orgs.length) { line('§SODA-EMPTY no branch Org (no C_POS station): nothing judged'); return 'Branch SODA: no branch'; }
+    let seqNo = 0, rowsOut = 0;
+    for (const org of orgs) {
+      const pos = trx.q('SELECT m_pricelist_id AS pl, m_warehouse_id AS wh FROM c_pos WHERE ad_client_id=? AND ad_org_id=? AND isactive=? ORDER BY c_pos_id', [C, org, 'Y'])[0];
+      if (!pos) { line('§SODA-BRANCH org=' + org + ' SKIPPED no C_POS station for this Org'); continue; }
+      const ver = (trx.q('SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=? ORDER BY validfrom DESC, m_pricelist_version_id DESC LIMIT 1', [pos.pl])[0] || {}).v;   // the version the till reads (till.js loadConfig)
+      let pin = []; try { pin = trx.q('SELECT i.ad_pinstance_id AS id, i.isprocessing AS isprocessing, i.updated AS updated, p.p_number AS org FROM ad_pinstance i JOIN ad_pinstance_para p ON p.ad_pinstance_id=i.ad_pinstance_id AND p.parametername=? WHERE i.ad_process_id=?', ['AD_Org_ID', P_SODA]); } catch (e) { pin = []; }   // no AD_PInstance table on this host = no earlier run = since 2000-01-01
+      const since = SODACORE.watermark(pin, org, P.SendAll);
+      const prices = trx.q('SELECT * FROM m_productprice WHERE m_pricelist_version_id=?', [ver]), products = trx.q('SELECT * FROM m_product WHERE ad_client_id IN (0,?)', [C]), taxes = trx.q('SELECT * FROM c_tax WHERE ad_client_id IN (0,?)', [C]);
+      seqNo = (trx.q('SELECT COALESCE(MAX(seq),0) AS s FROM pos_sodaref WHERE ad_org_id=? AND kind=?', [org, 'B'])[0] || {}).s + 1;
+      const orgVal = (trx.q('SELECT value AS v FROM ad_org WHERE ad_org_id=?', [org])[0] || {}).v || String(org), batchId = orgVal + '-SODA-' + P.BusinessDay + '-' + seqNo;
+      const d = SODACORE.refDelta({ since: SODA_BREAK === 'fulllist' ? SODACORE.EPOCH : since, upto, batchId, seq: seqNo, client: C, org, version: ver, prices, products, taxes });
+      // (a) the movements of the Replenish create for this branch's warehouses, not named by an earlier batch
+      const named = {}; trx.q('SELECT detail FROM pos_sodaref WHERE ad_org_id=? AND kind=?', [org, 'B']).forEach((r) => { try { (JSON.parse(r.detail).movementIds || []).forEach((m) => { named[m] = 1; }); } catch (e) { /* older header */ } });
+      // only a movement with an OPEN confirmation is something the branch must receive (an in-transit doctype, MMovement.prepareIt :354-356 created it); a movement without one moved its stock already (legacy MMovement.completeIt)
+      const mv = trx.q("SELECT DISTINCT m.m_movement_id AS id, m.documentno AS dn, m.docstatus AS st FROM m_movement m JOIN m_movementline l ON l.m_movement_id=m.m_movement_id JOIN m_locator lt ON lt.m_locator_id=l.m_locatorto_id JOIN m_warehouse w ON w.m_warehouse_id=lt.m_warehouse_id JOIN m_movementconfirm c ON c.m_movement_id=m.m_movement_id AND c.processed='N' WHERE w.ad_org_id=? AND m.docstatus='IP' ORDER BY m.m_movement_id", [org]).filter((m) => !named[m.id]);
+      const hdr = d.rows[0], det = JSON.parse(hdr.detail); det.movements = mv.map((m) => m.dn); det.movementIds = mv.map((m) => Number(m.id)); det.version = ver; det.watermark = since; hdr.detail = JSON.stringify(det);
+      line('§SODA-BRANCH org=' + org + ' batch=' + batchId + ' version=' + ver + ' since=' + since + ' upto=' + upto + ' prices=' + d.counts.prices + ' products=' + d.counts.products + ' taxes=' + d.counts.taxes + ' movements=' + mv.length + ' totalPrices=' + prices.length);
+      mv.forEach((m) => line('§SODA-MOVE org=' + org + ' batch=' + batchId + ' movement=' + m.dn + ' status=' + m.st));
+      d.rows.forEach((r) => { trx.insert('pos_sodaref', r); rowsOut++; });
+      // the finished AD_PInstance row of THIS run is the next run's watermark (the host's UI run records it, idempiere.html:4485-4490; a direct runJava has none: the witness plays the host)
+      this.addLog(0, null, null, 'Org ' + org + ' ' + batchId + ': prices=' + d.counts.prices + ' products=' + d.counts.products + ' taxes=' + d.counts.taxes + ' movements=' + mv.length);
+    }
+    line('§SODA-RESULT branches=' + orgs.length + ' rows=' + rowsOut);
+    return 'Branch SODA done: branches=' + orgs.length + ' rows=' + rowsOut;
+  };
+  return BranchSoda;
+}
+
 export async function activate(ctx) {
   HOSTP = ctx.process || null;
   try { const m = await import(new URL('../eoda_core.js', import.meta.url).href); EODACORE = globalThis.EodaCore || (m && (m.default || m)) || null; } catch (e) { EODACORE = null; }
+  try { const m = await import(new URL('../soda_core.js', import.meta.url).href); SODACORE = globalThis.SodaCore || (m && (m.default || m)) || null; } catch (e) { SODACORE = null; }
   try { const m = await import(new URL('../till_core.js', import.meta.url).href); TILLCORE = globalThis.TillCore || (m && (m.default || m)) || null; } catch (e) { TILLCORE = null; }   // UMD: sets window.TillCore in the browser, module.exports in node
   if (!ctx.lens) throw new Error('host has no lens extension point');
   ctx.lens.register('friendly-ops', lens);
-  if (ctx.process && ctx.process.defineProcess) { ctx.process.defineProcess('org.kernel.friendlyops.OrderReceive', receiveClass); ctx.process.defineProcess('org.kernel.friendlyops.OrderBill', billClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchDayClose', dayCloseClass); }
+  if (ctx.process && ctx.process.defineProcess) { ctx.process.defineProcess('org.kernel.friendlyops.OrderReceive', receiveClass); ctx.process.defineProcess('org.kernel.friendlyops.OrderBill', billClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchDayClose', dayCloseClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchSoda', sodaClass); }
 }
 export async function deactivate() { /* ctx.lens registrations are owner-removed by the registry on stop */ }
