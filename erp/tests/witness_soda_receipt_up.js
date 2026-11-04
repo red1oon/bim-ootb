@@ -166,7 +166,19 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
     check('R1-reaches-admin', seenD.mv === 1 && seenD.line === 1 && seenD.cf === 1 && seenD.lc === 1, 'the movement, its line, the confirm and its line confirm reached the branch POS admin through the plan (S3/S4/S5/F2)', seenD);
     var cfD = (await rowsOf(D, 'SELECT documentno AS dn, docstatus AS st, processed AS pr FROM m_movementconfirm'))[0] || {};
     var sentN0 = Object.keys(await eng(D, function (W) { return W.TeamSync.sent(); })).length;
-    var mkR = mark(), rc = await D.pg.evaluate(function (x) { return window.BranchAdmin.receiveStock(x); }, (function () { var o = {}; o[cfD.dn] = [{ line: 10, confirmed: CONF, scrapped: SCR }]; return o; })()); var reqR = since(mkR);
+    var mkR = mark(), rc;
+    if (process.env.SODA2_UI) {   // W-RECEIVE-UI (§33.5): the SAME receipt keyed on the branch admin's screen - open the panel, type Confirmed and Scrapped, read the Difference cell, click Confirm receipt
+      await D.pg.click('#a-refresh'); await D.pg.waitForFunction(function () { return !document.getElementById('a-soda-recv').disabled; }, null, { timeout: 20000 }); await D.pg.click('#a-soda-recv'); await D.pg.waitForSelector('#a-recv table.rc tbody tr', { timeout: 15000 }); mkR = mark();   // Refresh is a Visit of its own; the claim C1 is about Receive stock (typing + Confirm receipt)
+      var lbl = await D.pg.$$eval('#a-recv table.rc thead th', function (x) { return x.map(function (e) { return e.textContent; }).join('|'); });
+      check('UI1-window-333-fields', lbl === 'Move Line|Product|Target Quantity|Confirmed Quantity|Difference|Scrapped Quantity', 'the panel shows the Move Line Confirm fields of window 333 in legacy order', lbl);
+      var def = await D.pg.$eval('#a-recv tbody tr', function (r) { return { t: r.getAttribute('data-target'), c: r.querySelector('[data-rc-conf]').value, s: r.querySelector('[data-rc-scr]').value, d: r.querySelector('[data-rc-diff]').textContent }; });
+      check('UI2-defaults', Number(def.t) === QTY && Number(def.c) === QTY && Number(def.s) === 0 && Number(def.d) === 0, 'defaults = a full receipt (Confirmed = Target ' + QTY + ', Scrapped 0, Difference 0)', def);
+      await D.pg.fill('#a-recv [data-rc-conf]', String(CONF)); await D.pg.fill('#a-recv [data-rc-scr]', String(SCR));
+      var dd = await D.pg.$eval('#a-recv [data-rc-diff]', function (e) { return e.textContent; }); check('UI3-difference-computed', Number(dd) === DIFF, 'typing Confirmed ' + CONF + ' shows Difference ' + DIFF + ' (Target - Confirmed)', dd);
+      await D.pg.click('#rc-confirm'); var t0 = Date.now(); while (Date.now() - t0 < 20000 && !(await D.pg.evaluate(function () { return window.BranchAdmin.state().set.receipts.length >= 1; }))) await sleep(200);
+      rc = { received: (await D.pg.evaluate(function () { return window.BranchAdmin.state().set.receipts.length; })) };
+    } else rc = await D.pg.evaluate(function (x) { return window.BranchAdmin.receiveStock(x); }, (function () { var o = {}; o[cfD.dn] = [{ line: 10, confirmed: CONF, scrapped: SCR }]; return o; })());
+    var reqR = since(mkR);
     var sentN1 = Object.keys(await eng(D, function (W) { return W.TeamSync.sent(); })).length;
     check('C1-receive-authors-nothing-sends-nothing', rc && rc.received === 1 && puts(reqR, 'D') === 0 && sentN1 === sentN0, 'Receive stock makes 0 admin puts and authors 0 ops (' + puts(reqR, 'D') + ' puts, sent ops ' + sentN0 + ' -> ' + sentN1 + ')', { rc: rc, puts: puts(reqR, 'D'), sent: [sentN0, sentN1] });
     await visitAll([D, A]);

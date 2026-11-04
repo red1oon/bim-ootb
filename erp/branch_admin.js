@@ -85,14 +85,29 @@
     if (hd) { var h = ch(hd, { docstatus: 'CO', isapproved: 'Y', processed: 'Y' }); if (Object.keys(h).length) ops.push(upd('m_movementconfirm', x.uu, h)); }
     return ops;
   }
+  // the lines of one pending Move Confirmation (window 333, tab Move Line Confirm): Move Line, Target Quantity (and the product, for the screen)
+  async function readLines(c) {
+    var cl = [], lcs = await rows('SELECT m_movementlineconfirm_uu AS lcuu, m_movementline_id AS mlid, targetqty AS t FROM m_movementlineconfirm WHERE m_movementconfirm_id=' + Number(c.id));   // one table per query: a join returned the movement line's key under the confirm line's alias
+    for (var li = 0; li < lcs.length; li++) { var mlr = (await rows('SELECT line, m_product_id AS p, m_locator_id AS l, m_locatorto_id AS lt FROM m_movementline WHERE m_movementline_id=' + Number(lcs[li].mlid)))[0]; if (mlr) { var pr = (await rows('SELECT name FROM m_product WHERE m_product_id=' + Number(mlr.p)))[0]; cl.push({ lcuu: lcs[li].lcuu, t: lcs[li].t, line: mlr.line, p: mlr.p, pname: pr && pr.name || '', l: mlr.l, lt: mlr.lt }); } }
+    cl.sort(function (a, b) { return Number(a.line) - Number(b.line); }); return cl;
+  }
+  // §33.4: the per-line entry of Move Confirmation (AD_Field order: Move Line, Target Quantity, Confirmed Quantity, Difference, Scrapped Quantity). Difference = Target - Confirmed, read-only (MMovementLineConfirm.beforeSave :169-172). Confirm receipt hands the typed values to receiveStock(lines).
+  async function recvPanel() {
+    var s = await sodaRead(), box = $('#a-recv'), h = '';
+    for (var i = 0; i < s.confirms.length; i++) { var c = s.confirms[i], cl = await readLines(c);
+      h += '<h4>Move Confirmation ' + esc(c.documentno) + ' <small>(movement ' + esc(c.mdoc) + ')</small></h4><table class="rc" data-doc="' + esc(c.documentno) + '"><thead><tr><th>Move Line</th><th>Product</th><th>Target Quantity</th><th>Confirmed Quantity</th><th>Difference</th><th>Scrapped Quantity</th></tr></thead><tbody>' +
+        cl.map(function (x) { return '<tr data-line="' + esc(x.line) + '" data-target="' + Number(x.t) + '"><td>' + esc(x.line) + '</td><td>' + esc(x.pname) + '</td><td>' + Number(x.t) + '</td><td><input data-rc-conf size="5" value="' + Number(x.t) + '"></td><td data-rc-diff>0</td><td><input data-rc-scr size="5" value="0"></td></tr>'; }).join('') + '</tbody></table>'; }
+    box.innerHTML = h + (s.confirms.length ? '<p><button id="rc-confirm" class="go">Confirm receipt</button> <button id="rc-cancel">Cancel</button></p>' : ''); box.hidden = !s.confirms.length;
+    log('§SODA_RECV_PANEL confirms=' + s.confirms.length + ' lines=' + box.querySelectorAll('tbody tr').length); return s.confirms.length;
+  }
+  function recvCollect() { var out = {}; Array.prototype.forEach.call($('#a-recv').querySelectorAll('table.rc'), function (t) { out[t.getAttribute('data-doc')] = Array.prototype.map.call(t.querySelectorAll('tbody tr'), function (r) { return { line: Number(r.getAttribute('data-line')), confirmed: Number(r.querySelector('[data-rc-conf]').value), scrapped: Number(r.querySelector('[data-rc-scr]').value) }; }); }); return out; }
+  function recvDiff(row) { var t = Number(row.getAttribute('data-target')), c = Number(row.querySelector('[data-rc-conf]').value); row.querySelector('[data-rc-diff]').textContent = String(t - c); }
   // lines: optional { <confirm documentno>: [{ line, confirmed, scrapped }] }; no entry = a full receipt (Confirmed = Target, Scrapped = 0), as legacy's confirm is created (MMovementConfirm.create :62-90)
   function receiveStock(lines) {
     return serial(async function () {
       var s = await sodaRead(), n = 0; lines = lines || {};
       for (var i = 0; i < s.confirms.length; i++) {
-        var c = s.confirms[i], cl = [], lcs = await rows('SELECT m_movementlineconfirm_uu AS lcuu, m_movementline_id AS mlid, targetqty AS t FROM m_movementlineconfirm WHERE m_movementconfirm_id=' + Number(c.id));   // one table per query: a join returned the movement line's key under the confirm line's alias
-        for (var li = 0; li < lcs.length; li++) { var mlr = (await rows('SELECT line, m_product_id AS p, m_locator_id AS l, m_locatorto_id AS lt FROM m_movementline WHERE m_movementline_id=' + Number(lcs[li].mlid)))[0]; if (mlr) cl.push({ lcuu: lcs[li].lcuu, t: lcs[li].t, line: mlr.line, p: mlr.p, l: mlr.l, lt: mlr.lt }); }
-        cl.sort(function (a, b) { return Number(a.line) - Number(b.line); });
+        var c = s.confirms[i], cl = await readLines(c);
         var given = lines[c.documentno] || [], out = cl.map(function (x) { var g = given.filter(function (y) { return Number(y.line) === Number(x.line); })[0] || {}, conf = g.confirmed != null ? Number(g.confirmed) : Number(x.t), scr = g.scrapped != null ? Number(g.scrapped) : 0;
           return { lcuu: x.lcuu, line: x.line, m_product_id: x.p, m_locator_id: x.l, m_locatorto_id: x.lt, targetqty: Number(x.t), confirmedqty: conf, scrappedqty: scr, differenceqty: Number(x.t) - conf }; });   // DifferenceQty = Target - Confirmed (MMovementLineConfirm.beforeSave :169-172)
         var rr = out;
@@ -134,9 +149,10 @@
   }
 
   function bind() {
+    document.addEventListener('input', function (ev) { var r = ev.target.closest && ev.target.closest('table.rc tbody tr'); if (r) recvDiff(r); });
     document.addEventListener('click', function (ev) {
       var b = ev.target.closest && ev.target.closest('button'); if (!b || b.disabled) return;
-      if (b.id === 'a-send') send(false); else if (b.id === 'a-status') send(true); else if (b.id === 'a-refresh') refresh(); else if (b.id === 'a-soda-fan') fan(); else if (b.id === 'a-soda-recv') receiveStock();
+      if (b.id === 'a-send') send(false); else if (b.id === 'a-status') send(true); else if (b.id === 'a-refresh') refresh(); else if (b.id === 'a-soda-fan') fan(); else if (b.id === 'a-soda-recv') recvPanel(); else if (b.id === 'rc-confirm') { var ln = recvCollect(); $('#a-recv').hidden = true; receiveStock(ln); } else if (b.id === 'rc-cancel') $('#a-recv').hidden = true;
     });
     $('#a-day').addEventListener('change', function () { S.day = this.value; render(); });
     $('#a-override').addEventListener('input', function () { render(); });
@@ -165,7 +181,7 @@
     bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#a-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
     await render(); await renderSoda(); startLink();
-    window.BranchAdmin = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, soda: sodaRead, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
+    window.BranchAdmin = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§EODA_BOOT admin=' + S.cfg.key + ' org=' + S.cfg.org + ' engine_ready_ms=' + ms + ' heap_mb=' + heap + ' poll_ms=' + S.set.pollMs);
   }

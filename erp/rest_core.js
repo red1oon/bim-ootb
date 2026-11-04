@@ -71,6 +71,8 @@
         await counted.write([row(placeId, cur, { State: t.lines.length ? 'O' : 'C', LockedBy: '', Guests: t.guests || 0, Body: JSON.stringify({ lines: t.lines }) })]); C.saves++; delete held[placeId];
         log('§REST_SAVE place=' + placeId + ' till=' + me + ' lines=' + t.lines.length); return { ok: true };
       },
+      // verify the branch PIN only (uniCenta JTicketsBagRestaurant.java:339-350 asks it before Delete Current Order); none set = uniCenta's override.check false = no popup
+      checkPin: async function (pin) { var want = (await snap()).settings.PinHash; if (!want) return { ok: true, none: true }; return { ok: (await sha(String(pin))) === want }; },
       // override a lock held by another till: needs the branch PIN (stored hashed in a POS_FloorPlan setting). uniCenta JTicketsBagRestaurant delete/override with PIN.
       override: async function (placeId, pin) {
         var s = await snap(), want = s.settings.PinHash; if (!want || (await sha(String(pin))) !== want) { log('§REST_OVERRIDE place=' + placeId + ' till=' + me + ' REFUSED (pin)'); return { ok: false, reason: 'pin' }; }
