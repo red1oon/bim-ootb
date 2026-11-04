@@ -96,3 +96,4 @@ buildings/patches/*.prebake.json
 modeller/dxf2bim/local/
 !buildings/HHS_Office_Federated_2d.db
 capex/legacy_snapshot.json
+capex/site_copy.json

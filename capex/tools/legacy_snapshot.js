@@ -7,7 +7,8 @@ const env = process.env, base = env.BRIDGE_BASE || 'http://localhost:8088';
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(base) && !(env.BRIDGE_USER && env.BRIDGE_PASS)) { console.error('§CFG BRIDGE_USER/BRIDGE_PASS required for a non-localhost base'); process.exit(2); }
 const cfg = { base, login: { user: env.BRIDGE_USER || 'GardenAdmin', pass: env.BRIDGE_PASS || 'GardenAdmin', lang: 'en_US', ClientID: +(env.BRIDGE_CLIENT || 11), RoleID: +(env.BRIDGE_ROLE || 102), OrgID: +(env.BRIDGE_ORG || 11), WarehouseID: +(env.BRIDGE_WH || 103), stage: 0 } };
 const out = process.argv[2] || path.join(__dirname, '..', 'legacy_snapshot.json');
-A.loadLegacy(cfg).then(d => {
+// out = capex/site_copy.json → the twin's capex plugin mirrors it at boot (§5.26, every whitelisted column kept). The password stays in this process: the file carries the base URL and the client only.
+A.loadLegacy(cfg, null, { all: /site_copy\.json$/.test(out) }).then(d => {
   d.meta.takenAt = new Date().toISOString();
   fs.writeFileSync(out, JSON.stringify(d));
   console.log('§DASH_LEGACY_SNAPSHOT base=' + base + ' ' + A.ENTITIES.map(e => e + '=' + d[e].length).join(' ') + ' unavailable=[' + d.unavailable.join(',') + '] -> ' + out);
