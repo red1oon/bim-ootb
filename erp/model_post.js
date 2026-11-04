@@ -242,7 +242,7 @@
   }
   // Doc_InOut — loadDocumentDetails :84-113, loadLines :121-153, createFacts :185-1120 (MMS-SO, MMR-PO ported; MMR-SO / MMS-PO named)
   function Doc_InOut(trx, io, as, F) {
-    var dt = T.dt(trx, io.c_doctype_id), so = Y(io.issotrx), dbt = dt.docbasetype, M = mc();
+    var dt = T.dt(trx, docTypeIdOf(trx, 'm_inout', io)), so = Y(io.issotrx),   /* Doc.getC_DocType_ID :1911-1925 */ dbt = dt.docbasetype, M = mc();
     var ctx = Doc(trx, 'm_inout', io, { dateDoc: io.movementdate });
     var lines = trx.find('m_inoutline', { m_inout_id: io.m_inout_id }, ['line']).filter(function (l) { return !(Y(l.isdescription) || !nz(l.m_product_id) || D(l.movementqty).signum() === 0); })
       .map(function (l) { var dl = DocLine(trx, 'm_inoutline', l); dl.qty = dbt === 'MMS' ? D(l.movementqty).negate() : D(l.movementqty); dl.pcQty = D(l.movementqty); dl.reversalLine_ID = l.reversalline_id; return dl; });   // setQty(Qty, isShipment)
@@ -346,7 +346,7 @@
       return true;
     }
     if (dbt === 'MMR' && so) {                                                               // *** Sales - Return :451-675 (SQLiteIDEMPIERE.md §POSTING-PARITY 5a-port)
-      var MMR_SWAP = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) === 'mmrswap';   // witness negative control only (W-RMA-WINDOW-PATH RW-BOOKS-RECEIPT)
+      var MMR_BRK = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) || '', MMR_SWAP = MMR_BRK === 'mmrswap', MMR_STOCKFLIP = MMR_BRK === 'mmrstocked';   // witness negative controls only (W-RMA-WINDOW-PATH RW-BOOKS-*)
       for (var r = 0; r < lines.length; r++) {
         var rl = lines[r], rp = T.product(trx, rl.m_product_id), rcosts = null, rmas = null, rBatch = M.costingLevel(trx, rp, as) === 'B', rrev = isReversalLine(rl), rMap = false;
         if (!rrev) {                                                                           // :459-503
@@ -355,7 +355,7 @@
             if (rmas.length) { rMap = true; rmas.forEach(function (ma) { rl.pcQty = D(ma.movementqty); rl.pcAsi = ma.m_attributesetinstance_id; var c = lineProductCosts(trx, F, ctx, rl, true, true); ma._cost = c; rcosts = rcosts.add(c); }); }
           } else rcosts = lineProductCosts(trx, F, ctx, rl, true, true);
           if (rcosts == null || rcosts.signum() === 0) {                                        // :492-503 zero costs: stocked -> error (no zero-cost-detail exemption here), service -> ignore
-            if (T.isStocked(rp)) { F.err = 'No Costs for ' + rp.name; return false; }
+            if (T.isStocked(rp) !== MMR_STOCKFLIP) { F.err = 'No Costs for ' + rp.name; return false; }
             continue;
           }
         } else {
@@ -820,7 +820,7 @@
     gl_journal: function (trx, j, as, F) { return Doc_GLJournal(trx, j, as, F); },
     c_bankstatement: function (trx, bs, as, F) { return Doc_BankStatement(trx, bs, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
-      var dt = T.dt(trx, inv.c_doctype_id), cur = inv.c_currency_id, from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
+      var dt = T.dt(trx, docTypeIdOf(trx, 'c_invoice', inv)), cur = inv.c_currency_id,   /* Doc.getC_DocType_ID :1911-1925: C_DocType_ID 0 (a draft) -> C_DocTypeTarget_ID */ from = locOfOrg(trx, inv.ad_org_id), to = locOfBP(trx, inv.c_bpartner_location_id);
       // FactLine.setDocumentInfo :364-500 — "<DocumentNo>" + (" #<Line>" + " (<line desc | doc desc>)" | " (<doc desc>)") — the reversal's "({->orig))" lands here
       var hasDesc = function (v) { return v != null && String(v).length > 0; };
       var base = { ad_org_id: inv.ad_org_id, c_bpartner_id: inv.c_bpartner_id, c_locfrom_id: from, c_locto_id: to, description: inv.documentno + (hasDesc(inv.description) ? ' (' + inv.description + ')' : '') };
