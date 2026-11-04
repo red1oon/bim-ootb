@@ -144,6 +144,20 @@
     var res = updateMeasureGoals(q, function (row, ch) { var k = Object.keys(ch); run('UPDATE pa_goal SET ' + k.map(function (c) { return c + '=?'; }).join(',') + ' WHERE pa_goal_id=?', k.map(function (c) { return ch[c]; }).concat([Number(row.pa_goal_id)])); }, g.pa_measure_id, ctx);
     return { updated: res.some(function (r) { return r.written; }), goals: res };
   }
+  // MGoal.getUserGoals :60-108 — the active goals of the client whose user AND role are empty, or whose user is this user, or whose role is one this user holds; ORDER BY SeqNo. ONE owner: the Home gadget and storeDue.
+  function userGoals(q, s) {
+    return q("SELECT g.* FROM pa_goal g WHERE g.isactive='Y' AND g.ad_client_id=? AND ((g.ad_user_id IS NULL AND g.ad_role_id IS NULL) OR g.ad_user_id=? OR EXISTS " +
+      "(SELECT 1 FROM ad_user_roles ur WHERE ur.ad_user_id=? AND g.ad_role_id=ur.ad_role_id AND ur.isactive='Y')) ORDER BY g.seqno, g.pa_goal_id", [s.client, s.user, s.user]);
+  }
+  // what MGoal.getUserGoals does to each goal at render, updateGoal(false) :383-415 (bim-ootb prompts/CAPEX_DASHBOARD.md §5.32): a due goal's measure stores all its goals (measure.updateGoals()), so once per measure.
+  function storeDue(q, write, ctx) {
+    var done = {}, out = [];
+    userGoals(q, ctx).forEach(function (g) {
+      if (done[g.pa_measure_id] || !refreshDue(q, g, ctx).due) return;
+      done[g.pa_measure_id] = 1; out = out.concat(updateMeasureGoals(q, write, g.pa_measure_id, ctx));
+    });
+    return out;
+  }
   // MGoal.afterSave :594-603 as the PA_Goal model class (layered registry, owner 'core'): a new goal or a changed MeasureTarget / MeasureScope recomputes the measure's goals, read COMMITTED (trx.q)
   //   and written into the SAME Trx (legacy: the measure carries the goal's trxName). ctxFor(trx) → { client, role, today, now }.
   function installModel(ML, ctxFor) {
@@ -153,6 +167,6 @@
       updateMeasureGoals(trx.q, function (g, c) { trx.update('pa_goal', g, c); }, row.pa_measure_id, ctxFor(trx));
     } });
   }
-  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, aliasOf: aliasOf, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel, refreshDue: refreshDue };
+  var api = { install: install, evaluate: evaluate, trunc: trunc, accessSql: accessSql, aliasOf: aliasOf, _div6: div6, accessOf: accessOf, updateMeasureGoals: updateMeasureGoals, updateGoal: updateGoal, installModel: installModel, refreshDue: refreshDue, userGoals: userGoals, storeDue: storeDue };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.GoalEngine = api;
 })(typeof window !== 'undefined' ? window : this);

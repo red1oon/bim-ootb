@@ -211,6 +211,7 @@
       });
       home.addEventListener('click', linkClick);
       ph.style.display = 'none'; host.appendChild(home);
+      if (window.ModelPA && sel.main.some(function (g) { return g.kind === 'performance'; })) window.ModelPA.storeDue();   // MGoal.getUserGoals stores what is due at render (§5.32 CAPEX_DASHBOARD.md)
       console.log('§DASH-HOME client=' + S.client + ' role=' + S.role + ' user=' + S.user + ' main=' + sel.main.length + ' side=' + sel.side.length + ' cols=' + sel.cols + ' rendered=' + rendered + ' unported=' + unported + ' ids=[' + sel.main.map(function (g) { return g.id; }) + ']');
     } catch (e) { console.log('§OVERLAY home failed (core unaffected): ' + String(e && e.message).slice(0, 160)); }
     finally { busy = false; }
