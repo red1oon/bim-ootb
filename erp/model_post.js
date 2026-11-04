@@ -345,7 +345,56 @@
       }
       return true;
     }
-    F.err = 'Doc_InOut ' + dbt + (so ? ' SO (customer return :452-675)' : ' PO (vendor return :922-1120)') + ' — §MODEL-UNPORTED-DEP not ported in this pass'; return false;
+    if (dbt === 'MMR' && so) {                                                               // *** Sales - Return :451-675 (SQLiteIDEMPIERE.md §POSTING-PARITY 5a-port)
+      var MMR_SWAP = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) === 'mmrswap';   // witness negative control only (W-RMA-WINDOW-PATH RW-BOOKS-RECEIPT)
+      for (var r = 0; r < lines.length; r++) {
+        var rl = lines[r], rp = T.product(trx, rl.m_product_id), rcosts = null, rmas = null, rBatch = M.costingLevel(trx, rp, as) === 'B', rrev = isReversalLine(rl), rMap = false;
+        if (!rrev) {                                                                           // :459-503
+          if (rBatch && !nz(rl.m_attributesetinstance_id)) {
+            rmas = trx.find('m_inoutlinema', { m_inoutline_id: rl.id }); rcosts = Z;
+            if (rmas.length) { rMap = true; rmas.forEach(function (ma) { rl.pcQty = D(ma.movementqty); rl.pcAsi = ma.m_attributesetinstance_id; var c = lineProductCosts(trx, F, ctx, rl, true, true); ma._cost = c; rcosts = rcosts.add(c); }); }
+          } else rcosts = lineProductCosts(trx, F, ctx, rl, true, true);
+          if (rcosts == null || rcosts.signum() === 0) {                                        // :492-503 zero costs: stocked -> error (no zero-cost-detail exemption here), service -> ignore
+            if (T.isStocked(rp)) { F.err = 'No Costs for ' + rp.name; return false; }
+            continue;
+          }
+        } else {
+          rcosts = Z;                                                                          // :505-508
+          if (rBatch && !nz(rl.m_attributesetinstance_id)) rmas = trx.find('m_inoutlinema', { m_inoutline_id: rl.id });
+        }
+        var rdr = createLine(F, ctx, rl, productAcct(trx, rl.m_product_id, MMR_SWAP ? 'p_cogs_acct' : 'p_asset_acct', as), as.c_currency_id, rcosts, null);   // :510-512 DR P_Asset
+        if (!rdr) { F.err = 'FactLine DR not created: ' + rl.id; return false; }
+        rdr.m_locator_id = rl.m_locator_id; locFromLocator(trx, rdr, rl.m_locator_id, true); locFromBPartner(trx, rdr, io.c_bpartner_location_id, false);   // :519-521
+        if (rrev) {                                                                            // :522-537
+          if (!updateReverseLine(F, rdr, TABLE_ID.m_inout, revId, rl.reversalLine_ID, 1)) {
+            if (!T.isStocked(rp)) { removeLine(F, rdr); continue; }
+            F.err = 'Original Shipment/Receipt not posted yet'; return false;
+          }
+          rcosts = acctBalance(rdr);                                                           // :536 get original cost
+        }
+        var rRef = 0; if (nz(rl.reversalLine_ID) && laterThan(rl.id, rl.reversalLine_ID)) { var rocd = M.getShipment(trx, as, rl.m_product_id, rl.m_attributesetinstance_id || 0, rl.reversalLine_ID, 0); if (rocd) rRef = rocd.m_costdetail_id; }
+        if (rBatch && !nz(rl.m_attributesetinstance_id)) {                                     // :538-596
+          if (rmas && rmas.length) for (var rj = 0; rj < rmas.length; rj++) { var rma = rmas[rj], rq = D(rma.movementqty); if (rq.signum() !== rl.qty.signum()) rq = rq.negate();
+            var ramt = rMap ? rma._cost : null;
+            if (ramt == null && rrev) { ramt = findReversalCostDetailAmt(trx, as, rl.m_product_id, rma, rl.reversalLine_ID); if (ramt != null) ramt = ramt.negate(); }
+            if (ramt == null) ramt = rcosts.divide(rl.pcQty, rcosts.scale(), HU).multiply(rq);
+            else if (!rrev && rl.pcQty.signum() !== rl.qty.signum() && ramt.signum() !== rcosts.signum() * -1) ramt = ramt.negate();
+            var rRefMa = 0; if (nz(rl.reversalLine_ID) && laterThan(rl.id, rl.reversalLine_ID)) { var rocm = M.getShipment(trx, as, rl.m_product_id, rma.m_attributesetinstance_id || 0, rl.reversalLine_ID, 0); if (rocm) rRefMa = rocm.m_costdetail_id; }
+            if (!M.createShipment(trx, as, rl.ad_org_id, rl.m_product_id, rma.m_attributesetinstance_id, rl.id, 0, ramt, rq, rl.description, true, rl.dateAcct || ctx.dateAcct, rRefMa)) { F.err = 'Failed to create cost detail record'; return false; } }
+        } else if (nz(rl.m_product_id)) {                                                      // :597-640
+          var ramt2 = rcosts; if (rl.pcQty.signum() !== rl.qty.signum() && !rrev) ramt2 = ramt2.negate();
+          if (!M.createShipment(trx, as, rl.ad_org_id, rl.m_product_id, rl.m_attributesetinstance_id || 0, rl.id, 0, ramt2, rl.qty, rl.description, true, rl.dateAcct || ctx.dateAcct, rRef)) { F.err = 'Failed to create cost detail record'; return false; }
+        }
+        var rcr = createLine(F, ctx, rl, productAcct(trx, rl.m_product_id, MMR_SWAP ? 'p_asset_acct' : 'p_cogs_acct', as), as.c_currency_id, null, rcosts);   // :642-644 CR P_Cogs
+        if (!rcr) { F.err = 'FactLine CR not created: ' + rl.id; return false; }
+        rcr.m_locator_id = rl.m_locator_id; locFromLocator(trx, rcr, rl.m_locator_id, true); locFromBPartner(trx, rcr, io.c_bpartner_location_id, false);
+        var rool = nz(rl.c_orderline_id) ? trx.get('c_orderline', rl.c_orderline_id) : null; rcr.ad_org_id = rool && Number(rool.ad_org_id) > 0 ? rool.ad_org_id : rl.ad_org_id;   // :654 Revenue X-Org (getOrder_Org_ID)
+        rcr.qty = N(rl.qty.negate());                                                          // :655
+        if (rrev && !updateReverseLine(F, rcr, TABLE_ID.m_inout, revId, rl.reversalLine_ID, 1, rdr)) { F.err = 'Original Shipment/Receipt not posted yet'; return false; }   // :656-664
+      }
+      return true;
+    }
+    F.err = 'Doc_InOut ' + dbt + (so ? ' SO' : ' PO (vendor return :922-1120)') + ' — §MODEL-UNPORTED-DEP not ported in this pass'; return false;
   }
   function isBalancedAcct(F) { var s = Z; F.lines.forEach(function (l) { s = s.add(D(l.amtacctdr)).subtract(D(l.amtacctcr)); }); return s.signum() === 0; }
 
