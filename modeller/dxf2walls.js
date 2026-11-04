@@ -57,7 +57,7 @@
           var pm = S.prismCells(X.map(function (v) { return v * k; }), Y.map(function (v) { return v * k; }), solid, ps.level, top); if (!pm) return;
           var V = pm.vertices.map(function (v) { return [r6(v[0] * g.ux + v[1] * nx), r6(v[0] * g.uy + v[1] * ny), v[2]]; }), longest = W.slice().sort(function (a, b) { return (b.s1 - b.s0) - (a.s1 - a.s0); })[0];
           report.walls++;
-          els.push({ guid: guid, axis: { u: [g.ux, g.uy], s0: s0 * k, s1: s1 * k, c0: Math.min.apply(null, Y) * k, c1: Math.max.apply(null, Y) * k }, class: CLS, storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: V, faces: pm.faces, handle: first, layer: ly[0], sheet: ps.name, kind: TAG, mark: null, members: Object.keys(mem), z0: ps.level, z1: top,
+          els.push({ guid: guid, storey_level: ps.level, axis: { u: [g.ux, g.uy], s0: s0 * k, s1: s1 * k, c0: Math.min.apply(null, Y) * k, c1: Math.max.apply(null, Y) * k }, class: CLS, storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: V, faces: pm.faces, handle: first, layer: ly[0], sheet: ps.name, kind: TAG, mark: null, members: Object.keys(mem), z0: ps.level, z1: top,
             size: { t: { value: r6((longest.c1 - longest.c0) * k), source: 'drawn' }, t_min: r6(tMin * k), t_max: r6(tMax * k), stretches: W.length, length: { value: r6(len * k), source: 'drawn' }, lines: nMax, top: { value: top, source: 'next plan level' } }, height_source: 'plans', prov: 'derived', ifc: P.ifcType(KIND, null, null) });
         }
       });

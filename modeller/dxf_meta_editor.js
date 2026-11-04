@@ -1026,8 +1026,9 @@
       h += '<div class="dm-it adv nopos" data-gg="need" title="' + esc(r.need) + '"><span class="c">' + r.count + '</span><span class="m">' + esc(lab) + (miss.length ? '. Might help: ' + esc(miss.map(function (q) { return q.title + ' (' + q.no + ')'; }).join(' · ')) : '') + '</span></div>'; });
     var SAYS = { not_issued: function (L) { return 'The list says not issued in revision ' + L; }, issued_not_loaded: function (L) { return 'The list says issued in revision ' + L + ', not loaded here'; }, no_statement: function () { return 'Listed. The list does not say whether issued'; } };
     (g.registers || []).filter(function (r) { return r.legend; }).forEach(function (r) { h += '<div class="dm-ref" data-gg="legend" style="font-style:italic">' + esc(r.sheet) + ' prints: "' + esc(r.legend.slice(0, 160)) + '"</div>'; });
-    ['not_issued', 'issued_not_loaded', 'no_statement'].forEach(function (k) { var R = (g.missing_list || []).map(function (r, i) { return { r: r, i: i }; }).filter(function (q) { return q.r.says === k; }); if (!R.length) return; var byL = R[0].r.latest || '';
-      h += '<details data-gg="class" data-says="' + k + '"><summary class="dm-ref" style="color:#F3EEE8"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + '</summary>' + R.map(function (q) { return '<div class="dm-it adv" data-act="ggrow" data-i="' + q.i + '" title="Show this row on its sheet"><span class="m">' + esc(q.r.title) + ' (' + esc(q.r.no) + ')</span></div>'; }).join('') + '</details>'; });
+    ['not_issued', 'issued_not_loaded', 'no_statement'].forEach(function (k) { var R = (g.missing_list || []).map(function (r, i) { return { r: r, i: i }; }).filter(function (q) { return q.r.says === k; }); if (!R.length) return; var byL = R[0].r.latest || '', last = null, nPt = R.reduce(function (a, q) { return a + ((q.r.pointers || []).length); }, 0);
+      if (k === 'not_issued') h += '<button class="dm-btn" data-act="ggtint" data-gg="tint" aria-pressed="' + !!S.tintOn + '" title="Show on the building what the list and the plans name for these sheets" style="display:block;width:100%;margin:6px 0;text-align:left;outline:1px solid #ff3b3b;box-shadow:0 0 ' + (S.tintOn ? '14px 4px' : '8px 2px') + ' #ff3b3b"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + (S.tintOn ? ' · shown in purple (' + nPt + ' points)' : ' · show on the building') + '</button>';
+      h += '<details data-gg="class" data-says="' + k + '"><summary class="dm-ref" style="color:#F3EEE8"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + '</summary>' + R.map(function (q) { var head = q.r.heading && q.r.heading !== last ? '<div class="dm-ref" data-gg="heading" style="color:#9aa6b2;margin-top:4px">' + esc(q.r.heading) + '</div>' : ''; if (q.r.heading) last = q.r.heading; var np = (q.r.pointers || []).length, pl = q.r.place; return head + '<div class="dm-it adv" data-act="ggrow" data-i="' + q.i + '" title="Show this row on its sheet"><span class="m">' + esc(q.r.title) + ' (' + esc(q.r.no) + ')' + (np ? ' · points here ' + np : '') + (pl ? ' · names ' + esc(pl.stair || pl.storey) : '') + '</span></div>'; }).join('') + '</details>'; });
     return secHead('missing', IC.file, 'Missing sheets', c.missing + ' missing', c.missing > 0) + (S.sec.missing ? '<div class="dm-sb">' + h + '</div>' : '');
   }
   function renderVerdict() {
@@ -1058,6 +1059,26 @@
     console.log(TAG + ' attention unconfirmed=' + n); return n;
   }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
+  // §D110 G6f the toggle. On: a disc at each pointer, the existing walls of a named storey and flights of a named stair turn purple. Off: gone, the same materials back. No shape is added to the building.
+  var tintG = null, tintSaved = [];
+  function setTint(on) {
+    var A = window.A, T = window.THREE; S.tintOn = !!on; if (!A || !T) return;
+    if (tintG) { A.scene.remove(tintG); tintG.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); tintG = null; }
+    tintSaved.forEach(function (q) { q.m.material = q.mat; }); tintSaved = [];
+    var pts = 0, walls = 0, flights = 0, g = S.guide;
+    if (on && g && g.missing_list) {
+      var D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef, rad = Number(rf && rf.defaults && rf.defaults['guide.gap_sheets'] && rf.defaults['guide.gap_sheets'].tint_radius_m) || 0, R = g.missing_list.filter(function (r) { return r.says === 'not_issued'; }), levels = {}, stairs = {}, PUR = 0x9b5cf6, matD = new T.MeshBasicMaterial({ color: PUR, transparent: true, opacity: 0.75, depthTest: false, side: T.DoubleSide });
+      tintG = new T.Group(); tintG.name = 'dxf-missing-tint'; A.scene.add(tintG);
+      R.forEach(function (r) { (r.pointers || []).forEach(function (p) { var c = canvasOf(p.sheet); if (!c || !c.toWorld) return; var w = c.toWorld(p.x, p.y), d = new T.Mesh(new T.CircleGeometry(rad, 32), matD); d.position.set(w[0], w[1], w[2]); d.renderOrder = 6; d.userData.gg = { no: r.no, sheet: p.sheet }; tintG.add(d); pts++; }); if (r.place && typeof r.place.level === 'number') levels[r.place.level] = 1; if (r.place && r.place.stair) stairs[r.place.stair] = 1; });
+      var els = (D.gate && D.gate.R && D.gate.R.els) || [], box = new T.Box3(), v = new T.Vector3(), E = els.map(function (e) { var a = [1e9, 1e9, 1e9], b = [-1e9, -1e9, -1e9]; e.vertices.forEach(function (q) { for (var i = 0; i < 3; i++) { if (q[i] < a[i]) a[i] = q[i]; if (q[i] > b[i]) b[i] = q[i]; } }); return { e: e, p: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2] }; });
+      var matM = new T.MeshStandardMaterial({ color: PUR, transparent: true, opacity: 0.85 });
+      A.scene.traverse(function (o) { if (!o.isMesh || !/^bonsai:/.test(o.name)) return; box.setFromObject(o); box.getCenter(v); var best = null, bd = 1e9; E.forEach(function (q) { var d = Math.hypot(q.p[0] - v.x, q.p[1] - v.y, q.p[2] - v.z); if (d < bd) { bd = d; best = q.e; } }); if (!best) return;
+        var lvl = best.class === 'IfcWall' && best.storey_level !== undefined && levels[best.storey_level], fl = best.class === 'IfcStairFlight' && best.mark && stairs[String(best.mark).toUpperCase()];
+        if (lvl || fl) { tintSaved.push({ m: o, mat: o.material }); o.material = matM; if (lvl) walls++; else flights++; } });
+    }
+    console.log(TAG + ' §GAPGUIDE tint ' + (on ? 'on' : 'off') + ' pointers=' + pts + ' walls=' + walls + ' flights=' + flights);
+    if (A.requestRender) A.requestRender();
+  }
   function guideOn(rf) { var off = S.defaultChoices && S.defaultChoices['guide.gap_sheets'] === 'off'; S.sheets.forEach(function (sh) { (sh.marks || []).forEach(function (q) { if (q.key === 'DEFAULT' && String(q.value) === 'guide.gap_sheets,off') off = true; }); }); return !off && !!(rf && rf.defaults && rf.defaults['guide.gap_sheets'] && rf.defaults['guide.gap_sheets'].value === 'read'); }
   function takeGuide(g) {   // §D110 G6 both ways a verdict reaches this panel (a set opened, a set edited) take the guide here
     var r = g && g.R && g.R.bodies && g.R.bodies.report, D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef; S.guide = (r && r.guide) || null; S.guideLabels = rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].labels : null;
@@ -1190,6 +1211,7 @@
       else if (a === 'dtag') el.onclick = function () { var pk = S.dpick; if (!pk) return; var nw = document.getElementById('dm-dt-new').value.trim(), mk = nw || document.getElementById('dm-dt-sel').value; if (!mk) { S.dmsg = 'Pick a schedule mark or type a new one.'; render(); return; } writeTag(pk.sheet, pk.handle, mk); };
       else if (a === 'dzoom') el.onclick = function () { highlight({ code: 'door', sheet: el.getAttribute('data-sheet'), handles: [el.getAttribute('data-h')], pos: null }); };
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };
+      else if (a === 'ggtint') el.onclick = function () { setTint(!S.tintOn); render(); };
       else if (a === 'ggrow') el.onclick = function () { var r = S.guide.missing_list[Number(el.getAttribute('data-i'))], si = S.sheets.findIndex(function (q) { return q.name === r.sheet; }), hh = r.h || 0, shown = si >= 0 && window.DxfSheetFrame ? window.DxfSheetFrame.open(si, { evidence: { x0: r.x - hh / 2, y0: r.y - hh * 0.45, x1: r.x + hh * 30, y1: r.y + hh * 0.45 } }) : null; console.log(TAG + ' §GAPGUIDE evidence sheet=' + r.sheet + ' handle=' + r.handle + ' no=' + r.no + ' says=' + r.says + ' shown=' + !!shown); };   // §D110 G6b the row, on the sheet that says so
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });

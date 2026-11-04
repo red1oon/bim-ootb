@@ -1152,6 +1152,7 @@
     "off"
    ],
    "min_rows": 3,
+   "tint_radius_m": 1,
    "needs": {
     "GAP:beam_label_no_edges": ["FRAMING", "BEAM SCHEDULE"],
     "GAP:door_tag_no_row": ["DOOR SCHEDULE"],

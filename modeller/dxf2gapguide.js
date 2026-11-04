@@ -30,7 +30,8 @@
           var title = T.filter(function (o2) { return o2 !== q && Math.abs(o2.y - q.y) < tolY && o2.x > q.x && o2.x < right && /[A-Za-z]/.test(o2.t) && !NUM.test(o2.t); }).sort(function (a, b) { return a.x - b.x; })[0];
           if (seen[q.t]) return; seen[q.t] = 1; n++;
           var issued = revCols.filter(function (c) { return T.some(function (o2) { return MARK.test(o2.t) && Math.round(o2.x) === c.x && Math.abs(o2.y - q.y) < tolY; }); }).map(function (c) { return c.label; });
-          rows.push({ no: q.t, base: plainNo(q.t), title: title ? title.t : '', sheet: sh.name, handle: q.handle, x: q.x, y: q.y, h: pitch, issued: issued, marks_read: hasLegend && revCols.length > 0 });
+          var hd = T.filter(function (o2) { return Math.round(o2.x) === key && o2.y > q.y && o2.y < h.y && !NUM.test(o2.t) && /[A-Za-z]/.test(o2.t) && !TOTAL.test(o2.t); }).sort(function (a, b) { return a.y - b.y; })[0];
+          rows.push({ heading: hd ? hd.t : null, no: q.t, base: plainNo(q.t), title: title ? title.t : '', sheet: sh.name, handle: q.handle, x: q.x, y: q.y, h: pitch, issued: issued, marks_read: hasLegend && revCols.length > 0 });
         });
         var tot = T.filter(function (o2) { return Math.round(o2.x) === key && TOTAL.test(o2.t); }).map(function (o2) { return Number(TOTAL.exec(o2.t)[1]); })[0];
         one.rows += n; if (tot !== undefined) one.stated_total = tot;
@@ -67,7 +68,7 @@
     });
     var refused = !!(o && o.refused), status = !hasReg ? 'INCONCLUSIVE' : refused ? 'INCONCLUSIVE' : 'read', reason = !hasReg ? 'no register in this set: no sheet can be named' : refused ? 'the set is refused: nothing judged' : null;
     var regRows = hasReg ? register.rows : [], isHeld = function (r) { return !!(held && held[r.base]); }, saysOf = function (r) { return !r.marks_read || !r.latest ? 'no_statement' : r.issued.indexOf(r.latest) >= 0 ? 'issued_not_loaded' : 'not_issued'; };
-    var missingList = regRows.filter(function (r) { return !isHeld(r); }).map(function (r) { return { no: r.no, title: r.title, says: saysOf(r), latest: r.latest || null, issued: r.issued || [], sheet: r.sheet, handle: r.handle, x: r.x, y: r.y, h: r.h }; });
+    var missingList = regRows.filter(function (r) { return !isHeld(r); }).map(function (r) { return { no: r.no, title: r.title, says: saysOf(r), latest: r.latest || null, issued: r.issued || [], heading: r.heading || null, sheet: r.sheet, handle: r.handle, x: r.x, y: r.y, h: r.h }; });
     var nSays = function (k) { return missingList.filter(function (r) { return r.says === k; }).length; }, counts = hasReg ? { listed: regRows.length, loaded: regRows.length - missingList.length, missing: missingList.length, not_issued: nSays('not_issued'), issued_not_loaded: nSays('issued_not_loaded'), no_statement: nSays('no_statement') } : null;
     return { counts: counts, missing_list: missingList, status: status, reason: reason, says: 'might help', registers: hasReg ? register.registers : [], register_rows: hasReg ? register.rows.length : 0, rows: refused ? [] : rows,
       ask: refused ? [] : Object.keys(ask).sort().map(function (k) { return { no: k, title: ask[k] }; }), held: refused ? [] : Object.keys(inHand).sort().map(function (k) { return { no: k, title: inHand[k] }; }), set_aside: refused ? [] : (res.gaps || []).filter(function (g) { return g.code === 'GAP:sheet_set_aside'; }).map(function (g) { return { sheet: g.sheet, why: g.detail }; }).sort(function (a, b) { return a.sheet < b.sheet ? -1 : 1; }) };
@@ -78,11 +79,24 @@
     if (!DF || !DF.has('guide.gap_sheets') || String(DF.get('guide.gap_sheets')) !== 'read') return null;
     var m = DF.meta('guide.gap_sheets') || {}, reg = readRegister(sheets, { min_rows: m.min_rows });
     if (reg.rows.length) DF.use('guide.gap_sheets');
-    return guide(res, reg, heldOf(sheets), m.needs || {}, o);
+    return addWhere(guide(res, reg, heldOf(sheets), m.needs || {}, o), sheets, res);
   }
   // G6d before any gate: what the lists say, from raw sheets. held: { number: 1 } from the sheets' own numbers. Gaps not judged.
   function fromRaw(sheets, held, o) {
     var reg = readRegister(sheets, { min_rows: o && o.min_rows, any_list: true }), g = guide({ gaps: [], els: [] }, reg, held, {}, { refused: 1 }); g.reason = reg.rows.length ? 'no gate has judged this set yet' : g.reason; return g;
+  }
+  // G6f where a missing sheet is called up, from a real spot on a loaded plan, and what its title names that the set already holds. Read, never guessed: no match, no place.
+  var NOIN = /(?:^|[^A-Za-z0-9.-])([A-Z]{1,3}-\d{1,4})(?![0-9A-Za-z])/g, STOREY = /\b(LEVEL\s*0?\d+|GROUND)\b/i, normStorey = function (q) { return q.toUpperCase().replace(/\s+/g, ' ').replace('LEVEL 0', 'LEVEL '); };
+  function addWhere(g, sheets, res) {
+    if (!g || !g.missing_list || !g.missing_list.length) return g;
+    var plans = (sheets || []).filter(function (s) { return s.role === 'plan'; }), byNo = {}, lv = {}; g.missing_list.forEach(function (m) { m.pointers = []; (byNo[plainNo(m.no)] = byNo[plainNo(m.no)] || []).push(m); });
+    plans.forEach(function (ps) {
+      textsOf(ps).forEach(function (q) { var m; NOIN.lastIndex = 0; while ((m = NOIN.exec(q.t))) { (byNo[m[1]] || []).forEach(function (r) { r.pointers.push({ sheet: ps.name, x: q.x, y: q.y, handle: q.handle, level: ps.level }); }); } });
+      var nm = ps.desc && ps.desc.name, st = nm && STOREY.exec(nm); if (st) { var k = normStorey(st[1]); (lv[k] = lv[k] || {})[ps.level] = 1; }
+    });
+    var built = {}; Object.keys((res && res.report && res.report.stairs && res.report.stairs.short_m) || {}).forEach(function (k) { built[k.split('@')[0].toUpperCase()] = 1; });
+    g.missing_list.forEach(function (r) { var t = String(r.title).toUpperCase(), st = STOREY.exec(t), k = st && normStorey(st[1]), lvs = k && lv[k] ? Object.keys(lv[k]) : []; if (lvs.length === 1) r.place = { storey: k, level: Number(lvs[0]) }; Object.keys(built).forEach(function (n) { if (t.indexOf(n) >= 0) r.place = Object.assign({}, r.place, { stair: n }); }); });
+    return g;
   }
   function logLines(g) {
     if (!g) return [];
@@ -92,5 +106,5 @@
     g.rows.forEach(function (r) { L.push('§GAPGUIDE ' + r.need + ' count=' + r.count + ' might_help=' + r.sheets.map(function (s) { return s.no + (s.read === false ? ':set_aside' : s.held ? ':held' : ':missing'); }).join(',')); });
     return L;
   }
-  return { LIST_WORDS: LIST_WORDS, isListSheet: isListSheet, fromRaw: fromRaw, readRegister: readRegister, guide: guide, run: run, heldOf: heldOf, logLines: logLines, countOf: countOf };
+  return { addWhere: addWhere, LIST_WORDS: LIST_WORDS, isListSheet: isListSheet, fromRaw: fromRaw, readRegister: readRegister, guide: guide, run: run, heldOf: heldOf, logLines: logLines, countOf: countOf };
 });
