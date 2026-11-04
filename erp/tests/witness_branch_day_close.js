@@ -162,7 +162,7 @@ async function child() {
       var pinRe = /BASE_PIN = '([0-9a-f]{64})'/.exec(fs.readFileSync(path.join(__dirname, 'witness_pos_sales.js'), 'utf8')), hsh = baseHash();
       var gitq = cp.spawnSync('git', ['-C', ERP, 'diff', '--quiet', 'origin/main', '--', 'ad_seed.db', 'patches/ad_seed.db.sql', 'patches/mfg.sql']);
       check('STOPPLUG', 'removes-all', 'before Stop: staged rows=' + bandBefore + ' class=' + clsBefore + '; after: rows=0 class=false, running 53405 answers not found; base hash == the pin of W-POS-SALES (' + (pinRe ? pinRe[1].slice(0, 12) : '?') + ') and git sees no change to the hashed files',
-        bandBefore >= 12 && clsBefore && bandAfter === 0 && !clsAfter && /not found/i.test(String(rr.error || '')) && !!pinRe && hsh === pinRe[1] && gitq.status === 0, { bandBefore: bandBefore, bandAfter: bandAfter, clsBefore: clsBefore, clsAfter: clsAfter, err: rr.error, hsh: hsh, git: gitq.status });
+        bandBefore >= 13 && clsBefore && bandAfter === 0 && !clsAfter && /not found/i.test(String(rr.error || '')) && !!pinRe && hsh === pinRe[1] && gitq.status === 0, { bandBefore: bandBefore, bandAfter: bandAfter, clsBefore: clsBefore, clsAfter: clsAfter, err: rr.error, hsh: hsh, git: gitq.status });
     }
   }
   if (ARM === 'stop3') {
@@ -263,7 +263,7 @@ async function parent() {
     ];
     var base = arms.steps;
     MUT.forEach(function (m) {
-      var n = src.split(m.old).length - 1, root = '/tmp/dayclose_mut/' + m.name, dir = root + '/plugins'; fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(ERP, 'till_core.js'), root + '/till_core.js');   // ../till_core.js of the copy
+      var n = src.split(m.old).length - 1, root = '/tmp/dayclose_mut/' + m.name, dir = root + '/plugins'; fs.mkdirSync(dir, { recursive: true }); fs.copyFileSync(path.join(ERP, 'till_core.js'), root + '/till_core.js'); fs.copyFileSync(path.join(ERP, 'eoda_core.js'), root + '/eoda_core.js');   // ../till_core.js of the copy
       var mutSrc = src.replace(m.old, function () { return m.neu; }), applied = n === 1 && mutSrc !== src; fs.writeFileSync(dir + '/friendly_ops.mjs', mutSrc);
       line('§DAYCLOSE-MUTANT name=' + m.name + ' applied=' + (applied ? 'YES exactly once' : 'NO occurrences=' + n) + ' copy=' + dir + '/friendly_ops.mjs (a copy, the shipped file untouched)');
       if (!applied) { all.push(verdictLine('MUTANT-' + m.name, false, 0, 0, 'reason="rewrite did not apply: not a kill"')); return; }

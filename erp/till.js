@@ -237,7 +237,20 @@
     S.store.shift = freshShift(sh.seq + 1); saveStore();
     $('#zdone').textContent = 'Cash Closed OK'; log('§TILL_CLOSE closed=' + sh.seq + ' next=' + S.store.shift.seq + ' tickets=' + z.tickets + ' gross=' + C.money(z.gross));
     $('#zconfirm').hidden = true; await renderClose();
-    visit();   // cadence: ONE Visit per shift at Close Cash carries the shift's pending rows (owner 2026-11-03: batch, minimise central usage; §17.7)
+    await handoff(sh);   // §26.3: ONE hand-off per shift to the branch POS admin (audience = branch); nothing goes to head office from a till
+  }
+  // Close Cash -> the branch POS admin (POS_PLUGIN_LOCAL_FIRST §26.3): the shift's tickets (their I_Order lines + I_Payment tenders, as deposited) and one Z declaration per business day, in ONE atomic group of POS_TillHandoff rows, then ONE Visit (branch lane)
+  async function handoff(sh) {
+    var tag = 'POS shift ' + S.cfg.tillKey + '/' + sh.seq;
+    var os = await rows('SELECT * FROM i_order WHERE description=' + q(tag) + ' ORDER BY i_order_id'), ps = await rows('SELECT * FROM i_payment WHERE description=' + q(tag) + ' ORDER BY i_payment_id');
+    var hr = window.EodaCore.handoffRows({ tillKey: S.cfg.tillKey, seq: sh.seq, start: sh.start, end: sh.end, client: S.cfg.client, org: S.cfg.org, orders: os, payments: ps, day: today(), zOf: function (o, p) { return C.zTotals(o, p, S.taxEnv, []); } });
+    var res = await depositGroup(hr.map(function (r) { return create('pos_tillhandoff', r); }));
+    if (!res || res.committed !== true) { msg('Could not hand the shift to the branch admin: ' + (res && res.reason), 'bad'); log('§EODA_HANDOFF FAIL till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' ' + (res && res.reason)); return null; }
+    var keys = hr.filter(function (r) { return r.kind === 'T'; }).map(function (r) { return r.documentno; });
+    log('§EODA_HANDOFF till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' tickets=' + keys.length + ' zrows=' + hr.filter(function (r) { return r.kind === 'Z'; }).length + ' ops=' + hr.length + ' gid=' + res.gid);
+    var v = await visit();
+    if (v && v.rep && v.rep.sent > 0) { S.store.sent = S.store.sent || {}; keys.forEach(function (k) { S.store.sent[k] = 1; }); saveStore(); }   // a key handed to the branch is no longer editable on the till; a Visit that sent nothing (offline) marks nothing
+    return { keys: keys, visit: v };
   }
 
   // ── events ──
@@ -266,7 +279,7 @@
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
   function netChip() { var off = navigator.onLine === false; $('#s-net').textContent = off ? 'offline' : 'online'; }
-  async function visit() { try { var v = await E.TeamSync.visit(); if (v && v.rep && v.rep.sent > 0) { (await depositedDocNos()).forEach(function (k) { S.store.sent = S.store.sent || {}; S.store.sent[k] = 1; }); saveStore(); }   /* a Visit that sent nothing (offline, nothing pending) marks nothing */ log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
+  async function visit() { try { var v = await E.TeamSync.visit(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
 
   async function boot() {
     var t0 = performance.now();
@@ -276,6 +289,8 @@
     E = f.contentWindow;
     for (var i = 0; i < 1200 && !(E.TeamSync && E.__crud && E.__idmpDb && E.ERPEngine && E.APP && E.APP.actor); i++) await new Promise(function (r) { setTimeout(r, 150); });
     await E.TeamSync.ready;
+    if (E.AdImportTables && E.AdImportTables.ensurePos) E.AdImportTables.ensurePos(E.__idmpDb);   // POS_TillHandoff (POS_PLUGIN_LOCAL_FIRST §26.2)
+    E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
     await loadConfig();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
     S.ticket = S.store.ticket || newTicket();
