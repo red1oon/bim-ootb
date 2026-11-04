@@ -1060,6 +1060,36 @@
    ],
    "radius_tol_m": 0.15,
    "used_by": "dxf2doortags (§D109)"
+  },
+  "stair.flights": {
+   "element": "IfcStairFlight",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "3 or more parallel lines of one length, evenly spaced, are a flight's nosings; rise = (0.63 - tread) / 2, the drawing states no riser; a flight narrower than 0.6 m is no flight (§D109). 'off' = no flights",
+   "options": [
+    "read",
+    "off"
+   ],
+   "tread_min_m": 0.2,
+   "tread_max_m": 0.4,
+   "width_min_m": 0.6,
+   "blondel_m": 0.63,
+   "used_by": "dxf2stairs (§D109)"
+  },
+  "roof.from_spots": {
+   "element": "IfcRoof",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a surface through the plan's TOS spot levels, inside what the spots reach; deck thickness and height over the steel from the sheet's own deck note (§D109). Not the roof's outline: nothing states its edge. 'off' = none",
+   "options": [
+    "read",
+    "off"
+   ],
+   "deck_above_steel_m": 0.05,
+   "deck_thick_m": 0.05,
+   "used_by": "dxf2roofspots (§D109)"
   }
  },
  "building_types": {

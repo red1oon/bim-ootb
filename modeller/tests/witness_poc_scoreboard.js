@@ -29,7 +29,7 @@ files.forEach(f => {
   let wl = 0; d.entities.forEach(e => { if (e.type === 'LINE' && /^A-WALL$/.test(e.layer)) wl += Math.hypot(e.vertices[1].x - e.vertices[0].x, e.vertices[1].y - e.vertices[0].y); });
   if (wl) { wallLen += wl / 1000; wallPlans++; }   // metres of wall line: a wall is several lines, so a length of wall is not countable from the sheets without its type
   // stairs, roof: present or not, from what the sheet SAYS. A layer's entity count is no evidence: one stair drawn as thousands of short curved pieces read as 13,248 stairs on the first run. Count the stairs the sheet names.
-  d.entities.forEach(e => { if (/^S-SLAB|^A-FLOR-____-OTLN$/.test(e.layer)) slabLoops++; if (e.type === 'MTEXT' || e.type === 'TEXT') { const t = clean(e.text); if (/^STAIR\s+[A-Z0-9]+$/i.test(t) && !/\bBY\b/i.test(t)) stairNames[t.toUpperCase()] = 1; if (/^TOS\b/i.test(t) || /^T\/ROOF\b/i.test(t)) roofLines++; } });
+  d.entities.forEach(e => { if (/^S-SLAB|^A-FLOR-____-OTLN$/.test(e.layer)) slabLoops++; if (e.type === 'MTEXT' || e.type === 'TEXT') { const t = clean(e.text); if (/^STAIR\s+[A-Z0-9]{1,2}$/i.test(t)) stairNames[t.toUpperCase()] = 1; if (/^TOS\b/i.test(t) || /^T\/ROOF\b/i.test(t)) roofLines++; } });
   labels[f] = d.entities.filter(e => (e.type === 'MTEXT' || e.type === 'TEXT')).map(e => { const p = e.position || e.startPoint || {}; return { t: clean(e.text), x: p.x, y: p.y, layer: e.layer }; });
 });
 const bodies = dirR && fs.existsSync(path.join(dirR, 'bodies.json')) ? JSON.parse(fs.readFileSync(path.join(dirR, 'bodies.json'), 'utf8')) : null;
@@ -50,6 +50,7 @@ const sr = verdict && verdict.report && verdict.report.slabs; if (sr) console.lo
 line('slab_levels', sr ? sr.built_levels : 0, sr ? sr.levels : 0, slabLoops + ' floor lines');
 const stR = verdict && verdict.report && verdict.report.stairs; if (stR) console.log('§POC_STAIRS ' + JSON.stringify(stR));
 line('named_stairs', stR ? stR.named_built : 0, Object.keys(stairNames).length, Object.keys(stairNames).sort().join(' '));
+const rR = verdict && verdict.report && verdict.report.roof; if (rR) console.log('§POC_ROOF ' + JSON.stringify(rR));
 line('roof', built(['IfcRoof']), roofLines ? 1 : 0, roofLines + ' roof spot levels');
 // a count that matches can still be the wrong elements: each label of a repeated class goes to its nearest body (bbox, metres), on the plan with most labels. Two labels on one body or a body with none is printed.
 CLS.filter(c => c.repeat && bodies).forEach(c => { const pp = count[c.name].perPlan, f = Object.keys(pp).sort((a, b) => pp[b] - pp[a])[0]; if (!f) return;

@@ -347,8 +347,47 @@ ok('YR32k a key plan\'s GROUND FLOOR yields to a real title', vals(gf, 'PR-VIEW'
 ok('YR32h set back: text_only', vals(ttl('DOOR SCHEDULE', { 'suggest.title_text': 'text_only' }), 'PR-VIEW') === '');
 const cwG = ST.judge([planB([edgeL('GL', A0(0, 0), A0(6000, 0)), edgeL('GL', A0(0, 150), A0(6000, 150))], 0, { layers: [{ layer: 'GL', type: 'curtainband' }] }), planB([], 4.8), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate;
 ok('YR32i curtainband: one IfcCurtainWall', cwG.R.els.filter(e => e.class === 'IfcCurtainWall').length === 1 && cwG.R.bodies.report.curtain.walls === 1);
+// §D109 P7 stairs from their tread lines
+const sfP = (ents, c, lv, more) => { const d = planB(ents, lv === undefined ? 0 : lv, { layers: [{ layer: 'STR', type: 'stairlines' }] }); return ST.judge([d].concat(more === undefined ? [planB([], 4.8)] : more, elevS({ plane: 'A1' })), { I: IM, B: BD, choices: c || {} }).gate; };
+const treads = (n, step, u0) => Array.from({ length: n }, (_, i) => edgeL('STR', A0(u0 === undefined ? 0 : u0, i * (typeof step === 'function' ? step(i) : step)), A0((u0 === undefined ? 0 : u0) + 1200, i * (typeof step === 'function' ? step(i) : step))));
+const upAt = A0(600, -400), upT = T('MTEXT', 'NOTE', 'UP', upAt.x, upAt.y), nmAt = A0(600, -900), nmT = T('MTEXT', 'NOTE', 'STAIR A', nmAt.x, nmAt.y), flights = g => g.R.els.filter(e => e.class === 'IfcStairFlight'), stR = g => g.R.bodies.report.stairs || {};
+const sf1 = sfP(treads(17, 300).concat(upT, nmT)), sfe = flights(sf1);
+console.log('§YR33 ' + JSON.stringify(sfe.map(e => ({ z0: e.z0, z1: e.z1, size: e.size, vol: volOf(e) }))) + ' rep=' + JSON.stringify(stR(sf1)));
+const rise = (0.63 - 0.3) / 2;
+ok('YR33a 17 lines, 300 apart: one flight, 16 treads, rise from the tread, volume = treads x tread x width x rise, the shortfall reported', sfe.length === 1 && sfe[0].size.treads === 16 && Math.abs(sfe[0].size.rise.value - rise) < 1e-6 && Math.abs(volOf(sfe[0]) - 16 * 0.3 * 1.2 * rise) < 1e-4 && stR(sf1).named_built === 1 && Math.abs(Object.values(stR(sf1).short_m)[0] - (4.8 - 17 * rise)) < 1e-4, JSON.stringify(stR(sf1).short_m));
+const tick = sfP(Array.from({ length: 17 }, (_, i) => edgeL('STR', A0(0, i * 300), A0(60, i * 300))).concat(upT, nmT));
+ok('YR33i lines 60 mm long, evenly spaced: no flight', flights(tick).length === 0 && stR(tick).lines_unread === 17);
+const topPt = sfe[0] && sfe[0].vertices.reduce((m, v) => v[2] > m[2] ? v : m), farEnd = A0(600, 4800);
+ok('YR33b it rises away from UP', sfe.length === 1 && Math.hypot(topPt[0] - farEnd.x * 0.001, topPt[1] - farEnd.y * 0.001) < 1.0, JSON.stringify(topPt));
+const twin = Array.from({ length: 17 }, (_, i) => [edgeL('STR', A0(0, i * 280), A0(1200, i * 280)), edgeL('STR', A0(0, i * 280 + 19), A0(1200, i * 280 + 19))]).reduce((a, q) => a.concat(q), []), sfW = flights(sfP(twin.concat(upT, nmT)));
+ok('YR33h a nosing drawn as 2 lines 19 apart: 17 nosings, 16 treads of 280', sfW.length === 1 && sfW[0].size.treads === 16 && Math.abs(sfW[0].size.tread.value - 0.28) < 1e-3, JSON.stringify(sfW.map(e => e.size)));
+const sf2 = sfP(treads(2, 300).concat(upT, nmT));
+ok('YR33c 2 lines: no flight, counted', flights(sf2).length === 0 && stR(sf2).lines_unread === 2);
+const sfU = sfP([0, 300, 600, 1500].map(o => edgeL('STR', A0(0, o), A0(1200, o))).concat(upT, nmT));
+ok('YR33d uneven spacing: not the whole run', flights(sfU).every(e => e.size.treads <= 2) && stR(sfU).lines_unread >= 1, JSON.stringify(stR(sfU)));
+const cp = sfP(treads(17, 300).concat(upT, nmT), null, 0, [planB(treads(17, 300).concat(nmT), 4.8, { layers: [{ layer: 'STR', type: 'stairlines' }] }), planB([], 9.05)]);
+ok('YR33e the same flight on the plan above: the lower one\'s', flights(cp).length === 1 && flights(cp)[0].z0 >= 0 && flights(cp)[0].z1 <= 4.8, JSON.stringify(flights(cp).map(e => [e.z0, e.z1])));
+const sfT = sfP(treads(17, 300).concat(upT, nmT), null, 9.05, [planB([], 0)]);
+ok('YR33f a top plan: the gap', flights(sfT).length === 0 && sfT.R.bodies.gaps.some(q => q.code === 'GAP:stair_no_top'));
+ok('YR33g set back: off', flights(sfP(treads(17, 300).concat(upT, nmT), { 'stair.flights': 'off' })).length === 0);
+// §D109 P8 a roof through the spot levels
+const deck = T('MTEXT', 'NOTE', 'IS 50MM ABOVE T/STEEL', 0, 0), spot = (x, y, z) => T('MTEXT', 'NOTE', 'TOS: ' + (z >= 0 ? '+' : '') + z.toFixed(3) + ' m', x, y);
+const rfP = (ents, c) => ST.judge([planB([], 0), planB(ents, 9.05), elevS({ plane: 'A1' })], { I: IM, B: BD, choices: c || {} }).gate, roofs = g => g.R.els.filter(e => e.class === 'IfcRoof'), rfR = g => g.R.bodies.report.roof || {};
+const plane = (x, y) => 9 + x * 0.0001 + y * 0.0002, corners = [[0, 0], [10000, 0], [10000, 8000], [0, 8000]].map(q => spot(q[0], q[1], plane(q[0], q[1])));
+const r1 = rfP(corners.concat(spot(5000, 4000, plane(5000, 4000)), deck)), r1e = roofs(r1);
+console.log('§YR34 ' + JSON.stringify(rfR(r1)) + ' vol=' + (r1e[0] ? volOf(r1e[0]) : null));
+ok('YR34a corners + a middle spot on one plane: volume = area x 0.05, its held-out error 0', r1e.length === 1 && Math.abs(volOf(r1e[0]) - 80 * 0.05) < 1e-3 && rfR(r1).fit.judged >= 1 && rfR(r1).fit.max_m < 2e-3, JSON.stringify(rfR(r1).fit));
+ok('YR34b top = spot + 0.05', r1e.length === 1 && Math.abs(Math.max(...r1e[0].vertices.map(v => v[2])) - (plane(10000, 8000) + 0.05)) < 1e-3);
+const r2 = rfP(corners.concat(spot(5000, 4000, plane(5000, 4000) + 1), deck));
+ok('YR34c a middle spot 1 m high: its held-out error 1, reported', Math.abs(rfR(r2).fit.max_m - 1) < 2e-3, JSON.stringify(rfR(r2).fit));
+ok('YR34d a hull corner left out is outside: counted, not judged', rfR(r1).fit.outside >= 3, JSON.stringify(rfR(r1).fit));
+const r3 = rfP([spot(0, 0, 9), spot(100, 100, 9), deck]);
+ok('YR34e 2 spots: the gap, no roof', roofs(r3).length === 0 && r3.R.bodies.gaps.some(q => q.code === 'GAP:roof_too_few_spots'));
+const r4 = rfP(corners.concat(spot(5000, 4000, plane(5000, 4000))));
+ok('YR34f no deck note: the gap, no deck assumed', roofs(r4).length === 0 && r4.R.bodies.gaps.some(q => q.code === 'GAP:roof_no_deck_note'));
+ok('YR34g set back: off', roofs(rfP(corners.concat(deck), { 'roof.from_spots': 'off' })).length === 0);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'stair.flights': 'off', 'roof.from_spots': 'off', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

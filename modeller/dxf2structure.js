@@ -88,6 +88,15 @@
       var sb = SB.buildSlabs(sheets, res.els, { DF: DF });
       res.els = res.els.concat(sb.els); res.gaps = res.gaps.concat(sb.gaps); res.report = Object.assign({}, res.report, { slabs: sb.report });
     }
+    // §D109 P7 stair flights from their tread lines
+    var SF = ctx.SF || (typeof module === 'object' && module.exports ? require('./dxf2stairs.js') : (typeof self !== 'undefined' ? self.Dxf2Stairs : null));
+    if (SF && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'stairlines'; }); })) {
+      var sf = SF.buildStairs(sheets, { DF: DF });
+      res.els = res.els.concat(sf.els); res.gaps = res.gaps.concat(sf.gaps); res.report = Object.assign({}, res.report, { stairs: sf.report });
+    }
+    // §D109 P8 a roof surface through the drawing's own spot levels
+    var RF = ctx.RF || (typeof module === 'object' && module.exports ? require('./dxf2roofspots.js') : (typeof self !== 'undefined' ? self.Dxf2RoofSpots : null));
+    if (RF && !refused.length) { var rf = RF.buildRoof(sheets, { DF: DF }); if (rf.report.spots) { res.els = res.els.concat(rf.els); res.gaps = res.gaps.concat(rf.gaps); res.report = Object.assign({}, res.report, { roof: rf.report }); } }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));
     if (SC && !refused.length && sheets.some(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); })) {
