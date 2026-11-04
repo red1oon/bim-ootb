@@ -36,7 +36,7 @@
     var plv = (await rows('SELECT m_pricelist_version_id AS v FROM m_pricelist_version WHERE m_pricelist_id=' + Number(pos.m_pricelist_id) + ' ORDER BY validfrom DESC, m_pricelist_version_id DESC LIMIT 1'))[0];
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
-    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim, p.imageurl AS img FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
@@ -59,7 +59,7 @@
   }
 
   function msg(t, kind) { var el = $('#msg'); el.hidden = !t; el.textContent = t || ''; el.setAttribute('data-kind', kind || ''); if (t) log('§TILL_MSG ' + (kind || 'info') + ' ' + t); }
-  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', heldlist: 'u7', reprintlist: 'u5r' };
+  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', heldlist: 'u7', reprintlist: 'u5r' };
   var HOOKS = {};   // screen name -> function run after the screen is shown (the screens of till_ext.js)
   function go(name) {
     if (!SCREENS[name]) { msg('This panel is not in this release', 'info'); return false; }
@@ -131,8 +131,26 @@
     kids = kids.filter(function (c) { return hasProd(c.id); });
     $('#cats').innerHTML = (cur != null ? '<button data-cat-up="1">&larr;</button>' : '') + kids.map(function (c) { return '<button data-cat="' + c.id + '"' + (S.cat === c.id ? ' class="on"' : '') + '>' + esc(c.name) + '</button>'; }).join('');
     var list = cur == null ? [] : S.prods.filter(function (p) { return Number(p.cat) === Number(cur); });
-    $('#products').innerHTML = list.map(function (p) { return '<button class="prod" data-pid="' + p.pid + '">' + esc(p.name) + '<br>' + C.money(C.cents(p.price)) + '</button>'; }).join('');
+    var z = S.sizes || { 'img-width': 107, 'img-height': 60 };    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
+    $('#products').innerHTML = list.map(function (p) { return prodTile(p, z); }).join('');
+    log('§TILL_CATALOG tiles=' + list.length + ' withImage=' + list.filter(function (p) { return p.img; }).length + ' size=' + z['img-width'] + 'x' + z['img-height']);
   }
+  // Lucide image-off (placeholder, no GPL art; §29.D.2). The picture is decoded only when the tile is on screen (lazy + async), CORS so the SW media cache can store a real 200 (§31).
+  var NOIMG = '<svg class="noimg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"/><path d="M13.5 13.5 6 21"/><path d="M18 12l3 3"/><path d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"/><path d="M21 15V5a2 2 0 0 0-2-2H9"/></svg>';
+  function prodTile(p, z) {   // the button IS img-width x img-height (Ticket.Buttons.xml:77, W-TILL-UNICENTA-PARITY U5); picture fills it, name + price overlay the bottom (ThumbNailBuilder.java:101-202)
+    var w = z['img-width'], h = z['img-height'];
+    var pic = p.img ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" width="' + w + '" height="' + h + '" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain">' : '<span class="ph" style="position:absolute;left:0;top:0;width:100%;height:70%;display:flex;align-items:center;justify-content:center">' + NOIMG + '</span>';
+    return '<button class="prod" data-pid="' + p.pid + '" style="position:relative;overflow:hidden;box-sizing:border-box;padding:0;width:' + w + 'px;height:' + h + 'px">' + pic + '<span class="pn" style="position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:9px;line-height:1.1;background:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(p.name) + '<br><span class="pp">' + C.money(C.cents(p.price)) + '</span></span></button>';
+  }
+  // §31/§32: ask the service worker to fetch ONLY the pictures it does not hold yet, then evict what the catalog no longer lists. The bytes stay on the device's disk, never in the twin's DB.
+  async function mediaPrefetch() {
+    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean), sw = null;
+    try { if (navigator.serviceWorker) { var reg = await Promise.race([navigator.serviceWorker.ready, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]); sw = navigator.serviceWorker.controller || (reg && reg.active); } } catch (e) { /* no SW */ }
+    if (!urls.length || !sw) { log('§TILL_MEDIA INCONCLUSIVE urls=' + urls.length + ' sw=' + !!sw); return null; }
+    var r = await new Promise(function (ok) { var ch = new MessageChannel(); ch.port1.onmessage = function (e) { ok(e.data); }; sw.postMessage({ type: 'MEDIA_PREFETCH', urls: urls, capMb: 50 }, [ch.port2]); setTimeout(function () { ok(null); }, 60000); });
+    log('§TILL_MEDIA files=' + (r && r.files) + ' bytes=' + (r && r.bytes) + ' fetched=' + (r && r.fetched) + ' evicted=' + (r && r.evicted) + ' heap_mb=' + (performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1)); return r;
+  }
+  async function loadSizes() { try { var rs = await rows("SELECT recid, value FROM pos_floorplan WHERE kind='S'"); var o = {}; rs.forEach(function (r) { o[r.recid] = r.value; }); if (window.RestCore) S.sizes = RestCore.sizes(o); } catch (e) { /* table not made yet: defaults */ } }
 
   // ── U8 payment dialog (sale, refund U11, customer payment U12 share it: the tabs differ, 5.0 JPaymentSelectReceipt / Refund / Customer) ──
   function openPay(kind, amountCents, customer) {
@@ -272,7 +290,7 @@
     var res = window.SodaCore.applyRef(W, fresh, { client: S.cfg.client });
     var hi = fresh.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
     if (ops.length) { var g = await depositGroup(ops); if (!g || g.committed !== true) { log('§SODA_TILL_APPLY FAIL till=' + S.cfg.tillKey + ' ' + (g && g.reason)); return { failed: true }; } }
-    S.store.sodaSeq = hi; saveStore(); await loadConfig();
+    S.store.sodaSeq = hi; saveStore(); await loadConfig(); mediaPrefetch();
     log('§SODA_TILL_APPLY till=' + S.cfg.tillKey + ' rows=' + fresh.length + ' prices=' + res.applied.prices + ' products=' + res.applied.products + ' taxes=' + res.applied.taxes + ' unchanged=' + res.noop + ' upToSeq=' + hi);
     return res;
   }
@@ -315,8 +333,9 @@
     await E.TeamSync.ready;
     if (E.AdImportTables && E.AdImportTables.ensurePos) E.AdImportTables.ensurePos(E.__idmpDb);   // POS_TillHandoff (POS_PLUGIN_LOCAL_FIRST §26.2)
     E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
-    await loadConfig();
+    await loadConfig(); await loadSizes(); mediaPrefetch();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
+    { var sm = (S.store.setup || {})['machine.ticketsbag']; if (!qs.get('mode') && !new URLSearchParams(location.search).get('mode') && ['simple', 'standard', 'restaurant'].indexOf(sm) >= 0) { S.mode = sm; document.body.setAttribute('data-mode', sm); log('§TILL_SETUP_MODE applied=' + sm + ' (from the Configuration screen)'); } }
     S.ticket = S.store.ticket || newTicket();
     initPad(); await renderLogin(); renderMenu(); bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ }
@@ -329,6 +348,8 @@
       nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
+    if (window.TillSetupInit) window.TillSetupInit(api);
+    if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
     window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());

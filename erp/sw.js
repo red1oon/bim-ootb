@@ -10,7 +10,7 @@
 // init-bubble must be INSTANT, ERP_INIT_BUBBLE_INSTANT.md); network-first for non-precached .js (fresh on
 // deploy); cache-first for precached assets/.wasm/images. Freshness on deploy is carried by the SW version
 // bump (skipWaiting+clients.claim precache the new shell), so SWR strands a user at most one load post-deploy.
-const CACHE_VERSION = 'v989';   // bump on each deploy; v989: receipt UP (S6/S7 as the confirm's own rows; TeamScope dual DOWN+UP tables, E3 not-executor; HQ replica applies MMovementConfirm; POS_PLUGIN_LOCAL_FIRST §28.2, main was v988); v988: Import Product ported (processes/ImportProduct.js, I_Product boot table; POS_PLUGIN_LOCAL_FIRST §30, main was v987); v987: SODA down (soda_core.js, branch admin receive + fan-out, till apply; POS_PLUGIN_LOCAL_FIRST §28); v986: crud_overlay model reads wait for the sidecar (tip read race, POS_PLUGIN_LOCAL_FIRST §27); v985: model_post previews DRAFT invoices (C_DocTypeTarget_ID fallback) + RMA book cases; v984: Branch POS Admin + one-batch EODA (branch_admin.html/js, eoda_core.js, POS_TillHandoff / POS_BranchDayStatement, TeamSync.hold; POS_PLUGIN_LOCAL_FIRST §26); v983: MOrder.explodeBOM ported (model_order.js, POS_PLUGIN_LOCAL_FIRST §25); v982: model_post posts customer return receipts (Doc_InOut Sales-Return, #2601); v981: Posting-Preview renders the REAL poster (ModelPost.previewFacts on a never-committed Trx; W-PREVIEW-IS-POSTING) + doc_poster derive{MatchInv,MatchPO,GLJournal,Inventory} deleted (main was v980); v980: seed cost history (m_costdetail 84 + m_costhistory 172 rows of the shipped documents; Team base hash moved on purpose; main was v979); v979: model_post Doc_AllocationHdr discount/write-off/cash/AP legs + C_Cash seed rows (Team base hash moved on purpose; main was v978); v978: model_post Doc_BankStatement (main was v977); v976: model_post Doc_GLJournal (origin/main was v975); SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned). v973: erp_engine.js pruned to the browser subset (-970 lines) v977: friendly_ops.mjs Branch Day Close + till_core taxInputs + ImportOrder IsTaxIncluded (POS_PLUGIN_LOCAL_FIRST §21/§23)
+const CACHE_VERSION = 'v990';   // bump on each deploy; v990: till setup screen, picture tiles, branch-shared restaurant (till_setup.js, till_rest.js, rest_core.js, branch_floors.js; POS_PLUGIN_LOCAL_FIRST §32); v989: receipt UP (S6/S7 as the confirm's own rows; TeamScope dual DOWN+UP tables, E3 not-executor; HQ replica applies MMovementConfirm; POS_PLUGIN_LOCAL_FIRST §28.2, main was v988); v988: Import Product ported (processes/ImportProduct.js, I_Product boot table; POS_PLUGIN_LOCAL_FIRST §30, main was v987); v987: SODA down (soda_core.js, branch admin receive + fan-out, till apply; POS_PLUGIN_LOCAL_FIRST §28); v986: crud_overlay model reads wait for the sidecar (tip read race, POS_PLUGIN_LOCAL_FIRST §27); v985: model_post previews DRAFT invoices (C_DocTypeTarget_ID fallback) + RMA book cases; v984: Branch POS Admin + one-batch EODA (branch_admin.html/js, eoda_core.js, POS_TillHandoff / POS_BranchDayStatement, TeamSync.hold; POS_PLUGIN_LOCAL_FIRST §26); v983: MOrder.explodeBOM ported (model_order.js, POS_PLUGIN_LOCAL_FIRST §25); v982: model_post posts customer return receipts (Doc_InOut Sales-Return, #2601); v981: Posting-Preview renders the REAL poster (ModelPost.previewFacts on a never-committed Trx; W-PREVIEW-IS-POSTING) + doc_poster derive{MatchInv,MatchPO,GLJournal,Inventory} deleted (main was v980); v980: seed cost history (m_costdetail 84 + m_costhistory 172 rows of the shipped documents; Team base hash moved on purpose; main was v979); v979: model_post Doc_AllocationHdr discount/write-off/cash/AP legs + C_Cash seed rows (Team base hash moved on purpose; main was v978); v978: model_post Doc_BankStatement (main was v977); v976: model_post Doc_GLJournal (origin/main was v975); SEAM-W3A: kernel_ops marks edited snapshots. v972: ERPUI dead-engine retirement (ad_ui/ad_charts pruned). v973: erp_engine.js pruned to the browser subset (-970 lines) v977: friendly_ops.mjs Branch Day Close + till_core taxInputs + ImportOrder IsTaxIncluded (POS_PLUGIN_LOCAL_FIRST §21/§23)
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -89,8 +89,8 @@ const PRECACHE_ASSETS = [
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',
   'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
-  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js',
-  'branch_admin.html', 'branch_admin.js', 'eoda_core.js', 'soda_core.js',   // §26: the Branch POS Admin (EODA)
+  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js', 'till_rest.js', 'till_setup.js',
+  'branch_admin.html', 'branch_admin.js', 'eoda_core.js', 'soda_core.js', 'rest_core.js', 'branch_floors.js',   // §26: the Branch POS Admin (EODA)
   'kitchen.html', 'kitchen.js', 'kds_core.js', 'kds_link.js', 'till_kds.js',   // P2: the standalone kitchen screen + the till's Send Order (prompts/POS_PLUGIN_LOCAL_FIRST.md §19)
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
   'slipverify/slipok.js',
@@ -414,6 +414,46 @@ self.addEventListener('activate', (event) => {
 
 const _PRECACHE_SET = new Set(PRECACHE_ASSETS);
 
+// ── MEDIA CACHE (POS_PLUGIN_LOCAL_FIRST §31/§32.1): product pictures live on the device's DISK (Cache Storage), never in the twin's heap DB.
+// UNVERSIONED name that does not start with CACHE_PREFIX, so `activate` (which purges only CACHE_PREFIX caches) keeps it across deploys.
+// CORS responses only (status 200): an opaque response (cross-origin no-cors <img>) has an unknowable, quota-padded size and is never stored.
+const MEDIA_CACHE = 'erp-media-v1', MEDIA_INDEX = 'https://media-index.invalid/index.json';
+function isMediaReq(request) {
+  if (request.mode !== 'cors' || request.destination !== 'image') return false;
+  try { return new URL(request.url).origin !== self.location.origin; } catch (e) { return false; }
+}
+async function mediaIndex(c) { const r = await c.match(MEDIA_INDEX); return r ? await r.json() : {}; }
+async function mediaIndexSave(c, idx) { await c.put(MEDIA_INDEX, new Response(JSON.stringify(idx), { headers: { 'Content-Type': 'application/json' } })); }
+async function mediaPut(c, url, resp) {                // returns bytes stored; refuses anything that is not a real CORS 200
+  if (!resp || resp.type !== 'cors' || resp.status !== 200) return 0;
+  const bytes = (await resp.clone().arrayBuffer()).byteLength;
+  await c.put(url, resp);
+  const idx = await mediaIndex(c); idx[url] = { bytes: bytes, t: Date.now() }; await mediaIndexSave(c, idx);
+  return bytes;
+}
+function mediaFetch(request) {                         // cache-first on disk; a miss goes to the network once and is stored
+  return caches.open(MEDIA_CACHE).then(c => c.match(request.url).then(hit => {
+    if (hit) return hit;
+    return fetch(request).then(resp => { const keep = resp.clone(); mediaPut(c, request.url, keep).catch(() => {}); return resp; })
+      .catch(() => new Response('', { status: 503, statusText: 'Offline' }));
+  }));
+}
+// prefetch ONLY the urls not yet cached, then evict: anything not in `urls` (product gone / URL changed), then oldest-first down to capMb.
+async function mediaPrefetch(urls, capMb) {
+  const c = await caches.open(MEDIA_CACHE), idx = await mediaIndex(c), live = new Set(urls); let fetched = 0, skipped = 0, refused = 0;
+  for (const u of urls) {
+    if (idx[u]) { skipped++; continue; }
+    try { const r = await fetch(u, { mode: 'cors' }); const b = await mediaPut(c, u, r); if (b) fetched++; else refused++; } catch (e) { refused++; }
+  }
+  const cur = await mediaIndex(c); let evicted = 0;
+  for (const u of Object.keys(cur)) if (!live.has(u)) { await c.delete(u); delete cur[u]; evicted++; }
+  let total = Object.keys(cur).reduce((a, u) => a + cur[u].bytes, 0); const cap = (capMb || 50) * 1048576;
+  for (const u of Object.keys(cur).sort((a, b) => cur[a].t - cur[b].t)) { if (total <= cap) break; total -= cur[u].bytes; await c.delete(u); delete cur[u]; evicted++; }
+  await mediaIndexSave(c, cur);
+  return { fetched: fetched, skipped: skipped, refused: refused, evicted: evicted, files: Object.keys(cur).length, bytes: total };
+}
+async function mediaStats() { const idx = await mediaIndex(await caches.open(MEDIA_CACHE)); const k = Object.keys(idx); return { files: k.length, bytes: k.reduce((a, u) => a + idx[u].bytes, 0) }; }
+
 function isNetworkFirst(url) {
   var base = url.split('?')[0];
   if (base.includes('/lib/')) return false;
@@ -430,6 +470,7 @@ self.addEventListener('fetch', (event) => {
   // TEAMWORK_FRAMEWORK §13.1 (W1): a request that says cache:'no-store'/'reload' (the comm layer's pipe reads) must never be answered from a cache —
   // cacheFirst keys on the URL WITHOUT its query, so two list?prefix=… reads would otherwise get the same stale answer.
   if (event.request.cache === 'no-store' || event.request.cache === 'reload') return;
+  if (isMediaReq(event.request)) { event.respondWith(mediaFetch(event.request)); return; }   // §31 pictures: disk, CORS only
   if (url.split('?')[0].endsWith('.db')) return;   // ad_seed.db handled by the page directly
   if (event.request.mode === 'navigate') { event.respondWith(staleWhileRevalidate(event.request)); return; }
   if (isNetworkFirst(url)) { event.respondWith(networkFirst(event.request)); return; }
@@ -491,6 +532,8 @@ function cacheFirst(request) {
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data && event.data.type === 'MEDIA_PREFETCH') { const p = mediaPrefetch(event.data.urls || [], event.data.capMb).then(r => { if (event.ports && event.ports[0]) event.ports[0].postMessage(r); }); if (event.waitUntil) event.waitUntil(p); }
+  if (event.data && event.data.type === 'MEDIA_STATS') { const p = mediaStats().then(r => { if (event.ports && event.ports[0]) event.ports[0].postMessage(r); }); if (event.waitUntil) event.waitUntil(p); }
   if (event.data && event.data.type === 'GET_PRECACHE') {
     event.ports[0].postMessage({ assets: PRECACHE_ASSETS, libs: LOCAL_LIBS, version: CACHE_VERSION });
   }
