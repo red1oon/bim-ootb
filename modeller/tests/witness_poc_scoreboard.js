@@ -39,8 +39,9 @@ const built = names => names.reduce((a, n) => a + (by[n] || 0), 0);
 const line = (name, b, ev, note) => { const inc = !(ev > 0) ? ' INCONCLUSIVE: no evidence in these sheets' : !bodies ? ' INCONCLUSIVE: no run' : ''; console.log('§POC ' + name + ' built=' + b + ' evidence=' + ev + ' gap=' + (ev > 0 ? Math.max(0, ev - b) : '-') + inc + (note ? '  ' + note : '')); };
 CLS.forEach(c => { const pp = count[c.name].perPlan, vals = Object.keys(pp).map(k => pp[k]), ev = !vals.length ? 0 : c.repeat ? Math.max.apply(null, vals) : vals.reduce((a, v) => a + v, 0);
   // a labelled class counts labels that found their element: a label that names a repeat of one beam is not missing
-  const rb = c.resolved && verdict && verdict.report && verdict.report.beams; if (rb) console.log('§POC_BEAMS ' + JSON.stringify(rb) + ' bodies=' + built(c.ifc));
-  line(c.name, rb ? rb.labels - rb.no_edges : built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
+  const rb = c.resolved && verdict && verdict.report && verdict.report.beams; if (rb) console.log('§POC_BEAMS ' + JSON.stringify(rb));
+  const sb = c.name === 'members_steel' && verdict && verdict.report && verdict.report.steel; if (sb) console.log('§POC_STEEL ' + JSON.stringify(sb));
+  line(c.name, rb ? rb.labels - rb.no_edges : sb ? sb.built + sb.same_line : built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
 const wr = verdict && verdict.report && verdict.report.walls; if (wr) console.log('§POC_WALLS ' + JSON.stringify(wr) + ' bodies=' + built(['IfcWall']));
 line('wall_lines_m', wr ? Math.round(wr.covered_m) : 0, Math.round(wallLen), wallPlans + ' plans with wall lines');
 const sr = verdict && verdict.report && verdict.report.slabs; if (sr) console.log('§POC_SLABS ' + JSON.stringify(sr));

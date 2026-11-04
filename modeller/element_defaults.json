@@ -1017,6 +1017,36 @@
     "off"
    ],
    "used_by": "dxf2slabs (§D109)"
+  },
+  "steel.label_reach": {
+   "element": "IfcBeam",
+   "value": 1.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a steel section label its member's line may run (§D109). 0 = steel is not read from labels",
+   "options": [
+    1.5,
+    0
+   ],
+   "min_line_m": 0.5,
+   "used_by": "dxf2steel (§D109)"
+  },
+  "steel.section_table": {
+   "element": "IfcBeam",
+   "value": "standard",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a UB label names a designation, not its web and flange. BS EN 10365 values taken from public references, not from the drawing and not checked against the standard itself (§D109). 'off' = a gap",
+   "options": [
+    "standard",
+    "off"
+   ],
+   "table_mm": {
+    "UB254x146x43": { "h": 259.6, "b": 147.3, "tw": 7.2, "tf": 12.7 },
+    "UB305x165x54": { "h": 310.4, "b": 166.9, "tw": 7.9, "tf": 13.7 },
+    "UB457x191x98": { "h": 467.2, "b": 192.8, "tw": 11.4, "tf": 19.6 }
+   },
+   "used_by": "dxf2steel (§D109)"
   }
  },
  "building_types": {

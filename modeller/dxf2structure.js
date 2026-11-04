@@ -63,6 +63,8 @@
     if (BM && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'beamlabel'; }); })) {
       var bm = BM.buildBeams(sheets, { DF: DF });
       res.els = res.els.concat(bm.els); res.gaps = res.gaps.concat(bm.gaps); res.report = Object.assign({}, res.report, { beams: bm.report });
+      var SL = ctx.SL || (typeof module === 'object' && module.exports ? require('./dxf2steel.js') : (typeof self !== 'undefined' ? self.Dxf2Steel : null));   // §D109 P5 the steel labels on the same layers
+      if (SL) { var st = SL.buildSteel(sheets, { DF: DF }); res.els = res.els.concat(st.els); res.gaps = res.gaps.concat(st.gaps); res.report = Object.assign({}, res.report, { steel: st.report }); }
     }
     // §D109 P3 walls from their lines (a plan layer typed `wallband`), in any direction
     var WL = ctx.WL || (typeof module === 'object' && module.exports ? require('./dxf2walls.js') : (typeof self !== 'undefined' ? self.Dxf2Walls : null));

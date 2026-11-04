@@ -87,5 +87,5 @@
     });
     return { els: els, gaps: gaps, report: report };
   }
-  return { buildBeams: buildBeams, LABEL: LABEL };
+  return { buildBeams: buildBeams, LABEL: LABEL, parts: { segments: segments, distTo: distTo, along: along, runOf: runOf, clean: clean } };
 });

@@ -299,8 +299,28 @@ ok('YR30c a label outside every raft: no slab', slabs(slP([tx('S.O.G-150mm', 200
 const s4 = slP([tx('S.O.G-150mm', 1000, 1000)]);
 ok('YR30d a level above with no outline: the gap, one per level', s4.R.bodies.gaps.filter(q => q.code === 'GAP:slab_no_outline').length === 1 && s4.R.bodies.report.slabs.levels === 2 && s4.R.bodies.report.slabs.built_levels === 1, JSON.stringify(s4.R.bodies.report.slabs));
 ok('YR30e set back: off', slabs(slP([tx('S.O.G-150mm', 1000, 1000)], { 'slab.ground_on_raft': 'off' })).length === 0);
+// §D109 P5 steel: the true profile along its one line
+const stP = (ents, c) => { const d = planB(ents, 9.05, { layers: [{ layer: 'IDEN', type: 'beamlabel' }] }); return ST.judge([planB([], 0), d, elevS({ plane: 'A1' })], { I: IM, B: BD, choices: c || {} }).gate; };
+const mbr = (layer, o) => edgeL(layer || 'S-BEAM-OTLN', A0(0, o || 0), A0(6000, o || 0)), lp2 = A0(3000, 500);
+const stE = (lab, ents, c) => stP((ents || [mbr()]).concat(lbl(lab, lp2.x, lp2.y)), c);
+const stB = g => g.R.els.filter(e => e.kind === 'steel'), area = g => { const e = stB(g)[0]; return e ? volOf(e) / 6 * 1e6 : null; };
+const ub = stE('UB254x146x43'), ubE = stB(ub);
+console.log('§YR31 ' + JSON.stringify(ubE.map(e => ({ c: e.class, z0: e.z0, z1: e.z1, size: e.size, area: area(ub) }))) + ' rep=' + JSON.stringify(ub.R.bodies.report.steel));
+const nearA = (a, b) => Math.abs(a - b) < 1;
+ok('YR31a UB: IfcBeam, volume = the table area x length, top at the plan level', ubE.length === 1 && ubE[0].class === 'IfcBeam' && ubE[0].z1 === 9.05 && nearA(area(ub), 2 * 147.3 * 12.7 + 234.2 * 7.2), String(area(ub)));
+const an = stE('L100x100x8.0'); ok('YR31b an angle: IfcMember, (100 + 100 - 8) x 8', stB(an).length === 1 && stB(an)[0].class === 'IfcMember' && nearA(area(an), 192 * 8), String(area(an)));
+const bu = stE('BU-500x300x50x25'); ok('YR31c built-up: stated h b tf tw', stB(bu).length === 1 && stB(bu)[0].class === 'IfcBeam' && nearA(area(bu), 2 * 300 * 50 + 400 * 25), String(area(bu)));
+const rb = stE('RB70'); ok('YR31d a rod: the area of its 16-gon', stB(rb).length === 1 && stB(rb)[0].class === 'IfcMember' && nearA(area(rb), 8 * 35 * 35 * Math.sin(Math.PI / 8)), String(area(rb)));
+const tos = A0(3000, -500), tg = stE('UB254x146x43', [mbr(), T('MTEXT', 'NOTE', 'TOS +10.200', tos.x, tos.y)]); ok('YR31e a TOS text near it states the top', stB(tg).length === 1 && stB(tg)[0].z1 === 10.2, JSON.stringify(stB(tg).map(e => e.z1)));
+const anB = stE('L100x100x8.0', [mbr('S-BEAM-OTLN', 100), mbr('S-BRCG-OTLN', 0)]); ok('YR31f an angle prefers the bracing line, the nearer beam line left alone', stB(anB).length === 1 && /BRCG/.test(stB(anB)[0].size.line_layer) , JSON.stringify(stB(anB).map(e => e.size.line_layer)));
+const gapOf = (g, code) => g.R.bodies.gaps.some(q => q.code === code);
+ok('YR31g set back: off, the unknown gap', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_section_unknown'))(stE('UB254x146x43', null, { 'steel.section_table': 'off' })));
+ok('YR31h a designation not in the table: the unknown gap, never a box', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_section_unknown'))(stE('UB999x1x1')));
+ok('YR31i no line in reach: the no-line gap', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_label_no_line'))(stE('UB254x146x43', [edgeL('S-BEAM-OTLN', A0(0, 9000), A0(6000, 9000))])));
+ok('YR31j a line on a floor layer is no member', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_label_no_line'))(stE('UB254x146x43', [mbr('A-FLOR-OTLN')])));
+ok('YR31k set back: reach 0 reads none', stB(stE('UB254x146x43', null, { 'steel.label_reach': 0 })).length === 0);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);
