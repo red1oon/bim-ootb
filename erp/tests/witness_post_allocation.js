@@ -7,7 +7,8 @@
 //   A1 both client-11 C_AllocationHdr of the PATCHED seed post through the REAL poster == stored legacy Fact_Acct per schema x account x side (integer cents, maxDiff 0), Posted='Y'
 //   A2 the cash-transfer leg (516) is on #100 in both schemas   A3 every OTHER doc type posts byte-identically (result+ops+log) vs the pinned baseline on the patched seed
 //   A4 the seed patch applies idempotently (twice -> same bytes, 3 C_Cash rows, no duplicates)
-//   MUTANTS: MUT=nocash (cash leg 516 dropped) and MUT=nodisc (discount leg 427 dropped) must FAIL A1; GA_BASELINE=1 (baseline poster) must FAIL A1. Nothing judged -> INCONCLUSIVE.
+//   A5 AmtSource == stored legacy per schema x account x side x currency (A1 judges AmtAcct only; residual #101 724 source 0.01 vs 'stored 0.0' misread)
+//   MUTANTS: MUT=src0 (724 source zeroed, accounted kept) must FAIL A5 and leave A1 PASS; MUT=nocash (cash leg 516 dropped) and MUT=nodisc (discount leg 427 dropped) must FAIL A1; GA_BASELINE=1 (baseline poster) must FAIL A1. Nothing judged -> INCONCLUSIVE.
 // Run: node erp/tests/witness_post_allocation.js   (node only; sql.js)
 'use strict';
 var fs = require('fs'), path = require('path'), cp = require('child_process'), Module = require('module');
@@ -31,6 +32,7 @@ function applyPatch(db) { PATCH.split(/;\s*\n/).forEach(function (st) { st = st.
   var PB = null; if (src) { var m = new Module(path.join(ERP, '__model_post_baseline.js'), module); m.filename = path.join(ERP, '__model_post_baseline.js'); m.paths = Module._nodeModulePaths(ERP); m._compile(src, m.filename); PB = m.exports; }
   var PN = require(path.join(ERP, 'model_post.js'));
   var P = BASELINE ? PB : PN; if (BASELINE && PB) ML.setPoster(PB.post);
+  if (MUT === 'src0') { var origS = P.DOC.c_allocationhdr; P.DOC.c_allocationhdr = function (trx, h, as, F) { var r = origS(trx, h, as, F); F.lines.forEach(function (x) { if (Number(x.account_id) === 724) { x.amtsourcedr = 0; x.amtsourcecr = 0; } }); return r; }; }
   if (MUT === 'nocash' || MUT === 'nodisc') { var orig = P.DOC.c_allocationhdr, drop = MUT === 'nocash' ? 516 : 427; P.DOC.c_allocationhdr = function (trx, h, as, F) { var r = orig(trx, h, as, F); F.lines = F.lines.filter(function (x) { return Number(x.account_id) !== drop; }); return r; }; }
   function q(sql, params) { var st = db.prepare(sql), out = []; try { if (params && params.length) st.bind(params.map(function (v) { return v === undefined ? null : v; })); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }
   var DAY = '2026-11-05 00:00:00';
@@ -58,6 +60,19 @@ function applyPatch(db) { PATCH.split(/;\s*\n/).forEach(function (st) { st = st.
     Object.keys(keys).sort().forEach(function (k) { log('§WALC   ' + j.id + ' ' + k + ' twin=' + (tw[k] || 0) + ' legacy=' + (lg[k] || 0) + ((tw[k] || 0) === (lg[k] || 0) ? '' : '  <-- DIFF')); });
     ok('A1-' + j.id, 'allocation ' + j.id + ': twin facts == stored legacy Fact_Acct per schema x account x side, Posted=Y', legN ? (md === 0 && Object.keys(tw).length > 0 && posted === 'Y') : null, legN ? 'maxDiff=' + md + 'c posted=' + posted + (bad.length ? ' ' + bad.slice(0, 4).join('; ') : '') : 'VACUOUS: no legacy facts');
   });
+  // A5 (§POSTING-PARITY residual #101 724): A1 judges AmtAcct only, so it is scope-blind to the SOURCE amount. Same judgement on AmtSource, keyed schema x account x side x C_Currency_ID.
+  var legS = {}, n5 = 0, bad5 = [];
+  q('SELECT record_id AS r, c_acctschema_id AS s, account_id AS a, c_currency_id AS cu, amtsourcedr AS d, amtsourcecr AS c FROM fact_acct WHERE ad_table_id=735 AND ad_client_id=11').forEach(function (f) {
+    var b = legS[f.r] || (legS[f.r] = {}); if (cents(f.d)) { var k = f.s + ':' + f.a + ':' + f.cu + ':DR'; b[k] = (b[k] || 0) + cents(f.d); } if (cents(f.c)) { var k2 = f.s + ':' + f.a + ':' + f.cu + ':CR'; b[k2] = (b[k2] || 0) + cents(f.c); } });
+  hs.forEach(function (j) {
+    var lg = legS[j.id]; if (!lg || !Object.keys(lg).length) return; n5++;
+    var r = postWith(poster, 'c_allocationhdr', j.id), tw = {}, keys = {};
+    JSON.parse(r.ops).forEach(function (o) { if (o && o.table === 'fact_acct' && o.op_type === 'CRUD_CREATE') { var f = o.fields;
+      if (cents(f.amtsourcedr)) { var k = f.c_acctschema_id + ':' + f.account_id + ':' + f.c_currency_id + ':DR'; tw[k] = (tw[k] || 0) + cents(f.amtsourcedr); } if (cents(f.amtsourcecr)) { var k2 = f.c_acctschema_id + ':' + f.account_id + ':' + f.c_currency_id + ':CR'; tw[k2] = (tw[k2] || 0) + cents(f.amtsourcecr); } } });
+    Object.keys(tw).concat(Object.keys(lg)).forEach(function (k) { keys[k] = 1; });
+    Object.keys(keys).sort().forEach(function (k) { var same = (tw[k] || 0) === (lg[k] || 0); if (!same) bad5.push(j.id + ' ' + k + ' twin=' + (tw[k] || 0) + ' legacy=' + (lg[k] || 0)); log('§WALC-A5 ' + j.id + ' ' + k + ' twin=' + (tw[k] || 0) + ' legacy=' + (lg[k] || 0) + (same ? '' : '  <-- DIFF')); });
+  });
+  ok('A5', 'AmtSource: twin facts == stored legacy per schema x account x side x currency (incl. #101 724 rounding line)', n5 ? bad5.length === 0 : null, n5 ? 'allocations=' + n5 + (bad5.length ? ' ' + bad5.slice(0, 4).join('; ') : '') : 'VACUOUS: no legacy facts');
   var t100 = twin[100] || {};
   ok('A2', 'cash-transfer leg 516 Dr + receivable 518 Cr on #100 in schema 101 (50.35) and 200000 (42.80)', judged ? (t100['101:516:DR'] === 5035 && t100['101:518:CR'] === 5035 && t100['200000:516:DR'] === 4280 && t100['200000:518:CR'] === 4280) : null, judged ? JSON.stringify({ s101: [t100['101:516:DR'], t100['101:518:CR']], s200000: [t100['200000:516:DR'], t100['200000:518:CR']] }) : 'VACUOUS');
   // A3: every other document type, candidate vs pinned baseline, byte-identical
