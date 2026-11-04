@@ -143,6 +143,27 @@
     old.parentNode.replaceChild(perfGrid(items), old);
     console.log('§DASH-GADGET performance redrawn over base + tip goals=' + items.length);
   }
+  // the document-status indicators over base + signed tip, as the Performance gadget (§5.31 CAPEX_DASHBOARD.md: legacy counts what its DB holds, and a saved row is in it); one builder for the first draw and the tip redraw
+  function dsItems(S) {
+    var ds = function (qq) { return window.DashboardDocStatus.indicators(qq || q, S); };
+    try { return window.__crud && window.__crud.withTipQuery ? window.__crud.withTipQuery(ds) : ds(q); } catch (e) { console.log('§DASH-ERR docstatus: ' + (e && e.message)); return []; }
+  }
+  function dsGrid(inds) {
+    var dg = el('div', 'ds-grid');
+    inds.forEach(function (i) {
+      var t = el('div', 'ds'); t.setAttribute('data-ds-id', i.id); t.setAttribute('data-ds-count', i.count == null ? '' : i.count); t.title = i.error ? i.error : i.name;
+      t.appendChild(el('div', 'dn', i.count == null ? '?' : String(i.count))); t.appendChild(el('div', 'dl', i.name));
+      if (i.windowId) t.addEventListener('click', function () { try { var w = q('SELECT Name AS n FROM AD_Window WHERE AD_Window_ID=?', [i.windowId])[0]; if (w && window.IdmpHost && window.IdmpHost.focus) window.IdmpHost.focus('docstatus', { window: w.n }); } catch (e) { console.log('§DASH-HOME zoom failed ' + e.message); } });
+      dg.appendChild(t);
+    });
+    return dg;
+  }
+  function dsRedraw() {
+    var box = document.querySelector('#idmp-home .idmp-gadget[data-ds="1"]'), S = session(); if (!box || !S) return;
+    var inds = dsItems(S), old = box.querySelector('.ds-grid'); if (!old) return;
+    old.parentNode.replaceChild(dsGrid(inds), old);
+    console.log('§DASH-GADGET docstatus redrawn over base + tip indicators=' + inds.length + ' ' + inds.map(function (i) { return i.name + '=' + i.count; }).join(' | '));
+  }
   var sideAsked = false;
   function render() {
     if (busy) return; busy = true;
@@ -152,8 +173,8 @@
       var S = session(); if (!S) return;
       // §5.24 (CAPEX_DASHBOARD.md): the Home reads the committed state = base + signed tip; the tip lives in the sidecar, which opens lazily (async). Render now from what is open; when the
       //   sidecar reports ready, draw the Home again over base + tip (a profile with no saved edit draws the same twice; one with edits shows them, as legacy's DB would).
-      if (window.__crud && window.__crud.withSidecar && !sideAsked) { sideAsked = true; window.__crud.withSidecar(function (sdb) { console.log('§DASH-HOME sidecar ready=' + !!sdb + ' (Performance redrawn over base + tip when the tip holds edits)'); if (!sdb) return; var nOps = 0; try { var r = sdb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0"); nOps = r.length ? Number(r[0].values[0][0]) : 0; } catch (e) {} if (!nOps) return;   // no saved edit: base == committed, nothing to redraw
-        setTimeout(perfRedraw, 0); }); }
+      if (window.__crud && window.__crud.withSidecar && !sideAsked) { sideAsked = true; window.__crud.withSidecar(function (sdb) { console.log('§DASH-HOME sidecar ready=' + !!sdb + ' (Performance + docstatus redrawn over base + tip when the tip holds edits)'); if (!sdb) return; var nOps = 0; try { var r = sdb.exec("SELECT COUNT(*) FROM kernel_ops WHERE op_type IN ('CRUD_CREATE','CRUD_UPDATE','CRUD_DELETE') AND undone=0"); nOps = r.length ? Number(r[0].values[0][0]) : 0; } catch (e) {} if (!nOps) return;   // no saved edit: base == committed, nothing to redraw
+        setTimeout(function () { perfRedraw(); dsRedraw(); }, 0); }); }
       var sel = window.DashboardHome.select(q, { client: S.client, role: S.role, user: S.user });
       if (!sel.ok) { console.log('§DASH-HOME INCONCLUSIVE ' + sel.reason); return; }
       css();
@@ -169,13 +190,8 @@
           console.log('§DASH-GADGET performance goals=' + items.length + ' titles=' + JSON.stringify(items.map(function (i) { return i.title; })));
         } else if (g.kind === 'docstatus' && window.DashboardDocStatus) {
           if (!dsOn) { window.DashboardDocStatus.install(window.__idmpDb, q); dsOn = true; }
-          var inds = window.DashboardDocStatus.indicators(q, S), dg = el('div', 'ds-grid');
-          inds.forEach(function (i) {
-            var t = el('div', 'ds'); t.setAttribute('data-ds-id', i.id); t.setAttribute('data-ds-count', i.count == null ? '' : i.count); t.title = i.error ? i.error : i.name;
-            t.appendChild(el('div', 'dn', i.count == null ? '?' : String(i.count))); t.appendChild(el('div', 'dl', i.name));
-            if (i.windowId) t.addEventListener('click', function () { try { var w = q('SELECT Name AS n FROM AD_Window WHERE AD_Window_ID=?', [i.windowId])[0]; if (w && window.IdmpHost && window.IdmpHost.focus) window.IdmpHost.focus('docstatus', { window: w.n }); } catch (e) { console.log('§DASH-HOME zoom failed ' + e.message); } });
-            dg.appendChild(t);
-          });
+          var inds = dsItems(S), dg = dsGrid(inds);
+          box.setAttribute('data-ds', '1');
           body.appendChild(dg); rendered++;
           console.log('§DASH-GADGET docstatus indicators=' + inds.length + ' ' + inds.map(function (i) { return i.name + '=' + i.count; }).join(' | ') + ' (click opens the window WITHOUT the indicator filter: §DASH-UNPORTED zoom-filter)');
         } else if (g.kind === 'html' || g.kind === 'window' || g.kind === 'process') {

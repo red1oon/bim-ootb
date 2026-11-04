@@ -4,10 +4,11 @@
 // Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §26.4: uniCenta's Manager / back office as a Team device of the branch Org. It never rings a sale. It reads the branch-local POS_TillHandoff rows the tills wrote at Close Cash,
 // shows the EODA screen, and makes the ONE send to head office: the tickets' real I_Order / I_Payment rows (flows F3 / B4, authored HERE, the tills hold theirs) + the branch-day statement (POS_BranchDayStatement, flow E1) in one
 // atomic group, then ONE Visit. "Send EODA" needs every till closed or a logged override reason; "Send status now" is the same send marked PARTIAL and exists only as a pressed button (D2): there is no timer that sends.
+// §37 Stock count (POS_PLUGIN_LOCAL_FIRST): an AD HOC, BLIND count of the branch's sales-floor locator keyed here; kept at the branch; only a count the supervisor ticked "Include this count in tonight's EODA" rides send() as I_Inventory rows.
 // Between sends the page PEEKS the branch box with ONE list request per poll period (kds_link.js, §19.5) and Visits only when another device wrote.
 (function () {
   'use strict';
-  var E = null, EC = window.EodaCore, SD = window.SodaCore, S = { cfg: null, set: { tills: [], deposited: {}, batchSeq: {}, overrides: [], pollMs: 30000, sodaFanned: 0, receipts: [] }, day: null, view: null, tills: {}, kid: null, link: null, draws: 0 };
+  var E = null, EC = window.EodaCore, SD = window.SodaCore, S = { cfg: null, set: { tills: [], deposited: {}, batchSeq: {}, overrides: [], pollMs: 30000, sodaFanned: 0, receipts: [], counts: [], draft: [], countSeq: 0 }, day: null, view: null, tills: {}, kid: null, link: null, draws: 0 };
   var $ = function (s) { return document.querySelector(s); };
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
@@ -45,6 +46,60 @@
   function today() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
 
+
+  // ── Stock count (POS_PLUGIN_LOCAL_FIRST §37; uniCenta 5.0 StockManagement/JPanelInventory shape: pick a product, key the units). AD HOC and BLIND (owner D7/D10): this code NEVER reads m_storageonhand and never holds a book quantity.
+  //   draft lines -> "Save count" keeps a count at the branch (S.set.counts, reviewable/printable); only a count saved with the supervisor tick "Include this count in tonight's EODA" (OFF by default) is authored as I_Inventory creates
+  //   INSIDE the one send() group below, never a send of its own. Flow I1 (flows_pos.json) carries Value/UPC/LocatorValue/QtyCount/MovementDate/DocTypeName/Description only: no QtyBook.
+  async function salesLocator() {   // the locator every till of this branch sells from: the default locator of the c_pos warehouse
+    var r = (await rows("SELECT l.value AS value, l.m_warehouse_id AS wh FROM c_pos p JOIN m_locator l ON l.m_warehouse_id=p.m_warehouse_id WHERE p.ad_org_id=" + Number(S.cfg.org) + " AND COALESCE(l.isactive,'Y')='Y' ORDER BY (l.isdefault='Y') DESC, l.m_locator_id LIMIT 1"))[0];
+    return r || null;
+  }
+  async function findProduct(text) {
+    var t = String(text == null ? '' : text).trim(); if (!t) return null;
+    var r = await rows('SELECT m_product_id AS id, value, upc, name FROM m_product WHERE (value=' + q(t) + ' OR upc=' + q(t) + ') AND COALESCE(isactive,\'Y\')=\'Y\' ORDER BY m_product_id LIMIT 1');
+    if (!r.length) r = await rows('SELECT m_product_id AS id, value, upc, name FROM m_product WHERE lower(name)=lower(' + q(t) + ') AND COALESCE(isactive,\'Y\')=\'Y\' ORDER BY m_product_id LIMIT 1');
+    return r[0] || null;
+  }
+  function countAdd(text, qty) {
+    return serial(async function () {
+      var p = await findProduct(text), n = Number(qty);
+      if (!p) { msg('No product matches "' + text + '"'); log('§COUNT_ADD REFUSED unknown product "' + text + '"'); return { refused: 'no-product' }; }
+      if (!(n >= 0) || String(qty).trim() === '' || !isFinite(n)) { msg('Key the counted quantity (0 or more)'); log('§COUNT_ADD REFUSED bad quantity "' + qty + '" for ' + p.value); return { refused: 'bad-qty' }; }
+      var ex = S.set.draft.filter(function (d) { return d.value === p.value; })[0];
+      if (ex) ex.qty = n; else S.set.draft.push({ value: p.value, upc: p.upc || '', name: p.name, qty: n });      // one counted figure per product
+      saveSet(); renderCount(); log('§COUNT_ADD product=' + p.value + ' counted=' + n + ' draftLines=' + S.set.draft.length); return { added: p.value, qty: n };
+    });
+  }
+  function countRemove(value) { S.set.draft = S.set.draft.filter(function (d) { return d.value !== value; }); saveSet(); renderCount(); }
+  // SEAM (§37.4): per-till data is handed in, never fetched here. The §38 branch-relay agent gathers the tills' rows over the branch relay (LAN, never the internet) and calls BranchAdmin.collectTills({ reached: [per-till rows], notReached: [till keys] });
+  //   this file has NO transport. A till that did not answer is "not reached" and was never waited on (D9). Today nothing calls it: reached=0 notReached=0.
+  function collectTills(collected) { S.collected = { reached: (collected && collected.reached) || [], notReached: (collected && collected.notReached) || [] }; return S.collected; }
+  async function gatherTills() { return S.collected || { reached: [], notReached: [] }; }
+  // STUB (§37.4): "is this the flagged main till?" - ONE named function the §38 agent replaces with the real flag read (owner §35.3); true until then, so the screen shows on the branch POS admin.
+  function isMainTill() { return true; }
+  function countSave(include) {
+    return serial(async function () {
+      if (!S.set.draft.length) { msg('Nothing counted yet'); log('§COUNT_SAVE INCONCLUSIVE no draft line: nothing judged'); return { refused: 'empty' }; }
+      var loc = await salesLocator(); if (!loc) { msg('This branch has no sales-floor locator'); log('§COUNT_SAVE REFUSED no c_pos warehouse locator'); return { refused: 'no-locator' }; }
+      var g = await gatherTills(); log('§COUNT_GATHER reached=' + g.reached.length + ' notReached=' + g.notReached.length + ' (the per-till rows are handed in by the branch-relay agent via collectTills; none yet)');
+      var n = ++S.set.countSeq, c = { id: S.cfg.orgValue + '-CNT' + n, day: S.day || today(), locator: loc.value, include: include === undefined ? !!$('#c-include').checked : !!include, sent: false, lines: S.set.draft.map(function (d) { return Object.assign({}, d); }) };
+      S.set.counts.push(c); S.set.draft = []; saveSet(); renderCount();
+      log('§COUNT_SAVE id=' + c.id + ' day=' + c.day + ' locator=' + c.locator + ' lines=' + c.lines.length + ' include=' + (c.include ? 'Y' : 'N') + ' (' + (c.include ? 'rides the next EODA' : 'kept at the branch') + ')');
+      msg('Count ' + c.id + ' saved' + (c.include ? ' (goes with tonight\'s EODA)' : ' (kept at the branch)')); return { id: c.id, include: c.include, lines: c.lines.length };
+    });
+  }
+  // the I_Inventory declarations of the counts the supervisor chose to include: only the columns flow I1 carries (no QtyBook, ever)
+  function countRows(c) {
+    return c.lines.map(function (l) { var f = { ad_client_id: S.cfg.client, ad_org_id: S.cfg.org, isactive: 'Y', i_isimported: 'N', value: l.value, locatorvalue: c.locator, qtycount: l.qty, movementdate: c.day + ' 00:00:00', doctypename: 'Material Physical Inventory', description: c.id };
+      if (l.upc) f.upc = l.upc; return f; });
+  }
+  function renderCount() {
+    var d = $('#c-draft'), sv = $('#c-saved'); if (!d || !sv) return; $('#a-count').hidden = !isMainTill();
+    d.innerHTML = S.set.draft.map(function (x) { return '<tr data-cline="' + esc(x.value) + '"><td>' + esc(x.value) + '</td><td>' + esc(x.name) + '</td><td data-cq>' + x.qty + '</td><td><button data-c-del="' + esc(x.value) + '">Remove</button></td></tr>'; }).join('');
+    sv.innerHTML = S.set.counts.map(function (c) { return '<tr data-count="' + esc(c.id) + '" data-include="' + (c.include ? 1 : 0) + '" data-sent="' + (c.sent ? 1 : 0) + '"><td>' + esc(c.id) + '</td><td>' + esc(c.day) + '</td><td>' + esc(c.locator) + '</td><td>' + c.lines.map(function (l) { return esc(l.value) + ' x ' + l.qty; }).join(', ') + '</td><td>' + (c.include ? (c.sent ? 'sent with EODA' : 'goes with the next EODA') : 'kept at the branch') + '</td></tr>'; }).join('');
+    /*BOOK-ANCHOR*/
+  }
+
   // ── SODA (POS_PLUGIN_LOCAL_FIRST §28): the batch head office wrote for THIS branch (pos_sodaref, hub lane, DOWN) ──
   // fan(): re-emit the batch rows not yet passed on to the tills on the branch lane (pos_tillref) and make ONE Visit; a till applies only what arrived (till.js applySoda).
   // receiveStock(): the branch clerk's receipt of the in-transit movements (Move Confirmation, window 333): Confirmed / Scrapped per line (default Confirmed = Target). It is KEPT here, authors NO op, and leaves as the executor's
@@ -56,9 +111,9 @@
     return { ref: ref, fresh: ref.filter(function (r) { return Number(r.seq) > S.set.sodaFanned; }), confirms: pend };
   }
   async function renderSoda() {
-    if (!SD) return null; var s = await sodaRead(), counts = { P: 0, R: 0, T: 0 }; s.fresh.forEach(function (r) { if (counts[r.kind] != null) counts[r.kind]++; });
+    if (!SD) return null; var s = await sodaRead(), counts = { P: 0, R: 0, T: 0, O: 0 }; s.fresh.forEach(function (r) { if (counts[r.kind] != null) counts[r.kind]++; });
     var batches = {}; s.fresh.forEach(function (r) { batches[r.batchid] = 1; });
-    $('#s-state').textContent = Object.keys(batches).length ? Object.keys(batches).length + ' batch(es): ' + counts.P + ' prices, ' + counts.R + ' products, ' + counts.T + ' taxes' : 'no new batch';
+    $('#s-state').textContent = Object.keys(batches).length ? Object.keys(batches).length + ' batch(es): ' + counts.P + ' prices, ' + counts.R + ' products, ' + counts.T + ' taxes' + (counts.O ? ', the company details' : '') : 'no new batch';
     $('#a-soda-fan').disabled = !s.fresh.length; $('#a-soda-recv').disabled = !s.confirms.length; $('#s-recv').textContent = s.confirms.length ? s.confirms.length + ' movement(s) to receive' : (S.set.receipts.length ? S.set.receipts.length + ' receipt(s) go with the next EODA' : '');
     log('§SODA_SCREEN org=' + S.cfg.org + ' freshRows=' + s.fresh.length + ' prices=' + counts.P + ' products=' + counts.R + ' taxes=' + counts.T + ' toReceive=' + s.confirms.length + ' receiptsQueued=' + S.set.receipts.length);
     return s;
@@ -134,13 +189,16 @@
       st.forEach(function (r) { ops.push(create('pos_branchdaystatement', r)); });
       var rcpt = S.set.receipts.filter(function (x) { return !x.sent; }), nR = 0;     // §28.2 P3: the executor's outcome on the confirm's own rows goes up INSIDE this batch, never as a send of its own
       for (var ri = 0; ri < rcpt.length; ri++) { var ro = await receiptOps(rcpt[ri]); ro.forEach(function (o) { ops.push(o); nR++; }); log('§SODA_RECEIPT_OPS confirm=' + rcpt[ri].confirm + ' ops=' + ro.length + ' tables=' + ro.map(function (o) { return o.table + ':' + Object.keys(o.changes).join('+'); }).join(',')); }
+      var cnts = S.set.counts.filter(function (c) { return c.include && !c.sent; }), nC = 0;     // §37: ONLY the counts the supervisor chose to include ride this ONE send (never an extra send); the others stay at the branch
+      cnts.forEach(function (c) { countRows(c).forEach(function (r) { ops.push(create('i_inventory', r)); nC++; }); });
+      if (S.set.counts.length) log('§COUNT_EODA included=' + cnts.length + ' rows=' + nC + ' keptAtBranch=' + S.set.counts.filter(function (c) { return !c.include && !c.sent; }).length);
       var res = await depositGroup(ops);
       if (!res || res.committed !== true) { msg('Could not assemble the batch: ' + (res && res.reason)); log('§EODA_SEND FAIL ' + (res && res.reason)); return { failed: res && res.reason }; }
-      marks.forEach(function (k) { S.set.deposited[k] = batchId; }); S.set.batchSeq[day] = seq; rcpt.forEach(function (x) { x.sent = true; });
+      marks.forEach(function (k) { S.set.deposited[k] = batchId; }); S.set.batchSeq[day] = seq; rcpt.forEach(function (x) { x.sent = true; }); cnts.forEach(function (c) { c.sent = true; }); renderCount();
       if (!partial && !v.allClosed) S.set.overrides.push({ day: day, batch: batchId, reason: ov, open: v.tills.filter(function (t) { return !t.closed; }).map(function (t) { return t.tillKey; }) });
       saveSet();
       if (!partial && !v.allClosed) log('§EODA_OVERRIDE batch=' + batchId + ' day=' + day + ' open=' + v.tills.filter(function (t) { return !t.closed; }).map(function (t) { return t.tillKey; }).join(',') + ' reason=' + JSON.stringify(ov));
-      log('§EODA_SEND batch=' + batchId + ' day=' + day + ' partial=' + (partial ? 'Y' : 'N') + ' tills=' + closed.length + ' tickets=' + marks.length + ' i_order=' + nO + ' i_payment=' + nP + ' statement=' + st.length + ' receipts=' + nR + ' ops=' + ops.length + ' gid=' + res.gid);
+      log('§EODA_SEND batch=' + batchId + ' day=' + day + ' partial=' + (partial ? 'Y' : 'N') + ' tills=' + closed.length + ' tickets=' + marks.length + ' i_order=' + nO + ' i_payment=' + nP + ' statement=' + st.length + ' receipts=' + nR + ' counts=' + nC + ' ops=' + ops.length + ' gid=' + res.gid);
       var vis = await E.TeamSync.visit();       // ONE Visit carries the whole batch to head office
       log('§EODA_SEND_VISIT batch=' + batchId + ' sent=' + (vis && vis.rep ? vis.rep.sent : 'none'));
       msg((partial ? 'Status ' : 'EODA ') + batchId + ' sent: ' + marks.length + ' tickets'); await render();
@@ -152,8 +210,9 @@
     document.addEventListener('input', function (ev) { var r = ev.target.closest && ev.target.closest('table.rc tbody tr'); if (r) recvDiff(r); });
     document.addEventListener('click', function (ev) {
       var b = ev.target.closest && ev.target.closest('button'); if (!b || b.disabled) return;
-      if (b.id === 'a-send') send(false); else if (b.id === 'a-status') send(true); else if (b.id === 'a-refresh') refresh(); else if (b.id === 'a-soda-fan') fan(); else if (b.id === 'a-soda-recv') recvPanel(); else if (b.id === 'rc-confirm') { var ln = recvCollect(); $('#a-recv').hidden = true; receiveStock(ln); } else if (b.id === 'rc-cancel') $('#a-recv').hidden = true;
+      if (b.id === 'c-add') countAdd($('#c-find').value, $('#c-qty').value).then(function () { $('#c-find').value = ''; $('#c-qty').value = ''; $('#c-find').focus(); }); else if (b.id === 'c-save') countSave(); else if (b.id === 'c-print') window.print(); else if (b.hasAttribute('data-c-del')) countRemove(b.getAttribute('data-c-del')); else if (b.id === 'a-send') send(false); else if (b.id === 'a-status') send(true); else if (b.id === 'a-refresh') refresh(); else if (b.id === 'a-soda-fan') fan(); else if (b.id === 'a-soda-recv') recvPanel(); else if (b.id === 'rc-confirm') { var ln = recvCollect(); $('#a-recv').hidden = true; receiveStock(ln); } else if (b.id === 'rc-cancel') $('#a-recv').hidden = true;
     });
+    $('#c-find').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); $('#c-qty').focus(); } }); $('#c-qty').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); $('#c-add').click(); } });   // a scanner types the code then Enter
     $('#a-day').addEventListener('change', function () { S.day = this.value; render(); });
     $('#a-override').addEventListener('input', function () { render(); });
     $('#a-tills').addEventListener('change', function () { S.set.tills = this.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean); saveSet(); render(); });
@@ -180,8 +239,8 @@
     $('#a-org').textContent = 'Org ' + S.cfg.orgValue; $('#a-tills').value = S.set.tills.join(', ');
     bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#a-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
-    await render(); await renderSoda(); startLink();
-    window.BranchAdmin = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
+    await render(); await renderSoda(); renderCount(); startLink();
+    window.BranchAdmin = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, countAdd: countAdd, countSave: countSave, countRemove: countRemove, gatherTills: gatherTills, collectTills: collectTills, isMainTill: isMainTill, salesLocator: salesLocator, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§EODA_BOOT admin=' + S.cfg.key + ' org=' + S.cfg.org + ' engine_ready_ms=' + ms + ' heap_mb=' + heap + ' poll_ms=' + S.set.pollMs);
   }
