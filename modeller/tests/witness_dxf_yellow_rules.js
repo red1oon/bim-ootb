@@ -440,6 +440,7 @@ console.log('§YR39 ' + JSON.stringify(gd));
 ok('YR39a a gap whose words match a sheet held: held true', gRow('GAP:door_tag_no_row').count === 2 && gRow('GAP:door_tag_no_row').sheets.length === 1 && gRow('GAP:door_tag_no_row').sheets[0].no === 'A-500' && gRow('GAP:door_tag_no_row').sheets[0].held === true);
 ok('YR39b a limit whose words match a missing sheet: named, held false', gRow('limit:stair_short').count === 1 && gRow('limit:stair_short').sheets[0].no === 'A-502' && gRow('limit:stair_short').sheets[0].held === false);
 ok('YR39c words that match nothing: the need stays, no sheet named', gRow('GAP:wall_curved').count === 1 && gRow('GAP:wall_curved').sheets.length === 0);
+ok('YR39k a pad whose thickness is the default counts as the limit, a raft does not', GG.countOf({ els: [{ class: 'IfcFooting', thick_source: 'default' }, { class: 'IfcFooting' }, { class: 'IfcSlab' }] }, 'limit:pad_thickness') === 1);
 ok('YR39d a gap with no table row and a need with count 0 make no row', !gRow('GAP:other') && gd.rows.length === 4);
 ok('YR39e a word is whole: DOOR SCHEDULE does not match OUTDOOR SCHEDULES', GG.guide(gres, { rows: [{ no: 'A-9', base: 'A-9', title: 'OUTDOOR SCHEDULES' }], registers: [{}] }, {}, needs).rows.find(r => r.need === 'GAP:door_tag_no_row').sheets.length === 0);
 const gNo = GG.guide(gres, { rows: [], registers: [] }, {}, needs);
