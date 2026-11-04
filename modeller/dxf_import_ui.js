@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '11';
+  var V = '14';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -384,6 +384,23 @@
     var p = document.getElementById('dxf-panel'), on = !!(p && p.style.display !== 'none' && (state.slim || state.playSlim));
     document.body.classList.toggle('dxf-slim', on); if (p) p.classList.toggle('dxf-slimmed', on);
     var f = document.getElementById('dxf-fold'); if (f) { f.innerHTML = state.slim ? ICON.foldR : ICON.foldL; f.title = state.slim ? 'Unfold the panel' : 'Fold the panel away: more canvas'; }
+  }
+  // ---- §L32 one panel, one pill: #b-2d shows or hides the panels, X = the pill off, re-opening continues (no file read) ----
+  function paint2d() { var b = document.getElementById('b-2d'); if (!b) return; var has = !!(state.sheets && state.panel), d = has ? '' : 'none'; if (b.style.display !== d) b.style.display = d; b.classList.toggle('on', has && !state.closed); }
+  function setShown(on) {
+    var p = state.panel, ME = window.DxfMetaEditor, mp = ME && ME.state && ME.state.panel; if (!p || !state.sheets) return;
+    if (state.playSlim) { console.log(TAG + ' panel toggle ignored: the Arrange play holds it'); return; }
+    if (!on) { state.metaWas = !!(mp && mp.style.display !== 'none'); if (state.metaWas) ME.close(); p.style.display = 'none'; state.closed = true; gridFollow(null); }
+    else {
+      state.closed = false; p.style.display = 'block'; if (state.metaWas && ME) ME.show();
+      if (state.group && window.THREE) { var gb = new THREE.Box3().setFromObject(state.group); if (!gb.isEmpty()) gridFollow([[gb.min.x, gb.min.y, gb.min.z], [gb.max.x, gb.max.y, gb.max.z]]); }
+    }
+    applySlim(); paint2d(); console.log(TAG + ' panel shown=' + !!on + ' metadata=' + !!(mp && mp.style.display !== 'none') + ' sheets=' + state.sheets.length);
+  }
+  function toggleMeta() {
+    var ME = window.DxfMetaEditor, mp = ME && ME.state && ME.state.panel; if (!mp || !state.sheets || state.playSlim) return;
+    if (state.closed) { state.metaWas = true; setShown(true); return; }
+    if (mp.style.display !== 'none') ME.close(); else ME.show();
   }
   // ---- §D42 fill the canvas, the grid under the build ----
   function viewBoxOf(items, pick) { return boxOf(items.filter(function (o) { return o.view; }).map(pick)); }
@@ -837,8 +854,9 @@
         : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
-    p.style.display = 'block';
-    document.getElementById('dxf-close').onclick = function () { p.style.display = 'none'; applySlim(); gridFollow(null); };
+    p.style.display = state.closed ? 'none' : 'block';   // §L32 a re-render never pops a closed panel open
+    paint2d();
+    document.getElementById('dxf-close').onclick = function () { setShown(false); };
     document.getElementById('dxf-fold').onclick = function () { state.slim = !state.slim; applySlim(); };
     document.getElementById('dxf-convert').onclick = function () { convertGuarded(); };
     var cb = document.getElementById('dxf-complete');
@@ -864,7 +882,7 @@
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     state.sheets = window.Dxf2BimImport.readSheets(list, { prepChoices: (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {} });
-    state.last = null; state.linesOn = true; state.setOverride = null;
+    state.last = null; state.linesOn = true; state.setOverride = null; state.closed = false; state.metaWas = false;
     runPrep();
     await convertGate();
     state.sheets.forEach(function (s) {
@@ -905,9 +923,13 @@
     var bad = T.skipped.filter(function (x) { return x.refuse; });
     if (bad.length) { console.log(TAGC + ' REFUSED body ' + JSON.stringify(bad)); status('Convert refused: an opening body does not add up (' + bad.length + ')'); return { refused: bad }; }
     T.skipped.forEach(function (x) { console.log(TAGC + ' void skipped storey=' + x.storey + ' openings=' + x.openings.join('+') + ' reason=' + x.reason); });
-    var Lb = window.Bonsai.library, O = window.Bonsai.oplog;
-    Lb.registerRealGeometry(T.assets.map(function (a) { return { hash: a.hash, v: a.v, f: a.f, bbox: a.bbox, anchorOffset: a.anchorOffset, uncut: a.uncut }; }));
-    var db = await O._ensureDb();
+    var Lb = window.Bonsai.library, O = window.Bonsai.oplog, db = await O._ensureDb();
+    // §L35 one set, one building: an element already active in the model is not built a second time (a different set still adds to the model)
+    var liveR = db.exec('SELECT output_guid FROM kernel_ops WHERE undone=0 AND output_guid IS NOT NULL'), live = {}; if (liveR.length) liveR[0].values.forEach(function (v) { live[v[0]] = 1; });
+    var again = T.inserts.filter(function (o) { return live[o.outputGuid]; }).length;
+    if (again) { console.log(TAGC + ' REFUSED already in the model: ' + again + ' of ' + T.inserts.length); status('Convert refused: ' + again + ' of ' + T.inserts.length + ' elements of this set are already in the model. Press Ctrl+Z to remove the earlier Convert, then Convert again.'); return { refused: [{ sheet: '(set)', reason: 'already in the model', count: again }] }; }
+    var geomAssets = T.assets.map(function (a) { return { hash: a.hash, v: a.v, f: a.f, bbox: a.bbox, anchorOffset: a.anchorOffset, uncut: a.uncut }; });
+    Lb.registerRealGeometry(geomAssets); O.storeRealGeometry(geomAssets);
     var mr = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'), nextId = (mr.length ? Number(mr[0].values[0][0]) : 0) + 1;
     var ops = T.inserts.map(function (o) { return { op_type: o.op_type, params: o.params, outputGuid: o.outputGuid }; })
       .concat(T.cuts.map(function (c) { var sl = c.params.slide, P = Object.assign({}, c.params, { parent: nextId + c.params.parent });
@@ -1026,7 +1048,7 @@
         return L;
       }
       console.log(TAGC + ' no local library subset (' + LIB_URL + ' HTTP ' + r.status + ') → OCI');
-    } catch (e) { console.error('§DXF-LIB source=none reason=local subset unreadable: ' + (e && e.message)); return null; }
+    } catch (e) { console.log(TAGC + ' no local library subset (' + (e && e.message) + ') → OCI or its cached copy (§L33)'); }
     try {
       var t0 = performance.now();
       var o = await window.Dxf2BimImport.loadOci(sheets, { base: OCI_LIB, fetchJson: fetchJson, memo: _ociMemo, convertOpts: copts || { set: state.setOverride } });
@@ -1093,6 +1115,7 @@
 
   // T13.5: the building type the export writes: only a type the drawing / sheet / editor stated (never the registry default), else null
   function statedBuildingType() { var R = state.gate && state.gate.R, row = R && (R.defaults_table || []).filter(function (r) { return r.key === 'building.type'; })[0]; return row && /^(file|sheet|choice)$/.test(row.source) ? String(row.value) : null; }
-  window.DxfImportUI = { notesOf: notesOf, statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  { var b2d = document.getElementById('b-2d'); if (b2d) b2d.onclick = function (e) { e.stopPropagation(); setShown(!!state.closed); }; }
+  window.DxfImportUI = { togglePanel: function () { setShown(!!state.closed); }, toggleMeta: toggleMeta, notesOf: notesOf, statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

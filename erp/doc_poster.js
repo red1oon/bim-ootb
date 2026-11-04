@@ -4,12 +4,11 @@
 /**
  * doc_poster.js — reusable per-document GL derivation (W-DOC-POSTER).
  *
- * GAP-A FIX (POSTING_PREVIEW_PANEL.md): the per-document posting manifest that turns a completed
- * document into journal lines lived ONLY inside the FOLD witnesses (poc_fold_complete.deriveInvoice,
- * duplicated in poc_post_harden.derive) — never a shipped verb. This module EXTRACTS that derivation
- * VERBATIM so the live Posting-Preview seam consumes the SAME logic the FOLD oracle proved — no fork,
- * no re-derive. Faithfulness is proven by scripts/poc_doc_poster.js (== real fact_acct(318), and ==
- * poc_fold_complete's own agg).
+ * SCOPE NOW (bim-compiler prompts/SQLiteIDEMPIERE.md §POSTING-PARITY step 5, 2026-11-04): the REAL poster (model_post.js) owns every document it
+ * has a Doc class for — C_Invoice, M_InOut, M_Movement, C_AllocationHdr, C_BankStatement, C_Payment, M_MatchInv/PO, GL_Journal, M_Inventory —
+ * for Complete AND the Posting-Preview (W-PREVIEW-IS-POSTING); their folds here are retired. What stays: derivePostings for the tables
+ * model_post has no class for (A_Asset_*, C_ProjectIssue, M_Requisition, C_Cash, a bundle's derive-only class) and the draft-order
+ * projection; the cost-engine verbs (costQtyUpdates & co.); the posting-class registry model_post and the plugins consult.
  *
  * PURE + db-agnostic: `db` is ANY handle exposing `.prepare(sql).get(params)` / `.all(params)`
  *   (better-sqlite3 native in node; the sql.js facade in erp_preview.js in the browser). `R` is the
@@ -41,117 +40,11 @@ function lc(row) {
 function getRow(db, sql, params) { return lc(db.prepare(sql).get(params)); }
 function allRows(db, sql, params) { return (db.prepare(sql).all(params) || []).map(lc); }
 
-// ── INVOICE sales manifest — EXTRACTED VERBATIM from poc_fold_complete.deriveInvoice (W-FOLD-COMPLETE) ──
-// DR {BPartner.Receivable}=grandtotal / CR {Product.Revenue}=linenetamt per line / CR {Tax.Due}=taxamt.
-// §SD16: is this invoice an AR Credit Memo? The invoice row's document type (target type while drafting, C_DocType_ID once completed) has DocBaseType ARC. No doctype column / no row => false (ARI as before).
-function _isARCredit(db, invId) {
-  // a DRAFT invoice has C_DocType_ID=0 and its type in C_DocTypeTarget_ID (MInvoice.beforeSave / completeIt sets C_DocType_ID from the target): COALESCE(NULLIF(C_DocType_ID,0), C_DocTypeTarget_ID)
-  var hasT = _hasCol(db, 'c_invoice', 'c_doctype_id'), hasG = _hasCol(db, 'c_invoice', 'c_doctypetarget_id');
-  var col = hasT && hasG ? 'COALESCE(NULLIF(i.c_doctype_id,0), i.c_doctypetarget_id)' : hasT ? 'i.c_doctype_id' : hasG ? 'i.c_doctypetarget_id' : null;
-  if (!col || !_hasCol(db, 'c_doctype', 'docbasetype')) return false;   // a posting db without the document-type table (older handover seeds) is ARI as before
-  var r = getRow(db, 'SELECT d.docbasetype AS t FROM c_invoice i JOIN c_doctype d ON d.c_doctype_id=' + col + ' WHERE i.c_invoice_id=?', num(invId));
-  return !!(r && r.t === 'ARC');
-}
-function deriveInvoice(db, R, invId, schema) {
-  var hdr = getRow(db, 'SELECT c_invoice_id,c_bpartner_id,grandtotal,issotrx FROM c_invoice WHERE c_invoice_id=?', num(invId));
-  if (!hdr) return null;
-  if (String(hdr.issotrx) === 'N' && _apInvoiceBuilt(db, invId)) return deriveAPInvoice(db, R, invId, schema);   // §65.2 (F25)
-  var lines = allRows(db, 'SELECT m_product_id,linenetamt FROM c_invoiceline WHERE c_invoice_id=?', num(invId));
-  var taxes = allRows(db, 'SELECT c_tax_id,taxamt FROM c_invoicetax WHERE c_invoice_id=?', num(invId));
-  var by = {}, absent = [];
-  function add(side, el, amt) {
-    var k = el.id;
-    if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 };
-    if (side === 'DR') by[k].dr += cents(amt); else by[k].cr += cents(amt);
-    _part(by[k], side, cents(amt));   // §65.4 (F27): each fact line is converted on its own (FactLine.convert)
-  }
-  function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
-  // §SD16 (R-CM4): ARC = the mirror of ARI — Doc_Invoice.createFacts DOCTYPE_ARCredit (Doc_Invoice.java:522-575): Dr TaxDue per tax, Dr Revenue per line, Cr Receivable grand total.
-  var cm = _isARCredit(db, invId), S1 = cm ? 'CR' : 'DR', S2 = cm ? 'DR' : 'CR';
-  var rcv = el(R.resolve(db, '{BPartner.Receivable}', num(hdr.c_bpartner_id), schema));
-  if (rcv) add(S1, rcv, hdr.grandtotal);
-  lines.forEach(function (l) { var e = el(R.resolve(db, '{Product.Revenue}', num(l.m_product_id), schema)); if (e) add(S2, e, l.linenetamt); });
-  taxes.forEach(function (t) { var e = el(R.resolve(db, '{Tax.Due}', num(t.c_tax_id), schema)); if (e) add(S2, e, t.taxamt); });
-  convertToSchema(db, R, by, absent, invId, schema);
-  return { by: by, absent: absent };
-}
-
-// ── AP INVOICE (API) — §65.2 (F25), Doc_Invoice.createFacts DOCTYPE_APInvoice (Doc_Invoice.java:605-760) ─────────────────────────────────────────────────────────
-// Dr per tax {Tax.Credit} (APTaxType credit; a sales-tax/expense tax is not ported), Dr per line {Product.InventoryClearing} for an item / {Product.Expense} otherwise (amount = LineNetAmt), Cr {Vendor.V_Liability}
-// = GrandTotal (all items, or PostServices off — the services-liability split is deprecated, :733-737); charges, landed cost, trade discount, credit memos (APC) and reversals named absent.
-// Built only when the invoice row carries its C_DocType_ID and that doctype is API (older posting dbs keep the previous behaviour).
-function _apInvoiceBuilt(db, invId) {
-  if (!_hasCol(db, 'c_invoice', 'c_doctype_id')) return false;
-  var r = getRow(db, 'SELECT d.docbasetype AS t FROM c_invoice i JOIN c_doctype d ON d.c_doctype_id=i.c_doctype_id WHERE i.c_invoice_id=?', num(invId));
-  return !!(r && r.t === 'API');
-}
-function deriveAPInvoice(db, R, invId, schema) {
-  var hdr = getRow(db, 'SELECT * FROM c_invoice WHERE c_invoice_id=?', num(invId));
-  var by = {}, absent = [];
-  function add(side, el, amt) { if (!el) return; var k = el.id; if (!by[k]) by[k] = { account_id: el.id, value: el.value, name: el.name, dr: 0, cr: 0 }; if (side === 'DR') by[k].dr += cents(amt); else by[k].cr += cents(amt); _part(by[k], side, cents(amt)); }
-  function el(res) { if (res.acct == null || !res.element) { absent.push(res.token); return null; } return res.element; }
-  if (num(hdr.reversal_id)) { absent.push('AP invoice reversal not ported'); return { by: by, absent: absent }; }
-  if (Number(hdr.chargeamt || 0) !== 0) { absent.push('AP invoice header charge not ported'); return { by: by, absent: absent }; }
-  allRows(db, 'SELECT c_tax_id, taxamt FROM c_invoicetax WHERE c_invoice_id=?', num(invId)).forEach(function (t) { if (Number(t.taxamt) !== 0) add('DR', el(R.resolve(db, '{Tax.Credit}', num(t.c_tax_id), schema)), t.taxamt); });
-  allRows(db, 'SELECT m_product_id, linenetamt' + (_hasCol(db, 'c_invoiceline', 'c_charge_id') ? ', c_charge_id' : '') + ' FROM c_invoiceline WHERE c_invoice_id=?', num(invId)).forEach(function (l) {
-    if (num(l.c_charge_id)) { absent.push('AP invoice charge line not ported'); return; }
-    var p = _hasCol(db, 'm_product', 'producttype') ? getRow(db, 'SELECT producttype FROM m_product WHERE m_product_id=?', num(l.m_product_id)) : null;
-    if (!p) { absent.push('m_product.producttype#' + l.m_product_id); return; }
-    if (p.producttype !== 'I') { absent.push('AP invoice service/expense line not ported'); return; }
-    add('DR', el(R.resolve(db, '{Product.InventoryClearing}', num(l.m_product_id), schema)), l.linenetamt);
-  });
-  add('CR', el(R.resolve(db, '{Vendor.V_Liability}', num(hdr.c_bpartner_id), schema)), hdr.grandtotal);
-  convertToSchema(db, R, by, absent, invId, schema);
-  return { by: by, absent: absent };
-}
-
 // §46 (F12): FactLine.convert (FactLine.java:819-900) — each line's Dr/Cr × MConversionRate.getRate (MConversionRate.java:237-252) rounded HALF_UP to the schema currency's
 // StdPrecision (:126-147). A document without currency is posted in the schema currency (:821-823) — so nothing happens unless the invoice row carries c_currency_id.
 // Unbalanced after conversion ⇒ legacy Fact.balanceAccounting (Fact.java:548-630) — NOT ported: reported absent, never invented.
 function _bigDec(v) { var t = String(v).trim(); if (/e/i.test(t)) t = Number(t).toFixed(20).replace(/0+$/, '').replace(/\.$/, ''); var neg = t[0] === '-'; if (neg) t = t.slice(1); var p = t.split('.'), f = p[1] || ''; return { n: BigInt((neg ? '-' : '') + (p[0] || '0') + f), k: f.length }; }
 function _rhuB(n, d) { var neg = n < 0n, a = neg ? -n : n, q = a / d; if ((a % d) * 2n >= d) q += 1n; return neg ? -q : q; }
-// §65.4 (F27): FactLine.convert works per FACT LINE (FactLine.java:819-900); the fold keeps each line's source amount next to the per-account sum so a second-currency schema
-// converts line by line (legacy) instead of converting the sum (rounding differs on multi-line documents — found by the captured-books oracle, invoices 103 / 106 schema 200000).
-function _part(acc, side, amt) { (acc.parts || (acc.parts = [])).push({ side: side, amt: amt }); }
-function convertToSchema(db, R, by, absent, invId, schema) {   // R = the post resolver the host handed to derivePostings (browser: window.PostResolver — no require there)
-  var table = 'c_invoice';   // the invoice fold is the only caller left (§POSTING-PARITY 5: payment / allocation folds retired - the real poster owns them)
-  // table/column-guarded like every §29-§38 addition: a posting db without c_currency/c_conversion_rate/c_acctschema keeps the old (unconverted) fold; the
-  // c_currency table for the shared posting db ships as build/erp/patches/glassbowl_data.db.sql (patch text; host loader = open item, spec §46.1)
-  if (!_hasCol(db, table, 'c_currency_id') || !_hasCol(db, 'c_acctschema', 'c_currency_id') || !_hasCol(db, 'c_currency', 'stdprecision') || !_hasCol(db, 'c_conversion_rate', 'multiplyrate')) return;
-  var ctCol = _hasCol(db, table, 'c_conversiontype_id') ? 'c_conversiontype_id' : 'NULL AS c_conversiontype_id';
-  var h = getRow(db, 'SELECT c_currency_id, dateacct, ' + ctCol + ', ad_client_id, ad_org_id FROM ' + table + ' WHERE ' + table + '_id=?', num(invId));
-  var sc = getRow(db, 'SELECT c_currency_id FROM c_acctschema WHERE c_acctschema_id=?', num(schema));
-  if (!h || h.c_currency_id == null || !sc) return;
-  var same = num(h.c_currency_id) === num(sc.c_currency_id);
-  if (same) return;
-  var rate = null, cr = getRow(db, 'SELECT stdprecision FROM c_currency WHERE c_currency_id=?', num(sc.c_currency_id)), prec = cr ? num(cr.stdprecision) : null;
-  if (!same) {
-    rate = _rateFor(db, h.c_currency_id, sc.c_currency_id, h.dateacct, h.c_conversiontype_id, h.ad_client_id, h.ad_org_id);
-    if (rate == null) { absent.push('NoCurrencyConversion ' + h.c_currency_id + '->' + sc.c_currency_id + ' type=' + (num(h.c_conversiontype_id) || 'default') + ' date=' + String(h.dateacct || '').slice(0, 10)); return; }
-    if (prec == null) { absent.push('NoCurrencyPrecision ' + sc.c_currency_id); return; }
-    if (prec !== 2) { absent.push('currency precision ' + prec + ' not ported'); return; }
-  }
-  var conv = function (cents) { return same ? cents : _mulCents(cents, rate); };   // cents × rate, HALF_UP at precision 2
-  if (!same) Object.keys(by).forEach(function (k) {
-    var x = by[k];
-    if (x.parts && x.parts.length) { var d0 = 0, c0 = 0; x.parts.forEach(function (p) { if (p.side === 'DR') d0 += conv(p.amt); else c0 += conv(p.amt); }); x.dr = d0; x.cr = c0; }   // §65.4 (F27) per fact line
-    else { x.dr = conv(x.dr); x.cr = conv(x.cr); }
-  });
-  var dr = 0, crs = 0; Object.keys(by).forEach(function (k) { dr += by[k].dr; crs += by[k].cr; });
-  if (dr !== crs) balanceAccounting(db, R, by, absent, schema, dr - crs);
-}
-// MConversionRate.getRate (MConversionRate.java:237-252): active row of the conversion type (null/0 = the default type) valid on the date, client 0 or the document's, org 0 or the document's;
-// ORDER BY client DESC, org DESC, ValidFrom DESC (pg currencyRate()). → the multiply rate, or null when none.
-function _rateFor(db, curFrom, curTo, dateAcct, convType, clientId, orgId) {
-  var ct = num(convType);
-  if (!ct) { var dt = getRow(db, "SELECT c_conversiontype_id FROM c_conversiontype WHERE isdefault='Y' ORDER BY c_conversiontype_id", []); ct = dt ? num(dt.c_conversiontype_id) : 0; }
-  var date = String(dateAcct || '').slice(0, 10);
-  var rates = allRows(db, "SELECT multiplyrate, validfrom, validto, ad_client_id, ad_org_id FROM c_conversion_rate WHERE c_currency_id=? AND c_currency_id_to=? AND c_conversiontype_id=? AND isactive='Y'", [num(curFrom), num(curTo), ct])
-    .filter(function (r) { return String(r.validfrom).slice(0, 10) <= date && date <= String(r.validto).slice(0, 10) && [0, num(clientId || 0)].indexOf(num(r.ad_client_id)) >= 0 && [0, num(orgId || 0)].indexOf(num(r.ad_org_id || 0)) >= 0; })
-    .sort(function (a, b) { return (num(b.ad_client_id) - num(a.ad_client_id)) || (num(b.ad_org_id || 0) - num(a.ad_org_id || 0)) || String(b.validfrom).localeCompare(String(a.validfrom)); });
-  return rates.length ? rates[0].multiplyrate : null;
-}
-function _mulCents(cents, rate) { var r = _bigDec(rate); return Number(_rhuB(BigInt(cents) * r.n, 10n ** BigInt(r.k))); }
 // §68 (F32): MSysConfig.getValue(Name, default, AD_Client_ID, AD_Org_ID) (MSysConfig.java:595-640 @{u}) over the MIRRORED ad_sysconfig (state-synced from legacy, dict_spec):
 // WHERE Name=? AND AD_Client_ID IN (0,?) AND AD_Org_ID IN (0,?) AND IsActive='Y' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC; no table / no row ⇒ the caller's LEGACY default.
 // Column-guarded: a posting db that has not been synced yet (name/value/ad_client_id only) is read as it is (no org / active filter it cannot express).
@@ -1054,10 +947,9 @@ function derivePostings(db, recordRef, schema, R) {
   // §P9 — the GL_Category is resolved from the document ACTUALLY POSTED, so an order that folds through its
   //   generated invoice takes the INVOICE's doctype (that is the Doc iDempiere builds), not the order's.
   var glOf = function (t, i) { return glCategoryFor(db, t, i); };
-  if (table === 'C_Invoice') return finish(deriveInvoice(db, R, id, schema), 'invoice', glOf('c_invoice', id));
   if (table === 'C_Order') {
     var invId = invoiceForOrder(db, id);
-    if (invId != null) return finish(deriveInvoice(db, R, invId, schema), 'invoice', glOf('c_invoice', invId));
+    if (invId != null) return { lines: [], balanced: false, sumDr: 0, sumCr: 0, absent: [], basis: 'none' };   // the order's invoice posts through the REAL poster (erp_preview routes it; §POSTING-PARITY 5g)
     return finish(deriveOrder(db, R, id, schema), 'order', glOf('c_order', id));   // draft projection — no oracle
   }
   // B-3 0-seed classes (W-POST-B3 §W-3) — these read per-asset/project acct config, not R tokens
@@ -1077,7 +969,7 @@ function derivePostings(db, recordRef, schema, R) {
 
 function _R() { try { return (typeof require !== 'undefined') ? require('./post_resolver') : null; } catch (e) { return null; } }
 
-var _api = { legacyDocClassExists: legacyDocClassExists, legacyDocClassOf: legacyDocClassOf, registerDocClass: registerDocClass, unregisterDocClass: unregisterDocClass, removeDocClassOwner: removeDocClassOwner, docClassFor: docClassFor, describeDocClasses: describeDocClasses, derivePostings: derivePostings, deriveInvoice: deriveInvoice, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
+var _api = { legacyDocClassExists: legacyDocClassExists, legacyDocClassOf: legacyDocClassOf, registerDocClass: registerDocClass, unregisterDocClass: unregisterDocClass, removeDocClassOwner: removeDocClassOwner, docClassFor: docClassFor, describeDocClasses: describeDocClasses, derivePostings: derivePostings, costQtyUpdates: costQtyUpdates, costQtyUpdatesFor: costQtyUpdatesFor, deriveOrder: deriveOrder, invoiceForOrder: invoiceForOrder,
              glCategoryFor: glCategoryFor, fxRate: fxRate, costUpdatesForMatchPO: costUpdatesForMatchPO, costHistoryAt: costHistoryAt, costBase: _costBase, resetSchemaCache: resetSchemaCache, applyCostUpdate: applyCostUpdate, costBackDateGap: costBackDateGap, sysConfig: sysConfig, sysConfigBool: sysConfigBool, costAt: costAt, immediatePostingRefusal: immediatePostingRefusal, isClientAccountingImmediate: isClientAccountingImmediate };   // §P9 (W-POST-GLCATEGORY): the Doc.setDocumentType GL_Category chain, exposed for the witness; fxRate (MConversionRate.getRate shape) for the FA host, spec §63
 // UMD tail — node (require) + browser live host (window.DocPoster). erp_preview.js injects window.PostResolver as R.
 // Internal helpers for witnesses, exposed on the Node module ONLY (never on window.DocPoster): the public _api is not widened.

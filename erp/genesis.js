@@ -18,7 +18,9 @@
  *
  *   ACCEPTANCE (W-GENESIS-MINIMAL): a born tenant can CREATE -> COMPLETE -> POST one sales invoice whose GL ==
  *   the iDempiere oracle to the cent (DR 12110 Receivable / CR 41000 Revenue / CR 21610 Tax-due, balanced),
- *   posted via the SHIPPED doc_poster.derivePostings + post_resolver (consume the seam, never fork a verb).
+ *   posted via the REAL poster (model_post: ModelPost.previewFacts on a never-committed Trx — the seam the Posting-Preview uses)
+ *   over a posting db built from the GENERATED dictionary subset genesis_dict.js (bim-compiler prompts/SQLiteIDEMPIERE.md §POSTING-PARITY 5g,
+ *   W-GENESIS-REAL-POSTER) — consume the seam, never fork a verb.
  *
  * ISOMORPHIC (node + browser, ONE code path): no fs/path; seeds via genesis_seed (require | global.GenesisSeed);
  *   sha256 = an embedded SYNC implementation (the witness recomputes every tip with node's crypto and asserts
@@ -423,6 +425,9 @@
   //     · the hash chain is recomputed over the re-banded ops so the op-log still verifies (git-for-a-tenant).
   //   bundle = { groups, refs? } (born, optionally with an appended G7 sample-invoice group). Returns the same
   //   shape re-banded, plus { clientId, idMap }.
+  // activeRow — a born row without IsActive is active (the merge target's DDL carries no DEFAULT): ONE rule for the install merge (rebandGenesis)
+  //   and the page's own posting db (postSampleInvoice).
+  function activeRow(row) { if (row.isactive == null) row.isactive = 'Y'; return row; }
   function rebandGenesis(bundle, opts) {
     opts = opts || {};
     var newClientId = opts.clientId;
@@ -459,8 +464,7 @@
           if (typeof v === 'number' && map[v] != null) v = map[v];
           row[k] = v;
         });
-        if (row.isactive == null) row.isactive = 'Y';
-        return { op: o.op, table: o.table, row: row };
+        return { op: o.op, table: o.table, row: activeRow(row) };
       });
       var tip = sha256(parent + JSON.stringify(ops));
       out.push({ seq: g.seq, label: g.label, ops: ops, parent: parent, tip: tip });
@@ -567,9 +571,69 @@
     return { tip: head, sig: await S.signTip(priv, head), pub: pub, verify: function (t, s) { return S.verifyTip(t, s, pub); } };
   }
 
+  // ── §POSTING-PARITY 5g — the sample invoice through the REAL poster (W-GENESIS-REAL-POSTER) ───────────────────────────
+  //   b3: a better-sqlite3-shaped shim over a sql.js handle (get/all/run, named @key + positional ?) — foldGenesis / mergeGenesisInto need run().
+  function b3(dbh) {
+    function lc(o) { if (!o) return o; var r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; return r; }
+    function bind(st, sql, args) {
+      if (!args.length) return;
+      var p = args[0];
+      if (p != null && typeof p === 'object' && !Array.isArray(p)) {
+        var b = {}; Object.keys(p).forEach(function (k) { var m = sql.match(new RegExp('[@:$]' + k + '\\b')); b[(m ? m[0][0] : '@') + k] = p[k]; }); st.bind(b);
+      } else { st.bind(args.slice()); }
+    }
+    function exec(sql, args, all) {
+      var st = dbh.prepare(sql), out = all ? [] : undefined;
+      try { bind(st, sql, args); if (all) { while (st.step()) out.push(lc(st.getAsObject())); } else if (st.step()) out = lc(st.getAsObject()); } finally { st.free(); }
+      return out;
+    }
+    return { raw: dbh, prepare: function (sql) { return {
+      get: function () { return exec(sql, [].slice.call(arguments), false); },
+      all: function () { return exec(sql, [].slice.call(arguments), true); },
+      run: function () { var st = dbh.prepare(sql); try { bind(st, sql, [].slice.call(arguments)); st.step(); } finally { st.free(); } return {}; }
+    }; } };
+  }
+  // buildPostingDb(SQL, dict) — a fresh sql.js db holding exactly the generated subset: the seed DDL of every table the real poster reads for
+  //   the sample invoice + their AD_Table/AD_Column rows (the model layer's dictionary) + the client-0 rows it reads (genesis_dict.js).
+  function buildPostingDb(SQL, dict) {
+    var raw = new SQL.Database();
+    dict.order.forEach(function (t) { raw.run(dict.ddl[t]); });
+    Object.keys(dict.rows).sort().forEach(function (t) { var r = dict.rows[t];
+      var st = raw.prepare('INSERT OR IGNORE INTO "' + t + '" (' + r.cols.map(function (c) { return '"' + c + '"'; }).join(',') + ') VALUES (' + r.cols.map(function () { return '?'; }).join(',') + ')');
+      try { r.vals.forEach(function (v) { st.run(v); }); } finally { st.free(); } });
+    return raw;
+  }
+  // postSampleInvoice(o) — merge the born tenant into o.raw (column-intersect), create the $100 + $9 tax sales invoice on its OWN BP/product/tax
+  //   with the dictionary's columns, and post it through the REAL poster on a Trx that is never committed. o = { raw, born, ML, MP, invId?, onQuery? }
+  //   -> { merged, invId, pf, gl:{ lines:[{account_id,value,name,amtacctdr,amtacctcr}], balanced, sumDr, sumCr (cents), basis, absent } } (the page's render shape)
+  function postSampleInvoice(o) {
+    var raw = o.raw, db = b3(raw), born = o.born, R = born.refs, cid = R.clientId, inv = o.invId || 9000001, D = String(born.input.dateAcct || '2024-01-15').slice(0, 10) + ' 00:00:00';
+    var merged = mergeGenesisInto(born.groups.map(function (g) { return { seq: g.seq, label: g.label, ops: (g.ops || []).map(function (o) { return { op: o.op, table: o.table, row: activeRow(Object.assign({}, o.row)) }; }) }; }), db);
+    function colsOf(t) { var r = raw.exec('PRAGMA table_info("' + t + '")'); return r.length ? r[0].values.map(function (c) { return String(c[1]); }) : []; }
+    function ins(t, f) { var cs = colsOf(t), lcMap = {}; cs.forEach(function (c) { lcMap[c.toLowerCase()] = c; }); var ks = Object.keys(f).filter(function (k) { return lcMap[k]; });
+      raw.run('INSERT INTO "' + t + '" (' + ks.map(function (k) { return '"' + lcMap[k] + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k]; })); }
+    var cur = born.input.currencyId;
+    ins('c_invoice', { c_invoice_id: inv, ad_client_id: cid, ad_org_id: R.orgId, isactive: 'Y', issotrx: 'Y', documentno: 'G7-' + inv, docstatus: 'CO', docaction: 'CL', processed: 'Y',
+      c_doctype_id: R.doctypeAriId, c_doctypetarget_id: R.doctypeAriId, c_bpartner_id: R.bpartnerId, c_bpartner_location_id: R.bpLocationId, c_currency_id: cur, c_conversiontype_id: 114,
+      dateinvoiced: D, dateacct: D, grandtotal: 109, totallines: 100, m_pricelist_id: R.priceListId, c_paymentterm_id: R.paymentTermId, posted: 'N', istaxincluded: 'N', ispaid: 'N', isapproved: 'Y', paymentrule: 'P' });
+    ins('c_invoiceline', { c_invoiceline_id: inv, ad_client_id: cid, ad_org_id: R.orgId, isactive: 'Y', c_invoice_id: inv, line: 10, m_product_id: R.productId, c_uom_id: 100, qtyentered: 1, qtyinvoiced: 1,
+      priceentered: 100, priceactual: 100, linenetamt: 100, c_tax_id: R.taxId });
+    ins('c_invoicetax', { ad_client_id: cid, ad_org_id: R.orgId, isactive: 'Y', c_invoice_id: inv, c_tax_id: R.taxId, taxbaseamt: 100, taxamt: 9 });
+    function q(sql, params) { var st = raw.prepare(sql), out = []; try { if (params && params.length) st.bind(params.map(function (x) { return x === undefined ? null : x; }));
+      while (st.step()) { var g = st.getAsObject(), r = {}; for (var k in g) r[k.toLowerCase()] = g[k]; out.push(r); } } finally { st.free(); } if (o.onQuery) o.onQuery(sql, params || [], out); return out; }
+    var uu = 0, env = { client: cid, org: R.orgId, user: R.userId || 100, role: R.roleAdminId, date: D, now: D.slice(0, 10) + ' 09:00:00', nowMillis: Date.parse(D.slice(0, 10) + 'T09:00:00Z'),
+      uuid: function () { uu++; return '00000000-0000-4000-8000-' + ('000000000000' + uu).slice(-12); } };
+    var trx = new o.ML.Trx(q, env), pf = o.MP.previewFacts(trx, 'c_invoice', inv), el = {};
+    var lines = pf.facts.filter(function (f) { return String(f.c_acctschema_id) === String(R.acctSchemaId); }).map(function (f) {
+      var e = el[f.account_id] || (el[f.account_id] = (q('SELECT value, name FROM c_elementvalue WHERE c_elementvalue_id=?', [f.account_id])[0] || {}));
+      return { account_id: f.account_id, value: e.value != null ? String(e.value) : String(f.account_id), name: e.name, amtacctdr: Number(f.amtacctdr || 0), amtacctcr: Number(f.amtacctcr || 0) }; });
+    var sDr = 0, sCr = 0; lines.forEach(function (l) { sDr += Math.round(l.amtacctdr * 100); sCr += Math.round(l.amtacctcr * 100); });
+    return { merged: merged, invId: inv, pf: pf, gl: { lines: lines, balanced: lines.length > 0 && sDr === sCr, sumDr: sDr, sumCr: sCr, basis: pf.state, absent: pf.refusal ? [pf.refusal] : [] } };
+  }
+
   var _api = { birthTenant: birthTenant, parseCoA: parseCoA, foldGenesis: foldGenesis, signHead: signHead, IdGen: IdGen, sha256: sha256,
     rebandGenesis: rebandGenesis, mergeGenesisInto: mergeGenesisInto, nextClientId: nextClientId,
-    grantFullAccess: grantFullAccess };
+    grantFullAccess: grantFullAccess, b3: b3, buildPostingDb: buildPostingDb, postSampleInvoice: postSampleInvoice };
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;
   else global.Genesis = _api;
 

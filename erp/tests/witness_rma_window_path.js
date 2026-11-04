@@ -205,7 +205,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
     return { id: hd.id, line: ln.id };
   }
   var cm1 = rcCo && rcCo.status === 'CO' ? drive('RW-CM', function () { return creditMemo(h1.id, s1, L1.m_rmaline_id, rc1.line, 2, 50); }) : null;
-  // RW-BOOKS-DRAFTCM (§POSTING-PARITY 5e, was W-SD16-ENGINE-PORT S5 on doc_poster.deriveInvoice): the Preview of the DRAFT credit memo = the REAL poster on a never-committed Trx; a draft carries its
+  // RW-BOOKS-DRAFTCM (§POSTING-PARITY 5e, was W-SD16-ENGINE-PORT S5 on the doc_poster invoice fold): the Preview of the DRAFT credit memo = the REAL poster on a never-committed Trx; a draft carries its
   //   type in C_DocTypeTarget_ID (C_DocType_ID 0 -> model_post docTypeIdOf reads the target) so it books MIRRORED (Doc_Invoice ARC :522-575). NEG-CONTROL: the same draft targeted ARI is NOT mirrored.
   var MPm = require(path.join(ERP, 'model_post.js'));
   function draftPreview(id, target) { var ivd = one('SELECT c_doctype_id AS d, c_doctypetarget_id AS t FROM c_invoice WHERE c_invoice_id=?', [id]), keep = ivd ? ivd.t : null;
