@@ -1920,7 +1920,10 @@
     _needThen(spec && spec.table, function () { _modelRunNow(spec, cb, ML); });
   }
   function _modelRunNow(spec, cb, ML) {
-    withBundle(function (db) {
+    // §TIP_READ_HYDRATED: the tip shadow needs the sidecar; SIDE is hydrated lazily (withSidecar), so a read that
+    // lands before the first commit/hydration used to see the raw bundle (a saved tax edit read back as the seed 0%).
+    // Wait for the sidecar (cb(null) if absent -> raw bundle, as before) so every model read folds the op log.
+    withSidecar(function () { withBundle(function (db) {
       var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
       try { r = ML.run(_modelQuery(db), _modelEnv(), spec); }
       catch (e) { console.log('§MODEL-ERR ' + (e && e.message)); r = null; }
@@ -1928,7 +1931,7 @@
       if (r && r.log) r.log.forEach(function (l) { console.log(l); });
       _noteTouched(r);
       cb(r);
-    });
+    }); });
   }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;

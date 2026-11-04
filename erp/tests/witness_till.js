@@ -254,6 +254,7 @@ async function runDeposit(ctx, base) {
   check('deposit', 'tax-edit-committed', taxWritten === true, 'the tax edit (Standard 0% -> ' + TAX + '%) committed on the device before the page is reopened', taxWritten);
   await pg.close(); pg = await openTill(ctx, base);
   var trate = (await rowsOf(pg, 'SELECT rate FROM c_tax WHERE c_tax_id=104'))[0];
+  console.log('§TILL_TAXLIVE arm=deposit rate=' + (trate && trate.rate) + ' expect=' + TAX + ' (first tip read after reopen; sidecar must be hydrated before it, crud_overlay §TIP_READ_HYDRATED)');
   check('deposit', 'tax-live', num(trate.rate) === TAX, 'the device sees Standard tax at ' + TAX + '% (non-vacuous: the seed has 0%)', trate);
   var before = await coreCounts(pg);
   await loginSales(pg);
@@ -379,6 +380,7 @@ async function withTax(ctx, base, qs) {   // the seed's Standard tax is 0%: the 
   var ok = await pg.evaluate(function (rate) { return new Promise(function (res) { var E = window.Till.engine(); var once = function (e) { if (e.detail && String(e.detail.table).toLowerCase() === 'c_tax') { E.removeEventListener('overlay:committed', once); res(true); } }; E.addEventListener('overlay:committed', once); E.__crud.applyOp({ op_type: 'CRUD_UPDATE', key: 'c_tax', table: 'c_tax', verb: 'update', id: 104, changes: { rate: rate } }); setTimeout(function () { res(false); }, 10000); }); }, TAX2);
   await pg.close(); pg = await openTill(ctx, base, qs);
   var tr = (await rowsOf(pg, 'SELECT rate FROM c_tax WHERE c_tax_id=104'))[0];
+  console.log('§TILL_TAXLIVE arm=' + (qs || 'withTax') + ' rate=' + (tr && tr.rate) + ' expect=' + TAX2);
   return ok && num(tr.rate) === TAX2 ? pg : null;
 }
 async function ring(pg, items) { for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
