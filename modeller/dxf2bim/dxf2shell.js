@@ -378,6 +378,78 @@
     return { ok: true, roof_handle: roofs[0].handle, holes: holes, gaps: gaps };
   }
 
+  // ---- §L36 a pitched roof the sheet states: @PITCH, A-ROOF-GABLE rectangles, A-ROOF-RIDGE lines whose z is the ridge. The roof is the highest plane at every point: valleys are where planes meet, never authored ----
+  function gableRoof(entities, K, pitchDeg, thickness, tol) {
+    var gaps = [], rects = [], ridges = [], t = Math.tan(pitchDeg * Math.PI / 180);
+    if (!(pitchDeg > 0 && pitchDeg < 90)) return { planes: [], gaps: [{ code: 'GAP:roof_bad_pitch', pitch: pitchDeg }] };
+    (entities || []).forEach(function (e) {
+      if (e.layer === 'A-ROOF-GABLE' && (e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') && e.shape && e.vertices.length >= 4) { var xs = e.vertices.map(function (v) { return v.x * K; }), ys = e.vertices.map(function (v) { return v.y * K; }); rects.push({ handle: e.handle, r: [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)] }); }
+      if (e.layer === 'A-ROOF-RIDGE' && e.type === 'LINE' && e.vertices && e.vertices.length === 2) ridges.push({ handle: e.handle, a: [e.vertices[0].x * K, e.vertices[0].y * K, (e.vertices[0].z || 0) * K], b: [e.vertices[1].x * K, e.vertices[1].y * K, (e.vertices[1].z || 0) * K] });
+    });
+    var planes = [], used = {};
+    rects.forEach(function (R) {
+      var r = R.r, cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2;
+      var g = ridges.filter(function (q) { return (Math.abs(q.a[0] - cx) <= tol && Math.abs(q.b[0] - cx) <= tol && Math.abs(q.a[1] - q.b[1]) > tol) || (Math.abs(q.a[1] - cy) <= tol && Math.abs(q.b[1] - cy) <= tol && Math.abs(q.a[0] - q.b[0]) > tol); })[0];
+      if (!g) { gaps.push({ code: 'GAP:roof_gable_no_ridge', handle: R.handle, rect: r.map(r6) }); return; }
+      used[g.handle] = 1; var z = g.a[2], along = Math.abs(g.a[1] - g.b[1]) > tol ? 1 : 0;   // along = 1: the ridge runs in y, the planes fall in x
+      if (Math.abs(g.a[2] - g.b[2]) > tol || !(z > 0)) { gaps.push({ code: 'GAP:roof_gable_no_ridge', handle: R.handle, reason: 'the ridge line states no single height' }); return; }
+      var c = along ? cx : cy;
+      [-1, 1].forEach(function (s) {
+        var box = along ? (s < 0 ? [r[0], r[1], c, r[3]] : [c, r[1], r[2], r[3]]) : (s < 0 ? [r[0], r[1], r[2], c] : [r[0], c, r[2], r[3]]);
+        planes.push({ handle: R.handle, ridge: g.handle, box: box, axis: along ? 0 : 1, c: c, s: s, z: z, h: function (p) { return z - t * Math.abs(p[along ? 0 : 1] - c); } });
+      });
+    });
+    ridges.forEach(function (q) { if (!used[q.handle]) gaps.push({ code: 'GAP:roof_ridge_no_gable', handle: q.handle }); });
+    if (gaps.length) return { planes: [], gaps: gaps };
+    // a line a x + b y = d splits convex polygons; every other plane's edges and its meeting line with this plane are such lines
+    function split(poly, a, b, d) {
+      var P = [], Q = [], n = poly.length, eps = 1e-9, sd = function (p) { return a * p[0] + b * p[1] - d; };
+      for (var i = 0; i < n; i++) { var u = poly[i], w = poly[(i + 1) % n], su = sd(u), sw = sd(w); if (su >= -eps) P.push(u); if (su <= eps) Q.push(u); if ((su > eps && sw < -eps) || (su < -eps && sw > eps)) { var f = su / (su - sw), m = [u[0] + f * (w[0] - u[0]), u[1] + f * (w[1] - u[1])]; P.push(m); Q.push(m); } }
+      var area = function (p) { var A = 0; for (var i = 0; i < p.length; i++) { var q = p[(i + 1) % p.length]; A += p[i][0] * q[1] - q[0] * p[i][1]; } return Math.abs(A) / 2; };
+      return [P, Q].filter(function (p) { return p.length >= 3 && area(p) > 1e-8; });
+    }
+    var inBox = function (p, b) { return p[0] >= b[0] - 1e-9 && p[0] <= b[2] + 1e-9 && p[1] >= b[1] - 1e-9 && p[1] <= b[3] + 1e-9; };
+    var heightAt = function (p) { var H = -Infinity; planes.forEach(function (q) { if (inBox(p, q.box)) H = Math.max(H, q.h(p)); }); return H; };
+    planes.forEach(function (pl) {
+      var b = pl.box, polys = [[[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]]], cuts = [];
+      planes.forEach(function (o) { if (o === pl) return; var ob = o.box;
+        cuts.push([1, 0, ob[0]], [1, 0, ob[2]], [0, 1, ob[1]], [0, 1, ob[3]]);
+        // the meeting line: z_a - t s_a (p_a - c_a) = z_b - t s_b (p_b - c_b), s = the side each plane falls to
+        var A = [0, 0], B = [0, 0]; A[pl.axis] = t * pl.s; B[o.axis] = t * o.s; var a = A[0] - B[0], bb = A[1] - B[1], d = pl.z + t * pl.s * pl.c - o.z - t * o.s * o.c; if (Math.abs(a) > 1e-12 || Math.abs(bb) > 1e-12) cuts.push([a, bb, d]);
+      });
+      cuts.forEach(function (c) { var nx = []; polys.forEach(function (p) { nx = nx.concat(split(p, c[0], c[1], c[2])); }); polys = nx; });
+      pl.pieces = polys.filter(function (p) { var C = [0, 0]; p.forEach(function (q) { C[0] += q[0] / p.length; C[1] += q[1] / p.length; }); return pl.h(C) >= heightAt(C) - 1e-9; });
+      var V = [], F = [], area = 0;
+      pl.pieces.forEach(function (p) {
+        var sa = 0; p.forEach(function (q, i) { var n = p[(i + 1) % p.length]; sa += q[0] * n[1] - n[0] * q[1]; }); if (sa < 0) p = p.slice().reverse(); area += Math.abs(sa) / 2;
+        var o = V.length, n = p.length; p.forEach(function (q) { V.push([r6(q[0]), r6(q[1]), r6(pl.h(q))]); }); p.forEach(function (q) { V.push([r6(q[0]), r6(q[1]), r6(pl.h(q) - thickness)]); });
+        for (var i = 1; i < n - 1; i++) { F.push([o, o + i, o + i + 1]); F.push([o + n, o + n + i + 1, o + n + i]); }
+        for (var j = 0; j < n; j++) { var k = (j + 1) % n; F.push([o + j, o + n + j, o + n + k]); F.push([o + j, o + n + k, o + k]); }
+      });
+      pl.mesh = { vertices: V, faces: F }; pl.area = r6(area);
+    });
+    return { planes: planes.filter(function (p) { return p.pieces.length; }).map(function (p) { return { handle: p.handle, ridge: p.ridge, s: p.s, axis: p.axis, z: p.z, box: p.box.map(r6), pieces: p.pieces.map(function (q) { return q.map(function (v) { return [r6(v[0]), r6(v[1])]; }); }), area: p.area, mesh: p.mesh }; }), gaps: gaps, rects: rects.map(function (R) { return R.r.map(r6); }), pitch: pitchDeg, heightAt: heightAt };
+  }
+
+  // ---- §L36 a wall the sheet draws rising to the roof (a gable end): a closed rectangle on A-WALL-GABLE, from z0 to the roof's underside above it, broken at each ridge it crosses ----
+  function gableWalls(entities, K, form, z0) {
+    var out = [], gaps = [];
+    (entities || []).forEach(function (e) {
+      if (e.layer !== 'A-WALL-GABLE' || !(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape) return;
+      var xs = e.vertices.map(function (v) { return v.x * K; }), ys = e.vertices.map(function (v) { return v.y * K; }), r = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
+      var ax = (r[2] - r[0]) >= (r[3] - r[1]) ? 0 : 1, cr = 1 - ax, mid = (r[cr] + r[cr + 2]) / 2, under = function (s) { var p = []; p[ax] = s; p[cr] = mid; return form.heightAt(p) - form.thickness; };
+      var br = [r[ax], r[ax + 2]]; form.planes.forEach(function (q) { var c = q.box[q.s < 0 ? (q.axis === 0 ? 2 : 3) : q.axis]; if (q.axis === ax && c > r[ax] && c < r[ax + 2]) br.push(c); }); br = uniq(br.map(r6));
+      if (br.some(function (s) { return !(under(s) > z0); })) { gaps.push({ code: 'GAP:roof_gable_wall_outside', handle: e.handle, rect: r.map(r6) }); return; }
+      var P = [[r6(r[ax]), z0], [r6(r[ax + 2]), z0]].concat(br.slice().reverse().map(function (s) { return [s, r6(under(s))]; })), n = P.length, V = [], F = [];   // the profile in (along, z), counter-clockwise
+      [r[cr], r[cr + 2]].forEach(function (c) { P.forEach(function (q) { var v = []; v[ax] = q[0]; v[cr] = r6(c); v[2] = q[1]; V.push(v); }); });
+      for (var i = 1; i < n - 1; i++) { F.push([0, i, i + 1]); F.push([n, n + i + 1, n + i]); }
+      for (var j = 0; j < n; j++) { var k = (j + 1) % n; F.push([j, n + j, n + k]); F.push([j, n + k, k]); }
+      var vol = 0; F.forEach(function (f) { var a = V[f[0]], b = V[f[1]], c = V[f[2]]; vol += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]); }); if (vol < 0) F = F.map(function (f) { return [f[0], f[2], f[1]]; });
+      out.push({ handle: e.handle, rect: r.map(r6), mesh: { vertices: V, faces: F }, top: Math.max.apply(null, P.map(function (q) { return q[1]; })) });
+    });
+    return { walls: out, gaps: gaps };
+  }
+
   // ---- §2.3 W-H3 slab-above convention for walls the elevations do not show ----
   function applySlabAbove(opsAfter, opsBefore, U, level) {
     var pend = {}, out = [], n = 0;
@@ -642,6 +714,6 @@
     return { storeys: storeys, merged: merged };
   }
 
-  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, stackAt: stackAt, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, closedRects: closedRects,
+  return { prismRect: prismRect, innerRing: innerRing, envelope: envelope, slabZ: slabZ, sectionSlabs: sectionSlabs, stackAt: stackAt, roofZ: roofZ, levelLinesZ: levelLinesZ, roofPlan: roofPlan, gableRoof: gableRoof, gableWalls: gableWalls, closedRects: closedRects,
     applySlabAbove: applySlabAbove, applyWallBases: applyWallBases, mergeStacked: mergeStacked, bridgeOpenings: bridgeOpenings, faceCover: faceCover, boundedCells: boundedCells, prismCells: prismCells, prismPoly: prismPoly, slabEdges: slabEdges, doorSwing: doorSwing, doorStrip: doorStrip, placeFills: placeFills, familyToRef: familyToRef, pairKey: pairKey };
 });
