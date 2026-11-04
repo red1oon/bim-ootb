@@ -185,7 +185,7 @@ async function prepare(pg, screen) {   // put the live page on the screen a regi
 }
 async function runParity(pg, pgRest, pgKit) {
   var R = await pg.evaluate(function () { return window.Till.registry.ROWS; }), x = 0, N = R.length, detail = [];
-  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup', 'kitchen'];
+  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup', 'about', 'kitchen'];
   for (var row of R) {
     var ok = false, why = '', page = row.page === 'kitchen.html' ? pgKit : row.mode === 'restaurant' ? pgRest : pg;
     if (row.status !== 'built' || SCREENS.indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
@@ -383,7 +383,8 @@ async function withTax(ctx, base, qs) {   // the seed's Standard tax is 0%: the 
   console.log('§TILL_TAXLIVE arm=' + (qs || 'withTax') + ' rate=' + (tr && tr.rate) + ' expect=' + TAX2);
   return ok && num(tr.rate) === TAX2 ? pg : null;
 }
-async function ring(pg, items) { for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
+// §33.2: a cashier rings on the Sales screen. These arms used to ring while another screen was open because #u3 was never hidden (the bug W-TILL-SCREENS now judges); they go to Sales first.
+async function ring(pg, items) { await pg.evaluate(function () { if (window.Till.state().screen !== 'sales') window.Till.go('sales'); }); for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
 async function totalOf(pg) { return pg.$eval('#t-tot', function (e) { return e.textContent; }); }
 async function payExact(pg) { var t = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: t }]); return t; }
 async function receiptKey(pg) { return pg.$eval('#receipt .rf[data-f="Receipt"], #receipt .rf[data-f="Refund"]', function (e) { return e.textContent.split('  ')[1]; }); }
@@ -435,7 +436,7 @@ async function runBar(ctx, base) {
   await pg.evaluate(function () { window.Till.go('close'); }); await sleep(600); var ns = await pg.$eval('#z-nosales', function (e) { return e.textContent; });
   check('bar', 'drawer-nosales', ns === '2', 'two Open drawer presses = "No Sale - Drawer Openings" 2 on the Z (PaymentsModel NOSALES)', ns);
   // virtual keyboard types into the focused input
-  await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.click('#scriptbar [data-btn="Virtual Keyboard"]').catch(function () {});
+  await pg.evaluate(function () { window.Till.go('sales'); }); await pg.click('#scriptbar [data-btn="Virtual Keyboard"]').catch(function () {});
   await pg.evaluate(function () { document.querySelector('#scriptbar'); var k = document.getElementById('vkbd'); k.hidden = false; });
   var vk = await pg.evaluate(function () { return new Promise(function (res) { var t = window.Till; t.go('editsales'); var i = document.getElementById('es-number'); i.focus(); var b = document.querySelector('#vkbd .vk[data-vk="4"]'); if (!b) { res({ noKbd: true }); return; } b.click(); res({ v: i.value, shown: !document.getElementById('vkbd').hidden }); }); });
   check('bar', 'virtual-keyboard', vk.v === '4' && vk.shown, 'Virtual Keyboard: a key press lands in the focused input', vk);
@@ -726,7 +727,7 @@ else
         ctx = await newCtx(); var pgp = await openTill(ctx, sv.base), ctx2 = await newCtx(), pgr = await openTill(ctx2, sv.base, '?mode=restaurant'); await pgr.click('#u1 .u-user:has-text("GardenAdmin")');
         var ctx3 = await newCtx(), pgk = null; if (fs.existsSync(path.join(ERP, 'kitchen.html'))) { pgk = await ctx3.newPage(); pgk.on('pageerror', function (e) { ERRS.push(e.message); }); await pgk.goto(sv.base + '/erp/kitchen.html?login=50001', { waitUntil: 'load' }); await pgk.waitForFunction(function () { return window.Kitchen && window.Kitchen.ready; }, null, { timeout: 170000 }).catch(function () { pgk = null; }); }
         var pr = await runParity(pgp, pgr, pgk); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
-        check('parity', 'non-vacuous', pr.N === 25 && pr.x > 0, 'N is the registry (25: 22 of §14A.6 + N23-N25 of §32, each with its source) and at least one row was judged present', pr);
+        check('parity', 'non-vacuous', pr.N === 28 && pr.x > 0, 'N is the registry (28: 22 of §14A.6 + N23-N25 of §32 + N26-N28 of §36, each with its source) and at least one row was judged present', pr);
         console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
         await pgp.close(); await pgr.close(); if (pgk) await pgk.close();
       }

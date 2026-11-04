@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT'];
   var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -52,7 +52,8 @@
       if (val === '') { errors.push(err('MARK:malformed', '@' + key + ' has no value', { handle: m.handle })); return; }
       if (SINGLE.indexOf(key) >= 0) {
         var name = key.toLowerCase();
-        if (key === 'LEVEL' || key === 'ROOF') { var n = Number(val); if (!isFinite(n)) { errors.push(err('MARK:malformed', '@' + key + ' not a number: ' + val, { handle: m.handle })); return; } val = n; }   // ROOF: BASIC_SHAPES_SPEC §5.3
+        if (key === 'LEVEL' || key === 'ROOF' || key === 'PITCH') { var n = Number(val); if (!isFinite(n)) { errors.push(err('MARK:malformed', '@' + key + ' not a number: ' + val, { handle: m.handle })); return; } val = n; }   // ROOF: BASIC_SHAPES_SPEC §5.3
+        if (key === 'HEADFRAME') { var hfv = Number(val); if (!isFinite(hfv) || hfv < 0) { errors.push(err('MARK:malformed', '@HEADFRAME must be a number, zero or more: ' + val, { handle: m.handle })); return; } val = hfv; }   // lane spec L38
         if (key === 'REGION') {
           var rp = val.split(',').map(Number);
           if (rp.length !== 4 || rp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@REGION needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
@@ -118,6 +119,10 @@
         var sdup = d.schedule.find(function (q) { return q.text === sent.text && q.class === sent.class; });
         if (sdup && JSON.stringify(Object.assign({}, sdup, { by: undefined })) !== JSON.stringify(sent)) { errors.push(err('MARK:conflict', '@SCHEDULE ' + sent.text + ' (' + sc + ') has two sizes', { handle: m.handle })); return; }
         if (!sdup) { sent.by = by; d.schedule.push(sent); }
+      } else if (key === 'ACCEPT') {                                                        // lane spec L37: @ACCEPT=<code>,<who>,<YYYY-MM-DD>,<reason>: a person's recorded acceptance of a verdict row
+        var ap = val.split(','), aw = (ap[1] || '').trim(), ad = (ap[2] || '').trim(), ar = ap.slice(3).join(',').trim(), ac0 = (ap[0] || '').trim();
+        if (!ac0 || !aw || !/^\d{4}-\d{2}-\d{2}$/.test(ad) || !ar) { errors.push(err('MARK:malformed', '@ACCEPT needs <code>,<who>,<YYYY-MM-DD>,<reason>: ' + val, { handle: m.handle })); return; }
+        (d.accept = d.accept || []).push({ code: ac0, who: aw, date: ad, reason: ar, by: by, handle: m.handle });
       } else if (key === 'BODYZ') {                                                          // bim-ootb lane L7.14: the z range (m) the USER states for a body kind no elevation shows: @BODYZ=<kind>,<z0>,<z1>
         var bp = val.split(','), bk = (bp[0] || '').trim(), bn = bp.slice(1).map(Number);
         if (LAYER_TYPES.BODY.indexOf(bk) < 0 || bp.length !== 3 || bp.slice(1).some(function (t, i) { return t.trim() === '' || !isFinite(bn[i]); }) || !(bn[0] < bn[1])) { errors.push(err('MARK:malformed', '@BODYZ needs <' + LAYER_TYPES.BODY.join('|') + '>,<z0 m>,<z1 m> with z0 < z1: ' + val, { handle: m.handle })); return; }

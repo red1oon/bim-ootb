@@ -307,7 +307,28 @@
     get length() { return this.db ? this._geomOps().length : 0; },
     get cursor() { return this._cursor; },
 
+    // §L35 the meshes an op names by hash, kept with the op-log (outside the signed kernel_ops chain): a reload and a Native .db then rebuild what they name. Registered once per open DB, by the one gateway every fold passes.
+    storeRealGeometry(entries) {
+      if (!this.db || !entries || !entries.length) return 0;
+      this.db.run('CREATE TABLE IF NOT EXISTS geom_assets (hash TEXT PRIMARY KEY, data TEXT NOT NULL)');
+      const plain = (k, v) => (ArrayBuffer.isView(v) ? Array.from(v) : v); let bytes = 0, n = 0;
+      this.db.run('BEGIN');
+      try { entries.forEach(e => { if (!e || !e.hash) return; const d = JSON.stringify(e, plain); this.db.run('INSERT OR IGNORE INTO geom_assets (hash, data) VALUES (?, ?)', [e.hash, d]); bytes += d.length; n++; }); this.db.run('COMMIT'); }
+      catch (err) { this.db.run('ROLLBACK'); throw err; }
+      console.log(TAG + ' §GEOM-ASSETS stored meshes=' + n + ' bytes=' + bytes);
+      return n;
+    },
+    _registerStoredGeometry() {
+      if (!this.db || this._assetsOf === this.db) return; const L = window.Bonsai && window.Bonsai.library; if (!L || !L.registerRealGeometry) return;
+      this._assetsOf = this.db;
+      const has = this.db.exec("SELECT 1 FROM sqlite_master WHERE type='table' AND name='geom_assets'"); if (!has.length) return;
+      const r = this.db.exec('SELECT data FROM geom_assets'); if (!r.length) return;
+      L.registerRealGeometry(r[0].values.map(v => { const e = JSON.parse(v[0]); e.v = new Float32Array(e.v); e.f = new Uint32Array(e.f); return e; }));   // the shape the kernel and the fold take: JSON carries a float32 exactly, as a double
+      console.log(TAG + ' §GEOM-ASSETS restored meshes=' + r[0].values.length);
+    },
+
     async _foldUpto(upto) {
+      this._registerStoredGeometry();   // §L35
       const ops = this._geomOps();
       const n = upto == null ? ops.length : Math.max(0, Math.min(upto, ops.length));
       this._cursor = n;

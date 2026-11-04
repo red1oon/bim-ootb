@@ -48,7 +48,8 @@ var server = http.createServer(function (req, res) { var f = path.join(ROOT, dec
     if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /PLUGIN|PACK|CAPEX/.test(l); }).forEach(function (l) { log('  dbg1 ' + l.slice(0, 240)); });
     await page.close();
     // 2 — next boot (the plugin restored), a GardenWorld user
-    await open(); var bootLogs = logs.slice();
+    await open(); for (var bw = 0; bw < 60 && !logs.some(function (l) { return /^§PACKIN incremental bundle=org\.bimootb\.capex /.test(l); }); bw++) await new Promise(function (r) { setTimeout(r, 250); });   // the restore logs after networkidle: reading at once failed B1 1 run in 3, on a clean main too
+    var bootLogs = logs.slice();
     await login('GardenWorld', 'GardenAdmin');
     if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /PLUGIN|PACK|CAPEX/.test(l); }).forEach(function (l) { log('  dbg2 ' + l.slice(0, 240)); });
     if (process.env.PA_RENDER_DEBUG) logs.filter(function (l) { return /§DASH-HOME|§DASH-ERR|§DASH-GADGET perf|§OPLOG/i.test(l); }).slice(0, 40).forEach(function (l) { log('  dbg ' + l.slice(0, 260)); });

@@ -1,6 +1,6 @@
 // capex/tools/phase_progress.js — the film's progress beat (prompts/CAPEX_DASHBOARD.md §15 beat 7): mark ONE project phase complete on BOTH sides, the way a user ticks "Complete".
 //   SQLite: the folded DB's C_ProjectPhase row (legacy MProjectPhase has no save rule on IsComplete — a plain column write; Updated = the local clock, like legacy's server stamp).
-//   Legacy: stock update_data with the pilot-only type BridgeUpdateCProjectPhase (capex/tools/ws_capex_updatetypes.sql). Read the log: §PHASE_PROGRESS lines. Then re-run shed_twin.js.
+//   Legacy: stock update_data with the test-server type BridgeUpdateCProjectPhase (capex/legacy/ws_testserver/migration/iD13/postgresql/202611042302_CAPEX-WS-PHASE.sql). Read the log: §PHASE_PROGRESS lines. Then re-run shed_twin.js.
 // Usage: NODE_PATH=<bim-ootb>/node_modules node capex/tools/phase_progress.js <fold.db> <projectValue> <phaseName>
 const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js'), A = require('../adapters.js');
 const Push = require(path.join(__dirname, '..', '..', 'viewer', 'erp_rest_push.js'));

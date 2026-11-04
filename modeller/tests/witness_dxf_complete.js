@@ -45,7 +45,8 @@ runE2E('W-DXF-COMPLETE', async (t) => {
   t.assert('K3 real Convert: 11 inserts incl. 1 IfcSlab and 2 IfcRoof on Level 1', conv.n === 11 && conv.counts['Level 1/IfcSlab'] === 1 && conv.counts['Level 1/IfcRoof'] === 2 && after.len - before.len === 11, JSON.stringify(conv));
   t.assert('K3b the last insert (a synthetic roof sheet) carries the standard MATERIAL colour of Profiled metal roofing 0x99adc2 (§L26), provenance derived, IfcRoof', P1.color === 0x99adc2 && P1.provenance && P1.provenance.prov_kind === 'derived' && P1.provenance.ifc && P1.provenance.ifc.ifc_class === 'IfcRoof', JSON.stringify({ color: P1.color, prov: P1.provenance && P1.provenance.prov_kind }));
   await pg.evaluate(() => { const c = document.getElementById('dxf-evidence'); if (c && !c.checked) c.click(); }); await t.sleep(300);
-  await pg.click('#dxf-convert'); await pg.waitForFunction('window.Bonsai.oplog._geomOps().length >= 22', { timeout: 60000 }); await t.sleep(900);
+  await pg.evaluate(() => window.Bonsai.oplog.undo()); await pg.waitForFunction('window.Bonsai.oplog._geomOps().length === 0', { timeout: 60000 }); await pg.evaluate(() => { window.__l0 = window.DxfImportUI.state.last; });   // §L35 a set converts once: Ctrl+Z, then Convert with the lens on
+  await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last !== window.__l0 && window.Bonsai.oplog._geomOps().length === 11', { timeout: 60000 }); await t.sleep(900);
   const lastOp2 = await t.lastOp(), P2 = lastOp2 && (lastOp2.parameters || lastOp2.params) || {};
   t.assert('K3d the "Evidence colours" lens ticked: the same derived roof sheet is AMBER 0xffb347 (the old evidence tint, now a lens)', P2.color === 0xffb347 && P2.provenance.prov_kind === 'derived', JSON.stringify({ color: P2.color }));
   await pg.evaluate(() => { const c = document.getElementById('dxf-evidence'); if (c && c.checked) c.click(); }); await t.sleep(300);
