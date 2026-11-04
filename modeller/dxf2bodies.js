@@ -403,7 +403,7 @@
               distinct = [{ z0: r6(ps.level - thick), z1: ps.level }]; cands = []; matchKind = null; hsrc = 'plan';
               if (ftgRow.pad && opts.DF && opts.DF.has('footing.depth')) opts.DF.use('footing.depth');
               if (opts.DF && opts.DF.has('footing.z_from_plan')) opts.DF.use('footing.z_from_plan');
-            } else if (Object.keys(ftgRow.cnt).length || ftgRow.marks.length || r.list.length) {
+            } else if (footRows[pi].some(function (o) { return o.marks.length || Object.keys(o.cnt).length; })) {   // a plan that says nothing of its footings keeps the earlier gap (W-BODIES B9b)
               gaps.push(Object.assign({ code: 'GAP:footing_no_thickness', detail: ftgRow.tie ? 'labels disagree: ' + ftgRow.tie.map(function (q) { return q + ' mm'; }).join(' and ') : 'no thickness label inside it and no raft around it' }, base)); rep.gaps++; return; }
           }
           if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' + ' (state its z range with @BODYZ)' }, base)); rep.gaps++; return; }

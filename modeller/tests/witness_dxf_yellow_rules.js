@@ -229,8 +229,10 @@ ok('YR26d a tie: the gap, naming both', f4.els.length === 0 && f4.gaps.some(q =>
 const f5 = fOf(ftP(loopL('FTG', sqAt(0, 0, 9000, 9000)).concat(tx('400mm TH', 500, 500), loopL('FTG', sqAt(1000, 1000, 2000, 2000)), loopL('FTG', sqAt(4000, 4000, 2000, 2000)), tx('600mm TH', 5000, 5000))).gate);
 console.log('§YR26e ' + JSON.stringify(f5));
 ok('YR26e inside a 400 raft: no label = same thickness, dropped and counted; labelled 600 stays', f5.els.length === 2 && f5.nested === 1 && f5.els.some(e => Math.abs(e.z0 + 1.85) < 1e-9) && f5.els.some(e => Math.abs(e.z0 + 1.65) < 1e-9));
-const f6 = fOf(ftP(loopL('FTG', sqAt(0, 0, 9000, 9000))).gate);
-ok('YR26f no label and no raft around it: the gap', f6.els.length === 0 && f6.gaps.some(q => /footing_no_thickness/.test(q)), JSON.stringify(f6));
+const f6 = fOf(ftP(loopL('FTG', sqAt(0, 0, 9000, 9000)).concat(loopL('FTG', sqAt(20000, 0, 2500, 2500)), tx('F2', 21000, 1000))).gate);
+ok('YR26f on a plan that labels its footings, a loop with no label and no raft around it: the gap', f6.els.length === 1 && f6.gaps.some(q => /footing_no_thickness/.test(q)), JSON.stringify(f6));
+const f6b = fOf(ftP(loopL('FTG', sqAt(0, 0, 9000, 9000))).gate);
+ok('YR26i a plan that says nothing of its footings: the earlier gap', f6b.els.length === 0 && f6b.gaps.some(q => /body_no_elevation/.test(q)) && !f6b.gaps.some(q => /footing_no_thickness/.test(q)), JSON.stringify(f6b));
 const pent = [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }, { x: 2000, y: 4500 }, { x: 0, y: 3000 }], f7g = ftP(loopL('FTG', pent).concat(tx('400mm TH', 1000, 1000))).gate, f7v = f7g.R.els.filter(e => e.kind === 'footing').map(volOf);
 ok('YR26g a true 5-sided loop keeps its outline: volume = its area x thickness', f7v.length === 1 && Math.abs(f7v[0] - (4 * 3 + 0.5 * 4 * 1.5) * 0.4) < 1e-6, String(f7v));
 const f8 = fOf(ftP(loopL('FTG', sqAt(0, 0, 2500, 2500)).concat(tx('F2', 1000, 1000)), { 'footing.z_from_plan': 'off' }).gate);
