@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '12';
+  var V = '13';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -1044,7 +1044,7 @@
         return L;
       }
       console.log(TAGC + ' no local library subset (' + LIB_URL + ' HTTP ' + r.status + ') → OCI');
-    } catch (e) { console.error('§DXF-LIB source=none reason=local subset unreadable: ' + (e && e.message)); return null; }
+    } catch (e) { console.log(TAGC + ' no local library subset (' + (e && e.message) + ') → OCI or its cached copy (§L33)'); }
     try {
       var t0 = performance.now();
       var o = await window.Dxf2BimImport.loadOci(sheets, { base: OCI_LIB, fetchJson: fetchJson, memo: _ociMemo, convertOpts: copts || { set: state.setOverride } });
