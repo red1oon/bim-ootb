@@ -43,7 +43,7 @@
       };
       // §L33 a worker that cannot load (no network, kernel not cached yet) must not leave its callers waiting for ever: everything pending fails with the reason; the next fold tries again
       this._worker.onerror = (e) => {
-        const why = '3D kernel did not load' + (navigator.onLine === false ? ' (offline)' : '') + ': it is stored on first use, so use it once online first' + (e && e.message ? ' [' + e.message + ']' : '');
+        const why = '3D kernel did not load' + (navigator.onLine === false ? ' (offline)' : '') + ': its offline download is not complete, connect once to finish it' + (e && e.message ? ' [' + e.message + ']' : '');
         console.warn(TAG + ' worker error ' + why + ' pending=' + this._pending.size);
         const P = [...this._pending.values()]; this._pending.clear(); this._worker = null; P.forEach(p => p.reject(new Error(why)));
       };
