@@ -36,7 +36,6 @@
     pos_floorplan: 'CREATE TABLE IF NOT EXISTS "pos_floorplan" ("pos_floorplan_id" NUMERIC, ' + BASE_COLS + '"pos_floorplan_uu" TEXT, "kind" TEXT, "recid" TEXT, "name" TEXT, "floorid" TEXT, "seats" NUMERIC, "x" NUMERIC, "y" NUMERIC, "w" NUMERIC, "h" NUMERIC, "image" TEXT, "value" TEXT, "seq" NUMERIC, "deleted" TEXT)',
     pos_opentable: 'CREATE TABLE IF NOT EXISTS "pos_opentable" ("pos_opentable_id" NUMERIC, ' + BASE_COLS + '"pos_opentable_uu" TEXT, "placeid" TEXT, "seq" NUMERIC, "state" TEXT, "lockedby" TEXT, "guests" NUMERIC, "waiter" TEXT, "customer" TEXT, "body" TEXT, "since" TEXT, "override" TEXT)',
     pos_reservation: 'CREATE TABLE IF NOT EXISTS "pos_reservation" ("pos_reservation_id" NUMERIC, ' + BASE_COLS + '"pos_reservation_uu" TEXT, "resid" TEXT, "seq" NUMERIC, "customer" TEXT, "at" TEXT, "chairs" NUMERIC, "state" TEXT, "placeid" TEXT)'
-    pos_floorplan: [7900008, 'POS Floor Plan', 'POS_FloorPlan'], pos_opentable: [7900009, 'POS Open Table', 'POS_OpenTable'], pos_reservation: [7900010, 'POS Reservation', 'POS_Reservation'] };   // POS_PLUGIN_LOCAL_FIRST §28 (S1 / S2 / S6)
   };
   var AD_ROWS_POS = { pos_tillhandoff: [7900003, 'POS Till Handoff', 'POS_TillHandoff'], pos_branchdaystatement: [7900004, 'POS Branch Day Statement', 'POS_BranchDayStatement'],
     pos_sodaref: [7900005, 'POS SODA Reference Delta', 'POS_SodaRef'], pos_tillref: [7900006, 'POS Till Reference Delta', 'POS_TillRef'],
