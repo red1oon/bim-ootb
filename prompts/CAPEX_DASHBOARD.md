@@ -75,6 +75,7 @@ ad-hoc; once it is proven — and always before it reaches a client server — i
 | scenario twin | `capex/tools/shed_twin.js <fold.db> <Value> [today]`, `phase_progress.js`, `legacy_snapshot.js`, `twin.js` | `§SHED_TWIN_VERDICT` |
 | pilot config (LOCAL only) | `capex/tools/ws_capex_{readtypes,writetypes,updatetypes}.sql` (restore recipes in each header) | before/after ws counts in the archive §10/§12.2/§15.1 |
 | kernel fixes the twin found | `erp/model_layer.js` doc-value workflows · `erp/ad_docvalue_overlay.js` · `erp/ad_taxcat_overlay.js` · `viewer/proj_claim.js` line rounding · `viewer/proj_order_state.js` VO basis | `erp/tests/witness_docvalue_wf.js`, `witness_taxcat_overlay.js`, `viewer/tests/witness_s9_pure.js` |
+| user guide (iDempiere user's point of view) | bim-compiler `docs/CapexDashboardGuide.md` + `docs/img/capex/` (read-only ZK captures of the pilot) | numbers read from the pilot; states what is unproven |
 | film | `capex/tools/film_shots.js`, `capex/tools/film_cards/`; recipe = bim-compiler `prompts/FILM_NARRATION.md` ▶ PLAYBOOK C | numbers in `§FILM_SHOT` lines |
 
 ## 2. Architecture (unchanged)
