@@ -88,7 +88,7 @@ var TBL = [['c_invoice', 318], ['m_inout', 319], ['c_payment', 335], ['c_allocat
   var cdIds = {}; rowsCd.forEach(function (r) { cdIds[r.m_costdetail_id] = 1; }); rowsCh.forEach(function (r) { if (!cdIds[r.m_costdetail_id]) bad5.push('m_costhistory#' + r.m_costhistory_id + ' references detail ' + r.m_costdetail_id + ' not in seed'); });
   log('§WCH H5 detail ids ' + (rowsCd.length ? rowsCd[0].m_costdetail_id + '..' + rowsCd[rowsCd.length - 1].m_costdetail_id : '-') + ' history ids ' + (rowsCh.length ? rowsCh[0].m_costhistory_id + '..' + rowsCh[rowsCh.length - 1].m_costhistory_id : '-') + ' violations=' + bad5.length);
   ok('H5', 'every added row identical to the pilot, tied to a seed document line < 1e6 that exists in the seed, history only of seed details (' + rowsCd.length + ' details, ' + rowsCh.length + ' history)', rowsCd.length ? bad5.length === 0 && rowsCd.length === 84 && rowsCh.length === 172 : null, bad5.slice(0, 4).join('; ') || 'clean');
-  // H6-H8 (§POSTING-PARITY 5f — the BOOK claims of W-F9-COSTHISTORY, moved off the retired doc_poster.deriveInOut/deriveMovement onto the REAL poster): mutate the history the lookup reads
+  // H6-H8 (§POSTING-PARITY 5f — the BOOK claims of W-F9-COSTHISTORY, moved off the retired doc_poster shipment/movement folds onto the REAL poster): mutate the history the lookup reads
   //   (MCost.getCurrentCost :145-162 -> MCostHistory.get by cost detail :104-142, else as of DateAcct :188-260) and the books MUST follow; with no history they fall back to m_cost (MCost.getCost).
   function freshQ() { var d = mk(CUR); A.RUNTIME.registerSqlFunctions(function (n, f) { d.create_function(n, f); }); return { db: d, q: mkq(d) }; }
   var acct430 = function (tw) { return tw['101:430:DR'] || 0; };

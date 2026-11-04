@@ -167,7 +167,7 @@ section('S5', function () {
   // hand-evaluated: amount 2 x 33.7037037 = 67.4074074 -> 67.41 (cents); (27 x 33.7037037 + 67.41) / 29 = 977.4099999 / 29 = 33.70379310 = 33.7037931 (8 dp)
   var u2 = DP.costQtyUpdates(db, 11); n++; check('S5', 'C- line of -2: one update, qty 27 + 2 = 29, price 33.7037931 (2-decimal amount) -- NOT 33.70370344 (the C+ branch), no accumulation', u2.length ? [u2.length, u2[0].set.currentqty, u2[0].set.currentcostprice, u2[0].set.cumulatedqty, u2[0].set.cumulatedamt] : [0], [1, 29, 33.7037931, 27, 910]);
   n++; check('S5', 'NEG-CONTROL the C+ return (33.70370344) and the C- re-add (33.7037931) price DIFFERENTLY from the same cost state, so a C- path routed through the C+ branch (or the reverse) is caught', u.length && u2.length ? u[0].set.currentcostprice !== u2[0].set.currentcostprice : null, true);
-  // S5 books (moved to W-RMA-WINDOW-PATH RW-BOOKS-*, the REAL poster - §POSTING-PARITY 5e; doc_poster.deriveInOut/deriveInvoice retired)
+  // S5 books (moved to W-RMA-WINDOW-PATH RW-BOOKS-*, the REAL poster - §POSTING-PARITY 5e; the doc_poster book folds retired)
   verdict('S5', n);
 });
 
