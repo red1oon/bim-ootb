@@ -15,7 +15,7 @@
   function create(o) {
     var st = o.state; st.out = st.out || []; st.seq = st.seq || 0; st.shiftSent = st.shiftSent || {}; st.qn = st.qn || 0;
     st.main = st.main || { on: false }; var M = st.main;
-    if (M.on) { M.wm = M.wm || {}; M.lines = M.lines || {}; M.hand = M.hand || {}; M.beat = M.beat || {}; M.seen = M.seen || []; M.recv = M.recv || {}; M.soda = M.soda || {}; M.answered = M.answered || {}; }
+    M.wm = M.wm || {}; M.lines = M.lines || {}; M.hand = M.hand || {}; M.beat = M.beat || {}; M.seen = M.seen || []; M.recv = M.recv || {}; M.soda = M.soda || {}; M.answered = M.answered || {};   // present on every till (empty unless main), so no read ever meets undefined
     var log = o.log || function () {}, now = o.now || Date.now, save = o.save || function () {}, WIN = o.windowMs || 120000;
     var T = { tillKey: o.tillKey, state: st };
     if (!o.isMain && o.net) throw new Error('TillLan: an ordinary till is built with the branch relay only');   // D9/D11: no internet pipe on a dumb till

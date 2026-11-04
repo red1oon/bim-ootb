@@ -29,7 +29,7 @@ var money = function (c) { return (Number(c) / 100).toFixed(2); }, toCents = fun
 
 // mutants: [file, anchor (must occur exactly once), replacement, arm that must go red]
 var MUTS = {
-  'till-sends-direct': ['/erp/till.js', "E.TeamSync.hold(['i_order', 'i_payment']);", "", 'relay'],
+  'till-on-internet': ['/erp/tests/witness_eoda.js', "qsBase = '&team=1&pipe=' + encodeURIComponent(LAN)", "qsBase = '&team=1&pipe=' + encodeURIComponent(PIPE)", 'relay'],   // §38: the §26 'till-sends-direct' mutant is gone with the path it modelled; this one puts the tills on the INTERNET relay (harness-level, applied once to this file's own text)
   'send-per-ticket': ['/erp/branch_admin.js', "var res = await depositGroup(ops);", "var res = { committed: true, gid: 'mut' }, by = {}; ops.forEach(function (o) { var k = (o.fields && o.fields.documentno) || '~stmt'; (by[k] = by[k] || []).push(o); }); var ks = Object.keys(by); for (var mi = 0; mi < ks.length; mi++) { await depositGroup(by[ks[mi]]); await E.TeamSync.visit(); }", 'relay'],
   'send-without-gate': ['/erp/branch_admin.js', "if (!partial && !v.allClosed && !ov) {", "if (false) {", 'gate'],
   'override-not-recorded': ['/erp/branch_admin.js', "override: partial ? '' : (v.allClosed ? '' : ov),", "override: '',", 'gate'],
@@ -43,7 +43,8 @@ var MUTS = {
   var POSPLAN = loadPlan(path.join(ROOT, 'erp', 'team_plan_pos.js'), 'TEAM_PLAN_POS'), OFFICE = loadPlan(path.join(ROOT, 'erp', 'team_plan.js'), 'TEAM_PLAN');
   var FOLDER = fs.mkdtempSync(path.join(os.tmpdir(), 'eoda-')), cur = { plans: {}, over: {} };
   var haveAdmin = fs.existsSync(path.join(ROOT, 'erp', 'branch_admin.html'));
-  if (MUTNAME) { var m = MUTS[MUTNAME]; if (!m) { console.log('§EODA_CRASH unknown mutant'); process.exit(2); }
+  if (MUTNAME === 'till-on-internet') ARMS = ['relay'];
+  else if (MUTNAME) { var m = MUTS[MUTNAME]; if (!m) { console.log('§EODA_CRASH unknown mutant'); process.exit(2); }
     var orig = fs.readFileSync(path.join(ROOT, m[0]), 'utf8'); if (orig.split(m[1]).length !== 2) { console.log('§EODA_CRASH MUTATION DID NOT APPLY exactly once ' + m[0]); process.exit(2); }
     cur.over[m[0]] = orig.replace(m[1], function () { return m[2]; }); console.log('§EODA_MUTANT applied ' + MUTNAME + ' in ' + m[0] + ' (anchor found exactly once)'); ARMS = [m[3]]; }
   var REQ = [];
@@ -79,8 +80,9 @@ var MUTS = {
     await pg.goto(base + urlPath, { waitUntil: 'load' }); await pg.waitForFunction(ready, null, { timeout: 240000 });
     return { name: name, pg: pg, logs: logs, ctx: ctx };
   }
+  var TILLPIPE = MUTNAME === 'till-on-internet' ? PIPE : LAN; if (MUTNAME === 'till-on-internet') console.log('§EODA_MUTANT applied till-on-internet: the tills are given the INTERNET relay pipe (harness-level, once)');
   var qsNet = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';   // head office A: the internet relay
-  var qsBase = '&team=1&pipe=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';   // an ordinary till: the branch relay ONLY
+  var qsBase = '&team=1&pipe=' + encodeURIComponent(TILLPIPE) + '&relay=' + encodeURIComponent(RELAY) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';   // an ordinary till: the branch relay ONLY
   var qsMain = qsNet + '&lan=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY);   // the main till: internet relay + branch relay, routed
   var eng = function (d, fn, arg) { return d.pg.evaluate('(function(){ var W = window.Till ? window.Till.engine() : window.BranchAdmin ? window.BranchAdmin.engine() : window; return (' + fn.toString() + ')(W, ' + J(arg === undefined ? null : arg) + '); })()'); };
   var T = {
