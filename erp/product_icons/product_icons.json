@@ -1,17 +1,17 @@
 {
- "bucket": "bim-ootb-dev",
+ "bucket": "bim-ootb",
  "prefix": "erp/product-icons/",
  "fluentui_emoji_commit": "1ffb34c752ecf5d402f04cfb4b392c77f57c54bc",
  "lucide_commit": "1980e3d59b0fa1a2aeb566d5902b25ee98204001",
  "licences": [
-  "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/LICENSE.fluentui-emoji.txt",
-  "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/LICENSE.lucide.txt"
+  "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/LICENSE.fluentui-emoji.txt",
+  "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/LICENSE.lucide.txt"
  ],
  "products": [
   {
    "value": "Azalea Bush",
    "slug": "azalea-bush",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/azalea-bush.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/azalea-bush.svg",
    "set": "fluent",
    "source": "hibiscus",
    "tint": null,
@@ -21,7 +21,7 @@
   {
    "value": "Holly Bush",
    "slug": "holly-bush",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/holly-bush.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/holly-bush.svg",
    "set": "fluent",
    "source": "herb",
    "tint": null,
@@ -31,7 +31,7 @@
   {
    "value": "Rose Bush",
    "slug": "rose-bush",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/rose-bush.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/rose-bush.svg",
    "set": "fluent",
    "source": "rose",
    "tint": null,
@@ -41,7 +41,7 @@
   {
    "value": "Fertilizer#50",
    "slug": "fertilizer-50",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/fertilizer-50.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/fertilizer-50.svg",
    "set": "lucide",
    "source": "flask-conical",
    "tint": "#2e7d32",
@@ -51,7 +51,7 @@
   {
    "value": "Fertilizer#70",
    "slug": "fertilizer-70",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/fertilizer-70.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/fertilizer-70.svg",
    "set": "lucide",
    "source": "flask-conical",
    "tint": "#e65100",
@@ -61,7 +61,7 @@
   {
    "value": "Mulch",
    "slug": "mulch",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/mulch.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/mulch.svg",
    "set": "fluent",
    "source": "fallen_leaf",
    "tint": null,
@@ -71,7 +71,7 @@
   {
    "value": "Doc",
    "slug": "doc",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/doc.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/doc.svg",
    "set": "fluent",
    "source": "open_book",
    "tint": null,
@@ -81,7 +81,7 @@
   {
    "value": "PChair",
    "slug": "pchair",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/pchair.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/pchair.svg",
    "set": "fluent",
    "source": "chair",
    "tint": null,
@@ -91,7 +91,7 @@
   {
    "value": "PatioSet",
    "slug": "patioset",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/patioset.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/patioset.svg",
    "set": "fluent",
    "source": "couch_and_lamp",
    "tint": null,
@@ -101,7 +101,7 @@
   {
    "value": "Screen",
    "slug": "screen",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/screen.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/screen.svg",
    "set": "fluent",
    "source": "umbrella_on_ground",
    "tint": null,
@@ -111,7 +111,7 @@
   {
    "value": "PTable",
    "slug": "ptable",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/ptable.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/ptable.svg",
    "set": "lucide",
    "source": "table-2",
    "tint": "#8d6e63",
@@ -121,7 +121,7 @@
   {
    "value": "Grass",
    "slug": "grass",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/grass.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/grass.svg",
    "set": "fluent",
    "source": "sheaf_of_rice",
    "tint": null,
@@ -131,7 +131,7 @@
   {
    "value": "Mary",
    "slug": "mary",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/mary.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/mary.svg",
    "set": "fluent",
    "source": "woman_office_worker",
    "tint": null,
@@ -141,7 +141,7 @@
   {
    "value": "Planting",
    "slug": "planting",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/planting.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/planting.svg",
    "set": "fluent",
    "source": "potted_plant",
    "tint": null,
@@ -151,7 +151,7 @@
   {
    "value": "TShirt-GL",
    "slug": "tshirt-gl",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/tshirt-gl.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/tshirt-gl.svg",
    "set": "fluent",
    "source": "t-shirt",
    "tint": null,
@@ -161,7 +161,7 @@
   {
    "value": "TShirt-RL",
    "slug": "tshirt-rl",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/tshirt-rl.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/tshirt-rl.svg",
    "set": "fluent",
    "source": "t-shirt",
    "tint": null,
@@ -171,7 +171,7 @@
   {
    "value": "Travel",
    "slug": "travel",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/travel.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/travel.svg",
    "set": "fluent",
    "source": "automobile",
    "tint": null,
@@ -181,7 +181,7 @@
   {
    "value": "Seeder",
    "slug": "seeder",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/seeder.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/seeder.svg",
    "set": "fluent",
    "source": "seedling",
    "tint": null,
@@ -191,7 +191,7 @@
   {
    "value": "Hoe",
    "slug": "hoe",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/hoe.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/hoe.svg",
    "set": "lucide",
    "source": "pickaxe",
    "tint": "#6d4c41",
@@ -201,7 +201,7 @@
   {
    "value": "Tiller",
    "slug": "tiller",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/tiller.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/tiller.svg",
    "set": "lucide",
    "source": "tractor",
    "tint": "#455a64",
@@ -211,7 +211,7 @@
   {
    "value": "Rake-Bamboo",
    "slug": "rake-bamboo",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/rake-bamboo.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/rake-bamboo.svg",
    "set": "lucide",
    "source": "brush-cleaning",
    "tint": "#9e9d24",
@@ -221,7 +221,7 @@
   {
    "value": "Rake-Metal",
    "slug": "rake-metal",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/rake-metal.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/rake-metal.svg",
    "set": "lucide",
    "source": "brush-cleaning",
    "tint": "#546e7a",
@@ -231,7 +231,7 @@
   {
    "value": "Transplanter",
    "slug": "transplanter",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/transplanter.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/transplanter.svg",
    "set": "lucide",
    "source": "shovel",
    "tint": "#795548",
@@ -241,7 +241,7 @@
   {
    "value": "Weeder",
    "slug": "weeder",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/weeder.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/weeder.svg",
    "set": "fluent",
    "source": "scissors",
    "tint": null,
@@ -251,7 +251,7 @@
   {
    "value": "Elm",
    "slug": "elm",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/elm.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/elm.svg",
    "set": "fluent",
    "source": "deciduous_tree",
    "tint": null,
@@ -261,7 +261,7 @@
   {
    "value": "Oak",
    "slug": "oak",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/oak.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/oak.svg",
    "set": "fluent",
    "source": "deciduous_tree",
    "tint": null,
@@ -271,7 +271,7 @@
   {
    "value": "Plum Tree",
    "slug": "plum-tree",
-   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb-dev/o/erp/product-icons/plum-tree.svg",
+   "url": "https://objectstorage.ap-kulai-2.oraclecloud.com/n/ax3cp6tzwuy2/b/bim-ootb/o/erp/product-icons/plum-tree.svg",
    "set": "fluent",
    "source": "peach",
    "tint": null,
