@@ -66,7 +66,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
     var db = build(SQL, sh);
     var mc = db.prepare('SELECT currentcostprice p FROM m_cost WHERE m_product_id=7').get().p, h = DP.costHistoryAt(db, 7, 1, 1, 1, '2026-09-15');
     chk('F9-NOT-VACUOUS-' + sh, [eq('history_found', 'MCostHistory.get by DateAcct finds a row', !!h, true), eq('history_differs_from_m_cost', 'history price != m_cost price, else the test cannot tell them apart', h && Number(h.newcostprice) !== Number(mc), true)]);
-    // F9-HISTORY-PRICE / REFUSAL / TODAY / NEG-CONTROL / NO-HISTORY judged doc_poster.deriveInOut (retired, §POSTING-PARITY 5f): the BOOK claims now run on the REAL poster -
+    // F9-HISTORY-PRICE / REFUSAL / TODAY / NEG-CONTROL / NO-HISTORY judged the doc_poster shipment fold (retired, §POSTING-PARITY 5f): the BOOK claims now run on the REAL poster -
     //   W-SEED-COSTHISTORY H1 (history price == legacy), H6 (history +0.01 moves the books), H7 (no history -> m_cost); W-POST-ERROR (refusal on the HISTORY qty, AverageCostingNegativeQty).
     if (sh === 'H') {   // F9-APPEND on a fresh H db
       var d2 = build(SQL, 'H'), cnt = function () { return d2.prepare('SELECT COUNT(*) c FROM m_costhistory').get().c; }, c0 = cnt();
@@ -102,7 +102,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var Mv = build(SQL, 'S');
   Mv.exec("CREATE TABLE m_movement(m_movement_id,dateacct);CREATE TABLE m_movementline(m_movementline_id,m_movement_id,m_product_id,movementqty,m_locator_id,m_locatorto_id);CREATE TABLE m_locator(m_locator_id,m_warehouse_id);CREATE TABLE m_warehouse(m_warehouse_id,ad_org_id);" +
     "INSERT INTO m_warehouse VALUES(1,11);INSERT INTO m_locator VALUES(1,1);INSERT INTO m_locator VALUES(2,1);INSERT INTO m_movement VALUES(1,'2026-09-15 00:00:00');INSERT INTO m_movementline VALUES(1,1,7,1,1,2);");
-  // F9-R5-MOVEMENT-AT-DATE (doc_poster.deriveMovement, retired): movement books at the history price -> W-SEED-COSTHISTORY H6 (real poster, movement #100).
+  // F9-R5-MOVEMENT-AT-DATE (the doc_poster movement fold, retired): movement books at the history price -> W-SEED-COSTHISTORY H6 (real poster, movement #100).
   chk('F9-R5-COSTAT-DATE', [eq('costAt_with_date', 'costAt(db,pid,qty,schema,dateAcct) = history price x qty (2.5500) ; without date = m_cost (2.8900)', [DP.costAt(Mv, 7, 1, 1, '2026-09-15'), DP.costAt(Mv, 7, 1, 1)], ['2.5500', '2.8900'])]);
   // R6 BackDateDay (doc_poster's named refusal inside the window, retired): legacy re-processes later cost details inside the window (DocManager.java:640-700); the real poster
   //   has no such step - a NAMED OPEN GAP in bim-compiler prompts/SQLiteIDEMPIERE.md §POSTING-PARITY step 5f, not judged here.
