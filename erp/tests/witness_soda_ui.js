@@ -7,15 +7,15 @@
 // WHAT IS REAL: the plan routing of the SODA rows and the movement rows (flows S1..S6, F2), the admin's fan-out (branch lane), the tills' apply, the receive-stock receipt riding the EODA send, the relay counts.
 // WHAT IS SIMULATED (named): the HQ batch ROWS are computed by erp/soda_core.js refDelta over HQ's own rows after a real CRUD edit at HQ, and written as ONE op group (the output of the FO_Branch_SODA process,
 //   judged in the kernel by erp/tests/witness_soda.js); HQ's movement + confirm rows are written by CRUD ops (the Replenish create / Prepare, judged by witness_movement_confirm.js / witness_soda.js).
-// Arms: SODA_ARMS=fan,receive,relay.  Mutant: SODA_MUT=<name>.  Run: node erp/tests/witness_soda_ui.js 2>&1 | tee /tmp/soda_logs/soda_ui.log
+// Arms: SODA_ARMS=fan,relay (the receipt UP is judged by witness_soda_receipt_up.js).  Mutant: SODA_MUT=<name>.  Run: node erp/tests/witness_soda_ui.js 2>&1 | tee /tmp/soda_logs/soda_ui.log
 'use strict';
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), vm = require('vm'), nodeCrypto = require('crypto'), cp = require('child_process');
 var ROOT = process.env.SODA_ROOT || path.join(__dirname, '..', '..');
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
 var subtle = nodeCrypto.webcrypto.subtle, J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-var ARMS = (process.env.SODA_ARMS || 'fan,receive,relay').split(','), MUTNAME = process.env.SODA_MUT || '', LOGS = process.env.SODA_LOGS || '/tmp/soda_logs';
-var V = { fan: { judged: 0, failed: 0 }, receive: { judged: 0, failed: 0 }, relay: { judged: 0, failed: 0 } }, errors = [], ARM = 'fan';
+var ARMS = (process.env.SODA_ARMS || 'fan,relay').split(','), MUTNAME = process.env.SODA_MUT || '', LOGS = process.env.SODA_LOGS || '/tmp/soda_logs';
+var V = { fan: { judged: 0, failed: 0 }, relay: { judged: 0, failed: 0 } }, errors = [], ARM = 'fan';
 function check(key, ok, label, info) { var v = V[ARM]; v.judged++; if (!ok) v.failed++; console.log('  §SODA_UI_CHECK arm=' + ARM + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + label + (ok ? '' : ' got=' + J(info).slice(0, 600))); return ok; }
 function walk(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d).forEach(function (n) { var p = path.join(d, n), r = rel ? rel + '/' + n : n; if (fs.statSync(p).isDirectory()) walk(p, r, out); else out.push(r); }); return out; }
 function canon(o) { if (o === null || typeof o !== 'object') return J(o); if (Array.isArray(o)) return '[' + o.map(canon).join(',') + ']'; return '{' + Object.keys(o).sort().map(function (k) { return J(k) + ':' + canon(o[k]); }).join(',') + '}'; }
@@ -28,8 +28,7 @@ var money = function (c) { return (Number(c) / 100).toFixed(2); }, toCents = fun
 // mutants: [file, anchor (must occur exactly once), replacement, arm that must go red]
 var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go red]
   'fan-per-row': ['/erp/branch_admin.js', "var res = await depositGroup(tr.map(function (r) { return create('pos_tillref', r); }));", "var res = { committed: true, gid: 'mut' }; for (var mi = 0; mi < tr.length; mi++) { await depositGroup([create('pos_tillref', tr[mi])]); await E.TeamSync.visit(); }", 'relay'],
-  'till-no-apply': ['/erp/till.js', "if (ops.length) { var g = await depositGroup(ops);", "if (false) { var g = await depositGroup(ops);", 'fan'],
-  'receipt-own-send': ['/erp/branch_admin.js', "saveSet(); msg(n + ' movement(s) received;", "saveSet(); if (n) { var mo = []; S.set.receipts.filter(function (x) { return !x.sent; }).forEach(function (x) { x.rows.forEach(function (r) { mo.push(create('pos_movementreceipt', r)); }); x.sent = true; }); await depositGroup(mo); await E.TeamSync.visit(); } msg(n + ' movement(s) received;", 'receive']
+  'till-no-apply': ['/erp/till.js', "if (ops.length) { var g = await depositGroup(ops);", "if (false) { var g = await depositGroup(ops);", 'fan']
 };
 
 (async function main() {
@@ -200,44 +199,6 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
     }
   }
 
-  if (setupOk && ARMS.indexOf('receive') >= 0) {
-    ARM = 'receive'; console.log('§U4 RECEIVE: HQ writes an in-transit movement (header, line, confirm, line confirm) for the branch; the admin receives it SHORT; the receipt rides the next EODA send');
-    var admin2 = D.pg, XP = (await rowsOf(A, 'SELECT m_product_id AS p FROM m_productprice ORDER BY m_product_id LIMIT 1'))[0].p;
-    var hqW = async function (ops) { return eng(A, function (W, o) { return new Promise(function (res) { var t = setTimeout(function () { res({ committed: false, reason: 'timeout' }); }, 60000); W.__crud.applyOpGroup(o, function (r) { clearTimeout(t); res(r); }); }); }, ops); };
-    var cr2 = function (table, f) { return { op_type: 'CRUD_CREATE', key: table, table: table, verb: 'create', fields: f }; };
-    var base = { ad_client_id: 11, ad_org_id: 11, isactive: 'Y' };
-    var mvOps = [cr2('m_movement', Object.assign({ documentno: 'SODA-MV-1', movementdate: '2026-11-04 00:00:00', c_doctype_id: 143, docstatus: 'IP', docaction: 'CO', isintransit: 'N', processed: 'N', description: 'SODA receive witness' }, base)),
-      cr2('m_movementline', Object.assign({ m_movement_id: { __opRef: 0 }, line: 10, m_product_id: XP, m_locator_id: 101, m_locatorto_id: 102, movementqty: 5, qtyentered: 5, c_uom_id: 100 }, base)),
-      cr2('m_movementconfirm', Object.assign({ m_movement_id: { __opRef: 0 }, documentno: 'SODA-MC-1', docstatus: 'DR', docaction: 'CO', processed: 'N', isapproved: 'N' }, base)),
-      cr2('m_movementlineconfirm', Object.assign({ m_movementconfirm_id: { __opRef: 2 }, m_movementline_id: { __opRef: 1 }, targetqty: 5, confirmedqty: 5, scrappedqty: 0, differenceqty: 0, processed: 'N' }, base))];
-    var wr = await hqW(mvOps); await visitAll([A, D, A, D], 1);
-    var cnt = async function (sql) { var r = await rowsOf(D, sql); return r.length ? Number(r[0].n) : -1; };
-    var seenD = { m_movement: await cnt("SELECT count(*) AS n FROM m_movement WHERE documentno='SODA-MV-1'"), m_movementline: await cnt("SELECT count(*) AS n FROM m_movementline l JOIN m_movement m ON m.m_movement_id=l.m_movement_id WHERE m.documentno='SODA-MV-1'"),
-      m_movementconfirm: await cnt("SELECT count(*) AS n FROM m_movementconfirm WHERE documentno='SODA-MC-1'"), m_movementlineconfirm: await cnt("SELECT count(*) AS n FROM m_movementlineconfirm lc JOIN m_movementconfirm c ON c.m_movementconfirm_id=lc.m_movementconfirm_id WHERE c.documentno='SODA-MC-1'") };
-    console.log('§SODA_UI_MOVE hq committed=' + J(wr && wr.committed) + ' admin sees ' + J(seenD));
-    console.log('§SODA_UI_IDS admin: header=' + J(await rowsOf(D, "SELECT m_movement_id AS id FROM m_movement WHERE documentno='SODA-MV-1'")) + ' line.fk=' + J(await rowsOf(D, 'SELECT m_movementline_id AS id, m_movement_id AS fk FROM m_movementline ORDER BY ABS(m_movementline_id) DESC LIMIT 2')) + ' confirm.fk=' + J(await rowsOf(D, "SELECT m_movementconfirm_id AS id, m_movement_id AS fk FROM m_movementconfirm WHERE documentno='SODA-MC-1'")) + ' | hq header=' + J(await rowsOf(A, "SELECT m_movement_id AS id FROM m_movement WHERE documentno='SODA-MV-1'")) + ' hq line.fk=' + J(await rowsOf(A, 'SELECT m_movementline_id AS id, m_movement_id AS fk FROM m_movementline ORDER BY ABS(m_movementline_id) DESC LIMIT 1')));
-    var conf = await rowsOf(D, "SELECT c.documentno AS dn, c.processed AS pr, c.m_movementconfirm_id AS id FROM m_movementconfirm c WHERE c.documentno='SODA-MC-1'");
-    check('V1-movement-reaches-admin', wr && wr.committed === true && conf.length === 1, 'the movement and its confirmation written at HQ reach the branch POS admin through the plan (S3/S4/S5/F2)', { wr: wr && wr.committed, conf: conf, seen: seenD });
-    var lineSeen = await rowsOf(D, "SELECT lc.targetqty AS t, ml.line AS line, ml.m_locatorto_id AS lt FROM m_movementlineconfirm lc JOIN m_movementline ml ON ml.m_movementline_id=lc.m_movementline_id JOIN m_movementconfirm c ON c.m_movementconfirm_id=lc.m_movementconfirm_id WHERE c.documentno='SODA-MC-1'");
-    check('V2-lines-joined', lineSeen.length === 1 && Number(lineSeen[0].t) === 5 && Number(lineSeen[0].lt) === 102, 'the confirm line joins its movement line at the admin (target 5, destination locator 102 = Store Central)', lineSeen);
-    await admin2.evaluate(function () { return window.BranchAdmin.refresh(); });
-    var s0 = await admin2.evaluate(function () { return window.BranchAdmin.soda().then(function (s) { return { toReceive: s.confirms.length }; }); });
-    check('V3-screen-offers-receive', s0.toReceive === 1 && await admin2.$eval('#a-soda-recv', function (b) { return !b.disabled; }), 'the admin offers exactly one movement to receive and the "Receive stock" button is enabled', s0);
-    var mkR = mark(), rc = await admin2.evaluate(function () { return window.BranchAdmin.receiveStock({ 'SODA-MC-1': [{ line: 10, confirmed: 3, scrapped: 1 }] }); }); var reqR = since0(mkR);
-    check('V4-receive-sends-nothing', rc && rc.received === 1 && reqR.filter(function (r) { return r.m === 'PUT' && r.dev === 'D'; }).length === 0, 'Receive stock makes NO send of its own: ' + reqR.filter(function (r) { return r.m === 'PUT' && r.dev === 'D'; }).length + ' admin puts while receiving', { rc: rc, puts: reqR.filter(function (r) { return r.m === 'PUT' && r.dev === 'D'; }).length });
-    var q0 = await rowsOf(A, 'SELECT count(*) AS n FROM pos_movementreceipt'); await visitAll([D, A]);
-    check('V5-hq-has-no-receipt-yet', Number(q0[0].n) === 0 && Number((await rowsOf(A, 'SELECT count(*) AS n FROM pos_movementreceipt'))[0].n) === 0, 'head office holds 0 receipt rows after the receipt and a round of Visits (nothing travels until the EODA)', q0);
-    // one till rings and closes, then the admin makes its ONE send
-    var pgT = pgs[0]; await pgT.click('#u1 .u-user:has-text("GardenAdmin")'); await pgT.click('#u2 [data-panel="Sales"]'); await ring(0, 1); var creq = await closeShift(0); await visitAll([D, A, D]);
-    await admin2.fill('#a-tills', tillKeys[0]); await admin2.dispatchEvent('#a-tills', 'change'); await sleep(400);
-    var mkS = mark(), sr = await admin2.evaluate(function () { return window.BranchAdmin.send(false); }); var reqS = since0(mkS); await visitAll([D, A]);
-    var rcpt = await rowsOf(A, 'SELECT confirmdocumentno AS c, movementdocumentno AS m, targetqty AS t, confirmedqty AS cf, scrappedqty AS sc, differenceqty AS df, status AS st, batchid AS b FROM pos_movementreceipt');
-    console.log('§SODA_UI_SEND send=' + J(sr) + ' admin requests=' + reqS.length + ' hub puts=' + puts(reqS, 'D', 'hub') + ' receipt rows at HQ=' + J(rcpt));
-    check('V6-receipt-arrives-in-eoda', sr && sr.batch && rcpt.length === 1 && rcpt[0].c === 'SODA-MC-1' && rcpt[0].m === 'SODA-MV-1' && Number(rcpt[0].t) === 5 && Number(rcpt[0].cf) === 3 && Number(rcpt[0].sc) === 1 && Number(rcpt[0].df) === 2 && rcpt[0].st === 'CO', 'the confirmed result (target 5, confirmed 3, scrapped 1, difference 2 = Target - Confirmed) reached head office inside the EODA send', { sr: sr, rcpt: rcpt });
-    check('V7-one-send', puts(reqS, 'D', 'hub') <= 2, 'the EODA send that carried the receipt is ONE Visit: ' + puts(reqS, 'D', 'hub') + ' hub-lane puts (a send per receipt would add more)', puts(reqS, 'D', 'hub'));
-    var again = await admin2.evaluate(function () { return window.BranchAdmin.soda().then(function (s) { return s.confirms.length; }); });
-    check('V8-not-offered-twice', again === 0, 'a received movement is not offered again', again);
-  }
   console.log('§SODA_UI_PAGE_ERRORS n=' + errors.length + (errors.length ? ' ' + J(errors.slice(0, 3)) : ''));
   ARM = ARMS[0]; V[ARM].judged++; if (errors.length) V[ARM].failed++; console.log('  §SODA_UI_CHECK arm=' + ARM + ' key=page-errors ' + (errors.length ? 'FAIL' : 'OK') + ' 0 page errors on the five pages');
   await browser.close(); server.close();

@@ -246,7 +246,7 @@
           line.set('ad_client_id', hdr.ad_client_id).set('ad_org_id', hdr.ad_org_id).set('m_movement_id', hdr.m_movement_id);
           line.set('m_product_id', rep.m_product_id).set('movementqty', moveQty);         // :619-620
           if (D(rep.qtytoorder).compareTo(moveQty) !== 0) line.set('description', 'Total: ' + D(rep.qtytoorder).toString());   // :621-622
-          line.set('m_locator_id', s.loc).set('m_attributesetinstance_id', s.asi || 0).set('m_locatorto_id', locTo).set('m_attributesetinstanceto_id', s.asi || 0);   // :623-627
+          line.set('m_locator_id', s.loc).set('m_attributesetinstance_id', s.asi || 0).set('m_locatorto_id', locTo).set('m_attributesetinstanceto_id', (s.asi || 0) < 1 ? null : s.asi);   // :623-627; X_M_MovementLine.setM_AttributeSetInstanceTo_ID: < 1 -> null (parity run 2026-11-04: legacy row holds NULL, the twin held 0)
           M.MO.saveEx(line);                                                               // :628
           target = D(target).subtract(moveQty);                                            // :630
           if (target.signum() === 0) break;                                                // :631-632
@@ -291,7 +291,7 @@
         line.set('m_product_id', rep.m_product_id);                                        // :733
         line.set('qtyentered', rep.qtytoorder).set('qtyordered', rep.qtytoorder);          // :734 setQty
         // :735-736 `if (QtyToOrder.compareTo(QtyToOrder) != 0) setDescription(...)` - compares the value with itself, never true upstream (kept: no description)
-        line.set('m_locator_id', locFrom).set('m_attributesetinstance_id', 0).set('m_locatorto_id', locTo).set('m_attributesetinstanceto_id', 0).set('isinvoiced', 'N');   // :737-742
+        line.set('m_locator_id', locFrom).set('m_attributesetinstance_id', 0).set('m_locatorto_id', locTo).set('m_attributesetinstanceto_id', null).set('isinvoiced', 'N');   // :737-742 (X_ setter: 0 -> null)
         M.MO.saveEx(line);                                                                 // :743
       });
       if (reps.length === 0) { this.m_info = 'No Source Warehouse'; trx.say('§PROC-WARNING ' + this.m_info); }   // :745-749
