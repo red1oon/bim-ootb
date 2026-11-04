@@ -19,7 +19,7 @@ const log = console.log, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'g6a-')), S
 let judged = 0, fails = 0, inconc = 0;
 const ck = (n, ok, info) => { judged++; if (!ok) fails++; log('  §G6A ' + n + ' ' + (ok ? 'PASS' : 'FAIL') + (info !== undefined ? ' ' + (typeof info === 'string' ? info : JSON.stringify(info)) : '')); };
 const inc = (n, why) => { inconc++; log('  §G6A ' + n + ' INCONCLUSIVE ' + why); };
-const { psqlRaw, pj, pilotGoals, selects, parse } = require('../tools/legacy_goal_sql.js');
+const { psqlRaw, pj, pilotGoals, selects, parse, titleOf } = require('../tools/legacy_goal_sql.js');
 const lit = v => v == null ? 'NULL' : "'" + String(v).replace(/'/g, "''") + "'";
 const finish = () => { const verdict = judged === 0 ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS'; log('§G6A_VERDICT ' + verdict + ' judged=' + judged + ' fail=' + fails + ' inconclusive=' + inconc + (BREAK || NO_STORE ? ' (G6A_BREAK=' + process.env.G6A_BREAK + ': FAIL expected)' : '')); fs.rmSync(TMP, { recursive: true, force: true }); process.exit(verdict === 'PASS' ? 0 : verdict === 'FAIL' ? 1 : 2); };
 const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Number(v).toFixed(12); return BD.fromString(x); };
@@ -115,7 +115,7 @@ const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Numbe
       if (!d) { ck(tag + ' ' + g.name + ' drawn', false, 'absent from the Home'); continue; }
       if (g.name === 'CAPEX Approval Pending') { inc(tag + ' ' + g.name, 'AD_WF_Activity is not a fold: twin ' + d.title + ', pilot whole client ' + whole + ' (G6b)'); continue; }
       if (S[g.id] == null) { inc(tag + ' ' + g.name, 'no oracle (measure type ' + g.mt + ')'); continue; }
-      const oracle = BREAK ? bd(S[g.id]).add(BD.of(1)).toString() : S[g.id], want = g.name + ': ' + await fmtInt(oracle), sc = Math.min((String(oracle).split('.')[1] || '').length, 6), eng = bd(d.engine);
+      const oracle = BREAK ? bd(S[g.id]).add(BD.of(1)).toString() : S[g.id], want = await titleOf(g, oracle, fmtInt), sc = Math.min((String(oracle).split('.')[1] || '').length, 6), eng = bd(d.engine);
       if (tag === 'H') log('    §G6A_GAP ' + g.name + ' twinHome=' + JSON.stringify(d.title) + ' legacySameRows=' + oracle + ' pilotWholeClient=' + whole);
       if (bd(oracle).isZero() && eng.isZero()) { inc(tag + ' ' + g.name, 'not exercised — 0 on both sides'); continue; }
       ck(tag + ' ' + g.name + ' Home title == legacy over the same rows', d.title === want, 'drawn=' + JSON.stringify(d.title) + ' want=' + JSON.stringify(want));
