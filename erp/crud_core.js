@@ -493,7 +493,8 @@
           var ex = (p.id != null) ? byId[String(p.id)] : null;   // a created row may be edited (keyed by its synthetic pk)
           // model_layer: a table with no single key (AD_Column.IsKey/IsParent composite — M_StorageOnHand, M_Cost …) is
           // addressed by its <Table>_UU (p.idCol), the record identity PO.saveNew:3546 stamps.
-          if (!ex && p.idCol && p.id != null) { for (var xi = 0; xi < rows.length; xi++) { if (String(rows[xi][p.idCol]) === String(p.id)) { ex = rows[xi]; break; } } }
+          if (!ex && p.idCol && p.id != null) { var lic = String(p.idCol).toLowerCase(); for (var xi = 0; xi < rows.length; xi++) { var iv = rows[xi][p.idCol]; if (iv === undefined) { for (var ik in rows[xi]) if (Object.prototype.hasOwnProperty.call(rows[xi], ik) && String(ik).toLowerCase() === lic) { iv = rows[xi][ik]; break; } }   // a bundle SELECT * carries the dictionary's CamelCase (M_ProductPrice_UU) while the op's idCol is lowercase: the exact-case lookup never matched, so an edit of a UU-addressed table (M_ProductPrice) was invisible to model reads (SODA, POS_PLUGIN_LOCAL_FIRST §28)
+          if (String(iv) === String(p.id)) { ex = rows[xi]; break; } } }
           if (ex) {
             if (updated.indexOf(p.id) < 0) updated.push(p.id);   // S2/J4 — report the touched row so the host overlay repaints on a pure edit
             // apply each change onto the EXISTING key case (the op keys lowercase via f.col, but a SELECT* bundle row
