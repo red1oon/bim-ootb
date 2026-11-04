@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT'];
   var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -53,6 +53,7 @@
       if (SINGLE.indexOf(key) >= 0) {
         var name = key.toLowerCase();
         if (key === 'LEVEL' || key === 'ROOF' || key === 'PITCH') { var n = Number(val); if (!isFinite(n)) { errors.push(err('MARK:malformed', '@' + key + ' not a number: ' + val, { handle: m.handle })); return; } val = n; }   // ROOF: BASIC_SHAPES_SPEC §5.3
+        if (key === 'HEADFRAME') { var hfv = Number(val); if (!isFinite(hfv) || hfv < 0) { errors.push(err('MARK:malformed', '@HEADFRAME must be a number, zero or more: ' + val, { handle: m.handle })); return; } val = hfv; }   // lane spec L38
         if (key === 'REGION') {
           var rp = val.split(',').map(Number);
           if (rp.length !== 4 || rp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@REGION needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
