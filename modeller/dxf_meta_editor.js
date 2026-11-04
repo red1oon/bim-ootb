@@ -41,15 +41,15 @@
 
   var ROLE_VIEW = { PLAN: 'plan', ELEV: 'elev', ROOF: 'roof', SECTION: 'section' };
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
-  var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy' };   // §L4.1 canonical: the position that carries meaning
+  var SINGLE_POS = { GRIDX: 'x', GRIDH: 'x', GRIDY: 'y', Z: 'y', TAG: 'xy', GRIDA: 'xy' };   // §L4.1 canonical: the position that carries meaning
   // §D36 EVIDENCE TIERS (prompts/DXF2BIM_EVIDENCE_TIERS.md): the KIND of evidence a rule reads, fixed per rule (no rule states a confidence number): stated = the file
   // states it, read = a text names it, inferred = geometry or a convention (orange). Every suggestion stays yellow, not yours, until accepted. W-EVIDENCE E1: every
   // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
   var TAGE = '§DXF-EVIDENCE';
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred',   // §D98 a placeholder name: a convention, stays yellow until renamed
-    'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read',   // §D46: each READ from a text the sheet holds
+    'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-PLANE': 'read', 'PR-SHEETNO': 'read', 'PR-GRID-A': 'read', 'PR-LEVEL-NAME': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
-    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'default': 'inferred' };
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
   function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
@@ -124,7 +124,8 @@
     return tmplQualify().layers.grid.concat(st); }   // the set's grid layers + the sheet's @LAYER …,grid
   function levelLayers() { var M = maps(); return M.levl.rules.filter(function (r) { return r.type === 'levelline'; }).map(function (r) { return r.pattern; }); }
   var _SUG = null;   // created on first use: MK is bound lazily (bind())
-  function SUG() { return _SUG || (_SUG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return S.sheets; }, gridLayers: gridLayers, levelLayers: levelLayers })); }
+  function ruleSetting(k) { var c = S.defaultChoices && S.defaultChoices[k]; if (c !== undefined && c !== '') return c; var R = window.DxfImportUI && window.DxfImportUI.state.defaultsRef; return R && R.defaults && R.defaults[k] ? R.defaults[k].value : undefined; }   // §D107
+  function SUG() { return _SUG || (_SUG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return S.sheets; }, gridLayers: gridLayers, levelLayers: levelLayers, setting: ruleSetting })); }
   function proposalsFor(sh) { return SUG().proposalsFor(sh); }
   function unitsK(sh) { return SUG().unitsK(sh); }
   function txtPos(e) { return SUG().txtPos(e); }
@@ -658,7 +659,7 @@
         if (v === 'SECTION') h += field(sh, si, 'HAXIS', 'H axis', mi.miss, 'select', ['+X', '-X', '+Y', '-Y']) + field(sh, si, 'CUT', 'Cut', mi.miss) + field(sh, si, 'ROOF', 'Roof top (m)', mi.miss, 'num');   // §L4.3: the section states @ROOF (§L2.6 E)
         if (v === 'ELEV' || v === 'SECTION') { h += multiBlock(sh, si, ['GRIDH'], 'Grid lines', mi.miss, 'GRIDH') + multiBlock(sh, si, ['Z'], 'Level datums (@Z)', mi.miss, 'Z'); }
         mi.errors.forEach(function (e) { h += '<div class="dm-ref" style="color:#f2a3a3">' + esc(e.code + ' ' + e.message) + '</div>'; });
-        h += S.pv ? previewBlock(si) : proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'LEVEL', 'FACE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'Z']);   // §D34: while the Arrange view stands, the card lists every yellow value placing it (all rounds)
+        h += S.pv ? previewBlock(si) : proposalBlock(sh, si, ['VIEW', 'NAME', 'SET', 'SHEETNO', 'LEVEL', 'FACE', 'PLANE', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDA', 'GRIDH', 'Z']);   // §D34: while the Arrange view stands, the card lists every yellow value placing it (all rounds)
         (sh.prop ? sh.prop.refused : []).filter(function (r) { return r.rule !== 'PR-UNITS'; }).forEach(function (r) { h += '<div class="dm-ref">' + esc(r.rule + ' not proposed: ' + r.why) + '</div>'; });
         h += '</div>';
       }
@@ -1197,7 +1198,7 @@
     var key = JSON.stringify(S.sheets.map(sigOf)) + '|' + JSON.stringify(S.defaultChoices || {}) + '|' + (S.setOverride || '') + '|' + curSet();
     if (_pv && _pv.key === key) return _pv.out;
     var sh0 = S.sheets.map(function (sh) { return { name: sh.name, text: sh.text, dxf: sh.dxf, hatchLayers: sh.hatchLayers, marks: sh.marks.slice() }; });
-    var SG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return sh0; }, gridLayers: gridLayers, levelLayers: levelLayers });
+    var SG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return sh0; }, gridLayers: gridLayers, levelLayers: levelLayers, setting: ruleSetting });
     var yel = sh0.map(function () { return []; }), refused = sh0.map(function () { return []; }), r;
     for (r = 1; r <= PV_ROUNDS; r++) {
       var round = sh0.map(function (sh) { return SG.proposalsFor(sh); }), n = 0;
