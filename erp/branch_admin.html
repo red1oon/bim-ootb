@@ -22,6 +22,11 @@
   <p><label>Override reason (needed to send while a till is open) <input id="a-override" size="40"></label>
   <button id="a-send" class="go" disabled>Send EODA</button> <button id="a-status">Send status now</button> <span id="a-sendnote" class="chip"></span></p>
   <p id="a-soda"><b>SODA</b> <span id="s-state" class="chip">no batch</span> <button id="a-soda-fan" disabled>Pass prices to tills</button> <button id="a-soda-recv" disabled>Receive stock</button> <span id="s-recv" class="chip"></span></p><div id="a-recv" hidden></div></main>
+<section id="a-count" style="padding:10px"><h3>Stock count <small>(blind: this screen shows no stock figure; an ad hoc check of the sales floor, kept at this branch unless you include it in tonight's EODA)</small></h3>
+  <p><input id="c-find" size="26" placeholder="Scan or type product code / UPC / name"> <input id="c-qty" size="6" placeholder="Counted"> <button id="c-add">Add</button></p>
+  <table><thead><tr><th>Code</th><th>Product</th><th>Counted</th><th></th></tr></thead><tbody id="c-draft"></tbody></table>
+  <p><label><input type="checkbox" id="c-include"> Include this count in tonight's EODA</label> <button id="c-save" class="go">Save count</button> <button id="c-print">Print</button></p>
+  <table><thead><tr><th>Count</th><th>Day</th><th>Locator</th><th>Lines</th><th>Status</th></tr></thead><tbody id="c-saved"></tbody></table></section>
 <section id="floors" style="padding:10px"><h3>Floors, tables and till settings <small>(uniCenta Floors / Places editors; kept at the branch, never sent to head office)</small></h3>
   <p><input id="f-name" placeholder="Floor name"> <input id="f-image" size="30" placeholder="Background image URL (optional)"> <button id="f-save">Add floor</button></p>
   <table><thead><tr><th>Floor</th><th>Image</th><th></th></tr></thead><tbody id="f-floors"></tbody></table>

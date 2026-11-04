@@ -34,13 +34,14 @@ const button = (id, comp, name, pid, seq, dl, tab) => Object.assign({ ad_toolbar
   iscustomization: 'N', isadvancedbutton: 'N', isaddseparator: 'N', isshowmore: 'N' }, STD);
 
 // §21 Branch Day Close (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §21): ONE head-office process that runs the SAME ported legacy processes in legacy order for the chosen branch Orgs. Rows are DATA (manifest.dictionary), the class is below.
-const P_POSSALES = 9538001, P_IMPORT_ORDER = 206, P_IMPORT_PAYMENT = 343, P_REPLENISH = 53267, M_DAYCLOSE = 9534041, DC_ROLES = [[0, 0], [102, 11]];   // [role, client of the access row]; the head-office clerk, as pos_integration.mjs
+const P_POSSALES = 9538001, P_IMPORT_ORDER = 206, P_IMPORT_PAYMENT = 343, P_IMPORT_INVENTORY = 219, P_REPLENISH = 53267, M_DAYCLOSE = 9534041, DC_ROLES = [[0, 0], [102, 11]];   // [role, client of the access row]; the head-office clerk, as pos_integration.mjs
 // [id, name, columnname, seq, ref, refValue, valRule, mandatory, length]
 const DC_PARA = [[9534031, 'Organization', 'AD_Org_ID', 10, 19, null, 130, 'N', 10], [9534032, 'Branch Orgs (comma separated ids; both empty = every Org with pending till rows)', 'BranchOrgs', 20, 10, null, null, 'N', 255],
   [9534033, 'Business Day', 'BusinessDay', 30, 15, null, null, 'Y', 7], [9534034, 'Bank Account', 'C_BankAccount_ID', 40, 19, null, null, 'Y', 10],
   [9534035, 'Business Partner', 'C_BPartner_ID', 50, 18, 223, null, 'N', 10], [9534036, 'Product Category', 'M_Product_Category_ID', 60, 19, null, null, 'N', 10], [9534037, 'Is Kanban', 'IsKanban', 70, 17, 319, null, 'N', 1],
   [9534038, 'Create', 'ReplenishmentCreate', 80, 17, 53412, null, 'N', 3], [9534039, 'Document Type', 'C_DocType_ID', 90, 19, null, 229, 'N', 10],
-  [9534040, 'Include partial batch (a branch\'s Send status now; imported only when ticked)', 'IncludePartial', 100, 20, null, null, 'N', 1]]
+  [9534040, 'Include partial batch (a branch\'s Send status now; imported only when ticked)', 'IncludePartial', 100, 20, null, null, 'N', 1],
+  [9534042, 'Import the branch stock count (I_Inventory rows the branch included in its EODA): Import Inventory, completed (POS_PLUGIN_LOCAL_FIRST section 37)', 'ImportInventory', 110, 20, null, null, 'N', 1]]
   .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_DAYCLOSE, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_reference_value_id: r[5], ad_val_rule_id: r[6], ismandatory: r[7], fieldlength: r[8],
     defaultvalue: null, iscentrallymaintained: 'Y', isrange: 'N' }, STD));
 const DC_ACCESS = DC_ROLES.map((r) => { const x = Object.assign({ ad_process_id: P_DAYCLOSE, ad_role_id: r[0], isreadwrite: 'Y', ad_process_access_uu: 'fo-rows-' + P_DAYCLOSE + '-' + r[0] }, STD); x.ad_client_id = r[1]; delete x.entitytype; return x; });
@@ -192,7 +193,7 @@ function dayCloseClass(SvrProcess, X) {
       if (pv == null || pv === '') continue;
       if (name === 'AD_Org_ID' || name === 'C_BankAccount_ID' || name === 'C_BPartner_ID' || name === 'M_Product_Category_ID' || name === 'C_DocType_ID') this.p[name] = para[i].getParameterAsInt();
       else if (name === 'BusinessDay') this.p[name] = String(pv).slice(0, 10);
-      else if (name === 'BranchOrgs' || name === 'IsKanban' || name === 'ReplenishmentCreate' || name === 'IncludePartial') this.p[name] = String(pv);
+      else if (name === 'BranchOrgs' || name === 'IsKanban' || name === 'ReplenishmentCreate' || name === 'IncludePartial' || name === 'ImportInventory') this.p[name] = String(pv);
       else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA BranchDayClose ' + name);
     }
   };
@@ -278,6 +279,7 @@ function dayCloseClass(SvrProcess, X) {
     if (P.AD_Org_ID) orgs = [P.AD_Org_ID];
     else if (P.BranchOrgs) orgs = P.BranchOrgs.split(',').map((x) => Number(String(x).trim())).filter((x) => x > 0);
     else orgs = trx.q('SELECT DISTINCT o FROM (SELECT ad_org_id AS o, i_isimported AS i, substr(dateordered,1,10) AS d FROM i_order WHERE ad_client_id=? UNION ALL SELECT ad_org_id, i_isimported, substr(datetrx,1,10) FROM i_payment WHERE ad_client_id=?) WHERE i IS NOT \'Y\' AND d=? AND o IS NOT NULL ORDER BY o', [C, C, day]).map((r) => Number(r.o));
+    if (!P.AD_Org_ID && !P.BranchOrgs && P.ImportInventory === 'Y') { try { trx.q("SELECT DISTINCT ad_org_id AS o FROM i_inventory WHERE ad_client_id=? AND i_isimported IS NOT 'Y' AND ad_org_id IS NOT NULL ORDER BY ad_org_id", [C]).forEach((r) => orgs.push(Number(r.o))); } catch (e) { /* no I_Inventory table on this host: no counts */ } }   // section 37: a branch whose only pending rows are a stock count is closed too
     orgs = orgs.filter((o, i, a) => a.indexOf(o) === i).sort((a, b) => a - b);
     line('§DAYCLOSE-START client=' + C + ' day=' + day + ' branches=' + orgs.join(',') + ' import=' + (usePOS ? 'Import POS Sales ' + P_POSSALES : 'Import Orders ' + P_IMPORT_ORDER + ' + Import Payment ' + P_IMPORT_PAYMENT) + ' replenishCreate=' + (P.ReplenishmentCreate || 'none') + ' break=' + (DC_BREAK || 'none'));
     if (!orgs.length) { line('§DAYCLOSE-EMPTY day=' + day + ' no branch has pending till rows for this day: nothing judged'); this.addLog(0, null, null, 'Nothing to close for ' + day); return 'Branch Day Close: nothing pending for ' + day; }
@@ -296,7 +298,31 @@ function dayCloseClass(SvrProcess, X) {
       return false;
     };
     const pendingOf = (org) => trx.find('i_order', {}, null, { exclude: { i_isimported: 'Y' } }).filter((r) => nz(r.ad_org_id) === org).length;
-    // the three steps (an array so every step stays one named unit; the order IS legacy's, §2.3)
+    // §37 the branch stock count: Import Inventory (219) then the completion of each Physical Inventory (DocAction CO inside the process, HQ = the one executor, FL-8). The branch is BLIND (D7), so its rows carry no QtyBook: HQ stamps
+    //   QtyBook from its OWN M_StorageOnHand (sum over the row's locator and product, ASI 0, as InventoryCountUpdate.java:89-97 builds a count list) BEFORE the import - named twin decision, section 37.2 point 5a. Runs after Import POS Sales (the
+    //   tills' sales have reduced the book) and before the Replenish Report (which then sees the corrected stock). Not ticked / no rows: nothing runs.
+    const invStep = (org) => () => {
+      if (P.ImportInventory !== 'Y') { line('§DAYCLOSE-STEP org=' + org + ' step="Import Inventory" result=SKIPPED not requested'); return true; }
+      return step(org, 'Import Inventory', () => {
+        let pend = [];
+        try { pend = trx.q("SELECT i_inventory_id AS id, value, upc, locatorvalue AS lv, qtycount AS qc, ad_org_id AS o FROM i_inventory WHERE ad_client_id=? AND i_isimported IS NOT 'Y' ORDER BY i_inventory_id", [C]); } catch (e) { pend = []; }
+        if (!pend.length) { line('§DAYCLOSE-INV org=' + org + ' INCONCLUSIVE no pending count row (the branch did not include a count in its EODA): nothing judged'); return { ok: true, msg: 'no count rows' }; }
+        pend.forEach((r) => {
+          const loc = (trx.q('SELECT MAX(m_locator_id) AS l FROM m_locator WHERE value=? AND ad_client_id=?', [r.lv, C])[0] || {}).l;
+          let pr = r.value == null ? null : (trx.q('SELECT MAX(m_product_id) AS p FROM m_product WHERE value=? AND ad_client_id=?', [r.value, C])[0] || {}).p;
+          if (pr == null && r.upc != null) pr = (trx.q('SELECT MAX(m_product_id) AS p FROM m_product WHERE upc=? AND ad_client_id=?', [r.upc, C])[0] || {}).p;
+          const book = loc != null && pr != null ? trx.find('m_storageonhand', { m_locator_id: loc, m_product_id: pr }).filter((x) => nz(x.m_attributesetinstance_id) === 0).reduce((a, x) => a + nz(x.qtyonhand), 0) : 0;   // trx.find, not trx.q: the Trx's own pending writes (today's Import POS Sales shipments) are visible only to it
+          trx.update('i_inventory', trx.get('i_inventory', r.id), { qtybook: book });
+          line('§DAYCLOSE-BOOK org=' + r.o + ' row=' + r.id + ' product=' + (r.value || r.upc) + ' locator=' + r.lv + ' book=' + book + ' counted=' + nz(r.qc) + ' difference=' + (nz(r.qc) - book));
+        });
+        const ri = ap.runInTrx(trx, P_IMPORT_INVENTORY, { params: { AD_Client_ID: C, AD_Org_ID: org, DocAction: 'CO', DeleteOldImported: 'N' } });
+        if (!ri.ok) return { ok: false, msg: 'Import Inventory: ' + clean(ri.summary) };
+        const bad = trx.find('i_inventory', {}).filter((r) => String(r.i_isimported) !== 'Y' && nz(r.ad_client_id) === C && r.i_errormsg != null && clean(r.i_errormsg) !== '');
+        if (bad.length) return { ok: false, msg: 'Import Inventory refused ' + bad.length + ' row(s): ' + clean(bad[0].i_errormsg) };
+        return { ok: true, msg: 'rows=' + pend.length + ' ' + clean(ri.summary) };
+      });
+    };
+    // the steps (an array so every step stays one named unit; the order IS legacy's, §2.3)
     const steps = (org, g, whs) => {
       const imp = () => step(org, usePOS ? 'Import POS Sales' : 'Import Orders + Import Payment', () => {
         if (usePOS) {
@@ -332,10 +358,10 @@ function dayCloseClass(SvrProcess, X) {
         }
         return { ok: true, msg: 'warehouses=' + n + ' ' + sum.join(' ') };
       };
-      const list = [['import', imp], ['report', () => step(org, 'Replenish Report', rep(false))]];
+      const list = [['import', imp], ['inventory', invStep(org)], ['report', () => step(org, 'Replenish Report', rep(false))]];
       if (P.ReplenishmentCreate) list.push(['create', () => step(org, 'Replenish confirm create ' + P.ReplenishmentCreate, rep(true))]);
       else list.push(['create', () => { line('§DAYCLOSE-STEP org=' + org + ' step="Replenish confirm create" result=SKIPPED not requested'); return true; }]);
-      if (DC_BREAK === 'order') { const a = list[0]; list[0] = list[2]; list[2] = a; }   // witness-only negative control: the Replenish create before the Import
+      if (DC_BREAK === 'order') { const a = list[0]; list[0] = list[3]; list[3] = a; }   // witness-only negative control: the Replenish create before the Import
       return list;
     };
     const plans = orgs.map((org) => {                                                      // the gate judges every branch BEFORE any step (committed deposits only)
@@ -347,7 +373,7 @@ function dayCloseClass(SvrProcess, X) {
       if (!g.pending) line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' INCONCLUSIVE no pending ticket for this branch and day: nothing judged');
       line('§DAYCLOSE-GATE org=' + org + ' balance=' + g.balance);
       line('§DAYCLOSE-BRANCH org=' + org + ' warehouses=' + whs.join(',') + ' pass=' + g.pass.length + ' withheld=' + g.withheld.length + ' left=' + g.left.length);
-      if (!g.pending) { line('§DAYCLOSE-BRANCH org=' + org + ' SKIPPED nothing pending for ' + day + ': no step runs (Replenish create is not idempotent in legacy; a re-run must make nothing new)'); return { org, list: [0, 1, 2].map(() => ['skipped', () => true]) }; }
+      if (!g.pending) { line('§DAYCLOSE-BRANCH org=' + org + ' SKIPPED nothing pending for ' + day + ': no step runs (Replenish create is not idempotent in legacy; a re-run must make nothing new)'); return { org, list: [['skipped', () => true], ['inventory', invStep(org)], ['skipped', () => true], ['skipped', () => true]] }; }
       return { org, g, list: steps(org, g, whs) };
     });
     if (!usePOS) {                                                                         // fallback: the unscoped legacy imports are safe only when the gate held nothing and nothing else is pending
@@ -355,7 +381,7 @@ function dayCloseClass(SvrProcess, X) {
       if (held.length || nz(out && out.n) > 0) fbReason = (held.length ? 'the gate withheld ' + held.join('; ') : '') + (nz(out && out.n) > 0 ? (held.length ? '; ' : '') + nz(out.n) + ' pending row(s) of other days or Orgs would be imported too' : '') + '. Stage Import POS Sales for per-ticket control, or correct the held tills.';
     }
     // legacy order, stage by stage over the chosen branches (a clerk runs Import for them, then the Replenish Report, then its create): the same sequence of runs the separate-steps path makes
-    for (let st = 0; st < 3 && !stopped; st++) for (const p of plans) { if (stopped) break; p.list[st][1](); }
+    for (let st = 0; st < 4 && !stopped; st++) for (const p of plans) { if (stopped) break; p.list[st][1](); }
     if (!stopped) done = orgs.length;
     const msg = stopped ? 'Branch Day Close STOPPED at step "' + stopped.step + '" (Org ' + stopped.org + '): ' + stopped.reason : 'Branch Day Close done: branches=' + done + ' tickets imported=' + imported + ' till/day withheld=' + withheldN;
     line('§DAYCLOSE-RESULT ' + (stopped ? 'STOPPED' : 'DONE') + ' branches=' + done + '/' + orgs.length + ' imported=' + imported + ' withheld=' + withheldN + (stopped ? ' at="' + stopped.step + '" org=' + stopped.org : ''));
