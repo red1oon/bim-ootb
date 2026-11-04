@@ -115,7 +115,42 @@
   /* ── Main content ── */
   /* min-width:0 lets the flex item shrink below the grid's intrinsic width so the grid scrolls INSIDE
      #idmp-content (overflow:auto) instead of ballooning #idmp-main past the viewport (mobile overflow fix). */
-  #idmp-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); }
+  #idmp-main { flex:1; min-width:0; display:flex; flex-direction:column; min-height:0; background:var(--idmp-bg); position:relative; }
+  /* §FIND-LF — the Find window, legacy placement + metrics (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §FIND-LF; FindWindow.java, setupEmbeddedFindwindow,
+     measured on the live legacy): embedded, untitled, borderless, white; 24px toolbar row; 32px tabs (3px 13px, 2px accent under the selected one);
+     3-column grid 30/50/20 with right-aligned labels and 24px editors (4px radius, 4px 5px); 56x24 icon buttons (4px 20px, radius 4px, 6px apart); 24px status bar. */
+  .idmp-fw-mask { position:absolute; inset:0; background:#e4e4e4; opacity:.6; z-index:999; }
+  .idmp-fw { position:absolute; left:0; width:100%; z-index:1000; background:#fff; border:none; display:flex; flex-direction:column; font-size:12px; }
+  .idmp-fw .fw-content { width:99%; margin:0 auto; padding:5px 5px 0; display:flex; flex-direction:column; flex:1; min-height:0; background:#fff; }
+  .idmp-fw .fw-toolbar { flex:0 0 24px; height:24px; display:flex; align-items:center; gap:3px; position:relative; }
+  .idmp-fw .fw-lbl { color:#333; margin:0 3px 0 4px; white-space:nowrap; }
+  .idmp-fw .fw-combo { height:24px; min-width:160px; border:1px solid var(--idmp-border); border-radius:4px; padding:4px 5px; font:inherit; font-size:12px; background:#fff; }
+  .idmp-fw .fw-btn { display:inline-flex; align-items:center; justify-content:center; height:24px; padding:4px 20px; border:2px solid transparent; border-radius:4px;
+     background:linear-gradient(to bottom,#ffffff,#e6e6e6); border-color:rgba(0,0,0,.1) rgba(0,0,0,.1) rgba(0,0,0,.25); cursor:pointer; }
+  .idmp-fw .fw-btn img { width:22px; height:22px; display:block; }
+  .idmp-fw .fw-btn:hover { background:#e6e6e6; }
+  .idmp-fw .fw-tbbtn { padding:2px 11px; background:transparent; border-color:transparent; }
+  .idmp-fw .fw-tbbtn:hover { background:var(--idmp-hover); }
+  .idmp-fw .fw-pop { position:absolute; top:26px; left:260px; z-index:5; background:#fff; border-radius:4px; box-shadow:0 8px 32px rgba(0,0,0,.12); min-width:160px; }
+  .idmp-fw .fw-popitem { display:block; width:100%; text-align:left; padding:10px 14px; border:none; background:transparent; font:inherit; color:#e74c3c; font-weight:600; cursor:pointer; }
+  .idmp-fw .fw-tabs { flex:0 0 32px; display:flex; margin-top:3px; background:#fff; border-bottom:1px solid var(--idmp-border); }
+  .idmp-fw .fw-tab { height:32px; line-height:24px; padding:3px 13px; cursor:pointer; color:var(--idmp-text); border-bottom:2px solid transparent; user-select:none; }
+  .idmp-fw .fw-tab.sel { border-bottom-color:var(--idmp-blue); }
+  .idmp-fw .fw-panels { flex:1; min-height:0; overflow:auto; padding-top:4px; }
+  .idmp-fw .fw-grid { width:100%; border-collapse:collapse; table-layout:fixed; }
+  .idmp-fw .fw-grid td { padding:2px 4px; vertical-align:middle; }
+  .idmp-fw .fw-grid td.fw-label { text-align:right; color:var(--idmp-text); }
+  .idmp-fw .fw-grid input, .idmp-fw .fw-grid select, .idmp-fw .fw-list input, .idmp-fw .fw-list select { width:100%; height:24px; border:1px solid var(--idmp-border); border-radius:4px; padding:4px 5px; font:inherit; font-size:12px; background:#fff; }
+  .idmp-fw .fw-grid input:focus, .idmp-fw .fw-grid select:focus { outline:none; border-color:var(--idmp-blue); background:#ffffcc; }
+  .idmp-fw .fw-grid tr.fw-group td { cursor:pointer; padding:4px 6px; color:var(--idmp-muted); background:var(--idmp-bg); border-top:1px solid var(--idmp-border); }
+  .idmp-fw .fw-list { width:100%; border-collapse:collapse; margin-top:2px; }
+  .idmp-fw .fw-list th { text-align:left; font-weight:600; padding:4px; background:var(--idmp-bg); border-bottom:1px solid var(--idmp-border); white-space:nowrap; }
+  .idmp-fw .fw-list td { padding:2px 3px; }
+  .idmp-fw .fw-list tr.sel td { background:var(--idmp-sel); }
+  .idmp-fw .fw-south { flex:0 0 33px; display:flex; align-items:center; justify-content:space-between; padding-top:5px; }
+  .idmp-fw .fw-south .fw-left, .idmp-fw .fw-south .fw-right { display:flex; gap:6px; }
+  .idmp-fw .err { color:#c33; min-height:0; }
+  .idmp-fw .fw-status { flex:0 0 24px; height:24px; line-height:24px; padding:0 4px; color:var(--idmp-text); border-top:1px solid var(--idmp-border); }
   /* window MDI tabs */
   #idmp-wintabs {
     flex:0 0 auto; display:flex; align-items:flex-end; gap:2px; padding:6px 8px 0; background:var(--idmp-bg);
@@ -2556,6 +2591,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var level = tab.tabLevel || 0, mdNote = '';
     var tm = _gtModel(_activeTabIdx), gq = window.AdGridTab && tm ? AdGridTab.query(tm, _ctxGetFor(level), access) : { where: access.join(' AND ') || null, orderBy: null, note: 'no-gridtab' };
     var clauses = gq.where ? [gq.where] : [];
+    _findBase[_findKey()] = gq.where || null;   // §FIND-LF: the Find window's Records = N counts under exactly this filter (FindWindow.getNoOfRecords :3455-3490)
     // §MD-FAIL-CLOSED (GridTab contract: a detail tab whose parent link cannot be resolved shows NO rows — never every parent's
     //   rows). Field case 2026-10-07: Task Line listed 29 lines of two projects, the cursor sat on a Hospital line and the red pill
     //   opened Hospital from a Civil Works project. Generic for every window (AD-LAYER LAW) — keyed on AD tab level only.
@@ -2642,7 +2678,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   Simple tab (initFind :983-1170 / cmd_saveSimple :2951-3080), Advanced tab (cmd_saveAdvanced :2507-2840, this tab's columns),
   //   Saved Query (MUserQuery.get, saveQuery :2884-2945, delete), History (addHistoryRestriction :3394-3408). The query maths is
   //   window.AdFind (ad_find.js), judged against the real MQuery in the pilot JVM. Named gaps: child-tab/attribute rows, default + share.
-  var _findByTab = {};
+  var _findByTab = {}, _findBase = {};
   function _findKey() { return _activeWin + ':' + _activeTabIdx; }
   function _findMsg(v, en) { var r = _sqlRows("SELECT msgtext FROM ad_message WHERE value='" + String(v).replace(/'/g, "''") + "'")[0]; return r && r.msgtext ? String(r.msgtext).trim() : en; }
   function _findUdf() { try { if (window.__idmpDb && window.AdFind && !window.__idmpDb.__pgcollate) { window.__idmpDb.create_function('pgcollate', AdFind.collate); window.__idmpDb.__pgcollate = true; } } catch (e) { console.log('§UDP3-FIND udf failed ' + e); } }
@@ -2682,41 +2718,81 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var fields = _findFieldMeta(tab), ff = AdFind.findFields(fields, { isLookupOnlySelection: false }), all = ff.selection.concat(ff.more);
     var byCol = {}; fields.forEach(function (f) { byCol[f.columnName] = f; });
     var tabUU = (_sqlRows('SELECT AD_Tab_UU AS u FROM AD_Tab WHERE AD_Tab_ID=' + Number(tab.id))[0] || {}).u || '';
-    var ov = el('div', null); ov.id = 'idmp-find-ov';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center';
-    var box = el('div', 'idmp-procpane'); box.style.cssText = 'background:var(--idmp-panel,#fff);color:var(--idmp-fg,#1c1c1c);border:1px solid var(--idmp-border,#c9c9c9);border-radius:8px;padding:14px 16px;width:min(760px,96vw);max-height:90vh;overflow:auto;font:13px system-ui';
-    box.appendChild(el('h3', null, _findMsg('Find', 'Lookup Record') + ': ' + tab.name));
-    var tabsRow = el('div', null); tabsRow.style.cssText = 'display:flex;gap:6px;margin:6px 0 10px';
-    var tSimple = el('button', null, _findMsg('Find', 'Lookup Record')), tAdv = el('button', null, _findMsg('Advanced', 'Advanced'));
-    tSimple.type = tAdv.type = 'button'; tSimple.setAttribute('data-find-tab', 'simple'); tAdv.setAttribute('data-find-tab', 'advanced');
+    // §FIND-LF (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §FIND-LF; W-FIND-LF) — legacy's PLACEMENT + LAYOUT, measured on the live legacy:
+    //   EMBEDDED in the window (AbstractADWindowContent.setupEmbeddedFindwindow :1030-1042): no title, no border, white, absolute, 100% wide,
+    //   60% of the window area high (100% when the screen is <= 699px, ClientInfo.MEDIUM_HEIGHT-1); the initial open overlaps the window from its
+    //   top (:975-977 "overlap"), the toolbar Find drops below the window toolbar ("after_start" :2692) over the busy mask (Mask.java :32-33).
+    //   Inside: FindWindow.initPanel :760-860 — top toolbar (Saved Query · Save · ⋮ · History records), the tabbox (Lookup Record | Advanced),
+    //   initSimple :535-630 (3-column grid 30/50/20, south New+Reset left / OK+Cancel right), initAdvanced :636-760, the status bar.
+    var mainEl = $('idmp-main'), tabsEl = $('idmp-wintabs'), tbEl = $('idmp-toolbar');
+    var top0 = opts.initial ? (tabsEl ? tabsEl.offsetTop + tabsEl.offsetHeight : 0) : (tbEl && tbEl.offsetHeight ? tbEl.offsetTop + tbEl.offsetHeight : (tabsEl ? tabsEl.offsetTop + tabsEl.offsetHeight : 0));
+    var areaH = mainEl ? mainEl.clientHeight - (tabsEl ? tabsEl.offsetTop + tabsEl.offsetHeight : 0) : 0, shortScreen = window.innerHeight <= 699;
+    var mask = null;
+    if (!opts.initial && mainEl) { mask = el('div', 'idmp-fw-mask'); mask.id = 'idmp-find-mask'; mainEl.appendChild(mask); }   // showBusyMask (:3987)
+    var ov = el('div', 'idmp-fw'); ov.id = 'idmp-find-ov'; ov.setAttribute('data-find-placement', opts.initial ? 'initial' : 'toolbar');
+    ov.style.top = top0 + 'px'; ov.style.height = Math.round(shortScreen ? areaH : areaH * 0.6) + 'px';
+    function closeFind() { ov.remove(); if (mask) mask.remove(); }
+    var box = el('div', 'fw-content'); ov.appendChild(box);
+    function ibtn(img, tip, cls) { var b = el('button', 'fw-btn' + (cls ? ' ' + cls : '')); b.type = 'button'; b.title = tip; var im = el('img'); im.src = 'theme/default/images/' + img + '24.png'; im.alt = ''; im.draggable = false; b.appendChild(im); return b; }
+    // top toolbar row (initPanel :775-828): label · combo · Save · ⋮ (Default / Share / Delete) · label · combo
+    var bar = el('div', 'fw-toolbar');
+    var dl = document.createElement('datalist'); dl.id = 'idmp-find-queries';
+    var qn = document.createElement('input'); qn.type = 'text'; qn.className = 'fw-combo'; qn.setAttribute('list', dl.id); qn.setAttribute('data-find-query', '1'); qn.title = _findMsg('QueryName', 'Query Name');
+    var bSave = ibtn('Save', _T('find.save', 'Save'), 'fw-tbbtn'), bMore = ibtn('ShowMore', _findMsg('ShowMore', 'More'), 'fw-tbbtn');
+    bSave.setAttribute('data-find-save', '1'); bMore.setAttribute('data-find-more', '1');
+    var pop = el('div', 'fw-pop'); pop.style.display = 'none';
+    var bDel = el('button', 'fw-popitem', _T('find.delete', 'Delete')); bDel.type = 'button'; bDel.setAttribute('data-find-delete', '1'); pop.appendChild(bDel);   // Default + Share: named gaps (W-UDP3)
+    bMore.addEventListener('click', function (e) { e.stopPropagation(); pop.style.display = pop.style.display === 'none' ? '' : 'none'; });
+    ov.addEventListener('click', function () { pop.style.display = 'none'; });
+    var hist = document.createElement('select'); hist.className = 'fw-combo fw-hist'; hist.setAttribute('data-find-history', '1');
+    [['', ''], ['All', 'All'], ['Year', 'Year'], ['Month', 'Month'], ['Week', 'Week'], ['Day', 'Day']].forEach(function (p) { var o = el('option', null, p[0] ? _findMsg(p[0], p[1]) : ''); o.value = p[0]; hist.appendChild(o); });
+    [el('span', 'fw-lbl', _findMsg('SavedQuery', 'Saved Query')), qn, dl, bSave, bMore, pop, el('span', 'fw-lbl', _findMsg('History', 'History records')), hist].forEach(function (x) { bar.appendChild(x); });
+    box.appendChild(bar);
+    // tabbox (Find | Advanced, :834-843)
+    var tabsRow = el('div', 'fw-tabs');
+    var tSimple = el('div', 'fw-tab', _findMsg('Find', 'Lookup Record').replace('&', '')), tAdv = el('div', 'fw-tab', _findMsg('Advanced', 'Advanced'));
+    tSimple.setAttribute('data-find-tab', 'simple'); tAdv.setAttribute('data-find-tab', 'advanced');
     tabsRow.appendChild(tSimple); tabsRow.appendChild(tAdv); box.appendChild(tabsRow);
-    var pSimple = el('div', null), pAdv = el('div', null); pSimple.setAttribute('data-find-panel', 'simple'); pAdv.setAttribute('data-find-panel', 'advanced');
-    box.appendChild(pSimple); box.appendChild(pAdv);
+    var panels = el('div', 'fw-panels'); box.appendChild(panels);
+    var pSimple = el('div', 'fw-panel fw-simple'), pAdv = el('div', 'fw-panel fw-advanced'); pSimple.setAttribute('data-find-panel', 'simple'); pAdv.setAttribute('data-find-panel', 'advanced');
+    panels.appendChild(pSimple); panels.appendChild(pAdv);
     var mode = 'simple';
-    function show(m) { mode = m; pSimple.style.display = m === 'simple' ? '' : 'none'; pAdv.style.display = m === 'advanced' ? '' : 'none'; tSimple.style.fontWeight = m === 'simple' ? '700' : ''; tAdv.style.fontWeight = m === 'advanced' ? '700' : ''; }
-    tSimple.addEventListener('click', function () { show('simple'); }); tAdv.addEventListener('click', function () { show('advanced'); });
-    // Simple: the selection fields (+ the rest under "...", collapsed — :1152-1170); date / number get a To editor (addSelectionColumn :1800-1830)
-    function simpleRow(f, parent) {
-      var row = el('div', 'fld'); row.appendChild(el('label', null, f.name));
-      row.appendChild(_findEditor(f, 'data-find-s'));
-      var vt = AdFind.valueType(f);
-      if ((vt === 'date' || vt === 'num' || (vt === 'int' && Number(f.displayType) === 11))) { var to = _findEditor(f, 'data-find-s-to'); to.title = 'to'; row.appendChild(to); }
-      parent.appendChild(row);
+    // Lookup Record: the 3-column grid (contentSimple :580-611) — label right 30% · editor 50% · To editor 20%
+    var sGrid = el('table', 'fw-grid'), sCols = document.createElement('colgroup');
+    ['30%', '50%', '20%'].forEach(function (w) { var c = document.createElement('col'); c.style.width = w; sCols.appendChild(c); }); sGrid.appendChild(sCols);
+    var sBody = document.createElement('tbody'); sGrid.appendChild(sBody); pSimple.appendChild(sGrid);
+    function simpleRow(f, more) {
+      var row = document.createElement('tr'); row.className = 'fld' + (more ? ' fw-more' : ''); if (more) row.style.display = 'none';
+      var tl = el('td', 'fw-label'); tl.appendChild(el('label', null, f.name)); row.appendChild(tl);
+      var te = el('td', 'fw-ed'); te.appendChild(_findEditor(f, 'data-find-s')); row.appendChild(te);
+      var tt = el('td', 'fw-to'), vt = AdFind.valueType(f);
+      if ((vt === 'date' || vt === 'num' || (vt === 'int' && Number(f.displayType) === 11))) { var to = _findEditor(f, 'data-find-s-to'); to.title = 'to'; tt.appendChild(to); }
+      row.appendChild(tt); sBody.appendChild(row);
     }
-    ff.selection.forEach(function (f) { simpleRow(f, pSimple); });
-    if (ff.more.length && ff.selection.length) {
-      var det = document.createElement('details'); det.appendChild(el('summary', null, '...')); ff.more.forEach(function (f) { simpleRow(f, det); }); pSimple.appendChild(det);
+    ff.selection.forEach(function (f) { simpleRow(f, false); });
+    if (ff.more.length && ff.selection.length) {   // the collapsed group "..." (initFind :1152-1170)
+      var gr = document.createElement('tr'); gr.className = 'fw-group'; var gc = document.createElement('td'); gc.colSpan = 3; gc.textContent = '...'; gr.appendChild(gc); sBody.appendChild(gr);
+      gr.addEventListener('click', function () { var open = gr.classList.toggle('open'); sBody.querySelectorAll('tr.fw-more').forEach(function (r) { r.style.display = open ? '' : 'none'; }); });
+      ff.more.forEach(function (f) { simpleRow(f, true); });
     }
-    // Advanced rows
-    var advRows = el('div', null); pAdv.appendChild(advRows);
-    var addRow = el('button', null, '+'); addRow.type = 'button'; addRow.setAttribute('data-find-addrow', '1'); pAdv.appendChild(addRow);
+    // Advanced (initAdvanced :636-760): toolbar New / Delete, then the list with its header
+    var aBar = el('div', 'fw-toolbar fw-advbar');
+    var addRow = ibtn('New', _findMsg('New', 'New'), 'fw-tbbtn'), delRow = ibtn('Delete', _findMsg('Delete', 'Delete'), 'fw-tbbtn');
+    addRow.setAttribute('data-find-addrow', '1'); delRow.setAttribute('data-find-delrow', '1');
+    aBar.appendChild(addRow); aBar.appendChild(delRow); pAdv.appendChild(aBar);
+    var aList = el('table', 'fw-list'), aHead = document.createElement('thead'), hr = document.createElement('tr');
+    [['AndOr', 'And/Or'], ['(', '('], ['AD_Tab_ID', 'Tab'], ['AD_Field_ID', 'Field'], ['Operator', 'Operator'], ['QueryValue', 'Query Value'], ['QueryValue2', 'To Query Value'], [')', ')']].forEach(function (h) {
+      hr.appendChild(el('th', null, h[0].length > 1 ? _findMsg(h[0], h[1]) : h[1])); });
+    aHead.appendChild(hr); aList.appendChild(aHead);
+    var advRows = document.createElement('tbody'); aList.appendChild(advRows); pAdv.appendChild(aList);
     function opName(op) { return _findMsg(AdFind.OP_MSG[op], op).trim(); }
     function newAdvRow(r) {
-      r = r || {}; var row = el('div', 'fld'); row.setAttribute('data-find-row', '1'); row.style.cssText = 'display:flex;gap:4px;align-items:center;flex-wrap:wrap';
+      r = r || {}; var row = document.createElement('tr'); row.className = 'fld'; row.setAttribute('data-find-row', '1');
       var andOr = document.createElement('select'); ['', 'AND', 'OR', 'AND NOT', 'OR NOT'].forEach(function (v) { var o = el('option', null, v); o.value = v; andOr.appendChild(o); }); andOr.setAttribute('data-find-andor', '1');
       var lB = document.createElement('select'), rB = document.createElement('select');
-      ['', '(', '((', '((('].forEach(function (v) { var o = el('option', null, v); o.value = v; lB.appendChild(o); }); [')', '))', ')))'].reduce(function (a, v) { var o = el('option', null, v); o.value = v; rB.appendChild(o); return a; }, rB.appendChild((function () { var o = el('option', null, ''); o.value = ''; return o; })()));
+      ['', '(', '((', '((('].forEach(function (v) { var o = el('option', null, v); o.value = v; lB.appendChild(o); }); ['', ')', '))', ')))'].forEach(function (v) { var o = el('option', null, v); o.value = v; rB.appendChild(o); });
       lB.setAttribute('data-find-lb', '1'); rB.setAttribute('data-find-rb', '1');
+      var tabSel = document.createElement('select'); var ot = el('option', null, tab.name); ot.value = String(tab.id); tabSel.appendChild(ot); tabSel.disabled = true;   // this tab only (child-tab rows: named gap)
       var col = document.createElement('select'); col.setAttribute('data-find-col', '1');
       all.forEach(function (f) { var o = el('option', null, f.name); o.value = f.columnName; col.appendChild(o); });
       var op = document.createElement('select'); op.setAttribute('data-find-op', '1');
@@ -2728,34 +2804,35 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         vWrap.innerHTML = ''; v2Wrap.innerHTML = '';
         var v = _findEditor(f, 'data-find-v'), v2 = _findEditor(f, 'data-find-v2'); vWrap.appendChild(v); v2Wrap.appendChild(v2);
         if (keep) { v.value = _findShow(f, keep.v); v2.value = _findShow(f, keep.v2); }
-        v2Wrap.style.display = op.value === AdFind.OP.BETWEEN ? '' : 'none';
+        v2Wrap.style.visibility = op.value === AdFind.OP.BETWEEN ? '' : 'hidden';
       }
-      col.addEventListener('change', function () { refresh(); }); op.addEventListener('change', function () { v2Wrap.style.display = op.value === AdFind.OP.BETWEEN ? '' : 'none'; });
-      var del = el('button', null, '−'); del.type = 'button'; del.addEventListener('click', function () { row.remove(); });
-      [andOr, lB, col, op, vWrap, v2Wrap, rB, del].forEach(function (x) { row.appendChild(x); });
+      col.addEventListener('change', function () { refresh(); }); op.addEventListener('change', function () { v2Wrap.style.visibility = op.value === AdFind.OP.BETWEEN ? '' : 'hidden'; });
+      [andOr, lB, tabSel, col, op, vWrap, v2Wrap, rB].forEach(function (x) { var td = document.createElement('td'); td.appendChild(x); row.appendChild(td); });
+      row.addEventListener('click', function () { advRows.querySelectorAll('tr.sel').forEach(function (x) { x.classList.remove('sel'); }); row.classList.add('sel'); });
       if (r.column && byCol[r.column]) col.value = r.column;
       andOr.value = r.andOr || ''; lB.value = r.lB || ''; rB.value = r.rB || '';
       refresh(r.column ? r : null);
       advRows.appendChild(row);
     }
     addRow.addEventListener('click', function () { newAdvRow(); });
+    delRow.addEventListener('click', function () { var sel = advRows.querySelector('tr.sel') || advRows.lastElementChild; if (sel) sel.remove(); });   // btnDelete: the selected row
     newAdvRow();
-    // bottom: saved query + history + buttons
-    var bottom = el('div', 'fld'); bottom.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px';
-    var dl = document.createElement('datalist'); dl.id = 'idmp-find-queries';
-    var qn = document.createElement('input'); qn.type = 'text'; qn.setAttribute('list', dl.id); qn.setAttribute('data-find-query', '1'); qn.placeholder = _findMsg('SavedQuery', 'Saved Query');
-    var bSave = el('button', null, _T('find.save', 'Save')), bDel = el('button', null, _T('find.delete', 'Delete'));
-    bSave.type = bDel.type = 'button'; bSave.setAttribute('data-find-save', '1'); bDel.setAttribute('data-find-delete', '1');
-    var hist = document.createElement('select'); hist.setAttribute('data-find-history', '1'); hist.title = _findMsg('History', 'History records');
-    [['', ''], ['All', 'All'], ['Year', 'Year'], ['Month', 'Month'], ['Week', 'Week'], ['Day', 'Day']].forEach(function (p) { var o = el('option', null, p[0] ? _findMsg(p[0], p[1]) : ''); o.value = p[0]; hist.appendChild(o); });
-    [qn, dl, bSave, bDel, hist].forEach(function (x) { bottom.appendChild(x); });
-    box.appendChild(bottom);
-    var acts = el('div', 'actions'), bOk = el('button', 'run', 'OK'), bReset = el('button', null, _T('find.reset', 'Reset')), bCancel = el('button', null, _T('find.cancel', 'Cancel'));
-    bOk.type = bReset.type = bCancel.type = 'button'; bOk.setAttribute('data-find-ok', '1'); bReset.setAttribute('data-find-reset', '1'); bCancel.setAttribute('data-find-cancel', '1');
-    [bOk, bReset, bCancel].forEach(function (x) { acts.appendChild(x); }); box.appendChild(acts);
+    // south (initSimple :537-578): New + Reset at the left (Lookup Record only), OK + Cancel at the right; icon-only named buttons (ZK_BUTTON_STYLE=I)
+    var south = el('div', 'fw-south'), sLeft = el('div', 'fw-left'), sRight = el('div', 'fw-right');
+    var bNew = ibtn('New', _findMsg('New', 'New'), 'fw-new'), bReset = ibtn('Reset', _T('find.reset', 'Reset'), 'fw-reset'), bOk = ibtn('Ok', 'OK', 'fw-ok'), bCancel = ibtn('Cancel', _T('find.cancel', 'Cancel'), 'fw-cancel');
+    bNew.setAttribute('data-find-new', '1'); bOk.setAttribute('data-find-ok', '1'); bReset.setAttribute('data-find-reset', '1'); bCancel.setAttribute('data-find-cancel', '1');
+    sLeft.appendChild(bNew); sLeft.appendChild(bReset); sRight.appendChild(bOk); sRight.appendChild(bCancel); south.appendChild(sLeft); south.appendChild(sRight); box.appendChild(south);
     var msg = el('div', 'err'); box.appendChild(msg);
-    ov.appendChild(box); document.body.appendChild(ov);
+    // status bar (setStatusDB :3938-3942): " Records = N " - N = COUNT(*) under the tab's own filter + access (getNoOfRecords :3455-3490 = the grid's gq.where)
+    var status = el('div', 'fw-status'), nRec = '?';
+    try { var bw = _findBase[_findKey()]; var rc = db.exec('SELECT count(*) FROM ' + tab.tableName + (bw ? ' WHERE ' + bw : '')); nRec = rc.length ? Number(rc[0].values[0][0]) : 0; } catch (eC) { nRec = '?'; }
+    status.textContent = _findMsg('Records', 'Records') + ' = ' + nRec; status.setAttribute('data-find-records', String(nRec)); box.appendChild(status);
+    function show(m) { mode = m; pSimple.style.display = m === 'simple' ? '' : 'none'; pAdv.style.display = m === 'advanced' ? '' : 'none'; sLeft.style.visibility = m === 'simple' ? '' : 'hidden';
+      tSimple.classList.toggle('sel', m === 'simple'); tAdv.classList.toggle('sel', m === 'advanced'); }
+    tSimple.addEventListener('click', function () { show('simple'); }); tAdv.addEventListener('click', function () { show('advanced'); });
+    (mainEl || document.body).appendChild(ov);
     show('simple');
+    var firstEd = pSimple.querySelector('[data-find-s]'); if (firstEd) try { firstEd.focus(); } catch (eF) {}   // onPostVisible :3881-3884: focus the first editor
     // queries
     var queries = [], qctx = null;
     function entry() { return queries.filter(function (q) { return q.name === qn.value; })[0] || null; }
@@ -2779,7 +2856,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function readSimple() {
       var vals = {};
       pSimple.querySelectorAll('[data-find-s]').forEach(function (inp) {
-        var c = inp.getAttribute('data-find-s'), to = inp.parentNode.querySelector('[data-find-s-to="' + c + '"]');
+        var c = inp.getAttribute('data-find-s'), to = (inp.closest('tr') || inp.parentNode).querySelector('[data-find-s-to="' + c + '"]');
         if (inp.value !== '' || (to && to.value !== '')) vals[c] = { v: inp.value === '' ? null : inp.value, vTo: to && to.value !== '' ? to.value : null };
       });
       return AdFind.simpleQuery(ff.selection.concat(ff.more), vals, { table: tab.tableName, dialect: 'sqlite', tabUU: tabUU, history: hist.value });
@@ -2802,13 +2879,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       _findByTab[_findKey()] = empty ? null : { where: q.where, code: q.code, name: entry() ? entry().name : null };
       if (_openWins[_activeWin]) _openWins[_activeWin].onlyCurrentRows = false;   // §UDP-4 "search history too" (doOnFind :2662, initTab :777-779)
       console.log('§UDP3-FIND ok mode=' + mode + ' restrictions=' + q.restrictions.length + ' where=' + (empty ? '(none)' : q.where) + ' code=' + q.code + (q.skipped && q.skipped.length ? ' skipped=' + q.skipped.join(',') : ''));
-      ov.remove(); renderActiveTab();
+      closeFind(); renderActiveTab();
     });
     bReset.addEventListener('click', function () {
       pSimple.querySelectorAll('input,select').forEach(function (x) { x.value = ''; }); advRows.innerHTML = ''; newAdvRow(); hist.value = ''; qn.value = ''; enable();
       if (_findByTab[_findKey()]) { _findByTab[_findKey()] = null; console.log('§UDP3-FIND reset (query removed)'); }
     });
-    bCancel.addEventListener('click', function () { ov.remove(); if (opts.onCancel) opts.onCancel(); });
+    bCancel.addEventListener('click', function () { closeFind(); if (opts.onCancel) opts.onCancel(); });
+    bNew.addEventListener('click', function () {   // btnNew: m_createNew = true, close, the window opens on a NEW record (doOnFind isCreateNew :958 / :2664)
+      console.log('§UDP3-FIND new (create a new record)'); closeFind(); if (opts.initial && _openWins[_activeWin]) _openWins[_activeWin].onlyCurrentRows = false;
+      renderActiveTab(); var nb = document.querySelector('#idmp-toolbar [data-tb="new"]'); if (nb && !nb.disabled) nb.click(); });
     bSave.addEventListener('click', function () {   // saveQuery :2884-2945 (a name is required; an empty code on a listed name = delete)
       var nm = qn.value; if (!nm) { msg.textContent = _findMsg('NeedsName', 'Needs a name'); return; }
       var q = current(), e = entry(), App = window.APP || {}, ops;

@@ -56,7 +56,7 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   const before = rowsLine(0);
   let from = logs.length; await hc('#idmp-toolbar [data-tb="find"]'); await pg.waitForSelector('#idmp-find-ov');
   const openLine = logs.slice(from).find(l => /§UDP3-FIND open/.test(l)) || '';
-  const simpleCols = await pg.$$eval('[data-find-panel="simple"] > .fld [data-find-s]', e => e.map(x => x.getAttribute('data-find-s')));
+  const simpleCols = await pg.$$eval('[data-find-panel="simple"] tr.fld:not(.fw-more) [data-find-s]', e => e.map(x => x.getAttribute('data-find-s')));
   const dictSel = (await seed("SELECT c.ColumnName FROM AD_Field f JOIN AD_Column c ON c.AD_Column_ID=f.AD_Column_ID WHERE f.AD_Tab_ID=186 AND f.IsActive='Y' AND c.IsActive='Y' AND COALESCE(f.IsSelectionColumn, c.IsSelectionColumn)='Y' ORDER BY CASE WHEN COALESCE(c.SeqNoSelection,0)=0 THEN 1 ELSE 0 END, c.SeqNoSelection, f.IsDisplayed DESC, f.SeqNo")).map(r => r[0]);
   ok('F1', 'the Simple tab shows exactly the tab\'s IsSelectionColumn fields in SeqNoSelection order (initFind; dictionary)', JSON.stringify(simpleCols) === JSON.stringify(dictSel), openLine + ' shown=' + JSON.stringify(simpleCols) + ' dictionary=' + JSON.stringify(dictSel));
   // a real document number prefix from the seed
@@ -110,12 +110,12 @@ const ok = (id, name, cond, detail) => { console.log((cond ? '  ✅ ' : '  ❌ '
   // delete
   await hc('#idmp-toolbar [data-tb="find"]'); await pg.waitForSelector('#idmp-find-ov'); await pg.waitForTimeout(600);
   await pg.fill('[data-find-query]', QNAME); await pg.dispatchEvent('[data-find-query]', 'input'); await pg.waitForTimeout(300);
-  from = logs.length; await hc('[data-find-delete]'); await pg.waitForTimeout(1200);
+  from = logs.length; await hc('[data-find-more]'); await hc('[data-find-delete]'); await pg.waitForTimeout(1200);   // §FIND-LF: Delete lives in the more-options popup (FindWindow.initSavedQueryMoreOptions)
   const listed2 = await pg.$$eval('#idmp-find-queries option', o => o.map(x => x.value));
   const dl = logs.slice(from).find(l => /§UDP3-FIND delete/.test(l));
   ok('F9', 'Delete removes the saved query', !!dl && /committed=true/.test(dl) && !listed2.includes(QNAME), dl + ' list=' + JSON.stringify(listed2));
-  // reset -> unfiltered again
-  await hc('[data-find-reset]'); await hc('[data-find-cancel]'); from = logs.length; await hc('#idmp-toolbar [data-tb="refresh"], #idmp-toolbar [data-tb="refresh"]'); await pg.waitForTimeout(1000);
+  // reset -> unfiltered again (§FIND-LF: Reset is on the Lookup Record tab only, FindWindow.initSimple :545)
+  await hc('#idmp-find-ov [data-find-tab="simple"]'); await hc('[data-find-reset]'); await hc('[data-find-cancel]'); from = logs.length; await hc('#idmp-toolbar [data-tb="refresh"], #idmp-toolbar [data-tb="refresh"]'); await pg.waitForTimeout(1000);
   const w10 = lastRead(from), n10 = w10 ? (await seed('SELECT count(*) FROM C_Order WHERE ' + w10))[0][0] : null;
   ok('F10', 'Reset removes the query: the grid is back to the tab\'s own rows (history included after a Find, doOnFind :2662)', rowsLine(from) === Math.min(n10, 200) && !/UPPER|DocStatus='CO'|Processed='N'/.test(w10 || ''), 'rows=' + rowsLine(from) + ' whereCount=' + n10 + ' initial=' + before + ' where=' + w10);
   const real = errs.filter(e => !/ResizeObserver/.test(e));
