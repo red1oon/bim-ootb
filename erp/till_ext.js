@@ -231,6 +231,7 @@
     A = api; var S = A.S, H = A.hooks, s = S.store;
     ['held', 'cashio', 'presence', 'vouchers', 'reservations'].forEach(function (k) { s[k] = s[k] || []; }); s.sent = s.sent || {}; s.rcpt = s.rcpt || {}; s.pickup = s.pickup || 0;
     if (S.mode === 'restaurant') { seedFloor(); A.$('#bag').hidden = true; A.$('#floorbar').hidden = false; }
+    else if (S.mode === 'simple') { A.$('#bag').hidden = true; A.log('§TILL_SETUP_SIMPLE no shared-ticket bag (JTicketsBag.createTicketsBag, mode simple)'); }
     H.heldlist = renderHeld; H.reprintlist = renderReprintList; H.editsales = function () { esShow(null); A.$('#es-list').innerHTML = ''; }; H.refund = function () { RF.chosen = []; rfRender(); };
     H.custpay = function () { CP.cust = null; A.$('#cp-card').hidden = true; A.$('#cp-pay').disabled = true; A.$('#cp-list').innerHTML = ''; A.$('#cp-find').value = ''; cpSearch(); };
     H.payments = pmRender; H.vouchers = voRender; H.presence = prRender; H.pickup = puRender; H.floors = flRender; H.reservations = rsRender;

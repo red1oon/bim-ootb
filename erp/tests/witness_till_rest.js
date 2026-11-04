@@ -4,12 +4,12 @@
 // ⚠ DO NOT REMOVE — W-TILL-REST (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §32.1 items 2-3, §29.N rows 8-18). READ THE LOG (/tmp/rest_logs/till_rest.log): exit code is not evidence.
 // THE ISSUE: the till kept open tables per device in localStorage. This drives the REAL till page (mode restaurant) over the branch rows: floors/tables from POS_FloorPlan, a table saved ONCE when the waiter leaves it
 // (counted at the till's deposit + Visit), a lock held by another till blocks, reservation booking -> check-in picks the table -> done. TWO-DEVICE visibility over a real pipe is NOT judged here (witness_rest.js judges the
-// fold on a shared relay; a paired-device run needs the witness_eoda harness): that claim is open. Mutant TREST_MUT=no-leave-on-map serves a till_rest.js that never saves on leaving.
+// fold on a shared relay; a paired-device run needs the witness_eoda harness): that claim is open. Mutant TREST_MUT=never-save serves a till_rest.js whose leave never writes.
 'use strict';
 var http = require('http'), fs = require('fs'), path = require('path'), ROOT = path.join(__dirname, '..', '..'), MUT = process.env.TREST_MUT || '';
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.css': 'text/css', '.mjs': 'text/javascript', '.svg': 'image/svg+xml' };
 var V = { j: 0, f: 0 }; function check(ok, label, info) { V.j++; if (!ok) V.f++; console.log('  §TREST_CHECK ' + (ok ? 'OK' : 'FAIL') + ' ' + label + (info ? ' ' + info : '')); }
-var MUTS = { 'no-leave-on-map': ["await leaveCurrent();                                   // coming back", "// await leaveCurrent();                                   // coming back"] };
+var MUTS = { 'never-save': ["if (!cur || !core.isHeld(cur)) { cur = null; return; }", "return;"] };
 var srv = http.createServer(function (q, r) { var u = q.url.split('?')[0], p = path.join(ROOT, decodeURIComponent(u)); if (!fs.existsSync(p) || fs.statSync(p).isDirectory()) { r.statusCode = 404; return r.end(); } r.setHeader('Content-Type', MIME[path.extname(p)] || 'application/octet-stream');
   if (MUT && u.endsWith('/till_rest.js')) { var src = fs.readFileSync(p, 'utf8'), m = MUTS[MUT]; var n = src.split(m[0]).length - 1; console.log('§TREST_MUT ' + MUT + ' applied=' + n); r.end(src.replace(m[0], m[1])); return; } fs.createReadStream(p).pipe(r); });
 srv.listen(0, async function () {
@@ -48,11 +48,11 @@ srv.listen(0, async function () {
   await pg.click('#fl-reload'); await pg.waitForTimeout(800); var lk = await pg.$eval('#fl-map [data-place="T2"]', function (e) { return e.getAttribute('data-locked'); }); check(lk === '1', 'a table locked by another till is shown locked');
   await pg.click('#fl-map [data-place="T2"]'); await pg.waitForTimeout(800); var scr = await pg.evaluate(function () { return Till.state().screen; }); check(scr === 'floors', 'opening the locked table is refused (stays on the map)', 'screen=' + scr);
   // reservation
-  await pg.click('#fl-res'); await pg.waitForSelector('#reservations'); await pg.fill('#rs-customer', 'Aminah'); await pg.fill('#rs-chairs', '4'); await pg.fill('#rs-date', '2026-11-05T19:00'); await pg.click('#rs-save'); await pg.waitForSelector('[data-rr-in]');
+  await pg.click('#fl-res'); await pg.waitForSelector('#reservations'); await pg.fill('#rs-customer', 'Aminah'); await pg.fill('#rs-chairs', '4'); await pg.fill('#rs-date', '2026-11-05T19:00'); await pg.click('#rs-save'); await pg.waitForSelector('[data-res-in]');
   var pre = await pg.evaluate(function () { return Till.rows("SELECT state, placeid FROM pos_reservation"); }); check(pre.length === 1 && pre[0].state === 'B' && !pre[0].placeid, 'booking stores no table', JSON.stringify(pre));
-  await pg.selectOption('#rs-place', 'T3'); await pg.click('[data-rr-in]'); await pg.waitForSelector('#u3:not([hidden])');
+  await pg.selectOption('#rs-place', 'T3'); await pg.click('[data-res-in]'); await pg.waitForSelector('#u3:not([hidden])');
   var post = await pg.evaluate(function () { return Till.rows("SELECT state, placeid FROM pos_reservation ORDER BY seq DESC LIMIT 1"); }); check(post[0].state === 'I' && post[0].placeid === 'T3', 'check-in picks T3', JSON.stringify(post[0]));
-  await pg.click('#floorbar [data-btn="Tables"]'); await pg.waitForSelector('#fl-map .place'); await pg.click('#fl-res'); await pg.waitForSelector('[data-rr-done]'); await pg.click('[data-rr-done]'); await pg.waitForSelector('[data-res][data-state="D"]');
+  await pg.click('#floorbar [data-btn="Tables"]'); await pg.waitForSelector('#fl-map .place'); await pg.click('#fl-res'); await pg.waitForSelector('[data-res-done]'); await pg.click('[data-res-done]'); await pg.waitForSelector('[data-res][data-state="D"]');
   var st = await pg.$eval('[data-res][data-state="D"]', function (e) { return e.style.textDecoration; }); check(/line-through/.test(st), 'done is struck through', st);
   console.log('§TREST_VERDICT ' + (V.j === 0 ? 'INCONCLUSIVE' : V.f ? 'FAIL' : 'PASS') + ' judged=' + V.j + ' failed=' + V.f);
   await b.close(); srv.close(); process.exit(V.j && !V.f ? 0 : 1);

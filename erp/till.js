@@ -59,7 +59,7 @@
   }
 
   function msg(t, kind) { var el = $('#msg'); el.hidden = !t; el.textContent = t || ''; el.setAttribute('data-kind', kind || ''); if (t) log('§TILL_MSG ' + (kind || 'info') + ' ' + t); }
-  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', heldlist: 'u7', reprintlist: 'u5r' };
+  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', heldlist: 'u7', reprintlist: 'u5r' };
   var HOOKS = {};   // screen name -> function run after the screen is shown (the screens of till_ext.js)
   function go(name) {
     if (!SCREENS[name]) { msg('This panel is not in this release', 'info'); return false; }
@@ -137,9 +137,10 @@
   }
   // Lucide image-off (placeholder, no GPL art; §29.D.2). The picture is decoded only when the tile is on screen (lazy + async), CORS so the SW media cache can store a real 200 (§31).
   var NOIMG = '<svg class="noimg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"/><path d="M13.5 13.5 6 21"/><path d="M18 12l3 3"/><path d="M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59"/><path d="M21 15V5a2 2 0 0 0-2-2H9"/></svg>';
-  function prodTile(p, z) {
-    var pic = p.img ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" width="' + z['img-width'] + '" height="' + z['img-height'] + '" style="object-fit:contain;display:block;margin:0 auto">' : '<span class="ph" style="display:block;height:' + z['img-height'] + 'px;text-align:center">' + NOIMG + '</span>';
-    return '<button class="prod" data-pid="' + p.pid + '" style="width:' + (z['img-width'] + 10) + 'px;min-height:' + (z['img-height'] + 34) + 'px;padding:2px">' + pic + '<span class="pn" style="display:block;text-align:center">' + esc(p.name) + '</span><span class="pp" style="display:block;text-align:center">' + C.money(C.cents(p.price)) + '</span></button>';
+  function prodTile(p, z) {   // the button IS img-width x img-height (Ticket.Buttons.xml:77, W-TILL-UNICENTA-PARITY U5); picture fills it, name + price overlay the bottom (ThumbNailBuilder.java:101-202)
+    var w = z['img-width'], h = z['img-height'];
+    var pic = p.img ? '<img src="' + esc(p.img) + '" alt="" loading="lazy" decoding="async" crossorigin="anonymous" width="' + w + '" height="' + h + '" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain">' : '<span class="ph" style="position:absolute;left:0;top:0;width:100%;height:70%;display:flex;align-items:center;justify-content:center">' + NOIMG + '</span>';
+    return '<button class="prod" data-pid="' + p.pid + '" style="position:relative;overflow:hidden;box-sizing:border-box;padding:0;width:' + w + 'px;height:' + h + 'px">' + pic + '<span class="pn" style="position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:9px;line-height:1.1;background:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(p.name) + '<br><span class="pp">' + C.money(C.cents(p.price)) + '</span></span></button>';
   }
   // §31/§32: ask the service worker to fetch ONLY the pictures it does not hold yet, then evict what the catalog no longer lists. The bytes stay on the device's disk, never in the twin's DB.
   async function mediaPrefetch() {
@@ -334,6 +335,7 @@
     E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
     await loadConfig(); await loadSizes(); mediaPrefetch();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
+    { var sm = (S.store.setup || {})['machine.ticketsbag']; if (!qs.get('mode') && !new URLSearchParams(location.search).get('mode') && ['simple', 'standard', 'restaurant'].indexOf(sm) >= 0) { S.mode = sm; document.body.setAttribute('data-mode', sm); log('§TILL_SETUP_MODE applied=' + sm + ' (from the Configuration screen)'); } }
     S.ticket = S.store.ticket || newTicket();
     initPad(); await renderLogin(); renderMenu(); bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ }
@@ -346,6 +348,7 @@
       nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
+    if (window.TillSetupInit) window.TillSetupInit(api);
     if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
     window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)

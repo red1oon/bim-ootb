@@ -14,7 +14,7 @@
     var ops = rows.map(function (r) { var tb = r._t.toLowerCase(); return { op_type: 'CRUD_CREATE', key: tb, table: tb, verb: 'create', fields: Object.assign({ ad_client_id: A.S.cfg.client, ad_org_id: A.S.cfg.org }, RC.toDb(r)) }; });
     C.deposits++; var res = await A.depositGroup(ops); if (!res || res.committed !== true) throw new Error('deposit failed: ' + (res && res.reason)); await visit();
   }
-  function seedPlaces() { var p = []; for (var i = 0; i < 24; i++) p.push({ RecId: 'seed' + (i + 1), Name: 'Table ' + (i + 1), FloorId: 'seed', Seats: 1, X: 100 + 150 * (i % 6), Y: 50 + 100 * Math.floor(i / 6), W: 90, H: 45 }); return p; }
+  function seedPlaces() { var p = []; for (var i = 0; i < 24; i++) p.push({ RecId: 'Table ' + (i + 1), Name: 'Table ' + (i + 1), FloorId: 'seed', Seats: 1, X: 100 + 150 * (i % 6), Y: 50 + 100 * Math.floor(i / 6), W: 90, H: 45 }); return p; }
   async function render() {
     await leaveCurrent();                                   // coming back to the map = leaving the table: the ONE save
     await visit();                                          // ONE pull for the whole map
@@ -51,7 +51,7 @@
     await visit(); var s = RC.fold(await readAll()), places = s.floors.length ? s.places : seedPlaces();
     A.$('#rs-place').innerHTML = '<option value="">(table at check-in)</option>' + places.map(function (p) { return '<option value="' + A.esc(p.RecId) + '">' + A.esc(p.Name) + '</option>'; }).join('');
     A.$('#rs-list').innerHTML = s.reservations.slice().sort(function (a, b) { return String(a.At).localeCompare(String(b.At)); }).map(function (r) {
-      return '<div data-res="' + A.esc(r.ResId) + '" data-state="' + r.State + '"' + (r.State === 'D' ? ' style="text-decoration:line-through"' : '') + '>' + A.esc(r.Customer) + ' · ' + r.Chairs + ' · ' + A.esc(r.At) + (r.PlaceId ? ' · ' + A.esc(r.PlaceId) : '') + (r.State === 'B' ? ' <button data-rr-in="' + A.esc(r.ResId) + '">Check-In Now</button>' : r.State === 'I' ? ' <button data-rr-done="' + A.esc(r.ResId) + '">Done</button>' : ' · done') + '</div>'; }).join('');
+      return '<div data-res="' + A.esc(r.ResId) + '" data-state="' + r.State + '"' + (r.State === 'D' ? ' style="text-decoration:line-through"' : '') + '>' + A.esc(r.Customer) + ' · ' + r.Chairs + ' · ' + A.esc(r.At) + (r.PlaceId ? ' · ' + A.esc(r.PlaceId) : '') + (r.State === 'B' ? ' <button data-res-in="' + A.esc(r.ResId) + '">Check-In Now</button>' : r.State === 'I' ? ' <button data-res-done="' + A.esc(r.ResId) + '">Done</button>' : ' · done') + '</div>'; }).join('');
   }
   async function book() {
     var c = A.$('#rs-customer').value; if (!c) { A.msg('Select a person', 'warn'); return; }
@@ -76,8 +76,8 @@
       else if (b.hasAttribute('data-floor')) { ev.stopImmediatePropagation(); view.floor = b.getAttribute('data-floor'); await render(); }
       else if (b.closest('#floorbar') && b.getAttribute('data-btn') === 'Tables') { ev.stopImmediatePropagation(); await leaveCurrent(); A.go('floors'); }
       else if (b.id === 'rs-save') { ev.stopImmediatePropagation(); await book(); }
-      else if (b.hasAttribute('data-rr-in')) { ev.stopImmediatePropagation(); await checkIn(b.getAttribute('data-rr-in')); }
-      else if (b.hasAttribute('data-rr-done')) { ev.stopImmediatePropagation(); await core.done(b.getAttribute('data-rr-done')); await rsRender(); }
+      else if (b.hasAttribute('data-res-in')) { ev.stopImmediatePropagation(); await checkIn(b.getAttribute('data-res-in')); }
+      else if (b.hasAttribute('data-res-done')) { ev.stopImmediatePropagation(); await core.done(b.getAttribute('data-res-done')); await rsRender(); }
     }, true);
     window.TillRest = { core: core, counts: C, render: render, open: openPlace, leave: leaveCurrent, book: book, checkIn: checkIn, rsRender: rsRender, held: function () { return cur; } };
     A.log('§TILL_REST ready till=' + tk());
