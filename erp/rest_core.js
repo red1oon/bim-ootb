@@ -61,6 +61,8 @@
         held[placeId] = JSON.parse(after.Body || '{"lines":[]}'); held[placeId].guests = after.Guests; log('§REST_LOCK place=' + placeId + ' till=' + me + ' HELD seq=' + after.Seq);
         return { ok: true, ticket: held[placeId] };
       },
+      setLines: function (placeId, lines, guests) { if (!held[placeId]) throw new Error('table not held'); held[placeId].lines = lines; if (guests !== undefined) held[placeId].guests = guests; },   // the till owns the ticket lines; the core only carries them at leave
+      isHeld: function (placeId) { return !!held[placeId]; }, heldIds: function () { return Object.keys(held); },
       tap: function (placeId, line) { if (!held[placeId]) throw new Error('table not held'); held[placeId].lines.push(line); C.taps++; },         // memory only: no request
       guests: async function (placeId, n) { held[placeId].guests = n; },                                                                     // saved with the leave
       // leave the table: ONE write holds the ticket and releases the lock (§32.1 item 3).

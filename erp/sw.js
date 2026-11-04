@@ -89,7 +89,7 @@ const PRECACHE_ASSETS = [
   'borrower.html',        // W-MF-SEED / TEAMWORK_FRAMEWORK §40: the borrower page (a thin Team device over a hidden engine frame)
   'borrower.js',
   'till.html',            // W-TILL-*: the Unicenta-alike till (prompts/POS_PLUGIN_LOCAL_FIRST.md §15), a Team device over a hidden engine frame
-  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js',
+  'till.js', 'till_pad.js', 'till_core.js', 'till_registry.js', 'till_ext.js', 'till_rest.js',
   'branch_admin.html', 'branch_admin.js', 'eoda_core.js', 'soda_core.js', 'rest_core.js', 'branch_floors.js',   // §26: the Branch POS Admin (EODA)
   'kitchen.html', 'kitchen.js', 'kds_core.js', 'kds_link.js', 'till_kds.js',   // P2: the standalone kitchen screen + the till's Send Order (prompts/POS_PLUGIN_LOCAL_FIRST.md §19)
   'slipverify/slipverify.js',   // the one standard slip-verify interface; adapters load by convention (slipverify/<class>.js)
