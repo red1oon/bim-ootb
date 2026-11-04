@@ -253,6 +253,30 @@
     return { keys: keys, visit: v };
   }
 
+
+  // ── SODA (POS_PLUGIN_LOCAL_FIRST §28.3): the branch admin passes the reference deltas on the branch lane (pos_tillref). The till applies ONLY the rows that arrived (SodaCore.applyRef): a price / product (ImageURL included,
+  // the URL string only) / tax row it was told about; every other row stays as it was ("old prices stay", D5). No tile or image rendering here (a later lane).
+  async function applySoda() {
+    if (!window.SodaCore) return null;
+    var all = []; try { all = await rows('SELECT * FROM pos_tillref ORDER BY seq, ABS(pos_tillref_id)'); } catch (e) { return null; }
+    var done = Number(S.store.sodaSeq || 0), fresh = all.filter(function (r) { return Number(r.seq) > done && r.kind !== 'B'; });
+    if (!fresh.length) return { applied: 0 };
+    var cur = {}, ops = [], pk = {};
+    for (var i = 0; i < fresh.length; i++) { var r = fresh[i], t = r.kind === 'P' ? 'm_productprice' : r.kind === 'R' ? 'm_product' : 'c_tax';
+      var w = r.kind === 'P' ? 'm_product_id=' + Number(r.m_product_id) + ' AND m_pricelist_version_id=' + Number(r.m_pricelist_version_id) : r.kind === 'R' ? 'm_product_id=' + Number(r.m_product_id) : 'c_tax_id=' + Number(r.c_tax_id);
+      cur[t + '|' + w] = (await rows('SELECT * FROM ' + t + ' WHERE ' + w))[0] || null; }
+    var key = function (t, where) { return t + '|' + Object.keys(where).map(function (k) { return k + '=' + Number(where[k]); }).join(' AND '); };
+    var W = { find: function (t, where) { return cur[key(t, where)] || null; },
+      update: function (t, where, f) { var row = cur[key(t, where)]; if (!row) return; var idc = row[t + '_id'] != null ? t + '_id' : t + '_uu', ch = {}; Object.keys(f).forEach(function (k) { if (String(row[k] == null ? '' : row[k]) !== String(f[k] == null ? '' : f[k])) ch[k] = { old: row[k] == null ? null : row[k], new: f[k] }; }); if (!Object.keys(ch).length) return; ops.push({ op_type: 'CRUD_UPDATE', key: t, table: t, verb: 'update', id: row[idc], idCol: idc === t + '_id' ? undefined : idc, changes: ch }); },   // a single-key table by its id, a composite-key one (M_ProductPrice) by its UU; only the columns that differ
+      insert: function (t, f) { ops.push(create(t, f)); } };
+    var res = window.SodaCore.applyRef(W, fresh, { client: S.cfg.client });
+    var hi = fresh.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
+    if (ops.length) { var g = await depositGroup(ops); if (!g || g.committed !== true) { log('§SODA_TILL_APPLY FAIL till=' + S.cfg.tillKey + ' ' + (g && g.reason)); return { failed: true }; } }
+    S.store.sodaSeq = hi; saveStore(); await loadConfig();
+    log('§SODA_TILL_APPLY till=' + S.cfg.tillKey + ' rows=' + fresh.length + ' prices=' + res.applied.prices + ' products=' + res.applied.products + ' taxes=' + res.applied.taxes + ' unchanged=' + res.noop + ' upToSeq=' + hi);
+    return res;
+  }
+
   // ── events ──
   function bind() {
     document.addEventListener('click', function (ev) {
@@ -279,7 +303,7 @@
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
   function netChip() { var off = navigator.onLine === false; $('#s-net').textContent = off ? 'offline' : 'online'; }
-  async function visit() { try { var v = await E.TeamSync.visit(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
+  async function visit() { try { var v = await E.TeamSync.visit(); log('§TILL_VISIT replicaIn=' + (v && v.replicaIn)); try { await applySoda(); } catch (e) { log('🔴 §SODA_TILL_APPLY ' + (e && e.message)); } msg('Visit done', 'ok'); return v; } catch (e) { msg('Visit failed: ' + e.message, 'bad'); } }
 
   async function boot() {
     var t0 = performance.now();
@@ -305,7 +329,7 @@
       nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
-    window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, depositedDocNos: depositedDocNos };
+    window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
