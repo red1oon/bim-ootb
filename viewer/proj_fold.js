@@ -219,8 +219,8 @@
     if (projId == null) {
       projId = id('C_Project', 'C_Project_ID');
       db.run("INSERT INTO C_Project (C_Project_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
-        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,C_Project_UU) " +
-        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N',?)",
+        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,Processing,C_Project_UU) " +
+        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N','N',?)",
         [projId, CL, OG, now, U, now, U, building, 'BIM: ' + building, curId, _uu()]);
       created.projects = 1;
     }
@@ -427,8 +427,8 @@
       projId = id('C_Project', 'C_Project_ID');
       var curId = opts.currencyId != null ? opts.currencyId : 100;
       db.run("INSERT INTO C_Project (C_Project_ID,AD_Client_ID,AD_Org_ID,IsActive,Created,CreatedBy,Updated,UpdatedBy," +
-        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,C_Project_UU) " +
-        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N',?)",
+        "Value,Name,IsSummary,C_Currency_ID,PlannedAmt,PlannedQty,IsCommitment,ProjInvoiceRule,ProjectLineLevel,Processed,Processing,C_Project_UU) " +
+        "VALUES (?,?,?,'Y',?,?,?,?,?,?,'N',?,0,0,'N','-','P','N','N',?)",
         [projId, CL, OG, now, U, now, U, building, 'BIM: ' + building, curId, _uu()]);
       created.projects = 1;
     }
