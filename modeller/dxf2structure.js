@@ -42,9 +42,9 @@
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
     var choices = ctx.choices || {};
-    var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices });
     // §L18 the element-defaults registry: the drawing's @DEFAULT markings > the editor's choices > element_defaults.json; modules call DF.use(key) when they APPLY a default; the yellow rows come from DF
     var DFM = ctx.DFM || (typeof module === 'object' && module.exports ? require('./dxf2defaults.js') : (typeof self !== 'undefined' ? self.Dxf2Defaults : null)), DF = DFM ? DFM.create(ctx.defaultsRef || null, sheets, choices, notes.schedules && notes.schedules.derived.belowgrade ? { 'synth.column.belowgrade.size': notes.schedules.derived.belowgrade } : null) : null;
+    var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices, DF: DF });
     if (DF && DF.has('building.type')) DF.use('building.type');   // the building type is always a visible setting (yellow until stated)
     // §L11.2 wall panels from elevation hatch loops (a hatch layer typed `panel`): built alongside the plan/elevation bodies, same gaps/defaults channels
     var PN = ctx.PN || (typeof module === 'object' && module.exports ? require('./dxf2panels.js') : (typeof self !== 'undefined' ? self.Dxf2Panels : null));

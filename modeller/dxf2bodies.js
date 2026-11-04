@@ -34,22 +34,62 @@
   function bodyLayers(sheet, kind) { return ((sheet.desc && sheet.desc.layers) || []).filter(function (l) { return l.type === kind; }).map(function (l) { return l.layer; }); }
 
   // axis-aligned rectangular regions on the given layers: closed outlines as drawn, else loops of the loose lines (§L7.9, same tolerance)
-  function regions(sheet, layers, tol, noLoops) {   // noLoops: band kinds read their loose lines as BANDS (§L9), not as the faces the crossing lines happen to enclose
-    var out = [], nonRect = 0, ents = sheet.dxf.entities;
+  // §D109 P2 skewT (drawing units) reads a loop in any direction; touching: rectangles of one direction that touch are the parts of one body
+  function regions(sheet, layers, tol, noLoops, skewT, touching) {   // noLoops: band kinds read their loose lines as BANDS (§L9), not as the faces the crossing lines happen to enclose
+    var out = [], nonRect = 0, ents = sheet.dxf.entities, skew = [];
     ents.forEach(function (e) {
       if (!(e.type === 'LWPOLYLINE' && e.shape) || layers.indexOf(e.layer) < 0 || !(e.vertices || []).length) return;
       var xs = e.vertices.map(function (v) { return v.x; }), ys = e.vertices.map(function (v) { return v.y; }),
         x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
       var rect = e.vertices.length === 4 && e.vertices.every(function (v) { return (Math.abs(v.x - x0) <= tol || Math.abs(v.x - x1) <= tol) && (Math.abs(v.y - y0) <= tol || Math.abs(v.y - y1) <= tol); });
-      if (!rect) { nonRect++; return; }
+      if (!rect) { var so = P.skewOutline(e.vertices.map(function (v) { return [v.x, v.y]; }), skewT); if (so) skew.push({ deg: so.deg, outline: so.outline, layer: e.layer, members: [String(e.handle)] }); else nonRect++; return; }
       out.push({ x0: x0, y0: y0, x1: x1, y1: y1, handle: String(e.handle), members: [String(e.handle)], layer: e.layer });
     });
-    var sy = noLoops ? { entities: [], nonRect: 0, mixed: 0 } : P.synthRects(ents, tol, layers);   // layers that already hold closed outlines are skipped inside
+    var sy = noLoops ? { entities: [], nonRect: 0, mixed: 0, skew: [] } : P.synthRects(ents, tol, layers, skewT);   // layers that already hold closed outlines are skipped inside
+    skew = skew.concat(sy.skew || []);
     sy.entities.forEach(function (e) {
       var xs = e.vertices.map(function (v) { return v.x; }), ys = e.vertices.map(function (v) { return v.y; });
       out.push({ x0: Math.min.apply(null, xs), y0: Math.min.apply(null, ys), x1: Math.max.apply(null, xs), y1: Math.max.apply(null, ys), handle: e.handle, members: e.members, layer: e.layer });
     });
-    return { list: out, nonRect: nonRect + sy.nonRect, mixed: sy.mixed };
+    return { list: out.concat(skewRegions(skew, skewT, touching)), nonRect: nonRect + sy.nonRect - (sy.skew || []).length, mixed: sy.mixed };
+  }
+  // §D109 P2 skew loops -> regions: bbox in sheet units for the footprint key, `skew` the true shape in its own frame (one outline, or the rectangles of one body)
+  function skewRegions(skew, tol, touching) {
+    var isRect = function (s) { return s.outline.length === 4; }, parent = skew.map(function (_, i) { return i; });
+    var find = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    var toFrame = function (s, deg) { var d = (s.deg - deg) * Math.PI / 180, c = Math.cos(d), n = Math.sin(d); return s.outline.map(function (p) { return [p[0] * c - p[1] * n, p[0] * n + p[1] * c]; }); };
+    var box = function (o) { var u = o.map(function (p) { return p[0]; }), v = o.map(function (p) { return p[1]; }); return [Math.min.apply(null, u), Math.min.apply(null, v), Math.max.apply(null, u), Math.max.apply(null, v)]; };
+    var oneDir = function (a, b) { var d = Math.abs(a.deg - b.deg) % 90; return Math.min(d, 90 - d) <= 0.1; };
+    if (touching) for (var i = 0; i < skew.length; i++) for (var j = i + 1; j < skew.length; j++) {
+      if (!isRect(skew[i]) || !isRect(skew[j]) || !oneDir(skew[i], skew[j])) continue;
+      var A = box(skew[i].outline), B = box(toFrame(skew[j], skew[i].deg)), gapU = Math.max(A[0] - B[2], B[0] - A[2]), gapV = Math.max(A[1] - B[3], B[1] - A[3]);
+      if (Math.max(gapU, gapV) <= tol && Math.min(gapU, gapV) < -tol) parent[find(j)] = find(i);   // they meet along a side, not only at a corner
+    }
+    var groups = {}; skew.forEach(function (s, i) { (groups[find(i)] = groups[find(i)] || []).push(s); });
+    return Object.keys(groups).map(function (k) {
+      var G = groups[k], deg = G[0].deg, parts = G.map(function (s) { return toFrame(s, deg); }), a = deg * Math.PI / 180, c = Math.cos(a), n = Math.sin(a);
+      var world = [].concat.apply([], parts).map(function (p) { return [p[0] * c - p[1] * n, p[0] * n + p[1] * c]; }), bb = box(world), members = [].concat.apply([], G.map(function (s) { return s.members; }));
+      return { x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3], handle: 's' + members[0], members: members, layer: G[0].layer, skew: { deg: deg, parts: parts } };
+    });
+  }
+  // §D109 P2 the mesh of a skew region: its true outline or the union of its rectangles, made in its own frame (one mesh rule, prismRect / prismCells), turned back onto the sheet. Metres.
+  function skewMesh(g, k, ox, oy, z0, z1) {
+    var parts = g.skew.parts.map(function (o) { return o.map(function (p) { return [r6(p[0] * k), r6(p[1] * k)]; }); }), pm;
+    if (parts.length === 1) pm = S.prismRect(parts[0], [], z0, z1);
+    else {
+      var uniq = function (i) { var v = [].concat.apply([], parts.map(function (o) { return o.map(function (p) { return p[i]; }); })).sort(function (m, n) { return m - n; }); return v.filter(function (x, j) { return !j || x !== v[j - 1]; }); };
+      var X = uniq(0), Y = uniq(1), solid = [];
+      for (var j = 0; j + 1 < Y.length; j++) { solid.push([]); for (var i = 0; i + 1 < X.length; i++) { var cx = (X[i] + X[i + 1]) / 2, cy = (Y[j] + Y[j + 1]) / 2;
+        solid[j].push(parts.some(function (o) { var u = o.map(function (p) { return p[0]; }), v = o.map(function (p) { return p[1]; }); return cx > Math.min.apply(null, u) && cx < Math.max.apply(null, u) && cy > Math.min.apply(null, v) && cy < Math.max.apply(null, v); })); } }
+      pm = S.prismCells(X, Y, solid, z0, z1);
+    }
+    if (!pm) return null;
+    var a = g.skew.deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+    return { vertices: pm.vertices.map(function (v) { return [r6(v[0] * c - v[1] * s + ox), r6(v[0] * s + v[1] * c + oy), v[2]]; }), faces: pm.faces };
+  }
+  function skewSize(g, k) {
+    var U = [].concat.apply([], g.skew.parts).map(function (p) { return p[0]; }), V = [].concat.apply([], g.skew.parts).map(function (p) { return p[1]; });
+    return { w: r6((Math.max.apply(null, U) - Math.min.apply(null, U)) * k), d: r6((Math.max.apply(null, V) - Math.min.apply(null, V)) * k), deg: r6(g.skew.deg), parts: g.skew.parts.length, source: 'drawn' };
   }
 
   // §L7.10 line pairs: two parallel VERTICAL lines on a typed layer, neighbours, closer than pairMax (drawing units) and drawn over the same height = one region, even with no top or
@@ -163,13 +203,16 @@
     var elevs = sheets.filter(function (s) { return s.role === 'elev'; });
     var pairMaxM = opts.prepChoices && opts.prepChoices['bodies.pair_max_width'] !== undefined ? Number(opts.prepChoices['bodies.pair_max_width']) : 0.5, DEF = P.Defaults(), pairUsed = false;
     var levels = plans.map(function (p) { return p.level; }).filter(function (l, i, arr) { return arr.indexOf(l) === i; }).sort(function (x, y) { return x - y; });
+    // §D109 P2 settings: the drawing's @DEFAULT > an editor's choice > the registry (opts.DF); with no DF the shipped value
+    var setting = function (key, dflt) { return opts.DF && opts.DF.has(key) ? opts.DF.get(key) : dflt; };
+    var skewM = Number(setting('loops.skew_tol', 0.001)), touching = setting('bodies.touching_parts', 'one_body') === 'one_body', zPlans = setting('column.z_from_plans', 'plan_levels') === 'plan_levels';
     var els = [], gaps = [], report = { kinds: {}, snap_tol: snap, labels: {} }, seen = {}, names = {};
     if (!plans.length) { gaps.push({ code: 'GAP:body_no_plan', detail: 'no storey plan' }); return { els: els, gaps: gaps, report: report }; }
     var maps = elevs.map(function (es) { var al = MK.align(plans[0].desc, es.desc, alignTol); return { sheet: es, map: al.map && al.map.zOf ? al.map : null, why: al.map && al.map.zOf ? null : (al.errors || []).map(function (x) { return x.code; }).join(',') }; });
     // §L7.14 every plan after the base is aligned to it by shared grid labels (translation only); a plan that cannot be aligned contributes nothing, loudly
     function offsetOf(ps) { return planOffset(plans[0], ps, alignTol); }
     var pofs = plans.map(function (ps, pi) { return pi === 0 ? { ok: true, x: 0, y: 0, why: [] } : offsetOf(ps); });
-    var seenFp = {};
+    var seenFp = {}, skewSeen = {};
     // §L7.14 the z range the USER states for a kind (@BODYZ on any sheet); two sheets stating different ranges -> conflict, nothing built for that kind from it
     var stated = {};
     sheets.forEach(function (sh) { ((sh.desc && sh.desc.bodyz) || []).forEach(function (b) { var o = stated[b.kind]; if (!o) stated[b.kind] = { z0: b.z0, z1: b.z1 }; else if (o.z0 !== b.z0 || o.z1 !== b.z1) o.conflict = true; }); });
@@ -198,7 +241,7 @@
     var prCache = {};
     function planR(ps, ly, kind) {
       var key = ps.name + '|' + kind; if (prCache[key]) return prCache[key];
-      var k = ps.factor, r = regions(ps, ly, snap, BAND_KINDS.indexOf(kind) >= 0);
+      var k = ps.factor, r = regions(ps, ly, snap, BAND_KINDS.indexOf(kind) >= 0, skewM / k, touching);
       if (BAND_KINDS.indexOf(kind) >= 0) { const drawn0 = r.list.slice(); [true, false].forEach(function (hz) { bandRegions(ps, ly, snap, pairMaxM / k, hz).forEach(function (bd) { if (!drawn0.some(function (d) { return sameRegion(d, bd, snap); })) r.list.push(bd); }); }); }
       // §L9.3 the user's @EXCLUDE rectangles (drawing units, this sheet): a region wholly inside one is skipped and counted, never silently
       var exr = (ps.desc && ps.desc.excludes) || [], nEx = 0;
@@ -294,30 +337,38 @@
         r.list.forEach(function (g, gi) {
           var x0 = r6(Math.min(g.x0, g.x1) * k + pofs[pi].x), x1 = r6(Math.max(g.x0, g.x1) * k + pofs[pi].x), y0 = r6(Math.min(g.y0, g.y1) * k + pofs[pi].y), y1 = r6(Math.max(g.y0, g.y1) * k + pofs[pi].y);
           var fp = kind + '|' + [x0, y0, x1, y1].map(function (v) { return Math.round(v * 1000); }).join(',');
-          if (seenFp[fp]) { rep.dedup = (rep.dedup || 0) + 1; return; }   // the same footprint already came from an earlier plan
-          seenFp[fp] = 1;
+          var dupOf = seenFp[fp] ? seenFp[fp] : g.skew ? (skewSeen[kind] || []).filter(function (q) { return Math.abs(q.b[0] - x0) <= tolM && Math.abs(q.b[1] - y0) <= tolM && Math.abs(q.b[2] - x1) <= tolM && Math.abs(q.b[3] - y1) <= tolM; })[0] : null;
+          if (dupOf) { rep.dedup = (rep.dedup || 0) + 1;   // the same footprint already came from an earlier plan
+            var dE = dupOf.el; if (dE && dE.height_source === 'plans' && dE.z0 !== undefined) { var hi = levels.filter(function (l) { return l > ps.level; })[0]; if (hi !== undefined && hi > dE.z1) { var ot = dE.z1; dE.vertices = dE.vertices.map(function (v) { return v[2] === ot ? [v[0], v[1], hi] : v; }); dE.z1 = hi; } else if (hi === undefined) dE.top_plan = true; }
+            return; }
+          var fpRec = seenFp[fp] = { b: [x0, y0, x1, y1], el: null }; if (g.skew) (skewSeen[kind] = skewSeen[kind] || []).push(fpRec);
           var interval = function (e) { var I = e.axis === 'X' ? [x0, x1] : [y0, y1]; return { I: I, dc: Math.abs((e.p0 + e.p1) / 2 - (I[0] + I[1]) / 2), dw: Math.abs((e.p1 - e.p0) - (I[1] - I[0])), w: I[1] - I[0] }; };
-          var exact = ER.filter(function (e) { var q = interval(e); return Math.abs(e.p0 - q.I[0]) <= tolM && Math.abs(e.p1 - q.I[1]) <= tolM; }), matchKind = 'interval', cands = exact;
-          if (!cands.length) { cands = ER.filter(function (e) { var q = interval(e); return q.dc <= tolM && q.dw <= 0.5 * q.w; }); matchKind = 'centre'; }
+          var ERg = g.skew ? [] : ER, exact = ERg.filter(function (e) { var q = interval(e); return Math.abs(e.p0 - q.I[0]) <= tolM && Math.abs(e.p1 - q.I[1]) <= tolM; }), matchKind = 'interval', cands = exact;   // §D109 P2: the axis route reads a sheet-axis interval only
+          if (!cands.length) { cands = ERg.filter(function (e) { var q = interval(e); return q.dc <= tolM && q.dw <= 0.5 * q.w; }); matchKind = 'centre'; }
           // §L9 a span drawn in pieces (a label clips the line: the shed's 04-05 bay is two 50 in pieces) lies WITHIN the elevation band of its bay: it inherits that band's height (contained, never wider than the band)
-          if (!cands.length && BAND_KINDS.indexOf(kind) >= 0) { cands = ER.filter(function (e) { var q = interval(e); return q.I[0] >= e.p0 - tolM && q.I[1] <= e.p1 + tolM && (e.p1 - e.p0) <= 3.5 * q.w; }); matchKind = 'within'; }   // only a band of ABOUT the bay's size (<= 3.5x the piece): a narrow region inside a long band (an end beam inside the plinth line) must not borrow its height   // same centre line, a narrower/wider drawn face: reported, never silent
+          if (!cands.length && BAND_KINDS.indexOf(kind) >= 0) { cands = ERg.filter(function (e) { var q = interval(e); return q.I[0] >= e.p0 - tolM && q.I[1] <= e.p1 + tolM && (e.p1 - e.p0) <= 3.5 * q.w; }); matchKind = 'within'; }   // only a band of ABOUT the bay's size (<= 3.5x the piece): a narrow region inside a long band (an end beam inside the plinth line) must not borrow its height   // same centre line, a narrower/wider drawn face: reported, never silent
           var distinct = []; cands.forEach(function (c) { if (!distinct.some(function (d) { return Math.abs(d.z0 - c.z0) <= tolM && Math.abs(d.z1 - c.z1) <= tolM; })) distinct.push(c); });
           var base = { kind: kind, sheet: ps.name, handle: g.handle, layer: g.layer };
           var hsrc = 'elevation', st0 = stated[kind];
           if (!distinct.length && st0 && st0.conflict) { gaps.push(Object.assign({ code: 'GAP:body_stated_z_conflict', detail: 'two sheets state different @BODYZ ranges for ' + kind }, base)); rep.gaps++; return; }
           if (!distinct.length && st0) { distinct = [{ z0: st0.z0, z1: st0.z1 }]; cands = []; matchKind = null; hsrc = 'stated'; }
+          // §D109 P2b heights from the plans: this plan's level to the next plan level above (a later plan drawing the same footprint carries the top up)
+          var nextUp = levels.filter(function (l) { return l > ps.level; })[0];
+          if (!distinct.length && kind === 'column' && zPlans && levels.length > 1 && nextUp !== undefined) { distinct = [{ z0: ps.level, z1: nextUp }]; cands = []; matchKind = null; hsrc = 'plans'; }
           if (!distinct.length) { gaps.push(Object.assign({ code: 'GAP:body_no_elevation', detail: 'no ' + kind + ' region of an elevation has this horizontal interval' + ' (state its z range with @BODYZ)' }, base)); rep.gaps++; return; }
           if (distinct.length > 1) { gaps.push(Object.assign({ code: 'GAP:body_ambiguous_z', detail: distinct.map(function (d) { return d.z0 + '..' + d.z1 + ' (' + d.sheet + ' ' + d.handle + ')'; }).join(' | ') }, base)); rep.gaps++; return; }
           var mark = BAND_KINDS.indexOf(kind) >= 0 ? nearMark(ps, g, 5.0 / k) : null;   // §L9.4 per-region type mark (B-1 / B-2)
-          var z = distinct[0], guid = 'body-' + kind + '-' + pi + '-' + g.handle, sz = sizeOf(SZ[pi] && SZ[pi][gi], guid, x0, x1, y0, y1, k);
-          if (BAND_KINDS.indexOf(kind) >= 0) { var cs = crossSection(kind, mark, guid, x0, x1, y0, y1, z, k); if (cs) { sz = cs.sz; z = cs.z; } }
-          var pm = S.prismRect([[sz.x0, sz.y0], [sz.x1, sz.y0], [sz.x1, sz.y1], [sz.x0, sz.y1]], [], z.z0, z.z1);
+          var z = distinct[0], guid = 'body-' + kind + '-' + pi + '-' + g.handle, sz = g.skew ? { x0: x0, x1: x1, y0: y0, y1: y1, info: { plan: skewSize(g, k) } } : sizeOf(SZ[pi] && SZ[pi][gi], guid, x0, x1, y0, y1, k);
+          if (!g.skew && BAND_KINDS.indexOf(kind) >= 0) { var cs = crossSection(kind, mark, guid, x0, x1, y0, y1, z, k); if (cs) { sz = cs.sz; z = cs.z; } }
+          var pm = g.skew ? skewMesh(g, k, pofs[pi].x, pofs[pi].y, z.z0, z.z1) : S.prismRect([[sz.x0, sz.y0], [sz.x1, sz.y0], [sz.x1, sz.y1], [sz.x0, sz.y1]], [], z.z0, z.z1);
+          if (g.skew && opts.DF) { if (opts.DF.has('loops.skew_tol')) opts.DF.use('loops.skew_tol'); if (g.skew.parts.length > 1 && opts.DF.has('bodies.touching_parts')) opts.DF.use('bodies.touching_parts'); }
+          if (hsrc === 'plans' && opts.DF && opts.DF.has('column.z_from_plans')) opts.DF.use('column.z_from_plans');
           if (!pm) { gaps.push(Object.assign({ code: 'GAP:body_degenerate', detail: 'z range ' + z.z0 + '..' + z.z1 }, base)); rep.gaps++; return; }
           if (seen[guid]) throw new Error('Dxf2Bodies: duplicate body id ' + guid);
           seen[guid] = 1;
           var lv = levels.filter(function (l) { return l <= z.z0 + tolM; }).pop(); if (lv === undefined) lv = levels[0];   // several plans of one storey share ONE storey
-          els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
-            kind: kind, size: sz.info, prov: hsrc === 'stated' ? 'derived' : 'drawn', ifc: P.ifcType(kind, mark || names[kind] || null, null), mark: mark, band: !!g.band, width_m: g.width ? r6(g.width * k) : null, members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) });
+          fpRec.el = els[els.push({ guid: guid, class: P.ifcType(kind).ifc_class, storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: pm.vertices, faces: pm.faces, handle: g.handle, layer: g.layer, sheet: ps.name,
+            kind: kind, size: sz.info, prov: hsrc === 'stated' || hsrc === 'plans' ? 'derived' : 'drawn', ifc: P.ifcType(kind, mark || names[kind] || null, null), mark: mark, band: !!g.band, width_m: g.width ? r6(g.width * k) : null, members: g.members, z0: z.z0, z1: z.z1, height_source: hsrc, match: matchKind, width_note: matchKind === 'centre' ? 'footprint from the plan, centre line matched the elevation' : null, elev_handles: cands.map(function (c) { return c.sheet + ':' + c.handle; }) }) - 1];
           if (cands.some(function (c) { return c.pair; })) pairUsed = true;   // the default row exists only when a body was actually matched through a drawn line pair
           rep.bodies++;
         });

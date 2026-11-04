@@ -167,8 +167,54 @@ ok('YR19d a title that states its level wins', (r => vals(r, 'PR-LEVEL-FOOTING')
 ok('YR19e set back: off', vals(ftg('FOUNDATION PLAN', ['T/FOOTING: -1.250 m'], { 'suggest.level_footing': 'off' }), 'PR-LEVEL-FOOTING') === '');
 const ftgD = (() => { const p = sheet('p.dxf', [T('MTEXT', 'TB', 'FOUNDATION PLAN', 0, 0), T('MTEXT', 'SPOT', 'T/FOOTING: -1.250 m', 0, 500)], [mark('VIEW', 'PLAN'), mark('UNITS', 'mm')]); return props(withDef('suggest.level_footing,off', p)); })();
 ok('YR19f @DEFAULT sets it back', vals(ftgD, 'PR-LEVEL-FOOTING') === '');
+// §D109 P2 a footprint in any direction. Generated corners at a known angle; the answers are computed here, not read back.
+const rotP = (deg, cx, cy) => { const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a); return (u, v) => ({ x: cx + u * c - v * s, y: cy + u * s + v * c }); };
+const loopL = (layer, pts) => pts.map((p, i) => ({ type: 'LINE', layer, handle: (h++).toString(16), vertices: [p, pts[(i + 1) % pts.length]] }));
+const rectAt = (R, u0, v0, u1, v1) => [R(u0, v0), R(u1, v0), R(u1, v1), R(u0, v1)];
+const planB = (ents, level, extra) => { const d = planS(); d.level = level === undefined ? 0 : level; d.desc.level = d.level; d.name = 'p' + d.level + '.dxf'; d.dxf = { entities: ents }; d.desc.bodyz = []; return Object.assign(d, { desc: Object.assign(d.desc, extra || {}) }); };
+const stdZ = { bodyz: [{ kind: 'column', z0: 0, z1: 4.8 }] }, build = (ps, c) => ST.judge(ps.concat(elevS({ plane: 'A1' })), { I: IM, B: BD, choices: c || {} });
+const AT = rotP(16.165, 40000, 30000), R0 = rectAt(AT, -200, -275, 200, 275);
+const bLines = build([planB(loopL('COL', R0), 0, stdZ)]).gate.R.els, bPoly = build([planB([{ type: 'LWPOLYLINE', layer: 'COL', shape: true, handle: (h++).toString(16), vertices: R0 }], 0, stdZ)]).gate.R.els;
+const volOf = e => Math.abs(require(path.join(M, 'dxf2prep.js')).Solid.vol(e));
+const cornersOk = (e, pts) => pts.every(p => e.vertices.some(v => Math.hypot(v[0] - p.x * 0.001, v[1] - p.y * 0.001) < 1e-6));
+console.log('§YR20 lines=' + bLines.length + ' poly=' + bPoly.length + ' plan=' + JSON.stringify(bLines[0] && bLines[0].size && bLines[0].size.plan) + ' vol=' + (bLines[0] ? volOf(bLines[0]) : null));
+ok('YR20a a 400 x 550 loop at 16.165 deg gives those sizes, not its bounding box', bLines.length === 1 && Math.abs(bLines[0].size.plan.w - 0.55) < 1e-6 && Math.abs(bLines[0].size.plan.d - 0.4) < 1e-6);
+ok('YR20b its corners are the drawn corners, within 1 micron', bLines.length === 1 && cornersOk(bLines[0], R0));
+ok('YR20c its volume is w x d x h', bLines.length === 1 && Math.abs(volOf(bLines[0]) - 0.4 * 0.55 * 4.8) < 1e-6, bLines[0] && String(volOf(bLines[0])));
+ok('YR20d a closed polyline at the same angle gives the same body', bPoly.length === 1 && cornersOk(bPoly[0], R0) && Math.abs(volOf(bPoly[0]) - 0.4 * 0.55 * 4.8) < 1e-6);
+const offSq = [{ x: 1000, y: 1000 }, { x: 2000, y: 1000.1 }, { x: 1999.9, y: 1300.1 }, { x: 999.9, y: 1300 }];
+ok('YR21a a loop 0.1 mm off square on a sheet axis is read, the snap tolerance unchanged', build([planB(loopL('COL', offSq), 0, stdZ)]).gate.R.els.length === 1);
+ok('YR21b set back: skew_tol 0 gives the old result', build([planB(loopL('COL', offSq), 0, stdZ)], { 'loops.skew_tol': 0 }).gate.R.els.length === 0);
+const R2 = rotP(2, 0, 0), bent = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, R2(1000, 500), { x: 0, y: 500 }].map(q => q);
+ok('YR21c a loop with a corner 2 deg off is not a square: not read', build([planB(loopL('COL', [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1017, y: 500 }, { x: 0, y: 500 }]), 0, stdZ)]).gate.R.els.length === 0);
+const Ipl = [rectAt(AT, -214, -8.5, 214, 8.5), rectAt(AT, -244.5, -141.5, -214, 141.5), rectAt(AT, 214, -141.5, 244.5, 141.5)], IV = (428 * 17 + 2 * 30.5 * 283) * 1e-6 * 4.8;
+const bI = build([planB([].concat(...Ipl.map(q => loopL('COL', q))), 0, stdZ)]).gate.R.els, bIs = build([planB([].concat(...Ipl.map(q => loopL('COL', q))), 0, stdZ)], { 'bodies.touching_parts': 'separate' }).gate.R.els;
+console.log('§YR22 one=' + bI.length + ' vol=' + (bI[0] ? volOf(bI[0]) : null) + ' want=' + IV + ' separate=' + bIs.length);
+ok('YR22a an I from 3 touching plates is one body with the volume of the plates', bI.length === 1 && Math.abs(volOf(bI[0]) - IV) < 1e-6 && bI[0].size.plan.parts === 3);
+ok('YR22b set back: separate gives 3 bodies', bIs.length === 3);
+const far = [rectAt(AT, -200, -275, 200, 275), rectAt(AT, 3000, -275, 3400, 275)];
+ok('YR22c two far rectangles stay 2 bodies', build([planB([].concat(...far.map(q => loopL('COL', q))), 0, stdZ)]).gate.R.els.length === 2);
+const twoP = [planB(loopL('COL', R0), 0, stdZ), planB(loopL('COL', rectAt(rotP(16.165, 40000.4, 30000), -200, -275, 200, 275)), 4.8, stdZ)];
+ok('YR23 one footprint on two plans, under the body tolerance: one body', build(twoP).gate.R.els.length === 1, String(build(twoP).gate.R.els.length));
+// P2b heights from the plans
+const pz = (lv, withCol) => planB(withCol ? loopL('COL', R0) : [colRect2(lv)], lv), colRect2 = lv => ({ type: 'LINE', layer: 'OTHER', handle: (h++).toString(16), vertices: [{ x: lv, y: 0 }, { x: lv + 1, y: 0 }] });
+const zOf = (ps, c) => { const g = build(ps, c).gate; return { els: g.R.els.map(e => [e.z0, e.z1, e.height_source, e.prov]), gaps: g.R.bodies.gaps.filter(q => /body_no_elevation/.test(q.code)).length, used: (g.R.defaults_table || []).filter(q => q.key === 'column.z_from_plans').map(q => q.source) }; };
+const z2 = zOf([pz(0, 1), pz(4.8, 1), pz(9.05, 0)]), z1 = zOf([pz(0, 1), pz(4.8, 0), pz(9.05, 0)]), zT = zOf([pz(0, 0), pz(4.8, 0), pz(9.05, 1)]), zOff = zOf([pz(0, 1), pz(4.8, 0)], { 'column.z_from_plans': 'off' }), zOne = zOf([pz(0, 1)]);
+console.log('§YR24 ' + JSON.stringify({ z2, z1, zT, zOff, zOne }));
+ok('YR24a drawn on 0 and 4.8 of 0, 4.8, 9.05: runs 0 to 9.05, derived', z2.els.length === 1 && z2.els[0][0] === 0 && z2.els[0][1] === 9.05 && z2.els[0][2] === 'plans' && z2.els[0][3] === 'derived');
+ok('YR24b drawn on 0 alone: 0 to 4.8', z1.els.length === 1 && z1.els[0][1] === 4.8);
+ok('YR24c drawn only on the top plan: nothing states its top, a gap', zT.els.length === 0 && zT.gaps === 1);
+ok('YR24d set back: off, the gap', zOff.els.length === 0 && zOff.gaps === 1);
+ok('YR24e a one-level set: the gap (the shed path)', zOne.els.length === 0 && zOne.gaps === 1);
+const zB = zOf([planB(loopL('COL', R0), 0, stdZ), pz(4.8, 0)]);
+ok('YR24f a stated @BODYZ wins', zB.els.length === 1 && zB.els[0][1] === 4.8 && zB.els[0][2] === 'stated');
+// the drawing's @DEFAULT sets each one back
+const dfl = (key, value) => ({ defaults: [{ key, value, by: 'test' }] });
+ok('YR25a @DEFAULT loops.skew_tol,0', build([planB(loopL('COL', R0), 0, Object.assign({}, stdZ, dfl('loops.skew_tol', '0')))]).gate.R.els.length === 0);
+ok('YR25b @DEFAULT bodies.touching_parts,separate', build([planB([].concat(...Ipl.map(q => loopL('COL', q))), 0, Object.assign({}, stdZ, dfl('bodies.touching_parts', 'separate')))]).gate.R.els.length === 3);
+ok('YR25c @DEFAULT column.z_from_plans,off', build([planB(loopL('COL', R0), 0, dfl('column.z_from_plans', 'off')), pz(4.8, 0)]).gate.R.els.length === 0);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

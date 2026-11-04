@@ -909,6 +909,42 @@
     "off"
    ],
    "used_by": "dxf2suggest (§D109)"
+  },
+  "loops.skew_tol": {
+   "element": "IfcColumn",
+   "value": 0.001,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "a closed loop of lines counts as square, in any direction, when its corners lie within this of a true rectangle in the frame of its own longest side (§D109: a CAD export is 0.05 to 0.1 mm off square, the snap tolerance is 0.01 mm). 0 = sheet-axis rectangles only",
+   "options": [
+    0.001,
+    0
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "bodies.touching_parts": {
+   "element": "IfcColumn",
+   "value": "one_body",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "rectangles of one direction that touch along a side are the parts of one body: the 2 flanges and the web of a built-up steel section drawn as 3 loops (§D109). 'separate' = one body per loop",
+   "options": [
+    "one_body",
+    "separate"
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "column.z_from_plans": {
+   "element": "IfcColumn",
+   "value": "plan_levels",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a column with no elevation height and no @BODYZ runs from the lowest plan that draws it to the next plan level above the highest plan that draws it (§D109). 'off' = a gap, left out",
+   "options": [
+    "plan_levels",
+    "off"
+   ],
+   "used_by": "dxf2bodies (§D109)"
   }
  },
  "building_types": {
