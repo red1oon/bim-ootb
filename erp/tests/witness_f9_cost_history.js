@@ -7,7 +7,7 @@
 //   via MCostHistory.get by DateAcct) books it at the cost-history price of the shipment's day. Drives the shipped erp/doc_poster.js with a
 //   better-sqlite3-style facade over sql.js on a scratch db in BOTH history shapes: S = the shipped ad_seed shape (m_costhistory has NO c_acctschema_id,
 //   the schema comes from its m_costdetail), H = the handover shape (c_acctschema_id on the row; applyCostUpdate appends).
-//   F9-HISTORY-PRICE   back-dated sale costed at the history price (255), not the current price (289)         [S and H]
+//   (BOOK claims HISTORY-PRICE / REFUSAL / NEG-CONTROL / NO-HISTORY / MOVEMENT moved to the REAL poster: W-SEED-COSTHISTORY H1/H6/H7 + W-POST-ERROR, §POSTING-PARITY 5f)
 //   F9-APPEND          applyCostUpdate appends exactly one history row; the next date lookup sees it; the older date is unchanged   [H]
 //   F9-REFUSAL         back-dated sale of more than the history qty -> AverageCostingNegativeQty (history qty, not m_cost qty)      [S and H]
 //   F9-NEG-CONTROL     history price +0.01 -> the books MUST move (256); no history rows -> falls back to the m_cost price (289)
@@ -30,7 +30,6 @@ function facade(sdb) {
     all: function (p) { var s = sdb.prepare(sql), r = []; try { bind(s, p); while (s.step()) r.push(s.getAsObject()); return r; } finally { s.free(); } },
     run: function (p) { var s = sdb.prepare(sql); try { bind(s, p); s.step(); } finally { s.free(); } } }; }, exec: function (q) { sdb.run(q); } };
 }
-var R = { resolve: function (db, tok) { var t = tok.replace(/[{}]/g, '').split('.')[1]; return { acct: 1, element: { id: t === 'Cogs' ? 5000 : 1200, value: t, name: t }, token: tok }; } };
 
 function build(SQL, shape, o) {
   o = o || {};
@@ -54,7 +53,6 @@ function build(SQL, shape, o) {
   return db;
 }
 function ship(db, id, date, qty) { db.prepare('INSERT INTO m_inout VALUES(?,?,?,?)').run([id, 'Y', 'C-', date + ' 00:00:00']); db.prepare('INSERT INTO m_inoutline VALUES(?,?,?,?)').run([id * 10, id, 7, qty]); }
-function derive(db, id) { var r = DP.deriveInOut(db, R, id, 1, { today: '2026-10-12' }); return { dr: r && r.by[5000] ? r.by[5000].dr : null, absent: r ? r.absent : ['null'] }; }
 function chk(id, checks) {
   var bad = checks.filter(function (c) { return !c.ok; });
   checks.forEach(function (c) { log('  §F9-CHECK case=' + id + ' key=' + c.key + ' ' + (c.ok ? 'OK' : 'FAIL') + ' rule="' + c.rule + '" got=' + JSON.stringify(c.got) + ' want=' + JSON.stringify(c.want)); });
@@ -68,21 +66,8 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
     var db = build(SQL, sh);
     var mc = db.prepare('SELECT currentcostprice p FROM m_cost WHERE m_product_id=7').get().p, h = DP.costHistoryAt(db, 7, 1, 1, 1, '2026-09-15');
     chk('F9-NOT-VACUOUS-' + sh, [eq('history_found', 'MCostHistory.get by DateAcct finds a row', !!h, true), eq('history_differs_from_m_cost', 'history price != m_cost price, else the test cannot tell them apart', h && Number(h.newcostprice) !== Number(mc), true)]);
-    ship(db, 1, '2026-09-15', 1);
-    var r = derive(db, 1);
-    chk('F9-HISTORY-PRICE-' + sh, [eq('shipment_cogs_dr_cents', 'MCost.getCost :290-300 — history NewCostPrice 2.55 x 1 = 255, not current 2.89 (289)', r.dr, 255), eq('no_absent', 'posted, not refused', r.absent, [])]);
-    ship(db, 2, '2026-09-15', 31);
-    var q = derive(db, 2);
-    chk('F9-REFUSAL-' + sh, [eq('refused_on_history_qty', 'MCost.setCurrentQty :1919-1930 tests the HISTORY qty 30 (m_cost qty 32 would allow 31)', /AverageCostingNegativeQty.*Current Qty=30/.test(q.absent[0] || ''), true)]);
-    ship(db, 3, '2026-10-12', 1);
-    var t = derive(db, 3);
-    chk('F9-TODAY-' + sh, [eq('today_dated_uses_history_le_date', 'a today-dated sale still reads the latest history <= its date (2.55 here: no later history row) ', t.dr, 255)]);
-    // negative control: history price +0.01 must move the books
-    db.exec('UPDATE m_costhistory SET newcostprice = newcostprice + 0.01');
-    var n = derive(db, 1);
-    chk('F9-NEG-CONTROL-' + sh, [eq('history_price_plus_1c_moves_books', 'books follow the history price (256)', n.dr, 256)]);
-    db.exec('DELETE FROM m_costhistory'); var f = derive(db, 1);
-    chk('F9-NO-HISTORY-' + sh, [eq('fallback_m_cost', 'no history rows -> the m_cost price (289)', f.dr, 289)]);
+    // F9-HISTORY-PRICE / REFUSAL / TODAY / NEG-CONTROL / NO-HISTORY judged doc_poster.deriveInOut (retired, §POSTING-PARITY 5f): the BOOK claims now run on the REAL poster -
+    //   W-SEED-COSTHISTORY H1 (history price == legacy), H6 (history +0.01 moves the books), H7 (no history -> m_cost); W-POST-ERROR (refusal on the HISTORY qty, AverageCostingNegativeQty).
     if (sh === 'H') {   // F9-APPEND on a fresh H db
       var d2 = build(SQL, 'H'), cnt = function () { return d2.prepare('SELECT COUNT(*) c FROM m_costhistory').get().c; }, c0 = cnt();
       DP.applyCostUpdate(d2, { m_product_id: 7, c_acctschema_id: 1, m_costtype_id: 1, m_costelement_id: 1, set: { currentqty: 32, currentcostprice: 2.89, cumulatedqty: 32, cumulatedamt: 92.5 },
@@ -97,7 +82,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var Sx = build(SQL, 'S'), t, ups;
   // R1: a db with m_cost.currentqty but NO cumulated columns (pre-§78 schema) must not throw 'no such column'
   var O = build(SQL, 'S', { noCum: true }); ship(O, 1, '2026-09-15', 1);
-  var thrown = null, up0 = null; try { up0 = DP.costQtyUpdates(O, 1); derive(O, 1); } catch (e) { thrown = e.message; }
+  var thrown = null, up0 = null; try { up0 = DP.costQtyUpdates(O, 1); } catch (e) { thrown = e.message; }
   chk('F9-R1-OLD-SCHEMA', [eq('no_throw', 'currentqty-only m_cost reads without cumulatedqty/cumulatedamt', thrown, null), eq('update_produced', 'an update is still produced', !!(up0 && up0.length), true)]);
   // R2: legacy pins the ABSOLUTE state: back-dated shipment of 1 on history 2.55@30 leaves m_cost 2.55@29 (§78 measured legacy `2.55@29/76.5`, MCostDetail.process :1424-1441)
   ship(Sx, 1, '2026-09-15', 1); ups = DP.costQtyUpdates(Sx, 1); var u1 = ups[0];
@@ -117,20 +102,15 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var Mv = build(SQL, 'S');
   Mv.exec("CREATE TABLE m_movement(m_movement_id,dateacct);CREATE TABLE m_movementline(m_movementline_id,m_movement_id,m_product_id,movementqty,m_locator_id,m_locatorto_id);CREATE TABLE m_locator(m_locator_id,m_warehouse_id);CREATE TABLE m_warehouse(m_warehouse_id,ad_org_id);" +
     "INSERT INTO m_warehouse VALUES(1,11);INSERT INTO m_locator VALUES(1,1);INSERT INTO m_locator VALUES(2,1);INSERT INTO m_movement VALUES(1,'2026-09-15 00:00:00');INSERT INTO m_movementline VALUES(1,1,7,1,1,2);");
-  var mvr = DP.deriveMovement(Mv, R, 1, 1), mvd = mvr && mvr.by[1200] ? mvr.by[1200].dr : null;
-  chk('F9-R5-MOVEMENT-AT-DATE', [eq('movement_cost_at_history_price', 'Doc_Movement line.getProductCosts(dateAcct): 2.55 x 1 = 255 (not 289)', mvd, 255)]);
+  // F9-R5-MOVEMENT-AT-DATE (doc_poster.deriveMovement, retired): movement books at the history price -> W-SEED-COSTHISTORY H6 (real poster, movement #100).
   chk('F9-R5-COSTAT-DATE', [eq('costAt_with_date', 'costAt(db,pid,qty,schema,dateAcct) = history price x qty (2.5500) ; without date = m_cost (2.8900)', [DP.costAt(Mv, 7, 1, 1, '2026-09-15'), DP.costAt(Mv, 7, 1, 1)], ['2.5500', '2.8900'])]);
-  // R6: BackDateDay > 0: refuse INSIDE the window (DocManager.java:660-672 keeps details with DateAcct >= today - BackDateDay), accept outside; today from the host/ctx, wall clock only when absent (MAcctSchema.java:852)
-  var B = build(SQL, 'S', { bd: 5 }); ship(B, 1, '2026-10-10', 1); ship(B, 2, '2026-09-15', 1); ship(B, 3, '2026-10-12', 1);
-  var gi = DP.deriveInOut(B, R, 1, 1, { today: '2026-10-12' }), go = DP.deriveInOut(B, R, 2, 1, { today: '2026-10-12' }), gt = DP.deriveInOut(B, R, 3, 1, { today: '2026-10-12' });
-  var B0 = build(SQL, 'S', { bd: 0 }); ship(B0, 1, '2026-10-10', 1); var g0 = DP.deriveInOut(B0, R, 1, 1, { today: '2026-10-12' });
-  chk('F9-R6-BACKDATEDAY', [eq('inside_window_refused', 'dated 2 days back, BackDateDay=5 -> named absent (F9.2)', /BackDateDay=5/.test((gi.absent || [])[0] || ''), true), eq('outside_window_costed', 'dated 27 days back -> costed from history (255)', go.by[5000] && go.by[5000].dr, 255),
-    eq('today_not_gap', 'a today-dated document is not back-dated', (gt.absent || []).filter(function (x) { return /BackDateDay/.test(x); }), []), eq('bd0_never_gap', 'BackDateDay 0 never gaps', (g0.absent || []).filter(function (x) { return /BackDateDay/.test(x); }), [])]);
+  // R6 BackDateDay (doc_poster's named refusal inside the window, retired): legacy re-processes later cost details inside the window (DocManager.java:640-700); the real poster
+  //   has no such step - a NAMED OPEN GAP in bim-compiler prompts/SQLiteIDEMPIERE.md §POSTING-PARITY step 5f, not judged here.
   // R7: _hasCol is cached for PRESENT columns only (a column added later is still found)
   var sp = build(SQL, 'S'), pragmas = 0, rp = sp.prepare; sp.prepare = function (q) { if (/^PRAGMA/.test(q)) pragmas++; return rp.call(sp, q); };
-  ship(sp, 1, '2026-09-15', 1); derive(sp, 1); var p1 = pragmas; derive(sp, 1); var p2 = pragmas - p1;
+  ship(sp, 1, '2026-09-15', 1); DP.costQtyUpdates(sp, 1); var p1 = pragmas; DP.costQtyUpdates(sp, 1); var p2 = pragmas - p1;
   sp.exec('ALTER TABLE m_inout ADD COLUMN zz'); DP.resetSchemaCache && DP.resetSchemaCache(sp);
-  chk('F9-R7-HASCOL-CACHE', [eq('second_derive_probes_less', 'second derive issues fewer PRAGMA probes than the first (cached positives)', p2 < p1, true)]);
+  chk('F9-R7-HASCOL-CACHE', [eq('second_derive_probes_less', 'second costQtyUpdates issues fewer PRAGMA probes than the first (cached positives)', p2 < p1, true)]);
   // R8: exact decimals: a 17-digit cumulated/current qty survives _costBase as the stored text (the MatchPO path used the raw value; Number() would round it)
   var P = build(SQL, 'S'); P.exec("UPDATE m_cost SET currentqty='12.34567890123456789', cumulatedqty='12.34567890123456789'");
   var cb = DP.costBase && DP.costBase(P, 7, 1, 1, 1, 'A', null);
