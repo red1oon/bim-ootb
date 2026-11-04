@@ -8,7 +8,7 @@
 // *_acct rows (C_ValidCombination → C_ElementValue), amounts from document rows, FX from C_Conversion_Rate — none invented.
 // Doc classes ported here: Doc_Order (no facts — commitment accounting off), Doc_InOut (customer shipment C- / vendor
 // receipt V+ via NotInvoicedReceipts), Doc_Invoice (ARI/ARC/API), Doc_Payment, Doc_AllocationHdr (payment / cash line ↔ SO/PO invoice, discount,
-// write-off, VAT tax correction; foreign-currency gain/loss + rounding corrections are NAMED refusals unless they add no line — W-POST-ALLOCATION).
+// write-off, VAT tax correction; foreign-currency realized gain/loss lines (createInvoiceGainLoss / createPaymentGainLoss, W-NC5BCD-GAINLOSS); rounding corrections across several allocations stay NAMED — W-POST-ALLOCATION).
 // Doc_Movement (§60) and Doc_Inventory (§67: Physical Inventory / Internal Use / Cost Adjustment) are ported below on the same Doc/DocLine/createLine framework.
 'use strict';
 (function (root, factory) {
@@ -916,6 +916,14 @@
           var rt = rate(trx, cur, as.c_currency_id, rec.dateacct, rec.c_conversiontype_id); if (!rt) return null; var a0 = D(srcAmt).multiply(rt).setScale(prec2, HU); return { a0: a0 }; };
         var revPair = ls.length === 2 && rows[0].inv && rows[1].inv && (nz(rows[0].inv.reversal_id) ? String(rows[0].inv.reversal_id) === String(rows[1].inv.c_invoice_id) : (nz(rows[1].inv.reversal_id) && String(rows[1].inv.reversal_id) === String(rows[0].inv.c_invoice_id)));   // isReversedInvoice :1908-1930
         var payCount = {}; rows.forEach(function (q) { if (q.pay) payCount[q.pay.c_payment_id] = (payCount[q.pay.c_payment_id] || 0) + 1; });
+        // the gain/loss lines (createInvoiceGainLoss :973-1029 / createPaymentGainLoss :1113-1134), booked in the SCHEMA currency on the allocation line (DocLine -> org / BPartner / Line_ID):
+        //   Fact.createLine(line, acct, cur, amt) :205-212 = DR amt, or CR |amt| when negative; Fact.createLine(line, dr, cr, cur, amt) :186-193 = DR dr, or CR cr |amt| when negative.
+        var GL_BRK = (typeof process !== 'undefined' && process.env && process.env.LMV_BREAK) === 'nogainloss';   // witness negative control only (W-NC5BCD-GAINLOSS)
+        var gdf = trx.q('SELECT realizedgain_acct AS g, realizedloss_acct AS l FROM c_acctschema_default WHERE c_acctschema_id=?', [sch])[0] || {}, vcG = function (id) { var v = nz(id) ? trx.get('c_validcombination', id) : null; return v ? v.account_id : null; };
+        var rgain = vcG(gdf.g), rloss = vcG(gdf.l), s2 = function (q, aDr, aCr, amt, desc) { if (GL_BRK) return; var b = { ad_org_id: q.org, c_bpartner_id: q.l.c_bpartner_id, line_id: q.l.c_allocationline_id, qty: 0, description: desc };
+          if (amt.signum() < 0) F.line(aCr, as.c_currency_id, null, amt.abs(), b); else F.line(aDr, as.c_currency_id, amt, null, b); };
+        var sc2s = function (x, c) { return D(x).setScale(T.precisionOf(trx, c), HU).toString(); };   // the description's amounts at the scale Java's BigDecimals carry (fact sums / accounted / difference: currency precision)
+        var fwdHdr = !nz(h.reversal_id) || Number(h.c_allocationhdr_id) < Number(h.reversal_id);   // :983 alloc.getReversal_ID() == 0 || alloc.get_ID() < alloc.getReversal_ID()
         for (var j = 0; j < rows.length; j++) { var q = rows[j], mine = F.lines.filter(function (x) { return String(x.line_id) === String(q.l.c_allocationline_id); });
           if (q.inv) {                                                                         // createInvoiceGainLoss :892-1030
             var iso = Y(q.inv.issotrx), idt = nz(q.inv.c_doctype_id) ? trx.get('c_doctype', q.inv.c_doctype_id) : null, cm = !!idt && (idt.docbasetype === 'ARC' || idt.docbasetype === 'APC'), gt = D(q.inv.grandtotal);
@@ -926,7 +934,13 @@
             var al = sum(mine, q.mac), aSrc = iso ? al.sc : al.sd, aAcc = iso ? al.ac : al.ad, diff;
             if (aSrc.abs().compareTo(iSrc.abs()) === 0) diff = iAcc.abs().subtract(aAcc.abs());
             else { var pr = part(aSrc, aAcc, q.inv); if (!pr) return named('foreign-currency allocation gain/loss (no conversion rate)'); diff = pr.a0.abs().subtract(aAcc.abs()); if (diff.abs().compareTo(tol) < 0) diff = Z; }
-            if (diff.signum() !== 0) return named('foreign-currency allocation realized gain/loss lines (createInvoiceGainLoss :892-1030)');
+            if (diff.signum() !== 0) {                                                           // :973-1029
+              var full = aSrc.abs().compareTo(iSrc.abs()) === 0, idesc = 'Invoice=(' + q.inv.c_currency_id + ')' + sc2s(iSrc, q.inv.c_currency_id) + '/' + sc2s(iAcc, as.c_currency_id) + ' - Allocation=(' + cur + ')' + aSrc.toString() + '/' + sc2s(aAcc, as.c_currency_id) + ' - (' + (full ? 'full' : 'partial') + ') = ' + sc2s(diff, as.c_currency_id);
+              var ig = revPair ? q.mac : rgain, il_ = revPair ? q.mac : rloss;                  // :978-981 isReversedInvoice: gain = loss = acct
+              if (fwdHdr) { if (hasDebit) { s2(q, il_, ig, diff, idesc); s2(q, q.mac, q.mac, diff.negate(), idesc); } else { s2(q, q.mac, q.mac, diff, idesc); s2(q, il_, ig, diff.negate(), idesc); } }
+              else { if (hasDebit) { s2(q, q.mac, q.mac, diff, idesc); s2(q, ig, il_, diff.negate(), idesc); } else { s2(q, ig, il_, diff, idesc); s2(q, q.mac, q.mac, diff.negate(), idesc); } }
+              trx.say('§MODEL-POST allocation gain/loss invoice=' + q.inv.c_invoice_id + ' schema=' + sch + ' acctDifference=' + diff.toString() + ' (' + (full ? 'full' : 'partial') + ')');
+            }
             if (!revPair) { var others = trx.q("SELECT 1 AS x FROM c_allocationline al JOIN c_allocationhdr ah ON ah.c_allocationhdr_id=al.c_allocationhdr_id WHERE al.c_invoice_id=? AND ah.c_allocationhdr_id<>? AND ah.docstatus IN ('CO','CL')", [q.inv.c_invoice_id, h.c_allocationhdr_id]);
               if (others.length) return named('foreign-currency allocation rounding correction across several allocations of one invoice (createInvoiceRoundingCorrection :1147-1530)'); }
           }
@@ -937,7 +951,13 @@
             var pv = sum(pf, pa), pSrc = pv.sd.signum() === 0 && pv.ad.signum() === 0 ? pv.sc : pv.sd, pAcc = pv.sd.signum() === 0 && pv.ad.signum() === 0 ? pv.ac : pv.ad, pl = sum(mine, pa), lSrc = isSOpay(q) ? pl.sd : pl.sc, lAcc = isSOpay(q) ? pl.ad : pl.ac, pd;
             if (lSrc.abs().compareTo(pSrc.abs()) === 0) pd = lAcc.abs().subtract(pAcc.abs());
             else { var pp = part(lSrc, lAcc, q.pay); if (!pp) return named('foreign-currency allocation gain/loss (no conversion rate)'); pd = lAcc.abs().subtract(pp.a0.abs()); if (pd.abs().compareTo(tol) < 0) pd = Z; }
-            if (pd.signum() !== 0) return named('foreign-currency allocation realized gain/loss lines (createPaymentGainLoss :1045-1135)');
+            if (pd.signum() !== 0) {                                                             // :1113-1134
+              var pfull = lSrc.abs().compareTo(pSrc.abs()) === 0, pdesc = 'Payment=(' + q.pay.c_currency_id + ')' + sc2s(pSrc, q.pay.c_currency_id) + '/' + sc2s(pAcc, as.c_currency_id) + ' - Allocation=(' + cur + ')' + lSrc.toString() + '/' + sc2s(lAcc, as.c_currency_id) + ' - (' + (pfull ? 'full' : 'partial') + ') = ' + sc2s(pd, as.c_currency_id);
+              var prc = Y(q.pay.isreceipt), pam = D(q.pay.payamt);
+              if ((prc && pam.signum() >= 0) || (!prc && pam.signum() < 0)) { s2(q, pa, pa, pd.negate(), pdesc); s2(q, rloss, rgain, pd, pdesc); }
+              else { s2(q, pa, pa, pd, pdesc); s2(q, rloss, rgain, pd.negate(), pdesc); }
+              trx.say('§MODEL-POST allocation gain/loss payment=' + q.pay.c_payment_id + ' schema=' + sch + ' acctDifference=' + pd.toString() + ' (' + (pfull ? 'full' : 'partial') + ')');
+            }
           }
         }
         // Doc_AllocationHdr.balanceAccounting :1866-1890 (called :550 when the document currency != the schema currency): an accounting imbalance (here the per-line rounding of the converted amounts)
