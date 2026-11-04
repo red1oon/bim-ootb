@@ -62,7 +62,7 @@
       var boms = trx.q('SELECT * FROM PP_Product_BOM WHERE M_Product_ID=? AND AD_Client_ID IN (0,?) AND IsActive=? ORDER BY PP_Product_BOM_ID', [pid, A.Env.getAD_Client_ID(this.getCtx()), 'Y']);
       for (var bi = 0; bi < boms.length; bi++) {
         var bom = boms[bi];
-        var bomLines = trx.q('SELECT * FROM PP_Product_BOMLine WHERE PP_Product_BOM_ID=? AND AD_Client_ID IN (0,?) AND IsActive=? ORDER BY Line', [bom.pp_product_bom_id, A.Env.getAD_Client_ID(this.getCtx()), 'Y']);
+        var bomLines = ((typeof module !== 'undefined' && module.exports) ? require('../model_order') : global.ModelOrder).bomLines(trx, bom.pp_product_bom_id, A.Env.getAD_Client_ID(this.getCtx()));
         var lines = 0;
         for (var li = 0; li < bomLines.length; li++) {
           var bomLine = bomLines[li];
@@ -90,16 +90,8 @@
     };
     // MPPProductBOM.getDefault(product, trx) :155-185 — BOMUse 'A' (Master), BOMType 'A' (Current Active); org filter from the login org
     BOMVerify.prototype.getDefaultBOM = function (product) {
-      var A = X.A, trx = this.get_TrxName(), orgId = A.Env.getAD_Org_ID(this.getCtx());
-      var sql = 'SELECT * FROM PP_Product_BOM WHERE M_Product_ID=? AND BOMUse=? AND BOMType=? ';
-      var args = [product.get_ID(), 'A', 'A'];
-      if (orgId > 0) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
-      sql += 'AND IsActive=? AND AD_Client_ID IN (0,?)';
-      args.push('Y', A.Env.getAD_Client_ID(this.getCtx()));
-      if (orgId > 0) sql += ' ORDER BY AD_Org_ID Desc';
-      var list = trx.q(sql, args);
-      if (list.length > 0 && (orgId > 0 || list.length === 1)) return list[0];
-      return null;
+      var A = X.A, MO = (typeof module !== 'undefined' && module.exports) ? require('../model_order') : global.ModelOrder;
+      return MO.bomGetDefault(this.get_TrxName(), product.get_ID(), A.Env.getAD_Org_ID(this.getCtx()), A.Env.getAD_Client_ID(this.getCtx()));   // ONE reader (model_order.js, MOrder.explodeBOM uses it too)
     };
     return BOMVerify;
   });
