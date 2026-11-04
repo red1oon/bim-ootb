@@ -1005,6 +1005,18 @@
     0
    ],
    "used_by": "dxf2walls (§D109)"
+  },
+  "slab.ground_on_raft": {
+   "element": "IfcSlab",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a raft holding an S.O.G-<n>mm label of a plan carries a ground slab on its own outline, n thick (§D109: the drawing states the thickness, not the slab's edge). 'off' = no such slab",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2slabs (§D109)"
   }
  },
  "building_types": {

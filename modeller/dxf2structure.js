@@ -70,6 +70,12 @@
       var wl = WL.buildWalls(sheets, { DF: DF });
       res.els = res.els.concat(wl.els); res.gaps = res.gaps.concat(wl.gaps); res.report = Object.assign({}, res.report, { walls: wl.report });
     }
+    // §D109 P4 ground slabs on the rafts' outlines; a level with no closed outline is a gap
+    var SB = ctx.SB || (typeof module === 'object' && module.exports ? require('./dxf2slabs.js') : (typeof self !== 'undefined' ? self.Dxf2Slabs : null));
+    if (SB && !refused.length && res.els.some(function (e) { return e.outline; })) {
+      var sb = SB.buildSlabs(sheets, res.els, { DF: DF });
+      res.els = res.els.concat(sb.els); res.gaps = res.gaps.concat(sb.gaps); res.report = Object.assign({}, res.report, { slabs: sb.report });
+    }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));
     if (SC && !refused.length && sheets.some(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); })) {

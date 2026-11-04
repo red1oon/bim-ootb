@@ -287,8 +287,20 @@ ok('YR29f an arc is not built: the gap, with its length', wAll(wA).length === 1 
 const wTop = wlP([wl(0), wl(200)], null, 9.05, [planB([], 0)]);
 ok('YR29g a top plan with no level above: the gap', wAll(wTop).length === 0 && wTop.R.bodies.gaps.some(q => q.code === 'GAP:wall_no_top'));
 ok('YR29h set back: band_gap 0 reads none', wAll(wlP([wl(0), wl(200)], { 'wall.band_gap': 0 })).length === 0);
+// §D109 P4 ground slabs on the raft's outline
+const slP = (texts, c, upper) => { const f = planB(loopL('FTG', sqAt(0, 0, 9000, 9000)).concat(tx('400mm TH', 500, 500)), -1.25, { layers: [{ layer: 'FTG', type: 'footing' }] }), g = planB(texts, 0, { name: 'g' }); g.name = 'g.dxf'; return ST.judge([f, g].concat(upper || [planB([], 4.8)], elevS({ plane: 'A1' })), { I: IM, B: BD, choices: c || {} }).gate; };
+const slabs = g => g.R.els.filter(e => e.class === 'IfcSlab' && e.kind === 'slab');
+const s1 = slP([tx('S.O.G-150mm', 1000, 1000), tx('S.O.G-150mm', 2000, 1000), tx('S.O.G-200mm', 3000, 1000)]), s1e = slabs(s1);
+console.log('§YR30 ' + JSON.stringify(s1e.map(e => [e.z0, e.z1, e.size])) + ' rep=' + JSON.stringify(s1.R.bodies.report.slabs));
+ok('YR30a a raft + S.O.G labels: one slab, the raft\'s area x the most-named thickness, top at the plan level', s1e.length === 1 && s1e[0].z1 === 0 && Math.abs(volOf(s1e[0]) - 81 * 0.15) < 1e-5 && /200/.test(JSON.stringify(s1e[0].size.t.others)));
+const s2 = slabs(slP([tx('S.O.G-150mm', 1000, 1000), tx('TOC: -0.100 m', 2000, 2000)]));
+ok('YR30b a TOC text inside it states the top', s2.length === 1 && s2[0].z1 === -0.1 && Math.abs(s2[0].z0 + 0.25) < 1e-9, JSON.stringify(s2.map(e => [e.z0, e.z1])));
+ok('YR30c a label outside every raft: no slab', slabs(slP([tx('S.O.G-150mm', 20000, 20000)])).length === 0);
+const s4 = slP([tx('S.O.G-150mm', 1000, 1000)]);
+ok('YR30d a level above with no outline: the gap, one per level', s4.R.bodies.gaps.filter(q => q.code === 'GAP:slab_no_outline').length === 1 && s4.R.bodies.report.slabs.levels === 2 && s4.R.bodies.report.slabs.built_levels === 1, JSON.stringify(s4.R.bodies.report.slabs));
+ok('YR30e set back: off', slabs(slP([tx('S.O.G-150mm', 1000, 1000)], { 'slab.ground_on_raft': 'off' })).length === 0);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

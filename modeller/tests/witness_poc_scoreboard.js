@@ -43,7 +43,8 @@ CLS.forEach(c => { const pp = count[c.name].perPlan, vals = Object.keys(pp).map(
   line(c.name, rb ? rb.labels - rb.no_edges : built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
 const wr = verdict && verdict.report && verdict.report.walls; if (wr) console.log('§POC_WALLS ' + JSON.stringify(wr) + ' bodies=' + built(['IfcWall']));
 line('wall_lines_m', wr ? Math.round(wr.covered_m) : 0, Math.round(wallLen), wallPlans + ' plans with wall lines');
-line('slabs', built(['IfcSlab']), slabLoops ? 1 : 0, slabLoops + ' floor lines');
+const sr = verdict && verdict.report && verdict.report.slabs; if (sr) console.log('§POC_SLABS ' + JSON.stringify(sr));
+line('slab_levels', sr ? sr.built_levels : 0, sr ? sr.levels : 0, slabLoops + ' floor lines');
 line('stairs', built(['IfcStair', 'IfcStairFlight']), stairs ? 1 : 0, stairs + ' stair labels');
 line('roof', built(['IfcRoof']), roofLines ? 1 : 0, roofLines + ' roof spot levels');
 // a count that matches can still be the wrong elements: each label of a repeated class goes to its nearest body (bbox, metres), on the plan with most labels. Two labels on one body or a body with none is printed.

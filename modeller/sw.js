@@ -114,6 +114,7 @@ const PRECACHE_ASSETS = [
   'dxf2doors.js',
   'dxf2beams.js',
   'dxf2walls.js',
+  'dxf2slabs.js',
   'dxf2synth.js',
   'dxf2notes.js',
   'dxf2ledger.js',
