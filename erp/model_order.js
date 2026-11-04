@@ -134,8 +134,64 @@
   }
   function autoInOut(sub, isAuto) { return sub === 'WI' || sub === 'WP' || sub === 'WR' || (sub === 'PR' && Y(isAuto)); }   // :2250-2256
 
+  // ══ MPPProductBOM.getDefault :155-186 + getLines(false) :340-355 — the ONE BOM reader on the twin tables (processes/BOMVerify.js calls these; no second copy) ═══
+  function bomGetDefault(trx, productId, orgId, clientId) {                                 // BOMUse 'A' (Master), BOMType 'A' (Current Active); org filter from the login org
+    var sql = 'SELECT * FROM PP_Product_BOM WHERE M_Product_ID=? AND BOMUse=? AND BOMType=? ', args = [productId, 'A', 'A'];
+    if (orgId > 0) sql += 'AND AD_Org_ID IN (0, ' + orgId + ') ';
+    sql += 'AND IsActive=? AND AD_Client_ID IN (0,?)'; args.push('Y', clientId);
+    if (orgId > 0) sql += ' ORDER BY AD_Org_ID Desc';
+    var list = trx.q(sql, args);
+    return list.length > 0 && (orgId > 0 || list.length === 1) ? list[0] : null;              // :174-178
+  }
+  function bomLines(trx, bomId, clientId) { return trx.q('SELECT * FROM PP_Product_BOMLine WHERE PP_Product_BOM_ID=? AND AD_Client_ID IN (0,?) AND IsActive=? ORDER BY Line', [bomId, clientId, 'Y']); }   // :340-355
+
   // ══ MOrder DocAction ══════════════════════════════════════════════════════════════════════════════════════════
   var MOrder = {
+    // MOrder.explodeBOM() :1854-1919 — explode NON-STOCKED verified BOMs (IsBOM=Y IsVerified=Y IsStocked=N). A STOCKED BOM is a different route (Production), not built here.
+    explodeBOM: function (trx, o) {
+      var ret = false;
+      function isNsBom(l) { var p = nz(l.m_product_id) ? T.product(trx, l.m_product_id) : null; return !!p && Y(p.isbom) && Y(p.isverified) && !Y(p.isstocked); }   // :1856-1858 where
+      function countFor(orderId) { return trx.find('c_orderline', { c_order_id: orderId }).filter(function (l) { return l.isactive !== 'N' && isNsBom(l); }).length; }   // :1860-1861 SELECT COUNT(*)
+      function renumberLines(step) {                                                          // :980-992
+        var n = step; lines(trx, o, ['line', 'c_orderline_id']).forEach(function (l) { ML.saveEx(trx, 'c_orderline', l, { line: n }); n += step; });
+      }
+      function prec(u) { var r = nz(u) ? trx.get('c_uom', u) : null; return r ? Number(r.stdprecision) : 0; }
+      var count = countFor(o.c_order_id);
+      while (count !== 0) {                                                                   // :1862
+        ret = true;
+        renumberLines(1000);                                                                  // :1865 max 999 bom items
+        lines(trx, o, ['line']).filter(isNsBom).forEach(function (line) {                    // :1868-1870 order lines with non-stocked BOMs
+          var product = T.product(trx, line.m_product_id), lineNo = Number(line.line);        // :1874,1877
+          var bom = bomGetDefault(trx, product.m_product_id, Number(trx.env.org) || 0, trx.env.client);   // :1878
+          if (!bom) return;                                                                   // :1879-1880 continue
+          bomLines(trx, bom.pp_product_bom_id, trx.env.client).forEach(function (bl) {        // :1881
+            var nl = PXO.MOrderLine_new(trx, ML.po(trx, 'c_order', o.c_order_id));            // :1883 new MOrderLine(this)
+            nl.set('line', ++lineNo);                                                         // :1884
+            var bp = T.product(trx, bl.m_product_id);
+            nl.set('m_product_id', bl.m_product_id).set('c_uom_id', bp ? bp.c_uom_id : null).set('m_attributesetinstance_id', 0);   // :1885 setM_Product_ID(id, true) = setProduct :432-446 + ASI 0
+            var qty = D(line.qtyordered).multiply(D(bl.qtybom));                              // :1886 line.getQtyOrdered() x bomLine.getQtyBOM()
+            if (nz(nl.get('c_uom_id'))) qty = qty.setScale(prec(nl.get('c_uom_id')), HU);     // setQty :714-718 -> setQtyEntered :724-732 (UOM precision)
+            nl.set('qtyentered', qty);
+            nl.set('qtyordered', bp && nz(bp.c_uom_id) ? qty.setScale(prec(bp.c_uom_id), HU) : qty);   // setQtyOrdered :738-747 (product UOM precision)
+            if (bl.description != null) nl.set('description', bl.description);               // :1887-1888
+            PXO.MOrderLine_setPrice(trx, nl);                                                 // :1889 setPrice()
+            PXO.saveEx(nl);                                                                   // :1890 saveEx
+          });
+          //	Convert into Comment Line
+          var desc = product.name;                                                            // :1901-1905
+          if (product.description != null) desc += ' ' + product.description;
+          if (line.description != null) desc += ' ' + line.description;
+          ML.saveEx(trx, 'c_orderline', trx.get('c_orderline', line.c_orderline_id), {         // :1894-1907 M_Product_ID 0, ASI 0, Price/Limit/List/LineNetAmt/Freight 0, Description
+            m_product_id: null, m_attributesetinstance_id: 0, priceentered: 0, priceactual: 0, pricelimit: 0, pricelist: 0, linenetamt: 0, freightamt: 0, description: desc });
+        });
+        // :1911 m_lines = null (the twin re-reads every time)
+        // LEGACY QUIRK (verbatim, TWIN rule): :1912 recounts with getC_Invoice_ID() - the latest CO/CL invoice of the order, -1 when none - as the C_Order_ID. A normal order recounts 0: ONE pass, nested BOMs stay.
+        var inv = trx.q("SELECT C_Invoice_ID FROM C_Invoice WHERE C_Order_ID=? AND DocStatus IN ('CO','CL') ORDER BY C_Invoice_ID DESC", [o.c_order_id]);
+        count = countFor(inv.length ? inv[0].c_invoice_id : -1);
+        renumberLines(10);                                                                    // :1913
+      }
+      return ret;
+    },
     prepareIt: function (trx, o) {                                                           // :1536-1721
       var m = fire(trx, 'BEFORE_PREPARE', 'c_order', o); if (m) { T.msg(trx, m); return 'IN'; }
       var d = T.dt(trx, o.c_doctypetarget_id); if (!d) { T.msg(trx, 'No Document Type'); return 'IN'; }
@@ -160,8 +216,7 @@
       // :1633-1649 Mandatory Product Attribute Set Instance - ONE rule for every document (model_asi.js asiMandatoryFor = MProduct.isASIMandatoryFor, + the set's table excludes)
       for (var a = 0; a < ls.length; a++) { var pa = nz(ls[a].m_product_id) ? T.product(trx, ls[a].m_product_id) : null;
         if (pa && !nz(ls[a].m_attributesetinstance_id) && ASI().asiMandatoryFor(trx, pa, null, Y(o.issotrx)) && nz(pa.m_attributeset_id) && !ASI().excludeTableEntry(trx, pa, 'C_OrderLine', Y(o.issotrx))) { T.msg(trx, ASI().mandatoryMsg(ls[a].line, pa)); return 'IN'; } }
-      // :1652 explodeBOM — non-stocked verified BOMs
-      if (ls.some(function (l) { var p = T.product(trx, l.m_product_id); return p && Y(p.isbom) && Y(p.isverified) && !Y(p.isstocked); })) { T.msg(trx, 'explodeBOM (MOrder.java:1823) not ported — named'); return 'IN'; }
+      if (MOrder.explodeBOM(trx, o)) ls = lines(trx, o, ['m_product_id']);                   // :1651-1653 Lines (getLines(true, M_Product_ID))
       if (!autoInOut(d.docsubtypeso, d.isautogenerateinout)) { if (!reserveStock(trx, o, d, ls)) { T.msg(trx, 'Cannot reserve Stock -> ' + (trx._msg || '')); return 'IN'; } }
       calculateOrderTaxTotal(trx, o);
       o = trx.get('c_order', o.c_order_id);
@@ -1076,6 +1131,6 @@
     afterDelete: function (trx, l) { return reqLineUpdateHeader(trx, l.m_requisition_id); }                          // :330-336
   });
 
-  return Object.assign({}, PXO, { createPaySchedule: createPaySchedule, validatePaySchedule: validatePaySchedule, copyOrderPaySchedule: copyOrderPaySchedule, ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
+  return Object.assign({}, PXO, { bomGetDefault: bomGetDefault, bomLines: bomLines, createPaySchedule: createPaySchedule, validatePaySchedule: validatePaySchedule, copyOrderPaySchedule: copyOrderPaySchedule, ctorMod: ctorMod, addDocsPostProcess: addDocsPostProcess, MOrder: MOrder, MInOut: MInOut, calculateOrderTaxTotal: calculateOrderTaxTotal, reserveStock: reserveStock, createShipment: createShipment, setProcessed: setProcessed,
     setReversal: setReversal, isReversal: isReversal, idNum: idNum, backDateAllowed: backDateAllowed, backDateCostingNamed: backDateCostingNamed, MInOut_copyFrom: MInOut_copyFrom });
 });

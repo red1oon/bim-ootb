@@ -24,10 +24,10 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
 (async function main() {
   var SQL = await initSqlJs();
   var db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
-  var pOk = 0, pFail = 0, setupBad = [];                                                    // idempiere.html's FS-15 self-heal loader, statement by statement
-  fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); pOk++; } catch (e) { pFail++; log('§RW-SETUP patch statement failed: ' + String(e.message).slice(0, 120)); } });
+  var pOk = 0, pFail = 0, pDup = 0, setupBad = [];                                                    // idempiere.html's FS-15 self-heal loader, statement by statement
+  fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); pOk++; } catch (e) { if (/^duplicate column name/.test(e.message) && /^ALTER TABLE \w+ ADD COLUMN/i.test(st)) { pDup++; log('§RW-SETUP patch ALTER already satisfied (' + e.message + ') - the column exists, the statement is a no-op'); return; } pFail++; log('§RW-SETUP patch statement failed: ' + String(e.message).slice(0, 120)); } });
   if (pFail) setupBad.push('patches/ad_seed.db.sql ' + pFail + ' statements failed');
-  log('§RW-SEED ad_seed.db + patches/ad_seed.db.sql statements=' + pOk + ' failed=' + pFail + ' today=' + TODAY);
+  log('§RW-SEED ad_seed.db + patches/ad_seed.db.sql statements=' + pOk + ' alreadySatisfied=' + pDup + ' failed=' + pFail + ' today=' + TODAY);
   var A = require(path.join(ERP, 'ad_callout.js'));
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require(path.join(ERP, 'callouts', m + '.js')); });
   A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); });
@@ -37,7 +37,7 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   mods.push('model_post');
   mods.forEach(function (m) { require(path.join(ERP, m + '.js')); });
   var MV = require(path.join(ERP, 'ad_modelval.js'));
-  var E = require(path.join(ERP, 'erp_engine.js')), DP = require(path.join(ERP, 'doc_poster.js'));
+  var E = require(path.join(ERP, 'erp_engine.js'));
 
   function q(sql, params) {
     var st = db.prepare(sql), out = [];
@@ -117,6 +117,11 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var mc = one('SELECT * FROM m_cost WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [PROD]);
   if (mc) db.run('UPDATE m_cost SET currentcostprice=70, currentqty=0 WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [PROD]);
   else { var base = one('SELECT * FROM m_cost WHERE m_product_id=? AND c_acctschema_id=101 LIMIT 1', [PROD]); insertRow('m_cost', Object.assign({}, base, { m_costelement_id: 103, currentcostprice: 70, currentqty: 0, m_cost_uu: null })); }
+  //   MCost.getCurrentCost (MCost.java:145-162) reads M_CostHistory FIRST (by cost detail, else as of DateAcct) - since the seed carries cost history (#2597) the cost must be set where
+  //   legacy reads it, else the 70.00 is invisible to legacy too (it read 23.75 -> 47.50). Same state, both stores (§POSTING-PARITY 5a-port).
+  var nh = q('SELECT h.m_costhistory_id AS id FROM m_costhistory h JOIN m_costdetail d ON d.m_costdetail_id=h.m_costdetail_id WHERE d.m_product_id=? AND d.c_acctschema_id=101 AND h.m_costelement_id=103', [PROD]);
+  nh.forEach(function (h) { db.run('UPDATE m_costhistory SET newcostprice=70 WHERE m_costhistory_id=?', [h.id]); });
+  log('§RW-FIXTURE product ' + PROD + ' AveragePO cost 70.00 set in m_cost and ' + nh.length + ' m_costhistory rows (MCost.getCurrentCost reads history first)');
   var cnt = 0;
   function sale(qty, price, vendor, cur) {
     cnt++; var SO = vendor ? 'N' : 'Y';
@@ -203,14 +208,25 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var cmCo = cm1 ? docact('c_invoice', cm1.id, 'CO') : null, CM = cm1 ? one('SELECT * FROM c_invoice WHERE c_invoice_id=?', [cm1.id]) : null;
   verdict('RW-CM', cmCo ? [eq('completed', 'credit memo CO', [cmCo.ok, cmCo.status], [true, 'CO']), eq('grand_total', 'GrandTotal 110.00 (legacy SD16c)', n(CM.grandtotal), 110), eq('qtyinvoiced', 'RMA line QtyInvoiced 2 (legacy SD16c rma_invoiced 2)', n(rl(L1.m_rmaline_id).qtyinvoiced), 2)] : []);
 
-  // ── RW-BOOKS: the posting preview path (doc_poster) derives the legacy books from what the model path left ──
-  var Rstub = { resolve: function (d, token) { var id = { '{Product.Asset}': 11, '{Product.Cogs}': 12, '{Product.Revenue}': 13, '{Tax.Due}': 14, '{BPartner.Receivable}': 15 }[token]; return { acct: id, element: { id: id, value: token, name: token } }; } };
-  var b3p = { prepare: function (sql) { return { get: function (p) { return q(sql, p == null ? [] : Array.isArray(p) ? p : [p])[0]; }, all: function (p) { return q(sql, p == null ? [] : Array.isArray(p) ? p : [p]); }, run: function () {} }; }, exec: function () {} };
-  function books(table, id) { try { var r = DP.derivePostings(b3p, { table: table, id: id }, 101, Rstub); return r && r.lines ? r.lines : []; } catch (e) { return [{ err: String(e.message).slice(0, 120) }]; } }
+  // ── RW-BOOKS: the books the real Complete (model_post) wrote for what the model path left ──
+  // §POSTING-PARITY step 5a: the books are the fact_acct the REAL Complete wrote (model_post via ML.setPoster), schema 101 - no doc_poster fold (retired).
+  //   Accounts resolved from the seed's own accounting (m_product_acct / c_tax_acct / c_bp_customer_acct -> c_validcombination.account_id), the role the old Rstub tokens stood for.
+  var vc = function (id) { var r = one('SELECT account_id AS a FROM c_validcombination WHERE c_validcombination_id=?', [id]); return r ? Number(r.a) : null; };
+  var PA = one('SELECT p_asset_acct AS a, p_cogs_acct AS c, p_revenue_acct AS r FROM m_product_acct WHERE m_product_id=? AND c_acctschema_id=101', [PROD]) || {};
+  var TA = one('SELECT t_due_acct AS d FROM c_tax_acct WHERE c_tax_id=? AND c_acctschema_id=101', [TAX10]) || {}, BA = one('SELECT c_receivable_acct AS r FROM c_bp_customer_acct WHERE c_bpartner_id=? AND c_acctschema_id=101', [BP]) || {};
+  var ACC = { asset: vc(PA.a), cogs: vc(PA.c), revenue: vc(PA.r), taxdue: vc(TA.d), receivable: vc(BA.r) };
+  log('§RW-BOOKS-ACCTS ' + JSON.stringify(ACC));
+  function books(table, id) { var tid = (one('SELECT ad_table_id AS t FROM ad_table WHERE lower(tablename)=?', [table.toLowerCase()]) || {}).t, ps = one('SELECT posted AS p FROM ' + table + ' WHERE ' + table + '_id=?', [id]);
+    var ls = q('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct WHERE ad_table_id=? AND record_id=? AND c_acctschema_id=101', [tid, id]);
+    log('§RW-BOOKS table=' + table + ' id=' + id + ' posted=' + (ps && ps.p) + ' facts(schema 101)=' + ls.length + ' ' + ls.map(function (l) { return l.account_id + (Number(l.amtacctdr) ? ' Dr ' + l.amtacctdr : ' Cr ' + l.amtacctcr); }).join(' | '));
+    if (table === 'M_InOut') { var mcN = one('SELECT currentcostprice AS p, currentqty AS q FROM m_cost WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [PROD]) || {};
+      log('§RW-BOOKS-COST io=' + id + ' m_cost(101, AveragePO) price=' + mcN.p + ' qty=' + mcN.q + ' costdetail=' + JSON.stringify(q('SELECT d.m_costdetail_id AS cd, d.amt, d.qty, d.currentcostprice AS ccp, d.processed FROM m_costdetail d JOIN m_inoutline l ON l.m_inoutline_id=d.m_inoutline_id WHERE l.m_inout_id=? AND d.c_acctschema_id=101', [id]))
+        + ' history(latest)=' + JSON.stringify(q('SELECT h.newcostprice AS np, h.newqty AS nq, d.dateacct FROM m_costhistory h JOIN m_costdetail d ON d.m_costdetail_id=h.m_costdetail_id WHERE d.m_product_id=? AND d.c_acctschema_id=101 AND h.m_costelement_id=103 ORDER BY d.dateacct DESC, h.m_costhistory_id DESC LIMIT 2', [PROD]))); }
+    return ls.length ? ls : [{ err: 'no fact_acct written (posted=' + (ps && ps.p) + ')' }]; }
   var sideSum = function (ls, acct, side) { return ls.filter(function (l) { return Number(l.account_id) === acct; }).reduce(function (a, l) { return a + Number(l[side === 'dr' ? 'amtacctdr' : 'amtacctcr'] || 0); }, 0); };
   var bk = rcCo ? books('M_InOut', rc1.id) : null, bc = cmCo ? books('C_Invoice', cm1.id) : null;
-  verdict('RW-BOOKS-RECEIPT', bk && bk.length && !bk[0].err ? [eq('dr_asset_cr_cogs', 'Dr {Product.Asset} / Cr {Product.Cogs} = 2 x CURRENT cost 70.00 = 140.00, not the shipment cost (Doc_InOut "Sales - Return" :451-640, R-MMR4)', [sideSum(bk, 11, 'dr'), sideSum(bk, 12, 'cr')], [140, 140])] : (bk ? (log('§RW-NOTE books receipt: ' + JSON.stringify(bk).slice(0, 200)), []) : []));
-  verdict('RW-BOOKS-CM', bc && bc.length && !bc[0].err ? [eq('revenue', 'Dr revenue 100.00', sideSum(bc, 13, 'dr'), 100), eq('tax', 'Dr tax due 10.00', sideSum(bc, 14, 'dr'), 10), eq('receivable', 'Cr receivable 110.00 (mirror of ARI)', sideSum(bc, 15, 'cr'), 110)] : (bc ? (log('§RW-NOTE books cm: ' + JSON.stringify(bc).slice(0, 200)), []) : []));
+  verdict('RW-BOOKS-RECEIPT', bk && bk.length && !bk[0].err ? [eq('dr_asset_cr_cogs', 'Dr {Product.Asset} / Cr {Product.Cogs} = 2 x CURRENT cost 70.00 = 140.00, not the shipment cost (Doc_InOut "Sales - Return" :451-640, R-MMR4)', [sideSum(bk, ACC.asset, 'dr'), sideSum(bk, ACC.cogs, 'cr')], [140, 140])] : (bk ? (log('§RW-NOTE books receipt: ' + JSON.stringify(bk).slice(0, 200)), []) : []));
+  verdict('RW-BOOKS-CM', bc && bc.length && !bc[0].err ? [eq('revenue', 'Dr revenue 100.00', sideSum(bc, ACC.revenue, 'dr'), 100), eq('tax', 'Dr tax due 10.00', sideSum(bc, ACC.taxdue, 'dr'), 10), eq('receivable', 'Cr receivable 110.00 (mirror of ARI)', sideSum(bc, ACC.receivable, 'cr'), 110)] : (bc ? (log('§RW-NOTE books cm: ' + JSON.stringify(bc).slice(0, 200)), []) : []));
 
   // ── RW-VENDOR: the SAME generic path for Vendor RMA (IsSOTrx N): line save + CO, no table branch ──
   var sv = sale(3, 50, true), hv = drive('RW-VENDOR', function () { var h = rmaHeader(sv, DT_VRMA, true); return h.ok ? h : { err: 'vendor RMA header refused: ' + h.error }; });
