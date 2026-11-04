@@ -93,6 +93,23 @@
         log('§STOCK_ANSWER till=' + q.till + ' pid=' + q.pid + ' qty=' + s.qty + (unreached.length ? ' atMost notReached=' + unreached.join(',') : '') + ' reached=' + (c.reached || []).length + '/' + T.tills().length); }
       save(); return { ok: true, answered: n };
     };
+    // ── the shared stream of the Team space, copied both ways by NAME (bytes untouched; the readers verify the signatures as ever). Branch mailboxes (m/b_*) never leave the LAN. The main till is the only bridge,
+    //    so an ordinary till sees the roster, the heads and the hub's mail through the branch relay alone. A name seen on both sides is re-copied only when one side's bytes changed since the last copy (heads, requests).
+    var h32 = function (b) { var h = 5381; for (var i = 0; i < b.length; i++) h = ((h << 5) + h + b[i]) | 0; return h + ':' + b.length; };
+    var lanOnly = function (n) { return /(^|\/)m\/b_[^/]+\//.test(n); };
+    T.mirror = async function (net, lan) {
+      var r = T.requireMain('mirror'); if (r) return r; M.mir = M.mir || {}; var up = 0, down = 0;
+      var A = (await net.list('s/')).filter(function (n) { return !lanOnly(n); }), B = (await lan.list('s/')).filter(function (n) { return !lanOnly(n); }), inA = {}, inB = {}; A.forEach(function (n) { inA[n] = 1; }); B.forEach(function (n) { inB[n] = 1; });
+      var all = Object.keys(Object.assign({}, inA, inB)).sort();
+      for (var n of all) {
+        if (inA[n] && !inB[n]) { var x = await net.get(n); if (x) { await lan.put(n, x); M.mir[n] = h32(x); down++; } }
+        else if (inB[n] && !inA[n]) { var y = await lan.get(n); if (y) { await net.put(n, y); M.mir[n] = h32(y); up++; } }
+        else if (/\/(h|r|f)\//.test(n)) {   // mutable on both sides: copy from the side that changed
+          var xa = await net.get(n), xb = await lan.get(n); if (!xa || !xb) continue; var ha = h32(xa), hb = h32(xb), last = M.mir[n];
+          if (ha !== hb) { if (ha !== last) { await lan.put(n, xa); M.mir[n] = ha; down++; } else if (hb !== last) { await net.put(n, xb); M.mir[n] = hb; up++; } } else M.mir[n] = ha; }
+      }
+      save(); log('§LAN_MIRROR down=' + down + ' up=' + up + ' names=' + all.length); return { down: down, up: up };
+    };
     return T;
   }
   return { create: create, pad: pad };

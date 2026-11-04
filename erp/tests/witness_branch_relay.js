@@ -13,12 +13,13 @@ var path = require('path'), http = require('http'), fs = require('fs'), os = req
 var ROOT = process.env.BR_ROOT || path.join(__dirname, '..', '..'), LOGS = process.env.BR_LOGS || '/tmp/branch_logs';
 var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
-var ARMS = (process.env.BR_ARMS || 'cors,airgap,collect,query,flag,down').split(','), MUTNAME = process.env.BR_MUT || '';
+var ARMS = (process.env.BR_ARMS || 'cors,airgap,collect,query,flag,down,mirror').split(','), MUTNAME = process.env.BR_MUT || '';
 var MUTS = {
   'till-uses-internet': [[['/erp/till_lan.js', "if (!o.isMain && o.net) throw new Error('TillLan: an ordinary till is built with the branch relay only');", ''],
     ['/erp/till_lan.js', "var sent = 0, left = st.out;", "if (o.net) { try { await o.net.put('x/' + o.tillKey, J({ ping: 1 })); } catch (e) {} } var sent = 0, left = st.out;"]], 'airgap'],
   'flag-check-off': [[['/erp/till_lan.js', "if (M.on) return null;", "if (true) return null;"]], 'flag']
 };
+function walkDir(d, rel, out) { if (!fs.existsSync(d)) return out; fs.readdirSync(d).forEach(function (n) { var p = path.join(d, n), r = rel ? rel + '/' + n : n; if (fs.statSync(p).isDirectory()) walkDir(p, r, out); else out.push(r); }); return out; }
 var V = {}, ARM = '', J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
 function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, failed: 0 }; v.judged++; if (!ok) v.failed++; console.log('  §BR_CHECK arm=' + ARM + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + label + (ok ? '' : ' got=' + J(info).slice(0, 500))); return ok; }
 
@@ -37,7 +38,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
     var m = /^\/net\/([^/]+)\/pipe\/(.*)$/.exec(p);   // the internet relay stand-in, counted per device
     if (m) { var dev = m[1], rest = m[2]; if (req.method === 'OPTIONS') PREFLIGHT[dev] = (PREFLIGHT[dev] || 0) + 1; else NETREQ[dev] = (NETREQ[dev] || 0) + 1; res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', '*'); res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-      if (rest.indexOf('list') === 0) { res.writeHead(200); res.end('[]'); return; }
+      if (rest.indexOf('list') === 0) { var pre = new URL(req.url, 'http://x').searchParams.get('prefix') || ''; res.writeHead(200); res.end(J(walkDir(netFolder, '', []).filter(function (n) { return n.indexOf(pre) === 0; }))); return; }
       var fp = path.join(netFolder, rest.replace(/^f\//, '')); if (req.method === 'PUT') { var ch = []; req.on('data', function (c) { ch.push(c); }); req.on('end', function () { fs.mkdirSync(path.dirname(fp), { recursive: true }); fs.writeFileSync(fp, Buffer.concat(ch)); res.writeHead(200); res.end('ok'); }); return; }
       if (!fs.existsSync(fp)) { res.writeHead(404); res.end(); return; } res.writeHead(200); res.end(fs.readFileSync(fp)); return; }
     if (over[p]) { res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'text/plain' }); res.end(over[p]); return; }
@@ -163,6 +164,25 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
       var tot = await ev(BM, function () { return Object.keys(ST.main.lines).length; });
       check('catch-up-no-loss-no-double', tot === 3 && cu2.newLines === 0, 'after catch-up the main holds all 3 lines (1 before + 2 queued), a second pass adds none', { tot: tot, cu: cu, cu2: cu2 });
       console.log('§BR_VERDICT W-BRANCH-RELAY-DOWN ' + (V.down.failed ? 'FAIL' : 'PASS') + ' judged=' + V.down.judged); }
+
+    if (ARMS.indexOf('mirror') >= 0) { ARM = 'mirror'; wipe(); NETREQ = {};
+      var MM = await pc('MM', { q: { main: '1', expected: 'MM,MT', net: NET + '/MM/pipe' } }), MT = await pc('MT', { q: { expected: 'MM,MT' } });
+      await ev(MM, function (a) { L.applySodaFlag(a.m); }, { m: sodaRow('MM') });
+      var SP = 's/' + 'ab'.repeat(32) + '/';
+      await ev(MM, async function (a) { var e = function (x) { return new TextEncoder().encode(x); }; await NET.put(a.sp + 'o/hubkid/1', e('ROSTER')); await NET.put(a.sp + 'h/hubkid', e('HEAD1')); await NET.put(a.sp + 'm/p_x/o/hubkid/1', e('P')); return true; }, { sp: SP });
+      await ev(MT, async function (a) { var e = function (x) { return new TextEncoder().encode(x); }; await LANPIPE.put(a.sp + 'o/tillkid/1', e('ENROLL')); await LANPIPE.put(a.sp + 'm/b_shop/o/hubkid/1', e('SODA-LAN-ONLY')); return true; }, { sp: SP });
+      var m1 = await ev(MM, function () { return L.mirror(NET, LANPIPE); });
+      var onLan = await ev(MT, function (a) { return LANPIPE.list(a.sp); }, { sp: SP }), onNet = await ev(MM, function (a) { return NET.list(a.sp); }, { sp: SP });
+      check('down-copied', ['o/hubkid/1', 'h/hubkid', 'm/p_x/o/hubkid/1'].every(function (n) { return onLan.indexOf(SP + n) >= 0; }), 'roster, head and the hub mail reach the LAN (an ordinary till sees them through the branch relay alone)', onLan);
+      check('up-copied', onNet.indexOf(SP + 'o/tillkid/1') >= 0, 'the till\'s enrolment request reaches the internet relay through the main till', onNet);
+      check('branch-box-stays-on-lan', onNet.indexOf(SP + 'm/b_shop/o/hubkid/1') < 0 && onLan.indexOf(SP + 'm/b_shop/o/hubkid/1') >= 0, 'the branch mailbox (m/b_*) never leaves the LAN', { onNet: onNet });
+      await ev(MM, function (a) { return NET.put(a.sp + 'h/hubkid', new TextEncoder().encode('HEAD2-LONGER')); }, { sp: SP });
+      var m2 = await ev(MM, function () { return L.mirror(NET, LANPIPE); }), hd = await ev(MT, async function (a) { return new TextDecoder().decode(await LANPIPE.get(a.sp + 'h/hubkid')); }, { sp: SP });
+      var m3 = await ev(MM, function () { return L.mirror(NET, LANPIPE); });
+      check('mutable-head-refreshed', hd === 'HEAD2-LONGER' && m2.down === 1, 'a changed head is re-copied once', { hd: hd, m2: m2 });
+      check('idempotent', m3.down === 0 && m3.up === 0, 'a mirror pass with nothing new copies nothing', m3);
+      var refused = await ev(MT, function () { return L.mirror(LANPIPE, LANPIPE); }); check('mirror-main-only', refused.refused === 'not-main', 'a non-main till cannot bridge', refused);
+      console.log('§BR_VERDICT W-MIRROR ' + (V.mirror.failed ? 'FAIL' : 'PASS') + ' judged=' + V.mirror.judged); }
   } catch (e) { console.log('§BR_CRASH ' + (e && e.stack || e)); }
   await br.close(); await stopRelay(); app.close();
   var bad = Object.keys(V).filter(function (k) { return V[k].failed; }), empty = ARMS.filter(function (a) { return !V[a]; });
