@@ -849,8 +849,16 @@
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
+    var AC = state.gate.verdict && state.gate.verdict.accepted;   // lane spec L37: every accepted row stays on screen, under who, when and why
+    if (AC && AC.length) {
+      h += '<div id="dxf-accepted" style="max-height:220px;overflow:auto">'; var acSeen = {};
+      AC.forEach(function (x) { var a = x.accepted_by, k = x.code + '|' + a.who + '|' + a.date;
+        if (!acSeen[k]) { acSeen[k] = 1; h += '<div class="dxf-pv" style="margin:6px 8px 2px 8px;font-weight:600">' + esc('Accepted by ' + a.who + ', ' + a.date + ': ' + x.code + ' (' + state.gate.verdict.accepted_counts[x.code] + '). ' + a.reason) + '</div>'; }
+        h += '<div class="dxf-pv dxf-acc-row" style="margin:0 8px 2px 30px">' + esc((x.sheet || '(set)') + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
+      h += '</div>';
+    }
     h += '</div><div class="ip-foot"><button class="dxf-btn" id="dxf-lines"></button><button class="dxf-btn" id="dxf-meta" title="Drawing metadata">' + ICON.meta + '<span>Metadata</span></button><button class="dxf-btn" id="dxf-arrange" title="Arrange: the sheets as drawn, placed one marking / yellow default at a time (Esc stops)"></button><button class="dxf-btn primary" id="dxf-convert"' + (state.gate.ok ? '' : ' disabled') + '>' + ICON.box + '<span>Convert</span></button>' +
-      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory: no elevation or conflicting heights)' : '') + '. Walls, slabs and roof are not read in a structure set.' : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
+      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory: no elevation or conflicting heights)' : '') + '. Walls, slabs and roof are not read in a structure set.' : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies' + (state.gate.verdict.accepted ? ' with ' + state.gate.verdict.accepted.length + ' accepted row(s)' : '') + ' (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
         : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
@@ -1008,6 +1016,7 @@
     state.gate = g;
     console.log(TAG + ' gate ok=' + g.ok + ' set=' + g.set + ' roles=' + roles.ok + (g.verdict ? ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' counts=' + JSON.stringify(g.verdict.counts) : '') +
       (g.ok ? '' : ' refused=' + JSON.stringify(g.refused).slice(0, 500)));
+    if (g.verdict && g.verdict.accepted) console.log('§DXF-ACCEPT rows=' + g.verdict.accepted.length + ' counts=' + JSON.stringify(g.verdict.accepted_counts) + ' by=' + JSON.stringify(g.verdict.accepted.map(function (x) { return x.accepted_by.who + ' ' + x.accepted_by.date; }).filter(function (v, i, a) { return a.indexOf(v) === i; })));
     if (state.panel) renderPanel();
     return g;
   }
