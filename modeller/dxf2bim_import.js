@@ -593,7 +593,7 @@
     }
     // 1. every non-infill, non-fill element as its own body (fills: none in the page; with a library they are listed, see C1-PORT)
     R.els.forEach(function (e) {
-      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
+      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing' && e.kind !== 'door')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
       var pv = { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id };
       if (e.prov) pv.prov_kind = e.prov;                        // §L7.3 drawn | derived | assumed
       if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
@@ -719,7 +719,7 @@
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
     R.els.forEach(function (e) {
-      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing') return;
+      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing' || e.kind === 'door') return;   // §D109 a leaf generated from its schedule row is a body, not a library fill
       var G = R.libGeom && R.libGeom[e.geometry_hash];
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];
