@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '13';
+  var V = '14';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -923,9 +923,13 @@
     var bad = T.skipped.filter(function (x) { return x.refuse; });
     if (bad.length) { console.log(TAGC + ' REFUSED body ' + JSON.stringify(bad)); status('Convert refused: an opening body does not add up (' + bad.length + ')'); return { refused: bad }; }
     T.skipped.forEach(function (x) { console.log(TAGC + ' void skipped storey=' + x.storey + ' openings=' + x.openings.join('+') + ' reason=' + x.reason); });
-    var Lb = window.Bonsai.library, O = window.Bonsai.oplog;
-    Lb.registerRealGeometry(T.assets.map(function (a) { return { hash: a.hash, v: a.v, f: a.f, bbox: a.bbox, anchorOffset: a.anchorOffset, uncut: a.uncut }; }));
-    var db = await O._ensureDb();
+    var Lb = window.Bonsai.library, O = window.Bonsai.oplog, db = await O._ensureDb();
+    // §L35 one set, one building: an element already active in the model is not built a second time (a different set still adds to the model)
+    var liveR = db.exec('SELECT output_guid FROM kernel_ops WHERE undone=0 AND output_guid IS NOT NULL'), live = {}; if (liveR.length) liveR[0].values.forEach(function (v) { live[v[0]] = 1; });
+    var again = T.inserts.filter(function (o) { return live[o.outputGuid]; }).length;
+    if (again) { console.log(TAGC + ' REFUSED already in the model: ' + again + ' of ' + T.inserts.length); status('Convert refused: ' + again + ' of ' + T.inserts.length + ' elements of this set are already in the model. Press Ctrl+Z to remove the earlier Convert, then Convert again.'); return { refused: [{ sheet: '(set)', reason: 'already in the model', count: again }] }; }
+    var geomAssets = T.assets.map(function (a) { return { hash: a.hash, v: a.v, f: a.f, bbox: a.bbox, anchorOffset: a.anchorOffset, uncut: a.uncut }; });
+    Lb.registerRealGeometry(geomAssets); O.storeRealGeometry(geomAssets);
     var mr = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'), nextId = (mr.length ? Number(mr[0].values[0][0]) : 0) + 1;
     var ops = T.inserts.map(function (o) { return { op_type: o.op_type, params: o.params, outputGuid: o.outputGuid }; })
       .concat(T.cuts.map(function (c) { var sl = c.params.slide, P = Object.assign({}, c.params, { parent: nextId + c.params.parent });
