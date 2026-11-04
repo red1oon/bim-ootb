@@ -88,6 +88,20 @@ var TBL = [['c_invoice', 318], ['m_inout', 319], ['c_payment', 335], ['c_allocat
   var cdIds = {}; rowsCd.forEach(function (r) { cdIds[r.m_costdetail_id] = 1; }); rowsCh.forEach(function (r) { if (!cdIds[r.m_costdetail_id]) bad5.push('m_costhistory#' + r.m_costhistory_id + ' references detail ' + r.m_costdetail_id + ' not in seed'); });
   log('§WCH H5 detail ids ' + (rowsCd.length ? rowsCd[0].m_costdetail_id + '..' + rowsCd[rowsCd.length - 1].m_costdetail_id : '-') + ' history ids ' + (rowsCh.length ? rowsCh[0].m_costhistory_id + '..' + rowsCh[rowsCh.length - 1].m_costhistory_id : '-') + ' violations=' + bad5.length);
   ok('H5', 'every added row identical to the pilot, tied to a seed document line < 1e6 that exists in the seed, history only of seed details (' + rowsCd.length + ' details, ' + rowsCh.length + ' history)', rowsCd.length ? bad5.length === 0 && rowsCd.length === 84 && rowsCh.length === 172 : null, bad5.slice(0, 4).join('; ') || 'clean');
+  // H6-H8 (§POSTING-PARITY 5f — the BOOK claims of W-F9-COSTHISTORY, moved off the retired doc_poster.deriveInOut/deriveMovement onto the REAL poster): mutate the history the lookup reads
+  //   (MCost.getCurrentCost :145-162 -> MCostHistory.get by cost detail :104-142, else as of DateAcct :188-260) and the books MUST follow; with no history they fall back to m_cost (MCost.getCost).
+  function freshQ() { var d = mk(CUR); A.RUNTIME.registerSqlFunctions(function (n, f) { d.create_function(n, f); }); return { db: d, q: mkq(d) }; }
+  var acct430 = function (tw) { return tw['101:430:DR'] || 0; };
+  var F0 = freshQ(), io0 = twinOf(F0.q, 'm_inout', 100), mv0 = twinOf(F0.q, 'm_movement', 100);
+  var F1 = freshQ(); F1.db.run("UPDATE m_costhistory SET newcostprice=newcostprice+0.01 WHERE m_costdetail_id IN (SELECT m_costdetail_id FROM m_costdetail WHERE m_product_id IN (130,123) AND c_acctschema_id=101) AND m_costelement_id=103");
+  var io1 = twinOf(F1.q, 'm_inout', 100), mv1 = twinOf(F1.q, 'm_movement', 100), mvSum = function (tw) { return Object.keys(tw).filter(function (k) { return /^101:/.test(k) && /:DR$/.test(k); }).reduce(function (a, k) { return a + tw[k]; }, 0); };
+  log('§WCH H6 m_inout#100 430 Dr base=' + acct430(io0.tw) + 'c history+0.01=' + acct430(io1.tw) + 'c ; m_movement#100 schema-101 Dr base=' + mvSum(mv0.tw) + 'c history+0.01=' + mvSum(mv1.tw) + 'c keys=' + JSON.stringify(mv1.tw) + (io1.exc ? ' EXC ' + io1.exc : '') + (mv1.exc ? ' EXC ' + mv1.exc : ''));
+  var mvDr = Object.keys(mv0.tw).filter(function (k) { return /^101:/.test(k) && /:DR$/.test(k); });
+  ok('H6', 'history price +0.01 moves the books: shipment #100 (qty 1) 430 Dr 3000c -> 3001c; movement #100 (qty 4, product 123) +4c on EVERY schema-101 Dr leg - the books read the history, not a constant', acct430(io0.tw) === 3000 && acct430(io1.tw) === 3001 && mvDr.length > 0 && mvDr.every(function (k) { return mv1.tw[k] - mv0.tw[k] === 4; }), 'inout ' + acct430(io0.tw) + '->' + acct430(io1.tw) + ' movement ' + mvSum(mv0.tw) + '->' + mvSum(mv1.tw));
+  var F2 = freshQ(); F2.db.run("DELETE FROM m_costhistory WHERE m_costdetail_id IN (SELECT m_costdetail_id FROM m_costdetail WHERE m_product_id=130)");
+  var cur130 = F2.q("SELECT currentcostprice AS p FROM m_cost WHERE m_product_id=130 AND c_acctschema_id=101 AND m_costelement_id=103")[0], io2 = twinOf(F2.q, 'm_inout', 100);
+  log('§WCH H7 m_inout#100 with NO history for product 130: 430 Dr=' + acct430(io2.tw) + 'c m_cost.currentcostprice=' + (cur130 && cur130.p) + (io2.exc ? ' EXC ' + io2.exc : ''));
+  ok('H7', 'no history rows -> the m_cost price (MCost.getCost, history null): 1 x 37.36842105 -> 3737c, not the history 3000c', cur130 ? acct430(io2.tw) === Math.round(Number(cur130.p) * 100) && acct430(io2.tw) !== 3000 : null, acct430(io2.tw) + 'c vs m_cost ' + (cur130 && cur130.p));
   var verdict = fail ? 'FAIL' : (inc || !judged) ? 'INCONCLUSIVE' : 'PASS';
   log('§WCH-SUMMARY ' + verdict + ' mutant=' + (MUT || 'none') + ' baseline=' + (BASELINE ? 'Y' : 'N') + ' documentsJudged=' + judged + ' pass=' + pass + ' fail=' + fail + ' inconclusive=' + inc);
   process.exit(fail ? 1 : verdict === 'INCONCLUSIVE' ? 3 : 0);

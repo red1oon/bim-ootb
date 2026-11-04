@@ -85,6 +85,10 @@ function pg(sql) { return JSON.parse(require('child_process').execFileSync('dock
   // fixture: product 137 costed Average PO with nothing on hand in the cost (the pilot state behind the 660 'E' shipments)
   q("SELECT 1");
   db.run("UPDATE m_cost SET currentqty=0, cumulatedqty=0, cumulatedamt=0 WHERE m_product_id=137 AND m_costelement_id IN (SELECT m_costelement_id FROM m_costelement WHERE costingmethod IN ('A','a'))");
+  //   MCost.getCostInfo (MCost.java:1542-1572) reads the qty from M_CostHistory as of DateAcct FIRST - since the seed carries history (#2597) the pilot's qty-0 state must be set there too,
+  //   else the engine (like legacy) sees the history qty 50 and the shipment posts (§POSTING-PARITY 5f; same stale-shortcut class as W-RMA-WINDOW-PATH RW-BOOKS)
+  db.run("UPDATE m_costhistory SET newqty=0, oldqty=0 WHERE m_costdetail_id IN (SELECT m_costdetail_id FROM m_costdetail WHERE m_product_id=137) AND m_costelement_id IN (SELECT m_costelement_id FROM m_costelement WHERE costingmethod IN ('A','a'))");
+  log('§WPE-FIXTURE m_costhistory rows of product 137 (Average) at qty 0: ' + one("SELECT COUNT(*) AS n FROM m_costhistory WHERE newqty=0 AND m_costdetail_id IN (SELECT m_costdetail_id FROM m_costdetail WHERE m_product_id=137)").n);
   var nCost = one("SELECT COUNT(*) AS n FROM m_cost WHERE m_product_id=137 AND currentqty=0").n;
   log('§WPE-FIXTURE m_cost rows of product 137 at currentqty 0: ' + nCost);
   var cost0 = JSON.stringify(q('SELECT m_costelement_id AS e, c_acctschema_id AS s, currentqty, cumulatedqty FROM m_cost WHERE m_product_id=137 ORDER BY 1,2'));
