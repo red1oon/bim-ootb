@@ -1047,6 +1047,19 @@
     "UB457x191x98": { "h": 467.2, "b": 192.8, "tw": 11.4, "tf": 19.6 }
    },
    "used_by": "dxf2steel (§D109)"
+  },
+  "door.tag_reach": {
+   "element": "IfcDoor",
+   "value": 3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a door's tag its swing arc may be, the leaf then taking the schedule row's width and height (§D109: measured up to 2.6 m). 0 = doors are not read from tags",
+   "options": [
+    3,
+    0
+   ],
+   "radius_tol_m": 0.15,
+   "used_by": "dxf2doortags (§D109)"
   }
  },
  "building_types": {

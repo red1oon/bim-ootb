@@ -258,14 +258,15 @@
       var titleAll = setting('suggest.title_text') === 'text_and_mtext', titleSeen = {};
       var titles = {}; sh.dxf.entities.forEach(function (e) {
         var isT = e.type === 'TEXT' || (titleAll && e.type === 'MTEXT'), txt = titleAll ? plain(e) : e.text, c = isT && e.layer !== LAYER ? titleCore(txt) : '';
-        if (c && titleAll && /,|\b(?:SEE|REFER)\b/i.test(c)) c = '';   // §D107 a note, not a title ("BEAM, SEE PLAN")
+        if (c && titleAll && (/,|\b(?:SEE|REFER)\b/i.test(c) || /^KEY\s*PLAN$/i.test(c))) c = '';   // §D107 a note, not a title ("BEAM, SEE PLAN"); §D109 a title block's KEYPLAN names no sheet
         if (c && e.type === 'MTEXT' && c !== c.toUpperCase()) c = '';   // §D107 an MTEXT counts as a title only in capitals ("Footing Section" on a details sheet is a label; regression W-ARRANGE A9a, W-DATUM-PICK P0)
-        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && (/ELEVATION\s+GRID\s+\S+$/i.test(c) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(c))))) {   // §D109 a storey's name alone (LEVEL 01 FLOOR) titles a plan
+        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && (/\bSCHEDULE$/.test(c) || /ELEVATION\s+GRID\s+\S+$/i.test(c) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(c))))) {   // §D109 a storey's name alone (LEVEL 01 FLOOR) titles a plan
           var norm = titleAll ? c.replace(/[\s-]+/g, ' ').toUpperCase() : String(txt).trim();   // §D107 two spellings of one title are one
           if (!titleSeen[norm]) { titleSeen[norm] = 1; titles[String(txt).trim()] = c; } } });   // §D46 (a) on the title's core   // "Section A-A" / "Section A-A (Truss Detail)"
-      var tl = Object.keys(titles);
+      var tl = Object.keys(titles), fullT = tl.filter(function (q) { return !/^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(titles[q]); });   // §D109 a storey's name titles a sheet only when nothing else does: it is also a key plan's label
+      if (fullT.length) tl = fullT;
       if (tl.length === 1) {
-        var t = tl[0], tc = titles[t], vw = /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
+        var t = tl[0], tc = titles[t], vw = /\bSCHEDULE$/.test(tc) ? 'DRAWING' : /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
         out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
         out.push({ rule: 'PR-NAME', key: 'NAME', value: noScale(t), x: 0, y: 0, why: 'title text' });
       } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });

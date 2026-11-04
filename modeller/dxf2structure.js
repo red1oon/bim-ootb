@@ -72,6 +72,16 @@
       var wl = WL.buildWalls(sheets, { DF: DF });
       res.els = res.els.concat(wl.els); res.gaps = res.gaps.concat(wl.gaps); res.report = Object.assign({}, res.report, { walls: wl.report });
     }
+    if (WL && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'curtainband'; }); })) {   // §D109 P6 the same rule, its own class
+      var cw = WL.buildWalls(sheets, { DF: DF, kind: 'curtainband' });
+      res.els = res.els.concat(cw.els); res.gaps = res.gaps.concat(cw.gaps); res.report = Object.assign({}, res.report, { curtain: cw.report });
+    }
+    // §D109 P6 doors from their tag + the schedule row + the swing arc
+    var DT = ctx.DT || (typeof module === 'object' && module.exports ? require('./dxf2doortags.js') : (typeof self !== 'undefined' ? self.Dxf2DoorTags : null));
+    if (DT && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'doortag'; }); })) {
+      var dt = DT.buildDoors(sheets, { DF: DF });
+      res.els = res.els.concat(dt.els); res.gaps = res.gaps.concat(dt.gaps); res.report = Object.assign({}, res.report, { doors: dt.report });
+    }
     // §D109 P4 ground slabs on the rafts' outlines; a level with no closed outline is a gap
     var SB = ctx.SB || (typeof module === 'object' && module.exports ? require('./dxf2slabs.js') : (typeof self !== 'undefined' ? self.Dxf2Slabs : null));
     if (SB && !refused.length && res.els.some(function (e) { return e.outline; })) {

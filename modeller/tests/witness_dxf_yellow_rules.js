@@ -319,8 +319,36 @@ ok('YR31h a designation not in the table: the unknown gap, never a box', (g => s
 ok('YR31i no line in reach: the no-line gap', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_label_no_line'))(stE('UB254x146x43', [edgeL('S-BEAM-OTLN', A0(0, 9000), A0(6000, 9000))])));
 ok('YR31j a line on a floor layer is no member', (g => stB(g).length === 0 && gapOf(g, 'GAP:steel_label_no_line'))(stE('UB254x146x43', [mbr('A-FLOR-OTLN')])));
 ok('YR31k set back: reach 0 reads none', stB(stE('UB254x146x43', null, { 'steel.label_reach': 0 })).length === 0);
+// §D109 P6 doors: tag + schedule row + swing arc
+const DTg = require(path.join(M, 'dxf2doortags.js'));
+const schedT = [T('MTEXT', 'SCHD', 'DOOR NO.', 100, 400), T('MTEXT', 'SCHD', 'DOOR NO.', 300, 400)].concat(
+  [['1-01-A', 'WD-02', '980', '2200', 100, 380], ['1-02-A', 'WD-02', '1800', '2200', 100, 370], ['EX-03', 'PT-01', '1100', '3000', 300, 380]].reduce((a, q) => a.concat(T('MTEXT', 'SCHD', q[0], q[4], q[5]), T('MTEXT', 'SCHD', q[1], q[4] + 20, q[5]), T('MTEXT', 'SCHD', q[2], q[4] + 40, q[5]), T('MTEXT', 'SCHD', q[3], q[4] + 60, q[5])), []));
+const schS = () => ({ name: 's.dxf', role: 'drawing', factor: 0.001, sha: 's', marks: 1, errors: [], dxf: { entities: schedT }, desc: { view: 'DRAWING', units: 'mm', gridsX: {}, gridsY: {}, gridsH: {}, gridsA: {}, zs: [], layers: [], bodyz: [], excludes: [], labels: [], tags: [], sizes: [] } });
+const rowsS = DTg.scheduleRows([schS()]); console.log('§YR32 rows ' + JSON.stringify(rowsS));
+ok('YR32a 2 tables: each number has its own width and height, a finish code is no row', Object.keys(rowsS).sort().join() === '1-01-A,1-02-A,EX-03' && rowsS['1-01-A'].w === 980 && rowsS['EX-03'].h === 3000);
+const dtP = (ents, c) => { const d = planB(ents, 0, { layers: [{ layer: 'DTAG', type: 'doortag' }] }); return ST.judge([d, planB([], 4.8), schS(), elevS({ plane: 'A1' })], { I: IM, B: BD, choices: c || {} }).gate; };
+const hinge = A0(1000, 1000), arcA = (r, c0) => ({ type: 'ARC', layer: 'A-DOOR', handle: (h++).toString(16), center: c0 || hinge, radius: r, startAngle: 16.165 * Math.PI / 180, endAngle: (16.165 + 90) * Math.PI / 180 });
+const dtag = (t) => { const q = A0(1200, 1500); return T('MTEXT', 'DTAG', t, q.x, q.y); }, doors = g => g.R.els.filter(e => e.class === 'IfcDoor');
+const leafEnd = A0(1000, 1950), openLine = edgeL('A-DOOR', hinge, leafEnd), d1g = dtP([arcA(950), openLine, dtag('1-01-A')]), d1 = doors(d1g);
+console.log('§YR32 ' + JSON.stringify(d1.map(e => ({ size: e.size, z0: e.z0, z1: e.z1, vol: volOf(e) }))) + ' rep=' + JSON.stringify(d1g.R.bodies.report.doors));
+const closedEnd = A0(1980, 1000);
+ok('YR32b one arc, row 980 x 2200: one IfcDoor, the row\'s sizes, hinged at the centre, closed along the end with no leaf line', d1.length === 1 && Math.abs(volOf(d1[0]) - 0.98 * 2.2 * 0.04) < 1e-6 && d1[0].z1 === 2.2 && d1[0].vertices.some(v => Math.hypot(v[0] - hinge.x * 0.001, v[1] - hinge.y * 0.001) < 1e-5) && d1[0].vertices.some(v => Math.hypot(v[0] - closedEnd.x * 0.001, v[1] - closedEnd.y * 0.001) < 0.05));
+const h2 = A0(2800, 1000), d2 = doors(dtP([arcA(900), arcA(900, h2), dtag('1-02-A')]));
+ok('YR32c 2 arcs of half the width: a pair, 2 leaves of 0.9', d2.length === 2 && d2.every(e => Math.abs(volOf(e) - 0.9 * 2.2 * 0.04) < 1e-5), JSON.stringify(d2.map(e => volOf(e))));
+const gg = (g, code) => g.R.bodies.gaps.some(q => q.code === code);
+ok('YR32d a tag with no row: its gap, no box', (g => doors(g).length === 0 && gg(g, 'GAP:door_tag_no_row'))(dtP([arcA(950), dtag('9-99-Z')])));
+ok('YR32e a tag with no arc of its size: its gap, no box', (g => doors(g).length === 0 && gg(g, 'GAP:door_tag_no_swing'))(dtP([arcA(400), dtag('1-01-A')])));
+ok('YR32f set back: reach 0', doors(dtP([arcA(950), dtag('1-01-A')], { 'door.tag_reach': 0 })).length === 0);
+ok('YR32g DOOR SCHEDULE is a drawing', vals(ttl('DOOR SCHEDULE'), 'PR-VIEW') === 'DRAWING');
+const kp = (() => { const p = sheet('p.dxf', [T('MTEXT', 'TB', 'DOOR SCHEDULE', 0, 0), T('MTEXT', 'TB', 'KEYPLAN', 0, 500)], [mark('UNITS', 'mm')]); return props(p, [p]); })();
+ok('YR32j a title block\'s KEYPLAN is no second title', vals(kp, 'PR-VIEW') === 'DRAWING');
+const gf = (() => { const p = sheet('p.dxf', [T('MTEXT', 'TB', 'DOOR SCHEDULE', 0, 0), T('MTEXT', 'TB', 'GROUND FLOOR', 0, 500)], [mark('UNITS', 'mm')]); return props(p, [p]); })();
+ok('YR32k a key plan\'s GROUND FLOOR yields to a real title', vals(gf, 'PR-VIEW') === 'DRAWING');
+ok('YR32h set back: text_only', vals(ttl('DOOR SCHEDULE', { 'suggest.title_text': 'text_only' }), 'PR-VIEW') === '');
+const cwG = ST.judge([planB([edgeL('GL', A0(0, 0), A0(6000, 0)), edgeL('GL', A0(0, 150), A0(6000, 150))], 0, { layers: [{ layer: 'GL', type: 'curtainband' }] }), planB([], 4.8), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate;
+ok('YR32i curtainband: one IfcCurtainWall', cwG.R.els.filter(e => e.class === 'IfcCurtainWall').length === 1 && cwG.R.bodies.report.curtain.walls === 1);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

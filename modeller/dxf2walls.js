@@ -11,12 +11,12 @@
   var P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   function buildWalls(sheets, opts) {
     opts = opts || {};
-    var els = [], gaps = [], report = { lines_m: 0, covered_m: 0, single_m: 0, curved_m: 0, walls: 0 }, DF = opts.DF;
+    var KIND = opts.kind || 'wallband', CLS = P.ifcType(KIND).ifc_class, TAG = KIND === 'wallband' ? 'wall' : 'curtain', els = [], gaps = [], report = { lines_m: 0, covered_m: 0, single_m: 0, curved_m: 0, walls: 0 }, DF = opts.DF;
     var setting = function (k, d) { return DF && DF.has(k) ? DF.get(k) : d; };
     var gapM = Number(setting('wall.band_gap', 0.35)), tolM = Number(setting('loops.skew_tol', 0.001)); if (!(gapM > 0)) return { els: els, gaps: gaps, report: report };
     var plans = sheets.filter(function (s) { return s.role === 'plan'; }).sort(function (a, b) { return a.level - b.level; }), levels = plans.map(function (p) { return p.level; }).filter(function (l, i, a) { return a.indexOf(l) === i; });
     plans.forEach(function (ps, pi) {
-      var ly = ((ps.desc && ps.desc.layers) || []).filter(function (l) { return l.type === 'wallband'; }).map(function (l) { return l.layer; }); if (!ly.length) return;
+      var ly = ((ps.desc && ps.desc.layers) || []).filter(function (l) { return l.type === KIND; }).map(function (l) { return l.layer; }); if (!ly.length) return;
       var k = ps.factor, gap = gapM / k, tol = tolM / k, segs = [], top = levels.filter(function (l) { return l > ps.level; })[0], before = els.length;
       (ps.dxf.entities || []).forEach(function (e) {
         if (ly.indexOf(e.layer) < 0) return;
@@ -47,18 +47,18 @@
         open.forEach(emit);
         function emit(w) {
           var t = w.c1 - w.c0, len = w.s1 - w.s0; if (len <= t) { report.stub_m = (report.stub_m || 0) + len * k; return; }   // shorter than it is thick: a wall's end, not a wall
-          var first = Object.keys(w.members)[0], guid = 'body-wall-' + pi + '-' + report.walls;
-          if (top === undefined) { gaps.push({ code: 'GAP:wall_no_top', kind: 'wall', sheet: ps.name, handle: first, detail: 'plan level ' + ps.level + ' has no plan level above it' }); return; }
+          var first = Object.keys(w.members)[0], guid = 'body-' + TAG + '-' + pi + '-' + report.walls;
+          if (top === undefined) { gaps.push({ code: 'GAP:wall_no_top', kind: TAG, sheet: ps.name, handle: first, detail: 'plan level ' + ps.level + ' has no plan level above it' }); return; }
           var corner = function (s, c) { return [r6((s * g.ux + c * nx) * k), r6((s * g.uy + c * ny) * k)]; }, ring = [corner(w.s0, w.c0), corner(w.s1, w.c0), corner(w.s1, w.c1), corner(w.s0, w.c1)];
           var mesh = P.Solid.box(ring.map(function (c) { return [c[0], c[1], ps.level]; }).concat(ring.map(function (c) { return [c[0], c[1], top]; })));
           report.walls++;
-          els.push({ guid: guid, class: 'IfcWall', storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: first, layer: ly[0], sheet: ps.name, kind: 'wall', mark: null, members: Object.keys(w.members), z0: ps.level, z1: top,
-            size: { t: { value: r6(t * k), source: 'drawn' }, length: { value: r6(len * k), source: 'drawn' }, lines: w.n, top: { value: top, source: 'next plan level' } }, height_source: 'plans', prov: 'derived', ifc: P.ifcType('wallband', null, null) });
+          els.push({ guid: guid, class: CLS, storey: 'Level ' + (levels.indexOf(ps.level) + 1), vertices: mesh.vertices, faces: mesh.faces, handle: first, layer: ly[0], sheet: ps.name, kind: TAG, mark: null, members: Object.keys(w.members), z0: ps.level, z1: top,
+            size: { t: { value: r6(t * k), source: 'drawn' }, length: { value: r6(len * k), source: 'drawn' }, lines: w.n, top: { value: top, source: 'next plan level' } }, height_source: 'plans', prov: 'derived', ifc: P.ifcType(KIND, null, null) });
         }
       });
       if (els.length > before && DF && DF.has('wall.band_gap')) DF.use('wall.band_gap');
     });
-    if (report.curved_m > 0) gaps.push({ code: 'GAP:wall_curved', kind: 'wall', detail: 'wall arcs not built: ' + r6(report.curved_m) + ' m' });
+    if (report.curved_m > 0) gaps.push({ code: 'GAP:wall_curved', kind: TAG, detail: TAG + ' arcs not built: ' + r6(report.curved_m) + ' m' });
     ['lines_m', 'covered_m', 'single_m', 'curved_m'].forEach(function (q) { report[q] = r6(report[q]); });
     return { els: els, gaps: gaps, report: report };
   }
