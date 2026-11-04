@@ -988,3 +988,25 @@ Step `PLANE` joins `KEY_ORDER`; the sheet tints yellow as any default; a centred
 **Convert on the same set:** one annex alone qualifies with 5 columns and no walls; a rotated elevation is still refused. **NEXT:** (1) annex walls: mix walls and structure in one set (the guide's standing limit); (2) rotated wing through Convert: connect `@GRIDA` / `@PLANE` to `@FRAME`; (3) the curved roof as a loft through the drawing's own spot levels (`GEOM_LOFT` exists, untried). Open questions are with the owner's reviewer.
 **Parked proposals still unbuilt:** one DWG to many sheets at intake, Revit layer table as yellow rows (Y7, Y10).
 
+## §D109 SPEC (2026-11-04) — POC: CAN A REAL 2D SET ALONE GIVE A FULLY MODELLED LOD400 BUILDING?
+**Owner:** *"We are doing this as a p-o-c if such 2Ds alone can produce LOD400 fully modelled. So we proceed with what we have now while the BIM guy be sending later as a separate exercise."*
+**Rules of the POC.** Input = the 2D sheets of the private set, nothing else: its Revit models stay closed; a later IFC and the Revit families from its author are a separate exercise and become the Rosetta Stone: the blind 2D result is compared with them (owner: *"later IFC and Revit families will then act as the Rosetta Stone to compare"*). No public-press figure enters the model. Every element traces to a drawn entity, a schedule row, a stated label, or a yellow row. A class the sheets cannot support is counted as a gap, never a box. Rule of §D107 holds: each new default is a setting the user can set back.
+**"LOD400" here means:** the element's real parts and stated sizes, built by rule from what the sheets state, and tagged `generated`; it is not the manufacturer's product. Where the sheets state no parts (a sanitary fixture, the mihrab), the row is a gap or a real library mesh, never an invented shape.
+
+**Scoreboard (`§POC`, one line per class, a generic witness; every number comes from a count in the sheets).** Denominators: walls = wall lengths by plan; columns = column marks on the plan sheets; footings = `F*` marks; beams = beam labels; doors = plan tags (64); slabs = floor outlines; stairs, roof = present or not. `built / evidence / gap`. Baseline on main `286f2ca8`, all classes typed: **0 bodies**: rotated elevations refuse the set, and without them no plan has a level.
+
+**Steps, in order; each: spec line, witness, build, scoreboard.**
+- **P1 the gate opens.** An elevation with `@PLANE` does not need `@FACE` / `@HAXIS` to hold a role; bodies take heights from it only through the axis route. Set back: `suggest`-free, by removing `@PLANE`.
+- **P2 bodies in any direction.** Columns and beams on a rotated grid keep their true footprint and direction. Witness: a 400 x 550 rectangle at 16.165 deg gives those sizes, not its bounding box.
+- **P3 walls.** Pair the plan's wall lines into walls in any direction, thickness measured, mixed with structure bodies in one set (lifts the guide's standing limit). Height from the level names, else a yellow row. Openings cut from door tags and gaps.
+- **P4 slabs.** From floor outlines at each named level; thickness from the sections or a yellow row.
+- **P5 steel.** Section labels (`UB254x146x43`, `L100x100x8`, `BU-WF-489 X 283 X 30.5 X 17`) become true profiles swept along their members: the first true LOD400 class. Unknown section = gap.
+- **P6 doors and glazing.** Leaf + frame generated from the schedule row (width, height, panel and frame type). Curtain walls from the drawn mullion positions.
+- **P7 stairs and railings.** From the plan's stair lines and the levels they join.
+- **P8 the roof.** A loft through the drawing's own spot levels (`TOS`) and wall tops, tagged derived; its fit reported at each spot level not used to build it.
+- **P9 verdict.** The scoreboard, and what 2D alone could not reach, stated class by class. The later IFC checks it.
+
+**True limits known now, in this package:** no architectural elevation or section of the hall, no roof plan, no minaret elevation, no wall type or glazing schedule (all Rev.00 sheets not issued here). They are expected to show as gaps or yellow rows: that is a POC result, not a failure to hide.
+
+**§D109 STATUS (2026-11-04, branch `poc/dxf-2d-lod400`, WIP).** P1 half done: `@PLANE` lifts the `FACE` / `HAXIS` need. Measured on the private set with one column layer typed: still 0 bodies, refused by `GRIDH(>=2)` on the elevations with fewer than 2 grid lines (BA, AA, CE) and by no level on the foundation plan. No witness written yet, the runner not run. Next: `@PLANE` also lifts `GRIDH(>=2)`; `Z(>=2)` stays.
+

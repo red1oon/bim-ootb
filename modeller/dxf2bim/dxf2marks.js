@@ -184,7 +184,7 @@
       errors.push(err('MARK:layer_type', '@LAYER ' + q.layer + ',' + q.type + ': a ' + d.view + ' sheet reads ' + LAYER_TYPES[d.view].concat(LAYER_TYPES.ANY, LAYER_TYPES.BODY).join('|'), { handle: q.handle, layer: q.layer, type: q.type, view: d.view })); return false;
     });
     {
-      var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined; });
+      var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined && !(d.view === 'ELEV' && d.plane !== undefined && (k === 'FACE' || k === 'HAXIS')); });   // §D109 P1: @PLANE says where it stands
       if (d.view === 'PLAN') {
         if (Object.keys(d.gridsX).length < 2) need.push('GRIDX(>=2)');
         if (Object.keys(d.gridsY).length < 2) need.push('GRIDY(>=2)');
