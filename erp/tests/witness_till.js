@@ -174,7 +174,7 @@ var ROWARM = { 15: 'kds', 20: 'kds', 6: 'bar', 7: 'held', 10: 'edit', 11: 'refun
 async function prepare(pg, screen) {   // put the live page on the screen a registry row talks about, by the cashier's own clicks
   if (screen === 'login') { await pg.evaluate(function () { window.Till.go('login'); }); return; }
   if (!LOGGED) { await pg.evaluate(function () { window.Till.go('login'); }); await pg.click('#u1 .u-user:has-text("GardenAdmin")'); LOGGED = true; }
-  if (['menu', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations'].indexOf(screen) >= 0) { await pg.evaluate(function (s) { window.Till.go(s); }, screen); return; }
+  if (['menu', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup'].indexOf(screen) >= 0) { await pg.evaluate(function (s) { window.Till.go(s); }, screen); return; }
   await pg.evaluate(function () { window.Till.go('sales'); });
   if (!(await pg.$('#products .prod'))) { var c = await pg.$('#cats [data-cat]'); if (c) await c.click(); }
   if (screen === 'sales') return;
@@ -185,7 +185,7 @@ async function prepare(pg, screen) {   // put the live page on the screen a regi
 }
 async function runParity(pg, pgRest, pgKit) {
   var R = await pg.evaluate(function () { return window.Till.registry.ROWS; }), x = 0, N = R.length, detail = [];
-  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'kitchen'];
+  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup', 'kitchen'];
   for (var row of R) {
     var ok = false, why = '', page = row.page === 'kitchen.html' ? pgKit : row.mode === 'restaurant' ? pgRest : pg;
     if (row.status !== 'built' || SCREENS.indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
@@ -667,10 +667,11 @@ async function runRest(ctx, base) {
   check('rest', 'paid-frees-table', occ2 === '0', 'after payment the receipt returns to the map and the table is free', occ2);
   var ro = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + key + "'"); check('rest', 'deposits-as-ticket', ro.length === 1 && /-S\d+$/.test(key), 'the table sale deposits as an ordinary S ticket (1 I_Order row)', { n: ro.length, key: key });
   await pg.click('#fl-res'); await pg.waitForSelector('#u17.on');
-  await pg.fill('#rs-customer', 'Ms Lee'); await pg.fill('#rs-chairs', '4'); await pg.fill('#rs-date', '2026-11-04T19:00'); await pg.selectOption('#rs-place', 'Table 7'); await pg.click('#rs-save');
-  var rl = await pg.$$eval('#rs-list [data-res]', function (d) { return d.map(function (x) { return x.textContent; }); }); check('rest', 'reservation-saved', rl.length === 1 && /Ms Lee/.test(rl[0]) && /Table 7/.test(rl[0]), 'a reservation (person, 4 persons, booking time, table) is listed', rl);
-  await pg.click('#rs-list [data-res-in]'); await pg.waitForSelector('#u3.on'); var tid2 = await pg.$eval('#tid', function (e) { return e.textContent; }); check('rest', 'check-in-now', /Table 7/.test(tid2), 'Check-In Now opens the reserved table', tid2);
-  var hold = await pg.evaluate(function () { return window.Till.state().store.reservations[0].in; }); check('rest', 'check-in-marked', hold === true, 'the reservation is marked checked in', hold);
+  await pg.fill('#rs-customer', 'Ms Lee'); await pg.fill('#rs-chairs', '4'); await pg.fill('#rs-date', '2026-11-04T19:00'); await pg.click('#rs-save'); await pg.waitForSelector('#rs-list [data-res]');   // §29.N row 17 (owner 2026-11-04): the table is chosen at check-in, not at booking
+  
+  var rl = await pg.$$eval('#rs-list [data-res]', function (d) { return d.map(function (x) { return x.textContent; }); }); check('rest', 'reservation-saved', rl.length === 1 && /Ms Lee/.test(rl[0]) && /\b4\b/.test(rl[0]) && /2026-11-04T19:00/.test(rl[0]) && !/Table/.test(rl[0]), 'a reservation (person, 4 persons, booking time; NO table yet) is listed', rl);
+  await pg.selectOption('#rs-place', 'Table 7'); await pg.click('#rs-list [data-res-in]'); await pg.waitForSelector('#u3.on'); var tid2 = await pg.$eval('#tid', function (e) { return e.textContent; }); check('rest', 'check-in-now', /Table 7/.test(tid2), 'Check-In Now opens the reserved table', tid2);
+  var hold = await rowsOf(pg, "SELECT state, placeid FROM pos_reservation ORDER BY seq DESC LIMIT 1"); check('rest', 'check-in-marked', hold[0] && hold[0].state === 'I' && hold[0].placeid === 'Table 7', 'the reservation is marked checked in at Table 7', hold);
   await pg.close();
 }
 
@@ -725,7 +726,7 @@ else
         ctx = await newCtx(); var pgp = await openTill(ctx, sv.base), ctx2 = await newCtx(), pgr = await openTill(ctx2, sv.base, '?mode=restaurant'); await pgr.click('#u1 .u-user:has-text("GardenAdmin")');
         var ctx3 = await newCtx(), pgk = null; if (fs.existsSync(path.join(ERP, 'kitchen.html'))) { pgk = await ctx3.newPage(); pgk.on('pageerror', function (e) { ERRS.push(e.message); }); await pgk.goto(sv.base + '/erp/kitchen.html?login=50001', { waitUntil: 'load' }); await pgk.waitForFunction(function () { return window.Kitchen && window.Kitchen.ready; }, null, { timeout: 170000 }).catch(function () { pgk = null; }); }
         var pr = await runParity(pgp, pgr, pgk); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
-        check('parity', 'non-vacuous', pr.N === 22 && pr.x > 0, 'N is the registry (22, §14A.6) and at least one row was judged present', pr);
+        check('parity', 'non-vacuous', pr.N === 25 && pr.x > 0, 'N is the registry (25: 22 of §14A.6 + N23-N25 of §32, each with its source) and at least one row was judged present', pr);
         console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
         await pgp.close(); await pgr.close(); if (pgk) await pgk.close();
       }

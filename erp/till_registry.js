@@ -42,7 +42,11 @@
     { w: 20, u: 'N20', label: 'Kitchen screen: list by station, elapsed colour, bump (done / void), recall, Ready back to the till', src: '§14A.P rec. 2-4, §19.4 (uniCenta has none; fills the gap, additive)', ver: '5.0', status: 'built', screen: 'kitchen', page: 'kitchen.html',
       sels: ['#kitchen #k-cards', '#k-station', '#k-recall', '#k-amber', '#k-red'] },
     { w: 21, u: 'N21', label: 'Check In / Check Out', src: '5.0 JPanelEmployeePresence.java:137-147,286-318', ver: '5.0', status: 'built', screen: 'presence', sels: ['#presence #pr-in', '#presence #pr-out'] },
-    { w: 22, u: 'N22', label: 'Pick-up number reset', src: '5.0 JPanelResetPickupId.java:79-124', ver: '5.0', status: 'built', screen: 'pickup', sels: ['#pickup #pu-reset'] }
+    { w: 22, u: 'N22', label: 'Pick-up number reset', src: '5.0 JPanelResetPickupId.java:79-124', ver: '5.0', status: 'built', screen: 'pickup', sels: ['#pickup #pu-reset'] },
+    { w: 23, u: 'N23', label: 'Configuration screen: General, Locale, System Options, Ticket Setup, Company (49 applicable keys)', src: '5.0 JPanelConfiguration.java:233-267 (tabs); keys §29.1', ver: '5.0', status: 'built', screen: 'setup', sels: ['#setup #cfg-tabs', '#setup #cfg-save'],
+      order: { container: '#setup #cfg-tabs', item: 'button', texts: ['General', 'Locale', 'System Options', 'Ticket Setup', 'Company'] } },
+    { w: 24, u: 'N24', label: 'Tickets mode switch: simple / standard / restaurant', src: '5.0 JPanelConfigGeneral.java:89-91,164 (machine.ticketsbag)', ver: '5.0', status: 'built', screen: 'setup', sels: ['#setup #cfg-mode'], optionTexts: { sel: '#setup #cfg-mode option', texts: ['simple', 'standard', 'restaurant'] } },
+    { w: 25, u: 'N25', label: 'Floor tabs over the branch-shared table map (lock, save on leaving the table)', src: '5.0 JTicketsBagRestaurantMap.java:140-182,522-643; DataLogicReceipts.java:101-135 (behaviour: witness_till_rest.js)', ver: '5.0', status: 'built', screen: 'floors', mode: 'restaurant', sels: ['#floors #fl-tabs', '#floors #fl-map'] }
   ];
   return { MENU: MENU, ROWS: ROWS, N: ROWS.length };
 });
