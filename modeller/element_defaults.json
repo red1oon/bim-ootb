@@ -993,6 +993,18 @@
     "one_body"
    ],
    "used_by": "dxf2beams (§D109)"
+  },
+  "wall.band_gap": {
+   "element": "IfcWall",
+   "value": 0.35,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "parallel wall lines closer than this are one wall, solid from outer line to outer line: with no wall type schedule a leaf cannot be told from a cavity (§D109: spacing peaks at 50 to 300 mm). 0 = walls are not read from their lines",
+   "options": [
+    0.35,
+    0
+   ],
+   "used_by": "dxf2walls (§D109)"
   }
  },
  "building_types": {

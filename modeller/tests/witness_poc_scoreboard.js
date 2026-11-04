@@ -26,8 +26,8 @@ files.forEach(f => {
   if (!isPlan) return;
   CLS.forEach(c => { d.entities.forEach(e => { if ((e.type !== 'MTEXT' && e.type !== 'TEXT') || !c.layer.test(e.layer)) return; const t = clean(e.text); if (!c.text.test(t)) return;
     count[c.name].perPlan[f] = (count[c.name].perPlan[f] || 0) + 1; const k = t.split(/[ (]/)[0]; count[c.name].kinds[k] = (count[c.name].kinds[k] || 0) + 1; }); });
-  let wl = 0; d.entities.forEach(e => { if (e.type === 'LINE' && /^A-WALL(-|$)/.test(e.layer)) wl += Math.hypot(e.vertices[1].x - e.vertices[0].x, e.vertices[1].y - e.vertices[0].y); });
-  if (wl) { wallLen += wl / 2000; wallPlans++; }   // a wall is two lines: length in metres = half the line length (mm)
+  let wl = 0; d.entities.forEach(e => { if (e.type === 'LINE' && /^A-WALL$/.test(e.layer)) wl += Math.hypot(e.vertices[1].x - e.vertices[0].x, e.vertices[1].y - e.vertices[0].y); });
+  if (wl) { wallLen += wl / 1000; wallPlans++; }   // metres of wall line: a wall is several lines, so a length of wall is not countable from the sheets without its type
   // stairs, roof: present or not, from what the sheet SAYS. A layer name is no evidence: on the private set S-STRS holds the curved roof's linework, not stairs (13,248 entities counted as stairs, first run).
   d.entities.forEach(e => { if (/^S-SLAB|^A-FLOR-____-OTLN$/.test(e.layer)) slabLoops++; if (e.type === 'MTEXT' || e.type === 'TEXT') { const t = clean(e.text); if (/^(?:STAIR|STAIRS|STAIR \d+|ST-?\d+)$/i.test(t)) stairs++; if (/^TOS\b/i.test(t) || /^T\/ROOF\b/i.test(t)) roofLines++; } });
   labels[f] = d.entities.filter(e => (e.type === 'MTEXT' || e.type === 'TEXT')).map(e => { const p = e.position || e.startPoint || {}; return { t: clean(e.text), x: p.x, y: p.y, layer: e.layer }; });
@@ -41,7 +41,8 @@ CLS.forEach(c => { const pp = count[c.name].perPlan, vals = Object.keys(pp).map(
   // a labelled class counts labels that found their element: a label that names a repeat of one beam is not missing
   const rb = c.resolved && verdict && verdict.report && verdict.report.beams; if (rb) console.log('§POC_BEAMS ' + JSON.stringify(rb) + ' bodies=' + built(c.ifc));
   line(c.name, rb ? rb.labels - rb.no_edges : built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
-line('walls_m', Math.round((bodies || []).filter(b => b.class === 'IfcWall').reduce((a, b) => a + (b.length_m || 0), 0)), Math.round(wallLen), wallPlans + ' plans with wall lines');
+const wr = verdict && verdict.report && verdict.report.walls; if (wr) console.log('§POC_WALLS ' + JSON.stringify(wr) + ' bodies=' + built(['IfcWall']));
+line('wall_lines_m', wr ? Math.round(wr.covered_m) : 0, Math.round(wallLen), wallPlans + ' plans with wall lines');
 line('slabs', built(['IfcSlab']), slabLoops ? 1 : 0, slabLoops + ' floor lines');
 line('stairs', built(['IfcStair', 'IfcStairFlight']), stairs ? 1 : 0, stairs + ' stair labels');
 line('roof', built(['IfcRoof']), roofLines ? 1 : 0, roofLines + ' roof spot levels');

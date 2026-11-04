@@ -64,6 +64,12 @@
       var bm = BM.buildBeams(sheets, { DF: DF });
       res.els = res.els.concat(bm.els); res.gaps = res.gaps.concat(bm.gaps); res.report = Object.assign({}, res.report, { beams: bm.report });
     }
+    // §D109 P3 walls from their lines (a plan layer typed `wallband`), in any direction
+    var WL = ctx.WL || (typeof module === 'object' && module.exports ? require('./dxf2walls.js') : (typeof self !== 'undefined' ? self.Dxf2Walls : null));
+    if (WL && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'wallband'; }); })) {
+      var wl = WL.buildWalls(sheets, { DF: DF });
+      res.els = res.els.concat(wl.els); res.gaps = res.gaps.concat(wl.gaps); res.report = Object.assign({}, res.report, { walls: wl.report });
+    }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));
     if (SC && !refused.length && sheets.some(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); })) {

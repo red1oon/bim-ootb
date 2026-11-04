@@ -268,8 +268,27 @@ const bT = bmP([e1, e2, lbl('FB5(300x600)', lA.x, lA.y), lbl('FB5(300x600)', lB.
 ok('YR27k one mark labelled twice on a run: 1 body, the whole run', bT.length === 1 && Math.abs(bT[0].size.length.value - 6) < 1e-5);
 const twoLv = (() => { const mk = (lv) => planB([edgeL('BM', A0(0, 0), A0(6000, 0)), edgeL('BM', A0(0, 300), A0(6000, 300)), lbl('FB5(300x600)', lp.x, lp.y)], lv, { layers: [{ layer: 'IDEN', type: 'beamlabel' }] }); return ST.judge([planB([], 0), mk(4.8), mk(9.05), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate.R.els.filter(e => e.class === 'IfcBeam'); })();
 ok('YR27l one mark, one footprint, 2 plans: 1 body at the lower plan', twoLv.length === 1 && twoLv[0].z1 === 4.8);
+// §D109 P3 walls from their lines
+const wlP = (ents, c, lv, more) => { const d = planB(ents, lv === undefined ? 0 : lv, { layers: [{ layer: 'WALLS', type: 'wallband' }] }); return ST.judge([d].concat(more === undefined ? [planB([], 4.8)] : more, elevS({ plane: 'A1' })), { I: IM, B: BD, choices: c || {} }).gate; };
+const wl = (o, u0, u1) => edgeL('WALLS', A0(u0 === undefined ? 0 : u0, o), A0(u1 === undefined ? 6000 : u1, o));
+const wAll = g => g.R.els.filter(e => e.class === 'IfcWall'), wr = g => g.R.bodies.report.walls || {};
+const w1 = wlP([wl(0), wl(200)]), w1e = wAll(w1);
+console.log('§YR29 ' + JSON.stringify(w1e.map(e => ({ size: e.size, z0: e.z0, z1: e.z1 }))) + ' rep=' + JSON.stringify(wr(w1)));
+ok('YR29a 2 lines 200 apart at 16.165 deg: one wall, 0.2 thick, 6 long, level to next level', w1e.length === 1 && Math.abs(w1e[0].size.t.value - 0.2) < 1e-6 && Math.abs(w1e[0].size.length.value - 6) < 1e-5 && w1e[0].z0 === 0 && w1e[0].z1 === 4.8);
+ok('YR29b its corners are on the drawn lines', w1e.length === 1 && cornersOk(w1e[0], [A0(0, 0), A0(6000, 0), A0(6000, 200), A0(0, 200)]));
+const w3 = wAll(wlP([wl(0), wl(100), wl(200)]));
+ok('YR29c 3 lines at 0, 100, 200 are one wall 0.2 thick', w3.length === 1 && Math.abs(w3[0].size.t.value - 0.2) < 1e-6 && w3[0].size.lines === 3, JSON.stringify(w3.map(e => e.size)));
+const w5g = wlP([wl(0), wl(500)]);
+ok('YR29d lines 500 apart: no wall, both counted single', wAll(w5g).length === 0 && Math.abs(wr(w5g).single_m - 12) < 1e-5, JSON.stringify(wr(w5g)));
+const wS = wAll(wlP([wl(0), wl(200, 0, 3000)]));
+ok('YR29e a line stopping halfway: the wall stops with it', wS.length === 1 && Math.abs(wS[0].size.length.value - 3) < 1e-5, JSON.stringify(wS.map(e => e.size.length)));
+const wA = wlP([wl(0), wl(200), { type: 'ARC', layer: 'WALLS', handle: (h++).toString(16), center: { x: 0, y: 0 }, radius: 1000, startAngle: 0, endAngle: Math.PI / 2 }]);
+ok('YR29f an arc is not built: the gap, with its length', wAll(wA).length === 1 && wA.R.bodies.gaps.some(q => q.code === 'GAP:wall_curved') && Math.abs(wr(wA).curved_m - Math.PI / 2) < 1e-3, JSON.stringify(wr(wA)));
+const wTop = wlP([wl(0), wl(200)], null, 9.05, [planB([], 0)]);
+ok('YR29g a top plan with no level above: the gap', wAll(wTop).length === 0 && wTop.R.bodies.gaps.some(q => q.code === 'GAP:wall_no_top'));
+ok('YR29h set back: band_gap 0 reads none', wAll(wlP([wl(0), wl(200)], { 'wall.band_gap': 0 })).length === 0);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);
