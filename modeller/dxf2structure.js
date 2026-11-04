@@ -58,6 +58,12 @@
       var dr = DR.buildDoors(sheets, res.els, { numbers: ctx.numbers, DF: DF });
       res.els = res.els.concat(dr.els); res.gaps = res.gaps.concat(dr.gaps); res.defaults = (res.defaults || []).concat(dr.defaults);
     }
+    // §D109 P2d beams from their size labels (a plan layer typed `beamlabel`), in any direction
+    var BM = ctx.BM || (typeof module === 'object' && module.exports ? require('./dxf2beams.js') : (typeof self !== 'undefined' ? self.Dxf2Beams : null));
+    if (BM && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'beamlabel'; }); })) {
+      var bm = BM.buildBeams(sheets, { DF: DF });
+      res.els = res.els.concat(bm.els); res.gaps = res.gaps.concat(bm.gaps); res.report = Object.assign({}, res.report, { beams: bm.report });
+    }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));
     if (SC && !refused.length && sheets.some(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); })) {

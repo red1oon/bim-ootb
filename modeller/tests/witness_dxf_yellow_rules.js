@@ -235,8 +235,41 @@ const pent = [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }, { x: 2000
 ok('YR26g a true 5-sided loop keeps its outline: volume = its area x thickness', f7v.length === 1 && Math.abs(f7v[0] - (4 * 3 + 0.5 * 4 * 1.5) * 0.4) < 1e-6, String(f7v));
 const f8 = fOf(ftP(loopL('FTG', sqAt(0, 0, 2500, 2500)).concat(tx('F2', 1000, 1000)), { 'footing.z_from_plan': 'off' }).gate);
 ok('YR26h set back: off, the earlier gap', f8.els.length === 0 && f8.gaps.some(q => /body_no_elevation/.test(q)), JSON.stringify(f8));
+// §D109 P2d a storey's name alone titles a plan (a real sheet's only title: LEVEL 01 FLOOR)
+const ttl = (t, c) => { const p = sheet('p.dxf', [T('MTEXT', 'TB', t, 0, 0)], [mark('UNITS', 'mm')]); return props(p, [p], c); };
+ok('YR28a LEVEL 01 FLOOR is a plan title', vals(ttl('LEVEL 01 FLOOR'), 'PR-VIEW') === 'PLAN');
+ok('YR28b a note that ends in FLOOR is not', vals(ttl('CONCRETE FLOOR'), 'PR-VIEW') === '');
+ok('YR28c set back: text_only', vals(ttl('LEVEL 01 FLOOR', { 'suggest.title_text': 'text_only' }), 'PR-VIEW') === '');
+// §D109 P2d beams from their size labels
+const BM = require(path.join(M, 'dxf2beams.js'));
+const bmP = (ents, c) => { const d = planB(ents, 4.8, { layers: [{ layer: 'IDEN', type: 'beamlabel' }] }); return ST.judge([planB([], 0), d, elevS({ plane: 'A1' })], { I: IM, B: BD, choices: c || {} }).gate; };
+const edgeL = (layer, p, q) => ({ type: 'LINE', layer, handle: (h++).toString(16), vertices: [p, q] }), lbl = (t, x, y) => T('MTEXT', 'IDEN', t, x, y);
+const A0 = rotP(16.165, 40000, 30000), e1 = edgeL('BM', A0(0, 0), A0(6000, 0)), e2 = edgeL('BM', A0(0, 300), A0(6000, 300)), lp = A0(3000, 800), bb = bmP([e1, e2, lbl('FB5(300x600)', lp.x, lp.y)]), be = bb.R.els.filter(e => e.class === 'IfcBeam');
+const volB = e => Math.abs(require(path.join(M, 'dxf2prep.js')).Solid.vol(e));
+console.log('§YR27 ' + JSON.stringify(be.map(e => ({ size: e.size, z0: e.z0, z1: e.z1, mark: e.mark, vol: volB(e) }))));
+ok('YR27a a label beside 2 lines 300 apart at 16.165 deg: one IfcBeam, 300 wide, 600 deep, top at the plan level', be.length === 1 && Math.abs(be[0].size.w.value - 0.3) < 1e-6 && be[0].size.d.value === 0.6 && be[0].z1 === 4.8 && be[0].z0 === 4.2 && be[0].mark === 'FB5');
+ok('YR27b its corners are on the drawn lines, and its volume is w x d x length', be.length === 1 && cornersOk(be[0], [A0(0, 0), A0(6000, 0), A0(6000, 300), A0(0, 300)]) && Math.abs(volB(be[0]) - 0.3 * 0.6 * 6) < 1e-5);
+const pcs = bmP([edgeL('BM', A0(0, 0), A0(3600, 0)), edgeL('BM', A0(3600, 0), A0(6000, 0)), e2, lbl('FB5(300x600)', lp.x, lp.y)]).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27c an edge in 2 pieces is one run: the whole length', pcs.length === 1 && Math.abs(pcs[0].size.length.value - 6) < 1e-5, JSON.stringify(pcs.map(e => e.size.length)));
+const oth = bmP([e1, edgeL('FLOOR-EDGE', A0(0, 300), A0(6000, 300)), lbl('FB5(300x600)', lp.x, lp.y)]).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27d one edge on another layer: still found', oth.length === 1);
+const w4 = bmP([e1, edgeL('BM', A0(0, 400), A0(6000, 400)), lbl('FB5(300x600)', lp.x, lp.y)]);
+ok('YR27e lines 400 apart for a 300 label: a gap per label, never a box', w4.R.els.filter(e => e.class === 'IfcBeam').length === 0 && w4.R.bodies.gaps.some(q => q.code === 'GAP:beam_label_no_edges'));
+const tc = A0(3000, -700), tb = bmP([e1, e2, lbl('FB5(300x600)', lp.x, lp.y), T('MTEXT', 'NOTE', 'TOC: -0.100 m', tc.x, tc.y)]).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27f a TOC text near it states the top', tb.length === 1 && tb[0].z1 === -0.1 && Math.abs(tb[0].z0 + 0.7) < 1e-9 && tb[0].size.top.source === 'TOC label');
+const dimL = bmP([edgeL('G-DIMS', A0(0, 0), A0(6000, 0)), edgeL('G-DIMS', A0(0, 300), A0(6000, 300)), lbl('FB5(300x600)', lp.x, lp.y)]);
+ok('YR27g a dimension layer\'s lines are not edges', dimL.R.els.filter(e => e.class === 'IfcBeam').length === 0);
+ok('YR27h set back: reach 0 reads none, and says nothing', (g => g.R.els.filter(e => e.class === 'IfcBeam').length === 0 && !g.R.bodies.gaps.some(q => q.code === 'GAP:beam_label_no_edges'))(bmP([e1, e2, lbl('FB5(300x600)', lp.x, lp.y)], { 'beam.label_reach': 0 })));
+const lA = A0(1500, 800), lB = A0(4500, 800), bS = bmP([e1, e2, lbl('FB5(300x600)', lA.x, lA.y), lbl('FB7(300x800)', lB.x, lB.y)]).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27i two marks on one run: 2 bodies split at the midpoint, the lengths sum to the run', bS.length === 2 && Math.abs(bS[0].size.length.value - 3) < 1e-5 && Math.abs(bS[1].size.length.value - 3) < 1e-5 && bS.map(e => e.mark).sort().join() === 'FB5,FB7' && /midpoint/.test(bS[0].size.length.source), JSON.stringify(bS.map(e => [e.mark, e.size.length])));
+const bO = bmP([e1, e2, lbl('FB5(300x600)', lA.x, lA.y), lbl('FB7(300x800)', lB.x, lB.y)], { 'beam.span_split': 'one_body' }).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27j set back: one_body', bO.length === 1 && Math.abs(bO[0].size.length.value - 6) < 1e-5);
+const bT = bmP([e1, e2, lbl('FB5(300x600)', lA.x, lA.y), lbl('FB5(300x600)', lB.x, lB.y)]).R.els.filter(e => e.class === 'IfcBeam');
+ok('YR27k one mark labelled twice on a run: 1 body, the whole run', bT.length === 1 && Math.abs(bT[0].size.length.value - 6) < 1e-5);
+const twoLv = (() => { const mk = (lv) => planB([edgeL('BM', A0(0, 0), A0(6000, 0)), edgeL('BM', A0(0, 300), A0(6000, 300)), lbl('FB5(300x600)', lp.x, lp.y)], lv, { layers: [{ layer: 'IDEN', type: 'beamlabel' }] }); return ST.judge([planB([], 0), mk(4.8), mk(9.05), elevS({ plane: 'A1' })], { I: IM, B: BD }).gate.R.els.filter(e => e.class === 'IfcBeam'); })();
+ok('YR27l one mark, one footprint, 2 plans: 1 body at the lower plan', twoLv.length === 1 && twoLv[0].z1 === 4.8);
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

@@ -13,7 +13,8 @@ const clean = t => String(t).replace(/\\[A-Za-z][^;\\]*;/g, '').replace(/\\P/g, 
 const CLS = [
   { name: 'columns', ifc: ['IfcColumn'], layer: /^[AS]-COLS-.*-IDEN$/, text: /^(?:N?C\d*[A-Z]?|BU-WF-\d+.*)$/, repeat: true },
   { name: 'footings', ifc: ['IfcFooting'], layer: /^S-FNDN-.*-IDEN$/, text: /^F\d+[A-Z]?$/, repeat: true },
-  { name: 'beams', ifc: ['IfcBeam'], layer: /^S-BEAM-.*-IDEN$/, text: /^(?:-\s*)?(?:[A-Z]*B\d*\(.*|UB\d.*|UC\d.*|L\d+[xX]\d.*|RB\d+|BU[- ].*)$/, repeat: false },
+  { name: 'beams_rc', ifc: ['IfcBeam'], layer: /^S-BEAM-.*-IDEN$/, text: /^[A-Z]*B\d*\(.*$/, repeat: false, resolved: true },
+  { name: 'members_steel', ifc: ['IfcMember'], layer: /^S-BEAM-.*-IDEN$/, text: /^(?:-\s*)?(?:UB\d.*|UC\d.*|L\d+[xX]\d.*|RB\d+|BU[- ].*)$/, repeat: false },
   { name: 'doors', ifc: ['IfcDoor'], layer: /^A-DOOR-.*-IDEN$/, text: /^\d+-\d+(?:-[A-Z])?$/, repeat: false },
 ];
 const files = fs.readdirSync(dirS).filter(f => /\.dxf$/i.test(f)).sort();
@@ -21,7 +22,7 @@ const count = {}; CLS.forEach(c => { count[c.name] = { perPlan: {}, kinds: {} };
 let wallLen = 0, wallPlans = 0, slabLoops = 0, stairs = 0, roofLines = 0;
 const labels = {};
 files.forEach(f => {
-  const d = new DxfParser().parseSync(fs.readFileSync(path.join(dirS, f), 'utf8')), isPlan = /PLAN/i.test(f);
+  const d = new DxfParser().parseSync(fs.readFileSync(path.join(dirS, f), 'utf8')), isPlan = !/ELEVATION|SECTION|DETAIL/i.test(f);
   if (!isPlan) return;
   CLS.forEach(c => { d.entities.forEach(e => { if ((e.type !== 'MTEXT' && e.type !== 'TEXT') || !c.layer.test(e.layer)) return; const t = clean(e.text); if (!c.text.test(t)) return;
     count[c.name].perPlan[f] = (count[c.name].perPlan[f] || 0) + 1; const k = t.split(/[ (]/)[0]; count[c.name].kinds[k] = (count[c.name].kinds[k] || 0) + 1; }); });
@@ -32,11 +33,14 @@ files.forEach(f => {
   labels[f] = d.entities.filter(e => (e.type === 'MTEXT' || e.type === 'TEXT')).map(e => { const p = e.position || e.startPoint || {}; return { t: clean(e.text), x: p.x, y: p.y, layer: e.layer }; });
 });
 const bodies = dirR && fs.existsSync(path.join(dirR, 'bodies.json')) ? JSON.parse(fs.readFileSync(path.join(dirR, 'bodies.json'), 'utf8')) : null;
+const verdict = dirR && fs.existsSync(path.join(dirR, 'verdict.json')) ? JSON.parse(fs.readFileSync(path.join(dirR, 'verdict.json'), 'utf8')) : null;
 const by = {}; (bodies || []).forEach(b => { by[b.class] = (by[b.class] || 0) + 1; });
 const built = names => names.reduce((a, n) => a + (by[n] || 0), 0);
 const line = (name, b, ev, note) => { const inc = !(ev > 0) ? ' INCONCLUSIVE: no evidence in these sheets' : !bodies ? ' INCONCLUSIVE: no run' : ''; console.log('§POC ' + name + ' built=' + b + ' evidence=' + ev + ' gap=' + (ev > 0 ? Math.max(0, ev - b) : '-') + inc + (note ? '  ' + note : '')); };
 CLS.forEach(c => { const pp = count[c.name].perPlan, vals = Object.keys(pp).map(k => pp[k]), ev = !vals.length ? 0 : c.repeat ? Math.max.apply(null, vals) : vals.reduce((a, v) => a + v, 0);
-  line(c.name, built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
+  // a labelled class counts labels that found their element: a label that names a repeat of one beam is not missing
+  const rb = c.resolved && verdict && verdict.report && verdict.report.beams; if (rb) console.log('§POC_BEAMS ' + JSON.stringify(rb) + ' bodies=' + built(c.ifc));
+  line(c.name, rb ? rb.labels - rb.no_edges : built(c.ifc), ev, Object.keys(count[c.name].kinds).sort().map(k => k + ':' + count[c.name].kinds[k]).join(' ')); });
 line('walls_m', Math.round((bodies || []).filter(b => b.class === 'IfcWall').reduce((a, b) => a + (b.length_m || 0), 0)), Math.round(wallLen), wallPlans + ' plans with wall lines');
 line('slabs', built(['IfcSlab']), slabLoops ? 1 : 0, slabLoops + ' floor lines');
 line('stairs', built(['IfcStair', 'IfcStairFlight']), stairs ? 1 : 0, stairs + ' stair labels');

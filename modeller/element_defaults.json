@@ -957,6 +957,42 @@
     "off"
    ],
    "used_by": "dxf2bodies (§D109)"
+  },
+  "beam.label_reach": {
+   "element": "IfcBeam",
+   "value": 2.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a beam's size label its two edge lines may run (§D109: one label was measured 2.3 m from its member). 0 = beams are not read from labels",
+   "options": [
+    2.5,
+    0
+   ],
+   "used_by": "dxf2beams (§D109)"
+  },
+  "beam.edge_tol": {
+   "element": "IfcBeam",
+   "value": 0.006,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "two parallel lines count as a beam's edges when their spacing is within this of the label's width, and pieces on one line within this are one run (§D109)",
+   "options": [
+    0.006,
+    0.003
+   ],
+   "used_by": "dxf2beams (§D109)"
+  },
+  "beam.span_split": {
+   "element": "IfcBeam",
+   "value": "label_midpoint",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "labels of different marks along one pair of edge lines split it at the midpoint between them: the drawing does not state where one mark ends (§D109: 3 marks on one 42.565 m pair). 'one_body' = the first label takes the whole run",
+   "options": [
+    "label_midpoint",
+    "one_body"
+   ],
+   "used_by": "dxf2beams (§D109)"
   }
  },
  "building_types": {
