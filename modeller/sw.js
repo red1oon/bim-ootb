@@ -14,7 +14,7 @@
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
-const CACHE_VERSION = 'v217';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v218';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -25,16 +25,16 @@ const SHELL_LIBS = [
   '../common/lib/OrbitControls.module.js',
   '../common/lib/sql-wasm.js',
   '../common/lib/sql-wasm.wasm',
+  'lib/dxf-parser.js',   // §L33 air gap: without it, local DXFs cannot be opened offline after one visit
+  '../common/lib/web-ifc-api-iife.js',   // §L33 a page script tag: the first visit loads it before the service worker controls the page, so first-use caching never stores it
 ];
 // Deferred — heavy/feature-gated; cache-on-first-use via cacheFirst (lib/ is always cache-first).
 const DEFERRED_LIBS = [
-  '../common/lib/web-ifc-api-iife.js',
   '../common/lib/web-ifc.wasm',
   'lib/kernel/occt-wasm.js',
   'lib/kernel/occt-wasm.wasm',
   '../common/lib/planegcs/planegcs_dist/planegcs.wasm',
   'lib/three.webgpu.min.js',   // §THREE_ONE_BUILD: no longer the importmap target — cache-on-use only (was precached on every install)
-  'lib/dxf-parser.js',   // §DXF-IMPORT (DXF2BIM lane L3): loaded only when 2D drawings are opened
 ];
 const LOCAL_LIBS = [...SHELL_LIBS, ...DEFERRED_LIBS];
 const CDN_ASSETS = [];
@@ -96,6 +96,7 @@ const PRECACHE_ASSETS = [
   'routewalker.js',
   // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
   'dxf_import_ui.js',
+  'real_geometry.js', 'dagevu_engine.js', 'sdg_save.js', 'save_catalog.js', 'building_parts_outliner.js',   // §L33 air gap: page script tags that were never cached
   'dxf2bim_import.js',
   'dxf2prep.js',
   'dxf2pair.js',
@@ -198,6 +199,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   // TEAMWORK_FRAMEWORK §15 (found by W-TEAM-MODELLER; same fix as erp/sw.js §13.1): a request that says cache:'no-store'/'reload' (the comm layer's pipe reads, and GitHub's
   // api reads) must never be answered from a cache — cacheFirst keys on the URL WITHOUT its query, so every list?prefix=… read got the FIRST list's answer.
+  if (url.split('?')[0].endsWith('/dxf2bim/library/latest.json')) { event.respondWith(networkFirst(event.request)); return; }   // §L33 air gap: no-store online, the last copy when there is no network
   if (event.request.cache === 'no-store' || event.request.cache === 'reload') return;
   if (url.split('?')[0].endsWith('.db')) return;       // DBs → IndexedDB, skip SW
   if (event.request.mode === 'navigate') { event.respondWith(networkFirst(event.request)); return; }
