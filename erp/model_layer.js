@@ -375,7 +375,11 @@
     if (e1) return { ok: false, error: e1 };
     var live;
     if (isNew) { saveNewNumbers(trx, table, rec); var eu = uniqueError(trx, table, rec, null); if (eu) return { ok: false, error: eu }; ev(trx, 'WRITE_INSERT', table); live = trx.insert(table, rec, repl ? { keepKey: true } : null); }   // the DB refuses a duplicate key at the INSERT (B0)
-    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k]; var eu2 = uniqueError(trx, table, rec, row[trx.idCol(table)], Object.keys(ch)); if (eu2) return { ok: false, error: eu2 }; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }   // ... and at the UPDATE of an indexed column (B0)
+    else { var ch = {}; for (var k in rec) if (!same(rec[k], row[k]) || (rec[k] == null) !== (row[k] == null)) ch[k] = rec[k];
+      if (Object.keys(ch).length && trx.env && trx.env.now) {   // PO.doUpdate (PO.java:3181-3190): when anything changed and Updated was not set explicitly, Updated := now (UpdatedBy := the session user); SODA's watermark (Export2Queue rule, POS_PLUGIN_LOCAL_FIRST §28.1) reads it. SQLITE_GAP found by bridge/witness_soda_parity.js §SODAP_DELTA.
+        if ('updated' in rec && !(changes && Object.prototype.hasOwnProperty.call(changes, 'updated'))) { ch.updated = rec.updated = trx.env.now; }
+        if ('updatedby' in rec && trx.env.user != null && !(changes && Object.prototype.hasOwnProperty.call(changes, 'updatedby'))) { ch.updatedby = rec.updatedby = Number(trx.env.user); } }
+      var eu2 = uniqueError(trx, table, rec, row[trx.idCol(table)], Object.keys(ch)); if (eu2) return { ok: false, error: eu2 }; ev(trx, 'WRITE_UPDATE', table); live = trx.update(table, row, ch); }   // ... and at the UPDATE of an indexed column (B0)
     if (M.afterSave) { ev(trx, 'M.afterSave', table); var e2 = M.afterSave(trx, live, isNew, old); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, isNew ? (repl ? 'AFTER_NEW_REPLICATION' : 'AFTER_NEW') : (repl ? 'AFTER_CHANGE_REPLICATION' : 'AFTER_CHANGE'), table, live, Object.assign({ recordOld: old }, rx))
           || (repl ? null : fire(trx, 'AFTER_SAVE', table, live, { recordOld: old }));
