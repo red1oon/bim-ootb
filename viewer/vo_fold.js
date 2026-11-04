@@ -52,8 +52,10 @@
     var next = {};
     return function (table, idCol) {
       if (next[table] == null) {
-        var mx = Number(_scalar(db, 'SELECT COALESCE(MAX("' + idCol + '"),0) FROM "' + table + '"') || 0);
-        next[table] = Math.max(mx, BIM_BASE - 1) + 1;
+        var mx = Number(_scalar(db, 'SELECT COALESCE(MAX("' + idCol + '"),0) FROM "' + table + '"') || 0), gone = 0;
+        // a row the ERP deleted keeps its id (erp_base, erp/bim_orders_overlay.js): its signed tombstone would hide a new row reusing that id. §DEL
+        try { gone = Number(_scalar(db, "SELECT COALESCE(MAX(id),0) FROM erp_base WHERE tbl='" + table + "'") || 0); } catch (e) { gone = 0; }
+        next[table] = Math.max(mx, gone, BIM_BASE - 1) + 1;
       }
       return next[table]++;
     };
