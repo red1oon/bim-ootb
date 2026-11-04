@@ -371,6 +371,13 @@
       if (trx._justPrepared !== 'm_movementconfirm:' + cf.m_movementconfirm_id) { var st = MMovementConfirm.prepareIt(trx, cf); if (st !== 'IP') return st; }   // :390-397 re-check
       trx._justPrepared = null; cf = trx.get('m_movementconfirm', cf.m_movementconfirm_id);
       var m = fire(trx, 'BEFORE_COMPLETE', 'm_movementconfirm', cf); if (m) { T.msg(trx, m); return 'IN'; }                               // :399-402
+      return MMovementConfirm.applyIt(trx, cf);
+    },
+    // applyIt = MMovementConfirm.completeIt :404-488, the part AFTER the validators: implicit approval, processLine per line, the difference documents, the MOVEMENT's Complete, the inventory documents.
+    //   ONE implementation: completeIt runs it for the executor on the branch's own database; the replica listener below runs it at head office when the executor's outcome (the confirm's DocStatus/Processed and its
+    //   line quantities) arrives in the EODA batch (§28.2 P5).
+    applyIt: function (trx, cf) {
+      var m;
       if (!Y(cf.isapproved)) trx.update('m_movementconfirm', cf, { isapproved: 'Y' });                                                    // :404-406 implicit approval
       var ls = cLines(trx, cf), dd = { from: null, to: null, info: null, docs: [] };                                                       // :407 m_inventoryDoc = new ArrayList (m_inventoryFrom/To/Info are the instance fields :148-153)
       for (var i = 0; i < ls.length; i++) {                                                                                                // :412-444
@@ -421,6 +428,20 @@
     rejectIt: function (trx, cf) { trx.update('m_movementconfirm', cf, { isapproved: 'N' }); return true; }
   };
   ML.registerDocAction('m_movementconfirm', MMovementConfirm);
+  // §28.2 P5 - the REPLICA timing (legacy afterChangeReplication, PO.java:2783-2789): the destination role's Complete of the Move Confirmation reaches the processor as the confirm's columns. The processor is the plan's executor of the
+  // movement (the hub); there the confirm's consequences run exactly as MMovementConfirm.completeIt writes them (movement Complete, difference documents). Idempotent: nothing happens once the movement is Completed.
+  function iAmProcessor() { var g = typeof window !== 'undefined' ? window : null; return !!(g && g.TeamScope && g.TeamSync && typeof g.TeamSync.role === 'function' && g.TeamScope.kind() === 'pos' && g.TeamScope.executorFor('m_movement') !== null && String(g.TeamScope.executorFor('m_movement')) === String(g.TeamSync.role())); }
+  if (ML.MV && typeof ML.MV.registerValidator === 'function') ML.MV.registerValidator('M_MovementConfirm', 'AFTER_CHANGE_REPLICATION', 'SODA.confirmOutcomeReceived', function (ctx, info) {
+    var trx = ctx && ctx.trx, cf = info && info.record; if (!trx || !cf || !iAmProcessor()) return null;
+    if (String(cf.docstatus) !== 'CO' || !Y(cf.processed)) return null;
+    var mv = trx.get('m_movement', cf.m_movement_id);
+    if (!mv) return null;
+    if (mv.docstatus === 'CO' || mv.docstatus === 'CL') { trx.say('§SODA_APPLY confirm=' + cf.documentno + ' movement=' + mv.documentno + ' already ' + mv.docstatus + ' (no-op)'); return null; }
+    trx.update('m_movementconfirm', trx.get('m_movementconfirm', cf.m_movementconfirm_id), { processed: 'N' });   // the outcome says Processed; applyIt re-sets it before the movement workflow exactly as :449-450 does
+    var r = MMovementConfirm.applyIt(trx, trx.get('m_movementconfirm', cf.m_movementconfirm_id));
+    trx.say('§SODA_APPLY confirm=' + cf.documentno + ' movement=' + mv.documentno + ' result=' + r + (r === 'CO' ? '' : ' msg=' + (trx._msg || '')));
+    return r === 'CO' ? null : 'MMovementConfirm outcome not applied: ' + (trx._msg || r);
+  });
 
   return { MMovement: MMovement, MMovementConfirm: MMovementConfirm, pendingConfirmations: pendingConfirmations, checkMaterialPolicy: checkMaterialPolicy, sAdd: sAdd, uomPrecision: uomPrecision, day: day };
 });

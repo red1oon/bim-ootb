@@ -317,8 +317,9 @@
     if (held[table]) return { local: 'held-by-device ' + table, table: table, held: true };
     var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : scope === 'branch' && scopeCtx.person ? 'b_' + String(scopeCtx.person).toLowerCase() : null;   // 'branch' (P2 kitchen, POS_PLUGIN_LOCAL_FIRST §19.3): the lane of MY branch Org; the hub neither reads nor holds it
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };
-    if (scope === 'up' || scope === 'down' || scope === 'branch') ship = global.TeamScope.ship(table);               // §38.15: a declared flow - only its carried columns leave (FL-1)
+    if (scope === 'up' || scope === 'down' || scope === 'branch') ship = global.TeamScope.ship(table, scopeCtx.role);   // §38.15: a declared flow - only its carried columns leave (FL-1); §28.2 P2: of a DOWN+UP table, the flow of MY role
     else if (scope !== 'share') return { local: (pos ? 'not-declared-for-role ' : 'table-not-in-plan ') + table, table: table, undeclared: pos };
+    if (scope === 'up' && global.TeamScope.dual(table) && !/^(CRUD_UPDATE|SET_STATUS)$/.test(r.op_type)) return { local: 'up-outcome-only ' + table, table: table };   // §28.2 P2: the UP side of a table the hub also sends DOWN carries the executor's outcome (an update / a status), never a create or a delete
     if (scope === 'branch' && !laneTo) return { local: 'branch-without-person ' + table, table: table };   // a device not yet bound to its branch Org has no branch to address
     if (scope === 'down' && global.TeamScope.by(table)) {            // §38.15: a record addressed to ONE entity is sent only when that entity has a bound person in the roster (else nobody could take it in: it would only fatten the pipe)
       var fo = {}, base = r.op_type === 'CRUD_CREATE' ? p.fields : (isNeg(p.id) ? ((createRowOf(db, p.id) || {}).fields) : seedRow(table, Number(p.id))), ad = await entityUu(global.TeamScope.by(table), normNeg(db, base || {}, fo, 0), fo, table);
@@ -446,9 +447,12 @@
     }
     // POS plan: an op THIS device authored on a flow it declares left with only its carried columns (FL-1); projecting it back would strip the device's OWN record of everything else. Its full local row is kept as it is.
     var ownFull = {}, ownIds = {};
+    var createdBy = {}; fold.forEach(function (p) { if (p.env.body.op_type === 'CRUD_CREATE') createdBy[String(p.env.target.uu).toLowerCase()] = p.env.author; });
     if (thin) { var byHash = {}; oldRows.forEach(function (r) { if (r.user_tag !== 'team' && sent[r.op_uuid]) byHash[sent[r.op_uuid]] = r; });
       fold.forEach(function (p) { var sc2 = byHash[p.hash] && p.env.author === (dev && dev.kid) ? global.TeamScope.scopeOf(p.env.target.table, sc.role) : null;
-        if (sc2 === 'up' || sc2 === 'down' || sc2 === 'branch') { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
+        // §28.2 P2: my own UPDATE of a record ANOTHER device created (the branch's outcome on the confirm head office made) is regenerated from the log, after that record: a kept local copy would replay BEFORE the projected record and be lost
+        var foreignMade = p.env.body.op_type !== 'CRUD_CREATE' && createdBy[String(p.env.target.uu).toLowerCase()] !== undefined && createdBy[String(p.env.target.uu).toLowerCase()] !== (dev && dev.kid);
+        if ((sc2 === 'up' || sc2 === 'down' || sc2 === 'branch') && !foreignMade) { ownFull[p.hash] = byHash[p.hash]; ownIds[byHash[p.hash].id] = 1; } }); }
     var keep = oldRows.filter(function (r) { return r.user_tag !== 'team' && (!sent[r.op_uuid] || ownIds[r.id] || rel.ids[r.id]); }).map(function (r) {
       var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
       if (!/"_sigv":2/.test(String(c.parameters))) c.sig = null;       // a v1 signature attests the chain hash, which this rebuild changes: re-sign
@@ -494,7 +498,7 @@
       if (np == null || np === -Number(r.id)) return; var t; try { t = String(JSON.parse(r.parameters).table).toLowerCase(); } catch (e) { return; }
       (remap[t] = remap[t] || {})[-Number(r.id)] = np; });
     if (thin) log('§TEAM_THIN plan=pos role=' + sc.role + ' placed=' + thin.placed + ' accepted=' + thin.accepted + ' refused=' + thin.refused + ' bytes_accepted=' + thin.bytesAccepted + ' bytes_refused=' + thin.bytesRefused +
-                  ' refused_tables=' + JSON.stringify(thin.byTable) + ' (REFUSED not-addressed: this role is not the recipient of those flows; they are never projected)');
+                  ' refused_tables=' + JSON.stringify(thin.byTable) + ' reasons=' + JSON.stringify(Object.keys(thin.refuse).reduce(function (m, h) { m[thin.refuse[h]] = (m[thin.refuse[h]] || 0) + 1; return m; }, {})) + ' (REFUSED: not-addressed = this role is not the recipient of those flows; not-executor = the author is neither the hub nor the table\'s DocAction executor (FL-8 E3); never projected)');
     project.last = { released: rel.n, thin: thin ? { placed: thin.placed, accepted: thin.accepted, refused: thin.refused, bytesAccepted: thin.bytesAccepted, bytesRefused: thin.bytesRefused, byTable: thin.byTable } : null, kept: keep.length, placed: fold.length, projected: out.length - keep.length, skipped: skipped, groupHeld: groupHeld, byTable: byTable, remap: remap, received: received };
     return out;
   }
@@ -862,7 +866,7 @@
   global.TeamSync = { seatbeltState: seatbeltState, publishUpcasters: async function (sets) { await ready; var op = await global.TeamVersions.publish(S, sets); await visit(); return op; },
                       // §38.10 (G-8): an owner-signed statement (executors map / plan-trust rotation) signed offline with build/scriptor/sign_plan.js stmt — the engine judges it
                       publishStatement: async function (stmt) { await ready; if (!S) return { ok: false, reason: 'not-paired' }; var r = await S.publishStatement(stmt); if (r.hash) await visit();
-                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit,
+                        log('§TEAM_POLICY_PUBLISH kind=' + (stmt && stmt.kind) + ' ok=' + r.ok + ' verdict=' + (r.verdict || r.reason)); return r; }, onCommit: onCommit, visit: visit, role: function () { return scopeCtx.role; },
                       // P2 (POS_PLUGIN_LOCAL_FIRST §19.5): ONE list request of MY branch box (m/b_<person>/). The kitchen and the till learn that the other wrote something without a full Visit (~15 requests).
                       hold: function (tables) { (tables || []).forEach(function (t) { held[String(t).toLowerCase()] = 1; }); log('§TEAM_HOLD tables=' + Object.keys(held).join(',')); return Object.keys(held); }, peekBranch: async function () { await ready; if (!S || !pipe) return null; await refreshScope(); if (!scopeCtx.person || scopeCtx.kind !== 'pos') return null; var names = await pipe.list('s/' + S.space + '/m/b_' + String(scopeCtx.person).toLowerCase() + '/'); return { names: names }; }, ready: ready, found: found, join: join, leave: leave, requests: requests, approve: approve, roles: roleList, planChoices: planChoices, bindingFor: bindingFor, pairState: pairState,
                       inviteLink: function () { var u = new URL(global.location.href); u.searchParams.set('team', '1'); u.hash = 'join=' + (cfg && cfg.space || ''); return u.toString(); }, store: function () { return S; }, versionState: function () { return S && S.versionState ? S.versionState() : Promise.resolve(null); }, render: render, baseState: function () { return baseSt; }, verifyBase: verifyBase, baseRow: hostBaseRow,

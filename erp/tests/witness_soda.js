@@ -20,8 +20,7 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
   'full-list': ['plugins/friendly_ops.mjs', "since: SODA_BREAK === 'fulllist' ? SODACORE.EPOCH : since,", "since: SODACORE.EPOCH,", 'price'],
   'till-overwrites': ['soda_core.js', "w.update('m_productprice', where, f);", "w.update('m_productprice', { m_pricelist_version_id: r.m_pricelist_version_id }, f);", 'price'],
   'imageurl-dropped': ['soda_core.js', "upc: r.upc, imageurl: r.imageurl, c_uom_id: r.c_uom_id, m_product_category_id: r.m_product_category_id, c_taxcategory_id: r.c_taxcategory_id })); });", "upc: r.upc, c_uom_id: r.c_uom_id, m_product_category_id: r.m_product_category_id, c_taxcategory_id: r.c_taxcategory_id })); });", 'price'],
-  'watermark-ignored': ['soda_core.js', "return mine.length ? ts(mine[0].updated) : EPOCH;", "return EPOCH;", 'price'],
-  'receipt-ignores-scrap': ['soda_core.js', "scrappedqty: num(l.scrappedqty), differenceqty", "scrappedqty: 0, differenceqty", 'receive']
+  'watermark-ignored': ['soda_core.js', "return mine.length ? ts(mine[0].updated) : EPOCH;", "return EPOCH;", 'price']
 };
 
 (async function main() {
@@ -158,8 +157,6 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
     var up = H.update('m_movementlineconfirm', lc[0].m_movementlineconfirm_id, { confirmedqty: CONF, scrappedqty: SCR, differenceqty: DIFF });
     var lc1 = one('SELECT * FROM m_movementlineconfirm WHERE m_movementlineconfirm_id=?', [lc[0].m_movementlineconfirm_id]);
     var ml = one('SELECT * FROM m_movementline WHERE m_movement_id=?', [mid]);
-    var rr = SC.receiptRows({ client: 11, org: ORG, batchId: det && JSON.parse(hdr.detail) && hdr.batchid, movement: mv, confirm: cf, lines: [{ line: ml.line, m_product_id: PA, m_locator_id: HQL, m_locatorto_id: STL, targetqty: lc1.targetqty, confirmedqty: lc1.confirmedqty, scrappedqty: lc1.scrappedqty, differenceqty: lc1.differenceqty }] });
-    check('RECEIPT-ROWS', rr.length === 1 && rr[0].confirmedqty === CONF && rr[0].scrappedqty === SCR && rr[0].targetqty === QTY && rr[0].differenceqty === DIFF && rr[0].status === 'CO', 'the receipt row carries target ' + QTY + ', confirmed ' + CONF + ', scrapped ' + SCR + ', difference ' + DIFF + ' as the branch clerk entered them', rr);
     // HQ applies the receipt: the confirm completes (processLine, difference documents, then the movement completes by cascade)
     var fin = H.docAction('m_movementconfirm', cf.m_movementconfirm_id, 'CO', { noWorkflow: true }), mv1 = one('SELECT * FROM m_movement WHERE m_movement_id=?', [mid]), ml1 = one('SELECT * FROM m_movementline WHERE m_movement_id=?', [mid]), cf1 = one('SELECT * FROM m_movementconfirm WHERE m_movementconfirm_id=?', [cf.m_movementconfirm_id]);
     var s1 = { hq: onhand(HQL), st: onhand(STL) };

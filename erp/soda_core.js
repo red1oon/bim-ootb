@@ -3,7 +3,7 @@
 // ⚠ DO NOT REMOVE — soda_core.js: the PURE half of SODA down (start-of-day replenishment + reference deltas). READ THE LOG (§SODA_* lines of erp/tests/witness_soda.js), exit codes are not evidence.
 // Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §28 (SODA DOWN + RECEIVE STOCK) - Witness: W-SODA-PRICE / -BATCH / -RECEIVE / -EXECUTOR (erp/tests/witness_soda.js).
 // What lives here: the watermark (the 2012 Export2Queue "since last run" rule), the delta selection (a row travels only when its Updated is at or after the watermark), the rows of the batch (POS_SodaRef),
-//   the admin's re-emit for its tills (POS_TillRef), the till's apply (only the rows that arrived, only the carried columns), and the receipt rows (POS_MovementReceipt) of a confirmed movement.
+//   the admin's re-emit for its tills (POS_TillRef), the till's apply (only the rows that arrived, only the carried columns), (the receipt of a confirmed movement is the confirm's own rows, flows S6/S7, built by branch_admin.js receiptOps - §28.2).
 // No DOM, no Date.now / Math.random (the caller passes the times and ids). Timestamps compare as 'YYYY-MM-DD HH:MM:SS' strings.
 'use strict';
 (function (root, factory) {
@@ -68,11 +68,5 @@
     return out;
   }
 
-  // the receipt rows (S6) of a CONFIRMED movement: one per confirm line, read from the branch's own M_MovementLineConfirm (+ its movement line). confirm {documentno, docstatus}, movement {documentno},
-  // lines [{line, m_product_id, m_locator_id, m_locatorto_id, targetqty, confirmedqty, scrappedqty, differenceqty}]
-  function receiptRows(o) {
-    return o.lines.map(function (l) { return { ad_client_id: o.client, ad_org_id: o.org, isactive: 'Y', batchid: o.batchId, movementdocumentno: o.movement.documentno, confirmdocumentno: o.confirm.documentno, line: l.line, m_product_id: l.m_product_id,
-      m_locator_id: l.m_locator_id, m_locatorto_id: l.m_locatorto_id, targetqty: num(l.targetqty), confirmedqty: num(l.confirmedqty), scrappedqty: num(l.scrappedqty), differenceqty: num(l.differenceqty), status: 'CO' }; });
-  }
-  return { EPOCH: EPOCH, watermark: watermark, refDelta: refDelta, tillRows: tillRows, applyRef: applyRef, receiptRows: receiptRows, ts: ts };
+  return { EPOCH: EPOCH, watermark: watermark, refDelta: refDelta, tillRows: tillRows, applyRef: applyRef, ts: ts };
 });

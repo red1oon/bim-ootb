@@ -47,11 +47,11 @@
 
   // ── SODA (POS_PLUGIN_LOCAL_FIRST §28): the batch head office wrote for THIS branch (pos_sodaref, hub lane, DOWN) ──
   // fan(): re-emit the batch rows not yet passed on to the tills on the branch lane (pos_tillref) and make ONE Visit; a till applies only what arrived (till.js applySoda).
-  // receiveStock(): the branch clerk's receipt of the in-transit movements (Move Confirmation, window 333): Confirmed / Scrapped per line (default Confirmed = Target). It is KEPT as POS_MovementReceipt rows and leaves
-  // inside the next EODA send (send() below) - never as a send of its own (§28.2).
+  // receiveStock(): the branch clerk's receipt of the in-transit movements (Move Confirmation, window 333): Confirmed / Scrapped per line (default Confirmed = Target). It is KEPT here, authors NO op, and leaves as the executor's
+  // outcome on the confirm's OWN rows (flows S6/S7: DocStatus/IsApproved/Processed and the line quantities) inside the next EODA send (send() below) - never as a send of its own (§28.2 P3).
   async function sodaRead() {
     var ref = []; try { ref = await rows('SELECT * FROM pos_sodaref WHERE ad_org_id=' + Number(S.cfg.org) + ' ORDER BY seq, ABS(pos_sodaref_id)'); } catch (e) { /* no SODA table yet */ }
-    var cf = []; try { cf = await rows("SELECT c.m_movementconfirm_id AS id, c.documentno AS documentno, c.m_movement_id AS mid, m.documentno AS mdoc FROM m_movementconfirm c JOIN m_movement m ON m.m_movement_id=c.m_movement_id WHERE COALESCE(c.processed,'N')='N' AND COALESCE(c.isactive,'Y')='Y' ORDER BY c.m_movementconfirm_id"); } catch (e) { /* no confirms replicated */ }
+    var cf = []; try { cf = await rows("SELECT c.m_movementconfirm_id AS id, c.m_movementconfirm_uu AS uu, c.documentno AS documentno, c.m_movement_id AS mid, m.documentno AS mdoc FROM m_movementconfirm c JOIN m_movement m ON m.m_movement_id=c.m_movement_id WHERE COALESCE(c.processed,'N')='N' AND COALESCE(c.isactive,'Y')='Y' ORDER BY c.m_movementconfirm_id"); } catch (e) { /* no confirms replicated */ }
     var pend = cf.filter(function (c) { return !S.set.receipts.some(function (r) { return r.confirm === c.documentno; }); });
     return { ref: ref, fresh: ref.filter(function (r) { return Number(r.seq) > S.set.sodaFanned; }), confirms: pend };
   }
@@ -75,16 +75,28 @@
       msg('Passed ' + tr.length + ' reference rows to the tills'); await renderSoda(); return { rows: tr.length, sent: vis && vis.rep ? vis.rep.sent : null };
     });
   }
+  // the executor's outcome (MMovementConfirm.completeIt :387-488 on the confirm's side): each line's ConfirmedQty / ScrappedQty / DifferenceQty (= Target - Confirmed, MMovementLineConfirm.beforeSave :169-172) / Processed, then the
+  // confirm's DocStatus CO / IsApproved Y / Processed Y - only the columns that change, only the columns flows S6 / S7 carry. The documents the confirm CREATES (difference inventory, the movement's Complete) are made by head office.
+  async function receiptOps(x) {
+    var ops = [], upd = function (table, uu, ch) { return { op_type: 'CRUD_UPDATE', key: table, table: table, verb: 'update', id: uu, idCol: table + '_uu', changes: ch }; }, ch = function (o, n) { var m = {}; Object.keys(n).forEach(function (k) { if (String(o[k]) !== String(n[k])) m[k] = { old: o[k] === undefined ? null : o[k], new: n[k] }; }); return m; };
+    for (var i = 0; i < x.lines.length; i++) { var l = x.lines[i], cur = (await rows('SELECT confirmedqty, scrappedqty, differenceqty, processed FROM m_movementlineconfirm WHERE m_movementlineconfirm_uu=' + q(l.lcuu)))[0];
+      if (cur) { var c = ch(cur, { confirmedqty: l.confirmedqty, scrappedqty: l.scrappedqty, differenceqty: l.differenceqty, processed: 'Y' }); if (Object.keys(c).length) ops.push(upd('m_movementlineconfirm', l.lcuu, c)); } }
+    var hd = (await rows('SELECT docstatus, isapproved, processed FROM m_movementconfirm WHERE m_movementconfirm_uu=' + q(x.uu)))[0];
+    if (hd) { var h = ch(hd, { docstatus: 'CO', isapproved: 'Y', processed: 'Y' }); if (Object.keys(h).length) ops.push(upd('m_movementconfirm', x.uu, h)); }
+    return ops;
+  }
   // lines: optional { <confirm documentno>: [{ line, confirmed, scrapped }] }; no entry = a full receipt (Confirmed = Target, Scrapped = 0), as legacy's confirm is created (MMovementConfirm.create :62-90)
   function receiveStock(lines) {
     return serial(async function () {
       var s = await sodaRead(), n = 0; lines = lines || {};
       for (var i = 0; i < s.confirms.length; i++) {
-        var c = s.confirms[i], cl = await rows('SELECT lc.targetqty AS t, ml.line AS line, ml.m_product_id AS p, ml.m_locator_id AS l, ml.m_locatorto_id AS lt FROM m_movementlineconfirm lc JOIN m_movementline ml ON ml.m_movementline_id=lc.m_movementline_id WHERE lc.m_movementconfirm_id=' + Number(c.id) + ' ORDER BY ml.line');
+        var c = s.confirms[i], cl = [], lcs = await rows('SELECT m_movementlineconfirm_uu AS lcuu, m_movementline_id AS mlid, targetqty AS t FROM m_movementlineconfirm WHERE m_movementconfirm_id=' + Number(c.id));   // one table per query: a join returned the movement line's key under the confirm line's alias
+        for (var li = 0; li < lcs.length; li++) { var mlr = (await rows('SELECT line, m_product_id AS p, m_locator_id AS l, m_locatorto_id AS lt FROM m_movementline WHERE m_movementline_id=' + Number(lcs[li].mlid)))[0]; if (mlr) cl.push({ lcuu: lcs[li].lcuu, t: lcs[li].t, line: mlr.line, p: mlr.p, l: mlr.l, lt: mlr.lt }); }
+        cl.sort(function (a, b) { return Number(a.line) - Number(b.line); });
         var given = lines[c.documentno] || [], out = cl.map(function (x) { var g = given.filter(function (y) { return Number(y.line) === Number(x.line); })[0] || {}, conf = g.confirmed != null ? Number(g.confirmed) : Number(x.t), scr = g.scrapped != null ? Number(g.scrapped) : 0;
-          return { line: x.line, m_product_id: x.p, m_locator_id: x.l, m_locatorto_id: x.lt, targetqty: Number(x.t), confirmedqty: conf, scrappedqty: scr, differenceqty: Number(x.t) - conf }; });   // DifferenceQty = Target - Confirmed (MMovementLineConfirm.beforeSave :169-172)
-        var rr = SD.receiptRows({ client: S.cfg.client, org: S.cfg.org, batchId: S.cfg.orgValue + '-RECV-' + c.documentno, movement: { documentno: c.mdoc }, confirm: { documentno: c.documentno }, lines: out });
-        S.set.receipts.push({ confirm: c.documentno, rows: rr, sent: false }); n++;
+          return { lcuu: x.lcuu, line: x.line, m_product_id: x.p, m_locator_id: x.l, m_locatorto_id: x.lt, targetqty: Number(x.t), confirmedqty: conf, scrappedqty: scr, differenceqty: Number(x.t) - conf }; });   // DifferenceQty = Target - Confirmed (MMovementLineConfirm.beforeSave :169-172)
+        var rr = out;
+        S.set.receipts.push({ confirm: c.documentno, uu: c.uu, lines: rr, sent: false }); n++;   // addressed by _uu: the local pk of a replicated row is renumbered by every projection
         log('§SODA_RECEIVE confirm=' + c.documentno + ' movement=' + c.mdoc + ' lines=' + rr.length + ' confirmed=' + rr.map(function (r) { return r.confirmedqty + '/' + r.targetqty; }).join(',') + ' scrapped=' + rr.map(function (r) { return r.scrappedqty; }).join(','));
       }
       saveSet(); msg(n + ' movement(s) received; the receipt goes with the next EODA'); await renderSoda(); return { received: n };
@@ -105,7 +117,8 @@
       });
       var st = EC.statementRows({ batchId: batchId, seq: seq, day: day, partial: !!partial, override: partial ? '' : (v.allClosed ? '' : ov), client: S.cfg.client, org: S.cfg.org, view: v });
       st.forEach(function (r) { ops.push(create('pos_branchdaystatement', r)); });
-      var rcpt = S.set.receipts.filter(function (x) { return !x.sent; }), nR = 0; rcpt.forEach(function (x) { x.rows.forEach(function (r) { ops.push(create('pos_movementreceipt', r)); nR++; }); });   // §28.2: the confirmed result goes up INSIDE this batch, never as a send of its own
+      var rcpt = S.set.receipts.filter(function (x) { return !x.sent; }), nR = 0;     // §28.2 P3: the executor's outcome on the confirm's own rows goes up INSIDE this batch, never as a send of its own
+      for (var ri = 0; ri < rcpt.length; ri++) { var ro = await receiptOps(rcpt[ri]); ro.forEach(function (o) { ops.push(o); nR++; }); log('§SODA_RECEIPT_OPS confirm=' + rcpt[ri].confirm + ' ops=' + ro.length + ' tables=' + ro.map(function (o) { return o.table + ':' + Object.keys(o.changes).join('+'); }).join(',')); }
       var res = await depositGroup(ops);
       if (!res || res.committed !== true) { msg('Could not assemble the batch: ' + (res && res.reason)); log('§EODA_SEND FAIL ' + (res && res.reason)); return { failed: res && res.reason }; }
       marks.forEach(function (k) { S.set.deposited[k] = batchId; }); S.set.batchSeq[day] = seq; rcpt.forEach(function (x) { x.sent = true; });
