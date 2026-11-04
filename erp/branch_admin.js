@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — branch_admin.js: the Branch POS Admin page. READ THE LOG (§EODA_* lines of erp/tests/witness_eoda.js), exit codes are not evidence.
-// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §26.4: uniCenta's Manager / back office as a Team device of the branch Org. It never rings a sale. It reads the branch-local POS_TillHandoff rows the tills wrote at Close Cash,
+// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §26.4: uniCenta's Manager / back office as a Team device of the branch Org. It never rings a sale. It reads the POS_TillHandoff rows (the row shape; no longer a table or an op) the tills put on the BRANCH RELAY at Close Cash and the main till collected (§38),
 // shows the EODA screen, and makes the ONE send to head office: the tickets' real I_Order / I_Payment rows (flows F3 / B4, authored HERE, the tills hold theirs) + the branch-day statement (POS_BranchDayStatement, flow E1) in one
 // atomic group, then ONE Visit. "Send EODA" needs every till closed or a logged override reason; "Send status now" is the same send marked PARTIAL and exists only as a pressed button (D2): there is no timer that sends.
 // §37 Stock count (POS_PLUGIN_LOCAL_FIRST): an AD HOC, BLIND count of the branch's sales-floor locator keyed here; kept at the branch; only a count the supervisor ticked "Include this count in tonight's EODA" rides send() as I_Inventory rows.

@@ -8,6 +8,7 @@
 // HARNESS (copied from erp/tests/witness_kds.js): FIVE real devices in headless Chromium on one dumb folder pipe, signed POS plan: head office A (founder), the branch POS admin D (erp/branch_admin.html), tills T1 T2 T3 (erp/till.html),
 //   D and the tills are role 50004 Bound to the branch Org. Every pipe request is attributed to its device. Mutants are COPIES served by the harness, each proven applied exactly once; a crash is not a kill.
 // Head office's Branch Day Close over the dumped batch is judged by witness_eoda_close.js (W-DAYCLOSE-EODA, W-EODA-PARTIAL import side), which this file spawns on the dump: EODA_DUMP=<file>.
+// §38 (main till + branch relay): the tills' ONLY pipe is the REAL erp/branch_relay.py (LAN); the branch admin device D is the flagged MAIN till (flag seeded in its device store, as a SODA kind-M row sets it on a real till) and alone holds the internet pipe, routed so the branch mailbox stays on the LAN; D bridges the shared stream. The checks that counted a till's INTERNET traffic now assert 0.
 // Arms: EODA_ARMS=agg,gate,partial,relay (default all).  Mutant: EODA_MUT=<name>.  Run: node erp/tests/witness_eoda.js 2>&1 | tee /tmp/eoda_logs/eoda.log
 'use strict';
 var path = require('path'), http = require('http'), fs = require('fs'), os = require('os'), vm = require('vm'), nodeCrypto = require('crypto'), cp = require('child_process');
@@ -60,6 +61,9 @@ var MUTS = {
   });
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port, PIPE = base + '/pipe';
+  var RPORT = 19000 + Math.floor(Math.random() * 900), RBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'eoda-box-')), RELAY = 'http://127.0.0.1:' + RPORT, LANREQ = [], relayProc = cp.spawn('python3', [path.join(ROOT, 'erp', 'branch_relay.py'), '--port', String(RPORT), '--dir', RBOX, '--bind', '127.0.0.1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  await new Promise(function (res) { relayProc.stderr.on('data', function (d) { if (String(d).indexOf('§RELAY_UP') >= 0) res(); }); });
+  var LAN = RELAY + '/pipe';
   var browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
   var owner = await mkKey(); cur.plans.office = planJs('TEAM_PLAN', await signObj(OFFICE, owner)); cur.plans.pos = planJs('TEAM_PLAN_POS', await signObj(POSPLAN, owner));
   var xcfg = encodeURIComponent(Buffer.from(J({ trust: [owner.pub] })).toString('base64')), NET = { aborted: [] };
@@ -68,12 +72,16 @@ var MUTS = {
     pg.on('console', function (m) { var t = m.text(); logs.push(t); if (/^§(EODA|TEAM_HELD|TEAM_HOLD)|🔴/.test(t)) console.log('   [' + name + '] ' + t.slice(0, 300)); });
     pg.on('pageerror', function (e) { errors.push(name + ': ' + e.message); });
     await ctx.route('**/*', function (route) { var u = new URL(route.request().url()); if (u.hostname !== '127.0.0.1') { NET.aborted.push(u.host); return route.abort('blockedbyclient'); }
-      if (u.pathname.indexOf('/pipe/') === 0) REQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' }); return route.continue(); });
+      if (u.port === String(RPORT) && u.pathname.indexOf('/pipe/') === 0) LANREQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' });
+      else if (u.pathname.indexOf('/pipe/') === 0) REQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' }); return route.continue(); });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
+    if (name === 'D') await pg.addInitScript(function () { localStorage.setItem('tilllan.v1:12-MAIN', JSON.stringify({ main: { on: true } })); });
     await pg.goto(base + urlPath, { waitUntil: 'load' }); await pg.waitForFunction(ready, null, { timeout: 240000 });
     return { name: name, pg: pg, logs: logs, ctx: ctx };
   }
-  var qsBase = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';
+  var qsNet = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';   // head office A: the internet relay
+  var qsBase = '&team=1&pipe=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';   // an ordinary till: the branch relay ONLY
+  var qsMain = qsNet + '&lan=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY);   // the main till: internet relay + branch relay, routed
   var eng = function (d, fn, arg) { return d.pg.evaluate('(function(){ var W = window.Till ? window.Till.engine() : window.BranchAdmin ? window.BranchAdmin.engine() : window; return (' + fn.toString() + ')(W, ' + J(arg === undefined ? null : arg) + '); })()'); };
   var T = {
     found: function (d) { return eng(d, function (W) { return W.TeamSync.found(); }); }, join: function (d, sp) { return eng(d, function (W, s) { return W.TeamSync.join(s); }, sp); },
@@ -82,7 +90,8 @@ var MUTS = {
     visit: function (d) { var done = false; return Promise.race([eng(d, async function (W) { var v = await W.TeamSync.visit(); return v && v.replicaIn; }).then(function (v) { done = true; return v; }), sleep(120000).then(function () { if (!done) console.log('   §EODA_STEP visit on ' + d.name + ' did not return in 120 s'); return null; })]); },
     rows: function (d, sql) { return eng(d, function (W, q) { return new Promise(function (res) { W.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { try { res(trx.q(q)); } catch (e) { res({ error: String(e && e.message) }); } return { ok: true }; } }, function () {}); }); }, sql); }
   };
-  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) for (var i = 0; i < devs.length; i++) await T.visit(devs[i]); }
+  async function bridge() { if (typeof D !== 'undefined' && D && D.pg) await D.pg.evaluate(function () { return window.BranchAdmin.lanCollect(); }); }   // §38: the main till mirrors the shared stream and collects over the LAN
+  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) { for (var i = 0; i < devs.length; i++) { await bridge(); await T.visit(devs[i]); } await bridge(); } }
   var mark = function () { return REQ.length; }, since = function (mk) { return REQ.slice(mk); };
   // lanes of a PUT: 'branch' = the branch box m/b_<org>/ (head office never reads it); 'hub' = an op bundle (/o/) outside it = DATA head office reads; 'house' = heartbeat / frontier / receipt files (h, f, r), carry no ticket
   var lane = function (r) { return /\/m\/b_/.test(r.p + r.q) ? 'branch' : /\/o\//.test(r.p + r.q) ? 'hub' : 'house'; };
@@ -90,9 +99,9 @@ var MUTS = {
 
   // ═══ setup: head office A, the branch POS admin D, tills T1 T2 T3 (distinct logins = distinct till keys)
   console.log('§E0 setup: head office A (founder, POS plan), the branch POS admin D and three tills (role 50004, Bound to the branch Org 12)');
-  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsBase, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
+  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsNet, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
   await A.pg.evaluate(function () { return window.TeamSync.ready; });
-  var D = haveAdmin ? await open('D', '/erp/branch_admin.html?login=50001' + qsBase, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§EODA_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; }) : null;
+  var D = haveAdmin ? await open('D', '/erp/branch_admin.html?login=50001' + qsMain, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§EODA_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; }) : null;
   if (!D) console.log('§EODA_PAGE erp/branch_admin.html is ' + (haveAdmin ? 'present but did not boot' : 'ABSENT') + ' (RED: the branch POS admin is not built)');
   var tillLogins = [50001, 102, 101], TL = [];
   for (var i = 0; i < 3; i++) TL.push(await open('T' + (i + 1), '/erp/till.html?login=' + tillLogins[i] + qsBase, function () { return window.Till && window.Till.ready; }).catch(function (e) { console.log('§EODA_PAGE till T' + (i + 1) + ' did not boot: ' + String(e && e.message).slice(0, 160)); return null; }));
@@ -146,7 +155,7 @@ var MUTS = {
     console.log('§EODA_RELAY close: T1 requests=' + closeReq[0].length + ' (puts hub ' + puts(closeReq[0], null, 'hub') + ' branch ' + puts(closeReq[0], null, 'branch') + ') T2 requests=' + closeReq[1].length + ' (puts hub ' + puts(closeReq[1], null, 'hub') + ' branch ' + puts(closeReq[1], null, 'branch') + ')');
     await visitAll([A, D, A]);
     var hqAfterClose = Number((await T.rows(A, 'SELECT (SELECT count(*) FROM i_order) + (SELECT count(*) FROM i_payment) + (SELECT count(*) FROM pos_branchdaystatement) AS n'))[0].n);
-    var hnd = await T.rows(D, "SELECT tillkey, kind, count(*) AS n FROM pos_tillhandoff GROUP BY tillkey, kind ORDER BY tillkey, kind");
+    await bridge(); var hnd = await D.pg.evaluate(function () { var g = {}; window.BranchAdmin.lan().handoffRows().forEach(function (r) { var k = r.tillkey + '|' + r.kind; g[k] = (g[k] || 0) + 1; }); return Object.keys(g).sort().map(function (k) { return { tillkey: k.split('|')[0], kind: k.split('|')[1], n: g[k] }; }); });
     console.log('§EODA_STATE after T1 and T2 closed: head office holds ' + hqAfterClose + ' tickets/statement rows; the admin holds hand-offs ' + J(hnd));
     // the admin screen: expected tills = the three
     await admin.fill('#a-tills', tillKeys.join(', ')); await admin.dispatchEvent('#a-tills', 'change'); await sleep(500);
@@ -166,8 +175,9 @@ var MUTS = {
     check('a1-screen-ranges', tillKeys.slice(0, 2).every(function (k, i) { var c = byTill[k]; return c && Number(c[2]) === rung[i].length && new RegExp('S 1\\.\\.' + rung[i].length + ' x' + rung[i].length).test(c[3]) && c[4].trim() === ''; }), 'T1 shows S 1..3 x3 and T2 S 1..2 x2 with no gaps', byTill);
     check('a2-screen-z-matches-till', [0, 1].every(function (i) { var c = byTill[tillKeys[i]]; return tillZ[i] && c && c[7] === money(tillZ[i].gross) && Object.keys(tillZ[i].tenders).every(function (n) { return c[5].indexOf(n + ' ' + money(tillZ[i].tenders[n])) >= 0; }); }), 'each closed till\'s row shows the Z the till itself printed (gross and tender totals): ' + J(tillZ), { byTill: byTill, tillZ: tillZ });
     ARM = 'relay';
-    check('r1-day-nothing-travels', stage.day === 0, 'while 9 tickets are rung, the tills make 0 pipe requests (nothing travels during the day)', stage.day);
-    check('r2-till-writes-only-branch-lane', tillHub === 0 && tillBranch > 0, 'at Close Cash the tills write DATA to the BRANCH lane only: hub-lane op-bundle puts ' + tillHub + ', branch-lane puts ' + tillBranch, { tillHub: tillHub, tillBranch: tillBranch });
+    var tillNetAll = REQ.filter(function (r) { return /^T/.test(r.dev); }).length, tillLanDay = LANREQ.filter(function (r) { return /^T/.test(r.dev); }).length;
+    check('r1-day-nothing-travels', stage.day === 0, 'while 9 tickets are rung, the tills make 0 INTERNET-relay requests (their lines go to the branch relay: ' + tillLanDay + ' LAN requests so far)', stage.day);
+    check('r2-till-writes-only-branch-lane', tillHub === 0 && tillBranch === 0 && LANREQ.some(function (r) { return /^T/.test(r.dev) && r.m === 'PUT' && /\/h\//.test(r.p); }), 'at Close Cash the tills put the shift on the BRANCH RELAY (LAN, a /h/ file) and make 0 internet-relay writes: hub ' + tillHub + ', branch box on the internet ' + tillBranch, { tillHub: tillHub, tillBranch: tillBranch });
     check('r3-hq-holds-nothing-yet', hqAfterClose === 0 && zero[0] === 0, 'head office holds 0 ticket rows and 0 statement rows after two tills closed and every device Visited', hqAfterClose);
     check('r3b-hand-offs-reached-admin', hnd.length >= 4 && hnd.filter(function (x) { return x.kind === 'T'; }).reduce(function (a, x) { return a + Number(x.n); }, 0) === 5, 'non-vacuous: the admin holds the 5 hand-off ticket rows (3 + 2) and 2 Z rows', hnd);
 
@@ -233,7 +243,7 @@ var MUTS = {
     var allTill = REQ.filter(function (r) { return /^T/.test(r.dev); }), tillHubAll = puts(allTill, null, 'hub');
     console.log('§EODA_RELAY tills over the whole run after setup: hub-lane puts=' + puts(REQ.slice(mkDay).filter(function (r) { return /^T/.test(r.dev); }), null, 'hub') + ' (3 tills, 9 tickets, 3 shifts)');
     var tillHubRun = puts(REQ.slice(mkDay).filter(function (r) { return /^T/.test(r.dev); }), null, 'hub');
-    check('r4-tills-never-write-to-hub', tillHubRun === 0, 'across the whole day no till wrote anything outside the branch lane (hub-lane puts ' + tillHubRun + ')', tillHubRun);
+    check('r4-tills-never-write-to-hub', tillHubRun === 0 && REQ.filter(function (r) { return /^T/.test(r.dev); }).length === 0, 'W-TILL-AIRGAP: over the whole run (setup included) the three tills made ' + REQ.filter(function (r) { return /^T/.test(r.dev); }).length + ' internet-relay requests (hub-lane puts ' + tillHubRun + '); D (main) made ' + REQ.filter(function (r) { return r.dev === 'D'; }).length, tillHubRun);
     check('r5-only-admin-send-crosses', R1.hubPuts > 0 && R3.hubPuts > 0 && Number(hq1.o.length) === 5, 'non-vacuous: the admin\'s sends DID write to the hub lane (partial ' + R1.hubPuts + ', final ' + R3.hubPuts + ') and that is how the rows reached head office', { R1: R1, R3: R3 });
     check('r6-send-requests-not-growing-with-tickets', R3.n <= R1.n + 2 && R2.n <= R1.n + 2 && R1.hubPuts === R3.hubPuts, 'requests per send do not grow with tickets: 5 tickets -> ' + R1.n + ', 4 tickets -> ' + R3.n + ', 0 new tickets -> ' + R2.n + '; hub-lane puts equal (' + R1.hubPuts + ' / ' + R3.hubPuts + ')', { R1: R1, R2: R2, R3: R3 });
     check('r7-one-visit-per-send', R1.hubPuts <= 2 && R3.hubPuts <= 2, 'a send is ONE Visit: at most 2 hub-lane puts for any size of batch (measured ' + R1.hubPuts + ' and ' + R3.hubPuts + ')', { R1: R1, R3: R3 });
@@ -248,7 +258,8 @@ var MUTS = {
 
   console.log('§EODA_PAGE_ERRORS n=' + errors.length + (errors.length ? ' ' + J(errors.slice(0, 3)) : ''));
   ARM = ARMS[0]; V[ARM].judged++; if (errors.length) V[ARM].failed++; console.log('  §EODA_CHECK arm=' + ARM + ' key=page-errors ' + (errors.length ? 'FAIL' : 'OK') + ' 0 page errors on the five pages');
-  await browser.close(); server.close();
+  console.log('§EODA_NETREQ internet-relay requests per device: ' + J(REQ.reduce(function (a, r) { a[r.dev] = (a[r.dev] || 0) + 1; return a; }, {})) + ' | branch-relay requests per device: ' + J(LANREQ.reduce(function (a, r) { a[r.dev] = (a[r.dev] || 0) + 1; return a; }, {})));
+  await browser.close(); server.close(); relayProc.kill('SIGTERM');
   var names = { agg: 'W-EODA-AGG', gate: 'W-EODA-GATE', partial: 'W-EODA-PARTIAL', relay: 'W-EODA-RELAY' }, bad = 0;
   ARMS.forEach(function (a) { var v = V[a], verdict = !v.judged ? 'INCONCLUSIVE' : v.failed ? 'FAIL' : 'PASS'; if (verdict !== 'PASS') bad++; console.log('§EODA_VERDICT ' + names[a] + ' verdict=' + verdict + ' judged=' + v.judged + ' failed=' + v.failed + (MUTNAME ? ' mutant=' + MUTNAME : '')); });
   process.exit(bad ? 1 : 0);
