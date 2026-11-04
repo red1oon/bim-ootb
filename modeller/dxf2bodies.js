@@ -59,7 +59,7 @@
     var find = function (i) { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
     var toFrame = function (s, deg) { var d = (s.deg - deg) * Math.PI / 180, c = Math.cos(d), n = Math.sin(d); return s.outline.map(function (p) { return [p[0] * c - p[1] * n, p[0] * n + p[1] * c]; }); };
     var box = function (o) { var u = o.map(function (p) { return p[0]; }), v = o.map(function (p) { return p[1]; }); return [Math.min.apply(null, u), Math.min.apply(null, v), Math.max.apply(null, u), Math.max.apply(null, v)]; };
-    var oneDir = function (a, b) { var d = Math.abs(a.deg - b.deg) % 90; return Math.min(d, 90 - d) <= 0.1; };
+    var sideOf = function (s) { var B = box(s.outline); return Math.max(B[2] - B[0], B[3] - B[1]); }, oneDir = function (a, b) { var d = Math.abs(a.deg - b.deg) % 90; return Math.sin(Math.min(d, 90 - d) * Math.PI / 180) * Math.max(sideOf(a), sideOf(b)) <= tol; };   // one direction: the turn between them moves a side's far end by no more than the tolerance
     if (touching) for (var i = 0; i < skew.length; i++) for (var j = i + 1; j < skew.length; j++) {
       if (!isRect(skew[i]) || !isRect(skew[j]) || !oneDir(skew[i], skew[j])) continue;
       var A = box(skew[i].outline), B = box(toFrame(skew[j], skew[i].deg)), gapU = Math.max(A[0] - B[2], B[0] - A[2]), gapV = Math.max(A[1] - B[3], B[1] - A[3]);
