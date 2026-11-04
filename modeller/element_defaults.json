@@ -1166,6 +1166,20 @@
     "limit:wall_top": ["ELEVATION", "ELEVATIONS", "SECTION", "SECTIONS"],
     "limit:wall_type": ["WALL TYPE", "WALL TYPES", "WALL SCHEDULE"]
    },
+   "labels": {
+    "GAP:beam_label_no_edges": "Beam labels with no edges drawn",
+    "GAP:door_tag_no_row": "Door tags with no schedule row",
+    "GAP:door_tag_no_swing": "Door tags with no swing drawn",
+    "GAP:footing_no_thickness": "Foundations with no thickness",
+    "GAP:slab_no_outline": "Floors with no outline",
+    "GAP:wall_curved": "Kinds of curved line not built",
+    "limit:glazing": "Glazing with no mullions",
+    "limit:pad_thickness": "Pads with an assumed thickness",
+    "limit:roof_edge": "Roof with no drawn edge",
+    "limit:stair_short": "Stair runs that stop short",
+    "limit:wall_top": "Walls whose top is not read",
+    "limit:wall_type": "Walls with no type name"
+   },
    "used_by": "dxf2gapguide (§D110)"
   },
   "roof.from_spots": {

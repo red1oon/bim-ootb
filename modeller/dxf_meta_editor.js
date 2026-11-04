@@ -62,7 +62,7 @@
   function prNote(si, p) { return S.ev === evId(si, p) && S.evNote ? '<div class="dm-evnote">' + esc(S.evNote) + '</div>' : ''; }
   var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { grpOpen: {}, sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { grpOpen: {}, sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { missing: true, sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], wsched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -183,6 +183,7 @@
       if (tok !== S.token) return;
       var v = g.verdict; v.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') };
       S.verdict = v; S.busy = false; S.lib = g.lib;
+      takeGuide(g);
       var ac = {}; v.advisory.forEach(function (x) { ac[x.code] = (ac[x.code] || 0) + 1; });
       console.log(TAG + ' verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' pipeline=' + (v.pipeline.ran ? 'ran run_id=' + v.pipeline.run_id.slice(0, 12) : 'NOT RUN (' + v.pipeline.why.slice(0, 200) + ')') +
         ' counts=' + JSON.stringify(v.counts) + ' ms=' + Math.round(performance.now() - t0));
@@ -1012,6 +1013,23 @@
     });
     return secHead('walltops', IC.walltop, 'Wall tops', nB ? nB + ' blocking' : '', nB) + (S.sec.walltops ? '<div class="dm-sb">' + (h || '<div class="dm-ref">No plan sheet yet.</div>') + '</div>' : '');
   }
+  // §D110 G6 what the drawings say is missing: one renderer, any set. A reading of the set's own sheet list; 'might help' is the guide's word, never 'will'
+  function renderMissing() {
+    var g = S.guide; if (!g) return '';
+    var c = g.counts, h = '';
+    if (!c) return secHead('missing', IC.file, 'Missing sheets', 'no list') + (S.sec.missing ? '<div class="dm-sb"><div class="dm-ref" data-gg="none">No sheet list in this set: missing sheets cannot be counted. INCONCLUSIVE.</div></div>' : '');
+    h += '<div class="dm-ref" data-gg="counts" style="color:#F3EEE8;font-size:13px">The drawings list <b>' + c.listed + '</b> sheets. <b>' + c.loaded + '</b> are loaded. <b>' + c.missing + '</b> are missing.</div>';
+    (g.registers || []).forEach(function (r) { h += '<div class="dm-ref" data-gg="reg">List ' + esc(r.sheet) + ': ' + r.rows + ' rows read' + (r.stated_total === null ? ', no total printed' : ', it prints ' + r.stated_total + (r.agrees ? ', agrees' : ', DIFFERS')) + '</div>'; });
+    if ((g.set_aside || []).length) h += '<div class="dm-ref" data-gg="aside">' + g.set_aside.length + ' loaded sheet(s) cannot be placed, set aside.</div>';
+    if (g.status !== 'read' && g.reason) h += '<div class="dm-ref" data-gg="reason">Gaps not judged: ' + esc(g.reason) + '.</div>';
+    (g.rows || []).forEach(function (r) { var miss = r.sheets.filter(function (q) { return !q.held; }), lab = (S.guideLabels && S.guideLabels[r.need]) || r.need;
+      h += '<div class="dm-it adv nopos" data-gg="need" title="' + esc(r.need) + '"><span class="c">' + r.count + '</span><span class="m">' + esc(lab) + (miss.length ? '. Might help: ' + esc(miss.map(function (q) { return q.title + ' (' + q.no + ')'; }).join(' · ')) : '') + '</span></div>'; });
+    var SAYS = { not_issued: function (L) { return 'The list says not issued in revision ' + L; }, issued_not_loaded: function (L) { return 'The list says issued in revision ' + L + ', not loaded here'; }, no_statement: function () { return 'Listed. The list does not say whether issued'; } };
+    (g.registers || []).filter(function (r) { return r.legend; }).forEach(function (r) { h += '<div class="dm-ref" data-gg="legend" style="font-style:italic">' + esc(r.sheet) + ' prints: "' + esc(r.legend.slice(0, 160)) + '"</div>'; });
+    ['not_issued', 'issued_not_loaded', 'no_statement'].forEach(function (k) { var R = (g.missing_list || []).map(function (r, i) { return { r: r, i: i }; }).filter(function (q) { return q.r.says === k; }); if (!R.length) return; var byL = R[0].r.latest || '';
+      h += '<details data-gg="class" data-says="' + k + '"><summary class="dm-ref" style="color:#F3EEE8"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + '</summary>' + R.map(function (q) { return '<div class="dm-it adv" data-act="ggrow" data-i="' + q.i + '" title="Show this row on its sheet"><span class="m">' + esc(q.r.title) + ' (' + esc(q.r.no) + ')</span></div>'; }).join('') + '</details>'; });
+    return secHead('missing', IC.file, 'Missing sheets', c.missing + ' missing', c.missing > 0) + (S.sec.missing ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function renderVerdict() {
     var v = S.verdict, h = '';
     if (!v) return secHead('verdict', IC.verdict, 'Verdict', S.busy ? 'checking' : '') ;
@@ -1040,6 +1058,14 @@
     console.log(TAG + ' attention unconfirmed=' + n); return n;
   }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
+  function guideOn(rf) { var off = S.defaultChoices && S.defaultChoices['guide.gap_sheets'] === 'off'; S.sheets.forEach(function (sh) { (sh.marks || []).forEach(function (q) { if (q.key === 'DEFAULT' && String(q.value) === 'guide.gap_sheets,off') off = true; }); }); return !off && !!(rf && rf.defaults && rf.defaults['guide.gap_sheets'] && rf.defaults['guide.gap_sheets'].value === 'read'); }
+  function takeGuide(g) {   // §D110 G6 both ways a verdict reaches this panel (a set opened, a set edited) take the guide here
+    var r = g && g.R && g.R.bodies && g.R.bodies.report, D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef; S.guide = (r && r.guide) || null; S.guideLabels = rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].labels : null;
+    if (!S.guide && !(r && 'guide' in r) && window.Dxf2GapGuide && guideOn(rf)) {   // §D110 G6d the gate has not judged: the lists still say what they say, with nothing typed
+      var held = {}; S.sheets.forEach(function (sh) { var mk = (sh.marks || []).filter(function (q) { return q.key === 'SHEETNO'; })[0], pr = mk ? null : (proposalsFor(sh).list || []).filter(function (q) { return q.rule === 'PR-SHEETNO'; })[0], n = mk ? mk.value : pr ? pr.value : null; if (n) held[n] = 1; });
+      var gR = window.Dxf2GapGuide.fromRaw(S.sheets, held, { min_rows: rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].min_rows : undefined }); S.guide = gR.counts ? gR : null; }
+    if (S.guide && window.Dxf2GapGuide) window.Dxf2GapGuide.logLines(S.guide).forEach(function (l) { console.log(l); });
+  }
   function render() {
     if (!S.panel || S.panel.style.display === 'none') return;
     var body = document.getElementById('dm-body'), top = body ? body.scrollTop : 0, ae = document.activeElement, fid = ae && ae.id;
@@ -1049,7 +1075,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); }); S.evRows = {};   // §D36 the rows register themselves as they are drawn
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderMissing() + '</div><div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -1164,6 +1190,7 @@
       else if (a === 'dtag') el.onclick = function () { var pk = S.dpick; if (!pk) return; var nw = document.getElementById('dm-dt-new').value.trim(), mk = nw || document.getElementById('dm-dt-sel').value; if (!mk) { S.dmsg = 'Pick a schedule mark or type a new one.'; render(); return; } writeTag(pk.sheet, pk.handle, mk); };
       else if (a === 'dzoom') el.onclick = function () { highlight({ code: 'door', sheet: el.getAttribute('data-sheet'), handles: [el.getAttribute('data-h')], pos: null }); };
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };
+      else if (a === 'ggrow') el.onclick = function () { var r = S.guide.missing_list[Number(el.getAttribute('data-i'))], si = S.sheets.findIndex(function (q) { return q.name === r.sheet; }), hh = r.h || 0, shown = si >= 0 && window.DxfSheetFrame ? window.DxfSheetFrame.open(si, { evidence: { x0: r.x - hh / 2, y0: r.y - hh * 0.45, x1: r.x + hh * 30, y1: r.y + hh * 0.45 } }) : null; console.log(TAG + ' §GAPGUIDE evidence sheet=' + r.sheet + ' handle=' + r.handle + ' no=' + r.no + ' says=' + r.says + ' shown=' + !!shown); };   // §D110 G6b the row, on the sheet that says so
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
     P.querySelectorAll('.dm-pr[data-ev]').forEach(function (el) { el.addEventListener('click', function (e) { if (e.target.closest('button,select,input')) return; fly(el.getAttribute('data-ev')); }); });   // §D36 a row = fly to its evidence
@@ -1304,6 +1331,7 @@
     if (!S.panel) { S.panel = document.createElement('div'); S.panel.id = 'dm-panel'; document.body.appendChild(S.panel); }
     S.panel.style.display = 'flex';
     var g = gateNow();   // the import already judged the opened files: show that verdict, no second run
+    takeGuide(g);
     if (g && g.verdict) { S.verdict = g.verdict; S.verdict.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') }; S.lib = g.lib; S.busy = false; render();
       console.log(TAG + ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' (the import gate) counts=' + JSON.stringify(g.verdict.counts)); }
     else { render(); schedule(0); }

@@ -433,6 +433,21 @@ const regHold = sheet('reg.dxf', [T('MTEXT', 'S', 'DRAWING LIST &', 5, 5), T('MT
 ok('YR38i a sheet holding a drawing list takes @VIEW=DRAWING, whatever titles its rows carry', vals(props(regHold), 'PR-VIEW', 'VIEW') === 'DRAWING');
 ok('YR38j set back: guide off gives the earlier result, its titles disagree', vals(props(regHold, null, { 'guide.gap_sheets': 'off' }), 'PR-VIEW', 'VIEW') === '');
 ok('YR38k the words alone are no register: a plan that says DRAWING LIST in a note keeps its own title', vals(props(sheet('p.dxf', [T('MTEXT', 'S', 'DRAWING LIST', 5, 5), T('MTEXT', 'S', 'GROUND FLOOR PLAN', 40, 770)], [])), 'PR-VIEW', 'VIEW') === 'PLAN');
+// G6b the sheet says so: 2 revision columns under their headings, its own legend
+const REVE = [T('MTEXT', 'S', 'FIELDS WITH ● INDICATE SHEET ISSUED. BLANK FIELDS INDICATE SHEET NOT ISSUED.', 60, 830), T('MTEXT', 'S', 'SHEET\\PNUMBER', 20, 800), T('MTEXT', 'S', '00', 150, 800), T('MTEXT', 'S', '01', 160, 800),
+  T('MTEXT', 'S', 'A-100', 10, 770), T('MTEXT', 'S', 'GROUND PLAN', 40, 770), T('MTEXT', 'S', '●', 150, 770), T('MTEXT', 'S', '●', 160, 770),
+  T('MTEXT', 'S', 'A-101', 10, 760), T('MTEXT', 'S', 'UPPER PLAN', 40, 760), T('MTEXT', 'S', '●', 150, 760), T('MTEXT', 'S', '●', 160, 760),
+  T('MTEXT', 'S', 'A-102', 10, 750), T('MTEXT', 'S', 'ROOF PLAN', 40, 750), T('MTEXT', 'S', '●', 150, 750)];
+const REV = GG.readRegister([regSheet('rev.dxf', REVE)]), gv = GG.guide({ gaps: [], els: [] }, REV, { 'A-100': 1 }, {}), gvM = n => gv.missing_list.find(r => r.no === n);
+console.log('§YR38l ' + JSON.stringify(REV.rows.map(r => [r.no, r.issued])) + ' ' + JSON.stringify(gv.counts) + ' ' + JSON.stringify(REV.registers));
+ok('YR38l a mark on its row and column: each row its own revisions, latest the rightmost marked', REV.rows.find(r => r.no === 'A-100').issued.join() === '00,01' && REV.rows.find(r => r.no === 'A-102').issued.join() === '00' && REV.registers[0].latest === '01');
+ok('YR38m blank in the latest: the sheet says not issued', gvM('A-102').says === 'not_issued' && gv.counts.not_issued === 1);
+ok('YR38n marked in the latest and not loaded: the set in hand is short, a different thing', gvM('A-101').says === 'issued_not_loaded' && gv.counts.issued_not_loaded === 1);
+const noLeg = GG.guide({ gaps: [], els: [] }, GG.readRegister([regSheet('rev.dxf', REVE.slice(1))]), { 'A-100': 1 }, {});
+ok('YR38o no legend on the sheet: marks say nothing, no_statement, never not_issued', noLeg.counts.no_statement === 2 && noLeg.counts.not_issued === 0);
+ok('YR38p every missing row carries its evidence: sheet, handle, position', gv.missing_list.every(r => r.sheet === 'rev.dxf' && r.handle && typeof r.x === 'number' && typeof r.y === 'number'));
+ok('YR38q a list with no marks at all cannot speak to issue', GG.guide({ gaps: [], els: [] }, REGR, {}, {}).counts.no_statement === 7);
+ok('YR38r isListSheet: the words and a number header together; either alone is not', GG.isListSheet(regHold) && !GG.isListSheet(sheet('n.dxf', [T('MTEXT', 'S', 'DRAWING LIST', 5, 5)], [])) && !GG.isListSheet(sheet('h.dxf', [T('MTEXT', 'S', 'SHEET NUMBER', 5, 5)], [])));
 const needs = { 'GAP:door_tag_no_row': ['DOOR SCHEDULE'], 'limit:stair_short': ['STAIR'], 'GAP:wall_curved': ['NOTHING MATCHES THIS'], 'limit:roof_edge': ['ROOF PLAN'] };
 const gres = { gaps: [{ code: 'GAP:door_tag_no_row' }, { code: 'GAP:door_tag_no_row' }, { code: 'GAP:wall_curved' }, { code: 'GAP:other' }], els: [], report: { stairs: { short_m: { 'STAIR A@0': 1.2 } }, roof: { spots: 12 } } };
 const gd = GG.guide(gres, REGR, { 'A-500': 1 }, needs), gRow = n => gd.rows.find(r => r.need === n);
@@ -451,6 +466,13 @@ const useL = []; const onDF = { has: k => k === 'guide.gap_sheets', get: () => '
 const noReg = GG.run([sheet('p.dxf', [], [])], gres, onDF);
 ok('YR39h no register: no yellow row is used, so a set without one keeps its rows; with one, the row is used', noReg.status === 'INCONCLUSIVE' && useL.length === 0 && GG.run([regSheet('reg.dxf', REGE)], gres, onDF).status === 'read' && useL.length === 1);
 ok('YR39i a refused set is judged by nobody: INCONCLUSIVE', GG.run([regSheet('reg.dxf', REGE)], gres, onDF, { refused: 1 }).status === 'INCONCLUSIVE');
+const gC = GG.guide(gres, REGR, { 'A-100': 1, 'A-204': 1 }, needs);
+console.log('§YR39l ' + JSON.stringify(gC.counts));
+ok('YR39l counts on a known register: 7 listed, loaded by plain number, the rest missing with their titles', gC.counts.listed === 7 && gC.counts.loaded === 3 && gC.counts.missing === 4 && gC.missing_list.length === 4 && gC.missing_list.some(r => r.no === 'A-501' && r.title === 'ROOF PLAN') && !gC.missing_list.some(r => r.no === 'A-100'));
+ok('YR39m two rows on one number are both loaded by the plain number', !gC.missing_list.some(r => r.base === 'A-204' || /^A-204/.test(r.no)));
+const gR = GG.guide(gres, REGR, { 'A-100': 1 }, needs, { refused: 1 });
+ok('YR39n a refused set judges no gap, and still says what is missing: the list is a fact', gR.status === 'INCONCLUSIVE' && gR.rows.length === 0 && gR.counts.missing === 6);
+ok('YR39o every need has a plain label', Object.keys(REG['guide.gap_sheets'].needs).every(k => REG['guide.gap_sheets'].labels[k]));
 ok('YR39j the table has every need the spec names', ['GAP:slab_no_outline', 'GAP:door_tag_no_swing', 'GAP:door_tag_no_row', 'GAP:wall_curved', 'GAP:footing_no_thickness', 'GAP:beam_label_no_edges', 'limit:wall_top', 'limit:wall_type', 'limit:roof_edge', 'limit:stair_short', 'limit:glazing', 'limit:pad_thickness'].every(k => (REG['guide.gap_sheets'].needs[k] || []).length > 0));
 const scA = { ok: true, rows: [{ class: 'columns', built: 25, evidence: 25 }, { class: 'doors', built: 54, evidence: 64 }] }, scB = { ok: true, rows: [{ class: 'columns', built: 25, evidence: 25 }, { class: 'doors', built: 60, evidence: 64 }] };
 const d1 = SD.diff(scA, scB), d2 = SD.diff(scA, scB), g1 = JSON.stringify(GG.guide(gres, REGR, { 'A-500': 1 }, needs)), g2 = JSON.stringify(GG.guide(gres, REGR, { 'A-500': 1 }, needs));

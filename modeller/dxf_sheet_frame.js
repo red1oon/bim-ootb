@@ -85,8 +85,9 @@
     console.log('§SHEET-MARKS sheet=' + i.sheet + ' marks=' + i.marks + ' positional=' + i.positional + ' boxed=' + i.boxed + ' open_yellow=' + i.open + ' rings=' + i.rings.length + ' boxed_open=' + i.boxedOpen.length + (i.boxedOpenText.length ? ' open_box="' + i.boxedOpenText.join(' | ') + '"' : ''));   // the box's open rows, as written on the sheet (the film quotes them)
     console.log('§SHEET-FRAME sheet=' + i.sheet + ' own=' + (i.frame.own ? 1 : 0) + ' paper=' + (i.frame.paper || '-') + ' scale=' + (i.frame.scale ? '1:' + i.frame.scale : '-') + ' units=' + (i.frame.units || 'unknown')); }
 
+  var EVIDENCE_FILL = 0.7;   // §D110 G6b a row opens readable, at this share of the view: a sheet can be far wider than its list
   function paint() { if (!st.el) return; var cv = st.el.querySelector('canvas'), r = st.last, w = cv.clientWidth, h = cv.clientHeight; cv.width = w; cv.height = h;
-    if (!st.view) { st.view = V().fit(r.info.view, w, h, 24); var z0 = st.pick && datumOf(); if (z0) { st.view.cy = z0.y; st.view.s *= PICK_ZOOM; } }   /* §D94 the pick opens on the known datum, closer */ V().paintCanvas(cv.getContext('2d'), r.list, st.view, w, h); paintPick(cv.getContext('2d'), w, h); }
+    if (!st.view) { st.view = V().fit(r.info.view, w, h, 24); var z0 = st.pick && datumOf(); if (z0) { st.view.cy = z0.y; st.view.s *= PICK_ZOOM; } if (st.evidence) { var e0 = st.evidence, f0 = Math.min(w / Math.max(e0.x1 - e0.x0, 1e-9), h / Math.max(e0.y1 - e0.y0, 1e-9)); st.view.cx = (e0.x0 + e0.x1) / 2; st.view.cy = (e0.y0 + e0.y1) / 2; st.view.s = f0 * EVIDENCE_FILL; } }   /* §D94 the pick opens on the known datum, closer */ V().paintCanvas(cv.getContext('2d'), r.list, st.view, w, h); paintPick(cv.getContext('2d'), w, h); }
   // §D94 pick mode: the drawn horizontal segments of the sheet itself (not the markings, not the added frame); the pointer snaps to the nearest within 8 px, else stays free
   function hsegs(list) { var out = []; list.forEach(function (d) { if (d.grp === 'marks' || /^DXF2BIM-/.test(d.layer || '')) return;
       var sg = d.k === 'line' ? [[d.a, d.b]] : d.k === 'poly' && d.pts ? d.pts.slice(1).map(function (q, i) { return [d.pts[i], q]; }).concat(d.closed && d.pts.length > 2 ? [[d.pts[d.pts.length - 1], d.pts[0]]] : []) : [];
@@ -107,7 +108,7 @@
     ctx.save(); ctx.strokeStyle = q.snap === 'line' ? '#ffe14d' : q.snap === 'ambiguous' ? '#ff8a3d' : '#8a8a8a'; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
     ctx.setLineDash([]); ctx.font = '12px system-ui,sans-serif'; var t = pickLabel(q), tw = ctx.measureText(t).width; ctx.fillStyle = 'rgba(20,23,28,.85)'; ctx.fillRect(8, sy - 22, tw + 12, 18);
     ctx.fillStyle = q.snap === 'line' ? '#ffe14d' : q.snap === 'ambiguous' ? '#ff8a3d' : '#c7cdd8'; ctx.fillText(t, 14, sy - 9); ctx.restore(); }
-  function refresh() { if (st.si === null || !st.el) return; st.last = build(st.si, { marks: st.marks }); if (st.pick) st.pick.segs = hsegs(st.last.list); log(st.last); paint(); }
+  function refresh() { if (st.si === null || !st.el) return; st.last = build(st.si, { marks: st.marks }); if (st.evidence) { var eb = st.evidence; st.last.list.push({ k: 'poly', layer: MARK_LAYER, c: '#ff4fd8', pts: [[eb.x0, eb.y0], [eb.x1, eb.y0], [eb.x1, eb.y1], [eb.x0, eb.y1]], closed: true, w: 3, ev: 'row' }); } if (st.pick) st.pick.segs = hsegs(st.last.list); log(st.last); paint(); }
   function close(why) { if (!st.el) return; if (st.pick && why !== 'pick') console.log('§DXF-DATUM-PICK cancel sheet=' + ME().state.sheets[st.si].name + ' by=' + (why || 'close')); st.pick = null; st.el.remove(); st.el = null; st.si = null; st.view = null; document.removeEventListener('keydown', onKey, true); console.log(TAG + ' closed by=' + (why || 'close')); }
   function onKey(e) { if (e.key === 'Escape' && st.el) { e.stopPropagation(); close('esc'); } }
   function download(name, text, type) { var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0); }
@@ -118,7 +119,7 @@
     el.innerHTML = '<div style="display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid #2c303a"><b id="dsf-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b>' +
       '<label><input type="checkbox" id="dsf-marks"' + (st.marks ? ' checked' : '') + '> Markings</label><button class="dm-btn" id="dsf-svg">Save SVG</button><button class="dm-btn" id="dsf-print">Print</button><button class="dm-btn" id="dsf-close" title="Close (Esc)">✕</button></div>' +
       '<canvas style="flex:1;width:100%;min-height:0;cursor:grab"></canvas>';
-    document.body.appendChild(el); st.el = el; st.si = si; st.view = null; st.pick = opts && opts.pick ? { kind: opts.pick, onPick: opts.onPick, hover: null, segs: null } : null;
+    document.body.appendChild(el); st.el = el; st.si = si; st.view = null; st.evidence = (opts && opts.evidence) || null; st.pick = opts && opts.pick ? { kind: opts.pick, onPick: opts.onPick, hover: null, segs: null } : null;
     el.querySelector('#dsf-name').textContent = ME().state.sheets[si].name;
     el.querySelector('#dsf-close').onclick = function () { close('close'); };
     el.querySelector('#dsf-marks').onchange = function (e) { st.marks = !!e.target.checked; refresh(); };
