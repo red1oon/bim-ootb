@@ -12,6 +12,7 @@
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };                 // DXF $INSUNITS codes (reader table, SPEC N9)
   var FACES = ['minX', 'maxX', 'minY', 'maxY'];
   var SHAPES = ['walls', 'slabs', 'roof', 'openings'];
+  var ACCEPTABLE = ['GAP:fill_size_mismatch', 'GAP:type_size_mismatch', 'QF:dim_missing', 'QF:dim_point_missing', 'QF:elev_height_dim_missing', 'QF:grid_label_series'];   // lane spec L37
   var ADVISORY_GAP = /^GAP:(roof_sheet_defaulted$|type_unbound|type_defaulted|profile_not_bound|fan_detail_defaulted|schedule_conflict|label_|wall_base_from_plan_level$|slab_outline_not_rectangular$|slab_outline_estimated$|slab_edge_open$|slab_edge_bulge$|slab_edge_degenerate$|wall_top_defaulted$|section_underside_defaulted$|excluded_by_user$)/;   // §D44: a slab the walls do not outline is left out and listed   // wall_base_from_plan_level: lane spec L2.8 (1)
   var SHAPE_TABLE = [                                                                 // §L2.1 stated table for gaps without shape/kind
     [/^GAP:slab_/, 'slabs'], [/^GAP:roof_/, 'roof'],
@@ -481,12 +482,26 @@
       item(ADVISORY_GAP.test(g.code) ? advisory : blocking, g.code, shape, g.sheet === undefined ? null : g.sheet, hs, posOf(e), (g.sheet ? g.sheet + ': ' : '') + g.code + (hs.length ? ' ' + hs[0] : '') + (why ? ' (' + why + ')' : ''), { detail: extra });
     });
 
+    // ---------- lane spec L37: a person's recorded acceptance moves a row out of blocking; only a drawing's lack or convention, or a size delta on a placed mesh, can be accepted ----------
+    var acceptedRows = [], acc = {};
+    SH.forEach(function (s) { (s.desc.accept || []).forEach(function (a) {
+      var hs = a.handle ? [a.handle] : [];
+      if (ACCEPTABLE.indexOf(a.code) < 0) block('QF:accept_refused', s.id, hs, null, s.id + ': @ACCEPT ' + a.code + ' cannot be accepted', { accept: a.code });
+      else if (a.by !== 'user') block('QF:accept_refused', s.id, hs, null, s.id + ': @ACCEPT ' + a.code + ' was not stated by a person (@BY=' + (a.by || 'none') + ')', { accept: a.code });
+      else acc[a.code] = { who: a.who, date: a.date, reason: a.reason, sheet: s.id };
+    }); });
+    if (Object.keys(acc).length) {
+      var used = {};
+      blocking = blocking.filter(function (x) { var a = acc[x.code]; if (!a) return true; used[x.code] = 1; acceptedRows.push(Object.assign({}, x, { accepted_by: a })); return false; });
+      Object.keys(acc).sort().forEach(function (c) { if (!used[c]) item(advisory, 'QF:accept_unused', 'set', acc[c].sheet, [], null, '@ACCEPT ' + c + ': no such row in this set', { accept: c }); });
+    }
+
     // ---------- verdict ----------
     function cmp(a, b) {
       return a.code < b.code ? -1 : a.code > b.code ? 1 : (a.sheet || '') < (b.sheet || '') ? -1 : (a.sheet || '') > (b.sheet || '') ? 1 :
         hnum(a.handles[0]) - hnum(b.handles[0]) || (a.message < b.message ? -1 : a.message > b.message ? 1 : 0);
     }
-    blocking.sort(cmp); advisory.sort(cmp);
+    blocking.sort(cmp); advisory.sort(cmp); acceptedRows.sort(cmp);
     var by = {}; SHAPES.forEach(function (sh) {
       var nb = blocking.filter(function (x) { return x.shape === sh || x.shape === 'set'; }).length, na = advisory.filter(function (x) { return x.shape === sh || x.shape === 'set'; }).length;
       by[sh] = { verdict: nb ? 'blocked' : 'qualifies', blocking: nb, advisory: na };
@@ -499,6 +514,7 @@
       sheets: SH.map(function (s) { return { id: s.id, view: s.desc.view || null, units: s.desc.units || null, level: s.desc.level === undefined ? null : s.desc.level, face: s.desc.face || null, roof: s.desc.roof === undefined ? null : s.desc.roof, region: s.region || null, entities: s.ents.length }; }),
       reference_plan: ref ? ref.id : null, conventions: conventions, checks: ck
     };
+    if (acceptedRows.length) { out.accepted = acceptedRows; var ac_ = {}; acceptedRows.forEach(function (x) { ac_[x.code] = (ac_[x.code] || 0) + 1; }); out.accepted_counts = ac_; }   // L37: absent when none
     if (layerRules.length) out.layer_rules = layerRules;   // L4.2: the stated layer rules, with their source (file|model|user); absent when none
     return out;
   }
