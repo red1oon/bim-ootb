@@ -53,18 +53,36 @@
     console.log('§S9-STORE overlays src=' + src + ' ' + out.join(' '));
     return db;
   }
+  // §5.25 D1 (prompts/CAPEX_DASHBOARD.md): the ERP opens the seed WITH its self-heal patch, then its overlays (idempiere.html:1110); the store did only the overlays, so ad_ddl_default was absent and every fold
+  // left the physical column defaults NULL (NO_DDL_DEFAULTS: ProjectCategory, ProjectBalanceAmt, the line's CommittedAmt...). Applied when the table is absent = a fresh store or an old OPFS one; statements run one by
+  // one and a failing one never blocks (same rules as the ERP's loop). Best-effort: no patch reachable -> the fold's own NO_DDL_DEFAULTS note says so.
+  async function _seedPatch(db) {
+    var has = 0; try { has = db.exec("SELECT COUNT(*) FROM sqlite_master WHERE name='ad_ddl_default'")[0].values[0][0]; } catch (e) { has = 0; }
+    if (has) return;
+    var txt = null, why = '';
+    try {
+      if (typeof fetch === 'function' && typeof window !== 'undefined') { var r = await fetch('../erp/patches/ad_seed.db.sql', { cache: 'no-cache' }); if (r.ok) txt = await r.text(); else why = 'HTTP ' + r.status; }
+      else if (typeof require === 'function') txt = require('fs').readFileSync(require('path').join(__dirname, '..', 'erp', 'patches', 'ad_seed.db.sql'), 'utf8');
+    } catch (e) { why = e.message; }
+    if (txt == null) { console.log('§S9-STORE patch none (' + why + ')'); return; }
+    var ok = 0, failed = 0;
+    txt.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); ok++; } catch (e) { failed++; } });
+    console.log('§S9-STORE patch applied ok=' + ok + ' failed=' + failed);
+  }
   async function openStore(SQL, fetchSeed) {
     try {
       if (navigator.storage && navigator.storage.getDirectory) {
         var root = await navigator.storage.getDirectory(), dir = await root.getDirectoryHandle(STORE_DIR), fh = await dir.getFileHandle(STORE_FILE);
         var f = await fh.getFile(), buf = await f.arrayBuffer();
         console.log('§S9-STORE src=opfs bytes=' + buf.byteLength);
-        return { db: _overlay(new SQL.Database(new Uint8Array(buf)), 'opfs'), src: 'opfs' };
+        var odb = new SQL.Database(new Uint8Array(buf)); await _seedPatch(odb);
+        return { db: _overlay(odb, 'opfs'), src: 'opfs' };
       }
     } catch (e) { /* no OPFS store yet */ }
     var b = await fetchSeed();
     console.log('§S9-STORE src=seed bytes=' + (b && b.byteLength));
-    return { db: _overlay(new SQL.Database(new Uint8Array(b)), 'seed'), src: 'seed' };
+    var sdb = new SQL.Database(new Uint8Array(b)); await _seedPatch(sdb);
+    return { db: _overlay(sdb, 'seed'), src: 'seed' };
   }
   // §STORE_STAMP (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md §BIM-CRUD; user 2026-10-07 stale-tab fix): the store's identity on disk
   //   = lastModified:size, or 'gone'. A writer that cached the store reuses its copy ONLY while the stamp is unchanged — a seed reset

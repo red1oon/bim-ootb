@@ -27,7 +27,7 @@ function ok(c, m) { c ? pass++ : fail++; console.log(`§WIAUTH ${c ? 'PASS' : 'F
   db.run(`CREATE TABLE C_Project (C_Project_ID INTEGER PRIMARY KEY, AD_Client_ID INT, AD_Org_ID INT, IsActive TEXT,
             Created TEXT, CreatedBy INT, Updated TEXT, UpdatedBy INT, Value TEXT, Name TEXT, IsSummary TEXT,
             C_Currency_ID INT, PlannedAmt REAL, PlannedQty REAL, IsCommitment TEXT, ProjInvoiceRule TEXT,
-            ProjectLineLevel TEXT, Processed TEXT, C_Project_UU TEXT);
+            ProjectLineLevel TEXT, Processed TEXT, Processing TEXT, C_Project_UU TEXT);
           CREATE TABLE C_ProjectPhase (C_ProjectPhase_ID INTEGER PRIMARY KEY, C_Project_ID INT, AD_Client_ID INT,
             AD_Org_ID INT, IsActive TEXT, Created TEXT, CreatedBy INT, Updated TEXT, UpdatedBy INT, Name TEXT,
             SeqNo INT, StartDate TEXT, EndDate TEXT, IsComplete TEXT, PlannedAmt REAL, Qty REAL, C_ProjectPhase_UU TEXT);`);
