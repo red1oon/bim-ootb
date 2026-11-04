@@ -33,11 +33,44 @@
 
   // the panel.plane default (the ONE face plane without a wall envelope: here, the Modeller canvas and its Arrange view, D34): the outermost grid line of the base plan on the
   // face's side (metres), or null when the base plan has no grid on that coordinate
-  function facePlane(base, face) {
+  // §D107 opts { desc: the elevation's marks, mode: panel.plane in force }: @PLANE names the line; else the end line of the elevation's own grid family; no opts = the plan's outermost line
+  var PARALLEL = 1e-6;   // §D108 two grid lines closer to parallel than this do not cross
+  function facePlane(base, face, opts) {
     var F = FACE[face]; if (!F) return null;
-    var gr = F.coord === 'X' ? base.desc.gridsX : base.desc.gridsY, gv = Object.keys(gr || {}).map(function (l) { return gr[l] * base.factor; });
+    var gr = F.coord === 'X' ? base.desc.gridsX : base.desc.gridsY, labs = Object.keys(gr || {}), ed = opts && opts.desc;
+    if (ed && ed.plane !== undefined && gr && gr[ed.plane] !== undefined) return gr[ed.plane] * base.factor;
+    var fam = function (l) { var m = /^([A-Z])[A-Z0-9]+$/.exec(l); return m ? m[1] : ''; };
+    if (ed && opts.mode === 'grid family end line, centred') { var fs = Object.keys(ed.gridsH || {}).map(fam).filter(function (x, i, a) { return a.indexOf(x) === i; });
+      if (fs.length === 1 && fs[0]) { var own = labs.filter(function (l) { return fam(l) === fs[0]; }); if (own.length) labs = own; } }
+    var gv = labs.map(function (l) { return gr[l] * base.factor; });
     if (!gv.length) return null;
     return F.pick === 'min' ? Math.min.apply(null, gv) : Math.max.apply(null, gv);
+  }
+  // §D108 the line a plan grid label names, in metres: a point + a unit direction (gridsX, gridsY or a rotated gridsA line)
+  function gridLine(desc, label, k) {
+    if (desc.gridsX && desc.gridsX[label] !== undefined) return { p: [desc.gridsX[label] * k, 0], u: [0, 1] };
+    if (desc.gridsY && desc.gridsY[label] !== undefined) return { p: [0, desc.gridsY[label] * k], u: [1, 0] };
+    var a = desc.gridsA && desc.gridsA[label]; if (!a) return null;
+    var th = a.angle * Math.PI / 180; return { p: [a.x * k, a.y * k], u: [Math.cos(th), Math.sin(th)] };
+  }
+  // §D108 an elevation that names its line (@PLANE): where along that line each drawing x falls. Each GRIDH label whose plan line crosses it gives a distance; the sign with the smaller spread wins.
+  // Fewer than 2 crossing labels: with mode centre_on_wing, the sheet's centre (o.hc, drawing units) on the span of the family's crossing lines, reported fit 'centred'. Otherwise null. o: { k, hc, mode }
+  function planeFit(base, desc, o) {
+    var kb = base.factor, L = desc.plane !== undefined ? gridLine(base.desc, desc.plane, kb) : null; if (!L) return null;
+    var fam = function (l) { var m = /^([A-Z])[A-Z0-9]+$/.exec(l); return m ? m[1] : ''; };
+    var cross = function (M) { var det = L.u[0] * M.u[1] - L.u[1] * M.u[0]; if (Math.abs(det) < PARALLEL) return null; var dx = M.p[0] - L.p[0], dy = M.p[1] - L.p[1]; return (dx * M.u[1] - dy * M.u[0]) / det; };
+    var hs = []; Object.keys(desc.gridsH || {}).forEach(function (l) { if (l === desc.plane) return; var M = gridLine(base.desc, l, kb), s = M ? cross(M) : null; if (s !== null) hs.push({ l: l, h: desc.gridsH[l] * o.k, s: s }); });
+    var at = function (sg, off) { return function (h) { var s = sg * h * o.k + off; return [L.p[0] + L.u[0] * s, L.p[1] + L.u[1] * s]; }; };
+    if (hs.length >= 2) {
+      var best = [1, -1].map(function (sg) { var r = hs.map(function (q) { return q.s - sg * q.h; }), mn = Math.min.apply(null, r), mx = Math.max.apply(null, r); return { sg: sg, off: (mn + mx) / 2, spread: mx - mn }; }).sort(function (a, b) { return a.spread - b.spread; })[0];
+      return { line: L, sg: best.sg, off: best.off, spread: best.spread, n: hs.length, fit: 'grid', at: at(best.sg, best.off) };
+    }
+    if (o.mode !== 'centre_on_wing') return null;
+    var f = fam(String(desc.plane)), labs = [].concat(Object.keys(base.desc.gridsX || {}), Object.keys(base.desc.gridsY || {}), Object.keys(base.desc.gridsA || {})), ss = [];
+    labs.forEach(function (l) { if (l === desc.plane || !f || fam(l) !== f) return; var s = cross(gridLine(base.desc, l, kb)); if (s !== null) ss.push(s); });
+    if (!ss.length) return null;
+    var mid = (Math.min.apply(null, ss) + Math.max.apply(null, ss)) / 2, off0 = mid - (o.hc || 0) * o.k;
+    return { line: L, sg: 1, off: off0, spread: null, n: hs.length, fit: 'centred', at: at(1, off0) };
   }
   // sheets: readSheets output (role 'elev' sheets carry .hatches from the importer, .text); opts: { numbers, prepChoices }
   function buildPanels(sheets, opts) {
@@ -56,7 +89,7 @@
       if (!(al.map && al.map.zOf)) { gaps.push({ code: 'GAP:panel_elevation_not_aligned', sheet: es.name, detail: (al.errors || []).map(function (x) { return x.code; }).join(',') }); return; }
       var map = al.map, k = es.factor, un = unitName(k);
       if (map.axis !== F.axis) { gaps.push({ code: 'GAP:panel_axis', sheet: es.name, detail: 'face ' + es.face + ' runs along ' + F.axis + ' but the horizontal axis is ' + map.axis }); return; }
-      var plane = facePlane(plans[0], es.face);
+      var plane = facePlane(plans[0], es.face, { desc: es.desc, mode: DF.has('panel.plane') ? DF.get('panel.plane') : undefined });
       if (plane === null) { gaps.push({ code: 'GAP:panel_no_grid', sheet: es.name, detail: 'the base plan has no grid on ' + F.coord }); return; }
       planUsed = true;
       var layers = es.desc.layers.filter(function (l) { return l.type === 'panel'; }).map(function (l) { return l.layer; });
@@ -182,5 +215,5 @@
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
     return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
-  return { buildPanels: buildPanels, facePlane: facePlane, LABEL: LABEL };
+  return { buildPanels: buildPanels, facePlane: facePlane, planeFit: planeFit, gridLine: gridLine, LABEL: LABEL };
 });

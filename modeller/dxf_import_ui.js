@@ -88,9 +88,12 @@
     if (s.role !== 'plan' || !plans.length || s === plans[0] || !window.Dxf2Bodies || !window.Dxf2Bodies.planOffset) return null;
     return window.Dxf2Bodies.planOffset(plans[0], s, ALIGN_TOL);
   }
-  function faceOf(face, plans, env) {   // the face plane: the lowest plan's wall envelope; without one, the panel.plane default (the end grid line of the base plan, Dxf2Panels.facePlane)
+  function planeMode() { var D = window.Dxf2Defaults; if (!D || !state.defaultsRef) return undefined; var c = window.DxfMetaEditor && window.DxfMetaEditor.state && window.DxfMetaEditor.state.defaultChoices, d = D.create(state.defaultsRef, state.sheets || [], c || {}); return d.has('panel.plane') ? d.get('panel.plane') : undefined; }
+  function faceOf(face, plans, env, desc) {   // the face plane: @PLANE (§D107) > the lowest plan's wall envelope > the panel.plane default (the end grid line of the base plan, Dxf2Panels.facePlane)
+    var FP = window.Dxf2Panels && window.Dxf2Panels.facePlane, gO = { desc: desc, mode: planeMode() };
+    if (desc && desc.plane !== undefined && FP) { var gp = FP(plans[0], face, gO); if (gp !== null) return { v: gp, dflt: false, plane: true }; }
     if (env) return { v: { minX: env[0], minY: env[1], maxX: env[2], maxY: env[3] }[face], dflt: false };
-    var g = window.Dxf2Panels && window.Dxf2Panels.facePlane ? window.Dxf2Panels.facePlane(plans[0], face) : null;
+    var g = FP ? FP(plans[0], face, gO) : null;
     return g === null ? null : { v: g, dflt: true };
   }
   function placeOf(s, plans, env, Cf) {
@@ -99,7 +102,7 @@
       if (off && off.ok && (off.x || off.y)) { var ox = off.x, oy = off.y; return { k: k, z: z, off: off, w: function (x, y) { return [x * k + ox, y * k + oy, z]; } }; }
       return { k: k, z: z, off: off, w: function (x, y) { return [x * k, y * k, z]; } }; }
     if (s.role === 'elev' && plans.length) {
-      var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), fp = faceOf(s.face, plans, env);
+      var al = MK.align(plans[0].desc, s.desc, Cf.MARK_ALIGN_TOL), fp = faceOf(s.face, plans, env, s.desc);
       if (!fp) return { k: k, w: null, why: 'not drawn (role=elev): no wall envelope and no grid on the face side of the base plan' };
       if (!al.map || !al.map.zOf) return { k: k, w: null, warn: 'elevation does not align: not drawn ' + JSON.stringify(al.errors) };
       var fc = fp.v, ax = al.map.axis;
@@ -178,7 +181,7 @@
   // values were in place: DxfMetaEditor.preview). A VIEW: nothing is marked, accepted or saved; verdict / gate / Convert read the accepted markings only. A stage is
   // computed only from the values applied so far; the last stage of a sheet the canvas places IS placeOf's w (buildCanvas). Log §DXF-ARRANGE. ----
   var TAGA = '§DXF-ARRANGE', K0 = 0.001, YEL = 0xf5d90a, ORG = 0xff7a1a;   // §D36 ORG: the inferred tier (the panel's .dm-pr.inf)
-  var KEY_ORDER = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDH', 'FACE', 'CUT'];   // the placing keys, in the order a sheet is placed
+  var KEY_ORDER = ['UNITS', 'VIEW', 'LEVEL', 'ROOF', 'Z', 'HAXIS', 'GRIDX', 'GRIDY', 'GRIDA', 'GRIDH', 'FACE', 'PLANE', 'CUT'];   // the placing keys, in the order a sheet is placed
   var NEED = { PLAN: ['UNITS', 'VIEW', 'LEVEL', 'GRIDX', 'GRIDY'], ROOF: ['UNITS', 'VIEW', 'ROOF'], ELEV: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'FACE'], SECTION: ['UNITS', 'VIEW', 'Z', 'HAXIS', 'GRIDH', 'CUT'] };
   var VIEW_ROLE = { PLAN: 'plan', ROOF: 'roof', ELEV: 'elev', SECTION: 'section' }, RANK = { PLAN: 0, ROOF: 1, ELEV: 2, SECTION: 3 };
   var _envMemo = {};
@@ -196,7 +199,7 @@
       it.ref = ref; it.env = env; it.need = NEED[v] || ['UNITS']; it.zs = d.zs && d.zs.length ? d.zs[0] : null;
       if ((v === 'ELEV' || v === 'SECTION') && d.haxis) it.hax = { axis: d.haxis.slice(1), s: d.haxis[0] === '+' ? 1 : -1 };
       if (it.hax && ref && it.k) { var al = MK.align(ref.d, d, Cf.MARK_ALIGN_TOL); it.map = al.map; it.alErr = (al.errors || []).map(function (e) { return e.code; }).filter(function (c) { return c !== 'MARK:level_scale_fail'; }); }
-      var refP = ref ? { desc: ref.d, factor: ref.k } : null, fp = v === 'ELEV' && d.face && refP ? faceOf(d.face, [refP], env) : null;
+      var refP = ref ? { desc: ref.d, factor: ref.k } : null, fp = v === 'ELEV' && d.face && refP ? faceOf(d.face, [refP], env, d) : null;
       it.fc = fp ? fp.v : null; it.fcDefault = !!(fp && fp.dflt);
       if (v === 'PLAN' && ref && it !== ref && it.k && window.Dxf2Bodies && window.Dxf2Bodies.planOffset) it.off = window.Dxf2Bodies.planOffset(refP, { desc: d, factor: it.k }, ALIGN_TOL);
       if (v === 'SECTION' && d.cut && it.k) { var cp = String(d.cut).split(','); it.cut = { ax: cp[0], v: Number(cp[1]) * it.k }; }
@@ -206,6 +209,14 @@
         var ps = { role: VIEW_ROLE[v], factor: it.k, desc: d, level: d.level, roofZ: d.roof, face: d.face, cut: d.cut };
         if ((v === 'PLAN' && typeof d.level === 'number') || (v === 'ROOF' && typeof d.roof === 'number') || (v === 'ELEV' && d.face && d.haxis && it.zs) || (v === 'SECTION' && d.cut && d.haxis && it.zs)) {
           var pl = placeOf(ps, [it === ref ? ps : refP], env, Cf); if (pl.w) it.place = pl; }
+      }
+      // §D108 best-effort shape: an elevation the axis route cannot place, that names its line (@PLANE): placed along that line. A view only: the gate still reads the accepted markings.
+      if (!it.place && v === 'ELEV' && d.plane !== undefined && ref && it.k && it.zs && window.Dxf2Panels && window.Dxf2Panels.planeFit) {
+        var ebx = window.DxfImportUI.segs2d(it.s.dxf.entities.filter(function (e) { return e.layer !== 'DXF2BIM-MARK'; })).s, ehs = []; for (var ei = 0; ei < ebx.length; ei += 2) ehs.push(ebx[ei]);
+        var hc0 = ehs.length ? (Math.min.apply(null, ehs) + Math.max.apply(null, ehs)) / 2 : 0, DFs = window.Dxf2Defaults && state.defaultsRef ? window.Dxf2Defaults.create(state.defaultsRef, state.sheets || [], (window.DxfMetaEditor.state && window.DxfMetaEditor.state.defaultChoices) || {}) : null;
+        var pf = window.Dxf2Panels.planeFit(refP, d, { k: it.k, hc: hc0, mode: DFs && DFs.has('suggest.elev_no_grid') ? DFs.get('suggest.elev_no_grid') : undefined });
+        if (pf) { var z0p = it.zs, kp = it.k; it.pf = pf; it.need = ['UNITS', 'VIEW', 'Z', 'PLANE']; it.place = { k: kp, pf: pf, w: function (h, y) { var q = pf.at(h); return [q[0], q[1], z0p.z + (y - z0p.y) * kp]; } };
+          console.log(TAGA + ' plane sheet=' + it.name + ' line=' + d.plane + ' fit=' + pf.fit + ' labels=' + pf.n + (pf.spread === null ? ' (centred on its wing: along-the-wall position not read)' : ' spread=' + (Math.round(pf.spread * 1e4) / 1e4) + ' m')); }
       }
       // the steps: accepted placing markings (one per key) + yellow bands (one per key, all rows of that key), merged in KEY_ORDER; other yellow keys after
       var acc = {}; it.P.marks.forEach(function (m) { if (it.need.indexOf(m.key) >= 0) acc[m.key] = acc[m.key] || []; if (acc[m.key]) acc[m.key].push(m); });
@@ -248,7 +259,9 @@
     if (key === 'Z') return !A.UNITS ? 'needs @UNITS' : 'the datum is at its own height';
     if (key === 'HAXIS') return d.haxis === '+X' ? '+X: unchanged' : 'unchanged';
     if (key === 'GRIDH') return !it.hax || !A.HAXIS ? 'needs @HAXIS' + (it.ref ? '' : ' (no plan with @LEVEL to fit against)') : !it.map ? 'does not align: ' + (it.alErr || []).join(',') : 'already on the grid';
-    if (key === 'FACE') return !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.fc === null || it.fc === undefined ? 'no face plane: no wall envelope and no grid on that side of the base plan' : 'already on its face';
+    if (key === 'GRIDA') return 'the reference plan: a grid line in its own direction';
+    if (key === 'PLANE') return it.pf ? 'stands on line ' + d.plane : 'the grid line it stands on';
+    if (key === 'FACE') return it.pf ? 'the line it stands on decides' : !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.fc === null || it.fc === undefined ? 'no face plane: no wall envelope and no grid on that side of the base plan' : 'already on its face';
     if (key === 'CUT') return !it.hax || !A.HAXIS ? 'needs @HAXIS' : it.cut && it.cut.ax === it.hax.axis ? 'the cut runs along @HAXIS' : 'already on its cut';
     return key === 'NAME' ? 'names the sheet' : key === 'SET' ? 'names the set' : 'not a placing value';
   }
@@ -517,7 +530,7 @@
   // STANDS NOW (the Arrange view's preview placement while the view stands, else the canvas; a sheet neither draws is shown at its preview placement, or as
   // drawn when no value places it), framed in the canvas right of the panels; the evidence highlighted (thick), every other sheet dimmed; Esc, a click on the
   // canvas or the row again restores. A VIEW: nothing is marked, accepted, judged or saved. Log §DXF-EVIDENCE. ----
-  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
+  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1, 'PR-PLANE': 1, 'PR-SHEETNO': 1, 'PR-FACE-PLANE': 1, 'PR-GRID-A': 1, 'PR-LEVEL-NAME': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
   function allOf(segOf) { var P = []; Object.keys(segOf).forEach(function (h) { var a = segOf[h]; for (var i = 0; i < a.length; i++) P.push(a[i]); }); return P; }
   function wbox(P) { if (!P.length) return null; var b = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]; for (var i = 0; i < P.length; i += 3) for (var a = 0; a < 3; a++) { if (P[i + a] < b[0][a]) b[0][a] = P[i + a]; if (P[i + a] > b[1][a]) b[1][a] = P[i + a]; } return b; }
   function evSheet(name, X) {   // where the sheet stands now: { mode canvas | preview | as drawn, w (drawing units -> world m), segOf, drawn (already on screen), d (its desc), dxf }
@@ -583,7 +596,7 @@
       else E.sheets[P.name] = 1;
     }
     if (r === 'PR-FACE' && P) {   // the elevation on its face plane beside the plan's outer wall: the envelope edge (or the end grid line, structure sets) + the plane
-      var face = String(row.value), fp = faceOf(face, [{ desc: Rf.d, factor: Rf.k }], Rf.env), ay = face === 'minY' || face === 'maxY', span = null;
+      var face = String(row.value), fp = faceOf(face, [{ desc: Rf.d, factor: Rf.k }], Rf.env, S.d), ay = face === 'minY' || face === 'maxY', span = null;
       if (!fp) E.notes.push('no face plane: no wall envelope and no grid on that side of ' + Rf.name);
       else {
         if (Rf.env) span = ay ? [Rf.env[0], Rf.env[2]] : [Rf.env[1], Rf.env[3]];
@@ -592,7 +605,7 @@
         if (span) { var fa = ay ? [span[0], fp.v, zl] : [fp.v, span[0], zl], fb = ay ? [span[1], fp.v, zl] : [fp.v, span[1], zl], fc = [fb[0], fb[1], z1], fd = [fa[0], fa[1], z1];
           put(E.hl, fa, fb); put(E.hl2, fa, fd); put(E.hl2, fb, fc); put(E.hl2, fd, fc); E.tri.push.apply(E.tri, fa.concat(fb, fc, fa, fc, fd)); }
         var on = eb && Math.abs((ay ? eb[0][1] : eb[0][0]) - fp.v) < 0.01 && Math.abs((ay ? eb[1][1] : eb[1][0]) - fp.v) < 0.01;
-        E.notes.push((fp.dflt ? 'the end grid line ' : 'the wall envelope edge ') + face + ' = ' + r3(fp.v) + ' m of ' + Rf.name + (fp.dflt ? ' (panel.plane default: no wall envelope)' : '') + (on ? '' : '; the elevation does not stand on it yet'));
+        E.notes.push((fp.plane ? 'the grid line this sheet states (@PLANE) ' : fp.dflt ? 'the end grid line ' : 'the wall envelope edge ') + face + ' = ' + r3(fp.v) + ' m of ' + Rf.name + (fp.dflt ? ' (panel.plane default: no wall envelope)' : '') + (on ? '' : '; the elevation does not stand on it yet'));
       }
     }
     if (r === 'PR-HAXIS' && P) {   // the elevation's grid lines carried down onto the plan's grid lines of the same label (a wrong axis / sign shows as crossing lines)

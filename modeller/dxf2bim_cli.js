@@ -67,7 +67,8 @@ function run(args, log) {
   const SETX = I.setWith('DX');
   const ctx = { MK, sheets: () => sheets,
     gridLayers: sh => SETX.QUALIFY.layers.grid.concat(sh.marks.filter(m => m.key === 'LAYER' && /,grid$/.test(m.value)).map(m => m.value.replace(/,grid$/, ''))),
-    levelLayers: () => SETX.MAP_LEVL.rules.filter(r => r.type === 'levelline').map(r => r.pattern) };
+    levelLayers: () => SETX.MAP_LEVL.rules.filter(r => r.type === 'levelline').map(r => r.pattern),
+    setting: k => { const c = (args.choice || []).find(q => q.startsWith(k + '=')); return c ? c.slice(k.length + 1) : undefined; } };   // §D107
   const sug = SG.create(ctx), get1 = SG.get1, viewOf = SG.viewOf;
   const put = (sh, key, value, x, y, rule) => {   // the page's confirm: a single key replaces, a multi key adds (once)
     const multi = SG.SINGLE_POS[key] !== undefined || ['EXCLUDE', 'WALLTOP', 'TAG', 'LAYER', 'BODYZ', 'SCHEDULE', 'LABEL', 'OPENING'].includes(key);

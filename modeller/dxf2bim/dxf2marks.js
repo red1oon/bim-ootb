@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT'];
   var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -36,7 +36,7 @@
   }
 
   function describe(marks) {
-    var d = { gridsX: {}, gridsY: {}, gridsH: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], defaults: [], by: {} }, errors = [];
+    var d = { gridsX: {}, gridsY: {}, gridsH: {}, gridsA: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], defaults: [], by: {} }, errors = [];
     marks.forEach(function (m) {
       // lane spec L2.7 (5): @BY=model|user is a SUFFIX in the same TEXT and qualifies only that TEXT's marking; none -> 'file'
       var raw = m.raw, by = 'file', nBy = (raw.match(/@BY=/g) || []).length;
@@ -161,6 +161,10 @@
         if (xp.length !== 4 || xp.some(function (n) { return !isFinite(n); })) { errors.push(err('MARK:malformed', '@EXCLUDE needs x0,y0,x1,y1: ' + val, { handle: m.handle })); return; }
         var xr = [Math.min(xp[0], xp[2]), Math.min(xp[1], xp[3]), Math.max(xp[0], xp[2]), Math.max(xp[1], xp[3])];
         if (!d.excludes.some(function (q) { return q.join(',') === xr.join(','); })) d.excludes.push(xr);
+      } else if (key === 'GRIDA') {   // §D108 a plan grid line in any direction: <label>,<angle deg> at a point of the line
+        var ga = val.split(','), gaa = Number(ga[1]);
+        if (ga.length !== 2 || !ga[0].trim() || !isFinite(gaa)) { errors.push(err('MARK:malformed', '@GRIDA needs <label>,<angle deg>: ' + val, { handle: m.handle })); return; }
+        d.gridsA[ga[0].trim()] = { x: m.x, y: m.y, angle: gaa };
       } else if (key === 'Z') {
         var z = Number(val); if (!isFinite(z)) { errors.push(err('MARK:malformed', '@Z not a number: ' + val, { handle: m.handle })); return; }
         var dup = d.zs.find(function (q) { return q.z === z; });

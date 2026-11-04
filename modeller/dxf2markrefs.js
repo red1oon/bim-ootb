@@ -33,5 +33,15 @@
     return { rows: rows, advisories: adv, log: '§MARKREFS marks=' + rows.length + ' modelled=' + n('modelled') + ' not_modelled=' + n('not_modelled') + ' detail_only=' + n('detail_only') + ' no_detail=' + rows.filter(function (r) { return !r.details.length; }).length +
       ' ' + rows.map(function (r) { return r.mark + ':' + r.status + '(t' + r.nTags + ',b' + r.bodies + ',d' + r.details.length + (r.details.some(function (d) { return d.via === 'abbreviation'; }) ? ',abbr' : '') + ')'; }).join(' ') };
   }
-  return { build: build };
+  // §D107 the sheets the set refers to and does not hold. held = @SHEETNO of the sheets; a text counts only when its prefix and digit count match a held number, so a door mark like EX-03 never counts.
+  function sheetRefs(sheets, o) {
+    o = o || {}; var clean = o.clean || function (t) { return String(t || '').trim(); }, held = {}, forms = {}, refs = {};
+    (sheets || []).forEach(function (s) { var n = s.desc && s.desc.sheetno; if (!n) return; held[n] = 1; var m = /^([A-Z]+)-(\d+)$/.exec(n); if (m) forms[m[1] + ':' + m[2].length] = 1; });
+    (sheets || []).forEach(function (s) { ((s.dxf && s.dxf.entities) || []).forEach(function (e) { if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === 'DXF2BIM-MARK') return; var m = /^([A-Z]+)-(\d+)$/.exec(clean(e.text)); if (m && forms[m[1] + ':' + m[2].length]) refs[m[0]] = (refs[m[0]] || 0) + 1; }); });
+    var missing = Object.keys(refs).filter(function (r) { return !held[r]; }).sort();
+    return { held: Object.keys(held).sort(), referred: Object.keys(refs).sort(), missing: missing, counts: refs,
+      advisories: missing.map(function (r) { return { code: 'QF:sheet_referred_missing', sheet: '(set)', handles: [], message: 'sheet ' + r + ' is referred to ' + refs[r] + ' time(s) and is not in this set' }; }),
+      log: '§SHEETREFS held=' + Object.keys(held).length + ' referred=' + Object.keys(refs).length + ' missing=' + (missing.join(',') || 'none') };
+  }
+  return { build: build, sheetRefs: sheetRefs };
 });

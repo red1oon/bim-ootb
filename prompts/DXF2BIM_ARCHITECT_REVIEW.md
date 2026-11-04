@@ -54,6 +54,9 @@ from this lane's own recipe (RESUME above: `modeller/dxf2bim_cli.js --sheets ~/V
 `~/Projects/SYSNOVA/DXF2BIM/ShedDrawing/model/ShedDrawing_512_extracted.db` (`build_model.sh`), then given the 4D owner's programme and re-folded (CAPEX §5.1 R1), re-pushed, re-twinned.
 Result is recorded in `prompts/CAPEX_DASHBOARD.md`, NOT here. Nothing else of this lane is reopened: the open proposals (P-W1, P-K, P-V, P-E, P-L) and the carried list stay as written.
 
+## ▶ REOPENED 2026-11-04 for one job: §D107 yellow default rules (owner: *"Yes you should, we doing at earnest effort, to come about some default rules, that is coherent and fit, and user can as usualy set back those at the JSON or panel editing."*)
+Trigger: a real architect's set exported from Revit (private, 119 DWG, 7 disciplines; local only, never named in this repo). Spec + results at the END of this file, `## §D107`. The picks P-W1, P-K, P-V, P-E, P-L stay parked.
+
 ## Where things are in this file
 §0-§4 the original review charter · `## RESULT 2026-10-23` (sessions 1-2: HHS round trip, seams, §D56-§D59) · `## RESULT 2026-10-26` (sessions 7-8: spec/code/tutorial review, §D79
 witness dbs) · `## RESULT 2026-10-30 (session 13 …)` T13.5 + T14 · `## T14b SPEC` + RESULT · `## RR — REGULATORY REPORT` (owner's words, research, revised sections) · `## T14c SPEC` +
@@ -896,3 +899,92 @@ overlap is stated here, not merged in this task. Log `§REL_AGGREGATES rows=… 
   - save / export 5 of 6 (save 11, anchor round trip 6, export-seed 7, guid 5, spatial);
   - S8 10/0, S9 modeller 10/0, S9 IFC key 3/0; history-threads 10/0; sketch 7/0.
 - So the Modeller is **on par with its pre-session state** on the authoring set. Its 4 standing reds belong to the Modeller lane.
+
+## §D107 SPEC (2026-11-04) — yellow default rules that fit a Revit-exported set, each one a setting the user can set back
+**Issue (measured, not assumed).** A raw Revit-exported set (mm, one DWG per sheet, converted by the shed's LibreDWG route, 119 of 119) built 0 bodies and gave no role to any sheet. Measured causes, all rule gaps, none in the drawing:
+1. `PR-VIEW` / `PR-Z` read `TEXT` only (`dxf2suggest.js:195`, `:150`); Revit writes every text as `MTEXT` (502 MTEXT, 0 TEXT on one plan). Raw MTEXT also carries format codes (`\\LGROUND COLUMNS & AXES PLAN`).
+2. `PR-GRID` label grammar `^([A-Z]{1,2}|\d{1,3})$` (`:59`) refuses `A1` (10 of 29 labels); reach `perp` 0.7 m (`:58`) is short of a 1:100 bubble (measured 0.809-1.022 m on 22 of 29 lines); the grid layer list holds only `A-GRID` (`S-GRID` unread).
+3. `PR-GRID-TICK` (`:81`) runs even when the plan states its grid. Measured damage in Arrange: a plan stating A1 / A2 (x 0.28, 9.68 m) was also given yellow `1`, `2` at x 81.9 m (wall tags and dimension ticks), and an elevation's `FACE maxX` landed on 81.913 m, 72 m off. It also ignores `@REGION`.
+4. `PR-Z-GROUND` (`:107`) fires when `PR-Z` read nothing, and took the `-0.30 m` line as z 0 (CLI: `MARK:conflict`). On every line checked the sheet states the truth: level text value = its line's y (0, -300, 4000, 4800, 9050, 13800 mm). Text forms: `+4.00 m`, `EL: +4.800 m`; not matched by `([+-]\d+\.\d+)\s*$`, and not on a level layer of the map.
+5. `Dxf2Panels.facePlane` takes the end grid line of the whole base plan: `minX`/`maxX` of a set with three wings is the far wing's line. An elevation whose grid is AA..AE (wing A) goes to the end line of wing C. Titles already state the line (`WALL ELEVATION GRID A1`, 12 views).
+6. `§MARKREFS` lists `A-300`, `A-201`, `S-406` as "not modelled" marks. They are sheets the set refers to and does not hold; nothing says so.
+7. A title note makes a wrong role: `BEAM, SEE PLAN` read as PLAN. The same title written twice (`LEVEL 1 - FLOOR PLAN`, `LEVEL 1 FLOOR PLAN`) is refused as disagreeing.
+
+**Rule of this section.** No rule is a hard decision. Each is a row of `element_defaults.json`, shown in Element defaults, with the earlier behaviour as an offered option: the user sets it back in the panel, the JSON, `--choice`, or `@DEFAULT=<key>,<value>` (resolution as ever: the drawing's @DEFAULT > an editor choice > the registry). Suggestions stay suggestions: nothing becomes a marking until accepted.
+
+| Key | Default (new) | Set back to | Rule |
+|---|---|---|---|
+| `suggest.grid_ticks` | `unless_stated` | `always`; `off` | no tick rows on an axis that has 2 or more grid lines stated or read; ticks honour `@REGION` |
+| `suggest.grid_label` | `letters_digits` | `letters_or_digits` | a label may be `A1`, `BA`, `B12` as well as `A`, `AA`, `12` |
+| `suggest.grid_reach` | `1.2` (m) | `0.7` | how far from a grid line's end its label may sit |
+| `suggest.grid_along` | `0.5` (m) | `0.06` | how far sideways a label's text position may sit: CAD anchors a text at its corner (measured 0.25-0.37 m); the nearest label still wins |
+| `suggest.grid_layer` | `name_has_grid` | `a_grid_only` | a layer whose name holds `GRID` is searched for grid lines; a line with no label proposes nothing, so the layer name alone decides nothing |
+| `suggest.level_text` | `value_on_line` | `level_layer_only` | TEXT or MTEXT `[EL:] +n.nn [m]` with a horizontal line at exactly that height (value = y x units, 1 mm) is a read datum, on any layer; then `PR-Z-GROUND` does not fire |
+| `suggest.title_text` | `text_and_mtext` | `text_only` | titles from MTEXT too (codes stripped); a note (a comma, or the word SEE / REFER) is not a title; titles differing only by punctuation are one |
+| `panel.plane` | `grid family end line, centred` | `end grid line, centred` | an elevation whose grid labels share one family (`AA`, `AB` = A; `A1` = A; labels of one character or digits only have none) uses the end line of that family |
+| `suggest.sheet_refs` | `report` | `off` | sheet numbers the set refers to and does not hold become an advisory |
+
+**New markings (optional, additive; `NEED` and the gate do not change).**
+- `@PLANE=<grid label>`: the grid line this elevation stands on. `@FACE` still says which way it looks. Wins over the wall envelope and `panel.plane`. New rule `PR-PLANE` (tier read): a title ending `ELEVATION GRID <label>` where the label is a plan grid. Then `PR-FACE-PLANE` (tier inferred): when that line is the lowest or highest of its family on the plan, that end is `@FACE`; an interior line gives no face, the person states it.
+- `@SHEETNO=<number>`: this sheet's number. New rule `PR-SHEETNO` (tier read): exactly one `<1-2 letters>-<3 digits>` token in the file name. A referred number counts only when its prefix and digit count match a `@SHEETNO` of the set, so door marks like `EX-03` never count.
+- Output: `§SHEETREFS held=<n> referred=<n> missing=<list>`; advisory `QF:sheet_referred_missing`, never blocking.
+
+**Not in this section (stated):** rotated wings (`@FRAME` / Y9) stay unbuilt: skew grid lines are now counted in one `PR-GRID` refused row instead of silence. DWG reading stays an external tool (GPL, never vendored). The Convert path for walls does not use `@PLANE`.
+
+**Witness W-YELLOW-RULES (claim first; `modeller/tests/witness_dxf_yellow_rules.js`; generated sheets in the test, so it runs anywhere). Negative lines are paired with a positive line of the same rule:**
+- YR1 "a stated grid stops the ticks": plan with 2 stated X grids + a tick and a digit label: 0 tick rows on X; `always` brings the row back (old behaviour); `off` 0 with no stated grid. No stated grid: the tick row stays (the shed's path unchanged).
+- YR2 "ticks honour @REGION": a tick outside the region: 0 rows.
+- YR3 "A1 reads, and only from a line": a grid-layer line + `A1` at 1.0 m beyond its end on `S-GRID`: `PR-GRID` A1; `letters_or_digits` or reach 0.7 or `a_grid_only`: none. A line with no label on a `GRID` layer: none. A skew line: counted in a refused row.
+- YR4 "the level text reads, ground does not guess": MTEXT `+4.00 m`, `EL: +0.000 m` with lines at their heights + a longer lower line at -300: `PR-Z` 4 and 0; no `PR-Z-GROUND`. Text with no line at its height: not read. `level_layer_only`: old result.
+- YR5 "titles": MTEXT title with codes gives PR-VIEW; `BEAM, SEE PLAN` gives none; two spellings of one title give PR-VIEW; `text_only`: old result.
+- YR6 "the plane": 3 families of X grids; elevation AA..AE with FACE maxX: `facePlane` = wing A's end line; set back: the far line; `@PLANE=A1` wins over both. Single-family and no-family sets: identical to before.
+- YR7 "PR-PLANE": title `WALL ELEVATION GRID A1` proposes `@PLANE=A1`; a label the plan does not hold: none.
+- YR8 "missing sheets": two sheets with `@SHEETNO` A-100, S-012 referring to A-300, EX-03, S-012: missing = A-300 only; `off`: none; never blocking.
+- YR9 "@DEFAULT sets it back": every key above, set by a drawing's `@DEFAULT`, gives the same as the choice.
+- Regression, unchanged counts: W-EVIDENCE, W-ARRANGE, W-CLI (raw shed bodies 512), W-DXF-EDEFAULTS (+7 rows), W-FORMAT, W-YELLOW-PAGE, W-MARK-REFS, W-PURE, then `run_all_witnesses`.
+- Private set (SKIP loudly when `REVIT_SET_DIR` is absent, no sheet text printed): raw plan + elevations, roles and grids read with no hand marking, each annex's face within 1 mm of its own grid line.
+
+## §D108 SPEC (2026-11-04) — BEST-EFFORT SHAPE: the whole set stands up in Arrange, gaps listed for later
+**Owner:** *"yes add all three to the spec.. the idea is to salvage best effort shape. There may be gaps, which can be tackled later"*. Goal of this section: a raw Revit-exported set reads as the building in Arrange. It is a VIEW goal: no gate, Convert or body rule changes.
+
+**Issue (measured on the private set, after §D107, a structure plan + 8 wall elevations, nothing typed).** 6 of 8 elevations stand on their grid lines. Three things stop it reading as a building:
+1. The largest wing has a grid rotated 16.17° off the sheet axes: `PR-GRID` counts its 10 lines and reads none, its 4 elevations (grids BF, B4, BA, B1) have no `@HAXIS` and stay flat. `@HAXIS` / `@FACE` can only state the sheet axes.
+2. Two elevations draw no grid line of their own (`AA`, `CE`): they know their line from the title and their heights from their levels, but no along-the-wall position, so they lie flat at drawn coordinates (one about 200 m away).
+3. Only one plan level shows. The other levels' titles and values exist on the sheets: elevations pair a name with a value (`HALL LEVEL 01` / `EL: +4.800 m`, `HALL ROOF` / `EL: +9.050 m`, `HALL GROUND FLOOR` / `EL: +0.000 m`) and plans are titled `LEVEL 1 FRAMING PLAN`, `LEVEL 2 ROOF FRAMING PLAN`.
+
+**Rules (each a setting with the earlier behaviour on offer, as §D107).**
+
+| Key | Default | Set back to | Rule |
+|---|---|---|---|
+| `suggest.grid_rotated` | `read` | `off` | a grid-layer line off the sheet axes with its label at one end proposes `@GRIDA` (tier read) instead of only being counted |
+| `suggest.elev_no_grid` | `centre_on_wing` | `lie_flat` | an elevation that names its line but draws no grid: centred along the line on the span of its family, tinted yellow and said so; its heights stay read |
+| `suggest.level_name` | `read` | `off` | a plan's title and an elevation's level name that agree give `@LEVEL` (tier read): `LEVEL n` first (`01` = `1`), else ROOF, GROUND or BASEMENT; the most-named value wins and the row states the others (measured: `HALL LEVEL 01` at +4.800 on 4 sheets, a stray `Level 1` at +0.000 on 1); a tie = refused with both |
+
+**New marking (optional, additive).** `@GRIDA=<label>,<angle deg>` at a point of the line: a plan grid line in any direction. `@PLANE` may name it.
+
+**The one placement rule.** `Dxf2Panels.planeFit(base, desc, k, mode)` (pure, Node + browser): the line `@PLANE` names, from `gridsX`, `gridsY` or `gridsA`, as a point + unit direction. Each `GRIDH` label whose plan line crosses it gives a distance along the line; fit `s = sign x h x k + offset` over 2 or more labels, the sign with the smaller spread, the spread reported. Fewer than 2 crossing labels: `centre_on_wing` when set, reported `fit: centred`; otherwise null. World point = line point + direction x s, height from `@Z` as the Arrange preview does (one datum is enough). Arrange uses it only where the axis route (`@HAXIS` + `MK.align`) cannot place the sheet, so a sheet the axis route places does not move.
+Step `PLANE` joins `KEY_ORDER`; the sheet tints yellow as any default; a centred sheet says so in its step and its stands line.
+
+**Intake (local tool, not product; DWG reading stays external).** `analysis/tools/` in the private set's folder: one DXF per viewport, named by sheet + title, title kept as text; SPLINE, ELLIPSE, POLYLINE3D flattened to polylines on their layer; INSERTs exploded so block geometry shows (Arrange draws LINE, LWPOLYLINE, ARC, CIRCLE only). Counts logged.
+
+**Known gaps, deliberately left (for later, in order):**
+- Convert: a rotated elevation has no `@HAXIS` / `@FACE`, so the gate still refuses it. Shape shows in Arrange; no bodies from those sheets yet.
+- The curved roof: its framing shows as lines at one flat level; no curved surface. The drawn curve in the elevations stands in its true place.
+- Foundation plan: `FOUNDATION` matches no level name. Its own `T/FOOTING: -1.250 m` could give it later.
+- The architecture and structure grids differ by up to 3 mm (minaret 120 mm): each discipline keeps its own plan.
+- Intake as a product feature; blocks and curves drawn by the product's own canvas.
+
+**Witness (claim first).** W-YELLOW-RULES adds, generated data, known answers:
+- YR11 rotated rows: a labelled line at 73.835° proposes `@GRIDA`; `off`: none, only counted; an unlabelled one: none. `@DEFAULT` sets it back.
+- YR12 `planeFit` on a rotated line: world points of a sheet with 2 or more crossing labels land on the line within 1e-6 m, with the right sign for a reversed sheet; the spread reported.
+- YR13 an axis-parallel line gives the same point as the axis route (`MK.align` + `facePlane`), within 1e-6 m: one rule, not two.
+- YR14 no crossing labels: `centred` on the family span with its mode, null with `lie_flat`.
+- YR15 levels: `LEVEL 1 ... PLAN` + `HALL LEVEL 01` / `EL: +4.800 m` gives 4.8; `01` and `1` agree; two values refused; no match none; `off` none.
+- Private set (SKIP loudly when absent): in the real Modeller's Arrange, numbers only: every sheet placed, each elevation's points on its line within 5 mm, every sheet inside the footprint of the plan + 10 m, plans at their stated levels. **INCONCLUSIVE, never PASS, when fewer than 3 plans or 12 elevations were judged.**
+
+**§D107 + §D108 RESULT (2026-11-04): BUILT.** Rules + registry rows as specified (65 -> 76 settings); `@PLANE`, `@SHEETNO`, `@GRIDA`; `Dxf2Panels.planeFit` / `gridLine`; Arrange step `PLANE`. Deviations from the spec, each measured: an MTEXT counts as a title only in capitals (the first run gave a details sheet a false SECTION role from the label `Footing Section`: W-ARRANGE A9a, W-DATUM-PICK P0 caught it, fixed, both PASS); `suggest.grid_along` added (a text anchors at its corner: 0.25-0.37 m off its line); `PR-FACE-PLANE` added (the end line of a family gives `@FACE`); the level rule takes the most-named value and states the others.
+**W-YELLOW-RULES 69/0** (generated sheets, each rule's set-back option and `@DEFAULT` proven). **W-GUARD PASS** (thresholds 138 = baseline). **Runner:** `§ALLWITNESS PASS=110 ENV=9 FAIL=1 of 120`; the one FAIL is LT7, the standing item from session 18; W-YELLOW-PAGE PASS against the regenerated page (BIMCompiler PR, same day).
+**Private set, real Modeller, Arrange, nothing typed by hand (15 sheets; intake local, not in this repo):** `3 plans at 0, 4.8, 9.05 m (from level names); 12 elevations placed, all inside the footprint + 10 m, each on its named line to 0 mm; the 4 rotated-wing elevations fit their grid (3 with spread 0.0000 m, 1 centred); annex elevations on grid lines; 3 of 12 centred (`fit=centred`, along-the-wall position not read). 0 page errors. This is placement, not correctness: no answer key is available for this set yet.
+**Convert on the same set:** one annex alone qualifies with 5 columns and no walls; a rotated elevation is still refused. **NEXT:** (1) annex walls: mix walls and structure in one set (the guide's standing limit); (2) rotated wing through Convert: connect `@GRIDA` / `@PLANE` to `@FRAME`; (3) the curved roof as a loft through the drawing's own spot levels (`GEOM_LOFT` exists, untried). Open questions are with the owner's reviewer.
+**Parked proposals still unbuilt:** one DWG to many sheets at intake, Revit layer table as yellow rows (Y7, Y10).
+

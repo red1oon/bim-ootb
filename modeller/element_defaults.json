@@ -538,11 +538,12 @@
   },
   "panel.plane": {
    "element": "IfcWall",
-   "value": "end grid line, centred",
+   "value": "grid family end line, centred",
    "unit": "text",
    "kind": "guess",
-   "basis": "an elevation panel is placed on the outermost grid line of its face, centred",
+   "basis": "an elevation panel is placed on an end grid line of its face, centred. An elevation whose grid labels share one family (AA, AB or A1 = family A; a label of one character or digits only has none) uses that family's end line, so a set of several wings keeps each elevation on its own wing (§D107); set back to the plan's outermost line with 'end grid line, centred'. @PLANE=<grid label> on the sheet wins over both",
    "options": [
+    "grid family end line, centred",
     "end grid line, centred"
    ],
    "used_by": "dxf2panels"
@@ -763,6 +764,139 @@
     "PINNED"
    ],
    "used_by": "dxf2analytical (§D103)"
+  },
+  "suggest.grid_ticks": {
+   "element": "suggest",
+   "value": "unless_stated",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "grid lines guessed from dimension ticks: not on an axis where the sheet states or reads 2 or more grid lines, and not outside its @REGION (§D107: a stated plan was given wall tags as grids and an elevation landed 72 m away). 'always' = the earlier behaviour",
+   "options": [
+    "unless_stated",
+    "always",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.grid_label": {
+   "element": "suggest",
+   "value": "letters_digits",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "the labels read from a grid line's end: A, AA, 12 and also A1, B12 (§D107: 10 of 29 labels of a Revit-exported plan). 'letters_or_digits' = the earlier grammar",
+   "options": [
+    "letters_digits",
+    "letters_or_digits"
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.grid_reach": {
+   "element": "suggest",
+   "value": 1.2,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far beyond a grid line's end its label may sit: a bubble's centre at 1:100 (measured 0.809 to 1.022 m on a Revit-exported plan, §D107). 0.7 = the earlier reach",
+   "options": [
+    0.7,
+    1.2
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.grid_layer": {
+   "element": "suggest",
+   "value": "name_has_grid",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "layers searched for grid lines: any layer whose name holds GRID (a line with no label proposes nothing, so the name alone decides nothing, §D107). 'a_grid_only' = the template's layer and the layers you typed as grid",
+   "options": [
+    "name_has_grid",
+    "a_grid_only"
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.level_text": {
+   "element": "suggest",
+   "value": "value_on_line",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a level datum is read from a TEXT or MTEXT such as +4.00 m or EL: +4.800 m when a horizontal line lies at exactly that height, on any layer; the value and the line are two separate facts that must agree (§D107). 'level_layer_only' = the earlier rule",
+   "options": [
+    "value_on_line",
+    "level_layer_only"
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.title_text": {
+   "element": "suggest",
+   "value": "text_and_mtext",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a sheet's role is read from TEXT and MTEXT titles; a note (a comma, or SEE / REFER) is not a title, and two spellings of one title are one (§D107). 'text_only' = the earlier rule",
+   "options": [
+    "text_and_mtext",
+    "text_only"
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.sheet_refs": {
+   "element": "suggest",
+   "value": "report",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "sheet numbers the set refers to but does not hold are listed as an advisory; it never blocks (§D107). 'off' = no list",
+   "options": [
+    "report",
+    "off"
+   ],
+   "used_by": "dxf2markrefs (§D107)"
+  },
+  "suggest.grid_along": {
+   "element": "suggest",
+   "value": 0.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far sideways a grid label's text position may sit from its line: CAD anchors a text at its corner, not its bubble's centre (measured 0.25 to 0.37 m on a Revit-exported plan, §D107); the nearest label still wins. 0.06 = the earlier value",
+   "options": [
+    0.06,
+    0.5
+   ],
+   "used_by": "dxf2suggest (§D107)"
+  },
+  "suggest.grid_rotated": {
+   "element": "suggest",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a grid line off the sheet axes with its label at one end is read as a plan grid line in its own direction (@GRIDA, §D108). 'off' = only counted",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D108)"
+  },
+  "suggest.elev_no_grid": {
+   "element": "suggest",
+   "value": "centre_on_wing",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "an elevation that names its grid line but draws no grid: centred along that line on the span of its wing, tinted and said so; its heights stay read (§D108: best-effort shape). 'lie_flat' = it stays as drawn",
+   "options": [
+    "centre_on_wing",
+    "lie_flat"
+   ],
+   "used_by": "dxf_import_ui Arrange (§D108)"
+  },
+  "suggest.level_name": {
+   "element": "suggest",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a plan's level is read when its title and an elevation's level name agree: LEVEL 1 PLAN with LEVEL 01 beside EL: +4.800 m (§D108). 'off' = no such row",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D108)"
   }
  },
  "building_types": {
