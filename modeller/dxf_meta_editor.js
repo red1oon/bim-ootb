@@ -1063,7 +1063,7 @@
     var r = g && g.R && g.R.bodies && g.R.bodies.report, D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef; S.guide = (r && r.guide) || null; S.guideLabels = rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].labels : null;
     if (!S.guide && !(r && 'guide' in r) && window.Dxf2GapGuide && guideOn(rf)) {   // §D110 G6d the gate has not judged: the lists still say what they say, with nothing typed
       var held = {}; S.sheets.forEach(function (sh) { var mk = (sh.marks || []).filter(function (q) { return q.key === 'SHEETNO'; })[0], pr = mk ? null : (proposalsFor(sh).list || []).filter(function (q) { return q.rule === 'PR-SHEETNO'; })[0], n = mk ? mk.value : pr ? pr.value : null; if (n) held[n] = 1; });
-      var gR = window.Dxf2GapGuide.fromRaw(S.sheets, held, { min_rows: rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].min_rows : undefined }); S.guide = gR.counts ? gR : null; }
+      var gR = window.Dxf2GapGuide.fromRaw(S.sheets, held, { min_rows: rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].min_rows : undefined }); S.guide = gR; }   // no list: the section says so, it does not vanish
     if (S.guide && window.Dxf2GapGuide) window.Dxf2GapGuide.logLines(S.guide).forEach(function (l) { console.log(l); });
   }
   function render() {

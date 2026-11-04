@@ -448,6 +448,8 @@ ok('YR38o no legend on the sheet: marks say nothing, no_statement, never not_iss
 ok('YR38p every missing row carries its evidence: sheet, handle, position', gv.missing_list.every(r => r.sheet === 'rev.dxf' && r.handle && typeof r.x === 'number' && typeof r.y === 'number'));
 ok('YR38q a list with no marks at all cannot speak to issue', GG.guide({ gaps: [], els: [] }, REGR, {}, {}).counts.no_statement === 7);
 ok('YR38r isListSheet: the words and a number header together; either alone is not', GG.isListSheet(regHold) && !GG.isListSheet(sheet('n.dxf', [T('MTEXT', 'S', 'DRAWING LIST', 5, 5)], [])) && !GG.isListSheet(sheet('h.dxf', [T('MTEXT', 'S', 'SHEET NUMBER', 5, 5)], [])));
+ok('YR38s the other wordings of a list count: DRAWING REGISTER, Sheet Index, with the mixed-case header', ['DRAWING REGISTER', 'Sheet Index', 'INDEX OF DRAWINGS'].every(w => GG.isListSheet(sheet('r.dxf', [T('MTEXT', 'S', w, 5, 5), T('MTEXT', 'S', 'Sheet number', 5, 9)], []))));
+ok('YR38t PR-VIEW takes the same words', vals(props(sheet('r.dxf', [T('MTEXT', 'S', 'DRAWING REGISTER', 5, 5), T('MTEXT', 'S', 'SHEET NUMBER', 20, 800), T('MTEXT', 'S', 'GROUND FLOOR PLAN', 40, 770), T('MTEXT', 'S', 'ROOF PLAN', 40, 760)], [])), 'PR-VIEW', 'VIEW') === 'DRAWING');
 const needs = { 'GAP:door_tag_no_row': ['DOOR SCHEDULE'], 'limit:stair_short': ['STAIR'], 'GAP:wall_curved': ['NOTHING MATCHES THIS'], 'limit:roof_edge': ['ROOF PLAN'] };
 const gres = { gaps: [{ code: 'GAP:door_tag_no_row' }, { code: 'GAP:door_tag_no_row' }, { code: 'GAP:wall_curved' }, { code: 'GAP:other' }], els: [], report: { stairs: { short_m: { 'STAIR A@0': 1.2 } }, roof: { spots: 12 } } };
 const gd = GG.guide(gres, REGR, { 'A-500': 1 }, needs), gRow = n => gd.rows.find(r => r.need === n);
@@ -480,6 +482,8 @@ console.log(d1);
 ok('YR40a two runs of the guide and of status_diff are byte-equal', d1 === d2 && g1 === g2);
 ok('YR40b a planted change moves that row and moved, nothing else', /§STATUS doors 54 of 64 -> 60 of 64/.test(d1) && /§STATUS columns 25 of 25 -> 25 of 25/.test(d1) && /§STATUS_TOTAL moved=1/.test(d1));
 ok('YR40c no clock, path or random value in the output', !/\d{4}-\d{2}-\d{2}|\/home|\/tmp|Math\.random/.test(d1 + g1));
+const sA = { ok: true, rows: [], guide: { counts: { listed: 5, loaded: 2, missing: 3, not_issued: 1, issued_not_loaded: 1, no_statement: 1 }, missing_list: [{ no: 'A-1' }, { no: 'A-2' }, { no: 'A-3' }] } }, sB = { ok: true, rows: [], guide: { counts: { listed: 5, loaded: 3, missing: 2, not_issued: 1, issued_not_loaded: 0, no_statement: 1 }, missing_list: [{ no: 'A-1' }, { no: 'A-3' }] } };
+ok('YR40e a second open: loaded and what it closed come from the two runs, and no class counts as moved', /§STATUS_SHEETS listed=5 loaded 2 -> 3 \(\+1\) missing 3 -> 2 .*issued_not_loaded 1 -> 0 .*now_loaded=1/.test(SD.diff(sA, sB)) && /§STATUS_TOTAL moved=0/.test(SD.diff(sA, sB)));
 ok('YR40d a refused stage says so, not a row of zeros passed off as a result', /§STATUS_GATE refused=2/.test(SD.diff(scA, { ok: false, refused: 2, rows: [] })));
 }
 // §D110 YR41 each reading rule, on its positive and its set-back

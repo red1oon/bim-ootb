@@ -8,11 +8,11 @@
   else root.Dxf2GapGuide = factory({ BM: root.Dxf2Beams });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var clean = D.BM.parts.clean, HEAD = /^(?:SHEET|DRAWING)\s+(?:NUMBER|NO\.?)$/i, NUM = /^[A-Z]{1,3}-?\d{1,4}[A-Z]?(?:\s*\([A-Z0-9]+\))?$/, TOTAL = /\btotal\s*:?\s*(\d+)$/i, MARK = /^[\u25cf\u2022]$/, LEGEND = /\bBLANK FIELDS?\b/i;
+  var clean = D.BM.parts.clean, HEAD = /^(?:SHEET|DRAWING)\s+(?:NUMBER|NO\.?)$/i, NUM = /^[A-Z]{1,3}-?\d{1,4}[A-Z]?(?:\s*\([A-Z0-9]+\))?$/, TOTAL = /\btotal\s*:?\s*(\d+)$/i, LIST_WORDS = /^(?:(?:DRAWING|SHEET)S? (?:LIST|REGISTER|INDEX)\b|(?:LIST|INDEX) OF (?:DRAWINGS|SHEETS)$)/i, MARK = /^[\u25cf\u2022]$/, LEGEND = /\bBLANK FIELDS?\b/i;
   var plainNo = function (n) { return String(n).replace(/\s*\(.*$/, ''); };
   var textsOf = function (s) { return ((s.dxf && s.dxf.entities) || []).filter(function (e) { return e.type === 'TEXT' || e.type === 'MTEXT'; }).map(function (e) { var q = e.position || e.startPoint || {}; return { t: clean(e.text), x: q.x, y: q.y, handle: String(e.handle || '') }; }); };
   // G6d the one test of a sheet that holds a drawing list: the words and a number header together. PR-VIEW uses it too.
-  function isListSheet(sh) { var T = textsOf(sh); return T.some(function (q) { return HEAD.test(q.t); }) && T.some(function (q) { return /^(?:DRAWING LIST\b|LIST OF DRAWINGS$)/.test(q.t); }); }
+  function isListSheet(sh) { var T = textsOf(sh); return T.some(function (q) { return HEAD.test(q.t); }) && T.some(function (q) { return LIST_WORDS.test(q.t); }); }
   // G1 a register is the column under a number header, on a sheet read as a drawing. A number's title is the nearest text to its right on its row; the row height is the column's own spacing.
   function readRegister(sheets, o) {
     var minRows = (o && o.min_rows) || 3, rows = [], registers = [], seen = {};
@@ -92,5 +92,5 @@
     g.rows.forEach(function (r) { L.push('§GAPGUIDE ' + r.need + ' count=' + r.count + ' might_help=' + r.sheets.map(function (s) { return s.no + (s.read === false ? ':set_aside' : s.held ? ':held' : ':missing'); }).join(',')); });
     return L;
   }
-  return { isListSheet: isListSheet, fromRaw: fromRaw, readRegister: readRegister, guide: guide, run: run, heldOf: heldOf, logLines: logLines, countOf: countOf };
+  return { LIST_WORDS: LIST_WORDS, isListSheet: isListSheet, fromRaw: fromRaw, readRegister: readRegister, guide: guide, run: run, heldOf: heldOf, logLines: logLines, countOf: countOf };
 });

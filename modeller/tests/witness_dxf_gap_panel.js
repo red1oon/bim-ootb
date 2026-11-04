@@ -2,7 +2,7 @@
 // ⚠ DO NOT REMOVE — W-DXF-GAP-PANEL (prompts/DXF2BIM_ARCHITECT_REVIEW.md §D110 G6, G6b). Read the log after every run: exit code is not evidence.
 // THE ISSUE THIS PROVES OR DISPROVES: "we found N missing" must be something a user SEES on the real page, with no person or AI in the loop, and it must be the SHEET saying so. The guide once ran inside the page and displayed nothing.
 // Generated sheets, so it runs anywhere; the real page, real clicks. GP1 the panel's own text gives listed / loaded / missing, GP2 equal to report.guide, GP3 a wrong printed total says DIFFERS, GP4 a matching missing sheet shows "might help" and its title,
-// GP5 no register: the INCONCLUSIVE line, no count, GP6 @DEFAULT=guide.gap_sheets,off: no section, GP11 raw files with no mark give the counts with nothing typed, GP7 0 page errors, GP8 the page logged §GAPGUIDE, GP9 each class count in the panel equals the rows, the legend is quoted, GP10 clicking a missing row opens the real sheet view with a box round that row, and the sheet's own text is inside the box.
+// GP5 no register: the INCONCLUSIVE line, no count, GP6 @DEFAULT=guide.gap_sheets,off: no section, GP11 raw files with no mark give the counts with nothing typed, GP12 raw files with no list say so, GP7 0 page errors, GP8 the page logged §GAPGUIDE, GP9 each class count in the panel equals the rows, the legend is quoted, GP10 clicking a missing row opens the real sheet view with a box round that row, and the sheet's own text is inside the box.
 // usage: NODE_PATH=~/bim-compiler/node_modules node modeller/tests/witness_dxf_gap_panel.js
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), http = require('http');
@@ -58,6 +58,8 @@ const write = (name, files) => { const d = fs.mkdtempSync(path.join(os.tmpdir(),
   console.log('§GP_RAW ' + JSON.stringify(e));
   ok('GP11 raw files, nothing typed or accepted: the panel still gives the counts and the sheet\'s classes, and says gaps are not judged', /list 6 sheets\. 3 are loaded\. 3 are missing/.test((e.counts[0] || '').replace(/\s+/g, ' ')) && e.cls.some(c => c.says === 'not_issued' && c.rows === 1) && e.cls.some(c => c.says === 'issued_not_loaded' && c.rows === 2), JSON.stringify(e.counts));
   ok('GP11b it says no gate has judged yet', await E.pg.evaluate(() => [...document.querySelectorAll('[data-gg="reason"]')].some(q => /no gate has judged/.test(q.textContent))));
+  const F = await open(write('f', { 'A-100 raw.dxf': rawSheet, 'A-101 raw.dxf': rawSheet })), f = await panel(F.pg);
+  ok('GP12 raw files with no list: the section says it cannot count, it does not vanish', f.head.length === 1 && f.none.some(t => /No sheet list in this set: missing sheets cannot be counted\. INCONCLUSIVE/.test(t)) && !f.counts.length, JSON.stringify(f.none));
   ok('GP7 0 page errors', errs === 0, String(errs));
   await br.close(); srv.close();
   console.log('§W-DXF-GAP-PANEL ' + (fails ? 'FAIL ' + fails : 'PASS') + ' judged=' + judged); process.exit(fails ? 1 : 0);

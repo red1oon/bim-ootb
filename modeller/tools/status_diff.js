@@ -7,6 +7,9 @@ const fs = require('fs');
 const val = r => (r ? r.built + ' of ' + r.evidence : '-');
 function diff(a, b) {
   const L = [], gate = s => (s.ok ? 'ok' : 'refused=' + (s.refused || 0));
+  // §D110 G4b sheets, from each run's own sheet lists: what a second open changed. Not a class of the model, so not counted in moved.
+  const ca = a.guide && a.guide.counts, cb = b.guide && b.guide.counts;
+  if (ca && cb) { const delta = cb.loaded - ca.loaded, gone = (a.guide.missing_list || []).filter(r => !(b.guide.missing_list || []).some(q => q.no === r.no)).map(r => r.no); L.push('§STATUS_SHEETS listed=' + cb.listed + ' loaded ' + ca.loaded + ' -> ' + cb.loaded + ' (' + (delta >= 0 ? '+' : '') + delta + ') missing ' + ca.missing + ' -> ' + cb.missing + ' not_issued ' + ca.not_issued + ' -> ' + cb.not_issued + ' issued_not_loaded ' + ca.issued_not_loaded + ' -> ' + cb.issued_not_loaded + ' no_statement ' + ca.no_statement + ' -> ' + cb.no_statement + ' now_loaded=' + gone.length); }
   if (gate(a) !== gate(b)) L.push('§STATUS_GATE ' + gate(a) + ' -> ' + gate(b));
   if (!b.ok) { L.push('§STATUS_GATE refused=' + (b.refused || 0) + ' nothing judged at this stage'); L.push('§STATUS_TOTAL moved=INCONCLUSIVE'); return L.join('\n'); }
   if (!a.ok) { b.rows.forEach(r => L.push('§STATUS ' + r.class + ' - -> ' + val(r))); L.push('§STATUS_TOTAL moved=INCONCLUSIVE'); return L.join('\n'); }
