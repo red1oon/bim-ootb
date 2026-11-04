@@ -85,11 +85,11 @@ function num(x) { return x == null ? null : Number(x); }
   var dict = q0("SELECT lower(c.columnname) AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)='i_payment' AND c.isactive='Y'").map(function (r) { return r.c; }).sort();
   var before = q0("SELECT name FROM sqlite_master WHERE type='table' AND name='i_payment'").length;
   check('TABLE', 'seed-gap', 'the shipped seed + patch has the 74 I_Payment dictionary columns but NO physical i_payment table (the gap B1 closes)', dict.length === 74 && before === 0, { dict: dict.length, physical: before });
-  guard('TABLE', 'ensure', 'AdImportTables.ensure(db) creates i_order AND i_payment once (returns 2), the second call creates nothing (0), and the physical i_payment columns equal the 74 dictionary columns', function () {
+  guard('TABLE', 'ensure', 'AdImportTables.ensure(db) creates i_order, i_payment AND i_product once (returns 3), the second call creates nothing (0), and the physical i_payment columns equal the 74 dictionary columns', function () {
     if (!AIT.m || typeof AIT.m.ensure !== 'function') { check('TABLE', 'ensure', 'ad_import_tables.js exports ensure(db)', false, AIT.err || 'no ensure'); return; }
     var n1 = AIT.m.ensure(db), n2 = AIT.m.ensure(db);
     var phys = q0("PRAGMA table_info(i_payment)").map(function (r) { return String(r.name).toLowerCase(); }).sort();
-    check('TABLE', 'ensure', 'ensure(db) creates the two import tables once (2), then nothing (0); physical i_payment columns == the 74 dictionary columns', n1 === 2 && n2 === 0 && J(phys) === J(dict), { n1: n1, n2: n2, phys: phys.length, onlyPhys: phys.filter(function (c) { return dict.indexOf(c) < 0; }), onlyDict: dict.filter(function (c) { return phys.indexOf(c) < 0; }) });
+    check('TABLE', 'ensure', 'ensure(db) creates the three import tables (i_order, i_payment, i_product) once (3), then nothing (0); physical i_payment columns == the 74 dictionary columns', n1 === 3 && n2 === 0 && J(phys) === J(dict), { n1: n1, n2: n2, phys: phys.length, onlyPhys: phys.filter(function (c) { return dict.indexOf(c) < 0; }), onlyDict: dict.filter(function (c) { return phys.indexOf(c) < 0; }) });
   });
   var h = baseOracle();
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: B1 touched no hashed file (a teams-wide base-mismatch otherwise)', h === BASE_PIN, { got: h, pin: BASE_PIN });
