@@ -169,7 +169,7 @@
     } catch (e) { log('§DASH_SOURCE sqlite FAIL ' + e.message); }
     try { S.sources.legacy = await AD.loadSnapshot(CFG.legacySnapshot); log('§DASH_SOURCE legacy snapshot projects=' + S.sources.legacy.projects.length + ' unavailable=[' + S.sources.legacy.unavailable.join(',') + ']'); }
     catch (e) { log('§DASH_SOURCE legacy none (' + CFG.legacySnapshot + ')'); }
-    S.cur = S.sources.sqlite ? 'sqlite' : (S.sources.legacy ? 'legacy' : 'none');
+    S.cur = (Q.get('source') === 'legacy' && S.sources.legacy) ? 'legacy' : S.sources.sqlite ? 'sqlite' : (S.sources.legacy ? 'legacy' : 'none');   // ?source=legacy opens the snapshot (§5.27)
     $('src').innerHTML = Object.keys(S.sources).map(function (k) { return '<option value="' + k + '">' + (k === 'sqlite' ? 'A · SQLite ERP DB' : 'B · Legacy iDempiere') + '</option>'; }).join('');
     if (PROJECT) { var fp = $('fProject'); fp.hidden = false; fp.textContent = 'Project: ' + PROJECT; }
     $('src').value = S.cur; $('srcInfo').textContent = S.sources.legacy ? '' : 'Source B (legacy) not loaded';
