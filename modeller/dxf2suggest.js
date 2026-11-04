@@ -230,6 +230,14 @@
         var others = zs.slice(1).map(function (z) { return z + ' (' + cnt[z] + 'x)'; }).join(', ');
         out.push({ rule: 'PR-LEVEL-NAME', key: 'LEVEL', value: String(zs[0]), x: 0, y: 0, why: 'title "' + tl[0] + '" = level "' + hit.filter(function (h) { return h.z === zs[0]; })[0].name + '" on an elevation, ' + cnt[zs[0]] + 'x' + (others ? '; also named at ' + others : '') }); return true; }
       return false; }
+    // §D109 P1 PR-LEVEL-FOOTING: a foundation plan no title or level name places states its own level: one distinct T/FOOTING value on the sheet; two values = refused with both
+    function propLevelFooting(sh, out, refused) {
+      if (setting('suggest.level_footing') !== 'read' || get1(sh, 'LEVEL')) return false;
+      var v = {}; sh.dxf.entities.forEach(function (e) { if ((e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER) { var m = /^T\/FOOTING\s*:?\s*([+-]\d+\.\d+)\s*m?$/i.exec(plain(e)); if (m) v[String(Number(m[1]))] = 1; } });
+      var k = Object.keys(v); if (!k.length) return false;
+      if (k.length > 1) { refused.push({ rule: 'PR-LEVEL-FOOTING', why: k.length + ' different T/FOOTING values: ' + k.join(', ') }); return true; }
+      out.push({ rule: 'PR-LEVEL-FOOTING', key: 'LEVEL', value: k[0], x: 0, y: 0, why: 'the sheet states T/FOOTING ' + k[0] + ' m' }); return true;
+    }
     function propLevel(sh, tl, out, refused) {   // §D37 PR-LEVEL: no plan of the set states a level and no title names a storey -> @LEVEL=0, inferred (orange)
       if (typeof process !== 'undefined' && process.env && process.env.DXF_NO_PRLEVEL) return;
       if (get1(sh, 'LEVEL')) return;
@@ -271,7 +279,7 @@
       else if (!real.length && !own) out.push({ rule: 'PR-SET-PLACEHOLDER', key: 'SET', value: SET_PLACEHOLDER, x: 0, y: 0, why: 'no sheet names the set: a placeholder, rename it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
-      if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
+      if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused) && !propLevelFooting(sh, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); }
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")

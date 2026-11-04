@@ -132,8 +132,43 @@ ok('YR15c two values for one match: refused with both', (r => vals(r, 'PR-LEVEL-
 ok('YR15f one stray name against the rest: the most-named value, and the row says so', (() => { const p = pT('LEVEL 1 FRAMING PLAN'), e1 = eL(), e2 = eL(), e3 = eL([T('MTEXT', 'LV', 'EL: +0.000 m', 90000, 0), T('MTEXT', 'LV', 'Level 1', 90000, 500)]), r = props(p, [p, e1, e2, e3]); return vals(r, 'PR-LEVEL-NAME') === '4.8' && /also named at 0 \(1x\)/.test(rows(r, 'PR-LEVEL-NAME')[0].why); })());
 ok('YR15d no match: none', vals(lvl('FOUNDATION PLAN'), 'PR-LEVEL-NAME') === '');
 ok('YR15e set back: off', vals(lvl('LEVEL 1 FRAMING PLAN', null, { 'suggest.level_name': 'off' }), 'PR-LEVEL-NAME') === '');
+// §D109 P1 the gate opens: @PLANE says where an elevation stands, so a sheet with one grid line or none still holds its role
+const elMarks = (extra) => [{ raw: '@SET=S', handle: '1', x: 0, y: 0 }, { raw: '@VIEW=ELEV', handle: '2', x: 0, y: 0 }, { raw: '@UNITS=mm', handle: '3', x: 0, y: 0 }, { raw: '@GRIDH=A1', handle: '4', x: 5000, y: 0 }].concat(extra);
+const need = (r) => r.errors.filter(e => e.code === 'MARK:missing').reduce((a, e) => a.concat(e.keys || []), []).sort().join(',');
+const zz = [{ raw: '@Z=0', handle: '5', x: 0, y: 0 }, { raw: '@Z=4.8', handle: '6', x: 0, y: 4800 }], pl = { raw: '@PLANE=A1', handle: '7', x: 0, y: 0 };
+ok('YR16a @PLANE, one grid line, two @Z: nothing missing', (m => m === '')(need(MK.describe(elMarks(zz.concat(pl))))), need(MK.describe(elMarks(zz.concat(pl)))));
+ok('YR16b the same sheet without @PLANE misses FACE, HAXIS and GRIDH (the old result)', need(MK.describe(elMarks(zz))) === 'FACE,GRIDH(>=2),HAXIS', need(MK.describe(elMarks(zz))));
+ok('YR16c @PLANE does not lift the heights: one @Z still misses Z(>=2)', need(MK.describe(elMarks([zz[0], pl]))) === 'Z(>=2)', need(MK.describe(elMarks([zz[0], pl]))));
+const alNo = (() => { try { return MK.align({ units: 'mm', gridsX: {}, gridsY: {} }, { units: 'mm', gridsH: {}, zs: [] }, 0.001); } catch (e) { return { thrown: e.message }; } })();
+ok('YR17 align with no @HAXIS: MARK:align_fail, not an exception', !alNo.thrown && !alNo.map && alNo.errors.some(e => e.code === 'MARK:align_fail'), JSON.stringify(alNo.thrown || alNo.errors));
+// a real judgement over generated sheets: one column on the plan, its heights stated, the elevation stands only by @PLANE
+const IM = require(path.join(M, 'dxf2bim_import.js')), BD = require(path.join(M, 'dxf2bodies.js')), ST = require(path.join(M, 'dxf2structure.js'));
+const colRect = () => ({ type: 'LWPOLYLINE', layer: 'COL', shape: true, handle: (h++).toString(16), vertices: [{ x: 1000, y: 1000 }, { x: 1400, y: 1000 }, { x: 1400, y: 1550 }, { x: 1000, y: 1550 }] });
+const planS = () => ({ name: 'p.dxf', role: 'plan', level: 0, factor: 0.001, sha: 'p', marks: 1, errors: [], dxf: { entities: [colRect()] }, desc: { view: 'PLAN', units: 'mm', level: 0, gridsX: { A1: 0, A2: 9000 }, gridsY: { AA: 0, AB: 9000 }, gridsH: {}, gridsA: {}, zs: [], layers: [{ layer: 'COL', type: 'column' }], bodyz: [{ kind: 'column', z0: 0, z1: 4.8 }], excludes: [], labels: [], tags: [], sizes: [] } });
+const elevS = (d) => ({ name: 'e.dxf', role: 'elev', factor: 0.001, sha: 'e', marks: 1, errors: [], face: d.face, dxf: { entities: [] }, desc: Object.assign({ view: 'ELEV', units: 'mm', gridsX: {}, gridsY: {}, gridsH: { A1: 5000 }, gridsA: {}, zs: [{ z: 0, y: 0 }, { z: 4.8, y: 4800 }], layers: [], bodyz: [], excludes: [], labels: [], tags: [], sizes: [] }, d) });
+const jd = (e) => ST.judge([planS(), e], { I: IM, B: BD }).gate;
+const gP = jd(elevS({ plane: 'A1' })), gOld = jd(elevS({ haxis: '+Y', face: 'minX' }));
+const planeOnly = g => g.verdict.advisory.filter(a => a.code === 'GAP:body_elevation_plane_only').length;
+console.log('§YR18 plane sheet: ok=' + gP.ok + ' verdict=' + gP.verdict.verdict + ' bodies=' + gP.structure.bodies + ' left_out=' + gP.structure.left_out + ' plane_only=' + planeOnly(gP) + ' refused=' + gP.refused.length + ' | no plane: verdict=' + gOld.verdict.verdict + ' blocking=' + gOld.verdict.blocking.map(b => b.code).join(','));
+ok('YR18a an elevation that stands only by @PLANE: 1 body, qualifies, said once, nothing left out', gP.ok && gP.verdict.verdict === 'qualifies' && gP.structure.bodies === 1 && gP.structure.left_out === 0 && planeOnly(gP) === 1);
+ok('YR18b the same sheet with no @PLANE still blocks (the old result)', gOld.verdict.verdict === 'blocked' && gOld.verdict.blocking.some(b => b.code === 'GAP:body_elevation_not_aligned') && planeOnly(gOld) === 0);
+const badZ = jd(elevS({ plane: 'A1', haxis: '+Y', gridsH: { AA: 0, AB: 9000 }, zs: [{ z: 0, y: 0 }, { z: 4.8, y: 9000 }] }));
+ok('YR18c heights that disagree still block, @PLANE or not', badZ.verdict.verdict === 'blocked' && badZ.verdict.blocking.some(b => b.code === 'GAP:body_elevation_not_aligned') && planeOnly(badZ) === 0, badZ.verdict.blocking.map(b => b.message).join(' | '));
+const gGate = IM.gate([planS(), elevS({ plane: 'A1' }), elevS({ plane: 'A2' })], { set: 'STD' });
+ok('YR18d the standard gate judges a stated face only: no false "two elevations on @FACE=undefined"', !gGate.refused.some(r => /two elevations on @FACE/.test(r.reason)), JSON.stringify(gGate.refused));
+const gFace = IM.gate([planS(), elevS({ face: 'minX' }), elevS({ face: 'minX' })], { set: 'STD' });
+ok('YR18e two sheets on one stated face are still refused', gFace.refused.some(r => /two elevations on @FACE=minX/.test(r.reason)));
+// §D109 P1 PR-LEVEL-FOOTING: a foundation plan states its own level
+const ftg = (t, texts, c) => { const p = sheet('p.dxf', [T('MTEXT', 'TB', t, 0, 0)].concat((texts || []).map((x, i) => T('MTEXT', 'SPOT', x, 100 * i, 500))), [mark('VIEW', 'PLAN'), mark('UNITS', 'mm')]); return props(p, [p], c); };
+ok('YR19a one T/FOOTING value: the plan is at that level', vals(ftg('FOUNDATION PLAN', ['T/FOOTING: -1.250 m', 'T/FOOTING: -1.250 m']), 'PR-LEVEL-FOOTING') === '-1.25', vals(ftg('FOUNDATION PLAN', ['T/FOOTING: -1.250 m']), 'PR-LEVEL-FOOTING'));
+ok('YR19b two values: refused with both', (r => vals(r, 'PR-LEVEL-FOOTING') === '' && r.refused.some(q => q.rule === 'PR-LEVEL-FOOTING' && /-1\.25/.test(q.why) && /-2/.test(q.why)))(ftg('FOUNDATION PLAN', ['T/FOOTING: -1.250 m', 'T/FOOTING: -2.000 m'])));
+ok('YR19c no such text: none', vals(ftg('FOUNDATION PLAN', ['T/SLAB: -1.250 m']), 'PR-LEVEL-FOOTING') === '');
+ok('YR19d a title that states its level wins', (r => vals(r, 'PR-LEVEL-FOOTING') === '' && vals(r, 'PR-LEVEL-TITLE') === '0.5')(ftg('FOUNDATION PLAN (EL +0.500)', ['T/FOOTING: -1.250 m'])));
+ok('YR19e set back: off', vals(ftg('FOUNDATION PLAN', ['T/FOOTING: -1.250 m'], { 'suggest.level_footing': 'off' }), 'PR-LEVEL-FOOTING') === '');
+const ftgD = (() => { const p = sheet('p.dxf', [T('MTEXT', 'TB', 'FOUNDATION PLAN', 0, 0), T('MTEXT', 'SPOT', 'T/FOOTING: -1.250 m', 0, 500)], [mark('VIEW', 'PLAN'), mark('UNITS', 'mm')]); return props(withDef('suggest.level_footing,off', p)); })();
+ok('YR19f @DEFAULT sets it back', vals(ftgD, 'PR-LEVEL-FOOTING') === '');
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'panel.plane': 'end grid line, centred' };
+const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);

@@ -98,7 +98,7 @@
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
       blocking.push({ code: 'QF:no_bodies', sheet: '(set)', handles: [], message: 'no body could be built: type the body layers on a plan AND an elevation' });
     advisory.filter(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }).forEach(function (a) { blocking.push(a); });
-    var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
+    var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted|body_elevation_plane_only)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
     var counts = { bodies: res.els.length, left_out: leftOut }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
     // only on a set that converts and has a notes sheet: on a partial set a mark's bodies may simply wait (a height, a role), and without a details sheet every mark lacks a detail trivially
     if (res.markRefs && !refused.length && !blocking.length && notes.sheets.length) res.markRefs.advisories.forEach(function (a) { advisory.push(a); counts[a.code] = (counts[a.code] || 0) + 1; });

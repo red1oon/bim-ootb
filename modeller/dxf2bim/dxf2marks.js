@@ -189,7 +189,7 @@
         if (Object.keys(d.gridsX).length < 2) need.push('GRIDX(>=2)');
         if (Object.keys(d.gridsY).length < 2) need.push('GRIDY(>=2)');
       } else if (d.view === 'ELEV' || d.view === 'SECTION') {
-        if (Object.keys(d.gridsH).length < 2) need.push('GRIDH(>=2)');
+        if (Object.keys(d.gridsH).length < 2 && !(d.view === 'ELEV' && d.plane !== undefined)) need.push('GRIDH(>=2)');   // §D109 P1: @PLANE says where it stands; its heights still need two @Z
         if (d.zs.length < 2) need.push('Z(>=2)');
         if (d.view === 'ELEV' && d.face && d.haxis) {
           var faceAxis = d.face.slice(3), hax = d.haxis.slice(1);
@@ -252,6 +252,7 @@
   // plan: described PLAN, elev: described ELEV; tol in metres. Returns { ok, errors, map }.
   function align(plan, elev, tol) {
     var errors = [], map = null;
+    if (!elev.haxis) { errors.push(err('MARK:align_fail', 'no @HAXIS: this sheet has no axis route to the plan')); return { ok: false, errors: errors, map: null }; }   // §D109 P1: an elevation may stand by @PLANE alone
     var kp = K[plan.units], ke = K[elev.units];
     var axis = elev.haxis.slice(1), s = elev.haxis[0] === '+' ? 1 : -1;
     var planBag = axis === 'X' ? plan.gridsX : plan.gridsY;

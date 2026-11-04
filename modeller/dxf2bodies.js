@@ -173,7 +173,8 @@
     // §L7.14 the z range the USER states for a kind (@BODYZ on any sheet); two sheets stating different ranges -> conflict, nothing built for that kind from it
     var stated = {};
     sheets.forEach(function (sh) { ((sh.desc && sh.desc.bodyz) || []).forEach(function (b) { var o = stated[b.kind]; if (!o) stated[b.kind] = { z0: b.z0, z1: b.z1 }; else if (o.z0 !== b.z0 || o.z1 !== b.z1) o.conflict = true; }); });
-    maps.forEach(function (m) { if (!m.map) gaps.push({ code: 'GAP:body_elevation_not_aligned', sheet: m.sheet.name, detail: m.why }); });
+    // §D109 P1: an elevation that stands by @PLANE and has no axis route gives no heights, and says so; only a failed axis route may be excused, never heights that disagree
+    maps.forEach(function (m) { if (!m.map) gaps.push({ code: m.sheet.desc.plane !== undefined && m.why === 'MARK:align_fail' ? 'GAP:body_elevation_plane_only' : 'GAP:body_elevation_not_aligned', sheet: m.sheet.name, detail: m.why }); });
     // elevation regions per kind, in plan metres / absolute z metres
     function elevRegions(kind) {
       var out = [];

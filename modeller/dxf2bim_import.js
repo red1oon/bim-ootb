@@ -265,7 +265,7 @@
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
     if (n('roof') !== 1) refused.push({ sheet: '(set)', reason: 'roof plans=' + n('roof') + ' (need exactly 1: @VIEW=ROOF + @LEVEL + @ROOF)' });
     var lv = {}; sheets.filter(function (s) { return s.role === 'plan'; }).forEach(function (s) { if (lv[s.level]) refused.push({ sheet: s.name, reason: 'two plans at @LEVEL=' + s.level }); lv[s.level] = 1; });
-    var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
+    var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (!s.face) return; if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
     if (n('section') > 1) refused.push({ sheet: '(set)', reason: 'sections=' + n('section') + ' (at most 1: @VIEW=SECTION)' });
     var so = n('elev') ? setOf(sheets) : null;
     if (userSet) return { ok: refused.length === 0, refused: refused, set: userSet, setFrom: 'user', evidence: so ? so.name : null };

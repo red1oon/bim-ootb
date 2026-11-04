@@ -897,6 +897,18 @@
     "off"
    ],
    "used_by": "dxf2suggest (§D108)"
+  },
+  "suggest.level_footing": {
+   "element": "suggest",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a plan no title or level name places takes its level from one distinct T/FOOTING value on the sheet: T/FOOTING: -1.250 m (§D109). 'off' = no such row",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D109)"
   }
  },
  "building_types": {
