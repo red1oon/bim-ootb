@@ -48,9 +48,10 @@
     return rows;
   }
   // cfg = { base, login:{user,pass,lang,ClientID,RoleID,OrgID,WarehouseID,stage:0} }; types = optional override of LEGACY_TYPES
-  async function loadLegacy(cfg, types) {
+  // opts.all: keep every column the WS type returns, not only COLS (the DOWN copy, §5.26); meta.client = the login's client (what a mirror may replace)
+  async function loadLegacy(cfg, types, opts) {
     types = types || LEGACY_TYPES;
-    var out = { source: 'legacy', unavailable: [], meta: { base: cfg.base } };
+    var all = !!(opts && opts.all), out = { source: 'legacy', unavailable: [], meta: { base: cfg.base, client: cfg.login && cfg.login.ClientID } };
     for (var i = 0; i < ENTITIES.length; i++) {
       var e = ENTITIES[i];
       var res = await fetch(cfg.base + PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -61,7 +62,7 @@
         var msg = j.message || (sr && sr.Error) || ''; out.unavailable.push(e); out.meta['err_' + e] = String(msg).slice(0, 160); out[e] = []; continue;
       }
       var cols = COLS[e].cols;
-      out[e] = parseRows(j).map(function (r) { var o = {}; cols.forEach(function (c) { o[c] = r[c] === undefined ? null : r[c]; }); return o; });
+      out[e] = parseRows(j).map(function (r) { if (all) return r; var o = {}; cols.forEach(function (c) { o[c] = r[c] === undefined ? null : r[c]; }); return o; });
     }
     return out;
   }
