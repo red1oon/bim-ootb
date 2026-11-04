@@ -6,7 +6,7 @@
 // THE ISSUE it proves/disproves: erp/doc_poster.js + erp/erp_engine.js lacked the customer-return (M_RMA) rules: RMA qty refusal (MRMALine.checkQty, cumulative), return receipt booked at CURRENT cost
 //   (Doc_InOut.createFacts "Sales - Return" :451-640, DocLine.getProductCosts:791-842), cost detail at costing precision (MCostDetail/MCost.setWeightedAverage), AR credit memo mirror books
 //   (Doc_Invoice.java:522-575), manual allocation (owned by the shipped model layer erp/model_invoice.js, judged by witness_sd16_allocation_model_path.js; here: no duplicate verb), RMA line QtyDelivered (MInOut.completeIt:1984-2002), over-receipt accepted
-//   (no source rule at MInOutLine; measured on legacy, SD16r3). Drives the SHIPPED engine on scratch sql.js dbs. Each section ends judged=N; judged=0 => INCONCLUSIVE. SD16-NEG-* flip one input and the verdict MUST change.
+//   (no source rule at MInOutLine; measured on legacy, SD16r3). BOOK claims moved to W-RMA-WINDOW-PATH RW-BOOKS-* on the real poster (§POSTING-PARITY 5e). Drives the SHIPPED engine on scratch sql.js dbs. Each section ends judged=N; judged=0 => INCONCLUSIVE. SD16-NEG-* flip one input and the verdict MUST change.
 'use strict';
 var path = require('path'), fs = require('fs');
 var DP = require(path.join(__dirname, '..', 'doc_poster.js')), E = require(path.join(__dirname, '..', 'erp_engine.js'));
@@ -167,19 +167,7 @@ section('S5', function () {
   // hand-evaluated: amount 2 x 33.7037037 = 67.4074074 -> 67.41 (cents); (27 x 33.7037037 + 67.41) / 29 = 977.4099999 / 29 = 33.70379310 = 33.7037931 (8 dp)
   var u2 = DP.costQtyUpdates(db, 11); n++; check('S5', 'C- line of -2: one update, qty 27 + 2 = 29, price 33.7037931 (2-decimal amount) -- NOT 33.70370344 (the C+ branch), no accumulation', u2.length ? [u2.length, u2[0].set.currentqty, u2[0].set.currentcostprice, u2[0].set.cumulatedqty, u2[0].set.cumulatedamt] : [0], [1, 29, 33.7037931, 27, 910]);
   n++; check('S5', 'NEG-CONTROL the C+ return (33.70370344) and the C- re-add (33.7037931) price DIFFERENTLY from the same cost state, so a C- path routed through the C+ branch (or the reverse) is caught', u.length && u2.length ? u[0].set.currentcostprice !== u2[0].set.currentcostprice : null, true);
-  // books: a stub resolver (account = the token) isolates the Dr/Cr SIDES
-  var R = { resolve: function (d, token) { var id = { '{Product.Asset}': 11, '{Product.Cogs}': 12, '{Product.Revenue}': 13, '{Tax.Due}': 14, '{BPartner.Receivable}': 15 }[token]; return { acct: id, element: { id: id, value: token, name: token } }; } };
-  var side = function (r) { return Object.keys(r.by).map(function (k) { var a = r.by[k]; return a.value + ':' + (a.dr ? 'DR' + a.dr : '') + (a.cr ? 'CR' + a.cr : ''); }).sort(); };
-  var ret = DP.deriveInOut(db, R, 10, 1); n++; check('S5', 'return receipt books: Dr {Product.Asset} / Cr {Product.Cogs} at qty x CURRENT cost (2 x 33.7037037 = 67.41 -> cents 6741)', ret ? side(ret).concat(ret.absent) : null, ['{Product.Asset}:DR6741', '{Product.Cogs}:CR6741']);
-  var ari = DP.deriveInvoice(db, R, 20, 1); n++; check('S5', 'AR invoice (ARI): Dr receivable / Cr revenue + tax due', side(ari), ['{BPartner.Receivable}:DR11000', '{Product.Revenue}:CR10000', '{Tax.Due}:CR1000']);
-  var arc = DP.deriveInvoice(db, R, 21, 1); n++; check('S5', 'AR credit memo (ARC): the mirror -- Dr revenue + tax due / Cr receivable (Doc_Invoice.java:522-575; legacy pilot books DR10000+DR1000 / CR11000)', side(arc), ['{BPartner.Receivable}:CR11000', '{Product.Revenue}:DR10000', '{Tax.Due}:DR1000']);
-  // finding 1 -- a DRAFT credit memo carries its type in C_DocTypeTarget_ID (C_DocType_ID = 0): the posting preview must still mirror it
-  var drc = DP.deriveInvoice(db, R, 22, 1); n++; check('S5', 'DRAFT credit memo (C_DocType_ID 0, C_DocTypeTarget_ID ARC): mirrored books for the pre-completion preview', side(drc), ['{BPartner.Receivable}:CR11000', '{Product.Revenue}:DR10000', '{Tax.Due}:DR1000']);
-  var dri = DP.deriveInvoice(db, R, 23, 1); n++; check('S5', 'NEG-CONTROL DRAFT AR invoice (C_DocType_ID 0, target ARI) is NOT mirrored', side(dri), ['{BPartner.Receivable}:DR11000', '{Product.Revenue}:CR10000', '{Tax.Due}:CR1000']);
-  // regression found by the old-vs-new run: a posting db WITHOUT c_doctype (older seeds) must stay ARI, not throw "no such table"
-  var db0 = mkdb(); db0.exec("CREATE TABLE c_invoice(c_invoice_id INTEGER, c_bpartner_id INTEGER, grandtotal NUMERIC, issotrx TEXT);CREATE TABLE c_invoiceline(c_invoiceline_id INTEGER, c_invoice_id INTEGER, m_product_id INTEGER, linenetamt NUMERIC);CREATE TABLE c_invoicetax(c_invoice_id INTEGER, c_tax_id INTEGER, taxamt NUMERIC);INSERT INTO c_invoice VALUES(1,3,110,'Y');INSERT INTO c_invoiceline VALUES(1,1,5,100);INSERT INTO c_invoicetax VALUES(1,9,10);");
-  var nd = null; try { nd = side(DP.deriveInvoice(db0, R, 1, 1)); } catch (e) { nd = 'THREW ' + e.message; }
-  n++; check('S5', 'posting db with NO c_doctype table: invoice books as ARI (no throw)', nd, ['{BPartner.Receivable}:DR11000', '{Product.Revenue}:CR10000', '{Tax.Due}:CR1000']);
+  // S5 books (moved to W-RMA-WINDOW-PATH RW-BOOKS-*, the REAL poster - §POSTING-PARITY 5e; doc_poster.deriveInOut/deriveInvoice retired)
   verdict('S5', n);
 });
 
@@ -200,28 +188,16 @@ section('S6', function () {
     "INSERT INTO m_cost VALUES(5,1,1,7,60,10,600,10);" +
     "INSERT INTO m_inout VALUES(10,'Y','C+','2026-10-12 00:00:00',NULL),(12,'Y','C+','2026-10-12 00:00:00',10),(13,'Y','C-','2026-10-12 00:00:00',NULL),(14,'Y','C+','2026-10-12 00:00:00',NULL);" +
     "INSERT INTO m_inoutline VALUES(100,10,5,2,NULL),(120,12,5,-2,100),(130,13,5,2,NULL),(140,14,6,2,NULL);");
-  var R = { resolve: function (d, token) { var id = { '{Product.Asset}': 11, '{Product.Cogs}': 12 }[token]; return { acct: id, element: { id: id, value: token, name: token } }; } };
-  var amt = function () { var r = DP.deriveInOut(db, R, 10, 1); return r && r.by && r.by[11] ? r.by[11].dr : (r ? r.absent : null); };
-  var before = amt(); db.exec("UPDATE m_cost SET currentcostprice=70");   // cost moved 60 -> 70 AFTER the original shipment (SD-16 fixture)
-  var after = amt();
-  n++; check('S6', 'return receipt of 2 books at the CURRENT cost, not the shipment cost: 60 -> 12000 cents, after the cost moves to 70 -> 14000', [before, after], [12000, 14000]);
-  n++; check('S6', 'NEG-CONTROL the two amounts differ (a books routine that ignored the cost state could not satisfy S6 above)', before !== after, true);
-  // finding 7 -- the shared per-line cost helper: the SHIPMENT books are unchanged (golden: qty 2 x 70 = 14000, Dr cogs / Cr asset)
-  var sh = DP.deriveInOut(db, R, 13, 1); n++; check('S6', 'GOLDEN shipment (C-) books through the shared cost helper: Dr {Product.Cogs} / Cr {Product.Asset} 2 x 70 = 14000', sh ? [sh.by[12] && sh.by[12].dr, sh.by[11] && sh.by[11].cr, sh.absent.length] : null, [14000, 14000, 0]);
   // finding 6 -- books/cost agreement at ZERO cost: the posting error "No Costs for product 5" (Doc_InOut.java:535-545) leaves no books AND no cost detail
   n++; check('S6', 'cost 70, return receipt: one cost update (non-vacuous baseline for the zero-cost case)', DP.costQtyUpdates(db, 10).length, 1);
   db.exec("UPDATE m_cost SET currentcostprice=0");
-  var z = DP.deriveInOut(db, R, 10, 1);
-  n++; check('S6', 'zero current cost on a stocked product: books refused by name (No Costs), no accounts touched', [Object.keys(z.by).length, /^No Costs for product 5/.test(z.absent[0] || '')], [0, true]);
   n++; check('S6', 'the SAME document at zero cost moves no cost either (posting refused => no cost detail): costQtyUpdates = []', DP.costQtyUpdates(db, 10).length, 0);
   var u13 = DP.costQtyUpdates(db, 13); n++; check('S6', 'NEG-CONTROL other movements keep their previous path at zero cost: the C- shipment still reduces CurrentQty 10 -> 8', u13.length ? [u13.length, u13[0].set.currentqty] : [0], [1, 8]);
-  var s14 = DP.deriveInOut(db, R, 14, 1), u14 = DP.costQtyUpdates(db, 14); n++; check('S6', 'a SERVICE return line (IsStocked N) is ignored by BOTH: no books, no "No Costs" error, no cost update', [Object.keys(s14.by).length, s14.absent.length, u14.length], [0, 0, 0]);
+  var u14 = DP.costQtyUpdates(db, 14); n++; check('S6', 'a SERVICE return line (IsStocked N) moves no cost (books: RW-BOOKS-SERVICE on the real poster)', u14.length, 0);
   // finding 10 -- the unported return REVERSAL (C+ with Reversal_ID): books empty AND named (G-SD10) AND no cost movement
   db.exec("UPDATE m_cost SET currentcostprice=70");
-  var rv = DP.deriveInOut(db, R, 12, 1);
-  n++; check('S6', 'return REVERSAL: books empty and named absent (G-SD10), never an invented amount', [Object.keys(rv.by).length, /G-SD10/.test(rv.absent[0] || '')], [0, true]);
   n++; check('S6', 'return REVERSAL: cost detail refused too (books and cost agree) -- the cost row does not change when the books are empty', DP.costQtyUpdates(db, 12).length, 0);
-  n++; check('S6', 'NEG-CONTROL the same return WITHOUT Reversal_ID produces both books and a cost update', [Object.keys(DP.deriveInOut(db, R, 10, 1).by).length, DP.costQtyUpdates(db, 10).length], [2, 1]);
+  n++; check('S6', 'NEG-CONTROL the same return WITHOUT Reversal_ID produces a cost update (books: RW-BOOKS-RECEIPT / RW-BOOKS-REVERSAL on the real poster)', DP.costQtyUpdates(db, 10).length, 1);
   verdict('S6', n);
 });
 log('§SD16P_VERDICT ' + (fails ? 'FAIL' : incs ? 'INCONCLUSIVE' : 'PASS') + ' fails=' + fails + ' inconclusive=' + incs);

@@ -46,6 +46,7 @@ var r2 = function (v) { return (Math.round(Number(v || 0) * 100) / 100).toFixed(
     H.db.run("UPDATE m_product_category_acct SET costinglevel=? WHERE m_product_category_id=(SELECT m_product_category_id FROM m_product WHERE m_product_id=?)", [batch ? 'B' : null, PROD]);
     schemas.forEach(function (s) {
       H.db.run("DELETE FROM m_cost WHERE m_product_id=? AND c_acctschema_id=?", [PROD, s]);
+      H.db.run("DELETE FROM m_costhistory WHERE m_costdetail_id IN (SELECT m_costdetail_id FROM m_costdetail WHERE m_product_id=? AND c_acctschema_id=?)", [PROD, s]);   // MCostHistory.get :211 reads (ASI=? OR ASI=0) history FIRST - the seed's ASI-0 history (#2597, 33.75) would price the fresh lots; the fixture's cost state lives in m_cost only (§POSTING-PARITY 5f)
       var el = q("SELECT m_costelement_id AS id FROM m_costelement WHERE ad_client_id=11 AND costingmethod=(SELECT costingmethod FROM c_acctschema WHERE c_acctschema_id=?) AND costelementtype='M'", [s])[0];
       [[A1, COST1], [A2, COST2]].forEach(function (a) {
         H.db.run("INSERT INTO m_cost (ad_client_id, ad_org_id, m_product_id, m_costtype_id, c_acctschema_id, m_costelement_id, m_attributesetinstance_id, isactive, currentcostprice, currentqty, cumulatedamt, cumulatedqty, futurecostprice, iscostfrozen, m_cost_uu) VALUES (11,0,?,100,?,?,?,'Y',?,10,?,10,0,'N',?)",

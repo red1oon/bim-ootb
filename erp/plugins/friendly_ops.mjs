@@ -38,7 +38,8 @@ const P_POSSALES = 9538001, P_IMPORT_ORDER = 206, P_IMPORT_PAYMENT = 343, P_REPL
 const DC_PARA = [[9534031, 'Organization', 'AD_Org_ID', 10, 19, null, 130, 'N', 10], [9534032, 'Branch Orgs (comma separated ids; both empty = every Org with pending till rows)', 'BranchOrgs', 20, 10, null, null, 'N', 255],
   [9534033, 'Business Day', 'BusinessDay', 30, 15, null, null, 'Y', 7], [9534034, 'Bank Account', 'C_BankAccount_ID', 40, 19, null, null, 'Y', 10],
   [9534035, 'Business Partner', 'C_BPartner_ID', 50, 18, 223, null, 'N', 10], [9534036, 'Product Category', 'M_Product_Category_ID', 60, 19, null, null, 'N', 10], [9534037, 'Is Kanban', 'IsKanban', 70, 17, 319, null, 'N', 1],
-  [9534038, 'Create', 'ReplenishmentCreate', 80, 17, 53412, null, 'N', 3], [9534039, 'Document Type', 'C_DocType_ID', 90, 19, null, 229, 'N', 10]]
+  [9534038, 'Create', 'ReplenishmentCreate', 80, 17, 53412, null, 'N', 3], [9534039, 'Document Type', 'C_DocType_ID', 90, 19, null, 229, 'N', 10],
+  [9534040, 'Include partial batch (a branch\'s Send status now; imported only when ticked)', 'IncludePartial', 100, 20, null, null, 'N', 1]]
   .map((r) => Object.assign({ ad_process_para_id: r[0], ad_process_id: P_DAYCLOSE, name: r[1], columnname: r[2], seqno: r[3], ad_reference_id: r[4], ad_reference_value_id: r[5], ad_val_rule_id: r[6], ismandatory: r[7], fieldlength: r[8],
     defaultvalue: null, iscentrallymaintained: 'Y', isrange: 'N' }, STD));
 const DC_ACCESS = DC_ROLES.map((r) => { const x = Object.assign({ ad_process_id: P_DAYCLOSE, ad_role_id: r[0], isreadwrite: 'Y', ad_process_access_uu: 'fo-rows-' + P_DAYCLOSE + '-' + r[0] }, STD); x.ad_client_id = r[1]; delete x.entitytype; return x; });
@@ -158,7 +159,8 @@ function billClass(SvrProcess, X) {
 // §21 Branch Day Close - the one process class. It calls the legacy processes through AdProcess.runInTrx (the dictionary names each class), in ONE Trx, each behind a savepoint; it owns no business rule.
 //   GATE (§21.2): only what the till really sends (I_Order / I_Payment rows; no Z travels): ticket-number gaps per till series and lines-vs-tenders per ticket. A till/day with a gap or an unbalanced ticket is withheld whole and named.
 //   STOP (§21.1): a failed step is rolled back alone, the close stops, earlier steps stay; the class returns normally so they commit (a throw would roll the whole group back).
-let HOSTP = null, TILLCORE = null;                                                      // TILLCORE: erp/till_core.js, the till's own tax glue (one definition, POS_PLUGIN_LOCAL_FIRST.md §23)
+let HOSTP = null, TILLCORE = null, EODACORE = null;   // EODACORE: erp/eoda_core.js, the batch statement check (POS_PLUGIN_LOCAL_FIRST §26.5)
+// TILLCORE: erp/till_core.js, the till's own tax glue (one definition, POS_PLUGIN_LOCAL_FIRST.md §23)
 // HOSTP = ctx.process of activate(): the AdProcess engine through the plugin's own extension point
 function dayCloseClass(SvrProcess, X) {
   const AP = () => HOSTP || globalThis.AdProcess;
@@ -177,12 +179,13 @@ function dayCloseClass(SvrProcess, X) {
       if (pv == null || pv === '') continue;
       if (name === 'AD_Org_ID' || name === 'C_BankAccount_ID' || name === 'C_BPartner_ID' || name === 'M_Product_Category_ID' || name === 'C_DocType_ID') this.p[name] = para[i].getParameterAsInt();
       else if (name === 'BusinessDay') this.p[name] = String(pv).slice(0, 10);
-      else if (name === 'BranchOrgs' || name === 'IsKanban' || name === 'ReplenishmentCreate') this.p[name] = String(pv);
+      else if (name === 'BranchOrgs' || name === 'IsKanban' || name === 'ReplenishmentCreate' || name === 'IncludePartial') this.p[name] = String(pv);
       else X.A.RUNTIME.log('§PROC-UNKNOWN-PARA BranchDayClose ' + name);
     }
   };
   // the audit gate for ONE branch Org and the business day: reads the till's own deposit rows only
-  function gate(trx, C, org, day) {
+  function stmtRowsOf(trx, C, org) { try { return trx.q('SELECT * FROM pos_branchdaystatement WHERE ad_client_id=? AND ad_org_id=?', [C, org]); } catch (e) { return []; } }   // the twin-local table may not exist on this host: no statement
+  function gate(trx, C, org, day, includePartial) {
     const rowsO = trx.q('SELECT documentno AS k, m_product_id AS pid, qtyordered AS q, priceactual AS p, substr(dateordered,1,10) AS d, i_isimported AS imp FROM i_order WHERE ad_client_id=? AND ad_org_id=?', [C, org]);
     const rowsP = trx.q('SELECT documentno AS k, payamt AS a, substr(datetrx,1,10) AS d, i_isimported AS imp FROM i_payment WHERE ad_client_id=? AND ad_org_id=?', [C, org]);
     const pend = (r) => String(r.imp) !== 'Y';
@@ -224,10 +227,32 @@ function dayCloseClass(SvrProcess, X) {
         if (!k.lines || !k.tenders || k.taxErr || k.tc !== want) T.unbal.push(k.key + ' expected=' + (k.taxErr ? 'n/a(' + k.taxErr + ')' : money(want)) + ' tenders=' + money(k.tc) + (k.taxErr ? '' : ' difference=' + money(k.tc - want))); }); });
     const out = { balance: env ? 'tax-aware (till_core totals, price list IsTaxIncluded=' + (env.inclusive ? 'Y' : 'N') + ')' : 'NOT-AVAILABLE ' + envWhy, tills: [], pass: [], left: [], withheld: [], pending: Object.keys(keys).length,
       otherDayPending: rowsO.filter((r) => pend(r) && r.d !== day).length + rowsP.filter((r) => pend(r) && r.d !== day).length };
-    Object.keys(tills).sort().forEach((t) => { const T = tills[t], bad = (T.gaps.length || T.unbal.length) && DC_BREAK !== 'nogate';
-      out.tills.push({ till: t, keys: T.keys.length, gaps: T.gaps, unbal: T.unbal, withheld: !!bad });
-      if (bad) out.withheld.push({ till: t, reason: [T.gaps.length ? 'gap ' + T.gaps.join(',') : '', T.unbal.length ? 'unbalanced ' + T.unbal.join('; ') : ''].filter(Boolean).join(' | '), keys: T.keys.map((k) => k.key) });
+    // §26.5: the branch's declaration. The LATEST batch of this Org and day is the one judged; a Partial one is imported only when the clerk ticked IncludePartial
+    const batch = EODACORE ? EODACORE.latestBatch(stmtRowsOf(trx, C, org), day) : null, stm = { state: batch ? 'batch ' + batch.batchId + ' partial=' + (batch.partial ? 'Y' : 'N') + ' tills=' + Object.keys(batch.lines).length : 'NONE', byTill: {}, lines: [] };
+    const tn = (t) => String(t).replace(/-$/, '');
+    if (batch) {
+      const oRows = trx.q('SELECT documentno, m_product_id, qtyordered, priceactual FROM i_order WHERE ad_client_id=? AND ad_org_id=? AND substr(dateordered,1,10)=?', [C, org, day]);
+      const pRows = trx.q('SELECT documentno, tendertype, payamt FROM i_payment WHERE ad_client_id=? AND ad_org_id=? AND substr(datetrx,1,10)=?', [C, org, day]);
+      const mine = (rows, t) => rows.filter((r) => { const m = KEY.exec(String(r.documentno || '')); return m && tn(m[1].slice(0, -1)) === t; });
+      const bc = EODACORE.branchConsistent(batch), whole = batch.partial && includePartial !== 'Y' ? 'partial batch ' + batch.batchId + ' (tick Include partial batch to import it)' : (!bc.ok ? 'statement-branch ' + bc.why : '');
+      const names = {}; Object.keys(batch.lines).forEach((t) => { names[t] = 1; }); Object.keys(tills).forEach((t) => { names[tn(t)] = 1; });
+      Object.keys(names).sort().forEach((t) => {
+        const line = batch.lines[t]; let why = [];
+        if (whole) why = [whole];
+        else if (!line) why = ['statement-undeclared till ' + t + ' is not in batch ' + batch.batchId];
+        else { const r = EODACORE.check(TILLCORE, env, line, mine(oRows, t), mine(pRows, t)); why = r.why; stm.lines.push('till=' + t + ' totals=' + r.totals + ' declared=' + line.tickets + 'tickets/' + line.gross + ' held=' + JSON.stringify(r.held)); }
+        if (DC_BREAK === 'nostatement') why = [];                                    // witness-only negative control: the statement check off
+        stm.byTill[t] = why;
+      });
+    }
+    Object.keys(tills).sort().forEach((t) => { const T = tills[t], sw = stm.byTill[tn(t)] || [], bad = (T.gaps.length || T.unbal.length || sw.length) && DC_BREAK !== 'nogate';
+      out.tills.push({ till: t, keys: T.keys.length, gaps: T.gaps, unbal: T.unbal, stmt: sw, withheld: !!bad });
+      if (bad) out.withheld.push({ till: t, reason: [T.gaps.length ? 'gap ' + T.gaps.join(',') : '', T.unbal.length ? 'unbalanced ' + T.unbal.join('; ') : '', sw.length ? sw.join('; ') : ''].filter(Boolean).join(' | '), keys: T.keys.map((k) => k.key) });
       else T.keys.forEach((k) => { if (k.customerPayment) out.left.push(k.key); else out.pass.push(k.key); }); });
+    Object.keys(stm.byTill).sort().forEach((t) => {                                   // a declared till none of whose rows are pending (it never arrived, or was imported): judged and named too
+      if (Object.keys(tills).some((x) => tn(x) === t) || !stm.byTill[t].length) return;
+      out.tills.push({ till: t + '-', keys: 0, gaps: [], unbal: [], stmt: stm.byTill[t], withheld: true }); out.withheld.push({ till: t + '-', reason: stm.byTill[t].join('; '), keys: [] }); });
+    out.statement = stm;
     return out;
   }
   BranchDayClose.prototype.doIt = function () {
@@ -243,7 +268,8 @@ function dayCloseClass(SvrProcess, X) {
     orgs = orgs.filter((o, i, a) => a.indexOf(o) === i).sort((a, b) => a - b);
     line('§DAYCLOSE-START client=' + C + ' day=' + day + ' branches=' + orgs.join(',') + ' import=' + (usePOS ? 'Import POS Sales ' + P_POSSALES : 'Import Orders ' + P_IMPORT_ORDER + ' + Import Payment ' + P_IMPORT_PAYMENT) + ' replenishCreate=' + (P.ReplenishmentCreate || 'none') + ' break=' + (DC_BREAK || 'none'));
     if (!orgs.length) { line('§DAYCLOSE-EMPTY day=' + day + ' no branch has pending till rows for this day: nothing judged'); this.addLog(0, null, null, 'Nothing to close for ' + day); return 'Branch Day Close: nothing pending for ' + day; }
-    line('§DAYCLOSE-GATE z=NOT-AVAILABLE the till sends no Z declaration and no closed-shift marker (till.js closeCash keeps them on the device); judged: ticket-number gaps and lines vs tenders only');
+    const anyStmt = EODACORE && orgs.some((o) => EODACORE.latestBatch(stmtRowsOf(trx, C, o), day));
+    line(anyStmt ? '§DAYCLOSE-GATE z=DECLARED a branch batch carries its statement (the branch POS admin sends it with the rows, POS_PLUGIN_LOCAL_FIRST §26): judged per till against it, plus ticket-number gaps and lines vs tenders' : '§DAYCLOSE-GATE z=NOT-AVAILABLE no branch statement reached head office (an old direct send); judged: ticket-number gaps and lines vs tenders only');
     let stopped = null, done = 0, imported = 0, withheldN = 0, pin = 0, fbReason = null;
     const step = (org, name, fn) => {
       const sp = trx.setSavepoint(), log0 = trx.log.length;
@@ -300,8 +326,9 @@ function dayCloseClass(SvrProcess, X) {
       return list;
     };
     const plans = orgs.map((org) => {                                                      // the gate judges every branch BEFORE any step (committed deposits only)
-      const g = gate(trx, C, org, day), whs = trx.q("SELECT m_warehouse_id AS w FROM m_warehouse WHERE ad_client_id=? AND ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id", [C, org]).map((r) => Number(r.w));
-      g.tills.forEach((t) => line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' till=' + t.till + ' tickets=' + t.keys + ' gaps=' + t.gaps.length + ' unbalanced=' + t.unbal.length + ' ' + (t.withheld ? 'WITHHELD' : 'PASS')));
+      const g = gate(trx, C, org, day, P.IncludePartial), whs = trx.q("SELECT m_warehouse_id AS w FROM m_warehouse WHERE ad_client_id=? AND ad_org_id=? AND isactive='Y' ORDER BY m_warehouse_id", [C, org]).map((r) => Number(r.w));
+      line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' statement=' + g.statement.state); g.statement.lines.forEach((l) => line('§DAYCLOSE-STATEMENT org=' + org + ' day=' + day + ' ' + l));
+      g.tills.forEach((t) => line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' till=' + t.till + ' tickets=' + t.keys + ' gaps=' + t.gaps.length + ' unbalanced=' + t.unbal.length + ' statement=' + (t.stmt && t.stmt.length ? 'MISMATCH' : g.statement.state === 'NONE' ? 'NONE' : 'OK') + ' ' + (t.withheld ? 'WITHHELD' : 'PASS')));
       g.withheld.forEach((w) => { withheldN++; line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' WITHHELD till=' + w.till + ' reason="' + w.reason + '" keys=' + w.keys.join(',')); self.addLog(0, null, null, 'Org ' + org + ' till ' + w.till + ' WITHHELD: ' + w.reason); });
       g.left.forEach((k) => line('§DAYCLOSE-GATE org=' + org + ' LEFT key=' + k + ' customer payment (no lines): import it with Import Payment (343)'));
       if (!g.pending) line('§DAYCLOSE-GATE org=' + org + ' day=' + day + ' INCONCLUSIVE no pending ticket for this branch and day: nothing judged');
@@ -325,6 +352,7 @@ function dayCloseClass(SvrProcess, X) {
 }
 export async function activate(ctx) {
   HOSTP = ctx.process || null;
+  try { const m = await import(new URL('../eoda_core.js', import.meta.url).href); EODACORE = globalThis.EodaCore || (m && (m.default || m)) || null; } catch (e) { EODACORE = null; }
   try { const m = await import(new URL('../till_core.js', import.meta.url).href); TILLCORE = globalThis.TillCore || (m && (m.default || m)) || null; } catch (e) { TILLCORE = null; }   // UMD: sets window.TillCore in the browser, module.exports in node
   if (!ctx.lens) throw new Error('host has no lens extension point');
   ctx.lens.register('friendly-ops', lens);

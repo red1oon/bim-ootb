@@ -5,7 +5,7 @@
 // THE ISSUE: the shipped posting path (ML.setPoster -> model_post.post) had NO Doc_BankStatement in its DOC registry: a Completed C_BankStatement logged "no Doc class ported" and Posted stayed N,
 //   where legacy (Doc_BankStatement.java:160-285) books BankAsset/BankInTransit/Charge/Interest per line and sets Posted='Y'.
 //   B1  every client-11 C_BankStatement of ad_seed.db WITH stored legacy Fact_Acct posts through the REAL poster == legacy per schema x account x side (integer cents, maxDiff 0), Posted='Y'
-//   B1b a statement WITHOUT stored legacy facts: model_post vs doc_poster.deriveBankStatement (same rule) - labelled "no legacy oracle", never PASS (INCONCLUSIVE); plus a synthetic clearing-equal case (Java :184-198)
+//   B1b a statement WITHOUT stored legacy facts: the Java expectation only (no lines -> no facts; the doc_poster comparator retired, §POSTING-PARITY 5c) - labelled "no legacy oracle", never PASS (INCONCLUSIVE); plus a synthetic clearing-equal case (Java :184-198)
 //   B2  per-line DateAcct: SysConfig BANK_STATEMENT_POST_WITH_DATE_FROM_LINE=N -> header DateAcct, =Y -> the line's DateAcct (DocLine_Bank.java:50)
 //   B3  every OTHER doc type (incl. GL journals) posts byte-identically to the pinned baseline (git show BASE:erp/model_post.js)
 //   MUTANTS: MUT=notransit (InTransit leg dropped), MUT=flip (one line's side flipped) must FAIL B1; BST_BASELINE=1 (baseline poster) must FAIL B1. Nothing judged -> INCONCLUSIVE.
@@ -51,17 +51,15 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); };
   q('SELECT record_id AS r, c_acctschema_id AS s, account_id AS a, amtacctdr AS d, amtacctcr AS c FROM fact_acct WHERE ad_table_id=392 AND ad_client_id=11').forEach(function (f) {
     var b = legacy[f.r] || (legacy[f.r] = {}); if (cents(f.d)) { var k = f.s + ':' + f.a + ':DR'; b[k] = (b[k] || 0) + cents(f.d); } if (cents(f.c)) { var k2 = f.s + ':' + f.a + ':CR'; b[k2] = (b[k2] || 0) + cents(f.c); } });
   log('§WBST POPULATION statements(client 11)=' + ss.length + ' with legacy facts=' + Object.keys(legacy).length + ' (filtered by ad_client_id)');
-  var judged = 0, noOracle = 0, DP = require(path.join(ERP, 'doc_poster.js'));
-  var adapt = { prepare: function (sql) { var run = function (p) { return q(sql, p == null ? [] : Array.isArray(p) ? p : [p]); }; return { get: function (p) { return run(p)[0]; }, all: function (p) { return run(p); } }; } };
-  var schemasOf = q('SELECT c_acctschema_id AS s FROM c_acctschema WHERE ad_client_id=11 ORDER BY 1').map(function (r) { return r.s; });
+  var judged = 0, noOracle = 0;
   ss.forEach(function (s) {
     var r = postWith(poster, 'c_bankstatement', s.id), fx = facts(r), posted = r.trx.get('c_bankstatement', s.id).posted, lg = legacy[s.id] || {}, legN = Object.keys(lg).length, d = diffMaps(fx.tw, lg);
     log('§WBST stmt=' + s.id + ' legacyKeys=' + legN + ' twinKeys=' + Object.keys(fx.tw).length + ' facts=' + fx.n + ' maxDiff=' + d.md + 'c posted=' + posted + ' dates=' + fx.dates.join(',') + (r.exc ? ' EXC=' + r.exc : '') + (d.bad.length ? ' DIFF ' + d.bad.join(' | ') : '') + ' log=' + r.log.filter(function (l) { return /§MODEL-POST/.test(l); }).join(' ; ').slice(0, 240));
     if (legN) { judged++; ok('B1-' + s.id, 'statement ' + s.id + ': twin facts == stored legacy Fact_Acct per schema x account x side, Posted=Y', d.md === 0 && fx.n > 0 && posted === 'Y', 'maxDiff=' + d.md + 'c posted=' + posted + ' facts=' + fx.n); }
-    else {                                                                             // B1b: no legacy oracle - compare with the proven manifest (same rule), never a PASS
-      var dpm = {}; schemasOf.forEach(function (sc) { var o = DP.derivePostings(adapt, { table: 'C_BankStatement', id: s.id }, sc, {}); (o.lines || []).forEach(function (l) { if (cents(l.amtacctdr)) dpm[sc + ':' + l.account_id + ':DR'] = cents(l.amtacctdr); if (cents(l.amtacctcr)) dpm[sc + ':' + l.account_id + ':CR'] = cents(l.amtacctcr); }); });
-      var dd = diffMaps(fx.tw, dpm); log('§WBST B1b stmt=' + s.id + ' NO LEGACY ORACLE; twin keys=' + Object.keys(fx.tw).length + ' deriveBankStatement keys=' + Object.keys(dpm).length + ' maxDiff=' + dd.md + 'c posted=' + posted + (dd.bad.length ? ' DIFF ' + dd.bad.join(' | ') : ''));
-      noOracle++; log((dd.md === 0 ? '  ◻ ' : '  ❌ ') + 'B1b-' + s.id + ' NO LEGACY ORACLE (not a PASS, not counted as one): twin == doc_poster.deriveBankStatement ' + (dd.md === 0 ? 'equal' : 'DIFF ' + dd.bad.join(' | ')) + '; posted=' + posted + ' facts=' + fx.n); if (dd.md !== 0) fail++; }
+    else {                                                                             // B1b: no legacy oracle - the Java expectation only, never a PASS (the old comparator was doc_poster.deriveBankStatement, retired: §POSTING-PARITY step 5c)
+      var nl = q('SELECT count(*) AS n FROM c_bankstatementline WHERE c_bankstatement_id=?', [s.id])[0].n, expect0 = Number(nl) === 0;   // Doc_BankStatement.createFacts :160-285 loops p_lines: no lines -> no facts
+      log('§WBST B1b stmt=' + s.id + ' NO LEGACY ORACLE; statement lines=' + nl + ' twin keys=' + Object.keys(fx.tw).length + ' facts=' + fx.n + ' posted=' + posted);
+      noOracle++; var bad1b = expect0 && fx.n !== 0; log((bad1b ? '  ❌ ' : '  ◻ ') + 'B1b-' + s.id + ' NO LEGACY ORACLE (not a PASS, not counted as one): ' + (expect0 ? 'no statement lines -> Java books no facts; twin facts=' + fx.n : 'statement has ' + nl + ' lines and no legacy facts - not judged') + '; posted=' + posted); if (bad1b) fail++; }
   });
 
   // ── synthetic cases (rows inserted into the witness's own in-memory copy; no legacy oracle: expectations come from the Java text) ──
