@@ -205,6 +205,17 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
     return { id: hd.id, line: ln.id };
   }
   var cm1 = rcCo && rcCo.status === 'CO' ? drive('RW-CM', function () { return creditMemo(h1.id, s1, L1.m_rmaline_id, rc1.line, 2, 50); }) : null;
+  // RW-BOOKS-DRAFTCM (§POSTING-PARITY 5e, was W-SD16-ENGINE-PORT S5 on doc_poster.deriveInvoice): the Preview of the DRAFT credit memo = the REAL poster on a never-committed Trx; a draft carries its
+  //   type in C_DocTypeTarget_ID (C_DocType_ID 0 -> model_post docTypeIdOf reads the target) so it books MIRRORED (Doc_Invoice ARC :522-575). NEG-CONTROL: the same draft targeted ARI is NOT mirrored.
+  var MPm = require(path.join(ERP, 'model_post.js'));
+  function draftPreview(id, target) { var ivd = one('SELECT c_doctype_id AS d, c_doctypetarget_id AS t FROM c_invoice WHERE c_invoice_id=?', [id]), keep = ivd ? ivd.t : null;
+    if (target != null) db.run('UPDATE c_invoice SET c_doctypetarget_id=? WHERE c_invoice_id=?', [target, id]);
+    var pf = null; try { var trx = new ML.Trx(q, env()); pf = MPm.previewFacts(trx, 'c_invoice', id); } catch (e) { pf = { err: String(e).slice(0, 160), facts: [] }; }
+    if (target != null) db.run('UPDATE c_invoice SET c_doctypetarget_id=? WHERE c_invoice_id=?', [keep, id]);
+    var ls = (pf.facts || []).filter(function (f) { return Number(f.c_acctschema_id) === 101; });
+    log('§RW-BOOKS draft-preview c_invoice=' + id + ' c_doctype_id=' + (ivd && ivd.d) + ' target=' + (target != null ? target : ivd && ivd.t) + ' state=' + pf.state + (pf.refusal ? ' refusal=' + pf.refusal : '') + (pf.err ? ' err=' + pf.err : '') + ' ' + ls.map(function (l) { return l.account_id + (Number(l.amtacctdr) ? ' Dr ' + l.amtacctdr : ' Cr ' + l.amtacctcr); }).join(' | '));
+    return ls; }
+  var dCm = cm1 ? draftPreview(cm1.id) : null, dAri = cm1 ? draftPreview(cm1.id, DT_ARI) : null, cmDraft = cm1 ? one('SELECT docstatus AS s, posted AS p FROM c_invoice WHERE c_invoice_id=?', [cm1.id]) : null;
   var cmCo = cm1 ? docact('c_invoice', cm1.id, 'CO') : null, CM = cm1 ? one('SELECT * FROM c_invoice WHERE c_invoice_id=?', [cm1.id]) : null;
   verdict('RW-CM', cmCo ? [eq('completed', 'credit memo CO', [cmCo.ok, cmCo.status], [true, 'CO']), eq('grand_total', 'GrandTotal 110.00 (legacy SD16c)', n(CM.grandtotal), 110), eq('qtyinvoiced', 'RMA line QtyInvoiced 2 (legacy SD16c rma_invoiced 2)', n(rl(L1.m_rmaline_id).qtyinvoiced), 2)] : []);
 
@@ -228,6 +239,9 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   verdict('RW-BOOKS-RECEIPT', bk && bk.length && !bk[0].err ? [eq('dr_asset_cr_cogs', 'Dr {Product.Asset} / Cr {Product.Cogs} = 2 x CURRENT cost 70.00 = 140.00, not the shipment cost (Doc_InOut "Sales - Return" :451-640, R-MMR4)', [sideSum(bk, ACC.asset, 'dr'), sideSum(bk, ACC.cogs, 'cr')], [140, 140])] : (bk ? (log('§RW-NOTE books receipt: ' + JSON.stringify(bk).slice(0, 200)), []) : []));
   verdict('RW-BOOKS-CM', bc && bc.length && !bc[0].err ? [eq('revenue', 'Dr revenue 100.00', sideSum(bc, ACC.revenue, 'dr'), 100), eq('tax', 'Dr tax due 10.00', sideSum(bc, ACC.taxdue, 'dr'), 10), eq('receivable', 'Cr receivable 110.00 (mirror of ARI)', sideSum(bc, ACC.receivable, 'cr'), 110)] : (bc ? (log('§RW-NOTE books cm: ' + JSON.stringify(bc).slice(0, 200)), []) : []));
 
+  verdict('RW-BOOKS-DRAFTCM', dCm ? [eq('mirrored', 'DRAFT credit memo previews MIRRORED: Dr revenue 100.00 / Dr tax 10.00 / Cr receivable 110.00', [sideSum(dCm, ACC.revenue, 'dr'), sideSum(dCm, ACC.taxdue, 'dr'), sideSum(dCm, ACC.receivable, 'cr')], [100, 10, 110]),
+    eq('neg_ari', 'NEG-CONTROL the same draft targeted ARI is NOT mirrored: Cr revenue 100.00 / Dr receivable 110.00', [sideSum(dAri, ACC.revenue, 'cr'), sideSum(dAri, ACC.receivable, 'dr')], [100, 110]),
+    eq('not_committed', 'the preview wrote nothing: still DR, Posted not Y', [cmDraft.s, cmDraft.p === 'Y'], ['DR', false])] : []);
   // ── RW-VENDOR: the SAME generic path for Vendor RMA (IsSOTrx N): line save + CO, no table branch ──
   var sv = sale(3, 50, true), hv = drive('RW-VENDOR', function () { var h = rmaHeader(sv, DT_VRMA, true); return h.ok ? h : { err: 'vendor RMA header refused: ' + h.error }; });
   var lv = hv && uiSave('m_rmaline', { m_rma_id: hv.id, m_inoutline_id: sv.shipline, qty: 4, processed: 'N' }), lv2 = hv && uiSave('m_rmaline', { m_rma_id: hv.id, m_inoutline_id: sv.shipline, qty: 2, processed: 'N' });
@@ -290,6 +304,27 @@ function eq(key, rule, got, want) { return { key: key, rule: rule, ok: JSON.stri
   var rc9 = cl9 && docact('m_rma', h9.h, 'RC'), ra9 = cl9 && docact('m_rma', h9.h, 'RA'), re9 = cl9 && docact('m_rma', h9.h, 'RE');
   verdict('RW-CLOSE', cl9 ? [eq('closed', 'RMA close -> CL', [cl9.ok, cl9.status], [true, 'CL']), eq('amt_kept', 'close keeps the lines and Amt (closeIt only fires the validators)', n(rm(h9.h).amt), 110),
     eq('not_implemented', 'reverseCorrect / reverseAccrual / reActivate return false like MRMA (not implemented)', [rc9.ok, ra9.ok, re9.ok], [false, false, false]), eq('status_kept', 'and leave the status CL', rm(h9.h).docstatus, 'CL')] : []);
+
+  // ── RW-BOOKS-* (§POSTING-PARITY 5e: the book claims of W-SD16-ENGINE-PORT S5/S6, moved off the retired doc_poster.deriveInOut onto the REAL poster, Doc_InOut "Sales - Return" :451-675) ──
+  var rvIo = rvRc ? one('SELECT m_inout_id AS id FROM m_inout WHERE reversal_id=? AND m_inout_id<>?', [rc1.id, rc1.id]) : null, bRv = rvIo ? books('M_InOut', rvIo.id) : null;
+  verdict('RW-BOOKS-REVERSAL', bRv && !bRv[0].err ? [eq('swapped_original', 'the reversal books the ORIGINAL amounts with sides swapped (updateReverseLine :522-537 / :656-664): Cr {Product.Asset} 140.00 / Dr {Product.Cogs} 140.00 - never an invented amount', [sideSum(bRv, ACC.asset, 'cr'), sideSum(bRv, ACC.cogs, 'dr')], [140, 140])] : []);
+  function setCost(v, why) { db.run('UPDATE m_cost SET currentcostprice=? WHERE m_product_id=? AND m_costelement_id=103 AND c_acctschema_id=101', [v, PROD]);
+    var hs = q('SELECT h.m_costhistory_id AS id FROM m_costhistory h JOIN m_costdetail d ON d.m_costdetail_id=h.m_costdetail_id WHERE d.m_product_id=? AND d.c_acctschema_id=101 AND h.m_costelement_id=103', [PROD]);
+    hs.forEach(function (h) { db.run('UPDATE m_costhistory SET newcostprice=? WHERE m_costhistory_id=?', [v, h.id]); }); log('§RW-FIXTURE ' + why + ': cost ' + v + ' in m_cost + ' + hs.length + ' m_costhistory rows'); }
+  function returnOf(label) { var sx = sale(3, 50), hx = drive(label, function () { var h = rmaHeader(sx); if (!h.ok) return { err: 'hdr ' + h.error }; var l = rmaLine(h.id, sx, 2); return l.ok ? { h: h.id, l: l.id } : { err: 'line ' + l.error }; });
+    var cx = hx && docact('m_rma', hx.h, 'CO'), rx = cx && cx.status === 'CO' ? drive(label, function () { return receipt(hx.h, hx.l, 2); }) : null, rcx = rx ? docact('m_inout', rx.id, 'CO') : null;
+    if (!rcx) return null; var io = one('SELECT posted, docstatus FROM m_inout WHERE m_inout_id=?', [rx.id]), tid = (one("SELECT ad_table_id AS t FROM ad_table WHERE lower(tablename)='m_inout'") || {}).t;
+    var ls = q('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct WHERE ad_table_id=? AND record_id=? AND c_acctschema_id=101', [tid, rx.id]);
+    var note = q("SELECT textmsg AS t FROM ad_note WHERE record_id=? AND ad_table_id=?", [rx.id, tid]).map(function (r) { return String(r.t || '').slice(0, 80); });
+    log('§RW-BOOKS ' + label + ' io=' + rx.id + ' docstatus=' + io.docstatus + ' posted=' + io.posted + ' facts=' + ls.length + ' ' + ls.map(function (l) { return l.account_id + (Number(l.amtacctdr) ? ' Dr ' + l.amtacctdr : ' Cr ' + l.amtacctcr); }).join(' | ') + ' notes=' + JSON.stringify(note));
+    return { id: rx.id, posted: io.posted, ls: ls, note: note.join(' ') }; }
+  setCost(80, 'RW-BOOKS-COSTMOVE'); var cm80 = returnOf('RW-BOOKS-COSTMOVE');
+  verdict('RW-BOOKS-COSTMOVE', cm80 ? [eq('current_cost', 'after the cost moves 70 -> 80 the same return books 2 x 80 = 160.00 (the books follow the cost state, not a constant)', [sideSum(cm80.ls, ACC.asset, 'dr'), sideSum(cm80.ls, ACC.cogs, 'cr')], [160, 160]), eq('differs', 'NEG-CONTROL 160.00 differs from the 140.00 at cost 70', sideSum(cm80.ls, ACC.asset, 'dr') !== 140, true)] : []);
+  setCost(0, 'RW-BOOKS-NOCOST'); var cm0 = returnOf('RW-BOOKS-NOCOST');
+  verdict('RW-BOOKS-NOCOST', cm0 ? [eq('refused', 'zero current cost on a STOCKED product: "No Costs for <product>" (:492-503) -> Posted E (Doc.postLogic p_Error), no facts', [cm0.posted, cm0.ls.length], ['E', 0]), eq('named', 'the posting note names "No Costs"', /No Costs/.test(cm0.note), true)] : []);
+  db.run("UPDATE m_product SET isstocked='N' WHERE m_product_id=?", [PROD]); var cmS = returnOf('RW-BOOKS-SERVICE'); db.run("UPDATE m_product SET isstocked='Y' WHERE m_product_id=?", [PROD]);
+  verdict('RW-BOOKS-SERVICE', cmS ? [eq('ignored', 'zero cost on a NON-stocked line: ignored (:500-502 continue) -> no facts, no "No Costs" error, Posted Y', [cmS.posted, cmS.ls.length, /No Costs/.test(cmS.note)], ['Y', 0, false])] : []);
+  setCost(70, 'restore');
 
   // ── RW-DENOM: the dictionary's RMA-related windows through the generic grid-tab layer (ad_parser + ad_gridtab), WITHOUT Save: rows and parent id per tab (AD-LAYER LAW witness-what-the-user-sees) ──
   global.window = global.window || {};
