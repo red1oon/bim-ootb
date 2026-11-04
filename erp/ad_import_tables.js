@@ -18,6 +18,9 @@
     i_product: 'CREATE TABLE IF NOT EXISTS "i_product" ("i_product_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "m_product_id" NUMERIC, "value" TEXT, "name" TEXT, "description" TEXT, "documentnote" TEXT, "help" TEXT, "upc" TEXT, "sku" TEXT, "x12de355" TEXT, "c_uom_id" NUMERIC, "productcategory_value" TEXT, "m_product_category_id" NUMERIC, "producttype" TEXT, "classification" TEXT, "volume" NUMERIC, "weight" NUMERIC, "shelfwidth" NUMERIC, "shelfheight" NUMERIC, "shelfdepth" NUMERIC, "unitsperpallet" NUMERIC, "discontinued" TEXT, "discontinuedby" TEXT, "imageurl" TEXT, "descriptionurl" TEXT, "bpartner_value" TEXT, "c_bpartner_id" NUMERIC, "iso_code" TEXT, "c_currency_id" NUMERIC, "pricelist" NUMERIC, "pricepo" NUMERIC, "royaltyamt" NUMERIC, "priceeffective" TEXT, "vendorproductno" TEXT, "vendorcategory" TEXT, "manufacturer" TEXT, "order_min" NUMERIC, "order_pack" NUMERIC, "costperorder" NUMERIC, "deliverytime_promised" NUMERIC, "processing" TEXT, "processed" TEXT, "pricestd" NUMERIC, "pricelimit" NUMERIC, "discontinuedat" TEXT, "i_product_uu" TEXT, "customstariffnumber" TEXT, "group1" TEXT, "group2" TEXT, "m_attributeset_id" NUMERIC)',
     i_order: 'CREATE TABLE IF NOT EXISTS "i_order" ("i_order_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "ad_orgtrx_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "processing" TEXT, "processed" TEXT, "salesrep_id" NUMERIC, "m_warehouse_id" NUMERIC, "m_pricelist_id" NUMERIC, "c_currency_id" NUMERIC, "m_shipper_id" NUMERIC, "issotrx" TEXT, "c_bpartner_id" NUMERIC, "bpartnervalue" TEXT, "name" TEXT, "c_bpartner_location_id" NUMERIC, "billto_id" NUMERIC, "c_location_id" NUMERIC, "address1" TEXT, "address2" TEXT, "postal" TEXT, "city" TEXT, "c_region_id" NUMERIC, "regionname" TEXT, "c_country_id" NUMERIC, "countrycode" TEXT, "ad_user_id" NUMERIC, "contactname" TEXT, "email" TEXT, "phone" TEXT, "c_project_id" NUMERIC, "c_activity_id" NUMERIC, "c_doctype_id" NUMERIC, "doctypename" TEXT, "c_paymentterm_id" NUMERIC, "paymenttermvalue" TEXT, "c_order_id" NUMERIC, "documentno" TEXT, "dateordered" TEXT, "dateacct" TEXT, "description" TEXT, "m_product_id" NUMERIC, "productvalue" TEXT, "upc" TEXT, "sku" TEXT, "c_tax_id" NUMERIC, "taxindicator" TEXT, "taxamt" NUMERIC, "c_orderline_id" NUMERIC, "linedescription" TEXT, "c_uom_id" NUMERIC, "qtyordered" NUMERIC, "priceactual" NUMERIC, "freightamt" NUMERIC, "c_campaign_id" NUMERIC, "c_charge_id" NUMERIC, "chargename" TEXT, "c_ordersource_id" NUMERIC, "c_ordersourcevalue" TEXT, "deliveryrule" TEXT, "i_order_uu" TEXT)'
   };
+  // I_Inventory (AD_Table 572, 38 AD_Column rows in the seed, no physical table) for Import Inventory, AD_Process 219 - Witness: W-IMPORT-INVENTORY (erp/tests/witness_import_inventory.js), prompts/POS_PLUGIN_LOCAL_FIRST.md section 37; DDL verbatim from
+  //   build/erp/ad_full.db (sqlite3 .schema i_inventory). Kept apart from DDL (as Recurring) so ensure() still reports the three older import tables; ensure() calls ensureInventory().
+  var DDL_INV = { i_inventory: 'CREATE TABLE IF NOT EXISTS "i_inventory" ("i_inventory_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "i_isimported" TEXT, "i_errormsg" TEXT, "m_product_id" NUMERIC, "upc" TEXT, "value" TEXT, "lot" TEXT, "serno" TEXT, "m_locator_id" NUMERIC, "m_warehouse_id" NUMERIC, "warehousevalue" TEXT, "locatorvalue" TEXT, "x" TEXT, "y" TEXT, "z" TEXT, "m_inventory_id" NUMERIC, "m_inventoryline_id" NUMERIC, "qtybook" NUMERIC, "qtycount" NUMERIC, "movementdate" TEXT, "description" TEXT, "processing" TEXT, "processed" TEXT, "currentcostprice" NUMERIC, "i_inventory_uu" TEXT, "doctypename" TEXT, "c_doctype_id" NUMERIC, "qtyinternaluse" NUMERIC, "c_charge_id" NUMERIC, "chargename" TEXT, "m_costingline_id" NUMERIC)' };
   // RECURRING overlay (F1, prompts/TEAMWORK_FRAMEWORK.md section 41; Witness: W-RECURRING, erp/tests/witness_recurring.js): AD_Table 573 C_Recurring_Run and 200143 C_RecurringGroup are in the seed dictionary WITHOUT a physical
   //   table (C_Recurring 574 has one); DDL verbatim from build/erp/ad_full.db (sqlite3 .schema c_recurring_run / c_recurringgroup). Kept apart from DDL so ensure() still reports the import tables only.
   var DDL_RECURRING = {
@@ -60,6 +63,7 @@
     });
     log('§IMPORT_TABLES ensure created=' + made + ' (' + Object.keys(DDL).join(', ') + '; boot overlay, outside the team base hash)');
     ensureRecurring(db);
+    ensureInventory(db);
     return made;
   }
   // ensureRecurring(db) - the Recurring tables (see DDL_RECURRING); idempotent; returns the number it created. ensure() calls it, so every host that boots the import tables boots these too.
@@ -74,7 +78,14 @@
     return made;
   }
 
-  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
+  function ensureInventory(db) {
+    var made = 0;
+    Object.keys(DDL_INV).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_INV[t]); made++; });
+    log('§IMPORT_INV_TABLES ensure created=' + made + ' (' + Object.keys(DDL_INV).join(', ') + '; boot overlay, outside the team base hash)');
+    return made;
+  }
+
+  var API = { DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
