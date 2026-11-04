@@ -945,6 +945,18 @@
     "off"
    ],
    "used_by": "dxf2bodies (§D109)"
+  },
+  "footing.z_from_plan": {
+   "element": "IfcFooting",
+   "value": "plan_level",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a footing-layer loop with no elevation height: top = the plan's level. One F mark inside = a pad, its thickness footing.depth; else a raft, thick by the labels inside it (<n>mm TH, RAFT <n>mm) or the raft around it (§D109). 'off' = a gap, left out",
+   "options": [
+    "plan_level",
+    "off"
+   ],
+   "used_by": "dxf2bodies (§D109)"
   }
  },
  "building_types": {

@@ -43,10 +43,11 @@ line('stairs', built(['IfcStair', 'IfcStairFlight']), stairs ? 1 : 0, stairs + '
 line('roof', built(['IfcRoof']), roofLines ? 1 : 0, roofLines + ' roof spot levels');
 // a count that matches can still be the wrong elements: each label of a repeated class goes to its nearest body (bbox, metres), on the plan with most labels. Two labels on one body or a body with none is printed.
 CLS.filter(c => c.repeat && bodies).forEach(c => { const pp = count[c.name].perPlan, f = Object.keys(pp).sort((a, b) => pp[b] - pp[a])[0]; if (!f) return;
-  const B = bodies.filter(b => c.ifc.indexOf(b.class) >= 0 && b.bbox), L = labels[f].filter(q => c.layer.test(q.layer) && c.text.test(q.t)), hit = {}; let far = 0;
-  L.forEach(q => { const x = q.x * 0.001, y = q.y * 0.001; let best = null, bd = Infinity; B.forEach(b => { const dx = Math.max(b.bbox[0] - x, 0, x - b.bbox[3]), dy = Math.max(b.bbox[1] - y, 0, y - b.bbox[4]), d = Math.hypot(dx, dy); if (d < bd) { bd = d; best = b; } }); if (!best || bd > 3) far++; else (hit[best.guid] = hit[best.guid] || []).push(q.t); });
-  const shared = Object.keys(hit).filter(k => hit[k].length > 1).length, noLabel = B.filter(b => !hit[b.guid]).length;
-  console.log('§POC_MATCH ' + c.name + ' labels=' + L.length + ' bodies=' + B.length + ' one_to_one=' + Object.keys(hit).filter(k => hit[k].length === 1).length + ' shared=' + shared + ' no_label=' + noLabel + ' far=' + far + ' on=' + f.slice(0, 5)); });
+  const B = bodies.filter(b => c.ifc.indexOf(b.class) >= 0 && b.bbox), L = labels[f].filter(q => c.layer.test(q.layer) && c.text.test(q.t));
+  // nearest first, each body and each label used once: a rotated body's bbox overlaps its neighbour's, so a plain nearest would double count. A body that carries a mark must carry the label's.
+  const P = []; L.forEach((q, li) => { const x = q.x * 0.001, y = q.y * 0.001; B.forEach((b, bi) => { if (b.mark && b.mark !== q.t) return; const dx = Math.max(b.bbox[0] - x, 0, x - b.bbox[3]), dy = Math.max(b.bbox[1] - y, 0, y - b.bbox[4]); P.push([Math.hypot(dx, dy), li, bi]); }); });
+  P.sort((a, b) => a[0] - b[0]); const uL = {}, uB = {}; let n = 0; P.forEach(p => { if (uL[p[1]] || uB[p[2]] || p[0] > 3) return; uL[p[1]] = uB[p[2]] = 1; n++; });
+  console.log('§POC_MATCH ' + c.name + ' labels=' + L.length + ' bodies=' + B.length + ' matched=' + n + ' unmatched_labels=' + (L.length - n) + ' unmatched_bodies=' + (B.length - n) + ' on=' + f.slice(0, 5)); });
 const hs = {}; (bodies || []).forEach(b => { const k = b.class + ':' + (b.height_source || '-'); hs[k] = (hs[k] || 0) + 1; });
 console.log('§POC_HEIGHT ' + JSON.stringify(hs));
 console.log('§POC_TOTAL bodies=' + (bodies ? bodies.length : 'no run') + ' sheets=' + files.length);

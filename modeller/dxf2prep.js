@@ -170,12 +170,12 @@
   function synthRects(entities, tol, layers, skewTol) {   // layers: the layers the USER typed elevwall/sectwall; a layer that already has a closed outline is not line work and is left alone
     var hasClosed = {}; (entities || []).forEach(function (e) { if (e.type === 'LWPOLYLINE' && e.shape) hasClosed[e.layer] = 1; });
     layers = (layers || []).filter(function (l) { return !hasClosed[l]; });
-    var segs = segmentsOf(entities, true, layers), r = lineLoops(segs, tol), made = [], skew = [], nonRect = 0, mixed = 0, n = 0, consumed = {};
+    var segs = segmentsOf(entities, true, layers), r = lineLoops(segs, tol), made = [], skew = [], polys = [], nonRect = 0, mixed = 0, n = 0, consumed = {};
     r.loops.forEach(function (l) {
       var q = reduceCollinear(l.pts, tol);
       var rect = q.length === 4 && q.every(function (p, i) { var o = q[(i + 1) % 4]; return Math.abs(p[0] - o[0]) <= tol || Math.abs(p[1] - o[1]) <= tol; });
       if (!rect) { nonRect++;
-        var sk = skewOutline(l.pts, skewTol), sl = {}; if (sk) { l.handles.forEach(function (ei) { sl[entities[ei].layer] = 1; }); if (Object.keys(sl).length === 1) skew.push({ deg: sk.deg, outline: sk.outline, layer: Object.keys(sl)[0], members: l.handles.map(function (ei) { return entities[ei].handle; }), handles: l.handles }); }
+        var sk = skewOutline(l.pts, skewTol), sl = {}; if (sk) { l.handles.forEach(function (ei) { sl[entities[ei].layer] = 1; }); if (Object.keys(sl).length === 1) skew.push({ deg: sk.deg, outline: sk.outline, layer: Object.keys(sl)[0], members: l.handles.map(function (ei) { return entities[ei].handle; }), handles: l.handles }); } else if (!sk) { var pl = {}; l.handles.forEach(function (ei) { pl[entities[ei].layer] = 1; }); if (Object.keys(pl).length === 1) polys.push({ pts: l.pts, layer: Object.keys(pl)[0], members: l.handles.map(function (ei) { return entities[ei].handle; }) }); }
         return; }
       var layers = {}; l.handles.forEach(function (ei) { layers[entities[ei].layer] = 1; });
       var ls = Object.keys(layers); if (ls.length !== 1) { mixed++; return; }
@@ -184,7 +184,7 @@
       made.push({ type: 'LWPOLYLINE', layer: ls[0], handle: 'loop-' + (++n), shape: true, synthetic: true, members: l.handles.map(function (ei) { return entities[ei].handle; }),
         vertices: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] });
     });
-    return { entities: made, skew: skew, consumed: consumed, rects: made.length, nonRect: nonRect, mixed: mixed, loops: r.loops.length, segments: segs.length, dropped: r.dropped };
+    return { entities: made, skew: skew, polys: polys, consumed: consumed, rects: made.length, nonRect: nonRect, mixed: mixed, loops: r.loops.length, segments: segs.length, dropped: r.dropped };
   }
 
   // ---- §L7.3 provenance ----
