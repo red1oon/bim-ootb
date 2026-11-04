@@ -17,8 +17,8 @@
       else if (r._t === T.R) rs[r.ResId] = pick(rs[r.ResId], r, 'Customer');
     });
     var alive = function (m) { return Object.keys(m).map(function (k) { return m[k]; }).filter(function (r) { return r.State !== 'X' && r.Deleted !== 'Y'; }); };
-    var settings = {}; Object.keys(st).forEach(function (k) { settings[k] = st[k].Value; });
-    return { floors: alive(fl), places: alive(pl), settings: settings, tables: ot, reservations: alive(rs) };
+    var settings = {}, settingSeq = {}; Object.keys(st).forEach(function (k) { settings[k] = st[k].Value; settingSeq[k] = Number(st[k].Seq); });
+    return { floors: alive(fl), places: alive(pl), settings: settings, settingSeq: settingSeq, tables: ot, reservations: alive(rs) };
   }
   function sha(s) { var c = (typeof require === 'function') ? require('crypto').webcrypto : g.crypto; return c.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(function (b) { return Array.prototype.map.call(new Uint8Array(b), function (x) { return ('0' + x.toString(16)).slice(-2); }).join(''); }); }
   // Table button text, uniCenta JTicketsBagRestaurantMap.printState():522-643. Lines: customer (table.showcustomerdetails), waiter (table.showwaiterdetails), then "Name / Seats", Guests, waiting time (colour set); plain name otherwise.
@@ -30,6 +30,18 @@
     parts.push(o.colour ? place.Name + ' / ' + place.Seats : place.Name);
     if (o.colour && occ) { var sec = Math.max(0, Math.floor(((o.now || Date.now()) - Number(row.Since || row.Seq)) / 1000)); parts.push('Guests ' + (row.Guests || 0)); parts.push('Waiting ' + Math.floor(sec / 3600) + 'h:' + Math.floor((sec % 3600) / 60) + 'm'); }
     return parts;
+  }
+
+  // ── DB mapping + the branch admin's edits (§32.1 item 4). Field lists = the plan's `carries` (R1/R2/R3); DB columns are the lower-cased names.
+  var FIELDS = { POS_FloorPlan: ['Kind', 'RecId', 'Name', 'FloorId', 'Seats', 'X', 'Y', 'W', 'H', 'Image', 'Value', 'Seq', 'Deleted'], POS_OpenTable: ['PlaceId', 'Seq', 'State', 'LockedBy', 'Guests', 'Waiter', 'Customer', 'Body', 'Since', 'Override'], POS_Reservation: ['ResId', 'Seq', 'Customer', 'At', 'Chairs', 'State', 'PlaceId'] };
+  function fromDb(t, r) { var o = { _t: t }; FIELDS[t].forEach(function (f) { var v = r[f.toLowerCase()]; if (v !== undefined && v !== null && v !== '') o[f] = v; }); return o; }
+  function toDb(row) { var o = {}; FIELDS[row._t].forEach(function (f) { if (row[f] !== undefined) o[f.toLowerCase()] = row[f]; }); return o; }
+  // catalog sizes (uniCenta Ticket.Buttons.xml:77-120 defaults) read from the S rows; the admin overrides them.
+  function sizes(settings) { var d = { 'img-width': 107, 'img-height': 60, 'cat-height': 320, pricevisible: 1, taxesincluded: 1 }, o = {}; Object.keys(d).forEach(function (k) { o[k] = settings && settings[k] !== undefined && settings[k] !== '' ? Number(settings[k]) : d[k]; }); return o; }
+  // one edit = one row with Seq+1 over the folded current one (floor F, place P, setting S); delete = Deleted Y.
+  function editRow(state, kind, rec) {
+    var m = kind === 'F' ? state.floors : kind === 'P' ? state.places : null, cur = m ? m.filter(function (x) { return x.RecId === rec.RecId; })[0] : (rec.RecId in (state.settings || {}) ? { Seq: (state.settingSeq || {})[rec.RecId] || 1 } : null);
+    return Object.assign({ _t: T.F, Kind: kind, Seq: (cur ? Number(cur.Seq) : 0) + 1 }, cur && m ? cur : {}, rec, { Kind: kind, Seq: (cur ? Number(cur.Seq) : 0) + 1 });
   }
   function create(opts) {
     var relay = opts.relay, me = opts.tillKey, perms = opts.perms || [], held = {}, C = { reads: 0, writes: 0, taps: 0, saves: 0 }, log = opts.log || function () {};
@@ -91,6 +103,6 @@
     };
     return core;
   }
-  var API = { create: create, fold: fold, label: label, sha: sha, T: T };
+  var API = { create: create, fold: fold, label: label, sha: sha, T: T, FIELDS: FIELDS, fromDb: fromDb, toDb: toDb, sizes: sizes, editRow: editRow };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else g.RestCore = API;
 })(typeof window !== 'undefined' ? window : globalThis);

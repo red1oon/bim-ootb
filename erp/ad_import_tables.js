@@ -28,9 +28,13 @@
   var BASE_COLS = '"ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, ';
   var DDL_POS = {
     pos_tillhandoff: 'CREATE TABLE IF NOT EXISTS "pos_tillhandoff" ("pos_tillhandoff_id" NUMERIC, ' + BASE_COLS + '"pos_tillhandoff_uu" TEXT, "tillkey" TEXT, "shiftseq" NUMERIC, "kind" TEXT, "documentno" TEXT, "body" TEXT)',
-    pos_branchdaystatement: 'CREATE TABLE IF NOT EXISTS "pos_branchdaystatement" ("pos_branchdaystatement_id" NUMERIC, ' + BASE_COLS + '"pos_branchdaystatement_uu" TEXT, "batchid" TEXT, "businessday" TEXT, "partial" TEXT, "seq" NUMERIC, "kind" TEXT, "tillkey" TEXT, "series" TEXT, "tickets" NUMERIC, "gross" NUMERIC, "net" NUMERIC, "tax" NUMERIC, "tenders" TEXT, "taxes" TEXT, "override" TEXT)'
+    pos_branchdaystatement: 'CREATE TABLE IF NOT EXISTS "pos_branchdaystatement" ("pos_branchdaystatement_id" NUMERIC, ' + BASE_COLS + '"pos_branchdaystatement_uu" TEXT, "batchid" TEXT, "businessday" TEXT, "partial" TEXT, "seq" NUMERIC, "kind" TEXT, "tillkey" TEXT, "series" TEXT, "tickets" NUMERIC, "gross" NUMERIC, "net" NUMERIC, "tax" NUMERIC, "tenders" TEXT, "taxes" TEXT, "override" TEXT)',
+    pos_floorplan: 'CREATE TABLE IF NOT EXISTS "pos_floorplan" ("pos_floorplan_id" NUMERIC, ' + BASE_COLS + '"pos_floorplan_uu" TEXT, "kind" TEXT, "recid" TEXT, "name" TEXT, "floorid" TEXT, "seats" NUMERIC, "x" NUMERIC, "y" NUMERIC, "w" NUMERIC, "h" NUMERIC, "image" TEXT, "value" TEXT, "seq" NUMERIC, "deleted" TEXT)',
+    pos_opentable: 'CREATE TABLE IF NOT EXISTS "pos_opentable" ("pos_opentable_id" NUMERIC, ' + BASE_COLS + '"pos_opentable_uu" TEXT, "placeid" TEXT, "seq" NUMERIC, "state" TEXT, "lockedby" TEXT, "guests" NUMERIC, "waiter" TEXT, "customer" TEXT, "body" TEXT, "since" TEXT, "override" TEXT)',
+    pos_reservation: 'CREATE TABLE IF NOT EXISTS "pos_reservation" ("pos_reservation_id" NUMERIC, ' + BASE_COLS + '"pos_reservation_uu" TEXT, "resid" TEXT, "seq" NUMERIC, "customer" TEXT, "at" TEXT, "chairs" NUMERIC, "state" TEXT, "placeid" TEXT)'
   };
-  var AD_ROWS_POS = { pos_tillhandoff: [7900003, 'POS Till Handoff', 'POS_TillHandoff'], pos_branchdaystatement: [7900004, 'POS Branch Day Statement', 'POS_BranchDayStatement'] };
+  var AD_ROWS_POS = { pos_tillhandoff: [7900003, 'POS Till Handoff', 'POS_TillHandoff'], pos_branchdaystatement: [7900004, 'POS Branch Day Statement', 'POS_BranchDayStatement'],
+    pos_floorplan: [7900005, 'POS Floor Plan', 'POS_FloorPlan'], pos_opentable: [7900006, 'POS Open Table', 'POS_OpenTable'], pos_reservation: [7900007, 'POS Reservation', 'POS_Reservation'] };
   function ensurePos(db) {
     var made = 0;
     Object.keys(DDL_POS).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_POS[t]); made++; });

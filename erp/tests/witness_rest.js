@@ -79,6 +79,16 @@ function till(key, perms) { var store = MUT === 'per-device-store' ? (own[key] =
   var pl = RC.fold(JSON.parse(JSON.stringify(shared))).places.filter(function (p) { return p.RecId === 'T1'; })[0]; check('layout', pl.X === 300 && pl.Y === 120, 'the saved position is what the fold returns', 'x=' + pl.X + ' y=' + pl.Y);
   var lab = RC.label({ Name: 'Table 1', Seats: 4 }, { State: 'O', Body: '{"lines":[1]}', Guests: 3, Customer: 'Aminah', Waiter: 'Wan', Seq: Date.now() - 5400000 }, { colour: 'black', showCustomer: true, showWaiter: true, now: Date.now() });
   check('layout', lab.join('|') === 'Aminah|Wan|Table 1 / 4|Guests 3|Waiting 1h:30m', 'table button text follows uniCenta printState (customer, waiter, Name / Seats, Guests, Waiting)', lab.join('|'));
+  // ADMIN: the branch POS admin's edits (floors/tables/settings) round-trip through the DB mapping and the fold
+  var st0 = RC.fold(JSON.parse(JSON.stringify(shared))), z0 = RC.sizes(st0.settings);
+  check('admin', z0['img-width'] === 107 && z0['img-height'] === 60 && z0['cat-height'] === 320, 'catalog sizes default to uniCenta Ticket.Buttons.xml (107 x 60, panel 320)', JSON.stringify(z0));
+  var fr = RC.editRow(st0, 'F', { RecId: 'F2', Name: 'Terrace', Image: 'https://x/y.png' }), pr = RC.editRow(st0, 'P', { RecId: 'T9', Name: 'Table 9', FloorId: 'F2', Seats: 6, X: 10, Y: 20, W: 90, H: 45 }), sr = RC.editRow(st0, 'S', { RecId: 'img-width', Value: '120' });
+  var back = [fr, pr, sr].map(function (r) { var d = RC.toDb(r); return RC.fromDb(r._t, d); });
+  check('admin', JSON.stringify(back[1]) === JSON.stringify(Object.assign({}, pr, { Kind: pr.Kind })) || (back[1].Name === 'Table 9' && Number(back[1].Seats) === 6 && back[1].FloorId === 'F2'), 'a place survives toDb -> fromDb', JSON.stringify(back[1]));
+  shared.push.apply(shared, [fr, pr, sr]); var st1 = RC.fold(JSON.parse(JSON.stringify(shared)));
+  check('admin', st1.floors.some(function (f) { return f.RecId === 'F2'; }) && st1.places.some(function (p) { return p.RecId === 'T9'; }) && RC.sizes(st1.settings)['img-width'] === 120, 'the fold shows the new floor, table and the changed tile width');
+  var dl = RC.editRow(st1, 'P', { RecId: 'T9', Deleted: 'Y' }); check('admin', dl.Seq === pr.Seq + 1 && dl.Name === 'Table 9', 'an edit carries the current row at Seq+1', 'seq=' + dl.Seq); shared.push(dl);
+  check('admin', !RC.fold(JSON.parse(JSON.stringify(shared))).places.some(function (p) { return p.RecId === 'T9'; }), 'a deleted table drops out of the fold');
   Object.keys(V).forEach(function (a) { console.log('§REST_VERDICT arm=' + a + ' ' + (V[a].j === 0 ? 'INCONCLUSIVE' : V[a].f ? 'FAIL' : 'PASS') + ' judged=' + V[a].j + ' failed=' + V[a].f); });
   console.log('§REST_VERDICT ' + (tot.j === 0 ? 'INCONCLUSIVE' : tot.f ? 'FAIL' : 'PASS') + ' judged=' + tot.j + ' failed=' + tot.f); process.exit(tot.j && !tot.f ? 0 : 1);
 })().catch(function (e) { console.log('§REST_CRASH ' + e.stack); process.exit(3); });
