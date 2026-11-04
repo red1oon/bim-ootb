@@ -20,11 +20,11 @@ srv.listen(0, async function () {
   await boot(); await login();
   var keys = await pg.evaluate(function () { return TillSetup.keys.map(function (k) { return { key: k[1], scope: k[5], type: k[3], def: k[4] }; }); });
   var hw = ['payment.magcardreader', 'payment.gateway', 'machine.printer', 'machine.display', 'machine.scale', 'machine.scanner', 'db.URL', 'swing.defaultlaf', 'machine.screenmode', 'erp.URL'];
-  check(keys.length === 49, 'exactly 49 applicable keys (§29.1)', 'n=' + keys.length); check(!keys.some(function (k) { return hw.indexOf(k.key) >= 0; }), 'no hardware / Swing / DB key is shown');
+  check(keys.length === 50, 'exactly 50 keys: the 49 applicable (§29.1) + ui.theme Look and Feel (§36.3)', 'n=' + keys.length); check(!keys.some(function (k) { return hw.indexOf(k.key) >= 0; }), 'no hardware / Swing / DB key is shown');
   var dev = keys.filter(function (k) { return k.scope === 'device'; }); if (!dev.length) { console.log('§SETUP_VERDICT INCONCLUSIVE no device keys'); process.exit(2); }
   await pg.click('#cfg-open'); await pg.waitForSelector('#setup #cfg-tabs button');
   // set each device key on its own tab, save, reload, read back
-  var want = {}; dev.forEach(function (k, i) { want[k.key] = k.type === 'bool' ? !k.def : k.type === 'num' ? 7 + i : k.type === 'mode' ? 'simple' : 'v' + i; });
+  var want = {}; dev.forEach(function (k, i) { want[k.key] = k.type === 'bool' ? !k.def : k.type === 'num' ? 7 + i : k.type === 'mode' ? 'simple' : k.type === 'theme' ? 'modern' : 'v' + i; });
   var tabs = await pg.$$eval('#cfg-tabs button', function (b) { return b.map(function (x) { return x.getAttribute('data-cfg-tab'); }); });
   for (var t of tabs) { await pg.click('#cfg-tabs [data-cfg-tab="' + t + '"]'); await pg.evaluate(function (w) { document.querySelectorAll('#cfg-body [data-key]:not([disabled])').forEach(function (e) { var k = e.getAttribute('data-key'); if (!(k in w) || k === 'machine.ticketsbag') return; if (e.type === 'checkbox') e.checked = w[k]; else e.value = w[k]; }); }, want); await pg.click('#cfg-save'); }
   await boot('?mode=standard'); await login();   // ?mode= given: the URL wins for the mode, every other key is read back from the device store

@@ -111,9 +111,9 @@
     return { ref: ref, fresh: ref.filter(function (r) { return Number(r.seq) > S.set.sodaFanned; }), confirms: pend };
   }
   async function renderSoda() {
-    if (!SD) return null; var s = await sodaRead(), counts = { P: 0, R: 0, T: 0 }; s.fresh.forEach(function (r) { if (counts[r.kind] != null) counts[r.kind]++; });
+    if (!SD) return null; var s = await sodaRead(), counts = { P: 0, R: 0, T: 0, O: 0 }; s.fresh.forEach(function (r) { if (counts[r.kind] != null) counts[r.kind]++; });
     var batches = {}; s.fresh.forEach(function (r) { batches[r.batchid] = 1; });
-    $('#s-state').textContent = Object.keys(batches).length ? Object.keys(batches).length + ' batch(es): ' + counts.P + ' prices, ' + counts.R + ' products, ' + counts.T + ' taxes' : 'no new batch';
+    $('#s-state').textContent = Object.keys(batches).length ? Object.keys(batches).length + ' batch(es): ' + counts.P + ' prices, ' + counts.R + ' products, ' + counts.T + ' taxes' + (counts.O ? ', the company details' : '') : 'no new batch';
     $('#a-soda-fan').disabled = !s.fresh.length; $('#a-soda-recv').disabled = !s.confirms.length; $('#s-recv').textContent = s.confirms.length ? s.confirms.length + ' movement(s) to receive' : (S.set.receipts.length ? S.set.receipts.length + ' receipt(s) go with the next EODA' : '');
     log('§SODA_SCREEN org=' + S.cfg.org + ' freshRows=' + s.fresh.length + ' prices=' + counts.P + ' products=' + counts.R + ' taxes=' + counts.T + ' toReceive=' + s.confirms.length + ' receiptsQueued=' + S.set.receipts.length);
     return s;

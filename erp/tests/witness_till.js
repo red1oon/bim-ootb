@@ -185,7 +185,7 @@ async function prepare(pg, screen) {   // put the live page on the screen a regi
 }
 async function runParity(pg, pgRest, pgKit) {
   var R = await pg.evaluate(function () { return window.Till.registry.ROWS; }), x = 0, N = R.length, detail = [];
-  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup', 'kitchen'];
+  var SCREENS = ['login', 'menu', 'sales', 'pay', 'receipt', 'close', 'editsales', 'refund', 'custpay', 'payments', 'vouchers', 'presence', 'pickup', 'floors', 'reservations', 'setup', 'about', 'kitchen'];
   for (var row of R) {
     var ok = false, why = '', page = row.page === 'kitchen.html' ? pgKit : row.mode === 'restaurant' ? pgRest : pg;
     if (row.status !== 'built' || SCREENS.indexOf(row.screen) < 0) { why = 'no such screen in the page (registry status ' + row.status + ')'; }
@@ -727,7 +727,7 @@ else
         ctx = await newCtx(); var pgp = await openTill(ctx, sv.base), ctx2 = await newCtx(), pgr = await openTill(ctx2, sv.base, '?mode=restaurant'); await pgr.click('#u1 .u-user:has-text("GardenAdmin")');
         var ctx3 = await newCtx(), pgk = null; if (fs.existsSync(path.join(ERP, 'kitchen.html'))) { pgk = await ctx3.newPage(); pgk.on('pageerror', function (e) { ERRS.push(e.message); }); await pgk.goto(sv.base + '/erp/kitchen.html?login=50001', { waitUntil: 'load' }); await pgk.waitForFunction(function () { return window.Kitchen && window.Kitchen.ready; }, null, { timeout: 170000 }).catch(function () { pgk = null; }); }
         var pr = await runParity(pgp, pgr, pgk); console.log('§TILL_PARITY ' + pr.x + ' of ' + pr.N + ' ' + J(pr.detail));
-        check('parity', 'non-vacuous', pr.N === 25 && pr.x > 0, 'N is the registry (25: 22 of §14A.6 + N23-N25 of §32, each with its source) and at least one row was judged present', pr);
+        check('parity', 'non-vacuous', pr.N === 28 && pr.x > 0, 'N is the registry (28: 22 of §14A.6 + N23-N25 of §32 + N26-N28 of §36, each with its source) and at least one row was judged present', pr);
         console.log(pr.x < pr.N ? '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=INCONCLUSIVE ' + pr.x + '/' + pr.N : '§TILL_UNICENTA_PARITY_VERDICT W-TILL-UNICENTA-PARITY verdict=PASS ' + pr.x + '/' + pr.N);
         await pgp.close(); await pgr.close(); if (pgk) await pgk.close();
       }
