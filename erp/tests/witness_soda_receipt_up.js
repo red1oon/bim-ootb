@@ -56,6 +56,9 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
   });
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port, PIPE = base + '/pipe';
+  var RPORT = 19000 + Math.floor(Math.random() * 900), RBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'br-box-')), RELAY = 'http://127.0.0.1:' + RPORT, LAN = RELAY + '/pipe';   // §38: the REAL branch relay; tills use ONLY it, D is the main till
+  var relayProc = require('child_process').spawn('python3', [path.join(ROOT, 'erp', 'branch_relay.py'), '--port', String(RPORT), '--dir', RBOX, '--bind', '127.0.0.1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  await new Promise(function (res) { relayProc.stderr.on('data', function (d) { if (String(d).indexOf('§RELAY_UP') >= 0) res(); }); });
   var browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
   var owner = await mkKey(); cur.plans.office = planJs('TEAM_PLAN', await signObj(OFFICE, owner)); cur.plans.pos = planJs('TEAM_PLAN_POS', await signObj(POSPLAN, owner));
   var xcfg = encodeURIComponent(Buffer.from(J({ trust: [owner.pub] })).toString('base64')), NET = { aborted: [] };
@@ -64,12 +67,14 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
     pg.on('console', function (m) { var t = m.text(); logs.push(t); if (/^§(SODA|EODA|TEAM_HELD|TEAM_HOLD|TEAM_VISIT|TEAM_THIN|TEAM_OUT|TEAM_LOCALONLY|TEAM_NOT_DECLARED|TEAM_REPLICA|MV-TIP-SHADOW|BUS_REPLICA)|🔴/.test(t)) console.log('   [' + name + '] ' + t.slice(0, 300)); });
     pg.on('pageerror', function (e) { errors.push(name + ': ' + e.message); });
     await ctx.route('**/*', function (route) { var u = new URL(route.request().url()); if (u.hostname !== '127.0.0.1') { NET.aborted.push(u.host); return route.abort('blockedbyclient'); }
+      if (u.port === String(RPORT)) return route.continue();
       if (u.pathname.indexOf('/pipe/') === 0) REQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' }); return route.continue(); });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
+    if (name === 'D') await pg.addInitScript(function () { localStorage.setItem('tilllan.v1:12-MAIN', JSON.stringify({ main: { on: true } })); });   // §38: D is the flagged main till (a SODA kind-M row sets this on a real till)
     await pg.goto(base + urlPath, { waitUntil: 'load' }); await pg.waitForFunction(ready, null, { timeout: 240000 });
     return { name: name, pg: pg, logs: logs, ctx: ctx };
   }
-  var qsBase = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';
+  var qsNet = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600', qsBase = '&team=1&pipe=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600', qsMain = qsNet + '&lan=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY);
   var eng = function (d, fn, arg) { return d.pg.evaluate('(function(){ var W = window.Till ? window.Till.engine() : window.BranchAdmin ? window.BranchAdmin.engine() : window; return (' + fn.toString() + ')(W, ' + J(arg === undefined ? null : arg) + '); })()'); };
   var T = {
     found: function (d) { return eng(d, function (W) { return W.TeamSync.found(); }); }, join: function (d, sp) { return eng(d, function (W, s) { return W.TeamSync.join(s); }, sp); },
@@ -78,7 +83,8 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
     visit: function (d) { var done = false; return Promise.race([eng(d, async function (W) { var v = await W.TeamSync.visit(); return v && v.replicaIn; }).then(function (v) { done = true; return v; }), sleep(120000).then(function () { if (!done) console.log('   §EODA_STEP visit on ' + d.name + ' did not return in 120 s'); return null; })]); },
     rows: function (d, sql) { return eng(d, function (W, q) { return new Promise(function (res) { W.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { try { res(trx.q(q)); } catch (e) { res({ error: String(e && e.message) }); } return { ok: true }; } }, function () {}); }); }, sql); }
   };
-  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) for (var i = 0; i < devs.length; i++) await T.visit(devs[i]); }
+  async function bridge() { if (typeof D !== 'undefined' && D && D.pg) await D.pg.evaluate(function () { return window.BranchAdmin.lanCollect(); }); }   // §38: the main till mirrors the shared stream and collects over the LAN
+  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) { for (var i = 0; i < devs.length; i++) { await bridge(); await T.visit(devs[i]); } await bridge(); } }
   var mark = function () { return REQ.length; }, since = function (mk) { return REQ.slice(mk); };
   // lanes of a PUT: 'branch' = the branch box m/b_<org>/ (head office never reads it); 'hub' = an op bundle (/o/) outside it = DATA head office reads; 'house' = heartbeat / frontier / receipt files (h, f, r), carry no ticket
   var lane = function (r) { return /\/m\/b_/.test(r.p + r.q) ? 'branch' : /\/o\//.test(r.p + r.q) ? 'hub' : 'house'; };
@@ -87,9 +93,9 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
 
   // ═══ setup: head office A, the branch POS admin D, one till T1, and X (a device that is neither the hub nor the branch role)
   console.log('§E0 setup: head office A (founder, POS plan, role 102), the branch POS admin D and a till T1 (role 50004, Bound to the branch Org 12), X (role 103)');
-  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsBase, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
+  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsNet, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
   await A.pg.evaluate(function () { return window.TeamSync.ready; });
-  var D = await open('D', '/erp/branch_admin.html?login=50001' + qsBase, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§SODA2_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; });
+  var D = await open('D', '/erp/branch_admin.html?login=50001' + qsMain, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§SODA2_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; });
   var T1 = await open('T1', '/erp/till.html?login=50001' + qsBase, function () { return window.Till && window.Till.ready; }).catch(function (e) { console.log('§SODA2_PAGE till did not boot: ' + String(e && e.message).slice(0, 160)); return null; });
   var X = await open('X', '/erp/till.html?login=102' + qsBase, function () { return window.Till && window.Till.ready; }).catch(function (e) { console.log('§SODA2_PAGE X did not boot: ' + String(e && e.message).slice(0, 160)); return null; });
   var TL = [T1], setupOk = !!(D && T1 && X);
@@ -228,7 +234,7 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
 
   console.log('§SODA2_PAGE_ERRORS n=' + errors.length + (errors.length ? ' ' + J(errors.slice(0, 3)) : ''));
   ARM = ARMS[0]; V[ARM].judged++; if (errors.length) V[ARM].failed++; console.log('  §SODA2_CHECK arm=' + ARM + ' key=page-errors ' + (errors.length ? 'FAIL' : 'OK') + ' 0 page errors on the pages');
-  await browser.close(); server.close();
+  await browser.close(); server.close(); relayProc.kill('SIGTERM');
   var bad = 0; ARMS.forEach(function (a) { var v = V[a], verdict = !v.judged ? 'INCONCLUSIVE' : v.failed ? 'FAIL' : 'PASS'; if (verdict !== 'PASS') bad++; console.log('§SODA2_VERDICT arm=' + a + ' verdict=' + verdict + ' judged=' + v.judged + ' failed=' + v.failed + (MUTNAME ? ' mutant=' + MUTNAME : '')); });
   process.exit(bad ? 1 : 0);
 })().catch(function (e) { console.log('§SODA2_CRASH ' + (e && e.stack || e)); process.exit(3); });
