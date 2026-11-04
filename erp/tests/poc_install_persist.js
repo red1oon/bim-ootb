@@ -9,7 +9,7 @@
 //                        surfaces it in the switcher (≥2 tenants). (the make-it-stick claim)
 //     §C IDEMPOTENT    — re-install the SAME shard → AD_Client count + C_Order count UNCHANGED (INSERT OR
 //                        IGNORE dedups; no dup tenant, no dup orders/accounts).
-//     §D PREVIEW       — on the post-reload resident db, the FROZEN fold (DocPoster+PostResolver) derives the
+//     §D PREVIEW       — on the post-reload resident db, the REAL poster's preview (ModelPost.previewFacts) books the
 //                        Odoo order to coverage:complete + balanced (the accounting view still lights up).
 //   §-log first — READ tests/poc_install_persist.log before any conclusion.
 // Run:  node tests/poc_install_persist.js 2>&1 | tee tests/poc_install_persist.log   (cwd = bim-ootb/erp)
@@ -41,18 +41,6 @@ const probe = () => {
            odooOrders: q('SELECT COUNT(*) FROM C_Order WHERE AD_Client_ID=12'),
            odooVC: q('SELECT COUNT(*) FROM C_ValidCombination WHERE AD_Client_ID=12') };
 };
-// in-page: run the FROZEN fold over the resident db for an Odoo doc → coverage (complete iff nothing absent)
-const previewCoverage = (table, id) => {
-  try {
-    if (!window.DocPoster || !window.PostResolver || !window.ERPPreview) return { err: 'engine-not-loaded' };
-    const fdb = window.ERPPreview.facade(window.__idmpDb);
-    const res = window.DocPoster.derivePostings(fdb, { table, id }, 101, window.PostResolver);
-    if (!res || !res.lines) return { err: 'no-result' };
-    return { lines: res.lines.length, absent: res.absent.length, balanced: !!res.balanced,
-             coverage: res.absent.length ? 'partial' : 'complete' };
-  } catch (e) { return { err: e.message }; }
-};
-
 let fails = 0;
 const ok = (c, m) => { if (!c) { fails++; console.log('  ✗ FAIL: ' + m); } else { console.log('  ✓ ' + m); } };
 
@@ -130,20 +118,30 @@ const ok = (c, m) => { if (!c) { fails++; console.log('  ✗ FAIL: ' + m); } els
 
   // ── Phase D: the accounting view still lights up — frozen fold derives the Odoo order to the cent ──
   const cov = await page.evaluate(([t, i]) => {
-    if (!window.DocPoster || !window.PostResolver || !window.ERPPreview) return { err: 'engine-not-loaded' };
-    try {
-      const fdb = window.ERPPreview.facade(window.__idmpDb);
-      const res = window.DocPoster.derivePostings(fdb, { table: t, id: i }, 101, window.PostResolver);
-      if (!res || !res.lines) return { err: 'no-result' };
-      return { lines: res.lines.length, absent: res.absent.length, balanced: !!res.balanced,
-               sumDr: res.sumDr, sumCr: res.sumCr, basis: res.basis,
-               coverage: res.absent.length ? 'partial' : 'complete' };
+    if (!window.ModelPost || !window.ModelLayer || !(window.__crud && window.__crud.withModelTrx)) return { err: 'model-layer-not-loaded' };
+    try {   // §POSTING-PARITY 5d: the REAL poster's preview (ModelPost.previewFacts on a never-committed Trx) - the doc_poster fold is retired
+      const pf = window.__crud.withModelTrx((q, env) => window.ModelPost.previewFacts(new window.ModelLayer.Trx(q, env), t.toLowerCase(), i));
+      if (!pf || pf.state === 'absent') return { err: 'no-result' };
+      const dq = (sql) => { try { const r = window.__idmpDb.exec(sql); return r.length ? r[0].values : []; } catch (e) { return 'ERR ' + e.message; } };
+      const diag = 'inv=' + JSON.stringify(dq('SELECT ad_client_id, ad_org_id, c_doctype_id, docstatus, posted FROM c_invoice WHERE c_invoice_id=' + i)) + ' schemasOfClient=' + JSON.stringify(dq('SELECT c_acctschema_id, ad_client_id FROM c_acctschema WHERE ad_client_id=(SELECT ad_client_id FROM c_invoice WHERE c_invoice_id=' + i + ')')) + ' acctinfo=' + JSON.stringify(dq('SELECT ad_client_id, c_acctschema1_id FROM ad_clientinfo WHERE ad_client_id=(SELECT ad_client_id FROM c_invoice WHERE c_invoice_id=' + i + ')')) + ' say=' + JSON.stringify(pf.say).slice(0, 900);
+      const sch = pf.facts.some(f => Number(f.c_acctschema_id) === 101) ? 101 : (pf.facts.length ? Number(pf.facts[0].c_acctschema_id) : null);   // erp_preview's rule: the requested schema, else the first written
+      const ls = pf.facts.filter(f => Number(f.c_acctschema_id) === sch), c = v => Math.round(Number(v || 0) * 100);
+      const dr = ls.reduce((a, f) => a + c(f.amtacctdr), 0), cr = ls.reduce((a, f) => a + c(f.amtacctcr), 0);
+      return { lines: ls.length, absent: pf.posted ? 0 : 1, balanced: pf.posted && ls.length > 0 && dr === cr,
+               sumDr: dr / 100, sumCr: cr / 100, basis: pf.state + ' schema=' + sch + ' schemas=' + Array.from(new Set(pf.facts.map(f => f.c_acctschema_id))).join('/') + (pf.refusal ? ' refusal=' + String(pf.refusal).slice(0, 120) : ''),
+               coverage: pf.posted && ls.length ? 'complete' : 'partial', diag: diag, nSchemas: dq('SELECT COUNT(*) FROM c_acctschema WHERE ad_client_id=(SELECT ad_client_id FROM c_invoice WHERE c_invoice_id=' + i + ')')[0][0], nFacts: pf.facts.length, posted: pf.posted };
     } catch (e) { return { err: e.message }; }
   }, ['C_Invoice', 1200001]);
   console.log('§INSTALL-D preview C_Invoice:1200001 basis=' + cov.basis + ' coverage=' + cov.coverage + ' lines=' + cov.lines
     + ' absent=' + cov.absent + ' ΣDr=' + cov.sumDr + ' ΣCr=' + cov.sumCr + ' balanced=' + (cov.balanced ? 'Y' : 'N') + (cov.err ? ' err=' + cov.err : ''));
-  ok(!cov.err && cov.coverage === 'complete', 'resident Odoo invoice derives coverage:complete (accounting view lights up)');
-  ok(!cov.err && cov.balanced, 'derived journal is balanced (ΣDr==ΣCr) AFTER a re-install — the idempotency guard held (no double tax)');
+  console.log('§INSTALL-D-DIAG ' + cov.diag);
+  if (!cov.err && Number(cov.nSchemas) === 0) {   // legacy posts in the DOCUMENT's client's schemas (DocumentEngine.postImmediate :1445 getClientAcctSchema(AD_Client_ID)); none -> no facts
+    ok(cov.posted && cov.nFacts === 0, 'the Odoo tenant has NO C_AcctSchema: the real poster books nothing, as legacy (no cross-tenant booking into GardenWorld schema 101 - what the retired doc_poster fold did)');
+    console.log('§INSTALL-D accounting-view INCONCLUSIVE: the Odoo shard carries no accounting schema, so "the accounting view lights up" cannot be judged (§POSTING-PARITY 5d)');
+  } else {
+    ok(!cov.err && cov.coverage === 'complete', 'resident Odoo invoice: the real poster books it (accounting view lights up)');
+    ok(!cov.err && cov.balanced, 'the real poster\'s journal is balanced (ΣDr==ΣCr) AFTER a re-install — the idempotency guard held (no double tax)');
+  }
 
   // ── SEEN: screenshot the logged-in app on the resident tenant ──
   await page.goto(base + '?client=odoo&login=Odoo', { waitUntil: 'networkidle' });

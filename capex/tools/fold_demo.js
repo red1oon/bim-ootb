@@ -6,17 +6,15 @@
 const fs = require('fs'), path = require('path'), initSqlJs = require('sql.js');
 const ROOT = path.join(__dirname, '..', '..');
 const ProjFold = require(path.join(ROOT, 'viewer', 'proj_fold.js'));
+const PS = require(path.join(ROOT, 'viewer', 'proj_order_state.js'));
 const FI = require(path.join(ROOT, 'capex', 'tools', 'fold_inputs.js'));   // ONE input producer (5D quantities + the 4D owner's programme)
 (async () => {
   const [bldPath, outPath, packFile = 'pwd2024_bd.json', iso = 'BDT', startArg] = process.argv.slice(2);
   if (!bldPath || !outPath) { console.error('usage: fold_demo.js <building.db> <out.db> [pack] [ISO]'); process.exit(2); }
   const SQL = await initSqlJs();
   const bdb = new SQL.Database(fs.readFileSync(bldPath));
-  const edb = new SQL.Database(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db')));
-  // the ERP opens the seed WITH its self-heal patch (idempiere.html; erp/tests/dd_common.js does the same): ad_ddl_default etc. come from it
-  let pOk = 0, pBad = 0; fs.readFileSync(path.join(ROOT, 'erp', 'patches', 'ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(st => { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { edb.run(st); pOk++; } catch (e) { pBad++; } });
-  console.log('§FOLD_DEMO seed patch applied ok=' + pOk + ' failed=' + pBad);
-  ['ad_docvalue_overlay.js', 'ad_taxcat_overlay.js'].forEach(f => require(path.join(ROOT, 'erp', f)).ensure(edb));   // the ERP's boot overlays (idempiere.html / ws_kernel.js), same order
+  // the ONE store opener (viewer/proj_order_state.js: seed + self-heal patch + the ERP's boot overlays, §5.25 D1). INTO=1 folds into the existing output, as the viewer's OPFS store accumulates.
+  const edb = process.env.INTO === '1' && fs.existsSync(outPath) ? new SQL.Database(fs.readFileSync(outPath)) : (await PS.openStore(SQL, () => Promise.resolve(fs.readFileSync(path.join(ROOT, 'erp', 'ad_seed.db'))))).db;
   const building = bdb.exec('SELECT DISTINCT building FROM elements_meta LIMIT 1')[0].values[0][0];
   const pack = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', packFile), 'utf8'));
   const sr = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', 'sequence_rules.json'), 'utf8'));

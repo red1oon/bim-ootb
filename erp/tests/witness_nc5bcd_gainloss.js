@@ -12,7 +12,7 @@
 var fs = require('fs'), path = require('path');
 var ERP = path.join(__dirname, '..');
 var DP = require(path.join(ERP, 'doc_poster.js'));
-var initSqlJs; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); }
+var initSqlJs, VENDORED = false; try { initSqlJs = require('sql.js'); } catch (e) { initSqlJs = require(path.join(ERP, 'sqljs', 'sql-wasm.js')); VENDORED = true; }   // the vendored wasm only with the vendored loader (an npm sql.js + the vendored wasm = version mismatch crash)
 var LEG = process.env.NC5BCD_LEGACY || path.join('/home/red1/bim-compiler/scripts/bridge/out/nc5bcd_legacy.json');
 var log = function (s) { console.log(s); }, fails = 0, judgedTotal = 0;
 var EUR = 102, USD = 100;
@@ -61,7 +61,7 @@ function fold(db, table, id, schema) {
 function fmt(m) { return Object.keys(m).sort().map(function (k) { return k + ' DR' + m[k].dr + ' CR' + m[k].cr; }).join(' | ') || 'none'; }
 (async function () {
   if (!fs.existsSync(LEG)) { log('§NC5BCD-VERDICT INCONCLUSIVE reason="legacy file missing: ' + LEG + ' (run scripts/bridge/nc5bcd_legacy.js)"'); process.exit(3); }
-  var L = JSON.parse(fs.readFileSync(LEG, 'utf8')), SQL = await initSqlJs({ wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) });
+  var L = JSON.parse(fs.readFileSync(LEG, 'utf8')), SQL = await initSqlJs(VENDORED ? { wasmBinary: fs.readFileSync(path.join(ERP, 'sqljs', 'sql-wasm.wasm')) } : undefined);
   var gainLossSeen = {};
   L.variants.forEach(function (v) {
     if (!v.allocFacts || !v.allocFacts.length) { log('§NC5BCD case=' + v.k + ' INCONCLUSIVE (no legacy allocation facts: inv=' + (v.invError || '') + ' pay=' + (v.payError || '') + ')'); return; }
