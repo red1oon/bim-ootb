@@ -23,6 +23,8 @@
   }
   var changed = function (r, since) { return ts(r.updated) >= since; };           // Export2Queue.java:161-165 uses '>='
 
+  // §36.5 the printable company lines, from the legacy columns (AD_OrgInfo.TaxID/Phone/Phone2/Fax/EMail/ReceiptFooterMsg, C_Location.Address1/Address2/City/Postal, C_Country.Name); '?' is iDempiere's empty TaxID placeholder
+  function companyDetail(c) { var d = {}; ['address1', 'address2', 'city', 'postal', 'country', 'taxid', 'phone', 'phone2', 'fax', 'email', 'footer'].forEach(function (k) { var v = c[k == 'footer' ? 'receiptfootermsg' : k]; v = v == null ? '' : String(v).trim(); if (v === '?' ) v = ''; d[k] = v; }); return d; }
   // o { since, upto, batchId, seq, client, org, version, prices: m_productprice rows, products: m_product rows, taxes: c_tax rows }
   // -> { rows: POS_SodaRef rows (Kind B header first, then P, R, T), counts }. Unchanged rows never appear.
   function refDelta(o) {
@@ -32,12 +34,15 @@
     var P = inVersion.filter(function (p) { return changed(p, since); });
     var R = (o.products || []).filter(function (r) { return String(r.isactive) !== 'N' && pricedIds[r.m_product_id] && changed(r, since); });   // Export2Queue.java:161-165 also counts a changed price or storage as a changed product because its Openbravo message is price-inclusive; ours carries the price as its own P row, so the product row travels only when the PRODUCT row changed (thin pipe)
     var T = (o.taxes || []).filter(function (t) { return String(t.isactive) !== 'N' && changed(t, since); });
-    var rows = [];
-    rows.push(base({ kind: 'B', since: since, upto: ts(o.upto), detail: JSON.stringify({ prices: P.length, products: R.length, taxes: T.length }) }));
+    // §36.5: the company of THIS branch org (AD_Org.Name + AD_OrgInfo + C_Location + the logo AD_Image.ImageURL), ONE 'O' row, only when one of those records changed (their newest Updated >= since)
+    var O = (o.company || []).filter(function (c) { return String(c.isactive) !== 'N' && Number(c.ad_org_id) === Number(o.org) && changed(c, since); });
+    var rows = [], hd = { prices: P.length, products: R.length, taxes: T.length }; if (O.length) hd.company = O.length;   // key present only when a company row travels: a batch without one is byte-identical to before
+    rows.push(base({ kind: 'B', since: since, upto: ts(o.upto), detail: JSON.stringify(hd) }));
     P.sort(function (a, b) { return a.m_product_id - b.m_product_id; }).forEach(function (p) { rows.push(base({ kind: 'P', m_product_id: p.m_product_id, m_pricelist_version_id: p.m_pricelist_version_id, pricestd: num(p.pricestd), pricelimit: num(p.pricelimit), pricelist: num(p.pricelist) })); });
     R.sort(function (a, b) { return a.m_product_id - b.m_product_id; }).forEach(function (r) { rows.push(base({ kind: 'R', m_product_id: r.m_product_id, value: r.value, name: r.name, upc: r.upc, imageurl: r.imageurl, c_uom_id: r.c_uom_id, m_product_category_id: r.m_product_category_id, c_taxcategory_id: r.c_taxcategory_id })); });
     T.sort(function (a, b) { return a.c_tax_id - b.c_tax_id; }).forEach(function (t) { rows.push(base({ kind: 'T', c_tax_id: t.c_tax_id, c_taxcategory_id: t.c_taxcategory_id, name: t.name, rate: num(t.rate), validfrom: t.validfrom })); });
-    return { rows: rows, counts: { prices: P.length, products: R.length, taxes: T.length } };
+    O.forEach(function (c) { rows.push(base({ kind: 'O', value: c.value, name: c.name, imageurl: c.logo_url || null, detail: JSON.stringify(companyDetail(c)) })); });
+    return { rows: rows, counts: { prices: P.length, products: R.length, taxes: T.length, company: O.length } };
   }
 
   // the admin re-emits the batch rows for its tills on the branch-local flow (S2): same columns, nothing added, the header too (the till logs what it received)
@@ -68,5 +73,5 @@
     return out;
   }
 
-  return { EPOCH: EPOCH, watermark: watermark, refDelta: refDelta, tillRows: tillRows, applyRef: applyRef, ts: ts };
+  return { companyDetail: companyDetail, EPOCH: EPOCH, watermark: watermark, refDelta: refDelta, tillRows: tillRows, applyRef: applyRef, ts: ts };
 });
