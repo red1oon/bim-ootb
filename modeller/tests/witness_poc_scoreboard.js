@@ -61,4 +61,6 @@ CLS.filter(c => c.repeat && bodies).forEach(c => { const pp = count[c.name].perP
   console.log('§POC_MATCH ' + c.name + ' labels=' + L.length + ' bodies=' + B.length + ' matched=' + n + ' unmatched_labels=' + (L.length - n) + ' unmatched_bodies=' + (B.length - n) + ' on=' + f.slice(0, 5)); });
 const hs = {}; (bodies || []).forEach(b => { const k = b.class + ':' + (b.height_source || '-'); hs[k] = (hs[k] || 0) + 1; });
 console.log('§POC_HEIGHT ' + JSON.stringify(hs));
+// the end of the chain: the file holds what the run says it built, class by class, and nothing fell to a proxy
+if (dirR && fs.existsSync(path.join(dirR, 'model.ifc'))) { const ifc = fs.readFileSync(path.join(dirR, 'model.ifc'), 'utf8'), cnt = c => (ifc.match(new RegExp('=' + c.toUpperCase() + '\\(', 'g')) || []).length, off = Object.keys(by).filter(c => cnt(c) !== by[c]).map(c => c + ':' + cnt(c) + '/' + by[c]); console.log('§POC_IFC proxies=' + cnt('IfcBuildingElementProxy') + ' class_mismatch=[' + off.join(' ') + ']' + (off.length || cnt('IfcBuildingElementProxy') ? ' WRONG' : ' agrees')); } else console.log('§POC_IFC INCONCLUSIVE: no model.ifc in this run');
 console.log('§POC_TOTAL bodies=' + (bodies ? bodies.length : 'no run') + ' sheets=' + files.length);

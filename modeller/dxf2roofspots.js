@@ -53,7 +53,7 @@
     var zs = V.map(function (v) { return v[2]; }), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs), lv = levels.filter(function (l) { return l <= z1; }).pop(); if (lv === undefined) lv = levels[0];
     if (DF && DF.has('roof.from_spots')) DF.use('roof.from_spots');
     els.push({ guid: 'body-roof-spots', class: 'IfcRoof', storey: 'Level ' + (levels.indexOf(lv) + 1), vertices: V, faces: F, handle: 'roof-spots', layer: '', sheet: best.ps.name, kind: 'roof', mark: null, members: [], z0: z0, z1: z1,
-      size: { spots: pts.length, triangles: tris.length, thickness: { value: thick, source: 'note' }, outline: { source: 'the convex hull of the spots, not a drawn edge' } }, height_source: 'label', prov: 'derived', ifc: P.ifcType('roof', null, null) });
+      size: { spots: pts.length, triangles: tris.length, thickness: { value: thick, source: 'note' }, outline: { source: 'the convex hull of the spots, not a drawn edge' } }, height_source: 'label', prov: 'derived', ifc: Object.assign(P.ifcType('roof', null, null), { PredefinedType: 'FREEFORM' }) });
     return { els: els, gaps: gaps, report: report };
   }
   return { buildRoof: buildRoof, delaunay: delaunay, zAt: zAt };
