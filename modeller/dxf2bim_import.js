@@ -391,7 +391,7 @@
       if ((pd.tags || []).length) { var tg = T.applyTags(ops, [{ desc: pd }], MK.UNITS, { snap_tol: CFG.snap_tol, level: st.level }); ops = tg.ops; st.tagged = tg.labelled; }
       ops = E.applyElevations(ops, elevs.map(function (e) { return { face: e.face, clusters: e.clusters }; }), Object.assign({}, CFG, { wall: Object.assign({ height: r6(nxt - st.level) }, CFG.wall) }), { level: st.level, hashHex: hashHex, schedule: Object.keys(sch).length ? sch : null }).ops;
       ops = E.applyWallHeights(ops, elevs.map(function (e) { return { face: e.face, walls: e.walls }; }), CFG, { level: st.level }).ops;
-      var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, walls0: st.before, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: C.CASING });
+      var dh = E.applyDoorHeights(ops, elevs.map(function (e) { return { face: e.face, doors: e.doors }; }), CFG, { level: st.level, walls0: st.before, schedule: Object.keys(sch).length ? sch : null, schedule_head_frame: typeof pd.headframe === 'number' ? r6(pd.headframe * MK.UNITS[pd.units]) : C.CASING });   // L38: a set may state its own head frame
       ops = dh.ops; st.doorRep = dh.report;
       st.after = ops;
     }
@@ -515,7 +515,18 @@
       }
       st.fills.elements.forEach(function (e) { els.push(Object.assign(e, { storey: st.name, sheet: st.sheet })); });
     });
-    if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
+    // §L36 @BODYZ=column,z0,z1 on a plan: its closed rectangles on the column layers are columns. Without the mark they stay excluded, as before
+    ST.forEach(function (st) { var bz = (st.sh.desc.bodyz || []).filter(function (q) { return q.kind === 'column'; })[0]; if (!bz) return; ((st.sh.dxf && st.sh.dxf.entities) || []).forEach(function (e) {
+      if ((e.layer !== 'A-COLS' && e.layer !== 'S-COLS') || e.type !== 'LWPOLYLINE' || !e.shape) return; var k = st.sh.factor, xs = e.vertices.map(function (v) { return v.x * k; }), ys = e.vertices.map(function (v) { return v.y * k; }), a0 = Math.min.apply(null, xs), a1 = Math.max.apply(null, xs), b0 = Math.min.apply(null, ys), b1 = Math.max.apply(null, ys);
+      var pc = S.prismRect([[a0, b0], [a1, b0], [a1, b1], [a0, b1]], [], bz.z0, bz.z1); if (pc) els.push({ guid: hashHex('column|' + J([a0, b0, a1, b1, bz.z0])).slice(0, 32), class: 'IfcColumn', handle: e.handle, layer: e.layer, piece: 0, vertices: pc.vertices, faces: pc.faces, storey: st.name, sheet: st.sheet }); }); });
+    R.roofForm = null;
+    if (typeof roofSh.desc.pitch === 'number' && R.roofPlan.ok) {   // §L36 the sheet states a pitched roof: the highest plane at every point; no @PITCH = the prism below, exactly as before
+      var rT = Number(settingOf(sheets, opts, 'synth.roof.sheet_thickness', 0.05));
+      R.roofForm = S.gableRoof(roofSh.dxf.entities, roofSh.factor, roofSh.desc.pitch, rT, 0.03); R.roofForm.thickness = rT;
+      R.roofForm.planes.forEach(function (p) { els.push({ guid: hashHex('roofplane|' + J(p.box) + '|' + p.s).slice(0, 32), class: 'IfcRoof', handle: p.handle, layer: 'A-ROOF-GABLE', piece: 0, vertices: p.mesh.vertices, faces: p.mesh.faces, storey: 'Roof', sheet: roofSh.name }); });
+      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push({ guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name }); }); R.roofForm.gableWalls = gw.walls.length; }
+      console.log('§DXF-ROOF pitched planes=' + R.roofForm.planes.length + ' gable walls=' + (R.roofForm.gableWalls || 0) + ' pitch=' + roofSh.desc.pitch + ' thickness=' + rT + ' (default) gaps=' + R.roofForm.gaps.length);
+    } else if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
       var rpm = S.prismRect(TOP.ring.outline, R.roofPlan.holes.map(function (h) { return h.ring; }), R.roofZ.bottom, R.roofZ.top);
       if (rpm) els.push({ guid: hashHex('roof|' + J(TOP.ring.outline)).slice(0, 32), class: 'IfcRoof', handle: R.roofPlan.roof_handle, layer: 'A-ROOF', piece: 0, vertices: rpm.vertices, faces: rpm.faces, storey: 'Roof', sheet: roofSh.name });
     }
@@ -546,6 +557,7 @@
     });
     ((R.section && R.section.gaps) || []).forEach(function (x) { qg.push(Object.assign({ sheet: R.sectionSheet, shape: 'slabs' }, pick(x))); });
     R.roofPlan.gaps.concat(R.roofZ.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); });
+    if (R.roofForm) { R.roofForm.gaps.forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); }); if (R.roofForm.planes.length) qg.push({ sheet: roofSh.name, shape: 'roof', code: 'GAP:roof_sheet_defaulted', setting: 'synth.roof.sheet_thickness', reason: 'no sheet states the roof sheet thickness: ' + R.roofForm.thickness + ' m is a default' }); }
     var mapsOf = function (sh) { return sh.role === 'plan' ? [SET.MAP_PLAN] : sh.role === 'roof' ? [SET.MAP_ROOF] : sh.role === 'section' ? [SET.MAP_SECT] : [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []); };
     var planOps = {}; ST.forEach(function (st) { planOps[st.sheet] = st.before; });
     R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),

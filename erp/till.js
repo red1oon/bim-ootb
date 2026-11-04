@@ -59,7 +59,7 @@
   }
 
   function msg(t, kind) { var el = $('#msg'); el.hidden = !t; el.textContent = t || ''; el.setAttribute('data-kind', kind || ''); if (t) log('§TILL_MSG ' + (kind || 'info') + ' ' + t); }
-  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', heldlist: 'u7', reprintlist: 'u5r' };
+  var SCREENS = { login: 'u1', menu: 'u2', sales: 'u3', pay: 'u8', receipt: 'u9', close: 'u14', editsales: 'u10', refund: 'u11', custpay: 'u12', payments: 'u13', vouchers: 'u19', presence: 'u21', pickup: 'u22', floors: 'u16', reservations: 'u17', setup: 'u23', about: 'u24', heldlist: 'u7', reprintlist: 'u5r' };
   var HOOKS = {};   // screen name -> function run after the screen is shown (the screens of till_ext.js)
   function go(name) {
     if (!SCREENS[name]) { msg('This panel is not in this release', 'info'); return false; }
@@ -124,6 +124,9 @@
     $('#south').style.display = t.type === 'R' ? 'none' : '';
     $('#heldcount').textContent = (S.store.held || []).length || '';
   }
+  var BARH = 28;
+  function catCollapsed() { return !!(S.store && S.store.setup && S.store.setup['catalog.collapsed']); }   // device-local, the §29.D.1 settings store
+  function setCatCollapsed(v) { S.store.setup = S.store.setup || {}; S.store.setup['catalog.collapsed'] = !!v; saveStore(); renderCats(); log('§TILL_CATALOG_TOGGLE collapsed=' + !!v); }
   function childrenOf(id) { return S.cats.filter(function (c) { return (c.parent == null || c.parent === '' ? null : Number(c.parent)) === id; }); }
   function renderCats() {
     var cur = S.catPath.length ? S.catPath[S.catPath.length - 1] : null, kids = childrenOf(cur);
@@ -131,8 +134,13 @@
     kids = kids.filter(function (c) { return hasProd(c.id); });
     $('#cats').innerHTML = (cur != null ? '<button data-cat-up="1">&larr;</button>' : '') + kids.map(function (c) { return '<button data-cat="' + c.id + '"' + (S.cat === c.id ? ' class="on"' : '') + '>' + esc(c.name) + '</button>'; }).join('');
     var list = cur == null ? [] : S.prods.filter(function (p) { return Number(p.cat) === Number(cur); });
-    var z = S.sizes || { 'img-width': 107, 'img-height': 60 };    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
+    var z = Object.assign({ 'img-width': 107, 'img-height': 60, 'cat-height': 320 }, S.sizes || {});    // uniCenta Ticket.Buttons.xml:77 img-width/img-height; ThumbNailBuilder.java:101-202 (picture, name over the bottom, centred)
     $('#products').innerHTML = list.map(function (p) { return prodTile(p, z); }).join('');
+    var ch = Number(z['cat-height']) || 320, col = catCollapsed(); $('#south').style.height = (col ? BARH : ch) + 'px';    // cat-height: JPanelTicketSales.java:78-80 (code default 245, shipped 320, Ticket.Buttons.xml:77-80)
+    $('#catbody').hidden = col; $('#catbar').setAttribute('aria-expanded', col ? 'false' : 'true');
+    var cn = (S.cats.filter(function (c) { return c.id === cur; })[0] || {}).name;   // owner-requested addition beyond uniCenta (§33.8): the catalog folds to this bar, default expanded
+    $('#catbar').innerHTML = '<b>' + esc(cn || 'Products') + '</b>' + (col ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');   // Lucide chevron-up (collapsed: tap to expand) / chevron-down
+    log('§TILL_LAYOUT cat-height=' + ch + ' collapsed=' + col + ' tile=' + z['img-width'] + 'x' + z['img-height']);
     log('§TILL_CATALOG tiles=' + list.length + ' withImage=' + list.filter(function (p) { return p.img; }).length + ' size=' + z['img-width'] + 'x' + z['img-height']);
   }
   // Lucide image-off (placeholder, no GPL art; §29.D.2). The picture is decoded only when the tile is on screen (lazy + async), CORS so the SW media cache can store a real 200 (§31).
@@ -144,7 +152,7 @@
   }
   // §31/§32: ask the service worker to fetch ONLY the pictures it does not hold yet, then evict what the catalog no longer lists. The bytes stay on the device's disk, never in the twin's DB.
   async function mediaPrefetch() {
-    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean), sw = null;
+    var urls = S.prods.map(function (p) { return p.img; }).filter(Boolean).concat(window.TillCompany ? window.TillCompany.logoUrls() : []), sw = null;
     try { if (navigator.serviceWorker) { var reg = await Promise.race([navigator.serviceWorker.ready, new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]); sw = navigator.serviceWorker.controller || (reg && reg.active); } } catch (e) { /* no SW */ }
     if (!urls.length || !sw) { log('§TILL_MEDIA INCONCLUSIVE urls=' + urls.length + ' sw=' + !!sw); return null; }
     var r = await new Promise(function (ok) { var ch = new MessageChannel(); ch.port1.onmessage = function (e) { ok(e.data); }; sw.postMessage({ type: 'MEDIA_PREFETCH', urls: urls, capMb: 50 }, [ch.port2]); setTimeout(function () { ok(null); }, 60000); });
@@ -207,6 +215,7 @@
       var res = await depositGroup(ops);
       if (!res || res.committed !== true) { msg('Could not save the sale on this device: ' + (res && res.reason), 'bad'); log('§TILL_DEPOSIT FAIL ' + (res && res.reason)); return; }
       if (n != null) { S.store.counters = S.store.counters || {}; S.store.counters[kind] = n; }
+      await lanDeposit(key, rowsOut);   // §38.2.4: the ticket's lines go to the branch relay as rung (LAN only; queued on the till if the relay is away: selling never waits)
       var pickup = t.pickup || (kind === 'P' ? null : bumpPickup());
       var terminal = S.cfg.tillKey, rm = C.receiptModel({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change });
       S.lastReceipt = { key: key, model: rm, gross: tt.gross, change: ap.change, firstCash: ap.parts[0] && ap.parts[0].name === 'cash' };
@@ -219,7 +228,7 @@
   // ── U9 ──
   function showReceipt(print) {
     var r = S.lastReceipt;
-    $('#receipt').innerHTML = print ? r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
+    $('#receipt').innerHTML = print ? (window.TillCompany ? window.TillCompany.headerHtml() : '') + r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
     var cp = $('#changepop'); cp.hidden = !(r.firstCash && r.change > 0); cp.textContent = 'Change: ' + C.money(r.change);   // Ticket.Close.xml:23-60
     go('receipt');
   }
@@ -257,19 +266,38 @@
     $('#zconfirm').hidden = true; await renderClose();
     await handoff(sh);   // §26.3: ONE hand-off per shift to the branch POS admin (audience = branch); nothing goes to head office from a till
   }
-  // Close Cash -> the branch POS admin (POS_PLUGIN_LOCAL_FIRST §26.3): the shift's tickets (their I_Order lines + I_Payment tenders, as deposited) and one Z declaration per business day, in ONE atomic group of POS_TillHandoff rows, then ONE Visit (branch lane)
+  // Close Cash -> the branch relay (POS_PLUGIN_LOCAL_FIRST §38.2.4; replaces the §26.3 hand-off over the internet branch lane): the shift's tickets (I_Order lines + I_Payment tenders, as deposited) and one Z declaration per business day
+  // as ONE file on the LAN relay, collected by the main till. Nothing crosses the internet from a till, and no Visit is made here.
   async function handoff(sh) {
     var tag = 'POS shift ' + S.cfg.tillKey + '/' + sh.seq;
     var os = await rows('SELECT * FROM i_order WHERE description=' + q(tag) + ' ORDER BY i_order_id'), ps = await rows('SELECT * FROM i_payment WHERE description=' + q(tag) + ' ORDER BY i_payment_id');
     var hr = window.EodaCore.handoffRows({ tillKey: S.cfg.tillKey, seq: sh.seq, start: sh.start, end: sh.end, client: S.cfg.client, org: S.cfg.org, orders: os, payments: ps, day: today(), zOf: function (o, p) { return C.zTotals(o, p, S.taxEnv, []); } });
-    var res = await depositGroup(hr.map(function (r) { return create('pos_tillhandoff', r); }));
-    if (!res || res.committed !== true) { msg('Could not hand the shift to the branch admin: ' + (res && res.reason), 'bad'); log('§EODA_HANDOFF FAIL till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' ' + (res && res.reason)); return null; }
     var keys = hr.filter(function (r) { return r.kind === 'T'; }).map(function (r) { return r.documentno; });
-    log('§EODA_HANDOFF till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' tickets=' + keys.length + ' zrows=' + hr.filter(function (r) { return r.kind === 'Z'; }).length + ' ops=' + hr.length + ' gid=' + res.gid);
-    var v = await visit();
-    if (v && v.rep && v.rep.sent > 0) { S.store.sent = S.store.sent || {}; keys.forEach(function (k) { S.store.sent[k] = 1; }); saveStore(); }   // a key handed to the branch is no longer editable on the till; a Visit that sent nothing (offline) marks nothing
-    return { keys: keys, visit: v };
+    var f = await S.lan.depositShift(sh.seq, hr);
+    log('§EODA_HANDOFF till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' tickets=' + keys.length + ' zrows=' + hr.filter(function (r) { return r.kind === 'Z'; }).length + ' rows=' + hr.length + ' lan_sent=' + f.sent + ' lan_queued=' + f.queued);
+    if (f.queued === 0) { S.store.sent = S.store.sent || {}; keys.forEach(function (k) { S.store.sent[k] = 1; }); saveStore(); }   // a key on the branch relay is no longer editable on the till; a hand-off still queued (relay away) marks nothing
+    else msg('The branch relay is not reachable: the shift is kept on this till and goes when it returns', 'warn');
+    return { keys: keys, lan: f };
   }
+  // §38: the till's LAN side. ONE branch-relay pipe (httpPipe): this till has NO internet pipe object at all (D9/D11). Relay URL: ?relay= or the device store; none configured = everything queues on the till.
+  function lanSetup() {
+    var qs = new URLSearchParams(location.search), url = qs.get('relay') || (function () { try { return localStorage.getItem('branchrelay.url'); } catch (e) { return null; } })(), key = 'tilllan.v1:' + S.cfg.tillKey, st = {};
+    try { st = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { st = {}; }
+    var lan = url ? window.CommPipe.httpPipe(url.replace(/\/+$/, '') + '/pipe', 'lan') : { put: async function () { throw new Error('no branch relay configured'); }, get: async function () { throw new Error('no branch relay'); }, list: async function () { throw new Error('no branch relay'); } };
+    S.lan = window.TillLan.create({ tillKey: S.cfg.tillKey, isMain: false, lan: lan, state: st, expected: [], now: Date.now, save: function () { try { localStorage.setItem(key, JSON.stringify(st)); } catch (e) { /* kept in memory */ } }, log: log });
+    log('§LAN_BOOT till=' + S.cfg.tillKey + ' relay=' + (url || 'none') + ' queued=' + (st.out || []).length + ' main=' + S.lan.isMain());
+    S.lan.flush().catch(function () { /* queued */ });
+  }
+  // Check Stock (uniCenta's button, §38.2.7): ask the main till over the branch relay; show the answer; STORE NOTHING (D7). No answer = "main till not reachable" and selling carries on.
+  async function checkStock() {
+    var l = S.ticket.lines[S.ticket.sel]; if (!l) { msg('Select a line first, then Check Stock', 'warn'); return; }
+    msg('Asking the main till...', 'info'); var a = await S.lan.ask(l.pid, {});
+    if (a.unreachable) { msg('Main till not reachable', 'warn'); log('§LAN_STOCK_ASK pid=' + l.pid + ' unreachable'); return; }
+    var t = new Date(a.asOf).toTimeString().slice(0, 5);
+    msg((a.atMost ? 'At most ' : '') + a.qty + ' in stock as of ' + t + ' (' + a.reached.length + ' of ' + a.of + ' tills reached' + (a.notReached.length ? '; not reached: ' + a.notReached.join(', ') : '') + ')', a.atMost ? 'warn' : 'ok');
+    log('§LAN_STOCK_ASK pid=' + l.pid + ' qty=' + a.qty + ' atMost=' + a.atMost + ' reached=' + a.reached.length + '/' + a.of);   // shown, never stored
+  }
+  async function lanDeposit(key, rowsOut) { try { return await S.lan.deposit(key, rowsOut.orders, rowsOut.payments); } catch (e) { log('§LAN_HOLD deposit ' + (e && e.message)); return null; } }
 
 
   // ── SODA (POS_PLUGIN_LOCAL_FIRST §28.3): the branch admin passes the reference deltas on the branch lane (pos_tillref). The till applies ONLY the rows that arrived (SodaCore.applyRef): a price / product (ImageURL included,
@@ -278,7 +306,11 @@
     if (!window.SodaCore) return null;
     var all = []; try { all = await rows('SELECT * FROM pos_tillref ORDER BY seq, ABS(pos_tillref_id)'); } catch (e) { return null; }
     var done = Number(S.store.sodaSeq || 0), fresh = all.filter(function (r) { return Number(r.seq) > done && r.kind !== 'B'; });
-    if (!fresh.length) return { applied: 0 };
+    var lanRows = fresh.filter(function (r) { return r.kind === 'M' || r.kind === 'S'; }); fresh = fresh.filter(function (r) { return r.kind !== 'M' && r.kind !== 'S'; });   // §38.2.3: the main-till flag and HQ's on-hand are the till's own device record, not table rows
+    if (lanRows.length && S.lan) { S.lan.applySodaFlag(lanRows); S.lan.applySodaStock(lanRows); }
+    var comp = fresh.filter(function (r) { return r.kind === 'O'; }); fresh = fresh.filter(function (r) { return r.kind !== 'O'; });   // §36.5: the company row is the till's own device record, not a table row
+    var cres = comp.length && window.TillCompany ? window.TillCompany.apply(comp) : null;
+    if (!fresh.length) { if (comp.length || lanRows.length) { S.store.sodaSeq = comp.concat(lanRows).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
     var cur = {}, ops = [], pk = {};
     for (var i = 0; i < fresh.length; i++) { var r = fresh[i], t = r.kind === 'P' ? 'm_productprice' : r.kind === 'R' ? 'm_product' : 'c_tax';
       var w = r.kind === 'P' ? 'm_product_id=' + Number(r.m_product_id) + ' AND m_pricelist_version_id=' + Number(r.m_pricelist_version_id) : r.kind === 'R' ? 'm_product_id=' + Number(r.m_product_id) : 'c_tax_id=' + Number(r.c_tax_id);
@@ -288,7 +320,7 @@
       update: function (t, where, f) { var row = cur[key(t, where)]; if (!row) return; var idc = row[t + '_id'] != null ? t + '_id' : t + '_uu', ch = {}; Object.keys(f).forEach(function (k) { if (String(row[k] == null ? '' : row[k]) !== String(f[k] == null ? '' : f[k])) ch[k] = { old: row[k] == null ? null : row[k], new: f[k] }; }); if (!Object.keys(ch).length) return; ops.push({ op_type: 'CRUD_UPDATE', key: t, table: t, verb: 'update', id: row[idc], idCol: idc === t + '_id' ? undefined : idc, changes: ch }); },   // a single-key table by its id, a composite-key one (M_ProductPrice) by its UU; only the columns that differ
       insert: function (t, f) { ops.push(create(t, f)); } };
     var res = window.SodaCore.applyRef(W, fresh, { client: S.cfg.client });
-    var hi = fresh.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
+    var hi = fresh.concat(comp).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, 0);
     if (ops.length) { var g = await depositGroup(ops); if (!g || g.committed !== true) { log('§SODA_TILL_APPLY FAIL till=' + S.cfg.tillKey + ' ' + (g && g.reason)); return { failed: true }; } }
     S.store.sodaSeq = hi; saveStore(); await loadConfig(); mediaPrefetch();
     log('§SODA_TILL_APPLY till=' + S.cfg.tillKey + ' rows=' + fresh.length + ' prices=' + res.applied.prices + ' products=' + res.applied.products + ' taxes=' + res.applied.taxes + ' unchanged=' + res.noop + ' upToSeq=' + hi);
@@ -306,7 +338,9 @@
       else if (b.id === 'b-barcode') press('\n');
       else if (b.hasAttribute('data-cat')) { S.catPath.push(Number(b.getAttribute('data-cat'))); S.cat = null; renderCats(); }
       else if (b.hasAttribute('data-cat-up')) { S.catPath.pop(); renderCats(); }
+      else if (b.id === 'catbar') setCatCollapsed(!catCollapsed());
       else if (b.classList.contains('prod')) { var p = S.prods.filter(function (x) { return String(x.pid) === b.getAttribute('data-pid'); })[0]; var r = P.product(S.pad, p); S.pad = r.state; if (r.effect.type === 'addProduct') addLine(p, r.effect.qty); renderPad(); }
+      else if (b.id === 'b-checkstock') { checkStock(); }
       else if (b.id === 'b-remove') { if (S.ticket.sel >= 0) { removeLine(S.ticket.sel); persist(); renderSales(); } }
       else if (b.hasAttribute('data-tab')) { S.pay.tab = b.getAttribute('data-tab'); renderPay(); }
       else if (b.id === 'addpart') addPart(); else if (b.id === 'delpart') delPart();
@@ -332,8 +366,8 @@
     for (var i = 0; i < 1200 && !(E.TeamSync && E.__crud && E.__idmpDb && E.ERPEngine && E.APP && E.APP.actor); i++) await new Promise(function (r) { setTimeout(r, 150); });
     await E.TeamSync.ready;
     if (E.AdImportTables && E.AdImportTables.ensurePos) E.AdImportTables.ensurePos(E.__idmpDb);   // POS_TillHandoff (POS_PLUGIN_LOCAL_FIRST §26.2)
-    E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
-    await loadConfig(); await loadSizes(); mediaPrefetch();
+    E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3/§38: a till never sends its tickets to head office; its lines go to the branch relay (LAN) and the main till makes the ONE send
+    await loadConfig(); lanSetup(); await loadSizes(); mediaPrefetch();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
     { var sm = (S.store.setup || {})['machine.ticketsbag']; if (!qs.get('mode') && !new URLSearchParams(location.search).get('mode') && ['simple', 'standard', 'restaurant'].indexOf(sm) >= 0) { S.mode = sm; document.body.setAttribute('data-mode', sm); log('§TILL_SETUP_MODE applied=' + sm + ' (from the Configuration screen)'); } }
     S.ticket = S.store.ticket || newTicket();
@@ -349,8 +383,9 @@
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
     if (window.TillSetupInit) window.TillSetupInit(api);
+    if (window.TillCompanyInit) window.TillCompanyInit(api);   // §36: left menu panel, About, brand strip, receipt header
     if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
-    window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
+    window.Till = { ready: true, lan: function () { return S.lan; }, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
