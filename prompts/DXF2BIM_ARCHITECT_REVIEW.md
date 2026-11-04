@@ -1046,4 +1046,23 @@ Step `PLANE` joins `KEY_ORDER`; the sheet tints yellow as any default; a centred
 **P6 BUILT, best effort:** **door labels 54 of 64**, 76 leaves at the schedule's sizes, hinged on their arcs; 9 no arc of their size, 1 no row (`1-33-A`, which the plan has and the schedule does not). **Curtain walls:** 25 bodies cover 166 of 532 m of line; 366 m stand alone, 559 m of arcs are `GAP:wall_curved`. Most glazing is curved or single-line, so this class is mostly a gap. W-YELLOW-RULES 162/0, W-GUARD, W-CLI, W-PURE PASS. **Limits:** no frames (54 counted); a leaf's width is the schedule's, its arc up to 127 mm different; a door's wall is not cut, it stands in the wall's own gap; mullions not built.
 **P7 BUILT, partly:** 7 flights, 36 treads (280 mm, 1050 and 1230 wide), both named stairs reached, **but they stop 1.3 to 3.75 m short of the next level**: a plan cuts a stair at its cut line; `short_m` says so, they are not stretched. Rise 175 mm is a yellow rule from the tread, not stated. 339 stair lines unread. The minaret stair (curved pieces and radial lines) is not built and no gap names it. Railings not built. W-YELLOW-RULES 171/0.
 **P8 BUILT, derived:** one `IfcRoof`, 12 spots, 50 mm plate over the hull of the spots, not a drawn outline. **Fit, each spot left out in turn: 4 judged, mean 62 mm, max 128 mm; 8 outside the others' hull judged nothing.** The mesh shade on cables is a separate structure whose sheet is not in this package: not built. W-YELLOW-RULES 178/0, W-GUARD, W-CLI, W-PURE PASS.
+**P9 VERDICT (2026-11-04): NO, not from this package. It gives a coordinated structural model and a rough shell.** 771 bodies in a valid IFC, 21 sheets, 7 layers named by hand, no height typed. Against the sheets' own labels, not an answer key:
+
+| Class | Built / evidence | Standing |
+|---|---|---|
+| Columns | 25 / 25 labels | true plan shape; height is a rule |
+| Footings | 14 / 14 labels | true plan size; thickness a yellow row (S-400 not in the package) |
+| RC beams | 110 / 114 labels, 81 bodies | width drawn, depth and mark labelled; a split between marks is a midpoint |
+| Steel | 85 / 86 labels | true profiles, flat and unconnected; UB web and flange from a table |
+| Walls | 2,349 / 2,665 m of line | pieces, not whole walls; tops not read; 382 m of arcs not built |
+| Doors | 54 / 64 labels, 76 leaves | schedule sizes; no frames |
+| Curtain walls | 166 / 532 m of line | mostly a gap |
+| Slabs | 1 / 3 levels | no closed outline above ground; no floor guessed |
+| Stairs | 2 / 2 named, incomplete | 1.3-3.75 m short of the next level; minaret stair and railings not built |
+| Roof | 1 plate, 12 spots | not a drawn edge; 4 spots judged, mean 62 mm, max 128 mm; 8 not judged |
+
+**LOD400 is reached by no class:** no reinforcement, connections, fixings or frames. What 2D gives well: structure in plan, where labels and lines agree. What it did not: tops and sections (partly unread, partly in sheets not issued), and every class that needs a type schedule.
+**Chain end:** `§POC_IFC proxies=0 class_mismatch=[] agrees`; `ifcopenshell.validate` 0 statements. The first IFC held 32 proxies while the log said typed (fixed, YR35). **Arrange, real Modeller:** 8 plans + 12 elevations, 0 bad, 0 page errors, every elevation 0 mm off its line; the plans judged by shared grid lines: 15 of 19 within 5 mm of the base plan, the 4 minaret lines 60 mm off, the known question to the set's author. **Runner, before the last two lines below:** `§ALLWITNESS PASS=110 ENV=9 FAIL=1 of 120`; the one FAIL is LT7, standing; W-YELLOW-PAGE against a page generated to a scratch file, since the published page is not regenerated for a WIP branch. The first runner caught 3 regressions the focused witnesses had not (one bug, fixed).
+**Backward compatibility (owner, 2026-11-04: *"as long remain backward compatible as done for Shed"*).** Every §D109 rule stays a setting, and a set that already works must not change. **W-SHED-UNCHANGED** pins the Shed's bodies to the code before §D109, by hash of every body field, on 2 recipes: 111 and 61 bodies, identical. Verdict counts and yellow rows compared equal once, by hand, on 3 recipes. It runs in the runner, SKIP when the private sheets are absent.
+**Not for merge yet.** Needs: the published yellow page and format page regenerated, W-SHED-UNCHANGED seen in a full run, and the owner's call. **Next, when the comparison arrives:** the IFC and families from the set's author are the Rosetta Stone. Without them, none of the above is correctness.
 
