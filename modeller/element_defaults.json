@@ -1089,6 +1089,85 @@
    "blondel_m": 0.63,
    "used_by": "dxf2stairs (§D109)"
   },
+  "gate.unplaced_sheet": {
+   "element": "Set",
+   "value": "refuse",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a sheet the reader cannot place refuses the whole set, so nothing is converted past a sheet you meant to be read. 'set_aside' = the rest converts, each such sheet a counted gap with the reader's reason (§D110)",
+   "options": [
+    "refuse",
+    "set_aside"
+   ],
+   "used_by": "dxf2structure (§D110)"
+  },
+  "suggest.title_layout": {
+   "element": "Set",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a title ending LAYOUT names a plan, as a title ending PLAN does (§D110). 'off' = no view is read from it, and the sheet refuses the set",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D110)"
+  },
+  "wall.tag_reach": {
+   "element": "IfcWall",
+   "value": 1.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far a wall tag may lie from the wall it names, on a plan layer typed walltag: the nearest wall of that plan's level takes the tag as its type name. The binding is by distance, not checked; a name, not a build-up, without the wall type schedule (§D110). 0 = no tag is read",
+   "options": [
+    1.5,
+    0
+   ],
+   "used_by": "dxf2walls (§D110)"
+  },
+  "wall.top_from_elevation": {
+   "element": "IfcWall",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a wall on the grid line an elevation stands on takes its top and base from that elevation's wall lines over its own span; other walls of that wing no higher than the wing's top (§D110). 'next_plan_level' = every wall stops at the next plan level",
+   "options": [
+    "read",
+    "next_plan_level"
+   ],
+   "line_reach_m": 0.5,
+   "elev_layer": "^A-WALL",
+   "parallel_tol": 0.001,
+   "z_tol_m": 0.000001,
+   "used_by": "dxf2walls (§D110)"
+  },
+  "guide.gap_sheets": {
+   "element": "Set",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "which sheet of the set's own register might close each gap, by the words of its title; it says a sheet might help, never that it will (§D110). 'off' = no guide",
+   "options": [
+    "read",
+    "off"
+   ],
+   "min_rows": 3,
+   "needs": {
+    "GAP:beam_label_no_edges": ["FRAMING", "BEAM SCHEDULE"],
+    "GAP:door_tag_no_row": ["DOOR SCHEDULE"],
+    "GAP:door_tag_no_swing": ["DOOR", "DOORS"],
+    "GAP:footing_no_thickness": ["FOUNDATION", "FOOTING", "SCHEDULES DETAILS"],
+    "GAP:slab_no_outline": ["FINISH PLAN", "SLAB", "REINFORCEMENT PLAN"],
+    "GAP:wall_curved": ["GEOMETRY", "ENCLOSURE", "CURVED"],
+    "limit:glazing": ["GLAZING", "CURTAIN", "WINDOW", "ENCLOSURE"],
+    "limit:pad_thickness": ["FOUNDATION", "FOOTING", "SCHEDULES DETAILS"],
+    "limit:roof_edge": ["ROOF PLAN", "ROOF LAYOUT"],
+    "limit:stair_short": ["STAIR", "STAIRS"],
+    "limit:wall_top": ["ELEVATION", "ELEVATIONS", "SECTION", "SECTIONS"],
+    "limit:wall_type": ["WALL TYPE", "WALL TYPES", "WALL SCHEDULE"]
+   },
+   "used_by": "dxf2gapguide (§D110)"
+  },
   "roof.from_spots": {
    "element": "IfcRoof",
    "value": "read",

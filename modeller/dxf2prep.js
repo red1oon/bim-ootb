@@ -195,11 +195,11 @@
   var KIND = {
     column: ['IfcColumn', 'COLUMN'], footing: ['IfcFooting', 'PAD_FOOTING'], gradebeam: ['IfcBeam', 'BEAM'], beam: ['IfcBeam', 'BEAM'],
     wall: ['IfcWall', 'STANDARD'], supportwall: ['IfcWall', 'STANDARD'], roof: ['IfcRoof', 'GABLE_ROOF'],
-    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], fan: ['IfcFan', 'PROPELLORAXIAL'], net: ['IfcCovering', 'CLADDING'], doorswing: ['IfcDoor', 'DOOR'], beamlabel: ['IfcBeam', 'BEAM'], wallband: ['IfcWall', 'STANDARD'], doortag: ['IfcDoor', 'DOOR'], curtainband: ['IfcCurtainWall', 'NOTDEFINED'], stairlines: ['IfcStairFlight', 'STRAIGHT'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
+    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], fan: ['IfcFan', 'PROPELLORAXIAL'], net: ['IfcCovering', 'CLADDING'], doorswing: ['IfcDoor', 'DOOR'], beamlabel: ['IfcBeam', 'BEAM'], wallband: ['IfcWall', 'STANDARD'], doortag: ['IfcDoor', 'DOOR'], walltag: ['IfcWall', 'STANDARD'], curtainband: ['IfcCurtainWall', 'NOTDEFINED'], stairlines: ['IfcStairFlight', 'STRAIGHT'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
     door: ['IfcDoor', 'DOOR'], window: ['IfcWindow', 'WINDOW']
   };
   // the body kinds a drawing layer can be typed as (the editor's menu, the structure judge's list, dxf2marks LAYER_TYPES.BODY must equal this: W-KINDS). A new kind = one KIND row + one entry here + its builder.
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing', 'beamlabel', 'wallband', 'doortag', 'curtainband', 'stairlines'];
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing', 'beamlabel', 'wallband', 'doortag', 'curtainband', 'stairlines', 'walltag'];
   function ifcType(kind, typeName, material) {
     var k = KIND[kind]; if (!k) throw new Error('Dxf2Prep: no IFC mapping for body kind "' + kind + '"');
     return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };

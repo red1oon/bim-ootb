@@ -110,6 +110,7 @@ function run(args, log) {
   const refJ = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8'));
   const out = ST.judge(read, { I, B, choices, complete, ref: refJ });
   say('§CLI ' + out.log);
+  { const G0 = out.gate && out.gate.R && out.gate.R.bodies && out.gate.R.bodies.report && out.gate.R.bodies.report.guide; if (G0) require('./dxf2gapguide.js').logLines(G0).forEach(l => say(l)); }   // §D110
   // §L10.8 every typed dimension override against its own measured length (per sheet unit), one row per distinct conflict
   const PR = require('./dxf2pair.js'), audit = { rows: [], counts: {} };
   read.forEach(sh => { const k = sh.factor, u = Math.abs(k - 0.0254) < 1e-9 ? 'in' : Math.abs(k - 0.001) < 1e-12 ? 'mm' : Math.abs(k - 1) < 1e-12 ? 'm' : null; if (!u || !sh.dxf) return;

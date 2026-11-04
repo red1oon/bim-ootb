@@ -260,13 +260,16 @@
         var isT = e.type === 'TEXT' || (titleAll && e.type === 'MTEXT'), txt = titleAll ? plain(e) : e.text, c = isT && e.layer !== LAYER ? titleCore(txt) : '';
         if (c && titleAll && (/,|\b(?:SEE|REFER)\b/i.test(c) || /^KEY\s*PLAN$/i.test(c))) c = '';   // §D107 a note, not a title ("BEAM, SEE PLAN"); §D109 a title block's KEYPLAN names no sheet
         if (c && e.type === 'MTEXT' && c !== c.toUpperCase()) c = '';   // §D107 an MTEXT counts as a title only in capitals ("Footing Section" on a details sheet is a label; regression W-ARRANGE A9a, W-DATUM-PICK P0)
-        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && (/\bSCHEDULE$/.test(c) || /ELEVATION\s+GRID\s+\S+$/i.test(c) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(c))))) {   // §D109 a storey's name alone (LEVEL 01 FLOOR) titles a plan
+        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || (titleAll && setting('suggest.title_layout') === 'read' && /\bLAYOUT$/.test(c)) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && (/\bSCHEDULE$/.test(c) || /ELEVATION\s+GRID\s+\S+$/i.test(c) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(c))))) {   // §D109 a storey's name alone (LEVEL 01 FLOOR) titles a plan
           var norm = titleAll ? c.replace(/[\s-]+/g, ' ').toUpperCase() : String(txt).trim();   // §D107 two spellings of one title are one
           if (!titleSeen[norm]) { titleSeen[norm] = 1; titles[String(txt).trim()] = c; } } });   // §D46 (a) on the title's core   // "Section A-A" / "Section A-A (Truss Detail)"
+      // §D110 a sheet holding the set's drawing list under a number header is read as a drawing: its rows are other sheets' titles, so they must not name its view
+      var listText = null; if (titleAll && setting('guide.gap_sheets') !== 'off') { var lhead = false; sh.dxf.entities.forEach(function (e) { if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === LAYER) return; var q = plain(e).replace(/\s+/g, ' ').trim(); if (/^(?:SHEET|DRAWING) (?:NUMBER|NO\.?)$/i.test(q)) lhead = true; if (/^(?:DRAWING LIST\b|LIST OF DRAWINGS$)/.test(q) && !listText) listText = q; }); if (!lhead) listText = null; }
+      if (listText) titles = (function () { var o = {}; o[listText] = 'DRAWING LIST'; return o; })();
       var tl = Object.keys(titles), fullT = tl.filter(function (q) { return !/^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(titles[q]); });   // §D109 a storey's name titles a sheet only when nothing else does: it is also a key plan's label
       if (fullT.length) tl = fullT;
       if (tl.length === 1) {
-        var t = tl[0], tc = titles[t], vw = /\bSCHEDULE$/.test(tc) ? 'DRAWING' : /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
+        var t = tl[0], tc = titles[t], vw = tc === 'DRAWING LIST' || /\bSCHEDULE$/.test(tc) ? 'DRAWING' : /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) || /\bLAYOUT$/.test(tc) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
         out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
         out.push({ rule: 'PR-NAME', key: 'NAME', value: noScale(t), x: 0, y: 0, why: 'title text' });
       } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });

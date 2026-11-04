@@ -1,0 +1,78 @@
+// Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
+// SPDX-License-Identifier: MIT
+// dxf2gapguide.js — the Gap Guide (prompts/DXF2BIM_ARCHITECT_REVIEW.md §D110). Pure, Node + browser. Rules and arithmetic, no AI: same input, same bytes.
+// A set's own register says which sheets exist. The table `guide.gap_sheets.needs` (element_defaults.json, the user's to edit) says which title words might answer each gap or declared limit.
+// The guide names only a sheet the register holds, and says it might help, never that it will. Held = its number is a @SHEETNO of this set.
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory({ BM: require('./dxf2beams.js') });
+  else root.Dxf2GapGuide = factory({ BM: root.Dxf2Beams });
+})(typeof self !== 'undefined' ? self : this, function (D) {
+  'use strict';
+  var clean = D.BM.parts.clean, HEAD = /^(?:SHEET|DRAWING)\s+(?:NUMBER|NO\.?)$/i, NUM = /^[A-Z]{1,3}-?\d{1,4}[A-Z]?(?:\s*\([A-Z0-9]+\))?$/, TOTAL = /\btotal\s*:?\s*(\d+)$/i;
+  var plainNo = function (n) { return String(n).replace(/\s*\(.*$/, ''); };
+  var textsOf = function (s) { return ((s.dxf && s.dxf.entities) || []).filter(function (e) { return e.type === 'TEXT' || e.type === 'MTEXT'; }).map(function (e) { var q = e.position || e.startPoint || {}; return { t: clean(e.text), x: q.x, y: q.y }; }); };
+  // G1 a register is the column under a number header, on a sheet read as a drawing. A number's title is the nearest text to its right on its row; the row height is the column's own spacing.
+  function readRegister(sheets, o) {
+    var minRows = (o && o.min_rows) || 3, rows = [], registers = [], seen = {};
+    (sheets || []).filter(function (s) { return s.role === 'drawing'; }).slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).forEach(function (sh) {
+      var T = textsOf(sh), heads = T.filter(function (q) { return HEAD.test(q.t); }).sort(function (a, b) { return a.x - b.x; }), one = { sheet: sh.name, rows: 0, stated_total: null, agrees: null };
+      heads.forEach(function (h, i) {
+        var right = heads[i + 1] ? heads[i + 1].x : Infinity, left = i ? heads[i - 1].x : -Infinity, below = T.filter(function (q) { return q.y < h.y && NUM.test(q.t) && q.x < right && q.x > left; }), cols = {};
+        below.forEach(function (q) { var c = Math.round(q.x); (cols[c] = cols[c] || []).push(q); });
+        var keys = Object.keys(cols).map(Number).sort(function (a, b) { return Math.abs(a - h.x) - Math.abs(b - h.x) || a - b; }), key = keys.filter(function (c) { return cols[c].length >= minRows; })[0]; if (key === undefined) return;
+        var col = cols[key].slice().sort(function (a, b) { return b.y - a.y; }), pitch = col.slice(1).map(function (q, n) { return col[n].y - q.y; }).filter(function (g) { return g > 0; }).sort(function (a, b) { return a - b; })[0], tolY = pitch / 2, n = 0;
+        col.forEach(function (q) {
+          var title = T.filter(function (o2) { return o2 !== q && Math.abs(o2.y - q.y) < tolY && o2.x > q.x && o2.x < right && /[A-Za-z]/.test(o2.t) && !NUM.test(o2.t); }).sort(function (a, b) { return a.x - b.x; })[0];
+          if (seen[q.t]) return; seen[q.t] = 1; n++; rows.push({ no: q.t, base: plainNo(q.t), title: title ? title.t : '', sheet: sh.name });
+        });
+        var tot = T.filter(function (o2) { return Math.round(o2.x) === key && TOTAL.test(o2.t); }).map(function (o2) { return Number(TOTAL.exec(o2.t)[1]); })[0];
+        one.rows += n; if (tot !== undefined) one.stated_total = tot;
+      });
+      if (one.rows) { one.agrees = one.stated_total === null ? null : one.stated_total === one.rows; registers.push(one); }   // a total counts the whole table, however many columns it runs to
+    });
+    return { rows: rows, registers: registers };
+  }
+  var wordsOf = function (t) { return String(t).toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); };
+  var phraseIn = function (phrase, words) { return wordsOf(phrase).every(function (w) { return words.indexOf(w) >= 0; }); };
+  // G2 how much of each need the run has. A gap: its rows. A limit: counted from the run alone.
+  var LIMITS = {
+    'limit:wall_top': function (r) { return r.els.filter(function (e) { return e.class === 'IfcWall' && e.height_source !== 'elevation'; }).length; },
+    'limit:wall_type': function (r) { return r.els.filter(function (e) { return e.class === 'IfcWall' && !(e.size && e.size.type); }).length; },
+    'limit:roof_edge': function (r) { return r.report && r.report.roof && r.report.roof.spots ? 1 : 0; },
+    'limit:stair_short': function (r) { var s = r.report && r.report.stairs && r.report.stairs.short_m; return s ? Object.keys(s).filter(function (k) { return s[k] > 0; }).length : 0; },
+    'limit:glazing': function (r) { return r.els.filter(function (e) { return e.class === 'IfcCurtainWall'; }).length; },
+    'limit:pad_thickness': function (r) { return r.els.filter(function (e) { return e.class === 'IfcFooting' && e.thick_source === 'default'; }).length; }
+  };
+  function countOf(res, need) {
+    if (LIMITS[need]) return LIMITS[need]({ els: res.els || [], report: res.report });
+    return (res.gaps || []).filter(function (g) { return g.code === need; }).length;
+  }
+  // G3 rows { need, count, sheets: [{ no, title, held }] }. Register order within a row; needs in sorted order.
+  function guide(res, register, held, needs, o) {
+    var rows = [], hasReg = register && register.rows && register.rows.length > 0, ask = {}, inHand = {};
+    Object.keys(needs || {}).sort().forEach(function (need) {
+      var n = countOf(res, need); if (!n) return;
+      var sheets = !hasReg ? [] : register.rows.filter(function (r) { var w = wordsOf(r.title); return (needs[need] || []).some(function (p) { return phraseIn(p, w); }); }).map(function (r) { var h = !!(held && held[r.base]); (h ? inHand : ask)[r.no] = r.title; var row = { no: r.no, title: r.title, held: h }; if (h && held[r.base] === 'aside') row.read = false; return row; });
+      rows.push({ need: need, count: n, sheets: sheets });
+    });
+    var refused = !!(o && o.refused), status = !hasReg ? 'INCONCLUSIVE' : refused ? 'INCONCLUSIVE' : 'read', reason = !hasReg ? 'no register in this set: no sheet can be named' : refused ? 'the set is refused: nothing judged' : null;
+    return { status: status, reason: reason, says: 'might help', registers: hasReg ? register.registers : [], register_rows: hasReg ? register.rows.length : 0, rows: refused ? [] : rows,
+      ask: refused ? [] : Object.keys(ask).sort().map(function (k) { return { no: k, title: ask[k] }; }), held: refused ? [] : Object.keys(inHand).sort().map(function (k) { return { no: k, title: inHand[k] }; }), set_aside: refused ? [] : (res.gaps || []).filter(function (g) { return g.code === 'GAP:sheet_set_aside'; }).map(function (g) { return { sheet: g.sheet, why: g.detail }; }).sort(function (a, b) { return a.sheet < b.sheet ? -1 : 1; }) };
+  }
+  function heldOf(sheets) { var h = {}; (sheets || []).forEach(function (s) { var n = s.desc && s.desc.sheetno; if (!n) return; h[n] = !s.role && h[n] !== 1 ? 'aside' : 1; }); return h; }   // a sheet held but set aside is in hand and not read
+  // what the judge calls. off = null. No yellow row without a register, so a set that holds none keeps its rows.
+  function run(sheets, res, DF, o) {
+    if (!DF || !DF.has('guide.gap_sheets') || String(DF.get('guide.gap_sheets')) !== 'read') return null;
+    var m = DF.meta('guide.gap_sheets') || {}, reg = readRegister(sheets, { min_rows: m.min_rows });
+    if (reg.rows.length) DF.use('guide.gap_sheets');
+    return guide(res, reg, heldOf(sheets), m.needs || {}, o);
+  }
+  function logLines(g) {
+    if (!g) return [];
+    var L = g.registers.map(function (r) { return '§REGISTER sheet=' + r.sheet + ' rows=' + r.rows + ' stated_total=' + r.stated_total + ' agrees=' + r.agrees; });
+    L.push('§GAPGUIDE ' + g.status + (g.reason ? ' (' + g.reason + ')' : '') + ' register_rows=' + g.register_rows + ' needs=' + g.rows.length + ' ask=' + g.ask.length + ' held=' + g.held.length + ' set_aside=' + g.set_aside.length);
+    g.rows.forEach(function (r) { L.push('§GAPGUIDE ' + r.need + ' count=' + r.count + ' might_help=' + r.sheets.map(function (s) { return s.no + (s.read === false ? ':set_aside' : s.held ? ':held' : ':missing'); }).join(',')); });
+    return L;
+  }
+  return { readRegister: readRegister, guide: guide, run: run, heldOf: heldOf, logLines: logLines, countOf: countOf };
+});

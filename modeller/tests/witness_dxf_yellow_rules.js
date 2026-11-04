@@ -411,8 +411,111 @@ const allK = ST.judge([planB(loopL('COL', R0).concat(arcA(950), openLine, dtag('
 const opsK = IM.toOps(allK.R, {}), badK = opsK.skipped.filter(x => x.refuse), clsK = [...new Set(allK.R.els.map(e => e.class))].sort().join();
 console.log('§YR36 classes=' + clsK + ' inserts=' + opsK.inserts.length + ' refused=' + JSON.stringify(badK).slice(0, 200));
 ok('YR36 every class this lane builds passes the page\'s toOps: nothing refused, each body one insert', clsK === 'IfcColumn,IfcCurtainWall,IfcDoor,IfcWall' && badK.length === 0 && opsK.inserts.length >= allK.R.els.length, clsK + ' ' + opsK.inserts.length + '/' + allK.R.els.length);
+// §D110 the Gap Guide. YR38 the register, YR39 the guide, YR40 same input, same bytes.
+{
+const GG = require(path.join(M, 'dxf2gapguide.js')), SD = require(path.join(M, 'tools', 'status_diff.js'));
+const regSheet = (name, ents) => ({ name, role: 'drawing', dxf: { entities: ents }, desc: {} });
+const REGE = [T('MTEXT', 'S', 'SHEET\\PNUMBER', 20, 800), T('MTEXT', 'S', 'SHEET NAME', 60, 800), T('MTEXT', 'S', 'SHEET\\PNUMBER', 220, 800), T('MTEXT', 'S', 'SHEET NAME', 260, 800),
+  T('MTEXT', 'S', '100 - PLANS', 10, 780), T('MTEXT', 'S', 'A-100', 10, 770), T('MTEXT', 'S', 'GROUND FLOOR PLAN', 40, 770), T('MTEXT', 'S', '●', 150, 770), T('MTEXT', 'S', 'A-101', 10, 760), T('MTEXT', 'S', 'UPPER FLOOR\\PPLAN', 40, 760), T('MTEXT', 'S', 'A-204 (A)', 10, 750), T('MTEXT', 'S', 'WALL SECTION ONE', 40, 750), T('MTEXT', 'S', 'A-204 (B)', 10, 740), T('MTEXT', 'S', 'WALL SECTION TWO', 40, 740), T('MTEXT', 'S', '4', 10, 730),
+  T('MTEXT', 'S', 'WD-02', 180, 770), T('MTEXT', 'S', 'WD-03', 180, 760),
+  T('MTEXT', 'S', 'A-500', 210, 770), T('MTEXT', 'S', 'DOOR SCHEDULE', 240, 770), T('MTEXT', 'S', 'A-501', 210, 760), T('MTEXT', 'S', 'ROOF PLAN', 240, 760), T('MTEXT', 'S', 'A-502', 210, 750), T('MTEXT', 'S', 'STAIR DETAILS', 240, 750), T('MTEXT', 'S', 'TOTAL: 7', 210, 740)];
+const REGR = GG.readRegister([regSheet('reg.dxf', REGE)]);
+console.log('§YR38 ' + JSON.stringify(REGR.rows.map(r => r.no + '=' + r.title)) + ' ' + JSON.stringify(REGR.registers));
+ok('YR38a 2 columns of rows, each number its own title', REGR.rows.length === 7 && REGR.rows.find(r => r.no === 'A-100').title === 'GROUND FLOOR PLAN' && REGR.rows.find(r => r.no === 'A-501').title === 'ROOF PLAN');
+ok('YR38b a finish code that looks like a number is no row; a section head and a subtotal are no rows', !REGR.rows.some(r => /^WD-|^100|^4$/.test(r.no)));
+ok('YR38c a wrapped title stays whole', REGR.rows.find(r => r.no === 'A-101').title === 'UPPER FLOOR PLAN');
+ok('YR38d two rows on one number stay two, held by the plain number', REGR.rows.filter(r => r.base === 'A-204').length === 2);
+ok('YR38e the register\'s own total agrees, and a wrong one says so', REGR.registers.length === 1 && REGR.registers[0].rows === 7 && REGR.registers[0].stated_total === 7 && REGR.registers[0].agrees === true && GG.readRegister([regSheet('r2.dxf', REGE.filter(e => !/GROUND FLOOR PLAN|^A-100/.test(e.text)))]).registers.some(r => r.stated_total === 7 && r.agrees === false));
+ok('YR38f a title block\'s one sheet number is no register', GG.readRegister([regSheet('tb.dxf', [T('MTEXT', 'S', 'SHEET NUMBER', 20, 100), T('MTEXT', 'S', 'A-100', 20, 90)])]).rows.length === 0);
+ok('YR38g the other header form reads too: DRAWING NUMBER', GG.readRegister([regSheet('s.dxf', [T('MTEXT', 'S', 'DRAWING\\PNUMBER', 20, 100), T('MTEXT', 'S', 'S-100', 10, 90), T('MTEXT', 'S', 'FRAMING PLAN', 40, 90), T('MTEXT', 'S', 'S-101', 10, 80), T('MTEXT', 'S', 'FOUNDATION PLAN', 40, 80), T('MTEXT', 'S', 'S-102', 10, 70), T('MTEXT', 'S', 'DETAILS', 40, 70), T('MTEXT', 'S', 'Grand total: 3', 10, 60)])]).registers[0].agrees === true);
+ok('YR38h a non-drawing sheet holds no register', GG.readRegister([Object.assign(regSheet('p.dxf', REGE), { role: 'plan' })]).rows.length === 0);
+const regHold = sheet('reg.dxf', [T('MTEXT', 'S', 'DRAWING LIST &', 5, 5), T('MTEXT', 'S', 'SHEET\\PNUMBER', 20, 800), T('MTEXT', 'S', 'GROUND FLOOR PLAN', 40, 770), T('MTEXT', 'S', 'ROOF PLAN', 40, 760), T('MTEXT', 'S', 'NORTH ELEVATION', 40, 750)], []);
+ok('YR38i a sheet holding a drawing list takes @VIEW=DRAWING, whatever titles its rows carry', vals(props(regHold), 'PR-VIEW', 'VIEW') === 'DRAWING');
+ok('YR38j set back: guide off gives the earlier result, its titles disagree', vals(props(regHold, null, { 'guide.gap_sheets': 'off' }), 'PR-VIEW', 'VIEW') === '');
+ok('YR38k the words alone are no register: a plan that says DRAWING LIST in a note keeps its own title', vals(props(sheet('p.dxf', [T('MTEXT', 'S', 'DRAWING LIST', 5, 5), T('MTEXT', 'S', 'GROUND FLOOR PLAN', 40, 770)], [])), 'PR-VIEW', 'VIEW') === 'PLAN');
+const needs = { 'GAP:door_tag_no_row': ['DOOR SCHEDULE'], 'limit:stair_short': ['STAIR'], 'GAP:wall_curved': ['NOTHING MATCHES THIS'], 'limit:roof_edge': ['ROOF PLAN'] };
+const gres = { gaps: [{ code: 'GAP:door_tag_no_row' }, { code: 'GAP:door_tag_no_row' }, { code: 'GAP:wall_curved' }, { code: 'GAP:other' }], els: [], report: { stairs: { short_m: { 'STAIR A@0': 1.2 } }, roof: { spots: 12 } } };
+const gd = GG.guide(gres, REGR, { 'A-500': 1 }, needs), gRow = n => gd.rows.find(r => r.need === n);
+console.log('§YR39 ' + JSON.stringify(gd));
+ok('YR39a a gap whose words match a sheet held: held true', gRow('GAP:door_tag_no_row').count === 2 && gRow('GAP:door_tag_no_row').sheets.length === 1 && gRow('GAP:door_tag_no_row').sheets[0].no === 'A-500' && gRow('GAP:door_tag_no_row').sheets[0].held === true);
+ok('YR39b a limit whose words match a missing sheet: named, held false', gRow('limit:stair_short').count === 1 && gRow('limit:stair_short').sheets[0].no === 'A-502' && gRow('limit:stair_short').sheets[0].held === false);
+ok('YR39c words that match nothing: the need stays, no sheet named', gRow('GAP:wall_curved').count === 1 && gRow('GAP:wall_curved').sheets.length === 0);
+ok('YR39d a gap with no table row and a need with count 0 make no row', !gRow('GAP:other') && gd.rows.length === 4);
+ok('YR39e a word is whole: DOOR SCHEDULE does not match OUTDOOR SCHEDULES', GG.guide(gres, { rows: [{ no: 'A-9', base: 'A-9', title: 'OUTDOOR SCHEDULES' }], registers: [{}] }, {}, needs).rows.find(r => r.need === 'GAP:door_tag_no_row').sheets.length === 0);
+const gNo = GG.guide(gres, { rows: [], registers: [] }, {}, needs);
+ok('YR39f no register: INCONCLUSIVE, names no sheet, the needs stay', gNo.status === 'INCONCLUSIVE' && gNo.rows.length === 4 && gNo.rows.every(r => !r.sheets.length));
+const offP = { DF: { has: k => k === 'guide.gap_sheets', get: () => 'off', meta: () => ({ needs }), use: () => {} } };
+ok('YR39g set back: off gives no guide', GG.run([regSheet('reg.dxf', REGE)], gres, offP.DF) === null);
+const useL = []; const onDF = { has: k => k === 'guide.gap_sheets', get: () => 'read', meta: () => ({ needs, min_rows: 3 }), use: k => useL.push(k) };
+const noReg = GG.run([sheet('p.dxf', [], [])], gres, onDF);
+ok('YR39h no register: no yellow row is used, so a set without one keeps its rows; with one, the row is used', noReg.status === 'INCONCLUSIVE' && useL.length === 0 && GG.run([regSheet('reg.dxf', REGE)], gres, onDF).status === 'read' && useL.length === 1);
+ok('YR39i a refused set is judged by nobody: INCONCLUSIVE', GG.run([regSheet('reg.dxf', REGE)], gres, onDF, { refused: 1 }).status === 'INCONCLUSIVE');
+ok('YR39j the table has every need the spec names', ['GAP:slab_no_outline', 'GAP:door_tag_no_swing', 'GAP:door_tag_no_row', 'GAP:wall_curved', 'GAP:footing_no_thickness', 'GAP:beam_label_no_edges', 'limit:wall_top', 'limit:wall_type', 'limit:roof_edge', 'limit:stair_short', 'limit:glazing', 'limit:pad_thickness'].every(k => (REG['guide.gap_sheets'].needs[k] || []).length > 0));
+const scA = { ok: true, rows: [{ class: 'columns', built: 25, evidence: 25 }, { class: 'doors', built: 54, evidence: 64 }] }, scB = { ok: true, rows: [{ class: 'columns', built: 25, evidence: 25 }, { class: 'doors', built: 60, evidence: 64 }] };
+const d1 = SD.diff(scA, scB), d2 = SD.diff(scA, scB), g1 = JSON.stringify(GG.guide(gres, REGR, { 'A-500': 1 }, needs)), g2 = JSON.stringify(GG.guide(gres, REGR, { 'A-500': 1 }, needs));
+console.log(d1);
+ok('YR40a two runs of the guide and of status_diff are byte-equal', d1 === d2 && g1 === g2);
+ok('YR40b a planted change moves that row and moved, nothing else', /§STATUS doors 54 of 64 -> 60 of 64/.test(d1) && /§STATUS columns 25 of 25 -> 25 of 25/.test(d1) && /§STATUS_TOTAL moved=1/.test(d1));
+ok('YR40c no clock, path or random value in the output', !/\d{4}-\d{2}-\d{2}|\/home|\/tmp|Math\.random/.test(d1 + g1));
+ok('YR40d a refused stage says so, not a row of zeros passed off as a result', /§STATUS_GATE refused=2/.test(SD.diff(scA, { ok: false, refused: 2, rows: [] })));
+}
+// §D110 YR41 each reading rule, on its positive and its set-back
+{
+  const WLm = require(path.join(M, 'dxf2walls.js')), DFm = (o) => ({ has: k => k in o, get: k => o[k], meta: k => REG['wall.top_from_elevation'], use: () => {} });
+  const planD = { gridsX: { P1: 0 }, gridsY: { PA: 0, PB: 10000 }, gridsA: {} };
+  const plans = [{ role: 'plan', level: 0, factor: 0.001, name: 'g', desc: Object.assign({}, planD), dxf: { entities: [] } }, { role: 'plan', level: 4.8, factor: 0.001, name: 'u', desc: Object.assign({}, planD), dxf: { entities: [] } }];
+  const wall = (id, x, y0, y1, z0, z1, t) => ({ guid: id, class: 'IfcWall', axis: { u: [0, 1], s0: y0, s1: y1, c0: -x - (t || 0.2), c1: -x }, z0, z1, vertices: [[x, y0, z0], [x + 0.2, y1, z1]], size: {}, height_source: 'plans', ifc: {} });
+  const elev = (plane, top, base, h0, h1) => ({ role: 'elev', factor: 0.001, name: 'e' + plane, desc: { plane, zs: [{ z: 0, y: 0 }, { z: 1, y: 1000 }], gridsH: {} }, dxf: { entities: [L('A-WALL-OTLN', h0 === undefined ? 0 : h0, base * 1000, h1 === undefined ? 10000 : h1, base * 1000), L('A-WALL-OTLN', h0 === undefined ? 0 : h0, top * 1000, h1 === undefined ? 10000 : h1, top * 1000)] } });
+  const fams = plane => [elev(plane, 13.8, -1.25)];
+  const on = () => [wall('low', 0, 2, 8, 0, 4.8), wall('up', 0, 2, 8, 4.8, 9.05)];
+  const PNm = require(path.join(M, 'dxf2panels.js')), DFon = DFm({ 'wall.top_from_elevation': 'read' });
+  const wingLines = [elev('P1', 13.8, -1.25), elev('P2', 13.8, -1.25), elev('PA', 13.8, -1.25), elev('PB', 13.8, -1.25)]; plans.forEach(p => { p.desc.gridsX = { P1: 0, P2: 20000 }; });
+  const A = on(), repA = WLm.topsFromElevations(plans.concat(wingLines), A, { DF: DFon, PN: PNm });
+  console.log('§YR41a ' + JSON.stringify(repA) + ' ' + JSON.stringify(A.map(w => [w.guid, w.z0, w.z1, w.height_source])));
+  ok('YR41a on the line, 2 plan levels: the lower keeps its top and takes the base, the upper takes the top', A[0].z0 === -1.25 && A[0].z1 === 4.8 && A[1].z0 === 4.8 && A[1].z1 === 13.8 && A.every(w => w.height_source === 'elevation'), JSON.stringify(A.map(w => [w.z0, w.z1])));
+  ok('YR41b the mesh moves with it: every vertex at the new heights', A[1].vertices.some(v => v[2] === 13.8) && !A[1].vertices.some(v => v[2] === 9.05));
+  const B0 = on(); ok('YR41c set back: next_plan_level keeps today\'s walls', WLm.topsFromElevations(plans.concat(wingLines), B0, { DF: DFm({ 'wall.top_from_elevation': 'next_plan_level' }), PN: PNm }) === null && B0[1].z1 === 9.05 && B0[1].height_source === 'plans');
+  const low = [elev('P1', 4, -0.3), elev('P2', 4, -0.3), elev('PA', 4, -0.3), elev('PB', 4, -0.3)];
+  const off = [wall('in', 10, 2, 8, 0, 4.8)]; const repO = WLm.topsFromElevations(plans.concat(low), off, { DF: DFon, PN: PNm });
+  ok('YR41d off the lines, inside the wing: no higher than the wing\'s top, source wing, not counted as read', off[0].z1 === 4 && off[0].height_source === 'wing' && repO.wing_capped === 1 && repO.on_line === 0, JSON.stringify(repO));
+  const far = [wall('out', 30, 2, 8, 0, 4.8)]; WLm.topsFromElevations(plans.concat(low), far, { DF: DFon, PN: PNm });
+  ok('YR41e outside every wing: stays', far[0].z1 === 4.8 && far[0].height_source === 'plans');
+  const planF = plans.map(p => Object.assign({}, p, { desc: Object.assign({}, p.desc, { gridsY: { PA: 0, PB: 10000, PC: 20000 } }) }));
+  const span = elev('P1', 13.8, -1.25, 12000, 18000); span.desc.gridsH = { PA: 0, PB: 10000, PC: 20000 };
+  const notHere = [wall('n', 0, 2, 8, 0, 4.8)], repS = WLm.topsFromElevations(planF.concat([span, elev('P2', 13.8, -1.25), elev('PA', 13.8, -1.25), elev('PC', 13.8, -1.25)]), notHere, { DF: DFon, PN: PNm });
+  ok('YR41f a line of the elevation elsewhere along the wall line says nothing about this wall: counted no_span', notHere[0].height_source !== 'elevation' && repS.no_span === 1, JSON.stringify(repS));
+  // (b)
+  const lay = t => sheet('l.dxf', [T('MTEXT', 'G-ANNO-TTLB', t, 5, 5)], []);
+  ok('YR41g a title ending LAYOUT gives PLAN', vals(props(lay('GROUND FLOOR WALL TYPE LAYOUT')), 'PR-VIEW', 'VIEW') === 'PLAN');
+  ok('YR41h set back: off, no view is read from it', vals(props(lay('GROUND FLOOR WALL TYPE LAYOUT'), null, { 'suggest.title_layout': 'off' }), 'PR-VIEW', 'VIEW') === '');
+  // (c)
+  const tagP = ents => ({ role: 'plan', level: 0, factor: 0.001, name: 't', desc: { layers: [{ layer: 'A-WALL-IDEN', type: 'walltag' }] }, dxf: { entities: ents } });
+  const tw = () => [wall('w', 0, 0, 6, 0, 4.8)], DFt = DFm({ 'wall.tag_reach': 1.5 }), ttag = (t, x, y) => T('MTEXT', 'A-WALL-IDEN', t, x, y);
+  const w1 = tw(), r1 = WLm.readTags([tagP([ttag('WB01', 700, 3000)])], w1, { DF: DFt });
+  ok('YR41i a tag beside a wall names its type, and the IFC type carries it', w1[0].size.type.value === 'WB01' && w1[0].ifc.type_name === 'WB01' && r1.walls_typed === 1, JSON.stringify(w1[0].size));
+  const w2 = tw(), r2 = WLm.readTags([tagP([ttag('2 Hr.', 700, 3000), ttag('01', 700, 3000), ttag('-', 700, 3000)])], w2, { DF: DFt });
+  ok('YR41j a rating, a legend number and a dash are no tags', !w2[0].size.type && r2.labels === 0);
+  const w3 = tw(), r3 = WLm.readTags([tagP([ttag('WB01', 5000, 3000)])], w3, { DF: DFt });
+  ok('YR41k beyond reach: counted, nothing typed', !w3[0].size.type && r3.no_wall === 1);
+  const w4 = tw(), r4 = WLm.readTags([tagP([ttag('WB01', 700, 3000)])], w4, { DF: DFm({ 'wall.tag_reach': 0 }) });
+  ok('YR41l reach 0: none', !w4[0].size.type && r4.labels === 0);
+  const w5 = tw(), r5 = WLm.readTags([tagP([ttag('WB01', 1400, 3000), ttag('GW01', 500, 3000)])], w5, { DF: DFt });
+  ok('YR41m two tags on a wall: the nearest, the other stated', w5[0].size.type.value === 'GW01' && w5[0].size.type_also === 'WB01' && r5.two_tags === 1, JSON.stringify(w5[0].size));
+  const w6 = [wall('w', 0, 0, 6, 4.8, 9.05)]; WLm.readTags([tagP([ttag('WB01', 700, 3000)])], w6, { DF: DFt });
+  ok('YR41n a tag names a wall of its own plan\'s level only', !w6[0].size.type);
+  // (d)
+  const roleless = { name: 'x.dxf', role: null, why: 'markings name no role', dxf: { entities: [] }, desc: { sheetno: 'A-9' } };
+  const STm = require(path.join(M, 'dxf2structure.js')), Bm = require(path.join(M, 'dxf2bodies.js')), Im = require(path.join(M, 'dxf2bim_import.js'));
+  const base2 = () => [{ name: 'p.dxf', role: 'plan', level: 0, factor: 0.001, sha: 'p', desc: { layers: [], gridsX: {}, gridsY: {} }, dxf: { entities: [] } }, { name: 'e.dxf', role: 'elev', factor: 0.001, sha: 'e', face: 'minX', desc: { layers: [], zs: [], plane: 'P1' }, dxf: { entities: [] } }];
+  const jr = STm.judge(base2().concat([roleless]), { I: Im, B: Bm, choices: {} }), js = STm.judge(base2().concat([roleless]), { I: Im, B: Bm, choices: { 'gate.unplaced_sheet': 'set_aside' } });
+  console.log('§YR41o ' + JSON.stringify(jr.gate.refused.map(r => r.reason)) + ' ' + JSON.stringify(js.gate.refused.map(r => r.reason)) + ' ' + JSON.stringify(js.gate.R.gaps));
+  ok('YR41o refuse, the default: the sheet refuses the set', jr.gate.refused.some(r => r.sheet === 'x.dxf'));
+  ok('YR41p set_aside: the sheet does not refuse, it is a gap with the reader\'s reason', !js.gate.refused.some(r => r.sheet === 'x.dxf') && js.gate.R.gaps.some(g => g.code === 'GAP:sheet_set_aside' && g.sheet === 'x.dxf' && /no role/.test(g.detail)));
+  const GGm = require(path.join(M, 'dxf2gapguide.js'));
+  ok('YR41q the guide marks a set-aside sheet in hand, not read', GGm.heldOf([roleless])['A-9'] === 'aside' && GGm.guide({ gaps: [{ code: 'GAP:x' }] }, { rows: [{ no: 'A-9', base: 'A-9', title: 'ROOF PLAN' }], registers: [{}] }, GGm.heldOf([roleless]), { 'GAP:x': ['ROOF PLAN'] }).rows[0].sheets[0].read === false);
+}
 // every rule key is a registry row with the earlier behaviour on offer
-const BACK = { 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'stair.flights': 'off', 'roof.from_spots': 'off', 'wall.min_thick': 0, 'panel.plane': 'end grid line, centred' };
+const BACK = { 'guide.gap_sheets': 'off', 'wall.top_from_elevation': 'next_plan_level', 'wall.tag_reach': 0, 'suggest.title_layout': 'off', 'suggest.grid_ticks': 'always', 'suggest.grid_label': 'letters_or_digits', 'suggest.grid_reach': 0.7, 'suggest.grid_along': 0.06, 'suggest.grid_layer': 'a_grid_only', 'suggest.level_text': 'level_layer_only', 'suggest.title_text': 'text_only', 'suggest.sheet_refs': 'off', 'suggest.grid_rotated': 'off', 'suggest.elev_no_grid': 'lie_flat', 'suggest.level_name': 'off', 'suggest.level_footing': 'off', 'loops.skew_tol': 0, 'bodies.touching_parts': 'separate', 'column.z_from_plans': 'off', 'footing.z_from_plan': 'off', 'beam.label_reach': 0, 'beam.edge_tol': 0.003, 'beam.span_split': 'one_body', 'wall.band_gap': 0, 'slab.ground_on_raft': 'off', 'steel.label_reach': 0, 'steel.section_table': 'off', 'door.tag_reach': 0, 'stair.flights': 'off', 'roof.from_spots': 'off', 'wall.min_thick': 0, 'panel.plane': 'end grid line, centred' };
 ok('YR10 every rule is a registry row offering the earlier behaviour', Object.keys(BACK).every(k => REG[k] && (REG[k].options || []).includes(BACK[k]) && REG[k].value !== BACK[k]));
 console.log('§W-YELLOW-RULES PASS=' + passes + ' FAIL=' + fails + ' of ' + (passes + fails));
 process.exit(fails ? 1 : 0);
