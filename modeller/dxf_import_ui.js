@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '16';
+  var V = '17';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2beams.js', 'dxf2walls.js', 'dxf2slabs.js', 'dxf2steel.js', 'dxf2doortags.js', 'dxf2stairs.js', 'dxf2roofspots.js', 'dxf2gapguide.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -1146,6 +1146,7 @@
     console.log(TAGP + ' rules sheets=' + names.length + ' ms=' + (Date.now() - t1) + ' total_ms=' + (Date.now() - t0) + ' heap_mb=' + heap);
     var read = { file: file.name, rows: pdfRows(O.logs) }, by = { READ: 0, FINDING: 0, DEFAULT: 0 }; read.rows.forEach(function (r) { by[r.status]++; }); console.log(TAGP + ' values ' + JSON.stringify(by));
     var out = await openFiles(names.map(function (n) { return { name: n, text: O.sheets[n] }; }), { chooser: true, pdf: read });
+    var st0 = document.getElementById('stat'); if (st0 && /^Reading /.test(st0.textContent)) st0.textContent = 'Read ' + file.name + ': ' + names.length + ' sheets';
     return { sheets: names, by: by, open: out };
   }
   var inpPdf = null;

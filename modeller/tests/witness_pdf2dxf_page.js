@@ -35,6 +35,7 @@ async function run(id, lib, fn) { const udd = fs.mkdtempSync(path.join(TMP, 'pd-
     ok('T0 the library that answered is the local export named above, not the live one (a service worker escaped this once)', shaOf(rec) === wantSha(E.PD_TB_LIB), shaOf(rec) + ' vs ' + wantSha(E.PD_TB_LIB));
     ok('T1 7 sheets, each with a role', a.sheets && a.sheets.length === 7 && a.sheets.every(s => !/NONE/.test(s)), (a.sheets || []).join());
     ok('T2 it qualifies on the recorded acceptance, on a local export', a.ok === true && a.verdict === 'qualifies' && a.blocking === 0 && a.accepted === 57, a.verdict + ' blocking ' + a.blocking + ' accepted ' + a.accepted);
+    ok('T3b the status bar has moved on from Reading', !/^Reading /.test(a.stat || ''), (a.stat || '').slice(0, 80));
     ok('T3 what was read is on screen, and nothing on TB-LKTN is a default', a.block && a.rows.indexOf('DEFAULT') < 0, a.head + ' rows ' + a.rows.length);
     const c = await convert(pg); ok('T4 Convert builds the house: 14 fills, 14 cuts', c && c.fills === 14 && c.cuts === 14, JSON.stringify(c));
     ok('T5 no LOD400 hard fail, no refusal', !rec.logs.some(l => /LOD400 HARD FAIL|Convert refused|REFUSED/.test(l)));
