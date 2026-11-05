@@ -750,7 +750,8 @@
     storeOpts = { SQL: SQL, space: cfg.space, self: dev, access: access, tableId: tableId, log: log, messageText: coreMsg, baseRow: hostBaseRow, docno: hostDocNo, versions: global.TeamVersions && global.TeamVersions.registry };    // baseRow: asked only in a space that has a base; versions (§16.33): shape-version judgement, nothing judged differently at shape 1 with no sets
     S = global.CommStore.open(new SQL.Database(bytes), storeOpts); if (S.setMailbox) S.setMailbox(mailboxCfg());
     var pu = new URLSearchParams(global.location.search).get('pipe');
-    pipe = pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
+    var lu = new URLSearchParams(global.location.search).get('lan');   // §38: the MAIN till: `pipe` = the internet relay, `lan` = the branch relay; the branch mailbox is on the LAN, the rest on the internet relay. An ordinary till passes `pipe` = the branch relay only.
+    pipe = pu && lu ? global.CommPipe.routedPipe(global.CommPipe.httpPipe(pu, 'net'), global.CommPipe.httpPipe(lu, 'lan')) : pu ? global.CommPipe.httpPipe(pu) : global.CommPipe.ghPipe({ owner: cfg.owner || OWNER, repo: cfg.repo || REPO, token: cfg.token, self: dev.kid, minGapMs: Number(new URLSearchParams(global.location.search).get('gap') || 10000) });
   }
   function needKey() { var pu = new URLSearchParams(global.location.search).get('pipe'); if (!pu && !cfg.token) throw new Error('No key: open the Team panel and use the system default, or save your own repository and key'); }
   async function fresh() { sent = {}; localOnly = {}; fired = {}; replExc = []; await kvPut('erp_db', null); await kvPut('erp_sent', {}); await kvPut('erp_localonly', {}); await kvPut('erp_replfired', {}); }

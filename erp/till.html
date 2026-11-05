@@ -38,6 +38,16 @@
   #totals { display:flex; gap:16px; font-size:18px; justify-content:flex-end; color:var(--fg); } #totals b { background:var(--field-bg); border:var(--field-bw) solid var(--field-ln); padding:var(--field-pad); min-width:70px; text-align:right; display:inline-block; } #east .pad { display:grid; grid-template-columns:repeat(4,1fr); } #east .key { padding:14px 0; font-size:18px; color:var(--key-fg); font-weight:var(--key-fw); }
   #price, #por { display:inline-block; min-width:60px; font-size:20px; } .prod { width:107px; height:60px; padding:2px; background:var(--tile-bg); } .noimg { color:var(--tile-ic); } #cats button.on { background:var(--on-bg); color:var(--on-fg); }
   .dlg { max-width:720px; margin:0 auto; background:var(--pn); border:1px solid var(--ln); padding:10px; } #tabs button.on { background:var(--on-bg); color:var(--on-fg); } .rf { font-family:monospace; white-space:pre; }
+
+  /* §39 the receipt = paper: Printer.Ticket.xml's 42-column grid, black on white in every theme, 80 mm roll when printed */
+  #receipt { box-sizing:content-box; width:42ch; margin:8px auto; padding:10px 12px; background:#fff; color:#000; border:1px solid #bbb; box-shadow:0 1px 4px rgba(0,0,0,.25); font:13px/1.25 "DejaVu Sans Mono","Liberation Mono",Menlo,Consolas,monospace; }
+  #receipt .rf, #receipt .rb { font:inherit; color:#000; white-space:pre; overflow:visible; min-height:1.25em; } #receipt .rf b { font-weight:700; } #receipt .rf.sz1 { transform:scale(1,2); transform-origin:left top; margin-bottom:1.25em; } #receipt .rf[data-f="header-logo"] { text-align:center; white-space:normal; } #receipt .rf img { max-width:60%; max-height:60px; }
+  @page { size:80mm auto; margin:0; }
+  @media print {
+    html, body { background:#fff !important; margin:0 !important; padding:0 !important; height:auto !important; overflow:visible !important; }
+    body > *:not(#u9) { display:none !important; } #u9 { display:block !important; position:static !important; } #u9 .dlg { border:0; padding:0; margin:0; max-width:none; background:#fff; } #u9 h2, #u9 button, #changepop { display:none !important; }
+    #receipt { width:42ch; margin:0 auto; padding:3mm 4mm; border:0; box-shadow:none; font-family:"DejaVu Sans Mono","Liberation Mono",monospace; font-size:8pt; line-height:1.25; color:#000; background:#fff; } #receipt .rf img { max-height:18mm; }
+  }
   #b-engine { position:absolute; left:-10000px; top:0; width:1100px; height:800px; border:0; } .why { color:var(--mut); font-size:12px; }
 </style></head><body>
 <div class="bar" id="topbar"><b>Till</b><span id="brand" hidden><img id="brand-logo-img" alt="" hidden width="24" height="24"><span id="brand-logo"></span><b id="brand-name"></b></span><span id="s-net" class="chip">online</span><span id="s-pair" class="chip">starting</span><span id="s-who" class="chip"></span><span id="s-dep" class="chip">deposited 0</span><span style="flex:1"></span><button id="cfg-open" title="Configuration" aria-label="Configuration"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button><button id="visit">Visit head office</button></div>
@@ -59,7 +69,7 @@
   </div>
   <div id="ticketcol"><div id="lines"><table><thead><tr><th>Item</th><th>Price</th><th>Qty</th><th>Value</th></tr></thead><tbody id="tl"></tbody></table></div>
     <div id="totals"><span data-total="Subtotal">Subtotal <b id="t-sub">0.00</b></span><span data-total="Taxes">Taxes <b id="t-tax">0.00</b></span><span data-total="Total">Total <b id="t-tot">0.00</b></span></div></div>
-  <div id="rightcol"><button id="b-remove" data-btn="Delete line">Delete line</button><button data-btn="Search product" disabled data-disabled-reason="product finder: slice 2">Search product</button><button data-btn="Edit line" disabled data-disabled-reason="line editor: slice 2">Edit line</button><button data-btn="Choose attributes" disabled data-disabled-reason="attributes: slice 2">Choose attributes</button><button data-btn="Check Stock" disabled data-disabled-reason="stock check: slice 2">Check Stock</button>
+  <div id="rightcol"><button id="b-remove" data-btn="Delete line">Delete line</button><button data-btn="Search product" disabled data-disabled-reason="product finder: slice 2">Search product</button><button data-btn="Edit line" disabled data-disabled-reason="line editor: slice 2">Edit line</button><button data-btn="Choose attributes" disabled data-disabled-reason="attributes: slice 2">Choose attributes</button><button id="b-checkstock" data-btn="Check Stock">Check Stock</button>
     <div id="east"><div><span id="price"></span><span id="por"></span></div><div class="pad" id="pad"></div>
       <button id="b-barcode">Get Barcode</button><div><select id="taxcombo" title="Tax category"></select> <label><input type="checkbox" id="addtax"> +</label></div></div></div>
   <div id="south"><button id="catbar" aria-expanded="true" title="Show or hide the products"></button><div id="catbody"><div id="cats"></div><div id="products"></div></div></div>
@@ -74,7 +84,7 @@
   <div><button id="addpart">Add Part Payment</button><button id="delpart">Delete Part Payment</button> <label><input type="checkbox" id="printtoggle" checked> Print Receipt</label></div>
   <div><button id="pay-cancel">Cancel</button><button id="pay-ok" class="go">OK</button></div></div></section>
 
-<section id="u9" class="screen"><div class="dlg"><h2>Receipt</h2><div id="receipt"></div><div id="changepop" hidden></div><button id="rc-ok" class="go">OK</button></div></section>
+<section id="u9" class="screen"><div class="dlg"><h2>Receipt</h2><div id="receipt"></div><div id="changepop" hidden></div><button id="rc-print">Print</button> <button id="rc-ok" class="go">OK</button></div></section>
 
 <section id="u14" class="screen"><div class="dlg"><h2>Close Cash</h2>
   <div data-z="sequence">Sequence <b id="z-seq"></b></div><div data-z="start">Start Date <b id="z-start"></b></div><div data-z="end">End Date <b id="z-end"></b></div>
@@ -123,5 +133,5 @@
 <div id="confirmbox" class="bar" hidden><span id="confirm-text"></span><button id="confirm-yes" class="go">Yes</button><button id="confirm-no">No</button></div>
 
 <iframe id="b-engine" title="engine" aria-hidden="true"></iframe>
-<script src="till_theme.js"></script><script src="till_pad.js"></script><script src="rest_core.js"></script><script src="till_core.js"></script><script src="eoda_core.js"></script><script src="soda_core.js"></script><script src="till_registry.js"></script><script src="till.js"></script><script src="till_rest.js"></script><script src="till_setup.js"></script><script src="till_company.js"></script><script src="till_ext.js"></script><script src="kds_core.js"></script><script src="kds_link.js"></script><script src="till_kds.js"></script>
+<script src="till_theme.js"></script><script src="till_pad.js"></script><script src="rest_core.js"></script><script src="till_core.js"></script><script src="eoda_core.js"></script><script src="soda_core.js"></script><script src="till_registry.js"></script><script src="../common/comm/comm_pipe.js"></script><script src="till_lan.js"></script><script src="till.js"></script><script src="till_rest.js"></script><script src="till_setup.js"></script><script src="till_company.js"></script><script src="till_ext.js"></script><script src="kds_core.js"></script><script src="kds_link.js"></script><script src="till_kds.js"></script>
 </body></html>

@@ -37,6 +37,10 @@
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
     var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim, p.imageurl AS img FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    // A legacy ImageURL that is not an absolute http(s) URL (the seed's 'images/iD32.png' is relative to legacy's OWN web UI, which the till does not have)
+    // cannot be loaded here: treat it as no picture (the uniCenta placeholder tile) instead of a 404 per tile. POS_PLUGIN_LOCAL_FIRST §39.R follow-up.
+    var relImg = 0; prods.forEach(function (p) { if (p.img && !/^https?:\/\//i.test(String(p.img))) { relImg++; p.img = null; } });
+    if (relImg) log('§TILL_IMAGEURL_RELATIVE skipped=' + relImg + ' (not an absolute http(s) URL; shown as the placeholder tile)');
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
@@ -215,8 +219,9 @@
       var res = await depositGroup(ops);
       if (!res || res.committed !== true) { msg('Could not save the sale on this device: ' + (res && res.reason), 'bad'); log('§TILL_DEPOSIT FAIL ' + (res && res.reason)); return; }
       if (n != null) { S.store.counters = S.store.counters || {}; S.store.counters[kind] = n; }
+      await lanDeposit(key, rowsOut);   // §38.2.4: the ticket's lines go to the branch relay as rung (LAN only; queued on the till if the relay is away: selling never waits)
       var pickup = t.pickup || (kind === 'P' ? null : bumpPickup());
-      var terminal = S.cfg.tillKey, rm = C.receiptModel({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change });
+      var terminal = S.cfg.tillKey, rm = C.receiptModel(Object.assign({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change }, rx(kind === 'P' ? {} : t, kind === 'P' ? null : tt)));
       S.lastReceipt = { key: key, model: rm, gross: tt.gross, change: ap.change, firstCash: ap.parts[0] && ap.parts[0].name === 'cash' };
       S.store.last = { type: kind, key: key }; (S.store.rcpt = S.store.rcpt || {})[key] = { model: rm, change: ap.change, firstCash: S.lastReceipt.firstCash, pickup: pickup };   // 5.0 lastticket.number/type (JPanelTicket closeTicket); the detail a reprint needs and the rows do not hold (tendered, change, discount lines)
       log('§TILL_DEPOSIT key=' + key + ' type=' + kind + (t.old ? ' edit=1' : '') + ' lines=' + rowsOut.orders.length + ' tenders=' + rowsOut.payments.length + ' gross=' + sg(Math.abs(tt.gross)) + ' ops=' + ops.length + ' gid=' + res.gid + ' pickup=' + pickup + ' core_docs_written=0');
@@ -225,9 +230,28 @@
     });
   }
   // ── U9 ──
+  function rx(t, tt) {   // the receipt fields beyond the lines: Customer/Table of the ticket, the order totals (Subtotal/Tax/tax lines) §39.3
+    var c = t && t.customer, cn = c && (typeof c === 'string' ? c : (c.name || c.Name || ''));
+    return { tt: tt && tt.ok && tt.net != null ? tt : null, taxName: function (id) { var x = S.taxEnv && S.taxEnv.taxById && S.taxEnv.taxById(id); return x ? x.name : ''; }, table: t && t.table || '', customer: cn || '' };
+  }
+  function fmtDate(iso) { var d = new Date(iso); if (isNaN(d)) return String(iso); var z = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds()); }
+  function gridHtml(grid) {
+    return grid.map(function (g) {
+      if (g.f === 'blank') return '<div class="rb">&nbsp;</div>';
+      if (g.f === 'header-logo') return '<div class="rf" data-f="header-logo" data-v="' + esc(g.v) + '"><img alt="" crossorigin="anonymous" src="' + esc(g.v) + '"></div>';
+      var inner = g.cells.map(function (c) { return c.b ? '<b>' + esc(c.s) + '</b>' : esc(c.s); }).join('');
+      return '<div class="rf' + (g.size ? ' sz1' : '') + '" data-f="' + esc(g.f) + '" data-v="' + esc(g.v) + '">' + inner + '</div>';
+    }).join('');
+  }
   function showReceipt(print) {
-    var r = S.lastReceipt;
-    $('#receipt').innerHTML = print ? (window.TillCompany ? window.TillCompany.headerHtml() : '') + r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
+    var r = S.lastReceipt, TC = window.TillCompany, c = TC && TC.company && TC.company();
+    if (print) {
+      var hdr = TC ? TC.headerLines() : [], ft = [];
+      var su = S.store.setup || {}; for (var i = 1; i <= 6; i++) ft.push(i === 1 && TC ? TC.footerLine() : String(su['tkt.footer' + i] || '').trim());
+      var grid = C.receiptGrid(r.model, { header: hdr, footer: ft, logo: c && c.imageurl || null, fmtDate: fmtDate });
+      r.grid = grid; $('#receipt').innerHTML = gridHtml(grid);
+      log('§TILL_RECEIPT_GRID key=' + r.key + ' lines=' + grid.length + ' width=' + Math.max.apply(null, grid.map(function (g) { return g.text.length; })) + ' header=' + hdr.length + ' logo=' + (c && c.imageurl ? 'url' : 'none'));
+    } else $('#receipt').innerHTML = '<div class="rf" data-f="none">(receipt not printed)</div>';
     var cp = $('#changepop'); cp.hidden = !(r.firstCash && r.change > 0); cp.textContent = 'Change: ' + C.money(r.change);   // Ticket.Close.xml:23-60
     go('receipt');
   }
@@ -265,19 +289,38 @@
     $('#zconfirm').hidden = true; await renderClose();
     await handoff(sh);   // §26.3: ONE hand-off per shift to the branch POS admin (audience = branch); nothing goes to head office from a till
   }
-  // Close Cash -> the branch POS admin (POS_PLUGIN_LOCAL_FIRST §26.3): the shift's tickets (their I_Order lines + I_Payment tenders, as deposited) and one Z declaration per business day, in ONE atomic group of POS_TillHandoff rows, then ONE Visit (branch lane)
+  // Close Cash -> the branch relay (POS_PLUGIN_LOCAL_FIRST §38.2.4; replaces the §26.3 hand-off over the internet branch lane): the shift's tickets (I_Order lines + I_Payment tenders, as deposited) and one Z declaration per business day
+  // as ONE file on the LAN relay, collected by the main till. Nothing crosses the internet from a till, and no Visit is made here.
   async function handoff(sh) {
     var tag = 'POS shift ' + S.cfg.tillKey + '/' + sh.seq;
     var os = await rows('SELECT * FROM i_order WHERE description=' + q(tag) + ' ORDER BY i_order_id'), ps = await rows('SELECT * FROM i_payment WHERE description=' + q(tag) + ' ORDER BY i_payment_id');
     var hr = window.EodaCore.handoffRows({ tillKey: S.cfg.tillKey, seq: sh.seq, start: sh.start, end: sh.end, client: S.cfg.client, org: S.cfg.org, orders: os, payments: ps, day: today(), zOf: function (o, p) { return C.zTotals(o, p, S.taxEnv, []); } });
-    var res = await depositGroup(hr.map(function (r) { return create('pos_tillhandoff', r); }));
-    if (!res || res.committed !== true) { msg('Could not hand the shift to the branch admin: ' + (res && res.reason), 'bad'); log('§EODA_HANDOFF FAIL till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' ' + (res && res.reason)); return null; }
     var keys = hr.filter(function (r) { return r.kind === 'T'; }).map(function (r) { return r.documentno; });
-    log('§EODA_HANDOFF till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' tickets=' + keys.length + ' zrows=' + hr.filter(function (r) { return r.kind === 'Z'; }).length + ' ops=' + hr.length + ' gid=' + res.gid);
-    var v = await visit();
-    if (v && v.rep && v.rep.sent > 0) { S.store.sent = S.store.sent || {}; keys.forEach(function (k) { S.store.sent[k] = 1; }); saveStore(); }   // a key handed to the branch is no longer editable on the till; a Visit that sent nothing (offline) marks nothing
-    return { keys: keys, visit: v };
+    var f = await S.lan.depositShift(sh.seq, hr);
+    log('§EODA_HANDOFF till=' + S.cfg.tillKey + ' shift=' + sh.seq + ' tickets=' + keys.length + ' zrows=' + hr.filter(function (r) { return r.kind === 'Z'; }).length + ' rows=' + hr.length + ' lan_sent=' + f.sent + ' lan_queued=' + f.queued);
+    if (f.queued === 0) { S.store.sent = S.store.sent || {}; keys.forEach(function (k) { S.store.sent[k] = 1; }); saveStore(); }   // a key on the branch relay is no longer editable on the till; a hand-off still queued (relay away) marks nothing
+    else msg('The branch relay is not reachable: the shift is kept on this till and goes when it returns', 'warn');
+    return { keys: keys, lan: f };
   }
+  // §38: the till's LAN side. ONE branch-relay pipe (httpPipe): this till has NO internet pipe object at all (D9/D11). Relay URL: ?relay= or the device store; none configured = everything queues on the till.
+  function lanSetup() {
+    var qs = new URLSearchParams(location.search), url = qs.get('relay') || (function () { try { return localStorage.getItem('branchrelay.url'); } catch (e) { return null; } })(), key = 'tilllan.v1:' + S.cfg.tillKey, st = {};
+    try { st = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { st = {}; }
+    var lan = url ? window.CommPipe.httpPipe(url.replace(/\/+$/, '') + '/pipe', 'lan') : { put: async function () { throw new Error('no branch relay configured'); }, get: async function () { throw new Error('no branch relay'); }, list: async function () { throw new Error('no branch relay'); } };
+    S.lan = window.TillLan.create({ tillKey: S.cfg.tillKey, isMain: false, lan: lan, state: st, expected: [], now: Date.now, save: function () { try { localStorage.setItem(key, JSON.stringify(st)); } catch (e) { /* kept in memory */ } }, log: log });
+    log('§LAN_BOOT till=' + S.cfg.tillKey + ' relay=' + (url || 'none') + ' queued=' + (st.out || []).length + ' main=' + S.lan.isMain());
+    S.lan.flush().catch(function () { /* queued */ });
+  }
+  // Check Stock (uniCenta's button, §38.2.7): ask the main till over the branch relay; show the answer; STORE NOTHING (D7). No answer = "main till not reachable" and selling carries on.
+  async function checkStock() {
+    var l = S.ticket.lines[S.ticket.sel]; if (!l) { msg('Select a line first, then Check Stock', 'warn'); return; }
+    msg('Asking the main till...', 'info'); var a = await S.lan.ask(l.pid, {});
+    if (a.unreachable) { msg('Main till not reachable', 'warn'); log('§LAN_STOCK_ASK pid=' + l.pid + ' unreachable'); return; }
+    var t = new Date(a.asOf).toTimeString().slice(0, 5);
+    msg((a.atMost ? 'At most ' : '') + a.qty + ' in stock as of ' + t + ' (' + a.reached.length + ' of ' + a.of + ' tills reached' + (a.notReached.length ? '; not reached: ' + a.notReached.join(', ') : '') + ')', a.atMost ? 'warn' : 'ok');
+    log('§LAN_STOCK_ASK pid=' + l.pid + ' qty=' + a.qty + ' atMost=' + a.atMost + ' reached=' + a.reached.length + '/' + a.of);   // shown, never stored
+  }
+  async function lanDeposit(key, rowsOut) { try { return await S.lan.deposit(key, rowsOut.orders, rowsOut.payments); } catch (e) { log('§LAN_HOLD deposit ' + (e && e.message)); return null; } }
 
 
   // ── SODA (POS_PLUGIN_LOCAL_FIRST §28.3): the branch admin passes the reference deltas on the branch lane (pos_tillref). The till applies ONLY the rows that arrived (SodaCore.applyRef): a price / product (ImageURL included,
@@ -286,9 +329,11 @@
     if (!window.SodaCore) return null;
     var all = []; try { all = await rows('SELECT * FROM pos_tillref ORDER BY seq, ABS(pos_tillref_id)'); } catch (e) { return null; }
     var done = Number(S.store.sodaSeq || 0), fresh = all.filter(function (r) { return Number(r.seq) > done && r.kind !== 'B'; });
+    var lanRows = fresh.filter(function (r) { return r.kind === 'M' || r.kind === 'S'; }); fresh = fresh.filter(function (r) { return r.kind !== 'M' && r.kind !== 'S'; });   // §38.2.3: the main-till flag and HQ's on-hand are the till's own device record, not table rows
+    if (lanRows.length && S.lan) { S.lan.applySodaFlag(lanRows); S.lan.applySodaStock(lanRows); }
     var comp = fresh.filter(function (r) { return r.kind === 'O'; }); fresh = fresh.filter(function (r) { return r.kind !== 'O'; });   // §36.5: the company row is the till's own device record, not a table row
     var cres = comp.length && window.TillCompany ? window.TillCompany.apply(comp) : null;
-    if (!fresh.length) { if (comp.length) { S.store.sodaSeq = comp.reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
+    if (!fresh.length) { if (comp.length || lanRows.length) { S.store.sodaSeq = comp.concat(lanRows).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
     var cur = {}, ops = [], pk = {};
     for (var i = 0; i < fresh.length; i++) { var r = fresh[i], t = r.kind === 'P' ? 'm_productprice' : r.kind === 'R' ? 'm_product' : 'c_tax';
       var w = r.kind === 'P' ? 'm_product_id=' + Number(r.m_product_id) + ' AND m_pricelist_version_id=' + Number(r.m_pricelist_version_id) : r.kind === 'R' ? 'm_product_id=' + Number(r.m_product_id) : 'c_tax_id=' + Number(r.c_tax_id);
@@ -318,10 +363,12 @@
       else if (b.hasAttribute('data-cat-up')) { S.catPath.pop(); renderCats(); }
       else if (b.id === 'catbar') setCatCollapsed(!catCollapsed());
       else if (b.classList.contains('prod')) { var p = S.prods.filter(function (x) { return String(x.pid) === b.getAttribute('data-pid'); })[0]; var r = P.product(S.pad, p); S.pad = r.state; if (r.effect.type === 'addProduct') addLine(p, r.effect.qty); renderPad(); }
+      else if (b.id === 'b-checkstock') { checkStock(); }
       else if (b.id === 'b-remove') { if (S.ticket.sel >= 0) { removeLine(S.ticket.sel); persist(); renderSales(); } }
       else if (b.hasAttribute('data-tab')) { S.pay.tab = b.getAttribute('data-tab'); renderPay(); }
       else if (b.id === 'addpart') addPart(); else if (b.id === 'delpart') delPart();
       else if (b.id === 'pay-ok') { S.pay.print = $('#printtoggle').checked; payOk(); } else if (b.id === 'pay-cancel') { go('sales'); }
+      else if (b.id === 'rc-print') window.print();
       else if (b.id === 'rc-ok') { var back = S.afterReceipt || 'sales'; S.afterReceipt = null; go(back); }
       else if (b.id === 'zprint') { renderClose(); } else if (b.id === 'zclose') { $('#zconfirm').hidden = false; } else if (b.id === 'zconfirm') closeCash(); else if (b.id === 'zback') go('menu'); else if (b.id === 'zreprint') reprintZ();
       else if (b.id === 'visit') visit();
@@ -343,8 +390,8 @@
     for (var i = 0; i < 1200 && !(E.TeamSync && E.__crud && E.__idmpDb && E.ERPEngine && E.APP && E.APP.actor); i++) await new Promise(function (r) { setTimeout(r, 150); });
     await E.TeamSync.ready;
     if (E.AdImportTables && E.AdImportTables.ensurePos) E.AdImportTables.ensurePos(E.__idmpDb);   // POS_TillHandoff (POS_PLUGIN_LOCAL_FIRST §26.2)
-    E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3: a till never sends its tickets to head office; at Close Cash it hands the shift to its branch POS admin (branch lane), which makes the ONE send
-    await loadConfig(); await loadSizes(); mediaPrefetch();
+    E.TeamSync.hold(['i_order', 'i_payment']);   // §26.3/§38: a till never sends its tickets to head office; its lines go to the branch relay (LAN) and the main till makes the ONE send
+    await loadConfig(); lanSetup(); await loadSizes(); mediaPrefetch();
     S.store = loadStore() || { shift: freshShift(1), counters: {}, ticket: null };
     { var sm = (S.store.setup || {})['machine.ticketsbag']; if (!qs.get('mode') && !new URLSearchParams(location.search).get('mode') && ['simple', 'standard', 'restaurant'].indexOf(sm) >= 0) { S.mode = sm; document.body.setAttribute('data-mode', sm); log('§TILL_SETUP_MODE applied=' + sm + ' (from the Configuration screen)'); } }
     S.ticket = S.store.ticket || newTicket();
@@ -356,13 +403,13 @@
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§TILL_COST engine_ready_ms=' + ms + ' heap_mb=' + heap + ' products=' + S.prods.length + ' (the engine frame is the full ERP)');
     var api = { S: S, C: C, P: P, R: R, $: $, $$: $$, q: q, esc: esc, rows: rows, depositGroup: depositGroup, create: create, msg: msg, log: log, go: go, hooks: HOOKS, persist: persist, saveStore: saveStore, newTicket: newTicket, renderSales: renderSales, openPay: openPay,
-      nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
+      nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, rx: rx, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
     if (window.TillSetupInit) window.TillSetupInit(api);
     if (window.TillCompanyInit) window.TillCompanyInit(api);   // §36: left menu panel, About, brand strip, receipt header
     if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
-    window.Till = { ready: true, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
+    window.Till = { ready: true, lan: function () { return S.lan; }, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }

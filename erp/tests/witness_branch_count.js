@@ -59,6 +59,9 @@ var MUTS = {
   });
   await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
   var base = 'http://127.0.0.1:' + server.address().port, PIPE = base + '/pipe';
+  var RPORT = 19000 + Math.floor(Math.random() * 900), RBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'br-box-')), RELAY = 'http://127.0.0.1:' + RPORT, LAN = RELAY + '/pipe';   // §38: the REAL branch relay; tills use ONLY it, D is the main till
+  var relayProc = require('child_process').spawn('python3', [path.join(ROOT, 'erp', 'branch_relay.py'), '--port', String(RPORT), '--dir', RBOX, '--bind', '127.0.0.1'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  await new Promise(function (res) { relayProc.stderr.on('data', function (d) { if (String(d).indexOf('§RELAY_UP') >= 0) res(); }); });
   var browser = await reqPw().chromium.launch({ args: ['--disable-gpu'] });
   var owner = await mkKey(); cur.plans.office = planJs('TEAM_PLAN', await signObj(OFFICE, owner)); cur.plans.pos = planJs('TEAM_PLAN_POS', await signObj(POSPLAN, owner));
   var xcfg = encodeURIComponent(Buffer.from(J({ trust: [owner.pub] })).toString('base64')), NET = { aborted: [] };
@@ -67,12 +70,14 @@ var MUTS = {
     pg.on('console', function (m) { var t = m.text(); logs.push(t); if (/^§(EODA|TEAM_HELD|TEAM_HOLD)|🔴/.test(t)) console.log('   [' + name + '] ' + t.slice(0, 300)); });
     pg.on('pageerror', function (e) { errors.push(name + ': ' + e.message); });
     await ctx.route('**/*', function (route) { var u = new URL(route.request().url()); if (u.hostname !== '127.0.0.1') { NET.aborted.push(u.host); return route.abort('blockedbyclient'); }
+      if (u.port === String(RPORT)) return route.continue();
       if (u.pathname.indexOf('/pipe/') === 0) REQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' }); return route.continue(); });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
+    if (name === 'D') await pg.addInitScript(function () { localStorage.setItem('tilllan.v1:12-MAIN', JSON.stringify({ main: { on: true } })); });   // §38: D is the flagged main till (a SODA kind-M row sets this on a real till)
     await pg.goto(base + urlPath, { waitUntil: 'load' }); await pg.waitForFunction(ready, null, { timeout: 240000 });
     return { name: name, pg: pg, logs: logs, ctx: ctx };
   }
-  var qsBase = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600';
+  var qsNet = '&team=1&pipe=' + encodeURIComponent(PIPE) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600', qsBase = '&team=1&pipe=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY) + '&xcfg=' + xcfg + '&teamplan=pos&poll=3600', qsMain = qsNet + '&lan=' + encodeURIComponent(LAN) + '&relay=' + encodeURIComponent(RELAY);
   var eng = function (d, fn, arg) { return d.pg.evaluate('(function(){ var W = window.Till ? window.Till.engine() : window.BranchAdmin ? window.BranchAdmin.engine() : window; return (' + fn.toString() + ')(W, ' + J(arg === undefined ? null : arg) + '); })()'); };
   var T = {
     found: function (d) { return eng(d, function (W) { return W.TeamSync.found(); }); }, join: function (d, sp) { return eng(d, function (W, s) { return W.TeamSync.join(s); }, sp); },
@@ -81,7 +86,8 @@ var MUTS = {
     visit: function (d) { var done = false; return Promise.race([eng(d, async function (W) { var v = await W.TeamSync.visit(); return v && v.replicaIn; }).then(function (v) { done = true; return v; }), sleep(120000).then(function () { if (!done) console.log('   §BCNT_STEP visit on ' + d.name + ' did not return in 120 s'); return null; })]); },
     rows: function (d, sql) { return eng(d, function (W, q) { return new Promise(function (res) { W.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { try { res(trx.q(q)); } catch (e) { res({ error: String(e && e.message) }); } return { ok: true }; } }, function () {}); }); }, sql); }
   };
-  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) for (var i = 0; i < devs.length; i++) await T.visit(devs[i]); }
+  async function bridge() { if (typeof D !== 'undefined' && D && D.pg) await D.pg.evaluate(function () { return window.BranchAdmin.lanCollect(); }); }   // §38: the main till mirrors the shared stream and collects over the LAN
+  async function visitAll(devs, rounds) { for (var r = 0; r < (rounds || 1); r++) { for (var i = 0; i < devs.length; i++) { await bridge(); await T.visit(devs[i]); } await bridge(); } }
   var mark = function () { return REQ.length; }, since = function (mk) { return REQ.slice(mk); };
   // lanes of a PUT: 'branch' = the branch box m/b_<org>/ (head office never reads it); 'hub' = an op bundle (/o/) outside it = DATA head office reads; 'house' = heartbeat / frontier / receipt files (h, f, r), carry no ticket
   var lane = function (r) { return /\/m\/b_/.test(r.p + r.q) ? 'branch' : /\/o\//.test(r.p + r.q) ? 'hub' : 'house'; };
@@ -89,9 +95,9 @@ var MUTS = {
 
   // ═══ setup: head office A, the branch POS admin D, tills T1 T2 T3 (distinct logins = distinct till keys)
   console.log('§E0 setup: head office A (founder, POS plan), the branch POS admin D and three tills (role 50004, Bound to the branch Org 12)');
-  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsBase, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
+  var A = await open('A', '/erp/idempiere.html?login=GardenAdmin&window=281' + qsNet, function () { return window.TeamSync && window.__idmpDb && window.__crud && window.__idmpDb.exec('SELECT count(*) FROM ad_table')[0].values[0][0] > 0 && document.querySelector('#idmp-tree') && document.querySelector('#idmp-tree').children.length > 0; });
   await A.pg.evaluate(function () { return window.TeamSync.ready; });
-  var haveAdmin = true, D = haveAdmin ? await open('D', '/erp/branch_admin.html?login=50001' + qsBase, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§BCNT_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; }) : null;
+  var haveAdmin = true, D = haveAdmin ? await open('D', '/erp/branch_admin.html?login=50001' + qsMain, function () { return window.BranchAdmin && window.BranchAdmin.ready; }).catch(function (e) { console.log('§BCNT_PAGE branch_admin.html did not boot: ' + String(e && e.message).slice(0, 160)); return null; }) : null;
   if (!D) console.log('§BCNT_PAGE erp/branch_admin.html is ' + (haveAdmin ? 'present but did not boot' : 'ABSENT') + ' (RED: the branch POS admin is not built)');
   var tillLogins = [50001, 102, 101], TL = [];
   for (var i = 0; i < 3; i++) TL.push(await open('T' + (i + 1), '/erp/till.html?login=' + tillLogins[i] + qsBase, function () { return window.Till && window.Till.ready; }).catch(function (e) { console.log('§BCNT_PAGE till T' + (i + 1) + ' did not boot: ' + String(e && e.message).slice(0, 160)); return null; }));
@@ -117,7 +123,7 @@ var MUTS = {
     var cats = await pg.$$eval('#cats [data-cat]', function (b) { return b.map(function (x) { return x.getAttribute('data-cat'); }); });
     for (var c of cats) { await pg.click('#cats [data-cat="' + c + '"]'); if (await vis()) { await pg.click('#products .prod[data-pid="' + pid + '"]'); return true; } if (await pg.$('#cats [data-cat-up]')) await pg.click('#cats [data-cat-up]'); } return false; }
   async function pay(pg, tab) { var tot = await pg.$eval('#t-tot', function (e) { return e.textContent; }); await pg.click('#east .key[data-key="="]'); await pg.waitForSelector('#u8.on'); await pg.click('#tabs [data-tab="' + tab + '"]'); await pg.fill('#tender-amount', tot); await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
-    var key = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; }); await pg.click('#rc-ok'); return key; }
+    var key = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); }); await pg.click('#rc-ok'); return key; }
   var rung = [[], [], []], SHAPE = {};
   async function ring(ti, n, bankIdx) { var pg = pgs[ti]; for (var i = 0; i < n; i++) { await clickProduct(pg, 128); if (i % 2 === 0) await clickProduct(pg, 129); var key = await pay(pg, i === bankIdx ? 'bank' : 'cash'); rung[ti].push(key); SHAPE[key] = i % 2 === 0 ? 2 : 1; } }
   async function closeShift(ti) { var pg = pgs[ti], mk = mark(); await pg.evaluate(function () { window.Till.go('close'); }); await sleep(400); await pg.click('#zclose'); await pg.click('#zconfirm'); await pg.waitForFunction(function () { return /Cash Closed OK/.test(document.querySelector('#zdone').textContent); }, null, { timeout: 30000 }); await sleep(1500); return since(mk); }
@@ -171,7 +177,7 @@ var MUTS = {
     check('c4-adhoc-stays-at-branch', hqInv3.length === 2 && !hqInv3.some(function (r) { return r.description === cntA.id; }) && J(stF) === J([[cntA.id, false, false], [cntB.id, true, true]]) && J(domF) === J([[cntA.id, '0', '0'], [cntB.id, '1', '1']]), 'count A never leaves the branch (not at head office after three sends; the screen lists it "kept at the branch": include=0 sent=0) and B is marked sent', { stF: stF, domF: domF, n: hqInv3.length });
     check('c5-no-resend', hqInv3.length === 2, 'a third EODA does not send B again (head office still 2 rows)', hqInv3.length);
     var gl = D.logs.filter(function (l) { return /^§COUNT_GATHER /.test(l); });
-    check('c6-gather-seam', gl.length === 2 && gl.every(function (l) { return /reached=0 notReached=0/.test(l); }), 'the LAN gather seam is called once per saved count and reports reached=0 notReached=0 (not built; it never blocks)', gl);
+    check('c6-gather-seam', gl.length === 2 && gl.every(function (l) { return /reached=3 notReached=0/.test(l); }), 'the LAN gather seam (wired to the branch relay by §38) is called once per saved count and reports the 3 tills the main till collected (reached=3 notReached=0); it never blocks', gl);
     // BLIND: the screen, the stored state and the branch DBs never hold a book quantity
     var scrTxt = await admin.$eval('#a-count', function (e) { return e.innerText + ' ' + [].map.call(e.querySelectorAll('[data-book]'), function (x) { return x.outerHTML; }).join(' '); }), stateJson = await admin.evaluate(function () { return JSON.stringify(window.BranchAdmin.state().set); });
     var BOOKNUM = /\b(47|53|38|48)\b/;
@@ -200,7 +206,7 @@ var MUTS = {
   }
   console.log('§BCNT_PAGE_ERRORS n=' + errors.length + (errors.length ? ' ' + J(errors.slice(0, 3)) : ''));
   ARM = ARMS[0]; V[ARM].judged++; if (errors.length) V[ARM].failed++; console.log('  §BCNT_CHECK arm=' + ARM + ' key=page-errors ' + (errors.length ? 'FAIL' : 'OK') + ' 0 page errors on the five pages');
-  await browser.close(); server.close();
+  await browser.close(); server.close(); relayProc.kill('SIGTERM');
   // ═══ stage 2: head office's Day Close over the dump, in its own process
   if (ARMS.indexOf('close') >= 0) {
     ARM = 'close'; var envc = Object.assign({}, process.env, { BCNT_STAGE: 'close', BCNT_DUMP: DUMP }), tmpPlug = null;
