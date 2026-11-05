@@ -37,6 +37,10 @@
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
     var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim, p.imageurl AS img FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    // A legacy ImageURL that is not an absolute http(s) URL (the seed's 'images/iD32.png' is relative to legacy's OWN web UI, which the till does not have)
+    // cannot be loaded here: treat it as no picture (the uniCenta placeholder tile) instead of a 404 per tile. POS_PLUGIN_LOCAL_FIRST §39.R follow-up.
+    var relImg = 0; prods.forEach(function (p) { if (p.img && !/^https?:\/\//i.test(String(p.img))) { relImg++; p.img = null; } });
+    if (relImg) log('§TILL_IMAGEURL_RELATIVE skipped=' + relImg + ' (not an absolute http(s) URL; shown as the placeholder tile)');
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
