@@ -230,6 +230,14 @@
         var others = zs.slice(1).map(function (z) { return z + ' (' + cnt[z] + 'x)'; }).join(', ');
         out.push({ rule: 'PR-LEVEL-NAME', key: 'LEVEL', value: String(zs[0]), x: 0, y: 0, why: 'title "' + tl[0] + '" = level "' + hit.filter(function (h) { return h.z === zs[0]; })[0].name + '" on an elevation, ' + cnt[zs[0]] + 'x' + (others ? '; also named at ' + others : '') }); return true; }
       return false; }
+    // §D109 P1 PR-LEVEL-FOOTING: a foundation plan no title or level name places states its own level: one distinct T/FOOTING value on the sheet; two values = refused with both
+    function propLevelFooting(sh, out, refused) {
+      if (setting('suggest.level_footing') !== 'read' || get1(sh, 'LEVEL')) return false;
+      var v = {}; sh.dxf.entities.forEach(function (e) { if ((e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER) { var m = /^T\/FOOTING\s*:?\s*([+-]\d+\.\d+)\s*m?$/i.exec(plain(e)); if (m) v[String(Number(m[1]))] = 1; } });
+      var k = Object.keys(v); if (!k.length) return false;
+      if (k.length > 1) { refused.push({ rule: 'PR-LEVEL-FOOTING', why: k.length + ' different T/FOOTING values: ' + k.join(', ') }); return true; }
+      out.push({ rule: 'PR-LEVEL-FOOTING', key: 'LEVEL', value: k[0], x: 0, y: 0, why: 'the sheet states T/FOOTING ' + k[0] + ' m' }); return true;
+    }
     function propLevel(sh, tl, out, refused) {   // §D37 PR-LEVEL: no plan of the set states a level and no title names a storey -> @LEVEL=0, inferred (orange)
       if (typeof process !== 'undefined' && process.env && process.env.DXF_NO_PRLEVEL) return;
       if (get1(sh, 'LEVEL')) return;
@@ -250,14 +258,18 @@
       var titleAll = setting('suggest.title_text') === 'text_and_mtext', titleSeen = {};
       var titles = {}; sh.dxf.entities.forEach(function (e) {
         var isT = e.type === 'TEXT' || (titleAll && e.type === 'MTEXT'), txt = titleAll ? plain(e) : e.text, c = isT && e.layer !== LAYER ? titleCore(txt) : '';
-        if (c && titleAll && /,|\b(?:SEE|REFER)\b/i.test(c)) c = '';   // §D107 a note, not a title ("BEAM, SEE PLAN")
+        if (c && titleAll && (/,|\b(?:SEE|REFER)\b/i.test(c) || /^KEY\s*PLAN$/i.test(c))) c = '';   // §D107 a note, not a title ("BEAM, SEE PLAN"); §D109 a title block's KEYPLAN names no sheet
         if (c && e.type === 'MTEXT' && c !== c.toUpperCase()) c = '';   // §D107 an MTEXT counts as a title only in capitals ("Footing Section" on a details sheet is a label; regression W-ARRANGE A9a, W-DATUM-PICK P0)
-        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && /ELEVATION\s+GRID\s+\S+$/i.test(c)))) {
+        if (c && (/(PLAN|ELEVATION|SECTION)\s*$/i.test(c) || (titleAll && setting('suggest.title_layout') === 'read' && /\bLAYOUT$/.test(c)) || /^Section\s+[A-Z0-9]+\s*-\s*[A-Z0-9]+\b/i.test(c) || (titleAll && (/\bSCHEDULE$/.test(c) || /ELEVATION\s+GRID\s+\S+$/i.test(c) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(c))))) {   // §D109 a storey's name alone (LEVEL 01 FLOOR) titles a plan
           var norm = titleAll ? c.replace(/[\s-]+/g, ' ').toUpperCase() : String(txt).trim();   // §D107 two spellings of one title are one
           if (!titleSeen[norm]) { titleSeen[norm] = 1; titles[String(txt).trim()] = c; } } });   // §D46 (a) on the title's core   // "Section A-A" / "Section A-A (Truss Detail)"
-      var tl = Object.keys(titles);
+      // §D110 a sheet holding the set's drawing list under a number header is read as a drawing: its rows are other sheets' titles, so they must not name its view
+      var listText = null; if (titleAll && setting('guide.gap_sheets') !== 'off') { var lhead = false; sh.dxf.entities.forEach(function (e) { if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === LAYER) return; var q = plain(e).replace(/\s+/g, ' ').trim(); if (/^(?:SHEET|DRAWING) (?:NUMBER|NO\.?)$/i.test(q)) lhead = true; if (/^(?:(?:DRAWING|SHEET)S? (?:LIST|REGISTER|INDEX)\b|(?:LIST|INDEX) OF (?:DRAWINGS|SHEETS)$)/i.test(q) && !listText) listText = q; }); if (!lhead) listText = null; }
+      if (listText) titles = (function () { var o = {}; o[listText] = 'DRAWING LIST'; return o; })();
+      var tl = Object.keys(titles), fullT = tl.filter(function (q) { return !/^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(titles[q]); });   // §D109 a storey's name titles a sheet only when nothing else does: it is also a key plan's label
+      if (fullT.length) tl = fullT;
       if (tl.length === 1) {
-        var t = tl[0], tc = titles[t], vw = /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
+        var t = tl[0], tc = titles[t], vw = tc === 'DRAWING LIST' || /\bSCHEDULE$/.test(tc) ? 'DRAWING' : /ROOF PLAN$/i.test(tc) ? 'ROOF' : /PLAN$/i.test(tc) || /\bLAYOUT$/.test(tc) || /^(?:LEVEL\s*\d+|GROUND|BASEMENT)\s+FLOOR$/i.test(tc) ? 'PLAN' : /ELEVATION(\s+GRID\s+\S+)?$/i.test(tc) ? 'ELEV' : 'SECTION';
         out.push({ rule: 'PR-VIEW', key: 'VIEW', value: vw, x: 0, y: 0, why: 'title text "' + t + '"' });
         out.push({ rule: 'PR-NAME', key: 'NAME', value: noScale(t), x: 0, y: 0, why: 'title text' });
       } else refused.push({ rule: 'PR-VIEW', why: tl.length ? tl.length + ' title texts disagree' : 'no title text ending PLAN / ELEVATION / SECTION' });
@@ -271,7 +283,7 @@
       else if (!real.length && !own) out.push({ rule: 'PR-SET-PLACEHOLDER', key: 'SET', value: SET_PLACEHOLDER, x: 0, y: 0, why: 'no sheet names the set: a placeholder, rename it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
-      if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
+      if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused) && !propLevelFooting(sh, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); }
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")

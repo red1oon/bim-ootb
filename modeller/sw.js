@@ -14,7 +14,7 @@
 // v213 (2026-11-03) §SEAM-W3C F8/F18: common/walk_rules.js (ONE rules-DB/class owner, modeller _dwRules delegates) + disc_walker.js?v=12 dwRulesKey; rules-cache bust keys via dwRulesKey, logs §RULES_BUST deleted=true|false
 // v214 (2026-11-03) §ONE_LIB: shared libs (sql-wasm, OrbitControls, web-ifc, planegcs) load from ../common/lib/ (modeller/lib copies kept as compat mirrors); SHELL/DEFERRED lists re-pointed, deferred stays off the install path.
 // v215 (2026-11-03) §THREE_ONE_BUILD: importmap 'three' -> three.module.min.js (one wrapper; the 638 KB webgpu wrapper is no longer evaluated on load nor precached on install; still cache-on-use).
-const CACHE_VERSION = 'v223';   // bump on each deploy; per-change detail is the git commit message.
+const CACHE_VERSION = 'v224';   // bump on each deploy; per-change detail is the git commit message.
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -96,6 +96,10 @@ const PRECACHE_ASSETS = [
   'routewalker.js',
   // §DXF-IMPORT (DXF2BIM lane L3): Open 2D drawings → canvas → Convert; the verbatim BIMCompiler reader modules (dxf2bim/SOURCE.md)
   'dxf_import_ui.js',
+  // §PDF2DXF (lane L39): Open 2D drawings from PDF image: the reader, the rules, the type's JSONs, pdf.js. Lazy in the page, cached for the air gap
+  'lib/pdfjs/pdf.min.js', 'lib/pdfjs/pdf.worker.min.js',
+  'pdf2dxf/pdf_reader.js', 'pdf2dxf/py_rt.js', 'pdf2dxf/type_template.js', 'pdf2dxf/tag_reader.js', 'pdf2dxf/fill_blanks.js', 'pdf2dxf/infer_type.js', 'pdf2dxf/emit_dxf_p1.js', 'pdf2dxf/read_rooms.js', 'pdf2dxf/add_plan_marks.js', 'pdf2dxf/elev_emit.js', 'pdf2dxf/to_std.js', 'pdf2dxf/section_emit.js', 'pdf2dxf/roof_emit.js', 'pdf2dxf/index.js',
+  'pdf2dxf/types/low_cost_house_rosetta.json', 'pdf2dxf/types/low_cost_single_storey_unit.json', 'pdf2dxf/types/low_cost_house_tag_glyphs.json',
   'real_geometry.js', 'dagevu_engine.js', 'sdg_save.js', 'save_catalog.js', 'building_parts_outliner.js',   // §L33 air gap: page script tags that were never cached
   'dxf2bim_import.js',
   'dxf2prep.js',
@@ -113,6 +117,14 @@ const PRECACHE_ASSETS = [
   'dxf2profile.js',
   'dxf2section.js',
   'dxf2doors.js',
+  'dxf2beams.js',
+  'dxf2walls.js',
+  'dxf2slabs.js',
+  'dxf2steel.js',
+  'dxf2doortags.js',
+  'dxf2stairs.js',
+  'dxf2roofspots.js',
+  'dxf2gapguide.js',
   'dxf2synth.js',
   'dxf2notes.js',
   'dxf2ledger.js',

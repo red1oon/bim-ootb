@@ -10,6 +10,9 @@ const marksSrc = read('dxf2bim/dxf2marks.js'), prepSrc = read('dxf2prep.js');
 const list = (src, name) => { const m = new RegExp(name + " = \\[([^\\]]*)\\]").exec(src); return m ? m[1].split(',').map(x => x.trim().replace(/'/g, '')).filter(Boolean) : []; };
 const SINGLE = list(marksSrc, 'SINGLE'), MULTI = list(marksSrc, 'MULTI');
 const MEANING = {   // key -> [grammar, meaning]
+  ACCEPT: ['<code>,<who>,<YYYY-MM-DD>,<reason>', 'a person\'s recorded acceptance of a verdict row: the gate honours it and the row stays on screen'],
+  HEADFRAME: ['<number>', 'a door head frame the set states, zero or more'],
+  PITCH: ['<number>', 'a pitched roof the sheet states'],
   SET: ['name', 'the set (building) name: every sheet of one set carries the same'], VIEW: ['PLAN|ELEV|ROOF|SECTION', 'what the sheet is'], NAME: ['text', 'the sheet name'], UNITS: ['mm|cm|m|in|ft', 'the drawing units: confirmed by a person, the file header is only suggested'],
   LEVEL: ['number (m)', 'the storey level of a plan or roof sheet'], FACE: ['minX|maxX|minY|maxY', 'which face of the building an elevation looks at'], HAXIS: ['+X|-X|+Y|-Y', 'the elevation\'s horizontal axis in plan'],
   REGION: ['x0,y0,x1,y1', 'the part of a sheet that is one storey / wing'], ROOF: ['number (m)', 'the roof top height of a roof sheet (no drawing states it)'], CUT: ['X|Y,<plan coordinate>', 'where a section sheet cuts the plan'],

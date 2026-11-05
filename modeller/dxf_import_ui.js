@@ -9,9 +9,9 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '15';
+  var V = '16';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2beams.js', 'dxf2walls.js', 'dxf2slabs.js', 'dxf2steel.js', 'dxf2doortags.js', 'dxf2stairs.js', 'dxf2roofspots.js', 'dxf2gapguide.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -547,7 +547,7 @@
   // STANDS NOW (the Arrange view's preview placement while the view stands, else the canvas; a sheet neither draws is shown at its preview placement, or as
   // drawn when no value places it), framed in the canvas right of the panels; the evidence highlighted (thick), every other sheet dimmed; Esc, a click on the
   // canvas or the row again restores. A VIEW: nothing is marked, accepted, judged or saved. Log §DXF-EVIDENCE. ----
-  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1, 'PR-PLANE': 1, 'PR-SHEETNO': 1, 'PR-FACE-PLANE': 1, 'PR-GRID-A': 1, 'PR-LEVEL-NAME': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
+  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1, 'PR-PLANE': 1, 'PR-SHEETNO': 1, 'PR-FACE-PLANE': 1, 'PR-GRID-A': 1, 'PR-LEVEL-NAME': 1, 'PR-LEVEL-FOOTING': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
   function allOf(segOf) { var P = []; Object.keys(segOf).forEach(function (h) { var a = segOf[h]; for (var i = 0; i < a.length; i++) P.push(a[i]); }); return P; }
   function wbox(P) { if (!P.length) return null; var b = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]; for (var i = 0; i < P.length; i += 3) for (var a = 0; a < 3; a++) { if (P[i + a] < b[0][a]) b[0][a] = P[i + a]; if (P[i + a] > b[1][a]) b[1][a] = P[i + a]; } return b; }
   function evSheet(name, X) {   // where the sheet stands now: { mode canvas | preview | as drawn, w (drawing units -> world m), segOf, drawn (already on screen), d (its desc), dxf }
@@ -765,6 +765,7 @@
     if (s.role === 'plan') return '<span class="dxf-role">PLAN @' + s.level + '</span>';
     if (s.role === 'elev') return '<span class="dxf-role">ELEV ' + s.face + '</span>';
     if (s.role === 'section') return '<span class="dxf-role">SECTION ' + esc(s.cut) + '</span>';
+    if (s.role === 'drawing') return '<span class="dxf-role">DRAWING</span>';   // §D109 read, never converted
     return '<span class="dxf-role">ROOF @' + s.roofZ + '</span>';
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -849,6 +850,12 @@
     state.gate.refused.filter(function (r) { return r.sheet === '(set)'; }).forEach(function (r) { h += '<div class="dxf-why">' + esc(r.reason) + '</div>'; });
     if (state.gate.verdict && state.gate.verdict.blocking.length) state.gate.verdict.blocking.slice(0, 6).forEach(function (x) {
       h += '<div class="dxf-why dxf-block">' + esc(x.code + ' · ' + x.sheet + (x.handles.length ? ' · ' + x.handles.slice(0, 3).join(',') : '') + ' · ' + x.message) + '</div>'; });
+    if (state.pdfRead) {   // lane spec L39: what was read from the PDF, and what was not
+      var PR = state.pdfRead.rows, PN = { READ: 0, FINDING: 0, DEFAULT: 0 }; PR.forEach(function (r) { PN[r.status]++; });
+      h += '<div id="dxf-pdf-read" style="max-height:180px;overflow:auto"><div class="dxf-pv" style="margin:6px 8px 2px 8px;font-weight:600">' + esc('Read from ' + state.pdfRead.file + ': ' + PN.READ + ' as expected, ' + PN.FINDING + ' differ from the template (the sheet wins), ' + PN.DEFAULT + ' not on the sheet (template value)') + '</div>';
+      PR.filter(function (r) { return r.status !== 'READ'; }).forEach(function (r) { h += '<div class="dxf-pv dxf-pdf-row" data-status="' + r.status + '" style="margin:0 8px 2px 30px;color:' + (r.status === 'DEFAULT' ? '#e0b341' : 'inherit') + '">' + esc(r.status + ' · ' + r.name + ' · ' + r.value + (r.measured !== 'None' ? ' (' + r.measured + ')' : '')) + '</div>'; });
+      h += '</div>';
+    }
     var AC = state.gate.verdict && state.gate.verdict.accepted;   // lane spec L37: every accepted row stays on screen, under who, when and why
     if (AC && AC.length) {
       h += '<div id="dxf-accepted" style="max-height:220px;overflow:auto">'; var acSeen = {};
@@ -858,7 +865,7 @@
       h += '</div>';
     }
     h += '</div><div class="ip-foot"><button class="dxf-btn" id="dxf-lines"></button><button class="dxf-btn" id="dxf-meta" title="Drawing metadata">' + ICON.meta + '<span>Metadata</span></button><button class="dxf-btn" id="dxf-arrange" title="Arrange: the sheets as drawn, placed one marking / yellow default at a time (Esc stops)"></button><button class="dxf-btn primary" id="dxf-convert"' + (state.gate.ok ? '' : ' disabled') + '>' + ICON.box + '<span>Convert</span></button>' +
-      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory: no elevation or conflicting heights)' : '') + '. Walls, slabs and roof are not read in a structure set.' : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies' + (state.gate.verdict.accepted ? ' with ' + state.gate.verdict.accepted.length + ' accepted row(s)' : '') + ' (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
+      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory' + (state.gate.R && state.gate.R.bodies && state.gate.R.bodies.report && state.gate.R.bodies.report.walls ? ')' : ': no elevation or conflicting heights)') : '') + (state.gate.R && state.gate.R.bodies && state.gate.R.bodies.report && state.gate.R.bodies.report.walls ? '.' : '. Walls, slabs and roof are not read in a structure set.') : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies' + (state.gate.verdict.accepted ? ' with ' + state.gate.verdict.accepted.length + ' accepted row(s)' : '') + ' (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
         : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }
@@ -890,7 +897,7 @@
     }));
     list.sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
     state.sheets = window.Dxf2BimImport.readSheets(list, { prepChoices: (window.DxfMetaEditor && window.DxfMetaEditor.defaultChoices && window.DxfMetaEditor.defaultChoices()) || {} });
-    state.last = null; state.linesOn = true; state.setOverride = null; state.closed = false; state.metaWas = false;
+    state.last = null; state.linesOn = true; state.setOverride = null; state.closed = false; state.metaWas = false; state.pdfRead = (how && how.pdf) || null;
     runPrep();
     await convertGate();
     state.sheets.forEach(function (s) {
@@ -1104,6 +1111,52 @@
     inp.click();
   }
 
+  // ---- lane spec L39: Open ▸ 2D drawings from PDF image: the PDF becomes the 7 typed sheets in memory, then the same openFiles. All lazy: nothing here loads at boot ----
+  var TAGP = '§PDF2DXF', _pdfLoaded = null, PDF_RULES = ['py_rt', 'type_template', 'tag_reader', 'fill_blanks', 'infer_type', 'emit_dxf_p1', 'read_rooms', 'add_plan_marks', 'elev_emit', 'to_std', 'section_emit', 'roof_emit', 'index'], PDF_TYPES = { rosetta: 'low_cost_house_rosetta', template: 'low_cost_single_storey_unit', glyphs: 'low_cost_house_tag_glyphs' };
+  function pdfSay(t) { var s = document.getElementById('stat'); if (s) s.textContent = t; status(t); console.log(TAGP + ' ' + t); }
+  function loadPdfScripts() {
+    if (_pdfLoaded) return _pdfLoaded;
+    var one = function (src) { return new Promise(function (res, rej) { var s = document.createElement('script'); s.src = new URL(src + '?v=' + V, _base).href; s.onload = res; s.onerror = function () { _pdfLoaded = null; rej(new Error('load failed ' + src)); }; document.head.appendChild(s); }); };
+    var list = ['lib/pdfjs/pdf.min.js', 'pdf2dxf/pdf_reader.js'].concat(PDF_RULES.map(function (m) { return 'pdf2dxf/' + m + '.js'; })), T = {};
+    _pdfLoaded = list.reduce(function (p, src) { return p.then(function () { return one(src); }); }, Promise.resolve())
+      .then(function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('lib/pdfjs/pdf.worker.min.js?v=' + V, _base).href; return Promise.all(Object.keys(PDF_TYPES).map(function (k) { return fetch(new URL('pdf2dxf/types/' + PDF_TYPES[k] + '.json?v=' + V, _base).href).then(function (r) { if (!r.ok) throw new Error('load failed ' + PDF_TYPES[k]); return r.text(); }).then(function (t) { T[k] = t; }); })); })
+      .then(function () { return T; });
+    return _pdfLoaded;
+  }
+  function pdfRows(logs) {   // every value as the rules decided it, so a FINDING or a DEFAULT is on screen, not only in a log
+    var rows = [], seen = {};
+    Object.keys(logs).forEach(function (k) { (logs[k] || []).forEach(function (l) { var m = /^§INFER (\S+) (READ|FINDING|DEFAULT) value (.+?) measured (\S+)/.exec(l); if (m && !seen[m[1] + m[3]]) { seen[m[1] + m[3]] = 1; rows.push({ name: m[1], status: m[2], value: m[3], measured: m[4] }); }
+      var r = /^§ROOM (\w+) printed (\S+) cell (\S+) .*?\| (.+?) \|/.exec(l); if (r) rows.push({ name: 'room ' + r[4], status: r[1], value: r[2] + ' m2', measured: 'cell ' + r[3] }); }); });
+    return rows;
+  }
+  async function openPdf(file) {
+    var t0 = Date.now(), T; pdfSay('Reading ' + file.name + '…');
+    try { T = await loadPdfScripts(); } catch (e) { pdfSay('The PDF reader could not load: ' + e.message); return null; }
+    var R; try { R = await window.Pdf2DxfReader.read(window.pdfjsLib, new Uint8Array(await file.arrayBuffer())); } catch (e) { pdfSay('This PDF could not be opened: ' + ((e && e.message) || e)); return null; }
+    var S_ = JSON.parse(T.template).sheets, plan = R.pages[String(S_.plan)];
+    console.log(TAGP + ' read pages=' + R.stats.pages + ' paths=' + R.stats.paths + ' words=' + R.stats.words + ' images=' + R.stats.images + ' ms=' + (Date.now() - t0));
+    if (!plan || plan.paths.length < 20) { pdfSay(R.stats.images ? 'This PDF holds a scanned image, with no lines to read. A vector PDF, as exported from CAD, is needed.' : 'This PDF has no drawn lines on its plan page. A vector PDF, as exported from CAD, is needed.'); return null; }
+    var O, t1 = Date.now();
+    try { O = window.Pdf2Dxf.run({ pages: R.pages }, { rosetta: T.rosetta, template: T.template, glyphs: T.glyphs }); }
+    catch (e) { console.log(TAGP + ' rules stopped: ' + ((e && e.message) || e)); pdfSay("This PDF was not recognised as a 'Low cost single storey unit' drawing: " + ((e && e.message) || e)); return null; }
+    var names = Object.keys(O.sheets).sort();
+    if (!O.sheets['plan.dxf'] || !O.sheets['roof.dxf'] || names.length < 6) { pdfSay("This PDF was not recognised as a 'Low cost single storey unit' drawing: only " + names.length + ' sheets could be read (' + names.join(', ') + ').'); return null; }
+    var heap = window.performance && performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
+    console.log(TAGP + ' rules sheets=' + names.length + ' ms=' + (Date.now() - t1) + ' total_ms=' + (Date.now() - t0) + ' heap_mb=' + heap);
+    var read = { file: file.name, rows: pdfRows(O.logs) }, by = { READ: 0, FINDING: 0, DEFAULT: 0 }; read.rows.forEach(function (r) { by[r.status]++; }); console.log(TAGP + ' values ' + JSON.stringify(by));
+    var out = await openFiles(names.map(function (n) { return { name: n, text: O.sheets[n] }; }), { chooser: true, pdf: read });
+    return { sheets: names, by: by, open: out };
+  }
+  var inpPdf = null;
+  function pickPdf() {
+    if (!inpPdf) {
+      inpPdf = document.createElement('input'); inpPdf.type = 'file'; inpPdf.accept = '.pdf,application/pdf'; inpPdf.id = 'm-open-pdf'; inpPdf.style.display = 'none';
+      inpPdf.onchange = function () { var f = inpPdf.files && inpPdf.files[0]; console.log(TAGP + ' chooser picked ' + (f ? f.name : 'none')); if (f) openPdf(f).catch(function (e) { pdfSay('The PDF could not be read: ' + ((e && e.message) || e)); }); inpPdf.value = ''; };
+      document.body.appendChild(inpPdf);
+    }
+    inpPdf.click();
+  }
+
   // §L4.1: the editor hands in the EFFECTIVE sheets (its markings), its layer rules and the set it states; the ONE gate re-judges them;
   // the canvas is rebuilt (camera kept) only when a role / placement / map changed
   var _gateSeq = 0;
@@ -1125,6 +1178,6 @@
   // T13.5: the building type the export writes: only a type the drawing / sheet / editor stated (never the registry default), else null
   function statedBuildingType() { var R = state.gate && state.gate.R, row = R && (R.defaults_table || []).filter(function (r) { return r.key === 'building.type'; })[0]; return row && /^(file|sheet|choice)$/.test(row.source) ? String(row.value) : null; }
   { var b2d = document.getElementById('b-2d'); if (b2d) b2d.onclick = function (e) { e.stopPropagation(); setShown(!!state.closed); }; }
-  window.DxfImportUI = { togglePanel: function () { setShown(!!state.closed); }, toggleMeta: toggleMeta, notesOf: notesOf, statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
+  window.DxfImportUI = { pickPdf: pickPdf, openPdf: openPdf, togglePanel: function () { setShown(!!state.closed); }, toggleMeta: toggleMeta, notesOf: notesOf, statedBuildingType: statedBuildingType, addBay: addBay, bayRule: bayRule, loadCatalogue: loadCatalogue, clearCatalogue: clearCatalogue, arrange: arrange, arrangeStop: arrangeStop, evidence: evidence, evidenceClear: function (why) { evClear(why || 'the caller'); }, segs2d: segs2d, pick: pick, openFiles: openFiles, convert: convert, convertGate: convertGate, applySheets: applySheets, holdGate: holdGate, setLines: setLines, loadScripts: loadScripts, state: state, ICON: ICON };
   console.log(TAG + ' ui loaded');
 })();

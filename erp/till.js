@@ -37,6 +37,10 @@
     S.cfg = { pos: pos, client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org ? org.value : String(pos.ad_org_id), userId: user.id, userValue: user.value || ('u' + user.id), iso: iso, plv: plv && plv.v, host: null };
     S.cfg.tillKey = S.cfg.orgValue + '-' + S.cfg.userValue;
     var prods = await rows('SELECT p.m_product_id AS pid, p.value AS value, p.name AS name, p.upc AS upc, p.c_uom_id AS uom, p.m_product_category_id AS cat, p.c_taxcategory_id AS taxcat, pp.pricestd AS price, pp.pricelimit AS lim, p.imageurl AS img FROM m_product p JOIN m_productprice pp ON pp.m_product_id=p.m_product_id AND pp.m_pricelist_version_id=' + Number(S.cfg.plv) + " WHERE p.isactive='Y' AND pp.isactive='Y' ORDER BY p.value");
+    // A legacy ImageURL that is not an absolute http(s) URL (the seed's 'images/iD32.png' is relative to legacy's OWN web UI, which the till does not have)
+    // cannot be loaded here: treat it as no picture (the uniCenta placeholder tile) instead of a 404 per tile. POS_PLUGIN_LOCAL_FIRST §39.R follow-up.
+    var relImg = 0; prods.forEach(function (p) { if (p.img && !/^https?:\/\//i.test(String(p.img))) { relImg++; p.img = null; } });
+    if (relImg) log('§TILL_IMAGEURL_RELATIVE skipped=' + relImg + ' (not an absolute http(s) URL; shown as the placeholder tile)');
     S.prods = prods;
     var cats = await rows("SELECT m_product_category_id AS id, name, m_product_category_parent_id AS parent FROM m_product_category WHERE isactive='Y' AND ad_client_id=" + Number(pos.ad_client_id) + ' ORDER BY name');
     S.cats = cats;
@@ -217,7 +221,7 @@
       if (n != null) { S.store.counters = S.store.counters || {}; S.store.counters[kind] = n; }
       await lanDeposit(key, rowsOut);   // §38.2.4: the ticket's lines go to the branch relay as rung (LAN only; queued on the till if the relay is away: selling never waits)
       var pickup = t.pickup || (kind === 'P' ? null : bumpPickup());
-      var terminal = S.cfg.tillKey, rm = C.receiptModel({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change });
+      var terminal = S.cfg.tillKey, rm = C.receiptModel(Object.assign({ type: kind, number: key, date: nowIso(), terminal: terminal, user: S.cashier ? S.cashier.name : '', lines: t.lines.map(function (l) { return { name: l.name, price: C.cents(l.price), qty: l.qty, value: C.lineNetCents(l.qty, l.price) }; }), gross: kind === 'R' ? -p.gross : tt.gross, applied: ap, change: ap.change }, rx(kind === 'P' ? {} : t, kind === 'P' ? null : tt)));
       S.lastReceipt = { key: key, model: rm, gross: tt.gross, change: ap.change, firstCash: ap.parts[0] && ap.parts[0].name === 'cash' };
       S.store.last = { type: kind, key: key }; (S.store.rcpt = S.store.rcpt || {})[key] = { model: rm, change: ap.change, firstCash: S.lastReceipt.firstCash, pickup: pickup };   // 5.0 lastticket.number/type (JPanelTicket closeTicket); the detail a reprint needs and the rows do not hold (tendered, change, discount lines)
       log('§TILL_DEPOSIT key=' + key + ' type=' + kind + (t.old ? ' edit=1' : '') + ' lines=' + rowsOut.orders.length + ' tenders=' + rowsOut.payments.length + ' gross=' + sg(Math.abs(tt.gross)) + ' ops=' + ops.length + ' gid=' + res.gid + ' pickup=' + pickup + ' core_docs_written=0');
@@ -226,9 +230,28 @@
     });
   }
   // ── U9 ──
+  function rx(t, tt) {   // the receipt fields beyond the lines: Customer/Table of the ticket, the order totals (Subtotal/Tax/tax lines) §39.3
+    var c = t && t.customer, cn = c && (typeof c === 'string' ? c : (c.name || c.Name || ''));
+    return { tt: tt && tt.ok && tt.net != null ? tt : null, taxName: function (id) { var x = S.taxEnv && S.taxEnv.taxById && S.taxEnv.taxById(id); return x ? x.name : ''; }, table: t && t.table || '', customer: cn || '' };
+  }
+  function fmtDate(iso) { var d = new Date(iso); if (isNaN(d)) return String(iso); var z = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds()); }
+  function gridHtml(grid) {
+    return grid.map(function (g) {
+      if (g.f === 'blank') return '<div class="rb">&nbsp;</div>';
+      if (g.f === 'header-logo') return '<div class="rf" data-f="header-logo" data-v="' + esc(g.v) + '"><img alt="" crossorigin="anonymous" src="' + esc(g.v) + '"></div>';
+      var inner = g.cells.map(function (c) { return c.b ? '<b>' + esc(c.s) + '</b>' : esc(c.s); }).join('');
+      return '<div class="rf' + (g.size ? ' sz1' : '') + '" data-f="' + esc(g.f) + '" data-v="' + esc(g.v) + '">' + inner + '</div>';
+    }).join('');
+  }
   function showReceipt(print) {
-    var r = S.lastReceipt;
-    $('#receipt').innerHTML = print ? (window.TillCompany ? window.TillCompany.headerHtml() : '') + r.model.map(function (f) { return '<div class="rf" data-f="' + esc(f[0]) + '">' + esc(f.join('  ')) + '</div>'; }).join('') : '<div class="rf" data-f="none">(receipt not printed)</div>';
+    var r = S.lastReceipt, TC = window.TillCompany, c = TC && TC.company && TC.company();
+    if (print) {
+      var hdr = TC ? TC.headerLines() : [], ft = [];
+      var su = S.store.setup || {}; for (var i = 1; i <= 6; i++) ft.push(i === 1 && TC ? TC.footerLine() : String(su['tkt.footer' + i] || '').trim());
+      var grid = C.receiptGrid(r.model, { header: hdr, footer: ft, logo: c && c.imageurl || null, fmtDate: fmtDate });
+      r.grid = grid; $('#receipt').innerHTML = gridHtml(grid);
+      log('§TILL_RECEIPT_GRID key=' + r.key + ' lines=' + grid.length + ' width=' + Math.max.apply(null, grid.map(function (g) { return g.text.length; })) + ' header=' + hdr.length + ' logo=' + (c && c.imageurl ? 'url' : 'none'));
+    } else $('#receipt').innerHTML = '<div class="rf" data-f="none">(receipt not printed)</div>';
     var cp = $('#changepop'); cp.hidden = !(r.firstCash && r.change > 0); cp.textContent = 'Change: ' + C.money(r.change);   // Ticket.Close.xml:23-60
     go('receipt');
   }
@@ -345,6 +368,7 @@
       else if (b.hasAttribute('data-tab')) { S.pay.tab = b.getAttribute('data-tab'); renderPay(); }
       else if (b.id === 'addpart') addPart(); else if (b.id === 'delpart') delPart();
       else if (b.id === 'pay-ok') { S.pay.print = $('#printtoggle').checked; payOk(); } else if (b.id === 'pay-cancel') { go('sales'); }
+      else if (b.id === 'rc-print') window.print();
       else if (b.id === 'rc-ok') { var back = S.afterReceipt || 'sales'; S.afterReceipt = null; go(back); }
       else if (b.id === 'zprint') { renderClose(); } else if (b.id === 'zclose') { $('#zconfirm').hidden = false; } else if (b.id === 'zconfirm') closeCash(); else if (b.id === 'zback') go('menu'); else if (b.id === 'zreprint') reprintZ();
       else if (b.id === 'visit') visit();
@@ -379,7 +403,7 @@
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
     log('§TILL_COST engine_ready_ms=' + ms + ' heap_mb=' + heap + ' products=' + S.prods.length + ' (the engine frame is the full ERP)');
     var api = { S: S, C: C, P: P, R: R, $: $, $$: $$, q: q, esc: esc, rows: rows, depositGroup: depositGroup, create: create, msg: msg, log: log, go: go, hooks: HOOKS, persist: persist, saveStore: saveStore, newTicket: newTicket, renderSales: renderSales, openPay: openPay,
-      nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
+      nowIso: nowIso, today: today, shiftTag: shiftTag, curTotals: curTotals, removeLine: removeLine, addLine: addLine, bumpPickup: bumpPickup, showReceipt: showReceipt, rx: rx, depositedDocNos: depositedDocNos, zFromRows: zFromRows, renderPad: renderPad, press: press };
     api.engineWin = function () { return E; };
     if (window.TillExt) window.TillExt.init(api);
     if (window.TillSetupInit) window.TillSetupInit(api);

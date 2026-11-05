@@ -28,12 +28,11 @@
   }
   // session = { client, user, role, today, access:{clientIds, orgIds} }; GE = the goal engine
   function performance(q, session, GE) {
-    var goals = q("SELECT g.* FROM pa_goal g WHERE g.isactive='Y' AND g.ad_client_id=? AND ((g.ad_user_id IS NULL AND g.ad_role_id IS NULL) OR g.ad_user_id=? OR EXISTS " +
-      "(SELECT 1 FROM ad_user_roles ur WHERE ur.ad_user_id=? AND g.ad_role_id=ur.ad_role_id AND ur.isactive='Y')) ORDER BY g.seqno, g.pa_goal_id", [session.client, session.user, session.user]);
+    var goals = GE.userGoals(q, session);
     return goals.map(function (g) {
       // MGoal.getUserGoals → updateGoal(false) (MGoal.java:60-108, :383-415): a goal not due for refresh shows its STORED row (WPerformanceIndicator.init → getPercent()); a due one is what legacy
-      //   would compute now (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24 — the gadget drew a live value where legacy draws the stored one, e.g. right after a target edit). The overlay writes nothing:
-      //   a due goal is computed here and stored by the next save, so within the interval after a DATA change legacy (stored at its render) and the twin (live until stored) can differ — named.
+      //   would compute now (bim-ootb prompts/CAPEX_DASHBOARD.md §5.24 — the gadget drew a live value where legacy draws the stored one, e.g. right after a target edit). This model only reads: home.js stores
+      //   the due goals after the draw (ModelPA.storeDue, §5.32), with the same value this draws.
       var due = GE.refreshDue ? GE.refreshDue(q, g, { client: session.client, now: session.now }).due : true;
       var r = due ? GE.evaluate(q, g.pa_goal_id, { today: session.today, access: session.access })
         : { ok: true, actual: Number(g.measureactual || 0), percent: Math.trunc(Number(g.goalperformance || 0) * 100), stored: true };

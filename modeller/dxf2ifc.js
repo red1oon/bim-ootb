@@ -37,8 +37,8 @@
     const out = new Uint8Array(bytes.length - n + h2.length); for (let i = 0; i < h2.length; i++) out[i] = h2.charCodeAt(i); out.set(bytes.subarray(n), h2.length); return out;
   }
   const CLASS_MAP = { IfcWall: 'IFCWALL', IfcSlab: 'IFCSLAB', IfcColumn: 'IFCCOLUMN', IfcBeam: 'IFCBEAM', IfcRoof: 'IFCROOF', IfcPlate: 'IFCPLATE', IfcMember: 'IFCMEMBER',
-    IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcCovering: 'IFCCOVERING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW' };
-  const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum' };
+    IfcFooting: 'IFCFOOTING', IfcFan: 'IFCFAN', IfcCovering: 'IFCCOVERING', IfcBuildingElementProxy: 'IFCBUILDINGELEMENTPROXY', IfcDoor: 'IFCDOOR', IfcWindow: 'IFCWINDOW', IfcCurtainWall: 'IFCCURTAINWALL', IfcStairFlight: 'IFCSTAIRFLIGHT' };
+  const PD_ENUM = { IFCCOLUMN: 'IfcColumnTypeEnum', IFCBEAM: 'IfcBeamTypeEnum', IFCFOOTING: 'IfcFootingTypeEnum', IFCMEMBER: 'IfcMemberTypeEnum', IFCPLATE: 'IfcPlateTypeEnum', IFCROOF: 'IfcRoofTypeEnum', IFCWALL: 'IfcWallTypeEnum', IFCSLAB: 'IfcSlabTypeEnum', IFCFAN: 'IfcFanTypeEnum', IFCCOVERING: 'IfcCoveringTypeEnum', IFCCURTAINWALL: 'IfcCurtainWallTypeEnum' };
 
   // §L26 appearance + per-mesh metadata. ctx = { api, T (web-ifc), mID, enumOf, label, gid(n) -> IfcGloballyUniqueId }. style(fs, [r,g,b]) = one shared IfcSurfaceStyle per colour, applied by an IfcStyledItem
   // on the product's tessellated item (the way every IFC reader takes a colour); pset(product, props) = one IfcPropertySet 'Dxf2Bim_Evidence' (the `Pset_` prefix is reserved for buildingSMART-defined sets) of IfcText values + the IfcRelDefinesByProperties.
@@ -114,7 +114,8 @@
       const g = api.CreateIfcType(mID, T.IFCGLOBALLYUNIQUEID, guid(gn++));
       const args = [g, null, label(el.name || (el.class + ' ' + gn)), null, el.objectType ? label(el.objectType) : null, worldPl, pds, null];   // §F1: IfcProduct.WR1 (EXPRESS): a product with a Representation needs an ObjectPlacement; the geometry is in world coordinates, so the placement is the shared identity
       const oa = openingAttrs(ent, bboxOf(el.vertices ? el.vertices.map(v => [v[0], v[1], v[2]]) : null), { api, T, mID, enumOf }, el.predefined);
-      if (oa) args.push(...oa); else if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
+      if (ent === 'IFCSTAIRFLIGHT') args.push(null, null, null, null, enumOf('IfcStairFlightTypeEnum', el.predefined || 'STRAIGHT'));   // §D109 P9 four optional counts come before its type; the enum in the first slot would be invalid IFC4
+      else if (oa) args.push(...oa); else if (el.predefined && PD_ENUM[ent]) args.push(enumOf(PD_ENUM[ent], el.predefined));
       const e = api.CreateIfcEntity(mID, T[ent], ...args); api.WriteLine(mID, e);
       if (AP.style(fs, el.colour)) coloured++; if (AP.pset(e, el.props)) withPset++;
       const st = storeyFor(el); (st ? st.products : buildingProducts).push(e);

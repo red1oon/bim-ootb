@@ -269,14 +269,14 @@ async function runDeposit(ctx, base) {
   await pay(pg, [{ tab: 'cash', amount: cashAmt }, { tab: 'magcard', amount: money2(Number(tot) - cashAmt), ref: 'TRX-T1-0001', auth: 'AUTH-T1' }]);
   var rc1 = await pg.$$eval('#receipt .rf', function (e) { return e.map(function (x) { return x.getAttribute('data-f'); }); });
   var rcTotal1 = await pg.$eval('#receipt .rf[data-f="Total"]', function (e) { return e.textContent; });
-  var key1 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; });
+  var key1 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); });
   var changeHidden1 = await pg.$eval('#changepop', function (e) { return e.hidden; });
   await pg.click('#rc-ok');
   // ticket 2: one line, cash over-tendered -> change pop-up, change NOT deposited
   await clickProduct(pg, 128); var tot2 = await pg.$eval('#t-tot', function (e) { return e.textContent; }); var tend2 = Math.ceil(Number(tot2)) + 20;
   await pay(pg, [{ tab: 'cash', amount: tend2 }]);
   var pop2 = await pg.$eval('#changepop', function (e) { return { hidden: e.hidden, text: e.textContent }; });
-  var key2 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; });
+  var key2 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); });
   await pg.click('#rc-ok');
   console.log('§TILL_TICKET2 total=' + tot2 + ' tendered=' + tend2 + ' popup=' + J(pop2));
   check('deposit', 'receipt-order', J(rc1.slice(0, 5)) === J(['Receipt', 'Date', 'Terminal', 'Served by', 'Item']) && rc1.indexOf('Items count') > 0 && rc1.indexOf('Total') > rc1.indexOf('Items count'), 'receipt fields follow Printer.Ticket.xml order', rc1);
@@ -355,7 +355,7 @@ async function runOffline(ctx, base) {
   var onl = await pg.evaluate(function () { return navigator.onLine; });
   check('offline', 'network-off', onl === false, 'the browser context is offline (navigator.onLine false)', onl);
   var rung = [];
-  for (var i = 0; i < 2; i++) { await clickProduct(pg, 128); await pay(pg, [{ tab: 'cash', amount: 100 }]); rung.push(await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; })); await pg.click('#rc-ok'); }
+  for (var i = 0; i < 2; i++) { await clickProduct(pg, 128); await pay(pg, [{ tab: 'cash', amount: 100 }]); rung.push(await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); })); await pg.click('#rc-ok'); }
   var keys1 = await pg.evaluate(function () { return window.Till.depositedDocNos(); });
   var newKeys = keys1.filter(function (k) { return keys0.indexOf(k) < 0; });
   check('offline', 'rung-offline', newKeys.length === 2 && J(newKeys.sort()) === J(rung.slice().sort()), '2 tickets rung offline are on the device under their keys', { rung: rung, newKeys: newKeys });
@@ -365,7 +365,7 @@ async function runOffline(ctx, base) {
   var n1 = rung.map(function (k) { return Number(k.replace(/^.*-S/, '')); });
   check('offline', 'survive-reload', rung.every(function (k) { return keys2.indexOf(k) >= 0; }) && new Set(keys2).size === keys2.length, 'after a reload every offline ticket is still on the device, each key once (none lost, none doubled)', { rung: rung, keys2: keys2 });
   await loginSales(pg); await clickProduct(pg, 128); await pay(pg, [{ tab: 'cash', amount: 100 }]);
-  var k3 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; }), n3 = Number(k3.replace(/^.*-S/, ''));
+  var k3 = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); }), n3 = Number(k3.replace(/^.*-S/, ''));
   check('offline', 'no-number-reuse', n3 === Math.max.apply(null, n1) + 1, 'the next ticket continues the numbering (' + k3 + ' follows ' + rung[rung.length - 1] + ')', { k3: k3, n1: n1 });
   var z = await pg.evaluate(function () { return window.Till.zFromRows(); });
   console.log('§TILL_OFFLINE keys=' + J(rung) + ' next=' + k3 + ' z_tickets=' + z.tickets);
@@ -387,7 +387,7 @@ async function withTax(ctx, base, qs) {   // the seed's Standard tax is 0%: the 
 async function ring(pg, items) { await pg.evaluate(function () { if (window.Till.state().screen !== 'sales') window.Till.go('sales'); }); for (var it of items) { if (it[1] > 1) await typeNum(pg, it[1]); await clickProduct(pg, it[0]); } }
 async function totalOf(pg) { return pg.$eval('#t-tot', function (e) { return e.textContent; }); }
 async function payExact(pg) { var t = await totalOf(pg); await pay(pg, [{ tab: 'cash', amount: t }]); return t; }
-async function receiptKey(pg) { return pg.$eval('#receipt .rf[data-f="Receipt"], #receipt .rf[data-f="Refund"]', function (e) { return e.textContent.split('  ')[1]; }); }
+async function receiptKey(pg) { return pg.$eval('#receipt .rf[data-f="Receipt"], #receipt .rf[data-f="Refund"]', function (e) { return e.getAttribute('data-v'); }); }
 async function domLines(pg) { return pg.$$eval('#tl tr.line', function (trs) { return trs.map(function (t) { var c = t.querySelectorAll('td'); return { name: c[0].textContent, price: c[1].textContent, qty: c[2].textContent, value: c[3].textContent }; }); }); }
 async function importDevice(pg) {   // the device's deposited rows replayed in the node kernel, then the SHIPPED Import POS Sales
   var orders = await rowsOf(pg, 'SELECT * FROM i_order ORDER BY ABS(i_order_id)'), pays = await rowsOf(pg, 'SELECT * FROM i_payment ORDER BY ABS(i_payment_id)');
@@ -497,7 +497,7 @@ async function runHeld(ctx, base) {
   await pg.click('#bag [data-btn="Reprint Ticket"]'); await pg.waitForSelector('#u5r.on'); var rl = await pg.$$eval('#rl-list [data-reprint]', function (b) { return b.map(function (x) { return x.getAttribute('data-reprint'); }); });
   check('held', 'reprint-list', rl.indexOf(kRec) >= 0 && rl.indexOf(kLast) >= 0 && rl[0] === kLast, 'Reprint Ticket lists the saved tickets, newest first', rl.slice(0, 4));
   await pg.click('#rl-list [data-reprint="' + kRec + '"]'); await pg.waitForSelector('#u9.on'); var rp = await pg.$$eval('#receipt .rf', function (e) { return e.map(function (x) { return x.textContent; }); });
-  check('held', 'reprint-same', rp.some(function (t) { return t.indexOf(kRec) > 0; }) && rp.some(function (t) { return t.indexOf('Total  ' + totRec) === 0; }), 'the reprinted receipt shows its own key and Total ' + totRec, rp.slice(0, 3)); await pg.click('#rc-ok');
+  check('held', 'reprint-same', rp.some(function (t) { return t.indexOf(kRec) > 0; }) && rp.some(function (t) { return new RegExp('^Balance Due +' + String(totRec).replace('.', '\\.') + '$').test(t); }), 'the reprinted receipt shows its own key and Total ' + totRec, rp.slice(0, 3)); await pg.click('#rc-ok');
   await pg.click('#north [data-btn="Reprint Last Ticket"]'); await pg.waitForSelector('#u9.on'); var rk = await receiptKey(pg);
   check('held', 'reprint-last', rk === kLast, 'Reprint Last Ticket prints lastticket (' + kLast + ')', rk); await pg.click('#rc-ok');
   await pg.close();
@@ -565,7 +565,7 @@ async function runRefund(ctx, base) {
   check('refund', 'refund-key', /-R1$/.test(keyR) && /-S\d+$/.test(keyS), 'the refund has its own counter: ' + keyR + ' beside sale ' + keyS, { keyR: keyR, keyS: keyS });
   var orR = await rowsOf(pg, "SELECT * FROM i_order WHERE documentno='" + keyR + "'"), pyR = await rowsOf(pg, "SELECT * FROM i_payment WHERE documentno='" + keyR + "'");
   check('refund', 'rows-negative', orR.length === 1 && num(orR[0].qtyordered) === -1 && num(orR[0].priceactual) > 0 && pyR.length === 1 && num(pyR[0].payamt) < 0 && pyR[0].tendertype === 'X' && /^Refund of /.test(orR[0].linedescription), 'I_Order QtyOrdered -1 with positive PriceActual and "Refund of <key>"; I_Payment PayAmt negative, TenderType X', { o: orR[0] && [orR[0].qtyordered, orR[0].priceactual, orR[0].linedescription], p: pyR[0] && [pyR[0].payamt, pyR[0].tendertype] });
-  check('refund', 'receipt-total-negative', rtot.indexOf('Total  -') === 0, 'the refund receipt prints a negative total: ' + rtot, rtot);
+  check('refund', 'receipt-total-negative', /^Balance Due +-/.test(rtot), 'the refund receipt prints a negative total: ' + rtot, rtot);
   // second refund of the same ticket
   await pg.evaluate(function () { window.Till.go('editsales'); }); await pg.fill('#es-number', keyS.replace(/^.*-S/, '')); await pg.click('#es-find'); await sleep(700);
   var d2 = await pg.$$eval('#es-edit, #es-refund', function (b) { return b.map(function (x) { return x.id + ':' + x.disabled; }); }), s2 = await pg.$eval('#es-status', function (e) { return e.textContent; });
