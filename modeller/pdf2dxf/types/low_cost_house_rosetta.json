@@ -1,0 +1,481 @@
+{
+  "_readme": "ROSETTA DICTIONARY for type LowCostHouse, authored IN HINDSIGHT from TBKLTN_House.pdf (owner 2026-11-03: 'a Rosetta Stone dictionary you can infer in hindsight'). Source = multimodal read of the sheets (accepted by owner); each entry carries a `check` naming the numeric witness that corroborates it, or null.",
+  "sheet": {
+    "scale": "1:100",
+    "paper": "A4 landscape",
+    "mm_per_pt_fitted": 35.87,
+    "fit": "A..E label centres 163.2..439.2 pt = 9900 mm",
+    "title_block": [
+      "PROJEK",
+      "PEMILIK",
+      "ARKITEK",
+      "JENIS BANGUNAN",
+      "TAJUK LUKISAN",
+      "DILUKIS",
+      "UKURAN",
+      "HARIBULAN",
+      "DISEMAK",
+      "NO. LUKISAN",
+      "NO. KEPINGAN",
+      "PINDAAN NO"
+    ],
+    "sheet_no": "WD-1/01",
+    "project_type_text": "RUMAH RAKYAT"
+  },
+  "grid": {
+    "x": {
+      "A": 0,
+      "B": 1300,
+      "C": 3100,
+      "D": 6800,
+      "E": 9900
+    },
+    "y": {
+      "5": 0,
+      "4": 1500,
+      "3": 3100,
+      "2": 6200,
+      "1": 8500
+    },
+    "dim_chain_read": {
+      "x": [
+        1300,
+        3100,
+        3700,
+        3100,
+        9900
+      ],
+      "y": [
+        1500,
+        1600,
+        3100,
+        3100,
+        2300
+      ]
+    },
+    "overall_mm": [
+      9900,
+      8500
+    ],
+    "check": "rosetta_verify.py G1: label centres in text layer vs read dims"
+  },
+  "rooms": [
+    {
+      "name": "TANDAS",
+      "class": "toilet",
+      "ifc_space": "IfcSpace",
+      "x": [
+        "A",
+        "B"
+      ],
+      "y": [
+        "5",
+        "4"
+      ],
+      "ffl_from_agl": "050.00",
+      "floor": "CT",
+      "wall": "CT-PP",
+      "printed_sqm": 1.95
+    },
+    {
+      "name": "BILIK MANDI",
+      "class": "bathroom",
+      "x": [
+        "A",
+        "B"
+      ],
+      "y": [
+        "4",
+        "3"
+      ],
+      "ffl_from_agl": "050.00",
+      "floor": "CT",
+      "wall": "CT-PP",
+      "printed_sqm": 2.08
+    },
+    {
+      "name": "RUANG BASUH",
+      "class": "wash/utility",
+      "x": [
+        "B",
+        "C"
+      ],
+      "y": [
+        "4",
+        "3"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 2.88
+    },
+    {
+      "name": "DAPUR",
+      "class": "kitchen",
+      "x": [
+        "B",
+        "D"
+      ],
+      "y": [
+        "5",
+        "4"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "CT-PP",
+      "printed_sqm": 8.25
+    },
+    {
+      "name": "RUANG MAKAN",
+      "class": "dining",
+      "x": [
+        "C",
+        "D"
+      ],
+      "y": [
+        "4",
+        "3"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 5.92
+    },
+    {
+      "name": "BILIK 3",
+      "class": "bedroom",
+      "x": [
+        "D",
+        "E"
+      ],
+      "y": [
+        "5",
+        "3"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 9.61
+    },
+    {
+      "name": "BILIK 2",
+      "class": "bedroom",
+      "x": [
+        "D",
+        "E"
+      ],
+      "y": [
+        "3",
+        "2"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 9.61
+    },
+    {
+      "name": "BILIK UTAMA",
+      "class": "master_bedroom",
+      "x": [
+        "A",
+        "C"
+      ],
+      "y": [
+        "3",
+        "2"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 9.61
+    },
+    {
+      "name": "RUANG TAMU",
+      "class": "living",
+      "x": [
+        "C",
+        "D"
+      ],
+      "y": [
+        "3",
+        "2"
+      ],
+      "ffl_from_agl": "100.00",
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 11.47
+    },
+    {
+      "name": "ANJUNG",
+      "class": "porch",
+      "x_mm": 3200,
+      "y": [
+        "2",
+        "1"
+      ],
+      "ffl_from_agl": null,
+      "floor": "CR",
+      "wall": "PP",
+      "printed_sqm": 7.36
+    }
+  ],
+  "room_tag_format": "2x2 box under the room name: [FFL from AGL | floor area sqm] over [floor finish | wall finish]",
+  "room_class_note": "room x/y rectangles are grid-to-grid NOMINAL cells (area = dx*dy); check = rosetta_verify.py R1 vs printed_sqm",
+  "plan_symbols": {
+    "typ_units": {
+      "aluminium kitchen sink": 1,
+      "basin": 1,
+      "water closet (seating)": 1,
+      "shower": 1,
+      "floor trap": 3,
+      "tap": 4,
+      "gully trap": 2
+    },
+    "source": "p1 SYMBOLS table"
+  },
+  "notes_G": {
+    "_meaning": "G1..G10 in a triangle = general-note tags keyed to the table on p3; text layer holds only the tag, the note text is drawn",
+    "G1": "R.C beams, ground slabs & footing to Engr's detail",
+    "G2": "soil pipe discharged to IST per manufacturer's spec, Engr's detail and SPAN approval",
+    "G3": "waste pipe to Engr's detail",
+    "G4": "manhole to Engr's detail",
+    "G5": "230 mm dia half p.c. PERIMETER DRAIN discharged to nearest road-side drain, Engr's detail",
+    "G6": "location of 250 gal HDPE water tank on H.W plinth, Engr's + SPAN approval",
+    "G7": "dotted lines = waterproofing up to 1500 mm ht (baths)",
+    "G8": "dotted lines = damp-proof membrane",
+    "G9": "50 dia uPVC vent pipe with wire ball mesh built up 300 high above roof surface",
+    "G10": "50 mm thk x 600 mm d r.c. working counter top, cement render finish",
+    "anomaly": "p7 tags the water tank with G10 while p3 defines G6 as the tank and G10 as the counter top — drafter inconsistency, kept yellow"
+  },
+  "roof": {
+    "finish": "MR metal roofing on prefabricated trusses incl. fascia board (+ FG GI flashing)",
+    "pitch_deg": 25,
+    "faces_read": 4,
+    "eaves_overhang_mm": 700,
+    "layout": "main gable, ridge along grid 3 (E-W) with two 25 deg faces; porch (ANJUNG) gable with N-S ridge meeting it; plan tags MR, HC, BC, VT read but not decoded",
+    "check": null
+  },
+  "perimeter_drain": {
+    "note": "G5, 230 mm dia half p.c.",
+    "geometry": "nested outer outline around the L-shaped footprint incl. porch, DISCHARGE arrows mid-side (N,S,W,E), manhole MH1 (G4) NW outside",
+    "check": "gap of the nested lines measured but NOT matching 230 mm (candidates 276 / 176 mm) -> YELLOW"
+  },
+  "sheets_read": {
+    "p1": "1. FLOOR PLAN (+ finishes key, symbols table)",
+    "p3": "3. ROOF PLAN (+ G1-G10 note table); title block says '1. REFL. CEILING PLAN' (inconsistent)",
+    "p7": "11. DIAGRAMMATIC COLD WATER LAYOUT + 10. DIAGRAMMATIC SANITARY LAYOUT (NTS)",
+    "p8": "door & window schedule"
+  },
+  "schedule_sizes_mm": {
+    "source": "p8 text layer, exact",
+    "D1": [
+      900,
+      2100
+    ],
+    "D2": [
+      900,
+      2100
+    ],
+    "D3": [
+      750,
+      2100
+    ],
+    "W1": [
+      1800,
+      1000
+    ],
+    "W2": [
+      1200,
+      1000
+    ],
+    "W3": [
+      600,
+      500
+    ]
+  },
+  "opening_drawing_conventions": {
+    "window": "chain of 100x500 mm closed rects at 600 mm pitch along a wall axis; width = modules x 600 (W3 1, W2 2, W1 3)",
+    "door": "quarter-circle swing arc, radius = nominal width minus ~80 mm (frame), cubic Bezier endpoints span r x r"
+  },
+  "floor_buildup": {
+    "depth_mm": 150,
+    "status": "YELLOW",
+    "meaning": "FFL down to the damp-proof membrane (note G8) as drawn on both sections of p6; the 150 is the drawn dimension. NOT the structural slab: note G1 says ground slabs are to Engr's detail",
+    "section_used": "A-A",
+    "check": "section_emit.py W-C5: the sheet's only chromatic line lies depth_mm +- 10 below the FFL level line on A-A and on B-B"
+  },
+  "owner_rulings": {
+    "_source": "owner 2026-11-04: 'decide for me, but i can accept as this is p-o-c to get to the end of gaps discovery'. For this PoC only; the lane's own verdict stays blocked and bim-ootb is not changed (spec §30)",
+    "ACCEPTED_STAND_IN": [
+      "GAP:fill_size_mismatch",
+      "GAP:type_size_mismatch"
+    ],
+    "WAIVED_DRAWING_DIMENSIONS": [
+      "QF:dim_missing",
+      "QF:dim_point_missing",
+      "QF:elev_height_dim_missing"
+    ],
+    "STATED_FINDING_GRID_CONVENTION": [
+      "QF:grid_label_series"
+    ],
+    "_accept": {
+      "who": "owner",
+      "date": "2026-11-04",
+      "reason": "i can accept as this is p-o-c to get to the end of gaps discovery"
+    }
+  },
+  "electrical_p2": {
+    "_source": "p2 SYMBOLS table. Descriptions are drawn glyphs read once by multimodal read; QTY is the text layer. Sizes are the plan symbols' measured pt sizes (the table draws them larger), editable per drawing",
+    "qty_order_in_table": [
+      "electricity_meter",
+      "fuse_board",
+      "ceiling_light",
+      "ceiling_fan",
+      "switches_1_4_2",
+      "power_outlet",
+      "wall_light"
+    ],
+    "plan_symbol_pt": {
+      "ceiling_light": {
+        "circle_r": 4.6
+      },
+      "ceiling_fan": {
+        "circle_r": 3.0
+      },
+      "switch": {
+        "circle_r": 2.5
+      },
+      "power_outlet": {
+        "curve_wh": [
+          2.5,
+          4.9
+        ]
+      },
+      "wall_light": {
+        "curve_wh": [
+          3.5,
+          7.1
+        ]
+      }
+    },
+    "status": "YELLOW: FP / FP1 hexagon tags seen in rooms, meaning not extracted"
+  },
+  "plumbing_p7": {
+    "_source": "p7 legend + labels. Fixture and trap names are the text layer; pipe labels are drawn glyphs read once by multimodal read. The sheet is NTS: topology only, status YELLOW, no numeric check possible on the pipes",
+    "legend_box_pt": [
+      530,
+      60,
+      620,
+      130
+    ],
+    "cold_water_diagram_y_max_pt": 260,
+    "pipes_read": [
+      "25 int. polypipe PN 10",
+      "20 Upvc distribution",
+      "20 Upvc pressure relief",
+      "30 Upvc over flow",
+      "30 Upvc scour",
+      "15 Upvc",
+      "100 Upvc RWDP",
+      "50 Upvc vent",
+      "50 Upvc anti syphonage",
+      "50 Upvc waste",
+      "75 Upvc waste",
+      "100 Upvc soil"
+    ],
+    "items_read": [
+      "250 galls poly water tank + 150x150 brick plinth + 12 thk marine plywood",
+      "water meter",
+      "bollafix valve",
+      "MH1 manhole",
+      "individual septic tank (Engr's detail)",
+      "soak away (Engr's detail)"
+    ]
+  },
+  "schedule_locations_p8": {
+    "_source": "p8 LOCATION row, text layer; other_sheets.py W-S8 confirms each string is on the sheet",
+    "D1": [
+      "RUANG TAMU",
+      "DAPUR"
+    ],
+    "D2": [
+      "BILIK UTAMA",
+      "BILIK 2",
+      "BILIK 3"
+    ],
+    "D3": [
+      "BILIK MANDI",
+      "TANDAS"
+    ],
+    "W1": [
+      "DAPUR"
+    ],
+    "W2": [
+      "RUANG TAMU",
+      "BILIK UTAMA",
+      "BILIK 2",
+      "BILIK 3"
+    ],
+    "W3": [
+      "TANDAS",
+      "BILIK MANDI"
+    ]
+  },
+  "library_binding": {
+    "_note": "opening tag -> family_id of the LOCAL LOD400 library (BIMCompiler component_library.db, exported by export_library_subset.js --full). Doors: generated from the p8 schedule (CL008, §38). Windows: generated from the p8 schedule (CL007, §34).",
+    "D1": {
+      "family": "LCSSU_D1_900x2100",
+      "lib_size": [
+        900,
+        2100
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL008 (spec §38), replacing the FD1 fire-rated stand-in; leaf thickness a template default, YELLOW"
+    },
+    "D2": {
+      "family": "LCSSU_D2_900x2100",
+      "lib_size": [
+        900,
+        2100
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL008 (spec §38), replacing the FD1 fire-rated stand-in; leaf thickness a template default, YELLOW"
+    },
+    "D3": {
+      "family": "LCSSU_D3_750x2100",
+      "lib_size": [
+        750,
+        2100
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL008 (spec §38), replacing the FD1 fire-rated stand-in; leaf thickness a template default, YELLOW"
+    },
+    "W1": {
+      "family": "LCSSU_W1_1800x1000",
+      "lib_size": [
+        1800,
+        1000
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL007 (spec §34); frame profile a template default, YELLOW"
+    },
+    "W2": {
+      "family": "LCSSU_W2_1200x1000",
+      "lib_size": [
+        1200,
+        1000
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL007 (spec §34); frame profile a template default, YELLOW"
+    },
+    "W3": {
+      "family": "LCSSU_W3_600x500",
+      "lib_size": [
+        600,
+        500
+      ],
+      "exact": true,
+      "note": "generated from the p8 schedule, migration CL007 (spec §34); frame profile a template default, YELLOW"
+    }
+  }
+}
