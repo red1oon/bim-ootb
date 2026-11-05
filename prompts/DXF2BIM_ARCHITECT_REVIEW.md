@@ -907,7 +907,7 @@ overlap is stated here, not merged in this task. Log `§REL_AGGREGATES rows=… 
 3. `PR-GRID-TICK` (`:81`) runs even when the plan states its grid. Measured damage in Arrange: a plan stating A1 / A2 (x 0.28, 9.68 m) was also given yellow `1`, `2` at x 81.9 m (wall tags and dimension ticks), and an elevation's `FACE maxX` landed on 81.913 m, 72 m off. It also ignores `@REGION`.
 4. `PR-Z-GROUND` (`:107`) fires when `PR-Z` read nothing, and took the `-0.30 m` line as z 0 (CLI: `MARK:conflict`). On every line checked the sheet states the truth: level text value = its line's y (0, -300, 4000, 4800, 9050, 13800 mm). Text forms: `+4.00 m`, `EL: +4.800 m`; not matched by `([+-]\d+\.\d+)\s*$`, and not on a level layer of the map.
 5. `Dxf2Panels.facePlane` takes the end grid line of the whole base plan: `minX`/`maxX` of a set with three wings is the far wing's line. An elevation whose grid is AA..AE (wing A) goes to the end line of wing C. Titles already state the line (`WALL ELEVATION GRID A1`, 12 views).
-6. `§MARKREFS` lists `one sheet`, `one sheet`, `one sheet` as "not modelled" marks. They are sheets the set refers to and does not hold; nothing says so.
+6. `§MARKREFS` lists sheet numbers as "not modelled" marks. They are sheets the set refers to and does not hold; nothing says so.
 7. A title note makes a wrong role: `BEAM, SEE PLAN` read as PLAN. The same title written twice (`LEVEL 1 - FLOOR PLAN`, `LEVEL 1 FLOOR PLAN`) is refused as disagreeing.
 
 **Rule of this section.** No rule is a hard decision. Each is a row of `element_defaults.json`, shown in Element defaults, with the earlier behaviour as an offered option: the user sets it back in the panel, the JSON, `--choice`, or `@DEFAULT=<key>,<value>` (resolution as ever: the drawing's @DEFAULT > an editor choice > the registry). Suggestions stay suggestions: nothing becomes a marking until accepted.
@@ -939,7 +939,7 @@ overlap is stated here, not merged in this task. Log `§REL_AGGREGATES rows=… 
 - YR5 "titles": MTEXT title with codes gives PR-VIEW; `BEAM, SEE PLAN` gives none; two spellings of one title give PR-VIEW; `text_only`: old result.
 - YR6 "the plane": 3 families of X grids; elevation AA..AE with FACE maxX: `facePlane` = wing A's end line; set back: the far line; `@PLANE=A1` wins over both. Single-family and no-family sets: identical to before.
 - YR7 "PR-PLANE": title `WALL ELEVATION GRID A1` proposes `@PLANE=A1`; a label the plan does not hold: none.
-- YR8 "missing sheets": two sheets with `@SHEETNO` one sheet, one sheet referring to one sheet, EX-03, one sheet: missing = one sheet only; `off`: none; never blocking.
+- YR8 "missing sheets": two sheets with `@SHEETNO`, one referring to a third sheet, a door mark `EX-03` and a held sheet: missing = the third only; `off`: none; never blocking.
 - YR9 "@DEFAULT sets it back": every key above, set by a drawing's `@DEFAULT`, gives the same as the choice.
 - Regression, unchanged counts: W-EVIDENCE, W-ARRANGE, W-CLI (raw shed bodies 512), W-DXF-EDEFAULTS (+7 rows), W-FORMAT, W-YELLOW-PAGE, W-MARK-REFS, W-PURE, then `run_all_witnesses`.
 - Private set (SKIP loudly when `REVIT_SET_DIR` is absent, no sheet text printed): raw plan + elevations, roles and grids read with no hand marking, each annex's face within 1 mm of its own grid line.
