@@ -698,7 +698,9 @@
     var rec = gatherVals(e), flips = 0, withLogic = 0;
     var base = (_formCtx && _formCtx.verb === 'update' && _formCtx.baseline) || null;   // §GT.7: the record's own state (Processed/IsActive…)
     if (base) { var m = {}, k; for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) m[k] = base[k]; for (k in rec) if (Object.prototype.hasOwnProperty.call(rec, k)) m[k] = rec[k]; rec = m; }
-    var ctx = rec;
+    // GridField.get_ValueAsString -> Env.getContext(WindowNo, TabNo, name): the row, then the window, i.e. the shallower tabs' current rows. Row values win (ad_evaluator resolveVar reads the record first).
+    //   Only the row was passed, so a field's DisplayLogic on a parent column (Task Line @IsCommitment@) never saw it (W-DELETE-PO C14).
+    var ctx = (global.APP && global.APP._winCtx) || rec;
     (e.fields || []).forEach(function (f) {
       var hasLogic = [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; });
       if (hasLogic) withLogic++;

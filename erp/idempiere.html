@@ -788,7 +788,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=1"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=10"></script>
-<script src="crud_overlay.js?v=41"></script>
+<script src="crud_overlay.js?v=42"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
 <script src="../common/comm/team_defaults.js?v=1"></script><script src="../common/comm/team_trial.js?v=1"></script><script src="../common/comm/team_avatars.js?v=1"></script><script src="../common/comm/team_panel.js?v=4"></script><!-- §13.8: setup values + trial rule + the Team pill's panel (inert until opened) -->
@@ -2476,9 +2476,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   detail tab, then the Env globals filling what it lacks. Mirrors Env.getContext's "WindowNo|TabNo|Column"
   //   → "WindowNo|Column" fallback (org.compiere.util.Env), which is why a line sees its header's values.
   function _winCtxFor(tab) {
-    var ctx = {}, lvl = (tab && tab.tabLevel) || 0, k;
-    var prec = lvl > 0 ? _recByLevel[lvl - 1] : null;
-    if (prec) for (k in prec) if (Object.prototype.hasOwnProperty.call(prec, k) && prec[k] != null && String(prec[k]) !== '') ctx[String(k).toLowerCase()] = prec[k];
+    var ctx = {}, lvl = (tab && tab.tabLevel) || 0, k, L, prec;
+    // every shallower tab, nearest first (as _ctxGetFor): a level-3 tab's DisplayLogic @IsCommitment@ reads the level-0 Project. Only the immediate parent was read, so a Task Line hid its Committed fields on a commitment project (W-DELETE-PO C14).
+    for (L = lvl - 1; L >= 0; L--) { prec = _recByLevel[L]; if (!prec) continue; for (k in prec) if (Object.prototype.hasOwnProperty.call(prec, k) && prec[k] != null && String(prec[k]) !== '' && ctx[String(k).toLowerCase()] == null) ctx[String(k).toLowerCase()] = prec[k]; }
     var put = function (n, v) { if (v != null && String(v) !== '' && (ctx[n] == null || String(ctx[n]) === '')) ctx[n] = v; };
     put('ad_client_id', (_session && _session.client) ? _session.client.id : null);
     put('ad_org_id', (_session && _session.org) ? _session.org.id : null);

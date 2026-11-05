@@ -23,7 +23,8 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage();
   const logs = [], errs = []; page.on('console', m => logs.push(m.text())); page.on('pageerror', e => errs.push(e.message)); page.on('dialog', d => d.accept());
   const say = (s) => console.log('§WDEL ' + s);
-  const tip = (sql) => page.evaluate((sql) => new Promise((res, rej) => { try { window.__crud.withTipQuery(q => res(q(sql))); } catch (e) { rej(e); } }), sql);
+  // a modelRun first: it waits for the signed log to hydrate, which a bare read right after a load does not (§TIP_READ_HYDRATED), so the read is the committed state and not the bare base
+  const tip = (sql) => page.evaluate((sql) => new Promise((res, rej) => { try { window.__crud.modelRun({ table: 'ad_client', timing: 'HYDRATE' }, () => window.__crud.withTipQuery(q => res(q(sql)))); } catch (e) { rej(e); } }), sql);
   const store = (sql) => page.evaluate(async (sql) => { try { const d = await (await navigator.storage.getDirectory()).getDirectoryHandle('bim_analysis'), f = await (await d.getFileHandle('bim_project_orders.db')).getFile();
       const db = new window.SQL.Database(new Uint8Array(await f.arrayBuffer())), r = db.exec(sql); db.close(); return r.length ? r[0].values : []; } catch (e) { return 'ERR ' + e.message; } }, sql);
   const open = async (win, rec) => { await page.goto(base + '/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin&window=' + win + (rec ? '&record=' + rec : ''), { waitUntil: 'networkidle' });
@@ -40,6 +41,7 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
     const ok = page.locator('#idmp-delete-ov [data-del-ok]'); if (!(await ok.count()) || !(await ok.isVisible())) return { clicked: true, confirmed: false, noVisibleQuestion: true, log: logs.slice(n).filter(x => /§(CRUD|FORM-PILL|DEL-)/.test(x)).slice(0, 3) };
     await ok.click(); await page.waitForTimeout(1500);
     return { clicked: true, confirmed: true, log: logs.slice(n).filter(x => /§(CRUD-PERSIST|CRUD-GATE|MODEL-SAVE-ROLLBACK|MODEL-DELETE|DEL-|BIM_PUSH)/.test(x)).map(x => x.slice(0, 170)), toasts: await page.evaluate(() => Array.from(document.querySelectorAll('.crud-toast')).map(t => t.textContent.slice(0, 120))), view: await page.evaluate(() => ({ grid: document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]').length, form: !!document.querySelector('#idmp-inline-mount .cfrow') })) }; };
+  const quiet = async () => { for (let i = 0; i < 40; i++) { const n = logs.length; await page.waitForTimeout(2000); if (logs.length === n) return i; } return -1; };   // the order form's lookups render for seconds, and each pass re-bases the dirty check
   const sum = (x) => Math.round(x * 1000) / 1000;
   try {
     // ── the viewer's push store: a copy of the seed + a project with phases, tasks, lines, and two draft orders (rows cloned from shipped rows, so every NOT-NULL column is real)
@@ -50,7 +52,7 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
         const sel = cols.map(c => { const l = c.toLowerCase(); if (l === pk.toLowerCase()) return id; if (l === t.toLowerCase() + '_uu') return "'" + t + id + "'"; for (const k in over) if (k.toLowerCase() === l) return typeof over[k] === 'string' ? "'" + over[k] + "'" : (over[k] === null ? 'NULL' : over[k]); return '"' + c + '"'; });
         db.run('INSERT INTO "' + t + '" ("' + cols.join('","') + '") SELECT ' + sel.join(',') + ' FROM "' + t + '" WHERE "' + pk + '" = ' + from); };
       const LN = (id, ln, ph, tk, q, pr, com) => clone('C_ProjectLine', 'C_ProjectLine_ID', 990000, id, { C_Project_ID: ids.P, Line: ln, C_ProjectPhase_ID: ph, C_ProjectTask_ID: tk, PlannedQty: q, PlannedPrice: pr, PlannedAmt: q * pr, CommittedAmt: com, CommittedQty: 0, Processed: 'N', IsActive: 'Y', C_Order_ID: null, C_OrderPO_ID: null });
-      clone('C_Project', 'C_Project_ID', 990000, ids.P, { Value: 'WDEL', Name: 'W-DELETE-PO', PlannedAmt: 3600, CommittedAmt: 0 });
+      clone('C_Project', 'C_Project_ID', 990000, ids.P, { Value: 'WDEL', Name: 'W-DELETE-PO', PlannedAmt: 3600, CommittedAmt: 0, IsCommitment: 'Y' });   // legacy shows a line's Committed fields only on a commitment project (AD_Field DisplayLogic)
       clone('C_ProjectPhase', 'C_ProjectPhase_ID', 990000, ids.PH, { C_Project_ID: ids.P, Name: 'Phase A', SeqNo: 10, PlannedAmt: 3500, CommittedAmt: 0 });
       clone('C_ProjectPhase', 'C_ProjectPhase_ID', 990000, ids.PH2, { C_Project_ID: ids.P, Name: 'Phase B', SeqNo: 20, PlannedAmt: 100, CommittedAmt: 0 });
       clone('C_ProjectTask', 'C_ProjectTask_ID', 990000, ids.T, { C_ProjectPhase_ID: ids.PH, Name: 'Task A1', SeqNo: 10, PlannedAmt: 3500, CommittedAmt: 0 });
@@ -109,7 +111,7 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
     }
 
     // C11 the History reverses the delete, after a reload (the viewer's table no longer holds the row): ERP and store both get it back
-    await open(130, P); await page.waitForTimeout(2500); const n11 = logs.length; let back = 0;   // the newest ops are this reload's own (a window open writes AD_RecentItem), so step back until the delete's group is reversed, as the History scrubber does
+    await open(130, P); await quiet(); const n11 = logs.length; let back = 0;   // the newest ops are this reload's own (a window open writes AD_RecentItem), so step back until the delete's group is reversed, as the History scrubber does
     for (; back < 8; back++) { const has = await tip('SELECT COUNT(*) n FROM C_ProjectLine WHERE C_ProjectLine_ID=' + L1); if (has[0].n) break; await page.evaluate(() => window.__crud.foldBack('c_projectline', '', '')); await page.waitForTimeout(900); } await page.waitForTimeout(1500);
     say('C11 steps=' + back + ' ' + JSON.stringify(logs.slice(n11).filter(x => /§(FOLD-BACK|BIM_PUSH)/.test(x)).map(x => x.slice(0, 170))));
     const t11 = await tip(`SELECT (SELECT COUNT(*) FROM C_ProjectLine WHERE C_ProjectLine_ID=${L1}) n, (SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=${P}) p`), s11 = await store(`SELECT (SELECT COUNT(*) FROM C_ProjectLine WHERE C_ProjectLine_ID=${L1}), (SELECT PlannedAmt FROM C_Project WHERE C_Project_ID=${P})`);
@@ -150,7 +152,6 @@ const P = 990001, PH = 990101, PH2 = 990102, T = 990201, T2 = 990202, L1 = 99030
     }
     // C10 the user who did not create a record can edit it: shipped orders are CreatedBy=100, the session is GardenAdmin. Legacy: MRole.canUpdate only.
     const mark10 = logs.length; await open(143, O2); const c10 = await page.evaluate(async (id) => { const b = await new Promise(r => window.__crud.withTipQuery(q => r(q('SELECT CreatedBy c FROM C_Order WHERE C_Order_ID=' + id)[0].c))); return { createdBy: b, actor: window.APP && window.APP.actor }; }, O2);
-    const quiet = async () => { for (let i = 0; i < 40; i++) { const n = logs.length; await page.waitForTimeout(2000); if (logs.length === n) return i; } return -1; };   // the order form's lookups render for seconds, and each pass re-bases the dirty check
     for (let i = 0; i < 40 && !logs.slice(mark10).some(x => /§ADMIN3-CHANGEAUDIT rebuilt/.test(x)); i++) await page.waitForTimeout(500);   // the login-time rebuild ends in a form remount that clears the dirty state (named in §DEL-RESULT)
     say('C10 form settled after ' + await quiet() + ' waits, remounts so far=' + logs.filter(x => /§INPLACE-EDIT table=c_order id=990402/.test(x)).length); const n10 = logs.length, fld = page.locator('#idmp-inline-mount input[data-col="description"], #idmp-inline-mount textarea[data-col="description"]').first();
     if (!(await fld.count())) inconclusive('C10', 'no Description field on the order form, nothing was edited');
