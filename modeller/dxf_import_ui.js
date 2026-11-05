@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '18';
+  var V = '19';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2beams.js', 'dxf2walls.js', 'dxf2slabs.js', 'dxf2steel.js', 'dxf2doortags.js', 'dxf2stairs.js', 'dxf2roofspots.js', 'dxf2gapguide.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -981,7 +981,8 @@
     var placedH = {}; (T.fills || []).forEach(function (i) { placedH[T.inserts[i].params.storey + '|' + T.inserts[i].params.provenance.dxf_handle] = 1; });
     fillGaps.forEach(function (g) { if (placedH[g.storey + '|' + g.handle]) { console.warn(TAGC + ' fill gap ' + g.code + ' storey=' + g.storey + ' handle=' + g.handle + ' (fill placed; the gap stays in the verdict)'); return; }
       if (g.code !== 'GAP:lod400_library_unreachable') console.error(TAGC + ' HARD-FAIL fill ' + g.code + ' storey=' + g.storey + ' ' + g.kind + ' handle=' + g.handle + ' type=' + g.type_id + (g.element_ref ? ' product=' + g.element_ref : '') + (g.missing ? ' missing=' + g.missing.join(',') : '') + ' — not placed, never a box'); });
-    status('Converted: ' + T.inserts.length + ' elements (' + nFills + ' door/window fills), ' + T.cuts.length + ' openings cut.' + (fillGaps.length ? ' Fills not placed: ' + fillGaps.length + (fillNeed ? ' (LOD400 library not reachable here).' : ' (named GAPs, see console).') : ''));
+    var fillsNoted = fillGaps.filter(function (g) { return placedH[g.storey + '|' + g.handle]; }).length, fillsMissed = fillGaps.length - fillsNoted;   // §L39: a fill placed with a size row is placed: saying otherwise was untrue
+    status('Converted: ' + T.inserts.length + ' elements (' + nFills + ' door/window fills), ' + T.cuts.length + ' openings cut.' + (fillsMissed ? ' Fills not placed: ' + fillsMissed + (fillNeed ? ' (LOD400 library not reachable here).' : ' (named GAPs, see console).') : '') + (fillsNoted ? ' Placed with a size note: ' + fillsNoted + '.' : ''));
     setLines(false);
     if (window.Bonsai.frameSelection) window.Bonsai.frameSelection();
     bayRow();
