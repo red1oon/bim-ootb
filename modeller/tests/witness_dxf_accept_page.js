@@ -8,7 +8,7 @@
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer'));
 const ROOT = process.env.WITNESS_ROOT || path.join(__dirname, '..', '..'), DIR = process.env.HOUSE_TYPED_DIR || '';
-const LIBD = process.env.HOUSE_LIB_DIR || '', ROWS = +(process.env.HOUSE_ROWS || 62), HEADS = +(process.env.HOUSE_HEADS || 6), FAMS = process.env.HOUSE_FAMS || 'INST_FIRE_DOOR_750,INST_FIRE_DOOR_900,LCSSU_W1_1800x1000,LCSSU_W2_1200x1000,LCSSU_W3_600x500', LIVE_SHA = 'f5a308656e73';
+const LIBD = process.env.HOUSE_LIB_DIR || '', ROWS = +(process.env.HOUSE_ROWS || 57), HEADS = +(process.env.HOUSE_HEADS || 6), FAMS = process.env.HOUSE_FAMS || 'LCSSU_D1_900x2100,LCSSU_D2_900x2100,LCSSU_D3_750x2100,LCSSU_W1_1800x1000,LCSSU_W2_1200x1000,LCSSU_W3_600x500', LIVE_SHA = 'ebcea595bea6';
 let fails = 0, judged = 0; const ok = (id, c, m) => { judged++; console.log((c ? '§PASS ' : '§FAIL ') + id + (m ? '  ' + m : '')); if (!c) fails++; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.db': 'application/octet-stream' };
@@ -29,7 +29,7 @@ const GL = ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enab
   await pg.goto(U, { waitUntil: 'load', timeout: 120000 }); await ready();
   await open(names.map(n => path.join(plain, n))); const a = await st(); console.log('§UNMARKED ' + JSON.stringify(a));
   ok('U without @ACCEPT the same set is refused: blocked, no accepted rows on screen', a.ok === false && a.verdict === 'blocked' && a.blocking === ROWS && a.dom === 0, a.status);
-  ok(LIBD ? 'U2 the source of the library is the local export, not the published one' : 'U2 the source of the library is the published one', logs.some(l => (LIBD ? /§DXF-LIB source=oci sha=(?!f5a308656e73)/ : /§DXF-LIB source=oci sha=f5a308656e73/).test(l)), (logs.find(l => /§DXF-LIB/.test(l)) || '').slice(0, 150));
+  ok(LIBD ? 'U2 the source of the library is the local export, not the published one' : 'U2 the source of the library is the published one', logs.some(l => (LIBD ? new RegExp('§DXF-LIB source=oci sha=(?!' + LIVE_SHA + ')') : new RegExp('§DXF-LIB source=oci sha=' + LIVE_SHA)).test(l)), (logs.find(l => /§DXF-LIB/.test(l)) || '').slice(0, 150));
   await pg.reload({ waitUntil: 'load', timeout: 120000 }); await ready();
   await open(marked); const b = await st(); console.log('§MARKED ' + JSON.stringify(b)); console.log(logs.filter(l => /§DXF-ACCEPT/.test(l)).join(' | ').slice(0, 400));
   if (!b.accepted) { console.log('§VACUOUS no row was accepted: the marks did not reach the gate'); process.exit(2); }

@@ -139,7 +139,7 @@ async function openViaChooser(pg, files) {
   await c0(pg, 'std', SET.length);
   const srcLine = pg._logs.filter(t => /^§DXF-LIB /.test(t));
   check('C0 LIB-SOURCE', 'the library came from another source than this run asks for (' + LIBMODE + '), or no §DXF-LIB line',
-    srcLine.length > 0 && srcLine.every(t => t.indexOf('§DXF-LIB source=' + LIBMODE + ' ') === 0) && srcLine.every(t => /sha=f5a308656e73/.test(t)), srcLine.join(' || ').slice(0, 400));
+    srcLine.length > 0 && srcLine.every(t => t.indexOf('§DXF-LIB source=' + LIBMODE + ' ') === 0) && srcLine.every(t => /sha=ebcea595bea6/.test(t)), srcLine.join(' || ').slice(0, 400));
   check('C0 GATE std', 'the std set (Node verdict qualifies) is not allowed to convert by the ONE gate (roles + dxf2qualify)', imp.gate.ok && imp.gate.verdict && imp.gate.verdict.verdict === 'qualifies' && !imp.convertDisabled,
     JSON.stringify(imp.gate));
   say('import: multiple=' + multiple + ' gate.ok=' + imp.gate.ok + ' roles=' + JSON.stringify(imp.roles) + ' canvas=' + JSON.stringify(imp.lines));
