@@ -278,6 +278,10 @@
   .idmp-grid tr.sel td { background:var(--idmp-sel); }
   /* GRID_BATCH_FORM_PILL_SPEC item 4 — multi-select checkbox column + the gear/batch toolbar. */
   .idmp-grid th.idmp-cbcol, .idmp-grid td.idmp-cbcol { width:30px; text-align:center; padding:4px 6px; cursor:default; }
+  /* §GRID-CLICK-2 GridTabRowRenderer :604-617,:746-753: the indicator column; the current row's cell carries the Edit mark and opens the form */
+  .idmp-grid th.idmp-rowind, .idmp-grid td.idmp-rowind { width:18px; min-width:18px; padding:2px; text-align:center; border:none; }
+  .idmp-grid td.row-indicator-selected { cursor:pointer; }
+  .idmp-grid td.row-indicator-selected::before { content:'\270E'; }
   .idmp-grid td.idmp-cbcol input, .idmp-card-cb { width:15px; height:15px; cursor:pointer; }
   .idmp-card-cb { margin-right:8px; flex:0 0 auto; }
   /* P4 (W-INPLACE-GRID-LIVE) — a clicked data cell becomes an inline WEditor (GridView per-cell editor parity). */
@@ -3055,7 +3059,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       var cards = document.querySelector('.idmp-cards'); if (cards) cards.querySelectorAll('input[data-batch-cb]').forEach(function (cb) { cb.checked = allCk.checked; });
       _renderBatchBar(tab);
     });
-    thSel.appendChild(allCk); htr.appendChild(thSel);
+    thSel.appendChild(allCk); htr.appendChild(thSel); htr.appendChild(el('th', 'idmp-rowind'));
     // §GRID-COLS: DocStatus and Posted render IN PLACE in their own dictionary columns (the twin-only leading Status / trailing Posted
     //   columns, added when the old 7-column cut dropped them, are gone - legacy shows exactly the IsDisplayedGrid fields)
     var showPosted = _showPostedAffordance();
@@ -3066,7 +3070,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     cols.forEach(function (f) { var th = el('th', null, f.name); th.setAttribute('data-ad-col', f.columnName); if (f.customWidth) { th.style.width = f.customWidth; th.style.minWidth = f.customWidth; th.style.maxWidth = f.customWidth; } htr.appendChild(th); });
     thead.appendChild(htr); table.appendChild(thead);
     var tb = el('tbody');
-    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 1; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
+    if (!_records.length) { var tr = el('tr'); var td = el('td', null, 'No records'); td.colSpan = (cols.length || 1) + 2; td.style.color = '#888'; tr.appendChild(td); tb.appendChild(tr); }
     _records.forEach(function (rec, i) {
       var tr = el('tr'); tr.dataset.i = i; if (i === _recIdx) tr.classList.add('idmp-grid-cur');   // the current row (GridTabRowRenderer.setCurrentRow)
       var pk = _pkOf(tab, rec);
@@ -3076,6 +3080,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       ck.addEventListener('click', function (e) { e.stopPropagation(); });   // checkbox ≠ open-form
       ck.addEventListener('change', function () { if (ck.checked) _gridSel[pk] = 1; else delete _gridSel[pk]; _renderBatchBar(tab); var sa = document.getElementById('idmp-grid-selall'); if (sa) sa.checked = _selectedRecs(tab).length === _records.length; });
       tdCk.appendChild(ck); tr.appendChild(tdCk);
+      var tdInd = el('td', 'idmp-rowind' + (i === _recIdx ? ' row-indicator-selected' : '')); tdInd.title = _findMsg('EditRecord', 'Edit Record'); tr.appendChild(tdInd);
+      tdInd.addEventListener('click', function (ev) { ev.stopPropagation();   // GridTabRowRenderer :1072-1077: a click on the current row's indicator edits in the form; on any other row it selects
+        if (i === _recIdx) _openRowForm(tab, i); else _gridSelect(tab, i, recVal(rec, _keyCol(tab))); });
       cols.forEach(function (f) {
         var td;
         if (!cellShown(f, rec)) { td = el('td', 'idmp-gcell-hidden'); }
@@ -3091,7 +3098,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         }
         td.setAttribute('data-ad-col', f.columnName); tr.appendChild(td);
       });  // data-ad-col → per-field lineage hover (W-FIELD-LINEAGE)
-      tr.addEventListener('click', function () { _saveAndNavigate(function () { _recIdx = i; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); }); });
+      // GridView :1031-1072: one click never opens the form. A user's click always lands on a cell (status, Posted, hidden); only a script calling tr.click() has the row itself as target, and those keep their open-this-record meaning.
+      tr.addEventListener('click', function (ev) { if (ev.target === tr) { _openRowForm(tab, i); return; } if (i !== _recIdx) _gridSelect(tab, i, recVal(rec, _keyCol(tab))); });
       tb.appendChild(tr);
     });
     table.appendChild(tb);
@@ -5011,23 +5019,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   table resolves). onUnsupported (read-only per AD / older overlay / no pk) → open the record FORM (the classic
   //   row-click, so a read-only cell is never a dead click); onCancel (Escape/unchanged) → repaint the cell from the
   //   pre-edit HTML; onCommit → overlay:committed already refolds the grid (renderBody), nothing more to do here.
+  function _gridSelect(tab, idx, pk) {
+    _saveAndNavigate(function () { _recIdx = idx; _setSel(tab); renderBody(); renderToolbar(); _histPush('record');
+      console.log('§GRID-SELECT table=' + tab.tableName + ' row=' + idx + ' key=' + pk + ' (click on a non-current row selects it; a click on the current row edits)'); });
+  }
+  function _openRowForm(tab, idx) { _saveAndNavigate(function () { _recIdx = idx; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); console.log('§GRID-OPEN-FORM table=' + tab.tableName + ' row=' + idx); }); }
+  // ADTabpanel :341,:1509-1511: a double-click on the list toggles to the form. Delegated: the first click of the pair re-renders the grid, so no listener on a row survives to the dblclick.
+  document.addEventListener('dblclick', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest('.idmp-grid tbody tr[data-ad-record]') : null; if (!t || (ev.target.closest('.idmp-cbcol'))) return;
+    var tab = _curTab(), idx = Number(t.dataset.i); if (!tab || !(idx >= 0)) return;
+    _openRowForm(tab, idx);
+  });
   function _editGridCell(tab, rec, col, td, recIdx) {
     var tn = tab.tableName ? String(tab.tableName).toLowerCase() : null;
     var pk = rec ? recVal(rec, _keyCol(tab)) : null;
-    var openForm = function () { _recIdx = recIdx; _setSel(tab); _viewMode = 'form'; renderBody(); renderToolbar(); _histPush('record'); };
     // GridView.onEvent ON_CLICK (org.adempiere.ui.zk .../adwindow/GridView.java:1031-1072): a click on a row that is NOT the current row only changes the
-    //   current row (onSelectedRowChange -> GridTab.navigate; toolbar, Zoom Across and the lens follow it); a click on the CURRENT row enters edit mode.
-    if (recIdx !== _recIdx) {
-      _saveAndNavigate(function () { _recIdx = recIdx; _setSel(tab); renderBody(); renderToolbar(); _histPush('record');
-        console.log('§GRID-SELECT table=' + tab.tableName + ' row=' + recIdx + ' key=' + pk + ' (click on a non-current row selects it; a click on the current row edits)'); });
-      return;
-    }
-    if (!tn || pk == null || String(pk) === '' || !window.__crud || typeof window.__crud.editCell !== 'function' || !_crudHas(tn)) { openForm(); return; }
+    //   current row (onSelectedRowChange -> GridTab.navigate; toolbar, Zoom Across and the lens follow it); a click on the CURRENT row enters edit mode, and a read-only column simply takes no editor.
+    if (recIdx !== _recIdx) { _gridSelect(tab, recIdx, pk); return; }
+    if (!tn || pk == null || String(pk) === '' || !window.__crud || typeof window.__crud.editCell !== 'function' || !_crudHas(tn)) { console.log('§GRID-CLICK-RO table=' + (tab.tableName || '') + ' col=' + col + ' (not editable here: stays in the grid)'); return; }
     if (td.classList.contains('idmp-cell-edit')) return;   // already editing this cell
     var prevHtml = td.innerHTML;
     _withFoldedEntry(tn, 'update', function () {
       window.__crud.editCell(tn, pk, col, td, {
-        onUnsupported: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; openForm(); },
+        onUnsupported: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; console.log('§GRID-CLICK-RO table=' + tab.tableName + ' col=' + col + ' (read-only: stays in the grid)'); },
         onCancel: function () { td.classList.remove('idmp-cell-edit'); td.innerHTML = prevHtml; },
         onCommit: function () { /* overlay:committed → renderBody repaints the grid with the new value */ }
       });
