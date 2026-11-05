@@ -544,8 +544,8 @@
   function gateOp(op, ctx) {
     if (!op || !op.ownerGated) return { ok: true };
     ctx = ctx || {};
-    if (ctx.owner == null || ctx.actor == null || String(ctx.actor) !== String(ctx.owner))
-      return { ok: false, reason: 'owner' };
+    // §DEL (ERP_IDEMPIERE_UX_PARITY.md, TWIN CARDINAL RULE): the owner compare that stood here refused every record the session user had not created. Legacy has no such rule (GridTable.dataSave/dataDelete: MRole.canUpdate only,
+    //   the twin's _gateRecordAccess); every shipped GardenWorld order was unusable by GardenAdmin (CreatedBy=100).
     // CAS set-if-unset / set-if-match: when a cas column is declared and an expected baseline is supplied,
     // it must equal the record's current value (a stale read loses) — the erp_replay CLAIM CAS, generalized.
     if (op.cas != null || ctx.casCol != null) {

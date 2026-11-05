@@ -394,6 +394,14 @@
       openForm('update', e, id == null ? null : id);
     });
   }
+  // deleteNow - the toolbar's Delete after legacy's Dialog.ask "DeleteRecord?" (AbstractADWindowContent.onDeleteCallback): commits, then cb({ok,error}). §DEL
+  function deleteNow(table, id, cb) {
+    _ensureStore(function () {
+      var key = String(table || '').toLowerCase(), e = entryFor(key);
+      if (!e || !CORE.verbEnabled(e, 'delete')) { console.log('§CRUD-DELETE table=' + key + ' skipped (delete not permitted)'); if (cb) cb({ ok: false, error: 'You cannot delete records of this file for audit reasons' }); return; }
+      getRecord(key, function (rec) { var op = CORE.buildOp('delete', e, {}, rec || {}, { id: id }); op._onDone = cb; applyOp(op, e); }, id);
+    });
+  }
   function hostDelete(table, id) {
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
@@ -690,7 +698,9 @@
     var rec = gatherVals(e), flips = 0, withLogic = 0;
     var base = (_formCtx && _formCtx.verb === 'update' && _formCtx.baseline) || null;   // §GT.7: the record's own state (Processed/IsActive…)
     if (base) { var m = {}, k; for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) m[k] = base[k]; for (k in rec) if (Object.prototype.hasOwnProperty.call(rec, k)) m[k] = rec[k]; rec = m; }
-    var ctx = rec;
+    // GridField.get_ValueAsString -> Env.getContext(WindowNo, TabNo, name): the row, then the window, i.e. the shallower tabs' current rows. Row values win (ad_evaluator resolveVar reads the record first).
+    //   Only the row was passed, so a field's DisplayLogic on a parent column (Task Line @IsCommitment@) never saw it (W-DELETE-PO C14).
+    var ctx = (global.APP && global.APP._winCtx) || rec;
     (e.fields || []).forEach(function (f) {
       var hasLogic = [f.displaylogic, f.readonlylogic, f.mandatorylogic].some(function (s) { return s != null && String(s).trim() !== ''; });
       if (hasLogic) withLogic++;
@@ -1510,7 +1520,6 @@
     if (canC && !isCreate)  b.push('<button class="ic-vb" data-v="copy" title="' + esc(T('tb.copy', 'Copy')) + ' (Alt+C)">' + esc(T('tb.copy', 'Copy')) + '</button>');
     b.push('<button class="ic-vb ic-save" data-v="save" disabled title="' + esc(T('tb.save', 'Save')) + ' (Alt+S)">' + esc(T('tb.save', 'Save')) + '</button>');
     if (canC)               b.push('<button class="ic-vb" data-v="savenew" disabled title="' + esc(T('tb.saveNew', 'Save & New')) + ' (Alt+A)">' + esc(T('tb.saveNew', 'Save&New')) + '</button>');
-    if (canD && !isCreate)  b.push('<button class="ic-vb ic-del" data-v="delete" title="' + esc(T('tb.delete', 'Delete')) + ' (Alt+D)">' + esc(T('tb.delete', 'Delete')) + '</button>');
     b.push('<button class="ic-vb" data-v="ignore" disabled title="' + esc(T('tb.ignore', 'Ignore — discard unsaved edits')) + ' (Alt+Z)">' + esc(T('tb.ignore', 'Ignore')) + '</button>');
     b.push('<button class="ic-vb" data-v="refresh" title="' + esc(T('tb.refresh', 'Refresh')) + ' (Alt+E)">' + esc(T('tb.refresh', 'Refresh')) + '</button>');
     return '<div class="ic-bar" role=toolbar>' + b.join('') + '<span class=ic-grow></span><span class=ic-dirty style="display:none">' + esc(T('inline.unsaved', '● unsaved')) + '</span></div>' +
@@ -1569,7 +1578,6 @@
     wire('refresh', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
     wire('new', function () { if (_inlineOpts && typeof _inlineOpts.onNew === 'function') _inlineOpts.onNew(); });
     wire('copy', function () { if (_inlineOpts && typeof _inlineOpts.onCopy === 'function') _inlineOpts.onCopy(); });
-    wire('delete', function () { _inlineConfirmDelete(e, id); });
     _formCtx = { verb: verb, e: e, id: id, baseline: orig || {}, inline: true };
     _cancelQuietBuffer();
     if (verb === 'update' && !_tryResume(e, id)) _offerDraftRestore(e, id);
@@ -1597,36 +1605,29 @@
   }
   // _inlineConfirmDelete — iDempiere Delete with an INLINE confirm (no modal): the verb bar becomes a confirm strip.
   //   Delete commits the SAME signed reversible-tombstone op (CRUD_DELETE); Cancel restores the editor.
-  function _inlineConfirmDelete(e, id) {
-    if (!_inlineHost) return;
-    var bar = _inlineHost.querySelector('.ic-bar'); if (!bar) return;
-    bar.innerHTML = '<span class=ic-confirm>Delete this ' + esc(fname(e.key)) + '? <em>(a reversible tombstone — the History ↶ can reverse it)</em></span>' +
-      '<span class=ic-grow></span><button class="ic-vb ic-del" data-c="del">Delete</button><button class="ic-vb" data-c="cancel">Cancel</button>';
-    bar.querySelector('[data-c="del"]').addEventListener('click', function () {
-      console.log('§INPLACE-DELETE table=' + e.key + ' id=' + (id == null ? 'new' : id) + ' tombstone (inline confirm, ring not fanned)');
-      applyOp(CORE.buildOp('delete', e, {}, _inlineBaseline || {}, { id: id }), e);
-      if (_inlineOpts && typeof _inlineOpts.afterDelete === 'function') _inlineOpts.afterDelete();
-    });
-    bar.querySelector('[data-c="cancel"]').addEventListener('click', function () { if (_inlineOpts && typeof _inlineOpts.refresh === 'function') _inlineOpts.refresh(); });
-  }
   // editInline / createInline / copyInline — host-callable inline mounts (the form view calls these instead of the
   //   modal). opts: {onDirty(d) [T3 host blocks Process], refresh() [re-mount from tip], onNew()/onCopy() [host swaps
   //   to a fresh/cloned create], afterSaveCreate()/afterDelete()/afterDiscardNew() [host leaves new-mode], onUnsupported()}.
   // §GT: the new row's parent LINK (GridField.defaultFromParent) — set even when the link field is not displayed.
   var _inlineSeed = null;
+  // The newest mount request wins. The host re-renders while a form's record read is still pending, and those reads can finish out of order: an older one landing last made its abandoned mount the form, so every later read of the
+  //   fields went to inputs nobody can see and a real edit answered "No changes" (W-DELETE-PO C13: edit a record, reload, edit it again).
+  var _inlineReq = 0;
   function editInline(table, id, host, opts) {
     opts = opts || {}; _inlineSeed = null;
+    var req = ++_inlineReq;
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
       if (!e) { console.log('§INPLACE-EDIT table=' + key + ' skipped (no crud spec)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
       getRecord(key, function (rec) {
+        if (req !== _inlineReq) { console.log('§INLINE-STALE-MOUNT table=' + key + ' id=' + (id == null ? 'null' : id) + ' req=' + req + ' newest=' + _inlineReq + ' skipped'); return; }
         var vals = assignVals(e, rec || {});
         renderInline('update', e, vals, rec || {}, id == null ? null : id, host, opts);
       }, id == null ? null : id);
     });
   }
   function createInline(table, host, opts) {
-    opts = opts || {};
+    opts = opts || {}; _inlineReq++;
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
       if (!e || !CORE.verbEnabled(e, 'create')) { console.log('§INPLACE-NEW table=' + key + ' skipped (create not permitted)'); if (typeof opts.onUnsupported === 'function') opts.onUnsupported(); return; }
@@ -1638,6 +1639,7 @@
     });
   }
   function copyInline(table, fromId, host, opts) {
+    _inlineReq++;
     opts = opts || {}; _inlineSeed = opts.seedVals || null;
     _ensureStore(function () {
       var key = String(table || '').toLowerCase(), e = entryFor(key);
@@ -2061,9 +2063,16 @@
       var rows = K.rowsByIds(db, ids);
       return K.appendOpsRecords(_IDB, OPS_STORE, rows).then(function (keys) {
         rows.forEach(function (r, i) { console.log('§OPLOG-APPEND key=' + keys[i] + ' id=' + r.id + ' op_uuid=' + (r.op_uuid || 'null')); });
+        _bimStoreSync(rows);
         return _relayPush(rows).then(function () { return _deliverCommitted(rows, db); });
       }).catch(function (e) { console.warn('§OPLOG-APPEND error', e && e.message); });
     } catch (e) { console.warn('§OPLOG-APPEND error', e && e.message); return Promise.resolve(); }
+  }
+  // _bimStoreSync — every commit and every History reversal passes _sidePersist: a pushed Project Order row they touched is copied to the viewer's store (bim_orders_overlay.js syncRows). Never fails the commit. §DEL
+  function _bimStoreSync(rows) {
+    var B = global.BimOrdersOverlay, list = B && B.touched ? B.touched(rows) : [];
+    if (!list.length || !global.SQL) return;
+    try { withTipQuery(function (q) { B.syncRows(global.SQL, q, list); }); } catch (e) { console.log('§BIM_PUSH_WRITE error ' + (e && e.message)); }
   }
   // _relayPush — Implementing ERP_MULTIUSER_CONCURRENCY_POC.md §Relay Wiring item 1 — Witness: W-N-CONVERGE.
   // Best-effort, fire-and-forget: register the just-appended row(s) with the relay (erp_sync_relay.js's
@@ -2822,14 +2831,7 @@
     var ML = global.ModelLayer, MVb = global.AdModelVal;
     var observing = !!(MVb && typeof MVb.hasSubscribers === 'function' && MVb.hasSubscribers(op.table));   // the topic bus (ad_modelval.js): someone listens on this table - the save must run the model path so its events exist
     op._observed = null;
-    if (ML && op.op_type === 'CRUD_DELETE' && observing && typeof MVb.queueObserve === 'function' && MVb.hasObservers(op.table, MVb.topicOf('POST_DELETE'))) {   // PO.delete :4544 postDelete - the host row is deleted by this op, delivered after its commit
-      withBundle(function (bdb) {
-        var sh = SIDE ? _tipShadowOn(bdb, _sideTables(SIDE)) : [], old = null;
-        try { old = _modelQuery(bdb)('SELECT * FROM ' + op.table + ' WHERE ' + op.table + '_id=?', [op.id])[0] || null; } finally { _tipShadowOff(bdb, sh); }
-        var bag = []; MVb.queueObserve(bag, MVb.topicOf('POST_DELETE'), { table: op.table, record: old, recordOld: null }); op._observed = bag; cb([]);
-      });
-      return;
-    }
+    if (ML && op.op_type === 'CRUD_DELETE') { _modelDeleteGo(op, cb); return; }   // §DEL: every delete is PO.delete, whatever is registered: the FK rules apply to every table
     var listens = !(!ML || op.op_type === 'CRUD_DELETE' || !observing && !(ML.MODEL[op.table] && ML.MODEL[op.table].afterSave) && !(global.AdModelVal && global.AdModelVal.hooksFor && Object.keys(global.AdModelVal.hooksFor(op.table)).some(function (t) { return /^AFTER_/.test(t); })));
     if (!listens) {
       // nothing is registered in CODE for this table - but a dictionary row may still listen: AD_Table_ScriptValidator (TAN / TAC) is stage 3 of the same dispatcher (ad_rule.js, §10.8). Same gate, read where the rows are (the tip).
@@ -2843,6 +2845,21 @@
       return;
     }
     _modelAfterSaveGo(op, db, cb);
+  }
+  // _modelDeleteGo - PO.delete for the row this op deletes (ModelLayer.run timing DELETE, over the tip): beforeDelete, validators, FK rules, afterDelete. The model's ops join the host op's signed group;
+  //   a refusal seals nothing. The model's own delete of the host row is dropped (the host op IS that delete), and {__opRef} indexes are re-based on [host, ...the rest].
+  function _modelDeleteGo(op, cb) {
+    modelRun({ table: op.table, timing: 'DELETE', id: op.id }, function (mr) {
+      if (!mr) { cb([]); return; }
+      if (!mr.ok) { var why = mr.error || mr.msg || 'refused'; console.log('§MODEL-DELETE table=' + op.table + ' id=' + op.id + ' refused: ' + why); cb([], why); return; }
+      op._observed = mr.observed && mr.observed.length ? mr.observed : null;
+      var at = -1; mr.ops.forEach(function (o, i) { if (at < 0 && o.op_type === 'CRUD_DELETE' && o.table === op.table && String(o.id) === String(op.id)) at = i; });
+      var shift = function (v) { return (v && typeof v === 'object' && v.__opRef != null) ? { __opRef: v.__opRef < at ? v.__opRef + 1 : v.__opRef } : v; };
+      var ops = mr.ops.filter(function (o, i) { return i !== at; }).map(function (o) { var c = JSON.parse(JSON.stringify(o)); if (c.fields) Object.keys(c.fields).forEach(function (k) { c.fields[k] = shift(c.fields[k]); });
+        if (c.changes) Object.keys(c.changes).forEach(function (k) { c.changes[k].new = shift(c.changes[k].new); }); c.id = shift(c.id); return c; });
+      console.log('§MODEL-DELETE table=' + op.table + ' id=' + op.id + ' ops=' + ops.length + ' tables=' + JSON.stringify(ops.reduce(function (m, x) { m[x.table] = (m[x.table] || 0) + 1; return m; }, {})));
+      cb(ops);
+    });
   }
   function _modelAfterSaveGo(op, db, cb) {
     var nextId = 1; try { var r = db.exec('SELECT COALESCE(MAX(id),0) FROM kernel_ops'); if (r.length) nextId = Number(r[0].values[0][0]) + 1; } catch (e) {}
@@ -2881,7 +2898,7 @@
   }
   function _commitCrudSealed(op, K, db, done) {
     _modelAfterSave(op, db, function (modelOps, refusal) {
-      if (refusal) { console.log('§MODEL-SAVE-ROLLBACK table=' + op.table + ' op=' + op.op_type + ' nothing sealed: ' + refusal); toast('Save refused: ' + String(refusal).slice(0, 140)); done(); return; }
+      if (refusal) { console.log('§MODEL-SAVE-ROLLBACK table=' + op.table + ' op=' + op.op_type + ' nothing sealed: ' + refusal); toast((op.op_type === 'CRUD_DELETE' ? '' : 'Save refused: ') + String(refusal).slice(0, 140)); if (op._onDone) op._onDone({ ok: false, error: refusal }); done(); return; }
       try {
         var params = { table: op.table, id: op.id == null ? null : op.id };
         if (op.op_type === 'CRUD_UPDATE')      { params.changes = op.changes; if (op.actor != null) params.actor = op.actor; }
@@ -2908,6 +2925,7 @@
               try { global.dispatchEvent(new CustomEvent('overlay:committed',
                 { detail: { table: op.table, op_type: op.op_type, id: op.id == null ? null : op.id, createdId: createdId } })); } catch (ev) {}
               _settleSave({ ok: true, op_type: op.op_type, createdId: createdId });
+              if (op._onDone) op._onDone({ ok: true });
               done();
             });
           });
@@ -3277,7 +3295,7 @@
                     applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
-                    update: hostUpdate, remove: hostDelete,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
+                    update: hostUpdate, remove: hostDelete, deleteNow: deleteNow,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE
                     editInline: editInline, createInline: createInline, copyInline: copyInline,   // P2/P3 (W-INPLACE-*): in-place editable form view (no modal, no ✎ Edit) — edit/new/copy
                     editCell: editCell,   // P4 (W-INPLACE-GRID-LIVE): row-wise grid cell edit → ONE signed CRUD_UPDATE (GridView parity)
                     previewInline: previewInline,   // §SAVE-PREVIEW (ERP_FRIENDLY_OPS_LENS.md §16): the Save chain up to the commit, nothing committed

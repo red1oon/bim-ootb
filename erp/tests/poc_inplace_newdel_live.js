@@ -76,7 +76,7 @@ const newFormState = (page) => page.evaluate(() => {
   return { mounted: !!m, isNew: !!document.querySelector('.idmp-form-new'),
            bp: m ? (m.querySelector('[data-col="c_bpartner_id"]') || {}).value : null,
            docno: m ? ((m.querySelector('[data-col="documentno"]') || {}).value) : null,
-           hasCopy: !!(m && m.querySelector('.ic-vb[data-v="copy"]')), hasDelete: !!(m && m.querySelector('.ic-vb[data-v="delete"]')) };
+           hasCopy: !!(m && m.querySelector('.ic-vb[data-v="copy"]')), hasDelete: !!document.querySelector('#idmp-toolbar [data-tb="delete"]') };
 });
 
 (async () => {
@@ -152,13 +152,13 @@ const newFormState = (page) => page.evaluate(() => {
   const preDelPks = await gridPks(page);
   const killPk = preDelPks.filter(p => p < 0)[0];
   await openRow(page, killPk);
-  const delClicked = await clickVerb(page, 'delete');
+  const delClicked = await page.locator('#idmp-toolbar [data-tb="delete"]').click({ timeout: 8000 }).then(() => true).catch(() => false);
   await page.waitForTimeout(400);
-  const confirmShown = await page.evaluate(() => !!document.querySelector('#idmp-inline-mount .ic-confirm') && !document.querySelector('#crudForm.open'));
+  const confirmShown = await page.locator('#idmp-delete-ov [data-del-ok]').isVisible().catch(() => false) && await page.evaluate(() => !document.querySelector('#crudForm.open'));   // a real, visible question: §DEL found the old strip hidden by .ic-bar since #366
   console.log('§INPLACE-NEWDEL ACT4 killPk=' + killPk + ' delClicked=' + delClicked + ' confirmStrip=' + confirmShown);
-  ok('verb-bar Delete shows an INLINE confirm strip (no modal)', delClicked && confirmShown);
+  ok('toolbar Delete asks a visible question (legacy Dialog.ask "DeleteRecord?")', delClicked && confirmShown);
   const delMark = logs.length;
-  await page.evaluate(() => { const b = document.querySelector('#idmp-inline-mount .ic-confirm') ? document.querySelector('#idmp-inline-mount [data-c="del"]') : null; if (b) b.click(); });
+  await page.locator('#idmp-delete-ov [data-del-ok]').click({ timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1600);
   const persistD = lastLog(/§CRUD-PERSIST .*op=CRUD_DELETE/);
   const afterDel = await gridPks(page);

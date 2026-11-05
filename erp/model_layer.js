@@ -449,12 +449,72 @@
     var M = MODEL[table] || {};
     if (M.beforeDelete) { ev(trx, 'M.beforeDelete', table); var e0 = M.beforeDelete(trx, row); if (e0) return { ok: false, error: e0 }; }   // PO.delete → beforeDelete (model) before the validators
     var e1 = fire(trx, repl ? 'BEFORE_DELETE_REPLICATION' : 'BEFORE_DELETE', table, row, rx); if (e1) return { ok: false, error: e1 };
+    if (opts && opts.fk) { var e4 = fkOnDelete(trx, table, row); if (e4) return { ok: false, error: e4 }; }   // the window path only: PO.delete :4329-4337 + the database's FK rules, inside this trx
     ev(trx, 'WRITE_DELETE', table); trx.del(table, row);
     if (M.afterDelete) { ev(trx, 'M.afterDelete', table); var e2 = M.afterDelete(trx, row); if (e2) return { ok: false, error: e2 }; }
     var e3 = fire(trx, 'AFTER_DELETE', table, row, rx); if (e3) return { ok: false, error: e3 };
     if (repl) trx.say('§BUS_REPLICA table=' + table + ' delete fired=beforeDeleteReplication (not beforeDelete)');
     postEvent(trx, 'POST_DELETE', table, row, null, repl);                   // PO.java:4544
     return { ok: true };
+  }
+  // ── §DEL (bim-compiler prompts/ERP_IDEMPIERE_UX_PARITY.md): what legacy's DELETE does to the rows that point at this one. W-DELETE-PO C9 judges fkPlan against pg_constraint. ──
+  // MColumn.getReferenceTableName (the column -> table a foreign key points at) + getForeignKeyConstraint (null type = N, no constraint for D). Read once from the dictionary; no table named.
+  var MSG_DEPENDENT = 'Record not deleted - dependent record found', MSG_PROCESSED = 'Cannot delete completed/processed transactions';   // AD_Message DeleteErrorDependent, CannotDeleteTrx
+  var _fkByTarget = null, _fkRecord = null;
+  var FK_FIXED = { 21: 'c_location', 25: 'c_validcombination', 31: 'm_locator', 35: 'm_attributesetinstance', 33: 's_resourceassignment', 53370: 'ad_chart' }, FK_VIEW = { ad_allclients_v: 'ad_client', ad_allusers_v: 'ad_user', ad_allroles_v: 'ad_role' };
+  // fk_rules.js = the legacy database's own foreign keys (patches/build_fk_rules.js). A table it does not know (a Ninja/plugin module) takes the rule its dictionary states: FKConstraintType is what legacy would create it from
+  //   (MColumn.getForeignKeyConstraint). Model Cascade (M) and AD_Table+Record_ID (PO_Record) live only in the dictionary, for every table. AD_Column.IsActive plays no part: a constraint does not care.
+  function fkLoad(q) {
+    if (_fkByTarget) return;
+    var FR = typeof FK_RULES !== 'undefined' ? FK_RULES : (typeof module !== 'undefined' && module.exports ? (function () { try { return require('./fk_rules'); } catch (e) { return null; } })() : (typeof window !== 'undefined' ? window.FK_RULES : null));
+    var known = {}, by = {}, rec = [], model = {}, RULE = { a: 'N', c: 'C', n: 'S' };
+    if (FR) String(FR.tables).split(',').forEach(function (t) { known[t] = 1; });
+    q("SELECT lower(t.tablename) AS tn, lower(c.columnname) AS cn, c.fkconstrainttype AS ft, c.ad_reference_id AS rf, c.ad_reference_value_id AS rv, c.iskey AS k, lower(tr.tablename) AS rn " +
+      "FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id LEFT JOIN ad_ref_table rt ON rt.ad_reference_id=c.ad_reference_value_id LEFT JOIN ad_table tr ON tr.ad_table_id=rt.ad_table_id " +
+      "WHERE COALESCE(t.isview,'N')='N'").forEach(function (r) {
+      var rf = Number(r.rf), rule = r.ft == null ? '' : String(r.ft), target = null;
+      if (rule === 'D') return;
+      if (rf === 200202 || rf === 200240) { if (!rule) return; rec.push({ table: r.tn, column: r.cn, rule: rule, uu: rf === 200240 }); return; }
+      if (r.k === 'Y' || r.cn === r.tn + '_uu') return;
+      if (rule !== 'M' && known[r.tn]) return;   // the database speaks for this table
+      if (!rule) { if (/^(ad_client_id|ad_org_id|createdby|updatedby)$/.test(r.cn)) return; rule = 'N'; }   // a module's blank: MColumn.getForeignKeyConstraint :1278-1279 creates NoAction, :1138-1141 not for these four
+      if (rf === 19 || rf === 200234 || ((rf === 30 || rf === 200235) && !Number(r.rv))) target = r.cn.slice(0, -3);
+      else if (rf === 18 || rf === 200233 || rf === 30 || rf === 200235) target = r.rn;
+      else if (rf === 28) target = r.cn === 'ad_orgbp_id' ? 'ad_org' : r.cn === 'c_projecttype_id' ? 'c_projecttype' : null;
+      else if (rf === 32 && r.cn !== 'binarydata') target = 'ad_image';
+      else target = FK_FIXED[rf] || null;
+      if (!target) return;
+      target = FK_VIEW[target] || target;
+      if (known[r.tn]) { model[r.tn + '.' + r.cn + '.' + target] = 1; return; }
+      (by[target] = by[target] || []).push({ table: r.tn, column: r.cn, rule: rule, uu: rf === 200233 || rf === 200234 || rf === 200235 });
+    });
+    if (FR) Object.keys(FR.fk).forEach(function (ch) { String(FR.fk[ch]).split(',').forEach(function (e) { var p = e.split(':'), m = model[ch + '.' + p[0] + '.' + p[1]];
+      (by[p[1]] = by[p[1]] || []).push({ table: ch, column: p[0], rule: m ? 'M' : RULE[p[2]], uu: /_uu$/.test(p[0]) }); }); });
+    _fkByTarget = by; _fkRecord = rec;
+  }
+  function fkPlan(q, table) { fkLoad(q); return (_fkByTarget[String(table).toLowerCase()] || []).slice(); }
+  // PO_Record.exists + deleteModelCascade + deleteRecordCascade + setRecordNull (PO.java:4279-4337), then the DELETE's own FK behaviour: a -> refuse, c -> delete (no PO hooks), n -> null. A refusal fails the whole trx, as the rollback does.
+  function fkOnDelete(trx, table, row) {
+    var q = trx.q.bind(trx), plan = fkPlan(q, table), idc = trx.idCol(table), id = row[idc], uuv = row[table + '_uu'], n = { refused: 0, cascaded: 0, nulled: 0, model: 0 }, err = null;
+    var refs = function (p) { var w = {}; w[p.column] = p.uu ? uuv : id; if ((p.uu ? uuv : id) == null) return []; return trx.find(p.table, w).filter(function (c) { return !(p.table === table && String(c[trx.idCol(p.table)]) === String(id)); }); };
+    plan.forEach(function (p) { if (err || p.rule !== 'M') return; refs(p).forEach(function (c) { if (err) return; var r = remove(trx, p.table, c, { fk: true, force: true }); n.model++; if (!r.ok) err = r.error; }); });
+    if (!err) {
+      var tid = null; try { tid = tableIdOf(q, table); } catch (e) {}
+      if (tid != null) _fkRecord.forEach(function (p) { if (err || (p.uu ? uuv : id) == null) return;
+        var w = { ad_table_id: tid }; w[p.column] = p.uu ? uuv : id;
+        var rs = trx.find(p.table, w); if (!rs.length) return;
+        if (p.rule === 'M') rs.forEach(function (c) { if (err) return; var r = remove(trx, p.table, c, { fk: true, force: true }); n.model++; if (!r.ok) err = r.error; });
+        else if (p.rule === 'N') { err = MSG_DEPENDENT + ' -> ' + p.table; n.refused++; }
+        else if (p.rule === 'O') rs.forEach(function (c) { var ch = {}; ch[p.column] = null; trx.update(p.table, c, ch); n.nulled++; });
+      });
+    }
+    if (!err) plan.forEach(function (p) { if (err || p.rule === 'M') return; var rs = refs(p); if (!rs.length) return;
+      if (p.rule === 'N') { err = MSG_DEPENDENT; n.refused += rs.length; trx.say('§DEL-FK refused table=' + table + ' id=' + id + ' by=' + p.table + '.' + p.column + ' rows=' + rs.length); }
+      else if (p.rule === 'C') rs.forEach(function (c) { if (err) return; var e = fkOnDelete(trx, p.table, c); if (e) { err = e; return; } trx.del(p.table, c); n.cascaded++; });
+      else if (p.rule === 'S') rs.forEach(function (c) { var ch = {}; ch[p.column] = null; trx.update(p.table, c, ch); n.nulled++; });
+    });
+    trx.say('§DEL-FK table=' + table + ' id=' + id + ' refs=' + plan.length + ' model=' + n.model + ' cascaded=' + n.cascaded + ' nulled=' + n.nulled + ' refused=' + n.refused);
+    return err;
   }
   function removeReplica(trx, table, row) { return remove(trx, table, row, { isReplication: true }); }
 
@@ -702,6 +762,12 @@
         r = { ok: !e, error: e };
         if (!e) postEvent(trx, spec.isNew ? 'POST_CREATE' : 'POST_UPDATE', table, rec, spec.old || null, false);   // the host row IS saved: its post event rides this group (delivered after the host commits it)
       }
+      else if (spec.timing === 'DELETE') {   // §DEL: a window's Delete = GridTable.dataDelete :2184-2192 + PO.delete. The host commits this group: its own op is in r.ops, as every other row's
+        var drow = trx.get(table, spec.id);
+        if (!drow) r = { ok: false, error: 'Could not delete record: ' + table + ' ' + spec.id };
+        else if (!spec.force && drow.processed === 'Y') r = { ok: false, error: MSG_PROCESSED };
+        else r = remove(trx, table, drow, { fk: true, force: !!spec.force });
+      }
       else if (spec.timing === 'PROCESS') { r = spec.fn(trx, spec); }   // a plugin process run in ONE Trx: its op group is all-or-none and traced by §EVENT_SEQ
       else if (spec.timing === 'BEFORE_SAVE') {   // PO.beforeSave derivations for a record the HOST will write: returns the derived columns, no ops
         var rec2 = {}; for (var k2 in spec.record) rec2[k2.toLowerCase()] = spec.record[k2];
@@ -725,7 +791,7 @@
   function deliverObserved(res, ctx, resolve) { return MV.deliverObserved(res && res.observed !== undefined ? res.observed : res, ctx || {}, resolve); }
 
   return { PO: PO, po: po, newRecord: newRecord, setDocNoAllocator: setDocNoAllocator, columnsOf: columnsOf, setPoster: setPoster, getPoster: function () { return _poster; }, clientAccounting: clientAccounting, MV: MV, Trx: Trx, D: D, N: N, isNewId: isNewId, keyColsOf: keyColsOf, newPO: newPO, copyValues: copyValues, saveEx: saveEx, registerModel: registerModel, unregisterModel: unregisterModel, saveReplica: saveReplica, fireReplica: fireReplica, saveReplicaEx: saveReplicaEx, removeReplica: removeReplica, deliverObserved: deliverObserved, unregisterDocAction: unregisterDocAction, removeOwner: removeOwner, describe: describe, MODEL: MODEL, fire: fire,
-           save: save, remove: remove, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
+           save: save, remove: remove, fkPlan: fkPlan, registerDocAction: registerDocAction, docActionFor: docActionFor, DOCS: DOCS,
            uniqueError: uniqueError,   // B0: the legacy unique-index refusal, ONE implementation (ws_adinterface.js no longer has its own)
            eventSeq: function (trx) { return (trx && trx._events || []).map(function (e) { return e.event + '@' + e.table; }); }, processIt: processIt, runWorkflow: runWorkflow, workflowOf: workflowOf, tableIdOf: tableIdOf, run: run };
 });
