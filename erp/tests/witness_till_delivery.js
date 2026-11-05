@@ -125,7 +125,7 @@ function clean(r) { var o = {}; Object.keys(r).forEach(function (c) { if (r[c] !
     var cats = await pg.$$eval('#cats [data-cat]', function (b) { return b.map(function (x) { return x.getAttribute('data-cat'); }); });
     for (var c of cats) { await pg.click('#cats [data-cat="' + c + '"]'); if (await vis()) { await pg.click('#products .prod[data-pid="' + pid + '"]'); return true; } if (await pg.$('#cats [data-cat-up]')) await pg.click('#cats [data-cat-up]'); } return false; }
   async function payCash() { var tot = await pg.$eval('#t-tot', function (e) { return e.textContent; }); await pg.click('#east .key[data-key="="]'); await pg.waitForSelector('#u8.on'); await pg.click('#tabs [data-tab="cash"]'); await pg.fill('#tender-amount', tot); await pg.click('#pay-ok'); await pg.waitForSelector('#u9.on', { timeout: 20000 });
-    var key = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.textContent.split('  ')[1]; }); await pg.click('#rc-ok'); return key; }
+    var key = await pg.$eval('#receipt .rf[data-f="Receipt"]', function (e) { return e.getAttribute('data-v'); }); await pg.click('#rc-ok'); return key; }
   var keys = [], shape = {};
   async function ringShift(n) { var ks = []; for (var i = 0; i < n; i++) { await clickProduct(128); if (i % 2 === 0) await clickProduct(129); var k = await payCash(); ks.push(k); shape[k] = { lines: i % 2 === 0 ? 2 : 1, tenders: 1 }; keys.push(k); } return ks; }
   async function tillVisit() { var r0 = relay.n, p0 = relay.put, h0 = relay.hubPut; await pg.evaluate(function () { return window.Till.visit(); }); relay.tillHub = (relay.tillHub || 0) + relay.hubPut - h0; return { n: relay.n - r0, put: relay.put - p0 }; }

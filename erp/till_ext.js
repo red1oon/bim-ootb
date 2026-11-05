@@ -26,7 +26,7 @@
     if (!os.length && !ps.length) return null;
     var m = /-([SRP])(\d+)$/.exec(key), lines = os.map(function (r) { return { pid: r.m_product_id, name: r.pname || ('product ' + r.m_product_id), qty: Number(r.qtyordered), price: Number(r.priceactual) }; });
     var tt = A.C.totals(lines, A.S.taxEnv);
-    return { key: key, kind: m ? m[1] : 'S', number: m ? Number(m[2]) : 0, lines: lines, pays: ps, tag: (os[0] || ps[0]).description, refundOf: ((os[0] || {}).linedescription || '').replace(/^Refund of /, '') || null, gross: tt.ok ? tt.gross : null };
+    return { key: key, kind: m ? m[1] : 'S', number: m ? Number(m[2]) : 0, lines: lines, pays: ps, tag: (os[0] || ps[0]).description, refundOf: ((os[0] || {}).linedescription || '').replace(/^Refund of /, '') || null, gross: tt.ok ? tt.gross : null, tt: tt };
   }
   async function refunded(key) { return Number((await A.rows('SELECT count(*) AS n FROM i_order WHERE linedescription=' + A.q('Refund of ' + key)))[0].n) > 0; }
   function ticketText(t) {
@@ -38,7 +38,7 @@
     else {   // the device store was cleared: rebuild from the rows (no tendered / change / discount lines)
       var t = await loadTicket(key); if (!t) { A.msg('Ticket does not exist', 'warn'); return false; }
       var ap = { parts: t.pays.map(function (p) { var n = { X: 'cash', K: 'cheque', C: 'magcard', A: 'bank' }[p.tendertype]; return { name: n, tendered: Math.abs(A.C.cents(p.payamt)), applied: Math.abs(A.C.cents(p.payamt)), ref: p.r_pnref, auth: p.r_authcode }; }) };
-      model = A.C.receiptModel({ type: t.kind, number: key, date: A.nowIso(), terminal: A.S.cfg.tillKey, user: cashier(), lines: t.lines.map(function (l) { return { name: l.name, price: A.C.cents(l.price), qty: l.qty, value: A.C.lineNetCents(l.qty, l.price) }; }), gross: t.gross, applied: ap, change: 0 });
+      model = A.C.receiptModel(Object.assign({ type: t.kind, number: key, date: A.nowIso(), terminal: A.S.cfg.tillKey, user: cashier(), lines: t.lines.map(function (l) { return { name: l.name, price: A.C.cents(l.price), qty: l.qty, value: A.C.lineNetCents(l.qty, l.price) }; }), gross: t.gross, applied: ap, change: 0 }, A.rx({}, t.tt)));
     }
     A.S.lastReceipt = { key: key, model: model, gross: 0, change: change, firstCash: false }; A.S.afterReceipt = A.S.screen === 'editsales' ? 'editsales' : A.S.screen === 'reprintlist' ? 'sales' : A.S.screen;
     A.showReceipt(true); A.msg('Printed', 'ok'); A.log('§TILL_REPRINT key=' + key + ' fields=' + model.length); return true;
@@ -94,7 +94,7 @@
       A.log('§TILL_DISCOUNT line rate=' + rate + ' parent=' + l.pid);
     } else if (name === 'Print preview') {
       var folded = A.C.foldLines(t.lines), tt2 = A.C.totals(folded, A.S.taxEnv);
-      var rm = A.C.receiptModel({ type: t.type, number: '(preview)', date: A.nowIso(), terminal: A.S.cfg.tillKey, user: cashier(), lines: t.lines.map(function (x) { return { name: x.name, price: A.C.cents(x.price), qty: x.qty, value: A.C.lineNetCents(x.qty, x.price) }; }), gross: tt2.ok ? tt2.gross : 0, applied: { parts: [] }, change: 0 });
+      var rm = A.C.receiptModel(Object.assign({ type: t.type, number: '(preview)', date: A.nowIso(), terminal: A.S.cfg.tillKey, user: cashier(), lines: t.lines.map(function (x) { return { name: x.name, price: A.C.cents(x.price), qty: x.qty, value: A.C.lineNetCents(x.qty, x.price) }; }), gross: tt2.ok ? tt2.gross : 0, applied: { parts: [] }, change: 0 }, A.rx(t, tt2)));
       A.S.lastReceipt = { key: 'preview', model: rm, gross: 0, change: 0, firstCash: false }; A.S.afterReceipt = 'sales'; A.showReceipt(true); return;
     } else if (name === 'Open drawer') { st().shift.nosales = (st().shift.nosales || 0) + 1; A.saveStore(); A.msg('Drawer opened', 'ok'); A.log('§TILL_DRAWER nosales=' + st().shift.nosales); return; }
     else if (name === 'Virtual Keyboard') { toggleKbd(); return; }
