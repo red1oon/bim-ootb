@@ -27,8 +27,11 @@
   function bag() { var s = A.S.store; s.setup = s.setup || {}; return s.setup; }
   async function cpos() { try { return (await A.rows('SELECT * FROM c_pos ORDER BY c_pos_id LIMIT 1'))[0] || {}; } catch (e) { return {}; } }
   async function derive() { var o = {}; try { var c = (await A.rows('SELECT ad_language AS l FROM ad_client WHERE ad_client_id=' + Number(A.S.cfg.client)))[0] || {}; o.lang = c.l || ''; } catch (e) { /* none */ } return o; }
-  var cache = { cp: {}, dv: {} };
-  async function render() { draw(); cache.cp = await cpos(); cache.dv = await derive(); draw(); }   // first paint is synchronous (a till screen never shows empty); C_POS / client values fill in
+  var cache = { cp: {}, dv: {}, sup: false };
+  // §40.1 who may change the main-till flag: the signed-in cashier holds an active AD role with client-level authority (AD_Role.UserLevel has 'C'): the twin of uniCenta's Administrator/Manager roles, which alone list JPanelConfiguration
+  // (Role.Administrator.xml:196, Role.Manager.xml:196; the panel opens only for a role that lists it, JPrincipalApp.java:458, AppUser.java:191).
+  async function supervisor() { var c = A.S.cashier; if (!c) return false; try { return (await A.rows("SELECT 1 AS x FROM ad_user_roles ur JOIN ad_role r ON r.ad_role_id=ur.ad_role_id WHERE ur.ad_user_id=" + Number(c.id) + " AND ur.isactive='Y' AND r.isactive='Y' AND r.userlevel LIKE '%C%' LIMIT 1")).length > 0; } catch (e) { return false; } }
+  async function render() { draw(); cache.cp = await cpos(); cache.dv = await derive(); cache.sup = await supervisor(); draw(); }   // first paint is synchronous (a till screen never shows empty); C_POS / client values fill in
   function draw() {
     var s = bag(), cp = cache.cp, dv = cache.dv, tabs = ['G', 'L', 'S', 'K', 'C'], on = render.tab || 'G';
     A.$('#cfg-tabs').innerHTML = tabs.map(function (t) { return '<button data-cfg-tab="' + t + '"' + (t === on ? ' class="on"' : '') + '>' + T[t] + '</button>'; }).join('');
@@ -44,12 +47,14 @@
         : k[3] === 'bool' ? '<input type="checkbox" data-key="' + key + '"' + (val ? ' checked' : '') + (ro ? ' disabled' : '') + '>' : '<input data-key="' + key + '" type="' + (k[3] === 'num' ? 'number' : 'text') + '" value="' + A.esc(val) + '"' + (ro ? ' disabled' : '') + '>';
       return '<div class="cfgrow" data-scope="' + A.esc(sc) + '"><label>' + A.esc(k[2]) + ' ' + inp + '</label>' + (note ? ' <small>' + A.esc(note) + '</small>' : '') + '</div>';
     }).join('');
+    if (on === 'S') { var lan = A.S.lan, isM = !!(lan && lan.isMain()); A.$('#cfg-body').insertAdjacentHTML('beforeend', '<div class="cfgrow" data-scope="main"><label>This is the branch main till <input type="checkbox" id="cfg-main"' + (isM ? ' checked' : '') + (cache.sup ? '' : ' disabled') + '></label> <small>' + (cache.sup ? 'set here by the branch supervisor; HQ does not set or check it' : 'the branch supervisor sets this') + '</small></div>'); }
     A.log('§TILL_SETUP_VIEW tab=' + T[on] + ' keys=' + K.length + ' device=' + K.filter(function (k) { return k[5] === 'device'; }).length + ' mode=' + (A.S.mode || 'standard'));
   }
   function save() {
     var s = bag(), n = 0; A.$$('#cfg-body [data-key]:not([disabled])').forEach(function (e) { var k = e.getAttribute('data-key'), v = e.type === 'checkbox' ? e.checked : e.type === 'number' ? Number(e.value) : e.value; if (s[k] !== v) { s[k] = v; n++; } });
     var m = A.$('#cfg-mode'); if (m) s['machine.ticketsbag'] = m.value;
     if (window.TillTheme) window.TillTheme.apply(s['ui.theme'] || 'classic');   // §36.3: the theme applies at once
+    var mc = A.$('#cfg-main'); if (mc && !mc.disabled && A.S.lan) { var sm = A.S.lan.setMain(mc.checked, { supervisor: cache.sup, name: A.S.cashier && A.S.cashier.name }); n += sm.changed ? 1 : 0; }   // D13: the only writer of the flag
     A.saveStore(); A.log('§TILL_SETUP_SAVE till=' + A.S.cfg.tillKey + ' changed=' + n + ' mode=' + s['machine.ticketsbag']); A.msg('Saved. A changed Tickets mode applies at the next start.', 'ok'); return s;
   }
   function init(api) {
@@ -58,7 +63,7 @@
       var b = ev.target.closest && ev.target.closest('button'); if (!b) return;
       if (b.id === 'cfg-open') A.go('setup'); else if (b.id === 'cfg-save') save(); else if (b.id === 'cfg-back') A.go('menu'); else if (b.hasAttribute('data-cfg-tab')) { render.tab = b.getAttribute('data-cfg-tab'); render(); }
     });
-    window.TillSetup = { keys: K, modes: MODES, render: render, save: save, bag: bag, count: function () { return K.length; } };
+    window.TillSetup = { isSupervisor: supervisor, keys: K, modes: MODES, render: render, save: save, bag: bag, count: function () { return K.length; } };
   }
   window.TillSetupInit = init;
 })();

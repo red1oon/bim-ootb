@@ -70,7 +70,7 @@ var MUTS = {   // [file, anchor (exactly once), replacement, arm that must go re
       if (u.port === String(RPORT)) return route.continue();
       if (u.pathname.indexOf('/pipe/') === 0) REQ.push({ dev: name, m: route.request().method(), p: u.pathname, q: u.searchParams.get('prefix') || '' }); return route.continue(); });
     await pg.addInitScript(function () { var q = new URLSearchParams(location.search).get('xcfg'); if (q) { var c = JSON.parse(atob(q)); window.TEAM_PLAN_TRUST = c.trust; } });
-    if (name === 'D') await pg.addInitScript(function () { localStorage.setItem('tilllan.v1:12-MAIN', JSON.stringify({ main: { on: true } })); });   // §38: D is the flagged main till (a SODA kind-M row sets this on a real till)
+    if (name === 'D') await pg.addInitScript(function () { localStorage.setItem('tilllan.v1:12-MAIN', JSON.stringify({ main: { on: true } })); });   // §38: D is the flagged main till (the supervisor's Configuration setting sets this on a real till)
     await pg.goto(base + urlPath, { waitUntil: 'load' }); await pg.waitForFunction(ready, null, { timeout: 240000 });
     return { name: name, pg: pg, logs: logs, ctx: ctx };
   }

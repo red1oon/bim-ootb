@@ -66,7 +66,8 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
   var ev = function (page, fn, arg) { return page.evaluate(fn, arg); };
   var ORD = function (key, pid, qty) { return [{ documentno: key, m_product_id: pid, qtyordered: qty, priceactual: 1 }]; };
   var relayReqs = function (pre) { return relayLog.filter(function (l) { return l.indexOf('§RELAY ') === 0 && (!pre || l.indexOf(pre) >= 0); }).length; };
-  var sodaRow = function (till) { return [{ kind: 'M', value: till }]; };
+  var SUP = { supervisor: true, name: 'sup' };   // D13: the branch supervisor sets the flag (TillLan.setMain), no HQ row
+  var sodaRow = function () { return SUP; };
   var stockRows = [{ kind: 'S', m_product_id: 100, detail: JSON.stringify({ qty: 50 }) }, { kind: 'S', m_product_id: 200, detail: JSON.stringify({ qty: 30 }) }];
 
   try {
@@ -80,7 +81,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
 
     if (ARMS.indexOf('collect') >= 0) { ARM = 'collect';
       var T1 = await pc('T1'), T2 = await pc('T2'), M = await pc('M', { q: { main: '1' } });
-      await ev(M, function (rows) { L.applySodaFlag(rows); }, sodaRow('M'));
+      await ev(M, function (rows) { L.setMain(true, rows); }, sodaRow('M'));
       await ev(T1, function (a) { return L.deposit('O-T1-S1', a.o1, []); }, { o1: ORD('O-T1-S1', 100, 2) });
       await ev(T2, function (a) { return L.deposit('O-T2-S1', a.o1.concat(a.o2), []); }, { o1: ORD('O-T2-S1', 100, 1), o2: ORD('O-T2-S1', 200, 4) });
       var c1 = await ev(M, function () { return L.collect(); }), c2 = await ev(M, function () { return L.collect(); });
@@ -102,7 +103,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
 
     if (ARMS.indexOf('query') >= 0) { ARM = 'query'; wipe();
       var XQ = { expected: 'Q1,Q2,Q3,QM' }, D = await pc('Q3', { q: XQ }), Q1 = await pc('Q1', { q: XQ }), Q2 = await pc('Q2', { q: XQ }), Mq = await pc('QM', { q: Object.assign({ main: '1' }, XQ) });
-      await ev(Mq, function (a) { L.applySodaFlag(a.m); L.applySodaStock(a.s); L.received(100, 5); return true; }, { m: sodaRow('QM'), s: stockRows });
+      await ev(Mq, function (a) { L.setMain(true, a.m); L.applySodaStock(a.s); L.received(100, 5); return true; }, { m: sodaRow('QM'), s: stockRows });
       await ev(Q1, function (a) { return L.deposit('O-Q1-1', a.o, []); }, { o: ORD('O-Q1-1', 100, 4) }); await ev(Q2, function (a) { return L.deposit('O-Q2-1', a.o, []); }, { o: ORD('O-Q2-1', 100, 3) });
       for (var pg of [Q1, Q2, D, Mq]) await ev(pg, function () { return L.beat(); });
       var ansP = ev(D, function () { return L.ask(100, { tries: 40 }); }); await sleep(300); await ev(Mq, function () { return L.answerQueries(); }); var ans = await ansP; var stq = await ev(Mq, function () { return L.stock(100); });
@@ -121,12 +122,12 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
 
     if (ARMS.indexOf('flag') >= 0) { ARM = 'flag';
       var Td = await pc('T9'); 
-      var res = await ev(Td, async function () { var out = {}; ['collect', 'answerQueries'].forEach(function (k) { out[k] = null; }); try { out.collect = await L.collect(); } catch (e) { out.collect = { ranOnNonMain: String(e.message) }; } try { out.answer = await L.answerQueries(); } catch (e) { out.answer = { ranOnNonMain: String(e.message) }; } try { out.recv = L.received(1, 1); } catch (e) { out.recv = { ranOnNonMain: String(e.message) }; } out.setOther = L.applySodaFlag([{ kind: 'M', value: 'SOMEONE-ELSE' }]); out.on = L.isMain(); return out; });
+      var res = await ev(Td, async function () { var out = {}; ['collect', 'answerQueries'].forEach(function (k) { out[k] = null; }); try { out.collect = await L.collect(); } catch (e) { out.collect = { ranOnNonMain: String(e.message) }; } try { out.answer = await L.answerQueries(); } catch (e) { out.answer = { ranOnNonMain: String(e.message) }; } try { out.recv = L.received(1, 1); } catch (e) { out.recv = { ranOnNonMain: String(e.message) }; } out.setOther = L.setMain(true, { supervisor: false }).refused === 'not-supervisor' ? false : true; out.on = L.isMain(); return out; });
       check('collect-refused', res.collect && res.collect.refused === 'not-main' && /not the branch main till/.test(res.collect.message), 'collect refused with a clear message on a non-main till', res.collect);
       check('answer-refused', res.answer && res.answer.refused === 'not-main', 'stock check refused', res.answer);
       check('receive-refused', res.recv && res.recv.refused === 'not-main', 'receive stock refused', res.recv);
-      check('flag-only-own-row', res.setOther === false && res.on === false, 'a SODA row for ANOTHER till key does not make this till main', res);
-      var self = await ev(Td, function () { return L.applySodaFlag([{ kind: 'M', value: 'T9' }]); }); check('flag-from-soda', self === true, 'the till\'s own SODA row sets the flag', self);
+      check('flag-only-supervisor', res.setOther === false && res.on === false, 'a non-supervisor cannot make this till main', res);
+      var self = await ev(Td, function (a) { return L.setMain(true, a).on; }, SUP); check('flag-from-supervisor', self === true, 'the supervisor sets the flag on this till', self);
       var ctor = await ev(Td, function () { try { TillLan.create({ tillKey: 'X', isMain: false, net: {}, lan: {}, state: {} }); return 'built'; } catch (e) { return String(e.message); } });
       check('ordinary-has-no-net', /relay only/.test(ctor), 'an ordinary till cannot even be constructed with an internet pipe', ctor);
       console.log('§BR_VERDICT W-MAIN-FLAG ' + (V.flag.failed ? 'FAIL' : 'PASS') + ' judged=' + V.flag.judged); }
@@ -134,7 +135,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
     if (ARMS.indexOf('airgap') >= 0) { ARM = 'airgap'; wipe(); NETREQ = {}; var base = relayReqs();
       var tills = {}; for (var t of ['A1', 'A2', 'A3']) tills[t] = await pc(t, { q: Object.assign({ expected: 'A1,A2,A3,AM' }, MUTNAME ? { net: NET + '/' + t + '/pipe' } : {}) });
       var AM = await pc('AM', { q: { main: '1', expected: 'A1,A2,A3,AM', net: NET + '/AM/pipe' } });
-      await ev(AM, function (a) { L.applySodaFlag(a.m); }, { m: sodaRow('AM') });
+      await ev(AM, function (a) { L.setMain(true, a.m); }, { m: sodaRow('AM') });
       var soda = await ev(AM, async function (s) { var b = await NET.get('soda/' + 'latest'); return b === null ? 'none' : 'got'; }, null);   // the ONE SODA pull
       var n = 0; for (var d = 0; d < 3; d++) for (var t2 of ['A1', 'A2', 'A3']) { n++; await ev(tills[t2], function (a) { return L.deposit(a.k, a.o, []); }, { k: 'O-' + t2 + '-' + d, o: ORD('O-' + t2 + '-' + d, 100, 1) }); }
       await ev(AM, function () { return L.collect(); });
@@ -150,7 +151,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
 
     if (ARMS.indexOf('down') >= 0) { ARM = 'down'; wipe();
       var B1 = await pc('B1', { q: { expected: 'B1,B2,BM' } }), B2 = await pc('B2', { q: { expected: 'B1,B2,BM' } }), BM = await pc('BM', { q: { main: '1', expected: 'B1,B2,BM' } });
-      await ev(BM, function (a) { L.applySodaFlag(a.m); }, { m: sodaRow('BM') });
+      await ev(BM, function (a) { L.setMain(true, a.m); }, { m: sodaRow('BM') });
       await ev(B1, function (a) { return L.deposit('O-B1-1', a.o, []); }, { o: ORD('O-B1-1', 100, 1) });
       await stopRelay();
       var dn = await ev(B1, async function (a) { var r1 = await L.deposit('O-B1-2', a.o, []); var r2 = await L.depositShift(1, [{ kind: 'T' }]); return { r1: r1, r2: r2, queued: ST.out.length }; }, { o: ORD('O-B1-2', 100, 2) });
@@ -167,7 +168,7 @@ function check(key, ok, label, info) { var v = V[ARM] = V[ARM] || { judged: 0, f
 
     if (ARMS.indexOf('mirror') >= 0) { ARM = 'mirror'; wipe(); NETREQ = {};
       var MM = await pc('MM', { q: { main: '1', expected: 'MM,MT', net: NET + '/MM/pipe' } }), MT = await pc('MT', { q: { expected: 'MM,MT' } });
-      await ev(MM, function (a) { L.applySodaFlag(a.m); }, { m: sodaRow('MM') });
+      await ev(MM, function (a) { L.setMain(true, a.m); }, { m: sodaRow('MM') });
       var SP = 's/' + 'ab'.repeat(32) + '/';
       await ev(MM, async function (a) { var e = function (x) { return new TextEncoder().encode(x); }; await NET.put(a.sp + 'o/hubkid/1', e('ROSTER')); await NET.put(a.sp + 'h/hubkid', e('HEAD1')); await NET.put(a.sp + 'm/p_x/o/hubkid/1', e('P')); return true; }, { sp: SP });
       await ev(MT, async function (a) { var e = function (x) { return new TextEncoder().encode(x); }; await LANPIPE.put(a.sp + 'o/tillkid/1', e('ENROLL')); await LANPIPE.put(a.sp + 'm/b_shop/o/hubkid/1', e('SODA-LAN-ONLY')); return true; }, { sp: SP });
