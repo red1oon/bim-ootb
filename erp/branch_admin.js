@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — branch_admin.js: the Branch POS Admin page. READ THE LOG (§EODA_* lines of erp/tests/witness_eoda.js), exit codes are not evidence.
-// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §26.4: uniCenta's Manager / back office as a Team device of the branch Org. It never rings a sale. It reads the branch-local POS_TillHandoff rows the tills wrote at Close Cash,
+// Implementing bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §26.4: uniCenta's Manager / back office as a Team device of the branch Org. It never rings a sale. It reads the POS_TillHandoff rows (the row shape; no longer a table or an op) the tills put on the BRANCH RELAY at Close Cash and the main till collected (§38),
 // shows the EODA screen, and makes the ONE send to head office: the tickets' real I_Order / I_Payment rows (flows F3 / B4, authored HERE, the tills hold theirs) + the branch-day statement (POS_BranchDayStatement, flow E1) in one
 // atomic group, then ONE Visit. "Send EODA" needs every till closed or a logged override reason; "Send status now" is the same send marked PARTIAL and exists only as a pressed button (D2): there is no timer that sends.
 // §37 Stock count (POS_PLUGIN_LOCAL_FIRST): an AD HOC, BLIND count of the branch's sales-floor locator keyed here; kept at the branch; only a count the supervisor ticked "Include this count in tonight's EODA" rides send() as I_Inventory rows.
@@ -23,7 +23,27 @@
   function saveSet() { try { localStorage.setItem(skey(), JSON.stringify(S.set)); } catch (e) { /* kept in memory */ } }
   function msg(t) { var el = $('#a-msg'); el.hidden = !t; el.textContent = t || ''; if (t) log('§EODA_MSG ' + t); }
 
-  async function read() { return EC.fold(await rows('SELECT * FROM pos_tillhandoff ORDER BY ABS(pos_tillhandoff_id)')); }
+  async function read() { return EC.fold(S.lan ? S.lan.handoffRows() : []); }   // §38: the shifts the tills put on the branch relay and the main till collected; the §26.3 POS_TillHandoff ops over the internet are gone
+  // ── §38: the MAIN TILL's LAN ops. The flag is the till's own (set from HQ through its SODA row, till.js applySoda); this page runs the ops only where it is set, and TillLan refuses them elsewhere.
+  function lanUrl() { var q = new URLSearchParams(location.search).get('relay'); try { return q || localStorage.getItem('branchrelay.url'); } catch (e) { return q; } }
+  function lanSetup() {
+    var tk = null, qk = new URLSearchParams(location.search).get('till'), lsk = [];
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf('tilllan.v1:') === 0) lsk.push(k.slice(11)); } } catch (e) { /* none */ }
+    lsk.forEach(function (k) { try { var st = JSON.parse(localStorage.getItem('tilllan.v1:' + k) || '{}'); if (st.main && st.main.on && (!qk || qk === k)) tk = k; } catch (e) { /* skip */ } });
+    var url = lanUrl(), key = 'tilllan.main.v1:' + (tk || 'none'), st = {}; try { st = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { st = {}; }
+    if (tk) { st.main = st.main || {}; st.main.on = true; }
+    var lan = url ? window.CommPipe.httpPipe(url.replace(/\/+$/, '') + '/pipe', 'lan') : { put: async function () { throw new Error('no branch relay'); }, get: async function () { throw new Error('no branch relay'); }, list: async function () { throw new Error('no branch relay'); } };
+    S.lan = window.TillLan.create({ tillKey: tk || 'none', isMain: true, lan: lan, state: st, expected: S.set.tills, now: Date.now, save: function () { try { localStorage.setItem(key, JSON.stringify(st)); } catch (e) { /* memory */ } }, log: log });
+    S.netPipe = new URLSearchParams(location.search).get('pipe') ? window.CommPipe.httpPipe(new URLSearchParams(location.search).get('pipe'), 'net') : null;   // the internet relay: EODA up / SODA down + the shared-stream mirror, this page only
+    S.lanPipe = lan; log('§LAN_ADMIN main=' + isMainTill() + ' till=' + (tk || '-') + ' relay=' + (url || 'none'));
+  }
+  async function lanCollect() {   // one pass: bridge the shared stream, collect the tills' lines, answer the dumb tills' stock questions; hands the per-till result to the §37 seam
+    if (!isMainTill()) { var rf = S.lan ? S.lan.requireMain('collect') : { refused: 'not-main' }; msg(rf.message || 'Not the main till'); return rf; }
+    if (S.netPipe) { try { await S.lan.mirror(S.netPipe, S.lanPipe); } catch (e) { log('§LAN_MIRROR skipped ' + (e && e.message)); } }
+    var c = await S.lan.collect(); await S.lan.answerQueries();
+    if (c.ok) collectTills({ reached: c.reached.map(function (t) { return { till: t, lines: Object.keys(S.lan.state.main.lines).filter(function (k) { return S.lan.state.main.lines[k].till === t; }).length }; }), notReached: c.notReached });
+    await render(); return c;
+  }
   var fmtSeries = function (s) { return Object.keys(s).sort().map(function (t) { return t + ' ' + s[t].first + '..' + s[t].last + ' x' + s[t].count; }).join(' | '); };
   async function render() {
     S.tills = await read(); var ds = EC.days(S.tills), cur = S.day;
@@ -76,8 +96,9 @@
   function collectTills(collected) { S.collected = { reached: (collected && collected.reached) || [], notReached: (collected && collected.notReached) || [] }; return S.collected; }
   async function gatherTills() { return S.collected || { reached: [], notReached: [] }; }
   // STUB (§37.4): "is this the flagged main till?" - ONE named function the §38 agent replaces with the real flag read (owner §35.3); true until then, so the screen shows on the branch POS admin.
-  function isMainTill() { return true; }
+  function isMainTill() { return !!(S.lan && S.lan.isMain()); }
   function countSave(include) {
+    { var rfc = S.lan.requireMain('count'); if (rfc) { msg(rfc.message); return rfc; } }
     return serial(async function () {
       if (!S.set.draft.length) { msg('Nothing counted yet'); log('§COUNT_SAVE INCONCLUSIVE no draft line: nothing judged'); return { refused: 'empty' }; }
       var loc = await salesLocator(); if (!loc) { msg('This branch has no sales-floor locator'); log('§COUNT_SAVE REFUSED no c_pos warehouse locator'); return { refused: 'no-locator' }; }
@@ -160,12 +181,14 @@
   // lines: optional { <confirm documentno>: [{ line, confirmed, scrapped }] }; no entry = a full receipt (Confirmed = Target, Scrapped = 0), as legacy's confirm is created (MMovementConfirm.create :62-90)
   function receiveStock(lines) {
     return serial(async function () {
+      var rfr = S.lan.requireMain('receive stock'); if (rfr) { msg(rfr.message); return rfr; }
       var s = await sodaRead(), n = 0; lines = lines || {};
       for (var i = 0; i < s.confirms.length; i++) {
         var c = s.confirms[i], cl = await readLines(c);
         var given = lines[c.documentno] || [], out = cl.map(function (x) { var g = given.filter(function (y) { return Number(y.line) === Number(x.line); })[0] || {}, conf = g.confirmed != null ? Number(g.confirmed) : Number(x.t), scr = g.scrapped != null ? Number(g.scrapped) : 0;
           return { lcuu: x.lcuu, line: x.line, m_product_id: x.p, m_locator_id: x.l, m_locatorto_id: x.lt, targetqty: Number(x.t), confirmedqty: conf, scrappedqty: scr, differenceqty: Number(x.t) - conf }; });   // DifferenceQty = Target - Confirmed (MMovementLineConfirm.beforeSave :169-172)
         var rr = out;
+        rr.forEach(function (r) { S.lan.received(r.m_product_id, r.confirmedqty); });   // §38.2.5: the main till's running record = SODA on-hand - collected lines + received
         S.set.receipts.push({ confirm: c.documentno, uu: c.uu, lines: rr, sent: false }); n++;   // addressed by _uu: the local pk of a replicated row is renumbered by every projection
         log('§SODA_RECEIVE confirm=' + c.documentno + ' movement=' + c.mdoc + ' lines=' + rr.length + ' confirmed=' + rr.map(function (r) { return r.confirmedqty + '/' + r.targetqty; }).join(',') + ' scrapped=' + rr.map(function (r) { return r.scrappedqty; }).join(','));
       }
@@ -176,6 +199,7 @@
   // the ONE send (§26.4). partial = the pressed "Send status now"; otherwise "Send EODA" (every till closed, or a logged override reason)
   function send(partial, override) {
     return serial(async function () {
+      var rf = S.lan.requireMain('EODA send'); if (rf) { msg(rf.message); return rf; }   // §38.2.3: every LAN op checks the main-till flag
       var v = await render(), day = S.day, ov = String(override == null ? $('#a-override').value : override).trim();
       var closed = v.tills.filter(function (t) { return t.closed; });
       if (!partial && !v.allClosed && !ov) { msg('Not every till is closed: give an override reason to send'); log('§EODA_SEND REFUSED day=' + day + ' open=' + v.tills.filter(function (t) { return !t.closed; }).map(function (t) { return t.tillKey; }).join(',') + ' (no override reason)'); return { refused: 'open-till' }; }
@@ -219,7 +243,7 @@
     window.addEventListener('online', netChip); window.addEventListener('offline', netChip);
   }
   function netChip() { $('#a-net').textContent = navigator.onLine === false ? 'offline' : 'online'; }
-  async function refresh() { var v = await E.TeamSync.visit(); log('§EODA_REFRESH sent=' + (v && v.rep ? v.rep.sent : 'none') + ' replicaIn=' + (v && v.replicaIn)); var rv = await render(); await renderSoda(); return rv; }
+  async function refresh() { await lanCollect(); var v = await E.TeamSync.visit(); log('§EODA_REFRESH sent=' + (v && v.rep ? v.rep.sent : 'none') + ' replicaIn=' + (v && v.replicaIn)); var rv = await render(); await renderSoda(); return rv; }
   function startLink() {
     if (S.link) S.link.stop();
     S.link = window.KdsLink.create({ E: E, kid: async function () { if (!S.kid) S.kid = (await E.TeamSync.pairState()).device; return S.kid; }, pollMs: S.set.pollMs, log: log, onVisit: async function () { await render(); await renderSoda(); } });
@@ -237,11 +261,12 @@
     S.cfg = { client: pos.ad_client_id, org: pos.ad_org_id, orgValue: org.value || String(pos.ad_org_id), key: (org.value || pos.ad_org_id) + '-admin' }; loadSet();
     if (qs.get('poll')) S.set.pollMs = Number(qs.get('poll')) * 1000;
     $('#a-org').textContent = 'Org ' + S.cfg.orgValue; $('#a-tills').value = S.set.tills.join(', ');
-    bind(); netChip();
+    lanSetup(); bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#a-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
     await render(); await renderSoda(); renderCount(); startLink();
-    window.BranchAdmin = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, countAdd: countAdd, countSave: countSave, countRemove: countRemove, gatherTills: gatherTills, collectTills: collectTills, isMainTill: isMainTill, salesLocator: salesLocator, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
+    window.BranchAdmin = { ready: true, lan: function () { return S.lan; }, lanCollect: lanCollect, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, countAdd: countAdd, countSave: countSave, countRemove: countRemove, gatherTills: gatherTills, collectTills: collectTills, isMainTill: isMainTill, salesLocator: salesLocator, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;
+    if (isMainTill()) { setInterval(function () { lanCollect().catch(function (e) { log('§LAN_COLLECT_ERR ' + (e && e.message)); }); }, S.set.pollMs); }   // the main till polls the branch relay (LAN only); the internet is touched only by EODA send, the SODA Visit and the mirror
     log('§EODA_BOOT admin=' + S.cfg.key + ' org=' + S.cfg.org + ' engine_ready_ms=' + ms + ' heap_mb=' + heap + ' poll_ms=' + S.set.pollMs);
   }
   boot().catch(function (e) { log('🔴 §EODA_BOOT ' + (e && e.stack || e)); });

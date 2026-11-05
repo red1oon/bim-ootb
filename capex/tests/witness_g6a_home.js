@@ -102,6 +102,7 @@ const bd = v => { let x = String(v == null ? 0 : v); if (/e/i.test(x)) x = Numbe
     await open(); await signIn('System', 'System');
     const inst = await pg.evaluate(async u => { const reg = window.PluginEngine._reg(); try { const b = await reg.installBundle(new URL(u, location.href).href); await reg.startBundle(b.id || b.manifest.id); await window.PluginEngine.persist(); return reg.list().filter(x => x.id === 'org.bimootb.capex').map(x => x.state); } catch (e) { return { error: e.message }; } }, '/capex/plugin/capex_dashboard.mjs');
     ck('H0 the System Administrator installed + started the capex bundle', Array.isArray(inst) && inst[0] === 'ACTIVE', inst); await pg.close();
+    for (let bw = 0; bw < 60 && !logs.some(l => /^§BIM_OVERLAY /.test(l)); bw++) await new Promise(r => setTimeout(r, 250));   // the overlay logs asynchronously: reading at once failed H1 now and then, on a clean main too
     await open(); const bootLogs = logs.slice(); await signIn('GardenWorld', 'GardenAdmin');
     const band = {}; ['C_Project', 'C_ProjectPhase', 'C_ProjectTask', 'C_ProjectLine', 'M_Product', 'M_Product_Category'].forEach(t => { const pk = t === 'C_ProjectLine' ? 'c_projectline_id' : t + '_ID'; band[t] = rows('SELECT COUNT(*) AS n FROM ' + t + ' WHERE ' + pk + '>=990000')[0].n; });
     const ov = bootLogs.find(l => /^§BIM_OVERLAY rows=/.test(l)) || '', ovC = (ov.match(/(\{.*\})/) || [])[1], ovJ = ovC ? JSON.parse(ovC) : {};
