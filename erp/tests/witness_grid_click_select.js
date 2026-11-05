@@ -5,13 +5,15 @@
 //   C1 click an editable cell of the 2nd row -> NO editor opens, still grid view, Zoom Across reports the 2nd row's key, `§GRID-SELECT row=1`
 //   C2 click the same cell again (now the current row) -> the inline editor opens on the 2nd row (Escape reverts, nothing written)
 //   C3 the 2nd row's <tr> carries idmp-grid-cur, the 1st does not
+//   §GRID-CLICK-2 (GridView :1031-1072, ADTabpanel :1509-1511, GridTabRowRenderer :604,:746-753), every click a REAL mouse click so it lands where a user's does:
+//   C4 a click on a read-only cell of the current row stays in the grid, no editor   C5 a double-click on a non-current row opens the form on THAT record   C6 the indicator cell is marked on the current row only, and moves with it
 // Run: node erp/tests/witness_grid_click_select.js > <log>   (RED on main before §GRID-CLICK, GREEN after)
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
 const http = require('http'), fs = require('fs'), path = require('path');
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');   // the repo root: erp/idempiere.html loads ../common/*
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.db': 'application/octet-stream', '.png': 'image/png', '.css': 'text/css', '.wasm': 'application/wasm', '.sql': 'text/plain' };
-const server = http.createServer((req, res) => { let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/idempiere.html';
+const server = http.createServer((req, res) => { let p = decodeURIComponent(req.url.split('?')[0]);
   fs.readFile(path.join(ROOT, p), (e, buf) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(buf); }); });
 let fails = 0, judged = 0;
 const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { fails++; console.log('§WGC ' + id + ' INCONCLUSIVE ' + claim + ' ' + JSON.stringify(info)); return; }
@@ -22,7 +24,7 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
   const logs = [], errs = []; page.on('console', m => logs.push(m.text())); page.on('pageerror', e => errs.push(e.message));
   try {
-    await page.goto('http://localhost:' + server.address().port + '/idempiere.html?seed=ad_seed.db&login=GardenAdmin&window=123', { waitUntil: 'networkidle' });
+    await page.goto('http://localhost:' + server.address().port + '/erp/idempiere.html?seed=ad_seed.db&login=GardenAdmin&window=123', { waitUntil: 'networkidle' });
     await page.waitForSelector('[data-ad-table]', { timeout: 20000 }).catch(async () => {   // same entry as W-INPLACE-GRID-LIVE: pick the login user when the URL did not log in
       const u = await page.$('#idmp-login-users .idmp-login-user:not(.disabled)'); if (u) { await u.click(); const okb = await page.$('#idmp-login-ok'); if (okb) await okb.click(); }
       await page.waitForSelector('[data-ad-table]', { timeout: 15000 }).catch(() => {}); });   // rows appear only after the legacy Find step (showAllRows)
@@ -51,7 +53,26 @@ const verdict = (id, claim, cond, info, inconclusive) => { if (inconclusive) { f
     await click(pick.key1); await page.waitForTimeout(900);
     const c2 = await cell(pick.key1);
     verdict('C2', 'a second click on the now-current row opens the inline editor: editing ' + c2.editing + ', input ' + c2.input, c2.editing && c2.input, c2);
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
+    if (await page.locator('#idmp-zoom-ov').count()) { await page.mouse.click(4, 4); await page.waitForTimeout(400); }   // the Zoom Across popup from C1 closes on a click outside it
+    // C6 the indicator
+    const ind = () => page.evaluate(() => Array.from(document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]')).filter(r => r.querySelector('td.idmp-rowind.row-indicator-selected')).map(r => r.getAttribute('data-ad-record')));
+    const i1 = await ind(); await page.locator('.idmp-grid tbody tr[data-ad-record="' + pick.key0 + '"] td.idmp-rowind').click(); await page.waitForTimeout(900); const i2 = await ind();
+    verdict('C6', 'indicator marks only the current row: on ' + JSON.stringify(i1) + ', after selecting row 1 ' + JSON.stringify(i2), i1.length === 1 && i1[0] === pick.key1 && i2.length === 1 && i2[0] === pick.key0, { i1, i2 });
+    // C4 a read-only cell of the current row, found from the dictionary-driven form of this grid: a cell whose editor refuses
+    const ro = await page.evaluate((k0) => { const tds = Array.from(document.querySelectorAll('.idmp-grid tbody tr[data-ad-record="' + k0 + '"] td[data-ad-col]')); return tds.map(t => t.getAttribute('data-ad-col')); }, pick.key0);
+    let judged4 = false;
+    for (const c of ro) { const n = logs.length, loc = page.locator('.idmp-grid tbody tr[data-ad-record="' + pick.key0 + '"] td[data-ad-col="' + c + '"]');
+      if (!(await loc.isVisible().catch(() => false))) continue; await loc.click().catch(() => {}); await page.waitForTimeout(500);
+      const ed = await page.evaluate((k) => !!document.querySelector('.idmp-grid tbody tr[data-ad-record="' + k + '"] td.idmp-cell-edit'), pick.key0);
+      if (ed) { await page.keyboard.press('Escape'); await page.waitForTimeout(300); continue; }
+      const st = await page.evaluate(() => ({ grid: document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]').length, form: !!document.getElementById('idmp-inline-mount') })), lg = logs.slice(n).find(x => /§GRID-CLICK-RO/.test(x)) || null;
+      verdict('C4', 'a click on read-only ' + c + ' of the current row stays in the grid: rows ' + st.grid + ', form ' + st.form + ', ' + lg, st.grid === pick.rows && !st.form && !!lg, { st, lg }); judged4 = true; break; }
+    if (!judged4) verdict('C4', 'a read-only cell on the current row (found none: every visible column took an editor)', false, ro, true);
+    // C5 double-click the other row
+    await page.locator('.idmp-grid tbody tr[data-ad-record="' + pick.key1 + '"] td[data-ad-col="' + pick.col + '"]').dblclick(); await page.waitForTimeout(1500);
+    const c5 = await page.evaluate(() => { const f = document.querySelector('[data-ad-record]:not(tr)'); return { grid: document.querySelectorAll('.idmp-grid tbody tr[data-ad-record]').length, mount: !!document.getElementById('idmp-inline-mount'), rec: f ? f.getAttribute('data-ad-record') : null }; });
+    verdict('C5', 'a double-click on a non-current row opens the form on it: form ' + c5.mount + ', record ' + c5.rec + ' (row 2 = ' + pick.key1 + ')', c5.mount && c5.grid === 0 && String(c5.rec) === String(pick.key1), c5);
   } catch (e) { if (!/no fixture/.test(e.message)) { fails++; console.log('§WGC ERROR ' + (e.stack || e)); } }
   console.log('§WGC page errors ' + errs.length + (errs.length ? ' ' + JSON.stringify(errs.slice(0, 3)) : ''));
   if (errs.length) fails++;
