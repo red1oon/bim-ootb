@@ -172,13 +172,13 @@ async function fillBpForm(page, marker) {
   await backToGrid(page);
   await page.waitForTimeout(300); await backToGrid(page);
 
-  // ════════════ ACT 3 — DELETE (P3: inline confirm strip, no modal) ════════════
+  // ════════════ ACT 3 — DELETE (§DEL: the toolbar asks, as legacy's Dialog.ask) ════════════
   await openRow(page, draftPk);
   await tapPill(page, 'formdel');
-  await page.waitForSelector('#idmp-inline-mount .ic-confirm', { timeout: 8000 }).catch(() => {});
+  await page.waitForSelector('#idmp-delete-ov [data-del-ok]', { state: 'visible', timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(400);
   const delRing = await ringOpen(page);
-  await page.evaluate(() => { const d = document.querySelector('#idmp-inline-mount [data-c="del"]'); if (d) d.click(); });
+  await page.evaluate(() => { const d = document.querySelector('#idmp-delete-ov [data-del-ok]'); if (d) d.click(); });
   await page.waitForTimeout(1400);
   await backToGrid(page);
   const afterDel = await gridPks(page);

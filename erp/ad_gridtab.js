@@ -159,6 +159,12 @@
   }
   // canInsert — GridTab.isInsertRecord (isReadOnly incl. m_parentNeedSave → false) + dataNew's detail guard.
   function canInsert(tm, q) { return !!tm && !tm.isReadOnly && tm.isInsertRecord && !(q && q.parentNeedSave); }
+  // canDelete — AbstractADWindowContent.java:2134-2136: GridTab.isDeleteRecord (:1566-1571 !isReadOnly && IsDeleteable) && !isSortTab && !processed. `changed` is the host's.
+  function canDelete(tm, rec) {
+    if (!tm || tm.isReadOnly || !tm.isDeleteable) return false;
+    var p = rec ? (rec.Processed != null ? rec.Processed : rec.processed) : null;
+    return !(p === 'Y' || p === true || p === 1);
+  }
 
   // admit(db, tableName, rows, where) — keep only the rows for which `where` is TRUE, evaluated by sqlite itself over a
   //   one-row derived table aliased as the tab table (every table column bound; numeric strings bound as numbers).
@@ -286,7 +292,7 @@
   }
 
   var API = { singleRow: singleRow, parseCustom: parseCustom, customString: customString, autoHideToSave: autoHideToSave, isAutoHide: isAutoHide, tabCustSave: tabCustSave, customizeLists: customizeLists, gridFields: gridFields, onlyCurrentClause: onlyCurrentClause, maxQueryRecords: maxQueryRecords, isQueryRequire: isQueryRequire, initialDecision: initialDecision, open: open, linkColumn: linkColumn, parentColumns: parentColumns, keyColumn: keyColumn, parseContext: parseContext,
-              query: query, canInsert: canInsert, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
+              query: query, canInsert: canInsert, canDelete: canDelete, admit: admit, indexOfKey: indexOfKey, tableColumns: tableColumns, value: _get };
   // ── §UDP-ORDER the row order of a tab (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-ORDER; Witness: W-UDP-ORDER).
   //   GridTab.getOrderByClause :1760-1789: the tab's OrderByClause, else the fields' SortNo slots 1..3 (|SortNo|, negative = DESC;
   //   GridTab.initTab :386-423 walks the fields in AD_Field_v order, a later field overwrites a slot), else "Created" (+ " DESC" on a
