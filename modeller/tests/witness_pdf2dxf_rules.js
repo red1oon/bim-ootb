@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // ⚠ DO NOT REMOVE — W-PD1 (prompts/PDF2BIM_VECTOR_PROBE.md §41, rules seam). Read the log after every run: exit code alone is not evidence, a SKIP or a VACUOUS only shows in the log.
-// THE ISSUE THIS PROVES OR DISPROVES: the Modeller's "from PDF image" step needs the drawing-reader's RULES (sheet model -> the 7 typed DXF texts) in pure JavaScript, byte for byte what the Python chain
+// THE ISSUE THIS PROVES OR DISPROVES: the Modeller's "from PDF drawing" step needs the drawing-reader's RULES (sheet model -> the 7 typed DXF texts) in pure JavaScript, byte for byte what the Python chain
 // (scripts/pdf2bim/*.py) produces from the SAME model. Does modeller/pdf2dxf/ (UMD modules, no fs, no child_process) reproduce, for EACH of the 9 oracle drawings (tb second Z B H S T G D):
 //   (1) every one of the 7 sheets BYTE-IDENTICAL to the oracle's typed/*.dxf   (2) inferred.json deep-equal, incl. .values   (3) the effective rosetta (rooms included) and template deep-equal
 //   (4) the §INFER / §ROOM(S) / §FILL log lines equal (and, reported separately, every other stage log line)   (5) the same result when loaded the way a page loads it (UMD, only `self`, no require)

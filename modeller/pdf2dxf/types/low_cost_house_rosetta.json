@@ -319,9 +319,9 @@
       "QF:grid_label_series"
     ],
     "_accept": {
-      "who": "owner",
+      "who": "the first-release rule of this building type (owner)",
       "date": "2026-11-04",
-      "reason": "i can accept as this is p-o-c to get to the end of gaps discovery"
+      "reason": "a proof of concept, for this type's first release"
     }
   },
   "electrical_p2": {

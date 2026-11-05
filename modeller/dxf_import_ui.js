@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
-  var V = '17';
+  var V = '18';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
     'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2beams.js', 'dxf2walls.js', 'dxf2slabs.js', 'dxf2steel.js', 'dxf2doortags.js', 'dxf2stairs.js', 'dxf2roofspots.js', 'dxf2gapguide.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
@@ -1111,7 +1111,7 @@
     inp.click();
   }
 
-  // ---- lane spec L39: Open ▸ 2D drawings from PDF image: the PDF becomes the 7 typed sheets in memory, then the same openFiles. All lazy: nothing here loads at boot ----
+  // ---- lane spec L39: Open ▸ 2D drawings from PDF drawing: the PDF becomes the 7 typed sheets in memory, then the same openFiles. All lazy: nothing here loads at boot ----
   var TAGP = '§PDF2DXF', _pdfLoaded = null, PDF_RULES = ['py_rt', 'type_template', 'tag_reader', 'fill_blanks', 'infer_type', 'emit_dxf_p1', 'read_rooms', 'add_plan_marks', 'elev_emit', 'to_std', 'section_emit', 'roof_emit', 'index'], PDF_TYPES = { rosetta: 'low_cost_house_rosetta', template: 'low_cost_single_storey_unit', glyphs: 'low_cost_house_tag_glyphs' };
   function pdfSay(t) { var s = document.getElementById('stat'); if (s) s.textContent = t; status(t); console.log(TAGP + ' ' + t); }
   function loadPdfScripts() {
