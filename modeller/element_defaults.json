@@ -897,6 +897,305 @@
     "off"
    ],
    "used_by": "dxf2suggest (§D108)"
+  },
+  "suggest.level_footing": {
+   "element": "suggest",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a plan no title or level name places takes its level from one distinct T/FOOTING value on the sheet: T/FOOTING: -1.250 m (§D109). 'off' = no such row",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D109)"
+  },
+  "loops.skew_tol": {
+   "element": "IfcColumn",
+   "value": 0.001,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "a closed loop of lines counts as square, in any direction, when its corners lie within this of a true rectangle in the frame of its own longest side (§D109: a CAD export is 0.05 to 0.1 mm off square, the snap tolerance is 0.01 mm). 0 = sheet-axis rectangles only",
+   "options": [
+    0.001,
+    0
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "bodies.touching_parts": {
+   "element": "IfcColumn",
+   "value": "one_body",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "rectangles of one direction that touch along a side are the parts of one body: the 2 flanges and the web of a built-up steel section drawn as 3 loops (§D109). 'separate' = one body per loop",
+   "options": [
+    "one_body",
+    "separate"
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "column.z_from_plans": {
+   "element": "IfcColumn",
+   "value": "plan_levels",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a column with no elevation height and no @BODYZ runs from the lowest plan that draws it to the next plan level above the highest plan that draws it (§D109). 'off' = a gap, left out",
+   "options": [
+    "plan_levels",
+    "off"
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "wall.min_thick": {
+   "element": "IfcWall",
+   "value": 0.05,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "a band of wall lines thinner than this is a finish line, not a wall (§D109: 28 pieces measured 10-20 mm). 0 = read them as walls",
+   "options": [
+    0.05,
+    0
+   ],
+   "used_by": "dxf2walls (§D109)"
+  },
+  "footing.z_from_plan": {
+   "element": "IfcFooting",
+   "value": "plan_level",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a footing-layer loop with no elevation height: top = the plan's level. One F mark inside = a pad, its thickness footing.depth; else a raft, thick by the labels inside it (<n>mm TH, RAFT <n>mm) or the raft around it (§D109). 'off' = a gap, left out",
+   "options": [
+    "plan_level",
+    "off"
+   ],
+   "used_by": "dxf2bodies (§D109)"
+  },
+  "beam.label_reach": {
+   "element": "IfcBeam",
+   "value": 2.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a beam's size label its two edge lines may run (§D109: one label was measured 2.3 m from its member). 0 = beams are not read from labels",
+   "options": [
+    2.5,
+    0
+   ],
+   "used_by": "dxf2beams (§D109)"
+  },
+  "beam.edge_tol": {
+   "element": "IfcBeam",
+   "value": 0.006,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "two parallel lines count as a beam's edges when their spacing is within this of the label's width, and pieces on one line within this are one run (§D109)",
+   "options": [
+    0.006,
+    0.003
+   ],
+   "used_by": "dxf2beams (§D109)"
+  },
+  "beam.span_split": {
+   "element": "IfcBeam",
+   "value": "label_midpoint",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "labels of different marks along one pair of edge lines split it at the midpoint between them: the drawing does not state where one mark ends (§D109: 3 marks on one 42.565 m pair). 'one_body' = the first label takes the whole run",
+   "options": [
+    "label_midpoint",
+    "one_body"
+   ],
+   "used_by": "dxf2beams (§D109)"
+  },
+  "wall.band_gap": {
+   "element": "IfcWall",
+   "value": 0.35,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "parallel wall lines closer than this are one wall, solid from outer line to outer line: with no wall type schedule a leaf cannot be told from a cavity (§D109: spacing peaks at 50 to 300 mm). 0 = walls are not read from their lines",
+   "options": [
+    0.35,
+    0
+   ],
+   "used_by": "dxf2walls (§D109)"
+  },
+  "slab.ground_on_raft": {
+   "element": "IfcSlab",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a raft holding an S.O.G-<n>mm label of a plan carries a ground slab on its own outline, n thick (§D109: the drawing states the thickness, not the slab's edge). 'off' = no such slab",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2slabs (§D109)"
+  },
+  "steel.label_reach": {
+   "element": "IfcBeam",
+   "value": 1.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a steel section label its member's line may run (§D109). 0 = steel is not read from labels",
+   "options": [
+    1.5,
+    0
+   ],
+   "min_line_m": 0.5,
+   "used_by": "dxf2steel (§D109)"
+  },
+  "steel.section_table": {
+   "element": "IfcBeam",
+   "value": "standard",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a UB label names a designation, not its web and flange. BS EN 10365 values taken from public references, not from the drawing and not checked against the standard itself (§D109). 'off' = a gap",
+   "options": [
+    "standard",
+    "off"
+   ],
+   "table_mm": {
+    "UB254x146x43": { "h": 259.6, "b": 147.3, "tw": 7.2, "tf": 12.7 },
+    "UB305x165x54": { "h": 310.4, "b": 166.9, "tw": 7.9, "tf": 13.7 },
+    "UB457x191x98": { "h": 467.2, "b": 192.8, "tw": 11.4, "tf": 19.6 }
+   },
+   "used_by": "dxf2steel (§D109)"
+  },
+  "door.tag_reach": {
+   "element": "IfcDoor",
+   "value": 3,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far from a door's tag its swing arc may be, the leaf then taking the schedule row's width and height (§D109: measured up to 2.6 m). 0 = doors are not read from tags",
+   "options": [
+    3,
+    0
+   ],
+   "radius_tol_m": 0.15,
+   "used_by": "dxf2doortags (§D109)"
+  },
+  "stair.flights": {
+   "element": "IfcStairFlight",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "3 or more parallel lines of one length, evenly spaced, are a flight's nosings; rise = (0.63 - tread) / 2, the drawing states no riser; a flight narrower than 0.6 m is no flight (§D109). 'off' = no flights",
+   "options": [
+    "read",
+    "off"
+   ],
+   "tread_min_m": 0.2,
+   "tread_max_m": 0.4,
+   "width_min_m": 0.6,
+   "blondel_m": 0.63,
+   "used_by": "dxf2stairs (§D109)"
+  },
+  "gate.unplaced_sheet": {
+   "element": "Set",
+   "value": "refuse",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a sheet the reader cannot place refuses the whole set, so nothing is converted past a sheet you meant to be read. 'set_aside' = the rest converts, each such sheet a counted gap with the reader's reason (§D110)",
+   "options": [
+    "refuse",
+    "set_aside"
+   ],
+   "used_by": "dxf2structure (§D110)"
+  },
+  "suggest.title_layout": {
+   "element": "Set",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a title ending LAYOUT names a plan, as a title ending PLAN does (§D110). 'off' = no view is read from it, and the sheet refuses the set",
+   "options": [
+    "read",
+    "off"
+   ],
+   "used_by": "dxf2suggest (§D110)"
+  },
+  "wall.tag_reach": {
+   "element": "IfcWall",
+   "value": 1.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far a wall tag may lie from the wall it names, on a plan layer typed walltag: the nearest wall of that plan's level takes the tag as its type name. The binding is by distance, not checked; a name, not a build-up, without the wall type schedule (§D110). 0 = no tag is read",
+   "options": [
+    1.5,
+    0
+   ],
+   "used_by": "dxf2walls (§D110)"
+  },
+  "wall.top_from_elevation": {
+   "element": "IfcWall",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a wall on the grid line an elevation stands on takes its top and base from that elevation's wall lines over its own span; other walls of that wing no higher than the wing's top (§D110). 'next_plan_level' = every wall stops at the next plan level",
+   "options": [
+    "read",
+    "next_plan_level"
+   ],
+   "line_reach_m": 0.5,
+   "elev_layer": "^A-WALL",
+   "parallel_tol": 0.001,
+   "z_tol_m": 0.000001,
+   "used_by": "dxf2walls (§D110)"
+  },
+  "guide.gap_sheets": {
+   "element": "Set",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "which sheet of the set's own register might close each gap, by the words of its title; it says a sheet might help, never that it will (§D110). 'off' = no guide",
+   "options": [
+    "read",
+    "off"
+   ],
+   "min_rows": 3,
+   "tint_radius_m": 1,
+   "needs": {
+    "GAP:beam_label_no_edges": ["FRAMING", "BEAM SCHEDULE"],
+    "GAP:door_tag_no_row": ["DOOR SCHEDULE"],
+    "GAP:door_tag_no_swing": ["DOOR", "DOORS"],
+    "GAP:footing_no_thickness": ["FOUNDATION", "FOOTING", "SCHEDULES DETAILS"],
+    "GAP:slab_no_outline": ["FINISH PLAN", "SLAB", "REINFORCEMENT PLAN"],
+    "GAP:wall_curved": ["GEOMETRY", "ENCLOSURE", "CURVED"],
+    "limit:glazing": ["GLAZING", "CURTAIN", "WINDOW", "ENCLOSURE"],
+    "limit:pad_thickness": ["FOUNDATION", "FOOTING", "SCHEDULES DETAILS"],
+    "limit:roof_edge": ["ROOF PLAN", "ROOF LAYOUT"],
+    "limit:stair_short": ["STAIR", "STAIRS"],
+    "limit:wall_top": ["ELEVATION", "ELEVATIONS", "SECTION", "SECTIONS"],
+    "limit:wall_type": ["WALL TYPE", "WALL TYPES", "WALL SCHEDULE"]
+   },
+   "labels": {
+    "GAP:beam_label_no_edges": "Beam labels with no edges drawn",
+    "GAP:door_tag_no_row": "Door tags with no schedule row",
+    "GAP:door_tag_no_swing": "Door tags with no swing drawn",
+    "GAP:footing_no_thickness": "Foundations with no thickness",
+    "GAP:slab_no_outline": "Floors with no outline",
+    "GAP:wall_curved": "Kinds of curved line not built",
+    "limit:glazing": "Glazing with no mullions",
+    "limit:pad_thickness": "Pads with an assumed thickness",
+    "limit:roof_edge": "Roof with no drawn edge",
+    "limit:stair_short": "Stair runs that stop short",
+    "limit:wall_top": "Walls whose top is not read",
+    "limit:wall_type": "Walls with no type name"
+   },
+   "used_by": "dxf2gapguide (§D110)"
+  },
+  "roof.from_spots": {
+   "element": "IfcRoof",
+   "value": "read",
+   "unit": "text",
+   "kind": "guess",
+   "basis": "a surface through the plan's TOS spot levels, inside what the spots reach; deck thickness and height over the steel from the sheet's own deck note (§D109). Not the roof's outline: nothing states its edge. 'off' = none",
+   "options": [
+    "read",
+    "off"
+   ],
+   "deck_above_steel_m": 0.05,
+   "deck_thick_m": 0.05,
+   "used_by": "dxf2roofspots (§D109)"
   }
  },
  "building_types": {

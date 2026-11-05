@@ -161,7 +161,7 @@
     if (!marks.length) sh.why = 'no DXF2BIM-MARK marking';
     else if (other.length) sh.why = other.join('; ');
     else if (d.view === 'PLAN' && typeof d.level === 'number' && !missing.length) { sh.role = 'plan'; sh.level = d.level; }
-    else if (d.view === 'ELEV' && d.face && !missing.length) { sh.role = 'elev'; sh.face = d.face; }
+    else if (d.view === 'ELEV' && (d.face || d.plane !== undefined) && !missing.length) { sh.role = 'elev'; sh.face = d.face; }
     else if (d.view === 'ROOF' && typeof d.roof === 'number' && !missing.length) { sh.role = 'roof'; sh.roofZ = d.roof; }   // BIMCompiler #182 (lane L2.3 D1): @VIEW=ROOF + @LEVEL + @ROOF
     else if (d.view === 'SECTION' && d.cut && !missing.length) { sh.role = 'section'; sh.cut = d.cut; }
     else if (d.view === 'DRAWING' && !missing.length) { sh.role = 'drawing'; }   // §F7: a drawing issued for reading (the view at the plane): listed, never converted   // §L3.3 R5: @VIEW=SECTION (NEED SET,VIEW,UNITS,HAXIS,CUT + GRIDH, Z)
@@ -265,7 +265,7 @@
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
     if (n('roof') !== 1) refused.push({ sheet: '(set)', reason: 'roof plans=' + n('roof') + ' (need exactly 1: @VIEW=ROOF + @LEVEL + @ROOF)' });
     var lv = {}; sheets.filter(function (s) { return s.role === 'plan'; }).forEach(function (s) { if (lv[s.level]) refused.push({ sheet: s.name, reason: 'two plans at @LEVEL=' + s.level }); lv[s.level] = 1; });
-    var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
+    var fc = {}; sheets.filter(function (s) { return s.role === 'elev'; }).forEach(function (s) { if (!s.face) return; if (fc[s.face]) refused.push({ sheet: s.name, reason: 'two elevations on @FACE=' + s.face }); fc[s.face] = 1; });
     if (n('section') > 1) refused.push({ sheet: '(set)', reason: 'sections=' + n('section') + ' (at most 1: @VIEW=SECTION)' });
     var so = n('elev') ? setOf(sheets) : null;
     if (userSet) return { ok: refused.length === 0, refused: refused, set: userSet, setFrom: 'user', evidence: so ? so.name : null };
@@ -605,7 +605,7 @@
     }
     // 1. every non-infill, non-fill element as its own body (fills: none in the page; with a library they are listed, see C1-PORT)
     R.els.forEach(function (e) {
-      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
+      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing' && e.kind !== 'door')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
       var pv = { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id };
       if (e.prov) pv.prov_kind = e.prov;                        // §L7.3 drawn | derived | assumed
       if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
@@ -731,7 +731,7 @@
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
     R.els.forEach(function (e) {
-      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing') return;
+      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing' || e.kind === 'door') return;   // §D109 a leaf generated from its schedule row is a body, not a library fill
       var G = R.libGeom && R.libGeom[e.geometry_hash];
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];

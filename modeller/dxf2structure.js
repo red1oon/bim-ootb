@@ -42,9 +42,11 @@
     if (!n('plan')) refused.push({ sheet: '(set)', reason: 'no storey plan (@VIEW=PLAN + @LEVEL)' });
     if (!n('elev')) refused.push({ sheet: '(set)', reason: 'no elevation (@VIEW=ELEV + @FACE)' });
     var choices = ctx.choices || {};
-    var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices });
     // §L18 the element-defaults registry: the drawing's @DEFAULT markings > the editor's choices > element_defaults.json; modules call DF.use(key) when they APPLY a default; the yellow rows come from DF
     var DFM = ctx.DFM || (typeof module === 'object' && module.exports ? require('./dxf2defaults.js') : (typeof self !== 'undefined' ? self.Dxf2Defaults : null)), DF = DFM ? DFM.create(ctx.defaultsRef || null, sheets, choices, notes.schedules && notes.schedules.derived.belowgrade ? { 'synth.column.belowgrade.size': notes.schedules.derived.belowgrade } : null) : null;
+    // §D110 rule (d): a sheet with no role refuses the set, unless the person chose to set such sheets aside: then each is a gap with the reader's own reason, and the rest converts
+    var aside = []; if (DF && DF.has('gate.unplaced_sheet') && String(DF.get('gate.unplaced_sheet')) === 'set_aside') { DF.use('gate.unplaced_sheet'); sheets.forEach(function (s) { if (s.role || notes.sheets.indexOf(s.name) >= 0) return; aside.push({ code: 'GAP:sheet_set_aside', sheet: s.name, detail: s.why || 'no role' }); refused = refused.filter(function (r) { return r.sheet !== s.name; }); }); }
+    var res = refused.length ? { els: [], gaps: [], defaults: [], report: {} } : B.buildBodies(sheets, { prepChoices: choices, DF: DF });
     if (DF && DF.has('building.type')) DF.use('building.type');   // the building type is always a visible setting (yellow until stated)
     // §L11.2 wall panels from elevation hatch loops (a hatch layer typed `panel`): built alongside the plan/elevation bodies, same gaps/defaults channels
     var PN = ctx.PN || (typeof module === 'object' && module.exports ? require('./dxf2panels.js') : (typeof self !== 'undefined' ? self.Dxf2Panels : null));
@@ -52,12 +54,54 @@
       var pn = PN.buildPanels(sheets, { numbers: ctx.numbers, DF: DF });
       res.els = res.els.concat(pn.els); res.gaps = res.gaps.concat(pn.gaps); res.defaults = (res.defaults || []).concat(pn.defaults); res.report = Object.assign({}, res.report, { panels: pn.report });
     }
+    res.gaps = res.gaps.concat(aside);
     // §L16 door leaves from plan swing symbols (a plan layer typed `doorswing`), after the other bodies (the floor level comes from the drawn columns)
     var DR = ctx.DR || (typeof module === 'object' && module.exports ? require('./dxf2doors.js') : (typeof self !== 'undefined' ? self.Dxf2Doors : null));
     if (DR && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'doorswing'; }); })) {
       var dr = DR.buildDoors(sheets, res.els, { numbers: ctx.numbers, DF: DF });
       res.els = res.els.concat(dr.els); res.gaps = res.gaps.concat(dr.gaps); res.defaults = (res.defaults || []).concat(dr.defaults);
     }
+    // §D109 P2d beams from their size labels (a plan layer typed `beamlabel`), in any direction
+    var BM = ctx.BM || (typeof module === 'object' && module.exports ? require('./dxf2beams.js') : (typeof self !== 'undefined' ? self.Dxf2Beams : null));
+    if (BM && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'beamlabel'; }); })) {
+      var bm = BM.buildBeams(sheets, { DF: DF });
+      res.els = res.els.concat(bm.els); res.gaps = res.gaps.concat(bm.gaps); res.report = Object.assign({}, res.report, { beams: bm.report });
+      var SL = ctx.SL || (typeof module === 'object' && module.exports ? require('./dxf2steel.js') : (typeof self !== 'undefined' ? self.Dxf2Steel : null));   // §D109 P5 the steel labels on the same layers
+      if (SL) { var st = SL.buildSteel(sheets, { DF: DF }); res.els = res.els.concat(st.els); res.gaps = res.gaps.concat(st.gaps); res.report = Object.assign({}, res.report, { steel: st.report }); }
+    }
+    // §D109 P3 walls from their lines (a plan layer typed `wallband`), in any direction
+    var WL = ctx.WL || (typeof module === 'object' && module.exports ? require('./dxf2walls.js') : (typeof self !== 'undefined' ? self.Dxf2Walls : null));
+    if (WL && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'wallband'; }); })) {
+      var wl = WL.buildWalls(sheets, { DF: DF });
+      res.els = res.els.concat(wl.els); res.gaps = res.gaps.concat(wl.gaps); res.report = Object.assign({}, res.report, { walls: wl.report });
+    }
+    if (WL && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'curtainband'; }); })) {   // §D109 P6 the same rule, its own class
+      var cw = WL.buildWalls(sheets, { DF: DF, kind: 'curtainband' });
+      res.els = res.els.concat(cw.els); res.gaps = res.gaps.concat(cw.gaps); res.report = Object.assign({}, res.report, { curtain: cw.report });
+    }
+    // §D110 wall type names from their tags, then tops and bases from the elevations
+    if (WL && !refused.length && res.report.walls) { res.report.walls.tags = WL.readTags(sheets, res.els, { DF: DF }); res.report.walls.tops = WL.topsFromElevations(sheets, res.els, { DF: DF, PN: PN }); }
+    // §D109 P6 doors from their tag + the schedule row + the swing arc
+    var DT = ctx.DT || (typeof module === 'object' && module.exports ? require('./dxf2doortags.js') : (typeof self !== 'undefined' ? self.Dxf2DoorTags : null));
+    if (DT && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'doortag'; }); })) {
+      var dt = DT.buildDoors(sheets, { DF: DF });
+      res.els = res.els.concat(dt.els); res.gaps = res.gaps.concat(dt.gaps); res.report = Object.assign({}, res.report, { doors: dt.report });
+    }
+    // §D109 P4 ground slabs on the rafts' outlines; a level with no closed outline is a gap
+    var SB = ctx.SB || (typeof module === 'object' && module.exports ? require('./dxf2slabs.js') : (typeof self !== 'undefined' ? self.Dxf2Slabs : null));
+    if (SB && !refused.length && res.els.some(function (e) { return e.outline; })) {
+      var sb = SB.buildSlabs(sheets, res.els, { DF: DF });
+      res.els = res.els.concat(sb.els); res.gaps = res.gaps.concat(sb.gaps); res.report = Object.assign({}, res.report, { slabs: sb.report });
+    }
+    // §D109 P7 stair flights from their tread lines
+    var SF = ctx.SF || (typeof module === 'object' && module.exports ? require('./dxf2stairs.js') : (typeof self !== 'undefined' ? self.Dxf2Stairs : null));
+    if (SF && !refused.length && sheets.some(function (s) { return s.role === 'plan' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'stairlines'; }); })) {
+      var sf = SF.buildStairs(sheets, { DF: DF });
+      res.els = res.els.concat(sf.els); res.gaps = res.gaps.concat(sf.gaps); res.report = Object.assign({}, res.report, { stairs: sf.report });
+    }
+    // §D109 P8 a roof surface through the drawing's own spot levels
+    var RF = ctx.RF || (typeof module === 'object' && module.exports ? require('./dxf2roofspots.js') : (typeof self !== 'undefined' ? self.Dxf2RoofSpots : null));
+    if (RF && !refused.length) { var rf = RF.buildRoof(sheets, { DF: DF }); if (rf.report.spots) { res.els = res.els.concat(rf.els); res.gaps = res.gaps.concat(rf.gaps); res.report = Object.assign({}, res.report, { roof: rf.report }); } }
     // §L14 typed SECTION sheets (bar / plate / member layers): the drawn section at its cut, repeated along the building (the copies are assumed, red)
     var SC = ctx.SC || (typeof module === 'object' && module.exports ? require('./dxf2section.js') : (typeof self !== 'undefined' ? self.Dxf2Section : null));
     if (SC && !refused.length && sheets.some(function (s) { return s.role === 'section' && ((s.desc && s.desc.layers) || []).some(function (l) { return ['bar', 'plate', 'member'].indexOf(l.type) >= 0; }); })) {
@@ -90,6 +134,9 @@
     var MR = ctx.MR || (typeof module === 'object' && module.exports ? require('./dxf2markrefs.js') : (typeof self !== 'undefined' ? self.Dxf2MarkRefs : null));
     res.markRefs = MR && B.MARK_RE ? MR.build(sheets, res.els, { B: B, notesSheets: notes.sheets }) : null;
     res.sheetRefs = MR && MR.sheetRefs && (!DF || !DF.has('suggest.sheet_refs') || DF.get('suggest.sheet_refs') !== 'off') ? MR.sheetRefs(sheets, { clean: B.cleanText }) : null;   // §D107
+    // §D110 the Gap Guide: what might close each gap, from the set's own register. A reading only: no body is built or dropped by it
+    var GG = ctx.GG || (typeof module === 'object' && module.exports ? require('./dxf2gapguide.js') : (typeof self !== 'undefined' ? self.Dxf2GapGuide : null));
+    if (GG && DF) { res.report = res.report || {}; res.report.guide = GG.run(sheets, res, DF, { refused: refused.length }); }
     // §F3b the layer ledger: what is on every layer, how it was typed, how much of it produced a body (the entity account only says the parser read it)
     var LG = ctx.LG || (typeof module === 'object' && module.exports ? require('./dxf2ledger.js') : (typeof self !== 'undefined' ? self.Dxf2Ledger : null));
     res.ledger = LG ? LG.build(sheets, res.els) : null;
@@ -98,7 +145,7 @@
     if (!refused.length && !res.els.length && !advisory.some(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }))
       blocking.push({ code: 'QF:no_bodies', sheet: '(set)', handles: [], message: 'no body could be built: type the body layers on a plan AND an elevation' });
     advisory.filter(function (a) { return a.code === 'GAP:body_elevation_not_aligned'; }).forEach(function (a) { blocking.push(a); });
-    var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
+    var leftOut = res.gaps.filter(function (x) { return !/^GAP:(profile_not_bound|fan_detail_defaulted|body_elevation_plane_only|sheet_set_aside)$/.test(x.code); }).length;   // §D67.1 these list a body that STAYS (its drawn prism / a stated default): not a left-out item
     var counts = { bodies: res.els.length, left_out: leftOut }; res.gaps.forEach(function (x) { counts[x.code] = (counts[x.code] || 0) + 1; });
     // only on a set that converts and has a notes sheet: on a partial set a mark's bodies may simply wait (a height, a role), and without a details sheet every mark lacks a detail trivially
     if (res.markRefs && !refused.length && !blocking.length && notes.sheets.length) res.markRefs.advisories.forEach(function (a) { advisory.push(a); counts[a.code] = (counts[a.code] || 0) + 1; });

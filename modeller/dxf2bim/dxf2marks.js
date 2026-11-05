@@ -19,7 +19,7 @@
     ROOF: ['roof', 'glazing', 'ignore'],                                               // Dxf2Shell.roofPlan
     SECTION: ['sectslab', 'sectwall', 'roof', 'ignore'],                               // Dxf2Shell.sectionSlabs (+ L2.8 section walls)
     ANY: ['dims', 'grid'],
-    BODY: ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'] };   // bim-ootb lane L7.10 (+ L11 panel = an elevation HATCH layer read as wall panels; + L14 bar = LINE members of a SECTION sheet; + L11.3 fan = concentric CIRCLEs on an elevation; + L11.4 net = the ZIGZAG/mesh-pattern hatches of an elevation layer; + L16 doorswing = ARC swing symbols of a plan layer): the user types a layer with a BODY kind (any view); every existing reader maps it to 'ignore', the bodies module reads it
+    BODY: ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing', 'beamlabel', 'wallband', 'doortag', 'curtainband', 'stairlines', 'walltag'] };   // bim-ootb lane L7.10 (+ L11 panel = an elevation HATCH layer read as wall panels; + L14 bar = LINE members of a SECTION sheet; + L11.3 fan = concentric CIRCLEs on an elevation; + L11.4 net = the ZIGZAG/mesh-pattern hatches of an elevation layer; + L16 doorswing = ARC swing symbols of a plan layer): the user types a layer with a BODY kind (any view); every existing reader maps it to 'ignore', the bodies module reads it
   function err(code, message, extra) { return Object.assign({ code: code, message: message }, extra || {}); }
 
   // entities: parsed by dxf-parser (TEXT/MTEXT with .text and .startPoint/.position)
@@ -189,12 +189,12 @@
       errors.push(err('MARK:layer_type', '@LAYER ' + q.layer + ',' + q.type + ': a ' + d.view + ' sheet reads ' + LAYER_TYPES[d.view].concat(LAYER_TYPES.ANY, LAYER_TYPES.BODY).join('|'), { handle: q.handle, layer: q.layer, type: q.type, view: d.view })); return false;
     });
     {
-      var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined; });
+      var need = (NEED[d.view] || []).filter(function (k) { return d[k.toLowerCase()] === undefined && !(d.view === 'ELEV' && d.plane !== undefined && (k === 'FACE' || k === 'HAXIS')); });   // §D109 P1: @PLANE says where it stands
       if (d.view === 'PLAN') {
         if (Object.keys(d.gridsX).length < 2) need.push('GRIDX(>=2)');
         if (Object.keys(d.gridsY).length < 2) need.push('GRIDY(>=2)');
       } else if (d.view === 'ELEV' || d.view === 'SECTION') {
-        if (Object.keys(d.gridsH).length < 2) need.push('GRIDH(>=2)');
+        if (Object.keys(d.gridsH).length < 2 && !(d.view === 'ELEV' && d.plane !== undefined)) need.push('GRIDH(>=2)');   // §D109 P1: @PLANE says where it stands; its heights still need two @Z
         if (d.zs.length < 2) need.push('Z(>=2)');
         if (d.view === 'ELEV' && d.face && d.haxis) {
           var faceAxis = d.face.slice(3), hax = d.haxis.slice(1);
@@ -257,6 +257,7 @@
   // plan: described PLAN, elev: described ELEV; tol in metres. Returns { ok, errors, map }.
   function align(plan, elev, tol) {
     var errors = [], map = null;
+    if (!elev.haxis) { errors.push(err('MARK:align_fail', 'no @HAXIS: this sheet has no axis route to the plan')); return { ok: false, errors: errors, map: null }; }   // §D109 P1: an elevation may stand by @PLANE alone
     var kp = K[plan.units], ke = K[elev.units];
     var axis = elev.haxis.slice(1), s = elev.haxis[0] === '+' ? 1 : -1;
     var planBag = axis === 'X' ? plan.gridsX : plan.gridsY;

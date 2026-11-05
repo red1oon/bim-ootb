@@ -151,14 +151,32 @@
         if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) <= tol * Math.hypot(c[0] - a[0], c[1] - a[1])) { out.splice(i, 1); changed = true; break; } } }
     return out;
   }
-  function synthRects(entities, tol, layers) {   // layers: the layers the USER typed elevwall/sectwall; a layer that already has a closed outline is not line work and is left alone
+  // §D109 P2 a loop in any direction: square in the frame of its own longest side within skewTol (drawing units), else null. One family angle cannot do this: line angles spread, so a loop gives its own.
+  function skewOutline(pts, skewTol) {
+    if (!(skewTol > 0)) return null;
+    var q = reduceCollinear(pts, skewTol); if (q.length < 4 || q.length % 2) return null;
+    var best = -1, a = 0; q.forEach(function (p, i) { var o = q[(i + 1) % q.length], l = Math.hypot(o[0] - p[0], o[1] - p[1]); if (l > best) { best = l; a = Math.atan2(o[1] - p[1], o[0] - p[0]); } });
+    var c = Math.cos(-a), s = Math.sin(-a), uv = q.map(function (p) { return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; });
+    function snapTo(ix) {   // one value per side: the mean of the corners that lie on it
+      var v = uv.map(function (p) { return p[ix]; }).slice().sort(function (m, n) { return m - n; }), groups = [[v[0]]];
+      for (var i = 1; i < v.length; i++) { if (v[i] - v[i - 1] <= skewTol) groups[groups.length - 1].push(v[i]); else groups.push([v[i]]); }
+      var means = groups.map(function (g) { return g.reduce(function (m, n) { return m + n; }, 0) / g.length; });
+      return function (x) { return means.reduce(function (m, n) { return Math.abs(n - x) < Math.abs(m - x) ? n : m; }); };
+    }
+    var su = snapTo(0), sv = snapTo(1), out = uv.map(function (p) { return [su(p[0]), sv(p[1])]; });
+    if (!out.every(function (p, i) { var o = out[(i + 1) % out.length], sameU = p[0] === o[0], sameV = p[1] === o[1]; return sameU !== sameV; })) return null;   // every side runs along exactly one local axis
+    return { deg: a * 180 / Math.PI, outline: out };
+  }
+  function synthRects(entities, tol, layers, skewTol) {   // layers: the layers the USER typed elevwall/sectwall; a layer that already has a closed outline is not line work and is left alone
     var hasClosed = {}; (entities || []).forEach(function (e) { if (e.type === 'LWPOLYLINE' && e.shape) hasClosed[e.layer] = 1; });
     layers = (layers || []).filter(function (l) { return !hasClosed[l]; });
-    var segs = segmentsOf(entities, true, layers), r = lineLoops(segs, tol), made = [], nonRect = 0, mixed = 0, n = 0, consumed = {};
+    var segs = segmentsOf(entities, true, layers), r = lineLoops(segs, tol), made = [], skew = [], polys = [], nonRect = 0, mixed = 0, n = 0, consumed = {};
     r.loops.forEach(function (l) {
       var q = reduceCollinear(l.pts, tol);
       var rect = q.length === 4 && q.every(function (p, i) { var o = q[(i + 1) % 4]; return Math.abs(p[0] - o[0]) <= tol || Math.abs(p[1] - o[1]) <= tol; });
-      if (!rect) { nonRect++; return; }
+      if (!rect) { nonRect++;
+        var sk = skewOutline(l.pts, skewTol), sl = {}; if (sk) { l.handles.forEach(function (ei) { sl[entities[ei].layer] = 1; }); if (Object.keys(sl).length === 1) skew.push({ deg: sk.deg, outline: sk.outline, layer: Object.keys(sl)[0], members: l.handles.map(function (ei) { return entities[ei].handle; }), handles: l.handles }); } else if (!sk) { var pl = {}; l.handles.forEach(function (ei) { pl[entities[ei].layer] = 1; }); if (Object.keys(pl).length === 1) polys.push({ pts: l.pts, layer: Object.keys(pl)[0], members: l.handles.map(function (ei) { return entities[ei].handle; }) }); }
+        return; }
       var layers = {}; l.handles.forEach(function (ei) { layers[entities[ei].layer] = 1; });
       var ls = Object.keys(layers); if (ls.length !== 1) { mixed++; return; }
       var xs = q.map(function (p) { return p[0]; }), ys = q.map(function (p) { return p[1]; }), x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
@@ -166,7 +184,7 @@
       made.push({ type: 'LWPOLYLINE', layer: ls[0], handle: 'loop-' + (++n), shape: true, synthetic: true, members: l.handles.map(function (ei) { return entities[ei].handle; }),
         vertices: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }] });
     });
-    return { entities: made, consumed: consumed, rects: made.length, nonRect: nonRect, mixed: mixed, loops: r.loops.length, segments: segs.length, dropped: r.dropped };
+    return { entities: made, skew: skew, polys: polys, consumed: consumed, rects: made.length, nonRect: nonRect, mixed: mixed, loops: r.loops.length, segments: segs.length, dropped: r.dropped };
   }
 
   // ---- §L7.3 provenance ----
@@ -177,11 +195,11 @@
   var KIND = {
     column: ['IfcColumn', 'COLUMN'], footing: ['IfcFooting', 'PAD_FOOTING'], gradebeam: ['IfcBeam', 'BEAM'], beam: ['IfcBeam', 'BEAM'],
     wall: ['IfcWall', 'STANDARD'], supportwall: ['IfcWall', 'STANDARD'], roof: ['IfcRoof', 'GABLE_ROOF'],
-    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], fan: ['IfcFan', 'PROPELLORAXIAL'], net: ['IfcCovering', 'CLADDING'], doorswing: ['IfcDoor', 'DOOR'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
+    member: ['IfcMember', 'MEMBER'], plate: ['IfcPlate', 'PLATE'], panel: ['IfcWall', 'STANDARD'], bar: ['IfcMember', 'BRACE'], fan: ['IfcFan', 'PROPELLORAXIAL'], net: ['IfcCovering', 'CLADDING'], doorswing: ['IfcDoor', 'DOOR'], beamlabel: ['IfcBeam', 'BEAM'], wallband: ['IfcWall', 'STANDARD'], doortag: ['IfcDoor', 'DOOR'], walltag: ['IfcWall', 'STANDARD'], curtainband: ['IfcCurtainWall', 'NOTDEFINED'], stairlines: ['IfcStairFlight', 'STRAIGHT'], slab: ['IfcSlab', 'BASESLAB'], chord: ['IfcMember', 'CHORD'], web: ['IfcMember', 'BRACE'], post: ['IfcMember', 'POST'], purlin: ['IfcMember', 'PURLIN'], gusset: ['IfcPlate', 'GUSSET_PLATE'],
     door: ['IfcDoor', 'DOOR'], window: ['IfcWindow', 'WINDOW']
   };
   // the body kinds a drawing layer can be typed as (the editor's menu, the structure judge's list, dxf2marks LAYER_TYPES.BODY must equal this: W-KINDS). A new kind = one KIND row + one entry here + its builder.
-  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing'];
+  var BODY_KINDS = ['column', 'beam', 'footing', 'gradebeam', 'member', 'plate', 'panel', 'bar', 'fan', 'net', 'doorswing', 'beamlabel', 'wallband', 'doortag', 'curtainband', 'stairlines', 'walltag'];
   function ifcType(kind, typeName, material) {
     var k = KIND[kind]; if (!k) throw new Error('Dxf2Prep: no IFC mapping for body kind "' + kind + '"');
     return { ifc_class: k[0], PredefinedType: k[1], type_name: typeName || null, material: material || null };
@@ -196,5 +214,5 @@
     return { BOX: BOX, vol: vol, outward: outward, box: box };
   })();
 
-  return { hasLineWork: hasLineWork, synthRects: synthRects, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND, BODY_KINDS: BODY_KINDS, Solid: Solid };
+  return { hasLineWork: hasLineWork, synthRects: synthRects, skewOutline: skewOutline, SNAP_TOL_DEFAULT: 0.01, prepare: prepare, isLineWork: isLineWork, segmentsOf: segmentsOf, bodyId: bodyId, assertUniqueIds: assertUniqueIds, lineLoops: lineLoops, Defaults: Defaults, PROV: PROV, PROV_COLOUR: PROV_COLOUR, ifcType: ifcType, KIND: KIND, BODY_KINDS: BODY_KINDS, Solid: Solid };
 });

@@ -11,7 +11,7 @@
   var TAG = '§DXF-IMPORT', TAGC = '§DXF-CONVERT';
   var V = '16';
   var SCRIPTS = ['lib/dxf-parser.js', 'dxf2bim/dxf2bim.js', 'dxf2bim/dxf2marks.js', 'dxf2bim/dxf2elev.js', 'dxf2bim/dxf2mesh.js',
-    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
+    'dxf2bim/dxf2types.js', 'dxf2bim/dxf2shell.js', 'dxf2bim/dxf2shell_config.js', 'dxf2bim/dxf2qualify.js', 'dxf2hatch.js', 'dxf2bim_import.js', 'dxf2prep.js', 'dxf2profile.js', 'dxf2defaults.js', 'dxf2typology.js', 'dxf2pair.js', 'dxf2bodies.js', 'dxf2panels.js', 'dxf2section.js', 'dxf2doors.js', 'dxf2beams.js', 'dxf2walls.js', 'dxf2slabs.js', 'dxf2steel.js', 'dxf2doortags.js', 'dxf2stairs.js', 'dxf2roofspots.js', 'dxf2gapguide.js', 'dxf2synth.js', 'dxf2notes.js', 'dxf2ledger.js', 'dxf2bill.js', 'dxf2markrefs.js', 'dxf2suggest.js', 'dxf2structure.js', '../viewer/dxf_sheet_view.js', 'dxf_sheet_frame.js', 'dxf_meta_editor.js', 'bay_add.js'];   // §L4.1 + the Drawing metadata editor
   var _base = (document.currentScript && document.currentScript.src) || location.href;
   var _loaded = null;
   function loadScripts() {
@@ -547,7 +547,7 @@
   // STANDS NOW (the Arrange view's preview placement while the view stands, else the canvas; a sheet neither draws is shown at its preview placement, or as
   // drawn when no value places it), framed in the canvas right of the panels; the evidence highlighted (thick), every other sheet dimmed; Esc, a click on the
   // canvas or the row again restores. A VIEW: nothing is marked, accepted, judged or saved. Log §DXF-EVIDENCE. ----
-  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1, 'PR-PLANE': 1, 'PR-SHEETNO': 1, 'PR-FACE-PLANE': 1, 'PR-GRID-A': 1, 'PR-LEVEL-NAME': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
+  var TAGE = '§DXF-EVIDENCE', HLC = 0xff4fd8, HL2 = 0xffffff, WHOLE = { 'PR-UNITS': 1, 'PR-SET': 1, 'PR-SET-PLACEHOLDER': 1, 'PR-VIEW': 1, 'PR-NAME': 1, 'PR-LEVEL-TITLE': 1, 'PR-ROOF': 1, 'PR-CUT-TITLE': 1, 'PR-TAG-WIDTH': 1, 'PR-PLANE': 1, 'PR-SHEETNO': 1, 'PR-FACE-PLANE': 1, 'PR-GRID-A': 1, 'PR-LEVEL-NAME': 1, 'PR-LEVEL-FOOTING': 1 };   // §D46: the title / level-text rules frame their sheet   // HLC: the verdict zoom's highlight
   function allOf(segOf) { var P = []; Object.keys(segOf).forEach(function (h) { var a = segOf[h]; for (var i = 0; i < a.length; i++) P.push(a[i]); }); return P; }
   function wbox(P) { if (!P.length) return null; var b = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]]; for (var i = 0; i < P.length; i += 3) for (var a = 0; a < 3; a++) { if (P[i + a] < b[0][a]) b[0][a] = P[i + a]; if (P[i + a] > b[1][a]) b[1][a] = P[i + a]; } return b; }
   function evSheet(name, X) {   // where the sheet stands now: { mode canvas | preview | as drawn, w (drawing units -> world m), segOf, drawn (already on screen), d (its desc), dxf }
@@ -765,6 +765,7 @@
     if (s.role === 'plan') return '<span class="dxf-role">PLAN @' + s.level + '</span>';
     if (s.role === 'elev') return '<span class="dxf-role">ELEV ' + s.face + '</span>';
     if (s.role === 'section') return '<span class="dxf-role">SECTION ' + esc(s.cut) + '</span>';
+    if (s.role === 'drawing') return '<span class="dxf-role">DRAWING</span>';   // §D109 read, never converted
     return '<span class="dxf-role">ROOF @' + s.roofZ + '</span>';
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -864,7 +865,7 @@
       h += '</div>';
     }
     h += '</div><div class="ip-foot"><button class="dxf-btn" id="dxf-lines"></button><button class="dxf-btn" id="dxf-meta" title="Drawing metadata">' + ICON.meta + '<span>Metadata</span></button><button class="dxf-btn" id="dxf-arrange" title="Arrange: the sheets as drawn, placed one marking / yellow default at a time (Esc stops)"></button><button class="dxf-btn primary" id="dxf-convert"' + (state.gate.ok ? '' : ' disabled') + '>' + ICON.box + '<span>Convert</span></button>' +
-      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory: no elevation or conflicting heights)' : '') + '. Walls, slabs and roof are not read in a structure set.' : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies' + (state.gate.verdict.accepted ? ' with ' + state.gate.verdict.accepted.length + ' accepted row(s)' : '') + ' (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
+      '<div id="dxf-status">' + (state.gate.structure ? (state.gate.ok ? 'Structure set: ' + state.gate.structure.bodies + ' bodies will be built' + (state.gate.structure.left_out ? ', ' + state.gate.structure.left_out + ' left out (listed as advisory' + (state.gate.R && state.gate.R.bodies && state.gate.R.bodies.report && state.gate.R.bodies.report.walls ? ')' : ': no elevation or conflicting heights)') : '') + (state.gate.R && state.gate.R.bodies && state.gate.R.bodies.report && state.gate.R.bodies.report.walls ? '.' : '. Walls, slabs and roof are not read in a structure set.') : 'Convert refused: ' + (state.gate.refused.length ? state.gate.refused.map(function (r) { return r.reason; }).join('; ') : 'qualify verdict blocked')) : state.gate.ok ? 'Qualifies' + (state.gate.verdict.accepted ? ' with ' + state.gate.verdict.accepted.length + ' accepted row(s)' : '') + ' (' + (state.gate.set || '') + ' set, ' + state.gate.verdict.advisory.length + ' advisory). Convert builds walls, slabs, roof, cuts the openings and places the fills.'
         : state.gate.verdict ? 'Convert refused: qualify verdict blocked, ' + state.gate.verdict.blocking.length + ' blocking item(s).' : 'Convert refused: ' + state.gate.refused.length + ' sheet(s) or set rule(s) unresolved (roles come from DXF2BIM-MARK markings).') + '</div></div>';
     p.innerHTML = h;
     if (!state.panel) { document.body.appendChild(p); state.panel = p; }

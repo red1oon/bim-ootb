@@ -47,7 +47,7 @@
   // `rule:` of dxf2suggest.js has one tier. The door rules read the drawing's text; an applied default is a convention.
   var TAGE = '§DXF-EVIDENCE';
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred',   // §D98 a placeholder name: a convention, stays yellow until renamed
-    'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-PLANE': 'read', 'PR-SHEETNO': 'read', 'PR-GRID-A': 'read', 'PR-LEVEL-NAME': 'read',   // §D46: each READ from a text the sheet holds
+    'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-PLANE': 'read', 'PR-SHEETNO': 'read', 'PR-GRID-A': 'read', 'PR-LEVEL-NAME': 'read', 'PR-LEVEL-FOOTING': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
     'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
@@ -62,7 +62,7 @@
   function prNote(si, p) { return S.ev === evId(si, p) && S.evNote ? '<div class="dm-evnote">' + esc(S.evNote) + '</div>' : ''; }
   var BODY_KINDS = window.Dxf2Prep.BODY_KINDS;   // §L24 one table (dxf2prep; dxf2marks LAYER_TYPES.BODY must equal it: W-KINDS)
   var LAYER_TYPES = ['wall', 'door', 'glazing', 'dims', 'grid', 'level', 'ignore'].concat(BODY_KINDS);
-  var S = { grpOpen: {}, sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
+  var S = { grpOpen: {}, sheets: [], verdict: null, busy: false, token: 0, open: {}, sec: { missing: true, sheets: true, yellows: true, bodyz: true, sizes: true, edefaults: false, typology: false, units: true, defaults: true, layers: false, tags: false, doors: false, excludes: false, walltops: false, verdict: true },
     vtab: 'blocking', split: {}, wtLevel: {}, draft: {}, evRows: {}, ev: null, evNote: null, tool: null, pick: null, exSheet: null, byOk: false, lib: undefined, cache: {}, panel: null, saved: null, sched: [], wsched: [], dpick: null, dcache: {}, dmsg: null };
 
   // ---- markings: parse / write (Dxf2Marks owns the grammar; this only splits the lead-decided " @BY=" suffix for display) ----
@@ -183,6 +183,7 @@
       if (tok !== S.token) return;
       var v = g.verdict; v.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') };
       S.verdict = v; S.busy = false; S.lib = g.lib;
+      takeGuide(g);
       var ac = {}; v.advisory.forEach(function (x) { ac[x.code] = (ac[x.code] || 0) + 1; });
       console.log(TAG + ' verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' advisory=' + v.advisory.length + ' pipeline=' + (v.pipeline.ran ? 'ran run_id=' + v.pipeline.run_id.slice(0, 12) : 'NOT RUN (' + v.pipeline.why.slice(0, 200) + ')') +
         ' counts=' + JSON.stringify(v.counts) + ' ms=' + Math.round(performance.now() - t0));
@@ -1012,6 +1013,24 @@
     });
     return secHead('walltops', IC.walltop, 'Wall tops', nB ? nB + ' blocking' : '', nB) + (S.sec.walltops ? '<div class="dm-sb">' + (h || '<div class="dm-ref">No plan sheet yet.</div>') + '</div>' : '');
   }
+  // §D110 G6 what the drawings say is missing: one renderer, any set. A reading of the set's own sheet list; 'might help' is the guide's word, never 'will'
+  function renderMissing() {
+    var g = S.guide; if (!g) return '';
+    var c = g.counts, h = '';
+    if (!c) return secHead('missing', IC.file, 'Missing sheets', 'no list') + (S.sec.missing ? '<div class="dm-sb"><div class="dm-ref" data-gg="none">No sheet list in this set: missing sheets cannot be counted. INCONCLUSIVE.</div></div>' : '');
+    h += '<div class="dm-ref" data-gg="counts" style="color:#F3EEE8;font-size:13px">The drawings list <b>' + c.listed + '</b> sheets. <b>' + c.loaded + '</b> are loaded. <b>' + c.missing + '</b> are missing.</div>';
+    (g.registers || []).forEach(function (r) { h += '<div class="dm-ref" data-gg="reg">List ' + esc(r.sheet) + ': ' + r.rows + ' rows read' + (r.stated_total === null ? ', no total printed' : ', it prints ' + r.stated_total + (r.agrees ? ', agrees' : ', DIFFERS')) + '</div>'; });
+    if ((g.set_aside || []).length) h += '<div class="dm-ref" data-gg="aside">' + g.set_aside.length + ' loaded sheet(s) cannot be placed, set aside.</div>';
+    if (g.status !== 'read' && g.reason) h += '<div class="dm-ref" data-gg="reason">Gaps not judged: ' + esc(g.reason) + '.</div>';
+    (g.rows || []).forEach(function (r) { var miss = r.sheets.filter(function (q) { return !q.held; }), lab = (S.guideLabels && S.guideLabels[r.need]) || r.need;
+      h += '<div class="dm-it adv nopos" data-gg="need" title="' + esc(r.need) + '"><span class="c">' + r.count + '</span><span class="m">' + esc(lab) + (miss.length ? '. Might help: ' + esc(miss.map(function (q) { return q.title + ' (' + q.no + ')'; }).join(' · ')) : '') + '</span></div>'; });
+    var SAYS = { not_issued: function (L) { return 'The list says not issued in revision ' + L; }, issued_not_loaded: function (L) { return 'The list says issued in revision ' + L + ', not loaded here'; }, no_statement: function () { return 'Listed. The list does not say whether issued'; } };
+    (g.registers || []).filter(function (r) { return r.legend; }).forEach(function (r) { h += '<div class="dm-ref" data-gg="legend" style="font-style:italic">' + esc(r.sheet) + ' prints: "' + esc(r.legend.slice(0, 160)) + '"</div>'; });
+    ['not_issued', 'issued_not_loaded', 'no_statement'].forEach(function (k) { var R = (g.missing_list || []).map(function (r, i) { return { r: r, i: i }; }).filter(function (q) { return q.r.says === k; }); if (!R.length) return; var byL = R[0].r.latest || '', last = null, nPt = R.reduce(function (a, q) { return a + ((q.r.pointers || []).length); }, 0);
+      if (k === 'not_issued') h += '<button class="dm-btn" data-act="ggtint" data-gg="tint" aria-pressed="' + !!S.tintOn + '" title="Show on the building what the list and the plans name for these sheets" style="display:block;width:100%;margin:6px 0;text-align:left;outline:1px solid #ff3b3b;box-shadow:0 0 ' + (S.tintOn ? '14px 4px' : '8px 2px') + ' #ff3b3b"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + (S.tintOn ? ' · shown in purple (' + nPt + ' points)' : ' · show on the building') + '</button>';
+      h += '<details data-gg="class" data-says="' + k + '"><summary class="dm-ref" style="color:#F3EEE8"><b>' + R.length + '</b> ' + esc(SAYS[k](byL)) + '</summary>' + R.map(function (q) { var head = q.r.heading && q.r.heading !== last ? '<div class="dm-ref" data-gg="heading" style="color:#9aa6b2;margin-top:4px">' + esc(q.r.heading) + '</div>' : ''; if (q.r.heading) last = q.r.heading; var np = (q.r.pointers || []).length, pl = q.r.place; return head + '<div class="dm-it adv" data-act="ggrow" data-i="' + q.i + '" title="Show this row on its sheet"><span class="m">' + esc(q.r.title) + ' (' + esc(q.r.no) + ')' + (np ? ' · points here ' + np : '') + (pl ? ' · names ' + esc(pl.stair || pl.storey) : '') + '</span></div>'; }).join('') + '</details>'; });
+    return secHead('missing', IC.file, 'Missing sheets', c.missing + ' missing', c.missing > 0) + (S.sec.missing ? '<div class="dm-sb">' + h + '</div>' : '');
+  }
   function renderVerdict() {
     var v = S.verdict, h = '';
     if (!v) return secHead('verdict', IC.verdict, 'Verdict', S.busy ? 'checking' : '') ;
@@ -1040,6 +1059,34 @@
     console.log(TAG + ' attention unconfirmed=' + n); return n;
   }
   function renderHead() { var c = document.getElementById('dm-chip'); if (c) c.outerHTML = chip(); }
+  // §D110 G6f the toggle. On: a disc at each pointer, the existing walls of a named storey and flights of a named stair turn purple. Off: gone, the same materials back. No shape is added to the building.
+  var tintG = null, tintSaved = [];
+  function setTint(on) {
+    var A = window.A, T = window.THREE; S.tintOn = !!on; if (!A || !T) return;
+    if (tintG) { A.scene.remove(tintG); tintG.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); tintG = null; }
+    tintSaved.forEach(function (q) { q.m.material = q.mat; }); tintSaved = [];
+    var pts = 0, walls = 0, flights = 0, g = S.guide;
+    if (on && g && g.missing_list) {
+      var D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef, rad = Number(rf && rf.defaults && rf.defaults['guide.gap_sheets'] && rf.defaults['guide.gap_sheets'].tint_radius_m) || 0, R = g.missing_list.filter(function (r) { return r.says === 'not_issued'; }), levels = {}, stairs = {}, PUR = 0x9b5cf6, matD = new T.MeshBasicMaterial({ color: PUR, transparent: false, toneMapped: false, depthTest: false, side: T.DoubleSide });
+      tintG = new T.Group(); tintG.name = 'dxf-missing-tint'; A.scene.add(tintG);
+      R.forEach(function (r) { (r.pointers || []).forEach(function (p) { var c = canvasOf(p.sheet); if (!c || !c.toWorld) return; var w = c.toWorld(p.x, p.y), d = new T.Mesh(new T.CircleGeometry(rad, 32), matD); d.position.set(w[0], w[1], w[2]); d.renderOrder = 6; d.userData.gg = { no: r.no, sheet: p.sheet }; tintG.add(d); pts++; }); if (r.place && typeof r.place.level === 'number') levels[r.place.level] = 1; if (r.place && r.place.stair) stairs[r.place.stair] = 1; });
+      var els = (D.gate && D.gate.R && D.gate.R.els) || [], box = new T.Box3(), v = new T.Vector3(), E = els.map(function (e) { var a = [1e9, 1e9, 1e9], b = [-1e9, -1e9, -1e9]; e.vertices.forEach(function (q) { for (var i = 0; i < 3; i++) { if (q[i] < a[i]) a[i] = q[i]; if (q[i] > b[i]) b[i] = q[i]; } }); return { e: e, p: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2] }; });
+      var matM = new T.MeshStandardMaterial({ color: PUR, transparent: true, opacity: 0.85 });
+      A.scene.traverse(function (o) { if (!o.isMesh || !/^bonsai:/.test(o.name)) return; box.setFromObject(o); box.getCenter(v); var best = null, bd = 1e9; E.forEach(function (q) { var d = Math.hypot(q.p[0] - v.x, q.p[1] - v.y, q.p[2] - v.z); if (d < bd) { bd = d; best = q.e; } }); if (!best) return;
+        var lvl = best.class === 'IfcWall' && best.storey_level !== undefined && levels[best.storey_level], fl = best.class === 'IfcStairFlight' && best.mark && stairs[String(best.mark).toUpperCase()];
+        if (lvl || fl) { tintSaved.push({ m: o, mat: o.material }); o.material = matM; if (lvl) walls++; else flights++; } });
+    }
+    console.log(TAG + ' §GAPGUIDE tint ' + (on ? 'on' : 'off') + ' pointers=' + pts + ' walls=' + walls + ' flights=' + flights);
+    if (A.requestRender) A.requestRender();
+  }
+  function guideOn(rf) { var off = S.defaultChoices && S.defaultChoices['guide.gap_sheets'] === 'off'; S.sheets.forEach(function (sh) { (sh.marks || []).forEach(function (q) { if (q.key === 'DEFAULT' && String(q.value) === 'guide.gap_sheets,off') off = true; }); }); return !off && !!(rf && rf.defaults && rf.defaults['guide.gap_sheets'] && rf.defaults['guide.gap_sheets'].value === 'read'); }
+  function takeGuide(g) {   // §D110 G6 both ways a verdict reaches this panel (a set opened, a set edited) take the guide here
+    var r = g && g.R && g.R.bodies && g.R.bodies.report, D = window.DxfImportUI && window.DxfImportUI.state, rf = D && D.defaultsRef; S.guide = (r && r.guide) || null; S.guideLabels = rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].labels : null;
+    if (!S.guide && !(r && 'guide' in r) && window.Dxf2GapGuide && guideOn(rf)) {   // §D110 G6d the gate has not judged: the lists still say what they say, with nothing typed
+      var held = {}; S.sheets.forEach(function (sh) { var mk = (sh.marks || []).filter(function (q) { return q.key === 'SHEETNO'; })[0], pr = mk ? null : (proposalsFor(sh).list || []).filter(function (q) { return q.rule === 'PR-SHEETNO'; })[0], n = mk ? mk.value : pr ? pr.value : null; if (n) held[n] = 1; });
+      var gR = window.Dxf2GapGuide.fromRaw(S.sheets, held, { min_rows: rf && rf.defaults && rf.defaults['guide.gap_sheets'] ? rf.defaults['guide.gap_sheets'].min_rows : undefined }); S.guide = gR; }   // no list: the section says so, it does not vanish
+    if (S.guide && window.Dxf2GapGuide) window.Dxf2GapGuide.logLines(S.guide).forEach(function (l) { console.log(l); });
+  }
   function render() {
     if (!S.panel || S.panel.style.display === 'none') return;
     var body = document.getElementById('dm-body'), top = body ? body.scrollTop : 0, ae = document.activeElement, fid = ae && ae.id;
@@ -1049,7 +1096,7 @@
     var focusVal = ae && S.panel && S.panel.contains(ae) && ae.tagName === 'INPUT' ? { sel: ae.id ? '#' + ae.id : null, v: ae.value, s: ae.selectionStart } : null;
     S.sheets.forEach(function (sh) { sh.prop = proposalsFor(sh); }); S.evRows = {};   // §D36 the rows register themselves as they are drawn
     var h = '<div class="ip-head">' + IC.clipboard + '<span class="ip-title">Drawing metadata</span>' + chip() + '<button class="dm-x" id="dm-close" title="Close">' + IC.x + '</button></div>' +
-      '<div id="dm-body">' + '<div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
+      '<div id="dm-body">' + '<div class="dm-sec">' + renderMissing() + '</div><div class="dm-sec">' + renderYellows() + '</div>' + renderSheets() + '<div class="dm-sec">' + renderUnits() + '</div><div class="dm-sec">' + renderLayers() + '</div><div class="dm-sec">' + renderTags() + '</div><div class="dm-sec">' + renderDoors() + '</div><div class="dm-sec">' + renderBodyZ() + renderSizes() + renderElementDefaults() + renderTypology() + '</div><div class="dm-sec">' + renderDefaults() + '</div><div class="dm-sec">' + renderExcludes() + '</div><div class="dm-sec">' + renderWalltops() + '</div><div class="dm-sec">' + renderVerdict() + '</div></div>' +
       '<div class="ip-foot"><button class="dm-btn primary" id="dm-save">' + IC.save + '<span>Save marked copies</span></button><div id="dm-note">' +
       (S.saved ? 'Downloaded: ' + esc(S.saved.join(', ')) + '. The opened files are unchanged.' : 'Save writes the markings as DXF2BIM-MARK texts into downloaded copies (&lt;name&gt;_marked.dxf).') +
       (S.byOk ? '' : ' Source suffix @BY=user: not yet accepted by the synced grammar, so not written.') + '</div></div>';
@@ -1164,6 +1211,8 @@
       else if (a === 'dtag') el.onclick = function () { var pk = S.dpick; if (!pk) return; var nw = document.getElementById('dm-dt-new').value.trim(), mk = nw || document.getElementById('dm-dt-sel').value; if (!mk) { S.dmsg = 'Pick a schedule mark or type a new one.'; render(); return; } writeTag(pk.sheet, pk.handle, mk); };
       else if (a === 'dzoom') el.onclick = function () { highlight({ code: 'door', sheet: el.getAttribute('data-sheet'), handles: [el.getAttribute('data-h')], pos: null }); };
       else if (a === 'vtab') el.onclick = function () { S.vtab = el.getAttribute('data-tab'); render(); };
+      else if (a === 'ggtint') el.onclick = function () { setTint(!S.tintOn); render(); };
+      else if (a === 'ggrow') el.onclick = function () { var r = S.guide.missing_list[Number(el.getAttribute('data-i'))], si = S.sheets.findIndex(function (q) { return q.name === r.sheet; }), hh = r.h || 0, shown = si >= 0 && window.DxfSheetFrame ? window.DxfSheetFrame.open(si, { evidence: { x0: r.x - hh / 2, y0: r.y - hh * 0.45, x1: r.x + hh * 30, y1: r.y + hh * 0.45 } }) : null; console.log(TAG + ' §GAPGUIDE evidence sheet=' + r.sheet + ' handle=' + r.handle + ' no=' + r.no + ' says=' + r.says + ' shown=' + !!shown); };   // §D110 G6b the row, on the sheet that says so
       else if (a === 'item') el.onclick = function () { var x = (S.vtab === 'blocking' ? S.verdict.blocking : S.verdict.advisory)[Number(el.getAttribute('data-i'))]; highlight(x); };
     });
     P.querySelectorAll('.dm-pr[data-ev]').forEach(function (el) { el.addEventListener('click', function (e) { if (e.target.closest('button,select,input')) return; fly(el.getAttribute('data-ev')); }); });   // §D36 a row = fly to its evidence
@@ -1304,6 +1353,7 @@
     if (!S.panel) { S.panel = document.createElement('div'); S.panel.id = 'dm-panel'; document.body.appendChild(S.panel); }
     S.panel.style.display = 'flex';
     var g = gateNow();   // the import already judged the opened files: show that verdict, no second run
+    takeGuide(g);
     if (g && g.verdict) { S.verdict = g.verdict; S.verdict.pipeline = g.R && !g.R.refused ? { ran: true, run_id: g.R.run_id } : { ran: false, why: g.refused.map(function (r) { return r.sheet + ': ' + r.reason; }).join('; ') }; S.lib = g.lib; S.busy = false; render();
       console.log(TAG + ' verdict=' + g.verdict.verdict + ' blocking=' + g.verdict.blocking.length + ' advisory=' + g.verdict.advisory.length + ' (the import gate) counts=' + JSON.stringify(g.verdict.counts)); }
     else { render(); schedule(0); }
