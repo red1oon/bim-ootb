@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.84.1](https://github.com/red1oon/bim-ootb/compare/v1.84.0...v1.84.1) (2026-11-05)
+
+
+### 🐛 Fixes
+
+* **erp:** a detail tab whose dictionary read failed shows no rows, never every parent's (§MD-UPSTREAM) ([#2641](https://github.com/red1oon/bim-ootb/issues/2641)) ([4775f15](https://github.com/red1oon/bim-ootb/commit/4775f156bfe5ad421be4f034faa2985e5672f074))
+
 ## [1.84.0](https://github.com/red1oon/bim-ootb/compare/v1.83.0...v1.84.0) (2026-10-31)
 
 
