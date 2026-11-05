@@ -10,7 +10,7 @@
 var path = require('path'), fs = require('fs'), os = require('os'), cp = require('child_process');
 var ROOT = path.join(__dirname, '..', '..'), MUT = process.env.UIF_MUT || '';
 function reqPw() { try { return require('playwright'); } catch (e) { return require('/home/red1/bim-ootb/tests/node_modules/playwright'); } }
-var MUTS = { 'status-blank': ['erp/page_status.js', "el.className = 'ps-' + cls; el.innerHTML = html;", "el.className = 'ps-' + cls; el.innerHTML = '';"], 'failure-silent': ['erp/page_status.js', "var s = String(line); if (s.indexOf('🔴') !== 0) return;", "return;"] };
+var MUTS = { 'status-blank': ['erp/page_status.js', "el.innerHTML = html; el.title", "el.innerHTML = ''; el.title"], 'failure-silent': ['erp/page_status.js', "var s = String(line); if (s.indexOf('🔴') !== 0) return;", "return;"] };
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); }, V = { j: 0, f: 0 };
 function check(key, ok, label, info) { V.j++; if (!ok) V.f++; console.log('  §UIF_CHECK ' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + label + (ok ? '' : ' got=' + J(info).slice(0, 300))); return ok; }
 (async function () {
@@ -38,6 +38,7 @@ function check(key, ok, label, info) { V.j++; if (!ok) V.f++; console.log('  §U
       await pg.waitForFunction(PAGES[name][1], null, { timeout: 170000 }); await sleep(300);
       var rd = await txt(pg), expect = { till: /Choose your name/, kitchen: /Not joined to a branch relay|Branch relay:/, admin: /First: open the main till/ }[name];
       check(name + '-ready', !!rd && expect.test(rd), name + ' after ready: an instruction (' + expect + ')', rd);
+      if (name === 'till') { await pg.click('#u1 .u-user:has-text("GardenUser")'); await sleep(300); var dk = await pg.evaluate(function () { var e = document.querySelector('#ps-status'); return { text: e.innerText.trim(), docked: e.classList.contains('ps-dock'), inView: e.getBoundingClientRect().width > 0 }; }); check('till-docked-nonblank', dk.docked && dk.text.length > 5 && dk.inView, 'till after sign-in: the status stays visible as a docked chip (layout loses no height)', dk); }
       if (name === 'kitchen') { var ke = await pg.evaluate(function () { var e = document.querySelector('#k-empty'); return { hidden: e.hidden, text: e.textContent.trim() }; }); check('kitchen-empty', !ke.hidden && /No orders yet\. Orders appear here when a till presses Send Order\./.test(ke.text), 'kitchen empty state is shown with the instruction', ke); }
       if (name === 'admin') { var ae = await pg.evaluate(function () { var e = document.querySelector('#a-empty'); return { hidden: e.hidden, text: e.textContent.trim() }; }); check('admin-empty', !ae.hidden && /Nothing handed over yet/.test(ae.text), 'admin empty state is shown with what to do', ae); }
       await pg.context().close();

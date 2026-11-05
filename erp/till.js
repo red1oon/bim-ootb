@@ -71,6 +71,7 @@
     S.screen = name; $$('.screen').forEach(function (e) { e.classList.remove('on'); });
     $('#' + SCREENS[name]).classList.add('on');
     if (name === 'close') renderClose(); if (name === 'sales') renderSales(); if (HOOKS[name]) HOOKS[name]();
+    if (window.PageStatus) window.PageStatus.dock(name !== 'login');
     if (window.PageStatus) window.PageStatus.hint(name === 'login' ? 'Choose your name below to sign in. ' + window.PageStatus.relayWords() : (S.cashier ? 'Signed in as ' + S.cashier.name + '. ' : '') + window.PageStatus.relayWords());
     return true;
   }
