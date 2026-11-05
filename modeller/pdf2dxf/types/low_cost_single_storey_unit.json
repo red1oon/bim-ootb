@@ -1,0 +1,257 @@
+{
+  "_readme": "Default template (ruler) for the building type. Spec: prompts/PDF2BIM_VECTOR_PROBE.md §33. The structure is PRESET and orientation is PRESUMED; the code only fills the blanks from the sheets. Edit for another drafter's set of the same type.",
+  "type_name": "Low cost single storey unit",
+  "marking_template": "low_cost_house.json",
+  "dictionary": "low_cost_house_rosetta.json",
+  "preset": {
+    "storeys": 1,
+    "roof": {
+      "form": "main gable + porch gable",
+      "main_ridge_axis": "3",
+      "main_ridge_runs_along": "X",
+      "porch_ridge_runs_along": "Y",
+      "porch_on_face": "FRONT"
+    },
+    "room_layout": "dictionary: rooms, by grid cell",
+    "envelope": {
+      "ring": "closed ring of walls on the grid axes",
+      "openings": "doors D1..D3 and windows W1..W3, sizes from the p8 schedule, positions from the plan"
+    }
+  },
+  "sheets": {
+    "plan": 1,
+    "electrical": 2,
+    "roof": 3,
+    "elevations_a": 4,
+    "elevations_b": 5,
+    "sections": 6,
+    "plumbing": 7,
+    "schedule": 8
+  },
+  "views": {
+    "_presumed": "Orientation is presumed, not inferred (owner 2026-11-04). row = which of the sheet's two views. axis = the grid line of the wall that face shows.",
+    "FRONT": {
+      "sheet": 4,
+      "row": "lower",
+      "face": "minY",
+      "haxis": "+X",
+      "axis": "2"
+    },
+    "REAR": {
+      "sheet": 4,
+      "row": "upper",
+      "face": "maxY",
+      "haxis": "-X",
+      "axis": "5"
+    },
+    "RIGHT": {
+      "sheet": 5,
+      "row": "upper",
+      "face": "maxX",
+      "haxis": "+Y",
+      "axis": "E"
+    },
+    "LEFT": {
+      "sheet": 5,
+      "row": "lower",
+      "face": "minX",
+      "haxis": "-Y",
+      "axis": "A"
+    }
+  },
+  "blanks": {
+    "beam_above_ffl": {
+      "nominal": 3000,
+      "tol_mm": 15,
+      "read_from": "elevations: the long line above the floor line",
+      "module_mm": 50
+    },
+    "ffl_above_ground": {
+      "nominal": 150,
+      "tol_mm": 15,
+      "read_from": "elevations: floor line above the ground line",
+      "module_mm": 10
+    },
+    "ridge_above_beam": {
+      "nominal": 1722,
+      "tol_mm": 15,
+      "read_from": "side elevations: top of the highest line at the roof's pitch"
+    },
+    "eaves_from_axis": {
+      "nominal": 750,
+      "tol_mm": 15,
+      "read_from": "roof plan: where the sheet ribs end, from the outer axes",
+      "module_mm": 50
+    },
+    "wall_thickness": {
+      "nominal": 100,
+      "tol_mm": 15,
+      "read_from": "plan: gap between paired wall pen lines",
+      "module_mm": 10
+    },
+    "porch_step_below_ffl": {
+      "nominal": 100,
+      "tol_mm": 15,
+      "read_from": "front elevation: the line between floor and ground",
+      "module_mm": 10
+    },
+    "high_window_sill": {
+      "nominal": 2000,
+      "tol_mm": 15,
+      "read_from": "elevations: the window's frame edges",
+      "module_mm": 50
+    },
+    "high_window_head": {
+      "nominal": 2500,
+      "tol_mm": 15,
+      "read_from": "elevations: the window's frame edges",
+      "module_mm": 50
+    },
+    "door_head_above_ffl": {
+      "nominal": 2100,
+      "tol_mm": 15,
+      "read_from": "elevations: top of the door's outer frame verticals, standing on the floor line",
+      "module_mm": 50
+    },
+    "door_frame_face": {
+      "nominal": 50,
+      "tol_mm": 15,
+      "read_from": "elevations: outer to inner frame vertical",
+      "module_mm": 10
+    },
+    "roof_pitch_deg": {
+      "nominal": 25,
+      "tol_mm": 1,
+      "read_from": "side elevations: the long straight lines that are neither level nor plumb"
+    },
+    "floor_buildup": {
+      "nominal": 150,
+      "tol_mm": 10,
+      "read_from": "sections: FFL level line down to the chromatic membrane line, where one is drawn"
+    }
+  },
+  "window_system": {
+    "_status": "YELLOW: template defaults, the drawing does not state a profile. Overall sizes and panels come from the p8 schedule, depth from the plan.",
+    "frame_face_mm": 50,
+    "pane_mm": 6,
+    "depth_mm": 100,
+    "types": {
+      "W1": {
+        "panels": 3,
+        "text": "M.B alum. 3 panel frame adjustable window"
+      },
+      "W2": {
+        "panels": 2,
+        "text": "M.B alum. 2 panel frame adjustable window"
+      },
+      "W3": {
+        "panels": 1,
+        "text": "M.B alum. frame single panel, top hung adjustable window"
+      }
+    }
+  },
+  "ruler": {
+    "plan_frame_margin_mm": 300,
+    "printed_scale": 100,
+    "window_module_pitch_mm": 600,
+    "window_module_mm": [
+      100,
+      500
+    ],
+    "grid_module_mm": 100,
+    "grid_tol_mm": 15,
+    "long_line_mm": 10000,
+    "bubble_radius_mm": [
+      323,
+      395
+    ],
+    "section_marker_radius_mm": [
+      269,
+      323
+    ],
+    "wall_pen_mm": 12.91,
+    "room_tag": {
+      "_spec": "§36: the room tag's box and pens in mm, so they follow the print scale. read_max_mm and margin_mm are set from measurements, not to be widened to pass.",
+      "box_mm": [
+        693,
+        320
+      ],
+      "box_tol": 0.15,
+      "hair_pen_mm_max": 7,
+      "ink_pen_mm": [
+        15,
+        40
+      ],
+      "read_max_mm": 5.0,
+      "margin_mm": 0.25,
+      "glyphs": "low_cost_house_tag_glyphs.json"
+    },
+    "door_arc": {
+      "_spec": "§39: what a door's swing arc looks like, measured on this type's plan: leaves 669-900 mm in the 0.72 pt pen; the one fixture arc 559 mm in the 0.12 pt pen. Not tied to the schedule's widths: a schedule that disagrees with the plan must not lose the door.",
+      "radius_mm": [
+        600,
+        1300
+      ],
+      "pen_mm": [
+        15,
+        40
+      ]
+    },
+    "style_search": {
+      "_spec": "§40: where the sheet's own style is looked for. Read once in fill_blanks.py, written to template.effective.json; every later stage uses what was read.",
+      "wall_pair_mm": [
+        60,
+        300
+      ],
+      "long_line_mm": 1000,
+      "bubble_radius_mm": [
+        200,
+        800
+      ],
+      "arc_mm": [
+        450,
+        1300
+      ],
+      "elevation_beam_mm": [
+        2000,
+        4500
+      ],
+      "elevation_ffl_mm": [
+        50,
+        800
+      ],
+      "wall_on_axis_mm": 120
+    },
+    "column_tags": [
+      "W3",
+      "C1"
+    ],
+    "column_mm": {
+      "short": [
+        160,
+        240
+      ],
+      "long": [
+        160,
+        340
+      ]
+    }
+  },
+  "door_system": {
+    "_status": "§38. Frame face is read on p4 (door_frame_face). Leaf thickness is a template default, YELLOW: not drawn at a readable scale. Knob, lock, swing and finish are not modelled.",
+    "frame_face_mm": 50,
+    "leaf_mm": 40,
+    "depth_mm": 100,
+    "types": {
+      "D1": {
+        "text": "Metal frame, Single leaf solid timber door"
+      },
+      "D2": {
+        "text": "Flush door with gloss paint"
+      },
+      "D3": {
+        "text": "Flush door with gloss paint"
+      }
+    }
+  }
+}

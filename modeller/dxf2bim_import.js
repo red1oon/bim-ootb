@@ -400,7 +400,7 @@
     var sopt = null;
     if (sectSh) {
       var sal = MK.align(base, sectSh.desc, C.MARK_ALIGN_TOL);
-      R.section = sal.map ? S.sectionSlabs(sectSh.dxf.entities, MK.withLayers(SET.MAP_SECT, sectSh.desc), sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof, { stepped: settingOf(sheets, opts, UNDERSIDE_KEY, 'longest_cut') })
+      R.section = sal.map && typeof sal.map.zOf === 'function' ? S.sectionSlabs(sectSh.dxf.entities, MK.withLayers(SET.MAP_SECT, sectSh.desc), sal.map, ST.map(function (st) { return st.level; }), CFG, sectSh.desc.roof, { stepped: settingOf(sheets, opts, UNDERSIDE_KEY, 'longest_cut') })
         : { slabs: {}, roof: null, gaps: [{ code: 'GAP:section_align_fail', errors: sal.errors.map(function (e) { return e.code; }) }] };
       R.sectionSheet = sectSh.name; sopt = { section: R.section };
       if (sectSh.desc.cut && sal.map) { var cp = sectSh.desc.cut.split(','); R.sectionCut = { axis: cp[0], at: Number(cp[1]) * MK.UNITS[sectSh.desc.units] }; }
