@@ -1135,7 +1135,8 @@
     var R; try { R = await window.Pdf2DxfReader.read(window.pdfjsLib, new Uint8Array(await file.arrayBuffer())); } catch (e) { pdfSay('This PDF could not be opened: ' + ((e && e.message) || e)); return null; }
     var S_ = JSON.parse(T.template).sheets, plan = R.pages[String(S_.plan)];
     console.log(TAGP + ' read pages=' + R.stats.pages + ' paths=' + R.stats.paths + ' words=' + R.stats.words + ' images=' + R.stats.images + ' ms=' + (Date.now() - t0));
-    if (!plan || plan.paths.length < 20) { pdfSay(R.stats.images ? 'This PDF holds a scanned image, with no lines to read. A vector PDF, as exported from CAD, is needed.' : 'This PDF has no drawn lines on its plan page. A vector PDF, as exported from CAD, is needed.'); return null; }
+    var PDF_MIN_PLAN_PATHS = 20;   // fewer drawn paths than this on a plan page: not a vector drawing (W-GUARD G3: a named value, not an inline threshold)
+    if (!plan || plan.paths.length < PDF_MIN_PLAN_PATHS) { pdfSay(R.stats.images ? 'This PDF holds a scanned image, with no lines to read. A vector PDF, as exported from CAD, is needed.' : 'This PDF has no drawn lines on its plan page. A vector PDF, as exported from CAD, is needed.'); return null; }
     var O, t1 = Date.now();
     try { O = window.Pdf2Dxf.run({ pages: R.pages }, { rosetta: T.rosetta, template: T.template, glyphs: T.glyphs }); }
     catch (e) { console.log(TAGP + ' rules stopped: ' + ((e && e.message) || e)); pdfSay("This PDF was not recognised as a 'Low cost single storey unit' drawing: " + ((e && e.message) || e)); return null; }
