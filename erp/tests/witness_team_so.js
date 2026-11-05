@@ -15,6 +15,7 @@
 //   §TEAM-CL1      both create an order, then edit it BEFORE any Visit, then sync: each order keeps its OWN edit, on both
 //                  (disproves "an edit by device-local pk lands on another device's record" — TEAMWORK_FRAMEWORK §12.1).
 //   §TEAM-CONFLICT both edit the same field crossed: both show the CurrentRecordModified conflict and keep the last agreed value.
+//   §TEAM-GOAL-LOCAL a goal refresh at a Home render stays on the device, no conflict from two Homes; a target edit still replicates (CAPEX_DASHBOARD.md §5.32).
 //   §TEAM-LOCALONLY a DocAction (W2) is NOT sent and shows as a visible local-only warning (never guessed).
 //   §TEAM-NOERR    0 page errors.   §TEAM-XOFN  how many AD windows the hook covers generically vs witnessed.
 // Run: node erp/tests/witness_team_so.js 2>&1 | tee /tmp/witness_team_so.log
@@ -301,6 +302,44 @@ function kidOfName(n) { var p = n.split('/'); return (p.length >= 4 && p[0] === 
     var warn = L.A.slice(nLo).filter(function (t) { return /§TEAM_LOCALONLY/.test(t); }), after = await chip('A');
     if (!warn.length && !(after.localonly > before)) incon('§TEAM-LOCALONLY', 'the DocAction commit did not reach the funnel in this harness (no §TEAM_LOCALONLY line, chip unchanged) — see log');
     else verdict(warn.length >= 1 && after.localonly > before, 'a DocAction is NOT sent and the chip shows a visible local-only warning', (warn[0] || '').slice(0, 160) + ' | chip.localonly ' + before + ' → ' + after.localonly);
+
+    // ═══ §TEAM-GOAL-LOCAL — bim-ootb prompts/CAPEX_DASHBOARD.md §5.32. This harness pins no base, so a seeded goal cannot leave whatever it carries (team_sync.js:347-349): the record under test is a goal CREATED on the Team. ═══
+    console.log('\n§TEAM-GOAL-LOCAL');
+    var gOut = function (w, op) { return L[w].filter(function (l) { return new RegExp('^§TEAM_OUT op=' + op + ' table=pa_goal ').test(l); }).length; };
+    var gName = 'W-TEAM-GOAL';
+    var tipGoal = function (w) { return pg[w].evaluate(function (n) { return new Promise(function (res) { var c = window.__crud, r = window.__idmpDb.exec('SELECT * FROM pa_goal WHERE 1=0'), cols = r.length ? r[0].columns : []; c.withSidecar(function (d) { var t = c.core.listTip(d, 'pa_goal', 'pa_goal_id', [], null).rows.filter(function (x) { return x.name === n; })[0]; res(t ? { id: t.pa_goal_id, target: t.measuretarget, last: t.datelastrun, actual: t.measureactual } : null); }); }); }, gName); };
+    var made = await pg.A.evaluate(function (n) { return new Promise(function (res) { window.__crud.applyOpGroup([{ key: 'pa_goal', table: 'pa_goal', verb: 'create', op_uuid: null, op_type: 'CRUD_CREATE', cas: null, stdDefaults: { actor: 101, clientId: 11, orgId: 0 }, fields: { ad_client_id: 11, ad_org_id: 0, isactive: 'Y', name: n, pa_measure_id: 104, measuretarget: 10, measurescope: '0', measuredisplay: '0', seqno: 900, issummary: 'N', relativeweight: 1, charttype: 'BC', pa_colorschema_id: 100, measureactual: 0, goalperformance: 0 } }], function (r) { res(!!(r && r.committed)); }); }); }, gName);
+    await visit('A'); await visit('B');
+    var g0A = await tipGoal('A'), g0B = await tipGoal('B');
+    console.log('   §TEAM-GOAL-LOCAL created committed=' + made + ' out=' + gOut('A', 'CRUD_CREATE') + ' A=' + JSON.stringify(g0A) + ' B=' + JSON.stringify(g0B));
+    if (!made || !g0A || !g0B) incon('§TEAM-GOAL-LOCAL', 'the Team goal did not reach both devices: nothing to judge');
+    else {
+      verdict(gOut('A', 'CRUD_CREATE') === 1, 'a goal created on the Team leaves device A, and B holds it', 'B id=' + g0B.id);
+      var edited = await pg.A.evaluate(function (id) { return new Promise(function (res) { window.__crud.applyOpGroup([{ key: 'pa_goal', table: 'pa_goal', verb: 'update', op_uuid: null, op_type: 'CRUD_UPDATE', id: id, changes: { measuretarget: { old: 10, new: 77 } } }], function (r) { res(!!(r && r.committed)); }); }); }, g0A.id);
+      await visit('A'); await visit('B');
+      var g1B = await tipGoal('B');
+      verdict(edited && gOut('A', 'CRUD_UPDATE') === 1 && Number(g1B.target) === 77, 'a target edit with no marker leaves too, and B reads it', 'out=' + gOut('A', 'CRUD_UPDATE') + ' B target=' + g1B.target);
+      var nA = gOut('A', 'CRUD_UPDATE'), nB = gOut('B', 'CRUD_UPDATE'), storeOf = function (w) { return pg[w].evaluate(function () { return new Promise(function (res) { window.ModelPA.storeDue(res); }); }); };
+      var slA = L.A.length, slB = L.B.length; await storeOf('A'); await storeOf('B');
+      var gStA = await tipGoal('A'), gStB = await tipGoal('B');
+      verdict(!!gStA.last && !!gStB.last, 'both devices stored the Team goal at render', 'A=' + gStA.last + ' B=' + gStB.last);
+      var seeded = function (w) { return pg[w].evaluate(function () { return new Promise(function (res) { var c = window.__crud, r = window.__idmpDb.exec('SELECT * FROM pa_goal WHERE pa_goal_id=105'), b = r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (k, i) { o[k.toLowerCase()] = v[i]; }); return o; }); c.withSidecar(function (d) { res(c.core.listTip(d, 'pa_goal', 'pa_goal_id', b, null).rows[0].datelastrun); }); }); }); }, sdA0 = await seeded('A');      // the call the Home makes at render (this harness opens window 143 directly); W-GOAL-STORE T1 proves the Home makes it
+      await visit('A'); await visit('B'); await visit('A');
+      var g2A = await tipGoal('A'), g2B = await tipGoal('B'), box = function (w) { return pg[w].evaluate(function () { var b = document.getElementById('team-conflicts'); return b ? b.textContent : ''; }); }, cf0A = await box('A'), cf0B = await box('B');
+      console.log('   §TEAM-GOAL-LOCAL stored A=' + JSON.stringify(g2A) + ' B=' + JSON.stringify(g2B) + ' ' + JSON.stringify(L.A.slice(slA).concat(L.B.slice(slB)).filter(function (l) { return /^§GOAL_STORE/.test(l); })));
+      var sdA1 = await seeded('A');
+      verdict(/^20/.test(String(sdA0)) && !/^2007/.test(String(sdA0)) && sdA1 === sdA0, 'a seeded goal keeps its stored row through a Visit (every CAPEX goal is one: a stable key)', sdA0 + ' → ' + sdA1);
+      console.log('   §TEAM-GOAL-LOCAL LIMIT (named, §5.32) a goal created on the Team: its local refresh is orphaned by the rebuild (the pk moves, the kept op does not), so it is due again at the next render: A last=' + g2A.last + ' id ' + gStA.id + ' → ' + g2A.id);
+      verdict(L.A.concat(L.B).some(function (l) { return /^§TEAM_STATION_LOCAL op=CRUD_UPDATE goal-refresh pa_goal/.test(l); }) && gOut('A', 'CRUD_UPDATE') === nA && gOut('B', 'CRUD_UPDATE') === nB, 'the refreshes stayed on the device: nothing more left either one', 'A ' + nA + '→' + gOut('A', 'CRUD_UPDATE') + ' B ' + nB + '→' + gOut('B', 'CRUD_UPDATE'));
+      verdict(!/datelastrun|measureactual|goalperformance/i.test(cf0A + cf0B), 'two devices storing the same goal raised no conflict');
+      // CONTROL: the same two writes WITHOUT the marker. This is why the marker exists: if no conflict comes, §5.31's reason was wrong and the marker is not needed.
+      var cross = function (w, v) { return pg[w].evaluate(function (a) { return new Promise(function (res) { window.__crud.applyOpGroup([{ key: 'pa_goal', table: 'pa_goal', verb: 'update', op_uuid: null, op_type: 'CRUD_UPDATE', id: a.id, changes: { datelastrun: { old: a.old, new: a.v } } }], function (r) { res(!!(r && r.committed)); }); }); }, { id: w === 'A' ? g2A.id : g2B.id, old: null, v: v }); };
+      await cross('A', '2026-01-01 01:00:00'); await cross('B', '2026-01-01 02:00:00');
+      await visit('A'); await visit('B'); await visit('A');
+      var cf1A = await box('A'), cf1B = await box('B');
+      console.log('   §TEAM-GOAL-LOCAL control unmarked crossed writes: A=' + JSON.stringify(cf1A.slice(-200)) + ' B=' + JSON.stringify(cf1B.slice(-200)));
+      verdict(/datelastrun/i.test(cf1A) && /datelastrun/i.test(cf1B), 'CONTROL: the same writes with no marker DO raise the conflict on both devices', 'A=' + /datelastrun/i.test(cf1A) + ' B=' + /datelastrun/i.test(cf1B));
+    }
 
     // ═══ §TEAM-XOFN ═══
     console.log('\n§TEAM-XOFN');

@@ -11,10 +11,25 @@
   var ML = root.ModelLayer, GE = root.GoalEngine, A = root.AdCallout;
   if (!ML || !GE || typeof GE.installModel !== 'function') { if (root.console) console.log('§MODEL-PA not registered (ModelLayer=' + !!ML + ' GoalEngine=' + !!GE + ')'); return; }
   var installed = false;
-  GE.installModel(ML, function (trx) {
+  function ctxFor(trx) {
     var e = (trx && trx.env) || {}, day = String(e.date || e.now || '').slice(0, 10);
     if (!installed && root.__idmpDb) { try { GE.install(root.__idmpDb); installed = true; } catch (x) {} }   // the stock measures' views / UDFs (invoiceopen, currencybase, the invoice views), once
-    return { client: e.client, role: e.role, today: day, now: e.now || (day + ' 00:00:00'), convertSql: A && A.convertSql };
-  });
+    return { client: e.client, user: e.user, role: e.role, today: day, now: e.now || (day + ' 00:00:00'), convertSql: A && A.convertSql };
+  }
+  GE.installModel(ML, ctxFor);
+  // storeDue: the render's half of MGoal.getUserGoals (bim-ootb prompts/CAPEX_DASHBOARD.md §5.32, Witness W-GOAL-STORE): the user's due goals stored in ONE signed group. No role check on the write, as legacy's model save.
+  //   Every op carries teamLocal: a refresh stays on this device (team_sync translate), because every device writes these columns at every render and the comm layer judges conflicts per column. A goal saved in its window has no marker and replicates.
+  root.ModelPA = { storeDue: function (cb) {
+    var C = root.__crud, t0 = Date.now(), res = [], done = function (x) { if (cb) cb(x); };
+    if (!C || typeof C.modelRun !== 'function' || typeof C.applyOpGroup !== 'function') { console.log('§GOAL_STORE skipped: no signed op-log'); done(null); return; }
+    C.modelRun({ table: 'pa_goal', timing: 'PROCESS', fn: function (trx) { res = GE.storeDue(trx.q, function (g, c) { trx.update('pa_goal', g, c); }, ctxFor(trx)); return { ok: true }; } }, function (r) {
+      var ops = (r && r.ok !== false && r.ops) || [], written = res.filter(function (x) { return x.written; }).length, notWritten = res.filter(function (x) { return !x.written; });
+      var line = function (extra) { var m = root.performance && root.performance.memory; console.log('§GOAL_STORE goals=' + res.length + ' written=' + written + ' ops=' + ops.length + ' ' + extra + ' ms=' + (Date.now() - t0) + ' heapMB=' + (m ? Math.round(m.usedJSHeapSize / 1048576) : '?') + (notWritten.length ? ' notWritten=' + JSON.stringify(notWritten.map(function (x) { return x.goalId + ':' + x.reason; })) : '')); };
+      if (!r) { line('committed=false reason=model-run-failed'); done(null); return; }
+      if (!ops.length) { line('committed=false reason=nothing-due'); done(r); return; }
+      ops.forEach(function (o) { o.teamLocal = 'goal-refresh'; });
+      C.applyOpGroup(ops, function (cr) { line('committed=' + !!(cr && cr.committed)); done(cr); }, r.observed);
+    });
+  } };
   if (root.console) console.log('§MODEL-PA registered PA_Goal afterSave (MGoal.afterSave :594-603)');
 })(typeof window !== 'undefined' ? window : globalThis);

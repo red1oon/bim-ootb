@@ -314,6 +314,7 @@
     var p; try { p = JSON.parse(r.parameters); } catch (e) { return { skip: 'unparseable' }; }
     var table = String((p && p.table) || '').toLowerCase();
     if (!/^(CRUD_(CREATE|UPDATE|DELETE)|SET_STATUS)$/.test(r.op_type)) return { local: 'op-type ' + r.op_type, table: table };
+    if (p.teamLocal) return { quiet: p.teamLocal + ' ' + table };      // this one op stays on the device, its table's rule aside: a goal refresh at render (bim-ootb prompts/CAPEX_DASHBOARD.md §5.32)
     if (held[table]) return { local: 'held-by-device ' + table, table: table, held: true };
     var scope = global.TeamScope.scopeOf(table, scopeCtx.role), pos = scopeCtx.kind === 'pos', ship = null, laneTo = scope === 'up' ? 'hub' : scope === 'branch' && scopeCtx.person ? 'b_' + String(scopeCtx.person).toLowerCase() : null;   // 'branch' (P2 kitchen, POS_PLUGIN_LOCAL_FIRST §19.3): the lane of MY branch Org; the hub neither reads nor holds it
     if (scope === 'station-local') return { quiet: 'station-owned ' + table };

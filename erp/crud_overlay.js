@@ -416,7 +416,7 @@
   // @SQL default, an info window or a process port can call bomQtyOnHand()/invoiceOpen()/... exactly as the legacy DB lets any SQL call its PL/pgSQL functions.
   function _coBindUdf(db) {
     var A = global.AdCallout; if (!A || !A.bind) return;
-    A.bind(_modelQuery(db), { now: function () { return Date.now(); } });
+    A.bind(_modelQuery(db));   // no clock of its own: RUNTIME.now is the local wall clock (§5.33 CAPEX_DASHBOARD.md: a Date.now() here undid it, SQL SYSDATE was the UTC day)
     if (_coUdfDb !== db && A.RUNTIME.registerSqlFunctions) { _coUdfDb = db; try { A.RUNTIME.registerSqlFunctions(function (n, f) { db.create_function(n, f); }); } catch (eu) { console.log('§CALLOUT-UDF failed ' + (eu && eu.message)); } }
   }
   function _coDb(fn) {
