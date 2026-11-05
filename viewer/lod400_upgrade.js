@@ -68,6 +68,17 @@
       ' saved=' + (out.vBefore - out.vAfter) + ' (~' + ((out.vBefore - out.vAfter) * 0.17 / 1e6).toFixed(2) + ' GB heap)' + (out.geoms ? '' : ' INCONCLUSIVE: nothing welded'));
     return out;
   }
-  var API = { weldSmooth: weldSmooth, upgradeDb: upgradeDb, triArea: triArea };
+  // Panel (opened by the pill action in panels.js): runs upgradeDb on the open building (A.db). Result lives in the DB: Save Building, reopen to see it rendered.
+  function openPanel(A) {
+    var old = document.getElementById('lod400-panel'); if (old) { old.remove(); return; }
+    var p = A.createPanel('lod400-panel', { closable: true, style: { position: 'fixed', top: '70px', left: '320px', zIndex: '1100', width: '300px', padding: '12px' } });
+    var h = document.createElement('div'); h.innerHTML = '<b>LOD400 auto-upgrade</b><div style="opacity:.75;font-size:12px;margin:6px 0">Step 1: weld + smooth. Same triangles, area and size; fewer vertices. Nothing is added or removed.</div>';
+    var b = document.createElement('button'); b.textContent = 'Run weld + smooth'; b.style.cssText = 'padding:8px 12px;margin-top:4px;cursor:pointer';
+    var out = document.createElement('pre'); out.style.cssText = 'font-size:11px;white-space:pre-wrap;margin:8px 0 0';
+    b.addEventListener('click', function () { var r = upgradeDb(A.db, {}); root.__lod400Last = r;
+      out.textContent = r.geoms ? ('welded ' + r.geoms + ' geometries (' + r.skipped + ' skipped)\nvertices ' + r.vBefore + ' -> ' + r.vAfter + ' (' + Math.round(100 * (r.vAfter - r.vBefore) / r.vBefore) + '%)\nSave Building, then reopen to see it.') : 'nothing to weld (INCONCLUSIVE)'; });
+    p.appendChild(h); p.appendChild(b); p.appendChild(out); document.body.appendChild(p);
+  }
+  var API = { weldSmooth: weldSmooth, upgradeDb: upgradeDb, triArea: triArea, openPanel: openPanel };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.LOD400 = API;
 })(typeof window !== 'undefined' ? window : this);

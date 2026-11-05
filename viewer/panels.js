@@ -1333,7 +1333,7 @@ function setupPanels(A) {
         children: [ { name: 'Save the open building to a .db file' }, { name: 'Native Save As… dialog — pick name + folder' }, { name: 'Re-openable with Open (Ctrl+O)' } ] },
       // §LOD400 (bim-compiler prompts/LOD400_UPGRADER.md §H): auto-upgrader pill — step 1 weld+smooth on the open building's geometry tables.
       { id: 'lod400',     name: 'LOD400 Upgrade', icon: I.box.svg,
-        fn: function() { if (A.openLod400Panel) A.openLod400Panel(); },
+        fn: function() { if (window.LOD400 && window.LOD400.openPanel) window.LOD400.openPanel(A); },
         children: [ { name: 'Weld duplicate vertices + smooth curved surfaces' }, { name: 'Same triangles, area and size; fewer vertices' }, { name: 'Counted, logged; Save to keep it' } ] },
       { id: 'open',       name: 'Open Building',  key: 'Ctrl+O', icon: I.folderOpen.svg,
         fn: function() { if (A.openModelDb) A.openModelDb(); },
@@ -2687,17 +2687,3 @@ function setupPanels(A) {
   }, 500);
 }
 
-// §LOD400 panel: runs LOD400.upgradeDb on the open building (A.db). Result is in the DB (Save Building keeps it; reopen to see it rendered).
-(function () {
-  var A = window.APP; if (!A || !window.LOD400) return;
-  A.openLod400Panel = function () {
-    var old = document.getElementById('lod400-panel'); if (old) { old.remove(); return; }
-    var p = A.createPanel('lod400-panel', { closable: true, style: { position: 'fixed', top: '70px', left: '320px', zIndex: '1100', width: '300px', padding: '12px' } });
-    var h = document.createElement('div'); h.innerHTML = '<b>LOD400 auto-upgrade</b><div style="opacity:.75;font-size:12px;margin:6px 0">Step 1: weld + smooth. Same triangles, area and size; fewer vertices. Nothing is added or removed.</div>';
-    var b = document.createElement('button'); b.textContent = 'Run weld + smooth'; b.style.cssText = 'padding:8px 12px;margin-top:4px;cursor:pointer';
-    var out = document.createElement('pre'); out.style.cssText = 'font-size:11px;white-space:pre-wrap;margin:8px 0 0';
-    b.addEventListener('click', function () { var r = window.LOD400.upgradeDb(A.db, {}); window.__lod400Last = r;
-      out.textContent = r.geoms ? ('welded ' + r.geoms + ' geometries (' + r.skipped + ' skipped)\nvertices ' + r.vBefore + ' -> ' + r.vAfter + ' (' + Math.round(100 * (r.vAfter - r.vBefore) / r.vBefore) + '%)\nSave Building, then reopen to see it.') : 'nothing to weld (INCONCLUSIVE)'; });
-    p.appendChild(h); p.appendChild(b); p.appendChild(out); document.body.appendChild(p);
-  };
-})();
