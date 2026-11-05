@@ -13,7 +13,8 @@
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var money = function (c) { return (Number(c) / 100).toFixed(2); };
-  function log(s) { try { console.log(s); } catch (e) { /* never breaks the page */ } }
+  function log(s) { try { console.log(s); if (window.PageStatus) window.PageStatus.fromLog(s); } catch (e) { /* never breaks the page */ } }
+  if (window.PageStatus) window.PageStatus.start('admin');
   var chain = Promise.resolve(); function serial(fn) { var p = chain.then(fn, fn); chain = p.catch(function () {}); return p; }
   function rows(sql) { return new Promise(function (res) { E.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { res(trx.q(sql)); return { ok: true }; } }, function () {}); }); }
   function depositGroup(ops) { return new Promise(function (res) { var t = setTimeout(function () { res({ committed: false, reason: 'timeout' }); }, 60000); E.__crud.applyOpGroup(ops, function (r) { clearTimeout(t); res(r); }); }); }
@@ -24,7 +25,7 @@
   function msg(t) { var el = $('#a-msg'); el.hidden = !t; el.textContent = t || ''; if (t) log('§EODA_MSG ' + t); }
 
   async function read() { return EC.fold(S.lan ? S.lan.handoffRows() : []); }   // §38: the shifts the tills put on the branch relay and the main till collected; the §26.3 POS_TillHandoff ops over the internet are gone
-  // ── §38: the MAIN TILL's LAN ops. The flag is the till's own (set from HQ through its SODA row, till.js applySoda); this page runs the ops only where it is set, and TillLan refuses them elsewhere.
+  // ── §38: the MAIN TILL's LAN ops. The flag is the till's own (set at the branch by its supervisor in Configuration, D13 / §40); this page runs the ops only where it is set, and TillLan refuses them elsewhere.
   function lanUrl() { var q = new URLSearchParams(location.search).get('relay'); try { return q || localStorage.getItem('branchrelay.url'); } catch (e) { return q; } }
   function lanSetup() {
     var tk = null, qk = new URLSearchParams(location.search).get('till'), lsk = [];
@@ -55,6 +56,7 @@
         '<td class="gap">' + esc(t.gaps.join(' ')) + '</td><td>' + Object.keys(t.tenders).sort().map(function (n) { return '<span data-tender="' + n + '">' + n + ' ' + money(t.tenders[n]) + '</span>'; }).join(' ') + '</td>' +
         '<td>' + Object.keys(t.taxes).map(function (id) { return '<span data-tax="' + id + '">base ' + money(t.taxes[id].base) + ' tax ' + money(t.taxes[id].amount) + '</span>'; }).join(' ') + '</td><td>' + money(t.gross) + '</td></tr>';
     }).join('');
+    { var ae = $('#a-empty'); if (ae) { var none = !v.tills.length || v.total.tickets === 0; ae.hidden = !none; ae.textContent = 'Nothing handed over yet for this day. Each till presses Close Cash; then press Refresh. Send EODA unlocks when every listed till has closed.'; } }
     var T = v.total; $('#t-state').textContent = T.closed + ' of ' + T.tills + ' closed'; $('#t-tickets').textContent = T.tickets; $('#t-gross').textContent = money(T.gross);
     $('#t-tender').textContent = Object.keys(T.tenders).sort().map(function (n) { return n + ' ' + money(T.tenders[n]); }).join(' '); $('#t-tax').textContent = Object.keys(T.taxes).map(function (id) { return 'base ' + money(T.taxes[id].base) + ' tax ' + money(T.taxes[id].amount); }).join(' ');
     var need = !v.allClosed, ov = $('#a-override').value.trim();
@@ -251,6 +253,7 @@
   }
   async function boot() {
     var t0 = performance.now(), qs = new URLSearchParams(location.search); if (!qs.has('team')) qs.set('team', '1'); if (!qs.has('login')) qs.set('login', '50001');
+    qs.delete('relay');   // §40: `relay=` is the BRANCH relay for this page; the engine frame must not read it as the legacy ERP sync relay (erp_sync_relay.js posts /push to it)
     var f = $('#a-engine'); f.src = 'idempiere.html?' + qs.toString();
     await new Promise(function (r) { f.addEventListener('load', r, { once: true }); });
     E = f.contentWindow;
@@ -263,6 +266,7 @@
     $('#a-org').textContent = 'Org ' + S.cfg.orgValue; $('#a-tills').value = S.set.tills.join(', ');
     lanSetup(); bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#a-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
+    if (window.PageStatus) window.PageStatus.ready('First: open the main till and tick "This is the branch main till" (Configuration > System Options); then each till presses Close Cash; then Refresh and Send EODA here. ' + window.PageStatus.relayWords());
     await render(); await renderSoda(); renderCount(); startLink();
     window.BranchAdmin = { ready: true, lan: function () { return S.lan; }, lanCollect: lanCollect, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, refresh: refresh, send: send, fan: fan, receiveStock: receiveStock, recvPanel: recvPanel, soda: sodaRead, countAdd: countAdd, countSave: countSave, countRemove: countRemove, gatherTills: gatherTills, collectTills: collectTills, isMainTill: isMainTill, salesLocator: salesLocator, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
     var ms = Math.round(performance.now() - t0), heap = performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1;

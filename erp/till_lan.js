@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // ⚠ DO NOT REMOVE — till_lan.js: the till's side of the BRANCH RELAY (bim-compiler prompts/POS_PLUGIN_LOCAL_FIRST.md §38). READ THE LOG (§LAN_* / §MAIN_* lines of erp/tests/witness_branch_relay.js); exit codes are not evidence.
 // Every till runs from localhost (D11) and talks to ONE dumb mailbox on the shop LAN (D12, erp/branch_relay.py), never the internet. An ORDINARY till is built with `lan` only: there is no internet pipe on it to call (D9).
-// The MAIN till (flag set from HQ through its SODA record, §38.2.3) alone collects, answers stock queries and holds the internet pipe `net` (EODA up, SODA down).
+// The MAIN till (flag set at the BRANCH by its supervisor in Configuration, §35.5 D13 / §40; HQ neither sets nor checks it) alone collects, answers stock queries and holds the internet pipe `net` (EODA up, SODA down).
 // Names on the branch relay:  d/<till>/<seq8> a ticket's lines as rung · h/<till>/<shift8> the shift's hand-off rows (Close Cash) · p/<till> heartbeat · q/<till>/<n8> stock question · a/<till>/<n8> the main till's answer.
 // No DOM, no clock of its own (the caller passes now), state in a plain object the caller persists (opts.state + opts.save).
 'use strict';
@@ -20,11 +20,13 @@
     var T = { tillKey: o.tillKey, state: st };
     if (!o.isMain && o.net) throw new Error('TillLan: an ordinary till is built with the branch relay only');   // D9/D11: no internet pipe on a dumb till
     T.isMain = function () { return !!M.on; };
-    // ── the flag: set from HQ through this till's own SODA row (kind M, Value = this till's key). There is no other writer.
-    T.applySodaFlag = function (rows) {
-      var mine = (rows || []).filter(function (r) { return r.kind === 'M' && String(r.value) === String(o.tillKey); });
-      if (mine.length && !M.on) { M.on = true; M.wm = {}; M.lines = {}; M.hand = {}; M.beat = {}; M.seen = []; M.recv = {}; M.soda = M.soda || {}; M.answered = {}; save(); log('§MAIN_FLAG till=' + o.tillKey + ' set by SODA'); }
-      return M.on;
+    // ── the flag (D13, §40): the BRANCH supervisor sets it on THIS till in Configuration. setMain is the ONLY writer; HQ has no path to it (no SODA row sets it).
+    // auth = { supervisor: true, name } from the signed-in cashier's role (uniCenta: Configuration is opened only by a role that lists JPanelConfiguration, JPrincipalApp.java:458 / AppUser.java:191).
+    T.setMain = function (on, auth) {
+      if (!auth || auth.supervisor !== true) { log('§MAIN_SET_REFUSED till=' + o.tillKey + ' (the branch supervisor sets the main-till flag)'); return { refused: 'not-supervisor', message: 'Only the branch supervisor can change the main till setting.' }; }
+      on = !!on; if (on === M.on) return { ok: true, on: M.on, changed: false };
+      M.on = on; if (on) { M.wm = {}; M.lines = {}; M.hand = {}; M.beat = {}; M.seen = []; M.recv = {}; M.soda = M.soda || {}; M.answered = {}; }
+      save(); log('§MAIN_FLAG till=' + o.tillKey + ' ' + (on ? 'set' : 'cleared') + ' by supervisor=' + (auth.name || '-')); return { ok: true, on: M.on, changed: true };
     };
     T.applySodaStock = function (rows) {   // kind S rows: HQ's StorageOnHand for the branch. Main till only; an ordinary till never keeps a quantity (D7)
       if (!M.on) return 0; var n = 0;

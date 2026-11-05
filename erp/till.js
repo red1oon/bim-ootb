@@ -9,7 +9,8 @@
   var E = null, P = window.TillPad, C = window.TillCore, R = window.TillRegistry;
   var $ = function (s) { return document.querySelector(s); }, $$ = function (s) { return [].slice.call(document.querySelectorAll(s)); };
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
-  function log(s) { try { console.log(s); } catch (e) { /* logging never breaks the page */ } }
+  function log(s) { try { console.log(s); if (window.PageStatus) window.PageStatus.fromLog(s); } catch (e) { /* logging never breaks the page */ } }
+  if (window.PageStatus) window.PageStatus.start('till');   // §40.4: a visible line from first paint
   var chain = Promise.resolve(); function serial(fn) { var p = chain.then(fn, fn); chain = p.catch(function () {}); return p; }
   var S = { mode: 'standard', cfg: null, cashier: null, ticket: null, pad: P.zero(), screen: 'login', cat: null, catPath: [], prods: [], cats: [], store: null, taxEnv: null, pay: null, deposited: 0 };
 
@@ -70,6 +71,7 @@
     S.screen = name; $$('.screen').forEach(function (e) { e.classList.remove('on'); });
     $('#' + SCREENS[name]).classList.add('on');
     if (name === 'close') renderClose(); if (name === 'sales') renderSales(); if (HOOKS[name]) HOOKS[name]();
+    if (window.PageStatus) window.PageStatus.hint(name === 'login' ? 'Choose your name below to sign in. ' + window.PageStatus.relayWords() : (S.cashier ? 'Signed in as ' + S.cashier.name + '. ' : '') + window.PageStatus.relayWords());
     return true;
   }
 
@@ -329,11 +331,12 @@
     if (!window.SodaCore) return null;
     var all = []; try { all = await rows('SELECT * FROM pos_tillref ORDER BY seq, ABS(pos_tillref_id)'); } catch (e) { return null; }
     var done = Number(S.store.sodaSeq || 0), fresh = all.filter(function (r) { return Number(r.seq) > done && r.kind !== 'B'; });
-    var lanRows = fresh.filter(function (r) { return r.kind === 'M' || r.kind === 'S'; }); fresh = fresh.filter(function (r) { return r.kind !== 'M' && r.kind !== 'S'; });   // §38.2.3: the main-till flag and HQ's on-hand are the till's own device record, not table rows
-    if (lanRows.length && S.lan) { S.lan.applySodaFlag(lanRows); S.lan.applySodaStock(lanRows); }
+    var staleM = fresh.filter(function (r) { return r.kind === 'M'; }); if (staleM.length) log('§SODA_M_IGNORED n=' + staleM.length + ' (D13: HQ does not set the main-till flag; this branch decides it in Configuration)');
+    var lanRows = fresh.filter(function (r) { return r.kind === 'S'; }); fresh = fresh.filter(function (r) { return r.kind !== 'M' && r.kind !== 'S'; });   // §38.2.5: HQ's on-hand is the till's own device record, not table rows
+    if (lanRows.length && S.lan) { S.lan.applySodaStock(lanRows); }
     var comp = fresh.filter(function (r) { return r.kind === 'O'; }); fresh = fresh.filter(function (r) { return r.kind !== 'O'; });   // §36.5: the company row is the till's own device record, not a table row
     var cres = comp.length && window.TillCompany ? window.TillCompany.apply(comp) : null;
-    if (!fresh.length) { if (comp.length || lanRows.length) { S.store.sodaSeq = comp.concat(lanRows).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
+    if (!fresh.length) { if (comp.length || lanRows.length || staleM.length) { S.store.sodaSeq = comp.concat(lanRows, staleM).reduce(function (m, r) { return Math.max(m, Number(r.seq)); }, done); saveStore(); mediaPrefetch(); } return { applied: 0, company: cres }; }
     var cur = {}, ops = [], pk = {};
     for (var i = 0; i < fresh.length; i++) { var r = fresh[i], t = r.kind === 'P' ? 'm_productprice' : r.kind === 'R' ? 'm_product' : 'c_tax';
       var w = r.kind === 'P' ? 'm_product_id=' + Number(r.m_product_id) + ' AND m_pricelist_version_id=' + Number(r.m_pricelist_version_id) : r.kind === 'R' ? 'm_product_id=' + Number(r.m_product_id) : 'c_tax_id=' + Number(r.c_tax_id);
@@ -384,6 +387,7 @@
   async function boot() {
     var t0 = performance.now();
     var qs = new URLSearchParams(location.search); S.mode = qs.get('mode') === 'restaurant' ? 'restaurant' : 'standard'; qs.delete('mode'); document.body.setAttribute('data-mode', S.mode); if (!qs.has('team')) qs.set('team', '1'); if (!qs.has('login')) qs.set('login', '50001');   // 50001 = the Web Service user = role 50004, the role W-TEAM-UI-POS approves a till as (§15.4)
+    qs.delete('relay');   // §40: `relay=` is the BRANCH relay for this page; the engine frame must not read it as the legacy ERP sync relay (erp_sync_relay.js posts /push to it)
     var f = $('#b-engine'); f.src = 'idempiere.html?' + qs.toString();
     await new Promise(function (r) { f.addEventListener('load', r, { once: true }); });
     E = f.contentWindow;
@@ -411,6 +415,7 @@
     if (window.TillRestInit) window.TillRestInit(api);   // §32: branch-shared open tables / floors / reservations (overrides the per-device hooks of till_ext.js)
     window.Till = { ready: true, lan: function () { return S.lan; }, addLine: addLine, persist: persist, rows: rows, go: go, press: press, state: function () { return S; }, engine: function () { return E; }, registry: R, zFromRows: zFromRows, visit: visit, applySoda: applySoda, depositedDocNos: depositedDocNos };
     if (window.TillKdsInit) window.TillKdsInit(api);   // P2: Send Order -> the kitchen (prompts/POS_PLUGIN_LOCAL_FIRST.md §19.1)
+    if (window.PageStatus) window.PageStatus.ready('Choose your name below to sign in. ' + window.PageStatus.relayWords());
     go('login'); log('§TILL_BOOT till=' + S.cfg.tillKey + ' org=' + S.cfg.org + ' userId=' + S.cfg.userId + ' role=' + E.APP.roleId + ' shift=' + shiftTag());
   }
   boot().catch(function (e) { log('🔴 §TILL_BOOT ' + (e && e.stack || e)); });

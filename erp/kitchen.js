@@ -10,7 +10,8 @@
   var $ = function (s) { return document.querySelector(s); };
   var q = function (s) { return "'" + String(s == null ? '' : s).replace(/'/g, "''") + "'"; };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-  function log(s) { try { console.log(s); } catch (e) { /* never breaks the page */ } }
+  function log(s) { try { console.log(s); if (window.PageStatus) window.PageStatus.fromLog(s); } catch (e) { /* never breaks the page */ } }
+  if (window.PageStatus) window.PageStatus.start('kitchen');
   var chain = Promise.resolve(); function serial(fn) { var p = chain.then(fn, fn); chain = p.catch(function () {}); return p; }
   function rows(sql) { return new Promise(function (res) { E.__crud.modelRun({ table: 'c_order', timing: 'PROCESS', fn: function (trx) { res(trx.q(sql)); return { ok: true }; } }, function () {}); }); }
   function depositGroup(ops) { return new Promise(function (res) { var t = setTimeout(function () { res({ committed: false, reason: 'timeout' }); }, 15000); E.__crud.applyOpGroup(ops, function (r) { clearTimeout(t); res(r); }); }); }
@@ -35,6 +36,7 @@
         '<div class="kact"><button class="go" data-act="D">Bump</button><button data-act="V">Void</button></div></div>';
     }).join('');
     $('#k-count').textContent = open.length + ' open';
+    { var ke = $('#k-empty'); if (ke) { ke.hidden = open.length > 0; ke.textContent = 'No orders yet. Orders appear here when a till presses Send Order.'; } }
     var bumped = all.filter(function (c) { return c.state === 'D' || c.state === 'V'; }).sort(function (a, b) { return a.bumpedAt < b.bumpedAt ? 1 : -1; });
     S.lastBumped = bumped[0] || null; $('#k-recall').disabled = !S.lastBumped;
     var st = {}; d.o.forEach(function (r) { st[r.displayid] = 1; }); st[1] = 1;
@@ -81,6 +83,7 @@
   }
   async function boot() {
     var t0 = performance.now(), qs = new URLSearchParams(location.search); if (!qs.has('team')) qs.set('team', '1'); if (!qs.has('login')) qs.set('login', '50001');
+    qs.delete('relay');   // §40: `relay=` is the BRANCH relay for this page; the engine frame must not read it as the legacy ERP sync relay (erp_sync_relay.js posts /push to it)
     var f = $('#k-engine'); f.src = 'idempiere.html?' + qs.toString();
     await new Promise(function (r) { f.addEventListener('load', r, { once: true }); });
     E = f.contentWindow;
@@ -93,6 +96,7 @@
     $('#k-amber').value = S.set.amber == null ? '' : S.set.amber; $('#k-red').value = S.set.red == null ? '' : S.set.red; $('#k-poll').value = Math.round(S.set.pollMs / 1000);
     bind(); netChip();
     var pair = null; try { pair = await E.TeamSync.pairState(); } catch (e) { /* not paired */ } $('#k-pair').textContent = pair && pair.enrolled ? 'paired' : 'not paired';
+    if (window.PageStatus) window.PageStatus.ready((pair && pair.enrolled ? 'Joined to the branch team. ' : 'Not joined to the branch team yet: join it from the Team panel of the ERP page. ') + window.PageStatus.relayWords());
     await render(); startLink();
     setInterval(function () { if (S.cards.length) render(); }, 1000);      // the elapsed clock and colour: a local redraw, no network
     window.Kitchen = { ready: true, rows: rows, state: function () { return S; }, engine: function () { return E; }, render: render, act: act, itemTap: itemTap, recall: recall, tick: function () { return S.link.tick(); }, link: function () { return S.link; }, visit: function () { return E.TeamSync.visit(); } };
