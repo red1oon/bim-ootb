@@ -341,9 +341,122 @@
     var regular = A.collectMeshes(function (o) { return o.isMesh && !o.isInstancedMesh && !o.isBatchedMesh && !(o.userData && o.userData._loadPathClone); });
     var instBatch = A.collectMeshes(function (o) { return (o.isInstancedMesh || o.isBatchedMesh) && !(o.userData && o.userData._loadPathClone); });
     _rayMeshCache = regular.concat(instBatch);
+    _ensureHeavyBvh(_rayMeshCache);
+    _accelBatchedMeshes(_rayMeshCache);
     return _rayMeshCache;
   }
-  function _resetRayCache() { _rayMeshCache = null; _revInstanceIndex = null; _revBatchIndex = null; _revGuidClass = null; }
+  // §LP_PICK_HEAVY_MESH (prompts/LOD400_UPGRADER.md §H): a plain mesh with a huge triangle count is raycast
+  // brute-force unless its geometry carries a three-mesh-bvh `boundsTree` (§BVH_INIT patches the raycast but never
+  // builds trees). Measured on the Jebel roof proxies (1.1 M tris): 55 ms/ray brute vs 0.1 ms with a tree, identical
+  // hits (witness_lp_pick_heavy_mesh.mjs) — the arm-time pick (40 candidates x hops x <=49 rays) froze the bake 15+ min.
+  // Trees built here are tracked and disposed by _resetRayCache so their heap is not kept past the hold.
+  var LP_BVH_MIN_TRIS = 50000, _lpBvhBuilt = [];
+  function _meshTris(m) { var g = m.geometry; if (!g) return 0; return g.index ? g.index.count / 3 : (g.attributes && g.attributes.position ? g.attributes.position.count / 3 : 0); }
+  function _ensureHeavyBvh(meshes) {
+    var built = 0, tris = 0, ms0 = performance.now(), skippedNoBvh = 0, skippedTris = 0;
+    for (var i = 0; i < meshes.length; i++) {
+      var m = meshes[i];
+      if (!m.isMesh || m.isInstancedMesh || m.isBatchedMesh || !m.geometry || m.geometry.boundsTree) continue;
+      var t = _meshTris(m);
+      if (t < LP_BVH_MIN_TRIS) continue;
+      if (!(window._bvhReady && m.geometry.computeBoundsTree)) { skippedNoBvh++; skippedTris += t; continue; }
+      try { m.geometry.computeBoundsTree({ maxLeafTris: 8 }); _lpBvhBuilt.push(m.geometry); built++; tris += t; } catch (e) { skippedNoBvh++; skippedTris += t; }
+    }
+    if (built || skippedNoBvh) console.log('§LP_RAYCAST_BVH built=' + built + ' tris=' + tris + ' ms=' + (performance.now() - ms0).toFixed(0) + ' skippedNoBvh=' + skippedNoBvh + ' skippedTris=' + skippedTris + ' (minTris=' + LP_BVH_MIN_TRIS + ')');
+  }
+  // §LP_PICK_HEAVY_MESH part 2 — BatchedMesh. three's BatchedMesh.raycast tests every instance with a shared throw-away
+  // Mesh whose geometry has no boundsTree, so even with §BVH_INIT patched in, a ray through a batched roof proxy walks all of
+  // its triangles (Jebel: 230 batches, 4.07 M tris, top batch 14 instances / 1.36 M tris => the arm-time pick ran 15+ min).
+  // Fix, answer-preserving: for each heavy geometry range of a batch build ONE proxy geometry (shared positions, a copy of that
+  // range's index) with a boundsTree, and replace THIS mesh's raycast (own property, removed by _resetRayCache) with the same
+  // loop three runs, using the proxy for heavy instances. Hits keep object=batch, batchId=instance, distance (all the pick reads).
+  // A self-check compares the original prototype raycast with the accelerated one on fixed rays and prints §LP_RAYCAST_BATCH_NEUTRAL.
+  var LP_BATCH_BVH_MIN_TRIS = 50000, _lpBatchPatched = [], _lpProxyGeoms = [];
+  function _accelBatchedMeshes(meshes) {
+    var T = (typeof THREE !== 'undefined') ? THREE : null, t0 = performance.now();
+    var nb = 0, proxies = 0, tris = 0, skip = 0, skipTris = 0, why = '';
+    var heavyBatches = [];
+    for (var i = 0; i < meshes.length; i++) {
+      var m = meshes[i];
+      if (!m.isBatchedMesh || m.__lpAccel) continue;
+      var gi = m._geometryInfo, ii = m._instanceInfo, g = m.geometry;
+      if (!gi || !ii || !g || !g.index) { var tt = 0; if (gi) for (var q = 0; q < gi.length; q++) tt += (gi[q].count || 0) / 3; if (tt >= LP_BATCH_BVH_MIN_TRIS) { skip++; skipTris += tt; why = 'no-geometryInfo-or-index'; } continue; }
+      var heavy = {}, any = false;
+      for (var a = 0; a < gi.length; a++) if (gi[a] && gi[a].count / 3 >= LP_BATCH_BVH_MIN_TRIS) { heavy[a] = true; any = true; }
+      if (!any) continue;
+      if (!(T && window._bvhReady && T.BufferGeometry.prototype.computeBoundsTree)) { for (var h in heavy) { skip++; skipTris += gi[h].count / 3; } why = 'no-BVH'; continue; }
+      var proxy = {};
+      try {
+        for (var hk in heavy) {
+          var info = gi[hk], pg = new T.BufferGeometry();
+          pg.setAttribute('position', g.attributes.position);
+          pg.setIndex(new T.BufferAttribute(g.index.array.slice(info.start, info.start + info.count), 1));
+          pg.computeBoundsTree({ maxLeafTris: 8 });
+          var pm = new T.Mesh(pg, m.material); pm.matrixAutoUpdate = false;
+          proxy[hk] = pm; _lpProxyGeoms.push(pg); proxies++; tris += info.count / 3;
+        }
+      } catch (e) { skip++; why = 'build-error:' + e.message; continue; }
+      (function (mesh, proxy) {
+        var lightMesh = new T.Mesh(new T.BufferGeometry()), tmp = [];
+        mesh.raycast = function (raycaster, intersects) {
+          var iI = this._instanceInfo, gI = this._geometryInfo, mw = this.matrixWorld, bg = this.geometry;
+          lightMesh.material = this.material; lightMesh.geometry.index = bg.index; lightMesh.geometry.attributes = bg.attributes;
+          if (lightMesh.geometry.boundingBox === null) lightMesh.geometry.boundingBox = new T.Box3();
+          if (lightMesh.geometry.boundingSphere === null) lightMesh.geometry.boundingSphere = new T.Sphere();
+          for (var n = 0; n < iI.length; n++) {
+            if (!iI[n].visible || !iI[n].active) continue;
+            var gx = iI[n].geometryIndex, pm2 = proxy[gx], target;
+            if (pm2) { target = pm2; pm2.material = this.material; this.getMatrixAt(n, pm2.matrixWorld).premultiply(mw); }
+            else {
+              var o = gI[gx]; target = lightMesh;
+              lightMesh.geometry.setDrawRange(o.start, o.count); this.getMatrixAt(n, lightMesh.matrixWorld).premultiply(mw);
+              this.getBoundingBoxAt(gx, lightMesh.geometry.boundingBox); this.getBoundingSphereAt(gx, lightMesh.geometry.boundingSphere);
+            }
+            target.raycast(raycaster, tmp);
+            for (var k = 0; k < tmp.length; k++) { tmp[k].object = this; tmp[k].batchId = n; intersects.push(tmp[k]); }
+            tmp.length = 0;
+          }
+          lightMesh.material = null; lightMesh.geometry.index = null; lightMesh.geometry.attributes = {}; lightMesh.geometry.setDrawRange(0, Infinity);
+        };
+        mesh.__lpAccel = true; _lpBatchPatched.push(mesh);
+      })(m, proxy);
+      nb++; heavyBatches.push(m);
+    }
+    if (nb || skip) console.log('§LP_RAYCAST_BATCH_BVH batches=' + nb + ' proxies=' + proxies + ' tris=' + tris + ' ms=' + (performance.now() - t0).toFixed(0) + ' skipped=' + skip + ' skippedTris=' + skipTris + (why ? ' why=' + why : '') + ' minTris=' + LP_BATCH_BVH_MIN_TRIS + ' heapMB=' + ((performance.memory && performance.memory.usedJSHeapSize) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(0) : 'n/a'));
+    if (nb) _batchNeutralCheck(heavyBatches);
+  }
+  // §LP_RAYCAST_BATCH_NEUTRAL — original three raycast (prototype, unaffected by our own-property override) vs accelerated, same rays.
+  function _batchNeutralCheck(batches) {
+    var T = THREE, seed = 98765, R = function () { return (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296; };
+    var rays = 0, hits = 0, bad = 0, maxD = 0, origMs = 0, t0 = performance.now(), rc = new T.Raycaster();
+    batches.sort(function (a, b) { return (b.geometry.index ? b.geometry.index.count : 0) - (a.geometry.index ? a.geometry.index.count : 0); });
+    batches.slice(0, 2).forEach(function (m) {
+      var bb = new T.Box3().setFromObject(m); if (bb.isEmpty()) return;
+      var sz = bb.getSize(new T.Vector3()), ctr = bb.getCenter(new T.Vector3()), len = sz.length();
+      for (var k = 0; k < 8; k++) {
+        var tgt = new T.Vector3(bb.min.x + R() * sz.x, bb.min.y + R() * sz.y, bb.min.z + R() * sz.z);
+        var dir = new T.Vector3(R() - 0.5, R() - 0.5, R() - 0.5).normalize(), o = ctr.clone().addScaledVector(dir, len);
+        rc.set(o, tgt.clone().sub(o).normalize());
+        var A1 = [], B1 = [], ta = performance.now();
+        T.BatchedMesh.prototype.raycast.call(m, rc, A1); origMs += performance.now() - ta; m.raycast(rc, B1);
+        A1.sort(function (x, y) { return x.distance - y.distance; }); B1.sort(function (x, y) { return x.distance - y.distance; });
+        rays++;
+        if (!A1.length && !B1.length) continue;
+        hits++;
+        if (!A1.length || !B1.length || A1[0].batchId !== B1[0].batchId || Math.abs(A1[0].distance - B1[0].distance) > 1e-4) bad++;
+        else maxD = Math.max(maxD, Math.abs(A1[0].distance - B1[0].distance));
+      }
+    });
+    console.log('§LP_RAYCAST_BATCH_NEUTRAL ' + (hits === 0 ? 'INCONCLUSIVE (no ray hit a heavy batch — nothing judged)' : (bad === 0 ? 'PASS' : 'FAIL')) + ' rays=' + rays + ' hits=' + hits + ' mismatches=' + bad + ' maxDistDiff=' + maxD.toExponential(1) + ' origMs=' + origMs.toFixed(0) + ' checkMs=' + (performance.now() - t0).toFixed(0));
+  }
+  function _resetRayCache() {
+    for (var pi = 0; pi < _lpBatchPatched.length; pi++) { delete _lpBatchPatched[pi].raycast; delete _lpBatchPatched[pi].__lpAccel; }
+    _lpBatchPatched = [];
+    for (var gj = 0; gj < _lpProxyGeoms.length; gj++) { if (_lpProxyGeoms[gj].disposeBoundsTree) _lpProxyGeoms[gj].disposeBoundsTree(); _lpProxyGeoms[gj].dispose(); }
+    _lpProxyGeoms = [];
+    for (var bi = 0; bi < _lpBvhBuilt.length; bi++) { var bg = _lpBvhBuilt[bi]; if (bg.disposeBoundsTree) bg.disposeBoundsTree(); else bg.boundsTree = null; }
+    _lpBvhBuilt = [];
+    _rayMeshCache = null; _revInstanceIndex = null; _revBatchIndex = null; _revGuidClass = null; }
   A._loadPathRaycastUniverse = _raycastUniverse; A._loadPathReverseGuidFor = _reverseGuidFor;
   A._loadPathResetRayCache = _resetRayCache;
 
@@ -479,6 +592,7 @@
   function _memberUnoccluded(box, camPos, guid, S) {
     if (typeof THREE === 'undefined' || !THREE.Raycaster) return { unoccluded: 1, S: 0, raysCast: 0, hitsAny: 0, selfHits: 0, dominantOccluder: null };
     var pts = _facingFaceSamples(box, camPos, S);
+    _costMemberCalls++; _costRays += pts.length;
     if (!pts.length) return { unoccluded: 0, S: 0, raysCast: 0, hitsAny: 0, selfHits: 0, dominantOccluder: null };
     var meshes = _raycastUniverse();
     var rc = new THREE.Raycaster();
@@ -688,7 +802,29 @@
     return withRank.slice(0, cap).map(function (w) { return w.c; });
   }
   A._loadPathCheapCandidateRank = _cheapCandidateRank; A._loadPathRankAndCapForScoring = _rankAndCapForScoring;
+  // §LP_PICK_UNIVERSE — what the arm-time pick is about to raycast, by container type, heaviest first. Logged BEFORE scoring.
+  function _geoTris(g) { return !g ? 0 : g.index ? g.index.count / 3 : (g.attributes && g.attributes.position ? g.attributes.position.count / 3 : 0); }
+  function _logPickUniverse(meshes, nCand) {
+    var rows = [], T = { plain: [0, 0], inst: [0, 0], batched: [0, 0], other: [0, 0] };
+    for (var i = 0; i < meshes.length; i++) {
+      var m = meshes[i], k = m.isBatchedMesh ? 'batched' : m.isInstancedMesh ? 'inst' : m.isMesh ? 'plain' : 'other';
+      var inst = m.isBatchedMesh ? ((A._batchMeta && A._batchMeta[m.id] && A._batchMeta[m.id].length) || m.maxInstanceCount || 0) : m.isInstancedMesh ? (m.count || 0) : 1;
+      var tr = _geoTris(m.geometry);
+      T[k][0] += 1; T[k][1] += tr; rows.push({ k: k, inst: inst, tris: tr, bvh: !!(m.geometry && m.geometry.boundsTree), merged: !!(m.userData && m.userData.isMerged) });
+    }
+    rows.sort(function (a, b) { return b.tris - a.tris; });
+    console.log('§LP_PICK_UNIVERSE candidates=' + nCand + ' objs=' + meshes.length + ' plain=' + T.plain[0] + '/' + Math.round(T.plain[1]) + 'tris inst=' + T.inst[0] + '/' + Math.round(T.inst[1]) + 'tris batched=' + T.batched[0] + '/' + Math.round(T.batched[1]) + 'tris top5=' + JSON.stringify(rows.slice(0, 5)));
+  }
+  var _costRays = 0, _costMemberCalls = 0;
   function _pickTwoStacks(items, valid, camera, outW, outH, hudRects, buildingBox) {
+    var t0 = performance.now(); _costRays = 0; _costMemberCalls = 0;
+    var r = _pickTwoStacksInner(items, valid, camera, outW, outH, hudRects, buildingBox);
+    var tris = 0, mu = _rayMeshCache || [];
+    for (var i = 0; i < mu.length; i++) if (mu[i].isMesh && !mu[i].isInstancedMesh && !mu[i].isBatchedMesh) tris += _meshTris(mu[i]);
+    console.log('§LP_PICK_COST ms=' + (performance.now() - t0).toFixed(0) + ' rays=' + _costRays + ' memberCalls=' + _costMemberCalls + ' universe=' + mu.length + ' plainMeshTris=' + tris + ' bvhTrees=' + _lpBvhBuilt.length + ' pickSource=' + (r && r.pickSource) + ' scored=' + (r && r.scored) + '/' + (r && r.validTotal));
+    return r;
+  }
+  function _pickTwoStacksInner(items, valid, camera, outW, outH, hudRects, buildingBox) {
     var occludedMode = !!window.__lpPickOccluded;
     // ROUND 14 (2026-09-16, real HHS R13 bake: raycast STILL blind after ROUND 13 landed, with NO
     // §LOADPATH_VISIBILITY line at all — meaning ROUND 13's own blind condition, hitsTotal>0 &&
@@ -715,6 +851,7 @@
     // no broad-phase acceleration) — computed ONCE here, only when there is something to score, and
     // strictly BEFORE any `_scoreChain` call, so the check itself is cheap and gates the expensive
     // work rather than running after the damage is done.
+    if (capped.length > 0) { _logPickUniverse(_raycastUniverse(), capped.length); }
     if (capped.length > 0) {
       var instanceSum = 0, universeMeshes = _raycastUniverse();
       for (var ui = 0; ui < universeMeshes.length; ui++) {
