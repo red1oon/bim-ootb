@@ -1863,7 +1863,7 @@ function setupStreaming(A) {
     else if (_pvm && _pvm.bareKey && !rgbaStr && A.BARE_METAL_PBR[_pvm.bareKey]) {   // §PROXY_SUBSTANCE: cited srgb-linear, stored sRGB-encoded, as _bare above
       var _psl = A.BARE_METAL_PBR[_pvm.bareKey].lin, _pse = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
       r = _pse(_psl[0]); g = _pse(_psl[1]); b = _pse(_psl[2]);
-      // Finish MEASURED, not assumed (Jebel roof, same frames, render target sat ~0.04): metal 1 sat 0.70 (no diffuse term: reflections of the ground, reads as rust),
+      // Finish MEASURED, not assumed (a private model's metal roof, same frames, target from its architect's render, sat ~0.04): metal 1 sat 0.70 (no diffuse term: reflections of the ground, reads as rust),
       // 0.5 sat 0.32, 0.3 sat 0.11, 0 sat 0.083. A woven or coarse metal at building scale reads as a diffuse aggregate. The flag's envInt 0.05 goes -> the global 0.6.
       stdMat = Object.assign({}, stdMat, { metal: 0 }); delete stdMat.envInt;
     }
