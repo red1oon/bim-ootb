@@ -347,7 +347,7 @@
   }
   // §LP_PICK_HEAVY_MESH (prompts/LOD400_UPGRADER.md §K): a plain mesh with a huge triangle count is raycast
   // brute-force unless its geometry carries a three-mesh-bvh `boundsTree` (§BVH_INIT patches the raycast but never
-  // builds trees). Measured on the Jebel roof proxies (1.1 M tris): 55 ms/ray brute vs 0.1 ms with a tree, identical
+  // builds trees). Measured on a private model's two large roof proxies (1.1 M tris): 55 ms/ray brute vs 0.1 ms with a tree, identical
   // hits (witness_lp_pick_heavy_mesh.mjs) — the arm-time pick (40 candidates x hops x <=49 rays) froze the bake 15+ min.
   // Trees built here are tracked and disposed by _resetRayCache so their heap is not kept past the hold.
   var LP_BVH_MIN_TRIS = 50000, _lpBvhBuilt = [];
@@ -366,7 +366,7 @@
   }
   // §LP_PICK_HEAVY_MESH part 2 — BatchedMesh. three's BatchedMesh.raycast tests every instance with a shared throw-away
   // Mesh whose geometry has no boundsTree, so even with §BVH_INIT patched in, a ray through a batched roof proxy walks all of
-  // its triangles (Jebel: 230 batches, 4.07 M tris, top batch 14 instances / 1.36 M tris => the arm-time pick ran 15+ min).
+  // its triangles (one private model: 230 batches, 4.07 M tris, top batch 14 instances / 1.36 M tris => the arm-time pick ran 15+ min).
   // Fix, answer-preserving: for each heavy geometry range of a batch build ONE proxy geometry (shared positions, a copy of that
   // range's index) with a boundsTree, and replace THIS mesh's raycast (own property, removed by _resetRayCache) with the same
   // loop three runs, using the proxy for heavy instances. Hits keep object=batch, batchId=instance, distance (all the pick reads).

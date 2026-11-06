@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // WITNESS — proxy_substance: bim-compiler prompts/PHOTOREAL_STILL_RENDER.md §PROXY_SUBSTANCE SPEC.
 // ISSUE THIS PROVES OR DISPROVES: a colourless IfcBuildingElementProxy rendered the STD_MAT teal flag even when its name or material says what it is
-// (Jebel: a stainless mesh roof), and fixing that must be backward compatible: ONLY rows that render the flag today may move, on EVERY building.
+// (seen on a private model: a stainless mesh roof), and fixing that must be backward compatible: ONLY rows that render the flag today may move, on EVERY building.
 // Runs the SHIPPED _getMaterial / _elementVariant / _surfRowOf. Fleet census over every real DB under buildings/ (sqlite3), so it cannot pass empty.
 // Command: node viewer/tests/witness_proxy_substance.js
 'use strict';
