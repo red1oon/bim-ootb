@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.84.2](https://github.com/red1oon/bim-ootb/compare/v1.84.1...v1.84.2) (2026-11-06)
+
+
+### 🐛 Fixes
+
+* **load-path:** arm-time pick no longer freezes on heavy BatchedMesh roofs (§LP_PICK_HEAVY_MESH) ([#2662](https://github.com/red1oon/bim-ootb/issues/2662)) ([969a489](https://github.com/red1oon/bim-ootb/commit/969a48922025f7a7ded834e6608626c4dd608633))
+
 ## [1.84.1](https://github.com/red1oon/bim-ootb/compare/v1.84.0...v1.84.1) (2026-11-05)
 
 
