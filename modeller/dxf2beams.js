@@ -10,7 +10,7 @@
   'use strict';
   var P = D.P, r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var LABEL = /^-?\s*([A-Z]*B\d*)\(\s*(\d+)\s*[xX]\s*(\d+)\s*\)$/, TOC = /^TOC:?\s*([+-]\d+\.\d+)\s*m?$/i, NOT_EDGE = /GRID|DIM|ANNO|TEXT|IDEN|SYMB|TTLB|WALL|DETL/i;
-  var clean = function (t) { return String(t).replace(/\\[A-Za-z][^;\\]*;/g, '').replace(/\\P/g, ' ').replace(/[{}]/g, '').trim(); };
+  var clean = function (t) { return String(t).replace(/\\[A-Za-z][^;\\]*;/g, '').replace(/\\P/g, ' ').replace(/\\[LlOoKk]/g, '').replace(/[{}]/g, '').trim(); };   // \L \O \K: underline, overline, strike take no semicolon (a register heading '\LSHEET NUMBER' read as no heading)
   function segments(sheet) {
     var out = [];
     (sheet.dxf.entities || []).forEach(function (e) {
