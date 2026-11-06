@@ -64,6 +64,14 @@
         out.geoms++; out.vBefore += w.stats.vBefore; out.vAfter += w.stats.vAfter;
       });
     });
+    // §LOD_VACUUM: UPDATE leaves the old blobs on the free list, so a saved DB would stay the same size (measured: 40 % of pages free, 291 MB -> 291 MB).
+    if (out.geoms && opts.vacuum !== false) {
+      try { var pc0 = db.exec('PRAGMA page_count')[0].values[0][0], fl0 = db.exec('PRAGMA freelist_count')[0].values[0][0]; db.run('VACUUM');
+        var pc1 = db.exec('PRAGMA page_count')[0].values[0][0], ps = db.exec('PRAGMA page_size')[0].values[0][0];
+        out.bytesBefore = pc0 * ps; out.bytesAfter = pc1 * ps;
+        console.log('§LOD_VACUUM pages ' + pc0 + ' (free ' + fl0 + ') -> ' + pc1 + '  bytes ' + out.bytesBefore + ' -> ' + out.bytesAfter + ' (' + Math.round(100 * (out.bytesAfter - out.bytesBefore) / out.bytesBefore) + '%)');
+      } catch (e) { out.vacuumError = String(e && e.message || e); console.warn('§LOD_VACUUM REFUSE ' + out.vacuumError + ' (DB left un-vacuumed; weld kept)'); }
+    }
     console.log('§LOD_WELD_TOTAL tables=' + out.tables.join('+') + ' geometries=' + out.geoms + ' skipped=' + out.skipped + ' verts ' + out.vBefore + ' -> ' + out.vAfter +
       ' saved=' + (out.vBefore - out.vAfter) + ' (~' + ((out.vBefore - out.vAfter) * 0.17 / 1e6).toFixed(2) + ' GB heap)' + (out.geoms ? '' : ' INCONCLUSIVE: nothing welded'));
     return out;
