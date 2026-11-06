@@ -284,16 +284,55 @@
   // type name) actually exists in this disc's rule_space_type, so this NEVER returns a type the
   // schedule tables don't recognize. Zero regression: this branch is unreachable whenever the label
   // match above already succeeded, and unreachable entirely until dwSetRoomTypeConfig is called.
+  // §SPACE-TYPE-WORDS (prompts/DISC_WALK_SPACE_TYPE_WORDS.md): a real name is qualifier + type. Every mapping stays a row of rule_space_type / rule_space_alias;
+  // the guards are derived from those rows, no project's names live here. Runs only after the exact label steps found nothing, so a label typed today is untouched.
+  var SPACE_WORD = { minLen: 3, shortOk: { WC: true }, genericTails: 3 };   // §3: a code under minLen letters is an exact label only; a generic noun is the tail of genericTails or more rule names
+  var _spaceTypeWordOff = false, _spaceTypeHow = 'none', _spaceTypeAmbiguous = false, _wordIndexOf = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function _spaceWordIndex(db) {
+    var ix = _wordIndexOf && _wordIndexOf.get(db); if (ix) return ix;
+    ix = { to: {}, tail: {} };
+    _rows(db, "SELECT value v FROM rule_space_type").forEach(function (r) { ix.to[r.v] = r.v; });
+    _rows(db, "SELECT alias a, space_type_id st FROM rule_space_alias").forEach(function (r) {
+      var tailOfTarget = String(r.st).slice(-(String(r.a).length + 1)) === '_' + r.a;   // says less than its own target
+      var code = String(r.a).length < SPACE_WORD.minLen && !SPACE_WORD.shortOk[r.a];
+      if (!tailOfTarget && !code && !ix.to[r.a]) ix.to[r.a] = r.st;
+    });
+    var names = Object.keys(ix.to);
+    _rows(db, "SELECT alias a FROM rule_space_alias").forEach(function (r) { names.push(r.a); });
+    var tails = {}; names.forEach(function (n) { var i = n.lastIndexOf('_'); if (i > 0) { var w = n.slice(i + 1); tails[w] = (tails[w] || {}); tails[w][n] = true; } });
+    Object.keys(tails).forEach(function (w) { if (Object.keys(tails[w]).length >= SPACE_WORD.genericTails) ix.tail[w] = true; });
+    if (_wordIndexOf) _wordIndexOf.set(db, ix);
+    return ix;
+  }
+  function _spaceTypeByWords(db, label) {
+    var words = String(label).toUpperCase().split(/[^A-Z0-9]+/).filter(function (w) { return w && !/^\d+$/.test(w); });
+    if (!words.length) return null;
+    var ix = _spaceWordIndex(db);
+    for (var k = words.length; k >= 1; k--) {   // longest run first; within a length a specific name beats a generic noun, rightmost first
+      var specific = [], generic = null;
+      for (var i = words.length - k; i >= 0; i--) {
+        var run = words.slice(i, i + k).join('_'), t = ix.to[run];
+        if (!t) continue;
+        if (ix.tail[run]) { if (!generic) generic = t; } else if (specific.indexOf(t) < 0) specific.push(t);
+      }
+      if (specific.length) return { type: specific[0], ambiguous: specific.length > 1 };
+      if (generic) return { type: generic, ambiguous: false };
+    }
+    return null;
+  }
   function _spaceTypeFor(disc, sp) {
     var label = (sp && typeof sp === 'object') ? sp.label : sp;   // back-compat: a bare string still works
     var db = _dbFor(disc);
+    _spaceTypeHow = 'none'; _spaceTypeAmbiguous = false;
     if (label) {
       var norm = String(label).toUpperCase().replace(/[\s]+/g, '_').replace(/[_\s]*\d+$/, '').trim();
       if (norm) {
-        if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(norm) + "'").length) return norm;
+        if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(norm) + "'").length) { _spaceTypeHow = 'exact'; return norm; }
         var a = _rows(db, "SELECT space_type_id st FROM rule_space_alias WHERE alias='" + _esc(norm) + "'");
-        if (a.length) return a[0].st;
+        if (a.length) { _spaceTypeHow = 'alias'; return a[0].st; }
       }
+      var byWord = _spaceTypeWordOff ? null : _spaceTypeByWords(db, label);   // prompts/DISC_WALK_SPACE_TYPE_WORDS.md §2 step 3
+      if (byWord) { _spaceTypeHow = 'word'; _spaceTypeAmbiguous = byWord.ambiguous; return byWord.type; }
     }
     // ── geometry fallback ──
     if (!_roomTypeConfig || !RoomTypeClassifier || !ROOM_TYPE_MEASURED_DISCS[disc]) return null;
@@ -310,6 +349,7 @@
     candidates.push(result.type);
     for (var i = 0; i < candidates.length; i++) {
       if (_rows(db, "SELECT 1 FROM rule_space_type WHERE value='" + _esc(candidates[i]) + "'").length) {
+        _spaceTypeHow = 'geometry';
         console.log(TAG + ' §DW-ROOMTYPE ' + disc + ' space "' + (label || sp.guid || '?') + '" — no label match, ' +
           'geometry classifier -> ' + result.type + ' (conf=' + (result.confidence * 100).toFixed(1) +
           '%, area=' + feats.area.toFixed(2) + 'm2 aspect=' + feats.aspect.toFixed(2) + ') -> space_type=' +
@@ -457,14 +497,15 @@
     // (not per-space): adjacent space bboxes overlap (Hallway×Stair), so a same-space scan misses
     // real cross-space overlaps.
     var avoidAll = opts.avoid || [];
-    var out = [], refused = {}, skipped = [], used = 0;
+    var out = [], refused = {}, skipped = [], used = 0, typed = { exact: 0, alias: 0, word: 0, geometry: 0, none: 0, ambiguous: 0, typedNoSchedule: 0 };
     var schedYawN = 0, schedYawMeshN = 0;             // §SCHED-YAW: wall-anchored devices given a mesh-frame yaw (of which: frame measured off the mesh)
     all.forEach(function (sp) {
       var stype = _spaceTypeFor(disc, sp);
+      typed[_spaceTypeHow] = (typed[_spaceTypeHow] || 0) + 1; if (_spaceTypeAmbiguous) typed.ambiguous++;
       if (!stype) { skipped.push(sp.label); return; }
       var sched = _rows(_dbFor(disc), "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
         "' AND space_type_id='" + _esc(stype) + "'");
-      if (!sched.length) return;
+      if (!sched.length) { typed.typedNoSchedule++; return; }
       used++;
       var area = (sp.x1 - sp.x0) * (sp.y1 - sp.y0);
       var perAxisCount = {};                          // co-location spreader (Java GAP-10 port)
@@ -577,7 +618,10 @@
     });
     if (schedYawN) console.log(TAG + ' §SCHED-YAW disc=' + disc + ' wallAnchored=' + schedYawN + ' meshFrameMeasured=' + schedYawMeshN +
       ' ruleDims=' + (schedYawN - schedYawMeshN) + ' (facing → mesh-frame yaw; every consumer reads placement.yaw)');
-    return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused };
+    console.log(TAG + ' §DW-SPACE-TYPE disc=' + disc + ' spaces=' + all.length + ' exact=' + typed.exact + ' alias=' + typed.alias + ' word=' + typed.word + ' geometry=' + typed.geometry +
+      ' none=' + typed.none + ' ambiguous=' + typed.ambiguous + ' typedNoSchedule=' + typed.typedNoSchedule + ' left=' + JSON.stringify(skipped.filter(function (v, i) { return skipped.indexOf(v) === i; }).slice(0, 12)) +
+      (!all.length ? ' VACUOUS: no spaces' : typed.none === all.length ? ' INCONCLUSIVE: no space typed' : ''));
+    return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused, spaceTypes: typed };
   }
 
   // ── §NOSPACES (item 2, RESUME_DISC_WALKER_ENVELOPE_BOUND.md, 2026-07-10): measured-band placement
@@ -2676,6 +2720,7 @@
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
+    _setSpaceTypeWordOff: function (v) { _spaceTypeWordOff = !!v; }, _spaceTypeLastHow: function () { return _spaceTypeHow; },
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
     bendFinder: bendFinder, fittingOrientation: fittingOrientation, bendFittings: bendFittings,
