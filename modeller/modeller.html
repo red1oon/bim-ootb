@@ -330,8 +330,8 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
 <!-- DiscWalker: the ONE shared discipline-walker engine (Placer/Router/Gate) reading the MEASURED
      terminal_rules.db (mined off Terminal). Supersedes the thin mep_rw.db recipes for the disc-node walk —
      every disc walks on ANY opened building from rules measured off a real coordinated building. -->
-<script src="../common/walk_rules.js?v=1" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
-<script src="disc_walker.js?v=13" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
+<script src="../common/walk_rules.js?v=2" onerror="console.warn('§WALK_RULES LOAD_FAIL walk_rules.js')"></script>
+<script src="disc_walker.js?v=14" onerror="console.warn('§DW LOAD_FAIL disc_walker.js')"></script>
 <!-- §I5 per-instance hide (SPEC_INSTANCE_HIDE.md §I5d): Walked-Fixtures Outliner category — one row per
      walked instance (windowed via §V4 OL_CHUNK), eye = hide that exact instanceId. Witness: W-E2E-INSTHIDE. -->
 <script src="dw_instances_outliner.js?v=1" onerror="console.warn('§DWINST LOAD_FAIL dw_instances_outliner.js')"></script>
@@ -4283,7 +4283,7 @@ async function _dwResolveMeshes(hashes, tag) {
   var _rdb = window.DiscWalker && window.DiscWalker.rulesDb && window.DiscWalker.rulesDb(), _rmiss = want.filter(function (h) { return !real[h]; });   // §D66 the rules db can carry its library parts' meshes
   if (_rdb && _rmiss.length) { try { var _rm = window.RealGeometry.resolveHashes(_rdb, _rmiss); Object.keys(_rm).forEach(function (h) { real[h] = _rm[h]; _dwSrcMesh[h] = _rm[h]; });
     if (Object.keys(_rm).length) console.log('§DW-RULES-MESH building=' + (window.__dwName || '?') + ' source=the rules db resolved=' + Object.keys(_rm).length + '/' + _rmiss.length); } catch (e) { } }
-  var rules = window._dwRules(window.__dwName), keys = [].concat(_DW_RULES_SOURCE[rules] || []), SW = window.STRWalkerOutliner;
+  var rules = window._dwRules(window.__dwName), keys = [].concat(_DW_RULES_SOURCE[rules] || [], _DW_RULES_SOURCE[window.WalkRules.scheduleDb(window.__dwName)] || []), SW = window.STRWalkerOutliner;   // §SCHED-SOURCE: a schedule device's mesh is in the schedule's source building
   if (!keys.length || !SW || !SW._fetchGeoDb || window.__dwRulesMeshOff) return real;
   for (var ki = 0; ki < keys.length; ki++) {   // §D64 each named source in turn, only for the hashes still missing
     var key = keys[ki], miss = want.filter(function (h) { return !real[h]; }); if (!miss.length) break; if (key === window.__dwName) continue;
@@ -4330,6 +4330,9 @@ async function _discWalkOneBody(disc, ctx, opts) {
     await window._dwBustStaleRulesCache();   // evict stale rules DBs once per deploy (CACHE_VERSION change)
     try { await window.DiscWalker.dwInit(window.SQL, window._DW_BASE, window._dwRules(name || window.__dwName)); }
     catch (e) { setStat(disc + ' — rules not available'); console.warn('§DISC-WALK dwInit failed ' + (e && e.message)); return { refused: true, reason: 'rules not available', placed: 0 }; }
+    // §SCHED-SOURCE: room schedules from a named set when the class rules hold none. A failed load leaves the measured walk of today, said in the log.
+    try { await window.DiscWalker.dwScheduleSourceFile(window.SQL, window._DW_BASE, window.WalkRules.scheduleDb(name || window.__dwName)); }
+    catch (e) { window.DiscWalker.dwScheduleSource(null); console.warn('§DW-SCHED-SOURCE load failed, measured walk only: ' + (e && e.message)); }
     { var _rf = window._dwRules(name || window.__dwName), _rm = (window.DiscWalker.rulesMeta && window.DiscWalker.rulesMeta()) || {};   // §D61 the reference is STATED when it was not measured on this building
       if (_DW_RULES_SOURCE[_rf] && [].concat(_DW_RULES_SOURCE[_rf]).indexOf(name || window.__dwName) < 0) {
         console.log('§DW-RULES-REF building=' + (name || window.__dwName) + ' rules=' + _rf + ' standard=' + _rm.standard + ' built_from=' + _rm.built_from + ' (not measured on this building: a stated reference)');
