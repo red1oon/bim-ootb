@@ -24,4 +24,18 @@ ok('cylinder: smooth normals point radially (max deviation < 0.01)', radial < 0.
 let logged = ''; const ol = console.log; console.log = s => { logged += s + '\n'; };
 const fake = { exec: q => /sqlite_master/.test(q) ? [] : [], run() {} }; const r = L.upgradeDb(fake, {}); console.log = ol;
 ok('empty DB: nothing welded and the log says INCONCLUSIVE', r.geoms === 0 && /INCONCLUSIVE/.test(logged));
-const f = checks.filter(x => !x).length; console.log('§WITNESS_LOD_WELD ' + (f ? 'FAIL ' : 'PASS ') + (checks.length - f) + '/' + checks.length); process.exit(f ? 1 : 0);
+// db level with a REAL sql.js DB: weld must be followed by VACUUM so the file actually shrinks (issue: 40 % free pages, size unchanged)
+(async () => {
+  const fs = require('fs'), init = require('../../common/lib/sql-wasm.js');
+  const SQL = await init({ wasmBinary: fs.readFileSync(require('path').join(__dirname, '../../common/lib/sql-wasm.wasm')) });
+  const db = new SQL.Database(); db.run('CREATE TABLE component_geometries(geometry_hash TEXT PRIMARY KEY, vertices BLOB, faces BLOB, normals BLOB)');
+  const cc = []; for (let i = 0; i < 40; i++) { const cyl = [], cT = []; for (let k = 0; k < 64; k++) { const a = 2 * Math.PI * k / 64; cyl.push([Math.cos(a) * .025, Math.sin(a) * .025, 0], [Math.cos(a) * .025, Math.sin(a) * .025, 1 + i]); }
+    for (let k = 0; k < 64; k++) { const a = 2 * k, b = 2 * ((k + 1) % 64); cT.push([a, b, b + 1], [a, b + 1, a + 1]); } const s = soup(cyl, cT); cc.push([s.V, s.F]); }
+  cc.forEach((g, i) => db.run('INSERT INTO component_geometries VALUES(?,?,?,?)', ['h' + i, new Uint8Array(g[0].buffer), new Uint8Array(g[1].buffer), new Uint8Array(g[0].buffer)]));
+  const sz0 = db.export().length, ol2 = console.log; let lg = ''; console.log = s => { lg += s + '\n'; };
+  const r2 = L.upgradeDb(db, { minVerts: 100 }); console.log = ol2; const sz1 = db.export().length;
+  ok('real DB: 40 cylinders welded, none skipped', r2.geoms === 40 && r2.skipped === 0, JSON.stringify({ g: r2.geoms, s: r2.skipped }));
+  ok('real DB: VACUUM ran and the file shrank (' + sz0 + ' -> ' + sz1 + ')', /§LOD_VACUUM/.test(lg) && sz1 < sz0 && r2.bytesAfter < r2.bytesBefore && db.exec('PRAGMA freelist_count')[0].values[0][0] === 0);
+  const f2 = checks.filter(x => !x).length; console.log('§WITNESS_LOD_WELD ' + (f2 ? 'FAIL ' : 'PASS ') + (checks.length - f2) + '/' + checks.length); process.exit(f2 ? 1 : 0);
+})();
+
