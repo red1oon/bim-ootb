@@ -777,14 +777,41 @@ function setupStreaming(A) {
   var PROXY_EQUIP = /wshp|heat pump|panelboard|switchboard|transformer|sensor|switch|receptacle|cctv|camera|ahu|cooling tower|(^|[^a-z])fan([^a-z]|$)|water heater|boiler|chiller/i;
   var PROXY_STEEL = /stahl|steel|balkon|balcony/i;
   A.PROXY_NAME_MAT = { equip: { r: 0xCB / 255, g: 0xD0 / 255, b: 0xCC / 255, src: 'RAL 7035 light grey (equipment housings)' },
-    steel: { r: 0.50, g: 0.52, b: 0.55, src: 'STD_MAT.IfcMember steel' } };
-  A._proxyVariant = function(ifcClass, name, matName) {
-    if (ifcClass !== 'IfcBuildingElementProxy' || !name || A._isAuthoredMatName(matName)) return '';
-    return PROXY_EQUIP.test(name) ? 'proxy:equip' : (PROXY_STEEL.test(name) ? 'proxy:steel' : '');
+    steel: { r: 0.50, g: 0.52, b: 0.55, src: 'STD_MAT.IfcMember steel' },
+    // §PROXY_SUBSTANCE: no new numbers. A row names its source: the cited bare-metal table, or the whole STD_MAT row of a class of that substance.
+    stainless: { bareKey: 'stainless' }, metal: { fromClass: 'IfcMember' }, concrete: { fromClass: 'IfcColumn' },
+    plaster: { fromClass: 'IfcCovering' }, timber: { fromClass: 'IfcDoor' }, stone: { fromClass: 'IfcStair' } };
+  // §PROXY_SUBSTANCE (bim-compiler prompts/PHOTOREAL_STILL_RENDER.md, owner 2026-11-06 "consistent and abstract", "backward compatible or
+  // better"): the DB says WHAT the surface is, this owner says HOW it renders; no building, guid or family name lives here. INVARIANT: only a
+  // row that renders the STD_MAT teal flag today can move (proxy, material_rgba NULL/empty); a row with any colour, the exporter's cream
+  // included, is byte-identical. A real material name decides first ('<Unnamed>' is Revit's literal for "none"), else a whole word of the
+  // family name. No signal = '' = keeps the flag, and §PROXY_SUBSTANCE lists it. &proxysub=0 = the old table.
+  A._proxySubstanceOff = /[?&]proxysub=0/.test(typeof location !== 'undefined' ? location.search : '');
+  var PROXY_SUB_WORD = [[/(^|[^a-z])stainless([^a-z]|$)/i, 'stainless'], [/(^|[^a-z])(concrete|beton)([^a-z]|$)/i, 'concrete'],
+    [/(^|[^a-z])(timber|wood|wooden|kayu)([^a-z]|$)/i, 'timber'], [/(^|[^a-z])(stone|limestone|marble|granite|travertine)([^a-z]|$)/i, 'stone'],
+    [/(^|[^a-z])(steel|metal|metallic|aluminium|aluminum)([^a-z]|$)/i, 'metal']];
+  var _PROXY_SUB_SURF = { stainless: 'metal', metal: 'metal', concrete: 'concrete', plaster: 'plaster', timber: 'timber', stone: 'stone' };
+  A._proxySubstance = function(name, matName) {
+    var real = (A._isAuthoredMatName(matName) && !/^\s*<unnamed>\s*$/i.test(matName)) ? matName : '';
+    var texts = [real, name || ''];
+    for (var t = 0; t < texts.length; t++) for (var w = 0; w < PROXY_SUB_WORD.length; w++) if (texts[t] && PROXY_SUB_WORD[w][0].test(texts[t])) return PROXY_SUB_WORD[w][1];
+    var sub = real ? A._surfSubstance(real) : '';   // the layer-aware reader, material names only (its substrings would misfire on family names: 'cupboard')
+    return _PROXY_SUB_SURF[sub] ? sub : '';
   };
-  A._elementVariant = function(ifcClass, name, matName) {
+  A._proxyVariant = function(ifcClass, name, matName, rgba) {
+    if (ifcClass !== 'IfcBuildingElementProxy') return '';
+    if (name && !A._isAuthoredMatName(matName)) {
+      var v0 = PROXY_EQUIP.test(name) ? 'proxy:equip' : (PROXY_STEEL.test(name) ? 'proxy:steel' : '');
+      if (v0) return v0;
+    }
+    if (rgba === undefined || rgba || A._proxySubstanceOff) return '';   // §PROXY_SUBSTANCE: the teal-flag rows only
+    var sub = A._proxySubstance(name, matName);
+    if (sub) return 'proxy:' + sub;
+    return (name && PROXY_EQUIP.test(name)) ? 'proxy:equip' : '';   // '<Unnamed>' read as "authored" kept these from the row above
+  };
+  A._elementVariant = function(ifcClass, name, matName, rgba) {
     var bm = A._bareMetalKey(ifcClass, name, matName);
-    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '') || A._proxyVariant(ifcClass, name, matName);
+    return A._entourageVariant(ifcClass, name) || A._porcelainVariant(ifcClass, name, matName) || (bm ? 'metal:' + bm : '') || A._proxyVariant(ifcClass, name, matName, rgba);
   };
   // ONE owner for "which trade colour does this MEP element belong to" — the first source that
   // carries a hue. An achromatic source (the DUCT hint's galvanized grey, sat 0.052; DISC_COLORS.VOID
@@ -982,7 +1009,7 @@ function setupStreaming(A) {
       });
       var judged = 0;
       flat.forEach(function(e, k) {
-        if (!_SURF_ENVELOPE[e.c]) return;
+        if (!_SURF_ENVELOPE[e.c] && e.c !== 'IfcBuildingElementProxy') return;   // §PROXY_SUBSTANCE: proxies judged too; the set is only read by _surfRowOf
         judged++;
         var cells = 0, covered = 0;
         for (var x = e.x0; x <= e.x1; x++) for (var y = e.y0; y <= e.y1; y++) {
@@ -1013,6 +1040,9 @@ function setupStreaming(A) {
     var c = el.ifcClass || '';
     if (_SURF_MEP.test(c)) return 'R8';
     var sub = A._surfSubstance(el.matName);
+    // §PROXY_SUBSTANCE: a routed flag proxy has its substance in the variant; metal on the roof layer is the existing rough metal deck row
+    var _pk = (c === 'IfcBuildingElementProxy' && !el.rgba && typeof el.matVariant === 'string' && el.matVariant.indexOf('proxy:') === 0) ? _PROXY_SUB_SURF[el.matVariant.slice(6)] : null;
+    if (_pk) { sub = _pk; if (sub === 'metal' && A._surfRoofGuids && A._surfRoofGuids.has(el.guid)) return 'R1'; }
     if (_SURF_ENVELOPE[c] && A._surfRoofGuids && A._surfRoofGuids.has(el.guid)) return sub === 'metal' ? 'R1' : (sub === 'plaster' ? 'R2p' : 'R2c');
     if (_SURF_FLOOR[c]) return 'R4';            // a floor is a finished surface whatever it is cast from
     if (sub === 'concrete') return 'R3';
@@ -1409,6 +1439,14 @@ function setupStreaming(A) {
       if (A._placeholderOff) continue;
       rep++; byCls[cls] = (byCls[cls] || 0) + 1;
     }
+    var _psN = 0, _psR = 0, _psK = {}, _psL = {};   // §PROXY_SUBSTANCE: what the flag still covers is a data gap to read, not a look
+    for (var _pi = 0; _pi < q.length; _pi++) {
+      var _pr = q[_pi]; if (_pr[11] !== 'IfcBuildingElementProxy' || _pr[2]) continue;
+      _psN++; var _pv = A._elementVariant(_pr[11], _pr[12], _pr[16] || '', '');
+      if (_pv) { _psR++; _psK[_pv] = (_psK[_pv] || 0) + 1; } else { var _pn = String(_pr[12] || '?').split(':')[0]; _psL[_pn] = (_psL[_pn] || 0) + 1; }
+    }
+    console.log('§PROXY_SUBSTANCE bld=' + bld + ' rows=' + _psN + ' routed=' + _psR + ' byKey=' + JSON.stringify(_psK) + ' flagLeft=' + (_psN - _psR) + ' left=' + JSON.stringify(Object.keys(_psL).slice(0, 12)) +
+      (A._proxySubstanceOff ? ' off=1' : _psN === 0 ? ' VACUOUS — no colourless proxy on this building' : _psR === 0 ? ' NO-OP — no colourless proxy has a material signal' : ''));
     console.log('§PLACEHOLDER_COLOUR bld=' + bld + ' rows=' + q.length + ' placeholder=' + ph + ' replaced=' + rep + ' mepTier2=' + mep + ' proxyKept=' + proxy +
       ' noStdMat=' + noStd + ' porcelain=' + porcPh + ' off=' + (A._placeholderOff ? 1 : 0) +
       (ph === 0 ? ' VACUOUS — no placeholder row on this building, its 0 means nothing' : rep === 0 ? ' NO-OP — the rule moved no element' : ''));
@@ -1821,7 +1859,15 @@ function setupStreaming(A) {
     if (_bare && (!rgbaStr || _isPh)) { var _oe = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
       r = _oe(_bare.lin[0]); g = _oe(_bare.lin[1]); b = _oe(_bare.lin[2]); }   // cited srgb-linear, stored sRGB-encoded (Z9 decodes at stage)
     var _pvm = (typeof matVariant === 'string' && matVariant.indexOf('proxy:') === 0) ? A.PROXY_NAME_MAT[matVariant.slice(6)] : null;   // §PROXY_NAME_MAT
-    if (_pvm && (!rgbaStr || _isPh)) { r = _pvm.r; g = _pvm.g; b = _pvm.b; }
+    if (_pvm && _pvm.fromClass && !rgbaStr && STD_MAT[_pvm.fromClass]) { stdMat = STD_MAT[_pvm.fromClass]; r = stdMat.r; g = stdMat.g; b = stdMat.b; }   // §PROXY_SUBSTANCE
+    else if (_pvm && _pvm.bareKey && !rgbaStr && A.BARE_METAL_PBR[_pvm.bareKey]) {   // §PROXY_SUBSTANCE: cited srgb-linear, stored sRGB-encoded, as _bare above
+      var _psl = A.BARE_METAL_PBR[_pvm.bareKey].lin, _pse = function (c) { return c < 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
+      r = _pse(_psl[0]); g = _pse(_psl[1]); b = _pse(_psl[2]);
+      // Finish MEASURED, not assumed (Jebel roof, same frames, render target sat ~0.04): metal 1 sat 0.70 (no diffuse term: reflections of the ground, reads as rust),
+      // 0.5 sat 0.32, 0.3 sat 0.11, 0 sat 0.083. A woven or coarse metal at building scale reads as a diffuse aggregate. The flag's envInt 0.05 goes -> the global 0.6.
+      stdMat = Object.assign({}, stdMat, { metal: 0 }); delete stdMat.envInt;
+    }
+    else if (_pvm && (!rgbaStr || _isPh)) { r = _pvm.r; g = _pvm.g; b = _pvm.b; }
     var _mepAlb = (noMepHue || _isPorc || _bare || _pvm) ? null : A._mepDiscAlbedo(r, g, b, rgbaStr, ifcClass, discipline, mepHint, matName);
     if (_mepAlb) {
       r = _mepAlb.r; g = _mepAlb.g; b = _mepAlb.b;
@@ -2618,7 +2664,7 @@ function setupStreaming(A) {
       A._pendingInstances[hash].push({ guid, hash, rgba, disc, cx, cy, cz,
         rotX: rotX || 0, rotY: rotY || 0, rotZ: rotZ || 0,
         storey: storey || '', ifcClass,
-        matVariant: A._elementVariant(ifcClass, elementName, row[16] || ''),   // §ENTOURAGE / §PORCELAIN (Z20)
+        matVariant: A._elementVariant(ifcClass, elementName, row[16] || '', rgba || ''),   // §ENTOURAGE / §PORCELAIN (Z20)
         mepHint: A._mepNameHint(elementName),
         matName: row[16] || '',   // §CPE_MATERIAL_KEY — fixed slot 16, after the 16-slot bbox layout
         bx: row[13] || 0.3, by: row[14] || 0.3, bz: row[15] || 0.3 });
