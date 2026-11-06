@@ -6,16 +6,9 @@
 const fs = require('fs'), path = require('path'), M = path.join(__dirname, '..'), T = require(path.join(M, 'dxf2tables.js')), DT = require(path.join(M, 'dxf2doortags.js'));
 const checks = []; const ok = (n, v, d) => { checks.push(!!v); console.log('  ' + (v ? 'PASS ' : 'FAIL ') + n + (d ? '  ' + d : '')); };
 const quiet = fn => { const l = console.log; let s = ''; console.log = x => { s += x + '\n'; }; try { return [fn(), s]; } finally { console.log = l; } };
-// a ruled block: xs left to right, ys top to bottom, cells { 'r,c': text }, noV { 'r,e': 1 } = no vertical at edge e in row r, noH { 'b,c': 1 } = no rule under row b in column c
-function block(xs, ys, cells, noV, noH, h) {
-  const E = [], line = (a, b, c, d) => E.push({ type: 'LINE', vertices: [{ x: a, y: b }, { x: c, y: d }] }); noV = noV || {}; noH = noH || {}; h = h || 3;
-  for (let r = 0; r < ys.length - 1; r++) for (let e = 0; e < xs.length; e++) if (!noV[r + ',' + e]) line(xs[e], ys[r], xs[e], ys[r + 1]);
-  for (let b = 0; b < ys.length; b++) for (let c = 0; c < xs.length - 1; c++) if (!noH[(b - 1) + ',' + c]) line(xs[c], ys[b], xs[c + 1], ys[b]);
-  Object.keys(cells).forEach(k => { const [r, c] = k.split(',').map(Number); E.push({ type: 'MTEXT', text: cells[k], height: h, attachmentPoint: 5, position: { x: (xs[c] + xs[c + 1]) / 2, y: (ys[r] + ys[r + 1]) / 2 }, handle: 'H' + k }); });
-  return E;
-}
+const { block, rowsAt } = require('./dxf_table_fixture.js');
 const read = ents => quiet(() => T.read({ name: 'fixture', dxf: { entities: ents } }));
-const xs = [0, 40, 80, 120, 160, 200], rowsAt = (top, n) => Array.from({ length: n + 1 }, (_, i) => top - i * 10);
+const xs = [0, 40, 80, 120, 160, 200];
 // 1. heading block + two bodies with the same edges, a repeated tag kept twice
 const head = block(xs, rowsAt(300, 2), { '0,0': 'DOOR SCHEDULE', '1,0': 'TAG', '1,1': 'WIDTH', '1,2': 'HEIGHT', '1,3': 'RATING', '1,4': 'NOTE' }, { '0,1': 1, '0,2': 1, '0,3': 1, '0,4': 1 });
 const b1 = block(xs, rowsAt(260, 2), { '0,0': 'A-1', '0,1': '900', '0,2': '2100', '0,3': '60', '0,4': 'x', '1,0': 'A-2', '1,1': '1000', '1,2': '2200', '1,3': '60', '1,4': 'y' });

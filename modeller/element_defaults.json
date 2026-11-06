@@ -1196,6 +1196,59 @@
    "deck_above_steel_m": 0.05,
    "deck_thick_m": 0.05,
    "used_by": "dxf2roofspots (§D109)"
+  },
+  "read.tables": {
+    "element": "Set",
+    "value": "read",
+    "unit": "text",
+    "kind": "guess",
+    "basis": "how a ruled schedule is told from other linework and how its heading is told from its rows (§D111). Fractions of the table's own cells or columns; 'off' = no table is read",
+    "options": [
+      "read",
+      "off"
+    ],
+    "fill_min": 0.15,
+    "list_fill_min": 0.4,
+    "data_row_share": 0.15,
+    "title_span_share": 0.6,
+    "section_span_share": 0.5,
+    "heading_repeat_share": 0.5,
+    "edge_tol_text_h": 0.3
+  },
+  "check.set": {
+    "element": "Set",
+    "value": "read",
+    "unit": "text",
+    "kind": "guess",
+    "basis": "which printed relations the set check judges (§D112). A rule names its columns by heading; the tolerance is the printed rounding. 'off' = no sum is judged; add a row to judge another relation",
+    "options": [
+      "read",
+      "off"
+    ],
+    "rules": [
+      {
+        "id": "phases_add_to_total",
+        "kind": "run_sum",
+        "parts": [
+          "R-\\s*PH",
+          "Y-\\s*PH",
+          "B-\\s*PH"
+        ],
+        "total": "TOTAL\\s*LOAD",
+        "tol_abs": 0.03,
+        "tol_rel": 0.002,
+        "says": "the three phases add up to the total"
+      },
+      {
+        "id": "cover_less_invert_is_depth",
+        "kind": "difference",
+        "a": "COVER\\s*LEVEL",
+        "b": "INVERT\\s*LEVEL",
+        "c": "^DEPTH",
+        "tol_abs": 0.011,
+        "says": "cover level less invert level is the depth"
+      }
+    ]
   }
  },
  "building_types": {
