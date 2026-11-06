@@ -1,4 +1,4 @@
-// ⚠ DO NOT REMOVE — §LP_PICK_HEAVY_MESH witness. Scope: bim-compiler prompts/LOD400_UPGRADER.md §H. Read the log after every run.
+// ⚠ DO NOT REMOVE — §LP_PICK_HEAVY_MESH witness. Scope: bim-compiler prompts/LOD400_UPGRADER.md §K. Read the log after every run.
 // Proves/disproves: (C1) the load-path raycast cost guard (lp_geom_pick.js ROUND 18) is triangle-blind;
 // (C2) brute-force ray cost vs the real roof geometry; (C3) a BVH returns the SAME hits (look-neutral fix).
 // Env: THREE_URL, BVH_URL (file:// URLs), GEO_DIR (g0/g1 .v float32 xyz, .f uint32 tri indices, meta.json).

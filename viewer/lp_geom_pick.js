@@ -345,7 +345,7 @@
     _accelBatchedMeshes(_rayMeshCache);
     return _rayMeshCache;
   }
-  // §LP_PICK_HEAVY_MESH (prompts/LOD400_UPGRADER.md §H): a plain mesh with a huge triangle count is raycast
+  // §LP_PICK_HEAVY_MESH (prompts/LOD400_UPGRADER.md §K): a plain mesh with a huge triangle count is raycast
   // brute-force unless its geometry carries a three-mesh-bvh `boundsTree` (§BVH_INIT patches the raycast but never
   // builds trees). Measured on the Jebel roof proxies (1.1 M tris): 55 ms/ray brute vs 0.1 ms with a tree, identical
   // hits (witness_lp_pick_heavy_mesh.mjs) — the arm-time pick (40 candidates x hops x <=49 rays) froze the bake 15+ min.
