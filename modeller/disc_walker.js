@@ -54,6 +54,12 @@
   var ROOM_TYPE_MEASURED_DISCS = { PLB: true, FP: true };
   // Register/clear a borrowed discipline source. dwBorrow('FP', terminalDb) → FP rules read from terminalDb.
   function dwBorrow(disc, db) { if (db) _borrow[disc] = db; else delete _borrow[disc]; return _borrow; }
+  // §SCHED-SOURCE (prompts/DISC_WALK_SCHEDULE_SOURCE.md): room types and schedules read from a named set when the primary has none. The primary is never switched:
+  // clearances, gate, routing, shims and measured bands stay on it. _schedDbFor is the ONE read point; the rows are projected, so placements from it carry schedFrom.
+  var _schedSource = null;
+  function dwScheduleSource(db) { _schedSource = db || null; return !!_schedSource; }
+  function _hasSchedule(db) { return !!db && _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_space_schedule'").length > 0; }
+  function _schedDbFor(disc) { var p = _dbFor(disc); return (!_hasSchedule(p) && _hasSchedule(_schedSource)) ? _schedSource : p; }
   // Browser borrow-by-FILE (docs/WalkerDoctrine.md §2): IDB-cached load + open + register a borrowed discipline
   // from ANOTHER rules file WITHOUT switching the primary. A residential build (duplex_rules primary) lacks FP →
   // dwBorrowFile('FP', SQL, './', 'terminal_rules.db') routes FP's MEASURED rows to terminal_rules; the gate +
@@ -66,6 +72,15 @@
     var db = new SQL.Database(new Uint8Array(buf));
     db._dwFile = file; _borrow[disc] = db;
     console.log(TAG + ' §DW-BORROW ' + disc + ' ← ' + file);
+    return db;
+  }
+
+  async function dwScheduleSourceFile(SQL, baseUrl, file) {
+    if (!file) { _schedSource = null; return null; }
+    if (_schedSource && _schedSource._dwFile === file) return _schedSource;   // already registered
+    var db = new SQL.Database(new Uint8Array(await _loadDbBuf(dwRulesKey(file, baseUrl))));
+    db._dwFile = file; _schedSource = db;
+    console.log(TAG + ' §DW-SCHED-SOURCE registered ' + file);
     return db;
   }
 
@@ -322,7 +337,7 @@
   }
   function _spaceTypeFor(disc, sp) {
     var label = (sp && typeof sp === 'object') ? sp.label : sp;   // back-compat: a bare string still works
-    var db = _dbFor(disc);
+    var db = _schedDbFor(disc);
     _spaceTypeHow = 'none'; _spaceTypeAmbiguous = false;
     if (label) {
       var norm = String(label).toUpperCase().replace(/[\s]+/g, '_').replace(/[_\s]*\d+$/, '').trim();
@@ -484,29 +499,44 @@
   // Place one discipline's scheduled devices into every REAL space (or one space via
   // opts.spaceGuid). Returns { placements, spaces, skippedSpaces, refused } — refused =
   // LOD400-law refusals (no real mesh), honest and counted, never substituted.
+  // §SCHED-SOURCE §3.9: a federated building carries the same room once per discipline model. One physical room is served once. Same box = plan corners and floor within SPACE_SAME_M;
+  // a copy that can be typed is kept over one that cannot. A building whose rooms are all different keeps its list untouched, in order.
+  var SPACE_SAME_M = 0.25;
+  function _oneRoomPerBox(disc, all) {
+    if (all.length < 2) return all;
+    var keep = [], same = function (a, b) { return Math.abs(a.x0 - b.x0) <= SPACE_SAME_M && Math.abs(a.x1 - b.x1) <= SPACE_SAME_M && Math.abs(a.y0 - b.y0) <= SPACE_SAME_M && Math.abs(a.y1 - b.y1) <= SPACE_SAME_M && Math.abs(a.z0 - b.z0) <= SPACE_SAME_M; };
+    all.forEach(function (s) {
+      for (var i = 0; i < keep.length; i++) if (same(keep[i], s)) { if (!_spaceTypeFor(disc, keep[i]) && _spaceTypeFor(disc, s)) keep[i] = s; return; }
+      keep.push(s);
+    });
+    if (keep.length < all.length) console.log(TAG + ' §DW-SPACE-ONE-ROOM disc=' + disc + ' rows=' + all.length + ' rooms=' + keep.length + ' (the same room in several federated models is served once)');
+    return keep;
+  }
   function placeSchedule(disc, bdb, opts) {
     opts = opts || {};
-    if (!_rows(_dbFor(disc), "SELECT 1 FROM sqlite_master WHERE type='table' AND name='rule_space_schedule'").length) {
+    var schedDb = _schedDbFor(disc), fromSource = schedDb !== _dbFor(disc);
+    if (!_hasSchedule(schedDb)) {
       return { placements: [], spaces: -1, spacesUsed: 0, skippedSpaces: [], refused: {},
         noRules: 'rules DB has no rule_space_schedule (run build/project_rule_space_schedule.py)' };
     }
     var orderQty = (opts.orderQty == null) ? 99 : opts.orderQty;
     var all = spacesOf(bdb);
     if (opts.spaceGuid) all = all.filter(function (s) { return s.guid === opts.spaceGuid; });
+    all = _oneRoomPerBox(disc, all);
     // §W7-COLLISION cross-disc coordination: opts.avoid = prior discs' placements. Checked in FULL
     // (not per-space): adjacent space bboxes overlap (Hallway×Stair), so a same-space scan misses
     // real cross-space overlaps.
     var avoidAll = opts.avoid || [];
-    var out = [], refused = {}, skipped = [], used = 0, typed = { exact: 0, alias: 0, word: 0, geometry: 0, none: 0, ambiguous: 0, typedNoSchedule: 0 };
+    var out = [], refused = {}, skipped = [], used = 0, typed = { exact: 0, alias: 0, word: 0, geometry: 0, none: 0, ambiguous: 0, typedNoSchedule: 0 }, served = [];
     var schedYawN = 0, schedYawMeshN = 0;             // §SCHED-YAW: wall-anchored devices given a mesh-frame yaw (of which: frame measured off the mesh)
     all.forEach(function (sp) {
       var stype = _spaceTypeFor(disc, sp);
       typed[_spaceTypeHow] = (typed[_spaceTypeHow] || 0) + 1; if (_spaceTypeAmbiguous) typed.ambiguous++;
       if (!stype) { skipped.push(sp.label); return; }
-      var sched = _rows(_dbFor(disc), "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
+      var sched = _rows(schedDb, "SELECT * FROM rule_space_schedule WHERE disc='" + _esc(disc) +
         "' AND space_type_id='" + _esc(stype) + "'");
       if (!sched.length) { typed.typedNoSchedule++; return; }
-      used++;
+      used++; served.push(sp);
       var area = (sp.x1 - sp.x0) * (sp.y1 - sp.y0);
       var perAxisCount = {};                          // co-location spreader (Java GAP-10 port)
       var spWalls = null;                             // real walls near this space (lazy, once)
@@ -543,7 +573,7 @@
           var key = pos[0].toFixed(2) + '_' + pos[1].toFixed(2) + '_' + pos[2].toFixed(2);
           var idx = (perAxisCount[key] = (perAxisCount[key] || 0) + 1) - 1;
           if (idx > 0) {
-            var spc = _rows(_dbFor(disc), "SELECT max_spacing_m m FROM rule_code_spacing WHERE " +
+            var spc = _rows(schedDb, "SELECT max_spacing_m m FROM rule_code_spacing WHERE " +
               "element_type='" + _esc(e.device_id) + "' AND (space_type='" + _esc(stype) + "' OR space_type='ANY') " +
               "ORDER BY CASE WHEN space_type='" + _esc(stype) + "' THEN 0 ELSE 1 END LIMIT 1");
             var step = (spc.length && spc[0].m > 0) ? spc[0].m / 2 : 0.5;
@@ -621,7 +651,11 @@
     console.log(TAG + ' §DW-SPACE-TYPE disc=' + disc + ' spaces=' + all.length + ' exact=' + typed.exact + ' alias=' + typed.alias + ' word=' + typed.word + ' geometry=' + typed.geometry +
       ' none=' + typed.none + ' ambiguous=' + typed.ambiguous + ' typedNoSchedule=' + typed.typedNoSchedule + ' left=' + JSON.stringify(skipped.filter(function (v, i) { return skipped.indexOf(v) === i; }).slice(0, 12)) +
       (!all.length ? ' VACUOUS: no spaces' : typed.none === all.length ? ' INCONCLUSIVE: no space typed' : ''));
-    return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused, spaceTypes: typed };
+    if (fromSource) {
+      out.forEach(function (p) { p.schedFrom = schedDb._dwFile || 'schedule source'; });
+      console.log(TAG + ' §DW-SCHED-SOURCE disc=' + disc + ' primary=' + (_dbFor(disc)._dwFile || _loadedFile || '?') + ' schedule=' + (schedDb._dwFile || '?') + ' spaces=' + all.length + ' served=' + used + ' (projected rows, not measured on this class)');
+    }
+    return { placements: out, spaces: all.length, spacesUsed: used, skippedSpaces: skipped, refused: refused, spaceTypes: typed, fromSource: fromSource, served: served };
   }
 
   // ── §NOSPACES (item 2, RESUME_DISC_WALKER_ENVELOPE_BOUND.md, 2026-07-10): measured-band placement
@@ -2514,9 +2548,22 @@
       // instead of a flat REFUSE. Residential schedule data is NEVER consumed here (placeMeasured reads
       // rule_placement/rule_mesh_binding only); a building with BOTH schedule tables AND real spaces is
       // byte-identical to before (this branch is unreachable there).
-      if (ps.noRules || !ps.spaces) {
-        var pm = placeMeasured(disc, bdb, opts);
-        if (!pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
+      // §SCHED-SOURCE §3.4/§3.5: a source that served nothing is today's measured walk; one that served part keeps the bands for the rest, never twice in a room.
+      var srcNone = ps.fromSource && !ps.placements.length, srcPart = ps.fromSource && ps.placements.length > 0 && ps.spacesUsed < ps.spaces;
+      var pm = (ps.noRules || !ps.spaces || srcNone || srcPart) ? placeMeasured(disc, bdb, opts) : null;
+      if (srcPart && (pm.noRules || !pm.placements.length)) {
+        console.log(TAG + ' §DW-SCHED-MIXED disc=' + disc + ' scheduled=' + ps.placements.length + ' measuredKept=0 measuredDropped=0 (' + (pm.noRules || 'no band placements') + ')');
+        pm = null;
+      }
+      if (pm) {
+        var pmDropped = 0;
+        if (srcPart) {
+          pm.placements = pm.placements.filter(function (p) {
+            var inside = ps.served.some(function (sp) { return p.x >= sp.x0 && p.x <= sp.x1 && p.y >= sp.y0 && p.y <= sp.y1 && p.z >= sp.z0 && p.z <= sp.z1; });
+            if (inside) pmDropped++; return !inside;
+          });
+        }
+        if (!srcPart && !pm.noRules && !pm.placements.length && pm.verdicts && pm.verdicts.length) {
           // §ROOF-PATTERN: a deliberate verdict (the array is already present / not an array) — report it as the walk's
           // outcome with verdict:true so the Modeller does NOT fall back to the legacy fill (§SCHED-FALLBACK).
           console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' VERDICT ' + pm.verdicts.join('; '));
@@ -2547,10 +2594,15 @@
         var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
         if (!mSrc.segs.length) { var mBt = _bomTree(disc, bdb, mPlaced); if (mBt && mBt.segs.length) { mSrc = { segs: mBt.segs, byRule: mBt.byRule }; mBr = { rc: mSrc, patternInfo: { seed: mBt.seed, riser: null } }; } }   // §D65
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
-        console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
+        if (srcPart) {
+          console.log(TAG + ' §DW-SCHED-MIXED disc=' + disc + ' scheduled=' + ps.placements.length + ' measuredKept=' + mPlaced.length + ' measuredDropped=' + pmDropped);
+          mPlaced = ps.placements.concat(mPlaced);
+        }
+        console.log(TAG + (srcPart ? ' §WALK-SCHED-MIXED' : ' §WALK-NOSPACES') + ' disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
           (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
-        return { disc: disc, refused: false, mode: 'measured-band', placed: mPlaced.length, placements: mPlaced,
+        return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mPlaced.length, placements: mPlaced,
+          schedule: srcPart ? { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused } : undefined,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
           chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo };
       }
@@ -2720,6 +2772,7 @@
     hostWalls: hostWalls, countPer: countPer, occupancy: occupancy, defaultSeed: defaultSeed, spaceAsStorey: spaceAsStorey,
     spacesOf: spacesOf, placeSchedule: placeSchedule, dwSetRoomTypeConfig: dwSetRoomTypeConfig,
     _spaceTypeFor: _spaceTypeFor, ROOM_TYPE_MEASURED_DISCS: ROOM_TYPE_MEASURED_DISCS,
+    dwScheduleSource: dwScheduleSource, dwScheduleSourceFile: dwScheduleSourceFile,
     _setSpaceTypeWordOff: function (v) { _spaceTypeWordOff = !!v; }, _spaceTypeLastHow: function () { return _spaceTypeHow; },
     _shimForDisc: _shimForDisc, _shimForFixture: _shimForFixture, _loadRuleShims: _loadRuleShims,
     _trueMidpoint: _trueMidpoint,
