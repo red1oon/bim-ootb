@@ -3,19 +3,20 @@
 // dxf2tables.js — a schedule drawn as a ruled table, read as rows and named columns (prompts/DXF2BIM_ARCHITECT_REVIEW.md §D111). Pure, Node + browser.
 // The ruled lines say where the cells are; each text goes to the cell that holds it; a header cell covers the columns its own lines span. Nothing is typed in: a table
 // the lines do not close, or a text outside every cell, is counted and listed. Not a parser of what a row MEANS: the door, beam or panel reader owns that.
-// read(sheet) -> { tables: [{ bbox, columns: [name], rows: [{ cells: [text], section }], headerRows, fill }], rejected, outside } ; rule lines come from LINE and LWPOLYLINE.
+// read(sheet) -> { tables: [{ bbox, columns: [name], rows: [{ cells: [text], filled: [bool], run: [id], section }], headerRows, headerBasis, fill }], rejected }. filled[c] = the text came down a merged cell; run[c] = rows sharing one merged cell share an id, 0 = none. Rule lines come from LINE and LWPOLYLINE.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory({ BM: require('./dxf2beams.js') });
-  else root.Dxf2Tables = factory({ BM: root.Dxf2Beams });
+  if (typeof module === 'object' && module.exports) module.exports = factory({ BM: require('./dxf2beams.js'), REF: require('./element_defaults.json') });
+  else root.Dxf2Tables = factory({ BM: root.Dxf2Beams, REF: null });
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
-  var clean = D.BM.parts.clean;
+  var clean = D.BM.parts.clean, LIM = (D.REF && D.REF.defaults['read.tables']) || null;   // element_defaults.json read.tables: the numbers are the user's, not this file's
+  function setRef(ref) { LIM = ref.defaults['read.tables']; }   // the browser hands the registry over, as Dxf2Defaults.create does
   function median(a) { var s = a.slice().sort(function (p, q) { return p - q; }); return s.length ? s[s.length >> 1] : 0; }
   function textsOf(ents) {
     var out = [];
     ents.forEach(function (e) {
       if (e.type !== 'TEXT' && e.type !== 'MTEXT') return;
-      var q = e.position || e.startPoint, t = clean(String(e.text || '').replace(/\\[LlOoKk]/g, '')); if (!q || !t) return;
+      var q = e.position || e.startPoint, t = clean(e.text || ''); if (!q || !t) return;
       var h = e.height || e.textHeight || 0, a = e.attachmentPoint || 7, x = q.x, y = q.y;   // the insertion point sits on the text's edge: move it into the text
       if (e.type === 'MTEXT') { if (a <= 3) y -= h / 2; else if (a >= 7) y += h / 2; if (a % 3 === 1) x += h / 4; else if (a % 3 === 0) x -= h / 4; } else y += h / 2;
       out.push({ t: t, x: x, y: y, h: h, handle: String(e.handle || '') });
@@ -60,7 +61,7 @@
     var grid = []; for (var r = 0; r < nr; r++) { grid.push([]); for (var c = 0; c < nc; c++) grid[r].push([]); }
     inside.forEach(function (q) { var c = slot(xs, q.x), r = nr - 1 - slot(ysAsc, q.y); if (c >= 0 && r >= 0 && r < nr) grid[r][c].push(q); });
     var used = 0; grid.forEach(function (R) { R.forEach(function (C) { if (C.length) used++; }); });
-    if (used / (nr * nc) < 0.15) return null;   // a plan's linework closes cells too: they stay empty
+    if (used / (nr * nc) < LIM.fill_min) return null;   // a plan's linework closes cells too: they stay empty
     function spanOf(r, c) {   // a cell runs left and right until a vertical crosses this row
       var yMid = (ysAsc[nr - 1 - r] + ysAsc[nr - r]) / 2, wall = function (x) { return g.V.some(function (v) { return Math.abs(v.x - x) <= tol && v.a <= yMid && v.b >= yMid; }); }, a = c, b = c;
       while (a > 0 && !wall(xs[a])) a--; while (b < nc - 1 && !wall(xs[b + 1])) b++; return [a, b];
@@ -77,48 +78,53 @@
   function sameEdges(a, b, tol) { return a.length === b.length && a.every(function (v, i) { return Math.abs(v - b[i]) <= tol * 2; }); }
   function assemble(blocks) {   // blocks stacked with the same column edges are one table (Revit breaks a schedule into a heading block and one body per group)
     blocks.sort(function (a, b) { return b.y1 - a.y1; });
-    var nc = blocks[0].xs.length - 1, all = [], starts = [];
+    var nc = blocks[0].xs.length - 1, all = [], starts = [], runId = 0;
     blocks.forEach(function (B) {
       starts.push(all.length);
       // a merged cell (no rule between its rows) holds its text in ONE of them, often the middle: it belongs to every row of the run, inside this block only.
       // Two different texts in one run = a missing rule, not a merge: left as drawn.
-      var cells = B.rows.map(function (R) { return R.cells.slice(); });
+      var cells = B.rows.map(function (R) { return R.cells.slice(); }), runs = B.rows.map(function () { return {}; });
       for (var c = 0; c < nc; c++) for (var r = 0; r < B.rows.length; r++) {
         var e = r; while (e < B.rows.length - 1 && B.rows[e].open(c)) e++;
-        if (e > r) { var run = {}; for (var k = r; k <= e; k++) if (B.rows[k].cells[c]) run[B.rows[k].cells[c]] = 1; var u = Object.keys(run); if (u.length === 1) for (var m = r; m <= e; m++) cells[m][c] = u[0]; }
+        if (e > r) { var run = {}; for (var k = r; k <= e; k++) if (B.rows[k].cells[c]) run[B.rows[k].cells[c]] = 1; var u = Object.keys(run); if (u.length === 1) { runId++; for (var m = r; m <= e; m++) { cells[m][c] = u[0]; runs[m][c] = runId; } } }
         r = e;
       }
-      B.rows.forEach(function (R, i) { all.push({ cells: cells[i], own: R.cells, span: R.span }); });
+      B.rows.forEach(function (R, i) { all.push({ cells: cells[i], own: R.cells, span: R.span, runs: runs[i] }); });
     });
-    function isData(R) { var f = R.cells.filter(Boolean); return f.length >= Math.max(3, nc * 0.15) && f.filter(function (t) { return NUM.test(t); }).length >= 2; }
+    function isData(R) { var f = R.cells.filter(Boolean); return f.length >= Math.max(3, nc * LIM.data_row_share) && f.filter(function (t) { return NUM.test(t); }).length >= 2; }
     var first = -1;
     for (var i = 0; i < all.length && first < 0; i++) if (isData(all[i])) first = i;
     if (blocks.length > 1 && (first < 0 || first > starts[1])) first = starts[1];   // a separate top block with no number row in it is the heading
     var basis = 'number-row';
     if (first < 0) {   // a list with no number column (a sheet register): the heading is the first row that fills three cells, and it must be a real table
       var used0 = blocks.reduce(function (n, B) { return n + B.used; }, 0), area0 = blocks.reduce(function (n, B) { return n + B.area; }, 0);
-      if (used0 / area0 >= 0.4 && all.length >= 4) for (var h = 0; h < all.length - 1 && first < 0; h++) if (all[h].own.filter(Boolean).length >= 3) { first = h + 1; basis = 'no-number-row'; }
+      if (used0 / area0 >= LIM.list_fill_min && all.length >= 4) for (var h = 0; h < all.length - 1 && first < 0; h++) if (all[h].own.filter(Boolean).length >= 3) { first = h + 1; basis = 'no-number-row'; }
     }
     if (first < 1) return null;
     var names = []; for (var c = 0; c < nc; c++) names.push([]);
-    for (var rh = 0; rh < first; rh++) all[rh].own.forEach(function (t, ch) { if (!t) return; var sp = all[rh].span(ch); if (sp[1] - sp[0] + 1 > nc * 0.6) return; for (var k = sp[0]; k <= sp[1]; k++) names[k].push(t); });
+    for (var rh = 0; rh < first; rh++) all[rh].own.forEach(function (t, ch) { if (!t) return; var sp = all[rh].span(ch); if (sp[1] - sp[0] + 1 > nc * LIM.title_span_share) return; for (var k = sp[0]; k <= sp[1]; k++) names[k].push(t); });
     var rows = [], section = null;
     for (var rd = first; rd < all.length; rd++) {
       var own = all[rd].own, full = own.filter(Boolean);
       if (!full.length) continue;
-      if (full.length === 1) { var at = own.findIndex(Boolean), s2 = all[rd].span(at); if (s2[1] - s2[0] + 1 > nc * 0.5) { section = full[0]; continue; } }
-      rows.push({ cells: all[rd].cells, section: section });
+      if (full.length === 1) { var at = own.findIndex(Boolean), s2 = all[rd].span(at); if (s2[1] - s2[0] + 1 > nc * LIM.section_span_share) { section = full[0]; continue; } }
+      rows.push({ cells: all[rd].cells, own: own, runs: all[rd].runs, section: section });
     }
     // a heading that covers two grid columns is one column: a stray rule in the body must not split it (a value sits in either half)
     var keep = [], colNames = names.map(function (n) { return n.join(' / '); });
     colNames.forEach(function (n, c) { if (c && n && n === colNames[c - 1]) keep[keep.length - 1].push(c); else keep.push([c]); });
-    rows.forEach(function (R) { R.cells = keep.map(function (K) { return K.map(function (c) { return R.cells[c]; }).filter(Boolean).join(' '); }); });
+    rows.forEach(function (R) {   // filled[c] = this cell's text came down a merged run: it is not this row's own statement (a key check must not count it)
+      R.filled = keep.map(function (K) { return K.every(function (c) { return !R.own[c]; }) && K.some(function (c) { return R.cells[c]; }); });
+      R.cells = keep.map(function (K) { return K.map(function (c) { return R.cells[c]; }).filter(Boolean).join(' '); }); R.run = keep.map(function (K) { for (var q = 0; q < K.length; q++) if (R.runs[K[q]]) return R.runs[K[q]]; return 0; }); delete R.own; delete R.runs;
+    });
     colNames = keep.map(function (K) { return colNames[K[0]]; });
     var used = blocks.reduce(function (n, B) { return n + B.used; }, 0), area = blocks.reduce(function (n, B) { return n + B.area; }, 0);
     return { bbox: [blocks[0].xs[0], blocks[blocks.length - 1].y0, blocks[0].xs[nc], blocks[0].y1], blocks: blocks.length, columns: colNames, rows: rows, headerRows: first, headerBasis: basis, fill: Number((used / area).toFixed(3)) };
   }
   function read(sheet) {
-    var ents = (sheet && sheet.dxf && sheet.dxf.entities) || [], T = textsOf(ents), tol = Math.max(median(T.map(function (q) { return q.h; })) * 0.3, 1e-6), S = segsOf(ents, tol);
+    if (!LIM) { console.log('§DXF_TABLES INCONCLUSIVE: no read.tables row (setRef)'); return { tables: [], rejected: 0 }; }
+    if (LIM.value === 'off') { console.log('§DXF_TABLES off: read.tables = off'); return { tables: [], rejected: 0 }; }
+    var ents = (sheet && sheet.dxf && sheet.dxf.entities) || [], T = textsOf(ents), tol = Math.max(median(T.map(function (q) { return q.h; })) * LIM.edge_tol_text_h, 1e-6), S = segsOf(ents, tol);
     var blocks = [], rejected = 0, big = 0;
     components(S.H, S.V, tol).forEach(function (g) { if (g.V.length < 2 || g.H.length < 2) return; big++; var b = block(g, T, tol); if (b) blocks.push(b); else rejected++; });
     var groups = [];
@@ -128,9 +134,9 @@
       G.sort(function (a, b) { return b.y1 - a.y1; });
       var runs = [], headWords = null;
       G.forEach(function (b) {
-        var nc = b.xs.length - 1, top = b.rows[0], one = top.cells.filter(Boolean), titled = one.length === 1 && (function () { var sp = top.span(top.cells.findIndex(Boolean)); return sp[1] - sp[0] + 1 > nc * 0.6; })();
+        var nc = b.xs.length - 1, top = b.rows[0], one = top.cells.filter(Boolean), titled = one.length === 1 && (function () { var sp = top.span(top.cells.findIndex(Boolean)); return sp[1] - sp[0] + 1 > nc * LIM.title_span_share; })();
         var words = {}; b.rows.slice(0, 4).forEach(function (R) { R.cells.forEach(function (t) { if (t && !NUM.test(t)) words[t] = 1; }); });
-        var repeat = headWords && Object.keys(headWords).length >= 3 && Object.keys(headWords).filter(function (w) { return words[w]; }).length >= Object.keys(headWords).length * 0.5;
+        var repeat = headWords && Object.keys(headWords).length >= 3 && Object.keys(headWords).filter(function (w) { return words[w]; }).length >= Object.keys(headWords).length * LIM.heading_repeat_share;
         if (!runs.length || titled || repeat) { runs.push([b]); headWords = words; } else runs[runs.length - 1].push(b);
       });
       runs.forEach(function (R) { var t = assemble(R); if (t) tables.push(t); else rejected += R.length; });
@@ -138,5 +144,5 @@
     console.log('§DXF_TABLES sheet=' + (sheet.name || '?') + ' texts=' + T.length + ' lines=' + (S.H.length + S.V.length) + ' candidates=' + big + ' tables=' + tables.length + ' rejected=' + rejected + ' rows=' + tables.reduce(function (n, t) { return n + t.rows.length; }, 0) + (tables.length ? '' : ' INCONCLUSIVE: no ruled table read'));
     return { tables: tables, rejected: rejected };
   }
-  return { read: read, parts: { textsOf: textsOf, segsOf: segsOf, components: components } };
+  return { read: read, setRef: setRef, parts: { textsOf: textsOf, segsOf: segsOf, components: components } };
 });
