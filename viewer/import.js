@@ -166,7 +166,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=19', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=20', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -291,6 +291,7 @@ function setupImport(A) {
     var allSpaces = [], allSpaceProps = [];   // §IMPORT_SPACES
     var allDiscs = {}, allStoreys = new Set();
     var allDeclaredStoreys = [];
+    var allGridAxes = [];   // §IFC-GRID
     var totalElements = 0;
     // §GEOREF_REBASE federation frame: the first file that computes a georef offset pins it
     // for every subsequent file in this drop, so all disciplines rebase into ONE shared local
@@ -328,6 +329,7 @@ function setupImport(A) {
         }
         result.meta.storeys.forEach(function(s) { allStoreys.add(s); });
         if (result.meta.declaredStoreys) allDeclaredStoreys = allDeclaredStoreys.concat(result.meta.declaredStoreys);   // §IFC_STOREYS
+        if (result.meta.gridAxes) allGridAxes = allGridAxes.concat(result.meta.gridAxes);   // §IFC-GRID
 
         console.log('[S220] §MULTI_FILE_DONE ' + fileLabel +
           ' elements=' + result.meta.elementCount + ' geom=' + result.meta.geomCount);
@@ -354,6 +356,7 @@ function setupImport(A) {
           disciplines: allDiscs,
           storeys: Array.from(allStoreys).sort(),
           declaredStoreys: allDeclaredStoreys,   // §IFC_STOREYS: each file's own, each by its own unit
+          gridAxes: allGridAxes,   // §IFC-GRID: each file's stated grid, each in the frame of its own centres
           georefOffset: sessionGeorefOffset || [0, 0, 0],  // §GEOREF_REBASE traceability → project_metadata
           unitScale: sessionUnitScale,
         },
@@ -406,7 +409,7 @@ function setupImport(A) {
   function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=19', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=20', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {

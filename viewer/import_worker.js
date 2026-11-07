@@ -26,6 +26,7 @@ try {
 }
 console.log('[S220] §WORKER_LOADED web-ifc IIFE loaded, WebIFC=' + typeof WebIFC);
 try { importScripts('ifc_declared_storeys.js'); } catch (eDS) { console.warn('§IFC_STOREYS_FAIL load ' + eDS.message); }   // §IFC_STOREYS (bim-compiler MODELLER_MASTER §G3 SPEC)
+try { importScripts('../common/ifc_grid_read.js'); } catch (eGR) { console.warn('§IFC-GRID unavailable route=import: reader failed to load ' + eGR.message); }   // prompts/DISC_WALK_DRAWN_MAINS.md §4.2a
 try { importScripts('ifc_surface_names.js'); } catch (eSN) { console.warn('§IFC_SURFACE_NAMES_FAIL load ' + eSN.message); }   // §IFC_SURFACE_NAMES
 
 // Discipline classification (same as Python pipeline)
@@ -1229,6 +1230,17 @@ self.onmessage = async function(e) {
       }
     } catch (dsErr) { console.warn('§IFC_STOREYS_ERR ' + dsErr.message); }
 
+    // §IFC-GRID (§4.2a): the file's stated grid, in this route's element_transforms frame (metres, minus the whole-metre rebase just applied to the centres)
+    var _gridRows = [];
+    try {
+      if (self.IfcGridRead) {
+        var _ul = self.IfcDeclaredStoreys ? self.IfcDeclaredStoreys.lengthUnitScale(ifcApi, modelID, WebIFC) : null;
+        var _gr = self.IfcGridRead.read(ifcApi, modelID, WebIFC, { lengthScale: _ul, scaleOut: 1, offset: [georefOffset[0], georefOffset[1]], storeyName: function (sid) { return storeyMap[sid]; } });
+        _gridRows = _gr.rows;
+        console.log(self.IfcGridRead.line('import', _gr) + ' file=' + filename);
+      } else console.log('§IFC-GRID unavailable route=import (reader not loaded)');
+    } catch (grErr) { console.warn('§IFC-GRID_ERR ' + grErr.message); }
+
     const result = {
       type: 'done',
       meta: {
@@ -1245,6 +1257,7 @@ self.onmessage = async function(e) {
         siteGuid: siteGuid,          // §SITE_IDENTITY — this file's own IfcSite GlobalId, if any
         siteLocation: siteLocation,  // §SITE_IDENTITY — that site's raw placement, scaled to metres
         georef: georef,              // §GEOREF — real lat/long/elevation + true-north rotation
+        gridAxes: _gridRows,   // §IFC-GRID — ifc_grid_axis rows, this file's frame
         declaredStoreys: _declaredStoreys,   // §IFC_STOREYS — this file's IfcBuildingStorey.Elevation in metres, by its own IfcUnitAssignment
       },
       elements: renderableElements,
