@@ -1,0 +1,346 @@
+{
+ "generated_by": "modeller/tests/witness_edit_report_coverage.js",
+ "spec": "bim-compiler prompts/MODELLER_MASTER.md §EDIT-REPORT",
+ "rows": [
+  {
+   "id": "CONTROL_clean",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D1_overlap_same_class",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D2_overlap_door_in_slab",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D3_overlap_pipe_in_structure",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "gate is class-blind; footing stands in, the ARC seed holds no IfcBeam",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D3b_overlap_pipe_in_wall",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D4a_unsupported_column_50m_up",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "floating or unsupported elements",
+   "design": false
+  },
+  {
+   "id": "D4b_unsupported_beam_200m_away",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "floating or unsupported elements",
+   "design": false
+  },
+  {
+   "id": "D5a_mm_as_m_3100_clear",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "wrong units or absurd sizes, unless they hit something",
+   "design": false
+  },
+  {
+   "id": "D5b_mm_as_m_800_clear",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "wrong units or absurd sizes, unless they hit something",
+   "design": false
+  },
+  {
+   "id": "D5b2_mm_as_m_800_through_building",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "fires only because it hits something",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D5c_m_as_km_thin",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "wrong units or absurd sizes, unless they hit something",
+   "design": false
+  },
+  {
+   "id": "D7b_unknown_ifc_class",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "the gate receives boxes only, never a class",
+   "label": "unknown element types",
+   "design": false
+  },
+  {
+   "id": "D8b_duplicate_position",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "clash"
+   ],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "D8a_duplicate_guid",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "read",
+   "note": "boxes are keyed by fid, so a duplicate guid never reaches it",
+   "label": "duplicate ids",
+   "design": false
+  },
+  {
+   "id": "E1_overlap_under_tolerance_15mm",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "CLASH_TOL is 20 mm",
+   "label": "overlaps under 20 mm",
+   "design": true
+  },
+  {
+   "id": "E2_wall_driven_into_abuts_partner",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "abuts-clash"
+   ],
+   "how": "run",
+   "note": "real pair 15/3 overlap 0.300 m",
+   "label": "walls driven into a wall they already touch",
+   "design": false
+  },
+  {
+   "id": "E3_preexisting_overlap_moved_together",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "delta-only: an overlap already there is never counted",
+   "label": "overlaps that were already there",
+   "design": true
+  },
+  {
+   "id": "E4_nan_coordinates",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "invalid coordinates",
+   "design": false
+  },
+  {
+   "id": "E4b_zero_size_box",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "",
+   "label": "zero-size elements",
+   "design": false
+  },
+  {
+   "id": "E5_changed_element_left_off_moved_list",
+   "gate": "SdgGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "judged set = res.commands + res.riders in commitGridMove",
+   "label": "elements changed outside the edit's own list",
+   "design": false
+  },
+  {
+   "id": "F1_door_off_its_wall",
+   "gate": "SdgGate",
+   "verdict": "RED",
+   "kinds": [
+    "abuts-realign",
+    "door-out"
+   ],
+   "how": "run",
+   "note": "",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP0_CONTROL_small_move",
+   "gate": "GridSpanGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "worst span 5.586 m",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP1_span_past_depth_limit",
+   "gate": "GridSpanGate",
+   "verdict": "ORANGE",
+   "kinds": [
+    "span"
+   ],
+   "how": "run",
+   "note": "worst span 6.986 m",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP2_span_past_max",
+   "gate": "GridSpanGate",
+   "verdict": "RED",
+   "kinds": [
+    "span"
+   ],
+   "how": "run",
+   "note": "worst span 12.186 m",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP3_mm_as_m_delta_600",
+   "gate": "GridSpanGate",
+   "verdict": "RED",
+   "kinds": [
+    "span"
+   ],
+   "how": "run",
+   "note": "caught: the span becomes absurd; worst span 605.486 m",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP4_gridline_dragged_past_neighbour",
+   "gate": "GridSpanGate",
+   "verdict": "ORANGE",
+   "kinds": [
+    "span"
+   ],
+   "how": "run",
+   "note": "no crossing rule; any colour comes from the longer bay; worst span 11.173 m",
+   "label": "grid lines dragged past each other",
+   "design": false
+  },
+  {
+   "id": "SP5_zero_span",
+   "gate": "GridSpanGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "two lines on top of each other reads as fine",
+   "label": "grid lines placed on top of each other",
+   "design": false
+  },
+  {
+   "id": "SP6_unknown_material",
+   "gate": "GridSpanGate",
+   "verdict": "REFUSED",
+   "kinds": [],
+   "how": "run",
+   "note": "refused, never guessed",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP7_steel_girder_15m_judged_as_RC",
+   "gate": "GridSpanGate",
+   "verdict": "RED",
+   "kinds": [
+    "span"
+   ],
+   "how": "run",
+   "note": "one building-wide material; this building is mixed, so a steel girder within its own 18 m limit reads RED",
+   "label": "",
+   "design": false
+  },
+  {
+   "id": "SP8_floating_30m_beam_row",
+   "gate": "GridSpanGate",
+   "verdict": "NONE",
+   "kinds": [],
+   "how": "run",
+   "note": "girders before 228, after 228; only girders the column walk derives are judged",
+   "label": "real beams: only girders walked from columns are span-checked",
+   "design": false
+  }
+ ],
+ "not_checked": [
+  "duplicate ids",
+  "elements changed outside the edit's own list",
+  "floating or unsupported elements",
+  "grid lines placed on top of each other",
+  "invalid coordinates",
+  "real beams: only girders walked from columns are span-checked",
+  "unknown element types",
+  "wrong units or absurd sizes, unless they hit something",
+  "zero-size elements",
+  "load capacity",
+  "beam and column rules (Regulatory Report only)"
+ ]
+}

@@ -69,7 +69,7 @@
     };
   }
 
-  // evaluate(before, after, moved, rel, opts) → {red:[{kind,a,b,depth?}], orange:[{kind,a,b,gap}]}. PURE.
+  // evaluate(before, after, moved, rel, opts) → {red:[{kind,a,b,depth?}], orange:[{kind,a,b,gap}]}. PURE. red kinds: clash, abuts-clash, door-out, door-crush.
   //   before/after = {fid: aabb}      moved = [fid,…] (host + cascade riders)
   //   rel = { related(a,b)->bool  (hosted-by/abuts/anchored = EXPECTED contact, never a clash),
   //           hostOf: {fillingFid: hostFid}, abuts: [{a,b}] (real face-touch fid pairs) }
@@ -83,6 +83,9 @@
     var movedSet = {}; moved.forEach(function (m) { movedSet[m] = 1; });
     var allFids = Object.keys(after);
     var red = [], orange = [], seen = {};
+    var pairKey = function (a, b) { return Math.min(a, b) + '|' + Math.max(a, b); };
+    var abutsKeys = {}; (rel.abuts || []).forEach(function (p) { abutsKeys[pairKey(p.a, p.b)] = 1; });
+    var abutsOnly = function (a, b) { return !!abutsKeys[pairKey(a, b)] && hostOf[a] !== b && hostOf[b] !== a; };
     // §D89 (DXF2BIM_FOUNDATION_LANE.md, W-DXF-ADD-BAY): a COPY inherits its source's relations. opts.copies = {fid: {src, shift:[dx,dy,dz]}}. A copy has no before-state, so
     // without this every contact its source already had (a beam bearing on its column) read as NEW. Its "before" pair is the source with the same neighbour, or with the
     // neighbour's counterpart one shift back (the element whose before-box = the neighbour's box − shift, to 1 mm). No counterpart = no before = judged as new. Absent = as before.
@@ -98,10 +101,15 @@
 
     // (1) CLASH + (3) CLEARANCE — each moved element vs every other (deduped by unordered pair)
     function pairCheck(m, o) {
-      if (related(+m, +o)) return;                            // expected contact (door-in-wall, abuts) → never a clash
+      var isRelated = related(+m, +o);
+      if (isRelated && !abutsOnly(+m, +o)) return;            // expected contact: a filling sits inside its host by construction
       var penA = penetration(after[m], after[o]);
       var op = originPairs(m, o);
       var penB = op ? op.reduce(function (mx, pr) { return Math.max(mx, penetration(pr[0], pr[1])); }, 0) : ((before[m] && before[o]) ? penetration(before[m], before[o]) : 0);
+      if (isRelated) {                                        // §ABUTS-DEEPEN (MODELLER_MASTER §EDIT-REPORT): touching is expected, being driven in is not
+        if (penA > clashTol && penA > penB + clashTol) red.push({ kind: 'abuts-clash', a: +m, b: +o, depth: +penA.toFixed(4) });
+        return;
+      }
       if (penA > clashTol && penA > penB + clashTol) {         // NEW or WORSENED interpenetration
         red.push({ kind: 'clash', a: +m, b: +o, depth: +penA.toFixed(4) }); return;
       }
@@ -265,5 +273,28 @@
     return { kind: 'ubbl-room-size', checked: checked, flagged: flagged, check: check, unmeasured: unmeasured, label: UBBL_DEMO_LABEL };
   }
 
-  return { evaluate: evaluate, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL, UBBL_CHECK_LABEL: UBBL_CHECK_LABEL, UBBL_ANY: UBBL_ANY, UBBL_HAB: UBBL_HAB };
+  // pairsOver(boxes, moved, rel, opts) → {count, pairs:[{a,b,depth}], moved, against}. PURE. §EDIT-REPORT: evaluate is delta-only and never counts
+  // what was already there, so a before/after table needs this. Same penetration, tolerance, `related` and index as evaluate. Run on the before and
+  // after boxes with the same moved list and rel. `moved` counts only moved fids that have a box, `against` every box.
+  function pairsOver(boxes, moved, rel, opts) {
+    opts = opts || {}; rel = rel || {};
+    var tol = opts.clashTol != null ? opts.clashTol : CLASH_TOL, related = rel.related || function () { return false; };
+    var keys = Object.keys(boxes), idx = spatialIndex(boxes, keys, tol), seen = new Set(), pairs = [], n = 0, done = new Set();
+    moved.forEach(function (m) {
+      if (done.has(+m)) return; done.add(+m);
+      if (!boxes[m]) return; n++;
+      idx.near(boxes[m]).forEach(function (j) {
+        var o = +keys[j]; if (o === +m) return;
+        var a = Math.min(+m, o), b = Math.max(+m, o), k = a + '|' + b;
+        if (seen.has(k)) return; seen.add(k);
+        if (related(+m, o)) return;
+        var p = penetration(boxes[m], boxes[o]);
+        if (p > tol) pairs.push({ a: a, b: b, depth: +p.toFixed(4) });
+      });
+    });
+    pairs.sort(function (x, y) { return x.a - y.a || x.b - y.b; });
+    return { count: pairs.length, pairs: pairs, moved: n, against: keys.length };
+  }
+
+  return { evaluate: evaluate, pairsOver: pairsOver, ubblRoomSizeDemo: ubblRoomSizeDemo, penetration: penetration, faceGap: faceGap, overlaps: overlaps, CLASH_TOL: CLASH_TOL, CLEARANCE: CLEARANCE, UBBL_MIN_AREA: UBBL_MIN_AREA, UBBL_MIN_HEADROOM: UBBL_MIN_HEADROOM, UBBL_DEMO_LABEL: UBBL_DEMO_LABEL, UBBL_CHECK_LABEL: UBBL_CHECK_LABEL, UBBL_ANY: UBBL_ANY, UBBL_HAB: UBBL_HAB };
 });

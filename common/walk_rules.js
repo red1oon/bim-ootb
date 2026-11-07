@@ -14,6 +14,8 @@
   var RESIDENTIAL_RE = /duplex|sample.?house|sample.?castle|schependomlaan|(^|[^A-Z])(SH|DX|SC)([^A-Z]|$)/i;
   var FARM_RE = /shed|farm|barn|poultry|livestock|broiler/i;
   var RULES_DBS = ['duplex_rules.db', 'terminal_rules.db', 'farm_rules.db'];
+  // §SCHED-SOURCE (prompts/DISC_WALK_SCHEDULE_SOURCE.md): a rules DB with no room schedules reads them from here; the rules DB itself is not switched.
+  var SCHEDULE_SOURCE = { 'terminal_rules.db': 'duplex_rules.db' };
   var CLASS_OF = { 'duplex_rules.db': 'residential', 'terminal_rules.db': 'terminal', 'farm_rules.db': 'farm' };
 
   function rulesDb(name) {
@@ -25,7 +27,8 @@
     var db = rulesDb(name);
     return { cls: CLASS_OF[db], rulesDb: db };
   }
-  var API = { rulesDb: rulesDb, buildingClass: buildingClass, RULES_DBS: RULES_DBS.slice() };
+  function scheduleDb(name) { return SCHEDULE_SOURCE[rulesDb(name)] || null; }
+  var API = { rulesDb: rulesDb, buildingClass: buildingClass, scheduleDb: scheduleDb, RULES_DBS: RULES_DBS.slice() };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.WalkRules = API;
 })(typeof window !== 'undefined' ? window : this);
