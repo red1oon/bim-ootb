@@ -41,10 +41,23 @@ const fetchGeo = (SQL, n) => { const g = path.join(B, n + '_geo.db'); return fs.
   chk('N1b every one of those walks says so in the log', saidNone === judged, 'said=' + saidNone + ' of ' + judged);
   chk('N1 RED: keepPatternStubs routes, so the gate is what removed them', stubs > 0, 'stubRuns=' + stubs);
   chk('N2 placements identical with and without the gate, to 1e-3 m', moved === 0, 'differing=' + moved);
-  if (OLD) ['Hospital', 'Terminal', 'elec'].forEach(part => { const c = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=8000', __filename], { env: Object.assign({}, process.env, { W_MAINS_PART: 'real', W_MAINS_ONE: part }), encoding: 'utf8', maxBuffer: 1 << 26 }); process.stdout.write(c.stdout || ''); if (c.status && !/PART pass=/.test(c.stdout || '')) { fail++; log('§W_MAINS part ' + part + ' exit=' + c.status + ' ' + String(c.stderr || '').slice(0, 200)); } else { const m = (c.stdout || '').match(/PART pass=(\d+) fail=(\d+)/); if (m) { pass += +m[1]; fail += +m[2]; } } });
+  if (OLD) ['Hospital', 'Terminal', 'elec', 'held'].forEach(part => { const c = require('child_process').spawnSync(process.execPath, ['--max-old-space-size=8000', __filename], { env: Object.assign({}, process.env, { W_MAINS_PART: 'real', W_MAINS_ONE: part }), encoding: 'utf8', maxBuffer: 1 << 26 }); process.stdout.write(c.stdout || ''); if (c.status && !/PART pass=/.test(c.stdout || '')) { fail++; log('§W_MAINS part ' + part + ' exit=' + c.status + ' ' + String(c.stderr || '').slice(0, 200)); } else { const m = (c.stdout || '').match(/PART pass=(\d+) fail=(\d+)/); if (m) { pass += +m[1]; fail += +m[2]; } } });
   }
   if (realPart) {
     // N3: a file holding the service keeps its runs. Real rows: extracted DBs that carry MEP.
+    if (process.env.W_MAINS_ONE === 'held') {
+      // N6 §9.1: a file that holds the service must not be told no sheet is held. Hospital holds FP-labelled pipes and the rules have no routing row that pairs them. Red control: the same file with those pieces removed says none.
+      const p = path.join(B, 'Hospital_extracted.db'); if (!fs.existsSync(p)) { log('§W_MAINS N6 UNRUN db absent'); log('§W_MAINS PART pass=0 fail=0'); process.exit(0); }
+      const raw = new Uint8Array(fs.readFileSync(p)), hb = new SQL.Database(raw), CLS = "('IfcPipeSegment','IfcPipeFitting','IfcDuctSegment','IfcDuctFitting','IfcFlowSegment','IfcFlowFitting')", n = hb.exec("SELECT COUNT(*) FROM elements_meta WHERE discipline='FP' AND ifc_class IN " + CLS)[0].values[0][0];
+      quiet(() => H.openBuildingRules(SQL, stack, 'Hospital')); const a = quiet(() => H.walkLive(SQL, stack, 'FP', raw, 'Hospital', [], {})), la = a.lines.find(l => /§WALK-MAINS/.test(l)) || '';
+      log('§W_MAINS N6 Hospital/FP pieces in the file=' + n + ' runs=' + (a.r.chainSegs || []).length + ' mains=' + JSON.stringify(a.r.mains) + ' | ' + la.replace(/^.*§WALK-MAINS/, '§WALK-MAINS'));
+      if (!n) { log('§W_MAINS N6 not judged, no FP pieces in this file'); log('§W_MAINS PART pass=0 fail=0'); process.exit(0); }
+      chk('N6 a file holding the service says held=, never no sheet held', new RegExp('held=' + n + ' real=0 reason=no routing rule pairs them').test(la) && !/no sheet held/.test(la) && a.r.mains && a.r.mains.held === n && !(a.r.chainSegs || []).length, 'held=' + (a.r.mains && a.r.mains.held));
+      hb.run("DELETE FROM elements_meta WHERE discipline='FP' AND ifc_class IN " + CLS); const cut = hb.export(); hb.close();
+      const c = quiet(() => H.walkLive(SQL, stack, 'FP', cut, 'Hospital', [], {})), lc = c.lines.find(l => /§WALK-MAINS/.test(l)) || '';
+      chk('N6 RED: the same file with those pieces removed says none', /none reason=no sheet held/.test(lc) && c.r.mains && c.r.mains.none === 'no sheet held', lc.replace(/^.*§WALK-MAINS/, '§WALK-MAINS'));
+      log('§W_MAINS PART pass=' + pass + ' fail=' + fail); process.exit(fail ? 1 : 0);
+    }
     let real = 0, lost = [];
     [['Hospital', 'Hospital_extracted.db'], ['Terminal', 'Terminal_extracted.db']].filter(([n]) => n === process.env.W_MAINS_ONE).forEach(([n, f]) => {
       const p = path.join(B, f); if (!fs.existsSync(p)) return; const raw = fs.readFileSync(p);
