@@ -1116,6 +1116,65 @@ self.onmessage = async function(e) {
       console.log('§4D_NONE no scheduling data in this IFC');
     }
 
+    // §IMPORT_SPACES (prompts/IMPORT_KEEPS_IFCSPACE.md): the file's real rooms as DATA, never as render elements
+    // (still excluded from PRODUCT_TYPES above). Same frame as `transforms`, same table shape as the offline extractor.
+    var spaces = [], spaceProps = [];
+    (function () { try {   // own scope: this file reuses short var names across one long function
+      var _spT0 = Date.now(), _spIds = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCSPACE), _spParent = {}, _spGuid = {}, _spBox = 0;
+      var _idOf = function (o) { return o && o.value != null ? o.value : o; };
+      var _txt = function (o) { return o && o.value != null ? String(o.value) : null; };
+      if (_spIds.size() > 0) {
+        bomTreeRels.forEach(function (r) { if (r.relType === 'AGGREGATES' && storeyMap[r.parentId]) _spParent[r.childId] = storeyMap[r.parentId]; });
+        for (var _si = 0; _si < _spIds.size(); _si++) {
+          var _spId = _spIds.get(_si), _sp = ifcApi.GetLine(modelID, _spId), _guid = _txt(_sp.GlobalId);
+          if (!_guid) continue;
+          _spGuid[_spId] = _guid;
+          var _row = { guid: _guid, name: _txt(_sp.Name) || _txt(_sp.LongName), longName: _txt(_sp.LongName), objectType: _txt(_sp.ObjectType),
+            predefinedType: _txt(_sp.PredefinedType), storey: _spParent[_spId] || null, cx: null, cy: null, cz: null, sx: null, sy: null, sz: null };
+          try {
+            var _fm = ifcApi.GetFlatMesh(modelID, _spId), _mn = [Infinity, Infinity, Infinity], _mx = [-Infinity, -Infinity, -Infinity], _gn = _fm.geometries.size();
+            for (var _gi = 0; _gi < _gn; _gi++) {
+              var _ge = _fm.geometries.get(_gi), _md = ifcApi.GetGeometry(modelID, _ge.geometryExpressID), _vs = _md.GetVertexDataSize();
+              if (_vs) {
+                var _vv = ifcApi.GetVertexArray(_md.GetVertexData(), _vs), _tm = _ge.flatTransformation;
+                for (var _vi = 0; _vi + 5 < _vv.length; _vi += 6) {
+                  var _lx = _vv[_vi], _ly = _vv[_vi + 1], _lz = _vv[_vi + 2];
+                  var _w = [_tm[0]*_lx + _tm[4]*_ly + _tm[8]*_lz + _tm[12], -(_tm[2]*_lx + _tm[6]*_ly + _tm[10]*_lz + _tm[14]), _tm[1]*_lx + _tm[5]*_ly + _tm[9]*_lz + _tm[13]];
+                  for (var _a = 0; _a < 3; _a++) { if (_w[_a] < _mn[_a]) _mn[_a] = _w[_a]; if (_w[_a] > _mx[_a]) _mx[_a] = _w[_a]; }
+                }
+              }
+              if (_md.delete) _md.delete();
+            }
+            if (_mn[0] !== Infinity) {
+              _row.cx = (_mn[0] + _mx[0]) / 2 - georefOffset[0]; _row.cy = (_mn[1] + _mx[1]) / 2 - georefOffset[1]; _row.cz = (_mn[2] + _mx[2]) / 2 - georefOffset[2];
+              _row.sx = _mx[0] - _mn[0]; _row.sy = _mx[1] - _mn[1]; _row.sz = _mx[2] - _mn[2]; _spBox++;
+            }
+          } catch (eSpMesh) { /* a space with no usable shape keeps a NULL box, as the extractor does */ }
+          spaces.push(_row);
+        }
+        var _pr = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELDEFINESBYPROPERTIES), _pv = {};
+        for (var _pi = 0; _pi < _pr.size(); _pi++) {
+          try {
+            var _rl = ifcApi.GetLine(modelID, _pr.get(_pi)), _ob = (_rl.RelatedObjects || []).map(function (o) { return _spGuid[_idOf(o)]; }).filter(Boolean);
+            if (!_ob.length || !_rl.RelatingPropertyDefinition) continue;
+            var _did = _idOf(_rl.RelatingPropertyDefinition);
+            if (_pv[_did] === undefined) {
+              _pv[_did] = [];
+              var _set = ifcApi.GetLine(modelID, _did);
+              if (_set && _txt(_set.Name) === 'Pset_SpaceCommon' && _set.HasProperties) {
+                _set.HasProperties.forEach(function (h) {
+                  var _one = ifcApi.GetLine(modelID, _idOf(h)), _val = _one && _one.NominalValue && _one.NominalValue.value;
+                  if (_val != null && String(_val).trim() !== '') _pv[_did].push([_txt(_one.Name) || '', String(_val).trim()]);
+                });
+              }
+            }
+            _ob.forEach(function (g) { _pv[_did].forEach(function (nv) { spaceProps.push([g, 'Pset_SpaceCommon', nv[0], nv[1]]); }); });
+          } catch (ePr) { /* skip */ }
+        }
+      }
+      console.log('§IMPORT_SPACES file=' + filename + ' spaces=' + spaces.length + ' withBox=' + _spBox + ' props=' + spaceProps.length + ' ms=' + (Date.now() - _spT0) + (spaces.length ? '' : ' VACUOUS — no IfcSpace in this file'));
+    } catch (spErr) { console.warn('§IMPORT_SPACES_ERR ' + spErr.message); } })();
+
     // §CIVIL_PSETS (bim-compiler prompts/CIVIL_HIGHWAY_JELAPANG.md §S P-1 / §E.2): property labels for CIVIL
     // discipline files only — a civil set carries its identity in psets (JKR DAK: 01_Component_Name MAINLINE /
     // ROAD J2A…, 15_Name TRAFFIC SIGNAL, 16_Name + 17_Code sign codes, 02_Type + 03_Dimension drain sizes) while its
@@ -1188,6 +1247,7 @@ self.onmessage = async function(e) {
       taskElements: taskElements,
       calendars: calendars,  // T1b §5.2 — thin work-calendar carrier
       psets: psets,          // §CIVIL_PSETS — [guid, pset, name, value]; empty for non-civil files
+      spaces: spaces, spaceProps: spaceProps,   // §IMPORT_SPACES
     };
 
     // Transfer array buffers for zero-copy
