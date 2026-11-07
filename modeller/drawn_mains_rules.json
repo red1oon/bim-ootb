@@ -1,15 +1,80 @@
 {
-  "_note": "W-DRAWN-MAINS data rows (prompts/DISC_WALK_DRAWN_MAINS.md section 4.3). Row shape {discipline, role, pattern, standard, source}, so it can become a DB table without a shape change. layer roles: centreline, outline, fitting, grid_line, grid_tag (pattern = case-insensitive regex on the DXF layer name); terminal_<system> rows: pattern = a name word matched inside an INSERT block name. Ducts (ACMV) only: no FP or PLB rows until pipe layers are measured (section 8). Only the centreline ending is named by the spec; every other pattern is a placeholder to confirm on a real set, and the terminal words were tested on one set only (section 4.6). No existing word store maps terminal names to a system (grep of modeller/, viewer/, common/ 2026-11-08: viewer/import_worker.js maps names to a discipline only), so the terminal words live here.",
+  "_note": "W-DRAWN-MAINS data rows (prompts/DISC_WALK_DRAWN_MAINS.md section 4.3). Row shape {discipline, role, pattern, standard, source}, so it can become a DB table without a shape change. layer roles: centreline, outline, fitting, grid_line, grid_tag (pattern = case-insensitive regex on the DXF layer name); terminal_<system> rows: pattern = a name word matched inside an INSERT block name. Ducts (ACMV) only: no FP or PLB rows until pipe layers are measured (section 8). Layer patterns follow the US National CAD Standard (spec 4.3 amendments 2); fitting = an INSERT on the outline layer (entity INSERT); terminal_layer = diffuser inserts; the terminal words were tested on one set only (section 4.6). No existing word store maps terminal names to a system (grep of modeller/, viewer/, common/ 2026-11-08: viewer/import_worker.js maps names to a discipline only), so the terminal words live here.",
   "sheet_unit_m": 0.001,
   "tag_reach_m": 2.0,
   "rows": [
-    { "discipline": "ACMV", "role": "centreline", "pattern": "-DUCT-CNTR$", "standard": "unconfirmed", "source": "spec 4.1: a -DUCT-CNTR ending, measured on one private Revit-exported set" },
-    { "discipline": "ACMV", "role": "outline", "pattern": "-DUCT-OTLN$", "standard": "unconfirmed", "source": "placeholder, to confirm on a real set" },
-    { "discipline": "ACMV", "role": "fitting", "pattern": "-DUCT-FITG$", "standard": "unconfirmed", "source": "placeholder, to confirm on a real set" },
-    { "discipline": "ACMV", "role": "grid_line", "pattern": "(^|-)GRID$", "standard": "unconfirmed", "source": "placeholder, to confirm on a real set" },
-    { "discipline": "ACMV", "role": "grid_tag", "pattern": "(^|-)GRID-TAG$", "standard": "unconfirmed", "source": "placeholder, to confirm on a real set" },
-    { "discipline": "ACMV", "role": "terminal_supply", "pattern": "SUPPLY", "standard": "unconfirmed", "source": "name word, tested on one set only (spec 4.6)" },
-    { "discipline": "ACMV", "role": "terminal_return", "pattern": "RETURN", "standard": "unconfirmed", "source": "name word, tested on one set only (spec 4.6)" },
-    { "discipline": "ACMV", "role": "terminal_exhaust", "pattern": "EXHAUST", "standard": "unconfirmed", "source": "name word, tested on one set only (spec 4.6)" }
+    {
+      "discipline": "ACMV",
+      "role": "centreline",
+      "pattern": "M-HVAC-DUCT-CNTR$",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "outline",
+      "pattern": "M-HVAC-DUCT-OTLN$",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "fitting",
+      "pattern": "M-HVAC-DUCT-OTLN$",
+      "entity": "INSERT",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "terminal_layer",
+      "pattern": "M-HVAC-CDFF-OTLN$",
+      "entity": "INSERT",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "equipment",
+      "pattern": "M-EQPM-.*-OTLN$",
+      "entity": "INSERT",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "grid_line",
+      "pattern": "S-GRID(-.*-OTLN)?$",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "grid_tag",
+      "pattern": "S-GRID(-.*)?-IDEN$",
+      "standard": "US NCS",
+      "source": "design lane measured, one private set"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "terminal_supply",
+      "pattern": "SUPPLY",
+      "standard": "unconfirmed",
+      "source": "name word, tested on one set only (spec 4.6)"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "terminal_return",
+      "pattern": "RETURN",
+      "standard": "unconfirmed",
+      "source": "name word, tested on one set only (spec 4.6)"
+    },
+    {
+      "discipline": "ACMV",
+      "role": "terminal_exhaust",
+      "pattern": "EXHAUST",
+      "standard": "unconfirmed",
+      "source": "name word, tested on one set only (spec 4.6)"
+    }
   ]
 }
