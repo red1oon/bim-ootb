@@ -50,8 +50,18 @@ Issue it proves or disproves: the record claims more than the sheet draws. Fixtu
 Design lane re-runs the private set on the merged code against §2. **A second set is required before this reader is called general.**
 
 ## §7 Owner's questions, one at a time. Not decided here
-1. **Height, first.** What height may a drawn run take, when the sheet states none? This blocks any solid. Candidate from the design lane: inside the ceiling void, between a real ceiling and the structure above it, labelled provisional; where no ceiling is modelled, plan record only.
+1. **Height: RULED, owner 2026-11-07, *"Yes to all four"*.** See §7.1.
 2. **How the user supplies sheets** on an opened building, once the record is proven.
+
+### §7.1 Height of a drawn run. Not built
+Where a sheet states no height, a run takes one only inside the ceiling void.
+1. For each piece, at its midpoint: the real ceiling whose outline holds it (the host search's reader, §10 of the band spec), and the lowest structure above that ceiling at the same point.
+2. **The piece's centreline takes the middle of that void, labelled `provisional`.** Say which ceiling and which structure in the row.
+3. **No modelled ceiling there, or no structure above it: plan record only, no z.** Log the count. A room's top is not a ceiling.
+4. A component's pieces may land at different heights where ceilings step. Record that and count it; do not bridge it with an invented riser.
+5. A deep or sloped ceiling's lower face is not its soffit. Log pieces on such a host.
+6. **A height does not make a solid.** Depth is still unstated on most runs, so a run stays a centreline at height until depth is stated by the sheet. Do not assume a depth.
+Replaces §3.3's "no z", and §6 M8 for rows that qualify. Add M10: a piece under a ceiling with structure above gets the void's middle and the label; red control, a piece with no ceiling gets no z.
 
 ## §8 Not in this change
 Solids, fittings as parts, airflow, tray layers, PDF sheets, and any change to `hostBind` or band density. **FP and PLB:** the owner's ruling covers them, and the same reader takes them by data rows, but §2 was measured on duct layers only. Measure pipe layers the same way before enabling those rows.
@@ -105,4 +115,12 @@ Pattern engine witnesses now run behind the witness-only `window.__dwKeepPattern
 **Walks that placed devices and now place none: 2, for the owner to see.** `SampleCastle_ARC` ACMV 12 → 0 and `SampleHouse_ARC` ACMV 4 → 0, both on the refused path with the reason. Their rows are 35 mm `IfcFlowFitting` and `IfcFlowSegment` from 2 measured Duplex rows, hosted on ceilings. They are not the window vent grilles (`ACMV_WINDOW_SHIM`), which this walk does not place on these buildings.
 Other witnesses: W-BAND-NO-HOST 34/0, B7 real page 15 of 15, W-WALKED-EXPORT-DB on Duplex 6 of 6, W-DW-LIVEWIRE 12/12, W-ROUTE-PATTERN-BRIDGE 10/0, W-SEED-OUTWARD-REVEAL 9/0, W-MEP-OPENPATH 27/2 (M5, M7 fail on main too), W-BORROW-FP, W-ELEC-HOSTBIND, W-SHIM-SELECT, W-SPACE-SCOPED and W-TERMINAL-GEOSPLIT unchanged, W-UX-DISC 5/3 (fails on main too; B6 passed once in an earlier run, so it is not stable).
 **Newly failing, as the rule requires, not changed here.** Pointed at the shipped walker, W-TERM-NOSPACES 8/0 → 6/2 (T6, T8: `IfcPipeSegment 0/739`, they grade band pipes against a measured count) and W-DWWALK-HOSTBIND 5/1 → 4/2 (W4: PLB placed 7 of 11). Those scripts test bim-compiler's older `build/disc_walker.js`, so as written they stay green; update these claims when they are repointed.
+
+### §9.3 A corridor trunk is not a main (owner 2026-11-07, *"Yes to all four"*). Not built
+`SeedTrunk.planTrunk` draws a trunk from an entry a person picks. It stays outside "a main exists only where a drawn centreline is held", on these terms:
+1. **Available, user-triggered only.** If the walker's automatic path can still reach it (`_corridorJunctions`, for a discipline outside the row), state which and why.
+2. **Never a main:** `§WALK-MAINS` is unaffected, and neither `real=` nor `drawn=` counts it.
+3. **Says so:** the status line reads, for example, `proposed trunk, not a drawn main`.
+4. **Not saved or exported as a duct or pipe.** Check whether it can reach the DB or IFC export today; if it can, that path changes in this work, and the PR says what changed.
+**Witness, W-WALK-MAINS:** N10, a trunk drawn from a chosen entry leaves `mains` unchanged, prints the status words, and adds 0 rows to a commit or export. Red control: a fixture that routes it into a commit must fail.
 
