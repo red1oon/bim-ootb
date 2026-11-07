@@ -99,10 +99,11 @@
   // §EDIT-REPORT: every walked girder of the fold, counted by signal. Whole building, because check is arithmetic. null = no rule (refused, never a zero).
   function tally(info, ops, cursor, mat, depth) {
     if (!ruleFor(mat)) return null;
-    var st = fold(info, ops, cursor), out = { RED: 0, ORANGE: 0, GREEN: 0, unjudged: 0, pieces: st.pieces.length };
+    var st = fold(info, ops, cursor), out = { RED: 0, ORANGE: 0, GREEN: 0, unjudged: 0, pieces: st.pieces.length, limit: ruleFor(mat).maxBeamSpan, bays: {} };
     st.pieces.forEach(function (pc) {
       var sp = spanOf(st, pc), r = isFinite(sp) ? check(sp, mat, depth) : null;
-      if (r) out[r.signal]++; else out.unjudged++;
+      if (r) { out[r.signal]++; var k = 'g' + pc.spanAxis + pc.a + '-g' + pc.spanAxis + pc.b, B = out.bays[k] || (out.bays[k] = { bay: k, span: sp, signal: r.signal, n: 0 }); B.n++; if (RANK[r.signal] > RANK[B.signal]) B.signal = r.signal; }   // §13.4 the bays behind the count: one span per bay, the worst signal of its girders
+      else out.unjudged++;
     });
     return out;
   }

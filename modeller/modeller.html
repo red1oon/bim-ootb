@@ -296,14 +296,15 @@ if (window.WholeHistory && WholeHistory.mount) WholeHistory.mount({ page: 'model
      window.GeomapBridge && gmReady(), so a missing/failed script just means "no audit", never a broken seed. -->
 <script src="../geomapping/classify_geom.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL classify_geom.js')"></script>
 <script src="../geomapping/geomap_bridge.js?v=1" onerror="console.warn('§GEOMAP LOAD_FAIL geomap_bridge.js')"></script>
-<script src="str_walker_bridge.js?v=9" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
-<script src="grid_span_gate.js?v=2" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
-<script src="edit_report.js?v=1" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report.js')"></script>
-<script src="edit_report_panel.js?v=1" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report_panel.js')"></script>
+<script src="str_walker_bridge.js?v=10" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_bridge.js')"></script>
+<script src="grid_span_gate.js?v=3" onerror="console.warn('§GRID-SPAN LOAD_FAIL grid_span_gate.js')"></script>
+<script src="edit_report.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report.js')"></script>
+<script src="bay_add.js?v=2" onerror="console.warn('§BLOCK-SHIFT LOAD_FAIL bay_add.js')"></script>
+<script src="edit_report_panel.js?v=2" onerror="console.warn('§EDIT_REPORT LOAD_FAIL edit_report_panel.js')"></script>
 <script src="../viewer/lib/room_walker.js?v=3" onerror="console.warn('§MODELLER-ROOM-INJECT LOAD_FAIL room_walker.js')"></script>
 <script src="str_walker_outliner.js?v=27" onerror="console.warn('§STRWALK LOAD_FAIL str_walker_outliner.js')"></script>
 <!-- Bonsai library: insert a real catalog component (assemble, don't draw) as ONE signed GEOM_INSERT op @ LOD. -->
-<script src="bonsai_library.js?v=23" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
+<script src="bonsai_library.js?v=24" onerror="console.warn('§LIBRARY LOAD_FAIL bonsai_library.js')"></script>
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): shared cross-surface CONTEXT (selection/timeline/
      identity) over the one signed op-log; surfaces stay separate, only context crosses. Opt-in toggle. -->
 <script src="../viewer/connect_scene.js?v=2" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
@@ -2327,6 +2328,8 @@ function _erSpanState() {
   if (!tally) return { refused: 'no span rule for ' + mi.material };
   return { tally, material: mi.material, mixed: !!mi.mixed, prelim: GS.PRELIM };
 }
+// §13.6 the measuring instrument (edit_cli --lattice-boxes only; the app never sets it): a move of d on a lattice at theta can leave a member d·sin|theta| off the lattice, so that much is not a clash on this edit.
+function _latticeGateOpts(d) { if (!window.__gateLatticeBoxes || !window.SdgGate) return null; const i = window.swbGateInfo && window.swbGateInfo(), th = (i && i.theta) || 0; return th ? { clashTol: window.SdgGate.CLASH_TOL + Math.abs(d) * Math.abs(Math.sin(th)) } : null; }
 function _erTok() { const O = window.Bonsai.oplog; return O.length + ':' + O.cursor; }
 async function _erEmit(e) {
   const t0 = performance.now();
@@ -2335,10 +2338,11 @@ async function _erEmit(e) {
     const cov = await _erLoadCoverage();
     if (!cov || !Array.isArray(cov.not_checked) || !cov.not_checked.length) { console.warn('§EDIT_REPORT refused: edit_report_coverage.json did not load, and a table without its NOT-checked line reads as an all-clear'); return; }
     const SG = window.SdgGate, gate = window.__lastGateDetail, after = _gateBoxes(), rel = _gateRel(), spanAfter = window.__editReportBreak ? e.spanBefore : _erSpanState();
-    const overlap = (SG && gate) ? { tolMm: SG.CLASH_TOL * 1000, before: SG.pairsOver(e.gateBefore, moved, rel), after: SG.pairsOver(after, moved, rel) } : { tolMm: SG ? SG.CLASH_TOL * 1000 : null, refused: 'the conformity gate did not run' };
+    const lo = _latticeGateOpts(e.delta) || undefined, tol = lo ? lo.clashTol : (SG ? SG.CLASH_TOL : null);
+    const overlap = (SG && gate) ? { tolMm: tol * 1000, before: SG.pairsOver(e.gateBefore, moved, rel, lo), after: SG.pairsOver(after, moved, rel, lo) } : { tolMm: tol == null ? null : tol * 1000, refused: 'the conformity gate did not run' };
     const span = (e.spanBefore.refused || spanAfter.refused) ? { refused: e.spanBefore.refused || spanAfter.refused } : { before: e.spanBefore.tally, after: spanAfter.tally, prelim: spanAfter.prelim, material: spanAfter.material, mixed: spanAfter.mixed };
     const report = window.EditReport.compose({
-      change: { kind: 'grid-move', grid: e.id, delta: +e.delta.toFixed(6), recomposed: (e.res.commands || []).length, riders: (e.res.riders || []).length, verify: e.res.verify },
+      change: e.change || { kind: 'grid-move', grid: e.id, delta: +e.delta.toFixed(6), recomposed: (e.res.commands || []).length, riders: (e.res.riders || []).length, verify: e.res.verify },
       overlap, span, gate: gate ? { red: gate.red, orange: gate.orange } : null, notChecked: cov.not_checked
     });
     _erLast = { tok: _erTok(), moved, report };
@@ -2373,7 +2377,7 @@ async function commitGridMove(extra) {
     // OWN command was STRIPPED by gridmove.commit (it moved via an induced GEOM_MOVE instead), so it would
     // otherwise be invisible to the gate's changed set — the door-out oracle must still check it moved.
     const gateMsg = _runGate(_gateBefore, (res.commands || []).map(c => c.featureId).filter(f => f != null)
-      .concat((res.riders || []).map(r => r.featureId)));
+      .concat((res.riders || []).map(r => r.featureId)), _latticeGateOpts(delta));
     window.__lastGate = gateMsg;
     setStat('grid ' + id + ' moved ' + delta.toFixed(2) + '  recomposed=' + res.commands.length +
       (res.riders && res.riders.length ? ('  §STRETCH-RIDE riders=' + res.riders.length) : '') +
@@ -2382,6 +2386,43 @@ async function commitGridMove(extra) {
     await _erEmit({ id, delta, res, gateBefore: _gateBefore, spanBefore: _erSpanBefore });
   } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§MODELLER gridmove fail ' + err); }
 }
+// §BLOCK-SHIFT (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §13.1, W-BLOCK-SHIFT): a line and every later line on its axis move as ONE gesture, so only the bay before it changes width.
+// The plan is BayAdd.shift (pure); this measures the rows, commits, gates and reports through the same path as a grid move. Reached by the hook and edit_cli only: there is no button.
+function _shiftRows(axis, th) {
+  const O = window.Bonsai.oplog, g = window.Bonsai.group(), byFid = {}, v = new THREE.Vector3(); g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null) byFid[m.userData.featureId] = m; });
+  const k = axis === 'x' ? 0 : 1;
+  return _activeOps().filter(o => o.op_type === 'GEOM_INSERT' && o.parameters && o.parameters.ifc_class && byFid[o.id]).map(o => {
+    const m = byFid[o.id], P = m.geometry.attributes.position; let lo = Infinity, hi = -Infinity; m.updateMatrixWorld();
+    for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld); const f = window.swToFrame(v.x, v.y, th)[k]; if (f < lo) lo = f; if (f > hi) hi = f; }
+    return { id: o.id, cls: o.parameters.ifc_class, params: o.parameters, lo, hi };
+  }).filter(r => isFinite(r.lo));
+}
+window.__gridShift = async (id, delta) => {
+  const GM = window.Bonsai.gridmove, G = window.Bonsai.grid, t0 = performance.now(); GM.gridLines(); const m = GM._map[id];
+  if (!m) { setStat('FAIL no grid line ' + id); return null; }
+  if (Math.abs(delta || 0) < 0.05) { console.log('§EDIT_REPORT NO-OP delta=' + (delta || 0).toFixed(3) + ' — nothing committed, nothing judged'); return null; }
+  const info = window.swbGateInfo && window.swbGateInfo(), th = (info && info.theta) || 0, c0 = (info && info.centroid) || { x: 0, y: 0 }, world = m.axis === 'x' ? G.xs : G.ys;
+  const lines = world.map(w => (m.axis === 'x' ? window.swToFrame(w, c0.y, th)[0] : window.swToFrame(c0.x, w, th)[1]));   // the same world-to-lattice projection as the walker (_frameDatum)
+  const rows = _shiftRows(m.axis, th), cx = await window.Bonsai.copyCtx(), GK = window.GridKinematics;
+  const P = window.BayAdd.shift(rows, { axis: m.axis, index: m.index, lines, delta, theta: th, stretch: GM._STRUCTURAL_CLASSES, edgeTol: GK.EDGE_TOL, yawTol: GK.YAW_TOL }, cx.cascade, cx.ops);
+  if (!P.ok) { console.log('§BLOCK-SHIFT refused grid=' + id + ' reason=' + P.why); setStat('FAIL ' + P.why); return null; }
+  const travel = window.__blockShiftBreak ? 1.1 : 1;   // falsifier (W-BLOCK-SHIFT SHIFT_BREAK=1): the elements travel a different distance from the lines
+  if (travel !== 1) P.ops.forEach(o => { if (o.op_type === 'GEOM_MOVE') { o.params.dx *= travel; o.params.dy *= travel; } });
+  const gridIds = world.map((_, i) => 'g' + m.axis + i).slice(m.index);
+  const ops = gridIds.map(g => ({ op_type: 'GEOM_GRID_MOVE', params: { gridId: g, delta, commands: [], induced: 'block-shift' } })).concat(P.ops);
+  setStat('recomposing…');
+  const gateBefore = _gateBoxes(), spanBefore = _erSpanState(); window.__lastGateDetail = null;
+  try {
+    const r = await _commitUserGesture(ops), changed = P.moved.concat(P.stretched), gateMsg = _runGate(gateBefore, changed.concat(P.riders), _latticeGateOpts(delta)); window.__lastGate = gateMsg;
+    const byCls = {}; P.left.forEach(l => { byCls[l.cls] = (byCls[l.cls] || 0) + 1; });
+    const change = { kind: 'block-shift', grid: id, through: gridIds[gridIds.length - 1], lines: gridIds.length, delta: +delta.toFixed(6), moved: P.moved.length, stretched: P.stretched.length, riders: P.riders.length, stayed: P.stayed, left: { count: P.left.length, by_class: byCls }, verify: r.verify };
+    console.log('§BLOCK-SHIFT grid=' + id + ' through=' + change.through + ' lines=' + gridIds.length + ' delta=' + delta + ' band=' + P.band.toFixed(3) + ' moved=' + P.moved.length + ' stretched=' + P.stretched.length + ' riders=' + P.riders.length + ' stayed=' + P.stayed + ' left=' + P.left.length + ' ' + JSON.stringify(byCls) + ' verify=' + r.verify + ' gate=' + (gateMsg || 'clean') + ' ms=' + (performance.now() - t0).toFixed(0));
+    setStat('grid ' + id + ' and ' + (gridIds.length - 1) + ' after it moved ' + delta.toFixed(2) + '  moved=' + P.moved.length + ' stretched=' + P.stretched.length + '  verify=' + r.verify + (gateMsg ? '  ' + gateMsg : ''));
+    syncHistory();
+    await _erEmit({ id, delta, res: { commands: changed.map(f => ({ featureId: f })), riders: P.riders.map(f => ({ featureId: f })), verify: r.verify }, gateBefore, spanBefore, change });
+    return change;
+  } catch (err) { setStat('FAIL ' + (err && err.message || err)); console.warn('§BLOCK-SHIFT fail ' + err); return null; }
+};
 window.__dg = () => _dragGrid;   // test hook (§GRID-SPAN-GATE witness reads the live drag delta)
 window.__gridStretch = async (id, delta) => { _dragGrid = { id, delta }; await commitGridMove(); };
 // §CLIPBOARD (BIMCompiler prompts/MODELLER_CLIPBOARD_COPY_PASTE.md §REGROUND 2026-10-28 — W-CLIPBOARD-KEYS): after a commit carrying clipboard.js build() ops, the predicted ids
@@ -3126,6 +3167,9 @@ function _gateBoxes() {
   // the gate audits RENDERED geometry only; anchors' boxes live in gridmove._buildBoxByFid (which
   // deliberately INCLUDES them — the cascade needs them) but must never enter a clash/clearance audit.
   const g = window.Bonsai && window.Bonsai.group && window.Bonsai.group(); const out = {};
+  // §13.6 a measuring switch, off in the app: boxes in the lattice frame, so a long member on a rotated lattice gets a tight box and not a 4 m wide one. Set only by edit_cli --lattice-boxes.
+  const th = window.__gateLatticeBoxes && window.swbGateInfo && window.swbGateInfo() ? (window.swbGateInfo().theta || 0) : 0;
+  if (g && th) { g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { const P = m.geometry.attributes.position, b = [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity]; for (let i = 0; i < P.count; i++) { const f = window.swToFrame(P.getX(i), P.getY(i), th), z = P.getZ(i); if (f[0] < b[0]) b[0] = f[0]; if (f[0] > b[1]) b[1] = f[0]; if (f[1] < b[2]) b[2] = f[1]; if (f[1] > b[3]) b[3] = f[1]; if (z < b[4]) b[4] = z; if (z > b[5]) b[5] = z; } out[m.userData.featureId] = b; } }); return out; }
   if (g) g.children.forEach(m => { if (m.isMesh && m.userData && m.userData.featureId != null && !m.userData.anchor) { m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; out[m.userData.featureId] = [b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z]; } });
   return out;
 }

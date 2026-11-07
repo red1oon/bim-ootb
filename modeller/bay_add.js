@@ -12,6 +12,25 @@
 
   function sig(counts) { return Object.keys(counts).sort().map(function (k) { return k + ':' + counts[k]; }).join(','); }
 
+  // an element's CURRENT local size = its insert bbox x the product of the GEOM_SCALEs already on it (the fold multiplies them, bonsai_kernel.js foldChainToScene)
+  function localDims(r, ops) {
+    var f3 = [1, 1, 1], b = r.params.bbox;
+    (ops || []).forEach(function (o) { var q = o.parameters || {}; if (o.op_type === 'GEOM_SCALE' && q.parent === r.id) { f3[0] *= q.fx != null ? q.fx : 1; f3[1] *= q.fy != null ? q.fy : 1; f3[2] *= q.fz != null ? q.fz : 1; } });
+    return [(b[1] - b[0]) * f3[0], (b[3] - b[2]) * f3[1], (b[5] - b[4]) * f3[2]];
+  }
+  // fillings (a fills edge names the row as filling_guid, its host is a row): hostOf[filling fid] = host fid
+  function hostsOf(rows, C) {
+    var hostOf = {}, isRow = {}; rows.forEach(function (r) { isRow[r.id] = 1; });
+    if (C) C.fills.forEach(function (e) { var f = C.fidByGuid[e.filling_guid], h = C.fidByGuid[e.host_guid]; if (f != null && h != null && isRow[f] && isRow[h] && hostOf[f] == null) hostOf[f] = h; });
+    return hostOf;
+  }
+  function usableCascade(c) { return c && c.ridersFor && c.guidByFid && c.fidByGuid && Array.isArray(c.fills) ? c : null; }
+  // their fillings ride as hosted-by (SdgCascade.ridersFor, as commitMove does); a filling never moves on its own
+  function rideOps(C, moved, mv, out) {
+    if (C && moved.length) C.ridersFor(moved, C.guidByFid, C.fidByGuid, C.fills, new Set(moved)).forEach(function (f) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: f, induced: 'hosted-by' }, mv) }); out.riders.push(f); });
+  }
+  function scaleOp(id, lk, f, induced) { var sp = { parent: id, fx: 1, fy: 1, fz: 1, induced: induced }; sp['f' + 'xyz'[lk]] = +f.toFixed(9); return { op_type: 'GEOM_SCALE', params: sp }; }
+
   // rows: [{ id, cls, params, box: [x0,y0,z0,x1,y1,z1] world }], grid: { xs, ys, xlabels, ylabels }, rule: edits.bay_repeat, end: 'max' | 'min'
   // cascade (optional): { ridersFor, guidByFid, fidByGuid, fills } = SdgCascade.ridersFor + the §ARC-1 bridge + swXEdges.fills (§D89 step 3: a filling rides its host, never moves on its own)
   // copier: { build: Clipboard.build, ops: the active geom ops, firstId: the id the gesture's first op will get } — the Modeller's ONE copy path (clipboard.js, §D89 step 4)
@@ -23,9 +42,7 @@
     if (L.length < 3) { out.why = 'the grid has ' + L.length + ' lines on ' + axis + ' (needs 3 or more)'; return out; }
     var strC = rule.stretch || [], never = rule.never_copy || {};
     if (!copier || !copier.build) { out.why = 'no copy path (clipboard.js not loaded)'; return out; }
-    // an element's CURRENT local size = its insert bbox x the product of the GEOM_SCALEs already on it (the fold multiplies them, bonsai_kernel.js foldChainToScene)
-    var netF = function (fid) { var f3 = [1, 1, 1]; (copier.ops || []).forEach(function (o) { var q = o.parameters || {}; if (o.op_type === 'GEOM_SCALE' && q.parent === fid) { f3[0] *= q.fx != null ? q.fx : 1; f3[1] *= q.fy != null ? q.fy : 1; f3[2] *= q.fz != null ? q.fz : 1; } }); return f3; };
-    var dimsOf = function (r) { var b = r.params.bbox, n3 = netF(r.id); return [(b[1] - b[0]) * n3[0], (b[3] - b[2]) * n3[1], (b[5] - b[4]) * n3[2]]; };
+    var dimsOf = function (r) { return localDims(r, copier.ops); };
     // classify every insert: on a line, in a bay, or spanning several bays
     var bays = L.slice(0, -1).map(function () { return { counts: {}, rows: [] }; }), lines = L.map(function () { return { rows: [] }; }), span = [];
     rows.forEach(function (r) {
@@ -50,17 +67,14 @@
     var beyond = function (r) { var c = (r.box[k] + r.box[k + 3]) / 2; return dir > 0 ? c > X + ON_LINE : c < X - ON_LINE; };
     var badSpan = span.filter(function (r) { return strC.indexOf(r.cls) < 0 || Math.abs(((r.params.placement || {}).rot || 0) % 180) > 1e-6; });
     if (badSpan.length) { out.why = badSpan.length + ' full-length element(s) the rule does not stretch or that are yawed (first: #' + badSpan[0].id + ' ' + badSpan[0].cls + ')'; return out; }
-    // fillings (a fills edge names the row as filling_guid, its host is a row): hostOf[filling fid] = host fid
-    var C = cascade && cascade.ridersFor && cascade.guidByFid && cascade.fidByGuid && Array.isArray(cascade.fills) ? cascade : null, hostOf = {}, isRow = {};
-    rows.forEach(function (r) { isRow[r.id] = 1; });
-    if (C) C.fills.forEach(function (e) { var f = C.fidByGuid[e.filling_guid], h = C.fidByGuid[e.host_guid]; if (f != null && h != null && isRow[f] && isRow[h] && hostOf[f] == null) hostOf[f] = h; });
+    var C = usableCascade(cascade), hostOf = hostsOf(rows, C);
     var onSpan = Object.keys(hostOf).filter(function (f) { return span.some(function (r) { return r.id === hostOf[f]; }); });
     if (onSpan.length) { out.why = onSpan.length + ' filling(s) hosted by a full-length element that the bay stretches (first: #' + onSpan[0] + ' in #' + hostOf[onSpan[0]] + '): a stretch rides proportionally, not one pitch on'; return out; }
     var id = 'bay-' + axis + hinge + '-' + Date.now().toString(36), mv = { dx: 0, dy: 0, dz: 0 }; mv['d' + axis] = d;
     var tag = { id: id, axis: axis, index: end === 'min' ? hinge : hinge + 1, pos: X + d, pitch: pitch, dir: dir, from: bk };
-    // 1 move the hosts + free elements beyond the hinge; their fillings ride as hosted-by (SdgCascade.ridersFor, as commitMove does); a filling never moves on its own
+    // 1 move the hosts + free elements beyond the hinge; their fillings ride
     rows.forEach(function (r) { if (span.indexOf(r) >= 0 || !beyond(r) || hostOf[r.id] != null) return; out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) }); out.moved.push(r.id); });
-    if (C && out.moved.length) C.ridersFor(out.moved, C.guidByFid, C.fidByGuid, C.fills, new Set(out.moved)).forEach(function (f) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: f, induced: 'hosted-by' }, mv) }); out.riders.push(f); });
+    rideOps(C, out.moved, mv, out);
     // 2 copies: the typical bay and the hinge line's frame AS THEY ARE, one pitch on, through the clipboard (each copy carries its source's later edits, cuts and hosted fillings,
     //   §D89 step 4); never_copy = building-wide sizing only; fillings are not handed in — they come as riders of their copied host
     var src = bays[bk].rows.concat(lines[hinge].rows).filter(function (r) { return !never[r.cls] && hostOf[r.id] == null; }).map(function (r) { return r.id; });
@@ -73,13 +87,54 @@
     // 3 stretch the full-length members / coverings by one pitch (local axis = the longest of the op's CURRENT local size = its bbox x the product of the GEOM_SCALEs already on it,
     //   as the fold multiplies them; GEOM_SCALE is anchored at the local min edge). Before: the insert's own bbox, so a second bay over-stretched what the first had stretched.
     span.forEach(function (r) { var ld = dimsOf(r), lk = ld.indexOf(Math.max.apply(null, ld)), Lm = ld[lk], f = (Lm + pitch) / Lm;
-      var sp = { parent: r.id, fx: 1, fy: 1, fz: 1, induced: 'bay-add' }; sp['f' + 'xyz'[lk]] = +f.toFixed(9); out.ops.push({ op_type: 'GEOM_SCALE', params: sp });
+      out.ops.push(scaleOp(r.id, lk, f, 'bay-add'));
       if (dir < 0) out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'bay-add' }, mv) });
       out.stretched.push({ id: r.id, cls: r.cls, length: Lm, factor: f, dims: ld }); });
     out.ok = true; out.tag = tag; out.pitch = pitch; out.hingeLabel = labs[hinge] || String(hinge);
     out.counts = out.copied.reduce(function (a, c) { a[c.cls] = (a[c.cls] || 0) + 1; return a; }, {});
     out.never = Object.keys(never).map(function (c) { return { cls: c, why: never[c], inBay: bays[bk].counts[c] || 0 }; });
     return out;
+  }
+
+  // §BLOCK-SHIFT (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §13.1, W-BLOCK-SHIFT): line `index` and every later line on `axis` move together, so only the bay before the line
+  // changes width. One gesture, built from the same helpers as plan: no second mover and no new op type. Pure.
+  // rows: [{ id, cls, params, lo, hi }], lo/hi = the element's extent on the lattice axis, measured from its vertices.
+  // s: { axis, index, lines: lattice positions on the axis, delta, theta (rad), stretch: classes the grid governs, edgeTol, yawTol: the engine's own (grid_kinematics.js) }; cascade as plan.
+  function shift(rows, s, cascade, ops) {
+    var out = { ok: false, why: null, ops: [], moved: [], riders: [], stretched: [], stayed: 0, left: [], band: null };
+    if (!(s.index >= 0 && s.index < s.lines.length)) { out.why = 'no line ' + s.index + ' on axis ' + s.axis; return out; }
+    var X = s.lines[s.index], d = s.delta, th = s.theta || 0, a = s.axis === 'x' ? [Math.cos(th), Math.sin(th)] : [-Math.sin(th), Math.cos(th)];   // travel along the lattice axis, so the block stays on its own lines
+    var C = usableCascade(cascade), hostOf = hostsOf(rows, C), h = 0;
+    rows.forEach(function (r) { if (r.cls !== 'IfcColumn' && r.cls !== 'IfcColumnStandardCase') return; if (Math.abs((r.lo + r.hi) / 2 - X) < s.edgeTol) h = Math.max(h, (r.hi - r.lo) / 2); });   // the engine's band (grid_kinematics.js attachGridToElements)
+    var b = out.band = Math.max(ON_LINE, h > 0 ? h + s.edgeTol : 0), mv = { dx: d * a[0], dy: d * a[1], dz: 0 };
+    // aligned: the local plan axis nearest the lattice axis, within |theta| + the engine's yaw tolerance. A 3-axis placement has no plan axis of its own.
+    var localAxis = function (r) {
+      var p = r.params.placement || {}; if (typeof p.rotX === 'number' || typeof p.rotY === 'number' || typeof p.rotZRad === 'number') return null;
+      var t = (p.rot || 0) * Math.PI / 180, lx = a[0] * Math.cos(t) + a[1] * Math.sin(t), ly = -a[0] * Math.sin(t) + a[1] * Math.cos(t), k = Math.abs(lx) >= Math.abs(ly) ? 0 : 1, dot = k === 0 ? lx : ly;
+      if (Math.acos(Math.min(1, Math.abs(dot))) > Math.abs(th) + s.yawTol) return null;
+      return { k: k, sign: dot >= 0 ? 1 : -1 };
+    };
+    var cross = [];
+    rows.forEach(function (r) {
+      if (hostOf[r.id] != null) return;
+      if (r.lo >= X - b) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'block-shift' }, mv) }); out.moved.push(r.id); return; }
+      if (r.hi <= X - b) { out.stayed++; return; }
+      var la = (s.stretch || []).indexOf(r.cls) >= 0 ? localAxis(r) : null;
+      if (!la) { out.left.push({ id: r.id, cls: r.cls }); return; }
+      cross.push({ r: r, la: la });
+    });
+    var isCross = {}; cross.forEach(function (c) { isCross[c.r.id] = 1; });
+    var onCross = Object.keys(hostOf).filter(function (f) { return isCross[hostOf[f]]; });
+    if (onCross.length) { out.why = onCross.length + ' filling(s) hosted by an element that would stretch (first: #' + onCross[0] + ' in #' + hostOf[onCross[0]] + '): a stretch rides proportionally, not by the move'; return out; }
+    rideOps(C, out.moved, mv, out);
+    for (var i = 0; i < cross.length; i++) {
+      var c = cross[i], L = localDims(c.r, ops)[c.la.k];
+      if (!(L > 0) || L + d <= 0) { out.why = 'the move would shrink #' + c.r.id + ' ' + c.r.cls + ' (' + L.toFixed(3) + ' m) to nothing'; return out; }
+      out.ops.push(scaleOp(c.r.id, c.la.k, (L + d) / L, 'block-shift'));
+      if (c.la.sign < 0) out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: c.r.id, induced: 'block-shift' }, mv) });   // GEOM_SCALE anchors at the local minimum, here the far end
+      out.stretched.push(c.r.id);
+    }
+    out.ok = true; return out;
   }
 
   // cost of a plan through the §S8 owner (viewer/edit_delta.js deltaFor): a copy = its own row amount (ADDED x1.0), a stretched element = deltaFor(rec, net) (CHANGED); a move = 0
@@ -96,5 +151,5 @@
     return { added: added.toString(), changed: changed.toString(), total: added.add(changed).toString(), lines: lines };
   }
 
-  return { plan: plan, cost: cost, TAG: TAG, ON_LINE: ON_LINE };
+  return { plan: plan, shift: shift, cost: cost, TAG: TAG, ON_LINE: ON_LINE };
 });
