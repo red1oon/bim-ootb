@@ -521,6 +521,10 @@
       if (gridCmds && gridCmds.length) {
         for (let g = 0; g < gridCmds.length; g++) {
           const cmd = gridCmds[g], k = cmd.axis === 'x' ? 0 : cmd.axis === 'y' ? 1 : 2;
+          if (cmd.action === 'HINGE') {                                  // §14.1 a block shift: every vertex at or beyond the plane travels, every vertex before it stays. at null: all of them.
+            for (let i = 0; i < positions.length; i += 3) if (cmd.at == null || cmd.n[0] * positions[i] + cmd.n[1] * positions[i + 1] >= cmd.at) { positions[i] += cmd.dx; positions[i + 1] += cmd.dy; }
+            continue;
+          }
           if (cmd.action === 'TRANSLATE') {
             const d = cmd.delta || 0; for (let i = k; i < positions.length; i += 3) positions[i] += d;
           } else {                                                       // SCALE about the world min edge

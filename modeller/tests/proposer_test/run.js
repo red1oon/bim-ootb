@@ -7,6 +7,7 @@
  * Arm A = the proposer alone: its first proposal and its own forecast. Arm B = the same run continued: the report goes back, up to 2 revisions.
  * The proposer runs isolated: no tools, no files, no project instructions.
  * §13: a shift is one edit (--shift), every building is on its own grid (--own-grid), overlaps are judged on lattice boxes (--lattice-boxes), a judged-fine result ends the run, the report names the limit and the bay.
+ * §14: everything crossing a shift's line follows it by one rule, and one that is left behind scores LEFT_BEHIND.
  */
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), { spawn } = require('child_process');
@@ -48,6 +49,7 @@ function classify(edits, verdict, decline) {
   const row = (r, id) => r.rows.filter(x => x.id === id)[0] || {};
   const red = out.edits.some(r => (row(r, 'span_red').state === 'JUDGED' && row(r, 'span_red').delta > 0) || r.newRows.some(n => RED_NEW.indexOf(n.id) >= 0 && n.count > 0));
   if (red) return 'RED';
+  if (out.edits.some(r => r.change && r.change.kind === 'block-shift' && r.change.left && r.change.left.count > 0)) return 'LEFT_BEHIND';   // §14.1 a shift that left crossing elements behind is not clean
   if (out.edits.some(r => row(r, 'overlap').state !== 'JUDGED')) return 'PARTLY_JUDGED';
   return 'CLEAN';
 }
@@ -88,7 +90,7 @@ function prompt(brief, m, history) {
   let t = 'Building: ' + brief.building + '\nStructural system: ' + (m.system === 'column-framed' ? 'column-framed, ' + m.girders + ' girders, mostly ' + m.material + (m.mixed ? ' (mixed)' : '') : 'wall-bearing') + '\nGrid lines, derived from the building\'s own ' + (m.grid_source === 'column-derived' ? 'columns' : 'walls') + ', positions in metres:\n' + lines + '\n\nRequest: ' + brief.text + '\n\n' +
     'There are two kinds of edit, each by a signed number of metres along the line\'s axis:\n' +
     '{"grid":"<line id>","move":<metres>} moves that one line. Walls and other elements attached to it follow, and the bays on both sides change.\n' +
-    '{"shift":"<line id>","move":<metres>} moves that line and every later line on its axis together. Elements at or beyond it travel unchanged, members crossing it stretch, and only the bay just before that line changes width.\n' +
+    '{"shift":"<line id>","move":<metres>} moves that line and every later line on its axis together. Elements at or beyond it travel unchanged, elements crossing it stretch only inside that bay, and only the bay just before that line changes width.\n' +
     'A line may be moved more than once.\n' +
     'Reply with exactly this JSON:\n{"edits":[<edits>],"decline":false,"reason":"<why, if you decline or anything the requester should know>","expect_problems":<true or false>,"problems_expected":"<what you expect to go wrong, if anything>"}\n' +
     'If you should not make this change, set "decline":true and "edits":[].';
@@ -122,7 +124,7 @@ async function runBrief(brief, rep, propose, judgeWith) {
   return { brief: brief.id, rep, attempts };
 }
 function summarise(runs) {
-  const bad = ['RED', 'REFUSED', 'FAILED', 'INVALID'], s = { runs: runs.length, A: {}, B: {} };
+  const bad = ['RED', 'LEFT_BEHIND', 'REFUSED', 'FAILED', 'INVALID'], s = { runs: runs.length, A: {}, B: {} };
   const tally = (a, key) => { s[key][a.cls] = (s[key][a.cls] || 0) + 1; };
   let usedShiftA = 0, usedShiftB = 0, falseAssurance = 0, forecastRight = 0, badFirst = 0, goalA = 0, goalB = 0, goodA = 0, goodB = 0, crossedHidden = 0, wrongGoalHidden = 0;
   runs.forEach(r => {
@@ -184,6 +186,7 @@ function summarise(runs) {
     chk('S3b nothing red, all judged: CLEAN', classify(E1, { json: { edits: [rep('JUDGED', 0)] } }, false) === 'CLEAN');
     chk('S3c nothing red, scene not judged: PARTLY_JUDGED, never CLEAN', classify(E1, { json: { edits: [rep('NOT_JUDGED', 0)] } }, false) === 'PARTLY_JUDGED');
     chk('S3d a span over limit, or a new RED row, beats both', classify(E1, { json: { edits: [rep('NOT_JUDGED', 1)] } }, false) === 'RED' && classify(E1, { json: { edits: [rep('JUDGED', 0, [{ id: 'abuts-clash', count: 1 }])] } }, false) === 'RED');
+    chk('S3f §14.1 a shift that left crossing elements behind is LEFT_BEHIND, never CLEAN, and RED still beats it', classify(E1, { json: { edits: [Object.assign(rep('JUDGED', 0), { change: { kind: 'block-shift', left: { count: 3 } } })] } }, false) === 'LEFT_BEHIND' && classify(E1, { json: { edits: [Object.assign(rep('JUDGED', 1), { change: { kind: 'block-shift', left: { count: 3 } } })] } }, false) === 'RED');
     chk('S3e a new clearance is not RED, and a span count that falls is not RED', classify(E1, { json: { edits: [rep('JUDGED', -2, [{ id: 'clearance', count: 3 }])] } }, false) === 'CLEAN');
     log('§PROPOSER_STUB fail=' + fail + ' verdict=' + (fail ? 'FAIL' : 'PASS')); process.exit(fail ? 1 : 0);
   }

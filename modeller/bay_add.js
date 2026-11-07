@@ -8,6 +8,7 @@
   else root.BayAdd = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+  var PARENT_MUTATING = { GEOM_CUT: 1, GEOM_FILLET: 1, GEOM_SHELL: 1, GEOM_OFFSET: 1, GEOM_FILLET_VARIABLE: 1, GEOM_CHAMFER_DIST_ANGLE: 1, GEOM_DRAFT: 1 };   // the ops that promote an insert to a worker solid (bonsai_kernel.js _computeSeeds)
   var TAG = '§DXF-BAY', ON_LINE = 0.3;   // ON_LINE: an element whose centre is this close (m) to a grid line belongs to that line's frame (the §D88 bay probe's tolerance)
 
   function sig(counts) { return Object.keys(counts).sort().map(function (k) { return k + ':' + counts[k]; }).join(','); }
@@ -96,43 +97,38 @@
     return out;
   }
 
-  // §BLOCK-SHIFT (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §13.1, W-BLOCK-SHIFT): line `index` and every later line on `axis` move together, so only the bay before the line
-  // changes width. One gesture, built from the same helpers as plan: no second mover and no new op type. Pure.
+  // §BLOCK-SHIFT (bim-compiler prompts/NEURO_SYMBOLIC_ORDER_CONTRACT.md §14.1, W-BLOCK-SHIFT): line `index` and every later line on `axis` move together, so only the bay before the line
+  // changes width. One plane, at = line - band: every vertex at or beyond it travels the vector, every vertex before it stays. Built from plan's helpers, no second mover. Pure.
   // rows: [{ id, cls, params, lo, hi }], lo/hi = the element's extent on the lattice axis, measured from its vertices.
-  // s: { axis, index, lines: lattice positions on the axis, delta, theta (rad), stretch: classes the grid governs, edgeTol, yawTol: the engine's own (grid_kinematics.js) }; cascade as plan.
+  // s: { axis, index, lines: lattice positions on the axis, delta, theta (rad), follow: classes that follow when crossing, edgeTol: the engine's own (grid_kinematics.js) }; cascade as plan.
   function shift(rows, s, cascade, ops) {
-    var out = { ok: false, why: null, ops: [], moved: [], riders: [], stretched: [], stayed: 0, left: [], band: null };
+    var out = { ok: false, why: null, ops: [], commands: [], moved: [], riders: [], stretched: [], stayed: 0, left: [], band: null, at: null };
     if (!(s.index >= 0 && s.index < s.lines.length)) { out.why = 'no line ' + s.index + ' on axis ' + s.axis; return out; }
-    var X = s.lines[s.index], d = s.delta, th = s.theta || 0, a = s.axis === 'x' ? [Math.cos(th), Math.sin(th)] : [-Math.sin(th), Math.cos(th)];   // travel along the lattice axis, so the block stays on its own lines
-    var C = usableCascade(cascade), hostOf = hostsOf(rows, C), h = 0;
-    rows.forEach(function (r) { if (r.cls !== 'IfcColumn' && r.cls !== 'IfcColumnStandardCase') return; if (Math.abs((r.lo + r.hi) / 2 - X) < s.edgeTol) h = Math.max(h, (r.hi - r.lo) / 2); });   // the engine's band (grid_kinematics.js attachGridToElements)
-    var b = out.band = Math.max(ON_LINE, h > 0 ? h + s.edgeTol : 0), mv = { dx: d * a[0], dy: d * a[1], dz: 0 };
-    // aligned: the local plan axis nearest the lattice axis, within |theta| + the engine's yaw tolerance. A 3-axis placement has no plan axis of its own.
-    var localAxis = function (r) {
-      var p = r.params.placement || {}; if (typeof p.rotX === 'number' || typeof p.rotY === 'number' || typeof p.rotZRad === 'number') return null;
-      var t = (p.rot || 0) * Math.PI / 180, lx = a[0] * Math.cos(t) + a[1] * Math.sin(t), ly = -a[0] * Math.sin(t) + a[1] * Math.cos(t), k = Math.abs(lx) >= Math.abs(ly) ? 0 : 1, dot = k === 0 ? lx : ly;
-      if (Math.acos(Math.min(1, Math.abs(dot))) > Math.abs(th) + s.yawTol) return null;
-      return { k: k, sign: dot >= 0 ? 1 : -1 };
-    };
-    var cross = [];
-    rows.forEach(function (r) {
-      if (hostOf[r.id] != null) return;
-      if (r.lo >= X - b) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'block-shift' }, mv) }); out.moved.push(r.id); return; }
-      if (r.hi <= X - b) { out.stayed++; return; }
-      var la = (s.stretch || []).indexOf(r.cls) >= 0 ? localAxis(r) : null;
-      if (!la) { out.left.push({ id: r.id, cls: r.cls }); return; }
-      cross.push({ r: r, la: la });
-    });
-    var isCross = {}; cross.forEach(function (c) { isCross[c.r.id] = 1; });
-    var onCross = Object.keys(hostOf).filter(function (f) { return isCross[hostOf[f]]; });
-    if (onCross.length) { out.why = onCross.length + ' filling(s) hosted by an element that would stretch (first: #' + onCross[0] + ' in #' + hostOf[onCross[0]] + '): a stretch rides proportionally, not by the move'; return out; }
+    var X = s.lines[s.index], d = s.delta, th = s.theta || 0, a = s.axis === 'x' ? [Math.cos(th), Math.sin(th)] : [-Math.sin(th), Math.cos(th)];
+    var C = usableCascade(cascade), hostOf = hostsOf(rows, C), h = 0, byId = {}, hinged = {}, solid = {};
+    rows.forEach(function (r) { byId[r.id] = r; if (r.cls !== 'IfcColumn' && r.cls !== 'IfcColumnStandardCase') return; if (Math.abs((r.lo + r.hi) / 2 - X) < s.edgeTol) h = Math.max(h, (r.hi - r.lo) / 2); });   // the engine's band (grid_kinematics.js attachGridToElements)
+    (ops || []).forEach(function (o) { var q = o.parameters || {}; if (o.op_type === 'GEOM_GRID_MOVE') (q.commands || []).forEach(function (c) { if (c && c.action === 'HINGE') hinged[c.featureId] = 1; }); else if (PARENT_MUTATING[o.op_type] && q.parent != null) solid[q.parent] = o.op_type; });
+    var b = out.band = Math.max(ON_LINE, h > 0 ? h + s.edgeTol : 0), at = out.at = X - b, mv = { dx: d * a[0], dy: d * a[1], dz: 0 };
+    var hinge = function (id, plane) { out.commands.push({ featureId: id, action: 'HINGE', n: a, at: plane, dx: mv.dx, dy: mv.dy }); };
+    var cross = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i]; if (hostOf[r.id] != null) continue;
+      if (r.lo >= at) {
+        if (hinged[r.id]) hinge(r.id, null);   // a later GEOM_MOVE folds before the earlier hinge and would test the wrong coordinates, so it stays in command order
+        else out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: r.id, induced: 'block-shift' }, mv) });
+        out.moved.push(r.id); continue;
+      }
+      if (r.hi <= at) { out.stayed++; continue; }
+      if ((s.follow || []).indexOf(r.cls) < 0) { out.left.push({ id: r.id, cls: r.cls }); continue; }
+      if (solid[r.id]) { out.why = '#' + r.id + ' ' + r.cls + ' crosses the line and carries a ' + solid[r.id] + ': it cannot follow a shift'; return out; }
+      cross[r.id] = 1; hinge(r.id, at); out.stretched.push(r.id);
+    }
     rideOps(C, out.moved, mv, out);
-    for (var i = 0; i < cross.length; i++) {
-      var c = cross[i], L = localDims(c.r, ops)[c.la.k];
-      if (!(L > 0) || L + d <= 0) { out.why = 'the move would shrink #' + c.r.id + ' ' + c.r.cls + ' (' + L.toFixed(3) + ' m) to nothing'; return out; }
-      out.ops.push(scaleOp(c.r.id, c.la.k, (L + d) / L, 'block-shift'));
-      if (c.la.sign < 0) out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: c.r.id, induced: 'block-shift' }, mv) });   // GEOM_SCALE anchors at the local minimum, here the far end
-      out.stretched.push(c.r.id);
+    var fills = Object.keys(hostOf);
+    for (var k = 0; k < fills.length; k++) {
+      var f = byId[fills[k]]; if (!cross[hostOf[fills[k]]]) continue;
+      if (f.lo >= at) { out.ops.push({ op_type: 'GEOM_MOVE', params: Object.assign({ parent: f.id, induced: 'hosted-by' }, mv) }); out.riders.push(f.id); }
+      else if (f.hi > at) { out.why = 'filling #' + f.id + ' straddles the line in #' + hostOf[fills[k]] + ': it has a fixed shape and cannot stretch'; return out; }
     }
     out.ok = true; return out;
   }

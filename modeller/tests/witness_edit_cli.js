@@ -12,7 +12,8 @@
  *   C8 a block shift through the CLI is a second answer (§13.1): byte for byte against the page, twice identical
  *   C9 a default grid passed off as the building's (§13.2): --lines states its source, --own-grid lays the derived lines, the default-grid answers stay as they were
  *   C10 the measuring switch leaks (§13.6): no effect at theta 0, an effect on the rotated Garage, off unless asked
- *   C11 a refused shift reads as success: a filling on an element that would stretch gives refused, the reason, exit 3
+ *   C12 the CLI needs this repo (§14.2): run from outside it against --url, it must give the same bytes
+ *   C11 a refused shift reads as success: a crossing wall carrying a cut gives refused, the reason, exit 3
  */
 'use strict';
 const path = require('path'), { spawn } = require('child_process');
@@ -80,8 +81,14 @@ const J1 = ['--building', 'SampleHouse', '--grid', 'gx1', '--move', '1'], J2 = [
   const lb0 = await call('--building', 'SampleHouse', '--lattice-boxes', '--grid', 'gx1', '--move', '1'), lb1 = await call('--building', 'HospitalGarage', '--lattice-boxes', '--grid', 'gy8', '--move', '1.5');
   chk('C10a the switch has no effect at theta 0', edits(lb0) === edits(s1));
   chk('C10b the switch has an effect on the rotated Garage, and C1b shows it is off unless asked', !!edits(lb1) && edits(lb1) !== edits(g1));
-  const rf = await call('--building', 'SampleHouse', '--own-grid', '--shift', 'gx1', '--move', '0.355');
-  chk('C11 a refused shift: refused, the reason, exit 3', rf.code === 3 && rf.json.edits[0].refused === true && rf.json.edits[0].shift === true && /would stretch/.test(rf.json.edits[0].reason), (rf.json && rf.json.edits[0].reason || '').slice(0, 90));
+  const rf = await call('--building', 'SampleHouse', '--own-grid', '--shift', 'gy1', '--move', '1.355');
+  chk('C11 a refused shift: refused, the reason, exit 3', rf.code === 3 && rf.json.edits[0].refused === true && rf.json.edits[0].shift === true && /carries a GEOM_CUT/.test(rf.json.edits[0].reason), (rf.json && rf.json.edits[0].reason || '').slice(0, 90));
+  const fs = require('fs'), os = require('os'), http = require('http'), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edit_cli_alone_')), alone = path.join(dir, 'edit_cli.js'), ROOT = path.join(__dirname, '..', '..');
+  fs.copyFileSync(CLI, alone);
+  const srv = http.createServer((q, r) => fs.readFile(path.join(ROOT, decodeURIComponent(q.url.split('?')[0])), (e, b) => { if (e) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'Content-Type': /\.js$|\.mjs$/.test(q.url.split('?')[0]) ? 'text/javascript' : /\.html$/.test(q.url.split('?')[0]) ? 'text/html' : /\.wasm$/.test(q.url.split('?')[0]) ? 'application/wasm' : /\.json$/.test(q.url.split('?')[0]) ? 'application/json' : /\.css$/.test(q.url.split('?')[0]) ? 'text/css' : 'application/octet-stream', 'Accept-Ranges': 'bytes' }); r.end(b); })); await new Promise(z => srv.listen(0, z));
+  const viaUrl = await new Promise((res) => { let o = ''; const p = spawn('node', [alone, '--url', 'http://localhost:' + srv.address().port + '/modeller/modeller.html', ...J1], { cwd: dir, env: process.env, stdio: ['ignore', 'pipe', 'ignore'] }); p.stdout.on('data', d => { o += d; }); p.on('close', z => { let j = null; try { j = JSON.parse(o); } catch (e) {} res({ code: z, json: j }); }); });
+  srv.close(); fs.rmSync(dir, { recursive: true, force: true });
+  chk('C12 one copied file, run from an empty folder against --url = the repo run, byte for byte', edits(viaUrl) === edits(s1), 'exit=' + viaUrl.code);
   L('time quiet SampleHouse ms=' + s1.json.ms + ',' + s2.json.ms + ' Garage ms=' + g1.json.ms + ' | four at once ms=' + conc.map(c => c.json && c.json.ms).join(','));
   chk('C7 a time is reported per run', s1.json.ms > 0 && g1.json.ms > 0);
   const total = a.fail + b.fail + c.fail + fail;
