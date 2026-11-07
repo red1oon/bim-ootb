@@ -96,6 +96,16 @@
     r.maxSpan = rule.maxBeamSpan; r.depthRatio = rule.depthRatio;
     return r;
   }
+  // §EDIT-REPORT: every walked girder of the fold, counted by signal. Whole building, because check is arithmetic. null = no rule (refused, never a zero).
+  function tally(info, ops, cursor, mat, depth) {
+    if (!ruleFor(mat)) return null;
+    var st = fold(info, ops, cursor), out = { RED: 0, ORANGE: 0, GREEN: 0, unjudged: 0, pieces: st.pieces.length };
+    st.pieces.forEach(function (pc) {
+      var sp = spanOf(st, pc), r = isFinite(sp) ? check(sp, mat, depth) : null;
+      if (r) out[r.signal]++; else out.unjudged++;
+    });
+    return out;
+  }
   function fmt(x) { return (Math.round(x * 100) / 100).toFixed(2); }
   function message(r) {
     if (r.signal === 'RED') return 'Limit for this column span (' + r.maxSpan + ' m, ' + r.material + '). Add one more? ' + PRELIM;
@@ -143,6 +153,6 @@
     return lim;
   }
 
-  return { TAG: TAG, PRELIM: PRELIM, ruleFor: ruleFor, readMaterial: readMaterial, fold: fold, spanOf: spanOf, check: check,
+  return { TAG: TAG, PRELIM: PRELIM, ruleFor: ruleFor, readMaterial: readMaterial, fold: fold, spanOf: spanOf, check: check, tally: tally,
            message: message, preview: preview, clampDelta: clampDelta, RANK: RANK };
 });
