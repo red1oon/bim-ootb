@@ -4,6 +4,31 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.86.0](https://github.com/red1oon/bim-ootb/compare/v1.85.0...v1.86.0) (2026-11-07)
+
+
+### ✨ Features
+
+* **modeller:** a block shift hinges every crossing element at one plane; edit_cli needs one file and can drive the live site (§14) ([#2688](https://github.com/red1oon/bim-ootb/issues/2688)) ([16b0b65](https://github.com/red1oon/bim-ootb/commit/16b0b65aa31fbd6c1bd01aca4fbb4fc716dc4773))
+* **modeller:** block shift as one edit, limit and bay in the report, 3-axis move fix (§13) ([#2685](https://github.com/red1oon/bim-ootb/issues/2685)) ([36d0885](https://github.com/red1oon/bim-ootb/commit/36d0885300a427b67a77d65a7bab0cac6a895607))
+* **trunk:** a corridor trunk says it is a proposal, never a main (W-E2E-SEEDTRUNK N10) ([#2692](https://github.com/red1oon/bim-ootb/issues/2692)) ([29c22c9](https://github.com/red1oon/bim-ootb/commit/29c22c9f50ef7b6527084669f344f0f8ddcc9314))
+* **walk:** a band duct or pipe piece with no main is not placed (W-WALK-MAINS N7-N9) ([#2687](https://github.com/red1oon/bim-ootb/issues/2687)) ([6c3cb3a](https://github.com/red1oon/bim-ootb/commit/6c3cb3ac0af1f5e6e42fb7311261dd7346b0096e))
+* **walk:** no main without a drawing on ACMV, FP and PLB; the walker says why (W-WALK-MAINS) ([#2682](https://github.com/red1oon/bim-ootb/issues/2682)) ([c47562a](https://github.com/red1oon/bim-ootb/commit/c47562ad89feb7a21e5247ee615989d559bff686))
+
+
+### 🐛 Fixes
+
+* **trunk:** plan the corridor trunk on walls and doors where the mesh is (W-TRUNK-REAL-BOX) ([#2691](https://github.com/red1oon/bim-ootb/issues/2691)) ([d549558](https://github.com/red1oon/bim-ootb/commit/d549558ad3ac36ae3871e5679a1dcaac04058291))
+* **walk:** do not say no sheet held of a file that holds the service (W-WALK-MAINS N6) ([#2686](https://github.com/red1oon/bim-ootb/issues/2686)) ([7e4efcb](https://github.com/red1oon/bim-ootb/commit/7e4efcba9d9682adca10e0102152aab3011fd923))
+
+
+### 📝 Documentation
+
+* **walker:** do not say "no sheet held" of a file holding the service ([#2684](https://github.com/red1oon/bim-ootb/issues/2684)) ([f534c35](https://github.com/red1oon/bim-ootb/commit/f534c35ba4e59e912ca076b8e7f06be6ce3a295f))
+* **walker:** owner's go for the drawn-mains reader, after band spec §11 ([#2694](https://github.com/red1oon/bim-ootb/issues/2694)) ([748b259](https://github.com/red1oon/bim-ootb/commit/748b259dfc46ef58da693995c3de2c52392c7458))
+* **walker:** owner's rulings on band density, run height, corridor trunks ([#2690](https://github.com/red1oon/bim-ootb/issues/2690)) ([a0b3d66](https://github.com/red1oon/bim-ootb/commit/a0b3d665be2ccf717ced5fd3bba4dacf69d58705))
+* **walker:** provisional covers every band row, not-judged included ([#2693](https://github.com/red1oon/bim-ootb/issues/2693)) ([5ebd30d](https://github.com/red1oon/bim-ootb/commit/5ebd30d2963b510b8246dea0f5e85058ecf78da8))
+
 ## [1.85.0](https://github.com/red1oon/bim-ootb/compare/v1.84.2...v1.85.0) (2026-11-07)
 
 
