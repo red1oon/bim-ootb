@@ -135,6 +135,14 @@ const G1 = buildingGrid('G1');
     ok('M5d two grids, only G1\'s tags fit (' + c[1] + '): the fit names grid_guid G1, and G2 is logged as failed', q.r.sheet.grid_guid === 'G1' && w <= 0.001 && q.lines.some(l => /§MAINS-FIT sheet=\S+ grid=G2 .* FAIL/.test(l)) && q.lines.some(l => /§MAINS-FIT sheet=\S+ grid=G1 .* PASS/.test(l)), 'grid_guid=' + q.r.sheet.grid_guid + ' off=' + (w * 1000).toFixed(4) + ' mm'); });
   r = run('m5-g2only', fxd, G2);
   ok('M5d RED: offered only G2, the sheet REFUSES (no other grid is borrowed)', !!r.r.sheet.refused, r.r.sheet.refused);
+  // f (amendment 3, real set): two grids both fit at 0 mm; one holds only 5 of the sheet's tags. The grid with more tags wins in either order (first-passing would keep the 5-tag one).
+  const keep5 = { '1': 1, '2': 1, A: 1, B: 1, C: 1 }, G5 = G1.filter(g => keep5[g.tag]).map(g => Object.assign({}, g, { grid_guid: 'G5', storey: 'RESI' }));
+  [[G5.concat(G1), 'G5 first'], [G1.concat(G5), 'G1 first']].forEach(c => { const q = run('m5f-' + c[1].replace(' ', '-'), fxd, c[0]);
+    ok('M5f two grids fit at 0 mm, ' + c[1] + ': the grid with more matched tags wins (G1, 8 tags, not G5, 5)', q.r.sheet.grid_guid === 'G1' && q.r.sheet.fit_tags === 8 && q.lines.some(l => /§MAINS-FIT-CHOICE sheet=\S+ grid=G1 tags=8 .* of passing=2/.test(l)), 'grid=' + q.r.sheet.grid_guid + ' tags=' + q.r.sheet.fit_tags); });
+  // g: two grids with the same tags at the same place, on different storeys: the sheet's own storey breaks the tie; a grid's storey never becomes a row's level.
+  const GL1 = G1.map(g => Object.assign({}, g, { grid_guid: 'GL1', storey: 'L1' })), GL2 = G1.map(g => Object.assign({}, g, { grid_guid: 'GL2', storey: 'L2' }));
+  [[GL1.concat(GL2), 'L1 grid first'], [GL2.concat(GL1), 'L2 grid first']].forEach(c => { const q = run('m5g-' + c[1].replace(/ /g, '-'), fxd, c[0], null, { sheet: { number: 'm5g', revision: 'A', storey: 'L2' } });
+    ok('M5g equal grids, ' + c[1] + ', sheet on L2: the L2 grid is chosen; no row carries a level', q.r.sheet.grid_guid === 'GL2' && q.r.rows.every(w => !('storey' in w) && !('level' in w)), 'grid=' + q.r.sheet.grid_guid + ' rowKeys=' + Object.keys(q.r.rows[0] || {}).join(',')); });
 
   // ---- M6: the converter negates an insert's X insertion point (amendment 2.3). Guarded by the sheet's own extents. ----
   const mline = q => (q.lines.find(l => /§MAINS-READ/.test(l)) || ''), fired = q => (q.lines.find(l => /§MAINS-MIRROR/.test(l)) || '');
@@ -144,6 +152,11 @@ const G1 = buildingGrid('G1');
   ok('M6a an insert at negated X, box outside the drawn extents and its reflection inside: corrected, joins (1 component), mirrored=1, fired=yes', r.r.sheet.components === 1 && / mirrored=1 /.test(mline(r)) && /fired=yes n=1/.test(fired(r)), 'components=' + r.r.sheet.components + ' | ' + fired(r).replace(/^.*§MAINS-MIRROR/, '§MAINS-MIRROR'));
   r = run('m6b', m6, G1, { noMirrorFix: true });
   ok('M6b RED: correction off, the same set does not join (2 components)', r.r.sheet.components === 2, 'components=' + r.r.sheet.components);
+  // (f, amendment 3) the correction's effect reads from the log: a fitting touching no centreline piece is counted, with the correction on and off.
+  r = run('m6f', m6, G1);
+  ok('M6f fittings_unjoined: 0 with the correction, 1 with it off, both in the §MAINS-READ line', / fittings_unjoined=0 fittings_unjoined_nomirror=1 /.test(mline(r)) && r.r.sheet.fittings_unjoined === 0 && r.r.sheet.fittings_unjoined_nomirror === 1, (mline(r).match(/fittings=\S+ fittings_unjoined=\S+ fittings_unjoined_nomirror=\S+/) || ['?'])[0]);
+  r = run('m6f-off', m6, G1, { noMirrorFix: true });
+  ok('M6f RED: correction off, fittings_unjoined reads 1 (the count follows the boxes actually used)', r.r.sheet.fittings_unjoined === 1, 'fittings_unjoined=' + r.r.sheet.fittings_unjoined);
   // (c) the whole drawing really sits at negative X, inserts at negative X too: nothing moves
   const m6c = sheetFixture({ content: B => { B.line(L.C, [-15, 0], [-11, 0]); B.line(L.C, [-10, 0], [-6, 0]); B.ins(L.F, 'BOXNEG', -10, -0.5, 1); } });
   r = run('m6c', m6c, G1);
