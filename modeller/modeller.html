@@ -5830,6 +5830,9 @@ window.seedTrunk = async function (disc) {
     finally { if (tgdb) { try { tgdb.close(); } catch (e2) { } } }
     if (net.refused === true) { alert('Could not route a trunk: ' + (net.reason || 'no storeys')); return; }   // boolean refusal only (refused is else a fixture COUNT)
     _renderSeedTrunk(disc, net);
+    // §9.3 (prompts/DISC_WALK_DRAWN_MAINS.md): a trunk a person asked for is a proposal, never a main. It is drawn only, commits nothing, and says so.
+    setStat(disc + ' — proposed trunk, not a drawn main · ' + net.served + ' served, ' + net.refused + ' refused, ' + (net.totalLen || 0).toFixed(1) + ' m');
+    console.log('§TRUNK-PROPOSED disc=' + disc + ' served=' + net.served + ' refused=' + net.refused + ' len=' + (net.totalLen || 0).toFixed(1) + ' committed=0 (drawn only, not a main)');
     if (window.Bonsai && window.Bonsai.outliner) window.Bonsai.outliner.refresh();
   } finally { bdb.close(); }
 };
