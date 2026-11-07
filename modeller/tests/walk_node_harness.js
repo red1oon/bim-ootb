@@ -4,7 +4,7 @@
 // the shipped code. Read the log after every run; the exit code is not the evidence.
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
-const MODELLER = path.join(__dirname, '..');
+const MODELLER = process.env.WALK_TREE ? path.join(process.env.WALK_TREE, 'modeller') : path.join(__dirname, '..');   // WALK_TREE: run another tree's code through this harness
 
 /**
  * Load the walker stack the way the page's script tags do (globals on `window`).
@@ -55,15 +55,16 @@ function openBuildingRules(SQL, stack, name) {
  * fresh in memory for each walk, exactly as the page re-opens `__dwBuf`, so the file on disk is never written.
  * @param {Object} SQL @param {Object} stack @param {string} disc @param {Uint8Array} buf - building DB bytes.
  * @param {string} name @param {Object[]} avoid - other disciplines' live placements (page: window.__dwWalks).
+ * @param {Object} [extra] - added to the walk's opts (a geoDb, or a witness switch).
  * @returns {Object} the dwWalk result.
  */
-function walkLive(SQL, stack, disc, buf, name, avoid) {
+function walkLive(SQL, stack, disc, buf, name, avoid, extra) {
   const bdb = new SQL.Database(buf);
   try { bdb.run("DELETE FROM element_transforms WHERE transform_source='void_anchor'"); } catch (e) { /* no such column on an older DB, same as the page */ }
-  let w = stack.DW.dwWalk(disc, bdb, name, { schedule: true, avoid: avoid || [] });
+  let w = stack.DW.dwWalk(disc, bdb, name, Object.assign({ schedule: true, avoid: avoid || [] }, extra || {}));
   if ((w.refused || !w.placed) && !w.verdict) {
     console.log('§SCHED-FALLBACK ' + disc + ' schedule/measured-band yielded 0 (' + (w.reason || 'no placements') + ') -> legacy walk');
-    w = stack.DW.dwWalk(disc, bdb, name, {});
+    w = stack.DW.dwWalk(disc, bdb, name, Object.assign({}, extra || {}));
   }
   bdb.close();
   return w;

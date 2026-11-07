@@ -2509,6 +2509,34 @@
     }
     return _shimForDisc(shims, disc);
   }
+  // §WALK-BAND-NOHOST (bim-ootb prompts/DISC_WALK_BAND_NO_HOST.md, witness W-BAND-NO-HOST): a band device with no host is not placed. It is refused and counted, per class, by reason.
+  // The ONE pass both walk paths share, before routing, so no route anchors to a device that is not there. Only density placements (`placed:*`) are candidates; everything else
+  // (schedule rows, `shim:host-*`) passes through untouched. hostBind itself is unchanged. opts.keepUnhosted restores the floating output, for witnesses only.
+  // Returns { placements, bound, refusedNoHost: {total, byClass}, input, byClassInfo, hostsSeen, perceptsSeen, mountsSeen }.
+  function _bandHostPass(disc, placed, bdb, shimSrc, geoDb, spaceBBox, opts, buildingName) {
+    var band = [], out = [], byCls = {}, refused = { total: 0, byClass: {} }, info = [], hosts = {}, percepts = {}, mounts = {}, nBound = 0;
+    placed.forEach(function (p) { if (/^placed:/.test(p.prov || '')) { band.push(p); (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); } else out.push(p); });
+    function refuse(cls, why, list) {
+      var c = refused.byClass[cls] || (refused.byClass[cls] = { 'no-rule': 0, 'host-absent': 0, 'out-of-reach': 0 });
+      c[why] += list.length; refused.total += list.length;
+      if (opts && opts.keepUnhosted) out = out.concat(list);
+    }
+    Object.keys(byCls).forEach(function (cls) {
+      var grp = byCls[cls], shim = _shimForFixture(shimSrc, disc, cls);
+      if (!shim) { refuse(cls, 'no-rule', grp); return; }
+      var hb = hostBind(grp, bdb, shim, geoDb, spaceBBox);
+      if (hb.noHost) { refuse(cls, 'host-absent', grp); info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: grp.length, noHost: true }); return; }
+      out = out.concat(hb.bound); nBound += hb.bound.length;
+      if (hb.refusedList && hb.refusedList.length) refuse(cls, 'out-of-reach', hb.refusedList);
+      if (hb.bound.length) { hosts[shim.host_ifc_class] = 1; percepts[shim.product_value] = 1; mounts[shim.mount] = 1; }
+      info.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: hb.bound.length, refused: hb.refused });
+    });
+    var classes = Object.keys(refused.byClass).map(function (c) { var r = refused.byClass[c]; return c + ': no-rule=' + r['no-rule'] + ' host-absent=' + r['host-absent'] + ' out-of-reach=' + r['out-of-reach']; });
+    console.log(TAG + ' §WALK-BAND-NOHOST disc=' + disc + ' bldg=' + (buildingName || '') + (band.length ? ' input=' + band.length + ' placed=' + nBound + ' refused=' + refused.total : ' input=0 VACUOUS') + (opts && opts.keepUnhosted ? ' keepUnhosted(floating kept, witness only)' : '') + (classes.length ? ' [' + classes.join(' | ') + ']' : ''));
+    return { placements: out, bound: nBound, refusedNoHost: refused, input: band.length, byClassInfo: info, hostsSeen: hosts, perceptsSeen: percepts, mountsSeen: mounts };
+  }
+  function _noHostReason(r) { return r.total + ' band device(s) have no host: not placed (' + Object.keys(r.byClass).join(', ') + ')'; }
+
   // §WALK-BRIDGE-ALL (2026-09-24, MODELLER_MASTER §STRATEGY L1) — SPEC. The §CAMPAIGN M1 routePattern bridge used
   // to run ONLY on the legacy walk (below). The live Walk calls dwWalk(…,{schedule:true}) first
   // (modeller.html _discWalkOne), and its schedule and measured-band branches returned early with routeChains alone.
@@ -2589,22 +2617,17 @@
           return { disc: disc, refused: true, reason: why, placed: 0 };
         }
         // same grouped host-bind flow as the legacy walk: measured-band floats snap to real hosts via
-        // the projected rule_shim; refused stay envelope-bound at the measured z (honest §NOSPACES-FLOAT).
-        var mPlaced = pm.placements, mBound = 0, mFloat = 0;
+        // the projected rule_shim; one with no host is not placed (§WALK-BAND-NOHOST).
+        var mPlaced = pm.placements, mBound = 0, mFloat = 0, mRefusedNoHost = { total: 0, byClass: {} };
         if (!(opts.noHostBind || opts.hostBind === false)) {
-          var mShim = (opts && opts.shims) || _loadRuleShims(disc);
-          var mByCls = {}; mPlaced.forEach(function (p) { (mByCls[p.ifc_class] = mByCls[p.ifc_class] || []).push(p); });
-          var mOut = [];
-          Object.keys(mByCls).forEach(function (cls) {
-            var grp = mByCls[cls], shim = _shimForFixture(mShim, disc, cls);
-            if (!shim) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
-            var hb = hostBind(grp, bdb, shim, opts && opts.geoDb, null);
-            if (hb.noHost) { mOut = mOut.concat(grp); mFloat += grp.length; return; }
-            mOut = mOut.concat(hb.bound, hb.refusedList || []);
-            mBound += hb.bound.length; mFloat += hb.refused;
-          });
-          mPlaced = mOut;
+          var mPass = _bandHostPass(disc, mPlaced, bdb, (opts && opts.shims) || _loadRuleShims(disc), opts && opts.geoDb, null, opts, buildingName);
+          mPlaced = mPass.placements; mBound = mPass.bound; mRefusedNoHost = mPass.refusedNoHost; mFloat = opts.keepUnhosted ? mRefusedNoHost.total : 0;
         } else mFloat = mPlaced.length;
+        if (!mPlaced.length && mRefusedNoHost.total && !srcPart) {
+          var mWhy = _noHostReason(mRefusedNoHost);
+          console.log(TAG + ' §WALK-NOSPACES disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + mWhy);
+          return { disc: disc, refused: true, verdict: true, reason: mWhy, placed: 0, placements: [], refusedNoHost: mRefusedNoHost };
+        }
         var mChains = route(disc, bdb), mBr = _bridgeIfEmpty(disc, bdb, buildingName, mPlaced, routeChains(disc, bdb), opts), mSrc = mBr.rc;
         if (!mSrc.segs.length) { var mBt = _bomTree(disc, bdb, mPlaced); if (mBt && mBt.segs.length) { mSrc = { segs: mBt.segs, byRule: mBt.byRule }; mBr = { rc: mSrc, patternInfo: { seed: mBt.seed, riser: null } }; } }   // §D65
         var mRefN = Object.keys(pm.refused).reduce(function (a, k) { return a + pm.refused[k]; }, 0);
@@ -2615,18 +2638,19 @@
         console.log(TAG + (srcPart ? ' §WALK-SCHED-MIXED' : ' §WALK-NOSPACES') + ' disc=' + disc + ' bldg=' + buildingName + ' placed=' + mPlaced.length +
           ' zones=' + pm.zones + ' hostBound=' + mBound + ' floats=' + mFloat + ' lod400Refused=' + mRefN +
           (Object.keys(pm.refused).length ? ' [' + Object.keys(pm.refused).map(function (k) { return k + '×' + pm.refused[k]; }).join(' ') + ']' : ''));
-        return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mPlaced.length, placements: mPlaced,
+        return { disc: disc, refused: false, mode: srcPart ? 'schedule+measured' : 'measured-band', placed: mPlaced.length, placements: mPlaced, refusedNoHost: mRefusedNoHost,
           schedule: srcPart ? { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused } : undefined,
           measured: { zones: pm.zones, hostBound: mBound, floats: mFloat, lod400Refused: pm.refused },
           chains: mChains, chainSegs: mSrc.segs, chainByRule: mSrc.byRule, storeys: 0, patternBridge: mBr.patternInfo };
       }
+      _bandHostPass(disc, [], bdb, [], null, null, opts, buildingName);   // a schedule walk has no band devices: says so (input=0 VACUOUS)
       var schains = route(disc, bdb), sBr = _bridgeIfEmpty(disc, bdb, buildingName, ps.placements, routeChains(disc, bdb), opts), src2 = sBr.rc;
       var refusedN = Object.keys(ps.refused).reduce(function (a, k) { return a + ps.refused[k]; }, 0);
       console.log(TAG + ' §WALK-SCHED disc=' + disc + ' bldg=' + buildingName + ' placed=' + ps.placements.length +
         ' spaces=' + ps.spacesUsed + '/' + ps.spaces + ' lod400Refused=' + refusedN +
         (Object.keys(ps.refused).length ? ' [' + Object.keys(ps.refused).map(function (k) { return k + '×' + ps.refused[k]; }).join(' ') + ']' : '') +
         ' skippedSpaces=' + ps.skippedSpaces.length);
-      return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements,
+      return { disc: disc, refused: false, placed: ps.placements.length, placements: ps.placements, refusedNoHost: { total: 0, byClass: {} },
         schedule: { spaces: ps.spaces, spacesUsed: ps.spacesUsed, skippedSpaces: ps.skippedSpaces, lod400Refused: ps.refused },
         chains: schains, chainSegs: src2.segs, chainByRule: src2.byRule, storeys: 0, patternBridge: sBr.patternInfo };
     }
@@ -2658,15 +2682,14 @@
     }
     var geoDb = opts && opts.geoDb;                                              // §GEO-SPLIT (Terminal_geo.db)
     var placements = place(disc, sub, bdb, geoDb);
-    // ── HOST-BIND from the PROJECTION: snap floating host-bound placements onto a real host (anti-float),
-    // count-preserving. Source = caller opts.shims (override) ELSE the projected `rule_shim` table (the
+    // ── HOST-BIND from the PROJECTION: snap density placements onto a real host; one with no host is not placed, and is counted (§WALK-BAND-NOHOST). Source = caller opts.shims (override) ELSE the projected `rule_shim` table (the
     // first-class §SHIM flow — same as routing/placement). §SHIM-SELECT made this DEFAULT-ON (2026-06-30): the
     // per-fixture-ifc_class selection key removed the mis-bind risk (ELEC ceiling-lights → IfcCovering, wall-outlets
     // → IfcWall) so the live walk now anti-floats by default. CORRECTNESS-SAFE: a fixture binds only to its MEASURED
-    // host when one exists in reach, else it stays floating (REFUSE) — never fabricated, count always preserved.
+    // host when one exists in reach, else it is refused (§WALK-BAND-NOHOST) — never fabricated, every device accounted for.
     // ESCAPE HATCHES: opts.noHostBind=true (or opts.hostBind===false) restores the raw floating generation walk
     // (used by the GENERATION-layer count checks in witness_disc_walk_generalize.js). opts.shims forces the caller
-    // override. A discipline with NO matching shim row is a no-op (floats as before). The floating set is GROUPED BY
+    // override. A discipline with NO matching shim row: refused, reason no-rule. The floating set is GROUPED BY
     // ifc_class and each group binds with its OWN shim; a class with no per-fixture row falls back to the disc-level
     // shim. Caller-passed raw rows (no fixture_ifc_class) → disc-level fallback.
     var hbInfo = null;
@@ -2675,39 +2698,20 @@
     // Only FLOATING density placements (prov 'placed:*') are anti-float candidates. Placements already tacked to a
     // real host by the ref_kind='host' path (prov 'shim:host-*') are LEFT UNTOUCHED — re-binding them would move a
     // correctly-hosted fixture. So host-bind rescues only what actually floats; already-hosted walks are invariant.
-    var floating = [], fixed = [];
-    placements.forEach(function (p) { (/^placed:/.test(p.prov || '') ? floating : fixed).push(p); });
-    if (doBind && floating.length) {
+    var refusedNoHost = { total: 0, byClass: {} }, nFloating = placements.filter(function (p) { return /^placed:/.test(p.prov || ''); }).length;
+    if (doBind && nFloating) {
       var stZ = {}; sub.forEach(function (st) { stZ[st.name] = st.z; });
-      floating.forEach(function (p) { if (p.storeyZ == null) p.storeyZ = stZ[p.storey]; });
-      // group floating by ifc_class → each group picks its own shim via the selection key.
-      var byCls = {}; floating.forEach(function (p) { (byCls[p.ifc_class] = byCls[p.ifc_class] || []).push(p); });
-      var rebuilt = fixed.slice(), totBound = 0, totRefused = 0, byClassInfo = [], hostsSeen = {}, perceptsSeen = {}, mountsSeen = {}, anyBound = false;
-      Object.keys(byCls).forEach(function (cls) {
-        var grp = byCls[cls];
-        var shim = _shimForFixture(shimSrc, disc, cls);
-        if (!shim) { rebuilt = rebuilt.concat(grp); totRefused += 0; return; }   // no shim for class → leave floating
-        var hb = hostBind(grp, bdb, shim, geoDb, (opts && opts.spaceGuid) ? sub[0] : null);
-        if (hb.noHost) {
-          rebuilt = rebuilt.concat(grp);                                          // host class absent in bldg → kept floating
-          console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value +
-            ' REFUSE no-host (' + shim.host_ifc_class + ' absent) — kept floating');
-          byClassInfo.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: 0, refused: grp.length, noHost: true });
-          return;
-        }
-        rebuilt = rebuilt.concat(hb.bound, hb.refusedList || []);                 // count preserved per group
-        totBound += hb.bound.length; totRefused += hb.refused; anyBound = anyBound || hb.bound.length > 0;
-        if (hb.bound.length) { hostsSeen[shim.host_ifc_class] = 1; perceptsSeen[shim.product_value] = 1; mountsSeen[shim.mount] = 1; }
-        byClassInfo.push({ ifc_class: cls, percept: shim.product_value, host: shim.host_ifc_class, mount: shim.mount, bound: hb.bound.length, refused: hb.refused });
-        console.log(TAG + ' §WALK-HOSTBIND disc=' + disc + '/' + cls + ' percept=' + shim.product_value + ' host=' +
-          shim.host_ifc_class + '/' + shim.mount + ' floating=' + grp.length + ' bound=' + hb.bound.length + ' refused=' + hb.refused + ' (count preserved)');
-      });
-      if (anyBound || byClassInfo.length) {
-        placements = rebuilt;
-        var hostKeys = Object.keys(hostsSeen), perceptKeys = Object.keys(perceptsSeen), mountKeys = Object.keys(mountsSeen);
-        function _agg(keys) { return keys.length === 1 ? keys[0] : (keys.length ? 'MIXED' : null); }
-        hbInfo = { bound: totBound, refused: totRefused, floating: floating.length,
-          host: _agg(hostKeys), mount: _agg(mountKeys), percept: _agg(perceptKeys), byClass: byClassInfo };
+      placements.forEach(function (p) { if (/^placed:/.test(p.prov || '') && p.storeyZ == null) p.storeyZ = stZ[p.storey]; });
+      var pass = _bandHostPass(disc, placements, bdb, shimSrc, geoDb, (opts && opts.spaceGuid) ? sub[0] : null, opts, buildingName);
+      placements = pass.placements; refusedNoHost = pass.refusedNoHost;
+      if (pass.byClassInfo.length) {
+        function _agg(o) { var k = Object.keys(o); return k.length === 1 ? k[0] : (k.length ? 'MIXED' : null); }
+        hbInfo = { bound: pass.bound, refused: refusedNoHost.total, floating: nFloating, host: _agg(pass.hostsSeen), mount: _agg(pass.mountsSeen), percept: _agg(pass.perceptsSeen), byClass: pass.byClassInfo };
+      }
+      if (!placements.length) {
+        var lWhy = _noHostReason(refusedNoHost);
+        console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' REFUSE ' + lWhy);
+        return { disc: disc, refused: true, reason: lWhy, placed: 0, placements: [], refusedNoHost: refusedNoHost };
       }
     }
     var chains = route(disc, bdb);
@@ -2722,7 +2726,7 @@
     console.log(TAG + ' §WALK disc=' + disc + ' bldg=' + buildingName + ' placed=' + placements.length +
       ' chains=' + chains.length + ' chainSegs=' + rc.segs.length + ' storeys=' + sub.length +
       (rc.byRule.length ? ' [' + rc.byRule.map(function (b) { return b.from.replace('Ifc', '') + '→' + b.to.replace('Ifc', '') + ':' + (b.skipped || (b.segs + '/' + (b.segs + b.noNbr))); }).join(' ') + ']' : ''));
-    return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo,
+    return { disc: disc, refused: false, placed: placements.length, placements: placements, hostBind: hbInfo, refusedNoHost: refusedNoHost,
       chains: chains, chainSegs: rc.segs, chainByRule: rc.byRule, storeys: sub.length, patternBridge: patternInfo };
   }
 

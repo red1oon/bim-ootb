@@ -1,7 +1,7 @@
 # ⚠ DO NOT REMOVE
 SCOPE: what the disc walker does with a band device that has no host, for ANY building. Read the log after every run; exit code is not evidence. Public repo: no client or project names; a real test set is "a private Revit-exported set".
 Owner (2026-11-07): "we are abstracting a rules engine not custom to any particular design." On this rule: "go with your advice, write the spec".
-Status: SPEC ONLY, nothing built. Design lane wrote it; the Modeller lane executes it. Start after `prompts/IMPORT_KEEPS_IFCSPACE.md` merges.
+Status: BUILT on branch `feat/walk-band-no-host`, NOT merged: §7 stop conditions fired, see §7 RESULT. The doctrine edit in §5.7 was not made.
 
 ## §1 Issue
 The measured-band walk copies device density from a reference building. A device that finds no host stays in the model at its band height, floating, and counts as placed.
@@ -64,6 +64,25 @@ This rule changes band counts on every building that uses bands, and it may prov
 
   Do not pick a threshold to make the table pass. If "a few" needs a number, that is the question to ask.
 - `⛔ BLOCKED: <the one question>` is the right outcome here. Do not loosen the rule to get through.
+
+## §7 RESULT 2026-11-07: ⛔ STOPPED before merge, stop conditions 1 and 3 fired. For the owner.
+N = 118 walks (21 DBs with elements × each discipline the rules hold; `modeller/tests/fleet_band_table.js`, page call order, before = #2677's walker, after = this branch). 12 rows are not judged: both LTU_AHouse DBs hit the sql.js wasm limit in node, before and after, so they read 0 placed; that is the instrument, not a result.
+**Accounting holds and nothing moved:** before placed = after placed + refused on every walk with band devices (B3 fleet), and bound counts are identical before and after on every row.
+**Stop 1, a building walked with rules measured on itself loses most of its band devices.** Terminal, `terminal_rules.db`:
+| DB | ACMV | ELEC | FP | PLB | STR |
+|---|---:|---:|---:|---:|---:|
+| `Terminal_ARC.db` | 1,325 → 412 | 808 → 118 | 1,054 → 260 | 924 → 0 | 623 → 0 |
+| `Terminal_extracted.db` | 1,312 → 425 | 744 → 114 | 972 → 248 | 890 → 0 | 666 → 0 |
+| `Terminal_meta.db` | 1,334 → 402 | 745 → 111 | 973 → 238 | 890 → 0 | 675 → 0 |
+ACMV, ELEC and FP refusals are all `out-of-reach`. PLB and STR are all `no-rule`. The spec reads this as "the rule or the host search is wrong, not the building".
+**Stop 3, walks that placed devices now place none: 36 of the judged walks.** Every DB's PLB (no `rule_shim` row for it) and STR (same), plus `Garage_ARC.db` ACMV 4,007 → 0 and every class on the small warehouse DB.
+**Stop 2 did not fire.** The FP borrow keeps its bound devices: SampleCastle 126 → 126 bound 126, Duplex 46 → 29 bound 29, SampleHouse 17 → 16 bound 16. The spec's "151 sprinklers" is the older build copy's count; the shipped walker binds 126.
+**Routing collapses with the band devices:** e.g. Hospital_ARC PLB 19,457 runs → 0, FP 3,028 → 36, ACMV 3,352 → 3, Terminal_ARC ACMV 754 → 0. These were the stub runs measured in bim-compiler `MODELLER_MASTER.md` §G RESULTS.
+**The largest drops by building:** Garage ELEC 2,756 → 49, HHS_ARC ELEC 722 → 12, Hospital_ARC ELEC 3,190 → 193.
+**Spec text that does not match the code:** §2 says band duct pieces have no host rule. They do fall through `_shimForFixture` to the discipline-level shim, so they bind to ceilings and are refused only as `out-of-reach`; `no-rule` never fires for ACMV. Not changed. `scripts/witness_*` named in §6 test bim-compiler's older `build/disc_walker.js`, so as written they cannot see this change; a run pointed at the shipped walker exists for the baseline only (below).
+**Baseline before this change, shipped walker:** W-BORROW-FP 6/0, W-DWWALK-HOSTBIND 6/0, W-ELEC-HOSTBIND 5/0, W-SHIM-SELECT 6/0, W-TERM-NOSPACES 8/0, W-DW-LIVEWIRE 12/12, W-UX-DISC 5/3 (B3, B4, B6 fail on main too); W-SPACE-SCOPED could not run (a scratch path from an earlier session is gone). **Not yet run after this change.** B7 (real page) not built.
+**W-BAND-NO-HOST:** B1-B6 PASS on public Clinic ELEC, red control included. Also found: 87 of 723 bound devices share a spot with another of their class (`hostBind` re-snaps to the host's centre), today's behaviour, not changed here.
+**The one question:** with Terminal itself keeping only about 15 to 30 % of its services and PLB and STR gone everywhere, should the rule stand as written, apply only to the classes a host rule covers, or does the host search's reach need looking at first? No threshold was picked.
 
 ## §8 Then, design lane
 The design lane runs the private set on the merged code and compares placed and bound with the 269 drawn, by room, using its existing assignment. A count near 269 alone proves nothing; it reports positions as well. Report on this lane as: a rules engine, not custom to any design.
