@@ -10,6 +10,8 @@
  *   T3 ROUTED  — clicking Route ▶ renders the trunk (a dwTrunk=ELEC LineSegments with >0 segments) where there was none.
  *   T4 PLANNED — the rendered trunk reflects the planned net (storeys ≥1; rendered segs == net-derived segs).
  *   T5 VISIBLE — the framebuffer changed after routing (the user SEES the trunk).
+ *   N10 (prompts/DISC_WALK_DRAWN_MAINS.md §9.3) — a trunk is never a main: routing it adds 0 op-log rows and 0 entities to the IFC export, emits no §WALK-MAINS line, and the status says
+ *       "proposed trunk, not a drawn main". RED: one deliberate GEOM_INSERT through the walk's own commit call must move the counters, so they can fail.
  */
 'use strict';
 const { runE2E } = require('./e2e_harness');
@@ -30,6 +32,11 @@ runE2E('W-E2E-SEEDTRUNK', async (t) => {
   t.assert('T1 WALK (ELEC fixtures placed)', nFix > 0, 'fixtures=' + nFix);
   if (!nFix) return;
   const trunk0 = await trunkCensus(t); const pix0 = await t.pixsum();
+  // N10 before: op-log rows and IFC entities by class, as the export writes them. And a console tap for §WALK-MAINS / §TRUNK-PROPOSED.
+  const census = () => t.pg.evaluate(async () => { const O = window.Bonsai.oplog, b = await window.Bonsai.ifc.build(), td = new TextDecoder('latin1'), by = {};
+    for (const m of td.decode(b.bytes).matchAll(/=\s*(IFC[A-Z0-9]+)\(/g)) by[m[1]] = (by[m[1]] || 0) + 1; return { ops: O.length, geom: O._geomOps().length, ents: by }; });
+  await t.pg.evaluate(() => { window.__n10 = []; const L = console.log; console.log = function () { const s = Array.prototype.join.call(arguments, ' '); if (/§WALK-MAINS|§TRUNK-PROPOSED/.test(s)) window.__n10.push(s); return L.apply(console, arguments); }; });
+  const c0 = await census();
   await t.shot('02-walked');
 
   // T2 — trigger the Outliner "Route trunk" handler (seedTrunk) WITHOUT awaiting: it blocks on the popup. Then
@@ -54,4 +61,15 @@ runE2E('W-E2E-SEEDTRUNK', async (t) => {
   t.assert('T3 ROUTED (Route ▶ renders a dwTrunk=ELEC line where there was none)', trunk0.n === 0 && trunk1.n >= 1 && trunk1.segs > 0, 'trunk ' + trunk0.n + '→' + trunk1.n + ' segs0=' + trunk0.segs + ' segs1=' + trunk1.segs + ' entry=' + (chosen && chosen.guid));
   t.assert('T4 PLANNED (net has storeys, not refused; rendered segs>0)', !!plan && plan.refused === false && plan.storeys >= 1 && trunk1.segs > 0, 'plan=' + JSON.stringify(plan) + ' segs=' + trunk1.segs);
   t.assert('T5 VISIBLE (framebuffer changed after routing)', pix0 !== pix1, 'pix ' + pix0 + '→' + pix1);
+  const c1 = await census(), n10 = await t.pg.evaluate(() => ({ lines: window.__n10 || [], stat: (document.getElementById('stat') || {}).textContent || '' }));
+  const entDiff = Object.keys(Object.assign({}, c0.ents, c1.ents)).filter(k => (c0.ents[k] || 0) !== (c1.ents[k] || 0));
+  t.assert('N10a a trunk adds 0 op-log rows', c1.ops === c0.ops && c1.geom === c0.geom, 'ops ' + c0.ops + '→' + c1.ops + ' geom ' + c0.geom + '→' + c1.geom);
+  t.assert('N10b a trunk adds 0 entities to the IFC export', entDiff.length === 0, 'classes changed=' + entDiff.length + ' ' + entDiff.slice(0, 5).join(','));
+  t.assert('N10c no §WALK-MAINS line, one §TRUNK-PROPOSED committed=0', !n10.lines.some(l => /§WALK-MAINS/.test(l)) && n10.lines.filter(l => /§TRUNK-PROPOSED .*committed=0/.test(l)).length === 1, JSON.stringify(n10.lines).slice(0, 200));
+  t.assert('N10d the status says it is a proposed trunk, not a drawn main', /proposed trunk, not a drawn main/.test(n10.stat), JSON.stringify(n10.stat.slice(0, 140)));
+  // RED: the counters can fail. One GEOM_INSERT through the same commit call a walk uses.
+  const red = await t.pg.evaluate(async () => { const O = window.Bonsai.oplog, w = (O._geomOps().find(x => x.parameters && x.parameters._dw) || {}).parameters; if (!w) return null;
+    await O.commitSeedGroup([{ op_type: 'GEOM_INSERT', params: JSON.parse(JSON.stringify(w)) }], 'n10-red-' + O.length); return O.length; });
+  const c2 = await census();
+  t.assert('N10 RED: a deliberate commit moves the same counters', red != null && c2.ops > c1.ops && Object.keys(c2.ents).some(k => (c2.ents[k] || 0) !== (c1.ents[k] || 0)), 'ops ' + c1.ops + '→' + c2.ops);
 }, { width: 1200, height: 850, dpr: 2 });
