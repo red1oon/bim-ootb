@@ -12,7 +12,7 @@ const realLog = console.log; const quiet = () => { console.log = function (s) { 
 const cp = require('child_process'), MOD = path.join(process.env.HOME, 'bim-ootb', 'modeller');
 function list() {
   const out = [], skipped = [];
-  fs.readdirSync(DIR).filter(f => /\.db$/.test(f) && !/_geo\.db$/.test(f)).sort().forEach(f => { if (/BakeFilm|_silent|AjaibPath|Terminal_rooms|TermRooms|_2d\.db$/.test(f)) skipped.push(f + ':private or a copy'); else out.push(path.join(DIR, f)); });
+  fs.readdirSync(DIR).filter(f => /\.db$/.test(f) && !/_geo\.db$/.test(f)).sort().forEach(f => { if (fs.lstatSync(path.join(DIR, f)).isSymbolicLink() || /_silent|AjaibPath|Terminal_rooms|TermRooms|_2d\.db$/.test(f)) skipped.push(f + ':a link or a copy'); else out.push(path.join(DIR, f)); });
   fs.readdirSync(MOD).filter(f => /_ARC\.db$/.test(f)).sort().forEach(f => out.push(path.join(MOD, f)));   // the Modeller's residents: what the page actually walks
   return { out, skipped };
 }
